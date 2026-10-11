@@ -370,7 +370,7 @@
 
   {#if !editor.readOnly}
     <div
-      class="pointer-events-none absolute inset-x-2 bottom-full mb-2 flex items-center gap-2 md:static md:mt-2"
+      class="brush-status pointer-events-none absolute inset-x-2 bottom-full mb-2 flex items-center gap-2 md:static md:mt-2"
     >
       <p
         role="status"
@@ -419,11 +419,22 @@
       border: 1px solid var(--bt-line);
     }
   }
-  /* Narrow popovers stop 60px short of the right edge: the map's bottom controls sit just above the
-     bars (lifted by the bottom inset), and a popover partly covering the 44px attribution (i)
-     button (10px from the edge) would shrink its visible target below WCAG 2.5.8's 24px. */
+  /* Narrow popovers stop 60px short of the right edge. The map's bottom controls sit just above
+     the bars (lifted by the bottom inset), and below 640px (map-view's NARROW_PX) its attribution
+     is the compact 44px (i) button, 10px from the edge: partly covering it would shrink its visible
+     target below WCAG 2.5.8's 24px. Between 640 and 767px the attribution is a text strip that a
+     popover may partly cover; that is acceptable, as inline links are exempt and popovers are
+     transient. */
   .brush-pop {
     right: 3.75rem;
+  }
+  /* The floating status line shares that band, so it gets the same clearance from the compact
+     attribution button (640–767px it may overlay the text strip, as the popovers do; ≥ 768px it
+     is static inside the panel). */
+  @media (width < 640px) {
+    .brush-status {
+      right: 3.75rem;
+    }
   }
   .tool {
     --tool-c: var(--bt-fg);

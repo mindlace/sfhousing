@@ -2,6 +2,7 @@
 // scoreboard sheet are anchored to #map-region, not the viewport, so the site footer's links stay
 // visible, unobscured and tappable on the full-height routes `/` and `/p/:id`.
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { MSG } from '../src/lib/brush/messages';
 import { gotoEditor, smallText, waitForMap, type Win } from './helpers/sharing';
 
 const FOOTER_LINKS = ['About', 'Data & licences', 'Source code (GitHub)'];
@@ -157,6 +158,50 @@ test.describe('mobile', () => {
     await page.goto(`/p/${id}`);
     await waitForMap(page);
     await checkMobile(page);
+  });
+
+  // The floating status line shares the band just above the bars with map-view's compact
+  // attribution (i) button (< 640 px), so it must leave that button uncovered too.
+  const attrib = (page: Page): Locator => page.locator('.maplibregl-ctrl-attrib-button');
+  const statusLine = (page: Page): Locator => page.locator('.brush-toolbar').getByRole('status');
+
+  async function expectStatusClearOfAttrib(page: Page): Promise<void> {
+    await expect(attrib(page)).toBeVisible();
+    await expectUnobscured(attrib(page));
+    // The wrapper bounds any message (a long one wraps inside it), not just the current one.
+    const s = await box(page.locator('.brush-status'));
+    expect(s.x + s.width).toBeLessThanOrEqual((await box(attrib(page))).x);
+    expect(s.y + s.height).toBeLessThanOrEqual((await box(brushBar(page))).y);
+  }
+
+  test('/: a status message leaves the attribution button unobscured', async ({ page }) => {
+    await gotoEditor(page);
+    // Paint at the default city zoom: the brush is too small to see, so the zoom hint shows.
+    await brushBar(page).getByRole('radio', { name: 'Paint' }).tap();
+    await expect(statusLine(page)).toHaveText(MSG.zoomIn);
+    await expect(statusLine(page)).toBeVisible();
+    // (The status line is pointer-events: none, so elementFromPoint looks through it; no
+    // unobscured check on the line itself.)
+    await expectStatusClearOfAttrib(page);
+  });
+
+  test('/: the failed phase with Retry leaves the attribution button unobscured', async ({
+    page
+  }) => {
+    // The sim worker never loads: the client reports a crash and the brush enters `failed`.
+    await page.route('**/workers/worker-*.js', (r) => r.fulfill({ status: 404, body: '' }));
+    await page.goto('/');
+    await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
+      timeout: 20_000
+    });
+    await expect(statusLine(page)).toHaveText(MSG.cityFailed);
+    const retry = page.locator('.brush-toolbar').getByRole('button', { name: 'Retry' });
+    await expect(retry).toBeVisible();
+    await expectUnobscured(retry);
+    await expectStatusClearOfAttrib(page);
+    expect((await box(retry)).x + (await box(retry)).width).toBeLessThanOrEqual(
+      (await box(attrib(page))).x
+    );
   });
 });
 
