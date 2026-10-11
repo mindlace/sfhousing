@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { runSql } from '../lib/sql';
 import type { Duck } from '../lib/duck';
 import { readFileSync } from 'node:fs';
-import { KNOWN_LANDUSE } from '../config';
+import { KNOWN_LANDUSE, config } from '../config';
 import { miniDuck } from './helpers';
 
 let db: Duck;
@@ -131,5 +131,119 @@ describe('20_landuse', () => {
   it('hard-codes the same known codes as config.ts', () => {
     const sql = readFileSync(new URL('../sql/20_landuse.sql', import.meta.url), 'utf8');
     for (const code of KNOWN_LANDUSE) expect(sql).toContain(`'${code}'`);
+  });
+});
+
+describe('30–70 buildings, clipping, attributes', () => {
+  beforeAll(async () => {
+    db = await miniDuck();
+    await runSql(db);
+  });
+
+  it('applies height rules 0–3 with the expected hs', async () => {
+    const rows = await db.all<{ bid: string; height_m: number; hs: number }>(
+      `SELECT bid, height_m, hs FROM buildings WHERE bid IN ('b01','b13','b04','b03') ORDER BY bid`
+    );
+    expect(rows).toEqual([
+      { bid: 'b01', height_m: 12, hs: 0 },
+      { bid: 'b03', height_m: 7, hs: 3 },
+      { bid: 'b04', height_m: 12.4, hs: 2 },
+      { bid: 'b13', height_m: 21.3, hs: 1 }
+    ]);
+  });
+
+  it('drops underground and out-of-city buildings', async () => {
+    const ids = (await db.all<{ bid: string }>('SELECT bid FROM buildings')).map((r) => r.bid);
+    expect(ids).not.toContain('bunder');
+    expect(ids).not.toContain('bmarin');
+    const c = await counts();
+    expect(c['buildings.input']).toBe(12);
+    expect(c['buildings.underground_dropped']).toBe(1);
+    expect(c['buildings.outside_nb_dropped']).toBe(1);
+    expect(c['buildings.kept']).toBe(10);
+  });
+
+  it('clips a spanning building into 2 pieces and keeps the pier without parcelId', async () => {
+    const b10 = await db.all<{ parcel_id: string }>(
+      `SELECT parcel_id FROM pieces WHERE bid = 'b10' ORDER BY parcel_id`
+    );
+    expect(b10.map((r) => r.parcel_id)).toEqual(['3512010', '3512011']);
+    const pier = await db.all<{ parcel_id: string | null }>(
+      `SELECT parcel_id FROM pieces WHERE bid = 'bpier'`
+    );
+    expect(pier).toEqual([{ parcel_id: null }]);
+    expect((await counts())['pieces.sliver_dropped']).toBeGreaterThanOrEqual(1);
+  });
+
+  it('computes floor area by rules 1–4', async () => {
+    const fa = Object.fromEntries(
+      (
+        await db.all<{ id: string; floor_area_m2: number; fa_rule: number }>(
+          `SELECT id, floor_area_m2, fa_rule FROM parcel_out WHERE id IN ('3512001','3512013','3512008','3512009')`
+        )
+      ).map((r) => [r.id, [r.floor_area_m2, r.fa_rule]])
+    );
+    expect(fa['3512001']).toEqual([Math.round(2000 * 0.09290304 * 10) / 10, 1]);
+    expect(fa['3512013'][1]).toBe(2);
+    expect(fa['3512013'][0]).toBeGreaterThan(0);
+    expect(fa['3512008']).toEqual([960, 3]);
+    expect(fa['3512009']).toEqual([0, 4]);
+  });
+
+  it('sets existing height to the tallest piece and orders the export', async () => {
+    const [h] = await db.all<{ m: number }>(`SELECT max(height_m) m FROM parcel_out`);
+    expect(h.m).toBe(60);
+    const ex = await db.all<{ parcel_id: string | null }>('SELECT parcel_id FROM buildings_export');
+    expect(ex[ex.length - 1].parcel_id).toBeNull();
+    const nb = await db.all<{ name: string }>('SELECT name FROM neighborhoods_out');
+    expect(nb.map((r) => r.name)).toEqual(['Mission', 'Noe Valley']);
+  });
+
+  it('emits chunk-writer columns, ordered by id', async () => {
+    const rows = await db.all<{
+      id: string;
+      geojson7131: string;
+      xmin: number;
+      xmax: number;
+      ymin: number;
+      ymax: number;
+    }>('SELECT id, geojson7131, xmin, xmax, ymin, ymax FROM parcel_out');
+    expect(rows).toHaveLength(14);
+    expect(rows.map((r) => r.id)).toEqual(rows.map((r) => r.id).sort());
+    expect(JSON.parse(rows[0].geojson7131).type).toMatch(/Polygon/);
+    expect(rows[0].xmin).toBeLessThan(rows[0].xmax);
+    expect(rows[0].ymin).toBeLessThan(rows[0].ymax);
+    expect(rows[0].xmin).toBeLessThan(-122);
+  });
+
+  it('counts overture datasets and reports areas', async () => {
+    const o = await db.all<{ dataset: string; n: number }>(
+      'SELECT dataset, n FROM overture_contrib'
+    );
+    expect(o.length).toBeGreaterThan(0);
+    expect(o.map((r) => r.dataset)).toEqual(o.map((r) => r.dataset).sort());
+    const c = await counts();
+    expect(c['height.max_m']).toBe(60);
+    expect(c['pieces.outside_parcels']).toBeGreaterThanOrEqual(1);
+    expect(c['pieces.area_with_parcel_m2']).toBeLessThan(c['pieces.area_total_m2']);
+    expect(c['floor_area.rule4']).toBeGreaterThanOrEqual(1);
+    const hs = c['buildings.hs0'] + c['buildings.hs1'] + c['buildings.hs2'] + c['buildings.hs3'];
+    expect(hs).toBe(c['buildings.kept']);
+  });
+
+  it('ignores the right-of-way footprint and exports geojson', async () => {
+    const [r] = await db.all<{ g: string }>(
+      `SELECT geojson4326 g FROM buildings_export WHERE bid = 'b13'`
+    );
+    expect(JSON.parse(r.g).type).toMatch(/Polygon/);
+  });
+
+  it('refuses the unbuilt datasf fallback', async () => {
+    config.renderSource = 'datasf';
+    try {
+      await expect(runSql(db)).rejects.toThrow("renderSource 'datasf' fallback not implemented");
+    } finally {
+      config.renderSource = 'overture';
+    }
   });
 });
