@@ -650,3 +650,82 @@ describe('BrushController overlay, crosshair, prefetch', () => {
     expect(fx.client.prefetches).toHaveLength(0);
   });
 });
+
+describe('BrushController stale touch and in-flight recovery', () => {
+  it('a primary touch clears a stale tracked touch whose pointerup never arrived', () => {
+    down(0, 0, { type: 'touch', id: 1 }); // its pointerup/cancel is lost
+    fx.ctl.cancelStroke();
+    stroke({ type: 'touch', id: 2 });
+    expect(fx.editor.plan.ops).toHaveLength(1);
+  });
+
+  it('a primary touch resets touchBlocked left over from a lost pinch', () => {
+    down(0, 0, { type: 'touch', id: 1 });
+    down(50, 50, { type: 'touch', id: 2, primary: false }); // pinch: blocked
+    expect(fx.ctl.stroking).toBe(false);
+    // Neither pointerup arrives. A fresh primary touch paints.
+    stroke({ type: 'touch', id: 3 });
+    expect(fx.editor.plan.ops).toHaveLength(1);
+  });
+
+  it('window blur clears tracked touches', () => {
+    down(0, 0, { type: 'touch', id: 1 }); // its pointerup is lost to the blur
+    window.dispatchEvent(new Event('blur'));
+    down(0, 0); // a mouse stroke
+    expect(fx.ctl.stroking).toBe(true);
+    // A stale touch id would make this lone touch count as a second finger and cancel the stroke.
+    down(50, 50, { type: 'touch', id: 2, primary: false });
+    expect(fx.ctl.stroking).toBe(true);
+    up(0, 0);
+  });
+
+  it('onError clears an in-flight preview whose rev is at or below the error rev', () => {
+    down(0, 0);
+    move(30, 0);
+    fx.flushRaf();
+    expect(fx.client.previews).toHaveLength(1);
+    const rev = fx.client.previews[0].rev;
+    move(60, 0);
+    fx.flushRaf();
+    expect(fx.client.previews).toHaveLength(1); // blocked behind the in-flight one
+
+    fx.ctl.onError(rev - 1); // an older error does not clear it
+    fx.flushRaf();
+    expect(fx.client.previews).toHaveLength(1);
+
+    fx.ctl.onError(rev);
+    fx.flushRaf();
+    expect(fx.client.previews).toHaveLength(2); // the dirty path goes out
+    up(60, 0);
+  });
+
+  it('a new stroke after a commit does not wait on the previous stroke’s unanswered preview', () => {
+    down(0, 0);
+    move(30, 0);
+    fx.flushRaf();
+    expect(fx.client.previews).toHaveLength(1);
+    up(30, 0); // commit sent; the preview reply never arrives
+    expect(fx.client.commits).toHaveLength(1);
+
+    down(0, 50);
+    move(40, 50);
+    fx.flushRaf();
+    expect(fx.client.previews).toHaveLength(2);
+    up(40, 50);
+  });
+
+  it('a new stroke after a cancel does not wait on the cancelled preview', () => {
+    down(0, 0);
+    move(30, 0);
+    fx.flushRaf();
+    key('Escape');
+    expect(fx.client.cancels).toHaveLength(1);
+    up(30, 0);
+
+    down(0, 50);
+    move(40, 50);
+    fx.flushRaf();
+    expect(fx.client.previews).toHaveLength(2);
+    up(40, 50);
+  });
+});

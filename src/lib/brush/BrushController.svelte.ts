@@ -98,6 +98,8 @@ export class BrushController {
   #touchBlocked = false;
   #rafHandle: number | null = null;
   #inFlightRev: number | null = null;
+  /** A commit or cancelPreview went out after the in-flight preview: its reply no longer gates. */
+  #barrierAfterInFlight = false;
   #dirty = false;
   #awaitingStats: string | null = null;
   #crosshair = false;
@@ -177,24 +179,47 @@ export class BrushController {
   }
 
   onDiff(d: DiffResponse, stale: boolean): void {
-    if (this.#inFlightRev !== null && d.rev >= this.#inFlightRev) {
-      this.#inFlightRev = null;
-      if (this.#dirty && this.#stroke) {
-        this.#dirty = false;
-        this.#schedulePreview();
-      }
-    }
+    if (this.#inFlightRev !== null && d.rev >= this.#inFlightRev) this.#clearInFlight();
     if (!stale && d.phase === 'commit' && d.stats && d.stats.opId === this.#awaitingStats) {
       this.#awaitingStats = null;
       this.#d.state.announce(strokeMessage(d.stats), ANNOUNCE_MS);
     }
   }
 
+  /**
+   * The worker answered `rev` with an error: a preview in flight at or below it gets no diff, so
+   * stop waiting for one (and send the latest path if it changed meanwhile).
+   */
+  onError(rev: number): void {
+    if (this.#inFlightRev === null || this.#inFlightRev > rev) return;
+    this.#clearInFlight();
+  }
+
   cancelStroke(): void {
     const s = this.#stroke;
     if (!s) return;
-    if (s.sentPreview) this.#d.client.cancelPreview();
+    if (s.sentPreview) this.#cancelPreview();
     this.#endStroke();
+  }
+
+  #clearInFlight(): void {
+    this.#inFlightRev = null;
+    this.#barrierAfterInFlight = false;
+    if (this.#dirty && this.#stroke) {
+      this.#dirty = false;
+      this.#schedulePreview();
+    }
+  }
+
+  #cancelPreview(): void {
+    this.#d.client.cancelPreview();
+    if (this.#inFlightRev !== null) this.#barrierAfterInFlight = true;
+  }
+
+  #commit(op: PlanOp): number {
+    const rev = this.#d.client.commit(op);
+    if (this.#inFlightRev !== null) this.#barrierAfterInFlight = true;
+    return rev;
   }
 
   stampAtCenter(): void {
@@ -227,11 +252,11 @@ export class BrushController {
   }
 
   redo(): void {
-    const { editor, client, state } = this.#d;
+    const { editor, state } = this.#d;
     if (this.#stroke || editor.readOnly) return;
     const op = editor.redo();
     if (!op) return;
-    this.#lastCommitRev = client.commit(op);
+    this.#lastCommitRev = this.#commit(op);
     state.announce(undoMessage(op, 'Redid'), ANNOUNCE_MS);
   }
 
@@ -323,6 +348,12 @@ export class BrushController {
     base: Pick<Stroke, 'pointerId' | 'pointerType' | 'kind' | 'stories' | 'radiusM'>,
     first: LngLat
   ): void {
+    // The previous stroke's preview reply is stale once its commit or cancel went out; the host
+    // may never answer it (e.g. an error), so it must not hold up this stroke's first preview.
+    if (this.#barrierAfterInFlight) {
+      this.#inFlightRev = null;
+      this.#barrierAfterInFlight = false;
+    }
     this.#stroke = {
       pointerId: base.pointerId,
       pointerType: base.pointerType,
@@ -362,15 +393,15 @@ export class BrushController {
           // measurement is best-effort
         }
       }
-      this.#lastCommitRev = client.commit(op);
+      this.#lastCommitRev = this.#commit(op);
       this.#awaitingStats = op.id;
       return true;
     }
     if (r.reason === 'too-large' || r.reason === 'too-many-ops') {
-      client.cancelPreview();
+      this.#cancelPreview();
       state.announce(MSG.tooLarge, TOO_LARGE_MS);
     } else if (previewSent) {
-      client.cancelPreview();
+      this.#cancelPreview();
     }
     return false;
   }
@@ -380,7 +411,7 @@ export class BrushController {
     if (!s) return;
     const path = s.sampler.path();
     if (path.length === 0) {
-      if (s.sentPreview) this.#d.client.cancelPreview();
+      if (s.sentPreview) this.#cancelPreview();
     } else {
       this.#commitOp(this.#buildOp(s, path), s.sentPreview);
     }
@@ -442,6 +473,8 @@ export class BrushController {
 
   #onDown = (e: PointerEvent): void => {
     if (e.pointerType === 'touch') {
+      // A primary touch means no other touch is down: forget ids whose pointerup was lost.
+      if (e.isPrimary) this.#resetTouches();
       const another = this.#touches.size > 0;
       this.#touches.add(e.pointerId);
       if (another) {
@@ -497,6 +530,11 @@ export class BrushController {
     if (!s && e.pointerType !== 'touch' && this.#canPaint()) this.#ring = this.#lngLat(e);
   };
 
+  #resetTouches(): void {
+    this.#touches.clear();
+    this.#touchBlocked = false;
+  }
+
   #releaseTouch(e: PointerEvent): void {
     if (e.pointerType !== 'touch') return;
     this.#touches.delete(e.pointerId);
@@ -519,6 +557,7 @@ export class BrushController {
 
   #onWinBlur = (): void => {
     this.cancelStroke();
+    this.#resetTouches(); // their pointerups may go to another window
     this.#d.state.spaceHeld = false; // ruling (c): the keyup may never arrive
   };
 
