@@ -165,8 +165,18 @@ export function insertPlanRowLocal(body: string): string {
     'INSERT INTO plan (id, schema, dataset_version, body, content_hash, op_count, byte_size, ' +
     `created_at) VALUES ('${id}', 1, 'fixture-0000', '${body.replaceAll("'", "''")}', ` +
     `'${hash}', 3, ${Buffer.byteLength(body)}, ${Date.UTC(2026, 9, 1)})`;
-  execFileSync('npx', ['wrangler', 'd1', 'execute', 'DB', '--local', '--command', sql], {
-    stdio: 'pipe'
-  });
-  return id;
+  // The running preview holds the same SQLite file, so a concurrent spec's request can make this
+  // out-of-process write fail with SQLITE_BUSY: retry a few times with a short backoff.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      execFileSync('npx', ['wrangler', 'd1', 'execute', 'DB', '--local', '--command', sql], {
+        stdio: 'pipe'
+      });
+      return id;
+    } catch (e) {
+      const out = String((e as { stderr?: unknown }).stderr ?? '') + String(e);
+      if (attempt >= 5 || !out.includes('SQLITE_BUSY')) throw e;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250 * attempt);
+    }
+  }
 }
