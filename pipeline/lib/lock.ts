@@ -27,7 +27,8 @@ export interface Lock {
   sources: LockEntry[];
 }
 
-function sortKeys(v: unknown): unknown {
+/** Recursively sorted object keys (undefined values dropped); arrays keep their order. */
+export function sortKeys(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(sortKeys);
   if (v && typeof v === 'object') {
     const out: Record<string, unknown> = {};
@@ -67,12 +68,21 @@ export function sha256File(p: string): Promise<string> {
   });
 }
 
-/** Raw files are stored at `${rawDir}/${sha256}`. Returns mismatch messages; [] = ok. */
-export async function verifyRaw(lock: Lock, rawDir: string): Promise<string[]> {
+/** Where a lock file's raw bytes live: `${rawDir}/${sha256}`, or `${rawDir}/${name}` when byName. */
+export function rawPath(rawDir: string, f: LockFile, byName = false): string {
+  return path.join(rawDir, byName ? f.name : f.sha256);
+}
+
+/** Verify every raw file against the lock (see rawPath). Returns mismatch messages; [] = ok. */
+export async function verifyRaw(
+  lock: Lock,
+  rawDir: string,
+  opts: { byName?: boolean } = {}
+): Promise<string[]> {
   const msgs: string[] = [];
   for (const entry of lock.sources) {
     for (const f of entry.files) {
-      const p = path.join(rawDir, f.sha256);
+      const p = rawPath(rawDir, f, opts.byName);
       if (!fs.existsSync(p)) {
         msgs.push(`${entry.id}: missing raw file ${f.name} (${f.sha256})`);
         continue;

@@ -1,0 +1,151 @@
+{
+  "counts": {
+    "buildings.hs0": 7,
+    "buildings.hs1": 1,
+    "buildings.hs2": 1,
+    "buildings.hs3": 1,
+    "buildings.input": 12,
+    "buildings.kept": 10,
+    "buildings.outside_nb_dropped": 1,
+    "buildings.underground_dropped": 1,
+    "chunks.count": 1,
+    "chunks.empty_polygon": 0,
+    "chunks.label_outside_local": 0,
+    "chunks.max_parcels": 14,
+    "chunks.max_raw_bytes": 1666,
+    "chunks.total_raw_bytes": 1666,
+    "floor_area.rule1": 3,
+    "floor_area.rule2": 6,
+    "floor_area.rule3": 3,
+    "floor_area.rule4": 2,
+    "height.max_m": 60,
+    "landuse.class.CIE": 0,
+    "landuse.class.MED": 0,
+    "landuse.class.MIPS": 0,
+    "landuse.class.MIXED": 1,
+    "landuse.class.MIXRES": 1,
+    "landuse.class.NONE": 1,
+    "landuse.class.OPENSPACE": 1,
+    "landuse.class.PDR": 0,
+    "landuse.class.RESIDENT": 8,
+    "landuse.class.RETAIL/ENT": 1,
+    "landuse.class.UNKNOWN": 1,
+    "landuse.class.VACANT": 0,
+    "landuse.class.VISITOR": 0,
+    "landuse.duplicate_ids": 1,
+    "landuse.matched_parcels": 12,
+    "landuse.no_row_parcels": 2,
+    "landuse.orphan_dropped": 1,
+    "landuse.orphan_dropped_units": 9,
+    "landuse.orphan_reassigned": 1,
+    "landuse.orphan_reassigned_units": 7,
+    "landuse.orphan_rows": 2,
+    "landuse.rows": 15,
+    "landuse.unknown_values": 0,
+    "manifest.bytes": 2367,
+    "neighborhoods.bytes": 478,
+    "overture.contrib.Esri Community Maps": 1,
+    "overture.contrib.Microsoft ML Buildings": 1,
+    "overture.contrib.OpenStreetMap": 7,
+    "overture.contrib.USGS Lidar": 1,
+    "parcels.active_rows": 16,
+    "parcels.condo_geom_mismatch": 1,
+    "parcels.condo_sublots": 3,
+    "parcels.distinct_active_ids": 14,
+    "parcels.emitted": 14,
+    "parcels.height_max_m": 60,
+    "parcels.holed": 1,
+    "parcels.label_buffer_fallback": 0,
+    "parcels.label_warning": 0,
+    "parcels.multipart": 1,
+    "parcels.nb_spatial_fallback": 1,
+    "parcels.no_neighborhood": 0,
+    "parcels.null_id_dropped": 1,
+    "pieces.area_total_m2": 1227.925,
+    "pieces.area_with_parcel_m2": 1039.953,
+    "pieces.count": 11,
+    "pieces.outside_parcels": 2,
+    "pieces.remainder_sliver_dropped": 0,
+    "pieces.sliver_dropped": 1,
+    "units.total": 88
+  },
+  "datasetVersion": "fixture-0",
+  "housingStock": {
+    "end2022": 413208,
+    "end2023": 415803
+  },
+  "invariants": [
+    {
+      "detail": "Σ units 88 vs 88 (0.00%, tolerance ±0%)",
+      "id": "V1",
+      "ok": true
+    },
+    {
+      "detail": "parcels emitted 14 vs distinct active ids 14, range [14, 14]",
+      "id": "V2",
+      "ok": true
+    },
+    {
+      "detail": "land-use match 85.7% ≥ 80%",
+      "id": "V3",
+      "ok": true
+    },
+    {
+      "detail": "unknown landuse values: 0",
+      "id": "V4",
+      "ok": true
+    },
+    {
+      "detail": "height coverage 90.0% ≥ 50%",
+      "id": "V5",
+      "ok": true
+    },
+    {
+      "detail": "piece area with parcelId 84.7% ≥ 50%",
+      "id": "V6",
+      "ok": true
+    },
+    {
+      "detail": "2 neighborhoods; label inside 14/14",
+      "id": "V7",
+      "ok": true
+    },
+    {
+      "detail": "14 parcels in 1 chunk(s), each exactly once",
+      "id": "V8",
+      "ok": true
+    },
+    {
+      "detail": "largest chunk: 14/6000 parcels, 1666/1500000 B raw",
+      "id": "V9",
+      "ok": true
+    },
+    {
+      "detail": "max existingHeightM 60 m, range [59, 61]",
+      "id": "V10",
+      "ok": true
+    },
+    {
+      "detail": "manifest 2367/64000 B; neighborhoods 478/150000 B",
+      "id": "V11",
+      "ok": true
+    },
+    {
+      "detail": "chunks re-encode byte-identical",
+      "id": "V12",
+      "ok": true
+    },
+    {
+      "detail": "enforced at upload",
+      "id": "V13",
+      "ok": true
+    }
+  ],
+  "toolVersions": {
+    "duckdb": "1.5.6",
+    "node": ">=22",
+    "pmtiles": "1.31.2",
+    "tippecanoe": "2.79.0"
+  },
+  "warnings": []
+}

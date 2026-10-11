@@ -1,4 +1,15 @@
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { FIXTURE_PROFILE, LIVE_PROFILE } from './config';
+import { build, printResults } from './steps/build';
+import { checkDataset } from './steps/check';
 import { doctor } from './steps/doctor';
+import { fixture } from './steps/fixture';
+
+const ROOT = resolve(import.meta.dirname, '..');
+const OUT = join(ROOT, 'pipeline/out');
+const LOCK = join(ROOT, 'pipeline/sources.lock.json');
+const RAW = join(ROOT, 'pipeline/.cache/raw');
 
 export interface ParsedArgs {
   cmd: string | undefined;
@@ -26,6 +37,33 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
 type Step = (args: ParsedArgs) => Promise<number>;
 
+const str = (v: string | true | undefined): string | undefined =>
+  typeof v === 'string' ? v : undefined;
+
+async function runBuild(args: ParsedArgs): Promise<number> {
+  if (!existsSync(LOCK)) {
+    console.error(`no ${LOCK}: run \`npm run pipeline -- fetch\` first`);
+    return 1;
+  }
+  const { outDir, results } = await build({
+    lockPath: LOCK,
+    rawDir: RAW,
+    outRoot: OUT,
+    profile: LIVE_PROFILE,
+    skipTiles: args.flags['skip-tiles'] === true
+  });
+  console.log(`wrote ${outDir}`);
+  return printResults(results);
+}
+
+/** Newest dataset directory under pipeline/out (by mtime). */
+function latestOut(): string | undefined {
+  if (!existsSync(OUT)) return undefined;
+  return readdirSync(OUT)
+    .filter((d) => existsSync(join(OUT, d, 'report.json')))
+    .sort((a, b) => statSync(join(OUT, b)).mtimeMs - statSync(join(OUT, a)).mtimeMs)[0];
+}
+
 const steps: Record<string, { help: string; run: Step }> = {
   doctor: {
     help: 'check required tools and DuckDB extensions',
@@ -37,6 +75,46 @@ const steps: Record<string, { help: string; run: Step }> = {
       }
       return checks.every((c) => c.ok) ? 0 : 1;
     }
+  },
+  build: {
+    help: 'verify the lock, build out/<v>/ and run the invariants (offline) [--skip-tiles]',
+    run: runBuild
+  },
+  check: {
+    help: 're-run the invariants on out/<v>/ (default: newest) [<v>]',
+    run: async (args) => {
+      const v = args.positional[0] ?? latestOut();
+      const dir = v ? join(OUT, v) : undefined;
+      if (!v || !dir || !existsSync(join(dir, 'report.json'))) {
+        console.error(`no built dataset${v ? ` ${v}` : ''} under ${OUT}`);
+        return 1;
+      }
+      const report = JSON.parse(readFileSync(join(dir, 'report.json'), 'utf8')) as {
+        counts: Record<string, number>;
+        invariants?: { id: string; ok: boolean }[];
+      };
+      const fixtureV = v.startsWith('fixture-');
+      const results = await checkDataset(dir, fixtureV ? FIXTURE_PROFILE : LIVE_PROFILE, {
+        counts: report.counts,
+        reencodeIdentical: report.invariants?.find((r) => r.id === 'V12')?.ok,
+        skipTiles: fixtureV ? undefined : false
+      });
+      return printResults(results);
+    }
+  },
+  fixture: {
+    help: 'build the mini fixture into e2e/fixtures/data/fixture-0 [--update-golden] [--out <dir> --version fixture-<n>] [--skip-tiles]',
+    run: (args) =>
+      fixture({
+        outDir: str(args.flags.out),
+        version: str(args.flags.version),
+        skipTiles: args.flags['skip-tiles'] === true,
+        updateGolden: args.flags['update-golden'] === true
+      })
+  },
+  all: {
+    help: 'build from the existing lock (fetch is not wired yet); never uploads',
+    run: runBuild
   }
 };
 

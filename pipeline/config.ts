@@ -48,6 +48,8 @@ export interface InvariantProfile {
   heightCoverageMin: number;
   pieceAreaParcelMin: number;
   neighborhoodNames: 'from-source' | string[];
+  /** Required feature count of neighborhoods.geojson (V7); null = not checked. */
+  neighborhoodCount: number | null;
   labelInsideMin: number;
   maxChunkParcels: number;
   maxChunkRaw: number;
@@ -68,6 +70,7 @@ export const LIVE_PROFILE: InvariantProfile = {
   heightCoverageMin: 0.95,
   pieceAreaParcelMin: 0.95,
   neighborhoodNames: 'from-source',
+  neighborhoodCount: 41,
   labelInsideMin: 0.9999,
   maxChunkParcels: 6000,
   maxChunkRaw: 1.5e6,
@@ -79,7 +82,11 @@ export const LIVE_PROFILE: InvariantProfile = {
   neighborhoodsMax: 150e3
 };
 
-/** Provisional values for the mini fixture; Task 11 finalises them from its known answers. */
+/**
+ * The mini fixture's known answers (pipeline/test/fixtures/mini/README.md): Σ units
+ * 2+6+4+3+1+2+0+12+0+3+3+7+5+40 = 88 exactly, 14 parcels, 12/14 matched land use, 9/10 kept
+ * buildings with hs ≠ 3, max parcel height 60 m (lot 14), 2 neighborhoods.
+ */
 export const FIXTURE_PROFILE: InvariantProfile = {
   unitsTarget: 88,
   unitsTol: 0,
@@ -88,6 +95,7 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   heightCoverageMin: 0.5,
   pieceAreaParcelMin: 0.5,
   neighborhoodNames: 'from-source',
+  neighborhoodCount: 2,
   labelInsideMin: 1,
   maxChunkParcels: LIVE_PROFILE.maxChunkParcels,
   maxChunkRaw: LIVE_PROFILE.maxChunkRaw,

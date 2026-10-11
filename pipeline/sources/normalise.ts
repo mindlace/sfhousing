@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Duck } from '../lib/duck';
+import { rawPath, type Lock } from '../lib/lock';
 
 export type SourceId =
   | 'datasf-parcels'
@@ -102,4 +103,22 @@ export async function loadNormalised(db: Duck, normDir: string): Promise<void> {
     const file = path.join(normDir, `${id}.parquet`);
     await db.run(`CREATE OR REPLACE TABLE ${TABLES[id]} AS SELECT * FROM read_parquet(${q(file)})`);
   }
+}
+
+/** Normalise every source of the lock into `<normDir>/<id>.parquet`; returns row counts by id. */
+export async function normaliseAll(
+  db: Duck,
+  lock: Lock,
+  rawDir: string,
+  normDir: string,
+  opts: { byName?: boolean } = {}
+): Promise<Record<SourceId, number>> {
+  const rows = {} as Record<SourceId, number>;
+  for (const id of SOURCE_IDS) {
+    const entry = lock.sources.find((s) => s.id === id);
+    if (!entry) throw new Error(`lock has no entry for ${id}`);
+    const files = entry.files.map((f) => path.resolve(rawPath(rawDir, f, opts.byName)));
+    rows[id] = await normalise(db, id, files, path.join(normDir, `${id}.parquet`));
+  }
+  return rows;
 }
