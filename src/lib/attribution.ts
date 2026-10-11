@@ -2,6 +2,11 @@ export const SOFTWARE: { name: string; license: string; url: string }[] = [
   { name: 'MapLibre GL JS', license: 'BSD-3-Clause', url: 'https://maplibre.org' },
   { name: 'deck.gl', license: 'MIT', url: 'https://deck.gl' },
   { name: 'PMTiles', license: 'BSD-3-Clause', url: 'https://protomaps.com/docs/pmtiles' },
+  {
+    name: 'Protomaps Basemaps',
+    license: 'BSD-3-Clause',
+    url: 'https://github.com/protomaps/basemaps'
+  },
   { name: 'SvelteKit / Svelte', license: 'MIT', url: 'https://svelte.dev' },
   { name: 'kdbush', license: 'ISC', url: 'https://github.com/mourner/kdbush' },
   {
