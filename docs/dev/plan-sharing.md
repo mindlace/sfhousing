@@ -156,4 +156,3 @@ Schema change: edit `src/lib/server/db/schema/` → `npm run db:generate` → `n
 
 - **`/p/:id` page caching is `private, max-age=300`, not the spec's `public, max-age=300`.** adapter-cloudflare edge-caches public HTML, and cached HTML outlives a deploy while referencing hashed assets that then 404. Browser-only caching keeps the 5-minute takedown promise.
 - **`too_many_ops` is unreachable over HTTP** (5,001 minimal ops ≈ 290 KB > 262,144 → 413 `too_large` first). See the POST notes.
-- **Autosave restore happens client-side in `/`'s `onMount`, not in `+page.ts`.** A universal load also runs during SSR, where there is no `localStorage`. `+page.ts` still loads the current manifest; a restored plan is always rebased to the current version, so it is the same manifest.

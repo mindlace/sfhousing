@@ -1,5 +1,5 @@
 // Server data for the /p/:id read-only view (spec §4.7): loads the row directly (no HTTP
-// self-call), parses it, and picks the dataset version to render against (I16).
+// self-call), parses it, and picks the dataset notice (I16).
 import { error } from '@sveltejs/kit';
 import { parsePlan, type Plan } from '$lib/plan';
 import { getDb } from '$lib/server/db';
@@ -20,8 +20,6 @@ export interface SharedPlanData {
   /** ISO 8601. */
   createdAt: string;
   currentDatasetVersion: string;
-  /** plan.datasetVersion, or the current version when the plan's is gone. */
-  renderVersion: string;
   datasetNotice: DatasetNotice;
 }
 
@@ -45,7 +43,6 @@ export async function loadSharedPlan(args: {
   const plan = parsed.value;
 
   let datasetNotice: DatasetNotice = 'none';
-  let renderVersion = plan.datasetVersion;
   if (plan.datasetVersion !== current) {
     const bucket = platform?.env?.BUCKET;
     if (!bucket) throw new Error('R2 binding BUCKET unavailable');
@@ -54,7 +51,6 @@ export async function loadSharedPlan(args: {
       datasetNotice = 'remix';
     } else {
       datasetNotice = 'gone';
-      renderVersion = current;
     }
   }
 
@@ -63,7 +59,6 @@ export async function loadSharedPlan(args: {
     plan,
     createdAt: row.createdAt.toISOString(),
     currentDatasetVersion: current,
-    renderVersion,
     datasetNotice
   };
 }

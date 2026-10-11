@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import BrushEditor from '$lib/brush/BrushEditor.svelte';
@@ -61,8 +61,11 @@
   });
 
   // The restored plan serializes the same as what restore() wrote, so this first run is a no-op.
+  // Only editor.plan is tracked: schedule() reads/writes autosave.status, which must not re-run this.
   $effect(() => {
-    if (editor) autosave.schedule(editor.plan);
+    if (!editor) return;
+    const plan = editor.plan;
+    untrack(() => autosave.schedule(plan));
   });
 
   // `onpublished` may fire after the dialog closed and the user kept editing: merge only the title

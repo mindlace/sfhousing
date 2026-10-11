@@ -70,7 +70,6 @@ describe('loadSharedPlan', () => {
       plan: parsed.ok ? parsed.value : undefined,
       createdAt: NOW.toISOString(),
       currentDatasetVersion: 'fixture-0',
-      renderVersion: 'fixture-0',
       datasetNotice: 'none'
     });
     expect(bucket.calls.filter((c) => c.method === 'head')).toEqual([]);
@@ -86,7 +85,6 @@ describe('loadSharedPlan', () => {
       current: 'fixture-0'
     });
     expect(data.datasetNotice).toBe('remix');
-    expect(data.renderVersion).toBe('fixture-1');
     expect(data.currentDatasetVersion).toBe('fixture-0');
     expect(bucket.calls).toEqual([{ method: 'head', key: 'data/fixture-1/manifest.json' }]);
   });
@@ -100,7 +98,6 @@ describe('loadSharedPlan', () => {
       current: 'fixture-0'
     });
     expect(data.datasetNotice).toBe('gone');
-    expect(data.renderVersion).toBe('fixture-0');
     expect(data.plan.datasetVersion).toBe('fixture-1');
   });
 

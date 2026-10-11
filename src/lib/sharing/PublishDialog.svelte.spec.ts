@@ -238,6 +238,7 @@ describe('PublishButton + PublishDialog', () => {
     vi.advanceTimersByTime(1000);
     await expect.element(dialogPublish()).toBeEnabled();
     await expect.element(dialog().getByText(/You can publish again/)).not.toBeInTheDocument();
+    await expect.element(dialog().getByRole('alert')).toHaveTextContent('');
   });
 
   it('fetch rejecting: network copy, Publish re-enabled', async () => {
@@ -256,6 +257,19 @@ describe('PublishButton + PublishDialog', () => {
     await openForm();
     await userEvent.keyboard('{Escape}');
     await expect.element(dialog()).not.toBeInTheDocument();
+  });
+
+  it('Escape does not close the dialog while a publish is pending', async () => {
+    const fetchFn = vi.fn(() => new Promise<Response>(() => {}));
+    await setup({ fetchFn: fetchFn as unknown as typeof fetch });
+    await openForm();
+    await userEvent.click(dialogPublish());
+    const busy = dialog().getByRole('button', { name: 'Publishing…' });
+    await expect.element(busy).toBeVisible();
+    await userEvent.keyboard('{Escape}');
+    await expect.element(dialog()).toBeInTheDocument();
+    await expect.element(busy).toBeVisible();
+    expect((dialog().element() as HTMLDialogElement).open).toBe(true);
   });
 
   it('Cancel closes the dialog', async () => {

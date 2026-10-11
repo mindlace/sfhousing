@@ -95,7 +95,10 @@
     const deadline = now() + seconds * 1000;
     const update = () => {
       retryLeft = Math.max(0, Math.ceil((deadline - now()) / 1000));
-      if (retryLeft === 0) stopCountdown();
+      if (retryLeft === 0) {
+        stopCountdown();
+        if (failure?.outcome.code === 'rate_limited') failure = undefined;
+      }
     };
     update();
     retryTimer = setInterval(update, 1000);
@@ -186,6 +189,9 @@
 <dialog
   bind:this={dlg}
   aria-labelledby={ids.heading}
+  oncancel={(e) => {
+    if (busy) e.preventDefault();
+  }}
   onclose={() => (open = false)}
   class="m-auto w-[calc(100vw-2rem)] max-w-md rounded-lg bg-white p-5 text-gray-800 shadow-xl backdrop:bg-black/40"
 >
