@@ -1,6 +1,17 @@
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { DATASET_VERSION_RE } from '../../src/lib/data/dataset-version';
 import { FIXTURE_PROFILE } from '../config';
 import { readLock } from '../lib/lock';
@@ -38,6 +49,36 @@ function replaceDir(dst: string, src: string, keep: string[] = []): void {
   cpSync(src, dst, { recursive: true });
 }
 
+const PROTECTED = ['pipeline/test/fixtures', 'e2e/fixtures'].map((d) => join(REPO_ROOT, d));
+
+const within = (p: string, root: string) => {
+  const r = relative(root, p);
+  return r === '' || (!r.startsWith('..') && !isAbsolute(r));
+};
+
+/**
+ * Why `fixture` must not write to `dir`, or null when it may. It refuses anything inside the
+ * committed fixture trees, and an existing non-empty directory unless it holds a previous fixture
+ * output (a manifest.json whose datasetVersion is fixture-<n>), because the target is emptied.
+ */
+export function outTargetError(dir: string): string | null {
+  const abs = existsSync(dir) ? realpathSync(dir) : resolve(dir);
+  const hit = PROTECTED.find((p) => within(abs, existsSync(p) ? realpathSync(p) : p));
+  if (hit) return `refusing --out ${dir}: inside ${relative(REPO_ROOT, hit)}`;
+  if (!existsSync(abs)) return null;
+  if (!statSync(abs).isDirectory()) return `refusing --out ${dir}: not a directory`;
+  if (readdirSync(abs).length === 0) return null;
+  try {
+    const m = JSON.parse(readFileSync(join(abs, 'manifest.json'), 'utf8')) as {
+      datasetVersion?: unknown;
+    };
+    if (typeof m.datasetVersion === 'string' && /^fixture-\d+$/.test(m.datasetVersion)) return null;
+  } catch {
+    // no readable manifest: fall through
+  }
+  return `refusing --out ${dir}: not empty and not a previous fixture output`;
+}
+
 /** Spec §4.2 `fixture`: build the mini fixture; returns the exit code. */
 export async function fixture(opts: FixtureOpts = {}): Promise<number> {
   const version = opts.version ?? 'fixture-0';
@@ -48,6 +89,12 @@ export async function fixture(opts: FixtureOpts = {}): Promise<number> {
   const custom = opts.outDir !== undefined || opts.version !== undefined;
   if (custom && opts.updateGolden) {
     console.error('--update-golden only applies to the default fixture-0 output');
+    return 1;
+  }
+  const target = custom ? resolve(opts.outDir ?? join(REPO_ROOT, 'pipeline/out', version)) : E2E;
+  const refusal = custom ? outTargetError(target) : null;
+  if (refusal) {
+    console.error(refusal);
     return 1;
   }
   const lockPath = join(MINI, 'sources.lock.json');
@@ -67,7 +114,7 @@ export async function fixture(opts: FixtureOpts = {}): Promise<number> {
     const code = printResults(results);
     if (code !== 0) return code;
     if (custom) {
-      replaceDir(resolve(opts.outDir ?? join(REPO_ROOT, 'pipeline/out', version)), outDir);
+      replaceDir(target, outDir);
       return 0;
     }
     replaceDir(E2E, outDir, ['README.md']);
