@@ -23,7 +23,7 @@ export const ManifestSourceSchema = z.object({
   id: z.string().min(1),
   label: z.string().optional(),
   url: z.url({ protocol: /^https?$/ }),
-  retrievedAt: IsoDate,
+  retrievedAt: z.union([IsoDate, z.iso.date()]),
   license: z.string()
 });
 

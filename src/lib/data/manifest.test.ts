@@ -62,6 +62,23 @@ describe('parseManifest', () => {
     expect(parseManifest({ ...g(), chunks: [chunk] }).chunks[0].cellId).toBe('-1_-3');
   });
 
+  it('accepts a date-only retrievedAt and rejects a non-ISO one', () => {
+    const src = (retrievedAt: string) => [{ ...golden.sources[0], retrievedAt }];
+    expect(parseManifest({ ...g(), sources: src('2026-10-01') }).sources[0].retrievedAt).toBe(
+      '2026-10-01'
+    );
+    expect(() => parseManifest({ ...g(), sources: src('yesterday') })).toThrow(ManifestError);
+  });
+
+  it('rejects a sprite without the version prefix', () => {
+    expect(() => parseManifest({ ...g(), sprite: '/data/fixture-0/sprite' })).toThrow(
+      ManifestError
+    );
+    expect(parseManifest({ ...g(), sprite: '/data/2026-10-10-3fa9c2d1/sprite' }).sprite).toBe(
+      '/data/2026-10-10-3fa9c2d1/sprite'
+    );
+  });
+
   it('reports issues on the error', () => {
     try {
       parseManifest({});
