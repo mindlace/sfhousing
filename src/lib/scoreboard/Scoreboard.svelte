@@ -93,7 +93,7 @@
     <ScoreboardPanel score={shown} {status} {onretry} />
   </div>
 
-  <div class="fixed inset-x-0 bottom-0 z-20 h-14 bg-white md:hidden">
+  <div class="absolute inset-x-0 bottom-0 z-20 h-14 bg-white md:hidden">
     <button
       bind:this={barButton}
       type="button"
@@ -113,7 +113,7 @@
       bind:this={sheetEl}
       role="group"
       aria-label="Scoreboard details"
-      class="fixed inset-x-0 bottom-0 z-30 max-h-[85dvh] overflow-y-auto rounded-t-xl bg-white p-4 shadow-2xl md:hidden"
+      class="absolute inset-x-0 bottom-0 z-30 max-h-[85%] overflow-y-auto rounded-t-xl bg-white p-4 shadow-2xl md:hidden"
       bind:offsetHeight={sheetH}
     >
       <div class="flex justify-end">
