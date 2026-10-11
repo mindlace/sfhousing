@@ -1,5 +1,5 @@
 import { flushSync } from 'svelte';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MAX_PLAN_BYTES, OPS_MAX, planByteSize, type Plan, type PlanOp } from '$lib/plan';
 import { createEditor } from './editor.svelte';
 
@@ -225,6 +225,24 @@ describe('editor onLoad', () => {
     ed.load(plan0());
     expect(seen).toHaveLength(1);
     off(); // idempotent
+  });
+
+  it('isolates a throwing listener: the others still run and load does not throw', () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const ed = createEditor(plan0());
+    const boom = new Error('boom');
+    const seen: string[] = [];
+    ed.onLoad(() => {
+      throw boom;
+    });
+    ed.onLoad(() => void seen.push('second'));
+    const p2 = plan0([stamp('a')]);
+    expect(() => ed.load(p2)).not.toThrow();
+    expect(seen).toEqual(['second']);
+    expect(ed.plan).toBe(p2);
+    expect(err).toHaveBeenCalledTimes(1);
+    expect(err.mock.calls[0]).toContain(boom);
+    err.mockRestore();
   });
 
   it('commit, undo and redo do not notify', () => {

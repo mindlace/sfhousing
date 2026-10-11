@@ -27,11 +27,16 @@ let parentEditor: Pick<Editor, 'load'> | null = null;
 
 /**
  * E2E only: records the editor a parent route obtained through BrushEditor's `oneditor`, so
- * `__sfhBrush.load` exercises the same path plan-sharing uses. A no-op outside VITE_E2E.
+ * `__sfhBrush.load` exercises the same path plan-sharing uses. Returns a disposer for the
+ * parent's teardown; it clears the record only if it still holds this editor. A no-op outside
+ * VITE_E2E.
  */
-export function exposeEditorForDebug(editor: Pick<Editor, 'load'>): void {
-  if (import.meta.env.VITE_E2E !== '1') return;
+export function exposeEditorForDebug(editor: Pick<Editor, 'load'>): () => void {
+  if (import.meta.env.VITE_E2E !== '1') return () => {};
   parentEditor = editor;
+  return () => {
+    if (parentEditor === editor) parentEditor = null;
+  };
 }
 
 export function installBrushDebug(get: () => SfhBrushDebugState): () => void {

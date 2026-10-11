@@ -60,7 +60,14 @@ export function createEditor(initial: Plan, opts: { readOnly?: boolean } = {}): 
       plan = next;
       readOnly = loadOpts.readOnly ?? false;
       redo = [];
-      for (const cb of [...loadListeners]) cb(next);
+      for (const cb of [...loadListeners]) {
+        try {
+          cb(next);
+        } catch (e) {
+          // One bad listener must not stop the rest or fail the caller's load.
+          console.error('[brush] onLoad listener threw', e);
+        }
+      }
     },
     commit(op, commitOpts = {}) {
       if (readOnly) return { ok: false, reason: 'read-only' };

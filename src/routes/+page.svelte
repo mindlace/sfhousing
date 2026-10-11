@@ -1,10 +1,13 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import BrushEditor from '$lib/brush/BrushEditor.svelte';
   import { exposeEditorForDebug } from '$lib/brush/debug';
   import { loadManifest } from '$lib/sim/manifest';
   import type { PageProps } from './$types';
 
   let { data }: PageProps = $props();
+  let disposeDebugEditor = () => {};
+  onDestroy(() => disposeDebugEditor());
   async function reloadManifest() {
     return (await loadManifest(data.plan.datasetVersion, data.datasetVersion)).manifest;
   }
@@ -20,6 +23,6 @@
     plan={data.plan}
     currentVersion={data.datasetVersion}
     {reloadManifest}
-    oneditor={exposeEditorForDebug}
+    oneditor={(e) => (disposeDebugEditor = exposeEditorForDebug(e))}
   />
 </div>
