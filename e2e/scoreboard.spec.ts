@@ -68,29 +68,47 @@ test.describe('scoreboard', () => {
       const net = page.getByTestId('score-net');
       await expect(net).toHaveText('0');
 
+      // Record EVERY text change of the net readout, so the settled value's timestamp is known.
       await page.evaluate(() => {
         const el = document.querySelector('[data-testid="score-net"]')!;
-        const w = window as unknown as { __netChangeAt?: number };
+        const w = window as unknown as { __netLog: { t: number; text: string }[] };
+        w.__netLog = [];
         new MutationObserver(() => {
-          if (w.__netChangeAt === undefined && el.textContent?.trim() !== '0') {
-            w.__netChangeAt = performance.now();
-          }
+          const text = el.textContent?.trim() ?? '';
+          const last = w.__netLog.at(-1);
+          if (last?.text !== text) w.__netLog.push({ t: performance.now(), text });
         }).observe(el, { childList: true, characterData: true, subtree: true });
       });
 
       await mouseDrag(page, FROM, TO);
       await expect(net).not.toHaveText('0');
+      // Settled: the readout is unchanged across 3 polls, >= 100 ms apart.
+      let prev = '';
+      let stable = 0;
+      await expect
+        .poll(
+          async () => {
+            const t = (await net.textContent())?.trim() ?? '';
+            stable = t === prev ? stable + 1 : 0;
+            prev = t;
+            return stable;
+          },
+          { intervals: [100], timeout: 10_000 }
+        )
+        .toBeGreaterThanOrEqual(3);
 
-      const { changeAt, upAt } = await page.evaluate(() => {
+      const { log, upAt } = await page.evaluate(() => {
         const marks = performance.getEntriesByName('sfh-brush-pointerup');
         return {
-          changeAt: (window as unknown as { __netChangeAt?: number }).__netChangeAt,
+          log: (window as unknown as { __netLog: { t: number; text: string }[] }).__netLog,
           upAt: marks.length ? marks[marks.length - 1].startTime : undefined
         };
       });
-      expect(changeAt).toBeDefined();
       expect(upAt).toBeDefined();
-      const ms = changeAt! - upAt!;
+      const final = log.at(-1)!;
+      expect(final.text).not.toBe('0');
+      // A change before pointer-up (a preview diff) clamps to 0; the final value must land ≤ 150 ms.
+      const ms = Math.max(0, final.t - upAt!);
       test.info().annotations.push({ type: 'sfh-score-latency', description: `${ms} ms` });
       expect(ms).toBeLessThanOrEqual(150);
     });
@@ -108,7 +126,7 @@ test.describe('scoreboard', () => {
       await expect(region(page).getByText('Paint a height on the map to add homes.')).toBeVisible();
     });
 
-    // eslint-disable-next-line playwright/expect-expect
+    // eslint-disable-next-line playwright/expect-expect -- fixme placeholder, never runs
     test.fixme('W6: needs plan-sharing share links (W5c) to load a plan whose datasetVersion is absent from R2', async () => {
       // A share link with an absent dataset version shows the "recalculated" note.
     });
@@ -143,9 +161,33 @@ test.describe('scoreboard', () => {
 
     test('axe: the scoreboard sheet open', async ({ page }) => {
       await gotoEditor(page);
-      await region(page).getByRole('button', { expanded: false }).tap();
+      await region(page)
+        .getByRole('button', { name: /net new homes/ })
+        .tap();
       await expect(page.getByRole('group', { name: 'Scoreboard details' })).toBeVisible();
       await expectNoA11yViolations(page);
+    });
+
+    test('375 px: the brush bar sits on the scorebar; the open sheet covers it', async ({
+      page
+    }) => {
+      await gotoEditor(page);
+      const bar = region(page).getByRole('button', { name: /net new homes/ });
+      const toolbar = page.locator('.brush-toolbar');
+      const [barBox, toolBox] = await Promise.all([bar.boundingBox(), toolbar.boundingBox()]);
+      expect(Math.abs(toolBox!.y + toolBox!.height - barBox!.y)).toBeLessThanOrEqual(1);
+
+      await bar.tap();
+      const sheet = page.getByRole('group', { name: 'Scoreboard details' });
+      await expect(sheet).toBeVisible();
+      const hit = await page.evaluate(
+        ([x, y]) =>
+          !!document
+            .elementFromPoint(x, y)
+            ?.closest('[role="group"][aria-label="Scoreboard details"]'),
+        [toolBox!.x + toolBox!.width / 2, toolBox!.y + toolBox!.height / 2]
+      );
+      expect(hit).toBe(true);
     });
   });
 });
