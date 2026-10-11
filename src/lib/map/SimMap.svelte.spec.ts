@@ -5,8 +5,12 @@ import type { GeoJSONSource } from 'maplibre-gl';
 import type { Manifest } from '$lib/data/manifest';
 import '../../routes/layout.css';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
+import type { GeneratedBuilding } from '$lib/generator';
 import SimMap from './SimMap.svelte';
+import { packCell } from './pack';
 import { TOKENS } from './palette';
+import { BUILDINGS_LAYER } from './style';
+import genJson from './fixtures/generated-small.json';
 import type { ParcelSummaryLike, SimMapHandle, SimMapProps } from './types';
 
 // Fixture data: the client tests run on Vitest's Vite dev server, whose root is the repo, so the
@@ -73,6 +77,9 @@ async function chunkData(map: import('maplibre-gl').Map) {
   const data = await (map.getSource('chunk-status') as GeoJSONSource).getData();
   return data as unknown as { features: { properties: { status: string } }[] };
 }
+/** Chunk statuses in the GeoJSON source. setData is coalesced per frame, so poll this. */
+const statusesIn = async (map: import('maplibre-gl').Map) =>
+  (await chunkData(map)).features.map((f) => f.properties.status);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const idle = (h: SimMapHandle) =>
@@ -130,20 +137,51 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
 
     h.setChunkStatus('50_25', 'error');
     await expect.element(page.getByText("Some parcels didn't load")).toBeVisible();
-    const data = await chunkData(map);
-    expect(data.features.map((f) => f.properties.status)).toEqual(['error']);
+    await expect.poll(() => statusesIn(map)).toEqual(['error']);
     await page.getByRole('button', { name: 'Retry' }).click();
     expect(onRetryChunks).toHaveBeenCalledTimes(1);
     h.setChunkStatus('50_25', 'ready');
     await expect.element(page.getByText("Some parcels didn't load")).not.toBeInTheDocument();
-    const cleared = await chunkData(map);
-    expect(cleared.features).toEqual([]);
+    await expect.poll(() => statusesIn(map)).toEqual([]);
 
     // Glyphs and both pmtiles archives resolve from root-relative URLs: no map errors.
     await idle(h);
     expect(warn).not.toHaveBeenCalled();
     expect(error).not.toHaveBeenCalled();
     expect(errors).toEqual([]);
+  });
+
+  it('coalesces chunk-status updates to one setData per frame', async () => {
+    const { root, ready } = await mount();
+    await expect.poll(() => root.dataset.state, { timeout: 20_000 }).toBe('ready');
+    const h = await ready;
+    const map = h.getMap()!;
+    await new Promise((r) => requestAnimationFrame(r));
+    const setData = vi.spyOn(map.getSource('chunk-status') as GeoJSONSource, 'setData');
+    for (const s of ['loading', 'error', 'loading', 'ready', 'error'] as const)
+      h.setChunkStatus('50_25', s);
+    expect(setData).not.toHaveBeenCalled();
+    await new Promise((r) => requestAnimationFrame(r));
+    await new Promise((r) => requestAnimationFrame(r));
+    expect(setData).toHaveBeenCalledTimes(1);
+    await expect.poll(() => statusesIn(map)).toEqual(['error']);
+  });
+
+  it('a new manifest remount starts with no chunk statuses', async () => {
+    const { root, ready, screen } = await mount();
+    await expect.poll(() => root.dataset.state, { timeout: 20_000 }).toBe('ready');
+    const h = await ready;
+    const first = h.getMap()!;
+    h.setChunkStatus('50_25', 'error');
+    await expect.element(page.getByText("Some parcels didn't load")).toBeVisible();
+    await screen.rerender({ manifest: structuredClone(manifest) });
+    await expect
+      .poll(() => h.getMap() !== first && root.dataset.state === 'ready', { timeout: 20_000 })
+      .toBe(true);
+    const second = h.getMap()!;
+    await idle(h);
+    expect(document.body.textContent).not.toContain("Some parcels didn't load");
+    await expect.poll(() => statusesIn(second)).toEqual([]);
   });
 
   it('attribution text is exact and links to /attribution', async () => {
@@ -178,8 +216,7 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     expect(
       map.getFeatureState({ source: 'buildings', sourceLayer: 'buildings', id: 'QUEUED' })
     ).toEqual({ replaced: true });
-    const data = await chunkData(map);
-    expect(data.features.map((f) => f.properties.status)).toEqual(['loading']);
+    await expect.poll(() => statusesIn(map)).toEqual(['loading']);
   });
 
   it('switches theme via paint properties without setStyle and keeps feature-state', async () => {
@@ -293,5 +330,54 @@ describe('SimMap picking', { timeout: 30_000 }, () => {
     await expect.element(tip).toHaveTextContent(`Parcel ${P}`);
     fire('pointerleave', 'mouse');
     await expect.element(tip).not.toBeInTheDocument();
+  });
+});
+
+describe('SimMap feature-state across tile reloads (acceptance #5)', { timeout: 30_000 }, () => {
+  const AT: [number, number] = [-122.4179679, 37.7601348]; // parcel 3512014, chunk 50_25
+  const P = '3512014';
+
+  async function jumpIdle(map: import('maplibre-gl').Map, zoom: number) {
+    map.jumpTo({ center: AT, zoom, pitch: 0, bearing: 0 });
+    await new Promise<void>((r) => {
+      map.once('idle', () => r());
+      map.triggerRepaint();
+    });
+  }
+  const replacedAt = (map: import('maplibre-gl').Map) =>
+    map
+      .queryRenderedFeatures(map.project(AT), { layers: [BUILDINGS_LAYER] })
+      .filter((f) => String(f.id) === P)
+      .map((f) => f.state.replaced);
+
+  it('a hidden parcel stays replaced after its tiles unload and reload', async () => {
+    const { root, ready } = await mount();
+    await expect.poll(() => root.dataset.state, { timeout: 20_000 }).toBe('ready');
+    const h = await ready;
+    const map = h.getMap()!;
+    const b = (genJson as unknown as GeneratedBuilding[])[0];
+    const pack = packCell('50_25', [{ building: { ...b, parcelId: P }, existingUnits: 1 }]);
+    h.applyGenerated({
+      revision: 0,
+      cells: [{ settled: pack, rising: null }],
+      removedCells: [],
+      hide: { add: [P], remove: [] }
+    });
+    await jumpIdle(map, 17);
+    expect(replacedAt(map)).toEqual([true]);
+    let tileLoads = 0;
+    map.on('sourcedata', (e) => {
+      if (e.sourceId === 'buildings' && e.tile) tileLoads++;
+    });
+    await jumpIdle(map, 11);
+    await jumpIdle(map, 17);
+    expect(replacedAt(map)).toEqual([true]);
+    // Force a real refetch and re-parse of every loaded buildings tile, cache or not.
+    const before = tileLoads;
+    map.refreshTiles('buildings');
+    await jumpIdle(map, 17);
+    console.info(`[F9] buildings tile loads: zoom trip ${before}, refresh ${tileLoads - before}`);
+    expect(tileLoads).toBeGreaterThan(before);
+    expect(replacedAt(map)).toEqual([true]);
   });
 });

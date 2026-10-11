@@ -1,5 +1,6 @@
 <script module lang="ts">
   import type { Protocol as PmtilesProtocol } from 'pmtiles';
+  import { TOKENS as THEME_TOKENS } from './palette';
 
   type MapLibreModule = typeof import('maplibre-gl');
 
@@ -10,6 +11,16 @@
     'DataSF under PDDL / public domain; Protomaps basemap">' +
     ATTRIBUTION_TEXT +
     '</a>';
+
+  // CSS defaults for the --map-* tokens, so the SSR frame follows prefers-color-scheme before
+  // JS resolves a theme (an explicit or JS-resolved theme overrides them inline).
+  const tokenVars = (t: 'light' | 'dark') =>
+    Object.entries(THEME_TOKENS[t])
+      .map(([k, v]) => `--map-${k.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())}: ${v}`)
+      .join('; ');
+  const DEFAULT_TOKENS_CSS =
+    `<style>.sim-map { ${tokenVars('light')} } ` +
+    `@media (prefers-color-scheme: dark) { .sim-map { ${tokenVars('dark')} } }</style>`;
 
   // One pmtiles protocol per page (spec §4.1). Removed only on a real unload, never when the
   // page enters the back/forward cache (a restored page keeps its live map).
@@ -47,6 +58,7 @@
   import type { ParcelId } from '$lib/data/parcel';
   import type { Manifest } from '$lib/data/manifest';
   import { CONSTRAINTS, NARROW_PX, defaultFrame, initialCamera, pixelRatio } from './camera';
+  import { loadDeck } from './deck-loader';
   import { installDebug } from './debug';
   import { GeneratedController } from './generated-controller';
   import { TOKENS } from './palette';
@@ -97,6 +109,7 @@
   let container = $state<HTMLDivElement>();
   let mapState = $state<MapState>('loading');
   let systemTheme = $state<Theme>('light');
+  let systemResolved = $state(false);
   const theme = $derived<Theme>(themeProp ?? systemTheme);
   let bottomInset = $state(0);
   const chunkStatuses = new SvelteMap<string, ChunkStatus>();
@@ -115,11 +128,13 @@
   const tipPos = $derived(shown ? tooltipPosition(shown.x, shown.y, tw, th, vw, vh) : null);
 
   const kebab = (k: string) => k.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+  // Unset theme before the client resolves it (SSR, first paint): the CSS defaults apply.
   const rootStyle = $derived(
     [
-      ...Object.entries(TOKENS[theme]).map(([k, v]) => `--map-${kebab(k)}: ${v}`),
-      `--map-bottom-inset: ${bottomInset}px`,
-      'background: var(--map-land)'
+      ...(themeProp !== undefined || systemResolved
+        ? Object.entries(TOKENS[theme]).map(([k, v]) => `--map-${kebab(k)}: ${v}`)
+        : []),
+      `--map-bottom-inset: ${bottomInset}px`
     ].join('; ')
   );
 
@@ -136,6 +151,7 @@
     timers: Set<ReturnType<typeof setTimeout>>;
     loadTimer: ReturnType<typeof setTimeout> | null;
     pickRaf: number | null;
+    chunkRaf: number | null;
     pointer: { x: number; y: number } | null;
     touches: number; // active touch pointers (a tap needs exactly one)
     tap: { id: number; x: number; y: number; t: number } | null;
@@ -168,6 +184,7 @@
   export function applyGenerated(u: GeneratedUpdate): void {
     const c = live?.controller;
     if (c) return c.apply(u);
+    if (mapState === 'error' || mapState === 'unsupported') return; // nothing will drain them
     if (u.revision === 0) pendingApplies = [];
     pendingApplies.push(u);
   }
@@ -225,6 +242,7 @@
   $effect(() => {
     const mq = matchMedia('(prefers-color-scheme: dark)');
     systemTheme = mq.matches ? 'dark' : 'light';
+    systemResolved = true;
     const on = (e: MediaQueryListEvent) => (systemTheme = e.matches ? 'dark' : 'light');
     mq.addEventListener('change', on);
     return () => mq.removeEventListener('change', on);
@@ -268,6 +286,7 @@
       timers: new Set(),
       loadTimer: null,
       pickRaf: null,
+      chunkRaf: null,
       pointer: null,
       touches: 0,
       tap: null,
@@ -303,11 +322,17 @@
     // Root-relative URLs (glyphs, pmtiles://) resolve without a transformRequest: glyphs are
     // fetched on the main thread and the pmtiles protocol fetches on the main thread too
     // (verified by SimMap.svelte.spec.ts "ready", which fails on any map error).
+    let style: ReturnType<typeof buildStyle>;
+    try {
+      style = buildStyle(m, l.appliedTheme);
+    } catch (e) {
+      return fail(l, e);
+    }
     let map: MapLibreMap;
     try {
       map = new ml.Map({
         container,
-        style: buildStyle(m, l.appliedTheme),
+        style,
         ...CONSTRAINTS,
         pixelRatio: pixelRatio(dpr),
         canvasContextAttributes: { antialias: dpr < 2 },
@@ -316,8 +341,11 @@
         cooperativeGestures: false,
         ...(cam.kind === 'jump' ? cam.frame : { bounds: cam.bounds, fitBoundsOptions: cam.options })
       });
-    } catch {
-      return unsupported(l);
+    } catch (e) {
+      // Only a failed WebGL context means "needs WebGL 2"; anything else is a load error.
+      const GPUError = ml.GPUInitializationError;
+      const gpu = GPUError ? e instanceof GPUError : /webgl/i.test(String(e));
+      return gpu ? unsupported(l) : fail(l, e);
     }
     l.map = map;
     if (bottomInset > 0) map.setPadding({ top: 0, left: 0, right: 0, bottom: bottomInset });
@@ -368,11 +396,13 @@
     mapState = 'ready';
     pushChunkData();
     applyTheme(theme);
-    let mods: [typeof import('@deck.gl/maplibre'), typeof import('@deck.gl/layers')];
+    let mods: Awaited<ReturnType<typeof loadDeck>>;
     try {
-      mods = await Promise.all([import('@deck.gl/maplibre'), import('@deck.gl/layers')]);
+      mods = await loadDeck();
     } catch (e) {
-      if (!l.dead) console.error('[map] deck.gl failed to load', e);
+      // No generated layers without deck: show the error state, drop queued updates, and
+      // never fire onready.
+      if (!l.dead) fail(l, e);
       return;
     }
     if (l.dead) return;
@@ -421,6 +451,7 @@
     for (const t of l.timers) clearTimeout(t);
     l.timers.clear();
     if (l.pickRaf !== null) cancelAnimationFrame(l.pickRaf);
+    if (l.chunkRaf !== null) cancelAnimationFrame(l.chunkRaf);
     l.controller?.destroy();
     l.overlay?.finalize();
     l.map?.remove();
@@ -428,6 +459,7 @@
     l.overlay = null;
     l.map = null;
     if (live === l) live = null;
+    chunkStatuses.clear(); // statuses belong to this manifest's chunks; a remount starts clean
     hovered = null;
     reqSeq++;
     shown = null;
@@ -448,8 +480,11 @@
 
   function fail(l: Live, e: unknown): void {
     console.error('[map] failed to start', e);
+    if (l.chunkRaf !== null) cancelAnimationFrame(l.chunkRaf);
+    l.chunkRaf = null;
     l.map?.remove();
     l.map = null;
+    pendingApplies = [];
     mapState = 'error';
   }
 
@@ -492,11 +527,16 @@
     l.controller?.setTheme(t);
   }
 
+  /** Coalesced: at most one chunk-status setData per animation frame. */
   function pushChunkData(): void {
     const l = live;
-    if (!l?.loaded || !l.map) return;
-    const src = l.map.getSource(CHUNK_SOURCE) as GeoJSONSource | undefined;
-    src?.setData(chunkStatusCollection(manifest.chunks, chunkStatuses));
+    if (!l?.loaded || !l.map || l.chunkRaf !== null) return;
+    l.chunkRaf = requestAnimationFrame(() => {
+      l.chunkRaf = null;
+      if (l.dead || !l.map) return;
+      const src = l.map.getSource(CHUNK_SOURCE) as GeoJSONSource | undefined;
+      src?.setData(chunkStatusCollection(manifest.chunks, chunkStatuses));
+    });
   }
 
   function onDataLoading(l: Live): void {
@@ -689,6 +729,11 @@
   }
 </script>
 
+<svelte:head>
+  <!-- eslint-disable-next-line svelte/no-at-html-tags -- constant CSS built from TOKENS -->
+  {@html DEFAULT_TOKENS_CSS}
+</svelte:head>
+
 <!-- The brief and spec §4.1 require the explicit role. -->
 <!-- svelte-ignore a11y_no_redundant_roles -->
 <section
@@ -845,6 +890,9 @@
 </section>
 
 <style>
+  .sim-map {
+    background: var(--map-land);
+  }
   .sim-map-panel {
     background: var(--map-land);
     color: var(--map-label);
