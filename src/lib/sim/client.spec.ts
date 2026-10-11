@@ -218,3 +218,58 @@ describe('SimClient', () => {
     expect(events.onError).not.toHaveBeenCalled();
   });
 });
+
+describe('SimClient worker crash', () => {
+  it.each(['onerror', 'onmessageerror'] as const)(
+    '%s clears the resync latch, resolves pending summaries with null and reports a crash',
+    async (handler) => {
+      const onCrash = vi.fn();
+      const { w, client, loads } = setup({ onCrash });
+      client.init(MANIFEST);
+      client.resync(); // latch armed
+      const pending = client.parcelSummary('111');
+      expect(client.crashed).toBe(false);
+
+      w[handler]?.({} as ErrorEvent & MessageEvent);
+      expect(onCrash).toHaveBeenCalledTimes(1);
+      expect(client.crashed).toBe(true);
+      await expect(pending).resolves.toBeNull();
+      // Crashed: summaries answer null at once and resync sends nothing.
+      await expect(client.parcelSummary('222')).resolves.toBeNull();
+      client.resync();
+      expect(loads()).toHaveLength(1);
+    }
+  );
+
+  it('restart swaps in a fresh worker, keeps the rev sequence and re-arms resync', () => {
+    const { w, client, loads } = setup({ onCrash: () => {} });
+    client.init(MANIFEST); // 1
+    client.resync(); // 2
+    w.onerror?.({} as ErrorEvent);
+
+    const w2 = fakeWorker();
+    client.restart(w2);
+    expect(w.terminated).toBe(true);
+    expect(w.onmessage).toBeNull();
+    expect(client.crashed).toBe(false);
+    expect(client.init(MANIFEST)).toBe(3);
+    expect(w2.posts).toEqual([{ type: 'init', rev: 3, manifest: MANIFEST, mode: 'max' }]);
+
+    client.resync(); // the latch was cleared by the crash
+    expect(loads()).toHaveLength(1); // the first worker's
+    expect(w2.posts.filter((p) => p.type === 'load')).toHaveLength(1);
+    // Messages from the new worker reach the client.
+    w2.emit({ type: 'ready', rev: 3, datasetVersion: 'fixture-1', chunkCount: 1 });
+    expect(client.datasetVersion).toBe('fixture-1');
+  });
+
+  it('a crash after dispose is ignored', () => {
+    const onCrash = vi.fn();
+    const { w, client } = setup({ onCrash });
+    const onerror = w.onerror;
+    client.dispose();
+    onerror?.({} as ErrorEvent);
+    expect(onCrash).not.toHaveBeenCalled();
+    expect(w.onerror).toBeNull();
+  });
+});

@@ -17,6 +17,9 @@ import type {
 export interface WorkerLike {
   postMessage(msg: SimRequest): void;
   onmessage: ((e: { data: SimResponse }) => void) | null;
+  /** A script error or failed module load in the worker (a real Worker has both). */
+  onerror?: ((e: ErrorEvent) => void) | null;
+  onmessageerror?: ((e: MessageEvent) => void) | null;
   terminate(): void;
 }
 
@@ -25,6 +28,8 @@ export interface SimClientEvents {
   onDiff?(d: DiffResponse): void;
   onChunks?(c: ChunksResponse): void;
   onError?(e: ErrorResponse): void;
+  /** The worker crashed (onerror/onmessageerror). `restart` with a fresh worker, then `init`. */
+  onCrash?(e: Event): void;
 }
 
 type RevRequest = Extract<SimRequest, { rev: Rev }>;
@@ -41,12 +46,18 @@ export class SimClient {
   #pending = new Map<number, (s: ParcelSummary | null) => void>();
   #datasetVersion: string | null = null;
   #disposed = false;
+  #crashed = false;
 
   constructor(worker: WorkerLike, events: SimClientEvents, getPlan: () => Plan) {
     this.#worker = worker;
     this.#events = events;
     this.#getPlan = getPlan;
-    worker.onmessage = (e) => this.#receive(e.data);
+    this.#attach(worker);
+  }
+
+  /** True after a worker crash, until `restart`. */
+  get crashed(): boolean {
+    return this.#crashed;
   }
 
   /** From the latest `ready`. */
@@ -95,7 +106,7 @@ export class SimClient {
   }
 
   parcelSummary(parcelId: ParcelId): Promise<ParcelSummary | null> {
-    if (this.#disposed) return Promise.resolve(null);
+    if (this.#disposed || this.#crashed) return Promise.resolve(null);
     const reqId = ++this.#reqId;
     return new Promise((resolve) => {
       this.#pending.set(reqId, resolve);
@@ -105,7 +116,7 @@ export class SimClient {
 
   /** map-view onResyncNeeded and bad-request both call this; one load per episode. */
   resync(): void {
-    if (this.#disposed || this.#resyncRev !== null) return;
+    if (this.#disposed || this.#crashed || this.#resyncRev !== null) return;
     this.#resyncRev = this.load(this.#getPlan());
   }
 
@@ -114,13 +125,53 @@ export class SimClient {
     return d.phase === 'preview' && d.rev < this.#barrierRev;
   }
 
+  /**
+   * Replaces a crashed (or any) worker with a fresh one. The rev sequence continues, so callers'
+   * rev bookkeeping stays valid; send `init` next.
+   */
+  restart(worker: WorkerLike): void {
+    if (this.#disposed) return;
+    this.#detach();
+    this.#crashed = false;
+    this.#resyncRev = null;
+    this.#datasetVersion = null;
+    this.#worker = worker;
+    this.#attach(worker);
+  }
+
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
-    this.#worker.onmessage = null;
-    this.#worker.terminate();
+    this.#detach();
+  }
+
+  #attach(worker: WorkerLike): void {
+    worker.onmessage = (e) => this.#receive(e.data);
+    worker.onerror = (e) => this.#crash(worker, e);
+    worker.onmessageerror = (e) => this.#crash(worker, e);
+  }
+
+  #detach(): void {
+    const w = this.#worker;
+    w.onmessage = null;
+    w.onerror = null;
+    w.onmessageerror = null;
+    w.terminate();
+    this.#resolvePending();
+  }
+
+  #resolvePending(): void {
     for (const resolve of this.#pending.values()) resolve(null);
     this.#pending.clear();
+  }
+
+  #crash(worker: WorkerLike, e: Event): void {
+    if (this.#disposed || worker !== this.#worker || this.#crashed) return;
+    console.error('[sim] worker crashed', e);
+    this.#crashed = true;
+    this.#resyncRev = null;
+    this.#resolvePending();
+    this.#events.onCrash?.(e);
   }
 
   #receive(msg: SimResponse): void {
@@ -162,6 +213,12 @@ export class SimClient {
   }
 }
 
-export function spawnSimWorker(): Worker {
-  return new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+/**
+ * The real module worker. DOM's `onmessage` takes a full MessageEvent, which TypeScript will not
+ * narrow to WorkerLike's `{ data }`; at runtime a Worker is exactly a WorkerLike.
+ */
+export function spawnSimWorker(): WorkerLike {
+  return new Worker(new URL('./worker.ts', import.meta.url), {
+    type: 'module'
+  }) as unknown as WorkerLike;
 }
