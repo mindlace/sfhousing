@@ -170,11 +170,14 @@ export class SimClient {
     console.error('[sim] worker crashed', e);
     this.#crashed = true;
     this.#resyncRev = null;
-    this.#resolvePending();
+    // onmessageerror can fire while the worker is still alive: detach and terminate it, so a late
+    // message (a `ready` above all) cannot revive the UI while `crashed` stays true.
+    this.#detach();
     this.#events.onCrash?.(e);
   }
 
   #receive(msg: SimResponse): void {
+    if (this.#disposed || this.#crashed) return;
     switch (msg.type) {
       case 'ready':
         this.#datasetVersion = msg.datasetVersion;

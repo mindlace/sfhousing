@@ -263,6 +263,28 @@ describe('SimClient worker crash', () => {
     expect(client.datasetVersion).toBe('fixture-1');
   });
 
+  it.each(['onerror', 'onmessageerror'] as const)(
+    'after %s the worker is terminated and its late messages, a ready above all, are ignored',
+    (handler) => {
+      const onReady = vi.fn();
+      const onDiff = vi.fn();
+      const { w, client } = setup({ onCrash: () => {}, onReady, onDiff });
+      client.init(MANIFEST);
+      const onmessage = w.onmessage;
+      w[handler]?.({} as ErrorEvent & MessageEvent);
+      expect(w.terminated).toBe(true);
+      expect(w.onmessage).toBeNull();
+
+      // A message already queued before the detach still reaches the old handler.
+      onmessage?.({ data: { type: 'ready', rev: 1, datasetVersion: 'fixture-1', chunkCount: 1 } });
+      onmessage?.({ data: diff(1, 'load') });
+      expect(onReady).not.toHaveBeenCalled();
+      expect(onDiff).not.toHaveBeenCalled();
+      expect(client.datasetVersion).toBeNull();
+      expect(client.crashed).toBe(true);
+    }
+  );
+
   it('a crash after dispose is ignored', () => {
     const onCrash = vi.fn();
     const { w, client } = setup({ onCrash });

@@ -257,6 +257,7 @@ describe('BrushController drag, previews and commit', () => {
     expect(fx.client.commits).toHaveLength(1);
     expect(fx.client.commits[0].op).toEqual(op);
     expect(fx.ctl.lastCommitRev).toBe(fx.client.commits[0].rev);
+    expect(fx.ctl.markedCommitRev).toBe(fx.client.commits[0].rev);
     // Acceptance 2: the committed op is the last preview.
     expect(op.path).toEqual(fx.client.previews[2].op.path);
     expect(op.id).toBe(fx.client.previews[2].op.id);
@@ -579,9 +580,15 @@ describe('BrushController keyboard stamp, undo and redo', () => {
     expect(fx.editor.plan.ops).toHaveLength(0);
     expect(fx.state.announcement).toBe('Undid paint, 6 stories');
 
+    const strokeRev = fx.ctl.markedCommitRev;
+    expect(strokeRev).toBe(fx.client.commits[0].rev);
     key('z', { ctrlKey: true, shiftKey: true });
     expect(fx.client.commits.at(-1)!.op.id).toBe(id);
     expect(fx.ctl.lastCommitRev).toBe(fx.client.commits.at(-1)!.rev);
+    // A redo sets no pointerup mark, so the page must not measure it (it would span from the
+    // stroke's pointerup): markedCommitRev stays on the stroke.
+    expect(fx.ctl.markedCommitRev).toBe(strokeRev);
+    expect(fx.ctl.markedCommitRev).not.toBe(fx.ctl.lastCommitRev);
     expect(fx.editor.plan.ops).toHaveLength(1);
     expect(fx.state.announcement).toBe('Redid paint, 6 stories');
   });

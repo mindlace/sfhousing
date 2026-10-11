@@ -104,6 +104,7 @@ export class BrushController {
   #awaitingStats: string | null = null;
   #crosshair = false;
   #lastCommitRev: number | null = null;
+  #markedCommitRev: number | null = null;
   #lastPan: boolean | null = null;
   #overlayEmpty = false;
   #disposeEffects: (() => void) | null = null;
@@ -118,9 +119,17 @@ export class BrushController {
     return this.#stroking;
   }
 
-  /** rev of the last commit sent, for the page's performance.mark pairing. */
+  /** rev of the last commit sent (a stroke, a stamp or a redo). */
   get lastCommitRev(): number | null {
     return this.#lastCommitRev;
+  }
+
+  /**
+   * rev of the last commit that set a fresh `sfh-brush-pointerup` mark, for the page's
+   * `sfh-brush-commit` measure. A redo sets no mark, so it leaves this unchanged and is not measured.
+   */
+  get markedCommitRev(): number | null {
+    return this.#markedCommitRev;
   }
 
   attach(): void {
@@ -394,6 +403,7 @@ export class BrushController {
         }
       }
       this.#lastCommitRev = this.#commit(op);
+      this.#markedCommitRev = this.#lastCommitRev;
       this.#awaitingStats = op.id;
       return true;
     }

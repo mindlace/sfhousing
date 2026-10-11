@@ -118,7 +118,8 @@
       applyRender(d.render);
       const stale = client?.isStalePreview(d) ?? false;
       if (d.phase === 'commit' && d.stats && !stale) lastStats = d.stats;
-      if (d.phase === 'commit' && controller && d.rev === controller.lastCommitRev) markCommit();
+      // Only a commit with its own pointerup mark: a redo's would span from an older stroke.
+      if (d.phase === 'commit' && controller && d.rev === controller.markedCommitRev) markCommit();
       controller?.onDiff(d, stale);
       onscore?.(d.score);
     },
