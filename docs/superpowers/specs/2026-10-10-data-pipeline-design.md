@@ -33,9 +33,9 @@ Owned:
 |---|---|---|---|
 | I1 | `type ParcelId = string` — SF `mapblklot` (block+lot, e.g. `"3512008"`), the single join key across all data | data-pipeline → all | DC |
 | I6 | `interface ParcelRecord { id: ParcelId; polygon: [x: number, y: number][][] /* local metres, exactly EPSG:7131 (NAD83(2011) / San Francisco CS13, metres), origin at label point */; labelPoint: [lng, lat]; areaM2: number; existingUnits: number; existingFloorAreaM2: number; existingHeightM: number; landUse: string; eligible: boolean; neighborhood: string }` | data-pipeline → plan-model, generator, scoreboard | DC |
-| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, basemapTiles: url, glyphs: url /* MapLibre `{fontstack}/{range}.pbf` template */, sprite?: url, neighborhoods: url }`. All `url`s are root-relative (`/data/<v>/…`). Every eligible-or-not parcel appears in **exactly one** chunk. `buildingsTiles` has one source-layer `buildings` with properties `parcelId`, `heightM`, `baseM`, at minzoom ≤ 12, with buildings clipped to parcels. Published versions are immutable and retained indefinitely. `datasetVersion` matches `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (build date + 8-hex input hash) everywhere it is validated. R2 key = `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` | data-pipeline → platform, plan-model, brush-tool (worker host), typology-generator, map-view | DC |
+| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, label?, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, basemapTiles: url, glyphs: url /* MapLibre `{fontstack}/{range}.pbf` template */, sprite?: url, neighborhoods: url }`. All `url`s are root-relative (`/data/<v>/…`). Every eligible-or-not parcel appears in **exactly one** chunk. `buildingsTiles` has one source-layer `buildings` with properties `parcelId`, `heightM`, `baseM`, at minzoom ≤ 12, with buildings clipped to parcels. Published versions are immutable and retained indefinitely. `datasetVersion` matches `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (build date + 8-hex input hash) everywhere it is validated. R2 key = `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` | data-pipeline → platform, plan-model, brush-tool (worker host), typology-generator, map-view | DC |
 
-Consumed: none of the I-rows. The pipeline's only dependency is platform's key layout (`data/<v>/<path>`), its bucket `sfhousing` and `DATASET_VERSION_RE` (platform §4.2–4.4).
+Consumed: none of the I-rows beyond those it owns. I12 fixes the R2 key layout (`data/<v>/<path>`) and the `datasetVersion` pattern; `DATASET_VERSION_RE` is defined once, here, in `src/lib/data/manifest.ts`, and platform and plan-model import it. The bucket `sfhousing` and "manifest last" come from platform §4.2–4.4.
 
 ### Internal types
 
@@ -73,6 +73,7 @@ interface Manifest {
   neighborhoods: string;
 }                                       // every url root-relative: `/data/<v>/…` (I12)
 function parseManifest(json: unknown): Manifest;              // throws ManifestError
+const DATASET_VERSION_RE = /^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}|fixture-\d+)$/; // I12, the single definition
 ```
 
 Decoding rules:
@@ -121,7 +122,7 @@ DataSF moved from `data.sfgov.org` to **`data.sf.gov`**; the old host answers wi
 | `datasf-neighborhoods` | `j2bu-swwd` Analysis Neighborhoods: `nhood, the_geom` | 41 | PDDL (V) |
 | `overture-buildings` | `s3://overturemaps-us-west-2/release/<rel>/theme=buildings/type=building/*` | 177,940 in the bbox (release `2026-09-23.1`) | ODbL-1.0 (V: docs.overturemaps.org/attribution) |
 | `protomaps-basemap` | `https://build.protomaps.com/<YYYYMMDD>.pmtiles` | — | ODbL-1.0 data (V: docs.protomaps.com) |
-| `protomaps-fonts` | `github.com/protomaps/basemaps-assets` `fonts/` at a pinned commit | 4 stacks | OFL (V: repo `fonts/OFL.txt`) |
+| `protomaps-fonts` | `github.com/protomaps/basemaps-assets` `fonts/` at a pinned commit | 3 stacks copied (§4.8) | OFL (V: repo `fonts/OFL.txt`) |
 
 Fetch method:
 - **DataSF:** SODA 2 paging, `GET /resource/<id>.geojson?$select=…&$order=:id&$limit=50000&$offset=k`, run until a page comes back short. Parcels add `$where=active=true`. This form returned `X-SODA2-Truth-Last-Modified` and `ETag` headers (V).
@@ -166,11 +167,11 @@ Lock entry: `{ id, files: [{ url, sha256, bytes, archiveKey }], retrievedAt, ups
 
 ### 4.3 `datasetVersion`
 
-The format is `<YYYYMMDD>-<h8>`, for example `20261010-3fa9c2d1`:
-- `YYYYMMDD` is the UTC date of the newest `retrievedAt` in the lock.
+The format is `<YYYY-MM-DD>-<h8>`, for example `2026-10-10-3fa9c2d1` (I12's pattern):
+- `YYYY-MM-DD` is the UTC date of the newest `retrievedAt` in the lock.
 - `h8` is the first 8 hex digits of sha256 over: the canonical lock JSON (keys sorted), the git tree hash of `pipeline/` plus `src/lib/data/`, and the pinned tool versions.
 
-The version is derived from inputs, so it is known before the build. It matches platform's `DATASET_VERSION_RE` (`/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/`). The same lock and the same code give the same version string.
+The version is derived from inputs, so it is known before the build. It matches I12's `DATASET_VERSION_RE` (`/^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}|fixture-\d+)$/`); `h8` is lowercase hex. The same lock and the same code give the same version string.
 
 ### 4.4 Parcels (I1, label point, polygon)
 
@@ -350,8 +351,8 @@ Totals: cold end-to-end ≈ **15–25 min**; a warm rebuild ≈ **5–8 min**. A
 
 ### 4.12 Attribution obligations (ODbL)
 
-- `buildings.pmtiles`, `basemap.pmtiles` and the **parcel chunks** are Derivative Databases of ODbL data. Chunk `existingHeightM` and the fallback floor area are derived from Overture heights. Publishing them at public URLs is public use, so they are offered under **ODbL-1.0** (ODbL §4.4 share-alike) (I: reading of ODbL). The manifest `sources` licences and `report.json` state this. platform's data page must say "Derived data © OpenStreetMap contributors, Overture Maps Foundation, available under ODbL".
-- **Produced Work** (the rendered map) must carry visible attribution: "© OpenStreetMap contributors", "Overture Maps Foundation", plus the contributors present in the extract: "USGS 3D Elevation Program", "Microsoft Global ML Building Footprints (ODbL)" and "Esri Community Maps contributors (CC BY 4.0)" (V: docs.overturemaps.org/attribution). Protomaps recommends "Protomaps © OpenStreetMap" (map-view §, V).
+- `buildings.pmtiles`, `basemap.pmtiles` and the **parcel chunks** are Derivative Databases of ODbL data. Chunk `existingHeightM` and the fallback floor area are derived from Overture heights. Publishing them at public URLs is public use, so they are offered under **ODbL-1.0** (ODbL §4.4 share-alike) (I: reading of ODbL). The manifest `sources` licences and `report.json` state this. platform's `/attribution` page carries the notice in its fixed wording (platform §4.6: "Derived data files under `/data/` that incorporate OpenStreetMap or Overture data are made available under the ODbL 1.0.") (decided in fidelity pass).
+- **Produced Work** (the rendered map) must carry visible attribution: "© OpenStreetMap contributors", "Overture Maps Foundation", plus the contributors present in the extract: "USGS 3D Elevation Program", "Microsoft Global ML Building Footprints (ODbL)" and "Esri Community Maps contributors (CC BY 4.0)" (V: docs.overturemaps.org/attribution). Protomaps recommends "Protomaps © OpenStreetMap" (map-view §, V). In M1 the on-map control shows platform's fixed string ("© OpenStreetMap · Overture Maps (Esri, Microsoft, USGS) · DataSF · Protomaps", linked to `/attribution`), and the per-contributor credits appear on `/attribution` from the expanded manifest `sources` (decided in fidelity pass); see the orchestrator note on whether that satisfies CC BY 4.0 for Esri.
 - DataSF sources are PDDL, CC0 or public domain. Credit is courtesy, not obligation.
 
 ## 5. Seams

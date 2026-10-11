@@ -25,16 +25,17 @@ Verbatim rows owned or consumed:
 
 | # | interface | owner → consumers | mark |
 |---|---|---|---|
-| I3 | `type PlanOp = BrushStroke` where `type BrushStroke = { kind: 'paint'; stories: number /* integer 1..80 */; radiusM: number /* 5..500 */; path: [lng: number, lat: number][]; id: string } \| { kind: 'erase'; radiusM: number; path: [lng: number, lat: number][]; id: string }`. The union widens in later milestones (`AreaOp`, `PolicyOp`) | brush-tool → plan-model | DC |
+| I3 | (type lives in plan-model's module; brush-tool produces it) `type PlanOp = BrushStroke` where `type BrushStroke = { kind: 'paint'; stories: number /* integer 1..80 */; radiusM: number /* 5..500 */; path: [lng: number, lat: number][]; id: string } \| { kind: 'erase'; radiusM: number; path: [lng: number, lat: number][]; id: string }`. The union widens in later milestones (`AreaOp`, `PolicyOp`) | brush-tool → plan-model | DC |
 | I4 | `interface Plan { schema: 1; datasetVersion: string; ops: PlanOp[]; title?: string }` | plan-model → brush-tool, plan-sharing | DC |
-| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, basemapTiles: url, glyphs: url /* MapLibre `{fontstack}/{range}.pbf` template */, sprite?: url, neighborhoods: url }`. All `url`s are root-relative (`/data/<v>/…`). Every eligible-or-not parcel appears in **exactly one** chunk. `buildingsTiles` has one source-layer `buildings` with properties `parcelId`, `heightM`, `baseM`, at minzoom ≤ 12, with buildings clipped to parcels. Published versions are immutable and retained indefinitely. `datasetVersion` matches `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (build date + 8-hex input hash) everywhere it is validated. R2 key = `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` | data-pipeline → platform, plan-model, brush-tool (worker host), typology-generator, map-view | DC |
+| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, label?, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, basemapTiles: url, glyphs: url /* MapLibre `{fontstack}/{range}.pbf` template */, sprite?: url, neighborhoods: url }`. All `url`s are root-relative (`/data/<v>/…`). Every eligible-or-not parcel appears in **exactly one** chunk. `buildingsTiles` has one source-layer `buildings` with properties `parcelId`, `heightM`, `baseM`, at minzoom ≤ 12, with buildings clipped to parcels. Published versions are immutable and retained indefinitely. `datasetVersion` matches `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (build date + 8-hex input hash) everywhere it is validated. R2 key = `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` | data-pipeline → platform, plan-model, brush-tool (worker host), typology-generator, map-view | DC |
 | I13 | Share API: `POST /api/plans` (body: `Plan`, ≤ 256 KB) → `{ id }`; `GET /api/plans/:id` → `Plan`; page `/p/:id`. Ids are 8-char base58. Status codes and error bodies are as defined in the plan-sharing spec | plan-sharing ↔ platform | DC |
 | I16 | Dataset version discovery: the worker var `PUBLIC_DATASET_VERSION` names the current version for new plans. A **published** plan (`/p/:id`) renders on **its own** `plan.datasetVersion`, with an "Open with current data" action that remixes onto current. A **locally autosaved** plan is rebased to current on load: strokes are version-independent, so `datasetVersion` is rewritten and the plan re-resolved, with a one-line notice if the version changed (`manifestUrl = /data/${v}/manifest.json`). map-view and the worker host take the manifest as a parameter, never a global. If that version's manifest 404s, fall back to current and show the plan-sharing "older data" notice | platform → plan-sharing, brush-tool, map-view | DC |
 
-I16 governs which dataset a loaded plan renders on: its own `plan.datasetVersion`, falling back to
-the current version (`PUBLIC_DATASET_VERSION`) only if that manifest 404s, in which case this spec's
-"older data" notices (N3 / N6) are shown. The load itself is brush-tool's `loadManifest`, whose
-`fellBack` flag drives the notice.
+I16 governs which dataset a loaded plan renders on. A **published** plan (`/p/:id`) renders on its
+own `plan.datasetVersion`, falling back to the current version (`PUBLIC_DATASET_VERSION`) only if
+that manifest 404s (notice N6); its "Open with current data" action remixes onto current. A
+**locally autosaved** plan is rebased to current on load (notice N3 if the version changed). The
+manifest load itself is brush-tool's `loadManifest`, whose `fellBack` flag drives N6.
 
 Consumed from plan-model (its internal API, not an I-row): `parsePlan(text): Result<Plan>`,
 `serializePlan(plan): string`, `planByteSize`, `rebasePlan`, `emptyPlan`, `MAX_PLAN_BYTES = 262_144`,
@@ -172,25 +173,26 @@ value `JSON.stringify(LocalPlanRecord)`. One working plan per browser profile in
   `parsePlan(record.plan)`. On failure (`ok: false`, JSON error, or `v !== 1`): copy the raw
   string to `sfhousing:plan:corrupt:<ISO timestamp>`, start empty, and show notice N1.
   `future-schema` (a plan from a newer app build) is treated the same way with notice N2.
-- **datasetVersion differs from current:** per I16 the plan loads at its **own**
-  `datasetVersion` (published versions are immutable and retained, I12), so nothing changes
-  and no notice is shown. Only if `/data/<plan.datasetVersion>/manifest.json` 404s
-  (`loadManifest` returns `fellBack: true`) does it resolve against the **current** dataset
-  (strokes are geographic; plan-model §4.9); brush-tool then rebases on the next committed op,
-  and notice N3 is shown once per load.
+- **datasetVersion differs from current:** per I16 the autosaved plan is **rebased** on load:
+  `rebasePlan(plan, currentDatasetVersion)` (strokes are geographic; plan-model §4.9), written
+  back to localStorage immediately, then handed to the editor and resolved against the current
+  manifest. Notice N3 is shown once, as a one-line dismissible notice above the map. Same
+  version → no notice.
 - **Storage unavailable** (`localStorage` throws on access, `QuotaExceededError` on write):
   editing continues; a persistent status chip "Autosave off" with tooltip/popover N4. Retry
   write on each later change; chip clears on the first successful write.
 - **Multiple tabs:** last write wins. No cross-tab sync in M1.
 - **Redo stack is not persisted** — after reload, redo is empty; undo history is the op log
   itself as brush-tool defines it.
-- A "Saved" indicator in the toolbar shows "Saved" (≤ 1 s after a write), "Saving…" during
+- A "Saved" indicator in platform's header `headerActions` slot (decided in fidelity pass) shows "Saved" (≤ 1 s after a write), "Saving…" during
   debounce, or "Autosave off". It is an `aria-live="polite"` status that announces only the
   transition to "Autosave off" and back (not every save).
 
 ### 4.6 Publish flow (client)
 
-Toolbar button **Publish** (≥ 24×24 px target). States:
+Button **Publish** in platform's header `headerActions` slot on `/`, beside the Saved indicator
+(target ≥ 44×44 px on `pointer: coarse`, ≥ 24×24 px otherwise, matching brush-tool's touch
+targets (decided in fidelity pass)). States:
 
 | state | when | UI |
 |---|---|---|
@@ -221,7 +223,8 @@ editing your own copy afterward." Shows size "Size: 41 KB of 256 KB". Buttons **
   - 422 `unknown_dataset_version`: "This plan uses map data the server doesn't recognise.
     Reload the page and try again." (This happens only if a version was never uploaded.)
   - 422 `invalid_plan` / `unsupported_schema` / 400 / 415: "The server couldn't read this
-    plan (code: `<code>`). Please report this." with a link to the GitHub issues page.
+    plan (code: `<code>`). Please report this." with a link to the GitHub issues page
+    (`${REPO_URL}/issues`, platform §4.6).
   - 429 `rate_limited`: "Too many plans published from your network. Try again in a minute."
     Publish disabled with a visible countdown from `Retry-After` (default 60 s).
   - network error, timeout, 5xx: "Couldn't publish. Check your connection and try again."
@@ -248,7 +251,8 @@ Page headers: `Cache-Control: public, max-age=300`.
   renders against the current version. The server load decides the banner line with
   `BUCKET.head`; the client's `loadManifest` reaches the same answer and passes the manifest
   to map-view and the worker host. When `plan.datasetVersion !== current`, the
-  banner adds a second line N5 or N6 respectively.
+  banner adds a second line N5 or N6 respectively. Both lines end with an **Open with current
+  data** button (I16), which runs the Remix flow below (decided in fidelity pass).
 - **Remix:** if the local plan has ≥ 1 op, a confirm dialog: "Replace your current plan
   (<n> strokes) with a copy of this one? Your current plan will be lost unless you publish it
   first." [**Replace**] [**Cancel**]. On confirm (or immediately if the local plan is empty):
@@ -326,12 +330,13 @@ only deletion; there is no user-facing delete in M1.
 - `autosave.svelte.spec.ts` — debounce (fake timers): 3 commits within 500 ms → 1 write;
   flush on `visibilitychange`; corrupt record → preserved under `corrupt:` key + N1; `v: 2`
   record treated as corrupt; `setItem` throwing `QuotaExceededError` → "Autosave off" chip,
-  clears after a later successful write; older `datasetVersion` still present → loads at its
-  own version, no notice; older `datasetVersion` absent (`fellBack`) → N3 once.
+  clears after a later successful write; older `datasetVersion` → rebased to current, written
+  back, N3 once; same version → no notice.
 - `PublishDialog.svelte.spec.ts` — each row of §4.6 with a mocked `fetch`: disabled-when-empty,
   preflight oversize (no fetch call), publishing busy state, success → URL + Copy, already-
   published → no fetch, 413/422/429 (countdown from `Retry-After`)/network messages exactly as specified.
-- `SharedBanner.svelte.spec.ts` — N5/N6 lines; Remix confirm shown only when local plan non-empty.
+- `SharedBanner.svelte.spec.ts` — N5/N6 lines, each with "Open with current data" running Remix;
+  Remix confirm shown only when local plan non-empty.
 
 **e2e (Playwright, chromium + 375 px project, against `npm run preview` with fixture data,
 platform §6):**
@@ -370,15 +375,15 @@ platform §6):**
 1. ~~**I13 has no status codes or error body.**~~ *Resolved:* I13 now defers status codes and
    error bodies to this spec (§4.3–4.4).
 2. ~~**Rendering a shared plan at its own `datasetVersion`.**~~ *Resolved by I16:* map-view
-   and the worker host take the manifest as a parameter; a loaded plan uses its own version
-   with a 404 fallback to current.
+   and the worker host take the manifest as a parameter; a published plan uses its own version with a 404 fallback to current; an autosaved plan is
+   rebased to current on load.
 3. **Capacity of 256 KB.** At ≈ 24 bytes per quantised point, the cap holds ≈ 10,000 path
    points; plan-model allows 5,000 ops × 2,000 points. Real plans hit the byte cap long before
    the op cap. brush-tool must simplify stroke paths; plan-model already flags a compact wire
-   encoding as its open question 1. Recommend brush-tool's spec states its simplification tolerance.
-4. **`datasetVersion` pattern mismatch:** plan-model allows `^[A-Za-z0-9._-]+$` (1–64);
-   platform's route requires a leading alphanumeric. Recommend a single pattern in I12
-   (platform's). Harmless meanwhile: such a plan fails step 7 (`unknown_dataset_version`).
+   encoding as its open question 1. *Resolved:* brush-tool §4.4 fixes the spacing (`clamp(radiusM/2, 2, 50)` m radial filter) and refuses a commit past the cap (§4.5).
+4. ~~**`datasetVersion` pattern mismatch.**~~ *Resolved:* I12 fixes one pattern,
+   `DATASET_VERSION_RE` in `src/lib/data/manifest.ts`, which plan-model, platform and the
+   pipeline all import.
 5. **No remix lineage.** I4 `Plan` has no `remixOf`; lineage is not recorded. Fine for M1.
 
 ## 9. Open questions

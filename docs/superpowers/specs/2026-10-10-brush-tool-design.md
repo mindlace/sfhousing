@@ -36,13 +36,13 @@ Copied verbatim:
 |---|---|---|---|
 | I1 | `type ParcelId = string` — SF `mapblklot` (block+lot, e.g. `"3512008"`), the single join key across all data | data-pipeline → all | DC |
 | I2 | `interface Envelope { maxStories: number }` — the per-parcel allowed envelope. The **only** thing manipulation writes. Later milestones add optional fields; M1 code must ignore unknown fields | plan-model → generator, scoreboard | MC (envelope-as-common-currency), DC (field set) |
-| I3 | `type PlanOp = BrushStroke` where `type BrushStroke = { kind: 'paint'; stories: number /* integer 1..80 */; radiusM: number /* 5..500 */; path: [lng: number, lat: number][]; id: string } \| { kind: 'erase'; radiusM: number; path: [lng: number, lat: number][]; id: string }`. The union widens in later milestones (`AreaOp`, `PolicyOp`) | brush-tool → plan-model | DC |
+| I3 | (type lives in plan-model's module; brush-tool produces it) `type PlanOp = BrushStroke` where `type BrushStroke = { kind: 'paint'; stories: number /* integer 1..80 */; radiusM: number /* 5..500 */; path: [lng: number, lat: number][]; id: string } \| { kind: 'erase'; radiusM: number; path: [lng: number, lat: number][]; id: string }`. The union widens in later milestones (`AreaOp`, `PolicyOp`) | brush-tool → plan-model | DC |
 | I4 | `interface Plan { schema: 1; datasetVersion: string; ops: PlanOp[]; title?: string }` | plan-model → brush-tool, plan-sharing | DC |
 | I5 | `resolveEnvelopes(plan: Plan, index: ParcelIndex): Map<ParcelId, Envelope>`. Ops apply in order and later ops win. A parcel is covered by a stroke iff its label point is within `radiusM` of the stroke polyline. `erase` deletes the entry. Ineligible parcels never get an entry | plan-model → generator | DC |
 | I7 | `type BuildoutMode = 'max'` (M1). `'likely'` is reserved for M2 | generator, scoreboard | MC (sequence) |
 | I8 | `generate(parcel: ParcelRecord, env: Envelope, seed: number, mode: BuildoutMode): GeneratedBuilding \| null`. Returns `null` for a replacement when its floor area ≤ `existingFloorAreaM2` **or** its units ≤ `existingUnits`: nobody rebuilds smaller or to fewer homes. (An `adu` keeps the existing building and is exempt) | generator → map-view, scoreboard | DC |
 | I9 | `interface GeneratedBuilding { parcelId: ParcelId; source: 'user'; /* widens to 'pipeline' \| 'scenario' later */ typology: TypologyId; parts: { footprint: [lng, lat][] /* single outer ring; parcel holes dropped in M1 */; baseM: number; topM: number }[] /* nested: each part's footprint ⊆ the part below; rendered ground-to-topM */; stories: number; units: number; floorAreaM2: number; replacesExisting: boolean }` | generator → map-view, scoreboard | DC |
-| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, basemapTiles: url, glyphs: url /* MapLibre `{fontstack}/{range}.pbf` template */, sprite?: url, neighborhoods: url }`. All `url`s are root-relative (`/data/<v>/…`). Every eligible-or-not parcel appears in **exactly one** chunk. `buildingsTiles` has one source-layer `buildings` with properties `parcelId`, `heightM`, `baseM`, at minzoom ≤ 12, with buildings clipped to parcels. Published versions are immutable and retained indefinitely. `datasetVersion` matches `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (build date + 8-hex input hash) everywhere it is validated. R2 key = `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` | data-pipeline → platform, plan-model, brush-tool (worker host), typology-generator, map-view | DC |
+| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, label?, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, basemapTiles: url, glyphs: url /* MapLibre `{fontstack}/{range}.pbf` template */, sprite?: url, neighborhoods: url }`. All `url`s are root-relative (`/data/<v>/…`). Every eligible-or-not parcel appears in **exactly one** chunk. `buildingsTiles` has one source-layer `buildings` with properties `parcelId`, `heightM`, `baseM`, at minzoom ≤ 12, with buildings clipped to parcels. Published versions are immutable and retained indefinitely. `datasetVersion` matches `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (build date + 8-hex input hash) everywhere it is validated. R2 key = `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` | data-pipeline → platform, plan-model, brush-tool (worker host), typology-generator, map-view | DC |
 | I14 | Seed: `seed = fnv1a32(parcelId)`. Variety is a pure function of parcel and envelope, so the same plan always renders identically for everyone | generator | DC |
 | I15 | **The one main↔worker protocol** (`src/lib/sim/protocol.ts`, owned by brush-tool's worker host): `SimRequest` as in the brush-tool spec, and `SimResponse = { type: 'ready'; rev; datasetVersion; chunkCount } \| { type: 'diff'; rev; phase: DiffPhase; render: GeneratedUpdate; stats?: OpStats; complete: boolean; score: Score } \| { type: 'chunks'; status: Record<cellId, ChunkStatus>; pending: number; failed: string[] } \| { type: 'parcelSummary'; reqId: number; summary: ParcelSummary \| null } \| { type: 'error'; rev; code; message }`, with matching request `{ type: 'parcelSummary'; reqId: number; parcelId: ParcelId }` (no rev). `ParcelSummary = { parcelId; neighborhood; landUse; eligible; existingUnits; envelope: Envelope \| null; generated: { typology; stories; units } \| null }`, used by map-view's tooltip. `GeneratedUpdate` and `PackedCell` are owned by map-view (the worker imports the pure `packCell`). `Score` is owned by scoreboard (the worker calls its pure `score()`). The main thread never receives `GeneratedBuilding[]` | brush-tool ↔ map-view, scoreboard, typology-generator | DC |
 | I16 | Dataset version discovery: the worker var `PUBLIC_DATASET_VERSION` names the current version for new plans. A **published** plan (`/p/:id`) renders on **its own** `plan.datasetVersion`, with an "Open with current data" action that remixes onto current. A **locally autosaved** plan is rebased to current on load: strokes are version-independent, so `datasetVersion` is rewritten and the plan re-resolved, with a one-line notice if the version changed (`manifestUrl = /data/${v}/manifest.json`). map-view and the worker host take the manifest as a parameter, never a global. If that version's manifest 404s, fall back to current and show the plan-sharing "older data" notice | platform → plan-sharing, brush-tool, map-view | DC |
@@ -63,7 +63,8 @@ type SimRequest =
   | { type: 'commit'; rev: Rev; op: PlanOp }             // append; also used for redo
   | { type: 'undo'; rev: Rev; opId: string }             // must be the last committed op
   | { type: 'prefetch'; bbox: BBox }                     // advisory, no rev
-  | { type: 'retryChunks' };
+  | { type: 'retryChunks' }
+  | { type: 'parcelSummary'; reqId: number; parcelId: ParcelId }; // I15; no rev
 type DiffPhase = 'load' | 'preview' | 'cancel' | 'commit' | 'undo' | 'chunk';
 interface OpStats { opId: string; kind: 'paint' | 'erase'; stories?: number /* paint only */;
   covered: number; ineligible: number; built: number; notBigger: number; removed: number; partial: boolean }
@@ -71,7 +72,13 @@ type SimResponse =
   | { type: 'ready'; rev: Rev; datasetVersion: string; chunkCount: number }
   | { type: 'diff'; rev: Rev; phase: DiffPhase; render: GeneratedUpdate; stats?: OpStats; complete: boolean; score: Score }
   | { type: 'chunks'; status: Record<string /* cellId */, ChunkStatus>; pending: number; failed: string[] }  // cellIds
+  | { type: 'parcelSummary'; reqId: number; summary: ParcelSummary | null }
   | { type: 'error'; rev: Rev; code: 'manifest-invalid' | 'bad-request' | 'internal'; message: string };
+interface ParcelSummary {                                // I15; the only definition
+  parcelId: ParcelId; neighborhood: string; landUse: string; eligible: boolean; existingUnits: number;
+  envelope: Envelope | null;                             // committed-plus-preview display state
+  generated: { typology: TypologyId; stories: number; units: number } | null;
+}
 
 // src/lib/sim/manifest.ts — main thread; implements I16
 // Fetches /data/${planVersion}/manifest.json; on 404 fetches /data/${currentVersion}/manifest.json.
@@ -135,6 +142,12 @@ type BrushTool = 'move' | 'paint' | 'erase';
 - **Read-only** (`editor.readOnly`, used by `/p/:id`): the toolbar shows only the Move tool and a disabled-tools note, "Read-only — Remix to edit". The Remix button itself belongs to plan-sharing.
 - **Before `ready`**, Paint and Erase are disabled, and the status line reads "Loading city data…". If `loadManifest` rejects, or `error manifest-invalid` arrives, the status line reads "Couldn't load city data." with a **Retry** button, which reruns `loadManifest` and resends `init`.
 
+### 4.1a Toolbar placement (decided in fidelity pass)
+
+- **≥ 768 px:** a floating toolbar docked top-left of the map region (16 px inset): tool radiogroup, stories stepper and chips, radius slider, Undo, Redo, the shortcuts disclosure, and the status line beneath it. The scoreboard panel is top-right (scoreboard §4.4); map-view's controls are bottom-left and bottom-right.
+- **< 768 px:** a 56 px bar docked at the bottom, directly above the scoreboard's 56 px bar (`bottom: var(--scorebar-h)`), exposing `--brushbar-h: 56px`. Left to right: the tool radiogroup (3 × 44 px), a stories button reading "6 st" that opens the stepper and chips in a popover, the radius button ("30 m", popover), Undo and Redo. The status line floats above the bar. The shortcuts disclosure is not shown on `pointer: coarse`. The shell calls `SimMapHandle.setBottomInset(scorebar + brushbar)`, or the scoreboard sheet height when it is open.
+- **Read-only (`/p/:id`):** at every width only the Move tool and the note are shown, in the same position.
+
 ### 4.2 Stories and radius controls
 
 - **Stories:** a stepper `[−] 6 stories [+]`. The value is an editable `<input type="number" min=1 max=80 step=1>` (I3's bound). Out-of-range or non-integer input is clamped and rounded on blur or Enter. Beside it is the derived height `≈ 19 m` (stories × 3.1 m, rounded to an integer). This uses the design's floor-to-floor height, so it is a height hint, not a typology claim. Preset chips: **2 · 3 · 4 · 6 · 8 · 12 · 20 · 40**. The active chip is `aria-pressed`. The stepper is disabled when the tool is Erase, with the hint "Erase removes painted height". Erase ops carry no `stories` (I3): the controller builds `{ kind: 'erase', radiusM, path, id }`.
@@ -161,7 +174,7 @@ type BrushTool = 'move' | 'paint' | 'erase';
 
 - **During drag**, the controller sends `preview` with the current path. There is **at most one preview in flight**, so the newest pending path replaces any unsent one. Previews are sent no more than once per animation frame. When a diff arrives with `phase:'preview'`, the next pending preview (if any) is sent.
 - **On pointer-up**, the controller builds the final op and calls `editor.commit(op)`:
-  - If the plan's `datasetVersion` ≠ the worker's `ready.datasetVersion`, it first does `rebasePlan`.
+  - If the plan's `datasetVersion` ≠ the worker's `ready.datasetVersion`, it first does `rebasePlan`. This is defensive: plan-sharing already rebases autosaved plans and remixes onto current at load (I16), and published plans are read-only.
   - If adding the op makes `planByteSize > MAX_PLAN_BYTES` or `ops.length > OPS_MAX`, the commit is refused. The controller sends `cancelPreview`. The status line shows, for 6 s, "This stroke would make the plan too large to save (256 KB limit). Undo some strokes or start a new plan."
   - Otherwise the editor appends the op, clears redo, and the controller sends `commit`.
 - **The 150 ms budget** is measured from `pointerup` to map-view applying the `phase:'commit'` diff. The host meets it by promoting the matching preview: if the last preview op deep-equals the commit op, the commit diff is computed against the already-displayed preview state and is normally empty.
@@ -169,7 +182,7 @@ type BrushTool = 'move' | 'paint' | 'erase';
 - **Result announcement** (the status line, inside an `aria-live="polite"` region, shown for 4 s):
   - paint: "Painted 6 stories on 143 parcels · 97 new buildings · 46 already as big or bigger"
   - erase: "Erased 143 parcels · 97 generated buildings removed"
-  - if any parcels were ineligible, append " · 12 not eligible (parks, streets)"
+  - if any parcels were ineligible, append " · 12 not eligible (open space or unmapped lots)" (OD-6's two ineligible classes; streets are not parcels) (decided in fidelity pass)
   - if `stats.partial`, append " · some areas still loading"
   - if nothing was covered: "No parcels under that stroke"
 
@@ -212,11 +225,11 @@ A "Keyboard shortcuts" disclosure button in the toolbar lists this table.
 
 ### 4.9 Worker host behaviour
 
-- **Manifest (I16).** The page calls `loadManifest(plan.datasetVersion, PUBLIC_DATASET_VERSION)` once (a new plan uses the current version). The same `manifest` object is passed to map-view's `SimMap` and in `init`; neither reads a global. When `fellBack` is true, plan-sharing shows its "older data" notice, and the next commit rebases (§4.5).
+- **Manifest (I16).** The page calls `loadManifest(plan.datasetVersion, PUBLIC_DATASET_VERSION)` once. On `/` the editable plan has already been rebased to current by plan-sharing (new, autosaved or remixed), so this loads the current manifest. On `/p/:id` it loads the published plan's own version. The same `manifest` object is passed to map-view's `SimMap` and in `init`; neither reads a global. `fellBack: true` can only happen for a published plan whose version 404s; plan-sharing then shows its "older data" notice (N6). The plan stays read-only, and remixing rebases it.
 - **`init`:** validate the manifest's shape. On failure, send `error manifest-invalid`. On success, send `ready` with `manifest.datasetVersion`. Chunk URLs are root-relative (I12) and are fetched as given.
 - **Chunk loading:** the host loads a chunk whenever its bbox intersects the `opBBox` of any op in the plan, the current preview op, or a `prefetch` bbox. At most 4 fetches run concurrently. A failed chunk is retried after 1 s, 4 s and 16 s; after that it is reported in `chunks.failed`, and `retryChunks` starts another cycle. On every change in the pending or failed sets, the host sends `chunks`.
   - The toolbar shows "Loading parcels…" while `pending > 0`.
-  - While `failed` is non-empty, a persistent line reads "Some parcel data didn't load — buildings there are missing." with a **Retry** button.
+  - While `failed` is non-empty, brush-tool shows no failure line of its own: map-view's chip ("Some parcels didn't load — Retry") is the single on-map control, and the scoreboard's warning row explains the effect on totals. Both send this spec's `retryChunks` (decided in fidelity pass).
   - `chunks.status` maps every cellId whose status is not `ready`-and-unchanged to its `ChunkStatus`; the main thread forwards each entry to `SimMapHandle.setChunkStatus`.
   - When a chunk lands, the host calls `addChunk` and then `resolveChunk`. It reapplies the active preview, if any, generates, and sends `phase:'chunk'`.
 - **Prefetch:** while the tool is Paint or Erase and zoom ≥ 14, the controller sends `prefetch(viewport bbox)` on `moveend`. This keeps the first paint within 5 MB, because the initial city-wide view prefetches nothing.
@@ -229,13 +242,14 @@ A "Keyboard shortcuts" disclosure button in the toolbar lists this table.
 - **Generation:** for every changed parcel, the host calls `generate(record, env, fnv1a32(id), 'max')`. The whole-city path (`load` of a plan covering about 150k parcels) generates in ascending id order. Results are batched so that each diff covers at most 5,000 changed parcels (whole cells) and is sent as it completes, so the city fills in progressively; the 5 s target is to the final batch.
 - **Score:** every diff carries `score` (I15). The host keeps scoreboard's accumulator over the display state (equal by contract to scoreboard's pure `score()`), and attaches its snapshot.
 - **Errors:** an invalid request (for example, an `undo` whose `opId` is not last) gets `error bad-request`, and the host resyncs: the main thread responds by sending `load` with `editor.plan`.
+- **Parcel summary (I15).** `parcelSummary {reqId, parcelId}` is answered immediately, out of rev order, from the host's loaded state: the `ParcelRecord` fields, the display-state envelope and the display-state generated result. If the parcel's chunk is not loaded, `summary` is `null`; the host does **not** fetch a chunk for it. map-view's tooltip is the only caller and ignores replies whose `reqId` is not its latest.
 
 ### 4.10 Edge cases
 
 - **Empty plan:** Undo is disabled and no diffs are sent beyond the `load` diff, which is empty.
-- **Stroke entirely over ineligible parcels:** the op is still committed (it is a valid, undoable op), and the announcement reads "No eligible parcels under that stroke · 12 not eligible (parks, streets)".
+- **Stroke entirely over ineligible parcels:** the op is still committed (it is a valid, undoable op), and the announcement reads "No eligible parcels under that stroke · 12 not eligible (open space or unmapped lots)".
 - **Stroke over unloaded or failed chunks:** the op commits, `stats.partial = true`, and buildings appear when the data arrives.
-- **Plan from an older `datasetVersion`:** per I16 it resolves against its own version. Only if that manifest 404s does it fall back to the current dataset; rebasing then happens on the next commit (§4.5). The notice belongs to plan-sharing.
+- **Plan from an older `datasetVersion`:** per I16, an autosaved plan is rebased to current by plan-sharing before it reaches the editor. A published plan renders read-only on its own version, or on current if that manifest 404s; it is never committed to, so it is never rebased here. The notices belong to plan-sharing.
 - **Overshoot (>100% of target):** scoreboard owns readouts. brush-tool never limits painting to reach or stay under a target.
 - **Window blur mid-stroke:** treated as a cancel.
 
@@ -264,7 +278,7 @@ A "Keyboard shortcuts" disclosure button in the toolbar lists this table.
   - Rebase on commit.
   - Read-only refusal.
 - `host.spec.ts`
-  - Uses `createSimHost` with an in-memory fetch serving `src/lib/sim/fixtures/data/test-v1/` (a manifest plus 4 chunks of the plan-model `grid-20x20` parcels), map-view's real `packCell`, and a stub `generate`: a building with `units = maxStories` when `maxStories > 2`, else `null`. Display state is reconstructed by applying `render` updates in order.
+  - Uses `createSimHost` with an in-memory fetch serving `src/lib/sim/fixtures/data/fixture-1/` (`datasetVersion` `fixture-1`, valid under I12's pattern (decided in fidelity pass); a manifest plus 4 chunks of the plan-model `grid-20x20` parcels), map-view's real `packCell`, and a stub `generate`: a building with `units = maxStories` when `maxStories > 2`, else `null`. Display state is reconstructed by applying `render` updates in order.
   - (a) Preview then commit gives the same display as commit alone.
   - (b) Undo gives the same display as `load(plan minus last op)`.
   - (c) Chunk arrival order does not matter, including a chunk that arrives mid-preview.
@@ -274,7 +288,9 @@ A "Keyboard shortcuts" disclosure button in the toolbar lists this table.
   - (g) The `stats` counts on a hand-checked stroke; an erase's `stats` has no `stories`.
   - (h) Every `diff` carries `score`, and it equals scoreboard's `score()` over the reconstructed display state.
   - (i) `render.revision` is gap-free; a resync `load` yields revision 0.
+  - (j) `parcelSummary` returns the record, envelope and generated fields for a loaded parcel, `null` for an unloaded one, and triggers no fetch.
   - Properties (a)–(c) run under fast-check over random op sequences.
+- `host.bench.ts` (CI, fails above budget) (decided in fidelity pass): with the real `generate`, `packCell` and score accumulator over a synthetic 150,000-parcel city (map-view's `makeSyntheticCity`), (a) a 500-parcel stroke's commit diff is produced ≤ 100 ms after `commit` is received in Node, leaving the rest of the 150 ms for transfer and map-view's ≤ 30 ms; (b) a whole-city `load` produces its final batch ≤ 5,000 ms. This is the end-to-end owner of the design's 150 ms and 5 s targets; the plan-model, generator and map-view budgets are its components.
 - `shortcuts.spec.ts`: the key → action map, and suppression inside inputs.
 
 **Client project (Vitest browser, `*.svelte.spec.ts`):**
@@ -296,11 +312,11 @@ A "Keyboard shortcuts" disclosure button in the toolbar lists this table.
   - Enter on the focused map stamps at the centre.
 
 **Playwright e2e** (against platform's fixture dataset `fixture-0`, served at `/data/fixture-0/`; e2e builds set `PUBLIC_DATASET_VERSION=fixture-0`):
-1. Desktop paint: a drag across the grid produces a status line "Painted 6 stories on N parcels…", and map-view's test hook reports N generated buildings. The time from pointer-up to the commit diff being applied is ≤ 150 ms, read from a `performance.mark` pair (a 500-parcel stroke, as a soft-failing perf check on CI).
+1. Desktop paint: a drag across the fixture block produces a status line "Painted 6 stories on N parcels…", and map-view's test hook reports the generated buildings. The time from pointer-up to the commit diff being applied is ≤ 150 ms, read from a `performance.mark` pair (soft-failing on CI). `fixture-0` holds only the pipeline's mini parcels, so the 500-parcel case is asserted by `host.bench.ts` (decided in fidelity pass).
 2. Undo and redo with the keyboard; the counts revert.
 3. Mobile (375 × 812, touch): Move-mode drag pans and creates no op. Switching to Paint and dragging creates an op. A two-finger gesture during a stroke creates no op.
 4. A stamp by click and a stamp by keyboard (Enter) each create one op.
-5. A failed chunk (the route aborts one chunk) shows the Retry line, and Retry recovers.
+5. A failed chunk (the route aborts one chunk) shows map-view's Retry chip, and Retry recovers.
 6. The axe gate (`expectNoA11yViolations`, planafoot pattern) on the editor page with the radius popover open and the shortcuts disclosure open.
 
 ## 7. Acceptance criteria

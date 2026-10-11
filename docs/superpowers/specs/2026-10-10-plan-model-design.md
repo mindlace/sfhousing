@@ -25,7 +25,7 @@ Design row (verbatim):
 - Typology generation (`typology-generator`), scoring (`scoreboard`), and storage or transport (`plan-sharing`).
 - Any DOM, MapLibre, deck.gl or `localStorage` access. The package must import cleanly in Node and in a web worker.
 
-Module location: `src/lib/plan/` (no `$app` or `$env` imports). Runtime dependency: `kdbush` only.
+Module location: `src/lib/plan/` (no `$app` or `$env` imports). Runtime dependency: `kdbush@^4.1.0` only (decided in fidelity pass).
 
 ## 2. Interfaces
 
@@ -35,11 +35,11 @@ Owned or consumed rows, copied verbatim:
 |---|---|---|---|
 | I1 | `type ParcelId = string` — SF `mapblklot` (block+lot, e.g. `"3512008"`), the single join key across all data | data-pipeline → all | DC |
 | I2 | `interface Envelope { maxStories: number }` — the per-parcel allowed envelope. The **only** thing manipulation writes. Later milestones add optional fields; M1 code must ignore unknown fields | plan-model → generator, scoreboard | MC (envelope-as-common-currency), DC (field set) |
-| I3 | `type PlanOp = BrushStroke` where `type BrushStroke = { kind: 'paint'; stories: number /* integer 1..80 */; radiusM: number /* 5..500 */; path: [lng: number, lat: number][]; id: string } \| { kind: 'erase'; radiusM: number; path: [lng: number, lat: number][]; id: string }`. The union widens in later milestones (`AreaOp`, `PolicyOp`) | brush-tool → plan-model | DC |
+| I3 | (type lives in plan-model's module; brush-tool produces it) `type PlanOp = BrushStroke` where `type BrushStroke = { kind: 'paint'; stories: number /* integer 1..80 */; radiusM: number /* 5..500 */; path: [lng: number, lat: number][]; id: string } \| { kind: 'erase'; radiusM: number; path: [lng: number, lat: number][]; id: string }`. The union widens in later milestones (`AreaOp`, `PolicyOp`) | brush-tool → plan-model | DC |
 | I4 | `interface Plan { schema: 1; datasetVersion: string; ops: PlanOp[]; title?: string }` | plan-model → brush-tool, plan-sharing | DC |
 | I5 | `resolveEnvelopes(plan: Plan, index: ParcelIndex): Map<ParcelId, Envelope>`. Ops apply in order and later ops win. A parcel is covered by a stroke iff its label point is within `radiusM` of the stroke polyline. `erase` deletes the entry. Ineligible parcels never get an entry | plan-model → generator | DC |
 | I6 | `interface ParcelRecord { id: ParcelId; polygon: [x: number, y: number][][] /* local metres, exactly EPSG:7131 (NAD83(2011) / San Francisco CS13, metres), origin at label point */; labelPoint: [lng, lat]; areaM2: number; existingUnits: number; existingFloorAreaM2: number; existingHeightM: number; landUse: string; eligible: boolean; neighborhood: string }` | data-pipeline → plan-model, generator, scoreboard | DC |
-| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, basemapTiles: url, glyphs: url /* MapLibre `{fontstack}/{range}.pbf` template */, sprite?: url, neighborhoods: url }`. All `url`s are root-relative (`/data/<v>/…`). Every eligible-or-not parcel appears in **exactly one** chunk. `buildingsTiles` has one source-layer `buildings` with properties `parcelId`, `heightM`, `baseM`, at minzoom ≤ 12, with buildings clipped to parcels. Published versions are immutable and retained indefinitely. `datasetVersion` matches `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (build date + 8-hex input hash) everywhere it is validated. R2 key = `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` | data-pipeline → platform, plan-model, brush-tool (worker host), typology-generator, map-view | DC |
+| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, label?, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, basemapTiles: url, glyphs: url /* MapLibre `{fontstack}/{range}.pbf` template */, sprite?: url, neighborhoods: url }`. All `url`s are root-relative (`/data/<v>/…`). Every eligible-or-not parcel appears in **exactly one** chunk. `buildingsTiles` has one source-layer `buildings` with properties `parcelId`, `heightM`, `baseM`, at minzoom ≤ 12, with buildings clipped to parcels. Published versions are immutable and retained indefinitely. `datasetVersion` matches `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (build date + 8-hex input hash) everywhere it is validated. R2 key = `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` | data-pipeline → platform, plan-model, brush-tool (worker host), typology-generator, map-view | DC |
 
 ### Internal types (new; they do not alter any I-row)
 
@@ -186,7 +186,7 @@ A plan is rejected whole if any rule fails. Every failure is reported, with a JS
 |---|---|---|
 | root | a plain object | `not-object` |
 | `schema` | missing → `unknown-schema`. A number > `CURRENT_SCHEMA` → `future-schema`. Otherwise it is migrated (§4.8) and must then equal 1 | |
-| `datasetVersion` | string, 1–64 chars, matching `^[A-Za-z0-9._-]+$` | `bad-field` |
+| `datasetVersion` | string matching I12's `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (exported as `DATASET_VERSION_RE` from `src/lib/data/manifest.ts`, the single definition every validator imports) | `bad-field` |
 | `title` | absent, or a string of ≤ 120 chars after trim (an empty string after trim is dropped) | `bad-field` |
 | `ops` | array of length ≤ `OPS_MAX` (5,000) | `too-many-ops` |
 | `op.kind` | `'paint'` or `'erase'` | `bad-field` |
@@ -211,14 +211,14 @@ A plan is rejected whole if any rule fails. Every failure is reported, with a JS
 
 - `CURRENT_SCHEMA = 1`. `MIGRATIONS[n]` maps raw schema `n` to `n+1`. It is empty in M1.
 - Migration runs on raw objects before validation. Each migration is pure and total over valid input of its version.
-- A plan with `schema > CURRENT_SCHEMA` fails with `future-schema`. Its message is: "This plan was made with a newer version of SF Housing. Reload the page to get the latest version." Callers display the message as given.
+- A plan with `schema > CURRENT_SCHEMA` fails with `future-schema`. Its message is: "This plan was made with a newer version of SF Housing Simulator. Reload the page to get the latest version." This is the default copy; plan-sharing substitutes its own context-specific copy where it has one (autosave N2, the API's `unsupported_schema`) (decided in fidelity pass).
 - Any change to op semantics, or any new `PlanOp` variant, **must** bump `schema`. M1 code then rejects that plan, instead of silently resolving it wrongly.
 
 ### 4.9 datasetVersion
 
 - `Plan.datasetVersion` records the dataset in effect when the plan was last edited. Strokes are geographic, so a plan resolves against any dataset. Results may differ wherever parcels changed.
-- `rebasePlan(plan, v)` returns a copy with `datasetVersion = v`, with `ops` left unchanged. brush-tool calls it on the first op it commits to a plan whose version differs from the current manifest.
-- plan-model never rejects a plan for being stale. Which dataset renders is fixed by I16: a loaded plan uses its own `plan.datasetVersion`, falling back to the current version only if that manifest 404s. The user-facing "older data" notice belongs to plan-sharing. So `rebasePlan` normally runs only after such a fallback, when the worker's `ready.datasetVersion` differs from the plan's.
+- `rebasePlan(plan, v)` returns a copy with `datasetVersion = v`, with `ops` left unchanged.
+- plan-model never rejects a plan for being stale. Which dataset renders is fixed by I16: a **published** plan (`/p/:id`, read-only) renders on its own `plan.datasetVersion`, falling back to current only if that manifest 404s; a **locally autosaved** plan is rebased to current on load. So `rebasePlan` is called by plan-sharing when it loads an autosaved plan whose version differs from current, and when it remixes a published plan (including "Open with current data"). brush-tool also calls it defensively at commit if the editable plan's version differs from the worker's `ready.datasetVersion`, which after the load-time rebase should not occur. The user-facing notices belong to plan-sharing.
 
 ### 4.10 Determinism statement
 
@@ -266,7 +266,7 @@ There are no DOM, e2e or axe tests in this subsystem. The cross-layer seams are 
 
 ## 7. Acceptance criteria
 
-1. `src/lib/plan/` imports nothing but `kdbush` and type-only imports of I6. It runs unchanged in Node and in a module worker.
+1. `src/lib/plan/` imports nothing but `kdbush`, type-only imports of I6, and `DATASET_VERSION_RE` from `src/lib/data/manifest.ts`. It runs unchanged in Node and in a module worker.
 2. Every function in "Internal types" exists with the given signature, and I1–I5 match the design verbatim.
 3. Properties P1–P5 pass, and the goldens match.
 4. The benchmark budgets in §4.4 pass on CI.
@@ -276,7 +276,7 @@ There are no DOM, e2e or axe tests in this subsystem. The cross-layer seams are 
 
 ## 8. Open questions
 
-1. **A compact wire encoding** (for example, delta-encoded polyline strings) would raise the stroke capacity of the 256 KB cap about 4×. It would change I13's body away from `Plan` JSON. *Recommend:* not in M1. Revisit if real plans approach 75% of the cap (brush-tool warns at 90%).
+1. **A compact wire encoding** (for example, delta-encoded polyline strings) would raise the stroke capacity of the 256 KB cap about 4×. It would change I13's body away from `Plan` JSON. *Recommend:* not in M1. Revisit if real plans approach 75% of the cap (brush-tool refuses a commit past the cap, and the Publish dialog shows the size against 256 KB).
 2. ~~**Stories cap of 60.**~~ *Resolved by the 2026-10-10 reconciliation:* I3 bounds stories to 1..80. M3's scenario-loader may still need higher values for downtown height districts (up to 1,200 ft ≈ 118 stories, inferred). Raising the cap is a validation change, and it would not need a schema bump if semantics stay the same.
 
 ## Interface concerns (for the orchestrator)

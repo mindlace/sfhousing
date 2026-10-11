@@ -26,7 +26,7 @@ Rows owned or consumed, verbatim:
 
 | # | interface | owner → consumers | mark |
 |---|---|---|---|
-| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, basemapTiles: url, glyphs: url /* MapLibre `{fontstack}/{range}.pbf` template */, sprite?: url, neighborhoods: url }`. All `url`s are root-relative (`/data/<v>/…`). Every eligible-or-not parcel appears in **exactly one** chunk. `buildingsTiles` has one source-layer `buildings` with properties `parcelId`, `heightM`, `baseM`, at minzoom ≤ 12, with buildings clipped to parcels. Published versions are immutable and retained indefinitely. `datasetVersion` matches `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (build date + 8-hex input hash) everywhere it is validated. R2 key = `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` | data-pipeline → platform, plan-model, brush-tool (worker host), typology-generator, map-view | DC |
+| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, label?, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, basemapTiles: url, glyphs: url /* MapLibre `{fontstack}/{range}.pbf` template */, sprite?: url, neighborhoods: url }`. All `url`s are root-relative (`/data/<v>/…`). Every eligible-or-not parcel appears in **exactly one** chunk. `buildingsTiles` has one source-layer `buildings` with properties `parcelId`, `heightM`, `baseM`, at minzoom ≤ 12, with buildings clipped to parcels. Published versions are immutable and retained indefinitely. `datasetVersion` matches `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (build date + 8-hex input hash) everywhere it is validated. R2 key = `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` | data-pipeline → platform, plan-model, brush-tool (worker host), typology-generator, map-view | DC |
 | I13 | Share API: `POST /api/plans` (body: `Plan`, ≤ 256 KB) → `{ id }`; `GET /api/plans/:id` → `Plan`; page `/p/:id`. Ids are 8-char base58. Status codes and error bodies are as defined in the plan-sharing spec | plan-sharing ↔ platform | DC |
 | I16 | Dataset version discovery: the worker var `PUBLIC_DATASET_VERSION` names the current version for new plans. A **published** plan (`/p/:id`) renders on **its own** `plan.datasetVersion`, with an "Open with current data" action that remixes onto current. A **locally autosaved** plan is rebased to current on load: strokes are version-independent, so `datasetVersion` is rewritten and the plan re-resolved, with a one-line notice if the version changed (`manifestUrl = /data/${v}/manifest.json`). map-view and the worker host take the manifest as a parameter, never a global. If that version's manifest 404s, fall back to current and show the plan-sharing "older data" notice | platform → plan-sharing, brush-tool, map-view | DC |
 
@@ -40,8 +40,8 @@ its consumers (plan-sharing, the brush-tool worker host, map-view).
 
 ```ts
 // src/lib/server/data/key.ts
-/** datasetVersion path segment. Same pattern data-pipeline must emit. */
-export const DATASET_VERSION_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+/** datasetVersion path segment: I12's pattern, re-exported from src/lib/data/manifest.ts (single definition). */
+export { DATASET_VERSION_RE } from '$lib/data/manifest'; // /^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}|fixture-\d+)$/
 /** Maps a request path to an R2 key, or null if the path is not servable. */
 export function dataKey(version: string, rest: string): string | null; // → `data/${version}/${rest}`
 
@@ -176,7 +176,8 @@ The current dataset is `env.PUBLIC_DATASET_VERSION`, exposed to the client by th
 upload command prints that line. No mutable R2 pointer exists. In local dev, `.dev.vars`
 may override it; e2e builds set it to `fixture-0`.
 
-Per I16, this var names the version for **new** plans only. A loaded plan uses its own
+Per I16, this var names the version for **new** plans, and locally autosaved plans are
+rebased onto it when loaded (plan-sharing). A **published** plan (`/p/:id`) uses its own
 `plan.datasetVersion` (`manifestUrl = /data/${v}/manifest.json`); if that manifest 404s,
 the consumer falls back to the current version and plan-sharing shows its "older data"
 notice. Because published versions are immutable and retained indefinitely (I12), that
@@ -255,8 +256,14 @@ subsystem's Playwright tests run against.
 ### 4.6 App shell, pages, headers
 
 - Routes owned by platform: `/` (shell only; map-view fills it), `/about`, `/attribution`,
-  `+error.svelte`, `/data/...`. Root layout: skip link, `<main>`, footer with links
-  "About · Data & licences · Source code (GitHub)" visible on every page at 375 px.
+  `+error.svelte`, `/data/...`. Root layout: skip link; a 48 px `<header>` with the app name
+  "SF Housing Simulator" (link to `/`) on the left and a right-aligned `headerActions` snippet
+  slot that pages fill (plan-sharing puts its Saved indicator and Publish button there on `/`;
+  `/p/:id` leaves it empty because its banner carries Remix); `<main>`; and a footer with links
+  "About · Data & licences · Source code (GitHub)" visible on every page at 375 px. The source
+  link is `https://github.com/mindlace/sfhousing` (`REPO_URL` in `src/lib/config.ts`, per §9 OQ-2).
+  On `/` and `/p/:id` the layout is a fixed `100dvh` column (header, map region, footer), so the
+  footer stays visible and the page never scrolls (decided in fidelity pass).
 - `+error.svelte`: 404 → heading "Page not found", link home; other → "Something went
   wrong", status code, link home. No stack traces.
 - CSP via `kit.csp` (mode `auto`): `default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'`.
@@ -273,7 +280,7 @@ the code is MIT with a link to `LICENSE` on GitHub; plans published are public a
 **`/attribution` content** — SSR, reads `/data/<PUBLIC_DATASET_VERSION>/manifest.json` from
 `BUCKET` (JSON read, no geo):
 1. Heading "Data & licences". Line: "Dataset version `<datasetVersion>`, built `<builtAt as YYYY-MM-DD>`."
-2. Table from `manifest.sources`: Source (linked `url`) · Licence · Retrieved (date).
+2. Table from `manifest.sources`, in manifest order: Source (the `id`, linked to `url`) · Licence · Retrieved (`retrievedAt` as YYYY-MM-DD) (decided in fidelity pass).
 3. Fixed notices (always shown, even if the manifest fails):
    - "Map data © OpenStreetMap contributors, available under the Open Database License (ODbL)." link openstreetmap.org/copyright.
    - "Buildings © Overture Maps Foundation; OSM-derived data under ODbL, other data under CDLA Permissive 2.0." (I — wording per docs.overturemaps.org/attribution).
@@ -285,7 +292,7 @@ the code is MIT with a link to `LICENSE` on GitHub; plans published are public a
 4. Manifest fetch fails or missing → sources table replaced by "Source list unavailable for
    this dataset version." (fixed notices remain); page still 200.
 The map's compact attribution control text (rendered by map-view) is exactly:
-"© OpenStreetMap · Overture Maps · DataSF · Protomaps" linking to `/attribution`.
+"© OpenStreetMap · Overture Maps (Esri, Microsoft, USGS) · DataSF · Protomaps" linking to `/attribution`.
 
 `LICENSE`: standard MIT text, "Copyright (c) 2026 Ethan Fremen". `README.md` has a
 "Licences" section repeating the code/data split.
@@ -345,8 +352,10 @@ Vitest projects in one `vite.config.ts` (planafoot `vite.config.ts:93–121`, V)
 `@vitest/browser-playwright` provider (no planafoot slot semaphore). `expect.requireAssertions: true`.
 
 **server (unit):**
-- `src/lib/server/data/key.spec.ts` — `dataKey` accepts `fixture-0`/`chunks/c-12.bin`;
-  rejects `..`, `.`, empty segment, `%2e%2e`, >256 chars, leading `-`/`.` version. Property
+- `src/lib/server/data/key.spec.ts` — `dataKey` accepts `fixture-0`/`parcels/48_24.json` and
+  `2026-10-10-3fa9c2d1`/`fonts/NotoSans-Regular/0-255.pbf`; rejects `..`, `.`, empty segment,
+  `%2e%2e`, >256 chars, and versions outside I12's pattern (`20261010-3fa9c2d1`, `test-v1`,
+  `fixture-`, uppercase hex). Property
   test (fast-check): any accepted key starts with `data/<version>/` and contains no `..` segment.
 - `src/routes/data/[version]/[...path]/server.spec.ts` against `FakeR2Bucket`
   (`src/lib/server/test/fake-r2.ts`, in-memory, implements `get` with `range`/`onlyIf`
@@ -393,12 +402,11 @@ CI workflow lint: `actionlint` on `.github/workflows/*.yml` (planafoot `package.
 1. ~~**No I-row says how a client learns the *current* `datasetVersion`.**~~ **Resolved
    by I16** (2026-10-10 reconciliation): `PUBLIC_DATASET_VERSION` names the current version
    for new plans; loaded plans pin their own.
-2. **I12 URL form and R2 key layout.** *Partly resolved:* I12 now says all `url`s are
-   root-relative (`/data/<v>/…`). Still open: R2 key = URL path without the leading slash,
-   `manifest.json` uploaded last, and `DATASET_VERSION_RE` are not in I12; they stand as
-   this spec's contract (§4.2–4.4) and data-pipeline follows them.
-3. I12 `sources` carries `license` but not a display name; `/attribution` shows `id`
-   unless a `label` is added. Recommend an optional `label`.
+2. ~~**I12 URL form and R2 key layout.**~~ *Resolved:* I12 now fixes root-relative URLs, the
+   R2 key layout `data/<datasetVersion>/<path>` and the `datasetVersion` pattern. Only
+   "`manifest.json` uploaded last" remains this spec's contract (§4.4), and data-pipeline follows it.
+3. I12 `sources` carries `license` but not a display name. M1 `/attribution` shows `id` as the
+   linked source name (decided in fidelity pass). Recommend an optional `label` in a later I12 revision.
 
 ## 9. Open questions
 

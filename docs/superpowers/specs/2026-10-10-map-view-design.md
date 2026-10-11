@@ -46,7 +46,7 @@ Rows consumed (verbatim from the design):
 | I8 | `generate(parcel: ParcelRecord, env: Envelope, seed: number, mode: BuildoutMode): GeneratedBuilding \| null`. Returns `null` for a replacement when its floor area ≤ `existingFloorAreaM2` **or** its units ≤ `existingUnits`: nobody rebuilds smaller or to fewer homes. (An `adu` keeps the existing building and is exempt) | generator → map-view, scoreboard | DC |
 | I9 | `interface GeneratedBuilding { parcelId: ParcelId; source: 'user'; /* widens to 'pipeline' \| 'scenario' later */ typology: TypologyId; parts: { footprint: [lng, lat][] /* single outer ring; parcel holes dropped in M1 */; baseM: number; topM: number }[] /* nested: each part's footprint ⊆ the part below; rendered ground-to-topM */; stories: number; units: number; floorAreaM2: number; replacesExisting: boolean }` | generator → map-view, scoreboard | DC |
 | I10 | `type TypologyId = 'adu' \| 'plex' \| 'walkup' \| 'podium' \| 'midrise' \| 'tower'` | generator | DC |
-| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, basemapTiles: url, glyphs: url /* MapLibre `{fontstack}/{range}.pbf` template */, sprite?: url, neighborhoods: url }`. All `url`s are root-relative (`/data/<v>/…`). Every eligible-or-not parcel appears in **exactly one** chunk. `buildingsTiles` has one source-layer `buildings` with properties `parcelId`, `heightM`, `baseM`, at minzoom ≤ 12, with buildings clipped to parcels. Published versions are immutable and retained indefinitely. `datasetVersion` matches `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (build date + 8-hex input hash) everywhere it is validated. R2 key = `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` | data-pipeline → platform, plan-model, brush-tool (worker host), typology-generator, map-view | DC |
+| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, label?, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, basemapTiles: url, glyphs: url /* MapLibre `{fontstack}/{range}.pbf` template */, sprite?: url, neighborhoods: url }`. All `url`s are root-relative (`/data/<v>/…`). Every eligible-or-not parcel appears in **exactly one** chunk. `buildingsTiles` has one source-layer `buildings` with properties `parcelId`, `heightM`, `baseM`, at minzoom ≤ 12, with buildings clipped to parcels. Published versions are immutable and retained indefinitely. `datasetVersion` matches `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (build date + 8-hex input hash) everywhere it is validated. R2 key = `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` | data-pipeline → platform, plan-model, brush-tool (worker host), typology-generator, map-view | DC |
 | I15 | **The one main↔worker protocol** (`src/lib/sim/protocol.ts`, owned by brush-tool's worker host): `SimRequest` as in the brush-tool spec, and `SimResponse = { type: 'ready'; rev; datasetVersion; chunkCount } \| { type: 'diff'; rev; phase: DiffPhase; render: GeneratedUpdate; stats?: OpStats; complete: boolean; score: Score } \| { type: 'chunks'; status: Record<cellId, ChunkStatus>; pending: number; failed: string[] } \| { type: 'parcelSummary'; reqId: number; summary: ParcelSummary \| null } \| { type: 'error'; rev; code; message }`, with matching request `{ type: 'parcelSummary'; reqId: number; parcelId: ParcelId }` (no rev). `ParcelSummary = { parcelId; neighborhood; landUse; eligible; existingUnits; envelope: Envelope \| null; generated: { typology; stories; units } \| null }`, used by map-view's tooltip. `GeneratedUpdate` and `PackedCell` are owned by map-view (the worker imports the pure `packCell`). `Score` is owned by scoreboard (the worker calls its pure `score()`). The main thread never receives `GeneratedBuilding[]` | brush-tool ↔ map-view, scoreboard, typology-generator | DC |
 | I16 | Dataset version discovery: the worker var `PUBLIC_DATASET_VERSION` names the current version for new plans. A **published** plan (`/p/:id`) renders on **its own** `plan.datasetVersion`, with an "Open with current data" action that remixes onto current. A **locally autosaved** plan is rebased to current on load: strokes are version-independent, so `datasetVersion` is rewritten and the plan re-resolved, with a one-line notice if the version changed (`manifestUrl = /data/${v}/manifest.json`). map-view and the worker host take the manifest as a parameter, never a global. If that version's manifest 404s, fall back to current and show the plan-sharing "older data" notice | platform → plan-sharing, brush-tool, map-view | DC |
 | I17 | `SimMapHandle` (map-view → brush-tool), as in the map-view spec, plus `setOverlayLayers(layers: import('@deck.gl/core').Layer[]): void` for the brush ring and swath preview | map-view → brush-tool | DC |
@@ -92,7 +92,7 @@ interface SimMapHandle {
   setOverlayLayers(layers: import('@deck.gl/core').Layer[]): void; // I17: brush ring and swath; [] clears
   onResyncNeeded(cb: () => void): void;    // revision gap → worker host sends revision 0
 }
-// Props: { manifest: Manifest; theme?: Theme; initialFrame?: CameraFrame | 'plan-bbox'; planBBox?: BBox }
+// Props: { manifest: Manifest; theme?: Theme; initialFrame?: CameraFrame | 'plan-bbox'; planBBox?: BBox /* plan-model's BBox */ }
 // `manifest` (data-pipeline's type) is a parameter, never a global (I16). It is the result of
 // brush-tool's loadManifest(plan.datasetVersion, PUBLIC_DATASET_VERSION), which already applied
 // the 404 fallback to current; the same object is sent to the worker host's `init`.
@@ -268,14 +268,14 @@ Colour is never the only carrier of typology: the tooltip names it.
 | generated, replaces | `Parcel 3512008` | `Mid-rise · 8 stories · 64 units · replaces 3 (net +61)` |
 | generated ADU | `Parcel 3512008` | `ADU · adds 1 unit to 2 existing (net +1)` |
 | existing, chunk ready, eligible | `Parcel 3512008` | `Existing building · 3 units` |
-| existing, ineligible | `Parcel 3512008` | `Existing building · 0 units · not eligible for change` |
+| existing, ineligible | `Parcel 3512008` | `Existing building · 4 units · not eligible for change` (units from the summary) |
 | existing, chunk not loaded | `Parcel 3512008` | `Existing building · units loading…` (hover triggers no fetch; text updates if the chunk arrives while hovered) |
 | existing, chunk error | `Parcel 3512008` | `Existing building · units unavailable` |
 | existing, no `parcelId` | `Existing building` | `Not matched to a parcel` |
 
   - Typology display names: ADU, Plex, Walk-up, 5-over-1, Mid-rise, Tower.
   - Numbers use `Intl.NumberFormat('en-US')`.
-  - Existing units for a non-generated hit come from the worker host's loaded `ParcelRecord`, through a `getParcelSummary(id)` lookup that the host provides. Its transport is not yet in I15 (open; §9-3).
+  - Existing units for a non-generated hit come from the worker host's loaded `ParcelRecord`, through I15's `parcelSummary` request (brush-tool §4.9). The tooltip sends one request per newly hovered parcel id and ignores replies whose `reqId` is stale. The tooltip re-requests when the hovered parcel's cell turns `ready`. A `null` summary with the cell `loading` (or not yet requested) gives the "units loading…" row; with the cell `error`, the "units unavailable" row. The generated rows use the `PackedCell` `parcelMeta` already on the main thread.
 - **Touch (no hover).** In pan mode, a tap without movement (< 6 px, < 300 ms) runs the same pick. The result shows as a card docked above the bottom inset, full width minus 16 px gutters, with a close button labelled "Close". Tapping empty map dismisses it. In paint mode, taps belong to brush-tool and do not pick.
 - The tooltip and card never block map input (`pointer-events:none` on the tooltip).
 
@@ -307,7 +307,7 @@ The rest of the shell, including the scoreboard and `/p/[id]` numbers, still ren
 ### 4.10 Attribution control
 
 - Uses MapLibre's `AttributionControl`, bottom-right, with the default MapLibre credit removed (`attributionControl:false` plus a custom control).
-- Its text is exactly the platform-fixed string "© OpenStreetMap · Overture Maps · DataSF · Protomaps". The whole string is a link to `/attribution` (platform spec §4.6).
+- Its text is exactly the platform-fixed string "© OpenStreetMap · Overture Maps (Esri, Microsoft, USGS) · DataSF · Protomaps". The whole string is a link to `/attribution` (platform spec §4.6).
 - The link has `title="Data & licences: OpenStreetMap and Overture data under ODbL; DataSF under PDDL / public domain; Protomaps basemap"`.
 - ≥ 640 px: always expanded.
 - < 640 px: `compact`, expanded on first load. It collapses to the (i) button after the first user map interaction, and the button re-expands it.
@@ -315,9 +315,9 @@ The rest of the shell, including the scoreboard and `/p/[id]` numbers, still ren
 
 ### 4.11 Layout at 375 px
 
-- The map fills the area between platform's header and the bottom sheets.
+- The map fills the area between platform's header and footer (platform §4.6). The brush-tool and scoreboard bottom bars overlay its lower edge, and `setBottomInset` keeps the camera and controls clear of them.
 - `setBottomInset(px)` is called by the scoreboard and brush-tool sheets (via the shell) and maps to `map.setPadding({bottom})`, so the camera centre and `fitBounds` respect the sheets.
-- No MapLibre NavigationControl on touch (`pointer: coarse`). Gestures handle zoom, and a 44×44 px "Reset view" button sits top-right (it `jumpTo`s the default frame). On fine pointers, a NavigationControl with compass sits top-right.
+- No MapLibre NavigationControl on touch (`pointer: coarse`). Gestures handle zoom, and a 44×44 px "Reset view" button sits bottom-left (it `jumpTo`s the default frame). On fine pointers, a NavigationControl with compass sits bottom-left. Top-left belongs to brush-tool's toolbar and top-right to the scoreboard panel (≥ 768 px). `setBottomInset(px)` also lifts the bottom-left and bottom-right controls and the touch card by `px`, so the bottom bars never cover them (decided in fidelity pass).
 - No horizontal page scroll. The tooltip card respects the 16 px gutters. All map buttons are ≥ 44×44 px.
 - `cooperativeGestures` is off. Pan versus paint is the explicit mode switch, gated by `setPanEnabled(false)`, which disables `dragPan`, `touchZoomRotate.disableRotation` and `dragRotate`. Pinch-zoom stays enabled in paint mode.
 
@@ -379,7 +379,7 @@ Fixtures:
 - E6 WebGL off (init script returns null for `webgl2`): the fallback is shown and axe passes.
 - E7 Chunk failure (route a chunk to 500): the error outline and chip appear; Retry with success clears them.
 - E8 `reducedMotion:'reduce'` context: buildings are at full height on the first frame after the update.
-- E9 Golden screenshots `map-light.png` and `map-dark.png` at the default frame with the fixture plan, `maxDiffPixelRatio 0.01`, under Chromium SwiftShader.
+- E9 Golden screenshots `map-light.png` and `map-dark.png` at the default frame with the fixture plan (plan-sharing's `src/lib/sharing/fixtures/plans/small.json`, 3 strokes on `fixture-0` (decided in fidelity pass)), `maxDiffPixelRatio 0.01`, under Chromium SwiftShader.
 - E10 `@budget` (post-deploy, staging only): transferred bytes until the first `idle` are ≤ 5 MB.
 
 The debug hook `window.__sfhMap` (counts, layer ids, elevationScale, hidden set size) is compiled in only when `import.meta.env.VITE_E2E === '1'`.
@@ -410,5 +410,5 @@ The debug hook `window.__sfhMap` (counts, layer ids, elevationScale, hidden set 
 
 1. ~~**The design names `MapboxOverlay`.**~~ *Resolved:* the design row now names `MapLibreOverlay` from `@deck.gl/maplibre`.
 2. ~~**I12 lacks the basemap and the building-tile schema.**~~ *Resolved:* I12 now has `basemapTiles`, `glyphs`, optional `sprite`, and the `buildings` source-layer schema (`parcelId`, `heightM`, `baseM`, minzoom ≤ 12, clipped to parcels).
-3. **Worker-host ↔ map-view channel.** *Mostly resolved by I15:* `GeneratedUpdate` / `PackedCell` travel as `diff.render`; chunk status travels as `chunks.status` and is forwarded to `setChunkStatus`; per-cell retry is replaced by brush-tool's `retryChunks`. **Still open:** `getParcelSummary(id)` (existing units for the tooltip on a non-generated building, §4.7) has no carrier, because I15's `SimResponse` union has no reply variant for it. Options: add a `{ type: 'parcelSummary' }` response to I15, or ship existing units in the building tiles.
+3. ~~**Worker-host ↔ map-view channel.**~~ *Resolved by I15, including the `parcelSummary` request/response added in the follow-up rulings (§4.7).* History: `GeneratedUpdate` / `PackedCell` travel as `diff.render`; chunk status travels as `chunks.status` and is forwarded to `setChunkStatus`; per-cell retry is replaced by brush-tool's `retryChunks`. **Still open:** `getParcelSummary(id)` (existing units for the tooltip on a non-generated building, §4.7) has no carrier, because I15's `SimResponse` union has no reply variant for it. Options: add a `{ type: 'parcelSummary' }` response to I15, or ship existing units in the building tiles.
 4. ~~**Part containment is not stated in I9.**~~ *Resolved:* I9 now states parts are single rings, nested, rendered ground-to-`topM`; typology-generator guarantees it.
