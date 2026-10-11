@@ -35,6 +35,8 @@ test('serves the full manifest with 200 and JSON type', async ({ request }) => {
   const res = await request.get('/data/fixture-0/manifest.json');
   expect(res.status()).toBe(200);
   expect(res.headers()['content-type']).toContain('application/json');
+  expect(res.headers()['cache-control']).toBe('public, max-age=31536000, immutable');
+  expect(res.headers()['etag']).toBeTruthy();
   expect((await res.json()).datasetVersion).toBe('fixture-0');
 });
 

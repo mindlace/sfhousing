@@ -84,18 +84,6 @@ describe('GET /data/<version>/*', () => {
     expect(res.headers.get('content-length')).toBe('50');
   });
 
-  it('416 for start at size bytes=200-', async () => {
-    const res = await call(GET, 'fixture-0', 'buildings.pmtiles', { range: 'bytes=200-' });
-    expect(res.status).toBe(416);
-    expect(res.headers.get('content-range')).toBe('bytes */200');
-  });
-
-  it('416 for bytes=-0', async () => {
-    const res = await call(GET, 'fixture-0', 'buildings.pmtiles', { range: 'bytes=-0' });
-    expect(res.status).toBe(416);
-    expect(res.headers.get('content-range')).toBe('bytes */200');
-  });
-
   it('ignores multi-range and serves 200 full', async () => {
     const res = await call(GET, 'fixture-0', 'buildings.pmtiles', { range: 'bytes=0-1,5-6' });
     expect(res.status).toBe(200);
@@ -207,6 +195,29 @@ describe('GET /data/<version>/*', () => {
       expect(await res.text()).toBe('Data storage unavailable');
       expect(res.headers.get('cache-control')).toBe('no-store');
     }
+  });
+});
+
+describe.each(['throw', 'whole'] as const)('unsatisfiable ranges (fake R2 %s)', (mode) => {
+  beforeEach(() => {
+    bucket = new FakeR2Bucket({ unsatisfiable: mode });
+    bucket.put('data/fixture-0/buildings.pmtiles', BYTES);
+  });
+
+  it.each(['bytes=200-', 'bytes=-0'])('416 for %s', async (range) => {
+    const res = await call(GET, 'fixture-0', 'buildings.pmtiles', { range });
+    expect(res.status).toBe(416);
+    expect(res.headers.get('content-range')).toBe('bytes */200');
+  });
+});
+
+describe('suffix range shapes', () => {
+  it('206 when R2 reports a {suffix} range for bytes=-20', async () => {
+    bucket = new FakeR2Bucket({ suffixShape: 'suffix' });
+    bucket.put('data/fixture-0/buildings.pmtiles', BYTES);
+    const res = await call(GET, 'fixture-0', 'buildings.pmtiles', { range: 'bytes=-20' });
+    expect(res.status).toBe(206);
+    expect(res.headers.get('content-range')).toBe('bytes 180-199/200');
   });
 });
 

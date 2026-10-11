@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -46,15 +46,19 @@ async function main(): Promise<void> {
   const paths = collectDataPaths(manifest, version);
   const dir = mkdtempSync(join(tmpdir(), 'sfhousing-data-'));
   let loaded = 0;
-  for (const rel of paths) {
-    const res = await fetch(`${base}/data/${version}/${rel}`);
-    if (res.status === 404 && isSprite(rel)) continue;
-    if (!res.ok) throw new Error(`fetch ${rel} failed: ${res.status}`);
-    const file = join(dir, rel);
-    mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, Buffer.from(await res.arrayBuffer()));
-    putLocal(version, rel, file);
-    loaded++;
+  try {
+    for (const rel of paths) {
+      const res = await fetch(`${base}/data/${version}/${rel}`);
+      if (res.status === 404 && isSprite(rel)) continue;
+      if (!res.ok) throw new Error(`fetch ${rel} failed: ${res.status}`);
+      const file = join(dir, rel);
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+      putLocal(version, rel, file);
+      loaded++;
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
   console.warn(
     'Warning: glyphs is a {fontstack}/{range}.pbf template; glyph PBFs are not fetched.'

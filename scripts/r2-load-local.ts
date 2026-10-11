@@ -1,5 +1,5 @@
 import { readdirSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { basename, join, relative, resolve, sep } from 'node:path';
 import { DATASET_VERSION_RE } from '../src/lib/data/manifest';
 import { putLocal } from './r2-put-local';
 
@@ -17,7 +17,7 @@ if (!dirArg || !version || !DATASET_VERSION_RE.test(version)) {
 
 const root = resolve(dirArg);
 const files = walk(root)
-  .filter((f) => f !== join(root, 'README.md'))
+  .filter((f) => f !== join(root, 'README.md') && !basename(f).startsWith('.'))
   .sort();
 for (const file of files) putLocal(version, relative(root, file).split(sep).join('/'), file);
 console.log(`Loaded ${files.length} object(s) into local R2 under data/${version}/`);

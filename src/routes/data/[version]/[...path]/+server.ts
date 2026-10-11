@@ -63,6 +63,11 @@ function parseSingleRange(h: string | null): { first: string; last: string } | n
   return m && (m[1] || m[2]) ? { first: m[1], last: m[2] } : null;
 }
 
+/** RFC 9110 unsatisfiable: start at/after the end, or a zero-length suffix. */
+function isUnsatisfiable(range: { first: string; last: string }, size: number): boolean {
+  return range.first === '' ? Number(range.last) === 0 : Number(range.first) >= size;
+}
+
 function unsatisfiable(size: number): Response {
   return new Response(null, {
     status: 416,
@@ -94,8 +99,7 @@ export const GET: RequestHandler = async ({ params, request, platform }) => {
     if (!range) throw err;
     const meta = await bucket.head(key);
     if (!meta) return text(404, 'Not found', 'public, max-age=60');
-    const bad = range.first === '' ? Number(range.last) === 0 : Number(range.first) >= meta.size;
-    if (!bad) throw err;
+    if (!isUnsatisfiable(range, meta.size)) throw err;
     return unsatisfiable(meta.size);
   }
   if (!obj) return text(404, 'Not found', 'public, max-age=60');
@@ -110,7 +114,7 @@ export const GET: RequestHandler = async ({ params, request, platform }) => {
   // Local workerd R2 does not throw for a start past the end; it returns the whole object with
   // range {offset: 0, length: size}. Decide satisfiability from the header and the size instead
   // of trusting what R2 reports (see e2e/data-route.spec.ts).
-  if (range && (range.first === '' ? Number(range.last) === 0 : Number(range.first) >= obj.size)) {
+  if (range && isUnsatisfiable(range, obj.size)) {
     return unsatisfiable(obj.size);
   }
   if (range && obj.range) {
