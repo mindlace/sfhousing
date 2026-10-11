@@ -3,7 +3,12 @@ export const SOFTWARE: { name: string; license: string; url: string }[] = [
   { name: 'deck.gl', license: 'MIT', url: 'https://deck.gl' },
   { name: 'PMTiles', license: 'BSD-3-Clause', url: 'https://protomaps.com/docs/pmtiles' },
   { name: 'SvelteKit / Svelte', license: 'MIT', url: 'https://svelte.dev' },
-  { name: 'kdbush', license: 'ISC', url: 'https://github.com/mourner/kdbush' }
+  { name: 'kdbush', license: 'ISC', url: 'https://github.com/mourner/kdbush' },
+  {
+    name: 'Clipper2 (clipper2-ts)',
+    license: 'BSL-1.0',
+    url: 'https://github.com/countertype/clipper2-ts'
+  }
 ];
 
 /** First 10 chars of a valid ISO date/datetime, else the input unchanged. */
