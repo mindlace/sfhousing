@@ -21,8 +21,9 @@ export default defineConfig({
     }
   ],
   webServer: {
+    // VITE_E2E=1 compiles the map debug hook (window.__sfhMap) into this build only.
     command:
-      'npm run data:fixture && npm run db:migrate && npm run preview -- --var PUBLIC_DATASET_VERSION:fixture-0',
+      'npm run data:fixture && npm run db:migrate && VITE_E2E=1 npm run preview -- --var PUBLIC_DATASET_VERSION:fixture-0',
     url: 'http://localhost:4173/about',
     reuseExistingServer: !process.env.CI,
     timeout: 180_000
