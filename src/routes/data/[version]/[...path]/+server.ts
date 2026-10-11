@@ -14,17 +14,11 @@ const CORS = {
   'access-control-expose-headers': 'Content-Range, Content-Length, ETag, Accept-Ranges'
 };
 
-type R2Range = { offset?: number; length?: number } | { suffix: number };
-
 function text(status: number, body: string, cache: string): Response {
   return new Response(body, {
     status,
     headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': cache, ...CORS }
   });
-}
-
-function resolveKey(params: { version: string; path: string }) {
-  return dataKey(params.version, params.path);
 }
 
 function objectHeaders(obj: R2Object, path: string): Headers {
@@ -44,7 +38,10 @@ function objectHeaders(obj: R2Object, path: string): Headers {
 }
 
 /** Inclusive byte span R2 actually returned, clipped to the object. Null if empty. */
-function span(r: R2Range, size: number): { start: number; end: number } | null {
+function span(
+  r: { offset?: number; length?: number } | { suffix: number },
+  size: number
+): { start: number; end: number } | null {
   let start: number, end: number;
   if ('suffix' in r) {
     start = Math.max(0, size - r.suffix);
@@ -56,6 +53,14 @@ function span(r: R2Range, size: number): { start: number; end: number } | null {
   return end >= start ? { start, end } : null;
 }
 
+const SINGLE_RANGE_RE = /^bytes=(\d*)-(\d*)$/;
+
+/** Parse a single `bytes=` range; null when the header is not a valid single range. */
+function parseSingleRange(h: string | null): { first: string; last: string } | null {
+  const m = h ? SINGLE_RANGE_RE.exec(h.trim()) : null;
+  return m && (m[1] || m[2]) ? { first: m[1], last: m[2] } : null;
+}
+
 function unsatisfiable(size: number): Response {
   return new Response(null, {
     status: 416,
@@ -64,23 +69,31 @@ function unsatisfiable(size: number): Response {
 }
 
 export const GET: RequestHandler = async ({ params, request, platform }) => {
-  const key = resolveKey(params);
+  const key = dataKey(params.version, params.path);
   if (!key) return text(404, 'Not found', 'no-store');
   const bucket = platform?.env?.BUCKET;
   if (!bucket) return text(503, 'Data storage unavailable', 'no-store');
 
-  const rangeHeader = request.headers.get('range');
+  // Invalid or multi-range Range headers are ignored (RFC 9110 permits): serve 200 full.
+  const range = parseSingleRange(request.headers.get('range'));
   const rangeHeaders = new Headers(request.headers);
-  if (rangeHeader?.includes(',')) rangeHeaders.delete('range'); // multi-range → full 200
-  const singleRange = rangeHeaders.has('range');
+  if (!range) rangeHeaders.delete('range');
+  // Only ETag preconditions: R2 would otherwise also evaluate If-Modified-Since etc. from Headers.
+  const onlyIf = new Headers();
+  for (const name of ['if-match', 'if-none-match']) {
+    const v = request.headers.get(name);
+    if (v !== null) onlyIf.set(name, v);
+  }
 
   let obj: R2Object | R2ObjectBody | null;
   try {
-    obj = await bucket.get(key, { range: rangeHeaders, onlyIf: request.headers });
+    obj = await bucket.get(key, { range: rangeHeaders, onlyIf });
   } catch (err) {
-    if (!singleRange) throw err;
+    if (!range) throw err;
     const meta = await bucket.head(key);
     if (!meta) return text(404, 'Not found', 'public, max-age=60');
+    const bad = range.first === '' ? Number(range.last) === 0 : Number(range.first) >= meta.size;
+    if (!bad) throw err;
     return unsatisfiable(meta.size);
   }
   if (!obj) return text(404, 'Not found', 'public, max-age=60');
@@ -92,8 +105,8 @@ export const GET: RequestHandler = async ({ params, request, platform }) => {
       headers
     });
   }
-  if (singleRange && obj.range) {
-    const s = span(obj.range as R2Range, obj.size);
+  if (range && obj.range) {
+    const s = span(obj.range, obj.size);
     if (!s) return unsatisfiable(obj.size);
     headers.set('content-range', `bytes ${s.start}-${s.end}/${obj.size}`);
     headers.set('content-length', String(s.end - s.start + 1));
@@ -104,7 +117,7 @@ export const GET: RequestHandler = async ({ params, request, platform }) => {
 };
 
 export const HEAD: RequestHandler = async ({ params, platform }) => {
-  const key = resolveKey(params);
+  const key = dataKey(params.version, params.path);
   if (!key) return text(404, 'Not found', 'no-store');
   const bucket = platform?.env?.BUCKET;
   if (!bucket) return text(503, 'Data storage unavailable', 'no-store');

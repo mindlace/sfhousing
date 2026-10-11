@@ -6,6 +6,7 @@ export type FakeRange = { offset: number; length?: number } | { suffix: number }
 
 export class FakeR2Bucket {
   calls: { method: 'get' | 'head'; key: string }[] = [];
+  lastGetOptions: { range?: Headers; onlyIf?: Headers } | undefined;
   private objects = new Map<string, Stored>();
   private n = 0;
 
@@ -42,6 +43,7 @@ export class FakeR2Bucket {
 
   async get(key: string, opts: { range?: Headers; onlyIf?: Headers } = {}) {
     this.calls.push({ method: 'get', key });
+    this.lastGetOptions = opts;
     const s = this.objects.get(key);
     if (!s) return null;
     const inm = opts.onlyIf?.get('if-none-match');
@@ -74,6 +76,7 @@ function parseRange(h: string | null, size: number): FakeRange | null {
   }
   const offset = Number(m[1]);
   if (offset >= size) throw new Error('unsatisfiable range'); // R2 throws here (spec §4.4.6, I)
+  // `length` is deliberately not clipped: R2 may return fewer bytes than requested.
   return m[2] === '' ? { offset } : { offset, length: Number(m[2]) - offset + 1 };
 }
 

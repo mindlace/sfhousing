@@ -103,6 +103,32 @@ describe('GET /data/<version>/*', () => {
     expect(await bytesOf(res)).toEqual(BYTES);
   });
 
+  it('ignores unparseable single Range headers and serves 200 full', async () => {
+    for (const range of ['bytes=abc', 'items=0-5', 'bytes=-']) {
+      const res = await call(GET, 'fixture-0', 'buildings.pmtiles', { range });
+      expect(res.status).toBe(200);
+      expect(await bytesOf(res)).toEqual(BYTES);
+    }
+  });
+
+  it('rethrows a transient get() failure on a satisfiable range', async () => {
+    bucket.get = async () => {
+      throw new Error('boom');
+    };
+    await expect(
+      call(GET, 'fixture-0', 'buildings.pmtiles', { range: 'bytes=0-15' })
+    ).rejects.toThrow('boom');
+  });
+
+  it('If-Modified-Since alone yields 200 and is not forwarded to R2', async () => {
+    const res = await call(GET, 'fixture-0', 'buildings.pmtiles', {
+      'if-modified-since': 'Wed, 01 Jan 2200 00:00:00 GMT'
+    });
+    expect(res.status).toBe(200);
+    expect(await bytesOf(res)).toEqual(BYTES);
+    expect(bucket.lastGetOptions?.onlyIf?.has('if-modified-since')).toBe(false);
+  });
+
   it('304 on matching If-None-Match', async () => {
     const res = await call(GET, 'fixture-0', 'buildings.pmtiles', { 'if-none-match': '"etag1"' });
     expect(res.status).toBe(304);
