@@ -6,8 +6,12 @@ import { rawPath, type Lock } from '../lib/lock';
 import { contentTypeFor, type R2Target } from '../lib/r2';
 
 const PRIVATE = 'private, no-store';
-/** Build-time files that are not part of the served dataset. */
-const NOT_PUBLISHED = new Set(['manifest.json', 'report.json']);
+/** manifest.json is published last, separately. */
+const MANIFEST = 'manifest.json';
+const SEGMENT_RE = /^[A-Za-z0-9._-]+$/;
+/** A key segment must match the platform's route contract and must not be a dotfile. */
+const badKey = (key: string): boolean =>
+  key.split('/').some((seg) => !SEGMENT_RE.test(seg) || seg.startsWith('.'));
 export const STAGING_ORIGIN = 'https://sfhousing-staging.mindlace.net';
 
 export interface UploadArgs {
@@ -77,6 +81,18 @@ export async function upload(a: UploadArgs): Promise<number> {
     return 1;
   }
 
+  const rels = walk(a.outDir)
+    .map((f) => relative(a.outDir, f).split(sep).join('/'))
+    .filter((r) => r !== MANIFEST);
+  const bad = [
+    ...rels.filter(badKey),
+    ...a.lock.sources.flatMap((e) => e.files.map((f) => f.archiveKey)).filter(badKey)
+  ];
+  if (bad.length > 0) {
+    for (const k of bad) log(`refusing to upload: invalid key segment in '${k}'`);
+    return 1;
+  }
+
   const manifestKey = `data/${v}/manifest.json`;
   if (await a.target.exists(manifestKey)) {
     log(`version ${v} already published`);
@@ -91,9 +107,6 @@ export async function upload(a: UploadArgs): Promise<number> {
     }
   }
 
-  const rels = walk(a.outDir)
-    .map((f) => relative(a.outDir, f).split(sep).join('/'))
-    .filter((r) => !NOT_PUBLISHED.has(r));
   const putWithRetry = async (rel: string) => {
     for (let attempt = 0; ; attempt++) {
       try {

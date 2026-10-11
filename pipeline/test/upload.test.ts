@@ -58,7 +58,9 @@ describe('upload', () => {
     const puts = calls.filter((c) => c.startsWith('put'));
     expect(puts[puts.length - 1]).toBe('put data/fixture-7/manifest.json');
     expect(puts).toContain('put data/fixture-7/parcels/50_25.json');
-    expect(puts).not.toContain('put data/fixture-7/report.json');
+    const rep = puts.indexOf('put data/fixture-7/report.json');
+    expect(rep).toBeGreaterThanOrEqual(0);
+    expect(rep).toBeLessThan(puts.indexOf('put data/fixture-7/manifest.json'));
   });
   it('never puts the manifest when an artifact keeps failing', async () => {
     const { t, store } = fakeTarget([], { 'data/fixture-7/neighborhoods.geojson': 99 });
@@ -70,6 +72,35 @@ describe('upload', () => {
     expect(await upload(opts(t, { datasetVersion: 'fixture-8' }))).toBe(1);
     expect(await upload(opts(t, { datasetVersion: 'v1' }))).toBe(1);
     expect(calls).toEqual([]);
+  });
+  it.each(['my notes.txt', '.DS_Store', 'x/ y.json'])(
+    'rejects the invalid key %s with zero puts',
+    async (name) => {
+      const { t, calls } = fakeTarget();
+      const o = opts(t);
+      if (name.includes('/')) mkdirSync(join(o.outDir, 'x'));
+      writeFileSync(join(o.outDir, name), '');
+      expect(await upload(o)).toBe(1);
+      expect(calls.filter((c) => c.startsWith('put'))).toEqual([]);
+    }
+  );
+  it('rejects an invalid archive key with zero puts', async () => {
+    const { t, calls } = fakeTarget();
+    const lk = {
+      sources: [
+        {
+          id: 's',
+          files: [{ url: 'u', sha256: 'a', bytes: 1, archiveKey: 'sources/a b', name: 'a' }],
+          retrievedAt: '',
+          upstreamVersion: '',
+          rowCount: 0,
+          license: '',
+          homepage: ''
+        }
+      ]
+    };
+    expect(await upload(opts(t, { lock: lk }))).toBe(1);
+    expect(calls.filter((c) => c.startsWith('put'))).toEqual([]);
   });
   it('archives lock files missing from R2 before the artifacts, skipping present ones', async () => {
     const rawDir = mkdtempSync(join(tmpdir(), 'sfh-raw-'));
