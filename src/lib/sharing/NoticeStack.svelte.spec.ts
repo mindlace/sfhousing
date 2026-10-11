@@ -11,7 +11,7 @@ describe('NoticeStack', () => {
     vi.useRealTimers();
   });
 
-  it('renders each notice text as a status', async () => {
+  it('renders each notice text inside one status region, with no list semantics', async () => {
     const notices: Notice[] = [
       { id: 'n1', text: 'First notice' },
       { id: 'n3', text: 'Second notice' }
@@ -19,12 +19,25 @@ describe('NoticeStack', () => {
     render(NoticeStack, { notices, ondismiss: () => {} });
     await expect.element(page.getByText('First notice')).toBeVisible();
     await expect.element(page.getByText('Second notice')).toBeVisible();
-    expect(page.getByRole('status').elements()).toHaveLength(2);
+    const status = page.getByRole('status');
+    expect(status.elements()).toHaveLength(1);
+    await expect.element(status).toHaveTextContent('First notice');
+    await expect.element(status).toHaveTextContent('Second notice');
+    expect(document.querySelector('.notice-stack ul, .notice-stack li')).toBeNull();
   });
 
-  it('renders nothing visible with no notices', async () => {
-    render(NoticeStack, { notices: [], ondismiss: () => {} });
+  it('the status region is mounted before any notice arrives, and keeps the node', async () => {
+    const { rerender } = await render(NoticeStack, { notices: [], ondismiss: () => {} });
+    const status = page.getByRole('status');
+    await expect.element(status).toBeInTheDocument();
+    await expect.element(status).toHaveAttribute('aria-live', 'polite');
+    await expect.element(status).toHaveTextContent('');
     expect(page.getByRole('button', { name: 'Dismiss' }).elements()).toHaveLength(0);
+    const node = status.element();
+
+    await rerender({ notices: [{ id: 'n3', text: 'Arrived later' }], ondismiss: () => {} });
+    await expect.element(status).toHaveTextContent('Arrived later');
+    expect(status.element()).toBe(node);
   });
 
   it('each Dismiss button has an accessible name and calls ondismiss(id)', async () => {

@@ -143,7 +143,7 @@ describe('/ editor page', () => {
 
     it('Remix hand-off: shows the toast once and clears the history state', async () => {
       seed(painted('fixture-0'));
-      appPage.state = { sfhRemix: { from: 'My plan' } } as App.PageState;
+      appPage.state = { sfhRemix: { from: 'My plan' } };
       await render(Page, { props: { data: data(), params: {} } });
       await expect.element(page.getByText(remixedToast('My plan'))).toBeVisible();
       expect(replaceStateCalls).toEqual([{ url: '', state: {} }]);
@@ -153,7 +153,7 @@ describe('/ editor page', () => {
     it('Remix hand-off with the plan in history state (storage write failed) loads it', async () => {
       appPage.state = {
         sfhRemix: { from: 'abc123', plan: serializePlan(painted('fixture-0')) }
-      } as App.PageState;
+      };
       await render(Page, { props: { data: data(), params: {} } });
       await expect.element(page.getByText(remixedToast('abc123'))).toBeVisible();
       await expect.element(undo()).toBeEnabled();

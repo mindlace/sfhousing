@@ -27,7 +27,6 @@
   // Plan sharing (spec §4.5/§4.6): restore the autosaved plan on mount (ruling 6), autosave every
   // committed change, notices N1–N3 and the Remix toast, and Publish + Saved in the header.
   type Notice = { id: string; text: string; tone?: 'info' | 'toast' };
-  type RemixHandoff = { from: string; plan?: string };
   // The dataset version is fixed for the page's life.
   // svelte-ignore state_referenced_locally
   const autosave = new Autosave({ currentVersion: data.datasetVersion });
@@ -43,7 +42,7 @@
   // restored plan if the worker is ready, else the worker's onReady sends editor.plan.
   onMount(() => {
     if (!editor) return;
-    const remix = (page.state as { sfhRemix?: RemixHandoff }).sfhRemix;
+    const remix = page.state.sfhRemix;
     const r = autosave.restore(remix?.plan);
     editor.load(r.plan);
     if (r.notice?.kind === 'corrupt') notices.push({ id: 'n1', text: COPY.n1 });
