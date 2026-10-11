@@ -6,6 +6,7 @@
 nvm use                 # Node 24
 npm install             # prepare: husky, `wrangler types --strict-vars=false`, `svelte-kit sync`
 npx playwright install chromium   # needed by `npm run test:unit` (client project) and `test:e2e`; the one download beyond npm
+echo 'PUBLIC_DATASET_VERSION=fixture-0' > .dev.vars   # local dev uses the fixture, see below
 npm run data:fixture
 npm run db:migrate
 npm run dev
@@ -17,13 +18,13 @@ npm run dev
 
 ## `.dev.vars`
 
-`.dev.vars` is gitignored and read by the local worker. Use it to point local dev at a different dataset version than the one in `wrangler.jsonc`:
+`.dev.vars` is gitignored and read by the local worker (`wrangler dev` and `vite dev` via the adapter's platform proxy). Both otherwise use the top-level `wrangler.jsonc` vars, and `PUBLIC_DATASET_VERSION` there is the real production dataset, which is not in local R2 unless you copy it (`npm run data:local -- <version>`). For day-to-day local dev on the fixture, create `.dev.vars` with:
 
 ```
-PUBLIC_DATASET_VERSION=2026-10-10-0123abcd
+PUBLIC_DATASET_VERSION=fixture-0
 ```
 
-The version must exist in local R2 (see below). e2e builds set `PUBLIC_DATASET_VERSION=fixture-0` on the command line instead.
+and run `npm run data:fixture`. Without it, the app requests the production version from local R2 and the map's data loads 404; there is deliberately no code fallback (a missing or malformed value is a 500). e2e builds set `PUBLIC_DATASET_VERSION=fixture-0` on the command line instead, so they do not depend on `.dev.vars`.
 
 ## Local data
 

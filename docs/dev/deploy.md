@@ -36,7 +36,7 @@ There is no automated staging-to-prod interlock (as in planafoot): do not merge 
 
 Versions are immutable and retained indefinitely.
 
-Both deploy workflows end with the step "Smoke: current dataset manifest is served": it reads the deployed environment's `PUBLIC_DATASET_VERSION` (`scripts/dataset-version.ts`) and `curl`s `/data/<version>/manifest.json` on the deployed host. The step fails the deploy job when the configured version's manifest is not in R2. That includes `fixture-0`, which is not uploaded remotely, so staging and prod deploy jobs report red until the real dataset is uploaded and the vars are bumped (X1). At that point also enable the skipped real-version tests in `scripts/wrangler-config.spec.ts` (`it.skip(` to `it(`).
+Both deploy workflows end with the step "Smoke: current dataset manifest is served": it reads the deployed environment's `PUBLIC_DATASET_VERSION` (`scripts/dataset-version.ts`) and `curl`s `/data/<version>/manifest.json` on the deployed host. The step fails the deploy job when the configured version's manifest is not in R2. That includes `fixture-0`, which is not uploaded remotely. `scripts/wrangler-config.spec.ts` also requires both deployed vars to be a real `YYYY-MM-DD-<8 hex>` version, so a fixture version cannot be committed for staging or production.
 
 ## Secrets and variables
 
@@ -53,6 +53,7 @@ Done:
 - [x] R2 bucket `sfhousing` created.
 - [x] GitHub repo `mindlace/sfhousing` exists.
 - [x] release-please App credentials configured as repository variables.
+- [x] First real dataset uploaded (X1, 2026-10-11): `2026-10-11-697b4599` (918 objects) in R2; `PUBLIC_DATASET_VERSION` bumped to it for production and staging in `wrangler.jsonc`, and the real-version tests in `scripts/wrangler-config.spec.ts` are enabled.
 
 Remaining:
 

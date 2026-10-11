@@ -30,11 +30,11 @@ describe('wrangler.jsonc PUBLIC_DATASET_VERSION', () => {
     expect(config.env.staging.vars.PUBLIC_DATASET_VERSION).toMatch(DATASET_VERSION_RE);
   });
 
-  it.skip('production uses a real (non-fixture) dataset version — enable after X1 real upload bumps wrangler vars', () => {
+  it('production uses a real (non-fixture) dataset version — enable after X1 real upload bumps wrangler vars', () => {
     expect(config.vars.PUBLIC_DATASET_VERSION).toMatch(REAL_DATASET_VERSION_RE);
   });
 
-  it.skip('staging uses a real (non-fixture) dataset version — enable after X1 real upload bumps wrangler vars', () => {
+  it('staging uses a real (non-fixture) dataset version — enable after X1 real upload bumps wrangler vars', () => {
     expect(config.env.staging.vars.PUBLIC_DATASET_VERSION).toMatch(REAL_DATASET_VERSION_RE);
   });
 });
