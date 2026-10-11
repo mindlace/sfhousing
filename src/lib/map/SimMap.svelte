@@ -212,8 +212,10 @@
   const FP_BLOCK = '--map-controls-br-block-size';
   let fpRaf: number | null = null;
   let fpObserver: ResizeObserver | null = null;
+  let footprintGone = false;
 
   function publishFootprint(inline: number, block: number): void {
+    if (footprintGone) return;
     // :root, not the map root: BrushEditor's toolbar and sheets are siblings of SimMap's root.
     for (const el of [document.documentElement, root]) {
       el?.style.setProperty(FP_INLINE, `${inline}px`);
@@ -310,8 +312,10 @@
     return () => teardown(l);
   });
 
-  // Unmount only: remove the :root vars (teardown alone leaves 0px for remounts and error states).
+  // Unmount only: remove the :root vars. `footprintGone` makes this independent of whether
+  // teardown()'s 0px publish runs before or after this cleanup.
   $effect(() => () => {
+    footprintGone = true;
     clearFootprint();
   });
 

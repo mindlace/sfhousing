@@ -12,6 +12,8 @@ MapLibre's bottom-right container (`.maplibregl-ctrl-bottom-right`, holding the 
 | `--map-controls-br-block-size`  | px from the map root's bottom edge to the top edge of the controls. Includes the bottom-inset lift (`setBottomInset`), so it is measured from the map's bottom. |
 
 - **Where:** on `document.documentElement` (`:root`), and mirrored on the `[data-testid=map-root]` element. Publish on `:root` because consumers such as the brush toolbar are siblings of SimMap's root inside `BrushEditor`, not descendants, so a variable on the map root is invisible to them. Only one `SimMap` mounts per page.
+- **Direction:** the values are physical right and bottom distances (the app is LTR only), not logical inline-end/block-end.
+- **Remount:** consumers see a transient `0px` while the map remounts (new manifest), until the new map re-measures.
 - **Units:** integer px (`Math.ceil`), always with the `px` suffix.
 - **Zero:** `0px` while the map is loading, unsupported, in error, or when the container is empty or hidden. Both properties are removed from `:root` when `SimMap` unmounts, so consumers should use a fallback: `var(--map-controls-br-inline-size, 60px)`.
 - **Updates:** a `ResizeObserver` on the controls container and the map root, plus a re-measure after `setBottomInset`, coalesced to one `requestAnimationFrame`. Expanding or collapsing the compact attribution resizes the container and so updates the value. Nothing runs on map `move` (zero map-view JS during pan).
