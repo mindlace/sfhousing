@@ -24,7 +24,7 @@ Design row (verbatim):
 **Out of scope**
 
 - Envelope resolution (`plan-model`, I5).
-- The worker host, the `SimRequest`/`SimResponse` protocol, chunk fetching and batching. All of these belong to the brush-tool spec §4.9, which calls `generate(record, env, fnv1a32(id), 'max')`.
+- The worker host, the `SimRequest`/`SimResponse` protocol (I15), chunk fetching and batching. All of these belong to the brush-tool spec §4.9, which calls `generate(record, env, fnv1a32(id), 'max')`. The generator's only part in I15 is that call (plus the optional cache); its `GeneratedBuilding`s never leave the worker, being packed by map-view's `packCell`.
 - Rendering and animation (`map-view`).
 - Score maths and its UI (`scoreboard`).
 - `'likely'` mode, `generateForUnits` (M5), FAR/setback envelope fields (M3) and building status (M4).
@@ -37,13 +37,14 @@ Design row (verbatim):
 |---|---|---|---|
 | I1 | `type ParcelId = string` — SF `mapblklot` (block+lot, e.g. `"3512008"`), the single join key across all data | data-pipeline → all | DC |
 | I2 | `interface Envelope { maxStories: number }` — the per-parcel allowed envelope. The **only** thing manipulation writes. Later milestones add optional fields; M1 code must ignore unknown fields | plan-model → generator, scoreboard | MC (envelope-as-common-currency), DC (field set) |
-| I6 | `interface ParcelRecord { id: ParcelId; polygon: [x: number, y: number][][] /* local metres, EPSG:7131 or equivalent, origin at label point */; labelPoint: [lng, lat]; areaM2: number; existingUnits: number; existingFloorAreaM2: number; existingHeightM: number; landUse: string; eligible: boolean; neighborhood: string }` | data-pipeline → plan-model, generator, scoreboard | DC |
+| I6 | `interface ParcelRecord { id: ParcelId; polygon: [x: number, y: number][][] /* local metres, exactly EPSG:7131 (NAD83(2011) / San Francisco CS13, metres), origin at label point */; labelPoint: [lng, lat]; areaM2: number; existingUnits: number; existingFloorAreaM2: number; existingHeightM: number; landUse: string; eligible: boolean; neighborhood: string }` | data-pipeline → plan-model, generator, scoreboard | DC |
 | I7 | `type BuildoutMode = 'max'` (M1). `'likely'` is reserved for M2 | generator, scoreboard | MC (sequence) |
-| I8 | `generate(parcel: ParcelRecord, env: Envelope, seed: number, mode: BuildoutMode): GeneratedBuilding \| null`. Returns `null` when the generated floor area does not exceed `existingFloorAreaM2`: nobody rebuilds smaller | generator → map-view, scoreboard | DC |
-| I9 | `interface GeneratedBuilding { parcelId: ParcelId; source: 'user'; /* widens to 'pipeline' \| 'scenario' later */ typology: TypologyId; parts: { footprint: [lng, lat][]; baseM: number; topM: number }[]; stories: number; units: number; floorAreaM2: number; replacesExisting: boolean }` | generator → map-view, scoreboard | DC |
+| I8 | `generate(parcel: ParcelRecord, env: Envelope, seed: number, mode: BuildoutMode): GeneratedBuilding \| null`. Returns `null` for a replacement when its floor area ≤ `existingFloorAreaM2` **or** its units ≤ `existingUnits`: nobody rebuilds smaller or to fewer homes. (An `adu` keeps the existing building and is exempt) | generator → map-view, scoreboard | DC |
+| I9 | `interface GeneratedBuilding { parcelId: ParcelId; source: 'user'; /* widens to 'pipeline' \| 'scenario' later */ typology: TypologyId; parts: { footprint: [lng, lat][] /* single outer ring; parcel holes dropped in M1 */; baseM: number; topM: number }[] /* nested: each part's footprint ⊆ the part below; rendered ground-to-topM */; stories: number; units: number; floorAreaM2: number; replacesExisting: boolean }` | generator → map-view, scoreboard | DC |
 | I10 | `type TypologyId = 'adu' \| 'plex' \| 'walkup' \| 'podium' \| 'midrise' \| 'tower'` | generator | DC |
-| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, neighborhoods: url }` | data-pipeline → map-view, generator, platform | DC |
+| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, basemapTiles: url, glyphs: url /* MapLibre `{fontstack}/{range}.pbf` template */, sprite?: url, neighborhoods: url }`. All `url`s are root-relative (`/data/<v>/…`). Every eligible-or-not parcel appears in **exactly one** chunk. `buildingsTiles` has one source-layer `buildings` with properties `parcelId`, `heightM`, `baseM`, at minzoom ≤ 12, with buildings clipped to parcels. Published versions are immutable and retained indefinitely. `datasetVersion` matches `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (build date + 8-hex input hash) everywhere it is validated. R2 key = `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` | data-pipeline → platform, plan-model, brush-tool (worker host), typology-generator, map-view | DC |
 | I14 | Seed: `seed = fnv1a32(parcelId)`. Variety is a pure function of parcel and envelope, so the same plan always renders identically for everyone | generator | DC |
+| I15 | **The one main↔worker protocol** (`src/lib/sim/protocol.ts`, owned by brush-tool's worker host): `SimRequest` as in the brush-tool spec, and `SimResponse = { type: 'ready'; rev; datasetVersion; chunkCount } \| { type: 'diff'; rev; phase: DiffPhase; render: GeneratedUpdate; stats?: OpStats; complete: boolean; score: Score } \| { type: 'chunks'; status: Record<cellId, ChunkStatus>; pending: number; failed: string[] } \| { type: 'parcelSummary'; reqId: number; summary: ParcelSummary \| null } \| { type: 'error'; rev; code; message }`, with matching request `{ type: 'parcelSummary'; reqId: number; parcelId: ParcelId }` (no rev). `ParcelSummary = { parcelId; neighborhood; landUse; eligible; existingUnits; envelope: Envelope \| null; generated: { typology; stories; units } \| null }`, used by map-view's tooltip. `GeneratedUpdate` and `PackedCell` are owned by map-view (the worker imports the pure `packCell`). `Score` is owned by scoreboard (the worker calls its pure `score()`). The main thread never receives `GeneratedBuilding[]` | brush-tool ↔ map-view, scoreboard, typology-generator | DC |
 
 ### Internal types (new; they do not alter any I-row)
 
@@ -102,7 +103,7 @@ The generator exports no worker or message protocol. Brush-tool's worker host im
 | `TOWER_COVERAGE` / `TOWER_PLATE_MAX_M2` | 0.35 / 900 | OD-7 |
 | `TOWER_PODIUM_STORIES` | 5 | this spec |
 | `MIDRISE_STEPBACK_ABOVE` | 6 floors | OD-7 |
-| `MAX_STORIES` | 80 (painted values above this are clamped) | this spec |
+| `MAX_STORIES` | 80 (painted values above this are clamped; I3 already bounds stories to 1..80) | I3 |
 | `MIN_SITE_M2` | 40 | this spec |
 | `MIN_WIDTH_INSET_M` | 1.5 (the footprint must survive a further 1.5 m inward offset, i.e. it is ≥ ~3 m wide) | this spec |
 | `ADU_MIN_OPEN_M2` | 60 | OD-7 |
@@ -144,7 +145,7 @@ Steps run in order. The first one that fails returns `null`.
    - None left → `null`.
    - One ring: use it as-is.
    - More than one ring: `unionD(rings, FillRule.EvenOdd)`. This resolves holes and **disjoint parts** (multipolygon parcels) without trusting ring orientation.
-5. **Site** `P` = the largest outer polygon by area. Other parts get no building and are not counted. Holes inside `P` are **dropped**: the footprint uses the outer ring only, because I9 `footprint` is a single ring (see IC-2). `simplifyPathsD(P, SIMPLIFY_EPS_M)`. `A = areaD(P)`. If `A < MIN_SITE_M2` → `null`.
+5. **Site** `P` = the largest outer polygon by area. Other parts get no building and are not counted. Holes inside `P` are **dropped**: the footprint uses the outer ring only, because I9 `footprint` is a single outer ring with parcel holes dropped in M1. `simplifyPathsD(P, SIMPLIFY_EPS_M)`. `A = areaD(P)`. If `A < MIN_SITE_M2` → `null`.
 6. **Base region** `Q = inflatePathsD(P, −edgeInsetM, JoinType.Miter, EndType.Polygon, 2, CLIPPER_PRECISION)`. Drop pieces under 10 m².
    - Empty → `null`.
    - Width test: `inflatePathsD(Q, −MIN_WIDTH_INSET_M, …)` empty → `null`. This removes slivers.
@@ -182,7 +183,7 @@ The function `select(S, A, existingUnits)` resolves the typology, with `A` from 
    - `h` is found by bisection on `[0, half-extent of P along u]`. It runs 30 iterations, or stops when `|area − T| ≤ 0.25 m²`.
    - The slab clip uses in-house Sutherland–Hodgman against the slab's two half-planes, not Clipper. It is convex, and this keeps bisection cheap (§4.12).
 
-**Yard rule.** The band removed along the long axis is the lot's yard. M1 cannot tell the street side from the rear (I6 carries no frontage; IC-3), so it splits the band **equally between both ends**. For a 25×100 ft lot at plex coverage this leaves ≈5.3 m at each end.
+**Yard rule.** The band removed along the long axis is the lot's yard. M1 cannot tell the street side from the rear (I6 carries no frontage, by design ruling), so it splits the band **equally between both ends**. For a 25×100 ft lot at plex coverage this leaves ≈5.3 m at each end.
 
 Coverage is the binding yard rule, and there is no separate rear-yard minimum. The OD-7 coverages already leave ≥ 25% of lot depth open for plex and walkup.
 
@@ -207,6 +208,7 @@ Ground-floor height `g` is `GROUND_FTF_M` for `podium`, `midrise` and `tower`, a
     - Otherwise re-run as `midrise` with `S = 12`.
   - Tower floors 6–S on `R`.
 - **Parapet**: `parapetM` is added to `topM` of the parts that reach the top floor only. It never counts as floor area.
+- **Nesting (I9), guaranteed by construction.** Every part is a single outer ring with no holes (`P` has its holes dropped, and inward offsets and intersections of a hole-free region stay hole-free). Every part with `baseM > 0` lies within a part whose `topM` (before parapet) equals its `baseM`: midrise `U` is an inward offset of `F` (or `F` itself); tower `R` is an intersection with `inflatePathsD(F, −1.0)`, so each piece of `R` lies inside one piece of `F`. Ground-level parts (`baseM 0`) have nothing beneath them. This is what lets map-view render each part ground-to-`topM`. If a future rule could break nesting, it must clip the upper part to the part below rather than emit it.
 - `floorAreaM2 = Σ over parts of area(piece) × floors(part)`. Areas are measured in local metres before conversion.
 
 ### 4.8 ADU rule (keeps the existing building)
@@ -240,8 +242,8 @@ This applies only when `select` returns `adu`.
 
 - `units = floor(floorAreaM2 · EFFICIENCY / AVG_UNIT_M2[typ])`, using the rounded `floorAreaM2`. For `plex`, `units = min(units, 4)`. For `adu`, units is 1.
 - **N5** `units < 1` → `null`.
-- **N6 (I8)** is checked on the post-build total, `after = replacesExisting ? floorAreaM2 : existingFloorAreaM2 + floorAreaM2`. If `after ≤ existingFloorAreaM2` → `null`. For an ADU this is `floorAreaM2 ≤ 0`, which never happens.
-- **N7** For a replacement, `units ≤ existingUnits` → `null`. A replacement that nets zero or negative homes is not a "max buildout", and SF limits such demolitions (*inferred*). This rule extends I8's null condition; see IC-1.
+- **N6 (I8, floor area)** is checked on the post-build total, `after = replacesExisting ? floorAreaM2 : existingFloorAreaM2 + floorAreaM2`. If `after ≤ existingFloorAreaM2` → `null`. For an ADU this is `floorAreaM2 ≤ 0`, which never happens.
+- **N7 (I8, units)** For a replacement, `units ≤ existingUnits` → `null`. A replacement that nets zero or negative homes is not a "max buildout", and SF limits such demolitions (*inferred*). I8 states this rule and exempts the ADU, which keeps the existing building.
 - `replacesExisting = (typology !== 'adu')`. On a vacant or non-residential parcel the flag is still `true`, with zero existing units.
 - **Downzoning (OD-2)** needs no special handling. A lower envelope simply regenerates a smaller building or `null`. The existing building is never touched by the generator.
 
@@ -337,6 +339,7 @@ These run through `generateWith` with draws `r = [0.5, 0.5, 0.5, 0.5, 0, x]`: ed
 - **Rotation invariance:** rotating a fixture by any angle changes `units` and `stories` by none and `floorAreaM2` by ≤ 0.5%.
 - **Monotonicity:** raising `S` never lowers `floorAreaM2`, except across a cap-chain or N6/N7 boundary.
 - **Containment:** every footprint vertex lies within `P` (local frame), within 0.02 m.
+- **Nesting (I9):** over the fixtures and random parcels (rectangles, L-shapes, concave and multipart sites) at `S` in 1..80, every part's `footprint` is a single open ring of ≥ 3 vertices, and every part with `baseM > 0` lies within some part whose pre-parapet `topM` equals its `baseM`. Checked both in the local frame and after the lng/lat conversion (tolerance 0.02 m). map-view's U6 re-asserts the same property on its fixtures.
 - **Coverage:** base footprint area ≤ `COVERAGE·A + 0.25`.
 
 **Conversion**
@@ -373,15 +376,16 @@ Worker-host and e2e coverage belong to brush-tool and map-view. There is no page
 4. No `Math.sin`, `Math.cos`, `Math.atan2`, `Math.pow` or `Math.exp` appear outside `geo.ts`. A lint/grep test checks this.
 5. The perf spec passes within budget on CI.
 6. The only new runtime dependency is `clipper2-ts@2.0.1`. It is pinned exactly and listed on the attribution page.
-7. An ADU never sets `replacesExisting`. A replacement never has `units ≤ existingUnits`.
+7. An ADU never sets `replacesExisting`. A replacement never has `units ≤ existingUnits` or `floorAreaM2 ≤ existingFloorAreaM2` (I8).
+8. Every output satisfies I9's nesting: single-ring parts, each upper part inside the part below (property test).
 
 ## 8. Interface concerns (for the orchestrator)
 
-- **IC-1:** I8 states only the floor-area null condition. This spec adds N7 (replacement with `units ≤ existingUnits` → `null`) and N5 (`units < 1`). Recommend I8 read "returns `null` when the parcel would not gain floor area **or homes**". If this is rejected, drop N7, and the scoreboard must render negative per-parcel net.
-- **IC-2:** I9 `footprint` is a single ring, so holes cannot be represented, and holes are dropped (§4.4.5). Recommend that `data-pipeline` report the count of holed parcels. If it is non-trivial, add `holes?: [lng, lat][][]` to I9 parts later.
-- **IC-3:** I6 has no frontage or street side, which forces the symmetric yard. Recommend an optional `frontBearingDeg?: number` (pipeline: the edges not shared with a neighbour parcel in the same block). If present, the generator puts the whole yard band at the rear.
-- **IC-4:** I6 should state "EPSG:7131 exactly, label point as origin, valid polygons (`ST_MakeValid`), OGC ring order". "or equivalent" breaks §4.10.
-- **IC-5:** This spec agrees with brush-tool IC and map-view §9-3 that the worker-host channel needs an I15. The generator's contribution to it is only the I8 call and `createGeneratorCache`.
+- ~~**IC-1:**~~ *Resolved:* I8's null rule now covers units (N7), with the ADU exempt. N5 (`units < 1`) remains this spec's own rule.
+- ~~**IC-2:**~~ *Resolved:* I9 states parts are a single outer ring with parcel holes dropped in M1. data-pipeline's report counts holed parcels, which informs any later `holes` field.
+- ~~**IC-3:**~~ *Resolved (declined):* no frontage field; the yard is split across both ends of the long axis.
+- **IC-4:** *Partly resolved:* I6 now says exactly EPSG:7131 with the label point as origin. Still not in I6: valid polygons (`ST_MakeValid`) and OGC ring order. data-pipeline §4.4 provides both, and §4.4 here does not trust ring orientation.
+- ~~**IC-5:**~~ *Resolved by I15.* The generator's contribution is only the I8 call and `createGeneratorCache`.
 - **IC-6:** The I14 seed ignores the envelope. This satisfies I14 but means a parcel's jitter stays fixed as its height changes, which is the intended visual stability.
 
 ## 9. Open questions
@@ -390,4 +394,4 @@ Worker-host and e2e coverage belong to brush-tool and map-view. There is no page
 - **OQ-2:** Should the 4.5 m ground floor apply to `midrise` and `tower` too, and does it count toward residential yield? *Recommend:* yes, and it counts. This follows OD-7's single-formula yield. Recalibrate against FZP capacity later.
 - **OQ-3:** Should painting ≥ 3 stories fall back to an ADU when the replacement returns `null`? *Recommend:* no. Painted 1–2 means ADU and ≥ 3 means replacement, which is easier to explain.
 - **OQ-4:** Small lots (< 400 m², most of SF) cap at 5 stories via the cap chain. *Recommend:* accept for M1 (no lot merging). Flag in calibration against the FZP 19k–64k range.
-- **OQ-5:** `MAX_STORIES = 80`. *Recommend:* the brush-tool slider max should be ≤ 80, matching SF's tallest at about 61 stories.
+- ~~**OQ-5:**~~ *Resolved:* I3 bounds stories to 1..80, matching `MAX_STORIES`.

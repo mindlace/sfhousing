@@ -26,12 +26,15 @@ Rows owned or consumed, verbatim:
 
 | # | interface | owner → consumers | mark |
 |---|---|---|---|
-| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, neighborhoods: url }` | data-pipeline → map-view, generator, platform | DC |
-| I13 | Share API: `POST /api/plans` (body: `Plan`, ≤ 256 KB) → `{ id }`; `GET /api/plans/:id` → `Plan`; page `/p/:id`. Ids are 8-char base58 | plan-sharing ↔ platform | DC |
+| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, basemapTiles: url, glyphs: url /* MapLibre `{fontstack}/{range}.pbf` template */, sprite?: url, neighborhoods: url }`. All `url`s are root-relative (`/data/<v>/…`). Every eligible-or-not parcel appears in **exactly one** chunk. `buildingsTiles` has one source-layer `buildings` with properties `parcelId`, `heightM`, `baseM`, at minzoom ≤ 12, with buildings clipped to parcels. Published versions are immutable and retained indefinitely. `datasetVersion` matches `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (build date + 8-hex input hash) everywhere it is validated. R2 key = `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` | data-pipeline → platform, plan-model, brush-tool (worker host), typology-generator, map-view | DC |
+| I13 | Share API: `POST /api/plans` (body: `Plan`, ≤ 256 KB) → `{ id }`; `GET /api/plans/:id` → `Plan`; page `/p/:id`. Ids are 8-char base58. Status codes and error bodies are as defined in the plan-sharing spec | plan-sharing ↔ platform | DC |
+| I16 | Dataset version discovery: the worker var `PUBLIC_DATASET_VERSION` names the current version for new plans. A **published** plan (`/p/:id`) renders on **its own** `plan.datasetVersion`, with an "Open with current data" action that remixes onto current. A **locally autosaved** plan is rebased to current on load: strokes are version-independent, so `datasetVersion` is rewritten and the plan re-resolved, with a one-line notice if the version changed (`manifestUrl = /data/${v}/manifest.json`). map-view and the worker host take the manifest as a parameter, never a global. If that version's manifest 404s, fall back to current and show the plan-sharing "older data" notice | platform → plan-sharing, brush-tool, map-view | DC |
 
 Platform consumes I12 (serves it; reads `sources` for `/attribution`). For I13 platform
 supplies the D1 binding, the rate-limit binding, the Drizzle schema location and migration
-pipeline; `plan-sharing` owns the routes.
+pipeline; `plan-sharing` owns the routes. Platform owns I16: it defines
+`PUBLIC_DATASET_VERSION` (§4.3); the per-plan pinning and 404 fallback are carried out by
+its consumers (plan-sharing, the brush-tool worker host, map-view).
 
 ### Internal types
 
@@ -171,7 +174,14 @@ The current dataset is `env.PUBLIC_DATASET_VERSION`, exposed to the client by th
 `+layout.server.ts` as `data.datasetVersion` (and to non-page code via
 `$env/dynamic/public`). Changing it is a one-line `wrangler.jsonc` PR; the data-pipeline's
 upload command prints that line. No mutable R2 pointer exists. In local dev, `.dev.vars`
-may override it.
+may override it; e2e builds set it to `fixture-0`.
+
+Per I16, this var names the version for **new** plans only. A loaded plan uses its own
+`plan.datasetVersion` (`manifestUrl = /data/${v}/manifest.json`); if that manifest 404s,
+the consumer falls back to the current version and plan-sharing shows its "older data"
+notice. Because published versions are immutable and retained indefinitely (I12), that
+404 should only occur for a version that was never uploaded. Platform passes the version
+as data, never as a client global the map or worker reads implicitly.
 
 ### 4.4 `/data/<datasetVersion>/*` route
 
@@ -224,8 +234,11 @@ caching is driven by `immutable`. The route does no parsing or geo work on objec
 **Local data.** `npm run data:local -- <datasetVersion> [--from <origin>]` fetches
 `<origin>/data/<v>/manifest.json` (default origin `https://sfhousing.mindlace.net`), then every
 URL it names, and `wrangler r2 object put sfhousing/data/<v>/<path> --local --file …`. Keyless.
-For tests, a hand-made fixture dataset lives in `e2e/fixtures/data/fixture-0001/` (manifest,
-one chunk, a tiny PMTiles, neighborhoods) and `npm run data:fixture` loads it into local R2.
+For tests, a fixture dataset with `datasetVersion` **`fixture-0`** lives in
+`e2e/fixtures/data/fixture-0/` (manifest, chunks, a tiny buildings PMTiles, basemap PMTiles,
+glyphs, neighborhoods; produced by data-pipeline's `pipeline fixture`) and
+`npm run data:fixture` loads it into local R2. It is the single e2e dataset that every
+subsystem's Playwright tests run against.
 
 ### 4.5 D1 and migrations
 
@@ -332,7 +345,7 @@ Vitest projects in one `vite.config.ts` (planafoot `vite.config.ts:93–121`, V)
 `@vitest/browser-playwright` provider (no planafoot slot semaphore). `expect.requireAssertions: true`.
 
 **server (unit):**
-- `src/lib/server/data/key.spec.ts` — `dataKey` accepts `fixture-0001`/`chunks/c-12.bin`;
+- `src/lib/server/data/key.spec.ts` — `dataKey` accepts `fixture-0`/`chunks/c-12.bin`;
   rejects `..`, `.`, empty segment, `%2e%2e`, >256 chars, leading `-`/`.` version. Property
   test (fast-check): any accepted key starts with `data/<version>/` and contains no `..` segment.
 - `src/routes/data/[version]/[...path]/server.spec.ts` against `FakeR2Bucket`
@@ -346,7 +359,7 @@ Vitest projects in one `vite.config.ts` (planafoot `vite.config.ts:93–121`, V)
 
 **e2e (Playwright, `e2e/`, chromium + mobile 375×812 project):** `webServer` runs
 `npm run preview` after `data:fixture` + `db:migrate`.
-- `data-route.spec.ts` — `request.get('/data/fixture-0001/buildings.pmtiles', { headers: { Range: 'bytes=0-126' } })`
+- `data-route.spec.ts` — `request.get('/data/fixture-0/buildings.pmtiles', { headers: { Range: 'bytes=0-126' } })`
   → 206, 127 bytes, first 7 bytes are `PMTiles` magic (fixture), `Accept-Ranges: bytes`.
   Proves the workerd R2 range path end to end.
 - `pages-a11y.spec.ts` — `/`, `/about`, `/attribution`, a 404 path: `expectNoA11yViolations`
@@ -377,14 +390,13 @@ CI workflow lint: `actionlint` on `.github/workflows/*.yml` (planafoot `package.
 
 ## 8. Interface concerns (for the orchestrator)
 
-1. **No I-row says how a client learns the *current* `datasetVersion`.** This spec decides
-   `PUBLIC_DATASET_VERSION` (wrangler var, per env) surfaced as `data.datasetVersion` from
-   the root layout. map-view, plan-model (new plans) and plan-sharing depend on it; data-pipeline
-   must emit the bump. Recommend adding an I-row.
-2. **I12 does not say whether `url` fields are relative or absolute, nor the R2 key
-   layout.** Recommend: URLs are root-relative (`/data/<v>/chunks/…`) and R2 key = URL path
-   without the leading slash; `manifest.json` uploaded last. Also recommend the version
-   pattern `DATASET_VERSION_RE` be part of I12.
+1. ~~**No I-row says how a client learns the *current* `datasetVersion`.**~~ **Resolved
+   by I16** (2026-10-10 reconciliation): `PUBLIC_DATASET_VERSION` names the current version
+   for new plans; loaded plans pin their own.
+2. **I12 URL form and R2 key layout.** *Partly resolved:* I12 now says all `url`s are
+   root-relative (`/data/<v>/…`). Still open: R2 key = URL path without the leading slash,
+   `manifest.json` uploaded last, and `DATASET_VERSION_RE` are not in I12; they stand as
+   this spec's contract (§4.2–4.4) and data-pipeline follows them.
 3. I12 `sources` carries `license` but not a display name; `/attribution` shows `id`
    unless a `label` is added. Recommend an optional `label`.
 

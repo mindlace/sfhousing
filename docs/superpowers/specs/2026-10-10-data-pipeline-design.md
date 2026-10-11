@@ -15,7 +15,7 @@ All DataSF censuses below were run against the live SODA API on 2026-10-10.
 - Artifacts: `manifest.json`, `parcels/<cellId>.json`, `buildings.pmtiles`, `basemap.pmtiles`, `fonts/**`, `neighborhoods.geojson` and `report.json`.
 - Archiving raw source snapshots to R2. Uploading datasets to R2. Printing the `PUBLIC_DATASET_VERSION` bump line.
 - The invariants and the build report.
-- Generating the e2e fixture dataset that `platform` and `map-view` use.
+- Generating the e2e fixture dataset `fixture-0` that `platform` serves to every subsystem's e2e tests.
 
 **Out:**
 - Serving `/data/*`, the cache headers and range handling (`platform` §4.4).
@@ -32,8 +32,8 @@ Owned:
 | # | interface | owner → consumers | mark |
 |---|---|---|---|
 | I1 | `type ParcelId = string` — SF `mapblklot` (block+lot, e.g. `"3512008"`), the single join key across all data | data-pipeline → all | DC |
-| I6 | `interface ParcelRecord { id: ParcelId; polygon: [x: number, y: number][][] /* local metres, EPSG:7131 or equivalent, origin at label point */; labelPoint: [lng, lat]; areaM2: number; existingUnits: number; existingFloorAreaM2: number; existingHeightM: number; landUse: string; eligible: boolean; neighborhood: string }` | data-pipeline → plan-model, generator, scoreboard | DC |
-| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, neighborhoods: url }` | data-pipeline → map-view, generator, platform | DC |
+| I6 | `interface ParcelRecord { id: ParcelId; polygon: [x: number, y: number][][] /* local metres, exactly EPSG:7131 (NAD83(2011) / San Francisco CS13, metres), origin at label point */; labelPoint: [lng, lat]; areaM2: number; existingUnits: number; existingFloorAreaM2: number; existingHeightM: number; landUse: string; eligible: boolean; neighborhood: string }` | data-pipeline → plan-model, generator, scoreboard | DC |
+| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, basemapTiles: url, glyphs: url /* MapLibre `{fontstack}/{range}.pbf` template */, sprite?: url, neighborhoods: url }`. All `url`s are root-relative (`/data/<v>/…`). Every eligible-or-not parcel appears in **exactly one** chunk. `buildingsTiles` has one source-layer `buildings` with properties `parcelId`, `heightM`, `baseM`, at minzoom ≤ 12, with buildings clipped to parcels. Published versions are immutable and retained indefinitely. `datasetVersion` matches `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (build date + 8-hex input hash) everywhere it is validated. R2 key = `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` | data-pipeline → platform, plan-model, brush-tool (worker host), typology-generator, map-view | DC |
 
 Consumed: none of the I-rows. The pipeline's only dependency is platform's key layout (`data/<v>/<path>`), its bucket `sfhousing` and `DATASET_VERSION_RE` (platform §4.2–4.4).
 
@@ -67,8 +67,11 @@ interface Manifest {
   datasetVersion: string; builtAt: string;
   sources: { id: string; url: string; retrievedAt: string; license: string }[];
   chunks: { cellId: string; bbox: [w: number, s: number, e: number, n: number]; url: string; parcelCount: number }[];
-  buildingsTiles: string; neighborhoods: string;
-}
+  buildingsTiles: string; basemapTiles: string;
+  glyphs: string;                       // MapLibre `{fontstack}/{range}.pbf` template
+  sprite?: string;                      // omitted in M1 (map-view loads no sprite)
+  neighborhoods: string;
+}                                       // every url root-relative: `/data/<v>/…` (I12)
 function parseManifest(json: unknown): Manifest;              // throws ManifestError
 ```
 
@@ -156,7 +159,7 @@ Runtime deps: `@duckdb/node-api@1.5.6-r.1` (V: npm). This repo used it with the 
 | `check [<v>]` | Re-runs the §4.9 invariants on `out/<v>/`. | none |
 | `upload <v> [--local]` | Archives sources, uploads artifacts with `manifest.json` last, then prints the bump line. | R2 |
 | `verify <v> --origin <url>` | Fetches the manifest and HEADs every URL it names. Range-reads both PMTiles and expects 206. | yes |
-| `fixture` | Builds `test/fixtures/mini` and writes `e2e/fixtures/data/fixture-0001/`. | none |
+| `fixture` | Builds `test/fixtures/mini` and writes `e2e/fixtures/data/fixture-0/` (`datasetVersion` `fixture-0`). | none |
 | `all` | Runs `fetch` (only if the lock is missing), then `build`. Never uploads. | — |
 
 Lock entry: `{ id, files: [{ url, sha256, bytes, archiveKey }], retrievedAt, upstreamVersion, rowCount, license }`. `upstreamVersion` is the SODA truth-last-modified, the Overture release id, the Protomaps build date or the fonts commit sha.
@@ -262,10 +265,10 @@ This meets map-view's requirement of "a single parcel per feature; absent if unm
 
 ### 4.8 Artifacts
 
-All URLs in the manifest are **root-relative** (`/data/<v>/…`), so `new URL(u, manifestUrl)` and `pmtiles://` + `u` both work. R2 key = URL path without the leading `/`, as platform §4.4 requires.
+All URLs in the manifest are **root-relative** (`/data/<v>/…`, I12), so consumers fetch them as given and `pmtiles://` + `u` works. R2 key = URL path without the leading `/`, as platform §4.4 requires.
 
 **Parcel chunks.**
-- Grid: **1 km × 1 km cells in EPSG:7131**. `cellId = "<floor(X₀/1000)>_<floor(Y₀/1000)>"`, for example `48_24`. Each parcel is assigned by its label point, so every parcel is in exactly one chunk (plan-model IC-3).
+- Grid: **1 km × 1 km cells in EPSG:7131**. `cellId = "<floor(X₀/1000)>_<floor(Y₀/1000)>"`, for example `48_24`. Each parcel is assigned by its label point, so every parcel is in exactly one chunk (I12).
 - URL: `/data/<v>/parcels/<cellId>.json`.
 - Manifest `bbox`: the lng/lat extent of the chunk's parcel **polygons**, not the cell square. It is rounded outward to 1e-6. A brush near a cell edge therefore loads every chunk whose parcels it could touch.
 - Chunks are sorted by `cellId`, and parcels by `id`. Output is `JSON.stringify` with no whitespace, so it is byte-deterministic.
@@ -293,14 +296,16 @@ tippecanoe -o buildings.pmtiles -l buildings -Z 12 -z 15 \
 
 All flags are verified at tippecanoe 2.79.0 (V: README lines 425, 484, 503, 548). `parcelId` is **not** used as the MVT feature id: `--use-attribute-for-id` needs a numeric value (V: README:425), and ids such as `0026T001A` are not numeric. map-view promotes it instead (`promoteId: {buildings: 'parcelId'}`). `-P` is omitted so the read order stays fixed. Tile bytes are not required to be deterministic; feature attributes are.
 
-**`basemap.pmtiles`**: the Protomaps extract described in §4.1, at z0–15.
+**`basemap.pmtiles`**: the Protomaps extract described in §4.1, at z0–15. Manifest field `basemapTiles` = `/data/<v>/basemap.pmtiles`.
 
-**`fonts/<fontstack>/<range>.pbf`**: copied from basemaps-assets at the pinned commit (stacks `Noto Sans Regular`, `Noto Sans Medium`, `Noto Sans Italic`). Stack names contain spaces; see IC-4.
+**`fonts/<fontstack>/<range>.pbf`**: copied from basemaps-assets at the pinned commit (stacks `Noto Sans Regular`, `Noto Sans Medium`, `Noto Sans Italic`). The pipeline **renames the directories to remove spaces** (`NotoSans-Regular`, `NotoSans-Medium`, `NotoSans-Italic`), so every path segment matches platform's `^[A-Za-z0-9._-]+$`. Manifest field `glyphs` = `/data/<v>/fonts/{fontstack}/{range}.pbf`. map-view uses the renamed stack names in `text-font`. No `sprite` is published in M1.
 
 **`neighborhoods.geojson`**: `j2bu-swwd` simplified with `ST_SimplifyPreserveTopology` at 3 m in 7131, coordinates rounded to 6 decimals, properties `{ "name": nhood }`, features sorted by name. Budget ≤ 150 KB.
 
 **`manifest.json`** (I12):
 - `builtAt` is ISO-8601 UTC. It is the only field that is not deterministic.
+- `buildingsTiles`, `basemapTiles`, `glyphs` and `neighborhoods` are set as above; `sprite` is omitted.
+- Once uploaded, a version is immutable and retained indefinitely (I12, V13).
 - `sources[]` lists one entry per lock source. In addition, Overture is expanded into one entry per contributing `sources[].dataset` found in the SF extract: `overture:OpenStreetMap`, `overture:USGS Lidar`, `overture:Microsoft ML Buildings` and `overture:Esri Community Maps`, observed counts 176,325 / 12,942 / 9,638 / 52 (V). The platform attribution page can therefore render the obligations from data.
 - `license` uses SPDX ids where they exist: `PDDL-1.0`, `ODbL-1.0`, `CC-BY-4.0`, `OFL-1.1`; otherwise `public-domain`.
 
@@ -372,7 +377,7 @@ Fixture `pipeline/test/fixtures/mini/` holds hand-made GeoJSON for every source 
 
 Server project (Vitest, Node):
 1. `parcel-chunk.test.ts`: encode/decode round-trip on `grid-20x20` (the plan-model fixture). A property test (fast-check) on random polygons and ids checks `decode(encode(r))` equals `r`, with coordinates quantised to cm and `areaM2` within 0.01. Malformed inputs (length mismatch, unknown `format`) throw `ChunkFormatError`. Unknown keys are ignored.
-2. `manifest.test.ts`: `parseManifest` accepts the golden and rejects a missing field, a bad `datasetVersion` or a non-relative `url`.
+2. `manifest.test.ts`: `parseManifest` accepts the golden (with `basemapTiles` and `glyphs`, no `sprite`) and rejects a missing field, a bad `datasetVersion` or a `url` that is not root-relative (`/data/<v>/…`).
 3. `sql.test.ts`, one test per rule against the mini fixture:
    - condo dedupe;
    - eligibility table;
@@ -381,7 +386,8 @@ Server project (Vitest, Node):
    - clipping (the spanning building gives 2 pieces with the right `parcelId`s, and the pier has no `parcelId`);
    - label point inside;
    - multipart ring order;
-   - floor-area fallback rules 1–4.
+   - floor-area fallback rules 1–4;
+   - font directories are renamed with no spaces, and `glyphs` resolves to existing files.
 4. `golden.test.ts`: `pipeline fixture` output (chunks, manifest without `builtAt`, neighborhoods, report counts) is byte-equal to `test/fixtures/mini/golden/`. Building twice gives identical bytes (V12).
 5. `invariants.test.ts`: each of V1–V13 fails on a mutated fixture (for example, an injected unknown `landuse` fails V4).
 6. `version.test.ts`: `datasetVersion` is stable for the same lock and code, changes when any sha changes, and matches `DATASET_VERSION_RE`.
@@ -390,7 +396,7 @@ Server project (Vitest, Node):
 
 CI: the `pipeline.yml` workflow runs on changes to `pipeline/**` or `src/lib/data/**`. It installs tippecanoe 2.79.0 and runs 1–8.
 
-E2E seam (Playwright, local R2): `pipeline fixture` → `npm run data:fixture` → the test requests `/data/fixture-0001/manifest.json` and every chunk URL (200, `application/json`) and a `buildings.pmtiles` range (206). These requests are owned jointly with platform E-tests. The axe gate does not apply, since the pipeline adds no pages.
+E2E seam (Playwright, local R2): `pipeline fixture` → `npm run data:fixture` → the test requests `/data/fixture-0/manifest.json` and every chunk URL (200, `application/json`) and a `buildings.pmtiles` range (206). These requests are owned jointly with platform E-tests. The axe gate does not apply, since the pipeline adds no pages.
 
 Manual acceptance run: `pipeline all` on live data, then `upload`, then `verify <v> --origin https://sfhousing-staging.mindlace.net`.
 
@@ -403,22 +409,22 @@ Manual acceptance run: `pipeline all` on live data, then `upload`, then `verify 
 5. A second `build` from the same lock yields the same `datasetVersion` and byte-identical chunks, manifest (except `builtAt`) and neighborhoods.
 6. `upload` refuses an already published version. After upload, `verify` against staging succeeds: every manifest URL returns 200 and both PMTiles answer a range with 206.
 7. `fetch --restore` on a clean checkout reproduces `.cache` from R2 alone, after the Overture release has expired upstream.
-8. The fixture dataset in `e2e/fixtures/data/fixture-0001/` is generated by `pipeline fixture` and decodes with `decodeParcelChunk`.
+8. The fixture dataset `fixture-0` in `e2e/fixtures/data/fixture-0/` is generated by `pipeline fixture` and decodes with `decodeParcelChunk`. It includes buildings and basemap PMTiles and glyphs, so every subsystem's e2e can run against it.
 9. `report.json` lists counts for: dropped null ids, condo sub-lots, orphan land-use rows (reassigned and dropped), no-row parcels, each height-rule source, each floor-area rule, multipart and holed parcels, and dropped slivers.
 10. Manifest `sources` include each Overture contributing dataset with its licence.
 
 ## 8. Open questions
 
-- **OQ-1 Land Use source.** `fdfd-xptc` is archived (March-2023 vintage). `c5ge-t6pj` is current (2026-08) but lacks the `landuse` class and residential square footage. **Recommend:** use `fdfd-xptc` in M1. Revisit at M2 with a mapping from `c5ge-t6pj` (`open_space` → ineligible; floor area from `total_comm` plus the building-derived estimate) and its multi-parcel rows. The orchestrator should note in the design's data-sources table that the dataset is archived.
+- **OQ-1 Land Use source.** `fdfd-xptc` is archived (March-2023 vintage). `c5ge-t6pj` is current (2026-08) but lacks the `landuse` class and residential square footage. **Recommend:** use `fdfd-xptc` in M1. Revisit at M2 with a mapping from `c5ge-t6pj` (`open_space` → ineligible; floor area from `total_comm` plus the building-derived estimate) and its multi-parcel rows. (The design's data-sources table now notes that the dataset is archived.)
 - **OQ-2 Default height for unknown buildings** (`hs=3`, 7.0 m). **Recommend:** keep it, and render `hs=3` identically. Honesty is served by `report.json`, not by the map.
-- **OQ-3 Sprites.** map-view lists only fonts. If its flavour needs sprites, the pipeline will copy `basemaps-assets/sprites/v4/<flavour>*` at the same commit. **Recommend:** map-view confirms whether it needs them; the cost here is trivial.
+- ~~**OQ-3 Sprites.**~~ *Resolved:* I12 makes `sprite` optional, and map-view loads none in M1, so none is published. If a later flavour needs sprites, the pipeline copies `basemaps-assets/sprites/v4/<flavour>*` at the same commit and sets `sprite`.
 
 ## 9. Interface concerns (for the orchestrator)
 
-- **IC-1 I12 lacks basemap and fonts.** This spec publishes `/data/<v>/basemap.pmtiles` and `/data/<v>/fonts/<stack>/<range>.pbf` at fixed paths, matching map-view's assumption. **Recommend:** add `basemap` and `glyphs` to I12. They are additive, and I12's text is unchanged here.
-- **IC-2 Building-tile contract has no I-row.** The fields are source-layer `buildings` and properties `parcelId?: string`, `heightM`, `baseM` and `hs`, at minzoom 12 and maxzoom 15. Pieces are clipped per parcel (§4.7). map-view's IC-2 asks for the same contract. **Recommend:** a new I-row.
-- **IC-3 I12 `url` semantics** are unstated. This spec emits root-relative URLs. brush-tool resolves "relative to the manifest URL", and both work. **Recommend:** state "root-relative" in I12.
-- **IC-4 Font stack names contain spaces** (`Noto Sans Regular`, V: repo listing). platform's segment regex `^[A-Za-z0-9._-]+$` would return 404 for `/data/<v>/fonts/Noto%20Sans%20Regular/0-255.pbf`. **Recommend:** platform allows a space (decoded `%20`) within `fonts/` segments. The alternative is for the pipeline to slugify the directory names and for map-view to use slugged `text-font` names.
-- **IC-5 Licence of derived artifacts.** Parcel chunks become ODbL (§4.12), but the design's constraint text implies that only the basemap and Overture are ODbL. **Recommend:** the attribution page states that derived datasets are ODbL.
-- **IC-6 I12 consumers** should add brush-tool (the worker host) and plan-model (`opBBox` vs `chunks[].bbox`), as plan-model IC-2 and brush-tool IC-6 also note.
-- **IC-7 Data sources table:** the DataSF host is now `data.sf.gov`; `fdfd-xptc` is archived; Analysis Neighborhoods is `j2bu-swwd` (V).
+- ~~**IC-1 I12 lacks basemap and fonts.**~~ *Resolved:* I12 now has `basemapTiles`, `glyphs` and optional `sprite`.
+- ~~**IC-2 Building-tile contract has no I-row.**~~ *Resolved:* I12 now fixes source-layer `buildings`, properties `parcelId`, `heightM`, `baseM`, minzoom ≤ 12, clipped to parcels. `hs` is an extra property this spec adds.
+- ~~**IC-3 I12 `url` semantics.**~~ *Resolved:* I12 says all `url`s are root-relative.
+- ~~**IC-4 Font stack names contain spaces.**~~ *Resolved:* the pipeline renames font directories without spaces (§4.8); map-view uses the renamed `text-font` names; platform's segment regex is unchanged.
+- ~~**IC-5 Licence of derived artifacts.**~~ *Resolved:* the design's Data sources section now states parcel chunks and building tiles are published under ODbL with attribution.
+- ~~**IC-6 I12 consumers.**~~ *Resolved:* I12 lists platform, plan-model, brush-tool (worker host), typology-generator and map-view.
+- **IC-7 Data sources table:** *Partly resolved:* the design now notes `data.sf.gov` and that `fdfd-xptc` is archived. Still open: the table lists Analysis Neighborhoods as "id confirmed by pipeline"; this spec confirms `j2bu-swwd` (V).

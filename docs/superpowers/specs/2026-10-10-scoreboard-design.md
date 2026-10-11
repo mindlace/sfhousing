@@ -13,7 +13,7 @@ Design row (verbatim):
 
 **In scope**
 
-- The pure-TS `computeScore` and the incremental accumulator, with exact formulas. They are called by brush-tool's worker host.
+- The pure-TS `score()` (I15's name for it) and the incremental accumulator, with exact formulas. They are called by brush-tool's worker host, which attaches the result to every `diff` (I15).
 - The M1 target registry (`rhna` and `rhna-buffer`).
 - The Svelte `Scoreboard` component: desktop panel, 375 px collapsed bar, the neighborhood list, the "what this number means" copy, loading and error states, the data-vintage footnote, and the aria-live announcement.
 - Number formatting.
@@ -33,12 +33,13 @@ Design row (verbatim):
 |---|---|---|---|
 | I1 | `type ParcelId = string` — SF `mapblklot` (block+lot, e.g. `"3512008"`), the single join key across all data | data-pipeline → all | DC |
 | I2 | `interface Envelope { maxStories: number }` — the per-parcel allowed envelope. The **only** thing manipulation writes. Later milestones add optional fields; M1 code must ignore unknown fields | plan-model → generator, scoreboard | MC (envelope-as-common-currency), DC (field set) |
-| I6 | `interface ParcelRecord { id: ParcelId; polygon: [x: number, y: number][][] /* local metres, EPSG:7131 or equivalent, origin at label point */; labelPoint: [lng, lat]; areaM2: number; existingUnits: number; existingFloorAreaM2: number; existingHeightM: number; landUse: string; eligible: boolean; neighborhood: string }` | data-pipeline → plan-model, generator, scoreboard | DC |
+| I6 | `interface ParcelRecord { id: ParcelId; polygon: [x: number, y: number][][] /* local metres, exactly EPSG:7131 (NAD83(2011) / San Francisco CS13, metres), origin at label point */; labelPoint: [lng, lat]; areaM2: number; existingUnits: number; existingFloorAreaM2: number; existingHeightM: number; landUse: string; eligible: boolean; neighborhood: string }` | data-pipeline → plan-model, generator, scoreboard | DC |
 | I7 | `type BuildoutMode = 'max'` (M1). `'likely'` is reserved for M2 | generator, scoreboard | MC (sequence) |
-| I8 | `generate(parcel: ParcelRecord, env: Envelope, seed: number, mode: BuildoutMode): GeneratedBuilding \| null`. Returns `null` when the generated floor area does not exceed `existingFloorAreaM2`: nobody rebuilds smaller | generator → map-view, scoreboard | DC |
-| I9 | `interface GeneratedBuilding { parcelId: ParcelId; source: 'user'; /* widens to 'pipeline' \| 'scenario' later */ typology: TypologyId; parts: { footprint: [lng, lat][]; baseM: number; topM: number }[]; stories: number; units: number; floorAreaM2: number; replacesExisting: boolean }` | generator → map-view, scoreboard | DC |
-| I11 | `interface Score { grossUnits: number; demolishedUnits: number; netUnits: number; targets: TargetProgress[]; parcelsChanged: number; byNeighborhood: Record<string, number> }`; `interface Target { id: string; label: string; units: number; source: { label: string; url: string } }`; `interface TargetProgress { target: Target; fraction: number /* uncapped: 1.8 = 180% */ }`. M1 registers `rhna` (82,069) and `rhna-buffer` (94,379); M2 registers affordability targets | scoreboard → UI | MC (net units against named targets; overshoot is meaningful), DC (shape) |
-| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, neighborhoods: url }` | data-pipeline → map-view, generator, platform | DC |
+| I8 | `generate(parcel: ParcelRecord, env: Envelope, seed: number, mode: BuildoutMode): GeneratedBuilding \| null`. Returns `null` for a replacement when its floor area ≤ `existingFloorAreaM2` **or** its units ≤ `existingUnits`: nobody rebuilds smaller or to fewer homes. (An `adu` keeps the existing building and is exempt) | generator → map-view, scoreboard | DC |
+| I9 | `interface GeneratedBuilding { parcelId: ParcelId; source: 'user'; /* widens to 'pipeline' \| 'scenario' later */ typology: TypologyId; parts: { footprint: [lng, lat][] /* single outer ring; parcel holes dropped in M1 */; baseM: number; topM: number }[] /* nested: each part's footprint ⊆ the part below; rendered ground-to-topM */; stories: number; units: number; floorAreaM2: number; replacesExisting: boolean }` | generator → map-view, scoreboard | DC |
+| I11 | `interface Score { grossUnits: number; demolishedUnits: number; netUnits: number; targets: TargetProgress[]; parcelsChanged: number; byNeighborhood: Record<string, number> }`; `interface Target { id: string; label: string; units: number; range?: [low: number, high: number] /* M1 never sets; M2 affordability targets are ranges */; source: { label: string; url: string } }`; `interface TargetProgress { target: Target; fraction: number /* uncapped: 1.8 = 180% */ }`. M1 registers `rhna` (82,069) and `rhna-buffer` (94,379); M2 registers affordability targets | scoreboard → UI | MC (net units against named targets; overshoot is meaningful), DC (shape) |
+| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, basemapTiles: url, glyphs: url /* MapLibre `{fontstack}/{range}.pbf` template */, sprite?: url, neighborhoods: url }`. All `url`s are root-relative (`/data/<v>/…`). Every eligible-or-not parcel appears in **exactly one** chunk. `buildingsTiles` has one source-layer `buildings` with properties `parcelId`, `heightM`, `baseM`, at minzoom ≤ 12, with buildings clipped to parcels. Published versions are immutable and retained indefinitely. `datasetVersion` matches `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (build date + 8-hex input hash) everywhere it is validated. R2 key = `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` | data-pipeline → platform, plan-model, brush-tool (worker host), typology-generator, map-view | DC |
+| I15 | **The one main↔worker protocol** (`src/lib/sim/protocol.ts`, owned by brush-tool's worker host): `SimRequest` as in the brush-tool spec, and `SimResponse = { type: 'ready'; rev; datasetVersion; chunkCount } \| { type: 'diff'; rev; phase: DiffPhase; render: GeneratedUpdate; stats?: OpStats; complete: boolean; score: Score } \| { type: 'chunks'; status: Record<cellId, ChunkStatus>; pending: number; failed: string[] } \| { type: 'parcelSummary'; reqId: number; summary: ParcelSummary \| null } \| { type: 'error'; rev; code; message }`, with matching request `{ type: 'parcelSummary'; reqId: number; parcelId: ParcelId }` (no rev). `ParcelSummary = { parcelId; neighborhood; landUse; eligible; existingUnits; envelope: Envelope \| null; generated: { typology; stories; units } \| null }`, used by map-view's tooltip. `GeneratedUpdate` and `PackedCell` are owned by map-view (the worker imports the pure `packCell`). `Score` is owned by scoreboard (the worker calls its pure `score()`). The main thread never receives `GeneratedBuilding[]` | brush-tool ↔ map-view, scoreboard, typology-generator | DC |
 
 ### Internal types (new; they do not alter any I-row)
 
@@ -51,13 +52,13 @@ interface ScoreAccumulator {
   snapshot(): Score;                                                    // I11
 }
 function createScoreAccumulator(targets: readonly Target[]): ScoreAccumulator;
-// Pure, non-incremental; answers brush-tool IC-2. Must equal the accumulator's snapshot.
-function computeScore(entries: Iterable<[ParcelRecord, GeneratedBuilding]>, targets: readonly Target[]): Score;
+// Pure, non-incremental; the `score()` that I15's worker host calls. Must equal the accumulator's snapshot.
+function score(entries: Iterable<[ParcelRecord, GeneratedBuilding]>, targets: readonly Target[]): Score;
 
 // src/lib/scoreboard/targets.ts
 const M1_TARGETS: readonly Target[];
 
-// UI-only input, derived on the main thread from brush-tool SimResponse
+// UI-only input, derived on the main thread from the I15 SimResponse
 // ('chunks' → pending/failed.length; 'diff'.complete; 'ready'.datasetVersion)
 interface ScoreStatus { pendingChunks: number; failedChunks: number; datasetVersion: string;
   builtAt: string; planDatasetVersion?: string; mode: BuildoutMode }
@@ -107,7 +108,7 @@ Totals over all parcels with a contribution:
 
 All arithmetic is integer, so the totals are exact and independent of order, and a full recompute equals an incremental one.
 
-Because the generator's N7 rule makes every replacement net ≥ +1, `net(p) ≥ 1` for every changed parcel in M1. The formulas and UI still handle negative values (a minus sign, and the bar drawn from 0) in case IC-1 of the generator spec is rejected.
+Because I8 returns `null` for a replacement whose units ≤ `existingUnits` (and an ADU adds at least one home), `net(p) ≥ 1` for every changed parcel in M1. The formulas and UI still handle negative values (a minus sign, and the bar drawn from 0) defensively.
 
 ### 4.2 Targets (M1 registry)
 
@@ -122,7 +123,7 @@ Verified via search result 2026-10-10: the primer gives 82,069 for 2023–2031 a
 
 ### 4.3 Incremental update and timing
 
-- **Hosting.** Brush-tool's worker host holds every `ParcelRecord` and every result. It keeps one accumulator for the display state (committed state plus any active preview). For each upsert or removal in a diff, it calls `set()`. Each `set()` subtracts the parcel's previous `Contribution` (kept in a `Map<ParcelId, Contribution>`) and adds the new one, at O(1) per parcel. The host then attaches `snapshot()` as `diff.score`. Using `computeScore` over the whole display state is allowed, because the two must be equal (property test), but it is O(n) per diff and is not recommended during previews.
+- **Hosting.** Brush-tool's worker host holds every `ParcelRecord` and every result. It keeps one accumulator for the display state (committed state plus any active preview). For each parcel whose generated result changed (a building added, replaced or removed), it calls `set()`. Each `set()` subtracts the parcel's previous `Contribution` (kept in a `Map<ParcelId, Contribution>`) and adds the new one, at O(1) per parcel. The host then attaches `snapshot()` as `diff.score`, which I15 makes mandatory on every `diff`. Using `score()` over the whole display state is allowed, because the two must be equal (property test), but it is O(n) per diff and is not recommended during previews.
 - **Previews.** The score reflects the live preview while dragging. Cancel and commit diffs restore or confirm it.
 - **Rendering.** The main thread renders the `score` of the latest applied diff, at most once per animation frame. Diff ordering and dropping follow brush-tool §4.9.
 - **No count-up animation.** The number shown is always the exact current value.
@@ -202,7 +203,7 @@ Each target's source link is shown under the copy.
 
 ## 5. Seams
 
-- **M2 `consequences` / affordability (R9, OD-8).** The accumulator takes `targets: readonly Target[]` and the UI renders N targets generically. Nothing is hard-coded to two rows, and only the first target is styled primary. M2 appends targets whose `units` come from `AffordabilityModel.unitsToReach(goal)`. **Nothing is built now:** no model, no range fields, no cost display. Unknown extra fields on `Target` are ignored by the M1 UI (IC-3).
+- **M2 `consequences` / affordability (R9, OD-8).** The accumulator takes `targets: readonly Target[]` and the UI renders N targets generically. Nothing is hard-coded to two rows, and only the first target is styled primary. M2 appends targets whose `units` come from `AffordabilityModel.unitsToReach(goal)`. **Nothing is built now:** no model, no range display, no cost display. I11's optional `Target.range` is the M2 seam for ranges; M1 never sets it and the M1 UI ignores it, as it ignores any other unknown field.
 - **M2 `buildout-likelihood`.** The badge copy is keyed by `ScoreStatus.mode`. M1 has one entry, `max: 'Theoretical max buildout'`.
 - **M5 `pipeline-overlay`.** Nothing now. `Contribution` is per parcel, so a later per-`source` split is additive.
 
@@ -252,7 +253,7 @@ Each target's source link is shown under the copy.
 
 1. Paint a stroke over the fixture block. The score shows a nonzero net within 150 ms of pointer-up.
 2. Erase. The score returns to the empty state.
-3. Load a share link whose plan has an old `datasetVersion`. The footnote shows "recalculated".
+3. Load a share link whose plan's `datasetVersion` is absent from R2 (the I16 fallback to current). The footnote shows "recalculated". A plan whose version exists renders on its own data and shows no such note.
 4. Block one chunk URL (route abort). The warning and Retry appear. Retry recovers.
 5. axe reports no violations on the page with the panel and sheet open, at 1280 px and 375 px.
 
@@ -269,9 +270,9 @@ Each target's source link is shown under the copy.
 
 ## 8. Interface concerns (for the orchestrator)
 
-- **IC-1:** No I-row carries chunk status, `complete` or the plan's `datasetVersion` to the scoreboard. This spec derives `ScoreStatus` from brush-tool's `SimResponse`. Recommend that the proposed I15 (worker-host channel; brush-tool and map-view ICs) include it.
-- **IC-2:** This answers brush-tool IC-2. The scoreboard provides pure `computeScore` and `createScoreAccumulator`, with no DOM, so both are safe to run in the worker.
-- **IC-3:** OD-8 recommends showing **ranges**, but `Target.units` is a single number. M2 will likely need an optional `unitsRange?: [number, number]`. Nothing is needed in M1 beyond the existing rule that unknown fields are ignored.
+- ~~**IC-1:**~~ *Resolved by I15:* chunk status, `complete` and `ready.datasetVersion` travel in the single worker protocol; `ScoreStatus` is derived from it.
+- ~~**IC-2:**~~ *Resolved by I15:* the worker calls scoreboard's pure `score()` (and may use `createScoreAccumulator`); neither touches the DOM.
+- ~~**IC-3:**~~ *Resolved:* I11 gains optional `Target.range?: [low, high]`, which M1 never sets.
 
 ## 9. Open questions
 

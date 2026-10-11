@@ -35,11 +35,11 @@ Owned or consumed rows, copied verbatim:
 |---|---|---|---|
 | I1 | `type ParcelId = string` — SF `mapblklot` (block+lot, e.g. `"3512008"`), the single join key across all data | data-pipeline → all | DC |
 | I2 | `interface Envelope { maxStories: number }` — the per-parcel allowed envelope. The **only** thing manipulation writes. Later milestones add optional fields; M1 code must ignore unknown fields | plan-model → generator, scoreboard | MC (envelope-as-common-currency), DC (field set) |
-| I3 | `type PlanOp = BrushStroke` where `interface BrushStroke { kind: 'paint' \| 'erase'; stories: number; radiusM: number; path: [lng: number, lat: number][]; id: string }`. The union widens in later milestones (`AreaOp`, `PolicyOp`) | brush-tool → plan-model | DC |
+| I3 | `type PlanOp = BrushStroke` where `type BrushStroke = { kind: 'paint'; stories: number /* integer 1..80 */; radiusM: number /* 5..500 */; path: [lng: number, lat: number][]; id: string } \| { kind: 'erase'; radiusM: number; path: [lng: number, lat: number][]; id: string }`. The union widens in later milestones (`AreaOp`, `PolicyOp`) | brush-tool → plan-model | DC |
 | I4 | `interface Plan { schema: 1; datasetVersion: string; ops: PlanOp[]; title?: string }` | plan-model → brush-tool, plan-sharing | DC |
 | I5 | `resolveEnvelopes(plan: Plan, index: ParcelIndex): Map<ParcelId, Envelope>`. Ops apply in order and later ops win. A parcel is covered by a stroke iff its label point is within `radiusM` of the stroke polyline. `erase` deletes the entry. Ineligible parcels never get an entry | plan-model → generator | DC |
-| I6 | `interface ParcelRecord { id: ParcelId; polygon: [x: number, y: number][][] /* local metres, EPSG:7131 or equivalent, origin at label point */; labelPoint: [lng, lat]; areaM2: number; existingUnits: number; existingFloorAreaM2: number; existingHeightM: number; landUse: string; eligible: boolean; neighborhood: string }` | data-pipeline → plan-model, generator, scoreboard | DC |
-| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, neighborhoods: url }` | data-pipeline → map-view, generator, platform | DC |
+| I6 | `interface ParcelRecord { id: ParcelId; polygon: [x: number, y: number][][] /* local metres, exactly EPSG:7131 (NAD83(2011) / San Francisco CS13, metres), origin at label point */; labelPoint: [lng, lat]; areaM2: number; existingUnits: number; existingFloorAreaM2: number; existingHeightM: number; landUse: string; eligible: boolean; neighborhood: string }` | data-pipeline → plan-model, generator, scoreboard | DC |
+| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, basemapTiles: url, glyphs: url /* MapLibre `{fontstack}/{range}.pbf` template */, sprite?: url, neighborhoods: url }`. All `url`s are root-relative (`/data/<v>/…`). Every eligible-or-not parcel appears in **exactly one** chunk. `buildingsTiles` has one source-layer `buildings` with properties `parcelId`, `heightM`, `baseM`, at minzoom ≤ 12, with buildings clipped to parcels. Published versions are immutable and retained indefinitely. `datasetVersion` matches `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (build date + 8-hex input hash) everywhere it is validated. R2 key = `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` | data-pipeline → platform, plan-model, brush-tool (worker host), typology-generator, map-view | DC |
 
 ### Internal types (new; they do not alter any I-row)
 
@@ -69,7 +69,7 @@ function resolveParcels(ops: readonly PlanOp[], index: ParcelIndex, ids: Iterabl
 function resolveChunk(plan: Plan, index: ParcelIndex, addedIds: ParcelId[]): Map<ParcelId, Envelope | null>;
 
 // Bounds
-const STORIES_MIN = 1, STORIES_MAX = 60;
+const STORIES_MIN = 1, STORIES_MAX = 80;             // I3
 const RADIUS_MIN_M = 5, RADIUS_MAX_M = 500;
 const PATH_MAX_POINTS = 2000;
 const OPS_MAX = 5000;
@@ -154,7 +154,7 @@ return state re-inserted in ascending ParcelId order
 ```
 
 - **Later ops win, absolutely.** Painting 3 stories over a 12-story paint sets the parcel to 3. OD-2 (never demolish existing buildings) is the generator's rule (`generate` returns `null`), not a resolve rule.
-- `erase.stories` is validated (§4.6) but has no effect on resolution.
+- Erase ops carry no `stories` (I3's erase variant), so erase reads nothing but its path and radius.
 - An erase over a parcel with no entry is a no-op.
 - An **empty plan**, or a plan whose strokes cover only ineligible or unloaded parcels, resolves to an empty Map.
 - **Partial index.** The result is only defined over the parcels loaded in `index`. A plan's resolution is *complete* when every chunk whose bbox intersects some `opBBox(op)` has been added. The caller (the worker host) must load those chunks before it treats a score as final (brush-tool spec §4.9). For any set of loaded chunks, the result restricted to them is independent of the order in which they were loaded.
@@ -191,18 +191,18 @@ A plan is rejected whole if any rule fails. Every failure is reported, with a JS
 | `ops` | array of length ≤ `OPS_MAX` (5,000) | `too-many-ops` |
 | `op.kind` | `'paint'` or `'erase'` | `bad-field` |
 | `op.id` | string, 1–32 chars, `^[A-Za-z0-9_-]+$`, unique in the plan | `bad-field` / `duplicate-id` |
-| `op.stories` | integer 1–60 (also enforced on erase) | `out-of-bounds` |
+| `op.stories` | paint: required, integer 1–80. erase: not part of the variant; a `stories` on an erase op is an unknown property and is dropped | `bad-field` (missing on paint) / `out-of-bounds` |
 | `op.radiusM` | integer 5–500 | `out-of-bounds` |
 | `op.path` | 1–2,000 points. Each point is a 2-tuple of finite numbers inside `SF_BBOX` | `too-many-points` / `out-of-bounds` |
 | whole | `planByteSize ≤ MAX_PLAN_BYTES` | `too-large` |
 
-- The stories range 1–60 covers the tallest residential tower in SF (Salesforce Tower is 61 floors but is office; inferred from public sources). 60 × 3.1 m = 186 m. A higher cap is an M3 decision (scenario layers).
+- The stories range 1–80 is I3's bound. It lets people paint past Salesforce Tower's 61 floors. 80 × 3.1 m = 248 m.
 - The radius range 5–500 m runs from "one lot" to "whole-city repaint in ≈ 15 passes".
 - Unknown properties on the root or on ops are **dropped** during canonicalisation. They are not an error. This is consistent with I2's "ignore unknown fields".
 
 ### 4.7 Serialization
 
-- `serializePlan` emits compact JSON (no whitespace). Keys appear in a fixed order: root `schema, datasetVersion, title?, ops`; op `id, kind, stories, radiusM, path`. Numbers are formatted by `JSON.stringify` of the quantised doubles.
+- `serializePlan` emits compact JSON (no whitespace). Keys appear in a fixed order: root `schema, datasetVersion, title?, ops`; op `id, kind, stories, radiusM, path` (paint) or `id, kind, radiusM, path` (erase). Numbers are formatted by `JSON.stringify` of the quantised doubles.
 - The output is canonical: `serializePlan(parsePlan(s).value) === s` for every canonical `s`, and `parsePlan(serializePlan(p)).value` deep-equals `p`.
 - Size guidance (inferred): one path point costs about 24 bytes, so a typical 20-point stroke is about 560 bytes, and the 256 KB cap holds about 450 such strokes. No compact or binary encoding ships in M1 (YAGNI; see Open question 1).
 - The media type is `application/json`. The same string is used for `localStorage`, for the I13 POST body, and for any download.
@@ -218,7 +218,7 @@ A plan is rejected whole if any rule fails. Every failure is reported, with a JS
 
 - `Plan.datasetVersion` records the dataset in effect when the plan was last edited. Strokes are geographic, so a plan resolves against any dataset. Results may differ wherever parcels changed.
 - `rebasePlan(plan, v)` returns a copy with `datasetVersion = v`, with `ops` left unchanged. brush-tool calls it on the first op it commits to a plan whose version differs from the current manifest.
-- plan-model never rejects a plan for being stale. The user-facing notice and the choice of which dataset to render belong to plan-sharing and the app shell (see the brush-tool spec, §5).
+- plan-model never rejects a plan for being stale. Which dataset renders is fixed by I16: a loaded plan uses its own `plan.datasetVersion`, falling back to the current version only if that manifest 404s. The user-facing "older data" notice belongs to plan-sharing. So `rebasePlan` normally runs only after such a fallback, when the worker's `ready.datasetVersion` differs from the plan's.
 
 ### 4.10 Determinism statement
 
@@ -247,7 +247,7 @@ Unit tests:
 3. Resolve: ordering (lower wins), erase, ineligible never present, empty plan, a stroke only over ineligible parcels yields `{eligible: [], ineligible: [...]}`.
 4. Output ordering: ascending ids, whatever order the chunks were added in.
 5. Validation table: one test per row in §4.6. All errors are reported, and the paths are correct.
-6. Serialization: key order, canonical round-trip, unknown fields dropped, quantisation of `unquantised.json`.
+6. Serialization: key order, canonical round-trip, unknown fields dropped (including a `stories` on an erase op, which serializes without it), quantisation of `unquantised.json`.
 7. Migration: `future-schema` message text, missing schema, and the `MIGRATIONS` chain runner (tested with a fake registry `{1: identity}`).
 8. `rebasePlan` immutability.
 
@@ -277,11 +277,11 @@ There are no DOM, e2e or axe tests in this subsystem. The cross-layer seams are 
 ## 8. Open questions
 
 1. **A compact wire encoding** (for example, delta-encoded polyline strings) would raise the stroke capacity of the 256 KB cap about 4×. It would change I13's body away from `Plan` JSON. *Recommend:* not in M1. Revisit if real plans approach 75% of the cap (brush-tool warns at 90%).
-2. **Stories cap of 60.** *Recommend:* keep it for M1. M3's scenario-loader may need higher values for downtown height districts (up to 1,200 ft ≈ 118 stories, inferred). Raising the cap is a validation change, and it would not need a schema bump if semantics stay the same.
+2. ~~**Stories cap of 60.**~~ *Resolved by the 2026-10-10 reconciliation:* I3 bounds stories to 1..80. M3's scenario-loader may still need higher values for downtown height districts (up to 1,200 ft ≈ 118 stories, inferred). Raising the cap is a validation change, and it would not need a schema bump if semantics stay the same.
 
 ## Interface concerns (for the orchestrator)
 
 - **IC-1: `ParcelIndex` and partial data.** I5 names `ParcelIndex` but does not define it, and the design loads chunks lazily. This spec defines `ParcelIndex` as internal and states that the result is complete only once all chunks intersecting the ops are loaded. I5's text is unchanged.
-- **IC-2: I12 consumers.** The worker host builds the index from I12 `chunks[].bbox/url`, so plan-model (`opBBox`) and brush-tool (the worker host) are de facto consumers of I12, but I12 does not list them.
-- **IC-3: chunk uniqueness.** This spec assumes data-pipeline assigns each parcel to exactly one chunk, by label point. If a parcel id appears in two chunks, `addChunk` keeps the first and throws in dev builds if the records differ. data-pipeline should state this invariant.
-- **IC-4: `erase.stories`.** I3 requires `stories` on erase, where it is meaningless. This spec keeps it required (1–60) and ignored. Making it optional in a later widening would need a schema bump.
+- ~~**IC-2: I12 consumers.**~~ *Resolved:* I12 now lists plan-model and brush-tool (worker host) as consumers.
+- ~~**IC-3: chunk uniqueness.**~~ *Resolved:* I12 now states every parcel appears in exactly one chunk. As a guard, if a parcel id appears in two chunks, `addChunk` keeps the first and throws in dev builds if the records differ.
+- ~~**IC-4: `erase.stories`.**~~ *Resolved:* I3 is split into paint/erase variants and erase carries no `stories`; stories are bounded 1..80.

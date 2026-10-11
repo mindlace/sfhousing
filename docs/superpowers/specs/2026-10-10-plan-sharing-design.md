@@ -25,10 +25,16 @@ Verbatim rows owned or consumed:
 
 | # | interface | owner → consumers | mark |
 |---|---|---|---|
-| I3 | `type PlanOp = BrushStroke` where `interface BrushStroke { kind: 'paint' \| 'erase'; stories: number; radiusM: number; path: [lng: number, lat: number][]; id: string }`. The union widens in later milestones (`AreaOp`, `PolicyOp`) | brush-tool → plan-model | DC |
+| I3 | `type PlanOp = BrushStroke` where `type BrushStroke = { kind: 'paint'; stories: number /* integer 1..80 */; radiusM: number /* 5..500 */; path: [lng: number, lat: number][]; id: string } \| { kind: 'erase'; radiusM: number; path: [lng: number, lat: number][]; id: string }`. The union widens in later milestones (`AreaOp`, `PolicyOp`) | brush-tool → plan-model | DC |
 | I4 | `interface Plan { schema: 1; datasetVersion: string; ops: PlanOp[]; title?: string }` | plan-model → brush-tool, plan-sharing | DC |
-| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, neighborhoods: url }` | data-pipeline → map-view, generator, platform | DC |
-| I13 | Share API: `POST /api/plans` (body: `Plan`, ≤ 256 KB) → `{ id }`; `GET /api/plans/:id` → `Plan`; page `/p/:id`. Ids are 8-char base58 | plan-sharing ↔ platform | DC |
+| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, basemapTiles: url, glyphs: url /* MapLibre `{fontstack}/{range}.pbf` template */, sprite?: url, neighborhoods: url }`. All `url`s are root-relative (`/data/<v>/…`). Every eligible-or-not parcel appears in **exactly one** chunk. `buildingsTiles` has one source-layer `buildings` with properties `parcelId`, `heightM`, `baseM`, at minzoom ≤ 12, with buildings clipped to parcels. Published versions are immutable and retained indefinitely. `datasetVersion` matches `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (build date + 8-hex input hash) everywhere it is validated. R2 key = `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` | data-pipeline → platform, plan-model, brush-tool (worker host), typology-generator, map-view | DC |
+| I13 | Share API: `POST /api/plans` (body: `Plan`, ≤ 256 KB) → `{ id }`; `GET /api/plans/:id` → `Plan`; page `/p/:id`. Ids are 8-char base58. Status codes and error bodies are as defined in the plan-sharing spec | plan-sharing ↔ platform | DC |
+| I16 | Dataset version discovery: the worker var `PUBLIC_DATASET_VERSION` names the current version for new plans. A **published** plan (`/p/:id`) renders on **its own** `plan.datasetVersion`, with an "Open with current data" action that remixes onto current. A **locally autosaved** plan is rebased to current on load: strokes are version-independent, so `datasetVersion` is rewritten and the plan re-resolved, with a one-line notice if the version changed (`manifestUrl = /data/${v}/manifest.json`). map-view and the worker host take the manifest as a parameter, never a global. If that version's manifest 404s, fall back to current and show the plan-sharing "older data" notice | platform → plan-sharing, brush-tool, map-view | DC |
+
+I16 governs which dataset a loaded plan renders on: its own `plan.datasetVersion`, falling back to
+the current version (`PUBLIC_DATASET_VERSION`) only if that manifest 404s, in which case this spec's
+"older data" notices (N3 / N6) are shown. The load itself is brush-tool's `loadManifest`, whose
+`fellBack` flag drives the notice.
 
 Consumed from plan-model (its internal API, not an I-row): `parsePlan(text): Result<Plan>`,
 `serializePlan(plan): string`, `planByteSize`, `rebasePlan`, `emptyPlan`, `MAX_PLAN_BYTES = 262_144`,
@@ -166,9 +172,12 @@ value `JSON.stringify(LocalPlanRecord)`. One working plan per browser profile in
   `parsePlan(record.plan)`. On failure (`ok: false`, JSON error, or `v !== 1`): copy the raw
   string to `sfhousing:plan:corrupt:<ISO timestamp>`, start empty, and show notice N1.
   `future-schema` (a plan from a newer app build) is treated the same way with notice N2.
-- **datasetVersion differs from current:** the plan loads as-is and resolves against the
-  **current** dataset (strokes are geographic; plan-model §4.9). brush-tool rebases on the
-  next committed op (plan-model's rule). Notice N3 is shown once per load.
+- **datasetVersion differs from current:** per I16 the plan loads at its **own**
+  `datasetVersion` (published versions are immutable and retained, I12), so nothing changes
+  and no notice is shown. Only if `/data/<plan.datasetVersion>/manifest.json` 404s
+  (`loadManifest` returns `fellBack: true`) does it resolve against the **current** dataset
+  (strokes are geographic; plan-model §4.9); brush-tool then rebases on the next committed op,
+  and notice N3 is shown once per load.
 - **Storage unavailable** (`localStorage` throws on access, `QuotaExceededError` on write):
   editing continues; a persistent status chip "Autosave off" with tooltip/popover N4. Retry
   write on each later change; chip clears on the first successful write.
@@ -233,10 +242,12 @@ Page headers: `Cache-Control: public, max-age=300`.
   read into the view nor modified. A banner above the map (sticky, wraps at 375 px):
   "**<title or 'Untitled plan'>** · Shared plan · published <Mon D, YYYY>" with buttons
   **Remix** (primary) and **Start your own** (link to `/`).
-- **Dataset version:** the view renders against `plan.datasetVersion` when
+- **Dataset version (I16):** the view renders against `plan.datasetVersion` when
   `/data/<plan.datasetVersion>/manifest.json` exists (datasets are immutable and never
-  deleted), so viewers see what the author saw (Determinism constraint). If it does not
-  exist, it renders against the current version. When `plan.datasetVersion !== current`, the
+  deleted), so viewers see what the author saw (Determinism constraint). If it 404s, it
+  renders against the current version. The server load decides the banner line with
+  `BUCKET.head`; the client's `loadManifest` reaches the same answer and passes the manifest
+  to map-view and the worker host. When `plan.datasetVersion !== current`, the
   banner adds a second line N5 or N6 respectively.
 - **Remix:** if the local plan has ≥ 1 op, a confirm dialog: "Replace your current plan
   (<n> strokes) with a copy of this one? Your current plan will be lost unless you publish it
@@ -294,7 +305,7 @@ only deletion; there is no user-facing delete in M1.
 - `src/routes/api/plans/server.spec.ts` using an in-memory SQLite D1 shim (better-sqlite3
   via `drizzle-orm/better-sqlite3` with the generated migration applied — fixture
   `src/lib/server/test/d1.ts`), `FakeR2Bucket` (platform) seeded with
-  `data/fixture-0001/manifest.json`, and a `FakeRateLimiter({ allow: n })`:
+  `data/fixture-0/manifest.json`, and a `FakeRateLimiter({ allow: n })`:
   - 201 + `{ id }` for `fixtures/plans/small.json`; row columns correct; body equals `serializePlan`.
   - same body again → 200 and the same id; non-canonical but equivalent body (extra field,
     whitespace) → same id.
@@ -315,7 +326,8 @@ only deletion; there is no user-facing delete in M1.
 - `autosave.svelte.spec.ts` — debounce (fake timers): 3 commits within 500 ms → 1 write;
   flush on `visibilitychange`; corrupt record → preserved under `corrupt:` key + N1; `v: 2`
   record treated as corrupt; `setItem` throwing `QuotaExceededError` → "Autosave off" chip,
-  clears after a later successful write; older `datasetVersion` → N3 once.
+  clears after a later successful write; older `datasetVersion` still present → loads at its
+  own version, no notice; older `datasetVersion` absent (`fellBack`) → N3 once.
 - `PublishDialog.svelte.spec.ts` — each row of §4.6 with a mocked `fetch`: disabled-when-empty,
   preflight oversize (no fetch call), publishing busy state, success → URL + Copy, already-
   published → no fetch, 413/422/429 (countdown from `Retry-After`)/network messages exactly as specified.
@@ -332,7 +344,7 @@ platform §6):**
 - `share-a11y.spec.ts` — `expectNoA11yViolations` on `/p/<id>`, the 404 page, the open
   Publish dialog (success and error states), at both viewports.
 
-**Fixtures** (`src/lib/sharing/fixtures/plans/`): `small.json` (3 strokes on fixture-0001),
+**Fixtures** (`src/lib/sharing/fixtures/plans/`): `small.json` (3 strokes on `fixture-0`),
 `ops-5001.json` (generated by a fixture script, committed), `oversize.json`, `schema2.json`,
 `old-version.json` (`datasetVersion: "fixture-0000"`, absent from R2).
 
@@ -355,12 +367,11 @@ platform §6):**
 
 ## 8. Interface concerns (for the orchestrator)
 
-1. **I13 has no status codes or error body.** This spec defines them (§4.3–4.4); both sides
-   of I13 are covered by this spec and platform, so no other subsystem is affected. Recommend
-   recording the codes in I13.
-2. **Rendering a shared plan at its own `datasetVersion`** (§4.7) requires map-view /
-   generator / scoreboard to accept the dataset version as a parameter rather than reading the
-   current one globally. Recommend that map-view's spec take `datasetVersion` as input.
+1. ~~**I13 has no status codes or error body.**~~ *Resolved:* I13 now defers status codes and
+   error bodies to this spec (§4.3–4.4).
+2. ~~**Rendering a shared plan at its own `datasetVersion`.**~~ *Resolved by I16:* map-view
+   and the worker host take the manifest as a parameter; a loaded plan uses its own version
+   with a 404 fallback to current.
 3. **Capacity of 256 KB.** At ≈ 24 bytes per quantised point, the cap holds ≈ 10,000 path
    points; plan-model allows 5,000 ops × 2,000 points. Real plans hit the byte cap long before
    the op cap. brush-tool must simplify stroke paths; plan-model already flags a compact wire

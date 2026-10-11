@@ -17,15 +17,16 @@ Design row (verbatim):
 - Pointer, touch and pen handling over the MapLibre map, and stroke sampling.
 - Keyboard shortcuts and the keyboard stamp.
 - The **editor store**: the in-memory current `Plan`, plus the undo and redo stacks.
-- The **simulation worker protocol** (`SimRequest`/`SimResponse`) and the **worker host**. The host loads the manifest and parcel chunks, owns the `ParcelIndex`, runs plan-model resolution, calls `generate` (I8), and sends diffs to the main thread.
+- The **simulation worker protocol** (`SimRequest`/`SimResponse`, I15) and the **worker host**. The host receives the manifest as a parameter (I16), loads parcel chunks, owns the `ParcelIndex`, runs plan-model resolution, calls `generate` (I8), packs results with map-view's `packCell`, scores them with scoreboard's `score()`, and sends diffs to the main thread.
+- `loadManifest` (`src/lib/sim/manifest.ts`): the main-thread I16 loader whose result is passed to both map-view and the worker host.
 
 **Out:**
-- Rendering generated buildings and hiding existing ones (`map-view`). The ring and swath are drawn through map-view's overlay (§4.3, IC-1).
+- Rendering generated buildings and hiding existing ones (`map-view`). The ring and swath are drawn through map-view's `setOverlayLayers` (I17, §4.3).
 - The typology table and `generate` (`typology-generator`).
-- Score computation (`scoreboard`). The host calls scoreboard's function and forwards the result (IC-2).
+- Score computation (`scoreboard`). The host calls scoreboard's pure `score()` and forwards the result (I15).
 - Autosave, publish, the `/p/:id` loading and stale-dataset notice (`plan-sharing`).
 
-Files (internal layout): `src/lib/brush/` (`BrushToolbar.svelte`, `BrushController.svelte.ts`, `sampler.ts`, `editor.svelte.ts`, `shortcuts.ts`) and `src/lib/sim/` (`protocol.ts`, `client.ts`, `worker.ts`, `host.ts`). The worker is created with `new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })`, following the interplanetary pattern (verified: interplanetary/src/lib/game.svelte.ts:50). `worker.ts` is a thin `onmessage` shell over `createSimHost(deps)` in `host.ts`, so the host can be tested in Node.
+Files (internal layout): `src/lib/brush/` (`BrushToolbar.svelte`, `BrushController.svelte.ts`, `sampler.ts`, `editor.svelte.ts`, `shortcuts.ts`) and `src/lib/sim/` (`protocol.ts`, `client.ts`, `worker.ts`, `host.ts`, `manifest.ts`). The worker is created with `new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })`, following the interplanetary pattern (verified: interplanetary/src/lib/game.svelte.ts:50). `worker.ts` is a thin `onmessage` shell over `createSimHost(deps)` in `host.ts`, so the host can be tested in Node.
 
 ## 2. Interfaces
 
@@ -35,22 +36,27 @@ Copied verbatim:
 |---|---|---|---|
 | I1 | `type ParcelId = string` — SF `mapblklot` (block+lot, e.g. `"3512008"`), the single join key across all data | data-pipeline → all | DC |
 | I2 | `interface Envelope { maxStories: number }` — the per-parcel allowed envelope. The **only** thing manipulation writes. Later milestones add optional fields; M1 code must ignore unknown fields | plan-model → generator, scoreboard | MC (envelope-as-common-currency), DC (field set) |
-| I3 | `type PlanOp = BrushStroke` where `interface BrushStroke { kind: 'paint' \| 'erase'; stories: number; radiusM: number; path: [lng: number, lat: number][]; id: string }`. The union widens in later milestones (`AreaOp`, `PolicyOp`) | brush-tool → plan-model | DC |
+| I3 | `type PlanOp = BrushStroke` where `type BrushStroke = { kind: 'paint'; stories: number /* integer 1..80 */; radiusM: number /* 5..500 */; path: [lng: number, lat: number][]; id: string } \| { kind: 'erase'; radiusM: number; path: [lng: number, lat: number][]; id: string }`. The union widens in later milestones (`AreaOp`, `PolicyOp`) | brush-tool → plan-model | DC |
 | I4 | `interface Plan { schema: 1; datasetVersion: string; ops: PlanOp[]; title?: string }` | plan-model → brush-tool, plan-sharing | DC |
 | I5 | `resolveEnvelopes(plan: Plan, index: ParcelIndex): Map<ParcelId, Envelope>`. Ops apply in order and later ops win. A parcel is covered by a stroke iff its label point is within `radiusM` of the stroke polyline. `erase` deletes the entry. Ineligible parcels never get an entry | plan-model → generator | DC |
 | I7 | `type BuildoutMode = 'max'` (M1). `'likely'` is reserved for M2 | generator, scoreboard | MC (sequence) |
-| I8 | `generate(parcel: ParcelRecord, env: Envelope, seed: number, mode: BuildoutMode): GeneratedBuilding \| null`. Returns `null` when the generated floor area does not exceed `existingFloorAreaM2`: nobody rebuilds smaller | generator → map-view, scoreboard | DC |
-| I9 | `interface GeneratedBuilding { parcelId: ParcelId; source: 'user'; /* widens to 'pipeline' \| 'scenario' later */ typology: TypologyId; parts: { footprint: [lng, lat][]; baseM: number; topM: number }[]; stories: number; units: number; floorAreaM2: number; replacesExisting: boolean }` | generator → map-view, scoreboard | DC |
-| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, neighborhoods: url }` | data-pipeline → map-view, generator, platform | DC |
+| I8 | `generate(parcel: ParcelRecord, env: Envelope, seed: number, mode: BuildoutMode): GeneratedBuilding \| null`. Returns `null` for a replacement when its floor area ≤ `existingFloorAreaM2` **or** its units ≤ `existingUnits`: nobody rebuilds smaller or to fewer homes. (An `adu` keeps the existing building and is exempt) | generator → map-view, scoreboard | DC |
+| I9 | `interface GeneratedBuilding { parcelId: ParcelId; source: 'user'; /* widens to 'pipeline' \| 'scenario' later */ typology: TypologyId; parts: { footprint: [lng, lat][] /* single outer ring; parcel holes dropped in M1 */; baseM: number; topM: number }[] /* nested: each part's footprint ⊆ the part below; rendered ground-to-topM */; stories: number; units: number; floorAreaM2: number; replacesExisting: boolean }` | generator → map-view, scoreboard | DC |
+| I12 | Data manifest: `/data/<datasetVersion>/manifest.json` → `{ datasetVersion, builtAt, sources: { id, url, retrievedAt, license }[], chunks: { cellId, bbox, url, parcelCount }[], buildingsTiles: url, basemapTiles: url, glyphs: url /* MapLibre `{fontstack}/{range}.pbf` template */, sprite?: url, neighborhoods: url }`. All `url`s are root-relative (`/data/<v>/…`). Every eligible-or-not parcel appears in **exactly one** chunk. `buildingsTiles` has one source-layer `buildings` with properties `parcelId`, `heightM`, `baseM`, at minzoom ≤ 12, with buildings clipped to parcels. Published versions are immutable and retained indefinitely. `datasetVersion` matches `^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\|fixture-\d+)$` (build date + 8-hex input hash) everywhere it is validated. R2 key = `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` | data-pipeline → platform, plan-model, brush-tool (worker host), typology-generator, map-view | DC |
 | I14 | Seed: `seed = fnv1a32(parcelId)`. Variety is a pure function of parcel and envelope, so the same plan always renders identically for everyone | generator | DC |
+| I15 | **The one main↔worker protocol** (`src/lib/sim/protocol.ts`, owned by brush-tool's worker host): `SimRequest` as in the brush-tool spec, and `SimResponse = { type: 'ready'; rev; datasetVersion; chunkCount } \| { type: 'diff'; rev; phase: DiffPhase; render: GeneratedUpdate; stats?: OpStats; complete: boolean; score: Score } \| { type: 'chunks'; status: Record<cellId, ChunkStatus>; pending: number; failed: string[] } \| { type: 'parcelSummary'; reqId: number; summary: ParcelSummary \| null } \| { type: 'error'; rev; code; message }`, with matching request `{ type: 'parcelSummary'; reqId: number; parcelId: ParcelId }` (no rev). `ParcelSummary = { parcelId; neighborhood; landUse; eligible; existingUnits; envelope: Envelope \| null; generated: { typology; stories; units } \| null }`, used by map-view's tooltip. `GeneratedUpdate` and `PackedCell` are owned by map-view (the worker imports the pure `packCell`). `Score` is owned by scoreboard (the worker calls its pure `score()`). The main thread never receives `GeneratedBuilding[]` | brush-tool ↔ map-view, scoreboard, typology-generator | DC |
+| I16 | Dataset version discovery: the worker var `PUBLIC_DATASET_VERSION` names the current version for new plans. A **published** plan (`/p/:id`) renders on **its own** `plan.datasetVersion`, with an "Open with current data" action that remixes onto current. A **locally autosaved** plan is rebased to current on load: strokes are version-independent, so `datasetVersion` is rewritten and the plan re-resolved, with a one-line notice if the version changed (`manifestUrl = /data/${v}/manifest.json`). map-view and the worker host take the manifest as a parameter, never a global. If that version's manifest 404s, fall back to current and show the plan-sharing "older data" notice | platform → plan-sharing, brush-tool, map-view | DC |
+| I17 | `SimMapHandle` (map-view → brush-tool), as in the map-view spec, plus `setOverlayLayers(layers: import('@deck.gl/core').Layer[]): void` for the brush ring and swath preview | map-view → brush-tool | DC |
 
-### Internal types (new; no I-row altered)
+### Protocol and internal types
+
+`protocol.ts` is I15. `SimRequest` is defined here (I15 defers to this spec); `SimResponse` is I15's text, with its types spelled out. `GeneratedUpdate`, `PackedCell` and `ChunkStatus` are imported from map-view; `Score` from scoreboard; `Manifest` from data-pipeline (`src/lib/data/manifest.ts`).
 
 ```ts
-// src/lib/sim/protocol.ts — the single main↔worker protocol for M1
+// src/lib/sim/protocol.ts — the single main↔worker protocol for M1 (I15)
 type Rev = number; // strictly increasing per client, starting at 1
 type SimRequest =
-  | { type: 'init'; rev: Rev; manifestUrl: string; mode: BuildoutMode }
+  | { type: 'init'; rev: Rev; manifest: Manifest; mode: BuildoutMode } // manifest from loadManifest (I16)
   | { type: 'load'; rev: Rev; plan: Plan }               // replace the whole plan (open, remix, new)
   | { type: 'preview'; rev: Rev; op: PlanOp }            // replaces any earlier preview
   | { type: 'cancelPreview'; rev: Rev }
@@ -59,14 +65,18 @@ type SimRequest =
   | { type: 'prefetch'; bbox: BBox }                     // advisory, no rev
   | { type: 'retryChunks' };
 type DiffPhase = 'load' | 'preview' | 'cancel' | 'commit' | 'undo' | 'chunk';
-interface OpStats { opId: string; kind: 'paint' | 'erase'; stories: number;
+interface OpStats { opId: string; kind: 'paint' | 'erase'; stories?: number /* paint only */;
   covered: number; ineligible: number; built: number; notBigger: number; removed: number; partial: boolean }
 type SimResponse =
   | { type: 'ready'; rev: Rev; datasetVersion: string; chunkCount: number }
-  | { type: 'diff'; rev: Rev; phase: DiffPhase; upserts: GeneratedBuilding[]; removals: ParcelId[];
-      stats?: OpStats; complete: boolean; score?: Score }
-  | { type: 'chunks'; pending: number; failed: string[] }  // cellIds
-  | { type: 'error'; rev: Rev; code: 'manifest-failed' | 'bad-request' | 'internal'; message: string };
+  | { type: 'diff'; rev: Rev; phase: DiffPhase; render: GeneratedUpdate; stats?: OpStats; complete: boolean; score: Score }
+  | { type: 'chunks'; status: Record<string /* cellId */, ChunkStatus>; pending: number; failed: string[] }  // cellIds
+  | { type: 'error'; rev: Rev; code: 'manifest-invalid' | 'bad-request' | 'internal'; message: string };
+
+// src/lib/sim/manifest.ts — main thread; implements I16
+// Fetches /data/${planVersion}/manifest.json; on 404 fetches /data/${currentVersion}/manifest.json.
+// Any other failure (network, 5xx, both 404) rejects.
+function loadManifest(planVersion: string, currentVersion: string): Promise<{ manifest: Manifest; fellBack: boolean }>;
 
 // src/lib/brush/editor.svelte.ts
 interface Editor {
@@ -123,17 +133,17 @@ type BrushTool = 'move' | 'paint' | 'erase';
 - **Touch:** in Paint/Erase, one finger paints. When a second touch lands, the in-progress stroke is **cancelled** (no op is created, and the preview is reverted) and the gesture passes to MapLibre pinch/rotate. While any touch remains down, single-finger painting does not resume; a fresh touch is required. In Move, all touches pan and zoom.
 - **Pen** behaves like a mouse, and pressure is ignored. A mouse button other than the primary one never paints.
 - **Read-only** (`editor.readOnly`, used by `/p/:id`): the toolbar shows only the Move tool and a disabled-tools note, "Read-only — Remix to edit". The Remix button itself belongs to plan-sharing.
-- **Before `ready`**, Paint and Erase are disabled, and the status line reads "Loading city data…". If `error manifest-failed` arrives, the status line reads "Couldn't load city data." with a **Retry** button, which resends `init`.
+- **Before `ready`**, Paint and Erase are disabled, and the status line reads "Loading city data…". If `loadManifest` rejects, or `error manifest-invalid` arrives, the status line reads "Couldn't load city data." with a **Retry** button, which reruns `loadManifest` and resends `init`.
 
 ### 4.2 Stories and radius controls
 
-- **Stories:** a stepper `[−] 6 stories [+]`. The value is an editable `<input type="number" min=1 max=60 step=1>`. Out-of-range or non-integer input is clamped and rounded on blur or Enter. Beside it is the derived height `≈ 19 m` (stories × 3.1 m, rounded to an integer). This uses the design's floor-to-floor height, so it is a height hint, not a typology claim. Preset chips: **2 · 3 · 4 · 6 · 8 · 12 · 20 · 40**. The active chip is `aria-pressed`. The stepper is disabled when the tool is Erase, with the hint "Erase removes painted height".
+- **Stories:** a stepper `[−] 6 stories [+]`. The value is an editable `<input type="number" min=1 max=80 step=1>` (I3's bound). Out-of-range or non-integer input is clamped and rounded on blur or Enter. Beside it is the derived height `≈ 19 m` (stories × 3.1 m, rounded to an integer). This uses the design's floor-to-floor height, so it is a height hint, not a typology claim. Preset chips: **2 · 3 · 4 · 6 · 8 · 12 · 20 · 40**. The active chip is `aria-pressed`. The stepper is disabled when the tool is Erase, with the hint "Erase removes painted height". Erase ops carry no `stories` (I3): the controller builds `{ kind: 'erase', radiusM, path, id }`.
 - **Radius:** a slider with `aria-valuetext="Brush radius 30 metres"`, on a logarithmic scale from 5 to 500 m with 100 positions. The value is rounded to integer metres. It is labelled "Brush 30 m". On narrow screens it lives in a popover opened from a "30 m" button.
 - **Shortcuts** (§4.7) step the radius by ×1.25 or ÷1.25 (rounded and clamped), and the stories by ±1.
 
 ### 4.3 Brush ring and swath
 
-- Both are drawn as deck.gl layers in metres, so they are correct under pitch and zoom. `brush-ring` is a `ScatterplotLayer` with one stroked point (`radiusUnits: 'meters'`, a 2 px line, no fill). `brush-swath` is a `PathLayer` (`widthUnits: 'meters'`, width = 2·radiusM, rounded caps and joints, 25% opacity). Paint uses token `--brush-paint` and Erase uses `--brush-erase`; the erase ring is dashed (`PathStyleExtension`, or a 64-gon path in place of the scatterplot point). They are registered through map-view's overlay layer list (IC-1).
+- Both are drawn as deck.gl layers in metres, so they are correct under pitch and zoom. `brush-ring` is a `ScatterplotLayer` with one stroked point (`radiusUnits: 'meters'`, a 2 px line, no fill). `brush-swath` is a `PathLayer` (`widthUnits: 'meters'`, width = 2·radiusM, rounded caps and joints, 25% opacity). Paint uses token `--brush-paint` and Erase uses `--brush-erase`; the erase ring is dashed (`PathStyleExtension`, or a 64-gon path in place of the scatterplot point). They are passed to `SimMapHandle.setOverlayLayers([ring, swath])` (I17) whenever either changes; `setOverlayLayers([])` clears them.
 - The ring follows the hovered pointer (fine pointers only) whenever the tool is Paint or Erase. During a stroke it follows the active pointer on every device. The swath shows the **sampled path** (§4.4), so what you see is the op that will be stored.
 - At a zoom where the radius is under 4 px on screen, a minimum-size 4 px ring is drawn instead, and the status line reads "Zoom in to see the brush".
 
@@ -145,7 +155,7 @@ type BrushTool = 'move' | 'paint' | 'erase';
 - A pointer-down followed by a pointer-up with no movement gives a one-point path, a **stamp** (a disc). This is the single-pointer, non-drag way to paint (WCAG 2.2 SC 2.5.7).
 - **Cap:** when kept points reach `PATH_MAX_POINTS` (2,000), the current stroke commits and a new stroke begins at the same point with a new id. To the user it is continuous; each piece undoes separately. This needs at least 4 km of drag, because s ≥ 2 m.
 - **Op id:** 12 characters of base58 from `crypto.getRandomValues`. Ids do not affect resolution.
-- `stories` and `radiusM` are captured at pointer-down and frozen for the stroke. Shortcut changes during a stroke apply to the next stroke.
+- `stories` (paint only) and `radiusM` are captured at pointer-down and frozen for the stroke. Shortcut changes during a stroke apply to the next stroke.
 
 ### 4.5 Preview, commit, cancel
 
@@ -163,7 +173,7 @@ type BrushTool = 'move' | 'paint' | 'erase';
   - if `stats.partial`, append " · some areas still loading"
   - if nothing was covered: "No parcels under that stroke"
 
-  The numbers come from `OpStats`: `covered` is the eligible parcels covered, `built` is the non-null generated buildings, `notBigger` is the eligible parcels for which `generate` returned null, and `removed` is the buildings removed.
+  The numbers come from `OpStats`: `covered` is the eligible parcels covered, `built` is the non-null generated buildings, `notBigger` is the eligible parcels for which `generate` returned null (I8: the replacement would not add floor area or homes), and `removed` is the buildings removed.
 
 ### 4.6 Undo and redo
 
@@ -202,19 +212,22 @@ A "Keyboard shortcuts" disclosure button in the toolbar lists this table.
 
 ### 4.9 Worker host behaviour
 
-- **`init`:** fetch the manifest. On failure, send `error manifest-failed`. On success, send `ready`. Chunk URLs resolve relative to the manifest URL.
+- **Manifest (I16).** The page calls `loadManifest(plan.datasetVersion, PUBLIC_DATASET_VERSION)` once (a new plan uses the current version). The same `manifest` object is passed to map-view's `SimMap` and in `init`; neither reads a global. When `fellBack` is true, plan-sharing shows its "older data" notice, and the next commit rebases (§4.5).
+- **`init`:** validate the manifest's shape. On failure, send `error manifest-invalid`. On success, send `ready` with `manifest.datasetVersion`. Chunk URLs are root-relative (I12) and are fetched as given.
 - **Chunk loading:** the host loads a chunk whenever its bbox intersects the `opBBox` of any op in the plan, the current preview op, or a `prefetch` bbox. At most 4 fetches run concurrently. A failed chunk is retried after 1 s, 4 s and 16 s; after that it is reported in `chunks.failed`, and `retryChunks` starts another cycle. On every change in the pending or failed sets, the host sends `chunks`.
   - The toolbar shows "Loading parcels…" while `pending > 0`.
   - While `failed` is non-empty, a persistent line reads "Some parcel data didn't load — buildings there are missing." with a **Retry** button.
+  - `chunks.status` maps every cellId whose status is not `ready`-and-unchanged to its `ChunkStatus`; the main thread forwards each entry to `SimMapHandle.setChunkStatus`.
   - When a chunk lands, the host calls `addChunk` and then `resolveChunk`. It reapplies the active preview, if any, generates, and sends `phase:'chunk'`.
 - **Prefetch:** while the tool is Paint or Erase and zoom ≥ 14, the controller sends `prefetch(viewport bbox)` on `moveend`. This keeps the first paint within 5 MB, because the initial city-wide view prefetches nothing.
-- **Diffs:** `upserts` and `removals` are relative to the last diff the host sent, so the main thread applies them in order. The display state is the committed state, or the committed state plus the active preview.
-  - Upserts are sorted by `parcelId`.
-  - A parcel whose envelope resolves to an entry but whose `generate` returns `null` appears in neither list, or in `removals` if it previously had a building.
+- **Diffs:** each `diff` carries `render: GeneratedUpdate` (I15), map-view's packed format. The host keeps the `GeneratedBuilding`s per cell itself; the main thread never receives `GeneratedBuilding[]`. The display state is the committed state, or the committed state plus the active preview.
+  - `render` is relative to the previous `render` the host sent: `revision` increases by exactly 1 per diff, and each touched cell is fully repacked with `packCell` (parcels in ascending `parcelId` order), with every typed array in the transfer list. `hide.add`/`hide.remove` diff the set of parcels whose building has `replacesExisting`.
+  - A `load` diff, and the reply to map-view's `onResyncNeeded` (the main thread sends `load` with `editor.plan`), carry a revision-0 full snapshot.
+  - A parcel whose envelope resolves to an entry but whose `generate` returns `null` is absent from its cell's pack (and leaves the hide set if it was there).
   - `complete` is true iff no chunk needed by the plan (plus the preview) is pending or failed.
 - **Ordering:** requests are handled in FIFO order. Every response carries the `rev` of the request it answers, or the latest rev for `phase:'chunk'`. The main thread drops `preview` diffs whose rev is older than its latest `cancelPreview` or `commit`, by sending order; the host enforces this by always sending a cancel or commit diff after them.
-- **Generation:** for every changed parcel, the host calls `generate(record, env, fnv1a32(id), 'max')`. The whole-city path (`load` of a plan covering about 150k parcels) generates in ascending id order. Results are batched so that diffs of at most 5,000 upserts are sent as they complete, so the city fills in progressively; the 5 s target is to the final batch.
-- **Score:** after each diff, the host calls scoreboard's pure score function over the display state and attaches `score` (IC-2).
+- **Generation:** for every changed parcel, the host calls `generate(record, env, fnv1a32(id), 'max')`. The whole-city path (`load` of a plan covering about 150k parcels) generates in ascending id order. Results are batched so that each diff covers at most 5,000 changed parcels (whole cells) and is sent as it completes, so the city fills in progressively; the 5 s target is to the final batch.
+- **Score:** every diff carries `score` (I15). The host keeps scoreboard's accumulator over the display state (equal by contract to scoreboard's pure `score()`), and attaches its snapshot.
 - **Errors:** an invalid request (for example, an `undo` whose `opId` is not last) gets `error bad-request`, and the host resyncs: the main thread responds by sending `load` with `editor.plan`.
 
 ### 4.10 Edge cases
@@ -222,7 +235,7 @@ A "Keyboard shortcuts" disclosure button in the toolbar lists this table.
 - **Empty plan:** Undo is disabled and no diffs are sent beyond the `load` diff, which is empty.
 - **Stroke entirely over ineligible parcels:** the op is still committed (it is a valid, undoable op), and the announcement reads "No eligible parcels under that stroke · 12 not eligible (parks, streets)".
 - **Stroke over unloaded or failed chunks:** the op commits, `stats.partial = true`, and buildings appear when the data arrives.
-- **Plan from an older `datasetVersion`:** it resolves against the current dataset. Rebasing happens on the next commit (§4.5). The notice belongs to plan-sharing.
+- **Plan from an older `datasetVersion`:** per I16 it resolves against its own version. Only if that manifest 404s does it fall back to the current dataset; rebasing then happens on the next commit (§4.5). The notice belongs to plan-sharing.
 - **Overshoot (>100% of target):** scoreboard owns readouts. brush-tool never limits painting to reach or stay under a target.
 - **Window blur mid-stroke:** treated as a cancel.
 
@@ -239,6 +252,7 @@ A "Keyboard shortcuts" disclosure button in the toolbar lists this table.
 ## 6. Testing
 
 **Server project (Node, `*.spec.ts`):**
+- `manifest.spec.ts`: `loadManifest` returns the plan's version when present; on 404 returns the current one with `fellBack: true`; rejects on 5xx or a double 404.
 - `sampler.spec.ts`
   - The radial filter spacing.
   - Prefix stability: for any point sequence, `path()` after k pushes, minus its tail, is a prefix of the final `path()` (fast-check).
@@ -250,14 +264,16 @@ A "Keyboard shortcuts" disclosure button in the toolbar lists this table.
   - Rebase on commit.
   - Read-only refusal.
 - `host.spec.ts`
-  - Uses `createSimHost` with an in-memory fetch serving `src/lib/sim/fixtures/data/test-v1/` (a manifest plus 4 chunks of the plan-model `grid-20x20` parcels) and a stub `generate`: a building with `units = maxStories` when `maxStories > 2`, else `null`.
+  - Uses `createSimHost` with an in-memory fetch serving `src/lib/sim/fixtures/data/test-v1/` (a manifest plus 4 chunks of the plan-model `grid-20x20` parcels), map-view's real `packCell`, and a stub `generate`: a building with `units = maxStories` when `maxStories > 2`, else `null`. Display state is reconstructed by applying `render` updates in order.
   - (a) Preview then commit gives the same display as commit alone.
   - (b) Undo gives the same display as `load(plan minus last op)`.
   - (c) Chunk arrival order does not matter, including a chunk that arrives mid-preview.
   - (d) A failed chunk is retried 3 times on a fake clock, then reported in `failed`.
   - (e) Stale previews are superseded.
   - (f) A bad undo leads to `error bad-request`.
-  - (g) The `stats` counts on a hand-checked stroke.
+  - (g) The `stats` counts on a hand-checked stroke; an erase's `stats` has no `stories`.
+  - (h) Every `diff` carries `score`, and it equals scoreboard's `score()` over the reconstructed display state.
+  - (i) `render.revision` is gap-free; a resync `load` yields revision 0.
   - Properties (a)–(c) run under fast-check over random op sequences.
 - `shortcuts.spec.ts`: the key → action map, and suppression inside inputs.
 
@@ -266,19 +282,20 @@ A "Keyboard shortcuts" disclosure button in the toolbar lists this table.
   - Radiogroup arrow-key roving.
   - Stepper clamping, presets with `aria-pressed`, and the `≈ m` hint.
   - The log slider maps to 5 and 500 at its ends, with `aria-valuetext`.
-  - Erase disables the stepper.
-  - Disabled states before `ready` and on `manifest-failed`, including the Retry wiring.
+  - Erase disables the stepper, and an erase op has no `stories` key.
+  - The stories input clamps to 1..80.
+  - Disabled states before `ready` and on a `loadManifest` rejection or `manifest-invalid`, including the Retry wiring.
   - Status-line texts for each §4.5 template.
   - The read-only layout at 375 px.
 - `BrushController.svelte.spec.ts`
-  - Uses a stub map that exposes `unproject` and handler toggles.
+  - Uses a stub `SimMapHandle` (map with `unproject` and handler toggles, plus a recording `setOverlayLayers`).
   - A drag emits previews (no more than one per frame, one in flight) and then a commit.
   - Space toggles `dragPan`.
   - A second touch cancels the stroke.
   - Escape cancels.
   - Enter on the focused map stamps at the centre.
 
-**Playwright e2e** (the fixture dataset `test-v1` is served by platform at `/data/test-v1/`, IC-3):
+**Playwright e2e** (against platform's fixture dataset `fixture-0`, served at `/data/fixture-0/`; e2e builds set `PUBLIC_DATASET_VERSION=fixture-0`):
 1. Desktop paint: a drag across the grid produces a status line "Painted 6 stories on N parcels…", and map-view's test hook reports N generated buildings. The time from pointer-up to the commit diff being applied is ≤ 150 ms, read from a `performance.mark` pair (a 500-parcel stroke, as a soft-failing perf check on CI).
 2. Undo and redo with the keyboard; the counts revert.
 3. Mobile (375 × 812, touch): Move-mode drag pans and creates no op. Switching to Paint and dragging creates an op. A two-finger gesture during a stroke creates no op.
@@ -295,19 +312,19 @@ A "Keyboard shortcuts" disclosure button in the toolbar lists this table.
 5. Undo and redo restore the exact display of `load(ops prefix)`.
 6. A commit that would exceed 256 KB or 5,000 ops is refused with the specified message, and no partial op is stored.
 7. Every brush action has a non-drag alternative (a click or tap stamp, and the keyboard Enter stamp). The axe gate passes. Touch targets are ≥ 44 px.
-8. The worker protocol in `src/lib/sim/protocol.ts` matches §2. It is the only main↔worker channel.
+8. The worker protocol in `src/lib/sim/protocol.ts` matches I15 and §2. It is the only main↔worker channel, and no `GeneratedBuilding[]` crosses it.
 9. A chunk failure is visible, retried automatically, and recoverable manually.
 
 ## 8. Open questions
 
 1. **Default tool on hybrid devices** (a touch laptop with a fine pointer). *Recommend:* use `(pointer: fine)` at load (Paint). A touch on Paint still paints, which is fine because two-finger gestures still pan.
-2. **Should Erase take a stories value**, so that erase becomes "lower to N"? *Recommend:* no. Painting a lower height already does that.
+2. ~~**Should Erase take a stories value**~~ *Resolved:* no. I3's erase variant carries no `stories`; painting a lower height already lowers.
 
 ## Interface concerns (for the orchestrator)
 
-- **IC-1: overlay layer registration.** brush-tool needs map-view to accept extra deck.gl layers (`brush-ring`, `brush-swath`) and to expose `unproject`, the handler toggles and the canvas container. No I-row covers this. Proposed internal contract: `mapView.setOverlayLayers('brush', Layer[])`, plus access to the `maplibregl.Map` instance.
-- **IC-2: score inputs.** Scoreboard needs `existingUnits`, `neighborhood` and `replacesExisting` per parcel, and `GeneratedBuilding` (I9) does not carry the first two. This spec has the worker host (which holds the `ParcelRecord`s) call scoreboard's pure `computeScore` and attach `diff.score: Score` (I11). The scoreboard spec must confirm that it provides a pure function that can run in the worker.
-- **IC-3: test dataset.** The e2e tests need platform to serve a fixture `datasetVersion` (`test-v1`), and the app to accept a manifest-URL override in test builds.
-- **IC-4: diff payload size.** A whole-city `load` sends about 150k `GeneratedBuilding`s by structured clone. If map-view needs a columnar or transferable format to meet 5 s, it would replace `upserts: GeneratedBuilding[]` in this internal protocol. That is map-view's call; no I-row changes.
-- **IC-5: one protocol.** typology-generator's spec must not define a second worker protocol. It supplies `generate` (I8) and `fnv1a32` (I14) as pure imports into `host.ts`.
-- **IC-6: I12 consumers** should include brush-tool (the worker host), which reads `chunks[]`.
+- ~~**IC-1: overlay layer registration.**~~ *Resolved by I17:* `SimMapHandle.setOverlayLayers(layers)` plus `getMap()`.
+- ~~**IC-2: score inputs.**~~ *Resolved by I15:* the worker host calls scoreboard's pure `score()` and every `diff` carries `score`.
+- ~~**IC-3: test dataset.**~~ *Resolved:* platform serves fixture dataset `fixture-0`; e2e builds point `PUBLIC_DATASET_VERSION` at it, so no manifest-URL override is needed.
+- ~~**IC-4: diff payload size.**~~ *Resolved by I15:* `diff.render` is map-view's packed, transferable `GeneratedUpdate`.
+- ~~**IC-5: one protocol.**~~ *Resolved by I15:* the one protocol; typology-generator supplies `generate` (I8) and `fnv1a32` (I14) as pure imports into `host.ts`.
+- ~~**IC-6: I12 consumers**~~ *Resolved:* I12 lists brush-tool (worker host).
