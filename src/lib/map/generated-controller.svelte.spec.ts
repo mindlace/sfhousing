@@ -34,6 +34,7 @@ function packOf(cellId: string, from: number, to: number): PackedCell {
 const ids = (p: PackedCell) => p.parcelIds;
 const layerIds = (f: FakeDeps) => f.lastLayers.map((l) => l.id);
 const layerById = (f: FakeDeps, id: string) => f.lastLayers.find((l) => l.id === id);
+const beforeIdOf = (l: Layer) => (l.props as { beforeId?: string }).beforeId;
 
 function upd(revision: number, partial: Partial<GeneratedUpdate> = {}): GeneratedUpdate {
   return { revision, cells: [], removedCells: [], hide: { add: [], remove: [] }, ...partial };
@@ -394,16 +395,16 @@ describe('GeneratedController (fake deps)', () => {
       'brush-ring',
       'brush-swath'
     ]);
-    for (const l of f.lastLayers) expect(l.props.beforeId).toBe('x');
+    for (const l of f.lastLayers) expect(beforeIdOf(l)).toBe('x');
     // The caller's overlay instances are not mutated: they are cloned with the beforeId.
-    expect(ring.props.beforeId).toBeUndefined();
+    expect(beforeIdOf(ring)).toBeUndefined();
     const settled = f.lastLayers.slice(0, 2);
     f.flushFrame(1000 + RISE_MS / 2);
-    expect(layerById(f, 'rising-1-A')!.props.beforeId).toBe('x');
+    expect(beforeIdOf(layerById(f, 'rising-1-A')!)).toBe('x');
     expect(f.lastLayers.slice(0, 2)[0]).toBe(settled[0]);
     expect(f.lastLayers.slice(0, 2)[1]).toBe(settled[1]);
     c.setTheme('dark');
-    for (const l of f.lastLayers) expect(l.props.beforeId).toBe('x');
+    for (const l of f.lastLayers) expect(beforeIdOf(l)).toBe('x');
   });
 
   it('labelBeforeId unset: layers carry no beforeId and overlay instances pass through', () => {
@@ -412,7 +413,7 @@ describe('GeneratedController (fake deps)', () => {
     c.apply(snapshot0());
     const ring = new ScatterplotLayer({ id: 'brush-ring', data: [] });
     c.setOverlayLayers([ring]);
-    for (const l of f.lastLayers) expect(l.props.beforeId).toBeFalsy();
+    for (const l of f.lastLayers) expect(beforeIdOf(l)).toBeFalsy();
     expect(f.lastLayers.at(-1)).toBe(ring);
   });
 
