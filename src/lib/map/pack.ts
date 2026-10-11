@@ -56,6 +56,7 @@ export function packCell(cellId: string, items: readonly PackInput[]): PackedCel
   const typ: number[] = [];
   sorted.forEach(({ building: b, existingUnits }, s) => {
     const ti = TYPOLOGY_ORDER.indexOf(b.typology);
+    if (ti < 0) throw new Error(`packCell: unknown typology ${b.typology} on ${b.parcelId}`);
     parcelMeta.set([b.units, existingUnits, b.stories, ti], 4 * s);
     for (const part of b.parts) {
       rings.push(normaliseRing(part.footprint));

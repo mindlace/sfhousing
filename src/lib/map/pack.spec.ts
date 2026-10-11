@@ -101,6 +101,10 @@ describe('packCell (U1)', () => {
   it('duplicate parcelId throws', () => {
     expect(() => packCell('c', [items[0], items[0]])).toThrow();
   });
+  it('unknown typology throws', () => {
+    const bad = { ...items[0], building: { ...items[0].building, typology: 'castle' } };
+    expect(() => packCell('c', [bad as unknown as PackInput])).toThrow(/unknown typology castle/);
+  });
   it('concatPacks remaps slots and keeps geometry', () => {
     const a = packCell('c', items.slice(0, 6)),
       b = packCell('c', items.slice(6));
