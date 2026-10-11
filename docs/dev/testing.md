@@ -28,6 +28,8 @@ It is not a general R2 emulator. The Playwright e2e against workerd is the sourc
 
 `npm run test:e2e` (`playwright.config.ts`, `e2e/`): projects `chromium` (desktop) and `mobile` (375x812, touch). The `webServer` runs `npm run data:fixture && npm run db:migrate && npm run preview -- --var PUBLIC_DATASET_VERSION:fixture-0` on port 4173 and reuses an existing server outside CI. Free port 4173 if a previous run left a server behind.
 
+The `VITE_E2E=1` build adds the brush hook `window.__sfhBrush` (`src/lib/brush/debug.ts`: `ops`, `lastStats`, `ready`, `chunks`) beside map-view's `window.__sfhMap`, and the `sfh-brush-commit` performance measure (pointer-up to commit applied). In that build the sim worker retries a failed chunk after 50/100/200 ms instead of 1/4/16 s, so `e2e/brush.spec.ts` sees the Retry chip within seconds. The 500-parcel and whole-city budgets are not e2e: `src/lib/sim/host.bench.spec.ts` (server project, part of `test:unit`) fails above 100 ms for a ≈500-parcel commit diff and 5,000 ms for a whole-city load.
+
 CI runs `npm run test:e2e -- --project=chromium --project=mobile`. Single spec: `npx playwright test e2e/data-route.spec.ts --project=chromium`.
 
 ## Fixture dataset
