@@ -25,9 +25,16 @@ function toBuilding(p: ParcelRecord, b: { units: number; repl: boolean } | null)
 }
 
 describe('accumulator property (spec §6)', () => {
+  it('generator reaches scale (sequences routinely in the hundreds)', () => {
+    const lengths = fc
+      .sample(fc.array(opArb, { maxLength: 1500, size: 'max' }), 20)
+      .map((a) => a.length);
+    expect(Math.max(...lengths)).toBeGreaterThanOrEqual(200);
+  });
+
   it('incremental snapshot deep-equals a from-scratch recompute', () => {
     fc.assert(
-      fc.property(fc.array(opArb, { maxLength: 1500 }), (ops) => {
+      fc.property(fc.array(opArb, { maxLength: 1500, size: 'max' }), (ops) => {
         const acc = createScoreAccumulator(M1_TARGETS);
         const state = new Map<string, [ParcelRecord, GeneratedBuilding]>();
         for (const { idx, b } of ops) {
@@ -48,15 +55,17 @@ describe('accumulator property (spec §6)', () => {
   it('is invariant to the order of updates', () => {
     fc.assert(
       fc.property(
-        fc.uniqueArray(opArb, { selector: (o) => o.idx, maxLength: N }),
-        fc.integer(),
-        (ops, seed) => {
+        fc
+          .uniqueArray(opArb, { selector: (o) => o.idx, maxLength: N, size: 'max' })
+          .chain((ops) =>
+            fc.tuple(
+              fc.constant(ops),
+              fc.shuffledSubarray(ops, { minLength: ops.length, maxLength: ops.length })
+            )
+          ),
+        ([ops, shuffled]) => {
           const forward = createScoreAccumulator(M1_TARGETS);
           for (const { idx, b } of ops) forward.set(PARCELS[idx], toBuilding(PARCELS[idx], b));
-          const shuffled = fc.sample(fc.shuffledSubarray(ops, { minLength: ops.length }), {
-            seed,
-            numRuns: 1
-          })[0];
           const other = createScoreAccumulator(M1_TARGETS);
           for (const { idx, b } of shuffled) other.set(PARCELS[idx], toBuilding(PARCELS[idx], b));
           expect(JSON.stringify(other.snapshot())).toBe(JSON.stringify(forward.snapshot()));
