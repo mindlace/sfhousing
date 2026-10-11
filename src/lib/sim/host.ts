@@ -24,6 +24,7 @@ import {
 import { M1_TARGETS, type Target } from '$lib/scoreboard';
 import { cellsIntersecting, createChunkLoader, type ChunkLoader, type FetchLike } from './chunks';
 import { createDisplay, type Display } from './display';
+import { createLru, type Lru } from './lru';
 import { checkManifestShape } from './manifest-shape';
 import type { ErrorResponse, OpStats, ParcelSummary, SimRequest, SimResponse } from './protocol';
 
@@ -37,12 +38,24 @@ export interface SimHostDeps {
   retryDelaysMs?: readonly number[]; // default DEFAULT_RETRY_DELAYS_MS
   maxConcurrent?: number; // default 4
   batchParcels?: number; // default 5000
+  memoCap?: number; // generate-memo entries, default DEFAULT_MEMO_CAP
 }
 
 export interface SimHost {
   handle(req: SimRequest): void;
   dispose(): void;
 }
+
+/**
+ * Generate-memo cap, in entries (W7d, measured on the host.bench synthetic city with the real
+ * generator). One entry retains ≈0.8–1.0 KB (key, Map slot and building) and ≈77 B when the
+ * display already holds the building. 160,000 covers every SF parcel (≈150k) at one height, so
+ * a whole-city reload, or the undo and redo of a whole-city stroke, still hits; below the
+ * eligible count those sequences thrash to 0–12 % hits. Every smaller sequence (preview then
+ * commit, undo/redo, repaint) already reaches the unbounded hit rate at 65,536. Worst case, all
+ * entries off-display: ≈160 MB, against the unbounded memo's ≈150k × 80 heights.
+ */
+export const DEFAULT_MEMO_CAP = 160_000;
 
 export const DEFAULT_RETRY_DELAYS_MS: readonly number[] = Object.freeze([1000, 4000, 16000]);
 
@@ -61,8 +74,8 @@ interface State {
   opIds: Set<string>;
   committed: EnvelopeMap;
   preview: Preview | null;
-  memo: Map<string, GeneratedBuilding | null>;
-  logged: Set<ParcelId>;
+  memo: Lru<string, GeneratedBuilding | null>; // bounded; a miss just regenerates
+  logged: Set<ParcelId>; // bounded by the parcel count; keeps an evicted throw from re-logging
   display: Display;
   loader: ChunkLoader;
   opCells: WeakMap<PlanOp, string[]>;
@@ -90,6 +103,7 @@ export function createSimHost(deps: SimHostDeps): SimHost {
   const retryDelaysMs = deps.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
   const maxConcurrent = deps.maxConcurrent ?? 4;
   const batchParcels = deps.batchParcels ?? 5000;
+  const memoCap = deps.memoCap ?? DEFAULT_MEMO_CAP;
 
   let s: State | null = null;
   let latestRev = 0;
@@ -202,7 +216,7 @@ export function createSimHost(deps: SimHostDeps): SimHost {
       opIds: new Set(),
       committed: new Map(),
       preview: null,
-      memo: new Map(),
+      memo: createLru(memoCap),
       logged: new Set(),
       opCells: new WeakMap()
     } as Omit<State, 'display' | 'loader'> as State;

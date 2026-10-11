@@ -143,6 +143,7 @@ export function makeHarness(opts?: {
   generate?: SimHostDeps['generate'];
   retryDelaysMs?: readonly number[];
   batchParcels?: number;
+  memoCap?: number;
   /** Extra or replacement response bodies, keyed by url. */
   bodies?: Record<string, unknown>;
 }): Harness {
@@ -187,7 +188,8 @@ export function makeHarness(opts?: {
     clearTimeout: (h) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>),
     generate: opts?.generate ?? ((p, e) => stubGenerate(p, e)),
     ...(opts?.retryDelaysMs ? { retryDelaysMs: opts.retryDelaysMs } : {}),
-    ...(opts?.batchParcels ? { batchParcels: opts.batchParcels } : {})
+    ...(opts?.batchParcels ? { batchParcels: opts.batchParcels } : {}),
+    ...(opts?.memoCap !== undefined ? { memoCap: opts.memoCap } : {})
   });
 
   const diffs = () => sent.filter((m): m is DiffResponse => m.type === 'diff');
