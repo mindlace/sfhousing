@@ -580,20 +580,80 @@ test.describe('map view', () => {
     expect(first.layerIds.some((id) => id.startsWith('rising-'))).toBe(true);
   });
 
-  // ---- W6 task 2 ------------------------------------------------------------------------------
+  // ---- E9 golden screenshots, E10 first-paint budget -------------------------------------------
 
-  const W6: [title: string, reason: string][] = [
-    [
-      'E9: golden screenshots map-light.png and map-dark.png',
-      'W6: golden screenshots need fixture plan rendered via worker host'
-    ],
-    [
-      'E10 @budget: ≤ 5 MB transferred until first idle',
-      'W6/staging: @budget runs post-deploy against staging only'
-    ]
-  ];
-  for (const [title, reason] of W6) {
-    // eslint-disable-next-line playwright/expect-expect -- fixme placeholder, never runs
-    test.fixme(title, { annotation: { type: 'fixme', description: reason } }, () => {});
-  }
+  test.describe('goldens', () => {
+    // Goldens are Chromium SwiftShader only (spec §6 E9); the mobile project has a different frame.
+    // eslint-disable-next-line playwright/no-skipped-test
+    test.skip(({ isMobile }) => isMobile, 'chromium project only');
+    test.use({ reducedMotion: 'reduce' });
+
+    for (const scheme of ['light', 'dark'] as const) {
+      test(`E9: golden screenshot map-${scheme}.png`, async ({ page }) => {
+        await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
+        await gotoEditor(page);
+        await waitIdle(page);
+        await page.evaluate(
+          (text) => (window as Win).__sfhBrush!.load(JSON.parse(text)),
+          readFileSync(
+            new URL('../src/lib/sharing/fixtures/plans/small.json', import.meta.url),
+            'utf8'
+          )
+        );
+        // Worker completion: all 3 ops loaded, nothing pending, revision unchanged across polls.
+        await expect.poll(() => ops(page)).toBe(3);
+        let prev = -1;
+        let stable = 0;
+        await expect
+          .poll(
+            async () => {
+              const s = await page.evaluate(() => {
+                const m = (window as Win).__sfhMap!;
+                const snap = m.snapshot();
+                return {
+                  rev: snap?.revision ?? -1,
+                  pending: snap?.pending ?? 1,
+                  parts: snap?.parts ?? 0
+                };
+              });
+              stable = s.pending === 0 && s.rev === prev ? stable + 1 : 0;
+              prev = s.rev;
+              return stable;
+            },
+            { intervals: [100], timeout: 20_000 }
+          )
+          .toBeGreaterThanOrEqual(3);
+        // The spec's default desktop frame, as written (generated buildings may be off-frame).
+        await jumpAndIdle(page, {
+          center: [-122.4194, 37.7749],
+          zoom: 13,
+          pitch: 55,
+          bearing: -20
+        });
+        await waitIdle(page);
+        await expect(page.getByTestId('map-root')).toHaveScreenshot(`map-${scheme}.png`, {
+          maxDiffPixelRatio: 0.01,
+          animations: 'disabled'
+        });
+      });
+    }
+  });
+
+  test('E10 @budget: ≤ 5 MB transferred until first idle', async ({ page }) => {
+    // Local-preview proxy for the staging check. Bytes are CDP encodedDataLength totals; they can
+    // vary a little run to run (headers, compression, which tiles the first frame picks), so the
+    // measured value is annotated and only the generous 5 MB ceiling is asserted.
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Network.enable');
+    await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
+    let bytes = 0;
+    cdp.on('Network.loadingFinished', (e) => {
+      bytes += e.encodedDataLength;
+    });
+    await gotoReady(page);
+    await waitIdle(page);
+    test.info().annotations.push({ type: 'E10', description: `${bytes} bytes` });
+    expect(bytes).toBeGreaterThan(0);
+    expect(bytes).toBeLessThanOrEqual(5 * 1024 * 1024);
+  });
 });
