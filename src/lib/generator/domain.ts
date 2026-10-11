@@ -10,6 +10,33 @@ export function domainArea(domain: PathsD): number {
 
 /** Tests the complete region, including edges crossing concave boundaries. */
 export function insideDomain(region: PathsD, domain: PathsD): boolean {
+  // Convex domains contain an entire straight-edged region iff they contain every vertex.
+  // Concavities, multiple components and exclusions still use polygon difference.
+  if (domain.length === 1 && domain[0].length >= 3) {
+    const outer = domain[0];
+    let convex = true;
+    for (let i = 0; i < outer.length; i++) {
+      const a = outer[i],
+        b = outer[(i + 1) % outer.length],
+        c = outer[(i + 2) % outer.length];
+      if ((b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x) < -1e-9) {
+        convex = false;
+        break;
+      }
+    }
+    if (
+      convex &&
+      region.every((r) =>
+        r.every((p) =>
+          outer.every((a, i) => {
+            const b = outer[(i + 1) % outer.length];
+            return (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x) >= -1e-9;
+          })
+        )
+      )
+    )
+      return true;
+  }
   return domainArea(differenceD(region, domain, FillRule.NonZero, 4)) <= 0.0001;
 }
 

@@ -83,6 +83,8 @@ describe('packCell (U1)', () => {
             [0, 1],
             [0, 0]
           ] as [number, number][],
+          role: 'occupied' as const,
+          tone: 0 as const,
           baseM: 0,
           topM: 9
         }
@@ -102,7 +104,10 @@ describe('packCell (U1)', () => {
     expect(() => packCell('c', [items[0], items[0]])).toThrow();
   });
   it('unknown typology throws', () => {
-    const bad = { ...items[0], building: { ...items[0].building, typology: 'castle' } };
+    const bad = {
+      ...items[0],
+      building: { ...items[0].building, composition: 'simple', typology: 'castle' }
+    };
     expect(() => packCell('c', [bad as unknown as PackInput])).toThrow(/unknown typology castle/);
   });
   it('concatPacks remaps slots and keeps geometry', () => {

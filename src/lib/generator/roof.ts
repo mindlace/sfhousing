@@ -21,7 +21,7 @@ export function roofAccents(
   const caps: RoofAccent[] = [];
   const baseM = floorTop(composition.typology, composition.stories);
   for (const roof of roofs) {
-    for (const ring of inset([roof], 0.2)) {
+    for (const ring of inset([roof], 0.21)) {
       if (caps.length >= MAX_ROOF_ACCENTS) return caps;
       if (
         signedArea(ring) < 1 ||

@@ -33,3 +33,25 @@ export function toLngLat(
     return [r7(lng0 + e * degPerMLng), r7(lat0 + n * degPerMLat)];
   });
 }
+
+/** Unrounded inverse of the local affine transform, used to validate serialized rings. */
+export function fromLngLat(
+  ring: readonly (readonly [number, number])[],
+  labelPoint: readonly [number, number]
+): [number, number][] {
+  const [lng0, lat0] = labelPoint;
+  const phi = lat0 * D2R,
+    sinP = Math.sin(phi),
+    cosP = Math.cos(phi);
+  const g = (lng0 - LON0) * sinP * D2R,
+    cg = Math.cos(g),
+    sg = Math.sin(g);
+  const W = 1 - E2_GRS80 * sinP * sinP;
+  const M = (A_GRS80 * (1 - E2_GRS80)) / Math.pow(W, 1.5),
+    N = A_GRS80 / Math.sqrt(W);
+  return ring.map(([lng, lat]) => {
+    const e = (lng - lng0) * N * cosP * D2R,
+      n = (lat - lat0) * M * D2R;
+    return [e * cg - n * sg, e * sg + n * cg];
+  });
+}

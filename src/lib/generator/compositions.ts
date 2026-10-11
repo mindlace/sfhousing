@@ -21,7 +21,7 @@ import {
 } from './constants';
 import { domainArea, fitSimpleRegions, insideDomain } from './domain';
 import { massTypology } from './massing';
-import { canonicalRing, inset, orientedRect, project, signedArea } from './poly';
+import { canonicalRing, inset, intersect, orientedRect, project, signedArea } from './poly';
 import type { Site } from './site';
 import type { ReplacementTypology } from './types';
 import type { VarietyDraws } from './variety';
@@ -123,9 +123,7 @@ function cutTop(site: Site, regions: PathsD, divided: boolean, depth: number): P
   const clips = divided
     ? [rect(pu.min - 1, middle - depth / 2), rect(middle + depth / 2, pu.max + 1)]
     : [rect(pu.min - 1, pu.max - depth)];
-  return clips.flatMap((clip) =>
-    fitSimpleRegions(intersectD(regions, [clip], FillRule.NonZero, 4), site)
-  );
+  return clips.flatMap((clip) => fitSimpleRegions(intersect(regions, [clip]), site));
 }
 
 function roofRecipe(
@@ -181,7 +179,7 @@ function towerRecipe(
       centreV - width / 2,
       centreV + width / 2
     );
-    return fitSimpleRegions(intersectD([rect], support, FillRule.NonZero, 4), site);
+    return fitSimpleRegions(intersect([rect], support), site);
   };
   if (family === 'paired') {
     const split = draws.splitFraction;
@@ -229,17 +227,18 @@ function towerRecipe(
   };
 }
 
-export function compositionCandidates(
+export function* compositionOptions(
   site: Site,
   reference: OccupiedComposition,
   draws: CompositionDraws
-): OccupiedComposition[] {
-  const candidates: OccupiedComposition[] = [];
+): Generator<OccupiedComposition> {
+  let simple = false;
   const compatible =
     ['walkup', 'podium', 'midrise'].includes(reference.typology) && reference.stories >= 5;
   for (const family of draws.familyOrder) {
     if (family === 'simple') {
-      candidates.push(reference);
+      simple = true;
+      yield reference;
       continue;
     }
     const tower =
@@ -250,11 +249,18 @@ export function compositionCandidates(
         ? towerRecipe(site, reference, draws, family, attempt)
         : roofRecipe(site, reference, draws, family === 'divided', 1 - attempt * 0.2);
       if (occupiedArea(candidate.bands) > 0 && validComposition(site, candidate, reference)) {
-        candidates.push(candidate);
+        yield candidate;
         break;
       }
     }
   }
-  if (!candidates.some((c) => c.family === 'simple')) candidates.push(reference);
-  return candidates;
+  if (!simple) yield reference;
+}
+
+export function compositionCandidates(
+  site: Site,
+  reference: OccupiedComposition,
+  draws: CompositionDraws
+): OccupiedComposition[] {
+  return [...compositionOptions(site, reference, draws)];
 }

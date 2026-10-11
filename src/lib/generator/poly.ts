@@ -167,6 +167,14 @@ export function orientedRect(
 
 /** Open ring, no repeated vertices, CCW, starting at the lexicographically smallest (x, y). */
 export function canonicalRing(p: PathD): PathD {
+  let already = p.length >= 3;
+  for (let i = 0; i < p.length && already; i++) {
+    const q = p[i],
+      prev = p[(i + p.length - 1) % p.length];
+    if ((q.x === prev.x && q.y === prev.y) || q.x < p[0].x || (q.x === p[0].x && q.y < p[0].y))
+      already = false;
+  }
+  if (already && signedArea(p) > 0) return p;
   const pts: PathD = [];
   for (const q of p) {
     const last = pts[pts.length - 1];
@@ -188,12 +196,52 @@ export function canonicalRing(p: PathD): PathD {
   return pts.slice(start).concat(pts.slice(0, start));
 }
 
+/** Recognize rectangles without depending on their orientation or vertex start. */
+export function isRectangle(p: PathD): boolean {
+  if (p.length !== 4) return false;
+  const [a, b, c, d] = p;
+  const ux = b.x - a.x,
+    uy = b.y - a.y,
+    vx = d.x - a.x,
+    vy = d.y - a.y;
+  const scale = Math.max(1, Math.hypot(ux, uy) * Math.hypot(vx, vy));
+  return (
+    Math.abs(ux * vx + uy * vy) < scale * 1e-10 &&
+    Math.abs(c.x - b.x - d.x + a.x) < 1e-8 &&
+    Math.abs(c.y - b.y - d.y + a.y) < 1e-8
+  );
+}
+
 /** Inward offset by `d` metres (Miter, closed polygons, cm grid). */
-export function inset(paths: PathsD, d: number): PathsD {
-  return inflatePathsD(paths, -d, JoinType.Miter, EndType.Polygon, 2, CLIPPER_PRECISION);
+export function inset(paths: PathsD, d: number, precision = CLIPPER_PRECISION): PathsD {
+  if (paths.length === 1 && isRectangle(paths[0])) {
+    const p = paths[0],
+      a = p[0],
+      b = p[1],
+      z = p[3];
+    const lu = Math.hypot(b.x - a.x, b.y - a.y),
+      lv = Math.hypot(z.x - a.x, z.y - a.y);
+    if (lu <= 2 * d || lv <= 2 * d) return [];
+    const u = { x: (b.x - a.x) / lu, y: (b.y - a.y) / lu },
+      v = { x: (z.x - a.x) / lv, y: (z.y - a.y) / lv };
+    return [canonicalRing(orientedRect(a, u, v, d, lu - d, d, lv - d))];
+  }
+  return inflatePathsD(paths, -d, JoinType.Miter, EndType.Polygon, 2, precision);
 }
 
 export function intersect(a: PathsD, b: PathsD): PathsD {
+  if (a.length === 1 && b.length === 1 && isRectangle(a[0]) && isRectangle(b[0])) {
+    let ring = a[0];
+    const clip = canonicalRing(b[0]);
+    for (let i = 0; i < 4; i++) {
+      const p = clip[i],
+        q = clip[(i + 1) % 4],
+        nx = q.y - p.y,
+        ny = p.x - q.x;
+      ring = clipHalf(ring, nx, ny, nx * p.x + ny * p.y);
+    }
+    return ring.length >= 3 && Math.abs(signedArea(ring)) > 1e-8 ? [canonicalRing(ring)] : [];
+  }
   return intersectD(a, b, FillRule.NonZero, CLIPPER_PRECISION);
 }
 

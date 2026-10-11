@@ -46,10 +46,17 @@ function building(id: string, x: number, y: number, rnd: () => number): Generate
     return {
       parcelId: id,
       source: 'user',
+      composition: 'simple',
       typology: tower ? 'tower' : 'podium',
       parts: [
-        { footprint: rect(x, y, 10, 30), baseM: 0, topM: podiumTop },
-        { footprint: rect(x + 2 * M_LNG, y + 2 * M_LAT, 6, 26), baseM: podiumTop, topM: top }
+        { role: 'occupied', tone: 0, footprint: rect(x, y, 10, 30), baseM: 0, topM: podiumTop },
+        {
+          role: 'occupied',
+          tone: 0,
+          footprint: rect(x + 2 * M_LNG, y + 2 * M_LAT, 6, 26),
+          baseM: podiumTop,
+          topM: top
+        }
       ],
       stories: Math.round(top / 3.2),
       units: tower ? 120 : 40,
@@ -62,8 +69,9 @@ function building(id: string, x: number, y: number, rnd: () => number): Generate
   return {
     parcelId: id,
     source: 'user',
+    composition: 'simple',
     typology,
-    parts: [{ footprint: rect(x, y, 10, 30), baseM: 0, topM: top }],
+    parts: [{ role: 'occupied', tone: 0, footprint: rect(x, y, 10, 30), baseM: 0, topM: top }],
     stories: Math.max(1, Math.round(top / 3.2)),
     units: 2 + Math.floor(rnd() * 20),
     floorAreaM2: 400,

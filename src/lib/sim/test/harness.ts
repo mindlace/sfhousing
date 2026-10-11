@@ -69,6 +69,7 @@ export function stubGenerate(p: ParcelRecord, env: Envelope): GeneratedBuilding 
   return {
     parcelId: p.id,
     source: 'user',
+    composition: 'simple',
     typology: 'midrise',
     parts: [
       {
@@ -78,6 +79,8 @@ export function stubGenerate(p: ParcelRecord, env: Envelope): GeneratedBuilding 
           [lng + d, lat + d],
           [lng + d, lat - d]
         ],
+        role: 'occupied',
+        tone: 0,
         baseM: 0,
         topM: 3.1 * s
       }

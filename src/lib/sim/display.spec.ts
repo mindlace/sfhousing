@@ -68,6 +68,7 @@ function setup(batchParcels = 5000) {
           ? {
               parcelId: r.id,
               source: 'user',
+              composition: 'simple',
               typology: 'midrise',
               parts: [
                 {
@@ -77,6 +78,8 @@ function setup(batchParcels = 5000) {
                     [1, 1],
                     [1, 0]
                   ],
+                  role: 'occupied',
+                  tone: 0,
                   baseM: 0,
                   topM: 3.1 * s
                 }

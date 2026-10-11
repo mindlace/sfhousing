@@ -10,7 +10,15 @@ import {
 } from 'clipper2-ts';
 import { domainArea } from './domain';
 import { CLIPPER_PRECISION, MIN_SITE_M2, MIN_WIDTH_INSET_M, SIMPLIFY_EPS_M } from './constants';
-import { canonicalRing, centroid, inset, principalAxis, signedArea, type Vec } from './poly';
+import {
+  canonicalRing,
+  centroid,
+  inset,
+  isRectangle,
+  principalAxis,
+  signedArea,
+  type Vec
+} from './poly';
 
 export interface Site {
   /** Site ring (local metres), canonical: open, CCW, no holes. */
@@ -46,8 +54,12 @@ function cleanRing(ring: readonly (readonly number[])[]): PathD {
   ) {
     out.pop();
   }
-  const distinct = new Set(out.map((p) => p.x + ',' + p.y));
-  return distinct.size >= 3 ? out : [];
+  if (out.length < 3) return [];
+  const a = out[0];
+  const b = out.find((p) => p.x !== a.x || p.y !== a.y);
+  return b && out.some((p) => (p.x !== a.x || p.y !== a.y) && (p.x !== b.x || p.y !== b.y))
+    ? out
+    : [];
 }
 
 /** §4.4 steps 4–6. Returns null for degenerate parcels. */
@@ -85,7 +97,7 @@ export function normaliseSite(polygon: [number, number][][], edgeInsetM: number)
     holes = holes.sort((a, b) => a[0].x - b[0].x || a[0].y - b[0].y);
   }
   const originalDomain = [P, ...holes];
-  const simplified = simplifyPathsD([P], SIMPLIFY_EPS_M, true);
+  const simplified = isRectangle(P) ? [P] : simplifyPathsD([P], SIMPLIFY_EPS_M, true);
   if (simplified.length === 0 || simplified[0].length < 3) return null;
   const next = canonicalRing(simplified[0]);
   const unchanged =

@@ -9,3 +9,5 @@ export type { BuildoutMode, GeneratedBuilding, TypologyId } from './types';
 export type { VarietyDraws } from './variety';
 export { createGeneratorCache } from './cache';
 export type { GeneratorCache } from './cache';
+
+export type { CompositionId, CompositionDraws } from './composition-types';

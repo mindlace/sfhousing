@@ -14,7 +14,9 @@ import {
   TOWER_PODIUM_STORIES
 } from './constants';
 import {
+  canonicalRing,
   clipSlab,
+  isRectangle,
   intersect,
   inset,
   keepPieces,
@@ -64,6 +66,10 @@ export function baseFootprint(site: Site, target: number): PathsD {
   const { Q, P, c, u, v } = site;
   if (domainArea(Q) <= target)
     return Q.some((r) => signedArea(r) < 0) ? fitSimpleRegions(Q, site) : Q;
+  if (Q.length === 1 && isRectangle(P) && isRectangle(Q[0])) {
+    const pv = project(Q, c, v);
+    return [canonicalRing(clipSlab(Q[0], c, u, target / (2 * (pv.max - pv.min))))];
+  }
   const pu = project([P], c, u);
   const H = Math.max(-pu.min, pu.max);
   const slabArea = (h: number) => {
