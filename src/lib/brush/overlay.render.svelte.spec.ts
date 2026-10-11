@@ -26,17 +26,17 @@ const at = (from: P, d: number, deg: number): P => {
   return [quantize(from[0] + d * Math.cos(a) * M_LNG), quantize(from[1] + d * Math.sin(a) * M_LAT)];
 };
 
-let deck: Deck | null = null;
+let deck: Deck<MapView> | null = null;
 let canvas: HTMLCanvasElement | null = null;
-let pending: { resolve: (px: Uint8Array) => void; ids: string[] } | null = null;
+let pending: { resolve: (px: Uint8Array) => void; layers: Layer[] } | null = null;
 
-function getDeck(): Deck {
+function getDeck(): Deck<MapView> {
   if (deck) return deck;
   canvas = document.createElement('canvas');
   canvas.style.width = `${W}px`;
   canvas.style.height = `${H}px`;
   document.body.appendChild(canvas);
-  deck = new Deck({
+  const d = new Deck<MapView>({
     canvas,
     width: W,
     height: H,
@@ -47,12 +47,9 @@ function getDeck(): Deck {
     layers: [],
     onAfterRender: ({ gl }) => {
       if (!pending) return;
-      // Read only a frame that drew exactly the requested layers, fully loaded.
-      const drawn = deck!.layerManager!.getLayers().filter((l) => !l.parent);
-      const ready =
-        drawn.length === pending.ids.length &&
-        drawn.every((l, i) => l.id === pending!.ids[i] && l.isLoaded);
-      if (!ready) {
+      // Read only a frame that drew the requested layers: deck initialises a new layer just before
+      // the frame that first draws it, so every one being loaded means this frame drew them all.
+      if (!pending.layers.every((l) => l.isLoaded)) {
         setTimeout(() => deck?.redraw('swath-render-spec'));
         return;
       }
@@ -63,7 +60,8 @@ function getDeck(): Deck {
       p.resolve(px);
     }
   });
-  return deck;
+  deck = d;
+  return d;
 }
 
 afterAll(() => {
@@ -75,7 +73,7 @@ let seq = 0;
 async function draw(layers: Layer[]): Promise<Uint8Array> {
   const d = getDeck();
   return new Promise<Uint8Array>((resolve) => {
-    pending = { resolve, ids: layers.map((l) => l.id) };
+    pending = { resolve, layers };
     d.setProps({ layers });
     d.redraw('swath-render-spec');
   });
