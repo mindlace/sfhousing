@@ -12,6 +12,7 @@ Both environments share one R2 bucket, `sfhousing`, so a dataset version uploade
 - Push to `main` runs `.github/workflows/deploy-staging.yml`: build, apply D1 migrations to `sfhousing-staging`, deploy `--env staging`.
 - The same push runs `release-please.yml`, which maintains a release PR. Merging the release PR creates the release and, in the same workflow (releases made with `GITHUB_TOKEN` do not trigger other workflows), the `deploy-prod` job builds the tag, applies migrations to `sfhousing` and deploys production.
 - Pull requests run `ci.yml`: lint, check, unit tests, fixture load, migrate, Playwright (chromium and mobile projects), plus actionlint.
+- Release-please PRs are opened with `GITHUB_TOKEN`, and events from `GITHUB_TOKEN` do not trigger other workflows, so `ci.yml` never runs on the release PR. If `ci` is a required check, the release PR deadlocks. Workarounds: run `ci.yml` by `workflow_dispatch` on the `release-please--*` branch (the check attaches to the branch head commit), or merge with an admin bypass. A durable fix is to give release-please a GitHub App token or PAT.
 
 `PUBLIC_APP_RELEASE` is set at deploy time to the commit SHA (staging) or tag (production).
 
@@ -36,4 +37,5 @@ Nothing else.
 2. `npx wrangler r2 bucket create sfhousing`.
 3. Add the `CLOUDFLARE_API_TOKEN` secret and `CLOUDFLARE_ACCOUNT_ID` variable in the GitHub repository settings; create the `staging` and `production` GitHub environments.
 4. Attach the custom domains (declared as `custom_domain` routes in `wrangler.jsonc`; the zone must be on the Cloudflare account).
-5. Push to `main` to trigger the first staging deploy.
+5. Decide the release-PR CI strategy (dispatch / admin bypass / GitHub App token); see Release flow.
+6. Push to `main` to trigger the first staging deploy.

@@ -11,6 +11,7 @@ SF Housing Simulator: a free, open-source web tool for painting zoning and build
 ```bash
 nvm use                 # Node 24 (.nvmrc); engines require node >=22 <26, npm >=11.3.0
 npm install             # also runs `wrangler types --strict-vars=false` and `svelte-kit sync` via prepare
+npx playwright install chromium   # browser for client tests and e2e (the one download beyond npm)
 npm run data:fixture    # load the fixture dataset (fixture-0) into local R2
 npm run db:migrate      # apply D1 migrations to the local database
 npm run dev
@@ -37,7 +38,7 @@ Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link t
 
 | Command                                             | Purpose                                                                       |
 | --------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `npm run dev`                                       | Vite dev server (local D1/R2 via the Cloudflare plugin)                       |
+| `npm run dev`                                       | Vite dev server (local D1/R2 via adapter-cloudflare's platform proxy)         |
 | `npm run build`                                     | Production build                                                              |
 | `npm run preview`                                   | Build, then `wrangler dev` on port 4173 with `ENVIRONMENT=development`        |
 | `npm run check`                                     | `svelte-kit sync` + `svelte-check`                                            |

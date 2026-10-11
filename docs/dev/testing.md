@@ -9,6 +9,10 @@
 
 Test files are colocated with the code. `expect.requireAssertions` is on: every test must call `expect` (wrap `fc.assert` in `expect(() => ...).not.toThrow()`).
 
+The client project needs the Playwright chromium browser: run `npx playwright install chromium` once (the one download beyond npm; `test:e2e` needs it too).
+
+The client project has no `$app/*` or `$env/*` aliases. Components that import them need `vi.mock('$app/state', () => ...)` or alias stubs under `src/lib/test/`.
+
 Single test: `npx vitest --run --project server path/to/file.spec.ts` (or `--project client`).
 
 ## FakeR2Bucket

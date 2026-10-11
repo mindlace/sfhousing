@@ -5,6 +5,7 @@
 ```bash
 nvm use                 # Node 24
 npm install             # prepare: husky, `wrangler types --strict-vars=false`, `svelte-kit sync`
+npx playwright install chromium   # needed by `npm run test:unit` (client project) and `test:e2e`; the one download beyond npm
 npm run data:fixture
 npm run db:migrate
 npm run dev
@@ -41,4 +42,4 @@ Never hand-edit files in `migrations/`. CI applies migrations to remote D1 befor
 
 ## Header actions
 
-The header has a right-aligned slot pages can fill. The root layout calls `provideHeaderActions()` once; a page calls `useHeaderActions(snippet)` (both from `$lib/shell/header-actions.svelte`) during component init. The snippet is shown while the page is mounted and cleared on destroy.
+The header has a right-aligned slot pages can fill. The root layout calls `provideHeaderActions()` once; a page calls `useHeaderActions(snippet)` (both from `$lib/shell/header-actions.svelte`) during component init. The snippet is shown while the page is mounted and cleared on destroy. The snippet is registered during page init, so it is not present in SSR HTML: header actions appear after hydration.
