@@ -186,8 +186,12 @@
   </button>
 {/snippet}
 
-{#snippet stepper()}
-  <fieldset disabled={erasing} class="flex flex-col gap-1">
+{#snippet stepper(where: string)}
+  <fieldset
+    disabled={erasing}
+    aria-describedby={erasing ? `${uid}-${where}-hint` : undefined}
+    class="flex flex-col gap-1"
+  >
     <legend class="sr-only">Stories</legend>
     <div class="flex items-center gap-1">
       <button
@@ -202,6 +206,7 @@
         max="80"
         step="1"
         aria-label="Stories"
+        aria-describedby={erasing ? `${uid}-${where}-hint` : undefined}
         value={brush.stories}
         class="field min-h-11 w-16 rounded-md text-center disabled:opacity-40"
         onblur={(e) => commitStories(e.currentTarget)}
@@ -231,19 +236,21 @@
     </div>
   </fieldset>
   {#if erasing}
-    <p class="mt-1 text-sm">{MSG.eraseHint}</p>
+    <p id="{uid}-{where}-hint" class="mt-1 text-sm">{MSG.eraseHint}</p>
   {/if}
 {/snippet}
 
-{#snippet radius()}
+{#snippet radius(where: string)}
   <div class="flex w-full items-center gap-2">
-    <span class="text-sm whitespace-nowrap" aria-hidden="true">Brush {brush.radiusM} m</span>
+    <label for="{uid}-{where}-radius" class="text-sm whitespace-nowrap"
+      >Brush {brush.radiusM} m</label
+    >
     <input
+      id="{uid}-{where}-radius"
       type="range"
       min="0"
       max="99"
       step="1"
-      aria-label="Brush radius"
       aria-valuetext={radiusValueText(brush.radiusM)}
       value={posFromRadius(brush.radiusM)}
       class="range min-h-11 min-w-11 flex-1"
@@ -253,14 +260,13 @@
 {/snippet}
 
 <div
-  class="brush-toolbar fixed inset-x-0 bottom-[var(--scorebar-h,0px)] z-20 md:absolute md:top-4 md:right-auto md:bottom-auto md:left-4 md:w-[23rem]"
+  class="brush-toolbar fixed inset-x-0 bottom-[var(--scorebar-h,0px)] z-20 [--brushbar-h:56px] md:absolute md:top-4 md:right-auto md:bottom-auto md:left-4 md:w-[23rem] md:[--brushbar-h:0px]"
   style={THEME_VARS}
 >
   <div
     data-testid="brush-bar"
     role="group"
     aria-label="Brush"
-    style="--brushbar-h: 56px"
     class="brush-panel flex h-14 items-center gap-1 px-1 md:h-auto md:flex-col md:items-stretch md:gap-2 md:rounded-lg md:p-2"
   >
     {#if editor.readOnly}
@@ -275,7 +281,7 @@
         {/each}
       </div>
 
-      <div class="hidden md:block">{@render stepper()}</div>
+      <div class="hidden md:block">{@render stepper('inline')}</div>
       <button
         bind:this={storiesOpener}
         type="button"
@@ -293,11 +299,11 @@
           aria-label="Stories"
           class="brush-panel absolute inset-x-2 bottom-full z-10 mb-2 rounded-lg p-2 md:hidden"
         >
-          {@render stepper()}
+          {@render stepper('pop')}
         </div>
       {/if}
 
-      <div class="hidden md:flex">{@render radius()}</div>
+      <div class="hidden md:flex">{@render radius('inline')}</div>
       <button
         bind:this={radiusOpener}
         type="button"
@@ -315,7 +321,7 @@
           aria-label="Brush radius"
           class="brush-panel absolute inset-x-2 bottom-full z-10 mb-2 rounded-lg p-2 md:hidden"
         >
-          {@render radius()}
+          {@render radius('pop')}
         </div>
       {/if}
 

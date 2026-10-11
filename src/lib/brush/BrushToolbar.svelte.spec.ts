@@ -117,14 +117,20 @@ describe('BrushToolbar (desktop)', () => {
 
   it('maps the log slider ends to 5 m and 500 m with a value text', async () => {
     const { state } = setup();
-    const slider = page.getByRole('slider', { name: 'Brush radius' });
+    const slider = page.getByRole('slider', { name: /^Brush \d+ m$/ });
     await expect.element(slider).toHaveAttribute('aria-valuetext', 'Brush radius 30 metres');
     await expect.element(page.getByText('Brush 30 m')).toBeVisible();
+    // WCAG 2.5.3: the visible label is the accessible name (spec §4.2 "labelled Brush 30 m").
+    const label = (slider.element() as HTMLInputElement).labels![0];
+    await expect.element(slider).toHaveAccessibleName(label.textContent!.trim());
+    await expect.element(slider).toHaveAccessibleName('Brush 30 m');
+    expect(slider.element().hasAttribute('aria-label')).toBe(false);
     setRange(slider.element() as HTMLInputElement, 0);
     await expect.element(page.getByText('Brush 5 m')).toBeVisible();
     expect(state.radiusM).toBe(5);
     setRange(slider.element() as HTMLInputElement, 99);
     await expect.element(page.getByText('Brush 500 m')).toBeVisible();
+    await expect.element(slider).toHaveAccessibleName('Brush 500 m');
     await expect.element(slider).toHaveAttribute('aria-valuetext', 'Brush radius 500 metres');
     expect(state.radiusM).toBe(500);
   });
@@ -135,7 +141,12 @@ describe('BrushToolbar (desktop)', () => {
     await expect.element(stories()).toBeDisabled();
     await expect.element(page.getByRole('button', { name: 'More stories' })).toBeDisabled();
     await expect.element(page.getByText(MSG.eraseHint)).toBeVisible();
+    await expect.element(stories()).toHaveAccessibleDescription(MSG.eraseHint);
+    await expect
+      .element(page.getByRole('group', { name: 'Stories' }))
+      .toHaveAccessibleDescription(MSG.eraseHint);
     await radio('Paint').click();
+    await expect.element(stories()).not.toHaveAttribute('aria-describedby');
     await expect.element(stories()).toBeEnabled();
   });
 
@@ -199,6 +210,13 @@ describe('BrushToolbar (desktop)', () => {
       .toBeVisible();
   });
 
+  it('exposes --brushbar-h: 0px on the toolbar root at ≥ md', async () => {
+    setup();
+    await expect.element(radio('Paint')).toBeVisible();
+    const root = document.querySelector<HTMLElement>('.brush-toolbar')!;
+    expect(getComputedStyle(root).getPropertyValue('--brushbar-h').trim()).toBe('0px');
+  });
+
   it('persists stories to localStorage', async () => {
     const { state } = setup();
     state.setStories(8);
@@ -239,10 +257,12 @@ describe('BrushToolbar (375 px)', () => {
   it('closes a popover on an outside click', async () => {
     setup();
     await page.getByRole('button', { name: 'Brush 30 m' }).click();
-    await expect.element(page.getByRole('slider', { name: 'Brush radius' })).toBeVisible();
+    await expect
+      .element(page.getByRole('slider', { name: 'Brush 30 m', exact: true }))
+      .toBeVisible();
     document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
     await expect
-      .element(page.getByRole('slider', { name: 'Brush radius' }))
+      .element(page.getByRole('slider', { name: 'Brush 30 m', exact: true }))
       .not.toBeInTheDocument();
   });
 
@@ -258,5 +278,7 @@ describe('BrushToolbar (375 px)', () => {
     }
     expect(bar.getBoundingClientRect().height).toBe(56);
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
+    const root = document.querySelector<HTMLElement>('.brush-toolbar')!;
+    expect(getComputedStyle(root).getPropertyValue('--brushbar-h').trim()).toBe('56px');
   });
 });
