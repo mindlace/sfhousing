@@ -4,6 +4,10 @@ import { PathLayer, ScatterplotLayer, SolidPolygonLayer } from '@deck.gl/layers'
 import { MapLibreOverlay } from '@deck.gl/maplibre';
 import * as maplibregl from 'maplibre-gl';
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
+import { generateDetailed } from '$lib/generator/generate';
+import { compositionParcel } from '$lib/generator/fixtures/composition-parcel';
+import { drawVariety } from '$lib/generator/variety';
+import { drawComposition } from '$lib/generator/composition-variety';
 import type { GeneratedBuilding } from '$lib/generator';
 import type { ParcelRecord } from '$lib/data/parcel';
 import {
@@ -13,7 +17,7 @@ import {
   type ControllerDeps
 } from './generated-controller';
 import { emptyPack, packCell } from './pack';
-import { GEN_RGBA } from './palette';
+import { appearanceColor } from './appearance';
 import { TYPOLOGY_ORDER, type GeneratedUpdate, type PackedCell } from './types';
 import { makeFakeDeps, type FakeDeps } from './test/fake-deps';
 import { makeSyntheticCity } from './test/synthetic-city';
@@ -566,7 +570,9 @@ describe('GeneratedController (real deck)', () => {
     const a = c.debugSnapshot().attributes['generated-A'];
     expect(a).toBeDefined();
     expect(a.vertexCount).toBeGreaterThanOrEqual(p.positions.length / 2);
-    expect(a.firstColor).toEqual(GEN_RGBA.light[p.partTypology[0]]);
+    expect(a.firstColor).toEqual(
+      appearanceColor('light', TYPOLOGY_ORDER[p.partTypology[0]], p.partAppearance[0])
+    );
   });
 
   it('C5: a 500-parcel update reaches its first rising frame within 30 ms', async () => {
@@ -736,3 +742,30 @@ describe('GeneratedController (real deck)', () => {
     expect(max(gaps)).toBeLessThanOrEqual(50);
   }, 120_000);
 });
+
+for (const theme of ['light', 'dark'] as const)
+  it(`${theme}: sibling towers and caps rise together and pick one parcel total`, () => {
+    const building = generateDetailed(
+      compositionParcel('paired', 60, 50),
+      { maxStories: 40 },
+      drawVariety(1),
+      'max',
+      { ...drawComposition(1), familyOrder: ['paired'], capEnabled: true }
+    )!.building;
+    const pack = packCell('a', [{ building, existingUnits: 0 }]);
+    const f = makeFakeDeps(),
+      c = new GeneratedController(f, theme);
+    c.apply(upd(0));
+    c.apply(upd(1, { cells: [{ settled: emptyPack('a'), rising: pack }] }));
+    f.flushFrame(RISE_MS / 2);
+    expect(c.debugSnapshot().elevationScale['rising-1-a']).toBeCloseTo(easeOutCubic(0.5));
+    expect(layerIds(f)).toEqual(['rising-1-a']);
+    for (let i = 0; i < pack.partCount; i++) {
+      expect(c.lookup('rising-1-a', i)!.parcelId).toBe('paired');
+      expect(c.lookup('rising-1-a', i)!.units).toBe(building.units);
+    }
+    for (let t = RISE_MS; t < 1000 && f.pendingFrames(); t += 16) f.flushFrame(t);
+    expect(layerIds(f)).toEqual(['generated-a']);
+    expect(c.debugSnapshot().parts).toBe(pack.partCount);
+    c.destroy();
+  });

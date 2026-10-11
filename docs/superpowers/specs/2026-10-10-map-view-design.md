@@ -414,3 +414,5 @@ The debug hook `window.__sfhMap` (counts, layer ids, elevationScale, hidden set 
 4. ~~**Part containment is not stated in I9.**~~ *Resolved:* I9 now states parts are single rings, nested, rendered ground-to-`topM`; typology-generator guarantees it.
 
 The building-compositions extension uses supported floor bands and parcel exclusions. Occupied tops exclude cosmetic parapet height; optional roof accents occupy that allowance and contribute no housing. Scores use serialized occupied geometry, with the established declared-gross-area exception for ADUs. See [building compositions](2026-10-11-building-compositions-design.md).
+
+PackedCell additionally carries `partAppearance: Uint8Array` (tone 0–2; add 4 for roof accents). All seven typed-array buffers transfer with the cell. Appearance shares the existing per-cell layer, elevation animation, parcel slot and picking summary.

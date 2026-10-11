@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import gen from './fixtures/generated-small.json';
 import parcels from './fixtures/parcels-small.json';
 import { packCell, concatPacks, emptyPack, packTransferables, type PackInput } from './pack';
+import { encodeAppearance } from './appearance';
 import { TYPOLOGY_ORDER } from './types';
 import type { GeneratedBuilding } from '$lib/generator';
 import type { ParcelRecord } from '$lib/data/parcel';
@@ -54,6 +55,7 @@ describe('packCell (U1)', () => {
         expect(p.partSlot[k]).toBe(s);
         expect(p.partTopM[k]).toBeCloseTo(part.topM, 4);
         expect(p.partTypology[k]).toBe(TYPOLOGY_ORDER.indexOf(b.typology));
+        expect(p.partAppearance[k]).toBe(encodeAppearance(part.role, part.tone));
         k++;
       }
     });
@@ -67,7 +69,8 @@ describe('packCell (U1)', () => {
       'positions',
       'partTopM',
       'partSlot',
-      'partTypology'
+      'partTypology',
+      'partAppearance'
     ] as const)
       expect(Buffer.from(q[key].buffer).equals(Buffer.from(p[key].buffer))).toBe(true);
   });
@@ -114,6 +117,7 @@ describe('packCell (U1)', () => {
     const a = packCell('c', items.slice(0, 6)),
       b = packCell('c', items.slice(6));
     const c = concatPacks(a, b);
+    expect([...c.partAppearance]).toEqual([...a.partAppearance, ...b.partAppearance]);
     expect(c.partCount).toBe(a.partCount + b.partCount);
     expect(c.parcelIds).toEqual([...a.parcelIds, ...b.parcelIds]);
     expect(c.partSlot[a.partCount]).toBe(b.partSlot[0] + a.parcelIds.length);
@@ -121,6 +125,20 @@ describe('packCell (U1)', () => {
     expect(concatPacks(emptyPack('c'), a).partCount).toBe(a.partCount);
   });
   it('packTransferables lists every buffer', () => {
-    expect(packTransferables(p)).toHaveLength(6);
+    expect(packTransferables(p)).toHaveLength(7);
   });
+});
+it('coalesces identical consecutive occupied slabs without changing parcel totals', () => {
+  const part = items[0].building.parts[0];
+  const building: GeneratedBuilding = {
+    ...items[0].building,
+    parts: [
+      { ...part, role: 'occupied', tone: 0, baseM: 0, topM: 10 },
+      { ...part, role: 'occupied', tone: 0, baseM: 10, topM: 20 }
+    ]
+  };
+  const pack = packCell('a', [{ building, existingUnits: 0 }]);
+  expect(pack.partCount).toBe(1);
+  expect(pack.partTopM[0]).toBe(20);
+  expect(pack.parcelMeta[0]).toBe(building.units);
 });

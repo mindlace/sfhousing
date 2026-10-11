@@ -123,6 +123,7 @@ function buffersOf(p: PackedCell): ArrayBuffer[] {
     p.positions.buffer,
     p.partTopM.buffer,
     p.partSlot.buffer,
+    p.partAppearance.buffer,
     p.partTypology.buffer
   ] as ArrayBuffer[];
 }
