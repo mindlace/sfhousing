@@ -148,6 +148,20 @@ describe('BrushEditor wiring', () => {
     await expect.element(status(MSG.loadingCity)).toBeInTheDocument();
   });
 
+  it('a same-version reload keeps the mounted manifest object (no SimMap remount)', async () => {
+    const clone = structuredClone(manifest);
+    const { workers, reloadManifest, posts } = await setup({ reloadManifest: async () => clone });
+    await expect.poll(() => workers.length).toBe(1);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    workers[0].emit({ type: 'error', rev: 1, code: 'manifest-invalid', message: 'bad' });
+    await expect.element(retryButton()).toBeInTheDocument();
+    await click(retryButton());
+    await expect.poll(() => posts('init').length).toBe(2);
+    expect(reloadManifest).toHaveBeenCalledTimes(1);
+    const init = posts('init')[1] as Extract<SimRequest, { type: 'init' }>;
+    expect(init.manifest).toBe(manifest);
+  });
+
   it('a Retry whose reload rejects returns to the failed status', async () => {
     const { workers } = await setup({
       reloadManifest: async () => {

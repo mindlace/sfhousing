@@ -73,6 +73,7 @@
   let handle: SimMapHandle | null = null;
   let layers: OverlayCtors | null = null;
   let controller: BrushController | null = null;
+  let controllerMap: ReturnType<SimMapHandle['getMap']> = null;
   let dead = false;
   let retrying = false;
   /** The current manifest is missing or the worker rejected it: Retry must reload it. */
@@ -84,7 +85,10 @@
   let chunks: { pending: number; failed: string[] } = { pending: 0, failed: [] };
 
   function applyRender(u: GeneratedUpdate): void {
-    if (handle) return handle.applyGenerated(u);
+    if (handle) {
+      rebindController();
+      return handle.applyGenerated(u);
+    }
     if (u.revision === 0) pendingRenders = []; // a full snapshot supersedes what came before
     pendingRenders.push(u);
   }
@@ -149,9 +153,11 @@
       if (client.crashed) client.restart(createWorker());
       let m = manifest;
       if (needManifest || !m) {
-        m = await reloadManifest();
+        const fresh = await reloadManifest();
         if (dead) return;
-        manifest = m;
+        // A new object remounts SimMap's map (and onready does not fire again), so keep the
+        // mounted one when the reload is the same dataset; I16 still gets one object for both.
+        if (!m || fresh.datasetVersion !== m.datasetVersion) manifest = m = fresh;
         needManifest = false;
       }
       client.init(m);
@@ -174,10 +180,20 @@
     handle?.setBottomInset(px);
   }
 
+  /** SimMap remounted its map (a new manifest): move the controller to the new one. */
+  function rebindController(): void {
+    if (controller && handle && handle.getMap() !== controllerMap) {
+      controller.destroy();
+      controller = null;
+    }
+    attachController();
+  }
+
   function attachController(): void {
     if (controller || dead || !handle || !layers || !client) return;
     const map = handle.getMap();
     if (!map) return;
+    controllerMap = map;
     controller = new BrushController({
       handle,
       map,
@@ -195,7 +211,10 @@
   function onMapReady(h: SimMapHandle): void {
     if (dead) return;
     handle = h;
-    h.onResyncNeeded(() => client?.resync());
+    h.onResyncNeeded(() => {
+      rebindController();
+      client?.resync();
+    });
     for (const [cellId, s] of pendingStatus) h.setChunkStatus(cellId, s);
     pendingStatus.clear();
     const renders = pendingRenders;
