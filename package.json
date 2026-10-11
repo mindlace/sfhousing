@@ -51,6 +51,7 @@
     "@sveltejs/kit": "^2.70.1",
     "@sveltejs/vite-plugin-svelte": "^7.2.0",
     "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.19.2",
     "@vitest/browser-playwright": "^4.1.10",
     "better-sqlite3": "^13.0.1",
     "drizzle-kit": "^1.0.0-rc.4-5d5b77c",

@@ -1,0 +1,46 @@
+import { expect, test } from '@playwright/test';
+
+test('serves a PMTiles byte range from local R2', async ({ request }) => {
+  const res = await request.get('/data/fixture-0/buildings.pmtiles', {
+    headers: { Range: 'bytes=0-126' }
+  });
+  expect(res.status()).toBe(206);
+  const body = await res.body();
+  expect(body).toHaveLength(127);
+  expect(body.subarray(0, 7).toString('ascii')).toBe('PMTiles');
+  expect(res.headers()['accept-ranges']).toBe('bytes');
+  expect(res.headers()['content-range']).toBe('bytes 0-126/256');
+  expect(res.headers()['cache-control']).toBe('public, max-age=31536000, immutable');
+  expect(res.headers()['etag']).toBeTruthy();
+});
+
+test('serves a suffix range clipped to the object', async ({ request }) => {
+  const res = await request.get('/data/fixture-0/buildings.pmtiles', {
+    headers: { Range: 'bytes=-20' }
+  });
+  expect(res.status()).toBe(206);
+  expect(res.headers()['content-range']).toBe('bytes 236-255/256');
+  expect(await res.body()).toHaveLength(20);
+});
+
+test('answers 416 for a range past the end', async ({ request }) => {
+  const res = await request.get('/data/fixture-0/buildings.pmtiles', {
+    headers: { Range: 'bytes=999999-' }
+  });
+  expect(res.status()).toBe(416);
+  expect(res.headers()['content-range']).toBe('bytes */256');
+});
+
+test('serves the full manifest with 200 and JSON type', async ({ request }) => {
+  const res = await request.get('/data/fixture-0/manifest.json');
+  expect(res.status()).toBe(200);
+  expect(res.headers()['content-type']).toContain('application/json');
+  expect((await res.json()).datasetVersion).toBe('fixture-0');
+});
+
+test('404s traversal and unknown versions', async ({ request }) => {
+  for (const p of ['/data/fixture-0/a%2F..%2Fmanifest.json', '/data/test-v1/manifest.json']) {
+    const res = await request.get(p);
+    expect(res.status(), p).toBe(404);
+  }
+});

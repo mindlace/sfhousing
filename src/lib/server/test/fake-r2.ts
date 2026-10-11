@@ -73,10 +73,15 @@ function parseRange(h: string | null, size: number): FakeRange | null {
   if (m[1] === '') {
     const suffix = Number(m[2]);
     if (suffix === 0) throw new Error('unsatisfiable range');
-    return { suffix };
+    // Real workerd (local R2) reports a suffix request as a resolved {offset, length}, with
+    // `suffix` present-but-undefined (observed by e2e/data-route.spec.ts).
+    return { offset: Math.max(0, size - suffix), length: Math.min(suffix, size) };
   }
   const offset = Number(m[1]);
-  if (offset >= size) throw new Error('unsatisfiable range'); // R2 throws here (spec §4.4.6, I)
+  // The fake throws here (spec §4.4.6, I) to exercise the route's catch path. Local workerd R2
+  // does NOT throw: it returns the whole object (range {offset: 0, length: size}); the route
+  // therefore also checks satisfiability itself (e2e/data-route.spec.ts 416 case).
+  if (offset >= size) throw new Error('unsatisfiable range');
   // `length` is deliberately not clipped: R2 may return fewer bytes than requested.
   return m[2] === '' ? { offset } : { offset, length: Number(m[2]) - offset + 1 };
 }

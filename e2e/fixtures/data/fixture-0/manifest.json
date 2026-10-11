@@ -1,0 +1,13 @@
+{
+  "datasetVersion": "fixture-0",
+  "builtAt": "2026-10-10T00:00:00Z",
+  "sources": [
+    { "id": "datasf-parcels", "label": "DataSF parcels (fixture)", "url": "https://data.sfgov.org/", "retrievedAt": "2026-10-10T00:00:00Z", "license": "PDDL" },
+    { "id": "overture-buildings", "url": "https://overturemaps.org/", "retrievedAt": "2026-10-10T00:00:00Z", "license": "ODbL" }
+  ],
+  "chunks": [],
+  "buildingsTiles": "/data/fixture-0/buildings.pmtiles",
+  "basemapTiles": "/data/fixture-0/basemap.pmtiles",
+  "glyphs": "/data/fixture-0/fonts/{fontstack}/{range}.pbf",
+  "neighborhoods": "/data/fixture-0/neighborhoods.geojson"
+}

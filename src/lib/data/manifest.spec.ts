@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ManifestSchema, ManifestSourcesSchema, manifestUrl } from './manifest';
 
@@ -64,5 +65,12 @@ describe('ManifestSourcesSchema', () => {
 describe('manifestUrl', () => {
   it('builds the root-relative manifest path for a version', () => {
     expect(manifestUrl('fixture-0')).toBe('/data/fixture-0/manifest.json');
+  });
+});
+
+describe('fixture dataset', () => {
+  it('e2e/fixtures/data/fixture-0/manifest.json parses against the I12 schema', () => {
+    const raw = JSON.parse(readFileSync('e2e/fixtures/data/fixture-0/manifest.json', 'utf8'));
+    expect(ManifestSchema.safeParse(raw).success).toBe(true);
   });
 });

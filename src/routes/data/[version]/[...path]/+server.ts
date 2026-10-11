@@ -39,11 +39,13 @@ function objectHeaders(obj: R2Object, path: string): Headers {
 
 /** Inclusive byte span R2 actually returned, clipped to the object. Null if empty. */
 function span(
-  r: { offset?: number; length?: number } | { suffix: number },
+  r: { offset?: number; length?: number; suffix?: number },
   size: number
 ): { start: number; end: number } | null {
   let start: number, end: number;
-  if ('suffix' in r) {
+  // workerd reports suffix requests as {offset, length}; the `suffix` key may be present but
+  // undefined, so test its type rather than `in` (see e2e/data-route.spec.ts).
+  if (typeof r.suffix === 'number') {
     start = Math.max(0, size - r.suffix);
     end = size - 1;
   } else {
@@ -104,6 +106,12 @@ export const GET: RequestHandler = async ({ params, request, platform }) => {
       status: request.headers.has('if-none-match') ? 304 : 412,
       headers
     });
+  }
+  // Local workerd R2 does not throw for a start past the end; it returns the whole object with
+  // range {offset: 0, length: size}. Decide satisfiability from the header and the size instead
+  // of trusting what R2 reports (see e2e/data-route.spec.ts).
+  if (range && (range.first === '' ? Number(range.last) === 0 : Number(range.first) >= obj.size)) {
+    return unsatisfiable(obj.size);
   }
   if (range && obj.range) {
     const s = span(obj.range, obj.size);
