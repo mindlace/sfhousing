@@ -1,0 +1,11 @@
+package-lock.json
+.svelte-kit
+build
+.wrangler
+worker-configuration.d.ts
+migrations
+e2e/fixtures
+test-results
+playwright-report
+docs/superpowers
+.superpowers

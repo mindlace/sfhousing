@@ -1,0 +1,81 @@
+{
+  "name": "sfhousing",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "npm@11.3.0",
+  "engines": {
+    "node": ">=22 <26",
+    "npm": ">=11.3.0"
+  },
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "npm run build && wrangler dev --port 4173 --var ENVIRONMENT:development",
+    "prepare": "husky && wrangler types --strict-vars=false && svelte-kit sync",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "lint": "prettier --check . && eslint .",
+    "lint:workflows": "actionlint -color .github/workflows/*.yml",
+    "format": "prettier --write .",
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "vitest --run",
+    "test:e2e": "playwright test",
+    "db:generate": "tsx node_modules/.bin/drizzle-cf-migrations generate d1 --config ./drizzle-cf.config.ts",
+    "db:migrate": "wrangler d1 migrations apply DB --local",
+    "db:migrate:staging": "wrangler d1 migrations apply sfhousing-staging --remote --env staging",
+    "db:migrate:prod": "wrangler d1 migrations apply sfhousing --remote",
+    "data:local": "tsx scripts/data-local.ts",
+    "data:fixture": "tsx scripts/r2-load-local.ts e2e/fixtures/data/fixture-0 fixture-0",
+    "types": "wrangler types --strict-vars=false"
+  },
+  "lint-staged": {
+    "*.{ts,svelte,js}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "*.{md,json,css}": [
+      "prettier --write"
+    ]
+  },
+  "dependencies": {
+    "drizzle-orm": "^1.0.0-rc.4-5d5b77c",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@eslint/compat": "^2.1.0",
+    "@eslint/js": "^10.0.1",
+    "@planafoot/drizzle-cf-migrations": "^1.2.1",
+    "@playwright/test": "^1.62.0",
+    "@sveltejs/adapter-cloudflare": "^7.2.8",
+    "@sveltejs/kit": "^2.70.1",
+    "@sveltejs/vite-plugin-svelte": "^7.2.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.19.2",
+    "@vitest/browser-playwright": "^4.1.10",
+    "better-sqlite3": "^13.0.1",
+    "drizzle-kit": "^1.0.0-rc.4-5d5b77c",
+    "eslint": "^10.8.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-playwright": "^2.10.5",
+    "eslint-plugin-svelte": "^3.22.0",
+    "fast-check": "^4.9.0",
+    "globals": "^17.7.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.2.0",
+    "playwright": "^1.62.0",
+    "prettier": "^3.9.6",
+    "prettier-plugin-svelte": "^4.0.1",
+    "prettier-plugin-tailwindcss": "^0.8.1",
+    "svelte": "^5.56.8",
+    "svelte-check": "^4.7.3",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.1",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.65.0",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10",
+    "vitest-browser-svelte": "^3.0.0",
+    "wrangler": "^4.114.0"
+  }
+}
