@@ -22,3 +22,4 @@ export {
   viewState
 } from './view';
 export type { NeighborhoodRow, ScoreStatus, ViewState } from './view';
+export { frameLatest } from './latest.svelte';
