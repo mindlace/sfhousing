@@ -336,8 +336,8 @@
         >
         <button
           type="button"
-          aria-label="Redo (⇧⌘Z / Ctrl+Shift+Z)"
-          title="Redo (⇧⌘Z / Ctrl+Shift+Z)"
+          aria-label="Redo (⇧⌘Z / Ctrl+Shift+Z / Ctrl+Y)"
+          title="Redo (⇧⌘Z / Ctrl+Shift+Z / Ctrl+Y)"
           disabled={!editor.canRedo}
           class="ctl flex min-h-11 min-w-11 items-center justify-center rounded-md disabled:opacity-40"
           onclick={onRedo}>{@render icon(ICONS.redo)}</button

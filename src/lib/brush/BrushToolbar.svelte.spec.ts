@@ -194,7 +194,7 @@ describe('BrushToolbar (desktop)', () => {
     await page.getByRole('button', { name: 'Undo (⌘Z / Ctrl+Z)' }).click();
     expect(onUndo).toHaveBeenCalledOnce();
     await expect
-      .element(page.getByRole('button', { name: 'Redo (⇧⌘Z / Ctrl+Shift+Z)' }))
+      .element(page.getByRole('button', { name: 'Redo (⇧⌘Z / Ctrl+Shift+Z / Ctrl+Y)' }))
       .toBeDisabled();
   });
 

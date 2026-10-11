@@ -29,9 +29,10 @@ describe('actionForKey', () => {
   });
 
   it('maps stories and radius keys', () => {
-    expect(actionForKey(ev('-'), ctx)).toEqual({ type: 'stories', delta: -1 });
-    expect(actionForKey(ev('='), ctx)).toEqual({ type: 'stories', delta: 1 });
-    expect(actionForKey(ev('+', { shiftKey: true }), ctx)).toEqual({ type: 'stories', delta: 1 });
+    const off = { mapFocused: false };
+    expect(actionForKey(ev('-'), off)).toEqual({ type: 'stories', delta: -1 });
+    expect(actionForKey(ev('='), off)).toEqual({ type: 'stories', delta: 1 });
+    expect(actionForKey(ev('+', { shiftKey: true }), off)).toEqual({ type: 'stories', delta: 1 });
     expect(actionForKey(ev('['), ctx)).toEqual({ type: 'radius', dir: 'down' });
     expect(actionForKey(ev(']'), ctx)).toEqual({ type: 'radius', dir: 'up' });
   });
@@ -58,6 +59,19 @@ describe('actionForKey', () => {
   it('maps Escape to cancel and Enter to stamp', () => {
     expect(actionForKey(ev('Escape'), ctx)).toEqual({ type: 'cancel' });
     expect(actionForKey(ev('Enter'), ctx)).toEqual({ type: 'stamp' });
+  });
+
+  it('leaves - / = / + to MapLibre zoom when the map is focused (F-1); radius keys still act', () => {
+    expect(actionForKey(ev('-'), ctx)).toBeNull();
+    expect(actionForKey(ev('='), ctx)).toBeNull();
+    expect(actionForKey(ev('+', { shiftKey: true }), ctx)).toBeNull();
+    expect(actionForKey(ev('['), ctx)).toEqual({ type: 'radius', dir: 'down' });
+    expect(actionForKey(ev(']'), ctx)).toEqual({ type: 'radius', dir: 'up' });
+  });
+
+  it('says in the table that the stories keys apply only off the map', () => {
+    const row = SHORTCUTS.find((s) => s.keys === '- / = (or +)');
+    expect(row?.action).toMatch(/map not focused/);
   });
 
   it('returns null for Enter when the map is not focused', () => {

@@ -428,7 +428,16 @@ export class BrushController {
     if (path.length === 0) {
       if (s.sentPreview) this.#cancelPreview();
     } else {
-      this.#commitOp(this.#buildOp(s, path), s.sentPreview);
+      const op = this.#buildOp(s, path);
+      // AC 2 (ruling F-4): a pointer-up in the same frame as the last move, or while a preview is
+      // in flight, would commit a tail no preview showed. Send that preview now, past the raf and
+      // one-in-flight limits; the commit right behind it promotes it.
+      if (!samePath(path, s.lastSent)) {
+        this.#inFlightRev = this.#d.client.preview(op);
+        s.lastSent = path;
+        s.sentPreview = true;
+      }
+      this.#commitOp(op, s.sentPreview);
     }
     this.#endStroke();
   }

@@ -290,6 +290,45 @@ describe('BrushController drag, previews and commit', () => {
     expect('stories' in fx.client.commits[0].op).toBe(false);
   });
 
+  it('previews the final tail before committing when pointer-up lands in the same frame (F-4)', () => {
+    down(0, 0);
+    move(30, 0);
+    fx.flushRaf();
+    fx.ctl.onDiff(diff(fx.client.previews[0].rev, 'preview'), false); // acked: none in flight
+    move(60, 0);
+    up(60, 0); // no raf flush: the tail (30 → 60) was never previewed by the frame loop
+    const last = fx.client.previews.at(-1)!;
+    const commit = fx.client.commits[0];
+    expect(fx.client.previews).toHaveLength(2);
+    expect(last.op.path).toEqual(commit.op.path);
+    expect(last.op.id).toBe(commit.op.id);
+    expect(last.rev).toBeLessThan(commit.rev);
+    expect(fx.flushRaf()).toBe(0); // nothing more goes out for the finished stroke
+  });
+
+  it('previews the final tail before committing while a preview is in flight (F-4)', () => {
+    down(0, 0);
+    move(30, 0);
+    fx.flushRaf(); // preview 1 in flight, never acked
+    move(60, 0);
+    fx.flushRaf(); // held back by the one-in-flight limit
+    expect(fx.client.previews).toHaveLength(1);
+    up(60, 0);
+    expect(fx.client.previews).toHaveLength(2);
+    expect(fx.client.previews[1].op.path).toEqual(fx.client.commits[0].op.path);
+    expect(fx.client.previews[1].rev).toBeLessThan(fx.client.commits[0].rev);
+  });
+
+  it('sends no extra preview when the last preview already shows the whole path', () => {
+    down(0, 0);
+    move(60, 0);
+    fx.flushRaf();
+    fx.ctl.onDiff(diff(fx.client.previews[0].rev, 'preview'), false);
+    up(60, 0);
+    expect(fx.client.previews).toHaveLength(1);
+    expect(fx.client.previews[0].op.path).toEqual(fx.client.commits[0].op.path);
+  });
+
   it('commits a one-point stamp for a click with no movement', () => {
     down(5, 5);
     up(5, 5);
@@ -618,6 +657,16 @@ describe('BrushController keyboard stamp, undo and redo', () => {
     key(']');
     expect(fx.state.stories).toBe(5);
     expect(fx.state.radiusM).toBe(38);
+  });
+
+  it('leaves stories alone for + / = / - on the focused canvas, where MapLibre zooms (F-1)', () => {
+    fx.canvas.focus();
+    const before = fx.state.stories;
+    key('+', { shiftKey: true }, fx.canvas);
+    key('=', {}, fx.canvas);
+    key('-', {}, fx.canvas);
+    expect(fx.state.stories).toBe(before);
+    fx.canvas.blur();
   });
 });
 

@@ -200,12 +200,15 @@ export class SimClient {
         return;
       }
       case 'error': {
-        // An error answering the resync load itself must not start another: the plan is the
-        // problem, and resending it would loop.
+        // bad-request and internal both resync (host.ts reports a swallowed loader failure as
+        // internal for exactly this). An error answering the resync load itself must not start
+        // another: resending the same plan would loop.
         const answersResync = this.#resyncRev !== null && msg.rev === this.#resyncRev;
         if (this.#resyncRev !== null && msg.rev >= this.#resyncRev) this.#resyncRev = null;
         this.#events.onError?.(msg);
-        if (msg.code === 'bad-request' && !answersResync) this.resync();
+        if ((msg.code === 'bad-request' || msg.code === 'internal') && !answersResync) {
+          this.resync();
+        }
         return;
       }
       default: {

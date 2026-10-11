@@ -32,7 +32,10 @@ export function isEditableTarget(t: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }
 
-/** `mapFocused` gates Enter → stamp; `modalOpen` suppresses everything. */
+/**
+ * `mapFocused` gates Enter → stamp and turns off the stories keys (MapLibre zooms on + / - there;
+ * ruling F-1); `modalOpen` suppresses everything.
+ */
 export function actionForKey(
   e: KeyLike,
   ctx: { mapFocused: boolean; modalOpen?: boolean }
@@ -64,10 +67,10 @@ export function actionForKey(
     case 'e':
       return { type: 'tool', tool: 'erase' };
     case '-':
-      return { type: 'stories', delta: -1 };
+      return ctx.mapFocused ? null : { type: 'stories', delta: -1 };
     case '=':
     case '+':
-      return { type: 'stories', delta: 1 };
+      return ctx.mapFocused ? null : { type: 'stories', delta: 1 };
     case '[':
       return { type: 'radius', dir: 'down' };
     case ']':
@@ -87,7 +90,7 @@ export const SHORTCUTS: readonly { keys: string; action: string }[] = [
   { keys: 'B', action: 'Paint' },
   { keys: 'E', action: 'Erase' },
   { keys: 'Space (hold)', action: 'Temporary Move' },
-  { keys: '- / = (or +)', action: 'Stories −1 / +1' },
+  { keys: '- / = (or +)', action: 'Stories −1 / +1 (map not focused; there they zoom)' },
   { keys: '[ / ]', action: 'Radius ÷1.25 / ×1.25' },
   { keys: '⌘Z / Ctrl+Z', action: 'Undo' },
   { keys: '⇧⌘Z / Ctrl+Shift+Z / Ctrl+Y', action: 'Redo' },

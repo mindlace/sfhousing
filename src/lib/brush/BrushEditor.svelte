@@ -81,6 +81,8 @@
   // Until SimMap's handle exists, renders and chunk statuses wait here, in order.
   let pendingRenders: GeneratedUpdate[] = [];
   const pendingStatus = new Map<string, ChunkStatus>(); // eslint-disable-line svelte/prefer-svelte-reactivity
+  /** Every cell this worker has given map-view a status for, so a restart can clear them. */
+  const statusCells = new Set<string>(); // eslint-disable-line svelte/prefer-svelte-reactivity
   let lastStats: OpStats | null = null;
   let chunks: { pending: number; failed: string[] } = { pending: 0, failed: [] };
 
@@ -94,6 +96,7 @@
   }
 
   function setChunkStatus(cellId: string, s: ChunkStatus): void {
+    statusCells.add(cellId);
     if (handle) return handle.setChunkStatus(cellId, s);
     pendingStatus.delete(cellId);
     pendingStatus.set(cellId, s);
@@ -151,7 +154,10 @@
     retrying = true;
     brush.phase = 'loading';
     try {
-      if (client.crashed) client.restart(createWorker());
+      if (client.crashed) {
+        client.restart(createWorker());
+        resetChunkStatuses();
+      }
       let m = manifest;
       if (needManifest || !m) {
         const fresh = await reloadManifest();
@@ -168,6 +174,19 @@
     } finally {
       retrying = false;
     }
+  }
+
+  /**
+   * After a worker restart the new loader reports only the cells it fetches, so statuses the
+   * dead worker set would stick (a stale "Some parcels didn't load" chip whose Retry does nothing).
+   * ChunkStatus has no "not loaded" value; 'ready' is the only one that is neither an error nor a
+   * spinner (map-view's own "unknown" for an unreported cell is not settable). The new worker
+   * reports 'loading'/'error' again for any cell it actually needs.
+   */
+  function resetChunkStatuses(): void {
+    for (const cellId of statusCells) setChunkStatus(cellId, 'ready');
+    statusCells.clear();
+    chunks = { pending: 0, failed: [] };
   }
 
   function applyInset(): void {

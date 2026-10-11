@@ -128,6 +128,32 @@ describe('SimClient', () => {
     ]);
   });
 
+  it('answers an internal error with exactly one load per episode (F-2)', () => {
+    const onError = vi.fn();
+    const { w, client, loads } = setup({ onError });
+    client.init(MANIFEST);
+    client.commit(OP); // rev 2
+    w.emit({ type: 'error', rev: 2, code: 'internal', message: 'loader failed' });
+    w.emit({ type: 'error', rev: 2, code: 'internal', message: 'again' });
+    expect(onError).toHaveBeenCalledTimes(2);
+    expect(loads()).toEqual([{ type: 'load', rev: 3, plan: PLAN }]);
+  });
+
+  it('does not loop when the resync load itself fails internally', () => {
+    const { w, client, loads } = setup();
+    client.init(MANIFEST);
+    client.resync(); // rev 2
+    w.emit({ type: 'error', rev: 2, code: 'internal', message: 'still broken' });
+    expect(loads()).toHaveLength(1);
+  });
+
+  it('does not resync on manifest-invalid', () => {
+    const { w, client, loads } = setup();
+    client.init(MANIFEST);
+    w.emit({ type: 'error', rev: 1, code: 'manifest-invalid', message: 'bad' });
+    expect(loads()).toHaveLength(0);
+  });
+
   it('does not loop when the resync load itself is a bad request', () => {
     const onError = vi.fn();
     const { w, client, loads } = setup({ onError });
