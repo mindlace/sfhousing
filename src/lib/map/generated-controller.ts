@@ -110,6 +110,10 @@ function accessorsFor(pack: PackedCell, theme: Theme) {
 
 const RESERVED = /^(generated|rising)-/;
 
+// sfh-slice measures feed the C5 budget tests (dev) and e2e builds; production builds skip
+// them so they never accumulate in the performance timeline.
+const MEASURE = import.meta.env.DEV || import.meta.env.VITE_E2E === '1';
+
 const idsOf = (c: GeneratedUpdate['cells'][number]): ParcelId[][] =>
   c.rising ? [c.settled.parcelIds, c.rising.parcelIds] : [c.settled.parcelIds];
 
@@ -258,7 +262,7 @@ export class GeneratedController {
   }
 
   private runJob(job: Job): void {
-    const t0 = performance.now();
+    const t0 = MEASURE ? performance.now() : 0;
     const { slice } = job;
     for (const id of slice.removed) {
       this.finalise(id);
@@ -269,7 +273,7 @@ export class GeneratedController {
     for (const id of slice.add) this.deps.setReplaced(id);
     applyHideDiff(this.mirror, slice);
     this.emit();
-    performance.measure('sfh-slice', { start: t0, end: performance.now() });
+    if (MEASURE) performance.measure('sfh-slice', { start: t0, end: performance.now() });
   }
 
   /**
