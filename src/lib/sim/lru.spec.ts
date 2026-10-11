@@ -54,6 +54,19 @@ describe('createLru', () => {
     expect(lru.get('b')).toBeUndefined();
   });
 
+  it('evicts in LRU order over many evictions (long-lived oldest cursor)', () => {
+    const lru = createLru<number, number>(3);
+    for (let i = 0; i < 10_000; i++) {
+      lru.set(i, i);
+      if (i % 2 === 0) lru.get(i - 2); // keep the even keys warm
+    }
+    expect(lru.size).toBe(3);
+    expect(lru.get(9999)).toBe(9999);
+    expect(lru.get(9998)).toBe(9998);
+    expect(lru.get(9996)).toBe(9996);
+    expect(lru.get(9997)).toBeUndefined();
+  });
+
   it('cap 0 stores nothing', () => {
     const lru = createLru<string, number>(0);
     lru.set('a', 1);
@@ -82,10 +95,11 @@ describe('createLru', () => {
         k: fc.constant('set' as const),
         key: fc.integer({ min: 0, max: 9 }),
         v: fc.integer()
-      })
+      }),
+      fc.record({ k: fc.constant('clear' as const), key: fc.constant(0) })
     );
     fc.assert(
-      fc.property(fc.integer({ min: 0, max: 6 }), fc.array(op, { maxLength: 60 }), (cap, ops) => {
+      fc.property(fc.integer({ min: 0, max: 6 }), fc.array(op, { maxLength: 200 }), (cap, ops) => {
         const lru = createLru<number, number>(cap);
         let model: [number, number][] = []; // oldest first
         for (const o of ops) {
@@ -94,6 +108,9 @@ describe('createLru', () => {
             const want = i < 0 ? undefined : model[i][1];
             if (i >= 0) model = [...model.slice(0, i), ...model.slice(i + 1), model[i]];
             expect(lru.get(o.key)).toBe(want);
+          } else if (o.k === 'clear') {
+            model = [];
+            lru.clear();
           } else {
             if (i >= 0) model.splice(i, 1);
             model.push([o.key, o.v]);
@@ -102,6 +119,8 @@ describe('createLru', () => {
           }
           expect(lru.size).toBe(model.length);
         }
+        // Every surviving entry is still reachable with its latest value.
+        for (const [key, v] of [...model]) expect(lru.get(key)).toBe(v);
       })
     );
   });
