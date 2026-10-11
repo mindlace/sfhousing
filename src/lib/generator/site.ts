@@ -1,20 +1,24 @@
-import { FillRule, simplifyPathsD, unionD, type PathD, type PathsD } from 'clipper2-ts';
-import { CLIPPER_PRECISION, MIN_SITE_M2, MIN_WIDTH_INSET_M, SIMPLIFY_EPS_M } from './constants';
 import {
-  canonicalRing,
-  centroid,
-  inset,
-  keepPieces,
-  principalAxis,
-  signedArea,
-  type Vec
-} from './poly';
+  booleanOpDWithPolyTree,
+  ClipType,
+  FillRule,
+  intersectD,
+  PolyTreeD,
+  simplifyPathsD,
+  type PathD,
+  type PathsD
+} from 'clipper2-ts';
+import { domainArea } from './domain';
+import { CLIPPER_PRECISION, MIN_SITE_M2, MIN_WIDTH_INSET_M, SIMPLIFY_EPS_M } from './constants';
+import { canonicalRing, centroid, inset, principalAxis, signedArea, type Vec } from './poly';
 
 export interface Site {
   /** Site ring (local metres), canonical: open, CCW, no holes. */
   P: PathD;
   /** |area(P)| in m². */
   A: number;
+  originalDomain: PathsD;
+  domain: PathsD;
   /** Area centroid of P. */
   c: Vec;
   /** Long principal axis of P (unit). */
@@ -59,38 +63,45 @@ export function normaliseSite(polygon: [number, number][][], edgeInsetM: number)
   }
   if (rings.length === 0) return null;
 
-  let P: PathD | null;
+  let P: PathD;
+  let holes: PathsD = [];
   if (rings.length === 1) {
-    P = rings[0];
+    P = canonicalRing(rings[0]);
   } else {
-    // Resolves holes and disjoint parts without trusting ring orientation. Outers come back
-    // positive; holes negative. The largest positive path is the site's outer ring.
-    const merged = unionD(rings, [], FillRule.EvenOdd, CLIPPER_PRECISION);
-    P = null;
-    let best = 0;
-    for (const p of merged) {
-      const a = signedArea(p);
-      if (a > best) {
-        best = a;
-        P = p;
-      }
+    const tree = new PolyTreeD();
+    booleanOpDWithPolyTree(ClipType.Union, rings, null, tree, FillRule.EvenOdd, CLIPPER_PRECISION);
+    if (tree.count === 0) return null;
+    let best = tree.child(0);
+    for (let i = 1; i < tree.count; i++) {
+      const candidate = tree.child(i);
+      if (candidate.area() > best.area()) best = candidate;
     }
-    if (!P) return null;
+    if (!best.poly) return null;
+    P = canonicalRing(best.poly);
+    for (let i = 0; i < best.count; i++) {
+      const hole = best.child(i).poly;
+      if (hole) holes.push(canonicalRing(hole).reverse());
+    }
+    holes = holes.sort((a, b) => a[0].x - b[0].x || a[0].y - b[0].y);
   }
-  P = canonicalRing(P);
+  const originalDomain = [P, ...holes];
   const simplified = simplifyPathsD([P], SIMPLIFY_EPS_M, true);
   if (simplified.length === 0 || simplified[0].length < 3) return null;
-  P = canonicalRing(simplified[0]);
-
-  const A = Math.abs(signedArea(P));
+  const next = canonicalRing(simplified[0]);
+  const unchanged =
+    next.length === P.length && next.every((p, i) => p.x === P[i].x && p.y === P[i].y);
+  const domain = unchanged
+    ? originalDomain
+    : intersectD([next, ...holes], originalDomain, FillRule.NonZero, CLIPPER_PRECISION);
+  P = next;
+  const A = domainArea(domain);
   if (!(A >= MIN_SITE_M2)) return null;
-
-  const Q = keepPieces(inset([P], edgeInsetM));
-  if (Q.length === 0) return null;
-  if (inset(Q, MIN_WIDTH_INSET_M).length === 0) return null;
+  // Small exclusions must survive even when their area is below the occupied-piece minimum.
+  const Q = inset(domain, edgeInsetM).filter((p) => signedArea(p) < 0 || signedArea(p) >= 10);
+  if (Q.length === 0 || inset(Q, MIN_WIDTH_INSET_M).length === 0) return null;
 
   const c = centroid(P);
   const u = principalAxis(P, c);
   // `+ 0` turns -0 into 0 so structurally equal sites compare equal
-  return { P, A, c, u, v: { x: -u.y + 0, y: u.x + 0 }, Q };
+  return { P, A, c, u, v: { x: -u.y + 0, y: u.x + 0 }, Q, originalDomain, domain };
 }
