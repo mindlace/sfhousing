@@ -68,6 +68,7 @@ describe('/attribution page', () => {
     await expect
       .element(page.getByText('Source list unavailable for this dataset version.'))
       .toBeInTheDocument();
+    await expect.element(page.getByText('Dataset version fixture-0.')).toBeInTheDocument();
     expect(document.querySelector('table')).toBeNull();
     await expectNotices();
   });

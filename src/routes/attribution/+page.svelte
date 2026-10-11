@@ -42,6 +42,7 @@
     </table>
   </div>
 {:else}
+  <p class="mt-3">Dataset version <code>{data.datasetVersion}</code>.</p>
   <p class="mt-3">Source list unavailable for this dataset version.</p>
 {/if}
 

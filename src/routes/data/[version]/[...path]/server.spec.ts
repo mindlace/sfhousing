@@ -48,6 +48,12 @@ describe('GET /data/<version>/*', () => {
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
   });
 
+  it('200 full body for a reversed range bytes=5-2 (ignored)', async () => {
+    const res = await call(GET, 'fixture-0', 'buildings.pmtiles', { range: 'bytes=5-2' });
+    expect(res.status).toBe(200);
+    expect(await bytesOf(res)).toEqual(BYTES);
+  });
+
   it('206 for bytes=0-15', async () => {
     const res = await call(GET, 'fixture-0', 'buildings.pmtiles', { range: 'bytes=0-15' });
     expect(res.status).toBe(206);

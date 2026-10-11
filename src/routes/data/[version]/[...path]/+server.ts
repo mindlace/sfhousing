@@ -60,7 +60,10 @@ const SINGLE_RANGE_RE = /^bytes=(\d*)-(\d*)$/;
 /** Parse a single `bytes=` range; null when the header is not a valid single range. */
 function parseSingleRange(h: string | null): { first: string; last: string } | null {
   const m = h ? SINGLE_RANGE_RE.exec(h.trim()) : null;
-  return m && (m[1] || m[2]) ? { first: m[1], last: m[2] } : null;
+  if (!m || !(m[1] || m[2])) return null;
+  // last < first is invalid (RFC 9110 §14.1.2): ignore the header rather than send it to R2.
+  if (m[1] && m[2] && Number(m[2]) < Number(m[1])) return null;
+  return { first: m[1], last: m[2] };
 }
 
 /** RFC 9110 unsatisfiable: start at/after the end, or a zero-length suffix. */
