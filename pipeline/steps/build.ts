@@ -32,6 +32,13 @@ const REPO_ROOT = resolve(import.meta.dirname, '../..');
 /** SF housing stock (2023 Housing Inventory, Table 1); spec §4.9 V1. */
 const HOUSING_STOCK = { end2022: 413208, end2023: 415803 };
 const FIXTURE_RE = /^fixture-\d+$/;
+/** Spec §4.12: derivative databases of ODbL data are offered under ODbL-1.0 (share-alike). */
+const DERIVED_LICENSE = {
+  derivedData: 'ODbL-1.0',
+  artifacts: ['basemap.pmtiles', 'buildings.pmtiles', 'parcels/*'],
+  notice:
+    'Derived data files under /data/ that incorporate OpenStreetMap or Overture data are made available under the ODbL 1.0.'
+};
 
 /** True when every file in dir a has a byte-identical twin in dir b and vice versa. */
 function sameFiles(a: string, b: string): boolean {
@@ -162,6 +169,7 @@ export async function build(
       warnings: report.warnings,
       toolVersions: TOOL_VERSIONS,
       housingStock: HOUSING_STOCK,
+      license: DERIVED_LICENSE,
       invariants: results
     };
     // Fixture reports stay byte-stable: no wall-clock timings.

@@ -141,6 +141,15 @@
       "ok": true
     }
   ],
+  "license": {
+    "artifacts": [
+      "basemap.pmtiles",
+      "buildings.pmtiles",
+      "parcels/*"
+    ],
+    "derivedData": "ODbL-1.0",
+    "notice": "Derived data files under /data/ that incorporate OpenStreetMap or Overture data are made available under the ODbL 1.0."
+  },
   "toolVersions": {
     "duckdb": "1.5.6",
     "node": ">=22",

@@ -42,6 +42,13 @@ describe('pipeline fixture', () => {
         (r) => r.id
       )
     );
+    // Spec §4.12: the report states the ODbL offer for the derived artifacts.
+    expect(JSON.parse(readFileSync(join(a, 'report.json'), 'utf8')).license).toEqual({
+      artifacts: ['basemap.pmtiles', 'buildings.pmtiles', 'parcels/*'],
+      derivedData: 'ODbL-1.0',
+      notice:
+        'Derived data files under /data/ that incorporate OpenStreetMap or Overture data are made available under the ODbL 1.0.'
+    });
     expect(ids).toContain('0026T001A');
     expect(ids).toContain('8711023C');
     // besri's piece is a dropped sliver but the building is kept, so Esri contributes too.
