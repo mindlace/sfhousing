@@ -10,3 +10,4 @@ playwright-report
 docs/superpowers
 .superpowers
 pipeline/test/fixtures/mini/golden
+pipeline/test/fixtures/mini/raw

@@ -1,0 +1,94 @@
+{
+  "sources": [
+    {
+      "files": [
+        {
+          "archiveKey": "sources/b36127bab2c982819ff65f860e5e652fbb85dfcb8a0010851aebd344d781bb16.geojson",
+          "bytes": 841,
+          "name": "datasf-footprints.page-000.geojson",
+          "sha256": "b36127bab2c982819ff65f860e5e652fbb85dfcb8a0010851aebd344d781bb16",
+          "url": "https://fixture.invalid/datasf-footprints.page-000.geojson"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/ynuv-fyni",
+      "id": "datasf-footprints",
+      "label": "DataSF Building Footprints",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 3,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/d3cf2c2bce18e70ea74af8fa50910e5c7f93329f557071f99c4013a82d8815f6.geojson",
+          "bytes": 4695,
+          "name": "datasf-landuse-2023.page-000.geojson",
+          "sha256": "d3cf2c2bce18e70ea74af8fa50910e5c7f93329f557071f99c4013a82d8815f6",
+          "url": "https://fixture.invalid/datasf-landuse-2023.page-000.geojson"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/fdfd-xptc",
+      "id": "datasf-landuse-2023",
+      "label": "DataSF Land Use 2023",
+      "license": "public-domain",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 15,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/7ad1d6102ca900886294ada8e80b321fd381d3b3ea9d4e5ec6964bed4b6689d3.geojson",
+          "bytes": 504,
+          "name": "datasf-neighborhoods.page-000.geojson",
+          "sha256": "7ad1d6102ca900886294ada8e80b321fd381d3b3ea9d4e5ec6964bed4b6689d3",
+          "url": "https://fixture.invalid/datasf-neighborhoods.page-000.geojson"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/j2bu-swwd",
+      "id": "datasf-neighborhoods",
+      "label": "DataSF Analysis Neighborhoods",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 2,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/30f9a77ee6417df66c670d7535ab05c260d5018cc184d89c264d2d3c24c0826c.geojson",
+          "bytes": 6554,
+          "name": "datasf-parcels.page-000.geojson",
+          "sha256": "30f9a77ee6417df66c670d7535ab05c260d5018cc184d89c264d2d3c24c0826c",
+          "url": "https://fixture.invalid/datasf-parcels.page-000.geojson"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/acdm-wktn",
+      "id": "datasf-parcels",
+      "label": "DataSF Parcels (Active and Retired)",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 19,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/951b26d7001e989cb193f2e0ae9a3cbe49f0dc62bdd994aeda8418e5b008c5c6.geojson",
+          "bytes": 4043,
+          "name": "overture-buildings.page-000.geojson",
+          "sha256": "951b26d7001e989cb193f2e0ae9a3cbe49f0dc62bdd994aeda8418e5b008c5c6",
+          "url": "https://fixture.invalid/overture-buildings.page-000.geojson"
+        }
+      ],
+      "homepage": "https://overturemaps.org",
+      "id": "overture-buildings",
+      "label": "Overture Maps Buildings",
+      "license": "ODbL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 12,
+      "upstreamVersion": "fixture"
+    }
+  ]
+}
