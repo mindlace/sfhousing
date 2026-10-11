@@ -97,7 +97,7 @@ describe('375 px', () => {
     await render(Scoreboard, { props: { score: withNet(5), status: status(), onsheetchange } });
     const outside = document.createElement('button');
     outside.textContent = 'outside';
-    document.body.append(outside);
+    document.body.appendChild(outside);
     await page.getByRole('button', { name: /net new homes/ }).click();
     outside.focus();
     await userEvent.keyboard('{Escape}');
