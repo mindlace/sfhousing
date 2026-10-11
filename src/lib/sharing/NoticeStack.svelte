@@ -35,6 +35,15 @@
     for (const t of timers.values()) clearTimeout(t);
     timers.clear();
   });
+
+  // The stack's height on :root as --notice-stack-h, for the brush toolbar: from 768 to 1023 px it
+  // caps its own height to end above the stack (see the placement note below). Removed on unmount.
+  let stackH = $state(0);
+  $effect(() => {
+    const s = document.documentElement.style;
+    s.setProperty('--notice-stack-h', `${stackH}px`);
+    return () => s.removeProperty('--notice-stack-h');
+  });
 </script>
 
 <!--
@@ -50,10 +59,14 @@
     from the right keeps it out of the scoreboard column however tall the panel grows. From lg it
     also starts right of the toolbar column (25rem), so a tall toolbar (keyboard shortcuts open,
     about 620 px at 1024x768) cannot reach it either.
-    Known limit, 768-1023 px: the two columns leave no room beside the toolbar, so the stack sits
-    under it and relies on the toolbar ending above it. With the shortcuts open on a short
-    viewport the toolbar can reach the stack; fixing that needs the toolbar's height (brush owner),
-    not a NoticeStack class.
+    768-1023 px: the two columns leave no room beside the toolbar, so the stack sits under it.
+    The stack publishes its height as --notice-stack-h and the toolbar caps its own height to
+    end 0.5rem above the stack, scrolling inside (BrushToolbar.svelte); keep the 6rem in sync.
+  Short narrow viewports (below 768 px wide and at most 480 px tall, e.g. a 667x375 landscape
+  phone): the map region is about 290 px with the 112 px of bars and the attribution strip above
+  them, so 8rem down lands on the attribution and the brush bar. The stack moves to 0.5rem from
+  the top. Known limit: a map-view failure chip (top centre) showing at the same time may sit
+  under a notice until it is dismissed; the brush popovers, opened on demand, paint above it.
   One always-mounted status region (not a list): notices added to it later are announced, which
   a status node inserted with its text already inside often is not. Empty, it has no height.
 -->
@@ -61,6 +74,7 @@
   role="status"
   aria-live="polite"
   data-testid="notice-stack"
+  bind:offsetHeight={stackH}
   class="notice-stack pointer-events-none absolute top-32 right-[60px] left-4 z-20 flex flex-col gap-2 sm:right-4 md:top-auto md:right-[22rem] md:bottom-24 md:left-16 md:items-center lg:left-[25rem]"
 >
   {#each notices as n (n.id)}
@@ -82,3 +96,11 @@
     </div>
   {/each}
 </div>
+
+<style>
+  @media (width < 768px) and (height <= 480px) {
+    .notice-stack {
+      top: 0.5rem;
+    }
+  }
+</style>

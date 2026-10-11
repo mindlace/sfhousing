@@ -260,14 +260,14 @@
 {/snippet}
 
 <div
-  class="brush-toolbar absolute inset-x-0 bottom-[var(--scorebar-h,0px)] z-20 [--brushbar-h:56px] md:top-4 md:right-auto md:bottom-auto md:left-4 md:w-[23rem] md:[--brushbar-h:0px]"
+  class="brush-toolbar absolute inset-x-0 bottom-[var(--scorebar-h,0px)] z-21 [--brushbar-h:56px] md:top-4 md:right-auto md:bottom-auto md:left-4 md:flex md:w-[23rem] md:flex-col md:[--brushbar-h:0px]"
   style={THEME_VARS}
 >
   <div
     data-testid="brush-bar"
     role="group"
     aria-label="Brush"
-    class="brush-panel flex h-14 items-center gap-1 px-1 md:h-auto md:flex-col md:items-stretch md:gap-2 md:rounded-lg md:p-2"
+    class="brush-panel flex h-14 items-center gap-1 px-1 md:h-auto md:min-h-0 md:flex-col md:items-stretch md:gap-2 md:overflow-y-auto md:rounded-lg md:p-2"
   >
     {#if editor.readOnly}
       <div role="radiogroup" aria-label="Brush tool" class="flex gap-1">
@@ -370,7 +370,7 @@
 
   {#if !editor.readOnly}
     <div
-      class="brush-status pointer-events-none absolute inset-x-2 bottom-full mb-2 flex items-center gap-2 md:static md:mt-2"
+      class="brush-status pointer-events-none absolute inset-x-2 bottom-full mb-2 flex items-center gap-2 md:static md:mt-2 md:shrink-0"
     >
       <p
         role="status"
@@ -419,21 +419,59 @@
       border: 1px solid var(--bt-line);
     }
   }
-  /* Narrow popovers stop 60px short of the right edge. The map's bottom controls sit just above
-     the bars (lifted by the bottom inset), and below 640px (map-view's NARROW_PX) its attribution
-     is the compact 44px (i) button, 10px from the edge: partly covering it would shrink its visible
-     target below WCAG 2.5.8's 24px. Between 640 and 767px the attribution is a text strip that a
-     popover may partly cover; that is acceptable, as inline links are exempt and popovers are
-     transient. */
-  .brush-pop {
-    right: 3.75rem;
+  /* Below 768px the popovers and the status line float above the bar, in the band where map-view's
+     bottom-right controls (the attribution) sit, lifted by the bottom inset. They keep clear of the
+     controls' footprint (docs/dev/map-interfaces.md: px from the map's right and bottom edges):
+     - when a float at least 16rem wide fits left of the controls (the collapsed compact (i)
+       button below 640px), it stops at the controls' left edge, wrapping inside;
+     - otherwise (the expanded compact attribution, or the full-width text strip from 640px) it is
+       lifted above the controls' top edge, at full width.
+     The switch is a clamp on `--bt-room` (≥ 0: it fits), so no JS runs; the two terms overlap only
+     in a sub-pixel window, where the float is both narrowed and lifted. While the map loads the
+     footprint is 0px (nothing to avoid: 0.5rem in, no lift); with no map at all the vars are unset
+     and the fallback keeps the old 60px clearance from the compact button. 100cqw is the toolbar's
+     width (the map's, below 768px). From 768px the popovers are hidden and the status line is
+     static, so none of this applies.
+     The toolbar sits one z step (z-21) above plan-sharing's NoticeStack (z-20): the toolbar box
+     never overlaps a notice, but on a short viewport (667x375) a lifted popover can reach a
+     notice at the top, and a popover the user just opened should paint over it. */
+  .brush-toolbar {
+    container-type: inline-size;
+    --bt-br-inline: var(--map-controls-br-inline-size, 3.75rem);
+    --bt-br-block: var(--map-controls-br-block-size, 0px);
+    --bt-room: calc(100cqw - 16rem - var(--bt-br-inline));
+    /* The bar's top, measured from the map's bottom edge as the footprint is. */
+    --bt-bar-top: calc(var(--scorebar-h, 0px) + var(--brushbar-h));
+    --bt-float-right: min(
+      max(0.5rem, var(--bt-br-inline)),
+      max(0.5rem, (var(--bt-room) + 1px) * 10000)
+    );
+    --bt-float-lift: clamp(
+      0px,
+      var(--bt-room) * -10000,
+      max(0px, var(--bt-br-block) - var(--bt-bar-top))
+    );
   }
-  /* The floating status line shares that band, so it gets the same clearance from the compact
-     attribution button (640–767px it may overlay the text strip, as the popovers do; ≥ 768px it
-     is static inside the panel). */
-  @media (width < 640px) {
-    .brush-status {
-      right: 3.75rem;
+  .brush-pop,
+  .brush-status {
+    right: var(--bt-float-right);
+    bottom: calc(100% + var(--bt-float-lift));
+  }
+  /* 768–1023px: plan-sharing's NoticeStack sits under the toolbar column (6rem up from the map's
+     bottom, NoticeStack.svelte), and it publishes its height as --notice-stack-h. The toolbar
+     ends 0.5rem above it, and never lower than 9.5rem up, which clears map-view's bottom-left
+     navigation control (3 × 44px + 10px margin = 142px); the panel scrolls inside. From 1024px
+     the stack sits right of the toolbar column, so only the navigation control limits it. The
+     7rem floor keeps the tool radios on screen on very short viewports. */
+  @media (min-width: 768px) {
+    .brush-toolbar {
+      --bt-clear-bottom: max(9.5rem, 6.5rem + var(--notice-stack-h, 0px));
+      max-height: max(7rem, 100% - 1rem - var(--bt-clear-bottom));
+    }
+  }
+  @media (min-width: 1024px) {
+    .brush-toolbar {
+      --bt-clear-bottom: 9.5rem;
     }
   }
   .tool {
