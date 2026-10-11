@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "datasetVersion": "fixture-0",
+  "ops": [
+    { "id": "a1", "kind": "paint", "stories": 5, "radiusM": 25, "path": [[-122.418319, 37.760754]] }
+  ]
+}

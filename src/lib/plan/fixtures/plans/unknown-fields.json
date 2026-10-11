@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "datasetVersion": "fixture-0",
+  "extra": { "nested": true },
+  "ops": [
+    {
+      "id": "e1",
+      "kind": "erase",
+      "stories": 9,
+      "radiusM": 10,
+      "path": [[-122.418319, 37.760754]],
+      "color": "red"
+    },
+    {
+      "id": "p1",
+      "kind": "paint",
+      "stories": 2,
+      "radiusM": 10,
+      "path": [[-122.418319, 37.760754]],
+      "pressure": 0.5
+    }
+  ]
+}
