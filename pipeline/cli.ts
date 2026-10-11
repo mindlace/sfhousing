@@ -149,7 +149,7 @@ const steps: Record<string, { help: string; run: Step }> = {
       return upload({
         outDir,
         datasetVersion: v,
-        // Fixture datasets have no raw archives to publish.
+        // Fixture datasets have no raw archives to publish (and skip the lockSha256 check).
         lock: lockPath ? readLock(lockPath) : { sources: [] },
         rawDir: RAW,
         target: wranglerTarget({ local: args.flags.local === true })

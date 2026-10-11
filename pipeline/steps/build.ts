@@ -14,7 +14,7 @@ import { dirname, join, resolve } from 'node:path';
 import { TOOL_VERSIONS, type InvariantProfile } from '../config';
 import { run } from '../lib/exec';
 import { openDuck, type Duck } from '../lib/duck';
-import { rawPath, readLock, sortKeys, verifyRaw, type Lock } from '../lib/lock';
+import { lockSha256, rawPath, readLock, sortKeys, verifyRaw, type Lock } from '../lib/lock';
 import { Report } from '../lib/report';
 import { runSql } from '../lib/sql';
 import { codeTreeHash, computeDatasetVersion } from '../lib/version';
@@ -200,7 +200,10 @@ export async function build(
       toolVersions: TOOL_VERSIONS,
       housingStock: HOUSING_STOCK,
       license: DERIVED_LICENSE,
-      invariants: results
+      invariants: results,
+      // `upload` refuses unless the current lock hashes to this and tiles were built.
+      lockSha256: lockSha256(lock),
+      tilesSkipped: opts.skipTiles ?? false
     };
     // Fixture reports stay byte-stable: no wall-clock timings.
     if (!fixtureMode) body.timings = report.timings;

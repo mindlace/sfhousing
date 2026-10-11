@@ -46,6 +46,11 @@ export function canonicalJson(v: unknown): string {
   return JSON.stringify(sortKeys(v));
 }
 
+/** sha256 of canonicalJson(lock): recorded in report.json, re-checked by `upload`. */
+export function lockSha256(lock: Lock): string {
+  return createHash('sha256').update(canonicalJson(lock)).digest('hex');
+}
+
 export function readLock(p: string): Lock {
   return JSON.parse(fs.readFileSync(p, 'utf8')) as Lock;
 }
