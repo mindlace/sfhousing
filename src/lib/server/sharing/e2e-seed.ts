@@ -1,0 +1,65 @@
+// POST /api/e2e/plans: e2e-only seeding of raw plan rows for states the public API refuses to
+// create (a retired dataset version, an unparsable stored body). Writing through the preview's
+// own D1 binding avoids an out-of-process `wrangler d1 execute` racing the running server for the
+// SQLite file (SQLITE_BUSY). Reachable only in a VITE_E2E build running with
+// ENVIRONMENT=development; the route adapter compiles the call out of every other build.
+import { parsePlan } from '$lib/plan';
+import { getDb } from '$lib/server/db';
+import { sha256Hex } from '$lib/sharing/hash';
+import { newPlanId } from '$lib/sharing/ids';
+import { json, shareError } from './respond';
+import { findPlanByHash, insertPlan } from './store';
+
+export const E2E_SEED_DEFAULT_DATASET = 'fixture-0000';
+export const E2E_SEED_CREATED_AT = Date.UTC(2026, 9, 1);
+
+export async function handleE2eSeed(
+  event: { request: Request; platform: App.Platform | undefined },
+  opts: { e2eEnabled: boolean }
+): Promise<Response> {
+  const { request, platform } = event;
+  if (!opts.e2eEnabled || platform?.env?.ENVIRONMENT !== 'development') {
+    return shareError(404, 'not_found');
+  }
+
+  let payload: { body?: unknown; datasetVersion?: unknown };
+  try {
+    payload = (await request.json()) as typeof payload;
+  } catch {
+    return shareError(400, 'invalid_json', { message: 'e2e seed: body is not JSON' });
+  }
+  const { body, datasetVersion } = payload ?? {};
+  if (
+    typeof body !== 'string' ||
+    (datasetVersion !== undefined && typeof datasetVersion !== 'string')
+  ) {
+    return shareError(400, 'invalid_json', {
+      message: 'e2e seed: expected { body: string; datasetVersion?: string }'
+    });
+  }
+
+  const parsed = parsePlan(body);
+  const db = getDb(platform);
+  const version = datasetVersion ?? E2E_SEED_DEFAULT_DATASET;
+  const contentHash = await sha256Hex(body);
+  const id = newPlanId();
+  const inserted = await insertPlan(db, {
+    id,
+    schema: 1,
+    datasetVersion: version,
+    body,
+    contentHash,
+    opCount: parsed.ok ? parsed.value.ops.length : 0,
+    byteSize: new TextEncoder().encode(body).byteLength,
+    createdAt: new Date(E2E_SEED_CREATED_AT)
+  });
+  if (inserted) return json(201, { id });
+
+  // content_hash is unique and the preview's local D1 persists across runs, so seeding the same
+  // body again (repeat-each, a rerun) reuses the existing row, as publish dedupes.
+  const existing = await findPlanByHash(db, contentHash);
+  if (existing && existing.datasetVersion === version) return json(200, { id: existing.id });
+  return shareError(500, 'server_error', {
+    message: 'e2e seed: this body is already seeded under another dataset version'
+  });
+}
