@@ -730,7 +730,7 @@ Dialog behaviour (spec §4.6): native `<dialog>` opened with `showModal()` when 
   - already published: `lastPublished.hash = await sha256Hex(serializePlan(plan))` → button text "Share link", clicking opens success view with the stored id, `fetchFn` not called.
   - 413 → `tooLarge(bytes)` exact text in `role=alert`, Publish disabled; 422 `too_many_ops` copy; 422 `unknown_dataset_version` copy; 422 `invalid_plan` → `cannotRead('invalid_plan')` + issues link href `${REPO_URL}/issues`; 429 with `Retry-After: 2` (fake timers) → rate-limited copy, Publish disabled, "You can publish again in 2 s." then enabled after advancing 2 s; fetch rejecting → network copy.
   - Escape closes the dialog (`userEvent.keyboard('{Escape}')`).
-  `SaveIndicator.svelte.spec.ts`: text per status; live region empty on first render with `'saved'`; rerender `'off'` → live text "Autosave off"; `'saving'` → still "Autosave off"? no — `'saving'` after `'off'` means storage recovered only when a write succeeds, so the transition back is announced on `'saved'`: assert live text "Autosave on" after rerender to `'saved'`; N4 popover toggles.
+  `SaveIndicator.svelte.spec.ts`: text per status; live region empty on first render with `'saved'`; rerender `'off'` → live text "Autosave off"; rerender `'saving'` → live text still "Autosave off" (recovery is only known once a write succeeds); rerender `'saved'` → live text "Autosave on"; N4 popover toggles.
 - [ ] **Step 2: Run** `npx vitest --run --project client src/lib/sharing` and server spec → FAIL. **Step 3: Implement.** **Step 4: Run** → PASS; check + lint.
 - [ ] **Step 5: Commit** `git commit -m "feat(sharing): publish client, Publish dialog and Saved indicator"`.
 
