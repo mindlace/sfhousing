@@ -18,6 +18,7 @@
     "src/**/*.svelte",
     "scripts/**/*.ts",
     "e2e/**/*.ts",
+    "pipeline/**/*.ts",
     "*.config.ts"
   ]
 }

@@ -9,3 +9,5 @@ worker-configuration.d.ts
 test-results/
 playwright-report/
 /scratch/
+pipeline/.cache/
+pipeline/out/
