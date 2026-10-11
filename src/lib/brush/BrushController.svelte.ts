@@ -81,7 +81,9 @@ const inBBox = (p: LngLat) =>
 /**
  * Turns pointer, touch, pen and keyboard input over the map into brush ops (spec §4.1, §4.3–§4.8):
  * rate-limited previews with at most one in flight, commit through the editor, cancel, undo/redo,
- * the keyboard stamp, the ring/swath overlay, pan mode and viewport prefetch.
+ * the keyboard stamp, the ring overlay, pan mode and viewport prefetch. The ring and the live
+ * building previews are the in-stroke feedback; no stroke swath is drawn (partner ruling
+ * 2026-10-12).
  */
 export class BrushController {
   #d: BrushControllerDeps;
@@ -90,7 +92,6 @@ export class BrushController {
 
   #stroking = $state(false);
   #ring = $state.raw<LngLat | null>(null);
-  #swath = $state.raw<LngLat[] | null>(null);
   #zoomTick = $state(0);
 
   #stroke: Stroke | null = null;
@@ -301,7 +302,6 @@ export class BrushController {
     const { state, map, handle } = this.#d;
     const canPaint = this.#canPaint();
     const ring = this.#ring;
-    const swath = this.#swath;
     const stroking = this.#stroking;
     const radiusM = stroking && this.#stroke ? this.#stroke.radiusM : state.radiusM;
     const tool = state.tool;
@@ -310,7 +310,7 @@ export class BrushController {
       const lat = ring ? ring[1] : map.getCenter().lat;
       const mpp = metersPerPixel(lat, map.getZoom());
       state.zoomHint = canPaint && radiusM / mpp < ZOOM_HINT_PX;
-      if (!canPaint || tool === 'move' || (!ring && !swath)) {
+      if (!canPaint || tool === 'move' || !ring) {
         if (!this.#overlayEmpty) handle.setOverlayLayers([]);
         this.#overlayEmpty = true;
         return;
@@ -319,7 +319,6 @@ export class BrushController {
         tool,
         ring,
         radiusM,
-        swath,
         metersPerPixel: mpp,
         dark: this.#dark()
       });
@@ -386,7 +385,7 @@ export class BrushController {
 
   #push(s: Stroke, p: LngLat): void {
     this.#ring = p;
-    if (s.sampler.push(p[0], p[1])) this.#swath = s.sampler.path();
+    s.sampler.push(p[0], p[1]);
   }
 
   #buildOp(s: Stroke, path: LngLat[]): PlanOp {
@@ -467,7 +466,6 @@ export class BrushController {
     this.#stroke = null;
     this.#stroking = false;
     this.#dirty = false;
-    this.#swath = null;
     if (s.pointerType === 'touch') this.#ring = this.#crosshair ? this.#centre() : null;
   }
 
