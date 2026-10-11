@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "datasetVersion": "2026-10-01-0a1b2c3d",
+  "title": "  Mission upzone  ",
+  "ops": [
+    {
+      "id": "u1",
+      "kind": "paint",
+      "stories": 6,
+      "radiusM": 50,
+      "path": [
+        [-122.41831949, 37.76075351],
+        [-122.4180000004, 37.7609999996]
+      ]
+    }
+  ]
+}
