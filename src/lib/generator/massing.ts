@@ -185,5 +185,9 @@ export function massAdu(site: Site, stories: number, draws: VarietyDraws): Massi
   const rect = orientedRect(c, u, v, u0, u1, -width / 2, width / 2);
   const fit = largest(intersect([rect], inset([P], ADU_INSET_M)));
   if (!fit || Math.abs(signedArea(fit)) < 0.9 * Ap) return null;
-  return finish('adu', stories, [part(fit, 0, stories * FTF_M, stories, true)]);
+  // §4.8: an ADU's floor area is its declared gross area G; the drawn footprint may be clipped to ≥ 90% of the plate.
+  return {
+    ...finish('adu', stories, [part(fit, 0, stories * FTF_M, stories, true)]),
+    floorAreaM2: ADU_GROSS_M2
+  };
 }

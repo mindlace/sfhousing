@@ -63,6 +63,16 @@ describe('golden fixtures (hand-calculated, §6)', () => {
     expect(b.parts).toHaveLength(1);
     expect(b.parts[0]).toMatchObject({ baseM: 0, topM: 6.95 }); // 2×3.1 + 0.75
   });
+  it('std S=1 and S=2 → adu with floorAreaM2 = G (round1 68.75 = 68.8), monotone in S', () => {
+    for (const S of [1, 2]) {
+      expect(run(std, S)!.building).toMatchObject({
+        typology: 'adu',
+        floorAreaM2: 68.8,
+        units: 1,
+        replacesExisting: false
+      });
+    }
+  });
   it('shallow lot S=2 → null (open 34 m² < 60)', () => {
     expect(run(shallow, 2)).toBeNull();
   });
