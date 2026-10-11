@@ -680,14 +680,20 @@ describe('BrushController overlay, crosshair, prefetch', () => {
     expect(fx.handle.overlays.at(-1)).toEqual([]);
   });
 
-  it('draws the swath during a stroke and drops it after', () => {
-    down(0, 0);
-    move(40, 0);
-    flushSync();
-    expect(ids(fx.handle.overlays.at(-1))).toContain('brush-swath');
-    up(40, 0);
-    flushSync();
-    expect(ids(fx.handle.overlays.at(-1))).not.toContain('brush-swath');
+  it('draws only the ring during a stroke, never a swath (partner ruling 2026-10-12)', () => {
+    for (const tool of ['paint', 'erase'] as const) {
+      fx.ctl.setTool(tool);
+      const n = fx.handle.overlays.length;
+      down(0, 0);
+      move(40, 0);
+      move(0, 5);
+      move(40, 10);
+      flushSync();
+      expect(ids(fx.handle.overlays.at(-1))).toEqual(['brush-ring']);
+      expect(fx.handle.overlays.slice(n).flatMap(ids)).not.toContain('brush-swath');
+      up(40, 10);
+      flushSync();
+    }
   });
 
   it('does not follow touch hover', () => {
