@@ -9,3 +9,4 @@ test-results
 playwright-report
 docs/superpowers
 .superpowers
+src/lib/generator/fixtures/golden-seeded.json
