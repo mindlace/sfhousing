@@ -1,6 +1,13 @@
 import { flushSync } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
-import { MAX_PLAN_BYTES, OPS_MAX, planByteSize, type Plan, type PlanOp } from '$lib/plan';
+import {
+  MAX_PLAN_BYTES,
+  OPS_MAX,
+  TITLE_MAX_CHARS,
+  planByteSize,
+  type Plan,
+  type PlanOp
+} from '$lib/plan';
 import { createEditor } from './editor.svelte';
 
 const plan0 = (ops: PlanOp[] = []): Plan => ({ schema: 1, datasetVersion: 'fixture-0', ops });
@@ -253,5 +260,60 @@ describe('editor onLoad', () => {
     ed.undo();
     ed.redo();
     expect(n).toBe(0);
+  });
+});
+
+describe('setTitle', () => {
+  it('replaces plan with the normalised title, keeping ops', () => {
+    const e = createEditor(plan0());
+    e.commit(stamp('a'));
+    const before = e.plan;
+    e.setTitle('  Mission infill  ');
+    expect(e.plan).not.toBe(before);
+    expect(e.plan.title).toBe('Mission infill');
+    expect(e.plan.ops).toEqual(before.ops);
+  });
+  it('empty or whitespace removes the title key', () => {
+    const e = createEditor({ ...plan0(), title: 'x' });
+    e.setTitle('   ');
+    expect('title' in e.plan).toBe(false);
+    e.setTitle('y');
+    e.setTitle(undefined);
+    expect('title' in e.plan).toBe(false);
+  });
+  it('clips to TITLE_MAX_CHARS', () => {
+    const e = createEditor(plan0());
+    e.setTitle('a'.repeat(TITLE_MAX_CHARS + 5));
+    expect(e.plan.title).toHaveLength(TITLE_MAX_CHARS);
+  });
+  it('preserves undo and redo', () => {
+    const e = createEditor(plan0());
+    e.commit(stamp('a'));
+    e.commit(stamp('b'));
+    e.undo();
+    e.setTitle('t');
+    expect(e.canRedo).toBe(true);
+    expect(e.redo()?.id).toBe('b');
+    expect(e.plan.title).toBe('t');
+    expect(e.undo()?.id).toBe('b');
+  });
+  it('is a no-op when read-only', () => {
+    const e = createEditor(plan0(), { readOnly: true });
+    const before = e.plan;
+    e.setTitle('t');
+    expect(e.plan).toBe(before);
+  });
+  it('does not fire onLoad', () => {
+    const e = createEditor(plan0());
+    const cb = vi.fn();
+    e.onLoad(cb);
+    e.setTitle('t');
+    expect(cb).not.toHaveBeenCalled();
+  });
+  it('same title is a no-op (no new object)', () => {
+    const e = createEditor({ ...plan0(), title: 't' });
+    const before = e.plan;
+    e.setTitle(' t ');
+    expect(e.plan).toBe(before);
   });
 });
