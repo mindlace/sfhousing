@@ -1,5 +1,6 @@
 <script lang="ts">
   import BrushEditor from '$lib/brush/BrushEditor.svelte';
+  import { exposeEditorForDebug } from '$lib/brush/debug';
   import { loadManifest } from '$lib/sim/manifest';
   import type { PageProps } from './$types';
 
@@ -19,5 +20,6 @@
     plan={data.plan}
     currentVersion={data.datasetVersion}
     {reloadManifest}
+    oneditor={exposeEditorForDebug}
   />
 </div>

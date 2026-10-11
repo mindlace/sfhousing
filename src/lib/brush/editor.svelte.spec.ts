@@ -207,3 +207,33 @@ describe('editor reactivity', () => {
     cleanup();
   });
 });
+
+describe('editor onLoad', () => {
+  it('notifies after load updates state, and stops after unsubscribe', () => {
+    const ed = createEditor(plan0([stamp('a')]));
+    ed.undo();
+    const seen: { plan: Plan; readOnly: boolean; canRedo: boolean; arg: Plan }[] = [];
+    const off = ed.onLoad((p) =>
+      seen.push({ plan: ed.plan, readOnly: ed.readOnly, canRedo: ed.canRedo, arg: p })
+    );
+    const p2 = plan0([paint('b')]);
+    ed.load(p2, { readOnly: true });
+    expect(seen).toEqual([{ plan: p2, readOnly: true, canRedo: false, arg: p2 }]);
+    expect(seen[0].arg).toBe(p2);
+
+    off();
+    ed.load(plan0());
+    expect(seen).toHaveLength(1);
+    off(); // idempotent
+  });
+
+  it('commit, undo and redo do not notify', () => {
+    const ed = createEditor(plan0());
+    let n = 0;
+    ed.onLoad(() => n++);
+    ed.commit(stamp('a'));
+    ed.undo();
+    ed.redo();
+    expect(n).toBe(0);
+  });
+});

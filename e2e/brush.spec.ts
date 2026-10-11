@@ -4,6 +4,7 @@
 import { expect, test, type CDPSession, type Locator, type Page } from '@playwright/test';
 import { MSG } from '../src/lib/brush/messages';
 import type { SfhBrushDebug } from '../src/lib/brush/debug';
+import type { Plan } from '../src/lib/plan';
 import type { SfhMapDebug } from '../src/lib/map/debug';
 import { expectNoA11yViolations } from './helpers/a11y';
 
@@ -186,6 +187,31 @@ test.describe('brush tool', () => {
       await page.unroute(CHUNK);
       await retry.click();
       await expect(chip).toBeHidden({ timeout: 5_000 });
+      await expect.poll(() => generated(page)).toBeGreaterThan(0);
+    });
+
+    test('a parent loads a plan through oneditor and the buildings render', async ({ page }) => {
+      await gotoEditor(page);
+      await jumpAndIdle(page, FRAME);
+      expect(await generated(page)).toBe(0);
+      const q = (d: number) => Math.round(d * 1e6) / 1e6;
+      const plan: Plan = {
+        schema: 1,
+        datasetVersion: 'fixture-0',
+        ops: [
+          {
+            kind: 'paint',
+            stories: 6,
+            radiusM: 80,
+            path: [[q(FRAME.center[0]), q(FRAME.center[1])]],
+            id: 'Lo4dPlanAb12'
+          }
+        ]
+      };
+
+      await page.evaluate((p) => (window as Win).__sfhBrush!.load(p), plan);
+
+      await expect.poll(() => ops(page)).toBe(1);
       await expect.poll(() => generated(page)).toBeGreaterThan(0);
     });
 
