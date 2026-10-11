@@ -703,10 +703,13 @@
   style={rootStyle}
 >
   <!-- Passive pointer observers for picking; MapLibre's canvas owns the interaction. -->
+  <!-- Sized with h-full/w-full, not absolute+inset-0: MapLibre adds .maplibregl-map
+       (position: relative, unlayered CSS), which beats Tailwind's layered .absolute and would
+       collapse the container to 0 px high (the canvas then falls back to 300 px). -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     bind:this={container}
-    class="absolute inset-0"
+    class="h-full w-full"
     onpointermove={onPointerMove}
     onpointerleave={onPointerLeave}
     onpointerdown={onPointerDown}
