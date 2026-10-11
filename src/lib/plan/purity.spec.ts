@@ -72,10 +72,15 @@ describe('src/lib/plan purity', () => {
           spec === 'kdbush' ||
           (spec.startsWith('./') && !spec.includes('fixtures')) ||
           (spec === '../data/parcel' && typeOnly) ||
-          (spec === '../data/manifest' && what.trim() === '{ DATASET_VERSION_RE }');
+          (spec === '../data/dataset-version' && what.trim() === '{ DATASET_VERSION_RE }');
         if (!ok) problems.push(`${relative(ROOT, p)}: ${m[0]}`);
       }
     }
     expect(problems).toEqual([]);
+  });
+
+  it('runtime code never references the manifest module (it pulls zod into worker bundles)', () => {
+    const manifest = /['"](?:\.\.\/data|\$lib\/data)\/manifest['"]/;
+    expect(runtime.filter((p) => manifest.test(readFileSync(p, 'utf8')))).toEqual([]);
   });
 });
