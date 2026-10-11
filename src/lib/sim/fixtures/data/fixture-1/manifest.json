@@ -1,0 +1,55 @@
+{
+  "datasetVersion": "fixture-1",
+  "builtAt": "2026-10-10T00:00:00.000Z",
+  "sources": [],
+  "chunks": [
+    {
+      "cellId": "0_0",
+      "bbox": [
+        -122.419401,
+        37.759899000000004,
+        -122.41837526555399,
+        37.760710388327354
+      ],
+      "url": "/data/fixture-1/parcels/0_0.json",
+      "parcelCount": 100
+    },
+    {
+      "cellId": "1_0",
+      "bbox": [
+        -122.4182635172822,
+        37.759899000000004,
+        -122.4172377828362,
+        37.760710388327354
+      ],
+      "url": "/data/fixture-1/parcels/1_0.json",
+      "parcelCount": 100
+    },
+    {
+      "cellId": "0_1",
+      "bbox": [
+        -122.419401,
+        37.760798320363726,
+        -122.41837526555399,
+        37.761609708691076
+      ],
+      "url": "/data/fixture-1/parcels/0_1.json",
+      "parcelCount": 100
+    },
+    {
+      "cellId": "1_1",
+      "bbox": [
+        -122.4182635172822,
+        37.760798320363726,
+        -122.4172377828362,
+        37.761609708691076
+      ],
+      "url": "/data/fixture-1/parcels/1_1.json",
+      "parcelCount": 100
+    }
+  ],
+  "buildingsTiles": "/data/fixture-1/buildings/{z}/{x}/{y}.pbf",
+  "basemapTiles": "/data/fixture-1/basemap/{z}/{x}/{y}.pbf",
+  "glyphs": "/data/fixture-1/glyphs/{fontstack}/{range}.pbf",
+  "neighborhoods": "/data/fixture-1/neighborhoods.geojson"
+}
