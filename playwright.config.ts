@@ -26,7 +26,8 @@ export default defineConfig({
     command:
       'npm run data:fixture && npm run db:migrate && VITE_E2E=1 npm run preview -- --var PUBLIC_DATASET_VERSION:fixture-0',
     url: 'http://localhost:4173/about',
-    reuseExistingServer: !process.env.CI,
+    // A reused :4173 server may be a stale build from another worktree, which silently tests the wrong code; Playwright now fails loudly if the port is busy.
+    reuseExistingServer: false,
     timeout: 180_000
   }
 });
