@@ -72,7 +72,6 @@ describe('performance budgets (spec §4.4)', () => {
       size = resolveEnvelopes(plan, index).size;
       times.push(performance.now() - t0);
     }
-    console.info('bench resolveEnvelopes ms', times.map((t) => t.toFixed(1)).join(', '));
     expect(size).toBe(eligible); // every eligible parcel is covered
     expect(median(times)).toBeLessThanOrEqual(1000);
   });
@@ -96,7 +95,6 @@ describe('performance budgets (spec §4.4)', () => {
       applyOp(state, op, index);
       times.push(performance.now() - t0);
     }
-    console.info('bench applyOp ms', times.map((t) => t.toFixed(2)).join(', '));
     expect(median(times)).toBeLessThanOrEqual(10);
   });
 });

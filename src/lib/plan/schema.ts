@@ -33,11 +33,11 @@ export const FUTURE_SCHEMA_MESSAGE =
   'This plan was made with a newer version of SF Housing Simulator. Reload the page to get the latest version.';
 
 /** MIGRATIONS[n] maps raw schema n to n + 1. Empty in M1 (spec §4.8). */
-export const MIGRATIONS: Record<number, Migration> = {};
+export const MIGRATIONS: Readonly<Record<number, Migration>> = Object.freeze({});
 
 export function runMigrations(
   raw: Record<string, unknown>,
-  registry: Record<number, Migration> = MIGRATIONS,
+  registry: Readonly<Record<number, Migration>> = MIGRATIONS,
   target: number = CURRENT_SCHEMA
 ): Record<string, unknown> {
   let cur = raw;
@@ -154,6 +154,13 @@ function validateOp(raw: unknown, at: string, report: Report, seen: Set<string>)
     : { id: id as string, kind: 'erase', radiusM: radiusM as number, path };
 }
 
+/** Short, bounded description of an untrusted value; never serialises or recurses into it. */
+function describeSchema(v: unknown): string {
+  if (typeof v === 'number' || typeof v === 'string') return String(v).slice(0, 40);
+  if (v === null) return 'null';
+  return Array.isArray(v) ? 'array' : typeof v;
+}
+
 export function validatePlan(raw: unknown): Result<Plan> {
   if (!isPlainObject(raw)) return fail('', 'not-object', 'A plan must be a JSON object.');
   if (raw.schema === undefined)
@@ -162,7 +169,7 @@ export function validatePlan(raw: unknown): Result<Plan> {
     return fail('/schema', 'future-schema', FUTURE_SCHEMA_MESSAGE);
   const m = runMigrations(raw);
   if (m.schema !== CURRENT_SCHEMA)
-    return fail('/schema', 'unknown-schema', `Unknown plan schema ${JSON.stringify(m.schema)}.`);
+    return fail('/schema', 'unknown-schema', `Unknown plan schema ${describeSchema(m.schema)}.`);
 
   const errors: PlanError[] = [];
   const report: Report = (path, code, message) => errors.push({ path, code, message });
@@ -246,7 +253,7 @@ function checkVersion(datasetVersion: string): void {
 
 export function rebasePlan(plan: Plan, datasetVersion: string): Plan {
   checkVersion(datasetVersion);
-  return { ...plan, datasetVersion, ops: plan.ops };
+  return { ...plan, datasetVersion, ops: plan.ops.slice() };
 }
 
 export function emptyPlan(datasetVersion: string): Plan {

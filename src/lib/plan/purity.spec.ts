@@ -17,11 +17,44 @@ const runtime = all.filter(
 );
 
 describe('src/lib/plan purity', () => {
-  it('has no trig anywhere (spec §4.1, acceptance 7)', () => {
-    const trig = new RegExp(['Math\\.co', 's|Math\\.si', 'n|Math\\.hyp', 'ot'].join(''));
+  it('has no approximated Math functions anywhere (spec §4.1, acceptance 7)', () => {
+    const names = [
+      'co' + 's',
+      'si' + 'n',
+      'ta' + 'n',
+      'aco' + 's',
+      'asi' + 'n',
+      'ata' + 'n',
+      'ata' + 'n2',
+      'cos' + 'h',
+      'sin' + 'h',
+      'tan' + 'h',
+      'acos' + 'h',
+      'asin' + 'h',
+      'atan' + 'h',
+      'hyp' + 'ot',
+      'ex' + 'p',
+      'exp' + 'm1',
+      'lo' + 'g',
+      'log' + '1p',
+      'log' + '2',
+      'log' + '10',
+      'cb' + 'rt',
+      'po' + 'w'
+    ];
+    const fn = new RegExp('Math\\.(?:' + names.join('|') + ')\\b');
     const self = join(ROOT, 'purity.spec.ts');
-    const offenders = all.filter((p) => p !== self && trig.test(readFileSync(p, 'utf8')));
+    const offenders = all.filter((p) => p !== self && fn.test(readFileSync(p, 'utf8')));
     expect(offenders).toEqual([]);
+  });
+
+  it('runtime code has no exponentiation operator', () => {
+    const op = new RegExp('\\*' + '\\*');
+    const code = (p: string) =>
+      readFileSync(p, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/[^\n]*/g, '');
+    expect(runtime.filter((p) => op.test(code(p)))).toEqual([]);
   });
 
   it('runtime code avoids nondeterministic APIs (spec §4.10)', () => {

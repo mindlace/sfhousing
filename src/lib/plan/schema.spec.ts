@@ -310,6 +310,10 @@ describe('migration', () => {
     expect(Object.keys(MIGRATIONS)).toEqual([]);
   });
 
+  it('MIGRATIONS is frozen', () => {
+    expect(Object.isFrozen(MIGRATIONS)).toBe(true);
+  });
+
   it('runMigrations chains a registry up to the target', () => {
     const registry = {
       1: (r: Record<string, unknown>) => ({ ...r, schema: 2, a: true }),
@@ -335,9 +339,68 @@ describe('rebasePlan / emptyPlan', () => {
     expect(serializePlan(p)).toBe(before);
   });
 
+  it('rebasePlan does not share the ops array with its input', () => {
+    const p: Plan = emptyPlan('fixture-0');
+    const q = rebasePlan(p, '2026-10-01-0a1b2c3d');
+    q.ops.push({ id: 'x', kind: 'erase', radiusM: 5, path: [PT] });
+    expect(p.ops).toHaveLength(0);
+  });
+
   it('emptyPlan, and both reject a bad version', () => {
     expect(emptyPlan('fixture-3')).toEqual({ schema: 1, datasetVersion: 'fixture-3', ops: [] });
     expect(() => emptyPlan('latest')).toThrow(TypeError);
     expect(() => rebasePlan(emptyPlan('fixture-0'), 'latest')).toThrow(TypeError);
+  });
+});
+
+describe('validatePlan is total on hostile JSON', () => {
+  const deep = (n = 8000) => JSON.parse('['.repeat(n) + ']'.repeat(n)) as unknown;
+  const codes = (r: ReturnType<typeof validatePlan>) => (r.ok ? [] : r.errors.map((e) => e.code));
+
+  it('does not throw on a deeply nested schema', () => {
+    const r = parsePlan('{"schema":' + '['.repeat(8000) + ']'.repeat(8000) + '}');
+    expect(r.ok).toBe(false);
+    expect(r.ok ? [] : r.errors.map((e) => [e.path, e.code])).toEqual([
+      ['/schema', 'unknown-schema']
+    ]);
+  });
+
+  it('does not throw on deep values in title, op fields and path points', () => {
+    expect(validatePlan({ ...base(), title: deep() }).ok).toBe(false);
+    expect(validatePlan(withOp({ stories: deep() })).ok).toBe(false);
+    expect(validatePlan(withOp({ path: [deep()] })).ok).toBe(false);
+    expect(codes(validatePlan({ ...base(), schema: Number.POSITIVE_INFINITY }))).toEqual([
+      'unknown-schema'
+    ]);
+  });
+
+  it('never throws for arbitrary JSON', () => {
+    fc.assert(
+      fc.property(fc.jsonValue(), (v) => {
+        const r = validatePlan(v);
+        expect(typeof r.ok).toBe('boolean');
+      }),
+      FC
+    );
+  });
+
+  it('never throws when one field of a valid plan is overwritten with arbitrary JSON', () => {
+    const fields = ['schema', 'datasetVersion', 'title', 'ops'] as const;
+    const opFields = ['id', 'kind', 'stories', 'radiusM', 'path'] as const;
+    fc.assert(
+      fc.property(
+        fc.jsonValue(),
+        fc.boolean(),
+        fc.nat(fields.length - 1),
+        fc.nat(opFields.length - 1),
+        (v, atRoot, fi, oi) => {
+          const plan = base() as Record<string, unknown>;
+          if (atRoot) plan[fields[fi]] = v;
+          else (plan.ops as Record<string, unknown>[])[0][opFields[oi]] = v;
+          expect(typeof validatePlan(plan).ok).toBe('boolean');
+        }
+      ),
+      FC
+    );
   });
 });
