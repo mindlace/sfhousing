@@ -51,16 +51,24 @@ jobs:
           PRS: ${{ steps.rp.outputs.prs }}
         run: |
           set -euo pipefail
+          BRANCHES="$(jq -r '.[].headBranchName' <<<"$PRS")"
+          SIGNED=0
           while IFS= read -r BRANCH; do
             [ -n "$BRANCH" ] || continue
-            SHA="$(git ls-remote "https://github.com/${REPO}.git" "refs/heads/${BRANCH}" | cut -f1)"
-            if [ -z "$SHA" ]; then
-              echo "no head SHA for branch ${BRANCH}"
+            REFS="$(git ls-remote "https://github.com/${REPO}.git" "refs/heads/${BRANCH}")"
+            if [ -z "$REFS" ] || [ "$(wc -l <<<"$REFS")" -ne 1 ]; then
+              echo "expected exactly one ref for branch ${BRANCH}, got: ${REFS}"
               exit 1
             fi
+            SHA="$(cut -f1 <<<"$REFS")"
             echo "auto-signoff ${BRANCH} @ ${SHA}"
             gh api -X POST "repos/${REPO}/statuses/${SHA}" \
               -f state=success \
               -f context=local-ci/signoff \
               -f description="auto-signoff for release-please PR"
-          done < <(jq -r '.[].headBranchName' <<<"$PRS")
+            SIGNED=$((SIGNED + 1))
+          done <<<"$BRANCHES"
+          if [ "$SIGNED" -eq 0 ]; then
+            echo "prs output was non-empty but no branch was signed off"
+            exit 1
+          fi

@@ -15,11 +15,12 @@ export const SIGNOFF_CONTEXT = 'local-ci/signoff';
 const DESCRIPTION_MAX = 140;
 const CHECKS = ['check', 'lint', 'test:unit', 'test:e2e'] as const;
 
-export type Step = 'preconditions' | 'merge' | (typeof CHECKS)[number] | 'push' | 'status';
+export type Step =
+  'preconditions' | 'merge' | (typeof CHECKS)[number] | 'clean-tree' | 'push' | 'status';
 
 export function planSteps(opts: { verifyOnly: boolean }): Step[] {
   if (opts.verifyOnly) return [...CHECKS];
-  return ['preconditions', 'merge', ...CHECKS, 'push', 'status'];
+  return ['preconditions', 'merge', ...CHECKS, 'clean-tree', 'push', 'status'];
 }
 
 /** Arguments for `gh` that post the success status to `sha`. */
@@ -57,12 +58,40 @@ function fail(msg: string): never {
   process.exit(1);
 }
 
-function checkPreconditions(): void {
-  if (out('git', ['status', '--porcelain']) !== '') {
-    fail('working tree is dirty; commit or discard changes first');
+/** Error message if signoff must not proceed, else null. `branch` is null when detached. */
+export function preconditionError(opts: {
+  branch: string | null;
+  porcelain: string;
+}): string | null {
+  if (opts.porcelain !== '') return 'working tree is dirty; commit or discard changes first';
+  if (opts.branch === null || opts.branch === 'HEAD') {
+    return 'HEAD is detached; check out a PR branch';
   }
-  if (out('git', ['rev-parse', '--abbrev-ref', 'HEAD']) === 'main') {
-    fail('HEAD is on main; signoff is for PR branches');
+  if (opts.branch === 'main') return 'HEAD is on main; signoff is for PR branches';
+  return null;
+}
+
+function currentBranch(): string | null {
+  try {
+    return out('git', ['symbolic-ref', '-q', '--short', 'HEAD']);
+  } catch {
+    return null;
+  }
+}
+
+function checkPreconditions(): void {
+  const err = preconditionError({
+    branch: currentBranch(),
+    porcelain: out('git', ['status', '--porcelain'])
+  });
+  if (err) fail(err);
+}
+
+function checkCleanTree(): void {
+  if (out('git', ['status', '--porcelain']) !== '') {
+    fail(
+      'working tree changed during signoff (lockfile or a check modified tracked files); commit it and re-run'
+    );
   }
 }
 
@@ -115,6 +144,9 @@ function main(args: string[]): void {
       case 'merge':
         mergeMain();
         break;
+      case 'clean-tree':
+        checkCleanTree();
+        break;
       case 'push':
         run('git', ['push', '-u', 'origin', 'HEAD']);
         break;
@@ -129,7 +161,11 @@ function main(args: string[]): void {
         break;
       }
       default:
-        run('npm', ['run', step]);
+        try {
+          run('npm', ['run', step]);
+        } catch {
+          fail(`npm run ${step} failed`);
+        }
     }
   }
 }

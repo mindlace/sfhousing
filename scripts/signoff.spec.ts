@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildStatusArgs, planSteps } from './signoff';
+import { buildStatusArgs, planSteps, preconditionError } from './signoff';
 
 const base = { owner: 'o', name: 'n', sha: 'abc123', email: 'a@b.c' };
 
@@ -37,8 +37,28 @@ describe('planSteps', () => {
       'lint',
       'test:unit',
       'test:e2e',
+      'clean-tree',
       'push',
       'status'
     ]);
+  });
+});
+
+describe('preconditionError', () => {
+  it('accepts a clean PR branch', () => {
+    expect(preconditionError({ branch: 'feat/x', porcelain: '' })).toBeNull();
+  });
+
+  it('rejects a dirty tree', () => {
+    expect(preconditionError({ branch: 'feat/x', porcelain: ' M a.ts' })).toMatch(/dirty/);
+  });
+
+  it('rejects main', () => {
+    expect(preconditionError({ branch: 'main', porcelain: '' })).toMatch(/main/);
+  });
+
+  it('rejects a detached HEAD', () => {
+    expect(preconditionError({ branch: null, porcelain: '' })).toMatch(/detached/);
+    expect(preconditionError({ branch: 'HEAD', porcelain: '' })).toMatch(/detached/);
   });
 });
