@@ -10,5 +10,6 @@ export default defineConfig({
   dialect: 'sqlite',
   dbCredentials: { url: databaseUrl },
   verbose: true,
+  strict: true,
   out: './migrations/d1'
 });
