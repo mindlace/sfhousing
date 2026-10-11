@@ -31,7 +31,7 @@ There is no automated staging-to-prod interlock (as in planafoot): do not merge 
 ## Promoting a datasetVersion
 
 1. Upload the version to R2 once (the data-pipeline upload command; `manifest.json` goes last).
-2. Bump `PUBLIC_DATASET_VERSION` under `env.staging.vars` in `wrangler.jsonc`, merge, let staging deploy, and verify `/attribution` and the map.
+2. Bump `PUBLIC_DATASET_VERSION` under `env.staging.vars` in `wrangler.jsonc`, merge, let staging deploy, and verify `/attribution` and the map. A malformed value fails `npm run test:unit` (`scripts/wrangler-config.spec.ts`) and, at runtime, every page returns a 500.
 3. Bump the top-level `PUBLIC_DATASET_VERSION` (production) in a later PR and release.
 
 Versions are immutable and retained indefinitely.
