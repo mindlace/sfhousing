@@ -3,6 +3,7 @@ import type { Layer } from '@deck.gl/core';
 import { PathLayer, ScatterplotLayer, SolidPolygonLayer } from '@deck.gl/layers';
 import { MapLibreOverlay } from '@deck.gl/maplibre';
 import * as maplibregl from 'maplibre-gl';
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import type { GeneratedBuilding } from '$lib/generator';
 import type { ParcelRecord } from '$lib/data/parcel';
 import {
@@ -543,6 +544,10 @@ const idle = (map: maplibregl.Map) =>
 function syntheticRise(seed: number, n: number, rev: number): GeneratedUpdate {
   return asIncremental(makeSyntheticCity(seed, n, n)[0], rev);
 }
+
+// Same as SimMap's setupLibraries: Vite pre-bundles maplibre-gl away from its sibling worker,
+// so MapLibre's default worker URL 404s ("Worker failed to load"). Point it at the asset URL.
+maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
 describe('GeneratedController (real deck)', () => {
   let h: Harness | null = null;

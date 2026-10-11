@@ -32,6 +32,7 @@ Fetch the file when working in the relevant area:
 - **Data pipeline (commands, release run order, lock and `datasetVersion`, fixture, invariants, ODbL, partner actions)** — [docs/dev/pipeline.md](docs/dev/pipeline.md)
 - **Accessibility (WCAG 2.2 AA, `expectNoA11yViolations`, per-page checklist)** — [docs/dev/accessibility.md](docs/dev/accessibility.md)
 - **Plan sharing (API contract, rate limit, autosave, manual takedown)** — [docs/dev/plan-sharing.md](docs/dev/plan-sharing.md)
+- **Map performance (`npm run bench:map`, pass bar, results, CI note)** — [docs/dev/map-perf.md](docs/dev/map-perf.md)
 - **Design, specs and plans** — `docs/superpowers/design/`, `docs/superpowers/specs/`, `docs/superpowers/plans/`
 
 Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link them from this list.
@@ -50,6 +51,7 @@ Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link t
 | `npm test`                                          | `test:unit` then `test:e2e`                                                              |
 | `npm run test:unit`                                 | Vitest, server and client projects                                                       |
 | `npm run test:e2e`                                  | Playwright (starts the preview server, loads the fixture, migrates)                      |
+| `npm run bench:map`                                 | Headed GPU map pan benchmark (p50/p95 frame time); see docs/dev/map-perf.md              |
 | `npm run db:generate`                               | Generate + classify + flatten a migration from the Drizzle schema                        |
 | `npm run db:migrate`                                | Apply migrations to the local D1                                                         |
 | `npm run db:migrate:staging` / `db:migrate:prod`    | Apply migrations to remote staging / production D1 (normally done by CI)                 |

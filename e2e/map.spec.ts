@@ -1,9 +1,23 @@
 // Map view e2e (spec §6 E1–E10, §4.8 states). Runs against the VITE_E2E build, which exposes
-// window.__sfhMap (src/lib/map/debug.ts). Tests that need brush-tool's painting or worker host
-// are test.fixme until W6.
+// window.__sfhMap (src/lib/map/debug.ts) and window.__sfhBrush (src/lib/brush/debug.ts). E2–E8
+// paint with brush-tool's toolbar through the worker host.
 import { expect, test, type Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import type { SfhBrushDebug } from '../src/lib/brush/debug';
 import type { SfhMapDebug } from '../src/lib/map/debug';
+import type { ControllerSnapshot } from '../src/lib/map/generated-controller';
 import { expectNoA11yViolations } from './helpers/a11y';
+import {
+  FRAME,
+  FROM,
+  TO,
+  TOUCH_FROM,
+  TOUCH_TO,
+  mouseDrag,
+  ops,
+  paintOnce,
+  touchDrag
+} from './helpers/sharing';
 
 const ATTRIBUTION = '© OpenStreetMap · Overture Maps (Esri, Microsoft, USGS) · DataSF · Protomaps';
 const BUILDINGS = '**/data/fixture-0/buildings.pmtiles';
@@ -11,7 +25,11 @@ const BUILDINGS = '**/data/fixture-0/buildings.pmtiles';
 // 60 m existing building.
 const PARCEL_3512014: [number, number] = [-122.4179679, 37.7601348];
 
-type Win = Window & { __sfhMap?: SfhMapDebug; __cspViolations?: string[] };
+type Win = Window & {
+  __sfhMap?: SfhMapDebug;
+  __sfhBrush?: SfhBrushDebug;
+  __cspViolations?: string[];
+};
 
 async function gotoReady(page: Page): Promise<void> {
   await page.goto('/');
@@ -56,6 +74,124 @@ async function projectToPage(page: Page, lngLat: [number, number]): Promise<[num
     const r = map.getCanvas().getBoundingClientRect();
     return [r.left + p.x, r.top + p.y] as [number, number];
   }, lngLat);
+}
+
+// ---- painting helpers (brush-tool's toolbar and the worker host) --------------------------------
+
+const CHUNK = '**/data/fixture-0/parcels/50_25.json';
+
+type TileWin = Win & { __tileLoads?: number; __firstFrame?: ControllerSnapshot | null };
+
+// Fixture parcel label points (lng/lat), decoded from the chunk's 1e-7 degree integers.
+const LABELS: Map<string, [number, number]> = (() => {
+  const chunk = JSON.parse(
+    readFileSync(new URL('./fixtures/data/fixture-0/parcels/50_25.json', import.meta.url), 'utf8')
+  ) as { id: string[]; label: number[] };
+  return new Map(
+    chunk.id.map((id, i) => [id, [chunk.label[2 * i] / 1e7, chunk.label[2 * i + 1] / 1e7]])
+  );
+})();
+
+/** `/` with the map ready and the brush editor's worker ready. */
+async function gotoEditor(page: Page): Promise<void> {
+  await gotoReady(page);
+  await page.waitForFunction(() => !!(window as Win).__sfhBrush?.ready);
+}
+
+/** Selects a brush tool, then strokes FROM → TO (mouse) or TOUCH_FROM → TOUCH_TO (one finger). */
+async function stroke(page: Page, isMobile: boolean, tool: 'Paint' | 'Erase'): Promise<void> {
+  await jumpAndIdle(page, FRAME);
+  const radio = page.getByRole('radio', { name: tool });
+  if (isMobile) await radio.tap();
+  else await radio.click();
+  await expect(radio).toHaveAttribute('aria-checked', 'true');
+  if (isMobile) {
+    const cdp = await page.context().newCDPSession(page);
+    await touchDrag(
+      cdp,
+      await projectToPage(page, TOUCH_FROM),
+      await projectToPage(page, TOUCH_TO)
+    );
+  } else {
+    await mouseDrag(page, FROM, TO);
+  }
+}
+
+/** Controller state plus the replacing (non-ADU) generated parcels, both sorted by id. */
+async function settled(page: Page) {
+  return page.evaluate(() => {
+    const m = (window as Win).__sfhMap!;
+    const s = m.snapshot();
+    const gen = m.generatedParcels();
+    return {
+      parts: s?.parts ?? 0,
+      pending: s?.pending ?? 0,
+      hidden: m.hiddenSize,
+      hiddenIds: m.hiddenIds(),
+      generated: gen.length,
+      replacing: gen.filter((g) => g.typology !== 'adu').map((g) => g.parcelId)
+    };
+  });
+}
+
+/** `state.replaced` of each rendered existing-buildings feature of `id` at its label point. */
+async function replacedAt(page: Page, id: string, at: [number, number]): Promise<unknown[]> {
+  return page.evaluate(
+    ([id, at]) => {
+      const map = (window as Win).__sfhMap!.map!;
+      return map
+        .queryRenderedFeatures(map.project(at as [number, number]), {
+          layers: ['existing-buildings']
+        })
+        .filter((f) => String(f.id) === id)
+        .map((f) => f.state.replaced);
+    },
+    [id, at] as const
+  );
+}
+
+/** The first of `ids` whose existing building is rendered at its label point, else null. */
+async function firstRendered(page: Page, ids: string[]): Promise<string | null> {
+  for (const id of ids) {
+    const ll = LABELS.get(id);
+    if (ll && (await replacedAt(page, id, ll)).length > 0) return id;
+  }
+  return null;
+}
+
+const tileLoads = (page: Page) => page.evaluate(() => (window as TileWin).__tileLoads ?? 0);
+
+/** Rendered features of the chunk error outline anywhere in the viewport. */
+const errorOutline = (page: Page) =>
+  page.evaluate(() => {
+    const map = (window as Win).__sfhMap!.map!;
+    return map.queryRenderedFeatures({ layers: ['chunk-error-line'] }).length;
+  });
+
+/**
+ * Records the controller snapshot on the first MapLibre `render` after the revision advances
+ * with generated parts present: the first frame that draws the update's buildings.
+ */
+async function recordFirstFrame(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = window as TileWin;
+    const map = w.__sfhMap!.map!;
+    const rev0 = w.__sfhMap!.snapshot()!.revision;
+    w.__firstFrame = null;
+    const on = () => {
+      const s = w.__sfhMap!.snapshot();
+      if (s && s.revision > rev0 && s.parts > 0) {
+        w.__firstFrame = s;
+        map.off('render', on);
+      }
+    };
+    map.on('render', on);
+  });
+}
+
+async function firstFrame(page: Page): Promise<ControllerSnapshot> {
+  await page.waitForFunction(() => !!(window as TileWin).__firstFrame);
+  return (await page.evaluate(() => (window as TileWin).__firstFrame))!;
 }
 
 test.describe('map view', () => {
@@ -262,31 +398,268 @@ test.describe('map view', () => {
     });
   });
 
-  // ---- W6: need brush-tool painting and the worker host ----------------------------------------
+  // ---- painting (brush-tool + worker host) -----------------------------------------------------
 
-  const W6: [title: string, reason: string][] = [
-    ['E2: paint a stroke, then erase', 'W6: needs brush-tool painting + worker host'],
-    [
-      'E3: hover generated and existing buildings',
-      'W6: generated hover needs worker-host buildings'
-    ],
-    ['E5: feature-state persists across a z11 round trip', 'W6: needs painted replaced parcel'],
-    ['E7: chunk failure outline, chip and Retry', 'W6: needs worker host retryChunks'],
-    [
-      'E8: reduced motion renders full height on the first frame',
-      'W6: needs worker-host-generated buildings'
-    ],
-    [
-      'E9: golden screenshots map-light.png and map-dark.png',
-      'W6: golden screenshots need fixture plan rendered via worker host'
-    ],
-    [
-      'E10 @budget: ≤ 5 MB transferred until first idle',
-      'W6/staging: @budget runs post-deploy against staging only'
-    ]
-  ];
-  for (const [title, reason] of W6) {
-    // eslint-disable-next-line playwright/expect-expect -- fixme placeholder, never runs
-    test.fixme(title, { annotation: { type: 'fixme', description: reason } }, () => {});
-  }
+  test('E2: paint a stroke, then erase', async ({ page, isMobile }) => {
+    await gotoEditor(page);
+    expect(await settled(page)).toMatchObject({ parts: 0, hidden: 0 });
+
+    await paintOnce(page, isMobile);
+    // Expected hidden set: the parcels whose generated building replaces the existing one, i.e.
+    // every non-ADU typology (generator: replacesExisting = typology !== 'adu'), read from the
+    // controller's generated layers. The hidden ids come from the worker's hide diff.
+    await expect
+      .poll(async () => {
+        const s = await settled(page);
+        return (
+          s.pending === 0 &&
+          s.parts > 0 &&
+          s.replacing.length > 0 &&
+          s.hidden === s.replacing.length &&
+          s.hiddenIds.join() === s.replacing.join()
+        );
+      })
+      .toBe(true);
+    const s = await settled(page);
+    expect(s.hiddenIds).toEqual(s.replacing);
+    expect(s.hidden).toBe(s.replacing.length);
+    test.info().annotations.push({
+      type: 'E2',
+      description: `parts ${s.parts}, generated parcels ${s.generated}, hidden ${s.hidden}`
+    });
+
+    await stroke(page, isMobile, 'Erase');
+    await expect.poll(() => ops(page)).toBe(2);
+    await expect
+      .poll(async () => {
+        const t = await settled(page);
+        return { parts: t.parts, hidden: t.hidden, pending: t.pending };
+      })
+      .toEqual({ parts: 0, hidden: 0, pending: 0 });
+  });
+
+  test.describe('fine pointer', () => {
+    // Hover tooltips need a mouse; the mobile project is touch-only (its tap card is E4).
+    // eslint-disable-next-line playwright/no-skipped-test
+    test.skip(({ isMobile }) => isMobile, 'chromium project only');
+
+    test('E3: hover generated and existing buildings', async ({ page }) => {
+      await gotoEditor(page);
+      await paintOnce(page, false);
+      await expect
+        .poll(async () => {
+          const s = await settled(page);
+          return s.pending === 0 && s.replacing.length > 0;
+        })
+        .toBe(true);
+      const gen = await page.evaluate(() => (window as Win).__sfhMap!.generatedParcels());
+      const target = gen.find((g) => g.typology !== 'adu');
+      expect(target).toBeDefined();
+
+      const tip = page.getByTestId('map-root').getByRole('tooltip');
+      const [gx, gy] = await projectToPage(page, LABELS.get(target!.parcelId)!);
+      await page.mouse.move(gx, gy);
+      await expect(tip).toBeVisible();
+      await expect(tip).toContainText(`Parcel ${target!.parcelId}`);
+      // Spec §4.7 typology display names, literal (not the app's own typologyLabel).
+      await expect(tip.locator('p').nth(1)).toHaveText(
+        /^(ADU|House|Duplex|Plex|Walk-up|5-over-1|Mid-rise|Tower) · /
+      );
+      await expect(tip).toContainText(/\bunits?\b/);
+      await expect(tip).not.toContainText('Existing building');
+
+      // 3512014 (60 m, 40 units) lies under the stroke, but a 6-story building is not bigger, so
+      // it keeps its existing building.
+      expect(gen.map((g) => g.parcelId)).not.toContain('3512014');
+      const [ex, ey] = await projectToPage(page, PARCEL_3512014);
+      await page.mouse.move(ex, ey, { steps: 5 });
+      await expect(tip).toContainText('Parcel 3512014');
+      await expect(tip).toContainText('Existing building');
+    });
+  });
+
+  test('E5: feature-state persists across a z11 round trip and a tile refetch', async ({
+    page,
+    isMobile
+  }) => {
+    await gotoEditor(page);
+    await paintOnce(page, isMobile);
+    await expect
+      .poll(async () => {
+        const s = await settled(page);
+        return s.pending === 0 && s.hidden > 0;
+      })
+      .toBe(true);
+    await waitIdle(page);
+
+    // A replaced parcel with a rendered existing building in view (some fixture parcels have no
+    // building).
+    const hidden = (await settled(page)).hiddenIds;
+    const replaced = await firstRendered(page, hidden);
+    expect(replaced, `one of ${hidden.join(', ')} has a rendered building`).not.toBeNull();
+    const at = LABELS.get(replaced!)!;
+    test.info().annotations.push({ type: 'E5', description: `replaced parcel ${replaced}` });
+    expect(await replacedAt(page, replaced!, at)).toEqual([true]);
+
+    await page.evaluate(() => {
+      const w = window as TileWin;
+      w.__tileLoads = 0;
+      w.__sfhMap!.map!.on('sourcedata', (e) => {
+        if (e.sourceId === 'buildings' && e.tile) w.__tileLoads!++;
+      });
+    });
+    await jumpAndIdle(page, { center: FRAME.center, zoom: 11, pitch: 0, bearing: 0 });
+    await jumpAndIdle(page, FRAME);
+    expect(await replacedAt(page, replaced!, at)).toEqual([true]);
+
+    // The zoom trip may be served from MapLibre's tile cache: force a real refetch and re-parse.
+    const before = await tileLoads(page);
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          const map = (window as Win).__sfhMap!.map!;
+          map.refreshTiles('buildings');
+          map.once('idle', () => resolve());
+          map.triggerRepaint();
+        })
+    );
+    await waitIdle(page);
+    expect(await tileLoads(page)).toBeGreaterThan(before);
+    expect(await replacedAt(page, replaced!, at)).toEqual([true]);
+  });
+
+  test('E7: chunk failure outline, chip and Retry', async ({ page, isMobile }) => {
+    await page.route(CHUNK, (r) => r.fulfill({ status: 500 }));
+    await gotoEditor(page);
+    await paintOnce(page, isMobile);
+
+    const chip = page
+      .getByTestId('map-root')
+      .getByRole('status')
+      .filter({ hasText: "Some parcels didn't load" });
+    await expect(chip).toBeVisible({ timeout: 5_000 });
+    await expect(chip).toHaveText(/^Some parcels didn't load —\s*Retry$/);
+    const retry = chip.getByRole('button', { name: 'Retry' });
+    await expect(retry).toBeVisible();
+    await expect.poll(() => errorOutline(page)).toBeGreaterThan(0);
+    expect((await settled(page)).parts).toBe(0);
+
+    await page.unroute(CHUNK);
+    await retry.click();
+    await expect(chip).toBeHidden({ timeout: 5_000 });
+    await expect.poll(() => errorOutline(page)).toBe(0);
+    await expect.poll(async () => (await settled(page)).parts).toBeGreaterThan(0);
+  });
+
+  test.describe('reduced motion', () => {
+    test.use({ reducedMotion: 'reduce' });
+
+    test('E8: reduced motion renders full height on the first frame', async ({
+      page,
+      isMobile
+    }) => {
+      await gotoEditor(page);
+      await jumpAndIdle(page, FRAME);
+      await recordFirstFrame(page);
+      await paintOnce(page, isMobile);
+      const first = await firstFrame(page);
+      expect(first.layerIds.filter((id) => id.startsWith('rising-'))).toEqual([]);
+      const scales = Object.entries(first.elevationScale);
+      expect(scales.length).toBeGreaterThan(0);
+      for (const [id, v] of scales) expect(v, id).toBe(1);
+    });
+  });
+
+  // Control for E8: with motion allowed, the same first-frame probe sees a rising layer, so E8's
+  // assertion is able to fail.
+  test('E8 control: default motion rises in from the first frame', async ({ page, isMobile }) => {
+    await gotoEditor(page);
+    await jumpAndIdle(page, FRAME);
+    await recordFirstFrame(page);
+    await paintOnce(page, isMobile);
+    const first = await firstFrame(page);
+    expect(first.layerIds.some((id) => id.startsWith('rising-'))).toBe(true);
+  });
+
+  // ---- E9 golden screenshots, E10 first-paint budget -------------------------------------------
+
+  test.describe('goldens', () => {
+    // Goldens are Chromium SwiftShader only (spec §6 E9); the mobile project has a different frame.
+    // eslint-disable-next-line playwright/no-skipped-test
+    test.skip(({ isMobile }) => isMobile, 'chromium project only');
+    // eslint-disable-next-line playwright/no-skipped-test
+    test.skip(
+      process.platform !== 'darwin',
+      'E9 goldens are generated on darwin, where signoff (the merge gate) runs; ci.yml on Linux is feedback only'
+    );
+    test.use({ reducedMotion: 'reduce' });
+
+    for (const scheme of ['light', 'dark'] as const) {
+      test(`E9: golden screenshot map-${scheme}.png`, async ({ page }) => {
+        await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
+        await gotoEditor(page);
+        await waitIdle(page);
+        await page.evaluate(
+          (text) => (window as Win).__sfhBrush!.load(JSON.parse(text)),
+          readFileSync(
+            new URL('../src/lib/sharing/fixtures/plans/small.json', import.meta.url),
+            'utf8'
+          )
+        );
+        // Worker completion: all 3 ops loaded, nothing pending, revision unchanged across polls.
+        await expect.poll(() => ops(page)).toBe(3);
+        let prev = -1;
+        let stable = 0;
+        await expect
+          .poll(
+            async () => {
+              const s = await page.evaluate(() => {
+                const m = (window as Win).__sfhMap!;
+                const snap = m.snapshot();
+                return {
+                  rev: snap?.revision ?? -1,
+                  pending: snap?.pending ?? 1,
+                  parts: snap?.parts ?? 0
+                };
+              });
+              stable = s.pending === 0 && s.rev === prev ? stable + 1 : 0;
+              prev = s.rev;
+              return stable;
+            },
+            { intervals: [100], timeout: 20_000 }
+          )
+          .toBeGreaterThanOrEqual(3);
+        // The spec's default desktop frame, as written (generated buildings may be off-frame).
+        await jumpAndIdle(page, {
+          center: [-122.4194, 37.7749],
+          zoom: 13,
+          pitch: 55,
+          bearing: -20
+        });
+        await waitIdle(page);
+        await expect(page.getByTestId('map-root')).toHaveScreenshot(`map-${scheme}.png`, {
+          maxDiffPixelRatio: 0.01,
+          animations: 'disabled'
+        });
+      });
+    }
+  });
+
+  test('E10 @budget: ≤ 5 MB transferred until first idle', async ({ page }) => {
+    // Local-preview proxy for the staging check. Bytes are CDP encodedDataLength totals; they can
+    // vary a little run to run (headers, compression, which tiles the first frame picks), so the
+    // measured value is annotated and only the generous 5 MB ceiling is asserted.
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Network.enable');
+    await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
+    let bytes = 0;
+    cdp.on('Network.loadingFinished', (e) => {
+      bytes += e.encodedDataLength;
+    });
+    await gotoReady(page);
+    await waitIdle(page);
+    test.info().annotations.push({ type: 'E10', description: `${bytes} bytes` });
+    expect(bytes).toBeGreaterThan(0);
+    expect(bytes).toBeLessThanOrEqual(5 * 1024 * 1024);
+  });
 });
