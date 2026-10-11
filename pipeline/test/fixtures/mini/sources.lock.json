@@ -3,10 +3,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/b36127bab2c982819ff65f860e5e652fbb85dfcb8a0010851aebd344d781bb16.geojson",
-          "bytes": 841,
+          "archiveKey": "sources/8d1f6e12e35c750114d5d409176f024e917ec40abb016599807a14fad0de6f14.geojson",
+          "bytes": 880,
           "name": "datasf-footprints.page-000.geojson",
-          "sha256": "b36127bab2c982819ff65f860e5e652fbb85dfcb8a0010851aebd344d781bb16",
+          "sha256": "8d1f6e12e35c750114d5d409176f024e917ec40abb016599807a14fad0de6f14",
           "url": "https://fixture.invalid/datasf-footprints.page-000.geojson"
         }
       ],

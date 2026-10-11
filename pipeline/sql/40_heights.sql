@@ -1,7 +1,6 @@
 -- 40_heights: height fill, first match wins (spec §4.6). Reads b_base, src_footprints.
 -- Writes buildings and buildings.kept/hs0..hs3, height.max_m counts.
--- Only building footprints count: sf16_bldgid 'SF%' (the fixture and SODA put right-of-way 'CN…' keys there
--- or in mblr, which is the lot id, so both are screened).
+-- Only footprints with mblr 'SF%' count (spec §4.6; right-of-way rows are 'CN…').
 -- hs 0 overture height; 1 DataSF hgt_median_m (best IoU >= iou_min, ties -> smaller sf16_bldgid, then mblr);
 -- 2 num_floors * floors_m; 3 default. A footprint without hgt_median_m cannot supply a height, so is not a candidate.
 
@@ -11,7 +10,7 @@ SELECT mblr, sf16_bldgid, hgt_median_m,
          ST_MakeValid(ST_Transform(geom::GEOMETRY, 'EPSG:4326', 'EPSG:7131', always_xy := true)), 3
        ) AS geom
 FROM src_footprints
-WHERE sf16_bldgid LIKE 'SF%' AND coalesce(mblr, '') NOT LIKE 'CN%' AND hgt_median_m IS NOT NULL;
+WHERE mblr LIKE 'SF%' AND hgt_median_m IS NOT NULL;
 
 CREATE OR REPLACE TEMP TABLE h_pairs AS
 SELECT b.bid, f.mblr, f.sf16_bldgid, f.hgt_median_m,

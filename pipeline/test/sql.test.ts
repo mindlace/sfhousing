@@ -4,6 +4,7 @@ import type { Duck } from '../lib/duck';
 import { readFileSync } from 'node:fs';
 import { KNOWN_LANDUSE, config } from '../config';
 import { miniDuck } from './helpers';
+import { openDuck } from '../lib/duck';
 
 let db: Duck;
 const counts = async () =>
@@ -245,5 +246,53 @@ describe('30–70 buildings, clipping, attributes', () => {
     } finally {
       config.renderSource = 'overture';
     }
+  });
+});
+
+describe('40/50 edge cases on synthetic sources', () => {
+  const rect = (x0: number, y0: number, x1: number, y1: number) =>
+    `ST_GeomFromText('POLYGON((${x0} ${y0},${x1} ${y0},${x1} ${y1},${x0} ${y1},${x0} ${y0}))')`;
+  const X0 = -122.42;
+  const Y0 = 37.76;
+  async function synth(buildingX1: number, footprints: [string, string, number][]): Promise<Duck> {
+    const d = await openDuck();
+    await d.run(`
+      CREATE TABLE src_parcels(mapblklot VARCHAR, blklot VARCHAR, active BOOLEAN, analysis_neighborhood VARCHAR, geom GEOMETRY);
+      CREATE TABLE src_landuse(mapblklot VARCHAR, landuse VARCHAR, resunits INTEGER, res DOUBLE, totalcomm DOUBLE, geom GEOMETRY);
+      CREATE TABLE src_footprints(mblr VARCHAR, sf16_bldgid VARCHAR, hgt_median_m DOUBLE, geom GEOMETRY);
+      CREATE TABLE src_neighborhoods(nhood VARCHAR, geom GEOMETRY);
+      CREATE TABLE src_overture(id VARCHAR, height DOUBLE, num_floors INTEGER, min_height DOUBLE, is_underground BOOLEAN, datasets VARCHAR[], geom GEOMETRY);
+      INSERT INTO src_parcels VALUES ('P1', 'P1', TRUE, 'N', ${rect(X0, Y0, X0 + 1e-4, Y0 + 1e-4)});
+      INSERT INTO src_neighborhoods VALUES ('N', ${rect(X0 - 1e-3, Y0 - 1e-3, X0 + 1e-3, Y0 + 1e-3)});
+      INSERT INTO src_overture VALUES ('bx', NULL, NULL, NULL, FALSE, ['osm'], ${rect(X0, Y0, buildingX1, Y0 + 1e-4)});
+    `);
+    for (const [mblr, id, h] of footprints) {
+      await d.run(
+        `INSERT INTO src_footprints VALUES ('${mblr}', '${id}', ${h}, ${rect(X0, Y0, buildingX1, Y0 + 1e-4)})`
+      );
+    }
+    return d;
+  }
+
+  it('breaks an IoU tie with the smaller sf16_bldgid', async () => {
+    const d = await synth(X0 + 1e-4, [
+      ['SFP1', '201006.0000002', 30],
+      ['SFP1', '201006.0000001', 20]
+    ]);
+    await runSql(d);
+    expect(await d.all(`SELECT height_m, hs FROM buildings`)).toEqual([{ height_m: 20, hs: 1 }]);
+  });
+
+  it('counts a remainder under 2 m² and emits no NULL-parcel piece', async () => {
+    const d = await synth(X0 + 1e-4 + 1e-6, []);
+    await runSql(d);
+    const c = Object.fromEntries(
+      (await d.all<{ key: string; value: number }>('SELECT key, value FROM report_counts')).map(
+        (r) => [r.key, r.value]
+      )
+    );
+    expect(c['pieces.remainder_sliver_dropped']).toBe(1);
+    expect(c['pieces.sliver_dropped']).toBe(1);
+    expect(await d.all(`SELECT parcel_id FROM pieces`)).toEqual([{ parcel_id: 'P1' }]);
   });
 });

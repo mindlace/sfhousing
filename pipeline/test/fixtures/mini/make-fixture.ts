@@ -149,12 +149,18 @@ const landuse = [
 // ---- DataSF footprints ----
 const b13 = rect(122, 5, 128, 25);
 const footprints = [
-  feature({ mblr: LOT_IDS[13], sf16_bldgid: 'SF1234567', hgt_median_m: '21.3' }, polygon(b13)),
   feature(
-    { mblr: LOT_IDS[1], sf16_bldgid: 'SF7654321', hgt_median_m: '30.5' },
+    { mblr: 'SF' + LOT_IDS[13], sf16_bldgid: '201006.0000013', hgt_median_m: '21.3' },
+    polygon(b13)
+  ),
+  feature(
+    { mblr: 'SF' + LOT_IDS[1], sf16_bldgid: '201006.0000001', hgt_median_m: '30.5' },
     polygon(rect(5, 10, 9, 20))
   ),
-  feature({ sf16_bldgid: 'CN000001', hgt_median_m: '0' }, polygon(rect(0, -10, 10, -2)))
+  feature(
+    { mblr: 'CN0000001', sf16_bldgid: '201006.0000099', hgt_median_m: '0' },
+    polygon(rect(0, -10, 10, -2))
+  )
 ];
 
 // ---- neighborhoods ----
