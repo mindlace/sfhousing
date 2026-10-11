@@ -18,6 +18,9 @@ export default defineConfig({
       instances: [{ browser: 'chromium', headless: true }]
     },
     include: ['src/**/*.svelte.{test,spec}.ts'],
+    // Browser test files share one renderer main thread. Run them one at a time so the
+    // GL-heavy SimMap specs cannot stall the frame-budget test (C5) in another file.
+    fileParallelism: false,
     exclude: ['src/lib/server/**']
   }
 });
