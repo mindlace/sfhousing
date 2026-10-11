@@ -63,6 +63,7 @@
     CHUNK_LAYERS,
     CHUNK_SOURCE,
     buildStyle,
+    firstSymbolLayerId,
     buildingsSource,
     existingBuildingsLayer,
     themePaintDiff,
@@ -487,7 +488,9 @@
         reducedMotion: () => matchMedia('(prefers-reduced-motion: reduce)').matches,
         onResyncNeeded: () => resyncCb?.()
       },
-      l.appliedTheme
+      l.appliedTheme,
+      // Generated and overlay layers draw beneath the basemap labels (§4.4, ruling 2026-10-11).
+      firstSymbolLayerId(map.getStyle())
     );
     l.controller = controller;
     const queued = pendingApplies;

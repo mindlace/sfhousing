@@ -132,9 +132,15 @@ export class GeneratedController {
   private current: Layer[] = [];
   private destroyed = false;
 
+  /**
+   * `labelBeforeId`: the basemap's first label layer. Every layer this controller emits carries
+   * it as deck's `beforeId`, so generated buildings and the overlay draw beneath the labels
+   * (§4.4). Settled layers are built with it, so they stay referentially stable across emits.
+   */
   constructor(
     private deps: ControllerDeps,
-    private theme: Theme
+    private theme: Theme,
+    private labelBeforeId?: string
   ) {}
 
   get hidden(): ReadonlySet<ParcelId> {
@@ -177,7 +183,10 @@ export class GeneratedController {
   setOverlayLayers(layers: Layer[]): void {
     for (const l of layers)
       if (RESERVED.test(l.id)) throw new Error(`setOverlayLayers: reserved layer id ${l.id}`);
-    this.overlay = [...layers];
+    const beforeId = this.labelBeforeId;
+    this.overlay = beforeId
+      ? layers.map((l) => l.clone({ beforeId } as Partial<Layer['props']>))
+      : [...layers];
     this.emit();
   }
 
@@ -384,7 +393,8 @@ export class GeneratedController {
       updateTriggers: { getFillColor: theme },
       pickable: true,
       autoHighlight: true,
-      highlightColor: hexToRgba(TOKENS[theme].highlight)
+      highlightColor: hexToRgba(TOKENS[theme].highlight),
+      ...(this.labelBeforeId ? { beforeId: this.labelBeforeId } : {})
     } as ConstructorParameters<ControllerDeps['SolidPolygonLayer']>[0]) as unknown as Layer;
   }
 
