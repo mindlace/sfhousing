@@ -88,6 +88,34 @@ describe('invariants', () => {
     writeFileSync(join(d, 'manifest.json'), JSON.stringify(m));
     expect(await failed(d)).toContain('V8');
   });
+  it('V8 fails on a duplicated id even when Σ parcelCount still matches', async () => {
+    const d = copy();
+    // Same count and columns: record 1 takes record 0's id, so one id is doubled, one is missing.
+    editChunk(d, (c) => {
+      const ids = c.id as string[];
+      ids[1] = ids[0];
+    });
+    const r = await checkDataset(d, FIXTURE_PROFILE, { counts, reencodeIdentical: true });
+    const v8 = r.find((x) => x.id === 'V8')!;
+    expect(v8.ok).toBe(false);
+    expect(v8.detail).toMatch(/more than one chunk/);
+    expect(v8.detail).toMatch(/13 distinct ids ≠ V2 14/);
+    expect(v8.detail).not.toMatch(/Σ parcelCount/);
+  });
+  it('V7 fails on an empty polygon', async () => {
+    const d = copy();
+    editChunk(d, (c) => {
+      const rings = c.rings as number[][];
+      const nv = rings[0].reduce((a, b) => a + b, 0);
+      rings[0] = [];
+      (c.xy as number[]).splice(0, 2 * nv); // record 0's vertices come first
+    });
+    const r = await checkDataset(d, FIXTURE_PROFILE, { counts, reencodeIdentical: true });
+    const v7 = r.find((x) => x.id === 'V7')!;
+    expect(v7.ok).toBe(false);
+    expect(v7.detail).toMatch(/1 empty polygon/);
+    expect(r.find((x) => x.id === 'V8')!.ok).toBe(true); // still decodes consistently
+  });
   it('V9 fails on an oversized chunk', async () => {
     expect(
       (

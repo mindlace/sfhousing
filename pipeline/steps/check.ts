@@ -190,6 +190,7 @@ export async function checkDataset(
       manifestError ? `manifest: ${manifestError}` : '',
       ...decodeErrors,
       dupes ? `${dupes} parcel id(s) in more than one chunk` : '',
+      seen.size !== distinct ? `${seen.size} distinct ids ≠ V2 ${distinct}` : '',
       sumCount !== distinct ? `Σ parcelCount ${sumCount} ≠ V2 ${distinct}` : '',
       cellIds.size !== chunks.length ? 'duplicate cellId' : '',
       ...countMismatch.map((k) => `${k.cellId}: parcelCount ${k.parcelCount} ≠ ${k.recs!.length}`)
