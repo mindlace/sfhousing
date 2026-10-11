@@ -40,6 +40,10 @@ Both write to the Miniflare R2 state in `.wrangler/`; delete that directory to r
 
 Never hand-edit files in `migrations/`. CI applies migrations to remote D1 before each deploy.
 
+## Signoff
+
+`npm run signoff -- --verify-only` runs the full local gate (check, lint, unit, e2e). `npm run signoff` does that, merges `origin/main`, pushes and posts the `local-ci/signoff` status that branch protection requires; see [deploy.md](deploy.md).
+
 ## Header actions
 
 The header has a right-aligned slot pages can fill. The root layout calls `provideHeaderActions()` once; a page calls `useHeaderActions(snippet)` (both from `$lib/shell/header-actions.svelte`) during component init. The snippet is shown while the page is mounted and cleared on destroy. The snippet is registered during page init, so it is not present in SSR HTML: header actions appear after hydration.

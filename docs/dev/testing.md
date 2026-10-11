@@ -37,3 +37,5 @@ CI runs `npm run test:e2e -- --project=chromium --project=mobile`. Single spec: 
 ## Accessibility
 
 See [accessibility.md](accessibility.md).
+
+`npm run signoff -- --verify-only` runs the full local gate (`check`, `lint`, `test:unit`, `test:e2e`) without merging, pushing or posting a status. Plain `npm run signoff` runs the same suite and then signs off the PR (see [deploy.md](deploy.md)).

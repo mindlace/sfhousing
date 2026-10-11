@@ -10,14 +10,15 @@
     {
       "binding": "DB",
       "database_name": "sfhousing",
-      // TODO(bootstrap): replace with id from `wrangler d1 create`
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      // created 2026-10-10, region WNAM
+      "database_id": "08b75fb1-bf24-4d3d-88b2-f236a6be5f77",
       "preview_database_id": "local",
       "migrations_dir": "./migrations/d1"
     }
   ],
   "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "sfhousing" }],
   "ratelimits": [
+    // namespace_id is a user-chosen integer, unique within the Cloudflare account
     { "name": "PUBLISH_RL", "namespace_id": "4101", "simple": { "limit": 10, "period": 60 } }
   ],
   "vars": {
@@ -39,14 +40,15 @@
         {
           "binding": "DB",
           "database_name": "sfhousing-staging",
-          // TODO(bootstrap): replace with id from `wrangler d1 create`
-          "database_id": "00000000-0000-0000-0000-000000000001",
+          // created 2026-10-10, region WNAM
+          "database_id": "7975fab5-91fd-4947-8e88-af64bdc6e251",
           "preview_database_id": "local",
           "migrations_dir": "./migrations/d1"
         }
       ],
       "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "sfhousing" }],
       "ratelimits": [
+        // namespace_id is a user-chosen integer, unique within the Cloudflare account
         { "name": "PUBLISH_RL", "namespace_id": "4201", "simple": { "limit": 10, "period": 60 } }
       ],
       "vars": {
