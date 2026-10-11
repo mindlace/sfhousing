@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { FIXTURE_PROFILE } from '../config';
-import { checkDataset } from '../steps/check';
+import { checkDataset, maxOf } from '../steps/check';
 import { fixture } from '../steps/fixture';
 
 let base: string;
@@ -151,5 +151,13 @@ describe('invariants', () => {
   it('V13 is reported as enforced at upload', async () => {
     const r = await checkDataset(base, FIXTURE_PROFILE, { counts, reencodeIdentical: true });
     expect(r.find((x) => x.id === 'V13')).toMatchObject({ ok: true, detail: 'enforced at upload' });
+  });
+});
+
+describe('maxOf', () => {
+  it('handles arrays too large to spread', () => {
+    const xs = Array.from({ length: 500_000 }, (_, i) => i % 1000);
+    expect(maxOf(xs)).toBe(999);
+    expect(maxOf([])).toBe(-Infinity);
   });
 });

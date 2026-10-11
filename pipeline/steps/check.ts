@@ -74,6 +74,11 @@ function neighborhoodNames(outDir: string, profile: InvariantProfile): string[] 
   return fc.features.map((f) => f.properties.name);
 }
 
+/** Max without spreading (spread overflows the call stack at ~150k elements). */
+export function maxOf(xs: readonly number[]): number {
+  return xs.reduce((a, b) => (b > a ? b : a), -Infinity);
+}
+
 /** Spec §4.9 invariants V1–V13 over a built dataset directory. Never throws. */
 export async function checkDataset(
   outDir: string,
@@ -223,7 +228,7 @@ export async function checkDataset(
 
   // V10 max existingHeightM over the parcels.
   {
-    const maxH = recs.length ? Math.max(...recs.map((r) => r.existingHeightM)) : NaN;
+    const maxH = recs.length ? maxOf(recs.map((r) => r.existingHeightM)) : NaN;
     const [hlo, hhi] = profile.maxHeightRange;
     add('V10', maxH >= hlo && maxH <= hhi, `max existingHeightM ${maxH} m, range [${hlo}, ${hhi}]`);
   }
