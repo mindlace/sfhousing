@@ -5,3 +5,5 @@ export { massTypology } from './massing';
 export { drawVariety } from './variety';
 export type { BuildoutMode, GeneratedBuilding, TypologyId } from './types';
 export type { VarietyDraws } from './variety';
+export { createGeneratorCache } from './cache';
+export type { GeneratorCache } from './cache';
