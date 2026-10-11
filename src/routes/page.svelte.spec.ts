@@ -62,6 +62,14 @@ describe('/ editor page', () => {
     await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeInTheDocument();
   });
 
+  it('renders the scoreboard region with the empty state', async () => {
+    await render(Page, { props: { data: data(), params: {} } });
+    await expect
+      .element(page.getByRole('region', { name: 'Housing scoreboard' }))
+      .toBeInTheDocument();
+    await expect.element(page.getByText('Paint a height on the map to add homes.')).toBeVisible();
+  });
+
   it('shows the city-data failure with Retry and no map when the manifest failed', async () => {
     await render(Page, {
       props: { data: data({ manifest: null, manifestError: true }), params: {} }
