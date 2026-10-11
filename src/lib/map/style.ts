@@ -146,7 +146,7 @@ function renameFont(name: unknown): string {
 }
 
 /** Rewrite a text-font value: a plain stack, or an expression whose literals are stacks. */
-function rewriteFont(v: unknown, isStack: boolean): unknown {
+export function rewriteFont(v: unknown, isStack: boolean): unknown {
   if (!Array.isArray(v)) return v;
   if (isStack) return v.map(renameFont);
   const op = v[0];

@@ -2,7 +2,14 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseManifest, type Manifest } from '$lib/data/manifest';
 import { TOKENS } from './palette';
-import { buildStyle, themePaintDiff, BUILDINGS_LAYER, OVERLAY_ANCHOR, FONT_RENAME } from './style';
+import {
+  buildStyle,
+  themePaintDiff,
+  BUILDINGS_LAYER,
+  OVERLAY_ANCHOR,
+  FONT_RENAME,
+  rewriteFont
+} from './style';
 import type { Theme } from './types';
 
 const raw = JSON.parse(readFileSync('e2e/fixtures/data/fixture-0/manifest.json', 'utf8')) as Record<
