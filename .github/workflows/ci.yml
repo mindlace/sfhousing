@@ -1,3 +1,5 @@
+# Contributor feedback on PRs. This is NOT the merge gate: branch protection on main
+# requires the `local-ci/signoff` commit status, posted by `npm run signoff`.
 name: CI
 on:
   pull_request:

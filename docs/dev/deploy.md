@@ -9,12 +9,24 @@ Both environments share one R2 bucket, `sfhousing`, so a dataset version uploade
 
 ## Release flow
 
-- Push to `main` runs `.github/workflows/deploy-staging.yml`: build, apply D1 migrations to `sfhousing-staging`, deploy `--env staging`.
-- The same push runs `release-please.yml`, which maintains a release PR. Merging the release PR creates the release and, in the same workflow (releases made with `GITHUB_TOKEN` do not trigger other workflows), the `deploy-prod` job builds the tag, applies migrations to `sfhousing` and deploys production.
-- Pull requests run `ci.yml`: lint, check, unit tests, fixture load, migrate, Playwright (chromium and mobile projects), plus actionlint.
-- Release-please PRs are opened with `GITHUB_TOKEN`, and events from `GITHUB_TOKEN` do not trigger other workflows, so `ci.yml` never runs on the release PR. If `ci` is a required check, the release PR deadlocks. Workarounds: run `ci.yml` by `workflow_dispatch` on the `release-please--*` branch (the check attaches to the branch head commit), or merge with an admin bypass. A durable fix is to give release-please a GitHub App token or PAT.
+Releases run only after CI has been proven locally (the planafoot pattern). "Proven" is a GitHub commit status with context `local-ci/signoff`, which branch protection on `main` requires (strict, admins enforced, linear history, squash-only merges).
+
+1. Work on a PR branch. Run `npm run signoff`: it merges `origin/main`, runs `check`, `lint`, `test:unit` and `test:e2e`, pushes the branch (so do not `git push` first), and posts `local-ci/signoff` on the head SHA with your own `gh` auth. `npm run signoff -- --verify-only` runs just the four checks; `--dry-run` prints the plan.
+2. Squash-merge the PR. The push to `main` runs `deploy-staging.yml` (build, apply D1 migrations to `sfhousing-staging`, deploy `--env staging`). Staging deploys on every push to `main` and waits for nothing.
+3. The same push runs `release-please.yml`, which opens or updates the release PR and posts `local-ci/signoff` on its head SHA with `GITHUB_TOKEN` (`statuses: write`). Release PRs change only versions and `CHANGELOG`, and the code was already signed off.
+4. Merge the release PR. release-please publishes release `vX.Y.Z`, and `deploy-prod.yml` (`on: release: published`) builds the tag, applies migrations to `sfhousing` and deploys production.
+
+release-please runs with a GitHub App token (`actions/create-github-app-token`), not `GITHUB_TOKEN`. GitHub suppresses workflow runs for events emitted by `GITHUB_TOKEN`, so a release it published would never trigger `deploy-prod.yml`. The App is a distinct actor, so the `release: published` event propagates.
+
+There is no automated staging-to-prod interlock (as in planafoot): do not merge a release PR over a red staging deploy.
+
+`ci.yml` still runs on pull requests (lint, check, unit tests, fixture load, migrate, Playwright, actionlint) for contributor feedback, but it is not the merge gate.
 
 `PUBLIC_APP_RELEASE` is set at deploy time to the commit SHA (staging) or tag (production).
+
+### Contributors (fork PRs)
+
+`ci.yml` gives a contributor feedback, but only a maintainer can sign off. The maintainer runs `gh pr checkout <n>` then `npm run signoff`. Signoff pushes to the PR's head branch only if the maintainer has push rights to it; otherwise re-open the PR from a branch in this repo and sign that off.
 
 ## Promoting a datasetVersion
 
@@ -26,16 +38,23 @@ Versions are immutable and retained indefinitely.
 
 ## Secrets and variables
 
-- `CLOUDFLARE_API_TOKEN`: repository secret.
-- `CLOUDFLARE_ACCOUNT_ID`: repository variable.
+- Variables: `RELEASE_PLEASE_APP_ID` (present, unused by v3 of the token action), `RELEASE_PLEASE_CLIENT_ID`, `CLOUDFLARE_ACCOUNT_ID`.
+- Secrets: `RELEASE_PLEASE_APP_PRIVATE_KEY`, `CLOUDFLARE_API_TOKEN`.
 
 Nothing else.
 
 ## One-time bootstrap
 
-1. `npx wrangler d1 create sfhousing` and `npx wrangler d1 create sfhousing-staging`; paste each `database_id` over the placeholder (`TODO(bootstrap)`) in `wrangler.jsonc`.
-2. `npx wrangler r2 bucket create sfhousing`.
-3. Add the `CLOUDFLARE_API_TOKEN` secret and `CLOUDFLARE_ACCOUNT_ID` variable in the GitHub repository settings; create the `staging` and `production` GitHub environments.
-4. Attach the custom domains (declared as `custom_domain` routes in `wrangler.jsonc`; the zone must be on the Cloudflare account).
-5. Decide the release-PR CI strategy (dispatch / admin bypass / GitHub App token); see Release flow.
-6. Push to `main` to trigger the first staging deploy.
+Done:
+
+- [x] D1 databases created (2026-10-10, WNAM): `sfhousing` `08b75fb1-bf24-4d3d-88b2-f236a6be5f77`, `sfhousing-staging` `7975fab5-91fd-4947-8e88-af64bdc6e251` (ids are in `wrangler.jsonc`).
+- [x] R2 bucket `sfhousing` created.
+- [x] GitHub repo `mindlace/sfhousing` exists.
+- [x] release-please App credentials configured as repository variables.
+
+Remaining:
+
+- [ ] Set the two secrets (`CLOUDFLARE_API_TOKEN`, `RELEASE_PLEASE_APP_PRIVATE_KEY`).
+- [ ] Create the `staging` and `production` GitHub environments if they do not exist.
+- [ ] Run `npm run branch-protection` once (`npm run branch-protection:dry` previews the payloads; `-- --repo owner/name` overrides the repo).
+- [ ] Attach the custom domains (declared as `custom_domain` routes in `wrangler.jsonc`; the zone must be on the Cloudflare account).
