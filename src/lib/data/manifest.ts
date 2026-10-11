@@ -4,12 +4,22 @@ import { z } from 'zod';
 export const DATASET_VERSION_RE = /^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}|fixture-\d+)$/;
 
 const DatasetVersion = z.string().regex(DATASET_VERSION_RE);
-const RootRelativeUrl = z.string().startsWith('/data/');
+const RootRelativeUrl = z
+  .string()
+  .startsWith('/data/')
+  .refine(
+    (u) =>
+      u
+        .slice('/data/'.length)
+        .split('/')
+        .every((seg) => seg !== '' && seg !== '.' && seg !== '..'),
+    'URL path segments must not be empty, "." or ".."'
+  );
 
 export const ManifestSourceSchema = z.object({
   id: z.string().min(1),
   label: z.string().optional(),
-  url: z.string().url(),
+  url: z.url({ protocol: /^https?$/ }),
   retrievedAt: z.string(),
   license: z.string()
 });

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ManifestSchema } from '../src/lib/data/manifest';
-import { collectDataPaths } from './data-local';
+import { collectDataPaths, isSpritePath } from './data-local';
 
 const fixture = JSON.parse(readFileSync('e2e/fixtures/data/fixture-0/manifest.json', 'utf8'));
 const chunk = (cellId: string) => ({
@@ -48,5 +48,20 @@ describe('collectDataPaths', () => {
   it('throws for a url outside the version', () => {
     const bad = { ...manifest, neighborhoods: '/data/fixture-1/neighborhoods.geojson' };
     expect(() => collectDataPaths(bad, 'fixture-0')).toThrow(/outside version/);
+  });
+
+  it('throws for a traversal url that stays under the version prefix', () => {
+    const bad = { ...manifest, chunks: [chunk('0_0')] };
+    bad.chunks[0].url = '/data/fixture-0/../../etc/x';
+    expect(() => collectDataPaths(bad, 'fixture-0')).toThrow();
+  });
+});
+
+describe('isSpritePath', () => {
+  it('matches sprite variants wherever the sprite base lives', () => {
+    const m = { ...manifest, sprite: '/data/fixture-0/assets/atlas' };
+    expect(isSpritePath(m, 'fixture-0', 'assets/atlas@2x.png')).toBe(true);
+    expect(isSpritePath(m, 'fixture-0', 'assets/atlas.json')).toBe(true);
+    expect(isSpritePath(m, 'fixture-0', 'parcels/0_0.json')).toBe(false);
   });
 });

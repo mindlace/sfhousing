@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DATASET_VERSION_RE, ManifestSchema, type Manifest } from '../src/lib/data/manifest';
+import { dataKey } from '../src/lib/server/data/key';
 import { putLocal } from './r2-put-local';
 
 const SPRITE_SUFFIXES = ['.json', '.png', '@2x.json', '@2x.png'];
@@ -12,22 +13,28 @@ export function collectDataPaths(manifest: Manifest, version: string): string[] 
   const prefix = `/data/${version}/`;
   const rel = (url: string): string => {
     if (!url.startsWith(prefix)) throw new Error(`URL ${url} is outside version ${version}`);
-    return url.slice(prefix.length);
+    const path = url.slice(prefix.length);
+    if (dataKey(version, path) === null) throw new Error(`URL ${url} is not a servable data path`);
+    return path;
   };
   const paths = new Set<string>(['manifest.json']);
   for (const c of manifest.chunks) paths.add(rel(c.url));
   paths.add(rel(manifest.buildingsTiles));
   paths.add(rel(manifest.basemapTiles));
   paths.add(rel(manifest.neighborhoods));
-  if (manifest.sprite) {
-    const base = rel(manifest.sprite);
-    for (const s of SPRITE_SUFFIXES) paths.add(base + s);
-  }
+  for (const s of spriteVariants(manifest, version)) paths.add(s);
   return [...paths].sort();
 }
 
-function isSprite(rel: string): boolean {
-  return rel.startsWith('sprite/');
+function spriteVariants(manifest: Manifest, version: string): string[] {
+  if (!manifest.sprite) return [];
+  const base = manifest.sprite.slice(`/data/${version}/`.length);
+  return SPRITE_SUFFIXES.map((s) => base + s);
+}
+
+/** True for any path derived from `manifest.sprite` (optional: a 404 is tolerated). */
+export function isSpritePath(manifest: Manifest, version: string, rel: string): boolean {
+  return spriteVariants(manifest, version).includes(rel);
 }
 
 async function main(): Promise<void> {
@@ -49,7 +56,7 @@ async function main(): Promise<void> {
   try {
     for (const rel of paths) {
       const res = await fetch(`${base}/data/${version}/${rel}`);
-      if (res.status === 404 && isSprite(rel)) continue;
+      if (res.status === 404 && isSpritePath(manifest, version, rel)) continue;
       if (!res.ok) throw new Error(`fetch ${rel} failed: ${res.status}`);
       const file = join(dir, rel);
       mkdirSync(dirname(file), { recursive: true });

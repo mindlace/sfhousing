@@ -50,6 +50,28 @@ describe('ManifestSchema', () => {
   });
 });
 
+describe('URL hardening', () => {
+  const parse = (patch: object) => ManifestSchema.safeParse({ ...validManifest, ...patch });
+
+  it('rejects traversal and empty segments in root-relative urls', () => {
+    expect(parse({ neighborhoods: '/data/../x' }).success).toBe(false);
+    expect(parse({ neighborhoods: '/data//x' }).success).toBe(false);
+    expect(parse({ neighborhoods: '/data/fixture-0/./x' }).success).toBe(false);
+    expect(parse({ buildingsTiles: '/data/fixture-0/../../etc/x' }).success).toBe(false);
+  });
+
+  it('still accepts the glyphs template', () => {
+    expect(parse({ glyphs: '/data/fixture-0/fonts/{fontstack}/{range}.pbf' }).success).toBe(true);
+  });
+
+  it('rejects non-http(s) source urls', () => {
+    const src = (url: string) => ({ ...validManifest.sources[0], url });
+    expect(parse({ sources: [src('javascript:alert(1)')] }).success).toBe(false);
+    expect(parse({ sources: [src('data:text/html,x')] }).success).toBe(false);
+    expect(parse({ sources: [src('https://data.sfgov.org/')] }).success).toBe(true);
+  });
+});
+
 describe('ManifestSourcesSchema', () => {
   it('parses an object whose chunks are malformed (attribution ignores chunk shape)', () => {
     const parsed = ManifestSourcesSchema.safeParse({
