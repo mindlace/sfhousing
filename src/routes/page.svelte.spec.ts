@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
 import type { Manifest } from '$lib/data/manifest';
-import { emptyPlan } from '$lib/plan';
+import { emptyPlan, serializePlan, type Plan } from '$lib/plan';
+import { COPY, n3, remixedToast } from '$lib/sharing/copy';
+import { PLAN_KEY } from '$lib/sharing/storage';
+import { replaceStateCalls } from '../test-stubs/app/navigation';
+import { page as appPage } from '../test-stubs/app/state';
 import manifestJson from '../../e2e/fixtures/data/fixture-0/manifest.json';
 import Page from './+page.svelte';
 
@@ -46,6 +50,9 @@ describe('/ editor page', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    localStorage.clear();
+    appPage.state = {};
+    replaceStateCalls.length = 0;
   });
 
   it('renders the heading, the map region and the brush toolbar', async () => {
@@ -78,5 +85,78 @@ describe('/ editor page', () => {
     await expect.element(page.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
     await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeInTheDocument();
     expect(document.querySelector('[data-testid="map-root"]')).toBeNull();
+  });
+
+  describe('autosave restore (plan-sharing §4.5)', () => {
+    const painted = (datasetVersion: string): Plan => ({
+      schema: 1,
+      datasetVersion,
+      ops: [{ id: 's1', kind: 'paint', stories: 6, radiusM: 20, path: [[-122.4193, 37.76013]] }]
+    });
+    const seed = (plan: Plan) =>
+      localStorage.setItem(
+        PLAN_KEY,
+        JSON.stringify({ v: 1, savedAt: '2026-10-11T00:00:00.000Z', plan: serializePlan(plan) })
+      );
+    const undo = () => page.getByRole('button', { name: /^Undo/ });
+
+    it('loads the autosaved plan into the editor (Undo enabled), no notice', async () => {
+      seed(painted('fixture-0'));
+      await render(Page, { props: { data: data(), params: {} } });
+      await expect.element(undo()).toBeEnabled();
+      expect(page.getByRole('button', { name: 'Dismiss' }).elements()).toHaveLength(0);
+      // The restored plan is not re-written: the autosave's first schedule() is a no-op.
+      await new Promise((r) => setTimeout(r, 700));
+      expect(JSON.parse(localStorage.getItem(PLAN_KEY)!).savedAt).toBe('2026-10-11T00:00:00.000Z');
+    });
+
+    it('starts empty with nothing saved (Undo disabled)', async () => {
+      await render(Page, { props: { data: data(), params: {} } });
+      await expect.element(undo()).toBeDisabled();
+    });
+
+    it('shows N1 for a corrupt record and preserves it', async () => {
+      localStorage.setItem(PLAN_KEY, '{not json');
+      await render(Page, { props: { data: data(), params: {} } });
+      await expect.element(page.getByText(COPY.n1)).toBeVisible();
+      await expect.element(undo()).toBeDisabled();
+      const kept = Object.keys(localStorage).filter((k) => k.startsWith('sfhousing:plan:corrupt:'));
+      expect(kept).toHaveLength(1);
+    });
+
+    it('rebases an older-dataset plan, shows N3 and writes it back', async () => {
+      seed(painted('fixture-9'));
+      await render(Page, { props: { data: data(), params: {} } });
+      await expect.element(page.getByText(n3('fixture-9', 'fixture-0'))).toBeVisible();
+      await expect.element(undo()).toBeEnabled();
+      const rec = JSON.parse(localStorage.getItem(PLAN_KEY)!);
+      expect(JSON.parse(rec.plan).datasetVersion).toBe('fixture-0');
+    });
+
+    it('a notice can be dismissed', async () => {
+      localStorage.setItem(PLAN_KEY, '{not json');
+      await render(Page, { props: { data: data(), params: {} } });
+      await expect.element(page.getByText(COPY.n1)).toBeVisible();
+      await page.getByRole('button', { name: 'Dismiss' }).click();
+      await expect.element(page.getByText(COPY.n1)).not.toBeInTheDocument();
+    });
+
+    it('Remix hand-off: shows the toast once and clears the history state', async () => {
+      seed(painted('fixture-0'));
+      appPage.state = { sfhRemix: { from: 'My plan' } } as App.PageState;
+      await render(Page, { props: { data: data(), params: {} } });
+      await expect.element(page.getByText(remixedToast('My plan'))).toBeVisible();
+      expect(replaceStateCalls).toEqual([{ url: '', state: {} }]);
+      await expect.element(undo()).toBeEnabled();
+    });
+
+    it('Remix hand-off with the plan in history state (storage write failed) loads it', async () => {
+      appPage.state = {
+        sfhRemix: { from: 'abc123', plan: serializePlan(painted('fixture-0')) }
+      } as App.PageState;
+      await render(Page, { props: { data: data(), params: {} } });
+      await expect.element(page.getByText(remixedToast('abc123'))).toBeVisible();
+      await expect.element(undo()).toBeEnabled();
+    });
   });
 });

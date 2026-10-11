@@ -7,7 +7,14 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   plugins: [tailwindcss(), svelte()],
   resolve: {
-    alias: { $lib: fileURLToPath(new URL('./src/lib', import.meta.url)) }
+    alias: {
+      $lib: fileURLToPath(new URL('./src/lib', import.meta.url)),
+      // Route component specs only: `src/lib` code must still never import `$app/*`.
+      '$app/state': fileURLToPath(new URL('./src/test-stubs/app/state.ts', import.meta.url)),
+      '$app/navigation': fileURLToPath(
+        new URL('./src/test-stubs/app/navigation.ts', import.meta.url)
+      )
+    }
   },
   test: {
     name: 'client',
