@@ -586,6 +586,11 @@ test.describe('map view', () => {
     // Goldens are Chromium SwiftShader only (spec §6 E9); the mobile project has a different frame.
     // eslint-disable-next-line playwright/no-skipped-test
     test.skip(({ isMobile }) => isMobile, 'chromium project only');
+    // eslint-disable-next-line playwright/no-skipped-test
+    test.skip(
+      process.platform !== 'darwin',
+      'E9 goldens are generated on darwin, where signoff (the merge gate) runs; ci.yml on Linux is feedback only'
+    );
     test.use({ reducedMotion: 'reduce' });
 
     for (const scheme of ['light', 'dark'] as const) {
