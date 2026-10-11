@@ -71,7 +71,14 @@ describe('ScoreboardPanel states (§4.4)', () => {
   it('updating: spinner and "Updating…", numbers shown as-is', async () => {
     show(scoreOf({ Mission: 5 }), status({ complete: false }));
     await expect.element(page.getByText('Updating…')).toBeVisible();
+    await expect.element(page.getByTestId('updating-spinner')).toBeInTheDocument();
     await expect.element(page.getByTestId('score-net')).toHaveTextContent('5');
+  });
+
+  it('failed and settled: no Updating… even though the worker reports incomplete', async () => {
+    show(scoreOf({ Mission: 5 }), status({ complete: false, failedChunks: 1 }));
+    await expect.element(page.getByText(/Some areas didn't load/)).toBeVisible();
+    expect(page.getByText('Updating…').elements()).toHaveLength(0);
   });
 
   it('partial failure: warning text and Retry emits', async () => {
@@ -115,7 +122,7 @@ describe('ScoreboardPanel states (§4.4)', () => {
     const p = parcel('8100000', 3, 'Mission');
     show(score([[p, building(p, 12, true)]], M1_TARGETS));
     await expect.element(page.getByTestId('score-net')).toHaveTextContent('9');
-    await expect.element(page.getByText('12 built · 3 replaced · 1 parcels changed')).toBeVisible();
+    await expect.element(page.getByText('12 built · 3 replaced · 1 parcel changed')).toBeVisible();
   });
 
   it('targets render generically, keyed by id, first is primary', async () => {
@@ -132,6 +139,36 @@ describe('ScoreboardPanel states (§4.4)', () => {
     const links = page.getByRole('link', { name: /RHNA Primer/ }).elements();
     expect(links).toHaveLength(2);
     expect(links[0].getAttribute('href')).toBe(M1_TARGETS[0].source.url);
+  });
+});
+
+describe('§4.6 copy and genericness', () => {
+  const norm = (t: string | null) => (t ?? '').replace(/\s+/g, ' ').trim();
+  const COPY = [
+    'Theoretical max buildout. This counts every home the heights you painted would allow if every eligible parcel under your strokes were rebuilt to the maximum, all at once, today. It is not a forecast: real construction depends on cost, demand, permitting and time.',
+    'Net, not gross. When a new building replaces an existing one, the homes in the old building are subtracted. Backyard cottages (1–2 stories painted on a lot with homes) keep the existing building and add one home.',
+    'Targets. RHNA is the state-assigned number of homes San Francisco must plan for in 2023–2031 (82,069). The state also expects a buffer of at least 15% (94,379). Going past 100% is meaningful: SF is far behind, and more housing than the minimum is a real policy choice.'
+  ];
+
+  it('the disclosure body is the spec copy verbatim', async () => {
+    show(scoreOf({ Mission: 5 }));
+    await page.getByText('What does this number mean?').click();
+    const details = page.getByText('What does this number mean?').element().closest('details')!;
+    const paras = [...details.querySelectorAll('div > p')].map((p) => norm(p.textContent));
+    expect(paras).toEqual(COPY);
+  });
+
+  it('renders one row per target keyed by id; only index 0 is primary', async () => {
+    const s = scoreOf({ Mission: 5 });
+    const extra = structuredClone(s.targets[0]);
+    extra.target = { ...extra.target, id: 'synthetic', label: 'Synthetic goal' };
+    const reordered: Score = { ...s, targets: [s.targets[1], s.targets[0], extra] };
+    show(reordered);
+    const rows = page.getByTestId(/^target-/).elements();
+    expect(rows.map((r) => r.getAttribute('data-testid'))).toEqual(
+      reordered.targets.map((t) => `target-${t.target.id}`)
+    );
+    expect(rows.map((r) => r.getAttribute('data-primary'))).toEqual(['true', 'false', 'false']);
   });
 });
 

@@ -73,6 +73,9 @@ describe('375 px', () => {
     await expect.element(page.getByRole('group', { name: 'Scoreboard details' })).toBeVisible();
     await expect.poll(() => onsheetchange.mock.calls.at(-1)).toEqual([true, expect.any(Number)]);
     expect(onsheetchange.mock.calls.at(-1)![1]).toBeGreaterThan(56);
+    const firstOpen = onsheetchange.mock.calls.find((c) => c[0] === true)!;
+    expect(firstOpen[1]).toBeGreaterThan(56);
+    expect(onsheetchange.mock.calls.some((c) => c[0] === true && c[1] === 0)).toBe(false);
     await close.click();
     await expect.element(barBtn).toHaveFocus();
     expect(onsheetchange.mock.calls.at(-1)).toEqual([false, 0]);
@@ -86,6 +89,32 @@ describe('375 px', () => {
     await expect
       .element(page.getByRole('group', { name: 'Scoreboard details' }))
       .not.toBeInTheDocument();
+  });
+
+  it('Escape with focus outside the sheet closes it without moving focus', async () => {
+    await page.viewport(375, 812);
+    const onsheetchange = vi.fn();
+    await render(Scoreboard, { props: { score: withNet(5), status: status(), onsheetchange } });
+    const outside = document.createElement('button');
+    outside.textContent = 'outside';
+    document.body.append(outside);
+    await page.getByRole('button', { name: /net new homes/ }).click();
+    outside.focus();
+    await userEvent.keyboard('{Escape}');
+    await expect
+      .element(page.getByRole('group', { name: 'Scoreboard details' }))
+      .not.toBeInTheDocument();
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+  });
+
+  it('Escape while closed does nothing', async () => {
+    await page.viewport(375, 812);
+    const onsheetchange = vi.fn();
+    await render(Scoreboard, { props: { score: withNet(5), status: status(), onsheetchange } });
+    onsheetchange.mockClear();
+    await userEvent.keyboard('{Escape}');
+    expect(onsheetchange).not.toHaveBeenCalled();
   });
 
   it('widening past 768 px closes the sheet and reports closed', async () => {
@@ -144,6 +173,45 @@ describe('aria-live (§4.7)', () => {
     expect(live()).toBe('');
     vi.advanceTimersByTime(500);
     await expect.poll(live).toBe('Net new homes 7, 0.0% of RHNA');
+  });
+});
+
+describe('aria-live settled failure and no-repeat', () => {
+  it('announces once failed-but-settled (incomplete, failed chunk, none pending)', async () => {
+    vi.useFakeTimers();
+    await page.viewport(1280, 800);
+    const screen = await render(Scoreboard, { props: { score: withNet(5), status: status() } });
+    const live = () => page.getByTestId('score-live').element().textContent;
+    await screen.rerender({
+      score: withNet(41035),
+      status: status({ complete: false, failedChunks: 1 })
+    });
+    vi.advanceTimersByTime(1100);
+    await expect.poll(live).toBe('Net new homes 41,035, 50% of RHNA');
+  });
+
+  it('no repeat when the value is unchanged, and the live node is not touched', async () => {
+    vi.useFakeTimers();
+    await page.viewport(1280, 800);
+    const screen = await render(Scoreboard, { props: { score: withNet(5), status: status() } });
+    const node = page.getByTestId('score-live').element();
+    await screen.rerender({ score: withNet(41035), status: status() });
+    vi.advanceTimersByTime(1100);
+    await expect.poll(() => node.textContent).toBe('Net new homes 41,035, 50% of RHNA');
+
+    let mutations = 0;
+    const mo = new MutationObserver((r) => (mutations += r.length));
+    mo.observe(node, { childList: true, characterData: true, subtree: true });
+    await screen.rerender({
+      score: withNet(41035),
+      status: status({ pendingChunks: 0, builtAt: 'x' })
+    });
+    vi.advanceTimersByTime(2000);
+    await Promise.resolve();
+    mutations += mo.takeRecords().length;
+    mo.disconnect();
+    expect(mutations).toBe(0);
+    expect(node.textContent).toBe('Net new homes 41,035, 50% of RHNA');
   });
 });
 

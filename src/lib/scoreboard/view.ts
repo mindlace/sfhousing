@@ -70,7 +70,8 @@ export interface ViewState {
 export function viewState(score: Score, status: ScoreStatus): ViewState {
   return {
     empty: score.parcelsChanged === 0 && status.pendingChunks === 0,
-    updating: status.pendingChunks > 0 || !status.complete,
+    // A failed cell keeps the worker's `complete` false for good, so that alone is not "updating".
+    updating: status.pendingChunks > 0 || (!status.complete && status.failedChunks === 0),
     failed: status.failedChunks > 0,
     oldPlan: !!status.planDatasetVersion && status.planDatasetVersion !== status.datasetVersion
   };
@@ -101,7 +102,7 @@ export function barText(score: Score): string {
 export function secondaryText(score: Score): string {
   return (
     `${formatCount(score.grossUnits)} built · ${formatCount(score.demolishedUnits)} replaced · ` +
-    `${formatCount(score.parcelsChanged)} parcels changed`
+    `${formatCount(score.parcelsChanged)} ${score.parcelsChanged === 1 ? 'parcel' : 'parcels'} changed`
   );
 }
 

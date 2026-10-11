@@ -31,6 +31,7 @@
   let sheetH = $state(0);
   let barButton = $state<HTMLButtonElement>();
   let closeButton = $state<HTMLButtonElement>();
+  let sheetEl = $state<HTMLDivElement>();
 
   async function openSheet(): Promise<void> {
     open = true;
@@ -38,13 +39,20 @@
     closeButton?.focus();
   }
   async function closeSheet(): Promise<void> {
+    // Restore focus only if it was inside the sheet (or lost to <body>); never steal it.
+    const a = document.activeElement;
+    const restore = !a || a === document.body || !!sheetEl?.contains(a);
     open = false;
     await tick();
-    barButton?.focus();
+    if (restore) barButton?.focus();
   }
 
   $effect(() => {
-    onsheetchange?.(open, open ? sheetH : 0);
+    const o = open;
+    const h = sheetH;
+    // First open, before the size observer has reported: skip so the inset doesn't jump to 0.
+    if (o && h === 0) return;
+    untrack(() => onsheetchange?.(o, o ? h : 0));
   });
 
   onMount(() => {
@@ -74,7 +82,7 @@
 
 <svelte:window
   onkeydown={(e) => {
-    if (open && e.key === 'Escape') void closeSheet();
+    if (open && e.key === 'Escape' && !e.defaultPrevented) void closeSheet();
   }}
 />
 
@@ -102,6 +110,7 @@
   {#if open}
     <div
       id={sheetId}
+      bind:this={sheetEl}
       role="group"
       aria-label="Scoreboard details"
       class="fixed inset-x-0 bottom-0 z-30 max-h-[85dvh] overflow-y-auto rounded-t-xl bg-white p-4 shadow-2xl md:hidden"
@@ -123,7 +132,7 @@
 </div>
 
 <style>
-  @media (max-width: 767px) {
+  @media (width < 768px) {
     :global(:root:has(.sfh-scoreboard)) {
       --scorebar-h: 56px;
     }

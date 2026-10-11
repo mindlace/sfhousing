@@ -41,6 +41,7 @@
     <p class="mt-1 flex items-center gap-2 text-sm text-gray-800">
       <span
         aria-hidden="true"
+        data-testid="updating-spinner"
         class="inline-block h-3.5 w-3.5 rounded-full border-2 border-gray-400 border-t-gray-900 motion-safe:animate-spin"
       ></span>
       Updating…

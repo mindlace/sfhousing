@@ -32,7 +32,7 @@
   >
     <div
       data-testid="bar-fill"
-      class="absolute inset-y-0 left-0 rounded-sm {primary ? 'bg-blue-700' : 'bg-blue-500'}"
+      class="absolute inset-y-0 left-0 rounded-sm {primary ? 'bg-blue-700' : 'bg-blue-600'}"
       style:width="{fillPercent(tp.fraction, max)}%"
     ></div>
     <div

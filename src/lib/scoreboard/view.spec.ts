@@ -101,6 +101,12 @@ describe('viewState (§4.4 states)', () => {
     expect(viewState(withNet(3), status()).updating).toBe(false);
   });
 
+  it('a permanent failure settles: incomplete + failed + nothing pending is not updating', () => {
+    expect(
+      viewState(withNet(3), status({ complete: false, failedChunks: 1, pendingChunks: 0 }))
+    ).toMatchObject({ updating: false, failed: true });
+  });
+
   it('failed: any failed chunk', () => {
     expect(viewState(withNet(3), status({ failedChunks: 1 })).failed).toBe(true);
   });
@@ -135,7 +141,13 @@ describe('text', () => {
   it('secondary line: "{gross} built · {demolished} replaced · {parcelsChanged} parcels changed"', () => {
     const p = parcel('9000002', 3, 'Mission');
     const s = score([[p, building(p, 12, true)]], M1_TARGETS);
-    expect(secondaryText(s)).toBe('12 built · 3 replaced · 1 parcels changed');
+    expect(secondaryText(s)).toBe('12 built · 3 replaced · 1 parcel changed');
+    expect(secondaryText({ ...s, parcelsChanged: 0 })).toBe(
+      '12 built · 3 replaced · 0 parcels changed'
+    );
+    expect(secondaryText({ ...s, parcelsChanged: 2 })).toBe(
+      '12 built · 3 replaced · 2 parcels changed'
+    );
   });
 
   it('footnote lead: "Data {v} · built {YYYY-MM-DD}"; omits built when unknown', () => {
