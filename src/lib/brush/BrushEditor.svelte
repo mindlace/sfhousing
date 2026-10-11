@@ -1,6 +1,6 @@
 <script module lang="ts">
   const MEASURE = import.meta.env.DEV || import.meta.env.VITE_E2E === '1';
-  const NARROW = '(max-width: 767px)';
+  const NARROW = '(width < 768px)';
 
   function cssPx(el: Element, name: string): number {
     return parseFloat(getComputedStyle(el).getPropertyValue(name)) || 0;
