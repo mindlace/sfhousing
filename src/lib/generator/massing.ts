@@ -1,4 +1,4 @@
-import type { PathD, PathsD } from 'clipper2-ts';
+import { FillRule, intersectD, type PathD, type PathsD } from 'clipper2-ts';
 import {
   ADU_EDGE_GAP_M,
   ADU_GROSS_M2,
@@ -40,6 +40,9 @@ export interface Massing {
   floorAreaM2: number;
 }
 
+/** 0.1 mm grid: keeps the final slab cut within T + 0.01 m² (coverage property). */
+const SLAB_CUT_PRECISION = 4;
+
 /** Top of floor k: g + (k − 1)·FTF_M. */
 export function floorTop(typology: TypologyId, k: number): number {
   return rulesFor(typology).groundFtfM + (k - 1) * FTF_M;
@@ -75,7 +78,7 @@ export function baseFootprint(site: Site, target: number): PathsD {
   }
   const pv = project([P], c, v);
   const slab = orientedRect(c, u, v, -lo, lo, pv.min - 1, pv.max + 1);
-  return keepPieces(intersect(Q, [slab]));
+  return keepPieces(intersectD(Q, [slab], FillRule.NonZero, SLAB_CUT_PRECISION));
 }
 
 function part(
