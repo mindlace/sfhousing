@@ -41,7 +41,9 @@ export async function handleE2eSeed(
   const parsed = parsePlan(body);
   const db = getDb(platform);
   const version = datasetVersion ?? E2E_SEED_DEFAULT_DATASET;
-  const contentHash = await sha256Hex(body);
+  // Namespaced so a seed never shares a hash with a real publish (whose hash is of the bare
+  // canonical body): publish can't dedupe onto a seeded row, nor a seed collide with a publish.
+  const contentHash = await sha256Hex('e2e-seed\n' + version + '\n' + body);
   const id = newPlanId();
   const inserted = await insertPlan(db, {
     id,
@@ -55,11 +57,9 @@ export async function handleE2eSeed(
   });
   if (inserted) return json(201, { id });
 
-  // content_hash is unique and the preview's local D1 persists across runs, so seeding the same
-  // body again (repeat-each, a rerun) reuses the existing row, as publish dedupes.
+  // The preview's local D1 persists across runs, so seeding the same body and version again
+  // (repeat-each, a rerun) reuses the existing row.
   const existing = await findPlanByHash(db, contentHash);
-  if (existing && existing.datasetVersion === version) return json(200, { id: existing.id });
-  return shareError(500, 'server_error', {
-    message: 'e2e seed: this body is already seeded under another dataset version'
-  });
+  if (existing) return json(200, { id: existing.id });
+  return shareError(500, 'server_error', { message: 'e2e seed: plan id collided' });
 }

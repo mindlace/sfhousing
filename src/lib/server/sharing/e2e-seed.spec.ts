@@ -1,8 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parsePlan, serializePlan } from '$lib/plan';
 import { handleE2eSeed } from '$lib/server/sharing/e2e-seed';
+import { handleGetPlan } from '$lib/server/sharing/get-plan';
+import { handlePublish } from '$lib/server/sharing/publish';
 import { createTestD1, testPlatform, type TestD1 } from '$lib/server/test/d1';
+import { FakeR2Bucket } from '$lib/server/test/fake-r2';
 import type { ShareError } from '$lib/sharing/api';
 import { sha256Hex } from '$lib/sharing/hash';
 import { PLAN_ID_RE } from '$lib/sharing/ids';
@@ -64,7 +68,7 @@ describe('POST /api/e2e/plans', () => {
         schema: 1,
         dataset_version: 'fixture-0000',
         body,
-        content_hash: await sha256Hex(body),
+        content_hash: await sha256Hex('e2e-seed\nfixture-0000\n' + body),
         op_count: 0,
         byte_size: new TextEncoder().encode(body).byteLength,
         created_at: Date.UTC(2026, 9, 1)
@@ -98,18 +102,74 @@ describe('POST /api/e2e/plans', () => {
     expect(rows(t)).toHaveLength(1);
   });
 
-  it('the same body under another dataset version → 500 and still one row', async () => {
+  it('the same body under another dataset version → 201 with a new id and two rows', async () => {
     const { t, platform } = setup();
-    const seed = (datasetVersion: string) =>
-      handleE2eSeed(
+    const seed = async (datasetVersion: string) => {
+      const res = await handleE2eSeed(
         { request: post({ body: small, datasetVersion }), platform },
         { e2eEnabled: true }
       );
-    expect((await seed('fixture-0')).status).toBe(201);
-    const res = await seed('fixture-0000');
-    expect(res.status).toBe(500);
-    expect(((await res.json()) as ShareError).error.code).toBe('server_error');
-    expect(rows(t)).toHaveLength(1);
+      expect(res.status).toBe(201);
+      return ((await res.json()) as { id: string }).id;
+    };
+    const a = await seed('fixture-0');
+    const b = await seed('fixture-0000');
+    expect(b).not.toBe(a);
+    expect(rows(t).map((r) => [r.id, r.dataset_version])).toEqual(
+      expect.arrayContaining([
+        [a, 'fixture-0'],
+        [b, 'fixture-0000']
+      ])
+    );
+  });
+
+  it('a published body seeded again is a distinct row; publish still dedupes to its own', async () => {
+    const { t, platform } = setup();
+    const bucket = new FakeR2Bucket();
+    bucket.put('data/fixture-0/manifest.json', '{}');
+    platform.env.BUCKET = bucket as never;
+    const publish = () =>
+      handlePublish({
+        request: new Request('http://localhost:4173/api/plans', {
+          method: 'POST',
+          body: small,
+          headers: { 'content-type': 'application/json' }
+        }),
+        platform
+      });
+    const pub = await publish();
+    expect(pub.status).toBe(201);
+    const publishedId = ((await pub.json()) as { id: string }).id;
+
+    const parsed = parsePlan(small);
+    if (!parsed.ok) throw new Error('small.json must parse');
+    const canonical = serializePlan(parsed.value);
+    const seeded = await handleE2eSeed(
+      { request: post({ body: canonical }), platform },
+      { e2eEnabled: true }
+    );
+    expect(seeded.status).toBe(201);
+    const seededId = ((await seeded.json()) as { id: string }).id;
+    expect(seededId).not.toBe(publishedId);
+
+    const get = (id: string) =>
+      handleGetPlan({
+        params: { id },
+        request: new Request(`http://localhost:4173/api/plans/${id}`),
+        platform
+      });
+    const seededGet = await get(seededId);
+    expect(seededGet.status).toBe(200);
+    expect(await seededGet.text()).toBe(canonical);
+    expect(seededGet.headers.get('etag')).toBe(
+      `"${await sha256Hex('e2e-seed\nfixture-0000\n' + canonical)}"`
+    );
+    const byId = Object.fromEntries(rows(t).map((r) => [r.id, r.dataset_version]));
+    expect(byId).toEqual({ [publishedId]: 'fixture-0', [seededId]: 'fixture-0000' });
+
+    const again = await publish();
+    expect(again.status).toBe(200);
+    expect(await again.json()).toEqual({ id: publishedId });
   });
 
   it('a non-string body → 400 and no row', async () => {
