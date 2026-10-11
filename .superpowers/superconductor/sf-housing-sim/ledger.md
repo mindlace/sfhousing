@@ -6,3 +6,4 @@
 - Partner rulings R1–R8 recorded in design doc.
 - Design doc drafted: `docs/superpowers/design/2026-10-10-1749-sf-housing-sim.md`. Scope = Milestone 1; M2–M5 as typed seams.
 - Open decisions OD-0..OD-7 awaiting partner rulings. Specs not yet derived (gate: partner approval of design doc).
+- 2026-10-10: partner accepted OD-0..OD-7; added R9 (overbuild/affordability consequences → I11 plural targets, OD-8 deferred to M2), R10 (Major Development Projects source). Design approved; deriving M1 specs.
