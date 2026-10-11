@@ -2,10 +2,13 @@
 -- Writes parcel_out and floor_area.rule1..4 counts. Ordered by id.
 -- floor_area rules: 1 sqft * 0.09290304; 2 sum(piece area * max(1, round(height / floors_m)));
 -- 3 units * 80; else 4 = 0. Both floor area and height are rounded to 0.1.
+-- Rule 2 sums in bid order (list_sum over an ordered list): a parallel sum() may add the
+-- float terms in any order, which can flip the 0.1 rounding between runs (V12).
 
 CREATE OR REPLACE TEMP TABLE a_pieces AS
 SELECT parcel_id AS id,
-       sum(area_m2 * greatest(1, round(height_m / getvariable('floors_m')))) AS fa2,
+       list_sum(list(area_m2 * greatest(1, round(height_m / getvariable('floors_m')))
+                     ORDER BY bid)) AS fa2,
        max(height_m) AS hmax
 FROM pieces WHERE parcel_id IS NOT NULL
 GROUP BY parcel_id;

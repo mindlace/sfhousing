@@ -24,14 +24,16 @@ SELECT mapblklot AS id, analysis_neighborhood,
 FROM p_chosen;
 
 -- Largest part (7131) -> point on surface -> 4326 -> round 1e-7 -> back to 7131.
+-- part_path (the ST_Dump path) breaks ties between equal-area parts deterministically.
 CREATE OR REPLACE TEMP TABLE p_parts AS
-SELECT id, part, ST_Area(part) AS area FROM (
-  SELECT id, unnest(ST_Dump(geom)).geom AS part FROM p_valid
+SELECT id, part, part_path, ST_Area(part) AS area FROM (
+  SELECT id, struct_extract(d, 'geom') AS part, struct_extract(d, 'path') AS part_path
+  FROM (SELECT id, unnest(ST_Dump(geom)) AS d FROM p_valid)
 ) WHERE ST_GeometryType(part) = 'POLYGON';
 
 CREATE OR REPLACE TEMP TABLE p_largest AS
 SELECT id, part FROM (
-  SELECT *, row_number() OVER (PARTITION BY id ORDER BY area DESC) AS rn FROM p_parts
+  SELECT *, row_number() OVER (PARTITION BY id ORDER BY area DESC, part_path) AS rn FROM p_parts
 ) WHERE rn = 1;
 
 CREATE OR REPLACE TEMP TABLE p_label0 AS
