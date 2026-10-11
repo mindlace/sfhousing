@@ -11,3 +11,4 @@ docs/superpowers
 .superpowers
 pipeline/test/fixtures/mini/golden
 pipeline/test/fixtures/mini/raw
+src/lib/generator/fixtures/golden-seeded.json

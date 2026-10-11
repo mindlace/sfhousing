@@ -1,0 +1,19 @@
+{
+  "id": "0000004",
+  "polygon": [
+    [
+      [-30, -25],
+      [30, -25],
+      [30, 25],
+      [-30, 25]
+    ]
+  ],
+  "labelPoint": [-122.4194, 37.7749],
+  "areaM2": 3000,
+  "existingUnits": 1,
+  "existingFloorAreaM2": 180,
+  "existingHeightM": 7,
+  "landUse": "RESIDENTIAL",
+  "eligible": true,
+  "neighborhood": "Mission"
+}
