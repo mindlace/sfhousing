@@ -5,7 +5,12 @@ import {
   ADU_INSET_M,
   ADU_MAX_WIDTH_M,
   FTF_M,
-  rulesFor
+  MIDRISE_STEPBACK_ABOVE,
+  rulesFor,
+  TOWER_COVERAGE,
+  TOWER_INSET_M,
+  TOWER_PLATE_MAX_M2,
+  TOWER_PODIUM_STORIES
 } from './constants';
 import {
   clipSlab,
@@ -116,22 +121,52 @@ export function massTypology(
   );
 }
 
-// Task 6 replaces these two stubs.
-function massMidrise(_site: Site, F: PathsD, stories: number, _draws: VarietyDraws): Massing {
+/** §4.7 midrise: floors 1–6 on F; 7–S on U = F inset by the stepback (or F if U < 0.4·F). */
+function massMidrise(_site: Site, F: PathsD, stories: number, draws: VarietyDraws): Massing {
+  const below = MIDRISE_STEPBACK_ABOVE;
+  const topLow = floorTop('midrise', below);
+  let U = keepPieces(inset(F, draws.stepbackM));
+  if (totalArea(U) < 0.4 * totalArea(F)) U = F;
   const top = floorTop('midrise', stories);
-  return finish(
-    'midrise',
-    stories,
-    F.map((r) => part(r, 0, top, stories, true))
-  );
+  return finish('midrise', stories, [
+    ...F.map((r) => part(r, 0, topLow, below, false)),
+    ...U.map((r) => part(r, topLow, top, stories - below, true))
+  ]);
 }
-function massTower(_site: Site, F: PathsD, stories: number, _draws: VarietyDraws): Massing {
+
+/**
+ * §4.7 tower: podium floors 1–5 on F; tower plate (rectangle on u/v, area At) slid along u,
+ * clipped to F inset 1 m. Retry centred; else largest piece ≥ 0.5·At; else midrise at 12.
+ */
+function massTower(site: Site, F: PathsD, stories: number, draws: VarietyDraws): Massing | null {
+  const { c, u, v } = site;
+  const At = Math.min(TOWER_PLATE_MAX_M2, TOWER_COVERAGE * site.A);
+  const depth = Math.sqrt(At * draws.towerAspect);
+  const width = Math.sqrt(At / draws.towerAspect);
+  const fu = project(F, c, u);
+  const s = Math.max(0, (fu.max - fu.min - depth) / 2 - TOWER_INSET_M);
+  const Fin = inset(F, TOWER_INSET_M);
+  const plate = (slide: number) => {
+    const t = slide * s;
+    const rect = orientedRect(c, u, v, t - depth / 2, t + depth / 2, -width / 2, width / 2);
+    return keepPieces(intersect([rect], Fin));
+  };
+  let R = plate(draws.towerSlide);
+  if (totalArea(R) < 0.9 * At) {
+    R = plate(0);
+    if (totalArea(R) < 0.9 * At) {
+      const big = largest(R);
+      if (big && Math.abs(signedArea(big)) >= 0.5 * At) R = [big];
+      else return massTypology(site, 'midrise', 12, draws);
+    }
+  }
+  const podium = TOWER_PODIUM_STORIES;
+  const topPodium = floorTop('tower', podium);
   const top = floorTop('tower', stories);
-  return finish(
-    'tower',
-    stories,
-    F.map((r) => part(r, 0, top, stories, true))
-  );
+  return finish('tower', stories, [
+    ...F.map((r) => part(r, 0, topPodium, podium, false)),
+    ...R.map((r) => part(r, topPodium, top, stories - podium, true))
+  ]);
 }
 
 /** §4.8 ADU geometry (the open-area check lives in generate.ts: it needs the parcel). */

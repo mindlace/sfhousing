@@ -6,6 +6,8 @@ import { signedArea } from './poly';
 import std from './fixtures/std-25x100.json';
 import shallow from './fixtures/shallow-adu-fail.json';
 import lot1000 from './fixtures/lot-1000.json';
+import lot3000 from './fixtures/lot-3000.json';
+import lot1200 from './fixtures/lot-1200.json';
 import overApt from './fixtures/std-over-apartment.json';
 import over10 from './fixtures/std-over-10units.json';
 import vacant from './fixtures/vacant-std.json';
@@ -152,5 +154,71 @@ describe('I8 contract and mode', () => {
       d.building.parts.map((p) => [p.baseM, p.topM])
     );
     expect(d.local[0].ring.length).toBe(d.building.parts[0].footprint.length);
+  });
+});
+
+describe('golden fixtures: midrise and tower', () => {
+  it('lot-1000 S=10 → midrise, FA 6587.4, 81 units, tops 20.0 / 32.4 + 0.75', () => {
+    const d = run(lot1000, 10)!;
+    expect(d.building.typology).toBe('midrise');
+    expect(Math.abs(d.building.floorAreaM2 - 6587.4)).toBeLessThanOrEqual(2);
+    expect(d.building.units).toBe(81);
+    expect(d.building.parts.map((p) => [p.baseM, p.topM])).toEqual([
+      [0, 20],
+      [20, 33.15]
+    ]);
+  });
+  it('lot-3000 S=30 → tower, podium plate 2400, tower plate 900, 394 units', () => {
+    const d = run(lot3000, 30)!;
+    expect(d.building).toMatchObject({ typology: 'tower', stories: 30, units: 394 });
+    expect(d.building.parts.map((p) => [p.baseM, p.topM])).toEqual([
+      [0, 16.9],
+      [16.9, 95.15]
+    ]);
+    expect(localArea(d, 0)).toBeCloseTo(2400, 0);
+    expect(localArea(d, 1)).toBeCloseTo(900, 0);
+  });
+  it('lot-1200 S=30 → midrise, 12 stories (cap chain)', () => {
+    expect(run(lot1200, 30)!.building).toMatchObject({ typology: 'midrise', stories: 12 });
+  });
+  it('midrise without room for a stepback keeps U = F', () => {
+    const narrow = {
+      ...lot1000,
+      id: 'n',
+      polygon: [
+        [
+          [-5.5, -27.5],
+          [5.5, -27.5],
+          [5.5, 27.5],
+          [-5.5, 27.5]
+        ]
+      ]
+    };
+    const big = varietyFromUniforms([0.5, 0.999, 0.5, 0.5, 0, 0.25]);
+    const d = generateDetailed(P(narrow), { maxStories: 10 }, big, 'max')!;
+    expect(d.building.typology).toBe('midrise');
+    expect(d.local[1].ring).toEqual(d.local[0].ring);
+  });
+  it('tall paint on a large skinny L falls back without breaking nesting', () => {
+    const L = {
+      ...lot1000,
+      id: 'L',
+      polygon: [
+        [
+          [0, 0],
+          [90, 0],
+          [90, 10],
+          [10, 10],
+          [10, 80],
+          [0, 80]
+        ]
+      ]
+    };
+    const d = run(L, 40)!;
+    expect(['tower', 'midrise']).toContain(d.building.typology);
+    if (d.building.typology === 'midrise') expect(d.building.stories).toBe(12);
+    for (const up of d.local.filter((l) => l.baseM > 0)) {
+      expect(d.local.some((lo) => lo.baseM < up.baseM && lo.topM === up.baseM)).toBe(true);
+    }
   });
 });
