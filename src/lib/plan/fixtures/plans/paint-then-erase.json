@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "datasetVersion": "fixture-0",
+  "ops": [
+    {
+      "id": "p1",
+      "kind": "paint",
+      "stories": 8,
+      "radiusM": 40,
+      "path": [[-122.418319, 37.760754]]
+    },
+    { "id": "e1", "kind": "erase", "radiusM": 15, "path": [[-122.418319, 37.760754]] }
+  ]
+}

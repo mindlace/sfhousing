@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "datasetVersion": "fixture-0",
+  "title": "Lower wins",
+  "ops": [
+    {
+      "id": "hi",
+      "kind": "paint",
+      "stories": 12,
+      "radiusM": 30,
+      "path": [
+        [-122.419173, 37.76035],
+        [-122.418035, 37.76035]
+      ]
+    },
+    { "id": "lo", "kind": "paint", "stories": 3, "radiusM": 20, "path": [[-122.418604, 37.76035]] }
+  ]
+}
