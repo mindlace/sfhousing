@@ -11,7 +11,8 @@ export const SQL_VARS = {
   iou_min: 0.5,
   floors_m: 3.1,
   default_height_m: 7.0,
-  nb_simplify_m: 3.0
+  // 8 m per conductor ruling C2; spec §4.8 says 3 m but 3 m exceeds V11's 150 KB on live data
+  nb_simplify_m: 8.0
 } as const;
 export const KNOWN_LANDUSE = [
   'RESIDENT',
