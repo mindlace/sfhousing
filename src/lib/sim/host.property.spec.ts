@@ -1,6 +1,6 @@
 // Host properties (spec §6 "Properties (a)–(c) run under fast-check over random op sequences").
 import fc from 'fast-check';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Plan, PlanOp } from '$lib/plan';
 import { arbGridOps } from '$lib/plan/fixtures/arbitraries';
 import { FIXTURE_1, assertScores, makeHarness, serialise, type Harness } from './test/harness';
@@ -22,18 +22,68 @@ const undo = (h: Harness, opId: string) => h.host.handle({ type: 'undo', rev: h.
 const load = (h: Harness, plan: Plan) => h.host.handle({ type: 'load', rev: h.next(), plan });
 const errors = (h: Harness) => h.sent.filter((m) => m.type === 'error');
 
+const EMPTY_RENDER = { cells: [], removedCells: [], hide: { add: [], remove: [] } };
+
+/**
+ * A non-empty op sequence; `preload` loads all 4 chunks before the first op, and `flushAfter[i]`
+ * lets chunks land after op i, so loaded and unloaded paths mix.
+ */
+const arbRun = arbGridOps(6)
+  .filter((ops) => ops.length > 0)
+  .chain((ops) =>
+    fc.record({
+      ops: fc.constant(ops),
+      preload: fc.boolean(),
+      flushAfter: fc.array(fc.boolean(), { minLength: ops.length, maxLength: ops.length })
+    })
+  );
+
+async function prepared(preload: boolean): Promise<Harness> {
+  const h = started();
+  if (preload) {
+    h.host.handle({ type: 'prefetch', bbox: [-180, -90, 180, 90] });
+    await h.flush();
+  }
+  return h;
+}
+
+/** Non-vacuity guard: across a property's runs, some commits must cover loaded parcels. */
+let coveredSeen = 0;
+const observe = (covered: number) => {
+  if (covered > 0) coveredSeen++;
+};
+
 describe('host properties', () => {
+  beforeEach(() => {
+    coveredSeen = 0;
+  });
+  afterEach(() => {
+    if (expect.getState().currentTestName?.includes('P-c')) return;
+    expect(coveredSeen).toBeGreaterThan(0);
+  });
+
   it('P-a: preview(op) then commit(op) for each op ≡ committing each op', async () => {
     await fc.assert(
-      fc.asyncProperty(arbGridOps(6), async (ops) => {
-        const a = started();
-        ops.forEach((op) => {
-          preview(a, op);
-          commit(a, op);
-        });
+      fc.asyncProperty(arbRun, async ({ ops, preload, flushAfter }) => {
+        const a = await prepared(preload);
+        for (let i = 0; i < ops.length; i++) {
+          preview(a, ops[i]);
+          const shown = a.diffs().at(-1)!;
+          expect(shown.phase).toBe('preview');
+          commit(a, ops[i]);
+          const committed = a.diffs().at(-1)!;
+          expect(committed.phase).toBe('commit');
+          // Promotion: a preview that rendered over fully loaded chunks leaves nothing to redo.
+          if (shown.complete) expect(committed.render).toMatchObject(EMPTY_RENDER);
+          observe(committed.stats!.covered);
+          if (flushAfter[i]) await a.flush();
+        }
         await a.flush();
-        const b = started();
-        ops.forEach((op) => commit(b, op));
+        const b = await prepared(preload);
+        for (let i = 0; i < ops.length; i++) {
+          commit(b, ops[i]);
+          if (flushAfter[i]) await b.flush();
+        }
         await b.flush();
         expect(errors(a)).toEqual([]);
         expect(serialise(a.display())).toBe(serialise(b.display()));
@@ -45,13 +95,17 @@ describe('host properties', () => {
   });
 
   it('P-b: commit all then undo the last k ≡ load(ops.slice(0, n - k))', async () => {
-    const arb = arbGridOps(6).chain((ops) =>
-      fc.tuple(fc.constant(ops), fc.integer({ min: 0, max: ops.length }))
+    const arb = arbRun.chain((run) =>
+      fc.record({ run: fc.constant(run), k: fc.integer({ min: 0, max: run.ops.length }) })
     );
     await fc.assert(
-      fc.asyncProperty(arb, async ([ops, k]) => {
-        const a = started();
-        ops.forEach((op) => commit(a, op));
+      fc.asyncProperty(arb, async ({ run: { ops, preload, flushAfter }, k }) => {
+        const a = await prepared(preload);
+        for (let i = 0; i < ops.length; i++) {
+          commit(a, ops[i]);
+          observe(a.diffs().at(-1)!.stats!.covered);
+          if (flushAfter[i]) await a.flush();
+        }
         for (let i = 0; i < k; i++) undo(a, ops[ops.length - 1 - i].id);
         await a.flush();
         const b = started();
