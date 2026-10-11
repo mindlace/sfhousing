@@ -1,23 +1,14 @@
 // Chunk polygons inverted with typology-generator §4.10 match source lng/lat.
 import proj4 from 'proj4';
 import { describe, expect, it } from 'vitest';
+import { toLngLat } from '../../src/lib/generator/geo';
 import { toLocalRings } from '../lib/rings';
 import { miniDuck } from './helpers';
 import { runSql } from '../lib/sql';
 
-// typology-generator spec §4.10, transcribed (the generator module lives on another branch).
-function localToLngLat([x, y]: [number, number], [l0, p0]: [number, number]): [number, number] {
-  const rad = Math.PI / 180;
-  const g = (l0 + 122.45) * Math.sin(p0 * rad) * rad;
-  const e = x * Math.cos(g) + y * Math.sin(g);
-  const n = -x * Math.sin(g) + y * Math.cos(g);
-  const a = 6378137,
-    e2 = 0.0066943800229;
-  const W = 1 - e2 * Math.sin(p0 * rad) ** 2;
-  const M = (a * (1 - e2)) / W ** 1.5,
-    N = a / Math.sqrt(W);
-  return [l0 + e / (N * Math.cos(p0 * rad) * rad), p0 + n / (M * rad)];
-}
+// typology-generator §4.10 inverse (rounded to 1e-7°, about 1 cm: well inside 0.05 m).
+const localToLngLat = (v: [number, number], label: [number, number]): [number, number] =>
+  toLngLat([v], label)[0];
 
 describe('local frame', () => {
   it('inverts to the source lng/lat within 0.05 m', async () => {
