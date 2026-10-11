@@ -10,6 +10,7 @@ Built with SvelteKit 2, Svelte 5 and Tailwind 4 on Cloudflare Workers (D1 + R2).
 nvm use
 npm install
 npx playwright install chromium   # browser for client tests and e2e (the one download beyond npm)
+echo 'PUBLIC_DATASET_VERSION=fixture-0' > .dev.vars   # dev uses the fixture dataset
 npm run data:fixture   # fixture dataset into local R2
 npm run db:migrate     # local D1
 npm run dev
