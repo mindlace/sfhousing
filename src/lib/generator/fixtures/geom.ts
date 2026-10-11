@@ -96,7 +96,7 @@ export function pointNearPolygon(p: [number, number], ring: Ring, tol: number): 
  */
 export function lngLatToLocalApprox(ring: Ring, label: [number, number]): Ring {
   const mPerDegLat = 111_000;
-  // cos(lat) without Math.cos: SF latitudes are ~37.7–37.8°, cos ≈ 0.7907 there
+  // cos(lat) is not computed here: SF latitudes are ~37.7–37.8°, cos ≈ 0.7907 there
   const mPerDegLng = 111_000 * 0.7907;
   return ring.map(([lng, lat]) => [(lng - label[0]) * mPerDegLng, (lat - label[1]) * mPerDegLat]);
 }
