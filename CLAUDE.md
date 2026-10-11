@@ -31,6 +31,7 @@ Fetch the file when working in the relevant area:
 - **Testing (Vitest projects, `FakeR2Bucket`, Playwright, fixture dataset)** — [docs/dev/testing.md](docs/dev/testing.md)
 - **Data pipeline (commands, release run order, lock and `datasetVersion`, fixture, invariants, ODbL, partner actions)** — [docs/dev/pipeline.md](docs/dev/pipeline.md)
 - **Accessibility (WCAG 2.2 AA, `expectNoA11yViolations`, per-page checklist)** — [docs/dev/accessibility.md](docs/dev/accessibility.md)
+- **Plan sharing (API contract, rate limit, autosave, manual takedown)** — [docs/dev/plan-sharing.md](docs/dev/plan-sharing.md)
 - **Design, specs and plans** — `docs/superpowers/design/`, `docs/superpowers/specs/`, `docs/superpowers/plans/`
 
 Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link them from this list.
