@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { PATH_MAX_POINTS } from '$lib/plan';
+import { PATH_MAX_POINTS, project } from '$lib/plan';
 import { createSampler, spacingM } from './sampler';
 
 /** Micro-degree integers → degrees, exactly as quantize would produce them. */
@@ -83,34 +83,86 @@ describe('createSampler', () => {
     expect(s.path()).toHaveLength(PATH_MAX_POINTS);
   });
 
-  it('is prefix-stable: each path minus its tail is a prefix of the final path', () => {
-    // Micro-degree integers in the Mission.
-    const point = fc.tuple(
+  it('ends a 1,999-kept stroke with a live tail, then fills at the next kept point', () => {
+    const s = createSampler(5);
+    const lng = deg(-122_415_000);
+    const lat = (i: number) => deg(37_720_000 + 27 * i);
+    for (let i = 0; i < 1999; i++) s.push(lng, lat(i));
+    // 9 µdeg ≈ 1 m < s = 2.5 m: a non-kept tail.
+    expect(s.push(lng, deg(37_720_000 + 27 * 1998 + 9))).toBe(true);
+    expect(s.path()).toHaveLength(2000);
+    expect(s.full()).toBe(false);
+    expect(s.push(lng, lat(1999))).toBe(true);
+    expect(s.full()).toBe(true);
+    expect(s.path()).toHaveLength(2000);
+    expect(s.path()[1999]).toEqual([lng, lat(1999)]);
+  });
+
+  it('is prefix-stable: the kept part of each path is a prefix of the final path', () => {
+    // Random walks from a Mission start; deltas span zero, sub-spacing and over-50 m steps.
+    // 200 steps × 600 µdeg stays inside SF_BBOX from this start box.
+    const delta = fc.oneof(
+      fc.constant(0),
+      fc.integer({ min: -30, max: 30 }),
+      fc.integer({ min: -600, max: 600 })
+    );
+    const start = fc.tuple(
       fc.integer({ min: -122_425_000, max: -122_405_000 }),
       fc.integer({ min: 37_748_000, max: 37_768_000 })
     );
+    let keptPushes = 0;
+    let droppedPushes = 0;
+    let tailSnapshots = 0;
     fc.assert(
       fc.property(
-        fc.array(point, { minLength: 1, maxLength: 200 }),
+        start,
+        fc.array(fc.tuple(delta, delta), { minLength: 0, maxLength: 199 }),
         fc.integer({ min: 5, max: 500 }),
-        (pts, radiusM) => {
+        ([x0, y0], steps, radiusM) => {
           const s = createSampler(radiusM);
-          const snapshots: [number, number][][] = [];
-          for (const [x, y] of pts) {
+          const s2 = spacingM(radiusM) ** 2;
+          // Independent oracle for the kept count (spec §4.4 radial filter).
+          let lastKept: [number, number] | null = null;
+          let keptCount = 0;
+          const snapshots: { path: [number, number][]; kept: number }[] = [];
+          let [x, y] = [x0, y0];
+          for (const [dx, dy] of [[0, 0], ...steps]) {
+            x += dx;
+            y += dy;
+            const p: [number, number] = [deg(x), deg(y)];
+            const [px, py] = project(p[0], p[1]);
+            const keep =
+              lastKept === null || (px - lastKept[0]) ** 2 + (py - lastKept[1]) ** 2 >= s2;
+            if (keep) {
+              lastKept = [px, py];
+              keptCount++;
+              keptPushes++;
+            } else {
+              droppedPushes++;
+            }
             const before = s.path();
-            const changed = s.push(deg(x), deg(y));
+            const changed = s.push(p[0], p[1]);
             const after = s.path();
             expect(changed).toBe(JSON.stringify(before) !== JSON.stringify(after));
-            snapshots.push(after);
+            expect(after.length - keptCount).toBeGreaterThanOrEqual(0);
+            expect(after.length - keptCount).toBeLessThanOrEqual(1);
+            if (after.length > keptCount) tailSnapshots++;
+            const prev = snapshots[snapshots.length - 1];
+            if (prev) expect(isPrefix(prev.path.slice(0, prev.kept), after)).toBe(true);
+            snapshots.push({ path: after, kept: keptCount });
           }
           const final = s.path();
           expect(final.length).toBeGreaterThan(0);
           expect(final.length).toBeLessThanOrEqual(PATH_MAX_POINTS);
           for (const snap of snapshots) {
-            expect(isPrefix(snap.slice(0, -1), final)).toBe(true);
+            expect(isPrefix(snap.path.slice(0, snap.kept), final)).toBe(true);
           }
         }
       )
     );
+    // The walk generator must exercise both filter branches and the live tail.
+    expect(keptPushes).toBeGreaterThan(0);
+    expect(droppedPushes).toBeGreaterThan(0);
+    expect(tailSnapshots).toBeGreaterThan(0);
   });
 });
