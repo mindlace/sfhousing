@@ -102,6 +102,24 @@ describe('SharedBanner', () => {
     expect(onremix).not.toHaveBeenCalled();
   });
 
+  it('the dialog names the right count when focus moves into it on the first open', async () => {
+    setup({ count: 4 });
+    let atFocus: string | null = null;
+    const onFocus = (e: FocusEvent) => {
+      const dlg = (e.target as Element).closest('dialog');
+      if (dlg && atFocus === null) atFocus = dlg.textContent;
+    };
+    document.addEventListener('focusin', onFocus);
+    try {
+      await userEvent.click(remixButton());
+      await expect.element(dialog()).toBeVisible();
+      await expect.element(dialog()).toHaveAccessibleName(remixConfirm(4));
+      expect(atFocus).toContain(remixConfirm(4));
+    } finally {
+      document.removeEventListener('focusin', onFocus);
+    }
+  });
+
   it('renders a title containing markup as literal text', async () => {
     setup({ title: '<b>"x"</b>' });
     await expect.element(banner().getByText('<b>"x"</b>', { exact: true })).toBeVisible();

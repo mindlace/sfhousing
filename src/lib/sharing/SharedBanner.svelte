@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { flushSync } from 'svelte';
   import { formatPublished, n5, n6, remixConfirm } from './copy';
 
   // Mirrors DatasetNotice in $lib/server/sharing/shared-page (kept local: client code).
@@ -43,7 +44,9 @@
   function startRemix() {
     const n = localOpCount();
     if (n >= 1) {
-      pending = n;
+      // Commit the count to the DOM first, so the dialog's accessible name is current when focus
+      // moves into it.
+      flushSync(() => (pending = n));
       dlg?.showModal();
       cancelEl?.focus(); // the non-destructive choice takes focus
       return;

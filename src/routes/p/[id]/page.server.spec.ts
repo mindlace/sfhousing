@@ -154,7 +154,7 @@ describe('/p/[id] load', () => {
       setHeaders
     } as never);
     expect(data).toMatchObject({ id, currentDatasetVersion: 'fixture-0', datasetNotice: 'none' });
-    expect(setHeaders).toHaveBeenCalledWith({ 'cache-control': 'public, max-age=300' });
+    expect(setHeaders).toHaveBeenCalledWith({ 'cache-control': 'private, max-age=300' });
   });
 
   it('does not set the cache header when the plan is not found', async () => {
