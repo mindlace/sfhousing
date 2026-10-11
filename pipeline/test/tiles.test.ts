@@ -70,5 +70,9 @@ describe('fonts', () => {
         join(out, template.replace('{fontstack}', 'NotoSans-Regular').replace('{range}', '0-255'))
       )
     ).toBe(true);
+    // OFL-1.1 redistribution condition: the licence travels with the glyphs (ruling R7).
+    expect(readFileSync(join(out, 'fonts/OFL.txt'), 'utf8')).toBe(
+      readFileSync(join(MINI, 'raw/protomaps-fonts/OFL.txt'), 'utf8')
+    );
   });
 });

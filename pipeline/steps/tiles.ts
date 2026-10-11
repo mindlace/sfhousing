@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { FONT_STACKS, type BBOX } from '../config';
 import type { Duck } from '../lib/duck';
 import { run } from '../lib/exec';
@@ -32,14 +32,14 @@ export async function writeBuildingsTiles(
   });
   mkdirSync(outDir, { recursive: true });
   mkdirSync(workDir, { recursive: true });
-  const seqFile = join(workDir, 'buildings.geojsonseq');
-  writeFileSync(seqFile, lines.join('\n') + '\n');
-  const out = join(outDir, 'buildings.pmtiles');
+  writeFileSync(join(workDir, 'buildings.geojsonseq'), lines.join('\n') + '\n');
+  // tippecanoe records its output/input paths in the metadata (name, description,
+  // generator_options): run it in workDir with relative names so the archive is reproducible.
   const r = await run(
     'tippecanoe',
     [
       '-o',
-      out,
+      'buildings.pmtiles',
       '-l',
       'buildings',
       '-Z',
@@ -66,11 +66,16 @@ export async function writeBuildingsTiles(
       '--maximum-tile-bytes=400000',
       '--no-simplification-of-shared-nodes',
       '--force',
-      seqFile
+      'buildings.geojsonseq'
     ],
-    { input: '' }
+    { cwd: workDir, input: '' }
   );
   if (r.code !== 0) throw new Error(`tippecanoe failed (${r.code}): ${r.stderr}`);
+  if (resolve(workDir) !== resolve(outDir)) {
+    const built = join(workDir, 'buildings.pmtiles');
+    copyFileSync(built, join(outDir, 'buildings.pmtiles'));
+    rmSync(built);
+  }
 }
 
 export function copyBasemap(rawFile: string, outDir: string): void {
@@ -78,8 +83,15 @@ export function copyBasemap(rawFile: string, outDir: string): void {
   copyFileSync(rawFile, join(outDir, 'basemap.pmtiles'));
 }
 
-/** Copy <root>/<Stack Name>/*.pbf to outDir/fonts/<NoSpaceName>/; returns the stack names written. */
+/**
+ * Copy <root>/<Stack Name>/*.pbf to outDir/fonts/<NoSpaceName>/ and <root>/OFL.txt to
+ * outDir/fonts/OFL.txt (the OFL travels with the glyphs); returns the stack names written.
+ */
 export function installFonts(fontsRoot: string, outDir: string): string[] {
+  const ofl = join(fontsRoot, 'OFL.txt');
+  if (!existsSync(ofl)) throw new Error(`font licence missing: ${ofl}`);
+  mkdirSync(join(outDir, 'fonts'), { recursive: true });
+  copyFileSync(ofl, join(outDir, 'fonts', 'OFL.txt'));
   const written: string[] = [];
   for (const [src, dst] of Object.entries(FONT_STACKS)) {
     const srcDir = join(fontsRoot, src);
