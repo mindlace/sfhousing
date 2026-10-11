@@ -1,5 +1,6 @@
 import type { Layer } from '@deck.gl/core';
 import { project } from '$lib/plan';
+import { spacingM } from './sampler';
 
 type RGB = [number, number, number];
 
@@ -58,6 +59,66 @@ export interface OverlayInput {
 
 const RING_MIN_PX = 4;
 
+/** cos 60°: a vertex that turns the path by more than 60° is sharp. */
+const SHARP_TURN_COS = 0.5;
+
+type XY = [number, number];
+
+/** The vertex b's two segment lengths (plan-plane metres), and whether it turns by more than 60°. */
+function corner(a: XY, b: XY, c: XY): { la: number; lc: number; sharp: boolean } {
+  const [ax, ay] = project(a[0], a[1]);
+  const [bx, by] = project(b[0], b[1]);
+  const [cx, cy] = project(c[0], c[1]);
+  const la = Math.hypot(bx - ax, by - ay);
+  const lc = Math.hypot(cx - bx, cy - by);
+  const cos = ((bx - ax) * (cx - bx) + (by - ay) * (cy - by)) / (la * lc);
+  return { la, lc, sharp: la > 0 && lc > 0 && cos < SHARP_TURN_COS };
+}
+
+/**
+ * The swath path as deck should draw it (drawing only: the op and the sampler are untouched).
+ *
+ * deck's PathLayer clamps a sharp joint's inner miter by the longer of its two segments and
+ * discards the shorter segment's fragments past its end. So at a near-reversal beside a short
+ * segment it drops the inner half of the longer segment and draws dark, double-blended wedges and
+ * slivers along it: the brush's "line that shoots out, then disappears". The short segment is
+ * usually the live tail backing up a few centimetres (pointer jitter, or the start of a reversal),
+ * which is why it flickers.
+ *
+ * - A live tail (a last segment shorter than the kept spacing) that turns sharply is not drawn. It
+ *   lies within that spacing (≤ r/2) of the last kept point, so the drawn swath still reaches the
+ *   ring, and it is drawn again once it turns gently or is kept.
+ * - At every other sharp vertex the longer segment is split so both sides are equally long, which
+ *   keeps deck's clamped miter on the shorter segment. It only adds collinear points.
+ */
+export function swathDrawPath(path: readonly XY[], radiusM: number): XY[] {
+  let pts = path;
+  const n = pts.length;
+  if (n >= 3) {
+    const { lc, sharp } = corner(pts[n - 3], pts[n - 2], pts[n - 1]);
+    if (sharp && lc < spacingM(radiusM)) pts = pts.slice(0, -1);
+  }
+  if (pts.length < 3) return pts.slice();
+  const out: XY[] = [pts[0]];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const a = out[out.length - 1];
+    const b = pts[i];
+    const c = pts[i + 1];
+    const { la, lc, sharp } = corner(a, b, c);
+    if (sharp && la > lc) {
+      const t = lc / la;
+      out.push([b[0] + (a[0] - b[0]) * t, b[1] + (a[1] - b[1]) * t], b);
+    } else if (sharp && lc > la) {
+      const t = la / lc;
+      out.push(b, [b[0] + (c[0] - b[0]) * t, b[1] + (c[1] - b[1]) * t]);
+    } else {
+      out.push(b);
+    }
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+
 /** [] when nothing to draw. Layer ids: 'brush-ring', 'brush-swath' (never generated-/rising-). */
 export function buildOverlayLayers(L: OverlayCtors, s: OverlayInput): Layer[] {
   const color = [...BRUSH_COLORS[s.dark ? 'dark' : 'light'][s.tool], 255];
@@ -65,7 +126,8 @@ export function buildOverlayLayers(L: OverlayCtors, s: OverlayInput): Layer[] {
 
   if (s.swath && s.swath.length > 0) {
     // A stamp is a one-point path; doubling it lets the rounded caps draw a disc.
-    const path = s.swath.length === 1 ? [s.swath[0], s.swath[0]] : s.swath;
+    const path =
+      s.swath.length === 1 ? [s.swath[0], s.swath[0]] : swathDrawPath(s.swath, s.radiusM);
     layers.push(
       new L.PathLayer({
         id: 'brush-swath',
