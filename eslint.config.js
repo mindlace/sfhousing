@@ -24,6 +24,8 @@ export default defineConfig(
     rules: {
       // typescript-eslint recommends disabling no-undef for TS projects
       'no-undef': 'off',
+      // No base path; plain hrefs are fine (matches planafoot).
+      'svelte/no-navigation-without-resolve': 'off',
       '@typescript-eslint/no-unused-vars': [
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }
