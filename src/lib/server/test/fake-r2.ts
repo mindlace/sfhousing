@@ -60,7 +60,8 @@ export class FakeR2Bucket {
     return {
       ...this.meta(key, s, range ?? undefined),
       body: new Blob([slice as BlobPart]).stream(),
-      arrayBuffer: async () => slice.slice().buffer
+      arrayBuffer: async () => slice.slice().buffer,
+      text: async () => new TextDecoder().decode(slice)
     };
   }
 }
