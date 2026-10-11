@@ -14,7 +14,9 @@ import {
   resolveParcels,
   validatePlan,
   type Envelope,
+  type EnvelopeChange,
   type EnvelopeMap,
+  type OpCoverage,
   type ParcelIndex,
   type Plan,
   type PlanOp
@@ -23,7 +25,7 @@ import { M1_TARGETS, type Target } from '$lib/scoreboard';
 import { cellsIntersecting, createChunkLoader, type ChunkLoader, type FetchLike } from './chunks';
 import { createDisplay, type Display } from './display';
 import { checkManifestShape } from './manifest-shape';
-import type { ErrorResponse, ParcelSummary, SimRequest, SimResponse } from './protocol';
+import type { ErrorResponse, OpStats, ParcelSummary, SimRequest, SimResponse } from './protocol';
 
 export interface SimHostDeps {
   fetch: FetchLike;
@@ -58,7 +60,7 @@ interface State {
   plan: Plan; // host copy; the ops array is owned by the host
   opIds: Set<string>;
   committed: EnvelopeMap;
-  preview: Preview | null; // completed in Task 5
+  preview: Preview | null;
   memo: Map<string, GeneratedBuilding | null>;
   logged: Set<ParcelId>;
   display: Display;
@@ -143,6 +145,19 @@ export function createSimHost(deps: SimHostDeps): SimHost {
 
   function onLoaded(st: State, cellId: string, records: ParcelRecord[]): void {
     if (s !== st) return; // a superseded init's loader
+    try {
+      applyChunk(st, cellId, records);
+    } catch (e) {
+      // The loader would swallow this; report it so the client resyncs with a `load`.
+      error(
+        latestRev,
+        'internal',
+        `chunk ${cellId}: ${e instanceof Error ? e.message : String(e)}`
+      );
+    }
+  }
+
+  function applyChunk(st: State, cellId: string, records: ParcelRecord[]): void {
     const ids = st.index.addChunk(cellId, records);
     for (const id of ids) st.cellOf.set(id, cellId);
     for (const [id, env] of resolveChunk(st.plan, st.index, ids)) {
@@ -173,6 +188,7 @@ export function createSimHost(deps: SimHostDeps): SimHost {
       return;
     }
     s?.loader.dispose();
+    s = null; // a throw below must not leave the disposed state in place
     const manifest = req.manifest;
     const version = manifest.datasetVersion;
     // `st` is assigned before any callback can run: the loader only calls back asynchronously.
@@ -239,13 +255,87 @@ export function createSimHost(deps: SimHostDeps): SimHost {
     });
   }
 
-  /** The validated copy of op, or an error message. */
-  function check(st: State, op: PlanOp): PlanOp | string {
+  /** The validated (quantised) copy of op, or an error message. Shape only. */
+  function validOp(st: State, op: PlanOp): PlanOp | string {
     const v = validatePlan({ schema: 1, datasetVersion: st.version, ops: [op] });
     if (!v.ok) return v.errors[0]?.message ?? 'invalid op';
-    const checked = v.value.ops[0];
+    return v.value.ops[0];
+  }
+
+  /** validOp plus the plan's unique-id rule (commits only). */
+  function check(st: State, op: PlanOp): PlanOp | string {
+    const checked = validOp(st, op);
+    if (typeof checked === 'string') return checked;
     if (st.opIds.has(checked.id)) return `Duplicate op id "${checked.id}".`;
     return checked;
+  }
+
+  function preview(st: State, req: Extract<SimRequest, { type: 'preview' }>): void {
+    const op = validOp(st, req.op); // duplicate ids are fine: a preview is never stored
+    if (typeof op === 'string') {
+      error(req.rev, 'bad-request', op);
+      return;
+    }
+    const value = written(op);
+    const env = new Map<ParcelId, Envelope | null>();
+    for (const id of st.index.covered(op)) if (st.index.get(id)!.eligible) env.set(id, value);
+    const touched = new Set<ParcelId>(st.preview?.env.keys());
+    for (const id of env.keys()) touched.add(id);
+    st.preview = { op, env };
+    st.loader.want(opCellsOf(st, op));
+    st.display.update(touched, (id) => envFor(st, id), {
+      rev: req.rev,
+      phase: 'preview',
+      complete: () => complete(st)
+    });
+  }
+
+  function cancelPreview(st: State, req: Extract<SimRequest, { type: 'cancelPreview' }>): void {
+    const touched = [...(st.preview?.env.keys() ?? [])];
+    st.preview = null;
+    // Always one diff, even with no preview: it supersedes any in-flight preview diff (§4.9).
+    st.display.update(touched, (id) => envFor(st, id), {
+      rev: req.rev,
+      phase: 'cancel',
+      complete: () => complete(st)
+    });
+  }
+
+  /** OpStats for op, just applied to st.committed (spec §4.5 "Result announcement"). */
+  function computeStats(
+    st: State,
+    op: PlanOp,
+    coverage: OpCoverage,
+    changes: EnvelopeChange[]
+  ): OpStats {
+    const before = new Map<ParcelId, Envelope | null>();
+    for (const c of changes) before.set(c.id, c.before);
+    let built = 0;
+    let notBigger = 0;
+    let removed = 0;
+    for (const id of coverage.eligible) {
+      const rec = st.index.get(id)!;
+      const after = st.committed.get(id) ?? null;
+      const was = before.has(id) ? before.get(id)! : after; // unchanged → before = after
+      const bAfter = after ? build(st, rec, after) : null;
+      const bBefore = was ? build(st, rec, was) : null;
+      if (op.kind === 'paint') {
+        if (bAfter) built++;
+        else notBigger++;
+      }
+      if (bBefore && !bAfter) removed++;
+    }
+    return {
+      opId: op.id,
+      kind: op.kind,
+      ...(op.kind === 'paint' ? { stories: op.stories } : {}),
+      covered: coverage.eligible.length,
+      ineligible: coverage.ineligible.length,
+      built,
+      notBigger,
+      removed,
+      partial: opCellsOf(st, op).some((c) => !st.loader.isReady(c))
+    };
   }
 
   function commit(st: State, req: Extract<SimRequest, { type: 'commit' }>): void {
@@ -254,7 +344,10 @@ export function createSimHost(deps: SimHostDeps): SimHost {
       error(req.rev, 'bad-request', op);
       return;
     }
-    const { coverage } = applyOp(st.committed, op, st.index);
+    // Promotion needs no special path: after a matching preview (same validated op), the
+    // rendered envelopes already equal the committed ones, so the commit diff is empty.
+    const { changes, coverage } = applyOp(st.committed, op, st.index);
+    const stats = computeStats(st, op, coverage, changes);
     st.plan.ops.push(op);
     st.opIds.add(op.id);
     const touched = new Set<ParcelId>(coverage.eligible);
@@ -264,7 +357,7 @@ export function createSimHost(deps: SimHostDeps): SimHost {
     st.display.update(touched, (id) => envFor(st, id), {
       rev: req.rev,
       phase: 'commit',
-      stats: undefined, // Task 5 adds computeStats
+      stats,
       complete: () => complete(st)
     });
   }
@@ -308,9 +401,17 @@ export function createSimHost(deps: SimHostDeps): SimHost {
     switch (req.type) {
       case 'init':
         return init(req);
-      case 'parcelSummary':
-        post({ type: 'parcelSummary', reqId: req.reqId, summary: parcelSummary(s, req.parcelId) });
+      case 'parcelSummary': {
+        let summary: ParcelSummary | null;
+        try {
+          summary = parcelSummary(s, req.parcelId);
+        } catch (e) {
+          console.error(`[sim] parcelSummary ${req.parcelId}:`, e);
+          summary = null; // the client's promise must still resolve
+        }
+        post({ type: 'parcelSummary', reqId: req.reqId, summary });
         return;
+      }
       case 'prefetch':
         if (s) s.loader.want(cellsIntersecting(s.manifest, req.bbox));
         return;
@@ -331,9 +432,9 @@ export function createSimHost(deps: SimHostDeps): SimHost {
       case 'undo':
         return undo(st, req);
       case 'preview':
+        return preview(st, req);
       case 'cancelPreview':
-        error(req.rev, 'bad-request', 'not implemented'); // Task 5
-        return;
+        return cancelPreview(st, req);
       default: {
         const never: never = req;
         throw new Error(`unknown request ${String((never as RevRequest).type)}`);

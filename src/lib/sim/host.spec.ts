@@ -2,8 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Manifest } from '$lib/data/manifest';
 import { decodeParcelChunk, encodeParcelChunk } from '$lib/data/parcel-chunk';
 import { resolveEnvelopes, validatePlan, type Plan, type PlanOp } from '$lib/plan';
-import { gridId, gridIndex, gridLngLat } from '$lib/plan/fixtures/grid-20x20';
-import type { ChunksResponse, ErrorResponse, ParcelSummary, ReadyResponse } from './protocol';
+import { gridId, gridIndex, gridLngLat, gridRecord } from '$lib/plan/fixtures/grid-20x20';
+import type {
+  ChunksResponse,
+  ErrorResponse,
+  OpStats,
+  ParcelSummary,
+  ReadyResponse
+} from './protocol';
 import {
   FIXTURE_1,
   FIXTURE_1_CELL_OF,
@@ -61,6 +67,16 @@ function load(h: Harness, plan: Plan): number {
 function commit(h: Harness, op: PlanOp): number {
   const rev = h.next();
   h.host.handle({ type: 'commit', rev, op });
+  return rev;
+}
+function preview(h: Harness, op: PlanOp): number {
+  const rev = h.next();
+  h.host.handle({ type: 'preview', rev, op });
+  return rev;
+}
+function cancel(h: Harness): number {
+  const rev = h.next();
+  h.host.handle({ type: 'cancelPreview', rev });
   return rev;
 }
 function undo(h: Harness, opId: string): number {
@@ -188,6 +204,16 @@ describe('init', () => {
     expect(h.sent.length).toBe(before);
     expect(summary(h, gridId(2, 2))).toBeNull();
     expect(summary(h, gridId(15, 15))).toBeNull();
+
+    // Loading after the re-init fetches fixture-2's urls and renders on its data.
+    const n = h.fetches.length;
+    load(h, planOf([SMALL]));
+    expect(h.fetches.slice(n)).toEqual([url('0_0', v2)]);
+    h.release('0_0');
+    await h.flush();
+    expect(h.diffs().at(-1)).toMatchObject({ phase: 'chunk', complete: true });
+    expect(serialise(h.display())).toBe(serialise(direct(planOf([SMALL]))));
+    expect(h.display().parcels.size).toBeGreaterThan(0);
     assertScores(h);
   });
 });
@@ -229,6 +255,7 @@ describe('load', () => {
     expect(serialise(a.display())).toBe(serialise(b.display()));
     expect(a.display().parcels.size).toBeGreaterThan(0);
     assertScores(a);
+    assertScores(b);
   });
 
   it('rejects an invalid plan with bad-request', () => {
@@ -269,7 +296,7 @@ describe('commit (no preview)', () => {
     const rev = commit(h, SMALL);
     const d = h.diffs().at(-1)!;
     expect(d).toMatchObject({ phase: 'commit', rev, complete: true });
-    expect(d.stats).toBeUndefined();
+    expect(d.stats).toMatchObject({ opId: 'small', kind: 'paint', stories: 6 });
     const ids = [...h.display().parcels.keys()].sort();
     const want = [2, 3, 4, 5].filter((i) => (2 * 20 + i) % 7 !== 0).map((i) => gridId(i, 2));
     expect(ids).toEqual(want.sort());
@@ -444,6 +471,306 @@ describe('(d) chunk retry at host level', () => {
     expect(h.fetches).toHaveLength(5);
     expect(chunkMsgs(h).at(-1)).toMatchObject({ status: { '0_0': 'loading' }, failed: [] });
     await vi.advanceTimersByTimeAsync(0);
+    assertScores(h);
+  });
+});
+
+const emptyRender = { cells: [], removedCells: [], hide: { add: [], remove: [] } };
+
+describe('(a) preview then commit', () => {
+  it('preview X then commit X equals commit X alone, with an empty commit render', async () => {
+    const h = makeHarness();
+    start(h);
+    await prefetchAll(h);
+    const rev = preview(h, BIG);
+    expect(h.diffs().at(-1)).toMatchObject({ phase: 'preview', rev, complete: true });
+    expect(h.display().parcels.size).toBeGreaterThan(0);
+    const crev = commit(h, BIG);
+    const d = h.diffs().at(-1)!;
+    expect(d).toMatchObject({ phase: 'commit', rev: crev, render: emptyRender });
+    expect(d.stats).toMatchObject({ opId: 'big', kind: 'paint', stories: 5 });
+
+    const fresh = makeHarness();
+    start(fresh);
+    await prefetchAll(fresh);
+    commit(fresh, BIG);
+    expect(serialise(h.display())).toBe(serialise(fresh.display()));
+    expect(serialise(h.display())).toBe(serialise(direct(planOf([BIG]))));
+    assertScores(h);
+    assertScores(fresh);
+  });
+
+  it('preview X then commit Y equals commit Y alone', async () => {
+    const h = makeHarness();
+    start(h);
+    await prefetchAll(h);
+    preview(h, BIG);
+    commit(h, SMALL);
+    expect(h.diffs().at(-1)!.phase).toBe('commit');
+    expect(serialise(h.display())).toBe(serialise(direct(planOf([SMALL]))));
+    assertScores(h);
+  });
+
+  it('a preview whose path differs only in a later point is not the committed op', async () => {
+    const h = makeHarness();
+    start(h);
+    await prefetchAll(h);
+    preview(h, paint('small', 6, [[2, 2]]));
+    commit(h, SMALL);
+    expect(serialise(h.display())).toBe(serialise(direct(planOf([SMALL]))));
+    assertScores(h);
+  });
+
+  it('rejects an invalid preview op with bad-request; a duplicate id is allowed', async () => {
+    const h = makeHarness();
+    start(h);
+    await prefetchAll(h);
+    commit(h, SMALL);
+    const n = h.diffs().length;
+    const rev = preview(h, { ...SMALL, id: 'p', radiusM: 4.5 });
+    expect(h.sent.at(-1)).toMatchObject({ type: 'error', rev, code: 'bad-request' });
+    expect(h.diffs()).toHaveLength(n);
+    const rev2 = preview(h, { ...SMALL, stories: 9 } as PlanOp);
+    expect(h.diffs().at(-1)).toMatchObject({ phase: 'preview', rev: rev2 });
+    expect(summary(h, gridId(3, 2))?.envelope).toEqual({ maxStories: 9 });
+    assertScores(h);
+  });
+});
+
+describe('(e) stale previews', () => {
+  const A = paint('A', 7, [
+    [12, 2],
+    [16, 2]
+  ]);
+  const B = paint('B', 8, [
+    [2, 14],
+    [6, 14]
+  ]);
+
+  it('a newer preview supersedes the older one; cancel restores the committed display', async () => {
+    const h = makeHarness();
+    start(h);
+    await prefetchAll(h);
+    commit(h, SMALL);
+    preview(h, A);
+    expect(serialise(h.display())).toBe(serialise(direct(planOf([SMALL, A]))));
+    preview(h, B);
+    expect(serialise(h.display())).toBe(serialise(direct(planOf([SMALL, B]))));
+    const rev = cancel(h);
+    expect(h.diffs().at(-1)).toMatchObject({ phase: 'cancel', rev, complete: true });
+    expect(serialise(h.display())).toBe(serialise(direct(planOf([SMALL]))));
+    assertScores(h);
+  });
+
+  it('cancelPreview with no preview still posts exactly one diff', async () => {
+    const h = makeHarness();
+    start(h);
+    await prefetchAll(h);
+    const n = h.diffs().length;
+    const rev = cancel(h);
+    expect(h.diffs()).toHaveLength(n + 1);
+    expect(h.diffs().at(-1)).toMatchObject({ phase: 'cancel', rev, render: emptyRender });
+    assertScores(h);
+  });
+});
+
+describe('(g) op stats', () => {
+  // A stamp at (5,5): the centre and its 4 neighbours at 10 m (diagonals are at 14.1 m). The
+  // brief's radius is 10, but quantising the stamp point to 1e-6° moves it ~0.05 m off the grid
+  // point, so two neighbours land just past 10 m; radius 11 keeps the same 5 parcels.
+  const STAMP: [number, number][] = [
+    [5, 5],
+    [4, 5],
+    [6, 5],
+    [5, 4],
+    [5, 6]
+  ];
+  const eligible = STAMP.filter(([i, j]) => gridRecord(i, j).eligible).length; // 105 % 7 = 0 → 4
+  const ineligible = STAMP.length - eligible; // 1
+  const stamp = (id: string, stories: number) => paint(id, stories, [[5, 5]], 11);
+  const statsOf = (h: Harness) => h.diffs().at(-1)!.stats!;
+
+  it('covers the hand-checked parcels', () => {
+    const v = validatePlan(planOf([stamp('s', 6)]));
+    if (!v.ok) throw new Error('bad op');
+    const covered = gridIndex().covered(v.value.ops[0]).sort();
+    expect(covered).toEqual(STAMP.map(([i, j]) => gridId(i, j)).sort());
+    expect([eligible, ineligible]).toEqual([4, 1]);
+  });
+
+  it('a paint stamp counts every covered eligible parcel as built', async () => {
+    const h = makeHarness();
+    start(h);
+    await prefetchAll(h);
+    commit(h, stamp('s', 6));
+    expect(statsOf(h)).toEqual({
+      opId: 's',
+      kind: 'paint',
+      stories: 6,
+      covered: eligible,
+      ineligible,
+      built: eligible,
+      notBigger: 0,
+      removed: 0,
+      partial: false
+    } satisfies OpStats);
+    assertScores(h);
+  });
+
+  it('a 2-story paint over a 6-story building is notBigger and removes it', async () => {
+    const h = makeHarness();
+    start(h);
+    await prefetchAll(h);
+    commit(h, paint('six', 6, [[4, 5]]));
+    commit(h, paint('two', 2, [[4, 5]]));
+    expect(statsOf(h)).toEqual({
+      opId: 'two',
+      kind: 'paint',
+      stories: 2,
+      covered: 1,
+      ineligible: 0,
+      built: 0,
+      notBigger: 1,
+      removed: 1,
+      partial: false
+    } satisfies OpStats);
+    expect(h.display().parcels.size).toBe(0);
+    assertScores(h);
+  });
+
+  it('an erase has no stories key and counts the removed buildings', async () => {
+    const h = makeHarness();
+    start(h);
+    await prefetchAll(h);
+    commit(h, stamp('s', 6));
+    commit(h, erase('e', [[5, 5]], 11));
+    const stats = statsOf(h);
+    expect('stories' in stats).toBe(false);
+    expect(stats).toEqual({
+      opId: 'e',
+      kind: 'erase',
+      covered: eligible,
+      ineligible,
+      built: 0,
+      notBigger: 0,
+      removed: eligible,
+      partial: false
+    } satisfies OpStats);
+    assertScores(h);
+  });
+
+  it('a commit over an unloaded chunk is partial; the chunk diff then fills it', async () => {
+    const h = makeHarness();
+    start(h);
+    commit(h, stamp('s', 6));
+    expect(h.diffs().at(-1)).toMatchObject({ phase: 'commit', complete: false });
+    expect(statsOf(h)).toMatchObject({ partial: true, covered: 0, built: 0 });
+    await h.flush();
+    expect(h.diffs().at(-1)).toMatchObject({ phase: 'chunk', complete: true });
+    expect(serialise(h.display())).toBe(serialise(direct(planOf([stamp('s', 6)]))));
+    expect(h.display().parcels.size).toBe(eligible);
+    assertScores(h);
+  });
+});
+
+describe('(c) chunk arrival order', () => {
+  const plan = planOf([BIG, erase('e', [[10, 10]], 30), SMALL, paint('far', 9, [[15, 15]], 20)]);
+  const orders = [
+    ['0_0', '1_0', '0_1', '1_1'],
+    ['1_1', '0_1', '1_0', '0_0'],
+    ['0_1', '0_0', '1_1', '1_0'],
+    ['1_0', '1_1', '0_0', '0_1']
+  ];
+
+  it('the final display does not depend on the release order', async () => {
+    const want = serialise(direct(plan));
+    for (const order of orders) {
+      const h = makeHarness({ mode: 'manual' });
+      start(h);
+      load(h, plan);
+      for (const c of order) {
+        h.release(c);
+        await h.flush();
+      }
+      expect(h.diffs().at(-1)).toMatchObject({ phase: 'chunk', complete: true });
+      expect(serialise(h.display())).toBe(want);
+      assertScores(h);
+    }
+  });
+
+  it('a chunk that lands mid-preview carries the preview; cancel then removes it', async () => {
+    const h = makeHarness({ mode: 'manual' });
+    start(h);
+    load(h, planOf([SMALL]));
+    h.release('0_0');
+    await h.flush();
+    const far = paint('far', 6, [[15, 15]], 11);
+    preview(h, far);
+    expect(h.diffs().at(-1)).toMatchObject({ phase: 'preview', complete: false });
+    expect(h.fetches.at(-1)).toBe(url('1_1'));
+    h.release('1_1');
+    await h.flush();
+    const d = h.diffs().at(-1)!;
+    expect(d).toMatchObject({ phase: 'chunk', complete: true });
+    expect(d.render.cells.map((c) => c.settled.cellId)).toEqual(['1_1']);
+    expect(summary(h, gridId(16, 15))?.envelope).toEqual({ maxStories: 6 });
+    expect(serialise(h.display())).toBe(serialise(direct(planOf([SMALL, far]))));
+    cancel(h);
+    expect(h.diffs().at(-1)!.render.removedCells).toEqual(['1_1']);
+    expect(serialise(h.display())).toBe(serialise(direct(planOf([SMALL]))));
+    expect(h.display().parcels.size).toBeGreaterThan(0);
+    assertScores(h);
+  });
+});
+
+describe('host hardening', () => {
+  it('a throw while applying a landed chunk posts error internal with the latest rev', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const bad = gridId(3, 2);
+    const h = makeHarness({
+      generate: (p, e) =>
+        p.id === bad
+          ? ({ ...stubGenerate(p, e)!, parts: null } as unknown as ReturnType<typeof stubGenerate>)
+          : stubGenerate(p, e)
+    });
+    start(h);
+    const rev = load(h, planOf([SMALL]));
+    await h.flush();
+    expect(errors(h)).toEqual([
+      { type: 'error', rev, code: 'internal', message: expect.any(String) }
+    ]);
+    expect(error).not.toHaveBeenCalledWith(
+      expect.stringContaining('onLoaded threw'),
+      expect.anything()
+    );
+    assertScores(h);
+  });
+
+  it('a parcelSummary that throws still replies with summary null', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let boom = false;
+    const h = makeHarness({
+      generate: (p, e) => {
+        const b = stubGenerate(p, e);
+        if (!b) return b;
+        return Object.defineProperty({ ...b }, 'typology', {
+          get() {
+            if (boom) throw new Error('boom');
+            return 'midrise';
+          },
+          enumerable: true
+        });
+      }
+    });
+    start(h);
+    load(h, planOf([SMALL]));
+    await h.flush();
+    expect(summary(h, gridId(3, 2))?.generated?.typology).toBe('midrise');
+    boom = true;
+    expect(summary(h, gridId(3, 2))).toBeNull();
+    expect(errors(h)).toEqual([]);
+    expect(logged).toHaveBeenCalledTimes(1);
+    boom = false;
     assertScores(h);
   });
 });
