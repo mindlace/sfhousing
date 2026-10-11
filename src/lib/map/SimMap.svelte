@@ -1,16 +1,9 @@
 <script module lang="ts">
   import type { Protocol as PmtilesProtocol } from 'pmtiles';
   import { TOKENS as THEME_TOKENS } from './palette';
+  import { attributionHtml } from './attribution';
 
   type MapLibreModule = typeof import('maplibre-gl');
-
-  const ATTRIBUTION_TEXT =
-    '© OpenStreetMap · Overture Maps (Esri, Microsoft, USGS) · DataSF · Protomaps';
-  const ATTRIBUTION_HTML =
-    '<a href="/attribution" title="Data &amp; licences: OpenStreetMap and Overture data under ODbL; ' +
-    'DataSF under PDDL / public domain; Protomaps basemap">' +
-    ATTRIBUTION_TEXT +
-    '</a>';
 
   // CSS defaults for the --map-* tokens, so the SSR frame follows prefers-color-scheme before
   // JS resolves a theme (an explicit or JS-resolved theme overrides them inline).
@@ -373,7 +366,7 @@
     if (!coarse) map.addControl(new ml.NavigationControl({ showCompass: true }), 'bottom-left');
     const compact = width < NARROW_PX;
     map.addControl(
-      new ml.AttributionControl({ compact, customAttribution: ATTRIBUTION_HTML }),
+      new ml.AttributionControl({ compact, customAttribution: attributionHtml(manifest.sources) }),
       'bottom-right'
     );
     if (compact) {

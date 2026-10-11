@@ -31,7 +31,8 @@ const HANDLE_FNS = [
   'onResyncNeeded'
 ] as const;
 
-const ATTRIBUTION = '© OpenStreetMap · Overture Maps (Esri, Microsoft, USGS) · DataSF · Protomaps';
+const ATTRIBUTION =
+  '© OpenStreetMap · Overture Maps (Esri Community Maps, Microsoft ML Buildings, OpenStreetMap, USGS Lidar) · DataSF · Protomaps';
 
 let hosts: HTMLElement[] = [];
 let errors: unknown[] = [];
