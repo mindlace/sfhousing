@@ -2,7 +2,8 @@
 -- Writes buildings and buildings.kept/hs0..hs3, height.max_m counts.
 -- Only footprints with mblr 'SF%' count (spec §4.6; right-of-way rows are 'CN…').
 -- hs 0 overture height; 1 DataSF hgt_median_m (best IoU >= iou_min, ties -> smaller sf16_bldgid, then mblr);
--- 2 num_floors * floors_m; 3 default. A footprint without hgt_median_m cannot supply a height, so is not a candidate.
+-- 2 num_floors * floors_m; 3 default. A footprint without a positive hgt_median_m cannot supply a height,
+-- so is not a candidate (it falls through to rule 2/3). base_m is rounded to 0.1 like height_m.
 
 CREATE OR REPLACE TEMP TABLE h_fp AS
 SELECT mblr, sf16_bldgid, hgt_median_m,
@@ -10,7 +11,7 @@ SELECT mblr, sf16_bldgid, hgt_median_m,
          ST_MakeValid(ST_Transform(geom::GEOMETRY, 'EPSG:4326', 'EPSG:7131', always_xy := true)), 3
        ) AS geom
 FROM src_footprints
-WHERE mblr LIKE 'SF%' AND hgt_median_m IS NOT NULL;
+WHERE mblr LIKE 'SF%' AND hgt_median_m IS NOT NULL AND hgt_median_m > 0;
 
 CREATE OR REPLACE TEMP TABLE h_pairs AS
 SELECT b.bid, f.mblr, f.sf16_bldgid, f.hgt_median_m,
@@ -41,7 +42,7 @@ FROM b_base b LEFT JOIN h_best h USING (bid);
 CREATE OR REPLACE TABLE buildings AS
 SELECT bid, geom,
        round(least(340.0, greatest(2.5, raw_m)), 1)::DOUBLE AS height_m,
-       base_m::DOUBLE AS base_m,
+       round(base_m, 1)::DOUBLE AS base_m,
        hs::INTEGER AS hs,
        datasets
 FROM h_raw

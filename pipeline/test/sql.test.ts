@@ -254,7 +254,11 @@ describe('40/50 edge cases on synthetic sources', () => {
     `ST_GeomFromText('POLYGON((${x0} ${y0},${x1} ${y0},${x1} ${y1},${x0} ${y1},${x0} ${y0}))')`;
   const X0 = -122.42;
   const Y0 = 37.76;
-  async function synth(buildingX1: number, footprints: [string, string, number][]): Promise<Duck> {
+  async function synth(
+    buildingX1: number,
+    footprints: [string, string, number][],
+    minHeight: number | null = null
+  ): Promise<Duck> {
     const d = await openDuck();
     await d.run(`
       CREATE TABLE src_parcels(mapblklot VARCHAR, blklot VARCHAR, active BOOLEAN, analysis_neighborhood VARCHAR, geom GEOMETRY);
@@ -264,7 +268,7 @@ describe('40/50 edge cases on synthetic sources', () => {
       CREATE TABLE src_overture(id VARCHAR, height DOUBLE, num_floors INTEGER, min_height DOUBLE, is_underground BOOLEAN, datasets VARCHAR[], geom GEOMETRY);
       INSERT INTO src_parcels VALUES ('P1', 'P1', TRUE, 'N', ${rect(X0, Y0, X0 + 1e-4, Y0 + 1e-4)});
       INSERT INTO src_neighborhoods VALUES ('N', ${rect(X0 - 1e-3, Y0 - 1e-3, X0 + 1e-3, Y0 + 1e-3)});
-      INSERT INTO src_overture VALUES ('bx', NULL, NULL, NULL, FALSE, ['osm'], ${rect(X0, Y0, buildingX1, Y0 + 1e-4)});
+      INSERT INTO src_overture VALUES ('bx', NULL, NULL, ${minHeight}, FALSE, ['osm'], ${rect(X0, Y0, buildingX1, Y0 + 1e-4)});
     `);
     for (const [mblr, id, h] of footprints) {
       await d.run(
@@ -281,6 +285,21 @@ describe('40/50 edge cases on synthetic sources', () => {
     ]);
     await runSql(d);
     expect(await d.all(`SELECT height_m, hs FROM buildings`)).toEqual([{ height_m: 20, hs: 1 }]);
+  });
+
+  it('ignores a footprint whose hgt_median_m is not positive (falls through to rule 3)', async () => {
+    const d = await synth(X0 + 1e-4, [
+      ['SFP1', '201006.0000001', 0],
+      ['SFP1', '201006.0000002', -1]
+    ]);
+    await runSql(d);
+    expect(await d.all(`SELECT height_m, hs FROM buildings`)).toEqual([{ height_m: 7, hs: 3 }]);
+  });
+
+  it('rounds base_m to 0.1', async () => {
+    const d = await synth(X0 + 1e-4, [], 3.14159);
+    await runSql(d);
+    expect(await d.all(`SELECT base_m FROM buildings`)).toEqual([{ base_m: 3.1 }]);
   });
 
   it('counts a remainder under 2 m² and emits no NULL-parcel piece', async () => {
