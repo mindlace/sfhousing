@@ -1,4 +1,4 @@
-import { DATASET_VERSION_RE } from '../data/manifest';
+import { DATASET_VERSION_RE } from '../data/dataset-version';
 import {
   CURRENT_SCHEMA,
   MAX_PLAN_BYTES,
