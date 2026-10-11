@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { DATASET_VERSION_RE } from '../../src/lib/data/manifest';
+import { DATASET_VERSION_RE } from '../../src/lib/data/dataset-version';
 import { run } from './exec';
 import { canonicalJson, type Lock } from './lock';
 

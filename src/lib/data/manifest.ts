@@ -1,7 +1,7 @@
 import { z } from 'zod';
+import { DATASET_VERSION_RE } from './dataset-version';
 
-/** I12 datasetVersion pattern. The single definition; everything else re-exports it. */
-export const DATASET_VERSION_RE = /^(\d{4}-\d{2}-\d{2}-[0-9a-f]{8}|fixture-\d+)$/;
+export { DATASET_VERSION_RE } from './dataset-version';
 
 const DatasetVersion = z.string().regex(DATASET_VERSION_RE);
 const RootRelativeUrl = z
