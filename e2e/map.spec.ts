@@ -19,7 +19,8 @@ import {
   touchDrag
 } from './helpers/sharing';
 
-const ATTRIBUTION = '© OpenStreetMap · Overture Maps (Esri, Microsoft, USGS) · DataSF · Protomaps';
+const ATTRIBUTION =
+  '© OpenStreetMap · Overture Maps (Esri Community Maps, Microsoft ML Buildings, OpenStreetMap, USGS Lidar) · DataSF · Protomaps';
 const BUILDINGS = '**/data/fixture-0/buildings.pmtiles';
 // Fixture parcel 3512014 (e2e/fixtures/data/fixture-0/parcels/50_25.json): label point and a
 // 60 m existing building.
