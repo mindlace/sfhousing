@@ -16,9 +16,9 @@ export interface SfhMapDebug {
   applyGenerated(u: GeneratedUpdate): void;
   /**
    * bench:map only (docs/dev/map-perf.md): applies `makeSyntheticCity(seed, n)` as one settled
-   * revision-0 snapshot covering the whole SF bbox. Resolves to the parcel count applied.
+   * revision-0 snapshot covering the whole SF bbox. Resolves to the parcel and cell counts.
    */
-  loadSyntheticCity(seed?: number, n?: number): Promise<number>;
+  loadSyntheticCity(seed?: number, n?: number): Promise<{ parcels: number; cells: number }>;
 }
 
 declare global {
@@ -61,7 +61,7 @@ export function installDebug(
       );
       const add = updates.flatMap((u) => u.hide.add);
       get().controller?.apply({ revision: 0, cells, removedCells: [], hide: { add, remove: [] } });
-      return add.length;
+      return { parcels: add.length, cells: cells.length };
     }
   };
   window.__sfhMap = hook;

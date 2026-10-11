@@ -4,10 +4,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import type { SfhBrushDebug } from '../src/lib/brush/debug';
-import type { TypologyId } from '../src/lib/generator';
 import type { SfhMapDebug } from '../src/lib/map/debug';
 import type { ControllerSnapshot } from '../src/lib/map/generated-controller';
-import { typologyLabel } from '../src/lib/map/tooltip';
 import { expectNoA11yViolations } from './helpers/a11y';
 import {
   FRAME,
@@ -463,7 +461,10 @@ test.describe('map view', () => {
       await page.mouse.move(gx, gy);
       await expect(tip).toBeVisible();
       await expect(tip).toContainText(`Parcel ${target!.parcelId}`);
-      await expect(tip).toContainText(typologyLabel(target!.typology as TypologyId, target!.units));
+      // Spec §4.7 typology display names, literal (not the app's own typologyLabel).
+      await expect(tip.locator('p').nth(1)).toHaveText(
+        /^(ADU|House|Duplex|Plex|Walk-up|5-over-1|Mid-rise|Tower) · /
+      );
       await expect(tip).toContainText(/\bunits?\b/);
       await expect(tip).not.toContainText('Existing building');
 

@@ -1,9 +1,10 @@
 // bench:map (spec §4.12, docs/dev/map-perf.md): a scripted 10 s pan at pitch 55 over downtown
 // with a synthetic whole-city plan loaded. Reports rAF frame-time p50/p95; passes at p95 ≤ 16.7 ms.
 import { expect, test } from '@playwright/test';
+import type { SfhBrushDebug } from '../../src/lib/brush/debug';
 import type { SfhMapDebug } from '../../src/lib/map/debug';
 
-type Win = Window & { __sfhMap?: SfhMapDebug };
+type Win = Window & { __sfhMap?: SfhMapDebug; __sfhBrush?: SfhBrushDebug };
 
 const DOWNTOWN = {
   center: [-122.401, 37.789] as [number, number],
@@ -12,6 +13,8 @@ const DOWNTOWN = {
   bearing: 0
 };
 const PAN_MS = 10_000;
+/** Pan speed, scaled by each frame's delta so 60 Hz and 120 Hz displays pan alike. */
+const PAN_PX_PER_S = 360;
 const BAR_MS = 16.7;
 
 function pct(sorted: number[], p: number): number {
@@ -27,6 +30,9 @@ test('bench:map: 10 s pan over downtown, synthetic whole city', async ({ page })
     timeout: 30_000
   });
   await page.waitForFunction(() => !!(window as Win).__sfhMap?.snapshot());
+  // The worker host's own revision-0 snapshot (src/lib/sim/display.ts) resets the controller, so
+  // let it land before the synthetic city goes in.
+  await page.waitForFunction(() => !!(window as Win).__sfhBrush?.ready);
 
   const renderer = await page.evaluate(() => {
     const gl = document.createElement('canvas').getContext('webgl2');
@@ -35,12 +41,15 @@ test('bench:map: 10 s pan over downtown, synthetic whole city', async ({ page })
     gl?.getExtension('WEBGL_lose_context')?.loseContext();
     return r;
   });
+  const dpr = await page.evaluate(() => devicePixelRatio);
 
-  const parcels = await page.evaluate(() => (window as Win).__sfhMap!.loadSyntheticCity(1));
+  const { parcels, cells } = await page.evaluate(() =>
+    (window as Win).__sfhMap!.loadSyntheticCity(1)
+  );
   // The controller installs the snapshot in per-frame slices; wait until every cell is in.
   await page.waitForFunction(
     (n) => ((window as Win).__sfhMap!.snapshot()?.cells ?? 0) >= n,
-    Math.ceil(parcels / 1500),
+    cells,
     { timeout: 120_000 }
   );
 
@@ -56,7 +65,7 @@ test('bench:map: 10 s pan over downtown, synthetic whole city', async ({ page })
 
   // Back and forth east/west so the camera stays over downtown; tiles still load at the edges.
   const deltas = await page.evaluate(
-    (ms) =>
+    ({ ms, speed }) =>
       new Promise<number[]>((resolve) => {
         const map = (window as Win).__sfhMap!.map!;
         const out: number[] = [];
@@ -64,27 +73,33 @@ test('bench:map: 10 s pan over downtown, synthetic whole city', async ({ page })
         let last = -1;
         const step = (t: number) => {
           if (start < 0) start = last = t;
-          else {
-            out.push(t - last);
-            last = t;
-          }
+          const dt = t - last;
+          if (dt > 0) out.push(dt);
+          last = t;
           const el = t - start;
           if (el >= ms) return resolve(out);
           const dir = Math.floor(el / 2500) % 2 === 0 ? 1 : -1;
-          map.panBy([dir * 6, 0], { animate: false });
+          map.panBy([(dir * speed * dt) / 1000, 0], { animate: false });
           requestAnimationFrame(step);
         };
         requestAnimationFrame(step);
       }),
-    PAN_MS
+    { ms: PAN_MS, speed: PAN_PX_PER_S }
   );
+
+  // Nothing (e.g. a late worker snapshot) replaced the synthetic city during the pan.
+  const after = await page.evaluate(() => {
+    const m = (window as Win).__sfhMap!;
+    return { cells: m.snapshot()?.cells ?? 0, hidden: m.hiddenSize };
+  });
+  expect(after).toEqual({ cells, hidden: parcels });
 
   const sorted = [...deltas].sort((a, b) => a - b);
   const p50 = pct(sorted, 50);
   const p95 = pct(sorted, 95);
   const line =
     `bench:map frames=${deltas.length} parcels=${parcels} p50=${p50.toFixed(1)}ms ` +
-    `p95=${p95.toFixed(1)}ms bar=${BAR_MS}ms ${verdict(p95)} renderer="${renderer}"`;
+    `p95=${p95.toFixed(1)}ms bar=${BAR_MS}ms ${verdict(p95)} dpr=${dpr} renderer="${renderer}"`;
   console.log(line);
   test.info().annotations.push({ type: 'bench:map', description: line });
   expect(p95, line).toBeLessThanOrEqual(BAR_MS);
