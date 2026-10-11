@@ -1,0 +1,151 @@
+{
+  "sources": [
+    {
+      "files": [
+        {
+          "archiveKey": "sources/8d1f6e12e35c750114d5d409176f024e917ec40abb016599807a14fad0de6f14.geojson",
+          "bytes": 880,
+          "name": "datasf-footprints.page-000.geojson",
+          "sha256": "8d1f6e12e35c750114d5d409176f024e917ec40abb016599807a14fad0de6f14",
+          "url": "https://fixture.invalid/datasf-footprints.page-000.geojson"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/ynuv-fyni",
+      "id": "datasf-footprints",
+      "label": "DataSF Building Footprints",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 3,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/d3cf2c2bce18e70ea74af8fa50910e5c7f93329f557071f99c4013a82d8815f6.geojson",
+          "bytes": 4695,
+          "name": "datasf-landuse-2023.page-000.geojson",
+          "sha256": "d3cf2c2bce18e70ea74af8fa50910e5c7f93329f557071f99c4013a82d8815f6",
+          "url": "https://fixture.invalid/datasf-landuse-2023.page-000.geojson"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/fdfd-xptc",
+      "id": "datasf-landuse-2023",
+      "label": "DataSF Land Use 2023",
+      "license": "public-domain",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 15,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/7ad1d6102ca900886294ada8e80b321fd381d3b3ea9d4e5ec6964bed4b6689d3.geojson",
+          "bytes": 504,
+          "name": "datasf-neighborhoods.page-000.geojson",
+          "sha256": "7ad1d6102ca900886294ada8e80b321fd381d3b3ea9d4e5ec6964bed4b6689d3",
+          "url": "https://fixture.invalid/datasf-neighborhoods.page-000.geojson"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/j2bu-swwd",
+      "id": "datasf-neighborhoods",
+      "label": "DataSF Analysis Neighborhoods",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 2,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/30f9a77ee6417df66c670d7535ab05c260d5018cc184d89c264d2d3c24c0826c.geojson",
+          "bytes": 6554,
+          "name": "datasf-parcels.page-000.geojson",
+          "sha256": "30f9a77ee6417df66c670d7535ab05c260d5018cc184d89c264d2d3c24c0826c",
+          "url": "https://fixture.invalid/datasf-parcels.page-000.geojson"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/acdm-wktn",
+      "id": "datasf-parcels",
+      "label": "DataSF Parcels (Active and Retired)",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 19,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/951b26d7001e989cb193f2e0ae9a3cbe49f0dc62bdd994aeda8418e5b008c5c6.geojson",
+          "bytes": 4043,
+          "name": "overture-buildings.page-000.geojson",
+          "sha256": "951b26d7001e989cb193f2e0ae9a3cbe49f0dc62bdd994aeda8418e5b008c5c6",
+          "url": "https://fixture.invalid/overture-buildings.page-000.geojson"
+        }
+      ],
+      "homepage": "https://overturemaps.org",
+      "id": "overture-buildings",
+      "label": "Overture Maps Buildings",
+      "license": "ODbL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 12,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/c0d004aa02fa457ea1d8ca31101baa1b882217bb8dde168f6813259c7ca29ec3.pmtiles",
+          "bytes": 1189069,
+          "name": "protomaps-basemap.pmtiles",
+          "sha256": "c0d004aa02fa457ea1d8ca31101baa1b882217bb8dde168f6813259c7ca29ec3",
+          "url": "https://build.protomaps.com/20261009.pmtiles"
+        }
+      ],
+      "homepage": "https://protomaps.com",
+      "id": "protomaps-basemap",
+      "label": "Protomaps basemap (OpenStreetMap)",
+      "license": "ODbL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 1,
+      "upstreamVersion": "20261009"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/7713cfc8e3c36d5ec4aa3d6cffe7500a1b3310f8a86d914b8ea09c2a9dee7c2d.txt",
+          "bytes": 4374,
+          "name": "protomaps-fonts/OFL.txt",
+          "sha256": "7713cfc8e3c36d5ec4aa3d6cffe7500a1b3310f8a86d914b8ea09c2a9dee7c2d",
+          "url": "https://raw.githubusercontent.com/protomaps/basemaps-assets/028c18f713baecad011301ff7a69acc39bcc2ae7/fonts/OFL.txt"
+        },
+        {
+          "archiveKey": "sources/62c6d49b15fa836eb6aa45e259c7ca6762f44b011b09e47776efbe4a6db1b397.pbf",
+          "bytes": 76044,
+          "name": "protomaps-fonts/Noto Sans Regular/0-255.pbf",
+          "sha256": "62c6d49b15fa836eb6aa45e259c7ca6762f44b011b09e47776efbe4a6db1b397",
+          "url": "https://raw.githubusercontent.com/protomaps/basemaps-assets/028c18f713baecad011301ff7a69acc39bcc2ae7/fonts/Noto%20Sans%20Regular/0-255.pbf"
+        },
+        {
+          "archiveKey": "sources/ba2f0118dd024e3041b158e5f9eb49bc0a658019f53f458e9f5c0b8efcd79b91.pbf",
+          "bytes": 77628,
+          "name": "protomaps-fonts/Noto Sans Medium/0-255.pbf",
+          "sha256": "ba2f0118dd024e3041b158e5f9eb49bc0a658019f53f458e9f5c0b8efcd79b91",
+          "url": "https://raw.githubusercontent.com/protomaps/basemaps-assets/028c18f713baecad011301ff7a69acc39bcc2ae7/fonts/Noto%20Sans%20Medium/0-255.pbf"
+        },
+        {
+          "archiveKey": "sources/43edfca91c285ba1226f09d5e74d68e1473a088c517f02a5212ff6ccb10037dc.pbf",
+          "bytes": 79344,
+          "name": "protomaps-fonts/Noto Sans Italic/0-255.pbf",
+          "sha256": "43edfca91c285ba1226f09d5e74d68e1473a088c517f02a5212ff6ccb10037dc",
+          "url": "https://raw.githubusercontent.com/protomaps/basemaps-assets/028c18f713baecad011301ff7a69acc39bcc2ae7/fonts/Noto%20Sans%20Italic/0-255.pbf"
+        }
+      ],
+      "homepage": "https://github.com/protomaps/basemaps-assets",
+      "id": "protomaps-fonts",
+      "label": "Noto Sans glyphs",
+      "license": "OFL-1.1",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 4,
+      "upstreamVersion": "028c18f713baecad011301ff7a69acc39bcc2ae7"
+    }
+  ]
+}

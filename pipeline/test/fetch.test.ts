@@ -1,0 +1,226 @@
+import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import type { RunFn } from '../lib/r2';
+import type { R2Target } from '../lib/r2';
+import type { Lock } from '../lib/lock';
+import { fetchDatasf } from '../sources/datasf';
+import { latestOvertureRelease } from '../sources/overture';
+import { fetchBasemap } from '../sources/protomaps';
+import { restoreRaw } from '../steps/fetch';
+
+function fakeHttp(pageSizes: number[]) {
+  const urls: string[] = [];
+  return {
+    urls,
+    get: async (url: string) => {
+      urls.push(url);
+      const k = urls.length - 1;
+      const n = pageSizes[k] ?? 0;
+      const fc = {
+        type: 'FeatureCollection',
+        features: Array.from({ length: n }, (_, i) => ({
+          type: 'Feature',
+          properties: { mapblklot: `${k}-${i}` },
+          geometry: null
+        }))
+      };
+      return {
+        status: 200,
+        headers: new Headers({ 'X-SODA2-Truth-Last-Modified': 'Tue, 07 Oct 2026 10:00:00 GMT' }),
+        body: new TextEncoder().encode(JSON.stringify(fc))
+      };
+    }
+  };
+}
+
+const tmp = () => mkdtempSync(join(tmpdir(), 'sfh-raw-'));
+
+describe('fetchDatasf', () => {
+  it('pages with $order=:id/$limit/$offset until a short page, filters active parcels and locks each page', async () => {
+    const http = fakeHttp([50000, 50000, 12]);
+    const raw = tmp();
+    const entry = await fetchDatasf('datasf-parcels', raw, http);
+    expect(http.urls).toHaveLength(3);
+    const u = new URL(http.urls[1]);
+    expect(u.host).toBe('data.sf.gov');
+    expect(u.pathname).toBe('/resource/acdm-wktn.geojson');
+    expect(u.searchParams.get('$offset')).toBe('50000');
+    expect(u.searchParams.get('$order')).toBe(':id');
+    expect(u.searchParams.get('$where')).toBe('active=true');
+    expect(entry.files).toHaveLength(3);
+    expect(entry.rowCount).toBe(100012);
+    expect(entry.upstreamVersion).toBe('Tue, 07 Oct 2026 10:00:00 GMT');
+    expect(entry.license).toBe('PDDL-1.0');
+    expect(readFileSync(join(raw, entry.files[2].sha256), 'utf8')).toContain('"2-11"');
+  });
+
+  it('names pages, records sha256/bytes/archiveKey and selects the live column names', async () => {
+    const raw = tmp();
+    const entry = await fetchDatasf('datasf-footprints', raw, fakeHttp([3]));
+    const f = entry.files[0];
+    expect(f.name).toBe('datasf-footprints.page-000.geojson');
+    expect(f.archiveKey).toBe(`sources/${f.sha256}.geojson`);
+    const bytes = readFileSync(join(raw, f.sha256));
+    expect(createHash('sha256').update(bytes).digest('hex')).toBe(f.sha256);
+    expect(f.bytes).toBe(bytes.length);
+    const u = new URL(f.url);
+    expect(u.searchParams.get('$select')).toBe('mblr,sf16_bldgid,hgt_median_m,shape');
+    expect(u.searchParams.get('$where')).toBeNull();
+  });
+
+  it('does not lock a trailing empty page, and fails on a non-200 status', async () => {
+    const entry = await fetchDatasf('datasf-neighborhoods', tmp(), fakeHttp([50000, 0]));
+    expect(entry.files).toHaveLength(1);
+    await expect(
+      fetchDatasf('datasf-neighborhoods', tmp(), {
+        get: async () => ({ status: 403, headers: new Headers(), body: new Uint8Array() })
+      })
+    ).rejects.toThrow(/403/);
+  });
+
+  it('falls back to ETag when the truth-last-modified header is absent', async () => {
+    const entry = await fetchDatasf('datasf-neighborhoods', tmp(), {
+      get: async () => ({
+        status: 200,
+        headers: new Headers({ ETag: 'W/"abc"' }),
+        body: new TextEncoder().encode('{"type":"FeatureCollection","features":[]}')
+      })
+    });
+    expect(entry.upstreamVersion).toBe('W/"abc"');
+  });
+});
+
+describe('fetchBasemap', () => {
+  it('steps back a day on a 404 and records the date that worked', async () => {
+    const calls: string[] = [];
+    const run: RunFn = async (cmd, args) => {
+      calls.push(args[1]);
+      if (args[1].includes('20261009')) {
+        return { code: 1, stdout: '', stderr: 'Failed to create range reader, HTTP error: 404' };
+      }
+      writeFileSync(args[2], 'PMTILES');
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    const raw = tmp();
+    const entry = await fetchBasemap(undefined, raw, new Date('2026-10-10T05:00:00Z'), run);
+    expect(calls).toEqual([
+      'https://build.protomaps.com/20261009.pmtiles',
+      'https://build.protomaps.com/20261008.pmtiles'
+    ]);
+    expect(entry.upstreamVersion).toBe('20261008');
+    expect(entry.files[0].name).toBe('protomaps-basemap.pmtiles');
+    expect(entry.files[0].url).toBe('https://build.protomaps.com/20261008.pmtiles');
+    expect(readFileSync(join(raw, entry.files[0].sha256), 'utf8')).toBe('PMTILES');
+  });
+
+  it('passes the bbox/maxzoom, and does not step back for non-404 failures or an explicit date', async () => {
+    const seen: string[][] = [];
+    const run: RunFn = async (_c, args) => {
+      seen.push(args);
+      return { code: 1, stdout: '', stderr: 'boom' };
+    };
+    await expect(
+      fetchBasemap('20261001', tmp(), new Date('2026-10-10T00:00:00Z'), run)
+    ).rejects.toThrow(/boom/);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toContain('--bbox=-122.53,37.69,-122.34,37.84');
+    expect(seen[0]).toContain('--maxzoom=15');
+  });
+
+  it('gives up after 7 days of 404s', async () => {
+    let n = 0;
+    const run: RunFn = async () => {
+      n++;
+      return { code: 1, stdout: '', stderr: 'HTTP error: 404' };
+    };
+    await expect(
+      fetchBasemap(undefined, tmp(), new Date('2026-10-10T00:00:00Z'), run)
+    ).rejects.toThrow(/no protomaps build/);
+    expect(n).toBe(8);
+  });
+});
+
+describe('latestOvertureRelease', () => {
+  it('reads the `latest` field of the STAC catalog', async () => {
+    const urls: string[] = [];
+    const rel = await latestOvertureRelease({
+      get: async (u) => {
+        urls.push(u);
+        return {
+          status: 200,
+          headers: new Headers(),
+          body: new TextEncoder().encode(JSON.stringify({ latest: '2026-09-23.1', links: [] }))
+        };
+      }
+    });
+    expect(rel).toBe('2026-09-23.1');
+    expect(urls).toEqual(['https://stac.overturemaps.org/catalog.json']);
+  });
+});
+
+describe('restoreRaw', () => {
+  const content = new TextEncoder().encode('archived bytes');
+  const sha = createHash('sha256').update(content).digest('hex');
+  const lock: Lock = {
+    sources: [
+      {
+        id: 'x',
+        files: [
+          {
+            url: 'u',
+            sha256: sha,
+            bytes: content.length,
+            archiveKey: `sources/${sha}.geojson`,
+            name: 'x.geojson'
+          }
+        ],
+        retrievedAt: 't',
+        upstreamVersion: 'v',
+        rowCount: 1,
+        license: 'l',
+        homepage: 'h'
+      }
+    ]
+  };
+  const r2 = (bytes: Uint8Array | null): R2Target & { gets: string[] } => {
+    const gets: string[] = [];
+    return {
+      gets,
+      exists: async () => true,
+      put: async () => {},
+      get: async (key, file) => {
+        gets.push(key);
+        if (!bytes) return false;
+        writeFileSync(file, bytes);
+        return true;
+      }
+    };
+  };
+
+  it('downloads only missing files and verifies their sha256', async () => {
+    const raw = tmp();
+    const t = r2(content);
+    const res = await restoreRaw(lock, raw, t);
+    expect(res).toEqual({ restored: 1, present: 0 });
+    expect(t.gets).toEqual([`sources/${sha}.geojson`]);
+    expect(readFileSync(join(raw, sha), 'utf8')).toBe('archived bytes');
+    const t2 = r2(content);
+    expect(await restoreRaw(lock, raw, t2)).toEqual({ restored: 0, present: 1 });
+    expect(t2.gets).toEqual([]);
+  });
+
+  it('rejects a corrupt archive and leaves nothing under the sha name', async () => {
+    const raw = tmp();
+    await expect(restoreRaw(lock, raw, r2(new TextEncoder().encode('tampered')))).rejects.toThrow(
+      /sha256 mismatch/
+    );
+    expect(existsSync(join(raw, sha))).toBe(false);
+  });
+
+  it('reports an archive that is not in the bucket', async () => {
+    await expect(restoreRaw(lock, tmp(), r2(null))).rejects.toThrow(/not found in R2/);
+  });
+});

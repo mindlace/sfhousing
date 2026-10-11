@@ -1,0 +1,51 @@
+# Data pipeline tests. Path-filtered: only runs when the pipeline or its shared codec changes.
+name: Pipeline
+on:
+  pull_request:
+    paths:
+      - 'pipeline/**'
+      - 'src/lib/data/**'
+      - '.github/workflows/pipeline.yml'
+  push:
+    paths:
+      - 'pipeline/**'
+      - 'src/lib/data/**'
+      - '.github/workflows/pipeline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pipeline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm install -g npm@11.3.0
+      - run: npm ci
+      # tippecanoe has no prebuilt Linux binary: build the pinned tag from source.
+      - run: sudo apt-get update && sudo apt-get install -y build-essential libsqlite3-dev zlib1g-dev
+      - run: git clone --depth 1 --branch 2.79.0 https://github.com/felt/tippecanoe "$RUNNER_TEMP/tippecanoe"
+      - run: make -j
+        working-directory: ${{ runner.temp }}/tippecanoe
+      - run: sudo make install
+        working-directory: ${{ runner.temp }}/tippecanoe
+      - run: curl -fsSL -o "$RUNNER_TEMP/pmtiles.tar.gz" https://github.com/protomaps/go-pmtiles/releases/download/v1.31.2/go-pmtiles_1.31.2_Linux_x86_64.tar.gz
+      - run: mkdir -p "$RUNNER_TEMP/pmtiles" && tar -xzf "$RUNNER_TEMP/pmtiles.tar.gz" -C "$RUNNER_TEMP/pmtiles" && sudo install "$RUNNER_TEMP/pmtiles/pmtiles" /usr/local/bin/pmtiles
+      # DuckDB spatial/httpfs extensions download on first load (network is available here).
+      - run: npm run pipeline -- doctor
+      - run: npm run test:pipeline
+      - run: npx vitest --run --project server src/lib/data
+      # V12 cross-run: regenerating the fixture must not change committed bytes.
+      # buildings.pmtiles is excluded: tippecanoe output bytes are only known reproducible on
+      # macOS, and Linux builds may differ. Its feature attributes are covered by tiles.test.ts.
+      - run: npm run pipeline -- fixture
+      - run: git diff --exit-code -- e2e/fixtures pipeline/test/fixtures/mini/golden ':(exclude)e2e/fixtures/data/fixture-0/buildings.pmtiles'

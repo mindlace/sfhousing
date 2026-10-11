@@ -12,7 +12,9 @@ const NOTICES = [
 test('attribution page shows dataset version, sources and fixed notices', async ({ page }) => {
   await page.goto('/attribution');
   await expect(page.getByText('Dataset version fixture-0, built 2026-10-10.')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'DataSF parcels (fixture)' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'overture-buildings' })).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: 'DataSF Parcels (Active and Retired)' })
+  ).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Overture Maps Buildings' })).toBeVisible();
   for (const notice of NOTICES) await expect(page.getByText(notice)).toBeVisible();
 });

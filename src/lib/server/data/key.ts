@@ -1,4 +1,4 @@
-import { DATASET_VERSION_RE } from '$lib/data/manifest';
+import { DATASET_VERSION_RE } from '$lib/data/dataset-version';
 export { DATASET_VERSION_RE };
 
 const SEGMENT_RE = /^[A-Za-z0-9._-]+$/;

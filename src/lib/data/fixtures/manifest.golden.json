@@ -1,0 +1,31 @@
+{
+  "datasetVersion": "2026-10-10-3fa9c2d1",
+  "builtAt": "2026-10-10T18:00:00.000Z",
+  "sources": [
+    {
+      "id": "datasf-parcels",
+      "url": "https://data.sf.gov/d/acdm-wktn",
+      "retrievedAt": "2026-10-10T17:00:00.000Z",
+      "license": "PDDL-1.0"
+    },
+    {
+      "id": "overture:OpenStreetMap",
+      "label": "OpenStreetMap via Overture",
+      "url": "https://docs.overturemaps.org/attribution",
+      "retrievedAt": "2026-10-10T17:00:00.000Z",
+      "license": "ODbL-1.0"
+    }
+  ],
+  "chunks": [
+    {
+      "cellId": "50_25",
+      "bbox": [-122.4201, 37.7598, -122.4189, 37.7604],
+      "url": "/data/2026-10-10-3fa9c2d1/parcels/50_25.json",
+      "parcelCount": 14
+    }
+  ],
+  "buildingsTiles": "/data/2026-10-10-3fa9c2d1/buildings.pmtiles",
+  "basemapTiles": "/data/2026-10-10-3fa9c2d1/basemap.pmtiles",
+  "glyphs": "/data/2026-10-10-3fa9c2d1/fonts/{fontstack}/{range}.pbf",
+  "neighborhoods": "/data/2026-10-10-3fa9c2d1/neighborhoods.geojson"
+}

@@ -17,6 +17,17 @@ export default defineConfig({
           include: ['src/**/*.{test,spec}.ts', 'scripts/**/*.spec.ts'],
           exclude: ['src/**/*.svelte.{test,spec}.ts']
         }
+      },
+      // Data pipeline: standalone (no SvelteKit config); imports src/lib/data by relative path.
+      {
+        test: {
+          name: 'pipeline',
+          environment: 'node',
+          include: ['pipeline/test/**/*.test.ts'],
+          testTimeout: 120_000,
+          hookTimeout: 300_000,
+          expect: { requireAssertions: true }
+        }
       }
     ]
   }

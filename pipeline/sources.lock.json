@@ -1,0 +1,200 @@
+{
+  "sources": [
+    {
+      "files": [
+        {
+          "archiveKey": "sources/73a996394edc66f31ad7637d063151f66cd3b16d83b3167c4f3683c78a7fdcd1.geojson",
+          "bytes": 37978144,
+          "name": "datasf-footprints.page-000.geojson",
+          "sha256": "73a996394edc66f31ad7637d063151f66cd3b16d83b3167c4f3683c78a7fdcd1",
+          "url": "https://data.sf.gov/resource/ynuv-fyni.geojson?%24select=mblr%2Csf16_bldgid%2Chgt_median_m%2Cshape&%24order=%3Aid&%24limit=50000&%24offset=0"
+        },
+        {
+          "archiveKey": "sources/e5029e983a0401fdbef48ded79026320476e470e20f64561f6151320cbaed445.geojson",
+          "bytes": 33714466,
+          "name": "datasf-footprints.page-001.geojson",
+          "sha256": "e5029e983a0401fdbef48ded79026320476e470e20f64561f6151320cbaed445",
+          "url": "https://data.sf.gov/resource/ynuv-fyni.geojson?%24select=mblr%2Csf16_bldgid%2Chgt_median_m%2Cshape&%24order=%3Aid&%24limit=50000&%24offset=50000"
+        },
+        {
+          "archiveKey": "sources/0d53b6a175c59be2117d5286f0583c065dd307aff4da325865b5b552abd90dde.geojson",
+          "bytes": 39485287,
+          "name": "datasf-footprints.page-002.geojson",
+          "sha256": "0d53b6a175c59be2117d5286f0583c065dd307aff4da325865b5b552abd90dde",
+          "url": "https://data.sf.gov/resource/ynuv-fyni.geojson?%24select=mblr%2Csf16_bldgid%2Chgt_median_m%2Cshape&%24order=%3Aid&%24limit=50000&%24offset=100000"
+        },
+        {
+          "archiveKey": "sources/c214e9d52b4caa1410354301119ff4640298f11831a2f3462697a51b724d9d30.geojson",
+          "bytes": 18106928,
+          "name": "datasf-footprints.page-003.geojson",
+          "sha256": "c214e9d52b4caa1410354301119ff4640298f11831a2f3462697a51b724d9d30",
+          "url": "https://data.sf.gov/resource/ynuv-fyni.geojson?%24select=mblr%2Csf16_bldgid%2Chgt_median_m%2Cshape&%24order=%3Aid&%24limit=50000&%24offset=150000"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/ynuv-fyni",
+      "id": "datasf-footprints",
+      "label": "DataSF Building Footprints",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-11T03:52:42.612Z",
+      "rowCount": 177023,
+      "upstreamVersion": "Sat, 10 Oct 2026 17:24:43 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/992c830a0990532cca66d4d9dbd1594879f77ba29d23021122e71639576c3d5b.geojson",
+          "bytes": 24099669,
+          "name": "datasf-landuse-2023.page-000.geojson",
+          "sha256": "992c830a0990532cca66d4d9dbd1594879f77ba29d23021122e71639576c3d5b",
+          "url": "https://data.sf.gov/resource/fdfd-xptc.geojson?%24select=mapblklot%2Clanduse%2Cresunits%2Cres%2Ctotalcomm%2Cthe_geom&%24order=%3Aid&%24limit=50000&%24offset=0"
+        },
+        {
+          "archiveKey": "sources/71ca3231667646af0329fd5f2180b05cd036aaa1ead112442e5590898b15c41a.geojson",
+          "bytes": 32077158,
+          "name": "datasf-landuse-2023.page-001.geojson",
+          "sha256": "71ca3231667646af0329fd5f2180b05cd036aaa1ead112442e5590898b15c41a",
+          "url": "https://data.sf.gov/resource/fdfd-xptc.geojson?%24select=mapblklot%2Clanduse%2Cresunits%2Cres%2Ctotalcomm%2Cthe_geom&%24order=%3Aid&%24limit=50000&%24offset=50000"
+        },
+        {
+          "archiveKey": "sources/8d059f645032d0de4659fbe1f81fddb4d9050fe765fa7cddc9aaacff438f75d7.geojson",
+          "bytes": 28053904,
+          "name": "datasf-landuse-2023.page-002.geojson",
+          "sha256": "8d059f645032d0de4659fbe1f81fddb4d9050fe765fa7cddc9aaacff438f75d7",
+          "url": "https://data.sf.gov/resource/fdfd-xptc.geojson?%24select=mapblklot%2Clanduse%2Cresunits%2Cres%2Ctotalcomm%2Cthe_geom&%24order=%3Aid&%24limit=50000&%24offset=100000"
+        },
+        {
+          "archiveKey": "sources/2cbf68c32f6f10c21f3c244d707ca82a1867428953c59454fe478fd2091eeb0e.geojson",
+          "bytes": 2354495,
+          "name": "datasf-landuse-2023.page-003.geojson",
+          "sha256": "2cbf68c32f6f10c21f3c244d707ca82a1867428953c59454fe478fd2091eeb0e",
+          "url": "https://data.sf.gov/resource/fdfd-xptc.geojson?%24select=mapblklot%2Clanduse%2Cresunits%2Cres%2Ctotalcomm%2Cthe_geom&%24order=%3Aid&%24limit=50000&%24offset=150000"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/fdfd-xptc",
+      "id": "datasf-landuse-2023",
+      "label": "DataSF Land Use 2023",
+      "license": "public-domain",
+      "retrievedAt": "2026-10-11T03:52:24.948Z",
+      "rowCount": 154476,
+      "upstreamVersion": "Thu, 04 Apr 2024 15:35:26 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/376c25348e45a41c540d995c3557ef48232805a152953da75ced2e5b66c86621.geojson",
+          "bytes": 1713909,
+          "name": "datasf-neighborhoods.page-000.geojson",
+          "sha256": "376c25348e45a41c540d995c3557ef48232805a152953da75ced2e5b66c86621",
+          "url": "https://data.sf.gov/resource/j2bu-swwd.geojson?%24select=nhood%2Cthe_geom&%24order=%3Aid&%24limit=50000&%24offset=0"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/j2bu-swwd",
+      "id": "datasf-neighborhoods",
+      "label": "DataSF Analysis Neighborhoods",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-11T03:52:43.249Z",
+      "rowCount": 41,
+      "upstreamVersion": "Tue, 17 Oct 2023 18:30:17 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/2d3da24cf79447580b55d84b674623272a615a895b6cc1325cbd5d872f9bfa21.geojson",
+          "bytes": 28953444,
+          "name": "datasf-parcels.page-000.geojson",
+          "sha256": "2d3da24cf79447580b55d84b674623272a615a895b6cc1325cbd5d872f9bfa21",
+          "url": "https://data.sf.gov/resource/acdm-wktn.geojson?%24select=mapblklot%2Cblklot%2Cactive%2Canalysis_neighborhood%2Cshape&%24where=active%3Dtrue&%24order=%3Aid&%24limit=50000&%24offset=0"
+        },
+        {
+          "archiveKey": "sources/263375fe5adc5d6e4e5d7e8c7460076dd506d5402e81933410125c621f77390b.geojson",
+          "bytes": 28589285,
+          "name": "datasf-parcels.page-001.geojson",
+          "sha256": "263375fe5adc5d6e4e5d7e8c7460076dd506d5402e81933410125c621f77390b",
+          "url": "https://data.sf.gov/resource/acdm-wktn.geojson?%24select=mapblklot%2Cblklot%2Cactive%2Canalysis_neighborhood%2Cshape&%24where=active%3Dtrue&%24order=%3Aid&%24limit=50000&%24offset=50000"
+        },
+        {
+          "archiveKey": "sources/b739388656d293dce881d2dced77b88d3cce46facde9c06db9ed3b7c6035ab60.geojson",
+          "bytes": 28398641,
+          "name": "datasf-parcels.page-002.geojson",
+          "sha256": "b739388656d293dce881d2dced77b88d3cce46facde9c06db9ed3b7c6035ab60",
+          "url": "https://data.sf.gov/resource/acdm-wktn.geojson?%24select=mapblklot%2Cblklot%2Cactive%2Canalysis_neighborhood%2Cshape&%24where=active%3Dtrue&%24order=%3Aid&%24limit=50000&%24offset=100000"
+        },
+        {
+          "archiveKey": "sources/b18197759d31057fa0ae41f3c7c41ee74b9aab464b9781fe83007318fbda315d.geojson",
+          "bytes": 28211139,
+          "name": "datasf-parcels.page-003.geojson",
+          "sha256": "b18197759d31057fa0ae41f3c7c41ee74b9aab464b9781fe83007318fbda315d",
+          "url": "https://data.sf.gov/resource/acdm-wktn.geojson?%24select=mapblklot%2Cblklot%2Cactive%2Canalysis_neighborhood%2Cshape&%24where=active%3Dtrue&%24order=%3Aid&%24limit=50000&%24offset=150000"
+        },
+        {
+          "archiveKey": "sources/eff0c9fef2b2f1144b5fd207d23241708393ff978a7852f12dc598b50609282f.geojson",
+          "bytes": 15890723,
+          "name": "datasf-parcels.page-004.geojson",
+          "sha256": "eff0c9fef2b2f1144b5fd207d23241708393ff978a7852f12dc598b50609282f",
+          "url": "https://data.sf.gov/resource/acdm-wktn.geojson?%24select=mapblklot%2Cblklot%2Cactive%2Canalysis_neighborhood%2Cshape&%24where=active%3Dtrue&%24order=%3Aid&%24limit=50000&%24offset=200000"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/acdm-wktn",
+      "id": "datasf-parcels",
+      "label": "DataSF Parcels (Active and Retired)",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-11T03:51:36.336Z",
+      "rowCount": 227967,
+      "upstreamVersion": "Sat, 10 Oct 2026 17:35:47 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/0a8bca61efe49e2f3159606b7de6da114b2ca28ad5b06cd9d3bc5253de6e1a75.parquet",
+          "bytes": 36646085,
+          "name": "overture-buildings.parquet",
+          "sha256": "0a8bca61efe49e2f3159606b7de6da114b2ca28ad5b06cd9d3bc5253de6e1a75",
+          "url": "s3://overturemaps-us-west-2/release/2026-09-23.1/theme=buildings/type=building/*"
+        }
+      ],
+      "homepage": "https://overturemaps.org",
+      "id": "overture-buildings",
+      "label": "Overture Maps Buildings",
+      "license": "ODbL-1.0",
+      "retrievedAt": "2026-10-11T03:52:58.496Z",
+      "rowCount": 177940,
+      "upstreamVersion": "2026-09-23.1"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/d307633a0138b3b199be21c7103683bcc23c06959c232f88ad1f76ecd00f272c.pmtiles",
+          "bytes": 15065515,
+          "name": "protomaps-basemap.pmtiles",
+          "sha256": "d307633a0138b3b199be21c7103683bcc23c06959c232f88ad1f76ecd00f272c",
+          "url": "https://build.protomaps.com/20261010.pmtiles"
+        }
+      ],
+      "homepage": "https://protomaps.com",
+      "id": "protomaps-basemap",
+      "label": "Protomaps basemap (OpenStreetMap)",
+      "license": "ODbL-1.0",
+      "retrievedAt": "2026-10-11T03:53:01.680Z",
+      "rowCount": 1,
+      "upstreamVersion": "20261010"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/57e40e8c512bd8042d0a3a251f19d0d1c8523ad963c666c3c6643bada4dc92d0.gz",
+          "bytes": 6379327,
+          "name": "protomaps-fonts.tar.gz",
+          "sha256": "57e40e8c512bd8042d0a3a251f19d0d1c8523ad963c666c3c6643bada4dc92d0",
+          "url": "https://codeload.github.com/protomaps/basemaps-assets/tar.gz/028c18f713baecad011301ff7a69acc39bcc2ae7"
+        }
+      ],
+      "homepage": "https://github.com/protomaps/basemaps-assets",
+      "id": "protomaps-fonts",
+      "label": "Noto Sans glyphs",
+      "license": "OFL-1.1",
+      "retrievedAt": "2026-10-11T03:53:02.538Z",
+      "rowCount": 1,
+      "upstreamVersion": "028c18f713baecad011301ff7a69acc39bcc2ae7"
+    }
+  ]
+}

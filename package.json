@@ -18,7 +18,9 @@
     "lint:workflows": "actionlint -color .github/workflows/*.yml",
     "format": "prettier --write .",
     "test": "npm run test:unit && npm run test:e2e",
-    "test:unit": "vitest --run",
+    "test:unit": "vitest --run --project server --project client",
+    "test:pipeline": "vitest --run --project pipeline",
+    "pipeline": "tsx pipeline/cli.ts",
     "test:e2e": "playwright test",
     "db:generate": "tsx node_modules/.bin/drizzle-cf-migrations generate d1 --config ./drizzle-cf.config.ts",
     "db:migrate": "wrangler d1 migrations apply DB --local",
@@ -48,6 +50,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
+    "@duckdb/node-api": "1.5.6-r.1",
     "@eslint/compat": "^2.1.0",
     "@eslint/js": "^10.0.1",
     "@planafoot/drizzle-cf-migrations": "^1.2.1",
