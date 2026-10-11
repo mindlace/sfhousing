@@ -13,7 +13,7 @@ import {
 } from './generated-controller';
 import { emptyPack, packCell } from './pack';
 import { GEN_RGBA } from './palette';
-import type { GeneratedUpdate, PackedCell } from './types';
+import { TYPOLOGY_ORDER, type GeneratedUpdate, type PackedCell } from './types';
 import { makeFakeDeps, type FakeDeps } from './test/fake-deps';
 import { makeSyntheticCity } from './test/synthetic-city';
 import genJson from './fixtures/generated-small.json';
@@ -123,6 +123,53 @@ describe('GeneratedController (fake deps)', () => {
       s2.partCount
     );
     expect(c.debugSnapshot().elevationScale['rising-2-A']).toBe(0);
+    // Drain: rev 2's rise runs to completion; rev 1's rise never resurfaces as a stray merge.
+    const histAt = f.layerHistory.length;
+    for (let t = 116; f.pendingFrames() > 0 && t < 5000; t += 16) f.flushFrame(t);
+    expect(f.pendingFrames()).toBe(0);
+    expect(layerIds(f)).toEqual(['generated-A', 'generated-B']);
+    expect((layerById(f, 'generated-A')!.props.data as { length: number }).length).toBe(
+      packOf('A', 0, 6).partCount
+    );
+    // Exactly one rebuild of generated-A during the drain: rev 2's merge.
+    const rebuilds = f.layerHistory
+      .slice(histAt)
+      .map((ls) => ls.find((l) => l.id === 'generated-A'))
+      .filter((l, i, a) => i === 0 || l !== a[i - 1]);
+    expect(rebuilds.length).toBe(2);
+    expect(c.debugSnapshot().parts).toBe(
+      packOf('A', 0, 6).partCount + packOf('B', 6, 12).partCount
+    );
+  });
+
+  it('mid-rise removal: removedCells drops a rising cell with no later merge', () => {
+    const f = makeFakeDeps();
+    const c = new GeneratedController(f, 'light');
+    c.apply(snapshot0());
+    f.time = 0;
+    c.apply(riseA(1));
+    f.flushFrame(100);
+    c.apply(upd(2, { removedCells: ['A'] }));
+    expect(layerIds(f)).toEqual(['generated-B']);
+    for (let t = 116; f.pendingFrames() > 0 && t < 5000; t += 16) f.flushFrame(t);
+    expect(f.pendingFrames()).toBe(0);
+    expect(layerIds(f)).toEqual(['generated-B']);
+    expect(c.debugSnapshot().cells).toBe(1);
+  });
+
+  it('reduced motion is checked live per update', () => {
+    const f = makeFakeDeps();
+    const c = new GeneratedController(f, 'light');
+    c.apply(snapshot0());
+    f.reduced = true;
+    c.apply(riseA(1));
+    expect(layerIds(f).some((id) => id.startsWith('rising-'))).toBe(false);
+    f.reduced = false;
+    c.apply(riseA(2));
+    expect(layerIds(f)).toContain('rising-2-A');
+    f.reduced = true;
+    c.apply(riseA(3)); // finalises rising-2-A, then installs rev 3 without a rise
+    expect(layerIds(f).some((id) => id.startsWith('rising-'))).toBe(false);
   });
 
   it('C6: a revision gap resyncs; revision 0 replaces everything', () => {
@@ -281,6 +328,24 @@ describe('GeneratedController (fake deps)', () => {
     expect(hit.stories).toBe(p.parcelMeta[4 * slot + 2]);
     expect(c.lookup('generated-Z', 0)).toBeNull();
     expect(c.lookup('generated-A', 9999)).toBeNull();
+  });
+
+  it('lookup resolves a part on a rising layer, including typology', () => {
+    const f = makeFakeDeps();
+    const c = new GeneratedController(f, 'light');
+    c.apply(snapshot0());
+    const u = riseA(1);
+    c.apply(u);
+    const r = u.cells[0].rising!;
+    for (let k = 0; k < r.partCount; k++) {
+      const slot = r.partSlot[k];
+      const hit = c.lookup('rising-1-A', k)!;
+      expect(hit.parcelId).toBe(r.parcelIds[slot]);
+      expect(hit.typology).toBe(TYPOLOGY_ORDER[r.parcelMeta[4 * slot + 3]]);
+      const b = gen.find((g) => g.parcelId === hit.parcelId)!;
+      expect(hit.typology).toBe(b.typology);
+    }
+    expect(c.lookup('rising-1-B', 0)).toBeNull();
   });
 });
 
@@ -443,39 +508,76 @@ describe('GeneratedController (real deck)', () => {
     expect(m.duration).toBeLessThanOrEqual(30);
   });
 
-  it('C5: whole-city feed has no long task > 50 ms and every slice ≤ 8 ms', async () => {
+  it('C5: whole-city feed has no long task or frame gap > 50 ms and every slice ≤ 8 ms', async () => {
     const updates = makeSyntheticCity(1, 150_000, 1500);
     h = await harness(BUILDINGS_STYLE, { reducedMotion: () => false, drawGenerated: false });
     const c = h.controller();
     const longTasks: PerformanceEntry[] = [];
     const obs = new PerformanceObserver((list) => longTasks.push(...list.getEntries()));
     obs.observe({ type: 'longtask', buffered: true });
+    // The longtask observer does not see rAF work inside the Vitest iframe, and slices, merges
+    // and deck's deferred tessellation all run in rAF. Gaps between successive rAF timestamps
+    // do see it (layers are visible:false, so rasterisation is not in the gap).
+    h.deps.setLayers([]);
+    await idle(h.map); // deck's layerManager exists once the overlay has rendered
+    const deckUpdates: { start: number; dur: number }[] = [];
+    const lmProto = Object.getPrototypeOf(
+      (h.overlay as unknown as { _deck: { layerManager: object } })._deck.layerManager
+    ) as { updateLayers: (...a: unknown[]) => unknown };
+    const origUpdate = lmProto.updateLayers;
+    lmProto.updateLayers = function (this: unknown, ...a: unknown[]) {
+      const start = performance.now();
+      const r = origUpdate.apply(this, a);
+      deckUpdates.push({ start, dur: performance.now() - start });
+      return r;
+    };
+    const gaps: number[] = [];
+    let last = await nextFrame();
+    const frame = async () => {
+      const t = await nextFrame();
+      gaps.push(t - last);
+      last = t;
+    };
     performance.clearMeasures('sfh-slice');
-    await nextFrame();
     const t0 = performance.now();
-    for (const u of updates) {
-      c.apply(u);
-      await nextFrame();
+    try {
+      for (const u of updates) {
+        c.apply(u);
+        await frame();
+      }
+      for (let i = 0; i < 5000 && c.debugSnapshot().pending > 0; i++) await frame();
+      await frame();
+      await frame();
+    } finally {
+      lmProto.updateLayers = origUpdate;
+      obs.disconnect();
     }
-    for (let i = 0; i < 5000 && c.debugSnapshot().pending > 0; i++) await nextFrame();
-    await nextFrame();
-    await nextFrame();
-    obs.disconnect();
     const snap = c.debugSnapshot();
     expect(snap.pending).toBe(0);
     expect(snap.hidden).toBe(150_000);
     expect(snap.cells).toBe(100);
     expect(snap.layerIds.filter((id) => id.startsWith('rising-'))).toEqual([]);
-    const durations = performance.getEntriesByName('sfh-slice', 'measure').map((e) => e.duration);
+    const slices = performance.getEntriesByName('sfh-slice', 'measure');
+    const durations = slices.map((e) => e.duration);
+    // Slice plus the first deck update after it (deck tessellates on its next render).
+    const withDeck = slices.map((e) => {
+      const next = deckUpdates.find((d) => d.start >= e.startTime + e.duration);
+      return e.duration + (next?.dur ?? 0);
+    });
     const tasks = longTasks.filter((e) => e.startTime >= t0).map((e) => e.duration);
-    const sorted = [...durations].sort((a, b) => a - b);
+    const max = (xs: number[]) => Math.max(...xs);
+    const p50 = (xs: number[]) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
     console.info(
-      `[C5] wall ${(performance.now() - t0).toFixed(0)} ms; slices n=${durations.length} ` +
-        `p50=${sorted[sorted.length >> 1].toFixed(2)} max=${sorted.at(-1)!.toFixed(2)} ms; ` +
+      `[C5] wall ${(performance.now() - t0).toFixed(0)} ms; frames=${gaps.length}; ` +
+        `gap p50=${p50(gaps).toFixed(1)} max=${max(gaps).toFixed(1)} ms; ` +
+        `slices n=${durations.length} p50=${p50(durations).toFixed(2)} max=${max(durations).toFixed(2)} ms; ` +
+        `slice+deck p50=${p50(withDeck).toFixed(2)} max=${max(withDeck).toFixed(2)} ms; ` +
+        `deck updates max=${max(deckUpdates.map((d) => d.dur)).toFixed(2)} ms; ` +
         `long tasks ${JSON.stringify(tasks.map(Math.round))}`
     );
     expect(durations.length).toBeGreaterThan(0);
     expect(tasks.filter((d) => d > 50)).toEqual([]);
     for (const d of durations) expect(d).toBeLessThanOrEqual(8);
+    expect(max(gaps)).toBeLessThanOrEqual(50);
   }, 120_000);
 });
