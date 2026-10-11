@@ -23,6 +23,11 @@ function pointerFine(): boolean {
   }
 }
 
+/** The editable starting tool (spec §4.1): Paint on a fine pointer, else Move. */
+export function defaultTool(fine: boolean = pointerFine()): BrushTool {
+  return fine ? 'paint' : 'move';
+}
+
 function defaultStorage(): Storage | null {
   try {
     return typeof localStorage === 'undefined' ? null : localStorage;
@@ -61,7 +66,7 @@ export class BrushState {
     this.#storage = opts.storage === undefined ? defaultStorage() : opts.storage;
     this.#setTimeout = opts.setTimeout ?? globalThis.setTimeout.bind(globalThis);
     this.#clearTimeout = opts.clearTimeout ?? globalThis.clearTimeout.bind(globalThis);
-    this.tool = (opts.fine ?? pointerFine()) ? 'paint' : 'move';
+    this.tool = defaultTool(opts.fine);
     const s = readSettings(this.#storage);
     this.stories = s.stories;
     this.radiusM = s.radiusM;

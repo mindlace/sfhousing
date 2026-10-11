@@ -4,12 +4,13 @@ import { page } from 'vitest/browser';
 import '../../routes/layout.css';
 import type { Manifest } from '$lib/data/manifest';
 import type { GeneratedUpdate } from '$lib/map/types';
-import { emptyPlan } from '$lib/plan';
+import { emptyPlan, type Plan } from '$lib/plan';
 import type { Score } from '$lib/scoreboard';
 import type { WorkerLike } from '$lib/sim/client';
 import type { SimRequest, SimResponse } from '$lib/sim/protocol';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import BrushEditor from './BrushEditor.svelte';
+import type { Editor } from './editor.svelte';
 import { MSG } from './messages';
 
 const manifest = manifestJson as unknown as Manifest;
@@ -68,6 +69,8 @@ async function setup(opts: SetupOpts = {}) {
   });
   const reloadManifest = vi.fn(opts.reloadManifest ?? (async () => manifest));
   const onscore = vi.fn();
+  const editors: Editor[] = [];
+  const oneditor = vi.fn((e: Editor) => void editors.push(e));
   const screen = await render(BrushEditor, {
     props: {
       manifest: opts.manifest === undefined ? manifest : opts.manifest,
@@ -77,12 +80,13 @@ async function setup(opts: SetupOpts = {}) {
       readOnly: opts.readOnly,
       reloadManifest,
       onscore,
+      oneditor,
       createWorker
     }
   });
   const posts = (type: SimRequest['type'], i = workers.length - 1) =>
     workers[i].posts.filter((p) => p.type === type);
-  return { workers, createWorker, reloadManifest, onscore, screen, posts };
+  return { workers, createWorker, reloadManifest, onscore, oneditor, editors, screen, posts };
 }
 
 const status = (text: string) => page.getByText(text, { exact: true });
@@ -245,5 +249,99 @@ describe('BrushEditor worker crash', () => {
     workers[1].emit({ type: 'ready', rev: 3, datasetVersion: 'fixture-0', chunkCount: 4 });
     expect(posts('load', 1)).toEqual([{ type: 'load', rev: 4, plan }]);
     await expect.element(page.getByRole('radio', { name: 'Paint' })).toBeEnabled();
+  });
+});
+
+describe('BrushEditor exposes the Editor; Editor.load drives the worker', () => {
+  const p2: Plan = {
+    schema: 1,
+    datasetVersion: 'fixture-0',
+    ops: [{ kind: 'erase', radiusM: 30, path: [[-122.4187, 37.76014]], id: 'abcdefghijk1' }]
+  };
+  const ready = (w: FakeWorker) =>
+    w.emit({ type: 'ready', rev: 1, datasetVersion: 'fixture-0', chunkCount: 4 });
+  const radios = () => [...document.querySelectorAll('[role="radio"]')].map((r) => r.textContent);
+
+  it('fires oneditor once during setup, with the same editor getEditor() returns', async () => {
+    const { oneditor, editors, screen } = await setup();
+    expect(oneditor).toHaveBeenCalledTimes(1);
+    expect(screen.component.getEditor()).toBe(editors[0]);
+    expect(editors[0].plan).toBe(plan);
+  });
+
+  it('a load after ready posts a load with the new plan', async () => {
+    const { workers, editors, posts } = await setup();
+    await expect.poll(() => workers.length).toBe(1);
+    ready(workers[0]);
+    expect(posts('load')).toEqual([{ type: 'load', rev: 2, plan }]);
+    editors[0].load(p2);
+    expect(posts('load')).toEqual([
+      { type: 'load', rev: 2, plan },
+      { type: 'load', rev: 3, plan: p2 }
+    ]);
+    expect(editors[0].plan).toBe(p2);
+  });
+
+  it('a load before ready posts nothing extra; ready sends one load with the latest plan', async () => {
+    const { workers, editors, posts } = await setup();
+    await expect.poll(() => workers.length).toBe(1);
+    editors[0].load(p2);
+    expect(posts('load')).toEqual([]);
+    ready(workers[0]);
+    expect(posts('load')).toEqual([{ type: 'load', rev: 2, plan: p2 }]);
+  });
+
+  it('a read-only load shows the read-only toolbar and refuses commits; an editable load restores it', async () => {
+    const { workers, editors } = await setup();
+    await expect.poll(() => workers.length).toBe(1);
+    ready(workers[0]);
+    const ed = editors[0];
+    await expect.element(page.getByRole('radio', { name: 'Paint' })).toBeEnabled();
+
+    ed.load(p2, { readOnly: true });
+    await expect.element(status(MSG.readOnly)).toBeInTheDocument();
+    await expect.element(page.getByRole('radio', { name: 'Paint' })).not.toBeInTheDocument();
+    expect(radios()).toHaveLength(1);
+    await expect
+      .element(page.getByRole('radio', { name: 'Move' }))
+      .toHaveAttribute('aria-checked', 'true');
+    expect(ed.readOnly).toBe(true);
+    expect(ed.commit(p2.ops[0])).toEqual({ ok: false, reason: 'read-only' });
+
+    ed.load(p2, { readOnly: false });
+    await expect.element(status(MSG.readOnly)).not.toBeInTheDocument();
+    const fine = matchMedia('(pointer: fine)').matches;
+    await expect
+      .element(page.getByRole('radio', { name: fine ? 'Paint' : 'Move' }))
+      .toHaveAttribute('aria-checked', 'true');
+    expect(radios().length).toBeGreaterThan(1);
+    expect(ed.readOnly).toBe(false);
+    expect(ed.commit(p2.ops[0])).toEqual({ ok: true });
+  });
+
+  it('an editable load keeps the tool the user chose', async () => {
+    const { workers, editors } = await setup();
+    await expect.poll(() => workers.length).toBe(1);
+    ready(workers[0]);
+    await expect.element(page.getByRole('radio', { name: 'Erase' })).toBeEnabled();
+    await click(page.getByRole('radio', { name: 'Erase' }));
+    await expect
+      .element(page.getByRole('radio', { name: 'Erase' }))
+      .toHaveAttribute('aria-checked', 'true');
+    editors[0].load(p2);
+    await expect
+      .element(page.getByRole('radio', { name: 'Erase' }))
+      .toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('stops following loads after unmount', async () => {
+    const { workers, editors, posts, screen } = await setup();
+    await expect.poll(() => workers.length).toBe(1);
+    ready(workers[0]);
+    await screen.unmount();
+    const n = workers[0].posts.length;
+    editors[0].load(p2);
+    expect(workers[0].posts.length).toBe(n);
+    expect(posts('load')).toHaveLength(1);
   });
 });

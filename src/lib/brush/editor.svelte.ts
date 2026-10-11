@@ -19,6 +19,8 @@ export interface Editor {
   commit(op: PlanOp, opts?: { datasetVersion?: string }): CommitResult; // clears redo (R11)
   undo(): PlanOp | null;
   redo(): PlanOp | null;
+  /** Calls `cb` after each `load` updates state (never on commit/undo/redo). Returns unsubscribe. */
+  onLoad(cb: (plan: Plan) => void): () => void;
 }
 
 /**
@@ -29,6 +31,9 @@ export function createEditor(initial: Plan, opts: { readOnly?: boolean } = {}): 
   let plan = $state.raw(initial);
   let redo = $state.raw<PlanOp[]>([]);
   let readOnly = $state(opts.readOnly ?? false);
+  // Plain callbacks, not state.
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  const loadListeners = new Set<(plan: Plan) => void>();
 
   /** Appends op to base, or names the limit it would break. */
   function append(base: Plan, op: PlanOp): Plan | 'too-large' | 'too-many-ops' {
@@ -55,6 +60,14 @@ export function createEditor(initial: Plan, opts: { readOnly?: boolean } = {}): 
       plan = next;
       readOnly = loadOpts.readOnly ?? false;
       redo = [];
+      for (const cb of [...loadListeners]) {
+        try {
+          cb(next);
+        } catch (e) {
+          // One bad listener must not stop the rest or fail the caller's load.
+          console.error('[brush] onLoad listener threw', e);
+        }
+      }
     },
     commit(op, commitOpts = {}) {
       if (readOnly) return { ok: false, reason: 'read-only' };
@@ -89,6 +102,11 @@ export function createEditor(initial: Plan, opts: { readOnly?: boolean } = {}): 
       plan = next;
       redo = redo.slice(0, -1);
       return op;
+    },
+    onLoad(cb) {
+      const entry = (p: Plan) => cb(p); // a fresh entry, so subscribing one cb twice is two
+      loadListeners.add(entry);
+      return () => void loadListeners.delete(entry);
     }
   };
 }

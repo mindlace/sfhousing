@@ -803,3 +803,38 @@ describe('BrushController stale touch and in-flight recovery', () => {
     up(40, 50);
   });
 });
+
+describe('BrushController and Editor.load', () => {
+  it('previews never change editor.plan; only the pointer-up commit does', () => {
+    const before = fx.editor.plan;
+    down(0, 0);
+    for (let x = 10; x <= 60; x += 10) move(x, 0);
+    fx.flushRaf();
+    expect(fx.client.previews.length).toBeGreaterThan(0);
+    fx.ctl.onDiff(diff(fx.client.previews.at(-1)!.rev, 'preview'), false);
+    move(70, 0);
+    fx.flushRaf();
+    expect(fx.editor.plan).toBe(before);
+    expect(fx.editor.plan.ops).toHaveLength(0);
+    up(70, 0);
+    expect(fx.editor.plan).not.toBe(before);
+    expect(fx.editor.plan.ops).toHaveLength(1);
+  });
+
+  it('pan mode follows a load that toggles read-only, and a stroke in progress is cancelled', () => {
+    expect(lastPan()).toBe(false);
+    down(0, 0);
+    move(10, 0);
+    fx.flushRaf();
+    expect(fx.ctl.stroking).toBe(true);
+    fx.editor.load(emptyPlan('fixture-0'), { readOnly: true });
+    flushSync();
+    expect(lastPan()).toBe(true);
+    expect(fx.ctl.stroking).toBe(false);
+    expect(fx.box.style.touchAction).toBe('');
+    fx.editor.load(emptyPlan('fixture-0'), { readOnly: false });
+    flushSync();
+    expect(lastPan()).toBe(false);
+    expect(fx.box.style.touchAction).toBe('none');
+  });
+});

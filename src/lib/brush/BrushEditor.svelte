@@ -8,7 +8,7 @@
 </script>
 
 <script lang="ts">
-  import { onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import type { Manifest } from '$lib/data/manifest';
   import SimMap from '$lib/map/SimMap.svelte';
   import type { ChunkStatus, GeneratedUpdate, SimMapHandle } from '$lib/map/types';
@@ -24,10 +24,10 @@
   import { BrushController } from './BrushController.svelte';
   import BrushToolbar from './BrushToolbar.svelte';
   import { installBrushDebug } from './debug';
-  import { createEditor } from './editor.svelte';
+  import { createEditor, type Editor } from './editor.svelte';
   import type { OverlayCtors } from './overlay';
   import type { BrushTool } from './sampler';
-  import { BrushState } from './state.svelte';
+  import { BrushState, defaultTool } from './state.svelte';
 
   interface Props {
     manifest: Manifest | null;
@@ -41,6 +41,18 @@
     reloadManifest(): Promise<Manifest>;
     /** Latest score from the worker, for scoreboard UI (W5). */
     onscore?(s: Score): void;
+    /**
+     * Hands the parent this component's `Editor`, once, synchronously during setup (before
+     * mount), so the parent may call `load` straight away (SimMap's `onready` pattern; the same
+     * editor `getEditor()` returns). The contract plan-sharing builds on:
+     * - `editor.plan` is reactive (`$state.raw`, replaced on every commit/undo/redo/load), so an
+     *   `$effect` reading it can autosave;
+     * - `editor.load(plan, { readOnly })` re-renders: it cancels a stroke in progress, posts the
+     *   plan to the worker (or, before the worker is ready, the first load sends the latest plan)
+     *   and switches the toolbar to read-only (Move only) or back to the editable default tool;
+     * - stroke previews never touch the editor: `plan` changes only on a committed op.
+     */
+    oneditor?: (editor: Editor) => void;
     /** Tests inject a fake worker. */
     createWorker?: () => WorkerLike;
   }
@@ -53,6 +65,7 @@
     readOnly = false,
     reloadManifest,
     onscore,
+    oneditor,
     createWorker = spawnSimWorker
   }: Props = $props();
 
@@ -68,6 +81,14 @@
     if (manifestError || !initialManifest) brush.phase = 'failed';
     if (readOnly) brush.tool = 'move';
   });
+
+  /**
+   * This component's `Editor`, for a parent holding it through `bind:this` (see `oneditor` in
+   * Props for the contract: reactive `plan`, `load` re-renders, previews never change `plan`).
+   */
+  export function getEditor(): Editor {
+    return editor;
+  }
 
   let client: SimClient | null = null;
   let handle: SimMapHandle | null = null;
@@ -248,6 +269,19 @@
     if (controller) controller.setTool(t);
     else brush.tool = t;
   }
+
+  let wasReadOnly = untrack(() => readOnly);
+  /** Editor.load (plan-sharing's restore, /p/:id, Remix) must reach the worker and the toolbar. */
+  const offLoad = editor.onLoad((loaded) => {
+    controller?.cancelStroke();
+    // Not ready: onReady's load sends editor.plan, which is already `loaded`.
+    if (brush.phase === 'ready') client?.load(loaded);
+    if (editor.readOnly) onToolChange('move');
+    else if (wasReadOnly) onToolChange(defaultTool());
+    wasReadOnly = editor.readOnly;
+  });
+  onDestroy(offLoad);
+  untrack(() => oneditor?.(editor));
 
   onMount(() => {
     client = new SimClient(createWorker(), events, () => editor.plan);
