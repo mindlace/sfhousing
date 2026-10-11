@@ -39,6 +39,7 @@
   },
   "dependencies": {
     "drizzle-orm": "^1.0.0-rc.4-5d5b77c",
+    "kdbush": "^4.1.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
