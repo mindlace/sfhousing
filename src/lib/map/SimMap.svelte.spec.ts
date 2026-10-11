@@ -275,6 +275,49 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
   });
 });
 
+describe('SimMap controls footprint vars', { timeout: 30_000 }, () => {
+  const IN = '--map-controls-br-inline-size';
+  const BL = '--map-controls-br-block-size';
+  const rootVar = (n: string) => document.documentElement.style.getPropertyValue(n);
+  const px = (n: string) => parseFloat(rootVar(n));
+  const measured = (target: HTMLElement, root: HTMLElement) => {
+    const r = root.getBoundingClientRect();
+    const c = target.querySelector('.maplibregl-ctrl-bottom-right')!.getBoundingClientRect();
+    return { inline: r.right - c.left, block: r.bottom - c.top };
+  };
+
+  it('publishes the container footprint on :root and tracks collapse, inset and unmount', async () => {
+    const { target, root, ready, screen } = await mount();
+    target.style.width = '375px';
+    await expect.poll(() => root.dataset.state, { timeout: 20_000 }).toBe('ready');
+    const h = await ready;
+    await idle(h);
+
+    await expect.poll(() => px(IN)).toBeGreaterThan(0);
+    await expect.poll(() => px(BL)).toBeGreaterThan(0);
+    const m = measured(target, root);
+    expect(Math.abs(px(IN) - m.inline)).toBeLessThanOrEqual(1);
+    expect(Math.abs(px(BL) - m.block)).toBeLessThanOrEqual(1);
+
+    const attrib = target.querySelector<HTMLElement>('.maplibregl-ctrl-attrib')!;
+    expect(attrib.classList.contains('maplibregl-compact')).toBe(true);
+    const expandedIn = px(IN);
+    attrib.classList.remove('maplibregl-compact-show');
+    await expect.poll(() => px(IN)).toBeLessThan(expandedIn);
+    attrib.classList.add('maplibregl-compact-show');
+    await expect.poll(() => px(IN)).toBe(expandedIn);
+
+    const before = px(BL);
+    h.setBottomInset(100);
+    await expect.poll(() => px(BL)).toBeGreaterThanOrEqual(before + 99);
+    await expect.poll(() => px(BL)).toBeLessThanOrEqual(before + 101);
+
+    await screen.unmount();
+    expect(rootVar(IN)).toBe('');
+    expect(rootVar(BL)).toBe('');
+  });
+});
+
 describe('SimMap picking', { timeout: 30_000 }, () => {
   // Fixture parcel 3512014's label point, inside chunk 50_25.
   const AT: [number, number] = [-122.4179679, 37.7601348];

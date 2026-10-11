@@ -52,6 +52,7 @@
   import type { Manifest } from '$lib/data/manifest';
   import { CONSTRAINTS, NARROW_PX, defaultFrame, initialCamera, pixelRatio } from './camera';
   import { loadDeck } from './deck-loader';
+  import { controlsFootprint } from './footprint';
   import { installDebug } from './debug';
   import { GeneratedController } from './generated-controller';
   import { TOKENS } from './palette';
@@ -204,6 +205,60 @@
   export function setBottomInset(px: number): void {
     bottomInset = px;
     live?.map?.setPadding({ top: 0, left: 0, right: 0, bottom: px });
+    scheduleFootprint(); // the inset lifts the control container; re-measure next frame
+  }
+
+  // ---- bottom-right controls footprint (docs/dev/map-interfaces.md) -----------------------------
+  const FP_INLINE = '--map-controls-br-inline-size';
+  const FP_BLOCK = '--map-controls-br-block-size';
+  let fpRaf: number | null = null;
+  let fpObserver: ResizeObserver | null = null;
+  let footprintGone = false;
+
+  function publishFootprint(inline: number, block: number): void {
+    if (footprintGone) return;
+    // :root, not the map root: BrushEditor's toolbar and sheets are siblings of SimMap's root.
+    for (const el of [document.documentElement, root]) {
+      el?.style.setProperty(FP_INLINE, `${inline}px`);
+      el?.style.setProperty(FP_BLOCK, `${block}px`);
+    }
+  }
+
+  function clearFootprint(): void {
+    for (const el of [document.documentElement, root]) {
+      el?.style.removeProperty(FP_INLINE);
+      el?.style.removeProperty(FP_BLOCK);
+    }
+  }
+
+  function measureFootprint(): void {
+    fpRaf = null;
+    const controls = live?.map?.getContainer().querySelector('.maplibregl-ctrl-bottom-right');
+    if (!root || !controls) return publishFootprint(0, 0);
+    const f = controlsFootprint(root.getBoundingClientRect(), controls.getBoundingClientRect());
+    publishFootprint(f.inline, f.block);
+  }
+
+  function scheduleFootprint(): void {
+    if (fpRaf === null && typeof requestAnimationFrame === 'function')
+      fpRaf = requestAnimationFrame(measureFootprint);
+  }
+
+  function observeFootprint(map: MapLibreMap): void {
+    unobserveFootprint();
+    const controls = map.getContainer().querySelector('.maplibregl-ctrl-bottom-right');
+    if (!controls || !root || typeof ResizeObserver === 'undefined') return;
+    fpObserver = new ResizeObserver(scheduleFootprint);
+    fpObserver.observe(controls);
+    fpObserver.observe(root);
+    scheduleFootprint();
+  }
+
+  function unobserveFootprint(): void {
+    fpObserver?.disconnect();
+    fpObserver = null;
+    if (fpRaf !== null) cancelAnimationFrame(fpRaf);
+    fpRaf = null;
   }
 
   export function getMap(): MapLibreMap | null {
@@ -252,9 +307,17 @@
     untrack(() => {
       live = l;
       mapState = 'loading';
+      publishFootprint(0, 0); // no controls until the map exists
       void start(m, l);
     });
     return () => teardown(l);
+  });
+
+  // Unmount only: remove the :root vars. `footprintGone` makes this independent of whether
+  // teardown()'s 0px publish runs before or after this cleanup.
+  $effect(() => () => {
+    footprintGone = true;
+    clearFootprint();
   });
 
   $effect(() => {
@@ -370,6 +433,7 @@
       new ml.AttributionControl({ compact, customAttribution: attributionHtml(manifest.sources) }),
       'bottom-right'
     );
+    observeFootprint(map);
     if (compact) {
       // MapLibre v6 starts compact attribution expanded (maplibregl-compact-show) and collapses
       // it on `drag` only. Also collapse on the first user zoom, rotate or pitch.
@@ -444,6 +508,8 @@
 
   function teardown(l: Live): void {
     l.dead = true;
+    unobserveFootprint();
+    publishFootprint(0, 0); // a remount or error state has no controls until the next map exists
     for (const t of l.timers) clearTimeout(t);
     l.timers.clear();
     if (l.pickRaf !== null) cancelAnimationFrame(l.pickRaf);
@@ -469,6 +535,7 @@
     l.map?.remove();
     l.map = null;
     mapState = 'unsupported';
+    publishFootprint(0, 0);
     if (unsupportedFired) return;
     unsupportedFired = true;
     root?.dispatchEvent(new CustomEvent('mapunsupported', { bubbles: true }));
@@ -481,6 +548,8 @@
     l.map?.remove();
     l.map = null;
     pendingApplies = [];
+    unobserveFootprint();
+    publishFootprint(0, 0);
     mapState = 'error';
   }
 
