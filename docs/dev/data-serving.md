@@ -43,4 +43,4 @@ On every 200/206/304/412: `ETag` (R2 `httpEtag`), `Accept-Ranges: bytes`, `Last-
 
 ## Caching
 
-Browsers cache via `immutable`; the Worker Cache API is not used (it does not store 206s). Published versions are never modified, so a changed dataset means a new version path.
+Browsers cache via `immutable`. The route itself makes no Cache API calls, but the `@sveltejs/adapter-cloudflare` worker wrapper puts cacheable responses (anything without `private`/`no-cache`/`no-store`, so full 200 `/data` responses with the 1-year `immutable` header) into `caches.default` and answers later matching requests from it; 206 partial responses are not stored by the Cache API. In production this is harmless because published versions are never modified, so a changed dataset means a new version path. Locally, `wrangler dev` persists that cache on disk under `.wrangler/state/v3/cache`, so re-loading a fixture under the same version would be served stale; `scripts/r2-load-local.ts` (`npm run data:fixture`) therefore purges `.wrangler/state/v3/cache` after loading.
