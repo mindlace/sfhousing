@@ -3,13 +3,12 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: write
-  pull-requests: write
-
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
@@ -28,6 +27,8 @@ jobs:
     if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     concurrency: deploy-prod
+    permissions:
+      contents: read
     environment:
       name: production
       url: https://sfhousing.mindlace.net
@@ -51,4 +52,5 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy --env="" --tag ${{ needs.release-please.outputs.tag_name }} --var PUBLIC_APP_RELEASE:${{ needs.release-please.outputs.tag_name }}
+          # Omitting --env selects the top-level (production) config.
+          command: deploy --tag ${{ needs.release-please.outputs.tag_name }} --var PUBLIC_APP_RELEASE:${{ needs.release-please.outputs.tag_name }}
