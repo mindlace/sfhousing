@@ -221,7 +221,7 @@ Colour is never the only carrier of typology: the tooltip names it.
    - `fill-extrusion-color` = `case(feature-state.replaced, --map-replaced, --map-existing)`
    - `fill-extrusion-opacity`: zoom-interpolated, 0 at z12 and 0.92 at z13
 3. `chunk-status`: GeoJSON `fill` and `line` layers over the cell bboxes from I12.
-4. deck `generated-<cellId>` layers and `rising-<rev>-<cellId>` layers, with no `beforeId`, so they share the 3D depth buffer with the extrusions. The layers passed to `setOverlayLayers` (I17; brush-tool's `brush-ring` and `brush-swath`) follow them in the same overlay's layer list, so they draw on top. Their ids must not start with `generated-` or `rising-`.
+4. deck `generated-<cellId>` layers and `rising-<rev>-<cellId>` layers, inserted with `beforeId` = the id of the style's first `symbol` (label) layer, derived from the loaded style, so labels stay readable over them (partner ruling 2026-10-11); they still share the 3D depth buffer with the extrusions. The layers passed to `setOverlayLayers` (I17; brush-tool's `brush-ring` and `brush-swath`) get the same `beforeId` and follow them in the same overlay's layer list, so they draw over the buildings and under the labels. Their ids must not start with `generated-` or `rising-`.
 5. Protomaps label layers.
 6. **Reserved**: an `overlay-anchor` empty `background` layer with `visibility:none`, used as a `beforeId` slot for M2 area overlays and for the brush ring if brush-tool wants it in-map.
 

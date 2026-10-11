@@ -8,7 +8,8 @@ import {
   BUILDINGS_LAYER,
   OVERLAY_ANCHOR,
   FONT_RENAME,
-  rewriteFont
+  rewriteFont,
+  firstSymbolLayerId
 } from './style';
 import type { Theme } from './types';
 
@@ -129,6 +130,27 @@ describe('themePaintDiff (U7)', () => {
       );
     });
   }
+});
+
+describe('firstSymbolLayerId', () => {
+  for (const theme of themes) {
+    it(`returns the first label layer of the ${theme} style`, () => {
+      const style = buildStyle(base, theme);
+      const id = firstSymbolLayerId(style);
+      const i = style.layers.findIndex((l) => l.id === id);
+      expect(style.layers[i].type).toBe('symbol');
+      expect(style.layers.slice(0, i).some((l) => l.type === 'symbol')).toBe(false);
+      expect(i).toBeGreaterThan(style.layers.findIndex((l) => l.id === 'chunk-error-line'));
+    });
+  }
+
+  it('is undefined for a style without symbol layers (or without a style)', () => {
+    const style = buildStyle(base, 'light');
+    expect(
+      firstSymbolLayerId({ ...style, layers: style.layers.filter((l) => l.type !== 'symbol') })
+    ).toBeUndefined();
+    expect(firstSymbolLayerId(undefined)).toBeUndefined();
+  });
 });
 
 describe('rewriteFont', () => {

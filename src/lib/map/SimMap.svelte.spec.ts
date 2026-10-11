@@ -220,6 +220,35 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     await expect.poll(() => statusesIn(map)).toEqual(['loading']);
   });
 
+  it('inserts the generated and overlay deck layers just beneath the first label layer', async () => {
+    const { root, ready } = await mount();
+    await expect.poll(() => root.dataset.state, { timeout: 20_000 }).toBe('ready');
+    const h = await ready;
+    const map = h.getMap()!;
+    const pack = packCell(
+      '50_25',
+      (genJson as unknown as GeneratedBuilding[])
+        .slice(0, 3)
+        .map((b) => ({ building: b, existingUnits: 0 }))
+    );
+    h.applyGenerated({
+      revision: 0,
+      cells: [{ settled: pack, rising: null }],
+      removedCells: [],
+      hide: { add: [], remove: [] }
+    });
+    const { ScatterplotLayer } = await import('@deck.gl/layers');
+    h.setOverlayLayers([new ScatterplotLayer({ id: 'brush-ring', data: [] })]);
+    const firstSymbol = map.getStyle().layers.find((l) => l.type === 'symbol')!.id;
+    const group = `deck-maplibre-layer-group-before:${firstSymbol}`;
+    await expect.poll(() => map.getLayersOrder().includes(group)).toBe(true);
+    const order = map.getLayersOrder();
+    // One deck group (no "last" group above the labels), directly beneath the first label.
+    expect(order.filter((id) => id.startsWith('deck-'))).toEqual([group]);
+    expect(order.indexOf(group)).toBe(order.indexOf(firstSymbol) - 1);
+    expect(errors).toEqual([]);
+  });
+
   it('switches theme via paint properties without setStyle and keeps feature-state', async () => {
     const { root, screen, ready } = await mount({ theme: 'light' });
     await expect.poll(() => root.dataset.state, { timeout: 20_000 }).toBe('ready');
