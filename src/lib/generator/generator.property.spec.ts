@@ -72,13 +72,42 @@ const arbSite: fc.Arbitrary<Ring[]> = fc.oneof(
     .record({
       w: fc.double({ min: 6, max: 60, noNaN: true }),
       h: fc.double({ min: 6, max: 60, noNaN: true }),
+      w2: fc.double({ min: 4, max: 70, noNaN: true }),
+      h2: fc.double({ min: 4, max: 70, noNaN: true }),
       t,
       f: fc.boolean()
     })
-    .map(({ w, h, t, f }) => [
+    .map(({ w, h, w2, h2, t, f }) => [
       rotateRing(rectRing(w, h), t, f),
-      rotateRing(rectRing(5, 10, w + 20, 0), t, f)
-    ])
+      rotateRing(rectRing(w2, h2, (w + w2) / 2 + 5, 0), t, f)
+    ]),
+  // star-shaped, 7–16 vertices; rational circle parametrisation only (no sin/cos)
+  fc
+    .record({
+      n: fc.integer({ min: 7, max: 16 }),
+      jit: fc.array(fc.double({ min: -0.3, max: 0.3, noNaN: true }), {
+        minLength: 16,
+        maxLength: 16
+      }),
+      rad: fc.array(fc.double({ min: 6, max: 40, noNaN: true }), { minLength: 16, maxLength: 16 })
+    })
+    .map(({ n, jit, rad }): Ring[] => {
+      // turn fraction f in [0,1) -> unit-circle point, rational only: each half-turn uses
+      // t in [-1,1) with (c,s) = ((1-t²)/(1+t²), 2t/(1+t²)), angles -90°..90°; the second half is negated
+      const unit = (f: number): [number, number] => {
+        const half = f < 0.5 ? 1 : -1;
+        const t = (f < 0.5 ? f : f - 0.5) * 4 - 1;
+        const d = 1 + t * t;
+        return [(half * (1 - t * t)) / d, (half * 2 * t) / d];
+      };
+      const ring: Ring = [];
+      for (let i = 0; i < n; i++) {
+        const f = (i + jit[i] * 0.5 + n) / n;
+        const [ux, uy] = unit(f - Math.floor(f));
+        ring.push([ux * rad[i], uy * rad[i]]);
+      }
+      return [ring];
+    })
 );
 const arbCase = fc.record({
   site: arbSite,
@@ -129,6 +158,16 @@ describe('generator properties (§6)', () => {
             expect(p.footprint.length).toBeGreaterThanOrEqual(3);
             const [a, b] = [p.footprint[0], p.footprint[p.footprint.length - 1]];
             expect(a[0] === b[0] && a[1] === b[1]).toBe(false);
+          }
+          for (const ring of [
+            ...d.local.map((l) => l.ring),
+            ...d.building.parts.map((x) => x.footprint)
+          ]) {
+            expect(ring.length).toBeGreaterThanOrEqual(3);
+            ring.forEach((q, k) => {
+              const nx = ring[(k + 1) % ring.length];
+              expect(q[0] === nx[0] && q[1] === nx[1]).toBe(false);
+            });
           }
           expect(
             nested(

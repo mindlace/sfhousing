@@ -40,6 +40,10 @@ export function generateDetailed(
 ): Detailed | null {
   if (mode !== 'max') throw new Error('unsupported BuildoutMode');
   if (!parcel.eligible) return null;
+  if (env === null || typeof env !== 'object') return null;
+  const lp = parcel.labelPoint;
+  if (!Array.isArray(lp) || lp.length !== 2 || !Number.isFinite(lp[0]) || !Number.isFinite(lp[1]))
+    return null;
   let S = Math.floor(env.maxStories);
   if (!Number.isFinite(S) || S < 1) return null;
   if (S > MAX_STORIES) S = MAX_STORIES;
@@ -65,23 +69,40 @@ export function generateDetailed(
     : 1;
   if (units < 1) return null; // N5
   const after = replacesExisting ? floorAreaM2 : parcel.existingFloorAreaM2 + floorAreaM2;
-  if (after <= parcel.existingFloorAreaM2) return null; // N6
-  if (replacesExisting && units <= parcel.existingUnits) return null; // N7
+  if (!(after > parcel.existingFloorAreaM2)) return null; // N6 (NaN fails safe)
+  if (replacesExisting && !(units > parcel.existingUnits)) return null; // N7 (NaN fails safe)
 
-  const local: LocalPart[] = m.parts.map((p) => ({
-    ring: canonicalRing(p.ring).map((q) => [q.x, q.y] as [number, number]),
-    baseM: round2(p.baseM),
-    topM: round2(p.topM + (p.reachesTop ? draws.parapetM : 0))
-  }));
+  const local: LocalPart[] = [];
+  const parts: GeneratedBuilding['parts'] = [];
+  for (const p of m.parts) {
+    const ring = canonicalRing(p.ring).map((q) => [q.x, q.y] as [number, number]);
+    const ll = toLngLat(ring, parcel.labelPoint);
+    // Rounding to 1e-7° can merge neighbours (or last into first): drop those vertices from
+    // both frames so they stay index-aligned and the lng/lat ring is open with no repeats.
+    const keep = ll.map((q, i) => {
+      const prev = ll[(i + ll.length - 1) % ll.length];
+      return !(q[0] === prev[0] && q[1] === prev[1]);
+    });
+    const kept = keep.filter(Boolean).length;
+    // an all-equal ring would drop everything; a ring left with < 3 vertices is dropped
+    if (kept < 3) continue;
+    local.push({
+      ring: ring.filter((_, i) => keep[i]),
+      baseM: round2(p.baseM),
+      topM: round2(p.topM + (p.reachesTop ? draws.parapetM : 0))
+    });
+    parts.push({
+      footprint: ll.filter((_, i) => keep[i]),
+      baseM: local[local.length - 1].baseM,
+      topM: local[local.length - 1].topM
+    });
+  }
+  if (parts.length === 0) return null;
   const building: GeneratedBuilding = {
     parcelId: parcel.id,
     source: 'user',
     typology: m.typology,
-    parts: local.map((l) => ({
-      footprint: toLngLat(l.ring, parcel.labelPoint),
-      baseM: l.baseM,
-      topM: l.topM
-    })),
+    parts,
     stories: m.stories,
     units,
     floorAreaM2,

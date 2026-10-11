@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { ParcelRecord } from '../data/parcel';
 import { generate, generateDetailed, generateWith, type Detailed } from './generate';
-import { varietyFromUniforms } from './variety';
+import { drawVariety, varietyFromUniforms } from './variety';
 import { signedArea } from './poly';
+import { pointNearPolygon } from './fixtures/geom';
 import std from './fixtures/std-25x100.json';
 import shallow from './fixtures/shallow-adu-fail.json';
 import lot1000 from './fixtures/lot-1000.json';
@@ -188,6 +189,18 @@ describe('golden fixtures: midrise and tower', () => {
     expect(localArea(d, 0)).toBeCloseTo(2400, 0);
     expect(localArea(d, 1)).toBeCloseTo(900, 0);
   });
+  it('tower with non-zero slide: tower plate inside the podium and offset along u', () => {
+    const slid = varietyFromUniforms([0.5, 0.5, 0.5, 0.95, 0, 0.25]);
+    const d = generateDetailed(P(lot3000), { maxStories: 30 }, slid, 'max')!;
+    expect(d.building.typology).toBe('tower');
+    const [pod, tow] = d.local;
+    expect(tow.ring.every((p) => pointNearPolygon(p, pod.ring, 0.02))).toBe(true);
+    const cen = tow.ring
+      .reduce((s, [x, y]) => [s[0] + x, s[1] + y], [0, 0])
+      .map((v) => v / tow.ring.length);
+    const off = (cen[0] - d.site.c.x) * d.site.u.x + (cen[1] - d.site.c.y) * d.site.u.y;
+    expect(Math.abs(off)).toBeGreaterThan(1);
+  });
   it('lot-1200 S=30 → midrise, 12 stories (cap chain)', () => {
     expect(run(lot1200, 30)!.building).toMatchObject({ typology: 'midrise', stories: 12 });
   });
@@ -225,10 +238,64 @@ describe('golden fixtures: midrise and tower', () => {
       ]
     };
     const d = run(L, 40)!;
-    expect(['tower', 'midrise']).toContain(d.building.typology);
-    if (d.building.typology === 'midrise') expect(d.building.stories).toBe(12);
+    expect(d.building).toMatchObject({ typology: 'midrise', stories: 12 });
     for (const up of d.local.filter((l) => l.baseM > 0)) {
       expect(d.local.some((lo) => lo.baseM < up.baseM && lo.topM === up.baseM)).toBe(true);
     }
+  });
+});
+
+describe('final-review fixes', () => {
+  const repro = {
+    id: 'r',
+    polygon: [
+      [
+        [10.8444, 0],
+        [9.2836, 5.9662],
+        [4.2813, 9.3748],
+        [-1.6346, 11.3686],
+        [-7.1719, 8.2768],
+        [-10.1535, 2.9813],
+        [-10.257, -3.0117],
+        [-6.9816, -8.0572],
+        [-1.5139, -10.5291],
+        [4.2568, -9.3211],
+        [10.4398, -6.7092]
+      ]
+    ],
+    labelPoint: [-122.44, 37.76],
+    areaM2: 0,
+    existingUnits: 1,
+    existingFloorAreaM2: 50,
+    existingHeightM: 6,
+    landUse: 'RESIDENTIAL',
+    eligible: true,
+    neighborhood: 'X'
+  };
+  it('F1: lng/lat rings never repeat a vertex or close; local stays index-aligned', () => {
+    const d = generateDetailed(P(repro), { maxStories: 6 }, drawVariety(3184), 'max')!;
+    expect(d).not.toBeNull();
+    d.building.parts.forEach((p, i) => {
+      const f = p.footprint;
+      expect(f.length).toBeGreaterThanOrEqual(3);
+      for (let k = 0; k < f.length; k++) {
+        const n = f[(k + 1) % f.length];
+        expect(f[k][0] === n[0] && f[k][1] === n[1]).toBe(false);
+      }
+      expect(d.local[i].ring.length).toBe(f.length);
+    });
+  });
+  it('F2: malformed input returns null instead of throwing', () => {
+    const env = { maxStories: 3 };
+    const g = (p: unknown, e: unknown = env) => generate(P(p), e as never, 1, 'max');
+    expect(g({ ...std, polygon: null })).toBeNull();
+    expect(g({ ...std, polygon: [null] })).toBeNull();
+    expect(g({ ...std, polygon: [[[0, 0], null, [1, 1], [0, 5]]] })).toBeNull();
+    expect(g({ ...std, labelPoint: undefined })).toBeNull();
+    expect(g(std, null)).toBeNull();
+  });
+  it('F3: NaN existing values fail safe (N6/N7)', () => {
+    expect(run({ ...std, existingUnits: NaN }, 3)).toBeNull();
+    expect(run({ ...std, existingFloorAreaM2: NaN }, 3)).toBeNull();
   });
 });

@@ -37,12 +37,22 @@ describe('createGeneratorCache (§4.12)', () => {
   it('a throwing parcel yields null and logs once', () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const c = createGeneratorCache('fixture-0');
-    const bad = { ...P, id: 'bad', polygon: null } as unknown as ParcelRecord;
+    // malformed data now yields null inside generate; a throwing accessor still exercises the catch
+    const bad = { ...P, id: 'bad' } as ParcelRecord;
+    Object.defineProperty(bad, 'polygon', {
+      get() {
+        throw new Error('boom');
+      }
+    });
     expect(c.get(bad, { maxStories: 3 })).toBeNull();
     expect(c.get(bad, { maxStories: 4 })).toBeNull();
     expect(c.get(bad, { maxStories: 3 })).toBeNull();
     expect(err).toHaveBeenCalledTimes(1);
     expect(String(err.mock.calls[0][0])).toMatch(/^\[generator\] bad: /);
+  });
+  it('null envelope → null without throwing', () => {
+    const c = createGeneratorCache('fixture-0');
+    expect(c.get(P, null as never)).toBeNull();
   });
   it('clear() drops memoised results', () => {
     const c = createGeneratorCache('fixture-0');

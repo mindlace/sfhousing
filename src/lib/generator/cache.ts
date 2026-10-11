@@ -20,13 +20,17 @@ export function createGeneratorCache(_datasetVersion: string): GeneratorCache {
   const logged = new Set<string>();
   return {
     get(parcel, env) {
-      const f = Math.floor(env.maxStories);
-      if (!Number.isFinite(f) || f < 1) return null;
-      const key = parcel.id + '|' + Math.min(f, MAX_STORIES);
-      const hit = memo.get(key);
-      if (hit !== undefined) return hit;
+      let key: string | null = null;
       let out: GeneratedBuilding | null;
       try {
+        // Key covers only maxStories because M1's Envelope has a single field (I2); it must
+        // widen when M3 adds envelope fields. A null/odd envelope throws here and is treated
+        // like any other bad input: null, logged once per parcel.
+        const f = Math.floor(env.maxStories);
+        if (!Number.isFinite(f) || f < 1) return null;
+        key = parcel.id + '|' + Math.min(f, MAX_STORIES);
+        const hit = memo.get(key);
+        if (hit !== undefined) return hit;
         out = generate(parcel, env, fnv1a32(parcel.id), 'max');
       } catch (e) {
         if (!logged.has(parcel.id)) {
@@ -35,7 +39,7 @@ export function createGeneratorCache(_datasetVersion: string): GeneratorCache {
         }
         out = null;
       }
-      memo.set(key, out);
+      if (key !== null) memo.set(key, out); // no key (bad envelope): nothing to memoise
       return out;
     },
     clear() {

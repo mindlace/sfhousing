@@ -48,8 +48,12 @@ function cleanRing(ring: readonly (readonly number[])[]): PathD {
 
 /** §4.4 steps 4–6. Returns null for degenerate parcels. */
 export function normaliseSite(polygon: [number, number][][], edgeInsetM: number): Site | null {
+  if (!Array.isArray(polygon)) return null;
   const rings: PathsD = [];
   for (const ring of polygon) {
+    if (!Array.isArray(ring)) continue;
+    // a ring with a malformed point is dropped whole
+    if (ring.some((pt) => !Array.isArray(pt) || pt.length < 2)) continue;
     const r = cleanRing(ring);
     if (r.length) rings.push(r);
   }
