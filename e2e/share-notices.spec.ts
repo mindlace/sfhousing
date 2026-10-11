@@ -79,10 +79,12 @@ async function chrome(page: Page): Promise<[string, Locator][]> {
 }
 
 /** Every notice box lies inside #map-region and intersects none of the visible chrome. */
-async function expectNoticesClear(
-  page: Page,
-  required = ['brush toolbar', 'parcels chip', 'buildings chip', 'attribution']
-): Promise<void> {
+const BASE = ['brush toolbar', 'parcels chip', 'buildings chip', 'attribution'];
+/** Required chrome per project: the scoreboard panel on desktop, the score bar on mobile. */
+const DESKTOP = [...BASE, 'scoreboard panel'];
+const MOBILE = [...BASE, 'score bar'];
+
+async function expectNoticesClear(page: Page, required: string[]): Promise<void> {
   const region = await box(page.locator('#map-region'));
   const items = await chrome(page);
   const names = items.map(([n]) => n);
@@ -90,7 +92,6 @@ async function expectNoticesClear(
   for (const must of required) {
     expect(names, `${must} not rendered`).toContain(must);
   }
-  expect(names.some((n) => n === 'scoreboard panel' || n === 'score bar')).toBe(true);
 
   const count = await notice(page).count();
   expect(count).toBeGreaterThan(0);
@@ -143,10 +144,10 @@ test.describe('desktop', () => {
   // eslint-disable-next-line playwright/no-skipped-test
   test.skip(({ isMobile }) => isMobile, 'chromium project only');
 
-  // `beside`: from xl the stack starts right of the toolbar column (below xl, under the toolbar).
+  // `beside`: from lg the stack starts right of the toolbar column (below lg, under the toolbar).
   for (const [width, height, beside] of [
     [768, 1024, false],
-    [1024, 768, false],
+    [1024, 768, true],
     [1280, 800, true],
     [1440, 900, true]
   ] as const) {
@@ -155,7 +156,7 @@ test.describe('desktop', () => {
     }) => {
       await page.setViewportSize({ width, height });
       await gotoWithN3AndChips(page);
-      await expectNoticesClear(page);
+      await expectNoticesClear(page, DESKTOP);
       // Out of the scoreboard column at any panel height; from xl, out of the toolbar's too.
       const n = await box(notice(page).first());
       const panel = await box(scoreRegion(page).locator('div.md\\:block').first());
@@ -164,6 +165,20 @@ test.describe('desktop', () => {
       expect(n.x >= toolbar.x + toolbar.width).toBe(beside);
     });
   }
+
+  test('1024×768: N3 stays clear when the keyboard shortcuts grow the toolbar', async ({
+    page
+  }) => {
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await gotoWithN3AndChips(page);
+    const toggle = page
+      .locator('.brush-toolbar')
+      .getByRole('button', { name: 'Keyboard shortcuts' });
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('.brush-toolbar table')).toBeVisible();
+    await expectNoticesClear(page, DESKTOP);
+  });
 
   test('1024×768: the Remix toast is clear of the map chrome too', async ({ page, request }) => {
     await page.setViewportSize({ width: 1024, height: 768 });
@@ -187,7 +202,12 @@ test.describe('desktop', () => {
     await jumpAndIdle(page, FRAME);
     await expect(notice(page).filter({ hasText: /^Remixed from/ })).toBeVisible();
     await expect(chunkChip(page)).toBeVisible({ timeout: 10_000 });
-    await expectNoticesClear(page, ['brush toolbar', 'parcels chip', 'attribution']);
+    await expectNoticesClear(page, [
+      'brush toolbar',
+      'parcels chip',
+      'attribution',
+      'scoreboard panel'
+    ]);
   });
 });
 
@@ -200,13 +220,13 @@ test.describe('mobile', () => {
   }) => {
     await gotoWithN3AndChips(page);
     // MapLibre starts compact attribution expanded; either state must stay uncovered.
-    await expectNoticesClear(page);
+    await expectNoticesClear(page, MOBILE);
     await page.evaluate(() =>
       document
         .querySelector('.maplibregl-ctrl-attrib.maplibregl-compact')
         ?.classList.remove('maplibregl-compact-show')
     );
-    await expectNoticesClear(page);
+    await expectNoticesClear(page, MOBILE);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth
@@ -230,6 +250,6 @@ test.describe('mobile', () => {
     await expect(page.getByRole('group', { name: 'Scoreboard details' })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.getByRole('group', { name: 'Scoreboard details' })).toBeHidden();
-    await expectNoticesClear(page);
+    await expectNoticesClear(page, MOBILE);
   });
 });
