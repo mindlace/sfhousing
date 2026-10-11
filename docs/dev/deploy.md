@@ -36,6 +36,8 @@ There is no automated staging-to-prod interlock (as in planafoot): do not merge 
 
 Versions are immutable and retained indefinitely.
 
+Both deploy workflows end with the step "Smoke: current dataset manifest is served": it reads the deployed environment's `PUBLIC_DATASET_VERSION` (`scripts/dataset-version.ts`) and `curl`s `/data/<version>/manifest.json` on the deployed host. The step fails the deploy job when the configured version's manifest is not in R2. That includes `fixture-0`, which is not uploaded remotely, so staging and prod deploy jobs report red until the real dataset is uploaded and the vars are bumped (X1). At that point also enable the skipped real-version tests in `scripts/wrangler-config.spec.ts` (`it.skip(` to `it(`).
+
 ## Secrets and variables
 
 - Variables: `RELEASE_PLEASE_APP_ID` (present, unused by v3 of the token action), `RELEASE_PLEASE_CLIENT_ID`, `CLOUDFLARE_ACCOUNT_ID`.

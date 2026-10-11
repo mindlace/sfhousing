@@ -38,3 +38,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy --env staging --tag ${{ steps.sha.outputs.short }} --var PUBLIC_APP_RELEASE:${{ github.sha }}
+      - name: 'Smoke: current dataset manifest is served'
+        run: |
+          V="$(npx tsx scripts/dataset-version.ts staging)"
+          curl -fsS -o /dev/null -I --retry 5 --retry-delay 10 --retry-all-errors "https://sfhousing-staging.mindlace.net/data/${V}/manifest.json"

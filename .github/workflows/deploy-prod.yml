@@ -39,3 +39,7 @@ jobs:
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           # Omitting --env selects the top-level (production) config.
           command: deploy --tag ${{ github.event.release.tag_name }} --var PUBLIC_APP_RELEASE:${{ github.event.release.tag_name }}
+      - name: 'Smoke: current dataset manifest is served'
+        run: |
+          V="$(npx tsx scripts/dataset-version.ts production)"
+          curl -fsS -o /dev/null -I --retry 5 --retry-delay 10 --retry-all-errors "https://sfhousing.mindlace.net/data/${V}/manifest.json"
