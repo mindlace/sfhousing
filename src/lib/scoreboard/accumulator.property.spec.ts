@@ -27,7 +27,7 @@ function toBuilding(p: ParcelRecord, b: { units: number; repl: boolean } | null)
 describe('accumulator property (spec §6)', () => {
   it('generator reaches scale (sequences routinely in the hundreds)', () => {
     const lengths = fc
-      .sample(fc.array(opArb, { maxLength: 1500, size: 'max' }), 20)
+      .sample(fc.array(opArb, { maxLength: 1500, size: 'max' }), { seed: 1, numRuns: 20 })
       .map((a) => a.length);
     expect(Math.max(...lengths)).toBeGreaterThanOrEqual(200);
   });

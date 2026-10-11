@@ -63,6 +63,16 @@ describe('formulas (spec §4.1)', () => {
     expect(s.byNeighborhood).toEqual({ Unassigned: 7 });
   });
 
+  it('neighborhood names are trimmed so padded variants share one key', () => {
+    const ps = [' Mission', 'Mission ', 'Mission'].map((n, i) => parcel(`500000${i}`, 0, n));
+    const s = score(
+      ps.map((p, i) => [p, building(p, i + 1, true)] as [typeof p, ReturnType<typeof building>]),
+      ONE
+    );
+    expect(s.byNeighborhood).toEqual({ Mission: 6 });
+    expect(s.parcelsChanged).toBe(3);
+  });
+
   it('totals over mixed parcels; neighborhoods sum net; absent when unchanged', () => {
     const acc = createScoreAccumulator(ONE);
     acc.set(aduLot, aduBuilding);

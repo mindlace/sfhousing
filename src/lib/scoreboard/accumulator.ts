@@ -24,7 +24,7 @@ function contributionOf(p: ParcelRecord, b: GeneratedBuilding | null): Contribut
   return {
     gross: b.units,
     demolished: b.replacesExisting ? p.existingUnits : 0,
-    neighborhood: p.neighborhood.trim() === '' ? UNASSIGNED : p.neighborhood
+    neighborhood: p.neighborhood.trim() || UNASSIGNED
   };
 }
 
