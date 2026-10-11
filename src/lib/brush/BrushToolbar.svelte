@@ -260,7 +260,7 @@
 {/snippet}
 
 <div
-  class="brush-toolbar absolute inset-x-0 bottom-[var(--scorebar-h,0px)] z-20 [--brushbar-h:56px] md:top-4 md:right-auto md:bottom-auto md:left-4 md:flex md:w-[23rem] md:flex-col md:[--brushbar-h:0px]"
+  class="brush-toolbar absolute inset-x-0 bottom-[var(--scorebar-h,0px)] z-21 [--brushbar-h:56px] md:top-4 md:right-auto md:bottom-auto md:left-4 md:flex md:w-[23rem] md:flex-col md:[--brushbar-h:0px]"
   style={THEME_VARS}
 >
   <div
@@ -431,7 +431,10 @@
      footprint is 0px (nothing to avoid: 0.5rem in, no lift); with no map at all the vars are unset
      and the fallback keeps the old 60px clearance from the compact button. 100cqw is the toolbar's
      width (the map's, below 768px). From 768px the popovers are hidden and the status line is
-     static, so none of this applies. */
+     static, so none of this applies.
+     The toolbar sits one z step (z-21) above plan-sharing's NoticeStack (z-20): the toolbar box
+     never overlaps a notice, but on a short viewport (667x375) a lifted popover can reach a
+     notice at the top, and a popover the user just opened should paint over it. */
   .brush-toolbar {
     container-type: inline-size;
     --bt-br-inline: var(--map-controls-br-inline-size, 3.75rem);
