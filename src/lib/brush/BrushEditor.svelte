@@ -39,8 +39,12 @@
     readOnly?: boolean;
     /** Retry: reruns loadManifest client-side (the parent supplies it so /p/:id can reuse this). */
     reloadManifest(): Promise<Manifest>;
-    /** Latest score from the worker, for scoreboard UI (W5). */
-    onscore?(s: Score): void;
+    /** Latest score from the worker, with that diff's `complete` flag (I15), for the scoreboard
+     *  (its "Updating…" state reads `complete`). Fired on every diff. */
+    onscore?(s: Score, meta: { complete: boolean }): void;
+    /** Chunk loading summary for the scoreboard (pending count, failed count), fired whenever it
+     *  changes: on every `chunks` message and when a worker restart resets it. */
+    onchunks?(c: { pending: number; failed: number }): void;
     /**
      * Hands the parent this component's `Editor`, once, synchronously during setup (before
      * mount), so the parent may call `load` straight away (SimMap's `onready` pattern; the same
@@ -65,6 +69,7 @@
     readOnly = false,
     reloadManifest,
     onscore,
+    onchunks,
     oneditor,
     createWorker = spawnSimWorker
   }: Props = $props();
@@ -90,6 +95,25 @@
     return editor;
   }
 
+  /**
+   * Re-sends a fetch for failed parcel chunks (I15 `retryChunks`), for a sibling's Retry control
+   * (the scoreboard's partial-failure row). The same request map-view's on-map chip sends.
+   */
+  export function retryChunks(): void {
+    client?.retryChunks();
+  }
+
+  /**
+   * The scoreboard's mobile sheet height while it is open (brush-tool spec line 148: the shell
+   * calls setBottomInset with the sheet height when it is open). `null` when it closes: the
+   * inset is recomputed from `--brushbar-h` + `--scorebar-h`. While a number is set, a media-query
+   * change does not clobber it.
+   */
+  export function setSheetInset(px: number | null): void {
+    sheetInset = px;
+    applyInset();
+  }
+
   let client: SimClient | null = null;
   let handle: SimMapHandle | null = null;
   let layers: OverlayCtors | null = null;
@@ -106,6 +130,12 @@
   const statusCells = new Set<string>(); // eslint-disable-line svelte/prefer-svelte-reactivity
   let lastStats: OpStats | null = null;
   let chunks: { pending: number; failed: string[] } = { pending: 0, failed: [] };
+
+  /** Every assignment to `chunks` goes through here so `onchunks` never misses one. */
+  function setChunks(next: { pending: number; failed: string[] }): void {
+    chunks = next;
+    onchunks?.({ pending: next.pending, failed: next.failed.length });
+  }
 
   function applyRender(u: GeneratedUpdate): void {
     if (handle) {
@@ -145,12 +175,12 @@
       // Only a commit with its own pointerup mark: a redo's would span from an older stroke.
       if (d.phase === 'commit' && controller && d.rev === controller.markedCommitRev) markCommit();
       controller?.onDiff(d, stale);
-      onscore?.(d.score);
+      onscore?.(d.score, { complete: d.complete });
     },
     onChunks(c) {
       for (const [cellId, s] of Object.entries(c.status)) setChunkStatus(cellId, s);
       brush.loadingParcels = c.pending > 0;
-      chunks = { pending: c.pending, failed: [...c.failed] };
+      setChunks({ pending: c.pending, failed: [...c.failed] });
     },
     onError(e) {
       controller?.onError(e.rev);
@@ -207,12 +237,16 @@
   function resetChunkStatuses(): void {
     for (const cellId of statusCells) setChunkStatus(cellId, 'ready');
     statusCells.clear();
-    chunks = { pending: 0, failed: [] };
+    setChunks({ pending: 0, failed: [] });
   }
+
+  /** The scoreboard sheet's height while it overrides the computed inset (null: no override). */
+  let sheetInset: number | null = null;
 
   function applyInset(): void {
     let px = 0;
-    if (matchMedia(NARROW).matches) {
+    if (sheetInset !== null) px = sheetInset;
+    else if (matchMedia(NARROW).matches) {
       const bar = frame?.querySelector('.brush-toolbar');
       const brushbar = bar ? cssPx(bar, '--brushbar-h') : 56;
       px = brushbar + cssPx(document.documentElement, '--scorebar-h'); // R17: 0 until W5

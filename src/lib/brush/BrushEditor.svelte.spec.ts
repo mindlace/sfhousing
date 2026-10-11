@@ -58,6 +58,7 @@ interface SetupOpts {
   manifestError?: boolean;
   readOnly?: boolean;
   reloadManifest?: () => Promise<Manifest>;
+  onchunks?: (c: { pending: number; failed: number }) => void;
 }
 
 async function setup(opts: SetupOpts = {}) {
@@ -80,6 +81,7 @@ async function setup(opts: SetupOpts = {}) {
       readOnly: opts.readOnly,
       reloadManifest,
       onscore,
+      onchunks: opts.onchunks,
       oneditor,
       createWorker
     }
@@ -135,7 +137,7 @@ describe('BrushEditor wiring', () => {
     await expect.poll(() => workers.length).toBe(1);
     workers[0].emit({ type: 'ready', rev: 1, datasetVersion: 'fixture-0', chunkCount: 4 });
     workers[0].emit(diff(2));
-    expect(onscore).toHaveBeenCalledWith({ total: 1 });
+    expect(onscore).toHaveBeenCalledWith({ total: 1 }, { complete: true });
   });
 
   it('shows the failed status on error manifest-invalid, and Retry reloads and re-inits', async () => {
@@ -343,5 +345,46 @@ describe('BrushEditor exposes the Editor; Editor.load drives the worker', () => 
     editors[0].load(p2);
     expect(workers[0].posts.length).toBe(n);
     expect(posts('load')).toHaveLength(1);
+  });
+});
+
+describe('sibling surface (scoreboard)', () => {
+  it('forwards each diff complete flag with its score', async () => {
+    const { workers, onscore } = await setup();
+    await expect.poll(() => workers.length).toBe(1);
+    workers[0].emit({ type: 'ready', rev: 1, datasetVersion: 'fixture-0', chunkCount: 4 });
+    workers[0].emit({ ...diff(2), complete: false } as SimResponse);
+    expect(onscore).toHaveBeenLastCalledWith({ total: 1 }, { complete: false });
+  });
+
+  it('onchunks fires on a chunks message', async () => {
+    const onchunks = vi.fn();
+    const { workers } = await setup({ onchunks });
+    await expect.poll(() => workers.length).toBe(1);
+    workers[0].emit({ type: 'chunks', status: { a: 'error' }, pending: 2, failed: ['a'] });
+    expect(onchunks).toHaveBeenLastCalledWith({ pending: 2, failed: 1 });
+  });
+
+  it('onchunks fires with zeros when a crashed worker restarts', async () => {
+    const onchunks = vi.fn();
+    const { workers } = await setup({ onchunks });
+    await expect.poll(() => workers.length).toBe(1);
+    workers[0].emit({ type: 'ready', rev: 1, datasetVersion: 'fixture-0', chunkCount: 4 });
+    workers[0].emit({ type: 'chunks', status: { a: 'error' }, pending: 0, failed: ['a'] });
+    expect(onchunks).toHaveBeenLastCalledWith({ pending: 0, failed: 1 });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    workers[0].onerror?.(new ErrorEvent('error', { message: 'boom' }));
+    await expect.element(status(MSG.cityFailed)).toBeInTheDocument();
+    await click(retryButton());
+    await expect.poll(() => workers.length).toBe(2);
+    expect(onchunks).toHaveBeenLastCalledWith({ pending: 0, failed: 0 });
+  });
+
+  it('retryChunks() forwards to the worker', async () => {
+    const { workers, posts, screen } = await setup();
+    await expect.poll(() => workers.length).toBe(1);
+    workers[0].emit({ type: 'ready', rev: 1, datasetVersion: 'fixture-0', chunkCount: 4 });
+    screen.component.retryChunks();
+    expect(posts('retryChunks')).toEqual([{ type: 'retryChunks' }]);
   });
 });
