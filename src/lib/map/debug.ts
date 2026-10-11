@@ -7,6 +7,10 @@ export interface SfhMapDebug {
   readonly map: MapLibreMap | null;
   snapshot(): ControllerSnapshot | null;
   readonly hiddenSize: number;
+  /** Parcel ids the controller currently hides (its `hidden` mirror), sorted. */
+  hiddenIds(): string[];
+  /** One entry per parcel with a generated building in a generated-/rising- layer, by id. */
+  generatedParcels(): { parcelId: string; typology: string; units: number }[];
 }
 
 declare global {
@@ -26,6 +30,19 @@ export function installDebug(
     snapshot: () => get().controller?.debugSnapshot() ?? null,
     get hiddenSize() {
       return get().controller?.hidden.size ?? 0;
+    },
+    hiddenIds: () => [...(get().controller?.hidden ?? [])].sort(),
+    generatedParcels: () => {
+      const c = get().controller;
+      if (!c) return [];
+      const out = new Map<string, { parcelId: string; typology: string; units: number }>();
+      for (const id of c.debugSnapshot().layerIds) {
+        if (!/^(generated|rising)-/.test(id)) continue;
+        for (let i = 0, p = c.lookup(id, 0); p; p = c.lookup(id, ++i)) {
+          out.set(p.parcelId, { parcelId: p.parcelId, typology: p.typology, units: p.units });
+        }
+      }
+      return [...out.values()].sort((a, b) => (a.parcelId < b.parcelId ? -1 : 1));
     }
   };
   window.__sfhMap = hook;
