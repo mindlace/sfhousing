@@ -1,0 +1,60 @@
+{
+  "name": "sfhousing",
+  "compatibility_date": "2026-03-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": ".svelte-kit/cloudflare/_worker.js",
+  "assets": { "binding": "ASSETS", "directory": ".svelte-kit/cloudflare" },
+  "routes": [{ "pattern": "sfhousing.mindlace.net", "custom_domain": true }],
+  "observability": { "enabled": true, "logs": { "enabled": true } },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sfhousing",
+      // TODO(bootstrap): replace with id from `wrangler d1 create`
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "preview_database_id": "local",
+      "migrations_dir": "./migrations/d1"
+    }
+  ],
+  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "sfhousing" }],
+  "ratelimits": [
+    { "name": "PUBLISH_RL", "namespace_id": "4101", "simple": { "limit": 10, "period": 60 } }
+  ],
+  "vars": {
+    "ENVIRONMENT": "production",
+    // bumped by the data-pipeline upload PR (spec §4.3)
+    "PUBLIC_DATASET_VERSION": "fixture-0",
+    "PUBLIC_APP_RELEASE": "dev"
+  },
+  "env": {
+    "staging": {
+      "name": "sfhousing-staging",
+      "compatibility_date": "2026-03-01",
+      "compatibility_flags": ["nodejs_compat"],
+      "main": ".svelte-kit/cloudflare/_worker.js",
+      "assets": { "binding": "ASSETS", "directory": ".svelte-kit/cloudflare" },
+      "routes": [{ "pattern": "sfhousing-staging.mindlace.net", "custom_domain": true }],
+      "observability": { "enabled": true, "logs": { "enabled": true } },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "sfhousing-staging",
+          // TODO(bootstrap): replace with id from `wrangler d1 create`
+          "database_id": "00000000-0000-0000-0000-000000000001",
+          "preview_database_id": "local",
+          "migrations_dir": "./migrations/d1"
+        }
+      ],
+      "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "sfhousing" }],
+      "ratelimits": [
+        { "name": "PUBLISH_RL", "namespace_id": "4201", "simple": { "limit": 10, "period": 60 } }
+      ],
+      "vars": {
+        "ENVIRONMENT": "staging",
+        // bumped by the data-pipeline upload PR (spec §4.3)
+        "PUBLIC_DATASET_VERSION": "fixture-0",
+        "PUBLIC_APP_RELEASE": "dev"
+      }
+    }
+  }
+}

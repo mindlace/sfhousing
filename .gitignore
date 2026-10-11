@@ -1,3 +1,11 @@
 .claude/worktrees/
 node_modules/
 .superpowers/superconductor/*/scratch/
+.svelte-kit/
+build/
+.wrangler/
+.dev.vars
+worker-configuration.d.ts
+test-results/
+playwright-report/
+/scratch/
