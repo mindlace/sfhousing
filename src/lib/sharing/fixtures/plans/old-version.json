@@ -1,0 +1,1 @@
+{"schema":1,"datasetVersion":"fixture-0000","ops":[{"id":"s1","kind":"paint","stories":6,"radiusM":20,"path":[[-122.4193,37.76013],[-122.4188,37.76013]]},{"id":"s2","kind":"paint","stories":12,"radiusM":15,"path":[[-122.4183,37.76013]]},{"id":"s3","kind":"erase","radiusM":8,"path":[[-122.4189,37.76013]]}]}

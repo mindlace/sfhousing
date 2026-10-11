@@ -11,7 +11,7 @@ Test files are colocated with the code. `expect.requireAssertions` is on: every 
 
 The client project needs the Playwright chromium browser: run `npx playwright install chromium` once (the one download beyond npm; `test:e2e` needs it too).
 
-The client project has no `$app/*` or `$env/*` aliases. Components that import them need `vi.mock('$app/state', () => ...)` or alias stubs under `src/lib/test/`.
+In the client project, `$app/state` and `$app/navigation` are aliased to small stubs in `src/test-stubs/app/` (kept outside `$lib`) so route component specs (e.g. `src/routes/page.svelte.spec.ts`) can render pages: specs set `page.state` and read `replaceStateCalls`. Other `$app/*` modules and `$env/*` have no alias and still need `vi.mock(...)`. `src/lib/sharing/**` must not import `$app/*` at all; an ESLint `no-restricted-imports` rule enforces it so the stubs can't hide such an import.
 
 Single test: `npx vitest --run --project server path/to/file.spec.ts` (or `--project client`).
 

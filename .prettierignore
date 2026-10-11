@@ -15,4 +15,7 @@ src/lib/generator/fixtures/golden-seeded.json
 src/lib/map/fixtures/generated-small.json
 src/lib/map/fixtures/parcels-small.json
 src/lib/sharing/fixtures/plans/small.json
+src/lib/sharing/fixtures/plans/oversize.json
+src/lib/sharing/fixtures/plans/schema2.json
+src/lib/sharing/fixtures/plans/old-version.json
 src/lib/sim/fixtures/data

@@ -43,5 +43,23 @@ export default defineConfig(
       }
     }
   },
-  { files: ['e2e/**'], ...playwright.configs['flat/recommended'] }
+  { files: ['e2e/**'], ...playwright.configs['flat/recommended'] },
+  {
+    // plan-sharing: its components run in the client test project, whose `$app/*` stubs exist
+    // for route specs only; sharing code must stay free of `$app/*`.
+    files: ['src/lib/sharing/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['$app/*'],
+              message: 'src/lib/sharing must not import $app/* (see docs/dev/testing.md).'
+            }
+          ]
+        }
+      ]
+    }
+  }
 );

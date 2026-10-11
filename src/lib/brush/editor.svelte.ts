@@ -3,6 +3,7 @@ import {
   OPS_MAX,
   planByteSize,
   rebasePlan,
+  TITLE_MAX_CHARS,
   type Plan,
   type PlanOp
 } from '$lib/plan';
@@ -21,6 +22,13 @@ export interface Editor {
   redo(): PlanOp | null;
   /** Calls `cb` after each `load` updates state (never on commit/undo/redo). Returns unsubscribe. */
   onLoad(cb: (plan: Plan) => void): () => void;
+  /**
+   * Sets the plan title (plan-sharing's Publish dialog). Trims, treats empty as undefined and
+   * clips to TITLE_MAX_CHARS. Replaces `plan` with a new object (so an `$effect` on `plan`
+   * fires) but keeps undo/redo, never fires `onLoad`, and so never re-sends the plan to the
+   * worker (the title does not affect rendering). No-op when read-only or unchanged.
+   */
+  setTitle(title: string | undefined): void;
 }
 
 /**
@@ -102,6 +110,15 @@ export function createEditor(initial: Plan, opts: { readOnly?: boolean } = {}): 
       plan = next;
       redo = redo.slice(0, -1);
       return op;
+    },
+    setTitle(title) {
+      if (readOnly) return;
+      const t = title?.trim().slice(0, TITLE_MAX_CHARS) || undefined;
+      if (t === plan.title) return;
+      const next: Plan = { ...plan };
+      if (t === undefined) delete next.title;
+      else next.title = t;
+      plan = next;
     },
     onLoad(cb) {
       const entry = (p: Plan) => cb(p); // a fresh entry, so subscribing one cb twice is two

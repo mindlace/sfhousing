@@ -9,7 +9,9 @@ export const load: PageLoad = async ({ fetch, parent }) => {
   const { datasetVersion } = await parent();
   let plan: Plan;
   try {
-    plan = emptyPlan(datasetVersion); // plan-sharing (W5) will supply the autosaved plan here
+    // The autosaved plan is restored in +page.svelte's onMount (localStorage is client-only and
+    // this load also runs during SSR); it is always rebased to current, so this manifest fits.
+    plan = emptyPlan(datasetVersion);
   } catch {
     error(500, 'Invalid dataset version');
   }
