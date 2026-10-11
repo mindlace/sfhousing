@@ -1,16 +1,16 @@
 // Plan sharing e2e states (spec §6): not-found page, a rate-limited publish (route-mocked 429; the
 // development preview bypasses the real limiter), autosave restore on reload, the Remix confirm,
-// and two states only a row written straight into local D1 can produce (N6, unparsable).
+// and two states only a row seeded through the e2e-only route can produce (N6, unparsable).
 import { expect, test, type Page } from '@playwright/test';
 import {
   PLAN_KEY,
   gotoEditor,
-  insertPlanRowLocal,
   oldVersionText,
   ops,
   paintOnce,
   publishDialog,
   publishOpen,
+  seedPlanRow,
   smallText,
   waitForMap
 } from './helpers/sharing';
@@ -105,9 +105,10 @@ test('Remix over a non-empty local plan asks first; Cancel stays on the shared p
 });
 
 test('N6: a share link whose dataset version is gone renders on the current data', async ({
-  page
+  page,
+  request
 }) => {
-  const id = insertPlanRowLocal(oldVersionText);
+  const id = await seedPlanRow(request, { body: oldVersionText });
   const res = await page.goto(`/p/${id}`);
   expect(res?.status()).toBe(200);
   const banner = page.getByRole('region', { name: 'Shared plan' });
@@ -120,8 +121,13 @@ test('N6: a share link whose dataset version is gone renders on the current data
   await expect(page.getByTestId('score-net')).not.toHaveText('0');
 });
 
-test('a stored plan this app cannot parse is a 500 page with its own copy', async ({ page }) => {
-  const id = insertPlanRowLocal('{"schema":1,"datasetVersion":"fixture-0","ops":"nope"}');
+test('a stored plan this app cannot parse is a 500 page with its own copy', async ({
+  page,
+  request
+}) => {
+  const id = await seedPlanRow(request, {
+    body: '{"schema":1,"datasetVersion":"fixture-0","ops":"nope"}'
+  });
   const res = await page.goto(`/p/${id}`);
   expect(res?.status()).toBe(500);
   await expect(

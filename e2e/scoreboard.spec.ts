@@ -4,6 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 import type { SfhBrushDebug } from '../src/lib/brush/debug';
 import type { SfhMapDebug } from '../src/lib/map/debug';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { oldVersionText, seedPlanRow, smallText, waitForMap } from './helpers/sharing';
 
 type Win = Window & { __sfhMap?: SfhMapDebug; __sfhBrush?: SfhBrushDebug };
 type LngLat = [number, number];
@@ -126,9 +127,32 @@ test.describe('scoreboard', () => {
       await expect(region(page).getByText('Paint a height on the map to add homes.')).toBeVisible();
     });
 
-    // eslint-disable-next-line playwright/expect-expect -- fixme placeholder, never runs
-    test.fixme('W6: needs plan-sharing share links (W5c) to load a plan whose datasetVersion is absent from R2', async () => {
-      // A share link with an absent dataset version shows the "recalculated" note.
+    test('a share link with a dataset version absent from R2 shows "recalculated"', async ({
+      page,
+      request
+    }) => {
+      const id = await seedPlanRow(request, {
+        body: oldVersionText,
+        datasetVersion: 'fixture-0000'
+      });
+      await page.goto(`/p/${id}`);
+      await waitForMap(page);
+      await expect(page.getByTestId('score-net')).not.toHaveText('0');
+      await expect(region(page)).toContainText(
+        'plan made on data fixture-0000, recalculated on current data'
+      );
+
+      // Negative: a plan on the current dataset carries no such note.
+      const res = await request.post('/api/plans', {
+        data: smallText,
+        headers: { 'content-type': 'application/json' }
+      });
+      expect(res.ok(), await res.text()).toBe(true);
+      const { id: freshId } = (await res.json()) as { id: string };
+      await page.goto(`/p/${freshId}`);
+      await waitForMap(page);
+      await expect(page.getByTestId('score-net')).not.toHaveText('0');
+      await expect(region(page)).not.toContainText('recalculated');
     });
 
     test('a blocked chunk shows the warning, and Retry recovers', async ({ page }) => {

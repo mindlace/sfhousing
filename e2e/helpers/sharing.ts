@@ -1,12 +1,15 @@
 // Shared helpers for the plan-sharing e2e specs. Editor navigation and the drag helpers are copied
 // from e2e/scoreboard.spec.ts and e2e/brush.spec.ts (those specs keep their own copies).
-import { expect, type CDPSession, type Locator, type Page } from '@playwright/test';
-import { execFileSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import {
+  expect,
+  type APIRequestContext,
+  type CDPSession,
+  type Locator,
+  type Page
+} from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import type { SfhBrushDebug } from '../../src/lib/brush/debug';
 import type { SfhMapDebug } from '../../src/lib/map/debug';
-import { PLAN_ID_ALPHABET } from '../../src/lib/sharing/ids';
 
 export type Win = Window & { __sfhMap?: SfhMapDebug; __sfhBrush?: SfhBrushDebug };
 export type LngLat = [number, number];
@@ -154,29 +157,17 @@ export const oldVersionText = readFileSync(
 );
 
 /**
- * Writes a plan row straight into the preview's LOCAL D1 (never --remote) and returns its id, for
- * states the public API refuses to create: a retired dataset version (N6) or an unparsable body.
- * `wrangler dev` and `wrangler d1 execute --local` share `.wrangler/state`.
+ * Seeds a raw plan row through the preview's e2e-only `POST /api/e2e/plans` (VITE_E2E build with
+ * ENVIRONMENT=development) and returns its id, for states the public API refuses to create: a
+ * retired dataset version (N6) or an unparsable body. `datasetVersion` defaults to `fixture-0000`.
+ * The write goes through the preview's own D1 binding, so it never contends for the SQLite file.
  */
-export function insertPlanRowLocal(body: string): string {
-  const id = Array.from(randomBytes(8), (b) => PLAN_ID_ALPHABET[b % 58]).join('');
-  const hash = randomBytes(32).toString('hex'); // unique; nothing re-derives it on read
-  const sql =
-    'INSERT INTO plan (id, schema, dataset_version, body, content_hash, op_count, byte_size, ' +
-    `created_at) VALUES ('${id}', 1, 'fixture-0000', '${body.replaceAll("'", "''")}', ` +
-    `'${hash}', 3, ${Buffer.byteLength(body)}, ${Date.UTC(2026, 9, 1)})`;
-  // The running preview holds the same SQLite file, so a concurrent spec's request can make this
-  // out-of-process write fail with SQLITE_BUSY: retry a few times with a short backoff.
-  for (let attempt = 1; ; attempt++) {
-    try {
-      execFileSync('npx', ['wrangler', 'd1', 'execute', 'DB', '--local', '--command', sql], {
-        stdio: 'pipe'
-      });
-      return id;
-    } catch (e) {
-      const out = String((e as { stderr?: unknown }).stderr ?? '') + String(e);
-      if (attempt >= 5 || !out.includes('SQLITE_BUSY')) throw e;
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250 * attempt);
-    }
-  }
+export async function seedPlanRow(
+  request: APIRequestContext,
+  opts: { body: string; datasetVersion?: string }
+): Promise<string> {
+  const res = await request.post('/api/e2e/plans', { data: opts });
+  // 201 = a new row; 200 = this body was already seeded (local D1 persists across runs).
+  expect([200, 201], await res.text()).toContain(res.status());
+  return ((await res.json()) as { id: string }).id;
 }

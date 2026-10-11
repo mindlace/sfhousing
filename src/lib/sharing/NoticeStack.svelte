@@ -38,17 +38,30 @@
 </script>
 
 <!--
-  Top of #map-region. Below 768 px the brush toolbar and score bar sit at the bottom, so the top
-  is free. From xl the stack sits in the gap between the toolbar (left, 23rem) and the
-  scoreboard (right, 20rem).
+  Placement against the W6b layout (e2e/share-notices.spec.ts checks 375, 768, 1024, 1280, 1440):
+  - Below 768 px the brush bar and score bar sit at the bottom, the compact attribution button
+    just above them. The top is free except map-view's failure chips, whose tops sit at 0.5rem
+    (parcels) and 4rem (buildings, about 46 px tall), so the stack starts at 8rem, below both.
+    Below 640 px it keeps 60 px clear on the right (W6b rule).
+  - From 768 px the toolbar (left, 23rem) and the scoreboard panel (right, 20rem) hang from the
+    top with the chips between them; at 768 px the two columns are only 48 px apart. So the stack
+    sits near the bottom: 6rem up clears the attribution strip and, at its usual two-line height,
+    the parcel card (16 px up); 4rem in from the left clears the navigation control; 22rem in
+    from the right keeps it out of the scoreboard column however tall the panel grows. From lg it
+    also starts right of the toolbar column (25rem), so a tall toolbar (keyboard shortcuts open,
+    about 620 px at 1024x768) cannot reach it either.
+    Known limit, 768-1023 px: the two columns leave no room beside the toolbar, so the stack sits
+    under it and relies on the toolbar ending above it. With the shortcuts open on a short
+    viewport the toolbar can reach the stack; fixing that needs the toolbar's height (brush owner),
+    not a NoticeStack class.
   One always-mounted status region (not a list): notices added to it later are announced, which
-  a status node inserted with its text already inside often is not. Empty, it has no size.
+  a status node inserted with its text already inside often is not. Empty, it has no height.
 -->
 <div
   role="status"
   aria-live="polite"
   data-testid="notice-stack"
-  class="notice-stack pointer-events-none absolute top-2 left-1/2 z-20 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col gap-2 xl:top-4 xl:left-[calc(50%+1.5rem)] xl:max-w-[calc(100%-47rem)]"
+  class="notice-stack pointer-events-none absolute top-32 right-[60px] left-4 z-20 flex flex-col gap-2 sm:right-4 md:top-auto md:right-[22rem] md:bottom-24 md:left-16 md:items-center lg:left-[25rem]"
 >
   {#each notices as n (n.id)}
     <div
