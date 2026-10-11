@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import type { Manifest } from '$lib/data/manifest';
 import type { ParcelRecord } from '$lib/data/parcel';
 import { encodeParcelChunk } from '$lib/data/parcel-chunk';
@@ -83,8 +83,10 @@ function deferred(h: Harness, cellId: string) {
   return { resolve: (r: Resp) => resolve(r) };
 }
 
+let warn: MockInstance<typeof console.warn>;
 beforeEach(() => {
   vi.useFakeTimers();
+  warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -143,6 +145,14 @@ describe('createChunkLoader', () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(h.calls.length).toBe(4);
     expect(vi.getTimerCount()).toBe(0);
+    expect(warn).toHaveBeenCalledTimes(4);
+    for (let k = 1; k <= 4; k++) {
+      expect(warn).toHaveBeenNthCalledWith(
+        k,
+        `[sim] chunk a attempt ${k} failed`,
+        expect.any(Error)
+      );
+    }
   });
 
   it('retryFailed starts a fresh cycle immediately and reports loading again', async () => {
@@ -160,6 +170,8 @@ describe('createChunkLoader', () => {
     expect(h.calls.length).toBe(5);
     await vi.advanceTimersByTimeAsync(1);
     expect(h.calls.length).toBe(6);
+    expect(warn).toHaveBeenCalledWith('[sim] chunk a attempt 1 failed', expect.any(Error));
+    expect(warn).toHaveBeenCalledTimes(6);
   });
 
   const badBodies: [string, () => Resp][] = [
@@ -191,6 +203,8 @@ describe('createChunkLoader', () => {
       await vi.advanceTimersByTimeAsync(20_000);
       expect(h.reports.at(-1)!.failed).toEqual(['a']);
       expect(h.loaded).toEqual([]);
+      expect(warn).toHaveBeenCalledTimes(4);
+      expect(warn).toHaveBeenCalledWith('[sim] chunk a attempt 1 failed', expect.anything());
     });
   }
 

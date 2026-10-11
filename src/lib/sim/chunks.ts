@@ -117,8 +117,9 @@ export function createChunkLoader(manifest: Manifest, deps: ChunkLoaderDeps): Ch
     let records: ParcelRecord[] | null;
     try {
       records = await load(cellId, cell);
-    } catch {
+    } catch (e) {
       records = null;
+      if (!disposed) console.warn(`[sim] chunk ${cellId} attempt ${cell.attempt + 1} failed`, e);
     }
     if (disposed) return;
     fetching--;
