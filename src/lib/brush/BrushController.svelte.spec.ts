@@ -414,6 +414,24 @@ describe('BrushController pan mode and Space', () => {
     expect(fx.box.style.cursor).toBe('');
   });
 
+  it('claims touch-action in paint mode (no browser pointercancel) and returns it to MapLibre', () => {
+    expect(fx.box.style.touchAction).toBe('none');
+    key(' ');
+    flushSync();
+    expect(fx.box.style.touchAction).toBe('');
+    keyUp(' ');
+    flushSync();
+    expect(fx.box.style.touchAction).toBe('none');
+    fx.ctl.setTool('move');
+    flushSync();
+    expect(fx.box.style.touchAction).toBe('');
+    fx.ctl.setTool('erase');
+    flushSync();
+    expect(fx.box.style.touchAction).toBe('none');
+    fx.ctl.destroy();
+    expect(fx.box.style.touchAction).toBe('');
+  });
+
   it('enters temporary Move on Space and leaves it on keyup', () => {
     const e = key(' ');
     flushSync();

@@ -179,6 +179,7 @@ export class BrushController {
     this.#disposeEffects = null;
     this.#endStroke(); // the client may already be disposed: send nothing
     box.style.cursor = '';
+    box.style.touchAction = '';
   }
 
   setTool(t: BrushTool): void {
@@ -285,7 +286,11 @@ export class BrushController {
       this.#lastPan = pan;
       handle.setPanEnabled(pan); // R13: never touch map.dragPan directly
     }
-    map.getCanvasContainer().style.cursor = state.spaceHeld ? 'grab' : canPaint ? 'crosshair' : '';
+    const box = map.getCanvasContainer();
+    box.style.cursor = state.spaceHeld ? 'grab' : canPaint ? 'crosshair' : '';
+    // With dragPan off, MapLibre leaves the container at `touch-action: pan-x pan-y`, so the
+    // browser claims a one-finger drag and fires pointercancel mid-stroke. Paint/Erase own it.
+    box.style.touchAction = pan ? '' : 'none';
     untrack(() => {
       if (!canPaint && this.#stroke) this.cancelStroke(); // read-only/phase change mid-stroke
       this.#updateCrosshair();
