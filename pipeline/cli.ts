@@ -4,6 +4,7 @@ import { FIXTURE_PROFILE, LIVE_PROFILE } from './config';
 import { build, printResults } from './steps/build';
 import { checkDataset } from './steps/check';
 import { doctor } from './steps/doctor';
+import { fetchAll } from './steps/fetch';
 import { fixture } from './steps/fixture';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -112,9 +113,29 @@ const steps: Record<string, { help: string; run: Step }> = {
         updateGolden: args.flags['update-golden'] === true
       })
   },
+  fetch: {
+    help: 'fetch live sources into .cache/raw and write the lock [--only <id,...>] [--release <rel>] [--basemap-date YYYYMMDD] | --restore [--local]',
+    run: async (args) =>
+      fetchAll({
+        only: str(args.flags.only),
+        release: str(args.flags.release),
+        basemapDate: str(args.flags['basemap-date']),
+        restore: args.flags.restore === true,
+        local: args.flags.local === true
+      })
+  },
   all: {
-    help: 'build from the existing lock (fetch is not wired yet); never uploads',
-    run: runBuild
+    help: 'fetch (when the lock is missing) then build with the live profile; never uploads',
+    run: async (args) => {
+      if (!existsSync(LOCK)) {
+        const code = await fetchAll({
+          release: str(args.flags.release),
+          basemapDate: str(args.flags['basemap-date'])
+        });
+        if (code !== 0) return code;
+      }
+      return runBuild(args);
+    }
   }
 };
 

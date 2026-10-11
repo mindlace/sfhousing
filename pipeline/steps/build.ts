@@ -1,8 +1,18 @@
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync
+} from 'node:fs';
 import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { TOOL_VERSIONS, type InvariantProfile } from '../config';
+import { run } from '../lib/exec';
 import { openDuck, type Duck } from '../lib/duck';
 import { rawPath, readLock, sortKeys, verifyRaw, type Lock } from '../lib/lock';
 import { Report } from '../lib/report';
@@ -49,12 +59,32 @@ function sameFiles(a: string, b: string): boolean {
 }
 
 /**
- * Lay the font lock files out as `<dir>/<path below protomaps-fonts/>` so installFonts can read
- * `<Stack Name>/<range>.pbf` and `OFL.txt` regardless of how raw files are stored.
+ * Lay the font sources out as `<dir>/<Stack Name>/<range>.pbf` + `OFL.txt` for installFonts.
+ * The fixture lists the files individually (`protomaps-fonts/<path>`); the live lock has one
+ * `protomaps-fonts.tar.gz` (basemaps-assets at the pinned commit) whose `fonts/` is extracted.
  */
-function materialiseFonts(lock: Lock, rawDir: string, byName: boolean, dir: string): void {
+export async function materialiseFonts(
+  lock: Lock,
+  rawDir: string,
+  byName: boolean,
+  dir: string
+): Promise<void> {
   const entry = lock.sources.find((s) => s.id === 'protomaps-fonts');
   if (!entry) throw new BuildError('lock has no protomaps-fonts entry');
+  const tarball = entry.files.find((f) => f.name.endsWith('.tar.gz'));
+  if (tarball) {
+    const extract = join(dir, '.extract');
+    mkdirSync(extract, { recursive: true });
+    const r = await run('tar', ['-xzf', rawPath(rawDir, tarball, byName), '-C', extract]);
+    if (r.code !== 0) throw new BuildError(`tar extraction of ${tarball.name} failed: ${r.stderr}`);
+    const [root] = readdirSync(extract);
+    const fonts = root ? join(extract, root, 'fonts') : '';
+    if (!root || !existsSync(fonts))
+      throw new BuildError(`${tarball.name} has no fonts/ directory`);
+    cpSync(fonts, dir, { recursive: true });
+    rmSync(extract, { recursive: true, force: true });
+    return;
+  }
   for (const f of entry.files) {
     const dst = join(dir, f.name.replace(/^protomaps-fonts\//, ''));
     mkdirSync(dirname(dst), { recursive: true });
@@ -127,7 +157,7 @@ export async function build(
     const basemap = lock.sources.find((s) => s.id === 'protomaps-basemap')?.files[0];
     if (!basemap) throw new BuildError('lock has no protomaps-basemap file');
     copyBasemap(rawPath(opts.rawDir, basemap, byName), outDir);
-    materialiseFonts(lock, opts.rawDir, byName, join(work, 'fonts'));
+    await materialiseFonts(lock, opts.rawDir, byName, join(work, 'fonts'));
     installFonts(join(work, 'fonts'), outDir);
 
     const overtureContrib = await db.all<{ dataset: string; n: number }>(

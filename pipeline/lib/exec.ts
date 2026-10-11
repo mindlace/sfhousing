@@ -24,7 +24,10 @@ export function run(
         resolve({ stdout: stdout ?? '', stderr: stderr || e.message, code });
       }
     );
-    if (opts.input !== undefined) child.stdin?.end(opts.input);
+    // Always end stdin so children that read it (wrangler) never wait on an open pipe.
+    // A child that exits without reading stdin makes the write fail with EPIPE; that is fine.
+    child.stdin?.on('error', () => {});
+    child.stdin?.end(opts.input ?? '');
   });
 }
 

@@ -44,8 +44,13 @@ function sel(cols: Set<string>, name: string, type: string): string {
   return cols.has(name) ? `TRY_CAST(${name} AS ${type}) AS ${name}` : `NULL::${type} AS ${name}`;
 }
 
-async function buildSelect(db: Duck, id: SourceId, rawFiles: string[]): Promise<string> {
-  if (id === 'overture-buildings' && rawFiles.every((f) => f.endsWith('.parquet'))) {
+async function buildSelect(
+  db: Duck,
+  id: SourceId,
+  rawFiles: string[],
+  parquet: boolean
+): Promise<string> {
+  if (id === 'overture-buildings' && parquet) {
     // Live input is already in the src_overture schema (written by the fetch step).
     const list = rawFiles.map(q).join(', ');
     return `SELECT id::VARCHAR AS id, height::DOUBLE AS height, num_floors::INTEGER AS num_floors,
@@ -83,14 +88,20 @@ async function buildSelect(db: Duck, id: SourceId, rawFiles: string[]): Promise<
   }
 }
 
-/** Normalise one source's raw files into `<outParquet>`; returns the row count. */
+/**
+ * Normalise one source's raw files into `<outParquet>`; returns the row count. `parquet` says
+ * the inputs are already in the src_overture schema (the live fetch output); callers derive it
+ * from the lock file names, because live raw files on disk are named by sha256 (no extension).
+ * Default: every path ends in `.parquet`.
+ */
 export async function normalise(
   db: Duck,
   id: SourceId,
   rawFiles: string[],
-  outParquet: string
+  outParquet: string,
+  parquet: boolean = rawFiles.every((f) => f.endsWith('.parquet'))
 ): Promise<number> {
-  const select = await buildSelect(db, id, rawFiles);
+  const select = await buildSelect(db, id, rawFiles, parquet);
   fs.mkdirSync(path.dirname(outParquet), { recursive: true });
   await db.run(`COPY (${select}) TO ${q(outParquet)} (FORMAT parquet)`);
   const [r] = await db.all<{ n: number }>(`SELECT count(*) n FROM read_parquet(${q(outParquet)})`);
@@ -118,7 +129,8 @@ export async function normaliseAll(
     const entry = lock.sources.find((s) => s.id === id);
     if (!entry) throw new Error(`lock has no entry for ${id}`);
     const files = entry.files.map((f) => path.resolve(rawPath(rawDir, f, opts.byName)));
-    rows[id] = await normalise(db, id, files, path.join(normDir, `${id}.parquet`));
+    const parquet = entry.files.every((f) => f.name.endsWith('.parquet'));
+    rows[id] = await normalise(db, id, files, path.join(normDir, `${id}.parquet`), parquet);
   }
   return rows;
 }
