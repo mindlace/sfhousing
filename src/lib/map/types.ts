@@ -37,7 +37,18 @@ export interface PackedCell {
   partTypology: Uint8Array; // per part → index into TYPOLOGY_ORDER (I10 order)
 }
 
-// One message per worker revision (worker host → SimMap).
+/**
+ * One message per worker revision (worker host → SimMap).
+ *
+ * Any size is safe to send as one update: a whole-city repaint, undo or erase included. map-view
+ * applies an update in slices, one per animation frame. A slice closes at 2,000 hide ids or 4
+ * cells (repacked + removed), whichever comes first, and a cell is never split (`planSlices`,
+ * spec §4.5, §4.12). Each `hide.add` id is applied with the cell whose packs hold it, and each
+ * `hide.remove` id with the cell that held the parcel in the previous revision. So an existing
+ * building is never hidden before its replacement layer exists, and it is restored in the same
+ * frame its generated replacement disappears. Updates small enough for one slice (≤ 2,000 ids and
+ * ≤ 4 cells) apply synchronously in `applyGenerated`. Later updates queue behind earlier slices.
+ */
 export interface GeneratedUpdate {
   revision: number; // strictly +1 per message; 0 = full snapshot
   cells: { settled: PackedCell; rising: PackedCell | null }[]; // full repack of each touched cell

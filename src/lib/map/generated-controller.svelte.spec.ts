@@ -253,6 +253,85 @@ describe('GeneratedController (fake deps)', () => {
     expect(setOrder.slice(-r2.hide.add.length)).toEqual(r2.hide.add);
   });
 
+  /** Every drawn cell's replacing parcels are hidden, and no undrawn cell's parcels are. */
+  function checkCoLocated(f: FakeDeps, cellOf: Map<string, string>) {
+    const drawn = new Set(layerIds(f).map((id) => id.replace(/^(generated|rising-\d+)-/, '')));
+    for (const [id, cellId] of cellOf) expect(f.replaced.has(id)).toBe(drawn.has(cellId));
+  }
+
+  it('F1: a whole-city erase restores each building in the slice its cell disappears', () => {
+    const f = makeFakeDeps();
+    const c = new GeneratedController(f, 'light');
+    const snap = makeSyntheticCity(11, 15_000, 1500)[0];
+    expect(snap.cells).toHaveLength(10);
+    const cellOf = new Map<string, string>();
+    for (const x of snap.cells)
+      for (const id of x.settled.parcelIds) cellOf.set(id, x.settled.cellId);
+    c.apply(snap);
+    for (let t = 16; f.pendingFrames() > 0; t += 16) f.flushFrame(t);
+    checkCoLocated(f, cellOf);
+    c.apply(
+      upd(1, {
+        removedCells: snap.cells.map((x) => x.settled.cellId),
+        hide: { add: [], remove: [...snap.hide.add] }
+      })
+    );
+    let frames = 0;
+    checkCoLocated(f, cellOf);
+    for (let t = 1000; f.pendingFrames() > 0; t += 16, frames++) {
+      f.flushFrame(t);
+      checkCoLocated(f, cellOf);
+    }
+    expect(frames).toBeGreaterThanOrEqual(4); // 10 cells, 2 per slice (3000 ids ≥ SLICE_IDS)
+    expect(layerIds(f)).toEqual([]);
+    expect(f.replaced.size).toBe(0);
+    expect(c.hidden.size).toBe(0);
+  });
+
+  it('F1: a typology repaint (no hide ids) installs at most 4 cells per frame', () => {
+    const f = makeFakeDeps();
+    const c = new GeneratedController(f, 'light');
+    const snap = makeSyntheticCity(12, 15_000, 1500)[0];
+    c.apply(snap);
+    for (let t = 16; f.pendingFrames() > 0; t += 16) f.flushFrame(t);
+    const before = new Map(f.lastLayers.map((l) => [l.id, l]));
+    const repaint = makeSyntheticCity(12, 15_000, 1500)[0];
+    c.apply({ ...repaint, revision: 1, hide: { add: [], remove: [] } });
+    const changed = () => f.lastLayers.filter((l) => before.get(l.id) !== l).length;
+    const counts = [changed()];
+    for (let t = 1000; f.pendingFrames() > 0; t += 16) {
+      f.flushFrame(t);
+      counts.push(changed());
+    }
+    expect(counts).toEqual([4, 8, 10]);
+    expect(f.replaced.size).toBe(15_000);
+  });
+
+  it('F1: an erase queued behind its own unapplied install still restores with the cell', () => {
+    const f = makeFakeDeps();
+    const c = new GeneratedController(f, 'light');
+    c.apply(upd(0));
+    const big = asIncremental(makeSyntheticCity(13, 15_000, 1500)[0], 1);
+    const cellOf = new Map<string, string>();
+    for (const x of big.cells)
+      for (const id of x.rising!.parcelIds) cellOf.set(id, x.rising!.cellId);
+    c.apply(big);
+    // rev 2 arrives before rev 1 has drained: membership comes from rev 1, not the drawn cells.
+    c.apply(
+      upd(2, {
+        removedCells: big.cells.map((x) => x.rising!.cellId),
+        hide: { add: [], remove: [...big.hide.add] }
+      })
+    );
+    checkCoLocated(f, cellOf);
+    for (let t = 16; f.pendingFrames() > 0 && t < 10_000; t += 16) {
+      f.flushFrame(t);
+      checkCoLocated(f, cellOf);
+    }
+    expect(layerIds(f)).toEqual([]);
+    expect(f.replaced.size).toBe(0);
+  });
+
   it('removal: removedCells and hide.remove apply in one synchronous setLayers', () => {
     const f = makeFakeDeps();
     const c = new GeneratedController(f, 'light');
@@ -577,6 +656,77 @@ describe('GeneratedController (real deck)', () => {
     );
     expect(durations.length).toBeGreaterThan(0);
     expect(tasks.filter((d) => d > 50)).toEqual([]);
+    for (const d of durations) expect(d).toBeLessThanOrEqual(8);
+    expect(max(gaps)).toBeLessThanOrEqual(50);
+  }, 120_000);
+  it('C5: a whole-city repaint and erase, each ONE revision, keep gaps ≤ 50 ms and slices ≤ 8 ms', async () => {
+    const all = (seed: number) =>
+      makeSyntheticCity(seed, 150_000, 1500).flatMap((u) =>
+        u.cells.map((x) => ({ settled: x.rising ?? x.settled, rising: null }))
+      );
+    const city = all(1);
+    const repaint = all(1); // same parcels, fresh buffers: deck re-tessellates every cell
+    const allIds = city.flatMap((x) => x.settled.parcelIds);
+    h = await harness(BUILDINGS_STYLE, { reducedMotion: () => false, drawGenerated: false });
+    const c = h.controller();
+    c.apply(upd(0, { cells: city, hide: { add: allIds, remove: [] } }));
+    while (c.debugSnapshot().pending > 0) await nextFrame();
+    await idle(h.map);
+    expect(c.debugSnapshot().cells).toBe(100);
+
+    const deckUpdates: number[] = [];
+    const lmProto = Object.getPrototypeOf(
+      (h.overlay as unknown as { _deck: { layerManager: object } })._deck.layerManager
+    ) as { updateLayers: (...a: unknown[]) => unknown };
+    const origUpdate = lmProto.updateLayers;
+    lmProto.updateLayers = function (this: unknown, ...a: unknown[]) {
+      const start = performance.now();
+      const r = origUpdate.apply(this, a);
+      deckUpdates.push(performance.now() - start);
+      return r;
+    };
+    const gaps: number[] = [];
+    const run = async (u: GeneratedUpdate) => {
+      let last = await nextFrame();
+      c.apply(u);
+      for (let i = 0; i < 2000 && c.debugSnapshot().pending > 0; i++) {
+        const t = await nextFrame();
+        gaps.push(t - last);
+        last = t;
+      }
+      const t = await nextFrame(); // deck's deferred tessellation of the last slice
+      gaps.push(t - last);
+    };
+    performance.clearMeasures('sfh-slice');
+    let repaintSlices: number, repaintDeck: number;
+    try {
+      await run(upd(1, { cells: repaint }));
+      repaintSlices = performance.getEntriesByName('sfh-slice', 'measure').length;
+      repaintDeck = Math.max(...deckUpdates);
+      expect(c.debugSnapshot().hidden).toBe(150_000);
+      await run(
+        upd(2, {
+          removedCells: city.map((x) => x.settled.cellId),
+          hide: { add: [], remove: allIds }
+        })
+      );
+    } finally {
+      lmProto.updateLayers = origUpdate;
+    }
+    const snap = c.debugSnapshot();
+    expect(snap.pending).toBe(0);
+    expect(snap.cells).toBe(0);
+    expect(snap.hidden).toBe(0);
+    expect(snap.layerIds).toEqual([]);
+    const durations = performance.getEntriesByName('sfh-slice', 'measure').map((e) => e.duration);
+    const max = (xs: number[]) => Math.max(...xs);
+    console.info(
+      `[C5 F1] slices repaint=${repaintSlices} erase=${durations.length - repaintSlices}; ` +
+        `slice max=${max(durations).toFixed(2)} ms; deck update max repaint=${repaintDeck.toFixed(1)} ` +
+        `all=${max(deckUpdates).toFixed(1)} ms; gap max=${max(gaps).toFixed(1)} ms`
+    );
+    expect(repaintSlices).toBe(25);
+    expect(durations.length - repaintSlices).toBe(50);
     for (const d of durations) expect(d).toBeLessThanOrEqual(8);
     expect(max(gaps)).toBeLessThanOrEqual(50);
   }, 120_000);

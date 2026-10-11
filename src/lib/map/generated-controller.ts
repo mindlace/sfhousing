@@ -72,8 +72,6 @@ interface Cell {
 interface Job {
   rev: number;
   slice: Slice;
-  removed: string[];
-  touched: string[]; // cells whose pending rise finalises before this job (slice 0 only)
   animate: boolean;
 }
 
@@ -112,9 +110,14 @@ function accessorsFor(pack: PackedCell, theme: Theme) {
 
 const RESERVED = /^(generated|rising)-/;
 
+const idsOf = (c: GeneratedUpdate['cells'][number]): ParcelId[][] =>
+  c.rising ? [c.settled.parcelIds, c.rising.parcelIds] : [c.settled.parcelIds];
+
 export class GeneratedController {
   private lastRevision = -1;
   private cells = new Map<string, Cell>();
+  /** Parcel ids per cell as of the latest accepted revision (queued slices included). */
+  private membership = new Map<string, ParcelId[][]>();
   private mirror = new Set<ParcelId>();
   private queue: Job[] = [];
   private merges: string[] = [];
@@ -142,14 +145,14 @@ export class GeneratedController {
       return;
     }
     this.lastRevision = u.revision;
-    const touched = [...u.cells.map((c) => c.settled.cellId), ...u.removedCells];
-    const jobs = planSlices(u).map((slice, i): Job => ({
+    // A touched cell's pending rise finalises when its own slice runs (install / removal).
+    const jobs = planSlices(u, this.prevCellLookup(u)).map((slice): Job => ({
       rev: u.revision,
       slice,
-      removed: i === 0 ? u.removedCells : [],
-      touched: i === 0 ? touched : [],
       animate: true
     }));
+    for (const c of u.cells) this.membership.set(c.settled.cellId, idsOf(c));
+    for (const id of u.removedCells) this.membership.delete(id);
     const idle = this.queue.length === 0;
     this.queue.push(...jobs);
     if (idle) this.runJob(this.queue.shift()!);
@@ -221,6 +224,7 @@ export class GeneratedController {
     this.queue = [];
     this.merges = [];
     this.cells.clear();
+    this.membership.clear();
     this.layerPacks.clear();
     this.current = [];
   }
@@ -232,6 +236,7 @@ export class GeneratedController {
     this.queue = [];
     this.merges = [];
     this.cells.clear();
+    this.membership.clear();
     this.mirror.clear();
     this.deps.clearAllReplaced();
     this.lastRevision = 0;
@@ -240,14 +245,14 @@ export class GeneratedController {
       settled: c.rising ? concatPacks(c.settled, c.rising) : c.settled,
       rising: null
     }));
-    const slices = planSlices({ ...u, cells, hide: { add: u.hide.add, remove: [] } });
-    this.queue = slices.map((slice) => ({
-      rev: 0,
-      slice,
-      removed: [],
-      touched: [],
-      animate: false
-    }));
+    for (const c of cells) this.membership.set(c.settled.cellId, idsOf(c));
+    const slices = planSlices({
+      ...u,
+      cells,
+      removedCells: [],
+      hide: { add: u.hide.add, remove: [] }
+    });
+    this.queue = slices.map((slice) => ({ rev: 0, slice, animate: false }));
     this.runJob(this.queue.shift()!);
     this.schedule();
   }
@@ -255,8 +260,7 @@ export class GeneratedController {
   private runJob(job: Job): void {
     const t0 = performance.now();
     const { slice } = job;
-    for (const id of job.touched) this.finalise(id);
-    for (const id of job.removed) {
+    for (const id of slice.removed) {
       this.finalise(id);
       this.cells.delete(id);
     }
@@ -266,6 +270,24 @@ export class GeneratedController {
     applyHideDiff(this.mirror, slice);
     this.emit();
     performance.measure('sfh-slice', { start: t0, end: performance.now() });
+  }
+
+  /**
+   * Previous cell of a parcel, among the cells this update touches. Built lazily: planSlices
+   * asks only when the update is sliced and has removes.
+   */
+  private prevCellLookup(u: GeneratedUpdate): (id: ParcelId) => string | undefined {
+    let index: Map<ParcelId, string> | null = null;
+    return (id) => {
+      if (!index) {
+        index = new Map();
+        const touched = [...u.cells.map((c) => c.settled.cellId), ...u.removedCells];
+        for (const cellId of touched)
+          for (const ids of this.membership.get(cellId) ?? [])
+            for (const p of ids) index.set(p, cellId);
+      }
+      return index.get(id);
+    };
   }
 
   private install(settled: PackedCell, rising: PackedCell | null, job: Job): void {
