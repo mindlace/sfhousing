@@ -32,6 +32,8 @@ export const FONT_STACKS = {
   'Noto Sans Medium': 'NotoSans-Medium',
   'Noto Sans Italic': 'NotoSans-Italic'
 } as const;
+export const FONTS_COMMIT = '028c18f713baecad011301ff7a69acc39bcc2ae7';
+export const BASEMAP_BUILD = '20261009';
 export const R2_BUCKET = 'sfhousing';
 export const IMMUTABLE = 'public, max-age=31536000, immutable';
 

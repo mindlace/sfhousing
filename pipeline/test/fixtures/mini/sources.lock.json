@@ -89,6 +89,63 @@
       "retrievedAt": "2026-10-10T00:00:00.000Z",
       "rowCount": 12,
       "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/c0d004aa02fa457ea1d8ca31101baa1b882217bb8dde168f6813259c7ca29ec3.pmtiles",
+          "bytes": 1189069,
+          "name": "protomaps-basemap.pmtiles",
+          "sha256": "c0d004aa02fa457ea1d8ca31101baa1b882217bb8dde168f6813259c7ca29ec3",
+          "url": "https://build.protomaps.com/20261009.pmtiles"
+        }
+      ],
+      "homepage": "https://protomaps.com",
+      "id": "protomaps-basemap",
+      "label": "Protomaps basemap (OpenStreetMap)",
+      "license": "ODbL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 1,
+      "upstreamVersion": "20261009"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/7713cfc8e3c36d5ec4aa3d6cffe7500a1b3310f8a86d914b8ea09c2a9dee7c2d.txt",
+          "bytes": 4374,
+          "name": "protomaps-fonts/OFL.txt",
+          "sha256": "7713cfc8e3c36d5ec4aa3d6cffe7500a1b3310f8a86d914b8ea09c2a9dee7c2d",
+          "url": "https://raw.githubusercontent.com/protomaps/basemaps-assets/028c18f713baecad011301ff7a69acc39bcc2ae7/fonts/OFL.txt"
+        },
+        {
+          "archiveKey": "sources/62c6d49b15fa836eb6aa45e259c7ca6762f44b011b09e47776efbe4a6db1b397.pbf",
+          "bytes": 76044,
+          "name": "protomaps-fonts/Noto Sans Regular/0-255.pbf",
+          "sha256": "62c6d49b15fa836eb6aa45e259c7ca6762f44b011b09e47776efbe4a6db1b397",
+          "url": "https://raw.githubusercontent.com/protomaps/basemaps-assets/028c18f713baecad011301ff7a69acc39bcc2ae7/fonts/Noto%20Sans%20Regular/0-255.pbf"
+        },
+        {
+          "archiveKey": "sources/ba2f0118dd024e3041b158e5f9eb49bc0a658019f53f458e9f5c0b8efcd79b91.pbf",
+          "bytes": 77628,
+          "name": "protomaps-fonts/Noto Sans Medium/0-255.pbf",
+          "sha256": "ba2f0118dd024e3041b158e5f9eb49bc0a658019f53f458e9f5c0b8efcd79b91",
+          "url": "https://raw.githubusercontent.com/protomaps/basemaps-assets/028c18f713baecad011301ff7a69acc39bcc2ae7/fonts/Noto%20Sans%20Medium/0-255.pbf"
+        },
+        {
+          "archiveKey": "sources/43edfca91c285ba1226f09d5e74d68e1473a088c517f02a5212ff6ccb10037dc.pbf",
+          "bytes": 79344,
+          "name": "protomaps-fonts/Noto Sans Italic/0-255.pbf",
+          "sha256": "43edfca91c285ba1226f09d5e74d68e1473a088c517f02a5212ff6ccb10037dc",
+          "url": "https://raw.githubusercontent.com/protomaps/basemaps-assets/028c18f713baecad011301ff7a69acc39bcc2ae7/fonts/Noto%20Sans%20Italic/0-255.pbf"
+        }
+      ],
+      "homepage": "https://github.com/protomaps/basemaps-assets",
+      "id": "protomaps-fonts",
+      "label": "Noto Sans glyphs",
+      "license": "OFL-1.1",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 4,
+      "upstreamVersion": "028c18f713baecad011301ff7a69acc39bcc2ae7"
     }
   ]
 }

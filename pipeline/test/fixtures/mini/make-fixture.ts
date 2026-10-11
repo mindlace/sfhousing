@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import proj4 from 'proj4';
+import { BASEMAP_BUILD, FONTS_COMMIT, FONT_STACKS } from '../../../config';
 import { archiveKeyFor, type Lock, type LockEntry, sha256File, writeLock } from '../../../lib/lock';
 
 proj4.defs(
@@ -274,6 +275,59 @@ for (const src of SOURCES) {
     homepage: src.homepage
   });
 }
+
+// Non-vector sources: the committed basemap extract and glyph PBFs (downloaded once, see README).
+async function binaryEntry(
+  id: string,
+  names: string[],
+  meta: Pick<LockEntry, 'license' | 'homepage' | 'label' | 'upstreamVersion'>,
+  url: (name: string) => string
+): Promise<LockEntry> {
+  const files = [];
+  for (const name of names) {
+    const file = path.join(rawDir, name);
+    const sha256 = await sha256File(file);
+    files.push({
+      url: url(name),
+      sha256,
+      bytes: fs.statSync(file).size,
+      archiveKey: archiveKeyFor(sha256, name),
+      name
+    });
+  }
+  return { id, files, retrievedAt: '2026-10-10T00:00:00.000Z', rowCount: files.length, ...meta };
+}
+entries.push(
+  await binaryEntry(
+    'protomaps-basemap',
+    ['protomaps-basemap.pmtiles'],
+    {
+      upstreamVersion: BASEMAP_BUILD,
+      license: 'ODbL-1.0',
+      homepage: 'https://protomaps.com',
+      label: 'Protomaps basemap (OpenStreetMap)'
+    },
+    () => `https://build.protomaps.com/${BASEMAP_BUILD}.pmtiles`
+  )
+);
+const fontFiles = [
+  'protomaps-fonts/OFL.txt',
+  ...Object.keys(FONT_STACKS).map((s) => `protomaps-fonts/${s}/0-255.pbf`)
+];
+entries.push(
+  await binaryEntry(
+    'protomaps-fonts',
+    fontFiles,
+    {
+      upstreamVersion: FONTS_COMMIT,
+      license: 'OFL-1.1',
+      homepage: 'https://github.com/protomaps/basemaps-assets',
+      label: 'Noto Sans glyphs'
+    },
+    (name) =>
+      `https://raw.githubusercontent.com/protomaps/basemaps-assets/${FONTS_COMMIT}/${name.replace('protomaps-fonts/', 'fonts/').replaceAll(' ', '%20')}`
+  )
+);
 const lock: Lock = { sources: entries };
 writeLock(path.join(here, 'sources.lock.json'), lock);
 console.log(entries.map((e) => `${e.id}: ${e.rowCount}`).join('\n'));

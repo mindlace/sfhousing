@@ -11,8 +11,10 @@ npx tsx pipeline/test/fixtures/mini/make-fixture.ts
 Shapes are in local metres from origin O = (-122.4195, 37.7600) in EPSG:7131, converted to lng/lat. Lot _i_
 spans x in [10(i-1), 10i], y in [0, 30] unless stated. SODA conventions are mimicked: lower-case property
 names, numbers as strings, booleans as JSON booleans, null properties omitted. The raw files are read by
-`name` from `raw/`; their sha256 is verified against `sources.lock.json`. The lock holds only the five vector
-sources for now; Task 10 adds `protomaps-basemap` and `protomaps-fonts`.
+`name` from `raw/`; their sha256 is verified against `sources.lock.json`. The lock also lists the committed
+binary `protomaps-basemap` (`pmtiles extract` of build 20261009 over the fixture bbox) and `protomaps-fonts`
+(Noto Sans glyph PBFs + OFL.txt at the pinned basemaps-assets commit); `make-fixture.ts` hashes them but does
+not download them.
 
 ## Lots
 
