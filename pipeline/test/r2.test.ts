@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { wranglerTarget, type RunFn } from '../lib/r2';
+import { contentTypeFor, wranglerTarget, type RunFn } from '../lib/r2';
 
 function fakeRun(result: { code: number; stdout?: string; stderr?: string }) {
   const calls: { cmd: string; args: string[]; input?: string }[] = [];
@@ -89,5 +89,16 @@ describe('wranglerTarget.put/exists', () => {
     expect(await wranglerTarget({ local: true, run: fakeRun({ code: 0 }).run }).exists('k')).toBe(
       true
     );
+  });
+});
+
+describe('contentTypeFor', () => {
+  it('maps extensions per the brief, defaulting to octet-stream', () => {
+    expect(contentTypeFor('a/b.json')).toBe('application/json');
+    expect(contentTypeFor('n.geojson')).toBe('application/geo+json');
+    expect(contentTypeFor('b.pmtiles')).toBe('application/vnd.pmtiles');
+    expect(contentTypeFor('fonts/X/0-255.pbf')).toBe('application/x-protobuf');
+    expect(contentTypeFor('fonts/OFL.txt')).toBe('application/octet-stream');
+    expect(contentTypeFor('noext')).toBe('application/octet-stream');
   });
 });

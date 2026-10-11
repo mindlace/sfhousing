@@ -6,6 +6,10 @@ import { checkDataset } from './steps/check';
 import { doctor } from './steps/doctor';
 import { fetchAll } from './steps/fetch';
 import { fixture } from './steps/fixture';
+import { upload } from './steps/upload';
+import { verify } from './steps/verify';
+import { readLock } from './lib/lock';
+import { wranglerTarget } from './lib/r2';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const OUT = join(ROOT, 'pipeline/out');
@@ -123,6 +127,51 @@ const steps: Record<string, { help: string; run: Step }> = {
         restore: args.flags.restore === true,
         local: args.flags.local === true
       })
+  },
+  upload: {
+    help: 'publish out/<v>/ to R2, manifest last [--local]; never bumps PUBLIC_DATASET_VERSION',
+    run: async (args) => {
+      const v = args.positional[0];
+      if (!v) {
+        console.error('usage: upload <datasetVersion> [--local]');
+        return 2;
+      }
+      const outDir = join(OUT, v);
+      if (!existsSync(join(outDir, 'manifest.json'))) {
+        console.error(`no built dataset ${v} under ${OUT}`);
+        return 1;
+      }
+      const lockPath = v.startsWith('fixture-') ? undefined : LOCK;
+      if (lockPath && !existsSync(lockPath)) {
+        console.error(`no ${lockPath}: run \`npm run pipeline -- fetch\` first`);
+        return 1;
+      }
+      return upload({
+        outDir,
+        datasetVersion: v,
+        // Fixture datasets have no raw archives to publish.
+        lock: lockPath ? readLock(lockPath) : { sources: [] },
+        rawDir: RAW,
+        target: wranglerTarget({ local: args.flags.local === true })
+      });
+    }
+  },
+  verify: {
+    help: 'check a published version through a running origin <v> --origin <url>',
+    run: async (args) => {
+      const v = args.positional[0];
+      const origin = str(args.flags.origin);
+      if (!v || !origin) {
+        console.error('usage: verify <datasetVersion> --origin <url>');
+        return 2;
+      }
+      const r = await verify({ datasetVersion: v, origin });
+      for (const f of r.failures) console.error(`FAIL ${f}`);
+      console.log(
+        r.ok ? `OK   ${v} verified against ${origin}` : `${r.failures.length} failure(s)`
+      );
+      return r.ok ? 0 : 1;
+    }
   },
   all: {
     help: 'fetch (when the lock is missing) then build with the live profile; never uploads',

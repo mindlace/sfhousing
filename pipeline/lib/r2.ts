@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { extname, join, resolve } from 'node:path';
 import { R2_BUCKET } from '../config';
 import { run as defaultRun, type RunResult } from './exec';
 
@@ -26,6 +26,18 @@ const ROOT = resolve(import.meta.dirname, '../..');
  */
 const NOT_FOUND = /The specified key does not exist/i;
 
+const CONTENT_TYPES: Record<string, string> = {
+  '.json': 'application/json',
+  '.geojson': 'application/geo+json',
+  '.pmtiles': 'application/vnd.pmtiles',
+  '.pbf': 'application/x-protobuf'
+};
+
+/** Content-Type stored with an artifact, by extension (the worker overrides it by extension too). */
+export function contentTypeFor(path: string): string {
+  return CONTENT_TYPES[extname(path).toLowerCase()] ?? 'application/octet-stream';
+}
+
 /** R2 through `wrangler r2 object …`, `--local` (Miniflare) or `--remote`. */
 export function wranglerTarget(opts: { local: boolean; bucket?: string; run?: RunFn }): R2Target {
   const bucket = opts.bucket ?? R2_BUCKET;
@@ -44,6 +56,14 @@ export function wranglerTarget(opts: { local: boolean; bucket?: string; run?: Ru
       }
       throw new Error(`wrangler r2 object get ${key} failed (exit ${r.code}): ${r.stderr.trim()}`);
     },
+    /**
+     * Wrangler has no HEAD for R2 objects (`r2 object` only has get/put/delete), so this downloads
+     * the object to a temp file and discards it. Fine for the tiny manifest probe. For the
+     * `sources/<sha>` archive probes it costs a full download of every archive that is already
+     * published (basemap/Overture archives can be hundreds of MB); the missing-archive case, the
+     * common first-publish one, fails fast. Accepted: re-uploads are rare and no new dependency
+     * (S3 client) is warranted.
+     */
     async exists(key) {
       const dir = mkdtempSync(join(tmpdir(), 'sfh-r2-'));
       try {
