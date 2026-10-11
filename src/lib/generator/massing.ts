@@ -48,7 +48,7 @@ export function floorTop(typology: TypologyId, k: number): number {
 /**
  * §4.6: F = Q if area(Q) ≤ target, else Q ∩ slab(h) with h found by bisection on
  * [0, half-extent of P along u] (Sutherland–Hodgman inside the loop). Keeps the largest h
- * whose area ≤ target; stops after 30 iterations or once target − area ≤ 0.25 m².
+ * whose area ≤ target; stops after 30 iterations or once target − area ≤ 0.01 m².
  * The final clip uses Clipper so concave sites split into clean pieces.
  */
 export function baseFootprint(site: Site, target: number): PathsD {
@@ -68,7 +68,7 @@ export function baseFootprint(site: Site, target: number): PathsD {
     const a = slabArea(mid);
     if (a <= target) {
       lo = mid;
-      if (target - a <= 0.25) break;
+      if (target - a <= 0.01) break;
     } else {
       hi = mid;
     }

@@ -74,6 +74,20 @@ describe('golden fixtures (hand-calculated, §6)', () => {
   it('std over an 8-unit apartment (FA 700) S=3 → null (N6)', () => {
     expect(run(overApt, 3)).toBeNull();
   });
+  it('std with 1 unit, FA 500, S=3 → null (N6 isolated: FA 418 ≤ 500, units 3 > 1)', () => {
+    expect(run({ ...std, existingUnits: 1, existingFloorAreaM2: 500 }, 3)).toBeNull();
+  });
+  it('aduEnd −1 places the ADU at the −u end', () => {
+    const d = generateDetailed(
+      P(std),
+      { maxStories: 2 },
+      varietyFromUniforms([0.5, 0.5, 0.5, 0.5, 0, 0.75]),
+      'max'
+    )!;
+    expect(d.building.typology).toBe('adu');
+    expect(Math.abs(d.building.floorAreaM2 - 68.75)).toBeLessThanOrEqual(2);
+    expect(d.local[0].ring.every(([, y]) => y < 0)).toBe(true);
+  });
   it('std over 10 units (FA 600) S=5 → null (N7)', () => {
     expect(run(over10, 5)).toBeNull();
   });

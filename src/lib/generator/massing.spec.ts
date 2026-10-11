@@ -20,13 +20,13 @@ describe('floorTop', () => {
 });
 
 describe('baseFootprint (§4.6)', () => {
-  it('slab bisection reaches T within 0.25 m² from below, yard split equally', () => {
+  it('slab bisection reaches T within 0.01 m² from below, yard split equally', () => {
     const site = normaliseSite([rect(7.62, 30.48)], 0.4)!;
     const T = 0.6 * site.A;
     const F = baseFootprint(site, T);
     const a = totalArea(F);
-    expect(a).toBeLessThanOrEqual(T + 1e-9);
-    expect(T - a).toBeLessThanOrEqual(0.25 + 0.15); // + cm-grid snap of the final clip
+    // the slab area is ≤ T (bisection); the final Clipper cm-grid snap may move it by ≤ 0.15
+    expect(Math.abs(T - a)).toBeLessThanOrEqual(0.01 + 0.15);
     const ext = project(F, site.c, site.u);
     expect(ext.max).toBeCloseTo(-ext.min, 1); // equal yards at both ends
     expect(15.24 - ext.max).toBeCloseTo(5.0, 0); // ≈5.0 m from the lot line at each end
