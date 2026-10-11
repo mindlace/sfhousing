@@ -26,11 +26,12 @@ All run as `npm run pipeline -- <cmd>`.
 
 ## Release run order
 
-1. `npm run pipeline -- all` (cold about 15 to 25 minutes, warm rebuild 5 to 8). Every invariant must pass.
-2. Commit the updated `pipeline/sources.lock.json`.
-3. `npm run pipeline -- upload <v>`. It aborts if `data/<v>/manifest.json` already exists (V13).
-4. `npm run pipeline -- verify <v> --origin https://<staging-origin>`.
-5. Edit `PUBLIC_DATASET_VERSION` in `wrangler.jsonc` to `<v>` for staging, then for production via the normal release (see [deploy.md](deploy.md)). Old versions are never deleted, so saved plans keep loading.
+1. `npm run pipeline -- fetch` to refresh the sources and rewrite `pipeline/sources.lock.json` (`all` only fetches when the lock is missing, so it never refreshes an existing lock).
+2. `npm run pipeline -- build` (cold about 15 to 25 minutes, warm rebuild 5 to 8). Every invariant must pass, without `--skip-tiles`.
+3. Commit `pipeline/sources.lock.json`. The lock is not part of the code hash, so committing it does not change `<v>`: the commit that holds the lock rebuilds the same version.
+4. `npm run pipeline -- upload <v>`. It refuses, with nothing uploaded, unless `out/<v>/report.json` shows every invariant passing and tiles built, every file the manifest names exists, and the current lock is the one that built `<v>` (its canonical sha256 is recorded in `report.json` as `lockSha256`; fixture versions skip this check because they archive nothing). It aborts if `data/<v>/manifest.json` already exists (V13).
+5. `npm run pipeline -- verify <v> --origin https://<staging-origin>`.
+6. Edit `PUBLIC_DATASET_VERSION` in `wrangler.jsonc` to `<v>` for staging, then for production via the normal release (see [deploy.md](deploy.md)). Old versions are never deleted, so saved plans keep loading.
 
 ## Where things land
 
@@ -41,7 +42,7 @@ All run as `npm run pipeline -- <cmd>`.
 
 ## Lock and `datasetVersion`
 
-The lock pins every input by sha256. `build` refuses to run if a cached file does not match it. `datasetVersion` is `<YYYY-MM-DD>-<h8>`: the date is the newest `retrievedAt` in the lock, `h8` hashes the canonical lock, the git tree of `pipeline/` plus `src/lib/data/`, and the pinned tool versions. It is derived from inputs, so the same lock and code give the same version, and any change to pipeline code or the shared codec gives a new version. A published version is immutable; fixtures use `fixture-<n>`.
+The lock pins every input by sha256. `build` refuses to run if a cached file does not match it. `datasetVersion` is `<YYYY-MM-DD>-<h8>`: the date is the newest `retrievedAt` in the lock, `h8` hashes the canonical lock, the committed code under `pipeline/` plus `src/lib/data/` (a `git ls-tree` listing that excludes `sources.lock.json`, `.cache` and `out`, plus any uncommitted changes there), and the pinned tool versions. It is derived from inputs, so the same lock and code give the same version, and any change to pipeline code or the shared codec gives a new version. A published version is immutable; fixtures use `fixture-<n>`.
 
 ## Fixture
 

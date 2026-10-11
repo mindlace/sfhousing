@@ -42,18 +42,27 @@ async function git(root: string, args: string[]): Promise<string> {
   return r.stdout;
 }
 
+/** Paths that are inputs or outputs, not code: never part of the code hash. */
+const NOT_CODE = (f: string): boolean =>
+  f === 'pipeline/sources.lock.json' ||
+  f.startsWith('pipeline/.cache/') ||
+  f.startsWith('pipeline/out/');
+
 /**
- * Identifies the pipeline + data-schema code: the git tree hashes of `pipeline` and
- * `src/lib/data` at HEAD, concatenated. When those paths have uncommitted changes
- * (excluding pipeline/sources.lock.json, .cache and out), the sha256 of
- * `git diff HEAD` and of each untracked file is appended, so uncommitted code
- * produces a different datasetVersion than the committed tree.
+ * Identifies the pipeline + data-schema code: sha256 of the `git ls-tree -r HEAD` listing
+ * (mode, type, blob hash, path) of `pipeline` and `src/lib/data`, minus
+ * pipeline/sources.lock.json, .cache and out. The lock is hashed separately by
+ * computeDatasetVersion, so committing it does not change the version (spec AC-5, AC-7).
+ * When those paths have uncommitted changes (same excludes), the sha256 of `git diff HEAD`
+ * and of each untracked file is appended, so uncommitted code produces a different
+ * datasetVersion than the committed tree.
  */
 export async function codeTreeHash(repoRoot: string): Promise<string> {
-  const trees = await Promise.all(
-    PATHS.map(async (p) => (await git(repoRoot, ['rev-parse', `HEAD:${p}`])).trim())
-  );
-  let out = trees.join('');
+  const listing = (await git(repoRoot, ['ls-tree', '-r', '-z', 'HEAD', '--', ...PATHS]))
+    .split('\0')
+    .filter((line) => line !== '' && !NOT_CODE(line.slice(line.indexOf('\t') + 1)))
+    .sort();
+  let out = sha256(listing.join('\n'));
   const status = await git(repoRoot, ['status', '--porcelain', '--', ...PATHS, ...EXCLUDES]);
   if (status.trim() === '') return out;
   const diff = await git(repoRoot, ['diff', 'HEAD', '--', ...PATHS, ...EXCLUDES]);

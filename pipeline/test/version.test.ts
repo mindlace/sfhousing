@@ -1,3 +1,7 @@
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DATASET_VERSION_RE } from '../../src/lib/data/manifest';
 import type { Lock } from '../lib/lock';
@@ -81,5 +85,46 @@ describe('codeTreeHash', () => {
     const b = await codeTreeHash(root);
     expect(a.length).toBeGreaterThan(0);
     expect(a).toBe(b);
+  });
+
+  /** A throwaway repo with committed pipeline/ + src/lib/data/ code (never the real repo). */
+  function tempRepo(): { dir: string; git: (...a: string[]) => void } {
+    const dir = mkdtempSync(join(tmpdir(), 'sfh-ver-'));
+    const git = (...a: string[]) => {
+      execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], {
+        cwd: dir,
+        stdio: 'ignore'
+      });
+    };
+    git('init', '-q');
+    mkdirSync(join(dir, 'pipeline'), { recursive: true });
+    mkdirSync(join(dir, 'src/lib/data'), { recursive: true });
+    writeFileSync(join(dir, 'pipeline/a.ts'), 'export const a = 1;\n');
+    writeFileSync(join(dir, 'src/lib/data/b.ts'), 'export const b = 2;\n');
+    git('add', '.');
+    git('commit', '-q', '-m', 'code');
+    return { dir, git };
+  }
+  it('is identical whether the lock is untracked or committed', async () => {
+    const { dir, git } = tempRepo();
+    const before = await codeTreeHash(dir);
+    writeFileSync(join(dir, 'pipeline/sources.lock.json'), '{"sources":[]}\n');
+    const untracked = await codeTreeHash(dir);
+    git('add', 'pipeline/sources.lock.json');
+    git('commit', '-q', '-m', 'lock');
+    const committed = await codeTreeHash(dir);
+    expect(untracked).toBe(before);
+    expect(committed).toBe(before);
+  });
+  it('changes with an uncommitted code change, and with a committed one', async () => {
+    const { dir, git } = tempRepo();
+    const clean = await codeTreeHash(dir);
+    writeFileSync(join(dir, 'pipeline/a.ts'), 'export const a = 3;\n');
+    const dirty = await codeTreeHash(dir);
+    expect(dirty).not.toBe(clean);
+    git('commit', '-q', '-am', 'change');
+    const committed = await codeTreeHash(dir);
+    expect(committed).not.toBe(clean);
+    expect(committed).not.toBe(dirty);
   });
 });
