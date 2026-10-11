@@ -196,6 +196,21 @@ export function canonicalRing(p: PathD): PathD {
   return pts.slice(start).concat(pts.slice(0, start));
 }
 
+export function isParallelogram(p: PathD): boolean {
+  return (
+    p.length === 4 &&
+    Math.abs(p[2].x - p[1].x - p[3].x + p[0].x) < 1e-8 &&
+    Math.abs(p[2].y - p[1].y - p[3].y + p[0].y) < 1e-8
+  );
+}
+function convex(p: PathD): boolean {
+  return p.every((a, i) => {
+    const b = p[(i + 1) % p.length],
+      c = p[(i + 2) % p.length];
+    return (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x) >= -1e-9;
+  });
+}
+
 /** Recognize rectangles without depending on their orientation or vertex start. */
 export function isRectangle(p: PathD): boolean {
   if (p.length !== 4) return false;
@@ -226,16 +241,37 @@ export function inset(paths: PathsD, d: number, precision = CLIPPER_PRECISION): 
       v = { x: (z.x - a.x) / lv, y: (z.y - a.y) / lv };
     return [canonicalRing(orientedRect(a, u, v, d, lu - d, d, lv - d))];
   }
+  if (paths.length === 1 && isParallelogram(paths[0])) {
+    const p = canonicalRing(paths[0]);
+    const normals = p.map((a, i) => {
+      const b = p[(i + 1) % 4],
+        len = Math.hypot(b.x - a.x, b.y - a.y);
+      return { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
+    });
+    const width = (p[2].x - p[0].x) * normals[0].x + (p[2].y - p[0].y) * normals[0].y;
+    const depth = (p[3].x - p[1].x) * normals[1].x + (p[3].y - p[1].y) * normals[1].y;
+    if (width <= 2 * d || depth <= 2 * d) return [];
+    return [
+      canonicalRing(
+        p.map((a, i) => {
+          const n = normals[i],
+            prev = normals[(i + 3) % 4],
+            scale = d / (1 + n.x * prev.x + n.y * prev.y);
+          return { x: a.x + (n.x + prev.x) * scale, y: a.y + (n.y + prev.y) * scale };
+        })
+      )
+    ];
+  }
   return inflatePathsD(paths, -d, JoinType.Miter, EndType.Polygon, 2, precision);
 }
 
 export function intersect(a: PathsD, b: PathsD): PathsD {
-  if (a.length === 1 && b.length === 1 && isRectangle(a[0]) && isRectangle(b[0])) {
+  if (a.length === 1 && b.length === 1 && convex(a[0]) && convex(b[0])) {
     let ring = a[0];
     const clip = canonicalRing(b[0]);
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < clip.length; i++) {
       const p = clip[i],
-        q = clip[(i + 1) % 4],
+        q = clip[(i + 1) % clip.length],
         nx = q.y - p.y,
         ny = p.x - q.x;
       ring = clipHalf(ring, nx, ny, nx * p.x + ny * p.y);

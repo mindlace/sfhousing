@@ -4,7 +4,7 @@ import type { OccupiedComposition, RoofAccent } from './composition-types';
 import { rulesFor } from './constants';
 import { occupiedArea, floorSlices } from './bands';
 import { insideDomain } from './domain';
-import { fromLngLat, toLngLat } from './geo';
+import { localFrame } from './geo';
 import { canonicalRing, inset, signedArea } from './poly';
 import type { Site } from './site';
 import { floorTop } from './massing';
@@ -19,6 +19,7 @@ export function serializeComposition(
   caps: RoofAccent[],
   tone: 0 | 1 | 2
 ): { local: LocalPart[]; parts: GeneratedBuilding['parts']; area: number } | null {
+  const frame = localFrame(parcel.labelPoint);
   let repairDistance = 0.02;
   for (let repair = 0; repair <= 2; repair++) {
     const local: LocalPart[] = [],
@@ -34,16 +35,13 @@ export function serializeComposition(
     ): PathD | null => {
       const repaired = repair ? inset([ring], repair * repairDistance, 4) : [ring];
       if (repaired.length !== 1) return null;
-      const raw = toLngLat(
-        canonicalRing(repaired[0]).map((p) => [p.x, p.y]),
-        parcel.labelPoint
-      );
+      const raw = canonicalRing(repaired[0]).map((p) => frame.to(p.x, p.y));
       const ll = raw.filter((p, i) => {
         const prev = raw[(i + raw.length - 1) % raw.length];
         return p[0] !== prev[0] || p[1] !== prev[1];
       });
       if (ll.length < 3) return null;
-      const xy = fromLngLat(ll, parcel.labelPoint);
+      const xy = ll.map(([lng, lat]) => frame.from(lng, lat));
       const path = xy.map(([x, y]) => ({ x, y }));
       if (
         signedArea(path) < (role === 'occupied' ? 10 : 1) ||

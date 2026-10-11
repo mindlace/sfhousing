@@ -52,6 +52,7 @@
   import type { Manifest } from '$lib/data/manifest';
   import { CONSTRAINTS, NARROW_PX, defaultFrame, initialCamera, pixelRatio } from './camera';
   import { loadDeck } from './deck-loader';
+  import { generatedCellFilter } from './cull';
   import { installDebug } from './debug';
   import { GeneratedController } from './generated-controller';
   import { TOKENS } from './palette';
@@ -400,7 +401,11 @@
     }
     if (l.dead) return;
     const [{ MapLibreOverlay }, { SolidPolygonLayer }] = mods;
-    const overlay = new MapLibreOverlay({ interleaved: true, layers: [] });
+    const overlay = new MapLibreOverlay({
+      interleaved: true,
+      layers: [],
+      layerFilter: generatedCellFilter
+    });
     map.addControl(overlay);
     l.overlay = overlay;
     const controller = new GeneratedController(

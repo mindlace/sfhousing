@@ -15,10 +15,18 @@ export interface SfhMapDebug {
   /** Passthrough to the controller's `apply` (bypasses the worker host). No-op before ready. */
   applyGenerated(u: GeneratedUpdate): void;
   /**
-   * bench:map only (docs/dev/map-perf.md): applies `makeSyntheticCity(seed, n)` as one settled
+   * bench:map only (docs/dev/map-perf.md): applies `makeSyntheticCity(seed, n, 1500, complexity)` as one settled
    * revision-0 snapshot covering the whole SF bbox. Resolves to the parcel and cell counts.
    */
-  loadSyntheticCity(seed?: number, n?: number): Promise<{ parcels: number; cells: number }>;
+  loadCompositionDistrict(
+    seed: number,
+    stories: number
+  ): Promise<{ parcels: number; cells: number }>;
+  loadSyntheticCity(
+    seed?: number,
+    n?: number,
+    complexity?: 'representative' | 'worst'
+  ): Promise<{ parcels: number; cells: number }>;
 }
 
 declare global {
@@ -53,9 +61,54 @@ export function installDebug(
       return [...out.values()].sort((a, b) => (a.parcelId < b.parcelId ? -1 : 1));
     },
     applyGenerated: (u) => get().controller?.apply(u),
-    loadSyntheticCity: async (seed = 1, n = 150_000) => {
+    loadCompositionDistrict: async (seed, stories) => {
+      const { compositionDistrict } = await import('./fixtures/composition-district');
+      const { packCell } = await import('./pack');
+      const { toLngLat } = await import('../generator/geo');
+      const district = compositionDistrict(seed, stories);
+      const pack = packCell(
+        'composition-district',
+        district.buildings.map((building) => ({ building, existingUnits: 0 }))
+      );
+      get().controller?.apply({
+        revision: 0,
+        cells: [{ settled: pack, rising: null }],
+        removedCells: [],
+        hide: { add: [], remove: [] }
+      });
+      const map = get().map;
+      if (map) {
+        if (map.getLayer('composition-boundaries')) map.removeLayer('composition-boundaries');
+        if (map.getSource('composition-boundaries')) map.removeSource('composition-boundaries');
+        map.addSource('composition-boundaries', {
+          type: 'geojson',
+          data: {
+            type: 'FeatureCollection',
+            features: district.parcels.map((p) => ({
+              type: 'Feature',
+              properties: { id: p.id },
+              geometry: {
+                type: 'Polygon',
+                coordinates: p.polygon.map((r) => {
+                  const ll = toLngLat(r, p.labelPoint);
+                  return [...ll, ll[0]];
+                })
+              }
+            }))
+          }
+        });
+        map.addLayer({
+          id: 'composition-boundaries',
+          type: 'line',
+          source: 'composition-boundaries',
+          paint: { 'line-color': '#858099', 'line-width': 1 }
+        });
+      }
+      return { parcels: district.buildings.length, cells: 1 };
+    },
+    loadSyntheticCity: async (seed = 1, n = 150_000, complexity = 'representative') => {
       const { makeSyntheticCity } = await import('./test/synthetic-city');
-      const updates = makeSyntheticCity(seed, n);
+      const updates = makeSyntheticCity(seed, n, 1500, complexity);
       const cells = updates.flatMap((u) =>
         u.cells.map((c) => ({ settled: c.rising ?? c.settled, rising: null }))
       );

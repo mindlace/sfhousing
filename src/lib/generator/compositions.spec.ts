@@ -4,10 +4,11 @@ import { normaliseSite } from './site';
 import { drawVariety } from './variety';
 import { drawComposition } from './composition-variety';
 import { compositionParcel } from './fixtures/composition-parcel';
+import { fnv1a32 } from './seed';
 import { occupiedArea } from './bands';
 import { domainArea } from './domain';
 import { inset, signedArea, intersect } from './poly';
-import { lRing } from './fixtures/geom';
+import { rotateRing, lRing } from './fixtures/geom';
 import type { CompositionId } from './composition-types';
 
 describe('parcel composition recipes', () => {
@@ -104,4 +105,33 @@ describe('skyline recipes', () => {
     expect(candidate.family).not.toBe('paired');
     expect(candidate.typology).toBe(reference.typology);
   });
+});
+it('removes unusably narrow fragments from a holed reference before accounting', () => {
+  const polygon = compositionParcel('hole', 30, 30).polygon;
+  polygon.push([
+    [-12, -11.5],
+    [-8, -11.5],
+    [-8, 11.5],
+    [-12, 11.5]
+  ]);
+  const site = normaliseSite(polygon, 0.4)!;
+  const reference = referenceComposition(site, 'podium', 6, drawVariety(1))!;
+  expect(reference).not.toBeNull();
+  expect(reference.bands.every((b) => b.regions.every((r) => inset([r], 1.5).length > 0))).toBe(
+    true
+  );
+});
+
+it('keeps paired plate capacity under a rotated parcel frame', () => {
+  const parcel = compositionParcel('paired-rotation', 60, 50);
+  const draws = { ...drawComposition(fnv1a32('0000004')), familyOrder: ['paired' as const] };
+  const areas = [0, -0.5777051025928257].map((t) => {
+    const site = normaliseSite(
+      parcel.polygon.map((r) => rotateRing(r, t, false)),
+      0.4
+    )!;
+    const reference = referenceComposition(site, 'tower', 30, drawVariety(1))!;
+    return occupiedArea(compositionCandidates(site, reference, draws)[0].bands);
+  });
+  expect(Math.abs(areas[0] - areas[1])).toBeLessThan(0.5);
 });

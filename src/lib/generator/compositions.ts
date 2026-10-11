@@ -45,8 +45,10 @@ export function referenceComposition(
       band = { firstFloor, floors: part.floors, regions: [] };
       bands.push(band);
     }
-    band.regions.push(canonicalRing(part.ring));
+    const ring = canonicalRing(part.ring);
+    if (inset([ring], 1.5).length) band.regions.push(ring);
   }
+  if (bands.some((b) => !b.regions.length)) return null;
   return { family: 'simple', typology: mass.typology, stories: mass.stories, bands };
 }
 
@@ -99,8 +101,8 @@ export function validComposition(
           if (
             domainArea(
               intersectD(
-                inset([slice.regions[i]], -TOWER_SEPARATION_M / 2 + 0.001),
-                inset([slice.regions[j]], -TOWER_SEPARATION_M / 2 + 0.001),
+                inset([slice.regions[i]], -TOWER_SEPARATION_M / 2 + 0.001, 4),
+                inset([slice.regions[j]], -TOWER_SEPARATION_M / 2 + 0.001, 4),
                 FillRule.NonZero,
                 4
               )

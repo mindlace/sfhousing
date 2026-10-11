@@ -8,6 +8,7 @@ import type { TypologyId } from '$lib/generator';
 import { applyHideDiff, planSlices, type Slice } from './hide';
 import { concatPacks } from './pack';
 import { TOKENS, hexToRgba, type RGBA } from './palette';
+import { registerCellBounds } from './cull';
 import { appearanceColor } from './appearance';
 import { TYPOLOGY_ORDER, type GeneratedUpdate, type PackedCell, type Theme } from './types';
 
@@ -98,6 +99,7 @@ function accessorsFor(pack: PackedCell, theme: Theme) {
       getElevation: (_, { index }) => partTopM[index],
       fill: {}
     };
+    registerCellBounds(c.data, pack);
     packCache.set(pack, c);
   }
   let fill = c.fill[theme];

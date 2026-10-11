@@ -17,6 +17,7 @@ import {
   canonicalRing,
   clipSlab,
   isRectangle,
+  isParallelogram,
   intersect,
   inset,
   keepPieces,
@@ -69,6 +70,18 @@ export function baseFootprint(site: Site, target: number): PathsD {
   if (Q.length === 1 && isRectangle(P) && isRectangle(Q[0])) {
     const pv = project(Q, c, v);
     return [canonicalRing(clipSlab(Q[0], c, u, target / (2 * (pv.max - pv.min))))];
+  }
+  if (Q.length === 1 && isParallelogram(P) && isParallelogram(Q[0])) {
+    const pv = project(Q, c, v);
+    let h = target / (2 * (pv.max - pv.min));
+    let cut = clipSlab(Q[0], c, u, h);
+    const area = Math.abs(signedArea(cut));
+    if (area > 0) {
+      h *= target / area;
+      cut = clipSlab(Q[0], c, u, h);
+    }
+    const fitted = Math.abs(signedArea(cut));
+    if (fitted <= target + 1e-7 && target - fitted < 0.01) return [canonicalRing(cut)];
   }
   const pu = project([P], c, u);
   const H = Math.max(-pu.min, pu.max);

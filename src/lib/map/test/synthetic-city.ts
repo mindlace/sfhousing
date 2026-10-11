@@ -1,5 +1,7 @@
 // Deterministic synthetic whole-city plan for client budget tests (spec §6). Not committed data.
-import type { GeneratedBuilding, TypologyId } from '$lib/generator';
+import type { GeneratedBuilding } from '$lib/generator';
+import { compositionDistrict } from '../fixtures/composition-district';
+import { worstComposition } from './worst-composition';
 import { emptyPack, packCell, type PackInput } from '../pack';
 import type { GeneratedUpdate, PackedCell } from '../types';
 
@@ -8,8 +10,6 @@ const W = -122.515,
   S = 37.708,
   E = -122.357,
   N = 37.833;
-const M_LAT = 1 / 111_320;
-const M_LNG = 1 / (111_320 * Math.cos((37.77 * Math.PI) / 180));
 /** Cells per update after the snapshot. */
 const CELLS_PER_UPDATE = 10;
 
@@ -24,58 +24,32 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-/** Clockwise rectangle (lng/lat) with its south-west corner at (x, y), w × h metres. */
-function rect(x: number, y: number, w: number, h: number): [number, number][] {
-  const x1 = x + w * M_LNG,
-    y1 = y + h * M_LAT;
-  return [
-    [x, y],
-    [x, y1],
-    [x1, y1],
-    [x1, y]
-  ];
+export type Complexity = 'representative' | 'worst';
+const exemplarCache: Partial<Record<Complexity, GeneratedBuilding[]>> = {};
+export function benchmarkExemplars(complexity: Complexity): GeneratedBuilding[] {
+  return (exemplarCache[complexity] ??=
+    complexity === 'worst'
+      ? [worstComposition()]
+      : [2, 3, 5, 6, 8, 12, 20, 40].flatMap(
+          (stories) => compositionDistrict(42, stories).buildings
+        ));
 }
-
-const SINGLE: TypologyId[] = ['adu', 'plex', 'walkup', 'midrise'];
-
-function building(id: string, x: number, y: number, rnd: () => number): GeneratedBuilding {
-  if (rnd() < 0.3) {
-    const tower = rnd() < 0.5;
-    const podiumTop = 4 + rnd() * 4;
-    const top = tower ? 40 + rnd() * 60 : 18 + rnd() * 10;
-    return {
-      parcelId: id,
-      source: 'user',
-      composition: 'simple',
-      typology: tower ? 'tower' : 'podium',
-      parts: [
-        { role: 'occupied', tone: 0, footprint: rect(x, y, 10, 30), baseM: 0, topM: podiumTop },
-        {
-          role: 'occupied',
-          tone: 0,
-          footprint: rect(x + 2 * M_LNG, y + 2 * M_LAT, 6, 26),
-          baseM: podiumTop,
-          topM: top
-        }
-      ],
-      stories: Math.round(top / 3.2),
-      units: tower ? 120 : 40,
-      floorAreaM2: 3000,
-      replacesExisting: true
-    };
-  }
-  const typology = SINGLE[Math.floor(rnd() * SINGLE.length)];
-  const top = 4 + rnd() * 20;
+function building(
+  id: string,
+  x: number,
+  y: number,
+  rnd: () => number,
+  exemplars: GeneratedBuilding[]
+): GeneratedBuilding {
+  const source = exemplars[Math.floor(rnd() * exemplars.length)];
+  const anchor = source.parts[0].footprint[0];
   return {
+    ...source,
     parcelId: id,
-    source: 'user',
-    composition: 'simple',
-    typology,
-    parts: [{ role: 'occupied', tone: 0, footprint: rect(x, y, 10, 30), baseM: 0, topM: top }],
-    stories: Math.max(1, Math.round(top / 3.2)),
-    units: 2 + Math.floor(rnd() * 20),
-    floorAreaM2: 400,
-    replacesExisting: true
+    parts: source.parts.map((p) => ({
+      ...p,
+      footprint: p.footprint.map(([lng, lat]) => [x + lng - anchor[0], y + lat - anchor[1]])
+    }))
   };
 }
 
@@ -83,8 +57,14 @@ function building(id: string, x: number, y: number, rnd: () => number): Generate
  * `n` parcels in cells of `perCell`, on a grid across the SF bbox. Revision 0 is a snapshot of
  * the first 10 cells (all settled); each later revision brings 10 more cells as `rising`.
  */
-export function makeSyntheticCity(seed: number, n = 150_000, perCell = 1500): GeneratedUpdate[] {
+export function makeSyntheticCity(
+  seed: number,
+  n = 150_000,
+  perCell = 1500,
+  complexity: Complexity = 'representative'
+): GeneratedUpdate[] {
   const rnd = mulberry32(seed);
+  const exemplars = benchmarkExemplars(complexity);
   const nCells = Math.ceil(n / perCell);
   const cols = Math.ceil(Math.sqrt(nCells));
   const rows = Math.ceil(nCells / cols);
@@ -102,7 +82,10 @@ export function makeSyntheticCity(seed: number, n = 150_000, perCell = 1500): Ge
       const x = cx + ((i % side) + 0.1 + rnd() * 0.3) * (cw / side);
       const y = cy + (Math.floor(i / side) + 0.05 + rnd() * 0.1) * (ch / side);
       const id = `S${seed}-${String(made + i).padStart(7, '0')}`;
-      items.push({ building: building(id, x, y, rnd), existingUnits: Math.floor(rnd() * 3) });
+      items.push({
+        building: building(id, x, y, rnd, exemplars),
+        existingUnits: Math.floor(rnd() * 3)
+      });
     }
     made += count;
     packs.push(packCell(`syn-${String(c).padStart(4, '0')}`, items));
