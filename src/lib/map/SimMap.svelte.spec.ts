@@ -220,6 +220,35 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     await expect.poll(() => statusesIn(map)).toEqual(['loading']);
   });
 
+  it('inserts the generated and overlay deck layers just beneath the first label layer', async () => {
+    const { root, ready } = await mount();
+    await expect.poll(() => root.dataset.state, { timeout: 20_000 }).toBe('ready');
+    const h = await ready;
+    const map = h.getMap()!;
+    const pack = packCell(
+      '50_25',
+      (genJson as unknown as GeneratedBuilding[])
+        .slice(0, 3)
+        .map((b) => ({ building: b, existingUnits: 0 }))
+    );
+    h.applyGenerated({
+      revision: 0,
+      cells: [{ settled: pack, rising: null }],
+      removedCells: [],
+      hide: { add: [], remove: [] }
+    });
+    const { ScatterplotLayer } = await import('@deck.gl/layers');
+    h.setOverlayLayers([new ScatterplotLayer({ id: 'brush-ring', data: [] })]);
+    const firstSymbol = map.getStyle().layers.find((l) => l.type === 'symbol')!.id;
+    const group = `deck-maplibre-layer-group-before:${firstSymbol}`;
+    await expect.poll(() => map.getLayersOrder().includes(group)).toBe(true);
+    const order = map.getLayersOrder();
+    // One deck group (no "last" group above the labels), directly beneath the first label.
+    expect(order.filter((id) => id.startsWith('deck-'))).toEqual([group]);
+    expect(order.indexOf(group)).toBe(order.indexOf(firstSymbol) - 1);
+    expect(errors).toEqual([]);
+  });
+
   it('switches theme via paint properties without setStyle and keeps feature-state', async () => {
     const { root, screen, ready } = await mount({ theme: 'light' });
     await expect.poll(() => root.dataset.state, { timeout: 20_000 }).toBe('ready');
@@ -243,6 +272,49 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     ).toEqual({ replaced: true });
     await expect.poll(() => root.style.getPropertyValue('--map-land')).toBe(TOKENS.dark.land);
     expect(h.getMap()).toBe(map); // same map: no remount
+  });
+});
+
+describe('SimMap controls footprint vars', { timeout: 30_000 }, () => {
+  const IN = '--map-controls-br-inline-size';
+  const BL = '--map-controls-br-block-size';
+  const rootVar = (n: string) => document.documentElement.style.getPropertyValue(n);
+  const px = (n: string) => parseFloat(rootVar(n));
+  const measured = (target: HTMLElement, root: HTMLElement) => {
+    const r = root.getBoundingClientRect();
+    const c = target.querySelector('.maplibregl-ctrl-bottom-right')!.getBoundingClientRect();
+    return { inline: r.right - c.left, block: r.bottom - c.top };
+  };
+
+  it('publishes the container footprint on :root and tracks collapse, inset and unmount', async () => {
+    const { target, root, ready, screen } = await mount();
+    target.style.width = '375px';
+    await expect.poll(() => root.dataset.state, { timeout: 20_000 }).toBe('ready');
+    const h = await ready;
+    await idle(h);
+
+    await expect.poll(() => px(IN)).toBeGreaterThan(0);
+    await expect.poll(() => px(BL)).toBeGreaterThan(0);
+    const m = measured(target, root);
+    expect(Math.abs(px(IN) - m.inline)).toBeLessThanOrEqual(1);
+    expect(Math.abs(px(BL) - m.block)).toBeLessThanOrEqual(1);
+
+    const attrib = target.querySelector<HTMLElement>('.maplibregl-ctrl-attrib')!;
+    expect(attrib.classList.contains('maplibregl-compact')).toBe(true);
+    const expandedIn = px(IN);
+    attrib.classList.remove('maplibregl-compact-show');
+    await expect.poll(() => px(IN)).toBeLessThan(expandedIn);
+    attrib.classList.add('maplibregl-compact-show');
+    await expect.poll(() => px(IN)).toBe(expandedIn);
+
+    const before = px(BL);
+    h.setBottomInset(100);
+    await expect.poll(() => px(BL)).toBeGreaterThanOrEqual(before + 99);
+    await expect.poll(() => px(BL)).toBeLessThanOrEqual(before + 101);
+
+    await screen.unmount();
+    expect(rootVar(IN)).toBe('');
+    expect(rootVar(BL)).toBe('');
   });
 });
 

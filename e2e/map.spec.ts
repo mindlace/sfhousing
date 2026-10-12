@@ -397,6 +397,59 @@ test.describe('map view', () => {
       await expect(attrib).toHaveClass(/maplibregl-compact-show/);
       await expect(page.getByRole('link', { name: ATTRIBUTION, exact: true })).toBeVisible();
     });
+
+    test('the bottom-right controls footprint vars track the container and the (i) collapse', async ({
+      page
+    }) => {
+      await gotoReady(page);
+      const attrib = page.locator('.maplibregl-ctrl-attrib.maplibregl-compact');
+      await expect(attrib).toHaveClass(/maplibregl-compact-show/);
+
+      const read = () =>
+        page.evaluate(() => {
+          const cs = getComputedStyle(document.documentElement);
+          const root = document.querySelector('[data-testid="map-root"]')!.getBoundingClientRect();
+          const c = document
+            .querySelector('.maplibregl-ctrl-bottom-right')!
+            .getBoundingClientRect();
+          return {
+            inline: parseFloat(cs.getPropertyValue('--map-controls-br-inline-size')),
+            block: parseFloat(cs.getPropertyValue('--map-controls-br-block-size')),
+            boxInline: root.right - c.left,
+            boxBlock: root.bottom - c.top
+          };
+        });
+      const matches = async () => {
+        const r = await read();
+        return [
+          r.inline > 0,
+          r.block > 0,
+          Math.abs(r.inline - r.boxInline) <= 1,
+          Math.abs(r.block - r.boxBlock) <= 1
+        ].every(Boolean);
+      };
+      await expect.poll(matches).toBe(true);
+      const expanded = (await read()).inline;
+
+      const canvas = (await page.locator('.maplibregl-canvas').boundingBox())!;
+      const cx = canvas.x + canvas.width / 2;
+      const cy = canvas.y + canvas.height / 3;
+      await page.mouse.move(cx, cy);
+      await page.mouse.down();
+      await page.mouse.move(cx + 40, cy + 20, { steps: 5 });
+      await page.mouse.move(cx + 80, cy + 40, { steps: 5 });
+      await page.mouse.up();
+      await expect(attrib).not.toHaveClass(/maplibregl-compact-show/);
+      await expect.poll(async () => (await read()).inline).toBeLessThan(expanded);
+      await expect.poll(matches).toBe(true);
+
+      await attrib.locator('.maplibregl-ctrl-attrib-button').click();
+      await expect(attrib).toHaveClass(/maplibregl-compact-show/);
+      await expect
+        .poll(async () => Math.abs((await read()).inline - expanded))
+        .toBeLessThanOrEqual(1);
+      await expect.poll(matches).toBe(true);
+    });
   });
 
   // ---- painting (brush-tool + worker host) -----------------------------------------------------

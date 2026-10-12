@@ -13,7 +13,7 @@ Design row (verbatim):
 | `brush-tool` | Pointer and touch interaction that emits `BrushStroke` ops: paint or erase, a stories value, and a radius. Includes the brush cursor ring, an explicit pan/paint mode switch on touch devices, undo/redo over the op log, and a live preview while dragging. |
 
 **In:**
-- The toolbar UI (tool switch, stories picker, radius control, undo/redo, status line), the brush ring and the stroke swath.
+- The toolbar UI (tool switch, stories picker, radius control, undo/redo, status line), and the brush ring (no stroke swath, §4.3).
 - Pointer, touch and pen handling over the MapLibre map, and stroke sampling.
 - Keyboard shortcuts and the keyboard stamp.
 - The **editor store**: the in-memory current `Plan`, plus the undo and redo stacks.
@@ -21,7 +21,7 @@ Design row (verbatim):
 - `loadManifest` (`src/lib/sim/manifest.ts`): the main-thread I16 loader whose result is passed to both map-view and the worker host.
 
 **Out:**
-- Rendering generated buildings and hiding existing ones (`map-view`). The ring and swath are drawn through map-view's `setOverlayLayers` (I17, §4.3).
+- Rendering generated buildings and hiding existing ones (`map-view`). The ring is drawn through map-view's `setOverlayLayers` (I17, §4.3).
 - The typology table and `generate` (`typology-generator`).
 - Score computation (`scoreboard`). The host calls scoreboard's pure `score()` and forwards the result (I15).
 - Autosave, publish, the `/p/:id` loading and stale-dataset notice (`plan-sharing`).
@@ -154,10 +154,12 @@ type BrushTool = 'move' | 'paint' | 'erase';
 - **Radius:** a slider with `aria-valuetext="Brush radius 30 metres"`, on a logarithmic scale from 5 to 500 m with 100 positions. The value is rounded to integer metres. It is labelled "Brush 30 m". On narrow screens it lives in a popover opened from a "30 m" button.
 - **Shortcuts** (§4.7) step the radius by ×1.25 or ÷1.25 (rounded and clamped), and the stories by ±1.
 
-### 4.3 Brush ring and swath
+### 4.3 Brush ring
 
-- Both are drawn as deck.gl layers in metres, so they are correct under pitch and zoom. `brush-ring` is a `ScatterplotLayer` with one stroked point (`radiusUnits: 'meters'`, a 2 px line, no fill). `brush-swath` is a `PathLayer` (`widthUnits: 'meters'`, width = 2·radiusM, rounded caps and joints, 25% opacity). Paint uses token `--brush-paint` and Erase uses `--brush-erase`; the erase ring is dashed (`PathStyleExtension`, or a 64-gon path in place of the scatterplot point). They are passed to `SimMapHandle.setOverlayLayers([ring, swath])` (I17) whenever either changes; `setOverlayLayers([])` clears them.
-- The ring follows the hovered pointer (fine pointers only) whenever the tool is Paint or Erase. During a stroke it follows the active pointer on every device. The swath shows the **sampled path** (§4.4), so what you see is the op that will be stored.
+> Partner ruling 2026-10-12: the stroke swath is removed for Paint and Erase; the ring and live building previews are the in-stroke feedback.
+
+- The ring is drawn as a deck.gl layer in metres, so it is correct under pitch and zoom. `brush-ring` is a `ScatterplotLayer` with one stroked point (`radiusUnits: 'meters'`, a 2 px line, no fill). Paint uses token `--brush-paint` and Erase uses `--brush-erase`; the erase ring is dashed (`PathStyleExtension`, or a 64-gon path in place of the scatterplot point). It is passed to `SimMapHandle.setOverlayLayers([ring])` (I17) whenever it changes; `setOverlayLayers([])` clears it. No stroke swath is drawn.
+- The ring follows the hovered pointer (fine pointers only) whenever the tool is Paint or Erase. During a stroke it follows the active pointer on every device. The live building previews (§4.5) show what the stroke adds or erases.
 - At a zoom where the radius is under 4 px on screen, a minimum-size 4 px ring is drawn instead, and the status line reads "Zoom in to see the brush".
 
 ### 4.4 Stroke sampling and simplification

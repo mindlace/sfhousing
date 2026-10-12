@@ -236,10 +236,9 @@ function chunkLayers(theme: Theme): LayerSpecification[] {
 }
 
 /**
- * Stack: base, existing-buildings, chunk layers, labels, overlay-anchor. Note: the spec's
- * §4.4 order puts the deck layers under labels, but interleaved deck layers added without a
- * `beforeId` append to the top of the MapLibre stack, so in practice they draw over labels.
- * No sprite is ever set: pois and icon layers are dropped.
+ * Stack: base, existing-buildings, chunk layers, labels, overlay-anchor. The deck layers go
+ * beneath the labels at runtime: SimMap gives them `beforeId` = `firstSymbolLayerId(style)`
+ * (§4.4). No sprite is ever set: pois and icon layers are dropped.
  */
 export function buildStyle(manifest: Manifest, theme: Theme): StyleSpecification {
   const { base, labels } = protomapsLayers(theme);
@@ -259,6 +258,16 @@ export function buildStyle(manifest: Manifest, theme: Theme): StyleSpecification
       { id: OVERLAY_ANCHOR, type: 'background', layout: { visibility: 'none' } }
     ]
   } as StyleSpecification;
+}
+
+/**
+ * Id of the style's first `symbol` (label) layer: the `beforeId` that puts deck layers beneath
+ * every label (§4.4). Undefined when there is none, and deck layers then draw on top.
+ */
+export function firstSymbolLayerId(
+  style: Pick<StyleSpecification, 'layers'> | undefined
+): string | undefined {
+  return style?.layers.find((l) => l.type === 'symbol')?.id;
 }
 
 /** apply list[t] via setPaintProperty to move to theme t. Absent target keys emit null. */

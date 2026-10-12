@@ -4,7 +4,7 @@ import { project } from '$lib/plan';
 type RGB = [number, number, number];
 
 /**
- * Ring and swath colours (spec §4.3). Each is ≥ 3:1 against the map's land, existing-building and
+ * Ring colours (spec §4.3). Each is ≥ 3:1 against the map's land, existing-building and
  * replaced-building fills in its theme (WCAG 1.4.11); overlay.spec.ts checks it.
  */
 export const BRUSH_COLORS: { light: { paint: RGB; erase: RGB }; dark: { paint: RGB; erase: RGB } } =
@@ -51,35 +51,19 @@ export interface OverlayInput {
   tool: 'paint' | 'erase';
   ring: [number, number] | null;
   radiusM: number;
-  swath: [number, number][] | null;
   metersPerPixel: number;
   dark: boolean;
 }
 
 const RING_MIN_PX = 4;
 
-/** [] when nothing to draw. Layer ids: 'brush-ring', 'brush-swath' (never generated-/rising-). */
+/**
+ * [] when there is no ring. Layer id: 'brush-ring' (never generated-/rising-). No stroke swath is
+ * drawn (partner ruling 2026-10-12).
+ */
 export function buildOverlayLayers(L: OverlayCtors, s: OverlayInput): Layer[] {
   const color = [...BRUSH_COLORS[s.dark ? 'dark' : 'light'][s.tool], 255];
   const layers: Layer[] = [];
-
-  if (s.swath && s.swath.length > 0) {
-    // A stamp is a one-point path; doubling it lets the rounded caps draw a disc.
-    const path = s.swath.length === 1 ? [s.swath[0], s.swath[0]] : s.swath;
-    layers.push(
-      new L.PathLayer({
-        id: 'brush-swath',
-        data: [path],
-        getPath: (d: unknown) => d,
-        widthUnits: 'meters',
-        getWidth: 2 * s.radiusM,
-        capRounded: true,
-        jointRounded: true,
-        opacity: 0.25,
-        getColor: color
-      })
-    );
-  }
 
   if (s.ring) {
     if (s.tool === 'paint') {

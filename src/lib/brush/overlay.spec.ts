@@ -34,7 +34,6 @@ const base: OverlayInput = {
   tool: 'paint',
   ring: C,
   radiusM: 30,
-  swath: null,
   metersPerPixel: 1,
   dark: false
 };
@@ -75,9 +74,11 @@ describe('dashedCircle', () => {
 });
 
 describe('buildOverlayLayers', () => {
-  it('draws nothing with no ring and no swath', () => {
+  it('draws nothing with no ring', () => {
     const { L, made } = fakeCtors();
-    expect(buildOverlayLayers(L, { ...base, ring: null, swath: null })).toEqual([]);
+    for (const tool of ['paint', 'erase'] as const) {
+      expect(buildOverlayLayers(L, { ...base, tool, ring: null })).toEqual([]);
+    }
     expect(made).toHaveLength(0);
   });
 
@@ -128,34 +129,17 @@ describe('buildOverlayLayers', () => {
     expect(Math.abs(distM(C, first[0]) - 40) / 40).toBeLessThan(0.005);
   });
 
-  it('draws the swath 2·r metres wide at 25% opacity, under the ring', () => {
-    const { L, made } = fakeCtors();
-    const swath: [number, number][] = [C, [C[0] + 0.001, C[1]]];
-    const layers = buildOverlayLayers(L, { ...base, swath });
-    expect(layers.map((l) => l.id)).toEqual(['brush-swath', 'brush-ring']);
-    const p = made.find((m) => m.props.id === 'brush-swath')!.props;
-    expect(p.data).toEqual([swath]);
-    expect((p.getPath as (d: unknown) => unknown)(swath)).toBe(swath);
-    expect(p.widthUnits).toBe('meters');
-    expect(p.getWidth).toBe(60);
-    expect(p.capRounded).toBe(true);
-    expect(p.jointRounded).toBe(true);
-    expect(p.opacity).toBe(0.25);
-    expect(p.getColor).toEqual([...BRUSH_COLORS.light.paint, 255]);
-  });
-
-  it('draws a one-point stamp swath as [p, p]', () => {
-    const { L, made } = fakeCtors();
-    buildOverlayLayers(L, { ...base, tool: 'erase', ring: null, swath: [C] });
-    expect(made).toHaveLength(1);
-    expect(made[0].props.data).toEqual([[C, C]]);
-    expect(made[0].props.getColor).toEqual([...BRUSH_COLORS.light.erase, 255]);
+  it('draws only the ring, never a swath, for Paint and Erase (partner ruling 2026-10-12)', () => {
+    const { L } = fakeCtors();
+    for (const tool of ['paint', 'erase'] as const) {
+      expect(buildOverlayLayers(L, { ...base, tool }).map((l) => l.id)).toEqual(['brush-ring']);
+    }
   });
 
   it('never uses a generated- or rising- layer id', () => {
     const { L } = fakeCtors();
     for (const tool of ['paint', 'erase'] as const) {
-      const layers = buildOverlayLayers(L, { ...base, tool, swath: [C] });
+      const layers = buildOverlayLayers(L, { ...base, tool });
       for (const l of layers) expect(l.id).not.toMatch(/^(generated|rising)-/);
     }
   });
