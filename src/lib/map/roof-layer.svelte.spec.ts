@@ -6,6 +6,7 @@ import { decodeRoofChunk, encodeRoofChunk } from '$lib/data/roof-codec';
 import type { DecodedRoofChunk } from '$lib/data/building-roofs';
 import type { ParcelId } from '$lib/data/parcel';
 import { RoofMeshLayer, roofGpuBytes } from './roof-layer';
+import { RoofCache } from './roof-cache';
 
 // Two independent pitched surfaces and south-facing vertical walls. No shared piece vertices.
 function chunk(): DecodedRoofChunk {
@@ -386,4 +387,101 @@ it('releases the previous native VAO exactly once when immutable chunk identity 
   expect(oldModelDestroy).toHaveBeenCalledTimes(1);
   for (const destroy of oldDestroys) expect(destroy).toHaveBeenCalledTimes(1);
   expect(failure).not.toHaveBeenCalled();
+});
+
+it('charges deferred removal until actual finalization and cancels queued initialization permanently', async () => {
+  await emptyDeck();
+  const finalized = vi.fn();
+  const cache = new RoofCache({
+    onEvict: () => {
+      deck!.setProps({ layers: [] });
+      layer.cancelPreparation();
+    }
+  });
+  const layer = new RoofMeshLayer({
+    ...prepareLayer().props,
+    onFinalize: () => {
+      finalized();
+      cache.release('gpu-test');
+    }
+  });
+  await draw(layer);
+  await vi.waitFor(() => expect(layer.gpuBytes).toBeGreaterThan(0));
+  const bytes = layer.gpuBytes;
+  const cpu =
+    layer.props.chunk.positions.byteLength +
+    layer.props.chunk.normals.byteLength +
+    layer.props.chunk.indices.byteLength +
+    layer.props.chunk.pieceSlots.byteLength +
+    new TextEncoder().encode(JSON.stringify(layer.props.chunk.header)).length;
+  cache.reserve('gpu-test', cpu, bytes);
+  cache.install('gpu-test', layer.props.chunk);
+  cache.setVisible(['gpu-test']);
+  cache.reserve('other', 64 * 1024 * 1024 - cpu - bytes, 0);
+  await draw(layer.clone({ active: true }));
+  cache.evict('gpu-test');
+  expect(cache.reserve('replacement', 1, 0)).toBe(false);
+  expect(layer.cancelPreparation()).toBe(false);
+  expect(finalized).not.toHaveBeenCalled();
+  expect(layer.gpuBytes).toBe(bytes);
+  await tick();
+  deck!.redraw('finalize retired');
+  expect(finalized).toHaveBeenCalledTimes(1);
+  expect(layer.gpuBytes).toBe(0);
+  expect(cache.reserve('replacement', 1, 0)).toBe(true);
+  const cancelled = new RoofMeshLayer({ ...prepareLayer().props, onFinalize: finalized });
+  expect(cancelled.cancelPreparation()).toBe(true);
+  expect(finalized).toHaveBeenCalledTimes(2);
+  const create = vi.spyOn(testDevice, 'createBuffer');
+  await draw(cancelled.clone({ active: true }));
+  expect(cancelled.gpuBytes).toBe(0);
+  expect(
+    create.mock.calls.filter(([p]) => 'id' in p && p.id?.startsWith('existing-roof-'))
+  ).toEqual([]);
+  deck!.setProps({ layers: [] });
+  await tick();
+  deck!.redraw('remove cancelled');
+  expect(finalized).toHaveBeenCalledTimes(2);
+});
+
+it('prepares a near-limit decoded chunk without a 50 ms main-thread long task', async () => {
+  const vertices = 149000;
+  const mesh = chunk();
+  mesh.positions = new Float32Array(vertices * 3);
+  mesh.normals = new Float32Array(vertices * 3);
+  mesh.indices = new Uint32Array([0, 1, 2]);
+  mesh.pieceSlots = new Uint32Array(vertices);
+  mesh.header.pieces = [{ ...mesh.header.pieces[0], firstIndex: 0, indexCount: 3 }];
+  const encoded = encodeRoofChunk(mesh);
+  const decoded = decodeRoofChunk(encoded.header, encoded.buffer);
+  expect(encoded.buffer.byteLength).toBe(4172012);
+  await emptyDeck();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const tasks: number[] = [];
+  const start = performance.now();
+  const observer = new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) if (entry.startTime >= start) tasks.push(entry.duration);
+  });
+  observer.observe({ type: 'longtask' });
+  const ready = vi.fn(),
+    failure = vi.fn();
+  const layer = new RoofMeshLayer({
+    chunk: decoded,
+    hidden: new Set(),
+    visibilityRevision: 0,
+    theme: 'light',
+    active: false,
+    onReady: ready,
+    onFailure: failure
+  });
+  try {
+    await draw(layer);
+    await vi.waitFor(() => expect(ready).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(failure).not.toHaveBeenCalled();
+    expect(layer.gpuBytes).toBe(5967180);
+    expect(tasks.filter((duration) => duration > 50)).toEqual([]);
+  } finally {
+    observer.disconnect();
+  }
 });

@@ -26,6 +26,9 @@ export type RoofMeshLayerProps = {
   active: boolean;
   onReady(): void;
   onFailure(error: Error): void;
+  onFinalize?(): void;
+  /** Shared across deck clones; cancelled pending instances must never allocate. */
+  ownership?: { cancelled: boolean; released: boolean };
 };
 const modules = [project32, picking, gouraudMaterial, roofUniforms];
 const inputs = new ShaderInputs(
@@ -72,6 +75,7 @@ export class RoofMeshLayer extends Layer<RoofMeshLayerProps> {
   constructor(props: RoofMeshLayerProps & Partial<LayerProps>) {
     super({
       ...props,
+      ownership: props.ownership ?? { cancelled: false, released: false },
       id: `existing-roof-${props.chunk.header.chunkId}`,
       pickable: true,
       coordinateSystem: COORDINATE_SYSTEM.METER_OFFSETS,
@@ -94,10 +98,20 @@ export class RoofMeshLayer extends Layer<RoofMeshLayerProps> {
 
   initializeState(): void {
     this.setState({ buffers: {}, ready: false, failed: false });
-    this.prepare();
+    if (!this.props.ownership?.cancelled) this.prepare();
+  }
+
+  /** True means no GPU ownership ever began; otherwise wait for onFinalize. */
+  cancelPreparation(): boolean {
+    this.props.ownership!.cancelled = true;
+    const live = this.getCurrentLayer() as RoofMeshLayer | null;
+    if (live?.state?.buffers || this.state?.buffers) return false;
+    this.notifyFinalized();
+    return true;
   }
 
   updateState({ props, oldProps }: UpdateParameters<Layer<RoofMeshLayerProps>>): void {
+    if (props.ownership?.cancelled) return;
     if (oldProps.chunk && props.chunk !== oldProps.chunk) {
       this.release();
       this.setState({ ready: false, failed: false });
@@ -116,7 +130,7 @@ export class RoofMeshLayer extends Layer<RoofMeshLayerProps> {
 
   draw(): void {
     const model = this.state.model;
-    if (!model || this.state.failed) return;
+    if (!model || this.state.failed || this.props.ownership?.cancelled) return;
     try {
       model.shaderInputs.setProps({
         roof: {
@@ -163,6 +177,14 @@ export class RoofMeshLayer extends Layer<RoofMeshLayerProps> {
     // Clear our model before base cleanup so all release paths share exactly one owner.
     this.release();
     super.finalizeState(context);
+    this.notifyFinalized();
+  }
+
+  private notifyFinalized(): void {
+    const ownership = this.props.ownership!;
+    if (ownership.released) return;
+    ownership.released = true;
+    this.props.onFinalize?.();
   }
 
   private prepare(): void {
