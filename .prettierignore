@@ -19,3 +19,6 @@ src/lib/sharing/fixtures/plans/oversize.json
 src/lib/sharing/fixtures/plans/schema2.json
 src/lib/sharing/fixtures/plans/old-version.json
 src/lib/sim/fixtures/data
+# Owned by release-please: regenerated on every release, never hand-formatted
+CHANGELOG.md
+.release-please-manifest.json
