@@ -202,7 +202,9 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
   });
 
   it('calls queued before ready replay once deck attaches', async () => {
-    const { root, screen, ready } = await mount();
+    const { root, screen, ready } = await mount({
+      manifest: { ...manifest, buildingRoofs: undefined }
+    });
     const handle = screen.component as unknown as SimMapHandle;
     handle.setChunkStatus('50_25', 'loading');
     handle.applyGenerated({
@@ -250,7 +252,10 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
   });
 
   it('switches theme via paint properties without setStyle and keeps feature-state', async () => {
-    const { root, screen, ready } = await mount({ theme: 'light' });
+    const { root, screen, ready } = await mount({
+      theme: 'light',
+      manifest: { ...manifest, buildingRoofs: undefined }
+    });
     await expect.poll(() => root.dataset.state, { timeout: 20_000 }).toBe('ready');
     const h = await ready;
     const map = h.getMap()!;
@@ -420,7 +425,7 @@ describe('SimMap feature-state across tile reloads (acceptance #5)', { timeout: 
   const replacedAt = (map: import('maplibre-gl').Map) =>
     map
       .queryRenderedFeatures(map.project(AT), { layers: [BUILDINGS_LAYER] })
-      .filter((f) => String(f.id) === P)
+      .filter((f) => String(f.properties.parcelId) === P)
       .map((f) => f.state.replaced);
 
   it('a hidden parcel stays replaced after its tiles unload and reload', async () => {

@@ -109,6 +109,9 @@ test.describe('brush tool', () => {
     }) => {
       await gotoEditor(page);
       await jumpAndIdle(page, FRAME);
+      await expect
+        .poll(() => page.evaluate(() => window.__sfhMap?.roofSnapshot()?.activePieceIds.length))
+        .toBe(3);
       await expect(page.getByRole('radio', { name: 'Paint' })).toHaveAttribute(
         'aria-checked',
         'true'

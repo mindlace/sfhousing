@@ -431,3 +431,5 @@ export class RoofController {
     this.options.onDiagnostic(error instanceof Error ? error.message : String(error));
   }
 }
+
+export type RoofControllerSnapshot = ReturnType<RoofController['snapshot']>;

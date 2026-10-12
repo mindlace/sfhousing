@@ -144,7 +144,7 @@ async function replacedAt(page: Page, id: string, at: [number, number]): Promise
         .queryRenderedFeatures(map.project(at as [number, number]), {
           layers: ['existing-buildings']
         })
-        .filter((f) => String(f.id) === id)
+        .filter((f) => String(f.properties.parcelId) === id)
         .map((f) => f.state.replaced);
     },
     [id, at] as const

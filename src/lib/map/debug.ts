@@ -2,11 +2,15 @@
 // constant-false branch that Vite dead-code-eliminates.
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { ControllerSnapshot, GeneratedController } from './generated-controller';
+import type { ExistingBuildings } from './existing-buildings';
+import type { RoofController, RoofControllerSnapshot } from './roof-controller';
 import type { GeneratedUpdate } from './types';
 
 export interface SfhMapDebug {
   readonly map: MapLibreMap | null;
   snapshot(): ControllerSnapshot | null;
+  roofSnapshot(): RoofControllerSnapshot | null;
+  existingSnapshot(): { hiddenIds: string[]; roofReadyIds: string[] } | null;
   readonly hiddenSize: number;
   /** Parcel ids the controller currently hides (its `hidden` mirror), sorted. */
   hiddenIds(): string[];
@@ -28,7 +32,12 @@ declare global {
 }
 
 export function installDebug(
-  get: () => { map: MapLibreMap | null; controller: GeneratedController | null }
+  get: () => {
+    map: MapLibreMap | null;
+    controller: GeneratedController | null;
+    roofs?: RoofController | null;
+    existing?: ExistingBuildings | null;
+  }
 ): () => void {
   if (import.meta.env.VITE_E2E !== '1') return () => {};
   const hook: SfhMapDebug = {
@@ -36,6 +45,11 @@ export function installDebug(
       return get().map;
     },
     snapshot: () => get().controller?.debugSnapshot() ?? null,
+    roofSnapshot: () => get().roofs?.snapshot() ?? null,
+    existingSnapshot: () => {
+      const e = get().existing;
+      return e ? { hiddenIds: [...e.hidden].sort(), roofReadyIds: [...e.roofReady].sort() } : null;
+    },
     get hiddenSize() {
       return get().controller?.hidden.size ?? 0;
     },

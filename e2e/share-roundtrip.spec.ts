@@ -53,6 +53,8 @@ test('share roundtrip: publish, open in a fresh browser, same score, Remix', asy
   });
   try {
     const visitor = await ctx.newPage();
+    // A shared plan has identical score and remix behavior when optional roofs are unavailable.
+    await visitor.route('**/roofs/**', (r) => r.abort());
     const res = await visitor.goto(link);
     expect(res?.status()).toBe(200);
     const banner = visitor.getByRole('region', { name: 'Shared plan' });

@@ -54,9 +54,20 @@
   import { loadDeck } from './deck-loader';
   import { controlsFootprint } from './footprint';
   import { installDebug } from './debug';
+  import { ExistingBuildings } from './existing-buildings';
+  import { LayerComposer } from './layer-composer';
+  import type { RoofController } from './roof-controller';
+  import type { RoofMeshLayer } from './roof-layer';
+  import { RoofWorkerClient } from './roof-worker-client';
   import { GeneratedController } from './generated-controller';
   import { TOKENS } from './palette';
-  import { cellAt, chunkStatusCollection, resolveExistingHit, tooltipPosition } from './pick';
+  import {
+    cellAt,
+    chunkStatusCollection,
+    featureParcelId,
+    resolveExistingHit,
+    tooltipPosition
+  } from './pick';
   import {
     BUILDINGS_LAYER,
     BUILDINGS_SOURCE,
@@ -141,6 +152,11 @@
     map: MapLibreMap | null;
     overlay: MapLibreOverlay | null;
     controller: GeneratedController | null;
+    existing: ExistingBuildings | null;
+    composer: LayerComposer | null;
+    roofs: RoofController | null;
+    sourceRaf: number | null;
+    roofRaf: number | null;
     appliedTheme: Theme;
     paintDiff: Record<Theme, PaintSet[]> | null;
     timers: Set<ReturnType<typeof setTimeout>>;
@@ -326,7 +342,12 @@
   });
 
   $effect(() =>
-    installDebug(() => ({ map: live?.map ?? null, controller: live?.controller ?? null }))
+    installDebug(() => ({
+      map: live?.map ?? null,
+      controller: live?.controller ?? null,
+      roofs: live?.roofs ?? null,
+      existing: live?.existing ?? null
+    }))
   );
 
   // ---- lifecycle --------------------------------------------------------------------------------
@@ -338,6 +359,11 @@
       map: null,
       overlay: null,
       controller: null,
+      existing: null,
+      composer: null,
+      roofs: null,
+      sourceRaf: null,
+      roofRaf: null,
       appliedTheme: 'light',
       paintDiff: null,
       timers: new Set(),
@@ -412,20 +438,28 @@
     map.on('dataloading', () => onDataLoading(l));
     map.on('idle', () => clearLoading(l));
     map.on('sourcedata', (e) => {
-      if (e.sourceId === BUILDINGS_SOURCE && e.tile) l.buildingsTileLoaded = true;
+      if (e.sourceId !== BUILDINGS_SOURCE) return;
+      if (e.tile) l.buildingsTileLoaded = true;
+      // Source recreation clears MapLibre state; tile reloads keep the same promoted identities.
+      if (e.sourceDataType === 'metadata') l.existing?.replay();
+      observeBuildings(l);
     });
     map.on('movestart', () => {
       l.moving = true;
       if (shown?.surface === 'tooltip') clearShown();
     });
-    map.on('moveend', () => (l.moving = false));
+    map.on('moveend', () => {
+      l.moving = false;
+      updateRoofs(l);
+    });
+    map.on('zoomend', () => updateRoofs(l));
     map.on('webglcontextlost', () => {
       if (!l.dead) mapState = 'context-lost';
     });
     map.on('webglcontextrestored', () => {
       if (!l.dead) mapState = l.loaded ? 'ready' : 'loading';
     });
-    map.once('load', () => void onLoad(l, map));
+    map.once('load', () => void onLoad(l, map, m));
 
     if (!coarse) map.addControl(new ml.NavigationControl({ showCompass: true }), 'bottom-left');
     const compact = width < NARROW_PX;
@@ -448,7 +482,7 @@
     }
   }
 
-  async function onLoad(l: Live, map: MapLibreMap): Promise<void> {
+  async function onLoad(l: Live, map: MapLibreMap, m: Manifest): Promise<void> {
     if (l.dead) return;
     l.loaded = true;
     mapState = 'ready';
@@ -464,23 +498,32 @@
       return;
     }
     if (l.dead) return;
-    const [{ MapLibreOverlay }, { SolidPolygonLayer }] = mods;
+    const [{ MapLibreOverlay }, { SolidPolygonLayer }, { RoofMeshLayer }] = mods;
     const overlay = new MapLibreOverlay({ interleaved: true, layers: [] });
     map.addControl(overlay);
     l.overlay = overlay;
+    const composer = new LayerComposer((layers) => overlay.setProps({ layers }));
+    l.composer = composer;
+    const existing = new ExistingBuildings({
+      mode: m.buildingRoofs?.schemaVersion === 1 ? 'piece' : 'parcel',
+      setState: (id, state) => {
+        if (map.getSource(BUILDINGS_SOURCE)) map.setFeatureState({ ...FS, id }, state);
+      },
+      clearState: (id, key) => {
+        if (map.getSource(BUILDINGS_SOURCE)) map.removeFeatureState({ ...FS, id }, key);
+      },
+      onReplacementChange: ({ hidden, changed }) => l.roofs?.setHidden(hidden, changed)
+    });
+    l.existing = existing;
+    observeBuildings(l);
     const controller = new GeneratedController(
       {
-        setLayers: (layers) => overlay.setProps({ layers }),
-        setReplaced: (id) => {
-          if (map.getSource(BUILDINGS_SOURCE))
-            map.setFeatureState({ ...FS, id }, { replaced: true });
-        },
-        clearReplaced: (id) => {
-          if (map.getSource(BUILDINGS_SOURCE)) map.removeFeatureState({ ...FS, id }, 'replaced');
-        },
-        clearAllReplaced: () => {
-          if (map.getSource(BUILDINGS_SOURCE)) map.removeFeatureState(FS);
-        },
+        withRepresentationTransaction: (fn) => composer.transaction(() => existing.transaction(fn)),
+        setLayers: (layers) => composer.setGenerated(layers),
+        setBrushLayers: (layers) => composer.setBrush(layers),
+        setReplaced: (id) => existing.setReplaced(id),
+        clearReplaced: (id) => existing.clearReplaced(id),
+        clearAllReplaced: () => existing.clearAllReplaced(),
         SolidPolygonLayer,
         raf: (cb) => requestAnimationFrame(cb),
         cancelRaf: (h) => cancelAnimationFrame(h),
@@ -497,6 +540,7 @@
     pendingApplies = [];
     if (overlayLayers.length > 0) controller.setOverlayLayers(overlayLayers);
     for (const u of queued) controller.apply(u);
+    if (m.buildingRoofs?.schemaVersion === 1) void startRoofs(l, m, RoofMeshLayer);
     if (readyFired) {
       // Remount (new manifest): the old generated state went with the old map.
       if (queued.length === 0) resyncCb?.();
@@ -504,6 +548,69 @@
     }
     readyFired = true;
     onready?.(handle);
+  }
+
+  /** Observe source features (including tile-clipped duplicates) once per frame. */
+  function observeBuildings(l: Live): void {
+    if (!l.existing || l.dead || l.sourceRaf !== null) return;
+    l.sourceRaf = requestAnimationFrame(() => {
+      l.sourceRaf = null;
+      if (l.dead || !l.map?.getSource(BUILDINGS_SOURCE)) return;
+      const pieces = l.map.querySourceFeatures(BUILDINGS_SOURCE, { sourceLayer: 'buildings' });
+      l.existing?.observePieces(
+        pieces.flatMap((f) => {
+          const pieceId = f.properties.pieceId;
+          return typeof pieceId === 'string' ? [{ pieceId, parcelId: featureParcelId(f) }] : [];
+        })
+      );
+    });
+  }
+
+  async function startRoofs(l: Live, m: Manifest, Mesh: typeof RoofMeshLayer): Promise<void> {
+    try {
+      const { RoofController } = await import('./roof-controller');
+      if (l.dead || !l.map || !l.existing || !l.composer) return;
+      const beforeId = firstSymbolLayerId(l.map.getStyle());
+      l.roofs = new RoofController({
+        manifest: m,
+        existing: l.existing,
+        composer: l.composer,
+        worker: new RoofWorkerClient(),
+        fetch: (...args) => fetch(...args),
+        now: () => performance.now(),
+        raf: (cb) => requestAnimationFrame(cb),
+        cancelRaf: (id) => cancelAnimationFrame(id),
+        createLayer: (props) =>
+          new Mesh({
+            ...props,
+            ...(beforeId ? { beforeId } : {}),
+            onReady: () => {
+              props.onReady();
+              updateRoofs(l);
+            }
+          }),
+        onDiagnostic: () => {}
+      });
+      l.roofs.setTheme(l.appliedTheme);
+      updateRoofs(l);
+    } catch {
+      // Optional display data: failed imports leave the existing footprint representation.
+    }
+  }
+
+  function updateRoofs(l: Live): void {
+    if (!l.roofs || l.dead || l.roofRaf !== null) return;
+    l.roofRaf = requestAnimationFrame(() => {
+      l.roofRaf = null;
+      if (l.dead || !l.map) return;
+      const b = l.map.getBounds(),
+        c = l.map.getCenter();
+      l.roofs?.updateViewport(
+        [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()],
+        l.map.getZoom(),
+        [c.lng, c.lat]
+      );
+    });
   }
 
   function teardown(l: Live): void {
@@ -514,10 +621,19 @@
     l.timers.clear();
     if (l.pickRaf !== null) cancelAnimationFrame(l.pickRaf);
     if (l.chunkRaf !== null) cancelAnimationFrame(l.chunkRaf);
+    if (l.sourceRaf !== null) cancelAnimationFrame(l.sourceRaf);
+    if (l.roofRaf !== null) cancelAnimationFrame(l.roofRaf);
+    l.roofs?.destroy();
     l.controller?.destroy();
+    l.composer?.destroy();
+    // Finalize synchronously before a replacement mount can acquire roof GPU ownership.
     l.overlay?.finalize();
+    l.existing?.destroy();
     l.map?.remove();
     l.controller = null;
+    l.roofs = null;
+    l.composer = null;
+    l.existing = null;
     l.overlay = null;
     l.map = null;
     if (live === l) live = null;
@@ -590,6 +706,7 @@
       l.appliedTheme = t;
     }
     l.controller?.setTheme(t);
+    l.roofs?.setTheme(t);
   }
 
   /** Coalesced: at most one chunk-status setData per animation frame. */
@@ -654,9 +771,8 @@
     if (map.getSource(BUILDINGS_SOURCE)) map.removeSource(BUILDINGS_SOURCE);
     map.addSource(BUILDINGS_SOURCE, buildingsSource(manifest));
     map.addLayer(existingBuildingsLayer(l.appliedTheme), CHUNK_LAYERS[0]);
-    for (const id of l.controller?.hidden ?? []) {
-      map.setFeatureState({ ...FS, id }, { replaced: true });
-    }
+    l.existing?.replay();
+    observeBuildings(l);
   }
 
   function resetView(): void {
@@ -669,13 +785,17 @@
   function pickAt(l: Live, x: number, y: number): { hit: TooltipHit; cell: string | null } | null {
     const map = l.map;
     if (!map || !l.loaded) return null;
-    const info = l.overlay?.pickObject({ x, y, radius: 2 });
+    const info = l.overlay?.pickObject({ x, y, radius: 2, layerIds: ['generated-', 'rising-'] });
     if (info?.layer && RESERVED.test(info.layer.id) && l.controller) {
       const part = l.controller.lookup(info.layer.id, info.index);
       if (part) return { hit: { kind: 'generated', ...part }, cell: null };
     }
-    if (!map.getLayer(BUILDINGS_LAYER)) return null;
-    const features = map.queryRenderedFeatures([x, y], { layers: [BUILDINGS_LAYER] });
+    const roof = l.overlay?.pickObject({ x, y, radius: 2, layerIds: ['existing-roof-'] });
+    const features = roof?.object
+      ? [{ properties: roof.object }]
+      : map.getLayer(BUILDINGS_LAYER)
+        ? map.queryRenderedFeatures([x, y], { layers: [BUILDINGS_LAYER] })
+        : [];
     if (features.length === 0) return null;
     const ll = map.unproject([x, y]);
     const cell = cellAt(manifest.chunks, [ll.lng, ll.lat]);

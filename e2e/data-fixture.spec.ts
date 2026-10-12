@@ -11,6 +11,18 @@ test('fixture-0 manifest, every chunk and a buildings range are served', async (
     expect(r.headers()['content-type']).toContain('application/json');
     expect((await r.json()).format).toBe('sfh-parcels/1');
   }
+  expect(m.buildingRoofs.schemaVersion).toBe(1);
+  const roofIndex = await request.get(m.buildingRoofs.indexUrl);
+  expect(roofIndex.status()).toBe(200);
+  const index = await roofIndex.json();
+  for (const chunk of index.chunks) {
+    const header = await request.get(chunk.headerUrl);
+    expect(header.status()).toBe(200);
+    expect((await header.json()).pieces).toHaveLength(chunk.pieceCount);
+    const mesh = await request.get(chunk.meshUrl);
+    expect(mesh.status()).toBe(200);
+    expect((await mesh.body()).byteLength).toBe(chunk.meshBytes);
+  }
   const t = await request.get(m.buildingsTiles, { headers: { Range: 'bytes=0-15' } });
   expect(t.status()).toBe(206);
   const g = await request.get(
