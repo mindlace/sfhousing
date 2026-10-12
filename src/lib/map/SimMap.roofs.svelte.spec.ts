@@ -283,3 +283,89 @@ it('keeps unmatched footprint pieces visible and pickable when their matched sib
     .toContain('Not matched to a parcel');
   expect(roof()?.activePieceIds).not.toContain(unmatchedId);
 }, 30000);
+
+it('replays existing readiness and replacement to both vector-tile fragments of one roof piece', async () => {
+  const pieceId = 'p-7e33516c53ae4a9d6cd9d679';
+  const { h, map } = await mount({
+    ...manifest,
+    buildingsTiles: '/pipeline/test/fixtures/roof-tile-boundary/buildings.pmtiles'
+  });
+  // The ordinary app caps the camera at z18; this isolated source variant needs z20.
+  map.setMaxZoom(20);
+  await active();
+  h.applyGenerated({
+    revision: 0,
+    cells: [],
+    removedCells: [],
+    hide: { add: ['3512010'], remove: [] }
+  });
+  const fragments = () =>
+    map
+      .querySourceFeatures(BUILDINGS_SOURCE, { sourceLayer: 'buildings' })
+      .filter((f) => f.properties.pieceId === pieceId);
+  // z20-only tiles have not loaded; both independent state mirrors already exist.
+  expect(fragments()).toEqual([]);
+  expect(roof()?.activePieceIds).toContain(pieceId);
+  expect(window.__sfhMap!.existingSnapshot()!.hiddenIds).toEqual(['3512010']);
+  expect(map.getFeatureState({ ...FS, id: pieceId })).toEqual({ roofReady: true });
+  const loadedTiles: string[] = [];
+  map.on('sourcedata', (e) => {
+    if (e.sourceId === BUILDINGS_SOURCE && e.tile) {
+      const { z, x, y } = e.tile.tileID.canonical;
+      loadedTiles.push(`${z}/${x}/${y}`);
+    }
+  });
+  const assertFragments = () => {
+    const pieces = fragments();
+    expect(pieces).toHaveLength(2);
+    // MapLibre attaches the source's canonical tile coordinate to each source feature.
+    expect(
+      pieces
+        .map((f) => (f as typeof f & { tile: { z: number; x: number; y: number } }).tile)
+        .sort((a, b) => a.y - b.y)
+    ).toEqual([
+      { z: 20, x: 167718, y: 405350 },
+      { z: 20, x: 167718, y: 405351 }
+    ]);
+    expect(new Set(pieces.map((f) => JSON.stringify(f.geometry))).size).toBe(2);
+    const extents = pieces
+      .map((f) => {
+        const lat = (f.geometry as GeoJSON.Polygon).coordinates.flat().map((p) => p[1]);
+        return [Math.min(...lat), Math.max(...lat)];
+      })
+      .sort((a, b) => a[0] - b[0]);
+    // Partial overlapping extents prove clipping with real buffers, not duplicate full polygons.
+    expect(extents[0][0]).toBeLessThan(extents[1][0]);
+    expect(extents[0][1]).toBeLessThan(extents[1][1]);
+    expect(extents[0][1]).toBeGreaterThan(extents[1][0]);
+    expect(loadedTiles).toContain('20/167718/405350');
+    expect(loadedTiles).toContain('20/167718/405351');
+    for (const piece of pieces) {
+      expect(piece.id).toBe(pieceId);
+      expect(piece.properties.parcelId).toBe('3512010');
+      expect(map.getFeatureState({ ...FS, id: piece.id })).toEqual({
+        roofReady: true,
+        replaced: true
+      });
+    }
+  };
+  map.jumpTo({ center: [-122.418395, 37.760135], zoom: 20 });
+  await new Promise<void>((resolve) => map.once('idle', () => resolve()));
+  assertFragments();
+  loadedTiles.length = 0;
+  map.jumpTo({ zoom: 14 });
+  await new Promise<void>((resolve) => map.once('idle', () => resolve()));
+  expect(fragments()).toEqual([]);
+  await expect.poll(() => roof()?.activePieceIds).toEqual([]);
+  expect(map.getFeatureState({ ...FS, id: pieceId })).toEqual({ replaced: true });
+  // Flush MapLibre's out-of-view tile cache so re-entry really loads both tiles again.
+  map.refreshTiles(BUILDINGS_SOURCE);
+  map.jumpTo({ zoom: 20 });
+  await active();
+  await expect.poll(() => fragments().length).toBe(2);
+  assertFragments();
+  loadedTiles.length = 0;
+  map.refreshTiles(BUILDINGS_SOURCE);
+  await new Promise<void>((resolve) => map.once('idle', () => resolve()));
+  assertFragments();
+}, 30000);
