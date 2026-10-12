@@ -9,10 +9,11 @@ the fallback. See [pipeline.md](pipeline.md), [map-perf.md](map-perf.md) and
 
 ## Current checkpoint and coverage
 
-The local checkpoint is validated within the scopes below. **Whole Task 10, full SF roof
-coverage, release readiness and M2-class execution remain unmet.** The pending coverage question
-does not remove the full-coverage requirement. There is no citywide acceptance quota or approved
-lower-density default.
+Local validation is complete within the scopes below. The user selected local validation and a
+documented citywide rollout gate as this iteration's scope. **Full SF roof coverage, the remaining
+Task 10 rollout work, release readiness and M2-class execution remain unmet.** Citywide processing
+is deferred to a later effort; there is no citywide acceptance quota or approved lower-density
+default.
 
 The preview at <http://localhost:4190> uses `2026-10-12-c9b71965`, in worktree
 `/Users/mindlace/.codex/worktrees/roofline-spec/sfhousing`, branch `codex/roofline-spec`.
