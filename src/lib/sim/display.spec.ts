@@ -70,6 +70,7 @@ function setup(batchParcels = 5000, opts: { memo?: boolean } = {}) {
           ? {
               parcelId: r.id,
               source: 'user',
+              composition: 'simple',
               typology: 'midrise',
               parts: [
                 {
@@ -79,6 +80,8 @@ function setup(batchParcels = 5000, opts: { memo?: boolean } = {}) {
                     [1, 1],
                     [1, 0]
                   ],
+                  role: 'occupied',
+                  tone: 0,
                   baseM: 0,
                   topM: 3.1 * s
                 }
@@ -122,6 +125,7 @@ function buffersOf(p: PackedCell): ArrayBuffer[] {
     p.positions.buffer,
     p.partTopM.buffer,
     p.partSlot.buffer,
+    p.partAppearance.buffer,
     p.partTypology.buffer
   ] as ArrayBuffer[];
 }

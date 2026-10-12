@@ -1,4 +1,5 @@
 import { FillRule, intersectD, type PathD, type PathsD } from 'clipper2-ts';
+import { domainArea, fitSimpleRegions } from './domain';
 import {
   ADU_EDGE_GAP_M,
   ADU_GROSS_M2,
@@ -13,7 +14,10 @@ import {
   TOWER_PODIUM_STORIES
 } from './constants';
 import {
+  canonicalRing,
   clipSlab,
+  isRectangle,
+  isParallelogram,
   intersect,
   inset,
   keepPieces,
@@ -61,12 +65,29 @@ export function floorTop(typology: TypologyId, k: number): number {
  */
 export function baseFootprint(site: Site, target: number): PathsD {
   const { Q, P, c, u, v } = site;
-  if (totalArea(Q) <= target) return Q;
+  if (domainArea(Q) <= target)
+    return Q.some((r) => signedArea(r) < 0) ? fitSimpleRegions(Q, site) : Q;
+  if (Q.length === 1 && isRectangle(P) && isRectangle(Q[0])) {
+    const pv = project(Q, c, v);
+    return [canonicalRing(clipSlab(Q[0], c, u, target / (2 * (pv.max - pv.min))))];
+  }
+  if (Q.length === 1 && isParallelogram(P) && isParallelogram(Q[0])) {
+    const pv = project(Q, c, v);
+    let h = target / (2 * (pv.max - pv.min));
+    let cut = clipSlab(Q[0], c, u, h);
+    const area = Math.abs(signedArea(cut));
+    if (area > 0) {
+      h *= target / area;
+      cut = clipSlab(Q[0], c, u, h);
+    }
+    const fitted = Math.abs(signedArea(cut));
+    if (fitted <= target + 1e-7 && target - fitted < 0.01) return [canonicalRing(cut)];
+  }
   const pu = project([P], c, u);
   const H = Math.max(-pu.min, pu.max);
   const slabArea = (h: number) => {
     let s = 0;
-    for (const q of Q) s += Math.abs(signedArea(clipSlab(q, c, u, h)));
+    for (const q of Q) s += signedArea(clipSlab(q, c, u, h));
     return s;
   };
   let lo = 0;
@@ -83,7 +104,7 @@ export function baseFootprint(site: Site, target: number): PathsD {
   }
   const pv = project([P], c, v);
   const slab = orientedRect(c, u, v, -lo, lo, pv.min - 1, pv.max + 1);
-  return keepPieces(intersectD(Q, [slab], FillRule.NonZero, SLAB_CUT_PRECISION));
+  return fitSimpleRegions(intersectD(Q, [slab], FillRule.NonZero, SLAB_CUT_PRECISION), site);
 }
 
 function part(
@@ -183,7 +204,7 @@ export function massAdu(site: Site, stories: number, draws: VarietyDraws): Massi
       ? [pu.max - ADU_EDGE_GAP_M - depth, pu.max - ADU_EDGE_GAP_M]
       : [pu.min + ADU_EDGE_GAP_M, pu.min + ADU_EDGE_GAP_M + depth];
   const rect = orientedRect(c, u, v, u0, u1, -width / 2, width / 2);
-  const fit = largest(intersect([rect], inset([P], ADU_INSET_M)));
+  const fit = largest(fitSimpleRegions(intersect([rect], inset(site.domain, ADU_INSET_M)), site));
   if (!fit || Math.abs(signedArea(fit)) < 0.9 * Ap) return null;
   // §4.8: an ADU's floor area is its declared gross area G; the drawn footprint may be clipped to ≥ 90% of the plate.
   return {

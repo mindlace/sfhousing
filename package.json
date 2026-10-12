@@ -18,7 +18,7 @@
     "lint:workflows": "actionlint -color .github/workflows/*.yml",
     "format": "prettier --write .",
     "test": "npm run test:unit && npm run test:e2e",
-    "test:unit": "vitest --run --project server --project client",
+    "test:unit": "vitest --run --project server --project client --no-file-parallelism --maxWorkers=1",
     "test:pipeline": "vitest --run --project pipeline",
     "pipeline": "tsx pipeline/cli.ts",
     "test:e2e": "playwright test",

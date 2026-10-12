@@ -26,3 +26,5 @@ Contributor and agent guidance lives in [CLAUDE.md](CLAUDE.md), which indexes th
 
 - **Code:** MIT, see [LICENSE](LICENSE).
 - **Data:** the OpenStreetMap/Protomaps basemap and Overture Maps data are under the ODbL; DataSF data is under the PDDL / public domain. Derived files served under `/data/` that incorporate OpenStreetMap or Overture data are made available under the ODbL 1.0. Sources, vintages and licences for the current dataset are listed in the app at `/attribution`.
+
+Generated buildings use parcel-fitted terraces, divided rooflines, slabs, shoulders, offset towers and paired towers with restrained geometry and flat colors. Estimated housing capacity under the modeled building forms, not a forecast. Reopening a saved plan uses the current building model, so its appearance and estimated totals can change.

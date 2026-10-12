@@ -145,3 +145,19 @@ describe('clipper wrappers', () => {
     expect(largest([])).toBeNull();
   });
 });
+it('clips against every edge of a convex polygon of any vertex count', () => {
+  const triangle: PathD = [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+    { x: 0, y: 10 }
+  ];
+  expect(totalArea(intersect([rect(30, 30)], [triangle]))).toBeCloseTo(50, 6);
+  const pentagon: PathD = [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+    { x: 12, y: 6 },
+    { x: 5, y: 12 },
+    { x: 0, y: 7 }
+  ];
+  expect(totalArea(intersect([rect(40, 40)], [pentagon]))).toBeCloseTo(signedArea(pentagon), 6);
+});

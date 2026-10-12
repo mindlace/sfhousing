@@ -11,7 +11,7 @@ export default defineConfig({
   reporter: 'list',
   timeout: 180_000,
   use: {
-    baseURL: 'http://localhost:4173',
+    baseURL: `http://localhost:${process.env.SFH_E2E_PORT ?? '4173'}`,
     ...devices['Desktop Chrome'],
     viewport: { width: 1280, height: 800 },
     // The §4.12 pass bar names a 2022 MacBook Air, a DPR 2 display; Desktop Chrome defaults to 1.

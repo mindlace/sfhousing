@@ -3,6 +3,20 @@ const encoder = new TextEncoder();
 /** I14: FNV-1a 32-bit over the UTF-8 bytes of `s`. */
 export function fnv1a32(s: string): number {
   let h = 0x811c9dc5;
+  // The city identifiers and named streams are ASCII. Avoid allocating UTF-8 buffers for them.
+  let ascii = true;
+  for (let i = 0; i < s.length; i++)
+    if (s.charCodeAt(i) > 127) {
+      ascii = false;
+      break;
+    }
+  if (ascii) {
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    return h >>> 0;
+  }
   const bytes = encoder.encode(s);
   for (let i = 0; i < bytes.length; i++) {
     h ^= bytes[i];

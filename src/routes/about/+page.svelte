@@ -14,9 +14,9 @@
 
 <h2 class="mt-6 text-lg font-semibold">What the numbers mean</h2>
 <p class="mt-3">
-  The numbers are <strong>theoretical maximum buildout, not a forecast</strong>. They show what the
-  rules would permit if every eligible parcel were built to the limit, not what will actually get
-  built, or when.
+  <strong>Estimated housing capacity under the modeled building forms, not a forecast.</strong>
+  The totals describe the homes that fit the modeled forms on eligible parcels under your chosen height
+  limits.
 </p>
 <p class="mt-3">
   For scale, San Francisco's RHNA 6th-cycle target is <strong>82,069</strong> homes (<strong
@@ -28,6 +28,11 @@
     href="https://sfplanning.org/project/housing-element-update-2022"
     rel="noopener noreferrer">SF Planning's Housing Element</a
   > for how that target was set.
+</p>
+
+<p class="mt-3">
+  Reopening a saved plan uses the current building model, so its appearance and estimated totals can
+  change.
 </p>
 
 <h2 class="mt-6 text-lg font-semibold">Your plans</h2>

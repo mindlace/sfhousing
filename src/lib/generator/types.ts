@@ -1,3 +1,4 @@
+import type { CompositionId } from './composition-types';
 import type { ParcelId } from '../data/parcel';
 
 /** I10 */
@@ -11,11 +12,14 @@ export interface GeneratedBuilding {
   parcelId: ParcelId;
   source: 'user' /* widens to 'pipeline' | 'scenario' later */;
   typology: TypologyId;
+  composition: CompositionId;
   parts: {
-    footprint: [lng: number, lat: number][] /* single outer ring; parcel holes dropped in M1 */;
+    footprint: [lng: number, lat: number][] /* simple outer ring; exclusions remain empty */;
+    role: 'occupied' | 'roof';
+    tone: 0 | 1 | 2;
     baseM: number;
     topM: number;
-  }[] /* nested: each part's footprint ⊆ the part below; rendered ground-to-topM */;
+  }[] /* supported floor bands; siblings may have separate footprints; rendered ground-to-topM */;
   stories: number;
   units: number;
   floorAreaM2: number;

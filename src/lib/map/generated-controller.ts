@@ -7,7 +7,9 @@ import type { ParcelId } from '$lib/data/parcel';
 import type { TypologyId } from '$lib/generator';
 import { applyHideDiff, planSlices, type Slice } from './hide';
 import { concatPacks } from './pack';
-import { GEN_RGBA, TOKENS, hexToRgba, type RGBA } from './palette';
+import { TOKENS, hexToRgba, type RGBA } from './palette';
+import { registerCellBounds } from './cull';
+import { appearanceColor } from './appearance';
 import { TYPOLOGY_ORDER, type GeneratedUpdate, type PackedCell, type Theme } from './types';
 
 export interface ControllerDeps {
@@ -97,13 +99,14 @@ function accessorsFor(pack: PackedCell, theme: Theme) {
       getElevation: (_, { index }) => partTopM[index],
       fill: {}
     };
+    registerCellBounds(c.data, pack);
     packCache.set(pack, c);
   }
   let fill = c.fill[theme];
   if (!fill) {
-    const palette = GEN_RGBA[theme];
-    const { partTypology } = pack;
-    fill = c.fill[theme] = (_, { index }) => palette[partTypology[index]];
+    const { partTypology, partAppearance } = pack;
+    fill = c.fill[theme] = (_, { index }) =>
+      appearanceColor(theme, TYPOLOGY_ORDER[partTypology[index]], partAppearance[index]);
   }
   return { data: c.data, getElevation: c.getElevation, getFillColor: fill };
 }

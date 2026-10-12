@@ -2,19 +2,14 @@ import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import type { ParcelRecord } from '../data/parcel';
 import { generateDetailed, type Detailed } from './generate';
+import { drawComposition } from './composition-variety';
 import { drawVariety, varietyFromUniforms } from './variety';
 import { selectTypology } from './select';
+import { insideDomain } from './domain';
+import { inset } from './poly';
+import { fromLngLat } from './geo';
 import { COVERAGE } from './constants';
-import {
-  lRing,
-  lngLatToLocalApprox,
-  pointNearPolygon,
-  rectRing,
-  ringArea,
-  rotateRing,
-  uRing,
-  type Ring
-} from './fixtures/geom';
+import { lRing, rectRing, ringArea, rotateRing, uRing, type Ring } from './fixtures/geom';
 import std from './fixtures/std-25x100.json';
 import lot1000 from './fixtures/lot-1000.json';
 import lot3000 from './fixtures/lot-3000.json';
@@ -121,17 +116,20 @@ const detailed = (c: { site: Ring[]; S: number; seed: number; units: number; fa:
     parcel(c.site, { existingUnits: c.units, existingFloorAreaM2: c.fa }),
     { maxStories: c.S },
     drawVariety(c.seed),
-    'max'
+    'max',
+    drawComposition(c.seed)
   );
 
-/** Every part with baseM > 0 lies in some part whose topM equals its baseM. */
+/** Whole-region support against the union of all occupied solids below. */
 function nested(rings: Ring[], d: Detailed, tol: number): boolean {
   return d.local.every((up, i) => {
     if (up.baseM === 0) return true;
-    return d.local.some(
-      (lo, j) =>
-        j !== i && lo.topM === up.baseM && rings[i].every((p) => pointNearPolygon(p, rings[j], tol))
+    const below = d.local.flatMap((lo, j) =>
+      lo.role === 'occupied' && lo.baseM < up.baseM && lo.topM >= up.baseM
+        ? [rings[j].map(([x, y]) => ({ x, y }))]
+        : []
     );
+    return insideDomain([rings[i].map(([x, y]) => ({ x, y }))], inset(below, -tol));
   });
 }
 
@@ -177,7 +175,7 @@ describe('generator properties (§6)', () => {
             )
           ).toBe(true);
           const label: [number, number] = [-122.4194, 37.7749]; // parcel() labelPoint
-          const ll = d.building.parts.map((p) => lngLatToLocalApprox(p.footprint, label));
+          const ll = d.building.parts.map((p) => fromLngLat(p.footprint, label));
           expect(nested(ll, d, 0.02)).toBe(true);
           return true;
         }),
@@ -192,8 +190,9 @@ describe('generator properties (§6)', () => {
         fc.property(arbCase, (c) => {
           const d = detailed(c);
           if (!d) return true;
-          const P: Ring = d.site.P.map((q) => [q.x, q.y]);
-          return d.local.every((l) => l.ring.every((p) => pointNearPolygon(p, P, 0.02)));
+          return d.local.every((l) =>
+            insideDomain([l.ring.map(([x, y]) => ({ x, y }))], d.site.originalDomain)
+          );
         }),
         RUNS
       )

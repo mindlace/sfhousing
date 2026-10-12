@@ -59,3 +59,11 @@ export function rulesFor(typ: TypologyId): TypologyRules {
     maxUnits: typ === 'plex' ? PLEX_MAX_UNITS : typ === 'adu' ? 1 : Number.POSITIVE_INFINITY
   };
 }
+
+export const MAX_COMPOSITION_PARTS = 8;
+export const MAX_ROOF_ACCENTS = 2;
+export const MAX_COMPOSITION_VERTICES = 128;
+export const MAX_FAMILY_ATTEMPTS = 4;
+export const MIN_TOWER_PLATE_M2 = 150;
+export const MIN_TOWER_CORE_INSET_M = 3;
+export const TOWER_SEPARATION_M = 6;
