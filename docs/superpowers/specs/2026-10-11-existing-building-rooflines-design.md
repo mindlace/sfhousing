@@ -2,7 +2,7 @@
 
 Date: 2026-10-11
 
-Status: Approved by the user on 2026-10-11; implementation is not started.
+Status: Approved by the user on 2026-10-11. Local implementation and scoped validation are complete; citywide processing and release gates remain open. See the [current checkpoint](../../dev/rooflines.md#current-checkpoint-and-coverage) and [bounded citywide follow-up](2026-10-12-citywide-roof-streaming-design.md).
 
 ## 1. Intent and decisions
 
@@ -72,11 +72,7 @@ Initial processing uses Python geometry/point-cloud tools plus **roofer 1.1.0-be
 
 Pin amendment (2026-10-12, controller ruling): official prerelease 1.1.0-beta.1,
 commit `1c06fb1aed9096f4b16f894c2da12bc2d785b71b`, supersedes only the initial 1.0.0
-tool pin to address measured native reconstruction nondeterminism under §7. Retained
-[beta assessment](../../../.superpowers/sdd/2026-10-11-existing-building-rooflines/task-10-native-beta-assessment.md),
-[probe](../../../.superpowers/sdd/2026-10-11-existing-building-rooflines/task-10-native-beta-probe-report.md), and
-[retry evidence](../../../.superpowers/sdd/2026-10-11-existing-building-rooflines/task-10-native-beta-retry-report.md)
-support three-repeat sampled Mac decoded candidate/selection reproducibility. Raw native
+tool pin to address measured native reconstruction nondeterminism under §7. The committed [toolchain and evidence summary](../../dev/rooflines.md#toolchain-and-rights) records three-repeat sampled Mac decoded candidate/selection reproducibility. Raw native
 ordering and surface metadata still vary; Linux execution and citywide determinism remain
 unproved. Explicit CLI policy is `--cj-scale .0001 .0001 .0001`,
 `--min-building-density 1`, `--unit-scale 1`, and `--jobs 1`. All flat-ground,

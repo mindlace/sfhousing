@@ -15,6 +15,12 @@ Task 10 rollout work, release readiness and M2-class execution remain unmet.** C
 is deferred to a later effort; there is no citywide acceptance quota or approved lower-density
 default.
 
+The follow-up [citywide streaming design](../superpowers/specs/2026-10-12-citywide-roof-streaming-design.md)
+and [implementation plan](../superpowers/plans/2026-10-12-citywide-roof-streaming.md) target a
+50 GB total local working set. They propose streamed acquisition, verified remote backing storage,
+resumable spatial batches and a lower-resolution imagery pilot. These capabilities and the
+citywide run are future work; the commands in that plan are not available yet.
+
 The preview at <http://localhost:4190> uses `2026-10-12-c9b71965`, in worktree
 `/Users/mindlace/.codex/worktrees/roofline-spec/sfhousing`, branch `codex/roofline-spec`.
 It is the retained **roofer 1.0.0** sample, used for runtime/backward-compatibility review;

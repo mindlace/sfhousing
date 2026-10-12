@@ -256,6 +256,12 @@ Execution setup: read `CLAUDE.md` and linked area docs, confirm the existing iso
 
 ### Task 10: Local full-coverage validation, performance evidence and release handoff
 
+2026-10-12 checkpoint: local implementation/validation is complete within the
+[recorded scope](../../dev/rooflines.md#current-checkpoint-and-coverage); full-city and M2 release
+gates remain open. The [50 GB streaming follow-up plan](2026-10-12-citywide-roof-streaming.md)
+supplies the capacity work required before the citywide portion below. Historical checkboxes
+are not evidence that the full-city run happened.
+
 **Files:** Modify `e2e/bench/map-pan.bench.ts`, `docs/dev/map-perf.md`, `docs/dev/pipeline.md`, `docs/dev/deploy.md`; add `docs/dev/rooflines.md` and link it from `CLAUDE.md`. Modify `pipeline/roofs/source-config.json` and `pipeline/sources.lock.json` only when recording the expanded source coverage actually fetched. Generated data/reports remain outside Git except fixtures.
 
 **Interfaces:** Use existing `pipeline fetch/build/check/upload/verify`, source/artifact restore, `scripts/r2-load-local.ts`, and map benchmark. Do not add a second release system or a citywide success quota.
@@ -271,6 +277,6 @@ Execution setup: read `CLAUDE.md` and linked area docs, confirm the existing iso
 
 Spec coverage: §1–3 boundaries → Tasks 1/4/6–9; §4.1 sources/rights/versioning → Tasks 2/5/10; §4.2–4.5 geometry/filter/selection/override → Tasks 2–4; §5 identity/artifacts/audits → Tasks 1/4/5; §6 rendering/visibility/budgets → Tasks 6–10; §7 checks/rollout → Tasks 3–5/9/10; §8 repository impact → file map and constraints above. All five Review Focus cases have explicit assertions in their owning tasks.
 
-The user has approved the spec, not yet this implementation plan or its execution method. Review this document first. **Recommended execution: subagent-driven**, because the Python data pipeline, binary codec and GPU/parcel state boundaries have independently testable deliverables and benefit from review before dependent work builds on them. Native execution remains available with one whole-branch independent review after implementation. Neither approach changes the required local verification or fallback behavior.
+Historical handoff: the user subsequently approved this implementation plan and selected subagent-driven execution. See the checkpoint above for remaining work. The original execution recommendation was: **Recommended execution: subagent-driven**, because the Python data pipeline, binary codec and GPU/parcel state boundaries have independently testable deliverables and benefit from review before dependent work builds on them. Native execution remains available with one whole-branch independent review after implementation. Neither approach changes the required local verification or fallback behavior.
 
 Technical references: [deck custom-layer lifecycle](https://deck.gl/docs/developer-guide/custom-layers/layer-lifecycle), [deck custom picking](https://deck.gl/docs/developer-guide/custom-layers/picking), [luma Model](https://luma.gl/docs/api-reference/engine/model), and [Manifold's closed-mesh Boolean contract](https://github.com/elalish/manifold#manifold-library). These guide implementation of the pinned versions; browser/geometry tests establish behavior here.
