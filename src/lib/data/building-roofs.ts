@@ -125,13 +125,34 @@ export function parseRoofIndex(raw: unknown, datasetVersion: string): RoofIndex 
     throw new Error('duplicate roof chunk');
   return index;
 }
+/**
+ * Object-only callers must declare canonical JSON.stringify UTF-8 sizes. This is
+ * a serialization contract, not a measurement of an incoming HTTP response.
+ * Byte-reading callers must pass verifiedHeaderBytes from the actual decoded
+ * response body before JSON parsing, and verifiedIndexEntryBytes from the index
+ * body (the entire measured index length is a safe conservative upper bound).
+ * Never substitute Content-Length or reserialized JSON for measured HTTP bytes.
+ */
 export function parseRoofHeader(
   raw: unknown,
   ref: RoofChunkRef,
-  datasetVersion: string
+  datasetVersion: string,
+  verifiedHeaderBytes: number = jsonBytes(raw),
+  verifiedIndexEntryBytes: number = jsonBytes(ref)
 ): RoofHeader {
   const r = refSchema(datasetVersion).parse(ref);
   const h = validateRoofHeader(raw);
+  if (
+    !Number.isSafeInteger(verifiedHeaderBytes) ||
+    verifiedHeaderBytes <= 0 ||
+    verifiedHeaderBytes > ROOF_HEADER_MAX_BYTES ||
+    verifiedHeaderBytes !== r.headerBytes ||
+    !Number.isSafeInteger(verifiedIndexEntryBytes) ||
+    verifiedIndexEntryBytes <= 0 ||
+    verifiedIndexEntryBytes > ROOF_INDEX_MAX_BYTES ||
+    r.meshBytes + verifiedHeaderBytes + verifiedIndexEntryBytes > ROOF_CHUNK_MAX_BYTES
+  )
+    throw new Error('roof verified byte lengths/budget');
   if (
     h.datasetVersion !== datasetVersion ||
     h.chunkId !== r.chunkId ||

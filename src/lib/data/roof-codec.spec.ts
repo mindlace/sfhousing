@@ -24,15 +24,19 @@ it.each(['overlap', 'misalign', 'overflow', 'range', 'duplicate'])(
     expect(() => decodeRoofChunk(e.header, e.buffer)).toThrow();
   }
 );
-it.each(['vertex', 'slot', 'mixed', 'nan', 'infinity'])('rejects invalid %s payloads', (kind) => {
-  const c = fixture();
-  if (kind === 'vertex') c.indices[0] = 6;
-  if (kind === 'slot') c.pieceSlots[0] = 2;
-  if (kind === 'mixed') c.pieceSlots[0] = 1;
-  if (kind === 'nan') c.positions[0] = NaN;
-  if (kind === 'infinity') c.normals[0] = Infinity;
-  expect(() => encodeRoofChunk(c)).toThrow();
-});
+it.each(['vertex', 'slot', 'mixed', 'nan', 'infinity'])(
+  'rejects invalid %s incoming payloads',
+  (kind) => {
+    const e = encodeRoofChunk(fixture());
+    const view = new DataView(e.buffer);
+    if (kind === 'vertex') view.setUint32(144, 6, true);
+    if (kind === 'slot') view.setUint32(168, 2, true);
+    if (kind === 'mixed') view.setUint32(168, 1, true);
+    if (kind === 'nan') view.setFloat32(0, NaN, true);
+    if (kind === 'infinity') view.setFloat32(72, Infinity, true);
+    expect(() => decodeRoofChunk(e.header, e.buffer)).toThrow();
+  }
+);
 it('canonicalizes input offsets while preserving little-endian values', () => {
   const c = fixture();
   c.header.buffers.positions.offset = 999;
