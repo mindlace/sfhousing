@@ -26,7 +26,8 @@ vi.mock('./style', async (importOriginal) => {
 });
 
 // The lazy deck chunk fails to load (offline, a stale deploy's chunk 404s, …).
-vi.mock('./deck-loader', () => ({
+vi.mock('./deck-loader', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./deck-loader')>()),
   loadDeck: () => Promise.reject(new Error('deck chunk failed to load'))
 }));
 

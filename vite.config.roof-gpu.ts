@@ -9,7 +9,11 @@ export default defineConfig({
   test: {
     ...base.test,
     name: 'roof-gpu',
-    include: ['src/lib/map/roof-layer.svelte.spec.ts', 'src/lib/map/SimMap.roofs.svelte.spec.ts'],
+    include: [
+      'src/lib/map/roof-layer.svelte.spec.ts',
+      'src/lib/map/SimMap.roofs.svelte.spec.ts',
+      'src/lib/map/SimMap.roof-import-*.svelte.spec.ts'
+    ],
     exclude: [],
     setupFiles: ['./scripts/roof-gpu-vitest-setup.ts'],
     browser: {

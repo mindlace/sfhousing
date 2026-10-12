@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 import type {} from '../src/lib/map/debug';
 import type {} from '../src/lib/brush/debug';
 import {
@@ -316,5 +317,86 @@ for (const { roofs, ready, count } of [
     expect(await page.evaluate(() => window.__sfhMap!.roofSnapshot()!.activePieceIds)).toHaveLength(
       count
     );
+  });
+}
+
+// Use the emitted module identity rather than pinning a build-dependent chunk hash.
+for (const { mode, roofCount } of [
+  { mode: 'held', roofCount: 3 },
+  { mode: 'failed', roofCount: 0 }
+] as const) {
+  test(`${mode} optional roof JavaScript preserves brush, saved plan and score`, async ({
+    page,
+    isMobile
+  }) => {
+    const clientManifest = JSON.parse(
+      await readFile(
+        new URL('../.svelte-kit/output/client/.vite/manifest.json', import.meta.url),
+        'utf8'
+      )
+    ) as Record<string, { file: string }>;
+    const chunk = clientManifest['src/lib/map/roof-layer.ts'].file;
+    let requests = 0;
+    let release!: () => void;
+    const held = new Promise<void>((r) => {
+      release = r;
+    });
+    await page.route(`**/${chunk}`, async (route) => {
+      requests++;
+      if (mode === 'failed') await route.abort();
+      else {
+        await held;
+        await route.continue();
+      }
+    });
+    try {
+      await gotoEditor(page);
+      await expect.poll(() => requests).toBeGreaterThan(0);
+      await jumpAndIdle(page);
+      expect(await page.evaluate(() => window.__sfhMap!.roofSnapshot())).toBeNull();
+      expect(await page.evaluate(() => window.__sfhMap!.existingSnapshot()!.roofReadyIds)).toEqual(
+        []
+      );
+      expect(
+        await page.evaluate(
+          () =>
+            window.__sfhMap!.map!.queryRenderedFeatures(undefined, {
+              layers: ['existing-buildings']
+            }).length
+        )
+      ).toBeGreaterThan(0);
+      await paintOnce(page, isMobile);
+      await expect
+        .poll(() => page.evaluate(() => window.__sfhMap!.snapshot()!.parts))
+        .toBeGreaterThan(0);
+      await expect(page.getByTestId('score-net')).not.toHaveText('0');
+      const score = await settledNet(page);
+      await expect
+        .poll(() => page.evaluate((k) => localStorage.getItem(k), PLAN_KEY))
+        .not.toBeNull();
+      const saved = await page.evaluate((k) => localStorage.getItem(k), PLAN_KEY);
+      release();
+      await expect
+        .poll(() =>
+          page.evaluate(() => window.__sfhMap!.roofSnapshot()?.activePieceIds.length ?? 0)
+        )
+        .toBe(roofCount);
+      await page.reload();
+      await page.waitForFunction(() => !!window.__sfhMap?.snapshot() && !!window.__sfhBrush?.ready);
+      await jumpAndIdle(page);
+      await expect.poll(() => page.evaluate(() => window.__sfhBrush!.ops)).toBe(1);
+      expect(await settledNet(page)).toBe(score);
+      expect(await page.evaluate((k) => localStorage.getItem(k), PLAN_KEY)).toBe(saved);
+      await expect
+        .poll(() => page.evaluate(() => window.__sfhMap!.existingSnapshot()!.roofReadyIds.length))
+        .toBe(roofCount);
+      expect(await page.evaluate(() => window.__sfhMap!.roofSnapshot() === null)).toBe(
+        mode === 'failed'
+      );
+      await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready');
+      await expect(page.getByTestId('map-root').getByRole('alert')).toHaveCount(0);
+    } finally {
+      release();
+    }
   });
 }

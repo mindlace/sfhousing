@@ -51,13 +51,12 @@
   import type { ParcelId } from '$lib/data/parcel';
   import type { Manifest } from '$lib/data/manifest';
   import { CONSTRAINTS, NARROW_PX, defaultFrame, initialCamera, pixelRatio } from './camera';
-  import { loadDeck } from './deck-loader';
+  import { loadDeck, loadRoofs } from './deck-loader';
   import { controlsFootprint } from './footprint';
   import { installDebug } from './debug';
   import { ExistingBuildings } from './existing-buildings';
   import { LayerComposer } from './layer-composer';
   import type { RoofController } from './roof-controller';
-  import type { RoofMeshLayer } from './roof-layer';
   import { RoofWorkerClient } from './roof-worker-client';
   import { GeneratedController } from './generated-controller';
   import { TOKENS } from './palette';
@@ -499,7 +498,7 @@
       return;
     }
     if (l.dead) return;
-    const [{ MapLibreOverlay }, { SolidPolygonLayer }, { RoofMeshLayer }] = mods;
+    const [{ MapLibreOverlay }, { SolidPolygonLayer }] = mods;
     const overlay = new MapLibreOverlay({ interleaved: true, layers: [] });
     map.addControl(overlay);
     l.overlay = overlay;
@@ -541,14 +540,16 @@
     pendingApplies = [];
     if (overlayLayers.length > 0) controller.setOverlayLayers(overlayLayers);
     for (const u of queued) controller.apply(u);
-    if (m.buildingRoofs?.schemaVersion === 1) void startRoofs(l, m, RoofMeshLayer);
     if (readyFired) {
       // Remount (new manifest): the old generated state went with the old map.
       if (queued.length === 0) resyncCb?.();
-      return;
+    } else {
+      readyFired = true;
+      onready?.(handle);
     }
-    readyFired = true;
-    onready?.(handle);
+    if (m.buildingRoofs?.schemaVersion === 1) void startRoofs(l, m);
+    else if (m.buildingRoofs)
+      console.warn('[map] unsupported building roof schema', m.buildingRoofs.schemaVersion);
   }
 
   /** Observe source features (including tile-clipped duplicates) once per frame. */
@@ -567,9 +568,10 @@
     });
   }
 
-  async function startRoofs(l: Live, m: Manifest, Mesh: typeof RoofMeshLayer): Promise<void> {
+  async function startRoofs(l: Live, m: Manifest): Promise<void> {
+    if (l.dead) return;
     try {
-      const { RoofController } = await import('./roof-controller');
+      const [{ RoofMeshLayer: Mesh }, { RoofController }] = await loadRoofs();
       if (l.dead || !l.map || !l.existing || !l.composer) return;
       const beforeId = firstSymbolLayerId(l.map.getStyle());
       l.roofs = new RoofController({
