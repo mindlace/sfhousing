@@ -96,3 +96,21 @@ describe('fixture dataset', () => {
     expect(ManifestSchema.safeParse(raw).success).toBe(true);
   });
 });
+
+it.each([1, 99])('preserves optional roof descriptor version %s', (schemaVersion) => {
+  const buildingRoofs = {
+    schemaVersion,
+    indexUrl: '/data/fixture-0/roofs/index.json',
+    auditUrl: '/data/fixture-0/roofs/audit.json',
+    reportUrl: '/data/fixture-0/roofs/report.json'
+  };
+  expect(ManifestSchema.parse({ ...validManifest, buildingRoofs }).buildingRoofs).toEqual(
+    buildingRoofs
+  );
+  expect(
+    ManifestSchema.safeParse({
+      ...validManifest,
+      buildingRoofs: { ...buildingRoofs, indexUrl: '/data/fixture-1/x' }
+    }).success
+  ).toBe(false);
+});

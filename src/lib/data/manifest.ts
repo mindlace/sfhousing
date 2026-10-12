@@ -3,6 +3,13 @@ import { DATASET_VERSION_RE } from './dataset-version';
 
 export { DATASET_VERSION_RE } from './dataset-version';
 
+export type BuildingRoofsDescriptor = {
+  schemaVersion: number;
+  indexUrl: string;
+  auditUrl: string;
+  reportUrl: string;
+};
+
 const DatasetVersion = z.string().regex(DATASET_VERSION_RE);
 const RootRelativeUrl = z
   .string()
@@ -49,7 +56,15 @@ const ManifestBaseSchema = z.object({
   basemapTiles: RootRelativeUrl,
   glyphs: RootRelativeUrl,
   sprite: RootRelativeUrl.optional(),
-  neighborhoods: RootRelativeUrl
+  neighborhoods: RootRelativeUrl,
+  buildingRoofs: z
+    .object({
+      schemaVersion: z.number().int().positive(),
+      indexUrl: RootRelativeUrl,
+      auditUrl: RootRelativeUrl,
+      reportUrl: RootRelativeUrl
+    })
+    .optional()
 });
 
 export const ManifestSchema = ManifestBaseSchema.superRefine((m, ctx) => {
@@ -60,6 +75,9 @@ export const ManifestSchema = ManifestBaseSchema.superRefine((m, ctx) => {
     ['glyphs', m.glyphs],
     ['sprite', m.sprite],
     ['neighborhoods', m.neighborhoods],
+    ['buildingRoofs.indexUrl', m.buildingRoofs?.indexUrl],
+    ['buildingRoofs.auditUrl', m.buildingRoofs?.auditUrl],
+    ['buildingRoofs.reportUrl', m.buildingRoofs?.reportUrl],
     ...m.chunks.map((c, i): [string, string] => [`chunks.${i}.url`, c.url])
   ];
   for (const [path, u] of urls) {
