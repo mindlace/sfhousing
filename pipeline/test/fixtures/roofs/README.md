@@ -42,3 +42,19 @@ Its production footprint hash was verified directly against the locked Overture 
 The closed union preserves the approved above-ground silhouette; adding unseen bottoms
 and unioning authored parts does not cure its insufficient footprint coverage. The
 strict checks therefore retain its candidate evidence and a `roof_coverage_low` fallback.
+
+## Invalid native marina face
+
+`marina-invalid-face.json` retains face 708 from the full-resolution reference
+reconstruction of retained building `1a775ae1-a1c0-4f4c-b429-77b3e05d2306`. Its
+original quantized vertices and CityJSON transform are unchanged; only unused
+vertices/faces are removed and indices remapped. It intentionally contains an invalid
+open face, not a complete solid. With the pinned Shapely/GEOS toolchain, decoding
+reproduces `GEOSException: IllegalStateException: Unable to find a convex corner`.
+
+Provenance includes the original native output and job SHA-256, all 84 original EPT
+node hashes, EPT metadata hash, building footprint hash, processing commit and fitter
+parameters. The upstream LiDAR is public-domain USGS data; the Overture footprint
+retains ODbL obligations. No aerial imagery was used. The regression feeds this actual
+external output through decoding and checks that a valid native reference candidate
+and the next building still complete, preserving the rejected candidate and output.

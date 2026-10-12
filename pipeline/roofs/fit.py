@@ -7,6 +7,7 @@ import numpy as np
 import laspy
 from pyproj import CRS
 from shapely import constrained_delaunay_triangles
+from shapely.errors import GEOSException
 from shapely.geometry import Polygon
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -101,7 +102,7 @@ def fit_one(building, training_points, ground, config, name, complexity, support
         return candidate
     try:
         candidate['mesh'] = decode_cityjson(features[0],headers[0]['transform'],ground)
-    except (ValueError,KeyError,IndexError,TypeError) as error:
+    except (ValueError,KeyError,IndexError,TypeError,GEOSException) as error:
         candidate['error'] = 'invalid roofer geometry: '+str(error)
     return candidate
 

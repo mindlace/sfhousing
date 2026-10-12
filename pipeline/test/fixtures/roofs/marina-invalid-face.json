@@ -1,0 +1,152 @@
+{
+  "provenance": {
+    "buildingId": "1a775ae1-a1c0-4f4c-b429-77b3e05d2306",
+    "footprintHash": "ebfb3e856e0ffa770250c09a5799b24f3fffe1b0154908013229147e47a19a56",
+    "source": "https://s3-us-west-2.amazonaws.com/usgs-lidar-public/CA_SanFrancisco_1_B23/ept.json",
+    "lidarLicense": "public-domain",
+    "footprintLicense": "ODbL-1.0",
+    "processingCommit": "eaf0e3df764be55ff429c6db67cb462f335e93f0",
+    "rooferVersion": "1.0.0",
+    "candidate": "reference",
+    "complexity": 0.888,
+    "planeSupport": 15,
+    "faceIndex1Based": 708,
+    "originalCityJsonSha256": "4207d7af6c561c92d4fe54ba1f31d8fbdc1fbe0027c001f08fe6d67123e71e90",
+    "originalJobSha256": "87499cca7d5b09d86f78dc8bef7574e137fa364a82e38e7a619e087ae3c8388d",
+    "eptMetadataSha256": "85c7c5879cef7ef65155776c41c583acd1c6d3bb450041732dbf00877c6a5c29",
+    "sourceNodes": {
+      "ept-data/0-0-0-0.laz": "bce1c1f825402afa6a35f2f3d4d9276c4e1bd5979ff17a2991a03f9b2e2d2969",
+      "ept-data/1-0-1-0.laz": "70affca78fb6ce48649655542dff162f1a1136d443b52d086c17ce0a343b51f9",
+      "ept-data/1-0-1-1.laz": "bddcebb4f0350c7f52b45acc439fe2ba7db196aabb00d4b714f546f1628baa5a",
+      "ept-data/10-360-753-502.laz": "401febf5bc606b472b6fac719ad512f32919b4ed178993c45bbe2e31fc2d2b02",
+      "ept-data/10-360-755-502.laz": "959ac8a5d9e10304e7ff140bd770664030d4985c575f47608d00b56e996b0936",
+      "ept-data/10-360-756-502.laz": "ade622892c0223b05479cf2078f57101c1d52f71a1d5a8901db525dfc5142f6e",
+      "ept-data/10-360-759-502.laz": "7c982458fb4ddb549af6f5e73ba61ef859957966e95b43530a9cfacbd22d0802",
+      "ept-data/10-361-753-502.laz": "98128bc79b0e80b5123155af3beaa56cc864c3b8c7870b292399c79f2ee418ca",
+      "ept-data/10-361-755-502.laz": "5cdcbb053cdd65dafad76a6617be9ee98f66ad08140e5ac1580666d8d36eb667",
+      "ept-data/10-361-757-502.laz": "e27ae5355da0887a37c082053b4615af4d59f2bcbbce7de394d67d5292176e22",
+      "ept-data/10-361-759-502.laz": "997444c0dabf025967db9f7d2735c73f9b63608d826f4bdd9d699562c83cdeae",
+      "ept-data/10-362-750-502.laz": "a50327e98e2f99934ceb45bfafe19c077b5ba0125ae824a2f095a8875084a576",
+      "ept-data/10-362-751-502.laz": "31bf6163ace62cd4732ee94427e3bfce6981a39be08d834165564aa10ab37bdb",
+      "ept-data/10-362-752-502.laz": "5e5a5d0f76970cf329a94e79a94a796fc356ddc3400639011901ba08505900ed",
+      "ept-data/10-362-753-502.laz": "3645e5c0109e30acfbd1d10651588a9c294bac3a70ce0e6c856761ba6fcff51b",
+      "ept-data/10-364-750-502.laz": "497f1baa30d4abbac55c566a9d2185031e4719d7efb8987572b496720d359cd7",
+      "ept-data/2-1-2-1.laz": "8bf7ca9be9fca4e283c33537d53e9894b720a10c1400484fb89efc1ce01567c7",
+      "ept-data/3-2-5-3.laz": "8318591028011d41d41110bc63933ab83cf56ee535b40b5b081a04ea11976deb",
+      "ept-data/4-5-11-7.laz": "9c2b5bdf2920f05a3865b1dd08b5c0df446d2eb65df06c72a7869189b6aa7e94",
+      "ept-data/5-11-23-15.laz": "479a4c79cce65dfad712be165f8bf4253346d1629c57c9b2b99fbbd24c8da93c",
+      "ept-data/6-22-46-31.laz": "1a6978da3b1f8b21cbfc5462ef998a662d4b642024dc23185d0717cabdafb522",
+      "ept-data/6-22-47-31.laz": "efa8244d380aeb66f5814d2c143d8bb3d5b7327144695aa10da883764f75a0f0",
+      "ept-data/6-23-46-31.laz": "867f0439c29b333b82fa02561f82ee68352e81370cdf653e92c14a172797a7dc",
+      "ept-data/6-23-47-31.laz": "e2da83dc70bf486bb8c9d94c78569d15104d1644076bcfbb5c0fee1a75101203",
+      "ept-data/7-45-93-62.laz": "f3d8c8a9bf6d020a12db60646bbfbcef731ce7b25a9c7b7d8866525d55a97e80",
+      "ept-data/7-45-94-62.laz": "22b8ef23c142173b87920d6e10b6b1be520470fce9e1856b5106c052cbe52890",
+      "ept-data/7-45-94-63.laz": "f67a793aceaa05e5175b21a6cef6570f9954bf1e00a8b8ef6a5c4e75fd0e8b9c",
+      "ept-data/7-45-95-62.laz": "a0d29ccd8d101f957636325a2dddee5497b2c56df991b6338c687eb9993e8ef2",
+      "ept-data/7-46-93-62.laz": "390e7977e0460478cf1eb9afb159169bb8a80c2f7269e757e2657080d7f1daa9",
+      "ept-data/7-46-94-62.laz": "f80774d9730be0d996b4617d7817f78fd60003eec99bd86121d77a33bbb0377c",
+      "ept-data/7-46-95-62.laz": "07c6177193786c89f07b14f2954e68d236c3156a5b19c49a40b86629d5162a87",
+      "ept-data/8-90-187-125.laz": "879ea15c06238709e82129ceaf9930501a81d7528b53804231fd23cedabebc9d",
+      "ept-data/8-90-188-125.laz": "aa61fce0848eb670917f4ba3367d82d5e0e4101ed801a2fb9e35f4f9f6e8e50c",
+      "ept-data/8-90-189-125.laz": "d4cf9e7aa42c6f0efc4986ef12d72be5aff580be79983ee30100728c0d16084c",
+      "ept-data/8-90-190-125.laz": "c114390e49892a1463a543a8149a52febf58d47aa7f4dd1a69967d98865d6707",
+      "ept-data/8-91-187-125.laz": "5fa820a8ffdde5b5e59312b4766783652472d0de3e54e24c51ca46c3bb785175",
+      "ept-data/8-91-188-125.laz": "4f7e67b6948085ff53aa6577fb565433538f3b55089a43ff491b1804f2c7b9dc",
+      "ept-data/8-91-189-125.laz": "34ebad1ebd895cf2222f6aa4c47e9fc66a4e0f478b636fba9bea4a678c4970b5",
+      "ept-data/8-91-190-125.laz": "5b4784ae9fd596ab38e8793830cecdc91e85bab9e6660cad7166d704f4b39ef9",
+      "ept-data/8-92-187-125.laz": "96d8a5b7f7c610dcecdd9e5a4c8fba4358480dc517ab5f705534e7b44f91c973",
+      "ept-data/8-92-188-125.laz": "230695e2393e0fbbcbeea66508a4c1dba80ff6c22a25286e4b09dd514734b1df",
+      "ept-data/8-92-189-125.laz": "a44d36ce15afe728adf56be6690ea5a3065563cdfb62ca66c4bb7d5b17aed995",
+      "ept-data/8-92-190-125.laz": "9fba47661ba4c4cd800f157e77c107be6ba5787a9a384fa269ec9c57e82ddb5d",
+      "ept-data/9-180-375-250.laz": "d5e45d4f684f9a217f66eaeb21571c9e6842ca03d3c8f35b238e6c1720437a88",
+      "ept-data/9-180-375-251.laz": "dc0097eca8be0422bb99966034b124504ae7d2935917f2918a1c6f50f85d910e",
+      "ept-data/9-180-376-251.laz": "2ed960329013d5ed0b19b2290848e50bb0af411b314fcc35b01c94853e8152c9",
+      "ept-data/9-180-377-251.laz": "a233c1b920f80d853af065a2478a9a3228089108792673303fc1c295b8695ca5",
+      "ept-data/9-180-378-251.laz": "ebb42056e1bf17a7fa0682a5f63bba1c77534ead123ba640b1cb1288d143300a",
+      "ept-data/9-180-379-251.laz": "bf85a018bfa5491159a220e6ddd7e925086457de8a2354d8a3db636eb89ebe63",
+      "ept-data/9-180-380-250.laz": "693fc0eb92b046024aca36a75e1e52955145f22848425b73f6448f15c6113c9d",
+      "ept-data/9-180-380-251.laz": "de2b2c9d6d8ebcf76f3c55fe5ce478bd269202aa88f45abd344658f368ef708f",
+      "ept-data/9-181-375-251.laz": "c9962ef3da0608117351974ee03bc412dd8d26aa69dbb3152048ca4d633c95c2",
+      "ept-data/9-181-376-251.laz": "3f60db8022b4308d268e568004a197332554f89c32a4a840ec977b69863ac825",
+      "ept-data/9-181-377-250.laz": "4832235819e97923eb18c661936c3d9badf2788642edf44183f8ca1a04f2bd2d",
+      "ept-data/9-181-377-251.laz": "ef7ed12d236c381521116ac99cacc51e46242414259bfee88027e5936c8a70c1",
+      "ept-data/9-181-378-250.laz": "fc255e313a5242cc1e271b4b0463a9feffc8dff339e7fef600d85aa3474ccfea",
+      "ept-data/9-181-378-251.laz": "5c273b02effa94714c108cef2b06b8806fa7a8172b9c7bdf91a59d6b7d4c984f",
+      "ept-data/9-181-379-250.laz": "0cb231b8cf51057f325fd5243f907fdcb2a54223d6a3c85248a27b817321cf29",
+      "ept-data/9-181-379-251.laz": "0c2ae55cefd37d855c383488b402e255497dc66893bc595a315f395e7c9ff196",
+      "ept-data/9-181-380-251.laz": "6bdeba2290d84bf962a80aba95524ee0ab5b25181ac71d0116caf783cc060003",
+      "ept-data/9-182-375-250.laz": "59552230b157b6f77f96ce916d469b674f7a093c19968b35b53bcbd53452ec93",
+      "ept-data/9-182-375-251.laz": "b493fd35b1c761d08427679fff9a1cc4a34825d84b33152b28a6cb11c529b814",
+      "ept-data/9-182-376-250.laz": "2de4a63010982c7e4a3c35c490fc043e7f6b25f62f4ec8855f8994fd61c2826b",
+      "ept-data/9-182-376-251.laz": "3685cc83b368d93bd80b47b855ce40927d99b0b16a8ded8ba666a3ff007bae28",
+      "ept-data/9-182-377-251.laz": "833c3419ce9ed5a4e8b600cc7fb7be554b416cc2c74148ea34a1c5099598f69e",
+      "ept-data/9-182-378-250.laz": "ae22c4eff0265c773a63ef9b6ad101cf447079b1068ff80cc17b02d2043f9b7c",
+      "ept-data/9-182-378-251.laz": "dc91589df2251ae79edf8d04e4d554d7cbbc2f6438acf4e7e89945f86ace387e",
+      "ept-data/9-182-379-250.laz": "8faa043a5c24435314992d7f60396fc3cbd18591e1efe5c30e6efe6e092d4c8e",
+      "ept-data/9-182-380-250.laz": "488fa1fa822ad8a3f01151c6fec6e44eee53ea8feabb43230d716a762261c910",
+      "ept-data/9-182-380-251.laz": "2078cb27000f27cde0d1e10acc53005b879ee7b0b18ab2d8a4d2d9d3798f4e5d",
+      "ept-data/9-183-375-250.laz": "146ade437b3ad38da953c9dbb10d50269d290f422477210c152a016987554ad9",
+      "ept-data/9-183-375-251.laz": "794f5f61a25104435239ab777ecd11a6308a6ce6019e295272ee18f11ed11a0e",
+      "ept-data/9-183-377-250.laz": "35dbc70b9214958e265cdd028fd305d872bef78664ab93dc5d944374122507c2",
+      "ept-data/9-183-377-251.laz": "12b1520813c14df34e9810a7a094f7ea1f5756508b75437d492bb7daf7524b4e",
+      "ept-data/9-183-378-250.laz": "2d834feae5c91af28195c3db530c79c30fb0a64486714a19bc4f647a3952ed32",
+      "ept-data/9-183-378-251.laz": "241af0e29f3cbea02db75a6087f1b639f4c8e1248ef41e286d1a93e02bf48730",
+      "ept-data/9-183-380-250.laz": "fec4c11079ab781d88d7ca339a90cc4e4a11e78401671deb2aa4c46185ac308a",
+      "ept-data/9-183-380-251.laz": "e5570e079f908a4e4acdffe0bf6581387aca51a5f45f7d01c19d631d4b97de4b",
+      "ept-data/9-184-375-251.laz": "bce27ed2cfe07e237dd65e50ebe52580490b1fbdadeccdb44f7623b8525476c7",
+      "ept-data/9-184-380-251.laz": "1a7b852071df534357ca9c9d004b8a6daefcdc120ab6bc7d16643dcce76385e1",
+      "ept-data/9-185-375-250.laz": "d811c303c79f23e5208230f47f369dd5685ad7cc5a58a172e50a0e97a4c72052",
+      "ept-data/9-185-377-250.laz": "89a882c15e7d7acbcc13185418d83ba8125f7e2541ec0f5a88c0eda22c8c4de5",
+      "ept-data/9-185-380-250.laz": "7d90eae2962c09c301db378c29b38c15138ea43d3c0db7662e95d5662b06a759",
+      "ept-data/9-185-380-251.laz": "86eb80119f3834067147365f92ad2f7c209f22a73456be8212f90fa97ae3a405"
+    },
+    "note": "Only the actual failing native face is retained; vertices and transform are unchanged, indices remapped. This intentionally invalid open face tests decoding, not a complete solid. No aerials."
+  },
+  "transform": {
+    "scale": [0.001, 0.001, 0.001],
+    "translate": [48111.846, 29879.346, 0.0]
+  },
+  "groundM": 2.5999999999999943,
+  "feature": {
+    "type": "CityJSONFeature",
+    "id": "1a775ae1-a1c0-4f4c-b429-77b3e05d2306",
+    "CityObjects": {
+      "1a775ae1-a1c0-4f4c-b429-77b3e05d2306-0": {
+        "type": "Building",
+        "attributes": {
+          "rf_success": true,
+          "rf_extrusion_mode": "standard"
+        },
+        "geometry": [
+          {
+            "type": "Solid",
+            "lod": "2.2",
+            "boundaries": [[[[2, 5, 1, 0, 4, 3]]]],
+            "semantics": {
+              "surfaces": [
+                {
+                  "rf_azimuth": 182.2045135498047,
+                  "rf_h_roof_50p": 32.85177993774414,
+                  "rf_h_roof_70p": 33.566200256347656,
+                  "rf_h_roof_max": 38.16558837890625,
+                  "rf_h_roof_min": 31.869121551513672,
+                  "rf_slope": 52.66006088256836,
+                  "type": "RoofSurface"
+                }
+              ],
+              "values": [[0]]
+            }
+          }
+        ]
+      }
+    },
+    "vertices": [
+      [26496, -27370, 34544],
+      [27266, -29088, 31181],
+      [25644, -29642, 30697],
+      [25568, -29611, 30706],
+      [25769, -27994, 33243],
+      [27266, -29088, 32331]
+    ]
+  }
+}
