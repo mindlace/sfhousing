@@ -4,6 +4,11 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],
+  build: {
+    // The largest client chunk (~1.1 MB) is the MapLibre GL bundle. The limit sits just above it, so a
+    // jump in chunk size past 1.2 MB warns again.
+    chunkSizeWarningLimit: 1200
+  },
   test: {
     expect: { requireAssertions: true },
     projects: [
