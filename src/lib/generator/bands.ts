@@ -1,6 +1,6 @@
 import { FillRule, unionD, type PathsD } from 'clipper2-ts';
 import { signedArea } from './poly';
-import { EFFICIENCY, rulesFor } from './constants';
+import { EFFICIENCY, MAX_STORIES, rulesFor } from './constants';
 import { domainArea, insideDomain } from './domain';
 import type { FloorBand, OccupiedComposition } from './composition-types';
 import type { TypologyId } from './types';
@@ -95,4 +95,40 @@ export function retainsCapacity(
     area >= 0.9 * ref &&
     unitsFor(candidate.typology, area) >= Math.ceil(0.9 * unitsFor(reference.typology, ref))
   );
+}
+
+/** Recipes add floors to one fixed plate; roof stages keep their one/two-floor height. */
+export function growthRegions(composition: OccupiedComposition, reference = composition): PathsD {
+  if (composition.family === 'terrace' || composition.family === 'divided')
+    return reference.bands.at(-1)!.regions;
+  if (composition.family === 'shouldered')
+    return composition.bands.find((b) => b.firstFloor === 6)!.regions;
+  return composition.bands.at(-1)!.regions;
+}
+export function compositionHeightRange(composition: OccupiedComposition): [number, number] {
+  if (composition.typology === 'tower') return [13, MAX_STORIES];
+  if (composition.typology === 'midrise') return [8, 12];
+  if (composition.typology === 'podium') return [5, 7];
+  return [composition.stories, composition.stories];
+}
+/** Check the finite height range without regenerating or clipping at every allowance. */
+export function retainsCapacityAcrossHeights(
+  candidate: OccupiedComposition,
+  reference: OccupiedComposition,
+  area = occupiedArea(candidate.bands),
+  growth = domainArea(growthRegions(candidate, reference))
+): boolean {
+  const ref = occupiedArea(reference.bands),
+    refGrowth = domainArea(growthRegions(reference));
+  const [min, max] = compositionHeightRange(candidate);
+  for (let s = min; s <= max; s++) {
+    const a = Math.round((area + (s - candidate.stories) * growth) * 10) / 10;
+    const r = ref + (s - reference.stories) * refGrowth;
+    if (
+      a < 0.9 * r ||
+      unitsFor(candidate.typology, a) < Math.ceil(0.9 * unitsFor(reference.typology, r))
+    )
+      return false;
+  }
+  return true;
 }

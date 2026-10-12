@@ -2,7 +2,7 @@ import type { PathD } from 'clipper2-ts';
 import type { ParcelRecord } from '../data/parcel';
 import type { OccupiedComposition, RoofAccent } from './composition-types';
 import { rulesFor } from './constants';
-import { occupiedArea, floorSlices } from './bands';
+import { occupiedArea, floorSlices, growthRegions } from './bands';
 import { insideDomain } from './domain';
 import { localFrame } from './geo';
 import { canonicalRing, inset, signedArea } from './poly';
@@ -17,8 +17,9 @@ export function serializeComposition(
   site: Site,
   composition: OccupiedComposition,
   caps: RoofAccent[],
-  tone: 0 | 1 | 2
-): { local: LocalPart[]; parts: GeneratedBuilding['parts']; area: number } | null {
+  tone: 0 | 1 | 2,
+  reference: OccupiedComposition = composition
+): { local: LocalPart[]; parts: GeneratedBuilding['parts']; area: number; growth: number } | null {
   const frame = localFrame(parcel.labelPoint);
   let repairDistance = 0.02;
   for (let repair = 0; repair <= 2; repair++) {
@@ -117,7 +118,22 @@ export function serializeComposition(
         parts.splice(before);
       }
     }
-    return { local, parts, area: occupiedArea(bands) };
+    const source = growthRegions(composition, reference);
+    const sourceIndex = composition.bands.findIndex((b) => b.regions === source);
+    let growth: number;
+    if (sourceIndex >= 0)
+      growth = bands[sourceIndex].regions.reduce((n, r) => n + signedArea(r), 0);
+    else {
+      // An eight-floor midrise with two roof floors has a zero-height growth band.
+      // Round its plate with the same repair so height eligibility is still stable.
+      const before = local.length;
+      const rounded = source.map((r) => append(r, 0, 1, 'occupied', tone));
+      local.splice(before);
+      parts.splice(before);
+      if (rounded.some((r) => !r)) continue;
+      growth = rounded.reduce((n, r) => n + signedArea(r!), 0);
+    }
+    return { local, parts, area: occupiedArea(bands), growth };
   }
   return null;
 }

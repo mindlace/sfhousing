@@ -1,5 +1,5 @@
 import { FillRule, intersectD, type PathsD } from 'clipper2-ts';
-import { bandsSupported, occupiedArea, retainsCapacity, floorSlices } from './bands';
+import { bandsSupported, occupiedArea, retainsCapacityAcrossHeights, floorSlices } from './bands';
 import type {
   CompositionDraws,
   CompositionId,
@@ -49,6 +49,9 @@ export function referenceComposition(
     if (inset([ring], 1.5).length) band.regions.push(ring);
   }
   if (bands.some((b) => !b.regions.length)) return null;
+  if (mass.typology === 'tower' && !validTowerBands(site, bands))
+    return referenceComposition(site, 'midrise', 12, draws);
+  if (!bandsSupported(bands)) return null;
   return { family: 'simple', typology: mass.typology, stories: mass.stories, bands };
 }
 
@@ -67,9 +70,15 @@ export function validComposition(
   if (Math.max(...bands.map((b) => b.firstFloor + b.floors - 1)) !== candidate.stories)
     return false;
   const regions = bands.flatMap((b) => b.regions);
+  const budgetRegions =
+    candidate.typology === 'midrise' &&
+    ['terrace', 'divided'].includes(candidate.family) &&
+    bands.at(-1)!.firstFloor === 7
+      ? [...regions, ...reference.bands.at(-1)!.regions]
+      : regions;
   if (
-    regions.length > MAX_COMPOSITION_PARTS ||
-    regions.reduce((n, r) => n + r.length, 0) > MAX_COMPOSITION_VERTICES
+    budgetRegions.length > MAX_COMPOSITION_PARTS ||
+    budgetRegions.reduce((n, r) => n + r.length, 0) > MAX_COMPOSITION_VERTICES
   )
     return false;
   if (
@@ -86,33 +95,37 @@ export function validComposition(
     if (active.reduce((a, r) => a + signedArea(r), 0) - domainArea(slice.regions) > 0.001)
       return false;
   }
-  if (candidate.typology === 'tower') {
-    for (const slice of floorSlices(bands).filter((b) => b.firstFloor >= 6)) {
-      if (domainArea(slice.regions) > Math.min(TOWER_PLATE_MAX_M2, TOWER_COVERAGE * site.A) + 0.01)
-        return false;
-      if (
-        slice.regions.some(
-          (r) => signedArea(r) < MIN_TOWER_PLATE_M2 || !inset([r], MIN_TOWER_CORE_INSET_M).length
-        )
+  if (candidate.typology === 'tower' && !validTowerBands(site, bands)) return false;
+  return retainsCapacityAcrossHeights(candidate, reference);
+}
+
+/** Structural tower rules also apply to references; their geometry-budget exception remains. */
+function validTowerBands(site: Site, bands: FloorBand[]): boolean {
+  for (const slice of floorSlices(bands).filter((b) => b.firstFloor >= 6)) {
+    if (domainArea(slice.regions) > Math.min(TOWER_PLATE_MAX_M2, TOWER_COVERAGE * site.A) + 0.01)
+      return false;
+    if (
+      slice.regions.some(
+        (r) => signedArea(r) < MIN_TOWER_PLATE_M2 || !inset([r], MIN_TOWER_CORE_INSET_M).length
       )
-        return false;
-      for (let i = 0; i < slice.regions.length; i++)
-        for (let j = i + 1; j < slice.regions.length; j++) {
-          if (
-            domainArea(
-              intersectD(
-                inset([slice.regions[i]], -TOWER_SEPARATION_M / 2 + 0.001, 4),
-                inset([slice.regions[j]], -TOWER_SEPARATION_M / 2 + 0.001, 4),
-                FillRule.NonZero,
-                4
-              )
-            ) > 0
-          )
-            return false;
-        }
-    }
+    )
+      return false;
+    for (let i = 0; i < slice.regions.length; i++)
+      for (let j = i + 1; j < slice.regions.length; j++) {
+        if (
+          domainArea(
+            intersectD(
+              inset([slice.regions[i]], -TOWER_SEPARATION_M / 2 + 0.001, 4),
+              inset([slice.regions[j]], -TOWER_SEPARATION_M / 2 + 0.001, 4),
+              FillRule.NonZero,
+              4
+            )
+          ) > 0
+        )
+          return false;
+      }
   }
-  return retainsCapacity(candidate, reference);
+  return true;
 }
 
 /** Clip a roof slab in the parcel's long-axis frame; clipping preserves notches and exclusions. */

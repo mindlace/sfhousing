@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import type { ParcelRecord } from '../data/parcel';
 import { generateDetailed, type Detailed } from './generate';
+import { drawComposition } from './composition-variety';
 import { drawVariety, varietyFromUniforms } from './variety';
 import { selectTypology } from './select';
 import { insideDomain } from './domain';
@@ -115,7 +116,8 @@ const detailed = (c: { site: Ring[]; S: number; seed: number; units: number; fa:
     parcel(c.site, { existingUnits: c.units, existingFloorAreaM2: c.fa }),
     { maxStories: c.S },
     drawVariety(c.seed),
-    'max'
+    'max',
+    drawComposition(c.seed)
   );
 
 /** Whole-region support against the union of all occupied solids below. */

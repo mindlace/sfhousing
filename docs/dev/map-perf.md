@@ -77,8 +77,12 @@ Hardware: Apple M5 Pro, 24 GB, headed Playwright Chromium, ANGLE Metal Renderer,
 
 Before culling, representative p95 was 12.1 ms and stress p95 was 25.2 ms (failed). Culling changes draw eligibility, not packed geometry, housing totals or the number of layers/cells.
 
-Standalone generation of the existing 150,000-case seed-42 mix took 1,815 ms (145,132 non-null buildings). Synthetic population packing took 190 ms representative / 584 ms stress; this is fixture construction, not gesture latency. The existing generation and worker-host limits remain enforced.
+Standalone generation of the existing 150,000-case seed-42 mix took 2,208 ms (145,132 non-null buildings). Synthetic population packing took 170 ms representative / 694 ms stress; this is fixture construction, not gesture latency. The existing generation and worker-host limits remain enforced.
 
-The separate loaded 500-parcel pointer-up-to-visible-frame test measured 106 ms desktop and 101 ms at 375 px in browser mobile emulation, against a 150 ms limit. It routes 500 real parcel records through the worker, generator, packer and renderer; synthetic renderer loading is not used for this measurement. Mobile emulation is not a real mobile GPU result.
+The separate loaded 500-parcel pointer-up-to-visible-frame test measured 106 ms desktop and 111 ms at 375 px in browser mobile emulation, against a 150 ms limit. It routes 500 real parcel records through the worker, generator, packer and renderer; synthetic renderer loading is not used for this measurement. Mobile emulation is not a real mobile GPU result.
 
 Elevated views at 5/6/8/12/20/40 floors were inspected in light and dark themes at desktop and 375 px, with parcel boundary overlays and excluded/concave sites. M2 and physical-mobile performance acceptance remains open.
+
+Independent review found and corrected a same-typology capacity decrease at a family transition and a simple tower reference that bypassed the six-metre-core rule. Family/attempt retention is now checked across each typology's finite height range using fixed floor plates, and preference is anchored at the earliest replacement gain. These checks use bounded arithmetic, with the bounded fitted candidate set evaluated only when existing development prevents a gain at the typology's minimum height. Invalid tower references use the existing twelve-floor midrise fallback.
+
+Post-review verification passed: 1,180 unit/component tests, 143 end-to-end tests (33 expected skips), type checking and lint. Both headed GPU populations passed again at 9.3 ms p95. M2/physical-mobile acceptance remains open. A minor deferred issue is that final coordinate rounding can move tower plate area/separation slightly beyond local-space limits (observed plate excess 0.378 m² and expanded-plate overlap 0.022 m²).
