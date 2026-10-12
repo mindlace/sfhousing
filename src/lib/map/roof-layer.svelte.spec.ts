@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { Deck, WebMercatorViewport } from '@deck.gl/core';
-import type { Buffer, Device } from '@luma.gl/core';
+import type { Buffer, Device, VertexArray } from '@luma.gl/core';
 import { Model } from '@luma.gl/engine';
 import { decodeRoofChunk, encodeRoofChunk } from '$lib/data/roof-codec';
 import type { DecodedRoofChunk } from '$lib/data/building-roofs';
@@ -69,6 +69,16 @@ afterEach(() => {
   deck = undefined;
   canvas?.remove();
 });
+function watchVertexArray(vao: VertexArray) {
+  const gl = canvas!.getContext('webgl2')!;
+  const handle = (vao as unknown as { handle: WebGLVertexArrayObject }).handle;
+  const destroy = vi.spyOn(vao, 'destroy');
+  return { gl, handle, destroy };
+}
+function expectVertexArrayReleased(watch: ReturnType<typeof watchVertexArray>) {
+  expect(watch.gl.isVertexArray(watch.handle)).toBe(false);
+  expect(watch.destroy).toHaveBeenCalledTimes(1);
+}
 const tick = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 async function draw(layer: RoofMeshLayer) {
   deck!.setProps({ layers: [layer] });
@@ -175,9 +185,16 @@ it('prepares inactive indexed roofs, shades/picks individual pieces, hides witho
   expect(ready).toHaveBeenCalledTimes(1);
   const destroys = resources.map((b) => vi.spyOn(b, 'destroy'));
   const modelDestroy = vi.spyOn(model, 'destroy');
+  const vao = watchVertexArray(model.vertexArray);
+  expect(vao.gl.isVertexArray(vao.handle)).toBe(true);
+  deck.setProps({ layers: [] });
+  await tick();
+  deck.redraw('remove roofs');
+  expectVertexArrayReleased(vao);
   deck.finalize();
   deck = undefined;
   expect(modelDestroy).toHaveBeenCalledTimes(1);
+  expectVertexArrayReleased(vao);
   for (const destroy of destroys) expect(destroy).toHaveBeenCalledTimes(1);
 }, 20000);
 
@@ -265,16 +282,20 @@ it('reports a later draw exception once and releases the prepared representation
     ...model._uniformStore.uniformBuffers.values()
   ];
   const destroys = buffers.map((b) => vi.spyOn(b!, 'destroy'));
+  const vao = watchVertexArray(model.vertexArray);
+  expect(vao.gl.isVertexArray(vao.handle)).toBe(true);
   vi.spyOn(model, 'draw').mockImplementation(() => {
     throw new Error('GPU draw failed');
   });
   deck!.redraw('failure');
   expect(failure).toHaveBeenCalledExactlyOnceWith(new Error('GPU draw failed'));
+  expectVertexArrayReleased(vao);
   expect(layer.gpuBytes).toBe(0);
   deck!.redraw('retry after failure');
   deck!.finalize();
   deck = undefined;
   expect(failure).toHaveBeenCalledTimes(1);
+  expectVertexArrayReleased(vao);
   for (const destroy of destroys) expect(destroy).toHaveBeenCalledTimes(1);
 });
 
@@ -285,6 +306,13 @@ it('releases managed uniform buffers when allocation fails partway through model
   const device = testDevice;
   const create = device.createBuffer.bind(device);
   const allocated: Buffer[] = [];
+  const vertexArrays: ReturnType<typeof watchVertexArray>[] = [];
+  const createVertexArray = device.createVertexArray.bind(device);
+  vi.spyOn(device, 'createVertexArray').mockImplementation((props) => {
+    const vao = createVertexArray(props);
+    vertexArrays.push(watchVertexArray(vao));
+    return vao;
+  });
   let ownedSetup = false;
   vi.spyOn(device, 'createBuffer').mockImplementation((props) => {
     if ('id' in props && props.id === 'existing-roof-gpu-test-positions') ownedSetup = true;
@@ -302,6 +330,11 @@ it('releases managed uniform buffers when allocation fails partway through model
   expect(ready).not.toHaveBeenCalled();
   expect(allocated).toHaveLength(6);
   expect(allocated.every((buffer) => buffer.destroyed)).toBe(true);
+  expect(vertexArrays).toHaveLength(1);
+  expectVertexArrayReleased(vertexArrays[0]);
+  deck!.finalize();
+  deck = undefined;
+  expectVertexArrayReleased(vertexArrays[0]);
   expect(layer.gpuBytes).toBe(0);
 });
 
@@ -317,4 +350,40 @@ it('reports a permanently invalid GPU binding instead of retrying forever', asyn
   deck!.redraw('invalid binding');
   expect(failure).toHaveBeenCalledExactlyOnceWith(new Error('invalid vertex binding'));
   expect(layer.gpuBytes).toBe(0);
+});
+
+it('releases the previous native VAO exactly once when immutable chunk identity changes', async () => {
+  await emptyDeck();
+  const ready = vi.fn(),
+    failure = vi.fn();
+  let layer = prepareLayer(ready, failure);
+  await draw(layer);
+  await vi.waitFor(() => expect(ready).toHaveBeenCalledTimes(1));
+  const oldModel = layer.getModels()[0];
+  const oldVao = watchVertexArray(oldModel.vertexArray);
+  const oldModelDestroy = vi.spyOn(oldModel, 'destroy');
+  const oldBuffers = [
+    ...Object.values(layer.state.buffers),
+    ...oldModel._uniformStore.uniformBuffers.values()
+  ];
+  const oldDestroys = oldBuffers.map((buffer) => vi.spyOn(buffer!, 'destroy'));
+  expect(oldVao.gl.isVertexArray(oldVao.handle)).toBe(true);
+  layer = layer.clone({ chunk: chunk() });
+  await draw(layer);
+  await vi.waitFor(() => expect(ready).toHaveBeenCalledTimes(2));
+  expectVertexArrayReleased(oldVao);
+  expect(oldModelDestroy).toHaveBeenCalledTimes(1);
+  for (const destroy of oldDestroys) expect(destroy).toHaveBeenCalledTimes(1);
+  const newModel = layer.getModels()[0];
+  expect(newModel).not.toBe(oldModel);
+  const newVao = watchVertexArray(newModel.vertexArray);
+  expect(newVao.gl.isVertexArray(newVao.handle)).toBe(true);
+  deck!.setProps({ layers: [] });
+  await tick();
+  deck!.redraw('remove replacement');
+  expectVertexArrayReleased(newVao);
+  expectVertexArrayReleased(oldVao);
+  expect(oldModelDestroy).toHaveBeenCalledTimes(1);
+  for (const destroy of oldDestroys) expect(destroy).toHaveBeenCalledTimes(1);
+  expect(failure).not.toHaveBeenCalled();
 });

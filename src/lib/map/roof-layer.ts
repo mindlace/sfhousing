@@ -160,10 +160,9 @@ export class RoofMeshLayer extends Layer<RoofMeshLayerProps> {
   }
 
   finalizeState(context: LayerContext): void {
-    // Base finalization owns the model (including its UBOs); this layer owns external buffers.
+    // Clear our model before base cleanup so all release paths share exactly one owner.
+    this.release();
     super.finalizeState(context);
-    this.state.model = undefined;
-    this.releaseBuffers();
   }
 
   private prepare(): void {
@@ -239,6 +238,8 @@ export class RoofMeshLayer extends Layer<RoofMeshLayerProps> {
     this.props.onFailure(error instanceof Error ? error : new Error(String(error)));
   }
   private release(): void {
+    // Pinned luma 9.4 Model.destroy releases shaders/UBOs but does not destroy its VAO.
+    this.state.model?.vertexArray.destroy();
     this.state.model?.destroy();
     this.state.model = undefined;
     this.releaseBuffers();
