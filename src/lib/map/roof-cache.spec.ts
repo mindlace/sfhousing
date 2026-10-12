@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { RoofCache } from './roof-cache';
 import { roofFixture } from './test-utils/roof-fixtures';
 it('keeps retired buffers charged until release and pins visible chunks', () => {
@@ -25,4 +25,27 @@ it('counts index storage and simultaneous reservations against the hard cap', ()
   expect(cache.snapshot().totalBytes).toBe(48 * 1024 * 1024);
   cache.destroy();
   expect(cache.snapshot().totalBytes).toBe(0);
+});
+
+it('E2E observations retain reservation and retired ownership peaks after release', () => {
+  vi.stubEnv('VITE_E2E', '1');
+  try {
+    const cache = new RoofCache({ onEvict: () => {} });
+    cache.setIndexBytes(100);
+    cache.reserve('a', 200, 300);
+    cache.install('a', roofFixture().chunk);
+    cache.evict('a');
+    cache.release('a');
+    const observed = cache.snapshot().observation;
+    expect(observed).toMatchObject({
+      maxTotalBytes: 600,
+      maxReservedBytes: 500,
+      maxOwnedBytes: 500,
+      maxRetired: 1,
+      invalidComponents: 0
+    });
+    expect(cache.snapshot().totalBytes).toBe(100);
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });

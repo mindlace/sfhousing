@@ -4,11 +4,13 @@ import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { ControllerSnapshot, GeneratedController } from './generated-controller';
 import type { ExistingBuildings } from './existing-buildings';
 import type { RoofController, RoofControllerSnapshot } from './roof-controller';
+import type { LayerComposer } from './layer-composer';
 import type { GeneratedUpdate } from './types';
 
 export interface SfhMapDebug {
   readonly map: MapLibreMap | null;
   snapshot(): ControllerSnapshot | null;
+  compositionSnapshot(): ReturnType<LayerComposer['snapshot']>;
   roofSnapshot(): RoofControllerSnapshot | null;
   existingSnapshot(): { hiddenIds: string[]; roofReadyIds: string[] } | null;
   readonly hiddenSize: number;
@@ -36,6 +38,7 @@ export function installDebug(
     map: MapLibreMap | null;
     controller: GeneratedController | null;
     roofs?: RoofController | null;
+    composer?: LayerComposer | null;
     existing?: ExistingBuildings | null;
   }
 ): () => void {
@@ -45,6 +48,7 @@ export function installDebug(
       return get().map;
     },
     snapshot: () => get().controller?.debugSnapshot() ?? null,
+    compositionSnapshot: () => get().composer?.snapshot() ?? null,
     roofSnapshot: () => get().roofs?.snapshot() ?? null,
     existingSnapshot: () => {
       const e = get().existing;

@@ -56,7 +56,10 @@ function setup(ids = ['a']) {
   class FakeLayer {
     gpuBytes = 7300;
     initialized = true;
-    constructor(public props: RoofMeshLayerProps) {}
+    readonly id: string;
+    constructor(public props: RoofMeshLayerProps) {
+      this.id = `existing-roof-${props.chunk.header.chunkId}`;
+    }
     clone(props: Partial<RoofMeshLayerProps>) {
       return new FakeLayer({ ...this.props, ...props });
     }
@@ -350,4 +353,20 @@ it('rejects an index exceeding the actual stream safety bound without Content-Le
   expect(s.controller.snapshot().indexStatus).toBe('error');
   expect(s.controller.snapshot().totalBytes).toBe(0);
   expect(s.jobs).toHaveLength(0);
+});
+
+it('E2E job high water survives synchronous completion and disposal', async () => {
+  vi.stubEnv('VITE_E2E', '1');
+  try {
+    const s = setup(['a', 'b']);
+    s.controller.updateViewport([0, 0, 1, 1], 15, [0, 0]);
+    await flush();
+    for (let i = 0; i < 2; i++) s.jobs[i].resolve(s.fixtures[i].chunk);
+    await flush();
+    s.controller.destroy();
+    expect(s.controller.snapshot().maxInFlight).toBe(2);
+    expect(s.controller.snapshot().inFlight).toBe(0);
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });

@@ -60,6 +60,7 @@ export class RoofController {
   private indexRetryAt = 0;
   private entryBytes = new Map<string, number>();
   private failures = new Map<string, number>();
+  private maxInFlight = 0;
   private jobs = new Map<string, Job>();
   private residents = new Map<string, Resident>();
   private membership = new Map<ParcelId, Set<string>>();
@@ -141,6 +142,7 @@ export class RoofController {
       ...this.cache.snapshot(),
       indexStatus: this.indexStatus,
       inFlight: this.jobs.size,
+      maxInFlight: import.meta.env.VITE_E2E === '1' ? this.maxInFlight : undefined,
       chunks: Object.fromEntries(
         [...this.residents]
           .map(([id, r]) => [id, r.status])
@@ -251,6 +253,8 @@ export class RoofController {
         this.failures.delete(id);
         const job = { abort: new AbortController(), ref };
         this.jobs.set(id, job);
+        if (import.meta.env.VITE_E2E === '1')
+          this.maxInFlight = Math.max(this.maxInFlight, this.jobs.size);
         void this.options.worker
           .load(ref, this.version, job.abort.signal, this.entryBytes.get(id)!)
           .then((chunk) => {

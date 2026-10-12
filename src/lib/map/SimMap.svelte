@@ -346,6 +346,7 @@
       map: live?.map ?? null,
       controller: live?.controller ?? null,
       roofs: live?.roofs ?? null,
+      composer: live?.composer ?? null,
       existing: live?.existing ?? null
     }))
   );
