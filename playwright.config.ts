@@ -18,9 +18,14 @@ export default defineConfig({
   fullyParallel: true,
   workers: process.env.SFH_E2E_WORKERS ? Number(process.env.SFH_E2E_WORKERS) : undefined,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [['github'], ['list']] : 'list',
-  use: { baseURL: `http://localhost:${port}` },
+  // One retry everywhere: a retried pass still passes, but chreode's reporter records it, and
+  // from the third occurrence on, a signoff run that sees the same flake fails.
+  retries: 1,
+  reporter: process.env.CI
+    ? [['github'], ['list'], ['@mindlace/chreode/reporters/playwright']]
+    : [['list'], ['@mindlace/chreode/reporters/playwright']],
+  // A failed first attempt keeps its trace, so a recorded flake has evidence to diagnose.
+  use: { baseURL: `http://localhost:${port}`, trace: 'retain-on-failure' },
   projects: [
     { name: 'chromium', testIgnore: ignored, use: desktop },
     { name: 'mobile', testIgnore: ignored, use: mobile },

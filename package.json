@@ -61,7 +61,7 @@
     "@duckdb/node-api": "1.5.6-r.1",
     "@eslint/compat": "^2.1.0",
     "@eslint/js": "^10.0.1",
-    "@mindlace/chreode": "^0.1.0",
+    "@mindlace/chreode": "^0.2.0",
     "@planafoot/drizzle-cf-migrations": "^1.2.1",
     "@playwright/test": "^1.62.0",
     "@sveltejs/adapter-cloudflare": "^7.2.8",

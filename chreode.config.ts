@@ -1,4 +1,4 @@
-import { defineConfig } from '@mindlace/chreode';
+import { burnInStep, defineConfig } from '@mindlace/chreode';
 
 export default defineConfig({
   rules: [
@@ -28,8 +28,44 @@ export default defineConfig({
       policeStderr: true,
       timeoutMs: 15 * 60_000
     },
+    // Each Playwright invocation rebuilds the app (webServer), hence the longer ceiling.
+    burnInStep({ when: ['unit', 'e2e'], timeoutMs: 20 * 60_000 }),
     { label: 'lint:workflows', run: 'npm run lint:workflows', when: ['workflows'] }
   ],
+  // Retried-then-passed tests become `flake` issues; the third occurrence fails signoff.
+  flakes: {},
+  burnIn: {
+    runners: [
+      {
+        name: 'e2e',
+        match: 'e2e/**/*.spec.ts',
+        // Not tests (helpers, fixtures, the headed bench), or not in the chromium project (perf).
+        ignore: ['e2e/helpers/**', 'e2e/fixtures/**', 'e2e/bench/**', 'e2e/**/*.perf.spec.ts'],
+        // chromium only: --repeat-each multiplies across every project otherwise.
+        command: (files, n) =>
+          `npx playwright test --project chromium --repeat-each=${n} --retries=0 ${files.join(' ')}`
+      },
+      {
+        // Before server, whose globs also match *.svelte.spec.ts.
+        name: 'client',
+        match: 'src/**/*.svelte.{test,spec}.ts',
+        command: (files, n) =>
+          Array.from(
+            { length: n },
+            () => `npx vitest --run --project client --retry=0 ${files.join(' ')}`
+          )
+      },
+      {
+        name: 'server',
+        match: ['src/**/*.{test,spec}.ts', 'scripts/**/*.spec.ts'],
+        command: (files, n) =>
+          Array.from(
+            { length: n },
+            () => `npx vitest --run --project server --retry=0 ${files.join(' ')}`
+          )
+      }
+    ]
+  },
   stderrAllowlist: [
     // e2e/cache-headers.spec.ts and e2e/pages-a11y.spec.ts request /no-such-page on purpose;
     // wrangler dev logs each 404 to stderr as this three-line block.

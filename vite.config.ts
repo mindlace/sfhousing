@@ -1,5 +1,6 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
+import VitestFlakeReporter from '@mindlace/chreode/reporters/vitest';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -11,6 +12,9 @@ export default defineConfig({
   },
   test: {
     expect: { requireAssertions: true },
+    // Root-level only (vitest ignores project reporters). Records client retried-passes;
+    // server and pipeline run with no retries, so they never record.
+    reporters: ['default', new VitestFlakeReporter()],
     projects: [
       // Browser/client tests live in a standalone config that omits sveltekit() + tailwindcss().
       './vite.config.client-test.ts',
