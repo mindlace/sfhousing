@@ -134,6 +134,7 @@ it('onready and edits precede a delayed index; late tile pieces inherit only the
 }, 30000);
 
 it('remounts legacy and unknown schemas with parcel promotion and no roof controller', async () => {
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
   const { screen, h } = await mount();
   await active();
   for (const next of [
@@ -155,6 +156,7 @@ it('remounts legacy and unknown schemas with parcel promotion and no roof contro
     });
     expect(h.getMap()!.getFeatureState({ ...FS, id: '3512011' })).toEqual({ replaced: true });
   }
+  expect(warning.mock.calls).toEqual([['[map] unsupported building roof schema', 99]]);
 }, 30000);
 
 it('picks roof parcel summaries and prioritizes overlapping generated layers even beneath roofs', async () => {

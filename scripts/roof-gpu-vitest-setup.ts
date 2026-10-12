@@ -3,7 +3,7 @@ import { roofGpuCapability } from './roof-gpu-capability';
 
 beforeAll(() => {
   const capability = roofGpuCapability();
-  console.warn('REQUIRED_ROOF_GPU', capability);
+  console.info('REQUIRED_ROOF_GPU', capability);
   expect(capability.parallel, 'Required roof GPU gate needs KHR_parallel_shader_compile').toBe(
     true
   );

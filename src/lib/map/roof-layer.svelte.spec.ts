@@ -716,7 +716,7 @@ it('keeps a fresh shader-hook program cold compilation and activation below 50 m
     await tick();
     tasks.push(...observer.takeRecords().map((e) => e.duration));
     observer.disconnect();
-    console.warn('ROOF_FRESH_PROGRAM', {
+    console.info('ROOF_FRESH_PROGRAM', {
       preparationMs,
       pendingPolls,
       tasks,
