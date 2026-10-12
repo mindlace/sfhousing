@@ -195,12 +195,14 @@ export function buildRoofAudit(
       bbox: m.bbox,
       datasetVersion
     };
-    const clipFailed = children.some((p) => p.reason === 'parcel_clip_failed');
-    if (clipFailed) {
+    const pieceFailures = children.flatMap((p) =>
+      p.reason === 'parcel_clip_failed' || p.reason === 'invalid_geometry' ? [p.reason] : []
+    );
+    if (pieceFailures.length) {
       evidence.followUp = {
         ...evidence.followUp,
         revisit: true,
-        reasons: [...new Set([...evidence.followUp.reasons, 'parcel_clip_failed' as const])]
+        reasons: [...new Set([...evidence.followUp.reasons, ...pieceFailures])]
       };
     }
     audit.buildings.push({

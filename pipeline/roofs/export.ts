@@ -70,6 +70,80 @@ export interface RoofBuildResult {
   counts: Record<string, number>;
 }
 
+export class InvalidRoofGeometryError extends Error {
+  constructor() {
+    super('invalid serialized roof geometry');
+  }
+}
+
+/** Validate exactly the coordinates sent to the GPU, without repairing or deleting faces. */
+export function prepareRoofPiece(piece: ExportPiece): ExportPiece {
+  const fail = () => {
+    throw new InvalidRoofGeometryError();
+  };
+  const vertices = piece.mesh.vertices.map((v) => v.map(Math.fround) as [number, number, number]);
+  if (
+    !vertices.length ||
+    vertices.some((v) => v.length !== 3 || !v.every(Number.isFinite) || v[2] < 0 || v[2] > 340)
+  )
+    fail();
+  const triangles = piece.mesh.triangles;
+  if (!triangles.length) fail();
+  const parent = triangles.map((_, i) => i);
+  const root = (i: number): number => {
+    while (parent[i] !== i) {
+      parent[i] = parent[parent[i]];
+      i = parent[i];
+    }
+    return i;
+  };
+  const edges = new Map<string, { count: number; balance: number; face: number }>();
+  const volumes: number[] = [];
+  const origin = vertices[0];
+  for (const [face, tri] of triangles.entries()) {
+    if (
+      tri.length !== 3 ||
+      tri.some((i) => !Number.isSafeInteger(i) || i < 0 || i >= vertices.length)
+    )
+      fail();
+    const points = tri.map((i) => vertices[i]);
+    const [a, b, c] = points;
+    const u = b.map((v, i) => v - a[i]),
+      v = c.map((x, i) => x - a[i]);
+    const area = Math.hypot(
+      u[1] * v[2] - u[2] * v[1],
+      u[2] * v[0] - u[0] * v[2],
+      u[0] * v[1] - u[1] * v[0]
+    );
+    if (!Number.isFinite(area) || area === 0) fail();
+    const [x, y, z] = points.map((p) => p.map((v, i) => v - origin[i]));
+    volumes.push(
+      x[0] * (y[1] * z[2] - y[2] * z[1]) +
+        x[1] * (y[2] * z[0] - y[0] * z[2]) +
+        x[2] * (y[0] * z[1] - y[1] * z[0])
+    );
+    const ids = points.map((p) => p.join(','));
+    for (let i = 0; i < 3; i++) {
+      const a = ids[i],
+        b = ids[(i + 1) % 3],
+        key = a < b ? `${a}|${b}` : `${b}|${a}`;
+      const edge = edges.get(key) ?? { count: 0, balance: 0, face };
+      edge.count++;
+      edge.balance += a < b ? 1 : -1;
+      parent[root(face)] = root(edge.face);
+      edges.set(key, edge);
+    }
+  }
+  if ([...edges.values()].some((e) => e.count !== 2 || e.balance !== 0)) fail();
+  const components = new Map<number, number>();
+  for (const [face, volume] of volumes.entries()) {
+    const id = root(face);
+    components.set(id, (components.get(id) ?? 0) + volume);
+  }
+  if ([...components.values()].some((v) => !Number.isFinite(v) || v <= 0)) fail();
+  return { ...piece, mesh: { ...piece.mesh, vertices } };
+}
+
 class ChunkBudgetError extends Error {}
 
 function encode(pieces: ExportPiece[], chunkId: string, datasetVersion: string) {
@@ -177,7 +251,9 @@ export async function encodeRoofArtifacts(
   const directory = join(opts.outDir, 'roofs');
   mkdirSync(directory, { recursive: true });
   const index: RoofIndex = { schemaVersion: 1, datasetVersion: opts.datasetVersion, chunks: [] };
-  const ordered = [...pieces].sort((a, b) => cmp(a.cellId, b.cellId) || cmp(a.pieceId, b.pieceId));
+  const ordered = pieces
+    .map(prepareRoofPiece)
+    .sort((a, b) => cmp(a.cellId, b.cellId) || cmp(a.pieceId, b.pieceId));
   if (new Set(ordered.map((p) => p.pieceId)).size !== ordered.length)
     throw new Error('duplicate export piece');
   let current: ExportPiece[] = [],
@@ -269,6 +345,17 @@ export async function writeRoofArtifacts(
     const byId = new Map(processed.map((b) => [b.buildingId, b]));
     const lookup = new Map(rows.map((r) => [JSON.stringify([r.buildingId, r.parcelId]), r]));
     const exports: ExportPiece[] = [];
+    const exportRejections = new Map<
+      string,
+      {
+        pieceId: string;
+        reason: 'invalid_geometry';
+        stage: 'float32_export';
+        mesh: RoofMesh;
+        anchor: [number, number];
+        projectedOrigin: [number, number];
+      }[]
+    >();
     await db.run(
       'ALTER TABLE buildings_export ADD COLUMN IF NOT EXISTS piece_id VARCHAR; ALTER TABLE buildings_export ADD COLUMN IF NOT EXISTS building_id VARCHAR; CREATE OR REPLACE TEMP TABLE roof_piece_identity(piece_id VARCHAR,building_id VARCHAR,parcel_id VARCHAR)'
     );
@@ -297,7 +384,7 @@ export async function writeRoofArtifacts(
         anchor = geographic(projectedOrigin);
       const method = byId.get(p.buildingId)!.method;
       if (method === 'footprint') throw new Error('fallback building emitted a roof');
-      exports.push({
+      const candidate: ExportPiece = {
         ...p,
         method,
         mesh: { ...p.mesh, vertices: p.mesh.vertices.map((v) => projectedToLocal(v, anchor)) },
@@ -305,7 +392,24 @@ export async function writeRoofArtifacts(
         projectedOrigin,
         anchor,
         bbox: row.bbox
-      });
+      };
+      try {
+        exports.push(prepareRoofPiece(candidate));
+      } catch (error) {
+        if (!(error instanceof InvalidRoofGeometryError)) throw error;
+        const rejected = exportRejections.get(p.buildingId) ?? [];
+        rejected.push({
+          pieceId: p.pieceId,
+          reason: 'invalid_geometry',
+          stage: 'float32_export',
+          mesh: p.mesh,
+          anchor,
+          projectedOrigin
+        });
+        exportRejections.set(p.buildingId, rejected);
+        p.mesh = null;
+        p.reason = 'invalid_geometry';
+      }
     }
     const index = await encodeRoofArtifacts(exports, opts);
     mkdirSync(opts.archiveDir, { recursive: true });
@@ -342,6 +446,7 @@ export async function writeRoofArtifacts(
                   canonicalJson({
                     buildingId: b.buildingId,
                     pieces: grouped.get(b.buildingId),
+                    exportRejections: exportRejections.get(b.buildingId) ?? [],
                     inputArtifactRefs: b.archives.map((a) => a.archiveKey),
                     dependencies
                   })

@@ -1,10 +1,12 @@
+import precision from './fixtures/roof-quantization.json';
+import type { ExportPiece } from '../roofs/export';
 import { expect, it } from 'vitest';
 import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { addMetersToLngLat } from '@math.gl/web-mercator';
-import { encodeRoofArtifacts, projectedToLocal } from '../roofs/export';
+import { encodeRoofArtifacts, projectedToLocal, prepareRoofPiece } from '../roofs/export';
 import { parseRoofHeader, parseRoofIndex } from '../../src/lib/data/building-roofs';
 import { decodeRoofChunk } from '../../src/lib/data/roof-codec';
 
@@ -52,11 +54,17 @@ it.each([
       mesh: {
         vertices: [
           [i, 0, 0],
-          [i + 1, 0, 10],
-          [i, 1, 10]
+          [i + 1, 0, 0],
+          [i, 1, 0],
+          [i, 0, 10]
         ] as [number, number, number][],
-        triangles: [[0, 1, 2]] as [number, number, number][],
-        semantics: ['RoofSurface']
+        triangles: [
+          [0, 2, 1],
+          [0, 1, 3],
+          [1, 2, 3],
+          [2, 0, 3]
+        ] as [number, number, number][],
+        semantics: ['GroundSurface', 'WallSurface', 'RoofSurface', 'WallSurface']
       }
     }));
     const a = await encodeRoofArtifacts(pieces, {
@@ -86,6 +94,14 @@ it.each([
         Buffer.byteLength(JSON.stringify(ref))
       );
       const decoded = decodeRoofChunk(header, Uint8Array.from(bin).buffer);
+      let nextIndex = 0;
+      for (const [slot, piece] of header.pieces.entries()) {
+        expect(piece.firstIndex).toBe(nextIndex);
+        for (let i = piece.firstIndex; i < piece.firstIndex + piece.indexCount; i++)
+          expect(decoded.pieceSlots[decoded.indices[i]]).toBe(slot);
+        nextIndex += piece.indexCount;
+      }
+      expect(nextIndex).toBe(decoded.indices.length);
       expect(
         ref.meshBytes + ref.headerBytes + Buffer.byteLength(JSON.stringify(ref))
       ).toBeLessThanOrEqual(budget.decoded);
@@ -108,15 +124,27 @@ it.each([
 
 it('splits before the shared codec hard bound, including header bytes', async () => {
   const out = mkdtempSync(join(tmpdir(), 'roof-budget-'));
+  // 5461 disjoint outward tetrahedra: 21844 real, closed faces near the codec bound.
   const mesh = {
-    vertices: [
-      [0, 0, 0],
-      [1, 0, 1],
-      [0, 1, 1]
-    ] as [number, number, number][],
-    triangles: Array.from({ length: 21845 }, () => [0, 1, 2] as [number, number, number]),
-    semantics: Array(21845).fill('RoofSurface')
+    vertices: [] as [number, number, number][],
+    triangles: [] as [number, number, number][],
+    semantics: [] as string[]
   };
+  for (let i = 0; i < 5461; i++) {
+    const at = mesh.vertices.length,
+      x = (i % 100) * 2,
+      y = Math.floor(i / 100) * 2;
+    mesh.vertices.push([x, y, 0], [x + 1, y, 0], [x, y + 1, 0], [x, y, 1]);
+    mesh.triangles.push(
+      ...[
+        [0, 2, 1],
+        [0, 1, 3],
+        [1, 2, 3],
+        [2, 0, 3]
+      ].map((t) => t.map((v) => v + at) as [number, number, number])
+    );
+    mesh.semantics.push('GroundSurface', 'WallSurface', 'RoofSurface', 'WallSurface');
+  }
   const pieces = [0, 1].map((i) => ({
     pieceId: `budget-${i}`,
     buildingId: `b-${i}`,
@@ -136,3 +164,100 @@ it('splits before the shared codec hard bound, including header bytes', async ()
     )
   ).toBe(true);
 });
+
+it('rejects the actual post-clip mesh whose valid double faces collapse in Float32', async () => {
+  const p = precision.piece;
+  const piece = {
+    ...p,
+    method: 'lidar_only',
+    cellId: '49_24',
+    anchor: precision.anchor as [number, number],
+    projectedOrigin: precision.projectedOrigin as [number, number],
+    bbox: [-122.44, 37.75, -122.42, 37.76],
+    mesh: {
+      ...p.mesh,
+      triangles: p.mesh.triangles as [number, number, number][],
+      vertices: p.mesh.vertices.map((v) =>
+        projectedToLocal(v as [number, number, number], precision.anchor as [number, number])
+      )
+    }
+  } as ExportPiece;
+  await expect(
+    encodeRoofArtifacts([piece], {
+      outDir: mkdtempSync(join(tmpdir(), 'roof-precision-')),
+      datasetVersion: 'fixture-4'
+    })
+  ).rejects.toThrow('invalid serialized roof geometry');
+});
+it.each(precision.corners)(
+  'rejects Float32 repeated or collinear corners from $pieceId/$triangle',
+  async (corner) => {
+    const cross = (vs: number[][]) => {
+      const [a, b, c] = vs;
+      const u = b.map((v, i) => v - a[i]),
+        w = c.map((v, i) => v - a[i]);
+      return Math.hypot(
+        u[1] * w[2] - u[2] * w[1],
+        u[2] * w[0] - u[0] * w[2],
+        u[0] * w[1] - u[1] * w[0]
+      );
+    };
+    expect(cross(corner.local)).toBeGreaterThan(0);
+    expect(cross(corner.local.map((v) => v.map(Math.fround)))).toBe(0);
+    const piece = {
+      pieceId: corner.pieceId,
+      buildingId: 'b',
+      parcelId: null,
+      method: 'lidar_only',
+      cellId: '49_24',
+      anchor: precision.anchor as [number, number],
+      projectedOrigin: precision.projectedOrigin as [number, number],
+      bbox: [-122.44, 37.75, -122.42, 37.76],
+      mesh: { vertices: corner.local, triangles: [[0, 1, 2]], semantics: ['WallSurface'] }
+    } as ExportPiece;
+    await expect(
+      encodeRoofArtifacts([piece], {
+        outDir: mkdtempSync(join(tmpdir(), 'roof-corner-')),
+        datasetVersion: 'fixture-4'
+      })
+    ).rejects.toThrow('invalid serialized roof geometry');
+  }
+);
+
+it.each(['open', 'inward component', 'overflow'])(
+  'rejects unsafe final topology: %s',
+  (failure) => {
+    const vertices: [number, number, number][] = [
+      [0, 0, 0],
+      [2, 0, 0],
+      [0, 2, 0],
+      [0, 0, 2]
+    ];
+    const triangles: [number, number, number][] = [
+      [0, 2, 1],
+      [0, 1, 3],
+      [1, 2, 3],
+      [2, 0, 3]
+    ];
+    if (failure === 'open') triangles.pop();
+    if (failure === 'overflow') vertices[0][0] = 1e40;
+    if (failure === 'inward component') {
+      vertices.push([5, 0, 0], [6, 0, 0], [5, 1, 0], [5, 0, 1]);
+      triangles.push(
+        ...triangles.map(([a, b, c]) => [a + 4, c + 4, b + 4] as [number, number, number])
+      );
+    }
+    const piece: ExportPiece = {
+      pieceId: 'p',
+      buildingId: 'b',
+      parcelId: null,
+      method: 'lidar_only',
+      cellId: '49_24',
+      anchor: [-122.42, 37.76],
+      projectedOrigin: [49500, 24500],
+      bbox: [-122.44, 37.75, -122.42, 37.76],
+      mesh: { vertices, triangles, semantics: triangles.map(() => 'RoofSurface') }
+    };
+    expect(() => prepareRoofPiece(piece)).toThrow('invalid serialized roof geometry');
+  }
+);

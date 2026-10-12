@@ -564,30 +564,56 @@ it('fetch restore recovers raw and processing inputs into temporary caches with 
   );
 });
 
-it('rejects an inward closed mesh even with updated child hash and gzip metadata', async () => {
-  const { checkRoofArtifacts } = await import('../roofs/check');
-  const { createHash } = await import('node:crypto');
-  const { gzipSync } = await import('node:zlib');
-  const { d, index, manifest } = await dataset();
-  const ref = index.chunks[0],
-    header = read(d, `roofs/${ref.chunkId}.json`),
-    path = join(d, `roofs/${ref.chunkId}.bin`),
-    bin = readFileSync(path);
-  for (let i = 0; i < header.buffers.indices.count; i += 3) {
-    const at = header.buffers.indices.offset + i * 4,
-      a = bin.readUInt32LE(at + 4),
-      b = bin.readUInt32LE(at + 8);
-    bin.writeUInt32LE(b, at + 4);
-    bin.writeUInt32LE(a, at + 8);
+it.each(['inward', 'repeated vertices', 'collinear vertices'])(
+  'rejects %s geometry even with updated child hash and gzip metadata',
+  async (kind) => {
+    const { checkRoofArtifacts } = await import('../roofs/check');
+    const { createHash } = await import('node:crypto');
+    const { gzipSync } = await import('node:zlib');
+    const { d, index, manifest } = await dataset();
+    const ref = index.chunks[0],
+      header = read(d, `roofs/${ref.chunkId}.json`),
+      path = join(d, `roofs/${ref.chunkId}.bin`),
+      bin = readFileSync(path);
+    if (kind === 'inward') {
+      for (let i = 0; i < header.buffers.indices.count; i += 3) {
+        const at = header.buffers.indices.offset + i * 4,
+          a = bin.readUInt32LE(at + 4),
+          b = bin.readUInt32LE(at + 8);
+        bin.writeUInt32LE(b, at + 4);
+        bin.writeUInt32LE(a, at + 8);
+      }
+    } else {
+      const points =
+        kind === 'repeated vertices'
+          ? [
+              [0, 0, 0],
+              [0, 0, 0],
+              [0, 1, 0]
+            ]
+          : [
+              [0, 0, 0],
+              [1, 0, 0],
+              [2, 0, 0]
+            ];
+      for (let i = 0; i < 3; i++) {
+        const vertex = bin.readUInt32LE(header.buffers.indices.offset + i * 4);
+        for (let axis = 0; axis < 3; axis++)
+          bin.writeFloatLE(
+            points[i][axis],
+            header.buffers.positions.offset + (vertex * 3 + axis) * 4
+          );
+      }
+    }
+    writeFileSync(path, bin);
+    ref.meshSha256 = createHash('sha256').update(bin).digest('hex');
+    ref.gzipBytes =
+      gzipSync(bin, { level: 9 }).length +
+      gzipSync(readFileSync(join(d, `roofs/${ref.chunkId}.json`)), { level: 9 }).length;
+    write(d, 'roofs/index.json', index);
+    expect((await checkRoofArtifacts(d, manifest)).failures.join(' ')).toMatch(/V15/);
   }
-  writeFileSync(path, bin);
-  ref.meshSha256 = createHash('sha256').update(bin).digest('hex');
-  ref.gzipBytes =
-    gzipSync(bin, { level: 9 }).length +
-    gzipSync(readFileSync(join(d, `roofs/${ref.chunkId}.json`)), { level: 9 }).length;
-  write(d, 'roofs/index.json', index);
-  expect((await checkRoofArtifacts(d, manifest)).failures.join(' ')).toMatch(/V15/);
-});
+);
 
 it('rejects a missing clipping dependency referenced only transitively by the processing archive', async () => {
   const d = mkdtempSync(join(tmpdir(), 'roof-clip-closure-'));

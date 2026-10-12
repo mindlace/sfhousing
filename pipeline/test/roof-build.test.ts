@@ -1,10 +1,17 @@
-import { afterAll, expect, it } from 'vitest';
+import precision from './fixtures/roof-quantization.json';
+import * as roofRun from '../roofs/run';
+import { afterAll, expect, it, vi } from 'vitest';
 import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { miniDuck, MINI } from './helpers';
 import { runSql, runSqlRange } from '../lib/sql';
-import { writeRoofArtifacts } from '../roofs/export';
+import {
+  writeRoofArtifacts,
+  prepareRoofPiece,
+  projectedToLocal,
+  type ExportPiece
+} from '../roofs/export';
 import type { ProcessedBuilding } from '../roofs/job';
 import { writeChunks } from '../steps/chunks';
 import { Report } from '../lib/report';
@@ -185,124 +192,190 @@ it('runs a roof-enabled offline build with stable reports, archived evidence and
   });
 }, 30000);
 
-it('exports accepted parcel meshes while retaining failed candidate metrics and partial-parent evidence', async () => {
-  const db = await miniDuck();
-  await runSql(db);
-  const root = mkdtempSync(join(tmpdir(), 'roof-accepted-'));
-  const ids = await db.all<{ bid: string }>('SELECT bid FROM buildings ORDER BY bid');
-  const [bounds] = await db.all<{ w: number; s: number; e: number; n: number }>(
-    "SELECT ST_XMin(geom) w,ST_YMin(geom) s,ST_XMax(geom) e,ST_YMax(geom) n FROM pieces WHERE bid='b10' ORDER BY parcel_id LIMIT 1"
-  );
-  const { w, s, e, n } = bounds;
-  const mesh = {
-    vertices: [
-      [w, s, 0],
-      [e, s, 0],
-      [e, n, 0],
-      [w, n, 0],
-      [w, s, 10],
-      [e, s, 12],
-      [e, n, 12],
-      [w, n, 10]
-    ] as [number, number, number][],
-    triangles: [
-      [0, 2, 1],
-      [0, 3, 2],
-      [4, 5, 6],
-      [4, 6, 7],
-      [0, 1, 5],
-      [0, 5, 4],
-      [1, 2, 6],
-      [1, 6, 5],
-      [2, 3, 7],
-      [2, 7, 6],
-      [3, 0, 4],
-      [3, 4, 7]
-    ] as [number, number, number][],
-    semantics: [
-      'GroundSurface',
-      'GroundSurface',
-      'RoofSurface',
-      'RoofSurface',
-      ...Array(8).fill('WallSurface')
-    ]
-  };
-  const processed: ProcessedBuilding[] = ids.map(({ bid }) => ({
-    buildingId: bid,
-    footprintHash: 'a'.repeat(64),
-    method: 'footprint',
-    mesh: null,
-    selectedCandidate: null,
-    reason: 'fit_failed',
-    flags: [],
-    candidates: [
-      {
-        name: 'simplified',
-        mesh: null,
-        metrics: {
-          reason: 'fit_failed',
-          spikes: 0,
-          maeM: null,
-          validationSamples: 25,
-          validationCoverage: null
+it.each([false, true])(
+  'exports accepted siblings with complete partial-parent evidence (precision failure=%s)',
+  async (precisionFailure) => {
+    const db = await miniDuck();
+    await runSql(db);
+    const root = mkdtempSync(join(tmpdir(), 'roof-accepted-'));
+    const ids = await db.all<{ bid: string }>('SELECT bid FROM buildings ORDER BY bid');
+    const [bounds] = await db.all<{ w: number; s: number; e: number; n: number }>(
+      "SELECT ST_XMin(geom) w,ST_YMin(geom) s,ST_XMax(geom) e,ST_YMax(geom) n FROM pieces WHERE bid='b10' ORDER BY parcel_id LIMIT 1"
+    );
+    const { w, s, e, n } = bounds;
+    const mesh = {
+      vertices: [
+        [w, s, 0],
+        [e, s, 0],
+        [e, n, 0],
+        [w, n, 0],
+        [w, s, 10],
+        [e, s, 12],
+        [e, n, 12],
+        [w, n, 10]
+      ] as [number, number, number][],
+      triangles: [
+        [0, 2, 1],
+        [0, 3, 2],
+        [4, 5, 6],
+        [4, 6, 7],
+        [0, 1, 5],
+        [0, 5, 4],
+        [1, 2, 6],
+        [1, 6, 5],
+        [2, 3, 7],
+        [2, 7, 6],
+        [3, 0, 4],
+        [3, 4, 7]
+      ] as [number, number, number][],
+      semantics: [
+        'GroundSurface',
+        'GroundSurface',
+        'RoofSurface',
+        'RoofSurface',
+        ...Array(8).fill('WallSurface')
+      ]
+    };
+    const processed: ProcessedBuilding[] = ids.map(({ bid }) => ({
+      buildingId: bid,
+      footprintHash: 'a'.repeat(64),
+      method: 'footprint',
+      mesh: null,
+      selectedCandidate: null,
+      reason: 'fit_failed',
+      flags: [],
+      candidates: [
+        {
+          name: 'simplified',
+          mesh: null,
+          metrics: {
+            reason: 'fit_failed',
+            spikes: 0,
+            maeM: null,
+            validationSamples: 25,
+            validationCoverage: null
+          }
         }
-      }
-    ],
-    ground: null,
-    archives: []
-  }));
-  const b = processed.find((b) => b.buildingId === 'b10')!;
-  Object.assign(b, {
-    method: 'lidar_only',
-    flags: ['aerial_missing'],
-    diagnostics: { vegetation: ['aerial_partial_coverage'] },
-    mesh,
-    selectedCandidate: 'reference',
-    reason: null,
-    ground: { groundM: 31, method: 'near_ground', count: 50 },
-    returnCounts: { before: 100, retained: 90, rejected: 10, roofTraining: 60, validation: 25 }
-  });
-  b.candidates.push({
-    name: 'reference',
-    mesh,
-    metrics: {
+      ],
+      ground: null,
+      archives: []
+    }));
+    const b = processed.find((b) => b.buildingId === 'b10')!;
+    Object.assign(b, {
+      method: 'lidar_only',
+      flags: ['aerial_missing'],
+      diagnostics: { vegetation: ['aerial_partial_coverage'] },
+      mesh,
+      selectedCandidate: 'reference',
       reason: null,
-      spikes: 0,
-      maeM: 0.2,
-      validationSamples: 25,
-      validationCoverage: 1,
-      roofCoverage: 1,
-      maxHeightM: 12,
-      triangleCount: 12,
-      roofSections: 1
+      ground: { groundM: 31, method: 'near_ground', count: 50 },
+      returnCounts: { before: 100, retained: 90, rejected: 10, roofTraining: 60, validation: 25 }
+    });
+    b.candidates.push({
+      name: 'reference',
+      mesh,
+      metrics: {
+        reason: null,
+        spikes: 0,
+        maeM: 0.2,
+        validationSamples: 25,
+        validationCoverage: 1,
+        roofCoverage: 1,
+        maxHeightM: 12,
+        triangleCount: 12,
+        roofSections: 1
+      }
+    });
+    if (precisionFailure) {
+      const original = roofRun.clipRoofPieces;
+      vi.spyOn(roofRun, 'clipRoofPieces').mockImplementationOnce(async (...args) => {
+        const clipped = await original(...args);
+        const siblings = clipped.filter((p) => p.buildingId === 'b10');
+        const accepted = siblings.find((p) => p.mesh)!;
+        const failed = siblings.find((p) => !p.mesh)!;
+        failed.mesh = accepted.mesh;
+        failed.reason = null;
+        accepted.mesh = precision.piece.mesh as typeof accepted.mesh;
+        return clipped;
+      });
     }
-  });
-  const result = await writeRoofArtifacts(db, processed, {
-    outDir: join(root, 'public'),
-    archiveDir: join(root, 'archive'),
-    datasetVersion: 'fixture-4'
-  });
-  const parent = result.audit.buildings.find((b) => b.buildingId === 'b10')!;
-  expect(parent.outcome).toBe('partly_modelled');
-  expect(parent.sources.imageryCoverage).toBe('partial');
-  expect(parent.processing.attempts.map((a) => a.outcome)).toEqual(['failed', 'accepted']);
-  expect(parent.quality.validationMae).toEqual({ value: 0.2, unavailableReason: null });
-  expect(parent.followUp).toMatchObject({ revisit: true, reasons: ['parcel_clip_failed'] });
-  expect(
-    result.audit.pieces
-      .filter((p) => p.buildingId === 'b10')
-      .map((p) => p.outcome)
-      .sort()
-  ).toEqual(['footprint_fallback', 'modelled']);
-  expect(result.index.chunks).toHaveLength(1);
-  expect(result.archives.some((a) => a.name.endsWith('-clip.json'))).toBe(true);
-  const header = JSON.parse(
-    readFileSync(join(root, 'public/roofs', result.index.chunks[0].chunkId + '.json'), 'utf8')
-  );
-  expect(header.pieces).toHaveLength(1);
-  expect(header.pieces[0].buildingId).toBe('b10');
-  const modelled = result.audit.pieces.find(
-    (p) => p.buildingId === 'b10' && p.outcome === 'modelled'
-  )!;
-  expect(modelled.bbox).not.toEqual(parent.bbox);
-});
+    const result = await writeRoofArtifacts(db, processed, {
+      outDir: join(root, 'public'),
+      archiveDir: join(root, 'archive'),
+      datasetVersion: 'fixture-4'
+    });
+    const parent = result.audit.buildings.find((b) => b.buildingId === 'b10')!;
+    expect(parent.outcome).toBe('partly_modelled');
+    expect(parent.sources.imageryCoverage).toBe('partial');
+    expect(parent.processing.attempts.map((a) => a.outcome)).toEqual(['failed', 'accepted']);
+    expect(parent.quality.validationMae).toEqual({ value: 0.2, unavailableReason: null });
+    expect(parent.followUp).toMatchObject({
+      revisit: true,
+      reasons: [precisionFailure ? 'invalid_geometry' : 'parcel_clip_failed']
+    });
+    expect(
+      result.audit.pieces
+        .filter((p) => p.buildingId === 'b10')
+        .map((p) => p.outcome)
+        .sort()
+    ).toEqual(['footprint_fallback', 'modelled']);
+    expect(result.index.chunks).toHaveLength(1);
+    expect(result.archives.some((a) => a.name.endsWith('-clip.json'))).toBe(true);
+    const header = JSON.parse(
+      readFileSync(join(root, 'public/roofs', result.index.chunks[0].chunkId + '.json'), 'utf8')
+    );
+    expect(header.pieces).toHaveLength(1);
+    expect(header.pieces[0].buildingId).toBe('b10');
+    const modelled = result.audit.pieces.find(
+      (p) => p.buildingId === 'b10' && p.outcome === 'modelled'
+    )!;
+    expect(modelled.bbox).not.toEqual(parent.bbox);
+    if (precisionFailure) {
+      const failed = result.audit.pieces.find(
+        (p) => p.buildingId === 'b10' && p.reason === 'invalid_geometry'
+      )!;
+      expect(failed.outcome).toBe('footprint_fallback');
+      expect(header.pieces.some((p: { pieceId: string }) => p.pieceId === failed.pieceId)).toBe(
+        false
+      );
+      expect(result.counts['roofs.modelled']).toBe(1);
+      expect(result.counts['roofs.reason.invalid_geometry']).toBe(1);
+      expect(result.counts['roofs.fallback']).toBe(result.audit.pieces.length - 1);
+      const ref = result.archives.find((a) => a.name === 'b10-clip.json')!;
+      const archived = JSON.parse(readFileSync(join(root, 'archive', ref.sha256), 'utf8'));
+      expect(
+        archived.pieces.find((p: { pieceId: string }) => p.pieceId === failed.pieceId)
+      ).toMatchObject({ mesh: null, reason: 'invalid_geometry' });
+      expect(archived.exportRejections).toHaveLength(1);
+      expect(archived.exportRejections[0]).toMatchObject({
+        pieceId: failed.pieceId,
+        reason: 'invalid_geometry',
+        stage: 'float32_export',
+        mesh: precision.piece.mesh
+      });
+      expect(archived.exportRejections[0].anchor).toHaveLength(2);
+      const rejected = archived.exportRejections[0];
+      expect(() =>
+        prepareRoofPiece({
+          pieceId: rejected.pieceId,
+          buildingId: 'b10',
+          parcelId: failed.parcelId,
+          method: 'lidar_only',
+          cellId: '50_25',
+          anchor: rejected.anchor,
+          projectedOrigin: rejected.projectedOrigin,
+          bbox: failed.bbox,
+          mesh: {
+            ...rejected.mesh,
+            vertices: rejected.mesh.vertices.map((v: [number, number, number]) =>
+              projectedToLocal(v, rejected.anchor)
+            )
+          }
+        } as ExportPiece)
+      ).toThrow('invalid serialized roof geometry');
+      expect(result.counts['roofs.modelled_area_m2']).toBeGreaterThan(0);
+      expect(result.counts['roofs.fallback_area_m2']).toBeGreaterThan(0);
+    }
+    vi.restoreAllMocks();
+  }
+);
