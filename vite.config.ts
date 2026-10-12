@@ -6,6 +6,11 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],
   build: {
+    // Signoff polices stderr. Plugin timing advice is not a build correctness diagnostic;
+    // keep it for ordinary builds, while retaining every other bundler warning in signoff.
+    rolldownOptions: {
+      checks: { bundlerTimings: process.env.CHREODE_SIGNOFF !== '1' }
+    },
     // The largest client chunk (~1.1 MB) is the MapLibre GL bundle. The limit sits just above it, so a
     // jump in chunk size past 1.2 MB warns again.
     chunkSizeWarningLimit: 1200
