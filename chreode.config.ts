@@ -30,6 +30,22 @@ export default defineConfig({
     },
     { label: 'lint:workflows', run: 'npm run lint:workflows', when: ['workflows'] }
   ],
+  stderrAllowlist: [
+    // e2e/cache-headers.spec.ts and e2e/pages-a11y.spec.ts request /no-such-page on purpose;
+    // wrangler dev logs each 404 to stderr as this three-line block.
+    {
+      pattern: /^\[WebServer\] ✘ \[ERROR\]\s*$/,
+      reason: 'header of the expected /no-such-page 404 log block from wrangler dev'
+    },
+    {
+      pattern: /^\[WebServer\]\s+\[404\] GET \/no-such-page\s*$/,
+      reason: 'the expected /no-such-page 404 that the e2e cache-headers and a11y specs request'
+    },
+    {
+      pattern: /^\[WebServer\]\s*$/,
+      reason: 'empty spacer lines wrangler dev prints around each log block'
+    }
+  ],
   // npm ci also runs prepare (wrangler types / svelte-kit sync) for the merged tree.
   afterMerge: 'npx -y npm@11.21.0 ci'
 });
