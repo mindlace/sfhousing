@@ -29,7 +29,7 @@ jobs:
       - run: npm run test:unit
       - run: npm run data:fixture
       - run: npm run db:migrate
-      - run: npm run test:e2e -- --project=chromium --project=mobile
+      - run: npm run test:e2e -- --project=chromium --project=mobile --project=chromium-perf --project=mobile-perf
       - if: failure()
         uses: actions/upload-artifact@v4
         with:

@@ -2,10 +2,19 @@ import { defineConfig, devices } from '@playwright/test';
 
 const port = process.env.SFH_E2E_PORT ?? '4173';
 
+const perf = '**/*.perf.spec.ts';
+// bench/** is the headed GPU benchmark, run only via `npm run bench:map`.
+const ignored = ['fixtures/**', 'helpers/**', 'bench/**', perf];
+const desktop = devices['Desktop Chrome'];
+const mobile = {
+  ...devices['Desktop Chrome'],
+  viewport: { width: 375, height: 812 },
+  isMobile: true,
+  hasTouch: true
+};
+
 export default defineConfig({
   testDir: 'e2e',
-  // bench/** is the headed GPU benchmark, run only via `npm run bench:map`.
-  testIgnore: ['fixtures/**', 'helpers/**', 'bench/**'],
   fullyParallel: true,
   workers: process.env.SFH_E2E_WORKERS ? Number(process.env.SFH_E2E_WORKERS) : undefined,
   forbidOnly: !!process.env.CI,
@@ -13,16 +22,17 @@ export default defineConfig({
   reporter: process.env.CI ? [['github'], ['list']] : 'list',
   use: { baseURL: `http://localhost:${port}` },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'chromium', testIgnore: ignored, use: desktop },
+    { name: 'mobile', testIgnore: ignored, use: mobile },
+    // Wall-clock budgets run alone, after every parallel test: parallel workers compete for CPU and
+    // inflate the timings. The chain chromium+mobile -> chromium-perf -> mobile-perf keeps them serial.
     {
-      name: 'mobile',
-      use: {
-        ...devices['Desktop Chrome'],
-        viewport: { width: 375, height: 812 },
-        isMobile: true,
-        hasTouch: true
-      }
-    }
+      name: 'chromium-perf',
+      testMatch: perf,
+      use: desktop,
+      dependencies: ['chromium', 'mobile']
+    },
+    { name: 'mobile-perf', testMatch: perf, use: mobile, dependencies: ['chromium-perf'] }
   ],
   webServer: {
     // VITE_E2E=1 compiles the map debug hook (window.__sfhMap) into this build only.
