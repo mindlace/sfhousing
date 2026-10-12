@@ -8,6 +8,8 @@ build/
 worker-configuration.d.ts
 test-results/
 playwright-report/
+# chreode's flake log
+.chreode/
 /scratch/
 pipeline/.cache/
 pipeline/out/
