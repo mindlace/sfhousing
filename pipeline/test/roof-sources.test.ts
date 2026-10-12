@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -106,7 +107,20 @@ test('confirmed aerial downloads preserve exact tile URL and fail a listed hash 
       'sha256 mismatch'
     );
     enabled.aerial.tiles[0].sha256 = undefined;
-    const entries = await fetchRoofSources({ rawDir: dir, config: enabled, http });
+    await expect(fetchRoofSources({ rawDir: dir, config: enabled, http })).rejects.toThrow(
+      'aerial image'
+    );
+    const image = spawnSync('pipeline/.venv/bin/python', [
+      '-c',
+      'from PIL import Image; import sys; Image.new("RGB",(512,512)).save(sys.stdout.buffer,format="PNG")'
+    ]).stdout;
+    const validHttp: Http = {
+      get: async (url) =>
+        url.startsWith('https://imagery.test/')
+          ? { status: 200, headers: new Headers(), body: image }
+          : base.http.get(url)
+    };
+    const entries = await fetchRoofSources({ rawDir: dir, config: enabled, http: validHttp });
     expect(entries[1].files[0].url).toBe('https://imagery.test/19/0/0.png');
     expect(entries[1].spatial?.tiles?.[0].width).toBe(512);
     const bbox = entries[1].spatial!.coverage[0].bbox;
@@ -114,6 +128,46 @@ test('confirmed aerial downloads preserve exact tile URL and fail a listed hash 
     expect(bbox[1]).toBeCloseTo(85.0510695448, 9);
     expect(bbox[2]).toBeCloseTo(-179.9993133545, 9);
     expect(bbox[3]).toBeCloseTo(85.0511287798, 9);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('SF acquisition converts physical 50m support to Mercator scale at the coverage edge', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'roof-sf-support-'));
+  const lng = -122.413,
+    lat = 37.754;
+  const x = ((lng * Math.PI) / 180) * 6378137;
+  const y = Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) * 6378137;
+  const sf: RoofSourceConfig = {
+    ...config,
+    coverage: [{ id: 'sf', bbox: [lng, lat, lng + 0.00001, lat + 0.00001] }]
+  };
+  const objects: Record<string, unknown> = {
+    'ept.json': {
+      dataType: 'laszip',
+      bounds: [x - 585, y - 640, 0, x + 695, y + 640, 1280],
+      srs: { horizontal: '3857' }
+    },
+    'ept-hierarchy/0-0-0-0.json': { '7-64-64-0': 1, '7-66-64-0': 1 },
+    'ept-data/7-64-64-0.laz': 'within physical support'
+  };
+  const calls: string[] = [];
+  const http: Http = {
+    async get(url) {
+      const key = url.replace(sf.lidar.url, '');
+      calls.push(key);
+      return {
+        status: objects[key] === undefined ? 404 : 200,
+        headers: new Headers(),
+        body: new TextEncoder().encode(JSON.stringify(objects[key]))
+      };
+    }
+  };
+  try {
+    const entries = await fetchRoofSources({ rawDir: dir, config: sf, http });
+    expect(entries[0].files.some((f) => f.name === 'ept-data/7-64-64-0.laz')).toBe(true);
+    expect(calls).not.toContain('ept-data/7-66-64-0.laz');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

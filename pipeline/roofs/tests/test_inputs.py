@@ -47,3 +47,22 @@ class InputsTest(unittest.TestCase):
             Path(sources[0]['path']).write_bytes(b'bad')
             with self.assertRaisesRegex(ValueError,'sha256 mismatch'):
                 load_points(job)
+
+    def test_sf_physical_50m_support_boundary_survives_mercator_source_crop(self):
+        from pyproj import Transformer
+        tx = Transformer.from_crs('EPSG:4326','EPSG:7131',always_xy=True)
+        x,y = tx.transform(-122.413,37.754)
+        mercator = Transformer.from_crs('EPSG:7131','EPSG:3857',always_xy=True)
+        xx,yy = mercator.transform([x-49.9,x-50.1,x+1],[y,y,y])
+        with tempfile.TemporaryDirectory() as d:
+            las = laspy.LasData(laspy.LasHeader(point_format=6,version='1.4'))
+            las.header.scales = [.001,.001,.001]
+            las.header.offsets = [xx[0],yy[0],0]
+            las.x = np.array(xx); las.y = np.array(yy); las.z = np.array([10,10,10])
+            las.classification = np.array([2,2,1],dtype=np.uint8)
+            path = Path(d)/'sf.laz'; las.write(path)
+            source = {'kind':'lidar','path':str(path),'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'horizontalCrs':'EPSG:3857','supportBufferM':50,'coverage':[{'id':'sf','bbox':[-122.413,37.754,-122.412,37.755]}]}
+            buildings = [{'buildingId':'inside','bbox':[x,y,x+10,y+10]}]+[{'buildingId':f'far-{i}','bbox':[0,0,1,1]} for i in range(100)]
+            points = load_points({'sources':[source],'buildings':buildings})
+            self.assertEqual(points['inside']['ordinal'].tolist(),[0,2])
+            self.assertTrue(all(len(points[b['buildingId']])==0 for b in buildings[1:]))

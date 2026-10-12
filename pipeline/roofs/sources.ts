@@ -1,3 +1,5 @@
+import { run } from '../lib/exec';
+import { ROOF_PYTHON } from './setup';
 import type { Http } from '../lib/http';
 import type { LockEntry, LockSpatial } from '../lib/lock';
 import { storeBytes } from '../lib/raw';
@@ -156,7 +158,19 @@ export async function fetchRoofSources(opts: {
         .replace('{z}', '19')
         .replace('{x}', String(tile.x))
         .replace('{y}', String(tile.y));
-      await get(`aerial/19/${tile.x}/${tile.y}.png`, url, tile.sha256);
+      const bytes = await get(`aerial/19/${tile.x}/${tile.y}.png`, url, tile.sha256);
+      const inspected = await run(
+        ROOF_PYTHON,
+        [
+          '-c',
+          'import sys,io,base64,json; from PIL import Image; image=Image.open(io.BytesIO(base64.b64decode(sys.stdin.read()))); image.load(); print(json.dumps([image.format,*image.size]))'
+        ],
+        { input: Buffer.from(bytes).toString('base64') }
+      );
+      if (inspected.code !== 0) throw new Error('corrupt aerial image');
+      const [format, width, height] = JSON.parse(inspected.stdout) as [string, number, number];
+      if (format !== 'PNG' || width !== 512 || height !== 512)
+        throw new Error('aerial image format/dimensions disagree with zoom-19 raster transform');
       const lat = (y: number) =>
         (Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / 2 ** 19))) * 180) / Math.PI;
       aerialCoverage.push({

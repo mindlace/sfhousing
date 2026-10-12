@@ -97,3 +97,26 @@ Permission evidence: the [official aerial catalog metadata](https://data.sfgov.o
 attributes SF Planning but supplies no permission terms. Its title/description lag current
 imagery years, so it does not establish 2023 imagery rights. This absence is recorded as
 unconfirmed permission, never as permission to derive distributable geometry.
+
+`runRoofJob` is the offline reconstruction boundary. Every building receives an accepted
+mesh or a footprint fallback; nominal source coverage must contain its complete footprint
+before point loading. Spatially indexed batches verify all locked inputs once and load
+only intersecting nodes. Ground, training-only vegetation evidence, simplified/reference
+candidates, bounded spike retry and common validation samples are audited separately.
+An absent or unpermitted aerial can leave a valid LiDAR-only result; corrupt required
+images, unavailable tools and incomplete runner results fail the job.
+
+Build-only evidence is content-addressed under `roof-processing/<sha256>.<ext>` and cached
+in `pipeline/.cache/roof-artifacts/<sha256>`. Each building's portable input record points
+to complete source lock references, processing config/code/toolchain/override descriptors,
+source extracts and candidates. Structured arrays use deterministic gzip-compressed
+`.npy.gz` with original source SHA/ordinal identity; read with gzip then NumPy with
+`allow_pickle=False`. Scratch paths and timing fields are excluded from portable evidence.
+
+The real LiDAR regression fixtures and their provenance are documented in
+`pipeline/test/fixtures/roofs/README.md`. `npm run test:roofs` runs the complete pinned
+Python reconstruction suite. `ROOF_LOCAL_AERIAL_RESEARCH=1 npm run test:roofs` additionally
+uses locally cached original aerials for the Whole Foods research comparison; no real
+imagery is redistributed, and this opt-in does not establish published derivation rights.
+The Salesforce authored loft is retained with exact production identity/hash and evidence,
+but its current coverage fails the unchanged product checks and therefore falls back.

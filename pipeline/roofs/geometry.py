@@ -54,7 +54,12 @@ def load_points(job: dict) -> dict[str, np.ndarray]:
     from pyproj import Transformer
     dtype = np.dtype([('x','<f8'),('y','<f8'),('z','<f8'),('classification','u1'),
                       ('sourceSha','U64'),('ordinal','<u8')])
-    result = {b['buildingId']:[] for b in job['buildings']}
+    from shapely.geometry import box
+    from shapely import STRtree
+    buildings = job['buildings']
+    result = {b['buildingId']:[] for b in buildings}
+    largest_buffer = max((s['supportBufferM'] for s in job['sources'] if s['kind']=='lidar'),default=50)
+    support_index = STRtree([box(*b['bbox']).buffer(largest_buffer,cap_style='square',join_style='mitre') for b in buildings])
     # Stable source order, independent of acquisition completion or lock ordering.
     sources = sorted((s for s in job['sources'] if s['kind']=='lidar'),key=lambda s:(s['sha256'],s['path']))
     seen = set()
@@ -64,10 +69,20 @@ def load_points(job: dict) -> dict[str, np.ndarray]:
             continue
         seen.add(sha)
         path = Path(source['path'])
-        with path.open('rb') as handle:
-            actual = hashlib.file_digest(handle,'sha256').hexdigest()
-        if actual != sha:
-            raise ValueError('sha256 mismatch: '+str(path))
+        metadata = job.get('_verifiedSources',{}).get(sha)
+        if metadata is None:
+            with path.open('rb') as handle:
+                actual = hashlib.file_digest(handle,'sha256').hexdigest()
+            if actual != sha:
+                raise ValueError('sha256 mismatch: '+str(path))
+            with laspy.open(path) as reader:
+                w,s = reader.header.mins[:2]; e,n = reader.header.maxs[:2]
+            if source['horizontalCrs'] != 'EPSG:7131':
+                w,s,e,n = Transformer.from_crs(source['horizontalCrs'],'EPSG:7131',always_xy=True).transform_bounds(w,s,e,n,densify_pts=21)
+            metadata = [w,s,e,n]
+        shortlist = support_index.query(box(*metadata))
+        if not len(shortlist):
+            continue
         las = laspy.read(path)
         a = np.empty(len(las.points),dtype=dtype)
         x,y = np.asarray(las.x),np.asarray(las.y)
@@ -89,13 +104,15 @@ def load_points(job: dict) -> dict[str, np.ndarray]:
                 cw,cs,ce,cn = transformer.transform_bounds(*coverage['bbox'],densify_pts=21)
                 support = source['supportBufferM']
                 coverage_mask |= (x>=cw-support)&(x<=ce+support)&(y>=cs-support)&(y<=cn+support)
-        for building in job['buildings']:
+        for index in shortlist:
+            building = buildings[int(index)]
             w,s,e,n = building['bbox']
             buffer = source['supportBufferM']
             if buffer < 50:
                 raise ValueError('insufficient ground support buffer')
             mask = coverage_mask&(x>=w-buffer)&(x<=e+buffer)&(y>=s-buffer)&(y<=n+buffer)
-            result[building['buildingId']].append(a[mask])
+            if mask.any():
+                result[building['buildingId']].append(a[mask])
     return {key:np.concatenate(arrays) if arrays else np.empty(0,dtype=dtype) for key,arrays in result.items()}
 
 

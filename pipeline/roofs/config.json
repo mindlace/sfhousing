@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "algorithm": "rooflines-rgb-pca-1",
+  "split": "sha256-ascii-sourceSha-colon-originalOrdinal-first-four-big-endian-modulo5",
+  "cellM": 0.5,
+  "pcaNeighbors": 48,
+  "green": { "excess": 15, "redRatio": 0.85, "blueRatio": 1.15, "minimum": 25, "saturation": 0.28 },
+  "morphologyGroundM": { "close": 0.24, "dilate": 0.6 },
+  "roughnessM": 0.06,
+  "spreadM": 1.5,
+  "smoothRoughnessM": 0.025,
+  "supportNeighbors": 32,
+  "supportDistanceM": 6,
+  "aboveSupportM": 2,
+  "ground": { "bufferM": 4, "percentile": 5, "nearestM": 50 },
+  "candidates": { "simplified": [0.4, 50], "reference": [0.888, 15], "retry": [0.6, 50] },
+  "acceptance": {
+    "roofCoverage": 0.98,
+    "validationCoverage": 0.95,
+    "trainingReturns": 50,
+    "validationSamples": 20,
+    "heightRangeM": [2.5, 340],
+    "triangles": 512,
+    "landmarkTriangles": 16384
+  }
+}

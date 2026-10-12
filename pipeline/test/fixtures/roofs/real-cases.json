@@ -1,0 +1,158 @@
+[
+  {
+    "label": "wholefoods",
+    "site": "hillside",
+    "building": {
+      "buildingId": "3016508c-f86a-46dd-b8b9-869ee552395f",
+      "footprint": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [49661.836, 24237.137],
+            [49664.39, 24204.561],
+            [49671.669, 24205.128],
+            [49703.685, 24207.621],
+            [49701.132, 24240.13],
+            [49690.812, 24239.34],
+            [49685.647, 24243.978],
+            [49673.785, 24242.977],
+            [49669.653, 24237.726],
+            [49661.836, 24237.137]
+          ]
+        ]
+      },
+      "footprintHash": "b1664cf0fdbc1062bc3b845e3096d4a0b5dadd26b52f82a12f2cc8026928670c",
+      "horizontalCrs": "EPSG:7131",
+      "heightM": 6.8,
+      "baseM": 0,
+      "hs": 0,
+      "bbox": [49661.836, 24204.561, 49703.685, 24243.978],
+      "neighborhood": null,
+      "sourceDates": {
+        "acquisitionStart": null,
+        "acquisitionEnd": null
+      }
+    },
+    "file": "wholefoods.laz",
+    "sha256": "da46cf67b62431e4207542190e08b587648cee08f38f42de62dd1e561f720ab3",
+    "pointCount": 446413,
+    "identity": "derived-file-sha256:derived-file-original-point-ordinal",
+    "upstream": {
+      "source": "USGS CA_SanFrancisco_1_B23",
+      "license": "public-domain",
+      "url": "https://s3-us-west-2.amazonaws.com/usgs-lidar-public/CA_SanFrancisco_1_B23/",
+      "derivedFrom": "hillside-points.npy",
+      "derivedFromSha256": "4269979667a41f0e3d3106f8c3db864afa8186d495ce42eb590a361c42b09640",
+      "note": "Research NPY did not preserve original EPT ordinals. Derived LAZ ordinals identify only this extract."
+    }
+  },
+  {
+    "label": "corner-cap",
+    "site": "hillside",
+    "building": {
+      "buildingId": "a96b2333-08e3-4167-b7d6-6b21ba3ad017",
+      "footprint": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [49735.977, 24244.022],
+            [49736.604, 24234.521],
+            [49737.768, 24234.588],
+            [49737.865, 24233.156],
+            [49737.239, 24233.112],
+            [49737.602, 24227.562],
+            [49738.413, 24227.618],
+            [49738.519, 24225.986],
+            [49744.203, 24226.354],
+            [49743.646, 24234.911],
+            [49744.457, 24234.967],
+            [49743.944, 24242.847],
+            [49743.829, 24244.634],
+            [49738.885, 24244.311],
+            [49738.823, 24245.277],
+            [49736.823, 24245.143],
+            [49736.893, 24244.089],
+            [49735.977, 24244.022]
+          ]
+        ]
+      },
+      "footprintHash": "0ebda9409bb3f2170e03193bb287324a096a3bc84fd17092be465cb5911cd34c",
+      "horizontalCrs": "EPSG:7131",
+      "heightM": 7.0,
+      "baseM": 0,
+      "hs": 0,
+      "bbox": [49735.977, 24225.986, 49744.457, 24245.277],
+      "neighborhood": null,
+      "sourceDates": {
+        "acquisitionStart": null,
+        "acquisitionEnd": null
+      }
+    },
+    "file": "corner-cap.laz",
+    "sha256": "3744ff911f395b734aedf88f19c4ac768c8cb6f88d36ee86267aebef2b4526c0",
+    "pointCount": 228499,
+    "identity": "derived-file-sha256:derived-file-original-point-ordinal",
+    "upstream": {
+      "source": "USGS CA_SanFrancisco_1_B23",
+      "license": "public-domain",
+      "url": "https://s3-us-west-2.amazonaws.com/usgs-lidar-public/CA_SanFrancisco_1_B23/",
+      "derivedFrom": "hillside-points.npy",
+      "derivedFromSha256": "4269979667a41f0e3d3106f8c3db864afa8186d495ce42eb590a361c42b09640",
+      "note": "Research NPY did not preserve original EPT ordinals. Derived LAZ ordinals identify only this extract."
+    }
+  },
+  {
+    "label": "protected-pitch",
+    "site": "mission",
+    "building": {
+      "buildingId": "3a56e932-d9d8-49dd-b05e-5662ec65b7b5",
+      "footprint": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [51205.401, 24452.607],
+            [51205.472, 24451.575],
+            [51206.056, 24443.206],
+            [51206.435, 24443.24],
+            [51206.799, 24438.101],
+            [51207.786, 24438.168],
+            [51208.308, 24430.809],
+            [51213.472, 24431.166],
+            [51212.967, 24438.458],
+            [51214.042, 24438.525],
+            [51213.972, 24439.602],
+            [51214.544, 24439.647],
+            [51213.702, 24451.656],
+            [51212.883, 24451.6],
+            [51212.777, 24453.12],
+            [51205.921, 24452.64],
+            [51205.401, 24452.607]
+          ]
+        ]
+      },
+      "footprintHash": "688746cd7ef53230facc9c8e1feef73d64a1f0db5cfe9f95953af6338a2aa342",
+      "horizontalCrs": "EPSG:7131",
+      "heightM": 12.0,
+      "baseM": 0,
+      "hs": 0,
+      "bbox": [51205.401, 24430.809, 51214.544, 24453.12],
+      "neighborhood": null,
+      "sourceDates": {
+        "acquisitionStart": null,
+        "acquisitionEnd": null
+      }
+    },
+    "file": "protected-pitch.laz",
+    "sha256": "fedff711c8388b35979df35f4413ea479da801d29b04b15bc77333a43b0c07aa",
+    "pointCount": 238701,
+    "identity": "derived-file-sha256:derived-file-original-point-ordinal",
+    "upstream": {
+      "source": "USGS CA_SanFrancisco_1_B23",
+      "license": "public-domain",
+      "url": "https://s3-us-west-2.amazonaws.com/usgs-lidar-public/CA_SanFrancisco_1_B23/",
+      "derivedFrom": "mission-points.npy",
+      "derivedFromSha256": "95c60158b4ba2f1419f9e9e5fd43e2dbf72634ce4c730c2f6b308ce8b410ff41",
+      "note": "Research NPY did not preserve original EPT ordinals. Derived LAZ ordinals identify only this extract."
+    }
+  }
+]

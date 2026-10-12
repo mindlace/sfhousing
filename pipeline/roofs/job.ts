@@ -25,9 +25,63 @@ export interface RoofJob {
   datasetVersion: string;
   buildings: RoofInputBuilding[];
   sources: RoofInputSource[];
+  /** Original complete lock references, including EPT metadata/hierarchy objects. */
+  sourceArchives?: import('../lib/lock').LockFile[];
   /** Includes entries with no files, e.g. disabled aerials. */
   sourceStatus: { sourceId: string; spatial: LockSpatial }[];
   configPath: string;
   toolchainHash: string;
   workDir: string;
+}
+
+export interface RoofMesh {
+  vertices: [number, number, number][];
+  triangles: [number, number, number][];
+  semantics: string[];
+  roofPatchIds?: number[];
+}
+export interface CandidateMetrics {
+  reason: string | null;
+  roofCoverage?: number | null;
+  maxHeightM?: number | null;
+  triangleCount?: number;
+  roofSections?: number;
+  pitchedFraction?: number | null;
+  spikes: number;
+  maeM: number | null;
+  validationSamples: number;
+  validationCoverage: number | null;
+  negativeCorrectionM?: number | null;
+}
+export interface RoofCandidate {
+  name: 'simplified' | 'reference' | 'retry' | 'landmark';
+  mesh: RoofMesh | null;
+  metrics: CandidateMetrics;
+  complexity?: number;
+  planeSupport?: number;
+  trainingCount?: number;
+  error?: string | null;
+  rooferAttributes?: Record<string, unknown>;
+}
+export type RoofArchive = import('../lib/lock').LockFile;
+export interface ProcessedBuilding {
+  buildingId: string;
+  footprintHash: string;
+  method: 'lidar_aerial' | 'lidar_only' | 'landmark' | 'footprint';
+  mesh: RoofMesh | null;
+  selectedCandidate: RoofCandidate['name'] | null;
+  reason: string | null;
+  flags: string[];
+  candidates: RoofCandidate[];
+  ground: { groundM: number | null; method: string; count: number } | null;
+  archives: RoofArchive[];
+  returnCounts?: {
+    before: number;
+    retained: number;
+    rejected: number;
+    roofTraining: number;
+    validation: number;
+  };
+  override?: Record<string, unknown>;
+  followUp?: { revisit: boolean; reasons: string[] };
 }

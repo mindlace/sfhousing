@@ -92,6 +92,7 @@ export async function prepareRoofJob(
     datasetVersion: opts.datasetVersion,
     buildings,
     sources,
+    sourceArchives: entries.flatMap((entry) => entry.files),
     sourceStatus,
     configPath: join(ROOT, 'pipeline/roofs/config.json'),
     toolchainHash,
