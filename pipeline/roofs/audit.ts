@@ -112,9 +112,11 @@ export function buildRoofAudit(
             .sort((a, b) => cmp(a.sourceId, b.sourceId)) ?? [],
         imageryCoverage: b.diagnostics?.vegetation.includes('aerial_partial_coverage')
           ? 'partial'
-          : flags.includes('aerial_missing')
-            ? 'missing'
-            : 'unknown',
+          : b.diagnostics?.vegetation.includes('aerial_complete_coverage')
+            ? 'complete'
+            : flags.includes('aerial_missing')
+              ? 'missing'
+              : 'unknown',
         imageryAlignment:
           aerial?.alignment === 'verified'
             ? 'aligned'

@@ -167,6 +167,8 @@ def process_job(job):
     ids = [b['buildingId'] for b in job['buildings']]
     if len(set(ids)) != len(ids): raise ValueError('duplicate input building ids')
     config = json.loads(Path(job['configPath']).read_text())
+    if hashlib.sha256(json.dumps(config,sort_keys=True,separators=(',',':')).encode()).hexdigest() != 'baa8b9073fb582197d293438a4d46ef52ce4a89b34d684585f98ff66e88e3de7':
+        raise ValueError('unsupported roof configuration: restore the approved schemaVersion 1 config or implement the changed thresholds')
     config['workDir'] = job['workDir']
     images = validate_aerials(job)
     # Verify every locked input once, including nodes outside the selected buildings.
@@ -189,7 +191,7 @@ def process_job(job):
     support = max((s['supportBufferM'] for s in node_sources),default=50)
     archive = Archive(Path(job['workDir'])/'artifacts')
     config_ref = archive.save(Path(job['configPath']).read_bytes(),'config.json')
-    dependency_refs = [archive.save((ROOT/'pipeline/roofs'/name).read_bytes(),name) for name in ['toolchain.json','requirements.txt','config.json','source-config.json','job.ts','inputs.ts','run.ts','setup.ts','types.py','geometry.py','filter.py','fit.py','quality.py','process.py','overrides/salesforce.json']]
+    dependency_refs = [archive.save((ROOT/'pipeline/roofs'/name).read_bytes(),name) for name in ['toolchain.json','requirements.txt','config.json','source-config.json','job.ts','inputs.ts','run.ts','setup.ts','archives.ts','types.py','geometry.py','filter.py','fit.py','quality.py','process.py','overrides/salesforce.json']]
     source_refs = archive.json({'sources':[{k:v for k,v in s.items() if k!='path'} for s in job['sources']],'sourceStatus':job['sourceStatus'],'sourceArchives':job.get('sourceArchives',[])},'sources.json')
     coverage = source_coverage(job)
     eligible = [b for b in job['buildings'] if coverage.covers(shape(b['footprint']))]

@@ -92,3 +92,9 @@ class FilterTests(unittest.TestCase):
         self.assertFalse(result.rejected.any())
         self.assertEqual(result.flags,['vegetation_ambiguous'])
         self.assertEqual(result.diagnostics,['smooth_support_missing'])
+
+    def test_complete_raster_coverage_is_measured_and_retained_in_diagnostics(self):
+        f=load('filter')
+        p=np.array([(x,y,5.,1) for x in np.arange(1,4,.1) for y in np.arange(1,4,.1)],dtype=[('x','f8'),('y','f8'),('z','f8'),('classification','u1')])
+        result=f.vegetation_mask(p,np.full((100,100,3),80,dtype='u1'),{'left':0,'top':10,'pixelM':.1,'crs':'EPSG:7131'},{'cellM':.5})
+        self.assertIn('aerial_complete_coverage',result.diagnostics)

@@ -1,3 +1,4 @@
+import { checkRoofArtifacts } from '../roofs/check';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -279,5 +280,20 @@ export async function checkDataset(
 
   // V13 published versions are immutable: enforced by `upload`.
   add('V13', true, 'enforced at upload');
+  const roofs = m ? await checkRoofArtifacts(outDir, m) : null;
+  for (const id of ['V14', 'V15', 'V16'] as const) {
+    const failures = roofs?.failures.filter((f) => f.startsWith(id)) ?? ['manifest unavailable'];
+    if (
+      id === 'V16' &&
+      m?.buildingRoofs?.schemaVersion === 1 &&
+      roofs?.counts['roofs.buildings'] !== c['buildings.kept']
+    )
+      failures.push('roof audit count differs from retained SQL buildings');
+    add(
+      id,
+      failures.length === 0,
+      !m?.buildingRoofs ? 'roofs not enabled' : failures.join('; ') || 'roof artifacts verified'
+    );
+  }
   return out;
 }

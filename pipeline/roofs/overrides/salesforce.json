@@ -32734,6 +32734,6 @@
     "outsideRoofAreaM2": 0.003884747295278632,
     "outsideSilhouetteAreaM2": 29.578761758904367,
     "footprintAreaM2": 2670.5801145000673,
-    "reason": "invalid_geometry"
+    "reason": "roof_coverage_low"
   }
 }

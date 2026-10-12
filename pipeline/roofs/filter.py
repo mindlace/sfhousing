@@ -111,7 +111,7 @@ def vegetation_mask(training_points, image, raster_transform, config) -> MaskRes
             rejected[ids[group]] = True
     partial = not covered.all() or not full_cell_coverage.all()
     flags = ['aerial_missing'] if partial else []
-    diagnostics = ['aerial_partial_coverage'] if partial else []
+    diagnostics = ['aerial_partial_coverage'] if partial else ['aerial_complete_coverage']
     return MaskResult(rejected,np.array(bad,dtype=np.int64).reshape(-1,2),flags,diagnostics)
 
 

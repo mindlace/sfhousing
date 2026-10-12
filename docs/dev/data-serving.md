@@ -44,3 +44,19 @@ On every 200/206/304/412: `ETag` (R2 `httpEtag`), `Accept-Ranges: bytes`, `Last-
 ## Caching
 
 Browsers cache via `immutable`. The route itself makes no Cache API calls, but the `@sveltejs/adapter-cloudflare` worker wrapper puts cacheable responses (anything without `private`/`no-cache`/`no-store`, so full 200 `/data` responses with the 1-year `immutable` header) into `caches.default` and answers later matching requests from it; 206 partial responses are not stored by the Cache API. In production this is harmless because published versions are never modified, so a changed dataset means a new version path. Locally, `wrangler dev` persists that cache on disk under `.wrangler/state/v3/cache`, so re-loading a fixture under the same version would be served stale; `scripts/r2-load-local.ts` (`npm run data:fixture`) therefore purges `.wrangler/state/v3/cache` after loading.
+
+## Optional roof closure
+
+`buildingRoofs` adds index, audit and report URLs under the same dataset version. For schema 1,
+`roofs/index.json` discovers each chunk header and binary. Shared `roofArtifactUrls` validates
+all URLs before filesystem/network use; future schema versions retain only top-level discovery.
+`pipeline verify` streams the audit to disk, checks complete outcomes, and validates SHA-256
+against decoded header/mesh response bytes, including when HTTP transport applies compression.
+`data:local` fetches the supported index first, copies all nested files, streams large bodies,
+and purges the persisted local Cache API after success. Sprite and glyph-template handling
+remain unchanged.
+
+Canonical index bytes are compared exactly against the parsed compact serialization before
+using per-entry byte contributions. Noncanonical index bodies use the measured whole-index
+length conservatively, including whitespace and unknown fields. Header measurements always
+come from actual decoded body bytes, never Content-Length or a normalized reserialization.

@@ -22,7 +22,7 @@ const MINI = join(REPO_ROOT, 'pipeline/test/fixtures/mini');
 const E2E = join(REPO_ROOT, 'e2e/fixtures/data/fixture-0');
 const GOLDEN = join(MINI, 'golden');
 /** Deterministic outputs pinned by golden.test.ts (tile bytes and fonts are not compared). */
-const GOLDEN_FILES = ['parcels', 'manifest.json', 'neighborhoods.geojson', 'report.json'];
+const GOLDEN_FILES = ['parcels', 'roofs', 'manifest.json', 'neighborhoods.geojson', 'report.json'];
 
 const README = `# fixture-0
 

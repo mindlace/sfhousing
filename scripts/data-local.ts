@@ -1,15 +1,24 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { roofArtifactUrls } from '../src/lib/data/roof-paths';
+import { parseRoofIndex, type RoofIndex } from '../src/lib/data/building-roofs';
+import { createWriteStream, mkdirSync, mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DATASET_VERSION_RE, ManifestSchema, type Manifest } from '../src/lib/data/manifest';
 import { dataKey } from '../src/lib/server/data/key';
-import { putLocal } from './r2-put-local';
+import { localR2Target, contentTypeFor } from '../pipeline/lib/r2';
+import { IMMUTABLE } from '../pipeline/config';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 const SPRITE_SUFFIXES = ['.json', '.png', '@2x.json', '@2x.png'];
 
 /** Paths (relative to /data/<version>/) a complete local copy of the dataset needs. */
-export function collectDataPaths(manifest: Manifest, version: string): string[] {
+export function collectDataPaths(
+  manifest: Manifest,
+  version: string,
+  roofIndex?: RoofIndex
+): string[] {
   const prefix = `/data/${version}/`;
   const rel = (url: string): string => {
     if (!url.startsWith(prefix)) throw new Error(`URL ${url} is outside version ${version}`);
@@ -22,6 +31,8 @@ export function collectDataPaths(manifest: Manifest, version: string): string[] 
   paths.add(rel(manifest.buildingsTiles));
   paths.add(rel(manifest.basemapTiles));
   paths.add(rel(manifest.neighborhoods));
+  if (manifest.buildingRoofs)
+    for (const url of roofArtifactUrls(manifest.buildingRoofs, roofIndex)) paths.add(rel(url));
   for (const s of spriteVariants(manifest, version)) paths.add(s);
   return [...paths].sort();
 }
@@ -37,6 +48,73 @@ export function isSpritePath(manifest: Manifest, version: string, rel: string): 
   return spriteVariants(manifest, version).includes(rel);
 }
 
+export async function copyDataLocal(opts: {
+  version: string;
+  origin: string;
+  projectRoot: string;
+  fetch?: typeof fetch;
+  put?: (version: string, rel: string, file: string) => Promise<void>;
+}): Promise<number> {
+  const { version } = opts;
+  if (!DATASET_VERSION_RE.test(version)) throw new Error('invalid dataset version');
+  const base = opts.origin.replace(/\/$/, ''),
+    fetcher = opts.fetch ?? fetch;
+  const response = await fetcher(`${base}/data/${version}/manifest.json`);
+  if (!response.ok) throw new Error(`manifest fetch failed: ${response.status}`);
+  const manifest = ManifestSchema.parse(await response.json());
+  if (manifest.datasetVersion !== version) throw new Error('manifest version mismatch');
+  collectDataPaths(manifest, version);
+  const dir = mkdtempSync(join(tmpdir(), 'sfhousing-data-'));
+  const target = opts.put ? undefined : await localR2Target({ projectRoot: opts.projectRoot });
+  const put =
+    opts.put ??
+    (async (v, rel, file) => target!.put(`data/${v}/${rel}`, file, contentTypeFor(rel), IMMUTABLE));
+  let loaded = 0;
+  const download = async (rel: string, limit?: number) => {
+    const response = await fetcher(`${base}/data/${version}/${rel}`);
+    if (response.status === 404 && isSpritePath(manifest, version, rel)) return null;
+    if (!response.ok || !response.body) throw new Error(`fetch ${rel} failed: ${response.status}`);
+    const file = join(dir, rel);
+    mkdirSync(dirname(file), { recursive: true });
+    let total = 0;
+    await pipeline(
+      Readable.fromWeb(response.body as never),
+      async function* (source) {
+        for await (const bytes of source) {
+          total += bytes.length;
+          if (limit !== undefined && total > limit)
+            throw new Error('roof index exceeds byte limit');
+          yield bytes;
+        }
+      },
+      createWriteStream(file)
+    );
+    return file;
+  };
+  try {
+    let index: RoofIndex | undefined, indexRel: string | undefined;
+    if (manifest.buildingRoofs?.schemaVersion === 1) {
+      indexRel = manifest.buildingRoofs.indexUrl.slice(`/data/${version}/`.length);
+      const file = await download(indexRel, 8 * 1024 * 1024);
+      index = parseRoofIndex(JSON.parse(readFileSync(file!, 'utf8')), version);
+    }
+    const paths = collectDataPaths(manifest, version, index).sort((a, b) =>
+      a === 'manifest.json' ? 1 : b === 'manifest.json' ? -1 : a.localeCompare(b)
+    );
+    for (const rel of paths) {
+      const file = rel === indexRel ? join(dir, rel) : await download(rel);
+      if (!file) continue;
+      await put(version, rel, file);
+      loaded++;
+    }
+    rmSync(join(opts.projectRoot, '.wrangler/state/v3/cache'), { recursive: true, force: true });
+    return loaded;
+  } finally {
+    await target?.dispose();
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const fromIdx = args.indexOf('--from');
@@ -46,27 +124,11 @@ async function main(): Promise<void> {
     console.error('usage: data-local.ts <version> [--from <origin>]');
     process.exit(1);
   }
-  const base = origin.replace(/\/$/, '');
-  const mres = await fetch(`${base}/data/${version}/manifest.json`);
-  if (!mres.ok) throw new Error(`manifest fetch failed: ${mres.status}`);
-  const manifest = ManifestSchema.parse(await mres.json());
-  const paths = collectDataPaths(manifest, version);
-  const dir = mkdtempSync(join(tmpdir(), 'sfhousing-data-'));
-  let loaded = 0;
-  try {
-    for (const rel of paths) {
-      const res = await fetch(`${base}/data/${version}/${rel}`);
-      if (res.status === 404 && isSpritePath(manifest, version, rel)) continue;
-      if (!res.ok) throw new Error(`fetch ${rel} failed: ${res.status}`);
-      const file = join(dir, rel);
-      mkdirSync(dirname(file), { recursive: true });
-      writeFileSync(file, Buffer.from(await res.arrayBuffer()));
-      putLocal(version, rel, file);
-      loaded++;
-    }
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  const loaded = await copyDataLocal({
+    version,
+    origin,
+    projectRoot: new URL('..', import.meta.url).pathname
+  });
   console.warn(
     'Warning: glyphs is a {fontstack}/{range}.pbf template; glyph PBFs are not fetched.'
   );

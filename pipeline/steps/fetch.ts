@@ -1,9 +1,18 @@
+import { readFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { DATASET_VERSION_RE } from '../../src/lib/data/dataset-version';
+import {
+  restoreRoofArtifacts,
+  roofRawArchives,
+  parseRoofArchives,
+  ROOF_ARCHIVE_DIR
+} from '../roofs/archives';
 import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { openDuck } from '../lib/duck';
 import { nodeHttp, type Http } from '../lib/http';
 import { rawPath, readLock, sha256File, writeLock, type Lock, type LockEntry } from '../lib/lock';
-import { wranglerTarget, type R2Target } from '../lib/r2';
+import { wranglerTarget, localR2Target, type R2Target } from '../lib/r2';
 import { DATASF, fetchDatasf, type DatasfId } from '../sources/datasf';
 import { fetchRoofSources, type RoofSourceConfig } from '../roofs/sources';
 import roofSourceConfig from '../roofs/source-config.json';
@@ -28,6 +37,8 @@ export interface FetchOpts {
   release?: string;
   basemapDate?: string;
   restore?: boolean;
+  roofRun?: string;
+  roofArchiveDir?: string;
   local?: boolean;
   lockPath?: string;
   rawDir?: string;
@@ -86,10 +97,50 @@ export async function fetchAll(opts: FetchOpts = {}): Promise<number> {
       console.error(`no ${lockPath} to restore from`);
       return 1;
     }
-    const r2 = opts.r2 ?? wranglerTarget({ local: opts.local ?? false });
-    const { restored, present } = await restoreRaw(readLock(lockPath), rawDir, r2);
-    console.log(`restore: ${restored} downloaded, ${present} already present`);
-    return 0;
+    const r2 = opts.r2 ?? (opts.local ? await localR2Target() : wranglerTarget({ local: false }));
+    try {
+      const { restored, present } = await restoreRaw(readLock(lockPath), rawDir, r2);
+      if (opts.roofRun) {
+        if (!DATASET_VERSION_RE.test(opts.roofRun)) throw new Error('invalid roof run version');
+        const work = mkdtempSync(join(tmpdir(), 'roof-report-'));
+        try {
+          const path = join(work, 'report.json');
+          if (!(await r2.get(`data/${opts.roofRun}/report.json`, path)))
+            throw new Error('roof run report not found');
+          const report = JSON.parse(readFileSync(path, 'utf8'));
+          if (report.datasetVersion !== opts.roofRun)
+            throw new Error('roof report version mismatch');
+          await restoreRoofArtifacts(report, opts.roofArchiveDir ?? ROOF_ARCHIVE_DIR, r2);
+          const files = roofRawArchives(
+            parseRoofArchives(report),
+            opts.roofArchiveDir ?? ROOF_ARCHIVE_DIR
+          );
+          await restoreRaw(
+            {
+              sources: [
+                {
+                  id: 'roof-run',
+                  files,
+                  retrievedAt: '',
+                  upstreamVersion: '',
+                  rowCount: 0,
+                  license: '',
+                  homepage: ''
+                }
+              ]
+            },
+            rawDir,
+            r2
+          );
+        } finally {
+          rmSync(work, { recursive: true, force: true });
+        }
+      }
+      console.log(`restore: ${restored} downloaded, ${present} already present`);
+      return 0;
+    } finally {
+      if (!opts.r2) await r2.dispose?.();
+    }
   }
   const ids: readonly string[] = opts.only ? opts.only.split(',') : FETCH_IDS;
   const unknown = ids.filter((i) => !(FETCH_IDS as readonly string[]).includes(i));

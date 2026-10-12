@@ -3,10 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { verify } from '../steps/verify';
 
-const golden = readFileSync(
-  join(import.meta.dirname, 'fixtures/mini/golden/manifest.json'),
-  'utf8'
-);
+const golden = readFileSync(join(import.meta.dirname, 'fixtures/legacy/manifest.json'), 'utf8');
 const m = JSON.parse(golden) as { datasetVersion: string; chunks: { url: string }[] };
 const V = m.datasetVersion;
 

@@ -1,9 +1,17 @@
+import { checkRoofArtifacts } from '../roofs/check';
+import {
+  checkRoofArchives,
+  checkAuditArchiveClosure,
+  roofRawArchives,
+  ROOF_ARCHIVE_DIR
+} from '../roofs/archives';
+import type { RoofArchive } from '../roofs/job';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { DATASET_VERSION_RE } from '../../src/lib/data/dataset-version';
 import { parseManifest, type Manifest } from '../../src/lib/data/manifest';
 import { FONT_STACKS, IMMUTABLE } from '../config';
-import { lockSha256, rawPath, type Lock } from '../lib/lock';
+import { lockSha256, rawPath, sha256File, type Lock } from '../lib/lock';
 import { contentTypeFor, type R2Target } from '../lib/r2';
 
 const PRIVATE = 'private, no-store';
@@ -21,6 +29,8 @@ export interface UploadArgs {
   datasetVersion: string;
   lock: Lock;
   rawDir: string;
+  roofArchiveDir?: string;
+  rawByName?: boolean;
   target: R2Target;
   concurrency?: number;
   retries?: number;
@@ -68,8 +78,8 @@ interface BuildReport {
  * dataset. report.json must exist with every invariant ok and tiles built; every file the
  * manifest names (chunks, both PMTiles, neighborhoods, `0-255.pbf` per font stack) must exist;
  * and for a live version the lock being archived must be the lock that built it. Fixture
- * versions (`fixture-<n>`) archive nothing and are built from the committed mini lock, so the
- * lock check is skipped for them.
+ * versions (`fixture-<n>`) are built from the committed mini lock, so the lock check is
+ * skipped for them. Their original sources and roof processing archives are still archived.
  */
 export function datasetProblems(outDir: string, v: string, raw: unknown, lock: Lock): string[] {
   const problems: string[] = [];
@@ -145,6 +155,40 @@ export async function upload(a: UploadArgs): Promise<number> {
     return 1;
   }
   const problems = datasetProblems(a.outDir, v, raw, a.lock);
+  let roofArchives: RoofArchive[] = [];
+  let roofRaw: RoofArchive[] = [];
+  try {
+    const manifest = parseManifest(raw);
+    const roofs = await checkRoofArtifacts(a.outDir, manifest);
+    problems.push(...roofs.failures);
+    if (manifest.buildingRoofs?.schemaVersion === 1) {
+      const report = JSON.parse(readFileSync(join(a.outDir, 'report.json'), 'utf8'));
+      for (const id of ['V14', 'V15', 'V16'])
+        if (!report.invariants?.some((r: { id: string; ok: boolean }) => r.id === id && r.ok))
+          problems.push(`missing roof invariant ${id}`);
+      const archiveDir = a.roofArchiveDir ?? ROOF_ARCHIVE_DIR;
+      roofArchives = await checkRoofArchives(report, archiveDir);
+      await checkAuditArchiveClosure(
+        join(a.outDir, manifest.buildingRoofs.auditUrl.slice(`/data/${v}/`.length)),
+        v,
+        roofArchives,
+        archiveDir
+      );
+      roofRaw = roofRawArchives(roofArchives, archiveDir);
+      for (const ref of roofRaw) {
+        const path = rawPath(a.rawDir, ref, a.rawByName);
+        if (!existsSync(path) || (await sha256File(path)) !== ref.sha256)
+          throw new Error(`raw roof archive missing/hash mismatch: ${ref.name}`);
+      }
+      for (const [key, value] of Object.entries(roofs.counts))
+        if (report.counts?.[key] !== value)
+          problems.push(`roof build report count mismatch: ${key}`);
+      if (report.counts?.['buildings.kept'] !== roofs.counts['roofs.buildings'])
+        problems.push('roof audit misses retained SQL buildings');
+    }
+  } catch (error) {
+    problems.push((error as Error).message);
+  }
   if (problems.length > 0) {
     for (const p of problems) log(`refusing to upload: ${p}`);
     return 1;
@@ -168,12 +212,37 @@ export async function upload(a: UploadArgs): Promise<number> {
     return 1;
   }
 
-  for (const entry of a.lock.sources) {
-    for (const f of entry.files) {
-      if (await a.target.exists(f.archiveKey)) continue;
-      log(`archive ${f.archiveKey}`);
-      await a.target.put(f.archiveKey, rawPath(a.rawDir, f), 'application/octet-stream', PRIVATE);
+  const archives = [
+    ...a.lock.sources.flatMap((entry) =>
+      entry.files.map((ref) => ({ ref, file: rawPath(a.rawDir, ref, a.rawByName) }))
+    ),
+    ...roofRaw
+      .filter(
+        (ref) => !a.lock.sources.some((s) => s.files.some((f) => f.archiveKey === ref.archiveKey))
+      )
+      .map((ref) => ({ ref, file: rawPath(a.rawDir, ref, a.rawByName) })),
+    ...roofArchives.map((ref) => ({
+      ref,
+      file: join(a.roofArchiveDir ?? ROOF_ARCHIVE_DIR, ref.sha256)
+    }))
+  ];
+  const archiveFailures = await pool(archives, a.concurrency ?? 8, async ({ ref, file }) => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        if (!(await a.target.exists(ref.archiveKey)))
+          await a.target.put(ref.archiveKey, file, 'application/octet-stream', PRIVATE);
+        return;
+      } catch (error) {
+        if (attempt >= retries) throw error;
+        await sleep(200 * 2 ** attempt);
+      }
     }
+  });
+  if (archiveFailures.length) {
+    for (const failure of archiveFailures)
+      log(`failed archive: ${failure.item.ref.archiveKey}: ${String(failure.error)}`);
+    log('archive upload failed; manifest NOT published');
+    return 1;
   }
 
   const putWithRetry = async (rel: string) => {

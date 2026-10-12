@@ -110,6 +110,7 @@ it('runs a roof-enabled offline build with stable reports, archived evidence and
   const { run } = await import('../lib/exec');
   const root = mkdtempSync(join(tmpdir(), 'roof-full-build-'));
   const lock = readLock(join(MINI, 'sources.lock.json'));
+  lock.sources = lock.sources.filter((s) => !s.id.startsWith('roof-'));
   lock.sources.push({
     id: 'roof-lidar',
     files: [],

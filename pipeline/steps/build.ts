@@ -1,3 +1,4 @@
+import { archiveRoofDependencies } from '../roofs/archives';
 import {
   copyFileSync,
   cpSync,
@@ -182,9 +183,14 @@ export async function build(
         })
       );
       usedRoofSources = usedRoofSourceIds(processed.buildings);
+      roofs.archives.push(...(await archiveRoofDependencies()));
+      roofs.archives.sort((a, b) => a.archiveKey.localeCompare(b.archiveKey));
+      roofs.counts['roofs.archives'] = roofs.archives.length;
+      roofs.counts['roofs.archive_bytes'] = roofs.archives.reduce((n, a) => n + a.bytes, 0);
       const roofReportPath = join(outDir, 'roofs/report.json');
       const roofReport = JSON.parse(readFileSync(roofReportPath, 'utf8'));
       roofReport.builtAt = builtAt;
+      roofReport.counts = roofs.counts;
       if (!fixtureMode)
         roofReport.timings = {
           reconstruction: report.timings['roofs.reconstruct'],

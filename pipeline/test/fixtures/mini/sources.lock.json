@@ -146,6 +146,75 @@
       "retrievedAt": "2026-10-10T00:00:00.000Z",
       "rowCount": 4,
       "upstreamVersion": "028c18f713baecad011301ff7a69acc39bcc2ae7"
+    },
+    {
+      "files": [],
+      "homepage": "https://example.org/synthetic-fixture",
+      "id": "roof-aerial",
+      "license": "unconfirmed",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 0,
+      "spatial": {
+        "acquisitionEnd": null,
+        "acquisitionStart": null,
+        "alignment": "unverified",
+        "coverage": [],
+        "horizontalCrs": "EPSG:7131",
+        "horizontalUnits": "m",
+        "objects": [],
+        "permission": "unconfirmed",
+        "status": "disabled",
+        "supportBufferM": 50,
+        "verticalCrs": null,
+        "verticalUnits": "m"
+      },
+      "upstreamVersion": "disabled-fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/a03a35b70c723097ae64398ce08c467b6f2100af5e92fb0bdd80803caa7bc0b8.laz",
+          "bytes": 2330,
+          "name": "roof-lidar.laz",
+          "sha256": "a03a35b70c723097ae64398ce08c467b6f2100af5e92fb0bdd80803caa7bc0b8",
+          "url": "https://fixture.invalid/roof-lidar.laz"
+        }
+      ],
+      "homepage": "https://example.org/synthetic-fixture",
+      "id": "roof-lidar",
+      "label": "Synthetic roof returns",
+      "license": "CC0-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 1,
+      "spatial": {
+        "acquisitionEnd": null,
+        "acquisitionStart": null,
+        "alignment": "not-applicable",
+        "coverage": [
+          {
+            "bbox": [-122.4194886, 37.760036, -122.4193978, 37.7602342],
+            "id": "b01"
+          },
+          {
+            "bbox": [-122.4184332, 37.7600358, -122.418297, 37.7602339],
+            "id": "b10"
+          }
+        ],
+        "horizontalCrs": "EPSG:7131",
+        "horizontalUnits": "m",
+        "objects": [
+          {
+            "name": "roof-lidar.laz",
+            "sha256": "a03a35b70c723097ae64398ce08c467b6f2100af5e92fb0bdd80803caa7bc0b8",
+            "url": "https://fixture.invalid/roof-lidar.laz"
+          }
+        ],
+        "permission": "confirmed",
+        "supportBufferM": 50,
+        "verticalCrs": null,
+        "verticalUnits": "m"
+      },
+      "upstreamVersion": "fixture"
     }
   ]
 }

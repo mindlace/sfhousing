@@ -18,6 +18,7 @@ const files = (d: string) =>
 const golden = join(MINI, 'golden');
 const COMPARED = (f: string) =>
   f.startsWith('parcels/') ||
+  f.startsWith('roofs/') ||
   f === 'neighborhoods.geojson' ||
   f === 'manifest.json' ||
   f === 'report.json';
@@ -32,6 +33,11 @@ describe('pipeline fixture', () => {
     const fa = files(a).filter(COMPARED);
     expect(fa).toEqual(files(golden).filter(COMPARED));
     for (const f of fa) {
+      if (f.endsWith('.bin')) {
+        expect(readFileSync(join(a, f))).toEqual(readFileSync(join(golden, f)));
+        expect(readFileSync(join(a, f))).toEqual(readFileSync(join(b, f)));
+        continue;
+      }
       const ga = stripBuiltAt(readFileSync(join(a, f), 'utf8'));
       expect(ga, f).toBe(stripBuiltAt(readFileSync(join(golden, f), 'utf8')));
       expect(ga, f).toBe(stripBuiltAt(readFileSync(join(b, f), 'utf8')));
@@ -44,7 +50,7 @@ describe('pipeline fixture', () => {
     );
     // Spec §4.12: the report states the ODbL offer for the derived artifacts.
     expect(JSON.parse(readFileSync(join(a, 'report.json'), 'utf8')).license).toEqual({
-      artifacts: ['basemap.pmtiles', 'buildings.pmtiles', 'parcels/*'],
+      artifacts: ['basemap.pmtiles', 'buildings.pmtiles', 'parcels/*', 'roofs/*'],
       derivedData: 'ODbL-1.0',
       notice:
         'Derived data files under /data/ that incorporate OpenStreetMap or Overture data are made available under the ODbL 1.0.'
@@ -68,4 +74,19 @@ describe('pipeline fixture', () => {
       expect(readFileSync(join(e2e, f), 'utf8'), f).toBe(readFileSync(join(golden, f), 'utf8'));
     }
   });
+});
+
+it('generated mini includes a modelled multi-parcel building and explicit fallback outcomes', () => {
+  const manifest = JSON.parse(readFileSync(join(golden, 'manifest.json'), 'utf8'));
+  expect(manifest.buildingRoofs?.schemaVersion).toBe(1);
+  const audit = JSON.parse(readFileSync(join(golden, 'roofs/audit.json'), 'utf8'));
+  expect(audit.buildings.find((b: { buildingId: string }) => b.buildingId === 'b10')).toMatchObject(
+    {
+      outcome: 'fully_modelled',
+      pieceIds: expect.arrayContaining([expect.any(String), expect.any(String)])
+    }
+  );
+  expect(audit.pieces.some((p: { outcome: string }) => p.outcome === 'footprint_fallback')).toBe(
+    true
+  );
 });

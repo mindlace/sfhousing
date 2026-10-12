@@ -29,6 +29,12 @@
     "url": "https://tile.sf.gov/api/tiles/p2023_rgb8cm/{z}/{x}/{y}",
     "zoom": 19,
     "permission": "unconfirmed",
+    "permissionEvidence": {
+      "status": "No derivation or redistribution permission in official catalog metadata",
+      "metadataUrl": "https://data.sfgov.org/api/views/3keh-kpm9.json",
+      "reviewedAt": "2026-10-11",
+      "licenseTerms": null
+    },
     "alignment": "unverified",
     "enabled": false,
     "tiles": []

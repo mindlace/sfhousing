@@ -5,6 +5,7 @@ import { R2_BUCKET } from '../config';
 import { run as defaultRun, type RunResult } from './exec';
 
 export interface R2Target {
+  dispose?(): Promise<void>;
   exists(key: string): Promise<boolean>;
   put(key: string, file: string, contentType: string, cacheControl: string): Promise<void>;
   /** Download `key` to `file`. Returns false when the object does not exist; throws on any other failure. */
@@ -61,8 +62,8 @@ export function wranglerTarget(opts: { local: boolean; bucket?: string; run?: Ru
      * the object to a temp file and discards it. Fine for the tiny manifest probe. For the
      * `sources/<sha>` archive probes it costs a full download of every archive that is already
      * published (basemap/Overture archives can be hundreds of MB); the missing-archive case, the
-     * common first-publish one, fails fast. Accepted: re-uploads are rare and no new dependency
-     * (S3 client) is warranted.
+     * common first-publish one, fails fast. This transport is retained for compatibility;
+     * city-scale roof publication needs a reusable remote backend before release validation.
      */
     async exists(key) {
       const dir = mkdtempSync(join(tmpdir(), 'sfh-r2-'));
@@ -91,4 +92,55 @@ export function wranglerTarget(opts: { local: boolean; bucket?: string; run?: Ru
     }
   };
   return target;
+}
+
+/** One local worker for the complete operation, sharing Wrangler's v3 resource layout. */
+export async function localR2Target(
+  opts: { projectRoot?: string; bucket?: string } = {}
+): Promise<R2Target & { dispose(): Promise<void> }> {
+  const { Miniflare, convertV4MiniflareOptions } = await import('miniflare');
+  const { createReadStream, createWriteStream, statSync } = await import('node:fs');
+  const { Readable } = await import('node:stream');
+  const { pipeline } = await import('node:stream/promises');
+  const mf = new Miniflare(
+    convertV4MiniflareOptions({
+      modules: true,
+      script: `export default {async fetch(request,env){
+        if(request.method!=='PUT') return new Response(null,{status:405});
+        await env.BUCKET.put(decodeURIComponent(new URL(request.url).pathname.slice(1)),request.body,{httpMetadata:JSON.parse(request.headers.get('X-R2-Metadata'))});
+        return new Response(null,{status:204});
+      }}`,
+      resourcePersistencePath: join(opts.projectRoot ?? ROOT, '.wrangler/state/v3'),
+      r2Buckets: { BUCKET: opts.bucket ?? R2_BUCKET }
+    })
+  );
+  try {
+    const bucket = await mf.getR2Bucket('BUCKET');
+    return {
+      exists: async (key) => (await bucket.head(key)) !== null,
+      put: async (key, file, contentType, cacheControl) => {
+        const response = await mf.dispatchFetch(`http://localhost/${encodeURIComponent(key)}`, {
+          method: 'PUT',
+          body: createReadStream(file),
+          duplex: 'half',
+          headers: {
+            'Content-Length': String(statSync(file).size),
+            'X-R2-Metadata': JSON.stringify({ contentType, cacheControl })
+          }
+        });
+        if (response.status !== 204)
+          throw new Error(`local R2 put ${key}: ${response.status} ${await response.text()}`);
+      },
+      get: async (key, file) => {
+        const obj = await bucket.get(key);
+        if (!obj) return false;
+        await pipeline(Readable.fromWeb(obj.body as never), createWriteStream(file));
+        return true;
+      },
+      dispose: () => mf.dispose()
+    };
+  } catch (error) {
+    await mf.dispose();
+    throw error;
+  }
 }

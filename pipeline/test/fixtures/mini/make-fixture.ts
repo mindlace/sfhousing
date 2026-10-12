@@ -1,3 +1,5 @@
+import { run } from '../../../lib/exec';
+import { ROOF_PYTHON } from '../../../roofs/setup';
 /**
  * Generates the mini fixture raw sources + sources.lock.json (deterministic; output committed).
  * Run: npm run pipeline:... no — `npx tsx pipeline/test/fixtures/mini/make-fixture.ts`.
@@ -328,6 +330,53 @@ entries.push(
       `https://raw.githubusercontent.com/protomaps/basemaps-assets/${FONTS_COMMIT}/${name.replace('protomaps-fonts/', 'fonts/').replaceAll(' ', '%20')}`
   )
 );
+const roofGenerated = await run(ROOF_PYTHON, [path.join(here, 'make-roofs.py')]);
+if (roofGenerated.code !== 0) throw new Error(roofGenerated.stderr);
+const roofEntry = await binaryEntry(
+  'roof-lidar',
+  ['roof-lidar.laz'],
+  {
+    license: 'CC0-1.0',
+    homepage: 'https://example.org/synthetic-fixture',
+    label: 'Synthetic roof returns',
+    upstreamVersion: 'fixture'
+  },
+  () => 'https://fixture.invalid/roof-lidar.laz'
+);
+roofEntry.spatial = {
+  horizontalCrs: 'EPSG:7131',
+  verticalCrs: null,
+  horizontalUnits: 'm',
+  verticalUnits: 'm',
+  acquisitionStart: null,
+  acquisitionEnd: null,
+  coverage: [
+    { id: 'b01', bbox: [...ll([1, 4]), ...ll([9, 26])] },
+    { id: 'b10', bbox: [...ll([94, 4]), ...ll([106, 26])] }
+  ],
+  supportBufferM: 50,
+  permission: 'confirmed',
+  alignment: 'not-applicable',
+  objects: roofEntry.files.map((f) => ({ name: f.name, url: f.url, sha256: f.sha256 }))
+};
+entries.push(roofEntry);
+entries.push({
+  id: 'roof-aerial',
+  files: [],
+  retrievedAt: '2026-10-10T00:00:00.000Z',
+  upstreamVersion: 'disabled-fixture',
+  rowCount: 0,
+  license: 'unconfirmed',
+  homepage: 'https://example.org/synthetic-fixture',
+  spatial: {
+    ...roofEntry.spatial,
+    coverage: [],
+    objects: [],
+    permission: 'unconfirmed',
+    alignment: 'unverified',
+    status: 'disabled'
+  }
+});
 const lock: Lock = { sources: entries };
 writeLock(path.join(here, 'sources.lock.json'), lock);
 console.log(entries.map((e) => `${e.id}: ${e.rowCount}`).join('\n'));

@@ -98,7 +98,7 @@ const identity = {
   bbox: RoofBboxSchema,
   datasetVersion: z.string().regex(DATASET_VERSION_RE)
 };
-const pieceSchema = z
+export const RoofPieceAuditSchema = z
   .object({
     pieceId: id,
     buildingId: id,
@@ -115,7 +115,7 @@ const pieceSchema = z
       ? p.reason === null && p.method !== 'footprint' && p.processing.selectedCandidate !== null
       : p.reason !== null && p.method === 'footprint'
   );
-const buildingSchema = z.object({
+export const RoofBuildingAuditSchema = z.object({
   buildingId: id,
   ...identity,
   pieceIds: z.array(id),
@@ -126,8 +126,8 @@ const buildingSchema = z.object({
 const auditSchema = z.object({
   schemaVersion: z.literal(1),
   datasetVersion: z.string().regex(DATASET_VERSION_RE),
-  buildings: z.array(buildingSchema),
-  pieces: z.array(pieceSchema)
+  buildings: z.array(RoofBuildingAuditSchema),
+  pieces: z.array(RoofPieceAuditSchema)
 });
 export type RoofAudit = z.infer<typeof auditSchema>;
 export type RoofBuildingAudit = RoofAudit['buildings'][number];

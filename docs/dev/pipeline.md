@@ -146,3 +146,58 @@ cross-record archive validation; the public runner interfaces and archived JSON 
 unchanged. Complete source metadata occurs once per job, with each file descriptor carrying
 only its own object and imagery transform. Consumers of the city audit must use streaming
 JSON parsing rather than reading the entire artifact into one JavaScript string.
+
+### Roof publication and recovery
+
+Roof-enabled reports require V14 (artifact/identity integrity), V15 (size and geometry
+acceptance), and V16 (complete deterministic audit). Upload rechecks current bytes, decoded
+hashes, closed solids, measured chunk budgets, parent/piece outcomes, processing references,
+and original sources before the first R2 write. Legacy reports remain publishable for
+no-roof datasets. An unsupported descriptor schema validates/copies its three top-level
+URLs without interpreting its index.
+
+`setup-roofs` also caches all pinned platform wheels and roofer source/release archives in
+`pipeline/.cache/roof-dependencies/<sha256>`. Offline builds reverify and retain these in
+`roof-artifacts`; missing required dependencies fail the build. `report.json.roofArchives`
+closes portable jobs, masks, candidates, configuration/code and tool distributions. Private
+archives upload first using bounded concurrency/retries, runtime artifacts follow, and the
+root manifest is last. `upload --local`, fixture loading and `data:local` reuse a single
+Miniflare instance with Wrangler's `.wrangler/state/v3` storage; local archive existence
+uses HEAD rather than downloading each object. Remote uploads retain Wrangler's existing
+credential and transport behavior. That remote transport still starts a process per object
+and downloads existing objects for existence checks; full-city publication can contain over
+a million archives and requires a reusable remote backend before release validation. The
+local backend and local tests do not establish remote publication throughput.
+
+`fetch --restore --roof-run <datasetVersion> [--local]` downloads that version's public
+build report, restores and verifies its processing archives, and restores original roof
+source references alongside the lock's raw sources. It does not contact upstream HTTP.
+`roof-rebuild <datasetVersion> --building <buildingId> --out <empty-directory> [--local]`
+restores the portable job, checks the recorded configuration, processing code and toolchain
+against the checkout, and processes only the requested full building into `result.json`.
+A mismatch requires checking out the recorded processing revision and running `setup-roofs`.
+The published dataset is never modified. `--raw-dir` can isolate the restored source cache.
+
+The mini fixture includes deterministic synthetic original LAZ returns for b01 and the
+multi-parcel b10. Roofer and the production clip/export path generate three closed display
+pieces; other buildings retain explicit fallbacks, including a retained parent with no pieces.
+Run `npx tsx pipeline/test/fixtures/mini/make-fixture.ts` to regenerate original sources and
+then `pipeline fixture --update-golden`. Roof JSON and binary outputs participate in
+cross-run golden comparisons. Ordinary app CI consumes committed output without Python.
+A frozen no-roof manifest remains under `pipeline/test/fixtures/legacy`.
+
+Audit validation streams bounded records using the development-only `@streamparser/json`
+parser, retaining compact identity/completeness state rather than a city-sized JSON string.
+The geometry config currently supports the exact approved schema-1 values; changing a value
+without implementing its behavior fails explicitly. Complete imagery coverage is reported
+only after measured point/cell raster coverage; image presence alone remains unknown.
+Source config records the official catalog review and absent permission terms; 2023 imagery
+remains disabled and unconfirmed, and no original imagery is included in runtime artifacts.
+
+Readers can measure an exact index-entry contribution only after comparing the original
+index bytes against the canonical `JSON.stringify(parseRoofIndex(raw, version))` bytes.
+The current exporter uses that same key order. On an exact byte match, the UTF-8 size of
+`JSON.stringify(ref)` is the verified entry contribution; otherwise use the whole measured
+index byte length conservatively. Whitespace or unknown fields must fail the exact-match
+path before schema parsing strips fields. Browser readers can use `TextEncoder` for the
+same comparison and measurement; the pipeline implementation is in `roofs/check.ts`.

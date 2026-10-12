@@ -57,3 +57,11 @@ Extras:
 | `src_footprints`    | 3    | SF3512013, SF3512001, CN0000001                                    |
 | `src_neighborhoods` | 2    | Mission, Noe Valley                                                |
 | `src_overture`      | 12   | b01 b02 b03 b04 b06 b10 b13 b14 + bpier bunder bmarin besri        |
+
+## Synthetic roof originals
+
+`make-roofs.py`, run by `make-fixture.ts` with the pinned Python environment, writes the original
+synthetic `roof-lidar.laz`. b01 and b10 receive dense planar roof returns plus class-2 ground;
+b10 crosses two parcels. Coverage deliberately excludes the other buildings. A disabled aerial
+entry preserves rights/alignment flags. These are synthetic CC0 inputs, with no original aerials.
+The normal production reconstruction/clip/export path generates the committed roof artifacts.

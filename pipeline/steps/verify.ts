@@ -1,3 +1,12 @@
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { createWriteStream } from 'node:fs';
+import { roofArtifactUrls } from '../../src/lib/data/roof-paths';
+import { parseRoofIndex, ROOF_INDEX_MAX_BYTES } from '../../src/lib/data/building-roofs';
+import { checkRoofArtifacts, readBounded } from '../roofs/check';
 import { parseManifest, type Manifest } from '../../src/lib/data/manifest';
 import { FONT_STACKS } from '../config';
 
@@ -56,5 +65,59 @@ export async function verify(a: VerifyArgs): Promise<{ ok: boolean; failures: st
   ];
   for (const p of heads) await check('HEAD', p, 200);
   for (const p of [m.buildingsTiles, m.basemapTiles]) await check('GET', p, 206, '0-126');
+  if (m.buildingRoofs) {
+    const dir = mkdtempSync(join(tmpdir(), 'sfh-verify-roofs-'));
+    try {
+      const save = async (path: string, limit?: number) => {
+        const r = await f(abs(path));
+        if (r.status !== 200 || !r.body) throw new Error(`${path}: expected 200, got ${r.status}`);
+        const file = join(dir, path.slice(`/data/${m.datasetVersion}/`.length));
+        mkdirSync(dirname(file), { recursive: true });
+        let total = 0;
+        await pipeline(
+          Readable.fromWeb(r.body as never),
+          async function* (source) {
+            for await (const bytes of source) {
+              total += bytes.length;
+              if (limit !== undefined && total > limit)
+                throw new Error(`roof body too large: ${path}`);
+              yield bytes;
+            }
+          },
+          createWriteStream(file)
+        );
+        return file;
+      };
+      const descriptor = m.buildingRoofs;
+      roofArtifactUrls(descriptor, undefined);
+      const indexPath = await save(descriptor.indexUrl, ROOF_INDEX_MAX_BYTES);
+      const index =
+        descriptor.schemaVersion === 1
+          ? parseRoofIndex(
+              JSON.parse(readBounded(indexPath, ROOF_INDEX_MAX_BYTES).toString()),
+              m.datasetVersion
+            )
+          : undefined;
+      const urls = roofArtifactUrls(descriptor, index);
+      for (const path of urls.slice(1)) {
+        const ref = index?.chunks.find((c) => c.headerUrl === path || c.meshUrl === path);
+        await save(
+          path,
+          ref
+            ? ref.headerUrl === path
+              ? ref.headerBytes
+              : ref.meshBytes
+            : path === descriptor.reportUrl
+              ? ROOF_INDEX_MAX_BYTES
+              : undefined
+        );
+      }
+      failures.push(...(await checkRoofArtifacts(dir, m)).failures);
+    } catch (error) {
+      failures.push(`roofs: ${(error as Error).message}`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
   return { ok: failures.length === 0, failures };
 }

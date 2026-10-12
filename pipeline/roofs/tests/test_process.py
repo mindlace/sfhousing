@@ -88,3 +88,17 @@ class ProcessTests(unittest.TestCase):
         self.assertEqual(failed['reason'],'ground_missing')
         self.assertNotIn('returnCounts',failed)
         self.assertEqual(failed['usedSources'],['roof-lidar'])
+
+    def test_job_rejects_changed_unsupported_configuration(self):
+        p=load('process')
+        with tempfile.TemporaryDirectory() as d:
+            config=json.loads((Path(__file__).parents[1]/'config.json').read_text())
+            config['acceptance']['roofCoverage']=.5
+            path=Path(d)/'config.json';path.write_text(json.dumps(config))
+            with self.assertRaisesRegex(ValueError,'unsupported roof configuration'):
+                p.process_job({'schemaVersion':1,'buildings':[],'configPath':str(path),'workDir':d,'sources':[],'sourceStatus':[],'toolchainHash':'0'*64,'datasetVersion':'fixture-0'})
+
+    def test_salesforce_production_metadata_matches_current_fallback(self):
+        p=load('process');record=json.loads((Path(__file__).parents[1]/'overrides/salesforce.json').read_text())
+        result=p.landmark_override({'buildingId':record['buildingId'],'footprintHash':record['footprintHash'],'footprint':record['productionFootprint'],'heightM':326})
+        self.assertEqual(record['productionValidation']['reason'],result['reason'])

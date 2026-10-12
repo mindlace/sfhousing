@@ -1,3 +1,5 @@
+import { rebuildRoofBuilding } from './roofs/rebuild';
+import { ROOF_ARCHIVE_DIR } from './roofs/archives';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { FIXTURE_PROFILE, LIVE_PROFILE } from './config';
@@ -10,7 +12,7 @@ import { fixture } from './steps/fixture';
 import { upload } from './steps/upload';
 import { verify } from './steps/verify';
 import { readLock } from './lib/lock';
-import { wranglerTarget } from './lib/r2';
+import { wranglerTarget, localR2Target } from './lib/r2';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const OUT = join(ROOT, 'pipeline/out');
@@ -73,6 +75,31 @@ function latestOut(): string | undefined {
 }
 
 const steps: Record<string, { help: string; run: Step }> = {
+  'roof-rebuild': {
+    help: 'rebuild one archived building <version> --building <id> --out <dir> [--local]',
+    run: async (args) => {
+      const datasetVersion = args.positional[0],
+        buildingId = str(args.flags.building),
+        outDir = str(args.flags.out);
+      if (!datasetVersion || !buildingId || !outDir)
+        throw new Error('usage: roof-rebuild <version> --building <id> --out <dir> [--local]');
+      const r2 =
+        args.flags.local === true ? await localR2Target() : wranglerTarget({ local: false });
+      try {
+        await rebuildRoofBuilding({
+          datasetVersion,
+          buildingId,
+          outDir: resolve(outDir),
+          rawDir: str(args.flags['raw-dir']) ?? RAW,
+          archiveDir: ROOF_ARCHIVE_DIR,
+          r2
+        });
+      } finally {
+        await r2.dispose?.();
+      }
+      return 0;
+    }
+  },
   'setup-roofs': {
     help: 'install pinned roof build tools (explicit networked setup)',
     run: async () => setupRoofs()
@@ -137,6 +164,7 @@ const steps: Record<string, { help: string; run: Step }> = {
         release: str(args.flags.release),
         basemapDate: str(args.flags['basemap-date']),
         restore: args.flags.restore === true,
+        roofRun: str(args.flags['roof-run']),
         local: args.flags.local === true
       })
   },
@@ -158,14 +186,23 @@ const steps: Record<string, { help: string; run: Step }> = {
         console.error(`no ${lockPath}: run \`npm run pipeline -- fetch\` first`);
         return 1;
       }
-      return upload({
-        outDir,
-        datasetVersion: v,
-        // Fixture datasets have no raw archives to publish (and skip the lockSha256 check).
-        lock: lockPath ? readLock(lockPath) : { sources: [] },
-        rawDir: RAW,
-        target: wranglerTarget({ local: args.flags.local === true })
-      });
+      const target =
+        args.flags.local === true ? await localR2Target() : wranglerTarget({ local: false });
+      try {
+        return await upload({
+          outDir,
+          datasetVersion: v,
+          // Fixtures archive their original synthetic sources and skip the live lockSha256 check.
+          lock: lockPath
+            ? readLock(lockPath)
+            : readLock(join(ROOT, 'pipeline/test/fixtures/mini/sources.lock.json')),
+          rawDir: lockPath ? RAW : join(ROOT, 'pipeline/test/fixtures/mini/raw'),
+          rawByName: !lockPath,
+          target
+        });
+      } finally {
+        await target.dispose?.();
+      }
     }
   },
   verify: {

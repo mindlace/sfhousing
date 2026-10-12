@@ -5,11 +5,17 @@ on:
     paths:
       - 'pipeline/**'
       - 'src/lib/data/**'
+      - 'scripts/data-local*'
+      - 'scripts/r2-load-local*'
+      - 'package-lock.json'
       - '.github/workflows/pipeline.yml'
   push:
     paths:
       - 'pipeline/**'
       - 'src/lib/data/**'
+      - 'scripts/data-local*'
+      - 'scripts/r2-load-local*'
+      - 'package-lock.json'
       - '.github/workflows/pipeline.yml'
   workflow_dispatch:
 
@@ -50,7 +56,7 @@ jobs:
       # DuckDB spatial/httpfs extensions download on first load (network is available here).
       - run: npm run pipeline -- doctor --roofs
       - run: npm run test:pipeline
-      - run: npx vitest --run --project server src/lib/data
+      - run: npx vitest --run --project server src/lib/data scripts/data-local.spec.ts scripts/r2-load-local.spec.ts
       # V12 cross-run: regenerating the fixture must not change committed bytes.
       # buildings.pmtiles is excluded: tippecanoe output bytes are only known reproducible on
       # macOS, and Linux builds may differ. Its feature attributes are covered by tiles.test.ts.

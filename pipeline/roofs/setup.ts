@@ -1,3 +1,4 @@
+import { ROOF_DEPENDENCY_DIR, toolchainArchives, verifyRoofArchive } from './archives';
 import { createHash } from 'node:crypto';
 import {
   chmodSync,
@@ -90,6 +91,21 @@ export async function setupRoofs(
       executableSha256: hash(readFileSync(ROOFER))
     }) + '\n'
   );
+  mkdirSync(ROOF_DEPENDENCY_DIR, { recursive: true });
+  for (const ref of toolchainArchives()) {
+    const path = join(ROOF_DEPENDENCY_DIR, ref.sha256);
+    if (!existsSync(path)) {
+      const response = await nodeHttp.get(ref.url);
+      if (
+        response.status !== 200 ||
+        response.body.length !== ref.bytes ||
+        hash(response.body) !== ref.sha256
+      )
+        throw new Error(`roof dependency download/hash failed: ${ref.name}`);
+      writeFileSync(path, response.body);
+    }
+    await verifyRoofArchive(ref, ROOF_DEPENDENCY_DIR);
+  }
   const checks = await doctorRoofs();
   for (const check of checks)
     console.log(`${check.ok ? 'OK' : 'FAIL'} ${check.name}: ${check.found ?? check.hint}`);
