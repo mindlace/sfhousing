@@ -7,6 +7,11 @@ import type { DecodedRoofChunk } from '$lib/data/building-roofs';
 import type { ParcelId } from '$lib/data/parcel';
 import { RoofMeshLayer, roofGpuBytes } from './roof-layer';
 import { RoofCache } from './roof-cache';
+import { RoofController } from './roof-controller';
+import { LayerComposer } from './layer-composer';
+import { ExistingBuildings } from './existing-buildings';
+import { roofFixture } from './test-utils/roof-fixtures';
+import type { Manifest } from '$lib/data/manifest';
 
 // Two independent pitched surfaces and south-facing vertical walls. No shared piece vertices.
 function chunk(): DecodedRoofChunk {
@@ -389,60 +394,87 @@ it('releases the previous native VAO exactly once when immutable chunk identity 
   expect(failure).not.toHaveBeenCalled();
 });
 
-it('charges deferred removal until actual finalization and cancels queued initialization permanently', async () => {
-  await emptyDeck();
-  const finalized = vi.fn();
-  const cache = new RoofCache({
-    onEvict: () => {
-      deck!.setProps({ layers: [] });
-      layer.cancelPreparation();
-    }
-  });
-  const layer = new RoofMeshLayer({
-    ...prepareLayer().props,
-    onFinalize: () => {
-      finalized();
-      cache.release('gpu-test');
-    }
-  });
-  await draw(layer);
-  await vi.waitFor(() => expect(layer.gpuBytes).toBeGreaterThan(0));
-  const bytes = layer.gpuBytes;
-  const cpu =
-    layer.props.chunk.positions.byteLength +
-    layer.props.chunk.normals.byteLength +
-    layer.props.chunk.indices.byteLength +
-    layer.props.chunk.pieceSlots.byteLength +
-    new TextEncoder().encode(JSON.stringify(layer.props.chunk.header)).length;
-  cache.reserve('gpu-test', cpu, bytes);
-  cache.install('gpu-test', layer.props.chunk);
-  cache.setVisible(['gpu-test']);
-  cache.reserve('other', 64 * 1024 * 1024 - cpu - bytes, 0);
-  await draw(layer.clone({ active: true }));
-  cache.evict('gpu-test');
-  expect(cache.reserve('replacement', 1, 0)).toBe(false);
-  expect(layer.cancelPreparation()).toBe(false);
-  expect(finalized).not.toHaveBeenCalled();
-  expect(layer.gpuBytes).toBe(bytes);
-  await tick();
-  deck!.redraw('finalize retired');
-  expect(finalized).toHaveBeenCalledTimes(1);
-  expect(layer.gpuBytes).toBe(0);
-  expect(cache.reserve('replacement', 1, 0)).toBe(true);
-  const cancelled = new RoofMeshLayer({ ...prepareLayer().props, onFinalize: finalized });
-  expect(cancelled.cancelPreparation()).toBe(true);
-  expect(finalized).toHaveBeenCalledTimes(2);
-  const create = vi.spyOn(testDevice, 'createBuffer');
-  await draw(cancelled.clone({ active: true }));
-  expect(cancelled.gpuBytes).toBe(0);
-  expect(
-    create.mock.calls.filter(([p]) => 'id' in p && p.id?.startsWith('existing-roof-'))
-  ).toEqual([]);
-  deck!.setProps({ layers: [] });
-  await tick();
-  deck!.redraw('remove cancelled');
-  expect(finalized).toHaveBeenCalledTimes(2);
-});
+it.each(['original', 'pre-initialization clone'])(
+  'charges %s resources until finalization and permanently cancels queued initialization',
+  async (firstOwner) => {
+    await emptyDeck();
+    const finalized = vi.fn();
+    const cache = new RoofCache({
+      onEvict: () => {
+        deck!.setProps({ layers: [] });
+        layer.cancelPreparation();
+      }
+    });
+    const layer = new RoofMeshLayer({
+      ...prepareLayer().props,
+      onFinalize: () => {
+        finalized();
+        cache.release('gpu-test');
+      }
+    });
+    const initial =
+      firstOwner === 'original'
+        ? layer
+        : layer.clone({
+            theme: 'dark',
+            hidden: new Set(['parcel-0' as ParcelId]),
+            visibilityRevision: 1
+          });
+    expect(layer.getCurrentLayer()).toBeNull();
+    await draw(initial);
+    expect(layer.gpuBytes).toBe(roofGpuBytes(layer.props.chunk));
+    const model = initial.getModels()[0];
+    const vao = watchVertexArray(model.vertexArray);
+    const destroys = [
+      ...Object.values(initial.state.buffers),
+      ...model._uniformStore.uniformBuffers.values()
+    ].map((buffer) => vi.spyOn(buffer!, 'destroy'));
+    const modelDestroy = vi.spyOn(model, 'destroy');
+    const bytes = layer.gpuBytes;
+    const cpu =
+      layer.props.chunk.positions.byteLength +
+      layer.props.chunk.normals.byteLength +
+      layer.props.chunk.indices.byteLength +
+      layer.props.chunk.pieceSlots.byteLength +
+      new TextEncoder().encode(JSON.stringify(layer.props.chunk.header)).length;
+    cache.reserve('gpu-test', cpu, bytes);
+    cache.install('gpu-test', layer.props.chunk);
+    cache.setVisible(['gpu-test']);
+    cache.reserve('other', 64 * 1024 * 1024 - cpu - bytes, 0);
+    await draw(initial.clone({ active: true }));
+    expect(pick(22, 0, 20)?.object.pieceId).toBe('piece-1');
+    cache.evict('gpu-test');
+    expect(cache.reserve('replacement', 1, 0)).toBe(false);
+    expect(layer.cancelPreparation()).toBe(false);
+    expect(finalized).not.toHaveBeenCalled();
+    expect(layer.gpuBytes).toBe(bytes);
+    await tick();
+    deck!.redraw('finalize retired');
+    expect(finalized).toHaveBeenCalledTimes(1);
+    expect(layer.gpuBytes).toBe(0);
+    expect(cache.reserve('replacement', 1, 0)).toBe(true);
+    expectVertexArrayReleased(vao);
+    expect(modelDestroy).toHaveBeenCalledTimes(1);
+    for (const destroy of destroys) expect(destroy).toHaveBeenCalledTimes(1);
+    const cancelled = new RoofMeshLayer({ ...prepareLayer().props, onFinalize: finalized });
+    expect(cancelled.cancelPreparation()).toBe(true);
+    expect(finalized).toHaveBeenCalledTimes(2);
+    const create = vi.spyOn(testDevice, 'createBuffer');
+    await draw(cancelled.clone({ active: true }));
+    expect(cancelled.gpuBytes).toBe(0);
+    expect(
+      create.mock.calls.filter(([p]) => 'id' in p && p.id?.startsWith('existing-roof-'))
+    ).toEqual([]);
+    deck!.setProps({ layers: [] });
+    await tick();
+    deck!.redraw('remove cancelled');
+    expect(finalized).toHaveBeenCalledTimes(2);
+    deck!.finalize();
+    deck = undefined;
+    expect(modelDestroy).toHaveBeenCalledTimes(1);
+    for (const destroy of destroys) expect(destroy).toHaveBeenCalledTimes(1);
+  }
+);
 
 it('prepares a near-limit decoded chunk without a 50 ms main-thread long task', async () => {
   const vertices = 149000;
@@ -483,5 +515,96 @@ it('prepares a near-limit decoded chunk without a 50 ms main-thread long task', 
     expect(tasks.filter((duration) => duration > 50)).toEqual([]);
   } finally {
     observer.disconnect();
+  }
+});
+
+it('activates controller roofs cloned by theme and replacement before their first deck initialization', async () => {
+  await emptyDeck();
+  const mesh = chunk();
+  const ref = {
+    ...roofFixture('gpu-test').ref,
+    headerBytes: new TextEncoder().encode(JSON.stringify(mesh.header)).length,
+    meshBytes: mesh.header.byteLength,
+    pieceCount: mesh.header.pieces.length,
+    modelCount: 1
+  };
+  const manifest = {
+    datasetVersion: 'fixture-0',
+    buildingRoofs: {
+      schemaVersion: 1,
+      indexUrl: '/data/fixture-0/roofs/index.json',
+      auditUrl: '/data/fixture-0/roofs/audit.json',
+      reportUrl: '/data/fixture-0/roofs/report.json'
+    }
+  } as Manifest;
+  let published: RoofMeshLayer[] = [];
+  let frame: FrameRequestCallback | undefined;
+  let original: RoofMeshLayer | undefined;
+  const existing = new ExistingBuildings({
+    mode: 'piece',
+    setState() {},
+    clearState() {},
+    onReplacementChange: ({ hidden, changed }) => controller.setHidden(hidden, changed)
+  });
+  const composer = new LayerComposer((layers) => {
+    published = layers as RoofMeshLayer[];
+  });
+  const diagnostic = vi.fn();
+  const controller = new RoofController({
+    manifest,
+    existing,
+    composer,
+    worker: { load: async () => mesh, destroy() {} },
+    fetch: async () =>
+      new Response(
+        JSON.stringify({ schemaVersion: 1, datasetVersion: 'fixture-0', chunks: [ref] })
+      ),
+    now: () => 0,
+    raf: (callback) => {
+      frame = callback;
+      return 1;
+    },
+    cancelRaf: () => {
+      frame = undefined;
+    },
+    createLayer: (props) => {
+      original = new RoofMeshLayer(props);
+      return original;
+    },
+    onDiagnostic: diagnostic
+  });
+  try {
+    controller.updateViewport([0, 0, 1, 1], 15, [0, 0]);
+    await vi.waitFor(() => expect(frame).toBeDefined());
+    frame!(0);
+    expect(original!.getCurrentLayer()).toBeNull();
+    controller.setTheme('dark');
+    existing.setReplaced('parcel-0' as ParcelId);
+    const preparing = published[0];
+    expect(preparing).not.toBe(original);
+    expect(preparing.props.active).toBe(false);
+    await draw(preparing);
+    expect(original!.gpuBytes).toBe(roofGpuBytes(mesh));
+    expect(controller.snapshot().activePieceIds).toEqual(['piece-0', 'piece-1']);
+    expect([...existing.roofReady]).toEqual(['piece-0', 'piece-1']);
+    expect(published[0].props.active).toBe(true);
+    await draw(published[0]);
+    expect(pick(-22, 0, 20)).toBeNull();
+    expect(pick(22, 0, 20)?.object.pieceId).toBe('piece-1');
+    const owned = controller.snapshot().ownedBytes;
+    controller.updateViewport([0, 0, 1, 1], 14, [0, 0]);
+    expect(existing.roofReady.size).toBe(0);
+    expect(published).toEqual([]);
+    expect(controller.snapshot().ownedBytes).toBe(owned);
+    deck!.setProps({ layers: published });
+    await tick();
+    deck!.redraw('finalize pre-initialization clone');
+    expect(controller.snapshot().ownedBytes).toBe(0);
+    expect(original!.gpuBytes).toBe(0);
+    expect(diagnostic).not.toHaveBeenCalled();
+  } finally {
+    controller.destroy();
+    composer.destroy();
+    existing.destroy();
   }
 });

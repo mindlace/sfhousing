@@ -28,7 +28,7 @@ export type RoofMeshLayerProps = {
   onFailure(error: Error): void;
   onFinalize?(): void;
   /** Shared across deck clones; cancelled pending instances must never allocate. */
-  ownership?: { cancelled: boolean; released: boolean };
+  ownership?: { cancelled: boolean; released: boolean; resources?: RoofLayerState };
 };
 const modules = [project32, picking, gouraudMaterial, roofUniforms];
 const inputs = new ShaderInputs(
@@ -67,10 +67,12 @@ type RoofBuffers = Partial<
   Record<'positions' | 'normals' | 'indices' | 'pickingColors' | 'visibility', Buffer>
 >;
 
+type RoofLayerState = { model?: Model; buffers: RoofBuffers; ready: boolean; failed: boolean };
+
 /** One non-instanced indexed model per chunk. Preparation must remain visible to deck's draw pass. */
 export class RoofMeshLayer extends Layer<RoofMeshLayerProps> {
   static layerName = 'RoofMeshLayer';
-  declare state: { model?: Model; buffers: RoofBuffers; ready: boolean; failed: boolean };
+  declare state: RoofLayerState;
 
   constructor(props: RoofMeshLayerProps & Partial<LayerProps>) {
     super({
@@ -85,11 +87,11 @@ export class RoofMeshLayer extends Layer<RoofMeshLayerProps> {
 
   /** Actual owned bytes after initialization; zero after failure/eviction. */
   get gpuBytes(): number {
-    const live = this.getCurrentLayer() as RoofMeshLayer | null;
-    if (live && live !== this) return live.gpuBytes;
+    // The original may never initialize: pre-reconciliation clones have no deck state link.
+    const resources = this.props.ownership?.resources;
     return (
-      Object.values(this.state?.buffers ?? {}).reduce((n, b) => n + b.byteLength, 0) +
-      [...(this.state?.model?._uniformStore.uniformBuffers.values() ?? [])].reduce(
+      Object.values(resources?.buffers ?? {}).reduce((n, b) => n + b.byteLength, 0) +
+      [...(resources?.model?._uniformStore.uniformBuffers.values() ?? [])].reduce(
         (n, b) => n + b.byteLength,
         0
       )
@@ -98,14 +100,19 @@ export class RoofMeshLayer extends Layer<RoofMeshLayerProps> {
 
   initializeState(): void {
     this.setState({ buffers: {}, ready: false, failed: false });
-    if (!this.props.ownership?.cancelled) this.prepare();
+    const ownership = this.props.ownership!;
+    if (!ownership.cancelled && !ownership.released) {
+      // deck mutates/transfers this same state object to subsequent matched clones.
+      ownership.resources = this.state;
+      this.prepare();
+    }
   }
 
   /** True means no GPU ownership ever began; otherwise wait for onFinalize. */
   cancelPreparation(): boolean {
-    this.props.ownership!.cancelled = true;
-    const live = this.getCurrentLayer() as RoofMeshLayer | null;
-    if (live?.state?.buffers || this.state?.buffers) return false;
+    const ownership = this.props.ownership!;
+    ownership.cancelled = true;
+    if (ownership.resources) return false;
     this.notifyFinalized();
     return true;
   }
@@ -184,6 +191,7 @@ export class RoofMeshLayer extends Layer<RoofMeshLayerProps> {
     const ownership = this.props.ownership!;
     if (ownership.released) return;
     ownership.released = true;
+    ownership.resources = undefined;
     this.props.onFinalize?.();
   }
 
