@@ -6,6 +6,32 @@ const f = (properties: Record<string, unknown> | null) => ({ properties });
 const always = (s: ChunkStatus | 'unknown') => (): ChunkStatus | 'unknown' => s;
 
 describe('resolveExistingHit', () => {
+  it('uses the parcel property when the promoted feature id is a piece id', () => {
+    const features = [
+      { id: 'building-1:a', properties: { pieceId: 'building-1:a', parcelId: 'parcel-a' } },
+      { id: 'building-1:b', properties: { pieceId: 'building-1:b', parcelId: 'parcel-b' } }
+    ];
+    expect(resolveExistingHit(features, new Set(['parcel-a']), always('ready'))).toEqual({
+      kind: 'existing',
+      parcelId: 'parcel-b',
+      chunk: 'ready',
+      summary: null
+    });
+    expect(resolveExistingHit(features, new Set(['building-1:a']), always('ready'))?.parcelId).toBe(
+      'parcel-a'
+    );
+  });
+
+  it('never treats an unmatched promoted id as a parcel id', () => {
+    const features = [{ id: 'piece-a', properties: { pieceId: 'piece-a', parcelId: null } }];
+    expect(resolveExistingHit(features, new Set(['piece-a']), always('ready'))).toEqual({
+      kind: 'existing',
+      parcelId: null,
+      chunk: 'unknown',
+      summary: null
+    });
+  });
+
   it('returns null when nothing was hit', () => {
     expect(resolveExistingHit([], new Set(), always('ready'))).toBeNull();
   });

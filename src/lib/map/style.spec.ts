@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { createExpression } from '@maplibre/maplibre-gl-style-spec';
 import { parseManifest, type Manifest } from '$lib/data/manifest';
 import { TOKENS } from './palette';
 import {
@@ -9,7 +10,9 @@ import {
   OVERLAY_ANCHOR,
   FONT_RENAME,
   rewriteFont,
-  firstSymbolLayerId
+  firstSymbolLayerId,
+  buildingsSource,
+  existingBuildingsLayer
 } from './style';
 import type { Theme } from './types';
 
@@ -29,7 +32,8 @@ function fontStrings(v: unknown, out: string[] = []): string[] {
 
 describe('buildStyle (U7)', () => {
   for (const [label, m] of [
-    ['plain', base],
+    ['legacy', { ...base, buildingRoofs: undefined }],
+    ['with roofs', base],
     ['with sprite', withSprite]
   ] as const) {
     for (const theme of themes) {
@@ -43,7 +47,9 @@ describe('buildStyle (U7)', () => {
           const src = style.sources as Record<string, Record<string, unknown>>;
           expect(src.protomaps.url).toBe('pmtiles://' + m.basemapTiles);
           expect(src.buildings.url).toBe('pmtiles://' + m.buildingsTiles);
-          expect(src.buildings.promoteId).toEqual({ buildings: 'parcelId' });
+          expect(src.buildings.promoteId).toEqual({
+            buildings: label === 'legacy' ? 'parcelId' : 'pieceId'
+          });
         });
 
         it('drops pois and icon layers', () => {
@@ -163,4 +169,70 @@ describe('rewriteFont', () => {
       )
     ).toEqual(['case', ['literal', ['NotoSans-Medium']], ['literal', ['NotoSans-Regular']]]);
   });
+});
+
+describe('buildingsSource promotion', () => {
+  it('uses parcel ids for an unknown roof schema even with roof URLs present', () => {
+    const manifest = parseManifest({
+      ...raw,
+      buildingRoofs: { ...base.buildingRoofs, schemaVersion: 2 }
+    });
+    expect(buildingsSource(manifest).promoteId).toEqual({ buildings: 'parcelId' });
+  });
+
+  it('uses piece ids for schema 1 without requiring roof index availability', () => {
+    expect(buildingsSource(base).promoteId).toEqual({ buildings: 'pieceId' });
+  });
+});
+
+// Evaluate the emitted expressions with MapLibre's parser to verify actual solid visibility.
+describe('existing building solid visibility', () => {
+  for (const theme of themes) {
+    for (const [label, state, height, floor, color] of [
+      ['fallback', {}, 12, 2, TOKENS[theme].existing],
+      ['replaced', { replaced: true }, 0, 0, TOKENS[theme].replaced],
+      ['roof ready', { roofReady: true }, 0, 0, TOKENS[theme].existing],
+      ['replaced roof', { replaced: true, roofReady: true }, 0, 0, TOKENS[theme].replaced],
+      ['deactivated', { replaced: false, roofReady: false }, 12, 2, TOKENS[theme].existing]
+    ] as const) {
+      it(`${theme} / ${label} keeps footprint styling while suppressing the appropriate solid`, () => {
+        const layer = existingBuildingsLayer(theme) as { paint: Record<string, unknown> };
+        for (const [property, expected] of [
+          ['fill-extrusion-height', height],
+          ['fill-extrusion-base', floor],
+          ['fill-extrusion-color', color]
+        ] as const) {
+          const parsed = createExpression(layer.paint[property], property);
+          expect(parsed.result).toBe('success');
+          if (parsed.result !== 'success') throw new Error('invalid building paint expression');
+          expect(
+            parsed.value.evaluate(
+              { zoom: 16 },
+              { type: 'Polygon', properties: { heightM: 12, baseM: 2 } },
+              state
+            )
+          ).toBe(expected);
+        }
+      });
+    }
+
+    it(`${theme} / unmatched fallback retains the default height and flat base`, () => {
+      const layer = existingBuildingsLayer(theme) as { paint: Record<string, unknown> };
+      for (const [property, expected] of [
+        ['fill-extrusion-height', 6],
+        ['fill-extrusion-base', 0]
+      ] as const) {
+        const parsed = createExpression(layer.paint[property], property);
+        expect(parsed.result).toBe('success');
+        if (parsed.result !== 'success') throw new Error('invalid building paint expression');
+        expect(
+          parsed.value.evaluate(
+            { zoom: 16 },
+            { type: 'Polygon', properties: { parcelId: null } },
+            {}
+          )
+        ).toBe(expected);
+      }
+    });
+  }
 });

@@ -185,11 +185,13 @@ export function buildingsSource(manifest: Manifest): VectorSourceSpecification {
   return {
     type: 'vector',
     url: 'pmtiles://' + manifest.buildingsTiles,
-    promoteId: { buildings: 'parcelId' }
+    promoteId: { buildings: manifest.buildingRoofs?.schemaVersion === 1 ? 'pieceId' : 'parcelId' }
   };
 }
 
 const REPLACED = ['boolean', ['feature-state', 'replaced'], false];
+const ROOF_READY = ['boolean', ['feature-state', 'roofReady'], false];
+const SUPPRESS_SOLID = ['any', REPLACED, ROOF_READY];
 
 export function existingBuildingsLayer(theme: Theme): LayerSpecification {
   const t = TOKENS[theme];
@@ -200,8 +202,8 @@ export function existingBuildingsLayer(theme: Theme): LayerSpecification {
     'source-layer': 'buildings',
     minzoom: 12,
     paint: {
-      'fill-extrusion-height': ['case', REPLACED, 0, ['coalesce', ['get', 'heightM'], 6]],
-      'fill-extrusion-base': ['case', REPLACED, 0, ['coalesce', ['get', 'baseM'], 0]],
+      'fill-extrusion-height': ['case', SUPPRESS_SOLID, 0, ['coalesce', ['get', 'heightM'], 6]],
+      'fill-extrusion-base': ['case', SUPPRESS_SOLID, 0, ['coalesce', ['get', 'baseM'], 0]],
       'fill-extrusion-color': ['case', REPLACED, t.replaced, t.existing],
       'fill-extrusion-opacity': ['interpolate', ['linear'], ['zoom'], 12, 0, 13, 0.92]
     }

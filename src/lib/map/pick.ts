@@ -20,8 +20,9 @@ export function featureParcelId(f: {
 }
 
 /**
- * First rendered existing-building feature that is not hidden. Features without a parcelId are
- * never hidden and resolve to `parcelId: null`. Other properties (`hs`, heights) are ignored.
+ * First rendered existing-building feature that is not hidden. Promoted ids may identify pieces;
+ * only properties.parcelId is used. Features without a parcelId are never hidden and resolve to
+ * `parcelId: null`. Other properties (`hs`, heights) are ignored.
  */
 export function resolveExistingHit(
   features: readonly { properties?: Record<string, unknown> | null }[],
