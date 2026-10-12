@@ -2,7 +2,7 @@
 
 Date: 2026-10-11
 
-Status: Draft for review; implementation is not started.
+Status: Approved by the user on 2026-10-11; implementation is not started.
 
 ## 1. Intent and decisions
 
