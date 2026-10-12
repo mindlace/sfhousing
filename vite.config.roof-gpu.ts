@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config';
 import { playwright } from '@vitest/browser-playwright';
-import base from './vite.config.client-test.ts';
-import { roofGpuLaunchOptions } from './scripts/roof-gpu-launch.ts';
+import base from './vite.config.client-test';
+import { roofGpuLaunchOptions } from './scripts/roof-gpu-launch';
 
 // Required positive roof correctness/cold-activation gate; never silently skips unsupported hosts.
 export default defineConfig({
