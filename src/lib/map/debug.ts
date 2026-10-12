@@ -3,6 +3,7 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { ControllerSnapshot, GeneratedController } from './generated-controller';
 import type { GeneratedUpdate } from './types';
+import { packCell } from './pack';
 
 export interface SfhMapDebug {
   readonly map: MapLibreMap | null;
@@ -63,7 +64,6 @@ export function installDebug(
     applyGenerated: (u) => get().controller?.apply(u),
     loadCompositionDistrict: async (seed, stories) => {
       const { compositionDistrict } = await import('./fixtures/composition-district');
-      const { packCell } = await import('./pack');
       const { toLngLat } = await import('../generator/geo');
       const district = compositionDistrict(seed, stories);
       const pack = packCell(

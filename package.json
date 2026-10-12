@@ -29,9 +29,9 @@
     "db:migrate:prod": "wrangler d1 migrations apply sfhousing --remote",
     "data:local": "tsx scripts/data-local.ts",
     "data:fixture": "tsx scripts/r2-load-local.ts e2e/fixtures/data/fixture-0 fixture-0",
-    "signoff": "tsx scripts/signoff.ts",
-    "branch-protection": "tsx scripts/branch-protection.ts",
-    "branch-protection:dry": "tsx scripts/branch-protection.ts --dry-run",
+    "signoff": "chreode signoff",
+    "branch-protection": "chreode protect",
+    "branch-protection:dry": "chreode protect --dry-run",
     "types": "wrangler types --strict-vars=false"
   },
   "lint-staged": {
@@ -61,6 +61,7 @@
     "@duckdb/node-api": "1.5.6-r.1",
     "@eslint/compat": "^2.1.0",
     "@eslint/js": "^10.0.1",
+    "@mindlace/chreode": "^0.1.0",
     "@planafoot/drizzle-cf-migrations": "^1.2.1",
     "@playwright/test": "^1.62.0",
     "@sveltejs/adapter-cloudflare": "^7.2.8",

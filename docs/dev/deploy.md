@@ -9,11 +9,11 @@ Both environments share one R2 bucket, `sfhousing`, so a dataset version uploade
 
 ## Release flow
 
-Releases run only after CI has been proven locally (the planafoot pattern). "Proven" is a GitHub commit status with context `local-ci/signoff`, which branch protection on `main` requires (strict, admins enforced, linear history, squash-only merges).
+Releases run only after CI has been proven locally (via [chreode](https://github.com/mindlace/chreode)). "Proven" is a GitHub commit status with context `chreode/signoff`, which branch protection on `main` requires (strict, admins enforced, linear history, squash-only merges).
 
-1. Work on a PR branch. Run `npm run signoff`: it merges `origin/main`, runs `check`, `lint`, `test:unit` and `test:e2e`, pushes the branch (so do not `git push` first), and posts `local-ci/signoff` on the head SHA with your own `gh` auth. `npm run signoff -- --verify-only` runs just the four checks; `--dry-run` prints the plan.
+1. Work on a PR branch. Run `npm run signoff` (`chreode signoff`, configured by `chreode.config.ts`): it merges `origin/main`, plans the steps the changes since the last signoff need (rules map paths to steps; a path no rule matches runs everything), runs them under a machine-wide lock, pushes the branch (so do not `git push` first), and posts `chreode/signoff` on the head SHA with your own `gh` auth. `npm run signoff -- --dry-run` prints the plan; `-- --full` runs every step.
 2. Squash-merge the PR. The push to `main` runs `deploy-staging.yml` (build, apply D1 migrations to `sfhousing-staging`, deploy `--env staging`). Staging deploys on every push to `main` and waits for nothing.
-3. The same push runs `release-please.yml`, which opens or updates the release PR and posts `local-ci/signoff` on its head SHA with `GITHUB_TOKEN` (`statuses: write`). Release PRs change only versions and `CHANGELOG`, and the code was already signed off.
+3. The same push runs `release-please.yml`, which opens or updates the release PR and posts `chreode/signoff` on its head SHA with `GITHUB_TOKEN` (`statuses: write`). Release PRs change only versions and `CHANGELOG`, and the code was already signed off.
 4. Merge the release PR. release-please publishes release `vX.Y.Z`, and `deploy-prod.yml` (`on: release: published`) builds the tag, applies migrations to `sfhousing` and deploys production.
 
 release-please runs with a GitHub App token (`actions/create-github-app-token`), not `GITHUB_TOKEN`. GitHub suppresses workflow runs for events emitted by `GITHUB_TOKEN`, so a release it published would never trigger `deploy-prod.yml`. The App is a distinct actor, so the `release: published` event propagates.
@@ -59,5 +59,5 @@ Remaining:
 
 - [ ] Set the two secrets (`CLOUDFLARE_API_TOKEN`, `RELEASE_PLEASE_APP_PRIVATE_KEY`).
 - [ ] Create the `staging` and `production` GitHub environments if they do not exist.
-- [ ] Run `npm run branch-protection` once (`npm run branch-protection:dry` previews the payloads; `-- --repo owner/name` overrides the repo).
+- [x] Branch protection requires chreode/signoff (applied by `npm run branch-protection` during the chreode adoption).
 - [ ] Attach the custom domains (declared as `custom_domain` routes in `wrangler.jsonc`; the zone must be on the Cloudflare account).

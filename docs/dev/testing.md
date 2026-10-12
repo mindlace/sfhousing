@@ -26,11 +26,11 @@ It is not a general R2 emulator. The Playwright e2e against workerd is the sourc
 
 ## Playwright
 
-`npm run test:e2e` (`playwright.config.ts`, `e2e/`): projects `chromium` (desktop) and `mobile` (375x812, touch). The `webServer` runs `npm run data:fixture && npm run db:migrate && npm run preview -- --var PUBLIC_DATASET_VERSION:fixture-0` on port 4173. It never reuses an existing server (a stale build from another worktree would silently test the wrong code), so Playwright fails if port 4173 is busy: free it first.
+`npm run test:e2e` (`playwright.config.ts`, `e2e/`): projects `chromium` (desktop) and `mobile` (375x812, touch), plus `chromium-perf` and `mobile-perf`, which run `e2e/**/*.perf.spec.ts` (the 500-parcel pointer-up-to-display 150 ms budget) alone, after every parallel test has finished, because parallel workers compete for CPU and inflate wall-clock timings. The `webServer` runs `npm run data:fixture && npm run db:migrate && npm run preview -- --var PUBLIC_DATASET_VERSION:fixture-0` on port 4173. It never reuses an existing server (a stale build from another worktree would silently test the wrong code), so Playwright fails if port 4173 is busy: free it first.
 
 The `VITE_E2E=1` build adds the brush hook `window.__sfhBrush` (`src/lib/brush/debug.ts`: `ops`, `lastStats`, `ready`, `chunks`, and `load(plan)`, which loads through the editor `+page.svelte` received via BrushEditor's `oneditor`) beside map-view's `window.__sfhMap`, and the `sfh-brush-commit` performance measure (pointer-up to commit applied). In that build the sim worker retries a failed chunk after 50/100/200 ms instead of 1/4/16 s, so `e2e/brush.spec.ts` sees the Retry chip within seconds. The 500-parcel and whole-city budgets are not e2e: `src/lib/sim/host.bench.spec.ts` (server project, part of `test:unit`) fails above 100 ms for a ≈500-parcel commit diff and 5,000 ms for a whole-city load.
 
-CI runs `npm run test:e2e -- --project=chromium --project=mobile`. Single spec: `npx playwright test e2e/data-route.spec.ts --project=chromium`.
+CI runs `npm run test:e2e -- --project=chromium --project=mobile --project=chromium-perf --project=mobile-perf`. Single spec: `npx playwright test e2e/data-route.spec.ts --project=chromium`.
 
 ## Fixture dataset
 
@@ -40,4 +40,4 @@ CI runs `npm run test:e2e -- --project=chromium --project=mobile`. Single spec: 
 
 See [accessibility.md](accessibility.md).
 
-`npm run signoff -- --verify-only` runs the full local gate (`check`, `lint`, `test:unit`, `test:e2e`) without merging, pushing or posting a status. Plain `npm run signoff` runs the same suite and then signs off the PR (see [deploy.md](deploy.md)).
+`npm run signoff` runs the local gate with chreode: it merges `origin/main`, runs the checks the changes since the last signoff need (`chreode.config.ts`), pushes, and posts the `chreode/signoff` status that branch protection requires; `npm run signoff -- --dry-run` prints the plan without running it. See [deploy.md](deploy.md).
