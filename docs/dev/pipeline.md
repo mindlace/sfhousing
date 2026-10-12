@@ -71,10 +71,35 @@ These need credentials the pipeline never holds and are not done by CI:
 `npm run pipeline -- setup-roofs` is an explicit networked setup step. It requires Python
 3.14.8 (`ROOF_PYTHON=/path/to/python` selects an interpreter), creates `pipeline/.venv`,
 installs the complete hash-checked `pipeline/roofs/requirements.txt` wheel set, and verifies
-roofer 1.0.0 before installing it under `pipeline/.cache/tools`. `doctor --roofs` checks
+roofer 1.1.0-beta.1 (official prerelease) before installing it under `pipeline/.cache/tools`. `doctor --roofs` checks
 this environment; `npm run test:roofs` runs the offline Python input tests. Neither setup
 nor Python is required by ordinary application builds or old no-roof datasets. Linux x64
-and macOS arm64 artifacts are pinned in `toolchain.json`; pipeline CI exercises Linux.
+and macOS arm64 artifacts are pinned in `toolchain.json`; Linux execution of the beta is not yet characterized.
+
+The effective fitter is official **1.1.0-beta.1**, source commit
+`1c06fb1aed9096f4b16f894c2da12bc2d785b71b`. `toolchain.json` pins locally verified
+source and macOS ARM64/Linux x64 release archive hashes and lengths. Setup chmods the
+release executable without changing its bytes; setup and doctor require the exact full
+version/commit identity and verified installation hash. The upstream release repairs
+invalid vertex lifetimes and removes a wall-clock plane-growing cutoff seen in 1.0.0;
+it contains other numerical repairs too, so geometry changes cannot be attributed to
+one repair alone. This is binary provenance, not a reproducible source-build claim.
+
+Every fit explicitly supplies `--cj-scale .0001 .0001 .0001`,
+`--min-building-density 1`, `--unit-scale 1`, `--jobs 1`, classes 1/2 and supplied flat
+ground with `--no-clip-terrain`. Simplified/reference/retry complexity remains
+.4/.888/.6 with support 50/15/50. The supported `--plane-detect-min-points` and
+`--h-terrain-strategy` aliases are retained; the beta warns that they move to
+`[reconstruction.plane-detector].min-plane-points` and
+`[reconstruction].h-terrain-strategy` in TOML and are removed in 2.0. No invented
+replacement flags or ignored wall-clock fallback flag are used.
+
+Bounded three-repeat Mac characterization found identical decoded candidate geometry,
+unchanged QA and complete selection including triggered retries. Native CityJSON vertex/
+face order and non-timing surface azimuth/slope still vary; original raw outputs remain
+retained. Current decoding consumes surface types, not azimuth/slope. This does not
+establish Linux, citywide, cross-platform or source-build reproducibility. The versioned
+pin/code change affects datasetVersion; historical 1.0.0 archives retain their identity.
 
 `fetch --only roof-lidar` locks original intersecting EPT hierarchy pages and LAZ objects
 for the three committed sample coverages, including 50 m ground support. Roof fetches

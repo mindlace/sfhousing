@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { createReadStream, openSync, writeSync, closeSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { run } from '../lib/exec';
-import { ROOF_PYTHON } from './setup';
+import { doctorRoofs, ROOF_PYTHON } from './setup';
 import type { RoofJob, ProcessedBuilding, RoofArchive, RoofMesh } from './job';
 
 const ROOT = resolve(import.meta.dirname, '../..');
@@ -168,6 +168,9 @@ export async function readRoofResultRecords(path: string, inputs: RoofJob['build
 export async function runRoofJob(
   job: RoofJob
 ): Promise<{ buildings: ProcessedBuilding[]; archives: RoofArchive[] }> {
+  const failedTools = (await doctorRoofs()).filter((check) => !check.ok);
+  if (failedTools.length)
+    throw new Error(`roof tools unavailable: ${failedTools.map((check) => check.name).join(', ')}`);
   mkdirSync(job.workDir, { recursive: true });
   const jobPath = join(job.workDir, 'job.json');
   writeFileSync(jobPath, JSON.stringify(job) + '\n');

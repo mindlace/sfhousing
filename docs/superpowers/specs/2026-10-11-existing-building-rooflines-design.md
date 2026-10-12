@@ -68,7 +68,19 @@ Separate responsibilities:
 - Map roof controller: viewport loading, cache, render installation and eviction.
 - Existing-building visibility adapter: consistent parcel replacement and roof readiness for tiles and meshes.
 
-Initial processing uses Python geometry/point-cloud tools plus **roofer 1.0.0**, called from the existing TypeScript pipeline. Python dependencies and the executable/toolchain are pinned; they never ship in the Worker or browser. The production renderer uses the existing deck.gl/luma.gl stack and offline-triangulated meshes, not the spike's Three.js viewer.
+Initial processing uses Python geometry/point-cloud tools plus **roofer 1.1.0-beta.1**, called from the existing TypeScript pipeline. Python dependencies and the executable/toolchain are pinned; they never ship in the Worker or browser. The production renderer uses the existing deck.gl/luma.gl stack and offline-triangulated meshes, not the spike's Three.js viewer.
+
+Pin amendment (2026-10-12, controller ruling): official prerelease 1.1.0-beta.1,
+commit `1c06fb1aed9096f4b16f894c2da12bc2d785b71b`, supersedes only the initial 1.0.0
+tool pin to address measured native reconstruction nondeterminism under §7. Retained
+[beta assessment](../../../.superpowers/sdd/2026-10-11-existing-building-rooflines/task-10-native-beta-assessment.md),
+[probe](../../../.superpowers/sdd/2026-10-11-existing-building-rooflines/task-10-native-beta-probe-report.md), and
+[retry evidence](../../../.superpowers/sdd/2026-10-11-existing-building-rooflines/task-10-native-beta-retry-report.md)
+support three-repeat sampled Mac decoded candidate/selection reproducibility. Raw native
+ordering and surface metadata still vary; Linux execution and citywide determinism remain
+unproved. Explicit CLI policy is `--cj-scale .0001 .0001 .0001`,
+`--min-building-density 1`, `--unit-scale 1`, and `--jobs 1`. All flat-ground,
+source-coverage, support, complexity, QA and fallback requirements below remain in force.
 
 ## 4. Sources, versions, and reconstruction
 
@@ -104,7 +116,7 @@ Sparse neighborhoods, empty inputs, and raster boundaries must be handled explic
 
 ### 4.4 Candidates and selection
 
-Fit planar pitched/stepped roofs with roofer LoD2.2, supplied ground references, `--no-clip-terrain`, complexity factor **0.4**, and minimum plane support **50**. Produce a higher-detail reference from the same filtered training cloud using roofer's pinned 1.0.0 defaults (complexity factor **0.888**) for detail preservation. Any defaults relied upon are captured explicitly in the processing configuration/tool report.
+Fit planar pitched/stepped roofs with roofer LoD2.2, supplied ground references, `--no-clip-terrain`, complexity factor **0.4**, and minimum plane support **50**. Produce a higher-detail reference from the same filtered training cloud using roofer's pinned 1.1.0-beta.1 reference settings (complexity factor **0.888**, plane support **15**) for detail preservation. Any defaults relied upon are captured explicitly in the processing configuration/tool report.
 
 Prefer the simpler valid candidate. Preserve the reference when a substantial pitched roof is flattened and validation roof MAE worsens by more than **0.25 m**, provided the reference passes the same artifact checks. For this guard, “substantial pitched” means more than 35% of plan-projected roof area has slope above 8°. This is a processing diagnostic, not a verified architectural label. Evaluate both candidates on the same retained highest validation returns in 0.5 m cells inside a 0.5 m inset footprint; record sample size and coverage, and never treat missing diagnostics as zero error.
 

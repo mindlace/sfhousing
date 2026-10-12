@@ -127,7 +127,7 @@ export function buildRoofAudit(
         groundEstimationMethod: b.ground?.method ?? 'unavailable'
       },
       processing: {
-        algorithm: 'roofer-1.0.0-lod2.2',
+        algorithm: `roofer-${toolVersions.roofer}-lod2.2`,
         configurationHash: input?.config.sha256 ?? configurationHash,
         toolVersions,
         attempts: b.candidates.map((c) => ({

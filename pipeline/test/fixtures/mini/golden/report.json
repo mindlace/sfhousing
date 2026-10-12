@@ -67,9 +67,9 @@
     "pieces.outside_parcels": 2,
     "pieces.remainder_sliver_dropped": 0,
     "pieces.sliver_dropped": 1,
-    "roofs.archive_bytes": 346162575,
+    "roofs.archive_bytes": 346589873,
     "roofs.archives": 93,
-    "roofs.audit_bytes": 97509,
+    "roofs.audit_bytes": 97881,
     "roofs.building_outcome.all_fallback": 8,
     "roofs.building_outcome.fully_modelled": 2,
     "roofs.buildings": 10,
@@ -195,17 +195,10 @@
       "url": "https://files.pythonhosted.org/packages/70/e8/6b0c288c50942d78193696c9f15f9a0874f5178aa0ddf40f83d9924b3e8d/scipy-1.18.1-cp314-cp314-macosx_14_0_arm64.whl"
     },
     {
-      "archiveKey": "roof-processing/04ff376ab13fa818e79e6281df549e931b53c4efec24d552ab0c3a8d1f109200.json",
-      "bytes": 14925,
-      "name": "toolchain.json",
-      "sha256": "04ff376ab13fa818e79e6281df549e931b53c4efec24d552ab0c3a8d1f109200",
-      "url": ""
-    },
-    {
-      "archiveKey": "roof-processing/06d9c06b4effeaa3de38713b60c1dbe4e733e740cf1f11ede75f40b15dfe665e.json",
-      "bytes": 3058,
-      "name": "b02-clip.json",
-      "sha256": "06d9c06b4effeaa3de38713b60c1dbe4e733e740cf1f11ede75f40b15dfe665e",
+      "archiveKey": "roof-processing/02cfc57f4523487e02b5d6e5d03d5cb826a66bfdc583ab15e02b0da77862550c.json",
+      "bytes": 4919,
+      "name": "b13-input.json",
+      "sha256": "02cfc57f4523487e02b5d6e5d03d5cb826a66bfdc583ab15e02b0da77862550c",
       "url": ""
     },
     {
@@ -213,6 +206,13 @@
       "bytes": 857,
       "name": "b01-points.refs.json",
       "sha256": "073be1e319a88a24d41ea6ddda6697fa67f124d82bf5700d8afbe9c5ead162b0",
+      "url": ""
+    },
+    {
+      "archiveKey": "roof-processing/07929017499210cf2afa4dd91c2ef354648382a85a0ee10bd3cc6439ae0f1b91.ts",
+      "bytes": 9003,
+      "name": "run.ts",
+      "sha256": "07929017499210cf2afa4dd91c2ef354648382a85a0ee10bd3cc6439ae0f1b91",
       "url": ""
     },
     {
@@ -230,20 +230,6 @@
       "url": ""
     },
     {
-      "archiveKey": "roof-processing/0b164676849b42fa0a5a452ab7eed280dd5dfba5e2193dcf3e7d659d5be1a2e4.json",
-      "bytes": 4914,
-      "name": "b03-input.json",
-      "sha256": "0b164676849b42fa0a5a452ab7eed280dd5dfba5e2193dcf3e7d659d5be1a2e4",
-      "url": ""
-    },
-    {
-      "archiveKey": "roof-processing/0da385085b1be0976feba7437f9f4c82e3d606a034c3152ebbfd9030821709c3.json",
-      "bytes": 7229,
-      "name": "b10-input.json",
-      "sha256": "0da385085b1be0976feba7437f9f4c82e3d606a034c3152ebbfd9030821709c3",
-      "url": ""
-    },
-    {
       "archiveKey": "roof-processing/0e82073ecc7acc6436fac4b31674109c7e1d3e596789767eda01258a8c9e8123.whl",
       "bytes": 20916357,
       "name": "scipy-1.18.1-cp314-cp314t-macosx_14_0_arm64.whl",
@@ -258,6 +244,13 @@
       "url": "https://files.pythonhosted.org/packages/89/fa/2d5838248950b8cb41ba22496dfc7e95222582761ec83e473a210a0be059/manifold3d-3.4.1-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
     },
     {
+      "archiveKey": "roof-processing/12096b4bc2f96d9134aba4b9a5d9268c06c69b873619a742b08c6f22ba2c2e99.gz",
+      "bytes": 20526294,
+      "name": "roofer-linux-x86_64-v1.1.0-beta.1.tar.gz",
+      "sha256": "12096b4bc2f96d9134aba4b9a5d9268c06c69b873619a742b08c6f22ba2c2e99",
+      "url": "https://github.com/3DBAG/roofer/releases/download/v1.1.0-beta.1/roofer-linux-x86_64-v1.1.0-beta.1.tar.gz"
+    },
+    {
       "archiveKey": "roof-processing/15f5344c62a1023461996bdf5d1ba5fdd813e96694a524fee712931134f3792f.whl",
       "bytes": 86056,
       "name": "laspy-2.7.0-py3-none-any.whl",
@@ -265,10 +258,10 @@
       "url": "https://files.pythonhosted.org/packages/ed/fb/ae27ebca327117e35cc717a3a87afdcbbf10d5aac52e405d16ebe777357e/laspy-2.7.0-py3-none-any.whl"
     },
     {
-      "archiveKey": "roof-processing/16c19b1d67ff42d3c646176fe0557cf2f52d0e64eb65823420987cbb2dfb888a.ts",
-      "bytes": 6446,
-      "name": "setup.ts",
-      "sha256": "16c19b1d67ff42d3c646176fe0557cf2f52d0e64eb65823420987cbb2dfb888a",
+      "archiveKey": "roof-processing/1a60ffce8f3b562e9739780f5ff20cc8a33b0b2668e14d2f8055ca98d61b1d64.json",
+      "bytes": 4916,
+      "name": "bpier-input.json",
+      "sha256": "1a60ffce8f3b562e9739780f5ff20cc8a33b0b2668e14d2f8055ca98d61b1d64",
       "url": ""
     },
     {
@@ -293,13 +286,6 @@
       "url": ""
     },
     {
-      "archiveKey": "roof-processing/2147d7196802611feb39114c5170e90c7495d91256f9d88d07440eca102b67e0.ts",
-      "bytes": 8789,
-      "name": "run.ts",
-      "sha256": "2147d7196802611feb39114c5170e90c7495d91256f9d88d07440eca102b67e0",
-      "url": ""
-    },
-    {
       "archiveKey": "roof-processing/251bf95b67017e27b13d82f5b326234ca62d70f9cf4c2b9032de2358a3b12c7b.whl",
       "bytes": 6936962,
       "name": "pillow-12.3.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
@@ -321,10 +307,10 @@
       "url": ""
     },
     {
-      "archiveKey": "roof-processing/281c43070b5a2c41aa15fffbc1b48432797c7368fe79701fc2c4e777ddfd1d3c.json",
-      "bytes": 3813,
-      "name": "b06-clip.json",
-      "sha256": "281c43070b5a2c41aa15fffbc1b48432797c7368fe79701fc2c4e777ddfd1d3c",
+      "archiveKey": "roof-processing/26f518852966b6376e673063f8c0754f7f5853cb23a806d85b6dd02e4f075f5f.json",
+      "bytes": 14960,
+      "name": "toolchain.json",
+      "sha256": "26f518852966b6376e673063f8c0754f7f5853cb23a806d85b6dd02e4f075f5f",
       "url": ""
     },
     {
@@ -335,24 +321,10 @@
       "url": "https://files.pythonhosted.org/packages/0e/ec/da4bdba9ae1fe9049be9e2f42336ebf700dfd839795b561fb0cee9cb03f6/manifold3d-3.4.1-cp314-cp314-macosx_11_0_arm64.whl"
     },
     {
-      "archiveKey": "roof-processing/2ec8a17e5ed6be20a74046cf9b7a2b23a3896adb67a3394ceefd1304a34ed446.json",
-      "bytes": 1688,
-      "name": "b10-reference.json",
-      "sha256": "2ec8a17e5ed6be20a74046cf9b7a2b23a3896adb67a3394ceefd1304a34ed446",
-      "url": ""
-    },
-    {
       "archiveKey": "roof-processing/30fe407f3f0d229bdeb8b493c11db3af2fcaf8ef4729544c0d0dfe31e8ee6962.gz",
       "bytes": 11251,
       "name": "b10-point-records.npy.gz",
       "sha256": "30fe407f3f0d229bdeb8b493c11db3af2fcaf8ef4729544c0d0dfe31e8ee6962",
-      "url": ""
-    },
-    {
-      "archiveKey": "roof-processing/31c5ff01a81b97881638535a59db96842f7acf441ace3d70ad43fe8a6ee264b5.json",
-      "bytes": 3063,
-      "name": "bpier-clip.json",
-      "sha256": "31c5ff01a81b97881638535a59db96842f7acf441ace3d70ad43fe8a6ee264b5",
       "url": ""
     },
     {
@@ -363,31 +335,38 @@
       "url": ""
     },
     {
-      "archiveKey": "roof-processing/35aba528a49bc5c75a1bdab66316bb20f8187d0f656d435f1a2f4a0c9e989157.json",
+      "archiveKey": "roof-processing/39b475e5d94f59afb05d1e61b805e4aaafd03a9b7827c4a53b6f50d6b0036bd1.json",
       "bytes": 3066,
       "name": "b04-clip.json",
-      "sha256": "35aba528a49bc5c75a1bdab66316bb20f8187d0f656d435f1a2f4a0c9e989157",
+      "sha256": "39b475e5d94f59afb05d1e61b805e4aaafd03a9b7827c4a53b6f50d6b0036bd1",
       "url": ""
     },
     {
-      "archiveKey": "roof-processing/3d53bbad4810fe77cc71819d70132c9a18954fc37f98715a249553629470d5c1.json",
-      "bytes": 1598,
-      "name": "b01-reference.json",
-      "sha256": "3d53bbad4810fe77cc71819d70132c9a18954fc37f98715a249553629470d5c1",
+      "archiveKey": "roof-processing/3ab784b150700f4454e92aed0037e5578af9af93d7e3a98d5d9064dc8defef5c.json",
+      "bytes": 4928,
+      "name": "b01-clip.json",
+      "sha256": "3ab784b150700f4454e92aed0037e5578af9af93d7e3a98d5d9064dc8defef5c",
       "url": ""
     },
     {
-      "archiveKey": "roof-processing/3e0b51d462300dd586645c59050a029200e386051afda7dfd38249a4d402e70c.json",
+      "archiveKey": "roof-processing/426d196c4aef89cec85640c46e97f119dbb0b5aa297949eba36b7ac2d96b25cc.json",
+      "bytes": 3058,
+      "name": "b02-clip.json",
+      "sha256": "426d196c4aef89cec85640c46e97f119dbb0b5aa297949eba36b7ac2d96b25cc",
+      "url": ""
+    },
+    {
+      "archiveKey": "roof-processing/479265c52a0e157157cacaf101b632c0bba3b68a91ed4c35ece6c78dcd28e54f.json",
+      "bytes": 4913,
+      "name": "b02-input.json",
+      "sha256": "479265c52a0e157157cacaf101b632c0bba3b68a91ed4c35ece6c78dcd28e54f",
+      "url": ""
+    },
+    {
+      "archiveKey": "roof-processing/4827dccd60c5340188fa6097c597a82f77e9d5913d607ee03735df1b16a5f2d0.json",
       "bytes": 3065,
       "name": "b03-clip.json",
-      "sha256": "3e0b51d462300dd586645c59050a029200e386051afda7dfd38249a4d402e70c",
-      "url": ""
-    },
-    {
-      "archiveKey": "roof-processing/3e4cb8e812fe616e69644a1fcea097ea0b05f54a4f22b955adeea72a32e04e82.json",
-      "bytes": 4915,
-      "name": "besri-input.json",
-      "sha256": "3e4cb8e812fe616e69644a1fcea097ea0b05f54a4f22b955adeea72a32e04e82",
+      "sha256": "4827dccd60c5340188fa6097c597a82f77e9d5913d607ee03735df1b16a5f2d0",
       "url": ""
     },
     {
@@ -412,11 +391,11 @@
       "url": ""
     },
     {
-      "archiveKey": "roof-processing/579ed03e617074c83fb16d198a158c88bc71e5e99809f6880d615800ccf3bb3d.gz",
-      "bytes": 3136267,
-      "name": "bb2a85a99c424001e698dac0e97485a5da31e27e.tar.gz",
-      "sha256": "579ed03e617074c83fb16d198a158c88bc71e5e99809f6880d615800ccf3bb3d",
-      "url": "https://github.com/3DBAG/roofer/archive/bb2a85a99c424001e698dac0e97485a5da31e27e.tar.gz"
+      "archiveKey": "roof-processing/54b87047f1f28614881692dc20deb554a9c86fe4161d03c91165e2b40c5ead48.json",
+      "bytes": 4915,
+      "name": "b04-input.json",
+      "sha256": "54b87047f1f28614881692dc20deb554a9c86fe4161d03c91165e2b40c5ead48",
+      "url": ""
     },
     {
       "archiveKey": "roof-processing/593e51cd04fe1122f1ab3fae87b306c36b2be0184a5e0d9c26849c55ff4580dc.whl",
@@ -447,17 +426,17 @@
       "url": "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl"
     },
     {
+      "archiveKey": "roof-processing/6a627313abb0a406e68253d23d8b1e397438cec16ff452e39fee5ea7f461823b.json",
+      "bytes": 1615,
+      "name": "b01-reference.json",
+      "sha256": "6a627313abb0a406e68253d23d8b1e397438cec16ff452e39fee5ea7f461823b",
+      "url": ""
+    },
+    {
       "archiveKey": "roof-processing/6b0cd27b312025c273dce0643573b380a39ed739f2685b4b53f644d3547fdeee.ts",
       "bytes": 3189,
       "name": "job.ts",
       "sha256": "6b0cd27b312025c273dce0643573b380a39ed739f2685b4b53f644d3547fdeee",
-      "url": ""
-    },
-    {
-      "archiveKey": "roof-processing/6e2f73d754a39f5bced8d82dbe893646108ab5689ad2a34b389c5ac37e337e0b.json",
-      "bytes": 3060,
-      "name": "b13-clip.json",
-      "sha256": "6e2f73d754a39f5bced8d82dbe893646108ab5689ad2a34b389c5ac37e337e0b",
       "url": ""
     },
     {
@@ -482,6 +461,13 @@
       "url": "https://files.pythonhosted.org/packages/d2/54/8f3d60050a703dcab48f7991ec4fb111772731d20ce6a1bf649465033476/shapely-2.2.0-cp314-cp314-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl"
     },
     {
+      "archiveKey": "roof-processing/77448308daa1f06e26fb015cab380913f0911c88ff653963cd1cc2e81f6bbf78.json",
+      "bytes": 3063,
+      "name": "bpier-clip.json",
+      "sha256": "77448308daa1f06e26fb015cab380913f0911c88ff653963cd1cc2e81f6bbf78",
+      "url": ""
+    },
+    {
       "archiveKey": "roof-processing/790079c7c046304a1da41aa95d948dfb0baefa74c615646a1504494dd194bb5e.py",
       "bytes": 8733,
       "name": "quality.py",
@@ -489,10 +475,31 @@
       "url": ""
     },
     {
-      "archiveKey": "roof-processing/7c740a8c7f592c43b07197580aea34a3bc79b666a15a5825ba5ef5235bc729ec.json",
-      "bytes": 3061,
-      "name": "b14-clip.json",
-      "sha256": "7c740a8c7f592c43b07197580aea34a3bc79b666a15a5825ba5ef5235bc729ec",
+      "archiveKey": "roof-processing/7beadbadf7b64659e455b1ee68ebe36493633cda17effa2eac2cc5fb766a3ee4.json",
+      "bytes": 7223,
+      "name": "b01-input.json",
+      "sha256": "7beadbadf7b64659e455b1ee68ebe36493633cda17effa2eac2cc5fb766a3ee4",
+      "url": ""
+    },
+    {
+      "archiveKey": "roof-processing/7eac924401fd75058a68d4abeadc12fd52e23ba9c71269c4d41d07af0ee4b643.py",
+      "bytes": 7191,
+      "name": "fit.py",
+      "sha256": "7eac924401fd75058a68d4abeadc12fd52e23ba9c71269c4d41d07af0ee4b643",
+      "url": ""
+    },
+    {
+      "archiveKey": "roof-processing/7fe1fbb312908395049ec827944d6ddda4fb56f877391dc821fc40d669b00a0c.json",
+      "bytes": 5024,
+      "name": "b06-input.json",
+      "sha256": "7fe1fbb312908395049ec827944d6ddda4fb56f877391dc821fc40d669b00a0c",
+      "url": ""
+    },
+    {
+      "archiveKey": "roof-processing/807fcb37a29e2174e1c2bef3e7fb028b7eceff287986aefdcc3f68707136427a.ts",
+      "bytes": 6543,
+      "name": "setup.ts",
+      "sha256": "807fcb37a29e2174e1c2bef3e7fb028b7eceff287986aefdcc3f68707136427a",
       "url": ""
     },
     {
@@ -503,31 +510,17 @@
       "url": ""
     },
     {
-      "archiveKey": "roof-processing/85834b289467b0e583e2b9c59a725c97ef39dc03c0c0a12417a8a0666e1aa0a1.gz",
-      "bytes": 20291139,
-      "name": "roofer-linux-x86_64-v1.0.0.tar.gz",
-      "sha256": "85834b289467b0e583e2b9c59a725c97ef39dc03c0c0a12417a8a0666e1aa0a1",
-      "url": "https://github.com/3DBAG/roofer/releases/download/v1.0.0/roofer-linux-x86_64-v1.0.0.tar.gz"
-    },
-    {
-      "archiveKey": "roof-processing/860ca4028ead8581361eea86e3ff35a942a04a25fd65c4c4373f3dfd76318d05.json",
-      "bytes": 5754,
-      "name": "b10-clip.json",
-      "sha256": "860ca4028ead8581361eea86e3ff35a942a04a25fd65c4c4373f3dfd76318d05",
-      "url": ""
+      "archiveKey": "roof-processing/88cb6a9cd775f59b230f961c0a9fc9f6f01106bff0b3715ce8c32bf90f390ba1.gz",
+      "bytes": 15793454,
+      "name": "roofer-macOS-arm64-v1.1.0-beta.1.tar.gz",
+      "sha256": "88cb6a9cd775f59b230f961c0a9fc9f6f01106bff0b3715ce8c32bf90f390ba1",
+      "url": "https://github.com/3DBAG/roofer/releases/download/v1.1.0-beta.1/roofer-macOS-arm64-v1.1.0-beta.1.tar.gz"
     },
     {
       "archiveKey": "roof-processing/8a005d8772affb43f746c1024e2297608fa897e94ad731db70dfc916aeae4a14.gz",
       "bytes": 88,
       "name": "b10-canopyCells.npy.gz",
       "sha256": "8a005d8772affb43f746c1024e2297608fa897e94ad731db70dfc916aeae4a14",
-      "url": ""
-    },
-    {
-      "archiveKey": "roof-processing/8a4023123f0e9f358d7bf0e86b956a20d77cc9255df97a3b4095fa03f9a858da.py",
-      "bytes": 7088,
-      "name": "fit.py",
-      "sha256": "8a4023123f0e9f358d7bf0e86b956a20d77cc9255df97a3b4095fa03f9a858da",
       "url": ""
     },
     {
@@ -559,11 +552,32 @@
       "url": "https://files.pythonhosted.org/packages/d5/b2/c6ce165acffceb15a82c07b9cc77d391f86b3f379ba62911908ae5d34b91/numpy-2.5.4-cp314-cp314-macosx_14_0_arm64.whl"
     },
     {
+      "archiveKey": "roof-processing/971038c5d303909f1e6412d7a77faa700e887ccf82267da265abb25a2eeabd18.json",
+      "bytes": 7229,
+      "name": "b10-input.json",
+      "sha256": "971038c5d303909f1e6412d7a77faa700e887ccf82267da265abb25a2eeabd18",
+      "url": ""
+    },
+    {
+      "archiveKey": "roof-processing/97cdefb6492c1764aece2e62d5b0acfc2e980cf2e08338ac6c8e8e3c001fe7f4.json",
+      "bytes": 3813,
+      "name": "b06-clip.json",
+      "sha256": "97cdefb6492c1764aece2e62d5b0acfc2e980cf2e08338ac6c8e8e3c001fe7f4",
+      "url": ""
+    },
+    {
       "archiveKey": "roof-processing/98b053943e5a0474ec0da309d2cb9d3f18ea57f8a2067c2ab7b5f763d1068380.whl",
       "bytes": 5574615,
       "name": "numpy-2.5.4-cp314-cp314t-macosx_14_0_arm64.whl",
       "sha256": "98b053943e5a0474ec0da309d2cb9d3f18ea57f8a2067c2ab7b5f763d1068380",
       "url": "https://files.pythonhosted.org/packages/94/06/1f9c24db48eef0c2d1207e3b11fffb0478e39dfd8c1e1be7476936885eed/numpy-2.5.4-cp314-cp314t-macosx_14_0_arm64.whl"
+    },
+    {
+      "archiveKey": "roof-processing/9bf0010a397e85f5059b24045b6f8bc07c538a918408e08427951f5c8b0a8209.json",
+      "bytes": 1713,
+      "name": "b10-simplified.json",
+      "sha256": "9bf0010a397e85f5059b24045b6f8bc07c538a918408e08427951f5c8b0a8209",
+      "url": ""
     },
     {
       "archiveKey": "roof-processing/9cfa27d1506d121baeb9ea0651faca6422d40b0fb5f83d72037520b540c85ed4.gz",
@@ -580,6 +594,13 @@
       "url": ""
     },
     {
+      "archiveKey": "roof-processing/9dfdb31acf484d90189a471237e2ee6d1ec5b0edbae48e856bceecf819e604f6.json",
+      "bytes": 1614,
+      "name": "b01-simplified.json",
+      "sha256": "9dfdb31acf484d90189a471237e2ee6d1ec5b0edbae48e856bceecf819e604f6",
+      "url": ""
+    },
+    {
       "archiveKey": "roof-processing/9fafcd7ebdf6736d1b1070bff6e23ba7b90636fb6625a85cf202adfbd1e0c218.py",
       "bytes": 6089,
       "name": "filter.py",
@@ -587,18 +608,18 @@
       "url": ""
     },
     {
-      "archiveKey": "roof-processing/a01fb1d99a90cec0b4cabaeaba984e63f08a04a3ed3fb27cabd380bcb75332f4.json",
-      "bytes": 4916,
-      "name": "bpier-input.json",
-      "sha256": "a01fb1d99a90cec0b4cabaeaba984e63f08a04a3ed3fb27cabd380bcb75332f4",
-      "url": ""
+      "archiveKey": "roof-processing/a08b13898c8e75f85f08c5c0454278c6153529b2382f863f090db0276b8b869c.gz",
+      "bytes": 3174121,
+      "name": "1c06fb1aed9096f4b16f894c2da12bc2d785b71b.tar.gz",
+      "sha256": "a08b13898c8e75f85f08c5c0454278c6153529b2382f863f090db0276b8b869c",
+      "url": "https://github.com/3DBAG/roofer/archive/1c06fb1aed9096f4b16f894c2da12bc2d785b71b.tar.gz"
     },
     {
-      "archiveKey": "roof-processing/a157661dcc410584940a77fc03f39edee083f5cd2e7b4ac5814a32099f6abc18.gz",
-      "bytes": 15639798,
-      "name": "roofer-macOS-arm64-v1.0.0.tar.gz",
-      "sha256": "a157661dcc410584940a77fc03f39edee083f5cd2e7b4ac5814a32099f6abc18",
-      "url": "https://github.com/3DBAG/roofer/releases/download/v1.0.0/roofer-macOS-arm64-v1.0.0.tar.gz"
+      "archiveKey": "roof-processing/a1419d2617bff260ad77d11d796464c31980ddcbfaca3c051987f76cda090e25.ts",
+      "bytes": 11024,
+      "name": "audit.ts",
+      "sha256": "a1419d2617bff260ad77d11d796464c31980ddcbfaca3c051987f76cda090e25",
+      "url": ""
     },
     {
       "archiveKey": "roof-processing/a1d33a7836f7ddc1993427966a0823468ec41bcbdb1a9f9942d1d7e57f803ba3.whl",
@@ -606,13 +627,6 @@
       "name": "scipy-1.18.1-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
       "sha256": "a1d33a7836f7ddc1993427966a0823468ec41bcbdb1a9f9942d1d7e57f803ba3",
       "url": "https://files.pythonhosted.org/packages/87/53/39d046cc7574ed6acacb6bd5723e220107ece80bff12faaf3efc4ddeede4/scipy-1.18.1-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
-    },
-    {
-      "archiveKey": "roof-processing/a3272105854a47156fe9a6131ce74a6c28c2db38dfc0a6b149e4277be794d3ef.json",
-      "bytes": 5024,
-      "name": "b06-input.json",
-      "sha256": "a3272105854a47156fe9a6131ce74a6c28c2db38dfc0a6b149e4277be794d3ef",
-      "url": ""
     },
     {
       "archiveKey": "roof-processing/a43a3b8c983ca538a683b2018291084e7a26dd94d68dc0cf8e9b3e21d8c43a13.json",
@@ -627,6 +641,13 @@
       "name": "lazrs-0.8.2-cp314-cp314-macosx_11_0_arm64.whl",
       "sha256": "a7f5fd1ec5b56901344fafba9ffb6fb26754445e2bbdcb2dfbbc492b82924924",
       "url": "https://files.pythonhosted.org/packages/82/d4/dfcba8ae853858df8a495e891de9a9873fe2e65dba12dd0ea771f3abbba8/lazrs-0.8.2-cp314-cp314-macosx_11_0_arm64.whl"
+    },
+    {
+      "archiveKey": "roof-processing/a9334a66fbd64be934112134c815fdb6d6fd0418c75e57267d7964b4eed5f50f.json",
+      "bytes": 3060,
+      "name": "b13-clip.json",
+      "sha256": "a9334a66fbd64be934112134c815fdb6d6fd0418c75e57267d7964b4eed5f50f",
+      "url": ""
     },
     {
       "archiveKey": "roof-processing/ac0333bdf38309aa3dcbe7e3fa7ea29e7a2c37c6ea306a757b700ded8e4596ad.whl",
@@ -664,32 +685,11 @@
       "url": "https://files.pythonhosted.org/packages/fd/fa/5705986493097e268f26d87b3cfce8e966f6c62a1b8f38fa4086b704cf4d/manifold3d-3.4.1-cp314-cp314t-macosx_11_0_arm64.whl"
     },
     {
-      "archiveKey": "roof-processing/ba1bb7935bcb5e9ba73ae09c6b3e84f715df9cd80b84a9e4aea9fbb4616586da.json",
-      "bytes": 4890,
-      "name": "b01-clip.json",
-      "sha256": "ba1bb7935bcb5e9ba73ae09c6b3e84f715df9cd80b84a9e4aea9fbb4616586da",
-      "url": ""
-    },
-    {
-      "archiveKey": "roof-processing/bae1f82ba003a519f3549bde66a044bf074f8e2a3d445678908af88ad57dffb2.json",
-      "bytes": 4914,
-      "name": "b14-input.json",
-      "sha256": "bae1f82ba003a519f3549bde66a044bf074f8e2a3d445678908af88ad57dffb2",
-      "url": ""
-    },
-    {
       "archiveKey": "roof-processing/bf16ba1b4d0b6b7c8e534936632270cf70eb00dbe09005bc345b2677b726855c.whl",
       "bytes": 6989642,
       "name": "pillow-12.3.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
       "sha256": "bf16ba1b4d0b6b7c8e534936632270cf70eb00dbe09005bc345b2677b726855c",
       "url": "https://files.pythonhosted.org/packages/cc/91/420637fcb8f1bc11029e403b4538e6694744428d8246118e45719f944556/pillow-12.3.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
-    },
-    {
-      "archiveKey": "roof-processing/c8cd5ade16b3f0ad22f1000152332d4501de83be7cd14a95a09d5b15f1a4d2a1.json",
-      "bytes": 1687,
-      "name": "b10-simplified.json",
-      "sha256": "c8cd5ade16b3f0ad22f1000152332d4501de83be7cd14a95a09d5b15f1a4d2a1",
-      "url": ""
     },
     {
       "archiveKey": "roof-processing/c9b80cdf5cedba0e90d93fa5f9a333c4d65bd545cd669b71bb97ce2b703c9d73.whl",
@@ -706,13 +706,6 @@
       "url": ""
     },
     {
-      "archiveKey": "roof-processing/cf58fd63f7befb16fe7761b81cfe16bfcbe1cb9075c0572a80520c25ff2043fa.json",
-      "bytes": 1597,
-      "name": "b01-simplified.json",
-      "sha256": "cf58fd63f7befb16fe7761b81cfe16bfcbe1cb9075c0572a80520c25ff2043fa",
-      "url": ""
-    },
-    {
       "archiveKey": "roof-processing/d09f3165e09ed0395a4fd4f77a50dd7fc19ca6ed2d6e17f1922b3b416342f718.gz",
       "bytes": 1129,
       "name": "b01-validationRows.npy.gz",
@@ -720,24 +713,10 @@
       "url": ""
     },
     {
-      "archiveKey": "roof-processing/d17510dd616700140b5072062f0b9edfe4c9b46745304219926ab31262e7452c.json",
-      "bytes": 4915,
-      "name": "b04-input.json",
-      "sha256": "d17510dd616700140b5072062f0b9edfe4c9b46745304219926ab31262e7452c",
-      "url": ""
-    },
-    {
       "archiveKey": "roof-processing/d434a1aff1b474232688f4640e96e829e8df25a0a2903111dfcaa3b0d52bc323.py",
       "bytes": 4596,
       "name": "clip.py",
       "sha256": "d434a1aff1b474232688f4640e96e829e8df25a0a2903111dfcaa3b0d52bc323",
-      "url": ""
-    },
-    {
-      "archiveKey": "roof-processing/d49859fcd04dae85985a308dd91d182963ed04fba89b64edd10c8679941d722c.json",
-      "bytes": 4919,
-      "name": "b13-input.json",
-      "sha256": "d49859fcd04dae85985a308dd91d182963ed04fba89b64edd10c8679941d722c",
       "url": ""
     },
     {
@@ -783,6 +762,20 @@
       "url": ""
     },
     {
+      "archiveKey": "roof-processing/e62e983efb3e9969ea8751b8a3423bbb330edb0dd16e941b989fd0f18daca3a2.json",
+      "bytes": 3061,
+      "name": "b14-clip.json",
+      "sha256": "e62e983efb3e9969ea8751b8a3423bbb330edb0dd16e941b989fd0f18daca3a2",
+      "url": ""
+    },
+    {
+      "archiveKey": "roof-processing/ebbf364908f8b6f7972edfe28c3ddcb812e7038282578391ee90c85096034466.json",
+      "bytes": 1714,
+      "name": "b10-reference.json",
+      "sha256": "ebbf364908f8b6f7972edfe28c3ddcb812e7038282578391ee90c85096034466",
+      "url": ""
+    },
+    {
       "archiveKey": "roof-processing/ed360a7d7e261da4728c09b5a95b1149ab3047c624ffd937cdb473d78e2bd067.json",
       "bytes": 1864,
       "name": "sources.json",
@@ -790,10 +783,10 @@
       "url": ""
     },
     {
-      "archiveKey": "roof-processing/eda532e9b2b90c74f0e8f822abd798f17f82597f03d2d26d90a0c0ffa2acfa9e.json",
-      "bytes": 4913,
-      "name": "b02-input.json",
-      "sha256": "eda532e9b2b90c74f0e8f822abd798f17f82597f03d2d26d90a0c0ffa2acfa9e",
+      "archiveKey": "roof-processing/eec176e30721715376afdd8599cc772f95e58c799f081f39a0070a6ea4b499a3.json",
+      "bytes": 4915,
+      "name": "besri-input.json",
+      "sha256": "eec176e30721715376afdd8599cc772f95e58c799f081f39a0070a6ea4b499a3",
       "url": ""
     },
     {
@@ -804,6 +797,20 @@
       "url": ""
     },
     {
+      "archiveKey": "roof-processing/efdebceec96ead3581d8959e3c9c2cc7d90b2a2fd54f1fb09f2012ecf0789f20.json",
+      "bytes": 4914,
+      "name": "b03-input.json",
+      "sha256": "efdebceec96ead3581d8959e3c9c2cc7d90b2a2fd54f1fb09f2012ecf0789f20",
+      "url": ""
+    },
+    {
+      "archiveKey": "roof-processing/f2b13bd80ff557de525d6f3fdbc0cfc22b65798a99ab2e6c4cb3c1e579f4ea97.json",
+      "bytes": 5797,
+      "name": "b10-clip.json",
+      "sha256": "f2b13bd80ff557de525d6f3fdbc0cfc22b65798a99ab2e6c4cb3c1e579f4ea97",
+      "url": ""
+    },
+    {
       "archiveKey": "roof-processing/f481e27206db60e3f9d1d057c37d4c2ecc6e2af21e4c6b60b3a9fa347062aa50.whl",
       "bytes": 627518,
       "name": "lazrs-0.8.2-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
@@ -811,25 +818,18 @@
       "url": "https://files.pythonhosted.org/packages/9b/e5/ea06052f3432ece2e3c7eefc49d44296234faf01a93f13a6241f13f9be59/lazrs-0.8.2-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
     },
     {
-      "archiveKey": "roof-processing/f6919abf764c983ef5a3b6f77d620761dc850340325f8b2e6f55cbde3a50129f.ts",
-      "bytes": 11007,
-      "name": "audit.ts",
-      "sha256": "f6919abf764c983ef5a3b6f77d620761dc850340325f8b2e6f55cbde3a50129f",
-      "url": ""
-    },
-    {
-      "archiveKey": "roof-processing/f95b8559041bedfdad89ea935a033a479a3dbda757b403b8c7a1079f0ec9bf5f.json",
-      "bytes": 7223,
-      "name": "b01-input.json",
-      "sha256": "f95b8559041bedfdad89ea935a033a479a3dbda757b403b8c7a1079f0ec9bf5f",
-      "url": ""
-    },
-    {
       "archiveKey": "roof-processing/faa68c0996bdd3fd997d86c676e758b72a96209ab14b7c5e8b8dcf3b23f85881.whl",
       "bytes": 10127655,
       "name": "pyproj-3.8.0-cp314-cp314t-manylinux_2_28_x86_64.whl",
       "sha256": "faa68c0996bdd3fd997d86c676e758b72a96209ab14b7c5e8b8dcf3b23f85881",
       "url": "https://files.pythonhosted.org/packages/2e/ef/a23a52a64fd8669a3bb65e6af754f60b3622f30cfd86092007baec3afcdd/pyproj-3.8.0-cp314-cp314t-manylinux_2_28_x86_64.whl"
+    },
+    {
+      "archiveKey": "roof-processing/fd68f0442aae50a88d019695dca34e1c884984c77a477a58d70482efe185fe49.json",
+      "bytes": 4914,
+      "name": "b14-input.json",
+      "sha256": "fd68f0442aae50a88d019695dca34e1c884984c77a477a58d70482efe185fe49",
+      "url": ""
     },
     {
       "archiveKey": "roof-processing/ffa6ce09a1c6a08e9667dd9c97aa0b14184e8d18f2a14b78b2a2328c9147f076.whl",
@@ -853,8 +853,8 @@
     "pyproj": "3.8.0",
     "python": "3.14.8",
     "roofRequirementsHash": "1d76fe48bd41f096374c62fff113784dea6c7d26c5c5607973af14d6fb4363e2",
-    "roofToolchainHash": "04ff376ab13fa818e79e6281df549e931b53c4efec24d552ab0c3a8d1f109200",
-    "roofer": "1.0.0",
+    "roofToolchainHash": "26f518852966b6376e673063f8c0754f7f5853cb23a806d85b6dd02e4f075f5f",
+    "roofer": "1.1.0-beta.1",
     "scipy": "1.18.1",
     "shapely": "2.2.0",
     "tippecanoe": "2.79.0"

@@ -81,7 +81,8 @@ export async function setupRoofs(
   const version = await run(ROOFER, ['--version'], { cwd: join(ROOT, 'pipeline/.cache/tools') });
   if (
     version.code !== 0 ||
-    !`${version.stdout}${version.stderr}`.includes(toolchain.roofer.version)
+    `${version.stdout}${version.stderr}`.trim() !==
+      `roofer ${toolchain.roofer.version} (${toolchain.roofer.commit})`
   )
     throw new Error('roofer executable version mismatch');
   writeFileSync(
@@ -161,7 +162,8 @@ export async function doctorRoofs(): Promise<DoctorCheck[]> {
     ok:
       verified &&
       roofer.code === 0 &&
-      `${roofer.stdout}${roofer.stderr}`.includes(toolchain.roofer.version),
+      `${roofer.stdout}${roofer.stderr}`.trim() ===
+        `roofer ${toolchain.roofer.version} (${toolchain.roofer.commit})`,
     found: `${roofer.stdout}${roofer.stderr}`.trim(),
     hint
   });

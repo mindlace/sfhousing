@@ -271,23 +271,23 @@
     }
   ],
   "roofer": {
-    "version": "1.0.0",
-    "commit": "bb2a85a99c424001e698dac0e97485a5da31e27e",
+    "version": "1.1.0-beta.1",
+    "commit": "1c06fb1aed9096f4b16f894c2da12bc2d785b71b",
     "source": {
-      "url": "https://github.com/3DBAG/roofer/archive/bb2a85a99c424001e698dac0e97485a5da31e27e.tar.gz",
-      "sha256": "579ed03e617074c83fb16d198a158c88bc71e5e99809f6880d615800ccf3bb3d",
-      "bytes": 3136267
+      "url": "https://github.com/3DBAG/roofer/archive/1c06fb1aed9096f4b16f894c2da12bc2d785b71b.tar.gz",
+      "sha256": "a08b13898c8e75f85f08c5c0454278c6153529b2382f863f090db0276b8b869c",
+      "bytes": 3174121
     },
     "platforms": {
       "linux-x64": {
-        "url": "https://github.com/3DBAG/roofer/releases/download/v1.0.0/roofer-linux-x86_64-v1.0.0.tar.gz",
-        "sha256": "85834b289467b0e583e2b9c59a725c97ef39dc03c0c0a12417a8a0666e1aa0a1",
-        "bytes": 20291139
+        "url": "https://github.com/3DBAG/roofer/releases/download/v1.1.0-beta.1/roofer-linux-x86_64-v1.1.0-beta.1.tar.gz",
+        "sha256": "12096b4bc2f96d9134aba4b9a5d9268c06c69b873619a742b08c6f22ba2c2e99",
+        "bytes": 20526294
       },
       "darwin-arm64": {
-        "url": "https://github.com/3DBAG/roofer/releases/download/v1.0.0/roofer-macOS-arm64-v1.0.0.tar.gz",
-        "sha256": "a157661dcc410584940a77fc03f39edee083f5cd2e7b4ac5814a32099f6abc18",
-        "bytes": 15639798
+        "url": "https://github.com/3DBAG/roofer/releases/download/v1.1.0-beta.1/roofer-macOS-arm64-v1.1.0-beta.1.tar.gz",
+        "sha256": "88cb6a9cd775f59b230f961c0a9fc9f6f01106bff0b3715ce8c32bf90f390ba1",
+        "bytes": 15793454
       }
     }
   }

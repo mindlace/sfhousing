@@ -1,7 +1,8 @@
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
+import * as roofSetup from '../roofs/setup';
 import {
   runRoofJob,
   usedRoofSourceIds,
@@ -294,4 +295,34 @@ test('fallback source attribution uses explicit processing evidence', () => {
     ])
   ).toEqual(['roof-aerial', 'roof-lidar']);
   expect(usedRoofSourceIds([{ method: 'lidar_aerial' }])).toEqual([]);
+});
+
+test('runner aborts before creating a job when installed tool verification fails', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'roof-tool-failure-'));
+  const check = vi.spyOn(roofSetup, 'doctorRoofs').mockResolvedValue([
+    {
+      name: 'roofer',
+      ok: false,
+      found: 'same version but corrupt executable',
+      hint: 'setup-roofs'
+    }
+  ]);
+  try {
+    await expect(
+      runRoofJob({
+        schemaVersion: 1,
+        datasetVersion: 'test',
+        buildings: [building],
+        sources: [],
+        sourceStatus: [],
+        configPath: resolve('pipeline/roofs/config.json'),
+        toolchainHash: '0'.repeat(64),
+        workDir: dir
+      })
+    ).rejects.toThrow(/roof tools unavailable.*roofer/);
+    expect(existsSync(join(dir, 'job.json'))).toBe(false);
+  } finally {
+    check.mockRestore();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

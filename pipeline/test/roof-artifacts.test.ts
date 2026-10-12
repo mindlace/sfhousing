@@ -1327,3 +1327,11 @@ it.each([
   },
   30000
 );
+
+it('reports the effective prerelease algorithm for every building and piece', async () => {
+  const { audit } = await dataset();
+  for (const row of [...audit.buildings, ...audit.pieces]) {
+    expect(row.processing.algorithm).toBe('roofer-1.1.0-beta.1-lod2.2');
+    expect(row.processing.toolVersions.roofer).toBe('1.1.0-beta.1');
+  }
+});

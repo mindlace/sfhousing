@@ -1,4 +1,4 @@
-"""Pinned roofer 1.0.0 adapter. Supplied ground is mandatory."""
+"""Pinned roofer adapter (see toolchain.json). Supplied ground is mandatory."""
 import json
 import math
 from pathlib import Path
@@ -76,7 +76,7 @@ def fit_one(building, training_points, ground, config, name, complexity, support
     las.classification = training_points['classification']
     las.write(cloud)
     footprint.write_text(json.dumps({'type':'FeatureCollection','features':[{'type':'Feature','geometry':building['footprint'],'properties':{'buildingId':building['buildingId'],'groundM':ground,'fallbackRoofZ':ground+building['heightM']}}]},allow_nan=False))
-    args = [str(ROOFER),'--jobs','1','--bld-class','1','--grnd-class','2','--id-attribute','buildingId','--h-terrain-attribute','groundM','--h-terrain-strategy','user','--h-roof-attribute','fallbackRoofZ','--lod22','--no-clip-terrain','--complexity-factor',str(complexity),'--plane-detect-min-points',str(support),str(cloud),str(footprint),str(output)]
+    args = [str(ROOFER),'--jobs','1','--bld-class','1','--grnd-class','2','--id-attribute','buildingId','--h-terrain-attribute','groundM','--h-terrain-strategy','user','--h-roof-attribute','fallbackRoofZ','--lod22','--no-clip-terrain','--cj-scale','0.0001','0.0001','0.0001','--min-building-density','1','--unit-scale','1','--complexity-factor',str(complexity),'--plane-detect-min-points',str(support),str(cloud),str(footprint),str(output)]
     try:
         run = subprocess.run(args,cwd=work,capture_output=True,text=True,timeout=180)
     except subprocess.TimeoutExpired:
