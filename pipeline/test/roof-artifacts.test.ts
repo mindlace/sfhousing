@@ -1013,6 +1013,7 @@ it.each([
   'version',
   'dictionary',
   'source metadata',
+  'source role',
   'raw source',
   'hierarchy',
   'conflict',
@@ -1039,6 +1040,7 @@ it.each([
   const refs = g.refs.filter((r) => ![g.sources, g.points, g.subsets].includes(r));
   // Content-addressed duplicate source objects collapse in the report.
   const unique = [...new Map(refs.map((r) => [r.archiveKey, r])).values()];
+  if (failure === 'source role') sources.name = 'renamed.json';
   expect(subsets.name).toBe('b-subsets.refs.json');
   await expect(checkRoofArchives({ roofArchives: unique }, g.root)).rejects.toThrow(
     /point|subset|source/
@@ -1144,8 +1146,39 @@ it('keeps frozen old/new meshes, headers and all audit fields except input archi
     );
 }, 30000);
 
-it.each(['length', 'corruption'])(
-  'rejects raw roof %s before the first put from an otherwise valid upload',
+const invalidGroundHex = [
+  '0x1.0000000000000p+1024',
+  '0x1.0000000000000p-1075',
+  '0x1.0000000000000p-1023',
+  '0x0.0000000000000p-1022',
+  '0x0.0p-0',
+  '0x1.0p+0',
+  '0x1.0000000000000p+00',
+  '0x1.0000000000000p-0',
+  '0x1.0000000000000p+0\n'
+];
+const canonicalGroundHex = [
+  '0x1.0000000000000p+0',
+  '0x1.fffffffffffffp+1023',
+  '-0x1.fffffffffffffp+1023',
+  '0x1.0000000000000p-1022',
+  '0x0.fffffffffffffp-1022',
+  '0x0.0000000000001p-1022',
+  '-0x0.0000000000001p-1022',
+  '0x0.0p+0',
+  '-0x0.0p+0'
+];
+
+it.each([
+  'length',
+  'corruption',
+  'source-role-laz',
+  'source-role-metadata',
+  'source-role-hierarchy',
+  ...invalidGroundHex,
+  ...canonicalGroundHex
+])(
+  'checks private roof integrity %s from an otherwise valid upload before the first put',
   async (failure) => {
     const { createHash } = await import('node:crypto');
     const { symlinkSync, statSync } = await import('node:fs');
@@ -1184,10 +1217,6 @@ it.each(['length', 'corruption'])(
       },
       log: (s: string) => logs.push(s)
     };
-    expect(await upload(opts)).toBe(0);
-    expect(puts.at(-1)).toBe('data/fixture-0/manifest.json');
-    puts.length = 0;
-    logs.length = 0;
     const replacements = new Map<string, import('../roofs/job').RoofArchive>();
     const save = (ref: import('../roofs/job').RoofArchive, value: unknown) => {
       const bytes = Buffer.from(JSON.stringify(value));
@@ -1201,22 +1230,6 @@ it.each(['length', 'corruption'])(
       writeFileSync(join(archiveDir, sha256), bytes);
       replacements.set(ref.archiveKey, next);
     };
-    const sourceRef = original.find((a) => a.name === 'sources.json')!;
-    const source = read(archiveDir, sourceRef.sha256);
-    const raw = source.sourceArchives.find((a: { name: string }) => a.name.endsWith('.laz'));
-    expect(statSync(join(opts.rawDir, raw.name)).size).toBe(raw.bytes);
-    if (failure === 'corruption') {
-      const path = join(opts.rawDir, raw.name),
-        bytes = readFileSync(path);
-      bytes[0] ^= 1;
-      writeFileSync(path, bytes);
-      expect(await upload(opts)).toBe(1);
-      expect(puts).toEqual([]);
-      expect(logs.join('\n')).toMatch(/raw roof archive.*hash/);
-      return;
-    }
-    raw.bytes++;
-    save(sourceRef, source);
     const rewrite = (value: unknown): unknown => {
       if (typeof value === 'string') return replacements.get(value)?.archiveKey ?? value;
       if (!value || typeof value !== 'object') return value;
@@ -1226,30 +1239,91 @@ it.each(['length', 'corruption'])(
         return replacements.get(record.archiveKey);
       return Object.fromEntries(Object.entries(record).map(([k, v]) => [k, rewrite(v)]));
     };
-    // Repair only descriptor references in this test fixture, leaving one wrong raw byte count.
-    for (let pass = 0; pass < 5; pass++) {
-      for (const ref of original.filter((a) => a.archiveKey.endsWith('.json') && a !== sourceRef)) {
-        const value = read(archiveDir, ref.sha256),
-          next = rewrite(value);
-        if (JSON.stringify(next) !== JSON.stringify(value)) save(ref, next);
+    const edited = new Set<string>();
+    const publish = () => {
+      for (let pass = 0; pass < 5; pass++) {
+        for (const ref of original.filter(
+          (a) => a.archiveKey.endsWith('.json') && !edited.has(a.archiveKey)
+        )) {
+          const value = read(archiveDir, ref.sha256),
+            next = rewrite(value);
+          if (JSON.stringify(next) !== JSON.stringify(value)) save(ref, next);
+        }
       }
+      report.roofArchives = original.map((a) => replacements.get(a.archiveKey) ?? a);
+      const audit = rewrite(read(out, 'roofs/audit.json')) as Parameters<typeof writeRoofAudit>[1];
+      const auditBytes = writeRoofAudit(join(out, 'roofs/audit.json'), audit);
+      const roofReport = read(out, 'roofs/report.json');
+      for (const counts of [report.counts, roofReport.counts]) {
+        counts['roofs.audit_bytes'] = auditBytes;
+        counts['roofs.archive_bytes'] = report.roofArchives.reduce(
+          (n: number, a: { bytes: number }) => n + a.bytes,
+          0
+        );
+      }
+      write(out, 'report.json', report);
+      write(out, 'roofs/report.json', roofReport);
+    };
+    const sourceRef = original.find((a) => a.name === 'sources.json')!;
+    edited.add(sourceRef.archiveKey);
+    const source = read(archiveDir, sourceRef.sha256);
+    const raw = source.sourceArchives.find((a: { name: string }) => a.name.endsWith('.laz'));
+    expect(statSync(join(opts.rawDir, raw.name)).size).toBe(raw.bytes);
+    // Give the successful baseline real, hash-valid metadata/hierarchy closure as well.
+    if (failure.startsWith('source-role-')) {
+      for (const name of ['ept.json', 'ept-hierarchy.json']) {
+        const bytes = Buffer.from(JSON.stringify({ name }));
+        const sha256 = createHash('sha256').update(bytes).digest('hex');
+        writeFileSync(join(opts.rawDir, name), bytes);
+        const ref = { name, sha256, bytes: bytes.length, archiveKey: `sources/${sha256}.json` };
+        source.sourceArchives.push(ref);
+        source.sourceStatus[1].spatial.objects.push({ name, sha256 });
+      }
+      save(sourceRef, source);
+      publish();
     }
-    report.roofArchives = original.map((a) => replacements.get(a.archiveKey) ?? a);
-    const audit = rewrite(read(out, 'roofs/audit.json')) as Parameters<typeof writeRoofAudit>[1];
-    const auditBytes = writeRoofAudit(join(out, 'roofs/audit.json'), audit);
-    const roofReport = read(out, 'roofs/report.json');
-    for (const counts of [report.counts, roofReport.counts]) {
-      counts['roofs.audit_bytes'] = auditBytes;
-      counts['roofs.archive_bytes'] = report.roofArchives.reduce(
-        (n: number, a: { bytes: number }) => n + a.bytes,
-        0
-      );
+    expect(await upload(opts), logs.join('\n')).toBe(0);
+    expect(puts.at(-1)).toBe('data/fixture-0/manifest.json');
+    puts.length = 0;
+    logs.length = 0;
+    let expected = /raw roof archive.*length/;
+    if (failure.startsWith('source-role-')) {
+      const missing =
+        failure === 'source-role-laz'
+          ? raw.name
+          : failure === 'source-role-metadata'
+            ? 'ept.json'
+            : 'ept-hierarchy.json';
+      rmSync(join(opts.rawDir, missing));
+      report.roofArchives.find((a: { name: string }) => a.name === 'sources.json').name =
+        'renamed.json';
+      write(out, 'report.json', report);
+      expected = /source.*role/;
+    } else if (failure === 'corruption') {
+      const path = join(opts.rawDir, raw.name),
+        bytes = readFileSync(path);
+      bytes[0] ^= 1;
+      writeFileSync(path, bytes);
+      expected = /raw roof archive.*hash/;
+    } else {
+      if (failure === 'length') {
+        raw.bytes++;
+        save(sourceRef, source);
+      } else {
+        const ref = original.find((a) => a.name.endsWith('-subsets.refs.json'))!;
+        edited.add(ref.archiveKey);
+        save(ref, { ...read(archiveDir, ref.sha256), groundMHex: failure });
+        expected = /malformed point subset/;
+      }
+      publish();
     }
-    write(out, 'report.json', report);
-    write(out, 'roofs/report.json', roofReport);
-    expect(await upload(opts)).toBe(1);
-    expect(puts).toEqual([]);
-    expect(logs.join('\n')).toMatch(/raw roof archive.*length/);
+    const valid = canonicalGroundHex.includes(failure);
+    expect(await upload(opts), logs.join('\n')).toBe(valid ? 0 : 1);
+    if (valid) expect(puts.at(-1)).toBe('data/fixture-0/manifest.json');
+    else {
+      expect(puts).toEqual([]);
+      expect(logs.join('\n')).toMatch(expected);
+    }
   },
   30000
 );

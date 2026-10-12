@@ -54,6 +54,32 @@ class PointArchivesTests(unittest.TestCase):
                 self.assertEqual(len(children),1); self.assertEqual(len(children2),2)
                 with self.assertRaisesRegex(ValueError,'ground'): p.read_evidence([ref,subset],a.directory,raw,ground_m=.25)
 
+    def test_ground_hex_finite_canonical_boundaries(self):
+        valid = ['0x1.fffffffffffffp+1023', '-0x1.fffffffffffffp+1023',
+                 '0x1.0000000000000p-1022', '0x0.fffffffffffffp-1022',
+                 '0x0.0000000000001p-1022', '-0x0.0000000000001p-1022',
+                 '0x0.0p+0', '-0x0.0p+0']
+        invalid = ['0x1.0000000000000p+1024', '0x1.0000000000000p-1075',
+                   '0x1.0000000000000p-1023', '0x0.0000000000000p-1022',
+                   '0x0.0p-0', '0x1.0p+0', '0x1.0000000000000p+00']
+        with tempfile.TemporaryDirectory() as d:
+            p,a,s,points,raw = self.fixture(Path(d))
+            ref,_ = p.write_points(a,points,'b',s)
+            pre=np.array([0,1,3,4],dtype='<u8'); held=np.array([2,5],dtype='<u8')
+            mask=np.array([False,True,False,False]); mask_ref=a.array(mask,'b-mask.npy')
+            for spelling in valid:
+                ground=float.fromhex(spelling)
+                sub,_=p.write_subsets(a,ref,points,pre,held,mask,mask_ref,ground,'b')
+                desc=json.loads((a.directory/sub['sha256']).read_text())
+                self.assertEqual(desc['groundMHex'],spelling)
+                restored=p.read_evidence([ref,sub],a.directory,raw,ground_m=ground)
+                expected=points[held].copy(); expected['z']-=ground
+                self.assertEqual(restored['validation'].tobytes(),expected.tobytes())
+            for spelling in invalid:
+                bad=a.json(dict(desc,groundMHex=spelling),'b-subsets.refs.json')
+                with self.subTest(spelling=spelling),self.assertRaisesRegex(ValueError,'ground'):
+                    p.read_evidence([ref,bad],a.directory,raw,ground_m=-0.)
+
     def test_canonical_logical_digest_preserves_signed_zero_and_large_integer(self):
         p=self.codec()
         points=np.array([(-0.,1.25,2.5,2,'a'*64,2**63+17)],dtype=p.POINT_DTYPE)

@@ -84,15 +84,17 @@ export async function checkRoofArchives(
   const refs = parseRoofArchives(report),
     byKey = new Map(refs.map((a) => [a.archiveKey, a]));
   for (const ref of refs) await verifyRoofArchive(ref, archiveDir);
-  const requireRef = (raw: unknown) => {
+  const requireRef = (raw: unknown, sourceRole = false) => {
     const a = raw as RoofArchive,
       known = byKey.get(a?.archiveKey);
     if (!known || known.sha256 !== a.sha256 || known.bytes !== a.bytes)
       throw new Error(`missing roof archive closure: ${a?.archiveKey}`);
+    if (sourceRole && (a.name !== 'sources.json' || known.name !== 'sources.json'))
+      throw new Error('source archive role mismatch');
   };
   for (const ref of refs.filter((a) => a.name.endsWith('-input.json'))) {
     const input = JSON.parse(readFileSync(join(archiveDir, ref.sha256), 'utf8'));
-    requireRef(input.sources);
+    requireRef(input.sources, true);
     requireRef(input.config);
     if (
       !Array.isArray(input.dependencies) ||
@@ -114,11 +116,23 @@ export async function checkRoofArchives(
   for (const ref of toolchainArchives()) requireRef(ref);
   return refs;
 }
+/** Exact finite Python float.hex() spelling, including subnormals and signed zero. */
+function canonicalFloat64Hex(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  if (value === '0x0.0p+0' || value === '-0x0.0p+0') return true;
+  const match = /^-?0x([01])\.([0-9a-f]{13})p([+-](?:0|[1-9][0-9]{0,3}))$/.exec(value);
+  if (!match || match[0] !== value) return false;
+  const [, leading, fraction, power] = match;
+  if (leading === '0') return power === '-1022' && fraction !== '0000000000000';
+  const exponent = Number(power);
+  return exponent >= -1022 && exponent <= 1023 && power !== '-0';
+}
+
 /** Only the known, bounded subset -> points -> sources graph is followed. */
 function checkPointReferences(
   refs: RoofArchive[],
   archiveDir: string,
-  requireRef: (ref: unknown) => void
+  requireRef: (ref: unknown, sourceRole?: boolean) => void
 ): void {
   interface PointReferences {
     kind: string;
@@ -177,7 +191,7 @@ function checkPointReferences(
     )
       throw new Error('unsupported or malformed point reference descriptor');
     child(p.records, '-point-records.npy.gz');
-    child(p.sources, 'sources.json');
+    requireRef(p.sources, true);
     const source = read<{ sources: RoofInputSource[]; sourceArchives: RoofArchive[] }>(p.sources);
     if (!Array.isArray(source.sources) || !Array.isArray(source.sourceArchives))
       throw new Error('missing point source metadata/raw closure');
@@ -235,8 +249,7 @@ function checkPointReferences(
       !count(s.validationCount) ||
       !sha(s.trainingLogicalSha256) ||
       !sha(s.validationLogicalSha256) ||
-      typeof s.groundMHex !== 'string' ||
-      !/^-?0x[01]\.[0-9a-f]{1,13}p[+-][0-9]+$/.test(s.groundMHex)
+      !canonicalFloat64Hex(s.groundMHex)
     )
       throw new Error('unsupported or malformed point subset descriptor');
     child(s.points, '-points.refs.json');

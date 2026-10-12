@@ -263,7 +263,7 @@ def read_evidence(extracts, directory, raw_dir, ground_m=None, max_bytes=DEFAULT
         if desc.get('kind')!='roof-point-subsets' or type(desc.get('schemaVersion')) is not int or desc.get('schemaVersion')!=1 or desc.get('rowEncoding')!='npy-gzip-u64-le-v1':raise ValueError('unsupported subset version/encoding')
         if len(point_refs)!=1 or desc['points']!=point_refs[0] or 'training' in result or 'validation' in result:raise ValueError('subset point role mismatch')
         try:ground=float.fromhex(desc['groundMHex'])
-        except (ValueError,TypeError,KeyError) as error:raise ValueError('invalid ground') from error
+        except (ValueError,TypeError,KeyError,OverflowError) as error:raise ValueError('invalid ground') from error
         if ground_m is None or not np.isfinite(ground) or ground.hex()!=desc['groundMHex'] or float(ground_m).hex()!=ground.hex():raise ValueError('ground result mismatch')
         pre=read_array(desc['preTrainingRows'],directory,'<u8',desc['preTrainingCount'],max_bytes)
         validation=read_array(desc['validationRows'],directory,'<u8',desc['validationCount'],max_bytes)

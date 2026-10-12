@@ -67,7 +67,7 @@
     "pieces.outside_parcels": 2,
     "pieces.remainder_sliver_dropped": 0,
     "pieces.sliver_dropped": 1,
-    "roofs.archive_bytes": 346161822,
+    "roofs.archive_bytes": 346162575,
     "roofs.archives": 93,
     "roofs.audit_bytes": 97509,
     "roofs.building_outcome.all_fallback": 8,
@@ -195,20 +195,6 @@
       "url": "https://files.pythonhosted.org/packages/70/e8/6b0c288c50942d78193696c9f15f9a0874f5178aa0ddf40f83d9924b3e8d/scipy-1.18.1-cp314-cp314-macosx_14_0_arm64.whl"
     },
     {
-      "archiveKey": "roof-processing/0368093fb44293538ddd73b3f296aecd17f7cc182341a6aa982c67c538a132d3.json",
-      "bytes": 4913,
-      "name": "b02-input.json",
-      "sha256": "0368093fb44293538ddd73b3f296aecd17f7cc182341a6aa982c67c538a132d3",
-      "url": ""
-    },
-    {
-      "archiveKey": "roof-processing/0380afe495655a6200ca39f65fbf270fd020e9f86bf29057f279cfa05418615c.json",
-      "bytes": 3058,
-      "name": "b02-clip.json",
-      "sha256": "0380afe495655a6200ca39f65fbf270fd020e9f86bf29057f279cfa05418615c",
-      "url": ""
-    },
-    {
       "archiveKey": "roof-processing/04ff376ab13fa818e79e6281df549e931b53c4efec24d552ab0c3a8d1f109200.json",
       "bytes": 14925,
       "name": "toolchain.json",
@@ -216,10 +202,10 @@
       "url": ""
     },
     {
-      "archiveKey": "roof-processing/056abdb374a8a926b75660735a2e1d43c9114a0b559b357c608791c17bcd5f01.json",
-      "bytes": 4919,
-      "name": "b13-input.json",
-      "sha256": "056abdb374a8a926b75660735a2e1d43c9114a0b559b357c608791c17bcd5f01",
+      "archiveKey": "roof-processing/06d9c06b4effeaa3de38713b60c1dbe4e733e740cf1f11ede75f40b15dfe665e.json",
+      "bytes": 3058,
+      "name": "b02-clip.json",
+      "sha256": "06d9c06b4effeaa3de38713b60c1dbe4e733e740cf1f11ede75f40b15dfe665e",
       "url": ""
     },
     {
@@ -227,13 +213,6 @@
       "bytes": 857,
       "name": "b01-points.refs.json",
       "sha256": "073be1e319a88a24d41ea6ddda6697fa67f124d82bf5700d8afbe9c5ead162b0",
-      "url": ""
-    },
-    {
-      "archiveKey": "roof-processing/08911a76faf485d59447e9e4edbada4d4a6b5ece3914fbc6ea139b96bb8dc4ba.json",
-      "bytes": 4890,
-      "name": "b01-clip.json",
-      "sha256": "08911a76faf485d59447e9e4edbada4d4a6b5ece3914fbc6ea139b96bb8dc4ba",
       "url": ""
     },
     {
@@ -248,6 +227,20 @@
       "bytes": 8006,
       "name": "geometry.py",
       "sha256": "0add1f748d9c7929022875f6fdca766a620690a087420656ae28db137e4ec766",
+      "url": ""
+    },
+    {
+      "archiveKey": "roof-processing/0b164676849b42fa0a5a452ab7eed280dd5dfba5e2193dcf3e7d659d5be1a2e4.json",
+      "bytes": 4914,
+      "name": "b03-input.json",
+      "sha256": "0b164676849b42fa0a5a452ab7eed280dd5dfba5e2193dcf3e7d659d5be1a2e4",
+      "url": ""
+    },
+    {
+      "archiveKey": "roof-processing/0da385085b1be0976feba7437f9f4c82e3d606a034c3152ebbfd9030821709c3.json",
+      "bytes": 7229,
+      "name": "b10-input.json",
+      "sha256": "0da385085b1be0976feba7437f9f4c82e3d606a034c3152ebbfd9030821709c3",
       "url": ""
     },
     {
@@ -276,13 +269,6 @@
       "bytes": 6446,
       "name": "setup.ts",
       "sha256": "16c19b1d67ff42d3c646176fe0557cf2f52d0e64eb65823420987cbb2dfb888a",
-      "url": ""
-    },
-    {
-      "archiveKey": "roof-processing/18a57bc7d47304eb2411839bbab8ae7c69398aece3b30939cea1fac9013eb8cf.json",
-      "bytes": 4914,
-      "name": "b14-input.json",
-      "sha256": "18a57bc7d47304eb2411839bbab8ae7c69398aece3b30939cea1fac9013eb8cf",
       "url": ""
     },
     {
@@ -328,6 +314,20 @@
       "url": ""
     },
     {
+      "archiveKey": "roof-processing/269e61b79f8f484fe462a5b46851d3a01da4d783adf64efa157744850d07a4f8.py",
+      "bytes": 16679,
+      "name": "point_archives.py",
+      "sha256": "269e61b79f8f484fe462a5b46851d3a01da4d783adf64efa157744850d07a4f8",
+      "url": ""
+    },
+    {
+      "archiveKey": "roof-processing/281c43070b5a2c41aa15fffbc1b48432797c7368fe79701fc2c4e777ddfd1d3c.json",
+      "bytes": 3813,
+      "name": "b06-clip.json",
+      "sha256": "281c43070b5a2c41aa15fffbc1b48432797c7368fe79701fc2c4e777ddfd1d3c",
+      "url": ""
+    },
+    {
       "archiveKey": "roof-processing/2c9c20b479e15ec5f0710951d3ae4f95635d0bbf6502f03e43ed87e310e69230.whl",
       "bytes": 840646,
       "name": "manifold3d-3.4.1-cp314-cp314-macosx_11_0_arm64.whl",
@@ -349,6 +349,13 @@
       "url": ""
     },
     {
+      "archiveKey": "roof-processing/31c5ff01a81b97881638535a59db96842f7acf441ace3d70ad43fe8a6ee264b5.json",
+      "bytes": 3063,
+      "name": "bpier-clip.json",
+      "sha256": "31c5ff01a81b97881638535a59db96842f7acf441ace3d70ad43fe8a6ee264b5",
+      "url": ""
+    },
+    {
       "archiveKey": "roof-processing/3352a44bd9cdfd6e4c982225289e24613180db57731a8d65ed6a40011e4c0cd1.gz",
       "bytes": 5160,
       "name": "b01-preTrainingRows.npy.gz",
@@ -356,17 +363,10 @@
       "url": ""
     },
     {
-      "archiveKey": "roof-processing/346e72cfc2d8ce5cc561d7444a7aea604dd0cb0365bda541e85e8cd257cb317d.json",
-      "bytes": 3063,
-      "name": "bpier-clip.json",
-      "sha256": "346e72cfc2d8ce5cc561d7444a7aea604dd0cb0365bda541e85e8cd257cb317d",
-      "url": ""
-    },
-    {
-      "archiveKey": "roof-processing/394aa116175794b29ad7469aa1b829242582f4334172c42f097c3e6a2a62206c.json",
-      "bytes": 3060,
-      "name": "b13-clip.json",
-      "sha256": "394aa116175794b29ad7469aa1b829242582f4334172c42f097c3e6a2a62206c",
+      "archiveKey": "roof-processing/35aba528a49bc5c75a1bdab66316bb20f8187d0f656d435f1a2f4a0c9e989157.json",
+      "bytes": 3066,
+      "name": "b04-clip.json",
+      "sha256": "35aba528a49bc5c75a1bdab66316bb20f8187d0f656d435f1a2f4a0c9e989157",
       "url": ""
     },
     {
@@ -377,38 +377,17 @@
       "url": ""
     },
     {
-      "archiveKey": "roof-processing/45563c3cab1e96ec95e0a4db8e96b6a3e944b267afdfd537e2d3011b161976e9.json",
+      "archiveKey": "roof-processing/3e0b51d462300dd586645c59050a029200e386051afda7dfd38249a4d402e70c.json",
+      "bytes": 3065,
+      "name": "b03-clip.json",
+      "sha256": "3e0b51d462300dd586645c59050a029200e386051afda7dfd38249a4d402e70c",
+      "url": ""
+    },
+    {
+      "archiveKey": "roof-processing/3e4cb8e812fe616e69644a1fcea097ea0b05f54a4f22b955adeea72a32e04e82.json",
       "bytes": 4915,
-      "name": "b04-input.json",
-      "sha256": "45563c3cab1e96ec95e0a4db8e96b6a3e944b267afdfd537e2d3011b161976e9",
-      "url": ""
-    },
-    {
-      "archiveKey": "roof-processing/45faa72a176efe58b8ce43604e96bee541cabfc645e0c1c3134a6c6b4668853b.json",
-      "bytes": 5024,
-      "name": "b06-input.json",
-      "sha256": "45faa72a176efe58b8ce43604e96bee541cabfc645e0c1c3134a6c6b4668853b",
-      "url": ""
-    },
-    {
-      "archiveKey": "roof-processing/4624431357fa5be3500dcd53830124a75b1df003713a83280a8a50ba3ad19516.json",
-      "bytes": 4916,
-      "name": "bpier-input.json",
-      "sha256": "4624431357fa5be3500dcd53830124a75b1df003713a83280a8a50ba3ad19516",
-      "url": ""
-    },
-    {
-      "archiveKey": "roof-processing/49332bf7192146e53aafab740872431602de694954c0107846d67a76672098c5.json",
-      "bytes": 3813,
-      "name": "b06-clip.json",
-      "sha256": "49332bf7192146e53aafab740872431602de694954c0107846d67a76672098c5",
-      "url": ""
-    },
-    {
-      "archiveKey": "roof-processing/4d51aad8d542aed2e5893f03c9a01a950e2771345049540654ccd283d013ed09.json",
-      "bytes": 5754,
-      "name": "b10-clip.json",
-      "sha256": "4d51aad8d542aed2e5893f03c9a01a950e2771345049540654ccd283d013ed09",
+      "name": "besri-input.json",
+      "sha256": "3e4cb8e812fe616e69644a1fcea097ea0b05f54a4f22b955adeea72a32e04e82",
       "url": ""
     },
     {
@@ -447,6 +426,13 @@
       "url": "https://files.pythonhosted.org/packages/f4/36/c007a564ddfeda1aff3c79435d4beb2c0baf41b37d1ec212269ef62f8da8/shapely-2.2.0-cp314-cp314t-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl"
     },
     {
+      "archiveKey": "roof-processing/5a72c27b1c9575210a693bc3e4a0598b88f0d31df8ec6d4986c586b974db1270.ts",
+      "bytes": 16219,
+      "name": "archives.ts",
+      "sha256": "5a72c27b1c9575210a693bc3e4a0598b88f0d31df8ec6d4986c586b974db1270",
+      "url": ""
+    },
+    {
       "archiveKey": "roof-processing/5afb51d599ea772b8365ae807ae557f18bccfe46ab261fd1c2a9ed700fc6eb17.whl",
       "bytes": 4782956,
       "name": "pillow-12.3.0-cp314-cp314t-macosx_11_0_arm64.whl",
@@ -461,17 +447,17 @@
       "url": "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl"
     },
     {
-      "archiveKey": "roof-processing/654681113b9293853e305fe2eed4380acc03f88c2c882695725b8c4758272866.json",
-      "bytes": 4915,
-      "name": "besri-input.json",
-      "sha256": "654681113b9293853e305fe2eed4380acc03f88c2c882695725b8c4758272866",
-      "url": ""
-    },
-    {
       "archiveKey": "roof-processing/6b0cd27b312025c273dce0643573b380a39ed739f2685b4b53f644d3547fdeee.ts",
       "bytes": 3189,
       "name": "job.ts",
       "sha256": "6b0cd27b312025c273dce0643573b380a39ed739f2685b4b53f644d3547fdeee",
+      "url": ""
+    },
+    {
+      "archiveKey": "roof-processing/6e2f73d754a39f5bced8d82dbe893646108ab5689ad2a34b389c5ac37e337e0b.json",
+      "bytes": 3060,
+      "name": "b13-clip.json",
+      "sha256": "6e2f73d754a39f5bced8d82dbe893646108ab5689ad2a34b389c5ac37e337e0b",
       "url": ""
     },
     {
@@ -503,10 +489,10 @@
       "url": ""
     },
     {
-      "archiveKey": "roof-processing/80ebefcc7817a71929da40713004f7860a39f1050c09e88becbcddfc97211c63.json",
-      "bytes": 3066,
-      "name": "b04-clip.json",
-      "sha256": "80ebefcc7817a71929da40713004f7860a39f1050c09e88becbcddfc97211c63",
+      "archiveKey": "roof-processing/7c740a8c7f592c43b07197580aea34a3bc79b666a15a5825ba5ef5235bc729ec.json",
+      "bytes": 3061,
+      "name": "b14-clip.json",
+      "sha256": "7c740a8c7f592c43b07197580aea34a3bc79b666a15a5825ba5ef5235bc729ec",
       "url": ""
     },
     {
@@ -524,10 +510,10 @@
       "url": "https://github.com/3DBAG/roofer/releases/download/v1.0.0/roofer-linux-x86_64-v1.0.0.tar.gz"
     },
     {
-      "archiveKey": "roof-processing/893ea50e2f3eaa16495106c626275370c203445312a8efa4cd62e02944647e53.json",
-      "bytes": 4914,
-      "name": "b03-input.json",
-      "sha256": "893ea50e2f3eaa16495106c626275370c203445312a8efa4cd62e02944647e53",
+      "archiveKey": "roof-processing/860ca4028ead8581361eea86e3ff35a942a04a25fd65c4c4373f3dfd76318d05.json",
+      "bytes": 5754,
+      "name": "b10-clip.json",
+      "sha256": "860ca4028ead8581361eea86e3ff35a942a04a25fd65c4c4373f3dfd76318d05",
       "url": ""
     },
     {
@@ -545,25 +531,11 @@
       "url": ""
     },
     {
-      "archiveKey": "roof-processing/8beb4d9340bff4d68709ecdd0a20869173da16c059f19261f70d9108b5a623f9.py",
-      "bytes": 16665,
-      "name": "point_archives.py",
-      "sha256": "8beb4d9340bff4d68709ecdd0a20869173da16c059f19261f70d9108b5a623f9",
-      "url": ""
-    },
-    {
       "archiveKey": "roof-processing/8cff207c2a92235f79bb2caab29790e1743776e02331143bc5de4224bd695911.whl",
       "bytes": 9942031,
       "name": "pyproj-3.8.0-cp314-cp314-manylinux_2_28_x86_64.whl",
       "sha256": "8cff207c2a92235f79bb2caab29790e1743776e02331143bc5de4224bd695911",
       "url": "https://files.pythonhosted.org/packages/15/7e/ccee7d6b307bb635b47dbd96eb3471c3a7d6053b8f903723756f8a3ba00a/pyproj-3.8.0-cp314-cp314-manylinux_2_28_x86_64.whl"
-    },
-    {
-      "archiveKey": "roof-processing/8d05f0db02943882850c2b8ced7dce23d38438c3d7c247ca35090c450584b79f.json",
-      "bytes": 3065,
-      "name": "b03-clip.json",
-      "sha256": "8d05f0db02943882850c2b8ced7dce23d38438c3d7c247ca35090c450584b79f",
-      "url": ""
     },
     {
       "archiveKey": "roof-processing/8dd1a19d5273a2ce7123d4aad549fe71c092a0fdc3ec4a1b2873e1cb46d6a947.json",
@@ -594,13 +566,6 @@
       "url": "https://files.pythonhosted.org/packages/94/06/1f9c24db48eef0c2d1207e3b11fffb0478e39dfd8c1e1be7476936885eed/numpy-2.5.4-cp314-cp314t-macosx_14_0_arm64.whl"
     },
     {
-      "archiveKey": "roof-processing/9aad1dee65c9150c1ae224f7911a31345f0285946d1b93f81d75dfb960299c5f.json",
-      "bytes": 7223,
-      "name": "b01-input.json",
-      "sha256": "9aad1dee65c9150c1ae224f7911a31345f0285946d1b93f81d75dfb960299c5f",
-      "url": ""
-    },
-    {
       "archiveKey": "roof-processing/9cfa27d1506d121baeb9ea0651faca6422d40b0fb5f83d72037520b540c85ed4.gz",
       "bytes": 1721,
       "name": "b10-validationRows.npy.gz",
@@ -615,17 +580,17 @@
       "url": ""
     },
     {
-      "archiveKey": "roof-processing/9f7b7fc68137b58485f6b6eef9aacd33645be1f47e110ae8721e623435eb654d.json",
-      "bytes": 7229,
-      "name": "b10-input.json",
-      "sha256": "9f7b7fc68137b58485f6b6eef9aacd33645be1f47e110ae8721e623435eb654d",
-      "url": ""
-    },
-    {
       "archiveKey": "roof-processing/9fafcd7ebdf6736d1b1070bff6e23ba7b90636fb6625a85cf202adfbd1e0c218.py",
       "bytes": 6089,
       "name": "filter.py",
       "sha256": "9fafcd7ebdf6736d1b1070bff6e23ba7b90636fb6625a85cf202adfbd1e0c218",
+      "url": ""
+    },
+    {
+      "archiveKey": "roof-processing/a01fb1d99a90cec0b4cabaeaba984e63f08a04a3ed3fb27cabd380bcb75332f4.json",
+      "bytes": 4916,
+      "name": "bpier-input.json",
+      "sha256": "a01fb1d99a90cec0b4cabaeaba984e63f08a04a3ed3fb27cabd380bcb75332f4",
       "url": ""
     },
     {
@@ -641,6 +606,13 @@
       "name": "scipy-1.18.1-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
       "sha256": "a1d33a7836f7ddc1993427966a0823468ec41bcbdb1a9f9942d1d7e57f803ba3",
       "url": "https://files.pythonhosted.org/packages/87/53/39d046cc7574ed6acacb6bd5723e220107ece80bff12faaf3efc4ddeede4/scipy-1.18.1-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
+    },
+    {
+      "archiveKey": "roof-processing/a3272105854a47156fe9a6131ce74a6c28c2db38dfc0a6b149e4277be794d3ef.json",
+      "bytes": 5024,
+      "name": "b06-input.json",
+      "sha256": "a3272105854a47156fe9a6131ce74a6c28c2db38dfc0a6b149e4277be794d3ef",
+      "url": ""
     },
     {
       "archiveKey": "roof-processing/a43a3b8c983ca538a683b2018291084e7a26dd94d68dc0cf8e9b3e21d8c43a13.json",
@@ -692,6 +664,20 @@
       "url": "https://files.pythonhosted.org/packages/fd/fa/5705986493097e268f26d87b3cfce8e966f6c62a1b8f38fa4086b704cf4d/manifold3d-3.4.1-cp314-cp314t-macosx_11_0_arm64.whl"
     },
     {
+      "archiveKey": "roof-processing/ba1bb7935bcb5e9ba73ae09c6b3e84f715df9cd80b84a9e4aea9fbb4616586da.json",
+      "bytes": 4890,
+      "name": "b01-clip.json",
+      "sha256": "ba1bb7935bcb5e9ba73ae09c6b3e84f715df9cd80b84a9e4aea9fbb4616586da",
+      "url": ""
+    },
+    {
+      "archiveKey": "roof-processing/bae1f82ba003a519f3549bde66a044bf074f8e2a3d445678908af88ad57dffb2.json",
+      "bytes": 4914,
+      "name": "b14-input.json",
+      "sha256": "bae1f82ba003a519f3549bde66a044bf074f8e2a3d445678908af88ad57dffb2",
+      "url": ""
+    },
+    {
       "archiveKey": "roof-processing/bf16ba1b4d0b6b7c8e534936632270cf70eb00dbe09005bc345b2677b726855c.whl",
       "bytes": 6989642,
       "name": "pillow-12.3.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
@@ -711,13 +697,6 @@
       "name": "numpy-2.5.4-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
       "sha256": "c9b80cdf5cedba0e90d93fa5f9a333c4d65bd545cd669b71bb97ce2b703c9d73",
       "url": "https://files.pythonhosted.org/packages/34/88/16c5f12f86f5ad2817c4d103205131fc6c8acb3d1878af05a1a4f23ec859/numpy-2.5.4-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
-    },
-    {
-      "archiveKey": "roof-processing/cc8aa1a2e021adc8a667c940d97144e4fd11a6e65b72f322b6c8a64dd822c7de.json",
-      "bytes": 3061,
-      "name": "b14-clip.json",
-      "sha256": "cc8aa1a2e021adc8a667c940d97144e4fd11a6e65b72f322b6c8a64dd822c7de",
-      "url": ""
     },
     {
       "archiveKey": "roof-processing/cd543bf7b91de5346461a110f7a6669c461a9a78ca9740f0b93ec5ffee27f70e.json",
@@ -741,10 +720,24 @@
       "url": ""
     },
     {
+      "archiveKey": "roof-processing/d17510dd616700140b5072062f0b9edfe4c9b46745304219926ab31262e7452c.json",
+      "bytes": 4915,
+      "name": "b04-input.json",
+      "sha256": "d17510dd616700140b5072062f0b9edfe4c9b46745304219926ab31262e7452c",
+      "url": ""
+    },
+    {
       "archiveKey": "roof-processing/d434a1aff1b474232688f4640e96e829e8df25a0a2903111dfcaa3b0d52bc323.py",
       "bytes": 4596,
       "name": "clip.py",
       "sha256": "d434a1aff1b474232688f4640e96e829e8df25a0a2903111dfcaa3b0d52bc323",
+      "url": ""
+    },
+    {
+      "archiveKey": "roof-processing/d49859fcd04dae85985a308dd91d182963ed04fba89b64edd10c8679941d722c.json",
+      "bytes": 4919,
+      "name": "b13-input.json",
+      "sha256": "d49859fcd04dae85985a308dd91d182963ed04fba89b64edd10c8679941d722c",
       "url": ""
     },
     {
@@ -760,13 +753,6 @@
       "name": "scipy-1.18.1-cp314-cp314t-macosx_12_0_arm64.whl",
       "sha256": "ddef79fb382df40104a19bb7151b3b23e57c1778fcf857c71ceecd9bd264513f",
       "url": "https://files.pythonhosted.org/packages/74/b2/e3067c487982d4eeab2938928529410370c06fea84a4d3f4925e7d96647d/scipy-1.18.1-cp314-cp314t-macosx_12_0_arm64.whl"
-    },
-    {
-      "archiveKey": "roof-processing/de6ec7e2585a8595d78ed73696862e5eb12220c2b75cbec9e239c54d328f0f8e.ts",
-      "bytes": 15480,
-      "name": "archives.ts",
-      "sha256": "de6ec7e2585a8595d78ed73696862e5eb12220c2b75cbec9e239c54d328f0f8e",
-      "url": ""
     },
     {
       "archiveKey": "roof-processing/de84f192bb31d96b18a6e50429a48260c401c47606c880fe4c92af8e632d816d.ts",
@@ -804,6 +790,13 @@
       "url": ""
     },
     {
+      "archiveKey": "roof-processing/eda532e9b2b90c74f0e8f822abd798f17f82597f03d2d26d90a0c0ffa2acfa9e.json",
+      "bytes": 4913,
+      "name": "b02-input.json",
+      "sha256": "eda532e9b2b90c74f0e8f822abd798f17f82597f03d2d26d90a0c0ffa2acfa9e",
+      "url": ""
+    },
+    {
       "archiveKey": "roof-processing/ef0d869e347caac2578cf9552dd52b333d542fd759e4d4c93cb4fe484164ff10.json",
       "bytes": 858,
       "name": "b10-points.refs.json",
@@ -822,6 +815,13 @@
       "bytes": 11007,
       "name": "audit.ts",
       "sha256": "f6919abf764c983ef5a3b6f77d620761dc850340325f8b2e6f55cbde3a50129f",
+      "url": ""
+    },
+    {
+      "archiveKey": "roof-processing/f95b8559041bedfdad89ea935a033a479a3dbda757b403b8c7a1079f0ec9bf5f.json",
+      "bytes": 7223,
+      "name": "b01-input.json",
+      "sha256": "f95b8559041bedfdad89ea935a033a479a3dbda757b403b8c7a1079f0ec9bf5f",
       "url": ""
     },
     {
