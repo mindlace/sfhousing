@@ -44,6 +44,45 @@ export default defineConfig({
     {
       pattern: /^\[WebServer\]\s*$/,
       reason: 'empty spacer lines wrangler dev prints around each log block'
+    },
+    // wrangler's esbuild warns about SvelteKit's generated .svelte-kit/output/server/chunks/client.js
+    // (`import "devalue";`) because devalue declares "sideEffects": false. Nothing in the repo can
+    // change that output. Each line of the block is anchored to this exact warning.
+    {
+      pattern:
+        /^\[WebServer\] ▲ \[WARNING\] Ignoring this import because "node_modules\/devalue\/index\.js" was marked as having no side effects \[ignored-bare-import\]\s*$/,
+      reason:
+        'header of the esbuild ignored-bare-import warning for devalue in the SvelteKit server output'
+    },
+    {
+      pattern: /^\[WebServer\]\s+\.svelte-kit\/output\/server\/chunks\/client\.js:\d+:\d+:\s*$/,
+      reason: 'location line of the devalue ignored-bare-import warning (SvelteKit server chunk)'
+    },
+    {
+      pattern: /^\[WebServer\]\s+\d+ │ import "devalue";\s*$/,
+      reason: 'code frame of the devalue ignored-bare-import warning'
+    },
+    {
+      pattern: /^\[WebServer\]\s+╵\s+~{9}\s*$/,
+      reason:
+        'underline of the devalue import (9 tildes); generic shape, so any other 9-character esbuild underline would also match'
+    },
+    {
+      pattern: /^\[WebServer\]\s+"sideEffects" is false in the enclosing "package\.json" file:\s*$/,
+      reason: 'explanation line of the devalue ignored-bare-import warning'
+    },
+    {
+      pattern: /^\[WebServer\]\s+node_modules\/devalue\/package\.json:\d+:\d+:\s*$/,
+      reason: 'location line of the devalue package.json sideEffects note'
+    },
+    {
+      pattern: /^\[WebServer\]\s+\d+ │\s+"sideEffects": false,\s*$/,
+      reason: 'code frame of the devalue package.json sideEffects note'
+    },
+    {
+      pattern: /^\[WebServer\]\s+╵\s+~{13}\s*$/,
+      reason:
+        'underline of "sideEffects" (13 tildes); generic shape, so any other 13-character esbuild underline would also match'
     }
   ],
   // npm ci also runs prepare (wrangler types / svelte-kit sync) for the merged tree.
