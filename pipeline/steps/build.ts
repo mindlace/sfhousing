@@ -19,7 +19,7 @@ import { lockSha256, rawPath, readLock, sortKeys, verifyRaw, type Lock } from '.
 import { Report } from '../lib/report';
 import { runSql, runSqlRange } from '../lib/sql';
 import { prepareRoofJob } from '../roofs/inputs';
-import { runRoofJob } from '../roofs/run';
+import { runRoofJob, usedRoofSourceIds } from '../roofs/run';
 import { writeRoofArtifacts, type RoofBuildResult } from '../roofs/export';
 import { codeTreeHash, computeDatasetVersion } from '../lib/version';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
@@ -181,14 +181,7 @@ export async function build(
           archiveDir: join(REPO_ROOT, 'pipeline/.cache/roof-artifacts')
         })
       );
-      usedRoofSources = [
-        ...(processed.buildings.some(
-          (b) => (b.returnCounts?.before ?? 0) > 0 || b.method === 'landmark'
-        )
-          ? ['roof-lidar']
-          : []),
-        ...(processed.buildings.some((b) => b.method === 'lidar_aerial') ? ['roof-aerial'] : [])
-      ];
+      usedRoofSources = usedRoofSourceIds(processed.buildings);
       const roofReportPath = join(outDir, 'roofs/report.json');
       const roofReport = JSON.parse(readFileSync(roofReportPath, 'utf8'));
       roofReport.builtAt = builtAt;

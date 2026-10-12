@@ -81,3 +81,10 @@ class ProcessTests(unittest.TestCase):
         self.assertEqual(result['flags'],['vegetation_ambiguous'])
         self.assertEqual(result['diagnostics']['vegetation'],['pca_insufficient'])
         self.assertEqual(evidence['vegetationDiagnostics'],['pca_insufficient'])
+        self.assertEqual(result['method'],'footprint')
+        self.assertEqual(result['usedSources'],['roof-lidar','roof-aerial'])
+        no_ground=points[points['classification']==1]
+        failed,_=p.process_building(building,no_ground,[],{'cellM':.5})
+        self.assertEqual(failed['reason'],'ground_missing')
+        self.assertNotIn('returnCounts',failed)
+        self.assertEqual(failed['usedSources'],['roof-lidar'])

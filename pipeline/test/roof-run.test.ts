@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { expect, test } from 'vitest';
 import {
   runRoofJob,
+  usedRoofSourceIds,
   validateRoofResult,
   readRoofResultRecords,
   clipRoofPieces
@@ -283,4 +284,14 @@ test('clip exchange streams complete piece records and omits large reconstructio
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('fallback source attribution uses explicit processing evidence', () => {
+  expect(
+    usedRoofSourceIds([
+      { method: 'footprint', usedSources: ['roof-lidar'] },
+      { method: 'footprint', usedSources: ['roof-lidar', 'roof-aerial'] }
+    ])
+  ).toEqual(['roof-aerial', 'roof-lidar']);
+  expect(usedRoofSourceIds([{ method: 'lidar_aerial' }])).toEqual([]);
 });

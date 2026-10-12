@@ -78,7 +78,7 @@ def validate_aerials(job):
 
 
 def building_mask(training, images, config):
-    rejected = np.zeros(len(training),dtype=bool); cells = []; flags = []; diagnostics = []
+    rejected = np.zeros(len(training),dtype=bool); cells = []; flags = []; diagnostics = []; used = False
     for source,image,tile in images:
         if source['permission'] != 'confirmed':
             flags.append('aerial_rights_unconfirmed'); continue
@@ -96,10 +96,11 @@ def building_mask(training, images, config):
         tx = tile['transform']
         latitude = np.degrees(np.arctan(np.sinh((tx[5]+tile['height']*tx[4]/2)/6378137)))
         pixel = abs(tx[0])*np.cos(np.radians(latitude))
+        used = True
         result = vegetation_mask(training,image,{'transform':tx,'crs':source['horizontalCrs'],'groundPixelM':pixel},config)
         rejected |= result.rejected; cells.extend(result.cells.tolist()); flags.extend(result.flags); diagnostics.extend(result.diagnostics)
     if not images: flags.append('aerial_missing')
-    return rejected,np.unique(np.array(cells,dtype=np.int64).reshape(-1,2),axis=0),flags,sorted(set(diagnostics))
+    return rejected,np.unique(np.array(cells,dtype=np.int64).reshape(-1,2),axis=0),flags,sorted(set(diagnostics)),used
 
 
 def landmark_override(building):
@@ -120,19 +121,23 @@ def landmark_override(building):
 
 def process_building(building, points, images, config):
     landmark = landmark_override(building)
-    if landmark is not None: return landmark, {}
+    if landmark is not None:
+        landmark['usedSources']=['roof-lidar'] if landmark.get('override') else []
+        return landmark, {}
     footprint = shape(building['footprint'])
     points = points[~np.isin(points['classification'],[7,18])]
     ground = estimate_ground(points,footprint)
     if ground.groundM is None:
-        return fallback(building,'ground_missing'), {'ground':ground._asdict()}
+        result=fallback(building,'ground_missing')
+        result['usedSources']=['roof-lidar']
+        return result, {'ground':ground._asdict()}
     validation = np.zeros(len(points),dtype=bool)
     for sha in np.unique(points['sourceSha']):
         ids = points['sourceSha']==sha
         validation[ids] = validation_partition(str(sha),points['ordinal'][ids])
     inside = contains_xy(footprint,points['x'],points['y'])
     train = points[~validation & ((inside & (points['classification']==1)) | (points['classification']==2))]
-    rejected,cells,flags,diagnostics = building_mask(train,images,config)
+    rejected,cells,flags,diagnostics,aerial_used = building_mask(train,images,config)
     retained = train[~rejected]
     held = points[validation & inside & (points['classification']==1)]
     held = held[~apply_cells(held,cells,config['cellM'])].copy()
@@ -148,6 +153,7 @@ def process_building(building, points, images, config):
             candidates.append(retry)
             result = select_candidate(candidates,held,building,config)
         if result['mesh'] is not None and len(cells): result['method'] = 'lidar_aerial'
+    result['usedSources']=['roof-lidar']+(['roof-aerial'] if aerial_used else [])
     result['ground'] = ground._asdict()
     result['flags'] = sorted(set(flags))
     result['diagnostics'] = {'vegetation':diagnostics}
@@ -213,6 +219,7 @@ def process_job(job):
             results[building['buildingId']] = result
     for building in job['buildings']:
         result = results[building['buildingId']]
+        result.setdefault('usedSources',[])
         aerial_flags = []
         for entry in job['sourceStatus']:
             if entry['sourceId'] != 'roof-aerial': continue

@@ -7,7 +7,7 @@ import sys
 import numpy as np
 
 
-def _ring(points, ccw):
+def _ring(points, ccw, allow_collapsed=False):
     snapped = []
     for p in points:
         if len(p) < 2 or not all(math.isfinite(x) for x in p[:2]):
@@ -15,8 +15,15 @@ def _ring(points, ccw):
         q = tuple(int(math.floor(x * 1000 + 0.5)) for x in p[:2])
         if not snapped or q != snapped[-1]:
             snapped.append(q)
-    if snapped and snapped[0] == snapped[-1]:
+    if len(snapped) > 1 and snapped[0] == snapped[-1]:
         snapped.pop()
+    if allow_collapsed and snapped:
+        area = sum(a[0]*b[1]-b[0]*a[1] for a,b in zip(snapped,snapped[1:]+snapped[:1]))
+        if len(set(snapped)) < 3 or not area:
+            # Identity retains collapsed rings as canonical snapped sequences.
+            # Exact Boolean geometry is never reconstructed from this encoding.
+            seq = min(seq[i:]+seq[:i] for seq in (snapped,snapped[::-1]) for i in range(len(seq)))
+            return [[v/1000 if v else 0 for v in p] for p in seq+[seq[0]]]
     if len(set(snapped)) < 3:
         raise ValueError('degenerate snapped ring')
     area = sum(a[0]*b[1]-b[0]*a[1] for a,b in zip(snapped,snapped[1:]+snapped[:1]))
@@ -29,7 +36,7 @@ def _ring(points, ccw):
     return [[(v/1000 if v else 0) for v in p] for p in snapped+[snapped[0]]]
 
 
-def canonical_geometry(geojson: dict) -> dict:
+def canonical_geometry(geojson: dict, allow_collapsed=False) -> dict:
     kind = geojson['type']
     if kind not in ('Polygon','MultiPolygon'):
         raise ValueError('footprints must be polygonal')
@@ -38,7 +45,7 @@ def canonical_geometry(geojson: dict) -> dict:
     for rings in polygons:
         if not rings:
             raise ValueError('empty polygon')
-        normalized.append([_ring(rings[0],True)]+sorted(_ring(h,False) for h in rings[1:]))
+        normalized.append([_ring(rings[0],True,allow_collapsed)]+sorted(_ring(h,False,allow_collapsed) for h in rings[1:]))
     normalized.sort()
     return {'type':kind,'coordinates':normalized[0] if kind == 'Polygon' else normalized}
 
@@ -50,7 +57,7 @@ def footprint_hash(geojson: dict) -> str:
 
 
 def make_piece_id(building_id: str, parcel_id: str | None, geometry: dict) -> str:
-    data = json.dumps([building_id,parcel_id,canonical_geometry(geometry)],sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False)
+    data = json.dumps([building_id,parcel_id,canonical_geometry(geometry,allow_collapsed=True)],sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False)
     return 'p-'+hashlib.sha256(data.encode('utf-8')).hexdigest()[:24]
 
 

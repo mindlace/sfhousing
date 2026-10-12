@@ -74,3 +74,19 @@ class ClipTests(unittest.TestCase):
         self.assertIsNone(out['reason'])
         self.assertAlmostEqual(max(v[0] for v in out['mesh']['vertices']),5.0004,places=8)
         self.assertAlmostEqual(volume(out['mesh']),525.04400016,places=6)
+
+    def test_collapsed_identity_ring_keeps_exact_hole_and_siblings(self):
+        c=load('clip'); g=load('geometry')
+        geom=Polygon(box(0,0,10,10).exterior.coords,[box(3,3,3.0004,3.0004).exterior.coords])
+        other=piece(box(0,0,5,10),'sibling')
+        result=c.clip_building(prism(),[piece(geom),other])
+        self.assertEqual(len(result),2)
+        self.assertTrue(all(r['reason'] is None for r in result))
+        tiny=next(r for r in result if r['parcelId']=='a')
+        self.assertAlmostEqual(volume(tiny['mesh']),geom.area*10,places=8)
+        reversed_geom={'type':'Polygon','coordinates':[list(r)[::-1] for r in mapping(geom)['coordinates']]}
+        self.assertEqual(tiny['pieceId'],g.make_piece_id('b','a',reversed_geom))
+        malformed=dict(piece(geom,'bad'),geometry={'type':'Polygon','coordinates':[]},pieceId='p-invalid')
+        out=c.clip_building(prism(),[malformed,other])
+        self.assertEqual(next(r for r in out if r['parcelId']=='bad')['reason'],'parcel_clip_failed')
+        self.assertIsNone(next(r for r in out if r['parcelId']=='sibling')['reason'])

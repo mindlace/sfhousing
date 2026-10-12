@@ -28,6 +28,12 @@ function validMesh(mesh: RoofMesh): boolean {
       new Set(t).size === 3
   );
 }
+export function usedRoofSourceIds(
+  buildings: Pick<ProcessedBuilding, 'method' | 'usedSources'>[]
+): string[] {
+  return [...new Set(buildings.flatMap((b) => b.usedSources ?? []))].sort();
+}
+
 export function validateRoofResult(
   value: unknown,
   inputs: RoofJob['buildings']
@@ -56,6 +62,9 @@ export function validateRoofResult(
     seen.add(b.buildingId);
     if (
       !['footprint', 'lidar_only', 'lidar_aerial', 'landmark'].includes(b.method) ||
+      (b.usedSources !== undefined &&
+        (!Array.isArray(b.usedSources) ||
+          !b.usedSources.every((s) => ['roof-lidar', 'roof-aerial'].includes(s)))) ||
       !Array.isArray(b.flags) ||
       !Array.isArray(b.candidates) ||
       !Array.isArray(b.archives)

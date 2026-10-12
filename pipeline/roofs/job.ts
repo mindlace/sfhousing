@@ -66,6 +66,8 @@ export interface RoofCandidate {
 }
 export type RoofArchive = import('../lib/lock').LockFile;
 export interface ProcessedBuilding {
+  /** Sources consumed by processing, including failed reconstruction attempts. */
+  usedSources?: ('roof-lidar' | 'roof-aerial')[];
   buildingId: string;
   footprintHash: string;
   method: 'lidar_aerial' | 'lidar_only' | 'landmark' | 'footprint';

@@ -23,6 +23,7 @@ class Candidate(TypedDict):
     metrics: dict
 
 class ProcessedBuilding(TypedDict):
+    usedSources: NotRequired[list[Literal['roof-lidar','roof-aerial']]]
     buildingId: str
     footprintHash: str
     method: Literal['lidar_aerial','lidar_only','landmark','footprint']

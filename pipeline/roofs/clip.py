@@ -1,6 +1,9 @@
 """Closed-solid parcel intersection. No repairs or synthetic replacement roofs."""
 from collections import Counter
 import sys
+import hashlib
+import json
+from shapely.errors import GEOSException
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 import numpy as np
@@ -53,12 +56,16 @@ def clip_building(mesh:dict,pieces:list[dict])->list[dict]:
         solid=checked_solid(mesh)
         z=np.asarray(mesh['vertices'])[:,2]
         low,high=float(z.min())-1,float(z.max())+1
-    except (ValueError,TypeError,KeyError,RuntimeError):
+    except (ValueError,TypeError,KeyError,RuntimeError,GEOSException):
         solid=None
     results=[]
     for piece in pieces:
-        result=dict(piece,geometry=mapping(orient_polygons(normalize(shape(piece['geometry'])))),pieceId=make_piece_id(piece['buildingId'],piece['parcelId'],piece['geometry']),mesh=None,reason='parcel_clip_failed')
+        # Retain a deterministic failure identity even if malformed geometry cannot normalize.
+        failure_id=piece.get('pieceId') or 'p-'+hashlib.sha256(json.dumps([piece['buildingId'],piece['parcelId'],piece['geometry']],sort_keys=True,separators=(',',':')).encode()).hexdigest()[:24]
+        result=dict(piece,pieceId=failure_id,mesh=None,reason='parcel_clip_failed')
         try:
+            result['pieceId']=make_piece_id(piece['buildingId'],piece['parcelId'],piece['geometry'])
+            result['geometry']=mapping(orient_polygons(normalize(shape(piece['geometry']))))
             geom=shape(piece['geometry'])
             if solid is None or not geom.is_valid or geom.is_empty or geom.area<=0:
                 raise ValueError('invalid clipping geometry')
@@ -76,7 +83,7 @@ def clip_building(mesh:dict,pieces:list[dict])->list[dict]:
             if roof.intersection(geom).area/geom.area<.98 or roof.difference(geom.buffer(.001)).area>max(.01,geom.area*.001):
                 raise ValueError('piece coverage lost')
             result.update(mesh=out,reason=None)
-        except (ValueError,TypeError,KeyError,RuntimeError):
+        except (ValueError,TypeError,KeyError,RuntimeError,GEOSException):
             pass
         results.append(result)
     return sorted(results,key=lambda p:p['pieceId'])
