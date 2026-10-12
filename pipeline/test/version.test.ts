@@ -105,6 +105,20 @@ describe('codeTreeHash', () => {
     git('commit', '-q', '-m', 'code');
     return { dir, git };
   }
+  it.each(['source-config.json', 'geometry.py', 'toolchain.json', 'overrides/salesforce.json'])(
+    'versions roof input changes in %s',
+    async (name) => {
+      const { dir } = tempRepo();
+      const before = await codeTreeHash(dir);
+      const file = join(dir, 'pipeline/roofs', name);
+      mkdirSync(join(file, '..'), { recursive: true });
+      writeFileSync(file, 'version one');
+      const first = await codeTreeHash(dir);
+      writeFileSync(file, 'version two');
+      expect(first).not.toBe(before);
+      expect(await codeTreeHash(dir)).not.toBe(first);
+    }
+  );
   it('is identical whether the lock is untracked or committed', async () => {
     const { dir, git } = tempRepo();
     const before = await codeTreeHash(dir);

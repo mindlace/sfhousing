@@ -11,6 +11,7 @@ import {
 import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { roofToolVersions } from '../roofs/setup';
 import { TOOL_VERSIONS, type InvariantProfile } from '../config';
 import { run } from '../lib/exec';
 import { openDuck, type Duck } from '../lib/duck';
@@ -127,7 +128,9 @@ export async function build(
     computeDatasetVersion({
       lock,
       codeHash: await codeTreeHash(REPO_ROOT),
-      toolVersions: TOOL_VERSIONS
+      toolVersions: lock.sources.some((s) => s.id === 'roof-lidar')
+        ? { ...TOOL_VERSIONS, ...roofToolVersions() }
+        : TOOL_VERSIONS
     });
   const fixtureMode = FIXTURE_RE.test(datasetVersion);
   const builtAt = opts.builtAt ?? new Date().toISOString();
@@ -197,7 +200,9 @@ export async function build(
       datasetVersion,
       counts,
       warnings: report.warnings,
-      toolVersions: TOOL_VERSIONS,
+      toolVersions: lock.sources.some((s) => s.id === 'roof-lidar')
+        ? { ...TOOL_VERSIONS, ...roofToolVersions() }
+        : TOOL_VERSIONS,
       housingStock: HOUSING_STOCK,
       license: DERIVED_LICENSE,
       invariants: results,

@@ -124,9 +124,13 @@ export async function normaliseAll(
   normDir: string,
   opts: { byName?: boolean } = {}
 ): Promise<Record<SourceId, number>> {
+  // Roof entries are binary processing inputs, never parcel/building normalisation sources.
+  const tabularSources = lock.sources.filter(
+    (s) => s.id !== 'roof-lidar' && s.id !== 'roof-aerial'
+  );
   const rows = {} as Record<SourceId, number>;
   for (const id of SOURCE_IDS) {
-    const entry = lock.sources.find((s) => s.id === id);
+    const entry = tabularSources.find((s) => s.id === id);
     if (!entry) throw new Error(`lock has no entry for ${id}`);
     const files = entry.files.map((f) => path.resolve(rawPath(rawDir, f, opts.byName)));
     const parquet = entry.files.every((f) => f.name.endsWith('.parquet'));

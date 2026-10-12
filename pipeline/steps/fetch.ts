@@ -5,6 +5,8 @@ import { nodeHttp, type Http } from '../lib/http';
 import { rawPath, readLock, sha256File, writeLock, type Lock, type LockEntry } from '../lib/lock';
 import { wranglerTarget, type R2Target } from '../lib/r2';
 import { DATASF, fetchDatasf, type DatasfId } from '../sources/datasf';
+import { fetchRoofSources, type RoofSourceConfig } from '../roofs/sources';
+import roofSourceConfig from '../roofs/source-config.json';
 import { fetchOverture } from '../sources/overture';
 import { fetchBasemap, fetchFonts } from '../sources/protomaps';
 
@@ -16,7 +18,9 @@ export const FETCH_IDS = [
   ...(Object.keys(DATASF) as DatasfId[]),
   'overture-buildings',
   'protomaps-basemap',
-  'protomaps-fonts'
+  'protomaps-fonts',
+  'roof-lidar',
+  'roof-aerial'
 ] as const;
 
 export interface FetchOpts {
@@ -47,6 +51,8 @@ export async function restoreRaw(
     for (const f of entry.files) {
       const dest = rawPath(rawDir, f);
       if (existsSync(dest)) {
+        if ((await sha256File(dest)) !== f.sha256)
+          throw new Error(`${entry.id}: sha256 mismatch for ${f.name}`);
         present++;
         continue;
       }
@@ -96,6 +102,18 @@ export async function fetchAll(opts: FetchOpts = {}): Promise<number> {
   for (const id of ids) {
     const t0 = Date.now();
     console.log(`fetch ${id} ...`);
+    if (id === 'roof-lidar' || id === 'roof-aerial') {
+      if (!fetched.some((e) => e.id === 'roof-lidar')) {
+        fetched.push(
+          ...(await fetchRoofSources({
+            rawDir,
+            config: roofSourceConfig as unknown as RoofSourceConfig,
+            http
+          }))
+        );
+      }
+      continue;
+    }
     let entry: LockEntry;
     if (id in DATASF) entry = await fetchDatasf(id as DatasfId, rawDir, http);
     else if (id === 'overture-buildings') {

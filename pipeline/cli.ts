@@ -4,6 +4,7 @@ import { FIXTURE_PROFILE, LIVE_PROFILE } from './config';
 import { build, printResults } from './steps/build';
 import { checkDataset } from './steps/check';
 import { doctor } from './steps/doctor';
+import { setupRoofs, doctorRoofs } from './roofs/setup';
 import { fetchAll } from './steps/fetch';
 import { fixture } from './steps/fixture';
 import { upload } from './steps/upload';
@@ -46,13 +47,15 @@ const str = (v: string | true | undefined): string | undefined =>
   typeof v === 'string' ? v : undefined;
 
 async function runBuild(args: ParsedArgs): Promise<number> {
-  if (!existsSync(LOCK)) {
-    console.error(`no ${LOCK}: run \`npm run pipeline -- fetch\` first`);
+  const lockPath = str(args.flags['lock-path']) ? resolve(str(args.flags['lock-path'])!) : LOCK;
+  const rawDir = str(args.flags['raw-dir']) ? resolve(str(args.flags['raw-dir'])!) : RAW;
+  if (!existsSync(lockPath)) {
+    console.error(`no ${lockPath}: run \`npm run pipeline -- fetch\` first`);
     return 1;
   }
   const { outDir, results } = await build({
-    lockPath: LOCK,
-    rawDir: RAW,
+    lockPath,
+    rawDir,
     outRoot: OUT,
     profile: LIVE_PROFILE,
     skipTiles: args.flags['skip-tiles'] === true
@@ -70,10 +73,17 @@ function latestOut(): string | undefined {
 }
 
 const steps: Record<string, { help: string; run: Step }> = {
+  'setup-roofs': {
+    help: 'install pinned roof build tools (explicit networked setup)',
+    run: async () => setupRoofs()
+  },
   doctor: {
     help: 'check required tools and DuckDB extensions',
-    run: async () => {
-      const checks = await doctor();
+    run: async (args) => {
+      const checks = [
+        ...(await doctor()),
+        ...(args.flags.roofs === true ? await doctorRoofs() : [])
+      ];
       for (const c of checks) {
         const detail = c.ok ? (c.found ?? '') : `${c.found ? `${c.found} ` : ''}-> ${c.hint ?? ''}`;
         console.log(`${c.ok ? 'OK  ' : 'FAIL'} ${c.name}${detail ? `  ${detail}` : ''}`);
@@ -121,6 +131,8 @@ const steps: Record<string, { help: string; run: Step }> = {
     help: 'fetch live sources into .cache/raw and write the lock [--only <id,...>] [--release <rel>] [--basemap-date YYYYMMDD] | --restore [--local]',
     run: async (args) =>
       fetchAll({
+        lockPath: str(args.flags['lock-path']) ? resolve(str(args.flags['lock-path'])!) : undefined,
+        rawDir: str(args.flags['raw-dir']) ? resolve(str(args.flags['raw-dir'])!) : undefined,
         only: str(args.flags.only),
         release: str(args.flags.release),
         basemapDate: str(args.flags['basemap-date']),
@@ -195,6 +207,16 @@ function usage(): string {
 
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));
+  for (const flag of ['lock-path', 'raw-dir']) {
+    const value = args.flags[flag];
+    if (
+      value !== undefined &&
+      (typeof value !== 'string' || !value.trim() || value.includes('\0'))
+    ) {
+      console.error(`--${flag} requires a nonempty path`);
+      return 2;
+    }
+  }
   const step = args.cmd ? steps[args.cmd] : undefined;
   if (!step) {
     console.error(usage());

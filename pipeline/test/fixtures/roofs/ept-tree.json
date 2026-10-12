@@ -1,0 +1,23 @@
+{
+  "ept.json": {
+    "bounds": [-100, -100, -100, 100, 100, 100],
+    "srs": {
+      "horizontal": "3857"
+    },
+    "dataType": "laszip"
+  },
+  "ept-hierarchy/0-0-0-0.json": {
+    "0-0-0-0": 1,
+    "1-1-1-0": -1,
+    "3-7-7-0": 1,
+    "6-22-22-0": 1
+  },
+  "ept-hierarchy/1-1-1-0.json": {
+    "1-1-1-0": 2,
+    "2-2-2-0": 1
+  },
+  "ept-data/0-0-0-0.laz": "root",
+  "ept-data/1-1-1-0.laz": "page",
+  "ept-data/2-2-2-0.laz": "deep",
+  "ept-data/6-22-22-0.laz": "ground-support-only"
+}

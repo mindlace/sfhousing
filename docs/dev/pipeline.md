@@ -65,3 +65,35 @@ These need credentials the pipeline never holds and are not done by CI:
 3. Run the first real `npm run pipeline -- upload <v>` (remote), then `verify <v> --origin <staging>`.
 4. Bump `PUBLIC_DATASET_VERSION` in `wrangler.jsonc`: staging first, then production via a release.
 5. After the pinned Overture release expires upstream, prove the archive works: on a clean checkout run `npm run pipeline -- fetch --restore`, then `build` (AC-7).
+
+## Optional roof inputs and tools
+
+`npm run pipeline -- setup-roofs` is an explicit networked setup step. It requires Python
+3.14.8 (`ROOF_PYTHON=/path/to/python` selects an interpreter), creates `pipeline/.venv`,
+installs the complete hash-checked `pipeline/roofs/requirements.txt` wheel set, and verifies
+roofer 1.0.0 before installing it under `pipeline/.cache/tools`. `doctor --roofs` checks
+this environment; `npm run test:roofs` runs the offline Python input tests. Neither setup
+nor Python is required by ordinary application builds or old no-roof datasets. Linux x64
+and macOS arm64 artifacts are pinned in `toolchain.json`; pipeline CI exercises Linux.
+
+`fetch --only roof-lidar` locks original intersecting EPT hierarchy pages and LAZ objects
+for the three committed sample coverages, including 50 m ground support. Roof fetches
+also record an explicit aerial descriptor, even when there are no permitted tiles.
+2023 SF Planning imagery remains disabled with unconfirmed derivation permission. Enabling
+it requires confirmed permission and recorded license terms; individual tile coverage and
+EPSG:3857 pixel transforms are archived. Matching acquisition years do not establish
+alignment. Unknown acquisition dates and vertical CRS remain explicit nulls rather than
+invented precision; the archived EPT SRS supplies the vertical CRS when available.
+
+`fetch`, `fetch --restore`, and `build` accept `--lock-path <path>` and `--raw-dir <path>`
+for isolated caches. Restore verifies existing as well as downloaded bytes and reads only
+R2 archive keys. Offline jobs verify all locked roof bytes before reading the full
+`buildings` table after SQL 40, preserve EPSG:7131 footprints and fallback heights, and
+retain original source SHA plus point ordinal through cropping. Processing inputs never
+fetch upstream URLs. Roof configuration, Python code, toolchain and overrides participate
+in the dataset code hash, and roof-bearing datasets include toolchain/package digests.
+
+Permission evidence: the [official aerial catalog metadata](https://data.sfgov.org/api/views/3keh-kpm9.json)
+attributes SF Planning but supplies no permission terms. Its title/description lag current
+imagery years, so it does not establish 2023 imagery rights. This absence is recorded as
+unconfirmed permission, never as permission to derive distributable geometry.

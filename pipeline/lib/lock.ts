@@ -11,7 +11,31 @@ export interface LockFile {
   name: string;
 }
 
+export interface LockSpatial {
+  horizontalCrs: string;
+  verticalCrs: string | null;
+  horizontalUnits: string;
+  verticalUnits: string;
+  acquisitionStart: string | null;
+  acquisitionEnd: string | null;
+  coverage: { id: string; bbox: [number, number, number, number] }[];
+  supportBufferM: number;
+  permission: 'confirmed' | 'unconfirmed' | 'denied';
+  alignment: 'verified' | 'unverified' | 'not-applicable';
+  status?: 'available' | 'unavailable' | 'disabled';
+  objects: { name: string; url: string; sha256: string }[];
+  tiles?: {
+    x: number;
+    y: number;
+    zoom: number;
+    width: number;
+    height: number;
+    transform: number[];
+  }[];
+}
+
 export interface LockEntry {
+  spatial?: LockSpatial;
   id: string;
   files: LockFile[];
   retrievedAt: string;

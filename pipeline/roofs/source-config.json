@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "lidar": {
+    "url": "https://s3-us-west-2.amazonaws.com/usgs-lidar-public/CA_SanFrancisco_1_B23/",
+    "horizontalCrs": "EPSG:3857",
+    "verticalCrs": null,
+    "horizontalUnits": "m",
+    "verticalUnits": "m",
+    "acquisitionStart": null,
+    "acquisitionEnd": null,
+    "license": "public-domain"
+  },
+  "coverage": [
+    {
+      "id": "downtown",
+      "bbox": [-122.3975, 37.789, -122.3957, 37.7905]
+    },
+    {
+      "id": "mission",
+      "bbox": [-122.414, 37.7537, -122.4124, 37.755]
+    },
+    {
+      "id": "hillside",
+      "bbox": [-122.4313, 37.7511, -122.4297, 37.7524]
+    }
+  ],
+  "supportBufferM": 50,
+  "aerial": {
+    "url": "https://tile.sf.gov/api/tiles/p2023_rgb8cm/{z}/{x}/{y}",
+    "zoom": 19,
+    "permission": "unconfirmed",
+    "alignment": "unverified",
+    "enabled": false,
+    "tiles": []
+  }
+}

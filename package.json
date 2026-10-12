@@ -32,7 +32,8 @@
     "signoff": "tsx scripts/signoff.ts",
     "branch-protection": "tsx scripts/branch-protection.ts",
     "branch-protection:dry": "tsx scripts/branch-protection.ts --dry-run",
-    "types": "wrangler types --strict-vars=false"
+    "types": "wrangler types --strict-vars=false",
+    "test:roofs": "pipeline/.venv/bin/python -m unittest discover -s pipeline/roofs/tests -v"
   },
   "lint-staged": {
     "*.{ts,svelte,js}": [

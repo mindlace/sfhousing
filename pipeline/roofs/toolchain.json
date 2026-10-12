@@ -1,0 +1,294 @@
+{
+  "schemaVersion": 1,
+  "python": "3.14.8",
+  "packages": {
+    "numpy": "2.5.4",
+    "scipy": "1.18.1",
+    "shapely": "2.2.0",
+    "laspy": "2.7.0",
+    "lazrs": "0.8.2",
+    "pillow": "12.3.0",
+    "pyproj": "3.8.0",
+    "manifold3d": "3.4.1",
+    "certifi": "2026.7.22"
+  },
+  "wheels": [
+    {
+      "package": "numpy",
+      "version": "2.5.4",
+      "filename": "numpy-2.5.4-cp314-cp314-macosx_11_0_arm64.whl",
+      "url": "https://files.pythonhosted.org/packages/f3/49/fee7587c33ee35f7977f9051d7f2023d4e7246d62710c80f20c2361ea232/numpy-2.5.4-cp314-cp314-macosx_11_0_arm64.whl",
+      "sha256": "ffa6ce09a1c6a08e9667dd9c97aa0b14184e8d18f2a14b78b2a2328c9147f076",
+      "bytes": 12019666
+    },
+    {
+      "package": "numpy",
+      "version": "2.5.4",
+      "filename": "numpy-2.5.4-cp314-cp314-macosx_14_0_arm64.whl",
+      "url": "https://files.pythonhosted.org/packages/d5/b2/c6ce165acffceb15a82c07b9cc77d391f86b3f379ba62911908ae5d34b91/numpy-2.5.4-cp314-cp314-macosx_14_0_arm64.whl",
+      "sha256": "956555e0603a4d38019ae6925711cb9dc43195c076a928accf7ea5d50bddfe53",
+      "bytes": 5455617
+    },
+    {
+      "package": "numpy",
+      "version": "2.5.4",
+      "filename": "numpy-2.5.4-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/16/d5/928078d2b28f26829b138b4a6c3980045022fb409f570657a224ae60ef4e/numpy-2.5.4-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "d549420b8858885cea8838a727842249218b9c1da24dd517e25c9c7a948310a3",
+      "bytes": 16721710
+    },
+    {
+      "package": "numpy",
+      "version": "2.5.4",
+      "filename": "numpy-2.5.4-cp314-cp314t-macosx_11_0_arm64.whl",
+      "url": "https://files.pythonhosted.org/packages/13/34/083570ada3bb2a30fbe5d77c8c6fef9141144a15d33e6f793a67e9749ab8/numpy-2.5.4-cp314-cp314t-macosx_11_0_arm64.whl",
+      "sha256": "1ef3aa6d7e29bb13677323114280b05acc57607fa2300e66432d665d5418a162",
+      "bytes": 12138695
+    },
+    {
+      "package": "numpy",
+      "version": "2.5.4",
+      "filename": "numpy-2.5.4-cp314-cp314t-macosx_14_0_arm64.whl",
+      "url": "https://files.pythonhosted.org/packages/94/06/1f9c24db48eef0c2d1207e3b11fffb0478e39dfd8c1e1be7476936885eed/numpy-2.5.4-cp314-cp314t-macosx_14_0_arm64.whl",
+      "sha256": "98b053943e5a0474ec0da309d2cb9d3f18ea57f8a2067c2ab7b5f763d1068380",
+      "bytes": 5574615
+    },
+    {
+      "package": "numpy",
+      "version": "2.5.4",
+      "filename": "numpy-2.5.4-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/34/88/16c5f12f86f5ad2817c4d103205131fc6c8acb3d1878af05a1a4f23ec859/numpy-2.5.4-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "c9b80cdf5cedba0e90d93fa5f9a333c4d65bd545cd669b71bb97ce2b703c9d73",
+      "bytes": 16757212
+    },
+    {
+      "package": "scipy",
+      "version": "1.18.1",
+      "filename": "scipy-1.18.1-cp314-cp314-macosx_12_0_arm64.whl",
+      "url": "https://files.pythonhosted.org/packages/2a/49/59ea385dc3a62ff498ddf3cfff7c2b41b0f9f9d3c4122b3f1dcb6d6327fe/scipy-1.18.1-cp314-cp314-macosx_12_0_arm64.whl",
+      "sha256": "9554bcc6d715ee87a633a3cc8e7703c6628b100dd29cb8a2efc4c0533c7ff729",
+      "bytes": 28725221
+    },
+    {
+      "package": "scipy",
+      "version": "1.18.1",
+      "filename": "scipy-1.18.1-cp314-cp314-macosx_14_0_arm64.whl",
+      "url": "https://files.pythonhosted.org/packages/70/e8/6b0c288c50942d78193696c9f15f9a0874f5178aa0ddf40f83d9924b3e8d/scipy-1.18.1-cp314-cp314-macosx_14_0_arm64.whl",
+      "sha256": "011413b7426b75012840e35649e00fe0a2c3bae89fed433876e3a99251572efc",
+      "bytes": 20466839
+    },
+    {
+      "package": "scipy",
+      "version": "1.18.1",
+      "filename": "scipy-1.18.1-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/6b/89/2a844506d49651e9aa1af6ef95b6bd8031cb1d5a4375edec6155037e04cf/scipy-1.18.1-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "ac0333bdf38309aa3dcbe7e3fa7ea29e7a2c37c6ea306a757b700ded8e4596ad",
+      "bytes": 35329183
+    },
+    {
+      "package": "scipy",
+      "version": "1.18.1",
+      "filename": "scipy-1.18.1-cp314-cp314t-macosx_12_0_arm64.whl",
+      "url": "https://files.pythonhosted.org/packages/74/b2/e3067c487982d4eeab2938928529410370c06fea84a4d3f4925e7d96647d/scipy-1.18.1-cp314-cp314t-macosx_12_0_arm64.whl",
+      "sha256": "ddef79fb382df40104a19bb7151b3b23e57c1778fcf857c71ceecd9bd264513f",
+      "bytes": 29174642
+    },
+    {
+      "package": "scipy",
+      "version": "1.18.1",
+      "filename": "scipy-1.18.1-cp314-cp314t-macosx_14_0_arm64.whl",
+      "url": "https://files.pythonhosted.org/packages/d5/ab/374c9fe2d1ec014e576c781a4b5d8e1ba340e8f6b4638c16f711d2b194f0/scipy-1.18.1-cp314-cp314t-macosx_14_0_arm64.whl",
+      "sha256": "0e82073ecc7acc6436fac4b31674109c7e1d3e596789767eda01258a8c9e8123",
+      "bytes": 20916357
+    },
+    {
+      "package": "scipy",
+      "version": "1.18.1",
+      "filename": "scipy-1.18.1-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/87/53/39d046cc7574ed6acacb6bd5723e220107ece80bff12faaf3efc4ddeede4/scipy-1.18.1-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "a1d33a7836f7ddc1993427966a0823468ec41bcbdb1a9f9942d1d7e57f803ba3",
+      "bytes": 35380876
+    },
+    {
+      "package": "shapely",
+      "version": "2.2.0",
+      "filename": "shapely-2.2.0-cp314-cp314-macosx_11_0_arm64.whl",
+      "url": "https://files.pythonhosted.org/packages/a2/c8/e8117528eb96feafcd5fced50a939ecfdc6242b3782959d202755536bb9e/shapely-2.2.0-cp314-cp314-macosx_11_0_arm64.whl",
+      "sha256": "0a63e6b68ec785ef3aae3935c4aa9fb8edccced94e23c79d5d85276442c60859",
+      "bytes": 1585345
+    },
+    {
+      "package": "shapely",
+      "version": "2.2.0",
+      "filename": "shapely-2.2.0-cp314-cp314-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/d2/54/8f3d60050a703dcab48f7991ec4fb111772731d20ce6a1bf649465033476/shapely-2.2.0-cp314-cp314-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "74f4313af38d6e49ea83532d6cedfb4fe5e6c5485d7c40202bd61b19d6ff09bf",
+      "bytes": 2299593
+    },
+    {
+      "package": "shapely",
+      "version": "2.2.0",
+      "filename": "shapely-2.2.0-cp314-cp314t-macosx_11_0_arm64.whl",
+      "url": "https://files.pythonhosted.org/packages/af/1e/76728b192507909866d7eaa398c9a558d326ca9a7dd14bc929362cce99c9/shapely-2.2.0-cp314-cp314t-macosx_11_0_arm64.whl",
+      "sha256": "74028f468e05e461b30a479b08c1fb5094fa45062abeeec8e7905a6711761436",
+      "bytes": 1596025
+    },
+    {
+      "package": "shapely",
+      "version": "2.2.0",
+      "filename": "shapely-2.2.0-cp314-cp314t-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/f4/36/c007a564ddfeda1aff3c79435d4beb2c0baf41b37d1ec212269ef62f8da8/shapely-2.2.0-cp314-cp314t-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "593e51cd04fe1122f1ab3fae87b306c36b2be0184a5e0d9c26849c55ff4580dc",
+      "bytes": 2297494
+    },
+    {
+      "package": "laspy",
+      "version": "2.7.0",
+      "filename": "laspy-2.7.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/ed/fb/ae27ebca327117e35cc717a3a87afdcbbf10d5aac52e405d16ebe777357e/laspy-2.7.0-py3-none-any.whl",
+      "sha256": "15f5344c62a1023461996bdf5d1ba5fdd813e96694a524fee712931134f3792f",
+      "bytes": 86056
+    },
+    {
+      "package": "lazrs",
+      "version": "0.8.2",
+      "filename": "lazrs-0.8.2-cp314-cp314-macosx_11_0_arm64.whl",
+      "url": "https://files.pythonhosted.org/packages/82/d4/dfcba8ae853858df8a495e891de9a9873fe2e65dba12dd0ea771f3abbba8/lazrs-0.8.2-cp314-cp314-macosx_11_0_arm64.whl",
+      "sha256": "a7f5fd1ec5b56901344fafba9ffb6fb26754445e2bbdcb2dfbbc492b82924924",
+      "bytes": 561890
+    },
+    {
+      "package": "lazrs",
+      "version": "0.8.2",
+      "filename": "lazrs-0.8.2-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/9b/e5/ea06052f3432ece2e3c7eefc49d44296234faf01a93f13a6241f13f9be59/lazrs-0.8.2-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "sha256": "f481e27206db60e3f9d1d057c37d4c2ecc6e2af21e4c6b60b3a9fa347062aa50",
+      "bytes": 627518
+    },
+    {
+      "package": "pillow",
+      "version": "12.3.0",
+      "filename": "pillow-12.3.0-cp314-cp314-macosx_11_0_arm64.whl",
+      "url": "https://files.pythonhosted.org/packages/c7/da/32c752228ae345f489e3a42499d817b6c3996da7e8a3bc7a04fc806b243b/pillow-12.3.0-cp314-cp314-macosx_11_0_arm64.whl",
+      "sha256": "e158cb00350dc278f3b91551101aa7d12415a66ebf2c91d8d5ac14e56ddd3ad0",
+      "bytes": 4780131
+    },
+    {
+      "package": "pillow",
+      "version": "12.3.0",
+      "filename": "pillow-12.3.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/5c/44/c85361f65dbe00eea8576ee467c768d25129989efb76e94f205e9ca9bb46/pillow-12.3.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "251bf95b67017e27b13d82f5b326234ca62d70f9cf4c2b9032de2358a3b12c7b",
+      "bytes": 6936962
+    },
+    {
+      "package": "pillow",
+      "version": "12.3.0",
+      "filename": "pillow-12.3.0-cp314-cp314t-macosx_11_0_arm64.whl",
+      "url": "https://files.pythonhosted.org/packages/07/70/e5686d753e898a45d778ff1718dba8516ead6ab6b95d85fc8c4b70650cf2/pillow-12.3.0-cp314-cp314t-macosx_11_0_arm64.whl",
+      "sha256": "5afb51d599ea772b8365ae807ae557f18bccfe46ab261fd1c2a9ed700fc6eb17",
+      "bytes": 4782956
+    },
+    {
+      "package": "pillow",
+      "version": "12.3.0",
+      "filename": "pillow-12.3.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/cc/91/420637fcb8f1bc11029e403b4538e6694744428d8246118e45719f944556/pillow-12.3.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "bf16ba1b4d0b6b7c8e534936632270cf70eb00dbe09005bc345b2677b726855c",
+      "bytes": 6989642
+    },
+    {
+      "package": "pyproj",
+      "version": "3.8.0",
+      "filename": "pyproj-3.8.0-cp314-cp314-macosx_14_0_arm64.whl",
+      "url": "https://files.pythonhosted.org/packages/1f/f0/9eb71bd1a38680e0bed2dafc7bb86893944c389fc4d1e4861411f9bc00a3/pyproj-3.8.0-cp314-cp314-macosx_14_0_arm64.whl",
+      "sha256": "ad96cf05cfea67e54c16b2119b29ea60ba3b3562643ed3e8a0ce0ecc55efb50e",
+      "bytes": 4991052
+    },
+    {
+      "package": "pyproj",
+      "version": "3.8.0",
+      "filename": "pyproj-3.8.0-cp314-cp314-manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/15/7e/ccee7d6b307bb635b47dbd96eb3471c3a7d6053b8f903723756f8a3ba00a/pyproj-3.8.0-cp314-cp314-manylinux_2_28_x86_64.whl",
+      "sha256": "8cff207c2a92235f79bb2caab29790e1743776e02331143bc5de4224bd695911",
+      "bytes": 9942031
+    },
+    {
+      "package": "pyproj",
+      "version": "3.8.0",
+      "filename": "pyproj-3.8.0-cp314-cp314t-macosx_14_0_arm64.whl",
+      "url": "https://files.pythonhosted.org/packages/29/2a/c187159cdd3c0d77a47008b67848433c7663f6f330fdda31d33994525ba6/pyproj-3.8.0-cp314-cp314t-macosx_14_0_arm64.whl",
+      "sha256": "e2129d03506414ff22fa4bc2541100ce3bfd9b6d1d9af805e77631aae04b866b",
+      "bytes": 5034204
+    },
+    {
+      "package": "pyproj",
+      "version": "3.8.0",
+      "filename": "pyproj-3.8.0-cp314-cp314t-manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/2e/ef/a23a52a64fd8669a3bb65e6af754f60b3622f30cfd86092007baec3afcdd/pyproj-3.8.0-cp314-cp314t-manylinux_2_28_x86_64.whl",
+      "sha256": "faa68c0996bdd3fd997d86c676e758b72a96209ab14b7c5e8b8dcf3b23f85881",
+      "bytes": 10127655
+    },
+    {
+      "package": "manifold3d",
+      "version": "3.4.1",
+      "filename": "manifold3d-3.4.1-cp314-cp314-macosx_11_0_arm64.whl",
+      "url": "https://files.pythonhosted.org/packages/0e/ec/da4bdba9ae1fe9049be9e2f42336ebf700dfd839795b561fb0cee9cb03f6/manifold3d-3.4.1-cp314-cp314-macosx_11_0_arm64.whl",
+      "sha256": "2c9c20b479e15ec5f0710951d3ae4f95635d0bbf6502f03e43ed87e310e69230",
+      "bytes": 840646
+    },
+    {
+      "package": "manifold3d",
+      "version": "3.4.1",
+      "filename": "manifold3d-3.4.1-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/89/fa/2d5838248950b8cb41ba22496dfc7e95222582761ec83e473a210a0be059/manifold3d-3.4.1-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "1093c002a5f5c012219208bfb0b49f4821974f887cbd357316b9dbab74b7fa5b",
+      "bytes": 1356044
+    },
+    {
+      "package": "manifold3d",
+      "version": "3.4.1",
+      "filename": "manifold3d-3.4.1-cp314-cp314t-macosx_11_0_arm64.whl",
+      "url": "https://files.pythonhosted.org/packages/fd/fa/5705986493097e268f26d87b3cfce8e966f6c62a1b8f38fa4086b704cf4d/manifold3d-3.4.1-cp314-cp314t-macosx_11_0_arm64.whl",
+      "sha256": "b4b24047cf423b024f477c09e2c44fed5991cbca4906abf34bf6ced62f37ef93",
+      "bytes": 846070
+    },
+    {
+      "package": "manifold3d",
+      "version": "3.4.1",
+      "filename": "manifold3d-3.4.1-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/07/0a/f2d1c6390ebd565fa44357cddc9e6aa783fbccb0cc952996217bcbc69699/manifold3d-3.4.1-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "b1ac2b29c6ca1412f63a1ac2c240ae067fe03f666bb12a21729012275fbbde85",
+      "bytes": 1361860
+    },
+    {
+      "package": "certifi",
+      "version": "2026.7.22",
+      "filename": "certifi-2026.7.22-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl",
+      "sha256": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775",
+      "bytes": 136983
+    }
+  ],
+  "roofer": {
+    "version": "1.0.0",
+    "commit": "bb2a85a99c424001e698dac0e97485a5da31e27e",
+    "source": {
+      "url": "https://github.com/3DBAG/roofer/archive/bb2a85a99c424001e698dac0e97485a5da31e27e.tar.gz",
+      "sha256": "579ed03e617074c83fb16d198a158c88bc71e5e99809f6880d615800ccf3bb3d",
+      "bytes": 3136267
+    },
+    "platforms": {
+      "linux-x64": {
+        "url": "https://github.com/3DBAG/roofer/releases/download/v1.0.0/roofer-linux-x86_64-v1.0.0.tar.gz",
+        "sha256": "85834b289467b0e583e2b9c59a725c97ef39dc03c0c0a12417a8a0666e1aa0a1",
+        "bytes": 20291139
+      },
+      "darwin-arm64": {
+        "url": "https://github.com/3DBAG/roofer/releases/download/v1.0.0/roofer-macOS-arm64-v1.0.0.tar.gz",
+        "sha256": "a157661dcc410584940a77fc03f39edee083f5cd2e7b4ac5814a32099f6abc18",
+        "bytes": 15639798
+      }
+    }
+  }
+}

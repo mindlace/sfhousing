@@ -33,7 +33,8 @@ const PATHS = ['pipeline', 'src/lib/data'];
 const EXCLUDES = [
   ':(exclude)pipeline/sources.lock.json',
   ':(exclude)pipeline/.cache',
-  ':(exclude)pipeline/out'
+  ':(exclude)pipeline/out',
+  ':(exclude)pipeline/.venv'
 ];
 
 async function git(root: string, args: string[]): Promise<string> {
@@ -46,7 +47,8 @@ async function git(root: string, args: string[]): Promise<string> {
 const NOT_CODE = (f: string): boolean =>
   f === 'pipeline/sources.lock.json' ||
   f.startsWith('pipeline/.cache/') ||
-  f.startsWith('pipeline/out/');
+  f.startsWith('pipeline/out/') ||
+  f.startsWith('pipeline/.venv/');
 
 /**
  * Identifies the pipeline + data-schema code: sha256 of the `git ls-tree -r HEAD` listing

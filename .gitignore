@@ -11,3 +11,6 @@ playwright-report/
 /scratch/
 pipeline/.cache/
 pipeline/out/
+
+pipeline/.venv/
+pipeline/roofs/**/__pycache__/

@@ -1,0 +1,105 @@
+"""Offline input identity and geometry. No upstream access is permitted here."""
+import hashlib
+import json
+import math
+from pathlib import Path
+import sys
+import numpy as np
+
+
+def _ring(points, ccw):
+    snapped = []
+    for p in points:
+        if len(p) < 2 or not all(math.isfinite(x) for x in p[:2]):
+            raise ValueError('invalid footprint coordinate')
+        q = tuple(int(math.floor(x * 1000 + 0.5)) for x in p[:2])
+        if not snapped or q != snapped[-1]:
+            snapped.append(q)
+    if snapped and snapped[0] == snapped[-1]:
+        snapped.pop()
+    if len(set(snapped)) < 3:
+        raise ValueError('degenerate snapped ring')
+    area = sum(a[0]*b[1]-b[0]*a[1] for a,b in zip(snapped,snapped[1:]+snapped[:1]))
+    if not area:
+        raise ValueError('zero area footprint ring')
+    if (area > 0) != ccw:
+        snapped.reverse()
+    rotations = [snapped[i:]+snapped[:i] for i,p in enumerate(snapped) if p == min(snapped)]
+    snapped = min(rotations)
+    return [[(v/1000 if v else 0) for v in p] for p in snapped+[snapped[0]]]
+
+
+def canonical_geometry(geojson: dict) -> dict:
+    kind = geojson['type']
+    if kind not in ('Polygon','MultiPolygon'):
+        raise ValueError('footprints must be polygonal')
+    polygons = [geojson['coordinates']] if kind == 'Polygon' else geojson['coordinates']
+    normalized = []
+    for rings in polygons:
+        if not rings:
+            raise ValueError('empty polygon')
+        normalized.append([_ring(rings[0],True)]+sorted(_ring(h,False) for h in rings[1:]))
+    normalized.sort()
+    return {'type':kind,'coordinates':normalized[0] if kind == 'Polygon' else normalized}
+
+
+def footprint_hash(geojson: dict) -> str:
+    # Sort keys and disallow NaN; Unicode is encoded directly as UTF-8.
+    data = json.dumps(canonical_geometry(geojson),sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False)
+    return hashlib.sha256(data.encode('utf-8')).hexdigest()
+
+
+def load_points(job: dict) -> dict[str, np.ndarray]:
+    import laspy
+    from pyproj import Transformer
+    dtype = np.dtype([('x','<f8'),('y','<f8'),('z','<f8'),('classification','u1'),
+                      ('sourceSha','U64'),('ordinal','<u8')])
+    result = {b['buildingId']:[] for b in job['buildings']}
+    # Stable source order, independent of acquisition completion or lock ordering.
+    sources = sorted((s for s in job['sources'] if s['kind']=='lidar'),key=lambda s:(s['sha256'],s['path']))
+    seen = set()
+    for source in sources:
+        sha = source['sha256']
+        if sha in seen:
+            continue
+        seen.add(sha)
+        path = Path(source['path'])
+        with path.open('rb') as handle:
+            actual = hashlib.file_digest(handle,'sha256').hexdigest()
+        if actual != sha:
+            raise ValueError('sha256 mismatch: '+str(path))
+        las = laspy.read(path)
+        a = np.empty(len(las.points),dtype=dtype)
+        x,y = np.asarray(las.x),np.asarray(las.y)
+        if source['horizontalCrs'] != 'EPSG:7131':
+            x,y = Transformer.from_crs(source['horizontalCrs'],'EPSG:7131',always_xy=True).transform(x,y)
+        a['x'],a['y'],a['z'] = x,y,np.asarray(las.z)
+        a['classification'] = np.asarray(las.classification)
+        a['sourceSha'] = sha
+        a['ordinal'] = np.arange(len(a),dtype=np.uint64)
+        if not all(np.all(np.isfinite(a[k])) for k in ('x','y','z')):
+            raise ValueError('nonfinite LiDAR point')
+        # Parent EPT nodes contain incidental points outside selected coverage. Keep
+        # only the committed coverage plus its ground support before per-building crops.
+        coverage_mask = np.ones(len(a),dtype=bool)
+        if 'coverage' in source:
+            coverage_mask[:] = False
+            transformer = Transformer.from_crs('EPSG:4326','EPSG:7131',always_xy=True)
+            for coverage in source['coverage']:
+                cw,cs,ce,cn = transformer.transform_bounds(*coverage['bbox'],densify_pts=21)
+                support = source['supportBufferM']
+                coverage_mask |= (x>=cw-support)&(x<=ce+support)&(y>=cs-support)&(y<=cn+support)
+        for building in job['buildings']:
+            w,s,e,n = building['bbox']
+            buffer = source['supportBufferM']
+            if buffer < 50:
+                raise ValueError('insufficient ground support buffer')
+            mask = coverage_mask&(x>=w-buffer)&(x<=e+buffer)&(y>=s-buffer)&(y<=n+buffer)
+            result[building['buildingId']].append(a[mask])
+    return {key:np.concatenate(arrays) if arrays else np.empty(0,dtype=dtype) for key,arrays in result.items()}
+
+
+if __name__ == '__main__':
+    # Batch canonicalization keeps one Python invocation per input job.
+    geometries = json.load(sys.stdin)
+    json.dump([{'footprint':canonical_geometry(g),'footprintHash':footprint_hash(g)} for g in geometries],sys.stdout,separators=(',',':'),allow_nan=False)

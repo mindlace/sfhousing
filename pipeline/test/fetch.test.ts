@@ -212,6 +212,12 @@ describe('restoreRaw', () => {
     expect(t2.gets).toEqual([]);
   });
 
+  it('rejects an already cached file whose content no longer matches its lock', async () => {
+    const raw = tmp();
+    writeFileSync(join(raw, sha), 'tampered');
+    await expect(restoreRaw(lock, raw, r2(content))).rejects.toThrow(/sha256 mismatch/);
+  });
+
   it('rejects a corrupt archive and leaves nothing under the sha name', async () => {
     const raw = tmp();
     await expect(restoreRaw(lock, raw, r2(new TextEncoder().encode('tampered')))).rejects.toThrow(
