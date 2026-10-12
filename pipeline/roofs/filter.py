@@ -17,6 +17,7 @@ class MaskResult(NamedTuple):
     rejected: np.ndarray
     cells: np.ndarray
     flags: list[str]
+    diagnostics: list[str]
 
 
 def validation_partition(source_sha: str, ordinals: np.ndarray) -> np.ndarray:
@@ -61,7 +62,7 @@ def vegetation_mask(training_points, image, raster_transform, config) -> MaskRes
     rejected = np.zeros(len(training_points),dtype=bool)
     empty = np.empty((0,2),dtype=np.int64)
     if image is None:
-        return MaskResult(rejected, empty, ['aerial_missing'])
+        return MaskResult(rejected, empty, ['aerial_missing'], [])
     rgb = np.asarray(image,dtype=float)
     if rgb.ndim != 3 or rgb.shape[2] < 3 or not np.isfinite(rgb).all():
         raise ValueError('invalid aerial RGB image')
@@ -75,7 +76,7 @@ def vegetation_mask(training_points, image, raster_transform, config) -> MaskRes
     green = binary_dilation(binary_closing(green,iterations=close),iterations=dilate)
     ids = np.flatnonzero(training_points['classification'] == 1)
     if len(ids) < 3:
-        return MaskResult(rejected,empty,['pca_insufficient'])
+        return MaskResult(rejected,empty,['vegetation_ambiguous'],['pca_insufficient'])
     p = training_points[ids]
     xyz = np.column_stack([p[k] for k in ('x','y','z')])
     _, ix = cKDTree(xyz).query(xyz,k=min(48,len(xyz)))
@@ -87,7 +88,7 @@ def vegetation_mask(training_points, image, raster_transform, config) -> MaskRes
     if safe.sum() < 32:
         safe = (rough < .025)&covered
     if not safe.any():
-        return MaskResult(rejected,empty,['smooth_support_missing'])
+        return MaskResult(rejected,empty,['vegetation_ambiguous'],['smooth_support_missing'])
     cell_m = config.get('cellM', .5)
     keys = np.floor(xyz[:,:2]/cell_m).astype(np.int64)
     unique, inverse = np.unique(keys,axis=0,return_inverse=True)
@@ -97,16 +98,25 @@ def vegetation_mask(training_points, image, raster_transform, config) -> MaskRes
     indices = np.asarray(indices).reshape(len(unique),-1)
     support_z = np.median(xyz[safe,2][indices],axis=1)
     center_green, center_covered = _green_at(centers,green,raster_transform)
+    # Only export cells whose entire extent is covered. Validation can contain
+    # returns absent from training, so training-return coverage alone is insufficient.
+    corners = unique[:,None,:]*cell_m+np.array([[0,0],[cell_m,0],[0,cell_m],[cell_m,cell_m]])
+    _, corner_covered = _green_at(corners.reshape(-1,2),green,raster_transform)
+    full_cell_coverage = corner_covered.reshape(-1,4).all(axis=1)
     bad = []
     for i, key in enumerate(unique):
         group = inverse == i
-        if center_covered[i] and center_green[i] and (np.percentile(rough[group],90) > .06 or np.ptp(xyz[group,2]) > 1.5) and np.percentile(xyz[group,2],90)-support_z[i] > 2 and np.median(distances[i]) < 6:
+        if full_cell_coverage[i] and covered[group].all() and center_covered[i] and center_green[i] and (np.percentile(rough[group],90) > .06 or np.ptp(xyz[group,2]) > 1.5) and np.percentile(xyz[group,2],90)-support_z[i] > 2 and np.median(distances[i]) < 6:
             bad.append(key)
             rejected[ids[group]] = True
-    flags = ['aerial_partial_coverage'] if not covered.all() else []
-    return MaskResult(rejected,np.array(bad,dtype=np.int64).reshape(-1,2),flags)
+    partial = not covered.all() or not full_cell_coverage.all()
+    flags = ['aerial_missing'] if partial else []
+    diagnostics = ['aerial_partial_coverage'] if partial else []
+    return MaskResult(rejected,np.array(bad,dtype=np.int64).reshape(-1,2),flags,diagnostics)
 
 
 def apply_cells(points, cells, cell_m=.5):
+    # vegetation_mask exports only fully covered cells, preserving image coverage
+    # when applying a training-derived decision to previously unseen returns.
     bad = set(map(tuple,cells))
     return np.array([p['classification'] == 1 and tuple(np.floor([p['x']/cell_m,p['y']/cell_m]).astype(np.int64)) in bad for p in points],dtype=bool)

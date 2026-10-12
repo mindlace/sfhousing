@@ -119,3 +119,29 @@ test('runner rejects a model with missing selected candidate or measured ground 
     'candidate'
   );
 });
+
+test('runner flags obey the shared reason contract while internal details remain diagnostics', () => {
+  const fallback = {
+    buildingId: building.buildingId,
+    footprintHash: building.footprintHash,
+    method: 'footprint',
+    mesh: null,
+    selectedCandidate: null,
+    reason: 'lidar_sparse',
+    flags: ['pca_insufficient'],
+    candidates: [],
+    ground: null,
+    archives: []
+  };
+  expect(() => validateRoofResult({ buildings: [fallback], archives: [] }, [building])).toThrow(
+    'flag'
+  );
+  const supported = {
+    ...fallback,
+    flags: ['vegetation_ambiguous'],
+    diagnostics: { vegetation: ['pca_insufficient'] }
+  };
+  expect(
+    validateRoofResult({ buildings: [supported], archives: [] }, [building]).buildings[0].flags
+  ).toEqual(['vegetation_ambiguous']);
+});

@@ -1,3 +1,4 @@
+import { RoofReasonSchema } from '../../src/lib/data/roof-audit';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, copyFileSync, writeFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -64,6 +65,8 @@ export function validateRoofResult(
         : !b.mesh || b.reason !== null || !validMesh(b.mesh)
     )
       throw new Error('corrupt roof result mesh/outcome');
+    if (!b.flags.every((flag) => RoofReasonSchema.safeParse(flag).success))
+      throw new Error('unsupported roof result flag');
     if (b.method !== 'footprint') {
       const selected = b.candidates.find((c) => c.name === b.selectedCandidate);
       if (

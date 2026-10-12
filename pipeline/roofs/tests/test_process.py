@@ -68,3 +68,16 @@ class ProcessTests(unittest.TestCase):
             self.assertEqual(saved['ordinal'][0],0)
             for archive in first['archives']:
                 self.assertEqual((Path(directory)/'first/artifacts'/archive['sha256']).read_bytes(),(Path(directory)/'second/artifacts'/archive['sha256']).read_bytes())
+
+    def test_sparse_canopy_diagnostics_are_preserved_outside_contractual_flags(self):
+        import numpy as np
+        p=load('process')
+        building={'buildingId':'sparse','footprintHash':'h','heightM':10,'footprint':{'type':'Polygon','coordinates':[[[0,0],[10,0],[10,10],[0,10],[0,0]]]}}
+        points=np.array([(1.,1.,10.,1,'0'*64,0),(2.,2.,10.,1,'0'*64,1),(1.,1.,0.,2,'0'*64,2)],dtype=[('x','f8'),('y','f8'),('z','f8'),('classification','u1'),('sourceSha','U64'),('ordinal','u8')])
+        image=np.full((100,100,3),80,dtype='u1')
+        source={'permission':'confirmed','alignment':'verified','horizontalCrs':'EPSG:7131'}
+        tile={'width':100,'height':100,'transform':[.1,0,0,0,-.1,10]}
+        result,evidence=p.process_building(building,points,[(source,image,tile)],{'cellM':.5})
+        self.assertEqual(result['flags'],['vegetation_ambiguous'])
+        self.assertEqual(result['diagnostics']['vegetation'],['pca_insufficient'])
+        self.assertEqual(evidence['vegetationDiagnostics'],['pca_insufficient'])

@@ -71,7 +71,8 @@ export interface ProcessedBuilding {
   mesh: RoofMesh | null;
   selectedCandidate: RoofCandidate['name'] | null;
   reason: string | null;
-  flags: string[];
+  flags: import('../../src/lib/data/roof-audit').RoofReason[];
+  diagnostics?: { vegetation: string[] };
   candidates: RoofCandidate[];
   ground: { groundM: number | null; method: string; count: number } | null;
   archives: RoofArchive[];

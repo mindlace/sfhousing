@@ -60,3 +60,35 @@ class FilterTests(unittest.TestCase):
         self.assertFalse(f.vegetation_mask(p,gray,tf,{'cellM':.5}).rejected.any())
         low=p.copy();low['z'][len(smooth):-1]-=6
         self.assertFalse(f.vegetation_mask(low,rgb,tf,{'cellM':.5}).rejected.any())
+
+    def test_boundary_straddling_cell_never_borrows_covered_pixels_for_uncovered_returns(self):
+        f=load('filter')
+        dtype=[('x','f8'),('y','f8'),('z','f8'),('classification','u1')]
+        smooth=[(x,y,5.,1) for x in np.arange(0,4,.1) for y in np.arange(0,4,.1)]
+        canopy=[(5+x*.02,1+y*.02,9+z*.2,1) for x in range(25) for y in range(10) for z in range(15)]
+        points=np.array(smooth+canopy,dtype=dtype)
+        rgb=np.full((100,53,3),80,dtype='u1');rgb[:,50:]=[20,150,20]
+        tf={'left':0,'top':8,'pixelM':.1,'crs':'EPSG:7131'}
+        result=f.vegetation_mask(points,rgb,tf,{'cellM':.5})
+        uncovered=points['x']>=5.3
+        self.assertEqual(int(uncovered.sum()),1500)
+        self.assertFalse(result.rejected[uncovered].any())
+        # Discard the entire partially covered cell so validation cannot borrow it either.
+        self.assertFalse(result.rejected[len(smooth):].any())
+        validation=np.array([(5.4,1.1,10,1),(5.1,1.1,10,1)],dtype=dtype)
+        self.assertFalse(f.apply_cells(validation,result.cells).any())
+        # The training sample may miss the uncovered portion entirely. Its cells
+        # must still be safe for unseen validation returns beyond the raster edge.
+        covered_only=f.vegetation_mask(points[~uncovered],rgb,tf,{'cellM':.5})
+        self.assertFalse(f.apply_cells(validation,covered_only.cells).any())
+        self.assertIn('aerial_partial_coverage',result.diagnostics)
+        self.assertEqual(result.flags,['aerial_missing'])
+
+    def test_missing_smooth_support_retains_internal_diagnostic_without_unknown_flag(self):
+        f=load('filter')
+        points=np.array([(1.,1.,5.,1),(2.,1.,5.,1),(1.,2.,5.,1),(1.,1.,6.,1)],dtype=[('x','f8'),('y','f8'),('z','f8'),('classification','u1')])
+        image=np.full((100,100,3),[20,150,20],dtype='u1')
+        result=f.vegetation_mask(points,image,{'left':0,'top':8,'pixelM':.1,'crs':'EPSG:7131'},{'cellM':.5})
+        self.assertFalse(result.rejected.any())
+        self.assertEqual(result.flags,['vegetation_ambiguous'])
+        self.assertEqual(result.diagnostics,['smooth_support_missing'])

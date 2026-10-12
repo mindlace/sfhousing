@@ -78,7 +78,7 @@ def validate_aerials(job):
 
 
 def building_mask(training, images, config):
-    rejected = np.zeros(len(training),dtype=bool); cells = []; flags = []
+    rejected = np.zeros(len(training),dtype=bool); cells = []; flags = []; diagnostics = []
     for source,image,tile in images:
         if source['permission'] != 'confirmed':
             flags.append('aerial_rights_unconfirmed'); continue
@@ -97,9 +97,9 @@ def building_mask(training, images, config):
         latitude = np.degrees(np.arctan(np.sinh((tx[5]+tile['height']*tx[4]/2)/6378137)))
         pixel = abs(tx[0])*np.cos(np.radians(latitude))
         result = vegetation_mask(training,image,{'transform':tx,'crs':source['horizontalCrs'],'groundPixelM':pixel},config)
-        rejected |= result.rejected; cells.extend(result.cells.tolist()); flags.extend(result.flags)
+        rejected |= result.rejected; cells.extend(result.cells.tolist()); flags.extend(result.flags); diagnostics.extend(result.diagnostics)
     if not images: flags.append('aerial_missing')
-    return rejected,np.unique(np.array(cells,dtype=np.int64).reshape(-1,2),axis=0),flags
+    return rejected,np.unique(np.array(cells,dtype=np.int64).reshape(-1,2),axis=0),flags,sorted(set(diagnostics))
 
 
 def landmark_override(building):
@@ -132,7 +132,7 @@ def process_building(building, points, images, config):
         validation[ids] = validation_partition(str(sha),points['ordinal'][ids])
     inside = contains_xy(footprint,points['x'],points['y'])
     train = points[~validation & ((inside & (points['classification']==1)) | (points['classification']==2))]
-    rejected,cells,flags = building_mask(train,images,config)
+    rejected,cells,flags,diagnostics = building_mask(train,images,config)
     retained = train[~rejected]
     held = points[validation & inside & (points['classification']==1)]
     held = held[~apply_cells(held,cells,config['cellM'])].copy()
@@ -150,8 +150,9 @@ def process_building(building, points, images, config):
         if result['mesh'] is not None and len(cells): result['method'] = 'lidar_aerial'
     result['ground'] = ground._asdict()
     result['flags'] = sorted(set(flags))
+    result['diagnostics'] = {'vegetation':diagnostics}
     result['returnCounts'] = {'before':len(train),'retained':len(retained),'rejected':int(rejected.sum()),'roofTraining':count,'validation':len(held)}
-    return result, {'training':retained,'validation':held,'mask':rejected,'canopyCells':cells}
+    return result, {'training':retained,'validation':held,'mask':rejected,'canopyCells':cells,'vegetationDiagnostics':diagnostics}
 
 
 def process_job(job):

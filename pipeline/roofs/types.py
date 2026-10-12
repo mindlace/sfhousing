@@ -30,6 +30,7 @@ class ProcessedBuilding(TypedDict):
     selectedCandidate: str | None
     reason: str | None
     flags: list[str]
+    diagnostics: NotRequired[dict[str, list[str]]]
     candidates: list[Candidate]
     ground: dict | None
     archives: list[LockFile]
