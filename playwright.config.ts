@@ -18,8 +18,12 @@ export default defineConfig({
   fullyParallel: true,
   workers: process.env.SFH_E2E_WORKERS ? Number(process.env.SFH_E2E_WORKERS) : undefined,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [['github'], ['list']] : 'list',
+  // One retry everywhere: a retried pass still passes, but chreode's reporter records it, and
+  // the third occurrence of the same flake fails signoff.
+  retries: 1,
+  reporter: process.env.CI
+    ? [['github'], ['list'], ['@mindlace/chreode/reporters/playwright']]
+    : [['list'], ['@mindlace/chreode/reporters/playwright']],
   use: { baseURL: `http://localhost:${port}` },
   projects: [
     { name: 'chromium', testIgnore: ignored, use: desktop },

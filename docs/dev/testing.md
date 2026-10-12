@@ -41,3 +41,13 @@ CI runs `npm run test:e2e -- --project=chromium --project=mobile --project=chrom
 See [accessibility.md](accessibility.md).
 
 `npm run signoff` runs the local gate with chreode: it merges `origin/main`, runs the checks the changes since the last signoff need (`chreode.config.ts`), pushes, and posts the `chreode/signoff` status that branch protection requires; `npm run signoff -- --dry-run` prints the plan without running it. See [deploy.md](deploy.md).
+
+## Flakes
+
+Playwright runs with one retry and the vitest `client` project with `retry: 1`; the `server`
+project stays at 0, since pure logic must not flake. A test that fails and then passes on retry
+still passes, but chreode's reporters record it in `.chreode/flakes.jsonl`, and signoff files
+or bumps one GitHub issue (label `flake`) per flaking test. From the third occurrence on, any signoff run that sees that flake again fails with the issue's URL, unless the issue is labelled `flake-snoozed`; runs that don't hit the flake are unaffected. Signoff's `burn-in` step
+runs every test file changed on the branch five times with retries off (Playwright: `chromium`
+only). Do not run repeat matrices by hand. Diagnose with the
+[flake playbook](https://github.com/mindlace/chreode/blob/main/docs/flakes.md).
