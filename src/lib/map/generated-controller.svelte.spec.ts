@@ -17,6 +17,7 @@ import { GEN_RGBA } from './palette';
 import { TYPOLOGY_ORDER, type GeneratedUpdate, type PackedCell } from './types';
 import { makeFakeDeps, type FakeDeps } from './test/fake-deps';
 import { makeSyntheticCity } from './test/synthetic-city';
+import { LayerComposer } from './layer-composer';
 import genJson from './fixtures/generated-small.json';
 import parcelsJson from './fixtures/parcels-small.json';
 
@@ -71,6 +72,45 @@ function asIncremental(u: GeneratedUpdate, revision: number): GeneratedUpdate {
 }
 
 describe('GeneratedController (fake deps)', () => {
+  it('composes brush separately and applies reset and every hide slice atomically', () => {
+    const f = makeFakeDeps();
+    const output: { ids: string[]; hidden: number }[] = [];
+    const composer = new LayerComposer((ls) =>
+      output.push({ ids: ls.map((l) => l.id), hidden: f.replaced.size })
+    );
+    composer.setRoofs([new ScatterplotLayer({ id: 'roof' })]);
+    f.setLayers = (ls) => composer.setGenerated(ls);
+    f.setBrushLayers = (ls) => composer.setBrush(ls);
+    f.withRepresentationTransaction = (fn) => composer.transaction(fn);
+    // Replacement callbacks force roof updates, as Task 9's visibility adapter will.
+    const replace = f.setReplaced;
+    f.setReplaced = (id) => {
+      replace(id);
+      composer.setRoofs([new ScatterplotLayer({ id: 'roof' })]);
+    };
+    const clear = f.clearAllReplaced;
+    f.clearAllReplaced = () => {
+      clear();
+      composer.setRoofs([new ScatterplotLayer({ id: 'roof' })]);
+    };
+    const c = new GeneratedController(f, 'light', 'labels');
+    c.setOverlayLayers([new PathLayer({ id: 'brush' })]);
+    expect(c.debugSnapshot().layerIds).not.toContain('brush');
+    const start = output.length;
+    c.apply(snapshot0());
+    expect(output.slice(start)).toEqual([
+      { ids: ['roof', 'generated-A', 'generated-B', 'brush'], hidden: 12 }
+    ]);
+    const afterSnapshot = output.length;
+    c.apply(makeSyntheticCity(1, 1200, 200)[0]);
+    while (f.pendingFrames()) f.flushFrame(f.time + 16);
+    expect(
+      output.slice(afterSnapshot).every((o) => o.ids[0] === 'roof' && o.ids.at(-1) === 'brush')
+    ).toBe(true);
+    expect(output.slice(afterSnapshot).map((o) => o.hidden)).toEqual([800, 1200]);
+    c.destroy();
+  });
+
   it('C4: reduced motion merges rising straight into settled', () => {
     const f = makeFakeDeps();
     f.reduced = true;

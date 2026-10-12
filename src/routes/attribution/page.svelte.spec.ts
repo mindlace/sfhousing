@@ -29,6 +29,9 @@ async function expectNotices() {
   await expect.element(page.getByRole('heading', { name: 'Software' })).toBeInTheDocument();
   await expect.element(page.getByRole('link', { name: 'MapLibre GL JS' })).toBeInTheDocument();
   await expect
+    .element(page.getByRole('link', { name: 'luma.gl', exact: true }))
+    .toHaveAttribute('href', 'https://luma.gl');
+  await expect
     .element(page.getByRole('link', { name: 'MIT licensed' }))
     .toHaveAttribute('href', expect.stringMatching(/\/blob\/main\/LICENSE$/));
 }

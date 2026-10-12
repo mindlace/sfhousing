@@ -11,6 +11,10 @@ import { GEN_RGBA, TOKENS, hexToRgba, type RGBA } from './palette';
 import { TYPOLOGY_ORDER, type GeneratedUpdate, type PackedCell, type Theme } from './types';
 
 export interface ControllerDeps {
+  /** Coalesce roof visibility, feature state and generated changes into one representation. */
+  withRepresentationTransaction?(fn: () => void): void;
+  /** When present, the composer owns the brush slot separately from generated output. */
+  setBrushLayers?(layers: Layer[]): void;
   setLayers(layers: Layer[]): void; // overlay.setProps({ layers })
   setReplaced(id: ParcelId): void; // setFeatureState({source:'buildings', sourceLayer:'buildings', id}, {replaced:true})
   clearReplaced(id: ParcelId): void; // removeFeatureState({…id}, 'replaced')
@@ -149,7 +153,7 @@ export class GeneratedController {
 
   apply(u: GeneratedUpdate): void {
     if (this.destroyed) return;
-    if (u.revision === 0) return this.snapshot(u);
+    if (u.revision === 0) return this.transaction(() => this.snapshot(u));
     if (u.revision !== this.lastRevision + 1) {
       this.deps.onResyncNeeded();
       return;
@@ -187,7 +191,12 @@ export class GeneratedController {
     this.overlay = beforeId
       ? layers.map((l) => l.clone({ beforeId } as Partial<Layer['props']>))
       : [...layers];
-    this.emit();
+    if (this.deps.setBrushLayers) {
+      this.deps.setBrushLayers(this.overlay);
+      this.overlay = [];
+    } else {
+      this.emit();
+    }
   }
 
   lookup(layerId: string, index: number): PartLookup | null {
@@ -270,7 +279,16 @@ export class GeneratedController {
     this.schedule();
   }
 
+  private transaction(fn: () => void): void {
+    if (this.deps.withRepresentationTransaction) this.deps.withRepresentationTransaction(fn);
+    else fn();
+  }
+
   private runJob(job: Job): void {
+    this.transaction(() => this.applySlice(job));
+  }
+
+  private applySlice(job: Job): void {
     const t0 = MEASURE ? performance.now() : 0;
     const { slice } = job;
     for (const id of slice.removed) {
