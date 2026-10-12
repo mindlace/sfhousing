@@ -41,29 +41,29 @@ Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link t
 
 ## Commands
 
-| Command                                             | Purpose                                                                                  |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `npm run dev`                                       | Vite dev server (local D1/R2 via adapter-cloudflare's platform proxy)                    |
-| `npm run build`                                     | Production build                                                                         |
-| `npm run preview`                                   | Build, then `wrangler dev` on port 4173 with `ENVIRONMENT=development`                   |
-| `npm run check`                                     | `svelte-kit sync` + `svelte-check`                                                       |
-| `npm run lint`                                      | `prettier --check .` + `eslint .`                                                        |
-| `npm run lint:workflows`                            | `actionlint` on `.github/workflows/*.yml` (needs actionlint installed)                   |
-| `npm run format`                                    | `prettier --write .`                                                                     |
-| `npm test`                                          | `test:unit` then `test:e2e`                                                              |
-| `npm run test:unit`                                 | Vitest, server and client projects                                                       |
-| `npm run test:e2e`                                  | Playwright (starts the preview server, loads the fixture, migrates)                      |
-| `npm run bench:map`                                 | Headed GPU map pan benchmark (p50/p95 frame time); see docs/dev/map-perf.md              |
-| `npm run db:generate`                               | Generate + classify + flatten a migration from the Drizzle schema                        |
-| `npm run db:migrate`                                | Apply migrations to the local D1                                                         |
-| `npm run db:migrate:staging` / `db:migrate:prod`    | Apply migrations to remote staging / production D1 (normally done by CI)                 |
-| `npm run pipeline -- <cmd>`                         | Data pipeline: `doctor`, `fetch`, `build`, `check`, `upload`, `verify`, `fixture`, `all` |
-| `npm run test:pipeline`                             | Vitest pipeline project (needs tippecanoe, pmtiles)                                      |
-| `npm run data:fixture`                              | Load `e2e/fixtures/data/fixture-0` into local R2                                         |
-| `npm run data:local -- <version> [--from <origin>]` | Copy a published dataset version into local R2 (default origin production)               |
-| `npm run signoff`                                   | Merge `origin/main`, run the full suite, push, post `local-ci/signoff`                   |
-| `npm run branch-protection` / `:dry`                | Apply (or preview with `:dry`) `main` branch protection; run once by a maintainer        |
-| `npm run types`                                     | Regenerate `worker-configuration.d.ts` (`wrangler types --strict-vars=false`)            |
+| Command                                             | Purpose                                                                                              |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `npm run dev`                                       | Vite dev server (local D1/R2 via adapter-cloudflare's platform proxy)                                |
+| `npm run build`                                     | Production build                                                                                     |
+| `npm run preview`                                   | Build, then `wrangler dev` on port 4173 with `ENVIRONMENT=development`                               |
+| `npm run check`                                     | `svelte-kit sync` + `svelte-check`                                                                   |
+| `npm run lint`                                      | `prettier --check .` + `eslint .`                                                                    |
+| `npm run lint:workflows`                            | `actionlint` on `.github/workflows/*.yml` (needs actionlint installed)                               |
+| `npm run format`                                    | `prettier --write .`                                                                                 |
+| `npm test`                                          | `test:unit` then `test:e2e`                                                                          |
+| `npm run test:unit`                                 | Vitest, server and client projects                                                                   |
+| `npm run test:e2e`                                  | Playwright (starts the preview server, loads the fixture, migrates)                                  |
+| `npm run bench:map`                                 | Headed GPU map pan benchmark (p50/p95 frame time); see docs/dev/map-perf.md                          |
+| `npm run db:generate`                               | Generate + classify + flatten a migration from the Drizzle schema                                    |
+| `npm run db:migrate`                                | Apply migrations to the local D1                                                                     |
+| `npm run db:migrate:staging` / `db:migrate:prod`    | Apply migrations to remote staging / production D1 (normally done by CI)                             |
+| `npm run pipeline -- <cmd>`                         | Data pipeline: `doctor`, `fetch`, `build`, `check`, `upload`, `verify`, `fixture`, `all`             |
+| `npm run test:pipeline`                             | Vitest pipeline project (needs tippecanoe, pmtiles)                                                  |
+| `npm run data:fixture`                              | Load `e2e/fixtures/data/fixture-0` into local R2                                                     |
+| `npm run data:local -- <version> [--from <origin>]` | Copy a published dataset version into local R2 (default origin production)                           |
+| `npm run signoff`                                   | `chreode signoff`: merge `origin/main`, run the steps the changes need, push, post `chreode/signoff` |
+| `npm run branch-protection` / `:dry`                | `chreode protect`: require `chreode/signoff` on `main` (`:dry` previews); run once by a maintainer   |
+| `npm run types`                                     | Regenerate `worker-configuration.d.ts` (`wrangler types --strict-vars=false`)                        |
 
 ## Architecture
 
@@ -75,7 +75,7 @@ Shell: the root layout renders the skip link, header, `<main>` and footer. Pages
 
 - All work happens in git worktrees under `.claude/worktrees/`.
 - Conventional Commits.
-- PRs merge only with the `local-ci/signoff` commit status. Run `npm run signoff` (full local suite, then it pushes and posts the status); do not `git push` first. `ci.yml` is contributor feedback, not the gate.
+- PRs merge only with the `chreode/signoff` commit status. Run `npm run signoff` ([chreode](https://github.com/mindlace/chreode); config in `chreode.config.ts`): it merges `origin/main`, runs only the steps the changes since the last signoff need (a path no rule matches runs everything), pushes, and posts the status; do not `git push` first. `npm run signoff -- --dry-run` prints the plan; `-- --full` runs every step. `ci.yml` is contributor feedback, not the gate.
 - Schema change: edit `src/lib/server/db/schema/` → `npm run db:generate` → `npm run db:migrate`. Never hand-edit migrations.
 - Code style: 2-space indent, single quotes, no trailing commas, 100 columns (Prettier + ESLint).
 - CSP (`kit.csp` in `svelte.config.js`) changes are interface changes: raise them with the owning subsystem rather than widening ad hoc. Map glyphs and sprites are self-hosted under `/data/<version>/`.

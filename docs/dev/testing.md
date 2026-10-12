@@ -40,4 +40,4 @@ CI runs `npm run test:e2e -- --project=chromium --project=mobile`. Single spec: 
 
 See [accessibility.md](accessibility.md).
 
-`npm run signoff -- --verify-only` runs the full local gate (`check`, `lint`, `test:unit`, `test:e2e`) without merging, pushing or posting a status. Plain `npm run signoff` runs the same suite and then signs off the PR (see [deploy.md](deploy.md)).
+`npm run signoff` runs the local gate with chreode: it merges `origin/main`, runs the checks the changes since the last signoff need (`chreode.config.ts`), pushes, and posts the `chreode/signoff` status that branch protection requires; `npm run signoff -- --dry-run` prints the plan without running it. See [deploy.md](deploy.md).

@@ -1,5 +1,5 @@
 # Contributor feedback on PRs. This is NOT the merge gate: branch protection on main
-# requires the `local-ci/signoff` commit status, posted by `npm run signoff`.
+# requires the `chreode/signoff` commit status, posted by `npm run signoff` (chreode).
 name: CI
 on:
   pull_request:

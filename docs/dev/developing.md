@@ -43,7 +43,7 @@ Never hand-edit files in `migrations/`. CI applies migrations to remote D1 befor
 
 ## Signoff
 
-`npm run signoff -- --verify-only` runs the full local gate (check, lint, unit, e2e). `npm run signoff` does that, merges `origin/main`, pushes and posts the `local-ci/signoff` status that branch protection requires; see [deploy.md](deploy.md).
+`npm run signoff` runs the local gate with chreode: it merges `origin/main`, runs the checks the changes since the last signoff need (`chreode.config.ts`), pushes, and posts the `chreode/signoff` status that branch protection requires; `npm run signoff -- --dry-run` prints the plan without running it. See [deploy.md](deploy.md).
 
 ## Header actions
 
