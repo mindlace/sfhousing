@@ -68,196 +68,42 @@ These need credentials the pipeline never holds and are not done by CI:
 
 ## Optional roof inputs and tools
 
-`npm run pipeline -- setup-roofs` is an explicit networked setup step. It requires Python
-3.14.8 (`ROOF_PYTHON=/path/to/python` selects an interpreter), creates `pipeline/.venv`,
-installs the complete hash-checked `pipeline/roofs/requirements.txt` wheel set, and verifies
-roofer 1.1.0-beta.1 (official prerelease) before installing it under `pipeline/.cache/tools`. `doctor --roofs` checks
-this environment; `npm run test:roofs` runs the offline Python input tests. Neither setup
-nor Python is required by ordinary application builds or old no-roof datasets. Linux x64
-and macOS arm64 artifacts are pinned in `toolchain.json`; Linux execution of the beta is not yet characterized.
+See [rooflines.md](rooflines.md) for exact toolchain/source pins, sample coverage and rights,
+setup, isolated caches/local R2, archive restoration, single-building replay, streaming audit queries,
+landmark updates and current release gates. Roof-bearing datasets add optional schema-1
+`roofs/index.json`, headers/binaries, `roofs/audit.json` and `roofs/report.json`; no-roof legacy locks
+skip reconstruction and retain their original tile schema. Roofs are display data only on flat ground.
 
-The effective fitter is official **1.1.0-beta.1**, source commit
-`1c06fb1aed9096f4b16f894c2da12bc2d785b71b`. `toolchain.json` pins locally verified
-source and macOS ARM64/Linux x64 release archive hashes and lengths. Setup chmods the
-release executable without changing its bytes; setup and doctor require the exact full
-version/commit identity and verified installation hash. The upstream release repairs
-invalid vertex lifetimes and removes a wall-clock plane-growing cutoff seen in 1.0.0;
-it contains other numerical repairs too, so geometry changes cannot be attributed to
-one repair alone. This is binary provenance, not a reproducible source-build claim.
+`npm run pipeline -- setup-roofs` is explicit networked installation; `doctor --roofs` verifies the
+pinned Python/packages and exact official roofer 1.1.0-beta.1 version/commit/install identity.
+Ordinary application builds and legacy datasets do not require Python. Mac beta execution is
+measured; Linux artifact verification is not Linux execution. The historical local
+`2026-10-12-c9b71965` sample was built with 1.0.0 and cannot be relabelled beta.
 
-Every fit explicitly supplies `--cj-scale .0001 .0001 .0001`,
-`--min-building-density 1`, `--unit-scale 1`, `--jobs 1`, classes 1/2 and supplied flat
-ground with `--no-clip-terrain`. Simplified/reference/retry complexity remains
-.4/.888/.6 with support 50/15/50. The supported `--plane-detect-min-points` and
-`--h-terrain-strategy` aliases are retained; the beta warns that they move to
-`[reconstruction.plane-detector].min-plane-points` and
-`[reconstruction].h-terrain-strategy` in TOML and are removed in 2.0. No invented
-replacement flags or ignored wall-clock fallback flag are used.
+Roof-enabled builds verify locked original sources, pause SQL after `40_heights.sql`, reconstruct
+full buildings, then resume clipping/export. They preserve fallback heights, parcel records and
+simulation contracts. Processing uses EPSG:7131; runtime meshes use local east/north/up offsets
+with the pinned deck projection inverse and final Float32 validation. V14–V16 validate artifacts,
+geometry/budgets and complete deterministic audit before publication. Missing required source,
+tool or codec integrity aborts; an individual unusable model retains an audited footprint fallback.
 
-Bounded three-repeat Mac characterization found identical decoded candidate geometry,
-unchanged QA and complete selection including triggered retries. Native CityJSON vertex/
-face order and non-timing surface azimuth/slope still vary; original raw outputs remain
-retained. Current decoding consumes surface types, not azimuth/slope. This does not
-establish Linux, citywide, cross-platform or source-build reproducibility. The versioned
-pin/code change affects datasetVersion; historical 1.0.0 archives retain their identity.
+Processing closure lives in `pipeline/.cache/roof-artifacts/<sha256>` and archives privately at
+`roof-processing/<sha256>.<ext>` alongside original `sources/` objects. Private reference/subset
+archives regenerate exact numerical evidence from original LAZ; legacy expanded NPY archives
+remain readable. Neither stored compression nor the measured ordinary replay proves bounded
+large-case/batch-four memory. The city-sized audit uses streaming record validation/writing;
+use the bounded queries in [rooflines.md](rooflines.md#bounded-audit-queries).
 
-`fetch --only roof-lidar` locks original intersecting EPT hierarchy pages and LAZ objects
-for the three committed sample coverages, including 50 m ground support. Roof fetches
-also record an explicit aerial descriptor, even when there are no permitted tiles.
-2023 SF Planning imagery remains disabled with unconfirmed derivation permission. Enabling
-it requires confirmed permission and recorded license terms; individual tile coverage and
-EPSG:3857 pixel transforms are archived. Matching acquisition years do not establish
-alignment. Unknown acquisition dates and vertical CRS remain explicit nulls rather than
-invented precision; the archived EPT SRS supplies the vertical CRS when available.
+`fetch`/`build` accept `--lock-path` and `--raw-dir`; `fetch --restore --roof-run <version>` also
+restores processing closure. **The raw-dir flag does not isolate processing archives**, and CLI
+upload uses the default lock/caches. Use the documented existing API harness for independently
+empty raw/processing restoration, or a clean checkout at the recorded revision. Historical native
+rebuilds require that revision's exact code/config/toolchain. Local installed-tool restoration is
+not fresh-machine offline installation.
 
-`fetch`, `fetch --restore`, and `build` accept `--lock-path <path>` and `--raw-dir <path>`
-for isolated caches. Restore verifies existing as well as downloaded bytes and reads only
-R2 archive keys. Offline jobs verify all locked roof bytes before reading the full
-`buildings` table after SQL 40, preserve EPSG:7131 footprints and fallback heights, and
-retain original source SHA plus point ordinal through cropping. Processing inputs never
-fetch upstream URLs. Roof configuration, Python code, toolchain and overrides participate
-in the dataset code hash, and roof-bearing datasets include toolchain/package digests.
-
-Permission evidence: the [official aerial catalog metadata](https://data.sfgov.org/api/views/3keh-kpm9.json)
-attributes SF Planning but supplies no permission terms. Its title/description lag current
-imagery years, so it does not establish 2023 imagery rights. This absence is recorded as
-unconfirmed permission, never as permission to derive distributable geometry.
-
-`runRoofJob` is the offline reconstruction boundary. Every building receives an accepted
-mesh or a footprint fallback; nominal source coverage must contain its complete footprint
-before point loading. Spatially indexed batches verify all locked inputs once and load
-only intersecting nodes. Ground, training-only vegetation evidence, simplified/reference
-candidates, bounded spike retry and common validation samples are audited separately.
-An absent or unpermitted aerial can leave a valid LiDAR-only result; corrupt required
-images, unavailable tools and incomplete runner results fail the job.
-
-Build-only evidence is content-addressed under `roof-processing/<sha256>.<ext>` and cached
-in `pipeline/.cache/roof-artifacts/<sha256>`. Each building's portable input record points
-to complete source lock references, processing config/code/toolchain/override descriptors,
-source extracts and candidates. New private evidence uses `*-points.refs.json`
-(`kind: roof-point-references`, `schemaVersion: 1`): a sorted SHA dictionary and deterministic
-gzip NPY records of little-endian uint32 source indices and uint64 original ordinals.
-`*-subsets.refs.json` links ordered full-extract row indices for pre-mask training and final
-validation, the boolean rejection mask, and the exact float64 hexadecimal ground value.
-Training keeps absolute Z; validation copies its rows and subtracts ground once. The mask
-belongs to pre-mask training. These private versions do not change runtime/audit schema 1.
-Every descriptor child is flattened into the archive list and validated before upload.
-
-Logical evidence is decoded from SHA/length-verified **original LAZ** using the shared
-whole-node laspy/pyproj transform, without re-cropping or quantization. A canonical digest
-checks float64 XYZ bits, class, ASCII SHA and uint64 ordinal in row order. Source aliases
-must agree on CRS, units, support and coverage. Original source metadata/hierarchy, code,
-configuration and tool distributions remain required. Raw-source `roof-rebuild` still
-reconstructs from original LAZ and requires the recorded code revision.
-
-For bounded inspection, import `read_evidence` from `pipeline/roofs/point_archives.py`, then
-call `read_evidence(input_record['extracts'], archive_directory, raw_directory,
-ground_m=recorded_ground)` using the portable input JSON and the audited ground result.
-The same reader explicitly accepts legacy `*-points.npy.gz`, `*-training.npy.gz` and
-`*-validation.npy.gz` with strict dtypes, counts and `allow_pickle=False`; no migration is
-needed. It rejects unknown reference versions, duplicate identities, invalid memberships,
-truncated/trailing gzip or NPY data, and digest mismatches. Its default per-array/node
-allocation limit is 2 GiB; larger offline inspection requires an explicit `max_bytes` and
-an independent resource budget. It returns the current expanded numeric arrays.
-
-Writes stream deterministic NPY/gzip through a physical SHA digest into a temporary file,
-then rename on success. Existing immutable expanded archives retain their original hashes.
-Scratch paths and timing fields are excluded from portable evidence. Reference archives
-reduce stored evidence; they do not make four-cloud processing or retained results bounded.
-
-The real LiDAR regression fixtures and their provenance are documented in
-`pipeline/test/fixtures/roofs/README.md`. `npm run test:roofs` runs the complete pinned
-Python reconstruction suite. `ROOF_LOCAL_AERIAL_RESEARCH=1 npm run test:roofs` additionally
-uses locally cached original aerials for the Whole Foods research comparison; no real
-imagery is redistributed, and this opt-in does not establish published derivation rights.
-The Salesforce authored loft is retained with exact production identity/hash and evidence,
-but its current coverage fails the unchanged product checks and therefore falls back.
-
-Roof-enabled builds pause SQL after `40_heights.sql`, reconstruct complete buildings from
-locked inputs, then resume `50_clip.sql` through `70_export.sql` without clearing counts.
-Roof solids intersect the retained parcel polygons with manifold3d; each resulting piece
-has a stable `pieceId` shared by tiles, meshes and the complete audit. Unmatched pieces
-keep `parcelId: null`. Failed pieces retain the existing fallback height/base/height source,
-and parents whose pieces were all dropped by the existing area cutoff remain in the audit.
-Parcel records, eligibility, unit totals and generated massing do not use roof data.
-
-`roofs/index.json` points to numbered cell chunks. `gzipBytes` is the exact sum of gzip-9
-header and mesh body sizes; admission also includes the uncompressed index-entry bytes.
-The decoded budget counts actual header, binary and index-entry bytes. Exported XY is the
-offline inverse of the pinned deck METER_OFFSETS projection, including second-order scale;
-Z remains the relative height above zero ground. Every chunk is decoded again before writing.
-`roofs/audit.json` and `roofs/report.json` carry outcomes and quality evidence. Processing
-artifacts stay in `.cache/roof-artifacts/<sha256>` and their `roof-processing/<sha256>.<ext>`
-references are retained as `roofArchives` in the build report for archival publication.
-Legacy locks without roof coverage skip this stage and retain their original tile schema.
-
-At city scale, the complete audit exceeds Node's maximum string size. The writer validates
-one parent family at a time and streams individual records into the same JSON schema.
-Reconstruction and clipping use internal NDJSON exchanges with terminal counts and
-cross-record archive validation; the public runner interfaces and archived JSON remain
-unchanged. Complete source metadata occurs once per job, with each file descriptor carrying
-only its own object and imagery transform. Consumers of the city audit must use streaming
-JSON parsing rather than reading the entire artifact into one JavaScript string.
-
-### Roof publication and recovery
-
-Roof-enabled reports require V14 (artifact/identity integrity), V15 (size and geometry
-acceptance), and V16 (complete deterministic audit). Upload rechecks current bytes, decoded
-hashes, closed solids, measured chunk budgets, parent/piece outcomes, processing references,
-and original sources before the first R2 write. Legacy reports remain publishable for
-no-roof datasets. An unsupported descriptor schema validates/copies its three top-level
-URLs without interpreting its index.
-
-`setup-roofs` also caches all pinned platform wheels and roofer source/release archives in
-`pipeline/.cache/roof-dependencies/<sha256>`. Offline builds reverify and retain these in
-`roof-artifacts`; missing required dependencies fail the build. `report.json.roofArchives`
-closes portable jobs, masks, candidates, configuration/code and tool distributions. Private
-archives upload first using bounded concurrency/retries, runtime artifacts follow, and the
-root manifest is last. `upload --local`, fixture loading and `data:local` reuse a single
-Miniflare instance with Wrangler's `.wrangler/state/v3` storage; local archive existence
-uses HEAD rather than downloading each object. Remote uploads retain Wrangler's existing
-credential and transport behavior. That remote transport still starts a process per object
-and downloads existing objects for existence checks; full-city publication can contain over
-a million archives and requires a reusable remote backend before release validation. The
-local backend and local tests do not establish remote publication throughput.
-
-`fetch --restore --roof-run <datasetVersion> [--local]` downloads that version's public
-build report, restores and verifies its processing archives, and restores original roof
-source references alongside the lock's raw sources. It does not contact upstream HTTP.
-`roof-rebuild <datasetVersion> --building <buildingId> --out <empty-directory> [--local]`
-restores the portable job, checks the recorded configuration, processing code and toolchain
-against the checkout, and processes only the requested full building into `result.json`.
-A mismatch requires checking out the recorded processing revision and running `setup-roofs`.
-The published dataset is never modified. `--raw-dir` can isolate the restored source cache.
-
-The mini fixture includes deterministic synthetic original LAZ returns for b01 and the
-multi-parcel b10. Roofer and the production clip/export path generate three closed display
-pieces; other buildings retain explicit fallbacks, including a retained parent with no pieces.
-Run `npx tsx pipeline/test/fixtures/mini/make-fixture.ts` to regenerate original sources and
-then `pipeline fixture --update-golden`. Roof JSON and binary outputs participate in
-cross-run golden comparisons. Ordinary app CI consumes committed output without Python.
-A frozen no-roof manifest remains under `pipeline/test/fixtures/legacy`.
-
-Audit validation streams bounded records using the development-only `@streamparser/json`
-parser, retaining compact identity/completeness state rather than a city-sized JSON string.
-The geometry config currently supports the exact approved schema-1 values; changing a value
-without implementing its behavior fails explicitly. Complete imagery coverage is reported
-only after measured point/cell raster coverage; image presence alone remains unknown.
-Source config records the official catalog review and absent permission terms; 2023 imagery
-remains disabled and unconfirmed, and no original imagery is included in runtime artifacts.
-
-Readers can measure an exact index-entry contribution only after comparing the original
-index bytes against the canonical `JSON.stringify(parseRoofIndex(raw, version))` bytes.
-The current exporter uses that same key order. On an exact byte match, the UTF-8 size of
-`JSON.stringify(ref)` is the verified entry contribution; otherwise use the whole measured
-index byte length conservatively. Whitespace or unknown fields must fail the exact-match
-path before schema parsing strips fields. Browser readers can use `TextEncoder` for the
-same comparison and measurement; the pipeline implementation is in `roofs/check.ts`.
-
-V16 and upload compare audited piece totals to the independent SQL `pieces.count`, including
-zero-piece retained parents. Upload also checks piece/building/parcel identities and outcomes
-against archived clipping records. Schema-1 audit quality may include the additive
-`retainedRoofTrainingCount` metric: class-1 roof returns after rejection, excluding ground
-support. Older audit JSON still parses, but ordinary modelled outcomes require a measured
-count of at least 50 to pass V15, consistent with the retained total and parent/piece evidence.
-The existing before/after return totals keep their original meaning, including ground support.
+Private archives upload first, runtime artifacts next, root manifest last. Local operations share
+Wrangler's v3 storage through one Miniflare instance. Remote transport's per-object process/existence
+checks remain a city-publication throughput gate. Source permissions, full SF capacity/coverage,
+M2-class performance and whole Task 10 acceptance remain open; see the
+[release handoff](rooflines.md#capacity-and-release-handoff). No remote action is performed by this
+local checkpoint.

@@ -31,6 +31,7 @@ Fetch the file when working in the relevant area:
 - **Data serving (`/data/<version>/*` route contract, key layout, caching, path rules)** — [docs/dev/data-serving.md](docs/dev/data-serving.md)
 - **Testing (Vitest projects, `FakeR2Bucket`, Playwright, fixture dataset)** — [docs/dev/testing.md](docs/dev/testing.md)
 - **Data pipeline (commands, release run order, lock and `datasetVersion`, fixture, invariants, ODbL, partner actions)** — [docs/dev/pipeline.md](docs/dev/pipeline.md)
+- **Existing-building roofs (tool pins, replay, audits, fallback and release gates)** — [docs/dev/rooflines.md](docs/dev/rooflines.md)
 - **Accessibility (WCAG 2.2 AA, `expectNoA11yViolations`, per-page checklist)** — [docs/dev/accessibility.md](docs/dev/accessibility.md)
 - **Plan sharing (API contract, rate limit, autosave, manual takedown)** — [docs/dev/plan-sharing.md](docs/dev/plan-sharing.md)
 - **Map-view interfaces for page and subsystem consumers (`--map-controls-br-*` CSS vars)** — [docs/dev/map-interfaces.md](docs/dev/map-interfaces.md)

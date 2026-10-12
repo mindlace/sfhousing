@@ -36,6 +36,19 @@ There is no automated staging-to-prod interlock (as in planafoot): do not merge 
 
 Versions are immutable and retained indefinitely.
 
+For roof-bearing versions, use the [roof operator release handoff](rooflines.md#capacity-and-release-handoff)
+and [required verification](rooflines.md#runtime-fallback-and-required-verification) before an
+authorized release upload. Private source/processing closure must validate before runtime artifacts;
+the root manifest is uploaded last. A local sample benchmark or local archive restore does not
+establish citywide capacity, M2 execution or remote publication throughput. The current roof
+checkpoint leaves those gates open and does not authorize upload/promotion.
+
+Rollback uses the normal configuration PR/release flow to select the previous retained immutable
+`PUBLIC_DATASET_VERSION` for the affected environment, verify its manifest/map/attribution, then
+promote as appropriate. Do not rewrite or delete the failed dataset. No plan migration is needed.
+The prior configured production/staging version at this checkpoint is `2026-10-11-697b4599`;
+reconfirm the actual prior deployed value when releasing.
+
 Both deploy workflows end with the step "Smoke: current dataset manifest is served": it reads the deployed environment's `PUBLIC_DATASET_VERSION` (`scripts/dataset-version.ts`) and `curl`s `/data/<version>/manifest.json` on the deployed host. The step fails the deploy job when the configured version's manifest is not in R2. That includes `fixture-0`, which is not uploaded remotely. `scripts/wrangler-config.spec.ts` also requires both deployed vars to be a real `YYYY-MM-DD-<8 hex>` version, so a fixture version cannot be committed for staging or production.
 
 ## Secrets and variables

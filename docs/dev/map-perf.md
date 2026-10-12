@@ -119,10 +119,21 @@ Transition maxima were **8,388,608 accounted bytes** (the initial bounded index-
 duplicate publications. The matching named screenshots show Whole Foods' spike fallback,
 a96's partly modelled result, retained hillside/Mission roofs, Salesforce's inactive coverage
 fallback, and real single-parcel editing/Undo. The separate courtyard visuals use **fixture-0**;
-they are not real sample evidence.
+they are not real sample evidence. The generated-state assertion proves the unmatched piece is
+not replaced; generated geometry drops parcel holes and can occlude it. Before/Undo images show
+the courtyard hole, without claiming visible pixels under generated mass.
 
 This small two-chunk sample cannot exercise four-job saturation, 64 MiB pressure, maximum-size
 chunks, full-city complexity tails or sustained city eviction churn. **M2-class validation remains
 pending**. The old sample does not validate beta reconstruction quality, source coverage, operator
 completion, publication readiness or a full Task 10/city rollout. Default first-idle, generated
 commit/score and C5 latency regressions remain separate correctness gates.
+
+The required positive rendering gate is `npm run test:roofs:gpu` (optionally
+`ROOF_GPU_HEADED=1`); it asserts supported hardware and `KHR_parallel_shader_compile`. Ordinary
+software suites verify the intentional footprint fallback when asynchronous compilation capability
+is absent. They cannot substitute for positive roof rendering or headed timing. The accounting
+above includes a conservative 2 MiB opaque program reservation per layer; it is not a physical
+GPU-memory measurement. Accepted logs retain color-environment, bundle-size, devalue ignored-import
+and favicon 404 noise. See [rooflines.md](rooflines.md) for operator evidence, capability/schema
+fallbacks, the historical sample's reconstruction outcomes and open release gates.
