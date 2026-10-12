@@ -7,6 +7,8 @@ import { run } from '../lib/exec';
 
 interface ExportRow {
   parcel_id: string | null;
+  piece_id?: string;
+  building_id?: string;
   height_m: number;
   base_m: number;
   hs: number;
@@ -19,12 +21,18 @@ export async function writeBuildingsTiles(
   outDir: string,
   workDir: string
 ): Promise<void> {
+  const columns = await db.all<{ name: string }>("PRAGMA table_info('buildings_export')");
+  const roofs = columns.some((c) => c.name === 'piece_id');
   const rows = await db.all<ExportRow>(
-    'SELECT parcel_id, height_m, base_m, hs, geojson4326 FROM buildings_export ORDER BY parcel_id NULLS LAST, bid'
+    `SELECT parcel_id, height_m, base_m, hs, geojson4326${roofs ? ', piece_id, building_id' : ''} FROM buildings_export ORDER BY parcel_id NULLS LAST, bid`
   );
   const lines = rows.map((r) => {
     const properties: Record<string, unknown> = {};
     if (r.parcel_id !== null) properties.parcelId = r.parcel_id;
+    if (roofs) {
+      properties.pieceId = r.piece_id;
+      properties.buildingId = r.building_id;
+    }
     properties.heightM = r.height_m;
     properties.baseM = r.base_m;
     properties.hs = r.hs;
@@ -42,6 +50,9 @@ export async function writeBuildingsTiles(
       'buildings.pmtiles',
       '-l',
       'buildings',
+      ...(roofs
+        ? ['-y', 'pieceId', '-y', 'buildingId', '-T', 'pieceId:string', '-T', 'buildingId:string']
+        : []),
       '-Z',
       '12',
       '-z',

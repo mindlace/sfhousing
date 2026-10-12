@@ -74,3 +74,88 @@ test('CLI rejects missing cache override values before starting fetch or build',
     }
   }
 });
+
+test('job source descriptors grow linearly and retain only their own object and raster transform', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'roof-linear-'));
+  const db = await openDuck();
+  try {
+    await db.run(
+      'CREATE TABLE buildings(bid VARCHAR,geom GEOMETRY,height_m DOUBLE,base_m DOUBLE,hs INTEGER);CREATE TABLE nb7131(nhood VARCHAR,geom GEOMETRY)'
+    );
+    const make = async (n: number, kind: 'lidar' | 'aerial') => {
+      const files = Array.from({ length: n }, (_, i) =>
+        storeBytes(
+          dir,
+          kind === 'lidar' ? `ept-data/${i}.laz` : `aerial/${i}/0.png`,
+          `https://example.test/${i}`,
+          new Uint8Array([i, 3])
+        )
+      );
+      const objects = files.map((f) => ({ name: f.name, url: f.url, sha256: f.sha256 }));
+      const tiles =
+        kind === 'aerial'
+          ? files.map((_, i) => ({
+              x: i,
+              y: 0,
+              zoom: 18,
+              width: 256,
+              height: 256,
+              transform: [1, 0, i * 256, 0, -1, 256]
+            }))
+          : undefined;
+      const lock = {
+        sources: [
+          {
+            id: `roof-${kind}`,
+            files,
+            retrievedAt: '2026-01-01',
+            upstreamVersion: 'test',
+            rowCount: n,
+            license: 'public-domain',
+            homepage: 'https://example.test',
+            spatial: {
+              horizontalCrs: 'EPSG:7131',
+              verticalCrs: null,
+              horizontalUnits: 'm',
+              verticalUnits: 'm',
+              acquisitionStart: null,
+              acquisitionEnd: null,
+              coverage: [],
+              supportBufferM: 50,
+              permission: 'confirmed' as const,
+              alignment: 'verified' as const,
+              objects,
+              tiles
+            }
+          }
+        ]
+      };
+      return prepareRoofJob(db, lock, {
+        rawDir: dir,
+        rawByName: false,
+        datasetVersion: 'fixture-4',
+        workDir: dir
+      });
+    };
+    const small = await make(20, 'lidar'),
+      large = await make(40, 'lidar');
+    expect(large.sources.every((s) => s.objects.length === 1 && s.objects[0].name === s.name)).toBe(
+      true
+    );
+    expect(large.sourceStatus[0].spatial.objects).toHaveLength(40);
+    expect(large.sourceArchives).toHaveLength(40);
+    expect(Buffer.byteLength(JSON.stringify(large))).toBeLessThan(
+      Buffer.byteLength(JSON.stringify(small)) * 2.1
+    );
+    const aerial = await make(20, 'aerial');
+    expect(
+      aerial.sources.every(
+        (s, i) => s.tiles?.length === 1 && s.tiles[0].x === i && s.objects.length === 1
+      )
+    ).toBe(true);
+    expect(aerial.sourceStatus[0].spatial.tiles).toHaveLength(20);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -1,6 +1,10 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseManifest, type Manifest } from '../../src/lib/data/manifest';
+import {
+  parseManifest,
+  type Manifest,
+  type BuildingRoofsDescriptor
+} from '../../src/lib/data/manifest';
 import type { Lock } from '../lib/lock';
 import type { ChunkOut } from './chunks';
 
@@ -22,10 +26,14 @@ export function buildManifest(a: {
   chunks: ChunkOut[];
   overtureContrib: { dataset: string; n: number }[];
   warn?: (msg: string) => void;
+  buildingRoofs?: BuildingRoofsDescriptor;
+  usedRoofSources?: string[];
 }): Manifest {
   const v = a.datasetVersion;
   const base = `/data/${v}`;
-  const lockSources = [...a.lock.sources].sort((x, y) => cmp(x.id, y.id));
+  const lockSources = a.lock.sources
+    .filter((s) => !s.id.startsWith('roof-') || a.usedRoofSources?.includes(s.id))
+    .sort((x, y) => cmp(x.id, y.id));
   const overture = a.lock.sources.find((s) => s.id === 'overture-buildings');
   const sources: Manifest['sources'] = lockSources.map((s) => ({
     id: s.id,
@@ -51,6 +59,7 @@ export function buildManifest(a: {
     });
   }
   return parseManifest({
+    ...(a.buildingRoofs ? { buildingRoofs: a.buildingRoofs } : {}),
     datasetVersion: v,
     builtAt: a.builtAt,
     sources,

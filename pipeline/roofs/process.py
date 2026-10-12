@@ -226,10 +226,59 @@ def process_job(job):
     return {'buildings':[results[i] for i in ids],'archives':sorted(archive.files.values(),key=lambda r:r['archiveKey'])}
 
 
+def write_records(path, groups):
+    """No city-sized result string; one building/piece/archive descriptor per line."""
+    counts = {}
+    with Path(path).open('wb') as output:
+        for kind, values in groups.items():
+            count = 0
+            for value in values:
+                output.write(canonical({'type':kind,'value':value})+b'\n')
+                count += 1
+            counts[kind+'Count'] = count
+        output.write(canonical({'type':'end',**counts})+b'\n')
+
+
+def read_clip_records(path):
+    groups = {'building':[],'piece':[]}; ended = False
+    with Path(path).open() as source:
+        for line in source:
+            if ended: raise ValueError('roof record after terminal counts')
+            record = json.loads(line)
+            if record['type'] == 'end':
+                if any(record[k+'Count'] != len(v) for k,v in groups.items()): raise ValueError('roof terminal counts mismatch')
+                ended = True
+            elif record['type'] in groups: groups[record['type']].append(record['value'])
+            else: raise ValueError('unknown roof record')
+    if not ended: raise ValueError('incomplete roof records')
+    return {'buildings':groups['building'],'pieces':groups['piece'],'workDir':str(Path(path).resolve().parent)}
+
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(); parser.add_argument('--job',required=True)
-    args = parser.parse_args(); job = json.loads(Path(args.job).read_text())
-    result = process_job(job)
-    output = Path(job['workDir'])/'result.json'
-    output.write_bytes(canonical(result))
+    parser = argparse.ArgumentParser()
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument('--job'); mode.add_argument('--clip-job')
+    parser.add_argument('--result-format',choices=['json','ndjson'],default='json')
+    args = parser.parse_args()
+    job = read_clip_records(args.clip_job) if args.clip_job and args.clip_job.endswith('.ndjson') else json.loads(Path(args.job or args.clip_job).read_text())
+    if args.clip_job:
+        from clip import clip_building
+        from geometry import make_piece_id
+        by_id = {b['buildingId']:b for b in job['buildings']}
+        pieces = {}
+        for p in job['pieces']: pieces.setdefault(p['buildingId'],[]).append(p)
+        result = []
+        for bid in sorted(pieces):
+            b = by_id[bid]
+            if b['mesh'] is None:
+                result.extend(dict(p,pieceId=make_piece_id(bid,p['parcelId'],p['geometry']),mesh=None,reason=b['reason']) for p in pieces[bid])
+            else: result.extend(clip_building(b['mesh'],pieces[bid]))
+        result.sort(key=lambda p:p['pieceId'])
+    else:
+        result = process_job(job)
+    output = Path(job['workDir'])/('result.ndjson' if args.result_format=='ndjson' else 'result.json')
+    if args.result_format=='ndjson':
+        write_records(output,{'piece':result} if args.clip_job else {'building':result['buildings'],'archive':result['archives']})
+    else:
+        output.write_bytes(canonical(result))
     print(str(output))

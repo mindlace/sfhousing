@@ -4,6 +4,7 @@ export interface RoofInputBuilding {
   buildingId: string;
   footprint: { type: 'Polygon' | 'MultiPolygon'; coordinates: unknown[] };
   footprintHash: string;
+  sourceRelease?: string;
   horizontalCrs: 'EPSG:7131';
   heightM: number;
   baseM: number;
@@ -86,3 +87,14 @@ export interface ProcessedBuilding {
   override?: Record<string, unknown>;
   followUp?: { revisit: boolean; reasons: string[] };
 }
+
+export type RoofInputPiece = {
+  pieceId: string;
+  buildingId: string;
+  parcelId: string | null;
+  geometry: import('../lib/rings').PolygonGeom | import('../lib/rings').MultiPolygonGeom;
+};
+export type ClippedRoofPiece = RoofInputPiece & {
+  mesh: ProcessedBuilding['mesh'];
+  reason: import('../../src/lib/data/roof-audit').RoofReason | null;
+};

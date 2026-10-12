@@ -49,6 +49,11 @@ def footprint_hash(geojson: dict) -> str:
     return hashlib.sha256(data.encode('utf-8')).hexdigest()
 
 
+def make_piece_id(building_id: str, parcel_id: str | None, geometry: dict) -> str:
+    data = json.dumps([building_id,parcel_id,canonical_geometry(geometry)],sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False)
+    return 'p-'+hashlib.sha256(data.encode('utf-8')).hexdigest()[:24]
+
+
 def load_points(job: dict) -> dict[str, np.ndarray]:
     import laspy
     from pyproj import Transformer

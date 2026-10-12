@@ -118,7 +118,7 @@ const pieceSchema = z
 const buildingSchema = z.object({
   buildingId: id,
   ...identity,
-  pieceIds: z.array(id).min(1),
+  pieceIds: z.array(id),
   parcelIds: z.array(id.nullable()),
   outcome: z.enum(['fully_modelled', 'partly_modelled', 'all_fallback']),
   ...evidence

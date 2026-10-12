@@ -2,6 +2,8 @@ import { RoofReasonSchema } from '../../src/lib/data/roof-audit';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, copyFileSync, writeFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { createReadStream, openSync, writeSync, closeSync } from 'node:fs';
+import { createInterface } from 'node:readline';
 import { run } from '../lib/exec';
 import { ROOF_PYTHON } from './setup';
 import type { RoofJob, ProcessedBuilding, RoofArchive, RoofMesh } from './job';
@@ -100,6 +102,60 @@ export function validateRoofResult(
     }
   return result;
 }
+/** Bounded internal records avoid Node's city-scale single-string limit. */
+export function writeRoofRecords(path: string, groups: Record<string, Iterable<unknown>>): void {
+  const fd = openSync(path, 'w');
+  const counts: Record<string, number> = {};
+  const write = (value: unknown) => {
+    const data = Buffer.from(JSON.stringify(value) + '\n');
+    let offset = 0;
+    while (offset < data.length) offset += writeSync(fd, data, offset, data.length - offset);
+  };
+  try {
+    for (const [type, values] of Object.entries(groups)) {
+      let count = 0;
+      for (const value of values) {
+        write({ type, value });
+        count++;
+      }
+      counts[`${type}Count`] = count;
+    }
+    write({ type: 'end', ...counts });
+  } finally {
+    closeSync(fd);
+  }
+}
+
+async function readRecords(path: string, kinds: string[]): Promise<Record<string, unknown[]>> {
+  const result: Record<string, unknown[]> = Object.fromEntries(kinds.map((k) => [k, []]));
+  const stream = createReadStream(path);
+  const lines = createInterface({ input: stream, crlfDelay: Infinity });
+  let ended = false;
+  try {
+    for await (const line of lines) {
+      if (ended) throw new Error('roof record after terminal counts');
+      const record = JSON.parse(line);
+      if (record.type === 'end') {
+        if (kinds.some((k) => record[`${k}Count`] !== result[k].length))
+          throw new Error('roof terminal counts mismatch');
+        ended = true;
+      } else if (kinds.includes(record.type) && record.value) {
+        result[record.type].push(record.value);
+      } else throw new Error('unknown roof record');
+    }
+  } finally {
+    lines.close();
+    stream.destroy();
+  }
+  if (!ended) throw new Error('incomplete roof records');
+  return result;
+}
+
+export async function readRoofResultRecords(path: string, inputs: RoofJob['buildings']) {
+  const records = await readRecords(path, ['building', 'archive']);
+  return validateRoofResult({ buildings: records.building, archives: records.archive }, inputs);
+}
+
 export async function runRoofJob(
   job: RoofJob
 ): Promise<{ buildings: ProcessedBuilding[]; archives: RoofArchive[] }> {
@@ -109,14 +165,13 @@ export async function runRoofJob(
   const execution = await run(ROOF_PYTHON, [
     join(ROOT, 'pipeline/roofs/process.py'),
     '--job',
-    jobPath
+    jobPath,
+    '--result-format',
+    'ndjson'
   ]);
   if (execution.code !== 0)
     throw new Error(`roof processing integrity failure: ${execution.stderr || execution.stdout}`);
-  const result = validateRoofResult(
-    JSON.parse(readFileSync(join(job.workDir, 'result.json'), 'utf8')),
-    job.buildings
-  );
+  const result = await readRoofResultRecords(join(job.workDir, 'result.ndjson'), job.buildings);
   const cache = join(ROOT, 'pipeline/.cache/roof-artifacts');
   mkdirSync(cache, { recursive: true });
   for (const a of result.archives) {
@@ -127,6 +182,46 @@ export async function runRoofJob(
     )
       throw new Error(`roof archive integrity failure: ${a.archiveKey}`);
     copyFileSync(source, join(cache, a.sha256));
+  }
+  return result;
+}
+
+/** Identity and intersection use the same offline canonical geometry implementation. */
+export async function clipRoofPieces(
+  buildings: ProcessedBuilding[],
+  pieces: import('./job').RoofInputPiece[],
+  workDir: string
+): Promise<import('./job').ClippedRoofPiece[]> {
+  mkdirSync(workDir, { recursive: true });
+  const path = join(workDir, 'clip-job.ndjson');
+  writeRoofRecords(path, {
+    building: buildings.map(({ buildingId, mesh, reason }) => ({ buildingId, mesh, reason })),
+    piece: pieces
+  });
+  const execution = await run(ROOF_PYTHON, [
+    join(ROOT, 'pipeline/roofs/process.py'),
+    '--clip-job',
+    path,
+    '--result-format',
+    'ndjson'
+  ]);
+  if (execution.code !== 0) throw new Error(`roof clipping integrity failure: ${execution.stderr}`);
+  const records = await readRecords(join(workDir, 'result.ndjson'), ['piece']);
+  const result = records.piece as import('./job').ClippedRoofPiece[];
+  if (result.length !== pieces.length) throw new Error('missing roof piece outcomes');
+  const expected = new Map(pieces.map((p) => [JSON.stringify([p.buildingId, p.parcelId]), p]));
+  const seen = new Set<string>();
+  for (const p of result) {
+    const key = JSON.stringify([p.buildingId, p.parcelId]);
+    if (!expected.delete(key) || seen.has(p.pieceId) || !/^p-[a-f0-9]{24}$/.test(p.pieceId))
+      throw new Error('roof piece identity mismatch');
+    seen.add(p.pieceId);
+    if (
+      p.mesh
+        ? p.reason !== null || !validMesh(p.mesh)
+        : !RoofReasonSchema.safeParse(p.reason).success
+    )
+      throw new Error('invalid clipped roof outcome');
   }
   return result;
 }

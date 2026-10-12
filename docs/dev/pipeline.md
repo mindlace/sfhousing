@@ -120,3 +120,29 @@ uses locally cached original aerials for the Whole Foods research comparison; no
 imagery is redistributed, and this opt-in does not establish published derivation rights.
 The Salesforce authored loft is retained with exact production identity/hash and evidence,
 but its current coverage fails the unchanged product checks and therefore falls back.
+
+Roof-enabled builds pause SQL after `40_heights.sql`, reconstruct complete buildings from
+locked inputs, then resume `50_clip.sql` through `70_export.sql` without clearing counts.
+Roof solids intersect the retained parcel polygons with manifold3d; each resulting piece
+has a stable `pieceId` shared by tiles, meshes and the complete audit. Unmatched pieces
+keep `parcelId: null`. Failed pieces retain the existing fallback height/base/height source,
+and parents whose pieces were all dropped by the existing area cutoff remain in the audit.
+Parcel records, eligibility, unit totals and generated massing do not use roof data.
+
+`roofs/index.json` points to numbered cell chunks. `gzipBytes` is the exact sum of gzip-9
+header and mesh body sizes; admission also includes the uncompressed index-entry bytes.
+The decoded budget counts actual header, binary and index-entry bytes. Exported XY is the
+offline inverse of the pinned deck METER_OFFSETS projection, including second-order scale;
+Z remains the relative height above zero ground. Every chunk is decoded again before writing.
+`roofs/audit.json` and `roofs/report.json` carry outcomes and quality evidence. Processing
+artifacts stay in `.cache/roof-artifacts/<sha256>` and their `roof-processing/<sha256>.<ext>`
+references are retained as `roofArchives` in the build report for archival publication.
+Legacy locks without roof coverage skip this stage and retain their original tile schema.
+
+At city scale, the complete audit exceeds Node's maximum string size. The writer validates
+one parent family at a time and streams individual records into the same JSON schema.
+Reconstruction and clipping use internal NDJSON exchanges with terminal counts and
+cross-record archive validation; the public runner interfaces and archived JSON remain
+unchanged. Complete source metadata occurs once per job, with each file descriptor carrying
+only its own object and imagery transform. Consumers of the city audit must use streaming
+JSON parsing rather than reading the entire artifact into one JavaScript string.

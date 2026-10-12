@@ -1,5 +1,7 @@
 -- 70_export: tables the artifact writers read. Reads pieces, nb7131, buildings.
 -- Writes buildings_export, neighborhoods_out, overture_contrib.
+-- Optional roof export attaches piece_id/building_id after this stage, without altering
+-- these fallback dimensions or the parcel_out records computed in 60_attributes.
 
 CREATE OR REPLACE TABLE buildings_export AS
 SELECT parcel_id, bid, height_m, base_m, hs,

@@ -17,7 +17,10 @@ import { run } from '../lib/exec';
 import { openDuck, type Duck } from '../lib/duck';
 import { lockSha256, rawPath, readLock, sortKeys, verifyRaw, type Lock } from '../lib/lock';
 import { Report } from '../lib/report';
-import { runSql } from '../lib/sql';
+import { runSql, runSqlRange } from '../lib/sql';
+import { prepareRoofJob } from '../roofs/inputs';
+import { runRoofJob } from '../roofs/run';
+import { writeRoofArtifacts, type RoofBuildResult } from '../roofs/export';
 import { codeTreeHash, computeDatasetVersion } from '../lib/version';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
 import { checkDataset, type InvariantResult } from './check';
@@ -133,7 +136,16 @@ export async function build(
         : TOOL_VERSIONS
     });
   const fixtureMode = FIXTURE_RE.test(datasetVersion);
-  const builtAt = opts.builtAt ?? new Date().toISOString();
+  const builtAt =
+    opts.builtAt ??
+    (fixtureMode
+      ? new Date(
+          lock.sources
+            .map((s) => s.retrievedAt)
+            .sort()
+            .at(-1)!
+        ).toISOString()
+      : new Date().toISOString());
   const outDir = join(opts.outRoot, datasetVersion);
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
@@ -145,7 +157,50 @@ export async function build(
       await normaliseAll(db, lock, opts.rawDir, join(work, 'norm'), { byName });
       await loadNormalised(db, join(work, 'norm'));
     });
-    await report.time('sql', () => runSql(db));
+    const roofsEnabled = lock.sources.some(
+      (s) => s.id === 'roof-lidar' && s.spatial?.coverage.length
+    );
+    let roofs: RoofBuildResult | undefined;
+    let usedRoofSources: string[] = [];
+    if (roofsEnabled) {
+      await report.time('sql10-40', () => runSql(db, '40_heights.sql'));
+      const job = await prepareRoofJob(db, lock, {
+        rawDir: opts.rawDir,
+        rawByName: byName,
+        datasetVersion,
+        workDir: join(work, 'roof-job')
+      });
+      const processed = await report.time('roofs.reconstruct', () => runRoofJob(job));
+      await report.time('sql50-70', () =>
+        runSqlRange(db, { from: '50_clip.sql', to: '70_export.sql', resetCounts: false })
+      );
+      roofs = await report.time('roofs.export', () =>
+        writeRoofArtifacts(db, processed.buildings, {
+          outDir,
+          datasetVersion,
+          archiveDir: join(REPO_ROOT, 'pipeline/.cache/roof-artifacts')
+        })
+      );
+      usedRoofSources = [
+        ...(processed.buildings.some(
+          (b) => (b.returnCounts?.before ?? 0) > 0 || b.method === 'landmark'
+        )
+          ? ['roof-lidar']
+          : []),
+        ...(processed.buildings.some((b) => b.method === 'lidar_aerial') ? ['roof-aerial'] : [])
+      ];
+      const roofReportPath = join(outDir, 'roofs/report.json');
+      const roofReport = JSON.parse(readFileSync(roofReportPath, 'utf8'));
+      roofReport.builtAt = builtAt;
+      if (!fixtureMode)
+        roofReport.timings = {
+          reconstruction: report.timings['roofs.reconstruct'],
+          export: report.timings['roofs.export']
+        };
+      writeFileSync(roofReportPath, JSON.stringify(sortKeys(roofReport)));
+    } else {
+      await report.time('sql', () => runSql(db));
+    }
     const chunks = await report.time('chunks', () =>
       writeChunks(db, outDir, datasetVersion, report)
     );
@@ -172,6 +227,8 @@ export async function build(
       lock,
       chunks,
       overtureContrib,
+      buildingRoofs: roofs?.descriptor,
+      usedRoofSources,
       warn: (w) => report.warnings.push(w)
     });
     const manifestBytes = writeManifest(outDir, manifest);
@@ -181,6 +238,7 @@ export async function build(
     const counts: Record<string, number> = {
       ...(await sqlCounts(db)),
       ...report.counts,
+      ...roofs?.counts,
       ...chunkCounts(chunks),
       ...Object.fromEntries(overtureContrib.map((o) => [`overture.contrib.${o.dataset}`, o.n])),
       'units.total': totals.units,
@@ -204,7 +262,10 @@ export async function build(
         ? { ...TOOL_VERSIONS, ...roofToolVersions() }
         : TOOL_VERSIONS,
       housingStock: HOUSING_STOCK,
-      license: DERIVED_LICENSE,
+      license: roofs
+        ? { ...DERIVED_LICENSE, artifacts: [...DERIVED_LICENSE.artifacts, 'roofs/*'] }
+        : DERIVED_LICENSE,
+      ...(roofs ? { roofArchives: roofs.archives } : {}),
       invariants: results,
       // `upload` refuses unless the current lock hashes to this and tiles were built.
       lockSha256: lockSha256(lock),

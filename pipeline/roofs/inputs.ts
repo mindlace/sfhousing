@@ -32,10 +32,19 @@ export async function prepareRoofJob(
     ) {
       throw new Error('aerial derivation permission is unconfirmed');
     }
+    const tileBySuffix = new Map(entry.spatial.tiles?.map((t) => [`${t.x}/${t.y}.png`, t]));
     for (const f of entry.files) {
       if (!f.name.endsWith('.laz') && !f.name.endsWith('.png')) continue;
+      const tileSuffix = f.name.match(/(?:^|\/)(\d+\/\d+\.png)$/)?.[1];
+      const tile = tileSuffix
+        ? tileBySuffix.get(tileSuffix)
+        : entry.spatial.tiles?.length === 1
+          ? entry.spatial.tiles[0]
+          : undefined;
       sources.push({
         ...entry.spatial,
+        objects: [{ name: f.name, url: f.url, sha256: f.sha256 }],
+        ...(entry.spatial.tiles ? { tiles: tile ? [tile] : [] } : {}),
         kind: entry.id === 'roof-lidar' ? 'lidar' : 'aerial',
         sourceId: entry.id,
         name: f.name,
@@ -78,6 +87,8 @@ export async function prepareRoofJob(
     ...b,
     ...shapes[i],
     horizontalCrs: 'EPSG:7131',
+    sourceRelease:
+      lock.sources.find((s) => s.id === 'overture-buildings')?.upstreamVersion ?? 'unavailable',
     sourceDates: {
       acquisitionStart: spatial?.acquisitionStart ?? null,
       acquisitionEnd: spatial?.acquisitionEnd ?? null
