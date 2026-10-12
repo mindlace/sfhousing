@@ -13,6 +13,7 @@ import {
   existingBuildingsLayer
 } from './style';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
+import legacyJson from '../../../pipeline/test/fixtures/legacy/manifest.json';
 import header from '../../../e2e/fixtures/data/fixture-0/roofs/50_25-000.json';
 import '../../routes/layout.css';
 
@@ -22,6 +23,9 @@ const manifest = {
   ),
   buildingRoofs: manifestJson.buildingRoofs
 } as Manifest;
+const legacyManifest = JSON.parse(
+  JSON.stringify(legacyJson).replaceAll('/data/fixture-0/', '/e2e/fixtures/data/fixture-0/')
+) as Manifest;
 const frame = { center: [-122.4188, 37.76014] as [number, number], zoom: 17, pitch: 0, bearing: 0 };
 const FS = { source: BUILDINGS_SOURCE, sourceLayer: 'buildings' };
 let host: HTMLDivElement;
@@ -132,13 +136,11 @@ it('onready and edits precede a delayed index; late tile pieces inherit only the
 it('remounts legacy and unknown schemas with parcel promotion and no roof controller', async () => {
   const { screen, h } = await mount();
   await active();
-  for (const schema of [undefined, 99]) {
+  for (const next of [
+    legacyManifest,
+    { ...manifest, buildingRoofs: { ...manifest.buildingRoofs!, schemaVersion: 99 } } as Manifest
+  ]) {
     const map = h.getMap();
-    const next = {
-      ...manifest,
-      buildingRoofs:
-        schema === undefined ? undefined : { ...manifest.buildingRoofs!, schemaVersion: schema }
-    } as Manifest;
     await screen.rerender({ manifest: next });
     await expect.poll(() => h.getMap() !== map && window.__sfhMap?.snapshot() !== null).toBe(true);
     await expect.poll(roof).toBeNull();
@@ -208,4 +210,76 @@ it('picks roof parcel summaries and prioritizes overlapping generated layers eve
   await expect
     .poll(() => document.querySelector('[role="tooltip"]')?.textContent)
     .toContain('Parcel PRIORITY');
+}, 30000);
+
+it('retains promoted parcel-clipped piece IDs in loaded vector tiles across zoom and refresh', async () => {
+  const { map } = await mount();
+  await active();
+  const loaded = () => map.querySourceFeatures(BUILDINGS_SOURCE, { sourceLayer: 'buildings' });
+  for (const zoom of [15, 17]) {
+    map.jumpTo({ zoom });
+    await new Promise<void>((resolve) => map.once('idle', () => resolve()));
+    const pieces = loaded().filter((f) => f.properties.buildingId === 'b10');
+    expect([...new Set(pieces.map((f) => f.id))].sort()).toEqual([
+      'p-4f95dedf1e4cbf31e3e45491',
+      'p-7e33516c53ae4a9d6cd9d679'
+    ]);
+    for (const f of pieces) {
+      expect(f.id).toBe(f.properties.pieceId);
+      expect(header.pieces.find((p) => p.pieceId === f.id)?.parcelId).toBe(f.properties.parcelId);
+    }
+  }
+  map.refreshTiles(BUILDINGS_SOURCE);
+  await new Promise<void>((resolve) => map.once('idle', () => resolve()));
+  expect(
+    loaded()
+      .filter((f) => f.properties.buildingId === 'b10')
+      .map((f) => f.id)
+      .sort()
+  ).toEqual(['p-4f95dedf1e4cbf31e3e45491', 'p-7e33516c53ae4a9d6cd9d679']);
+}, 30000);
+
+it('keeps unmatched footprint pieces visible and pickable when their matched sibling is replaced', async () => {
+  const { h, map } = await mount();
+  await active();
+  const unmatchedId = 'p-39caa3c6bea85d194a88807b';
+  const sourcePieces = () =>
+    map.querySourceFeatures(BUILDINGS_SOURCE, { sourceLayer: 'buildings' });
+  await expect.poll(() => sourcePieces().some((f) => f.id === unmatchedId)).toBe(true);
+  h.applyGenerated({
+    revision: 0,
+    cells: [],
+    removedCells: [],
+    hide: { add: ['3512006'], remove: [] }
+  });
+  const unmatched = sourcePieces().find((f) => f.id === unmatchedId)!;
+  expect(unmatched.properties.parcelId ?? '').toBe('');
+  expect(map.getFeatureState({ ...FS, id: 'p-4e879cb5566587068dcbe1e6' })).toEqual({
+    replaced: true
+  });
+  expect(map.getFeatureState({ ...FS, id: unmatchedId })).toEqual({});
+  expect(unmatched.geometry.type).toBe('Polygon');
+  // Probe the south band of this courtyard polygon, not its central hole.
+  const at: [number, number] = [-122.418875, 37.760099];
+  map.jumpTo({ center: at, zoom: 20, pitch: 0, bearing: 0 });
+  await new Promise<void>((resolve) => map.once('idle', () => resolve()));
+  const point = map.project(at),
+    bounds = map.getCanvas().getBoundingClientRect();
+  expect(
+    map
+      .queryRenderedFeatures(point, { layers: [BUILDINGS_LAYER] })
+      .some((f) => f.id === unmatchedId)
+  ).toBe(true);
+  map.getCanvas().dispatchEvent(
+    new PointerEvent('pointermove', {
+      bubbles: true,
+      pointerType: 'mouse',
+      clientX: bounds.left + point.x,
+      clientY: bounds.top + point.y
+    })
+  );
+  await expect
+    .poll(() => document.querySelector('[role="tooltip"]')?.textContent)
+    .toContain('Not matched to a parcel');
+  expect(roof()?.activePieceIds).not.toContain(unmatchedId);
 }, 30000);

@@ -57,6 +57,9 @@ export interface OverlayInput {
   dark: boolean;
 }
 
+// Brush feedback sits above 3D buildings; it must not occlude later map labels.
+const OVERLAY_PARAMETERS = { depthCompare: 'always', depthWriteEnabled: false } as const;
+
 const RING_MIN_PX = 4;
 
 /** cos 60°: a vertex that turns the path by more than 60° is sharp. */
@@ -131,6 +134,7 @@ export function buildOverlayLayers(L: OverlayCtors, s: OverlayInput): Layer[] {
     layers.push(
       new L.PathLayer({
         id: 'brush-swath',
+        parameters: OVERLAY_PARAMETERS,
         data: [path],
         getPath: (d: unknown) => d,
         widthUnits: 'meters',
@@ -148,6 +152,7 @@ export function buildOverlayLayers(L: OverlayCtors, s: OverlayInput): Layer[] {
       layers.push(
         new L.ScatterplotLayer({
           id: 'brush-ring',
+          parameters: OVERLAY_PARAMETERS,
           data: [s.ring],
           getPosition: (d: unknown) => d,
           getRadius: s.radiusM,
@@ -166,6 +171,7 @@ export function buildOverlayLayers(L: OverlayCtors, s: OverlayInput): Layer[] {
       layers.push(
         new L.PathLayer({
           id: 'brush-ring',
+          parameters: OVERLAY_PARAMETERS,
           data: dashedCircle(s.ring, r),
           getPath: (d: unknown) => d,
           widthUnits: 'pixels',

@@ -180,3 +180,141 @@ test('building source retry replays roof readiness independently of replaced par
     )
   ).toEqual({ roofReady: true });
 });
+
+async function smallEraseBrush(page: Page, isMobile: boolean) {
+  if (isMobile) await page.getByRole('button', { name: /^Brush \d+ m$/ }).click();
+  await page.getByRole('slider', { name: /^Brush/ }).press('Home');
+  await page.getByRole('radio', { name: 'Erase' }).click();
+}
+
+async function holdStroke(page: Page, isMobile: boolean, point: [number, number]) {
+  const [x, y] = point;
+  if (isMobile) {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x, y, id: 1 }]
+    });
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ x: x + 2, y, id: 1 }]
+    });
+    return async () => {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await cdp.detach();
+    };
+  }
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 2, y);
+  return () => page.mouse.up();
+}
+
+async function erasePixels(page: Page, bytes: Buffer) {
+  return page.evaluate(
+    async (png) => {
+      const bitmap = await createImageBitmap(
+        new Blob([new Uint8Array(png)], { type: 'image/png' })
+      );
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(bitmap, 0, 0);
+      const { data } = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+      const width = bitmap.width;
+      bitmap.close();
+      let count = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        // Only the eastern half lies over the building. Exclude the center seam.
+        if ((i / 4) % width < width / 2 + 5) continue;
+        // Opaque erase-ring pink, distinct from the map and generated building palette.
+        if (
+          Math.abs(data[i] - 190) < 8 &&
+          Math.abs(data[i + 1] - 24) < 8 &&
+          Math.abs(data[i + 2] - 93) < 8
+        )
+          count++;
+      }
+      return count;
+    },
+    [...bytes]
+  );
+}
+
+async function configureRoofs(page: Page, roofs: string) {
+  if (roofs === 'blocked') await page.route('**/roofs/index.json', (r) => r.abort());
+}
+
+for (const { roofs, ready, count } of [
+  { roofs: 'loaded', ready: { roofReady: true }, count: 3 },
+  { roofs: 'blocked', ready: {}, count: 0 }
+]) {
+  test(`functional roof edits preserve sibling readiness through an active erase stroke and undo (${roofs})`, async ({
+    page,
+    isMobile
+  }, testInfo) => {
+    await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
+    await configureRoofs(page, roofs);
+    await gotoEditor(page);
+    await jumpAndIdle(page, { center: [-122.418422, 37.760135], zoom: 19, pitch: 0, bearing: 0 });
+    await expect
+      .poll(() => page.evaluate(() => window.__sfhMap!.roofSnapshot()?.activePieceIds.length))
+      .toBe(count);
+    await page.evaluate(() =>
+      window.__sfhBrush!.load({
+        schema: 1,
+        datasetVersion: 'fixture-0',
+        ops: [
+          {
+            id: 'one-roof-half',
+            kind: 'paint',
+            stories: 20,
+            radiusM: 5,
+            path: [[-122.418422, 37.760135]]
+          }
+        ]
+      })
+    );
+    await expect.poll(() => page.evaluate(() => window.__sfhMap!.hiddenIds())).toEqual(['3512010']);
+    const state = () =>
+      page.evaluate(() => {
+        const map = window.__sfhMap!.map!;
+        return ['p-7e33516c53ae4a9d6cd9d679', 'p-4f95dedf1e4cbf31e3e45491'].map((id) =>
+          map.getFeatureState({ source: 'buildings', sourceLayer: 'buildings', id })
+        );
+      });
+    expect(await state()).toEqual([{ ...ready, replaced: true }, ready]);
+    await smallEraseBrush(page, isMobile);
+    const point = await projectToPage(page, [-122.418422, 37.760135]);
+    const clip = { x: point[0] - 80, y: point[1] - 80, width: 160, height: 160 };
+    const before = await erasePixels(page, await page.screenshot({ clip }));
+    const release = await holdStroke(page, isMobile, point);
+    try {
+      await expect
+        .poll(async () => erasePixels(page, await page.screenshot({ clip })))
+        .toBeGreaterThan(before + 10);
+      await testInfo.attach('active-erase-over-roofs', {
+        body: await page
+          .getByTestId('map-root')
+          .screenshot({ path: testInfo.outputPath('active-erase-over-roofs.png') }),
+        contentType: 'image/png'
+      });
+      // Worker previews already apply the erase while the pointer remains held.
+      await expect.poll(() => page.evaluate(() => window.__sfhMap!.hiddenIds())).toEqual([]);
+      expect(await state()).toEqual([ready, ready]);
+    } finally {
+      await release();
+    }
+    await expect.poll(() => page.evaluate(() => window.__sfhMap!.hiddenIds())).toEqual([]);
+    expect(await state()).toEqual([ready, ready]);
+    await expect.poll(() => page.evaluate(() => window.__sfhMap!.generatedParcels())).toEqual([]);
+    await page.getByRole('button', { name: /^Undo/ }).click();
+    await expect.poll(() => page.evaluate(() => window.__sfhMap!.hiddenIds())).toEqual(['3512010']);
+    expect(await state()).toEqual([{ ...ready, replaced: true }, ready]);
+    expect(
+      await page.evaluate(() => window.__sfhMap!.generatedParcels().map((p) => p.parcelId))
+    ).toEqual(['3512010']);
+    expect(await page.evaluate(() => window.__sfhMap!.roofSnapshot()!.activePieceIds)).toHaveLength(
+      count
+    );
+  });
+}
