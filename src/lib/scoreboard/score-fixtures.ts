@@ -38,6 +38,7 @@ export function building(
   return {
     parcelId: p.id,
     source: 'user',
+    composition: 'simple',
     typology: replacesExisting ? 'walkup' : 'adu',
     parts: [
       {
@@ -47,6 +48,8 @@ export function building(
           [-122.4199, 37.7601],
           [-122.42, 37.76]
         ],
+        role: 'occupied',
+        tone: 0,
         baseM: 0,
         topM: 12
       }

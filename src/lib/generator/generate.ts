@@ -1,9 +1,22 @@
 import type { ParcelRecord } from '../data/parcel';
 import type { Envelope } from '../plan/types';
-import { ADU_MIN_OPEN_M2, EFFICIENCY, FTF_M, MAX_STORIES, rulesFor } from './constants';
-import { toLngLat } from './geo';
-import { massAdu, massTypology, type Massing } from './massing';
+import { ADU_MIN_OPEN_M2, ADU_GROSS_M2, FTF_M, MAX_STORIES } from './constants';
+import { compositionOptions, referenceComposition } from './compositions';
+import { drawComposition } from './composition-variety';
+import type { CompositionDraws, OccupiedComposition } from './composition-types';
+import {
+  retainsCapacityAcrossHeights,
+  compositionHeightRange,
+  growthRegions,
+  occupiedArea,
+  unitsFor
+} from './bands';
+import { fnv1a32 } from './seed';
+import { roofAccents } from './roof';
+import { serializeComposition } from './serialize';
+import { massAdu } from './massing';
 import { canonicalRing } from './poly';
+import { domainArea } from './domain';
 import { selectTypology } from './select';
 import { normaliseSite, type Site } from './site';
 import type { BuildoutMode, GeneratedBuilding } from './types';
@@ -14,6 +27,8 @@ export interface LocalPart {
   ring: [number, number][];
   baseM: number;
   topM: number;
+  role: 'occupied' | 'roof';
+  tone: 0 | 1 | 2;
 }
 
 export interface Detailed {
@@ -23,7 +38,6 @@ export interface Detailed {
 }
 
 const round1 = (x: number) => Math.round(x * 10) / 10;
-const round2 = (x: number) => Math.round(x * 100) / 100;
 
 /** §4.8 existing-footprint estimate: is there ≥ 60 m² of open lot for an ADU? */
 export function aduOpenOk(parcel: ParcelRecord, A: number): boolean {
@@ -36,7 +50,8 @@ export function generateDetailed(
   parcel: ParcelRecord,
   env: Envelope,
   draws: VarietyDraws,
-  mode: BuildoutMode
+  mode: BuildoutMode,
+  compositionDraws: CompositionDraws = drawComposition(fnv1a32(parcel.id))
 ): Detailed | null {
   if (mode !== 'max') throw new Error('unsupported BuildoutMode');
   if (!parcel.eligible) return null;
@@ -52,63 +67,107 @@ export function generateDetailed(
   if (!site) return null;
 
   const sel = selectTypology(S, site.A, parcel.existingUnits);
-  let m: Massing | null;
+  let reference: OccupiedComposition | null;
   if (sel.typology === 'adu') {
     if (!aduOpenOk(parcel, site.A)) return null;
-    m = massAdu(site, sel.stories, draws);
-  } else {
-    m = massTypology(site, sel.typology, sel.stories, draws);
-  }
-  if (!m || m.parts.length === 0) return null;
-
-  const floorAreaM2 = round1(m.floorAreaM2);
-  const replacesExisting = m.typology !== 'adu';
-  const rules = rulesFor(m.typology);
-  const units = replacesExisting
-    ? Math.min(rules.maxUnits, Math.floor((floorAreaM2 * EFFICIENCY) / rules.avgUnitM2))
-    : 1;
-  if (units < 1) return null; // N5
-  const after = replacesExisting ? floorAreaM2 : parcel.existingFloorAreaM2 + floorAreaM2;
-  if (!(after > parcel.existingFloorAreaM2)) return null; // N6 (NaN fails safe)
-  if (replacesExisting && !(units > parcel.existingUnits)) return null; // N7 (NaN fails safe)
-
-  const local: LocalPart[] = [];
-  const parts: GeneratedBuilding['parts'] = [];
-  for (const p of m.parts) {
-    const ring = canonicalRing(p.ring).map((q) => [q.x, q.y] as [number, number]);
-    const ll = toLngLat(ring, parcel.labelPoint);
-    // Rounding to 1e-7° can merge neighbours (or last into first): drop those vertices from
-    // both frames so they stay index-aligned and the lng/lat ring is open with no repeats.
-    const keep = ll.map((q, i) => {
-      const prev = ll[(i + ll.length - 1) % ll.length];
-      return !(q[0] === prev[0] && q[1] === prev[1]);
-    });
-    const kept = keep.filter(Boolean).length;
-    // an all-equal ring would drop everything; a ring left with < 3 vertices is dropped
-    if (kept < 3) continue;
-    local.push({
-      ring: ring.filter((_, i) => keep[i]),
-      baseM: round2(p.baseM),
-      topM: round2(p.topM + (p.reachesTop ? draws.parapetM : 0))
-    });
-    parts.push({
-      footprint: ll.filter((_, i) => keep[i]),
-      baseM: local[local.length - 1].baseM,
-      topM: local[local.length - 1].topM
-    });
-  }
-  if (parts.length === 0) return null;
-  const building: GeneratedBuilding = {
-    parcelId: parcel.id,
-    source: 'user',
-    typology: m.typology,
-    parts,
-    stories: m.stories,
-    units,
-    floorAreaM2,
-    replacesExisting
+    const mass = massAdu(site, sel.stories, draws);
+    reference = mass && {
+      family: 'simple',
+      typology: 'adu',
+      stories: mass.stories,
+      bands: [
+        {
+          firstFloor: 1,
+          floors: mass.stories,
+          regions: mass.parts.map((p) => canonicalRing(p.ring))
+        }
+      ]
+    };
+  } else reference = referenceComposition(site, sel.typology, sel.stories, draws);
+  if (!reference) return null;
+  const ref = reference;
+  const evaluate = function* () {
+    for (const candidate of compositionOptions(site, ref, compositionDraws)) {
+      const output = serializeComposition(
+        parcel,
+        site,
+        candidate,
+        roofAccents(site, candidate, compositionDraws, draws.parapetM),
+        compositionDraws.tone,
+        ref
+      );
+      if (!output || !output.parts.length) continue;
+      if (
+        candidate.family !== 'simple' &&
+        !retainsCapacityAcrossHeights(candidate, ref, output.area, output.growth)
+      )
+        continue;
+      yield { candidate, output };
+    }
   };
-  return { building, local, site };
+  type Option = {
+    candidate: OccupiedComposition;
+    output: NonNullable<ReturnType<typeof serializeComposition>>;
+  };
+  let options: Iterable<Option> = evaluate();
+  const [min, max] = compositionHeightRange(ref);
+  let anchor = min;
+  const gains = (typology: GeneratedBuilding['typology'], area: number) =>
+    round1(area) > parcel.existingFloorAreaM2 && unitsFor(typology, area) > parcel.existingUnits;
+  if (
+    ref.typology !== 'adu' &&
+    min !== max &&
+    !gains(
+      ref.typology,
+      occupiedArea(ref.bands) + (min - ref.stories) * domainArea(growthRegions(ref))
+    )
+  ) {
+    // Existing development can make different families first replaceable at different heights.
+    // Evaluate the bounded set once and freeze preference at the earliest possible gain.
+    const fitted = [...options];
+    options = fitted;
+    anchor = Infinity;
+    for (const { candidate, output } of fitted)
+      for (let s = min; s <= max && s < anchor; s++) {
+        if (gains(candidate.typology, output.area + (s - candidate.stories) * output.growth)) {
+          anchor = s;
+          break;
+        }
+      }
+    if (!Number.isFinite(anchor)) return null;
+  }
+  for (const { candidate, output } of options) {
+    if (
+      candidate.typology !== 'adu' &&
+      !gains(candidate.typology, output.area + (anchor - candidate.stories) * output.growth)
+    )
+      continue;
+    const floorAreaM2 = round1(candidate.typology === 'adu' ? ADU_GROSS_M2 : output.area);
+    const replacesExisting = candidate.typology !== 'adu';
+    const units = replacesExisting ? unitsFor(candidate.typology, floorAreaM2) : 1;
+    if (
+      units < 1 ||
+      !(
+        floorAreaM2 + (replacesExisting ? 0 : parcel.existingFloorAreaM2) >
+        parcel.existingFloorAreaM2
+      ) ||
+      (replacesExisting && !(units > parcel.existingUnits))
+    )
+      continue;
+    const building: GeneratedBuilding = {
+      parcelId: parcel.id,
+      source: 'user',
+      typology: candidate.typology,
+      composition: candidate.family,
+      parts: output.parts,
+      stories: candidate.stories,
+      units,
+      floorAreaM2,
+      replacesExisting
+    };
+    return { building, local: output.local, site };
+  }
+  return null;
 }
 
 /** Same rules as `generate`, with injected draws (test seam). */
@@ -116,9 +175,10 @@ export function generateWith(
   parcel: ParcelRecord,
   env: Envelope,
   draws: VarietyDraws,
-  mode: BuildoutMode
+  mode: BuildoutMode,
+  compositionDraws: CompositionDraws = drawComposition(fnv1a32(parcel.id))
 ): GeneratedBuilding | null {
-  return generateDetailed(parcel, env, draws, mode)?.building ?? null;
+  return generateDetailed(parcel, env, draws, mode, compositionDraws)?.building ?? null;
 }
 
 /** I8. Callers pass `seed = fnv1a32(parcel.id)` (I14). */
@@ -129,5 +189,5 @@ export function generate(
   mode: BuildoutMode
 ): GeneratedBuilding | null {
   if (mode !== 'max') throw new Error('unsupported BuildoutMode');
-  return generateWith(parcel, env, drawVariety(seed), mode);
+  return generateWith(parcel, env, drawVariety(seed), mode, drawComposition(seed));
 }

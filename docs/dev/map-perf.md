@@ -17,8 +17,7 @@ Spec: `docs/superpowers/specs/2026-10-10-map-view-design.md` §4.12.
 3. Waits for `window.__sfhBrush.ready`, so the worker host's own revision-0 snapshot has landed
    (a later one would reset the controller). Then loads a synthetic whole-city plan: `window.__sfhMap.loadSyntheticCity(1)` applies
    `makeSyntheticCity(1, 150_000)` (`src/lib/map/test/synthetic-city.ts`) as one settled
-   revision-0 snapshot. That is 150,000 generated buildings in 100 cells across the SF bbox, about
-   30% of them two-part podium/tower buildings. The plan goes straight to the
+   revision-0 snapshot. That is 150,000 buildings in 100 cells across the SF bbox. The representative population translates cached real generated buildings covering every composition family; the separate stress population exercises eight occupied solids, two roof accents and 128 input vertices per building. The plan goes straight to the
    `GeneratedController`, bypassing the generator worker, because fixture-0 has only 14 parcels.
    Painting a whole-city plan through `__sfhBrush.load` would need production data.
 4. Waits for every cell to install, then jumps to downtown (`[-122.4010, 37.7890]`, zoom 15,
@@ -137,3 +136,26 @@ above includes a conservative 2 MiB opaque program reservation per layer; it is 
 GPU-memory measurement. Accepted logs retain color-environment, bundle-size, devalue ignored-import
 and favicon 404 noise. See [rooflines.md](rooflines.md) for operator evidence, capability/schema
 fallbacks, the historical sample's reconstruction outcomes and open release gates.
+
+## Building compositions validation (2026-10-11)
+
+Run with `SFH_E2E_PORT=4191 npm run bench:map` to use an isolated preview while another worktree owns the default port. Both benchmark cases run on the real GPU. Cells wholly outside the visible volume between ground and roof height are culled; culling is disabled for cameras below roof height and pitches above 60°, preserving conservative visibility.
+
+Hardware: Apple M5 Pro, 24 GB, headed Playwright Chromium, ANGLE Metal Renderer, DPR 2, 1280×800 CSS pixels. These results do **not** establish the M2 or real-mobile acceptance target.
+
+| Population                  | Buildings |     Parts | Input vertices |    p50 |    p95 | ≤16.7 ms |
+| --------------------------- | --------: | --------: | -------------: | -----: | -----: | -------- |
+| Representative compositions |   150,000 |   494,972 |      2,458,446 | 8.3 ms | 9.3 ms | Pass     |
+| Maximum-budget stress       |   150,000 | 1,500,000 |     19,200,000 | 8.3 ms | 9.3 ms | Pass     |
+
+Before culling, representative p95 was 12.1 ms and stress p95 was 25.2 ms (failed). Culling changes draw eligibility, not packed geometry, housing totals or the number of layers/cells.
+
+Standalone generation of the existing 150,000-case seed-42 mix took 2,208 ms (145,132 non-null buildings). Synthetic population packing took 170 ms representative / 694 ms stress; this is fixture construction, not gesture latency. The existing generation and worker-host limits remain enforced.
+
+The separate loaded 500-parcel pointer-up-to-visible-frame test measured 106 ms desktop and 111 ms at 375 px in browser mobile emulation, against a 150 ms limit. It routes 500 real parcel records through the worker, generator, packer and renderer; synthetic renderer loading is not used for this measurement. Mobile emulation is not a real mobile GPU result.
+
+Elevated views at 5/6/8/12/20/40 floors were inspected in light and dark themes at desktop and 375 px, with parcel boundary overlays and excluded/concave sites. M2 and physical-mobile performance acceptance remains open.
+
+Independent review found and corrected a same-typology capacity decrease at a family transition and a simple tower reference that bypassed the six-metre-core rule. Family/attempt retention is now checked across each typology's finite height range using fixed floor plates, and preference is anchored at the earliest replacement gain. These checks use bounded arithmetic, with the bounded fitted candidate set evaluated only when existing development prevents a gain at the typology's minimum height. Invalid tower references use the existing twelve-floor midrise fallback.
+
+Post-review verification passed: 1,180 unit/component tests, 143 end-to-end tests (33 expected skips), type checking and lint. Both headed GPU populations passed again at 9.3 ms p95. M2/physical-mobile acceptance remains open. A minor deferred issue is that final coordinate rounding can move tower plate area/separation slightly beyond local-space limits (observed plate excess 0.378 m² and expanded-plate overlap 0.022 m²).

@@ -9,6 +9,8 @@ export default defineConfig({
   test: {
     ...base.test,
     name: 'roof-gpu',
+    // Cold activation must pass on the first attempt, without a warmed driver retry.
+    retry: 0,
     include: [
       'src/lib/map/roof-layer.svelte.spec.ts',
       'src/lib/map/SimMap.roofs.svelte.spec.ts',

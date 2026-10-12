@@ -69,6 +69,7 @@ export function stubGenerate(p: ParcelRecord, env: Envelope): GeneratedBuilding 
   return {
     parcelId: p.id,
     source: 'user',
+    composition: 'simple',
     typology: 'midrise',
     parts: [
       {
@@ -78,6 +79,8 @@ export function stubGenerate(p: ParcelRecord, env: Envelope): GeneratedBuilding 
           [lng + d, lat + d],
           [lng + d, lat - d]
         ],
+        role: 'occupied',
+        tone: 0,
         baseM: 0,
         topM: 3.1 * s
       }
@@ -143,6 +146,7 @@ export function makeHarness(opts?: {
   generate?: SimHostDeps['generate'];
   retryDelaysMs?: readonly number[];
   batchParcels?: number;
+  memoCap?: number;
   /** Extra or replacement response bodies, keyed by url. */
   bodies?: Record<string, unknown>;
 }): Harness {
@@ -187,7 +191,8 @@ export function makeHarness(opts?: {
     clearTimeout: (h) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>),
     generate: opts?.generate ?? ((p, e) => stubGenerate(p, e)),
     ...(opts?.retryDelaysMs ? { retryDelaysMs: opts.retryDelaysMs } : {}),
-    ...(opts?.batchParcels ? { batchParcels: opts.batchParcels } : {})
+    ...(opts?.batchParcels ? { batchParcels: opts.batchParcels } : {}),
+    ...(opts?.memoCap !== undefined ? { memoCap: opts.memoCap } : {})
   });
 
   const diffs = () => sent.filter((m): m is DiffResponse => m.type === 'diff');

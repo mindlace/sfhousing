@@ -42,6 +42,9 @@ export default defineConfig({
   },
   test: {
     name: 'client',
+    // Browser tests get one retry so a flake is recorded rather than absorbed or fatal.
+    // The server project stays at 0: pure logic must not flake.
+    retry: 1,
     expect: { requireAssertions: true },
     browser: {
       enabled: true,

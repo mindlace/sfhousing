@@ -12,7 +12,11 @@ import type { DiffPhase, DiffResponse, OpStats } from './protocol';
 export interface DisplayDeps {
   record(id: ParcelId): ParcelRecord | undefined;
   cellOf(id: ParcelId): string | undefined;
-  /** Memoised generate (host supplies it): same inputs → same object. */
+  /**
+   * Generate for (rec, env), deterministic in content. The host memoises it in a bounded LRU, so
+   * equal inputs usually, but not always, give the same object: correctness here must never
+   * depend on identity.
+   */
   build(rec: ParcelRecord, env: Envelope): GeneratedBuilding | null;
   targets: readonly Target[];
   post(msg: DiffResponse, transfer: ArrayBuffer[]): void;
@@ -175,7 +179,11 @@ export function createDisplay(deps: DisplayDeps): Display {
         const next = env ? deps.build(rec, env) : null;
         if (env) renderedEnv.set(id, env);
         else renderedEnv.delete(id);
-        if (next === prev) continue; // memo makes equal inputs identical
+        // A shortcut only, never a correctness assumption. pending holds only changed envs, so
+        // prev and next come from different memo keys and this fires for null → null alone. An
+        // equal but distinct object (a memo eviction) would take the value-based path below
+        // (acc.set, replacesExisting, maxTop) and render the same parcels.
+        if (next === prev) continue;
 
         if (next) {
           if (held) held.set(id, next);

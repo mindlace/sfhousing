@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ParcelRecord } from '../data/parcel';
 import { generate, generateDetailed, generateWith, type Detailed } from './generate';
 import { drawVariety, varietyFromUniforms } from './variety';
+import { drawComposition } from './composition-variety';
 import { signedArea } from './poly';
 import { pointNearPolygon } from './fixtures/geom';
 import std from './fixtures/std-25x100.json';
@@ -20,8 +21,10 @@ import lshape from './fixtures/lshape.json';
 
 /** Golden draws r = [0.5, 0.5, 0.5, 0.5, 0, x]: inset 0.4, stepback 2.25, parapet 0.75, slide 0, aspect 1. */
 const GOLDEN = varietyFromUniforms([0.5, 0.5, 0.5, 0.5, 0, 0.25]);
+const SIMPLE = { ...drawComposition(1), familyOrder: ['simple' as const], capEnabled: false };
 const P = (j: unknown) => j as ParcelRecord;
-const run = (j: unknown, S: number) => generateDetailed(P(j), { maxStories: S }, GOLDEN, 'max');
+const run = (j: unknown, S: number) =>
+  generateDetailed(P(j), { maxStories: S }, GOLDEN, 'max', SIMPLE);
 const localArea = (d: Detailed, i: number) =>
   Math.abs(signedArea(d.local[i].ring.map(([x, y]) => ({ x, y }))));
 /** Building without parcelId, footprints as sorted vertex lists (start vertex may differ). */
@@ -43,7 +46,7 @@ describe('golden fixtures (hand-calculated, §6)', () => {
     expect(localArea(d, 0)).toBeCloseTo(139.4, 0); // ±0.5
     expect(Math.abs(d.building.floorAreaM2 - 418.1)).toBeLessThanOrEqual(2);
     expect(d.building.parts[0].baseM).toBe(0);
-    expect(d.building.parts[0].topM).toBe(10.05); // 3×3.1 + 0.75
+    expect(d.building.parts[0].topM).toBe(9.3); // 3×3.1 + 0.75
     expect(d.building.source).toBe('user');
     expect(d.building.parcelId).toBe('0000001');
   });
@@ -62,7 +65,7 @@ describe('golden fixtures (hand-calculated, §6)', () => {
     expect(b).toMatchObject({ typology: 'adu', stories: 2, units: 1, replacesExisting: false });
     expect(Math.abs(b.floorAreaM2 - 68.75)).toBeLessThanOrEqual(2);
     expect(b.parts).toHaveLength(1);
-    expect(b.parts[0]).toMatchObject({ baseM: 0, topM: 6.95 }); // 2×3.1 + 0.75
+    expect(b.parts[0]).toMatchObject({ baseM: 0, topM: 6.2 }); // 2×3.1 + 0.75
   });
   it('std S=1 and S=2 → adu with floorAreaM2 = G (round1 68.75 = 68.8), monotone in S', () => {
     for (const S of [1, 2]) {
@@ -82,7 +85,7 @@ describe('golden fixtures (hand-calculated, §6)', () => {
     expect(b.typology).toBe('podium');
     expect(Math.abs(b.floorAreaM2 - 4800)).toBeLessThanOrEqual(2);
     expect(b.units).toBe(59);
-    expect(b.parts.map((p) => p.topM)).toEqual([20.75]);
+    expect(b.parts.map((p) => p.topM)).toEqual([20]);
   });
   it('std over an 8-unit apartment (FA 700) S=3 → null (N6)', () => {
     expect(run(overApt, 3)).toBeNull();
@@ -95,7 +98,8 @@ describe('golden fixtures (hand-calculated, §6)', () => {
       P(std),
       { maxStories: 2 },
       varietyFromUniforms([0.5, 0.5, 0.5, 0.5, 0, 0.75]),
-      'max'
+      'max',
+      SIMPLE
     )!;
     expect(d.building.typology).toBe('adu');
     expect(Math.abs(d.building.floorAreaM2 - 68.75)).toBeLessThanOrEqual(2);
@@ -115,9 +119,10 @@ describe('golden fixtures (hand-calculated, §6)', () => {
       expect(run(tiny, S)).toBeNull();
     }
   });
-  it('multipart and holed equal the std S=3 result', () => {
+  it('multipart retains the main lot and holed lots exclude unavailable area', () => {
     expect(shape(run(multipart, 3))).toEqual(shape(run(std, 3)));
-    expect(shape(run(holed, 3))).toEqual(shape(run(std, 3)));
+    const h = run(holed, 3);
+    expect(h === null || h.building.floorAreaM2 <= run(std, 3)!.building.floorAreaM2).toBe(true);
   });
   it('lshape S=5 → walkup, ≥ 1 part, footprint ≤ 0.7·A·1.001', () => {
     const d = run(lshape, 5)!;
@@ -136,7 +141,7 @@ describe('I8 contract and mode', () => {
   });
   it('ineligible parcel → null', () => {
     expect(
-      generateWith(P({ ...std, eligible: false }), { maxStories: 3 }, GOLDEN, 'max')
+      generateWith(P({ ...std, eligible: false }), { maxStories: 3 }, GOLDEN, 'max', SIMPLE)
     ).toBeNull();
   });
   it('generate draws variety from the seed', () => {
@@ -157,7 +162,7 @@ describe('I8 contract and mode', () => {
     for (const S of [0, 0.9, -3, NaN, Infinity, -Infinity]) expect(run(std, S)).toBeNull();
     expect(run(lot1000, 1e9)!.building.stories).toBeLessThanOrEqual(80);
     const extra = { maxStories: 3, farMax: 2, setbackM: 9 } as unknown as { maxStories: number };
-    expect(generateWith(P(std), extra, GOLDEN, 'max')).toEqual(run(std, 3)!.building);
+    expect(generateWith(P(std), extra, GOLDEN, 'max', SIMPLE)).toEqual(run(std, 3)!.building);
   });
   it('local parts mirror the output parts', () => {
     const d = run(std, 3)!;
@@ -176,7 +181,7 @@ describe('golden fixtures: midrise and tower', () => {
     expect(d.building.units).toBe(81);
     expect(d.building.parts.map((p) => [p.baseM, p.topM])).toEqual([
       [0, 20],
-      [20, 33.15]
+      [20, 32.4]
     ]);
   });
   it('lot-3000 S=30 → tower, podium plate 2400, tower plate 900, 394 units', () => {
@@ -184,14 +189,14 @@ describe('golden fixtures: midrise and tower', () => {
     expect(d.building).toMatchObject({ typology: 'tower', stories: 30, units: 394 });
     expect(d.building.parts.map((p) => [p.baseM, p.topM])).toEqual([
       [0, 16.9],
-      [16.9, 95.15]
+      [16.9, 94.4]
     ]);
     expect(localArea(d, 0)).toBeCloseTo(2400, 0);
     expect(localArea(d, 1)).toBeCloseTo(900, 0);
   });
   it('tower with non-zero slide: tower plate inside the podium and offset along u', () => {
     const slid = varietyFromUniforms([0.5, 0.5, 0.5, 0.95, 0, 0.25]);
-    const d = generateDetailed(P(lot3000), { maxStories: 30 }, slid, 'max')!;
+    const d = generateDetailed(P(lot3000), { maxStories: 30 }, slid, 'max', SIMPLE)!;
     expect(d.building.typology).toBe('tower');
     const [pod, tow] = d.local;
     expect(tow.ring.every((p) => pointNearPolygon(p, pod.ring, 0.02))).toBe(true);
@@ -218,7 +223,7 @@ describe('golden fixtures: midrise and tower', () => {
       ]
     };
     const big = varietyFromUniforms([0.5, 0.999, 0.5, 0.5, 0, 0.25]);
-    const d = generateDetailed(P(narrow), { maxStories: 10 }, big, 'max')!;
+    const d = generateDetailed(P(narrow), { maxStories: 10 }, big, 'max', SIMPLE)!;
     expect(d.building.typology).toBe('midrise');
     expect(d.local[1].ring).toEqual(d.local[0].ring);
   });

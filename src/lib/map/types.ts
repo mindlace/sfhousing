@@ -34,6 +34,7 @@ export interface PackedCell {
   positions: Float64Array; // [lng, lat]*, rings open (no repeated closing vertex), CW
   partTopM: Float32Array; // per part: topM (ground-up rendering, §4.4)
   partSlot: Uint32Array; // per part → parcel slot
+  partAppearance: Uint8Array; // tone + 4 for a roof accent
   partTypology: Uint8Array; // per part → index into TYPOLOGY_ORDER (I10 order)
 }
 

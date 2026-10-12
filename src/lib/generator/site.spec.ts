@@ -49,14 +49,14 @@ describe('normaliseSite (§4.4)', () => {
     const s = normaliseSite([STD, rect(5, 10, 12.5, 5)], 0.4)!;
     expect(s).toEqual(normaliseSite([STD], 0.4));
   });
-  it('holed: holes are dropped, the outer ring is used', () => {
+  it('holed: exclusions reduce usable area', () => {
     const hole: Ring = [
       [-1, -1],
       [-1, 1],
       [1, 1],
       [1, -1]
     ];
-    expect(normaliseSite([STD, hole], 0.4)).toEqual(normaliseSite([STD], 0.4));
+    expect(normaliseSite([STD, hole], 0.4)!.A).toBeCloseTo(normaliseSite([STD], 0.4)!.A - 4, 2);
   });
   it('clockwise single ring gives the same site', () => {
     expect(normaliseSite([[...STD].reverse()], 0.4)).toEqual(normaliseSite([STD], 0.4));

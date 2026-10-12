@@ -37,7 +37,7 @@ jobs:
           manifest-file: .release-please-manifest.json
 
       # Release PRs only modify version files + CHANGELOG; the underlying code was
-      # already signed off on main. Auto-post local-ci/signoff to the head SHA so
+      # already signed off on main. Auto-post chreode/signoff to the head SHA so
       # branch protection lets the PR merge without a manual signoff.
       #
       # The head SHA is read with `git ls-remote` (git protocol), not the REST API:
@@ -64,7 +64,7 @@ jobs:
             echo "auto-signoff ${BRANCH} @ ${SHA}"
             gh api -X POST "repos/${REPO}/statuses/${SHA}" \
               -f state=success \
-              -f context=local-ci/signoff \
+              -f context=chreode/signoff \
               -f description="auto-signoff for release-please PR"
             SIGNED=$((SIGNED + 1))
           done <<<"$BRANCHES"

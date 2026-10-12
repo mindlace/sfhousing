@@ -51,7 +51,9 @@ interface Posted {
   transfer: ArrayBuffer[];
 }
 
-function setup(batchParcels = 5000) {
+/** memo: false gives a fresh (equal) object on every build, as after a memo eviction. */
+function setup(batchParcels = 5000, opts: { memo?: boolean } = {}) {
+  const useMemo = opts.memo ?? true;
   const memo = new Map<string, GeneratedBuilding | null>();
   const posts: Posted[] = [];
   let builds = 0;
@@ -60,7 +62,7 @@ function setup(batchParcels = 5000) {
     cellOf: (id) => CELL[id],
     build(r, env) {
       const key = `${r.id}|${env.maxStories}`;
-      if (memo.has(key)) return memo.get(key)!;
+      if (useMemo && memo.has(key)) return memo.get(key)!;
       builds++;
       const s = env.maxStories;
       const b: GeneratedBuilding | null =
@@ -68,6 +70,7 @@ function setup(batchParcels = 5000) {
           ? {
               parcelId: r.id,
               source: 'user',
+              composition: 'simple',
               typology: 'midrise',
               parts: [
                 {
@@ -77,6 +80,8 @@ function setup(batchParcels = 5000) {
                     [1, 1],
                     [1, 0]
                   ],
+                  role: 'occupied',
+                  tone: 0,
                   baseM: 0,
                   topM: 3.1 * s
                 }
@@ -120,6 +125,7 @@ function buffersOf(p: PackedCell): ArrayBuffer[] {
     p.positions.buffer,
     p.partTopM.buffer,
     p.partSlot.buffer,
+    p.partAppearance.buffer,
     p.partTypology.buffer
   ] as ArrayBuffer[];
 }
@@ -291,6 +297,32 @@ describe('createDisplay', () => {
       expect(expected.length).toBeGreaterThan(0);
       expect(transfer).toHaveLength(expected.length);
       for (const b of expected) expect(transfer).toContain(b);
+    }
+  });
+
+  it('never depends on build identity: fresh equal objects post exactly what a memo posts', () => {
+    const steps: Record<string, number | null>[] = [
+      { a1: 5, a2: 8, b1: 3 },
+      { a1: 9, a2: 4, a3: 3 },
+      { a1: 5, a2: 8, b1: null }, // back to earlier heights: memo hits vs regenerated objects
+      { a1: 2, a2: 8, b2: 6 }, // a1 builds null
+      { a1: 2, a2: 8, b2: 6, b3: 1 }, // unchanged envs and an env that builds null
+      { a1: 5, b1: 3, b2: 6 }
+    ];
+    const run = (memo: boolean) => {
+      const r = setup(2, { memo });
+      steps.forEach((m, k) =>
+        r.display.update(Object.keys(CELL), envs(m), meta({ rev: k + 1, phase: 'commit' }))
+      );
+      return r;
+    };
+    const memo = run(true);
+    const fresh = run(false);
+    expect(fresh.builds()).toBeGreaterThan(memo.builds()); // regeneration really happened
+    expect(fresh.posts.map((p) => p.msg)).toEqual(memo.posts.map((p) => p.msg));
+    for (const id of Object.keys(CELL)) {
+      expect(fresh.display.building(id)).toEqual(memo.display.building(id));
+      expect(fresh.display.renderedEnv(id)).toEqual(memo.display.renderedEnv(id));
     }
   });
 

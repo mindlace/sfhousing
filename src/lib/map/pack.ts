@@ -1,4 +1,5 @@
 // Pure, worker-safe geometry packing. No DOM, no zod, no $app.
+import { encodeAppearance } from './appearance';
 import { TYPOLOGY_ORDER } from './types';
 import type { PackedCell } from './types';
 import type { GeneratedBuilding } from '$lib/generator';
@@ -18,6 +19,7 @@ export function emptyPack(cellId: string): PackedCell {
     positions: new Float64Array(0),
     partTopM: new Float32Array(0),
     partSlot: new Uint32Array(0),
+    partAppearance: new Uint8Array(0),
     partTypology: new Uint8Array(0)
   };
 }
@@ -54,15 +56,34 @@ export function packCell(cellId: string, items: readonly PackInput[]): PackedCel
   const topM: number[] = [];
   const slots: number[] = [];
   const typ: number[] = [];
+  const appearance: number[] = [];
   sorted.forEach(({ building: b, existingUnits }, s) => {
     const ti = TYPOLOGY_ORDER.indexOf(b.typology);
     if (ti < 0) throw new Error(`packCell: unknown typology ${b.typology} on ${b.parcelId}`);
     parcelMeta.set([b.units, existingUnits, b.stories, ti], 4 * s);
+    const renderParts: GeneratedBuilding['parts'] = [];
     for (const part of b.parts) {
+      const previous = renderParts.at(-1);
+      if (
+        previous &&
+        previous.role === 'occupied' &&
+        part.role === 'occupied' &&
+        previous.tone === part.tone &&
+        previous.topM === part.baseM &&
+        previous.footprint.length === part.footprint.length &&
+        previous.footprint.every(
+          (p, i) => p[0] === part.footprint[i][0] && p[1] === part.footprint[i][1]
+        )
+      ) {
+        renderParts[renderParts.length - 1] = { ...previous, topM: part.topM };
+      } else renderParts.push(part);
+    }
+    for (const part of renderParts) {
       rings.push(normaliseRing(part.footprint));
       topM.push(part.topM);
       slots.push(s);
       typ.push(ti);
+      appearance.push(encodeAppearance(part.role, part.tone));
     }
   });
 
@@ -89,6 +110,7 @@ export function packCell(cellId: string, items: readonly PackInput[]): PackedCel
     positions,
     partTopM: Float32Array.from(topM),
     partSlot: Uint32Array.from(slots),
+    partAppearance: Uint8Array.from(appearance),
     partTypology: Uint8Array.from(typ)
   };
 }
@@ -117,6 +139,8 @@ export function concatPacks(a: PackedCell, b: PackedCell): PackedCell {
   partTopM.set(b.partTopM, a.partTopM.length);
   const partTypology = cat(a.partTypology, b.partTypology);
   partTypology.set(b.partTypology, a.partTypology.length);
+  const partAppearance = cat(a.partAppearance, b.partAppearance);
+  partAppearance.set(b.partAppearance, a.partAppearance.length);
   const partSlot = cat(a.partSlot, b.partSlot);
   for (let k = 0; k < b.partCount; k++) partSlot[a.partCount + k] = b.partSlot[k] + slotShift;
   const startIndices = new Uint32Array(partCount + 1);
@@ -133,7 +157,8 @@ export function concatPacks(a: PackedCell, b: PackedCell): PackedCell {
     positions,
     partTopM,
     partSlot,
-    partTypology
+    partTypology,
+    partAppearance
   };
 }
 
@@ -144,6 +169,7 @@ export function packTransferables(p: PackedCell): ArrayBuffer[] {
     p.positions.buffer,
     p.partTopM.buffer,
     p.partSlot.buffer,
+    p.partAppearance.buffer,
     p.partTypology.buffer
   ] as ArrayBuffer[];
 }

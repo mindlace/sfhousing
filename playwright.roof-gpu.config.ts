@@ -8,13 +8,19 @@ export default defineConfig({
   testMatch: 'roofs.spec.ts',
   testIgnore: [],
   workers: 1,
+  retries: 0,
   globalSetup: './scripts/roof-gpu-playwright-setup.ts',
-  projects: base.projects!.map((project) => ({
-    ...project,
-    use: {
-      ...project.use,
-      headless: roofGpuLaunchOptions.headless,
-      launchOptions: roofGpuLaunchOptions
-    }
-  }))
+  projects: base
+    .projects!.filter((project) => ['chromium', 'mobile'].includes(project.name!))
+    .map((project) => ({
+      ...project,
+      testMatch: 'roofs.spec.ts',
+      testIgnore: [],
+      dependencies: [],
+      use: {
+        ...project.use,
+        headless: roofGpuLaunchOptions.headless,
+        launchOptions: roofGpuLaunchOptions
+      }
+    }))
 });

@@ -1,5 +1,5 @@
 # Contributor feedback on PRs. This is NOT the merge gate: branch protection on main
-# requires the `local-ci/signoff` commit status, posted by `npm run signoff`.
+# requires the `chreode/signoff` commit status, posted by `npm run signoff` (chreode).
 name: CI
 on:
   pull_request:
@@ -29,7 +29,7 @@ jobs:
       - run: npm run test:unit
       - run: npm run data:fixture
       - run: npm run db:migrate
-      - run: npm run test:e2e -- --project=chromium --project=mobile
+      - run: npm run test:e2e -- --project=chromium --project=mobile --project=chromium-perf --project=mobile-perf
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
