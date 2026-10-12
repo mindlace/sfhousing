@@ -6,6 +6,7 @@ import { decodeRoofChunk, encodeRoofChunk } from '$lib/data/roof-codec';
 import type { DecodedRoofChunk } from '$lib/data/building-roofs';
 import type { ParcelId } from '$lib/data/parcel';
 import { RoofMeshLayer, roofGpuBytes } from './roof-layer';
+import { ROOF_PROGRAM_BYTES } from './roof-program';
 import { RoofCache } from './roof-cache';
 import { RoofController } from './roof-controller';
 import { LayerComposer } from './layer-composer';
@@ -161,7 +162,7 @@ it('prepares inactive indexed roofs, shades/picks individual pieces, hides witho
   expect(model.topology).toBe('triangle-list');
   expect(model.isInstanced).toBe(false);
   expect(model.indexCount).toBe(24);
-  expect(layer.gpuBytes).toBe(resources.reduce((n, b) => n + b.byteLength, 0));
+  expect(layer.gpuBytes).toBe(resources.reduce((n, b) => n + b.byteLength, 0) + ROOF_PROGRAM_BYTES);
   expect(roofGpuBytes(mesh)).toBe(layer.gpuBytes);
   const meshWrites = ['positions', 'normals', 'indices', 'pickingColors'].map((name) =>
     vi.spyOn(layer.state.buffers[name as keyof typeof layer.state.buffers]!, 'write')
@@ -267,7 +268,9 @@ it('reports partial allocation failure once and destroys buffers already allocat
   });
   const layer = prepareLayer(ready, failure);
   await draw(layer);
-  expect(failure).toHaveBeenCalledExactlyOnceWith(new Error('GPU allocation failed'));
+  await vi.waitFor(() =>
+    expect(failure).toHaveBeenCalledExactlyOnceWith(new Error('GPU allocation failed'))
+  );
   expect(ready).not.toHaveBeenCalled();
   expect(layer.gpuBytes).toBe(0);
   deck!.finalize();
@@ -294,9 +297,11 @@ it('reports a later draw exception once and releases the prepared representation
     throw new Error('GPU draw failed');
   });
   deck!.redraw('failure');
-  expect(failure).toHaveBeenCalledExactlyOnceWith(new Error('GPU draw failed'));
+  expect(failure).not.toHaveBeenCalled();
   expectVertexArrayReleased(vao);
   expect(layer.gpuBytes).toBe(0);
+  await Promise.resolve();
+  expect(failure).toHaveBeenCalledExactlyOnceWith(new Error('GPU draw failed'));
   deck!.redraw('retry after failure');
   deck!.finalize();
   deck = undefined;
@@ -332,7 +337,9 @@ it('releases managed uniform buffers when allocation fails partway through model
   });
   const layer = prepareLayer(ready, failure);
   await draw(layer);
-  expect(failure).toHaveBeenCalledExactlyOnceWith(new Error('uniform allocation failed'));
+  await vi.waitFor(() =>
+    expect(failure).toHaveBeenCalledExactlyOnceWith(new Error('uniform allocation failed'))
+  );
   expect(ready).not.toHaveBeenCalled();
   expect(allocated).toHaveLength(6);
   expect(allocated.every((buffer) => buffer.destroyed)).toBe(true);
@@ -354,8 +361,10 @@ it('reports a permanently invalid GPU binding instead of retrying forever', asyn
   const model = layer.getModels()[0];
   vi.spyOn(model.vertexArray, 'getDrawValidationError').mockReturnValue('invalid vertex binding');
   deck!.redraw('invalid binding');
-  expect(failure).toHaveBeenCalledExactlyOnceWith(new Error('invalid vertex binding'));
+  expect(failure).not.toHaveBeenCalled();
   expect(layer.gpuBytes).toBe(0);
+  await Promise.resolve();
+  expect(failure).toHaveBeenCalledExactlyOnceWith(new Error('invalid vertex binding'));
 });
 
 it('releases the previous native VAO exactly once when immutable chunk identity changes', async () => {
@@ -422,6 +431,7 @@ it.each(['original', 'pre-initialization clone'])(
           });
     expect(layer.getCurrentLayer()).toBeNull();
     await draw(initial);
+    await vi.waitFor(() => expect(initial.state.ready).toBe(true));
     expect(layer.gpuBytes).toBe(roofGpuBytes(layer.props.chunk));
     const model = initial.getModels()[0];
     const vao = watchVertexArray(model.vertexArray);
@@ -511,7 +521,7 @@ it('prepares a near-limit decoded chunk without a 50 ms main-thread long task', 
     await vi.waitFor(() => expect(ready).toHaveBeenCalledTimes(1));
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(failure).not.toHaveBeenCalled();
-    expect(layer.gpuBytes).toBe(5967180);
+    expect(layer.gpuBytes).toBe(5967180 + ROOF_PROGRAM_BYTES);
     expect(tasks.filter((duration) => duration > 50)).toEqual([]);
   } finally {
     observer.disconnect();
@@ -584,6 +594,9 @@ it('activates controller roofs cloned by theme and replacement before their firs
     expect(preparing).not.toBe(original);
     expect(preparing.props.active).toBe(false);
     await draw(preparing);
+    await vi.waitFor(() =>
+      expect(controller.snapshot().activePieceIds).toEqual(['piece-0', 'piece-1'])
+    );
     expect(original!.gpuBytes).toBe(roofGpuBytes(mesh));
     expect(controller.snapshot().activePieceIds).toEqual(['piece-0', 'piece-1']);
     expect([...existing.roofReady]).toEqual(['piece-0', 'piece-1']);
@@ -607,4 +620,363 @@ it('activates controller roofs cloned by theme and replacement before their firs
     composer.destroy();
     existing.destroy();
   }
+});
+
+it('waits for asynchronous link completion before layout queries and the real inactive draw', async () => {
+  await emptyDeck();
+  const gl = canvas!.getContext('webgl2')!;
+  const extension = gl.getExtension('KHR_parallel_shader_compile');
+  expect(extension).not.toBeNull();
+  let complete = false;
+  const premature: number[] = [];
+  const getParameter = gl.getProgramParameter.bind(gl);
+  vi.spyOn(gl, 'getProgramParameter').mockImplementation((program, parameter) => {
+    if (parameter === extension!.COMPLETION_STATUS_KHR && !complete) return false;
+    if (!complete) premature.push(parameter);
+    return getParameter(program, parameter);
+  });
+  const programs: WebGLProgram[] = [];
+  const createProgram = gl.createProgram.bind(gl);
+  vi.spyOn(gl, 'createProgram').mockImplementation(() => {
+    const program = createProgram()!;
+    programs.push(program);
+    return program;
+  });
+  const ready = vi.fn(),
+    failure = vi.fn();
+  const layer = prepareLayer(ready, failure);
+  await draw(layer);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  expect(premature).toEqual([]);
+  expect(ready).not.toHaveBeenCalled();
+  expect(layer.getModels()).toEqual([]);
+  expect(programs).toHaveLength(1);
+  complete = true;
+  await vi.waitFor(() => expect(ready).toHaveBeenCalledOnce());
+  expect(failure).not.toHaveBeenCalled();
+  expect(programs).toHaveLength(1);
+  expect((layer.getModels()[0].pipeline as unknown as { handle: WebGLProgram }).handle).toBe(
+    programs[0]
+  );
+  expect(pixel(-22, 0, 20)[3]).toBe(0);
+  expect(pick(-22, 0, 20)).toBeNull();
+});
+
+it('keeps a fresh shader-hook program cold compilation and activation below 50 ms', async () => {
+  await emptyDeck();
+  const gl = canvas!.getContext('webgl2')!;
+  const extension = gl.getExtension('KHR_parallel_shader_compile');
+  expect(extension).not.toBeNull();
+  const name = `roofCold${Date.now()}`;
+  class FreshRoof extends RoofMeshLayer {
+    static layerName = 'FreshRoof';
+    getShaders(shaders: Parameters<RoofMeshLayer['getShaders']>[0]) {
+      return super.getShaders({
+        ...shaders,
+        modules: [
+          ...shaders.modules,
+          {
+            name,
+            vs: `layout(std140) uniform ${name}Uniforms { float offset; } ${name};`,
+            uniformTypes: { offset: 'f32' },
+            defaultUniforms: { offset: 0 }
+          }
+        ],
+        inject: {
+          'vs:DECKGL_FILTER_GL_POSITION': `position.x += ${name}.offset * ${1 + Math.random()};`
+        }
+      });
+    }
+  }
+  let pendingPolls = 0;
+  const query = gl.getProgramParameter.bind(gl);
+  vi.spyOn(gl, 'getProgramParameter').mockImplementation((program, parameter) => {
+    const value = query(program, parameter);
+    if (parameter === extension!.COMPLETION_STATUS_KHR && !value) pendingPolls++;
+    return value;
+  });
+  const tasks: number[] = [];
+  const observer = new PerformanceObserver((list) =>
+    tasks.push(...list.getEntries().map((e) => e.duration))
+  );
+  observer.observe({ entryTypes: ['longtask'] });
+  const started = performance.now();
+  const ready = vi.fn(),
+    failure = vi.fn();
+  const layer = new FreshRoof({ ...prepareLayer().props, onReady: ready, onFailure: failure });
+  try {
+    await draw(layer);
+    await vi.waitFor(() => {
+      expect(failure).not.toHaveBeenCalled();
+      expect(ready).toHaveBeenCalledOnce();
+    });
+    const preparationMs = performance.now() - started;
+    const active = layer.clone({ active: true });
+    await draw(active);
+    await tick();
+    tasks.push(...observer.takeRecords().map((e) => e.duration));
+    observer.disconnect();
+    console.warn('ROOF_FRESH_PROGRAM', {
+      preparationMs,
+      pendingPolls,
+      tasks,
+      sourceBytes: layer.state.program!.sourceBytes
+    });
+    expect(pendingPolls).toBeGreaterThan(0);
+    expect(pick(-22, 0, 20)?.object.pieceId).toBe('piece-0');
+    expect(pixel(-22, 0, 20)[3]).toBe(255);
+    expect(tasks.filter((ms) => ms > 50)).toEqual([]);
+  } finally {
+    observer.disconnect();
+  }
+}, 20000);
+
+function watchNativePrograms() {
+  const gl = canvas!.getContext('webgl2')!;
+  const programs: WebGLProgram[] = [],
+    shaders: WebGLShader[] = [];
+  const createProgram = gl.createProgram.bind(gl),
+    createShader = gl.createShader.bind(gl);
+  vi.spyOn(gl, 'createProgram').mockImplementation(() => {
+    const handle = createProgram()!;
+    programs.push(handle);
+    return handle;
+  });
+  vi.spyOn(gl, 'createShader').mockImplementation((stage) => {
+    const handle = createShader(stage)!;
+    shaders.push(handle);
+    return handle;
+  });
+  const deleteProgram = vi.spyOn(gl, 'deleteProgram'),
+    deleteShader = vi.spyOn(gl, 'deleteShader');
+  return { gl, programs, shaders, deleteProgram, deleteShader };
+}
+function expectProgramsReleased(watch: ReturnType<typeof watchNativePrograms>) {
+  for (const handle of watch.programs) {
+    expect(watch.gl.isProgram(handle)).toBe(false);
+    expect(watch.deleteProgram.mock.calls.filter(([deleted]) => deleted === handle)).toHaveLength(
+      1
+    );
+  }
+  for (const handle of watch.shaders) {
+    expect(watch.gl.isShader(handle)).toBe(false);
+    expect(watch.deleteShader.mock.calls.filter(([deleted]) => deleted === handle)).toHaveLength(1);
+  }
+}
+function holdNativeLink() {
+  const gl = canvas!.getContext('webgl2')!;
+  const extension = gl.getExtension('KHR_parallel_shader_compile')!;
+  expect(extension).not.toBeNull();
+  const query = gl.getProgramParameter.bind(gl);
+  return vi
+    .spyOn(gl, 'getProgramParameter')
+    .mockImplementation((program, parameter) =>
+      parameter === extension.COMPLETION_STATUS_KHR ? false : query(program, parameter)
+    );
+}
+it('cancels a pending pre-initialization clone without late queries or retained source staging', async () => {
+  await emptyDeck();
+  const watch = watchNativePrograms(),
+    query = holdNativeLink();
+  const ready = vi.fn(),
+    failure = vi.fn(),
+    finalized = vi.fn();
+  const original = new RoofMeshLayer({
+    ...prepareLayer(ready, failure).props,
+    onFinalize: finalized
+  });
+  const clone = original.clone({
+    theme: 'dark',
+    hidden: new Set(['parcel-0' as ParcelId]),
+    visibilityRevision: 1
+  });
+  await draw(clone);
+  const program = clone.state.program!;
+  expect(program.sourceBytes).toBeGreaterThan(0);
+  expect(original.gpuBytes).toBe(ROOF_PROGRAM_BYTES);
+  expect(original.cancelPreparation()).toBe(false);
+  expectProgramsReleased(watch);
+  expect(program.sourceBytes).toBe(0);
+  const queries = query.mock.calls.length;
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  expect(query.mock.calls).toHaveLength(queries);
+  expect(ready).not.toHaveBeenCalled();
+  expect(failure).not.toHaveBeenCalled();
+  expect(finalized).not.toHaveBeenCalled();
+  deck!.setProps({ layers: [] });
+  await tick();
+  deck!.redraw('cancelled pending clone');
+  expect(finalized).toHaveBeenCalledOnce();
+  expect(original.gpuBytes).toBe(0);
+  expectProgramsReleased(watch);
+});
+it.each(['timeout', 'context loss'])(
+  'releases pending native program ownership on %s',
+  async (reason) => {
+    await emptyDeck();
+    const watch = watchNativePrograms(),
+      query = holdNativeLink();
+    const ready = vi.fn(),
+      failure = vi.fn();
+    const layer = prepareLayer(ready, failure);
+    await draw(layer);
+    if (reason === 'timeout')
+      vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 6000);
+    else watch.gl.getExtension('WEBGL_lose_context')!.loseContext();
+    await vi.waitFor(() => expect(failure).toHaveBeenCalledOnce());
+    expect(ready).not.toHaveBeenCalled();
+    expect(layer.gpuBytes).toBe(0);
+    expectProgramsReleased(watch);
+    const queries = query.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(query.mock.calls).toHaveLength(queries);
+    expect(failure.mock.calls[0][0].message).toContain(
+      reason === 'timeout' ? 'timed out' : 'context lost'
+    );
+  }
+);
+it.each(['second shader', 'link', 'link status', 'model wrapper', 'vertex array'])(
+  'cleans native handles after partial %s failure',
+  async (phase) => {
+    await emptyDeck();
+    const watch = watchNativePrograms();
+    if (phase === 'second shader') {
+      const compile = watch.gl.compileShader.bind(watch.gl);
+      vi.spyOn(watch.gl, 'compileShader').mockImplementation((shader) => {
+        if (watch.shaders.length === 2) throw new Error('shader compilation failed');
+        compile(shader);
+      });
+    } else if (phase === 'link') {
+      vi.spyOn(watch.gl, 'linkProgram').mockImplementation(() => {
+        throw new Error('link failed');
+      });
+    } else if (phase === 'link status') {
+      const query = watch.gl.getProgramParameter.bind(watch.gl);
+      vi.spyOn(watch.gl, 'getProgramParameter').mockImplementation((program, parameter) =>
+        parameter === watch.gl.LINK_STATUS ? false : query(program, parameter)
+      );
+    } else if (phase === 'vertex array') {
+      vi.spyOn(testDevice, 'createVertexArray').mockImplementation(() => {
+        throw new Error('vertex array failed');
+      });
+    } else
+      vi.spyOn(testDevice, 'createRenderPipeline').mockImplementation(() => {
+        throw new Error('model wrapper failed');
+      });
+    const ready = vi.fn(),
+      failure = vi.fn();
+    const layer = prepareLayer(ready, failure);
+    await draw(layer);
+    await vi.waitFor(() => expect(failure).toHaveBeenCalledOnce());
+    expect(ready).not.toHaveBeenCalled();
+    expect(layer.gpuBytes).toBe(0);
+    expectProgramsReleased(watch);
+    deck!.finalize();
+    deck = undefined;
+    expectProgramsReleased(watch);
+  }
+);
+
+it('releases ready pipeline wrappers before their program and shader handles exactly once', async () => {
+  await emptyDeck();
+  const watch = watchNativePrograms();
+  const layer = prepareLayer();
+  await draw(layer);
+  await vi.waitFor(() => expect(layer.state.ready).toBe(true));
+  const pipeline = layer.state.model!.pipeline;
+  const destroyed = vi.spyOn(pipeline, 'destroy');
+  const program = layer.state.program!;
+  expect(watch.gl.isProgram(watch.programs[0])).toBe(true);
+  expect(watch.shaders.every((shader) => watch.gl.isShader(shader))).toBe(true);
+  deck!.setProps({ layers: [] });
+  await tick();
+  deck!.redraw('release prepared program');
+  expect(destroyed).toHaveBeenCalledOnce();
+  expect(destroyed.mock.invocationCallOrder[0]).toBeLessThan(
+    watch.deleteProgram.mock.invocationCallOrder[0]
+  );
+  expect(watch.deleteProgram.mock.invocationCallOrder[0]).toBeLessThan(
+    watch.deleteShader.mock.invocationCallOrder[0]
+  );
+  expectProgramsReleased(watch);
+  expect(program.sourceBytes).toBe(0);
+  expect(layer.gpuBytes).toBe(0);
+  deck!.finalize();
+  deck = undefined;
+  expectProgramsReleased(watch);
+});
+
+it('rejects changed assembled Model source before creating a pipeline wrapper', async () => {
+  await emptyDeck();
+  const watch = watchNativePrograms();
+  const assembler = Model.defaultProps.shaderAssembler as unknown as {
+    assembleGLSLShaderPair(...args: unknown[]): { vs: string; fs: string };
+  };
+  const assemble = assembler.assembleGLSLShaderPair.bind(assembler);
+  let count = 0;
+  vi.spyOn(assembler, 'assembleGLSLShaderPair').mockImplementation((...args) => {
+    const result = assemble(...args);
+    return ++count === 2 ? { ...result, vs: result.vs + '\n// changed Model source' } : result;
+  });
+  const wrapper = vi.spyOn(testDevice, 'createRenderPipeline');
+  const ready = vi.fn(),
+    failure = vi.fn();
+  const layer = prepareLayer(ready, failure);
+  await draw(layer);
+  await vi.waitFor(() => expect(failure).toHaveBeenCalledOnce());
+  expect(failure.mock.calls[0][0].message).toContain('source differs');
+  expect(ready).not.toHaveBeenCalled();
+  expect(wrapper).not.toHaveBeenCalled();
+  expect(layer.gpuBytes).toBe(0);
+  expectProgramsReleased(watch);
+});
+
+it('delivers a real hover-leave result without stopping reconciliation and finalization', async () => {
+  await emptyDeck();
+  const finalized = vi.fn();
+  const layer = new RoofMeshLayer({ ...prepareLayer().props, onFinalize: finalized });
+  await draw(layer);
+  await vi.waitFor(() => expect(layer.state.ready).toBe(true));
+  const active = layer.clone({ active: true });
+  await draw(active);
+  const [x, y] = point(-22, 0, 20);
+  const enter = { x, y, radius: 1, mode: 'hover' };
+  expect(deck!.pickObject(enter)?.object.pieceId).toBe('piece-0');
+  const leave = { x: 0, y: 0, radius: 0, mode: 'hover' };
+  const left = deck!.pickObject(leave);
+  expect(left?.picked).toBe(false);
+  expect(left?.object).toBeUndefined();
+  active.cancelPreparation();
+  deck!.setProps({ layers: [] });
+  await tick();
+  deck!.redraw('hover leave then removal');
+  expect(finalized).toHaveBeenCalledOnce();
+  expect(layer.gpuBytes).toBe(0);
+});
+
+it('bounds wrapper ownership across repeated Model parameter changes', async () => {
+  await emptyDeck();
+  const watch = watchNativePrograms();
+  const layer = prepareLayer();
+  await draw(layer);
+  await vi.waitFor(() => expect(layer.state.ready).toBe(true));
+  const model = layer.state.model!;
+  const bytes = layer.gpuBytes;
+  for (let i = 0; i < 20; i++) {
+    const previous = model.pipeline;
+    const destroy = vi.spyOn(previous, 'destroy');
+    model.setParameters({ depthWriteEnabled: i % 2 === 0 });
+    model.predraw(testDevice.commandEncoder);
+    expect(previous.destroyed).toBe(true);
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(model.pipeline.destroyed).toBe(false);
+    expect(layer.gpuBytes).toBe(bytes);
+  }
+  expect(watch.programs).toHaveLength(1);
+  expect(watch.shaders).toHaveLength(2);
+  await draw(layer.clone({ active: true }));
+  expect(pick(-22, 0, 20)?.object.pieceId).toBe('piece-0');
+  deck!.finalize();
+  deck = undefined;
+  expectProgramsReleased(watch);
 });

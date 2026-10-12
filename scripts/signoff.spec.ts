@@ -25,8 +25,14 @@ describe('buildStatusArgs', () => {
 });
 
 describe('planSteps', () => {
-  it('verify-only runs just the four checks in order', () => {
-    expect(planSteps({ verifyOnly: true })).toEqual(['check', 'lint', 'test:unit', 'test:e2e']);
+  it('verify-only runs software and required GPU checks in order', () => {
+    expect(planSteps({ verifyOnly: true })).toEqual([
+      'check',
+      'lint',
+      'test:unit',
+      'test:e2e',
+      'test:roofs:gpu'
+    ]);
   });
 
   it('full plan orders preconditions, merge, checks, push, status', () => {
@@ -37,6 +43,7 @@ describe('planSteps', () => {
       'lint',
       'test:unit',
       'test:e2e',
+      'test:roofs:gpu',
       'clean-tree',
       'push',
       'status'

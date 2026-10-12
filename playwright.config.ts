@@ -3,7 +3,7 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: 'e2e',
   // bench/** is the headed GPU benchmark, run only via `npm run bench:map`.
-  testIgnore: ['fixtures/**', 'helpers/**', 'bench/**'],
+  testIgnore: ['fixtures/**', 'helpers/**', 'bench/**', 'roofs.spec.ts'],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

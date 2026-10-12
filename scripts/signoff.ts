@@ -3,7 +3,7 @@
  * which branch protection requires on `main`. Run on a PR branch:
  *
  *   npm run signoff                 merge origin/main, run the full suite, push, post status
- *   npm run signoff -- --verify-only   just the four checks (no merge, push or status)
+ *   npm run signoff -- --verify-only   just the required checks (no merge, push or status)
  *   npm run signoff -- --dry-run       print the plan, run nothing
  *   --repo owner/name                  override the repo detected by `gh repo view`
  */
@@ -13,7 +13,7 @@ import { resolveRepo } from './gh-repo';
 
 export const SIGNOFF_CONTEXT = 'local-ci/signoff';
 const DESCRIPTION_MAX = 140;
-const CHECKS = ['check', 'lint', 'test:unit', 'test:e2e'] as const;
+const CHECKS = ['check', 'lint', 'test:unit', 'test:e2e', 'test:roofs:gpu'] as const;
 
 export type Step =
   'preconditions' | 'merge' | (typeof CHECKS)[number] | 'clean-tree' | 'push' | 'status';

@@ -52,6 +52,11 @@ export default defineConfig({
     // Browser test files share one renderer main thread. Run them one at a time so the
     // GL-heavy SimMap specs cannot stall the frame-budget test (C5) in another file.
     fileParallelism: false,
-    exclude: ['src/lib/server/**']
+    // Positive roof coverage is the REQUIRED test:roofs:gpu gate; software checks fallback.
+    exclude: [
+      'src/lib/server/**',
+      'src/lib/map/roof-layer.svelte.spec.ts',
+      'src/lib/map/SimMap.roofs.svelte.spec.ts'
+    ]
   }
 });
