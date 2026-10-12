@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import type { Manifest } from '$lib/data/manifest';
 import type { GeneratedUpdate } from '$lib/map/types';
 import { emptyPlan, type Plan, type PlanOp } from '$lib/plan';
@@ -246,6 +246,21 @@ describe('SimClient', () => {
 });
 
 describe('SimClient worker crash', () => {
+  let err: MockInstance<typeof console.error>;
+  beforeEach(() => {
+    err = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    err.mockRestore();
+  });
+  const expectCrashLogged = () => {
+    expect(err).toHaveBeenCalledTimes(1);
+    expect(err).toHaveBeenCalledWith(
+      expect.stringContaining('[sim] worker crashed'),
+      expect.anything()
+    );
+  };
+
   it.each(['onerror', 'onmessageerror'] as const)(
     '%s clears the resync latch, resolves pending summaries with null and reports a crash',
     async (handler) => {
@@ -258,6 +273,7 @@ describe('SimClient worker crash', () => {
 
       w[handler]?.({} as ErrorEvent & MessageEvent);
       expect(onCrash).toHaveBeenCalledTimes(1);
+      expectCrashLogged();
       expect(client.crashed).toBe(true);
       await expect(pending).resolves.toBeNull();
       // Crashed: summaries answer null at once and resync sends nothing.
@@ -272,6 +288,7 @@ describe('SimClient worker crash', () => {
     client.init(MANIFEST); // 1
     client.resync(); // 2
     w.onerror?.({} as ErrorEvent);
+    expectCrashLogged();
 
     const w2 = fakeWorker();
     client.restart(w2);
@@ -298,6 +315,7 @@ describe('SimClient worker crash', () => {
       client.init(MANIFEST);
       const onmessage = w.onmessage;
       w[handler]?.({} as ErrorEvent & MessageEvent);
+      expectCrashLogged();
       expect(w.terminated).toBe(true);
       expect(w.onmessage).toBeNull();
 

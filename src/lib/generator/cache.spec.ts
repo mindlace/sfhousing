@@ -51,8 +51,11 @@ describe('createGeneratorCache (§4.12)', () => {
     expect(String(err.mock.calls[0][0])).toMatch(/^\[generator\] bad: /);
   });
   it('null envelope → null without throwing', () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const c = createGeneratorCache('fixture-0');
     expect(c.get(P, null as never)).toBeNull();
+    expect(err).toHaveBeenCalledTimes(1);
+    expect(String(err.mock.calls[0][0])).toMatch(/^\[generator\] /);
   });
   it('clear() drops memoised results', () => {
     const c = createGeneratorCache('fixture-0');
