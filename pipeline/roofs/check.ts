@@ -137,10 +137,32 @@ export async function checkRoofArtifacts(
     );
     if (report.schemaVersion !== 1 || report.datasetVersion !== manifest.datasetVersion)
       throw new Error('roof report identity mismatch');
+    const training = (q: RoofBuildingAudit['quality']) =>
+      [
+        q.returnsBeforeRejection.value,
+        q.returnsAfterRejection.value,
+        q.retainedRoofTrainingCount?.value ?? null
+      ] as const;
+    const sufficientTraining = (values: ReturnType<typeof training> | null) => {
+      if (!values) return false;
+      const [before, retained, roof] = values;
+      return (
+        before !== null &&
+        retained !== null &&
+        roof !== null &&
+        before >= retained &&
+        retained >= roof &&
+        roof >= 50
+      );
+    };
     type Parent = Pick<
       RoofBuildingAudit,
       'buildingId' | 'pieceIds' | 'parcelIds' | 'outcome' | 'footprintHash' | 'sourceRelease'
-    > & { accepted: number; seen: Set<string | null> };
+    > & {
+      accepted: number;
+      seen: Set<string | null>;
+      training: ReturnType<typeof training> | null;
+    };
     const parents = new Map<string, Parent>();
     const expected = new Map<string, string>();
     let lastBuilding = '',
@@ -165,6 +187,7 @@ export async function checkRoofArtifacts(
           footprintHash: b.footprintHash,
           sourceRelease: b.sourceRelease,
           accepted: 0,
+          training: b.outcome === 'all_fallback' ? null : training(b.quality),
           seen: new Set()
         });
       } else {
@@ -195,6 +218,18 @@ export async function checkRoofArtifacts(
           accepted++;
           modelled.delete(p.pieceId);
           const q = p.quality;
+          if (p.method !== 'landmark') {
+            const measured = training(q);
+            if (
+              !sufficientTraining(measured) ||
+              !sufficientTraining(b.training) ||
+              measured.some((value, index) => value !== b.training?.[index])
+            )
+              fail(
+                'V15',
+                `missing, insufficient or contradictory retained roof-training evidence: ${p.buildingId}`
+              );
+          }
           if (
             q.roofCoverage.value === null ||
             q.triangleCount.value === null ||

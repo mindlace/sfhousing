@@ -160,6 +160,7 @@ export function buildRoofAudit(
       quality: {
         returnsBeforeRejection: metric(b.returnCounts?.before, reason),
         returnsAfterRejection: metric(b.returnCounts?.retained, reason),
+        retainedRoofTrainingCount: metric(b.returnCounts?.roofTraining, reason),
         rejectedFraction: metric(
           b.returnCounts && b.returnCounts.before > 0
             ? b.returnCounts.rejected / b.returnCounts.before

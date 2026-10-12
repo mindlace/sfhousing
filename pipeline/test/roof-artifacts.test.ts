@@ -99,14 +99,13 @@ async function dataset(diagnostics: string[] = []) {
     validationSampleCount: 25,
     validationMae: 0,
     detectedSpikes: 0,
-    returnsAfterRejection: 100
+    returnsAfterRejection: 100,
+    retainedRoofTrainingCount: 100
   }))
-    Object.assign(model.quality[key as keyof typeof model.quality], {
-      value,
-      unavailableReason: null
-    });
+    model.quality[key as keyof typeof model.quality] = { value, unavailableReason: null };
   model.quality.returnsBeforeRejection = { value: 100, unavailableReason: null };
   audit.buildings[1].outcome = 'fully_modelled';
+  audit.buildings[1].quality = structuredClone(model.quality);
   writeRoofAudit(join(d, 'roofs/audit.json'), audit);
   write(d, 'roofs/report.json', {
     schemaVersion: 1,
@@ -675,4 +674,184 @@ it('audits complete imagery only with measured coverage evidence', async () => {
   expect(complete.audit.buildings[0].sources.imageryCoverage).toBe('complete');
   expect(unknown.audit.buildings[0].sources.imageryCoverage).toBe('unknown');
   expect(partial.audit.pieces[0].sources.imageryCoverage).toBe('partial');
+});
+
+/** Each hostile mutation starts from the actual generated, publishable archive closure. */
+async function publishableFixture() {
+  const { readLock } = await import('../lib/lock');
+  const d = mkdtempSync(join(tmpdir(), 'roof-reviewed-'));
+  dirs.push(d);
+  cpSync('e2e/fixtures/data/fixture-0', d, { recursive: true });
+  const puts: string[] = [],
+    logs: string[] = [];
+  const args = {
+    outDir: d,
+    datasetVersion: 'fixture-0',
+    lock: readLock('pipeline/test/fixtures/mini/sources.lock.json'),
+    rawDir: 'pipeline/test/fixtures/mini/raw',
+    rawByName: true,
+    target: {
+      exists: async () => false,
+      get: async () => false,
+      put: async (key: string) => {
+        puts.push(key);
+      }
+    },
+    log: (line: string) => {
+      logs.push(line);
+    }
+  };
+  expect(await upload(args), logs.join('\n')).toBe(0);
+  puts.length = 0;
+  logs.length = 0;
+  return { d, args, puts, logs };
+}
+
+it('V16 and upload reject a fallback omitted from both parent and audit despite matching roof summaries', async () => {
+  const { checkDataset } = await import('../steps/check');
+  const { FIXTURE_PROFILE } = await import('../config');
+  const { d, args, puts, logs } = await publishableFixture();
+  const report = read(d, 'report.json');
+  const before = await checkDataset(d, FIXTURE_PROFILE, {
+    counts: report.counts,
+    reencodeIdentical: true
+  });
+  expect(before.every((r) => r.ok)).toBe(true);
+  const audit = read(d, 'roofs/audit.json');
+  const piece = audit.pieces.find((p: { outcome: string }) => p.outcome === 'footprint_fallback');
+  const parent = audit.buildings.find(
+    (b: { buildingId: string }) => b.buildingId === piece.buildingId
+  );
+  audit.pieces = audit.pieces.filter((p: { pieceId: string }) => p.pieceId !== piece.pieceId);
+  parent.pieceIds = parent.pieceIds.filter((id: string) => id !== piece.pieceId);
+  parent.parcelIds = [
+    ...new Set(
+      audit.pieces
+        .filter((p: { buildingId: string }) => p.buildingId === parent.buildingId)
+        .map((p: { parcelId: string | null }) => p.parcelId)
+    )
+  ];
+  write(d, 'roofs/audit.json', audit);
+  for (const path of ['report.json', 'roofs/report.json']) {
+    const summary = read(d, path);
+    summary.counts['roofs.pieces']--;
+    summary.counts['roofs.fallback']--;
+    write(d, path, summary);
+  }
+  const results = await checkDataset(d, FIXTURE_PROFILE, {
+    counts: report.counts,
+    reencodeIdentical: true
+  });
+  expect.soft(results.find((r) => r.id === 'V16')).toMatchObject({
+    ok: false,
+    detail: expect.stringMatching(/SQL pieces/)
+  });
+  expect(await upload(args)).toBe(1);
+  expect(logs.join('\n')).toMatch(/SQL pieces/);
+  expect(puts).toEqual([]);
+});
+
+it('rejects changed audit piece identity against the archived clipping identity even when all counts agree', async () => {
+  const { d, args, puts, logs } = await publishableFixture();
+  const audit = read(d, 'roofs/audit.json');
+  const piece = audit.pieces.find((p: { outcome: string }) => p.outcome === 'footprint_fallback');
+  const parent = audit.buildings.find(
+    (b: { buildingId: string }) => b.buildingId === piece.buildingId
+  );
+  const oldId = piece.pieceId;
+  piece.pieceId += '-forged';
+  parent.pieceIds = parent.pieceIds.map((id: string) => (id === oldId ? piece.pieceId : id)).sort();
+  audit.pieces.sort((a: { pieceId: string }, b: { pieceId: string }) =>
+    a.pieceId.localeCompare(b.pieceId)
+  );
+  write(d, 'roofs/audit.json', audit);
+  expect(await upload(args)).toBe(1);
+  expect(logs.join('\n')).toMatch(/clipping.*identity/);
+  expect(puts).toEqual([]);
+});
+
+it.each([
+  '49',
+  '50',
+  'missing',
+  'null',
+  'ground-only',
+  'zero-total',
+  'null-total',
+  'parent-disagrees'
+])(
+  'checks retained roof-training evidence through check, upload and HTTP verify (%s)',
+  async (kind) => {
+    const { checkRoofArtifacts } = await import('../roofs/check');
+    const { d, args, puts, logs } = await publishableFixture();
+    const audit = read(d, 'roofs/audit.json');
+    const parents = new Set(
+      audit.pieces
+        .filter(
+          (p: { outcome: string; method: string }) =>
+            p.outcome === 'modelled' && p.method !== 'landmark'
+        )
+        .map((p: { buildingId: string }) => p.buildingId)
+    );
+    for (const record of [...audit.buildings, ...audit.pieces]) {
+      if (!parents.has(record.buildingId)) continue;
+      record.quality.retainedRoofTrainingCount = { value: 50, unavailableReason: null };
+      if (kind === '49' || kind === 'ground-only')
+        record.quality.retainedRoofTrainingCount.value = kind === '49' ? 49 : 0;
+      if (kind === 'missing') delete record.quality.retainedRoofTrainingCount;
+      if (kind === 'null')
+        record.quality.retainedRoofTrainingCount = {
+          value: null,
+          unavailableReason: 'not_measured'
+        };
+      if (kind === 'zero-total') record.quality.returnsAfterRejection.value = 0;
+      if (kind === 'null-total')
+        record.quality.returnsAfterRejection = { value: null, unavailableReason: 'not_measured' };
+      if (kind === 'parent-disagrees' && !('pieceId' in record))
+        record.quality.retainedRoofTrainingCount.value = 51;
+    }
+    write(d, 'roofs/audit.json', audit);
+    const result = await checkRoofArtifacts(d, read(d, 'manifest.json'));
+    const valid = kind === '50';
+    expect(result.ok).toBe(valid);
+    if (!valid) expect(result.failures.join('\n')).toMatch(/V15.*retained roof.training/);
+    expect(await upload(args), logs.join('\n')).toBe(valid ? 0 : 1);
+    if (!valid) {
+      expect(logs.join('\n')).toMatch(/V15.*retained roof.training/);
+      expect(puts).toEqual([]);
+    }
+    const f = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (new Headers(init?.headers).has('range')) return new Response('x', { status: 206 });
+      const path = new URL(String(input)).pathname.slice('/data/fixture-0/'.length);
+      return new Response(readFileSync(join(d, path)));
+    }) as typeof fetch;
+    const verified = await verify({
+      datasetVersion: 'fixture-0',
+      origin: 'http://offline',
+      fetch: f
+    });
+    expect(verified.ok).toBe(valid);
+    if (!valid) expect(verified.failures.join('\n')).toMatch(/V15.*retained roof.training/);
+  }
+);
+
+it('emits the measured class-1 candidate count separately from retained ground support', () => {
+  const d = 'e2e/fixtures/data/fixture-0';
+  const audit = read(d, 'roofs/audit.json'),
+    report = read(d, 'report.json');
+  expect(audit.buildings.some((b: { pieceIds: string[] }) => b.pieceIds.length === 0)).toBe(true);
+  for (const parent of audit.buildings.filter(
+    (b: { outcome: string }) => b.outcome !== 'all_fallback'
+  )) {
+    const selected = parent.processing.selectedCandidate;
+    const ref = report.roofArchives.find(
+      (a: { name: string }) => a.name === `${parent.buildingId}-${selected}.json`
+    );
+    const candidate = read('pipeline/.cache/roof-artifacts', ref.sha256);
+    expect(parent.quality.retainedRoofTrainingCount.value).toBe(candidate.trainingCount);
+    expect(parent.quality.retainedRoofTrainingCount.value).toBeGreaterThanOrEqual(50);
+    expect(parent.quality.retainedRoofTrainingCount.value).toBeLessThan(
+      parent.quality.returnsAfterRejection.value
+    );
+  }
 });

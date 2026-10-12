@@ -38,6 +38,8 @@ const quality = z
   .object({
     returnsBeforeRejection: metric(count),
     returnsAfterRejection: metric(count),
+    /** Class-1 roof training returns only; older audits may lack this additive evidence. */
+    retainedRoofTrainingCount: metric(count).optional(),
     rejectedFraction: metric(ratio),
     validationSampleCount: metric(count),
     validationCoverage: metric(ratio),

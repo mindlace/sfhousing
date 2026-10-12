@@ -201,3 +201,11 @@ The current exporter uses that same key order. On an exact byte match, the UTF-8
 index byte length conservatively. Whitespace or unknown fields must fail the exact-match
 path before schema parsing strips fields. Browser readers can use `TextEncoder` for the
 same comparison and measurement; the pipeline implementation is in `roofs/check.ts`.
+
+V16 and upload compare audited piece totals to the independent SQL `pieces.count`, including
+zero-piece retained parents. Upload also checks piece/building/parcel identities and outcomes
+against archived clipping records. Schema-1 audit quality may include the additive
+`retainedRoofTrainingCount` metric: class-1 roof returns after rejection, excluding ground
+support. Older audit JSON still parses, but ordinary modelled outcomes require a measured
+count of at least 50 to pass V15, consistent with the retained total and parent/piece evidence.
+The existing before/after return totals keep their original meaning, including ground support.

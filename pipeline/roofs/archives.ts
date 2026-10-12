@@ -179,6 +179,11 @@ export async function checkAuditArchiveClosure(
   const inputs = new Map(
     refs.filter((a) => a.name.endsWith('-input.json')).map((a) => [a.name, a])
   );
+  const clips = new Map(refs.filter((a) => a.name.endsWith('-clip.json')).map((a) => [a.name, a]));
+  const clippedPieces = new Map<
+    string,
+    { buildingId: string; parcelId: string | null; modelled: boolean }
+  >();
   let buildings = 0;
   await streamRoofAudit(auditPath, version, (kind, value) => {
     for (const key of [
@@ -190,6 +195,32 @@ export async function checkAuditArchiveClosure(
       if (!byKey.has(key)) throw new Error(`missing audit processing archive ${key}`);
     if (kind === 'buildings') {
       buildings++;
+      const parent = value as import('../../src/lib/data/roof-audit').RoofBuildingAudit;
+      const clipRef = clips.get(`${value.buildingId}-clip.json`);
+      if (clipRef) {
+        const clip = JSON.parse(readFileSync(join(archiveDir, clipRef.sha256), 'utf8'));
+        if (
+          clip.buildingId !== value.buildingId ||
+          !Array.isArray(clip.pieces) ||
+          clip.pieces.length !== parent.pieceIds.length
+        )
+          throw new Error('archived clipping piece identity mismatch');
+        const expectedIds = new Set(parent.pieceIds);
+        for (const piece of clip.pieces) {
+          if (
+            piece.buildingId !== value.buildingId ||
+            !expectedIds.delete(piece.pieceId) ||
+            clippedPieces.has(piece.pieceId)
+          )
+            throw new Error('archived clipping piece identity mismatch');
+          clippedPieces.set(piece.pieceId, {
+            buildingId: piece.buildingId,
+            parcelId: piece.parcelId,
+            modelled: piece.mesh !== null
+          });
+        }
+        if (expectedIds.size) throw new Error('archived clipping piece identity mismatch');
+      }
       const ref = inputs.get(`${value.buildingId}-input.json`);
       if (!ref) throw new Error(`missing portable building archive ${value.buildingId}`);
       const input = JSON.parse(readFileSync(join(archiveDir, ref.sha256), 'utf8'));
@@ -200,7 +231,20 @@ export async function checkAuditArchiveClosure(
         input.config.sha256 !== value.processing.configurationHash
       )
         throw new Error('portable building/audit identity mismatch');
+    } else {
+      const piece = value as import('../../src/lib/data/roof-audit').RoofPieceAudit;
+      const clipped = clippedPieces.get(piece.pieceId);
+      if (
+        clips.has(`${piece.buildingId}-clip.json`) &&
+        (!clipped ||
+          clipped.buildingId !== piece.buildingId ||
+          clipped.parcelId !== piece.parcelId ||
+          clipped.modelled !== (piece.outcome === 'modelled'))
+      )
+        throw new Error('archived clipping piece identity mismatch');
+      clippedPieces.delete(piece.pieceId);
     }
   });
+  if (clippedPieces.size) throw new Error('archived clipping piece identity mismatch');
   if (buildings !== inputs.size) throw new Error('orphan portable building archive');
 }

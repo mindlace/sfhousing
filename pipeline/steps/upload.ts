@@ -166,6 +166,13 @@ export async function upload(a: UploadArgs): Promise<number> {
       for (const id of ['V14', 'V15', 'V16'])
         if (!report.invariants?.some((r: { id: string; ok: boolean }) => r.id === id && r.ok))
           problems.push(`missing roof invariant ${id}`);
+      for (const [key, value] of Object.entries(roofs.counts))
+        if (report.counts?.[key] !== value)
+          problems.push(`roof build report count mismatch: ${key}`);
+      if (report.counts?.['buildings.kept'] !== roofs.counts['roofs.buildings'])
+        problems.push('roof audit misses retained SQL buildings');
+      if (report.counts?.['pieces.count'] !== roofs.counts['roofs.pieces'])
+        problems.push('roof audit count differs from retained SQL pieces');
       const archiveDir = a.roofArchiveDir ?? ROOF_ARCHIVE_DIR;
       roofArchives = await checkRoofArchives(report, archiveDir);
       await checkAuditArchiveClosure(
@@ -180,11 +187,6 @@ export async function upload(a: UploadArgs): Promise<number> {
         if (!existsSync(path) || (await sha256File(path)) !== ref.sha256)
           throw new Error(`raw roof archive missing/hash mismatch: ${ref.name}`);
       }
-      for (const [key, value] of Object.entries(roofs.counts))
-        if (report.counts?.[key] !== value)
-          problems.push(`roof build report count mismatch: ${key}`);
-      if (report.counts?.['buildings.kept'] !== roofs.counts['roofs.buildings'])
-        problems.push('roof audit misses retained SQL buildings');
     }
   } catch (error) {
     problems.push((error as Error).message);

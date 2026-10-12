@@ -289,6 +289,12 @@ export async function checkDataset(
       roofs?.counts['roofs.buildings'] !== c['buildings.kept']
     )
       failures.push('roof audit count differs from retained SQL buildings');
+    if (
+      id === 'V16' &&
+      m?.buildingRoofs?.schemaVersion === 1 &&
+      roofs?.counts['roofs.pieces'] !== c['pieces.count']
+    )
+      failures.push('roof audit count differs from retained SQL pieces');
     add(
       id,
       failures.length === 0,
