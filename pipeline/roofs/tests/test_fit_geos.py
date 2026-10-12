@@ -53,7 +53,7 @@ class InvalidNativeFaceTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             job = {'schemaVersion':1,'datasetVersion':'test','buildings':buildings,
-                   'sources':[source],'sourceStatus':[{'sourceId':'roof-lidar','spatial':spatial}],
+                   'sources':[source],'sourceArchives':[{'name':case['file'],'sha256':case['sha256'],'bytes':Path(source['path']).stat().st_size,'archiveKey':f"sources/{case['sha256']}.laz"}],'sourceStatus':[{'sourceId':'roof-lidar','spatial':spatial}],
                    'toolchainHash':'0'*64,'configPath':str(Path(__file__).parents[1]/'config.json'),
                    'workDir':directory}
             with patch.object(fit.subprocess,'run',side_effect=archived_output):

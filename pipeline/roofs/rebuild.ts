@@ -82,6 +82,7 @@ export async function rebuildRoofBuilding(opts: {
       'archives.ts',
       'types.py',
       'geometry.py',
+      'point_archives.py',
       'filter.py',
       'fit.py',
       'quality.py',

@@ -57,13 +57,15 @@ class ProcessTests(unittest.TestCase):
         spatial={'horizontalCrs':'EPSG:7131','verticalCrs':None,'horizontalUnits':'m','verticalUnits':'m','acquisitionStart':None,'acquisitionEnd':None,'coverage':[{'id':'fixture','bbox':bbox}],'supportBufferM':50,'permission':'confirmed','alignment':'not-applicable','objects':[]}
         source=dict(spatial,kind='lidar',sourceId='roof-lidar',name=case['file'],path=str((FIXTURES/case['file']).resolve()),sha256=case['sha256'],url='https://example.test/derived-fixture')
         with tempfile.TemporaryDirectory() as directory:
-            job={'schemaVersion':1,'datasetVersion':'test','buildings':[case['building']],'sources':[source],'sourceStatus':[{'sourceId':'roof-lidar','spatial':spatial}],'toolchainHash':'0'*64,'configPath':str(Path(__file__).parents[1]/'config.json')}
+            job={'schemaVersion':1,'datasetVersion':'test','buildings':[case['building']],'sources':[source],'sourceArchives':[{'name':case['file'],'sha256':case['sha256'],'bytes':Path(source['path']).stat().st_size,'archiveKey':f"sources/{case['sha256']}.laz"}],'sourceStatus':[{'sourceId':'roof-lidar','spatial':spatial}],'toolchainHash':'0'*64,'configPath':str(Path(__file__).parents[1]/'config.json')}
             first=p.process_job(dict(job,workDir=directory+'/first'))
             second=p.process_job(dict(job,workDir=directory+'/second'))
             self.assertEqual(p.canonical(first),p.canonical(second))
             self.assertIsNotNone(first['buildings'][0]['mesh'])
-            extract=next(a for a in first['archives'] if a['name'].endswith('-points.npy.gz'))
-            saved=np.load(io.BytesIO(gzip.decompress((Path(directory)/'first/artifacts'/extract['sha256']).read_bytes())),allow_pickle=False)
+            self.assertTrue(any(a['name'].endswith('-points.refs.json') for a in first['archives']))
+            from point_archives import read_evidence
+            raw=Path(directory)/'raw';raw.mkdir();(raw/case['sha256']).write_bytes(Path(source['path']).read_bytes())
+            saved=read_evidence(first['buildings'][0]['archives'],Path(directory)/'first/artifacts',raw,ground_m=first['buildings'][0]['ground']['groundM'])['points']
             self.assertEqual(np.unique(saved['sourceSha']).tolist(),[case['sha256']])
             self.assertEqual(saved['ordinal'][0],0)
             for archive in first['archives']:

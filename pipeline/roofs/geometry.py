@@ -61,11 +61,52 @@ def make_piece_id(building_id: str, parcel_id: str | None, geometry: dict) -> st
     return 'p-'+hashlib.sha256(data.encode('utf-8')).hexdigest()[:24]
 
 
+POINT_DTYPE = np.dtype([('x','<f8'),('y','<f8'),('z','<f8'),('classification','u1'),
+                       ('sourceSha','U64'),('ordinal','<u8')])
+
+
+def consistent_sources(sources):
+    """Identical aliases share bytes; conflicting effective metadata is an integrity error."""
+    result = {}
+    fields = ('horizontalCrs','verticalCrs','horizontalUnits','verticalUnits','supportBufferM','coverage')
+    for source in sources:
+        if source['kind'] != 'lidar': continue
+        sha = source['sha256']
+        if sha in result and any(result[sha].get(k) != source.get(k) for k in fields):
+            raise ValueError('conflicting LiDAR source metadata')
+        result.setdefault(sha,source)
+    return result
+
+
+def decode_source(source):
+    """Decode one whole original node using the pinned, shared coordinate recipe."""
+    import laspy
+    from pyproj import Transformer
+    if source['horizontalCrs'] not in ('EPSG:7131','EPSG:3857') or any(source.get(k,'m') != 'm' for k in ('horizontalUnits','verticalUnits')):
+        raise ValueError('unsupported LiDAR CRS/units')
+    path = Path(source['path'])
+    with path.open('rb') as stream:
+        if hashlib.file_digest(stream,'sha256').hexdigest() != source['sha256']:
+            raise ValueError('LiDAR sha256 mismatch')
+    las = laspy.read(path)
+    a = np.empty(len(las.points),dtype=POINT_DTYPE)
+    x,y = np.asarray(las.x),np.asarray(las.y)
+    if source['horizontalCrs'] != 'EPSG:7131':
+        x,y = Transformer.from_crs(source['horizontalCrs'],'EPSG:7131',always_xy=True).transform(x,y)
+    a['x'],a['y'],a['z'] = x,y,np.asarray(las.z)
+    a['classification'] = np.asarray(las.classification)
+    a['sourceSha'] = source['sha256']
+    a['ordinal'] = np.arange(len(a),dtype=np.uint64)
+    if not all(np.isfinite(a[k]).all() for k in ('x','y','z')):
+        raise ValueError('nonfinite LiDAR point')
+    return a
+
+
 def load_points(job: dict) -> dict[str, np.ndarray]:
     import laspy
     from pyproj import Transformer
-    dtype = np.dtype([('x','<f8'),('y','<f8'),('z','<f8'),('classification','u1'),
-                      ('sourceSha','U64'),('ordinal','<u8')])
+    dtype = POINT_DTYPE
+    consistent_sources(job['sources'])
     from shapely.geometry import box
     from shapely import STRtree
     buildings = job['buildings']
@@ -95,17 +136,8 @@ def load_points(job: dict) -> dict[str, np.ndarray]:
         shortlist = support_index.query(box(*metadata))
         if not len(shortlist):
             continue
-        las = laspy.read(path)
-        a = np.empty(len(las.points),dtype=dtype)
-        x,y = np.asarray(las.x),np.asarray(las.y)
-        if source['horizontalCrs'] != 'EPSG:7131':
-            x,y = Transformer.from_crs(source['horizontalCrs'],'EPSG:7131',always_xy=True).transform(x,y)
-        a['x'],a['y'],a['z'] = x,y,np.asarray(las.z)
-        a['classification'] = np.asarray(las.classification)
-        a['sourceSha'] = sha
-        a['ordinal'] = np.arange(len(a),dtype=np.uint64)
-        if not all(np.all(np.isfinite(a[k])) for k in ('x','y','z')):
-            raise ValueError('nonfinite LiDAR point')
+        a = decode_source(source)
+        x,y = a['x'],a['y']
         # Parent EPT nodes contain incidental points outside selected coverage. Keep
         # only the committed coverage plus its ground support before per-building crops.
         coverage_mask = np.ones(len(a),dtype=bool)

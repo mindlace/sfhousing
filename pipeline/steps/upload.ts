@@ -6,7 +6,7 @@ import {
   ROOF_ARCHIVE_DIR
 } from '../roofs/archives';
 import type { RoofArchive } from '../roofs/job';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { DATASET_VERSION_RE } from '../../src/lib/data/dataset-version';
 import { parseManifest, type Manifest } from '../../src/lib/data/manifest';
@@ -184,8 +184,12 @@ export async function upload(a: UploadArgs): Promise<number> {
       roofRaw = roofRawArchives(roofArchives, archiveDir);
       for (const ref of roofRaw) {
         const path = rawPath(a.rawDir, ref, a.rawByName);
-        if (!existsSync(path) || (await sha256File(path)) !== ref.sha256)
-          throw new Error(`raw roof archive missing/hash mismatch: ${ref.name}`);
+        if (
+          !existsSync(path) ||
+          statSync(path).size !== ref.bytes ||
+          (await sha256File(path)) !== ref.sha256
+        )
+          throw new Error(`raw roof archive missing/hash/length mismatch: ${ref.name}`);
       }
     }
   } catch (error) {

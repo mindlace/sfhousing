@@ -1,6 +1,6 @@
 import { RoofReasonSchema } from '../../src/lib/data/roof-audit';
-import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, copyFileSync, writeFileSync, statSync } from 'node:fs';
+import { sha256File } from '../lib/lock';
+import { mkdirSync, copyFileSync, writeFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createReadStream, openSync, writeSync, closeSync } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -185,10 +185,7 @@ export async function runRoofJob(
   mkdirSync(cache, { recursive: true });
   for (const a of result.archives) {
     const source = join(job.workDir, 'artifacts', a.sha256);
-    if (
-      statSync(source).size !== a.bytes ||
-      createHash('sha256').update(readFileSync(source)).digest('hex') !== a.sha256
-    )
+    if (statSync(source).size !== a.bytes || (await sha256File(source)) !== a.sha256)
       throw new Error(`roof archive integrity failure: ${a.archiveKey}`);
     copyFileSync(source, join(cache, a.sha256));
   }

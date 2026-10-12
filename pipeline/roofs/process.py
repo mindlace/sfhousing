@@ -1,8 +1,6 @@
 """Offline bounded reconstruction orchestration; every input building has an outcome."""
 import argparse
 import hashlib
-import gzip
-import io
 import json
 from pathlib import Path
 import sys
@@ -14,7 +12,8 @@ from shapely.geometry import shape, box
 from shapely.ops import unary_union
 from shapely import transform
 from shapely import contains_xy, STRtree
-from geometry import load_points
+from geometry import load_points, consistent_sources
+from point_archives import Archive, write_points, write_subsets
 from filter import validation_partition, estimate_ground, vegetation_mask, apply_cells
 from fit import fit_candidates, fit_one, ROOFER
 from quality import fallback, select_candidate
@@ -24,27 +23,6 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def canonical(value):
     return json.dumps(value,sort_keys=True,separators=(',',':'),allow_nan=False).encode()
-
-
-class Archive:
-    def __init__(self, directory):
-        self.directory = Path(directory); self.directory.mkdir(parents=True,exist_ok=True)
-        self.files = {}
-
-    def save(self, data, name):
-        sha = hashlib.sha256(data).hexdigest()
-        ext = Path(name).suffix
-        record = {'url':'','sha256':sha,'bytes':len(data),'archiveKey':f'roof-processing/{sha}{ext}','name':name}
-        (self.directory/sha).write_bytes(data)
-        self.files[record['archiveKey']] = record
-        return record
-
-    def json(self, value, name): return self.save(canonical(value),name)
-
-    def array(self, value, name):
-        stream = io.BytesIO(); np.save(stream,value,allow_pickle=False)
-        # Stable mtime avoids wall-clock-dependent gzip bytes; structured identities compress well.
-        return self.save(gzip.compress(stream.getvalue(),mtime=0),name+'.gz')
 
 
 def source_coverage(job):
@@ -125,7 +103,8 @@ def process_building(building, points, images, config):
         landmark['usedSources']=['roof-lidar'] if landmark.get('override') else []
         return landmark, {}
     footprint = shape(building['footprint'])
-    points = points[~np.isin(points['classification'],[7,18])]
+    rows = np.flatnonzero(~np.isin(points['classification'],[7,18])).astype('<u8')
+    points = points[rows]
     ground = estimate_ground(points,footprint)
     if ground.groundM is None:
         result=fallback(building,'ground_missing')
@@ -136,11 +115,16 @@ def process_building(building, points, images, config):
         ids = points['sourceSha']==sha
         validation[ids] = validation_partition(str(sha),points['ordinal'][ids])
     inside = contains_xy(footprint,points['x'],points['y'])
-    train = points[~validation & ((inside & (points['classification']==1)) | (points['classification']==2))]
+    training_selector = ~validation & ((inside & (points['classification']==1)) | (points['classification']==2))
+    pre_training_rows = rows[training_selector]
+    train = points[training_selector]
     rejected,cells,flags,diagnostics,aerial_used = building_mask(train,images,config)
     retained = train[~rejected]
-    held = points[validation & inside & (points['classification']==1)]
-    held = held[~apply_cells(held,cells,config['cellM'])].copy()
+    validation_selector = validation & inside & (points['classification']==1)
+    held = points[validation_selector]
+    held_selector = ~apply_cells(held,cells,config['cellM'])
+    validation_rows = rows[validation_selector][held_selector]
+    held = held[held_selector].copy()
     held['z'] -= ground.groundM
     count = int((retained['classification']==1).sum())
     if count < 50:
@@ -158,7 +142,7 @@ def process_building(building, points, images, config):
     result['flags'] = sorted(set(flags))
     result['diagnostics'] = {'vegetation':diagnostics}
     result['returnCounts'] = {'before':len(train),'retained':len(retained),'rejected':int(rejected.sum()),'roofTraining':count,'validation':len(held)}
-    return result, {'training':retained,'validation':held,'mask':rejected,'canopyCells':cells,'vegetationDiagnostics':diagnostics}
+    return result, {'preTrainingRows':pre_training_rows,'validationRows':validation_rows,'training':retained,'validation':held,'mask':rejected,'canopyCells':cells,'vegetationDiagnostics':diagnostics}
 
 
 def process_job(job):
@@ -170,6 +154,7 @@ def process_job(job):
     if hashlib.sha256(json.dumps(config,sort_keys=True,separators=(',',':')).encode()).hexdigest() != 'baa8b9073fb582197d293438a4d46ef52ce4a89b34d684585f98ff66e88e3de7':
         raise ValueError('unsupported roof configuration: restore the approved schemaVersion 1 config or implement the changed thresholds')
     config['workDir'] = job['workDir']
+    consistent_sources(job['sources'])
     images = validate_aerials(job)
     # Verify every locked input once, including nodes outside the selected buildings.
     import laspy
@@ -191,7 +176,7 @@ def process_job(job):
     support = max((s['supportBufferM'] for s in node_sources),default=50)
     archive = Archive(Path(job['workDir'])/'artifacts')
     config_ref = archive.save(Path(job['configPath']).read_bytes(),'config.json')
-    dependency_refs = [archive.save((ROOT/'pipeline/roofs'/name).read_bytes(),name) for name in ['toolchain.json','requirements.txt','config.json','source-config.json','job.ts','inputs.ts','run.ts','setup.ts','archives.ts','types.py','geometry.py','filter.py','fit.py','quality.py','process.py','overrides/salesforce.json']]
+    dependency_refs = [archive.save((ROOT/'pipeline/roofs'/name).read_bytes(),name) for name in ['toolchain.json','requirements.txt','config.json','source-config.json','job.ts','inputs.ts','run.ts','setup.ts','archives.ts','types.py','point_archives.py','geometry.py','filter.py','fit.py','quality.py','process.py','overrides/salesforce.json']]
     source_refs = archive.json({'sources':[{k:v for k,v in s.items() if k!='path'} for s in job['sources']],'sourceStatus':job['sourceStatus'],'sourceArchives':job.get('sourceArchives',[])},'sources.json')
     coverage = source_coverage(job)
     eligible = [b for b in job['buildings'] if coverage.covers(shape(b['footprint']))]
@@ -211,8 +196,14 @@ def process_job(job):
                 result, evidence = fallback(building,'lidar_missing'), {}
             else:
                 result,evidence = process_building(building,points,images,config)
-            result['archives'] = [archive.array(points,building['buildingId']+'-points.npy')]
+            point_ref,children = write_points(archive,points,building['buildingId'],source_refs)
+            result['archives'] = [point_ref,*children]
+            if 'preTrainingRows' in evidence:
+                mask_ref = archive.array(evidence['mask'],building['buildingId']+'-mask.npy')
+                subset_ref,children = write_subsets(archive,point_ref,points,evidence['preTrainingRows'],evidence['validationRows'],evidence['mask'],mask_ref,result['ground']['groundM'],building['buildingId'])
+                result['archives'].extend([subset_ref,mask_ref,*children])
             for name,value in evidence.items():
+                if name in ('preTrainingRows','validationRows','training','validation','mask'): continue
                 result['archives'].append(archive.array(value,building['buildingId']+'-'+name+'.npy') if isinstance(value,np.ndarray) else archive.json(value,building['buildingId']+'-'+name+'.json'))
             for candidate in result['candidates']:
                 # Scratch commands are diagnostics, not portable dependencies.

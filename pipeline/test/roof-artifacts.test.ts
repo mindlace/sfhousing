@@ -386,7 +386,7 @@ it('rebuilds just the requested archived building offline and refuses a changed 
   });
   const rebuilt = read(join(root, 'rebuilt'), 'result.json');
   expect(rebuilt.buildings).toHaveLength(1);
-  expect(rebuilt.buildings[0].mesh).toEqual(result.buildings[0].mesh);
+  expect(rebuilt.buildings[0]).toEqual(result.buildings[0]);
   const input = result.archives.find((a) => a.name === `${c.building.buildingId}-input.json`)!;
   const original = read('pipeline/.cache/roof-artifacts', input.sha256);
   original.toolchainHash = '0'.repeat(64);
@@ -881,3 +881,375 @@ it('emits the measured class-1 candidate count separately from retained ground s
     );
   }
 });
+
+async function referenceGraph() {
+  const { createHash } = await import('node:crypto');
+  const root = mkdtempSync(join(tmpdir(), 'roof-references-'));
+  dirs.push(root);
+  const refs: import('../roofs/job').RoofArchive[] = [];
+  const save = (name: string, value: unknown) => {
+    const bytes = Buffer.from(JSON.stringify(value));
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const ref = {
+      name,
+      url: '',
+      sha256,
+      bytes: bytes.length,
+      archiveKey: `roof-processing/${sha256}.${name.endsWith('.gz') ? 'gz' : 'json'}`
+    };
+    writeFileSync(join(root, sha256), bytes);
+    refs.push(ref);
+    return ref;
+  };
+  const raw = {
+    name: 'node.laz',
+    url: '',
+    sha256: 'a'.repeat(64),
+    bytes: 9,
+    archiveKey: `sources/${'a'.repeat(64)}.laz`
+  };
+  const sourceData = {
+    sources: [
+      {
+        kind: 'lidar',
+        name: 'node.laz',
+        sha256: raw.sha256,
+        horizontalCrs: 'EPSG:7131',
+        horizontalUnits: 'm',
+        verticalUnits: 'm',
+        supportBufferM: 50
+      }
+    ],
+    sourceArchives: [raw],
+    sourceStatus: [] as { spatial: { objects: { name: string; sha256: string }[] } }[]
+  };
+  const sources = save('sources.json', sourceData);
+  const records = save('b-point-records.npy.gz', 'record-body');
+  const pointData = {
+    kind: 'roof-point-references',
+    schemaVersion: 1,
+    count: 3,
+    sources,
+    sourceShas: [raw.sha256],
+    records,
+    recordEncoding: 'npy-gzip-source-u32-ordinal-u64-le-v1',
+    coordinateRecipe: 'laspy-scaled-xy-to-epsg7131-z-unchanged-v1',
+    order: 'source-sha-ordinal-v1',
+    logicalSha256: 'b'.repeat(64)
+  };
+  const points = save('b-points.refs.json', pointData);
+  const mask = save('b-mask.npy.gz', 'mask-body');
+  const preTrainingRows = save('b-preTrainingRows.npy.gz', 'pretraining-body');
+  const validationRows = save('b-validationRows.npy.gz', 'validation-body');
+  const subsetData = {
+    kind: 'roof-point-subsets',
+    schemaVersion: 1,
+    points,
+    mask,
+    preTrainingRows,
+    preTrainingCount: 2,
+    validationRows,
+    validationCount: 1,
+    rowEncoding: 'npy-gzip-u64-le-v1',
+    groundMHex: '0x1.0000000000000p+0',
+    trainingLogicalSha256: 'c'.repeat(64),
+    validationLogicalSha256: 'd'.repeat(64)
+  };
+  const subsets = save('b-subsets.refs.json', subsetData);
+  return {
+    root,
+    refs,
+    save,
+    sources,
+    sourceData,
+    pointData,
+    points,
+    subsetData,
+    subsets,
+    records,
+    mask,
+    preTrainingRows,
+    validationRows
+  };
+}
+
+it.each(['sources', 'records', 'points', 'mask', 'preTrainingRows', 'validationRows'] as const)(
+  'rejects missing nested point child %s before the first upload put',
+  async (role) => {
+    const graph = await referenceGraph();
+    const { checkRoofArchives } = await import('../roofs/archives');
+    const refs = graph.refs.filter((r) => r !== graph[role]);
+    await expect(checkRoofArchives({ roofArchives: refs }, graph.root)).rejects.toThrow(
+      `missing roof archive closure: ${graph[role].archiveKey}`
+    );
+    const { d } = await dataset();
+    const report = read(d, 'report.json');
+    report.roofArchives = refs;
+    write(d, 'report.json', report);
+    const puts: string[] = [],
+      logs: string[] = [];
+    const code = await upload({
+      outDir: d,
+      datasetVersion: 'fixture-0',
+      lock: { sources: [] },
+      rawDir: graph.root,
+      roofArchiveDir: graph.root,
+      target: {
+        exists: async () => false,
+        get: async () => false,
+        put: async (k) => {
+          puts.push(k);
+        }
+      },
+      log: (s) => logs.push(s)
+    });
+    expect(code).toBe(1);
+    expect(puts).toEqual([]);
+    expect(logs.join('\n')).toMatch(/missing roof archive closure/);
+  }
+);
+
+it.each([
+  'version',
+  'dictionary',
+  'source metadata',
+  'raw source',
+  'hierarchy',
+  'conflict',
+  'subset count',
+  'encoding'
+])('fails closed on malformed point reference %s', async (failure) => {
+  const g = await referenceGraph();
+  const { checkRoofArchives } = await import('../roofs/archives');
+  if (failure === 'version') g.pointData.schemaVersion = 2;
+  if (failure === 'dictionary') g.pointData.sourceShas.push(g.pointData.sourceShas[0]);
+  if (failure === 'source metadata') g.sourceData.sources = [];
+  if (failure === 'raw source') g.sourceData.sourceArchives = [];
+  if (failure === 'hierarchy')
+    g.sourceData.sourceStatus.push({
+      spatial: { objects: [{ name: 'ept-hierarchy/0-0-0-0.json', sha256: 'e'.repeat(64) }] }
+    });
+  if (failure === 'conflict')
+    g.sourceData.sources.push({ ...g.sourceData.sources[0], supportBufferM: 51 });
+  if (failure === 'subset count') g.subsetData.preTrainingCount = 4;
+  if (failure === 'encoding') g.subsetData.rowEncoding = 'npy-u16';
+  const sources = g.save('sources.json', g.sourceData);
+  const points = g.save('b-points.refs.json', { ...g.pointData, sources });
+  const subsets = g.save('b-subsets.refs.json', { ...g.subsetData, points });
+  const refs = g.refs.filter((r) => ![g.sources, g.points, g.subsets].includes(r));
+  // Content-addressed duplicate source objects collapse in the report.
+  const unique = [...new Map(refs.map((r) => [r.archiveKey, r])).values()];
+  expect(subsets.name).toBe('b-subsets.refs.json');
+  await expect(checkRoofArchives({ roofArchives: unique }, g.root)).rejects.toThrow(
+    /point|subset|source/
+  );
+  const { d } = await dataset();
+  const report = read(d, 'report.json');
+  report.roofArchives = unique;
+  write(d, 'report.json', report);
+  const puts: string[] = [];
+  expect(
+    await upload({
+      outDir: d,
+      datasetVersion: 'fixture-0',
+      lock: { sources: [] },
+      rawDir: g.root,
+      roofArchiveDir: g.root,
+      target: {
+        exists: async () => false,
+        get: async () => false,
+        put: async (key) => {
+          puts.push(key);
+        }
+      },
+      log: () => {}
+    })
+  ).toBe(1);
+  expect(puts).toEqual([]);
+});
+
+it('keeps frozen old/new meshes, headers and all audit fields except input archive references identical', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { readdirSync } = await import('node:fs');
+  const { prepareRoofPiece, projectedToLocal } = await import('../roofs/export');
+  const proj4 = (await import('proj4')).default;
+  const { ROOF_PYTHON } = await import('../roofs/setup');
+  const root = mkdtempSync(join(tmpdir(), 'roof-export-parity-'));
+  dirs.push(root);
+  execFileSync(
+    ROOF_PYTHON,
+    [
+      '-m',
+      'unittest',
+      'test_point_archives.PointArchivesTests.test_permitted_aerial_frozen_native_parity_and_independent_membership'
+    ],
+    {
+      cwd: 'pipeline/roofs/tests',
+      env: { ...process.env, ROOF_PARITY_OUTPUT: root }
+    }
+  );
+  const runs = read(root, 'parity.json') as {
+    building: import('../roofs/job').ProcessedBuilding;
+    pieces: import('../roofs/job').ClippedRoofPiece[];
+  }[];
+  expect(runs[0].building.candidates).toEqual(runs[1].building.candidates);
+  expect(runs[0].pieces).toEqual(runs[1].pieces);
+  const audits = [];
+  for (const [i, run] of runs.entries()) {
+    const anchor = proj4('EPSG:7131', 'EPSG:4326', [0, 0]) as [number, number];
+    const bbox: [number, number, number, number] = [
+      anchor[0],
+      anchor[1],
+      anchor[0] + 0.0001,
+      anchor[1] + 0.0001
+    ];
+    const method = run.building.method;
+    if (method === 'footprint') throw new Error('parity fixture must model a roof');
+    const exported = run.pieces
+      .filter((p) => p.mesh)
+      .map((p) =>
+        prepareRoofPiece({
+          pieceId: p.pieceId,
+          buildingId: 'aerial',
+          parcelId: p.parcelId,
+          method,
+          cellId: '0_0',
+          projectedOrigin: [0, 0],
+          anchor,
+          mesh: { ...p.mesh!, vertices: p.mesh!.vertices.map((v) => projectedToLocal(v, anchor)) },
+          bbox
+        })
+      );
+    await encodeRoofArtifacts(exported, {
+      outDir: join(root, String(i)),
+      datasetVersion: 'fixture-0'
+    });
+    const audit = buildRoofAudit(
+      [run.building],
+      run.pieces,
+      [{ buildingId: 'aerial', bbox, neighborhood: null, heightM: 5 }],
+      'fixture-0',
+      join(root, 'artifacts'),
+      new Map(run.pieces.map((p) => [p.pieceId, bbox]))
+    );
+    // The only intentional audit difference in this fixed-version comparison.
+    for (const record of [...audit.buildings, ...audit.pieces])
+      record.followUp.inputArtifactRefs = [];
+    audits.push(audit);
+  }
+  expect(audits[0]).toEqual(audits[1]);
+  for (const name of readdirSync(join(root, '0/roofs')))
+    expect(readFileSync(join(root, '0/roofs', name))).toEqual(
+      readFileSync(join(root, '1/roofs', name))
+    );
+}, 30000);
+
+it.each(['length', 'corruption'])(
+  'rejects raw roof %s before the first put from an otherwise valid upload',
+  async (failure) => {
+    const { createHash } = await import('node:crypto');
+    const { symlinkSync, statSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const { readLock } = await import('../lib/lock');
+    const root = mkdtempSync(join(tmpdir(), 'roof-raw-length-'));
+    dirs.push(root);
+    const out = join(root, 'dataset'),
+      archiveDir = join(root, 'archives');
+    cpSync('e2e/fixtures/data/fixture-0', out, { recursive: true });
+    cpSync('pipeline/test/fixtures/mini/raw', join(root, 'raw'), { recursive: true });
+    const { mkdirSync } = await import('node:fs');
+    mkdirSync(archiveDir);
+    const report = read(out, 'report.json');
+    const original = report.roofArchives as import('../roofs/job').RoofArchive[];
+    for (const ref of original)
+      symlinkSync(
+        resolve('pipeline/.cache/roof-artifacts', ref.sha256),
+        join(archiveDir, ref.sha256)
+      );
+    const puts: string[] = [],
+      logs: string[] = [];
+    const opts = {
+      outDir: out,
+      datasetVersion: 'fixture-0',
+      lock: readLock('pipeline/test/fixtures/mini/sources.lock.json'),
+      rawDir: join(root, 'raw'),
+      rawByName: true,
+      roofArchiveDir: archiveDir,
+      target: {
+        exists: async () => false,
+        get: async () => false,
+        put: async (key: string) => {
+          puts.push(key);
+        }
+      },
+      log: (s: string) => logs.push(s)
+    };
+    expect(await upload(opts)).toBe(0);
+    expect(puts.at(-1)).toBe('data/fixture-0/manifest.json');
+    puts.length = 0;
+    logs.length = 0;
+    const replacements = new Map<string, import('../roofs/job').RoofArchive>();
+    const save = (ref: import('../roofs/job').RoofArchive, value: unknown) => {
+      const bytes = Buffer.from(JSON.stringify(value));
+      const sha256 = createHash('sha256').update(bytes).digest('hex');
+      const next = {
+        ...ref,
+        sha256,
+        bytes: bytes.length,
+        archiveKey: `roof-processing/${sha256}.json`
+      };
+      writeFileSync(join(archiveDir, sha256), bytes);
+      replacements.set(ref.archiveKey, next);
+    };
+    const sourceRef = original.find((a) => a.name === 'sources.json')!;
+    const source = read(archiveDir, sourceRef.sha256);
+    const raw = source.sourceArchives.find((a: { name: string }) => a.name.endsWith('.laz'));
+    expect(statSync(join(opts.rawDir, raw.name)).size).toBe(raw.bytes);
+    if (failure === 'corruption') {
+      const path = join(opts.rawDir, raw.name),
+        bytes = readFileSync(path);
+      bytes[0] ^= 1;
+      writeFileSync(path, bytes);
+      expect(await upload(opts)).toBe(1);
+      expect(puts).toEqual([]);
+      expect(logs.join('\n')).toMatch(/raw roof archive.*hash/);
+      return;
+    }
+    raw.bytes++;
+    save(sourceRef, source);
+    const rewrite = (value: unknown): unknown => {
+      if (typeof value === 'string') return replacements.get(value)?.archiveKey ?? value;
+      if (!value || typeof value !== 'object') return value;
+      if (Array.isArray(value)) return value.map(rewrite);
+      const record = value as Record<string, unknown>;
+      if (typeof record.archiveKey === 'string' && replacements.has(record.archiveKey))
+        return replacements.get(record.archiveKey);
+      return Object.fromEntries(Object.entries(record).map(([k, v]) => [k, rewrite(v)]));
+    };
+    // Repair only descriptor references in this test fixture, leaving one wrong raw byte count.
+    for (let pass = 0; pass < 5; pass++) {
+      for (const ref of original.filter((a) => a.archiveKey.endsWith('.json') && a !== sourceRef)) {
+        const value = read(archiveDir, ref.sha256),
+          next = rewrite(value);
+        if (JSON.stringify(next) !== JSON.stringify(value)) save(ref, next);
+      }
+    }
+    report.roofArchives = original.map((a) => replacements.get(a.archiveKey) ?? a);
+    const audit = rewrite(read(out, 'roofs/audit.json')) as Parameters<typeof writeRoofAudit>[1];
+    const auditBytes = writeRoofAudit(join(out, 'roofs/audit.json'), audit);
+    const roofReport = read(out, 'roofs/report.json');
+    for (const counts of [report.counts, roofReport.counts]) {
+      counts['roofs.audit_bytes'] = auditBytes;
+      counts['roofs.archive_bytes'] = report.roofArchives.reduce(
+        (n: number, a: { bytes: number }) => n + a.bytes,
+        0
+      );
+    }
+    write(out, 'report.json', report);
+    write(out, 'roofs/report.json', roofReport);
+    expect(await upload(opts)).toBe(1);
+    expect(puts).toEqual([]);
+    expect(logs.join('\n')).toMatch(/raw roof archive.*length/);
+  },
+  30000
+);

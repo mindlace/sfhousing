@@ -109,9 +109,36 @@ images, unavailable tools and incomplete runner results fail the job.
 Build-only evidence is content-addressed under `roof-processing/<sha256>.<ext>` and cached
 in `pipeline/.cache/roof-artifacts/<sha256>`. Each building's portable input record points
 to complete source lock references, processing config/code/toolchain/override descriptors,
-source extracts and candidates. Structured arrays use deterministic gzip-compressed
-`.npy.gz` with original source SHA/ordinal identity; read with gzip then NumPy with
-`allow_pickle=False`. Scratch paths and timing fields are excluded from portable evidence.
+source extracts and candidates. New private evidence uses `*-points.refs.json`
+(`kind: roof-point-references`, `schemaVersion: 1`): a sorted SHA dictionary and deterministic
+gzip NPY records of little-endian uint32 source indices and uint64 original ordinals.
+`*-subsets.refs.json` links ordered full-extract row indices for pre-mask training and final
+validation, the boolean rejection mask, and the exact float64 hexadecimal ground value.
+Training keeps absolute Z; validation copies its rows and subtracts ground once. The mask
+belongs to pre-mask training. These private versions do not change runtime/audit schema 1.
+Every descriptor child is flattened into the archive list and validated before upload.
+
+Logical evidence is decoded from SHA/length-verified **original LAZ** using the shared
+whole-node laspy/pyproj transform, without re-cropping or quantization. A canonical digest
+checks float64 XYZ bits, class, ASCII SHA and uint64 ordinal in row order. Source aliases
+must agree on CRS, units, support and coverage. Original source metadata/hierarchy, code,
+configuration and tool distributions remain required. Raw-source `roof-rebuild` still
+reconstructs from original LAZ and requires the recorded code revision.
+
+For bounded inspection, import `read_evidence` from `pipeline/roofs/point_archives.py`, then
+call `read_evidence(input_record['extracts'], archive_directory, raw_directory,
+ground_m=recorded_ground)` using the portable input JSON and the audited ground result.
+The same reader explicitly accepts legacy `*-points.npy.gz`, `*-training.npy.gz` and
+`*-validation.npy.gz` with strict dtypes, counts and `allow_pickle=False`; no migration is
+needed. It rejects unknown reference versions, duplicate identities, invalid memberships,
+truncated/trailing gzip or NPY data, and digest mismatches. Its default per-array/node
+allocation limit is 2 GiB; larger offline inspection requires an explicit `max_bytes` and
+an independent resource budget. It returns the current expanded numeric arrays.
+
+Writes stream deterministic NPY/gzip through a physical SHA digest into a temporary file,
+then rename on success. Existing immutable expanded archives retain their original hashes.
+Scratch paths and timing fields are excluded from portable evidence. Reference archives
+reduce stored evidence; they do not make four-cloud processing or retained results bounded.
 
 The real LiDAR regression fixtures and their provenance are documented in
 `pipeline/test/fixtures/roofs/README.md`. `npm run test:roofs` runs the complete pinned

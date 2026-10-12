@@ -8,9 +8,9 @@ import {
   statSync
 } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { sha256File } from '../lib/lock';
+import { canonicalJson, sha256File } from '../lib/lock';
 import type { R2Target } from '../lib/r2';
-import type { RoofArchive } from './job';
+import type { RoofArchive, RoofInputSource } from './job';
 import toolchain from './toolchain.json';
 
 export const ROOF_ARCHIVE_DIR = resolve(import.meta.dirname, '../.cache/roof-artifacts');
@@ -110,9 +110,147 @@ export async function checkRoofArchives(
     for (const key of clip.inputArtifactRefs)
       if (!byKey.has(key)) throw new Error(`missing clipping input archive closure: ${key}`);
   }
+  checkPointReferences(refs, archiveDir, requireRef);
   for (const ref of toolchainArchives()) requireRef(ref);
   return refs;
 }
+/** Only the known, bounded subset -> points -> sources graph is followed. */
+function checkPointReferences(
+  refs: RoofArchive[],
+  archiveDir: string,
+  requireRef: (ref: unknown) => void
+): void {
+  interface PointReferences {
+    kind: string;
+    schemaVersion: number;
+    count: number;
+    sources: RoofArchive;
+    sourceShas: string[];
+    records: RoofArchive;
+    recordEncoding: string;
+    coordinateRecipe: string;
+    order: string;
+    logicalSha256: string;
+  }
+  interface SubsetReferences {
+    kind: string;
+    schemaVersion: number;
+    points: RoofArchive;
+    mask: RoofArchive;
+    preTrainingRows: RoofArchive;
+    preTrainingCount: number;
+    validationRows: RoofArchive;
+    validationCount: number;
+    rowEncoding: string;
+    groundMHex: string;
+    trainingLogicalSha256: string;
+    validationLogicalSha256: string;
+  }
+  const read = <T>(ref: RoofArchive): T => {
+    requireRef(ref);
+    if (ref.bytes > 32 * 1024 ** 2) throw new Error('point descriptor too large');
+    return JSON.parse(readFileSync(join(archiveDir, ref.sha256), 'utf8')) as T;
+  };
+  const sha = (value: unknown): value is string =>
+    typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+  const count = (value: number) => Number.isSafeInteger(value) && value >= 0;
+  const child = (ref: RoofArchive, suffix: string) => {
+    requireRef(ref);
+    if (typeof ref.name !== 'string' || !ref.name.endsWith(suffix))
+      throw new Error('point reference child role mismatch');
+  };
+  const points = new Map<string, PointReferences>();
+  for (const ref of refs.filter((a) => a.name.endsWith('-points.refs.json'))) {
+    const p = read<PointReferences>(ref);
+    if (
+      p.kind !== 'roof-point-references' ||
+      p.schemaVersion !== 1 ||
+      !count(p.count) ||
+      p.recordEncoding !== 'npy-gzip-source-u32-ordinal-u64-le-v1' ||
+      p.coordinateRecipe !== 'laspy-scaled-xy-to-epsg7131-z-unchanged-v1' ||
+      p.order !== 'source-sha-ordinal-v1' ||
+      !sha(p.logicalSha256) ||
+      !Array.isArray(p.sourceShas) ||
+      p.sourceShas.length > 2 ** 32 ||
+      !p.sourceShas.every((s, i) => sha(s) && (i === 0 || p.sourceShas[i - 1] < s)) ||
+      (p.count > 0 && p.sourceShas.length === 0)
+    )
+      throw new Error('unsupported or malformed point reference descriptor');
+    child(p.records, '-point-records.npy.gz');
+    child(p.sources, 'sources.json');
+    const source = read<{ sources: RoofInputSource[]; sourceArchives: RoofArchive[] }>(p.sources);
+    if (!Array.isArray(source.sources) || !Array.isArray(source.sourceArchives))
+      throw new Error('missing point source metadata/raw closure');
+    const metadata = new Map<string, RoofInputSource>();
+    const fields = [
+      'horizontalCrs',
+      'verticalCrs',
+      'horizontalUnits',
+      'verticalUnits',
+      'supportBufferM',
+      'coverage'
+    ] as const;
+    for (const item of source.sources.filter((s) => s.kind === 'lidar')) {
+      const old = metadata.get(item.sha256);
+      if (
+        old &&
+        fields.some((key) => canonicalJson(old[key] ?? null) !== canonicalJson(item[key] ?? null))
+      )
+        throw new Error('conflicting point source metadata');
+      metadata.set(item.sha256, item);
+    }
+    for (const key of p.sourceShas) {
+      const item = metadata.get(key);
+      const raw = source.sourceArchives.filter((a) => a.sha256 === key);
+      if (
+        !item ||
+        !raw.length ||
+        raw.some(
+          (a) =>
+            !count(a.bytes) ||
+            a.archiveKey !== `sources/${key}.laz` ||
+            a.bytes !== raw[0].bytes ||
+            a.archiveKey !== raw[0].archiveKey
+        )
+      )
+        throw new Error('missing or conflicting point source raw closure');
+      if (
+        !['EPSG:7131', 'EPSG:3857'].includes(item.horizontalCrs) ||
+        item.horizontalUnits !== 'm' ||
+        item.verticalUnits !== 'm' ||
+        !Number.isFinite(item.supportBufferM) ||
+        item.supportBufferM < 50
+      )
+        throw new Error('unsupported point source metadata');
+    }
+    points.set(ref.archiveKey, p);
+  }
+  for (const ref of refs.filter((a) => a.name.endsWith('-subsets.refs.json'))) {
+    const s = read<SubsetReferences>(ref);
+    if (
+      s.kind !== 'roof-point-subsets' ||
+      s.schemaVersion !== 1 ||
+      s.rowEncoding !== 'npy-gzip-u64-le-v1' ||
+      !count(s.preTrainingCount) ||
+      !count(s.validationCount) ||
+      !sha(s.trainingLogicalSha256) ||
+      !sha(s.validationLogicalSha256) ||
+      typeof s.groundMHex !== 'string' ||
+      !/^-?0x[01]\.[0-9a-f]{1,13}p[+-][0-9]+$/.test(s.groundMHex)
+    )
+      throw new Error('unsupported or malformed point subset descriptor');
+    child(s.points, '-points.refs.json');
+    child(s.mask, '-mask.npy.gz');
+    child(s.preTrainingRows, '-preTrainingRows.npy.gz');
+    child(s.validationRows, '-validationRows.npy.gz');
+    const p = points.get(s.points.archiveKey);
+    if (!p || s.preTrainingCount + s.validationCount > p.count)
+      throw new Error('point subset count/role mismatch');
+  }
+  // Includes preserved EPT metadata and hierarchy references, not just dictionary LAZ.
+  if (points.size) roofRawArchives(refs, archiveDir);
+}
+
 export async function restoreRoofArtifacts(
   report: unknown,
   archiveDir: string,
@@ -161,7 +299,10 @@ export function roofRawArchives(refs: RoofArchive[], archiveDir: string): RoofAr
       files.set(a.archiveKey, a);
     }
     const sourceHashes = new Set(source.sourceArchives.map((a: RoofArchive) => a.sha256));
-    for (const s of source.sources)
+    const metadataObjects = (source.sourceStatus ?? []).flatMap(
+      (s: { spatial: { objects?: { name: string; sha256: string }[] } }) => s.spatial.objects ?? []
+    );
+    for (const s of [...source.sources, ...metadataObjects])
       if (!sourceHashes.has(s.sha256))
         throw new Error(`missing raw roof source closure: ${s.name}`);
   }
