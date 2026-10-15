@@ -49,27 +49,28 @@ No existing I-row changes except the additive optional manifest field (T1).
 
 ### 4.1 Sources
 
-Five operator feeds fetched directly. None needs a key, so CI and anyone who clones the repo can fetch them without secrets.
+Three operator feeds fetched directly. None needs a key, so CI and anyone who clones the repo can fetch them without secrets.
 
 | lock id | URL | licence (recorded in lock) |
 |---|---|---|
 | `gtfs-muni` | `https://muni-gtfs.apps.sfmta.com/data/muni_gtfs-current.zip` ([page](https://www.sfmta.com/reports/gtfs-transit-data)) | SFMTA Transit Data License Agreement: non-exclusive, revocable, may reproduce and distribute; **no sublicensing**; cl.12 notice required on derived data; cl.4 disclaimer; no SFMTA/Muni marks |
 | `gtfs-bart` | `https://www.bart.gov/dev/schedules/google_transit.zip` ([DLA](https://www.bart.gov/dla)) | BART Developer License: non-exclusive, revocable, may redistribute; no attribution required; no BART marks |
 | `gtfs-caltrain` | `https://data.trilliumtransit.com/gtfs/caltrain-ca-us/caltrain-ca-us.zip` ([dev resources](https://www.caltrain.com/developer-resources)) | PCJPB Developer License: non-exclusive, revocable, may redistribute; no logo or system map |
-| `gtfs-sfbayferry` | `https://gtfs.sanfranciscobayferry.com/gtfs.zip` | No licence stated by WETA; Mobility Database lists ODC-BY. Credit "San Francisco Bay Ferry". |
-| `gtfs-goldengate` | `https://realtime.goldengate.org/gtfsstatic/GTFSTransitData.zip` (combined bus + ferry; keep `route_type 4` only) | No published terms found. Credit "Golden Gate Ferry". |
 
-Each is a raw zip stored by sha256 like every other source. `upstreamVersion` is `feed_info.feed_version` when present, else `<min calendar start>..<max calendar end>` (Muni, BART and Golden Gate ship no `feed_info.txt`).
 
-Ferry notes: the only SF terminal with scheduled weekday service in either feed is the Ferry Building (Pier 41 and Pier 48 appear in `stops.txt` with no trips). The Treasure Island ferry (Prop SF) publishes no GTFS anywhere; it is omitted until WETA absorbs it.
+Each is a raw zip stored by sha256 like every other source, and archived to R2 `sources/` so `fetch --restore` works after a feed rolls over. `upstreamVersion` is `feed_info.feed_version` when present, else `<min calendar start>..<max calendar end>` (Muni and BART ship no `feed_info.txt`).
 
-**Bootstrap for cloners: `npm run data:transit`.** Because the transit terms are the agencies' (not ours to sublicense), a clone gets transit data straight from the operators, not from our archive. `data:transit` runs `pipeline fetch --only gtfs-*` from the agency URLs, then builds `transit.json` and writes it into the local R2 copy of the dataset named in `.dev.vars`, adding `transit` to that local manifest copy. If a fetched feed's sha256 differs from the lock (feeds roll over every service change), it proceeds with a warning, since local dev does not need bit-for-bit reproducibility; `pipeline build` for a release still requires the lock to match. The raw GTFS zips are **excluded** from the R2 `sources/` archive and from `fetch --restore`; if an upstream feed has moved on, a release rebuild refetches and relocks. Setup in `CLAUDE.md` and `docs/dev/developing.md` gains the step.
+**Ferries are excluded.** The only SF terminal with weekday service is the Ferry Building. It is within 800 m of BART Embarcadero, whose peak capacity (~30–40k riders/hr) dwarfs the ferries' (~3k/hr), and AM peak ferry trips run overwhelmingly into SF. Adding them would mean two more feeds for no visible change. A ferry pattern can be added later through the same network model.
+
+**Bootstrap for cloners: `npm run data:transit`.** This fetches the feeds directly from the agency URLs (`pipeline fetch --only gtfs-*`), builds `transit.json`, and writes it into the local R2 copy of the dataset named in `.dev.vars`, adding `transit` to that local manifest copy. Feeds roll over at every service change, so a sha256 that differs from the lock is a warning here, not an error: local dev does not need bit-for-bit reproducibility. `pipeline build` for a release still requires the lock to match. The Setup sections in `CLAUDE.md` and `docs/dev/developing.md` gain this step.
 
 **Rejected: the 511.org regional feed.** It is one merged feed, but it needs an API key (a CI secret), requires reporting to MTC within 30 days of launch, and its sublicensing clause (§2c, written acceptance from sublicensees) does not fit anonymous public data. It is the fallback if the direct Muni URL goes stale.
 
-**Licensing of `transit.json`.** The derived file carries the agencies' terms, **not** ODbL or PDDL. Muni's licence forbids sublicensing, so we cannot relabel it. `/attribution` shows the SFMTA cl.12 notice verbatim, the cl.4 disclaimer, and credits for BART, Caltrain, SF Bay Ferry and Golden Gate Ferry. `DERIVED_LICENSE` gains a `transit.json → agency terms` entry, and `docs/dev/pipeline.md` "ODbL obligations" notes the exception. The SFMTA and BART licences are revocable; if one is withdrawn, the next dataset version drops that feed and the layer degrades to the remaining operators.
+**Licensing of `transit.json`.** `transit.json` contains only facts: stop locations, which routes serve them, how often, and vehicle capacities. Facts are not copyrightable in the US (*Feist v. Rural*). We publish it like the DataSF sources and credit the operators as a courtesy. The licence column above records each feed's stated terms in the lock, for the record.
 
-**`route_type` mapping.** These feeds use standard codes only: `0` (Muni Metro and F/E streetcar, split by route id: `F`, `E` → `streetcar`; `J K L M N T S` → `light-rail`), `1` → `heavy-rail` (BART), `2` → `commuter-rail` (Caltrain), `3` → `bus`, `4` → `ferry`, `5` → `cable-car`. Trolleybuses are not distinguished: capacity depends on vehicle size, not propulsion. GTFS carries no vehicle size or train length, so those come from the vehicle assignments in §4.2 step 7.
+**Credits appear on `/attribution` only**: SFMTA, BART and Caltrain, each with the licence recorded in the lock. The map's attribution control is not extended, since it already links to `/attribution`.
+
+**`route_type` mapping.** These feeds use standard codes only: `0` (Muni Metro and F/E streetcar, split by route id: `F`, `E` → `streetcar`; `J K L M N T S` → `light-rail`), `1` → `heavy-rail` (BART), `2` → `commuter-rail` (Caltrain), `3` → `bus`, `5` → `cable-car`. Trolleybuses are not distinguished: capacity depends on vehicle size, not propulsion. GTFS carries no vehicle size or train length, so those come from the vehicle assignments in §4.2 step 7.
 
 ### 4.2 Reduction (`pipeline/steps/transit.ts`)
 
@@ -97,8 +98,6 @@ Pure TS (no DuckDB needed; feeds are small). Steps:
    | `muni-cable-powell` / `-california` | ~30 / ~35 | 52 / 60 | SRTP Table 4-5 |
    | `bart-car` (Fleet of the Future) | 54 | 107 | BART standard: 60 seated + 47 standing per car |
    | `caltrain-emu7` (Stadler KISS, 7 cars, one unit) | 675 | 810 | Caltrain 2025 Title VI (load factor 1.2) |
-   | `ferry-weta` | — | 400 | sfbayferry.com fleet (225–445; newer vessels 320–400) |
-   | `ferry-ggf` | — | 450 | Golden Gate Ferry fleet (catamarans 400–450) |
 
    | route assignments (seed) | |
    |---|---|
@@ -145,7 +144,7 @@ Target size: under 400 KB uncompressed. New invariant **V14**: `transit.json` ro
 
 ### 4.4 Fixture
 
-Hand-made mini GTFS in `pipeline/test/fixtures/mini/raw/` covering the fixture cells: two bus routes (one 60-ft), one 2-car light-rail line with a shared station, one BART-like heavy-rail stop grouped with a Muni stop into one place, one ferry stop, one stop outside the clip. Golden `transit.json` pinned alongside the existing goldens.
+Hand-made mini GTFS in `pipeline/test/fixtures/mini/raw/` covering the fixture cells: two bus routes (one 60-ft), one 2-car light-rail line with a shared station, one BART-like heavy-rail stop grouped with a Muni stop into one place, one stop outside the clip. Golden `transit.json` pinned alongside the existing goldens.
 
 ## 5. Transit module (`src/lib/transit/`)
 
@@ -155,7 +154,7 @@ DOM-free, zod-free, `$app`-free (same constraints as `src/lib/sim/host.ts`), so 
 
 ```ts
 type ModeId = 'bus' | 'cable-car' | 'streetcar' | 'light-rail'
-            | 'heavy-rail' | 'commuter-rail' | 'ferry';
+            | 'heavy-rail' | 'commuter-rail';
 type VehicleId = string;   // keys of the vehicle table; open so edits can add vehicles
 interface Vehicle { label: string; seats: number | null; capacity: number }
 interface Stop { id: string; name: string; lngLat: [number, number]; stationId: string | null; placeId: string }
@@ -170,7 +169,7 @@ interface TransitNetwork { serviceDate: string; peak: { start: string; end: stri
 
 - `stopService(net)` → per stop, a list of `{ routeKey: \`${operatorId}:${routeId}:${direction}\`, mode, tph, cap }`, summing across patterns of the same route-direction at that stop. `cap = tph × vehicles[vehicle].capacity × cars`.
 - `stopCapacity(net)` → `Float64Array`, riders per peak hour: Σ `cap` over the stop's service.
-- `stopClass(service)` → `'regional-rail' | 'rail' | 'ferry' | 'bus'` by the highest mode served, in that order of precedence (`heavy-rail`, `commuter-rail` → regional-rail; `light-rail`, `streetcar` → rail; `ferry` → ferry; everything else → bus, including cable car). Used for marker colour only.
+- `stopClass(service)` → `'regional-rail' | 'rail' | 'bus'` by the highest mode served (`heavy-rail`, `commuter-rail` → regional-rail; `light-rail`, `streetcar` → rail; everything else → bus, including cable car). Used for marker colour only.
 - `sb79Tier(net, stop)` → `1 | 2 | null`. Tier 1: served by heavy rail, or commuter rail with ≥ 72 trains/day both directions (computed over the service day, all hours). Tier 2: light rail or streetcar, or commuter rail ≥ 48/day. Bus-only stops return `null` (dedicated-lane data not modelled). Labelled "estimated" wherever shown. Computed, not stored, so edits change it.
 
 ### 5.3 Area-capacity surface
@@ -207,13 +206,13 @@ MapLibre GeoJSON sources, not deck overlays: `setOverlayLayers` is single-owner 
 
 **Access colours.** A 5-step sequential ramp, new `TOKENS` entries `transit-access-1..5` in both themes, binned on a log scale: < 1k, 1k–3k, 3k–10k, 10k–30k, ≥ 30k riders/hr. Cells under 200 riders/hr are transparent. Bins are a `TransitParams`-adjacent constant in `src/lib/transit/legend.ts` so the legend and the layer share them.
 
-**Stop markers.** Colour by `stopClass` (tokens `transit-bus`, `transit-rail`, `transit-regional`, `transit-ferry`). Radius by `log10(cap)` with an interpolate expression, zoom-scaled. Filtering by zoom: below z13 only regional rail and ferry; z13–14 adds rail; z15+ all stops. A white (light) or near-black (dark) stroke keeps markers legible over the access surface.
+**Stop markers.** Colour by `stopClass` (tokens `transit-bus`, `transit-rail`, `transit-regional`). Radius by `log10(cap)` with an interpolate expression, zoom-scaled. Filtering by zoom: below z13 only regional rail; z13–14 adds rail; z15+ all stops. A white (light) or near-black (dark) stroke keeps markers legible over the access surface.
 
 **Hover tooltip** on stops at z ≥ 14: name, routes (grouped by mode), peak capacity/hr, SB 79 tier (estimated) when non-null. Uses the existing tooltip affordance (keyboard focus parity per `docs/dev/accessibility.md`).
 
 ### 6.2 Attribution
 
-Feed licences flow through `manifest.sources` to `/attribution` like every other source. Map attribution string gains the transit operators only when a transit layer is visible.
+Operator credits flow through `manifest.sources` to `/attribution` like every other source (§4.1). The map's attribution control is unchanged.
 
 ### 6.3 View menu
 
@@ -239,14 +238,9 @@ Feed licences flow through `manifest.sources` to `/attribution` like every other
 - **Edits apply to the seed.** `applyTransitEdits(seed, edits) → TransitNetwork`. Edits are things like `{ kind: 'frequency', routeKey, factor }`, `{ kind: 'consist', routeKey, cars }`, `{ kind: 'vehicle', routeKey, vehicle }`, `{ kind: 'vehicle-capacity', vehicle, capacity }`, `{ kind: 'new-pattern', … }`, `{ kind: 'new-stop', … }`. All derivations take the resulting network; none read the seed directly.
 - **Zoning from transit.** M2 area-select ("transit buffer") and per-parcel transit metrics read `accessAt` or stop sets from the same network, inside the sim worker.
 
-## 9. Open questions
+## 9. Decisions (2026-10-14)
 
-Resolved 2026-10-14:
-- The licence exception is accepted, and a bootstrap script lets cloners fetch the feeds themselves (§4.1).
+- Transit data is published as facts, with credits on `/attribution` only. A bootstrap script fetches the feeds for anyone who clones the repo (§4.1).
 - Both layers are on by default.
-- Ferries are included.
-- Vehicle capacities are sourced from agency planning standards (§4.2 step 7).
-
-Still open:
-1. The ferry feeds publish no licence (SF Bay Ferry is listed as ODC-BY only by a catalogue; Golden Gate Ferry has nothing). Is crediting them and proceeding acceptable, or should we email both operators for written terms first?
-2. The capacity rule is each agency's planning load (Caltrain 810 < 10-car BART 1,070). The alternative is seats × a common load factor, which ranks seated capacity more evenly. Keep agency planning?
+- Ferries are excluded: negligible resident-facing capacity (§4.1).
+- Capacities use each agency's own planning load, with no common load-factor abstraction (§4.2 step 7).
