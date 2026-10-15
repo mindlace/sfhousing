@@ -76,13 +76,13 @@ Each is a raw zip stored by sha256 like every other source, and archived to R2 `
 
 Pure TS (no DuckDB needed; feeds are small). Steps:
 
-1. **Service day.** Pick the representative weekday: the first Tuesday on or after the lock's newest `retrievedAt` that is active in every feed (`calendar` ∩ `calendar_dates`, honouring exceptions). Record it in the output.
+1. **Service day, chosen per feed.** Each feed picks the first Tuesday on or after the lock's newest `retrievedAt` on which it has service (`calendar` ∩ `calendar_dates`, honouring exceptions). If there is none, it falls back to its last scheduled Tuesday and logs a warning. Feeds pick independently because they roll over on different dates (in October 2026 the Muni feed ran only to 2026-08-28). Each operator's date is recorded in the output.
 2. **Peak window.** Weekday AM peak, 07:00–09:00 local, by `departure_time` at each stop. `tripsPerHour = departures in window / 2`.
 3. **Clip.** Keep stops within the SF city/county boundary buffered by 1 km (riders in Daly City walk to Balboa Park). Keep patterns that serve at least one kept stop.
 4. **Patterns.** Group trips by `(route_id, direction_id, ordered stop list)`. For each pattern and each of its stops, count peak departures. Drop patterns with zero peak departures at every stop.
 5. **Mode.** Map `route_type` to `ModeId` per §4.1.
 6. **Stations.** Keep GTFS `parent_station` as `stationId` within an operator. Then group across operators: stops (or stations) within 150 m whose normalised names share a token (e.g. "Powell") get a common `placeId`. Ungrouped stops get `placeId = stopId`.
-7. **Vehicles and consists.** Capacity is `vehicle capacity × cars`. `pipeline/config/transit-vehicles.ts` holds two tables, both with a source URL and as-of date per row:
+7. **Vehicles and consists.** Capacity is `vehicle capacity × cars`. `pipeline/transit-config.ts` holds two tables, both with a source URL and as-of date per row:
    - **Vehicles** (`VehicleId → { label, seats, capacity }`), at each agency's own *planning* load, meaning the load it schedules service against.
    - **Route assignments** (`operator:route → { vehicle, cars }`). Every route not listed gets its operator's default.
 
@@ -104,7 +104,7 @@ Pure TS (no DuckDB needed; feeds are small). Steps:
    | Muni default | `muni-bus-40` × 1 |
    | Muni 60-ft | 5, 5R, 7, 8, 9R, 14, 14R, 30, 38, 38R, 49, 1X, 8AX, 8BX, 30X (Wikipedia "^" column; SFMTA confirms 38/38R, 49, 14R). The 9 runs 60-ft only on weekends, so it stays 40-ft at weekday peak. |
    | Muni 30-ft | 35, 36, 37, 39, 52, 56, 66, 67 |
-   | Muni Metro | N, K, T × 2 cars; J, L, M, S × 1 |
+   | Muni Metro | N, K, T × 2 cars; J, L, M × 1 (E and S are absent from the current feed) |
    | BART | Red × 10, Yellow × 9, Green × 6, Blue × 6, Orange × 6 (July 2026 schedule) |
    | Caltrain | `caltrain-emu7` × 1 |
 
@@ -124,9 +124,9 @@ One JSON file, columnar like the parcel chunks:
 ```ts
 {
   format: 'sfh-transit/1',
-  serviceDate: 'YYYY-MM-DD', peak: { start: '07:00', end: '09:00' },
+  peak: { start: '07:00', end: '09:00' },
   vehicles: { [VehicleId]: { label: string; seats: number | null; capacity: number } },
-  operators: { id: string; label: string }[],
+  operators: { id: string; label: string; serviceDate: 'YYYY-MM-DD' }[],
   stops: {               // parallel arrays, index = stop index
     id: string[]; name: string[]; lng: number[]; lat: number[]   // lng/lat as int ×1e6
     station: (string | null)[]; place: string[]
@@ -136,6 +136,7 @@ One JSON file, columnar like the parcel chunks:
     mode: ModeId; direction: 0 | 1; vehicle: VehicleId; cars: number;
     stops: number[];         // stop indices, in order
     tph: number[];           // peak trips per hour at each stop, parallel to `stops` (×10, int)
+    tpd: number[];           // trips per day at each stop, int (SB 79 tier needs daily counts)
   }[]
 }
 ```
@@ -160,8 +161,9 @@ interface Vehicle { label: string; seats: number | null; capacity: number }
 interface Stop { id: string; name: string; lngLat: [number, number]; stationId: string | null; placeId: string }
 interface Pattern { id: string; operatorId: string; routeId: string; routeName: string;
                     mode: ModeId; direction: 0 | 1; vehicle: VehicleId; cars: number;
-                    stops: { stop: number; tph: number }[] }
-interface TransitNetwork { serviceDate: string; peak: { start: string; end: string };
+                    stops: { stop: number; tph: number; tpd: number }[] }
+interface Operator { id: string; label: string; serviceDate: string }
+interface TransitNetwork { peak: { start: string; end: string }; operators: Operator[];
                            vehicles: Record<VehicleId, Vehicle>; stops: Stop[]; patterns: Pattern[] }
 ```
 
@@ -178,7 +180,7 @@ The value at a point *p* is the peak-hour capacity reachable on foot, counting e
 
 ```
 access(p) = Σ over route-directions r of  max over stops s of r within R of  cap(r, s) · w(dist(p, s))
-cap(r, s) = tph(r, s) · vehicleCapacity(mode(r))
+cap(r, s) = tph(r, s) · vehicles[vehicle(r)].capacity · cars(r)
 w(d)      = 1                         for d ≤ d0
             1 − (d − d0) / (R − d0)   for d0 < d ≤ R
             0                         beyond R
@@ -202,7 +204,7 @@ MapLibre GeoJSON sources, not deck overlays: `setOverlayLayers` is single-owner 
 | layer id | type | placement | data |
 |---|---|---|---|
 | `transit-access` | `fill`, opacity 0.45 | above basemap non-symbol layers, below `existing-buildings` | grid cells as polygons, property `v` = access, merged runs per row to cut feature count |
-| `transit-stops` | `circle` | above basemap labels (top of stack) so stops are never hidden under generated buildings | stops, properties `cls`, `cap`, `name` |
+| `transit-stops-bus` (minzoom 15), `transit-stops-rail` (minzoom 13), `transit-stops-regional` | `circle`, one layer per class | above basemap labels (top of stack) so stops are never hidden under generated buildings | stops, properties `cls`, `cap`, `name` |
 
 **Access colours.** A 5-step sequential ramp, new `TOKENS` entries `transit-access-1..5` in both themes, binned on a log scale: < 1k, 1k–3k, 3k–10k, 10k–30k, ≥ 30k riders/hr. Cells under 200 riders/hr are transparent. Bins are a `TransitParams`-adjacent constant in `src/lib/transit/legend.ts` so the legend and the layer share them.
 
