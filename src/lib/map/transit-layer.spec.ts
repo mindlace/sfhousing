@@ -177,6 +177,11 @@ describe('stopTooltipLines', () => {
       'Bus 22 · ~260 riders/hr at peak'
     ]);
   });
+  it('omits the capacity for a stop with no peak boarding (an end of line)', () => {
+    const n = embarcadero();
+    n.patterns[3].stops = [{ stop: 1, tph: 0, tpd: 60 }];
+    expect(stopTooltipLines(transitView(n), 1)).toEqual(['Market St & Main St', 'Bus 22']);
+  });
   it('lists rail before bus and omits a null tier', () => {
     expect(stopTooltipLines(t, 1)[1]).toBe(
       'Muni Metro N · Bus 22 · ~1,480 riders/hr at peak · SB 79 tier 2 (est.)'

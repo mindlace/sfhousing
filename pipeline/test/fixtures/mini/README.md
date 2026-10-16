@@ -79,5 +79,6 @@ Expected in `golden/transit.json`:
   2026-10-13.
 - m4 and FX-1 share a `place` (within 150 m, both named "Fixture Station").
 - Pattern `muni:22:0:0`: 12 trips in the two-hour peak (6 tph, `tph` `[60, 0]` on the wire, which stores
-  tenths) and `tpd` `[13, 0]`: only departures count, and a trip's last stop (m2) is an arrival.
+  tenths) and `tpd` `[13, 13]`: peak `tph` counts departures only, so a trip's last stop (m2) adds
+  none, while `tpd` counts every train serving the stop.
 - V14 passes with the fixture profile: 8 stops, one heavy-rail stop (FX-1, "Fixture Station").

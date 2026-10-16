@@ -174,7 +174,8 @@ export function stopTooltipLines(t: TransitView, i: number): [string, string] {
   const parts = MODE_ORDER.filter((m) => byMode.has(m)).map(
     (m) => `${MODE_LABEL[m]} ${[...byMode.get(m)!].sort(natural).join(', ')}`
   );
-  parts.push(`~${nf.format(Math.round(m.cap / 10) * 10)} riders/hr at peak`);
+  // An end-of-line stop has trains but no peak boarding: say nothing rather than "~0".
+  if (m.cap > 0) parts.push(`~${nf.format(Math.round(m.cap / 10) * 10)} riders/hr at peak`);
   // sb79Tier already counts over the whole station.
   const tier = sb79Tier(t.net, m.stops[0], t.service);
   if (tier !== null) parts.push(`SB 79 tier ${tier} (est.)`);

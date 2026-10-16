@@ -142,7 +142,7 @@ function reduceFeed(
     if (sec === null) untimed++;
     let list = seqs.get(trip);
     if (!list) seqs.set(trip, (list = []));
-    // pickup_type 1: no boarding here, so not a departure (a missing column reads as 0).
+    // pickup_type 1: no boarding here, so not a peak departure (a missing column reads as 0).
     list.push([Number(at(r, sseq)), at(r, sstop), sec ?? -1, at(r, spick) !== '1']);
   }
   counts['transit.untimed_stop_times'] = (counts['transit.untimed_stop_times'] ?? 0) + untimed;
@@ -162,11 +162,12 @@ function reduceFeed(
       p = { route: t.route, dir: t.dir, stops, peak: stops.map(() => 0), day: stops.map(() => 0) };
       pats.set(key, p);
     }
-    // Departures only: a trip's last stop is an arrival, and so is a no-pickup row.
+    // tpd counts every train serving the stop (SB 79 counts trains per day at a station), so a
+    // trip's terminal arrival and a pickup_type=1 row both count. Peak tph is boarding capacity:
+    // only departures, so neither of those counts there.
     rows.forEach((r, k) => {
-      if (k === rows.length - 1 || !r[3]) return;
       p.day[k]++;
-      if (r[2] >= p0 && r[2] < p1) p.peak[k]++;
+      if (k < rows.length - 1 && r[3] && r[2] >= p0 && r[2] < p1) p.peak[k]++;
     });
   }
 

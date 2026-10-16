@@ -56,10 +56,10 @@ describe('reduceTransit', () => {
     const { network } = reduceTransit([{ spec: GTFS_FEEDS['gtfs-muni'], files: muni() }], opts);
     const p22 = network.patterns.find((p) => p.id === 'muni:22:0:0')!;
     expect(p22).toMatchObject({ mode: 'bus', vehicle: 'muni-bus-40', cars: 1 });
-    // A trip's last stop is an arrival, not a departure.
+    // A trip's last stop is an arrival: it adds no peak boarding, but the trip still serves it.
     expect(p22.stops.map((s) => [network.stops[s.stop].id, s.tph, s.tpd])).toEqual([
       ['muni:a', 6, 13],
-      ['muni:b', 0, 0]
+      ['muni:b', 0, 13]
     ]);
     expect(network.patterns.find((p) => p.routeId === '14')).toMatchObject({
       vehicle: 'muni-bus-60'
@@ -86,7 +86,7 @@ describe('reduceTransit', () => {
     expect(network.stops.map((s) => s.id)).not.toContain('muni:d');
   });
 
-  it('does not count a row with pickup_type 1 as a departure', () => {
+  it('does not count a row with pickup_type 1 as a peak departure, but counts it in tpd', () => {
     const files = muni();
     files.set(
       'stop_times.txt',
@@ -97,8 +97,8 @@ describe('reduceTransit', () => {
     const { network } = reduceTransit([{ spec: GTFS_FEEDS['gtfs-muni'], files }], opts);
     expect(network.patterns[0].stops.map((s) => [network.stops[s.stop].id, s.tph, s.tpd])).toEqual([
       ['muni:a', 0.5, 1],
-      ['muni:b', 0, 0],
-      ['muni:d', 0, 0]
+      ['muni:b', 0, 1],
+      ['muni:d', 0, 1]
     ]);
   });
 
