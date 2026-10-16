@@ -36,6 +36,25 @@ describe('sfh-transit/1 codec', () => {
     expect(() => decodeTransit(w)).toThrow(msg);
   });
 
+  it('rejects a vehicle name that is only an Object.prototype member', () => {
+    const w = wire() as any;
+    w.patterns[0].vehicle = 'toString';
+    expect(() => decodeTransit(w)).toThrow(/vehicle/);
+  });
+
+  it('keeps a vehicle keyed __proto__ as an ordinary entry', () => {
+    const w = wire() as any;
+    const text = JSON.stringify(w).replace(
+      '"vehicles":{',
+      '"vehicles":{"__proto__":{"label":"odd","seats":null,"capacity":10},'
+    );
+    const t = JSON.parse(text);
+    t.patterns[0].vehicle = '__proto__';
+    const net = decodeTransit(JSON.stringify(t));
+    expect(Object.hasOwn(net.vehicles, '__proto__')).toBe(true);
+    expect(net.vehicles[net.patterns[0].vehicle].capacity).toBe(10);
+  });
+
   it('rejects invalid JSON text', () => {
     expect(() => decodeTransit('{')).toThrow(/invalid JSON/);
   });

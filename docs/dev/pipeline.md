@@ -57,7 +57,7 @@ The lock pins every input by sha256. `build` refuses to run if a cached file doe
 `transit.json` (codec `sfh-transit/1`) is the reduced transit network the capacity features read; design in the transit spec (`docs/superpowers/specs/2026-10-14-transit-capacity-design.md`).
 
 - Feeds come only from the agencies' own GTFS URLs (`pipeline/transit-config.ts`), never 511. They are pinned in the lock as `gtfs-muni`, `gtfs-bart` and `gtfs-caltrain`.
-- Vehicles and route-to-vehicle assignments live in `pipeline/transit-config.ts`, each with a URL and as-of date. Update them when SFMTA reassigns fleets, and run a strict live build (`strict: true`) to catch renamed lines.
+- Vehicles and route-to-vehicle assignments live in `pipeline/transit-config.ts`, each citing its source and an as-of date (or `null`). Every `url` is currently `null`: the spec supplies none, so add one when a row is re-sourced. Update them when SFMTA reassigns fleets, then run `npm run pipeline -- build`: a non-fixture build is strict (`strict: !fixtureMode` in `pipeline/steps/build.ts`; there is no CLI flag) and fails when an assigned line is missing from a feed, which catches renamed lines. Fixture builds and `npm run data:transit` skip that check.
 - The service day is chosen per feed. A feed whose calendar has expired is a warning, not a failure.
 - `npm run data:transit` exists for local use: it builds `transit.json` from live feeds into the local dataset (see [developing.md](developing.md)). It clips to the loaded dataset's neighborhoods, so it needs a real dataset from `npm run data:local`; `fixture-0` yields only a handful of stops.
 

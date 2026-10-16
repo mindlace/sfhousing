@@ -91,7 +91,8 @@ export function decodeTransit(json: unknown): TransitNetwork {
     return { id: o.id, label: o.label, serviceDate: o.serviceDate };
   });
   if (!isObj(w.vehicles)) throw new TransitFormatError('vehicles is not an object');
-  const vehicles: TransitNetwork['vehicles'] = {};
+  // Null prototype: a `__proto__` key is an ordinary entry, and no inherited name is a vehicle.
+  const vehicles: TransitNetwork['vehicles'] = Object.create(null);
   for (const [k, v] of Object.entries(w.vehicles)) {
     if (
       !isObj(v) ||
@@ -140,7 +141,7 @@ export function decodeTransit(json: unknown): TransitNetwork {
     if (!MODE_IDS.includes(p.mode as ModeId)) throw new TransitFormatError(`${where}: bad mode`);
     if (p.direction !== 0 && p.direction !== 1)
       throw new TransitFormatError(`${where}: bad direction`);
-    if (typeof p.vehicle !== 'string' || !(p.vehicle in vehicles))
+    if (typeof p.vehicle !== 'string' || !Object.hasOwn(vehicles, p.vehicle))
       throw new TransitFormatError(`${where}: unknown vehicle ${String(p.vehicle)}`);
     if (!isInt(p.cars, 1)) throw new TransitFormatError(`${where}: bad cars`);
     const st = p.stops,

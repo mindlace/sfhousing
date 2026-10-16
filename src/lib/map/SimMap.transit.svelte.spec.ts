@@ -16,6 +16,7 @@ import {
   TRANSIT_STOP_LAYERS,
   TRANSIT_STOPS_SOURCE
 } from './style';
+import { loadTransitNetwork } from './transit-layer';
 import type { SimMapHandle, SimMapProps } from './types';
 
 // The client tests run on Vitest's Vite dev server (root = repo), so the committed fixture is
@@ -192,6 +193,31 @@ describe('SimMap transit', { timeout: 30_000 }, () => {
       .toBe(true);
     expect(await features(map, TRANSIT_STOPS_SOURCE)).toBe(0);
     expect(await features(map, TRANSIT_ACCESS_SOURCE)).toBe(0);
+    expect(errors).toEqual([]);
+  });
+
+  it.each([
+    ['the stops', TRANSIT_STOPS_SOURCE],
+    ['the access grid', TRANSIT_ACCESS_SOURCE]
+  ])('turns a failure building %s into a warning, not an error', async (_, source) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const { ready, root } = await mount({
+      fetchTransit: async (url) => {
+        await gate;
+        return loadTransitNetwork(url);
+      }
+    });
+    const map = (await ready).getMap()!;
+    vi.spyOn(map.getSource(source) as GeoJSONSource, 'setData').mockImplementation(() => {
+      throw new Error('boom');
+    });
+    release();
+    await expect
+      .poll(() => warn.mock.calls.some((c) => c[0] === '[map] transit data unavailable'))
+      .toBe(true);
+    expect(root.dataset.state).toBe('ready');
     expect(errors).toEqual([]);
   });
 

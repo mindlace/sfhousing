@@ -693,15 +693,27 @@
     }
     // A teardown or start-up failure (fail() drops the map) while the network loaded.
     if (l.dead || l.map !== map) return;
-    l.transit = t;
-    (map.getSource(TRANSIT_STOPS_SOURCE) as GeoJSONSource | undefined)?.setData(stopsCollection(t));
+    // Transit is warning-only: a failure here leaves that layer empty and the map ready.
+    try {
+      (map.getSource(TRANSIT_STOPS_SOURCE) as GeoJSONSource | undefined)?.setData(
+        stopsCollection(t)
+      );
+      l.transit = t;
+    } catch (e) {
+      console.warn('[map] transit data unavailable', e);
+      return;
+    }
     l.transitIdle = onIdle(() => {
       l.transitIdle = null;
       if (l.dead || l.map !== map) return;
-      const grid = buildAccessGrid(t.net, DEFAULT_TRANSIT_PARAMS, SF_GRID_BBOX, t.service);
-      (map.getSource(TRANSIT_ACCESS_SOURCE) as GeoJSONSource | undefined)?.setData(
-        accessCollection(grid)
-      );
+      try {
+        const grid = buildAccessGrid(t.net, DEFAULT_TRANSIT_PARAMS, SF_GRID_BBOX, t.service);
+        (map.getSource(TRANSIT_ACCESS_SOURCE) as GeoJSONSource | undefined)?.setData(
+          accessCollection(grid)
+        );
+      } catch (e) {
+        console.warn('[map] transit data unavailable', e);
+      }
     });
   }
 
