@@ -149,17 +149,17 @@
           "url": "https://fixture.invalid/gtfs-caltrain/routes.txt"
         },
         {
-          "archiveKey": "sources/ba516c4f025c81ce88cae2b91f98b2ce7b91c0ee22b76f0658d3f0759b2f9c2f.txt",
-          "bytes": 4920,
+          "archiveKey": "sources/21afb751a82965470a0c763c20821bd1cd34f1572d47f150a7e9a2ebff10c08d.txt",
+          "bytes": 6240,
           "name": "gtfs-caltrain/stop_times.txt",
-          "sha256": "ba516c4f025c81ce88cae2b91f98b2ce7b91c0ee22b76f0658d3f0759b2f9c2f",
+          "sha256": "21afb751a82965470a0c763c20821bd1cd34f1572d47f150a7e9a2ebff10c08d",
           "url": "https://fixture.invalid/gtfs-caltrain/stop_times.txt"
         },
         {
-          "archiveKey": "sources/0dc1b6c99e058ed601079bd19971e51a26b3d76891cdfafaa69dd199b954c5f6.txt",
-          "bytes": 325,
+          "archiveKey": "sources/1433710dd141c4c53935b3babff3c3a7c477e526c1fab0177d92423998f3010a.txt",
+          "bytes": 382,
           "name": "gtfs-caltrain/stops.txt",
-          "sha256": "0dc1b6c99e058ed601079bd19971e51a26b3d76891cdfafaa69dd199b954c5f6",
+          "sha256": "1433710dd141c4c53935b3babff3c3a7c477e526c1fab0177d92423998f3010a",
           "url": "https://fixture.invalid/gtfs-caltrain/stops.txt"
         },
         {

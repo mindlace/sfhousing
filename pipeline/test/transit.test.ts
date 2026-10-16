@@ -37,7 +37,8 @@ const MUNI_ROUTES =
 const MUNI_STOPS =
   'stop_id,stop_name,stop_lat,stop_lon\n' +
   'a,Mission St & 20th St,37.7596,-122.4195\nb,Mission St & 22nd St,37.7556,-122.4195\n' +
-  'c,Metro Powell Station/Downtown,37.784653,-122.407086\nfar,Far St,37.9,-122.4195\n';
+  'c,Metro Powell Station/Downtown,37.784653,-122.407086\nfar,Far St,37.9,-122.4195\n' +
+  'd,Mission St & 24th St,37.7522,-122.4184\n';
 const keepAll = () => true;
 const opts = { targetDate: '2026-10-10', keep: keepAll, strict: false };
 
@@ -45,17 +46,20 @@ describe('reduceTransit', () => {
   const muniTrips = (): TripSpec[] => [
     { route: '22', dir: 0, stops: ['a', 'b'], starts: [...every(7, 0, 10, 12), 12 * 3600] },
     { route: '14', dir: 0, stops: ['b', 'a', 'far'], starts: every(7, 0, 15, 8) },
-    { route: 'N', dir: 1, stops: ['c'], starts: every(5, 0, 30, 4) } // 05:00-06:30: no peak trips
+    { route: 'N', dir: 1, stops: ['c', 'd'], starts: every(5, 0, 30, 4) }, // 05:00-06:30: no peak
+    // Evening only: no peak trips, but a and b are kept by the peak pattern above and d is not.
+    { route: '22', dir: 0, stops: ['a', 'b', 'd'], starts: every(20, 0, 30, 3) }
   ];
   const muni = () => feed(MUNI_ROUTES, MUNI_STOPS, muniTrips());
 
   it('counts peak trips per hour and trips per day per stop, by pattern', () => {
     const { network } = reduceTransit([{ spec: GTFS_FEEDS['gtfs-muni'], files: muni() }], opts);
-    const p22 = network.patterns.find((p) => p.routeId === '22')!;
-    expect(p22).toMatchObject({ id: 'muni:22:0:0', mode: 'bus', vehicle: 'muni-bus-40', cars: 1 });
+    const p22 = network.patterns.find((p) => p.id === 'muni:22:0:0')!;
+    expect(p22).toMatchObject({ mode: 'bus', vehicle: 'muni-bus-40', cars: 1 });
+    // A trip's last stop is an arrival, not a departure.
     expect(p22.stops.map((s) => [network.stops[s.stop].id, s.tph, s.tpd])).toEqual([
       ['muni:a', 6, 13],
-      ['muni:b', 6, 13]
+      ['muni:b', 0, 0]
     ]);
     expect(network.patterns.find((p) => p.routeId === '14')).toMatchObject({
       vehicle: 'muni-bus-60'
@@ -67,6 +71,35 @@ describe('reduceTransit', () => {
     const { network } = reduceTransit([{ spec: GTFS_FEEDS['gtfs-muni'], files: muni() }], opts);
     expect(network.patterns.some((p) => p.routeId === 'N')).toBe(false);
     expect(network.stops.map((s) => s.id)).not.toContain('muni:c');
+  });
+
+  it('counts daily trips of off-peak patterns at stops a peak pattern keeps (SB 79 counts all hours)', () => {
+    const { network } = reduceTransit([{ spec: GTFS_FEEDS['gtfs-muni'], files: muni() }], opts);
+    const evening = network.patterns.filter((p) => p.routeId === '22' && p.direction === 0);
+    expect(evening).toHaveLength(2);
+    const off = evening.find((p) => p.stops.every((s) => s.tph === 0))!;
+    expect(off.stops.map((s) => [network.stops[s.stop].id, s.tph, s.tpd])).toEqual([
+      ['muni:a', 0, 3],
+      ['muni:b', 0, 3]
+    ]);
+    // A zero-peak pattern never brings in a stop of its own.
+    expect(network.stops.map((s) => s.id)).not.toContain('muni:d');
+  });
+
+  it('does not count a row with pickup_type 1 as a departure', () => {
+    const files = muni();
+    files.set(
+      'stop_times.txt',
+      'trip_id,arrival_time,departure_time,stop_id,stop_sequence,pickup_type\n' +
+        't1,07:10:00,07:10:00,a,1,0\nt1,07:11:00,07:11:00,b,2,1\nt1,07:12:00,07:12:00,d,3,0\n'
+    );
+    files.set('trips.txt', 'route_id,service_id,trip_id,direction_id\n22,WK,t1,0\n');
+    const { network } = reduceTransit([{ spec: GTFS_FEEDS['gtfs-muni'], files }], opts);
+    expect(network.patterns[0].stops.map((s) => [network.stops[s.stop].id, s.tph, s.tpd])).toEqual([
+      ['muni:a', 0.5, 1],
+      ['muni:b', 0, 0],
+      ['muni:d', 0, 0]
+    ]);
   });
 
   it('clips stops, keeping the pattern for its kept stops', () => {
@@ -96,16 +129,19 @@ describe('reduceTransit', () => {
     const bart = feed(
       'route_id,route_short_name,route_long_name,route_type\n7,Red-S,Richmond to SFO,1\nBB-A,BridgeA,Bus Bridge,3\n',
       'stop_id,stop_name,stop_lat,stop_lon,location_type,parent_station\n' +
-        'POWL,Powell Street,37.784606,-122.407331,1,\nM30-1,Powell Street,37.784645,-122.407387,0,POWL\n',
+        'POWL,Powell Street,37.784606,-122.407331,1,\nM30-1,Powell Street,37.784645,-122.407387,0,POWL\n' +
+        'M20-1,Montgomery Street,37.789256,-122.401407,0,\n',
       [
-        { route: '7', dir: 0, stops: ['M30-1'], starts: every(7, 0, 15, 8) },
-        { route: 'BB-A', dir: 0, stops: ['M30-1'], starts: every(7, 0, 5, 24) }
+        { route: '7', dir: 0, stops: ['M30-1', 'M20-1'], starts: every(7, 0, 15, 8) },
+        { route: 'BB-A', dir: 0, stops: ['M30-1', 'M20-1'], starts: every(7, 0, 5, 24) }
       ]
     );
     const { network } = reduceTransit([{ spec: GTFS_FEEDS['gtfs-bart'], files: bart }], opts);
     expect(network.patterns).toHaveLength(1);
     expect(network.patterns[0]).toMatchObject({ routeName: 'Red', mode: 'heavy-rail', cars: 10 });
-    expect(network.stops[0]).toMatchObject({ id: 'bart:M30-1', stationId: 'bart:POWL' });
+    expect(network.stops.find((s) => s.id === 'bart:M30-1')).toMatchObject({
+      stationId: 'bart:POWL'
+    });
   });
 
   it('reports a feed whose calendar ended before the target date', () => {
@@ -134,12 +170,13 @@ describe('reduceTransit', () => {
   it('warns on peak-serving Muni rail and BART routes with no vehicle assignment', () => {
     const muniRail = feed(MUNI_ROUTES + 'S,S,SHUTTLE,0\n', MUNI_STOPS, [
       ...muniTrips(),
-      { route: 'S', dir: 0, stops: ['c'], starts: every(7, 0, 10, 12) }
+      { route: 'S', dir: 0, stops: ['c', 'd'], starts: every(7, 0, 10, 12) }
     ]);
     const bart = feed(
       'route_id,route_short_name,route_long_name,route_type\n9,Purple-N,SFO to Millbrae,1\n',
-      'stop_id,stop_name,stop_lat,stop_lon\nM30-1,Powell Street,37.784645,-122.407387\n',
-      [{ route: '9', dir: 0, stops: ['M30-1'], starts: every(7, 0, 15, 8) }]
+      'stop_id,stop_name,stop_lat,stop_lon\nM30-1,Powell Street,37.784645,-122.407387\n' +
+        'M20-1,Montgomery Street,37.789256,-122.401407\n',
+      [{ route: '9', dir: 0, stops: ['M30-1', 'M20-1'], starts: every(7, 0, 15, 8) }]
     );
     const r = reduceTransit(
       [

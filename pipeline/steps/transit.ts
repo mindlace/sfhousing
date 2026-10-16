@@ -124,14 +124,15 @@ function reduceFeed(
     }
   }
 
-  const seqs = new Map<string, [seq: number, stop: string, sec: number][]>();
+  const seqs = new Map<string, [seq: number, stop: string, sec: number, board: boolean][]>();
   const sc = csv(g.get('stop_times.txt'));
-  const [strip, sstop, sseq, sdep, sarr] = [
+  const [strip, sstop, sseq, sdep, sarr, spick] = [
     'trip_id',
     'stop_id',
     'stop_sequence',
     'departure_time',
-    'arrival_time'
+    'arrival_time',
+    'pickup_type'
   ].map(sc.col);
   let untimed = 0;
   for (const r of sc.rows()) {
@@ -141,7 +142,8 @@ function reduceFeed(
     if (sec === null) untimed++;
     let list = seqs.get(trip);
     if (!list) seqs.set(trip, (list = []));
-    list.push([Number(at(r, sseq)), at(r, sstop), sec ?? -1]);
+    // pickup_type 1: no boarding here, so not a departure (a missing column reads as 0).
+    list.push([Number(at(r, sseq)), at(r, sstop), sec ?? -1, at(r, spick) !== '1']);
   }
   counts['transit.untimed_stop_times'] = (counts['transit.untimed_stop_times'] ?? 0) + untimed;
 
@@ -160,7 +162,9 @@ function reduceFeed(
       p = { route: t.route, dir: t.dir, stops, peak: stops.map(() => 0), day: stops.map(() => 0) };
       pats.set(key, p);
     }
+    // Departures only: a trip's last stop is an arrival, and so is a no-pickup row.
     rows.forEach((r, k) => {
+      if (k === rows.length - 1 || !r[3]) return;
       p.day[k]++;
       if (r[2] >= p0 && r[2] < p1) p.peak[k]++;
     });
@@ -184,23 +188,22 @@ function reduceFeed(
   }
 
   const peakHours = (p1 - p0) / 3600;
-  const used = new Map<string, RawStop>();
-  const patterns: RawPattern[] = [];
-  const seq = new Map<string, number>();
-  for (const key of [...pats.keys()].sort(cmp)) {
+  // Patterns with peak departures choose the stops. A pattern with none adds no capacity, but its
+  // trips still count in `tpd` (SB 79 counts trains over the whole service day) at those stops.
+  const candidates = [...pats.keys()].sort(cmp).map((key) => {
     const p = pats.get(key)!;
-    const route = routes.get(p.route)!;
-    const kept = p.stops
+    const inClip = p.stops
       .map((s, k) => ({ s, k }))
       .filter(({ s }) => {
         const st = all.get(s);
         return st !== undefined && opts.keep(st.lngLat);
       });
-    if (kept.length === 0 || kept.every(({ k }) => p.peak[k] === 0)) continue;
-    const rd = `${p.route}:${p.dir}`;
-    const n = seq.get(rd) ?? 0;
-    seq.set(rd, n + 1);
-    for (const { s } of kept) {
+    return { p, inClip, peak: inClip.some(({ k }) => p.peak[k] > 0) };
+  });
+  const used = new Map<string, RawStop>();
+  for (const { inClip, peak } of candidates) {
+    if (!peak) continue;
+    for (const { s } of inClip) {
       if (used.has(s)) continue;
       const st = all.get(s)!;
       const parent = st.parent ? all.get(st.parent) : undefined;
@@ -212,6 +215,16 @@ function reduceFeed(
         stationName: parent?.name ?? null
       });
     }
+  }
+  const patterns: RawPattern[] = [];
+  const seq = new Map<string, number>();
+  for (const { p, inClip, peak } of candidates) {
+    const kept = peak ? inClip : inClip.filter(({ s, k }) => used.has(s) && p.day[k] > 0);
+    if (kept.length === 0) continue;
+    const route = routes.get(p.route)!;
+    const rd = `${p.route}:${p.dir}`;
+    const n = seq.get(rd) ?? 0;
+    seq.set(rd, n + 1);
     patterns.push({
       id: `${op}:${p.route}:${p.dir}:${n}`,
       operatorId: op,
@@ -231,6 +244,7 @@ function reduceFeed(
   // Spec §4.2 step 7: the operator default is likely wrong for Muni rail and BART.
   const unassigned = new Set<string>();
   for (const p of patterns) {
+    if (p.stops.every((s) => s.tph === 0)) continue;
     const { line, mode, vehicle, cars } = routes.get(p.routeId)!;
     if (op === 'caltrain' || (op === 'muni' && mode === 'bus') || unassigned.has(line)) continue;
     if (ASSIGNMENTS.some((a) => a.operator === op && a.lines.includes(line))) continue;

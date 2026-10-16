@@ -273,12 +273,18 @@ const GTFS: Record<string, Record<string, string>> = {
       { id: 'fixture_ct', name: 'Fixture Caltrain Station', at: [-40, -80], station: true },
       { id: '70011', name: 'Fixture Caltrain Northbound', at: [-40, -78], parent: 'fixture_ct' },
       { id: '70012', name: 'Fixture Caltrain Southbound', at: [-40, -82], parent: 'fixture_ct' },
-      { id: 'far_ct', name: 'Far Caltrain', at: [0, -8000] }
+      { id: 'far_ct', name: 'Far Caltrain', at: [0, -8000] },
+      { id: 'far_ct_n', name: 'Far North Caltrain', at: [0, 8000] }
     ],
     // 40 trains each way (80/day at the station: SB 79 tier 1), 5 in the peak window -> 2.5 tph.
     trips: [
       { route: '77119', dir: 0, stops: ['70012', 'far_ct'], starts: every(5, 0, 25, 40) },
-      { route: '77119', dir: 1, stops: ['far_ct', '70011'], starts: every(5, 0, 25, 40) }
+      {
+        route: '77119',
+        dir: 1,
+        stops: ['far_ct', '70011', 'far_ct_n'],
+        starts: every(5, 0, 25, 40)
+      }
     ]
   })
 };

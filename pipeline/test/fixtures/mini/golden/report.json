@@ -67,7 +67,7 @@
     "pieces.outside_parcels": 2,
     "pieces.remainder_sliver_dropped": 0,
     "pieces.sliver_dropped": 1,
-    "transit.bytes": 2879,
+    "transit.bytes": 2873,
     "transit.patterns": 7,
     "transit.stops": 8,
     "transit.untimed_stop_times": 0,
@@ -159,7 +159,7 @@
     "derivedData": "ODbL-1.0",
     "notice": "Derived data files under /data/ that incorporate OpenStreetMap or Overture data are made available under the ODbL 1.0."
   },
-  "lockSha256": "8449b88bd065c67d25293ddc148f5d8f0095f3101c2db3609374b79944385bc4",
+  "lockSha256": "085e00321dff83018c910878978dcb08e7d9429663bd1ea433642e398c691876",
   "tilesSkipped": false,
   "toolVersions": {
     "duckdb": "1.5.6",

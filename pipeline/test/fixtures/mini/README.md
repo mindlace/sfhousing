@@ -65,19 +65,19 @@ calendar_dates, routes, stops, stop_times, trips), each one lock entry of six fi
 weekday service `WKDY` (2026-09-01..2026-12-31) and calls at its stops one minute apart. Stop positions are in
 local metres from O. The lock's newest `retrievedAt` is 2026-10-10, so the build targets Tuesday 2026-10-13.
 
-| feed     | stops (local m)                                                                                                 | routes and trips                                                                                                                           |
-| -------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Muni     | m1 (0,-50), m2 (0,-250), m3 (170,-50), m4 "Metro Fixture Station/Downtown" (100,100), m5 (300,300), mx (3000,0) | 22 bus m1-m2 both ways, every 10 min from 07:00 (12 trips) + 12:00; 14 bus m3-m1-mx every 15 min (8); N light rail m4-m5 every 12 min (10) |
-| BART     | station FXST "Fixture Station" (120,110), platform FX-1 under it, FAR (6000,0)                                  | 7 "Red-S" FX-1-FAR every 15 min from 07:00 (8); bus bridge BB-A (route_type 3) is dropped                                                  |
-| Caltrain | station fixture_ct (-40,-80), platforms 70011 / 70012 under it, far_ct (0,-8000)                                | 77119 Local Weekday, 40 trips each way every 25 min from 05:00: 80/day at the station, 5 per direction 07:00-09:00 (2.5 tph)               |
+| feed     | stops (local m)                                                                                                 | routes and trips                                                                                                                                                     |
+| -------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Muni     | m1 (0,-50), m2 (0,-250), m3 (170,-50), m4 "Metro Fixture Station/Downtown" (100,100), m5 (300,300), mx (3000,0) | 22 bus m1-m2 both ways, every 10 min from 07:00 (12 trips) + 12:00; 14 bus m3-m1-mx every 15 min (8); N light rail m4-m5 every 12 min (10)                           |
+| BART     | station FXST "Fixture Station" (120,110), platform FX-1 under it, FAR (6000,0)                                  | 7 "Red-S" FX-1-FAR every 15 min from 07:00 (8); bus bridge BB-A (route_type 3) is dropped                                                                            |
+| Caltrain | station fixture_ct (-40,-80), platforms 70011 / 70012 under it, far_ct (0,-8000), far_ct_n (0,8000)             | 77119 Local Weekday, 70012-far_ct and far_ct-70011-far_ct_n, 40 trips each way every 25 min from 05:00: 80/day at the station, 5 per direction 07:00-09:00 (2.5 tph) |
 
 Expected in `golden/transit.json`:
 
-- 8 stops: m1 m2 m3 m4 m5 FX-1 70011 70012. mx, FAR and far_ct lie more than 1 km outside the
+- 8 stops: m1 m2 m3 m4 m5 FX-1 70011 70012. mx, FAR, far_ct and far_ct_n lie more than 1 km outside the
   neighborhoods and are clipped.
 - `calendar_dates` removes Muni's 2026-10-13, so Muni counts 2026-10-20 while BART and Caltrain count
   2026-10-13.
 - m4 and FX-1 share a `place` (within 150 m, both named "Fixture Station").
-- Pattern `muni:22:0:0`: 12 trips in the two-hour peak (6 tph, `tph` `[60, 60]` on the wire, which stores
-  tenths) and `tpd` `[13, 13]`.
+- Pattern `muni:22:0:0`: 12 trips in the two-hour peak (6 tph, `tph` `[60, 0]` on the wire, which stores
+  tenths) and `tpd` `[13, 0]`: only departures count, and a trip's last stop (m2) is an arrival.
 - V14 passes with the fixture profile: 8 stops, one heavy-rail stop (FX-1, "Fixture Station").
