@@ -1,7 +1,10 @@
 // Recording SimMapHandle for SimMapStub.svelte. Tests read `chunkStatus` and reset it per test.
-import type { ChunkStatus, SimMapHandle } from '$lib/map/types';
+import type { ChunkStatus, SimMapHandle, SimMapProps } from '$lib/map/types';
 
 export const chunkStatus = new Map<string, ChunkStatus>();
+
+/** The stub's latest `view` prop (kept current by SimMapStub.svelte). */
+export const stubProps: { view: SimMapProps['view'] } = { view: undefined };
 
 export const stubHandle: SimMapHandle = {
   applyGenerated: () => {},

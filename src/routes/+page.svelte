@@ -15,6 +15,8 @@
   import { applyTitle } from '$lib/sharing/title';
   import { useHeaderActions } from '$lib/shell/header-actions.svelte';
   import { loadManifest } from '$lib/sim/manifest';
+  import { readViewPrefs, writeViewPrefs, type ViewPrefs } from '$lib/view/prefs';
+  import ViewMenu from '$lib/view/ViewMenu.svelte';
   import type { PageProps } from './$types';
 
   let { data }: PageProps = $props();
@@ -79,6 +81,13 @@
 
   useHeaderActions(headerActions);
 
+  // Map layer toggles (transit spec §6.3), per viewer.
+  let view = $state<ViewPrefs>(readViewPrefs());
+  function onViewChange(v: ViewPrefs): void {
+    view = v;
+    writeViewPrefs(v);
+  }
+
   // Scoreboard wiring (scoreboard spec §4.3/§4.4), separate from the editor/plan concern above.
   let brushEditor = $state<ReturnType<typeof BrushEditor>>();
   // Score and its diff's `complete` travel together, coalesced to ≤ 1 commit per frame.
@@ -100,6 +109,9 @@
 </script>
 
 {#snippet headerActions()}
+  {#if data.manifest?.transit}
+    <ViewMenu {view} onchange={onViewChange} />
+  {/if}
   <SaveIndicator status={autosave.status} />
   {#if editor}
     <!-- editor.plan passes straight through: PublishDialog's 413 lock keys on its identity. -->
@@ -125,6 +137,7 @@
     oneditor={onEditor}
     onscore={(s, meta) => latestScore.push({ score: s, complete: meta.complete })}
     onchunks={(c) => (chunkState = c)}
+    {view}
   />
   <Scoreboard
     score={latestScore.current.score}

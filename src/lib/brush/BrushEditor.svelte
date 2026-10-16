@@ -21,6 +21,7 @@
     type WorkerLike
   } from '$lib/sim/client';
   import type { OpStats } from '$lib/sim/protocol';
+  import type { ViewPrefs } from '$lib/view/prefs';
   import { BrushController } from './BrushController.svelte';
   import BrushToolbar from './BrushToolbar.svelte';
   import { installBrushDebug } from './debug';
@@ -59,6 +60,8 @@
     oneditor?: (editor: Editor) => void;
     /** Tests inject a fake worker. */
     createWorker?: () => WorkerLike;
+    /** Map layer toggles (transit spec §6.3), passed to SimMap. */
+    view?: ViewPrefs;
   }
 
   // eslint-disable-next-line svelte/no-unused-props -- currentVersion: see Props
@@ -71,7 +74,8 @@
     onscore,
     onchunks,
     oneditor,
-    createWorker = spawnSimWorker
+    createWorker = spawnSimWorker,
+    view = undefined
   }: Props = $props();
 
   // The props seed the editor once; later changes belong to whoever remounts this component.
@@ -362,6 +366,7 @@
       requestParcelSummary={(id) => client?.parcelSummary(id) ?? Promise.resolve(null)}
       onRetryChunks={() => client?.retryChunks()}
       onready={onMapReady}
+      {view}
     />
   {:else}
     <div class="brush-editor-frame h-full" data-testid="brush-frame"></div>
