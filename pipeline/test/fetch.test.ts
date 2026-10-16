@@ -2,11 +2,13 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import type { RunFn } from '../lib/r2';
 import type { R2Target } from '../lib/r2';
 import type { Lock } from '../lib/lock';
 import { fetchDatasf } from '../sources/datasf';
+import { fetchGtfs } from '../sources/gtfs';
 import { latestOvertureRelease } from '../sources/overture';
 import { fetchBasemap } from '../sources/protomaps';
 import { restoreRaw } from '../steps/fetch';
@@ -222,5 +224,41 @@ describe('restoreRaw', () => {
 
   it('reports an archive that is not in the bucket', async () => {
     await expect(restoreRaw(lock, tmp(), r2(null))).rejects.toThrow(/not found in R2/);
+  });
+});
+
+describe('fetchGtfs', () => {
+  it('stores the zip by sha256 and versions it from the feed', async () => {
+    const zip = zipSync({
+      'stops.txt': strToU8(
+        'stop_id,stop_name,stop_lat,stop_lon\n1,A,37.7,-122.4\n2,B,37.7,-122.4\n'
+      ),
+      'stop_times.txt': strToU8('trip_id,stop_id\n'),
+      'calendar.txt': strToU8(
+        'service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nWK,1,1,1,1,1,0,0,20260901,20261231\n'
+      )
+    });
+    const http = { get: async () => ({ status: 200, headers: new Headers(), body: zip }) };
+    const raw = mkdtempSync(join(tmpdir(), 'sfh-gtfs-raw-'));
+    const e = await fetchGtfs('gtfs-bart', raw, http, new Date('2026-10-14T00:00:00Z'));
+    expect(e).toMatchObject({
+      id: 'gtfs-bart',
+      rowCount: 2,
+      upstreamVersion: '20260901..20261231',
+      retrievedAt: '2026-10-14T00:00:00.000Z',
+      label: 'BART GTFS'
+    });
+    expect(e.files[0].name).toBe('gtfs-bart.zip');
+  });
+
+  it('rejects a response that is not a GTFS zip', async () => {
+    const http = {
+      get: async () => ({
+        status: 200,
+        headers: new Headers(),
+        body: zipSync({ 'x.txt': strToU8('x') })
+      })
+    };
+    await expect(fetchGtfs('gtfs-muni', tmpdir(), http)).rejects.toThrow(/not a GTFS zip/);
   });
 });

@@ -66,8 +66,8 @@ interface BuildReport {
 /**
  * Spec §4.9 "any failure -> nothing uploaded": the reasons `outDir` is not a publishable
  * dataset. report.json must exist with every invariant ok and tiles built; every file the
- * manifest names (chunks, both PMTiles, neighborhoods, `0-255.pbf` per font stack) must exist;
- * and for a live version the lock being archived must be the lock that built it. Fixture
+ * manifest names (chunks, both PMTiles, neighborhoods, transit, `0-255.pbf` per font stack)
+ * must exist; and for a live version the lock being archived must be the lock that built it. Fixture
  * versions (`fixture-<n>`) archive nothing and are built from the committed mini lock, so the
  * lock check is skipped for them.
  */
@@ -108,6 +108,7 @@ export function datasetProblems(outDir: string, v: string, raw: unknown, lock: L
     m.buildingsTiles,
     m.basemapTiles,
     m.neighborhoods,
+    ...(m.transit ? [m.transit] : []),
     ...(m.sprite ? [m.sprite] : []),
     ...Object.values(FONT_STACKS).map((s) =>
       m.glyphs.replace('{fontstack}', s).replace('{range}', '0-255')

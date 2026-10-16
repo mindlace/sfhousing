@@ -19,6 +19,7 @@ const golden = join(MINI, 'golden');
 const COMPARED = (f: string) =>
   f.startsWith('parcels/') ||
   f === 'neighborhoods.geojson' ||
+  f === 'transit.json' ||
   f === 'manifest.json' ||
   f === 'report.json';
 const stripBuiltAt = (s: string) => s.replace(/"builtAt":"[^"]*"/, '"builtAt":""');

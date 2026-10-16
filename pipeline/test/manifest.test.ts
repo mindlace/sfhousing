@@ -60,4 +60,16 @@ describe('buildManifest', () => {
     expect(m.glyphs).toBe('/data/fixture-3/fonts/{fontstack}/{range}.pbf');
     expect('sprite' in m).toBe(false);
   });
+
+  it('names transit.json when the build wrote one', () => {
+    const m = buildManifest({
+      datasetVersion: 'fixture-3',
+      builtAt: '2026-10-10T00:00:00.000Z',
+      lock: { sources: [] },
+      chunks: [],
+      overtureContrib: [],
+      transit: true
+    });
+    expect(m.transit).toBe('/data/fixture-3/transit.json');
+  });
 });

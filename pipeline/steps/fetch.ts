@@ -6,7 +6,9 @@ import { rawPath, readLock, sha256File, writeLock, type Lock, type LockEntry } f
 import { wranglerTarget, type R2Target } from '../lib/r2';
 import { DATASF, fetchDatasf, type DatasfId } from '../sources/datasf';
 import { fetchOverture } from '../sources/overture';
+import { fetchGtfs } from '../sources/gtfs';
 import { fetchBasemap, fetchFonts } from '../sources/protomaps';
+import { GTFS_IDS, type GtfsLockId } from '../transit-config';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 export const LOCK_PATH = join(ROOT, 'pipeline/sources.lock.json');
@@ -16,7 +18,8 @@ export const FETCH_IDS = [
   ...(Object.keys(DATASF) as DatasfId[]),
   'overture-buildings',
   'protomaps-basemap',
-  'protomaps-fonts'
+  'protomaps-fonts',
+  ...GTFS_IDS
 ] as const;
 
 export interface FetchOpts {
@@ -107,6 +110,8 @@ export async function fetchAll(opts: FetchOpts = {}): Promise<number> {
       }
     } else if (id === 'protomaps-basemap') {
       entry = await fetchBasemap(opts.basemapDate, rawDir, new Date());
+    } else if ((GTFS_IDS as readonly string[]).includes(id)) {
+      entry = await fetchGtfs(id as GtfsLockId, rawDir, http);
     } else entry = await fetchFonts(rawDir, http);
     console.log(
       `  ${id}: ${entry.files.length} file(s), ${entry.rowCount} rows, ${entry.upstreamVersion} (${((Date.now() - t0) / 1000).toFixed(1)}s)`

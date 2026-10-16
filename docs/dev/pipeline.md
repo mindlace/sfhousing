@@ -50,7 +50,7 @@ The lock pins every input by sha256. `build` refuses to run if a cached file doe
 
 ## Invariants
 
-`build` and `check` evaluate V1 to V13 and exit 1 on any failure, so nothing is uploaded. In short: V1 unit total within 2% of 413,208; V2 parcel count equals distinct active ids and lies in [140k, 170k]; V3 land-use match >= 99%; V4 known land-use values; V5 height coverage >= 95%; V6 piece area with a parcel >= 95%; V7 neighborhoods and label points; V8 each parcel in exactly one chunk, chunks round-trip; V9 chunk size limits; V10 tallest building 300 to 340 m; V11 first-paint budget; V12 determinism; V13 published versions are never altered. Thresholds live in `pipeline/config.ts`; the full table is spec section 4.9.
+`build` and `check` evaluate V1 to V14 and exit 1 on any failure, so nothing is uploaded. In short: V1 unit total within 2% of 413,208; V2 parcel count equals distinct active ids and lies in [140k, 170k]; V3 land-use match >= 99%; V4 known land-use values; V5 height coverage >= 95%; V6 piece area with a parcel >= 95%; V7 neighborhoods and label points; V8 each parcel in exactly one chunk, chunks round-trip; V9 chunk size limits; V10 tallest building 300 to 340 m; V11 first-paint budget; V12 determinism; V13 published versions are never altered; V14 `transit.json` decodes, has >= 3,000 stops and heavy-rail service at the 8 SF BART stations (it warns above 400 KB). Thresholds live in `pipeline/config.ts`; the full table is spec section 4.9 (V14: transit spec section 4.3).
 
 ## ODbL obligations
 

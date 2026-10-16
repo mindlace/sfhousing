@@ -1,0 +1,7 @@
+stop_id,stop_name,stop_lat,stop_lon,location_type,parent_station
+m1,"Mission St & 20th St",37.7595495,-122.4195002,0,
+m2,"Mission St & 22nd St",37.7577476,-122.4195009,0,
+m3,"Valencia St & 20th St",37.759549,-122.417571,0,
+m4,"Metro Fixture Station/Downtown",37.7609007,-122.4183648,0,
+m5,"Church St & 24th St",37.7627019,-122.4160943,0,
+mx,"Far Away St & Nowhere Ave",37.7599863,-122.385455,0,

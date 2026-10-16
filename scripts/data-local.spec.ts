@@ -28,14 +28,16 @@ describe('collectDataPaths', () => {
       'sprite/basemap.json',
       'sprite/basemap.png',
       'sprite/basemap@2x.json',
-      'sprite/basemap@2x.png'
+      'sprite/basemap@2x.png',
+      'transit.json'
     ]);
   });
 
   it('lists transit.json only when the manifest has a transit url', () => {
-    const withTransit = { ...manifest, transit: '/data/fixture-0/transit.json' };
-    expect(collectDataPaths(withTransit, 'fixture-0')).toContain('transit.json');
-    expect(collectDataPaths(manifest, 'fixture-0')).not.toContain('transit.json');
+    expect(collectDataPaths(manifest, 'fixture-0')).toContain('transit.json');
+    const withoutTransit = { ...manifest };
+    delete withoutTransit.transit;
+    expect(collectDataPaths(withoutTransit, 'fixture-0')).not.toContain('transit.json');
   });
 
   it('de-duplicates repeated chunk urls', () => {

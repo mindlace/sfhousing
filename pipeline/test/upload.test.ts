@@ -34,6 +34,7 @@ function outDir(v = 'fixture-7', report: Record<string, unknown> = {}) {
   mkdirSync(join(d, 'parcels'));
   writeFileSync(join(d, 'parcels', '50_25.json'), '{}');
   writeFileSync(join(d, 'neighborhoods.geojson'), '{}');
+  writeFileSync(join(d, 'transit.json'), '{}');
   writeFileSync(join(d, 'buildings.pmtiles'), 'b');
   writeFileSync(join(d, 'basemap.pmtiles'), 'm');
   for (const s of STACKS) {
@@ -62,7 +63,8 @@ function outDir(v = 'fixture-7', report: Record<string, unknown> = {}) {
       buildingsTiles: `${base}/buildings.pmtiles`,
       basemapTiles: `${base}/basemap.pmtiles`,
       glyphs: `${base}/fonts/{fontstack}/{range}.pbf`,
-      neighborhoods: `${base}/neighborhoods.geojson`
+      neighborhoods: `${base}/neighborhoods.geojson`,
+      transit: `${base}/transit.json`
     })
   );
   return d;
@@ -198,6 +200,7 @@ describe('upload', () => {
       'buildings.pmtiles',
       'basemap.pmtiles',
       'neighborhoods.geojson',
+      'transit.json',
       'parcels/50_25.json',
       'fonts/NotoSans-Italic/0-255.pbf'
     ])('a missing referenced file %s', async (rel) => {

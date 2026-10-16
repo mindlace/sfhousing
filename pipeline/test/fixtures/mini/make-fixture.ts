@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 import proj4 from 'proj4';
 import { BASEMAP_BUILD, FONTS_COMMIT, FONT_STACKS } from '../../../config';
 import { archiveKeyFor, type Lock, type LockEntry, sha256File, writeLock } from '../../../lib/lock';
+import { GTFS_FEEDS } from '../../../transit-config';
+import { every, tripTables, type TripSpec } from '../../gtfs-builder';
 
 proj4.defs(
   'EPSG:7131',
@@ -206,10 +208,91 @@ const overture = [
   ov('besri', 4, null, ['Esri Community Maps'], polygon(rect(57.5, 26, 58.7, 27.2)))
 ];
 
+// ---- GTFS (transit spec §4.4) ----
+// Local metres from O like the lots. Expected: 8 kept stops (m1 m2 m3 m4 m5 FX-1 70011 70012);
+// mx, FAR and far_ct lie > 1 km outside the neighborhoods and are clipped. Muni's 2026-10-13 is
+// removed by calendar_dates, so Muni counts 2026-10-20 while BART and Caltrain count 2026-10-13.
+// m4 ("Metro Fixture Station") and FX-1 (station "Fixture Station") share a place.
+interface FxStop {
+  id: string;
+  name: string;
+  at: [number, number];
+  station?: boolean;
+  parent?: string;
+}
+const CAL =
+  'service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n' +
+  'WKDY,1,1,1,1,1,0,0,20260901,20261231\n';
+function gtfs(f: { routes: string; stops: FxStop[]; trips: TripSpec[]; dates?: string }) {
+  const stops = ['stop_id,stop_name,stop_lat,stop_lon,location_type,parent_station'];
+  for (const s of f.stops) {
+    const [lng, lat] = ll(s.at);
+    stops.push(`${s.id},"${s.name}",${lat},${lng},${s.station ? 1 : 0},${s.parent ?? ''}`);
+  }
+  return {
+    'calendar.txt': CAL,
+    'calendar_dates.txt': f.dates ?? 'service_id,date,exception_type\n',
+    'routes.txt': f.routes,
+    'stops.txt': stops.join('\n') + '\n',
+    ...tripTables(f.trips, 'WKDY')
+  };
+}
+const GTFS: Record<string, Record<string, string>> = {
+  'gtfs-muni': gtfs({
+    routes:
+      'route_id,route_short_name,route_long_name,route_type\n22,22,FILLMORE,3\n14,14,MISSION,3\nN,N,JUDAH,0\n',
+    stops: [
+      { id: 'm1', name: 'Mission St & 20th St', at: [0, -50] },
+      { id: 'm2', name: 'Mission St & 22nd St', at: [0, -250] },
+      { id: 'm3', name: 'Valencia St & 20th St', at: [170, -50] },
+      { id: 'm4', name: 'Metro Fixture Station/Downtown', at: [100, 100] },
+      { id: 'm5', name: 'Church St & 24th St', at: [300, 300] },
+      { id: 'mx', name: 'Far Away St & Nowhere Ave', at: [3000, 0] }
+    ],
+    trips: [
+      { route: '22', dir: 0, stops: ['m1', 'm2'], starts: [...every(7, 0, 10, 12), 12 * 3600] },
+      { route: '22', dir: 1, stops: ['m2', 'm1'], starts: [...every(7, 0, 10, 12), 12 * 3600] },
+      { route: '14', dir: 0, stops: ['m3', 'm1', 'mx'], starts: every(7, 0, 15, 8) },
+      { route: 'N', dir: 0, stops: ['m4', 'm5'], starts: every(7, 0, 12, 10) }
+    ],
+    dates: 'service_id,date,exception_type\nWKDY,20261013,2\n'
+  }),
+  'gtfs-bart': gtfs({
+    routes:
+      'route_id,route_short_name,route_long_name,route_type\n7,Red-S,Richmond to SFO,1\nBB-A,BridgeA,Bus Bridge,3\n',
+    stops: [
+      { id: 'FXST', name: 'Fixture Station', at: [120, 110], station: true },
+      { id: 'FX-1', name: 'Fixture Station', at: [120, 110], parent: 'FXST' },
+      { id: 'FAR', name: 'Far Station', at: [6000, 0] }
+    ],
+    trips: [{ route: '7', dir: 0, stops: ['FX-1', 'FAR'], starts: every(7, 0, 15, 8) }]
+  }),
+  'gtfs-caltrain': gtfs({
+    routes: 'route_id,route_short_name,route_long_name,route_type\n77119,Local Weekday,,2\n',
+    stops: [
+      { id: 'fixture_ct', name: 'Fixture Caltrain Station', at: [-40, -80], station: true },
+      { id: '70011', name: 'Fixture Caltrain Northbound', at: [-40, -78], parent: 'fixture_ct' },
+      { id: '70012', name: 'Fixture Caltrain Southbound', at: [-40, -82], parent: 'fixture_ct' },
+      { id: 'far_ct', name: 'Far Caltrain', at: [0, -8000] }
+    ],
+    // 40 trains each way (80/day at the station: SB 79 tier 1), 5 in the peak window -> 2.5 tph.
+    trips: [
+      { route: '77119', dir: 0, stops: ['70012', 'far_ct'], starts: every(5, 0, 25, 40) },
+      { route: '77119', dir: 1, stops: ['far_ct', '70011'], starts: every(5, 0, 25, 40) }
+    ]
+  })
+};
+
 // ---- write ----
 const here = path.dirname(fileURLToPath(import.meta.url));
 const rawDir = path.join(here, 'raw');
 fs.mkdirSync(rawDir, { recursive: true });
+for (const [id, files] of Object.entries(GTFS)) {
+  fs.mkdirSync(path.join(rawDir, id), { recursive: true });
+  for (const [name, body] of Object.entries(files)) {
+    fs.writeFileSync(path.join(rawDir, id, name), body);
+  }
+}
 
 const SOURCES = [
   {
@@ -328,6 +411,23 @@ entries.push(
       `https://raw.githubusercontent.com/protomaps/basemaps-assets/${FONTS_COMMIT}/${name.replace('protomaps-fonts/', 'fonts/').replaceAll(' ', '%20')}`
   )
 );
+for (const spec of Object.values(GTFS_FEEDS)) {
+  entries.push(
+    await binaryEntry(
+      spec.lockId,
+      Object.keys(GTFS[spec.lockId])
+        .sort()
+        .map((n) => `${spec.lockId}/${n}`),
+      {
+        upstreamVersion: 'fixture',
+        license: spec.license,
+        homepage: spec.homepage,
+        label: spec.label
+      },
+      (name) => `https://fixture.invalid/${name}`
+    )
+  );
+}
 const lock: Lock = { sources: entries };
 writeLock(path.join(here, 'sources.lock.json'), lock);
 console.log(entries.map((e) => `${e.id}: ${e.rowCount}`).join('\n'));

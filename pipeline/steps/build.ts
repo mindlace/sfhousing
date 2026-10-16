@@ -23,6 +23,7 @@ import { checkDataset, type InvariantResult } from './check';
 import { writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
 import { buildManifest, writeManifest } from './manifest';
 import { copyBasemap, installFonts, writeBuildingsTiles } from './tiles';
+import { writeTransit } from './transit';
 
 export interface BuildOpts {
   lockPath: string;
@@ -151,6 +152,20 @@ export async function build(
       return sameFiles(join(outDir, 'parcels'), join(work, 'reencode', 'parcels'));
     });
     const neighborhoodsBytes = await writeNeighborhoods(db, outDir);
+    // Transit spec §4.2 step 1: the service date is picked from the newest fetch date.
+    const newest = lock.sources.reduce((d, s) => (s.retrievedAt > d ? s.retrievedAt : d), '');
+    const transit = await report.time('transit', async () =>
+      writeTransit({
+        lock,
+        rawDir: opts.rawDir,
+        byName,
+        outDir,
+        targetDate: newest.slice(0, 10),
+        // The mini fixture's feeds carry only a few lines; assignment checks are live-only.
+        strict: !fixtureMode
+      })
+    );
+    report.warnings.push(...transit.warnings);
     if (!opts.skipTiles) {
       await report.time('tiles', () => writeBuildingsTiles(db, outDir, work));
     }
@@ -169,6 +184,7 @@ export async function build(
       lock,
       chunks,
       overtureContrib,
+      transit: true,
       warn: (w) => report.warnings.push(w)
     });
     const manifestBytes = writeManifest(outDir, manifest);
@@ -179,6 +195,7 @@ export async function build(
       ...(await sqlCounts(db)),
       ...report.counts,
       ...chunkCounts(chunks),
+      ...transit.counts,
       ...Object.fromEntries(overtureContrib.map((o) => [`overture.contrib.${o.dataset}`, o.n])),
       'units.total': totals.units,
       'parcels.height_max_m': totals.hmax,

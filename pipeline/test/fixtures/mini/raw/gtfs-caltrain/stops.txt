@@ -1,0 +1,5 @@
+stop_id,stop_name,stop_lat,stop_lon,location_type,parent_station
+fixture_ct,"Fixture Caltrain Station",37.7592793,-122.4199542,1,
+70011,"Fixture Caltrain Northbound",37.7592974,-122.4199542,0,fixture_ct
+70012,"Fixture Caltrain Southbound",37.7592613,-122.4199542,0,fixture_ct
+far_ct,"Far Caltrain",37.6879228,-122.4195295,0,

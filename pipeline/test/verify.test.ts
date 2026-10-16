@@ -37,6 +37,7 @@ describe('verify', () => {
     expect(r).toEqual({ ok: true, failures: [] });
     expect(seen).toContain(`HEAD /data/${V}/fonts/NotoSans-Medium/0-255.pbf`);
     expect(seen).toContain(`GET /data/${V}/buildings.pmtiles`);
+    expect(seen).toContain(`HEAD /data/${V}/transit.json`);
   });
   it('collects a missing chunk and a PMTiles that ignores Range', async () => {
     const chunk = new URL(m.chunks[0].url, 'http://o').pathname;

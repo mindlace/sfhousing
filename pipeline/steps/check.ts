@@ -4,6 +4,7 @@ import { gzipSync } from 'node:zlib';
 import { parseManifest, type Manifest } from '../../src/lib/data/manifest';
 import type { ParcelRecord } from '../../src/lib/data/parcel';
 import { decodeParcelChunk } from '../../src/lib/data/parcel-chunk';
+import { decodeTransit } from '../../src/lib/data/transit-codec';
 import { BBOX, type InvariantProfile } from '../config';
 import { pointStrictlyInside } from '../lib/rings';
 import { z12TileBytes } from './tiles';
@@ -33,6 +34,9 @@ interface Chunk {
   recs: ParcelRecord[] | null;
   error?: string;
 }
+
+/** Transit spec §4.3 size target for transit.json; over it V14 warns but still passes. */
+const TRANSIT_TARGET_BYTES = 400e3;
 
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 const thr = (x: number) => `${Number((x * 100).toFixed(4))}%`;
@@ -79,7 +83,10 @@ export function maxOf(xs: readonly number[]): number {
   return xs.reduce((a, b) => (b > a ? b : a), -Infinity);
 }
 
-/** Spec §4.9 invariants V1–V13 over a built dataset directory. Never throws. */
+/**
+ * Spec §4.9 invariants V1–V13 and transit spec §4.3 V14 over a built dataset directory.
+ * Never throws.
+ */
 export async function checkDataset(
   outDir: string,
   profile: InvariantProfile,
@@ -279,5 +286,35 @@ export async function checkDataset(
 
   // V13 published versions are immutable: enforced by `upload`.
   add('V13', true, 'enforced at upload');
+
+  // V14 transit network (transit spec §4.3).
+  {
+    const problems: string[] = [];
+    let detail = '';
+    if (!m?.transit) problems.push('manifest has no transit');
+    else {
+      try {
+        const rel = m.transit.slice(`/data/${m.datasetVersion}/`.length);
+        const buf = readFileSync(join(outDir, rel));
+        const net = decodeTransit(buf.toString('utf8'));
+        if (net.stops.length < profile.transitMinStops)
+          problems.push(`${net.stops.length} stops < ${profile.transitMinStops}`);
+        const heavy = new Set<number>();
+        for (const p of net.patterns)
+          if (p.mode === 'heavy-rail') for (const s of p.stops) if (s.tph > 0) heavy.add(s.stop);
+        const missing = profile.transitHeavyRailStations.filter(
+          (name) =>
+            ![...heavy].some((i) => net.stops[i].name.toLowerCase().includes(name.toLowerCase()))
+        );
+        if (missing.length) problems.push(`no heavy-rail service at ${missing.join(', ')}`);
+        detail = `${net.stops.length} stops, ${net.patterns.length} patterns, ${heavy.size} heavy-rail stops`;
+        if (buf.length > TRANSIT_TARGET_BYTES)
+          detail += `; warn: transit.json ${buf.length} B > ${TRANSIT_TARGET_BYTES} B target`;
+      } catch (e) {
+        problems.push(`transit.json: ${(e as Error).message}`);
+      }
+    }
+    add('V14', problems.length === 0, problems.length ? problems.join('; ') : detail);
+  }
   return out;
 }
