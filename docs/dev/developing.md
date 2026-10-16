@@ -30,6 +30,7 @@ and run `npm run data:fixture`. Without it, the app requests the production vers
 
 - `npm run data:fixture` loads `e2e/fixtures/data/fixture-0/` into local R2 under `data/fixture-0/`. Today this is a platform placeholder; the data-pipeline's `pipeline fixture` command will overwrite it under the same version name.
 - `npm run data:local -- <version> [--from <origin>]` fetches `<origin>/data/<version>/manifest.json` (default origin `https://sfhousing.mindlace.net`), then every URL the manifest names, and writes each into local R2. Glyphs are not fetched (the manifest names a template, not files). Needs no credentials.
+- `npm run data:transit [-- <version>]` adds live transit to the local dataset named in `.dev.vars` (or `<version>`). Run it after `data:local` of a dataset older than transit support, or to see current service. It fetches the Muni, BART and Caltrain GTFS feeds directly from the agencies, builds `transit.json` and rewrites the local manifest to name it. A sha256 mismatch with the committed `pipeline/sources.lock.json` is only a warning (the feed rolled over); the lock is never modified. It clips to the loaded dataset's `neighborhoods.geojson`, so on `fixture-0` it yields only a handful of stops: load a real dataset with `npm run data:local` first.
 
 Both write to the Miniflare R2 state in `.wrangler/`; delete that directory to reset local state.
 

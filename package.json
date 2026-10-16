@@ -29,6 +29,7 @@
     "db:migrate:prod": "wrangler d1 migrations apply sfhousing --remote",
     "data:local": "tsx scripts/data-local.ts",
     "data:fixture": "tsx scripts/r2-load-local.ts e2e/fixtures/data/fixture-0 fixture-0",
+    "data:transit": "tsx scripts/data-transit.ts",
     "signoff": "chreode signoff",
     "branch-protection": "chreode protect",
     "branch-protection:dry": "chreode protect --dry-run",
