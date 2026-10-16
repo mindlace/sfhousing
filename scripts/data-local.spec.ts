@@ -32,6 +32,12 @@ describe('collectDataPaths', () => {
     ]);
   });
 
+  it('lists transit.json only when the manifest has a transit url', () => {
+    const withTransit = { ...manifest, transit: '/data/fixture-0/transit.json' };
+    expect(collectDataPaths(withTransit, 'fixture-0')).toContain('transit.json');
+    expect(collectDataPaths(manifest, 'fixture-0')).not.toContain('transit.json');
+  });
+
   it('de-duplicates repeated chunk urls', () => {
     const dup = { ...manifest, chunks: [chunk('0_0'), chunk('0_0')] };
     expect(collectDataPaths(dup, 'fixture-0').filter((p) => p === 'parcels/0_0.json')).toHaveLength(

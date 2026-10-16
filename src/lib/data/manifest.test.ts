@@ -88,4 +88,17 @@ describe('parseManifest', () => {
       expect((e as ManifestError).issues.length).toBeGreaterThan(0);
     }
   });
+
+  it('accepts an optional transit URL under the version prefix', () => {
+    const m = g();
+    m.transit = `/data/${m.datasetVersion as string}/transit.json`;
+    expect(parseManifest(m).transit).toBe(m.transit);
+    expect(parseManifest(g()).transit).toBeUndefined();
+  });
+
+  it('rejects a transit URL outside the version prefix', () => {
+    const m = g();
+    m.transit = '/data/2026-01-01-00000000/transit.json';
+    expect(() => parseManifest(m)).toThrow(/transit: url must start with/);
+  });
 });
