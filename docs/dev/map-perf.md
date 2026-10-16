@@ -49,15 +49,15 @@ display refresh rate, so on a 120 Hz display the p50 is about 8.3 ms. The bar is
 
 ## Results
 
-| Machine                                             | Date       | Browser                    | DPR | Frames | p50    | p95     | Pass                         |
-| --------------------------------------------------- | ---------- | -------------------------- | --- | ------ | ------ | ------- | ---------------------------- |
-| Apple M5 Pro (Mac17,9), 24 GB, macOS 27.0.1, 120 Hz | 2026-10-11 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 9.0 ms  | Yes                          |
-| Apple M5 Pro (same), superseded first run           | 2026-10-11 | Playwright Chromium, Metal | 1   | 1201   | 8.3 ms | 10.0 ms | Yes (DPR 1, fixed 6 px step) |
-| 2022 MacBook Air (M2)                               | —          | —                          | 2   | —      | —      | —       | not yet recorded             |
+| Machine                                                                   | Date       | Browser                    | DPR | Frames | p50    | p95     | Pass                                         |
+| ------------------------------------------------------------------------- | ---------- | -------------------------- | --- | ------ | ------ | ------- | -------------------------------------------- |
+| Apple M5 Pro (Mac17,9), 24 GB, macOS 27.0.1, 120 Hz                       | 2026-10-11 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 9.0 ms  | Yes                                          |
+| Apple M5 Pro (same), superseded first run                                 | 2026-10-11 | Playwright Chromium, Metal | 1   | 1201   | 8.3 ms | 10.0 ms | Yes (DPR 1, fixed 6 px step)                 |
+| 2022 MacBook Air (M2)                                                     | —          | —                          | 2   | —      | —      | —       | not yet recorded                             |
+| Apple M5 Pro (same), both transit layers on, fixture-0 (8 stops)          | 2026-10-15 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 8.5 ms  | Yes (representative; worst-case p95 8.4 ms)  |
+| Apple M5 Pro (same), both transit layers on, live network (3,147 markers) | 2026-10-15 | Playwright Chromium, Metal | 2   | 1181   | 8.3 ms | 10.2 ms | Yes (representative; worst-case p95 10.0 ms) |
 
-| Apple M5 Pro (same), both transit layers on (default) | 2026-10-15 | Playwright Chromium, Metal | 2 | 1201 | 8.3 ms | 8.5 ms | Yes (representative; worst-case p95 8.4 ms) |
-
-Run the bench with both transit layers on (the default View prefs) on the bench machine. fixture-0 has only 8 stops, so the transit row measures the layer overhead, not a full network. Re-check against live data (`npm run data:transit`) when the stop layers change.
+Run the bench with both transit layers on (the default View prefs). fixture-0 has only 8 stops, so its transit row measures the layer overhead. The live-network row ran the same bench against a local copy of the production dataset (`npm run data:local -- <version>`, then `npm run data:transit -- <version>`) served with `PUBLIC_DATASET_VERSION` set to that version instead of `fixture-0` (the bench config pins `fixture-0`, so this needs a one-off config override). Re-check against live data when the stop layers change.
 
 Add a row when you run the bench on new hardware or after a change to the rendering path.
 
