@@ -85,3 +85,41 @@ describe('BrushEditor worker restart (F-3)', () => {
     expect(chunkStatus.get('50_25')).toBe('loading');
   });
 });
+
+describe('BrushEditor onmanifest', () => {
+  it('reports the manifest SimMap renders: none on a failed load, then the reloaded one', async () => {
+    const seen: (Manifest | null)[] = [];
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await render(BrushEditor, {
+      props: {
+        manifest: null,
+        manifestError: true,
+        plan: emptyPlan('fixture-0'),
+        currentVersion: 'fixture-0',
+        reloadManifest: async () => manifest,
+        createWorker: fakeWorker,
+        onmanifest: (m) => seen.push(m)
+      }
+    });
+    expect(seen).toEqual([null]);
+    const retry = page.getByRole('button', { name: 'Retry', exact: true });
+    (retry.element() as HTMLElement).click();
+    await expect.poll(() => seen.at(-1)).toBe(manifest);
+  });
+
+  it('reports the initial manifest synchronously, before mount', async () => {
+    const seen: (Manifest | null)[] = [];
+    await render(BrushEditor, {
+      props: {
+        manifest,
+        manifestError: false,
+        plan: emptyPlan('fixture-0'),
+        currentVersion: 'fixture-0',
+        reloadManifest: async () => manifest,
+        createWorker: fakeWorker,
+        onmanifest: (m) => seen.push(m)
+      }
+    });
+    expect(seen).toEqual([manifest]);
+  });
+});

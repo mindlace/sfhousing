@@ -12,15 +12,22 @@ import manifestJson from '../../e2e/fixtures/data/fixture-0/manifest.json';
 import PageHost from './test/PageHost.svelte';
 
 vi.mock('$lib/map/SimMap.svelte', async () => import('$lib/brush/test/SimMapStub.svelte'));
+// Retry after a failed manifest load reloads it through here.
+vi.mock('$lib/sim/manifest', async () => ({
+  loadManifest: async () => ({
+    manifest: (await import('../../e2e/fixtures/data/fixture-0/manifest.json')).default,
+    fellBack: false
+  })
+}));
 
 const manifest = manifestJson as unknown as Manifest;
 
-function data(m: Manifest = manifest) {
+function data(m: Manifest | null = manifest) {
   return {
     plan: emptyPlan('fixture-0'),
     manifest: m,
     fellBack: false,
-    manifestError: false,
+    manifestError: m === null,
     datasetVersion: 'fixture-0',
     appRelease: 'dev'
   };
@@ -79,5 +86,15 @@ describe('/ View menu', () => {
     await first.unmount();
     await render(PageHost, { props: { data: data() } });
     expect(stubProps.view).toEqual({ transitStops: false, transitAccess: false });
+  });
+
+  it('gates View on the manifest the map renders: a reload after a failed load brings it', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await render(PageHost, { props: { data: data(null) } });
+    const retry = page.getByRole('button', { name: 'Retry', exact: true });
+    await expect.element(retry).toBeInTheDocument();
+    expect(viewButton().elements()).toHaveLength(0);
+    (retry.element() as HTMLElement).click();
+    await expect.element(viewButton()).toBeInTheDocument();
   });
 });

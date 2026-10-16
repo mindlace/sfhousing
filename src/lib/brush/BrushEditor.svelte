@@ -62,6 +62,9 @@
     createWorker?: () => WorkerLike;
     /** Map layer toggles (transit spec §6.3), passed to SimMap. */
     view?: ViewPrefs;
+    /** The manifest SimMap renders (null: none yet), once during setup and again whenever a
+     *  Retry replaces it, so the parent can gate manifest-dependent UI (the View menu) on it. */
+    onmanifest?: (m: Manifest | null) => void;
   }
 
   // eslint-disable-next-line svelte/no-unused-props -- currentVersion: see Props
@@ -75,7 +78,8 @@
     onchunks,
     oneditor,
     createWorker = spawnSimWorker,
-    view = undefined
+    view = undefined,
+    onmanifest = undefined
   }: Props = $props();
 
   // The props seed the editor once; later changes belong to whoever remounts this component.
@@ -87,6 +91,7 @@
   let frame = $state<HTMLElement>();
 
   untrack(() => {
+    onmanifest?.(manifest);
     if (manifestError || !initialManifest) brush.phase = 'failed';
     if (readOnly) brush.tool = 'move';
   });
@@ -219,7 +224,10 @@
         if (dead) return;
         // A new object remounts SimMap's map (and onready does not fire again), so keep the
         // mounted one when the reload is the same dataset; I16 still gets one object for both.
-        if (!m || fresh.datasetVersion !== m.datasetVersion) manifest = m = fresh;
+        if (!m || fresh.datasetVersion !== m.datasetVersion) {
+          manifest = m = fresh;
+          onmanifest?.(m);
+        }
         needManifest = false;
       }
       client.init(m);

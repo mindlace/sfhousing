@@ -5,6 +5,7 @@
   import BrushEditor from '$lib/brush/BrushEditor.svelte';
   import { exposeEditorForDebug } from '$lib/brush/debug';
   import type { Editor } from '$lib/brush/editor.svelte';
+  import type { Manifest } from '$lib/data/manifest';
   import { frameLatest, type Score, type ScoreStatus } from '$lib/scoreboard';
   import Scoreboard from '$lib/scoreboard/Scoreboard.svelte';
   import { Autosave } from '$lib/sharing/autosave.svelte';
@@ -81,8 +82,10 @@
 
   useHeaderActions(headerActions);
 
-  // Map layer toggles (transit spec §6.3), per viewer.
+  // Map layer toggles (transit spec §6.3), per viewer. View shows only when the manifest the map
+  // renders (BrushEditor's own, which a Retry can replace) has a transit network.
   let view = $state<ViewPrefs>(readViewPrefs());
+  let mapManifest = $state.raw<Manifest | null>(null);
   function onViewChange(v: ViewPrefs): void {
     view = v;
     writeViewPrefs(v);
@@ -109,7 +112,7 @@
 </script>
 
 {#snippet headerActions()}
-  {#if data.manifest?.transit}
+  {#if mapManifest?.transit}
     <ViewMenu {view} onchange={onViewChange} />
   {/if}
   <SaveIndicator status={autosave.status} />
@@ -138,6 +141,7 @@
     onscore={(s, meta) => latestScore.push({ score: s, complete: meta.complete })}
     onchunks={(c) => (chunkState = c)}
     {view}
+    onmanifest={(m) => (mapManifest = m)}
   />
   <Scoreboard
     score={latestScore.current.score}
