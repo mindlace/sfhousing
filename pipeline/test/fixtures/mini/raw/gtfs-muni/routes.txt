@@ -1,0 +1,4 @@
+route_id,route_short_name,route_long_name,route_type
+22,22,FILLMORE,3
+14,14,MISSION,3
+N,N,JUDAH,0

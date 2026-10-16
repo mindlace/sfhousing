@@ -4,6 +4,8 @@ import type { ParcelId } from '$lib/data/parcel';
 import type { Manifest } from '$lib/data/manifest';
 import type { BBox } from '$lib/plan';
 import type { TypologyId } from '$lib/generator';
+import type { TransitNetwork } from '$lib/data/transit';
+import type { ViewPrefs } from '$lib/view/prefs';
 
 export type Theme = 'light' | 'dark';
 export interface CameraFrame {
@@ -83,4 +85,8 @@ export interface SimMapProps {
   requestParcelSummary?: (parcelId: ParcelId) => Promise<ParcelSummaryLike | null>;
   onRetryChunks?: () => void;
   onready?: (h: SimMapHandle) => void;
+  /** Transit layer visibility (transit spec §6.3); default both on. */
+  view?: ViewPrefs;
+  /** Loads `manifest.transit`; tests inject. Default: fetch + decode. */
+  fetchTransit?: (url: string) => Promise<TransitNetwork>;
 }

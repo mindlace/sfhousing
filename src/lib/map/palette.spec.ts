@@ -31,6 +31,24 @@ describe('palette (U4)', () => {
       const cs = TYPOLOGY_ORDER.map((t) => contrast(TOKENS[theme][`gen-${t}`], TOKENS[theme].land));
       for (let i = 1; i < cs.length; i++) expect(cs[i]).toBeGreaterThan(cs[i - 1]);
     });
+    it(`${theme}: the access ramp's contrast with land strictly increases`, () => {
+      const cs = ([1, 2, 3, 4, 5] as const).map((k) =>
+        contrast(TOKENS[theme][`transit-access-${k}`], TOKENS[theme].land)
+      );
+      for (let i = 1; i < cs.length; i++) expect(cs[i]).toBeGreaterThan(cs[i - 1]);
+    });
+    it(`${theme}: stop classes are distinct (ΔE2000 ≥ 20)`, () => {
+      const ids = ['transit-bus', 'transit-rail', 'transit-regional'] as const;
+      for (let i = 0; i < ids.length; i++)
+        for (let j = i + 1; j < ids.length; j++) {
+          const d = de(parse(TOKENS[theme][ids[i]])!, parse(TOKENS[theme][ids[j]])!);
+          expect(d, `${ids[i]} vs ${ids[j]}`).toBeGreaterThanOrEqual(20);
+        }
+    });
+    it(`${theme}: stop markers keep 3:1 contrast with land`, () => {
+      for (const id of ['transit-bus', 'transit-rail', 'transit-regional'] as const)
+        expect(contrast(TOKENS[theme][id], TOKENS[theme].land), id).toBeGreaterThanOrEqual(3);
+    });
   }
   it('non-user source throws (M1 seam)', () => {
     expect(() => colorFor('pipeline' as never, 'plex', 'light')).toThrow(/unsupported source/);

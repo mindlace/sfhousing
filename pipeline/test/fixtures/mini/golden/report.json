@@ -42,7 +42,7 @@
     "landuse.orphan_rows": 2,
     "landuse.rows": 15,
     "landuse.unknown_values": 0,
-    "manifest.bytes": 2367,
+    "manifest.bytes": 2977,
     "neighborhoods.bytes": 478,
     "overture.contrib.Esri Community Maps": 1,
     "overture.contrib.Microsoft ML Buildings": 1,
@@ -67,6 +67,10 @@
     "pieces.outside_parcels": 2,
     "pieces.remainder_sliver_dropped": 0,
     "pieces.sliver_dropped": 1,
+    "transit.bytes": 2876,
+    "transit.patterns": 7,
+    "transit.stops": 8,
+    "transit.untimed_stop_times": 0,
     "units.total": 88
   },
   "datasetVersion": "fixture-0",
@@ -126,7 +130,7 @@
       "ok": true
     },
     {
-      "detail": "manifest 2367/64000 B; neighborhoods 478/150000 B",
+      "detail": "manifest 2977/64000 B; neighborhoods 478/150000 B",
       "id": "V11",
       "ok": true
     },
@@ -139,6 +143,11 @@
       "detail": "enforced at upload",
       "id": "V13",
       "ok": true
+    },
+    {
+      "detail": "8 stops, 7 patterns, 1 heavy-rail stops",
+      "id": "V14",
+      "ok": true
     }
   ],
   "license": {
@@ -150,7 +159,7 @@
     "derivedData": "ODbL-1.0",
     "notice": "Derived data files under /data/ that incorporate OpenStreetMap or Overture data are made available under the ODbL 1.0."
   },
-  "lockSha256": "17c356b1fdb73caab0ba35dcc5ebeb3e5b4b2b0a326cf137c7c1b0256446bd6e",
+  "lockSha256": "085e00321dff83018c910878978dcb08e7d9429663bd1ea433642e398c691876",
   "tilesSkipped": false,
   "toolVersions": {
     "duckdb": "1.5.6",

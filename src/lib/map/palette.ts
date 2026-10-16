@@ -15,9 +15,14 @@ export type TokenName =
   | 'highlight'
   | 'chunkLoading'
   | 'chunkError'
-  | `gen-${TypologyId}`;
+  | `gen-${TypologyId}`
+  | `transit-access-${1 | 2 | 3 | 4 | 5}`
+  | 'transit-bus'
+  | 'transit-rail'
+  | 'transit-regional'
+  | 'transit-stroke';
 
-/** Spec §4.3 verbatim. Hex, or rgba() for highlight. */
+/** Spec §4.3 verbatim; `transit-*` from transit spec §6.1. Hex, or rgba() for highlight. */
 export const TOKENS: Record<Theme, Record<TokenName, string>> = {
   light: {
     land: '#F3EFE6',
@@ -36,7 +41,16 @@ export const TOKENS: Record<Theme, Record<TokenName, string>> = {
     'gen-walkup': '#D2704E',
     'gen-podium': '#BF5A3A',
     'gen-midrise': '#A3472C',
-    'gen-tower': '#84371F'
+    'gen-tower': '#84371F',
+    'transit-access-1': '#E4EEF3',
+    'transit-access-2': '#BED7E3',
+    'transit-access-3': '#8DB9CF',
+    'transit-access-4': '#5596B5',
+    'transit-access-5': '#2C6E8F',
+    'transit-bus': '#5F6B66',
+    'transit-rail': '#7B3FA0',
+    'transit-regional': '#1F5FBF',
+    'transit-stroke': '#FFFFFF'
   },
   dark: {
     land: '#1C1D1F',
@@ -55,7 +69,16 @@ export const TOKENS: Record<Theme, Record<TokenName, string>> = {
     'gen-walkup': '#A65C2E',
     'gen-podium': '#C27236',
     'gen-midrise': '#DB8B42',
-    'gen-tower': '#F0A752'
+    'gen-tower': '#F0A752',
+    'transit-access-1': '#1E2A31',
+    'transit-access-2': '#24414F',
+    'transit-access-3': '#2D5D72',
+    'transit-access-4': '#3A7F9C',
+    'transit-access-5': '#5BA6C6',
+    'transit-bus': '#A3ADA6',
+    'transit-rail': '#C59BE0',
+    'transit-regional': '#7FB2FF',
+    'transit-stroke': '#111214'
   }
 };
 

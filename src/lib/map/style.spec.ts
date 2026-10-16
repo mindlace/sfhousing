@@ -9,7 +9,11 @@ import {
   OVERLAY_ANCHOR,
   FONT_RENAME,
   rewriteFont,
-  firstSymbolLayerId
+  firstSymbolLayerId,
+  TRANSIT_ACCESS_LAYER,
+  TRANSIT_ACCESS_SOURCE,
+  TRANSIT_STOP_LAYERS,
+  TRANSIT_STOPS_SOURCE
 } from './style';
 import type { Theme } from './types';
 
@@ -162,5 +166,70 @@ describe('rewriteFont', () => {
         false
       )
     ).toEqual(['case', ['literal', ['NotoSans-Medium']], ['literal', ['NotoSans-Regular']]]);
+  });
+});
+
+describe('transit layers', () => {
+  const rest = { ...raw };
+  delete rest.transit;
+  const noTransit: Manifest = parseManifest(rest);
+  const withTransit: Manifest = base;
+
+  it('the fixture manifest names transit; the stripped one does not', () => {
+    expect(withTransit.transit).toBe('/data/fixture-0/transit.json');
+    expect(noTransit.transit).toBeUndefined();
+  });
+
+  for (const theme of themes) {
+    it(`${theme}: are absent when the manifest has no transit`, () => {
+      const s = buildStyle(noTransit, theme);
+      expect(Object.keys(s.sources)).not.toContain(TRANSIT_STOPS_SOURCE);
+      expect(Object.keys(s.sources)).not.toContain(TRANSIT_ACCESS_SOURCE);
+      expect(s.layers.some((l) => l.id.startsWith('transit-'))).toBe(false);
+    });
+
+    it(`${theme}: put the access fill under buildings and the stops above the labels, hidden`, () => {
+      const s = buildStyle(withTransit, theme);
+      const ids = s.layers.map((l) => l.id);
+      const src = s.sources as Record<string, { type: string }>;
+      expect(src[TRANSIT_ACCESS_SOURCE].type).toBe('geojson');
+      expect(src[TRANSIT_STOPS_SOURCE].type).toBe('geojson');
+      expect(ids.indexOf(TRANSIT_ACCESS_LAYER)).toBeGreaterThan(0);
+      expect(ids.indexOf(TRANSIT_ACCESS_LAYER)).toBeLessThan(ids.indexOf(BUILDINGS_LAYER));
+      const lastLabel = ids.lastIndexOf(s.layers.filter((l) => l.type === 'symbol').at(-1)!.id);
+      for (const id of TRANSIT_STOP_LAYERS) expect(ids.indexOf(id)).toBeGreaterThan(lastLabel);
+      expect(ids.at(-1)).toBe(OVERLAY_ANCHOR);
+      for (const id of [TRANSIT_ACCESS_LAYER, ...TRANSIT_STOP_LAYERS]) {
+        const l = s.layers.find((x) => x.id === id) as { layout?: { visibility?: string } };
+        expect(l.layout?.visibility, id).toBe('none');
+      }
+      expect(firstSymbolLayerId(s)).toBe(firstSymbolLayerId(buildStyle(noTransit, theme)));
+    });
+
+    it(`${theme}: filter stops by class with the spec's zoom thresholds`, () => {
+      const s = buildStyle(withTransit, theme);
+      const got = TRANSIT_STOP_LAYERS.map((id) => {
+        const l = s.layers.find((x) => x.id === id) as {
+          minzoom?: number;
+          filter: unknown;
+          source: string;
+          paint: Record<string, unknown>;
+        };
+        expect(l.source).toBe(TRANSIT_STOPS_SOURCE);
+        return [l.minzoom, l.filter, l.paint['circle-color']];
+      });
+      const t = TOKENS[theme];
+      expect(got).toEqual([
+        [15, ['==', ['get', 'cls'], 'bus'], t['transit-bus']],
+        [13, ['==', ['get', 'cls'], 'rail'], t['transit-rail']],
+        [undefined, ['==', ['get', 'cls'], 'regional-rail'], t['transit-regional']]
+      ]);
+    });
+  }
+
+  it('theme-diff the transit paint', () => {
+    const d = themePaintDiff(withTransit);
+    expect(d.dark.some(([id]) => id === TRANSIT_ACCESS_LAYER)).toBe(true);
+    for (const id of TRANSIT_STOP_LAYERS) expect(d.dark.some(([x]) => x === id)).toBe(true);
   });
 });

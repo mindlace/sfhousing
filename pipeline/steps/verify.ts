@@ -48,6 +48,7 @@ export async function verify(a: VerifyArgs): Promise<{ ok: boolean; failures: st
   const heads = [
     ...m.chunks.map((c) => c.url),
     m.neighborhoods,
+    ...(m.transit ? [m.transit] : []),
     m.buildingsTiles,
     m.basemapTiles,
     ...Object.values(FONT_STACKS).map((s) =>

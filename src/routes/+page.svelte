@@ -5,6 +5,7 @@
   import BrushEditor from '$lib/brush/BrushEditor.svelte';
   import { exposeEditorForDebug } from '$lib/brush/debug';
   import type { Editor } from '$lib/brush/editor.svelte';
+  import type { Manifest } from '$lib/data/manifest';
   import { frameLatest, type Score, type ScoreStatus } from '$lib/scoreboard';
   import Scoreboard from '$lib/scoreboard/Scoreboard.svelte';
   import { Autosave } from '$lib/sharing/autosave.svelte';
@@ -15,6 +16,8 @@
   import { applyTitle } from '$lib/sharing/title';
   import { useHeaderActions } from '$lib/shell/header-actions.svelte';
   import { loadManifest } from '$lib/sim/manifest';
+  import { readViewPrefs, writeViewPrefs, type ViewPrefs } from '$lib/view/prefs';
+  import ViewMenu from '$lib/view/ViewMenu.svelte';
   import type { PageProps } from './$types';
 
   let { data }: PageProps = $props();
@@ -79,6 +82,15 @@
 
   useHeaderActions(headerActions);
 
+  // Map layer toggles (transit spec §6.3), per viewer. View shows only when the manifest the map
+  // renders (BrushEditor's own, which a Retry can replace) has a transit network.
+  let view = $state<ViewPrefs>(readViewPrefs());
+  let mapManifest = $state.raw<Manifest | null>(null);
+  function onViewChange(v: ViewPrefs): void {
+    view = v;
+    writeViewPrefs(v);
+  }
+
   // Scoreboard wiring (scoreboard spec §4.3/§4.4), separate from the editor/plan concern above.
   let brushEditor = $state<ReturnType<typeof BrushEditor>>();
   // Score and its diff's `complete` travel together, coalesced to ≤ 1 commit per frame.
@@ -100,6 +112,9 @@
 </script>
 
 {#snippet headerActions()}
+  {#if mapManifest?.transit}
+    <ViewMenu {view} onchange={onViewChange} />
+  {/if}
   <SaveIndicator status={autosave.status} />
   {#if editor}
     <!-- editor.plan passes straight through: PublishDialog's 413 lock keys on its identity. -->
@@ -125,6 +140,8 @@
     oneditor={onEditor}
     onscore={(s, meta) => latestScore.push({ score: s, complete: meta.complete })}
     onchunks={(c) => (chunkState = c)}
+    {view}
+    onmanifest={(m) => (mapManifest = m)}
   />
   <Scoreboard
     score={latestScore.current.score}

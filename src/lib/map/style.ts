@@ -1,10 +1,13 @@
 import { layers, namedFlavor, type Flavor } from '@protomaps/basemaps';
 import type {
+  ExpressionSpecification,
+  GeoJSONSourceSpecification,
   LayerSpecification,
   StyleSpecification,
   VectorSourceSpecification
 } from 'maplibre-gl';
 import type { Manifest } from '$lib/data/manifest';
+import type { StopClass } from '$lib/transit';
 import { TOKENS } from './palette';
 import type { Theme } from './types';
 
@@ -13,6 +16,14 @@ export const BUILDINGS_LAYER = 'existing-buildings';
 export const CHUNK_SOURCE = 'chunk-status';
 export const CHUNK_LAYERS = ['chunk-fill', 'chunk-loading-line', 'chunk-error-line'] as const;
 export const OVERLAY_ANCHOR = 'overlay-anchor';
+export const TRANSIT_ACCESS_SOURCE = 'transit-access';
+export const TRANSIT_STOPS_SOURCE = 'transit-stops';
+export const TRANSIT_ACCESS_LAYER = 'transit-access';
+export const TRANSIT_STOP_LAYERS = [
+  'transit-stops-bus',
+  'transit-stops-rail',
+  'transit-stops-regional'
+] as const;
 
 /** Protomaps font names to the space-free glyph directories the pipeline ships. */
 export const FONT_RENAME: Record<string, string> = {
@@ -235,26 +246,101 @@ function chunkLayers(theme: Theme): LayerSpecification[] {
   ] as LayerSpecification[];
 }
 
+/** Transit spec §6.1: binned fill under existing buildings; hidden until SimMap applies the view. */
+export function transitAccessLayer(theme: Theme): LayerSpecification {
+  const t = TOKENS[theme];
+  return {
+    id: TRANSIT_ACCESS_LAYER,
+    type: 'fill',
+    source: TRANSIT_ACCESS_SOURCE,
+    layout: { visibility: 'none' },
+    paint: {
+      'fill-color': [
+        'match',
+        ['get', 'b'],
+        1,
+        t['transit-access-1'],
+        2,
+        t['transit-access-2'],
+        3,
+        t['transit-access-3'],
+        4,
+        t['transit-access-4'],
+        5,
+        t['transit-access-5'],
+        'rgba(0,0,0,0)'
+      ],
+      'fill-opacity': 0.45,
+      'fill-antialias': false
+    }
+  } as LayerSpecification;
+}
+
+// Radius by log10(capacity): 100 riders/hr -> 2.5 px, ~30k -> 7 px at z11; x3 by z16.
+const STOP_R: ExpressionSpecification = ['interpolate', ['linear'], ['get', 'lc'], 2, 2.5, 4.5, 7];
+const STOP_LAYER: Record<
+  (typeof TRANSIT_STOP_LAYERS)[number],
+  { cls: StopClass; minzoom?: number; token: 'transit-bus' | 'transit-rail' | 'transit-regional' }
+> = {
+  'transit-stops-bus': { cls: 'bus', minzoom: 15, token: 'transit-bus' },
+  'transit-stops-rail': { cls: 'rail', minzoom: 13, token: 'transit-rail' },
+  'transit-stops-regional': { cls: 'regional-rail', token: 'transit-regional' }
+};
+
+/** Bus at z15+, rail at z13+, regional rail always (transit spec §6.1); on top of the labels. */
+export function transitStopLayers(theme: Theme): LayerSpecification[] {
+  const t = TOKENS[theme];
+  return TRANSIT_STOP_LAYERS.map((id) => {
+    const { cls, minzoom, token } = STOP_LAYER[id];
+    return {
+      id,
+      type: 'circle',
+      source: TRANSIT_STOPS_SOURCE,
+      ...(minzoom !== undefined ? { minzoom } : {}),
+      filter: ['==', ['get', 'cls'], cls],
+      layout: { visibility: 'none' },
+      paint: {
+        'circle-color': t[token],
+        'circle-stroke-color': t['transit-stroke'],
+        'circle-stroke-width': 1,
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, STOP_R, 16, ['*', 3, STOP_R]]
+      }
+    } as LayerSpecification;
+  });
+}
+
+const emptyCollection = (): GeoJSONSourceSpecification => ({
+  type: 'geojson',
+  data: { type: 'FeatureCollection', features: [] }
+});
+
 /**
- * Stack: base, existing-buildings, chunk layers, labels, overlay-anchor. The deck layers go
- * beneath the labels at runtime: SimMap gives them `beforeId` = `firstSymbolLayerId(style)`
- * (§4.4). No sprite is ever set: pois and icon layers are dropped.
+ * Stack: base, transit-access, existing-buildings, chunk layers, labels, transit stops,
+ * overlay-anchor. The transit sources and layers exist only when the manifest names a transit
+ * network. The deck layers go beneath the labels at runtime: SimMap gives them `beforeId` =
+ * `firstSymbolLayerId(style)` (§4.4). No sprite is ever set: pois and icon layers are dropped.
  */
 export function buildStyle(manifest: Manifest, theme: Theme): StyleSpecification {
   const { base, labels } = protomapsLayers(theme);
+  const transit = manifest.transit !== undefined;
   return {
     version: 8,
     glyphs: manifest.glyphs,
     sources: {
       protomaps: { type: 'vector', url: 'pmtiles://' + manifest.basemapTiles },
       [BUILDINGS_SOURCE]: buildingsSource(manifest),
-      [CHUNK_SOURCE]: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } }
+      [CHUNK_SOURCE]: emptyCollection(),
+      ...(transit
+        ? { [TRANSIT_ACCESS_SOURCE]: emptyCollection(), [TRANSIT_STOPS_SOURCE]: emptyCollection() }
+        : {})
     },
     layers: [
       ...base,
+      ...(transit ? [transitAccessLayer(theme)] : []),
       existingBuildingsLayer(theme),
       ...chunkLayers(theme),
       ...labels,
+      ...(transit ? transitStopLayers(theme) : []),
       { id: OVERLAY_ANCHOR, type: 'background', layout: { visibility: 'none' } }
     ]
   } as StyleSpecification;

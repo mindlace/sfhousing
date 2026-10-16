@@ -145,6 +145,60 @@
     {
       "files": [
         {
+          "archiveKey": "sources/affdc4d70cac01f71e54f049c754ba36824a885edcdef2ef8b024820c9e93080.zip",
+          "bytes": 892312,
+          "name": "gtfs-bart.zip",
+          "sha256": "affdc4d70cac01f71e54f049c754ba36824a885edcdef2ef8b024820c9e93080",
+          "url": "https://www.bart.gov/dev/schedules/google_transit.zip"
+        }
+      ],
+      "homepage": "https://www.bart.gov/schedules/developers/gtfs",
+      "id": "gtfs-bart",
+      "label": "BART GTFS",
+      "license": "BART Developer License Agreement",
+      "retrievedAt": "2026-10-16T03:59:49.651Z",
+      "rowCount": 287,
+      "upstreamVersion": "72"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/71c80e46edd526e9ebe123be968145b4ccd505f4e9fa012a521e31c7ef311578.zip",
+          "bytes": 173656,
+          "name": "gtfs-caltrain.zip",
+          "sha256": "71c80e46edd526e9ebe123be968145b4ccd505f4e9fa012a521e31c7ef311578",
+          "url": "https://data.trilliumtransit.com/gtfs/caltrain-ca-us/caltrain-ca-us.zip"
+        }
+      ],
+      "homepage": "https://www.caltrain.com/developer-resources",
+      "id": "gtfs-caltrain",
+      "label": "Caltrain GTFS",
+      "license": "Caltrain (PCJPB) Developer License Agreement",
+      "retrievedAt": "2026-10-16T03:59:49.843Z",
+      "rowCount": 106,
+      "upstreamVersion": "UTC: 10-Jun-2026 22:25"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/69572de4529dd3b7848e11258df5ea2aef1b36611d953d84fe0170075dbab910.zip",
+          "bytes": 10447937,
+          "name": "gtfs-muni.zip",
+          "sha256": "69572de4529dd3b7848e11258df5ea2aef1b36611d953d84fe0170075dbab910",
+          "url": "https://muni-gtfs.apps.sfmta.com/data/muni_gtfs-current.zip"
+        }
+      ],
+      "homepage": "https://www.sfmta.com/reports/gtfs-transit-data",
+      "id": "gtfs-muni",
+      "label": "SFMTA Muni GTFS",
+      "license": "SFMTA Transit Data License Agreement",
+      "retrievedAt": "2026-10-16T03:59:49.078Z",
+      "rowCount": 3238,
+      "upstreamVersion": "20260723..20260828"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/0a8bca61efe49e2f3159606b7de6da114b2ca28ad5b06cd9d3bc5253de6e1a75.parquet",
           "bytes": 36646085,
           "name": "overture-buildings.parquet",

@@ -50,6 +50,8 @@
   import type { ErrorEvent as MapErrorEvent, GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
   import type { ParcelId } from '$lib/data/parcel';
   import type { Manifest } from '$lib/data/manifest';
+  import { DEFAULT_TRANSIT_PARAMS, SF_GRID_BBOX, buildAccessGrid } from '$lib/transit';
+  import { DEFAULT_VIEW } from '$lib/view/prefs';
   import { CONSTRAINTS, NARROW_PX, defaultFrame, initialCamera, pixelRatio } from './camera';
   import { loadDeck } from './deck-loader';
   import { generatedCellFilter } from './cull';
@@ -63,6 +65,10 @@
     BUILDINGS_SOURCE,
     CHUNK_LAYERS,
     CHUNK_SOURCE,
+    TRANSIT_ACCESS_LAYER,
+    TRANSIT_ACCESS_SOURCE,
+    TRANSIT_STOP_LAYERS,
+    TRANSIT_STOPS_SOURCE,
     buildStyle,
     firstSymbolLayerId,
     buildingsSource,
@@ -71,6 +77,14 @@
     type PaintSet
   } from './style';
   import { tooltipLines, type TooltipHit } from './tooltip';
+  import {
+    accessCollection,
+    loadTransitNetwork,
+    stopTooltipLines,
+    stopsCollection,
+    transitView,
+    type TransitView
+  } from './transit-layer';
   import type {
     ChunkStatus,
     GeneratedUpdate,
@@ -88,7 +102,9 @@
     planBBox = undefined,
     requestParcelSummary = undefined,
     onRetryChunks = undefined,
-    onready = undefined
+    onready = undefined,
+    view = undefined,
+    fetchTransit = undefined
   }: SimMapProps = $props();
 
   type PaintProp = Parameters<MapLibreMap['setPaintProperty']>[1];
@@ -100,6 +116,10 @@
   const RESERVED = /^(generated|rising)-/;
   const TAP_PX = 6;
   const TAP_MS = 300;
+  /** Half-size of the square hit box around the pointer for stop markers (transit spec §6.1). */
+  const STOP_HIT_PX = 6;
+  /** Stop tooltips from this zoom up (transit spec §6.1). */
+  const STOP_TOOLTIP_MIN_ZOOM = 14;
 
   let root = $state<HTMLElement>();
   let container = $state<HTMLDivElement>();
@@ -154,6 +174,10 @@
     moving: boolean;
     buildingsTileLoaded: boolean;
     warned: Set<string>;
+    transit: TransitView | null;
+    transitIdle: (() => void) | null; // cancels the pending access-grid build
+    deckLayers: Layer[]; // the generated controller's latest deck layers
+    deckGroupsPending: boolean; // set while deck skipped adding its MapLibre layer groups
   }
 
   let live: Live | null = null;
@@ -326,6 +350,11 @@
     untrack(() => applyTheme(t));
   });
 
+  $effect(() => {
+    void [view?.transitStops, view?.transitAccess];
+    untrack(() => applyView());
+  });
+
   $effect(() =>
     installDebug(() => ({ map: live?.map ?? null, controller: live?.controller ?? null }))
   );
@@ -350,7 +379,11 @@
       tap: null,
       moving: false,
       buildingsTileLoaded: false,
-      warned: new Set()
+      warned: new Set(),
+      transit: null,
+      transitIdle: null,
+      deckLayers: [],
+      deckGroupsPending: false
     };
   }
 
@@ -411,9 +444,13 @@
 
     map.on('error', (e) => onMapError(l, e));
     map.on('dataloading', () => onDataLoading(l));
-    map.on('idle', () => clearLoading(l));
+    map.on('idle', () => {
+      clearLoading(l);
+      flushDeckGroups(l);
+    });
     map.on('sourcedata', (e) => {
       if (e.sourceId === BUILDINGS_SOURCE && e.tile) l.buildingsTileLoaded = true;
+      flushDeckGroups(l);
     });
     map.on('movestart', () => {
       l.moving = true;
@@ -455,6 +492,8 @@
     mapState = 'ready';
     pushChunkData();
     applyTheme(theme);
+    applyView();
+    void startTransit(l, map);
     let mods: Awaited<ReturnType<typeof loadDeck>>;
     try {
       mods = await loadDeck();
@@ -475,7 +514,13 @@
     l.overlay = overlay;
     const controller = new GeneratedController(
       {
-        setLayers: (layers) => overlay.setProps({ layers }),
+        setLayers: (layers) => {
+          l.deckLayers = layers;
+          overlay.setProps({ layers });
+          // Deck adds a new layer group only while the style reports loaded; any loading tile or
+          // GeoJSON setData (transit, chunk status) makes it report not loaded. Retry on load.
+          l.deckGroupsPending = !map.isStyleLoaded();
+        },
         setReplaced: (id) => {
           if (map.getSource(BUILDINGS_SOURCE))
             map.setFeatureState({ ...FS, id }, { replaced: true });
@@ -519,6 +564,9 @@
     l.timers.clear();
     if (l.pickRaf !== null) cancelAnimationFrame(l.pickRaf);
     if (l.chunkRaf !== null) cancelAnimationFrame(l.chunkRaf);
+    l.transitIdle?.();
+    l.transitIdle = null;
+    l.transit = null;
     l.controller?.destroy();
     l.overlay?.finalize();
     l.map?.remove();
@@ -609,6 +657,73 @@
     });
   }
 
+  /** Transit spec §6.3: layer visibility from the view prefs; re-run after every (re)load. */
+  function applyView(): void {
+    const l = live;
+    const map = l?.loaded ? l.map : null;
+    if (!map) return;
+    const v = view ?? DEFAULT_VIEW;
+    const set = (id: string, on: boolean) => {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+    };
+    set(TRANSIT_ACCESS_LAYER, v.transitAccess);
+    for (const id of TRANSIT_STOP_LAYERS) set(id, v.transitStops);
+    if (!v.transitStops && shown?.hit.kind === 'stop') clearShown();
+  }
+
+  function onIdle(fn: () => void): () => void {
+    if (typeof requestIdleCallback === 'function') {
+      const h = requestIdleCallback(fn, { timeout: 2000 });
+      return () => cancelIdleCallback(h);
+    }
+    const h = setTimeout(fn, 0);
+    return () => clearTimeout(h);
+  }
+
+  /** Transit spec §5.3/§6.1: stops right away, the access grid in an idle callback. */
+  async function startTransit(l: Live, map: MapLibreMap): Promise<void> {
+    const url = manifest.transit;
+    if (!url) return;
+    let t: TransitView;
+    try {
+      t = transitView(await (fetchTransit ?? loadTransitNetwork)(url));
+    } catch (e) {
+      console.warn('[map] transit data unavailable', e);
+      return;
+    }
+    // A teardown or start-up failure (fail() drops the map) while the network loaded.
+    if (l.dead || l.map !== map) return;
+    // Transit is warning-only: a failure here leaves that layer empty and the map ready.
+    try {
+      (map.getSource(TRANSIT_STOPS_SOURCE) as GeoJSONSource | undefined)?.setData(
+        stopsCollection(t)
+      );
+      l.transit = t;
+    } catch (e) {
+      console.warn('[map] transit data unavailable', e);
+      return;
+    }
+    l.transitIdle = onIdle(() => {
+      l.transitIdle = null;
+      if (l.dead || l.map !== map) return;
+      try {
+        const grid = buildAccessGrid(t.net, DEFAULT_TRANSIT_PARAMS, SF_GRID_BBOX, t.service);
+        (map.getSource(TRANSIT_ACCESS_SOURCE) as GeoJSONSource | undefined)?.setData(
+          accessCollection(grid)
+        );
+      } catch (e) {
+        console.warn('[map] transit data unavailable', e);
+      }
+    });
+  }
+
+  /** Re-sends the deck layers once the style is loaded, so deck adds the groups it skipped. */
+  function flushDeckGroups(l: Live): void {
+    if (!l.deckGroupsPending || l.dead || !l.overlay || !l.map?.isStyleLoaded()) return;
+    l.deckGroupsPending = false;
+    l.overlay.setProps({ layers: l.deckLayers });
+  }
+
   function onDataLoading(l: Live): void {
     if (l.loadTimer !== null || loadingBar) return;
     l.loadTimer = later(l, 300, () => {
@@ -674,6 +789,22 @@
   function pickAt(l: Live, x: number, y: number): { hit: TooltipHit; cell: string | null } | null {
     const map = l.map;
     if (!map || !l.loaded) return null;
+    // Stops draw on top of everything, so they win. queryRenderedFeatures skips hidden layers.
+    if (l.transit && map.getZoom() >= STOP_TOOLTIP_MIN_ZOOM) {
+      const layers = TRANSIT_STOP_LAYERS.filter((id) => map.getLayer(id));
+      const f = layers.length
+        ? map.queryRenderedFeatures(
+            [
+              [x - STOP_HIT_PX, y - STOP_HIT_PX],
+              [x + STOP_HIT_PX, y + STOP_HIT_PX]
+            ],
+            { layers }
+          )[0]
+        : undefined;
+      const i = f?.properties?.i;
+      if (typeof i === 'number')
+        return { hit: { kind: 'stop', lines: stopTooltipLines(l.transit, i) }, cell: null };
+    }
     const info = l.overlay?.pickObject({ x, y, radius: 2 });
     if (info?.layer && RESERVED.test(info.layer.id) && l.controller) {
       const part = l.controller.lookup(info.layer.id, info.index);

@@ -1,0 +1,4 @@
+stop_id,stop_name,stop_lat,stop_lon,location_type,parent_station
+FXST,"Fixture Station",37.7609907,-122.4181378,1,
+FX-1,"Fixture Station",37.7609907,-122.4181378,0,FXST
+FAR,"Far Station",37.7599627,-122.35141,0,

@@ -21,6 +21,8 @@ export function buildManifest(a: {
   lock: Lock;
   chunks: ChunkOut[];
   overtureContrib: { dataset: string; n: number }[];
+  /** The build wrote `transit.json`. */
+  transit?: boolean;
   warn?: (msg: string) => void;
 }): Manifest {
   const v = a.datasetVersion;
@@ -63,7 +65,8 @@ export function buildManifest(a: {
     buildingsTiles: `${base}/buildings.pmtiles`,
     basemapTiles: `${base}/basemap.pmtiles`,
     glyphs: `${base}/fonts/{fontstack}/{range}.pbf`,
-    neighborhoods: `${base}/neighborhoods.geojson`
+    neighborhoods: `${base}/neighborhoods.geojson`,
+    ...(a.transit ? { transit: `${base}/transit.json` } : {})
   });
 }
 

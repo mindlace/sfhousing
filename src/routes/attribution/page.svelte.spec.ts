@@ -72,4 +72,24 @@ describe('/attribution page', () => {
     expect(document.querySelector('table')).toBeNull();
     await expectNotices();
   });
+
+  const CREDIT = 'Transit stops and schedules from SFMTA Muni, BART and Caltrain GTFS feeds.';
+  const gtfs = { ...source, id: 'gtfs-muni', label: 'SFMTA Muni GTFS' };
+
+  it('credits the transit operators when the manifest lists GTFS sources', async () => {
+    render(Page, {
+      data: {
+        datasetVersion: 'fixture-0',
+        appRelease: 'dev',
+        manifest: { ...manifest, sources: [source, gtfs] }
+      }
+    });
+    await expect.element(page.getByText(CREDIT)).toBeInTheDocument();
+  });
+
+  it('omits the transit credit without GTFS sources', async () => {
+    render(Page, { data: { datasetVersion: 'fixture-0', appRelease: 'dev', manifest } });
+    await expect.element(page.getByText('Map data ©')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(CREDIT);
+  });
 });

@@ -1,6 +1,6 @@
 # Data pipeline
 
-`pipeline/` turns open sources (DataSF parcels, land use and footprints; Overture buildings; a Protomaps basemap extract; Noto Sans glyphs) into one immutable, versioned dataset: parcel chunks, `buildings.pmtiles`, `basemap.pmtiles`, fonts, neighborhoods and `manifest.json`. The Worker serves it from R2 (see [data-serving.md](data-serving.md)). Design: `docs/superpowers/specs/2026-10-10-data-pipeline-design.md`.
+`pipeline/` turns open sources (DataSF parcels, land use and footprints; Overture buildings; a Protomaps basemap extract; Noto Sans glyphs; Muni, BART and Caltrain GTFS) into one immutable, versioned dataset: parcel chunks, `buildings.pmtiles`, `basemap.pmtiles`, fonts, neighborhoods, `transit.json` and `manifest.json`. The Worker serves it from R2 (see [data-serving.md](data-serving.md)). Design: `docs/superpowers/specs/2026-10-10-data-pipeline-design.md`.
 
 ## Requirements
 
@@ -50,7 +50,16 @@ The lock pins every input by sha256. `build` refuses to run if a cached file doe
 
 ## Invariants
 
-`build` and `check` evaluate V1 to V13 and exit 1 on any failure, so nothing is uploaded. In short: V1 unit total within 2% of 413,208; V2 parcel count equals distinct active ids and lies in [140k, 170k]; V3 land-use match >= 99%; V4 known land-use values; V5 height coverage >= 95%; V6 piece area with a parcel >= 95%; V7 neighborhoods and label points; V8 each parcel in exactly one chunk, chunks round-trip; V9 chunk size limits; V10 tallest building 300 to 340 m; V11 first-paint budget; V12 determinism; V13 published versions are never altered. Thresholds live in `pipeline/config.ts`; the full table is spec section 4.9.
+`build` and `check` evaluate V1 to V14 and exit 1 on any failure, so nothing is uploaded. In short: V1 unit total within 2% of 413,208; V2 parcel count equals distinct active ids and lies in [140k, 170k]; V3 land-use match >= 99%; V4 known land-use values; V5 height coverage >= 95%; V6 piece area with a parcel >= 95%; V7 neighborhoods and label points; V8 each parcel in exactly one chunk, chunks round-trip; V9 chunk size limits; V10 tallest building 300 to 340 m; V11 first-paint budget; V12 determinism; V13 published versions are never altered; V14 `transit.json` decodes, has >= 3,000 stops and heavy-rail service at the 8 SF BART stations (it warns above 400 KB). Thresholds live in `pipeline/config.ts`; the full table is spec section 4.9 (V14: transit spec section 4.3).
+
+## Transit
+
+`transit.json` (codec `sfh-transit/1`) is the reduced transit network the capacity features read; design in the transit spec (`docs/superpowers/specs/2026-10-14-transit-capacity-design.md`).
+
+- Feeds come only from the agencies' own GTFS URLs (`pipeline/transit-config.ts`), never 511. They are pinned in the lock as `gtfs-muni`, `gtfs-bart` and `gtfs-caltrain`.
+- Vehicles and route-to-vehicle assignments live in `pipeline/transit-config.ts`, each citing its source and an as-of date (or `null`). Every `url` is currently `null`: the spec supplies none, so add one when a row is re-sourced. Update them when SFMTA reassigns fleets, then run `npm run pipeline -- build`: a non-fixture build is strict (`strict: !fixtureMode` in `pipeline/steps/build.ts`; there is no CLI flag) and fails when an assigned line is missing from a feed, which catches renamed lines. Fixture builds and `npm run data:transit` skip that check.
+- The service day is chosen per feed. A feed whose calendar has expired is a warning, not a failure.
+- `npm run data:transit` exists for local use: it builds `transit.json` from live feeds into the local dataset (see [developing.md](developing.md)). It clips to the loaded dataset's neighborhoods, so it needs a real dataset from `npm run data:local`; `fixture-0` yields only a handful of stops.
 
 ## ODbL obligations
 

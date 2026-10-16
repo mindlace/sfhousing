@@ -87,7 +87,7 @@ describe('codeTreeHash', () => {
     expect(a).toBe(b);
   });
 
-  /** A throwaway repo with committed pipeline/ + src/lib/data/ code (never the real repo). */
+  /** A throwaway repo with committed pipeline/ and src/lib/ code (never the real repo). */
   function tempRepo(): { dir: string; git: (...a: string[]) => void } {
     const dir = mkdtempSync(join(tmpdir(), 'sfh-ver-'));
     const git = (...a: string[]) => {
@@ -99,8 +99,11 @@ describe('codeTreeHash', () => {
     git('init', '-q');
     mkdirSync(join(dir, 'pipeline'), { recursive: true });
     mkdirSync(join(dir, 'src/lib/data'), { recursive: true });
+    mkdirSync(join(dir, 'src/lib/plan'), { recursive: true });
     writeFileSync(join(dir, 'pipeline/a.ts'), 'export const a = 1;\n');
     writeFileSync(join(dir, 'src/lib/data/b.ts'), 'export const b = 2;\n');
+    writeFileSync(join(dir, 'src/lib/plan/geometry.ts'), 'export const g = 3;\n');
+    writeFileSync(join(dir, 'src/lib/plan/other.ts'), 'export const o = 4;\n');
     git('add', '.');
     git('commit', '-q', '-m', 'code');
     return { dir, git };
@@ -126,5 +129,15 @@ describe('codeTreeHash', () => {
     const committed = await codeTreeHash(dir);
     expect(committed).not.toBe(clean);
     expect(committed).not.toBe(dirty);
+  });
+  it('covers src/lib/plan/geometry.ts, the shared projection, but no other plan code', async () => {
+    const { dir, git } = tempRepo();
+    const clean = await codeTreeHash(dir);
+    writeFileSync(join(dir, 'src/lib/plan/other.ts'), 'export const o = 5;\n');
+    git('commit', '-q', '-am', 'other');
+    expect(await codeTreeHash(dir)).toBe(clean);
+    writeFileSync(join(dir, 'src/lib/plan/geometry.ts'), 'export const g = 6;\n');
+    git('commit', '-q', '-am', 'geometry');
+    expect(await codeTreeHash(dir)).not.toBe(clean);
   });
 });

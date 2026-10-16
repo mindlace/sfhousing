@@ -60,6 +60,10 @@ export interface InvariantProfile {
   z12BasemapMax: number;
   manifestMax: number;
   neighborhoodsMax: number;
+  /** V14: minimum stops in transit.json. */
+  transitMinStops: number;
+  /** V14: each name (case-insensitive substring) must be a stop with heavy-rail service > 0 tph. */
+  transitHeavyRailStations: string[];
 }
 
 /** Spec §4.9 invariants for the full San Francisco build (expects 41 neighborhoods). */
@@ -80,13 +84,25 @@ export const LIVE_PROFILE: InvariantProfile = {
   z12BuildingsMax: 2.0e6,
   z12BasemapMax: 1.2e6,
   manifestMax: 64e3,
-  neighborhoodsMax: 150e3
+  neighborhoodsMax: 150e3,
+  transitMinStops: 3000,
+  transitHeavyRailStations: [
+    'Embarcadero',
+    'Montgomery',
+    'Powell',
+    'Civic Center',
+    '16th',
+    '24th',
+    'Glen Park',
+    'Balboa Park'
+  ]
 };
 
 /**
  * The mini fixture's known answers (pipeline/test/fixtures/mini/README.md): Σ units
  * 2+6+4+3+1+2+0+12+0+3+3+7+5+40 = 88 exactly, 14 parcels, 12/14 matched land use, 9/10 kept
- * buildings with hs ≠ 3, max parcel height 60 m (lot 14), 2 neighborhoods.
+ * buildings with hs ≠ 3, max parcel height 60 m (lot 14), 2 neighborhoods,
+ * 8 transit stops, one BART station.
  */
 export const FIXTURE_PROFILE: InvariantProfile = {
   unitsTarget: 88,
@@ -105,5 +121,7 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   z12BuildingsMax: LIVE_PROFILE.z12BuildingsMax,
   z12BasemapMax: LIVE_PROFILE.z12BasemapMax,
   manifestMax: LIVE_PROFILE.manifestMax,
-  neighborhoodsMax: LIVE_PROFILE.neighborhoodsMax
+  neighborhoodsMax: LIVE_PROFILE.neighborhoodsMax,
+  transitMinStops: 8,
+  transitHeavyRailStations: ['Fixture Station']
 };

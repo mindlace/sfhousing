@@ -75,6 +75,165 @@
     {
       "files": [
         {
+          "archiveKey": "sources/27997afadcaa25b9885cab997e88796e49faae18434be407b1af4309da78fe40.txt",
+          "bytes": 125,
+          "name": "gtfs-bart/calendar.txt",
+          "sha256": "27997afadcaa25b9885cab997e88796e49faae18434be407b1af4309da78fe40",
+          "url": "https://fixture.invalid/gtfs-bart/calendar.txt"
+        },
+        {
+          "archiveKey": "sources/aaa66bee57e81ca0cd63d4afe576f993aba0441428a79cf6fe5c58721e39421f.txt",
+          "bytes": 31,
+          "name": "gtfs-bart/calendar_dates.txt",
+          "sha256": "aaa66bee57e81ca0cd63d4afe576f993aba0441428a79cf6fe5c58721e39421f",
+          "url": "https://fixture.invalid/gtfs-bart/calendar_dates.txt"
+        },
+        {
+          "archiveKey": "sources/94e29b4a30b2259fce6d8ee8ba7def2bea86a9da28b78fb4b1d041de6871f25e.txt",
+          "bytes": 105,
+          "name": "gtfs-bart/routes.txt",
+          "sha256": "94e29b4a30b2259fce6d8ee8ba7def2bea86a9da28b78fb4b1d041de6871f25e",
+          "url": "https://fixture.invalid/gtfs-bart/routes.txt"
+        },
+        {
+          "archiveKey": "sources/4538fdfbaff0a03a6d1a050b58c02a7667fc70e124ca6e5d7772cbf86dedfc77.txt",
+          "bytes": 498,
+          "name": "gtfs-bart/stop_times.txt",
+          "sha256": "4538fdfbaff0a03a6d1a050b58c02a7667fc70e124ca6e5d7772cbf86dedfc77",
+          "url": "https://fixture.invalid/gtfs-bart/stop_times.txt"
+        },
+        {
+          "archiveKey": "sources/2bf73b7860138fe07f29ac0bd4c54926f76df40a1ea1189aa911bf0db94fe1d0.txt",
+          "bytes": 212,
+          "name": "gtfs-bart/stops.txt",
+          "sha256": "2bf73b7860138fe07f29ac0bd4c54926f76df40a1ea1189aa911bf0db94fe1d0",
+          "url": "https://fixture.invalid/gtfs-bart/stops.txt"
+        },
+        {
+          "archiveKey": "sources/31466380729ded58458230093dca2c8bac88f8db87087f5162ed09a3a4105b41.txt",
+          "bytes": 137,
+          "name": "gtfs-bart/trips.txt",
+          "sha256": "31466380729ded58458230093dca2c8bac88f8db87087f5162ed09a3a4105b41",
+          "url": "https://fixture.invalid/gtfs-bart/trips.txt"
+        }
+      ],
+      "homepage": "https://www.bart.gov/schedules/developers/gtfs",
+      "id": "gtfs-bart",
+      "label": "BART GTFS",
+      "license": "BART Developer License Agreement",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 6,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/27997afadcaa25b9885cab997e88796e49faae18434be407b1af4309da78fe40.txt",
+          "bytes": 125,
+          "name": "gtfs-caltrain/calendar.txt",
+          "sha256": "27997afadcaa25b9885cab997e88796e49faae18434be407b1af4309da78fe40",
+          "url": "https://fixture.invalid/gtfs-caltrain/calendar.txt"
+        },
+        {
+          "archiveKey": "sources/aaa66bee57e81ca0cd63d4afe576f993aba0441428a79cf6fe5c58721e39421f.txt",
+          "bytes": 31,
+          "name": "gtfs-caltrain/calendar_dates.txt",
+          "sha256": "aaa66bee57e81ca0cd63d4afe576f993aba0441428a79cf6fe5c58721e39421f",
+          "url": "https://fixture.invalid/gtfs-caltrain/calendar_dates.txt"
+        },
+        {
+          "archiveKey": "sources/6f5d25e31d195aea552d1d3f3e80eb4e5e6db9527db3668fa908d03cdf5194c5.txt",
+          "bytes": 76,
+          "name": "gtfs-caltrain/routes.txt",
+          "sha256": "6f5d25e31d195aea552d1d3f3e80eb4e5e6db9527db3668fa908d03cdf5194c5",
+          "url": "https://fixture.invalid/gtfs-caltrain/routes.txt"
+        },
+        {
+          "archiveKey": "sources/21afb751a82965470a0c763c20821bd1cd34f1572d47f150a7e9a2ebff10c08d.txt",
+          "bytes": 6240,
+          "name": "gtfs-caltrain/stop_times.txt",
+          "sha256": "21afb751a82965470a0c763c20821bd1cd34f1572d47f150a7e9a2ebff10c08d",
+          "url": "https://fixture.invalid/gtfs-caltrain/stop_times.txt"
+        },
+        {
+          "archiveKey": "sources/1433710dd141c4c53935b3babff3c3a7c477e526c1fab0177d92423998f3010a.txt",
+          "bytes": 382,
+          "name": "gtfs-caltrain/stops.txt",
+          "sha256": "1433710dd141c4c53935b3babff3c3a7c477e526c1fab0177d92423998f3010a",
+          "url": "https://fixture.invalid/gtfs-caltrain/stops.txt"
+        },
+        {
+          "archiveKey": "sources/1aa0ae8ca805c1b05e3e3a011f4e5200d9de3d5d32a38f8478905ae0e42f843f.txt",
+          "bytes": 1392,
+          "name": "gtfs-caltrain/trips.txt",
+          "sha256": "1aa0ae8ca805c1b05e3e3a011f4e5200d9de3d5d32a38f8478905ae0e42f843f",
+          "url": "https://fixture.invalid/gtfs-caltrain/trips.txt"
+        }
+      ],
+      "homepage": "https://www.caltrain.com/developer-resources",
+      "id": "gtfs-caltrain",
+      "label": "Caltrain GTFS",
+      "license": "Caltrain (PCJPB) Developer License Agreement",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 6,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/27997afadcaa25b9885cab997e88796e49faae18434be407b1af4309da78fe40.txt",
+          "bytes": 125,
+          "name": "gtfs-muni/calendar.txt",
+          "sha256": "27997afadcaa25b9885cab997e88796e49faae18434be407b1af4309da78fe40",
+          "url": "https://fixture.invalid/gtfs-muni/calendar.txt"
+        },
+        {
+          "archiveKey": "sources/62df2c37aeafdb0aa5371da8d15c8dfeb44106df03563b95cec58ec964deb6b2.txt",
+          "bytes": 47,
+          "name": "gtfs-muni/calendar_dates.txt",
+          "sha256": "62df2c37aeafdb0aa5371da8d15c8dfeb44106df03563b95cec58ec964deb6b2",
+          "url": "https://fixture.invalid/gtfs-muni/calendar_dates.txt"
+        },
+        {
+          "archiveKey": "sources/5d28cb0a9155fe79ed1807e77331828d4ba6aacc9cd019951b2d0e6f9f8ca72f.txt",
+          "bytes": 98,
+          "name": "gtfs-muni/routes.txt",
+          "sha256": "5d28cb0a9155fe79ed1807e77331828d4ba6aacc9cd019951b2d0e6f9f8ca72f",
+          "url": "https://fixture.invalid/gtfs-muni/routes.txt"
+        },
+        {
+          "archiveKey": "sources/f5a16a704dad97b1cbe1b27e9c66ac0f69c8f6916f30e1434bdd295be95f6185.txt",
+          "bytes": 2632,
+          "name": "gtfs-muni/stop_times.txt",
+          "sha256": "f5a16a704dad97b1cbe1b27e9c66ac0f69c8f6916f30e1434bdd295be95f6185",
+          "url": "https://fixture.invalid/gtfs-muni/stop_times.txt"
+        },
+        {
+          "archiveKey": "sources/d0ed7da1a5f19dbcae5c21997e4c576d43570ca91700fabff7c3cae9f0ab40ea.txt",
+          "bytes": 395,
+          "name": "gtfs-muni/stops.txt",
+          "sha256": "d0ed7da1a5f19dbcae5c21997e4c576d43570ca91700fabff7c3cae9f0ab40ea",
+          "url": "https://fixture.invalid/gtfs-muni/stops.txt"
+        },
+        {
+          "archiveKey": "sources/55e3337013c9ecd0edd2cb86bc9df7c1df0f64efdb55d4d11d92443021fb33f1.txt",
+          "bytes": 638,
+          "name": "gtfs-muni/trips.txt",
+          "sha256": "55e3337013c9ecd0edd2cb86bc9df7c1df0f64efdb55d4d11d92443021fb33f1",
+          "url": "https://fixture.invalid/gtfs-muni/trips.txt"
+        }
+      ],
+      "homepage": "https://www.sfmta.com/reports/gtfs-transit-data",
+      "id": "gtfs-muni",
+      "label": "SFMTA Muni GTFS",
+      "license": "SFMTA Transit Data License Agreement",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 6,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/951b26d7001e989cb193f2e0ae9a3cbe49f0dc62bdd994aeda8418e5b008c5c6.geojson",
           "bytes": 4043,
           "name": "overture-buildings.page-000.geojson",

@@ -3,6 +3,8 @@ import { cpSync, mkdtempSync, readFileSync, writeFileSync, readdirSync } from 'n
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { encodeTransit } from '../../src/lib/data/transit-codec';
+import { tinyNetwork } from '../../src/lib/data/fixtures/transit-tiny';
 import { FIXTURE_PROFILE } from '../config';
 import { checkDataset, maxOf } from '../steps/check';
 import { fixture } from '../steps/fixture';
@@ -147,6 +149,55 @@ describe('invariants', () => {
   });
   it('V12 fails when re-encoding differs', async () => {
     expect(await failed(base, counts, { reencodeIdentical: false })).toContain('V12');
+  });
+  it('V14 passes on a small valid network', async () => {
+    const d = copy();
+    writeFileSync(join(d, 'transit.json'), encodeTransit(tinyNetwork()));
+    const profile = {
+      ...FIXTURE_PROFILE,
+      transitMinStops: 2,
+      transitHeavyRailStations: ['Fixture Station']
+    };
+    const r = await checkDataset(d, profile, { counts, reencodeIdentical: true });
+    expect(r.find((x) => x.id === 'V14')).toMatchObject({
+      ok: true,
+      detail: '2 stops, 2 patterns, 1 heavy-rail stops'
+    });
+  });
+  it('V14 fails when a named station has no heavy-rail service', async () => {
+    const d = copy();
+    writeFileSync(join(d, 'transit.json'), encodeTransit(tinyNetwork()));
+    const profile = {
+      ...FIXTURE_PROFILE,
+      transitMinStops: 2,
+      transitHeavyRailStations: ['Embarcadero']
+    };
+    const v14 = (await checkDataset(d, profile, { counts, reencodeIdentical: true })).find(
+      (x) => x.id === 'V14'
+    )!;
+    expect(v14.ok).toBe(false);
+    expect(v14.detail).toMatch(/no heavy-rail service at Embarcadero/);
+  });
+  it('V14 fails when the manifest has no transit', async () => {
+    const d = copy();
+    const m = JSON.parse(readFileSync(join(d, 'manifest.json'), 'utf8'));
+    delete m.transit;
+    writeFileSync(join(d, 'manifest.json'), JSON.stringify(m));
+    const v14 = (await checkDataset(d, FIXTURE_PROFILE, { counts, reencodeIdentical: true })).find(
+      (x) => x.id === 'V14'
+    )!;
+    expect(v14.ok).toBe(false);
+    expect(v14.detail).toMatch(/manifest has no transit/);
+  });
+  it('V14 fails on too few stops or an undecodable transit.json', async () => {
+    const d = copy();
+    writeFileSync(join(d, 'transit.json'), encodeTransit(tinyNetwork()));
+    expect(await failed(d)).toContain('V14'); // 2 stops < 8
+    writeFileSync(join(d, 'transit.json'), '{"format":"nope"}');
+    const v14 = (await checkDataset(d, FIXTURE_PROFILE, { counts, reencodeIdentical: true })).find(
+      (x) => x.id === 'V14'
+    )!;
+    expect(v14.detail).toMatch(/^transit\.json: /);
   });
   it('V13 is reported as enforced at upload', async () => {
     const r = await checkDataset(base, FIXTURE_PROFILE, { counts, reencodeIdentical: true });

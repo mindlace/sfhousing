@@ -22,6 +22,7 @@ export function collectDataPaths(manifest: Manifest, version: string): string[] 
   paths.add(rel(manifest.buildingsTiles));
   paths.add(rel(manifest.basemapTiles));
   paths.add(rel(manifest.neighborhoods));
+  if (manifest.transit) paths.add(rel(manifest.transit));
   for (const s of spriteVariants(manifest, version)) paths.add(s);
   return [...paths].sort();
 }

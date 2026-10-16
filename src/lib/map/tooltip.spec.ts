@@ -105,6 +105,12 @@ const cases: [string, TooltipHit, [string, string]][] = [
 ];
 
 describe('tooltipLines', () => {
+  it('passes stop lines through', () => {
+    expect(tooltipLines({ kind: 'stop', lines: ['Powell', 'BART Red'] })).toEqual([
+      'Powell',
+      'BART Red'
+    ]);
+  });
   it.each(cases)('%s', (_name, hit, expected) => {
     expect(tooltipLines(hit)).toEqual(expected);
   });
