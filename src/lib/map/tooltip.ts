@@ -33,7 +33,8 @@ export type TooltipHit =
       parcelId: ParcelId | null;
       chunk: ChunkStatus | 'unknown';
       summary: ParcelSummaryLike | null;
-    };
+    }
+  | { kind: 'stop'; lines: [string, string] };
 
 function generatedLines(
   parcelId: ParcelId,
@@ -55,6 +56,7 @@ function generatedLines(
 }
 
 export function tooltipLines(hit: TooltipHit): [string, string] {
+  if (hit.kind === 'stop') return hit.lines;
   if (hit.kind === 'generated') return generatedLines(hit.parcelId, hit, hit.existingUnits);
   if (hit.parcelId === null) return ['Existing building', 'Not matched to a parcel'];
   const s = hit.summary;
