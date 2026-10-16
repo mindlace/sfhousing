@@ -80,6 +80,7 @@
     "eslint-plugin-playwright": "^2.10.5",
     "eslint-plugin-svelte": "^3.22.0",
     "fast-check": "^4.9.0",
+    "fflate": "^0.8.2",
     "globals": "^17.7.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.2.0",
