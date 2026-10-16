@@ -3,31 +3,31 @@
     {
       "files": [
         {
-          "archiveKey": "sources/73a996394edc66f31ad7637d063151f66cd3b16d83b3167c4f3683c78a7fdcd1.geojson",
-          "bytes": 37978144,
+          "archiveKey": "sources/815431cd5587abd99dbfdaf812201bf8776ff1d46727f63bc62a8e689e152975.geojson",
+          "bytes": 45589486,
           "name": "datasf-footprints.page-000.geojson",
-          "sha256": "73a996394edc66f31ad7637d063151f66cd3b16d83b3167c4f3683c78a7fdcd1",
+          "sha256": "815431cd5587abd99dbfdaf812201bf8776ff1d46727f63bc62a8e689e152975",
           "url": "https://data.sf.gov/resource/ynuv-fyni.geojson?%24select=mblr%2Csf16_bldgid%2Chgt_median_m%2Cshape&%24order=%3Aid&%24limit=50000&%24offset=0"
         },
         {
-          "archiveKey": "sources/e5029e983a0401fdbef48ded79026320476e470e20f64561f6151320cbaed445.geojson",
-          "bytes": 33714466,
+          "archiveKey": "sources/668798c40c092614a09f6e6ea208058579b45234b4928b84333cdb954e68c317.geojson",
+          "bytes": 36131637,
           "name": "datasf-footprints.page-001.geojson",
-          "sha256": "e5029e983a0401fdbef48ded79026320476e470e20f64561f6151320cbaed445",
+          "sha256": "668798c40c092614a09f6e6ea208058579b45234b4928b84333cdb954e68c317",
           "url": "https://data.sf.gov/resource/ynuv-fyni.geojson?%24select=mblr%2Csf16_bldgid%2Chgt_median_m%2Cshape&%24order=%3Aid&%24limit=50000&%24offset=50000"
         },
         {
-          "archiveKey": "sources/0d53b6a175c59be2117d5286f0583c065dd307aff4da325865b5b552abd90dde.geojson",
-          "bytes": 39485287,
+          "archiveKey": "sources/64ed2e5f2c7f9c039435871ec5b7cdeb8a75e0fb04beb37630a6815ee836af31.geojson",
+          "bytes": 35380972,
           "name": "datasf-footprints.page-002.geojson",
-          "sha256": "0d53b6a175c59be2117d5286f0583c065dd307aff4da325865b5b552abd90dde",
+          "sha256": "64ed2e5f2c7f9c039435871ec5b7cdeb8a75e0fb04beb37630a6815ee836af31",
           "url": "https://data.sf.gov/resource/ynuv-fyni.geojson?%24select=mblr%2Csf16_bldgid%2Chgt_median_m%2Cshape&%24order=%3Aid&%24limit=50000&%24offset=100000"
         },
         {
-          "archiveKey": "sources/c214e9d52b4caa1410354301119ff4640298f11831a2f3462697a51b724d9d30.geojson",
-          "bytes": 18106928,
+          "archiveKey": "sources/bb2899d453067984cbc940057bbe8edbfefdb2aae72dd0f0ef175892b9aa6ebd.geojson",
+          "bytes": 12182730,
           "name": "datasf-footprints.page-003.geojson",
-          "sha256": "c214e9d52b4caa1410354301119ff4640298f11831a2f3462697a51b724d9d30",
+          "sha256": "bb2899d453067984cbc940057bbe8edbfefdb2aae72dd0f0ef175892b9aa6ebd",
           "url": "https://data.sf.gov/resource/ynuv-fyni.geojson?%24select=mblr%2Csf16_bldgid%2Chgt_median_m%2Cshape&%24order=%3Aid&%24limit=50000&%24offset=150000"
         }
       ],
@@ -35,9 +35,9 @@
       "id": "datasf-footprints",
       "label": "DataSF Building Footprints",
       "license": "PDDL-1.0",
-      "retrievedAt": "2026-10-11T03:52:42.612Z",
+      "retrievedAt": "2026-10-16T17:03:54.383Z",
       "rowCount": 177023,
-      "upstreamVersion": "Sat, 10 Oct 2026 17:24:43 GMT"
+      "upstreamVersion": "Thu, 15 Oct 2026 17:22:13 GMT"
     },
     {
       "files": [
@@ -74,7 +74,7 @@
       "id": "datasf-landuse-2023",
       "label": "DataSF Land Use 2023",
       "license": "public-domain",
-      "retrievedAt": "2026-10-11T03:52:24.948Z",
+      "retrievedAt": "2026-10-16T17:02:18.063Z",
       "rowCount": 154476,
       "upstreamVersion": "Thu, 04 Apr 2024 15:35:26 GMT"
     },
@@ -92,7 +92,7 @@
       "id": "datasf-neighborhoods",
       "label": "DataSF Analysis Neighborhoods",
       "license": "PDDL-1.0",
-      "retrievedAt": "2026-10-11T03:52:43.249Z",
+      "retrievedAt": "2026-10-16T17:03:57.583Z",
       "rowCount": 41,
       "upstreamVersion": "Tue, 17 Oct 2023 18:30:17 GMT"
     },
@@ -138,9 +138,9 @@
       "id": "datasf-parcels",
       "label": "DataSF Parcels (Active and Retired)",
       "license": "PDDL-1.0",
-      "retrievedAt": "2026-10-11T03:51:36.336Z",
+      "retrievedAt": "2026-10-16T17:01:54.669Z",
       "rowCount": 227967,
-      "upstreamVersion": "Sat, 10 Oct 2026 17:35:47 GMT"
+      "upstreamVersion": "Thu, 15 Oct 2026 17:30:29 GMT"
     },
     {
       "files": [
@@ -156,7 +156,7 @@
       "id": "gtfs-bart",
       "label": "BART GTFS",
       "license": "BART Developer License Agreement",
-      "retrievedAt": "2026-10-16T03:59:49.651Z",
+      "retrievedAt": "2026-10-16T17:04:18.530Z",
       "rowCount": 287,
       "upstreamVersion": "72"
     },
@@ -174,7 +174,7 @@
       "id": "gtfs-caltrain",
       "label": "Caltrain GTFS",
       "license": "Caltrain (PCJPB) Developer License Agreement",
-      "retrievedAt": "2026-10-16T03:59:49.843Z",
+      "retrievedAt": "2026-10-16T17:04:18.682Z",
       "rowCount": 106,
       "upstreamVersion": "UTC: 10-Jun-2026 22:25"
     },
@@ -192,7 +192,7 @@
       "id": "gtfs-muni",
       "label": "SFMTA Muni GTFS",
       "license": "SFMTA Transit Data License Agreement",
-      "retrievedAt": "2026-10-16T03:59:49.078Z",
+      "retrievedAt": "2026-10-16T17:04:17.239Z",
       "rowCount": 3238,
       "upstreamVersion": "20260723..20260828"
     },
@@ -210,27 +210,27 @@
       "id": "overture-buildings",
       "label": "Overture Maps Buildings",
       "license": "ODbL-1.0",
-      "retrievedAt": "2026-10-11T03:52:58.496Z",
+      "retrievedAt": "2026-10-16T17:04:10.537Z",
       "rowCount": 177940,
       "upstreamVersion": "2026-09-23.1"
     },
     {
       "files": [
         {
-          "archiveKey": "sources/d307633a0138b3b199be21c7103683bcc23c06959c232f88ad1f76ecd00f272c.pmtiles",
-          "bytes": 15065515,
+          "archiveKey": "sources/a6a1acc8d1592b0514f7323034deecbe753365fb5fcbd7b7f8965d838c9bbd87.pmtiles",
+          "bytes": 15066031,
           "name": "protomaps-basemap.pmtiles",
-          "sha256": "d307633a0138b3b199be21c7103683bcc23c06959c232f88ad1f76ecd00f272c",
-          "url": "https://build.protomaps.com/20261010.pmtiles"
+          "sha256": "a6a1acc8d1592b0514f7323034deecbe753365fb5fcbd7b7f8965d838c9bbd87",
+          "url": "https://build.protomaps.com/20261015.pmtiles"
         }
       ],
       "homepage": "https://protomaps.com",
       "id": "protomaps-basemap",
       "label": "Protomaps basemap (OpenStreetMap)",
       "license": "ODbL-1.0",
-      "retrievedAt": "2026-10-11T03:53:01.680Z",
+      "retrievedAt": "2026-10-16T17:04:16.660Z",
       "rowCount": 1,
-      "upstreamVersion": "20261010"
+      "upstreamVersion": "20261015"
     },
     {
       "files": [
@@ -246,7 +246,7 @@
       "id": "protomaps-fonts",
       "label": "Noto Sans glyphs",
       "license": "OFL-1.1",
-      "retrievedAt": "2026-10-11T03:53:02.538Z",
+      "retrievedAt": "2026-10-16T17:04:17.238Z",
       "rowCount": 1,
       "upstreamVersion": "028c18f713baecad011301ff7a69acc39bcc2ae7"
     }
