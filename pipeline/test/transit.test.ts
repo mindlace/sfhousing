@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { encodeTransit } from '../../src/lib/data/transit-codec';
 import type { GtfsFiles } from '../lib/gtfs';
 import { TransitBuildError, assignPlaces, clipFilter, reduceTransit } from '../steps/transit';
-import { GTFS_FEEDS, placeTokens } from '../transit-config';
+import { ASSIGNMENTS, GTFS_FEEDS, VEHICLES, placeTokens } from '../transit-config';
 import { every, tripTables, type TripSpec } from './gtfs-builder';
 
 const CAL =
@@ -241,5 +241,15 @@ describe('clipFilter', () => {
     expect(keep([-122.415, 37.765])).toBe(true);
     expect(keep([-122.405, 37.765])).toBe(true); // ~440 m east of the edge
     expect(keep([-122.39, 37.765])).toBe(false); // ~1.8 km east
+  });
+});
+
+describe('transit config', () => {
+  it('cites a source, URL and as-of date (or null) on every vehicle and assignment row', () => {
+    for (const row of [...Object.values(VEHICLES), ...ASSIGNMENTS]) {
+      expect(row.source).not.toBe('');
+      expect(row.url === null || /^https:\/\//.test(row.url)).toBe(true);
+      expect(row.asOf === null || /^\d{4}(-\d{2})?$/.test(row.asOf)).toBe(true);
+    }
   });
 });

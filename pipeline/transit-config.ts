@@ -1,5 +1,6 @@
-// Transit feeds, vehicles and route assignments (transit spec §4.1, §4.2 step 7). Every number has
-// its source and as-of date. These are seed values: the client may edit the network (spec §8).
+// Transit feeds, vehicles and route assignments (transit spec §4.1, §4.2 step 7). Every vehicle and
+// assignment row cites its source, with a URL and as-of date (null where the source names none;
+// see Cite). These are seed values: the client may edit the network (spec §8).
 //
 // Feed facts, verified 2026-10-14 against the live feeds:
 // - Muni: route_id equals route_short_name (14, 14R, N, CA, PM, PH). Rail lines are F J K L M N T
@@ -67,35 +68,54 @@ export const PEAK = { start: '07:00', end: '09:00' } as const;
 export const CLIP_BUFFER_M = 1000;
 export const PLACE_RADIUS_M = 150;
 
-const SRTP = 'SFMTA SRTP FY19–30 (Jan 2020), Tables 4-5/4-6';
-export const VEHICLES: Record<VehicleId, Vehicle & { source: string }> = {
-  'muni-bus-30': { label: 'Muni 30 ft bus', seats: 24, capacity: 33, source: SRTP },
-  'muni-bus-40': { label: 'Muni 40 ft bus', seats: 30, capacity: 44, source: SRTP },
-  'muni-bus-60': { label: 'Muni 60 ft articulated bus', seats: 45, capacity: 69, source: SRTP },
-  'muni-lrv4': { label: 'Muni Metro LRV4 car', seats: 60, capacity: 139, source: SRTP },
-  'muni-streetcar': { label: 'Muni historic streetcar', seats: 33, capacity: 69, source: SRTP },
-  'muni-cable-powell': { label: 'Powell cable car', seats: 30, capacity: 52, source: SRTP },
-  'muni-cable-california': { label: 'California cable car', seats: 35, capacity: 60, source: SRTP },
+/**
+ * Where a row's numbers come from. `url` and `asOf` (YYYY or YYYY-MM) are null where the spec
+ * records no URL or date for that source; they are never guessed.
+ */
+export interface Cite {
+  source: string;
+  url: string | null;
+  asOf: string | null;
+}
+
+const SRTP: Cite = {
+  source: 'SFMTA SRTP FY19–30 (Jan 2020), Tables 4-5/4-6',
+  url: null,
+  asOf: '2020-01'
+};
+const BART_JULY_2026 = { url: null, asOf: '2026-07' } as const;
+
+export const VEHICLES: Record<VehicleId, Vehicle & Cite> = {
+  'muni-bus-30': { label: 'Muni 30 ft bus', seats: 24, capacity: 33, ...SRTP },
+  'muni-bus-40': { label: 'Muni 40 ft bus', seats: 30, capacity: 44, ...SRTP },
+  'muni-bus-60': { label: 'Muni 60 ft articulated bus', seats: 45, capacity: 69, ...SRTP },
+  'muni-lrv4': { label: 'Muni Metro LRV4 car', seats: 60, capacity: 139, ...SRTP },
+  'muni-streetcar': { label: 'Muni historic streetcar', seats: 33, capacity: 69, ...SRTP },
+  'muni-cable-powell': { label: 'Powell cable car', seats: 30, capacity: 52, ...SRTP },
+  'muni-cable-california': { label: 'California cable car', seats: 35, capacity: 60, ...SRTP },
   'bart-car': {
     label: 'BART car (Fleet of the Future)',
     seats: 54,
     capacity: 107,
-    source: 'BART planning standard: 60 seated + 47 standing per car'
+    source: 'BART planning standard: 60 seated + 47 standing per car',
+    url: null,
+    asOf: null
   },
   'caltrain-emu7': {
     label: 'Caltrain 7-car electric train',
     seats: 675,
     capacity: 810,
-    source: 'Caltrain 2025 Title VI Program (peak load factor 1.2)'
+    source: 'Caltrain 2025 Title VI Program (peak load factor 1.2)',
+    url: null,
+    asOf: '2025'
   }
 };
 
-export interface Assignment {
+export interface Assignment extends Cite {
   operator: OperatorId;
   lines: string[];
   vehicle: VehicleId;
   cars: number;
-  source: string;
 }
 
 /** Spec §4.2 step 7. Lines absent from the 2026-07-23 Muni feed (E, S) are omitted. */
@@ -122,14 +142,18 @@ export const ASSIGNMENTS: Assignment[] = [
     vehicle: 'muni-bus-60',
     cars: 1,
     source:
-      'Wikipedia "List of San Francisco Municipal Railway lines" (^ = 60 ft, July 2022); SFMTA confirms 38/38R, 49, 14R. The 9 is 60 ft on weekends only, so it keeps the 40 ft default.'
+      'Wikipedia "List of San Francisco Municipal Railway lines" (^ = 60 ft, July 2022); SFMTA confirms 38/38R, 49, 14R. The 9 is 60 ft on weekends only, so it keeps the 40 ft default.',
+    url: null,
+    asOf: '2022-07'
   },
   {
     operator: 'muni',
     lines: ['35', '36', '37', '39', '52', '56', '66', '67'],
     vehicle: 'muni-bus-30',
     cars: 1,
-    source: 'Wikipedia "List of San Francisco Municipal Railway lines" (community routes)'
+    source: 'Wikipedia "List of San Francisco Municipal Railway lines" (community routes)',
+    url: null,
+    asOf: null
   },
   {
     operator: 'muni',
@@ -137,7 +161,9 @@ export const ASSIGNMENTS: Assignment[] = [
     vehicle: 'muni-lrv4',
     cars: 2,
     source:
-      'SFMTA two-car K/T trains; N Judah two-car. Simplification: K counts 2 cars on Ocean Ave, where the rear car is locked.'
+      'SFMTA two-car K/T trains; N Judah two-car. Simplification: K counts 2 cars on Ocean Ave, where the rear car is locked.',
+    url: null,
+    asOf: null
   },
   {
     operator: 'muni',
@@ -145,38 +171,44 @@ export const ASSIGNMENTS: Assignment[] = [
     vehicle: 'muni-lrv4',
     cars: 1,
     source:
-      'J single car (short platforms). L and M low confidence: no current source on 2-car peaks.'
+      'J single car (short platforms). L and M low confidence: no current source on 2-car peaks.',
+    url: null,
+    asOf: null
   },
-  { operator: 'muni', lines: ['F'], vehicle: 'muni-streetcar', cars: 1, source: SRTP },
-  { operator: 'muni', lines: ['PM', 'PH'], vehicle: 'muni-cable-powell', cars: 1, source: SRTP },
-  { operator: 'muni', lines: ['CA'], vehicle: 'muni-cable-california', cars: 1, source: SRTP },
+  { operator: 'muni', lines: ['F'], vehicle: 'muni-streetcar', cars: 1, ...SRTP },
+  { operator: 'muni', lines: ['PM', 'PH'], vehicle: 'muni-cable-powell', cars: 1, ...SRTP },
+  { operator: 'muni', lines: ['CA'], vehicle: 'muni-cable-california', cars: 1, ...SRTP },
   {
     operator: 'bart',
     lines: ['Red'],
     vehicle: 'bart-car',
     cars: 10,
-    source: 'BART July 2026 schedule'
+    source: 'BART July 2026 schedule',
+    ...BART_JULY_2026
   },
   {
     operator: 'bart',
     lines: ['Yellow'],
     vehicle: 'bart-car',
     cars: 9,
-    source: 'BART July 2026 schedule'
+    source: 'BART July 2026 schedule',
+    ...BART_JULY_2026
   },
   {
     operator: 'bart',
     lines: ['Green', 'Blue'],
     vehicle: 'bart-car',
     cars: 6,
-    source: 'BART July 2026 schedule; 6-car base unconfirmed'
+    source: 'BART July 2026 schedule; 6-car base unconfirmed',
+    ...BART_JULY_2026
   },
   {
     operator: 'bart',
     lines: ['Orange'],
     vehicle: 'bart-car',
     cars: 6,
-    source: 'BART July 2026 schedule'
+    source: 'BART July 2026 schedule',
+    ...BART_JULY_2026
   }
 ];
 
