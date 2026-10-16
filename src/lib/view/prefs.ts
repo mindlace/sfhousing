@@ -6,7 +6,7 @@ export interface ViewPrefs {
 }
 
 export const VIEW_KEY = 'sfhousing:view';
-export const DEFAULT_VIEW: ViewPrefs = { transitStops: true, transitAccess: true };
+export const DEFAULT_VIEW: ViewPrefs = { transitStops: false, transitAccess: true };
 
 function defaultStorage(): Storage | null {
   try {

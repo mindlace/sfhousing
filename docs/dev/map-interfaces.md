@@ -35,7 +35,7 @@ Transit spec section 6. `SimMap` draws a transit access surface and the stops as
 
 - **Sources:** GeoJSON `transit-access` (binned 10-minute-walk capacity polygons) and `transit-stops`. The stops source is filled from `transit.json`, the access source once the map is idle (the grid is built on the main thread).
 - **Layers:** `transit-access` (fill) and `transit-stops-bus`, `transit-stops-rail`, `transit-stops-regional` (circles; bus from zoom 15, rail from 13, regional always). Stack order: base, `transit-access`, `existing-buildings`, chunk layers, labels, the stop layers, `overlay-anchor`. So the surface sits under existing buildings and the stops sit above the labels.
-- **Props:** `SimMapProps.view` (`ViewPrefs`: `transitStops`, `transitAccess`; default both on) toggles layer `visibility`; `SimMapProps.fetchTransit` replaces the `transit.json` loader (tests inject a fixture network).
+- **Props:** `SimMapProps.view` (`ViewPrefs`: `transitStops`, `transitAccess`; default stops off, capacity on) toggles layer `visibility`; `SimMapProps.fetchTransit` replaces the `transit.json` loader (tests inject a fixture network).
 - **Why MapLibre layers:** `setOverlayLayers` is single-owner (the generated-buildings deck layers), so transit does not use it.
 - **UI gating:** the header View menu (`src/lib/view/ViewMenu.svelte`; prefs persist in localStorage `sfhousing:view`) is mounted only when `manifest.transit` is set. Without it there are no transit sources, layers or View button.
 - **Known gap:** the stop tooltip is pointer-only. It has no keyboard parity yet.

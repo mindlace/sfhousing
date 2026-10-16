@@ -12,7 +12,7 @@ const visibility = (page: Page, id: string) =>
 
 const viewButton = (page: Page) => page.getByRole('button', { name: 'View', exact: true });
 
-test('fixture stops load and both layers are on by default', async ({ page }) => {
+test('fixture stops load; capacity is on and stops are off by default', async ({ page }) => {
   await gotoEditor(page);
   await expect
     .poll(() =>
@@ -25,7 +25,7 @@ test('fixture stops load and both layers are on by default', async ({ page }) =>
     )
     .toBe(7);
   expect(await visibility(page, 'transit-access')).toBe('visible');
-  expect(await visibility(page, 'transit-stops-regional')).toBe('visible');
+  expect(await visibility(page, 'transit-stops-regional')).toBe('none');
 });
 
 test('the View menu toggles a layer and the choice survives a reload', async ({ page }) => {
@@ -37,7 +37,7 @@ test('the View menu toggles a layer and the choice survives a reload', async ({ 
   await expect(viewButton(page)).toBeFocused();
   await gotoEditor(page);
   await expect.poll(() => visibility(page, 'transit-access')).toBe('none');
-  expect(await visibility(page, 'transit-stops-regional')).toBe('visible');
+  expect(await visibility(page, 'transit-stops-regional')).toBe('none');
 });
 
 for (const scheme of ['light', 'dark'] as const) {
