@@ -1,4 +1,5 @@
-// Transit layers e2e (transit spec §7) on fixture-0: 8 stops, View menu, persistence, a11y.
+// Transit layers e2e (transit spec §7) on fixture-0: 8 stops (7 markers: the two Caltrain platforms
+// are one station), View menu, persistence, a11y.
 import { expect, test, type Page } from '@playwright/test';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { gotoEditor, waitForMap, type Win } from './helpers/sharing';
@@ -22,7 +23,7 @@ test('fixture stops load and both layers are on by default', async ({ page }) =>
         return (await src.getData()).features.length;
       })
     )
-    .toBe(8);
+    .toBe(7);
   expect(await visibility(page, 'transit-access')).toBe('visible');
   expect(await visibility(page, 'transit-stops-regional')).toBe('visible');
 });

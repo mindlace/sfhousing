@@ -27,6 +27,8 @@ const manifest = JSON.parse(
 
 // Fixture stop 0, "Fixture Station" (BART, regional rail: drawn at every zoom).
 const STATION: [number, number] = [-122.418138, 37.760991];
+/** fixture-0 has 8 stops; Caltrain's two platforms are one station marker. */
+const MARKERS = 7;
 
 let hosts: HTMLElement[] = [];
 let errors: unknown[] = [];
@@ -103,7 +105,7 @@ describe('SimMap transit', { timeout: 30_000 }, () => {
   it('loads the fixture network into both sources and shows both layers by default', async () => {
     const { ready } = await mount();
     const map = (await ready).getMap()!;
-    await expect.poll(() => features(map, TRANSIT_STOPS_SOURCE), { timeout: 10_000 }).toBe(8);
+    await expect.poll(() => features(map, TRANSIT_STOPS_SOURCE), { timeout: 10_000 }).toBe(MARKERS);
     await expect
       .poll(() => features(map, TRANSIT_ACCESS_SOURCE), { timeout: 10_000 })
       .toBeGreaterThan(0);
@@ -126,7 +128,7 @@ describe('SimMap transit', { timeout: 30_000 }, () => {
   it('shows the stop tooltip on hover at z14+ only, and never while stops are hidden', async () => {
     const { ready, screen } = await mount();
     const map = (await ready).getMap()!;
-    await expect.poll(() => features(map, TRANSIT_STOPS_SOURCE), { timeout: 10_000 }).toBe(8);
+    await expect.poll(() => features(map, TRANSIT_STOPS_SOURCE), { timeout: 10_000 }).toBe(MARKERS);
 
     await jumpIdle(map, STATION, 13);
     hoverAt(map, STATION);
@@ -155,7 +157,7 @@ describe('SimMap transit', { timeout: 30_000 }, () => {
     const { ready } = await mount();
     const h = await ready;
     const map = h.getMap()!;
-    await expect.poll(() => features(map, TRANSIT_STOPS_SOURCE), { timeout: 10_000 }).toBe(8);
+    await expect.poll(() => features(map, TRANSIT_STOPS_SOURCE), { timeout: 10_000 }).toBe(MARKERS);
     await jumpIdle(map, STATION, 16);
     const stops = await (map.getSource(TRANSIT_STOPS_SOURCE) as GeoJSONSource).getData();
     (map.getSource(TRANSIT_STOPS_SOURCE) as GeoJSONSource).setData(stops);
