@@ -59,7 +59,7 @@
 
 <svelte:window {onkeydown} {onpointerdown} />
 
-<div class="relative">
+<div class="sm:relative">
   <button
     bind:this={button}
     type="button"
@@ -74,7 +74,7 @@
       id="{id}-panel"
       role="group"
       aria-label="Map layers"
-      class="absolute top-full right-0 z-50 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-md border border-gray-300 bg-white p-3 text-sm shadow-lg dark:border-gray-600 dark:bg-gray-900"
+      class="absolute top-full right-4 z-50 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-md border border-gray-300 bg-white p-3 text-sm text-gray-900 shadow-lg sm:right-0 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
     >
       <label class="flex min-h-6 items-center gap-2 font-medium">
         <input

@@ -5,6 +5,7 @@
 
   let { data }: { data: PageData } = $props();
   const manifest = $derived(data.manifest);
+  const hasTransit = $derived(manifest?.sources.some((s) => s.id.startsWith('gtfs-')) ?? false);
 </script>
 
 <svelte:head><title>Data &amp; licences · SF Housing Simulator</title></svelte:head>
@@ -64,6 +65,12 @@
     Parcels, land use, building footprints and neighborhoods from DataSF (datasf.org), Public Domain
     Dedication and License (PDDL) / public domain.
   </li>
+  {#if hasTransit}
+    <li>
+      Transit stops and schedules from SFMTA Muni, BART and Caltrain GTFS feeds. These are facts,
+      credited as a courtesy; vehicle capacities are agency planning figures.
+    </li>
+  {/if}
   <li>
     Derived data files under <code>/data/</code> that incorporate OpenStreetMap or Overture data are made
     available under the ODbL 1.0.

@@ -55,6 +55,10 @@ display refresh rate, so on a 120 Hz display the p50 is about 8.3 ms. The bar is
 | Apple M5 Pro (same), superseded first run           | 2026-10-11 | Playwright Chromium, Metal | 1   | 1201   | 8.3 ms | 10.0 ms | Yes (DPR 1, fixed 6 px step) |
 | 2022 MacBook Air (M2)                               | —          | —                          | 2   | —      | —      | —       | not yet recorded             |
 
+| Apple M5 Pro (same), both transit layers on (default) | 2026-10-15 | Playwright Chromium, Metal | 2 | 1201 | 8.3 ms | 8.5 ms | Yes (representative; worst-case p95 8.4 ms) |
+
+Run the bench with both transit layers on (the default View prefs) on the bench machine. fixture-0 has only 8 stops, so the transit row measures the layer overhead, not a full network. Re-check against live data (`npm run data:transit`) when the stop layers change.
+
 Add a row when you run the bench on new hardware or after a change to the rendering path.
 
 ## CI
