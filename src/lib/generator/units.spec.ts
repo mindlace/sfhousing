@@ -113,6 +113,37 @@ describe('generateForUnits', () => {
     expect(massingApproximate(b)).toBe(false);
   });
 
+  it('a fallen-back midrise scales as a midrise (tower-fallback, stories 20, 0.4·cap)', () => {
+    // At k < 1 the smaller tower plate fits again, so rebuilding the tower inputs would give a
+    // tower: a typology change that §4.4 counts as too small, leaving the massing unscaled.
+    const [c] = massingCandidates(siteOf(towerFallback), 1, GOLDEN, { stories: 20 });
+    const U = Math.round(0.4 * c.cap);
+    const b = run(towerFallback, U, 80, 20)!;
+    expect(b).toMatchObject({ typology: 'midrise', stories: 20, composition: 'simple', units: U });
+    expect(massingApproximate(b)).toBe(false);
+  });
+
+  it('a fallen-back midrise scales as a midrise (A 3476 L-lot, stories 25, seed 22)', () => {
+    // property-test counterexample: the unscaled terrace massed 713 units against U 286
+    const lot = P({
+      ...P(std),
+      id: 'fallback-l',
+      polygon: [
+        [
+          [-24.08864711308439, -39.999999999999986],
+          [24.08864711308439, -39.999999999999986],
+          [24.08864711308439, 23.999999999999964],
+          [0.4773581521675041, 23.999999999999964],
+          [0.4773581521675041, 39.999999999999986],
+          [-24.08864711308439, 39.999999999999986]
+        ]
+      ]
+    });
+    const b = generateForUnits(lot, 286, 80, 22, 25)!;
+    expect(b).toMatchObject({ typology: 'midrise', stories: 25, units: 286 });
+    expect(massingApproximate(b)).toBe(false);
+  });
+
   it('G9: lot-3000, U 754, stories 65 → tower 65, top 202.9 m + parapet', () => {
     const b = run(lot3000, 754, 80, 65)!;
     expect(b).toMatchObject({ typology: 'tower', stories: 65, units: 754 });

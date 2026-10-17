@@ -46,7 +46,7 @@ export interface MassingCandidate {
   ref: OccupiedComposition;
   /** Units the reference holds: `unitsFor(typology, round1(occupiedArea(bands)))`. */
   cap: number;
-  /** The `referenceComposition` inputs that built `ref`; footprint scaling rebuilds from them. */
+  /** The `referenceComposition` inputs that built `ref`; footprint scaling reuses its `opts`. */
   build: Typ & { opts?: MassOpts };
 }
 
@@ -147,9 +147,10 @@ const SCALE_ITERATIONS = 20;
 
 /**
  * §4.4 footprint scaling (k < 1): bisects the coverage scale `k` over (0, 1), rebuilding the
- * candidate's reference from its own inputs, toward the smallest `k` that still masses `U`. A
- * scaled reference that is null or changes typology is too small. Returns the evaluated
- * reference with the smallest |massed - U|, ties to the smaller `k`; it is always 'simple'.
+ * candidate's reference as its own typology and stories, toward the smallest `k` that still
+ * masses `U`. A scaled reference that is null or changes typology is too small. Returns the
+ * evaluated reference with the smallest |massed - U|, ties to the smaller `k`; it is always
+ * 'simple'.
  */
 function scaleFootprint(
   site: Site,
@@ -157,7 +158,12 @@ function scaleFootprint(
   U: number,
   draws: VarietyDraws
 ): OccupiedComposition | null {
-  const { typology, stories, opts } = c.build;
+  // "The reference is rebuilt": a tower that fell back to midrise is rebuilt as that midrise.
+  // Rebuilt from the tower inputs, a smaller plate fits again at k < 1, and every scaled
+  // reference would be a tower, i.e. a typology change that counts as too small.
+  const typology = c.ref.typology as ReplacementTypology; // candidates are never 'adu'
+  const { stories } = c.ref;
+  const { opts } = c.build;
   let lo = 0;
   let hi = 1;
   let best: { k: number; massed: number; ref: OccupiedComposition } | null = null;
