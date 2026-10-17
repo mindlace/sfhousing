@@ -159,7 +159,8 @@ export function installDebug(
       const u = makeSyntheticTimeline(seed, n);
       timeline.setTimelineLookups(SYNTHETIC_LOOKUPS);
       timeline.applyTimeline(u);
-      return { projects: n, cells: u.cells.length };
+      const projects = u.cells.reduce((a, c) => a + c.slotProjectIds.length, 0);
+      return { projects, cells: u.cells.length };
     }
   };
   window.__sfhMap = hook;
