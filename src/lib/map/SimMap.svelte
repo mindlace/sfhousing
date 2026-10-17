@@ -178,6 +178,8 @@
     timeline: TimelineController | null; // timeline mode only, once its lazy module has loaded
     timelinePart: RegExp | null; // TIMELINE_PART_LAYER, from that module
     timelineLoading: boolean;
+    timelineFailed: boolean; // a timelapse shader error: the error state is final for this map
+    onRejection: ((e: PromiseRejectionEvent) => void) | null; // timeline mode's compile watch
     SolidPolygonLayer: SolidPolygonLayerClass | null; // from loadDeck(), once the overlay exists
     appliedTheme: Theme;
     paintDiff: Record<Theme, PaintSet[]> | null;
@@ -439,6 +441,8 @@
       timeline: null,
       timelinePart: null,
       timelineLoading: false,
+      timelineFailed: false,
+      onRejection: null,
       SolidPolygonLayer: null,
       appliedTheme: 'light',
       paintDiff: null,
@@ -535,7 +539,9 @@
       if (!l.dead) mapState = 'context-lost';
     });
     map.on('webglcontextrestored', () => {
-      if (!l.dead) mapState = l.loaded ? 'ready' : 'loading';
+      if (l.dead) return;
+      // A timelapse shader failure stays an error: the restored context would fail the same way.
+      mapState = l.timelineFailed ? 'error' : l.loaded ? 'ready' : 'loading';
     });
     map.once('load', () => void onLoad(l, map));
 
@@ -690,6 +696,7 @@
     );
     l.timeline = timeline;
     l.timelinePart = TIMELINE_PART_LAYER;
+    watchCompileErrors(l);
     overlay.setProps({
       // Other layers keep deck's default (deck.ts defaultProps.onError).
       onError: (e: Error, layer?: Layer) => {
@@ -726,9 +733,32 @@
     return true;
   }
 
+  /**
+   * luma 9.4.2 throws a shader compile error inside its un-awaited link-status check
+   * (webgl-shared-render-pipeline.ts:89, :101), so it surfaces only as an unhandled rejection
+   * (ruling R13). Installed in timeline mode only; removed in teardown.
+   */
+  function watchCompileErrors(l: Live): void {
+    if (l.onRejection) return;
+    l.onRejection = (e: PromiseRejectionEvent) => {
+      const r: unknown = e.reason;
+      if (!(r instanceof Error) || !/during compilation of/.test(r.message)) return;
+      e.preventDefault();
+      timelapseFailed(l, r);
+    };
+    addEventListener('unhandledrejection', l.onRejection);
+  }
+
+  /** The timelapse shader failed: log once, stop the timeline and keep the error state. */
   function timelapseFailed(l: Live, e: unknown): void {
+    if (l.dead || l.timelineFailed) return;
+    l.timelineFailed = true;
     console.error('[map] timelapse shader', e);
-    if (!l.dead) mapState = 'error';
+    // The destroyed controller stays in place, so later handle calls are no-ops.
+    l.timeline?.destroy();
+    l.deckLayers = [];
+    l.overlay?.setProps({ layers: [] });
+    mapState = 'error';
   }
 
   function teardown(l: Live): void {
@@ -744,6 +774,8 @@
     l.transit = null;
     l.controller?.destroy();
     l.timeline?.destroy();
+    if (l.onRejection) removeEventListener('unhandledrejection', l.onRejection);
+    l.onRejection = null;
     l.overlay?.finalize();
     l.map?.remove();
     l.controller = null;
@@ -1023,7 +1055,6 @@
         report({ projectId, parcelId, x, y, kind: kind === 'hover' ? 'hover' : 'tap' });
         return;
       }
-      if (kind === 'click') return; // clicks pick only for timelinePick
       const hit = { kind: 'generated', parcelId, typology, stories, units, existingUnits } as const;
       return present(surface, x, y, { hit, cell: null });
     }

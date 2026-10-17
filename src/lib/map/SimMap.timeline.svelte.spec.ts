@@ -250,6 +250,7 @@ describe('SimMap timeline mode', { timeout: 60_000 }, () => {
   it('ignores applyGenerated in timeline mode with one console.error', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { h, map } = await mountReady();
+    h.setTimelineLookups(timelineLookups);
     h.applyTimeline(timelineSmall);
     await converged(map);
     const gen = { revision: 0, cells: [], removedCells: [], hide: { add: ['X'], remove: [] } };
@@ -358,6 +359,9 @@ describe('SimMap timeline picking', { timeout: 60_000 }, () => {
   }
   const tooltip = () => document.querySelector('[role="tooltip"]');
 
+  // Pins the current miss semantics on purpose (2026-10-17 conductor ruling: `timelinePick(null)`
+  // stays kind-less): leaving a part after a hover sends one null; a click or tap off a part
+  // sends null. A later T7 change to null's meaning must show up here.
   it('reports hover and click, suppresses the tooltip, and sends one null on leaving', async () => {
     const timelinePick = vi.fn();
     const { at, fire } = await readyOverPart({ timelinePick });
@@ -461,23 +465,87 @@ describe('SimMap timeline errors', { timeout: 60_000 }, () => {
     expect(device.props.onError(new Error('editor'))).toBe(false);
     expect(root.dataset.state).toBe('ready');
 
+    h.setTimelineLookups(timelineLookups);
     h.applyTimeline(timelineSmall);
     await converged(map);
     const e = new Error('link failed');
     expect(device.props.onError(e)).toBe(true);
     expect(error).toHaveBeenCalledWith('[map] timelapse shader', e);
     await expect.poll(() => root.dataset.state).toBe('error');
+    // Once: a second error is swallowed, the controller is stopped, and a restored context
+    // does not flip the state back to ready.
+    expect(device.props.onError(new Error('again'))).toBe(true);
+    expect(error.mock.calls.filter((c) => c[0] === '[map] timelapse shader')).toHaveLength(1);
+    expect(dbg().timelineSnapshot()).toMatchObject({ cells: 0, layerIds: [] });
+    expect(layerIds(map)).toEqual([]);
+    map.fire('webglcontextrestored');
+    await frames(2);
+    expect(root.dataset.state).toBe('error');
   });
 
   it("deck's onError for a timeline- layer fails the map", async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { h, map, root } = await mountReady();
+    h.setTimelineLookups(timelineLookups);
     h.applyTimeline(timelineSmall);
     await converged(map);
     const e = new Error('layer failed');
     const layer = liveLayers(map).find((l) => l.id === 'timeline-solid-tl-A')!;
     deckOf(map).props.onError!(e, layer);
+    deckOf(map).props.onError!(new Error('ghost failed'), layer);
     expect(error).toHaveBeenCalledWith('[map] timelapse shader', e);
+    expect(error.mock.calls.filter((c) => c[0] === '[map] timelapse shader')).toHaveLength(1);
     await expect.poll(() => root.dataset.state).toBe('error');
+  });
+
+  // luma throws a compile error in an un-awaited async check (ruling R13). This Chromium
+  // reports the fixture's broken shader through the link path instead
+  // (SimMap.timeline-shader.svelte.spec.ts), so the rejection listener is driven directly.
+  // The listener is called rather than a synthetic event dispatched: Vite's dev client forwards
+  // every `unhandledrejection` to the terminal, which would make the test output noisy.
+  const watched = (spy: { mock: { calls: unknown[][] } }) =>
+    spy.mock.calls.filter((c) => c[0] === 'unhandledrejection').map((c) => c[1]);
+  const rejection = (message: string) => ({
+    reason: new Error(message),
+    preventDefault: vi.fn()
+  });
+  const COMPILE = 'RenderPipeline Link error during compilation of Shader vs';
+
+  it('the editor installs no unhandledrejection listener', async () => {
+    const add = vi.spyOn(window, 'addEventListener');
+    const { h, map } = await mountReady();
+    h.applyGenerated({ revision: 0, cells: [], removedCells: [], hide: { add: [], remove: [] } });
+    await frames(2);
+    expect(watched(add)).toEqual([]);
+    expect(map).toBeTruthy();
+  });
+
+  it('a compile rejection fails the map in timeline mode, once; unmount removes it', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const add = vi.spyOn(window, 'addEventListener');
+    const remove = vi.spyOn(window, 'removeEventListener');
+    const { h, map, root, screen } = await mountReady();
+    h.setTimelineLookups(timelineLookups);
+    h.applyTimeline(timelineSmall);
+    await converged(map);
+    const listeners = watched(add) as ((e: unknown) => void)[];
+    expect(listeners).toHaveLength(1);
+    const onRejection = listeners[0];
+
+    const other = rejection('unrelated');
+    onRejection(other);
+    expect(other.preventDefault).not.toHaveBeenCalled(); // other rejections are left alone
+    expect(root.dataset.state).toBe('ready');
+
+    const compile = rejection(COMPILE);
+    onRejection(compile);
+    expect(compile.preventDefault).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith('[map] timelapse shader', compile.reason);
+    await expect.poll(() => root.dataset.state).toBe('error');
+    onRejection(rejection(COMPILE));
+    expect(error.mock.calls.filter((c) => c[0] === '[map] timelapse shader')).toHaveLength(1);
+
+    await screen.unmount();
+    expect(watched(remove)).toContain(onRejection);
   });
 });
