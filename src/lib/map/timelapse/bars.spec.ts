@@ -176,11 +176,17 @@ describe('evalBar visibility and alpha', () => {
     expect(evalBar(b, L, end + DYING_HOLD_DAYS + DYING_FADE_DAYS / 2, Z).alpha).toBe(0.5);
     expect(evalBar(b, L, end + DYING_DAYS - 1, Z).visible).toBe(true);
     expect(evalBar(b, L, end + DYING_DAYS, Z).visible).toBe(false);
-    // Fill is frozen at the exit day.
-    expect(evalBar(b, L, end + 100, Z).fill).toBe(atEnd.fill);
-    expect(evalBar(bar('e'), L, DAYS.e.end + 200, Z).fill).toBe(
-      evalBar(bar('e'), L, DAYS.e.end, Z).fill
-    );
+  });
+  it('freezes the fill at the exit day ((e) dies 400 days into construction)', () => {
+    const e = bar('e');
+    // Construction is segment 4 of 5; 400 days is below the cap, so the frozen value is exact.
+    const within = (DAYS.e.end - DAYS.e.construction) / MONTH_DAYS;
+    const frozen = (4 + within / L.typicalMonths.discretionary.construction!) / 5;
+    expect(within / L.typicalMonths.discretionary.construction!).toBeLessThan(FLOOR_CAP);
+    expect(evalBar(e, L, DAYS.e.end - 1, Z).fill).toBeLessThan(frozen);
+    expect(evalBar(e, L, DAYS.e.end, Z).fill).toBeCloseTo(frozen, 12);
+    expect(evalBar(e, L, DAYS.e.end + 100, Z).fill).toBeCloseTo(frozen, 12);
+    expect(evalBar(e, L, DAYS.e.end + 200, Z).fill).toBeCloseTo(frozen, 12);
   });
   it('a completed bar is full with no chance, holds 90 days and fades over 90', () => {
     const a = bar('a');
@@ -233,6 +239,19 @@ describe('evalBar fill (§4.4.2)', () => {
     const f = bar('f');
     expect(evalBar(f, L, DAYS.f.permitFiled + 200, Z).fill).toBeCloseTo(2 / 5, 12);
   });
+  it('a 0-month typical duration gives a finite fill on entry and the cap the next day', () => {
+    const zero: typeof L = {
+      ...L,
+      typicalMonths: { ...L.typicalMonths, discretionary: { ...L.typicalMonths.discretionary } }
+    };
+    zero.typicalMonths.discretionary.filed = 0;
+    const a = barsOf('a', buildBars(timelineSmall.cells, zero))[0];
+    expect(a.segTypicalDays[1]).toBe(1); // typicalDays' 1-day floor
+    const onEntry = evalBar(a, zero, DAYS.a.filed, Z).fill;
+    expect(Number.isFinite(onEntry)).toBe(true);
+    expect(onEntry).toBeCloseTo(1 / 6, 12);
+    expect(evalBar(a, zero, DAYS.a.filed + 1, Z).fill).toBeCloseTo((1 + FLOOR_CAP) / 6, 12);
+  });
   it('property: fill never reaches a segment before it is entered, nor 1 before completion', () => {
     fc.assert(
       fc.property(
@@ -261,13 +280,13 @@ describe('evalBar chance (§4.4.3)', () => {
     const entry = DAYS.d.permitIssued;
     expect(d1.segEntry[3]).toBe(entry);
     const row = L.chance.discretionary.permitIssued!;
+    // Observed month index per k: entry + k·MONTH_DAYS rounds below the boundary in doubles at
+    // k = 1 and 240, so monthsIn gives k − 1 there; 300 clamps to the table's last entry, 240.
+    const index: Record<number, number> = { 0: 0, 1: 0, 240: 239, 300: 240 };
     for (const k of [0, 1, 240, 300]) {
       const t = entry + k * MONTH_DAYS;
-      // entry + k·MONTH_DAYS rounds, so monthsIn may give k − 1 (it does at k = 1 and 240);
-      // monthsIn is the one rule, and evalBar must agree with it exactly.
-      const m = monthsIn(entry, t);
-      expect(m === k || m === k - 1, `k=${k}`).toBe(true);
-      expect(evalBar(d1, L, t, Z).chance, `k=${k}`).toBe(row[Math.min(m, 240)]);
+      expect(Math.min(monthsIn(entry, t), 240), `k=${k}`).toBe(index[k]);
+      expect(evalBar(d1, L, t, Z).chance, `k=${k}`).toBe(row[index[k]]);
       if (k > 0) {
         const before = evalBar(d1, L, entry + k * MONTH_DAYS - 1, Z).chance;
         expect(before, `k=${k} − 1 day`).toBe(row[Math.min(k - 1, 240)]);

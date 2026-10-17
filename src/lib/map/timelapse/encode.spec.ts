@@ -60,6 +60,17 @@ describe('typicalDays', () => {
     bad.typicalMonths.permitOnly = { construction: Infinity };
     expect(typicalDays(bad, 'permitOnly', 'construction')).toBe(OPEN_DAY);
   });
+  it('floors a finite non-negative entry at 1 day and maps a negative one to OPEN_DAY', () => {
+    const odd = {
+      ...timelineLookups,
+      typicalMonths: { ...timelineLookups.typicalMonths, permitOnly: { construction: 0 } }
+    };
+    expect(typicalDays(odd, 'permitOnly', 'construction')).toBe(1);
+    odd.typicalMonths.permitOnly = { construction: 0.01 };
+    expect(typicalDays(odd, 'permitOnly', 'construction')).toBe(1);
+    odd.typicalMonths.permitOnly = { construction: -1 };
+    expect(typicalDays(odd, 'permitOnly', 'construction')).toBe(OPEN_DAY);
+  });
 });
 
 describe('encodeParts (§4.2.1)', () => {

@@ -47,14 +47,19 @@ export function validateTimedCell(c: TimedPackedCell): void {
   }
 }
 
-/** Typical days in a stage: months · MONTH_DAYS, or OPEN_DAY if unknown (fill stays at 0). */
+/**
+ * Typical days in a stage: months · MONTH_DAYS, floored at 1 day so a fill or floor progress is
+ * never 0/0 (ruling R8), or OPEN_DAY if missing, negative or non-finite (progress stays at 0).
+ * The bar (`evalBar`) and the floors (`evalPart`, via `encodeParts`) read typical days only here.
+ */
 export function typicalDays(
   l: TimelineLookups | null,
   pathway: Pathway,
   stage: Exclude<Stage, 'complete'>
 ): number {
   const months = l?.typicalMonths[pathway]?.[stage];
-  return months !== undefined && Number.isFinite(months) ? months * MONTH_DAYS : OPEN_DAY;
+  if (months === undefined || !Number.isFinite(months) || months < 0) return OPEN_DAY;
+  return Math.max(months * MONTH_DAYS, 1);
 }
 
 export interface EncodedParts {
