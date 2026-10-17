@@ -422,8 +422,11 @@ describe('buildPhases: enriched', () => {
   it('enriched with all phases and the tracking parcel excluded is last resort', () => {
     const out = buildPhases(
       ctx({
-        master: row({ caseNo: 'X', prx: true, newUnits: 300 }),
-        entry: entry([phase({ units: 150, blklots: ['y'] }), phase({ units: 150 })]),
+        master: row({ caseNo: 'X', prx: true, newUnits: 3000 }),
+        entry: entry([
+          phase({ units: 150, blklots: ['y'], plannedPermitFiled: '2008-06-12' }),
+          phase({ units: 150 })
+        ]),
         trackingParcels: ['3512014'],
         excluded: new Set(['y', '3512014'])
       })
@@ -433,7 +436,11 @@ describe('buildPhases: enriched', () => {
     expect(out.warnings).toContain(
       'X: every phase and the tracking parcel belong to other projects; phasing dropped'
     );
-    expect(out.problems.join('\n')).not.toMatch(/tracking parcel are excluded/);
+    // the 4.10.3 curation problem stays; the moot plannedPermitFiled problem is dropped
+    expect(out.problems).toEqual([
+      "X: remaining phase 'Phase' resolves only to parcels of another in-flight or completed " +
+        'project (excluded); mark it built or separate'
+    ]);
   });
 
   it('flags a planned permit-filed date not after entitlement', () => {

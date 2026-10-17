@@ -144,7 +144,8 @@ function enriched(
   R: number,
   caseNo: string,
   problems: string[],
-  warnings: string[]
+  warnings: string[],
+  moot: string[]
 ): { phases: Phase[] | null; scale: number; merged: number } {
   const taken = new Set<ParcelId>();
   const drafts: Draft[] = remaining.map((ph) => {
@@ -167,10 +168,11 @@ function enriched(
     for (const id of parcelIds) taken.add(id);
     const planned = ph.plannedPermitFiled === null ? null : isoToDay(ph.plannedPermitFiled);
     if (planned !== null && ctx.masterEntitled !== null && planned <= ctx.masterEntitled) {
-      problems.push(
+      const msg =
         `${caseNo}: phase '${ph.name}' plannedPermitFiled ${ph.plannedPermitFiled} is not after ` +
-          'the master entitlement'
-      );
+        'the master entitlement';
+      problems.push(msg);
+      moot.push(msg);
     }
     return {
       units: ph.units,
@@ -187,10 +189,11 @@ function enriched(
   const sum = drafts.reduce((s, d) => s + d.units, 0);
   const scale = R / sum;
   if (scale < SCALE_BOUNDS[0] || scale > SCALE_BOUNDS[1]) {
-    problems.push(
+    const msg =
       `${caseNo}: scale factor ${scale} (R ${R} / Σ ${sum}) is outside ` +
-        `[${SCALE_BOUNDS[0]}, ${SCALE_BOUNDS[1]}]`
-    );
+      `[${SCALE_BOUNDS[0]}, ${SCALE_BOUNDS[1]}]`;
+    problems.push(msg);
+    moot.push(msg);
   }
 
   if (drafts.every((d) => d.parcelIds.length === 0)) {
@@ -266,11 +269,14 @@ export function buildPhases(ctx: PhaseContext): PhaseResult {
   const entry = ctx.entry;
   const remaining = entry?.phases.filter((p) => p.status === 'remaining') ?? [];
   if (entry && entry.schedule && remaining.length > 0) {
-    const before = problems.length;
-    const r = enriched(ctx, entry.schedule, remaining, R, caseNo, problems, warnings);
+    const moot: string[] = [];
+    const r = enriched(ctx, entry.schedule, remaining, R, caseNo, problems, warnings, moot);
     if (r.phases === null) {
-      // Ruling L2: phasing is dropped, so problems raised by the dropped phases no longer apply.
-      problems.length = before;
+      // Ruling L2: scale and plannedPermitFiled problems are moot without phases; the 4.10.3
+      // curation problem (phase resolves only to excluded parcels) stays and still fails V24.
+      const kept = problems.filter((m) => !moot.includes(m));
+      problems.length = 0;
+      problems.push(...kept);
       return lastResort();
     }
     return {
