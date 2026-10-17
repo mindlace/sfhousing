@@ -340,10 +340,12 @@ describe('timeline perf (per-frame JS)', { timeout: 600_000 }, () => {
       const small = await playback(300);
       const large = await playback(30_000);
       const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+      const worst = (r: typeof small) =>
+        r.parts[r.frames.indexOf(Math.max(...r.frames))].map((x) => x.toFixed(1)).join('/');
       const report = (r: typeof small) =>
         `layers ${r.layers}, draws/frame ${Math.min(...r.draws)}–${Math.max(...r.draws)}, ` +
         `mean ${mean(r.frames).toFixed(3)} ms, max ${Math.max(...r.frames).toFixed(3)} ms ` +
-        `(setTime/extension/bars ${r.parts[r.frames.indexOf(Math.max(...r.frames))].map((x) => x.toFixed(1)).join('/')})`;
+        `(setTime/extension/bars ${worst(r)})`;
       console.info(
         `[timeline-perf] per-frame timeline JS over ${PLAYBACK_FRAMES} frames: ` +
           `300: ${report(small)}; 30k: ${report(large)}; ` +
