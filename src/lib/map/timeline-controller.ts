@@ -157,6 +157,11 @@ export class TimelineController {
     return this.pump;
   }
 
+  /** The demolish pump's largest feature-state call count in one frame (bench reporting). */
+  get demolishMaxFrameOps(): number {
+    return this.pump.maxFrameOps;
+  }
+
   apply(u: TimelineUpdate): void {
     if (this.destroyed) return;
     if (u.revision !== 0 && u.revision !== this.lastRevision + 1) {
