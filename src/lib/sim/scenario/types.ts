@@ -1,0 +1,142 @@
+// Step 0 of the FZP timelapse build: the worker scenario protocol types (T5, T6, T8), types
+// only and worker-safe (no runtime exports). `protocol.ts` re-exports this module; fzp-mode and
+// timelapse-render import it. timelapse-sim implements behaviour against it from step 3.
+import type { Manifest } from '$lib/data/manifest';
+import type { ParcelId } from '$lib/data/parcel';
+import type { ScenarioParcels } from '$lib/data/scenario-codec';
+import type { GeneratedBuilding } from '$lib/generator';
+import type { TimelineUpdate } from '$lib/map/types';
+import type { Target } from '$lib/scoreboard';
+import type { InFlightProject } from '$lib/timelapse/projects';
+import type { Day } from '$lib/timelapse/time';
+import type { Calibration, ExitReason, Pathway, Provenance, Stage } from '$lib/timelapse/types';
+import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev, SimRequest } from '../protocol';
+
+// T5
+export interface Schedule {
+  projectId: string;
+  origin: 'pipeline' | 'simulated';
+  parcelIds: ParcelId[];
+  pathway: Pathway;
+  entered: Partial<Record<Stage, Day>>;
+  end:
+    | { kind: 'complete'; day: Day }
+    | { kind: 'exit'; stage: Stage; reason: ExitReason; day: Day }
+    | { kind: 'open' }; // still in progress at horizon
+  revisions: {
+    day: Day;
+    units: number;
+    stories: number | null; /* null = unknown until massed */
+  }[]; // [0] is the initial proposal; ascending days; none on or after entered.construction
+  existingUnits: number;
+  multiPhase: boolean;
+  phase: { masterId: string; index: number; of: number } | null; // a phase sub-project of a multi-phase master
+}
+export type SimInput = {
+  parcels: ScenarioParcels; // decoded T11
+  projects: InFlightProject[];
+  calibration: Calibration;
+  asOf: Day;
+};
+export type Simulate = (input: SimInput, seed: number, horizon: Day) => Schedule[];
+
+// T6
+export type ScenarioRequest =
+  | Extract<SimRequest, { type: 'prefetch' | 'retryChunks' }>
+  | {
+      type: 'initScenario';
+      rev: Rev;
+      manifest: Manifest;
+      scenario: 'fzp';
+      seed: number | null; // null = representative seed
+      horizon: Day;
+    }
+  | { type: 'reroll'; rev: Rev; seed: number | null }
+  | {
+      type: 'parcelSummary';
+      reqId: number;
+      parcelId: ParcelId;
+      day: Day;
+      projectId?: string;
+    };
+export type TimelineResponse = {
+  type: 'timeline';
+  rev: Rev;
+  seed: number;
+  render: TimelineUpdate;
+  score: TimelineScore;
+  bandRuns: number; // band runs finished so far; the band is provisional until bandRuns = bandRunsTotal
+  bandRunsTotal: number; // N
+  complete: boolean; // all loaded cells packed
+};
+export type Massing = GeneratedBuilding | { footprint: [lng: number, lat: number][] }; // timelapse-render's packTimedCell input entry
+export type ScenarioErrorCode =
+  'manifest-invalid' | 'scenario-missing' | 'scenario-invalid' | 'bad-request' | 'internal';
+export type ScenarioResponse =
+  | ReadyResponse
+  | ChunksResponse
+  | TimelineResponse
+  | { type: 'error'; rev: Rev; code: ScenarioErrorCode; message: string }
+  | { type: 'parcelSummary'; reqId: number; summary: ParcelSummary | null };
+export type WorkerRequest = SimRequest | ScenarioRequest;
+export type ProjectCard = {
+  projectId: string;
+  origin: 'pipeline' | 'simulated';
+  label: string; // pipeline: T3 label, else 'Block B, Lot L'; simulated: always 'Block B, Lot L'
+  pathway: Pathway;
+  units: number;
+  existingUnits: number; // summed over the project's parcels
+  stories: number | null;
+  storiesTier: 0 | 3 | null; // pipeline only; 3 = parsed from description text
+  massing: 'matched' | 'approximate' | 'none';
+  multiPhase: boolean;
+  phase: Schedule['phase'];
+  localProgram: boolean; // the project's parcel is a Local Program parcel and the project is simulated
+  stages: { stage: Stage; day: Day; actual: boolean }[]; // only stages entered <= day
+  revisions: Schedule['revisions']; // only those <= day
+  end: Schedule['end'] | null; // null if the end is after day
+  sources: {
+    dataset: string;
+    id: string;
+    key?: string; // field to query, e.g. 'case_no'; absent = the dataset's record-id field
+  }[];
+};
+
+// T8
+export interface TimelineScore {
+  months: Day[]; // months[i] = the 1st of the i-th month, starting with asOf's month and ending with the horizon's month; every series value at i is the state at the end of that month (events with day < months[i + 1], or <= horizon for the last entry)
+  shown: {
+    completedNet: number; // cumulative since asOf, simulation only, excludes baseline
+    completedNetPipeline: number;
+    completedNetNew: number;
+    entitledNew: number; // cumulative net units of new (simulated) projects reaching entitled
+    inProgress: Record<Exclude<Stage, 'complete'>, number>; // current proposed units of projects in each stage at that month
+    exitedUnits: number; // cumulative
+  }[];
+  planEffect: { entitledNew: number; completedNetNew: number }[]; // shown seed: FZP run minus its paired old-zoning run (T9 `baseZoning`), cumulative net units
+  planEffectBand: { p10: number; p50: number; p90: number }[]; // planEffect.completedNetNew over the N paired runs
+  band: { p10: number; p50: number; p90: number }[]; // completedNet over N runs, same basis as shown
+  baseline: { completedNet: number; since: Day; provenance: Provenance };
+  phasing: {
+    masters: number;
+    enrichedMasters: number;
+    phasesScheduled: number; // plan date from a published schedule
+    phasesEstimated: number; // fallback sizes or phaseGap stagger
+    unenriched: { projectId: string; label: string | null; units: number }[];
+  };
+  targets: TargetProgressAt[];
+  references: {
+    id: string;
+    label: string;
+    units: number;
+    from: Day;
+    by: Day;
+    measure: 'planEffect.entitledNew' | 'planEffect.completedNetNew' | 'completedNet';
+    provenance: Provenance;
+  }[]; // published estimates, each compared with the matching shown series
+}
+export type TargetProgressAt = {
+  target: Target; // I11
+  deadline: Day;
+  fraction: number[]; // per month, (baseline + completedNet) / target, uncapped
+};
