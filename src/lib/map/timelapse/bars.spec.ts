@@ -5,7 +5,7 @@ import { DAYS, SLOT, timelineSmall } from '../fixtures/timeline-small';
 import { timelineLookups } from '../fixtures/timeline-lookups';
 import { TOKENS, hexToRgba, type RGBA } from '../palette';
 import type { TimedPackedCell } from '../types';
-import { BAR_SEGMENTS, barSizePx, buildBars, evalBar, rampColor } from './bars';
+import { BAR_SEGMENTS, barColor, barSizePx, buildBars, evalBar, rampColor } from './bars';
 import {
   BAR_MIN_ZOOM,
   BAR_TOP_GAP_M,
@@ -352,5 +352,31 @@ describe('rampColor', () => {
       ),
       { numRuns: 200 }
     );
+  });
+});
+
+describe('barColor', () => {
+  const base = { visible: true, fill: 0.5, segCount: 5, alpha: 1 };
+  for (const theme of ['light', 'dark'] as const) {
+    const tok = TOKENS[theme];
+    it(`${theme}: dead is tl-bar-dead, complete is tl-bar-likely, else the ramp`, () => {
+      expect(barColor({ ...base, chance: null, dead: true }, theme)).toEqual(
+        hexToRgba(tok['tl-bar-dead'])
+      );
+      // A complete bar has no chance (evalBar rule 3) and is never dead.
+      expect(barColor({ ...base, fill: 1, chance: null, dead: false }, theme)).toEqual(
+        hexToRgba(tok['tl-bar-likely'])
+      );
+      for (const c of [0, 0.2, 0.45, 0.6, 1])
+        expect(barColor({ ...base, chance: c, dead: false }, theme)).toEqual(rampColor(c, theme));
+    });
+  }
+  it('agrees with evalBar on the fixture: dead (b) after its exit, complete (a)', () => {
+    const b = evalBar(bar('b'), L, DAYS.b.end + 10, Z);
+    expect(b.dead).toBe(true);
+    expect(barColor(b, 'light')).toEqual(hexToRgba(TOKENS.light['tl-bar-dead']));
+    const a = evalBar(bar('a'), L, DAYS.a.complete + 10, Z);
+    expect(a.fill).toBe(1);
+    expect(barColor(a, 'light')).toEqual(hexToRgba(TOKENS.light['tl-bar-likely']));
   });
 });

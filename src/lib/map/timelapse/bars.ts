@@ -2,7 +2,7 @@
 // shader (`evalBar`), bar size and the chance colour ramp. Pure. The GLSL port keeps
 // `evalBar`'s rule order and straight-line shape; do not restructure one without the other.
 import type { RGBA } from '../palette';
-import { TOKENS } from '../palette';
+import { TOKENS, hexToRgba } from '../palette';
 import type { Theme, TimedPackedCell } from '../types';
 import { typicalDays, validateTimedCell } from './encode';
 import {
@@ -180,8 +180,8 @@ export function evalBar(b: BarAttrs, l: TimelineLookups, t: Day, zoom: number): 
   return { visible: true, fill, segCount: b.segCount, chance, dead, alpha };
 }
 
-/** Zooms over which the bar grows from its z15 size to its full size. */
-const BAR_GROW_ZOOMS = 2;
+/** Zooms over which the bar grows from its z15 size to its full size (the shader's too). */
+export const BAR_GROW_ZOOMS = 2;
 
 /** Bar size in px: `W = clamp(32 + 8·(zoom − 15), 32, 48)`, `H = clamp(6 + (zoom − 15), 6, 8)`. */
 export function barSizePx(zoom: number): { w: number; h: number } {
@@ -201,8 +201,8 @@ const toSrgb = (v: number) =>
 const linearRgb = (hex: string) =>
   [1, 3, 5].map((i) => toLinear(parseInt(hex.slice(i, i + 2), 16)));
 
-/** Per theme: the unlikely, uncertain and likely stops in linear RGB. */
-const RAMP: Record<Theme, number[][]> = {
+/** Per theme: the unlikely, uncertain and likely stops in linear RGB (the bar shader's too). */
+export const RAMP: Record<Theme, number[][]> = {
   light: (['tl-bar-unlikely', 'tl-bar-uncertain', 'tl-bar-likely'] as const).map((id) =>
     linearRgb(TOKENS.light[id])
   ),
@@ -227,4 +227,15 @@ export function rampColor(c: number, theme: Theme): RGBA {
   else if (c >= s2) [a, b, u] = [hi, hi, 0];
   const ch = (i: number) => toSrgb(a[i] + (b[i] - a[i]) * u);
   return [ch(0), ch(1), ch(2), 255];
+}
+
+/**
+ * The fill colour of an evaluated bar (§4.4.3), opaque sRGB 0–255: `tl-bar-dead` once exited,
+ * `tl-bar-likely` when complete (evalBar rule 3: no chance, never dead), else `rampColor`.
+ * CPU reference of the bar shader's colour choice.
+ */
+export function barColor(e: BarEval, theme: Theme): RGBA {
+  if (e.dead) return hexToRgba(TOKENS[theme]['tl-bar-dead']);
+  if (e.chance === null) return hexToRgba(TOKENS[theme]['tl-bar-likely']);
+  return rampColor(e.chance, theme);
 }
