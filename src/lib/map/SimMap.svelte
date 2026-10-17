@@ -50,6 +50,7 @@
   import type { ErrorEvent as MapErrorEvent, GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
   import type { ParcelId } from '$lib/data/parcel';
   import type { Manifest } from '$lib/data/manifest';
+  import type { Day } from '$lib/timelapse/time';
   import { DEFAULT_TRANSIT_PARAMS, SF_GRID_BBOX, buildAccessGrid } from '$lib/transit';
   import { DEFAULT_VIEW } from '$lib/view/prefs';
   import { CONSTRAINTS, NARROW_PX, defaultFrame, initialCamera, pixelRatio } from './camera';
@@ -91,7 +92,8 @@
     ParcelSummaryLike,
     SimMapHandle,
     SimMapProps,
-    Theme
+    Theme,
+    TimelineUpdate
   } from './types';
   import { hasWebGL2 } from './webgl';
 
@@ -301,6 +303,15 @@
     resyncCb = cb;
   }
 
+  // step-0 no-op; timelapse-render step 1 implements it
+  export function applyTimeline(_u: TimelineUpdate): void {}
+
+  // step-0 no-op; timelapse-render step 1 implements it
+  export function setTime(_day: Day): void {}
+
+  // step-0 no-op; timelapse-render step 1 implements it
+  export function setTimelineLookups(_l: Parameters<SimMapHandle['setTimelineLookups']>[0]): void {}
+
   const handle: SimMapHandle = {
     applyGenerated,
     setChunkStatus,
@@ -308,7 +319,10 @@
     setBottomInset,
     getMap,
     setOverlayLayers,
-    onResyncNeeded
+    onResyncNeeded,
+    applyTimeline,
+    setTime,
+    setTimelineLookups
   };
 
   // ---- effects ----------------------------------------------------------------------------------

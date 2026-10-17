@@ -6,6 +6,8 @@ import type { BBox } from '$lib/plan';
 import type { TypologyId } from '$lib/generator';
 import type { TransitNetwork } from '$lib/data/transit';
 import type { ViewPrefs } from '$lib/view/prefs';
+import type { chanceTable, typicalMonths } from '$lib/timelapse/model';
+import type { Day } from '$lib/timelapse/time';
 
 export type Theme = 'light' | 'dark';
 export interface CameraFrame {
@@ -40,6 +42,23 @@ export interface PackedCell {
   partTypology: Uint8Array; // per part → index into TYPOLOGY_ORDER (I10 order)
 }
 
+/** T7: a packed cell whose parts and slots carry the timelapse's time data. */
+export interface TimedPackedCell extends PackedCell {
+  slotProjectIds: string[]; // render slots are keyed by project; parcelIds may repeat across slots
+  partWindow: Float32Array; // per part: [fromDay, toDay) the part's revision is current; toDay = OPEN_DAY if open
+  slotStages: Float32Array; // per slot: STAGE_ORDER.length entry days, NaN = never
+  slotEnd: Float32Array; // per slot: [endDay, endKind] (0 open, 1 complete, 2 exit)
+  slotPathway: Uint8Array; // index into ['discretionary','streamlined','permitOnly']
+}
+
+/** T7: one timeline message (timelapse worker → SimMap). */
+export interface TimelineUpdate {
+  revision: number; // 0 = snapshot
+  cells: TimedPackedCell[];
+  removedCells: string[];
+  demolish: { parcelId: ParcelId; day: Day }[]; // complete list in revision 0 (needs no geometry); empty afterwards
+}
+
 /**
  * One message per worker revision (worker host → SimMap).
  *
@@ -68,6 +87,12 @@ export interface SimMapHandle {
   getMap(): MapLibreMap | null; // brush-tool projects its ring
   setOverlayLayers(layers: Layer[]): void; // I17: brush ring and swath; [] clears
   onResyncNeeded(cb: () => void): void; // revision gap → worker host sends revision 0
+  applyTimeline(u: TimelineUpdate): void; // T7: timelapse-render step 1 implements it
+  setTime(day: Day): void; // T7
+  setTimelineLookups(l: {
+    chance: ReturnType<typeof chanceTable>;
+    typicalMonths: ReturnType<typeof typicalMonths>;
+  }): void; // T7
 }
 
 export interface ParcelSummaryLike {
@@ -89,4 +114,17 @@ export interface SimMapProps {
   view?: ViewPrefs;
   /** Loads `manifest.transit`; tests inject. Default: fetch + decode. */
   fetchTransit?: (url: string) => Promise<TransitNetwork>;
+  /**
+   * T7: timeline part pick callback. When set, SimMap's built-in tooltip is suppressed over
+   * timeline parts (implemented by timelapse-render step 1).
+   */
+  timelinePick?: (
+    p: {
+      projectId: string;
+      parcelId: ParcelId;
+      x: number;
+      y: number;
+      kind: 'hover' | 'tap';
+    } | null
+  ) => void;
 }
