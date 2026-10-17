@@ -144,6 +144,7 @@ function assess(
   const existingAtFiling = existingUnitsAt(proj.parcelIds, rollYear, input.assessorUnits);
   const existingLatest = existingUnitsAt(proj.parcelIds, input.latestRollYear, input.assessorUnits);
   const inPopulation = isPopulation(proj, units, existingAtFiling);
+  // A PRX row joined to a fetched permit is an ordinary graph project (Ruling F1).
   const multiPhase = pipelineOnly && proj.pipelineRows[0].prx;
   const status: Status =
     inPopulation && firstEntered === null
@@ -236,6 +237,19 @@ export function deriveProjects(input: ProjectRecordsInput): DeriveResult {
   const resolve = (blklots: string[]) => resolveParcels(blklots, input).ids;
   const link = linkProjects(parsed, { resolve, filedDay: filedEvidenceDay });
   const counts = zeroCounts();
+
+  // A curated entry for a PRX row that joined its permit's project is valid but unused.
+  const curatedCases = new Set(input.multiphase.projects.map((e) => e.caseNo));
+  const joinedPrx: string[] = [];
+  for (const proj of link.projects) {
+    if (proj.kind !== 'graph') continue;
+    for (const r of proj.pipelineRows) {
+      if (r.prx && r.caseNo !== null && curatedCases.has(r.caseNo)) {
+        joinedPrx.push(`${r.caseNo}: PRX row joins permit ${r.bpaNo}; multiphase entry unused`);
+      }
+    }
+  }
+  warnings.push(...joinedPrx.sort(cmp));
 
   // Parcels: per distinct candidate block-lot across all projects.
   const candidates = new Set<string>();

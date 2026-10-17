@@ -3,7 +3,8 @@
  * lower-case keys, strings, nulls omitted). Projects:
  * - A `PRJ:2019-000001PRJ`: discretionary, construction, pipeline row with da 'Fixture Village'.
  * - B `BP:202403150003`: permitOnly, permitFiled; its pipeline row sets the cutoff 2026-07-28.
- * - C `PRJ:2016-000006PRJ`: complete 2019-08-01 (TCO 60 units): the citywide phase size.
+ * - C `PRJ:2016-000006PRJ`: streamlined (SB 35), complete 2019-08-01 (TCO 60 units): the citywide
+ *   phase size, and the streamlined history V23 needs.
  * - D `CASE:2010.0002PRX`: PRX master, 100 units, da 'Fixture Village', fallback phasing.
  * - E `CASE:2099-000099PRJ`: non-PRX pipeline-only row, 5 units (multiPhase false).
  * - F `BP:201410070008`: open, absent from the pipeline: stale-open (3 units).
@@ -188,7 +189,8 @@ export function baseRaw(): Record<ProjectSourceId, RawRow[]> {
         open_date: ts('2016-03-01'),
         building_permits: '201605010006',
         number_of_units_prop: '60',
-        new_construction: 'CHECKED'
+        new_construction: 'CHECKED',
+        sb35: 'CHECKED'
       }
     ],
     'datasf-planning-records': [],

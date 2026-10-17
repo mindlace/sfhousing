@@ -10,7 +10,7 @@ import {
   type ProjectsFile
 } from '../../src/lib/timelapse/projects';
 import type { Day } from '../../src/lib/timelapse/time';
-import { STAGE_ORDER } from '../../src/lib/timelapse/types';
+import { PATHWAYS, STAGE_ORDER } from '../../src/lib/timelapse/types';
 import type { ProjectHistory, Stage } from '../../src/lib/timelapse/types';
 import type { InvariantResult } from '../steps/check';
 import { SCALE_BOUNDS } from './multiphase';
@@ -168,9 +168,10 @@ export function checkV23(i: V2xInputs, rerunIdentical: boolean): InvariantResult
       problems.push(`${at}: exit stage ${e.stage} was not entered`);
     }
   }
+  // Spec V23: each non-null pathway has a history (stage-calibration fits one table per pathway).
   const pathways = new Set(i.histories.map((h) => h.pathway));
-  for (const p of new Set(i.file.projects.map((x) => x.pathway))) {
-    if (!pathways.has(p)) problems.push(`pathway ${p} has in-flight projects but no history`);
+  for (const p of PATHWAYS) {
+    if (!pathways.has(p)) problems.push(`pathway ${p} has no history`);
   }
   return result('V23', problems, `${i.histories.length} histories`);
 }

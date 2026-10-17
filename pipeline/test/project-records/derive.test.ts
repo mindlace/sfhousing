@@ -542,6 +542,16 @@ describe('deriveProjects: masters', () => {
     expect(r.counts['multiphase.u.2010.0002PRX']).toBe(60);
   });
 
+  it('reports an out-of-bounds scale factor once in V24', () => {
+    const input = withEnrichedMaster();
+    input.multiphase.projects[0].phases[1].units = 300; // R 300 / Σ 420
+    const r = deriveProjects(input);
+    expect(r.checks.multiphase.scales).toEqual({ '2007.0001PRX': 300 / 420 });
+    const v24 = checkV24(r.checks);
+    expect(v24.ok).toBe(false);
+    expect(v24.detail?.match(/scale factor/g)).toHaveLength(1);
+  });
+
   it('reports multiphase file problems and buildPhases warnings', () => {
     const mp = baseMultiphase();
     mp.projects.push(fallbackEntry('2001.0001PRX', 'Nowhere'));
@@ -552,6 +562,56 @@ describe('deriveProjects: masters', () => {
     enriched.multiphase.projects[0].phases[0].blklots.push('9999999');
     const w = deriveProjects(enriched);
     expect(w.warnings.some((x) => x.includes('9999999'))).toBe(true);
+  });
+});
+
+describe('deriveProjects: PRX rows', () => {
+  /** Adds PRX row `2023-000001PRX` naming F's fetched permit, with a curated entry. */
+  function withJoinedPrx(): ProjectRecordsInput {
+    const raw = baseRaw();
+    raw['datasf-dev-pipeline'].push({
+      blklot: '3512002',
+      current_status: 'BP Filed',
+      current_status_date: ts('2026-07-01'),
+      case_no: '2023-000001PRX',
+      bpa_no: '201410070008',
+      new_pipeline_units: '3'
+    });
+    const mp = baseMultiphase();
+    mp.projects.push(fallbackEntry('2023-000001PRX', 'Joined Tower'));
+    return baseInput(raw, mp);
+  }
+
+  it('joins a PRX row with a fetched bpa_no to the permit project, not multi-phase', () => {
+    const base = deriveProjects(baseInput());
+    expect(base.counts['projects.staleOpen']).toBe(1);
+    const r = deriveProjects(withJoinedPrx());
+    expect(r.file.projects.map((p) => p.id)).not.toContain('CASE:2023-000001PRX');
+    const f = project(r, 'BP:201410070008');
+    expect(f).toMatchObject({ units: 3, multiPhase: false, phases: null });
+    expect(f.label).not.toBe('Joined Tower');
+    expect(f.sources).toContainEqual({
+      dataset: '6jgi-cpb4',
+      id: '2023-000001PRX',
+      key: 'case_no'
+    });
+    expect(r.counts['projects.staleOpen']).toBe(0);
+    expect(r.counts['multiphase.fallback']).toBe(1);
+    expect(r.warnings).toContain(
+      '2023-000001PRX: PRX row joins permit 201410070008; multiphase entry unused'
+    );
+    expect(r.checks.multiphase.fileProblems).toEqual([]);
+    expect(checkV24(r.checks)).toMatchObject({ id: 'V24', ok: true });
+  });
+
+  it('keeps a PRX row without a fetched bpa_no a CASE multi-phase master', () => {
+    const raw = baseRaw();
+    const d = raw['datasf-dev-pipeline'].find((x) => x.case_no === '2010.0002PRX')!;
+    d.bpa_no = '209901017777';
+    const r = deriveProjects(baseInput(raw));
+    expect(project(r, 'CASE:2010.0002PRX')).toMatchObject({ multiPhase: true, units: 100 });
+    expect(r.warnings.some((w) => w.includes('multiphase entry unused'))).toBe(false);
+    expect(r.counts['link.excludedRows']).toBe(1);
   });
 });
 

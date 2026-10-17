@@ -218,6 +218,16 @@ describe('checkV23', () => {
     expect(checkV23(i, true).ok).toBe(false);
   });
 
+  it('fails a pathway with no history even when no in-flight project has it', () => {
+    expect(good.file.projects.some((p) => p.pathway === 'streamlined')).toBe(false);
+    const i = inputs((x) => {
+      x.histories = x.histories.filter((h) => h.pathway !== 'streamlined');
+    });
+    const r = checkV23(i, true);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/pathway streamlined has no history/);
+  });
+
   it('fails a rerun that is not identical', () => {
     expect(checkV23(good.checks, false).ok).toBe(false);
   });

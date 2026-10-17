@@ -60,7 +60,7 @@ The lock pins every input by sha256. `build` refuses to run if a cached file doe
 
 ## Multi-phase enrichment
 
-`pipeline/enrichment/multiphase.json` is the hand-curated list of Development Agreement (DA) phasings behind the "PRX" master rows of `datasf-dev-pipeline` (`6jgi-cpb4`, `case_no` ending `PRX`). A master is entitled once; its phases are separate permitting sub-projects, so `projects.json` carries them as `phases`. The file is committed, read directly by `build` (not fetched, not in the lock) and part of the dataset-version hash. Its zod schema is `pipeline/enrichment/schema.ts` and a parse failure is a `BuildError`. Fixture builds read `pipeline/test/fixtures/mini/enrichment/multiphase.json`.
+`pipeline/enrichment/multiphase.json` is the hand-curated list of Development Agreement (DA) phasings behind the "PRX" master rows of `datasf-dev-pipeline` (`6jgi-cpb4`, `case_no` ending `PRX`). A master is entitled once; its phases are separate permitting sub-projects, so `projects.json` carries them as `phases`. Only a PRX row whose `bpa_no` names no fetched permit is a master (`CASE:<case_no>`, `multiPhase` true); one whose `bpa_no` names a fetched permit joins that permit's project like any pipeline row (`multiPhase` false, spec section 4.2 steps 4 and 9), and its entry stays valid but unused, with the warning `<caseNo>: PRX row joins permit <bpa>; multiphase entry unused`. The file is committed, read directly by `build` (not fetched, not in the lock) and part of the dataset-version hash. Its zod schema is `pipeline/enrichment/schema.ts` and a parse failure is a `BuildError`. Fixture builds read `pipeline/test/fixtures/mini/enrichment/multiphase.json`.
 
 Curation rules (spec section 4.10.1):
 

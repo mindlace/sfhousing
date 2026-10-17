@@ -571,4 +571,10 @@ describe('pipelineOnlyHistory', () => {
     expect(pipelineOnlyHistory(row({ status: 'Mystery', statusDay: d('2012-01-01') }))).toBeNull();
     expect(pipelineOnlyHistory(row({ status: null, statusDay: d('2012-01-01') }))).toBeNull();
   });
+
+  it('drops a status that names an Object.prototype key', () => {
+    for (const status of ['constructor', 'toString', '__proto__']) {
+      expect(pipelineOnlyHistory(row({ status, statusDay: d('2012-01-01') }))).toBeNull();
+    }
+  });
 });

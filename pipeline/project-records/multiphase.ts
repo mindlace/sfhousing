@@ -187,14 +187,8 @@ function enriched(
   });
 
   const sum = drafts.reduce((s, d) => s + d.units, 0);
+  // The scale factor is returned, not checked here: checkV24 reports one out of bounds once.
   const scale = R / sum;
-  if (scale < SCALE_BOUNDS[0] || scale > SCALE_BOUNDS[1]) {
-    const msg =
-      `${caseNo}: scale factor ${scale} (R ${R} / Σ ${sum}) is outside ` +
-      `[${SCALE_BOUNDS[0]}, ${SCALE_BOUNDS[1]}]`;
-    problems.push(msg);
-    moot.push(msg);
-  }
 
   if (drafts.every((d) => d.parcelIds.length === 0)) {
     const parcelIds = ctx.trackingParcels.filter((id) => !ctx.excluded.has(id)).sort();
@@ -272,8 +266,9 @@ export function buildPhases(ctx: PhaseContext): PhaseResult {
     const moot: string[] = [];
     const r = enriched(ctx, entry.schedule, remaining, R, caseNo, problems, warnings, moot);
     if (r.phases === null) {
-      // Ruling L2: scale and plannedPermitFiled problems are moot without phases; the 4.10.3
-      // curation problem (phase resolves only to excluded parcels) stays and still fails V24.
+      // Ruling L2: plannedPermitFiled problems are moot without phases, and a last resort records
+      // no scale for checkV24; the 4.10.3 curation problem (phase resolves only to excluded
+      // parcels) stays and still fails V24.
       const kept = problems.filter((m) => !moot.includes(m));
       problems.length = 0;
       problems.push(...kept);

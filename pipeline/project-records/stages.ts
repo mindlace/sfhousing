@@ -198,8 +198,10 @@ const PIPELINE_STAGE: Record<string, Stage> = {
 /** Stage history of a pipeline-only row; null when the row is dropped. */
 export function pipelineOnlyHistory(row: PipelineRow): Partial<Record<Stage, Day>> | null {
   if (row.statusDay === null || row.status === null) return null;
-  const stage = PIPELINE_STAGE[row.status.trim()];
-  if (stage === undefined) return null;
+  const status = row.status.trim();
+  // Own keys only: a status such as 'constructor' must not hit Object.prototype.
+  if (!Object.hasOwn(PIPELINE_STAGE, status)) return null;
+  const stage = PIPELINE_STAGE[status];
   const history: Partial<Record<Stage, Day>> = {};
   const approved = row.approvedDay;
   const entitledOk = approved !== null && approved <= row.statusDay;

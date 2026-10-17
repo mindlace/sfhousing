@@ -416,6 +416,35 @@ describe('ids and pipeline rows', () => {
     expect(byId(r, 'PRJ:2010.0002').pipelineRows.map((x) => x.idx)).toEqual([1]);
   });
 
+  it('joins a PRX row whose bpa_no names a fetched permit to that permit project', () => {
+    const r = link(
+      parsedOf({
+        permits: [permit('P1')],
+        prjs: [prj('A', { permits: ['P1'] })],
+        pipeline: [{ caseNo: '2023-010914PRX', bpaNo: 'P1', blklot: '3512001' }]
+      })
+    );
+    expect(ids(r)).toEqual(['PRJ:A']);
+    const a = byId(r, 'PRJ:A');
+    expect(a.kind).toBe('graph');
+    expect(a.pipelineRows.map((x) => x.caseNo)).toEqual(['2023-010914PRX']);
+    expect(r.counts['link.pipelineOnly']).toBe(0);
+    expect(r.excludedRows).toEqual([]);
+  });
+
+  it('keeps a PRX row whose bpa_no names no fetched permit a CASE project', () => {
+    const r = link(
+      parsedOf({
+        permits: [permit('P1')],
+        pipeline: [{ caseNo: '2023-010956PRX', bpaNo: 'X999', blklot: '3512002' }]
+      })
+    );
+    expect(ids(r)).toEqual(['BP:P1', 'CASE:2023-010956PRX']);
+    expect(byId(r, 'CASE:2023-010956PRX').kind).toBe('pipelineOnly');
+    expect(r.excludedRows).toEqual([]);
+    expect(r.counts['link.pipelineOnly']).toBe(1);
+  });
+
   it('treats a row whose bpa_no resolves to nothing as an excluded alteration', () => {
     const r = link(parsedOf({ pipeline: [{ bpaNo: 'X999', newUnits: 1 }] }));
     expect(r.projects).toEqual([]);

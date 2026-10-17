@@ -285,7 +285,7 @@ describe('buildPhases: enriched', () => {
     expect(out.problems).toEqual([]);
   });
 
-  it('flags a scale factor outside the bounds', () => {
+  it('returns a scale factor outside the bounds without a problem (checkV24 reports it)', () => {
     const low = buildPhases(
       ctx({
         master: row({ caseNo: 'X', prx: true, newUnits: 79 }),
@@ -294,7 +294,7 @@ describe('buildPhases: enriched', () => {
     );
     expect(low.scale).toBeCloseTo(0.79);
     expect(low.phases!.map((p) => p.units)).toEqual([79]);
-    expect(low.problems.join('\n')).toMatch(/scale/);
+    expect(low.problems).toEqual([]);
     const high = buildPhases(
       ctx({
         master: row({ caseNo: 'X', prx: true, newUnits: 126 }),
@@ -302,7 +302,7 @@ describe('buildPhases: enriched', () => {
       })
     );
     expect(high.scale).toBeCloseTo(1.26);
-    expect(high.problems.join('\n')).toMatch(/scale/);
+    expect(high.problems).toEqual([]);
   });
 
   it('merges a phase with no parcels left into the earlier phase', () => {

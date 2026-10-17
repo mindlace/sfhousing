@@ -278,12 +278,16 @@ export function linkProjects(p: Parsed, opts: LinkOptions): LinkResult {
   const graphRows: PipelineRow[] = [];
   const excludedRows: PipelineRow[] = [];
   for (const row of p.pipeline) {
-    if (row.prx) {
+    // A PRX case never names a PRJ (no base-case join). A PRX row whose bpa_no names a fetched
+    // permit joins the graph like any row (spec 4.2 steps 4 and 9, Ruling F1); without one it is
+    // a CASE:<caseNo> multi-phase master, even when its bpa_no resolves to nothing.
+    const caseKey =
+      !row.prx && row.caseNo !== null && p.prjs.has(row.caseNo) ? `R:${row.caseNo}` : null;
+    const bpaKey = row.bpaNo !== null && p.permits.has(row.bpaNo) ? `P:${row.bpaNo}` : null;
+    if (row.prx && bpaKey === null) {
       caseRows.push(row);
       continue;
     }
-    const caseKey = row.caseNo !== null && p.prjs.has(row.caseNo) ? `R:${row.caseNo}` : null;
-    const bpaKey = row.bpaNo !== null && p.permits.has(row.bpaNo) ? `P:${row.bpaNo}` : null;
     if (caseKey !== null || bpaKey !== null) {
       const key = `L:${row.idx}`;
       uf.add(key);
