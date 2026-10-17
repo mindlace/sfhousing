@@ -61,5 +61,20 @@ export default defineConfig(
         }
       ]
     }
+  },
+  {
+    // FZP timelapse: exp/log on determinism paths come from src/lib/timelapse/math.ts (fdlibm),
+    // never the engine's Math functions, which differ across JS engines.
+    files: ['src/lib/timelapse/**', 'pipeline/lib/fzp-cal/**'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        ...['exp', 'log', 'pow', 'log1p', 'expm1'].map((property) => ({
+          object: 'Math',
+          property,
+          message: 'Use src/lib/timelapse/math.ts (determinism, stage-calibration §4.1a).'
+        }))
+      ]
+    }
   }
 );
