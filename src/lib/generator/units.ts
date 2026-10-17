@@ -177,7 +177,8 @@ function scaleFootprint(
     const massed = capOf(ref);
     const d = Math.abs(massed - U);
     const bestD = best ? Math.abs(best.massed - U) : Infinity;
-    if (d < bestD || (d === bestD && k < best!.k)) best = { k, massed, ref };
+    // ledger ruling: a massing holding no unit is never the pick, however close to U
+    if (massed >= 1 && (d < bestD || (d === bestD && k < best!.k))) best = { k, massed, ref };
     if (massed === U) break;
     if (massed > U) hi = k;
     else lo = k;
@@ -251,18 +252,24 @@ export function generateForUnitsWith(
     }
     options.push(option);
   }
-  if (!accepted && options.length) {
+  if (!accepted) {
     // The option with the smallest |massed - U|, ties to family order (ledger rulings). On an
     // undershoot this is §4.4's "most massed units" whenever no family exceeds U; a family
     // massing far above U is not taken over one closer to it. Otherwise it is the k = 1
     // fallback, which footprint scaling must beat.
-    accepted = options[0];
     for (const o of options)
-      if (Math.abs(o.massed - U) < Math.abs(accepted.massed - U)) accepted = o;
+      if (!accepted || Math.abs(o.massed - U) < Math.abs(accepted.massed - U)) accepted = o;
+    // §4.4 "if none qualifies … go to scaling": also when no k = 1 option serialised at all.
+    // A scaled massing holding no unit never replaces the fallback (ledger ruling).
     if (!choice.undershoot) {
       const scaledRef = scaleFootprint(site, choice.candidate, U, draws);
       const scaled = scaledRef && serialise(scaledRef, scaledRef);
-      if (scaled && Math.abs(scaled.massed - U) < Math.abs(accepted.massed - U)) accepted = scaled;
+      if (
+        scaled &&
+        scaled.massed >= 1 &&
+        (!accepted || Math.abs(scaled.massed - U) < Math.abs(accepted.massed - U))
+      )
+        accepted = scaled;
     }
   }
   if (!accepted) return null;

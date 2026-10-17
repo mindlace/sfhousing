@@ -320,6 +320,29 @@ describe('generateForUnits', () => {
     expect(withinTolerance(17, 20)).toBe(false);
   });
 
+  it('a scaled massing holding no unit never replaces the k = 1 fallback (ledger ruling)', () => {
+    // probe counterexample: plex 1 for U 1 masses 4 at k = 1; the bisection's closest record
+    // masses 0 (|0 − 1| < |4 − 1|), which would draw a volume holding no unit
+    const lot = P({
+      ...P(std),
+      id: 'scaled-zero',
+      labelPoint: [-122.4194, 37.7749],
+      polygon: [
+        [
+          [29.499404151922363, -17.591483381462748],
+          [7.582193771114289, 33.499036859229406],
+          [-3.8687194959039424, 28.586734656330073],
+          [7.801499608957689, 1.3826537066694295],
+          [-17.829185047060733, -9.612597568197895],
+          [-7.582193771114289, -33.499036859229406]
+        ]
+      ]
+    });
+    const b = generateForUnits(lot, 1, 80, 3455185796)!;
+    expect(b).toMatchObject({ typology: 'plex', stories: 1, composition: 'simple', units: 1 });
+    expect(massedUnits(b)).toBe(4);
+  });
+
   it('undershoot takes the family closest to U; ties keep family order', () => {
     const order = { ...SIMPLE, familyOrder: ['terrace', 'divided', 'simple'] as CompositionId[] };
     // lot-1000 podium 6: terrace (first in order) and divided mass 58 units, simple 59
