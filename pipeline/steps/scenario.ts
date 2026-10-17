@@ -439,9 +439,12 @@ export async function writeScenario(a: {
 
   const rows = [...a.records].sort((x, y) => cmp(x.cellId, y.cellId) || cmp(x.rec.id, y.rec.id));
   const n = rows.length;
-  const districtNames = [
-    ...new Set(rows.map(({ rec }) => t11.districtById.get(rec.id)!.district))
-  ].sort(cmp);
+  const districtOf = (id: string): DistrictRow => {
+    const d = t11.districtById.get(id);
+    if (!d) throw new Error(`scenario: parcel ${id} has no district row`);
+    return d;
+  };
+  const districtNames = [...new Set(rows.map(({ rec }) => districtOf(rec.id).district))].sort(cmp);
   const districtIdx = new Map(districtNames.map((d, i) => [d, i]));
   const cells: ScenarioParcels['cells'] = [];
   const p: ScenarioParcels = {
@@ -532,8 +535,7 @@ export async function writeScenario(a: {
     p.labelPoint[2 * i] = rec.labelPoint[0];
     p.labelPoint[2 * i + 1] = rec.labelPoint[1];
 
-    const d = t11.districtById.get(rec.id);
-    if (!d) throw new Error(`scenario: parcel ${rec.id} has no district row`);
+    const d = districtOf(rec.id);
     p.district[i] = fit('district', districtIdx.get(d.district)!, 0xffff);
     p.split[i] = d.split ? 1 : 0;
 

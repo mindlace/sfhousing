@@ -21,6 +21,9 @@ export default defineConfig({
       triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline']
     },
     { match: ['src/**'], triggers: ['lint', 'check', 'unit', 'e2e'] },
+    // fixture-0 is generated; pipeline/test/golden.test.ts compares it with the golden, so a
+    // change here also runs test:pipeline. Before the e2e/** rule: the first matching rule wins.
+    { match: ['e2e/fixtures/data/**'], triggers: ['lint', 'check', 'e2e', 'pipeline'] },
     { match: ['e2e/**'], triggers: ['lint', 'check', 'e2e'] },
     // scripts/ specs run in the vitest server project; r2-load-local feeds e2e (data:fixture).
     { match: ['scripts/**'], triggers: ['lint', 'check', 'unit', 'e2e'] },

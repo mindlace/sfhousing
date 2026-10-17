@@ -66,7 +66,7 @@ export interface ScenarioParcels {
 const MAGIC = [0x53, 0x46, 0x48, 0x53]; // "SFHS"
 const MAJOR = 1;
 const PRELUDE = 12;
-const SHARE_SCALE = 200; // improvementShare u8 = round(share × 200), spec §4.8
+const SHARE_SCALE = 200; // improvementShare u8 = round(share × 200): the tier-4 quantisation grid, spec §4.8 (AC 11)
 const DEG_SCALE = 1e7; // label points as i32 degrees × 1e7, spec §4.8
 const MAX_AFFIX = 255; // idPrefix and idSuffixLen are u8
 
