@@ -284,6 +284,32 @@ describe('generateForUnits', () => {
     expect(massedUnits(run(lot1200, 100, 80, 6)!)).toBe(70); // simple alone
   });
 
+  it('undershoot takes the family closest to U, not one massing far above it', () => {
+    // property-test counterexample: tower 80 caps at 335 units against U 410; the offset family
+    // masses 520 (27% above U), slab and simple 335, paired 339, shouldered 331
+    const lot = P({
+      ...P(std),
+      id: 'undershoot-u',
+      labelPoint: [-122.4194, 37.7749],
+      polygon: [
+        [
+          [-14.215177858653512, -39.99999999999999],
+          [14.215177858653512, -39.99999999999999],
+          [14.215177858653512, 39.99999999999999],
+          [8.529106715192084, 39.99999999999999],
+          [8.529106715192084, -5.089585487344742],
+          [-8.529106715192084, -5.089585487344742],
+          [-8.529106715192084, 39.99999999999999],
+          [-14.215177858653512, 39.99999999999999]
+        ]
+      ]
+    });
+    const b = generateForUnits(lot, 410, 80, 4220030817)!;
+    expect(b).toMatchObject({ typology: 'tower', stories: 80, composition: 'paired', units: 410 });
+    expect(massedUnits(b)).toBe(339);
+    expect(massingApproximate(b)).toBe(true);
+  });
+
   it('a huge undershoot on std is fast and approximate', () => {
     generateForUnits(P(std), 1e9, 80, fnv1a32(P(std).id)); // warm up: time the steady state
     const t0 = performance.now();

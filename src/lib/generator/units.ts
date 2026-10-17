@@ -252,16 +252,13 @@ export function generateForUnitsWith(
     options.push(option);
   }
   if (!accepted && options.length) {
-    // Undershoot: the most massed units. Otherwise the k = 1 fallback option, the smallest
-    // |massed - U| (ledger ruling), which footprint scaling must beat. Ties go to family order.
+    // The option with the smallest |massed - U|, ties to family order (ledger rulings). On an
+    // undershoot this is §4.4's "most massed units" whenever no family exceeds U; a family
+    // massing far above U is not taken over one closer to it. Otherwise it is the k = 1
+    // fallback, which footprint scaling must beat.
     accepted = options[0];
     for (const o of options)
-      if (
-        choice.undershoot
-          ? o.massed > accepted.massed
-          : Math.abs(o.massed - U) < Math.abs(accepted.massed - U)
-      )
-        accepted = o;
+      if (Math.abs(o.massed - U) < Math.abs(accepted.massed - U)) accepted = o;
     if (!choice.undershoot) {
       const scaledRef = scaleFootprint(site, choice.candidate, U, draws);
       const scaled = scaledRef && serialise(scaledRef, scaledRef);
