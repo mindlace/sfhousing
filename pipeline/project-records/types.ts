@@ -161,3 +161,36 @@ export interface ProjectRecordsInput {
   hiNet: Record<number, number>;
   areaM2(id: ParcelId): number;
 }
+
+/** A project after linking (spec 4.2): one connected component, or one split of it. */
+export interface LinkedProject {
+  id: string;
+  kind: 'graph' | 'pipelineOnly' | 'ppaOnly';
+  /** Non-satellite PRJs, by recordId. */
+  anchors: Prj[];
+  /** Anchor the lead permit is assigned to, else earliest open (tie: lowest id). */
+  primary: Prj | null;
+  /** PRJs whose permits all went to other PRJs; sources only. By recordId. */
+  satellites: Prj[];
+  /** Children of anchors, incl. PPAs (attached PPAs too), in parsed order. */
+  children: Child[];
+  /** Children of satellites, in parsed order. */
+  sourceOnlyChildren: Child[];
+  /** d4jk rows of anchors, in parsed order. */
+  reviews: Review[];
+  /** All permits, ascending number. */
+  permits: Permit[];
+  /** Permits that are not dead (and so not superseded), ascending number. */
+  live: Permit[];
+  /** Dead permits with a later-filed permit in the project. */
+  superseded: Set<string>;
+  lead: Permit | null;
+  /** j67f rows of the project's permits, in parsed order. */
+  completions: Completion[];
+  /** By idx. */
+  pipelineRows: PipelineRow[];
+  /** Candidate block-lots (spec 4.2 Parcels), sorted unique. */
+  blklots: string[];
+  /** `resolve(blklots)`. */
+  parcelIds: ParcelId[];
+}
