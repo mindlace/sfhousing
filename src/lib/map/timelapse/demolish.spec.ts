@@ -285,4 +285,24 @@ describe('DemolishPump', () => {
     expect(d.pendingFrames()).toBe(0);
     expect(pump.has('p0')).toBe(false);
   });
+
+  it('schedules one bound frame callback, so setTarget allocates no closure (§4.7)', () => {
+    const d = fake();
+    const callbacks: ((t: number) => void)[] = [];
+    const raf = d.raf;
+    d.raf = (cb) => {
+      callbacks.push(cb);
+      return raf(cb);
+    };
+    const pump = new DemolishPump(d);
+    pump.replace(entries(3));
+    pump.setTarget(1000);
+    d.flushFrame();
+    pump.setTarget(1001);
+    d.flushFrame();
+    pump.setTarget(999);
+    d.flushFrame();
+    expect(callbacks.length).toBe(3);
+    expect(new Set(callbacks).size).toBe(1);
+  });
 });

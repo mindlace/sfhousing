@@ -9,6 +9,9 @@ import { SLICE_IDS } from '../hide';
 import type { ParcelId } from '$lib/data/parcel';
 import type { Day } from '$lib/timelapse/time';
 
+/** Same gate as generated-controller's `sfh-slice`: dev builds and e2e only. */
+const MEASURE = import.meta.env.DEV || import.meta.env.VITE_E2E === '1';
+
 export interface PumpDeps {
   setReplaced(id: ParcelId): void;
   clearReplaced(id: ParcelId): void;
@@ -104,7 +107,7 @@ export class DemolishPump {
 
   private schedule(): void {
     if (this.handle === null && this.crossing()) {
-      this.handle = this.deps.raf(() => this.frame());
+      this.handle = this.deps.raf(this.frame);
     }
   }
 
@@ -115,10 +118,15 @@ export class DemolishPump {
     }
   }
 
-  /** One frame: moves the cursor toward the target by at most SLICE_IDS entries. */
-  private frame(): void {
+  /**
+   * One frame: moves the cursor toward the target by at most SLICE_IDS entries. An arrow field,
+   * bound once, so scheduling from `setTarget` allocates no closure. Emits the `sfh-pump`
+   * measure under MEASURE (the §4.5 pass bar, timed by timeline-perf.svelte.spec.ts).
+   */
+  private readonly frame = (): void => {
     this.handle = null;
     if (this.destroyed) return;
+    const t0 = MEASURE ? performance.now() : 0;
     const { days, ids, refs, deps, target } = this;
     let cursor = this.cursor;
     let ops = 0;
@@ -148,6 +156,7 @@ export class DemolishPump {
     this.cursor = cursor;
     this.lastFrameOps = ops;
     if (ops > this.maxFrameOps) this.maxFrameOps = ops;
+    if (MEASURE) performance.measure('sfh-pump', { start: t0, end: performance.now() });
     this.schedule();
-  }
+  };
 }

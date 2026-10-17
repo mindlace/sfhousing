@@ -37,6 +37,12 @@ export interface SfhMapDebug {
     n?: number,
     complexity?: 'representative' | 'worst'
   ): Promise<{ parcels: number; cells: number }>;
+  /**
+   * bench:map and timeline-perf only (docs/dev/map-perf.md): sets `SYNTHETIC_LOOKUPS`, then
+   * applies `makeSyntheticTimeline(seed, n)` (revision 0) through SimMap's `applyTimeline`.
+   * Resolves to the project and cell counts.
+   */
+  loadSyntheticTimeline(seed: number, n: number): Promise<{ projects: number; cells: number }>;
   /** SimMap's `applyTimeline` (enters timeline mode; queues until the map is ready). */
   applyTimeline(u: TimelineUpdate): void;
   /** SimMap's `setTime`. */
@@ -146,6 +152,14 @@ export function installDebug(
       const add = updates.flatMap((u) => u.hide.add);
       get().controller?.apply({ revision: 0, cells, removedCells: [], hide: { add, remove: [] } });
       return { parcels: add.length, cells: cells.length };
+    },
+    loadSyntheticTimeline: async (seed, n) => {
+      const { makeSyntheticTimeline, SYNTHETIC_LOOKUPS } =
+        await import('./test/synthetic-timeline');
+      const u = makeSyntheticTimeline(seed, n);
+      timeline.setTimelineLookups(SYNTHETIC_LOOKUPS);
+      timeline.applyTimeline(u);
+      return { projects: n, cells: u.cells.length };
     }
   };
   window.__sfhMap = hook;
