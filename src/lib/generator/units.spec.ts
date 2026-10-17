@@ -144,6 +144,59 @@ describe('generateForUnits', () => {
     expect(massingApproximate(b)).toBe(false);
   });
 
+  it('known §4.4 limitation: midrise scaling can land below U (U-lot 1171 m², stories 33)', () => {
+    // massing.ts puts midrise upper floors on F inset by the stepback, or on F itself when that
+    // inset is under 0.4·F, so massed units are non-monotone in k (e.g. 80 at k 0.225, 45 at
+    // 0.25, 124 at 0.35). §4.4's plain bisection converges on the jump near 0.35 and keeps 61,
+    // although k ≈ 0.23 would hold about 90. Pinned so a change to either rule is noticed.
+    const lot = P({
+      ...P(std),
+      id: 'midrise-jump',
+      polygon: [
+        [
+          [-22.603748088407944, -14.853982048443052],
+          [22.603748088407944, -14.853982048443052],
+          [22.603748088407944, 14.853982048443052],
+          [6.685036997392081, 14.853982048443052],
+          [6.685036997392081, 2.004344266570124],
+          [-6.685036997392081, 2.004344266570124],
+          [-6.685036997392081, 14.853982048443052],
+          [-22.603748088407944, 14.853982048443052]
+        ]
+      ]
+    });
+    const b = generateForUnits(lot, 90, 80, 3490931901, 33)!;
+    expect(b).toMatchObject({ typology: 'midrise', stories: 33, composition: 'simple', units: 90 });
+    expect(massedUnits(b)).toBe(61);
+  });
+
+  it('known §4.4 limitation: a matched cap can serialise one unit short (walkup 2, U 5)', () => {
+    // Case 1 ties walkup 2 (cap 4) and walkup 3 (cap 6) at |cap − U| = 1 and takes fewer
+    // stories. Cap is measured on the reference bands (≥ 350 m²), but the serialised area is
+    // 349.6 m² (1e-7° rounding), which holds 3 units; scaling only shrinks, so it stays there.
+    const lot = P({
+      ...P(std),
+      id: 'cap-boundary',
+      polygon: [
+        [
+          [-3.5450000000000004, -17.605],
+          [3.5450000000000004, -17.605],
+          [3.5450000000000004, 17.605],
+          [-3.5450000000000004, 17.605]
+        ],
+        [
+          [8.545, -2],
+          [12.545, -2],
+          [12.545, 2],
+          [8.545, 2]
+        ]
+      ]
+    });
+    const b = generateForUnits(lot, 5, 80, 5)!;
+    expect(b).toMatchObject({ typology: 'walkup', stories: 2, composition: 'simple', units: 5 });
+    expect(massedUnits(b)).toBe(3);
+  });
+
   it('G9: lot-3000, U 754, stories 65 → tower 65, top 202.9 m + parapet', () => {
     const b = run(lot3000, 754, 80, 65)!;
     expect(b).toMatchObject({ typology: 'tower', stories: 65, units: 754 });
