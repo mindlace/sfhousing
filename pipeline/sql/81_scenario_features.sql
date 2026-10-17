@@ -49,7 +49,8 @@ LEFT JOIN f_med_year my ON my.roll_year = y.roll_year
 ORDER BY y.roll_year, c.idx;
 
 -- Feature values and imputed bits (T11 mask: bit 0 yearBuilt, 1 existingStories,
--- 2 improvementShare; bit 4, no roll row, is Task 8's and never set here).
+-- 2 improvementShare, 3 existingUnits replaced by the tier-4 units rule of 80_scenario; bit 4,
+-- no roll row, is the scenario step's and never set here).
 CREATE OR REPLACE TEMP TABLE f_feat AS
 SELECT b.id, b.roll_year,
        -- T1 Day of 1 January roll_year: the CA lien date (spec §4.5, I).
@@ -73,7 +74,7 @@ SELECT b.id, b.roll_year,
        b.land, b.impr, b.use_code, b.land_use_class,
        CASE WHEN b.floor_area_m2 > 0 THEN b.floor_area_m2 ELSE o.floor_area_m2 END::DOUBLE
          AS existing_floor_area_m2,
-       b.noncondo_units, b.hotel, b.status_n
+       b.noncondo_units, b.hotel, b.status_n, b.units_replaced
 FROM f_base b
 JOIN parcel_out o ON o.id = b.id
 JOIN sc_medians m ON m.roll_year = b.roll_year AND m.land_use_class = b.land_use_class;
@@ -102,7 +103,8 @@ SELECT f.id AS mapblklot,
        (f.units >= 2 AND f.year_built < 1979) AS rent_control_likely,
        ((CASE WHEN f.year_imputed THEN 1 ELSE 0 END)
         | (CASE WHEN f.stories_imputed THEN 2 ELSE 0 END)
-        | (CASE WHEN f.share_imputed THEN 4 ELSE 0 END))::UTINYINT AS imputed,
+        | (CASE WHEN f.share_imputed THEN 4 ELSE 0 END)
+        | (CASE WHEN f.units_replaced THEN 8 ELSE 0 END))::UTINYINT AS imputed,
        f.existing_floor_area_m2,
        s.eligible,
        f.noncondo_units,

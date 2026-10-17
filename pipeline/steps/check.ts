@@ -1,15 +1,23 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { gzipSync } from 'node:zlib';
+import { gzipSync, inflateRawSync } from 'node:zlib';
 import { parseManifest, type Manifest } from '../../src/lib/data/manifest';
 import type { ParcelRecord } from '../../src/lib/data/parcel';
 import { decodeParcelChunk } from '../../src/lib/data/parcel-chunk';
+import {
+  FILL_LEVELS,
+  SCENARIO_FORMAT,
+  decodeScenarioPayload,
+  encodeScenarioPayload,
+  type ScenarioParcels
+} from '../../src/lib/data/scenario-codec';
 import { decodeTransit } from '../../src/lib/data/transit-codec';
 import type { Day } from '../../src/lib/timelapse/time';
 import { BBOX, type InvariantProfile } from '../config';
 import { pointStrictlyInside } from '../lib/rings';
 import { checkV20 } from '../project-records/invariants';
 import { PROJECTS_JSON } from './projects';
+import { PARCELS_BIN } from '../lib/scenario-files';
 import { z12TileBytes } from './tiles';
 
 export interface InvariantResult {
@@ -50,6 +58,17 @@ interface Chunk {
 
 /** Transit spec §4.3 size target for transit.json; over it V14 warns but still passes. */
 const TRANSIT_TARGET_BYTES = 400e3;
+/**
+ * Planning's ~780,000 units of net added FZP capacity (tier 1, scenario-data literature §1 [A]):
+ * V17's cross-check of `scenario.yield.fzp_net_total`.
+ */
+const FZP_NET_CAPACITY = 780e3;
+/** V17 warns (still passes) outside [0.25×, 4×] FZP_NET_CAPACITY (spec §4.10, tier 4 band). */
+const FZP_NET_BAND = [0.25, 4] as const;
+/** V17: at least this share of eligible parcels is hostable (spec §4.10, tier 4 check bound). */
+const HOSTABLE_MIN = 0.5;
+/** V19 warns (still passes) when parcels.bin is larger (spec §4.10, tier 4). */
+const SCENARIO_WARN_BYTES = 3.0e6;
 
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 const thr = (x: number) => `${Number((x * 100).toFixed(4))}%`;
@@ -83,6 +102,38 @@ function readChunks(outDir: string, m: Manifest): Chunk[] {
   });
 }
 
+interface Scenario {
+  p: ScenarioParcels | null;
+  /** The inflated payload, when it inflated. */
+  payload?: Uint8Array;
+  /** parcels.bin bytes on disk; NaN when unreadable. */
+  fileBytes: number;
+  error?: string;
+}
+
+/** Inflate and decode `scenarios/fzp/parcels.bin` (manifest-independent path). Never throws. */
+function readScenario(outDir: string): Scenario {
+  let body: Buffer;
+  try {
+    body = readFileSync(join(outDir, PARCELS_BIN));
+  } catch (e) {
+    return { p: null, fileBytes: NaN, error: `${PARCELS_BIN} unreadable: ${(e as Error).message}` };
+  }
+  try {
+    const payload = new Uint8Array(inflateRawSync(body));
+    return { p: decodeScenarioPayload(payload), payload, fileBytes: body.length };
+  } catch (e) {
+    const error = `${PARCELS_BIN} does not decode: ${(e as Error).message}`;
+    return { p: null, fileBytes: body.length, error };
+  }
+}
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 function neighborhoodNames(outDir: string, profile: InvariantProfile): string[] {
   if (profile.neighborhoodNames !== 'from-source') return profile.neighborhoodNames;
   const fc = JSON.parse(readFileSync(join(outDir, 'neighborhoods.geojson'), 'utf8')) as {
@@ -97,8 +148,9 @@ export function maxOf(xs: readonly number[]): number {
 }
 
 /**
- * Spec §4.9 invariants V1–V13, transit spec §4.3 V14 and project-records spec §4.9 V20 over a
- * built dataset directory, then V21–V24 from `extras.projectChecks`. Never throws.
+ * Spec §4.9 invariants V1–V13, transit spec §4.3 V14, scenario-data spec §4.10 V15–V19 and
+ * project-records spec §4.9 V20 over a built dataset directory, then V21–V24 from
+ * `extras.projectChecks`. Never throws.
  */
 export async function checkDataset(
   outDir: string,
@@ -328,6 +380,165 @@ export async function checkDataset(
       }
     }
     add('V14', problems.length === 0, problems.length ? problems.join('; ') : detail);
+  }
+
+  // V15–V19 scenario file (scenario-data spec §4.10).
+  const sc = readScenario(outDir);
+  const p = sc.p;
+  const eligible = recs.filter((r) => r.eligible);
+  const eligibleById = new Map(recs.map((r) => [r.id, r.eligible]));
+  const fileProblem = sc.error ?? '';
+  const addProblems = (id: InvariantResult['id'], problems: string[], okDetail: string) => {
+    const ps = problems.filter(Boolean);
+    add(id, ps.length === 0, ps.length ? ps.join('; ') : okDetail);
+  };
+
+  // V15 decodes; header matches; count = V2; ids in exactly one chunk, in that chunk's cell;
+  // re-encoding the decoded payload is byte-identical.
+  {
+    const problems = [fileProblem];
+    if (p) {
+      if (p.format !== SCENARIO_FORMAT) problems.push(`format ${p.format} ≠ ${SCENARIO_FORMAT}`);
+      if (!m) problems.push('no manifest to compare datasetVersion');
+      else if (p.datasetVersion !== m.datasetVersion)
+        problems.push(`datasetVersion ${p.datasetVersion} ≠ ${m.datasetVersion}`);
+      if (p.scenario !== 'fzp') problems.push(`scenario ${p.scenario} ≠ fzp`);
+      if (p.count !== emitted) problems.push(`count ${p.count} ≠ parcels.emitted ${emitted}`);
+      if (recs.length !== p.count) problems.push(`${recs.length} chunk records ≠ count ${p.count}`);
+      const cellsOf = new Map<string, string[]>();
+      for (const k of chunks)
+        for (const r of k.recs ?? []) cellsOf.set(r.id, [...(cellsOf.get(r.id) ?? []), k.cellId]);
+      let missing = 0;
+      let multi = 0;
+      let wrongCell = 0;
+      p.id.forEach((id, i) => {
+        const cs = cellsOf.get(id);
+        if (!cs) missing++;
+        else if (cs.length > 1) multi++;
+        else if (p.cells[p.cell[i]]?.cellId !== cs[0]) wrongCell++;
+      });
+      if (missing) problems.push(`${missing} id(s) in no chunk`);
+      if (multi) problems.push(`${multi} id(s) in more than one chunk`);
+      if (wrongCell) problems.push(`${wrongCell} id(s) whose cell ≠ their chunk's cellId`);
+      if (decodeErrors.length) problems.push(`${decodeErrors.length} chunk(s) failed to decode`);
+      try {
+        if (!sameBytes(encodeScenarioPayload(p), sc.payload!))
+          problems.push('re-encoding the decoded payload differs');
+      } catch (e) {
+        problems.push(`re-encoding the decoded payload fails: ${(e as Error).message}`);
+      }
+    }
+    addProblems(
+      'V15',
+      problems,
+      `${p?.count} parcels decode, each in its chunk's cell; re-encode byte-identical`
+    );
+  }
+
+  // V16 height strings parse; eligible parcels have a district.
+  {
+    const parseFail = c['scenario.height.parse_fail'];
+    const withDistrict = p
+      ? eligible.filter((r) => {
+          const i = p.index.get(r.id);
+          return i !== undefined && p.districts[p.district[i]] !== '';
+        }).length
+      : 0;
+    const share = ratio(withDistrict, eligible.length);
+    addProblems(
+      'V16',
+      [
+        fileProblem,
+        parseFail === 0 ? '' : `scenario.height.parse_fail ${parseFail} ≠ 0`,
+        p && !(share >= profile.heightJoinMin)
+          ? `eligible with a district ${pct(share)} < ${thr(profile.heightJoinMin)}`
+          : ''
+      ],
+      `0 parse failures; eligible with a district ${withDistrict}/${eligible.length} ≥ ${thr(profile.heightJoinMin)}`
+    );
+  }
+
+  // V17 fill levels, no clamped u16, hostable masks, non-LP base = FZP, hostable share; warn on
+  // the FZP net capacity cross-check.
+  {
+    const clamped = c['scenario.yield.clamped'];
+    const nonlp = c['scenario.yield.nonlp_base_mismatch'];
+    const problems = [
+      fileProblem,
+      clamped === 0 ? '' : `scenario.yield.clamped ${clamped} ≠ 0`,
+      nonlp === 0 ? '' : `scenario.yield.nonlp_base_mismatch ${nonlp} ≠ 0`
+    ];
+    let hostable = 0;
+    if (p) {
+      const fl = p.fillLevels;
+      if (fl.length !== FILL_LEVELS.length || FILL_LEVELS.some((v, k) => fl[k] !== v))
+        problems.push(`fillLevels [${fl.join(', ')}] ≠ FILL_LEVELS`);
+      const F = fl.length;
+      let badH = 0;
+      let badB = 0;
+      for (let i = 0; i < p.count; i++) {
+        const elig = eligibleById.get(p.id[i]) ?? false;
+        const h = elig && p.envelopeStories[i] >= 1 && p.yield[i * F + F - 1] > 0;
+        const hb = elig && p.baseStories[i] >= 1 && p.baseYield[i * F + F - 1] > 0;
+        if (p.hostable[i] !== (h ? 1 : 0)) badH++;
+        if (p.hostableBase[i] !== (hb ? 1 : 0)) badB++;
+        hostable += p.hostable[i];
+      }
+      if (badH) problems.push(`${badH} hostable flag(s) disagree with eligibility and yield`);
+      if (badB) problems.push(`${badB} hostableBase flag(s) disagree with eligibility and yield`);
+      const share = ratio(hostable, eligible.length);
+      if (!(share >= HOSTABLE_MIN))
+        problems.push(`hostable ${pct(share)} of eligible < ${thr(HOSTABLE_MIN)}`);
+    }
+    const net = c['scenario.yield.fzp_net_total'];
+    const [lo, hi] = FZP_NET_BAND.map((x) => x * FZP_NET_CAPACITY);
+    const warn =
+      net >= lo && net <= hi
+        ? ''
+        : `; warn: FZP net capacity ${net} outside [${lo}, ${hi}] (Planning ~${FZP_NET_CAPACITY}, tier 1)`;
+    addProblems('V17', problems, `hostable ${hostable}/${eligible.length} eligible${warn}`);
+  }
+
+  // V18 panel covers every roll year; latest-year roll join; Σ units; panel = T11 features.
+  {
+    const panelYears = c['scenario.panel.years'];
+    const rollYears = c['scenario.roll.years'];
+    const matched = c['scenario.roll.latest_eligible_matched'];
+    const unitsTotal = c['scenario.units.total'];
+    const mismatch = c['scenario.panel.feature_mismatch'];
+    const share = ratio(matched, eligible.length);
+    const [ulo, uhi] = profile.scenarioUnitsRange;
+    addProblems(
+      'V18',
+      [
+        fileProblem,
+        rollYears > 0 && panelYears === rollYears
+          ? ''
+          : `panel years ${panelYears} ≠ roll years ${rollYears}`,
+        share >= profile.rollJoinMin
+          ? ''
+          : `eligible with a latest-year roll row ${pct(share)} < ${thr(profile.rollJoinMin)}`,
+        unitsTotal >= ulo && unitsTotal <= uhi
+          ? ''
+          : `scenario.units.total ${unitsTotal} outside [${ulo}, ${uhi}]`,
+        mismatch === 0 ? '' : `scenario.panel.feature_mismatch ${mismatch} ≠ 0`
+      ],
+      `${panelYears} roll years; eligible with a latest-year roll row ${matched}/${eligible.length}; Σ units ${unitsTotal} in [${ulo}, ${uhi}]`
+    );
+  }
+
+  // V19 file size budget; warn over SCENARIO_WARN_BYTES.
+  {
+    const b = sc.fileBytes;
+    const max = profile.scenarioMaxBytes;
+    const ok = b <= max;
+    const warn = b > SCENARIO_WARN_BYTES ? `; warn: over ${SCENARIO_WARN_BYTES / 1e6} MB` : '';
+    const detail = Number.isNaN(b)
+      ? fileProblem
+      : extras.stableDetail
+        ? `parcels.bin ${ok ? 'within' : 'over'} budget${warn}`
+        : `parcels.bin ${b}/${max} B${warn}`;
+    add('V19', ok, detail);
   }
 
   // V20 projects.json (project-records spec §4.9): the T3 validator against the chunk parcels.

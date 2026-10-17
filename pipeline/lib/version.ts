@@ -31,7 +31,8 @@ export function computeDatasetVersion(input: {
 
 /**
  * Code whose bytes shape the published data. geometry.ts is the shared projection (transit);
- * generator, timelapse and plan/types.ts feed the scenario step (yields, OPEN_DAY, FeatureId).
+ * generator, timelapse and plan/types.ts feed the scenario step (yields, the Day type and time
+ * helpers, FeatureId).
  */
 const PATHS = [
   'pipeline',

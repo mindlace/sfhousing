@@ -467,3 +467,109 @@ describe('runScenarioSql on a copy with a far-away parcel and a bad height strin
     expect(c.value).toBe(1);
   });
 });
+
+describe('runScenarioSql roll sanity rules on a copy (tier 4)', () => {
+  let db: Duck;
+  const roll = (id: string) =>
+    db.all<{ roll_year: number; units: number; stories: number; units_replaced: boolean }>(
+      `SELECT roll_year, units, stories, units_replaced FROM syn2.sc_roll_agg
+       WHERE id = '${id}' ORDER BY roll_year`
+    );
+  // A copy of a parcel's roll row in another year with another unit count.
+  const yearRow = (id: string, from: number, year: number, units: number) =>
+    db.run(
+      `INSERT INTO syn2.src_roll SELECT * REPLACE (${year} AS closed_roll_year,
+         ${units} AS number_of_units)
+       FROM syn2.src_roll WHERE parcel_number = '${id}' AND closed_roll_year = ${from}`
+    );
+  beforeAll(async () => {
+    db = await miniDuck();
+    await runSql(db);
+    await db.run(`ATTACH ':memory:' AS syn2`);
+    for (const t of ['parcels', 'parcel_out', 'src_height_bulk', 'src_parcel_attrs', 'src_roll']) {
+      await db.run(`CREATE TABLE syn2.${t} AS SELECT * FROM memory.${t}`);
+    }
+    await db.run('CREATE TABLE syn2.report_counts AS SELECT * FROM memory.report_counts');
+    // Stories 999 on lot 6's 2025 row (live rows reach 999, wv5m-vpq2 2026-10-16).
+    await db.run(
+      `UPDATE syn2.src_roll SET number_of_stories = 999
+       WHERE parcel_number = '3512006' AND closed_roll_year = 2025`
+    );
+    // Lot 1 (2 units in 2024 and 2025): 2, 50000, 50000, 2, 2 over 2021-2025, bracketed.
+    await yearRow('3512001', 2024, 2021, 2);
+    await yearRow('3512001', 2024, 2022, 50000);
+    await yearRow('3512001', 2024, 2023, 50000);
+    // Lot 8: 0, 0, 300, 300 over 2022-2025, a one-sided change that stays.
+    await db.run(`UPDATE syn2.src_roll SET number_of_units = 300 WHERE parcel_number = '3512008'`);
+    await yearRow('3512008', 2024, 2022, 0);
+    await yearRow('3512008', 2024, 2023, 0);
+    // Lot 10: 4000 in every year, constant.
+    await db.run(`UPDATE syn2.src_roll SET number_of_units = 4000 WHERE parcel_number = '3512010'`);
+    await yearRow('3512010', 2024, 2022, 4000);
+    await yearRow('3512010', 2024, 2023, 4000);
+    await db.run('USE syn2');
+    try {
+      await runScenarioSql(db, await readParcelRecords(db));
+    } finally {
+      await db.run('USE memory');
+    }
+  });
+
+  const count = async (key: string) => {
+    const [c] = await db.all<{ value: number }>(
+      `SELECT value FROM syn2.report_counts WHERE key = '${key}'`
+    );
+    return c?.value;
+  };
+
+  it('treats roll stories above 80 as missing and counts the rows', async () => {
+    const [r] = (await roll('3512006')).filter((x) => x.roll_year === 2025);
+    expect(r.stories).toBe(0);
+    const [f] = await db.all<{ existing_stories: number; imputed: number }>(
+      `SELECT existing_stories, imputed FROM syn2.sc_features
+       WHERE mapblklot = '3512006' AND roll_year = 2025`
+    );
+    // The height fallback applies: imputed bit 1.
+    expect(f.imputed & 2).toBe(2);
+    expect(f.existing_stories).toBeLessThanOrEqual(80);
+    expect(await count('scenario.roll.stories_implausible')).toBe(1);
+  });
+
+  it('replaces a bracketed implausible units run with the previous value, imputed bit 3', async () => {
+    const rows = await roll('3512001');
+    expect(rows.map((r) => [r.roll_year, r.units, r.units_replaced])).toEqual([
+      [2021, 2, false],
+      [2022, 2, true],
+      [2023, 2, true],
+      [2024, 2, false],
+      [2025, 2, false]
+    ]);
+    const f = await db.all<{ roll_year: number; existing_units: number; imputed: number }>(
+      `SELECT roll_year, existing_units, imputed FROM syn2.sc_features
+       WHERE mapblklot = '3512001' ORDER BY roll_year`
+    );
+    expect(f.map((r) => [r.roll_year, r.existing_units, r.imputed & 8])).toEqual([
+      [2021, 2, 0],
+      [2022, 2, 8],
+      [2023, 2, 8],
+      [2024, 2, 0],
+      [2025, 2, 0]
+    ]);
+    expect(await count('scenario.roll.units_implausible')).toBe(2);
+  });
+
+  it('leaves a one-sided change (0, 0, 300, 300) and a constant 4000 untouched', async () => {
+    expect((await roll('3512008')).map((r) => [r.units, r.units_replaced])).toEqual([
+      [0, false],
+      [0, false],
+      [300, false],
+      [300, false]
+    ]);
+    expect((await roll('3512010')).map((r) => [r.units, r.units_replaced])).toEqual([
+      [4000, false],
+      [4000, false],
+      [4000, false],
+      [4000, false]
+    ]);
+  });
+});

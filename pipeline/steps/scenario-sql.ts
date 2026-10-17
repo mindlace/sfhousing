@@ -5,6 +5,7 @@
 import path from 'node:path';
 import type { ParcelRecord } from '../../src/lib/data/parcel';
 import { LAND_USE_CLASSES } from '../../src/lib/data/scenario-codec';
+import { MAX_STORIES } from '../../src/lib/generator/constants';
 import { DENSITY_CAP_CHANGE_DAY, FZP_EFFECTIVE_DAY, densityCap } from '../lib/density-caps';
 import { createTableFromRows, runSqlFile, type CellValue, type Duck } from '../lib/duck';
 import {
@@ -134,6 +135,8 @@ export async function runScenarioSql(
     ],
     LAND_USE_CLASSES.map((name, idx) => [idx, name])
   );
+  // Roll stories above the generator's MAX_STORIES are missing (tier-4 sanity rule, 80_scenario).
+  await db.run(`SET VARIABLE max_stories = ${MAX_STORIES}::INTEGER`);
   await runSqlFile(db, path.join(SQL_DIR, '80_scenario.sql'));
   await writeParcelCaps(db, records);
   await db.run(`SET VARIABLE density_cap_change_day = ${DENSITY_CAP_CHANGE_DAY}::INTEGER`);

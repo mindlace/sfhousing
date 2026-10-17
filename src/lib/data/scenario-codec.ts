@@ -45,7 +45,7 @@ export interface ScenarioParcels {
   localProgram: Uint8Array; // 0/1
   hostable: Uint8Array; // 0/1: may receive a simulated project
   split: Uint8Array; // 0/1: largest district overlap < 90% of parcel area
-  imputed: Uint8Array; // bit 0 yearBuilt, 1 existingStories, 2 improvementShare, 4 no roll row (bit 3 unused)
+  imputed: Uint8Array; // bit 0 yearBuilt, 1 existingStories, 2 improvementShare, 3 existingUnits replaced (implausible roll value), 4 no roll row
   baseCap: Uint16Array; // T11 base-zoning density cap in units; 0xFFFF = null (no cap)
   existingUnits: Uint16Array;
   existingStories: Uint8Array;
@@ -66,7 +66,7 @@ export interface ScenarioParcels {
 const MAGIC = [0x53, 0x46, 0x48, 0x53]; // "SFHS"
 const MAJOR = 1;
 const PRELUDE = 12;
-const SHARE_SCALE = 200; // improvementShare u8 = round(share × 200), spec §4.8
+const SHARE_SCALE = 200; // improvementShare u8 = round(share × 200): the tier-4 quantisation grid, spec §4.8 (AC 11)
 const DEG_SCALE = 1e7; // label points as i32 degrees × 1e7, spec §4.8
 const MAX_AFFIX = 255; // idPrefix and idSuffixLen are u8
 

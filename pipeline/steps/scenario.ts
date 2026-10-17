@@ -30,10 +30,10 @@ import { createTableFromRows, type CellValue, type Duck } from '../lib/duck';
 import type { HeightDistrict } from '../lib/heights';
 import { localProgramEnvelope } from '../lib/local-program';
 import type { Report } from '../lib/report';
+import { PARCELS_BIN } from '../lib/scenario-files';
 import { runScenarioSql } from './scenario-sql';
 
-/** The T11 file, relative to the dataset's out dir. */
-export const PARCELS_BIN = 'scenarios/fzp/parcels.bin';
+export { PARCELS_BIN };
 /** The golden's canonical dump of the decoded T11 payload (spec §4.11). */
 export const SCENARIO_DUMP = 'scenarios/fzp/parcels.decoded.json';
 
@@ -257,7 +257,10 @@ function provenance(capDay: Day, rollYear: number): ScenarioParcels['provenance'
         'current parcels through acdm-wktn (retired lots by centroid). Imputations are tier 2: ' +
         'missing year built and improvement share take the median of the same land-use class ' +
         'and roll year (a year-wide median, then 0, when the class has none: tier 4); missing ' +
-        'stories come from the building height. Parcels without a latest-year roll row take ' +
+        'stories come from the building height. Sanity rules (tier 4, made up): roll stories ' +
+        'above 80 are missing; a bracketed run of implausible units (≥ 100 and over 10× its ' +
+        'neighbouring years) takes the previous year’s units (imputed bit 3). Parcels without ' +
+        'a latest-year roll row take ' +
         'the "other" class medians. Assessed values reflect the Prop 13 acquisition basis, not ' +
         `market value. ${CAP_RULES}`
     ),
@@ -266,7 +269,9 @@ function provenance(capDay: Day, rollYear: number): ScenarioParcels['provenance'
       'Existing homes (assessor)',
       [SRC.roll],
       `Σ number_of_units over the parcel’s roll rows in the latest roll year (${rollYear}); no ` +
-        'LUDB fallback. A parcel without a latest-year row has 0.'
+        'LUDB fallback. A parcel without a latest-year row has 0. An implausible bracketed run ' +
+        '(≥ 100 units and over 10× the neighbouring years) takes the previous year’s value ' +
+        '(tier 4, imputed bit 3).'
     ),
     yield: p(
       3,
@@ -434,9 +439,12 @@ export async function writeScenario(a: {
 
   const rows = [...a.records].sort((x, y) => cmp(x.cellId, y.cellId) || cmp(x.rec.id, y.rec.id));
   const n = rows.length;
-  const districtNames = [
-    ...new Set(rows.map(({ rec }) => t11.districtById.get(rec.id)!.district))
-  ].sort(cmp);
+  const districtOf = (id: string): DistrictRow => {
+    const d = t11.districtById.get(id);
+    if (!d) throw new Error(`scenario: parcel ${id} has no district row`);
+    return d;
+  };
+  const districtNames = [...new Set(rows.map(({ rec }) => districtOf(rec.id).district))].sort(cmp);
   const districtIdx = new Map(districtNames.map((d, i) => [d, i]));
   const cells: ScenarioParcels['cells'] = [];
   const p: ScenarioParcels = {
@@ -523,19 +531,18 @@ export async function writeScenario(a: {
     const last = cells[cells.length - 1];
     if (last?.cellId === cellId) last.count++;
     else cells.push({ cellId, start: i, count: 1 });
-    p.cell[i] = cells.length - 1;
+    p.cell[i] = fit('cell', cells.length - 1, 0xffff);
     p.labelPoint[2 * i] = rec.labelPoint[0];
     p.labelPoint[2 * i + 1] = rec.labelPoint[1];
 
-    const d = t11.districtById.get(rec.id);
-    if (!d) throw new Error(`scenario: parcel ${rec.id} has no district row`);
-    p.district[i] = districtIdx.get(d.district)!;
+    const d = districtOf(rec.id);
+    p.district[i] = fit('district', districtIdx.get(d.district)!, 0xffff);
     p.split[i] = d.split ? 1 : 0;
-    const lotAreaM2 = d.lot_area_m2;
-    p.lotAreaM2[i] = fit('lotAreaM2', lotAreaM2, 0xffffffff);
 
     // Features: the latest-year panel row, else the no-roll defaults (spec §4.5, rulings).
     const lat = t11.latestById.get(rec.id);
+    const lotAreaM2 = lat ? lat.lot_area_m2 : d.lot_area_m2;
+    p.lotAreaM2[i] = fit('lotAreaM2', lotAreaM2, 0xffffffff);
     let existingUnits: number;
     let existingStories: number;
     let floorArea: number;
@@ -546,7 +553,7 @@ export async function writeScenario(a: {
       p.yearBuilt[i] = fit('yearBuilt', lat.year_built, 0xffff);
       p.improvementShare[i] = lat.improvement_share;
       p.rentControlLikely[i] = lat.rent_control_likely ? 1 : 0;
-      p.landUseClass[i] = lat.land_use_class;
+      p.landUseClass[i] = fit('landUseClass', lat.land_use_class, LAND_USE_CLASSES.length - 1);
       p.imputed[i] = lat.imputed;
       inc('roll.latest_eligible_matched', rec.eligible ? 1 : 0);
     } else {
@@ -717,7 +724,9 @@ export async function writeScenario(a: {
       `tier-4 cap rules cover split ${split} parcels (${splitH} hostable), generic NC ${nc} ` +
       `(${ncH} hostable), unlisted ${c['scenario.density_cap.rule.unlisted']}`
   );
+  // Fixture builds keep the counts but not this line: on mini it fires on lot 3 alone.
   if (
+    !FIXTURE_RE.test(a.datasetVersion) &&
     hostable > 0 &&
     (splitH > UNVERIFIED_SHARE_WARN * hostable || ncH > UNVERIFIED_SHARE_WARN * hostable)
   ) {
