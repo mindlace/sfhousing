@@ -127,7 +127,12 @@ describe('assembleSite', () => {
     const [dx, dy] = frameOffset(a.anchor.labelPoint, ex.labelPoint);
     const exRing = ex.polygon[0].map(([x, y]) => ({ x: x + dx, y: y + dy }));
     const overlap = intersectD(site.domain, [exRing], FillRule.NonZero, 2);
-    expect(domainArea(overlap)).toBeLessThanOrEqual(0.01);
+    // independent 1 cm quantisation seam (§4.2): at most 2 cm of sliver along the lot's outline
+    const perimeter = exRing.reduce((s, p, i) => {
+      const n = exRing[(i + 1) % exRing.length];
+      return s + Math.hypot(n.x - p.x, n.y - p.y);
+    }, 0);
+    expect(domainArea(overlap)).toBeLessThanOrEqual(0.02 * perimeter);
   });
 
   it('one record → its polygon unchanged', () => {

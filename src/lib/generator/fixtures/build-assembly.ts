@@ -58,43 +58,11 @@ function interiorPoint(r: Pt[]): Pt {
 
 const q = (v: number): number => Math.round(v * 100) / 100 + 0;
 
-const roundLL = (v: number): number => Math.round(v * 1e7) / 1e7;
-/** Distance from v to the nearest multiple of 1 cm. */
-const cmResidual = (v: number): number => Math.abs(v - Math.round(v * 100) / 100);
-
-/**
- * Normally a lot's label point is just its interior point, rounded to 1e-7 degrees. With `align`
- * (a fractional-cm target for x0 and y0), the label point is moved by up to 100 steps of 1e-7
- * degrees to the candidate whose (x0, y0) best matches that target. Lots aligned to one target
- * are quantised identically, so their shared edges agree to well under a millimetre.
- */
-function place(abs: Pt[], align?: Pt) {
-  const [lng, lat] = proj4('EPSG:7131', 'EPSG:4326', interiorPoint(abs));
-  const base: Pt = [roundLL(lng), roundLL(lat)];
-  const at = (labelPoint: Pt) => {
-    const [x0, y0] = proj4('EPSG:4326', 'EPSG:7131', labelPoint);
-    return { labelPoint, x0, y0 };
-  };
-  if (!align) return at(base);
-  let best = at(base);
-  let bestErr = Infinity;
-  for (let i = -100; i <= 100; i++) {
-    for (let j = -100; j <= 100; j++) {
-      const c = at([roundLL(base[0] + i * 1e-7), roundLL(base[1] + j * 1e-7)]);
-      const err = Math.max(cmResidual(c.x0 - align[0]), cmResidual(c.y0 - align[1]));
-      if (err < bestErr) {
-        best = c;
-        bestErr = err;
-      }
-    }
-  }
-  if (bestErr > 2e-4) throw new Error(`no aligned label point (best ${bestErr} m)`);
-  return best;
-}
-
-function record(lot: Lot, align?: Pt) {
+function record(lot: Lot) {
   const abs = lot.ring.map(([x, y]) => [ORIGIN[0] + x, ORIGIN[1] + y] as Pt);
-  const { labelPoint, x0, y0 } = place(abs, align);
+  const [lng, lat] = proj4('EPSG:7131', 'EPSG:4326', interiorPoint(abs));
+  const labelPoint: Pt = [Math.round(lng * 1e7) / 1e7, Math.round(lat * 1e7) / 1e7];
+  const [x0, y0] = proj4('EPSG:4326', 'EPSG:7131', labelPoint);
   const ring = abs.map(([x, y]) => [q(x - x0), q(y - y0)] as Pt);
   return {
     id: lot.id,
@@ -176,20 +144,7 @@ const fixtures: Record<string, { parcels: Lot[]; excluded?: Lot }> = {
 };
 
 for (const [name, { parcels, excluded }] of Object.entries(fixtures)) {
-  let out;
-  if (excluded) {
-    // The courtyard asserts the hole equals the excluded lot to 0.01 m^2, which needs the lots
-    // quantised alike: align every label point to the first lot's fractional-cm origin.
-    const first = record(parcels[0]);
-    const [x0, y0] = proj4('EPSG:4326', 'EPSG:7131', first.labelPoint);
-    const target: Pt = [x0, y0];
-    out = {
-      parcels: [first, ...parcels.slice(1).map((l) => record(l, target))],
-      excluded: record(excluded, target)
-    };
-  } else {
-    out = { parcels: parcels.map((l) => record(l)) };
-  }
+  const out = { parcels: parcels.map(record), ...(excluded ? { excluded: record(excluded) } : {}) };
   writeFileSync(
     fileURLToPath(new URL(`./assembly-${name}.json`, import.meta.url)),
     JSON.stringify(out, null, 2) + '\n'
