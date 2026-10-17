@@ -8,7 +8,7 @@ import {
   serializeProjects,
   type DeriveResult
 } from '../../project-records/derive';
-import { checkV24 } from '../../project-records/invariants';
+import { checkV23, checkV24 } from '../../project-records/invariants';
 import type { ProjectRecordsInput, ProjectSourceId, RawRow } from '../../project-records/types';
 import { ASOF, PARCELS, baseInput, baseMultiphase, baseRaw, day } from './derive-input';
 
@@ -552,6 +552,50 @@ describe('deriveProjects: masters', () => {
     enriched.multiphase.projects[0].phases[0].blklots.push('9999999');
     const w = deriveProjects(enriched);
     expect(w.warnings.some((x) => x.includes('9999999'))).toBe(true);
+  });
+});
+
+describe('deriveProjects: exits before later stages', () => {
+  it('moves a permit exit that precedes later entered stages to the last stage (V23)', () => {
+    const raw = baseRaw();
+    raw['datasf-planning-projects'].push({
+      record_id: '2019-000010PRJ',
+      record_status: 'Open',
+      block: '3512',
+      lot: '008',
+      open_date: ts('2019-01-01'),
+      building_permits: '201906010010',
+      number_of_units_prop: '10',
+      new_construction: 'CHECKED'
+    });
+    raw['datasf-planning-review'].push({
+      b1_alt_id: '2019-000010PRJ',
+      start_event_type: 'accepted',
+      start_event_date: ts('2019-01-10'),
+      end_event_type: 'approval',
+      end_event_date: ts('2020-03-01')
+    });
+    raw['datasf-permits-newcon'].push({
+      permit_number: '201906010010',
+      permit_type: '2',
+      block: '3512',
+      lot: '008',
+      status: 'withdrawn',
+      status_date: ts('2019-09-01'),
+      filed_date: ts('2019-06-01'),
+      proposed_units: '10',
+      site_permit: 'N',
+      primary_address_flag: 'Y'
+    });
+    const r = deriveProjects(baseInput(raw));
+    const h = history(r, 'PRJ:2019-000010PRJ');
+    expect(h.end).toEqual({
+      kind: 'exit',
+      stage: 'permitFiled',
+      reason: 'withdrawn',
+      day: day('2020-03-01')
+    });
+    expect(checkV23(r.checks, true)).toMatchObject({ id: 'V23', ok: true });
   });
 });
 

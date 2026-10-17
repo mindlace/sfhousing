@@ -87,25 +87,20 @@ export function lastObserved(proj: LinkedProject, entered: Entered, asOf: Day): 
 }
 
 /**
- * An exit: the stage is the latest entered stage with an entry day on or before the exit day, else
- * the first entered stage; the day is no earlier than that stage's entry. Null when nothing is
- * entered (deriveProjects drops such histories later).
+ * An exit at the last entered stage, no earlier than that stage's entry. Spec 4.6 names the latest
+ * stage entered on or before the exit day; Ruling L1 adds that an exit day before later entered
+ * stages moves to the last stage and its entry day (V23: end.day >= the last entered day). Every
+ * entered stage is then on or before the clamped day, so the stage is always the last entered
+ * one. Null when nothing is entered (deriveProjects drops such histories later).
  */
 function exitAt(
   entered: Entered,
   reason: ExitReason,
   day: Day
 ): { kind: 'exit'; stage: Stage; reason: ExitReason; day: Day } | null {
-  let stage: Stage | null = null;
-  let first: Stage | null = null;
-  for (const s of STAGE_ORDER) {
-    const d = entered[s];
-    if (d === undefined) continue;
-    if (first === null) first = s;
-    if (d <= day) stage = s;
-  }
-  stage ??= first;
-  if (stage === null) return null;
+  // Ruling L1: exit stage is the last entered stage; the day is clamped up to its entry.
+  const stage = [...STAGE_ORDER].reverse().find((s) => entered[s] !== undefined);
+  if (stage === undefined) return null;
   return { kind: 'exit', stage, reason, day: Math.max(day, entered[stage] as Day) };
 }
 

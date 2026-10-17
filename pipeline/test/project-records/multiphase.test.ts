@@ -406,6 +406,36 @@ describe('buildPhases: enriched', () => {
     expect(out.problems.join('\n')).toMatch(/excluded|another/);
   });
 
+  it('enriched with all phases parcel-less keeps a phase on a free tracking parcel', () => {
+    const out = buildPhases(
+      ctx({
+        master: row({ caseNo: 'X', prx: true, newUnits: 300 }),
+        entry: entry([phase({ units: 300 })]),
+        trackingParcels: ['3512014', 't2'],
+        excluded: new Set(['t2'])
+      })
+    );
+    expect(out.mode).toBe('enriched');
+    expect(out.phases!.map((p) => [p.units, p.parcelIds])).toEqual([[300, ['3512014']]]);
+  });
+
+  it('enriched with all phases and the tracking parcel excluded is last resort', () => {
+    const out = buildPhases(
+      ctx({
+        master: row({ caseNo: 'X', prx: true, newUnits: 300 }),
+        entry: entry([phase({ units: 150, blklots: ['y'] }), phase({ units: 150 })]),
+        trackingParcels: ['3512014'],
+        excluded: new Set(['y', '3512014'])
+      })
+    );
+    expect(out.mode).toBe('lastResort');
+    expect(out.phases).toBeNull();
+    expect(out.warnings).toContain(
+      'X: every phase and the tracking parcel belong to other projects; phasing dropped'
+    );
+    expect(out.problems.join('\n')).not.toMatch(/tracking parcel are excluded/);
+  });
+
   it('flags a planned permit-filed date not after entitlement', () => {
     const out = buildPhases(
       ctx({

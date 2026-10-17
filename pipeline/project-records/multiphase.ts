@@ -145,7 +145,7 @@ function enriched(
   caseNo: string,
   problems: string[],
   warnings: string[]
-): { phases: Phase[]; scale: number; merged: number } {
+): { phases: Phase[] | null; scale: number; merged: number } {
   const taken = new Set<ParcelId>();
   const drafts: Draft[] = remaining.map((ph) => {
     if (ph.blklots.length === 0) warnings.push(`${caseNo} phase ${ph.name}: names no blklots`);
@@ -196,14 +196,18 @@ function enriched(
   if (drafts.every((d) => d.parcelIds.length === 0)) {
     const parcelIds = ctx.trackingParcels.filter((id) => !ctx.excluded.has(id)).sort();
     if (parcelIds.length === 0) {
-      problems.push(`${caseNo}: every phase and the tracking parcel are excluded`);
+      // Ruling L2: no free tracking parcel either, so phasing is dropped (a phase would double-draw).
+      warnings.push(
+        `${caseNo}: every phase and the tracking parcel belong to other projects; phasing dropped`
+      );
+      return { phases: null, scale, merged: 0 };
     }
     const planned = drafts.reduce<Day | null>((m, d) => minDay(m, d.planned), null);
     return {
       phases: [
         {
           units: R,
-          parcelIds: parcelIds.length > 0 ? parcelIds : [...ctx.trackingParcels].sort(),
+          parcelIds,
           plannedPermitFiled: planned,
           source: drafts[0].source
         }
@@ -262,7 +266,13 @@ export function buildPhases(ctx: PhaseContext): PhaseResult {
   const entry = ctx.entry;
   const remaining = entry?.phases.filter((p) => p.status === 'remaining') ?? [];
   if (entry && entry.schedule && remaining.length > 0) {
+    const before = problems.length;
     const r = enriched(ctx, entry.schedule, remaining, R, caseNo, problems, warnings);
+    if (r.phases === null) {
+      // Ruling L2: phasing is dropped, so problems raised by the dropped phases no longer apply.
+      problems.length = before;
+      return lastResort();
+    }
     return {
       phases: r.phases,
       parcelIds: masterParcels(daAvail, r.phases, ctx.trackingParcels),

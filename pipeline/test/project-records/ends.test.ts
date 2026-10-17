@@ -215,7 +215,7 @@ describe('endOf rule 2: permit exit', () => {
     const p = proj({
       permits: [permit('1', { status: 'withdrawn', statusDay: d('2015-01-01') })]
     });
-    expect(endOf(p, E, CTX)).toEqual({
+    expect(endOf(p, entered({ filed: '2016-01-01' }), CTX)).toEqual({
       kind: 'exit',
       stage: 'filed',
       reason: 'withdrawn',
@@ -225,7 +225,19 @@ describe('endOf rule 2: permit exit', () => {
 
   it('takes the latest entered stage on or before the exit day', () => {
     const p = proj({ permits: [permit('1', { status: 'expired', statusDay: d('2016-03-15') })] });
-    expect(endOf(p, E, CTX)).toMatchObject({ kind: 'exit', stage: 'entitled' });
+    const e = entered({ filed: '2016-01-01', entitled: '2016-03-01' });
+    expect(endOf(p, e, CTX)).toMatchObject({ kind: 'exit', stage: 'entitled' });
+  });
+
+  it('exit before later entered stages moves to the last stage', () => {
+    const p = proj({ permits: [permit('1', { status: 'withdrawn', statusDay: 6648 })] });
+    const e: Partial<Record<Stage, Day>> = { filed: 6000, entitled: 6678, permitFiled: 6678 };
+    expect(endOf(p, e, CTX)).toEqual({
+      kind: 'exit',
+      stage: 'permitFiled',
+      reason: 'withdrawn',
+      day: 6678
+    });
   });
 });
 
