@@ -41,6 +41,8 @@ export interface PhaseResult {
   scale: number | null;
   /** Number of phase merges. */
   merged: number;
+  /** Fallback: the phase size u used (project median, else citywide). Otherwise null. */
+  u: { u: number; n: number } | null;
   /** V24 failures. */
   problems: string[];
   /** Non-failing notes for the report: unresolved phase blklots, a schedule with no remaining phase. */
@@ -247,6 +249,7 @@ export function buildPhases(ctx: PhaseContext): PhaseResult {
     mode: 'lastResort',
     scale: null,
     merged: 0,
+    u: null,
     problems,
     warnings
   });
@@ -266,6 +269,7 @@ export function buildPhases(ctx: PhaseContext): PhaseResult {
       mode: 'enriched',
       scale: r.scale,
       merged: r.merged,
+      u: null,
       problems,
       warnings
     };
@@ -276,9 +280,10 @@ export function buildPhases(ctx: PhaseContext): PhaseResult {
     );
   }
 
-  const u = [ctx.projectU, ctx.citywideU].find((x) => x !== null && x.u > 0)?.u ?? null;
+  const used = [ctx.projectU, ctx.citywideU].find((x) => x !== null && x.u > 0) ?? null;
   const P = daAvail.length;
-  if (u === null || P === 0) return lastResort();
+  if (used === null || P === 0) return lastResort();
+  const u = used.u;
 
   const k = Math.min(P, Math.max(1, Math.floor(R / u + 0.5)));
   const base = Math.floor(R / k);
@@ -299,6 +304,7 @@ export function buildPhases(ctx: PhaseContext): PhaseResult {
     mode: 'fallback',
     scale: null,
     merged: 0,
+    u: { u: used.u, n: used.n },
     problems,
     warnings
   };

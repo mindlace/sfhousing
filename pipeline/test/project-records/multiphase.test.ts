@@ -458,6 +458,33 @@ describe('buildPhases: fallback and last resort', () => {
     expect(out.merged).toBe(0);
     expect(out.warnings).toEqual([]);
     expect(out.parcelIds).toEqual(['3512009']);
+    expect(out.u).toEqual({ u: 40, n: 1 });
+  });
+
+  it('returns the u it used: citywide without a project median, null when not fallback', () => {
+    const fallback = buildPhases(
+      ctx({
+        master: row({ caseNo: 'X', prx: true, newUnits: 100, blklot: 'a' }),
+        daParcels: ['a'],
+        trackingParcels: ['a'],
+        projectU: null,
+        citywideU: { u: 120, n: 30 }
+      })
+    );
+    expect(fallback.mode).toBe('fallback');
+    expect(fallback.u).toEqual({ u: 120, n: 30 });
+    const f = mini();
+    const enriched = buildPhases(
+      ctx({
+        master: row({ caseNo: '2007.0001PRX', prx: true, newUnits: 300, blklot: '3512014' }),
+        entry: f.projects[0],
+        daParcels: ['3512014', '3512002'],
+        trackingParcels: ['3512014'],
+        projectU: { u: 40, n: 1 }
+      })
+    );
+    expect(enriched.mode).toBe('enriched');
+    expect(enriched.u).toBeNull();
   });
 
   it('R 100, u 40, P 5 gives 3 phases 34/33/33 on the three largest parcels', () => {

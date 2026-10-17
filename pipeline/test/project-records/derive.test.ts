@@ -8,6 +8,7 @@ import {
   serializeProjects,
   type DeriveResult
 } from '../../project-records/derive';
+import { checkV24 } from '../../project-records/invariants';
 import type { ProjectRecordsInput, ProjectSourceId, RawRow } from '../../project-records/types';
 import { ASOF, PARCELS, baseInput, baseMultiphase, baseRaw, day } from './derive-input';
 
@@ -125,7 +126,10 @@ function withBaseCase(): ProjectRecordsInput {
   return baseInput(raw);
 }
 
-/** Adds an earlier master H `2007.0001PRX` (lot 008, 300 units) sharing D's da, fallback. */
+/**
+ * Adds an earlier master H `2007.0001PRX` (lot 008, 300 units) sharing D's da, fallback, and an
+ * alteration row with that da on lot 009 (so both masters' DA parcels hold lot 009).
+ */
 function withEarlierMaster(): ProjectRecordsInput {
   const raw = baseRaw();
   raw['datasf-dev-pipeline'].push({
@@ -134,6 +138,15 @@ function withEarlierMaster(): ProjectRecordsInput {
     current_status_date: ts('2008-06-12'),
     case_no: '2007.0001PRX',
     new_pipeline_units: '300',
+    da: 'Fixture Village'
+  });
+  // An alteration row on lot 009 with the same da puts lot 009 in both masters' DA parcels.
+  raw['datasf-dev-pipeline'].push({
+    blklot: '3512009',
+    current_status: 'BP Filed',
+    current_status_date: ts('2026-01-01'),
+    bpa_no: '209901018888',
+    new_pipeline_units: '3',
     da: 'Fixture Village'
   });
   const mp = baseMultiphase();
@@ -486,17 +499,22 @@ describe('deriveProjects: masters', () => {
     expect(row).toMatchObject({ prj_record_id: '2010.0002', prx_case_no: '2010.0002PRX' });
   });
 
-  it('excludes the final parcels of earlier masters, in id order', () => {
+  it("excludes other masters' own parcels and earlier masters' final parcels, in id order", () => {
     const r = deriveProjects(withEarlierMaster());
-    const h = project(r, 'CASE:2007.0001PRX');
-    expect(h.phases).toEqual([
-      { units: 150, parcelIds: ['3512008'], plannedPermitFiled: null, source: null },
-      { units: 150, parcelIds: ['3512006'], plannedPermitFiled: null, source: null }
+    // H (first in id order) may not take D's tracking lot 006; it splits lots 009 and 008.
+    expect(project(r, 'CASE:2007.0001PRX').phases).toEqual([
+      { units: 150, parcelIds: ['3512009'], plannedPermitFiled: null, source: null },
+      { units: 150, parcelIds: ['3512008'], plannedPermitFiled: null, source: null }
     ]);
-    expect(project(r, 'CASE:2010.0002PRX').phases).toBeNull();
-    expect(r.checks.multiphase.lastResort).toEqual(['CASE:2010.0002PRX']);
-    expect(r.counts['multiphase.lastResort']).toBe(1);
-    expect(r.counts['multiphase.fallback']).toBe(1);
+    // D may not take H's final lot 009, so P = 1 and D keeps one fallback phase on its own lot.
+    expect(project(r, 'CASE:2010.0002PRX').phases).toEqual([
+      { units: 100, parcelIds: ['3512006'], plannedPermitFiled: null, source: null }
+    ]);
+    expect(project(r, 'CASE:2010.0002PRX').parcelIds).toEqual(['3512006']);
+    expect(r.checks.multiphase.lastResort).toEqual([]);
+    expect(r.counts['multiphase.lastResort']).toBe(0);
+    expect(r.counts['multiphase.fallback']).toBe(2);
+    expect(checkV24(r.checks)).toMatchObject({ id: 'V24', ok: true });
   });
 
   it('enriches from the schedule, scaled to the control total', () => {
@@ -519,6 +537,9 @@ describe('deriveProjects: masters', () => {
     expect(r.checks.multiphase.scales).toEqual({ '2007.0001PRX': 300 / 320 });
     expect(r.counts['multiphase.enriched']).toBe(1);
     expect(r.counts['multiphase.phases.enriched']).toBe(2);
+    // u is reported only where buildPhases used one (D's fallback), not for the enriched H.
+    expect(r.counts).not.toHaveProperty(['multiphase.u.2007.0001PRX']);
+    expect(r.counts['multiphase.u.2010.0002PRX']).toBe(60);
   });
 
   it('reports multiphase file problems and buildPhases warnings', () => {

@@ -269,11 +269,13 @@ export interface MasterOut {
 /**
  * Phases every in-flight PRX master in the given (id) order. `excluded` starts as the parcels of
  * every non-master in-flight project and of every history ending complete; each master's final
- * parcels are added before the next master. Per master, the DA parcels are the resolved tracking
+ * parcels are added before the next master, and each master also excludes every other in-flight
+ * master's own (tracking) parcels. Per master, the DA parcels are the resolved tracking
  * blklot, the blklots of every pipeline row with the same non-null `da`, of every project holding
  * the base-case PRJ (case number without 'PRX') and of every phase in the entry. The phase size u
  * is the median over completed permits of those base-case projects and of projects holding a row
- * with the same `da`, else the citywide median (>= 50 units, completed since 2015-01-01).
+ * with the same `da`, else the citywide median (>= 50 units, completed since 2015-01-01);
+ * `multiphase.u.<caseNo>` reports the u buildPhases used (fallback only).
  * Adds the `multiphase.*` counts and the buildPhases warnings to `counts` and `warnings`.
  */
 export function phaseMasters(o: {
@@ -326,10 +328,10 @@ export function phaseMasters(o: {
     for (const ph of entry?.phases ?? []) for (const b of ph.blklots) blklots.add(b);
 
     const projectU = medianOf(completedUnits(new Set([...baseProjects, ...daProjects])));
-    const chosen = [projectU, citywide].find((x) => x !== null && x.u > 0) ?? null;
-    if (chosen !== null) {
-      counts[`multiphase.u.${caseNo}`] = chosen.u;
-      counts[`multiphase.u.${caseNo}.n`] = chosen.n;
+    // Every other in-flight master's own parcels are another in-flight project's parcels.
+    const mine = new Set(excluded);
+    for (const other of o.masters) {
+      if (other.proj !== proj) for (const id of other.proj.parcelIds) mine.add(id);
     }
 
     const r = buildPhases({
@@ -337,7 +339,7 @@ export function phaseMasters(o: {
       entry,
       masterEntitled: entitled,
       daParcels: resolve([...blklots].sort(cmp)),
-      excluded,
+      excluded: mine,
       trackingParcels: master.blklot === null ? [] : resolve([master.blklot]),
       projectU,
       citywideU: citywide,
@@ -350,6 +352,10 @@ export function phaseMasters(o: {
     counts['multiphase.merged'] += r.merged;
     if (r.mode === 'lastResort') lastResort.push(proj.id);
     else counts[`multiphase.phases.${r.mode}`] += r.phases?.length ?? 0;
+    if (r.u !== null) {
+      counts[`multiphase.u.${caseNo}`] = r.u.u;
+      counts[`multiphase.u.${caseNo}.n`] = r.u.n;
+    }
     if (r.scale !== null) {
       counts[`multiphase.scale.${caseNo}`] = r.scale;
       scales[caseNo] = r.scale;
