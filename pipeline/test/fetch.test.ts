@@ -57,6 +57,28 @@ function fakeJsonHttp(pageSizes: number[]) {
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'sfh-raw-'));
 
+/** SODA CSV pages (quoted header + rows, trailing newline), one body per request. */
+function fakeCsvHttp(bodies: string[]) {
+  const urls: string[] = [];
+  return {
+    urls,
+    get: async (url: string) => {
+      urls.push(url);
+      return {
+        status: 200,
+        headers: new Headers({ 'X-SODA2-Truth-Last-Modified': 'Wed, 15 Oct 2026 10:00:00 GMT' }),
+        body: new TextEncoder().encode(bodies[urls.length - 1] ?? bodies[bodies.length - 1])
+      };
+    }
+  };
+}
+const ROLL_HEADER =
+  '"closed_roll_year","parcel_number","use_code","property_class_code","year_property_built",' +
+  '"number_of_stories","number_of_units","property_area","assessed_land_value",' +
+  '"assessed_improvement_value","status_code"\n';
+const rollRow = (p: string) =>
+  `"2025","${p}","SRES","D","1950","1.0","1.0","1000.0","300000.0","100000.0","NA"\n`;
+
 describe('fetchDatasf', () => {
   it('pages with $order=:id/$limit/$offset until a short page, filters active parcels and locks each page', async () => {
     const http = fakeHttp([50000, 50000, 12]);
@@ -109,6 +131,73 @@ describe('fetchDatasf', () => {
       })
     });
     expect(entry.upstreamVersion).toBe('W/"abc"');
+  });
+
+  it('CSV paging locks pages until a short page', async () => {
+    const http = fakeCsvHttp([
+      ROLL_HEADER + rollRow('3512001') + rollRow('3512002') + rollRow('3512003'),
+      ROLL_HEADER + rollRow('3512004')
+    ]);
+    const raw = tmp();
+    const entry = await fetchDatasf('datasf-assessor-roll', raw, http, 3);
+    expect(http.urls).toHaveLength(2);
+    const u = new URL(http.urls[1]);
+    expect(u.pathname).toBe('/resource/wv5m-vpq2.csv');
+    expect(u.searchParams.get('$order')).toBe(':id');
+    expect(u.searchParams.get('$limit')).toBe('3');
+    expect(u.searchParams.get('$offset')).toBe('3');
+    expect(u.searchParams.get('$where')).toBe('closed_roll_year >= 2007');
+    expect(u.searchParams.get('$select')).toBe(
+      'closed_roll_year,parcel_number,use_code,property_class_code,year_property_built,' +
+        'number_of_stories,number_of_units,property_area,assessed_land_value,' +
+        'assessed_improvement_value,status_code'
+    );
+    expect(entry.rowCount).toBe(4);
+    expect(entry.files.map((f) => f.name)).toEqual([
+      'datasf-assessor-roll.page-000.csv',
+      'datasf-assessor-roll.page-001.csv'
+    ]);
+    expect(entry.files[1].archiveKey).toBe(`sources/${entry.files[1].sha256}.csv`);
+    expect(entry.license).toBe('PDDL-1.0');
+    expect(entry.label).toBe('DataSF Assessor Historical Secured Property Tax Rolls');
+    expect(entry.upstreamVersion).toBe('Wed, 15 Oct 2026 10:00:00 GMT');
+    expect(readFileSync(join(raw, entry.files[1].sha256), 'utf8')).toContain('"3512004"');
+  });
+
+  it('a trailing empty CSV page (header only) is not locked', async () => {
+    const http = fakeCsvHttp([ROLL_HEADER + rollRow('a') + rollRow('b'), ROLL_HEADER]);
+    const entry = await fetchDatasf('datasf-parcel-attrs', tmp(), http, 2);
+    expect(http.urls).toHaveLength(2);
+    expect(new URL(http.urls[0]).pathname).toBe('/resource/acdm-wktn.csv');
+    expect(new URL(http.urls[0]).searchParams.get('$where')).toBeNull();
+    expect(entry.files).toHaveLength(1);
+    expect(entry.rowCount).toBe(2);
+    expect(entry.label).toBe('DataSF Parcels (attributes, active and retired)');
+  });
+
+  it('a quoted newline inside a field counts as one row', async () => {
+    const body =
+      '"mapblklot","zoning_code"\n"3512001","RH-2\nRM-1"\r\n"3512002",""\n"3512003",\n"3512004","x ""q"""';
+    const entry = await fetchDatasf('datasf-parcel-attrs', tmp(), fakeCsvHttp([body]), 10);
+    expect(entry.rowCount).toBe(4);
+    const header = await fetchDatasf('datasf-parcel-attrs', tmp(), fakeCsvHttp(['']), 10);
+    expect(header.rowCount).toBe(0);
+    expect(header.files).toHaveLength(1);
+  });
+
+  it('fetches the height districts as GeoJSON with the spec labels', async () => {
+    const http = fakeHttp([5]);
+    const entry = await fetchDatasf('datasf-height-bulk', tmp(), http);
+    const u = new URL(http.urls[0]);
+    expect(u.pathname).toBe('/resource/h9wh-cg3m.geojson');
+    expect(u.searchParams.get('$select')).toBe('height,gen_hght,the_geom');
+    expect(entry.files[0].name).toBe('datasf-height-bulk.page-000.geojson');
+    expect(entry).toMatchObject({
+      rowCount: 5,
+      license: 'public-domain',
+      homepage: 'https://data.sf.gov/d/h9wh-cg3m',
+      label: 'DataSF Zoning Map – Height and Bulk Districts'
+    });
   });
 });
 

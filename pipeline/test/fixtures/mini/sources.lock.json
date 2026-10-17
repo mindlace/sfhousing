@@ -3,6 +3,24 @@
     {
       "files": [
         {
+          "archiveKey": "sources/0d65e6b6d99674eec0557f35bb8af90ba45c4308fc6291268ea984e393148b80.csv",
+          "bytes": 2496,
+          "name": "datasf-assessor-roll.page-000.csv",
+          "sha256": "0d65e6b6d99674eec0557f35bb8af90ba45c4308fc6291268ea984e393148b80",
+          "url": "https://fixture.invalid/datasf-assessor-roll.page-000.csv"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/wv5m-vpq2",
+      "id": "datasf-assessor-roll",
+      "label": "DataSF Assessor Historical Secured Property Tax Rolls",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 28,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/8d1f6e12e35c750114d5d409176f024e917ec40abb016599807a14fad0de6f14.geojson",
           "bytes": 880,
           "name": "datasf-footprints.page-000.geojson",
@@ -16,6 +34,24 @@
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
       "rowCount": 3,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/adbde864495fb31172afe1b8926e8032195df09f36749387fd33b39abe4c4c23.geojson",
+          "bytes": 1579,
+          "name": "datasf-height-bulk.page-000.geojson",
+          "sha256": "adbde864495fb31172afe1b8926e8032195df09f36749387fd33b39abe4c4c23",
+          "url": "https://fixture.invalid/datasf-height-bulk.page-000.geojson"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/h9wh-cg3m",
+      "id": "datasf-height-bulk",
+      "label": "DataSF Zoning Map – Height and Bulk Districts",
+      "license": "public-domain",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 6,
       "upstreamVersion": "fixture"
     },
     {
@@ -52,6 +88,24 @@
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
       "rowCount": 2,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/14f8e55c720ceec030e8592ba2f422526293b1b696b09177de3e27a83b7525ed.csv",
+          "bytes": 1367,
+          "name": "datasf-parcel-attrs.page-000.csv",
+          "sha256": "14f8e55c720ceec030e8592ba2f422526293b1b696b09177de3e27a83b7525ed",
+          "url": "https://fixture.invalid/datasf-parcel-attrs.page-000.csv"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/acdm-wktn",
+      "id": "datasf-parcel-attrs",
+      "label": "DataSF Parcels (attributes, active and retired)",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 19,
       "upstreamVersion": "fixture"
     },
     {

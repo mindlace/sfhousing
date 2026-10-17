@@ -42,24 +42,21 @@ interface Cell {
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-export async function writeChunks(
-  db: Duck,
-  outDir: string,
-  datasetVersion: string,
-  report: Report
-): Promise<ChunkOut[]> {
+/** One parcel_out row as the chunk record, its cell and its lng/lat extent. */
+interface ParcelRow {
+  rec: ParcelRecord;
+  cellId: string;
+  bbox: [number, number, number, number];
+}
+
+async function readParcelRows(db: Duck): Promise<ParcelRow[]> {
   const rows = await db.all<Row>(
     `SELECT id, label_lng, label_lat, x0, y0, units, floor_area_m2, height_m, land_use,
             eligible, neighborhood, xmin, ymin, xmax, ymax, geojson7131
      FROM parcel_out ORDER BY id`
   );
-  const cells = new Map<string, Cell>();
-  let empty = 0;
-  let outside = 0;
-  for (const r of rows) {
+  return rows.map((r) => {
     const polygon = toLocalRings(JSON.parse(r.geojson7131), r.x0, r.y0);
-    if (polygon.length === 0) empty++;
-    if (!pointStrictlyInside([0, 0], polygon)) outside++;
     const rec: ParcelRecord = {
       id: String(r.id),
       polygon,
@@ -72,18 +69,43 @@ export async function writeChunks(
       eligible: r.eligible,
       neighborhood: r.neighborhood
     };
-    const cellId = cellIdFor(r.x0, r.y0);
+    return { rec, cellId: cellIdFor(r.x0, r.y0), bbox: [r.xmin, r.ymin, r.xmax, r.ymax] };
+  });
+}
+
+/**
+ * Every parcel_out row as the exact `ParcelRecord` `writeChunks` encodes, with its cell, sorted
+ * by id. The scenario step reads parcels through this so both see one record per parcel.
+ */
+export async function readParcelRecords(
+  db: Duck
+): Promise<{ rec: ParcelRecord; cellId: string }[]> {
+  return (await readParcelRows(db)).map(({ rec, cellId }) => ({ rec, cellId }));
+}
+
+export async function writeChunks(
+  db: Duck,
+  outDir: string,
+  datasetVersion: string,
+  report: Report
+): Promise<ChunkOut[]> {
+  const cells = new Map<string, Cell>();
+  let empty = 0;
+  let outside = 0;
+  for (const { rec, cellId, bbox } of await readParcelRows(db)) {
+    if (rec.polygon.length === 0) empty++;
+    if (!pointStrictlyInside([0, 0], rec.polygon)) outside++;
     let c = cells.get(cellId);
     if (!c) {
-      c = { recs: [], bbox: [r.xmin, r.ymin, r.xmax, r.ymax] };
+      c = { recs: [], bbox };
       cells.set(cellId, c);
     }
     c.recs.push(rec);
     c.bbox = [
-      Math.min(c.bbox[0], r.xmin),
-      Math.min(c.bbox[1], r.ymin),
-      Math.max(c.bbox[2], r.xmax),
-      Math.max(c.bbox[3], r.ymax)
+      Math.min(c.bbox[0], bbox[0]),
+      Math.min(c.bbox[1], bbox[1]),
+      Math.max(c.bbox[2], bbox[2]),
+      Math.max(c.bbox[3], bbox[3])
     ];
   }
   report.set('chunks.empty_polygon', empty);
