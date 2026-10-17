@@ -20,7 +20,7 @@ import {
   TOWER_SEPARATION_M
 } from './constants';
 import { domainArea, fitSimpleRegions, insideDomain } from './domain';
-import { massTypology } from './massing';
+import { massTypology, type MassOpts } from './massing';
 import { canonicalRing, inset, intersect, orientedRect, project, signedArea } from './poly';
 import type { Site } from './site';
 import type { ReplacementTypology } from './types';
@@ -30,9 +30,10 @@ export function referenceComposition(
   site: Site,
   typology: ReplacementTypology,
   stories: number,
-  draws: VarietyDraws
+  draws: VarietyDraws,
+  opts?: MassOpts
 ): OccupiedComposition | null {
-  const mass = massTypology(site, typology, stories, draws);
+  const mass = massTypology(site, typology, stories, draws, opts);
   if (!mass) return null;
   const bands: FloorBand[] = [];
   for (const part of mass.parts) {
@@ -50,7 +51,7 @@ export function referenceComposition(
   }
   if (bands.some((b) => !b.regions.length)) return null;
   if (mass.typology === 'tower' && !validTowerBands(site, bands))
-    return referenceComposition(site, 'midrise', 12, draws);
+    return referenceComposition(site, 'midrise', opts?.fallbackStories ?? 12, draws, opts);
   if (!bandsSupported(bands)) return null;
   return { family: 'simple', typology: mass.typology, stories: mass.stories, bands };
 }
