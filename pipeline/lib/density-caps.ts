@@ -3,13 +3,21 @@
 // has no cap (Bulletin 11: "not limited by a ratio of permitted units to lot area",
 // §206.10(d)(1)(A)).
 //
-// Every per-area divisor and per-lot count below is tier 1 (first-party: the Planning Code). The
-// values were re-verified (AC 10) against the enacted text of Ordinance No. 245-25 (File 250701,
-// the Family Zoning Plan Planning Code ordinance), which reprints the amended rows of Tables 209.1,
-// 209.2 and 710-713 with strike/underline markup, read page by page. The consolidated Code on
-// amlegal returned HTTP 403 (2026-10-16), so later amendments after Ord. 245-25 were not checked
-// there; the gocodebook mirror (text as of 2026-09-23, Ord. 37-26) agrees with every value:
-// https://gocodebook.com/library/us/ca/san-francisco-planning (spec §4.4 gives the full paths).
+// Three periods (coordinator ruling C2, 2026-10-16): before DENSITY_CAP_CHANGE_DAY (2022-11-27,
+// four-unit RH exception), from it to the day before FZP_EFFECTIVE_DAY, and from FZP_EFFECTIVE_DAY
+// (2026-01-12, Ord. 245-25: form-based density for NC inside R-4).
+//
+// Every per-area divisor and per-lot count below is tier 1 (first-party), each with its source:
+// - current values (from 2022-11-27): the enacted text of Ordinance No. 245-25 (File 250701, the
+//   Family Zoning Plan Planning Code ordinance), which reprints the amended rows of Tables 209.1,
+//   209.2, 710-713 and 750-752 with strike/underline markup, read page by page;
+// - pre-2022-11-27 RH values: the as-of-right per-lot counts in the official Planning code summary
+//   2021-010762PCA, "The Way It Was" (per-area alternatives then needed a CUA; ruling C1).
+// The consolidated Code on amlegal returned HTTP 403 (2026-10-16), so amendments after Ord. 245-25
+// were not checked there; the gocodebook mirror (text as of 2026-09-23, Ord. 37-26) agrees with
+// every current value: https://gocodebook.com/library/us/ca/san-francisco-planning (spec §4.4).
+// Not tier 1: the per-lot floor of 1 for RM/NC (spec reading), the split and generic-NC rules
+// (tier 4), and the date the RH per-area alternatives became as-of-right (taken as 2022-11-27, I).
 import type { Day } from '../../src/lib/timelapse/time';
 
 /** Director Bulletin No. 11, Housing Choice-SF Program (first issued February 2026). */
@@ -29,6 +37,14 @@ const FOURPLEX_SUMMARY_URL =
  * 11). Tier 1: Planning code summary 2021-010762PCA, "Effective Date: November 27, 2022".
  */
 export const DENSITY_CAP_CHANGE_DAY: Day = Date.UTC(2022, 10, 27) / 86400000;
+
+/**
+ * Day of 2026-01-12, the effective date of Ord. 245-25 (Family Zoning Plan), from which NC lots
+ * inside R-4 have form-based density. Tier 2 (I): the Mayor signed it on 2025-12-12 (Bulletin 11)
+ * and ordinances take effect 30 days later; the date is the coordinator's ruling C2 (2026-10-16),
+ * not read from an official effective-date notice.
+ */
+export const FZP_EFFECTIVE_DAY: Day = Date.UTC(2026, 0, 12) / 86400000;
 
 /** Square metres per square foot: the international foot, exact by definition (0.3048 m)². */
 const SQFT_M2 = 0.09290304;
@@ -52,38 +68,51 @@ export type DensityCapEntry = {
   note?: string;
 };
 
-/** `A` is lot area in whole square feet (≥ 1); `post` is day ≥ DENSITY_CAP_CHANGE_DAY. */
-type CapFormula = (A: number, post: boolean, inR4: boolean) => number | null;
+/**
+ * `pre-fourplex`: day < DENSITY_CAP_CHANGE_DAY. `fourplex`: from it to FZP_EFFECTIVE_DAY - 1.
+ * `fzp`: day ≥ FZP_EFFECTIVE_DAY.
+ */
+type Period = 'pre-fourplex' | 'fourplex' | 'fzp';
+
+/** `A` is lot area in whole square feet (≥ 1). */
+type CapFormula = (A: number, period: Period, inR4: boolean) => number | null;
 
 type CapRow = DensityCapEntry & { cap: CapFormula };
+
+function periodOf(day: Day): Period {
+  if (day < DENSITY_CAP_CHANGE_DAY) return 'pre-fourplex';
+  return day < FZP_EFFECTIVE_DAY ? 'fourplex' : 'fzp';
+}
 
 /** "X per lot, or one unit per N sf of lot area" reads as whichever allows more (spec §4.4). */
 const perArea = (A: number, perLot: number, sfPerUnit: number): number =>
   Math.max(perLot, Math.floor(A / sfPerUnit));
 
-/** RH cap: the pre-2022-11-27 formula, lifted to at least four units from that day. */
+/**
+ * RH cap: before 2022-11-27 the as-of-right per-lot count `pre` (2021-010762PCA, "The Way It
+ * Was": the per-area alternatives needed a CUA, so they are not a by-right cap; ruling C1). From
+ * 2022-11-27 the current Table 209.1 formula, lifted to at least four units (Note 11).
+ */
 const rh =
-  (pre: (A: number) => number): CapFormula =>
-  (A, post) =>
-    post ? Math.max(RH_FOURPLEX, pre(A)) : pre(A);
+  (pre: number, current: (A: number) => number): CapFormula =>
+  (A, period) =>
+    period === 'pre-fourplex' ? pre : Math.max(RH_FOURPLEX, current(A));
 
 /**
- * NC cap: one unit per N sf outside R-4. Inside R-4 the current Code reads "Form-Based Density
- * applies within the R-4 Height and Bulk District (§§ 263.19, 270(i))", so null. The R-4 rule is
- * applied from DENSITY_CAP_CHANGE_DAY (the spec's single change day); before it the outside
- * formula holds (spec §4.4 marks that cell "—").
+ * NC cap: one unit per N sf outside R-4. Inside R-4, from FZP_EFFECTIVE_DAY, the Code reads
+ * "Form-Based Density applies within the R-4 Height and Bulk District (§§ 263.19, 270(i))" (added
+ * by Ord. 245-25), so null; before that day the outside formula holds (ruling C2).
  */
 const nc =
   (sfPerUnit: number): CapFormula =>
-  (A, post, inR4) =>
-    post && inR4 ? null : perArea(A, 1, sfPerUnit);
+  (A, period, inR4) =>
+    period === 'fzp' && inR4 ? null : perArea(A, 1, sfPerUnit);
 
 const ord = (page: number): string => `${ORD_245_25_URL}#page=${page}`;
 
 const RH_NOTE_PRE =
-  'Pre-2022-11-27 branch is the spec formula. The official code summary ' +
-  `${FOURPLEX_SUMMARY_URL} ("The Way It Was") lists the per-area alternative as conditional ` +
-  '(CUA) and RH-1(D) as "1 unit max. per lot"; reported to main, value unchanged.';
+  `Before 2022-11-27: official code summary 2021-010762PCA, ${FOURPLEX_SUMMARY_URL} ` +
+  '("The Way It Was"), as-of-right value';
 
 const ROWS: CapRow[] = [
   {
@@ -94,9 +123,10 @@ const ROWS: CapRow[] = [
     note:
       'Ord. 245-25 pp. 63-64: "P up to one unit per lot, or one unit per 3,000 square feet of ' +
       'lot area, with no more than three units per lot." ' +
-      RH_NOTE_PRE,
-    // Tier 1: 1 per lot, 1 per 3,000 sf, at most 3 (Table 209.1).
-    cap: rh((A) => Math.min(3, perArea(A, 1, 3000)))
+      `${RH_NOTE_PRE} 1: "RH-1(D) Districts 1 unit max. per lot".`,
+    // Tier 1: before 2022-11-27, 1 per lot (2021-010762PCA). From then, 1 per lot or 1 per
+    // 3,000 sf, at most 3 (Table 209.1), lifted to 4.
+    cap: rh(1, (A) => Math.min(3, perArea(A, 1, 3000)))
   },
   {
     codes: ['RH-1'],
@@ -106,9 +136,11 @@ const ROWS: CapRow[] = [
     note:
       'Ord. 245-25 pp. 63-64: "P up to one unit per lot, or up to one unit per 3,000 square ' +
       'feet of lot area." ' +
-      RH_NOTE_PRE,
-    // Tier 1: 1 per lot or 1 per 3,000 sf (Table 209.1).
-    cap: rh((A) => perArea(A, 1, 3000))
+      `${RH_NOTE_PRE} 1: "RH-1 Districts 1 unit max. per lot or 1 unit per every 3,000sqft ` +
+      'of lot area with a CUA, but in no case more than 3 units per lot".',
+    // Tier 1: before 2022-11-27, 1 per lot as of right (2021-010762PCA; up to 3 only with a CUA).
+    // From then, 1 per lot or 1 per 3,000 sf (Table 209.1), lifted to 4.
+    cap: rh(1, (A) => perArea(A, 1, 3000))
   },
   {
     codes: ['RH-1(S)'],
@@ -119,9 +151,11 @@ const ROWS: CapRow[] = [
       'Ord. 245-25 pp. 63-64: "P up to two units per lot, if the second unit is 600 sq. ft. or ' +
       'less, or up to one unit per 3,000 square feet of lot area, with no more than three units ' +
       'per lot." The 600 sf second-unit condition is not modelled. ' +
-      RH_NOTE_PRE,
-    // Tier 1: 2 per lot or 1 per 3,000 sf, at most 3 (Table 209.1).
-    cap: rh((A) => Math.min(3, perArea(A, 2, 3000)))
+      `${RH_NOTE_PRE} 2: "1 unit max. per lot, though a small second unit is allowed if it is ` +
+      '600sqft or less" (the per-area alternative needed a CUA).',
+    // Tier 1: before 2022-11-27, 2 per lot (1 plus a small second unit, 2021-010762PCA). From
+    // then, 2 per lot or 1 per 3,000 sf, at most 3 (Table 209.1), lifted to 4.
+    cap: rh(2, (A) => Math.min(3, perArea(A, 2, 3000)))
   },
   {
     codes: ['RH-2'],
@@ -131,9 +165,11 @@ const ROWS: CapRow[] = [
     note:
       'Ord. 245-25 pp. 63-64: "P up to two units per lot, or up to one unit per 1,500 square ' +
       'feet of lot area." ' +
-      RH_NOTE_PRE,
-    // Tier 1: 2 per lot or 1 per 1,500 sf (Table 209.1).
-    cap: rh((A) => perArea(A, 2, 1500))
+      `${RH_NOTE_PRE} 2: "RH-2 Districts 2 unit max. per lot or 1 unit per every 1,500sqft ` +
+      'of lot area with CUA".',
+    // Tier 1: before 2022-11-27, 2 per lot as of right (2021-010762PCA). From then, 2 per lot or
+    // 1 per 1,500 sf (Table 209.1), lifted to 4.
+    cap: rh(2, (A) => perArea(A, 2, 1500))
   },
   {
     codes: ['RH-3'],
@@ -143,9 +179,11 @@ const ROWS: CapRow[] = [
     note:
       'Ord. 245-25 pp. 63-64: "P up to three units per lot, or up to one unit per 1,000 square ' +
       'feet of lot area." ' +
-      RH_NOTE_PRE,
-    // Tier 1: 3 per lot or 1 per 1,000 sf (Table 209.1).
-    cap: rh((A) => perArea(A, 3, 1000))
+      `${RH_NOTE_PRE} 3: "RH-3 Districts 3 unit max. per lot, or 1 unit per every 1,000sqft ` +
+      'of lot area with CUA".',
+    // Tier 1: before 2022-11-27, 3 per lot as of right (2021-010762PCA). From then, 3 per lot or
+    // 1 per 1,000 sf (Table 209.1), lifted to 4.
+    cap: rh(3, (A) => perArea(A, 3, 1000))
   },
   {
     codes: ['RM-1'],
@@ -238,14 +276,15 @@ const ROWS: CapRow[] = [
   },
   {
     codes: ['NCT-1', 'NCT-2', 'NCT-3'],
-    section: '§207.6(a); §750, Table 750 (NCT-1); §751, §752',
+    section: '§207.6(a); §750 Table 750 (NCT-1), §751 Table 751 (NCT-2), §752 Table 752 (NCT-3)',
     url: ord(96),
     verified: 'official',
     note:
       'Ord. 245-25 p. 96, §207.6(a): "dwelling unit density is not controlled by lot area in ' +
-      'RTO-1 RTO-M, NCT, and Eastern Neighborhoods Mixed Use Districts"; p. 373, Table 750: ' +
-      '"Form-Based Density." Tables 751 and 752 themselves were not read.',
-    // Tier 1: no lot-area density limit (§207.6(a)).
+      'RTO-1 RTO-M, NCT, and Eastern Neighborhoods Mixed Use Districts". Tables 750 (p. 373), ' +
+      '751 (p. 377) and 752 (p. 381) strike "No density limit by lot area. Density restricted ' +
+      'by physical envelope controls ..." and add "Form-Based Density.", so null in every period.',
+    // Tier 1: no lot-area density limit before or after Ord. 245-25 (§207.6(a), Tables 750-752).
     cap: () => null
   }
 ];
@@ -272,12 +311,12 @@ const GENERIC_NC = new Set(['NCD', 'NCT']);
 
 /**
  * Districts whose cap could not be verified against the official Code: every `mirror` table entry
- * (none after the 2026-10-16 re-verification) plus the generic `NCD` code, whose named district,
- * and so its section, is unknown. They default to no cap; the build reports parcel counts.
+ * (none after the 2026-10-16 re-verification) plus the generic `NCD` and `NCT` codes, whose named
+ * district, and so its section, is unknown. They default to no cap; the build reports counts.
  */
 export const UNVERIFIED_DISTRICTS: string[] = [
   ...ROWS.filter((r) => r.verified === 'mirror').flatMap((r) => r.codes),
-  'NCD'
+  ...GENERIC_NC
 ];
 
 export type DensityCapRule = 'table' | 'split' | 'generic-nc' | 'unlisted' | 'none';
@@ -291,16 +330,17 @@ export function densityCapRule(zoning: string | null): DensityCapRule {
   return BY_CODE.has(z) ? 'table' : 'unlisted';
 }
 
-function capOne(code: string, A: number, post: boolean, inR4: boolean): number | null {
+function capOne(code: string, A: number, period: Period, inR4: boolean): number | null {
   const f = BY_CODE.get(code);
-  return f === undefined ? null : f(A, post, inR4);
+  return f === undefined ? null : f(A, period, inR4);
 }
 
 /**
  * Base-zoning cap in units for a lot of `lotAreaM2` on `day`, or null for no cap.
  *
  * - `A = max(1, floor(lotAreaM2 / 0.09290304))` sf; a non-finite or non-positive area reads as 1.
- * - Table codes use the §4.4 formulas; `day ≥ DENSITY_CAP_CHANGE_DAY` selects the current Code.
+ * - Table codes use the §4.4 formulas as corrected by rulings C1/C2, in three periods split at
+ *   DENSITY_CAP_CHANGE_DAY and FZP_EFFECTIVE_DAY.
  * - A split code (`RH-2|RM-1`) takes the most permissive component: null if any component is
  *   null, else the max. Tier 4 (main ruling 2026-10-16): the Code applies each district to its
  *   own part of the lot, which the data does not split.
@@ -316,12 +356,12 @@ export function densityCap(
   if (rule === 'none' || rule === 'generic-nc' || rule === 'unlisted') return null;
   const sf = Number.isFinite(lotAreaM2) ? Math.floor(lotAreaM2 / SQFT_M2 + SQFT_EPS) : 0;
   const A = Math.max(1, sf);
-  const post = day >= DENSITY_CAP_CHANGE_DAY;
+  const period = periodOf(day);
   const z = (zoning as string).trim();
-  if (rule === 'table') return capOne(z, A, post, inR4);
+  if (rule === 'table') return capOne(z, A, period, inR4);
   let best = 0;
   for (const part of z.split('|')) {
-    const c = capOne(part.trim(), A, post, inR4);
+    const c = capOne(part.trim(), A, period, inR4);
     if (c === null) return null;
     best = Math.max(best, c);
   }

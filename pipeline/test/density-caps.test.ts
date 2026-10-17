@@ -4,6 +4,7 @@ import {
   BULLETIN_11_URL,
   DENSITY_CAP_CHANGE_DAY,
   DENSITY_CAP_TABLE,
+  FZP_EFFECTIVE_DAY,
   UNVERIFIED_DISTRICTS,
   densityCap,
   densityCapRule
@@ -14,10 +15,17 @@ const m2 = (sf: number): number => sf * 0.09290304;
 const BEFORE: Day = DENSITY_CAP_CHANGE_DAY - 1;
 const AFTER: Day = DENSITY_CAP_CHANGE_DAY;
 const TODAY: Day = Date.UTC(2026, 9, 16) / 86400000;
+const day = (y: number, m: number, d: number): Day => Date.UTC(y, m - 1, d) / 86400000;
 
 describe('DENSITY_CAP_CHANGE_DAY', () => {
   it('is 2022-11-27 as a Day', () => {
     expect(DENSITY_CAP_CHANGE_DAY).toBe(Date.UTC(2022, 10, 27) / 86400000);
+  });
+});
+
+describe('FZP_EFFECTIVE_DAY', () => {
+  it('is 2026-01-12 as a Day', () => {
+    expect(FZP_EFFECTIVE_DAY).toBe(Date.UTC(2026, 0, 12) / 86400000);
   });
 });
 
@@ -27,9 +35,10 @@ describe('densityCap: spec §4.4 known answers', () => {
     expect(densityCap('RH-2', m2(1000), false, AFTER)).toBe(4);
   });
 
-  it('RH-3 on 8,000 sf → 8', () => {
+  it('RH-3 on 8,000 sf → 8 (3 as of right before 2022-11-27)', () => {
     expect(densityCap('RH-3', m2(8000), false, TODAY)).toBe(8);
-    expect(densityCap('RH-3', m2(8000), false, BEFORE)).toBe(8);
+    expect(densityCap('RH-3', m2(8000), false, AFTER)).toBe(8);
+    expect(densityCap('RH-3', m2(8000), false, BEFORE)).toBe(3);
   });
 
   it('RM-1 on 3,229 sf → 4', () => {
@@ -43,22 +52,29 @@ describe('densityCap: spec §4.4 known answers', () => {
 });
 
 describe('densityCap: one case per district', () => {
-  it('RH-1(D): at most 3 before, at least 4 after', () => {
-    expect(densityCap('RH-1(D)', m2(12000), false, BEFORE)).toBe(3);
-    expect(densityCap('RH-1(D)', m2(12000), false, AFTER)).toBe(4);
+  it('RH-1(D): 1 per lot before (2021-010762PCA), at least 4 after', () => {
+    expect(densityCap('RH-1(D)', m2(12000), false, BEFORE)).toBe(1);
     expect(densityCap('RH-1(D)', m2(2000), false, BEFORE)).toBe(1);
+    expect(densityCap('RH-1(D)', m2(12000), false, AFTER)).toBe(4);
+    expect(densityCap('RH-1(D)', m2(15000), false, TODAY)).toBe(4);
   });
 
-  it('RH-1: one per 3,000 sf, at least 4 after', () => {
-    expect(densityCap('RH-1', m2(9000), false, BEFORE)).toBe(3);
+  it('RH-1: 1 per lot as of right before, one per 3,000 sf and at least 4 after', () => {
+    expect(densityCap('RH-1', m2(9000), false, BEFORE)).toBe(1);
     expect(densityCap('RH-1', m2(9000), false, AFTER)).toBe(4);
     expect(densityCap('RH-1', m2(15000), false, AFTER)).toBe(5);
+    expect(densityCap('RH-1', m2(15000), false, day(2024, 6, 1))).toBe(5);
   });
 
-  it('RH-1(S): two per lot, at most 3 before, at least 4 after', () => {
+  it('RH-1(S): 2 per lot before (with a small second unit), at least 4 after', () => {
     expect(densityCap('RH-1(S)', m2(3000), false, BEFORE)).toBe(2);
-    expect(densityCap('RH-1(S)', m2(12000), false, BEFORE)).toBe(3);
+    expect(densityCap('RH-1(S)', m2(12000), false, BEFORE)).toBe(2);
     expect(densityCap('RH-1(S)', m2(3000), false, AFTER)).toBe(4);
+  });
+
+  it('RH-2 before 2022-11-27 is 2 as of right on any lot', () => {
+    expect(densityCap('RH-2', m2(9000), false, BEFORE)).toBe(2);
+    expect(densityCap('RH-2', m2(9000), false, AFTER)).toBe(6);
   });
 
   it('RM-2, RM-3, RM-4: one per 600, 400, 200 sf', () => {
@@ -85,6 +101,14 @@ describe('densityCap: one case per district', () => {
 
   it('an NC district inside R-4 before the change day takes the outside formula', () => {
     expect(densityCap('NC-3', m2(6000), true, BEFORE)).toBe(10);
+  });
+
+  it('the R-4 NC rule starts on FZP_EFFECTIVE_DAY (ruling C2)', () => {
+    expect(densityCap('NC-3', m2(6000), true, day(2025, 6, 1))).toBe(10);
+    expect(densityCap('NC-3', m2(6000), true, day(2026, 1, 12))).toBeNull();
+    expect(densityCap('NC-1', m2(3226), true, day(2026, 1, 11))).toBe(4);
+    expect(densityCap('NC-1', m2(3226), true, day(2026, 10, 10))).toBeNull();
+    expect(densityCap('NC-1', m2(3226), false, day(2026, 10, 10))).toBe(4);
   });
 
   it('R-4 does not lift RH or RM caps', () => {
@@ -196,11 +220,12 @@ describe('DENSITY_CAP_TABLE provenance', () => {
     expect(new Set(codes).size).toBe(codes.length);
   });
 
-  it('UNVERIFIED_DISTRICTS lists every mirror entry', () => {
-    for (const e of DENSITY_CAP_TABLE.filter((x) => x.verified === 'mirror')) {
-      for (const c of e.codes) expect(UNVERIFIED_DISTRICTS).toContain(c);
-    }
-    expect(UNVERIFIED_DISTRICTS).toContain('NCD');
+  it('UNVERIFIED_DISTRICTS is exactly the mirror entries plus generic NCD and NCT', () => {
+    const mirror = DENSITY_CAP_TABLE.filter((x) => x.verified === 'mirror').flatMap((e) => e.codes);
+    expect([...UNVERIFIED_DISTRICTS].sort()).toEqual([...mirror, 'NCD', 'NCT'].sort());
+    expect(new Set(UNVERIFIED_DISTRICTS).size).toBe(UNVERIFIED_DISTRICTS.length);
+    // After the 2026-10-16 re-verification no table entry is mirror-only.
+    expect(mirror).toEqual([]);
   });
 
   it('every table code resolves by rule table', () => {
