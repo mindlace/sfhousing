@@ -200,6 +200,31 @@
       "detail": "8 stops, 7 patterns, 1 heavy-rail stops",
       "id": "V14",
       "ok": true
+    },
+    {
+      "detail": "14 parcels decode, each in its chunk's cell; re-encode byte-identical",
+      "id": "V15",
+      "ok": true
+    },
+    {
+      "detail": "0 parse failures; eligible with a district 12/12 ≥ 100%",
+      "id": "V16",
+      "ok": true
+    },
+    {
+      "detail": "hostable 8/12 eligible; warn: FZP net capacity 28 outside [195000, 3120000] (Planning ~780000, tier 1)",
+      "id": "V17",
+      "ok": true
+    },
+    {
+      "detail": "2 roll years; eligible with a latest-year roll row 10/12; Σ units 66 in [66, 66]",
+      "id": "V18",
+      "ok": true
+    },
+    {
+      "detail": "parcels.bin within budget",
+      "id": "V19",
+      "ok": true
     }
   ],
   "license": {

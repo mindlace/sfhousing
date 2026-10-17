@@ -64,11 +64,25 @@ export interface InvariantProfile {
   transitMinStops: number;
   /** V14: each name (case-insensitive substring) must be a stop with heavy-rail service > 0 tph. */
   transitHeavyRailStations: string[];
+  /** V16: minimum share of eligible parcels with a height district in parcels.bin. */
+  heightJoinMin: number;
+  /** V18: minimum share of eligible parcels with a latest-year assessor roll row. */
+  rollJoinMin: number;
+  /** V18: inclusive range of `scenario.units.total` (Σ latest-year roll units). */
+  scenarioUnitsRange: [number, number];
+  /** V19: maximum size of scenarios/fzp/parcels.bin on disk, bytes. */
+  scenarioMaxBytes: number;
 }
+
+/**
+ * SF housing stock at end-2022, 413,208 units: 2023 Housing Inventory, Table 1 (tier 1; the V1
+ * source, `HOUSING_STOCK.end2022` in pipeline/steps/build.ts). Also LIVE_PROFILE.unitsTarget.
+ */
+const HOUSING_STOCK_END_2022 = 413208;
 
 /** Spec §4.9 invariants for the full San Francisco build (expects 41 neighborhoods). */
 export const LIVE_PROFILE: InvariantProfile = {
-  unitsTarget: 413208,
+  unitsTarget: HOUSING_STOCK_END_2022,
   unitsTol: 0.02,
   parcelRange: [140000, 170000],
   landUseMatchMin: 0.99,
@@ -95,7 +109,16 @@ export const LIVE_PROFILE: InvariantProfile = {
     '24th',
     'Glen Park',
     'Balboa Park'
-  ]
+  ],
+  // Scenario-data spec §4.10 V16: a check bound (tier 4, made up), not simulation data.
+  heightJoinMin: 0.99,
+  // Spec §4.10 V18: a check bound (tier 4, made up).
+  rollJoinMin: 0.97,
+  // Spec §4.10 V18: [0.90, 1.02] (tier 4 band) × 413,208 (HOUSING_STOCK.end2022, 2023 Housing
+  // Inventory Table 1, tier 1); the live roll Σ is ≈ 389,527 ≈ 0.943 × 413,208 (V).
+  scenarioUnitsRange: [0.9 * HOUSING_STOCK_END_2022, 1.02 * HOUSING_STOCK_END_2022],
+  // Spec §4.10 V19: size budget for parcels.bin (tier 4; the file is expected ≈ 2.3–2.8 MB).
+  scenarioMaxBytes: 3.5e6
 };
 
 /**
@@ -123,5 +146,12 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   manifestMax: LIVE_PROFILE.manifestMax,
   neighborhoodsMax: LIVE_PROFILE.neighborhoodsMax,
   transitMinStops: 8,
-  transitHeavyRailStations: ['Fixture Station']
+  transitHeavyRailStations: ['Fixture Station'],
+  // Spec §4.10 V16: every eligible mini parcel has a district (fixture known answer).
+  heightJoinMin: 1,
+  // Ruling: 10 of the 12 eligible mini parcels have a 2025 roll row (lots 12 and 13 do not).
+  rollJoinMin: 0.8,
+  // Spec §4.10 V18 "fixture exact": Σ 2025 roll units of the mini fixture (known answer).
+  scenarioUnitsRange: [66, 66],
+  scenarioMaxBytes: LIVE_PROFILE.scenarioMaxBytes
 };
