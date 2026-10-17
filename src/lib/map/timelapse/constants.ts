@@ -14,6 +14,10 @@ export const FLOOR_CAP = 0.9;
 export const BAR_MIN_ZOOM = 15;
 /** Tier 4: this spec; zoom range over which bar alpha ramps from 0 to 1 below the gate. */
 export const BAR_ZOOM_RAMP = 0.5;
+/** Tier 4: this spec; bar width in px at z15 and from z17 up (8 px per zoom between). */
+export const BAR_W_PX = [32, 48] as const;
+/** Tier 4: this spec; bar height in px at z15 and from z17 up (1 px per zoom between). */
+export const BAR_H_PX = [6, 8] as const;
 /** Tier 4: this spec; screen gap in px between the anchor and the bar's bottom edge. */
 export const BAR_OFFSET_PX = 10;
 /** Tier 4: this spec; metres above the revision's highest part top for the bar anchor. */

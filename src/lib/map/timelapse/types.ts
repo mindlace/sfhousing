@@ -1,5 +1,6 @@
 // timelapse-render internal types (spec §2.1). None alters a T-row.
 import type { SimMapHandle, Theme } from '../types';
+import type { ParcelId } from '$lib/data/parcel';
 import type { Day } from '$lib/timelapse/time';
 
 /** T7: what `setTimelineLookups` receives (T12 `chanceTable` and `typicalMonths` outputs). */
@@ -33,6 +34,30 @@ export interface PartEval {
   state: PartState;
   alpha: number;
   zCutM: number;
+}
+
+/**
+ * CPU record of one stage bar (§4.4.2): one per (slot, revision) with parts. "Never" days are
+ * `OPEN_DAY`. The per-segment arrays are `segCount` long, in `BAR_SEGMENTS` order, with
+ * `preApplication` prepended when the slot entered it.
+ */
+export interface BarAttrs {
+  projectId: string;
+  parcelId: ParcelId; // the slot's pick parcel
+  units: number; // final revision's units (declutter priority)
+  pathway: number; // index into PATHWAYS
+  anchor: [lng: number, lat: number, z: number];
+  from: Day; // max(ghostFrom, revision from)
+  to: Day; // min(revision to, barEnd)
+  barEnd: Day;
+  endDay: Day;
+  endKind: number; // 0 open, 1 complete, 2 exit
+  completeDay: Day;
+  segCount: number;
+  segEntry: number[]; // effective entry day per segment
+  segTypicalDays: number[]; // typical days per segment; OPEN_DAY if unknown
+  segRow: number[]; // chance texture row per segment
+  minZoom: number; // declutter's zoom gate (Task 6); BAR_MIN_ZOOM until then
 }
 
 /** `evalBar` result (§4.4). */
