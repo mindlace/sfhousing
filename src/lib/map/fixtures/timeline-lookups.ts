@@ -19,8 +19,9 @@ function chance(): TimelineLookups['chance'] {
   PATHWAYS.forEach((p, pi) => {
     for (const stage of pathwayStages(p)) {
       if (stage === 'complete') continue;
-      // The one absent row (spec §6).
-      if (p === 'discretionary' && stage === 'preApplication') continue;
+      // The one absent occupiable row (spec §6). No fixture slot is streamlined with a PPA, so it
+      // is never read (§4.4.3); permitOnly filed/entitled are absent too, as T2 makes them.
+      if (p === 'streamlined' && stage === 'preApplication') continue;
       const si = STAGE_ORDER.indexOf(stage);
       out[p][stage] = Float32Array.from({ length: CHANCE_LEN }, (_, m) =>
         chanceRampValue(pi, si, m)

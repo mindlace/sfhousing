@@ -7,7 +7,7 @@ import { FLOOR_CAP } from './constants';
 import type { TimelineLookups } from './types';
 import { FTF_M, GROUND_FTF_M } from '$lib/generator/constants';
 import { MONTH_DAYS, OPEN_DAY } from '$lib/timelapse/time';
-import { STAGE_ORDER } from '$lib/timelapse/types';
+import { PATHWAYS, STAGE_ORDER } from '$lib/timelapse/types';
 
 type SlotKey = keyof typeof SLOT;
 
@@ -224,28 +224,44 @@ describe('timeline-small fixture invariants', () => {
   });
 
   it('(h) shares its pick parcel with (a), and both have demolish entries there, (h) later', () => {
-    const pick = (key: SlotKey) => {
-      const c = cellOf(key);
-      return c.parcelIds[c.slotProjectIds.indexOf(SLOT[key].projectId)];
-    };
-    expect(pick('h')).toBe(pick('a'));
-    const there = timelineSmall.demolish.filter((x) => x.parcelId === pick('a'));
+    expect(SLOT.h.parcelId).toBe(SLOT.a.parcelId);
+    const there = timelineSmall.demolish.filter((x) => x.parcelId === SLOT.a.parcelId);
     expect(there.map((x) => x.day)).toEqual([DAYS.a.construction, DAYS.h.construction]);
     expect(DAYS.h.construction).toBeGreaterThan(DAYS.a.construction);
     expect(timelineSmall.demolish.map((x) => x.parcelId)).toEqual(
-      expect.arrayContaining([pick('c'), pick('e')])
+      expect.arrayContaining([SLOT.c.parcelId, SLOT.e.parcelId])
     );
     expect(timelineSmall.demolish).toHaveLength(4);
+  });
+
+  it("SLOT.parcelId is each slot's pick parcel in its packed cell", () => {
+    for (const u of [timelineSmall, timelineSmallRev1])
+      for (const c of u.cells)
+        c.slotProjectIds.forEach((id, s) => {
+          const key = (Object.keys(SLOT) as SlotKey[]).find((k) => SLOT[k].projectId === id)!;
+          expect(c.parcelIds[s]).toBe(SLOT[key].parcelId);
+        });
   });
 
   it('every other slot has its own pick parcel', () => {
     const picks = (Object.keys(SLOT) as SlotKey[])
       .filter((k) => k !== 'h')
-      .map((key) => {
-        const c = cellOf(key);
-        return c.parcelIds[c.slotProjectIds.indexOf(SLOT[key].projectId)];
-      });
+      .map((key) => SLOT[key].parcelId);
     expect(new Set(picks).size).toBe(picks.length);
+  });
+
+  it('the absent chance row (streamlined.preApplication) is one no fixture slot enters', () => {
+    const { chance } = timelineLookups;
+    expect(chance.streamlined.preApplication).toBeUndefined();
+    expect(chance.discretionary.preApplication).toHaveLength(241);
+    expect(chance.permitOnly.filed).toBeUndefined();
+    expect(chance.permitOnly.entitled).toBeUndefined();
+    const PRE = STAGE_ORDER.indexOf('preApplication');
+    for (const c of timelineSmall.cells)
+      c.slotPathway.forEach((pw, s) => {
+        if (PATHWAYS[pw] === 'streamlined')
+          expect(Number.isNaN(c.slotStages[STAGE_ORDER.length * s + PRE])).toBe(true);
+      });
   });
 
   it('constructing slots put p = 0.5 and the 0.9 cap mid-floor, and finish after the cap', () => {

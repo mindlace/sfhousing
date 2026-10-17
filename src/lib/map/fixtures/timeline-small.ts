@@ -110,22 +110,24 @@ export const DAYS = {
 
 type SlotKey = 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h' | 'i1' | 'i2';
 
-const CELL_OF: Record<SlotKey, 'tl-A' | 'tl-B'> = {
-  a: 'tl-A',
-  c: 'tl-A',
-  d: 'tl-A',
-  e: 'tl-A',
-  h: 'tl-A',
-  b: 'tl-B',
-  f: 'tl-B',
-  g: 'tl-B',
-  i1: 'tl-B',
-  i2: 'tl-B'
+/** Each slot's cell and pick parcel. Every slot has its own parcel except (h), on (a)'s. */
+const PLACE: Record<SlotKey, { cellId: 'tl-A' | 'tl-B'; parcelId: ParcelId }> = {
+  a: { cellId: 'tl-A', parcelId: '9000001' },
+  c: { cellId: 'tl-A', parcelId: '9000045' },
+  d: { cellId: 'tl-A', parcelId: '9000009' },
+  e: { cellId: 'tl-A', parcelId: '9000003' },
+  h: { cellId: 'tl-A', parcelId: '9000001' },
+  b: { cellId: 'tl-B', parcelId: '9000012' },
+  f: { cellId: 'tl-B', parcelId: '9000002' },
+  g: { cellId: 'tl-B', parcelId: '9000007' },
+  i1: { cellId: 'tl-B', parcelId: '9000061' },
+  i2: { cellId: 'tl-B', parcelId: '9000022' }
 };
 
+/** Per slot: its projectId, cell and pick parcel (`parcelIds` entry in the packed cell). */
 export const SLOT = Object.fromEntries(
-  (Object.keys(CELL_OF) as SlotKey[]).map((k) => [k, { projectId: `fx-${k}`, cellId: CELL_OF[k] }])
-) as Record<SlotKey, { projectId: string; cellId: string }>;
+  (Object.keys(PLACE) as SlotKey[]).map((k) => [k, { projectId: `fx-${k}`, ...PLACE[k] }])
+) as Record<SlotKey, { projectId: string; cellId: string; parcelId: ParcelId }>;
 
 function building(parcelId: ParcelId): GeneratedBuilding {
   const b = BUILDINGS.find((x) => x.parcelId === parcelId);
@@ -168,7 +170,6 @@ function unitsOf(m: Massing, fallback: number): number {
 
 interface SlotSpec {
   key: SlotKey;
-  parcelId: ParcelId;
   origin: Schedule['origin'];
   pathway: Schedule['pathway'];
   end: Schedule['end'];
@@ -180,12 +181,13 @@ interface SlotSpec {
 
 function item(spec: SlotSpec): TimedPackInput {
   const days = DAYS[spec.key];
-  const p = parcel(spec.parcelId);
+  const parcelId = SLOT[spec.key].parcelId;
+  const p = parcel(parcelId);
   return {
     schedule: {
       projectId: SLOT[spec.key].projectId,
       origin: spec.origin,
-      parcelIds: [spec.parcelId],
+      parcelIds: [parcelId],
       pathway: spec.pathway,
       entered: entered(days),
       end: spec.end,
@@ -199,105 +201,95 @@ function item(spec: SlotSpec): TimedPackInput {
       phase: spec.phase ?? null
     },
     massings: spec.massings,
-    pickParcelId: spec.parcelId
+    pickParcelId: parcelId
   };
 }
 
 const D = DAYS;
 
 function specs(rev1: boolean): SlotSpec[] {
-  const d9 = building('9000009');
+  const d9 = building(SLOT.d.parcelId);
   return [
     {
       key: 'a',
-      parcelId: '9000001',
       origin: 'pipeline',
       pathway: 'discretionary',
       end: { kind: 'complete', day: D.a.end },
-      massings: [building('9000001')],
+      massings: [building(SLOT.a.parcelId)],
       revDays: [D.a.rev0]
     },
     {
       key: 'b',
-      parcelId: '9000012',
       origin: 'pipeline',
       pathway: 'streamlined',
       end: { kind: 'exit', stage: 'permitFiled', reason: 'withdrawn', day: D.b.end },
-      massings: [building('9000012')],
+      massings: [building(SLOT.b.parcelId)],
       revDays: [D.b.rev0]
     },
     {
       key: 'c',
-      parcelId: '9000045',
       origin: 'pipeline',
       pathway: 'permitOnly',
       end: { kind: 'open' },
-      massings: [building('9000045')],
+      massings: [building(SLOT.c.parcelId)],
       revDays: [D.c.rev0]
     },
     {
       key: 'd',
-      parcelId: '9000009',
       origin: 'pipeline',
       pathway: 'discretionary',
       end: { kind: 'open' },
-      massings: rev1 ? [d9, downsized(d9), building('9000009')] : [d9, downsized(d9)],
+      massings: rev1 ? [d9, downsized(d9), building(SLOT.d.parcelId)] : [d9, downsized(d9)],
       revDays: rev1 ? [D.d.rev0, D.d.rev1, D.d.rev2] : [D.d.rev0, D.d.rev1]
     },
     {
       key: 'e',
-      parcelId: '9000003',
       origin: 'simulated',
       pathway: 'discretionary',
       end: { kind: 'exit', stage: 'construction', reason: 'cancelled', day: D.e.end },
-      massings: [building('9000003')],
+      massings: [building(SLOT.e.parcelId)],
       revDays: [D.e.rev0]
     },
     {
       key: 'f',
-      parcelId: '9000002',
       origin: 'simulated',
       pathway: 'streamlined',
       end: { kind: 'complete', day: D.f.end },
-      massings: [building('9000002')],
+      massings: [building(SLOT.f.parcelId)],
       revDays: [D.f.rev0]
     },
     {
       key: 'g',
-      parcelId: '9000007',
       origin: 'pipeline',
       pathway: 'discretionary',
       end: { kind: 'complete', day: D.g.end },
-      massings: [building('9000007')],
+      massings: [building(SLOT.g.parcelId)],
       revDays: [D.g.rev0]
     },
     {
       key: 'h',
-      parcelId: '9000001',
       origin: 'pipeline',
       pathway: 'discretionary',
       end: { kind: 'complete', day: D.h.end },
-      massings: [footprint('9000001')],
+      massings: [footprint(SLOT.h.parcelId)],
       revDays: [D.h.rev0],
       multiPhase: true
     },
     {
       key: 'i1',
-      parcelId: '9000061',
       origin: 'pipeline',
       pathway: 'discretionary',
       end: { kind: 'complete', day: D.i1.end },
-      massings: [building('9000061')],
+      massings: [building(SLOT.i1.parcelId)],
       revDays: [D.i1.rev0],
       phase: { masterId: 'fx-i', index: 0, of: 2 }
     },
     {
       key: 'i2',
-      parcelId: '9000022',
       origin: 'pipeline',
       pathway: 'discretionary',
       end: { kind: 'exit', stage: 'permitIssued', reason: 'expired', day: D.i2.end },
-      massings: [building('9000022')],
+      massings: [building(SLOT.i2.parcelId)],
       revDays: [D.i2.rev0],
       phase: { masterId: 'fx-i', index: 1, of: 2 }
     }
@@ -308,7 +300,7 @@ function cell(cellId: 'tl-A' | 'tl-B', rev1: boolean) {
   return packTimedCell(
     cellId,
     specs(rev1)
-      .filter((s) => CELL_OF[s.key] === cellId)
+      .filter((s) => SLOT[s.key].cellId === cellId)
       .map(item)
   );
 }
@@ -319,11 +311,11 @@ export const timelineSmall: TimelineUpdate = {
   cells: [cell('tl-A', false), cell('tl-B', false)],
   removedCells: [],
   demolish: [
-    { parcelId: '9000045', day: D.c.construction },
-    { parcelId: '9000003', day: D.e.construction },
-    { parcelId: '9000001', day: D.a.construction },
+    { parcelId: SLOT.c.parcelId, day: D.c.construction },
+    { parcelId: SLOT.e.parcelId, day: D.e.construction },
+    { parcelId: SLOT.a.parcelId, day: D.a.construction },
     // (h) on (a)'s parcel, later: one parcel in two entries (Review Focus 1).
-    { parcelId: '9000001', day: D.h.construction }
+    { parcelId: SLOT.h.parcelId, day: D.h.construction }
   ]
 };
 
