@@ -4,6 +4,7 @@
  */
 import type { ParcelId } from '../../src/lib/data/parcel';
 import type { Day } from '../../src/lib/timelapse/time';
+import type { MultiphaseFile } from '../enrichment/schema';
 
 export type ProjectSourceId =
   | 'datasf-permits-newcon'
@@ -160,6 +161,8 @@ export interface ProjectRecordsInput {
   baseStories(id: ParcelId, rollYear: number): number | null;
   hiNet: Record<number, number>;
   areaM2(id: ParcelId): number;
+  /** Parsed `multiphase.json` (spec 4.10.1). */
+  multiphase: MultiphaseFile;
 }
 
 /** A project after linking (spec 4.2): one connected component, or one split of it. */
