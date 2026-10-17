@@ -16,6 +16,17 @@ export default defineConfig({
       )
     }
   },
+  // Pre-bundle the deck/luma entry points the GPU specs import. Left to lazy discovery, a cold
+  // cache re-optimises mid-run and luma logs PipelineFactory errors, which fail every GPU test.
+  optimizeDeps: {
+    include: [
+      '@deck.gl/core',
+      '@deck.gl/layers',
+      '@deck.gl/maplibre',
+      '@luma.gl/core',
+      '@luma.gl/engine'
+    ]
+  },
   test: {
     name: 'client',
     // Browser tests get one retry so a flake is recorded rather than absorbed or fatal.

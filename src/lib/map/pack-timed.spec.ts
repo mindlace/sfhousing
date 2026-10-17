@@ -155,14 +155,25 @@ describe('packTimedCell (§4.1.1)', () => {
     expect(Array.from(p.partWindow.subarray(0, 4))).toEqual([100, 150, 150, OPEN_DAY]);
   });
 
-  it('normalises a footprint ring (open, clockwise)', () => {
+  it('normalises a footprint ring to clockwise, with or without a closing vertex', () => {
     const closed = [...RING, RING[0]];
     const p = packTimedCell('c', [item('f', [{ footprint: closed }])]);
     expect(p.partCount).toBe(1);
-    expect(p.positions.length).toBe(2 * RING.length);
+    // The stored ring is RING.length vertices, or one more when normaliseRing repeats the first
+    // vertex to close it; derive the count from startIndices rather than assuming either.
+    const n = p.startIndices[1] - p.startIndices[0];
+    expect([RING.length, RING.length + 1]).toContain(n);
+    expect(p.positions.length).toBe(2 * n);
+    if (n === RING.length + 1) {
+      expect([p.positions[2 * n - 2], p.positions[2 * n - 1]]).toEqual([
+        p.positions[0],
+        p.positions[1]
+      ]);
+    }
+    // Shoelace over the n stored vertices (a closing duplicate adds zero), wrapping at the end.
     let area = 0;
-    for (let i = 0; i < RING.length; i++) {
-      const j = (i + 1) % RING.length;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
       area +=
         p.positions[2 * i] * p.positions[2 * j + 1] - p.positions[2 * j] * p.positions[2 * i + 1];
     }

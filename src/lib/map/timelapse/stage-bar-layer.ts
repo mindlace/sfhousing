@@ -104,7 +104,7 @@ in vec4 instanceSegRowA; // segRow[0..3]
 in vec2 instanceSegRowB; // segRow[4..5]
 
 // r8unorm, 18 rows × max(len) columns (§4.4.3); absent rows are 0.
-uniform sampler2D chanceTexture;
+uniform highp sampler2D chanceTexture;
 
 out vec2 vPx;
 flat out vec2 vSize;
@@ -151,9 +151,12 @@ struct SbBarEval {
   float alpha;
 };
 
-// T1 monthsIn: floor((day - enteredDay) / MONTH_DAYS). GLSL ES division may be off by 2.5 ULP,
-// but products are correctly rounded and m · MONTH_DAYS is exact (MONTH_DAYS = 487/16), so one
-// correction step gives the exact floor, as the CPU's double division does for integer days.
+// T1 monthsIn: floor((day - enteredDay) / MONTH_DAYS). MONTH_DAYS is 30.436875, which float32
+// cannot represent exactly, and GLSL ES division may be off by 2.5 ULP. Near a month boundary the
+// quotient can therefore land just on the wrong side of an integer. The correction step compares
+// m · MONTH_DAYS (a single correctly rounded product) with d and moves m by one, so the result
+// matches the CPU monthsIn (double division) for integer days; the GPU spec checks this around
+// k = 1, 16 and 240.
 float sb_monthsIn(float enteredDay, float day) {
   float d = day - enteredDay;
   float m = floor(d / SB_MONTH_DAYS);

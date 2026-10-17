@@ -32,9 +32,10 @@ const B = 20000;
 /** The clear colour (opaque magenta): unlike every bar token, so "nothing drawn" is visible. */
 const BG: Rgb = [255, 0, 255];
 /**
- * Per-channel tolerance (0–255). Ruling (Task 5 review b): ±2 against `barColor` on the
- * quantised chance. Opaque pixels need no more: the GPU ramp and sRGB encode differ from the CPU
- * by under 1 before rounding.
+ * Per-channel tolerance (0–255), chosen by this test: ±2/255 against `barColor` covers the r8
+ * quantisation of the chance (the texture stores 8 bits, so the ramp input is off by up to half a
+ * step) plus blending. Opaque pixels need no more: the GPU ramp and sRGB encode differ from the
+ * CPU by under 1 before rounding.
  */
 const TOL = 2;
 /**

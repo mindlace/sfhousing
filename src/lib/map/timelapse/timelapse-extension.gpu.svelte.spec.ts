@@ -320,15 +320,16 @@ describe('TimelapseExtension on the GPU', () => {
 
   /** Part `k`'s roof centre in canvas pixels (top-left origin). */
   function roofCentre(k: number): [number, number] {
-    let x = 0;
-    let y = 0;
-    const s = CELL.startIndices[k];
-    const n = CELL.startIndices[k + 1] - s;
-    for (let v = s; v < s + n; v++) {
-      x += CELL.positions[2 * v] / n;
-      y += CELL.positions[2 * v + 1] / n;
+    // The centre of the lng/lat bounding box: a closing duplicate vertex cannot bias it.
+    let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
+    for (let v = CELL.startIndices[k]; v < CELL.startIndices[k + 1]; v++) {
+      const [x, y] = [CELL.positions[2 * v], CELL.positions[2 * v + 1]];
+      [x0, x1] = [Math.min(x0, x), Math.max(x1, x)];
+      [y0, y1] = [Math.min(y0, y), Math.max(y1, y)];
     }
-    const [px, py] = deck.getViewports()[0].project([x, y, CELL.partTopM[k]]);
+    const [px, py] = deck
+      .getViewports()[0]
+      .project([(x0 + x1) / 2, (y0 + y1) / 2, CELL.partTopM[k]]);
     return [px, py];
   }
 
@@ -452,10 +453,11 @@ describe('TimelapseExtension on the GPU', () => {
   // At that pitch the ray through a wall point below 10 m reaches the ground inside the 20 m
   // footprint, so the facing wall is the only surface on it. fx-1 (SW) is seen on its west wall
   // from the west (bearing 90); fx-3 (NW) on its north wall from the north (bearing 180).
-  // Neither is a ring's closing edge (SE → SW): packed rings are open, and with `_normalize:
-  // false` deck draws no wall along that edge (polygon-tesselator.ts `_updateVertexValid`).
-  // This is the known map-view finding (open rings + `_normalize: false`), routed 2026-10-17;
-  // the test samples non-closing walls until that fix lands.
+  // Neither is a ring's closing edge (SE → SW). Packed rings are open today, and with
+  // `_normalize: false` deck draws no wall along that edge (polygon-tesselator.ts
+  // `_updateVertexValid`). Once the map-view fix (PR #21) lands, rings end with a repeated closing
+  // vertex and the closing-edge wall is drawn too. The test deliberately samples non-closing
+  // walls, so it passes either way.
   const SIDE_CASES: { k: number; bearing: 90 | 180; h: number; day: number }[] = [
     { k: 0, bearing: 90, h: 6, day: B + 320 }, // ready ghost
     { k: 0, bearing: 90, h: 6, day: B + 600 }, // constructing, zCut 3.1: ghost above the cut
