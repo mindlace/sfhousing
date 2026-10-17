@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.0](https://github.com/mindlace/sfhousing/compare/v0.2.0...v0.3.0) (2026-10-17)
+
+
+### Features
+
+* add parcel-fitted building compositions ([#9](https://github.com/mindlace/sfhousing/issues/9)) ([b14b663](https://github.com/mindlace/sfhousing/commit/b14b66394006fca0305255f6c6dd58ccb1053b1d))
+* transit stops and area capacity on the map ([#15](https://github.com/mindlace/sfhousing/issues/15)) ([7437ece](https://github.com/mindlace/sfhousing/commit/7437ece0632afc026cde62463a93395b5ab39b26))
+* **view:** default transit stops off; point production at dataset 2026-10-16-685e203c ([#17](https://github.com/mindlace/sfhousing/issues/17)) ([1534779](https://github.com/mindlace/sfhousing/commit/1534779937bb6aef06b6c69c705b13e520d97ffe))
+
 ## [0.2.0](https://github.com/mindlace/sfhousing/compare/v0.1.0...v0.2.0) (2026-10-12)
 
 
