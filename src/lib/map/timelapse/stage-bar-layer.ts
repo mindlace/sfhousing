@@ -401,6 +401,8 @@ export class StageBarLayer extends Layer<_StageBarLayerProps> {
   declare state: {
     model?: Model;
     chanceTexture?: Texture;
+    /** The one `stageBar` props object `draw` mutates in place (no per-draw allocation). */
+    uniforms?: { stageBar: StageBarModuleProps };
   };
 
   constructor(...propObjects: Partial<StageBarLayerProps>[]) {
@@ -456,12 +458,21 @@ export class StageBarLayer extends Layer<_StageBarLayerProps> {
     const { model, chanceTexture } = this.state;
     if (!model || !chanceTexture) return;
     const { clock } = this.props;
-    const stageBar: StageBarModuleProps = {
-      day: clock.day,
-      ...COLOURS[clock.theme],
-      chanceTexture
-    };
-    model.shaderInputs.setProps({ stageBar });
+    // luma copies the values (`ShaderInputs.setProps` merges them into its own uniforms), so one
+    // object per layer, mutated in place, serves every draw.
+    const u = (this.state.uniforms ??= { stageBar: { day: 0, ...COLOURS.light } });
+    const sb = u.stageBar;
+    const c = COLOURS[clock.theme];
+    sb.day = clock.day;
+    sb.track = c.track;
+    sb.edge = c.edge;
+    sb.dead = c.dead;
+    sb.likely = c.likely;
+    sb.rampLo = c.rampLo;
+    sb.rampMid = c.rampMid;
+    sb.rampHi = c.rampHi;
+    sb.chanceTexture = chanceTexture;
+    model.shaderInputs.setProps(u);
     model.draw(this.context.renderPass);
   }
 

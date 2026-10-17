@@ -1,7 +1,7 @@
 // GPU test of TimelapseExtension (spec §6 `timelapse-extension.gpu`): a standalone deck over a
 // 64×64 canvas renders one 4-slot timeline cell; the pixel at each part's centre must fall in the
 // colour class that `evalPart` (the CPU reference) gives for that part and day.
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Deck, MapView, type Layer, type MapViewState, type Material } from '@deck.gl/core';
 import { SolidPolygonLayer } from '@deck.gl/layers';
 import { TimelapseExtension, type TimelapseExtensionProps } from './extension';
@@ -499,6 +499,33 @@ describe('TimelapseExtension on the GPU', () => {
       deck.setProps({ viewState: VIEW_STATE });
     }
     expect(got).toEqual(want);
+    expect(errors).toEqual([]);
+  });
+
+  it('reuses one timelapse props object per layer across draws (no per-draw allocation)', () => {
+    const spies = layers.map((l) => vi.spyOn(l, 'setShaderModuleProps'));
+    try {
+      clock.theme = 'light';
+      clock.day = B + 120;
+      deck.redraw('test');
+      clock.theme = 'dark';
+      clock.day = B + 1250;
+      deck.redraw('test');
+      layers.forEach((l, i) => {
+        const sent = spies[i].mock.calls.map(([p]) => p).filter((p) => 'timelapse' in p);
+        expect(sent.length).toBeGreaterThanOrEqual(2);
+        expect(new Set(sent).size).toBe(1);
+        // luma copies the values, so mutating the one object in place still updates the uniforms.
+        for (const m of l.getModels()) {
+          const u = (m.shaderInputs as unknown as { moduleUniforms: Record<string, unknown> })
+            .moduleUniforms.timelapse as { day: number; pass: number; ghostAlpha: number };
+          expect(u).toMatchObject({ day: B + 1250, pass: i, ghostAlpha: GHOST_ALPHA.dark });
+        }
+      });
+    } finally {
+      spies.forEach((s) => s.mockRestore());
+      clock.theme = 'light';
+    }
     expect(errors).toEqual([]);
   });
 

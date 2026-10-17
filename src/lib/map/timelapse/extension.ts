@@ -83,18 +83,33 @@ export class TimelapseExtension extends LayerExtension<{ clock: TimelineClock }>
     });
   }
 
-  // Runs before the layer's own draw on every render, picking included (layer.ts).
+  // Runs before the layer's own draw on every render, picking included (layer.ts). Allocates
+  // nothing: one props object per layer, kept in the layer's state (which deck hands on to the
+  // layer's next instance), is mutated in place. luma copies the values (`ShaderInputs.setProps`
+  // merges them into its own uniforms), so the object is never read after the call.
   draw(this: TimelapseLayer, _params: unknown, extension: this) {
     const { clock } = extension.opts;
-    const timelapse: TimelapseModuleProps = {
-      day: clock.day,
-      pass: this.props.timelapsePass,
-      ghostAlpha: GHOST_ALPHA[clock.theme],
-      dyingHoldDays: DYING_HOLD_DAYS,
-      dyingFadeDays: DYING_FADE_DAYS,
-      ftfM: FTF_M,
-      ...TINTS[clock.theme]
-    };
-    this.setShaderModuleProps({ timelapse });
+    const state = this.state as { timelapseProps?: { timelapse: TimelapseModuleProps } };
+    const props = (state.timelapseProps ??= {
+      timelapse: {
+        day: 0,
+        pass: 0,
+        ghostAlpha: 0,
+        dyingHoldDays: DYING_HOLD_DAYS,
+        dyingFadeDays: DYING_FADE_DAYS,
+        ftfM: FTF_M,
+        ...TINTS.light
+      }
+    });
+    const t = props.timelapse;
+    const tint = TINTS[clock.theme];
+    t.day = clock.day;
+    t.pass = this.props.timelapsePass;
+    t.ghostAlpha = GHOST_ALPHA[clock.theme];
+    t.tintPlanning = tint.tintPlanning;
+    t.tintPermit = tint.tintPermit;
+    t.tintReady = tint.tintReady;
+    t.tintDying = tint.tintDying;
+    this.setShaderModuleProps(props);
   }
 }

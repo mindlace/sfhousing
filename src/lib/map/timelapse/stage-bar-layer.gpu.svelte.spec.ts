@@ -1,7 +1,7 @@
 // GPU test of StageBarLayer (spec §6 `stage-bar-layer.gpu`): a standalone deck over a 128×64
 // canvas, top-down on the bars' anchor. Each sampled pixel must match `barColor(evalBar(…))`, the
 // CPU reference, evaluated on the chance the texture holds (8-bit quantised, Task 5 review b).
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Deck, MapView, type Layer, type MapViewState, type Material } from '@deck.gl/core';
 import { SolidPolygonLayer } from '@deck.gl/layers';
 import { StageBarLayer } from './stage-bar-layer';
@@ -531,6 +531,29 @@ describe('StageBarLayer on the GPU', () => {
     // Removing the layer destroys its texture.
     await show([]);
     expect(tex1?.destroyed).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  it('reuses one stageBar props object per layer across draws (no per-draw allocation)', async () => {
+    await show([bars([P])]);
+    const layer = deck.props.layers[0] as StageBarLayer;
+    const model = layer.getModels()[0];
+    const spy = vi.spyOn(model.shaderInputs, 'setProps');
+    try {
+      render(E1 + 10, 17, 'light');
+      render(E1 + 20, 17, 'dark');
+      const sent = spy.mock.calls.map(([p]) => p).filter((p) => 'stageBar' in p);
+      expect(sent.length).toBe(2);
+      expect(sent[1]).toBe(sent[0]);
+      // luma copies the values, so mutating the one object in place still updates the uniforms.
+      const u = (model.shaderInputs as unknown as { moduleUniforms: Record<string, unknown> })
+        .moduleUniforms.stageBar as { day: number; track: number[] };
+      expect(u.day).toBe(E1 + 20);
+      const track = rgb(TOKENS.dark['tl-bar-track']).map((v) => v / 255);
+      Array.from(u.track).forEach((v, i) => expect(v).toBeCloseTo(track[i], 6));
+    } finally {
+      spy.mockRestore();
+    }
     expect(errors).toEqual([]);
   });
 
