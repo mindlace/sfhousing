@@ -10,7 +10,7 @@ export type ReplacementTypology = Exclude<TypologyId, 'adu'>;
 /** I9 */
 export interface GeneratedBuilding {
   parcelId: ParcelId;
-  source: 'user' /* widens to 'pipeline' | 'scenario' later */;
+  source: 'user' | 'pipeline' | 'scenario';
   typology: TypologyId;
   composition: CompositionId;
   parts: {

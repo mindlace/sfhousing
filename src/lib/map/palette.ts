@@ -105,6 +105,7 @@ export function colorFor(
   typology: TypologyId,
   theme: Theme
 ): RGBA {
-  if (source !== 'user') throw new Error(`colorFor: unsupported source ${String(source)}`);
+  if (source !== 'user' && source !== 'pipeline' && source !== 'scenario')
+    throw new Error(`colorFor: unsupported source ${String(source)}`);
   return GEN_RGBA[theme][TYPOLOGY_ORDER.indexOf(typology)];
 }
