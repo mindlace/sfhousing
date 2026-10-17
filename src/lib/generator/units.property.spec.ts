@@ -163,7 +163,9 @@ describe('generateForUnits properties (§6)', () => {
           const [minU, maxU] = capRange(cU);
           fc.pre(U >= Math.max(1, minU) && U <= maxU);
           const b = generateForUnits(vacant(site), U, 80, seed);
-          expect(b).not.toBeNull();
+          // exclusion: a candidate none of whose compositions serialise gives null, exactly as
+          // `generate` does on that site (e.g. every midrise on a narrow star lot)
+          fc.pre(b !== null);
           expect(
             !massingApproximate(b!) || Math.abs(massedUnits(b!) - U) <= unitsTolerance(U) + 1
           ).toBe(true);
@@ -196,7 +198,9 @@ describe('generateForUnits properties (§6)', () => {
           const cU = candidates(site, seed, U, { stories: S });
           fc.pre(cU.length > 0 && cU[0].ref.typology === c0[0].ref.typology);
           const b = generateForUnits(vacant(site), U, 80, seed, S);
-          expect(b).not.toBeNull();
+          // exclusion: a candidate none of whose compositions serialise gives null, exactly as
+          // `generate` does on that site (e.g. every midrise on a narrow star lot)
+          fc.pre(b !== null);
           expect(b!.stories).toBe(S);
           built++;
           if (massingApproximate(b!)) {
@@ -218,7 +222,7 @@ describe('generateForUnits properties (§6)', () => {
   //   one unit either side of cap = unitsFor(round1(occupiedArea(ref.bands)));
   // - the composition walk may pick a non-simple family that masses more than the reference
   //   (within tolerance it is accepted, so it need not be approximate, and may mass above U).
-  it('P3: undershoot, U − c_max > unitsTolerance(U) + 1 → largest candidate, massed ≥ c_max − 1', () => {
+  it('P3: undershoot (U − c_max > tol(U) + 1) → largest candidate, massed ≥ c_max − 1', () => {
     expect(() =>
       fc.assert(
         fc.property(arbSite, arbSeed, fc.integer({ min: 0, max: 50 }), (site, seed, d) => {

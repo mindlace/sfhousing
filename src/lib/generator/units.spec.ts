@@ -320,7 +320,7 @@ describe('generateForUnits', () => {
     expect(withinTolerance(17, 20)).toBe(false);
   });
 
-  it('undershoot takes the most massed family, not the first; ties keep family order', () => {
+  it('undershoot takes the family closest to U; ties keep family order', () => {
     const order = { ...SIMPLE, familyOrder: ['terrace', 'divided', 'simple'] as CompositionId[] };
     // lot-1000 podium 6: terrace (first in order) and divided mass 58 units, simple 59
     const terrace = run(lot1000, 58, 80, 6, order)!;
