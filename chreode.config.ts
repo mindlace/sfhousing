@@ -11,7 +11,13 @@ export default defineConfig({
     // The scenario step and the dataset-version code hash read these, so a change here also runs
     // test:pipeline. Before the src/** rule: the first matching rule wins.
     {
-      match: ['src/lib/generator/**', 'src/lib/timelapse/**', 'src/lib/data/**'],
+      match: [
+        'src/lib/generator/**',
+        'src/lib/timelapse/**',
+        'src/lib/data/**',
+        'src/lib/plan/types.ts',
+        'src/lib/plan/geometry.ts'
+      ],
       triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline']
     },
     { match: ['src/**'], triggers: ['lint', 'check', 'unit', 'e2e'] },
