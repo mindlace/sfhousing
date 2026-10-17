@@ -1,5 +1,5 @@
 // Each invariant fails on a mutated fixture.
-import { cpSync, mkdtempSync, readFileSync, writeFileSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { deflateRawSync, inflateRawSync } from 'node:zlib';
@@ -12,16 +12,36 @@ import {
 import { encodeTransit } from '../../src/lib/data/transit-codec';
 import { tinyNetwork } from '../../src/lib/data/fixtures/transit-tiny';
 import { FIXTURE_PROFILE } from '../config';
-import { checkDataset, maxOf } from '../steps/check';
+import { deriveProjects } from '../project-records/derive';
+import {
+  checkV21,
+  checkV22,
+  checkV23,
+  checkV24,
+  type V2xInputs
+} from '../project-records/invariants';
+import { checkDataset, maxOf, type CheckExtras, type InvariantResult } from '../steps/check';
 import { fixture } from '../steps/fixture';
+import { PROJECTS_JSON } from '../steps/projects';
+import { miniProjectInput } from './fixtures/mini/projects-raw';
 import { PARCELS_BIN } from '../lib/scenario-files';
 
 let base: string;
 let counts: Record<string, number>;
+/** What the build measured: V20's snapshot day and V21-V24, carried as `check` does. */
+let measured: Pick<CheckExtras, 'asOf' | 'projectChecks'>;
 beforeAll(async () => {
   base = mkdtempSync(join(tmpdir(), 'sfh-inv-'));
   expect(await fixture({ outDir: base, skipTiles: true })).toBe(0);
-  counts = JSON.parse(readFileSync(join(base, 'report.json'), 'utf8')).counts;
+  const report = JSON.parse(readFileSync(join(base, 'report.json'), 'utf8')) as {
+    counts: Record<string, number>;
+    invariants: InvariantResult[];
+  };
+  counts = report.counts;
+  measured = {
+    asOf: counts['projects.asOf'],
+    projectChecks: report.invariants.filter((r) => ['V21', 'V22', 'V23', 'V24'].includes(r.id))
+  };
 });
 const copy = () => {
   const d = mkdtempSync(join(tmpdir(), 'sfh-inv-m-'));
@@ -29,9 +49,38 @@ const copy = () => {
   return d;
 };
 const failed = async (dir: string, c = counts, extra: object = {}) =>
-  (await checkDataset(dir, FIXTURE_PROFILE, { counts: c, reencodeIdentical: true, ...extra }))
+  (
+    await checkDataset(dir, FIXTURE_PROFILE, {
+      counts: c,
+      reencodeIdentical: true,
+      ...measured,
+      ...extra
+    })
+  )
     .filter((r) => !r.ok)
     .map((r) => r.id);
+/** V21-V24 as the project-records step computes them, with the fixture profile's thresholds. */
+const projectChecks = (i: V2xInputs, rerunIdentical = true): InvariantResult[] => [
+  checkV21(i, FIXTURE_PROFILE.pipelineCoverageMin),
+  checkV22(i, FIXTURE_PROFILE.hiNet, {
+    year: FIXTURE_PROFILE.rhnaYearTol,
+    total: FIXTURE_PROFILE.rhnaTotalTol
+  }),
+  checkV23(i, rerunIdentical),
+  checkV24(i)
+];
+/** The mini records' V21-V24 inputs, after `mutate`. */
+const inputs = (mutate: (i: V2xInputs) => void = () => {}): V2xInputs => {
+  const i = structuredClone(deriveProjects(miniProjectInput()).checks);
+  mutate(i);
+  return i;
+};
+const editProjects = (dir: string, f: (p: { projects: Record<string, unknown>[] }) => void) => {
+  const p = join(dir, PROJECTS_JSON);
+  const j = JSON.parse(readFileSync(p, 'utf8'));
+  f(j);
+  writeFileSync(p, JSON.stringify(j));
+};
 const editChunk = (dir: string, f: (c: Record<string, unknown>) => void) => {
   const p = join(dir, 'parcels', readdirSync(join(dir, 'parcels'))[0]);
   const c = JSON.parse(readFileSync(p, 'utf8'));
@@ -370,7 +419,7 @@ describe('invariants', () => {
     const r = await checkDataset(
       base,
       { ...FIXTURE_PROFILE, scenarioMaxBytes: 10 },
-      { counts, reencodeIdentical: true }
+      { counts, reencodeIdentical: true, ...measured }
     );
     expect(r.filter((x) => !x.ok).map((x) => x.id)).toEqual(['V19']);
   });
@@ -383,6 +432,78 @@ describe('invariants', () => {
     const v19 = r.find((x) => x.id === 'V19')!;
     expect(v19.ok).toBe(true);
     expect(v19.detail).not.toMatch(/\d{3,}/);
+  });
+  it('V20 fails when projects.json breaks the T3 validator', async () => {
+    const d = copy();
+    editProjects(d, (j) => {
+      j.projects[1].id = j.projects[0].id;
+    });
+    expect(await failed(d)).toEqual(['V20']);
+    const e = copy();
+    editProjects(e, (j) => {
+      j.projects[0].parcelIds = ['9999999'];
+    });
+    expect(await failed(e)).toEqual(['V20']);
+  });
+  it('V20 fails on a missing projects.json, an unknown snapshot day or the size budget', async () => {
+    const d = copy();
+    rmSync(join(d, PROJECTS_JSON));
+    expect(await failed(d)).toEqual(['V20']);
+    expect(await failed(base, counts, { asOf: undefined })).toEqual(['V20']);
+    expect(await failed(base, counts, { asOf: measured.asOf! + 1 })).toEqual(['V20']);
+    const r = await checkDataset(
+      base,
+      { ...FIXTURE_PROFILE, projectsMaxBytes: 100 },
+      { counts, reencodeIdentical: true, ...measured }
+    );
+    expect(r.find((x) => x.id === 'V20')).toMatchObject({ ok: false });
+  });
+  it('V21-V24 fail as not measured when the build did not supply them', async () => {
+    const r = await checkDataset(base, FIXTURE_PROFILE, {
+      counts,
+      reencodeIdentical: true,
+      asOf: measured.asOf
+    });
+    for (const id of ['V21', 'V22', 'V23', 'V24']) {
+      expect(
+        r.find((x) => x.id === id),
+        id
+      ).toEqual({ id, ok: false, detail: 'not measured' });
+    }
+  });
+  it('V21-V24 pass on the mini records and are what the build measured', async () => {
+    const checks = projectChecks(inputs());
+    expect(checks.map((c) => c.ok)).toEqual([true, true, true, true]);
+    expect(checks).toEqual(measured.projectChecks);
+  });
+  it('V21 fails when in-flight units no longer cover the pipeline rows', async () => {
+    const i = inputs((x) => {
+      x.coverage.matchedUnits -= 1;
+    });
+    expect(await failed(base, counts, { projectChecks: projectChecks(i) })).toEqual(['V21']);
+  });
+  it('V22 fails when a cross-check year drifts from hiNet', async () => {
+    const i = inputs((x) => {
+      x.rhna.byYear[2023] += 5;
+    });
+    expect(await failed(base, counts, { projectChecks: projectChecks(i) })).toEqual(['V22']);
+  });
+  it('V23 fails on a broken history or a rerun that differs', async () => {
+    const i = inputs((x) => {
+      const h = x.histories.find((y) => y.end.kind === 'complete')!;
+      h.end = { kind: 'complete', day: (h.end as { day: number }).day + 1 };
+    });
+    expect(await failed(base, counts, { projectChecks: projectChecks(i) })).toEqual(['V23']);
+    expect(await failed(base, counts, { projectChecks: projectChecks(inputs(), false) })).toEqual([
+      'V23'
+    ]);
+  });
+  it('V24 fails when phase units no longer sum to the master', async () => {
+    const i = inputs((x) => {
+      const m = x.file.projects.find((p) => p.multiPhase && p.phases !== null)!;
+      m.phases![0].units -= 1;
+    });
+    expect(await failed(base, counts, { projectChecks: projectChecks(i) })).toEqual(['V24']);
   });
   it('V13 is reported as enforced at upload', async () => {
     const r = await checkDataset(base, FIXTURE_PROFILE, { counts, reencodeIdentical: true });

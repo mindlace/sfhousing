@@ -1,0 +1,303 @@
+/**
+ * In-flight fields, the staleness / in-flight decision and the T4d history extras (spec 4.3 net
+ * units, 4.7 in flight and stale-open, 4.8 label, units, existing units, stories, sources).
+ * Pure functions over a `LinkedProject`; deriveProjects composes them.
+ */
+import type { ParcelId } from '../../src/lib/data/parcel';
+import type { InFlightProject } from '../../src/lib/timelapse/projects';
+import type { Day } from '../../src/lib/timelapse/time';
+import type { ProjectHistory, Stage } from '../../src/lib/timelapse/types';
+import { isNewConstruction } from './classify';
+import { permitCompletionDay } from './stages';
+import { DATASET } from './types';
+import type { LinkedProject, Permit, ProjectRecordsInput } from './types';
+
+/** Tier 1: 92 days is one quarter, the pipeline dataset's published refresh cadence. */
+export const STALE_WINDOW_DAYS = 92;
+
+/** Reconciliation: parsed stories outside 1..MAX_STORIES are discarded. */
+export const MAX_STORIES = 80;
+
+export type SourceRef = InFlightProject['sources'][number];
+
+/** Spec 4.8 label rule 1: '123 MAIN ST' to '123 Main St'; ordinals stay lower-case ('16TH' to '16th'). */
+export function titleCase(s: string): string {
+  return s
+    .trim()
+    .toLowerCase()
+    .replace(/(^|[\s\-/])([a-z])/g, (_m, sep: string, ch: string) => sep + ch.toUpperCase());
+}
+
+function nonBlank(s: string | null | undefined): string | null {
+  if (s === null || s === undefined) return null;
+  const t = s.trim();
+  return t === '' ? null : t;
+}
+
+/** Spec 4.8 label rules 0 to 4; `curated` is the multiphase.json label for a PRX row. */
+export function labelOf(proj: LinkedProject, curated: string | null): string | null {
+  const first = proj.pipelineRows[0];
+  if (curated !== null && proj.kind === 'pipelineOnly' && first !== undefined && first.prx) {
+    return curated;
+  }
+  const primaryRow = proj.lead?.rows.find((r) => r.primary);
+  if (primaryRow !== undefined) {
+    const parts = [primaryRow.streetNumber, primaryRow.streetName, primaryRow.streetSuffix]
+      .map(nonBlank)
+      .filter((p): p is string => p !== null);
+    if (parts.length > 0) return titleCase(parts.join(' '));
+  }
+  const address = nonBlank(proj.primary?.address);
+  if (address !== null) return address;
+  for (const r of proj.pipelineRows) {
+    const name = nonBlank(r.nameaddr);
+    if (name !== null) return name;
+  }
+  return null;
+}
+
+/** The live set, else (all permits dead) the non-superseded permits. */
+export function unitBearingPermits(proj: LinkedProject): Permit[] {
+  if (proj.live.length > 0) return proj.live;
+  return proj.permits.filter((q) => !proj.superseded.has(q.number));
+}
+
+function sumProposed(permits: Permit[]): number | null {
+  let sum = 0;
+  let any = false;
+  for (const q of permits) {
+    if (q.proposedUnits !== null) {
+      sum += q.proposedUnits;
+      any = true;
+    }
+  }
+  return any ? sum : null;
+}
+
+/** Spec 4.8 units (gross). Null when no rule yields a number. */
+export function grossUnits(proj: LinkedProject): number | null {
+  if (proj.kind === 'pipelineOnly') return proj.pipelineRows[0]?.newUnits ?? null;
+  const permitSum = sumProposed(unitBearingPermits(proj));
+  if (permitSum !== null) return permitSum;
+  const prop = proj.primary?.unitsProp ?? null;
+  if (prop !== null && prop > 0) return prop;
+  for (const r of proj.pipelineRows) if (r.newUnits !== null) return r.newUnits;
+  return null;
+}
+
+const NUMBER_WORDS: Record<string, number> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20
+};
+
+const TENS = 'twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety';
+
+/**
+ * Spec 4.8 stories rule 2. The lookbehinds keep the match to a whole number: no digit or letter
+ * before it, and no tens word before a units word ('eighty-one-story' is a compound this rule
+ * cannot read, so it yields nothing instead of 'one').
+ */
+const STORIES_RE = new RegExp(
+  `(?<![a-z0-9])(?<!(?:${TENS})[\\s-])(\\d{1,2}|${Object.keys(NUMBER_WORDS).join('|')})[\\s-]*stor(?:y|ies)`,
+  'i'
+);
+const FEET_RE = /(?<!\d)(\d{2,3})[\s-]*(?:foot|feet|ft)\b/i;
+const KEYWORD_RE = /\b(construct|erect|new|build)\b/i;
+
+function inRange(n: number): number | null {
+  return Number.isInteger(n) && n >= 1 && n <= MAX_STORIES ? n : null;
+}
+
+/** Spec 4.8 stories rules 2 and 3 on one text; null when nothing in 1..80 is found. */
+export function parseStories(text: string | null): number | null {
+  if (text === null) return null;
+  const kw = KEYWORD_RE.exec(text);
+  if (kw === null) return null;
+  const rest = text.slice(kw.index + kw[0].length);
+  const s = STORIES_RE.exec(rest);
+  if (s !== null) {
+    const token = s[1].toLowerCase();
+    return inRange(NUMBER_WORDS[token] ?? Number(token));
+  }
+  const f = FEET_RE.exec(rest);
+  if (f !== null) return inRange(Math.floor(Number(f[1]) / 10));
+  return null;
+}
+
+/** Spec 4.8 `stories` and `storiesTier`. */
+export function storiesOf(proj: LinkedProject): { stories: number | null; tier: 0 | 3 | null } {
+  let max = 0;
+  for (const q of unitBearingPermits(proj)) {
+    if (q.stories !== null && q.stories > max) max = q.stories;
+  }
+  if (max > 0) return { stories: max, tier: 0 };
+  const anchors = [...proj.anchors].sort((a, b) => (a.recordId < b.recordId ? -1 : 1));
+  const ordered = proj.primary === null ? anchors : [proj.primary, ...anchors];
+  const texts = [
+    ...ordered.map((a) => a.description),
+    ...proj.pipelineRows.map((r) => r.description)
+  ];
+  for (const t of texts) {
+    const n = parseStories(t);
+    if (n !== null) return { stories: n, tier: 3 };
+  }
+  return { stories: null, tier: null };
+}
+
+function cmp(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Spec 4.8 `sources`: every linked record, with the key table, sorted and unique. */
+export function sourcesOf(proj: LinkedProject): SourceRef[] {
+  const seen = new Map<string, SourceRef>();
+  const add = (dataset: string, id: string, key?: string): void => {
+    const k = `${dataset}\0${id}\0${key ?? ''}`;
+    if (seen.has(k)) return;
+    seen.set(k, key === undefined ? { dataset, id } : { dataset, id, key });
+  };
+  for (const a of proj.anchors) add(DATASET['datasf-planning-projects'], a.recordId);
+  for (const a of proj.satellites) add(DATASET['datasf-planning-projects'], a.recordId);
+  for (const c of proj.children) add(DATASET['datasf-planning-records'], c.recordId);
+  for (const c of proj.sourceOnlyChildren) add(DATASET['datasf-planning-records'], c.recordId);
+  for (const r of proj.reviews) add(DATASET['datasf-planning-review'], r.recordId, 'b1_alt_id');
+  for (const q of proj.permits) add(DATASET['datasf-permits-newcon'], q.number, 'permit_number');
+  for (const c of proj.completions) {
+    add(DATASET['datasf-unit-completions'], c.permit, 'building_permit_application');
+  }
+  for (const r of proj.pipelineRows) {
+    if (r.caseNo !== null) add(DATASET['datasf-dev-pipeline'], r.caseNo, 'case_no');
+    else if (r.bpaNo !== null) add(DATASET['datasf-dev-pipeline'], r.bpaNo, 'bpa_no');
+  }
+  return [...seen.values()].sort(
+    (a, b) => cmp(a.dataset, b.dataset) || cmp(a.id, b.id) || cmp(a.key ?? '', b.key ?? '')
+  );
+}
+
+/** Spec 4.8 `existingUnits`: Σ over parcels of the assessor units, null as 0. */
+export function existingUnitsAt(
+  ids: ParcelId[],
+  rollYear: number,
+  f: ProjectRecordsInput['assessorUnits']
+): number {
+  let sum = 0;
+  for (const id of ids) sum += f(id, rollYear) ?? 0;
+  return sum;
+}
+
+/** The roll year of a day: its UTC year clamped to `[2007, latest]`. */
+export function rollYearOf(day: Day, latest: number): number {
+  const year = new Date(day * 86_400_000).getUTCFullYear();
+  return Math.min(Math.max(year, 2007), latest);
+}
+
+/** Spec 4.8 `unitsAt` (tier 2: current values across records, not snapshots). */
+export function unitsAt(proj: LinkedProject): Partial<Record<Stage, number>> {
+  const out: Partial<Record<Stage, number>> = {};
+  const filed = proj.primary?.unitsProp ?? null;
+  if (filed !== null) out.filed = filed;
+  const bearing = unitBearingPermits(proj);
+  const permitFiled = sumProposed(bearing);
+  if (permitFiled !== null) out.permitFiled = permitFiled;
+
+  const withUnits = bearing.filter((q) => q.proposedUnits !== null && q.proposedUnits > 0);
+  if (
+    withUnits.length > 0 &&
+    withUnits.every((q) => permitCompletionDay(q, proj.completions) !== null)
+  ) {
+    let total = 0;
+    for (const q of withUnits) {
+      let tco = 0;
+      let cfc = 0;
+      for (const c of proj.completions) {
+        if (c.permit !== q.number || c.units === null) continue;
+        if (c.kind === 'TCO') tco += c.units;
+        else if (c.kind === 'CFC' && c.units > cfc) cfc = c.units;
+      }
+      total += Math.max(tco, cfc);
+    }
+    if (total > 0) out.complete = total;
+  }
+  return out;
+}
+
+/** Spec 4.8 `baseStoriesAtFiling`: max over parcels of the panel base stories, else null. */
+export function baseStoriesAt(
+  ids: ParcelId[],
+  rollYear: number,
+  f: ProjectRecordsInput['baseStories']
+): number | null {
+  let max: number | null = null;
+  for (const id of ids) {
+    const v = f(id, rollYear);
+    if (v !== null && (max === null || v > max)) max = v;
+  }
+  return max;
+}
+
+/**
+ * Spec 4.3 population: new construction with net units (units minus assessor units at filing)
+ * >= 1; PPA-only projects always; pipeline-only rows when they have >= 1 new unit.
+ */
+export function isPopulation(
+  proj: LinkedProject,
+  units: number | null,
+  existingAtFiling: number
+): boolean {
+  if (proj.kind === 'ppaOnly') return true;
+  if (proj.kind === 'pipelineOnly') return units !== null && units >= 1;
+  return isNewConstruction(proj) && units !== null && units - existingAtFiling >= 1;
+}
+
+export type InFlightStatus =
+  'inFlight' | 'staleOpen' | 'netDropped' | 'ended' | 'noUnits' | 'noParcels' | 'notPopulation';
+
+/** Spec 4.7 in-flight decision; the first failing check names the status. `end` is null for pipeline-only. */
+export function inFlightStatus(
+  proj: LinkedProject,
+  c: {
+    inPopulation: boolean;
+    end: ProjectHistory['end'] | null;
+    units: number | null;
+    existingLatest: number;
+    firstEntered: Day | null;
+    pipelineCutoff: Day;
+    multiPhase: boolean;
+  }
+): InFlightStatus {
+  if (!c.inPopulation) return 'notPopulation';
+  if (proj.kind !== 'pipelineOnly' && c.end !== null && c.end.kind !== 'open') return 'ended';
+  if (
+    proj.pipelineRows.length === 0 &&
+    (c.firstEntered === null || c.firstEntered <= c.pipelineCutoff - STALE_WINDOW_DAYS)
+  ) {
+    return 'staleOpen';
+  }
+  if (c.units === null || c.units < 1) return 'noUnits';
+  if (proj.parcelIds.length === 0) return 'noParcels';
+  if (!c.multiPhase && c.units - c.existingLatest < 1) return 'netDropped';
+  return 'inFlight';
+}
+
+/** Spec 4.7: the records won over the quarterly pipeline (a pipeline row on a project that ended). */
+export function pipelineConflict(proj: LinkedProject, end: ProjectHistory['end'] | null): boolean {
+  return proj.pipelineRows.length >= 1 && end !== null && end.kind !== 'open';
+}
