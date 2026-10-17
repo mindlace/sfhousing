@@ -70,7 +70,7 @@
           "url": "https://data.sf.gov/d/acdm-wktn"
         }
       ],
-      "method": "Per parcel from the 2025 secured roll (lien date 1 January), roll rows mapped to current parcels through acdm-wktn (retired lots by centroid). Imputations are tier 2: missing year built and improvement share take the median of the same land-use class and roll year (a year-wide median, then 0, when the class has none: tier 4); missing stories come from the building height. Parcels without a latest-year roll row take the \"other\" class medians. Assessed values reflect the Prop 13 acquisition basis, not market value. Base-zoning density caps from the Planning Code (tier 1, pipeline/lib/density-caps.ts); a split zoning code takes its most permissive component and generic NCD/NCT codes have no cap (both tier 4, made up); districts not verified against the official Code default to no cap (NCD, NCT)."
+      "method": "Per parcel from the 2025 secured roll (lien date 1 January), roll rows mapped to current parcels through acdm-wktn (retired lots by centroid). Imputations are tier 2: missing year built and improvement share take the median of the same land-use class and roll year (a year-wide median, then 0, when the class has none: tier 4); missing stories come from the building height. Sanity rules (tier 4, made up): roll stories above 80 are missing; a bracketed run of implausible units (≥ 100 and over 10× its neighbouring years) takes the previous year’s units (imputed bit 3). Parcels without a latest-year roll row take the \"other\" class medians. Assessed values reflect the Prop 13 acquisition basis, not market value. Base-zoning density caps from the Planning Code (tier 1, pipeline/lib/density-caps.ts); a split zoning code takes its most permissive component and generic NCD/NCT codes have no cap (both tier 4, made up); districts not verified against the official Code default to no cap (NCD, NCT)."
     },
     "existingUnits": {
       "tier": 0,
@@ -81,7 +81,7 @@
           "url": "https://data.sf.gov/d/wv5m-vpq2"
         }
       ],
-      "method": "Σ number_of_units over the parcel’s roll rows in the latest roll year (2025); no LUDB fallback. A parcel without a latest-year row has 0."
+      "method": "Σ number_of_units over the parcel’s roll rows in the latest roll year (2025); no LUDB fallback. A parcel without a latest-year row has 0. An implausible bracketed run (≥ 100 units and over 10× the neighbouring years) takes the previous year’s value (tier 4, imputed bit 3)."
     },
     "yield": {
       "tier": 3,

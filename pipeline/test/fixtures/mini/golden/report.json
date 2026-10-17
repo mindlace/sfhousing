@@ -67,7 +67,7 @@
     "pieces.outside_parcels": 2,
     "pieces.remainder_sliver_dropped": 0,
     "pieces.sliver_dropped": 1,
-    "scenario.bytes.payload": 6324,
+    "scenario.bytes.payload": 6668,
     "scenario.density_cap.NC-1": 1,
     "scenario.density_cap.RH-1": 1,
     "scenario.density_cap.RH-2": 3,
@@ -106,6 +106,8 @@
     "scenario.roll.latest_eligible_matched": 10,
     "scenario.roll.lineage_retired": 1,
     "scenario.roll.matched_parcels": 13,
+    "scenario.roll.stories_implausible": 0,
+    "scenario.roll.units_implausible": 0,
     "scenario.roll.unmatched.2024": 0,
     "scenario.roll.unmatched.2025": 0,
     "scenario.roll.unmatched_units.2024": 0,
@@ -218,7 +220,6 @@
     "tippecanoe": "2.79.0"
   },
   "warnings": [
-    "scenario: density caps unverified for NCD, NCT (no cap); tier-4 cap rules cover split 0 parcels (0 hostable), generic NC 1 (1 hostable), unlisted 5",
-    "scenario: split (0) or generic-NC (1) parcels exceed 10% of the 8 hostable parcels (main ruling 4c: report to main)"
+    "scenario: density caps unverified for NCD, NCT (no cap); tier-4 cap rules cover split 0 parcels (0 hostable), generic NC 1 (1 hostable), unlisted 5"
   ]
 }

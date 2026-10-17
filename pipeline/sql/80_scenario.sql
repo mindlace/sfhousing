@@ -129,8 +129,14 @@ WHERE NOT a.active
 ORDER BY a.blklot, a.mapblklot, a.date_rec_drop;
 
 -- Every roll row with its current parcel (id NULL = unmatched) and the rule that mapped it.
+-- Sanity rule (tier 4, made up; coordinator ruling, Task 8 fix round 1): number_of_stories above
+-- getvariable('max_stories') (the generator's MAX_STORIES, 80; SF's tallest building has 61) is
+-- missing, so the height fallback applies. Live rows reach 999 (wv5m-vpq2, 2026-10-16).
 CREATE OR REPLACE TEMP TABLE s_roll AS
-SELECT r.*, m.current_id AS id, m.how
+SELECT r.* REPLACE (CASE WHEN r.number_of_stories > getvariable('max_stories') THEN NULL
+                         ELSE r.number_of_stories END AS number_of_stories),
+       m.current_id AS id, m.how,
+       coalesce(r.number_of_stories > getvariable('max_stories'), false) AS stories_implausible
 FROM src_roll r
 LEFT JOIN s_blklot_map m ON m.blklot = r.parcel_number
 WHERE r.closed_roll_year IS NOT NULL;
@@ -191,12 +197,43 @@ FROM s_roll
 WHERE id IS NOT NULL
 GROUP BY id, closed_roll_year;
 
+-- Sanity rule for units (tier 4, made up; coordinator ruling, Task 8 fix round 1). Over each
+-- parcel's units series by roll year, a maximal run of equal values v is implausible when it has
+-- a bracketing year on both sides (the nearest roll years outside the run, units prev and next),
+-- v >= 100 and v > 10 * max(1, prev, next). Every year of the run takes prev. Live example:
+-- 0827025 has 5 units except 50,000 in 2022-2023. A one-sided change (redevelopment that stays)
+-- is never touched. noncondo_units is left as is: a bracketed run is never the latest year, the
+-- only year the Local Program exclusions read.
+CREATE OR REPLACE TEMP TABLE s_units_seq AS
+SELECT id, roll_year, units,
+       sum(CASE WHEN lag_units IS DISTINCT FROM units THEN 1 ELSE 0 END) OVER (
+         PARTITION BY id ORDER BY roll_year ROWS UNBOUNDED PRECEDING) AS run
+FROM (SELECT id, roll_year, units,
+             lag(units) OVER (PARTITION BY id ORDER BY roll_year) AS lag_units
+      FROM s_roll_sum);
+
+CREATE OR REPLACE TEMP TABLE s_units_run AS
+SELECT id, run, v,
+       lag(v) OVER (PARTITION BY id ORDER BY run) AS prev,
+       lead(v) OVER (PARTITION BY id ORDER BY run) AS next
+FROM (SELECT id, run, any_value(units) AS v FROM s_units_seq GROUP BY id, run);
+
+CREATE OR REPLACE TEMP TABLE s_units_fix AS
+SELECT q.id, q.roll_year, r.prev AS units
+FROM s_units_seq q
+JOIN s_units_run r USING (id, run)
+WHERE r.prev IS NOT NULL AND r.next IS NOT NULL AND r.v >= 100
+  AND r.v > 10 * greatest(1, r.prev, r.next);
+
+-- units_replaced marks the parcel-years the units rule rewrote (T11/T13 imputed bit 3).
 CREATE OR REPLACE TABLE sc_roll_agg AS
-SELECT s.id, s.roll_year, s.units, s.stories, s.year_built, s.land, s.impr, s.floor_area_m2,
+SELECT s.id, s.roll_year, coalesce(x.units, s.units)::INTEGER AS units, s.stories, s.year_built,
+       s.land, s.impr, s.floor_area_m2,
        c.use_code, c.land_use_class::INTEGER AS land_use_class, s.noncondo_units, s.hotel,
-       s.status_n
+       s.status_n, x.id IS NOT NULL AS units_replaced
 FROM s_roll_sum s
 JOIN s_roll_class c ON c.id = s.id AND c.closed_roll_year = s.roll_year
+LEFT JOIN s_units_fix x ON x.id = s.id AND x.roll_year = s.roll_year
 ORDER BY s.id, s.roll_year;
 
 -- scenario.height.*: `none` = parcels in a district whose string has no height (sentinels and
@@ -236,3 +273,8 @@ SELECT 'scenario.roll.unmatched_units.' || closed_roll_year,
 FROM s_roll GROUP BY closed_roll_year ORDER BY closed_roll_year;
 INSERT INTO report_counts
 SELECT 'scenario.roll.lineage_retired', count(*) FROM s_roll WHERE how = 'b';
+-- Tier-4 sanity rules: roll rows whose stories were nulled; parcel-years whose units were replaced.
+INSERT INTO report_counts
+SELECT 'scenario.roll.stories_implausible', count(*) FILTER (WHERE stories_implausible) FROM s_roll;
+INSERT INTO report_counts
+SELECT 'scenario.roll.units_implausible', count(*) FROM s_units_fix;

@@ -45,7 +45,7 @@ export interface ScenarioParcels {
   localProgram: Uint8Array; // 0/1
   hostable: Uint8Array; // 0/1: may receive a simulated project
   split: Uint8Array; // 0/1: largest district overlap < 90% of parcel area
-  imputed: Uint8Array; // bit 0 yearBuilt, 1 existingStories, 2 improvementShare, 4 no roll row (bit 3 unused)
+  imputed: Uint8Array; // bit 0 yearBuilt, 1 existingStories, 2 improvementShare, 3 existingUnits replaced (implausible roll value), 4 no roll row
   baseCap: Uint16Array; // T11 base-zoning density cap in units; 0xFFFF = null (no cap)
   existingUnits: Uint16Array;
   existingStories: Uint8Array;

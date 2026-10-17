@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { FILL_LEVELS } from '../../src/lib/data/scenario-codec';
+import type { ParcelRecord } from '../../src/lib/data/parcel';
 import type { Duck } from '../lib/duck';
 import { Report } from '../lib/report';
 import { runSql } from '../lib/sql';
@@ -26,14 +27,15 @@ vi.mock('../../src/lib/data/scenario-yield', async (importOriginal) => {
 const CAP_DAY = Date.UTC(2026, 9, 10) / 86400000;
 let db: Duck;
 
-const run = async () => {
+/** writeScenario on the unmutated mini DB; `edit` changes only the JS records it is given. */
+const run = async (edit: (rec: ParcelRecord) => ParcelRecord = (r) => r) => {
   const dir = mkdtempSync(join(tmpdir(), 'sfh-scenario-bounds-'));
   const out = await writeScenario({
     db,
     outDir: join(dir, 'out'),
     derivedDir: join(dir, 'derived'),
     datasetVersion: 'fixture-0',
-    records: await readParcelRecords(db),
+    records: (await readParcelRecords(db)).map(({ rec, cellId }) => ({ rec: edit(rec), cellId })),
     capDay: CAP_DAY,
     report: new Report()
   });
@@ -57,11 +59,11 @@ describe('writeScenario bounds', () => {
     expect(counts['scenario.yield.clamped']).toBeGreaterThanOrEqual(F);
   });
 
-  it('fails loudly when roll stories do not fit the u8 column', async () => {
-    // Live 2025 roll rows carry number_of_stories up to 999 (DataSF wv5m-vpq2, 2026-10-16).
-    await db.run(`UPDATE src_roll SET number_of_stories = 999 WHERE parcel_number = '3512001'`);
-    await expect(run()).rejects.toThrow(
-      /parcel 3512001 existingStories = 999 does not fit 0\.\.255/
-    );
+  it('fails loudly when existing stories do not fit the u8 column', async () => {
+    // Lot 9 has no roll row, so its stories come from the height: round(1000 / 3.1) = 323.
+    // (Roll stories above 80 are already missing, 80_scenario.sql.) The DB is not mutated.
+    await expect(
+      run((r) => (r.id === '3512009' ? { ...r, existingHeightM: 1000 } : r))
+    ).rejects.toThrow(/parcel 3512009 existingStories = 323 does not fit 0\.\.255/);
   });
 });
