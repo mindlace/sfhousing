@@ -29,8 +29,18 @@ export function computeDatasetVersion(input: {
   return v;
 }
 
-/** Code whose bytes shape the published data. geometry.ts is the shared projection (transit). */
-const PATHS = ['pipeline', 'src/lib/data', 'src/lib/plan/geometry.ts'];
+/**
+ * Code whose bytes shape the published data. geometry.ts is the shared projection (transit);
+ * generator, timelapse and plan/types.ts feed the scenario step (yields, OPEN_DAY, FeatureId).
+ */
+const PATHS = [
+  'pipeline',
+  'src/lib/data',
+  'src/lib/generator',
+  'src/lib/timelapse',
+  'src/lib/plan/geometry.ts',
+  'src/lib/plan/types.ts'
+];
 const EXCLUDES = [
   ':(exclude)pipeline/sources.lock.json',
   ':(exclude)pipeline/.cache',
@@ -51,8 +61,8 @@ const NOT_CODE = (f: string): boolean =>
 
 /**
  * Identifies the pipeline + data-schema code: sha256 of the `git ls-tree -r HEAD` listing
- * (mode, type, blob hash, path) of `pipeline`, `src/lib/data` and `src/lib/plan/geometry.ts`,
- * minus pipeline/sources.lock.json, .cache and out. The lock is hashed separately by
+ * (mode, type, blob hash, path) of `pipeline`, `src/lib/data`, `src/lib/generator`,
+ * `src/lib/timelapse`, `src/lib/plan/geometry.ts` and `src/lib/plan/types.ts`, minus pipeline/sources.lock.json, .cache and out. The lock is hashed separately by
  * computeDatasetVersion, so committing it does not change the version (spec AC-5, AC-7).
  * When those paths have uncommitted changes (same excludes), the sha256 of `git diff HEAD`
  * and of each untracked file is appended, so uncommitted code produces a different
