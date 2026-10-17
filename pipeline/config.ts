@@ -64,6 +64,21 @@ export interface InvariantProfile {
   transitMinStops: number;
   /** V14: each name (case-insensitive substring) must be a stop with heavy-rail service > 0 tph. */
   transitHeavyRailStations: string[];
+  /** V21: Σ in-flight units ≥ this × Σ `new_pipeline_units` of the matched population rows. */
+  pipelineCoverageMin: number;
+  /**
+   * V22: Housing Inventory net units per calendar year (2025 HI Table 2 "Net Change in Number of
+   * Units", p.17; project-records spec §4.9).
+   */
+  hiNet: Record<number, number>;
+  /** V22: relative tolerance per cross-check year. */
+  rhnaYearTol: number;
+  /** V22: relative tolerance on the cross-check total. */
+  rhnaTotalTol: number;
+  /** V20: projects.json size limit (engineering budget). */
+  projectsMaxBytes: number;
+  /** V20: above this projects.json passes with a warning. */
+  projectsWarnBytes: number;
 }
 
 /** Spec §4.9 invariants for the full San Francisco build (expects 41 neighborhoods). */
@@ -95,7 +110,13 @@ export const LIVE_PROFILE: InvariantProfile = {
     '24th',
     'Glen Park',
     'Balboa Park'
-  ]
+  ],
+  pipelineCoverageMin: 0.9,
+  hiNet: { 2023: 2544, 2024: 1603, 2025: 2669 },
+  rhnaYearTol: 0.1,
+  rhnaTotalTol: 0.05,
+  projectsMaxBytes: 2e6,
+  projectsWarnBytes: 1e6
 };
 
 /**
@@ -123,5 +144,11 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   manifestMax: LIVE_PROFILE.manifestMax,
   neighborhoodsMax: LIVE_PROFILE.neighborhoodsMax,
   transitMinStops: 8,
-  transitHeavyRailStations: ['Fixture Station']
+  transitHeavyRailStations: ['Fixture Station'],
+  pipelineCoverageMin: 1,
+  hiNet: { 2023: 3, 2024: 2, 2025: -1 },
+  rhnaYearTol: LIVE_PROFILE.rhnaYearTol,
+  rhnaTotalTol: LIVE_PROFILE.rhnaTotalTol,
+  projectsMaxBytes: LIVE_PROFILE.projectsMaxBytes,
+  projectsWarnBytes: LIVE_PROFILE.projectsWarnBytes
 };

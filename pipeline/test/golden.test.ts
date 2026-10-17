@@ -1,10 +1,12 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { decodeParcelChunk } from '../../src/lib/data/parcel-chunk';
 import { parseManifest } from '../../src/lib/data/manifest';
 import { FILL_LEVELS, type ScenarioParcels } from '../../src/lib/data/scenario-codec';
-import { fixture } from '../steps/fixture';
+import { PATHWAYS, STAGE_ORDER } from '../../src/lib/timelapse/types';
+import { GOLDEN_DERIVED, fixture } from '../steps/fixture';
+import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, dumpPermits } from '../steps/projects';
 import { PARCELS_BIN, SCENARIO_DUMP, formatScenarioDump, readParcelsBin } from '../steps/scenario';
 import { which } from '../lib/exec';
 import { MINI } from './helpers';
@@ -25,7 +27,8 @@ const COMPARED = (f: string) =>
   f === 'neighborhoods.geojson' ||
   f === 'transit.json' ||
   f === 'manifest.json' ||
-  f === 'report.json';
+  f === 'report.json' ||
+  f === PROJECTS_JSON;
 const stripBuiltAt = (s: string) => s.replace(/"builtAt":"[^"]*"/, '"builtAt":""');
 const decodeBin = (dir: string) => readParcelsBin(join(dir, PARCELS_BIN));
 const dumpOf = (dir: string) => formatScenarioDump(decodeBin(dir));
@@ -34,8 +37,10 @@ describe('pipeline fixture', () => {
   it('matches the golden byte for byte and is identical across two builds (V12)', async () => {
     const a = mkdtempSync(join(tmpdir(), 'sfh-fx-a-'));
     const b = mkdtempSync(join(tmpdir(), 'sfh-fx-b-'));
-    expect(await fixture({ outDir: a, skipTiles })).toBe(0);
-    expect(await fixture({ outDir: b, skipTiles })).toBe(0);
+    const da = mkdtempSync(join(tmpdir(), 'sfh-fx-da-'));
+    const db = mkdtempSync(join(tmpdir(), 'sfh-fx-db-'));
+    expect(await fixture({ outDir: a, skipTiles, derivedRoot: da })).toBe(0);
+    expect(await fixture({ outDir: b, skipTiles, derivedRoot: db })).toBe(0);
     const fa = files(a).filter(COMPARED);
     expect(fa).toEqual(files(golden).filter(COMPARED));
     for (const f of fa) {
@@ -47,6 +52,27 @@ describe('pipeline fixture', () => {
     const dump = dumpOf(a);
     expect(dump).toBe(readFileSync(join(golden, SCENARIO_DUMP), 'utf8'));
     expect(dump).toBe(dumpOf(b));
+    // Project-records spec §4.9: the histories byte for byte, permits.parquet by row values.
+    const histories = (root: string) =>
+      readFileSync(join(root, 'fixture-0', HISTORIES_JSON), 'utf8');
+    expect(histories(da)).toBe(
+      readFileSync(join(golden, 'derived', GOLDEN_DERIVED.histories), 'utf8')
+    );
+    expect(histories(da)).toBe(histories(db));
+    const permits = async (root: string) =>
+      JSON.parse(await dumpPermits(join(root, 'fixture-0', PERMITS_PARQUET))) as Record<
+        string,
+        unknown
+      >[];
+    const pa = await permits(da);
+    expect(pa).toEqual(
+      JSON.parse(readFileSync(join(golden, 'derived', GOLDEN_DERIVED.permits), 'utf8'))
+    );
+    expect(pa).toEqual(await permits(db));
+    expect(pa.find((r) => r.permit_number === '201501150014')).toMatchObject({
+      prx_case_no: '2010.0002PRX',
+      project_id: 'PRJ:2010.0002'
+    });
     const m = parseManifest(JSON.parse(readFileSync(join(a, 'manifest.json'), 'utf8')));
     const ids = m.chunks.flatMap((c) =>
       decodeParcelChunk(readFileSync(join(a, c.url.replace('/data/fixture-0/', '')), 'utf8')).map(
@@ -218,5 +244,74 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
     expect(counts['scenario.height.parse_fail']).toBe(0);
     expect(counts['scenario.panel.feature_mismatch']).toBe(0);
     expect(p.fillLevels).toEqual([...FILL_LEVELS]);
+  });
+});
+
+describe('fixture-0 project records report (project-records spec §4.9)', () => {
+  const e2e = 'e2e/fixtures/data/fixture-0';
+  const report = () =>
+    JSON.parse(readFileSync(join(e2e, 'report.json'), 'utf8')) as {
+      counts: Record<string, number>;
+      warnings: string[];
+    };
+
+  it('carries every project-records count key (plan Task 10)', () => {
+    const keys = Object.keys(report().counts);
+    const want = [
+      'projects.inFlight',
+      'projects.inFlightUnits',
+      ...PATHWAYS.map((p) => `projects.byPathway.${p}`),
+      ...STAGE_ORDER.map((s) => `projects.byStage.${s}`),
+      'projects.staleOpen',
+      'projects.staleOpenUnits',
+      'projects.pipelineConflicts',
+      'projects.pathwayDefaulted',
+      'projects.excludedAlterationUnits',
+      'projects.netDropped',
+      'projects.stories.tier0',
+      'projects.stories.tier3',
+      'projects.stories.null',
+      'projects.parcels.mapped',
+      'projects.parcels.unmapped',
+      'histories.total',
+      ...STAGE_ORDER.map((s) => `histories.clamped.${s}`),
+      'histories.ppaLagDays',
+      'histories.ppaLagN',
+      'rhna.units',
+      'rhna.crossCheck.2023',
+      'rhna.crossCheck.2024',
+      'rhna.crossCheck.2025',
+      'rhna.xdhtLagDays',
+      'params.ppaUmbrellaDays',
+      'params.ppaUmbrellaDays.tier',
+      'params.referralToleranceDays',
+      'params.referralToleranceDays.tier',
+      'multiphase.enriched',
+      'multiphase.fallback',
+      'multiphase.lastResort',
+      'multiphase.merged',
+      'multiphase.phases.enriched',
+      'multiphase.phases.fallback',
+      'multiphase.scale.2007.0001PRX',
+      'multiphase.u.2010.0002PRX',
+      'multiphase.u.2010.0002PRX.n',
+      'pipeline.cutoffDay',
+      'projects.asOf'
+    ];
+    for (const k of want) expect(keys, k).toContain(k);
+    expect(keys.some((k) => k.startsWith('link.'))).toBe(true);
+    expect(report().counts['projects.asOf']).toBe(Date.parse('2026-10-10') / 86_400_000);
+  });
+
+  it('warns that the fixture xdht-4php completions are stale (633 days)', () => {
+    expect(report().warnings).toContain(
+      'rhna.xdhtLagDays 633 > 120: xdht-4php completions look stale'
+    );
+  });
+
+  it('keeps scenarios out of the manifest until calibration.json exists', () => {
+    const m = JSON.parse(readFileSync(join(e2e, 'manifest.json'), 'utf8')) as object;
+    expect(existsSync(join(e2e, PROJECTS_JSON))).toBe(true);
+    expect('scenarios' in m).toBe(false);
   });
 });
