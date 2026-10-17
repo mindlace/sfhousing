@@ -16,7 +16,7 @@
  * | M9 2007.0001PRX        | pipeline-only, lot 014, 300 units, da 'Fixture Shipyard' (enriched)       |
  * | M10 2020-000010PRJ     | lot 001; permit A withdrawn, permit B filed; d4jk approval; pipeline      |
  * | M11 2026-000011PRJ     | lot 006; opened 2026-09-20, 3 units, no evidence, no pipeline row         |
- * | M12 2026-000012PRJ     | lot 008; umbrella PRJ and PPA opened 2026-08-03, 12 units                 |
+ * | M12 2026-000012PRJ     | lot 008; umbrella PRJ and PPA opened 2026-08-03, 24 units (12 existing)   |
  * | M13 2015-000013PRJ     | lot 012; Closed, no decision, closed 2016-05-02                           |
  * | M14 2010.0002PRX       | pipeline-only, lot 009, 100 units, da 'Fixture Village' (fallback);       |
  * |                        | base case PRJ 2010.0002 (lot 007) with completed permit 201501150014      |
@@ -24,7 +24,8 @@
  *
  * Every pipeline row's `new_pipeline_units` equals its project's units (V21 coverage 1.0).
  * `miniProjectInput()` serves the callbacks as stubs mirroring scenario-data's fixture (lineage,
- * the 2025 roll, retired lot 099's 2024 units), so Task 12 can compare it with the real panel.
+ * and assessor units aggregated from the landed roll CSV), so Task 12 can compare it with the real
+ * panel.
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -308,7 +309,8 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       block: '3512',
       lot: '008',
       open_date: ts('2026-08-03'),
-      number_of_units_prop: '12',
+      // 24 units on lot 008's 12 existing (fixture roll): nets 12.
+      number_of_units_prop: '24',
       new_construction: 'CHECKED'
     },
     {
@@ -514,30 +516,50 @@ const LINEAGE: Record<string, ParcelId> = {
   '3512103': '3512002'
 };
 
-/** Latest (2025) roll units; every other mini parcel has none. */
-const UNITS_2025: Record<ParcelId, number> = {
-  '3512001': 2,
-  '3512002': 3,
-  '0026T001A': 3,
-  '3512006': 2
-};
+const lineage = (b: string): ParcelId | null => LINEAGE[b] ?? (MINI_PARCELS.has(b) ? b : null);
+
+const ROLL = fileURLToPath(new URL('./raw/datasf-assessor-roll.page-000.csv', import.meta.url));
+
+/**
+ * Assessor units per `<current parcel>|<roll year>`, aggregated from the landed fixture roll as
+ * scenario-data's `sc_roll_agg` does (pipeline/sql/80_scenario.sql): each row's `parcel_number`
+ * maps through lineage (condo sub-lots and retired lots to their current parcel), then
+ * `number_of_units` is summed per (parcel, year). A (parcel, year) with no roll row is absent.
+ */
+function rollUnits(): Map<string, number> {
+  const lines = readFileSync(ROLL, 'utf8').trim().split('\n');
+  const unquote = (s: string) => s.replace(/^"|"$/g, '');
+  const header = lines[0].split(',').map(unquote);
+  const col = (name: string) => header.indexOf(name);
+  const [yearCol, parcelCol, unitsCol] = [
+    col('closed_roll_year'),
+    col('parcel_number'),
+    col('number_of_units')
+  ];
+  const sums = new Map<string, number>();
+  for (const line of lines.slice(1)) {
+    const f = line.split(',').map(unquote);
+    const id = lineage(f[parcelCol]);
+    if (id === null) continue;
+    const key = `${id}|${Number(f[yearCol])}`;
+    sums.set(key, (sums.get(key) ?? 0) + (f[unitsCol] === '' ? 0 : Number(f[unitsCol])));
+  }
+  return sums;
+}
 
 /**
  * The deriveProjects input for the mini records, with stub callbacks mirroring scenario-data's
- * fixture: lineage above; assessor units for 2025 above plus lot 012's 7 lineage units in 2024
- * only; no base stories; every parcel 300 m2; fixture `hiNet`; the mini `multiphase.json`.
+ * fixture: lineage above; assessor units summed from the landed fixture roll (2024 and 2025);
+ * no base stories; every parcel 300 m2; fixture `hiNet`; the mini `multiphase.json`.
  */
 export function miniProjectInput(): ProjectRecordsInput {
+  const units = rollUnits();
   return {
     asOf: MINI_ASOF,
     raw: PROJECT_RAW,
     parcelIds: MINI_PARCELS,
-    lineage: (b) => LINEAGE[b] ?? (MINI_PARCELS.has(b) ? b : null),
-    assessorUnits: (id, year) => {
-      if (year === 2025) return UNITS_2025[id] ?? null;
-      if (year === 2024 && id === '3512012') return 7;
-      return null;
-    },
+    lineage,
+    assessorUnits: (id, year) => units.get(`${id}|${year}`) ?? null,
     latestRollYear: 2025,
     baseStories: () => null,
     hiNet: { 2023: 3, 2024: 2, 2025: -1 },

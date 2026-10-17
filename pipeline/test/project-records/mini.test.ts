@@ -74,6 +74,31 @@ describe('mini project records: raw shape', () => {
   });
 });
 
+describe('mini project records: the stub roll mirrors the landed fixture roll', () => {
+  it('sums number_of_units per current parcel and roll year, through lineage', () => {
+    const input = miniProjectInput();
+    const table = (year: number) =>
+      Object.fromEntries([...MINI_PARCELS].map((id) => [id, input.assessorUnits(id, year)]));
+    const common = {
+      '3512001': 2,
+      '3512002': 3,
+      '8711023C': 0,
+      '0026T001A': 3,
+      '3512005': 1,
+      '3512006': 2,
+      '3512007': 0,
+      '3512008': 12,
+      '3512009': null,
+      '3512010': 3,
+      '3512011': 0,
+      '3512014': 40
+    };
+    expect(table(2025)).toEqual({ ...common, '3512012': null, '3512013': null });
+    expect(table(2024)).toEqual({ ...common, '3512012': 7, '3512013': 5 });
+    expect(input.assessorUnits('3512001', 2023)).toBeNull();
+  });
+});
+
 describe('mini project records: the in-flight set and histories', () => {
   it('ships exactly M1, M2, M3, M8, M9, M10, M11, M12 and M14', () => {
     expect(r.file.projects.map((p) => p.id)).toEqual(IN_FLIGHT);
@@ -109,6 +134,7 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
       stage: 'construction',
       parcelIds: ['3512010', '3512011'],
       units: 24,
+      existingUnits: 3,
       stories: 6,
       storiesTier: 0,
       multiPhase: false,
@@ -132,6 +158,9 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(p.pathway).toBe('permitOnly');
     expect(p.stage).toBe('permitFiled');
     expect(Object.keys(p.history)).toEqual(['permitFiled']);
+    // Lot 005 holds 1 unit in the fixture roll: net 1 still clears the >= 1 rule.
+    expect(p.units).toBe(2);
+    expect(p.existingUnits).toBe(1);
   });
 
   it('M4: a PPA-only project withdrawn at preApplication', () => {
@@ -184,7 +213,10 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
       pathway: 'discretionary',
       stage: 'entitled',
       units: 300,
-      multiPhase: true
+      multiPhase: true,
+      // DA parcels left after excluding completed lot 007: lot 002 (3 units) and lot 014 (40).
+      parcelIds: ['3512002', '3512014'],
+      existingUnits: 43
     });
     expect(p.phases).toEqual([
       { units: 120, parcelIds: ['3512014'], plannedPermitFiled: null, source },
@@ -215,7 +247,8 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(project('PRJ:2026-000012PRJ')).toMatchObject({
       pathway: 'discretionary',
       stage: 'preApplication',
-      units: 12,
+      units: 24,
+      existingUnits: 12,
       parcelIds: ['3512008']
     });
   });
