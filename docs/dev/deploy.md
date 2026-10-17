@@ -20,13 +20,13 @@ release-please runs with a GitHub App token (`actions/create-github-app-token`),
 
 There is no automated staging-to-prod interlock (as in planafoot): do not merge a release PR over a red staging deploy.
 
-`ci.yml` still runs on pull requests (lint, check, unit tests, fixture load, migrate, Playwright, actionlint) for contributor feedback, but it is not the merge gate.
+There is no CI workflow on pull requests: `npm run signoff` is the only check, and it runs locally. Add a workflow deliberately if checks move off the maintainer's machine.
 
 `PUBLIC_APP_RELEASE` is set at deploy time to the commit SHA (staging) or tag (production).
 
 ### Contributors (fork PRs)
 
-`ci.yml` gives a contributor feedback, but only a maintainer can sign off. The maintainer runs `gh pr checkout <n>` then `npm run signoff`. Signoff pushes to the PR's head branch only if the maintainer has push rights to it; otherwise re-open the PR from a branch in this repo and sign that off.
+Only a maintainer can sign off a contributor's PR. The maintainer runs `gh pr checkout <n>` then `npm run signoff`. Signoff pushes to the PR's head branch only if the maintainer has push rights to it; otherwise re-open the PR from a branch in this repo and sign that off.
 
 ## Promoting a datasetVersion
 

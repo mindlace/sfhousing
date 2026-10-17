@@ -77,7 +77,7 @@ Shell: the root layout renders the skip link, header, `<main>` and footer. Pages
 
 - All work happens in git worktrees under `.claude/worktrees/`.
 - Conventional Commits.
-- PRs merge only with the `chreode/signoff` commit status. Run `npm run signoff` ([chreode](https://github.com/mindlace/chreode); config in `chreode.config.ts`): it merges `origin/main`, runs only the steps the changes since the last signoff need (a path no rule matches runs everything), pushes, and posts the status; do not `git push` first. `npm run signoff -- --dry-run` prints the plan; `-- --full` runs every step. `ci.yml` is contributor feedback, not the gate.
+- PRs merge only with the `chreode/signoff` commit status. Run `npm run signoff` ([chreode](https://github.com/mindlace/chreode); config in `chreode.config.ts`): it merges `origin/main`, runs only the steps the changes since the last signoff need (a path no rule matches runs everything), pushes, and posts the status; do not `git push` first. `npm run signoff -- --dry-run` prints the plan; `-- --full` runs every step. There is no CI workflow on pull requests; signoff is the only check.
 - Schema change: edit `src/lib/server/db/schema/` → `npm run db:generate` → `npm run db:migrate`. Never hand-edit migrations.
 - Code style: 2-space indent, single quotes, no trailing commas, 100 columns (Prettier + ESLint).
 - CSP (`kit.csp` in `svelte.config.js`) changes are interface changes: raise them with the owning subsystem rather than widening ad hoc. Map glyphs and sprites are self-hosted under `/data/<version>/`.
