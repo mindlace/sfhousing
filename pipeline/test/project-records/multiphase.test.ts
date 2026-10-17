@@ -133,8 +133,8 @@ describe('MultiphaseFileSchema', () => {
     expect(f.projects[1].searched).toHaveLength(1);
   });
 
-  it('accepts the live placeholder', () => {
-    expect(parseMultiphase(readJson(LIVE))).toEqual({ schema: 1, projects: [] });
+  it('accepts the committed live file', () => {
+    expect(parseMultiphase(readJson(LIVE)).schema).toBe(1);
   });
 
   it('rejects a fact without a url', () => {
