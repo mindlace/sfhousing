@@ -28,19 +28,19 @@ Rows this subsystem consumes, copied verbatim from the design's interface table.
 
 | # | interface | owner → consumers | mark |
 |---|---|---|---|
-| T1 | `type Day = number` is integer days since 1970-01-01 UTC. All schedule times use it. It is exact in Float32 | timelapse-sim → all | DC |
+| T1 | `type Day = number` is integer days since 1970-01-01 UTC. All schedule times use it. It is exact in Float32. `MONTH_DAYS = 30.436875` (365.2425 / 12). `monthsIn(enteredDay, day) = floor((day − enteredDay) / MONTH_DAYS)` is the single months-in-stage rule, used by every table index (T4, T12, the bar, the card). `OPEN_DAY = 3.0e38` encodes an open-ended window end. These live in `src/lib/timelapse/time.ts` | stage-calibration → all | DC |
 | T2 | `type Stage = 'preApplication' \| 'filed' \| 'entitled' \| 'permitFiled' \| 'permitIssued' \| 'construction' \| 'complete'`; `type Pathway = 'discretionary' \| 'streamlined' \| 'permitOnly'`; `type ExitReason = 'withdrawn' \| 'disapproved' \| 'cancelled' \| 'expired'`. `STAGE_ORDER` lists the stages in this order. `preApplication` is optional on every pathway. `permitOnly` projects never enter `filed` or `entitled`. A ghost is visible from the project's first entered stage | stage-calibration → project-records, timelapse-sim, timelapse-render, fzp-mode | MC (stage sequence and exits follow real records), DC (names) |
-| T3 | `interface InFlightProject { id: string /* PRJ record id, else permit number */; parcelIds: ParcelId[]; pathway: Pathway; stage: Stage; history: Partial<Record<Stage, Day>> /* observed entry days */; units: number; existingUnits: number; stories: number \| null; sources: { dataset: string; id: string }[] }`. `scenarios/fzp/projects.json` = `{ schema: 1; asOf: Day; rhnaCompletedNet: { units: number; since: Day; provenance: Provenance }; projects: InFlightProject[] }` | project-records → timelapse-sim, fzp-mode | MC (real pipeline is the starting state), DC (shape) |
+| T3 | `interface InFlightProject { id: string /* 'PRJ:<record_id>', 'BP:<permit>', 'PRJ:<record_id>:BP:<permit>' for split pipeline rows, 'CASE:<case_no>' for PRX rows, 'PPA:<record_id>' for PPA-only; unique */; label: string \| null /* street address from the records, if any */; parcelIds: ParcelId[] /* current mapblklot, mapped through retired-parcel lineage */; pathway: Pathway; stage: Stage; history: Partial<Record<Stage, Day>> /* observed entry days */; units: number; existingUnits: number; stories: number \| null; storiesTier: 0 \| 3 \| null /* 0 = recorded field, 3 = parsed from description text */; multiPhase: boolean /* PRX/DA remaining-phase row */; sources: { dataset: string; id: string }[] }`. `scenarios/fzp/projects.json` = `{ schema: 1; asOf: Day; rhnaCompletedNet: { units: number /* net units added since `since` up to `asOf`, Housing Inventory definition: completions plus alteration gains, minus demolitions and alteration losses */; since: Day /* 2022-06-30, RHNA projection period start */; provenance: Provenance }; projects: InFlightProject[] }`. Projects are new construction only (alterations adding units are out of scope) | project-records → timelapse-sim, fzp-mode | MC (real pipeline is the starting state), DC (shape) |
 | T4 | `interface Provenance { tier: 0 \| 1 \| 2 \| 3 \| 4; label: string; sources: { label: string; url: string }[]; method: string; n?: number; window?: [from: string, to: string] }`. `interface Transition { months: number; advance: number[] /* cumulative incidence by month 1..months */; exit: Partial<Record<ExitReason, number[]>>; tail: { advance: number; exit: Partial<Record<ExitReason, number>> } /* constant monthly hazards beyond months */; provenance: Provenance }`. `scenarios/fzp/calibration.json` = `{ schema: 1; asOf: Day; transitions: Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, Transition>>>; initiation: InitiationModel; pathwayForNew: Record<Pathway, number> & { provenance: Provenance }; size: SizeModel; revision: RevisionModel }`. The calibration also carries `ppaShare: Record<Pathway, number> & { provenance: Provenance }`, the share of new projects that start at `preApplication`. `InitiationModel`, `SizeModel` and `RevisionModel` are rows T4a–c. Everything is plain JSON, so future policy levers can transform it (the T9 seam). **Sampling semantics:** a project entering stage *s* at day *d* draws one uniform. The month of advance or exit comes from the cumulative tables (`advance` + Σ`exit` ≤ 1 at every month), with the tail hazards beyond `months`. An in-flight project already *m* months into *s* draws conditionally on having survived *m* months. Day within the month is uniform | stage-calibration → timelapse-sim, fzp-mode | MC (every parameter carries tier + source), DC (encoding) |
-| T4a | `type FeatureId = 'potentialRatio' /* yield units at envelope ÷ max(existingUnits, 1) */ \| 'existingUnits' \| 'lotAreaM2' \| 'yearBuilt' \| 'storiesGap' /* envelope stories − existing stories */ \| 'improvementShare' /* improvement ÷ (land + improvement) assessed value */ \| 'rentControlLikely' /* 0/1: ≥ 2 units and built < 1979 */ \| 'landUseClass' /* categorical: residential, mixed, commercial, pdr, vacant, other */`. `interface InitiationModel { kind: 'logit-monthly'; intercept: number; terms: { feature: FeatureId; bins: number[] /* ascending edges; categorical features use category index */; coef: number[] /* one per bin */ }[]; provenance: Provenance }`. Monthly hazard = `1 / (1 + exp(−(intercept + Σ coef[bin(feature)])))`. It is fitted on pre-FZP (base) envelopes and evaluated on FZP envelopes. Parcels with an in-flight project are not at risk until that project ends | stage-calibration → timelapse-sim, scenario-data (feature list) | DC |
+| T4a | `type FeatureId = 'potentialRatio' /* yield units at full envelope ÷ max(existingUnits, 1); base variant uses the density-capped base yield (T13), FZP variant the Local Program yield (T11) — this is how density decontrol is seen */ \| 'existingUnits' \| 'lotAreaM2' \| 'yearBuilt' \| 'storiesGap' /* envelope stories − existing stories */ \| 'improvementShare' /* improvement ÷ (land + improvement) assessed value */ \| 'rentControlLikely' /* 0/1: ≥ 2 units and built < 1979 */ \| 'landUseClass' /* categorical: residential, mixed, commercial, pdr, vacant, other */`. `interface InitiationModel { kind: 'logit-monthly'; intercept: number; terms: { feature: FeatureId; bins: number[] /* ascending edges; categorical features use category index */; coef: number[] /* one per bin */ }[]; provenance: Provenance }`. Monthly hazard = `1 / (1 + exp(−(intercept + Σ coef[bin(feature)])))`. It is fitted on pre-FZP (base) envelopes and evaluated on FZP envelopes. Parcels with an in-flight project are not at risk until that project ends | stage-calibration → timelapse-sim, scenario-data (feature list) | DC |
 | T4b | `interface SizeModel { fillLevels: number[] /* ascending fractions of envelope stories; last = 1; length F matches T11 yield */; byEnvelope: { maxStoriesUpTo: number; probs: number[] /* length F, sums to 1 */ }[]; provenance: Provenance }`. A new project proposes `stories = max(1, round(fill × envelope.maxStories))` | stage-calibration → timelapse-sim, scenario-data (F) | DC |
 | T4c | `interface RevisionModel { at: { stage: Stage /* applied on entering this stage */; probability: number; ratio: { edges: number[]; probs: number[] } /* histogram of new units ÷ previous units */ }[]; provenance: Provenance }`. No revision on or after `construction`. Upsizing is capped at the parcel's envelope. A revision changes units, and stories follow from the yield table (simulated) or scale proportionally (pipeline) | stage-calibration → timelapse-sim | MC (projects can resize before construction), DC (shape) |
-| T5 | `interface Schedule { projectId: string; origin: 'pipeline' \| 'simulated'; parcelIds: ParcelId[]; pathway: Pathway; entered: Partial<Record<Stage, Day>>; end: { kind: 'complete'; day: Day } \| { kind: 'exit'; stage: Stage; reason: ExitReason; day: Day } \| { kind: 'open' } /* still in progress at horizon */; revisions: { day: Day; units: number; stories: number }[] /* [0] is the initial proposal; ascending days; none on or after entered.construction */; existingUnits: number }`. `simulate(input: SimInput, seed: number, horizon: Day): Schedule[]` is pure and deterministic. `SimInput = { parcels: ScenarioParcels; projects: InFlightProject[]; calibration: Calibration; asOf: Day }` | timelapse-sim → timelapse-render (via T7), fzp-mode | MC (deaths, resizing, real starting state), DC (shape) |
-| T6 | Worker protocol additions (I15 extended): request `{ type: 'initScenario'; rev; manifest: Manifest; scenario: 'fzp'; seed: number \| null /* null = representative seed */; horizon: Day }` and `{ type: 'reroll'; rev; seed: number }`. Response `{ type: 'timeline'; rev; seed: number; render: TimelineUpdate; score: TimelineScore; complete: boolean }`. `parcelSummary` gains `project?: ProjectCard`, where `ProjectCard = { projectId: string; origin: 'pipeline' \| 'simulated'; label: string /* address if known, else 'Block B Lot L' */; pathway: Pathway; units: number; stories: number; stages: { stage: Stage; day: Day; actual: boolean }[]; revisions: Schedule['revisions']; end: Schedule['end']; sources: { dataset: string; id: string }[] }`. The card's chance to finish is computed on the main thread from T12 at the current time. `prefetch` and `chunks` are reused unchanged | timelapse-sim ↔ fzp-mode, timelapse-render | DC |
-| T7 | `interface TimedPackedCell extends PackedCell { partWindow: Float32Array /* per part: [fromDay, toDay) the part's revision is current */; slotStages: Float32Array /* per slot: STAGE_ORDER.length entry days, NaN = never */; slotEnd: Float32Array /* per slot: [endDay, endKind] (0 open, 1 complete, 2 exit) */; slotPathway: Uint8Array /* index into ['discretionary','streamlined','permitOnly'] */ }`. `interface TimelineUpdate { revision: number; cells: TimedPackedCell[]; removedCells: string[]; demolish: { parcelId: ParcelId; day: Day }[] }`. `SimMapHandle` gains `applyTimeline(u: TimelineUpdate): void` and `setTime(day: Day): void`. `setTime` does O(1) JS work per call | timelapse-render ↔ timelapse-sim, fzp-mode | DC |
-| T12 | `chanceTable(cal: Calibration): Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, Float32Array>>>` gives, per month spent in a stage, the probability of eventually reaching `complete`. Beyond the table length it uses the tail. It is pure and shared by the worker, the renderer (uploaded once as a lookup) and the card. The bar colour and the card's "chance of finishing" both come from it | timelapse-sim → timelapse-render, fzp-mode | MC (health = chance of finishing, OD-T2) |
-| T8 | `interface TimelineScore { months: Day[] /* first of each month, asOf → horizon */; shown: { completedNet: number; completedNetPipeline: number; completedNetNew: number; inProgress: Record<Exclude<Stage, 'complete'>, number> /* units */; exitedUnits: number }[]; band: { p10: number; p50: number; p90: number }[] /* completedNet over N runs */; baseline: { completedNet: number; since: Day; provenance: Provenance }; targets: TargetProgressAt[]; references: { id: string; label: string; units: number; by: Day; provenance: Provenance }[] /* published estimates to compare against, e.g. Planning ~39k in 5 yrs, Controller 14,646 by 2045 */ }`, where `TargetProgressAt = { target: Target /* I11 */; deadline: Day; fraction: number[] /* per month, uncapped, baseline included */ }` | timelapse-sim → fzp-mode | MC (net units against RHNA; band shown; baseline actuals counted), DC (shape) |
-| T11 | `scenarios/fzp/parcels.bin` (codec `sfh-scenario/1`, in `src/lib/data/`): per eligible parcel `id`, `labelPoint`, `cellId`, `envelope: Envelope` (FZP Local Program stories), the base (pre-FZP) stories, the T4a feature values (with base-envelope and FZP-envelope variants of `potentialRatio` and `storiesGap`), a `localProgram: boolean` flag (false when the parcel is excluded from the Local Program, in which case `envelope` is the base height) and `yield: Uint16[F]`, the units at each quantised fill level of the envelope. Named in the manifest as `scenarios?: { fzp: { parcels: url; projects: url; calibration: url } }` (amends I12; optional, so older datasets load) | scenario-data → timelapse-sim | DC |
+| T5 | `interface Schedule { projectId: string; origin: 'pipeline' \| 'simulated'; parcelIds: ParcelId[]; pathway: Pathway; entered: Partial<Record<Stage, Day>>; end: { kind: 'complete'; day: Day } \| { kind: 'exit'; stage: Stage; reason: ExitReason; day: Day } \| { kind: 'open' } /* still in progress at horizon */; revisions: { day: Day; units: number; stories: number \| null /* null = unknown until massed */ }[] /* [0] is the initial proposal; ascending days; none on or after entered.construction */; existingUnits: number; multiPhase: boolean }`. `simulate(input: SimInput, seed: number, horizon: Day): Schedule[]` is pure and deterministic. `SimInput = { parcels: ScenarioParcels /* decoded T11 */; projects: InFlightProject[]; calibration: Calibration; asOf: Day }`. Buildings of simulated projects carry `source: 'scenario'`, and pipeline projects carry `'pipeline'` (the sim stamps them) | timelapse-sim → timelapse-render (via T7), fzp-mode | MC (deaths, resizing, real starting state), DC (shape) |
+| T6 | Worker protocol additions (I15 extended), served by a separate scenario host behind the same Worker and a separate `ScenarioClient` (the editor's host and `SimClient` are unchanged). Requests: `{ type: 'initScenario'; rev; manifest: Manifest; scenario: 'fzp'; seed: number \| null /* null = representative seed */; horizon: Day }`, `{ type: 'reroll'; rev; seed: number \| null }` (also the resync path: same seed → fresh revision-0 snapshot), and `{ type: 'parcelSummary'; reqId: number; parcelId: ParcelId; day: Day }`. Responses: `ready` (existing shape), `{ type: 'timeline'; rev; seed: number; render: TimelineUpdate; score: TimelineScore; complete: boolean /* band complete and all loaded cells packed */ }`, `chunks` (existing), and `error` with `code: 'manifest-invalid' \| 'scenario-missing' \| 'scenario-invalid' \| 'bad-request' \| 'internal'`. `parcelSummary` responds with `project?: ProjectCard`: the project on that parcel whose first entered stage is ≤ `day`, latest first, and none if no project is visible at `day`. `ProjectCard = { projectId: string; origin: 'pipeline' \| 'simulated'; label: string /* pipeline: T3 label, else 'Block B, Lot L'; simulated: always 'Block B, Lot L' */; pathway: Pathway; units: number; stories: number \| null; massing: 'matched' \| 'approximate' \| 'none'; multiPhase: boolean; stages: { stage: Stage; day: Day; actual: boolean }[] /* only stages entered ≤ day */; revisions: Schedule['revisions'] /* only those ≤ day */; end: Schedule['end'] \| null /* null if the end is after day */; sources: { dataset: string; id: string }[] }`. The card's chance to finish is computed on the main thread from T12 at the current time. `prefetch` is reused, viewport-driven at every zoom in this mode | timelapse-sim ↔ fzp-mode, timelapse-render | DC |
+| T7 | `interface TimedPackedCell extends PackedCell { slotProjectIds: string[] /* render slots are keyed by project; parcelIds may repeat across slots */; partWindow: Float32Array /* per part: [fromDay, toDay) the part's revision is current; toDay = OPEN_DAY if open */; slotStages: Float32Array /* per slot: STAGE_ORDER.length entry days, NaN = never */; slotEnd: Float32Array /* per slot: [endDay, endKind] (0 open, 1 complete, 2 exit) */; slotPathway: Uint8Array /* index into ['discretionary','streamlined','permitOnly'] */ }`. `parcelMeta` rows describe the slot's final revision. `packTimedCell` is pure and owned by timelapse-render (in `src/lib/map/`); the worker imports it. `interface TimelineUpdate { revision: number /* 0 = snapshot */; cells: TimedPackedCell[]; removedCells: string[]; demolish: { parcelId: ParcelId; day: Day }[] /* complete list in revision 0 (needs no geometry); empty afterwards */ }`. `SimMapHandle` gains `applyTimeline(u: TimelineUpdate): void`, `setTime(day: Day): void` and `setTimelineLookups(l: { chance: ReturnType<typeof chanceTable>; typicalMonths: ReturnType<typeof typicalMonths> }): void`. `SimMapProps` gains `timelinePick?: (p: { projectId: string; parcelId: ParcelId; x: number; y: number; kind: 'hover' \| 'tap' } \| null) => void`. When it is set, SimMap's built-in tooltip is suppressed over timeline parts. Timeline colour tokens (`tl-*` in `palette.ts`) and an exported `TIMELINE_LEGEND` are owned here. `setTime` does O(1) JS work per call, except the existing-building catch-up, which applies at most 2,000 feature-state changes per frame until it converges | timelapse-render ↔ timelapse-sim, fzp-mode | DC |
+| T12 | In `src/lib/timelapse/model.ts` (pure, zod-free, worker-safe): `sampleTransition(t: Transition, u: number, monthsElapsed: number): { kind: 'advance' \| ExitReason; days: number }`, `initiationHazard(m: InitiationModel, f: Record<FeatureId, number>): number`, `chanceTable(cal: Calibration): Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, Float32Array>>>` (per month in a stage, the probability of eventually reaching `complete`; the table is 241 months long, and the tail is used beyond it), `typicalMonths(cal: Calibration): Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, number>>>` (median months to leave each stage, used for the bar's within-stage fill), and `parseCalibration(json: unknown): Calibration` (throws on schema mismatch). The pipeline's validation, the worker, the renderer (lookups uploaded once) and the card all use these, and nothing re-implements them. The bar colour and the card's "chance of finishing" both come from `chanceTable` | stage-calibration → timelapse-sim, timelapse-render, fzp-mode | MC (health = chance of finishing, OD-T2; one sampling semantics everywhere) |
+| T8 | `interface TimelineScore { months: Day[] /* first of each month, asOf → horizon */; shown: { completedNet: number /* cumulative since asOf, simulation only, excludes baseline */; completedNetPipeline: number; completedNetNew: number; entitledNew: number /* cumulative units of new (simulated) projects reaching entitled */; inProgress: Record<Exclude<Stage, 'complete'>, number> /* current proposed units of projects in each stage at that month */; exitedUnits: number /* cumulative */ }[]; band: { p10: number; p50: number; p90: number }[] /* completedNet over N runs, same basis as shown */; baseline: { completedNet: number; since: Day; provenance: Provenance }; targets: TargetProgressAt[]; references: { id: string; label: string; units: number; from: Day; by: Day; measure: 'entitledNew' \| 'completedNetNew' \| 'completedNet'; provenance: Provenance }[] /* published estimates, each compared with the matching shown series */ }`, where `TargetProgressAt = { target: Target /* I11 */; deadline: Day; fraction: number[] /* per month, (baseline + completedNet) ÷ target, uncapped */ }` | timelapse-sim → fzp-mode | MC (net units against RHNA; band shown; baseline actuals counted), DC (shape) |
+| T11 | `scenarios/fzp/parcels.bin` (codec `sfh-scenario/1`, in `src/lib/data/`; deflate inside the file, async decode). It holds **every** parcel: `id`, `labelPoint`, `cellId`, a `hostable` flag (eligible and able to host a new project), `envelope: Envelope` (FZP stories: Local Program height if `localProgram`, else base height; clamped to `MAX_STORIES`), base stories, the base-zoning density cap in units (null = none), `localProgram: boolean`, `existingUnits` (latest assessor roll), the T4a feature values (base and FZP variants of `potentialRatio` and `storiesGap`) with an imputation mask, and `yield: Uint16[F]`, the gross units at each fill level of the envelope, replacement typologies only (no ADU outcomes), with no density cap under the Local Program. `FILL_LEVELS = [0.25, 0.5, 0.75, 0.9, 1]` (F = 5, tier-4 quantisation grid) is owned here, and stage-calibration imports it. Named in the manifest as `scenarios?: { fzp: { parcels: url; projects: url; calibration: url } }` (amends I12 and `ManifestBaseSchema`; optional, so older datasets load). Because the yield uses the generator, `src/lib/generator` and `src/lib/timelapse` join the dataset-version hash | scenario-data → timelapse-sim | DC |
 
 Rows from the source design that this subsystem consumes, verbatim:
 
@@ -62,15 +62,16 @@ type Speed = 'month' | 'year' | 'threeYears';              // playback speed cho
 interface ScoreAt {                                         // score-view.ts, pure
   monthIndex: number; total: number; actual: number;        // actual = baseline.completedNet
   pipeline: number; fresh: number;                          // completedNetPipeline, completedNetNew
-  band: { low: number; high: number } | null;               // p10/p90 + baseline
+  entitledNew: number;                                      // T8 shown[i].entitledNew
+  band: { low: number; high: number } | null;               // p10/p90 + baseline (same basis, T8)
   inProgress: { stage: Exclude<Stage, 'complete'>; units: number }[];
   exitedUnits: number;
   targets: { tp: TargetProgress; atDeadline: number }[];    // I11 TargetProgress at this month
 }
 interface CardStatus {                                      // card.ts, pure
-  kind: 'notYet' | 'inStage' | 'complete' | 'exited';
-  stage: Stage | null; monthsInStage: number; day: Day | null;
-  units: number; stories: number; chance: number | null;    // chance only for 'inStage'
+  kind: 'inStage' | 'complete' | 'exited';                  // no project visible → no card status
+  stage: Stage; monthsInStage: number; day: Day;            // monthsIn(entered, t), T1
+  units: number; stories: number | null; chance: number | null; // chance only for 'inStage'
 }
 ```
 
@@ -87,7 +88,8 @@ The source design's constraints still apply (free and open, determinism, oversho
 - **Honesty of numbers.** The mode is labelled a *simulation*. The scoreboard shows the shown run and the p10–p90 band. Pipeline and new-FZP units are separate lines. Actual completions since the RHNA period start are counted and labelled as actual. Units lost to dead projects are shown.
 - **Time scrubbing performance.** At 60 fps on a 2022-era laptop with the whole city's timeline loaded, per-frame JS during scrub or playback is O(1) in project count. A reroll reaches a full new timeline (the shown run, to 2050) within 3 s off the main thread. The p10–p90 band may fill in progressively afterwards; the UI marks it as provisional until it is complete.
 - **First paint.** `/fzp` must not require loading every parcel chunk. The whole-city score comes from `parcels.bin`, `projects.json` and `calibration.json`. Geometry streams with the viewport, as on `/`.
-- **The editor is unchanged.** `/` and `/p/:id` behave exactly as before. FZP mode is additive.
+- **The editor is unchanged.** `/` and `/p/:id` behave exactly as before. FZP mode is additive. The one intended exception is the shared header, which gains the mode links ("Paint" / "Timelapse").
+- **Map budgets in FZP mode.** Two deck layers per cell are allowed for timeline cells: translucency needs them. This is an exception to map-view's one-layer-per-cell rule, so a `bench:map` timeline scenario must pass the same p95 frame bar. The existing-building catch-up stays within 2,000 feature-state changes per frame.
 - **Accessibility.** WCAG 2.2 AA as in `docs/dev/accessibility.md`. The scrubber is a labelled slider: arrow keys step a month, Page Up/Down a year. Reduced motion stops autoplay, but scrubbing still works.
 
 ### Evidence hierarchy (partner ruling; global)
@@ -108,31 +110,33 @@ Consequence: calibration is **computed by the data pipeline from DataSF records*
 
 ### 4.1 Route, load and states
 
-- **Load** (`src/routes/fzp/+page.ts`, universal like `src/routes/+page.ts:8-25`): read `datasetVersion` from the layout; parse `seed` from the URL (§4.7); `loadManifest(datasetVersion, datasetVersion, fetch)` (`src/lib/sim/manifest.ts:21-36`). If `manifest.scenarios?.fzp` is absent, return `no-scenario`. Otherwise fetch `manifest.scenarios.fzp.calibration` and validate it with the same parser the worker uses (timelapse-sim's; concern C13). The main thread needs the calibration for `chanceTable` (T12) and the sources dialog. Any failure returns `manifestError: true` or `calibrationError: true`, never a thrown 500. The page always uses the current dataset; there is no plan and no I16 fallback.
+- **Load** (`src/routes/fzp/+page.ts`, universal like `src/routes/+page.ts:8-25`): read `datasetVersion` from the layout; parse `seed` from the URL (§4.7); `loadManifest(datasetVersion, datasetVersion, fetch)` (`src/lib/sim/manifest.ts:21-36`). If `manifest.scenarios?.fzp` is absent, return `no-scenario`. Otherwise fetch `manifest.scenarios.fzp.calibration` and validate it with `parseCalibration` (T12, `src/lib/timelapse/model.ts`, the same parser the worker uses). The main thread needs the calibration for `chanceTable` (T12) and the sources dialog. Any failure returns `manifestError: true` or `calibrationError: true`, never a thrown 500. The page always uses the current dataset; there is no plan and no I16 fallback.
 - **Page phases** (`FzpPhase`), each with a single `role="status"` or `role="alert"` element over the map:
   - `loading`: "Loading the simulation…". Shown until the first `timeline` answering the latest `initScenario`/`reroll` rev arrives.
   - `ready`: the controls are live.
   - `no-scenario`: the map still renders (existing buildings only). A panel says: "The Family Zoning Plan timelapse isn't available for dataset {version}. It needs simulation data that this dataset doesn't have." Below it is a link, "Go to the editor" (`/`). There is no scrubber, scoreboard or "Another future" button, and the worker is never started. This covers every dataset older than the first scenario release.
-  - `failed`: "The simulation couldn't load." plus a **Retry** button (≥ 44×44 px, as `BrushEditor.svelte:417-422`).
+  - `failed`: "The simulation couldn't load." plus a **Retry** button (≥ 44×44 px, as `BrushEditor.svelte:417-422`). When the worker's error code is `scenario-missing` or `scenario-invalid` (T6), the message is "The simulation data for dataset {version} is missing or damaged." and Retry is still offered.
 - **SimMap failures** (WebGL unsupported, context lost) are SimMap's own overlays (`SimMap.svelte:1062-1092`). The scoreboard, chart and scrubber keep working without a map, because they read only `TimelineScore`.
 
 ### 4.2 Composition and worker lifecycle
 
 `+page.svelte` renders an sr-only `<h1>`, "Family Zoning Plan timelapse (simulation)", and `<div id="map-region" class="relative h-full">`, the same as `src/routes/+page.svelte:131-132`. Inside it is `FzpMode.svelte`, which composes `SimMap` directly (no `BrushEditor`), `TimeScrubber`, `FzpScoreboard`, `ProjectCardPanel` and `SourcesDialog`. `<svelte:head><title>`: "Family Zoning Plan timelapse · SF Housing Simulator".
 
-- **Client.** `src/lib/fzp/client.ts`, `ScenarioClient`, is internal. It wraps `spawnSimWorker()` (`src/lib/sim/client.ts:226-230`, the same worker, with the T6 messages). It keeps a rev counter, `parcelSummary` promises and crash detection, mirroring `SimClient`. `SimClient` itself is not reused: its error path resyncs by sending `load(plan)` (`client.ts:202-213`), which is wrong here.
+- **Client.** T6 names a separate `ScenarioClient` behind the same Worker. If timelapse-sim does not ship it, fzp-mode writes it at `src/lib/fzp/client.ts`. It wraps `spawnSimWorker()` (`src/lib/sim/client.ts:226-230`). It keeps a rev counter, `parcelSummary` promises and crash detection, mirroring `SimClient`. `SimClient` is unchanged (T6).
   - It sends `initScenario { manifest, scenario: 'fzp', seed, horizon }`, where horizon is the `Day` of 2050-12-31 (OD-T4).
-  - It sends `reroll { seed }`, plus `prefetch`, `retryChunks` and `parcelSummary`.
+  - It sends `reroll { seed: number | null }`, plus `prefetch`, `retryChunks` and `parcelSummary { parcelId, day }`.
+  - The host answers `initScenario` with `ready` (existing shape). Phase `ready` still waits for the first `timeline`.
   - A `timeline` or `error` whose `rev` is older than the latest `initScenario`/`reroll` rev is dropped.
 - **Pending state before the map handle exists** (mirroring `BrushEditor.svelte:149-163,298-312`): `TimelineUpdate`s and chunk statuses queue, and an update with `revision === 0` clears the queue. `onready(h)` then:
-  1. applies the queue in order;
-  2. calls `h.setTime(day)` with the current scrub day;
-  3. calls `h.setBottomInset(px)` (§4.3);
-  4. registers `h.onResyncNeeded`.
+  1. calls `h.setTimelineLookups({ chance: chanceTable(cal), typicalMonths: typicalMonths(cal) })` (T7, T12). It computes both once per calibration on the main thread, and the card reuses the same `chance` table;
+  2. applies the queue in order;
+  3. calls `h.setTime(day)` with the current scrub day;
+  4. calls `h.setBottomInset(px)` (§4.3);
+  5. registers `h.onResyncNeeded`.
 - **Every `timeline` message**: call `applyTimeline(render)`, or queue it, then replace the held `TimelineScore` and record `seed` and `complete`. Several messages per seed are normal: the band fills in, and new chunks bring geometry.
 - **Chunks.** `chunks` messages feed `setChunkStatus` and the chunk-error chip, as in the editor. The chip's Retry sends `retryChunks`.
-- **Prefetch.** After the first `timeline`, and on every map `moveend`, send `prefetch(viewport bbox)` **at every zoom**. This differs from the editor's zoom-14 gate (`BrushController.svelte.ts:59,656-661`): ghosts must appear at the city view (OD-T2 tints below street zoom), and the first paint (score and controls) never waits on chunks. Concern C9 covers the cost.
-- **Resync** (`onResyncNeeded`): send `reroll` with the seed of the shown future. The same seed gives the same schedule (T5), so this is a lossless resend (concern C2).
+- **Prefetch.** After the first `timeline`, and on every map `moveend`, send `prefetch(viewport bbox)` **at every zoom**. This differs from the editor's zoom-14 gate (`BrushController.svelte.ts:59,656-661`): ghosts must appear at the city view (OD-T2 tints below street zoom), and the first paint (score and controls) never waits on chunks. T6 ("viewport-driven at every zoom in this mode") rules this.
+- **Resync** (`onResyncNeeded`): send `reroll` with the seed of the shown future. T6 makes this the resync path: the same seed gives a fresh revision-0 snapshot.
 - **Errors.**
   - An `error` answering the latest scenario rev in phase `loading` → `failed`.
   - In phase `ready` (a failed reroll), keep the shown future and show a dismissible notice: "Couldn't make another future. Try again."
@@ -144,7 +148,8 @@ Consequence: calibration is **computed by the data pipeline from DataSF records*
     1. `restart(spawnSimWorker())`;
     2. reset the chunk statuses (`BrushEditor.svelte:249-253`);
     3. reload the manifest and calibration if either failed;
-    4. send `initScenario` with the shown seed, or with the URL seed (`null` when absent) before any future has been shown.
+    4. call `init` with the manifest. The host answers with `ready`;
+    5. send `initScenario` with the shown seed, or with the URL seed (`null` when absent) before any future has been shown.
 
   The same seed reproduces the same future, so the map and score do not change.
 - **Teardown** on unmount: stop playback, dispose the client and drop the handle.
@@ -189,7 +194,7 @@ All overlays are absolutely positioned inside `#map-region`. None uses the viewp
   The ends of the track are labelled with the `asOf` month ("Oct 2026") and "2050". Marker buttons have accessible names "Jump to RHNA deadline, January 2031" and "Jump to 2045".
 - **Readout:** the visible text is `Simulation · March 2031`. The format is `Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })`. "Simulation" is a pill, so the date can never read as a real calendar. The readout is not a live region: it changes every frame during playback.
 - **Play/Pause:** one button whose label switches between "Play" and "Pause". At `horizon` playback stops, and the button reads "Replay". Pressing Replay jumps to `asOf` and plays.
-- **Speeds:** a native `<select>` labelled "Speed" (the label is visible ≥ 640 px and sr-only below). The options are "1 month/s", "1 year/s" (default) and "3 years/s". The speed changes the days advanced per second of wall time, 30.436875, 365.2425 and 1,095.7275 days respectively (the Gregorian mean year ÷ 12, exact). The defaults are tier 4 (UI design choices, not model numbers). The reasons:
+- **Speeds:** a native `<select>` labelled "Speed" (the label is visible ≥ 640 px and sr-only below). The options are "1 month/s", "1 year/s" (default) and "3 years/s". The speed changes the days advanced per second of wall time: `MONTH_DAYS`, `12 × MONTH_DAYS` and `36 × MONTH_DAYS` (T1, 30.436875 days). The reconciliation section "Page" rules that the speeds and the default belong to fzp-mode. The values are tier 4 (UI design choices, not model numbers). The reasons:
   - **1 year/s** plays the whole range (about 24 years) in about 24 s, short enough to watch to the end;
   - **1 month/s** (about 290 s) is slow enough to follow one project's bar through its stages;
   - **3 years/s** (about 8 s) shows the overall shape at a glance.
@@ -205,7 +210,7 @@ All overlays are absolutely positioned inside `#map-region`. None uses the viewp
   When `day` changes, call `handle.setTime(day)` once and update the `day` state. The 100 ms clamp is tier 4 and stops a jump after a background tab. Everything the frame triggers is O(1) in project count:
   - the score month index is computed arithmetically: `(Y(day) − Y(months[0]))·12 + (M(day) − M(months[0]))`, clamped to `[0, months.length − 1]`;
   - the chart cursor moves to x(day);
-  - an open card recomputes `CardStatus` (O(stages)).
+  - an open card recomputes `CardStatus` (O(stages)). When the month index changes, it re-requests `parcelSummary(parcelId, day)`, with at most one request in flight and the latest wins (§4.8).
 
   While paused, every `input` event calls `setTime` directly.
 - **Debug hook** (`VITE_E2E === '1'` only, like `src/lib/map/debug.ts`): `window.__sfhFzp = { phase, seed, representative, day, asOf, horizon, playing, score: TimelineScore | null }`, read-only.
@@ -222,21 +227,15 @@ The panel's contents at month index `i`, in order:
 4. **Split**, each a labelled row:
    - "Actually completed, to {asOf date}": `baseline.completedNet`;
    - "Simulated, from today's pipeline": `completedNetPipeline`;
-   - "Simulated, new under the plan": `completedNetNew`.
-5. **Band:** "In 8 of 10 simulated futures: {p10 + baseline}–{p90 + baseline}". While `complete` is false it gets the suffix " (still calculating)" and `aria-busy="true"`. Until any band value exists it reads "Range: calculating…".
+   - "Simulated, new under the plan": `completedNetNew`;
+   - "Simulated, new homes approved under the plan": `entitledNew` (T8; this is the series Planning's estimate compares with).
+5. **Band:** "In 8 of 10 simulated futures: {p10 + baseline}–{p90 + baseline}" (the band has the same basis as `shown`, T8). While `complete` is false it gets the suffix " (still calculating)" and `aria-busy="true"`. Until any band value exists it reads "Range: calculating…".
 6. **Targets:** one `TargetRow` per T8 `targets` entry, in order (RHNA, then RHNA + buffer). Under each is "At the deadline ({deadline as Mon D, YYYY}): {formatPercent(fraction[d])}", where `d` is the month index of the deadline. The fractions come straight from T8, which includes the baseline.
 7. **In progress:** "Homes in projects still in progress: {sum}". Then a `<dl>` with one row per stage in `STAGE_ORDER` (unknown keys appended), using the "in stage" labels of §4.9.
 8. **Stopped:** "Proposed homes in projects that stopped since {asOf month}: {exitedUnits}".
 9. **Chart** (§4.6).
 10. **Future line:** "This future: #{seed}", plus " (representative)" when the shown seed came from a `null` request. When it is not representative there is also a button, "Back to the representative future" (§4.7).
-11. **"Map key"** (`<details>`, open by default ≥ 768 px), the ghost-state legend:
-    - "Proposed or in review (ghost)";
-    - "Under construction: floors fill in from the bottom";
-    - "Completed in this simulation";
-    - "Project stopped: turns red, then fades";
-    - a bar swatch: "Bar length: progress through the stages. Bar colour: chance of finishing, low to high".
-
-    The colours come from timelapse-render (concern C8).
+11. **"Map key"** (`<details>`, open by default ≥ 768 px), the ghost-state legend. It renders one row per entry of timelapse-render's exported `TIMELINE_LEGEND` (T7), drawing each swatch from the `tl-*` tokens through their `--map-*` CSS variables, so the legend follows the theme. After the entries it adds one line of fzp-mode's own: "Bar length: progress through the stages. Bar colour: chance of finishing, low to high."
 12. **Button:** "Where these numbers come from" (opens §4.10).
 13. **Footnote:** "Data {datasetVersion} · built {date} · as of {asOf date} · [Sources](/attribution)".
 
@@ -258,17 +257,23 @@ There are no chart conventions in the repo (no chart, sparkline or SVG plotting 
   | band p10–p90 + baseline | `#1d4ed8` area at 15% opacity |
   | total (baseline + completedNet) | `#1d4ed8` (blue-700) solid 2.5 px |
   | from pipeline | `#374151` (gray-700) dashed 6 3 |
-  | new under the plan | `#b45309` (amber-700) solid 2 px |
+  | new under the plan, completed (`completedNetNew`) | `#b45309` (amber-700) solid 2 px |
+  | new under the plan, approved (`entitledNew`) | amber-700 dashed 2 2 |
   | RHNA (82,069) | 1 px black horizontal line, labelled "RHNA" |
-  | each T8 reference | amber-700 dotted horizontal line at `units` from `asOf` to `by`, a dot at `by`, labelled `label` |
+  | each T8 reference | dotted horizontal line at `units`, a dot at `by`, labelled `label` (detail below) |
   | RHNA deadline and 2045 | gray dashed verticals |
   | current day | black vertical cursor |
 
+  Each reference line runs from `max(from, asOf)` to `by`. It takes the colour of the series its `measure` names: amber for `completedNetNew` and `entitledNew`, blue for `completedNet`. Its label ends "(compare with: {series name})".
 - **Contrast:** every stroke has ≥ 3:1 contrast on white (SC 1.4.11: blue-700 is 6.7:1, gray-700 10.3:1, amber-700 5.0:1). Every series is also told apart by its dash pattern, plus a legend in text under the chart.
-- **References are drawn against the "new under the plan" line**, and the legend says so: "Dotted: published estimates of homes the plan itself will add (compare with the amber line)." Both published estimates are FZP-attributable (research §1: Planning 19k–64k in about 5 years, Controller 8,504–14,646 by 2045). They are levels, not trajectories, which is why they are drawn horizontal (concern C5).
+- **References are compared with the series their `measure` names** (T8, reconciliation "References"):
+  - Planning's ~39k are entitlements, compared with `entitledNew`;
+  - the Controller's 14,646 and 8,504 by 2045 are completions, compared with `completedNetNew`.
+
+  They are levels, not trajectories, so they are drawn horizontal. The simulated series start at `asOf`, while Planning's window starts at 2026-01-12. The dialog's reference entry says so: "Simulated counts start on {asOf date}."
 - **Accessibility:**
   - The chart is a `<figure>` whose SVG has `role="img"` and an `aria-label` summary: "Net new homes in this simulation: {x} by the RHNA deadline, {y} by 2045, {z} by the end of 2050."
-  - A `<details>` "Show as table" holds a `<table>` with one row per January from `asOf`'s year + 1 to 2050, plus the deadline row and the final month. Its columns are date, total, from pipeline, new under the plan, and the 8-in-10 range.
+  - A `<details>` "Show as table" holds a `<table>` with one row per January from `asOf`'s year + 1 to 2050, plus the deadline row and the final month. Its columns are date, total, from pipeline, new under the plan (completed), new under the plan (approved), and the 8-in-10 range.
 
 ### 4.7 Seed, URL and "Show another possible future"
 
@@ -280,28 +285,35 @@ There are no chart conventions in the repo (no chart, sparkline or SVG plotting 
 
   On the answering `timeline`, apply it, keep the **current scrub day and play state**, and call `replaceState('?seed=N', {})` from `$app/navigation`, so Back still leaves the page and no history entry is added per reroll. Any open card re-requests its parcel (§4.8).
 - **"Back to the representative future":**
-  - if the representative seed is known (a `null` request answered earlier on this page), send `reroll` with it;
-  - otherwise send `initScenario` with `seed: null` (concern C2);
+  - send `reroll { seed: null }` (T6);
   - on answer, remove `seed` from the URL.
 - **Reproducibility is per dataset.** The footnote shows the dataset version beside "This future: #N", so a seed is never presented as permanent across dataset releases.
 
 ### 4.8 The project card (`ProjectCardPanel.svelte`, `card.ts`)
 
-- **Hover** (fine pointer) shows SimMap's tooltip with lines: `[card.label, "{Real|Simulated} project · {in-stage label at t} · {units} homes"]`. This needs a SimMap hook to override the tooltip lines (concern C7).
-- **Click** (mouse) or **tap** (touch) on a ghost, or on an existing building with a parcel, opens the card for that parcel. The card is an interactive panel, so its links work. The page calls `client.parcelSummary(parcelId)` and reads `summary.project`. A summary with no project gives "No project on this parcel in this future." The card closes on Close, on Escape, and on a click or tap on empty map.
+- **Picks** come from `SimMapProps.timelinePick` (T7). SimMap suppresses its own tooltip over timeline parts, and parts hidden at `t` are not pickable. Existing buildings keep SimMap's normal tooltip and open no card.
+- **Hover** (fine pointer, `matchMedia('(pointer: fine)')`): a non-null pick shows fzp-mode's own non-interactive tooltip at `(x, y)`. It uses the same `role="tooltip"` and `sim-map-panel` styling as `SimMap.svelte:1032-1043`, and its text is `[label, "{Real|Simulated} project · {in-stage label} · {units} homes"]`. A null pick hides it. The text comes from a `parcelSummary(parcelId, day)` request. Requests are latest-wins, and "Loading…" shows until the answer.
+- **Opening the card.**
+  - With a fine pointer, a map `click` (via `handle.getMap()`) while the latest pick is non-null opens the card.
+  - With a coarse pointer, any non-null pick (a tap) opens it.
+
+  The card is an interactive panel, so its links work. The page calls `client.parcelSummary(parcelId, day)` and reads `summary.project`. Per T6, that is the latest project on the parcel whose first stage is ≤ `day`. With no project it reads "No project on this parcel at this date." The card closes on Close, on Escape, and on a click or tap on empty map.
+- **While the card is open,** it re-requests when the month index changes. Per T6 the card shows only stages and revisions on or before `day`, and `end` only once it has passed. The card therefore never shows future stages, which the reconciliation ruled under "Open questions answered".
 - **Card content** (all from `ProjectCard` plus the current `day`; `card.ts` is pure):
-  - **Heading**, the `label`, and a badge: "Real project" for `origin 'pipeline'` or "Simulated project".
+  - **Heading**, the `label`, and a badge: "Real project" for `origin 'pipeline'` or "Simulated project". Simulated labels are always "Block B, Lot L" (T6).
+  - **Massing note:**
+    - `massing === 'approximate'`: "Building shape approximate";
+    - `massing === 'none'` or `multiPhase`: "Multi-phase project; buildings not drawn" (reconciliation "Multi-phase projects").
   - **Simulated projects** add: "Not a real proposal. In this simulated future a project starts on this parcel. The parcel was picked by chance, weighted by how often parcels like it have been redeveloped. It says nothing about the owner's plans."
   - **Pathway**, using the §4.9 labels.
   - **Status at `day`**:
-    - `notYet`: "In this simulation a project appears here in {Mon YYYY}."
     - `inStage`: "{in-stage label}, {n} months so far".
     - `complete`: "Completed {date}".
     - `exited`: "Stopped during {in-stage label of end.stage} ({reason label}), {date}".
-    - The current stage is the last entry in `stages` with `day ≤ t`, unless `end.day ≤ t`.
-  - **Size at `day`**: the last `revisions` entry with `day ≤ t`, else `revisions[0]`. It reads "{units} homes · {stories} stories · replaces {existingUnits} (net +{units − existingUnits})". Each later revision is listed as "Resized: {a} → {b} homes, {date}{, simulated if day > asOf}".
-  - **Chance of finishing** (`inStage` only): `chanceTable(calibration)[pathway][stage][min(m, len−1)]`, where `m` is the months in stage (concern C6: the rule must be the one the renderer uses). The table is computed once per calibration on the main thread. The value is shown as a whole percent, rounded, or as "under 1%" or "over 99%": "Chance of finishing from here: 62%". Under it, a `<details>` "How is this estimated?" lists every `Transition` from the current stage to `complete` on this pathway, each with its tier and `provenance.label`. It links to the matching dialog section. If any listed transition has tier ≥ 3, the line also says "partly based on research estimates, not San Francisco records". The copy says the number is the share of similar projects that finish, not this project's fate.
-  - **Timeline**: one row per `stages` entry (iterated from data, not from `STAGE_ORDER`), then the end. Each row is "{entered label} · {date} · Recorded" when `actual`, else "Simulated". Actual dates are `Mon D, YYYY`; simulated dates are `Mon YYYY` (the day within the month is a uniform draw, T4). All dates are formatted in UTC.
+    - The current stage is the last entry in `stages` with `day ≤ t`, unless `end` is non-null and `end.day ≤ t`.
+  - **Size at `day`**: the last `revisions` entry with `day ≤ t`. It reads "{units} homes · {stories} stories (omitted when null) · replaces {existingUnits} existing homes (assessor) (net +{units − existingUnits})". Each later revision is listed as "Resized: {a} → {b} homes, {date}", with ", simulated" appended when its day is after `asOf`.
+  - **Chance of finishing** (`inStage` only): `chance[pathway][stage][min(monthsIn(entered, t), 240)]`, using the main thread's `chanceTable(calibration)` (241 months long, T12) and `monthsIn` (T1). These are the same functions and table the renderer receives, so the card and the bar colour agree. The value is shown as a whole percent, rounded, or as "under 1%" or "over 99%": "Chance of finishing from here: 62%". Under it, a `<details>` "How is this estimated?" lists every `Transition` from the current stage to `complete` on this pathway, each with its tier and `provenance.label`. It links to the matching dialog section. If any listed transition has tier ≥ 3, the line also says "partly based on research estimates, not San Francisco records". The copy says the number is the share of similar projects that finish, not this project's fate.
+  - **Timeline**: one row per `stages` entry (iterated from data, not from `STAGE_ORDER`), then `end` if non-null. Each row is "{entered label} · {date} · Recorded" when `actual`, else "Simulated". Actual dates are `Mon D, YYYY`; simulated dates are `Mon YYYY` (the day within the month is a uniform draw, T4). All dates are formatted in UTC.
   - **Sources**: one link per `sources` entry: "{dataset name} {id}: DataSF record (JSON)". The URL is `https://data.sf.gov/resource/{dataset}.json?{key}={encodeURIComponent(id)}`, with keys verified live on 2026-10-16:
 
     | dataset | key | name |
@@ -316,7 +328,7 @@ There are no chart conventions in the repo (no chart, sparkline or SVG plotting 
 
     Any other dataset links to `https://data.sf.gov/d/{dataset}`, with the id as text.
 - **Reroll and crash.** On reroll the card re-requests its parcel. On a crash it shows "Details unavailable" until Retry.
-- **Keyboard gap.** Map picking is pointer-only, a known gap shared with the editor's tooltips (`docs/dev/map-interfaces.md`, "Known gap"). It is documented in `docs/dev/fzp-mode.md` (open question Q3).
+- **Keyboard gap.** Map picking is pointer-only, a known gap shared with the editor's tooltips (`docs/dev/map-interfaces.md`, "Known gap"). The reconciliation section ("Page") records it as a known a11y gap, and it is documented in `docs/dev/fzp-mode.md`.
 
 ### 4.9 Labels (`labels.ts`; one table each, so new stages render)
 
@@ -358,7 +370,7 @@ There are no chart conventions in the repo (no chart, sparkline or SVG plotting 
 4. **"Where new projects start":** `initiation`. Its terms are shown as a table: feature, bin, coefficient.
 5. **"How big new projects are":** `size`, as a table: envelope band, fill level, share.
 6. **"How projects change size":** `revision`. For each stage: the chance of a resize, the share that shrink and the share that grow.
-7. **"Which approval path":** `pathwayForNew` and `ppaShare`, as percentages.
+7. **"Which approval path":** `pathwayForNew` and `ppaShare`, as percentages. Before them, a fixed sentence: "New projects on Local Program parcels always take the streamlined path. That is a rule (administrative approval with a 180-day clock), tier 1. The shares below apply to other parcels." This follows the reconciliation, "New-project pathway and PPA".
 8. **"Targets and published estimates":** each T8 target `source` and each `references[].provenance`.
 
 **Every entry shows:**
@@ -372,7 +384,7 @@ There are no chart conventions in the repo (no chart, sparkline or SVG plotting 
 
 An entry with tier ≥ 3 also gets a visible note: "Not from San Francisco records."
 
-**Decision: no link to stage-calibration's `calibration-report.md` in this package.** It is not named in the manifest (T11 lists only `parcels`, `projects` and `calibration`). The dialog shows everything a reader needs from it (Q2).
+**No link to stage-calibration's `calibration-report.md`** (reconciliation, "Page"). It is a pipeline build artifact and is not uploaded. The dialog reads `calibration.json`.
 
 ### 4.11 Shell
 
@@ -385,11 +397,11 @@ An entry with tier ≥ 3 also gets a visible note: "Not from San Francisco recor
 
 ### 4.12 Attribution
 
-- **`/attribution`.** `ManifestSourcesSchema` (`src/lib/data/manifest.ts:88-92`) also picks `scenarios`, which T11 adds to the base schema (concern C10). When `manifest.scenarios?.fzp` is present, the "Licences and notices" list (`src/routes/attribution/+page.svelte:52-80`) gains this item: "Housing project records (building permits, Planning applications, approvals and completions, the development pipeline), the assessor's secured roll and the Family Zoning Plan height districts from DataSF, under PDDL, CC0 or public domain. The simulation's comparison estimates are cited from SF Planning and the SF Controller's Office." The sources table already lists every manifest source automatically.
+- **`/attribution`.** `ManifestSourcesSchema` (`src/lib/data/manifest.ts:88-92`) also picks `scenarios`, which T11 adds to `ManifestBaseSchema`. When `manifest.scenarios?.fzp` is present, the "Licences and notices" list (`src/routes/attribution/+page.svelte:52-80`) gains this item: "Housing project records (building permits, Planning applications, approvals and completions, the development pipeline), the assessor's secured roll and the Family Zoning Plan height districts from DataSF, under PDDL, CC0 or public domain. The simulation's comparison estimates are cited from SF Planning and the SF Controller's Office." The sources table already lists every manifest source automatically.
 - **On-map attribution.** The visible text stays "… · DataSF · …" (`src/lib/map/attribution.ts:32-41`), since all new data is DataSF. The link `title` names the distinct licences of the manifest's `datasf-*` sources:
   - the order is PDDL, public domain, CC0, joined with " / ";
   - so it reads "DataSF under PDDL / public domain" for every existing dataset (unchanged), and gains " / CC0" only when a CC0 source is present.
-- **SOFTWARE** (`src/lib/attribution.ts:1-17`): no new runtime dependency, so no new entry. Any dependency added during implementation gets one.
+- **SOFTWARE** (`src/lib/attribution.ts:1-17`): fzp-mode adds no runtime dependency. timelapse-render credits `@luma.gl/engine` (reconciliation, "Rendering"). Any dependency fzp-mode adds during implementation gets an entry.
 
 ### 4.13 UI constants introduced (all tier 4, design choices; none feeds the simulation)
 
@@ -415,15 +427,15 @@ Real-world values are read from data, not hard-coded:
 - **Addenda sub-stages.** Stage labels are one table (§4.9). The card iterates `card.stages` and the scoreboard iterates `inProgress` keys (`STAGE_ORDER` first, unknown keys appended), so new stages render without code changes. A stage missing from the label table falls back to its id.
 - **DA phasing.** Nothing: phased projects arrive as ordinary `ProjectCard`s.
 - **Renderings.** Nothing: the card has no image slot.
-- **calibration-report.md.** The dialog's sections have stable `id`s, so a later link can deep-link to them.
+- **calibration-report.md.** The dialog's sections have stable `id`s, so a later link to the report can deep-link to them.
 
 ## 6. Testing
 
 **Fixtures:**
 
 - `src/lib/fzp/fixtures/timeline-score.ts`: a hand-made `TimelineScore` with 291 months (2026-10 to 2050-12), a partial band and two references;
-- `src/lib/fzp/fixtures/cards.ts`: `ProjectCard`s that are real-actual, simulated, exited, revised and not-yet;
-- the fixture calibration: `e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json`, read from disk in server tests;
+- `src/lib/fzp/fixtures/cards.ts`: `ProjectCard`s that are real-actual, simulated (labelled "Block B, Lot L"), exited, revised, `massing: 'approximate'`, `multiPhase` with `massing: 'none'`, and with null `stories`;
+- the fixture calibration: `e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json`, read from disk in server tests through `parseCalibration`. A copy with one provenance set to tier 3 covers the tier-3 notes;
 - `FakeScenarioWorker` (`src/lib/fzp/test/fake-worker.ts`).
 
 **Vitest server project** (pure TS):
@@ -437,20 +449,21 @@ Real-world values are read from data, not hard-coded:
 - **`playback.spec.ts`:** advancing by dt × speed; the 100 ms clamp; stopping at horizon; Replay restarts; property test (fast-check): the day is monotonic and within range.
 - **`format.spec.ts`:** readout "March 2031"; actual and simulated date formats; UTC at midnight boundaries; percent rounding including "under 1%" and "over 99%".
 - **`score-view.spec.ts`:**
-  - `ScoreAt` from the fixture: total = baseline + completedNet;
+  - `ScoreAt` from the fixture: total = baseline + completedNet; `entitledNew` passed through;
   - band offset by the baseline, and `null` when absent;
   - deadline fraction; stage order with an unknown key appended.
-- **`chart.spec.ts`:** `niceCeil`; the x and y scales; the band path closes; references end at `by`; table rows (Januaries, the deadline and the final month).
+- **`chart.spec.ts`:** `niceCeil`; the x and y scales; the band path closes; references start at `max(from, asOf)`, end at `by`, and are coloured by `measure`; table rows (Januaries, the deadline and the final month).
 - **`card.spec.ts`:**
-  - `CardStatus` for each fixture at days before, inside, at and after each stage;
+  - `CardStatus` for each fixture at days inside, at and after each stage, with `end: null`;
   - the size and revision at a day;
-  - chance from `chanceTable(fixture calibration)`, clamped past the table length;
+  - chance from `chanceTable(fixture calibration)` indexed by `monthsIn`, clamped at month 240;
+  - the massing and multi-phase notes;
   - the provenance transition list;
   - the tier ≥ 3 note;
   - source URLs for every dataset in the key table, plus the fallback.
 - **`provenance.spec.ts`:** the cumulative shares at 12, 24 and 60 months with tail extension, checked against hand-computed values; advance + Σexit ≤ 1; an entry for every calibration parameter present in the fixture.
 - **`seed.spec.ts`:** valid, out-of-range and junk seeds; unknown parameters kept.
-- **`client.spec.ts`:** rev ordering; stale `timeline`s dropped; summary promises resolve `null` on crash or restart.
+- **`client.spec.ts`** (if fzp-mode owns the client): rev ordering; stale `timeline`s dropped; `parcelSummary` carries `day`; summary promises resolve `null` on crash or restart.
 - **Edits to existing specs:**
   - `src/lib/shell/layout.spec.ts`: `/fzp` → true;
   - `src/lib/map/attribution.spec.ts`: the title is unchanged for fixture-0's sources and gains " / CC0" with a CC0 `datasf-*` source.
@@ -473,11 +486,14 @@ Real-world values are read from data, not hard-coded:
   - the mobile bar and sheet, with focus moving and returning;
   - `--scorebar-h`.
 - **`ScoreChart.svelte.spec.ts`:** the `role="img"` label; the table opens; the cursor moves with `day`.
-- **`ProjectCardPanel.svelte.spec.ts`:** each status; the simulated-parcel disclaimer; links; the provenance disclosure; Escape closes it.
+- **`ProjectCardPanel.svelte.spec.ts`:** each status; the simulated-parcel disclaimer; the massing note; "No project on this parcel at this date."; links; the provenance disclosure; a re-request on a month change with one in flight; Escape closes it.
 - **`SourcesDialog.svelte.spec.ts`:** opens modal; the focus trap and Escape; the section deep link; every fixture parameter has a tier badge and label.
 - **`FzpMode.svelte.spec.ts`** (fake worker, `SimMapStub` as `src/lib/brush/test/`):
-  - loading → ready;
-  - an error before ready → failed → Retry re-sends `initScenario` with the same seed;
+  - loading → `ready` message → still loading → first `timeline` → ready;
+  - `setTimelineLookups` called before the queued `applyTimeline`s;
+  - an error before ready (including `scenario-missing` with its copy) → failed → Retry re-sends `initScenario` with the same seed;
+  - "Back to the representative future" sends `reroll { seed: null }`;
+  - a fine-pointer hover pick shows the tooltip; a click opens the card; a coarse pick opens the card;
   - a crash after ready → chip, scrubbing still works, Retry sends `initScenario` with the shown seed;
   - reroll keeps the day, then a stale timeline is ignored;
   - resync sends `reroll` with the shown seed;
@@ -486,12 +502,12 @@ Real-world values are read from data, not hard-coded:
   - `no-scenario` never spawns a worker.
 - **`SiteHeader.svelte.spec.ts`:** the mode nav at both widths, `aria-current`, and the shortened brand.
 
-**Playwright e2e** (`e2e/fzp.spec.ts`; projects `chromium` and `mobile`; fixture-0 with its scenario files, concern C11):
+**Playwright e2e** (`e2e/fzp.spec.ts`; projects `chromium` and `mobile`; fixture-0 with the scenario files the reconciliation specifies under "Fixture-0 contents": one in-flight project per stage, one PPA, one multi-phase row, and a high initiation hazard):
 
 - **Load and controls:** `/fzp` reaches `ready` (`__sfhFzp.phase`). The readout shows the `asOf` month. Keyboard End → "December 2050", and the headline equals `baseline + score.shown[last].completedNet` from the hook.
 - **Reduced motion:** with `emulateMedia({ reducedMotion: 'reduce' })` the day stays at `asOf` for 2 s. Without it, the day advances.
 - **Reroll:** puts `?seed=N` in the URL with the day unchanged. Reloading `/fzp?seed=N` gives identical `score.shown`. `/fzp` twice gives the same seed (determinism).
-- **Card:** jump to the fixture's pipeline project (`jumpAndIdle` + `projectToPage`, `e2e/helpers/sharing.ts:53-72`). Click or tap opens a card with "Real project" and a DataSF link whose `href` matches the key table.
+- **Card:** jump to the fixture's pipeline project (`jumpAndIdle` + `projectToPage`, `e2e/helpers/sharing.ts:53-72`). Click or tap opens a card with "Real project" and a DataSF link whose `href` matches the key table. The multi-phase row's card says "Multi-phase project; buildings not drawn".
 - **Sources dialog:** lists one entry per parameter in fixture-0's `calibration.json`.
 - **No scenario:** `page.route` strips `scenarios` from `manifest.json`, and the message and editor link show.
 - **Header:** the "Timelapse" link on `/` navigates to `/fzp`, and "Paint" returns.
@@ -512,16 +528,25 @@ Real-world values are read from data, not hard-coded:
    - every change calls `setTime` once with the new `Day`.
 4. Playback defaults to 1 year/s and offers 1 month/s and 3 years/s. Autoplay happens only without reduced motion, and any scrub input pauses it.
 5. The scoreboard shows, for the scrubbed month:
-   - actual-to-date and the two simulated lines separately;
+   - actual-to-date, the two simulated completion lines and the simulated approvals (`entitledNew`), each separately;
    - the 8-in-10 band, marked provisional until `complete`;
    - RHNA and buffer progress, with the at-deadline values;
    - homes in progress by stage;
    - stopped homes;
-   - a chart with the reference estimates and a table alternative.
+   - a chart with each reference estimate compared with the series its `measure` names, and a table alternative.
 
    It is labelled "Simulation".
 6. A reroll changes the seed, keeps the day, and writes `?seed=N`. Loading that URL reproduces the same numbers on the same dataset.
-7. The project card shows the origin, pathway, status at the current day, size and resizes, recorded versus simulated dates, the chance of finishing with its provenance, and DataSF links. Simulated projects carry the disclaimer.
+7. The project card shows:
+   - the origin and pathway;
+   - the status at the current day;
+   - the size and resizes;
+   - recorded versus simulated dates, with no future stages;
+   - the massing or multi-phase note;
+   - the chance of finishing (from `chanceTable` via `monthsIn`), with its provenance;
+   - DataSF links.
+
+   Simulated projects are labelled "Block B, Lot L" and carry the disclaimer.
 8. The sources dialog lists every parameter in `calibration.json`, plus the baseline, targets and references, each with a tier and source. Tier ≥ 3 entries say they are not from SF records.
 9. A worker crash after `ready` leaves scrubbing working, and Retry restores the same future.
 10. `/` and `/p/:id` behave as before. Their only visible change is the header mode link and the shortened brand below 640 px. `Scoreboard.svelte` and `BrushEditor.svelte` are byte-identical.
@@ -530,41 +555,36 @@ Real-world values are read from data, not hard-coded:
 
 ## 8. Open questions
 
-- **Q1. Hide the header "Timelapse" link when the current dataset has no `scenarios`?**
-  - *Recommended:* no. That would need the manifest in the root layout. Instead, release so that the first scenario dataset is promoted with the same release (`docs/dev/deploy.md`). The no-scenario page handles any gap.
-- **Q2. Link `calibration-report.md`?**
-  - *Recommended:* not now. If stage-calibration publishes it under the dataset version and names it in the manifest, add one link at the top of the dialog.
-- **Q3. Keyboard access to project cards** (map picking is pointer-only).
-  - *Recommended:* accept the gap, which the editor shares, and document it. A later "projects near the map centre" list gives keyboard parity.
-- **Q4. Put the scrub day `t` in the URL?**
-  - *Recommended:* no. Sharing a timelapse view is out of scope. Only `seed` goes in the URL.
+None remain. The design's reconciliation section, under "Page", answered all four earlier questions:
+
+| question | answer |
+|---|---|
+| header link gated on scenario data? | no |
+| link `calibration-report.md`? | no |
+| keyboard access to cards? | a known a11y gap |
+| scrub day in the URL? | no; the seed only |
 
 ## Interface concerns (for the orchestrator)
 
-- **C1. T6 `parcelSummary.project?` is singular and carries no time.** Over 2026–2050 a parcel can host several projects (one dies, another starts later), and the worker never sees the scrub day. Recommend either `projects?: ProjectCard[]`, with the main thread picking by day (the §4.8 rule), or a `day` field in the request.
-- **C2. T6 has no resync message, and `reroll.seed` cannot be `null`.** fzp-mode resyncs with `reroll` and the shown seed. Returning to the representative future needs `initScenario { seed: null }` unless that seed is already known. Recommend `reroll { seed: number | null }`.
-- **C3. T6 does not say what the host sends after `initScenario`, or which error code a missing or invalid scenario file produces.** Does it send `ready`? fzp-mode treats the first `timeline` as ready and any `error` with the latest scenario rev as a failure.
-- **C4. T8 semantics are ambiguous:**
-  - whether `shown[].completedNet` and `band` include `baseline` (`fraction` explicitly does);
-  - whether `exitedUnits` is cumulative since `asOf`.
+**Resolved by the 2026-10-16 interface reconciliation**
 
-  This spec assumes that both exclude the baseline, that `exitedUnits` is cumulative, and that `completedNet = completedNetPipeline + completedNetNew`.
-- **C5. T8 `references` have no field saying which series they compare to, and no start date.** Both published estimates are plan-attributable, so fzp-mode plots them against `completedNetNew`. Recommend `compareTo: 'new' | 'total'`.
-- **C6. T12 has no shared "months in stage" rule.** Without one, the card's percentage and the bar colour can disagree by a month. Recommend that timelapse-sim export `monthsInStage(entered: Day, t: Day)`.
-- **C7. SimMap needs props that are not in T7 or I17:**
-  - a click/tap parcel-select callback that covers ghosts;
-  - suppressing its built-in tap card when that callback is present;
-  - a hover-tooltip line override.
+| # | concern | resolved by |
+|---|---|---|
+| C1 | `parcelSummary` time | T6 `parcelSummary { day }`, latest visible project, only stages ≤ day |
+| C2 | resync / null reroll | T6 `reroll { seed: number \| null }` is the resync path |
+| C3 | `ready` and error codes | T6 `ready` plus `scenario-missing` / `scenario-invalid` |
+| C4 | T8 semantics | T8 row and "Units semantics" |
+| C5 | reference series | T8 `references[].from` / `measure` and "References" |
+| C6 | months in stage | T1 `monthsIn` / `MONTH_DAYS` and T12 |
+| C7 | SimMap picking | T7 `timelinePick` with tooltip suppression |
+| C8 | legend colours | T7 `tl-*` tokens and `TIMELINE_LEGEND` |
+| C9 | prefetch | T6 "viewport-driven at every zoom" |
+| C10 | `ManifestBaseSchema` | T11 |
+| C11 | fixture contents | reconciliation, "Fixture-0 contents" |
+| C12 | simulated labels | T6 `label` and "Ids and labels" |
+| C13 | validator | T12 `parseCalibration` |
 
-  Without the override, SimMap's built-in `generated` tooltip (`tooltip.ts:39-56`) would describe a ghost with the slot's `parcelMeta` units, not the revision current at `t`, and would say "replaces" for a proposal. Picking must also hit only the parts visible at `t`.
-- **C8. The legend needs timelapse-render's ghost, construction, complete, stopped and bar-ramp colours (light and dark) exported as tokens.**
-- **C9. Prefetch policy is contradictory.** "Geometry streams with the viewport, as on /" conflicts with the editor's zoom ≥ 14 gate and with "the whole city's timeline loaded" (scrub performance). fzp-mode prefetches the viewport at every zoom after the first timeline. At the default frame (zoom 13 / 12.2, `camera.ts:17-19`) that loads most of the 144 production chunks (155,020 parcels; production manifest queried 2026-10-16). timelapse-sim's geometry and memory budget must accept that.
-- **C10. T11's `scenarios?` must be added to `ManifestBaseSchema`, not only to the refined schema,** so that `/attribution` can pick it.
-- **C11. fixture-0 must give fzp-mode e2e:**
-  - ≥ 1 in-flight pipeline project on a parcel in chunk `50_25`;
-  - a representative run with ≥ 1 simulated project, ≥ 1 completion and ≥ 1 exit before 2050;
-  - ≥ 1 calibration entry at tier ≥ 3.
+**Still open**
 
-  The files must be at `scenarios/fzp/{parcels.bin,projects.json,calibration.json}`.
-- **C12. T6 `ProjectCard.label` is "address if known".** For a simulated project on a real parcel, an address implies a real proposal. Recommend that simulated projects always use "Block B Lot L". The card's disclaimer mitigates this either way.
-- **C13. The main thread needs the same `calibration.json` validator as the worker.** Recommend that timelapse-sim export `parseCalibration`.
+- **R1. T7 `timelinePick` does not say whether a call is a hover or a tap.** The render spec's draft carried `surface: 'tooltip' | 'card'`, but the reconciled row dropped it. Without it, fzp-mode infers the trigger: fine-pointer picks are hovers, and a map `click` with a live pick opens the card; coarse-pointer picks are taps (§4.8). Recommend restoring `surface` in T7, which would remove the inference.
+- **R2. T6 names a `ScenarioClient` but not its owner.** fzp-mode writes it at `src/lib/fzp/client.ts` unless timelapse-sim ships it.

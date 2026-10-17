@@ -20,7 +20,8 @@ From the design (verbatim):
 
 **Out of scope**
 
-- Choosing which projects get massed, when, how often, and memoising the results. That is `timelapse-sim`.
+- Choosing which projects get massed, when, how often, and memoising the results. That is `timelapse-sim`. Per the reconciliation ("Multi-phase projects"), `multiPhase` rows are never massed: their card shows massing `none`.
+- Stamping `source: 'scenario'` on simulated projects' buildings. T5 assigns this to the sim.
 - Ghost, stage and colour rendering, and per-slot packing. That is `timelapse-render`.
 - The yield table in `parcels.bin` (T11). That is `scenario-data`, using the existing `generate`.
 - Parsing stories or units out of records. That is `project-records`.
@@ -85,7 +86,8 @@ The source design's constraints still apply (free and open, determinism, oversho
 - **Honesty of numbers.** The mode is labelled a *simulation*. The scoreboard shows the shown run and the p10–p90 band. Pipeline and new-FZP units are separate lines. Actual completions since the RHNA period start are counted and labelled as actual. Units lost to dead projects are shown.
 - **Time scrubbing performance.** At 60 fps on a 2022-era laptop with the whole city's timeline loaded, per-frame JS during scrub or playback is O(1) in project count. A reroll reaches a full new timeline (the shown run, to 2050) within 3 s off the main thread. The p10–p90 band may fill in progressively afterwards; the UI marks it as provisional until it is complete.
 - **First paint.** `/fzp` must not require loading every parcel chunk. The whole-city score comes from `parcels.bin`, `projects.json` and `calibration.json`. Geometry streams with the viewport, as on `/`.
-- **The editor is unchanged.** `/` and `/p/:id` behave exactly as before. FZP mode is additive.
+- **The editor is unchanged.** `/` and `/p/:id` behave exactly as before. FZP mode is additive. The one intended exception is the shared header, which gains the mode links ("Paint" / "Timelapse").
+- **Map budgets in FZP mode.** Two deck layers per cell are allowed for timeline cells: translucency needs them. This is an exception to map-view's one-layer-per-cell rule, so a `bench:map` timeline scenario must pass the same p95 frame bar. The existing-building catch-up stays within 2,000 feature-state changes per frame.
 - **Accessibility.** WCAG 2.2 AA as in `docs/dev/accessibility.md`. The scrubber is a labelled slider: arrow keys step a month, Page Up/Down a year. Reduced motion stops autoplay, but scrubbing still works.
 
 ## 4. Behaviour
@@ -93,7 +95,7 @@ The source design's constraints still apply (free and open, determinism, oversho
 ### 4.1 Contract summary
 
 - **Units come from the record.** The result's `units` always equals `U = Math.floor(units)`, the caller's number. The massing only draws a volume for those units. `floorAreaM2` is the drawn volume's area. Scores (T8) count schedule/record units (tier 0) and never `massedUnits`.
-- **`source` is `'pipeline'`** on every result. `replacesExisting` is always `true`: the result is never an `adu` (see §4.4 and IC-6).
+- **`source` is `'pipeline'`** on every result. Per T5, the sim re-stamps simulated projects' buildings as `'scenario'`. `replacesExisting` is always `true`: the result is never an `adu`, which matches T3 ("new construction only").
 - **`parcelId`** is the anchor parcel (§4.2). Callers that need every parcel use `Schedule.parcelIds`.
 - **`stories`**: if a valid `stories` is given, the result's `stories` equals `Math.floor(stories)` exactly (§4.4). Otherwise it is the story count the search chose.
 - **No I8 null rule.** A real project may be smaller than what it replaces, in floor area or in units. `existingUnits`, `existingFloorAreaM2`, `existingHeightM`, `landUse` and `eligible` are **ignored**: the record is ground truth (tier 0) over the generator's "nobody rebuilds smaller" assumption.
@@ -104,7 +106,7 @@ The source design's constraints still apply (free and open, determinism, oversho
 Steps run in order. The first failure returns `null`.
 
 1. **Units.** If `units` is not finite → `null`. `U = Math.floor(units)`. If `U < 1` → `null`.
-2. **Stories.** A given `stories` is *valid* when it is finite and `1 ≤ Math.floor(stories) ≤ MAX_STORIES` (80, `constants.ts:27`). An invalid `stories` is treated as absent, not clamped. DBI's `number_of_proposed_stories` holds junk such as 300, 670 and 920 on old permits (verified by live query of `i98e-djp9`, 2026-10-16), and clamping a 920 to 80 would draw a spurious tower. If `stories` is absent, `maxStories` must be finite with `Math.floor(maxStories) ≥ 1`, or the result is `null`. Then `Smax = Math.min(Math.floor(maxStories), MAX_STORIES)`. If `stories` is valid, `maxStories` is not read (the record wins).
+2. **Stories.** A given `stories` is *valid* when it is finite and `1 ≤ Math.floor(stories) ≤ MAX_STORIES` (80, `constants.ts:27`). An invalid `stories` is treated as absent, not clamped. DBI's `number_of_proposed_stories` holds junk such as 300, 670 and 920 on old permits (verified by live query of `i98e-djp9`, 2026-10-16), and clamping a 920 to 80 would draw a spurious tower. If `stories` is absent, `maxStories` must be finite with `Math.floor(maxStories) ≥ 1`, or the result is `null`. Then `Smax = Math.min(Math.floor(maxStories), MAX_STORIES)`. If `stories` is valid, `maxStories` is not read (the record wins). The reconciliation rules that `generateForUnits` caps at `MAX_STORIES` when stories are unknown. So `timelapse-sim` passes `maxStories = MAX_STORIES` for pipeline projects whose `stories` is null, and the `min` keeps 80 as the hard cap for any caller.
 3. **Seed.** `seed = seed >>> 0`. The draws are `drawVariety(seed)` and `drawComposition(seed)`, exactly as `generate` uses them (`generate.ts:192`).
 4. **Parcels.** Wrap a single record in an array. Drop records whose `labelPoint` is not two finite numbers (the same test as `generate.ts:59-61`). De-duplicate by `id` and sort by `id` ascending, so the output does not depend on input order. If none remain → `null`.
 5. **Anchor.** The record with the largest `areaM2`, ties broken by the smallest `id`. Its `labelPoint` is the output frame's origin, and its `id` is the output `parcelId`.
@@ -117,12 +119,12 @@ Steps run in order. The first failure returns `null`.
      4. Heal the seams with a morphological closing: `inset(inset(U, −SIMPLIFY_EPS_M), +SIMPLIFY_EPS_M)` (an outset, then an inset of 0.10 m, miter joins). This bridges gaps narrower than 0.20 m.
    - **Why closing is needed.** The pipeline quantises every ring to centimetres relative to its own origin (`pipeline/lib/rings.ts:7`). Neighbouring parcels' shared edges can therefore disagree by about 1 cm per axis, plus the frame-offset error (below). 0.10 m is the existing `SIMPLIFY_EPS_M` (tier 4, typology-generator §4.1), reused rather than introducing a new number.
 7. **Site.** `normaliseSite(polygon, draws.edgeInsetM)` (`site.ts:66`).
-   - If the union has several components (non-adjacent parcels, e.g. across a street), only the largest is massed, as for multipart parcels (`site.ts:86-90`). The others get no geometry, and the units are not split.
+   - If the union has several components (non-adjacent parcels, e.g. across a street), only the largest is massed, as for multipart parcels (`site.ts:86-90`). The reconciliation ("Massing") confirms this. The others get no geometry, and the units are not split.
    - A non-project parcel enclosed by the assembly becomes an exclusion (a hole). The existing `fitSimpleRegions` handles it.
    - The edge inset applies to the union's outline only, so the massing spans the internal lot lines.
    - `null` site → `null`.
 
-**`frameOffset`, and why no new pipeline data is needed.** I6 polygons are exactly EPSG:7131 minus the projected label point. The label point is rounded to 1e-7° and then projected back (`pipeline/sql/10_parcels.sql:44-50`), and rings are `geom − (x0, y0)` (`pipeline/steps/chunks.ts:60`). So the offset between two parcels' frames is the 7131 grid difference between their label points, and `labelPoint` (I6) is enough. The pipeline must provide only that T3 `parcelIds` are current mapblklots present in the dataset's chunks (`project-records`), which it already promises.
+**`frameOffset`, and why no new pipeline data is needed.** I6 polygons are exactly EPSG:7131 minus the projected label point. The label point is rounded to 1e-7° and then projected back (`pipeline/sql/10_parcels.sql:44-50`), and rings are `geom − (x0, y0)` (`pipeline/steps/chunks.ts:60`). So the offset between two parcels' frames is the 7131 grid difference between their label points, and `labelPoint` (I6) is enough. The pipeline must provide only that T3 `parcelIds` are current mapblklots present in the dataset's chunks. T3 now states this: "current mapblklot, mapped through retired-parcel lineage".
 
 `frameOffset` evaluates the same tangent-plane formula as `localFrame(from).from(...to)` (`geo.ts:32-36`): grid convergence γ, GRS80 `M` and `N` at `from`'s latitude. It uses only `+ − × ÷` and `Math.sqrt`, so it is bit-identical in every engine. This keeps typology-generator §4.3 and the AC4 guard (`determinism.spec.ts:7-9`), since multi-parcel offsets feed floor area:
 
@@ -172,9 +174,12 @@ The known-stories path has one candidate, and the same three cases apply to it.
 
 **Result.** The result has `typology`, `composition`, `parts`, `stories` and `floorAreaM2 = round1(area)` from the chosen massing. `units = U`, `source: 'pipeline'`, `replacesExisting: true`, and `parcelId = anchor.id`. Serialisation goes through `serializeComposition` with a record carrying `anchor.labelPoint` and the assembled polygon, so parts are open CCW lng/lat rings rounded to 1e-7° and the I9 nesting holds.
 
-**Undershoot.** The target does not fit on the site within the story bound. The result is the largest massing, and `massingApproximate(b)` is `true`. Example (golden G4): 20 units on a 25×100 ft lot with no stories gives a 5-story walkup holding 9 units (computed with golden draws, `golden.spec.ts:53-57`). `timelapse-sim` puts this flag on the card (IC-4) as "massing approximate".
+**Undershoot.** The target does not fit on the site within the story bound. The result is the largest massing, and `massingApproximate(b)` is `true`. Example (golden G4): 20 units on a 25×100 ft lot with no stories gives a 5-story walkup holding 9 units (computed with golden draws, `golden.spec.ts:53-57`). `timelapse-sim` maps this flag to T6 `ProjectCard.massing`:
+- `'approximate'` when `massingApproximate(b)` is true;
+- `'matched'` otherwise;
+- `'none'` when the result is `null` or the project is `multiPhase`.
 
-**`unitsTolerance` (tier 4, made up, labelled as such).** ±10% with a minimum of ±1 unit. It is a display threshold for "the drawn volume roughly holds the record's units". It never changes a counted number.
+**`unitsTolerance` (tier 4, made up, labelled as such).** The reconciliation sets ±10% of units. This spec adds a floor of ±1 unit, so that small projects (U < 10) are not flagged for a one-unit rounding difference. It is a display threshold for "the drawn volume roughly holds the record's units", and it never changes a counted number.
 
 ### 4.5 Heights and the 80-story cap
 
@@ -183,8 +188,8 @@ There is no `STORIES_MAX` in the code. The cap is `MAX_STORIES = 80` (`constants
 - **FZP Local Program heights** reach 650 ft (`260//650-R-4`, the maximum over 2,356 Local Program polygons in `h9wh-cg3m`, verified 2026-10-16). By the design's rule that is 65 stories, which is inside 80.
 - **The generator handles 65 stories.** `generate` on a 50×60 m lot gives a 65-story tower with 752 units, top 202.9 m before parapet. `referenceComposition` on `lot-3000` gives 754 units at 65 stories and 826 at 72 (local probe, 2026-10-16).
 - **The tallest in-flight record seen** is 72 stories (permit `202311170986`, status filed, 672 units; verified live), also inside 80.
-- **Base (non-Local-Program) heights** reach 1000 ft (`1000-S-2`), so a T11 envelope can exceed 80 stories. `generate` clamps such an envelope to 80 (IC-7).
-- **Drawn height vs the height limit.** Floor-to-floor is 3.1 m with a 4.5 m ground floor, so a 65-story massing is about 666 ft against a 650 ft limit (+2.4%, plus a parapet of up to 1.2 m). This is a visual effect of the tier-3 rule `stories = floor(ft/10)`. It is not corrected here (IC-7).
+- **Base (non-Local-Program) heights** reach 1000 ft (`1000-S-2`), so a T11 envelope can exceed 80 stories. The reconciliation rules that envelopes are clamped to `MAX_STORIES` (80), and `generate` already does this.
+- **Drawn height vs the height limit.** Floor-to-floor is 3.1 m with a 4.5 m ground floor, so a 65-story massing is about 666 ft against a 650 ft limit (+2.4%, plus a parapet of up to 1.2 m). The reconciliation accepts this overshoot and asks for it to be documented: it is a visual effect of the tier-3 rule `stories = floor(ft/10)`.
 
 ### 4.6 Determinism and the seed contract
 
@@ -193,6 +198,7 @@ There is no `STORIES_MAX` in the code. The cap is `MAX_STORIES = 80` (`constants
   - The seed is independent of the realisation seed and of the revision. A project therefore looks the same in every possible future.
   - Across a revision (T5) the edge inset, stepback, tower slide and family preference stay fixed, so only the size changes.
 - **Input order.** Permuting or duplicating `parcel` entries does not change the output.
+- **Dataset hash.** Per the reconciliation, `src/lib/generator` joins the dataset-version hash (T11), because the yield table depends on it. Any change to `units.ts` or `assemble.ts` therefore changes `datasetVersion` and triggers `test:pipeline` through `chreode.config.ts` (scenario-data owns that edit). Massing results are not stored in any dataset file.
 
 ### 4.7 Performance
 
@@ -210,7 +216,7 @@ Calls run in the simulation worker, with no DOM.
 - a prototype of §4.3–4.4 over 20,000 synthetic lots (without serialisation) ran at p50 0.03 ms, p95 0.21 ms, p99 1.14 ms, max 1.9 ms;
 - the CI allowance is about 3×.
 
-**What this means for `timelapse-sim`.** 1,000 massings cost ≤ 0.4 s. Massing only the projects in loaded chunks, once per revision, fits the 3 s reroll budget.
+**What this means for `timelapse-sim`.** 1,000 massings cost ≤ 0.4 s. Massing only the projects in loaded chunks, once per revision, fits the 3 s reroll budget. `multiPhase` rows cost nothing, because they are not massed.
 
 **Internal.** Candidate capacities within one typology may be extrapolated linearly in stories: reference area is affine in stories for every typology (`bands.ts:100-113`). The chosen candidate is always rebuilt directly before output.
 
@@ -233,7 +239,7 @@ The editor only ever builds `'user'` buildings, so its behaviour is identical. M
 
 - **T9 policy levers.** Nothing. Levers transform `Calibration`/`ScenarioParcels`, not massing. `generateForUnits` reads the existing `rulesFor` table, so a future lever on coverage or unit size flows through without change.
 - **Addenda sub-stages.** Nothing. Massing is stage-independent.
-- **DA phasing.** Nothing new. The API already takes any subset of parcels and any unit count, so a later phasing spec can mass each phase as its own call.
+- **DA phasing.** Nothing new. `multiPhase` rows are not massed (reconciliation). The API already takes any subset of parcels and any unit count, so a later phasing spec can mass each phase as its own call.
 - **Renderings / R10 enrichment.** `stories` already carries stated facts. A future stated footprint or height is a new function. No hook is added now.
 
 ## 6. Testing
@@ -322,18 +328,27 @@ All in the Vitest **server** project (`src/**/*.spec.ts`), except as marked. Eve
 
 ## 8. Interface concerns (for the orchestrator)
 
-- **IC-1.** The design's subsystem paragraph gives `generateForUnits(parcel, units, maxStories, stories?)` without `seed`. T10 includes `seed`. This spec follows T10.
-- **IC-2 (doc vs code).** The source-design I9 row lacks `composition`, `parts[].role` and `parts[].tone`, which the code has (`types.ts:15-22`; also map-view spec line 47). The code governs. The I9 row should be refreshed when T10 amends it.
-- **IC-3.** T10 cannot mark a building `'scenario'`. *Recommended:* `generateForUnits` returns `'pipeline'`, and `timelapse-sim` stamps `{ ...b, source: 'scenario' }` on simulated projects' buildings, whichever generator call produced them. The alternative is an optional `source` argument on T10.
-- **IC-4.** `ProjectCard` (T6) has no field for "massing approximate", and no state for "no geometry" (`generateForUnits` returned `null`). *Recommended:* add `massing: 'matched' | 'approximate' | 'none'`, set by the worker from `massingApproximate(b)`.
-- **IC-5.** T5 `revisions[].stories` is `number`, but T3 `stories` may be `null`. The massed story count needs parcel polygons, and the sim does not load them for all projects (T11 carries no polygons). T4c also says pipeline stories "scale proportionally", which is undefined for `null`. *Recommended:* `stories: number | null` in T5 revisions, with the card showing the massed stories once geometry exists.
-- **IC-6.** T3 cannot express "keeps the existing building" (ADUs, additions, conversions). `generateForUnits` always masses a replacement. *Recommended:* `project-records` keeps to new-construction permit types (1/2) as in the dataset probe; otherwise T3 needs a `kind`.
-- **IC-7.** T11 envelopes can exceed 80 stories (base heights up to 1000 ft, `1000-S-2`, verified). `generate` clamps them to 80, so yields are flat above 80. Also, the 10 ft/story rule draws a 650 ft envelope at about 666 ft (§4.5). Both are for `scenario-data`/`timelapse-render` to accept or address.
-- **IC-8.** `packCell` rejects duplicate `parcelId`s in a cell (`pack.ts:51-52`). Two projects can share an anchor parcel (superseded and current records, or overlapping assemblies). `timelapse-render`'s per-slot packing (T7) must key slots by project, not by `parcelId`.
-- **IC-9 (naming).** The brief's `STORIES_MAX` is `MAX_STORIES` in code (`constants.ts:27`).
+### Open
+
+- **IC-1.** The design's subsystem paragraph (line 95) still gives `generateForUnits(parcel, units, maxStories, stories?)` without `seed`. T10 includes `seed`. This spec follows T10. Only the paragraph needs the fix.
+- **IC-2 (doc vs code).** The source-design I9 row lacks `composition`, `parts[].role` and `parts[].tone`, which the code has (`types.ts:15-22`; also map-view spec line 47). The code governs. The I9 row should be refreshed alongside T10's amendment.
+
+### Resolved by the 2026-10-16 interface reconciliation
+
+- ~~IC-3~~ `'scenario'` stamping: T5 now says "the sim stamps them" (§4.1).
+- ~~IC-4~~ Card flag: T6 `ProjectCard.massing: 'matched' | 'approximate' | 'none'` (§4.4).
+- ~~IC-5~~ Unknown stories: T5 `revisions[].stories: number | null /* null = unknown until massed */`. Reconciliation, "Massing".
+- ~~IC-6~~ Projects that keep the existing building: T3 "Projects are new construction only".
+- ~~IC-7~~ Over-80 envelopes and the floor-height overshoot: "Envelopes are clamped to `MAX_STORIES`" and "Floor-height overshoot … is accepted and documented" (§4.5).
+- ~~IC-8~~ Shared anchor parcels: "Render slots are keyed by project (T7)".
+- ~~IC-9~~ Naming: the code's `MAX_STORIES` governs. No change is needed.
 
 ## 9. Open questions
 
-- **OQ-1.** What `maxStories` should `timelapse-sim` pass for pipeline projects whose `stories` is `null`? *Recommended:* `MAX_STORIES`. The search prefers the fewest stories that reach the units (§4.4, cases 1–2), so the bound only matters on undershoot. That is exactly where density-bonus projects exceed zoning, so the parcel's FZP envelope would wrongly truncate them.
-- **OQ-2.** Is the ±10% / ±1 unit `unitsTolerance` (tier 4) the right threshold for showing "massing approximate"? *Recommended:* keep it. It only gates a label and never a number.
-- **OQ-3.** For non-contiguous assemblies, should each component be massed with units split by area? *Recommended:* not now. Mass the largest component only (§4.2 step 7), and revisit with DA phasing.
+Each of these was answered by the reconciliation and has been applied above:
+
+- ~~OQ-1~~ The cap when stories are unknown is `MAX_STORIES`, passed as `maxStories` by the sim (§4.2 step 2).
+- ~~OQ-2~~ The tolerance is ±10% of units (tier 4). This spec keeps its own ±1-unit floor (§4.4).
+- ~~OQ-3~~ Non-adjacent parcels mass on the largest connected component (§4.2 step 7).
+
+None remain open.

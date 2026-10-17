@@ -1,6 +1,6 @@
 # scenario-data: spec (fzp-timelapse)
 
-Status: derived from [the FZP timelapse design](../design/2026-10-16-1903-fzp-timelapse.md) (approved with partner rulings). Owns T11 and the `sfh-scenario/1` codec. Consumes T4a (feature list), T4b (F) and T4 (`Provenance`).
+Status: derived from [the FZP timelapse design](../design/2026-10-16-1903-fzp-timelapse.md) (approved with partner rulings). Updated to the design's "Interface reconciliation (2026-10-16, after spec derivation)", cited below as **R**. Owns T11, T13 and the `sfh-scenario/1` codec. Consumes T1 (`Day`), T4 (`Provenance`), T4a (feature list) and T4b (F).
 
 Evidence marks: **(V)** means verified, with a file:line or a URL I fetched or queried live on 2026-10-16. **(I)** means inferred.
 
@@ -15,14 +15,17 @@ Evidence marks: **(V)** means verified, with a file:line or a URL I fetched or q
 - Base density caps, the yield step (generator inside the pipeline) and `FILL_LEVELS`.
 - The codec `src/lib/data/scenario-codec.ts` (`sfh-scenario/1`) and the types in `src/lib/data/scenario.ts`.
 - The manifest `scenarios` field (I12 amendment).
-- Two in-build tables for downstream pipeline subsystems: `scenario_envelopes` and `scenario_panel`.
+- The T13 parcel panel and the retired-parcel lineage file, for project-records and stage-calibration.
 - Invariants V15–V19, the fixture-0 mini scenario parcels, and report counts.
+- Two edits R assigns to this subsystem:
+  - the `chreode.config.ts` rule plus a `test:pipeline` step;
+  - correcting the fixture claim in `docs/dev/pipeline.md`.
 
 **Out:**
 - `projects.json` (project-records) and `calibration.json` (stage-calibration).
 - Fitting anything, choosing the fitting window, and the size-model probabilities.
 - Runtime decoding policy in the worker (timelapse-sim calls the codec).
-- Corner-lot height bonuses, historic-register data, and Neighborhood Commercial (NC) density limits (§8).
+- Corner-lot height bonuses (deferred, R) and historic-register data (assumed eligible, R).
 
 ## 2. Interfaces
 
@@ -30,10 +33,12 @@ Rows copied verbatim from the design.
 
 | # | interface | owner → consumers | mark |
 |---|---|---|---|
+| T1 | `type Day = number` is integer days since 1970-01-01 UTC. All schedule times use it. It is exact in Float32. `MONTH_DAYS = 30.436875` (365.2425 / 12). `monthsIn(enteredDay, day) = floor((day − enteredDay) / MONTH_DAYS)` is the single months-in-stage rule, used by every table index (T4, T12, the bar, the card). `OPEN_DAY = 3.0e38` encodes an open-ended window end. These live in `src/lib/timelapse/time.ts` | stage-calibration → all | DC |
 | T4 | `interface Provenance { tier: 0 \| 1 \| 2 \| 3 \| 4; label: string; sources: { label: string; url: string }[]; method: string; n?: number; window?: [from: string, to: string] }`. `interface Transition { months: number; advance: number[] /* cumulative incidence by month 1..months */; exit: Partial<Record<ExitReason, number[]>>; tail: { advance: number; exit: Partial<Record<ExitReason, number>> } /* constant monthly hazards beyond months */; provenance: Provenance }`. `scenarios/fzp/calibration.json` = `{ schema: 1; asOf: Day; transitions: Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, Transition>>>; initiation: InitiationModel; pathwayForNew: Record<Pathway, number> & { provenance: Provenance }; size: SizeModel; revision: RevisionModel }`. The calibration also carries `ppaShare: Record<Pathway, number> & { provenance: Provenance }`, the share of new projects that start at `preApplication`. `InitiationModel`, `SizeModel` and `RevisionModel` are rows T4a–c. Everything is plain JSON, so future policy levers can transform it (the T9 seam). **Sampling semantics:** a project entering stage *s* at day *d* draws one uniform. The month of advance or exit comes from the cumulative tables (`advance` + Σ`exit` ≤ 1 at every month), with the tail hazards beyond `months`. An in-flight project already *m* months into *s* draws conditionally on having survived *m* months. Day within the month is uniform | stage-calibration → timelapse-sim, fzp-mode | MC (every parameter carries tier + source), DC (encoding) |
-| T4a | `type FeatureId = 'potentialRatio' /* yield units at envelope ÷ max(existingUnits, 1) */ \| 'existingUnits' \| 'lotAreaM2' \| 'yearBuilt' \| 'storiesGap' /* envelope stories − existing stories */ \| 'improvementShare' /* improvement ÷ (land + improvement) assessed value */ \| 'rentControlLikely' /* 0/1: ≥ 2 units and built < 1979 */ \| 'landUseClass' /* categorical: residential, mixed, commercial, pdr, vacant, other */`. `interface InitiationModel { kind: 'logit-monthly'; intercept: number; terms: { feature: FeatureId; bins: number[] /* ascending edges; categorical features use category index */; coef: number[] /* one per bin */ }[]; provenance: Provenance }`. Monthly hazard = `1 / (1 + exp(−(intercept + Σ coef[bin(feature)])))`. It is fitted on pre-FZP (base) envelopes and evaluated on FZP envelopes. Parcels with an in-flight project are not at risk until that project ends | stage-calibration → timelapse-sim, scenario-data (feature list) | DC |
+| T4a | `type FeatureId = 'potentialRatio' /* yield units at full envelope ÷ max(existingUnits, 1); base variant uses the density-capped base yield (T13), FZP variant the Local Program yield (T11) — this is how density decontrol is seen */ \| 'existingUnits' \| 'lotAreaM2' \| 'yearBuilt' \| 'storiesGap' /* envelope stories − existing stories */ \| 'improvementShare' /* improvement ÷ (land + improvement) assessed value */ \| 'rentControlLikely' /* 0/1: ≥ 2 units and built < 1979 */ \| 'landUseClass' /* categorical: residential, mixed, commercial, pdr, vacant, other */`. `interface InitiationModel { kind: 'logit-monthly'; intercept: number; terms: { feature: FeatureId; bins: number[] /* ascending edges; categorical features use category index */; coef: number[] /* one per bin */ }[]; provenance: Provenance }`. Monthly hazard = `1 / (1 + exp(−(intercept + Σ coef[bin(feature)])))`. It is fitted on pre-FZP (base) envelopes and evaluated on FZP envelopes. Parcels with an in-flight project are not at risk until that project ends | stage-calibration → timelapse-sim, scenario-data (feature list) | DC |
 | T4b | `interface SizeModel { fillLevels: number[] /* ascending fractions of envelope stories; last = 1; length F matches T11 yield */; byEnvelope: { maxStoriesUpTo: number; probs: number[] /* length F, sums to 1 */ }[]; provenance: Provenance }`. A new project proposes `stories = max(1, round(fill × envelope.maxStories))` | stage-calibration → timelapse-sim, scenario-data (F) | DC |
-| T11 | `scenarios/fzp/parcels.bin` (codec `sfh-scenario/1`, in `src/lib/data/`): per eligible parcel `id`, `labelPoint`, `cellId`, `envelope: Envelope` (FZP Local Program stories), the base (pre-FZP) stories, the T4a feature values (with base-envelope and FZP-envelope variants of `potentialRatio` and `storiesGap`), a `localProgram: boolean` flag (false when the parcel is excluded from the Local Program, in which case `envelope` is the base height) and `yield: Uint16[F]`, the units at each quantised fill level of the envelope. Named in the manifest as `scenarios?: { fzp: { parcels: url; projects: url; calibration: url } }` (amends I12; optional, so older datasets load) | scenario-data → timelapse-sim | DC |
+| T11 | `scenarios/fzp/parcels.bin` (codec `sfh-scenario/1`, in `src/lib/data/`; deflate inside the file, async decode). It holds **every** parcel: `id`, `labelPoint`, `cellId`, a `hostable` flag (eligible and able to host a new project), `envelope: Envelope` (FZP stories: Local Program height if `localProgram`, else base height; clamped to `MAX_STORIES`), base stories, the base-zoning density cap in units (null = none), `localProgram: boolean`, `existingUnits` (latest assessor roll), the T4a feature values (base and FZP variants of `potentialRatio` and `storiesGap`) with an imputation mask, and `yield: Uint16[F]`, the gross units at each fill level of the envelope, replacement typologies only (no ADU outcomes), with no density cap under the Local Program. `FILL_LEVELS = [0.25, 0.5, 0.75, 0.9, 1]` (F = 5, tier-4 quantisation grid) is owned here, and stage-calibration imports it. Named in the manifest as `scenarios?: { fzp: { parcels: url; projects: url; calibration: url } }` (amends I12 and `ManifestBaseSchema`; optional, so older datasets load). Because the yield uses the generator, `src/lib/generator` and `src/lib/timelapse` join the dataset-version hash | scenario-data → timelapse-sim | DC |
+| T13 | Pipeline-internal parcel panel `pipeline/.cache/derived/<datasetVersion>/parcel-panel.parquet`. Per parcel × assessor roll year (2007..latest): `mapblklot`, roll year, assessor units, stories, year built, land and improvement value, use code → `landUseClass`, the zoning code (`acdm-wktn`), base stories, the base density cap, and the base-envelope yield (gross units at full base envelope, density-capped). Never shipped. Retired-parcel lineage is `parcel-lineage.parquet` in the same folder | scenario-data → project-records, stage-calibration | DC |
 | I1 | `type ParcelId = string` — SF `mapblklot` (block+lot, e.g. `"3512008"`), the single join key across all data | data-pipeline → all | DC |
 | I2 | `interface Envelope { maxStories: number }` — the per-parcel allowed envelope. The **only** thing manipulation writes. Later milestones add optional fields; M1 code must ignore unknown fields | plan-model → generator, scoreboard | MC (envelope-as-common-currency), DC (field set) |
 | I6 | `interface ParcelRecord { id: ParcelId; polygon: [x: number, y: number][][] /* local metres, exactly EPSG:7131 (NAD83(2011) / San Francisco CS13, metres), origin at label point */; labelPoint: [lng, lat]; areaM2: number; existingUnits: number; existingFloorAreaM2: number; existingHeightM: number; landUse: string; eligible: boolean; neighborhood: string }` | data-pipeline → plan-model, generator, scoreboard | DC |
@@ -55,7 +60,7 @@ export const fillStories = (fill: number, maxStories: number) =>
 export const LAND_USE_CLASSES = ['residential', 'mixed', 'commercial', 'pdr', 'vacant', 'other'] as const;
 export type LandUseClass = (typeof LAND_USE_CLASSES)[number];
 
-/** Decoded T11. Struct of arrays; row i is one parcel; rows sorted by (cellId, id). */
+/** Decoded T11 (T5's `ScenarioParcels`). Struct of arrays; row i is one parcel; rows sorted by (cellId, id). */
 export interface ScenarioParcels {
   format: 'sfh-scenario/1'; datasetVersion: string; scenario: 'fzp';
   rollYear: number;                 // latest closed_roll_year the features come from
@@ -72,7 +77,8 @@ export interface ScenarioParcels {
   localProgram: Uint8Array;         // 0/1
   hostable: Uint8Array;             // 0/1: may receive a simulated project
   split: Uint8Array;                // 0/1: largest district overlap < 90% of parcel area
-  imputed: Uint8Array;              // bit 0 yearBuilt, 1 existingStories, 2 improvementShare, 3 existingUnits, 4 no roll row
+  imputed: Uint8Array;              // bit 0 yearBuilt, 1 existingStories, 2 improvementShare, 4 no roll row (bit 3 unused)
+  baseCap: Uint16Array;             // T11 base-zoning density cap in units; 0xFFFF = null (no cap)
   existingUnits: Uint16Array; existingStories: Uint8Array; lotAreaM2: Uint32Array;
   yearBuilt: Uint16Array; improvementShare: Float32Array; rentControlLikely: Uint8Array;
   landUseClass: Uint8Array;         // index into LAND_USE_CLASSES
@@ -88,9 +94,9 @@ export function featureValue(p: ScenarioParcels, i: number, f: FeatureId, env: '
 export function envelopeOf(p: ScenarioParcels, i: number): Envelope;            // { maxStories: envelopeStories[i] }
 ```
 
-The pipeline-only tables (DuckDB, in-build) are also exported as parquet to `pipeline/.cache/derived/<datasetVersion>/`. They are never shipped:
-- `scenario_envelopes(parcel_id, district, base_ft, lp_ft, base_stories, lp_stories, envelope_stories, local_program, lp_exclusion, split, zoning_code, hostable)`, one row per parcel. project-records reads `base_stories` for T4d `baseStoriesAtFiling`.
-- `scenario_panel`, defined in §4.6. stage-calibration fits T4a on it.
+Pipeline-only files under `pipeline/.cache/derived/<datasetVersion>/` (R: derived-cache path), never shipped:
+- `parcel-panel.parquet`, the T13 panel; columns in §4.6. In the build it is also the DuckDB table `scenario_panel`. project-records reads `base_stories` from it for T4d `baseStoriesAtFiling`, and stage-calibration fits T4a on it.
+- `parcel-lineage.parquet`: `(blklot, retired_mapblklot, current_mapblklot, date_rec_drop)`, the retired-parcel lineage (T13). project-records uses it to map T3 `parcelIds` to current parcels.
 
 ## 3. Global constraints
 
@@ -119,7 +125,8 @@ The source design's constraints still apply (free and open, determinism, oversho
 - **Honesty of numbers.** The mode is labelled a *simulation*. The scoreboard shows the shown run and the p10–p90 band. Pipeline and new-FZP units are separate lines. Actual completions since the RHNA period start are counted and labelled as actual. Units lost to dead projects are shown.
 - **Time scrubbing performance.** At 60 fps on a 2022-era laptop with the whole city's timeline loaded, per-frame JS during scrub or playback is O(1) in project count. A reroll reaches a full new timeline (the shown run, to 2050) within 3 s off the main thread. The p10–p90 band may fill in progressively afterwards; the UI marks it as provisional until it is complete.
 - **First paint.** `/fzp` must not require loading every parcel chunk. The whole-city score comes from `parcels.bin`, `projects.json` and `calibration.json`. Geometry streams with the viewport, as on `/`.
-- **The editor is unchanged.** `/` and `/p/:id` behave exactly as before. FZP mode is additive.
+- **The editor is unchanged.** `/` and `/p/:id` behave exactly as before. FZP mode is additive. The one intended exception is the shared header, which gains the mode links ("Paint" / "Timelapse").
+- **Map budgets in FZP mode.** Two deck layers per cell are allowed for timeline cells: translucency needs them. This is an exception to map-view's one-layer-per-cell rule, so a `bench:map` timeline scenario must pass the same p95 frame bar. The existing-building catch-up stays within 2,000 feature-state changes per frame.
 - **Accessibility.** WCAG 2.2 AA as in `docs/dev/accessibility.md`. The scrubber is a labelled slider: arrow keys step a month, Page Up/Down a year. Reduced motion stops autoplay, but scrubbing still works.
 
 ## 4. Behaviour
@@ -152,9 +159,9 @@ Output: `{ kind: 'none' } | { kind: 'height'; baseFt: number; lpFt: number | nul
    - Checked against all 269 live strings: the maximum on the Local Program side, else the base side, equals `gen_hght` for every non-sentinel string (V). Semantics of multi-number forms: max is the permitted ceiling (I).
 5. **`r4`** = the normalised string ends `-R-4`. An R-4 string with no `//` has `lpFt = baseFt`.
    - Five live strings have `//` without R-4: `120/400-R-2  //  140/590-R-2`, `120/400-R-2 / 120-R-2  //  140/590-R-2`, `120/400-R-2  //  140/520-R-2`, `85-X // 120/400-R-2` and, before normalisation, `120/400//120/650-R4` (V).
-   - The first four are **not** Local Program: the program is "R-4 Height and Bulk District" only (V: Director Bulletin 11, §206.10(b)(3)). Their envelope is the base side. They are counted in `scenario.height.dbl_non_r4` (§8 OQ-5).
+   - The first four are **not** Local Program: the program is "R-4 Height and Bulk District" only (V: Director Bulletin 11, §206.10(b)(3)). R confirms this. Their envelope is the base side. They are counted in `scenario.height.dbl_non_r4`.
 
-**Stories** (tier 3, orchestrator): `stories(ft) = min(80, floor(ft / 10))`. 80 is `MAX_STORIES` (`src/lib/generator/constants.ts:27`), which the generator clamps to anyway (`generate.ts:64`).
+**Stories** (tier 3, orchestrator): `stories(ft) = min(80, floor(ft / 10))`. 80 is `MAX_STORIES` (`src/lib/generator/constants.ts:27`; R: "Envelopes are clamped to `MAX_STORIES`"). Overshoot of floor heights against the height limit, up to about 5% on towers, is accepted (R).
 
 ### 4.3 Parcel ↔ district join
 
@@ -168,7 +175,7 @@ Output: `{ kind: 'none' } | { kind: 'height'; baseFt: number; lpFt: number | nul
 
 - `baseStories = stories(baseFt)`.
 - For `r4` parcels, `lpFt' = max(baseFt, lpFt)`. Then, if `lotAreaM2 ≥ 743.2` (8,000 sf) and `lpFt' < 65`, `lpFt' = 65`.
-  - Source for the large-lot rule (V, tier 1): Bulletin 11 citing §206.10(d)(1)(C). The same rule covers corner lots, which are not modelled (§8 OQ-1).
+  - Source for the large-lot rule (V, tier 1): Bulletin 11 citing §206.10(d)(1)(C). The same rule covers corner lots, which are deferred (R). `localProgram` provenance says corner lots are understated.
 - `localProgram = r4 ∧ ¬excluded`, where `excluded` is any of:
 
 | exclusion (V: Bulletin 11) | data and approximation | tier |
@@ -176,14 +183,14 @@ Output: `{ kind: 'none' } | { kind: 'height'; baseFt: number; lpFt: number | nul
 | demolition on a site with > 2 rent-controlled units, §206.10(b)(9) | latest roll year: Σ `number_of_units` over **non-condo** rows ≥ 3 **and** `yearBuilt < 1979`. The Rent Ordinance covers pre-1979-06-13 buildings (I). Condo classes (`Z, ZBM, ZEU, LZ, LZBM, CZ, OZ, PZ, IZ, GZ, BZ, OZEU`) are excluded: Costa-Hawkins (I). Every simulated project replaces the existing building, so any project on such a site demolishes. | 2 |
 | demolition or conversion of a Hotel, §206.10(b)(10); motels may be eligible | any latest-roll row with `property_class_code ∈ {H, H1, H2, HC, HG, RH, RH1, RHG}` (codes V from a `$group` of 2025; RH = residential hotel/SRO counts as a Hotel (I)). `M`/`MG` motels are not excluded (V: Bulletin footnote 4). | 2 |
 | Article 10/11 listed properties | mapped outside R-4 (V: Bulletin footnote 1), so the height string already excludes them | 0 |
-| demolition of California/National Register buildings, Article 10 district contributors | no ingested dataset: **assumed eligible** (§8 OQ-2) | 4 |
+| demolition of California/National Register buildings, Article 10 district contributors | no ingested dataset: **assumed eligible** (R), labelled tier 4 in provenance | 4 |
 | Development-Agreement SUDs, §206.10(b)(8) | DA areas carry non-R-4 strings (Mission Rock, HP, CP, TI) (V: string list), so they are excluded by the map | 0 |
 
 - `envelopeStories = localProgram ? stories(lpFt') : baseStories`. It is 0 when `kind = 'none'`.
 - `hostable = (ParcelRecord.eligible) ∧ envelopeStories ≥ 1 ∧ yield[F−1] > 0`.
 - Provenance `localProgram`: tier 2, method "R-4 bulk from h9wh-cg3m; exclusions approximated from wv5m-vpq2; register listings not modelled".
 
-**Base density cap** (applies to the base path only; the Local Program decontrols density, per the literature survey §1 [A]). The rule comes from `zoning_code` of the parcel's chosen `acdm-wktn` row, picked like `10_parcels.sql:13`:
+**Base density cap.** R: the base envelope is the base height **and** the base zoning's density cap; the Local Program envelope has no cap. The cap comes from `zoning_code` of the parcel's chosen `acdm-wktn` row, picked like `10_parcels.sql:13`. It is a cap in units, evaluated at a date: today for parcels.bin `baseCap` and yields, and `lien_day` for panel rows. Per-area ratios use `lotAreaM2 / 0.09290304` square feet, floored, with a minimum of 1.
 
 | zoning | before 2022-11-27 | from 2022-11-27 |
 |---|---|---|
@@ -191,11 +198,12 @@ Output: `{ kind: 'none' } | { kind: 'height'; baseFt: number; lpFt: number | nul
 | RH-1(S) | 2 | 4 |
 | RH-2 | 2 | 4 |
 | RH-3 | 3 | 4 |
-| RM-1 / RM-2 / RM-3 / RM-4 | 1 per 800 / 600 / 400 / 200 sf of lot area (I, must be verified against §209.2) | same |
-| anything else | no cap | no cap |
+| RM-1 / RM-2 / RM-3 / RM-4 | 1 per 800 / 600 / 400 / 200 sf of lot area (I, to verify against §209.2) | same |
+| NC districts (NC-1, NC-2, NC-3, NC-S, named NCDs, NCT where a ratio is stated) | the per-lot-area ratio the Code states for each district (to read from Article 7 at implementation) | same |
+| anything else, including districts whose Code sets no ratio (for example RTO, NCT and UMU forms with no stated ratio) | no cap (null) | no cap |
 
-- Tier 1 (first-party code text). The implementer must cite §209.1/§209.2 next to the table, and the AC requires it.
-- Corner-lot six-unit allowances are not modelled. Neither are NC district caps (§8 OQ-4).
+- Tier 1 (first-party code text). R: "read from the Planning Code for RH, RM and NC districts wherever a per-lot or per-area ratio is stated", and each cap is verified against the Code before merge. The table lives in `pipeline/lib/density-caps.ts`, one cited Code section per entry.
+- Corner-lot six-unit allowances are not modelled (deferred, as with corner heights).
 
 ### 4.5 Roll ingest, lineage and features
 
@@ -215,10 +223,7 @@ So the history of lots merged for a project lands on the merged lot. Without thi
 - `landUseClass` from the row with the largest `property_area`: `SRES`/`MRES` → residential, `MISC` → mixed, `COMM`/`COMR`/`COMO`/`COMH` → commercial, `IND` → pdr, `GOVT` → other. A `property_class_code` starting `V` overrides to vacant (codes V from the 2025 `$group`; the mapping is mine (I)).
 
 **One scenario view of a parcel, used for both the panel and parcels.bin.** `scenarioRecord(rec, agg)` is the chunk `ParcelRecord` with these fields replaced:
-- `existingUnits`:
-  - `agg.units` when > 0;
-  - else the LUDB units (`rec.existingUnits`) when every mapped row has `status_code = 'N'` (government, where public housing carries 0 units on the roll; bit 3);
-  - else 0.
+- `existingUnits` = `agg.units` (R: "`existingUnits` in FZP mode comes from the latest assessor roll"). There is no LUDB fallback. Government parcels with roll units 0 and LUDB units > 0 (for example public housing) are counted in `scenario.roll.gov_zero_units` and `…_ludb_units`, so the gap is visible.
 - `existingFloorAreaM2` = `agg.floorAreaM2` when > 0, else `rec.existingFloorAreaM2`.
 - `existingHeightM` = `existingStories × 3.1`.
 
@@ -233,19 +238,26 @@ Features:
 
 The features reflect the roll year as of its lien date, 1 January of `closed_roll_year` (I: CA lien date). The current features use the **latest** roll year in the lock (2025 on 2026-10-16), and the header records it.
 
-**Why the roll and not LUDB for units.** LUDB (`fdfd-xptc`) is a single 2023 snapshot. The initiation hazard must be fitted and applied on the same definition, so both use the roll. The roll's 2025 Σ units is 389,527 against LUDB's ~411,500 (V: `sum(number_of_units)` query; data-pipeline spec §4.9). The government fallback recovers part of the gap, and V18 bounds the rest.
+**Why the roll and not LUDB for units.** LUDB (`fdfd-xptc`) is a single 2023 snapshot. The initiation hazard must be fitted and applied on the same definition, so both use the roll. project-records uses the same roll for T3 `existingUnits` (R). The roll's 2025 Σ units is 389,527 against LUDB's ~411,500 (V: `sum(number_of_units)` query; data-pipeline spec §4.9). V18 bounds the gap. The editor keeps LUDB, and the card says "existing homes (assessor)" (R).
 
-### 4.6 Panel emitted for stage-calibration (`scenario_panel`)
+### 4.6 T13 panel (`parcel-panel.parquet`, table `scenario_panel`)
 
-One row per (current parcel, roll year) that has ≥ 1 mapped roll row, for **every** roll year in the lock (2007–2025). The fitting window is stage-calibration's (OD-T3).
+One row per (current parcel, roll year) that has ≥ 1 mapped roll row, for **every** roll year in the lock (2007..latest). The fitting window is stage-calibration's: W = 2015-01-01 (R).
 
-Columns:
-- `parcel_id`, `roll_year`, `lien_day` (T1 Day of 1 January `roll_year`)
-- `existing_units`, `existing_stories`, `year_built`, `lot_area_m2`, `improvement_share`, `rent_control_likely`, `land_use_class`, `imputed`
-- `base_stories`, `base_density_cap` (NULL = none, evaluated at `lien_day`), `base_yield`, `potential_ratio_base` = `base_yield / max(existing_units, 1)`, `stories_gap_base`
-- `hostable_base` = eligible ∧ `base_stories ≥ 1` ∧ `base_yield > 0`
+Columns, sorted by (`mapblklot`, `roll_year`):
+- T13's columns:
+  - `mapblklot`, `roll_year`;
+  - `existing_units` (assessor units), `existing_stories`, `year_built`, `land_value`, `improvement_value`;
+  - `use_code`, `land_use_class`, `zoning_code`;
+  - `base_stories`, `base_density_cap` (NULL = none, evaluated at `lien_day`);
+  - `base_yield`: gross units at full base envelope, density-capped.
+- My additions:
+  - `lien_day` (T1 Day of 1 January `roll_year`);
+  - `lot_area_m2`, `improvement_share`, `rent_control_likely`, `imputed`;
+  - `potential_ratio_base` = `base_yield / max(existing_units, 1)`, `stories_gap_base`;
+  - `hostable_base` = eligible ∧ `base_stories ≥ 1` ∧ `base_yield > 0`.
 
-The base height is the **left side of the current string**, used as the pre-FZP height for every year. Tier 2. There is no historical DataSF height layer: the only Wayback copy before FZP, 2023-08-16, is truncated at SODA's default 1,000 rows (V). Provenance says so (§8 OQ-3).
+The base height is the **left side of the current string**, used as the height in force for every year. **Tier 3** (R: "No pre-FZP height map exists"), and provenance says so. The only Wayback copy before FZP, 2023-08-16, is truncated at SODA's default 1,000 rows (V). A Planning export would be an enrichment, not a blocker (R).
 
 ### 4.7 Yield table
 
@@ -253,7 +265,7 @@ Computed in the pipeline with the shared function `scenarioYield(rec, stories, c
 
 - `b = generate(rec, { maxStories: stories }, fnv1a32(rec.id), 'max')`, with I14's seed.
 - `null` gives 0.
-- An ADU (`replacesExisting = false`) gives `rec.existingUnits + b.units`. Otherwise `b.units`. Yield is **gross units on the parcel after the project**, so net = yield − `existingUnits` for every row.
+- An ADU outcome (`replacesExisting = false`) gives 0: the yield table has replacement typologies only (T11; R "The yield table excludes ADU outcomes"). Otherwise `b.units`. Yield is **gross units on the parcel after the project**, so net = yield − `existingUnits`.
 - If `cap` is set and the gross exceeds it, it becomes `cap`. Then 0 if `cap ≤ rec.existingUnits` (I8's "fewer homes" rule applied after the cap).
 
 Per parcel, with `rec' = scenarioRecord(rec, latest)`:
@@ -265,7 +277,11 @@ Per parcel, with `rec' = scenarioRecord(rec, latest)`:
 - `FILL_LEVELS = [0.25, 0.5, 0.75, 0.9, 1]` is a **tier-4 quantisation grid**, not a measured number. The measured part is stage-calibration's `probs` over it. For a 4-story envelope it gives 1, 2, 3, 4, 4 stories; for 8, it gives 2, 4, 6, 7, 8; for 24, it gives 6, 12, 18, 22, 24. The resolution near full fill reflects that most new SF projects build close to the limit (I).
 - Run time: about 155k × 4 distinct + panel memo misses. At the perf spec's ≤ 2.5 s per 150k synthetic parcels (`generator.perf.spec.ts:7`) that is ≈ 1–3 min (I). It is reported as `timings.scenario`.
 
-`src/lib/generator` (and `src/lib/plan/types.ts`) are added to `PATHS` in `pipeline/lib/version.ts:33`. The yields depend on the generator, so a generator change must give a new `datasetVersion`.
+`src/lib/generator`, `src/lib/timelapse` and `src/lib/plan/types.ts` are added to `PATHS` in `pipeline/lib/version.ts:33` (T11). The yields depend on the generator, so a generator change must give a new `datasetVersion`.
+
+R assigns two edits here:
+- **chreode.** `chreode.config.ts` gains a step `{ label: 'test:pipeline', run: 'npm run test:pipeline', when: ['pipeline'] }` and a rule `{ match: ['src/lib/generator/**', 'src/lib/timelapse/**', 'src/lib/data/**'], triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline'] }`, placed before the `src/**` rule (`chreode.config.ts:10`). The rule's `pipeline` trigger fires on changes to those paths. Paths no rule matches already run every step, and `test:pipeline` then joins them.
+- **Docs.** `docs/dev/pipeline.md` (Fixture) is corrected: CI loads fixture-0 (`.github/workflows/ci.yml:30`) but does not regenerate it. Drift is caught by `pipeline/test/golden.test.ts` under `test:pipeline`. The doc also gains the generator/timelapse hash note.
 
 ### 4.8 Codec `sfh-scenario/1` and file
 
@@ -286,7 +302,7 @@ Per parcel, with `rec' = scenarioRecord(rec, latest)`:
     envelopeStories u8[N]  baseStories u8[N]  flags u8[N]  imputed u8[N]
     existingUnits u16[N]   existingStories u8[N]  lotAreaM2 u32[N]  yearBuilt u16[N]
     improvementShare u8[N] (round(share × 200); /200 on decode)  landUseClass u8[N]
-    baseYield u16[N]       yield u16[N×F]
+    baseCap u16[N] (0xFFFF = null)  baseYield u16[N]  yield u16[N×F]
 ```
 
 - `flags`: bit 0 localProgram, bit 1 rentControlLikely, bit 2 hostable, bit 3 split.
@@ -328,7 +344,8 @@ New step `pipeline/steps/scenario.ts`, called from `build` (`pipeline/steps/buil
 Report counts (`scenario.*`):
 - `parcels`, `hostable`, `local_program`, `excluded.rent_control`, `excluded.hotel`, `large_lot_65`
 - `height.parse_fail`, `height.none`, `height.no_district`, `height.split`, `height.split_units`, `height.dbl_non_r4`
-- `roll.years`, `roll.latest`, `roll.matched_parcels`, `roll.unmatched.<y>`, `roll.unmatched_units.<y>`, `roll.lineage_retired`
+- `roll.years`, `roll.latest`, `roll.matched_parcels`, `roll.unmatched.<y>`, `roll.unmatched_units.<y>`, `roll.lineage_retired`, `roll.gov_zero_units`, `roll.gov_zero_units_ludb_units`
+- `density_cap.<zoning>` (parcels per capped district), `density_cap.none`
 - `imputed.<field>`
 - `units.total`, `yield.fzp_net_total` (Σ max(0, yield[F−1] − existingUnits) over hostable LP parcels), `yield.zero_hostable_eligible`, `yield.nonmonotone`
 - `bytes.payload`, `bytes.file`
@@ -338,7 +355,7 @@ Report counts (`scenario.*`):
 | V15 | `parcels.bin` inflates and decodes. `format`, `datasetVersion` and `scenario` match. `count` = `parcels.emitted`. Ids are unique, each is in exactly one chunk, and its `cell` equals that chunk's `cellId`. Re-encoding the decoded payload is byte-identical. | ✓ |
 | V16 | `height.parse_fail = 0`. ≥ `heightJoinMin` (live 0.99, fixture 1) of `eligible` parcels have a district. | (I) |
 | V17 | `fillLevels` deep-equal `FILL_LEVELS`. No clamped `u16`. `hostable ⇒ yield[F−1] > 0`. ≥ 50% of eligible parcels are hostable. **Warn** (not fail) if `yield.fzp_net_total` lies outside [0.25×, 4×] of Planning's ~780,000 net added capacity (tier 1 cross-check, literature §1 [A]). | (I) |
-| V18 | The panel covers every roll year in the lock. In the latest year ≥ `rollJoinMin` (live 0.97, fixture 1) of eligible parcels have a roll row. `scenario.units.total` lies in `scenarioUnitsRange` (live [0.90, 1.02] × 413,208, fixture exact). | roll Σ 389,527 + gov fallback (V/I) |
+| V18 | The panel covers every roll year in the lock. In the latest year ≥ `rollJoinMin` (live 0.97, fixture 1) of eligible parcels have a roll row. `scenario.units.total` lies in `scenarioUnitsRange` (live [0.90, 1.02] × 413,208, fixture exact). | roll Σ 389,527 ≈ 0.943 × (V) |
 | V19 | `bytes.file` ≤ `scenarioMaxBytes` (3.0e6). Warn > 2.5e6. | ≈ 2–2.5 MB (I) |
 
 `InvariantProfile` (`pipeline/config.ts:44`) gains `heightJoinMin`, `rollJoinMin`, `scenarioUnitsRange` and `scenarioMaxBytes`. `docs/dev/pipeline.md` (Invariants, Fixture, Where things land) and the CLAUDE.md pipeline row are updated.
@@ -348,7 +365,7 @@ Report counts (`scenario.*`):
 `make-fixture.ts` adds three raw files, keeping the SODA conventions of `pipeline/test/fixtures/mini/README.md`:
 - `datasf-height-bulk.page-000.geojson`;
 - `datasf-parcel-attrs.page-000.csv`, one row per parcel row incl. retired, condo and null-id;
-- `datasf-assessor-roll.page-000.csv`, roll years 2023–2025.
+- `datasf-assessor-roll.page-000.csv`, roll years 2024 and 2025. R asks for two roll years in the panel.
 
 Districts (local x ranges, y [−100, 100]):
 
@@ -368,9 +385,10 @@ Roll highlights:
 - lot 2: three `Z` condo rows, 1 unit each, 1985;
 - lot 3: `H1` hotel;
 - lot 4: `A`, 3 units, 1925;
-- lot 11: status `N`, 0 units;
+- lot 6: `RM-1`, 2 units, so the per-area cap is exercised;
+- lot 11: status `N`, 0 units (LUDB has 3);
 - lot 13: no 2025 row;
-- retired `3512099` (centroid in lot 12, dropped 2023-06-30): 7 units in 2023 only.
+- retired `3512099` (centroid in lot 12, dropped 2024-06-30): 7 units in 2024 only.
 
 Known answers (golden test assertions):
 
@@ -380,10 +398,12 @@ Known answers (golden test assertions):
 | 2 | existingUnits 3, LP (condos are not counted as rent-controlled) |
 | 3 | `excluded.hotel`, envelope = base 4 |
 | 4 | `excluded.rent_control`, envelope 4 |
-| 5 | district `65-X` (largest overlap), not LP |
+| 5 | district `65-X` (largest overlap), not LP, `baseCap` 4 (RH-1 after 2022-11-27) |
+| 6 | `baseCap` = floor(300 m² in sf / 800) = 4 |
 | 10 | `65-X`, split 1 |
-| 11 | existingUnits 3 (government fallback), envelope 12 |
-| 12 | `none`, not hostable; 2023 panel row has 7 units via lineage |
+| 11 | existingUnits 0 (roll only), counted in `roll.gov_zero_units`; envelope 12 |
+| 12 | `none`, not hostable; its 2024 panel row has 7 units via lineage |
+| 3, 13, 14 | `baseCap` null |
 | 13 | not LP (`dbl_non_r4`), base 40 stories, imputed bit 4 |
 | 14 | `R4` normalised, LP, envelope 65 |
 | 7, 9 | not hostable (ineligible) |
@@ -408,7 +428,7 @@ Vitest server project (`src/lib/data`, pure TS):
   - each `ScenarioFormatError` case in §4.8 (bad magic, truncated column, dictionary index out of range, bad `fillLevels`);
   - `featureValue` for every `FeatureId` × env.
 - `scenario.test.ts`: `fillStories` table (4 → 1, 2, 3, 4, 4; 8 → 2, 4, 6, 7, 8; 1 → 1 ×5); `FILL_LEVELS` ascending with last 1.
-- `scenario-yield.test.ts` (stub generator via `vi.mock`): ADU gross rule; cap clips; `cap ≤ existing` gives 0; `null` gives 0; the seed passed is `fnv1a32(id)`.
+- `scenario-yield.test.ts` (stub generator via `vi.mock`): an ADU outcome gives 0; cap clips; `cap ≤ existing` gives 0; `null` gives 0; the seed passed is `fnv1a32(id)`.
 - `scenario-yield.property.spec.ts` (fast-check, real generator on generator fixtures): never negative, ≤ 65,535, deterministic.
 - `manifest.test.ts` additions: `scenarios` optional; full object parses; partial `fzp` rejected; wrong-version prefix rejected; golden manifest re-validated.
 
@@ -419,16 +439,17 @@ Vitest client project:
 - `heights.test.ts`: table over a committed snapshot of all 269 live strings (`pipeline/test/fixtures/height-strings-2026-10-16.json`, with expected `baseFt`/`lpFt`/`r4`/kind and `gen_hght`), asserting max = `gen_hght` for each non-sentinel; fast-check never throws.
 - `scenario-sql.test.ts` on mini:
   - largest-overlap and split (lots 5, 10);
-  - lineage (lot 12, 2023);
+  - lineage (lot 12, 2024), and `parcel-lineage.parquet` rows;
   - condo aggregation (lot 2);
-  - government fallback (lot 11);
+  - roll-only units and the `gov_zero_units` count (lot 11);
   - exclusions (lots 3, 4);
-  - density cap table at 2022-11-26 vs 2022-11-27.
+  - panel has exactly the 2 roll years, with T13 columns present.
+- `density-caps.test.ts`: RH caps at 2022-11-26 vs 2022-11-27; RM per-area flooring and the minimum of 1; NC per-area entries; unlisted districts give null; every entry carries a Code section citation.
 - `local-program.test.ts`: large-lot 65-ft bump on a synthetic 800 m² R-4 record at `40//40-R-4`; `lpFt < baseFt` takes the max.
 - `fetch.test.ts` addition: CSV paging with a mock `Http` (header row not counted; short page stops; the trailing empty page is not locked).
 - `normalise.test.ts` addition: the three new tables' column types; bad years become NULL.
 - `invariants.test.ts` additions: V15–V19 each fail on a crafted out-dir (wrong count, parse failure, clamped yield, missing roll year, oversize file) and pass on mini.
-- `version.test.ts` addition: `codeTreeHash` changes when a file under `src/lib/generator` changes.
+- `version.test.ts` addition: `codeTreeHash` changes when a file under `src/lib/generator` or `src/lib/timelapse` changes.
 - `golden.test.ts`: decoded payload equals `parcels.decoded.json` and is identical across two builds; known answers of §4.11.
 
 Playwright e2e (`e2e/scenario-data.spec.ts`), after `npm run data:fixture`:
@@ -444,32 +465,38 @@ No page is added, so there is no axe gate here. fzp-mode owns it.
 3. `report.json` carries every `scenario.*` count of §4.10, including `roll.latest = 2025` on a 2026-10 fetch.
 4. Every one of the 269 live height strings parses. The max-height rule equals `gen_hght` for all non-sentinels.
 5. `decodeScenarioPayload` round-trips, and its header `fillLevels` equals `FILL_LEVELS`. stage-calibration's `size.fillLevels` imports the same constant.
-6. `scenario_envelopes` and `scenario_panel` exist after `build`, the panel covers 2007–2025, and both are exported under `pipeline/.cache/derived/<v>/`.
+6. After `build`, `pipeline/.cache/derived/<v>/parcel-panel.parquet` (T13 columns, 2007–2025) and `parcel-lineage.parquet` exist.
 7. The fixture known answers in §4.11 hold, and `npm run pipeline -- fixture` is stable across two runs (decoded payload).
 8. A manifest without `scenarios` still parses. `parseManifest` of fixture-0 passes with or without the field.
-9. Changing any file in `src/lib/generator` changes `datasetVersion`.
-10. The density-cap table cites Planning Code §209.1/§209.2 in a code comment, and the RM values are verified against the code text before merge.
+9. Changing any file in `src/lib/generator` or `src/lib/timelapse` changes `datasetVersion`, and `npm run signoff -- --dry-run` on such a change lists `test:pipeline`.
+10. Every RH, RM and NC entry of the density-cap table cites its Planning Code section and is verified against the Code text before merge (R).
 11. Every numeric parameter in this subsystem's code has a comment giving its tier and source as in this spec.
+12. `docs/dev/pipeline.md` no longer claims CI regenerates fixture-0.
 
 ## 8. Open questions
 
-1. **Corner lots.** §206.10(d)(1)(C) also lifts corner lots to 65 ft. Corners need street centerlines, which the pipeline does not ingest. *Recommend:* defer, and record in `localProgram` provenance that corner lots are understated.
-2. **Register-listed historic buildings in R-4.** *Recommend:* keep "assumed eligible" (tier 4, labelled), and add a historic-resources source in a later package.
-3. **Pre-FZP heights for 2007–2025.** The panel uses today's base side. *Recommend:* ask Planning for a pre-2026 height-and-bulk export. Until then, stage-calibration should prefer recent roll years when the window rule allows, and say so in provenance.
-4. **NC and other district density limits** are not capped, so base potential is overstated on NC parcels. *Recommend:* accept for this package and report the hostable NC count.
-5. **The five non-R-4 `//` strings.** *Recommend:* treat them as non-Local-Program per Bulletin 11, as specified, and confirm with the partner.
+None remain. All were answered in R:
+- corner-lot 65 ft: deferred;
+- register-listed buildings: assumed eligible (tier 4);
+- pre-FZP heights: the base side, tier 3, with an export as later enrichment;
+- NC density caps: included;
+- the five non-R-4 `//` strings: non-Local-Program.
 
-## Interface concerns (for the orchestrator)
+## Interface concerns
 
-1. **T11 "per eligible parcel".** I ship **every** parcel, with a `hostable` flag. T3 `InFlightProject` carries only `parcelIds`, and without full coverage the worker cannot place pipeline projects (cell, label point) before chunks load.
-2. **`ScenarioParcels`** is used by T5 `SimInput` but defined by no row. It is defined here as an internal type. Promote it to a row, or confirm it is internal to scenario-data → timelapse-sim.
-3. **T4a has no missing-value rule.** I impute in the pipeline, the same way for the panel and the current values, and ship an `imputed` mask.
-4. **`existingUnits` source.** The T4a feature and the net baseline in parcels.bin come from the roll (with a government fallback), not LUDB `ParcelRecord.existingUnits`. Numbers in FZP mode will differ from the editor's existing-unit counts, and possibly from project-records' T3 `existingUnits`. timelapse-sim should take net = yield − parcels.bin `existingUnits` for simulated projects.
-5. **"Yield units at envelope" (T4a/T11)** is specified as gross units after the project, with the base density cap applied on the base path. The cap is new and needs the zoning code. Without it, a `40//40-R-4` parcel (77% of affected parcels keep their height) shows zero FZP effect.
-6. **Sources added beyond the design's two:** `acdm-wktn` attributes (zoning code, retired lineage). The parcels source itself is untouched.
-7. **Version hash** must include `src/lib/generator`. Every generator change then yields a new `datasetVersion` and needs `fixture --update-golden`. chreode's `src/**` rule does not run `test:pipeline` (`chreode.config.ts:10`), so only CI or a full signoff catches a stale golden.
-8. **Compression inside `.bin`.** The decode is async. `docs/dev/data-serving.md` claims a stored `contentEncoding` "passes through"; that is unverified, so it is not relied on.
-9. **Invariant numbering.** I claim V15–V19. project-records and stage-calibration should start at V20.
-10. **Derived cache path.** T4d says `pipeline/.cache/derived/project-histories.json`. I recommend `pipeline/.cache/derived/<datasetVersion>/` for all derived files, so a fixture build never clobbers live ones.
-11. **Doc vs code.** `docs/dev/pipeline.md` (Fixture) says CI regenerates fixture-0 and fails on diff. `.github/workflows/ci.yml:30` only loads it (`data:fixture`), and the golden comparison is in `pipeline/test/golden.test.ts`.
-12. **T4b `fillLevels`** values are owned here (`FILL_LEVELS`). The row says only "length F matches T11 yield". stage-calibration must import the constant, not choose its own.
+All resolved by the design's "Interface reconciliation" (R) and the amended rows:
+
+1. Every parcel shipped, with `hostable`: resolved by **T11** ("holds **every** parcel … a `hostable` flag").
+2. `ScenarioParcels` undefined: resolved by **T5** (`ScenarioParcels /* decoded T11 */`). The decoded shape is in this spec's internal types.
+3. Missing values: resolved by **T11** ("with an imputation mask").
+4. `existingUnits` source: resolved by R, Units semantics (latest assessor roll in both files; the editor keeps LUDB). The government fallback I had proposed is removed.
+5. Yield semantics and density cap: resolved by **T4a/T11/T13** and R, Density decontrol (gross, replacement only, capped on the base path, uncapped under the Local Program, NC included).
+6. Extra `acdm-wktn` source: resolved by R ("Zoning codes come from `acdm-wktn`") and **T13**.
+7. Version hash and chreode: resolved by **T11** and R, Pipeline housekeeping. This spec now owns the chreode edit (§4.7).
+8. Compression inside `.bin`: resolved by **T11** ("deflate inside the file, async decode").
+9. Invariant numbering: resolved by R (V15–V19 here).
+10. Derived cache path: resolved by R and **T4d/T13** (`<datasetVersion>/`).
+11. Doc vs code on fixture regeneration: resolved by R. This spec corrects the doc (§4.7, AC 12).
+12. `FILL_LEVELS` ownership: resolved by **T11** ("owned here, and stage-calibration imports it").
+
+
