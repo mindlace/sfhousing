@@ -27,3 +27,4 @@
 - pipeline-massing spec synced. Fixed design para to include seed. Finding (doc↔code): source-design I9 row lags code (composition/role/tone) — record only; code is truth, T10 unaffected.
 - scenario-data and stage-calibration specs synced. Confirmed 16 occupiable pathway×stage pairs (added to design reconciliation).
 - All 7 specs synced to reconciled design; mechanical row check: every T-row in every spec byte-identical to design. Late rulings recorded (rhnaCompletedNet HI-net, parcel-lineage.parquet, timelinePick kind, ScenarioClient owner sim, math.ts fdlibm, no exit labels/edges). Next: fresh-eyes fidelity agent (C4).
+- Fidelity review: 2 blockers, 24 should-fix, 17 nits (report at scratchpad/fidelity-report.md; to be committed). Round-2 reconciliation written; rows T3/T4d/T6/T8 amended (projectId, bandRuns, card fields, months semantics, sources.key); step-0 types. Partner questions pending: #18 references vs counterfactual, #19 multi-phase steps, #23 window.
