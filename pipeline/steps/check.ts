@@ -14,7 +14,7 @@ import {
 import { decodeTransit } from '../../src/lib/data/transit-codec';
 import { BBOX, type InvariantProfile } from '../config';
 import { pointStrictlyInside } from '../lib/rings';
-import { PARCELS_BIN } from './scenario';
+import { PARCELS_BIN } from '../lib/scenario-files';
 import { z12TileBytes } from './tiles';
 
 export interface InvariantResult {
@@ -390,7 +390,7 @@ export async function checkDataset(
         problems.push(`datasetVersion ${p.datasetVersion} ≠ ${m.datasetVersion}`);
       if (p.scenario !== 'fzp') problems.push(`scenario ${p.scenario} ≠ fzp`);
       if (p.count !== emitted) problems.push(`count ${p.count} ≠ parcels.emitted ${emitted}`);
-      if (p.index.size !== p.count) problems.push(`${p.count - p.index.size} duplicate id(s)`);
+      if (recs.length !== p.count) problems.push(`${recs.length} chunk records ≠ count ${p.count}`);
       const cellsOf = new Map<string, string[]>();
       for (const k of chunks)
         for (const r of k.recs ?? []) cellsOf.set(r.id, [...(cellsOf.get(r.id) ?? []), k.cellId]);

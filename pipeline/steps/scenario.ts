@@ -30,10 +30,10 @@ import { createTableFromRows, type CellValue, type Duck } from '../lib/duck';
 import type { HeightDistrict } from '../lib/heights';
 import { localProgramEnvelope } from '../lib/local-program';
 import type { Report } from '../lib/report';
+import { PARCELS_BIN } from '../lib/scenario-files';
 import { runScenarioSql } from './scenario-sql';
 
-/** The T11 file, relative to the dataset's out dir. */
-export const PARCELS_BIN = 'scenarios/fzp/parcels.bin';
+export { PARCELS_BIN };
 /** The golden's canonical dump of the decoded T11 payload (spec §4.11). */
 export const SCENARIO_DUMP = 'scenarios/fzp/parcels.decoded.json';
 
