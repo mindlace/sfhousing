@@ -7,7 +7,7 @@ export type { Site } from './site';
 export { drawVariety } from './variety';
 export type { BuildoutMode, GeneratedBuilding, TypologyId } from './types';
 export type { VarietyDraws } from './variety';
-export { massedUnits, massingApproximate, unitsTolerance } from './units';
+export { generateForUnits, massedUnits, massingApproximate, unitsTolerance } from './units';
 export { createGeneratorCache } from './cache';
 export type { GeneratorCache } from './cache';
 
