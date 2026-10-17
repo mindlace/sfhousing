@@ -19,12 +19,13 @@ From the design (verbatim):
 
 **Out of scope**
 
-- Choosing which projects get massed, when, how often, and memoising the results. That is `timelapse-sim`. Per the reconciliation ("Multi-phase projects"), `multiPhase` rows are never massed: their card shows massing `none`.
+- Choosing which projects get massed, when, how often, and memoising the results. That is `timelapse-sim`. Unphased multi-phase rows are not massed. Phase sub-projects are massed like any pipeline project (timelapse-sim §4.8).
 - Stamping `source: 'scenario'` on simulated projects' buildings. T5 assigns this to the sim.
 - Ghost, stage and colour rendering, and per-slot packing. That is `timelapse-render`.
 - The yield table in `parcels.bin` (T11). That is `scenario-data`, using the existing `generate`.
 - Parsing stories or units out of records. That is `project-records`.
-- Real footprints and renderings (R10), and DA phasing.
+- Real footprints and renderings (R10).
+- DA phasing logic: splitting rows into phases, phase counts, and gaps. DA phasing itself is in scope for this package (reconciliation round 4, N6), but timelapse-sim and project-records own it. This subsystem only masses each phase sub-project: one `generateForUnits` call on that phase's parcels and units.
 - Any change to `generate` (I8), its outputs, or the editor (`/`, `/p/:id`).
 
 ## 2. Interfaces
@@ -45,7 +46,7 @@ From the design (verbatim):
 | I10 | `type TypologyId = 'adu' \| 'plex' \| 'walkup' \| 'podium' \| 'midrise' \| 'tower'` | generator | DC |
 | I14 | Seed: `seed = fnv1a32(parcelId)`. Variety is a pure function of parcel and envelope, so the same plan always renders identically for everyone | generator | DC |
 
-The code's `GeneratedBuilding` (`src/lib/generator/types.ts:11-27`) also carries `composition`, `role` and `tone`, which the source-design I9 row lacks (IC-2). This spec follows the code.
+The code's `GeneratedBuilding` (`src/lib/generator/types.ts:11-27`) also carries `composition`, `role` and `tone`, which the source-design I9 row lacks. This is source-design doc debt (N18). This spec follows the code.
 
 ### Internal types and functions (new; they alter no T- or I-row)
 
@@ -62,10 +63,7 @@ The code's `GeneratedBuilding` (`src/lib/generator/types.ts:11-27`) also carries
 - `export function massingApproximate(b: GeneratedBuilding): boolean`
 - `export function massedUnits(b: GeneratedBuilding): number`
 
-timelapse-sim owns the card's `massing` rule (reconciliation round 2) and builds it on these helpers:
-
-- pipeline buildings: `massingApproximate(b)`;
-- simulated buildings: `Math.abs(b.units − revision.units) > unitsTolerance(revision.units)`.
+timelapse-sim owns the card's `massing` rule (its §4.9) and builds it on these helpers. This spec does not restate that rule.
 
 The other three functions are internal.
 
@@ -184,10 +182,7 @@ The known-stories path has one candidate, and the same three cases apply to it.
 
 **Result.** The result has `typology`, `composition`, `parts`, `stories` and `floorAreaM2 = round1(area)` from the chosen massing. `units = U`, `source: 'pipeline'`, `replacesExisting: true`, and `parcelId = anchor.id`. Serialisation goes through `serializeComposition` with a record carrying `anchor.labelPoint` and the assembled polygon, so parts are open CCW lng/lat rings rounded to 1e-7° and the I9 nesting holds.
 
-**Undershoot.** The target does not fit on the site within the story bound. The result is the largest massing, and `massingApproximate(b)` is `true`. Example (golden G4): 20 units on a 25×100 ft lot with no stories gives a 5-story walkup holding 9 units (computed with golden draws, `golden.spec.ts:53-57`). `timelapse-sim` maps this flag to T6 `ProjectCard.massing`:
-- `'approximate'` when `massingApproximate(b)` is true;
-- `'matched'` otherwise;
-- `'none'` when the result is `null` or the project is `multiPhase`.
+**Undershoot.** The target does not fit on the site within the story bound. The result is the largest massing, and `massingApproximate(b)` is `true`. Example (golden G4): 20 units on a 25×100 ft lot with no stories gives a 5-story walkup holding 9 units (computed with golden draws, `golden.spec.ts:53-57`). The card's `massing` value is derived by timelapse-sim (§4.9 of its spec), not here.
 
 **`unitsTolerance` (tier 4, made up, labelled as such).** The reconciliation sets ±10% of units. This spec adds a floor of ±1 unit, so that small projects (U < 10) are not flagged for a one-unit rounding difference. It is a display threshold for "the drawn volume roughly holds the record's units", and it never changes a counted number.
 
@@ -226,7 +221,7 @@ Calls run in the simulation worker, with no DOM.
 - a prototype of §4.3–4.4 over 20,000 synthetic lots (without serialisation) ran at p50 0.03 ms, p95 0.21 ms, p99 1.14 ms, max 1.9 ms;
 - the CI allowance is about 3×.
 
-**What this means for `timelapse-sim`.** 1,000 massings cost ≤ 0.4 s. Massing only the projects in loaded chunks, once per revision, fits the 3 s reroll budget. `multiPhase` rows cost nothing, because they are not massed.
+**What this means for `timelapse-sim`.** 1,000 massings cost ≤ 0.4 s. Massing only the projects in loaded chunks, once per revision, fits the 3 s reroll budget. Multi-phase projects add about one call per phase revision in loaded cells. Unphased multi-phase rows add none.
 
 **Internal.** Candidate capacities within one typology may be extrapolated linearly in stories: reference area is affine in stories for every typology (`bands.ts:100-113`). The chosen candidate is always rebuilt directly before output.
 
@@ -249,7 +244,7 @@ The editor only ever builds `'user'` buildings, so its behaviour is identical. M
 
 - **T9 policy levers.** Nothing. Levers transform `Calibration`/`ScenarioParcels`, not massing. `generateForUnits` reads the existing `rulesFor` table, so a future lever on coverage or unit size flows through without change.
 - **Addenda sub-stages.** Nothing. Massing is stage-independent.
-- **DA phasing.** Nothing new. `multiPhase` rows are not massed (reconciliation). The API already takes any subset of parcels and any unit count, so a later phasing spec can mass each phase as its own call.
+- **DA phasing (in scope, owned by timelapse-sim §4.8).** Each phase sub-project is massed like any pipeline project, with one call on its own parcels (each phase is its own lot, N8) and its own units. This needs no new API. Unphased multi-phase rows are not massed.
 - **Renderings / R10 enrichment.** `stories` already carries stated facts. A future stated footprint or height is a new function. No hook is added now.
 
 ## 6. Testing
@@ -338,15 +333,14 @@ All in the Vitest **server** project (`src/**/*.spec.ts`), except as marked. Eve
 
 ## 8. Interface concerns (for the orchestrator)
 
-### Open
-
-- **IC-2 (doc vs code).** The source-design I9 row lacks `composition`, `parts[].role` and `parts[].tone`, which the code has (`types.ts:15-22`; also map-view spec line 47). The code governs. The I9 row should be refreshed alongside T10's amendment.
+None open.
 
 ### Resolved by the 2026-10-16 interface reconciliation
 
+- ~~IC-2~~ The I9 row lags the code (`composition`, `role`, `tone`). Closed as source-design doc debt (round 4, N18): the code is truth, and nothing here depends on the stale row.
 - ~~IC-1~~ The design paragraph now includes `seed` (reconciliation round 2).
 - ~~IC-3~~ `'scenario'` stamping: T5 now says "the sim stamps them" (§4.1).
-- ~~IC-4~~ Card flag: T6 `ProjectCard.massing: 'matched' | 'approximate' | 'none'` (§4.4).
+- ~~IC-4~~ Card flag: T6 `ProjectCard.massing: 'matched' | 'approximate' | 'none'`. timelapse-sim §4.9 derives it (N2).
 - ~~IC-5~~ Unknown stories: T5 `revisions[].stories: number | null /* null = unknown until massed */`. Reconciliation, "Massing".
 - ~~IC-6~~ Projects that keep the existing building: T3 "Projects are new construction only".
 - ~~IC-7~~ Over-80 envelopes and the floor-height overshoot: "Envelopes are clamped to `MAX_STORIES`" and "Floor-height overshoot … is accepted and documented" (§4.5).

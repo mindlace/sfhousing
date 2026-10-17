@@ -248,7 +248,7 @@ The panel's contents at month index `i`, in order:
 10. **Future line:** "This future: #{seed}", plus " (representative)" when the shown seed came from a `null` request. When it is not representative there is also a button, "Back to the representative future" (§4.7).
 11. **"Map key"** (`<details>`, open by default ≥ 768 px), the ghost-state legend. It renders one row per entry of timelapse-render's exported `TIMELINE_LEGEND` (T7), drawing each swatch from the `tl-*` tokens through their `--map-*` CSS variables, so the legend follows the theme. After the entries it adds one line of fzp-mode's own: "Bar length: progress through the stages. Bar colour: chance of finishing, low to high."
 12. **Button:** "Where these numbers come from" (opens §4.10).
-13. **Footnote:** "Data {datasetVersion} · built {date} · as of {asOf date} · [Sources](/attribution)". When the dataset has multi-phase projects, a second line follows (round 3, "Multi-phase"): "Multi-phase projects: {s} phases scheduled from published plans, {e} estimated from past projects; {u} projects without phase data are drawn as one footprint." The counts come from the phasing summary (concern R4). The line is omitted when the summary is unavailable, never guessed.
+13. **Footnote:** "Data {datasetVersion} · built {date} · as of {asOf date} · [Sources](/attribution)". When T8 `phasing.masters > 0`, a second line follows (round 3 "Multi-phase", round 4 N4): "Multi-phase projects: {phasesScheduled} phases scheduled from published plans, {phasesEstimated} estimated from past projects; {unenriched.length} projects without phase data are drawn as one footprint." When `masters` is 0 the line is omitted.
 
 - **Mobile collapsed bar** (button, `aria-expanded`): line 1 is `{formatCompactCount(total)} net new homes · {formatPercent(rhna fraction)} of RHNA`, line 2 "Simulation".
 - **Announcements:** an sr-only `aria-live="polite"` region. It speaks only when playback is paused, 1,000 ms after the day settles (the debounce of `Scoreboard.svelte:72-80`): "{March 2031}: {45,210} net new homes in this simulation, {55%} of RHNA."
@@ -341,6 +341,8 @@ There are no chart conventions in the repo (no chart, sparkline or SVG plotting 
 
     For a **Local Program project** the list starts with the `streamlinedForLocalProgram` provenance (tier 2: the Local Program uses the streamlined tables as a proxy). A project counts as Local Program when `ProjectCard.localProgram` is true (T6, round 3). Each entry links to the matching dialog section. If any listed transition has tier ≥ 3, the line also says "partly based on research estimates, not San Francisco records". The copy says the number is the share of similar projects that finish, not this project's fate.
   - **Timeline**: one row per `stages` entry (iterated from data, not from `STAGE_ORDER`), then `end` if non-null. Each row is "{entered label} · {date} · Recorded" when `actual`, else "Simulated". Actual dates are `Mon D, YYYY`; simulated dates are `Mon YYYY` (the day within the month is a uniform draw, T4). All dates are formatted in UTC.
+    - **Phase cards** (`phase` non-null, round 4 N10): the stage rows before `permitFiled` belong to the master plan. They are labelled as master context, with the stage label prefixed "Master plan": for example "Master plan approved · 2010 · Recorded" for `entitled` and "Master plan application filed" for `filed`. A sub-heading "This phase" precedes the `permitFiled` row and the rows after it.
+    - When the phase's `permitFiled` comes from the `phaseGap` proxy rather than a published schedule, the row reads "Building permit filed · {Mon YYYY} · Simulated (start estimated)". This applies only when `card.sources` has no schedule source.
   - **Sources**: one link per `sources` entry: "{dataset name} {id}: DataSF record (JSON)". The URL is `https://data.sf.gov/resource/{dataset}.json?{field}={encodeURIComponent(id)}`. `field` is `sources[].key` when present (T3/T6, round 2 "DataSF links"). Otherwise it is the dataset's record-id field from this table, with keys verified live on 2026-10-16:
 
     | dataset | key | name |
@@ -405,16 +407,17 @@ There are no chart conventions in the repo (no chart, sparkline or SVG plotting 
    - Each reference names the series it is compared with.
    - It adds the twin copy of §4.5 item 5a: the plan effect is this simulation minus the same city under the old zoning, with the same seed.
    - It says "Simulated counts start on {asOf date}."
-9. **"Multi-phase projects"** (round 3):
-   - **Counts:** {s} phases scheduled from published Development Agreement phasing plans (tier 1, `pipeline/enrichment/multiphase.json`), and {e} phases estimated from past projects (tier 2).
+   - It states the twins' pipeline-resize difference (round 4 N3): "Under the old zoning a real project's resize is capped by the old height limit, so its size can differ between the two runs. That difference is a real effect of the plan, but it appears only in 'from today's pipeline', not in 'what the plan added', so that the published estimates compare like with like."
+9. **"Multi-phase projects"** (round 3; bound to T8 `phasing` per round 4 N4; shown only when `phasing.masters > 0`):
+   - **Counts:** {masters} multi-phase projects, of which {enrichedMasters} have a published Development Agreement phasing plan (tier 1, `pipeline/enrichment/multiphase.json`). {phasesScheduled} phases are scheduled from those plans, and {phasesEstimated} are estimated from past projects (tier 2).
    - **How estimated phases are built:**
      - phase size: the median completed building size;
-     - start gaps: `phaseGap`.
+     - start gaps: `phaseGap`;
+     - at most one phase per parcel; extra units are spread over the existing phases (N8).
 
      `phaseGap` has its own provenance entry when present in `calibration.json`.
-   - **Unenriched projects:** {u} projects with no phase data, simulated as one project and drawn as a single footprint. The dialog lists them by label.
-
-   The counts and the list come from the phasing summary (R4). Without it, this section says "Phase details are not available for this dataset."
+   - **First-phase delay proxy** (round 4 N10): "Where no published schedule gives a start date, the first phase starts after the master plan's approval by a gap drawn from `phaseGap`. That is the typical gap between successive phases of past projects, used here as a stand-in for the wait before the first phase (tier 2, proxy)."
+   - **Unenriched projects:** a list of `phasing.unenriched`, each shown by `label`, falling back to `projectId`, with its `units`. These are simulated as one project and drawn as a single footprint.
 
 **Every entry shows:**
 
@@ -482,6 +485,7 @@ Real-world values are read from data, not hard-coded:
   - each value is the end-of-month state, so an event dated 2026-10-20 counts at index 0 and one dated 2026-11-01 at index 1;
   - a partial band with `bandRuns` 40 of `bandRunsTotal` 101;
   - `planEffect` and `planEffectBand` series, including negative early values;
+  - `phasing` with `masters: 2`, `enrichedMasters: 1`, `phasesScheduled: 5`, `phasesEstimated: 3` and one `unenriched` entry with a null label. A second variant has `masters: 0`;
   - two references, with `measure` set to `planEffect.entitledNew` and `planEffect.completedNetNew`;
 - `src/lib/fzp/fixtures/cards.ts`: `ProjectCard`s that are:
   - real-actual;
@@ -538,14 +542,17 @@ Real-world values are read from data, not hard-coded:
   - the values at a month;
   - "still calculating" and `aria-busy` on both bands while `bandRuns < bandRunsTotal`, even when `complete` is true; neither shows at `bandRuns = bandRunsTotal`, even when `complete` is false;
   - the "What the plan added" rows and the twin copy;
-  - the multi-phase footnote with counts, omitted without a summary;
+  - the multi-phase footnote: its counts from `phasing`, and omitted when `masters` is 0;
   - the representative label;
   - the live region silent while playing and speaking 1 s after a pause;
   - the mobile bar and sheet, with focus moving and returning;
   - `--scorebar-h`.
 - **`ScoreChart.svelte.spec.ts`:** the `role="img"` label; the table opens; the cursor moves with `day`.
 - **`ProjectCardPanel.svelte.spec.ts`:** each status; the simulated-parcel disclaimer; the massing note; `existingUnits` from the card; the tier-3 stories wording; "Loading project details…" versus "No project on this parcel at this date."; links built from `key` when present, else from the table; the tail and Local Program provenance entries; the provenance disclosure; a re-request on a month change with one in flight; Escape closes it.
+  - A phase card's "Phase 3 of 12" line, its master-context rows before `permitFiled` ("Master plan approved · … · Recorded") and its "This phase" sub-heading.
 - **`SourcesDialog.svelte.spec.ts`:** opens modal; the focus trap and Escape; the section deep link; every fixture parameter has a tier badge and label.
+  - The N3 pipeline-resize paragraph in section 8.
+  - Section 9 bound to `phasing` (counts, the unenriched list with the `projectId` fallback, and the first-phase delay proxy text), and absent when `masters` is 0.
 - **`FzpMode.svelte.spec.ts`** (fake worker, `SimMapStub` as `src/lib/brush/test/`):
   - loading → `ready` message → still loading → first `timeline` → ready;
   - `setTimelineLookups` called before the queued `applyTimeline`s;
@@ -658,11 +665,10 @@ None remain. The design's reconciliation section, under "Page", answered all fou
 | R3 | band total and Local Program flag | T6 `bandRunsTotal` and `ProjectCard.localProgram` |
 | — | reference lines and multi-phase notes (pending partner question) | the plan-effect twin (T8 `planEffect`, `planEffectBand`, `references[].measure`) and phase-by-phase simulation (T3 `phases`, T5/T6 `phase`) |
 
-**Still open**
+**Resolved by reconciliation round 4**
 
-- **R4. The main thread has no phasing summary.** Round 3 requires the scoreboard footnote and the sources dialog to state how many phases were scheduled from published plans versus estimated, and to disclose unenriched rows. No message carries those counts:
-  - T8 has none;
-  - `ProjectCard.phase` has no source tier;
-  - the page does not load `projects.json`.
+| # | concern | resolved by |
+|---|---|---|
+| R4 | phasing summary | T8 `phasing` (N4) |
 
-  Recommend that T8 gain `phasing: { scheduled: number; estimated: number; unenriched: { id: string; label: string }[]; provenance: Provenance }`, computed by timelapse-sim from T3 `phases[].source` (null source = estimated). Until it exists, the footnote line and the dialog section are omitted or say "not available", as §4.5 and §4.10 specify.
+**Still open:** none.

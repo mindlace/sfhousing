@@ -266,7 +266,7 @@ The features reflect the roll year as of its lien date, 1 January of `closed_rol
 
 ### 4.6 T13 panel (`parcel-panel.parquet`, table `scenario_panel`)
 
-One row per (current parcel, roll year) that has ≥ 1 mapped roll row, for **every** roll year in the lock (2007..latest). The fitting window is stage-calibration's: W = 2015-01-01 (R).
+One row per (current parcel, roll year) that has ≥ 1 mapped roll row, for **every** roll year in the lock (2007..latest). The fitting windows are stage-calibration's (§4.4); initiation uses every roll year from 2007.
 
 Columns, sorted by (`mapblklot`, `roll_year`):
 - T13's columns:
@@ -361,7 +361,7 @@ R assigns two edits here:
   - an index out of a dictionary's range;
   - `fillLevels` not ascending or not ending at 1.
 
-**Size budget** (engineering, derived from the 5 MB first-paint rule; not a simulation parameter): payload ≈ 48 B/parcel ≈ 7.4 MB, compressed ≈ 2.3–2.8 MB (I). The round-3 `baseYield[F]` adds 8 B/parcel raw over the single value. It compresses well, because it equals `yield` on every non-Local-Program parcel and differs only on Local Program parcels. V19 fails above 3.5 MB compressed and warns above 3.0 MB. Those are the earlier 3.0/2.5 MB thresholds raised by the expected ≈ 0.5 MB, still inside the 5 MB first-paint rule together with the basemap z12 budget (1.2 MB).
+**Size budget** (engineering, not a simulation parameter). It serves the design's relaxed first-paint rule, "`/fzp` must not require loading every parcel chunk" (no all-chunk load), and does not rest on a 5 MB transfer claim. payload ≈ 48 B/parcel ≈ 7.4 MB, compressed ≈ 2.3–2.8 MB (I). The round-3 `baseYield[F]` adds 8 B/parcel raw over the single value. It compresses well, because it equals `yield` on every non-Local-Program parcel and differs only on Local Program parcels. V19 fails above 3.5 MB compressed and warns above 3.0 MB. Those are the earlier 3.0/2.5 MB thresholds raised by the expected ≈ 0.5 MB. They keep the whole-city file well below the ≈ 5 MB compressed all-chunk load it replaces (data-pipeline spec §4.8).
 
 **Determinism.** The payload is byte-deterministic (V12-style re-encode check). The deflate bytes may differ across zlib builds and CPUs (I). The golden therefore compares the decoded payload, as `buildings.pmtiles` is handled today (`docs/dev/pipeline.md`, Fixture).
 
@@ -525,7 +525,7 @@ None remain. All were answered in R:
 - register-listed buildings: assumed eligible (tier 4);
 - pre-FZP heights: the base side, tier 3, with an export as later enrichment;
 - NC density caps: included;
-- the five non-R-4 `//` strings: non-Local-Program.
+- the four non-R-4 `//` strings: non-Local-Program; the `-R4` typo is Local Program.
 
 ## Interface concerns
 

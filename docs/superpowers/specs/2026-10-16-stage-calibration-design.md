@@ -13,16 +13,17 @@ From the design:
 > - the **initiation model**: a discrete-time hazard that a parcel with no project files one in a given month. It is fitted to SF parcel-years using pre-FZP envelopes and features, then applied with FZP envelopes (tier 2);
 > - the **size model**: what fraction of the allowed envelope a project proposes, measured from proposed stories against allowed height (tier 0→2);
 > - the **revision model**: the chance, timing and magnitude of a change in unit count, measured by comparing the PRJ proposal, the permit's `proposed_units` and the completed units of linked records (tier 0→2).
-> Every parameter carries its provenance (T4). **Fitting window (partner ruling OD-T3):** the longest window available across the majority of stages, with no weighting toward recent years. For each stage, take the earliest year with reliable tier-0 coverage. The common window starts at the latest of those years that still keeps a majority of stages fully covered, and ends at the snapshot. A stage whose coverage starts later uses its own span, and its provenance says so. Initiation is fitted over all available parcel-years with no calendar-year term.
+> Every parameter carries its provenance (T4). **Fitting window (partner ruling OD-T3):** the longest window available across the majority of stages, with no weighting toward recent years. For each stage, take the earliest year with reliable tier-0 coverage. The common window starts at the latest of those years that still keeps a majority of stages fully covered, and ends at the snapshot. A stage whose coverage starts later uses its own span, and its provenance says so. Initiation is fitted over all available parcel-years with no calendar-year term (a measurement-basis term for pre-2015 permit-filing events is allowed: see round-3 addenda).
 
 **In scope**
-- **Step 0** (round 2: "a step 0 lands the shared types and time modules"). Three dependency-free files land first, before any other subsystem's code:
+- **Step 0** (round 2: "a step 0 lands the shared types and time modules"). Four files land first, before any other subsystem's code (round 4 N5 adds the `model.ts` stubs; project-records lands `src/lib/timelapse/projects.ts` with the T3 types in the same step):
   - **`src/lib/timelapse/time.ts` (T1).** `Day`, `MONTH_DAYS`, `monthsIn`, `OPEN_DAY`, and `DYING_DAYS = 270` (display only, tier 4, read by render's uniforms).
   - **`src/lib/timelapse/math.ts`.** Deterministic fdlibm ports of `exp` and `log`.
   - **`src/lib/timelapse/types.ts`.**
     - The T2 types and constants: `Stage`, `Pathway`, `ExitReason`, `STAGE_ORDER`, `PATHWAYS`, `EXIT_ORDER`, `pathwayStages`.
     - The T4 types `Provenance`, `Transition`, `Calibration`; the T4a types `FeatureId`, `InitiationModel`; T4b `SizeModel`; T4c `RevisionModel`; T4d `ProjectHistory`.
-- **`src/lib/timelapse/model.ts` (T12)**, which imports `types.ts`, `time.ts` and `math.ts`. It is pure, zod-free and worker-safe. It exports `sampleTransition`, `initiationHazard`, `chanceTable`, `typicalMonths` and `parseCalibration`, plus the helpers `binIndex` and `eventualProbabilities`.
+  - **`src/lib/timelapse/model.ts` stubs.** Every T12 export (`sampleTransition`, `initiationHazard`, `chanceTable`, `typicalMonths`, `parseCalibration`) with its exact T12 signature, each throwing `new Error('not implemented')`. Consumers compile against it from day one, and step 2 replaces the bodies.
+- **`src/lib/timelapse/model.ts` (T12, full implementation, step 2)**, which imports `types.ts`, `time.ts` and `math.ts`. It is pure, zod-free and worker-safe. It exports `sampleTransition`, `initiationHazard`, `chanceTable`, `typicalMonths` and `parseCalibration`, plus the helpers `binIndex` and `eventualProbabilities`.
 
   `src/lib/timelapse` is in the dataset-version hash (T11).
 - **The pipeline step `pipeline/steps/calibration.ts`** and its libraries under `pipeline/lib/fzp-cal/`: window, spells, Aalen–Johansen, tails, fallbacks, initiation panel and IRLS, size, revision, pathway mix, provenance and the report writer.
@@ -36,7 +37,7 @@ From the design:
 - Histories, `projects.json`, `parcels.bin`, the T13 panel, `parcel-lineage.parquet` and the manifest entry (project-records, scenario-data). Lineage is not read here: T4d `parcelIds` are already current mapblklots.
 - `simulate`, clamping sampled days to the snapshot, applying revisions and caps, and the pathway rule for Local Program parcels (timelapse-sim).
 - Rendering and UI.
-- Policy levers, addenda sub-stages, DA phasing (§5).
+- Policy levers and addenda sub-stages (§5). DA phasing **is** in scope (design "Out of scope", round 3). This subsystem's part is `phaseGap` (§4.7a). The phase split itself belongs to project-records and timelapse-sim.
 - Any runtime fitting.
 
 ## 2. Interfaces
@@ -392,7 +393,7 @@ A numeric feature's highest bin with fewer than `MIN_BIN_EVENTS` events merges d
 **Fit.**
 1. Rows are binned with the shared `binIndex`, aggregated into `FitCell`s, and sorted lexicographically by bin tuple.
 2. The model is a binomial logit on (events, exposure): one Bernoulli trial per parcel-month, which is the discrete-time hazard likelihood.
-3. The design is the intercept, a full one-hot over bins, and one **nuisance column** `basis` (1 for parcel-months before 2015-01-01, else 0). Ridge ½·`RIDGE_LAMBDA`·Σβ² applies to the bin coefficients only; the intercept and `basis` are unpenalised.
+3. The design is the intercept, a full one-hot over bins, and one **nuisance column** `basis`. It follows each event's own detection basis (round 4 N13): 1 for an event month whose event has basis "permit", 0 for basis "record". Non-event parcel-months take the basis in force for their month (1 before 2015-01-01, else 0), which is the basis an event in that month would have had. Ridge ½·`RIDGE_LAMBDA`·Σβ² applies to the bin coefficients only; the intercept and `basis` are unpenalised.
 4. IRLS starts from the intercept = logit(Σevents/Σexposure), with `basis` and the bins at 0. It stops when max|Δ| < 1e-9, with at most 100 iterations. Non-convergence is a `CalibrationError`.
 5. The published `InitiationModel` is the intercept and bin coefficients with `basis` = 0. The `basis` coefficient is printed in the report and in `method`, never shipped, so the T4a shape is unchanged. Coefficients are rounded to 6 significant digits.
 
@@ -431,31 +432,27 @@ The initiation provenance `method` says: "pre-2015 events detected by first new-
 
 `phaseGap.days` holds the empirical gaps in days between successive phases' permit filings in past multi-phase projects. timelapse-sim draws from it uniformly by index for phases with no published schedule.
 
-**Identifying past multi-phase projects in the records.** Phases of one Development Agreement project are the separate new-construction site or full permits of one linked project. project-records' linkage puts them in one T4d history; only current pipeline rows are split. A history is a **DA group** iff at least one of these holds:
-- its `sources` include a `y673-d69b` child record whose id ends in `DVA` (optionally followed by `-NN`; DVA is Planning's Development Agreement record type, verified present in `y673-d69b`);
-- its `sources` include a `6jgi-cpb4` case ending in `PRX`;
-- its PRJ or case id appears in `pipeline/enrichment/multiphase.json`.
+**Identifying past multi-phase projects in the records** (round 4 N1). The input is project-records' `permits.parquet`, one row per linked type 1/2 permit. Its column names are used as-is:
+- `permit_number`, `project_id`;
+- `prx_case_no`, `dva_record_id`, `da`;
+- `proposed_units`, `site_permit`, `superseded`, `filed_day`.
+
+The **DA key** is `coalesce(prx_case_no, dva_record_id, da)`. Permits with a non-null DA key form one **DA group** per key. Grouping is by DA key, not by history id: one DA's phases may sit in several histories.
 
 **Phases of a group.**
-- **Which permits.** The group's distinct type-1/2 site or full permits that each propose ≥ `PHASE_MIN_UNITS` = 10 units (tier 4). They come from project-records' `permits.parquet` (round-3 addenda). This spec reads these columns:
-  - `permit_number`, `project_id` (the T4d history id);
-  - `filed_day` (Day), `proposed_units`, `permit_type` (1 or 2), `site_permit` (bool);
-  - `superseded` (bool, project-records' rule);
-  - the DA links `dva_record_ids`, `prx_case`, `case_no`.
-
-  If the landed project-records spec names them differently, its names win and this list maps one-to-one.
-- **Refiles.** Superseded permits, under project-records' superseded rule, are dropped, because a refile is not a new phase.
+- **Which permits.** The group's rows with `proposed_units` ≥ `PHASE_MIN_UNITS` = 10 (tier 4) and non-null `filed_day`. Every row is already type 1/2. Both site and full permits count.
+- **Refiles.** Rows with `superseded` true are dropped, because a refile is not a new phase.
 - **Same day.** Permits filed on the same day count as one phase.
 - **Gaps.** Phases are sorted by filed day. The gaps are the differences between successive filed days, in days and always > 0.
 - **Window.** Permit records from 1989-01-01 (the permit-side window).
 
 **Output and ladder.** `days` is all gaps across groups, sorted ascending.
-1. **DA groups** with ≥ `PHASE_MIN_GAPS` = 10 gaps (tier 4 threshold).
+1. **DA groups.** Every DA group with ≥ 2 phases contributes its gaps. The rung passes with ≥ `PHASE_MIN_GAPS` = 10 gaps in total (tier 4 threshold).
    - Tier 2.
    - `label`: "Gaps between phase permit filings in past SF Development Agreement projects (tier 2)".
    - `method`: the group count, the gap count, the median and the IQR.
    - `n`: the gap count; `window`: [1989-01-01, asOf].
-2. **Fallback, tier 2.** The same rule over every history with ≥ 2 qualifying permits of ≥ 10 units each: large multi-building projects, DA or not. `method` says "not DA-specific".
+2. **Fallback, tier 2.** Group all rows by `project_id`, and keep projects with ≥ 2 qualifying permits (≥ 10 units, not superseded). These are large multi-building projects, DA or not. The same gap rule applies. `method` says "not DA-specific". The "≥ 2 qualifying permits per project" condition exists only on this rung.
 3. **Last resort.** `days = [730]`, **tier 4**, "made up: no multi-phase history found". This is expected only in fixture builds.
 
 ### 4.8 SizeModel (T4b)
@@ -600,7 +597,7 @@ Probe URLs (verified 2026-10-16), base `https://data.sf.gov/resource/`:
 
 - **Policy levers (T9).** Every behavioural number is in `calibration.json`, as plain JSON with `schema: 1`. `parseCalibration` validates any transformed calibration too. Nothing else is done now.
 - **Addenda sub-stages.** Spells, the estimator, the ladder, `chanceTable`, `typicalMonths` and the validator all iterate `pathwayStages`/`STAGE_ORDER`, with no per-stage code. A future split edits T2 and the coverage table. Nothing else is done now.
-- **DA phasing.** `multiPhase` histories run through the ordinary tables, and the report counts them. Nothing else is done now.
+- **DA phasing (in scope, round 3).** `phaseGap` (§4.7a) is computed here. `multiPhase` histories run through the ordinary tables, and the report counts them. Phase splitting and scheduling belong to project-records and timelapse-sim.
 - **Renderings.** Not applicable.
 
 ## 6. Testing
@@ -652,7 +649,7 @@ Probe URLs (verified 2026-10-16), base `https://data.sf.gov/resource/`:
   - simulated panels with a known basis offset recover the feature coefficients within 0.05;
   - the back-cast holds per basis.
 - `phase-gap.test.ts`:
-  - DA detection by a `DVA` child, a `PRX` case, and a `multiphase.json` entry;
+  - grouping by `coalesce(prx_case_no, dva_record_id, da)`, including one DA spread over two `project_id`s that still forms one group;
   - permits under 10 units, superseded refiles and same-day phases are excluded or merged;
   - gaps sorted ascending;
   - the ladder falls back to rung 2 (tier 2) and then to [730] (tier 4).

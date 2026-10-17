@@ -30,3 +30,34 @@
 - Fidelity review: 2 blockers, 24 should-fix, 17 nits (report at scratchpad/fidelity-report.md; to be committed). Round-2 reconciliation written; rows T3/T4d/T6/T8 amended (projectId, bandRuns, card fields, months semantics, sources.key); step-0 types. Partner questions pending: #18 references vs counterfactual, #19 multi-phase steps, #23 window.
 - Round-2 spec edits applied by all 7 agents. Partner rulings round 3: old-zoning twin (planEffect, T9 baseZoning, paired CRN runs); multi-phase simulated phase-by-phase (master + phase sub-projects; DA phasing enrichment file, tier 1; fallbacks tier 2); window: planning-side 2015+, permit-side ~1989+ pooled pre-2015, initiation from 2007 via permit filings. Rows T3,T4,T5,T6,T8,T9,T11 amended.
 - Round 3 applied by all specs; rows verified identical. Next: fidelity pass 2.
+
+## 2026-10-16 — composition complete; handoff to superconductor
+- Package (branch `worktree-fzp-timelapse`):
+  - design `docs/superpowers/design/2026-10-16-1903-fzp-timelapse.md` (interface rows T1–T13; rulings OD-T1..T5; reconciliation rounds 1–4 + partner rulings round 3);
+  - 7 specs `docs/superpowers/specs/2026-10-16-{scenario-data,project-records,stage-calibration,pipeline-massing,timelapse-sim,timelapse-render,fzp-mode}-design.md`;
+  - research `docs/superpowers/research/2026-10-16-{fzp-calibration-literature,sf-stage-datasets}.md`;
+  - fidelity reports 1–2 in this folder.
+- Verified: every T-row byte-identical across all specs (script); no placeholders; fidelity pass 2 found no blockers; round-4 fixes applied by all owners.
+- Settled:
+  - evidence hierarchy 0–4;
+  - stage model with exits and optional preApplication;
+  - ghost from first record, option A visuals;
+  - horizon 2050;
+  - all projects treated the same in future;
+  - old-zoning twin (planEffect);
+  - DA phase-by-phase simulation;
+  - history windows (planning-side 2015+, permitFiled 1989+, permitIssued/construction 2000+, initiation 2007+).
+- Dependency order:
+  - step 0: shared types/time;
+  - then scenario-data ∥ project-records (after SD panel) ∥ pipeline-massing ∥ timelapse-render;
+  - then stage-calibration;
+  - then timelapse-sim;
+  - then fzp-mode.
+  - Integration milestone: a dataset release with scenarios/fzp/*.
+- Implementation-time obligations named as ACs:
+  - density caps re-verified against the official Planning Code;
+  - multiphase.json curation of all 21 PRX rows;
+  - Controller primary report citation (else labelled via press).
+- Doc debt: source-design I9 row lags code (composition/role/tone).
+- Doc↔code finding: docs/dev/pipeline.md says CI regenerates fixture-0; ci.yml does not (scenario-data corrects).
+- Next: fresh session, `supersonic:superconductor` intake on this package. Do not dispatch from the composition session.

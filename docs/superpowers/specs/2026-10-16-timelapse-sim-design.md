@@ -23,7 +23,7 @@ New files in `src/lib/sim/scenario/`, all worker-safe (no zod, no DOM, no `$app`
 
 | File | Contents |
 |---|---|
-| `types.ts` | **Step 0** of the design's Dependency order, landed before any body. It holds the T5 types (`Schedule`, `SimInput`, the `simulate` signature), the T6 types (`ScenarioRequest`, `TimelineResponse`, `ScenarioErrorCode`, `ScenarioResponse`, `ProjectCard`) and the T8 types (`TimelineScore`, `TargetProgressAt`). Types only: `protocol.ts` re-exports them, and fzp-mode and timelapse-render import them. |
+| `types.ts` | **Step 0** of the design's Dependency order, landed before any body. It holds the T5 types (`Schedule`, `SimInput`, the `simulate` signature). `SimInput.projects` imports the T3 `InFlightProject` type from `src/lib/timelapse/projects.ts`, owned by project-records (step 0, round 4 N5). It also holds the T6 types (`ScenarioRequest`, `TimelineResponse`, `ScenarioErrorCode`, `ScenarioResponse`, `ProjectCard`) and the T8 types (`TimelineScore`, `TargetProgressAt`). Types only: `protocol.ts` re-exports them, and fzp-mode and timelapse-render import them. |
 | `dates.ts` | `dayOf(y, m, d)` and `isoOf(day)`, built on `Date.UTC` |
 | `rng.ts` | counter-based draws |
 | `simulate.ts` | T5 `simulate`, the internal `simulateDetailed` (schedules plus multi-phase masters), and the schedule-only `simulateNet` |
@@ -57,9 +57,8 @@ Owned by other subsystems:
 
 Not in this package:
 
-- policy levers (the T9 seam only);
+- user-facing policy levers (the only PolicyOp shipped is `baseZoning`, T9);
 - addenda sub-stages;
-- DA phasing;
 - renderings.
 
 Unchanged:
@@ -163,14 +162,9 @@ function simulateNet(input: SimInput, seed: number, horizon: Day, months: Day[])
 | C11 | calibration completeness | Invariant: every pathway × stage pair is present |
 | R1 | T12 determinism across engines | Late rulings: `src/lib/timelapse/math.ts` (fdlibm `exp`/`log`, owned by stage-calibration) is used by T12 and by timelapse-sim; `Math.exp`/`Math.log` never appear on a determinism path |
 | R2 | `sampleTransition` days contract | Late rulings / stage-calibration spec §4.2: days count from stage entry and are ≥ ⌈m·M⌉; ρ > 0, so every project eventually leaves. Placing a result in a past month at the snapshot day is timelapse-sim's job (§4.4.2) |
+| R3 | T9 "identical schedules" against the T4c pipeline upsizing cap | Round 4 N3: T9 now promises identical stage timing, exits and ends. Pipeline revision **units** may differ between twins, because `baseZoning` lowers the envelope cap. That doesn't touch `planEffect`, which counts only simulated projects. fzp-mode's dialog states it |
 
-**Still open (round 3):**
-
-- **R3. "Identical in-flight schedules" (T9) against the T4c envelope cap.**
-  - Under common random numbers, in-flight stage timing, exits and ends are identical in the FZP run and its `baseZoning` twin. Entity-keyed draws guarantee this, and a test checks it.
-  - Revision **units** can still differ, because T4c caps pipeline upsizing at the parcel's envelope, and `baseZoning` lowers that envelope (`yield` becomes `baseYield`).
-  - This does not affect `planEffect`, which counts simulated projects only. It does make `completedNetPipeline` differ slightly between twins. That is arguably real: FZP re-applications that upsize a project are a plan effect.
-  - Recommend: T9 says "identical stage timing and outcomes". Alternatively, rule that pipeline caps ignore PolicyOps.
+No concerns remain open.
 
 ## 3. Global constraints
 
@@ -381,7 +375,7 @@ Each such row becomes a **master** plus one **phase sub-project** per entry of `
 - the master's `pathway`
 - `parcelIds = phases[i−1].parcelIds`
 - `revisions[0] = { day: F_i, units: phases[i−1].units, stories: null }`
-- `existingUnits`: the T11 assessor units of its parcels. A parcel listed by several phases counts only in the first phase that lists it, so nothing is double-subtracted.
+- `existingUnits`: the T11 assessor units of its parcels. Phases never share a parcel (round 4 N8: the fallback caps the phase count at the parcel count P), so nothing can be double-subtracted. When P = 1 there is a single phase on that parcel, staggered after entitlement by the first-phase rule.
 
 **When a phase files** (`F_i`, its `permitFiled` day):
 
@@ -788,7 +782,7 @@ Every test calls `expect`.
   - `F_i` follows the plan date, the overdue-date rule, the null-date rule and the first-phase rule, using `PHASE_GAP` draws keyed by master and index;
   - an unentitled master that exits gives no phases, and its units go to `exitedUnits`;
   - phases stall and die independently;
-  - parcels shared between phases subtract existing units once;
+  - each phase's `existingUnits` is the assessor sum of its own parcels, which are disjoint (N8); with P = 1 there is a single phase;
   - an unphased row stays single-project.
 - **`initiation.property.spec.ts`:** first-initiation months follow the geometric distribution within 4·SE.
 
@@ -852,9 +846,16 @@ Every test calls `expect`.
 
 **`simulate-replay.test.ts`** checks the whole engine against real history.
 
-- **Inputs:** take T4d histories in each `(pathway, stage)` with n ≥ 50 inside W (2015-01-01 onwards). Convert each to an in-flight starting state at its stage entry.
+- **Inputs** (round 4 N9). Cohorts follow each stage's own fitting window:
+  - **Planning-side stages** (`preApplication`, `filed`, `entitled`): one cohort per `(pathway, stage)` with n ≥ 50, from T4d histories that entered the stage on or after 2015-01-01.
+  - **Permit-side stages** (`permitFiled`, `permitIssued`, `construction`): one cohort per stage, pooled across pathways, using stage-calibration's pooled window, which starts at that stage's `Wₛ` (around 1989).
+
+  Each history is converted to an in-flight starting state at its stage entry.
 - **Run:** call `simulate` with 20 seeds, censoring each simulated project at its own `lastObserved` or the snapshot.
-- **Check:** compare Aalen–Johansen cumulative incidence against the observed histories. Pass if max |Δ| ≤ max(0.03, 2.5·SE).
+- **Check:** compare Aalen–Johansen cumulative incidence against the observed histories.
+  - **Planning-side stages:** strict, per pathway, against the observed cohort.
+  - **Permit-side stages:** against the pooled cohort, with simulated pathways mixed in the cohort's own proportions. No per-pathway check here, because the pooled tables are scaled per pathway.
+  - **Pass bar:** max |Δ| ≤ max(0.03, 2.5·SE).
 - **Overlap:** this complements stage-calibration's V-check of `sampleTransition` alone. The tolerance is a test parameter, not a model number.
 
 ### Playwright e2e
@@ -923,4 +924,4 @@ None remain for this subsystem. The reconciliation answered the earlier ones:
 - **Q2:** after an exit, a parcel is at risk again immediately, at the same hazard.
 - **Q3:** reroll seeds are any uint32.
 
-R1 and R2 (§2) are resolved by the late rulings.
+R1 and R2 are resolved by the late rulings, and R3 by round 4 N3 (§2). No interface questions remain.
