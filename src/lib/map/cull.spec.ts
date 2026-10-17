@@ -58,3 +58,17 @@ it('keeps cells when a camera lies below their roofs and leaves other overlays a
   expect(generatedCellFilter({ layer: layerAt(-122.51, 37.71, 250), viewport })).toBe(true);
   expect(generatedCellFilter({ layer: { id: 'brush', props: { data: {} } }, viewport })).toBe(true);
 });
+it('culls a timeline ghost layer outside the view, but never timeline-bars', () => {
+  const viewport = new WebMercatorViewport({
+    width: 1280,
+    height: 800,
+    longitude: -122.401,
+    latitude: 37.789,
+    zoom: 15,
+    pitch: 55
+  });
+  const ghost = { ...layerAt(-122.51, 37.71), id: 'timeline-ghost-a' };
+  expect(generatedCellFilter({ layer: ghost, viewport })).toBe(false);
+  const bars = { ...layerAt(-122.51, 37.71), id: 'timeline-bars' };
+  expect(generatedCellFilter({ layer: bars, viewport })).toBe(true);
+});

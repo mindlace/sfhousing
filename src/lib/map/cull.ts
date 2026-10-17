@@ -25,7 +25,7 @@ interface FilterContext {
 }
 export function generatedCellFilter({ layer, viewport }: FilterContext): boolean {
   if (
-    !/^(generated|rising)-/.test(layer.id) ||
+    !/^(generated|rising|timeline-(solid|ghost))-/.test(layer.id) ||
     !layer.props.data ||
     typeof layer.props.data !== 'object'
   )

@@ -111,7 +111,7 @@ function accessorsFor(pack: PackedCell, theme: Theme) {
   return { data: c.data, getElevation: c.getElevation, getFillColor: fill };
 }
 
-const RESERVED = /^(generated|rising)-/;
+const RESERVED = /^(generated|rising|timeline)-/;
 
 // sfh-slice measures feed the C5 budget tests (dev) and e2e builds; production builds skip
 // them so they never accumulate in the performance timeline.
