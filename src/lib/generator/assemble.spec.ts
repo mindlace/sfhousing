@@ -3,11 +3,12 @@ import proj4 from 'proj4';
 import { describe, expect, it } from 'vitest';
 import type { ParcelRecord } from '../data/parcel';
 import { assembleSite, frameOffset } from './assemble';
-import { domainArea } from './domain';
-import { localFrame } from './geo';
-import { signedArea } from './poly';
-import { mulberry32 } from './seed';
+import { domainArea, insideDomain } from './domain';
+import { fromLngLat, localFrame } from './geo';
+import { inset, signedArea } from './poly';
+import { fnv1a32, mulberry32 } from './seed';
 import { normaliseSite } from './site';
+import { generateForUnits } from './units';
 import courtyardJson from './fixtures/assembly-courtyard.json';
 import pairJson from './fixtures/assembly-pair.json';
 import rowJson from './fixtures/assembly-row.json';
@@ -190,5 +191,49 @@ describe('assembleSite', () => {
 
   it('[] → null', () => {
     expect(assembleSite([])).toBeNull();
+  });
+});
+
+describe('generateForUnits on assemblies', () => {
+  const mass = (a: Assembly, units: number, stories?: number) => {
+    const anchor = assembleSite(a.parcels)!.anchor;
+    const b = generateForUnits(a.parcels, units, 80, fnv1a32(anchor.id), stories);
+    expect(b).not.toBeNull();
+    return { anchor, b: b! };
+  };
+  /** A record's outer ring in the anchor's local frame. */
+  const reframed = (anchor: ParcelRecord, r: ParcelRecord): PathD => {
+    const [dx, dy] = frameOffset(anchor.labelPoint, r.labelPoint);
+    return outerRings(r.polygon)[0].map(([x, y]) => ({ x: x + dx, y: y + dy }));
+  };
+  const local = (anchor: ParcelRecord, footprint: [number, number][]): PathD =>
+    toPath(fromLngLat(footprint, anchor.labelPoint));
+
+  it('street → parts lie inside the larger lot', () => {
+    const { anchor, b } = mass(street, 12);
+    const lot = inset([reframed(anchor, street.parcels[0])], -0.02);
+    expect(b.parts.length).toBeGreaterThan(0);
+    for (const part of b.parts)
+      expect(insideDomain([local(anchor, part.footprint)], lot)).toBe(true);
+  });
+
+  it('courtyard → no part intersects the excluded lot', () => {
+    const { anchor, b } = mass(courtyard, 20);
+    const ex = [reframed(anchor, courtyard.excluded!)];
+    expect(b.parts.length).toBeGreaterThan(0);
+    for (const part of b.parts) {
+      const overlap = intersectD([local(anchor, part.footprint)], ex, FillRule.NonZero, 4);
+      expect(domainArea(overlap)).toBeLessThanOrEqual(0.01);
+    }
+  });
+
+  it('pair → parcelId is the anchor and the massing spans the lot line', () => {
+    const { anchor, b } = mass(pair, 18, 5);
+    expect(anchor.id).toBe('3604002');
+    expect(b.parcelId).toBe(anchor.id);
+    const base = b.parts
+      .filter((p) => p.baseM === 0)
+      .reduce((s, p) => s + signedArea(local(anchor, p.footprint)), 0);
+    expect(base).toBeGreaterThan(Math.max(...pair.parcels.map((r) => r.areaM2)));
   });
 });

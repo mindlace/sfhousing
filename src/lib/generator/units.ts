@@ -5,6 +5,7 @@ import { compositionOptions, referenceComposition } from './compositions';
 import type { CompositionDraws, OccupiedComposition } from './composition-types';
 import { drawComposition } from './composition-variety';
 import { MAX_STORIES, PLEX_MAX_UNITS } from './constants';
+import type { MassOpts } from './massing';
 import { roofAccents } from './roof';
 import { selectTypology } from './select';
 import { serializeComposition } from './serialize';
@@ -39,19 +40,23 @@ const TYPOLOGY_ORDER: readonly TypologyId[] = [
   'tower'
 ];
 
+type Typ = { typology: ReplacementTypology; stories: number };
+
 export interface MassingCandidate {
   ref: OccupiedComposition;
   /** Units the reference holds: `unitsFor(typology, round1(occupiedArea(bands)))`. */
   cap: number;
+  /** The `referenceComposition` inputs that built `ref`; footprint scaling rebuilds from them. */
+  build: Typ & { opts?: MassOpts };
 }
-
-type Typ = { typology: ReplacementTypology; stories: number };
 
 /** §4.3: a plex cannot hold more than PLEX_MAX_UNITS, so larger projects use a walkup. */
 function promote(t: { typology: TypologyId; stories: number }, U: number): Typ {
-  if (t.typology === 'plex' && U > PLEX_MAX_UNITS)
-    return { typology: 'walkup', stories: t.stories };
-  return t as Typ;
+  // Every caller passes selectTypology(…, existingUnits = 0), which returns 'plex' where it
+  // would otherwise return 'adu' (select.ts:25), so 'adu' never arrives; the guard only narrows.
+  const typology = t.typology === 'adu' ? 'plex' : t.typology;
+  if (typology === 'plex' && U > PLEX_MAX_UNITS) return { typology: 'walkup', stories: t.stories };
+  return { typology, stories: t.stories };
 }
 
 /** §4.3: the typology for a stated story count when the lot-area cap chain would cut it. */
@@ -79,9 +84,13 @@ export function massingCandidates(
     const t = selectTypology(S, site.A, 0);
     const typology = t.stories === S ? promote(t, U).typology : uncappedTypology(S, site.A);
     const opts = { fallbackStories: S };
+    let build: MassingCandidate['build'] = { typology, stories: S, opts };
     let ref = referenceComposition(site, typology, S, draws, opts);
-    if (!ref && typology !== 'walkup') ref = referenceComposition(site, 'walkup', S, draws, opts);
-    return ref ? [{ ref, cap: capOf(ref) }] : [];
+    if (!ref && typology !== 'walkup') {
+      build = { typology: 'walkup', stories: S, opts };
+      ref = referenceComposition(site, 'walkup', S, draws, opts);
+    }
+    return ref ? [{ ref, cap: capOf(ref), build }] : [];
   }
   const out: MassingCandidate[] = [];
   const tried = new Set<string>();
@@ -97,7 +106,7 @@ export function massingCandidates(
     const key = `${ref.typology}:${ref.stories}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ ref, cap: capOf(ref) });
+    out.push({ ref, cap: capOf(ref), build: t });
   }
   return out.sort(
     (a, b) =>
@@ -122,6 +131,52 @@ function chooseCandidate(
   if (over) return { candidate: over, undershoot: false };
   for (const c of candidates) if (!best || c.cap > best.cap) best = c;
   return { candidate: best!, undershoot: true };
+}
+
+/**
+ * §4.4 acceptance in the k = 1 composition walk: massed units within `unitsTolerance(U)` of `U`.
+ * Ledger ruling: a massing holding no unit (massed < 1) never qualifies, as in `generate`.
+ * Internal: a test seam, not exported from index.
+ */
+export function withinTolerance(massed: number, U: number): boolean {
+  return massed >= 1 && Math.abs(massed - U) <= unitsTolerance(U);
+}
+
+/** Internal numerical setting: bisection steps for the footprint scale `k`. */
+const SCALE_ITERATIONS = 20;
+
+/**
+ * §4.4 footprint scaling (k < 1): bisects the coverage scale `k` over (0, 1), rebuilding the
+ * candidate's reference from its own inputs, toward the smallest `k` that still masses `U`. A
+ * scaled reference that is null or changes typology is too small. Returns the evaluated
+ * reference with the smallest |massed - U|, ties to the smaller `k`; it is always 'simple'.
+ */
+function scaleFootprint(
+  site: Site,
+  c: MassingCandidate,
+  U: number,
+  draws: VarietyDraws
+): OccupiedComposition | null {
+  const { typology, stories, opts } = c.build;
+  let lo = 0;
+  let hi = 1;
+  let best: { k: number; massed: number; ref: OccupiedComposition } | null = null;
+  for (let i = 0; i < SCALE_ITERATIONS; i++) {
+    const k = (lo + hi) / 2;
+    const ref = referenceComposition(site, typology, stories, draws, { ...opts, coverageScale: k });
+    if (!ref || ref.typology !== c.ref.typology) {
+      lo = k;
+      continue;
+    }
+    const massed = capOf(ref);
+    const d = Math.abs(massed - U);
+    const bestD = best ? Math.abs(best.massed - U) : Infinity;
+    if (d < bestD || (d === bestD && k < best!.k)) best = { k, massed, ref };
+    if (massed === U) break;
+    if (massed > U) hi = k;
+    else lo = k;
+  }
+  return best ? best.ref : null;
 }
 
 /** Same rules as `generateForUnits`, with injected draws (test seam). */
@@ -161,31 +216,30 @@ export function generateForUnitsWith(
 
   // §4.4 composition (k = 1): the generateDetailed loop without the I8 gains logic
   const record: ParcelRecord = { ...anchor, polygon };
-  const tol = unitsTolerance(U);
-  type Option = {
-    candidate: OccupiedComposition;
-    output: NonNullable<ReturnType<typeof serializeComposition>>;
-    massed: number;
-  };
-  const options: Option[] = [];
-  let accepted: Option | null = null;
-  for (const candidate of compositionOptions(site, ref, compositionDraws)) {
+  const serialise = (candidate: OccupiedComposition, reference: OccupiedComposition) => {
     const output = serializeComposition(
       record,
       site,
       candidate,
       roofAccents(site, candidate, compositionDraws, draws.parapetM),
       compositionDraws.tone,
-      ref
+      reference
     );
-    if (!output || !output.parts.length) continue;
+    if (!output || !output.parts.length) return null;
+    return { candidate, output, massed: unitsFor(candidate.typology, round1(output.area)) };
+  };
+  type Option = NonNullable<ReturnType<typeof serialise>>;
+  const options: Option[] = [];
+  let accepted: Option | null = null;
+  for (const candidate of compositionOptions(site, ref, compositionDraws)) {
+    const option = serialise(candidate, ref);
+    if (!option) continue;
     if (
       candidate.family !== 'simple' &&
-      !retainsCapacityAcrossHeights(candidate, ref, output.area, output.growth)
+      !retainsCapacityAcrossHeights(candidate, ref, option.output.area, option.output.growth)
     )
       continue;
-    const option = { candidate, output, massed: unitsFor(candidate.typology, round1(output.area)) };
-    if (Math.abs(option.massed - U) <= tol) {
+    if (withinTolerance(option.massed, U)) {
       accepted = option;
       break;
     }
@@ -193,7 +247,7 @@ export function generateForUnitsWith(
   }
   if (!accepted && options.length) {
     // Undershoot: the most massed units. Otherwise the k = 1 fallback option, the smallest
-    // |massed - U|; footprint scaling (§4.4) is not applied yet. Ties go to family order.
+    // |massed - U| (ledger ruling), which footprint scaling must beat. Ties go to family order.
     accepted = options[0];
     for (const o of options)
       if (
@@ -202,6 +256,11 @@ export function generateForUnitsWith(
           : Math.abs(o.massed - U) < Math.abs(accepted.massed - U)
       )
         accepted = o;
+    if (!choice.undershoot) {
+      const scaledRef = scaleFootprint(site, choice.candidate, U, draws);
+      const scaled = scaledRef && serialise(scaledRef, scaledRef);
+      if (scaled && Math.abs(scaled.massed - U) < Math.abs(accepted.massed - U)) accepted = scaled;
+    }
   }
   if (!accepted) return null;
 

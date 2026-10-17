@@ -3,18 +3,24 @@ import type { ParcelRecord } from '../data/parcel';
 import { generate, generateWith } from './generate';
 import { drawComposition } from './composition-variety';
 import { varietyFromUniforms } from './variety';
+import { fromLngLat } from './geo';
+import { signedArea } from './poly';
 import { fnv1a32 } from './seed';
 import { normaliseSite } from './site';
+import type { GeneratedBuilding } from './types';
 import {
   generateForUnits,
   generateForUnitsWith,
   massedUnits,
   massingApproximate,
   massingCandidates,
-  unitsTolerance
+  unitsTolerance,
+  withinTolerance
 } from './units';
+import type { CompositionDraws, CompositionId } from './composition-types';
 import std from './fixtures/std-25x100.json';
 import lot1000 from './fixtures/lot-1000.json';
+import lot1200 from './fixtures/lot-1200.json';
 import lot3000 from './fixtures/lot-3000.json';
 import overApt from './fixtures/std-over-apartment.json';
 import towerFallback from './fixtures/tower-fallback.json';
@@ -53,8 +59,13 @@ describe('massing helpers', () => {
 });
 
 describe('generateForUnits', () => {
-  const run = (j: unknown, U: number, maxS: number, stories?: number, cd = SIMPLE) =>
-    generateForUnitsWith(P(j), U, maxS, GOLDEN, cd, stories);
+  const run = (
+    j: unknown,
+    U: number,
+    maxS: number,
+    stories?: number,
+    cd: CompositionDraws = SIMPLE
+  ) => generateForUnitsWith(P(j), U, maxS, GOLDEN, cd, stories);
   const siteOf = (j: unknown) => normaliseSite(P(j).polygon, GOLDEN.edgeInsetM)!;
 
   it('G1: std, U 9, stories 5 → walkup 5, FA 812.9, not approximate', () => {
@@ -176,7 +187,74 @@ describe('generateForUnits', () => {
     );
   });
 
+  describe('footprint scaling (k < 1)', () => {
+    const baseArea = (b: GeneratedBuilding, labelPoint: [number, number]) =>
+      b.parts
+        .filter((p) => p.baseM === 0)
+        .reduce(
+          (s, p) => s + signedArea(fromLngLat(p.footprint, labelPoint).map(([x, y]) => ({ x, y }))),
+          0
+        );
+
+    it('G5: lot-1000, U 30, stories 6 → podium 6, simple, 30-33 massed, FA < 4800', () => {
+      const b = run(lot1000, 30, 80, 6)!;
+      expect(b).toMatchObject({ typology: 'podium', stories: 6, composition: 'simple', units: 30 });
+      expect(massedUnits(b)).toBeGreaterThanOrEqual(30);
+      expect(massedUnits(b)).toBeLessThanOrEqual(33);
+      expect(b.floorAreaM2).toBeLessThan(4800);
+    });
+
+    it('scaling only shrinks', () => {
+      const b = run(std, 6, 80, 5)!;
+      expect(b).toMatchObject({ typology: 'walkup', stories: 5, units: 6 });
+      expect(massedUnits(b)).toBeGreaterThanOrEqual(6);
+      expect(massedUnits(b)).toBeLessThanOrEqual(7);
+      const lp = P(std).labelPoint as [number, number];
+      expect(baseArea(b, lp)).toBeLessThan(baseArea(run(std, 9, 80, 5)!, lp));
+    });
+
+    it('tower scaling below the minimum plate stays a tower or falls back to k=1', () => {
+      const b = run(lot3000, 50, 80, 20);
+      expect(b).not.toBeNull();
+      expect(b).toMatchObject({ typology: 'tower', stories: 20 });
+    });
+  });
+
+  it('a valid stories ignores maxStories', () => {
+    const want = run(std, 9, 80, 5);
+    expect(want).toMatchObject({ typology: 'walkup', stories: 5 });
+    for (const m of [NaN, 0]) expect(run(std, 9, m, 5)).toStrictEqual(want);
+  });
+
+  it('a massing holding no unit never counts as within tolerance (ledger ruling)', () => {
+    expect(withinTolerance(0, 1)).toBe(false);
+    expect(withinTolerance(0.5, 1)).toBe(false);
+    expect(withinTolerance(1, 1)).toBe(true);
+    expect(withinTolerance(2, 1)).toBe(true);
+    expect(withinTolerance(3, 1)).toBe(false);
+    expect(withinTolerance(18, 20)).toBe(true);
+    expect(withinTolerance(17, 20)).toBe(false);
+  });
+
+  it('undershoot takes the most massed family, not the first; ties keep family order', () => {
+    const order = { ...SIMPLE, familyOrder: ['terrace', 'divided', 'simple'] as CompositionId[] };
+    // lot-1000 podium 6: terrace (first in order) and divided mass 58 units, simple 59
+    const terrace = run(lot1000, 58, 80, 6, order)!;
+    expect(terrace).toMatchObject({ typology: 'podium', stories: 6, composition: 'terrace' });
+    expect(massedUnits(terrace)).toBe(58);
+    const most = run(lot1000, 100, 80, 6, order)!;
+    expect(most).toMatchObject({ typology: 'podium', stories: 6, composition: 'simple' });
+    expect(massedUnits(most)).toBe(59);
+    expect(massingApproximate(most)).toBe(true);
+    // lot-1200 podium 6: terrace and simple both mass 70, so the earlier family wins the tie
+    const tie = run(lot1200, 100, 80, 6, order)!;
+    expect(tie).toMatchObject({ typology: 'podium', stories: 6, composition: 'terrace' });
+    expect(massedUnits(tie)).toBe(70);
+    expect(massedUnits(run(lot1200, 100, 80, 6)!)).toBe(70); // simple alone
+  });
+
   it('a huge undershoot on std is fast and approximate', () => {
+    generateForUnits(P(std), 1e9, 80, fnv1a32(P(std).id)); // warm up: time the steady state
     const t0 = performance.now();
     const b = generateForUnits(P(std), 1e9, 80, fnv1a32(P(std).id))!;
     const ms = performance.now() - t0;
