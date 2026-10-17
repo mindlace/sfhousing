@@ -1,15 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  FILL_LEVELS,
-  LAND_USE_CLASSES,
-  ScenarioFormatError,
-  decodeScenarioPayload,
-  encodeScenarioPayload,
-  envelopeOf,
-  featureValue,
-  fillStories,
-  readScenarioParcels
-} from './scenario-codec';
+import { FILL_LEVELS, LAND_USE_CLASSES, ScenarioFormatError, fillStories } from './scenario-codec';
 
 describe('sfh-scenario/1 codec declarations (step 0)', () => {
   it('fixes the fill levels ascending, ending at 1', () => {
@@ -41,19 +31,5 @@ describe('sfh-scenario/1 codec declarations (step 0)', () => {
     expect(err).toBeInstanceOf(ScenarioFormatError);
     expect(err.name).toBe('ScenarioFormatError');
     expect(err.message).toBe('x');
-  });
-
-  it('sync functions throw not implemented', () => {
-    const bytes = new Uint8Array();
-    expect(() => encodeScenarioPayload(undefined as never)).toThrow('not implemented');
-    expect(() => decodeScenarioPayload(bytes)).toThrow('not implemented');
-    expect(() => featureValue(undefined as never, 0, undefined as never, 'fzp')).toThrow(
-      'not implemented'
-    );
-    expect(() => envelopeOf(undefined as never, 0)).toThrow('not implemented');
-  });
-
-  it('readScenarioParcels rejects with not implemented', async () => {
-    await expect(readScenarioParcels(new Uint8Array())).rejects.toThrow('not implemented');
   });
 });
