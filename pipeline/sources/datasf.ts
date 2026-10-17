@@ -5,7 +5,13 @@ import type { Http } from '../lib/http';
 export type { Http };
 
 export type DatasfId =
-  'datasf-parcels' | 'datasf-landuse-2023' | 'datasf-footprints' | 'datasf-neighborhoods';
+  | 'datasf-parcels'
+  | 'datasf-landuse-2023'
+  | 'datasf-footprints'
+  | 'datasf-neighborhoods'
+  | 'datasf-height-bulk'
+  | 'datasf-parcel-attrs'
+  | 'datasf-assessor-roll';
 
 export const DATASF: Record<
   DatasfId,
@@ -13,6 +19,8 @@ export const DATASF: Record<
     dataset: string;
     select: string;
     where?: string;
+    /** SODA export format; default `'geojson'`. */
+    format?: 'geojson' | 'csv';
     license: string;
     homepage: string;
     label: string;
@@ -46,17 +54,83 @@ export const DATASF: Record<
     license: 'PDDL-1.0',
     homepage: 'https://data.sf.gov/d/j2bu-swwd',
     label: 'DataSF Analysis Neighborhoods'
+  },
+  // Scenario-data spec §4.1.
+  'datasf-height-bulk': {
+    dataset: 'h9wh-cg3m',
+    select: 'height,gen_hght,the_geom',
+    format: 'geojson',
+    license: 'public-domain',
+    homepage: 'https://data.sf.gov/d/h9wh-cg3m',
+    label: 'DataSF Zoning Map – Height and Bulk Districts'
+  },
+  'datasf-parcel-attrs': {
+    dataset: 'acdm-wktn',
+    select:
+      'mapblklot,blklot,active,zoning_code,date_rec_add,date_rec_drop,' +
+      'centroid_latitude,centroid_longitude',
+    format: 'csv',
+    license: 'PDDL-1.0',
+    homepage: 'https://data.sf.gov/d/acdm-wktn',
+    label: 'DataSF Parcels (attributes, active and retired)'
+  },
+  'datasf-assessor-roll': {
+    dataset: 'wv5m-vpq2',
+    select:
+      'closed_roll_year,parcel_number,use_code,property_class_code,year_property_built,' +
+      'number_of_stories,number_of_units,property_area,assessed_land_value,' +
+      'assessed_improvement_value,status_code',
+    where: 'closed_roll_year >= 2007',
+    format: 'csv',
+    license: 'PDDL-1.0',
+    homepage: 'https://data.sf.gov/d/wv5m-vpq2',
+    label: 'DataSF Assessor Historical Secured Property Tax Rolls'
   }
 };
 
 export const PAGE_SIZE = 50000;
 
+const QUOTE = 0x22;
+const LF = 0x0a;
+const CR = 0x0d;
+
+/**
+ * Data rows of a CSV body (RFC 4180 quoting): records outside quotes, minus the header. A newline
+ * inside a quoted field does not end a record; blank lines and a missing final newline are fine.
+ */
+export function csvDataRows(body: Uint8Array): number {
+  let records = 0;
+  let inQuote = false;
+  let pending = false;
+  for (const b of body) {
+    if (b === QUOTE) {
+      // `""` inside a quoted field toggles twice, so the field stays quoted.
+      inQuote = !inQuote;
+      pending = true;
+    } else if (b === LF && !inQuote) {
+      if (pending) records++;
+      pending = false;
+    } else if (b !== CR || inQuote) {
+      pending = true;
+    }
+  }
+  if (pending) records++;
+  return Math.max(0, records - 1);
+}
+
 /**
  * Spec §4.1: SODA 2 paging (`$order=:id`, `$limit=50000`, `$offset=k`) until a page comes back
- * short. Each page is one lock file saved as `<rawDir>/<sha256>`.
+ * short. Each page is one lock file saved as `<rawDir>/<sha256>` and named
+ * `<id>.page-NNN.<geojson|csv>`. CSV row counts exclude the header.
  */
-export async function fetchDatasf(id: DatasfId, rawDir: string, http: Http): Promise<LockEntry> {
+export async function fetchDatasf(
+  id: DatasfId,
+  rawDir: string,
+  http: Http,
+  pageSize: number = PAGE_SIZE
+): Promise<LockEntry> {
   const d = DATASF[id];
+  const format = d.format ?? 'geojson';
   const files: LockFile[] = [];
   let rowCount = 0;
   let upstreamVersion = '';
@@ -65,24 +139,27 @@ export async function fetchDatasf(id: DatasfId, rawDir: string, http: Http): Pro
     params.set('$select', d.select);
     if (d.where) params.set('$where', d.where);
     params.set('$order', ':id');
-    params.set('$limit', String(PAGE_SIZE));
-    params.set('$offset', String(page * PAGE_SIZE));
-    const url = `https://data.sf.gov/resource/${d.dataset}.geojson?${params}`;
+    params.set('$limit', String(pageSize));
+    params.set('$offset', String(page * pageSize));
+    const url = `https://data.sf.gov/resource/${d.dataset}.${format}?${params}`;
     const res = await http.get(url);
     if (res.status !== 200) throw new Error(`GET ${url}: HTTP ${res.status}`);
-    const n = (JSON.parse(new TextDecoder().decode(res.body)) as { features: unknown[] }).features
-      .length;
+    const n =
+      format === 'csv'
+        ? csvDataRows(res.body)
+        : (JSON.parse(new TextDecoder().decode(res.body)) as { features: unknown[] }).features
+            .length;
     if (page === 0) {
       upstreamVersion =
         res.headers.get('X-SODA2-Truth-Last-Modified') ?? res.headers.get('ETag') ?? 'unknown';
     }
     // A trailing empty page (row count an exact multiple of the page size) is not locked.
     if (n > 0 || page === 0) {
-      const name = `${id}.page-${String(page).padStart(3, '0')}.geojson`;
+      const name = `${id}.page-${String(page).padStart(3, '0')}.${format}`;
       files.push(storeBytes(rawDir, name, url, res.body));
       rowCount += n;
     }
-    if (n < PAGE_SIZE) break;
+    if (n < pageSize) break;
   }
   return {
     id,

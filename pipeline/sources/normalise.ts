@@ -2,12 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Duck } from '../lib/duck';
 import { rawPath, type Lock } from '../lib/lock';
+import { DATASF, type DatasfId } from './datasf';
 
 export type SourceId =
   | 'datasf-parcels'
   | 'datasf-landuse-2023'
   | 'datasf-footprints'
   | 'datasf-neighborhoods'
+  | 'datasf-height-bulk'
+  | 'datasf-parcel-attrs'
+  | 'datasf-assessor-roll'
   | 'overture-buildings';
 
 export const SOURCE_IDS: SourceId[] = [
@@ -15,6 +19,9 @@ export const SOURCE_IDS: SourceId[] = [
   'datasf-landuse-2023',
   'datasf-footprints',
   'datasf-neighborhoods',
+  'datasf-height-bulk',
+  'datasf-parcel-attrs',
+  'datasf-assessor-roll',
   'overture-buildings'
 ];
 
@@ -24,6 +31,9 @@ const TABLES: Record<SourceId, string> = {
   'datasf-landuse-2023': 'src_landuse',
   'datasf-footprints': 'src_footprints',
   'datasf-neighborhoods': 'src_neighborhoods',
+  'datasf-height-bulk': 'src_height_bulk',
+  'datasf-parcel-attrs': 'src_parcel_attrs',
+  'datasf-assessor-roll': 'src_roll',
   'overture-buildings': 'src_overture'
 };
 
@@ -32,6 +42,38 @@ const q = (s: string) => `'${s.replaceAll("'", "''")}'`;
 /** UNION ALL BY NAME over every GeoJSON page (SODA lower-cases column names). */
 function readPages(files: string[]): string {
   return files.map((f) => `SELECT * FROM ST_Read(${q(f)})`).join('\nUNION ALL BY NAME\n');
+}
+
+/**
+ * Every CSV page as text (spec §4.1: `read_csv(all_varchar=true)`, then `TRY_CAST`). Options are
+ * explicit because live raw files are named by sha256, with no extension to sniff from.
+ */
+function readCsvPages(files: string[]): string {
+  return `SELECT * FROM read_csv([${files.map(q).join(', ')}], header = true, all_varchar = true,
+    union_by_name = true, delim = ',', quote = '"', escape = '"')`;
+}
+
+const isCsv = (id: SourceId) => id in DATASF && DATASF[id as DatasfId].format === 'csv';
+
+/** Text column -> trimmed text, '' -> NULL; `upper` also upper-cases (parcel ids). */
+function txt(cols: Set<string>, name: string, upper = false): string {
+  if (!cols.has(name)) return `NULL::VARCHAR AS ${name}`;
+  const t = upper ? `upper(trim(${name}))` : `trim(${name})`;
+  return `NULLIF(${t}, '') AS ${name}`;
+}
+
+/** Numeric text (SODA writes `"3.0"`) through DOUBLE to INTEGER. */
+function int(cols: Set<string>, name: string, alias = name): string {
+  return cols.has(name)
+    ? `TRY_CAST(TRY_CAST(${name} AS DOUBLE) AS INTEGER) AS ${alias}`
+    : `NULL::INTEGER AS ${alias}`;
+}
+
+/** SODA floating timestamp (`2009-10-14T00:00:00.000`) -> DATE. */
+function date(cols: Set<string>, name: string): string {
+  return cols.has(name)
+    ? `TRY_CAST(TRY_CAST(${name} AS TIMESTAMP) AS DATE) AS ${name}`
+    : `NULL::DATE AS ${name}`;
 }
 
 /** Column absent from every page of a source -> NULL, so a sparse fixture still normalises. */
@@ -58,10 +100,34 @@ async function buildSelect(
       datasets::VARCHAR[] AS datasets, geom::GEOMETRY AS geom
       FROM read_parquet([${list}]) ORDER BY id`;
   }
-  const pages = readPages(rawFiles);
+  const pages = isCsv(id) ? readCsvPages(rawFiles) : readPages(rawFiles);
   const cols = await columnsOf(db, pages);
   const p = `(${pages})`;
   switch (id) {
+    case 'datasf-height-bulk':
+      // Height strings stay verbatim: parseHeightDistrict (spec §4.2) normalises them.
+      return `SELECT ${sel(cols, 'height', 'VARCHAR')}, ${sel(cols, 'gen_hght', 'VARCHAR')}, geom
+        FROM ${p} ORDER BY height, gen_hght, ST_AsHEXWKB(geom)`;
+    case 'datasf-parcel-attrs':
+      return `SELECT ${txt(cols, 'mapblklot', true)}, ${txt(cols, 'blklot', true)},
+        ${cols.has('active') ? "lower(trim(active)) IN ('true', '1')" : 'NULL::BOOLEAN'} AS active,
+        ${txt(cols, 'zoning_code')}, ${date(cols, 'date_rec_add')}, ${date(cols, 'date_rec_drop')},
+        ${sel(cols, 'centroid_latitude', 'DOUBLE')}, ${sel(cols, 'centroid_longitude', 'DOUBLE')}
+        FROM ${p} ORDER BY ALL`;
+    case 'datasf-assessor-roll':
+      // Spec §4.1: a year built outside [1850, roll year] (SODA has `"0"`) becomes NULL.
+      return `SELECT closed_roll_year, parcel_number, use_code, property_class_code,
+        CASE WHEN yb BETWEEN 1850 AND closed_roll_year THEN yb END AS year_property_built,
+        number_of_stories, number_of_units, property_area, assessed_land_value,
+        assessed_improvement_value, status_code
+        FROM (SELECT ${int(cols, 'closed_roll_year')}, ${txt(cols, 'parcel_number', true)},
+          ${txt(cols, 'use_code')}, ${txt(cols, 'property_class_code')},
+          ${int(cols, 'year_property_built', 'yb')},
+          ${int(cols, 'number_of_stories')}, ${int(cols, 'number_of_units')},
+          ${sel(cols, 'property_area', 'DOUBLE')}, ${sel(cols, 'assessed_land_value', 'DOUBLE')},
+          ${sel(cols, 'assessed_improvement_value', 'DOUBLE')}, ${txt(cols, 'status_code')}
+          FROM ${p})
+        ORDER BY ALL`;
     case 'datasf-parcels':
       return `SELECT ${sel(cols, 'mapblklot', 'VARCHAR')}, ${sel(cols, 'blklot', 'VARCHAR')},
         ${cols.has('active') ? "CAST(active AS VARCHAR) IN ('true','1')" : 'NULL::BOOLEAN'} AS active,

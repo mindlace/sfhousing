@@ -42,7 +42,7 @@
     "landuse.orphan_rows": 2,
     "landuse.rows": 15,
     "landuse.unknown_values": 0,
-    "manifest.bytes": 2977,
+    "manifest.bytes": 3555,
     "neighborhoods.bytes": 478,
     "overture.contrib.Esri Community Maps": 1,
     "overture.contrib.Microsoft ML Buildings": 1,
@@ -130,7 +130,7 @@
       "ok": true
     },
     {
-      "detail": "manifest 2977/64000 B; neighborhoods 478/150000 B",
+      "detail": "manifest 3555/64000 B; neighborhoods 478/150000 B",
       "id": "V11",
       "ok": true
     },
@@ -159,7 +159,7 @@
     "derivedData": "ODbL-1.0",
     "notice": "Derived data files under /data/ that incorporate OpenStreetMap or Overture data are made available under the ODbL 1.0."
   },
-  "lockSha256": "085e00321dff83018c910878978dcb08e7d9429663bd1ea433642e398c691876",
+  "lockSha256": "768a509c9661ce549f9f04d7c85fff3473423c8571405e8c41f77e44c7db8078",
   "tilesSkipped": false,
   "toolVersions": {
     "duckdb": "1.5.6",
