@@ -206,7 +206,20 @@ describe('fetchDatasf json sources (spec §4.1)', () => {
     expect(entry.rowCount).toBe(50000);
   });
 
-  it('licences, labels and homepages', () => {
+  it('rejects a 200 json response whose body is not an array', async () => {
+    const url = 'https://data.sf.gov/resource/qvu5-m3a2.json';
+    await expect(
+      fetchDatasf('datasf-planning-projects', tmp(), {
+        get: async () => ({
+          status: 200,
+          headers: new Headers(),
+          body: new TextEncoder().encode('{"error":true}')
+        })
+      })
+    ).rejects.toThrow(new RegExp(url.replace(/[.]/g, '\\.')));
+  });
+
+  it('licences, labels, homepages and format', () => {
     expect(
       ids.map((id) => [
         DATASF[id].license,

@@ -150,6 +150,9 @@ export async function fetchDatasf(id: DatasfId, rawDir: string, http: Http): Pro
     const res = await http.get(url);
     if (res.status !== 200) throw new Error(`GET ${url}: HTTP ${res.status}`);
     const parsed: unknown = JSON.parse(new TextDecoder().decode(res.body));
+    if (d.format === 'json' && !Array.isArray(parsed)) {
+      throw new Error(`GET ${url}: expected a JSON array of rows`);
+    }
     const n =
       d.format === 'json'
         ? (parsed as unknown[]).length
