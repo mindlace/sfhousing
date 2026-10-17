@@ -5,7 +5,6 @@ import { encodeParts, partAttrs } from './encode';
 import { DYING_FADE_DAYS, DYING_HOLD_DAYS, FLOOR_CAP } from './constants';
 import { evalPart } from './state';
 import type { PartAttrs } from './types';
-import { FTF_M } from '$lib/generator/constants';
 import { OPEN_DAY } from '$lib/timelapse/time';
 
 type SlotKey = keyof typeof SLOT;
@@ -21,14 +20,18 @@ function partsOf(key: SlotKey): PartAttrs[] {
 }
 /** The first part of a slot (its first revision). */
 const first = (key: SlotKey) => partsOf(key)[0];
-/** The cut height with `n` floors built. */
-const cutFor = (a: PartAttrs, n: number) => (n === 0 ? 0 : a.groundFtfM + (n - 1) * FTF_M);
 
 describe('evalPart hidden and ghost tint', () => {
   it('is hidden before ghostFrom and planning at ghostFrom', () => {
     const a = first('a');
     expect(evalPart(a, a.ghostFrom - 1)).toEqual({ state: 'hidden', alpha: 0, zCutM: 0 });
     expect(evalPart(a, a.ghostFrom)).toEqual({ state: 'planning', alpha: 1, zCutM: 0 });
+  });
+  it('is hidden before ghostFrom even when the part window opened earlier', () => {
+    const a = first('a');
+    const early = { ...a, partFrom: a.ghostFrom - 100 };
+    expect(evalPart(early, a.ghostFrom - 1)).toEqual({ state: 'hidden', alpha: 0, zCutM: 0 });
+    expect(evalPart(early, a.ghostFrom)).toEqual({ state: 'planning', alpha: 1, zCutM: 0 });
   });
   it('flips to permit exactly at permitDay and ready at readyDay', () => {
     const a = first('a');
@@ -56,19 +59,33 @@ describe('evalPart construction and completion', () => {
   it('cuts at the floor reached at p = 0.5 (mid-floor day)', () => {
     const a = first('a');
     const t = a.constructionDay + 0.5 * a.constructionTypicalDays;
-    // 5 stories at p = 0.5 is 2.5 floors, so n = 2.
+    // 5 stories at p = 0.5 is 2.5 floors, so n = 2: walkup ground 3.1 m + 1 · 3.1 m.
     expect(a.stories).toBe(5);
-    expect(evalPart(a, t)).toEqual({ state: 'constructing', alpha: 1, zCutM: cutFor(a, 2) });
+    expect(a.groundFtfM).toBeCloseTo(3.1, 6);
+    const e = evalPart(a, t);
+    expect(e.state).toBe('constructing');
+    expect(e.alpha).toBe(1);
+    expect(e.zCutM).toBeCloseTo(6.2, 5);
+  });
+  it('cuts at the capped floor of a podium: ground 4.5 m + 5 · 3.1 m = 20 m (c)', () => {
+    const c = first('c');
+    // 7 stories, tall ground floor; at the horizon p is capped at 0.9, so n = floor(6.3) = 6.
+    expect(c.stories).toBe(7);
+    expect(c.groundFtfM).toBe(4.5);
+    expect(c.constructionDay + FLOOR_CAP * c.constructionTypicalDays).toBeLessThan(DAYS.horizon);
+    const e = evalPart(c, DAYS.horizon);
+    expect(e.state).toBe('constructing');
+    expect(e.zCutM).toBeCloseTo(20, 5);
   });
   it('caps progress at 0.9 just before completeDay', () => {
     const a = first('a');
     // The cap day is well before completion, so this is the capped floor: floor(0.9 · 5) = 4.
     expect(a.constructionDay + FLOOR_CAP * a.constructionTypicalDays).toBeLessThan(a.completeDay);
-    expect(evalPart(a, a.completeDay - 1)).toEqual({
-      state: 'constructing',
-      alpha: 1,
-      zCutM: cutFor(a, 4)
-    });
+    const e = evalPart(a, a.completeDay - 1);
+    expect(e.state).toBe('constructing');
+    expect(e.alpha).toBe(1);
+    expect(e.zCutM).toBeCloseTo(12.4, 5); // 3.1 + 3 · 3.1
+    expect(evalPart(a, a.completeDay).zCutM).toBe(OPEN_DAY);
   });
   it('is complete exactly at completeDay, opaque, with zCutM OPEN_DAY', () => {
     const a = first('a');
@@ -122,14 +139,22 @@ describe('evalPart dying', () => {
     const e0 = first('e');
     const atEnd = evalPart(e0, DAYS.e.end);
     const later = evalPart(e0, DAYS.e.end + 100);
-    const n = Math.floor(
-      ((DAYS.e.end - e0.constructionDay) / e0.constructionTypicalDays) * e0.stories
-    );
+    // 400 days of a 24-month construction on 5 stories: p ≈ 0.55, n = 2, so 3.1 + 3.1 m.
     expect(atEnd.state).toBe('dying');
-    expect(atEnd.zCutM).toBeGreaterThan(0);
-    expect(atEnd.zCutM).toBe(cutFor(e0, n));
+    expect(atEnd.zCutM).toBeCloseTo(6.2, 5);
     expect(later.zCutM).toBe(atEnd.zCutM);
     expect(later.alpha).toBeLessThan(1);
+  });
+  it('dies a footprint-only slot as a ghost with zCutM 0, hidden at end + 270 (h)', () => {
+    const h0 = first('h');
+    const h = { ...h0, endKind: 2, endDay: h0.constructionDay + 50 };
+    expect(h.stories).toBe(0);
+    const dying = evalPart(h, h.endDay + 100);
+    expect(dying.state).toBe('dying');
+    expect(dying.zCutM).toBe(0);
+    expect(dying.alpha).toBeLessThan(1);
+    expect(dying.alpha).toBeGreaterThan(0);
+    expect(evalPart(h, h.endDay + 270)).toEqual({ state: 'hidden', alpha: 0, zCutM: 0 });
   });
   it('has zCutM 0 for a death before construction started (i2)', () => {
     const i2 = first('i2');
