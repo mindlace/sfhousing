@@ -188,7 +188,7 @@ describe('transit layers', () => {
       expect(s.layers.some((l) => l.id.startsWith('transit-'))).toBe(false);
     });
 
-    it(`${theme}: put the access fill under buildings and the stops above the labels, hidden`, () => {
+    it(`${theme}: put the access fill and the stops flat under the roads, hidden`, () => {
       const s = buildStyle(withTransit, theme);
       const ids = s.layers.map((l) => l.id);
       const src = s.sources as Record<string, { type: string }>;
@@ -196,8 +196,15 @@ describe('transit layers', () => {
       expect(src[TRANSIT_STOPS_SOURCE].type).toBe('geojson');
       expect(ids.indexOf(TRANSIT_ACCESS_LAYER)).toBeGreaterThan(0);
       expect(ids.indexOf(TRANSIT_ACCESS_LAYER)).toBeLessThan(ids.indexOf(BUILDINGS_LAYER));
-      const lastLabel = ids.lastIndexOf(s.layers.filter((l) => l.type === 'symbol').at(-1)!.id);
-      for (const id of TRANSIT_STOP_LAYERS) expect(ids.indexOf(id)).toBeGreaterThan(lastLabel);
+      const water = ids.indexOf('water');
+      const firstRoad = ids.findIndex((id, i) => i > water && id.startsWith('roads_'));
+      for (const id of TRANSIT_STOP_LAYERS) {
+        expect(ids.indexOf(id)).toBeGreaterThan(water);
+        expect(ids.indexOf(id)).toBeLessThan(firstRoad);
+        const paint = (s.layers.find((x) => x.id === id) as { paint: Record<string, unknown> })
+          .paint;
+        expect(paint['circle-pitch-alignment']).toBe('map');
+      }
       expect(ids.at(-1)).toBe(OVERLAY_ANCHOR);
       for (const id of [TRANSIT_ACCESS_LAYER, ...TRANSIT_STOP_LAYERS]) {
         const l = s.layers.find((x) => x.id === id) as { layout?: { visibility?: string } };
