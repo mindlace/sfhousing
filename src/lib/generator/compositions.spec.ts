@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { referenceComposition, compositionCandidates, validComposition } from './compositions';
 import { normaliseSite } from './site';
-import { drawVariety } from './variety';
+import { drawVariety, varietyFromUniforms } from './variety';
+import towerFallback from './fixtures/tower-fallback.json';
 import { drawComposition } from './composition-variety';
 import { compositionParcel } from './fixtures/composition-parcel';
 import { fnv1a32 } from './seed';
@@ -134,4 +135,15 @@ it('keeps paired plate capacity under a rotated parcel frame', () => {
     return occupiedArea(compositionCandidates(site, reference, draws)[0].bands);
   });
   expect(Math.abs(areas[0] - areas[1])).toBeLessThan(0.5);
+});
+
+describe('fallbackStories', () => {
+  const GOLDEN = varietyFromUniforms([0.5, 0.5, 0.5, 0.5, 0, 0.25]);
+  it('sets the midrise fallback height when a tower plate does not fit', () => {
+    const site = normaliseSite(towerFallback.polygon as [number, number][][], GOLDEN.edgeInsetM)!;
+    const base = referenceComposition(site, 'tower', 20, GOLDEN)!;
+    expect([base.typology, base.stories]).toEqual(['midrise', 12]);
+    const opted = referenceComposition(site, 'tower', 20, GOLDEN, { fallbackStories: 20 })!;
+    expect([opted.typology, opted.stories]).toEqual(['midrise', 20]);
+  });
 });

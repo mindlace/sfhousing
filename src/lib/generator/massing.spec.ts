@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { baseFootprint, floorTop } from './massing';
+import { baseFootprint, floorTop, massTypology } from './massing';
 import { normaliseSite } from './site';
 import { totalArea, project } from './poly';
+import { varietyFromUniforms } from './variety';
+import std from './fixtures/std-25x100.json';
+import lot1000 from './fixtures/lot-1000.json';
+import lot3000 from './fixtures/lot-3000.json';
+
+const GOLDEN = varietyFromUniforms([0.5, 0.5, 0.5, 0.5, 0, 0.25]);
 
 const rect = (w: number, h: number): [number, number][] => [
   [-w / 2, -h / 2],
@@ -57,4 +63,30 @@ describe('baseFootprint coverage bound on wide lots', () => {
       });
     }
   }
+});
+
+describe('massTypology opts (§2, §4.4)', () => {
+  const siteOf = (parcel: { polygon: number[][][] }) =>
+    normaliseSite(parcel.polygon as [number, number][][], GOLDEN.edgeInsetM)!;
+  const typologies = ['plex', 'walkup', 'podium', 'midrise', 'tower'] as const;
+
+  it('opts omitted is identical', () => {
+    for (const site of [siteOf(std), siteOf(lot1000), siteOf(lot3000)])
+      for (const t of typologies)
+        for (const s of [3, 6, 12, 20])
+          expect(massTypology(site, t, s, GOLDEN)).toStrictEqual(
+            massTypology(site, t, s, GOLDEN, {})
+          );
+  });
+  it('coverageScale scales the base footprint', () => {
+    const site = siteOf(lot1000);
+    const podium = massTypology(site, 'podium', 6, GOLDEN, { coverageScale: 0.5 })!;
+    const base = podium.parts.filter((p) => p.baseM === 0).map((p) => p.ring);
+    expect(Math.abs(totalArea(base) - 0.5 * 0.8 * site.A)).toBeLessThan(0.01);
+    const big = siteOf(lot3000);
+    const tower = massTypology(big, 'tower', 20, GOLDEN, { coverageScale: 0.5 })!;
+    expect(tower.typology).toBe('tower');
+    const plate = totalArea(tower.parts.filter((p) => p.baseM > 0).map((p) => p.ring));
+    expect(plate).toBeLessThanOrEqual(0.5 * Math.min(900, 0.35 * big.A) + 0.01);
+  });
 });
