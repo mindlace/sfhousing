@@ -28,14 +28,14 @@ const BG: [number, number, number] = [255, 255, 255];
 /** Per-channel tolerance (0–255) for a pixel to match its class prototype. */
 const TOL = 6;
 
-/** A 20 m square ring centred `(x, y)` metres from CENTRE, as lng/lat. */
-function square(x: number, y: number): [number, number][] {
-  const h = 10;
+/** A rectangle ring (half-sizes `hx`, `hy`; default a 20 m square) centred `(x, y)` metres from
+ *  CENTRE, as lng/lat. */
+function square(x: number, y: number, hx = 10, hy = 10): [number, number][] {
   return [
-    [x - h, y - h],
-    [x - h, y + h],
-    [x + h, y + h],
-    [x + h, y - h]
+    [x - hx, y - hy],
+    [x - hx, y + hy],
+    [x + hx, y + hy],
+    [x + hx, y - hy]
   ].map(([px, py]) => FRAME.to(px, py));
 }
 
@@ -62,9 +62,9 @@ function item(
   pathway: Schedule['pathway'],
   entered: Schedule['entered'],
   end: Schedule['end'],
-  massing: Massing
+  massings: Massing[],
+  revDays: number[] = [Math.min(...Object.values(entered))]
 ): TimedPackInput {
-  const first = Math.min(...Object.values(entered));
   return {
     schedule: {
       projectId,
@@ -73,19 +73,25 @@ function item(
       pathway,
       entered,
       end,
-      revisions: [{ day: first, units: 40, stories: 'parts' in massing ? massing.stories : null }],
+      revisions: massings.map((m, i) => ({
+        day: revDays[i],
+        units: 40,
+        stories: 'parts' in m ? m.stories : null
+      })),
       existingUnits: 1,
       multiPhase: false,
       phase: null
     },
-    massings: [massing],
+    massings,
     pickParcelId: projectId
   };
 }
 
-// Four slots, one square part each (slot order = projectId order = part index):
-// fx-1 completes (SW), fx-2 exits before construction (SE), fx-3 dies in construction (NW),
-// fx-4 is footprint-only and completes (NE).
+// Four slots in projectId order: fx-1 completes (SW), fx-2 exits before construction (SE),
+// fx-3 dies in construction (NW), fx-4 is footprint-only and completes (NE). Each has one
+// square part, except fx-2: its two revisions are side by side (west half, then east half from
+// day +200), so its revision-0 part is hidden by its part window alone while the revision-1
+// part is visible. Part order: 0 fx-1, 1 fx-2 rev 0, 2 fx-2 rev 1, 3 fx-3, 4 fx-4.
 const CELL: TimedPackedCell = packTimedCell('gpu-test', [
   item(
     'fx-1',
@@ -98,28 +104,29 @@ const CELL: TimedPackedCell = packTimedCell('gpu-test', [
       complete: B + 1200
     },
     { kind: 'complete', day: B + 1200 },
-    building('walkup', 5, square(-14, -14))
+    [building('walkup', 5, square(-14, -14))]
   ),
   item(
     'fx-2',
     'streamlined',
     { filed: B + 100, entitled: B + 150, permitFiled: B + 180 },
     { kind: 'exit', stage: 'permitFiled', reason: 'withdrawn', day: B + 250 },
-    building('plex', 3, square(14, -14))
+    [building('plex', 3, square(9, -14, 5, 10)), building('plex', 4, square(19, -14, 5, 10))],
+    [B + 100, B + 200]
   ),
   item(
     'fx-3',
     'discretionary',
     { filed: B + 100, entitled: B + 200, permitIssued: B + 300, construction: B + 350 },
     { kind: 'exit', stage: 'construction', reason: 'cancelled', day: B + 750 },
-    building('midrise', 5, square(-14, 14))
+    [building('midrise', 5, square(-14, 14))]
   ),
   item(
     'fx-4',
     'permitOnly',
     { permitFiled: B + 150, permitIssued: B + 300, construction: B + 400, complete: B + 1200 },
     { kind: 'complete', day: B + 1200 },
-    { footprint: square(14, 14) }
+    [{ footprint: square(14, 14) }]
   )
 ]);
 const ENC: EncodedParts = encodeParts(CELL, timelineLookups);
@@ -131,9 +138,9 @@ const FILL: RGBA[] = Array.from({ length: PARTS }, (_, k) =>
 /** 12 days (offsets from B) covering every rule; the comment is what `evalPart` gives. */
 const DAYS = [
   50, // all hidden: before ghostFrom
-  120, // planning ×3; fx-4 hidden (its first stage is later)
-  160, // fx-2 and fx-4 permit; fx-1, fx-3 planning
-  220, // permit ×4
+  120, // planning ×3 (fx-2 rev 1 hidden: before its window); fx-4 hidden (later first stage)
+  160, // fx-2 rev 0 and fx-4 permit; fx-1, fx-3 planning
+  220, // permit ×4; fx-2 rev 0 hidden by its window's end, its rev 1 part visible from +200
   280, // fx-2 dying, hold (age 30)
   320, // ready ×3 (fx-2 still dying, hold)
   380, // fx-3 constructing below the first floor (zCut 0); fx-2 dying, fade
@@ -325,9 +332,9 @@ describe('TimelapseExtension on the GPU', () => {
     return [px, py];
   }
 
-  it('packs one part per slot, each centred inside the canvas', () => {
-    expect(PARTS).toBe(4);
-    expect([...CELL.partSlot]).toEqual([0, 1, 2, 3]);
+  it('packs one part per revision, each centred inside the canvas', () => {
+    expect(PARTS).toBe(5);
+    expect([...CELL.partSlot]).toEqual([0, 1, 1, 2, 3]);
     for (let k = 0; k < PARTS; k++) {
       const [x, y] = roofCentre(k);
       expect(x).toBeGreaterThan(4);
@@ -346,6 +353,14 @@ describe('TimelapseExtension on the GPU', () => {
         seen.add(e.state);
         if (e.state === 'hidden' && day < a.ghostFrom) seen.add('hidden:before');
         if (e.state === 'hidden' && a.endKind === 2 && day >= a.endDay) seen.add('hidden:dead');
+        // Hidden by the part window alone, while another part of the same slot is visible.
+        const byWindow = day >= a.ghostFrom && (day < a.partFrom || day >= a.partTo);
+        const sibling = [...CELL.partSlot].some(
+          (s, j) =>
+            j !== k && s === CELL.partSlot[k] && evalPart(partAttrs(ENC, j), day).state !== 'hidden'
+        );
+        if (e.state === 'hidden' && byWindow && sibling)
+          seen.add(day < a.partFrom ? 'window:before' : 'window:after');
         if (e.state === 'constructing') seen.add(e.zCutM === 0 ? 'cut:zero' : 'cut:floors');
         if (
           e.state === 'constructing' &&
@@ -374,7 +389,9 @@ describe('TimelapseExtension on the GPU', () => {
         'hidden:dead',
         'permit',
         'planning',
-        'ready'
+        'ready',
+        'window:after',
+        'window:before'
       ].sort()
     );
   });
@@ -437,17 +454,19 @@ describe('TimelapseExtension on the GPU', () => {
   // from the west (bearing 90); fx-3 (NW) on its north wall from the north (bearing 180).
   // Neither is a ring's closing edge (SE → SW): packed rings are open, and with `_normalize:
   // false` deck draws no wall along that edge (polygon-tesselator.ts `_updateVertexValid`).
+  // This is the known map-view finding (open rings + `_normalize: false`), routed 2026-10-17;
+  // the test samples non-closing walls until that fix lands.
   const SIDE_CASES: { k: number; bearing: 90 | 180; h: number; day: number }[] = [
     { k: 0, bearing: 90, h: 6, day: B + 320 }, // ready ghost
     { k: 0, bearing: 90, h: 6, day: B + 600 }, // constructing, zCut 3.1: ghost above the cut
     { k: 0, bearing: 90, h: 2, day: B + 600 }, // constructing, zCut 3.1: solid below the cut
     { k: 0, bearing: 90, h: 6, day: B + 1100 }, // constructing, capped zCut 12.4: solid
     { k: 0, bearing: 90, h: 6, day: B + 1250 }, // complete: solid
-    { k: 2, bearing: 180, h: 3, day: B + 600 }, // constructing, zCut 4.5: solid
-    { k: 2, bearing: 180, h: 9, day: B + 800 }, // dying above the frozen zCut 7.6: red ghost
-    { k: 2, bearing: 180, h: 3, day: B + 800 }, // dying below the frozen zCut: red-tinted floors
-    { k: 2, bearing: 180, h: 3, day: B + 950 }, // the same floors, fading
-    { k: 2, bearing: 180, h: 3, day: B + 1100 } // hidden after death: vacant lot
+    { k: 3, bearing: 180, h: 3, day: B + 600 }, // constructing, zCut 4.5: solid
+    { k: 3, bearing: 180, h: 9, day: B + 800 }, // dying above the frozen zCut 7.6: red ghost
+    { k: 3, bearing: 180, h: 3, day: B + 800 }, // dying below the frozen zCut: red-tinted floors
+    { k: 3, bearing: 180, h: 3, day: B + 950 }, // the same floors, fading
+    { k: 3, bearing: 180, h: 3, day: B + 1100 } // hidden after death: vacant lot
   ];
 
   it('side walls split solid below zCut and ghost above it, as evalPart gives', () => {

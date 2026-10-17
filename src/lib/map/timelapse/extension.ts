@@ -1,8 +1,14 @@
 // TimelapseExtension (spec §4.2): decides each timeline part's state at `clock.day` on the GPU.
 // One instance serves every timeline layer and both passes; each layer's `timelapsePass` prop
 // picks the pass. `equals` compares options one level deep (layer-extension.ts), so the shared
-// clock object, mutated in place by `setTime`, never re-initialises a layer. Shader compile or
-// link errors surface through deck's `onError`; nothing here catches them.
+// clock object, mutated in place by `setTime`, never re-initialises a layer.
+// Shader errors do NOT reach deck's `onError` (luma 9.4.2). After link polling, a link failure
+// goes asynchronously to `device.reportError` → `deviceProps.onError`
+// (@luma.gl/webgl/src/adapter/resources/webgl-shared-render-pipeline.ts:79-115,
+// @luma.gl/core/src/adapter/device.ts:698-711), else only to `log.error`. A compile error
+// found there is thrown inside that async function (webgl-shared-render-pipeline.ts:89, :101)
+// and becomes an unhandled rejection. Ruling R10: Task 11 wires the overlay's
+// `deviceProps.onError`. Nothing here catches errors.
 import { LayerExtension, type Accessor, type Layer, type LayerContext } from '@deck.gl/core';
 import { TIMELAPSE_INJECT, timelapseModule, type TimelapseModuleProps } from './shader';
 import { DYING_FADE_DAYS, DYING_HOLD_DAYS, GHOST_ALPHA } from './constants';
