@@ -13,7 +13,11 @@ import { normaliseSite, type Site } from './site';
 import type { GeneratedBuilding, ReplacementTypology, TypologyId } from './types';
 import { drawVariety, type VarietyDraws } from './variety';
 
-/** Allowed unit-count drift (10%, at least 1) before a massing counts as approximate. */
+/**
+ * Allowed unit-count drift (10%, at least 1) before a massing counts as approximate. Tier 4:
+ * made up, and labelled as such. A display threshold that never changes a counted number
+ * (spec §4.4 "unitsTolerance").
+ */
 export function unitsTolerance(units: number): number {
   return Math.max(1, Math.round(0.1 * units));
 }
@@ -257,8 +261,13 @@ export function generateForUnitsWith(
     // undershoot this is §4.4's "most massed units" whenever no family exceeds U; a family
     // massing far above U is not taken over one closer to it. Otherwise it is the k = 1
     // fallback, which footprint scaling must beat.
-    for (const o of options)
+    // Options massing no unit are skipped while any option holds one, so U = 1 never draws a
+    // 0-unit volume that `massingApproximate` would call matched.
+    const holdsUnit = options.some((o) => o.massed >= 1);
+    for (const o of options) {
+      if (holdsUnit && o.massed < 1) continue;
       if (!accepted || Math.abs(o.massed - U) < Math.abs(accepted.massed - U)) accepted = o;
+    }
     // §4.4 "if none qualifies … go to scaling": also when no k = 1 option serialised at all.
     // A scaled massing holding no unit never replaces the fallback (ledger ruling).
     if (!choice.undershoot) {

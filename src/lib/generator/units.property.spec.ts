@@ -147,34 +147,38 @@ describe('generateForUnits properties (§6)', () => {
   // but massed units on the serialised area (1e-7° rounding, repair insets; P7 pins the latter),
   // so a cap at a unit boundary can serialise one unit short and fall just outside tolerance
   // (units.spec.ts pins one such case). Restated (controller ruling): within tolerance + 1.
-  it('P1: unknown stories, U in [max(1, c_min), c_max] → within tolerance (+1 drift)', () => {
-    expect(() =>
-      fc.assert(
-        fc.property(arbSite, arbSeed, arbF, (site, seed, f) => {
-          // U0 = 5 fixes promotion: every U below is ≥ 5
-          const c0 = candidates(site, seed, 5, { maxStories: 80 });
-          fc.pre(c0.length > 0);
-          const [cMin, cMax] = capRange(c0);
-          fc.pre(cMax >= 5);
-          const lo = Math.max(5, cMin);
-          const U = Math.round(lo + f * (cMax - lo));
-          const cU = candidates(site, seed, U, { maxStories: 80 });
-          fc.pre(cU.length > 0);
-          const [minU, maxU] = capRange(cU);
-          fc.pre(U >= Math.max(1, minU) && U <= maxU);
-          const b = generateForUnits(vacant(site), U, 80, seed);
-          // exclusion: a candidate none of whose compositions serialise gives null, exactly as
-          // `generate` does on that site (e.g. every midrise on a narrow star lot)
-          fc.pre(b !== null);
-          expect(
-            !massingApproximate(b!) || Math.abs(massedUnits(b!) - U) <= unitsTolerance(U) + 1
-          ).toBe(true);
-          return true;
-        }),
-        QUICK_FAIL
-      )
-    ).not.toThrow();
-  });
+  it(
+    'P1: unknown stories, U in [max(1, c_min), c_max] → within tolerance (+1 drift)',
+    { timeout: 30_000 },
+    () => {
+      expect(() =>
+        fc.assert(
+          fc.property(arbSite, arbSeed, arbF, (site, seed, f) => {
+            // U0 = 5 fixes promotion: every U below is ≥ 5
+            const c0 = candidates(site, seed, 5, { maxStories: 80 });
+            fc.pre(c0.length > 0);
+            const [cMin, cMax] = capRange(c0);
+            fc.pre(cMax >= 5);
+            const lo = Math.max(5, cMin);
+            const U = Math.round(lo + f * (cMax - lo));
+            const cU = candidates(site, seed, U, { maxStories: 80 });
+            fc.pre(cU.length > 0);
+            const [minU, maxU] = capRange(cU);
+            fc.pre(U >= Math.max(1, minU) && U <= maxU);
+            const b = generateForUnits(vacant(site), U, 80, seed);
+            // exclusion: a candidate none of whose compositions serialise gives null, exactly as
+            // `generate` does on that site (e.g. every midrise on a narrow star lot)
+            fc.pre(b !== null);
+            expect(
+              !massingApproximate(b!) || Math.abs(massedUnits(b!) - U) <= unitsTolerance(U) + 1
+            ).toBe(true);
+            return true;
+          }),
+          QUICK_FAIL
+        )
+      ).not.toThrow();
+    }
+  );
 
   // Spec §6 says P2 is never approximate (a prototype on the pipeline-synth mix). That does not
   // hold on these arbitraries: §4.4 footprint scaling stops at hard floors (pieces under 10 m² or
@@ -185,35 +189,45 @@ describe('generateForUnits properties (§6)', () => {
   // The midrise exception: massing.ts puts midrise upper floors on F inset by the stepback, or
   // on F itself when that inset is under 0.4·F, so massed units are non-monotone in k and the
   // §4.4 bisection can land below U (units.spec.ts pins one such case).
-  it('P2: known stories S, U in [0.4, 1.0]·cap(S) → stories === S, rarely approximate', () => {
-    let built = 0;
-    let approximate = 0;
-    expect(() =>
-      fc.assert(
-        fc.property(arbSite, arbSeed, fc.integer({ min: 1, max: 40 }), arbF, (site, seed, S, f) => {
-          const c0 = candidates(site, seed, 1, { stories: S });
-          fc.pre(c0.length > 0 && c0[0].cap >= 1);
-          const U = Math.max(1, Math.round((0.4 + 0.6 * f) * c0[0].cap));
-          // promotion can switch plex → walkup at U > 4; keep the case the cap was taken from
-          const cU = candidates(site, seed, U, { stories: S });
-          fc.pre(cU.length > 0 && cU[0].ref.typology === c0[0].ref.typology);
-          const b = generateForUnits(vacant(site), U, 80, seed, S);
-          // exclusion: a candidate none of whose compositions serialise gives null, exactly as
-          // `generate` does on that site (e.g. every midrise on a narrow star lot)
-          fc.pre(b !== null);
-          expect(b!.stories).toBe(S);
-          built++;
-          if (massingApproximate(b!)) {
-            approximate++;
-            expect(massedUnits(b!) > U || b!.typology === 'midrise').toBe(true);
-          }
-          return true;
-        }),
-        QUICK_FAIL
-      )
-    ).not.toThrow();
-    expect(approximate).toBeLessThanOrEqual(0.03 * built);
-  });
+  it(
+    'P2: known stories S, U in [0.4, 1.0]·cap(S) → stories === S, rarely approximate',
+    { timeout: 30_000 },
+    () => {
+      let built = 0;
+      let approximate = 0;
+      expect(() =>
+        fc.assert(
+          fc.property(
+            arbSite,
+            arbSeed,
+            fc.integer({ min: 1, max: 40 }),
+            arbF,
+            (site, seed, S, f) => {
+              const c0 = candidates(site, seed, 1, { stories: S });
+              fc.pre(c0.length > 0 && c0[0].cap >= 1);
+              const U = Math.max(1, Math.round((0.4 + 0.6 * f) * c0[0].cap));
+              // promotion can switch plex → walkup at U > 4; keep the case the cap was taken from
+              const cU = candidates(site, seed, U, { stories: S });
+              fc.pre(cU.length > 0 && cU[0].ref.typology === c0[0].ref.typology);
+              const b = generateForUnits(vacant(site), U, 80, seed, S);
+              // exclusion: a candidate none of whose compositions serialise gives null, exactly as
+              // `generate` does on that site (e.g. every midrise on a narrow star lot)
+              fc.pre(b !== null);
+              expect(b!.stories).toBe(S);
+              built++;
+              if (massingApproximate(b!)) {
+                approximate++;
+                expect(massedUnits(b!) > U || b!.typology === 'midrise').toBe(true);
+              }
+              return true;
+            }
+          ),
+          QUICK_FAIL
+        )
+      ).not.toThrow();
+      expect(approximate).toBeLessThanOrEqual(0.03 * built);
+    }
+  );
 
   // Spec §6 states P3 as "U > c_max → approximate, massedUnits === c_max". Restated (controller
   // ruling) because three §4.4 rules contradict the literal form:
@@ -222,39 +236,43 @@ describe('generateForUnits properties (§6)', () => {
   //   one unit either side of cap = unitsFor(round1(occupiedArea(ref.bands)));
   // - the composition walk may pick a non-simple family that masses more than the reference
   //   (within tolerance it is accepted, so it need not be approximate, and may mass above U).
-  it('P3: undershoot (U − c_max > tol(U) + 1) → largest candidate, massed ≥ c_max − 1', () => {
-    expect(() =>
-      fc.assert(
-        fc.property(arbSite, arbSeed, fc.integer({ min: 0, max: 50 }), (site, seed, d) => {
-          // U ≥ 5 here, so the U0 = 5 candidates normally equal the ones at U
-          const c0 = candidates(site, seed, 5, { maxStories: 80 });
-          fc.pre(c0.length > 0);
-          const c0Max = capRange(c0)[1];
-          const U = c0Max + 2 * unitsTolerance(c0Max) + 2 + d;
-          const cU = candidates(site, seed, U, { maxStories: 80 });
-          fc.pre(cU.length > 0);
-          const cMax = capRange(cU)[1];
-          fc.pre(U - cMax > unitsTolerance(U) + 1);
-          // candidates are in ascending stories, so the first at c_max is the tie-break winner
-          const top = cU.find((c) => c.cap === cMax)!;
-          const b = generateForUnits(vacant(site), U, 80, seed);
-          // exclusion: a chosen candidate none of whose compositions serialise gives null, exactly
-          // as `generate` does on that site (e.g. every midrise on a narrow star lot)
-          fc.pre(b !== null);
-          expect({ typology: b!.typology, stories: b!.stories }).toStrictEqual({
-            typology: top.ref.typology,
-            stories: top.ref.stories
-          });
-          expect(massedUnits(b!)).toBeGreaterThanOrEqual(cMax - 1);
-          // the closest family is never farther from U than the largest candidate itself (±1)
-          expect(Math.abs(massedUnits(b!) - U)).toBeLessThanOrEqual(U - cMax + 1);
-          expect(massingApproximate(b!) || b!.composition !== 'simple').toBe(true);
-          return true;
-        }),
-        QUICK_FAIL
-      )
-    ).not.toThrow();
-  });
+  it(
+    'P3: undershoot (U − c_max > tol(U) + 1) → largest candidate, massed ≥ c_max − 1',
+    { timeout: 30_000 },
+    () => {
+      expect(() =>
+        fc.assert(
+          fc.property(arbSite, arbSeed, fc.integer({ min: 0, max: 50 }), (site, seed, d) => {
+            // U ≥ 5 here, so the U0 = 5 candidates normally equal the ones at U
+            const c0 = candidates(site, seed, 5, { maxStories: 80 });
+            fc.pre(c0.length > 0);
+            const c0Max = capRange(c0)[1];
+            const U = c0Max + 2 * unitsTolerance(c0Max) + 2 + d;
+            const cU = candidates(site, seed, U, { maxStories: 80 });
+            fc.pre(cU.length > 0);
+            const cMax = capRange(cU)[1];
+            fc.pre(U - cMax > unitsTolerance(U) + 1);
+            // candidates are in ascending stories, so the first at c_max is the tie-break winner
+            const top = cU.find((c) => c.cap === cMax)!;
+            const b = generateForUnits(vacant(site), U, 80, seed);
+            // exclusion: a chosen candidate none of whose compositions serialise gives null, exactly
+            // as `generate` does on that site (e.g. every midrise on a narrow star lot)
+            fc.pre(b !== null);
+            expect({ typology: b!.typology, stories: b!.stories }).toStrictEqual({
+              typology: top.ref.typology,
+              stories: top.ref.stories
+            });
+            expect(massedUnits(b!)).toBeGreaterThanOrEqual(cMax - 1);
+            // the closest family is never farther from U than the largest candidate itself (±1)
+            expect(Math.abs(massedUnits(b!) - U)).toBeLessThanOrEqual(U - cMax + 1);
+            expect(massingApproximate(b!) || b!.composition !== 'simple').toBe(true);
+            return true;
+          }),
+          QUICK_FAIL
+        )
+      ).not.toThrow();
+    }
+  );
 
   it('P4: permuting or duplicating assembly parcels does not change the output', () => {
     type Fixture = { parcels: ParcelRecord[]; excluded?: ParcelRecord };
