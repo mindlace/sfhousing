@@ -102,9 +102,10 @@ static void buildExp(void) {
     addNeighbours(-t);
   }
   for (i = 0; i <= 140; i++) add(-30.0 + 0.25 * (double)i);
-  add(INFINITY);
-  add(-INFINITY);
-  add(NAN);
+  /* Inf and NaN come from bit patterns, so neither the INFINITY/NAN macros nor math.h are needed */
+  addBits(0x7FF0000000000000ULL);
+  addBits(0xFFF0000000000000ULL);
+  addBits(0x7FF8000000000000ULL);
   addBits(0xFFF8000000000000ULL);
   for (i = 0; i < 40; i++) {
     double u = (double)(lcg() >> 11) / 9007199254740992.0;
@@ -146,9 +147,9 @@ static void buildLog(void) {
   add(1e-300);
   add(1e300);
   add(-1.0);
-  add(-INFINITY);
-  add(INFINITY);
-  add(NAN);
+  addBits(0xFFF0000000000000ULL);
+  addBits(0x7FF0000000000000ULL);
+  addBits(0x7FF8000000000000ULL);
   for (i = 0; i < 40;) {
     uint64_t u = lcg() & 0x7FFFFFFFFFFFFFFFULL;
     if (u == 0 || (u >> 52) == 0x7FF) continue;
