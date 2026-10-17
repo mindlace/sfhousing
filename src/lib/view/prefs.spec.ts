@@ -4,8 +4,8 @@ import { DEFAULT_VIEW, VIEW_KEY, readViewPrefs, writeViewPrefs } from './prefs';
 const mem = (v: string | null) => ({ getItem: (k: string) => (k === VIEW_KEY ? v : null) });
 
 describe('view prefs', () => {
-  it('defaults to both layers on', () => {
-    expect(DEFAULT_VIEW).toEqual({ transitStops: true, transitAccess: true });
+  it('defaults to stops off and capacity on', () => {
+    expect(DEFAULT_VIEW).toEqual({ transitStops: false, transitAccess: true });
     expect(readViewPrefs(mem(null))).toEqual(DEFAULT_VIEW);
     expect(readViewPrefs(null)).toEqual(DEFAULT_VIEW);
   });

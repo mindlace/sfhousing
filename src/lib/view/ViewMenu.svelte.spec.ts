@@ -13,7 +13,7 @@ describe('ViewMenu', () => {
     await expect.element(button()).toHaveAttribute('aria-expanded', 'false');
     await button().click();
     await expect.element(button()).toHaveAttribute('aria-expanded', 'true');
-    await expect.element(page.getByRole('checkbox', { name: 'Transit stops' })).toBeChecked();
+    await expect.element(page.getByRole('checkbox', { name: 'Transit stops' })).not.toBeChecked();
     await userEvent.keyboard('{Escape}');
     await expect.element(button()).toHaveAttribute('aria-expanded', 'false');
     await expect.element(button()).toHaveFocus();
@@ -24,7 +24,7 @@ describe('ViewMenu', () => {
     render(ViewMenu, { props: { view: DEFAULT_VIEW, onchange } });
     await button().click();
     await page.getByRole('checkbox', { name: 'Transit capacity within a 10-minute walk' }).click();
-    expect(onchange).toHaveBeenCalledWith({ transitStops: true, transitAccess: false });
+    expect(onchange).toHaveBeenCalledWith({ transitStops: false, transitAccess: false });
   });
 
   it('shows both legends and the caption', async () => {

@@ -61,7 +61,7 @@ describe('/ View menu', () => {
     // First in the header actions: left of Saved / Publish.
     const slot = document.querySelector('[data-testid="header-actions"]')!;
     expect(slot.firstElementChild?.contains(viewButton().element())).toBe(true);
-    expect(stubProps.view).toEqual({ transitStops: true, transitAccess: true });
+    expect(stubProps.view).toEqual({ transitStops: false, transitAccess: true });
   });
 
   it('has no View button without manifest.transit', async () => {

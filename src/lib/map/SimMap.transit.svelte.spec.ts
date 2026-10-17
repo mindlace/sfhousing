@@ -103,7 +103,7 @@ const tooltipText = () => document.querySelector('[role="tooltip"]')?.textConten
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe('SimMap transit', { timeout: 30_000 }, () => {
-  it('loads the fixture network into both sources and shows both layers by default', async () => {
+  it('loads the fixture network into both sources; capacity on, stops off by default', async () => {
     const { ready } = await mount();
     const map = (await ready).getMap()!;
     await expect.poll(() => features(map, TRANSIT_STOPS_SOURCE), { timeout: 10_000 }).toBe(MARKERS);
@@ -111,7 +111,7 @@ describe('SimMap transit', { timeout: 30_000 }, () => {
       .poll(() => features(map, TRANSIT_ACCESS_SOURCE), { timeout: 10_000 })
       .toBeGreaterThan(0);
     expect(vis(map, TRANSIT_ACCESS_LAYER)).toBe('visible');
-    for (const id of TRANSIT_STOP_LAYERS) expect(vis(map, id)).toBe('visible');
+    for (const id of TRANSIT_STOP_LAYERS) expect(vis(map, id)).toBe('none');
     expect(errors).toEqual([]);
   });
 
@@ -127,7 +127,7 @@ describe('SimMap transit', { timeout: 30_000 }, () => {
   });
 
   it('shows the stop tooltip on hover at z14+ only, and never while stops are hidden', async () => {
-    const { ready, screen } = await mount();
+    const { ready, screen } = await mount({ view: { transitStops: true, transitAccess: true } });
     const map = (await ready).getMap()!;
     await expect.poll(() => features(map, TRANSIT_STOPS_SOURCE), { timeout: 10_000 }).toBe(MARKERS);
 

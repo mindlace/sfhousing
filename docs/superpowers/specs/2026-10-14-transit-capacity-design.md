@@ -220,7 +220,7 @@ Operator credits flow through `manifest.sources` to `/attribution` like every ot
 
 - A **View** button in the header-actions snippet on the main page (`src/routes/+page.svelte`), left of save/publish. Hidden when `manifest.transit` is absent.
 - Opens a disclosure popover (button + `aria-expanded`, Esc closes, focus returns) with two checkboxes, each followed by its legend:
-  - **Transit stops** (default **on**)
+  - **Transit stops** (default **off**: the markers dominate the map)
   - **Transit capacity within a 10-minute walk** (default **on**). Legend shows the five bins and the caption "Estimated weekday 7–9 am capacity, riders per hour. Existing service only."
 - State persisted to localStorage key `sfhousing:view` as `{ transitStops: boolean; transitAccess: boolean }`, read/written with the guarded pattern from `src/lib/brush/settings.ts`. Applied with `setLayoutProperty(id, 'visibility', …)` and re-applied after style reloads or map remount.
 - The menu is a list so later layers (pipeline overlay, M5) add rows without redesign.
@@ -243,6 +243,6 @@ Operator credits flow through `manifest.sources` to `/attribution` like every ot
 ## 9. Decisions (2026-10-14)
 
 - Transit data is published as facts, with credits on `/attribution` only. A bootstrap script fetches the feeds for anyone who clones the repo (§4.1).
-- Both layers are on by default.
+- The capacity layer is on by default; stops are off.
 - Ferries are excluded: negligible resident-facing capacity (§4.1).
 - Capacities use each agency's own planning load, with no common load-factor abstraction (§4.2 step 7).
