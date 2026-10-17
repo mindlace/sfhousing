@@ -136,6 +136,12 @@ describe('parseProjectsFile accepts', () => {
     expect(parseProjectsFile(f, { asOf: ASOF, parcelIds })).toBe(f);
   });
 
+  it('a history with two stages on the same day (non-decreasing, not strictly increasing)', () => {
+    const f = validFile();
+    f.projects[0].history = { filed: 19500, entitled: 19500 };
+    expect(parseProjectsFile(f)).toBe(f);
+  });
+
   it('an empty projects array', () => {
     const f = validFile();
     f.projects = [];

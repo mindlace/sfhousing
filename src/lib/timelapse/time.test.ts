@@ -10,6 +10,13 @@ describe('monthsIn', () => {
     }
   });
 
+  it('matches literal spot checks around the first month boundaries', () => {
+    expect(monthsIn(0, 30)).toBe(0);
+    expect(monthsIn(0, 31)).toBe(1);
+    expect(monthsIn(0, 60)).toBe(1);
+    expect(monthsIn(0, 61)).toBe(2);
+  });
+
   it('is zero on the entry day and floors negative offsets', () => {
     expect(monthsIn(100, 100)).toBe(0);
     expect(monthsIn(100, 99)).toBe(-1);
