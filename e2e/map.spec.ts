@@ -644,7 +644,7 @@ test.describe('map view', () => {
     // eslint-disable-next-line playwright/no-skipped-test
     test.skip(
       process.platform !== 'darwin',
-      'E9 goldens are generated on darwin, where signoff (the merge gate) runs; ci.yml on Linux is feedback only'
+      'E9 goldens are generated on darwin, where signoff (the merge gate) runs'
     );
     test.use({ reducedMotion: 'reduce' });
 
