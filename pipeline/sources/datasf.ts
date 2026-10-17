@@ -5,12 +5,24 @@ import type { Http } from '../lib/http';
 export type { Http };
 
 export type DatasfId =
-  'datasf-parcels' | 'datasf-landuse-2023' | 'datasf-footprints' | 'datasf-neighborhoods';
+  | 'datasf-parcels'
+  | 'datasf-landuse-2023'
+  | 'datasf-footprints'
+  | 'datasf-neighborhoods'
+  | 'datasf-permits-newcon'
+  | 'datasf-planning-projects'
+  | 'datasf-planning-records'
+  | 'datasf-planning-review'
+  | 'datasf-unit-completions'
+  | 'datasf-housing-production'
+  | 'datasf-dev-pipeline';
 
 export const DATASF: Record<
   DatasfId,
   {
     dataset: string;
+    /** `geojson` pages are FeatureCollections; `json` pages are bare row arrays. */
+    format: 'geojson' | 'json';
     select: string;
     where?: string;
     license: string;
@@ -20,6 +32,7 @@ export const DATASF: Record<
 > = {
   'datasf-parcels': {
     dataset: 'acdm-wktn',
+    format: 'geojson',
     select: 'mapblklot,blklot,active,analysis_neighborhood,shape',
     where: 'active=true',
     license: 'PDDL-1.0',
@@ -28,6 +41,7 @@ export const DATASF: Record<
   },
   'datasf-landuse-2023': {
     dataset: 'fdfd-xptc',
+    format: 'geojson',
     select: 'mapblklot,landuse,resunits,res,totalcomm,the_geom',
     license: 'public-domain',
     homepage: 'https://data.sf.gov/d/fdfd-xptc',
@@ -35,6 +49,7 @@ export const DATASF: Record<
   },
   'datasf-footprints': {
     dataset: 'ynuv-fyni',
+    format: 'geojson',
     select: 'mblr,sf16_bldgid,hgt_median_m,shape',
     license: 'PDDL-1.0',
     homepage: 'https://data.sf.gov/d/ynuv-fyni',
@@ -42,10 +57,74 @@ export const DATASF: Record<
   },
   'datasf-neighborhoods': {
     dataset: 'j2bu-swwd',
+    format: 'geojson',
     select: 'nhood,the_geom',
     license: 'PDDL-1.0',
     homepage: 'https://data.sf.gov/d/j2bu-swwd',
     label: 'DataSF Analysis Neighborhoods'
+  },
+  'datasf-permits-newcon': {
+    dataset: 'i98e-djp9',
+    format: 'json',
+    select:
+      'permit_number,permit_type,block,lot,street_number,street_name,street_suffix,status,status_date,filed_date,permit_creation_date,issued_date,first_construction_document_date,completed_date,last_permit_activity_date,number_of_proposed_stories,existing_units,proposed_units,site_permit,primary_address_flag',
+    where: "permit_type in('1','2')",
+    license: 'PDDL-1.0',
+    homepage: 'https://data.sf.gov/d/i98e-djp9',
+    label: 'DataSF Building Permits (new construction)'
+  },
+  'datasf-planning-projects': {
+    dataset: 'qvu5-m3a2',
+    format: 'json',
+    select:
+      'record_id,record_status,project_address,block,lot,open_date,close_date,building_permits,project_decision,project_decision_date,number_of_units_prop,number_of_units_exist,new_construction,sb35,housing_sustainability_dist,ab2162,description',
+    license: 'public-domain',
+    homepage: 'https://data.sf.gov/d/qvu5-m3a2',
+    label: 'DataSF Planning Projects'
+  },
+  'datasf-planning-records': {
+    dataset: 'y673-d69b',
+    format: 'json',
+    select: 'record_id,record_type,record_status,block,lot,parent_id,open_date,close_date',
+    where:
+      "record_type in('PPA','ENV','CUA','VAR','DNX','ENX','OFA','AHB','PHA','DVA','COA','PTA','MAP','PCA','GPA','CTZ','DRP','DRM')",
+    license: 'public-domain',
+    homepage: 'https://data.sf.gov/d/y673-d69b',
+    label: 'DataSF Planning Records'
+  },
+  'datasf-planning-review': {
+    dataset: 'd4jk-jw33',
+    format: 'json',
+    select: 'b1_alt_id,start_event_type,start_event_date,end_event_type,end_event_date',
+    where: "project_stage='accepted to approved'",
+    license: 'PDDL-1.0',
+    homepage: 'https://data.sf.gov/d/d4jk-jw33',
+    label: 'DataSF Planning Review Time Metrics'
+  },
+  'datasf-unit-completions': {
+    dataset: 'j67f-aayr',
+    format: 'json',
+    select: 'building_permit_application,date_issued,document_type,number_of_units_certified',
+    license: 'PDDL-1.0',
+    homepage: 'https://data.sf.gov/d/j67f-aayr',
+    label: 'DataSF Dwelling Unit Completions'
+  },
+  'datasf-housing-production': {
+    dataset: 'xdht-4php',
+    format: 'json',
+    select: 'bpa,blocklot,form_no,net_units_completed,first_completion_date',
+    license: 'public-domain',
+    homepage: 'https://data.sf.gov/d/xdht-4php',
+    label: 'DataSF Housing Production'
+  },
+  'datasf-dev-pipeline': {
+    dataset: '6jgi-cpb4',
+    format: 'json',
+    select:
+      'blklot,nameaddr,current_status,current_status_date,approved_date_planning,case_no,bpa_no,new_pipeline_units,existing_units,proposed_units,completed_new_units,net_pipeline_units,description_planning,da',
+    license: 'CC0-1.0',
+    homepage: 'https://data.sf.gov/d/6jgi-cpb4',
+    label: 'DataSF SF Development Pipeline'
   }
 };
 
@@ -67,18 +146,21 @@ export async function fetchDatasf(id: DatasfId, rawDir: string, http: Http): Pro
     params.set('$order', ':id');
     params.set('$limit', String(PAGE_SIZE));
     params.set('$offset', String(page * PAGE_SIZE));
-    const url = `https://data.sf.gov/resource/${d.dataset}.geojson?${params}`;
+    const url = `https://data.sf.gov/resource/${d.dataset}.${d.format}?${params}`;
     const res = await http.get(url);
     if (res.status !== 200) throw new Error(`GET ${url}: HTTP ${res.status}`);
-    const n = (JSON.parse(new TextDecoder().decode(res.body)) as { features: unknown[] }).features
-      .length;
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(res.body));
+    const n =
+      d.format === 'json'
+        ? (parsed as unknown[]).length
+        : (parsed as { features: unknown[] }).features.length;
     if (page === 0) {
       upstreamVersion =
         res.headers.get('X-SODA2-Truth-Last-Modified') ?? res.headers.get('ETag') ?? 'unknown';
     }
     // A trailing empty page (row count an exact multiple of the page size) is not locked.
     if (n > 0 || page === 0) {
-      const name = `${id}.page-${String(page).padStart(3, '0')}.geojson`;
+      const name = `${id}.page-${String(page).padStart(3, '0')}.${d.format}`;
       files.push(storeBytes(rawDir, name, url, res.body));
       rowCount += n;
     }
