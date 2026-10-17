@@ -41,7 +41,10 @@ export interface PhaseResult {
   scale: number | null;
   /** Number of phase merges. */
   merged: number;
+  /** V24 failures. */
   problems: string[];
+  /** Non-failing notes for the report: unresolved phase blklots, a schedule with no remaining phase. */
+  warnings: string[];
 }
 
 /** 'YYYY-MM-DD' as a UTC day number (no clipping: planned dates may be after asOf). */
@@ -107,16 +110,48 @@ interface Draft {
   source: Phase['source'];
 }
 
+/**
+ * Folds every draft for which `drop` holds into the nearest earlier kept draft, else the next kept
+ * one: units, parcels and the earliest planned date go with it. Needs at least one kept draft.
+ */
+function mergeInto(
+  drafts: Draft[],
+  drop: (d: Draft) => boolean
+): { kept: Draft[]; merged: number } {
+  const keep = drafts.map((d) => !drop(d));
+  const out = drafts.map((d, i) => (keep[i] ? { ...d, parcelIds: [...d.parcelIds] } : null));
+  let merged = 0;
+  drafts.forEach((d, i) => {
+    if (keep[i]) return;
+    let target = -1;
+    for (let j = i - 1; j >= 0 && target < 0; j--) if (keep[j]) target = j;
+    if (target < 0) target = keep.indexOf(true, i + 1);
+    const t = out[target]!;
+    t.units += d.units;
+    t.parcelIds = [...t.parcelIds, ...d.parcelIds].sort();
+    t.planned = minDay(t.planned, d.planned);
+    merged++;
+  });
+  return { kept: out.filter((d): d is Draft => d !== null), merged };
+}
+
 function enriched(
   ctx: PhaseContext,
   schedule: NonNullable<MultiphaseEntry['schedule']>,
   remaining: MultiphasePhase[],
   R: number,
   caseNo: string,
-  problems: string[]
+  problems: string[],
+  warnings: string[]
 ): { phases: Phase[]; scale: number; merged: number } {
   const taken = new Set<ParcelId>();
   const drafts: Draft[] = remaining.map((ph) => {
+    if (ph.blklots.length === 0) warnings.push(`${caseNo} phase ${ph.name}: names no blklots`);
+    for (const b of ph.blklots) {
+      if (ctx.resolve([b]).length === 0) {
+        warnings.push(`${caseNo} phase ${ph.name}: blklot ${b} resolves to no parcel`);
+      }
+    }
     const resolved = ctx.resolve(ph.blklots);
     if (resolved.length > 0 && resolved.every((id) => ctx.excluded.has(id))) {
       problems.push(
@@ -155,14 +190,8 @@ function enriched(
         `[${SCALE_BOUNDS[0]}, ${SCALE_BOUNDS[1]}]`
     );
   }
-  const scaled = largestRemainder(
-    drafts.map((d) => d.units),
-    R
-  );
-  drafts.forEach((d, i) => (d.units = scaled[i]));
 
-  const keep = drafts.map((d) => d.parcelIds.length > 0 && d.units > 0);
-  if (!keep.some(Boolean)) {
+  if (drafts.every((d) => d.parcelIds.length === 0)) {
     const parcelIds = ctx.trackingParcels.filter((id) => !ctx.excluded.has(id)).sort();
     if (parcelIds.length === 0) {
       problems.push(`${caseNo}: every phase and the tracking parcel are excluded`);
@@ -182,43 +211,34 @@ function enriched(
     };
   }
 
-  let merged = 0;
-  const kept = drafts.map((d, i) => (keep[i] ? { ...d } : null));
-  drafts.forEach((d, i) => {
-    if (keep[i]) return;
-    let target = -1;
-    for (let j = i - 1; j >= 0; j--) {
-      if (keep[j]) {
-        target = j;
-        break;
-      }
-    }
-    if (target < 0) target = keep.indexOf(true, i + 1);
-    const t = kept[target]!;
-    t.units += d.units;
-    t.planned = minDay(t.planned, d.planned);
-    merged++;
-  });
-  const phases = kept
-    .filter((d): d is Draft => d !== null)
-    .map((d) => ({
-      units: d.units,
-      parcelIds: d.parcelIds,
-      plannedPermitFiled: d.planned,
-      source: d.source
-    }));
-  return { phases, scale, merged };
+  // 1. Parcel-less phases merge; 2. the merged phases scale to R; 3. phases scaled to 0 merge.
+  const first = mergeInto(drafts, (d) => d.parcelIds.length === 0);
+  const scaled = largestRemainder(
+    first.kept.map((d) => d.units),
+    R
+  );
+  first.kept.forEach((d, i) => (d.units = scaled[i]));
+  const second = mergeInto(first.kept, (d) => d.units === 0);
+  const phases = second.kept.map((d) => ({
+    units: d.units,
+    parcelIds: d.parcelIds,
+    plannedPermitFiled: d.planned,
+    source: d.source
+  }));
+  return { phases, scale, merged: first.merged + second.merged };
 }
 
 /**
  * Builds the master's T3 `phases` (spec 4.10.2). Enriched when the entry has a schedule and at
  * least one `remaining` phase; else the fallback from the phase size u (project median, then
- * citywide); else (no u, or no DA parcel left) the last resort, `phases: null`.
+ * citywide); else (no u, or no DA parcel left) the last resort, `phases: null`. `problems` fail
+ * V24; `warnings` are non-failing report notes.
  */
 export function buildPhases(ctx: PhaseContext): PhaseResult {
   const caseNo = ctx.master.caseNo ?? `pipeline row ${ctx.master.idx}`;
   const R = ctx.master.newUnits ?? 0;
   const problems: string[] = [];
+  const warnings: string[] = [];
   const daAvail = [...new Set(ctx.daParcels)].filter((id) => !ctx.excluded.has(id)).sort();
 
   const lastResort = (): PhaseResult => ({
@@ -227,7 +247,8 @@ export function buildPhases(ctx: PhaseContext): PhaseResult {
     mode: 'lastResort',
     scale: null,
     merged: 0,
-    problems
+    problems,
+    warnings
   });
 
   if (R < 1) {
@@ -238,15 +259,21 @@ export function buildPhases(ctx: PhaseContext): PhaseResult {
   const entry = ctx.entry;
   const remaining = entry?.phases.filter((p) => p.status === 'remaining') ?? [];
   if (entry && entry.schedule && remaining.length > 0) {
-    const r = enriched(ctx, entry.schedule, remaining, R, caseNo, problems);
+    const r = enriched(ctx, entry.schedule, remaining, R, caseNo, problems, warnings);
     return {
       phases: r.phases,
       parcelIds: masterParcels(daAvail, r.phases, ctx.trackingParcels),
       mode: 'enriched',
       scale: r.scale,
       merged: r.merged,
-      problems
+      problems,
+      warnings
     };
+  }
+  if (entry && entry.schedule) {
+    warnings.push(
+      `${caseNo}: schedule lists no remaining phase but ${R} units remain; using the fallback`
+    );
   }
 
   const u = [ctx.projectU, ctx.citywideU].find((x) => x !== null && x.u > 0)?.u ?? null;
@@ -272,7 +299,8 @@ export function buildPhases(ctx: PhaseContext): PhaseResult {
     mode: 'fallback',
     scale: null,
     merged: 0,
-    problems
+    problems,
+    warnings
   };
 }
 

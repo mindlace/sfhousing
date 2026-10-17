@@ -269,6 +269,7 @@ describe('buildPhases: enriched', () => {
     expect(out.scale).toBe(1);
     expect(out.merged).toBe(0);
     expect(out.problems).toEqual([]);
+    expect(out.warnings).toEqual([]);
     expect(out.parcelIds).toEqual(['3512002', '3512014']);
   });
 
@@ -336,7 +337,7 @@ describe('buildPhases: enriched', () => {
     expect(out.phases!.map((p) => [p.units, p.parcelIds])).toEqual([[200, ['b']]]);
   });
 
-  it('merges a phase whose units scale to 0', () => {
+  it('merges a phase whose units scale to 0, handing its parcels to the target', () => {
     const out = buildPhases(
       ctx({
         master: row({ caseNo: 'X', prx: true, newUnits: 2 }),
@@ -350,8 +351,44 @@ describe('buildPhases: enriched', () => {
     expect(out.merged).toBe(1);
     expect(out.phases!.map((p) => [p.units, p.parcelIds])).toEqual([
       [1, ['a']],
-      [1, ['b']]
+      [1, ['b', 'c']]
     ]);
+  });
+
+  it('merges parcel-less phases before scaling over the merged phases', () => {
+    const out = buildPhases(
+      ctx({
+        master: row({ caseNo: 'X', prx: true, newUnits: 6 }),
+        entry: entry([
+          phase({ units: 1, blklots: ['a'] }),
+          phase({ units: 1, blklots: [] }),
+          phase({ units: 1, blklots: ['c'] }),
+          phase({ units: 1, blklots: ['d'] })
+        ])
+      })
+    );
+    expect(out.merged).toBe(1);
+    expect(out.scale).toBe(1.5);
+    expect(out.phases!.map((p) => [p.units, p.parcelIds])).toEqual([
+      [3, ['a']],
+      [2, ['c']],
+      [1, ['d']]
+    ]);
+  });
+
+  it('warns about phase blklots that resolve to no parcel', () => {
+    const out = buildPhases(
+      ctx({
+        master: row({ caseNo: 'X', prx: true, newUnits: 200 }),
+        entry: entry([
+          phase({ name: 'One', units: 100, blklots: ['a', 'gone'] }),
+          phase({ name: 'Two', units: 100, blklots: ['b'] })
+        ]),
+        resolve: (blklots) => [...new Set(blklots)].filter((b) => b !== 'gone').sort()
+      })
+    );
+    expect(out.warnings).toEqual(['X phase One: blklot gone resolves to no parcel']);
+    expect(out.problems).toEqual([]);
   });
 
   it('falls back to a single phase on the tracking parcel when every phase is empty', () => {
@@ -419,6 +456,7 @@ describe('buildPhases: fallback and last resort', () => {
     ]);
     expect(out.scale).toBeNull();
     expect(out.merged).toBe(0);
+    expect(out.warnings).toEqual([]);
     expect(out.parcelIds).toEqual(['3512009']);
   });
 
@@ -475,5 +513,8 @@ describe('buildPhases: fallback and last resort', () => {
     );
     expect(out.mode).toBe('fallback');
     expect(out.phases!.map((p) => [p.units, p.parcelIds])).toEqual([[300, ['3512014']]]);
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0]).toMatch(/no remaining phase/);
+    expect(out.problems).toEqual([]);
   });
 });
