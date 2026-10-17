@@ -7,6 +7,10 @@
 -- Writes sc_district, sc_zoning, parcel_lineage, sc_roll_agg and scenario.height.* /
 -- scenario.roll.* counts. Every float sum is taken over an ordered list (list_sum), as in
 -- 60_attributes.sql, so the result does not depend on thread scheduling (V12).
+-- District overlap is summed per normalised height string, not per polygon: adjacent polygons
+-- carrying the same string are one district, so a parcel straddling their shared edge is not
+-- split between them. overlap_frac is clamped to at most 1; a raw sum above 1.0001 (overlapping
+-- same-string polygons) is counted in scenario.height.overlap_gt1.
 
 -- Height polygons in EPSG:7131 (as 10_parcels.sql:6) with their parsed string. A polygon with no
 -- string (normalised '') carries no district and is left out.
@@ -46,22 +50,29 @@ QUALIFY row_number() OVER (
   PARTITION BY id ORDER BY (ov >= ov_max - 0.01) DESC, has_label DESC, normalised
 ) = 1;
 
+-- Winning overlap as a fraction of the parcel area, before clamping (0 when no overlap or a
+-- degenerate parcel).
+CREATE OR REPLACE TEMP TABLE s_frac AS
+SELECT p.id, w.normalised,
+       CASE WHEN w.id IS NULL OR ST_Area(p.geom) <= 0 THEN 0.0
+            ELSE w.ov / ST_Area(p.geom) END::DOUBLE AS raw_frac
+FROM parcels p
+LEFT JOIN s_win w USING (id);
+
 -- Every parcel. No overlap -> district '' and kind none. `split` when the winning overlap is
 -- under 90% of the parcel area (spec §4.3; a reporting threshold only, orchestrator, tier 4).
 CREATE OR REPLACE TABLE sc_district AS
-SELECT p.id,
-       coalesce(w.normalised, '') AS district,
+SELECT f.id,
+       coalesce(f.normalised, '') AS district,
        coalesce(h.kind, 'none') AS kind,
        h.base_ft::INTEGER AS base_ft,
        h.lp_ft::INTEGER AS lp_ft,
        coalesce(h.r4, false) AS r4,
-       CASE WHEN w.id IS NULL OR ST_Area(p.geom) <= 0 THEN 0.0
-            ELSE w.ov / ST_Area(p.geom) END::DOUBLE AS overlap_frac,
-       (w.id IS NOT NULL AND ST_Area(p.geom) > 0 AND w.ov / ST_Area(p.geom) < 0.9) AS split
-FROM parcels p
-LEFT JOIN s_win w USING (id)
-LEFT JOIN s_hp h ON h.normalised = w.normalised
-ORDER BY p.id;
+       least(1.0, f.raw_frac)::DOUBLE AS overlap_frac,
+       (f.normalised IS NOT NULL AND f.raw_frac < 0.9) AS split
+FROM s_frac f
+LEFT JOIN s_hp h ON h.normalised = f.normalised
+ORDER BY f.id;
 
 -- Zoning of the parcel's chosen active acdm-wktn row, picked like 10_parcels.sql:13
 -- (blklot = mapblklot first, else the smallest blklot). NULL when the parcel has no attrs row.
@@ -199,6 +210,9 @@ SELECT 'scenario.height.split', count(*) FROM sc_district WHERE split;
 INSERT INTO report_counts
 SELECT 'scenario.height.split_units', coalesce(sum(o.units), 0)
 FROM sc_district d JOIN parcel_out o USING (id) WHERE d.split;
+-- Raw overlap sum above the parcel area by more than 1e-4 (a floating-point allowance, tier 4).
+INSERT INTO report_counts
+SELECT 'scenario.height.overlap_gt1', count(*) FROM s_frac WHERE raw_frac > 1.0001;
 -- `//` strings that are not R-4 are not Local Program (spec §4.2 step 5).
 INSERT INTO report_counts
 SELECT 'scenario.height.dbl_non_r4', count(*)

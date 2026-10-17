@@ -67,7 +67,10 @@ function literal(v: CellValue): string {
   if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
   if (typeof v === 'number') {
     if (!Number.isFinite(v)) throw new Error(`createTableFromRows: non-finite number ${v}`);
-    return Object.is(v, -0) ? '0' : String(v);
+    if (Number.isInteger(v)) return Object.is(v, -0) ? '0' : String(v);
+    // A bare decimal literal parses as DECIMAL, whose cast to DOUBLE can be 1 ulp off; a string
+    // cast parses the shortest round-trip form exactly.
+    return `CAST('${String(v)}' AS DOUBLE)`;
   }
   return `'${v.replaceAll("'", "''")}'`;
 }

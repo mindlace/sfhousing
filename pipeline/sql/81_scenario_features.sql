@@ -14,8 +14,9 @@ SELECT r.*,
        CASE WHEN r.land + r.impr > 0 THEN r.impr / (r.land + r.impr) END AS share_raw
 FROM sc_roll_agg r;
 
--- Medians over non-vacant rows with a value: per (year, class), and per year as the fallback for
--- a class with no value that year (the spec's class median does not exist there; tier 2, I).
+-- Medians over non-vacant rows with a value: per (year, class) (spec §4.5, tier 2), and per year
+-- as the fallback for a class with no value that year. The fallback is tier 4 (made up, operator
+-- ruling, Task 7 fix round 1): the spec's class median does not exist there.
 CREATE OR REPLACE TEMP TABLE f_med_class AS
 SELECT roll_year, land_use_class,
        quantile_disc(year_built, 0.5) AS year_built,
@@ -30,8 +31,10 @@ SELECT roll_year,
 FROM f_base WHERE NOT vacant
 GROUP BY roll_year;
 
--- One row per (roll year, class), final values: the median share rounded to 1/200 (the T11
--- quantisation, spec §4.8); vacant 0 and 0 (spec §4.5); no value at all in a year gives 0.
+-- One row per (roll year, class), final values: the median share rounded to 1/200 (a tier-4
+-- quantisation grid, T11 spec §4.8); vacant 0 and 0 (spec §4.5). Fallback chain: class median,
+-- else the year-wide non-vacant median, else 0; both fallbacks are tier 4 (made up, operator
+-- ruling, Task 7 fix round 1).
 CREATE OR REPLACE TABLE sc_medians AS
 SELECT y.roll_year, c.idx::INTEGER AS land_use_class,
        CASE WHEN c.name = 'vacant' THEN 0
@@ -61,7 +64,8 @@ SELECT b.id, b.roll_year,
        CASE WHEN b.vacant THEN 0 ELSE coalesce(b.year_built, m.year_built) END::INTEGER
          AS year_built,
        (NOT b.vacant AND b.year_built IS NULL) AS year_imputed,
-       -- improvement ÷ (land + improvement), rounded to 1/200 like T11; vacant 0.
+       -- improvement ÷ (land + improvement), rounded to 1/200 (a tier-4 quantisation grid,
+       -- T11 spec §4.8); vacant 0.
        CASE WHEN b.vacant THEN 0
             WHEN b.share_raw IS NOT NULL THEN round(b.share_raw * 200) / 200
             ELSE m.improvement_share END::FLOAT AS improvement_share,

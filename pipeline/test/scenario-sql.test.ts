@@ -112,6 +112,31 @@ describe('createTableFromRows', () => {
     expect(await db.all('SELECT * FROM t_empty')).toEqual([]);
   });
 
+  it('round-trips doubles exactly (no DECIMAL literal rounding)', async () => {
+    const db = await miniDuck();
+    // mulberry32, seeded: 1,000 doubles in [0, 1e6) plus a value a DECIMAL literal gets 1 ulp off.
+    let a = 0x5eed;
+    const next = () => {
+      a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const vals = [0.9678718104870807, -1.5e-300, 1.7976931348623157e308];
+    for (let i = 0; i < 1000; i++) vals.push(next() * 1e6 * (next() < 0.5 ? -1 : 1) + next());
+    await createTableFromRows(
+      db,
+      't_dbl',
+      [
+        ['i', 'INTEGER'],
+        ['d', 'DOUBLE']
+      ],
+      vals.map((v, i) => [i, v])
+    );
+    const got = await db.all<{ d: number }>('SELECT d FROM t_dbl ORDER BY i');
+    expect(got.map((r) => r.d)).toEqual(vals);
+  });
+
   it('rejects a non-finite number', async () => {
     const db = await miniDuck();
     await expect(createTableFromRows(db, 't_bad', [['d', 'DOUBLE']], [[NaN]])).rejects.toThrow(
@@ -189,6 +214,7 @@ describe('runScenarioSql on the mini fixture', () => {
     expect(c['scenario.height.no_district']).toBe(0);
     expect(c['scenario.height.split']).toBe(2);
     expect(c['scenario.height.dbl_non_r4']).toBe(1);
+    expect(c['scenario.height.overlap_gt1']).toBe(0);
     const units = await db.all<{ u: number }>(
       `SELECT sum(units)::INTEGER u FROM parcel_out WHERE id IN ('3512005', '3512010')`
     );
@@ -324,7 +350,10 @@ describe('runScenarioSql on the mini fixture', () => {
   it('lot 11 improvement_share is imputed with bit 2', async () => {
     const f = await feature(db, '3512011', 2025);
     expect(f.imputed & 4).toBe(4);
-    expect(Math.round(f.improvement_share * 200)).toBeCloseTo(f.improvement_share * 200, 4);
+    const [m] = await db.all<{ improvement_share: number }>(
+      'SELECT improvement_share FROM sc_medians WHERE roll_year = 2025 AND land_use_class = 5'
+    );
+    expect(f.improvement_share).toBe(m.improvement_share);
   });
 
   it('rounds improvement_share to 1/200 and sets rent_control_likely', async () => {
@@ -388,6 +417,11 @@ describe('runScenarioSql on a copy with a far-away parcel and a bad height strin
          ST_Translate(geom, 0.1, 0) AS geom)
        FROM memory.src_height_bulk WHERE height = '65-X'`
     );
+    // An exact duplicate of the 85//120-R-4 polygon: lot 11's raw same-string sum is 2.
+    await db.run(
+      `INSERT INTO syn.src_height_bulk SELECT * FROM memory.src_height_bulk
+       WHERE height = '85//120-R-4'`
+    );
     await db.run('USE syn');
     try {
       const records = await readParcelRecords(db);
@@ -410,6 +444,15 @@ describe('runScenarioSql on a copy with a far-away parcel and a bad height strin
       ).map((r) => [r.key, r.value])
     );
     expect(c['scenario.height.no_district']).toBe(1);
+  });
+
+  it('clamps overlap_frac to 1 and counts a raw same-string sum above 1', async () => {
+    const [d] = await db.all<District>(`SELECT * FROM syn.sc_district WHERE id = '3512011'`);
+    expect(d).toMatchObject({ district: '85//120-R-4', overlap_frac: 1, split: false });
+    const [c] = await db.all<{ value: number }>(
+      `SELECT value FROM syn.report_counts WHERE key = 'scenario.height.overlap_gt1'`
+    );
+    expect(c.value).toBe(1);
   });
 
   it('records a parse failure as kind none and returns it', async () => {
