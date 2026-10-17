@@ -23,6 +23,7 @@ New files in `src/lib/sim/scenario/`, all worker-safe (no zod, no DOM, no `$app`
 
 | File | Contents |
 |---|---|
+| `types.ts` | **Step 0** of the design's Dependency order, landed before any body. It holds the T5 types (`Schedule`, `SimInput`, the `simulate` signature), the T6 types (`ScenarioRequest`, `TimelineResponse`, `ScenarioErrorCode`, `ScenarioResponse`, `ProjectCard`) and the T8 types (`TimelineScore`, `TargetProgressAt`). Types only: `protocol.ts` re-exports them, and fzp-mode and timelapse-render import them. |
 | `dates.ts` | `dayOf(y, m, d)` and `isoOf(day)`, built on `Date.UTC` |
 | `rng.ts` | counter-based draws |
 | `simulate.ts` | T5 `simulate`, and the schedule-only `simulateNet` |
@@ -36,7 +37,7 @@ Other changes:
 
 - **`src/lib/sim/protocol.ts`:** the T6 unions are added beside `SimRequest` and `SimResponse`, which stay unchanged.
 - **`src/lib/sim/worker.ts`:** becomes a router between the editor host and the scenario host.
-- **`src/lib/sim/scenario-client.ts`:** `ScenarioClient` (T6).
+- **`src/lib/sim/scenario-client.ts`:** `ScenarioClient` (T6), including `prefetch(bbox)` and `retryChunks()`. This module ships it. fzp-mode has no fallback client.
 - **`pipeline/test/simulate-replay.test.ts`:** replays the historical cohort through `simulate`.
 
 ### Out of scope
@@ -73,32 +74,34 @@ The rows below are copied verbatim from the current design. T4d is consumed only
 |---|---|---|---|
 | T1 | `type Day = number` is integer days since 1970-01-01 UTC. All schedule times use it. It is exact in Float32. `MONTH_DAYS = 30.436875` (365.2425 / 12). `monthsIn(enteredDay, day) = floor((day − enteredDay) / MONTH_DAYS)` is the single months-in-stage rule, used by every table index (T4, T12, the bar, the card). `OPEN_DAY = 3.0e38` encodes an open-ended window end. These live in `src/lib/timelapse/time.ts` | stage-calibration → all | DC |
 | T2 | `type Stage = 'preApplication' \| 'filed' \| 'entitled' \| 'permitFiled' \| 'permitIssued' \| 'construction' \| 'complete'`; `type Pathway = 'discretionary' \| 'streamlined' \| 'permitOnly'`; `type ExitReason = 'withdrawn' \| 'disapproved' \| 'cancelled' \| 'expired'`. `STAGE_ORDER` lists the stages in this order. `preApplication` is optional on every pathway. `permitOnly` projects never enter `filed` or `entitled`. A ghost is visible from the project's first entered stage | stage-calibration → project-records, timelapse-sim, timelapse-render, fzp-mode | MC (stage sequence and exits follow real records), DC (names) |
-| T3 | `interface InFlightProject { id: string /* 'PRJ:<record_id>', 'BP:<permit>', 'PRJ:<record_id>:BP:<permit>' for split pipeline rows, 'CASE:<case_no>' for PRX rows, 'PPA:<record_id>' for PPA-only; unique */; label: string \| null /* street address from the records, if any */; parcelIds: ParcelId[] /* current mapblklot, mapped through retired-parcel lineage */; pathway: Pathway; stage: Stage; history: Partial<Record<Stage, Day>> /* observed entry days */; units: number; existingUnits: number; stories: number \| null; storiesTier: 0 \| 3 \| null /* 0 = recorded field, 3 = parsed from description text */; multiPhase: boolean /* PRX/DA remaining-phase row */; sources: { dataset: string; id: string; key?: string /* field to query, e.g. 'case_no'; absent = the dataset's record-id field */ }[] }`. `scenarios/fzp/projects.json` = `{ schema: 1; asOf: Day; rhnaCompletedNet: { units: number /* net units added since `since` up to `asOf`, Housing Inventory definition: completions plus alteration gains, minus demolitions and alteration losses */; since: Day /* 2022-06-30, RHNA projection period start */; provenance: Provenance }; projects: InFlightProject[] }`. Projects are new construction only (alterations adding units are out of scope) | project-records → timelapse-sim, fzp-mode | MC (real pipeline is the starting state), DC (shape) |
-| T4 | `interface Provenance { tier: 0 \| 1 \| 2 \| 3 \| 4; label: string; sources: { label: string; url: string }[]; method: string; n?: number; window?: [from: string, to: string] }`. `interface Transition { months: number; advance: number[] /* cumulative incidence by month 1..months */; exit: Partial<Record<ExitReason, number[]>>; tail: { advance: number; exit: Partial<Record<ExitReason, number>> } /* constant monthly hazards beyond months */; provenance: Provenance }`. `scenarios/fzp/calibration.json` = `{ schema: 1; asOf: Day; transitions: Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, Transition>>>; initiation: InitiationModel; pathwayForNew: Record<Pathway, number> & { provenance: Provenance }; size: SizeModel; revision: RevisionModel }`. The calibration also carries `ppaShare: Record<Pathway, number> & { provenance: Provenance }`, the share of new projects that start at `preApplication`. `InitiationModel`, `SizeModel` and `RevisionModel` are rows T4a–c. Everything is plain JSON, so future policy levers can transform it (the T9 seam). **Sampling semantics:** a project entering stage *s* at day *d* draws one uniform. The month of advance or exit comes from the cumulative tables (`advance` + Σ`exit` ≤ 1 at every month), with the tail hazards beyond `months`. An in-flight project already *m* months into *s* draws conditionally on having survived *m* months. Day within the month is uniform | stage-calibration → timelapse-sim, fzp-mode | MC (every parameter carries tier + source), DC (encoding) |
+| T3 | `interface InFlightProject { id: string /* 'PRJ:<record_id>', 'BP:<permit>', 'PRJ:<record_id>:BP:<permit>' for split pipeline rows, 'CASE:<case_no>' for PRX rows, 'PPA:<record_id>' for PPA-only; unique */; label: string \| null /* street address from the records, if any */; parcelIds: ParcelId[] /* current mapblklot, mapped through retired-parcel lineage */; pathway: Pathway; stage: Stage; history: Partial<Record<Stage, Day>> /* observed entry days */; units: number; existingUnits: number; stories: number \| null; storiesTier: 0 \| 3 \| null /* 0 = recorded field, 3 = parsed from description text */; multiPhase: boolean /* PRX/DA remaining-phase row */; phases: { units: number; parcelIds: ParcelId[]; plannedPermitFiled: Day \| null /* from the DA phasing schedule, if enriched */; source: { label: string; url: string; retrieved: string } \| null }[] \| null /* multi-phase only: null until enriched, then each phase is simulated as its own sub-project */; sources: { dataset: string; id: string; key?: string /* field to query, e.g. 'case_no'; absent = the dataset's record-id field */ }[] }`. `scenarios/fzp/projects.json` = `{ schema: 1; asOf: Day; rhnaCompletedNet: { units: number /* net units added since `since` up to `asOf`, Housing Inventory definition: completions plus alteration gains, minus demolitions and alteration losses */; since: Day /* 2022-06-30, RHNA projection period start */; provenance: Provenance }; projects: InFlightProject[] }`. Projects are new construction only (alterations adding units are out of scope) | project-records → timelapse-sim, fzp-mode | MC (real pipeline is the starting state), DC (shape) |
+| T4 | `interface Provenance { tier: 0 \| 1 \| 2 \| 3 \| 4; label: string; sources: { label: string; url: string }[]; method: string; n?: number; window?: [from: string, to: string] }`. `interface Transition { months: number; advance: number[] /* cumulative incidence by month 1..months */; exit: Partial<Record<ExitReason, number[]>>; tail: { advance: number; exit: Partial<Record<ExitReason, number>> } /* constant monthly hazards beyond months */; provenance: Provenance; tailProvenance: Provenance /* tier 2: extrapolation beyond the observed months */ }`. `scenarios/fzp/calibration.json` = `{ schema: 1; asOf: Day; transitions: Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, Transition>>>; initiation: InitiationModel; pathwayForNew: Record<Pathway, number> & { provenance: Provenance }; size: SizeModel; revision: RevisionModel; streamlinedForLocalProgram: Provenance /* tier 2: Local Program projects use the streamlined tables */; phaseGap: { days: number[] /* empirical gaps between successive phases' permitFiled */; provenance: Provenance } }`. The calibration also carries `ppaShare: Record<Pathway, number> & { provenance: Provenance }`, the share of new projects that start at `preApplication`. `InitiationModel`, `SizeModel` and `RevisionModel` are rows T4a–c. Everything is plain JSON, so future policy levers can transform it (the T9 seam). **Sampling semantics:** a project entering stage *s* at day *d* draws one uniform. The month of advance or exit comes from the cumulative tables (`advance` + Σ`exit` ≤ 1 at every month), with the tail hazards beyond `months`. An in-flight project already *m* months into *s* draws conditionally on having survived *m* months. Day within the month is uniform | stage-calibration → timelapse-sim, fzp-mode | MC (every parameter carries tier + source), DC (encoding) |
 | T4a | `type FeatureId = 'potentialRatio' /* yield units at full envelope ÷ max(existingUnits, 1); base variant uses the density-capped base yield (T13), FZP variant the Local Program yield (T11) — this is how density decontrol is seen */ \| 'existingUnits' \| 'lotAreaM2' \| 'yearBuilt' \| 'storiesGap' /* envelope stories − existing stories */ \| 'improvementShare' /* improvement ÷ (land + improvement) assessed value */ \| 'rentControlLikely' /* 0/1: ≥ 2 units and built < 1979 */ \| 'landUseClass' /* categorical: residential, mixed, commercial, pdr, vacant, other */`. `interface InitiationModel { kind: 'logit-monthly'; intercept: number; terms: { feature: FeatureId; bins: number[] /* ascending edges; categorical features use category index */; coef: number[] /* one per bin */ }[]; provenance: Provenance }`. Monthly hazard = `1 / (1 + exp(−(intercept + Σ coef[bin(feature)])))`. It is fitted on pre-FZP (base) envelopes and evaluated on FZP envelopes. Parcels with an in-flight project are not at risk until that project ends | stage-calibration → timelapse-sim, scenario-data (feature list) | DC |
 | T4b | `interface SizeModel { fillLevels: number[] /* ascending fractions of envelope stories; last = 1; length F matches T11 yield */; byEnvelope: { maxStoriesUpTo: number; probs: number[] /* length F, sums to 1 */ }[]; provenance: Provenance }`. A new project proposes `stories = max(1, round(fill × envelope.maxStories))` | stage-calibration → timelapse-sim, scenario-data (F) | DC |
 | T4c | `interface RevisionModel { at: { stage: Stage /* applied on entering this stage */; probability: number; ratio: { edges: number[]; probs: number[] } /* histogram of new units ÷ previous units */ }[]; provenance: Provenance }`. No revision on or after `construction`. Upsizing is capped at the parcel's envelope. A revision changes units, and stories follow from the yield table (simulated) or scale proportionally (pipeline) | stage-calibration → timelapse-sim | MC (projects can resize before construction), DC (shape) |
 | T4d | `interface ProjectHistory { id: string; pathway: Pathway \| null /* null = unclassifiable: excluded from per-pathway tables, included in pooled ones */; parcelIds: ParcelId[]; entered: Partial<Record<Stage, Day>>; end: { kind: 'complete'; day: Day } \| { kind: 'exit'; stage: Stage; reason: ExitReason; day: Day } \| { kind: 'open'; lastObserved: Day }; unitsAt: Partial<Record<Stage, number>> /* current proposed units from the record that represents each stage: PRJ → 'filed', site/full permit → 'permitFiled', TCO/CFC certified → 'complete'; cross-record, not snapshots (tier 2) */; existingUnits: number; storiesProposed: number \| null; baseStoriesAtFiling: number \| null /* current base height proxy, tier 3: no pre-FZP height map exists */; sources: { dataset: string; id: string; key?: string /* field to query, e.g. 'case_no'; absent = the dataset's record-id field */ }[] }`. Pipeline-internal file `pipeline/.cache/derived/<datasetVersion>/project-histories.json` = `{ schema: 1; asOf: Day; histories: ProjectHistory[] }`, never shipped. The history population and the in-flight population (T3) come from the same linkage | project-records → stage-calibration | DC |
-| T5 | `interface Schedule { projectId: string; origin: 'pipeline' \| 'simulated'; parcelIds: ParcelId[]; pathway: Pathway; entered: Partial<Record<Stage, Day>>; end: { kind: 'complete'; day: Day } \| { kind: 'exit'; stage: Stage; reason: ExitReason; day: Day } \| { kind: 'open' } /* still in progress at horizon */; revisions: { day: Day; units: number; stories: number \| null /* null = unknown until massed */ }[] /* [0] is the initial proposal; ascending days; none on or after entered.construction */; existingUnits: number; multiPhase: boolean }`. `simulate(input: SimInput, seed: number, horizon: Day): Schedule[]` is pure and deterministic. `SimInput = { parcels: ScenarioParcels /* decoded T11 */; projects: InFlightProject[]; calibration: Calibration; asOf: Day }`. Buildings of simulated projects carry `source: 'scenario'`, and pipeline projects carry `'pipeline'` (the sim stamps them) | timelapse-sim → timelapse-render (via T7), fzp-mode | MC (deaths, resizing, real starting state), DC (shape) |
-| T6 | Worker protocol additions (I15 extended), served by a separate scenario host behind the same Worker and a separate `ScenarioClient` (the editor's host and `SimClient` are unchanged). Requests: `{ type: 'initScenario'; rev; manifest: Manifest; scenario: 'fzp'; seed: number \| null /* null = representative seed */; horizon: Day }`, `{ type: 'reroll'; rev; seed: number \| null }` (also the resync path: same seed → fresh revision-0 snapshot), and `{ type: 'parcelSummary'; reqId: number; parcelId: ParcelId; day: Day; projectId?: string /* the picked project; returned if visible at day */ }`. Responses: `ready` (existing shape), `{ type: 'timeline'; rev; seed: number; render: TimelineUpdate; score: TimelineScore; bandRuns: number /* band runs finished so far, of N; the band is provisional until bandRuns = N */; complete: boolean /* all loaded cells packed */ }`. A band-only update is a `timeline` whose `render` is `{ revision: last + 1, cells: [], removedCells: [], demolish: [] }`, `chunks` (existing), and `error` with `code: 'manifest-invalid' \| 'scenario-missing' \| 'scenario-invalid' \| 'bad-request' \| 'internal'`. `parcelSummary` responds with `project?: ProjectCard`: the project named by `projectId` if it is visible at `day`; otherwise the project on that parcel whose first entered stage is ≤ `day`, latest first; none if no project is visible at `day`. `ProjectCard = { projectId: string; origin: 'pipeline' \| 'simulated'; label: string /* pipeline: T3 label, else 'Block B, Lot L'; simulated: always 'Block B, Lot L' */; pathway: Pathway; units: number; existingUnits: number /* summed over the project's parcels */; stories: number \| null; storiesTier: 0 \| 3 \| null /* pipeline only; 3 = parsed from description text */; massing: 'matched' \| 'approximate' \| 'none'; multiPhase: boolean; stages: { stage: Stage; day: Day; actual: boolean }[] /* only stages entered ≤ day */; revisions: Schedule['revisions'] /* only those ≤ day */; end: Schedule['end'] \| null /* null if the end is after day */; sources: { dataset: string; id: string; key?: string /* field to query, e.g. 'case_no'; absent = the dataset's record-id field */ }[] }`. The card's chance to finish is computed on the main thread from T12 at the current time. `prefetch` is reused, viewport-driven at every zoom in this mode | timelapse-sim ↔ fzp-mode, timelapse-render | DC |
+| T5 | `interface Schedule { projectId: string; origin: 'pipeline' \| 'simulated'; parcelIds: ParcelId[]; pathway: Pathway; entered: Partial<Record<Stage, Day>>; end: { kind: 'complete'; day: Day } \| { kind: 'exit'; stage: Stage; reason: ExitReason; day: Day } \| { kind: 'open' } /* still in progress at horizon */; revisions: { day: Day; units: number; stories: number \| null /* null = unknown until massed */ }[] /* [0] is the initial proposal; ascending days; none on or after entered.construction */; existingUnits: number; multiPhase: boolean; phase: { masterId: string; index: number; of: number } \| null /* a phase sub-project of a multi-phase master */ }`. `simulate(input: SimInput, seed: number, horizon: Day): Schedule[]` is pure and deterministic. `SimInput = { parcels: ScenarioParcels /* decoded T11 */; projects: InFlightProject[]; calibration: Calibration; asOf: Day }`. Buildings of simulated projects carry `source: 'scenario'`, and pipeline projects carry `'pipeline'` (the sim stamps them) | timelapse-sim → timelapse-render (via T7), fzp-mode | MC (deaths, resizing, real starting state), DC (shape) |
+| T6 | Worker protocol additions (I15 extended), served by a separate scenario host behind the same Worker and a separate `ScenarioClient` (the editor's host and `SimClient` are unchanged). Requests: `{ type: 'initScenario'; rev; manifest: Manifest; scenario: 'fzp'; seed: number \| null /* null = representative seed */; horizon: Day }`, `{ type: 'reroll'; rev; seed: number \| null }` (also the resync path: same seed → fresh revision-0 snapshot), and `{ type: 'parcelSummary'; reqId: number; parcelId: ParcelId; day: Day; projectId?: string /* the picked project; returned if visible at day */ }`. Responses: `ready` (existing shape), `{ type: 'timeline'; rev; seed: number; render: TimelineUpdate; score: TimelineScore; bandRuns: number /* band runs finished so far; the band is provisional until bandRuns = bandRunsTotal */; bandRunsTotal: number /* N */; complete: boolean /* all loaded cells packed */ }`. A band-only update is a `timeline` whose `render` is `{ revision: last + 1, cells: [], removedCells: [], demolish: [] }`, `chunks` (existing), and `error` with `code: 'manifest-invalid' \| 'scenario-missing' \| 'scenario-invalid' \| 'bad-request' \| 'internal'`. `parcelSummary` responds with `project?: ProjectCard`: the project named by `projectId` if it is visible at `day`; otherwise the project on that parcel whose first entered stage is ≤ `day`, latest first; none if no project is visible at `day`. `ProjectCard = { projectId: string; origin: 'pipeline' \| 'simulated'; label: string /* pipeline: T3 label, else 'Block B, Lot L'; simulated: always 'Block B, Lot L' */; pathway: Pathway; units: number; existingUnits: number /* summed over the project's parcels */; stories: number \| null; storiesTier: 0 \| 3 \| null /* pipeline only; 3 = parsed from description text */; massing: 'matched' \| 'approximate' \| 'none'; multiPhase: boolean; phase: Schedule['phase']; localProgram: boolean /* the project's parcel is a Local Program parcel and the project is simulated */; stages: { stage: Stage; day: Day; actual: boolean }[] /* only stages entered ≤ day */; revisions: Schedule['revisions'] /* only those ≤ day */; end: Schedule['end'] \| null /* null if the end is after day */; sources: { dataset: string; id: string; key?: string /* field to query, e.g. 'case_no'; absent = the dataset's record-id field */ }[] }`. The card's chance to finish is computed on the main thread from T12 at the current time. `prefetch` is reused, viewport-driven at every zoom in this mode | timelapse-sim ↔ fzp-mode, timelapse-render | DC |
 | T7 | `interface TimedPackedCell extends PackedCell { slotProjectIds: string[] /* render slots are keyed by project; parcelIds may repeat across slots */; partWindow: Float32Array /* per part: [fromDay, toDay) the part's revision is current; toDay = OPEN_DAY if open */; slotStages: Float32Array /* per slot: STAGE_ORDER.length entry days, NaN = never */; slotEnd: Float32Array /* per slot: [endDay, endKind] (0 open, 1 complete, 2 exit) */; slotPathway: Uint8Array /* index into ['discretionary','streamlined','permitOnly'] */ }`. `parcelMeta` rows describe the slot's final revision. `packTimedCell` is pure and owned by timelapse-render (in `src/lib/map/`); the worker imports it. `interface TimelineUpdate { revision: number /* 0 = snapshot */; cells: TimedPackedCell[]; removedCells: string[]; demolish: { parcelId: ParcelId; day: Day }[] /* complete list in revision 0 (needs no geometry); empty afterwards */ }`. `SimMapHandle` gains `applyTimeline(u: TimelineUpdate): void`, `setTime(day: Day): void` and `setTimelineLookups(l: { chance: ReturnType<typeof chanceTable>; typicalMonths: ReturnType<typeof typicalMonths> }): void`. `SimMapProps` gains `timelinePick?: (p: { projectId: string; parcelId: ParcelId; x: number; y: number; kind: 'hover' \| 'tap' } \| null) => void`. When it is set, SimMap's built-in tooltip is suppressed over timeline parts. Timeline colour tokens (`tl-*` in `palette.ts`) and an exported `TIMELINE_LEGEND` are owned here. `setTime` does O(1) JS work per call, except the existing-building catch-up, which applies at most 2,000 feature-state changes per frame until it converges | timelapse-render ↔ timelapse-sim, fzp-mode | DC |
 | T12 | In `src/lib/timelapse/model.ts` (pure, zod-free, worker-safe): `sampleTransition(t: Transition, u: number, monthsElapsed: number): { kind: 'advance' \| ExitReason; days: number }`, `initiationHazard(m: InitiationModel, f: Record<FeatureId, number>): number`, `chanceTable(cal: Calibration): Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, Float32Array>>>` (per month in a stage, the probability of eventually reaching `complete`; the table is 241 months long, and the tail is used beyond it), `typicalMonths(cal: Calibration): Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, number>>>` (median months to leave each stage, used for the bar's within-stage fill), and `parseCalibration(json: unknown): Calibration` (throws on schema mismatch). The pipeline's validation, the worker, the renderer (lookups uploaded once) and the card all use these, and nothing re-implements them. The bar colour and the card's "chance of finishing" both come from `chanceTable` | stage-calibration → timelapse-sim, timelapse-render, fzp-mode | MC (health = chance of finishing, OD-T2; one sampling semantics everywhere) |
-| T8 | `interface TimelineScore { months: Day[] /* months[i] = the 1st of the i-th month, starting with asOf's month and ending with the horizon's month; every series value at i is the state at the end of that month (events with day < months[i + 1], or ≤ horizon for the last entry) */; shown: { completedNet: number /* cumulative since asOf, simulation only, excludes baseline */; completedNetPipeline: number; completedNetNew: number; entitledNew: number /* cumulative units of new (simulated) projects reaching entitled */; inProgress: Record<Exclude<Stage, 'complete'>, number> /* current proposed units of projects in each stage at that month */; exitedUnits: number /* cumulative */ }[]; band: { p10: number; p50: number; p90: number }[] /* completedNet over N runs, same basis as shown */; baseline: { completedNet: number; since: Day; provenance: Provenance }; targets: TargetProgressAt[]; references: { id: string; label: string; units: number; from: Day; by: Day; measure: 'entitledNew' \| 'completedNetNew' \| 'completedNet'; provenance: Provenance }[] /* published estimates, each compared with the matching shown series */ }`, where `TargetProgressAt = { target: Target /* I11 */; deadline: Day; fraction: number[] /* per month, (baseline + completedNet) ÷ target, uncapped */ }` | timelapse-sim → fzp-mode | MC (net units against RHNA; band shown; baseline actuals counted), DC (shape) |
-| T9 | Policy-lever seam (no levers in this package): `simulate` reads all behaviour from `Calibration`. A future `PolicyOp` is a pure `(Calibration, ScenarioParcels) → (Calibration, ScenarioParcels)` transform applied before `simulate` | timelapse-sim → future policy-levers | MC (levers change inputs, not the engine) |
+| T8 | `interface TimelineScore { months: Day[] /* months[i] = the 1st of the i-th month, starting with asOf's month and ending with the horizon's month; every series value at i is the state at the end of that month (events with day < months[i + 1], or ≤ horizon for the last entry) */; shown: { completedNet: number /* cumulative since asOf, simulation only, excludes baseline */; completedNetPipeline: number; completedNetNew: number; entitledNew: number /* cumulative units of new (simulated) projects reaching entitled */; inProgress: Record<Exclude<Stage, 'complete'>, number> /* current proposed units of projects in each stage at that month */; exitedUnits: number /* cumulative */ }[]; planEffect: { entitledNew: number; completedNetNew: number }[] /* shown seed: FZP run minus its paired old-zoning run (T9 `baseZoning`), cumulative net units */; planEffectBand: { p10: number; p50: number; p90: number }[] /* planEffect.completedNetNew over the N paired runs */; band: { p10: number; p50: number; p90: number }[] /* completedNet over N runs, same basis as shown */; baseline: { completedNet: number; since: Day; provenance: Provenance }; targets: TargetProgressAt[]; references: { id: string; label: string; units: number; from: Day; by: Day; measure: 'planEffect.entitledNew' \| 'planEffect.completedNetNew' \| 'completedNet'; provenance: Provenance }[] /* published estimates, each compared with the matching shown series */ }`, where `TargetProgressAt = { target: Target /* I11 */; deadline: Day; fraction: number[] /* per month, (baseline + completedNet) ÷ target, uncapped */ }` | timelapse-sim → fzp-mode | MC (net units against RHNA; band shown; baseline actuals counted), DC (shape) |
+| T9 | Policy-lever seam: `simulate` reads all behaviour from `Calibration`. A `PolicyOp` is a pure `(Calibration, ScenarioParcels) → (Calibration, ScenarioParcels)` transform applied before `simulate`. This package ships exactly one: `baseZoning`, the old-zoning counterfactual. It sets every envelope to base stories, every yield to `baseYield`, `localProgram` false and hostability to `hostable_base`, and evaluates initiation on the base features. Each FZP run is paired with a `baseZoning` run on the same seed. Draws are keyed by entity, so in-flight projects get identical schedules in both runs and the difference isolates the plan (common random numbers). Only the FZP run is drawn on the map | timelapse-sim → future policy-levers | MC (levers change inputs, not the engine) |
 | T10 | `GeneratedBuilding.source: 'user' \| 'pipeline' \| 'scenario'` (amends I9). `generateForUnits(parcel: ParcelRecord \| ParcelRecord[], units: number, maxStories: number, seed: number, stories?: number): GeneratedBuilding \| null` | pipeline-massing → timelapse-sim, map-view | DC |
-| T11 | `scenarios/fzp/parcels.bin` (codec `sfh-scenario/1`, in `src/lib/data/`; deflate inside the file, async decode). It holds **every** parcel: `id`, `labelPoint`, `cellId`, a `hostable` flag (eligible and able to host a new project), `envelope: Envelope` (FZP stories: Local Program height if `localProgram`, else base height; clamped to `MAX_STORIES`), base stories, the base-zoning density cap in units (null = none), `localProgram: boolean`, `existingUnits` (latest assessor roll), the T4a feature values (base and FZP variants of `potentialRatio` and `storiesGap`) with an imputation mask, and `yield: Uint16[F]`, the gross units at each fill level of the envelope, replacement typologies only (no ADU outcomes), with no density cap under the Local Program. `FILL_LEVELS = [0.25, 0.5, 0.75, 0.9, 1]` (F = 5, tier-4 quantisation grid) is owned here, and stage-calibration imports it. Named in the manifest as `scenarios?: { fzp: { parcels: url; projects: url; calibration: url } }` (amends I12 and `ManifestBaseSchema`; optional, so older datasets load). Because the yield uses the generator, `src/lib/generator` and `src/lib/timelapse` join the dataset-version hash | scenario-data → timelapse-sim | DC |
+| T11 | `scenarios/fzp/parcels.bin` (codec `sfh-scenario/1`, in `src/lib/data/`; deflate inside the file, async decode). It holds **every** parcel: `id`, `labelPoint`, `cellId`, a `hostable` flag (eligible and able to host a new project), `envelope: Envelope` (FZP stories: Local Program height if `localProgram`, else base height; clamped to `MAX_STORIES`), base stories, the base-zoning density cap in units (null = none), `localProgram: boolean`, `existingUnits` (latest assessor roll), the T4a feature values (base and FZP variants of `potentialRatio` and `storiesGap`) with an imputation mask, `hostable_base` (hostable under the old zoning), `baseYield: Uint16[F]` (gross units at each fill level of the base envelope, density-capped), and `yield: Uint16[F]`, the gross units at each fill level of the envelope, replacement typologies only (no ADU outcomes), with no density cap under the Local Program. `FILL_LEVELS = [0.25, 0.5, 0.75, 0.9, 1]` (F = 5, tier-4 quantisation grid) is owned here, and stage-calibration imports it. Named in the manifest as `scenarios?: { fzp: { parcels: url; projects: url; calibration: url } }` (amends I12 and `ManifestBaseSchema`; optional, so older datasets load). Because the yield uses the generator, `src/lib/generator` and `src/lib/timelapse` join the dataset-version hash | scenario-data → timelapse-sim | DC |
 
 ### Internal types (not T-rows; they alter no row)
 
 ```ts
-// protocol.ts. SimRequest and SimResponse stay byte-identical, so the editor's exhaustiveness
-// checks still compile (host.ts:452, client.ts:214).
+// src/lib/sim/scenario/types.ts (step 0), re-exported by protocol.ts. SimRequest and SimResponse
+// stay byte-identical, so the editor's exhaustiveness checks still compile (host.ts:452,
+// client.ts:214).
 type ScenarioRequest =
   | Extract<SimRequest, { type: 'prefetch' | 'retryChunks' }>
   | { type: 'initScenario'; rev: Rev; manifest: Manifest; scenario: 'fzp'; seed: number | null; horizon: Day } // T6
   | { type: 'reroll'; rev: Rev; seed: number | null } // T6
-  | { type: 'parcelSummary'; reqId: number; parcelId: ParcelId; day: Day }; // T6
-type TimelineResponse = { type: 'timeline'; rev: Rev; seed: number; render: TimelineUpdate; score: TimelineScore; complete: boolean }; // T6
+  | { type: 'parcelSummary'; reqId: number; parcelId: ParcelId; day: Day; projectId?: string }; // T6
+type TimelineResponse = { type: 'timeline'; rev: Rev; seed: number; render: TimelineUpdate; score: TimelineScore; bandRuns: number; complete: boolean }; // T6
+type Massing = GeneratedBuilding | { footprint: [lng: number, lat: number][] }; // timelapse-render's packTimedCell input entry
 type ScenarioErrorCode = 'manifest-invalid' | 'scenario-missing' | 'scenario-invalid' | 'bad-request' | 'internal'; // T6
 type ScenarioResponse =
   | ReadyResponse
@@ -207,10 +210,11 @@ T6 fixes the structure: a separate scenario host behind the same Worker, and a s
 - `reroll(seed: number | null): Rev` (sets the barrier)
 - `isStale(t)`, true when `t.rev < barrier`
 - `resync()`: sends one `reroll(currentSeed)` per episode, on a T7 revision gap. `currentSeed` is the `seed` of the latest accepted timeline.
-- `parcelSummary(parcelId, day)`
+- `parcelSummary(parcelId, day, projectId?)`
+- `prefetch(bbox)` and `retryChunks()`, which forward the existing fire-and-forget requests
 - events: `onReady`, `onTimeline`, `onChunks`, `onError`, `onCrash`
 
-It never auto-resyncs on an `error`, unlike `client.ts:209`.
+It never auto-resyncs on an `error`, unlike `client.ts:209`. After a crash, fzp-mode's Retry calls `restart(spawnSimWorker())` and then sends only `initScenario`, using the current seed.
 
 ### 4.2 Data loading
 
@@ -244,8 +248,9 @@ It never auto-resyncs on an `error`, unlike `client.ts:209`.
 
 **Geometry** is built only for projects anchored in ready cells.
 
-- Chunks are requested only by `prefetch`, which is viewport-driven at every zoom (T6). There is never an all-chunk load.
-- A project's **anchor** is the smallest `ParcelId` among its parcels. Its cell is that parcel's T11 `cellId`.
+- Chunks are requested only by `prefetch`, which is viewport-driven at every zoom (T6). First paint never requires an all-chunk load.
+- **Cell anchor.** A project's cell is the T11 `cellId` of the smallest `ParcelId` among its parcels. This is deliberate: it is stable and needs no records.
+- **Footprint parcel.** The parcel with the largest `areaM2` (ties to the smallest id) supplies the fallback footprint (§4.8). It is also timelapse-render's pick parcel.
 - A parcel id that is absent from T11 is logged once. A project with no T11 parcel gets no geometry but is still scored.
 - For a multi-parcel project the host also `want`s the cells of its other parcels, and packs the project once all of them are ready.
 
@@ -253,11 +258,15 @@ It never auto-resyncs on an `error`, unlike `client.ts:209`.
 
 The run uses T1's `MONTH_DAYS`, `monthsIn` and `OPEN_DAY`. `dates.ts` adds `dayOf` and `isoOf`.
 
-`TimelineScore.months` runs from the 1st of the month after `asOf` to the 1st of the month after `horizon`, inclusive.
+**`TimelineScore.months`** follows T8.
 
-- For `asOf` 2026-10-16 and horizon 2050-12-31 that is 291 entries.
-- The final entry carries the end-of-horizon state.
-- The value at `months[i]` counts the events with `day < months[i]`.
+- `months[i]` is the 1st of the i-th month, starting with `asOf`'s month and ending with the horizon's month. For `asOf` 2026-10-16 and horizon 2050-12-31 that runs from 2026-10-01 to 2050-12-01: 291 entries.
+- Every series value at `i` is the state at the **end** of that month. It counts the events with `day < months[i + 1]`, or `day ≤ horizon` for the last entry.
+- Snapshot instant: `T_i = months[i + 1]`, or `horizon + 1` for the last entry.
+- `idx(d)` is the `i` with `months[i] ≤ d < T_i`.
+- Every future event is after `asOf`, so `idx` is always ≥ 0, and month 0 holds only the rest of October 2026.
+
+fzp-mode indexes `months` by the scrubbed day's month.
 
 Day bounds:
 
@@ -283,7 +292,7 @@ H = fmix32(H ^ ((purpose << 8) | stageIdx))
   - simulated project: `fnv1a32('p:' + parcelId)`;
   - pipeline project: `fnv1a32('j:' + projectId)`. T3 ids are prefixed and unique.
 - **`k`:** the initiation index on the parcel; 0 for pipeline projects.
-- **`purpose`:** `INIT=1`, `INIT_DAY=2`, `PATHWAY=3`, `PPA=4`, `SIZE=5`, `STAGE=6`, `REV=8`, `REV_RATIO=9`.
+- **`purpose`:** `INIT=1`, `INIT_DAY=2`, `PATHWAY=3`, `PPA=4`, `SIZE=5`, `STAGE=6`, `REV=8`, `REV_RATIO=9`, `STAGE_REDRAW=16 + j` for `j = 1…7` (§4.4.2).
 - **`stageIdx`:** the `STAGE_ORDER` index of the stage being left (for `STAGE`) or entered (for `REV` and `REV_RATIO`). It is 0 otherwise.
 
 What this guarantees:
@@ -301,7 +310,14 @@ For a project in stage `s` (entered on day `e`, pathway `p`):
 1. **Sample.** Call `r = sampleTransition(transitions[p][s], draw(STAGE, s), monthsElapsed)` (T12).
    - `monthsElapsed` is `monthsIn(e, asOf)` for an in-flight project's current stage, and 0 otherwise.
 2. **Event day.** `day = e + floor(r.days)`.
-   - For the in-flight first draw only: `sampleTransition` guarantees `days ≥ ⌈m·MONTH_DAYS⌉` but not `days > asOf − e`. So when the result falls in the snapshot's month, at or before `asOf`, it is placed at `day = asOf + 1` (R2 ruling: this placement is timelapse-sim's job).
+   - **In-flight first draw only: redraw** (reconciliation round 2). `sampleTransition` guarantees `days ≥ ⌈m·MONTH_DAYS⌉`, but the result can still land in the snapshot's month on or before `asOf`. Up to 8 attempts are made:
+     - attempt 0 uses `draw(STAGE, s)`;
+     - attempt `j` (1…7) uses `draw(STAGE_REDRAW + j, s)`;
+     - every attempt calls `sampleTransition(t, u_j, monthsIn(e, asOf))`.
+
+     The first attempt with `e + floor(r.days) > asOf` is accepted, outcome and day together. Rejecting until acceptance is exactly conditioning on survival to `asOf`. If all 8 attempts land on or before `asOf`, the last attempt's outcome is kept and placed at `day = asOf + 1`.
+
+     The cap of 8 is tier 4 and numerical only. A single attempt is rejected only when the event falls in the part of the current month before the snapshot. With one month's worth of event probability split across that partial month, a fallback needs 8 consecutive rejections. That is negligible except for stages with near-certain exit within a month.
 3. **Outcome.**
    - If `day > horizon`, the schedule ends `{ kind: 'open' }`. ρ > 0 guarantees every project leaves its stage eventually, so a horizon cut is the only way a schedule stays open.
    - On an exit: the schedule ends `{ kind: 'exit', stage: s, reason, day }`.
@@ -365,9 +381,9 @@ A revision can happen only on entering a later stage `n`. That means a future en
 
 1. **Whether it happens.** Use the first `at` entry for `n`. A revision happens if `draw(REV, n) < probability`.
 2. **The ratio.** One uniform, `draw(REV_RATIO, n)`, picks histogram bin `i`. Its residual places the ratio uniformly in `[edges[i], edges[i+1])`.
-3. **New units.** `units' = max(1, round(ratio × units))`, then capped:
-   - simulated: at `yield[F−1]`;
-   - pipeline: at `max(units, Σ yield[F−1] of its parcels)`.
+3. **New units.**
+   - **Simulated:** `units' = min(yield[F−1], max(existingUnits + 1, round(ratio × units)))`. A downsize is floored at `existingUnits + 1` (reconciliation round 2), so a simulated project never becomes net-negative. The size draw already guaranteed `units > existingUnits`.
+   - **Pipeline:** `units' = max(1, round(ratio × units))`, capped at `max(units, Σ yield[F−1] of its parcels)`.
 
    The cap never forces a downsize.
 4. **New stories.**
@@ -394,7 +410,7 @@ A revision can happen only on entering a later stage `n`. That means a future en
 
 ### 4.5 Score (T8)
 
-The score is built from schedules only, as prefix sums of per-month deltas. Let `idx(d)` be the first `i` with `months[i] > d`.
+The score is built from schedules only, as prefix sums of per-month deltas. `idx(d)` and the snapshot instant `T_i` are defined in §4.3. Value `i` is the end-of-month state.
 
 **Shown series:**
 
@@ -403,7 +419,7 @@ The score is built from schedules only, as prefix sums of per-month deltas. Let 
 | `completedNetPipeline`, `completedNetNew` | Split by origin. Add `+units_final` at `idx(complete)`. Add `−existingUnits` at `idx(construction)` when construction is after `asOf`. |
 | `completedNet` | The sum of the two series above. It excludes the baseline. |
 | `entitledNew` | Cumulative units, at the revision current on that day, of simulated projects entering `entitled` after `asOf`. `permitOnly` projects never count. |
-| `inProgress[s]` | Units of the current revision, for projects with `entered[s] < months[i]` whose next event is on or after `months[i]`. |
+| `inProgress[s]` | Units of the revision current at `T_i`, for projects with `entered[s] < T_i` whose next event is on or after `T_i`. |
 | `exitedUnits` | Cumulative units at exit, for exits after `asOf`. |
 
 **Baseline.** T3 `rhnaCompletedNet`, passed through unchanged: `since` = 2022-06-30.
@@ -453,7 +469,7 @@ Notes on the references:
 | Trigger | What happens |
 |---|---|
 | `seed: null` | Run the band in slices of ≤ 50 ms, separated by `setTimeout(0)`; `prefetch` and `parcelSummary` are served between slices. Then simulate the representative seed and post revision 0. |
-| A seed is given (the common case: the seed is in the URL) | Post the shown run's revision 0 first. Its `band` holds the quantiles folded so far, or `[]` before any. After that, post a band-only message after every 16 runs. |
+| A seed is given (the common case: the seed is in the URL) | Post the shown run's revision 0 first. Its `band` holds the quantiles folded so far, or `[]` before any. After that, post a band-only update after every 16 runs, and after the last run. |
 | `reroll(seed)` | Cancel the old seed's geometry work, then post revision 0 under the reroll's `rev`. |
 | `reroll` before loading has finished | `bad-request`, with the message `not initialised`. |
 
@@ -461,7 +477,13 @@ Notes on the references:
 
 - **Revision 0 is the snapshot.** It carries the **complete** `demolish` list for the shown run (T7: it needs no geometry), plus every ready anchored cell packed within 2.5 s of the request.
 - **Revisions n > 0** add or fully replace the cells they list. They carry `demolish: []` and `removedCells: []`. A newly ready chunk produces one message per 50 ms packing slice.
-- **`complete`** is true when the band holds all N runs **and** every ready anchored cell is packed (T6).
+- **A band-only update** is a `timeline` whose `render` is `{ revision: last + 1, cells: [], removedCells: [], demolish: [] }` (T6).
+- **`bandRuns`** is on every timeline. It counts the band runs folded so far:
+  - with `seed: null`, it is N, because revision 0 waits for the band;
+  - on a seeded init, it starts below N.
+
+  fzp-mode labels the band provisional while `bandRuns < N`.
+- **`complete`** is true when every ready anchored cell is packed (T6). It says nothing about the band.
 - **Score.** Every message carries the seed's full `TimelineScore`: 291 months, under 64 KB.
 
 ### 4.8 Geometry, memo and packing
@@ -470,15 +492,23 @@ Notes on the references:
 
 - **Simulated:** `{ ...generate(rec, { maxStories: stories_k }, fnv1a32(rec.id), 'max'), source: 'scenario' }`. This is the editor's seed rule (`host.ts:147`). Memo key: `s|<parcelId>|<stories>`.
 - **Pipeline:** `generateForUnits(records sorted by id, units_k, maxStories, fnv1a32(projectId), stories_k ?? undefined)`, stamped `source: 'pipeline'`. `maxStories` is `stories_k` when known, otherwise `MAX_STORIES` (80, `constants.ts:27`), per the reconciliation's Massing ruling. Memo key: `p|<projectId>|<units>|<stories ?? '-'>`.
-- **Multi-phase** projects get no generator call. They are passed to `packTimedCell` as footprint-only (massing `none`), using timelapse-render's input contract.
+- **Multi-phase** projects get no generator call. Every revision gets the footprint entry described below.
+
+**Footprint entries** (reconciliation round 2). When a massing returns `null` or throws, that revision becomes a footprint entry `{ footprint }`. Multi-phase rows take the same path.
+
+- The ring comes from the project's footprint parcel: the largest `areaM2`, ties to the smallest id (§4.2).
+- It is that parcel's outer ring, `polygon[0]` in local metres, converted to lng/lat with `localFrame(rec.labelPoint).to(x, y)` (`generator/geo.ts:13-37`; equivalently `toLngLat`, `geo.ts:39`).
+- It is display-only geometry, so `geo.ts`'s `Math.sin` and `Math.cos` never touch the score.
+
+As a result, `packTimedCell` gets one entry, a building or a footprint, for **every** revision, and every slot can be rendered and picked.
 
 **Memo and failures.**
 
 - The memo is `createLru(60_000)`. That is tier 4, an engineering budget of about 60 MB at the ≈0.8–1.0 KB per entry measured in `host.ts:50-56`.
 - Keys are content-based, so pipeline projects hit the memo across every seed.
-- A throwing generator gives `null`, logged once per project (as at `host.ts:149`).
+- A throwing generator is logged once per project (as at `host.ts:149`). Its revision falls back to the footprint entry.
 
-**Packing.** The worker calls timelapse-render's `packTimedCell` (T7) with each schedule, its `projectId` and its per-revision buildings. It transfers every typed array.
+**Packing.** The worker calls timelapse-render's `packTimedCell` (T7) with each schedule and its index-aligned `massings: Massing[]`. It transfers every typed array.
 
 ### 4.9 `parcelSummary` → `ProjectCard` (T6)
 
@@ -496,21 +526,31 @@ Notes on the references:
 
 **Project choice.**
 
-- The worker considers the shown-run schedules on this parcel whose first entered day is ≤ `day`, and takes the latest one.
-- "No project visible" means the parcel has no such project, or the chosen project exited longer ago than timelapse-render's death display (90 d red + 180 d fade = 270 d, a tier-4 render constant imported from that module). In that case `project` is absent.
+A project is **visible at `day`** when both hold:
+
+- its first entered day is ≤ `day`;
+- it has not exited more than `DYING_DAYS` before `day`. `DYING_DAYS` (= 270, display, tier 4) is imported from `src/lib/timelapse/time.ts`.
+
+Selection, per T6:
+
+1. If `projectId` is given, that project is returned when it is in the shown run, includes this parcel and is visible at `day`.
+2. Otherwise, among the shown-run schedules on this parcel whose first entered day is ≤ `day`, the latest is taken, if it is visible.
+3. If neither rule yields a project, `project` is absent.
 
 **ProjectCard fields.**
 
 | Field | Value |
 |---|---|
 | `label` | **Pipeline:** the T3 `label`, else `Block <B>, Lot <L>`. **Simulated:** always `Block <B>, Lot <L>`. `B` is the first 4 characters of the anchor, plus a following letter if present; `L` is the rest. `0026T001A` → "Block 0026T, Lot 001A"; `3512008` → "Block 3512, Lot 008". These formats were verified in `fixture-0` and against live DataSF `mapblklot`. |
-| `units`, `stories` | from the latest revision ≤ `day`. `stories` falls back to the building's stories, else `null`. |
-| `massing` | `none` for multi-phase projects or when there is no building. `matched` when the building's units are within ±10 % of `units` (tier 4, reconciliation). Otherwise `approximate`. |
+| `units`, `stories` | From the latest revision ≤ `day`. `stories` falls back to the building's stories, else `null`. |
+| `existingUnits` | `schedule.existingUnits`. For pipeline projects this is T3's assessor value for the project. For simulated projects it is the parcel's T11 value. Both are the assessor sum over the project's parcels. |
+| `storiesTier` | For pipeline projects, T3 `storiesTier` when `stories` comes from the record. It is `null` when `stories` came from the building or is unknown, and always `null` for simulated projects. |
+| `massing` | Follows reconciliation round 2, using pipeline-massing's helpers: **multi-phase, or a footprint entry** gives `none`; **pipeline** gives `massingApproximate(b) ? 'approximate' : 'matched'`; **simulated** gives `abs(b.units − revision.units) > unitsTolerance(revision.units) ? 'approximate' : 'matched'`. |
 | `stages` | only the stages entered on or before `day`. `actual` is true only for a pipeline history day ≤ `asOf`. |
 | `revisions` | only those on or before `day` |
 | `end` | `null` when the end falls after `day` |
 | `multiPhase` | from the schedule |
-| `sources` | `[]` for simulated projects |
+| `sources` | Pipeline: T3 `sources`, passed through with `key`. Simulated: `[]`. |
 
 ### 4.10 Error states
 
@@ -522,7 +562,7 @@ Notes on the references:
 | Decode fails, `parseCalibration` throws, the projects shape check fails, or `fillLevels` mismatch | `scenario-invalid` |
 | A fetch fails after retries | `internal`. fzp-mode's Retry re-sends `initScenario`. |
 | One project is invalid | Skipped; one aggregated warning |
-| The generator throws or returns null | No geometry for that revision; the project is still scored |
+| The generator throws or returns null | That revision gets a footprint entry and card `massing: 'none'`; the project is still scored |
 | A chunk fails | The existing `chunks` / `retryChunks` path |
 | The worker crashes | `ScenarioClient.onCrash`; the page restarts the worker and re-inits with the current seed |
 
@@ -558,6 +598,7 @@ The heap is measured as the `process.memoryUsage().heapUsed` delta. Time scrubbi
 | Reference dates | 2026-01-12 → 2031-01-12; 2026-01-12 → 2045-12-31 | reconciliation / inferred | §4.5 |
 | Memo cap | 60,000 | 4 (engineering) | `host.ts:50-56` |
 | Slice; revision-0 geometry cap; band post cadence | 50 ms; 2.5 s; 16 runs | 4 (engineering) | §4.7 |
+| In-flight redraw attempts | 8 | 4 (numerical) | §4.4.2 |
 | Budgets | see §4.11 | 4 (engineering) | §4.11 |
 
 This spec introduces no tier-3 or tier-4 model rates. Every behavioural rate comes from `calibration.json`, through T12.
@@ -609,6 +650,11 @@ Every test calls `expect`.
   - Risk rules: no re-initiation after completion; re-initiation after an exit, with `k + 1`; blocked while in flight.
   - The size draw never chooses `yield ≤ existingUnits`.
   - Caps hold, and null stories stay null.
+  - A simulated downsize never goes below `existingUnits + 1`.
+  - **In-flight redraw:**
+    - a fixture project whose first draw lands on or before `asOf` is redrawn, and its accepted day is > `asOf`;
+    - a calibration rigged so that all 8 attempts land at or before `asOf` takes the fallback `asOf + 1`;
+    - across 20,000 synthetic projects, the accepted outcomes match the incidence conditioned on survival to `asOf`, within 4·SE.
   - `source` stamping is correct.
 - **`simulate.incidence.property.spec.ts`** (acceptance: "reproduces observed per-stage death rates", through the whole engine):
   - **Fresh entries:** for each Transition in the fixture calibration, 20,000 synthetic pipeline projects enter that stage on day `asOf − 0`, with the horizon far out. The simulated cumulative incidence of advance and of each exit, by month, must be within 4·SE of the table.
@@ -622,22 +668,30 @@ Every test calls `expect`.
 
 - **`score.spec.ts`:**
   - Hand-computed deltas for every series, including `entitledNew`.
-  - 291 months.
+  - 291 months, from 2026-10-01 to 2050-12-01.
+  - Each value is the end-of-month state: an event on 2026-10-20 counts at `i = 0`; one on 2026-11-01 counts at `i = 1`; one on 2050-12-31 counts in the last entry.
   - No subtraction for construction before `asOf`.
   - Target fractions include the baseline; deadline 2031-01-31.
   - The references match §4.5 exactly.
 - **`band.spec.ts`:** nearest-rank quantiles; the rank-50 representative with its tie-break; partial bands.
 - **`card.spec.ts`:**
   - labels for `0026T001A`, `2999A019` and `3512008`, and the pipeline label;
-  - the day-based choice, including the 270-day death-visibility cut;
+  - `projectId` honoured when visible, and falling back to the day rule when not;
+  - the day-based choice, including the `DYING_DAYS` cut;
   - filtering of stages, revisions and `end`;
-  - the `massing` thresholds.
+  - `existingUnits`, `storiesTier` and `sources[].key`;
+  - the `massing` rule: pipeline via `massingApproximate`; simulated via `unitsTolerance`; footprint and multi-phase give `none`.
+- **`footprint.spec.ts`:**
+  - a null or throwing massing gives a footprint entry whose ring is the largest-area parcel's `polygon[0]` through `localFrame`;
+  - multi-phase rows take the same path;
+  - the entries stay index-aligned with `revisions`.
 
 **Host, router and client**
 
 - **`scenario-host.spec.ts`** (a harness modelled on `src/lib/sim/test/harness.ts`, with a fake clock):
   - `ready`, then the first timeline.
-  - A null seed gives `complete` only when the band and the packing are both done.
+  - A null seed gives `bandRuns = N` on revision 0. A seeded init streams band-only updates with the exact T6 `render` shape and a rising `bandRuns`.
+  - `complete` tracks packing only.
   - A seeded init streams the band.
   - `reroll(null)` returns the representative seed; `reroll` reuses the band.
   - Stale revs are handled.
@@ -647,7 +701,14 @@ Every test calls `expect`.
   - Every row of §4.10.
   - Slices take ≤ 50 ms.
 - **`worker-router.spec.ts`:** routing as in §4.1.
-- **`scenario-client.spec.ts`:** the barrier; resync sends one `reroll(currentSeed)`; no resync on error; crash and restart.
+- **`scenario-client.spec.ts`:**
+  - the barrier;
+  - resync sends one `reroll(currentSeed)`;
+  - no resync on error;
+  - crash and restart, then `initScenario` only;
+  - `prefetch(bbox)` and `retryChunks()` post the existing request shapes;
+  - `parcelSummary` forwards `projectId`.
+- **`types.spec.ts`:** compile-time assertions that `src/lib/sim/scenario/types.ts` matches the T5, T6 and T8 rows.
 
 **Bench and regression**
 
@@ -683,21 +744,30 @@ The existing `/` and `/p/:id` suites pass unchanged. The axe gate on `/fzp` belo
 3. **In-flight projects.** They keep their history. Their first future event falls after `asOf`.
 4. **Revisions.** They occur only on later stage entries before `construction`. Caps hold. Units are ≥ 1.
 5. **Net units.** Existing units are subtracted at a construction start after `asOf`; final units are added at completion. `completedNet = completedNetPipeline + completedNetNew`.
-6. **Score shape and contents.** 291 months; deadline 2031-01-31; target fractions include the baseline. `references` and `entitledNew` are as in §4.5.
+6. **Score shape and contents.** 291 months, from asOf's month to the horizon's month, each holding the end-of-month state; deadline 2031-01-31; target fractions include the baseline. `references` and `entitledNew` are as in §4.5.
 7. **Band.** N = 101. With a null seed, the shown run's final `completedNet` equals the final p50.
 8. **Timeline delivery.**
    - Revision 0 carries the complete `demolish` list.
-   - `complete` means the band is full and the loaded cells are packed.
+   - `complete` means the loaded cells are packed.
+   - `bandRuns` counts the band runs folded so far.
+   - Band-only updates have the T6 shape.
    - A reroll posts revision 0 within 3 s (bench).
 9. **Geometry.**
    - Built only for anchors in ready cells.
    - Each content key is generated once while memoised.
    - `source` is stamped `scenario` or `pipeline`.
-   - Multi-phase projects are footprint-only.
-10. **Card.** It follows T6 exactly: the `day` selection, no future stages, `end` null after `day`, and the labels.
+   - Multi-phase projects, and every failed massing, get footprint entries, so every revision has an entry.
+10. **Card.** It follows T6 exactly:
+    - `projectId` first, then the `day` rule;
+    - no future stages, and `end` null after `day`;
+    - labels, `existingUnits`, `storiesTier` and `sources[].key`;
+    - the round-2 `massing` rule.
 11. **Editor unchanged.** `host.ts`, `display.ts` and `client.ts` have no diff, and their tests pass untouched.
 12. **Errors.** Every §4.10 condition produces its stated response, and the worker remains usable.
 13. **Budgets.** The §4.11 budgets hold.
+14. **Step-0 types.** `src/lib/sim/scenario/types.ts` lands first, and `protocol.ts` re-exports it.
+15. **Client.** `ScenarioClient`, including `prefetch` and `retryChunks`, ships in `src/lib/sim/scenario-client.ts`.
+16. **Redraw rule.** An in-flight first event is never on or before `asOf`. It is redrawn up to 8 times, then placed at `asOf + 1`.
 
 ## 8. Open questions
 

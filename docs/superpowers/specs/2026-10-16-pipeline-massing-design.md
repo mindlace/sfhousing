@@ -6,9 +6,8 @@ Status: derived from [the FZP timelapse design](../design/2026-10-16-1903-fzp-ti
 
 From the design (verbatim):
 
-> **`pipeline-massing`** (typology generator). Adds `generateForUnits(parcel, units, maxStories, stories?)`. It inverts the existing generator to mass a real project from its unit count and, where known, its stories. It also supports multi-parcel projects by massing on the union of their parcels. `GeneratedBuilding.source` widens to `'user' | 'pipeline' | 'scenario'`, which design-doc I9 already reserved.
+> **`pipeline-massing`** (typology generator). Adds `generateForUnits(parcel, units, maxStories, seed, stories?)` (T10). It inverts the existing generator to mass a real project from its unit count and, where known, its stories. It also supports multi-parcel projects by massing on the union of their parcels. `GeneratedBuilding.source` widens to `'user' | 'pipeline' | 'scenario'`, which design-doc I9 already reserved.
 
-(The T10 row, which governs, adds a `seed` argument. See IC-1.)
 
 **In scope**
 
@@ -57,7 +56,18 @@ The code's `GeneratedBuilding` (`src/lib/generator/types.ts:11-27`) also carries
 - `generateForUnitsWith(parcels, units, maxStories, draws: VarietyDraws, compositionDraws: CompositionDraws, stories?)`: a test seam, in the same pattern as `generateWith` (`generate.ts:174-182`).
 - `massTypology` and `referenceComposition` gain an optional last argument `opts?: { coverageScale?: number; fallbackStories?: number }`. When it is omitted, behaviour is byte-identical to today: scale 1, and fall back to midrise at 12 (`massing.ts:181`, `compositions.ts:53`).
 
-`massedUnits`, `massingApproximate` and `unitsTolerance` are exported from `index.ts`. The other three are internal.
+`massedUnits`, `massingApproximate` and `unitsTolerance` are exported from `src/lib/generator/index.ts` with exactly these signatures. All three are pure and total:
+
+- `export function unitsTolerance(units: number): number`
+- `export function massingApproximate(b: GeneratedBuilding): boolean`
+- `export function massedUnits(b: GeneratedBuilding): number`
+
+timelapse-sim owns the card's `massing` rule (reconciliation round 2) and builds it on these helpers:
+
+- pipeline buildings: `massingApproximate(b)`;
+- simulated buildings: `Math.abs(b.units − revision.units) > unitsTolerance(revision.units)`.
+
+The other three functions are internal.
 
 ## 3. Global constraints
 
@@ -109,7 +119,7 @@ Steps run in order. The first failure returns `null`.
 2. **Stories.** A given `stories` is *valid* when it is finite and `1 ≤ Math.floor(stories) ≤ MAX_STORIES` (80, `constants.ts:27`). An invalid `stories` is treated as absent, not clamped. DBI's `number_of_proposed_stories` holds junk such as 300, 670 and 920 on old permits (verified by live query of `i98e-djp9`, 2026-10-16), and clamping a 920 to 80 would draw a spurious tower. If `stories` is absent, `maxStories` must be finite with `Math.floor(maxStories) ≥ 1`, or the result is `null`. Then `Smax = Math.min(Math.floor(maxStories), MAX_STORIES)`. If `stories` is valid, `maxStories` is not read (the record wins). The reconciliation rules that `generateForUnits` caps at `MAX_STORIES` when stories are unknown. So `timelapse-sim` passes `maxStories = MAX_STORIES` for pipeline projects whose `stories` is null, and the `min` keeps 80 as the hard cap for any caller.
 3. **Seed.** `seed = seed >>> 0`. The draws are `drawVariety(seed)` and `drawComposition(seed)`, exactly as `generate` uses them (`generate.ts:192`).
 4. **Parcels.** Wrap a single record in an array. Drop records whose `labelPoint` is not two finite numbers (the same test as `generate.ts:59-61`). De-duplicate by `id` and sort by `id` ascending, so the output does not depend on input order. If none remain → `null`.
-5. **Anchor.** The record with the largest `areaM2`, ties broken by the smallest `id`. Its `labelPoint` is the output frame's origin, and its `id` is the output `parcelId`.
+5. **Anchor.** The record with the largest `areaM2`, ties broken by the smallest `id`. Its `labelPoint` is the output frame's origin, and its `id` is the output `parcelId`. This matches the slot's pick parcel and the failed-massing footprint parcel (both the largest `areaM2`) in reconciliation round 2. It is deliberately not the cell-placement parcel: timelapse-sim places the slot in the cell of the smallest `ParcelId`. Callers must not assume `b.parcelId` equals that cell-placement parcel.
 6. **Site polygon.**
    - **One parcel:** its `polygon` is used unchanged. The site is therefore exactly the one `generate` builds, which property P7 relies on.
    - **Several parcels:**
@@ -330,11 +340,11 @@ All in the Vitest **server** project (`src/**/*.spec.ts`), except as marked. Eve
 
 ### Open
 
-- **IC-1.** The design's subsystem paragraph (line 95) still gives `generateForUnits(parcel, units, maxStories, stories?)` without `seed`. T10 includes `seed`. This spec follows T10. Only the paragraph needs the fix.
 - **IC-2 (doc vs code).** The source-design I9 row lacks `composition`, `parts[].role` and `parts[].tone`, which the code has (`types.ts:15-22`; also map-view spec line 47). The code governs. The I9 row should be refreshed alongside T10's amendment.
 
 ### Resolved by the 2026-10-16 interface reconciliation
 
+- ~~IC-1~~ The design paragraph now includes `seed` (reconciliation round 2).
 - ~~IC-3~~ `'scenario'` stamping: T5 now says "the sim stamps them" (§4.1).
 - ~~IC-4~~ Card flag: T6 `ProjectCard.massing: 'matched' | 'approximate' | 'none'` (§4.4).
 - ~~IC-5~~ Unknown stories: T5 `revisions[].stories: number | null /* null = unknown until massed */`. Reconciliation, "Massing".

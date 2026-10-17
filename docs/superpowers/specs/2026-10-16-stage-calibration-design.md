@@ -16,19 +16,21 @@ From the design:
 > Every parameter carries its provenance (T4). **Fitting window (partner ruling OD-T3):** the longest window available across the majority of stages, with no weighting toward recent years. For each stage, take the earliest year with reliable tier-0 coverage. The common window starts at the latest of those years that still keeps a majority of stages fully covered, and ends at the snapshot. A stage whose coverage starts later uses its own span, and its provenance says so. Initiation is fitted over all available parcel-years with no calendar-year term.
 
 **In scope**
-- **`src/lib/timelapse/time.ts` (T1).** Exports `Day`, `MONTH_DAYS`, `monthsIn` and `OPEN_DAY`.
-- **`src/lib/timelapse/math.ts`.** Deterministic fdlibm ports of `exp` and `log` (late ruling, reconciliation section).
-- **`src/lib/timelapse/model.ts` (T12, plus the T2 and T4–T4c types).** It is pure, zod-free and worker-safe. It exports:
-  - the T2 and T4 types, `STAGE_ORDER`, `PATHWAYS`, `EXIT_ORDER` and `pathwayStages`;
-  - `sampleTransition`, `initiationHazard`, `chanceTable`, `typicalMonths` and `parseCalibration`;
-  - the helpers `binIndex` and `eventualProbabilities`.
+- **Step 0** (round 2: "a step 0 lands the shared types and time modules"). Three dependency-free files land first, before any other subsystem's code:
+  - **`src/lib/timelapse/time.ts` (T1).** `Day`, `MONTH_DAYS`, `monthsIn`, `OPEN_DAY`, and `DYING_DAYS = 270` (display only, tier 4, read by render's uniforms).
+  - **`src/lib/timelapse/math.ts`.** Deterministic fdlibm ports of `exp` and `log`.
+  - **`src/lib/timelapse/types.ts`.**
+    - The T2 types and constants: `Stage`, `Pathway`, `ExitReason`, `STAGE_ORDER`, `PATHWAYS`, `EXIT_ORDER`, `pathwayStages`.
+    - The T4 types `Provenance`, `Transition`, `Calibration`; the T4a types `FeatureId`, `InitiationModel`; T4b `SizeModel`; T4c `RevisionModel`; T4d `ProjectHistory`.
+- **`src/lib/timelapse/model.ts` (T12)**, which imports `types.ts`, `time.ts` and `math.ts`. It is pure, zod-free and worker-safe. It exports `sampleTransition`, `initiationHazard`, `chanceTable`, `typicalMonths` and `parseCalibration`, plus the helpers `binIndex` and `eventualProbabilities`.
 
   `src/lib/timelapse` is in the dataset-version hash (T11).
 - **The pipeline step `pipeline/steps/calibration.ts`** and its libraries under `pipeline/lib/fzp-cal/`: window, spells, Aalen–Johansen, tails, fallbacks, initiation panel and IRLS, size, revision, pathway mix, provenance and the report writer.
 - **Outputs:**
   - `out/<v>/scenarios/fzp/calibration.json` (shipped);
   - `pipeline/.cache/derived/<datasetVersion>/calibration-report.md`, a build artifact that is **not uploaded or linked** (reconciliation, "Page");
-  - invariants V25–V29, `report.json` counts and the fixture calibration.
+  - invariants V25–V29, `report.json` counts and the fixture calibration;
+  - the `docs/dev/pipeline.md` update for V25–V29 (round 2; text in §4.10).
 
 **Out of scope**
 - Histories, `projects.json`, `parcels.bin`, the T13 panel, `parcel-lineage.parquet` and the manifest entry (project-records, scenario-data). Lineage is not read here: T4d `parcelIds` are already current mapblklots.
@@ -45,18 +47,18 @@ Verbatim rows this subsystem owns (T1, T2, T4, T4a, T4b, T4c, T12) or consumes (
 |---|---|---|---|
 | T1 | `type Day = number` is integer days since 1970-01-01 UTC. All schedule times use it. It is exact in Float32. `MONTH_DAYS = 30.436875` (365.2425 / 12). `monthsIn(enteredDay, day) = floor((day − enteredDay) / MONTH_DAYS)` is the single months-in-stage rule, used by every table index (T4, T12, the bar, the card). `OPEN_DAY = 3.0e38` encodes an open-ended window end. These live in `src/lib/timelapse/time.ts` | stage-calibration → all | DC |
 | T2 | `type Stage = 'preApplication' \| 'filed' \| 'entitled' \| 'permitFiled' \| 'permitIssued' \| 'construction' \| 'complete'`; `type Pathway = 'discretionary' \| 'streamlined' \| 'permitOnly'`; `type ExitReason = 'withdrawn' \| 'disapproved' \| 'cancelled' \| 'expired'`. `STAGE_ORDER` lists the stages in this order. `preApplication` is optional on every pathway. `permitOnly` projects never enter `filed` or `entitled`. A ghost is visible from the project's first entered stage | stage-calibration → project-records, timelapse-sim, timelapse-render, fzp-mode | MC (stage sequence and exits follow real records), DC (names) |
-| T3 | `interface InFlightProject { id: string /* 'PRJ:<record_id>', 'BP:<permit>', 'PRJ:<record_id>:BP:<permit>' for split pipeline rows, 'CASE:<case_no>' for PRX rows, 'PPA:<record_id>' for PPA-only; unique */; label: string \| null /* street address from the records, if any */; parcelIds: ParcelId[] /* current mapblklot, mapped through retired-parcel lineage */; pathway: Pathway; stage: Stage; history: Partial<Record<Stage, Day>> /* observed entry days */; units: number; existingUnits: number; stories: number \| null; storiesTier: 0 \| 3 \| null /* 0 = recorded field, 3 = parsed from description text */; multiPhase: boolean /* PRX/DA remaining-phase row */; sources: { dataset: string; id: string; key?: string /* field to query, e.g. 'case_no'; absent = the dataset's record-id field */ }[] }`. `scenarios/fzp/projects.json` = `{ schema: 1; asOf: Day; rhnaCompletedNet: { units: number /* net units added since `since` up to `asOf`, Housing Inventory definition: completions plus alteration gains, minus demolitions and alteration losses */; since: Day /* 2022-06-30, RHNA projection period start */; provenance: Provenance }; projects: InFlightProject[] }`. Projects are new construction only (alterations adding units are out of scope) | project-records → timelapse-sim, fzp-mode | MC (real pipeline is the starting state), DC (shape) |
-| T4 | `interface Provenance { tier: 0 \| 1 \| 2 \| 3 \| 4; label: string; sources: { label: string; url: string }[]; method: string; n?: number; window?: [from: string, to: string] }`. `interface Transition { months: number; advance: number[] /* cumulative incidence by month 1..months */; exit: Partial<Record<ExitReason, number[]>>; tail: { advance: number; exit: Partial<Record<ExitReason, number>> } /* constant monthly hazards beyond months */; provenance: Provenance }`. `scenarios/fzp/calibration.json` = `{ schema: 1; asOf: Day; transitions: Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, Transition>>>; initiation: InitiationModel; pathwayForNew: Record<Pathway, number> & { provenance: Provenance }; size: SizeModel; revision: RevisionModel }`. The calibration also carries `ppaShare: Record<Pathway, number> & { provenance: Provenance }`, the share of new projects that start at `preApplication`. `InitiationModel`, `SizeModel` and `RevisionModel` are rows T4a–c. Everything is plain JSON, so future policy levers can transform it (the T9 seam). **Sampling semantics:** a project entering stage *s* at day *d* draws one uniform. The month of advance or exit comes from the cumulative tables (`advance` + Σ`exit` ≤ 1 at every month), with the tail hazards beyond `months`. An in-flight project already *m* months into *s* draws conditionally on having survived *m* months. Day within the month is uniform | stage-calibration → timelapse-sim, fzp-mode | MC (every parameter carries tier + source), DC (encoding) |
+| T3 | `interface InFlightProject { id: string /* 'PRJ:<record_id>', 'BP:<permit>', 'PRJ:<record_id>:BP:<permit>' for split pipeline rows, 'CASE:<case_no>' for PRX rows, 'PPA:<record_id>' for PPA-only; unique */; label: string \| null /* street address from the records, if any */; parcelIds: ParcelId[] /* current mapblklot, mapped through retired-parcel lineage */; pathway: Pathway; stage: Stage; history: Partial<Record<Stage, Day>> /* observed entry days */; units: number; existingUnits: number; stories: number \| null; storiesTier: 0 \| 3 \| null /* 0 = recorded field, 3 = parsed from description text */; multiPhase: boolean /* PRX/DA remaining-phase row */; phases: { units: number; parcelIds: ParcelId[]; plannedPermitFiled: Day \| null /* from the DA phasing schedule, if enriched */; source: { label: string; url: string; retrieved: string } \| null }[] \| null /* multi-phase only: null until enriched, then each phase is simulated as its own sub-project */; sources: { dataset: string; id: string; key?: string /* field to query, e.g. 'case_no'; absent = the dataset's record-id field */ }[] }`. `scenarios/fzp/projects.json` = `{ schema: 1; asOf: Day; rhnaCompletedNet: { units: number /* net units added since `since` up to `asOf`, Housing Inventory definition: completions plus alteration gains, minus demolitions and alteration losses */; since: Day /* 2022-06-30, RHNA projection period start */; provenance: Provenance }; projects: InFlightProject[] }`. Projects are new construction only (alterations adding units are out of scope) | project-records → timelapse-sim, fzp-mode | MC (real pipeline is the starting state), DC (shape) |
+| T4 | `interface Provenance { tier: 0 \| 1 \| 2 \| 3 \| 4; label: string; sources: { label: string; url: string }[]; method: string; n?: number; window?: [from: string, to: string] }`. `interface Transition { months: number; advance: number[] /* cumulative incidence by month 1..months */; exit: Partial<Record<ExitReason, number[]>>; tail: { advance: number; exit: Partial<Record<ExitReason, number>> } /* constant monthly hazards beyond months */; provenance: Provenance; tailProvenance: Provenance /* tier 2: extrapolation beyond the observed months */ }`. `scenarios/fzp/calibration.json` = `{ schema: 1; asOf: Day; transitions: Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, Transition>>>; initiation: InitiationModel; pathwayForNew: Record<Pathway, number> & { provenance: Provenance }; size: SizeModel; revision: RevisionModel; streamlinedForLocalProgram: Provenance /* tier 2: Local Program projects use the streamlined tables */; phaseGap: { days: number[] /* empirical gaps between successive phases' permitFiled */; provenance: Provenance } }`. The calibration also carries `ppaShare: Record<Pathway, number> & { provenance: Provenance }`, the share of new projects that start at `preApplication`. `InitiationModel`, `SizeModel` and `RevisionModel` are rows T4a–c. Everything is plain JSON, so future policy levers can transform it (the T9 seam). **Sampling semantics:** a project entering stage *s* at day *d* draws one uniform. The month of advance or exit comes from the cumulative tables (`advance` + Σ`exit` ≤ 1 at every month), with the tail hazards beyond `months`. An in-flight project already *m* months into *s* draws conditionally on having survived *m* months. Day within the month is uniform | stage-calibration → timelapse-sim, fzp-mode | MC (every parameter carries tier + source), DC (encoding) |
 | T4a | `type FeatureId = 'potentialRatio' /* yield units at full envelope ÷ max(existingUnits, 1); base variant uses the density-capped base yield (T13), FZP variant the Local Program yield (T11) — this is how density decontrol is seen */ \| 'existingUnits' \| 'lotAreaM2' \| 'yearBuilt' \| 'storiesGap' /* envelope stories − existing stories */ \| 'improvementShare' /* improvement ÷ (land + improvement) assessed value */ \| 'rentControlLikely' /* 0/1: ≥ 2 units and built < 1979 */ \| 'landUseClass' /* categorical: residential, mixed, commercial, pdr, vacant, other */`. `interface InitiationModel { kind: 'logit-monthly'; intercept: number; terms: { feature: FeatureId; bins: number[] /* ascending edges; categorical features use category index */; coef: number[] /* one per bin */ }[]; provenance: Provenance }`. Monthly hazard = `1 / (1 + exp(−(intercept + Σ coef[bin(feature)])))`. It is fitted on pre-FZP (base) envelopes and evaluated on FZP envelopes. Parcels with an in-flight project are not at risk until that project ends | stage-calibration → timelapse-sim, scenario-data (feature list) | DC |
 | T4b | `interface SizeModel { fillLevels: number[] /* ascending fractions of envelope stories; last = 1; length F matches T11 yield */; byEnvelope: { maxStoriesUpTo: number; probs: number[] /* length F, sums to 1 */ }[]; provenance: Provenance }`. A new project proposes `stories = max(1, round(fill × envelope.maxStories))` | stage-calibration → timelapse-sim, scenario-data (F) | DC |
 | T4c | `interface RevisionModel { at: { stage: Stage /* applied on entering this stage */; probability: number; ratio: { edges: number[]; probs: number[] } /* histogram of new units ÷ previous units */ }[]; provenance: Provenance }`. No revision on or after `construction`. Upsizing is capped at the parcel's envelope. A revision changes units, and stories follow from the yield table (simulated) or scale proportionally (pipeline) | stage-calibration → timelapse-sim | MC (projects can resize before construction), DC (shape) |
 | T4d | `interface ProjectHistory { id: string; pathway: Pathway \| null /* null = unclassifiable: excluded from per-pathway tables, included in pooled ones */; parcelIds: ParcelId[]; entered: Partial<Record<Stage, Day>>; end: { kind: 'complete'; day: Day } \| { kind: 'exit'; stage: Stage; reason: ExitReason; day: Day } \| { kind: 'open'; lastObserved: Day }; unitsAt: Partial<Record<Stage, number>> /* current proposed units from the record that represents each stage: PRJ → 'filed', site/full permit → 'permitFiled', TCO/CFC certified → 'complete'; cross-record, not snapshots (tier 2) */; existingUnits: number; storiesProposed: number \| null; baseStoriesAtFiling: number \| null /* current base height proxy, tier 3: no pre-FZP height map exists */; sources: { dataset: string; id: string; key?: string /* field to query, e.g. 'case_no'; absent = the dataset's record-id field */ }[] }`. Pipeline-internal file `pipeline/.cache/derived/<datasetVersion>/project-histories.json` = `{ schema: 1; asOf: Day; histories: ProjectHistory[] }`, never shipped. The history population and the in-flight population (T3) come from the same linkage | project-records → stage-calibration | DC |
 | T12 | In `src/lib/timelapse/model.ts` (pure, zod-free, worker-safe): `sampleTransition(t: Transition, u: number, monthsElapsed: number): { kind: 'advance' \| ExitReason; days: number }`, `initiationHazard(m: InitiationModel, f: Record<FeatureId, number>): number`, `chanceTable(cal: Calibration): Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, Float32Array>>>` (per month in a stage, the probability of eventually reaching `complete`; the table is 241 months long, and the tail is used beyond it), `typicalMonths(cal: Calibration): Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, number>>>` (median months to leave each stage, used for the bar's within-stage fill), and `parseCalibration(json: unknown): Calibration` (throws on schema mismatch). The pipeline's validation, the worker, the renderer (lookups uploaded once) and the card all use these, and nothing re-implements them. The bar colour and the card's "chance of finishing" both come from `chanceTable` | stage-calibration → timelapse-sim, timelapse-render, fzp-mode | MC (health = chance of finishing, OD-T2; one sampling semantics everywhere) |
-| T11 | `scenarios/fzp/parcels.bin` (codec `sfh-scenario/1`, in `src/lib/data/`; deflate inside the file, async decode). It holds **every** parcel: `id`, `labelPoint`, `cellId`, a `hostable` flag (eligible and able to host a new project), `envelope: Envelope` (FZP stories: Local Program height if `localProgram`, else base height; clamped to `MAX_STORIES`), base stories, the base-zoning density cap in units (null = none), `localProgram: boolean`, `existingUnits` (latest assessor roll), the T4a feature values (base and FZP variants of `potentialRatio` and `storiesGap`) with an imputation mask, and `yield: Uint16[F]`, the gross units at each fill level of the envelope, replacement typologies only (no ADU outcomes), with no density cap under the Local Program. `FILL_LEVELS = [0.25, 0.5, 0.75, 0.9, 1]` (F = 5, tier-4 quantisation grid) is owned here, and stage-calibration imports it. Named in the manifest as `scenarios?: { fzp: { parcels: url; projects: url; calibration: url } }` (amends I12 and `ManifestBaseSchema`; optional, so older datasets load). Because the yield uses the generator, `src/lib/generator` and `src/lib/timelapse` join the dataset-version hash | scenario-data → timelapse-sim | DC |
+| T11 | `scenarios/fzp/parcels.bin` (codec `sfh-scenario/1`, in `src/lib/data/`; deflate inside the file, async decode). It holds **every** parcel: `id`, `labelPoint`, `cellId`, a `hostable` flag (eligible and able to host a new project), `envelope: Envelope` (FZP stories: Local Program height if `localProgram`, else base height; clamped to `MAX_STORIES`), base stories, the base-zoning density cap in units (null = none), `localProgram: boolean`, `existingUnits` (latest assessor roll), the T4a feature values (base and FZP variants of `potentialRatio` and `storiesGap`) with an imputation mask, `hostable_base` (hostable under the old zoning), `baseYield: Uint16[F]` (gross units at each fill level of the base envelope, density-capped), and `yield: Uint16[F]`, the gross units at each fill level of the envelope, replacement typologies only (no ADU outcomes), with no density cap under the Local Program. `FILL_LEVELS = [0.25, 0.5, 0.75, 0.9, 1]` (F = 5, tier-4 quantisation grid) is owned here, and stage-calibration imports it. Named in the manifest as `scenarios?: { fzp: { parcels: url; projects: url; calibration: url } }` (amends I12 and `ManifestBaseSchema`; optional, so older datasets load). Because the yield uses the generator, `src/lib/generator` and `src/lib/timelapse` join the dataset-version hash | scenario-data → timelapse-sim | DC |
 | T13 | Pipeline-internal parcel panel `pipeline/.cache/derived/<datasetVersion>/parcel-panel.parquet`. Per parcel × assessor roll year (2007..latest): `mapblklot`, roll year, assessor units, stories, year built, land and improvement value, use code → `landUseClass`, the zoning code (`acdm-wktn`), base stories, the base density cap, and the base-envelope yield (gross units at full base envelope, density-capped). Never shipped. Retired-parcel lineage is `parcel-lineage.parquet` in the same folder | scenario-data → project-records, stage-calibration | DC |
 
 **Internal types and exports** (none of them alters a T-row):
-- From `model.ts` (shared, additive):
+- From `types.ts` and `model.ts` (shared, additive):
   - `PATHWAYS = ['discretionary','streamlined','permitOnly'] as const`.
   - `EXIT_ORDER: ExitReason[] = ['withdrawn','disapproved','cancelled','expired']`. Within a month, outcomes are ordered advance first, then `EXIT_ORDER`.
   - `pathwayStages(p: Pathway): Stage[]`. Discretionary and streamlined get all of `STAGE_ORDER`. permitOnly gets `preApplication, permitFiled, permitIssued, construction, complete`.
@@ -69,7 +71,12 @@ Verbatim rows this subsystem owns (T1, T2, T4, T4a, T4b, T4c, T12) or consumes (
   - `CalProfile` (`LIVE_CAL`, `FIXTURE_CAL`; the same pattern as `InvariantProfile`, `pipeline/config.ts:44-127`).
   - `PanelRow = { mapblklot; rollYear; exposureMonths; events; features: Record<FeatureId, number> }`.
   - `FitCell = { bins: number[]; exposure: number; events: number }`.
-- File shape: `ppaShare` is the top-level key after `pathwayForNew` (T4: "the calibration also carries").
+- File shape, an additive amendment of T4's internal file shape. Round 2 rules that these entries exist, and the T4 row text is unchanged; the orchestrator may want to fold them into the T4 row:
+  - `ppaShare` is the top-level key after `pathwayForNew` (T4: "the calibration also carries").
+  - `streamlinedForLocalProgram: Provenance` (§4.7).
+  - `tailProvenance: Record<Pathway, Partial<Record<Exclude<Stage,'complete'>, Provenance>>>`, with the same keys as `transitions` (§4.4).
+
+  `type Calibration` in `types.ts` includes all three.
 
 ### Interface concerns (all resolved by the reconciliation section)
 
@@ -115,7 +122,7 @@ The source design's constraints still apply (free and open, determinism, oversho
 - **Honesty of numbers.** The mode is labelled a *simulation*. The scoreboard shows the shown run and the p10–p90 band. Pipeline and new-FZP units are separate lines. Actual completions since the RHNA period start are counted and labelled as actual. Units lost to dead projects are shown.
 - **Time scrubbing performance.** At 60 fps on a 2022-era laptop with the whole city's timeline loaded, per-frame JS during scrub or playback is O(1) in project count. A reroll reaches a full new timeline (the shown run, to 2050) within 3 s off the main thread. The p10–p90 band may fill in progressively afterwards; the UI marks it as provisional until it is complete.
 - **First paint.** `/fzp` must not require loading every parcel chunk. The whole-city score comes from `parcels.bin`, `projects.json` and `calibration.json`. Geometry streams with the viewport, as on `/`.
-- **The editor is unchanged.** `/` and `/p/:id` behave exactly as before. FZP mode is additive. The one intended exception is the shared header, which gains the mode links ("Paint" / "Timelapse").
+- **The editor is unchanged.** `/` and `/p/:id` behave exactly as before. FZP mode is additive. The one intended exception is the shared header, which gains the mode links ("Paint" / "Timelapse") and shortens the brand to "SF Housing" below 640 px so the links fit at 375 px.
 - **Map budgets in FZP mode.** Two deck layers per cell are allowed for timeline cells: translucency needs them. This is an exception to map-view's one-layer-per-cell rule, so a `bench:map` timeline scenario must pass the same p95 frame bar. The existing-building catch-up stays within 2,000 feature-state changes per frame.
 - **Accessibility.** WCAG 2.2 AA as in `docs/dev/accessibility.md`. The scrubber is a labelled slider: arrow keys step a month, Page Up/Down a year. Reduced motion stops autoplay, but scrubbing still works.
 
@@ -126,6 +133,7 @@ The source design's constraints still apply (free and open, determinism, oversho
 - `MONTH_DAYS = 30.436875`. `monthsIn(enteredDay, day) = Math.floor((day − enteredDay) / MONTH_DAYS)`.
 - Table month *k* (1-based, `advance[k−1]`) holds exactly the durations *d* (integer days since entry) with `monthsIn(0, d) = k − 1`. That is, *d* < k·`MONTH_DAYS`, so the integer days in month *k* are ⌈(k−1)·M⌉ … ⌈k·M⌉ − 1, where M = `MONTH_DAYS`.
 - `OPEN_DAY = 3.0e38` (finite in Float32).
+- `DYING_DAYS = 270`: the display window of a death, 90 days red then 180 days fade. It is tier 4, display only, and named in round 2. Nothing in calibration reads it.
 - The module has no dependencies.
 
 ### 4.1a Deterministic math (`src/lib/timelapse/math.ts`)
@@ -187,7 +195,8 @@ All of `typicalMonths` and `chanceTable`, including their tail evaluation, use `
 - `fillLevels` equals `FILL_LEVELS` (T11), and each `probs` has length F and sums to 1 within 1e-9.
 - Revision `edges` are ascending, `probs.length = edges.length − 1`, and each `probability` lies in [0, 1].
 - `pathwayForNew` sums to 1 within 1e-9, and each `ppaShare` value lies in [0, 1].
-- Every `Provenance` has tier 0..4, a non-empty label and method, and ≥ 1 source with an `https:` URL. Tiers 0–2 also have `n` and `window`.
+- Every `Provenance` has tier 0..4, a non-empty label and method, and ≥ 1 source with an `https:` URL. Tiers 0–2 also have `n` and `window`. This includes `streamlinedForLocalProgram` and every `tailProvenance` entry.
+- `tailProvenance` has exactly the keys of `transitions`.
 
 ### 4.3 Placement in the build
 
@@ -208,6 +217,16 @@ It writes `calibration.json` and the report. It does no network access. There is
 3. **Exit reconciliation.** An exit applies at the last entered stage, and its day is clamped to `≥ eff[last]`.
 4. **Defensive pathway rule.** A `permitOnly` history with `eff.permitFiled` < 2015-01-01 is treated as `pathway = null`, in addition to T4d's nulls. Before PRJ coverage, a missing PRJ link does not prove there was no entitlement.
 5. **preApplication pooling.** Every preApplication spell is pooled across pathways, because a PPA-only record's pathway is assigned, not observed.
+6. **Administrative-purge censoring** (round 2). Exits from bulk administrative actions, such as DBI's Sept–Oct 2026 batch withdrawal, are not project decisions. Detection runs over the exits of all qualifying histories after step 3, using the duration in stage *x* = exit day − `eff[stage]`:
+   - **Purge day.** A calendar day *D* is a purge day iff all three hold:
+     - c(*D*) ≥ `PURGE_MIN_EXITS`, where c(*D*) is the number of exits dated *D*, any reason and stage;
+     - c(*D*) ≥ `PURGE_RATIO` × the mean daily exit count over the 365 days before *D*, with that mean floored at 1/365;
+     - the median *x* of *D*'s exits is ≥ `PURGE_MIN_DAYS`.
+   - **Purge window.** Purge days less than `PURGE_GAP_DAYS` apart merge into one window [first, last].
+   - **Censoring.** Every exit dated inside a window with *x* ≥ `PURGE_MIN_DAYS` becomes **censored at its last non-purge activity**, which is the day before the window starts. T4d carries no activity dates, so that is the last day the record is known to have been open; it is never earlier than `eff[stage]`. Shorter-duration exits inside the window stay exits.
+   - **Tier.** The thresholds are tier 4 (§4.11). The detection is a tier-2 inference. Every affected Transition's `method` says "k exits in administrative purge windows [dates] censored (tier 2 detection, tier-4 thresholds)". The report prints each window: dates, exits by reason and stage, how many were censored, and the median durations.
+   - **Scope.** The rule runs in live and fixture builds alike.
+   - **Effect on initiation.** A censored exit does not end the project for the initiation panel; the project stays open (§4.6).
 
 Tables are **project-weighted**. Unit-weighted shares appear only in the report.
 
@@ -224,7 +243,7 @@ Tables are **project-weighted**. Unit-weighted shares appear only in the report.
 
 **Window rule.** Sort the six coverage years. With majority *m* = 4, W = 1 January of the 4th smallest. A stage with a later `startYear` uses its own span, and its `method` says so. Today W = **2015-01-01** for every stage, as the reconciliation confirms, and permit stages are not pooled further back.
 
-**Guard.** Any year from `startYear` to the last complete year with zero qualifying entries for a stage raises `CalibrationError: coverage gap`.
+**Guard.** `COVERAGE_GUARD` is a method constant: **on in `LIVE_CAL`, off in `FIXTURE_CAL`** (round 2). When it is on, any year from `startYear` to the last complete year with zero qualifying entries for a stage raises `CalibrationError: coverage gap`. When it is off, the per-year counts are still reported.
 
 **What is recorded.** Every Transition's `window` is [W, asOf]. The report reprints the table, the sorted years, *m*, W and the spans.
 
@@ -248,6 +267,13 @@ F_j += S · e_j(d) / n(d);   S *= 1 − e(d) / n(d)
   - Person-months E = Σᵢ |[max(aᵢ, (k₀−1)·M), xᵢ]| ÷ M.
   - λ_j = events_j ÷ E.
   - p_j = (λ_j/λ)(1 − `exp`(−λ)), using `math.ts`.
+  - **Tail provenance** (round 2). `tailProvenance[p][s]` is written for every cell, with tier **2** ("extrapolation beyond the observed months"):
+    - `method`: "constant competing hazards, occurrence/exposure over months k₀+ (k₀ = …), applied beyond month `months`";
+    - `n`: the events in the span;
+    - `window`: the Transition's window;
+    - `sources`: the Transition's sources.
+
+    For rung 3 it copies the Transition's own tier and sources, because there the tail is the table.
 - **Rounding.** Table values are floored to 1e-6, which keeps them monotone and keeps Σ ≤ 1. Tail values are rounded to 6 significant digits.
 - **Rejection.** A cell is rejected, and goes to §4.5, unless C(K) ≤ 1 − 1e-6 and ρ > 0.
 - **Construction provenance.** The `construction` cells' `method` states: "completion = first TCO/CFC, else permit `completed_date`; TCO data start in 2018, so earlier completions are dated later (bias toward longer durations)".
@@ -256,7 +282,7 @@ F_j += S · e_j(d) / n(d);   S *= 1 − e(d) / n(d)
 
 A rung passes when the cell has spells ≥ `N_SPELLS_MIN` and events ≥ `N_EVENTS_MIN` in the window, and §4.4's rejection checks pass.
 
-1. **Pathway-specific AJ.** Tier 0. Method: "Aalen–Johansen cumulative incidence, right-censored at last observation, left-truncated at window start; tail: constant hazards over months k₀+ (extrapolation)".
+1. **Pathway-specific AJ.** Tier 0. Method: "Aalen–Johansen cumulative incidence, right-censored at last observation, left-truncated at window start". The tail is covered by `tailProvenance`.
 2. **Pooled AJ.** All pathways plus null-pathway spells, copied into the cell. Tier 2, "pooled across pathways". preApplication always uses this rung.
 3. **Literature synthetic.** A constant-hazard table with `months = 1`:
    - q = 1 − 2^{−1/D};
@@ -277,27 +303,31 @@ The build warns for each rung-3 cell. In live mode none is expected.
 
 ### 4.6 Initiation model (T4a)
 
-**Features for the historical panel.** They are computed from T13 rows (roll year Y) using the T4a definitions:
+**Features: read, never computed or imputed here** (round 2, "Initiation features. One definition"). scenario-data computes every feature, its imputation and the `imputed` mask.
 
-| FeatureId | computation |
-|---|---|
-| `potentialRatio` | base-envelope yield (density-capped, T13) ÷ max(units_Y, 1) |
-| `existingUnits` | units_Y |
-| `lotAreaM2` | the parcel's T11 `lotAreaM2` (time-invariant) |
-| `yearBuilt` | year built_Y, 0 if unknown |
-| `storiesGap` | base stories − stories_Y. If stories_Y is null, the parcel's T11 base-variant value is used and counted |
-| `improvementShare` | impr ÷ (land + impr), −1 if the sum is 0 or null |
-| `rentControlLikely` | units_Y ≥ 2 and 0 < year built_Y < 1979 |
-| `landUseClass` | T13's mapped class |
+- **Historical panel.** Each value is read from the `scenario_panel` row (T13 `parcel-panel.parquet`) for that roll year:
 
-A test checks that for the latest roll year these values equal T11's base-variant feature values. That catches any divergence from scenario-data's implementation. The FZP application uses T11's FZP variants.
+  | FeatureId | column |
+  |---|---|
+  | `potentialRatio` | `potential_ratio_base` |
+  | `existingUnits` | `existing_units` |
+  | `lotAreaM2` | `lot_area_m2` |
+  | `yearBuilt` | `year_built` |
+  | `storiesGap` | `stories_gap_base` |
+  | `improvementShare` | `improvement_share` |
+  | `rentControlLikely` | `rent_control_likely` |
+  | `landUseClass` | `land_use_class` |
+
+- **FZP application.** It reads T11 through scenario-data's `featureValue(p, i, f, 'fzp')`.
+
+No value is altered. The `imputed` mask is not a model input. The report prints, for each feature, the share of at-risk exposure with that mask bit set.
 
 **Panel, at-risk set and event.**
 - **Months.** Calendar months 2015-01 through 2025-12. The start is W, the event coverage. The end is the last full month on pre-FZP zoning (FZP effective 2026-01-12). Months of year Y use roll Y.
-- **Parcels.** T11 parcels with `hostable` true. A parcel-year missing from T13 is excluded and counted.
+- **Parcels.** A parcel-year is in the panel iff its `scenario_panel` row has **`hostable_base`** true (round 2). That column is eligible ∧ base stories ≥ 1 ∧ base yield > 0, evaluated for that roll year. Parcel-years with no panel row are excluded and counted. T11's `hostable` applies only to the FZP application.
 - **Event.** The month of `min(entered.preApplication, filed, permitFiled)` of a qualifying history, assigned to its primary parcel: the largest `lotAreaM2`, ties broken by the smaller id.
 - **At risk.** The event month is at risk with event = 1. From the next month the parcel is not at risk while any qualifying history covers it (any of its `parcelIds`), through the end month.
-  - After an **exit**, it is at risk again from the next month.
+  - After an **exit**, it is at risk again from the next month. An exit censored as a purge (§4.4 step 6) is treated as still open through `asOf`.
   - After a **completion**, it never returns to risk.
   
   Both match the sim's rules in the reconciliation ("open questions answered"). The panel's base heights are the tier-3 proxy from the "Pre-FZP heights" ruling, and the initiation `method` says so.
@@ -309,9 +339,11 @@ A test checks that for the latest roll year these values equal T11's base-varian
 | potentialRatio | 0, 1, 1.5, 2, 3, 5, 10, 20 |
 | existingUnits | 0, 1, 2, 3, 5, 10, 20, 50 |
 | lotAreaM2 | 0, 150, 250, 400, 800, 2000, 5000 |
-| yearBuilt | 0 (unknown), 1800, 1906, 1930, 1950, 1979, 2000 |
+| yearBuilt | 0, 1800, 1906, 1930, 1950, 1979, 2000 |
 | storiesGap | −100, 0, 1, 2, 3, 5, 10 |
-| improvementShare | −1 (unknown), 0, 0.1, 0.25, 0.4, 0.55, 0.7, 0.85 |
+| improvementShare | 0, 0.1, 0.25, 0.4, 0.55, 0.7, 0.85 |
+
+There are no "unknown" bins. scenario-data imputes every missing value, so the only 0 values are its own vacant-lot rule (vacant lots: `yearBuilt` 0, `improvementShare` 0). Those fall in bin 0 by that rule, not by the mask.
 | rentControlLikely | 0, 1 |
 | landUseClass | 0, 1, 2, 3, 4, 5 |
 
@@ -345,6 +377,14 @@ A numeric feature's highest bin with fewer than `MIN_BIN_EVENTS` events merges d
 
 - **`pathwayForNew`.** The pathway shares among qualifying, non-null-pathway histories whose first record falls in [W, asOf]. Tier 0. timelapse-sim applies it only to new projects on non-`localProgram` parcels; Local Program parcels take `streamlined` by the reconciliation's rule. If fewer than `N_SPELLS_MIN` histories qualify, the fallback is the pathway mix of T3 in-flight projects (tier 0).
 - **`ppaShare[p]`.** The share of pathway-*p* qualifying filings (first non-PPA entry in [2023-07-08, asOf]) that have a preApplication entry. Tier 0. The method reads: "measured after the PPA record series ended (2023-07-07)". This follows the reconciliation, and the value is expected to be 0. With no filings in the window the value is 0, tier 4, "not measured".
+- **`streamlinedForLocalProgram: Provenance`** (round 2). This entry documents that new projects on `localProgram` parcels use the `streamlined` tables. fzp-mode cites it for Local Program projects.
+  - **Tier 2.** The streamlined tables (SB 35, SB 423, AB 2011, AB 2162, HSD ministerial) stand in for the Local Program, which has no recorded history of its own.
+  - **`label`:** "Local Program projects use streamlined-pathway rates (tier 2 proxy)".
+  - **`method`:** "Local Program = administrative approval, 180-day clock, no DR or appeal (rule, tier 1: Planning Director Bulletin 11); durations and attrition taken from the streamlined tables, n = <streamlined spells>".
+  - **`n`:** the streamlined spells across all stages.
+  - **`window`:** [W, asOf].
+  - **`sources`:** the Planning Director Bulletin No. 11 URL (literature §1) plus the DataSF pages.
+  - **Diagnostic.** The report also prints the count of Local Program-era filings (since 2026-01-12) and their median days from `filed` to `entitled`, if any, against the 180-day clock. Nothing uses those numbers.
 
 ### 4.8 SizeModel (T4b)
 
@@ -369,7 +409,12 @@ A numeric feature's highest bin with fewer than `MIN_BIN_EVENTS` events merges d
 
 ### 4.10 Provenance, outputs, invariants
 
-**Provenance.** Every Transition, `initiation`, `size`, `revision`, `pathwayForNew` and `ppaShare` carries a T4 `Provenance`:
+**Provenance.** These entries each carry a T4 `Provenance`:
+- every Transition, and its `tailProvenance` entry;
+- `initiation`, `size`, `revision`, `pathwayForNew` and `ppaShare`;
+- `streamlinedForLocalProgram`.
+
+Each `Provenance` has these fields:
 - `label`, e.g. "SF permit & Planning records 2015–2026 (tier 0)";
 - `sources`: `https://data.sf.gov/d/<id>` for tiers 0–2, or the research doc's URLs for tiers 1/3;
 - `method`, naming the estimator, rung, imputation counts, proxies and any own span;
@@ -399,7 +444,7 @@ Any tier-3/4 component is named in `method`, e.g. "D = 12 mo (tier 4, made up)".
 - The only randomness is V27's `mulberry32(0x5eed)`.
 - The step runs twice in-run, and the outputs must be byte-identical.
 
-**`report.json` counts.** `calibration.histories`, `.qualifying`, `.adjust.*`, `.pathwayNull`, `.spells.<pathway>.<stage>`, `.rung3`, `.panel.parcelYears`, `.panel.exposureMonths`, `.panel.events`, `.bytes`.
+**`report.json` counts.** `calibration.histories`, `.qualifying`, `.adjust.*`, `.pathwayNull`, `.spells.<pathway>.<stage>`, `.rung3`, `.panel.parcelYears`, `.panel.exposureMonths`, `.panel.events`, `.purge.windows`, `.purge.censored`, `.bytes`.
 
 **Invariants.** Run by `build` and `check`.
 
@@ -410,6 +455,13 @@ Any tier-3/4 component is named in `method`, e.g. "D = 12 mo (tier 4, made up)".
 | V27 | **Reproduction.** For every Transition, 100,000 seeded `sampleTransition` draws (from m = 0) give an empirical cumulative incidence, by `monthsIn(0, days) + 1`, within **0.005** of the table at every month for advance and each exit reason, and the eventual shares within 0.005 |
 | V28 | Initiation back-cast total is within 2% (live mode only) |
 | V29 | Determinism: two in-run computations are byte-identical |
+
+**`docs/dev/pipeline.md` update** (round 2; owned here).
+- The Invariants paragraph's range "V1 to V14" grows to cover the new invariants. project-records edits the V20–V24 part, and stage-calibration appends this sentence:
+
+  > V25 `calibration.json` parses (`parseCalibration`), its `asOf` matches `projects.json`, and it is ≤ 256 KB; V26 every occupiable pathway × stage table is present; V27 sampling reproduces each table's cumulative incidence within 0.005; V28 the initiation back-cast total is within 2% of observed filings; V29 calibration is deterministic. Method constants live in `pipeline/lib/fzp-cal/` (`LIVE_CAL`, `FIXTURE_CAL`); the full table is the stage-calibration spec §4.10–4.11.
+
+- The "Where things land" list gains `pipeline/.cache/derived/<datasetVersion>/calibration-report.md` (not uploaded).
 
 Probe URLs (verified 2026-10-16), base `https://data.sf.gov/resource/`:
 - `y673-d69b.json?$select=max(open_date),min(open_date),count(*)&$where=record_type='PPA'`
@@ -432,8 +484,12 @@ Probe URLs (verified 2026-10-16), base `https://data.sf.gov/resource/`:
 | `INIT_MIN_EVENTS` | 100 (else fail) | n/a (fixture model, §4.6) |
 | `SIZE_MIN_N` / `REV_MIN_N` | 30 / 30 | 2 / 2 |
 | V27 tolerance | 0.005 at N = 100k | same |
+| `COVERAGE_GUARD` | on | off |
+| `PURGE_MIN_EXITS` / `PURGE_RATIO` | 10 / 10 | same |
+| `PURGE_MIN_DAYS` (median duration in stage) | 730 | same |
+| `PURGE_GAP_DAYS` | 30 | same |
 
-`MONTH_DAYS` and `OPEN_DAY` are definitional and have no tier.
+`MONTH_DAYS` and `OPEN_DAY` are definitional and have no tier. `DYING_DAYS` is display-only, tier 4, and unused here.
 
 ### 4.12 Fixture calibration
 
@@ -444,7 +500,10 @@ Probe URLs (verified 2026-10-16), base `https://data.sf.gov/resource/`:
   - initiation: one term, `potentialRatio` [0, 2, 5] with coefficients [0, 0.5, 1];
   - F = 5.
 
-  It is the unit fixture for timelapse-sim, timelapse-render and fzp-mode.
+  It is **stage-calibration's own** unit fixture, used by `model.test.ts` and `reproduce.test.ts`. Other subsystems keep their own fixtures, and this spec does not supply them:
+  - timelapse-sim: `src/lib/sim/scenario/fixtures/mini-calibration.json`, which must pass `parseCalibration`;
+  - timelapse-render: hand-made lookups in `src/lib/map/fixtures/timeline-lookups.ts`;
+  - fzp-mode: reads fixture-0's `calibration.json`.
 
 ### 4.13 Error states
 
@@ -498,7 +557,12 @@ Probe URLs (verified 2026-10-16), base `https://data.sf.gov/resource/`:
   - full one-hot plus ridge is identifiable;
   - non-convergence throws;
   - shuffled input gives byte-identical output.
-- `initiation-panel.test.ts` (DuckDB, hand-made T13 and histories): not at risk while in flight, the event month counted, at risk again after an exit, never after a completion, the primary parcel, the 2025-12 cutoff, features matching T11 for the latest roll.
+- `initiation-panel.test.ts` (DuckDB, hand-made T13 and histories): not at risk while in flight, the event month counted, at risk again after an exit, never after a completion, the primary parcel, the 2025-12 cutoff, panel membership by `hostable_base`, and features read from the columns unchanged (no imputation code path exists).
+- `purge.test.ts`:
+  - a synthetic history set with background exits plus 40 exits of median duration 1,200 days on 2026-09-15 and 2026-10-01 gives one window [2026-09-15, 2026-10-01];
+  - the long-duration exits in it are censored on 2026-09-14, and the short-duration ones stay exits;
+  - a burst of 40 short-duration exits is not a purge;
+  - the report section lists the window.
 - `pathway-ppa.test.ts`, `size.test.ts`, `revision.test.ts`: shares and the fallback; the `ppaShare` window starts 2023-07-08; snapping on the F = 5 grid, r > 1, bucket merge; the two pair types, clamp, pooling.
 - `calibration-invariants.test.ts`: V25–V29 pass on fixture-0, and each fails on a corrupted copy.
 - `golden.test.ts` (existing): extended to `scenarios/fzp/calibration.json` and the golden `calibration-report.md`.

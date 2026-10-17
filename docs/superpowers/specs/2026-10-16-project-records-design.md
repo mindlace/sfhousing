@@ -18,6 +18,7 @@ From the design:
 - The T4d histories file, written to the derived cache.
 - `out/<v>/scenarios/fzp/projects.json` (T3), including `rhnaCompletedNet`.
 - Invariants V20–V24, the mini fixture records, golden files and report counts.
+- The `docs/dev/pipeline.md` update for V20–V24 and the seven new sources (round 2, "Nits adopted"). stage-calibration owns V25–V29.
 
 **Out:**
 - Transition tables, `ppaShare` and every fitted parameter. Those belong to `stage-calibration`.
@@ -36,10 +37,10 @@ From the composition design (`2026-10-16-1903-fzp-timelapse.md`):
 |---|---|---|---|
 | T1 | `type Day = number` is integer days since 1970-01-01 UTC. All schedule times use it. It is exact in Float32. `MONTH_DAYS = 30.436875` (365.2425 / 12). `monthsIn(enteredDay, day) = floor((day − enteredDay) / MONTH_DAYS)` is the single months-in-stage rule, used by every table index (T4, T12, the bar, the card). `OPEN_DAY = 3.0e38` encodes an open-ended window end. These live in `src/lib/timelapse/time.ts` | stage-calibration → all | DC |
 | T2 | `type Stage = 'preApplication' \| 'filed' \| 'entitled' \| 'permitFiled' \| 'permitIssued' \| 'construction' \| 'complete'`; `type Pathway = 'discretionary' \| 'streamlined' \| 'permitOnly'`; `type ExitReason = 'withdrawn' \| 'disapproved' \| 'cancelled' \| 'expired'`. `STAGE_ORDER` lists the stages in this order. `preApplication` is optional on every pathway. `permitOnly` projects never enter `filed` or `entitled`. A ghost is visible from the project's first entered stage | stage-calibration → project-records, timelapse-sim, timelapse-render, fzp-mode | MC (stage sequence and exits follow real records), DC (names) |
-| T3 | `interface InFlightProject { id: string /* 'PRJ:<record_id>', 'BP:<permit>', 'PRJ:<record_id>:BP:<permit>' for split pipeline rows, 'CASE:<case_no>' for PRX rows, 'PPA:<record_id>' for PPA-only; unique */; label: string \| null /* street address from the records, if any */; parcelIds: ParcelId[] /* current mapblklot, mapped through retired-parcel lineage */; pathway: Pathway; stage: Stage; history: Partial<Record<Stage, Day>> /* observed entry days */; units: number; existingUnits: number; stories: number \| null; storiesTier: 0 \| 3 \| null /* 0 = recorded field, 3 = parsed from description text */; multiPhase: boolean /* PRX/DA remaining-phase row */; sources: { dataset: string; id: string; key?: string /* field to query, e.g. 'case_no'; absent = the dataset's record-id field */ }[] }`. `scenarios/fzp/projects.json` = `{ schema: 1; asOf: Day; rhnaCompletedNet: { units: number /* net units added since `since` up to `asOf`, Housing Inventory definition: completions plus alteration gains, minus demolitions and alteration losses */; since: Day /* 2022-06-30, RHNA projection period start */; provenance: Provenance }; projects: InFlightProject[] }`. Projects are new construction only (alterations adding units are out of scope) | project-records → timelapse-sim, fzp-mode | MC (real pipeline is the starting state), DC (shape) |
-| T4 | `interface Provenance { tier: 0 \| 1 \| 2 \| 3 \| 4; label: string; sources: { label: string; url: string }[]; method: string; n?: number; window?: [from: string, to: string] }`. `interface Transition { months: number; advance: number[] /* cumulative incidence by month 1..months */; exit: Partial<Record<ExitReason, number[]>>; tail: { advance: number; exit: Partial<Record<ExitReason, number>> } /* constant monthly hazards beyond months */; provenance: Provenance }`. `scenarios/fzp/calibration.json` = `{ schema: 1; asOf: Day; transitions: Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, Transition>>>; initiation: InitiationModel; pathwayForNew: Record<Pathway, number> & { provenance: Provenance }; size: SizeModel; revision: RevisionModel }`. The calibration also carries `ppaShare: Record<Pathway, number> & { provenance: Provenance }`, the share of new projects that start at `preApplication`. `InitiationModel`, `SizeModel` and `RevisionModel` are rows T4a–c. Everything is plain JSON, so future policy levers can transform it (the T9 seam). **Sampling semantics:** a project entering stage *s* at day *d* draws one uniform. The month of advance or exit comes from the cumulative tables (`advance` + Σ`exit` ≤ 1 at every month), with the tail hazards beyond `months`. An in-flight project already *m* months into *s* draws conditionally on having survived *m* months. Day within the month is uniform | stage-calibration → timelapse-sim, fzp-mode | MC (every parameter carries tier + source), DC (encoding) |
+| T3 | `interface InFlightProject { id: string /* 'PRJ:<record_id>', 'BP:<permit>', 'PRJ:<record_id>:BP:<permit>' for split pipeline rows, 'CASE:<case_no>' for PRX rows, 'PPA:<record_id>' for PPA-only; unique */; label: string \| null /* street address from the records, if any */; parcelIds: ParcelId[] /* current mapblklot, mapped through retired-parcel lineage */; pathway: Pathway; stage: Stage; history: Partial<Record<Stage, Day>> /* observed entry days */; units: number; existingUnits: number; stories: number \| null; storiesTier: 0 \| 3 \| null /* 0 = recorded field, 3 = parsed from description text */; multiPhase: boolean /* PRX/DA remaining-phase row */; phases: { units: number; parcelIds: ParcelId[]; plannedPermitFiled: Day \| null /* from the DA phasing schedule, if enriched */; source: { label: string; url: string; retrieved: string } \| null }[] \| null /* multi-phase only: null until enriched, then each phase is simulated as its own sub-project */; sources: { dataset: string; id: string; key?: string /* field to query, e.g. 'case_no'; absent = the dataset's record-id field */ }[] }`. `scenarios/fzp/projects.json` = `{ schema: 1; asOf: Day; rhnaCompletedNet: { units: number /* net units added since `since` up to `asOf`, Housing Inventory definition: completions plus alteration gains, minus demolitions and alteration losses */; since: Day /* 2022-06-30, RHNA projection period start */; provenance: Provenance }; projects: InFlightProject[] }`. Projects are new construction only (alterations adding units are out of scope) | project-records → timelapse-sim, fzp-mode | MC (real pipeline is the starting state), DC (shape) |
+| T4 | `interface Provenance { tier: 0 \| 1 \| 2 \| 3 \| 4; label: string; sources: { label: string; url: string }[]; method: string; n?: number; window?: [from: string, to: string] }`. `interface Transition { months: number; advance: number[] /* cumulative incidence by month 1..months */; exit: Partial<Record<ExitReason, number[]>>; tail: { advance: number; exit: Partial<Record<ExitReason, number>> } /* constant monthly hazards beyond months */; provenance: Provenance; tailProvenance: Provenance /* tier 2: extrapolation beyond the observed months */ }`. `scenarios/fzp/calibration.json` = `{ schema: 1; asOf: Day; transitions: Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, Transition>>>; initiation: InitiationModel; pathwayForNew: Record<Pathway, number> & { provenance: Provenance }; size: SizeModel; revision: RevisionModel; streamlinedForLocalProgram: Provenance /* tier 2: Local Program projects use the streamlined tables */; phaseGap: { days: number[] /* empirical gaps between successive phases' permitFiled */; provenance: Provenance } }`. The calibration also carries `ppaShare: Record<Pathway, number> & { provenance: Provenance }`, the share of new projects that start at `preApplication`. `InitiationModel`, `SizeModel` and `RevisionModel` are rows T4a–c. Everything is plain JSON, so future policy levers can transform it (the T9 seam). **Sampling semantics:** a project entering stage *s* at day *d* draws one uniform. The month of advance or exit comes from the cumulative tables (`advance` + Σ`exit` ≤ 1 at every month), with the tail hazards beyond `months`. An in-flight project already *m* months into *s* draws conditionally on having survived *m* months. Day within the month is uniform | stage-calibration → timelapse-sim, fzp-mode | MC (every parameter carries tier + source), DC (encoding) |
 | T4d | `interface ProjectHistory { id: string; pathway: Pathway \| null /* null = unclassifiable: excluded from per-pathway tables, included in pooled ones */; parcelIds: ParcelId[]; entered: Partial<Record<Stage, Day>>; end: { kind: 'complete'; day: Day } \| { kind: 'exit'; stage: Stage; reason: ExitReason; day: Day } \| { kind: 'open'; lastObserved: Day }; unitsAt: Partial<Record<Stage, number>> /* current proposed units from the record that represents each stage: PRJ → 'filed', site/full permit → 'permitFiled', TCO/CFC certified → 'complete'; cross-record, not snapshots (tier 2) */; existingUnits: number; storiesProposed: number \| null; baseStoriesAtFiling: number \| null /* current base height proxy, tier 3: no pre-FZP height map exists */; sources: { dataset: string; id: string; key?: string /* field to query, e.g. 'case_no'; absent = the dataset's record-id field */ }[] }`. Pipeline-internal file `pipeline/.cache/derived/<datasetVersion>/project-histories.json` = `{ schema: 1; asOf: Day; histories: ProjectHistory[] }`, never shipped. The history population and the in-flight population (T3) come from the same linkage | project-records → stage-calibration | DC |
-| T11 | `scenarios/fzp/parcels.bin` (codec `sfh-scenario/1`, in `src/lib/data/`; deflate inside the file, async decode). It holds **every** parcel: `id`, `labelPoint`, `cellId`, a `hostable` flag (eligible and able to host a new project), `envelope: Envelope` (FZP stories: Local Program height if `localProgram`, else base height; clamped to `MAX_STORIES`), base stories, the base-zoning density cap in units (null = none), `localProgram: boolean`, `existingUnits` (latest assessor roll), the T4a feature values (base and FZP variants of `potentialRatio` and `storiesGap`) with an imputation mask, and `yield: Uint16[F]`, the gross units at each fill level of the envelope, replacement typologies only (no ADU outcomes), with no density cap under the Local Program. `FILL_LEVELS = [0.25, 0.5, 0.75, 0.9, 1]` (F = 5, tier-4 quantisation grid) is owned here, and stage-calibration imports it. Named in the manifest as `scenarios?: { fzp: { parcels: url; projects: url; calibration: url } }` (amends I12 and `ManifestBaseSchema`; optional, so older datasets load). Because the yield uses the generator, `src/lib/generator` and `src/lib/timelapse` join the dataset-version hash | scenario-data → timelapse-sim | DC |
+| T11 | `scenarios/fzp/parcels.bin` (codec `sfh-scenario/1`, in `src/lib/data/`; deflate inside the file, async decode). It holds **every** parcel: `id`, `labelPoint`, `cellId`, a `hostable` flag (eligible and able to host a new project), `envelope: Envelope` (FZP stories: Local Program height if `localProgram`, else base height; clamped to `MAX_STORIES`), base stories, the base-zoning density cap in units (null = none), `localProgram: boolean`, `existingUnits` (latest assessor roll), the T4a feature values (base and FZP variants of `potentialRatio` and `storiesGap`) with an imputation mask, `hostable_base` (hostable under the old zoning), `baseYield: Uint16[F]` (gross units at each fill level of the base envelope, density-capped), and `yield: Uint16[F]`, the gross units at each fill level of the envelope, replacement typologies only (no ADU outcomes), with no density cap under the Local Program. `FILL_LEVELS = [0.25, 0.5, 0.75, 0.9, 1]` (F = 5, tier-4 quantisation grid) is owned here, and stage-calibration imports it. Named in the manifest as `scenarios?: { fzp: { parcels: url; projects: url; calibration: url } }` (amends I12 and `ManifestBaseSchema`; optional, so older datasets load). Because the yield uses the generator, `src/lib/generator` and `src/lib/timelapse` join the dataset-version hash | scenario-data → timelapse-sim | DC |
 | T13 | Pipeline-internal parcel panel `pipeline/.cache/derived/<datasetVersion>/parcel-panel.parquet`. Per parcel × assessor roll year (2007..latest): `mapblklot`, roll year, assessor units, stories, year built, land and improvement value, use code → `landUseClass`, the zoning code (`acdm-wktn`), base stories, the base density cap, and the base-envelope yield (gross units at full base envelope, density-capped). Never shipped. Retired-parcel lineage is `parcel-lineage.parquet` in the same folder | scenario-data → project-records, stage-calibration | DC |
 
 From the source design (`2026-10-10-1749-sf-housing-sim.md`):
@@ -51,7 +52,7 @@ From the source design (`2026-10-10-1749-sf-housing-sim.md`):
 
 **Internal types** (pipeline-only; they do not alter any row):
 - `deriveProjects(input: ProjectRecordsInput): { histories: ProjectHistory[]; file: ProjectsFile; counts: Record<string, number>; warnings: string[] }`. It is pure and deterministic. `ProjectsFile` is the T3 file object.
-- `ProjectRecordsInput = { asOf: Day; raw: Record<ProjectSourceId, unknown[]>; parcelIds: Set<ParcelId>; lineage(blklot: string): ParcelId | null; assessorUnits(id: ParcelId, rollYear: number): number | null; latestRollYear: number; baseStories(id: ParcelId): number | null; hiNet: Record<number, number> }`. The callbacks are served from DuckDB tables in the same build (§4.9).
+- `ProjectRecordsInput = { asOf: Day; raw: Record<ProjectSourceId, unknown[]>; parcelIds: Set<ParcelId>; lineage(blklot: string): ParcelId | null; assessorUnits(id: ParcelId, rollYear: number): number | null; latestRollYear: number; baseStories(id: ParcelId, rollYear: number): number | null; hiNet: Record<number, number> }`. The callbacks are served from DuckDB tables in the same build (§4.9).
 
 ## 3. Global constraints
 
@@ -64,7 +65,7 @@ The source design's constraints still apply (free and open, determinism, oversho
 - **Honesty of numbers.** The mode is labelled a *simulation*. The scoreboard shows the shown run and the p10–p90 band. Pipeline and new-FZP units are separate lines. Actual completions since the RHNA period start are counted and labelled as actual. Units lost to dead projects are shown.
 - **Time scrubbing performance.** At 60 fps on a 2022-era laptop with the whole city's timeline loaded, per-frame JS during scrub or playback is O(1) in project count. A reroll reaches a full new timeline (the shown run, to 2050) within 3 s off the main thread. The p10–p90 band may fill in progressively afterwards; the UI marks it as provisional until it is complete.
 - **First paint.** `/fzp` must not require loading every parcel chunk. The whole-city score comes from `parcels.bin`, `projects.json` and `calibration.json`. Geometry streams with the viewport, as on `/`.
-- **The editor is unchanged.** `/` and `/p/:id` behave exactly as before. FZP mode is additive. The one intended exception is the shared header, which gains the mode links ("Paint" / "Timelapse").
+- **The editor is unchanged.** `/` and `/p/:id` behave exactly as before. FZP mode is additive. The one intended exception is the shared header, which gains the mode links ("Paint" / "Timelapse") and shortens the brand to "SF Housing" below 640 px so the links fit at 375 px.
 - **Map budgets in FZP mode.** Two deck layers per cell are allowed for timeline cells: translucency needs them. This is an exception to map-view's one-layer-per-cell rule, so a `bench:map` timeline scenario must pass the same p95 frame bar. The existing-building catch-up stays within 2,000 feature-state changes per frame.
 - **Accessibility.** WCAG 2.2 AA as in `docs/dev/accessibility.md`. The scrubber is a labelled slider: arrow keys step a month, Page Up/Down a year. Reduced motion stops autoplay, but scrubbing still works.
 
@@ -98,7 +99,7 @@ Each source is a new `DATASF` entry (`pipeline/sources/datasf.ts:10-50`). The en
 | `datasf-housing-production` | `xdht-4php` | `bpa,blocklot,form_no,net_units_completed,first_completion_date` | none | public-domain | 6,157 |
 | `datasf-dev-pipeline` | `6jgi-cpb4` | `blklot,nameaddr,current_status,current_status_date,approved_date_planning,case_no,bpa_no,new_pipeline_units,existing_units,net_pipeline_units,description_planning` | none | CC0-1.0 | 1,917 |
 
-Parcel lineage comes from `scenario-data`'s `datasf-parcel-attrs` (`acdm-wktn`, active and retired). This spec adds no parcel source.
+Parcel lineage comes from `scenario-data`'s `parcel-lineage.parquet`, which is built from its `datasf-parcel-attrs` source (`acdm-wktn`, active and retired). This spec adds no parcel source.
 
 The new entries need no further change elsewhere:
 - `fetch --restore` and `upload` archiving cover them.
@@ -152,9 +153,9 @@ The graph has four node kinds:
 - the pipeline `blklot`;
 - for a PPA-only project, the PPA's `block`+`lot`.
 
-Each candidate maps through `scenario-data`'s retired-parcel lineage (T13 folder; scenario-data spec §4.5):
-- A `blklot` whose `mapblklot` is a current parcel maps to it. Condo sub-lots map to their `mapblklot`, e.g. pipeline `0708023` → `0708021`.
-- A retired lot maps to the current parcel containing its centroid.
+Each candidate maps to a current parcel:
+- **Active `blklot`.** It maps to its `mapblklot` via the active rows of `src_parcels`. Condo sub-lots map to their `mapblklot`, e.g. pipeline `0708023` → `0708021`.
+- **Retired `blklot`.** It maps via `scenario-data`'s `pipeline/.cache/derived/<datasetVersion>/parcel-lineage.parquet`: the row whose `blklot` matches gives `current_mapblklot` (T13; round-2 "Table names"). scenario-data assigns a retired lot to the current parcel containing its centroid.
 
 `parcelIds` is the sorted, de-duplicated set of mapped ids that exist in the build's parcel set (I1). Unmapped and absent ids are counted and dropped. Live probe of pipeline `blklot`s on 2026-10-16: 1,823 map to the same id, 18 condo, 76 retired.
 
@@ -181,6 +182,8 @@ Both groups are excluded and their units are counted in `projects.excludedAltera
    SB 423 and AB 2011 have no field; text is the only indicator. "Local Program" alone is **not** an indicator, because pre-2026 records use it for the ADU Local Program (verified, e.g. `2022-013049PRJ`).
 2. **`discretionary`** when an anchor PRJ has a `d4jk-jw33` row, or a child of type `CUA, VAR, DNX, ENX, OFA, AHB, PHA, DVA, MAP, PCA, GPA, CTZ, COA, PTA, DRP, DRM` or `PPA`. Pipeline-only rows and PPA-only projects are `discretionary` (reconciliation).
 3. **`permitOnly`** when there is no anchor PRJ, or every anchor PRJ is a **referral**. A referral has no streamlined or discretionary evidence and opened on or after the earliest permit's filed day minus 30 days. Live data has 1,301 such evidence-free PRJs opened after their permit.
+
+   **The 30-day referral tolerance is tier 4 and made up.** It covers intake routing, where Planning opens the referral PRJ shortly before DBI records the permit's filing. One month is a round figure, chosen because only 15.8% of linked PRJ–permit pairs fall within ±30 days of each other (verified live). That makes the result insensitive to the exact value. The report prints it as `params.referralToleranceDays`.
 4. **Unclassifiable** otherwise: an anchor PRJ with no evidence and no permit to judge it by.
    - The history gets `pathway: null` (T4d).
    - The in-flight project defaults to `discretionary`, because T3 needs a pathway. The default is counted as `projects.pathwayDefaulted`.
@@ -194,7 +197,7 @@ The meanings of child types `DRM` and `PHA` are inferred from samples.
 | stage | `raw` (first that exists) | notes |
 |---|---|---|
 | `preApplication` | min `open_date` of the project's PPAs | dropped unless before `raw.filed` |
-| `filed` (not `permitOnly`) | min of the **filing evidence**: (a) anchor PRJ `open_date`, unless a PPA opened within 7 days of it; (b) `open_date` of children of type `ENV, CUA, VAR, DNX, ENX, OFA, AHB, PHA, DVA, COA, PTA, MAP, PCA, GPA, CTZ`; (c) `d4jk` `start_event_date`; (d) the filed day of any permit in the project | (a) exists because 43% of parented PPAs share the PRJ's `open_date`: the PRJ is created as the PPA's umbrella (verified) |
+| `filed` (not `permitOnly`) | min of the **filing evidence**: (a) anchor PRJ `open_date`, unless a PPA opened within 7 days of it; (b) `open_date` of children of type `ENV, CUA, VAR, DNX, ENX, OFA, AHB, PHA, DVA, COA, PTA, MAP, PCA, GPA, CTZ`; (c) `d4jk` `start_event_date`; (d) the filed day of any permit in the project | (a) exists because 43% of parented PPAs share the PRJ's `open_date`: the PRJ is created as the PPA's umbrella (verified). **The 7-day window is tier 4 and made up:** one working week of intake lag around the exact-match case. The report prints it as `params.ppaUmbrellaDays` |
 | `entitled` (not `permitOnly`) | `d4jk` `end_event_date` where `end_event_type='approval'` (2013-05-06 onwards); else `project_decision_date` when the decision is `Approved`; else pipeline `approved_date_planning`; else max `close_date` of rule-2 children whose `record_status` matches `/Approved/` | |
 | `permitFiled` | min filed day over **all** of the project's permits | discretionary/streamlined: kept only if `entitled` or `permitIssued` exists. A permit filed in parallel with Planning review leaves the project at `filed` |
 | `permitIssued` | min `issued_date` over the live set | |
@@ -295,7 +298,18 @@ When daily records conflict with the quarterly pipeline, the records win. The co
   - `permit_number` for permits and `j67f`;
   - `case_no ?? bpa_no` for pipeline rows.
 
-  Sorted by `(dataset, id)`.
+  `key` names the field that holds the id. It is omitted only when that field is the dataset's `record_id` (round 2, "DataSF links"):
+
+  | dataset | id field | `key` |
+  |---|---|---|
+  | `qvu5-m3a2`, `y673-d69b` | `record_id` | absent |
+  | `i98e-djp9` | `permit_number` (its `record_id` is per address row) | `'permit_number'` |
+  | `d4jk-jw33` | `b1_alt_id` | `'b1_alt_id'` |
+  | `j67f-aayr` | `building_permit_application` | `'building_permit_application'` |
+  | `xdht-4php` | `bpa` | `'bpa'` |
+  | `6jgi-cpb4` (no record-id field) | `case_no` (PRJ and PRX rows), else `bpa_no` | `'case_no'` or `'bpa_no'` |
+
+  Sorted by `(dataset, id, key)`.
 
 **`ProjectHistory` extras (T4d).**
 - **`unitsAt`.** Tier 2: these are current values across records, not snapshots.
@@ -303,14 +317,14 @@ When daily records conflict with the quarterly pipeline, the records win. The co
   - `permitFiled` is Σ live-set `proposed_units`.
   - `complete` is Σ per permit of `max(Σ TCO units, max CFC units)` from `j67f`. The CFC-restates-the-total reading is inferred from live rows, e.g. TCO 2 units then CFC 120.
 - **`storiesProposed`** follows the `stories` rule.
-- **`baseStoriesAtFiling`** is the max `scenario_envelopes.base_stories` over `parcelIds`, else `null`. Tier 3: the current base height proxy (reconciliation, "Pre-FZP heights").
+- **`baseStoriesAtFiling`** is the max over `parcelIds` of the base stories in `scenario_panel` (T13), taken at the roll year of the first entered day, clamped to 2007..latest; else `null`. Tier 3: the current base height proxy (reconciliation, "Pre-FZP heights"; round 2, "Table names").
 
 ### 4.9 Pipeline wiring
 
 **Step placement.** `build` (`pipeline/steps/build.ts:140-147`) runs `projectRecords` after `runSql` and the `scenario-data` step, and before `stage-calibration`. It is pure TS, like `writeTransit`. It reads these DuckDB tables:
 - `parcelIds` from `parcel_out`;
-- `lineage` and `assessorUnits` from `scenario-data`'s lineage and `scenario_panel` (T13);
-- `baseStories` from `scenario_envelopes`.
+- `assessorUnits` and `baseStories` from `scenario_panel` (T13);
+- `lineage` from active `src_parcels` rows and `parcel-lineage.parquet` (T13).
 
 **Outputs.**
 - `out/<v>/scenarios/fzp/projects.json`, minified, with `schema: 1`. Keys follow T3 declaration order, `history` keys follow `STAGE_ORDER`, projects are sorted by `id`, and `parcelIds` are sorted.
@@ -319,7 +333,7 @@ When daily records conflict with the quarterly pipeline, the records win. The co
 - `GOLDEN_FILES` (`pipeline/steps/fixture.ts:25-31`) gains `scenarios/fzp/projects.json`.
 - The `report.json` counts gain the `projects.*`, `histories.*` and `rhna.*` keys named here.
 
-**`rhnaCompletedNet`** (T3: units completed minus units demolished).
+**`rhnaCompletedNet`** (the Housing Inventory's net: units completed in new construction, plus units gained or lost through alterations, minus units demolished).
 - **`since`** is Day(2022-06-30). HCD's determination to ABAG (2020-06-09) gives the "projection period beginning June 30, 2022" (https://www.hcd.ca.gov/community-development/housing-element/docs/abagrhna-final060920(r).pdf, verified).
 - **`units`** is Σ `net_units_completed` over `xdht-4php` rows whose `first_completion_date` is in `[since, asOf]`:
   - forms 1 and 2 (new construction);
@@ -362,10 +376,10 @@ The fixture covers every in-flight stage, a PPA, and a multi-phase row (reconcil
 | M5 `PRJ:2017-000005PRJ` | `Closed - Withdrawn` 2018-04-02, 9 units, new construction | history only: exit `withdrawn` at `filed` |
 | M6 `PRJ:2016-000006PRJ` | permit `201605010006` complete; `j67f` Initial TCO 2019-08-01 (12 units) | history `complete` 2019-08-01, `unitsAt.complete` 12 |
 | M7 `BP:201410070008` | type 2 permit `filed` 2014-10-07, not in pipeline | history open, `lastObserved` 2014-10-07; `projects.staleOpen` = 1 |
-| M8 `PRJ:2020-000008PRJ` | referral PRJ (opened after its permit, no evidence); permit on retired lot `3512099`, issued; pipeline `BP Issued` | in flight, `permitOnly`, `permitIssued`, parcels [3512012] |
+| M8 `PRJ:2020-000008PRJ` | referral PRJ (opened after its permit, no evidence); permit on retired lot `3512099`, issued, 4 units; pipeline `BP Issued` | in flight, `permitOnly`, `permitIssued`, parcels [3512012] |
 | M9 `CASE:2007.0001PRX` | pipeline-only, lot 014, `PL Approved`, status date 2008-06-12, 300 new units | in flight, `discretionary`, `entitled`, `multiPhase` true, no history |
-| M10 `PRJ:2020-000010PRJ` | permit A `202001100010` withdrawn 2021-01-01; permit B `202203010010` filed (6 units), lot 001; d4jk approval 2021-11-01; pipeline `BP Filed` (bpa B) | in flight, `permitFiled` = 2021-11-01 (raw 2020-01-10 forced up), units 6 |
-| M11 `PRJ:2026-000011PRJ` | `new_construction` CHECKED, opened 2026-09-20, 3 units, lot 006, no evidence, not in pipeline | in flight (after cutoff), `filed`; history `pathway: null`; T3 `discretionary`; `projects.pathwayDefaulted` = 1 |
+| M10 `PRJ:2020-000010PRJ` | permit A `202001100010` withdrawn 2021-01-01; permit B `202203010010` filed (6 units), lot 001; d4jk approval 2021-11-01; pipeline `BP Filed` (bpa B) | in flight, `permitFiled` = 2021-11-01 (raw 2020-01-10 forced up), units 6, existing 2 |
+| M11 `PRJ:2026-000011PRJ` | `new_construction` CHECKED, opened 2026-09-20, 3 units, lot 006, no evidence, not in pipeline | in flight (after cutoff), `filed`, existing 2; history `pathway: null`; T3 `discretionary`; `projects.pathwayDefaulted` = 1 |
 | M12 `PRJ:2026-000012PRJ` | umbrella PRJ `Open`, opened 2026-08-03, `new_construction` CHECKED, 12 units, lot 008; PPA `2026-000012PPA` (parent M12, opened the same day) | in flight, `discretionary`, `preApplication`, units 12, parcels [3512008] |
 | M13 `PRJ:2015-000013PRJ` | `Closed`, no decision, no approval, no permit, closed 2016-05-02 | history only: exit `withdrawn` at `filed` 2016-05-02 |
 | xdht extras | `202101050007` (form 2, +3, 2023-05-10); form 3 (+2, 2024-02-01); form 6 (−1, 2025-01-15) | `rhnaCompletedNet.units` = 4, `n` = 3 |
@@ -373,7 +387,9 @@ The fixture covers every in-flight stage, a PPA, and a multi-phase row (reconcil
 Remaining fixture settings:
 - The pipeline `current_status_date` max is 2026-07-28.
 - Fixture `hiNet` = {2023: 3, 2024: 2, 2025: −1}.
-- Fixture assessor units are 0 on every project lot except lot 001 (1 unit), which gives M10 `existingUnits` 1.
+- Assessor units come from scenario-data's fixture roll (round 2, "Fixture-0"). Lot 1 has 2, which gives M10 existing 2. Lot 6 has 2, which gives M11 existing 2.
+- Every other project lot (5, 8, 10, 11, 12, 13, 14) has no units in the latest fixture roll, so its existing count is 0. Lot 12's 7 lineage units are in 2024 only.
+- If scenario-data's golden changes these numbers, this spec's goldens follow it.
 
 **Determinism.**
 - No wall-clock time: `asOf` comes from the lock.
@@ -434,6 +450,7 @@ All in `npm run test:pipeline`. Every test calls `expect`.
   - exit-stage clamping.
 - **`project-records/inflight.test.ts`**:
   - pipeline match, the after-cutoff window, stale-open and conflicts;
+  - `sources[].key` per dataset (absent for `record_id`; `'case_no'` for PRX/PRJ pipeline ids);
   - label precedence;
   - assessor `existingUnits`;
   - stories precedence and `storiesTier`;
@@ -473,8 +490,11 @@ No browser, e2e or axe tests apply. `timelapse-sim` and `fzp-mode` e2e exercise 
    - `projects.stories.{tier0,tier3,null}`;
    - `projects.parcels.{mapped,unmapped}`;
    - `histories.total`, `histories.clamped.*` and `histories.ppaLagDays`;
-   - `rhna.units`, `rhna.crossCheck.<year>` and `rhna.xdhtLagDays`.
+   - `rhna.units`, `rhna.crossCheck.<year>` and `rhna.xdhtLagDays`;
+   - `params.ppaUmbrellaDays` (7) and `params.referralToleranceDays` (30), both labelled tier 4.
 8. Two builds from the same lock and code give byte-identical `projects.json`.
+9. Every `sources` entry follows the §4.8 `key` table.
+10. `docs/dev/pipeline.md` lists V20–V24 and the seven new lock sources.
 
 ## 8. Open questions
 
@@ -487,12 +507,13 @@ None remain. The reconciliation answered all four: RHNA `since` (T3: 2022-06-30)
 2. Unique ids. Resolved by the T3 prefixed ids ("Ids and labels").
 3. Address for cards. Resolved by T3 `label`.
 4. Multi-phase rows. Resolved by T3 `multiPhase` and "Multi-phase projects".
-5. `baseStoriesAtFiling`. Resolved by T4d's tier-3 note ("Pre-FZP heights"), with the value read from `scenario_envelopes` (T13 folder).
+5. `baseStoriesAtFiling`. Resolved by T4d's tier-3 note ("Pre-FZP heights"), with the value read from `scenario_panel` (round 2, "Table names").
 6. `unitsAt` semantics. Resolved by the T4d comment ("cross-record, not snapshots").
 7. Per-project stories tier. Resolved by T3 `storiesTier`.
 8. Invariant ids. Resolved as V20–V24 ("Pipeline housekeeping").
 9. Histories file layout and path. Resolved by T4d and "Derived caches go under `pipeline/.cache/derived/<datasetVersion>/`".
 
-**Still open:**
-- **`rhnaCompletedNet` scope.** T3 says "completed minus demolished". This spec counts alteration gains and losses as completed units, per the HI definition, and V22 needs them to match HI Table 2. Please confirm that reading.
-- **Lineage table name.** T13 says "Retired-parcel lineage is in the same folder", but the scenario-data spec names `scenario_envelopes` and `scenario_panel` and no lineage table. The table name needs fixing between the two specs.
+10. `rhnaCompletedNet` scope. Resolved in round 2: the value is the Housing Inventory net, with alterations included (§4.9).
+11. Lineage table name. Resolved in round 2 ("Table names"): `parcel-lineage.parquet`, per T13.
+
+None remain open.
