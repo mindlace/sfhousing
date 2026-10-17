@@ -37,6 +37,9 @@ describe('resolveParcels', () => {
     );
     expect(r).toEqual({ ids: ['0708021', '5555001'], mapped: 3, unmapped: 1 });
   });
+  it('ignores null and empty candidates without counting them', () => {
+    expect(resolveParcels([null, ''], input)).toEqual({ ids: [], mapped: 0, unmapped: 0 });
+  });
   it('accepts any iterable', () => {
     expect(resolveParcels(new Set(['3512099']), input).ids).toEqual(['3512012']);
   });

@@ -38,7 +38,8 @@ export const DATASET: Record<ProjectSourceId, string> = {
 export type RawRow = Record<string, unknown>;
 
 export interface AddressRow {
-  blklot: string;
+  /** `block` + `lot` (both trimmed); null when either is missing. */
+  blklot: string | null;
   streetNumber: string | null;
   streetName: string | null;
   streetSuffix: string | null;

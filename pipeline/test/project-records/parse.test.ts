@@ -114,6 +114,9 @@ describe('asOfFromLock', () => {
     };
     expect(asOfFromLock(lock)).toBe(day(2026, 10, 10));
   });
+  it('throws on an empty lock', () => {
+    expect(() => asOfFromLock({ sources: [] })).toThrow();
+  });
 });
 
 describe('parseAll', () => {
@@ -145,7 +148,7 @@ describe('parseAll', () => {
       existingUnits: null,
       proposedUnits: null,
       rows: [
-        { blklot: '', streetNumber: null, streetName: null, streetSuffix: null, primary: false }
+        { blklot: null, streetNumber: null, streetName: null, streetSuffix: null, primary: false }
       ]
     });
     expect(p.prjs.get('2019-000001PRJ')).toEqual({
@@ -482,6 +485,45 @@ describe('parseAll', () => {
       'parse.dropped.datasf-planning-review': 1,
       'parse.dropped.datasf-unit-completions': 1
     });
+  });
+
+  it('keeps an address row with a missing block or lot, with blklot null', () => {
+    const p = parseAll(
+      raw({
+        'datasf-permits-newcon': [
+          { permit_number: 'P1', block: '1', street_name: 'MAIN' },
+          { permit_number: 'P1', lot: '2' }
+        ]
+      }),
+      ASOF
+    );
+    const rows = p.permits.get('P1')!.rows;
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.blklot)).toEqual([null, null]);
+    expect(rows.map((r) => r.streetName).sort()).toEqual(['MAIN', null]);
+  });
+
+  it('falls back to permit_creation_date when filed_date is present but clipped', () => {
+    const p = parseAll(
+      raw({
+        'datasf-permits-newcon': [
+          {
+            permit_number: 'P1',
+            filed_date: '1909-06-02T00:00:00.000',
+            permit_creation_date: '2019-05-30T00:00:00.000'
+          }
+        ]
+      }),
+      ASOF
+    );
+    expect(p.permits.get('P1')!.filedDay).toBe(day(2019, 5, 30));
+  });
+
+  it('counts every extra duplicate of a PRJ record_id', () => {
+    const rows = ['A', 'B', 'C'].map((s) => ({ record_id: 'R1', record_status: s }));
+    const p = parseAll(raw({ 'datasf-planning-projects': rows }), ASOF);
+    expect(p.prjs.get('R1')!.status).toBe('A');
+    expect(p.counts).toEqual({ 'parse.duplicate.datasf-planning-projects': 2 });
   });
 
   it('keeps the first of a duplicated PRJ record_id in canonical order', () => {

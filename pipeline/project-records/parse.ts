@@ -110,7 +110,7 @@ function bump(counts: Record<string, number>, key: string): void {
 
 function addressRow(r: RawRow): AddressRow {
   return {
-    blklot: blklotOf(r.block, r.lot) ?? '',
+    blklot: blklotOf(r.block, r.lot),
     streetNumber: str(r.street_number),
     streetName: str(r.street_name),
     streetSuffix: str(r.street_suffix),
@@ -120,7 +120,7 @@ function addressRow(r: RawRow): AddressRow {
 
 function compareAddress(a: AddressRow, b: AddressRow): number {
   return (
-    cmp(a.blklot, b.blklot) ||
+    cmp(a.blklot ?? '', b.blklot ?? '') ||
     cmp(a.streetNumber ?? '', b.streetNumber ?? '') ||
     cmp(a.streetName ?? '', b.streetName ?? '') ||
     cmp(a.streetSuffix ?? '', b.streetSuffix ?? '') ||
