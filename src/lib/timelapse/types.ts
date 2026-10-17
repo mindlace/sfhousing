@@ -31,7 +31,11 @@ export const STAGE_ORDER = [
   'complete'
 ] as const satisfies readonly Stage[];
 
-export const PATHWAYS = ['discretionary', 'streamlined', 'permitOnly'] as const;
+export const PATHWAYS = [
+  'discretionary',
+  'streamlined',
+  'permitOnly'
+] as const satisfies readonly Pathway[];
 
 /** Within a month, outcomes are ordered advance first, then `EXIT_ORDER`. */
 export const EXIT_ORDER: ExitReason[] = ['withdrawn', 'disapproved', 'cancelled', 'expired'];

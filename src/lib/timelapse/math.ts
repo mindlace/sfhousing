@@ -187,7 +187,7 @@ export function log(x: number): number {
         return dk * ln2_hi + dk * ln2_lo;
       }
     }
-    R = f * f * (0.5 - 0.3333333333333333 * f);
+    R = f * f * (0.5 - 0.3333333333333333 * f); // C: 0.33333333333333333 (same double; no-loss-of-precision)
     if (k === 0) return f - R;
     else {
       dk = k;

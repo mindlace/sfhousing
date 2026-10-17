@@ -42,7 +42,10 @@ export interface PackedCell {
   partTypology: Uint8Array; // per part → index into TYPOLOGY_ORDER (I10 order)
 }
 
-/** T7: a packed cell whose parts and slots carry the timelapse's time data. */
+/**
+ * T7: a packed cell whose parts and slots carry the timelapse's time data.
+ * `parcelMeta` rows describe the slot's final revision.
+ */
 export interface TimedPackedCell extends PackedCell {
   slotProjectIds: string[]; // render slots are keyed by project; parcelIds may repeat across slots
   partWindow: Float32Array; // per part: [fromDay, toDay) the part's revision is current; toDay = OPEN_DAY if open
