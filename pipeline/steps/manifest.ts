@@ -23,6 +23,8 @@ export function buildManifest(a: {
   overtureContrib: { dataset: string; n: number }[];
   /** The build wrote `transit.json`. */
   transit?: boolean;
+  /** The build wrote all of `scenarios/fzp/{parcels.bin,projects.json,calibration.json}`. */
+  scenarios?: boolean;
   warn?: (msg: string) => void;
 }): Manifest {
   const v = a.datasetVersion;
@@ -66,7 +68,18 @@ export function buildManifest(a: {
     basemapTiles: `${base}/basemap.pmtiles`,
     glyphs: `${base}/fonts/{fontstack}/{range}.pbf`,
     neighborhoods: `${base}/neighborhoods.geojson`,
-    ...(a.transit ? { transit: `${base}/transit.json` } : {})
+    ...(a.transit ? { transit: `${base}/transit.json` } : {}),
+    ...(a.scenarios
+      ? {
+          scenarios: {
+            fzp: {
+              parcels: `${base}/scenarios/fzp/parcels.bin`,
+              projects: `${base}/scenarios/fzp/projects.json`,
+              calibration: `${base}/scenarios/fzp/calibration.json`
+            }
+          }
+        }
+      : {})
   });
 }
 

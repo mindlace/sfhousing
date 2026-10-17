@@ -101,4 +101,43 @@ describe('parseManifest', () => {
     m.transit = '/data/2026-01-01-00000000/transit.json';
     expect(() => parseManifest(m)).toThrow(/transit: url must start with/);
   });
+
+  describe('scenarios', () => {
+    const v = '2026-10-10-3fa9c2d1';
+    const fzp = () => ({
+      parcels: `/data/${v}/scenarios/fzp/parcels.bin`,
+      projects: `/data/${v}/scenarios/fzp/projects.json`,
+      calibration: `/data/${v}/scenarios/fzp/calibration.json`
+    });
+
+    it('scenarios is optional', () => {
+      expect(parseManifest(g()).scenarios).toBeUndefined();
+    });
+
+    it('a full scenarios object parses', () => {
+      const m = parseManifest({ ...g(), scenarios: { fzp: fzp() } });
+      expect(m.scenarios?.fzp).toEqual(fzp());
+    });
+
+    it('a partial fzp object is rejected', () => {
+      const { parcels, projects } = fzp();
+      expect(() => parseManifest({ ...g(), scenarios: { fzp: { parcels, projects } } })).toThrow(
+        ManifestError
+      );
+    });
+
+    it('a scenarios url with another version prefix is rejected', () => {
+      const bad = {
+        ...fzp(),
+        calibration: '/data/2026-01-01-00000000/scenarios/fzp/calibration.json'
+      };
+      expect(() => parseManifest({ ...g(), scenarios: { fzp: bad } })).toThrow(
+        /scenarios\.fzp\.calibration: url must start with/
+      );
+    });
+
+    it('the golden manifest still validates', () => {
+      expect(parseManifest(g()).datasetVersion).toBe(v);
+    });
+  });
 });

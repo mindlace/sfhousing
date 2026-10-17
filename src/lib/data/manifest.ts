@@ -51,7 +51,17 @@ const ManifestBaseSchema = z.object({
   sprite: RootRelativeUrl.optional(),
   neighborhoods: RootRelativeUrl,
   /** Transit seed network (transit spec T1). Optional: older datasets have none. */
-  transit: RootRelativeUrl.optional()
+  transit: RootRelativeUrl.optional(),
+  /** Scenario data for the FZP timelapse (scenario-data spec §4.9). Optional: older datasets have none. */
+  scenarios: z
+    .object({
+      fzp: z.object({
+        parcels: RootRelativeUrl,
+        projects: RootRelativeUrl,
+        calibration: RootRelativeUrl
+      })
+    })
+    .optional()
 });
 
 export const ManifestSchema = ManifestBaseSchema.superRefine((m, ctx) => {
@@ -63,6 +73,9 @@ export const ManifestSchema = ManifestBaseSchema.superRefine((m, ctx) => {
     ['sprite', m.sprite],
     ['neighborhoods', m.neighborhoods],
     ['transit', m.transit],
+    ['scenarios.fzp.parcels', m.scenarios?.fzp.parcels],
+    ['scenarios.fzp.projects', m.scenarios?.fzp.projects],
+    ['scenarios.fzp.calibration', m.scenarios?.fzp.calibration],
     ...m.chunks.map((c, i): [string, string] => [`chunks.${i}.url`, c.url])
   ];
   for (const [path, u] of urls) {

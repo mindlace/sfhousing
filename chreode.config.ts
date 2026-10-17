@@ -8,7 +8,22 @@ export default defineConfig({
     // docs-index.spec.ts (in test:unit) asserts every docs/dev/*.md is linked from CLAUDE.md.
     { match: ['CLAUDE.md', 'docs/dev/**'], triggers: ['format', 'unit'] },
     { match: ['**/*.md'], triggers: ['format'] },
+    // The scenario step and the dataset-version code hash read these, so a change here also runs
+    // test:pipeline. Before the src/** rule: the first matching rule wins.
+    {
+      match: [
+        'src/lib/generator/**',
+        'src/lib/timelapse/**',
+        'src/lib/data/**',
+        'src/lib/plan/types.ts',
+        'src/lib/plan/geometry.ts'
+      ],
+      triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline']
+    },
     { match: ['src/**'], triggers: ['lint', 'check', 'unit', 'e2e'] },
+    // fixture-0 is generated; pipeline/test/golden.test.ts compares it with the golden, so a
+    // change here also runs test:pipeline. Before the e2e/** rule: the first matching rule wins.
+    { match: ['e2e/fixtures/data/**'], triggers: ['lint', 'check', 'e2e', 'pipeline'] },
     { match: ['e2e/**'], triggers: ['lint', 'check', 'e2e'] },
     // scripts/ specs run in the vitest server project; r2-load-local feeds e2e (data:fixture).
     { match: ['scripts/**'], triggers: ['lint', 'check', 'unit', 'e2e'] },
@@ -20,6 +35,7 @@ export default defineConfig({
     { label: 'format', run: 'npx prettier --check .', when: ['format'], supersededBy: ['lint'] },
     { label: 'lint', run: 'npm run lint', when: ['lint'] },
     { label: 'check', run: 'npm run check', when: ['check'] },
+    { label: 'test:pipeline', run: 'npm run test:pipeline', when: ['pipeline'] },
     { label: 'test:unit', run: 'npm run test:unit', when: ['unit'], policeStderr: true },
     {
       label: 'test:e2e',

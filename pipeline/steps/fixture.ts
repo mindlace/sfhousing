@@ -11,17 +11,21 @@ import {
   writeFileSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { DATASET_VERSION_RE } from '../../src/lib/data/dataset-version';
 import { FIXTURE_PROFILE } from '../config';
 import { readLock } from '../lib/lock';
 import { build, printResults } from './build';
+import { PARCELS_BIN, SCENARIO_DUMP, formatScenarioDump, readParcelsBin } from './scenario';
 
 const REPO_ROOT = resolve(import.meta.dirname, '../..');
 const MINI = join(REPO_ROOT, 'pipeline/test/fixtures/mini');
 const E2E = join(REPO_ROOT, 'e2e/fixtures/data/fixture-0');
 const GOLDEN = join(MINI, 'golden');
-/** Deterministic outputs pinned by golden.test.ts (tile bytes and fonts are not compared). */
+/**
+ * Deterministic outputs pinned by golden.test.ts (tile bytes and fonts are not compared). The T11
+ * file is pinned by its decoded dump, SCENARIO_DUMP, not by its deflate bytes (spec §4.8).
+ */
 const GOLDEN_FILES = [
   'parcels',
   'manifest.json',
@@ -112,6 +116,8 @@ export async function fixture(opts: FixtureOpts = {}): Promise<number> {
       rawDir: join(MINI, 'raw'),
       rawByName: true,
       outRoot,
+      // A per-run derived cache, so parallel fixture builds never share pipeline/.cache/derived.
+      derivedRoot: join(outRoot, 'derived'),
       datasetVersion: version,
       builtAt: new Date(newest).toISOString(),
       profile: FIXTURE_PROFILE,
@@ -129,6 +135,11 @@ export async function fixture(opts: FixtureOpts = {}): Promise<number> {
       rmSync(GOLDEN, { recursive: true, force: true });
       mkdirSync(GOLDEN, { recursive: true });
       for (const f of GOLDEN_FILES) cpSync(join(outDir, f), join(GOLDEN, f), { recursive: true });
+      mkdirSync(dirname(join(GOLDEN, SCENARIO_DUMP)), { recursive: true });
+      writeFileSync(
+        join(GOLDEN, SCENARIO_DUMP),
+        formatScenarioDump(readParcelsBin(join(outDir, PARCELS_BIN)))
+      );
     }
     return 0;
   } catch (e) {

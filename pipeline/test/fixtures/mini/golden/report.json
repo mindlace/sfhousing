@@ -42,7 +42,7 @@
     "landuse.orphan_rows": 2,
     "landuse.rows": 15,
     "landuse.unknown_values": 0,
-    "manifest.bytes": 2977,
+    "manifest.bytes": 3555,
     "neighborhoods.bytes": 478,
     "overture.contrib.Esri Community Maps": 1,
     "overture.contrib.Microsoft ML Buildings": 1,
@@ -67,6 +67,58 @@
     "pieces.outside_parcels": 2,
     "pieces.remainder_sliver_dropped": 0,
     "pieces.sliver_dropped": 1,
+    "scenario.bytes.payload": 6668,
+    "scenario.density_cap.NC-1": 1,
+    "scenario.density_cap.RH-1": 1,
+    "scenario.density_cap.RH-2": 3,
+    "scenario.density_cap.RH-3": 2,
+    "scenario.density_cap.RM-1": 1,
+    "scenario.density_cap.fzp_differs": 1,
+    "scenario.density_cap.none": 6,
+    "scenario.density_cap.rule.generic_nc": 1,
+    "scenario.density_cap.rule.generic_nc_hostable": 1,
+    "scenario.density_cap.rule.split": 0,
+    "scenario.density_cap.rule.split_hostable": 0,
+    "scenario.density_cap.rule.unlisted": 5,
+    "scenario.excluded.hotel": 1,
+    "scenario.excluded.rent_control": 1,
+    "scenario.height.dbl_non_r4": 1,
+    "scenario.height.no_district": 0,
+    "scenario.height.none": 1,
+    "scenario.height.overlap_gt1": 0,
+    "scenario.height.parse_fail": 0,
+    "scenario.height.split": 2,
+    "scenario.height.split_units": 4,
+    "scenario.hostable": 8,
+    "scenario.imputed.existing_stories": 1,
+    "scenario.imputed.improvement_share": 4,
+    "scenario.imputed.no_roll": 3,
+    "scenario.imputed.year_built": 3,
+    "scenario.large_lot_65": 0,
+    "scenario.local_program": 4,
+    "scenario.panel.base_yield_memo": 13,
+    "scenario.panel.feature_mismatch": 0,
+    "scenario.panel.years": 2,
+    "scenario.parcels": 14,
+    "scenario.roll.gov_zero_units": 1,
+    "scenario.roll.gov_zero_units_ludb_units": 3,
+    "scenario.roll.latest": 2025,
+    "scenario.roll.latest_eligible_matched": 10,
+    "scenario.roll.lineage_retired": 1,
+    "scenario.roll.matched_parcels": 13,
+    "scenario.roll.stories_implausible": 0,
+    "scenario.roll.units_implausible": 0,
+    "scenario.roll.unmatched.2024": 0,
+    "scenario.roll.unmatched.2025": 0,
+    "scenario.roll.unmatched_units.2024": 0,
+    "scenario.roll.unmatched_units.2025": 0,
+    "scenario.roll.years": 2,
+    "scenario.units.total": 66,
+    "scenario.yield.clamped": 0,
+    "scenario.yield.fzp_net_total": 28,
+    "scenario.yield.nonlp_base_mismatch": 0,
+    "scenario.yield.nonmonotone": 0,
+    "scenario.yield.zero_hostable_eligible": 3,
     "transit.bytes": 2876,
     "transit.patterns": 7,
     "transit.stops": 8,
@@ -130,7 +182,7 @@
       "ok": true
     },
     {
-      "detail": "manifest 2977/64000 B; neighborhoods 478/150000 B",
+      "detail": "manifest 3555/64000 B; neighborhoods 478/150000 B",
       "id": "V11",
       "ok": true
     },
@@ -148,6 +200,31 @@
       "detail": "8 stops, 7 patterns, 1 heavy-rail stops",
       "id": "V14",
       "ok": true
+    },
+    {
+      "detail": "14 parcels decode, each in its chunk's cell; re-encode byte-identical",
+      "id": "V15",
+      "ok": true
+    },
+    {
+      "detail": "0 parse failures; eligible with a district 12/12 ≥ 100%",
+      "id": "V16",
+      "ok": true
+    },
+    {
+      "detail": "hostable 8/12 eligible; warn: FZP net capacity 28 outside [195000, 3120000] (Planning ~780000, tier 1)",
+      "id": "V17",
+      "ok": true
+    },
+    {
+      "detail": "2 roll years; eligible with a latest-year roll row 10/12; Σ units 66 in [66, 66]",
+      "id": "V18",
+      "ok": true
+    },
+    {
+      "detail": "parcels.bin within budget",
+      "id": "V19",
+      "ok": true
     }
   ],
   "license": {
@@ -159,7 +236,7 @@
     "derivedData": "ODbL-1.0",
     "notice": "Derived data files under /data/ that incorporate OpenStreetMap or Overture data are made available under the ODbL 1.0."
   },
-  "lockSha256": "085e00321dff83018c910878978dcb08e7d9429663bd1ea433642e398c691876",
+  "lockSha256": "3f3555f15824ea25545d9f068bbb798ce7f6de51af5bcda0e5d4d6e73805c3f8",
   "tilesSkipped": false,
   "toolVersions": {
     "duckdb": "1.5.6",
@@ -167,5 +244,7 @@
     "pmtiles": "1.31.2",
     "tippecanoe": "2.79.0"
   },
-  "warnings": []
+  "warnings": [
+    "scenario: density caps unverified for NCD, NCT (no cap); tier-4 cap rules cover split 0 parcels (0 hostable), generic NC 1 (1 hostable), unlisted 5"
+  ]
 }
