@@ -19,6 +19,11 @@ From the design:
 - `out/<v>/scenarios/fzp/projects.json` (T3), including `rhnaCompletedNet`.
 - Invariants V20–V24, the mini fixture records, golden files and report counts.
 - The `docs/dev/pipeline.md` update for V20–V24 and the seven new sources (round 2, "Nits adopted"). stage-calibration owns V25–V29.
+- Multi-phase phasing enrichment (round 3), in §4.10:
+  - the committed `pipeline/enrichment/multiphase.json`;
+  - its curation for every PRX row;
+  - the fallback phasing;
+  - the T3 `phases` field.
 
 **Out:**
 - Transition tables, `ppaShare` and every fitted parameter. Those belong to `stage-calibration`.
@@ -97,7 +102,7 @@ Each source is a new `DATASF` entry (`pipeline/sources/datasf.ts:10-50`). The en
 | `datasf-planning-review` | `d4jk-jw33` | `b1_alt_id,start_event_type,start_event_date,end_event_type,end_event_date` | `project_stage='accepted to approved'` | PDDL-1.0 | 16,141 |
 | `datasf-unit-completions` | `j67f-aayr` | `building_permit_application,date_issued,document_type,number_of_units_certified` | none | PDDL-1.0 | 2,559 |
 | `datasf-housing-production` | `xdht-4php` | `bpa,blocklot,form_no,net_units_completed,first_completion_date` | none | public-domain | 6,157 |
-| `datasf-dev-pipeline` | `6jgi-cpb4` | `blklot,nameaddr,current_status,current_status_date,approved_date_planning,case_no,bpa_no,new_pipeline_units,existing_units,net_pipeline_units,description_planning` | none | CC0-1.0 | 1,917 |
+| `datasf-dev-pipeline` | `6jgi-cpb4` | `blklot,nameaddr,current_status,current_status_date,approved_date_planning,case_no,bpa_no,new_pipeline_units,existing_units,proposed_units,completed_new_units,net_pipeline_units,description_planning,da` | none | CC0-1.0 | 1,917 |
 
 Parcel lineage comes from `scenario-data`'s `parcel-lineage.parquet`, which is built from its `datasf-parcel-attrs` source (`acdm-wktn`, active and retired). This spec adds no parcel source.
 
@@ -292,6 +297,7 @@ When daily records conflict with the quarterly pipeline, the records win. The co
 
   Parsed values outside 1–80 are discarded (`MAX_STORIES` = 80, reconciliation).
 - **`multiPhase`** is `true` only for `…PRX` pipeline rows.
+- **`phases`** is `null` for every project that is not multi-phase. Multi-phase projects follow §4.10.
 - **`sources`** lists every record that set a date, a number, the pathway or the label, as `{ dataset: <DataSF id>, id }`. The id is:
   - `record_id` for PRJ and child records;
   - `b1_alt_id` for `d4jk`;
@@ -330,6 +336,21 @@ When daily records conflict with the quarterly pipeline, the records win. The co
 - `out/<v>/scenarios/fzp/projects.json`, minified, with `schema: 1`. Keys follow T3 declaration order, `history` keys follow `STAGE_ORDER`, projects are sorted by `id`, and `parcelIds` are sorted.
 - `pipeline/.cache/derived/<datasetVersion>/project-histories.json` (T4d layout), sorted by `id`. The histories are also passed in memory to `stage-calibration`.
 - Fixture builds write `derived/<fixture-n>/`. `--update-golden` copies the histories to `pipeline/test/fixtures/mini/golden/derived/project-histories.json`.
+- `pipeline/.cache/derived/<datasetVersion>/permits.parquet` (round-3 addenda). It is input to stage-calibration's `phaseGap` and is never shipped. There is one row per linked type 1/2 permit, written with DuckDB `COPY … (FORMAT parquet)`. Rows are sorted by `(prx_case_no, dva_record_id, filed_day, permit_number)`, with nulls last. Columns:
+  - `permit_number` VARCHAR.
+  - `project_id` VARCHAR: the T3/T4d id of the permit's project.
+  - `prj_record_id` VARCHAR NULL: the anchor PRJ.
+  - `dva_record_id` VARCHAR NULL: the anchor PRJ's `DVA` child (Development Agreement), with the lowest id if several.
+  - `prx_case_no` VARCHAR NULL: the PRX row whose case without `PRX` equals `prj_record_id`, or whose `da` equals this permit's pipeline row `da`.
+  - `da` VARCHAR NULL: the pipeline `da` of the row naming this permit.
+  - `parcel_ids` VARCHAR[]: resolved per §4.2.
+  - `proposed_units` INTEGER NULL.
+  - `site_permit` BOOLEAN.
+  - `status` VARCHAR.
+  - `live` BOOLEAN.
+  - `superseded` BOOLEAN.
+  - `filed_day`, `issued_day`, `construction_day`, `complete_day`, `status_day` INTEGER NULL: valid dates as T1 `Day`, from the same rules as §4.5 applied to this permit alone, without the project-level clamp.
+  - The fixture copy is checked by `golden.test.ts` as row values, not bytes. It holds M14's completed permit with `prx_case_no` `2010.0002PRX`.
 - `GOLDEN_FILES` (`pipeline/steps/fixture.ts:25-31`) gains `scenarios/fzp/projects.json`.
 - The `report.json` counts gain the `projects.*`, `histories.*` and `rhna.*` keys named here.
 
@@ -357,11 +378,11 @@ When daily records conflict with the quarterly pipeline, the records win. The co
 
 | id | check | live | fixture |
 |---|---|---|---|
-| V20 | `projects.json` passes the T3 validator: `schema` 1; `asOf` = snapshot day; ids unique and prefixed per T3; `parcelIds` non-empty, sorted, in the parcel set; `stage` = last `history` key; `history` non-decreasing in `STAGE_ORDER` and ≤ `asOf`; `permitOnly` has no `filed`/`entitled`; `units` ≥ 1; `units − existingUnits` ≥ 1 except `multiPhase`; `stories` null or 1–80; `storiesTier` null iff `stories` null; `sources` non-empty | same | same |
+| V20 | `projects.json` passes the T3 validator: `schema` 1; `asOf` = snapshot day; ids unique and prefixed per T3; `parcelIds` non-empty, sorted, in the parcel set; `stage` = last `history` key; `history` non-decreasing in `STAGE_ORDER` and ≤ `asOf`; `permitOnly` has no `filed`/`entitled`; `units` ≥ 1; `units − existingUnits` ≥ 1 except `multiPhase`; `stories` null or 1–80; `storiesTier` null iff `stories` null; `sources` non-empty; `projects.json` ≤ 2 MB, with a warning above 1 MB (engineering budget) | same | same |
 | V21 | Pipeline coverage: Σ `units` of in-flight projects matched to population pipeline rows ≥ 0.90 × Σ `new_pipeline_units` of those rows, excluding rows the records show ended | ≥ 0.90 | = 1.0 |
 | V22 | `rhnaCompletedNet`: each cross-check year within ±10% of `hiNet`; the total within ±5% | 2023–2025 | fixture `hiNet` |
-| V23 | Histories: entered days non-decreasing; `end.day` ≥ the last entered day; `complete` ⇒ `entered.complete = end.day`; `exit.stage` was entered; `lastObserved` in [first entered day, `asOf`]; each non-null pathway has ≥ 1 history | same | same |
-| V24 | Determinism and size: `deriveProjects` run twice gives byte-identical outputs; `projects.json` ≤ 2 MB, with a warning above 1 MB (engineering budget) | same | same |
+| V23 | Histories: entered days non-decreasing; `end.day` ≥ the last entered day; `complete` ⇒ `entered.complete = end.day`; `exit.stage` was entered; `lastObserved` in [first entered day, `asOf`]; each non-null pathway has ≥ 1 history; `deriveProjects` run twice gives byte-identical `projects.json` and histories | same | same |
+| V24 | Multi-phase phasing (§4.10). Every in-flight `multiPhase` project has non-null `phases`, unless it is a last resort (counted). `Σ phases.units = units`. Each phase has `units ≥ 1`, non-empty `parcelIds` drawn from the parcel set, and parcels disjoint from every other in-flight project. `plannedPermitFiled` is null or later than `history.entitled`. Enriched phases carry `source`; fallback phases carry `source: null` and `plannedPermitFiled: null`. Every `multiphase.json` entry names an existing PRX row, every fact carries a URL and a retrieval date ≤ `asOf`, and every PRX row with units has an entry (§4.10.1). The enriched scale factor is in [0.8, 1.25] | same; live checks the AC-11 coverage | 1 enriched (M9), 1 fallback (M14) |
 
 **Fixture.** `make-fixture.ts` gains seven `raw/<lockId>.page-000.json` files in SODA shape: lower-case keys, numbers as strings, nulls omitted. Their lock entries have `retrievedAt` ≤ 2026-10-10, which keeps the fixture `asOf` at Day(2026-10-10). The mini lineage, assessor units and base stories come from `scenario-data`'s fixture. That fixture maps retired `3512099` to lot 12 (scenario-data spec mini table).
 
@@ -377,7 +398,8 @@ The fixture covers every in-flight stage, a PPA, and a multi-phase row (reconcil
 | M6 `PRJ:2016-000006PRJ` | permit `201605010006` complete; `j67f` Initial TCO 2019-08-01 (12 units) | history `complete` 2019-08-01, `unitsAt.complete` 12 |
 | M7 `BP:201410070008` | type 2 permit `filed` 2014-10-07, not in pipeline | history open, `lastObserved` 2014-10-07; `projects.staleOpen` = 1 |
 | M8 `PRJ:2020-000008PRJ` | referral PRJ (opened after its permit, no evidence); permit on retired lot `3512099`, issued, 4 units; pipeline `BP Issued` | in flight, `permitOnly`, `permitIssued`, parcels [3512012] |
-| M9 `CASE:2007.0001PRX` | pipeline-only, lot 014, `PL Approved`, status date 2008-06-12, 300 new units | in flight, `discretionary`, `entitled`, `multiPhase` true, no history |
+| M9 `CASE:2007.0001PRX` | pipeline-only, lot 014, `PL Approved`, status date 2008-06-12, 300 new units, `da` "Fixture Shipyard". The mini `multiphase.json` lists three phases: A (120 units, lot 014, `plannedPermitFiled` null), B (180 units, lot 002, 2027-03-01) and C (40 units, lot 007, `status: 'built'`). Each fact carries a `https://example.invalid/fixture-da.pdf` URL retrieved 2026-10-01 | in flight, `discretionary`, `entitled`, `multiPhase` true, no history. `phases` = [A 120 [3512014] null, B 180 [3512002] Day(2027-03-01)], each with `source`. C is excluded; scale factor 1.0 |
+| M14 `CASE:2010.0002PRX` | pipeline-only, lot 009, `PL Approved`, status date 2012-04-02, 100 new units, `da` "Fixture Village". Its `multiphase.json` entry has `schedule: null` and one `searched` URL. PRJ `2010.0002` (base case) has completed permit `201501150014`: 40 units, lot 007, `j67f` CFC 2017-03-01 | in flight, `multiPhase` true. Fallback with u = 40 (project median, n = 1): k = round(100/40) = 3, so `phases` = [34, 33, 33], all [3512009] (lot 007 is excluded as built), `plannedPermitFiled` null, `source` null. The completed permit is the history `PRJ:2010.0002` (`complete`) |
 | M10 `PRJ:2020-000010PRJ` | permit A `202001100010` withdrawn 2021-01-01; permit B `202203010010` filed (6 units), lot 001; d4jk approval 2021-11-01; pipeline `BP Filed` (bpa B) | in flight, `permitFiled` = 2021-11-01 (raw 2020-01-10 forced up), units 6, existing 2 |
 | M11 `PRJ:2026-000011PRJ` | `new_construction` CHECKED, opened 2026-09-20, 3 units, lot 006, no evidence, not in pipeline | in flight (after cutoff), `filed`, existing 2; history `pathway: null`; T3 `discretionary`; `projects.pathwayDefaulted` = 1 |
 | M12 `PRJ:2026-000012PRJ` | umbrella PRJ `Open`, opened 2026-08-03, `new_construction` CHECKED, 12 units, lot 008; PPA `2026-000012PPA` (parent M12, opened the same day) | in flight, `discretionary`, `preApplication`, units 12, parcels [3512008] |
@@ -396,11 +418,88 @@ Remaining fixture settings:
 - Iteration is over sorted keys, with the explicit tie-breaks above.
 - `ppaLag` uses nearest-rank ⌈0.9·n⌉.
 
+### 4.10 Multi-phase phasing enrichment (round 3)
+
+Each PRX master is entitled once. Its phases are separate permitting sub-projects, each simulated from `permitFiled` onwards by timelapse-sim. This spec supplies T3 `phases`; the master itself never draws as a building.
+
+#### 4.10.1 `pipeline/enrichment/multiphase.json`
+
+The file is committed and hand-curated. It is under `pipeline/`, so it is part of the dataset-version hash (`docs/dev/pipeline.md:45`). Builds read it directly: it is not fetched and not in the lock. Fixture builds read `pipeline/test/fixtures/mini/enrichment/multiphase.json`. The schema is a zod schema (`pipeline/enrichment/schema.ts`), and a parse failure is a `BuildError`.
+
+```ts
+type IsoDate = string; // YYYY-MM-DD
+interface Fact { url: string; retrieved: IsoDate; locator: string /* page, table or exhibit */ }
+interface MultiphaseFile {
+  schema: 1;
+  projects: {
+    caseNo: string;               // 6jgi-cpb4 case_no, e.g. '2007.0946PRX'
+    label: string;                // e.g. 'Candlestick Point / Hunters Point Shipyard Phase 2'
+    schedule: { label: string; url: string; retrieved: IsoDate } | null; // the DA phasing exhibit
+    searched: { url: string; retrieved: IsoDate }[];  // required, non-empty when schedule is null
+    phases: {
+      name: string;               // the DA's own phase name, e.g. 'CP Major Phase 2, Sub-Phase 1'
+      units: number;              // gross units in the published schedule
+      blklots: string[];          // block-lots named for the phase (resolved per §4.2 Parcels)
+      plannedPermitFiled: IsoDate | null; // from the schedule of performance, if it gives one
+      status: 'remaining' | 'built' | 'separate';
+      separateRef?: { dataset: string; id: string; key?: string }; // required when status = 'separate'
+      facts: { units: Fact; blklots: Fact; plannedPermitFiled?: Fact };
+    }[];                          // empty when schedule is null
+  }[];
+}
+```
+
+**Curation rules.** Curation is tier 1, from each DA's published phasing schedule.
+- Use the Development Agreement or DDA phasing exhibit, the schedule of performance, or approved major-phase and sub-phase applications.
+- Record each phase's unit count, its block-lots, and the planned permit-filed date. The planned date is the schedule's site-permit or vertical-application deadline for that phase.
+- Every fact cites its own URL, retrieval date and locator.
+- A phase the records show as completed, or as its own pipeline or permit row, gets status `built` or `separate` (§4.10.3) and keeps its citation.
+- Where no schedule can be found, the entry has `schedule: null`, `phases: []`, and the URLs that were searched. The fallback (§4.10.2) is then a recorded decision, not an omission.
+
+**Scope and status.** Curating all PRX rows is an **implementation task** with acceptance criterion AC-11. A PRX row counts when `new_pipeline_units ≥ 1`. Live on 2026-10-16 there are 24 PRX rows and 21 with units; the design says 22, and the build covers whatever the pinned pipeline holds.
+
+Seeding research on 2026-10-16 (inferred, not yet curated):
+- **Candlestick / HPS II.** The DDA carries a "Project Phasing Schedule" attachment, and major-phase and sub-phase approvals and final maps exist. Example: the 2026 final map for Candlestick Point Major Phase 2, with up to 441 units (https://media.api.sf.gov/documents/m26-0051.pdf; FEIR addenda at https://sfmea.sfplanning.org/).
+- **Treasure Island.** The DDA defines four major phases with sub-phases. Sub-phase applications carry schedules of performance and housing tables (https://sf.gov/node/7505; https://sf.gov/sites/default/files/2024-07/TI%20Sub-Phase%20Application%203%20Book-Revision%201%20-%20reduced.pdf).
+
+#### 4.10.2 Building `phases` for a master
+
+The remaining units R are the PRX row's `new_pipeline_units`. The **DA parcels** are the resolved parcels of:
+- the tracking `blklot`;
+- every pipeline row with the same `da`;
+- the anchor PRJ whose `record_id` is the case number without `PRX`, and that PRJ's permits;
+- every `blklots` entry in the file.
+
+From these, remove the parcels of every other in-flight project and of every completed history.
+
+1. **Enriched** (the entry has a schedule and at least one `remaining` phase):
+   - The remaining phases, in file order, become `phases`. Each takes `parcelIds` from its resolved `blklots` minus excluded parcels; a phase left with no parcels takes the tracking parcel.
+   - `plannedPermitFiled` = Day(date).
+   - `source` = `{ label: schedule.label, url: facts.units.url, retrieved: facts.units.retrieved }`.
+   - If Σ units ≠ R, units are scaled by R / Σ, using largest-remainder rounding with ties to the earlier phase. Planning's remaining count is the tier-1 control total. The factor goes in `multiphase.scale.<caseNo>`, and V24 fails outside [0.8, 1.25] (tier-4 check bound).
+2. **Fallback** (no schedule):
+   - **Phase size u.** u is the median `proposed_units` of the project's completed buildings (tier 0 → 2), where those are completed type 1/2 permits in the components of the base-case PRJ or of pipeline rows sharing the `da`, with n ≥ 1. If there are none, u is the median `proposed_units` of all completed type 1/2 permits with ≥ 50 units and a completion day on or after 2015-01-01 (tier 2). Both are computed every build and reported as `multiphase.u.<caseNo>` with `n`.
+   - **Phases.** k = max(1, round-half-up(R / u)). Units split evenly, with the first `R mod k` phases getting +1.
+   - **Parcels.** Sort the DA parcels by `areaM2` descending, then id. Phase i gets parcel i mod P, so phases share parcels when k > P.
+   - `plannedPermitFiled` = null, because stage-calibration's `phaseGap` drives the stagger (round 3). `source` = null.
+   - The report counts `multiphase.enriched`, `multiphase.fallback` and `multiphase.phases.{enriched,fallback}`, which the scoreboard and sources dialog cite.
+3. **Last resort:** if neither u exists, `phases` = null. The project stays single, with a footprint ghost and a disclosure, counted in `multiphase.lastResort`.
+
+The master's `units` remains R = Σ `phases.units`. Its `history` (`entitled`) and `parcelIds` (the DA parcels) are unchanged.
+
+#### 4.10.3 No double counting
+
+A phase that is already built, or in flight as its own record, must not be counted again.
+- **Planning's control total already nets these out.** Verified live on 2026-10-16 for 7 of 10 DAs that have other pipeline rows: `proposed_units − completed_new_units − new_pipeline_units` equals Σ `new_pipeline_units` of the DA's other rows exactly. Examples: Candlestick 699, Parkmerced 1,903, Pier 70 516. So R excludes built phases and separate rows.
+- **Curated phases.** Phases whose block-lots or ids match a completed history, an in-flight project, or another pipeline row with the same `da` must carry status `built` or `separate`. The build checks this: any `remaining` phase whose resolved parcels all belong to another in-flight or completed project fails V24.
+- **Rendering.** Phase parcels are disjoint from other in-flight projects (V24), so no parcel draws twice.
+- **Mismatched DAs.** Treasure Island (745 vs 495), Balboa Reservoir (438 vs 279) and HPS I (628 vs 599) do not reconcile in Planning's own numbers. R is still the control total, and the gap shows only as the scale factor.
+
 ## 5. Seams
 
 - **T9 policy levers.** `projects.json` is plain JSON. No other change.
 - **Addenda.** Permit numbers stay in `sources`, so `87xy-gk8d` can join later. No addenda are fetched.
-- **DA phasing.** PRX rows carry `multiPhase` and their `CASE:` id. No phase schedule is inferred.
+- **DA phasing.** This spec delivers it as T3 `phases` (§4.10), as round 3 now requires. The phases' own stage sampling is timelapse-sim's job, and `phaseGap` is stage-calibration's.
 - **Renderings.** PRJ and permit ids in `sources` are the future join key.
 
 ## 6. Testing
@@ -457,6 +556,17 @@ All in `npm run test:pipeline`. Every test calls `expect`.
   - the regex skips "existing two-story";
   - the feet fallback;
   - `multiPhase`.
+- **`project-records/multiphase.test.ts`**:
+  - schema parse accepts the mini file and rejects a fact without `url` or `retrieved`;
+  - an entry whose `caseNo` is not in the pipeline fails;
+  - `schedule: null` without `searched` fails;
+  - enriched phases in file order, with the `built` and `separate` phases excluded;
+  - largest-remainder scaling, with the factor reported and V24 failing at 0.79 and 1.26;
+  - fallback u from the project median, then the citywide ≥ 50-unit median since 2015;
+  - k with round-half-up, the even split, and largest-first parcel assignment with sharing;
+  - last resort gives `phases: null`;
+  - phase parcels disjoint from other in-flight projects;
+  - Σ `phases.units` = `units`.
 - **`project-records/rhna.test.ts`**:
   - inclusive window bounds;
   - demolitions are negative;
@@ -477,8 +587,8 @@ No browser, e2e or axe tests apply. `timelapse-sim` and `fzp-mode` e2e exercise 
 2. `build` writes `out/<v>/scenarios/fzp/projects.json`. It matches T3 exactly and passes V20–V24; the build exits 1 on any failure.
 3. `pipeline/.cache/derived/<v>/project-histories.json` matches the T4d file layout.
 4. `fixture` reproduces the goldens, with these values:
-   - In flight: M1, M2, M3, M8, M9, M10, M11 and M12. Together they cover every non-complete stage.
-   - Histories only: M4–M7 and M13.
+   - In flight: M1, M2, M3, M8, M9, M10, M11, M12 and M14. Together they cover every non-complete stage.
+   - Histories only: M4–M7, M13 and `PRJ:2010.0002`.
    - `rhnaCompletedNet.units` = 4.
 5. No in-flight project ends complete or exit at `asOf`, and none is stale-open.
 6. `rhnaCompletedNet.since` = Day(2022-06-30), with tier-0 provenance, both sources and the window.
@@ -494,7 +604,12 @@ No browser, e2e or axe tests apply. `timelapse-sim` and `fzp-mode` e2e exercise 
    - `params.ppaUmbrellaDays` (7) and `params.referralToleranceDays` (30), both labelled tier 4.
 8. Two builds from the same lock and code give byte-identical `projects.json`.
 9. Every `sources` entry follows the §4.8 `key` table.
-10. `docs/dev/pipeline.md` lists V20–V24 and the seven new lock sources.
+10. `docs/dev/pipeline.md` lists V20–V24, the seven new lock sources and `pipeline/enrichment/multiphase.json`, with how to curate it.
+11. **Curation (implementation task).** `pipeline/enrichment/multiphase.json` has an entry for every PRX row with `new_pipeline_units ≥ 1` in the pinned pipeline.
+    - Each entry either cites the DA's published phasing schedule, with a URL, retrieval date and locator for every units, block-lot and date fact, or records `schedule: null` with the URLs searched.
+    - At a minimum, Candlestick / HPS II, Treasure Island and Parkmerced are enriched.
+    - V24 passes live, and the report's `multiphase.enriched` and `multiphase.fallback` counts are stated in the PR.
+12. In the fixture, M9 is enriched (2 phases, 120 + 180) and M14 is fallback (3 phases, 34 + 33 + 33).
 
 ## 8. Open questions
 
@@ -517,3 +632,5 @@ None remain. The reconciliation answered all four: RHNA `since` (T3: 2022-06-30)
 11. Lineage table name. Resolved in round 2 ("Table names"): `parcel-lineage.parquet`, per T13.
 
 None remain open.
+
+Round 3 note: the PRX count in the design (22) differs from the live pipeline (24 rows, 21 with units, on 2026-10-16). §4.10 covers whatever the pinned pipeline holds.

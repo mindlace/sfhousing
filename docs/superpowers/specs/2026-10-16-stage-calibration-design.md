@@ -71,14 +71,9 @@ Verbatim rows this subsystem owns (T1, T2, T4, T4a, T4b, T4c, T12) or consumes (
   - `CalProfile` (`LIVE_CAL`, `FIXTURE_CAL`; the same pattern as `InvariantProfile`, `pipeline/config.ts:44-127`).
   - `PanelRow = { mapblklot; rollYear; exposureMonths; events; features: Record<FeatureId, number> }`.
   - `FitCell = { bins: number[]; exposure: number; events: number }`.
-- File shape, an additive amendment of T4's internal file shape. Round 2 rules that these entries exist, and the T4 row text is unchanged; the orchestrator may want to fold them into the T4 row:
-  - `ppaShare` is the top-level key after `pathwayForNew` (T4: "the calibration also carries").
-  - `streamlinedForLocalProgram: Provenance` (§4.7).
-  - `tailProvenance: Record<Pathway, Partial<Record<Exclude<Stage,'complete'>, Provenance>>>`, with the same keys as `transitions` (§4.4).
+- File shape: T4 now carries `Transition.tailProvenance`, `streamlinedForLocalProgram` and `phaseGap` (round 3), so no keys are added beyond the row. `ppaShare` is the top-level key after `pathwayForNew` (T4: "the calibration also carries"). Keys are emitted in T4 order: `schema, asOf, transitions, initiation, pathwayForNew, ppaShare, size, revision, streamlinedForLocalProgram, phaseGap`.
 
-  `type Calibration` in `types.ts` includes all three.
-
-### Interface concerns (all resolved by the reconciliation section)
+### Interface concerns (all resolved by the reconciliation sections and round-3 addenda)
 
 | # | concern | resolution |
 |---|---|---|
@@ -96,6 +91,8 @@ Verbatim rows this subsystem owns (T1, T2, T4, T4a, T4b, T4c, T12) or consumes (
 | IC-12 | Invariant numbering | **Resolved**: stage-calibration V25–V29 |
 | IC-13 | Mini assessor panel | **Resolved**: scenario-data's fixture panel has two roll years |
 | IC-14 | Bias from completion dating | **Resolved**: documented in provenance (§4.4, `construction` method text) |
+| IC-15 | The round-3 permit-side start of "about 1989" assumes first-construction-document dates from 1989. They are sparse until 2000 (verified counts in §4.4) | **Resolved**, round-3 addenda: data-driven starts, `permitFiled` 1989, `permitIssued` and `construction` 2000 |
+| IC-16 | `phaseGap` needs per-permit filed days, but T4d merges a past DA's phase permits into one history and carries only permit ids in `sources` | **Resolved**, round-3 addenda: project-records emits `pipeline/.cache/derived/<datasetVersion>/permits.parquet`. Columns needed are listed in §4.7a |
 
 ## 3. Global constraints
 
@@ -195,8 +192,8 @@ All of `typicalMonths` and `chanceTable`, including their tail evaluation, use `
 - `fillLevels` equals `FILL_LEVELS` (T11), and each `probs` has length F and sums to 1 within 1e-9.
 - Revision `edges` are ascending, `probs.length = edges.length − 1`, and each `probability` lies in [0, 1].
 - `pathwayForNew` sums to 1 within 1e-9, and each `ppaShare` value lies in [0, 1].
-- Every `Provenance` has tier 0..4, a non-empty label and method, and ≥ 1 source with an `https:` URL. Tiers 0–2 also have `n` and `window`. This includes `streamlinedForLocalProgram` and every `tailProvenance` entry.
-- `tailProvenance` has exactly the keys of `transitions`.
+- Every `Provenance` has tier 0..4, a non-empty label and method, and ≥ 1 source with an `https:` URL. Tiers 0–2 also have `n` and `window`. This includes `streamlinedForLocalProgram`, `phaseGap.provenance` and every `tailProvenance`.
+- Every Transition has a `tailProvenance`. `streamlinedForLocalProgram` is present. `phaseGap.days` is a non-empty, ascending array of positive integers.
 
 ### 4.3 Placement in the build
 
@@ -230,28 +227,38 @@ It writes `calibration.json` and the report. It does no network access. There is
 
 Tables are **project-weighted**. Unit-weighted shares appear only in the report.
 
-**Fitting window (OD-T3).** The coverage table is a configured constant (`pipeline/lib/fzp-cal/window.ts`), and its evidence comes from probes verified 2026-10-16 (URLs at the end of §4.10). A stage's coverage year is the earliest year in which its entry dates, its end-event dates and its pathway classification are all reliably recorded.
+**Fitting windows (OD-T3 as refined by partner rulings round 3).** A configured constant in `pipeline/lib/fzp-cal/window.ts`. Its evidence comes from probes verified 2026-10-16 (URLs at the end of §4.10).
 
-| stage | startYear | binding input and evidence |
-|---|---|---|
-| preApplication | 2011 | PPA records `y673-d69b`: 754 of them, 2011-02-11 to **2023-07-07** (`entryEnd`) |
-| filed | 2015 | PRJs `qvu5-m3a2` with net units ≥ 1: 71 (2013), 158 (2014), 398 (2015) |
-| entitled | 2015 | approvals `d4jk-jw33`: 3 (2013), 182 (2014), 1,328 (2015) |
-| permitFiled | 2015 | pathway classification needs PRJ coverage (`filed_date` itself exists from 1981) |
-| permitIssued | 2015 | pathway classification (first construction document from 2000) |
-| construction | 2015 | pathway classification (TCO/CFC from 2018; `completed_date` from 1983) |
+| stage | side | pooled window start Wₛ | pathway window start | evidence |
+|---|---|---|---|---|
+| preApplication | Planning | 2015-01-01 | 2015-01-01 | PPA records `y673-d69b`, 2011-02-11 to **2023-07-07** (`entryEnd`); Planning span from 2015 (ruling) |
+| filed | Planning | 2015-01-01 | 2015-01-01 | PRJs with net units ≥ 1: 71 (2013), 158 (2014), 398 (2015) |
+| entitled | Planning | 2015-01-01 | 2015-01-01 | approvals `d4jk-jw33`: 182 (2014), 1,328 (2015) |
+| permitFiled | permit | **1989-01-01** | 2015-01-01 | `filed_date` dense from 1981; ruling "about 1989" |
+| permitIssued | permit | **2000-01-01** | 2015-01-01 | see below |
+| construction | permit | **2000-01-01** | 2015-01-01 | see below |
 
-**Window rule.** Sort the six coverage years. With majority *m* = 4, W = 1 January of the 4th smallest. A stage with a later `startYear` uses its own span, and its `method` says so. Today W = **2015-01-01** for every stage, as the reconciliation confirms, and permit stages are not pooled further back.
+**Why 2000 and not 1989 for two stages.** The ruling ties the permit-side start to the first-construction-document date. Verified per-year counts of `first_construction_document_date` (types 1/2, primary address) are:
+- 1 in 1989;
+- 0 in 1990–91;
+- 46 and 47 in 1992–93;
+- ≤ 3 per year in 1994–99;
+- 183 in 2000, and dense after.
 
-**Guard.** `COVERAGE_GUARD` is a method constant: **on in `LIVE_CAL`, off in `FIXTURE_CAL`** (round 2). When it is on, any year from `startYear` to the last complete year with zero qualifying entries for a stage raises `CalibrationError: coverage gap`. When it is off, the per-year counts are still reported.
+Before 2000, site permits would fall back to `issued_date` as the construction start. That would fabricate zero-length `permitIssued` spells. So the two stages that use the date start in 2000. `permitFiled`, whose transition needs only `filed_date`, `issued_date` and status, starts in 1989. The round-3 addenda confirm these data-driven starts.
 
-**What is recorded.** Every Transition's `window` is [W, asOf]. The report reprints the table, the sorted years, *m*, W and the spans.
+**Guard.** `COVERAGE_GUARD` is a method constant: **on in `LIVE_CAL`, off in `FIXTURE_CAL`** (round 2). When on, any year in a pooled window with zero qualifying entries raises `CalibrationError: coverage gap`. When off, the per-year counts are still reported.
+
+**What is recorded.**
+- Planning-side Transitions have `window` = [2015-01-01, asOf].
+- Permit-side Transitions have `window` = [Wₛ, asOf], and their `method` gives both windows (§4.5).
+- The report reprints this table.
 
 **Spells.** For each entered non-terminal stage *s*:
 - entry *e* = `eff[s]`;
 - end *z* = `eff[next entered]` with outcome `advance`; or the exit day with its reason; or `min(lastObserved, asOf)`, censored.
 
-A spell is kept iff *z* ≥ W and *e* < asOf. Then *a* = max(0, W − *e*) (left truncation, delayed entry) and *x* = *z* − *e*. preApplication entries end on 2023-07-07, and their spells are still followed to `asOf`.
+For a window start V (either Wₛ or 2015-01-01, §4.5), a spell is kept iff *z* ≥ V and *e* < asOf. Then *a* = max(0, V − *e*) (left truncation, delayed entry) and *x* = *z* − *e*. preApplication entries end on 2023-07-07, and their spells are still followed to `asOf`.
 
 **Aalen–Johansen.** For each (pathway, stage) cell, take the distinct event durations *d* in ascending order. All reasons at *d* are applied before S is updated. The sweep starts with S = 1 and F_j = 0.
 
@@ -267,7 +274,7 @@ F_j += S · e_j(d) / n(d);   S *= 1 − e(d) / n(d)
   - Person-months E = Σᵢ |[max(aᵢ, (k₀−1)·M), xᵢ]| ÷ M.
   - λ_j = events_j ÷ E.
   - p_j = (λ_j/λ)(1 − `exp`(−λ)), using `math.ts`.
-  - **Tail provenance** (round 2). `tailProvenance[p][s]` is written for every cell, with tier **2** ("extrapolation beyond the observed months"):
+  - **Tail provenance** (T4 `Transition.tailProvenance`). It is written for every Transition, with tier **2** ("extrapolation beyond the observed months"):
     - `method`: "constant competing hazards, occurrence/exposure over months k₀+ (k₀ = …), applied beyond month `months`";
     - `n`: the events in the span;
     - `window`: the Transition's window;
@@ -280,10 +287,33 @@ F_j += S · e_j(d) / n(d);   S *= 1 − e(d) / n(d)
 
 ### 4.5 Fallback ladder (every applicable cell is always filled)
 
-A rung passes when the cell has spells ≥ `N_SPELLS_MIN` and events ≥ `N_EVENTS_MIN` in the window, and §4.4's rejection checks pass.
+A rung passes when the cell has spells ≥ `N_SPELLS_MIN` and events ≥ `N_EVENTS_MIN` in its window, and §4.4's rejection checks pass.
 
-1. **Pathway-specific AJ.** Tier 0. Method: "Aalen–Johansen cumulative incidence, right-censored at last observation, left-truncated at window start". The tail is covered by `tailProvenance`.
-2. **Pooled AJ.** All pathways plus null-pathway spells, copied into the cell. Tier 2, "pooled across pathways". preApplication always uses this rung.
+**Planning-side stages** (filed, entitled):
+1. **Pathway-specific AJ** over [2015-01-01, asOf]. Tier 0. Method: "Aalen–Johansen cumulative incidence, right-censored at last observation, left-truncated at window start". The tail is covered by `tailProvenance`.
+2. **Pooled AJ.** All pathways plus null-pathway spells, copied into the cell. Tier 2, "pooled across pathways". preApplication always uses this rung, over 2015+.
+
+**Permit-side stages** (permitFiled, permitIssued, construction): **pooled shape, pathway level** (round 3). The rule is a stratified proportional-hazards scaling of the pooled Aalen–Johansen table.
+- **Pooled component.** AJ over every qualifying spell, of any pathway including null, in [Wₛ, asOf]. At each pooled event duration *d* it gives the cause-specific hazard increments ĥ_j(d) = e_j(d)/n(d) and the pooled tail rates λ_j.
+- **Pathway level.** For pathway *p* and outcome *j* (advance or each exit reason), take *p*'s spells in [2015-01-01, asOf], left-truncated at 2015-01-01, with at-risk counts nₚ(d).
+  - O_{p,j} = *p*'s observed *j* events;
+  - E_{p,j} = Σ_d nₚ(d)·ĥ_j(d) + (*p*'s tail-span person-months)·λ_j;
+  - θ_{p,j} = (O_{p,j} + κ) / (E_{p,j} + κ), with κ = `PH_PRIOR` = 5 (tier 4). This is a gamma-prior shrinkage toward 1, the pooled level.
+  - Every *p* event is also a pooled event, so E is defined at every *p* event time.
+- **Pathway table.** The AJ recursion re-run on the pooled event grid with h_j(d) = θ_{p,j}·ĥ_j(d). If Σ_j h_j(d) > 1, all of them are scaled down so the sum is 1, and the count goes in the report. The tail is λ_{p,j} = θ_{p,j}·λ_j through the §4.4 tail formula. `months` is the pooled table's.
+- **Why this rule.**
+  - Durations in permit review and construction are set mostly by administrative queues and building physics. They are estimated far more precisely from about 25 years of records than from 11.
+  - Pathways differ mainly in level, for example in how often a streamlined permit is abandoned. One constant ratio per outcome is the smallest model that keeps each pathway's own 2015+ level, and κ keeps thin pathways near the pooled table instead of at 0 or ∞.
+  - Unlike multiplying the cumulative incidence by a constant, this keeps advance + Σ exit ≤ 1, monotonicity and competing-risk consistency by construction.
+  - **Diagnostic.** The report prints, for each pathway and stage, the maximum absolute difference between the scaled table and *p*'s own 2015+ AJ. The build warns if it exceeds 0.05.
+- **Thin pathways.** If *p* has fewer than `N_SPELLS_MIN` spells in 2015+, θ = 1 (pure pooled), and the method says so.
+- **Provenance.**
+  - Tier 2.
+  - `label`: "SF permit records <Wₛ year>–<asOf year>, pooled across pathways before 2015, scaled to <pathway> 2015–<asOf year> (tier 2)".
+  - `method`: "Pooled Aalen–Johansen over all spells since <Wₛ> (pooled across pathways before 2015; pathway unknowable); cause-specific hazards scaled by θ = (O+5)/(E+5) from <pathway> spells since 2015-01-01 (proportional hazards): advance θ=…, <reason> θ=…".
+  - `n`: pooled spells. `method` also gives the pathway's 2015+ spells.
+  - `window`: [Wₛ, asOf].
+- **Fallback.** If the pooled component fails the thresholds, rung 3.
 3. **Literature synthetic.** A constant-hazard table with `months = 1`:
    - q = 1 − 2^{−1/D};
    - `advance[0]` = tail.advance = A·q;
@@ -323,10 +353,15 @@ The build warns for each rung-3 cell. In live mode none is expected.
 No value is altered. The `imputed` mask is not a model input. The report prints, for each feature, the share of at-risk exposure with that mask bit set.
 
 **Panel, at-risk set and event.**
-- **Months.** Calendar months 2015-01 through 2025-12. The start is W, the event coverage. The end is the last full month on pre-FZP zoning (FZP effective 2026-01-12). Months of year Y use roll Y.
+- **Months.** Calendar months **2007-01** through 2025-12: every assessor roll year (round 3). The end is the last full month on pre-FZP zoning (FZP effective 2026-01-12). Months of year Y use roll Y.
+- **Detection basis.** Planning records are reliable from 2015-01-01, the Planning-side window. For each qualifying history let F = the earliest of `entered.preApplication`, `filed` and `permitFiled`, and P = `entered.permitFiled`, the first new-construction (type 1/2) site or full permit filing.
+  - **Basis "record"** if F ≥ 2015-01-01. The event day is F, and coverage starts at F. Tier 0.
+  - **Basis "permit"** if F < 2015-01-01. The event day is P, if present, in whatever year it falls, and coverage starts at P. In this era only permit filings are reliably visible, so a project that never filed a permit is invisible: no event and no coverage. The months between F and P count as at risk.
+  - The event date is tier 0. Using it as the event is a **tier 2** proxy, because it misses projects that died before filing a permit and dates the rest later. The initiation `method` states this.
+  - Each event month carries its basis.
 - **Parcels.** A parcel-year is in the panel iff its `scenario_panel` row has **`hostable_base`** true (round 2). That column is eligible ∧ base stories ≥ 1 ∧ base yield > 0, evaluated for that roll year. Parcel-years with no panel row are excluded and counted. T11's `hostable` applies only to the FZP application.
-- **Event.** The month of `min(entered.preApplication, filed, permitFiled)` of a qualifying history, assigned to its primary parcel: the largest `lotAreaM2`, ties broken by the smaller id.
-- **At risk.** The event month is at risk with event = 1. From the next month the parcel is not at risk while any qualifying history covers it (any of its `parcelIds`), through the end month.
+- **Event.** The month of the event day under its basis, assigned to the history's primary parcel: the largest `lotAreaM2`, ties broken by the smaller id.
+- **At risk.** The event month is at risk with event = 1. From the next month the parcel is not at risk while any qualifying history covers it (any of its `parcelIds`), from coverage start through the end month.
   - After an **exit**, it is at risk again from the next month. An exit censored as a purge (§4.4 step 6) is treated as still open through `asOf`.
   - After a **completion**, it never returns to risk.
   
@@ -342,10 +377,10 @@ No value is altered. The `imputed` mask is not a model input. The report prints,
 | yearBuilt | 0, 1800, 1906, 1930, 1950, 1979, 2000 |
 | storiesGap | −100, 0, 1, 2, 3, 5, 10 |
 | improvementShare | 0, 0.1, 0.25, 0.4, 0.55, 0.7, 0.85 |
-
-There are no "unknown" bins. scenario-data imputes every missing value, so the only 0 values are its own vacant-lot rule (vacant lots: `yearBuilt` 0, `improvementShare` 0). Those fall in bin 0 by that rule, not by the mask.
 | rentControlLikely | 0, 1 |
 | landUseClass | 0, 1, 2, 3, 4, 5 |
+
+There are no "unknown" bins. scenario-data imputes every missing value, so the only 0 values are its own vacant-lot rule (vacant lots: `yearBuilt` 0, `improvementShare` 0). Those fall in bin 0 by that rule, not by the mask.
 
 A numeric feature's highest bin with fewer than `MIN_BIN_EVENTS` events merges downward, repeatedly, and then the same runs upward from the bottom. The published `bins` are the merged edges.
 
@@ -357,16 +392,22 @@ A numeric feature's highest bin with fewer than `MIN_BIN_EVENTS` events merges d
 **Fit.**
 1. Rows are binned with the shared `binIndex`, aggregated into `FitCell`s, and sorted lexicographically by bin tuple.
 2. The model is a binomial logit on (events, exposure): one Bernoulli trial per parcel-month, which is the discrete-time hazard likelihood.
-3. The design is the intercept plus a full one-hot over bins, with ridge ½·`RIDGE_LAMBDA`·Σβ² on the bin coefficients only.
-4. IRLS starts from the intercept = logit(Σevents/Σexposure). It stops when max|Δ| < 1e-9, with at most 100 iterations. Non-convergence is a `CalibrationError`.
-5. Coefficients are rounded to 6 significant digits. No calendar-year term.
+3. The design is the intercept, a full one-hot over bins, and one **nuisance column** `basis` (1 for parcel-months before 2015-01-01, else 0). Ridge ½·`RIDGE_LAMBDA`·Σβ² applies to the bin coefficients only; the intercept and `basis` are unpenalised.
+4. IRLS starts from the intercept = logit(Σevents/Σexposure), with `basis` and the bins at 0. It stops when max|Δ| < 1e-9, with at most 100 iterations. Non-convergence is a `CalibrationError`.
+5. The published `InitiationModel` is the intercept and bin coefficients with `basis` = 0. The `basis` coefficient is printed in the report and in `method`, never shipped, so the T4a shape is unchanged. Coefficients are rounded to 6 significant digits.
 
-**Back-cast.** Predicted filings per year 2015–2025 (Σ hazard over at-risk parcel-months), beside observed filings.
-- **Gate (V28):** the predicted total is within 2% of the observed total.
+**Why the term: it is a measurement-definition term** (round-3 addenda). Before 2015 the event is a permit-filing proxy, not the first Planning record, so its level differs by construction. The `basis` term absorbs that difference. It is **not** a market adjustment. Any market difference between eras that it happens to absorb is a side effect, and the report states that. The level that matches the simulation's event (first record) is therefore set by 2015+ data, while 2007–2014 parcel-years sharpen the feature coefficients. This mirrors the permit-side pooling in §4.5: long record for shape, reliable era for level.
+
+It is **not** a calendar-year term: it is constant within each era and stands for a change in measurement, not market time. That keeps faith with OD-T3's "no calendar-year term".
+
+The initiation provenance `method` says: "pre-2015 events detected by first new-construction permit filing (tier 2 proxy); a measurement-definition term (permit-filing proxy vs first Planning record) is fitted and not shipped, so the published level is set by 2015+ first-record events; this is not a market adjustment; basis coefficient = …".
+
+**Back-cast.** Predicted events per year 2007–2025 (Σ hazard over at-risk parcel-months, with each year's basis) beside observed events, labelled by basis.
+- **Gate (V28):** the predicted total is within 2% of the observed total, checked separately for each basis.
 - **Report only:**
   - per-year ratios;
   - per-bin observed and predicted;
-  - a hold-out fit on 2015–2022 predicting 2023–2025;
+  - a hold-out fit on 2007–2022 predicting 2023–2025;
   - FZP expected filings per year (12·Σ hazard over hostable parcels with no in-flight project) against the historical mean, with a warning outside [0.5, 20] (tier-4 sanity band).
 
 **Fallback.**
@@ -375,21 +416,52 @@ A numeric feature's highest bin with fewer than `MIN_BIN_EVENTS` events merges d
 
 ### 4.7 `pathwayForNew` and `ppaShare`
 
-- **`pathwayForNew`.** The pathway shares among qualifying, non-null-pathway histories whose first record falls in [W, asOf]. Tier 0. timelapse-sim applies it only to new projects on non-`localProgram` parcels; Local Program parcels take `streamlined` by the reconciliation's rule. If fewer than `N_SPELLS_MIN` histories qualify, the fallback is the pathway mix of T3 in-flight projects (tier 0).
+- **`pathwayForNew`.** The pathway shares among qualifying, non-null-pathway histories whose first record falls in [2015-01-01, asOf] (Planning-reliable, since pathway is known only then). Tier 0. timelapse-sim applies it only to new projects on non-`localProgram` parcels; Local Program parcels take `streamlined` by the reconciliation's rule. If fewer than `N_SPELLS_MIN` histories qualify, the fallback is the pathway mix of T3 in-flight projects (tier 0).
 - **`ppaShare[p]`.** The share of pathway-*p* qualifying filings (first non-PPA entry in [2023-07-08, asOf]) that have a preApplication entry. Tier 0. The method reads: "measured after the PPA record series ended (2023-07-07)". This follows the reconciliation, and the value is expected to be 0. With no filings in the window the value is 0, tier 4, "not measured".
 - **`streamlinedForLocalProgram: Provenance`** (round 2). This entry documents that new projects on `localProgram` parcels use the `streamlined` tables. fzp-mode cites it for Local Program projects.
   - **Tier 2.** The streamlined tables (SB 35, SB 423, AB 2011, AB 2162, HSD ministerial) stand in for the Local Program, which has no recorded history of its own.
   - **`label`:** "Local Program projects use streamlined-pathway rates (tier 2 proxy)".
   - **`method`:** "Local Program = administrative approval, 180-day clock, no DR or appeal (rule, tier 1: Planning Director Bulletin 11); durations and attrition taken from the streamlined tables, n = <streamlined spells>".
   - **`n`:** the streamlined spells across all stages.
-  - **`window`:** [W, asOf].
+  - **`window`:** [2015-01-01, asOf].
   - **`sources`:** the Planning Director Bulletin No. 11 URL (literature §1) plus the DataSF pages.
   - **Diagnostic.** The report also prints the count of Local Program-era filings (since 2026-01-12) and their median days from `filed` to `entitled`, if any, against the 180-day clock. Nothing uses those numbers.
+
+### 4.7a `phaseGap` (T4, partner rulings round 3)
+
+`phaseGap.days` holds the empirical gaps in days between successive phases' permit filings in past multi-phase projects. timelapse-sim draws from it uniformly by index for phases with no published schedule.
+
+**Identifying past multi-phase projects in the records.** Phases of one Development Agreement project are the separate new-construction site or full permits of one linked project. project-records' linkage puts them in one T4d history; only current pipeline rows are split. A history is a **DA group** iff at least one of these holds:
+- its `sources` include a `y673-d69b` child record whose id ends in `DVA` (optionally followed by `-NN`; DVA is Planning's Development Agreement record type, verified present in `y673-d69b`);
+- its `sources` include a `6jgi-cpb4` case ending in `PRX`;
+- its PRJ or case id appears in `pipeline/enrichment/multiphase.json`.
+
+**Phases of a group.**
+- **Which permits.** The group's distinct type-1/2 site or full permits that each propose ≥ `PHASE_MIN_UNITS` = 10 units (tier 4). They come from project-records' `permits.parquet` (round-3 addenda). This spec reads these columns:
+  - `permit_number`, `project_id` (the T4d history id);
+  - `filed_day` (Day), `proposed_units`, `permit_type` (1 or 2), `site_permit` (bool);
+  - `superseded` (bool, project-records' rule);
+  - the DA links `dva_record_ids`, `prx_case`, `case_no`.
+
+  If the landed project-records spec names them differently, its names win and this list maps one-to-one.
+- **Refiles.** Superseded permits, under project-records' superseded rule, are dropped, because a refile is not a new phase.
+- **Same day.** Permits filed on the same day count as one phase.
+- **Gaps.** Phases are sorted by filed day. The gaps are the differences between successive filed days, in days and always > 0.
+- **Window.** Permit records from 1989-01-01 (the permit-side window).
+
+**Output and ladder.** `days` is all gaps across groups, sorted ascending.
+1. **DA groups** with ≥ `PHASE_MIN_GAPS` = 10 gaps (tier 4 threshold).
+   - Tier 2.
+   - `label`: "Gaps between phase permit filings in past SF Development Agreement projects (tier 2)".
+   - `method`: the group count, the gap count, the median and the IQR.
+   - `n`: the gap count; `window`: [1989-01-01, asOf].
+2. **Fallback, tier 2.** The same rule over every history with ≥ 2 qualifying permits of ≥ 10 units each: large multi-building projects, DA or not. `method` says "not DA-specific".
+3. **Last resort.** `days = [730]`, **tier 4**, "made up: no multi-phase history found". This is expected only in fixture builds.
 
 ### 4.8 SizeModel (T4b)
 
 - **Fill levels.** `fillLevels` = `FILL_LEVELS` imported from T11 ([0.25, 0.5, 0.75, 0.9, 1], F = 5).
-- **Measurement.** Qualifying histories with first record in [W, asOf] and with `storiesProposed` and `baseStoriesAtFiling` both ≥ 1. The ratio r = storiesProposed ÷ baseStoriesAtFiling is snapped to the nearest fill level, ties going up. r > 1 (density bonus) maps to 1, and that share is reported.
+- **Measurement.** Qualifying histories with first record in [2015-01-01, asOf] and with `storiesProposed` and `baseStoriesAtFiling` both ≥ 1. The ratio r = storiesProposed ÷ baseStoriesAtFiling is snapped to the nearest fill level, ties going up. r > 1 (density bonus) maps to 1, and that share is reported.
 - **Buckets.** `maxStoriesUpTo` edges are 4, 6, 8, 12, 999 (999 = any; tier 4). A history goes to the first bucket with base stories ≤ edge.
   - A bucket with fewer than `SIZE_MIN_N` histories merges into its lower neighbour, or its upper one for the first bucket.
   - `probs` are rounded to 6 decimals, with the residual added to the largest so they sum to 1.
@@ -401,7 +473,7 @@ A numeric feature's highest bin with fewer than `MIN_BIN_EVENTS` events merges d
 - **Pairs.** T4d records units only for `filed` (PRJ), `permitFiled` (permit) and `complete` (TCO/CFC), so there are two `at` entries, in this order:
   - `permitFiled`: previous = `unitsAt.filed`, new = `unitsAt.permitFiled`;
   - `permitIssued`: previous = `unitsAt.permitFiled`, new = `unitsAt.complete`, completed projects only. T4c forbids revisions on or after construction, so the permit-to-completion change is placed on entering `permitIssued`. That attribution is tier 2, and `method` says so.
-- **Measurement.** A pair counts when both counts are ≥ 1 and the later stage was entered in [W, asOf]. A revision means the counts differ. `probability` = revised ÷ pairs.
+- **Measurement.** A pair counts when both counts are ≥ 1 and the later stage was entered in [2015-01-01, asOf] (PRJ units, needed for the `permitFiled` pair, exist only then; both pairs use one window). A revision means the counts differ. `probability` = revised ÷ pairs.
 - **Ratios.** Among revised pairs, new ÷ previous is clamped to [0.25, 3] and binned with `edges` [0.25, 0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 2, 3] (tier 4). Sampling within a bin is uniform.
 - **Exclusions.** A project's first stage is never revised; its proposal is `revisions[0]` (reconciliation). Pipeline projects are counted only for entries after their first stage.
 - **Fallback.** Fewer than `REV_MIN_N` pairs uses all pairs pooled (tier 2). If the pooled pairs are also fewer, `probability` = 0 (tier 4, "no revision evidence").
@@ -412,7 +484,9 @@ A numeric feature's highest bin with fewer than `MIN_BIN_EVENTS` events merges d
 **Provenance.** These entries each carry a T4 `Provenance`:
 - every Transition, and its `tailProvenance` entry;
 - `initiation`, `size`, `revision`, `pathwayForNew` and `ppaShare`;
-- `streamlinedForLocalProgram`.
+- `streamlinedForLocalProgram` and `phaseGap.provenance`.
+
+The initiation provenance has `window` [2007-01-01, 2025-12-31], and its `method` names the detection basis (tier 2 before 2015).
 
 Each `Provenance` has these fields:
 - `label`, e.g. "SF permit & Planning records 2015–2026 (tier 0)";
@@ -453,8 +527,12 @@ Any tier-3/4 component is named in `method`, e.g. "D = 12 mo (tier 4, made up)".
 | V25 | `parseCalibration` accepts `calibration.json`; `asOf` equals T3 and T4d `asOf`; size ≤ 256 KB |
 | V26 | Every pair a project can occupy is present (`pathwayStages`). Every T3 in-flight project's (pathway, stage) has a cell. Every cell passes the §4.4 rejection checks |
 | V27 | **Reproduction.** For every Transition, 100,000 seeded `sampleTransition` draws (from m = 0) give an empirical cumulative incidence, by `monthsIn(0, days) + 1`, within **0.005** of the table at every month for advance and each exit reason, and the eventual shares within 0.005 |
-| V28 | Initiation back-cast total is within 2% (live mode only) |
+| V28 | Initiation back-cast total is within 2% for each detection basis (live mode only) |
 | V29 | Determinism: two in-run computations are byte-identical |
+
+**V27 and the purge rule under pooled tables** (round 3, re-checked).
+- **V27 still holds.** It tests sampler-to-table consistency, which does not depend on how a table was estimated. A θ-scaled permit-side table has the same structure as any AJ table: monotone, Σ ≤ 1 (after the step cap), and ρ > 0. A synthetic test (below) checks that scaled tables pass V27, and V26 rejects any that do not.
+- **The purge rule still holds.** Detection runs on all qualifying exits over the full record. The pre-2015 permit era is now included, and so are any historical DBI batch expirations in it. The trailing 365-day baseline adapts to each era's exit volume. Because censoring is applied once, in normalisation (step 6), both the pooled component and every pathway's 2015+ component see the same censored spells, so O and E in θ are consistent. The report lists purge windows from every era.
 
 **`docs/dev/pipeline.md` update** (round 2; owned here).
 - The Invariants paragraph's range "V1 to V14" grows to cover the new invariants. project-records edits the V20–V24 part, and stage-calibration appends this sentence:
@@ -488,6 +566,8 @@ Probe URLs (verified 2026-10-16), base `https://data.sf.gov/resource/`:
 | `PURGE_MIN_EXITS` / `PURGE_RATIO` | 10 / 10 | same |
 | `PURGE_MIN_DAYS` (median duration in stage) | 730 | same |
 | `PURGE_GAP_DAYS` | 30 | same |
+| `PH_PRIOR` κ (θ shrinkage) | 5 | 5 |
+| `PHASE_MIN_UNITS` / `PHASE_MIN_GAPS` | 10 / 10 | 10 / 1 |
 
 `MONTH_DAYS` and `OPEN_DAY` are definitional and have no tier. `DYING_DAYS` is display-only, tier 4, and unused here.
 
@@ -548,7 +628,6 @@ Probe URLs (verified 2026-10-16), base `https://data.sf.gov/resource/`:
   - all spells censored gives zeros;
   - monotone, Σ ≤ 1.
 - `aj-recovery.test.ts` (property): 20,000 synthetic spells from a known Transition, with entries over 2005–2026, censoring at `asOf` and window 2015. The estimate recovers the truth within 0.02 at every month and for the eventual shares. A naive "dead among ended" estimator fails the same check.
-- `window.test.ts`: today's table gives 2015-01-01. [2000, 2001, 2002, 2003, 2010, 2012] gives 2003, with own spans for 2010 and 2012. Ties are handled. A gap year throws.
 - `spells.test.ts`: imputation, running maximum, exit clamp, null pathway and the defensive rule, preApplication pooling, delayed entry.
 - `tail.test.ts`, `fallback.test.ts`: the probability formula, extending k₀, rejection; rung selection, a rung-3 median of D, tiers and method text.
 - `irls.test.ts`:
@@ -558,6 +637,25 @@ Probe URLs (verified 2026-10-16), base `https://data.sf.gov/resource/`:
   - non-convergence throws;
   - shuffled input gives byte-identical output.
 - `initiation-panel.test.ts` (DuckDB, hand-made T13 and histories): not at risk while in flight, the event month counted, at risk again after an exit, never after a completion, the primary parcel, the 2025-12 cutoff, panel membership by `hostable_base`, and features read from the columns unchanged (no imputation code path exists).
+- `ph-pool.test.ts`:
+  - with identical pathway and pooled hazards, θ ≈ 1 and the table equals the pooled one;
+  - a pathway with a doubled exit hazard over 2015+ recovers θ_exit within 0.15 at n = 5,000, and its scaled table is within 0.02 of the truth;
+  - no 2015+ events gives θ = κ/(E+κ);
+  - the step cap engages and is counted;
+  - scaled tables pass `parseCalibration` and the V27 check;
+  - provenance label and method wording.
+- `window.test.ts` (rewritten): Planning-side spells are cut at 2015-01-01; permit-side pooled spells start at 1989-01-01 / 2000-01-01; the coverage guard is on for live and off for fixture.
+- `initiation-basis.test.ts`:
+  - basis "record" versus "permit" by the F < 2015 rule;
+  - a pre-2015 project with no permit gives no event and no coverage;
+  - the `basis` coefficient is excluded from the published model;
+  - simulated panels with a known basis offset recover the feature coefficients within 0.05;
+  - the back-cast holds per basis.
+- `phase-gap.test.ts`:
+  - DA detection by a `DVA` child, a `PRX` case, and a `multiphase.json` entry;
+  - permits under 10 units, superseded refiles and same-day phases are excluded or merged;
+  - gaps sorted ascending;
+  - the ladder falls back to rung 2 (tier 2) and then to [730] (tier 4).
 - `purge.test.ts`:
   - a synthetic history set with background exits plus 40 exits of median duration 1,200 days on 2026-09-15 and 2026-10-01 gives one window [2026-09-15, 2026-10-01];
   - the long-duration exits in it are censored on 2026-09-14, and the short-duration ones stay exits;
@@ -573,7 +671,7 @@ There are no DOM, e2e or axe tests, because this subsystem has no page and the r
 
 - **AC-1 ("if 10% die at stage z, ours do too").** For every Transition in the live and fixture calibrations, a seeded simulation of 100,000 entrants through `sampleTransition` recovers the table's cumulative incidence of advance and of each exit reason at every month, and the eventual shares, within 0.005 (V27). `calibration-small.json`'s `permitFiled` gives expired = 0.10 ± 0.005 by month 12.
 - **AC-2.** Censored, left-truncated synthetic histories recover a known truth within 0.02.
-- **AC-3.** The report and provenance state the OD-T3 coverage table, majority, W and spans. Today W = 2015-01-01.
+- **AC-3.** The report and provenance state the refined OD-T3 windows: Planning-side 2015-01-01; permit-side pooled from 1989-01-01 (`permitFiled`) and 2000-01-01 (`permitIssued`, `construction`), with pathway level from 2015. Permit-side provenance says "pooled across pathways before 2015".
 - **AC-4.** Every parameter has a tier, label, method and source, plus n and window for tiers 0–2. The report indexes them all.
 - **AC-5.** The initiation back-cast total is within 2%. The report shows per-year values, the hold-out, the extrapolation share and the FZP expected filings.
 - **AC-6.** `calibration.json` is ≤ 256 KB and byte-identical across in-run repeats and fixture regenerations.
@@ -581,6 +679,10 @@ There are no DOM, e2e or axe tests, because this subsystem has no page and the r
 - **AC-8.** `size.fillLevels` equals T11's `FILL_LEVELS` (F = 5).
 - **AC-9.** Every pathway × stage pair a project can occupy is present (V26). A live build warns for each rung-3 cell.
 - **AC-10.** The worker, renderer, card and pipeline V-check all import T12's functions. A repo search finds no second implementation of the sampling or chance logic.
+- **AC-12 (round 3).**
+  - Permit-side Transitions are θ-scaled pooled tables, and their provenance says "pooled across pathways before 2015".
+  - Initiation is fitted over 2007–2025 with the detection basis stated as tier 2.
+  - `phaseGap` has ≥ 10 DA gaps (tier 2) in a live build, or is labelled with its fallback tier.
 - **AC-11 (deterministic math).**
   - `math.ts` `exp` and `log` return the committed fdlibm bit patterns for every golden input, on Node and in the browser test engines.
   - No `Math.exp`, `Math.log`, `Math.pow`, `Math.log1p` or `Math.expm1` appears under `src/lib/timelapse/` or `pipeline/lib/fzp-cal/`; the ESLint rule enforces this.
@@ -588,6 +690,6 @@ There are no DOM, e2e or axe tests, because this subsystem has no page and the r
 
 ## 8. Open questions
 
-None remain from the original spec: the reconciliation answered all three (W = 2015 with no older pooling; `ppaShare` measured after 2023-07-07; Local Program parcels take `streamlined`).
+None remain from the original spec: the reconciliation answered all three (the window question is now settled by partner rulings round 3, §4.4; `ppaShare` measured after 2023-07-07; Local Program parcels take `streamlined`).
 
 The 16-pair reading of "every pathway × stage pair" is **confirmed** by the orchestrator's clarification in the reconciliation section.

@@ -26,9 +26,10 @@ New files in `src/lib/sim/scenario/`, all worker-safe (no zod, no DOM, no `$app`
 | `types.ts` | **Step 0** of the design's Dependency order, landed before any body. It holds the T5 types (`Schedule`, `SimInput`, the `simulate` signature), the T6 types (`ScenarioRequest`, `TimelineResponse`, `ScenarioErrorCode`, `ScenarioResponse`, `ProjectCard`) and the T8 types (`TimelineScore`, `TargetProgressAt`). Types only: `protocol.ts` re-exports them, and fzp-mode and timelapse-render import them. |
 | `dates.ts` | `dayOf(y, m, d)` and `isoOf(day)`, built on `Date.UTC` |
 | `rng.ts` | counter-based draws |
-| `simulate.ts` | T5 `simulate`, and the schedule-only `simulateNet` |
-| `score.ts` | T8 |
-| `band.ts` | the uncertainty band |
+| `simulate.ts` | T5 `simulate`, the internal `simulateDetailed` (schedules plus multi-phase masters), and the schedule-only `simulateNet` |
+| `policy.ts` | T9 `PolicyOp` type and `baseZoning`, the package's only PolicyOp |
+| `score.ts` | T8, including `planEffect` |
+| `band.ts` | the uncertainty band and the plan-effect band |
 | `card.ts` | `ProjectCard` |
 | `projects-shape.ts` | worker-safe structural check of `projects.json` |
 | `scenario-host.ts` | `createScenarioHost` |
@@ -84,7 +85,7 @@ The rows below are copied verbatim from the current design. T4d is consumed only
 | T6 | Worker protocol additions (I15 extended), served by a separate scenario host behind the same Worker and a separate `ScenarioClient` (the editor's host and `SimClient` are unchanged). Requests: `{ type: 'initScenario'; rev; manifest: Manifest; scenario: 'fzp'; seed: number \| null /* null = representative seed */; horizon: Day }`, `{ type: 'reroll'; rev; seed: number \| null }` (also the resync path: same seed → fresh revision-0 snapshot), and `{ type: 'parcelSummary'; reqId: number; parcelId: ParcelId; day: Day; projectId?: string /* the picked project; returned if visible at day */ }`. Responses: `ready` (existing shape), `{ type: 'timeline'; rev; seed: number; render: TimelineUpdate; score: TimelineScore; bandRuns: number /* band runs finished so far; the band is provisional until bandRuns = bandRunsTotal */; bandRunsTotal: number /* N */; complete: boolean /* all loaded cells packed */ }`. A band-only update is a `timeline` whose `render` is `{ revision: last + 1, cells: [], removedCells: [], demolish: [] }`, `chunks` (existing), and `error` with `code: 'manifest-invalid' \| 'scenario-missing' \| 'scenario-invalid' \| 'bad-request' \| 'internal'`. `parcelSummary` responds with `project?: ProjectCard`: the project named by `projectId` if it is visible at `day`; otherwise the project on that parcel whose first entered stage is ≤ `day`, latest first; none if no project is visible at `day`. `ProjectCard = { projectId: string; origin: 'pipeline' \| 'simulated'; label: string /* pipeline: T3 label, else 'Block B, Lot L'; simulated: always 'Block B, Lot L' */; pathway: Pathway; units: number; existingUnits: number /* summed over the project's parcels */; stories: number \| null; storiesTier: 0 \| 3 \| null /* pipeline only; 3 = parsed from description text */; massing: 'matched' \| 'approximate' \| 'none'; multiPhase: boolean; phase: Schedule['phase']; localProgram: boolean /* the project's parcel is a Local Program parcel and the project is simulated */; stages: { stage: Stage; day: Day; actual: boolean }[] /* only stages entered ≤ day */; revisions: Schedule['revisions'] /* only those ≤ day */; end: Schedule['end'] \| null /* null if the end is after day */; sources: { dataset: string; id: string; key?: string /* field to query, e.g. 'case_no'; absent = the dataset's record-id field */ }[] }`. The card's chance to finish is computed on the main thread from T12 at the current time. `prefetch` is reused, viewport-driven at every zoom in this mode | timelapse-sim ↔ fzp-mode, timelapse-render | DC |
 | T7 | `interface TimedPackedCell extends PackedCell { slotProjectIds: string[] /* render slots are keyed by project; parcelIds may repeat across slots */; partWindow: Float32Array /* per part: [fromDay, toDay) the part's revision is current; toDay = OPEN_DAY if open */; slotStages: Float32Array /* per slot: STAGE_ORDER.length entry days, NaN = never */; slotEnd: Float32Array /* per slot: [endDay, endKind] (0 open, 1 complete, 2 exit) */; slotPathway: Uint8Array /* index into ['discretionary','streamlined','permitOnly'] */ }`. `parcelMeta` rows describe the slot's final revision. `packTimedCell` is pure and owned by timelapse-render (in `src/lib/map/`); the worker imports it. `interface TimelineUpdate { revision: number /* 0 = snapshot */; cells: TimedPackedCell[]; removedCells: string[]; demolish: { parcelId: ParcelId; day: Day }[] /* complete list in revision 0 (needs no geometry); empty afterwards */ }`. `SimMapHandle` gains `applyTimeline(u: TimelineUpdate): void`, `setTime(day: Day): void` and `setTimelineLookups(l: { chance: ReturnType<typeof chanceTable>; typicalMonths: ReturnType<typeof typicalMonths> }): void`. `SimMapProps` gains `timelinePick?: (p: { projectId: string; parcelId: ParcelId; x: number; y: number; kind: 'hover' \| 'tap' } \| null) => void`. When it is set, SimMap's built-in tooltip is suppressed over timeline parts. Timeline colour tokens (`tl-*` in `palette.ts`) and an exported `TIMELINE_LEGEND` are owned here. `setTime` does O(1) JS work per call, except the existing-building catch-up, which applies at most 2,000 feature-state changes per frame until it converges | timelapse-render ↔ timelapse-sim, fzp-mode | DC |
 | T12 | In `src/lib/timelapse/model.ts` (pure, zod-free, worker-safe): `sampleTransition(t: Transition, u: number, monthsElapsed: number): { kind: 'advance' \| ExitReason; days: number }`, `initiationHazard(m: InitiationModel, f: Record<FeatureId, number>): number`, `chanceTable(cal: Calibration): Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, Float32Array>>>` (per month in a stage, the probability of eventually reaching `complete`; the table is 241 months long, and the tail is used beyond it), `typicalMonths(cal: Calibration): Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, number>>>` (median months to leave each stage, used for the bar's within-stage fill), and `parseCalibration(json: unknown): Calibration` (throws on schema mismatch). The pipeline's validation, the worker, the renderer (lookups uploaded once) and the card all use these, and nothing re-implements them. The bar colour and the card's "chance of finishing" both come from `chanceTable` | stage-calibration → timelapse-sim, timelapse-render, fzp-mode | MC (health = chance of finishing, OD-T2; one sampling semantics everywhere) |
-| T8 | `interface TimelineScore { months: Day[] /* months[i] = the 1st of the i-th month, starting with asOf's month and ending with the horizon's month; every series value at i is the state at the end of that month (events with day < months[i + 1], or ≤ horizon for the last entry) */; shown: { completedNet: number /* cumulative since asOf, simulation only, excludes baseline */; completedNetPipeline: number; completedNetNew: number; entitledNew: number /* cumulative units of new (simulated) projects reaching entitled */; inProgress: Record<Exclude<Stage, 'complete'>, number> /* current proposed units of projects in each stage at that month */; exitedUnits: number /* cumulative */ }[]; planEffect: { entitledNew: number; completedNetNew: number }[] /* shown seed: FZP run minus its paired old-zoning run (T9 `baseZoning`), cumulative net units */; planEffectBand: { p10: number; p50: number; p90: number }[] /* planEffect.completedNetNew over the N paired runs */; band: { p10: number; p50: number; p90: number }[] /* completedNet over N runs, same basis as shown */; baseline: { completedNet: number; since: Day; provenance: Provenance }; targets: TargetProgressAt[]; references: { id: string; label: string; units: number; from: Day; by: Day; measure: 'planEffect.entitledNew' \| 'planEffect.completedNetNew' \| 'completedNet'; provenance: Provenance }[] /* published estimates, each compared with the matching shown series */ }`, where `TargetProgressAt = { target: Target /* I11 */; deadline: Day; fraction: number[] /* per month, (baseline + completedNet) ÷ target, uncapped */ }` | timelapse-sim → fzp-mode | MC (net units against RHNA; band shown; baseline actuals counted), DC (shape) |
+| T8 | `interface TimelineScore { months: Day[] /* months[i] = the 1st of the i-th month, starting with asOf's month and ending with the horizon's month; every series value at i is the state at the end of that month (events with day < months[i + 1], or ≤ horizon for the last entry) */; shown: { completedNet: number /* cumulative since asOf, simulation only, excludes baseline */; completedNetPipeline: number; completedNetNew: number; entitledNew: number /* cumulative units of new (simulated) projects reaching entitled */; inProgress: Record<Exclude<Stage, 'complete'>, number> /* current proposed units of projects in each stage at that month */; exitedUnits: number /* cumulative */ }[]; planEffect: { entitledNew: number; completedNetNew: number }[] /* shown seed: FZP run minus its paired old-zoning run (T9 `baseZoning`), cumulative net units */; planEffectBand: { p10: number; p50: number; p90: number }[] /* planEffect.completedNetNew over the N paired runs */; band: { p10: number; p50: number; p90: number }[] /* completedNet over N runs, same basis as shown */; baseline: { completedNet: number; since: Day; provenance: Provenance }; phasing: { masters: number; enrichedMasters: number; phasesScheduled: number /* plan date from a published schedule */; phasesEstimated: number /* fallback sizes or phaseGap stagger */; unenriched: { projectId: string; label: string \| null; units: number }[] }; targets: TargetProgressAt[]; references: { id: string; label: string; units: number; from: Day; by: Day; measure: 'planEffect.entitledNew' \| 'planEffect.completedNetNew' \| 'completedNet'; provenance: Provenance }[] /* published estimates, each compared with the matching shown series */ }`, where `TargetProgressAt = { target: Target /* I11 */; deadline: Day; fraction: number[] /* per month, (baseline + completedNet) ÷ target, uncapped */ }` | timelapse-sim → fzp-mode | MC (net units against RHNA; band shown; baseline actuals counted), DC (shape) |
 | T9 | Policy-lever seam: `simulate` reads all behaviour from `Calibration`. A `PolicyOp` is a pure `(Calibration, ScenarioParcels) → (Calibration, ScenarioParcels)` transform applied before `simulate`. This package ships exactly one: `baseZoning`, the old-zoning counterfactual. It sets every envelope to base stories, every yield to `baseYield`, `localProgram` false and hostability to `hostable_base`, and evaluates initiation on the base features. Each FZP run is paired with a `baseZoning` run on the same seed. Draws are keyed by entity, so in-flight projects get identical schedules in both runs and the difference isolates the plan (common random numbers). Only the FZP run is drawn on the map | timelapse-sim → future policy-levers | MC (levers change inputs, not the engine) |
 | T10 | `GeneratedBuilding.source: 'user' \| 'pipeline' \| 'scenario'` (amends I9). `generateForUnits(parcel: ParcelRecord \| ParcelRecord[], units: number, maxStories: number, seed: number, stories?: number): GeneratedBuilding \| null` | pipeline-massing → timelapse-sim, map-view | DC |
 | T11 | `scenarios/fzp/parcels.bin` (codec `sfh-scenario/1`, in `src/lib/data/`; deflate inside the file, async decode). It holds **every** parcel: `id`, `labelPoint`, `cellId`, a `hostable` flag (eligible and able to host a new project), `envelope: Envelope` (FZP stories: Local Program height if `localProgram`, else base height; clamped to `MAX_STORIES`), base stories, the base-zoning density cap in units (null = none), `localProgram: boolean`, `existingUnits` (latest assessor roll), the T4a feature values (base and FZP variants of `potentialRatio` and `storiesGap`) with an imputation mask, `hostable_base` (hostable under the old zoning), `baseYield: Uint16[F]` (gross units at each fill level of the base envelope, density-capped), and `yield: Uint16[F]`, the gross units at each fill level of the envelope, replacement typologies only (no ADU outcomes), with no density cap under the Local Program. `FILL_LEVELS = [0.25, 0.5, 0.75, 0.9, 1]` (F = 5, tier-4 quantisation grid) is owned here, and stage-calibration imports it. Named in the manifest as `scenarios?: { fzp: { parcels: url; projects: url; calibration: url } }` (amends I12 and `ManifestBaseSchema`; optional, so older datasets load). Because the yield uses the generator, `src/lib/generator` and `src/lib/timelapse` join the dataset-version hash | scenario-data → timelapse-sim | DC |
@@ -100,7 +101,7 @@ type ScenarioRequest =
   | { type: 'initScenario'; rev: Rev; manifest: Manifest; scenario: 'fzp'; seed: number | null; horizon: Day } // T6
   | { type: 'reroll'; rev: Rev; seed: number | null } // T6
   | { type: 'parcelSummary'; reqId: number; parcelId: ParcelId; day: Day; projectId?: string }; // T6
-type TimelineResponse = { type: 'timeline'; rev: Rev; seed: number; render: TimelineUpdate; score: TimelineScore; bandRuns: number; complete: boolean }; // T6
+type TimelineResponse = { type: 'timeline'; rev: Rev; seed: number; render: TimelineUpdate; score: TimelineScore; bandRuns: number; bandRunsTotal: number; complete: boolean }; // T6
 type Massing = GeneratedBuilding | { footprint: [lng: number, lat: number][] }; // timelapse-render's packTimedCell input entry
 type ScenarioErrorCode = 'manifest-invalid' | 'scenario-missing' | 'scenario-invalid' | 'bad-request' | 'internal'; // T6
 type ScenarioResponse =
@@ -127,7 +128,20 @@ interface ScenarioHostDeps {
   bandRuns?: number;
 }
 
-function simulateNet(input: SimInput, seed: number, horizon: Day, months: Day[]): Int32Array; // completedNet per month
+// policy.ts (T9)
+type PolicyOp = (cal: Calibration, parcels: ScenarioParcels) => { cal: Calibration; parcels: ScenarioParcels };
+const baseZoning: PolicyOp;
+
+// simulate.ts
+interface Master { // a multi-phase row with `phases`; never drawn, never a Schedule
+  masterId: string; pathway: Pathway; entered: Partial<Record<Stage, Day>> /* Planning-side only */;
+  end: { kind: 'entitled'; day: Day } | { kind: 'exit'; stage: Stage; reason: ExitReason; day: Day } | { kind: 'open' };
+  phaseUnits: number[]; phaseFiled: (Day | null)[] /* permitFiled day of each phase, null = not by horizon */;
+}
+function simulateDetailed(input: SimInput, seed: number, horizon: Day): { schedules: Schedule[]; masters: Master[] };
+// simulate(...) === simulateDetailed(...).schedules
+function simulateNet(input: SimInput, seed: number, horizon: Day, months: Day[]):
+  { completedNet: Int32Array; completedNetNew: Int32Array; entitledNew: Int32Array }; // per month
 ```
 
 ### Interface concerns
@@ -150,7 +164,13 @@ function simulateNet(input: SimInput, seed: number, horizon: Day, months: Day[])
 | R1 | T12 determinism across engines | Late rulings: `src/lib/timelapse/math.ts` (fdlibm `exp`/`log`, owned by stage-calibration) is used by T12 and by timelapse-sim; `Math.exp`/`Math.log` never appear on a determinism path |
 | R2 | `sampleTransition` days contract | Late rulings / stage-calibration spec §4.2: days count from stage entry and are ≥ ⌈m·M⌉; ρ > 0, so every project eventually leaves. Placing a result in a past month at the snapshot day is timelapse-sim's job (§4.4.2) |
 
-No concerns remain open.
+**Still open (round 3):**
+
+- **R3. "Identical in-flight schedules" (T9) against the T4c envelope cap.**
+  - Under common random numbers, in-flight stage timing, exits and ends are identical in the FZP run and its `baseZoning` twin. Entity-keyed draws guarantee this, and a test checks it.
+  - Revision **units** can still differ, because T4c caps pipeline upsizing at the parcel's envelope, and `baseZoning` lowers that envelope (`yield` becomes `baseYield`).
+  - This does not affect `planEffect`, which counts simulated projects only. It does make `completedNetPipeline` differ slightly between twins. That is arguably real: FZP re-applications that upsize a project are a plan effect.
+  - Recommend: T9 says "identical stage timing and outcomes". Alternatively, rule that pipeline caps ignore PolicyOps.
 
 ## 3. Global constraints
 
@@ -241,8 +261,9 @@ It never auto-resyncs on an `error`, unlike `client.ts:209`. After a crash, fzp-
    - Any failure gives `scenario-invalid`, with the message `scenario <file>: <first problem>`.
    - `projects.asOf ≥ horizon` gives `bad-request`.
    - The run's `asOf` is `projects.asOf`. If `calibration.asOf` differs, the host logs one warning.
-6. **Precompute once per `initScenario`.** These values are keyed by `SimInput` identity and never held in module state:
-   - each `hostable` parcel's hazard `h = initiationHazard(calibration.initiation, fzpFeatures(i))` and its `log(1 − h)`, using `math.ts`;
+6. **Build two inputs.** `buildSimInput(files)` makes the FZP `SimInput`. `applyPolicies([baseZoning], fzpInput)` makes its twin (§4.4.8).
+7. **Precompute once per input.** Each input (FZP and twin) gets its own precompute. The values are keyed by `SimInput` identity and never held in module state:
+   - each hostable parcel's hazard `h = initiationHazard(calibration.initiation, features(i))` and its `log(1 − h)`, using `math.ts`;
    - each parcel's renormalised size distribution;
    - the parcels blocked by in-flight projects.
 
@@ -292,7 +313,7 @@ H = fmix32(H ^ ((purpose << 8) | stageIdx))
   - simulated project: `fnv1a32('p:' + parcelId)`;
   - pipeline project: `fnv1a32('j:' + projectId)`. T3 ids are prefixed and unique.
 - **`k`:** the initiation index on the parcel; 0 for pipeline projects.
-- **`purpose`:** `INIT=1`, `INIT_DAY=2`, `PATHWAY=3`, `PPA=4`, `SIZE=5`, `STAGE=6`, `REV=8`, `REV_RATIO=9`, `STAGE_REDRAW=16 + j` for `j = 1…7` (§4.4.2).
+- **`purpose`:** `INIT=1`, `INIT_DAY=2`, `PATHWAY=3`, `PPA=4`, `SIZE=5`, `STAGE=6`, `REV=8`, `REV_RATIO=9`, `PHASE_GAP=11` (§4.4.3a), `STAGE_REDRAW=16 + j` for `j = 1…7` (§4.4.2).
 - **`stageIdx`:** the `STAGE_ORDER` index of the stage being left (for `STAGE`) or entered (for `REV` and `REV_RATIO`). It is 0 otherwise.
 
 What this guarantees:
@@ -330,7 +351,7 @@ For a project in stage `s` (entered on day `e`, pathway `p`):
 
 #### 4.4.3 Pipeline projects (in-flight conditioning)
 
-Every InFlightProject (T3) is simulated, including `multiPhase` rows.
+Every InFlightProject (T3) is simulated. A row with `multiPhase && phases !== null` follows §4.4.3a. A multi-phase row without `phases` is simulated here as a single project, with footprint geometry (§4.8).
 
 - **Skipped projects.** `stage === 'complete'`, or `permitOnly` at `filed` or `entitled`, is skipped. The count is logged once.
 - **Starting state.**
@@ -340,6 +361,43 @@ Every InFlightProject (T3) is simulated, including `multiPhase` rows.
 - **Carried over.** `existingUnits` and `multiPhase` are copied from T3.
 
 OD-T5 applies: pipeline projects face the same tables and can die.
+
+#### 4.4.3a Multi-phase rows with `phases` (partner rulings, round 3)
+
+Each such row becomes a **master** plus one **phase sub-project** per entry of `phases`.
+
+**The master** is internal: it is a `Master`, never a Schedule. It is never packed, drawn, picked or scored as a building. It holds the row's shared Planning-side entitlement.
+
+- `entered` is the row's history for `preApplication`, `filed` and `entitled`.
+- **If the row is already entitled** (`history.entitled` set, or `stage` at or past `entitled`), then `end = { kind: 'entitled', day: E }`, where `E = history.entitled` if present, else the earliest permit-side history day, else `asOf`.
+- **If the row is not yet entitled**, the master runs the ordinary §4.4.2 steps on the row's pathway, with entity `'j:' + masterId`. It stops when it enters `entitled`, which sets `E`.
+  - If it exits first, every phase dies unborn: no phase schedules, and the units count as exited (§4.5).
+  - If it is still open at the horizon, nothing files.
+
+**Phase sub-projects.** For phase `i` (1-based, in array order, `of = phases.length`):
+
+- `projectId = '<masterId>:phase:<i>'`
+- `origin: 'pipeline'`, `multiPhase: true`, `phase: { masterId, index: i, of }`
+- the master's `pathway`
+- `parcelIds = phases[i−1].parcelIds`
+- `revisions[0] = { day: F_i, units: phases[i−1].units, stories: null }`
+- `existingUnits`: the T11 assessor units of its parcels. A parcel listed by several phases counts only in the first phase that lists it, so nothing is double-subtracted.
+
+**When a phase files** (`F_i`, its `permitFiled` day):
+
+- **Planned date.** If `plannedPermitFiled` is set and is after `asOf`: `F_i = max(plannedPermitFiled, E + 1)`.
+- **Otherwise,** with an overdue or absent plan date, the phase files one gap later: `F_i = base_i + 1 + g_i`.
+  - `g_i = phaseGap.days[floor(u × phaseGap.days.length)]`, with `u = draw(entity 'j:' + masterId, k = i, PHASE_GAP)`. That is a uniform pick from the empirical gap list (tier 2, stage-calibration).
+  - For `i = 1`: `base_1 = max(E, asOf)`. Using a successive-phase gap for the first phase's delay after entitlement is a tier-2 proxy. Its provenance is `phaseGap`, and it is stated in the sources dialog.
+  - For `i > 1`: `base_i = max(F_{i−1}, asOf)`, where `F_{i−1}` is the predecessor's computed filing day. A predecessor's later stall or death does not hold this phase back.
+- **Not filed in time.** A phase with `F_i > horizon` produces no Schedule. It is invisible, and its units stay in the master's bucket (§4.5).
+
+**From filing onwards.**
+
+- The phase's `entered` contains **only** `permitFiled = F_i` and later stages. Neither the master's entitlement nor any other stage before `permitFiled` is copied in, so its ghost and slot stage days start at filing (render requirement). The card shows the master's entitlement as context (§4.9).
+- From `F_i` the phase runs the ordinary §4.4.2 steps with entity `'j:' + projectId`, starting fresh (`monthsElapsed = 0`), so phases stall or die independently.
+- Revisions follow §4.4.5, using the pipeline rule on the phase's own parcels.
+- The risk set treats the master's parcels as blocked until the master ends. Each phase's parcels are then blocked until that phase ends, following the normal exit and completion rules. If the master dies, all of its parcels are at risk from that day.
 
 #### 4.4.4 Initiation of simulated projects
 
@@ -406,7 +464,23 @@ A revision can happen only on entering a later stage `n`. That means a future en
 
 **Inputs only.** `simulate` reads every behavioural number from `input.calibration` and `input.parcels` (T9). The rule constants (`localProgram` → `streamlined`, the risk rules) are the reconciliation's.
 
-**Fast path.** `simulateNet` is an allocation-light copy of the same logic, used for band runs. It must equal `score(simulate(...)).shown[i].completedNet` exactly.
+**Fast path.** `simulateNet` is an allocation-light copy of the same logic, used for band runs. Its `completedNet`, `completedNetNew` and `entitledNew` must equal those of `score(simulateDetailed(...))` exactly.
+
+#### 4.4.8 `baseZoning` twin and common random numbers (T9)
+
+`baseZoning(cal, parcels)` returns the calibration unchanged and a `ScenarioParcels` **view** over the same decoded columns. Nothing is copied. In the view:
+
+- `envelope.maxStories` is the base stories;
+- `yield` is `baseYield`;
+- `localProgram` is false, so new projects take the measured `pathwayForNew`;
+- `hostable` is `hostable_base`;
+- the `potentialRatio` and `storiesGap` features read their base variants.
+
+**Pairing.** Every FZP run, the shown seed's and each band seed's, is paired with `simulateDetailed(baseZoningInput, sameSeed, horizon)`.
+
+**Common random numbers.** The draws are keyed by entity, `k`, purpose and stage, never by position or envelope. So in-flight projects, multi-phase phases included, get identical stage timing, exits and ends in both runs (concern R3 covers revision units). A simulated project on a given parcel with a given `k` uses the same uniforms in both runs, so the difference isolates the plan. The difference comes from the hazard, the size draw and hostability.
+
+**What is drawn.** Only the FZP run is packed, drawn or used for cards. Twins produce score series only. Their Schedules are discarded after scoring.
 
 ### 4.5 Score (T8)
 
@@ -416,11 +490,34 @@ The score is built from schedules only, as prefix sums of per-month deltas. `idx
 
 | Series | How it is built |
 |---|---|
-| `completedNetPipeline`, `completedNetNew` | Split by origin. Add `+units_final` at `idx(complete)`. Add `−existingUnits` at `idx(construction)` when construction is after `asOf`. |
+| `completedNetPipeline`, `completedNetNew` | Split by origin; phase sub-projects count as pipeline. Add `+units_final` at `idx(complete)`. Add `−existingUnits` at `idx(construction)` when construction is after `asOf`. |
 | `completedNet` | The sum of the two series above. It excludes the baseline. |
-| `entitledNew` | Cumulative units, at the revision current on that day, of simulated projects entering `entitled` after `asOf`. `permitOnly` projects never count. |
-| `inProgress[s]` | Units of the revision current at `T_i`, for projects with `entered[s] < T_i` whose next event is on or after `T_i`. |
+| `entitledNew` | Cumulative **net** units of simulated projects entering `entitled` after `asOf`: the revision's units on that day minus `existingUnits`. It is net so that `planEffect.entitledNew` is net units (round 3). `permitOnly` projects never count. |
+| `inProgress[s]` | Units of the revision current at `T_i`, for Schedules with `entered[s] < T_i` whose next event is on or after `T_i`. |
 | `exitedUnits` | Cumulative units at exit, for exits after `asOf`. |
+
+**Multi-phase masters: no double count.** A master is not a Schedule, so it never counts as completed or demolished.
+
+- Its **unfiled** phases' units sit in `inProgress` at the master's current Planning-side stage, or at `entitled` once it is entitled.
+- At each phase's `F_i` those units leave the master's bucket and move to the phase's own Schedule. They are counted exactly once at any time.
+- If the master exits before entitlement, the sum of its phases' units goes to `exitedUnits` on the exit day.
+- Phases still unfiled at the horizon stay in `inProgress.entitled`.
+
+**`planEffect`** (shown seed): `entitledNew[i]` and `completedNetNew[i]` of the FZP run, minus the same series of its `baseZoning` twin. Both are cumulative net units.
+
+**`planEffectBand`**: nearest-rank p10, p50 and p90 per month (§4.6) of `planEffect.completedNetNew` over the paired band runs.
+
+Until the shown twin is done, `planEffect` is `[]`. Until any pair is done, `planEffectBand` is `[]`.
+
+**`phasing`** is computed once per dataset in `buildSimInput`, independent of seed, and reused on every timeline.
+
+| Field | Value |
+|---|---|
+| `masters` | number of `multiPhase` rows |
+| `enrichedMasters` | number of those rows with `phases !== null` |
+| `phasesScheduled` | phases with `source !== null` and `plannedPermitFiled > asOf`: a plan date from a published schedule that is used as-is |
+| `phasesEstimated` | all other phases: fallback sizes, or the `phaseGap` stagger, including overdue plan dates |
+| `unenriched` | the `phases === null` rows, as `{ projectId, label, units }`, sorted by `units` descending, then `projectId` |
 
 **Baseline.** T3 `rhnaCompletedNet`, passed through unchanged: `since` = 2022-06-30.
 
@@ -433,9 +530,9 @@ The score is built from schedules only, as prefix sums of per-month deltas. `idx
 
 | id | label | units | from | by | measure | tier and source |
 |---|---|---|---|---|---|---|
-| `planning-citywide` | "SF Planning: ~39,000 FZP-enabled net approvals within 5 years (citywide method)" | 39000 | `dayOf(2026,1,12)` | `dayOf(2031,1,12)` | `entitledNew` | 1. Land Use Committee deck 2025-11-17, slide 6 (verified by fetch): https://sfplanning.org/sites/default/files/documents/citywide/fzp_land_use_committee_presentation-111725.pdf |
-| `controller-high` | "Controller's Office of Economic Analysis: 14,646 FZP-enabled units by 2045, high growth (via press coverage)" | 14646 | `dayOf(2026,1,12)` | `dayOf(2045,12,31)` | `completedNetNew` | 1 via secondary: https://www.kqed.org/news/12062042 (verified by fetch, 2025-10-29) |
-| `controller-low` | "Controller's Office of Economic Analysis: 8,504 FZP-enabled units by 2045, conservative (via press coverage)" | 8504 | `dayOf(2026,1,12)` | `dayOf(2045,12,31)` | `completedNetNew` | as above |
+| `planning-citywide` | "SF Planning: ~39,000 net units approved because of the rezoning within 5 years (citywide method)" | 39000 | `dayOf(2026,1,12)` | `dayOf(2031,1,12)` | `planEffect.entitledNew` | 1. Land Use Committee deck 2025-11-17, slide 6 (verified by fetch): https://sfplanning.org/sites/default/files/documents/citywide/fzp_land_use_committee_presentation-111725.pdf |
+| `controller-high` | "Controller's Office of Economic Analysis: 14,646 net additional units from the rezoning by 2045, high growth (via press coverage)" | 14646 | `dayOf(2026,1,12)` | `dayOf(2045,12,31)` | `planEffect.completedNetNew` | 1 via secondary: https://www.kqed.org/news/12062042 (verified by fetch, 2025-10-29) |
+| `controller-low` | "Controller's Office of Economic Analysis: 8,504 net additional units from the rezoning by 2045, conservative (via press coverage)" | 8504 | `dayOf(2026,1,12)` | `dayOf(2045,12,31)` | `planEffect.completedNetNew` | as above |
 
 Notes on the references:
 
@@ -444,11 +541,13 @@ Notes on the references:
 
 ### 4.6 Band runs, seeds and the representative seed
 
-**N = 101 band runs.** This is tier 4, a numerical-method choice, not evidence. It changes no expected value. The reasons:
+**N = 101 band runs** (`bandRunsTotal`). This is tier 4, a numerical-method choice, not evidence. It changes no expected value. The reasons:
 
 - It is odd, so the median is a single run.
 - The rank SE at p10 is about `√(0.09/101) ≈ 0.03`.
-- 101 runs × 15 ms is about 1.5 s, which fits the 3 s budget.
+- 101 FZP runs × 15 ms is about 1.5 s, which fits the 3 s budget when `seed` is null.
+
+**One band run is a pair**: the FZP run plus its `baseZoning` twin on the same seed. `bandRuns` counts completed pairs. The twins roughly double the background work, to about 3 s in total, and are progressive (§4.7).
 
 **Seeds and quantiles.**
 
@@ -460,7 +559,7 @@ Notes on the references:
 - Sort the runs by final-month `completedNet`, ties broken by lower `i`, and take rank 50.
 - Its final value equals the final p50. At earlier months it need not, and that is not a bug.
 
-**Band reuse.** The band depends only on the dataset, so `reroll` reuses it. The shown run is never added to the band.
+**Band reuse.** Both bands depend only on the dataset, so `reroll` reuses them. The shown run and its twin are never added to a band. A `reroll` recomputes only the shown seed's twin, and therefore `planEffect`.
 
 ### 4.7 Timeline messages and timings
 
@@ -468,9 +567,9 @@ Notes on the references:
 
 | Trigger | What happens |
 |---|---|
-| `seed: null` | Run the band in slices of ≤ 50 ms, separated by `setTimeout(0)`; `prefetch` and `parcelSummary` are served between slices. Then simulate the representative seed and post revision 0. |
-| A seed is given (the common case: the seed is in the URL) | Post the shown run's revision 0 first. Its `band` holds the quantiles folded so far, or `[]` before any. After that, post a band-only update after every 16 runs, and after the last run. |
-| `reroll(seed)` | Cancel the old seed's geometry work, then post revision 0 under the reroll's `rev`. |
+| `seed: null` | Run the 101 **FZP** band runs in slices of ≤ 50 ms, separated by `setTimeout(0)`; `prefetch` and `parcelSummary` are served between slices. Then simulate the representative seed and post revision 0, with `band` complete, `planEffect` `[]` and `bandRuns` 0. Next comes the shown seed's twin, as a band-only update carrying `planEffect`. Then the band twins, as band-only updates every 16 pairs and after the last. |
+| A seed is given (the common case: the seed is in the URL) | Post the shown FZP run's revision 0 first. Its `band` holds the quantiles folded so far, or `[]` before any. Then post the shown twin as a band-only update with `planEffect`. Then run the band pairs, FZP and twin per seed, posting a band-only update every 16 pairs and after the last. |
+| `reroll(seed)` | Cancel the old seed's geometry and twin work. Post revision 0 under the reroll's `rev`, with `planEffect` `[]`, followed by the twin's band-only update. |
 | `reroll` before loading has finished | `bad-request`, with the message `not initialised`. |
 
 **Revisions** count up per `(rev, seed)`.
@@ -478,11 +577,9 @@ Notes on the references:
 - **Revision 0 is the snapshot.** It carries the **complete** `demolish` list for the shown run (T7: it needs no geometry), plus every ready anchored cell packed within 2.5 s of the request.
 - **Revisions n > 0** add or fully replace the cells they list. They carry `demolish: []` and `removedCells: []`. A newly ready chunk produces one message per 50 ms packing slice.
 - **A band-only update** is a `timeline` whose `render` is `{ revision: last + 1, cells: [], removedCells: [], demolish: [] }` (T6).
-- **`bandRuns`** is on every timeline. It counts the band runs folded so far:
-  - with `seed: null`, it is N, because revision 0 waits for the band;
-  - on a seeded init, it starts below N.
-
-  fzp-mode labels the band provisional while `bandRuns < N`.
+- **`bandRuns` and `bandRunsTotal`** are on every timeline. `bandRunsTotal` is N = 101. `bandRuns` counts completed pairs, from 0 to N.
+  - With `seed: null`, the FZP `band` is already complete at revision 0, while `bandRuns` is still 0.
+  - fzp-mode labels the bands provisional while `bandRuns < bandRunsTotal`.
 - **`complete`** is true when every ready anchored cell is packed (T6). It says nothing about the band.
 - **Score.** Every message carries the seed's full `TimelineScore`: 291 months, under 64 KB.
 
@@ -492,9 +589,10 @@ Notes on the references:
 
 - **Simulated:** `{ ...generate(rec, { maxStories: stories_k }, fnv1a32(rec.id), 'max'), source: 'scenario' }`. This is the editor's seed rule (`host.ts:147`). Memo key: `s|<parcelId>|<stories>`.
 - **Pipeline:** `generateForUnits(records sorted by id, units_k, maxStories, fnv1a32(projectId), stories_k ?? undefined)`, stamped `source: 'pipeline'`. `maxStories` is `stories_k` when known, otherwise `MAX_STORIES` (80, `constants.ts:27`), per the reconciliation's Massing ruling. Memo key: `p|<projectId>|<units>|<stories ?? '-'>`.
-- **Multi-phase** projects get no generator call. Every revision gets the footprint entry described below.
+- **Phase sub-projects** (§4.4.3a) use the pipeline rule on their own parcels: `generateForUnits(phase records, units_k, MAX_STORIES, fnv1a32(phaseProjectId), undefined)`. Each phase's cell anchor is its own smallest `ParcelId`. Masters are never massed.
+- **Multi-phase rows without `phases`** get no generator call. Every revision gets the footprint entry described below.
 
-**Footprint entries** (reconciliation round 2). When a massing returns `null` or throws, that revision becomes a footprint entry `{ footprint }`. Multi-phase rows take the same path.
+**Footprint entries** (reconciliation round 2). When a massing returns `null` or throws, that revision becomes a footprint entry `{ footprint }`. Unphased multi-phase rows take the same path.
 
 - The ring comes from the project's footprint parcel: the largest `areaM2`, ties to the smallest id (§4.2).
 - It is that parcel's outer ring, `polygon[0]` in local metres, converted to lng/lat with `localFrame(rec.labelPoint).to(x, y)` (`generator/geo.ts:13-37`; equivalently `toLngLat`, `geo.ts:39`).
@@ -541,15 +639,16 @@ Selection, per T6:
 
 | Field | Value |
 |---|---|
-| `label` | **Pipeline:** the T3 `label`, else `Block <B>, Lot <L>`. **Simulated:** always `Block <B>, Lot <L>`. `B` is the first 4 characters of the anchor, plus a following letter if present; `L` is the rest. `0026T001A` → "Block 0026T, Lot 001A"; `3512008` → "Block 3512, Lot 008". These formats were verified in `fixture-0` and against live DataSF `mapblklot`. |
+| `label` | **Pipeline:** the T3 `label`, else `Block <B>, Lot <L>`. A phase uses its master row's label, so fzp-mode can render "Phase 3 of 12, Candlestick Point". **Simulated:** always `Block <B>, Lot <L>`. `B` is the first 4 characters of the anchor, plus a following letter if present; `L` is the rest. `0026T001A` → "Block 0026T, Lot 001A"; `3512008` → "Block 3512, Lot 008". These formats were verified in `fixture-0` and against live DataSF `mapblklot`. |
 | `units`, `stories` | From the latest revision ≤ `day`. `stories` falls back to the building's stories, else `null`. |
 | `existingUnits` | `schedule.existingUnits`. For pipeline projects this is T3's assessor value for the project. For simulated projects it is the parcel's T11 value. Both are the assessor sum over the project's parcels. |
 | `storiesTier` | For pipeline projects, T3 `storiesTier` when `stories` comes from the record. It is `null` when `stories` came from the building or is unknown, and always `null` for simulated projects. |
-| `massing` | Follows reconciliation round 2, using pipeline-massing's helpers: **multi-phase, or a footprint entry** gives `none`; **pipeline** gives `massingApproximate(b) ? 'approximate' : 'matched'`; **simulated** gives `abs(b.units − revision.units) > unitsTolerance(revision.units) ? 'approximate' : 'matched'`. |
-| `stages` | only the stages entered on or before `day`. `actual` is true only for a pipeline history day ≤ `asOf`. |
+| `massing` | Follows reconciliation round 2, using pipeline-massing's helpers: **an unphased multi-phase row, or a footprint entry**, gives `none`; a phase uses the pipeline rule; **pipeline** gives `massingApproximate(b) ? 'approximate' : 'matched'`; **simulated** gives `abs(b.units − revision.units) > unitsTolerance(revision.units) ? 'approximate' : 'matched'`. |
+| `stages` | Only the stages entered on or before `day`. `actual` is true only for a pipeline history day ≤ `asOf`. For a **phase**, the list starts with the master's Planning-side stages (`preApplication`, `filed`, `entitled`, each ≤ `day`, with `actual` per the master's history), followed by the phase's own stages from `permitFiled`. fzp-mode renders entries before `permitFiled` as master context, e.g. "Master plan entitled 2010". They never appear in the phase's Schedule or slot stage days (§4.4.3a). |
 | `revisions` | only those on or before `day` |
 | `end` | `null` when the end falls after `day` |
-| `multiPhase` | from the schedule |
+| `multiPhase`, `phase` | from the schedule (`phase` is `null` except for phase sub-projects) |
+| `localProgram` | `true` when the project is simulated and its parcel has T11 `localProgram` in the FZP run. Otherwise `false`. |
 | `sources` | Pipeline: T3 `sources`, passed through with `key`. Simulated: `[]`. |
 
 ### 4.10 Error states
@@ -580,12 +679,23 @@ These are tier-4 engineering budgets, enforced by `scenario.bench.spec.ts`.
 |---|---|
 | `simulateNet`, median per run | ≤ 15 ms |
 | `simulate` + `score` | ≤ 80 ms |
-| `initScenario(null)`: from fetched files to the first timeline, with no chunks ready | ≤ 3 s |
-| `reroll` → revision 0 (warm or cold, including the 2.5 s geometry cap) | ≤ 3 s |
-| Longest worker macrotask during band or geometry work | ≤ 50 ms |
+| `initScenario(null)`: from fetched files to the first timeline (the shown FZP run), with no chunks ready | ≤ 3 s |
+| `reroll` → revision 0 of the shown FZP run (warm or cold, including the 2.5 s geometry cap) | ≤ 3 s |
+| Shown twin → `planEffect` update, after revision 0 | ≤ 200 ms |
+| All 101 pairs complete, after revision 0 (progressive, not gating) | ≤ 4 s |
+| Longest worker macrotask during band, twin or geometry work | ≤ 50 ms |
 | Worker heap growth with all 256 cells loaded, after 3 rerolls | ≤ 300 MB |
 
-The heap is measured as the `process.memoryUsage().heapUsed` delta. Time scrubbing never messages the worker.
+The 3 s budget covers the shown FZP run only. The twin and both bands fill in progressively (round 3). Heap is measured as the `process.memoryUsage().heapUsed` delta.
+
+**Memory impact of the twin.** It stays within the unchanged 300 MB budget:
+
+- The `baseZoning` view shares the decoded T11 columns.
+- The twin's own precompute (hazard, `log(1 − h)`, size distributions) adds about 5–8 MB for 150k parcels (inferred: 2 × Float64 plus F × Float32 per parcel).
+- Band state grows by one `Int32Array(291)` per pair for `planEffect.completedNetNew`, about 120 KB.
+- Twin Schedules are transient and are discarded after scoring.
+
+Time scrubbing never messages the worker.
 
 ### 4.12 Numbers this spec introduces
 
@@ -599,20 +709,19 @@ The heap is measured as the `process.memoryUsage().heapUsed` delta. Time scrubbi
 | Memo cap | 60,000 | 4 (engineering) | `host.ts:50-56` |
 | Slice; revision-0 geometry cap; band post cadence | 50 ms; 2.5 s; 16 runs | 4 (engineering) | §4.7 |
 | In-flight redraw attempts | 8 | 4 (numerical) | §4.4.2 |
+| First-phase delay after entitlement | one `phaseGap` draw | 2 (proxy; `phaseGap` provenance) | §4.4.3a |
 | Budgets | see §4.11 | 4 (engineering) | §4.11 |
 
 This spec introduces no tier-3 or tier-4 model rates. Every behavioural rate comes from `calibration.json`, through T12.
 
 ## 5. Seams
 
-- **T9 policy levers.** Three things keep the seam open:
-  - `simulate` takes all behaviour from `SimInput` (§4.4.7);
-  - precomputation is keyed by `SimInput` identity;
-  - the host builds `SimInput` in one function, `buildSimInput(files)`, which is the single place a future `PolicyOp[]` would apply.
-
-  No `PolicyOp` type is added. A test shows that calibration edits alone change outcomes: zeroed exit tables give no exits, and a zero hazard gives no simulated projects.
+- **T9 policy levers.** This package now ships the `PolicyOp` type and exactly one op, `baseZoning` (§4.4.8). It is applied by `applyPolicies(ops, input)`, the single place future levers would plug in.
+  - `simulate` still takes all behaviour from `SimInput`, and precomputation is keyed by `SimInput` identity.
+  - A test shows that calibration edits alone change outcomes: zeroed exit tables give no exits, and a zero hazard gives no simulated projects.
+  - No user-facing levers are added.
 - **Addenda sub-stages.** `nextStage` and the score iterate `STAGE_ORDER` generically. Nothing more.
-- **DA phasing.** `multiPhase` rows run through the ordinary tables and render footprint-only. Nothing more.
+- **DA phasing.** This is now implemented for enriched rows (§4.4.3a). Unenriched rows keep the single-project footprint path, and `phasing.unenriched` discloses them.
 - **Renderings.** All massing goes through one function, `massingFor(schedule, k, records)`, which a later rendering source can replace. Nothing more.
 
 ## 6. Testing
@@ -622,7 +731,13 @@ Every test calls `expect`.
 **Fixtures** (`src/lib/sim/scenario/fixtures/`):
 
 - `mini-parcels.ts`: 60 parcels, encoded with the T11 encoder.
-- `mini-projects.ts`: 12 projects. They cover every stage, multi-parcel projects, a missing current-stage day, `multiPhase`, a null `label`, null stories, and one invalid project.
+- `mini-projects.ts`: 14 projects. They cover:
+  - every stage, multi-parcel projects and a missing current-stage day;
+  - an unphased `multiPhase` row;
+  - an entitled master with 3 `phases` (one planned date after `asOf`, one overdue, one null);
+  - an unentitled master with 2 phases;
+  - a null `label`, null stories, and one invalid project.
+- `mini-calibration.json` carries a `phaseGap` list.
 - `mini-calibration.json`: built so that it passes `parseCalibration`.
 - `synth-city.ts`: for the bench.
 
@@ -661,38 +776,56 @@ Every test calls `expect`.
   - **In-flight cohort:** the same check for projects `m` months in, against the conditional incidence.
 - **`simulate.property.spec.ts`:**
   - Adding or removing unrelated parcels or projects, or shuffling input order, leaves the other schedules identical.
-  - `simulateNet` equals `score(simulate)` for 50 seeds.
+  - `simulateNet` equals `score(simulateDetailed)` for 50 seeds, on all three series, for both FZP and `baseZoning` inputs.
+- **`policy.spec.ts`:**
+  - the `baseZoning` view swaps envelope, `yield`, `localProgram`, `hostable` and the feature variants, and copies nothing (the same typed-array buffers);
+  - the calibration is unchanged;
+  - **common random numbers:** for 20 seeds, every in-flight and phase Schedule has identical `entered` and `end` in the FZP run and its twin;
+  - with base columns made equal to the FZP columns, `planEffect` is identically 0.
+- **`multiphase.spec.ts`:**
+  - a master is never a Schedule;
+  - phase ids are `<masterId>:phase:<i>`, and each phase's `entered` starts at `permitFiled`, with nothing earlier;
+  - `F_i` follows the plan date, the overdue-date rule, the null-date rule and the first-phase rule, using `PHASE_GAP` draws keyed by master and index;
+  - an unentitled master that exits gives no phases, and its units go to `exitedUnits`;
+  - phases stall and die independently;
+  - parcels shared between phases subtract existing units once;
+  - an unphased row stays single-project.
 - **`initiation.property.spec.ts`:** first-initiation months follow the geometric distribution within 4·SE.
 
 **Score, band and card**
 
 - **`score.spec.ts`:**
-  - Hand-computed deltas for every series, including `entitledNew`.
+  - Hand-computed deltas for every series, including net `entitledNew`, `planEffect`, the master bucket's `inProgress` and `exitedUnits`, with no double count between master and phases.
+  - `phasing` counts and the `unenriched` order on the mini fixture, identical for every seed.
   - 291 months, from 2026-10-01 to 2050-12-01.
   - Each value is the end-of-month state: an event on 2026-10-20 counts at `i = 0`; one on 2026-11-01 counts at `i = 1`; one on 2050-12-31 counts in the last entry.
   - No subtraction for construction before `asOf`.
   - Target fractions include the baseline; deadline 2031-01-31.
   - The references match §4.5 exactly.
-- **`band.spec.ts`:** nearest-rank quantiles; the rank-50 representative with its tie-break; partial bands.
+- **`band.spec.ts`:** nearest-rank quantiles for `band` and `planEffectBand`; the rank-50 representative with its tie-break, using FZP runs only; partial bands; `bandRuns` counts pairs.
 - **`card.spec.ts`:**
   - labels for `0026T001A`, `2999A019` and `3512008`, and the pipeline label;
   - `projectId` honoured when visible, and falling back to the day rule when not;
   - the day-based choice, including the `DYING_DAYS` cut;
   - filtering of stages, revisions and `end`;
   - `existingUnits`, `storiesTier` and `sources[].key`;
-  - the `massing` rule: pipeline via `massingApproximate`; simulated via `unitsTolerance`; footprint and multi-phase give `none`.
+  - the `massing` rule: pipeline and phases via `massingApproximate`; simulated via `unitsTolerance`; footprint and unphased multi-phase give `none`;
+  - `localProgram`; `phase`; a phase card's `stages` starting with the master's Planning-side entries, followed by the phase's own.
 - **`footprint.spec.ts`:**
   - a null or throwing massing gives a footprint entry whose ring is the largest-area parcel's `polygon[0]` through `localFrame`;
-  - multi-phase rows take the same path;
+  - unphased multi-phase rows take the same path, and phases are massed with `generateForUnits` on their own parcels;
   - the entries stay index-aligned with `revisions`.
 
 **Host, router and client**
 
 - **`scenario-host.spec.ts`** (a harness modelled on `src/lib/sim/test/harness.ts`, with a fake clock):
   - `ready`, then the first timeline.
-  - A null seed gives `bandRuns = N` on revision 0. A seeded init streams band-only updates with the exact T6 `render` shape and a rising `bandRuns`.
+  - A null seed gives a complete `band`, `planEffect` `[]` and `bandRuns` 0 on revision 0. Then the twin update fills `planEffect`, and pair updates raise `bandRuns` to `bandRunsTotal` = 101.
+  - A seeded init streams band-only updates with the exact T6 `render` shape.
+  - Every timeline carries `bandRunsTotal`.
   - `complete` tracks packing only.
-  - A seeded init streams the band.
+  - A `reroll` recomputes only the shown twin.
+  - Twin Schedules are never packed.
   - `reroll(null)` returns the representative seed; `reroll` reuses the band.
   - Stale revs are handled.
   - Revision 0 carries the full `demolish` list; later revisions carry none.
@@ -744,30 +877,43 @@ The existing `/` and `/p/:id` suites pass unchanged. The axe gate on `/fzp` belo
 3. **In-flight projects.** They keep their history. Their first future event falls after `asOf`.
 4. **Revisions.** They occur only on later stage entries before `construction`. Caps hold. Units are ≥ 1.
 5. **Net units.** Existing units are subtracted at a construction start after `asOf`; final units are added at completion. `completedNet = completedNetPipeline + completedNetNew`.
-6. **Score shape and contents.** 291 months, from asOf's month to the horizon's month, each holding the end-of-month state; deadline 2031-01-31; target fractions include the baseline. `references` and `entitledNew` are as in §4.5.
-7. **Band.** N = 101. With a null seed, the shown run's final `completedNet` equals the final p50.
+6. **Score shape and contents.**
+   - 291 months, from asOf's month to the horizon's month, each holding the end-of-month state.
+   - Deadline 2031-01-31; target fractions include the baseline.
+   - `references`, net `entitledNew`, `planEffect`, `planEffectBand` and `phasing` are as in §4.5.
+   - References compare with `planEffect.entitledNew` (Planning) and `planEffect.completedNetNew` (Controller), both in net units.
+7. **Band.** N = 101 pairs. With a null seed, the shown run's final `completedNet` equals the final FZP p50.
 8. **Timeline delivery.**
    - Revision 0 carries the complete `demolish` list.
    - `complete` means the loaded cells are packed.
-   - `bandRuns` counts the band runs folded so far.
+   - `bandRuns` counts completed pairs; `bandRunsTotal` = 101 on every timeline.
+   - The 3 s budget covers only the shown FZP run; the twin and bands follow progressively.
    - Band-only updates have the T6 shape.
    - A reroll posts revision 0 within 3 s (bench).
 9. **Geometry.**
    - Built only for anchors in ready cells.
    - Each content key is generated once while memoised.
    - `source` is stamped `scenario` or `pipeline`.
-   - Multi-phase projects, and every failed massing, get footprint entries, so every revision has an entry.
+   - Unphased multi-phase rows, and every failed massing, get footprint entries, so every revision has an entry.
+   - Phases are massed on their own parcels.
+   - Masters and twins are never packed.
 10. **Card.** It follows T6 exactly:
     - `projectId` first, then the `day` rule;
     - no future stages, and `end` null after `day`;
-    - labels, `existingUnits`, `storiesTier` and `sources[].key`;
-    - the round-2 `massing` rule.
+    - labels, `existingUnits`, `storiesTier`, `phase`, `localProgram` and `sources[].key`;
+    - the round-2 `massing` rule;
+    - master entitlement shown as context on phase cards only.
 11. **Editor unchanged.** `host.ts`, `display.ts` and `client.ts` have no diff, and their tests pass untouched.
 12. **Errors.** Every §4.10 condition produces its stated response, and the worker remains usable.
 13. **Budgets.** The §4.11 budgets hold.
 14. **Step-0 types.** `src/lib/sim/scenario/types.ts` lands first, and `protocol.ts` re-exports it.
 15. **Client.** `ScenarioClient`, including `prefetch` and `retryChunks`, ships in `src/lib/sim/scenario-client.ts`.
 16. **Redraw rule.** An in-flight first event is never on or before `asOf`. It is redrawn up to 8 times, then placed at `asOf + 1`.
+17. **Plan-effect twin.** Every FZP run is paired with a `baseZoning` run on the same seed. In-flight and phase stage timing and ends are identical across each pair.
+18. **Multi-phase.**
+    - A row with `phases` becomes an unscored master plus phase Schedules.
+    - Each phase's `entered` starts at `permitFiled`.
+    - Phase units are counted once, through the master bucket and then the phase.
 
 ## 8. Open questions
 

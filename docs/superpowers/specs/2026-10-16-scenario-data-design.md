@@ -85,7 +85,8 @@ export interface ScenarioParcels {
   existingUnits: Uint16Array; existingStories: Uint8Array; lotAreaM2: Uint32Array;
   yearBuilt: Uint16Array; improvementShare: Float32Array; rentControlLikely: Uint8Array;
   landUseClass: Uint8Array;         // index into LAND_USE_CLASSES
-  baseYield: Uint16Array;           // gross units at full base envelope (base density cap applied)
+  hostableBase: Uint8Array;         // 0/1: T11 hostable_base (eligible, baseStories ≥ 1, baseYield[F−1] > 0)
+  baseYield: Uint16Array;           // count × F: gross units at each fill level of the base envelope, density-capped
   yield: Uint16Array;               // count × F, row-major: yield[i * F + k]
   potentialRatio: { fzp: Float32Array; base: Float32Array };   // derived at decode
   storiesGap: { fzp: Int16Array; base: Int16Array };            // derived at decode
@@ -224,7 +225,7 @@ Output: `{ kind: 'none' } | { kind: 'height'; baseFt: number; lpFt: number | nul
   - the pre-2022-11-27 RH per-area alternatives (whether `⌊A/N⌋` predates the exception: I);
   - the NC phrase "or the density permitted in the nearest R District, whichever is greater". Its R-district term is not modelled, so NC caps may be understated (I);
   - §751–§764 and the 32 unchecked named NCDs. These default to null, following the §729/§750 pattern, and are labelled unverified.
-- The AC still requires checking every entry against the official Code (amlegal or sfplanning.org) before merge.
+- Partner ruling round 3: the mirror check is acceptable now. Re-verification of every entry against the official Code (amlegal or sfplanning.org) is an acceptance criterion at implementation (AC 10). Unverified districts default to no cap and are listed above.
 - Tier 1. The table lives in `pipeline/lib/density-caps.ts`, one cited section and URL per entry.
 - Corner-lot six-unit allowances are not modelled (deferred, as with corner heights).
 
@@ -309,7 +310,8 @@ Computed in the pipeline with the shared function `scenarioYield(rec, stories, c
 
 Per parcel, with `rec' = scenarioRecord(rec, latest)`:
 - `yield[k] = scenarioYield(rec', fillStories(FILL_LEVELS[k], envelopeStories), localProgram ? null : cap(today))`.
-- `baseYield = scenarioYield(rec', baseStories, cap(today))`.
+- `baseYield[k] = scenarioYield(rec', fillStories(FILL_LEVELS[k], baseStories), cap(today))` (T11, round 3). This serves the T9 `baseZoning` twin run. `baseYield[F−1]` is the full-base-envelope yield behind `potentialRatio.base`.
+- `hostable_base = eligible ∧ baseStories ≥ 1 ∧ baseYield[F−1] > 0`. It uses the same rule as the panel's `hostable_base`, evaluated on the latest roll year.
 - Distinct story counts are generated once per parcel.
 - Panel `base_yield` uses `scenarioRecord(rec, agg_y)` and `cap(lien_day)`. It is memoised on (parcel, existingUnits, existingFloorAreaM2, existingStories).
 - Values > 65,535 fail V17. Yields may be non-monotone in k, because typology steps change with stories (`select.ts:7`). They are stored raw.
@@ -341,15 +343,15 @@ R assigns two edits here:
     envelopeStories u8[N]  baseStories u8[N]  flags u8[N]  imputed u8[N]
     existingUnits u16[N]   existingStories u8[N]  lotAreaM2 u32[N]  yearBuilt u16[N]
     improvementShare u8[N] (round(share × 200); /200 on decode)  landUseClass u8[N]
-    baseCap u16[N] (0xFFFF = null)  baseYield u16[N]  yield u16[N×F]
+    baseCap u16[N] (0xFFFF = null)  baseYield u16[N×F]  yield u16[N×F]
 ```
 
-- `flags`: bit 0 localProgram, bit 1 rentControlLikely, bit 2 hostable, bit 3 split.
+- `flags`: bit 0 localProgram, bit 1 rentControlLikely, bit 2 hostable, bit 3 split, bit 4 hostableBase.
 - Ids are front-coded against the previous row in file order (`idPrefix` = shared prefix length, ≤ 255).
 - Rows are sorted by `cellId` (the chunk's cell, `pipeline/lib/rings.ts` `cellIdFor`), then by id. That is the same comparator as chunks (`parcel-chunk.ts:32`).
 - **Every parcel in the chunks has a row**, with `count` = V2's `parcels.emitted`. Non-hostable rows carry zeros, so the worker can map any T3 `parcelIds` to a cell and a label point (see Interface concerns).
 - `decodeScenarioPayload` derives:
-  - `potentialRatio.fzp = yield[F−1] / max(existingUnits, 1)` and `.base = baseYield / max(existingUnits, 1)`;
+  - `potentialRatio.fzp = yield[F−1] / max(existingUnits, 1)` and `.base = baseYield[F−1] / max(existingUnits, 1)`;
   - `storiesGap.fzp = envelopeStories − existingStories` and `.base = baseStories − existingStories`.
   - `featureValue` returns these, or the stored column, or the class index for `landUseClass`.
 - Errors throw `ScenarioFormatError` with a message:
@@ -359,7 +361,7 @@ R assigns two edits here:
   - an index out of a dictionary's range;
   - `fillLevels` not ascending or not ending at 1.
 
-**Size budget** (engineering, derived from the 5 MB first-paint rule; not a simulation parameter): payload ≈ 38 B/parcel ≈ 5.9 MB, compressed ≈ 2–2.5 MB (I). V19 fails above 3.0 MB compressed and warns above 2.5 MB.
+**Size budget** (engineering, derived from the 5 MB first-paint rule; not a simulation parameter): payload ≈ 48 B/parcel ≈ 7.4 MB, compressed ≈ 2.3–2.8 MB (I). The round-3 `baseYield[F]` adds 8 B/parcel raw over the single value. It compresses well, because it equals `yield` on every non-Local-Program parcel and differs only on Local Program parcels. V19 fails above 3.5 MB compressed and warns above 3.0 MB. Those are the earlier 3.0/2.5 MB thresholds raised by the expected ≈ 0.5 MB, still inside the 5 MB first-paint rule together with the basemap z12 budget (1.2 MB).
 
 **Determinism.** The payload is byte-deterministic (V12-style re-encode check). The deflate bytes may differ across zlib builds and CPUs (I). The golden therefore compares the decoded payload, as `buildings.pmtiles` is handled today (`docs/dev/pipeline.md`, Fixture).
 
@@ -393,9 +395,9 @@ Report counts (`scenario.*`):
 |---|---|---|
 | V15 | `parcels.bin` inflates and decodes. `format`, `datasetVersion` and `scenario` match. `count` = `parcels.emitted`. Ids are unique, each is in exactly one chunk, and its `cell` equals that chunk's `cellId`. Re-encoding the decoded payload is byte-identical. | ✓ |
 | V16 | `height.parse_fail = 0`. ≥ `heightJoinMin` (live 0.99, fixture 1) of `eligible` parcels have a district. | (I) |
-| V17 | `fillLevels` deep-equal `FILL_LEVELS`. No clamped `u16`. `hostable ⇒ yield[F−1] > 0`. ≥ 50% of eligible parcels are hostable. **Warn** (not fail) if `yield.fzp_net_total` lies outside [0.25×, 4×] of Planning's ~780,000 net added capacity (tier 1 cross-check, literature §1 [A]). | (I) |
+| V17 | `fillLevels` deep-equal `FILL_LEVELS`. No clamped `u16`. `hostable ⇔ (eligible ∧ envelopeStories ≥ 1 ∧ yield[F−1] > 0)`. `hostableBase ⇔ (eligible ∧ baseStories ≥ 1 ∧ baseYield[F−1] > 0)`. On non-Local-Program parcels `baseYield = yield`. ≥ 50% of eligible parcels are hostable. **Warn** (not fail) if `yield.fzp_net_total` lies outside [0.25×, 4×] of Planning's ~780,000 net added capacity (tier 1 cross-check, literature §1 [A]). | (I) |
 | V18 | The panel covers every roll year in the lock. In the latest year ≥ `rollJoinMin` (live 0.97, fixture 1) of eligible parcels have a roll row. `scenario.units.total` lies in `scenarioUnitsRange`: live [0.90, 1.02] × 413,208, fixture exact. 413,208 is the pipeline's V1 source, SF housing stock at end-2022 from the 2023 Housing Inventory, Table 1 (`pipeline/steps/build.ts:43` `HOUSING_STOCK.end2022`, `pipeline/config.ts:71` `unitsTarget`; data-pipeline spec §4.9 V1). The panel's latest-year features equal T11's for every parcel. | roll Σ 389,527 ≈ 0.943 × (V) |
-| V19 | `bytes.file` ≤ `scenarioMaxBytes` (3.0e6). Warn > 2.5e6. | ≈ 2–2.5 MB (I) |
+| V19 | `bytes.file` ≤ `scenarioMaxBytes` (3.5e6). Warn > 3.0e6. | ≈ 2.3–2.8 MB (I) |
 
 `InvariantProfile` (`pipeline/config.ts:44`) gains `heightJoinMin`, `rollJoinMin`, `scenarioUnitsRange` and `scenarioMaxBytes`. `docs/dev/pipeline.md` (Invariants, Fixture, Where things land) and the CLAUDE.md pipeline row are updated.
 
@@ -451,7 +453,7 @@ The three new fixture lock entries in `pipeline/test/fixtures/mini/sources.lock.
 
 ## 5. Seams
 
-- **Policy levers (T9).** `ScenarioParcels` is plain typed arrays, copyable by a `PolicyOp`. `baseStories`, `localProgram`, `district` and `baseYield` are shipped so a lever can switch the program off or change eligibility. A lever that changes an envelope recomputes yields with the shared `scenarioYield` and I14's seed. Nothing more is built now.
+- **Policy levers (T9).** `ScenarioParcels` is plain typed arrays, copyable by a `PolicyOp`. `baseStories`, `baseCap`, `localProgram`, `district`, `hostableBase` and `baseYield[F]` are shipped. The first PolicyOp, T9 `baseZoning` (the old-zoning twin, round 3), therefore needs no runtime generation: it swaps `envelopeStories` → `baseStories`, `yield` → `baseYield` and `hostable` → `hostableBase`, and evaluates `potentialRatio`/`storiesGap` with the base variants. A lever that changes an envelope recomputes yields with the shared `scenarioYield` and I14's seed. Nothing more is built now.
 - **Addenda sub-stages.** None here.
 - **DA phasing.** DA areas resolve to `kind: 'none'` with their district string kept in `districts`, so a later DA-phasing source can find its parcels. No other change.
 - **Renderings.** None.
@@ -493,7 +495,7 @@ Vitest client project:
 - `normalise.test.ts` addition: the three new tables' column types; bad years become NULL.
 - `invariants.test.ts` additions: V15–V19 each fail on a crafted out-dir (wrong count, parse failure, clamped yield, missing roll year, oversize file) and pass on mini.
 - `version.test.ts` addition: `codeTreeHash` changes when a file under `src/lib/generator` or `src/lib/timelapse` changes.
-- `golden.test.ts`: decoded payload equals `parcels.decoded.json` and is identical across two builds; known answers of §4.11.
+- `golden.test.ts`: decoded payload equals `parcels.decoded.json` (which includes `baseYield[F]` and `hostableBase`) and is identical across two builds; known answers of §4.11. Lot 1 (Local Program, base 4 / envelope 6) has `baseYield` ≠ `yield` and `baseYield[k]` capped at 4 (RH-2). Lot 5 (not Local Program) has `baseYield` = `yield`.
 
 Playwright e2e (`e2e/scenario-data.spec.ts`), after `npm run data:fixture`:
 - `GET /data/fixture-0/scenarios/fzp/parcels.bin` returns 200 `application/octet-stream` with the immutable cache header.
@@ -504,7 +506,7 @@ No page is added, so there is no axe gate here. fzp-mode owns it.
 ## 7. Acceptance criteria
 
 1. `npm run pipeline -- fetch` writes lock entries `datasf-height-bulk`, `datasf-parcel-attrs` and `datasf-assessor-roll`, with licences `public-domain`, `PDDL-1.0` and `PDDL-1.0`. They appear in manifest `sources` and on `/attribution`.
-2. A live `build` passes V1–V19, and `out/<v>/scenarios/fzp/parcels.bin` is ≤ 3.0 MB.
+2. A live `build` passes V1–V19, and `out/<v>/scenarios/fzp/parcels.bin` is ≤ 3.5 MB.
 3. `report.json` carries every `scenario.*` count of §4.10, including `roll.latest = 2025` on a 2026-10 fetch.
 4. Every one of the 269 live height strings parses. The max-height rule equals `gen_hght` for all non-sentinels.
 5. `decodeScenarioPayload` round-trips, and its header `fillLevels` equals `FILL_LEVELS`. stage-calibration's `size.fillLevels` imports the same constant.
@@ -512,7 +514,7 @@ No page is added, so there is no axe gate here. fzp-mode owns it.
 7. The fixture known answers in §4.11 hold, and `npm run pipeline -- fixture` is stable across two runs (decoded payload).
 8. A manifest without `scenarios` still parses. `parseManifest` of fixture-0 passes with or without the field.
 9. Changing any file in `src/lib/generator` or `src/lib/timelapse` changes `datasetVersion`, and `npm run signoff -- --dry-run` on such a change lists `test:pipeline`.
-10. Every RH, RM and NC entry of the density-cap table cites its Planning Code section and is verified against the Code text before merge (R).
+10. Every RH, RM and NC entry of the density-cap table cites its Planning Code section and URL. At implementation each is re-verified against the official Code text, amlegal or sfplanning.org (partner ruling round 3; spec values come from the gocodebook mirror). Districts that cannot be verified stay null and are listed in `density-caps.ts`.
 11. Every numeric parameter in this subsystem's code has a comment giving its tier and source as in this spec.
 12. `docs/dev/pipeline.md` no longer claims CI regenerates fixture-0.
 

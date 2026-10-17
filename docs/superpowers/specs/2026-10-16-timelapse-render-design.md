@@ -33,7 +33,7 @@ From the design:
 - The card's text, the legend markup, the scrubber, playback speeds and autoplay (fzp-mode).
 - Any change to the editor (`/`, `/p/:id`): no new layer, paint property, request or animation there (§4.8).
 - On-map text labels and wireframe edges (OQ-1 and OQ-2, resolved), and screen-space collision on the GPU.
-- Building footprint rings for failed massings and multi-phase rows (timelapse-sim, round 2 "Failed massing").
+- Building footprint rings for failed massings and for multi-phase rows not enriched with phases, and splitting multi-phase rows into phase slots (timelapse-sim and project-records; round 2 "Failed massing", round 3).
 
 ## 2. Interfaces
 
@@ -56,7 +56,7 @@ These rows are copied verbatim from the design's interface table (as reconciled)
 export interface TimedPackInput {
   schedule: Schedule;                       // T5
   /** One entry for every revision, index-aligned with schedule.revisions. Either a building, or a
-   *  footprint ring (lng/lat) for massing 'none': a null or throwing massing, or a multi-phase row.
+   *  footprint ring (lng/lat) for massing 'none': a null or throwing massing, or a multi-phase row left unsplit (round 3 last resort).
    *  timelapse-sim builds the ring from the anchor parcel's outer ring (largest areaM2, converted
    *  with geo.ts localFrame) (round 2, "Failed massing"). */
   massings: (GeneratedBuilding | { footprint: [lng: number, lat: number][] })[];
@@ -237,7 +237,7 @@ In the fragment shader (`fs:DECKGL_FILTER_COLOR`, default order, so before picki
 - **Completion** is a step at `completeDay`: floors stall at ≤ 90% and then snap to full. This is deliberate, so the map never reveals a future completion date (§4.4.2).
 - **A construction death** leaves the floors frozen and tinted red. They fade together with the ghost over `fade`, which leaves a vacant lot: the existing building does not come back (§4.5).
 - **Revisions** swap instantly at the revision day through `partWindow`.
-- **Footprint-only slots** (`stories == 0`: multi-phase rows and failed massings, "massing `none`") never enter the solid pass. They are ghost-tinted by stage, use the `ready` tint while constructing and after completion, and die like any ghost. The card explains (fzp-mode).
+- **Footprint-only slots** (`stories == 0`: failed massings and multi-phase rows without phase data, "massing `none`") never enter the solid pass. They are ghost-tinted by stage, use the `ready` tint while constructing and after completion, and die like any ghost. The card explains (fzp-mode).
 
 #### 4.2.4 Why not `DataFilterExtension`
 
@@ -443,7 +443,13 @@ The chance and typical durations are not parameters of this spec. They come from
 
 - **Policy levers (T9).** Nothing. Levers change `Calibration` before `simulate`, and the renderer sees only a new `TimelineUpdate` (revision 0) and new lookups. The renderer never reads `Calibration`: its lookups arrive already computed by T12's `chanceTable` and `typicalMonths`.
 - **Addenda sub-stages.** The bar's segment list comes from one table, `BAR_SEGMENTS: Record<Pathway, Stage[]>`, in `timelapse/bars.ts`. Ghost tint groups come from one table, `TINT_GROUP: Record<Stage, 'planning' | 'permit' | 'ready'>`. Nothing else is added: no spare attribute slots and no sub-stage encoding.
-- **DA phasing.** Nothing. Multi-phase projects render as ordinary slots.
+- **DA phasing (round 3: simulated phase by phase).**
+  - Each phase arrives as an ordinary slot with real massing and is rendered like any project.
+  - A master never arrives as a slot, so nothing is drawn for it. Its entitlement shows only on the card.
+  - A phase's ghost appears at its first entered stage (T2). timelapse-sim must therefore give a phase slot no stage days before its `permitFiled`; inherited master days would make it appear early.
+  - On the bar, a phase's discretionary `filed` and `entitled` segments count as passed (the skipped-stage rule, §4.4.2).
+  - Only rows without phase data keep the footprint-only path.
+  - No renderer change is needed.
 - **Renderings.** Nothing. Ghosts and buildings are generator massings. `partAppearance` is reused unchanged.
 
 ## 6. Testing
@@ -452,7 +458,7 @@ Every test calls `expect` (`expect.requireAssertions`).
 
 **Fixtures (hand-made, committed):**
 
-- `src/lib/map/fixtures/timeline-small.ts`: a `TimelineUpdate` (revision 0) over parcels from `fixtures/parcels-small.json`, packed with `packTimedCell`. It has eight slots:
+- `src/lib/map/fixtures/timeline-small.ts`: a `TimelineUpdate` (revision 0) over parcels from `fixtures/parcels-small.json`, packed with `packTimedCell`. It has ten slots:
   - (a) discretionary with PPA, completes;
   - (b) streamlined, exits `withdrawn` at `permitFiled`;
   - (c) permitOnly, in construction, open at the horizon;
@@ -460,7 +466,8 @@ Every test calls `expect` (`expect.requireAssertions`).
   - (e) construction-stage death;
   - (f) simulated, first stage in 2040;
   - (g) a pipeline record with a skipped stage (`entitled` = `NaN`);
-  - (h) a multi-phase footprint-only row that shares its parcel with (a), so a parcel id repeats across slots.
+  - (h) a multi-phase row without phase data (footprint-only) that shares its parcel with (a), so a parcel id repeats across slots;
+  - (i) two phase slots of one DA master. Their stage days start at `permitFiled` (different dates), they have real massing on separate parcels, one phase dies, and there is no master slot.
 
   Its demolish entries cover (a), (c) and (e). It also provides `timelineSmallRev1`, which repacks one cell, removes another and has an empty `demolish`.
 - `src/lib/map/fixtures/timeline-lookups.ts`: hand-made `{ chance, typicalMonths }`. The chance has 241-entry rows and one absent row. `typicalMonths` has one missing entry.
@@ -565,7 +572,7 @@ Every test calls `expect` (`expect.requireAssertions`).
 6. The existing building on each `demolish` parcel shows the `replaced` footprint from its day, and returns when scrubbed earlier. The pump catches up within ⌈k/2,000⌉ frames.
 7. Bars appear at zoom ≥ 15 (or the project's `minZoom`), in 3–6 equal segments. Fill and colour follow §4.4.2–4.4.3. Exited bars are `tl-bar-dead`, and no bar shows before lookups arrive.
 8. Every `tl-*` token exists in both themes and passes the §6 palette tests. `TIMELINE_LEGEND` is exported as in §4.6.
-8a. Footprint-only (multi-phase) slots render as a 1 m ghost and are never solid.
+8a. Footprint-only slots (failed massings, multi-phase rows without phase data) render as a 1 m ghost and are never solid. Phase slots render like any project, and nothing is drawn for a master.
 9. With no `applyTimeline` call, the editor makes no new request and renders no new layer, and all existing map tests pass unmodified.
 10. Both `bench:map` timeline cases pass at p95 ≤ 16.7 ms on the reference machine, with a row recorded in `docs/dev/map-perf.md`.
 11. `npm run check`, `npm run lint` and `npm run test:unit` pass.

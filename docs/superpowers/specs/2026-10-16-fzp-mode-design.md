@@ -1,6 +1,6 @@
 # `fzp-mode`: the Family Zoning Plan timelapse page (spec)
 
-Status: reconciled with the design's interface reconciliation and reconciliation round 2 (2026-10-16). Two items await a partner ruling and are left as drafted: the reference lines and the multi-phase notes. Composition: [FZP timelapse design](../design/2026-10-16-1903-fzp-timelapse.md) (approved with partner rulings OD-T1..T5). Slug `fzp-mode`. Route `/fzp`. Built last (dependency order step 4).
+Status: reconciled with the design's interface reconciliation, reconciliation round 2 and partner rulings round 3 (2026-10-16). Composition: [FZP timelapse design](../design/2026-10-16-1903-fzp-timelapse.md) (approved with partner rulings OD-T1..T5). Slug `fzp-mode`. Route `/fzp`. Built last (dependency order step 4).
 
 ## 1. Scope
 
@@ -39,7 +39,7 @@ Rows this subsystem consumes, copied verbatim from the design's interface table.
 | T6 | Worker protocol additions (I15 extended), served by a separate scenario host behind the same Worker and a separate `ScenarioClient` (the editor's host and `SimClient` are unchanged). Requests: `{ type: 'initScenario'; rev; manifest: Manifest; scenario: 'fzp'; seed: number \| null /* null = representative seed */; horizon: Day }`, `{ type: 'reroll'; rev; seed: number \| null }` (also the resync path: same seed → fresh revision-0 snapshot), and `{ type: 'parcelSummary'; reqId: number; parcelId: ParcelId; day: Day; projectId?: string /* the picked project; returned if visible at day */ }`. Responses: `ready` (existing shape), `{ type: 'timeline'; rev; seed: number; render: TimelineUpdate; score: TimelineScore; bandRuns: number /* band runs finished so far; the band is provisional until bandRuns = bandRunsTotal */; bandRunsTotal: number /* N */; complete: boolean /* all loaded cells packed */ }`. A band-only update is a `timeline` whose `render` is `{ revision: last + 1, cells: [], removedCells: [], demolish: [] }`, `chunks` (existing), and `error` with `code: 'manifest-invalid' \| 'scenario-missing' \| 'scenario-invalid' \| 'bad-request' \| 'internal'`. `parcelSummary` responds with `project?: ProjectCard`: the project named by `projectId` if it is visible at `day`; otherwise the project on that parcel whose first entered stage is ≤ `day`, latest first; none if no project is visible at `day`. `ProjectCard = { projectId: string; origin: 'pipeline' \| 'simulated'; label: string /* pipeline: T3 label, else 'Block B, Lot L'; simulated: always 'Block B, Lot L' */; pathway: Pathway; units: number; existingUnits: number /* summed over the project's parcels */; stories: number \| null; storiesTier: 0 \| 3 \| null /* pipeline only; 3 = parsed from description text */; massing: 'matched' \| 'approximate' \| 'none'; multiPhase: boolean; phase: Schedule['phase']; localProgram: boolean /* the project's parcel is a Local Program parcel and the project is simulated */; stages: { stage: Stage; day: Day; actual: boolean }[] /* only stages entered ≤ day */; revisions: Schedule['revisions'] /* only those ≤ day */; end: Schedule['end'] \| null /* null if the end is after day */; sources: { dataset: string; id: string; key?: string /* field to query, e.g. 'case_no'; absent = the dataset's record-id field */ }[] }`. The card's chance to finish is computed on the main thread from T12 at the current time. `prefetch` is reused, viewport-driven at every zoom in this mode | timelapse-sim ↔ fzp-mode, timelapse-render | DC |
 | T7 | `interface TimedPackedCell extends PackedCell { slotProjectIds: string[] /* render slots are keyed by project; parcelIds may repeat across slots */; partWindow: Float32Array /* per part: [fromDay, toDay) the part's revision is current; toDay = OPEN_DAY if open */; slotStages: Float32Array /* per slot: STAGE_ORDER.length entry days, NaN = never */; slotEnd: Float32Array /* per slot: [endDay, endKind] (0 open, 1 complete, 2 exit) */; slotPathway: Uint8Array /* index into ['discretionary','streamlined','permitOnly'] */ }`. `parcelMeta` rows describe the slot's final revision. `packTimedCell` is pure and owned by timelapse-render (in `src/lib/map/`); the worker imports it. `interface TimelineUpdate { revision: number /* 0 = snapshot */; cells: TimedPackedCell[]; removedCells: string[]; demolish: { parcelId: ParcelId; day: Day }[] /* complete list in revision 0 (needs no geometry); empty afterwards */ }`. `SimMapHandle` gains `applyTimeline(u: TimelineUpdate): void`, `setTime(day: Day): void` and `setTimelineLookups(l: { chance: ReturnType<typeof chanceTable>; typicalMonths: ReturnType<typeof typicalMonths> }): void`. `SimMapProps` gains `timelinePick?: (p: { projectId: string; parcelId: ParcelId; x: number; y: number; kind: 'hover' \| 'tap' } \| null) => void`. When it is set, SimMap's built-in tooltip is suppressed over timeline parts. Timeline colour tokens (`tl-*` in `palette.ts`) and an exported `TIMELINE_LEGEND` are owned here. `setTime` does O(1) JS work per call, except the existing-building catch-up, which applies at most 2,000 feature-state changes per frame until it converges | timelapse-render ↔ timelapse-sim, fzp-mode | DC |
 | T12 | In `src/lib/timelapse/model.ts` (pure, zod-free, worker-safe): `sampleTransition(t: Transition, u: number, monthsElapsed: number): { kind: 'advance' \| ExitReason; days: number }`, `initiationHazard(m: InitiationModel, f: Record<FeatureId, number>): number`, `chanceTable(cal: Calibration): Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, Float32Array>>>` (per month in a stage, the probability of eventually reaching `complete`; the table is 241 months long, and the tail is used beyond it), `typicalMonths(cal: Calibration): Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, number>>>` (median months to leave each stage, used for the bar's within-stage fill), and `parseCalibration(json: unknown): Calibration` (throws on schema mismatch). The pipeline's validation, the worker, the renderer (lookups uploaded once) and the card all use these, and nothing re-implements them. The bar colour and the card's "chance of finishing" both come from `chanceTable` | stage-calibration → timelapse-sim, timelapse-render, fzp-mode | MC (health = chance of finishing, OD-T2; one sampling semantics everywhere) |
-| T8 | `interface TimelineScore { months: Day[] /* months[i] = the 1st of the i-th month, starting with asOf's month and ending with the horizon's month; every series value at i is the state at the end of that month (events with day < months[i + 1], or ≤ horizon for the last entry) */; shown: { completedNet: number /* cumulative since asOf, simulation only, excludes baseline */; completedNetPipeline: number; completedNetNew: number; entitledNew: number /* cumulative units of new (simulated) projects reaching entitled */; inProgress: Record<Exclude<Stage, 'complete'>, number> /* current proposed units of projects in each stage at that month */; exitedUnits: number /* cumulative */ }[]; planEffect: { entitledNew: number; completedNetNew: number }[] /* shown seed: FZP run minus its paired old-zoning run (T9 `baseZoning`), cumulative net units */; planEffectBand: { p10: number; p50: number; p90: number }[] /* planEffect.completedNetNew over the N paired runs */; band: { p10: number; p50: number; p90: number }[] /* completedNet over N runs, same basis as shown */; baseline: { completedNet: number; since: Day; provenance: Provenance }; targets: TargetProgressAt[]; references: { id: string; label: string; units: number; from: Day; by: Day; measure: 'planEffect.entitledNew' \| 'planEffect.completedNetNew' \| 'completedNet'; provenance: Provenance }[] /* published estimates, each compared with the matching shown series */ }`, where `TargetProgressAt = { target: Target /* I11 */; deadline: Day; fraction: number[] /* per month, (baseline + completedNet) ÷ target, uncapped */ }` | timelapse-sim → fzp-mode | MC (net units against RHNA; band shown; baseline actuals counted), DC (shape) |
+| T8 | `interface TimelineScore { months: Day[] /* months[i] = the 1st of the i-th month, starting with asOf's month and ending with the horizon's month; every series value at i is the state at the end of that month (events with day < months[i + 1], or ≤ horizon for the last entry) */; shown: { completedNet: number /* cumulative since asOf, simulation only, excludes baseline */; completedNetPipeline: number; completedNetNew: number; entitledNew: number /* cumulative units of new (simulated) projects reaching entitled */; inProgress: Record<Exclude<Stage, 'complete'>, number> /* current proposed units of projects in each stage at that month */; exitedUnits: number /* cumulative */ }[]; planEffect: { entitledNew: number; completedNetNew: number }[] /* shown seed: FZP run minus its paired old-zoning run (T9 `baseZoning`), cumulative net units */; planEffectBand: { p10: number; p50: number; p90: number }[] /* planEffect.completedNetNew over the N paired runs */; band: { p10: number; p50: number; p90: number }[] /* completedNet over N runs, same basis as shown */; baseline: { completedNet: number; since: Day; provenance: Provenance }; phasing: { masters: number; enrichedMasters: number; phasesScheduled: number /* plan date from a published schedule */; phasesEstimated: number /* fallback sizes or phaseGap stagger */; unenriched: { projectId: string; label: string \| null; units: number }[] }; targets: TargetProgressAt[]; references: { id: string; label: string; units: number; from: Day; by: Day; measure: 'planEffect.entitledNew' \| 'planEffect.completedNetNew' \| 'completedNet'; provenance: Provenance }[] /* published estimates, each compared with the matching shown series */ }`, where `TargetProgressAt = { target: Target /* I11 */; deadline: Day; fraction: number[] /* per month, (baseline + completedNet) ÷ target, uncapped */ }` | timelapse-sim → fzp-mode | MC (net units against RHNA; band shown; baseline actuals counted), DC (shape) |
 | T11 | `scenarios/fzp/parcels.bin` (codec `sfh-scenario/1`, in `src/lib/data/`; deflate inside the file, async decode). It holds **every** parcel: `id`, `labelPoint`, `cellId`, a `hostable` flag (eligible and able to host a new project), `envelope: Envelope` (FZP stories: Local Program height if `localProgram`, else base height; clamped to `MAX_STORIES`), base stories, the base-zoning density cap in units (null = none), `localProgram: boolean`, `existingUnits` (latest assessor roll), the T4a feature values (base and FZP variants of `potentialRatio` and `storiesGap`) with an imputation mask, `hostable_base` (hostable under the old zoning), `baseYield: Uint16[F]` (gross units at each fill level of the base envelope, density-capped), and `yield: Uint16[F]`, the gross units at each fill level of the envelope, replacement typologies only (no ADU outcomes), with no density cap under the Local Program. `FILL_LEVELS = [0.25, 0.5, 0.75, 0.9, 1]` (F = 5, tier-4 quantisation grid) is owned here, and stage-calibration imports it. Named in the manifest as `scenarios?: { fzp: { parcels: url; projects: url; calibration: url } }` (amends I12 and `ManifestBaseSchema`; optional, so older datasets load). Because the yield uses the generator, `src/lib/generator` and `src/lib/timelapse` join the dataset-version hash | scenario-data → timelapse-sim | DC |
 
 Rows from the source design that this subsystem consumes, verbatim:
@@ -62,7 +62,8 @@ type Speed = 'month' | 'year' | 'threeYears';              // playback speed cho
 interface ScoreAt {                                         // score-view.ts, pure
   monthIndex: number; total: number; actual: number;        // actual = baseline.completedNet
   pipeline: number; fresh: number;                          // completedNetPipeline, completedNetNew
-  entitledNew: number;                                      // T8 shown[i].entitledNew
+  planCompleted: number; planEntitled: number;              // T8 planEffect[i].completedNetNew / .entitledNew
+  planBand: { low: number; high: number } | null;           // T8 planEffectBand p10/p90 (no baseline)
   band: { low: number; high: number } | null;               // p10/p90 + baseline (same basis, T8)
   inProgress: { stage: Exclude<Stage, 'complete'>; units: number }[];
   exitedUnits: number;
@@ -133,7 +134,7 @@ Consequence: calibration is **computed by the data pipeline from DataSF records*
   3. calls `h.setTime(day)` with the current scrub day;
   4. calls `h.setBottomInset(px)` (§4.3);
   5. registers `h.onResyncNeeded`.
-- **Every `timeline` message**: call `applyTimeline(render)`, or queue it, then replace the held `TimelineScore` and record `seed`, `bandRuns` and `complete`. Several messages per seed are normal: band-only updates (empty `render`, T6) and new chunks bringing geometry.
+- **Every `timeline` message**: call `applyTimeline(render)`, or queue it, then replace the held `TimelineScore` and record `seed`, `bandRuns`, `bandRunsTotal` and `complete`. Several messages per seed are normal: band-only updates (empty `render`, T6) and new chunks bringing geometry.
 - **Chunks.** `chunks` messages feed `setChunkStatus` and the chunk-error chip, as in the editor. The chip's Retry sends `retryChunks`.
 - **Prefetch.** After the first `timeline`, and on every map `moveend`, send `prefetch(viewport bbox)` **at every zoom**. This differs from the editor's zoom-14 gate (`BrushController.svelte.ts:59,656-661`): ghosts must appear at the city view (OD-T2 tints below street zoom), and the first paint (score and controls) never waits on chunks. T6 ("viewport-driven at every zoom in this mode") rules this.
 - **Resync** (`onResyncNeeded`): send `reroll` with the seed of the shown future. T6 makes this the resync path: the same seed gives a fresh revision-0 snapshot.
@@ -229,9 +230,17 @@ The panel's contents at month index `i`, in order:
 4. **Split**, each a labelled row:
    - "Actually completed, to {asOf date}": `baseline.completedNet`;
    - "Simulated, from today's pipeline": `completedNetPipeline`;
-   - "Simulated, new under the plan": `completedNetNew`;
-   - "Simulated, new homes approved under the plan": `entitledNew` (T8; this is the series Planning's estimate compares with).
-5. **Band:** "In 8 of 10 simulated futures: {p10 + baseline}–{p90 + baseline}" (the band has the same basis as `shown`, T8). While `bandRuns < N` it gets the suffix " (still calculating)" and `aria-busy="true"` (T6, round 2 "Band"). `complete` does not drive this label. `N` is timelapse-sim's band-run count, 101 (tier 4, numerical), imported from its exported constant (see R3). Until any band value exists it reads "Range: calculating…".
+   - "Simulated, new projects not yet in today's pipeline": `completedNetNew`.
+
+   The headline, this split and RHNA progress (item 6) all come from the FZP run (round 3).
+5. **Band:** "In 8 of 10 simulated futures: {p10 + baseline}–{p90 + baseline}" (the band has the same basis as `shown`, T8).
+   - While `bandRuns < bandRunsTotal` (T6), the band gets the suffix " (still calculating)" and `aria-busy="true"`. `complete` does not drive this label.
+   - Until any band value exists, the line reads "Range: calculating…".
+   - The same rule applies to the plan-effect band in item 5a.
+5a. **"What the plan added"**, a sub-heading with three rows (round 3, "Plan effect"):
+   - "Homes completed because of the plan": `planEffect[i].completedNetNew`, with "In 8 of 10 futures: {planEffectBand p10}–{p90}". This band has no baseline, because the plan effect is a difference;
+   - "Homes approved because of the plan": `planEffect[i].entitledNew`;
+   - one paragraph of plain copy: "To see what the plan itself does, each future is run twice: once with the Family Zoning Plan, and once as the same city simulated under the old zoning, with the same luck. The difference between the two is the plan's effect. Some homes would have been built anyway; they are not counted here." Values can be negative early on, and are shown with a U+2212 minus via `formatCount`.
 6. **Targets:** one `TargetRow` per T8 `targets` entry, in order (RHNA, then RHNA + buffer). Under each is "At the deadline ({deadline as Mon D, YYYY}): {formatPercent(fraction[d])}", where `d` is the month index of the deadline. The fractions come straight from T8, which includes the baseline.
 7. **In progress:** "Homes in projects still in progress: {sum}". Then a `<dl>` with one row per stage in `STAGE_ORDER` (unknown keys appended), using the "in stage" labels of §4.9.
 8. **Stopped:** "Proposed homes in projects that stopped since {asOf month}: {exitedUnits}".
@@ -239,7 +248,7 @@ The panel's contents at month index `i`, in order:
 10. **Future line:** "This future: #{seed}", plus " (representative)" when the shown seed came from a `null` request. When it is not representative there is also a button, "Back to the representative future" (§4.7).
 11. **"Map key"** (`<details>`, open by default ≥ 768 px), the ghost-state legend. It renders one row per entry of timelapse-render's exported `TIMELINE_LEGEND` (T7), drawing each swatch from the `tl-*` tokens through their `--map-*` CSS variables, so the legend follows the theme. After the entries it adds one line of fzp-mode's own: "Bar length: progress through the stages. Bar colour: chance of finishing, low to high."
 12. **Button:** "Where these numbers come from" (opens §4.10).
-13. **Footnote:** "Data {datasetVersion} · built {date} · as of {asOf date} · [Sources](/attribution)".
+13. **Footnote:** "Data {datasetVersion} · built {date} · as of {asOf date} · [Sources](/attribution)". When the dataset has multi-phase projects, a second line follows (round 3, "Multi-phase"): "Multi-phase projects: {s} phases scheduled from published plans, {e} estimated from past projects; {u} projects without phase data are drawn as one footprint." The counts come from the phasing summary (concern R4). The line is omitted when the summary is unavailable, never guessed.
 
 - **Mobile collapsed bar** (button, `aria-expanded`): line 1 is `{formatCompactCount(total)} net new homes · {formatPercent(rhna fraction)} of RHNA`, line 2 "Simulation".
 - **Announcements:** an sr-only `aria-live="polite"` region. It speaks only when playback is paused, 1,000 ms after the day settles (the debounce of `Scoreboard.svelte:72-80`): "{March 2031}: {45,210} net new homes in this simulation, {55%} of RHNA."
@@ -259,23 +268,25 @@ There are no chart conventions in the repo (no chart, sparkline or SVG plotting 
   | band p10–p90 + baseline | `#1d4ed8` area at 15% opacity |
   | total (baseline + completedNet) | `#1d4ed8` (blue-700) solid 2.5 px |
   | from pipeline | `#374151` (gray-700) dashed 6 3 |
-  | new under the plan, completed (`completedNetNew`) | `#b45309` (amber-700) solid 2 px |
-  | new under the plan, approved (`entitledNew`) | amber-700 dashed 2 2 |
+  | new projects (`completedNetNew`) | `#b45309` (amber-700) solid 2 px |
+  | plan effect, completed (`planEffect.completedNetNew`) | `#6d28d9` (violet-700) solid 2 px |
+  | plan-effect band (`planEffectBand` p10–p90) | violet-700 area at 15% opacity |
+  | plan effect, approved (`planEffect.entitledNew`) | violet-700 dashed 2 2 |
   | RHNA (82,069) | 1 px black horizontal line, labelled "RHNA" |
   | each T8 reference | dotted horizontal line at `units`, a dot at `by`, labelled `label` (detail below) |
   | RHNA deadline and 2045 | gray dashed verticals |
   | current day | black vertical cursor |
 
-  Each reference line runs from `max(from, asOf)` to `by`. It takes the colour of the series its `measure` names: amber for `completedNetNew` and `entitledNew`, blue for `completedNet`. Its label ends "(compare with: {series name})".
-- **Contrast:** every stroke has ≥ 3:1 contrast on white (SC 1.4.11: blue-700 is 6.7:1, gray-700 10.3:1, amber-700 5.0:1). Every series is also told apart by its dash pattern, plus a legend in text under the chart.
-- **References are compared with the series their `measure` names** (T8, reconciliation "References"):
-  - Planning's ~39k are entitlements, compared with `entitledNew`;
-  - the Controller's 14,646 and 8,504 by 2045 are completions, compared with `completedNetNew`.
+  Each reference line runs from `max(from, asOf)` to `by`. It takes the colour of the series its `measure` names: violet for `planEffect.*`, blue for `completedNet`. Its label ends "(compare with: {series name})".
+- **Contrast:** every stroke has ≥ 3:1 contrast on white (SC 1.4.11: blue-700 is 6.7:1, gray-700 10.3:1, amber-700 5.0:1, violet-700 7.1:1). Every series is also told apart by its dash pattern, plus a legend in text under the chart.
+- **References are compared with the plan-effect series their `measure` names** (T8, round 3 "Plan effect"). Both published estimates are increments over the old zoning:
+  - Planning's ~39k are entitlements, compared with `planEffect.entitledNew`;
+  - the Controller's 14,646 and 8,504 by 2045 are completions, compared with `planEffect.completedNetNew`.
 
-  They are levels, not trajectories, so they are drawn horizontal. The simulated series start at `asOf`, while Planning's window starts at 2026-01-12. The dialog's reference entry says so: "Simulated counts start on {asOf date}."
+  The legend line reads: "Dotted: published estimates of what the plan adds. Compare them with the violet lines, which show this simulation's plan effect (with the plan minus the old zoning)." References are levels, not trajectories, so they are drawn horizontal. The simulated series start at `asOf`, while Planning's window starts at 2026-01-12. The dialog's reference entry says so: "Simulated counts start on {asOf date}."
 - **Accessibility:**
   - The chart is a `<figure>` whose SVG has `role="img"` and an `aria-label` summary: "Net new homes in this simulation: {x} by the RHNA deadline, {y} by 2045, {z} by the end of 2050."
-  - A `<details>` "Show as table" holds a `<table>` with one row per January from `asOf`'s year + 1 to 2050, plus the deadline row and the final month. Its columns are date, total, from pipeline, new under the plan (completed), new under the plan (approved), and the 8-in-10 range.
+  - A `<details>` "Show as table" holds a `<table>` with one row per January from `asOf`'s year + 1 to 2050, plus the deadline row and the final month. Its columns are date, total, from pipeline, new projects, plan effect (completed), plan effect (approved), the 8-in-10 range, and the plan-effect 8-in-10 range.
 
 ### 4.7 Seed, URL and "Show another possible future"
 
@@ -303,9 +314,11 @@ There are no chart conventions in the repo (no chart, sparkline or SVG plotting 
 - **While the card is open,** it re-requests when the month index changes. Per T6 the card shows only stages and revisions on or before `day`, and `end` only once it has passed. The card therefore never shows future stages, which the reconciliation ruled under "Open questions answered".
 - **Card content** (all from `ProjectCard` plus the current `day`; `card.ts` is pure):
   - **Heading**, the `label`, and a badge: "Real project" for `origin 'pipeline'` or "Simulated project". Simulated labels are always "Block B, Lot L" (T6).
+  - **Phase line** (round 3, "Multi-phase"): when `phase` is non-null it reads "Phase {phase.index} of {phase.of}, {label}" (e.g. "Phase 3 of 12, Candlestick Point"). The master is never drawn, so it is never picked. `label` is the master's T3 label.
   - **Massing note:**
     - `massing === 'approximate'`: "Building shape approximate";
-    - `massing === 'none'` or `multiPhase`: "Multi-phase project; buildings not drawn" (reconciliation "Multi-phase projects").
+    - `multiPhase && phase === null` (an unenriched row, the round-3 last resort): "Multi-phase project without published or estimated phases; drawn as one footprint";
+    - any other `massing === 'none'`: "Building not drawn; footprint only".
   - **Simulated projects** add: "Not a real proposal. In this simulated future a project starts on this parcel. The parcel was picked by chance, weighted by how often parcels like it have been redeveloped. It says nothing about the owner's plans."
   - **Pathway**, using the §4.9 labels.
   - **Status at `day`**:
@@ -319,12 +332,14 @@ There are no chart conventions in the repo (no chart, sparkline or SVG plotting 
     |---|---|
     | 0, or a simulated project | "{N} stories" |
     | 3 | "about {N} stories, from the project description" (round 2, "Card") |
-    | `stories` null | omitted | Each later revision is listed as "Resized: {a} → {b} homes, {date}", with ", simulated" appended when its day is after `asOf`.
+    | `stories` null | omitted |
+
+    Each later revision is listed as "Resized: {a} → {b} homes, {date}", with ", simulated" appended when its day is after `asOf`.
   - **Chance of finishing** (`inStage` only): `chance[pathway][stage][min(monthsIn(entered, t), 240)]`, using the main thread's `chanceTable(calibration)` (241 months long, T12) and `monthsIn` (T1). These are the same functions and table the renderer receives, so the card and the bar colour agree. The value is shown as a whole percent, rounded, or as "under 1%" or "over 99%": "Chance of finishing from here: 62%". Under it, a `<details>` "How is this estimated?" lists, for every `Transition` from the current stage to `complete` on this pathway:
     - its tier and `provenance.label`;
     - its tail provenance, `tailProvenance[pathway][stage]` (tier 2: extrapolation beyond the observed months, round 2 "Provenance"), since `chanceTable` integrates the tail.
 
-    For a **Local Program project** the list starts with the `streamlinedForLocalProgram` provenance (tier 2: the Local Program uses the streamlined tables as a proxy). A project counts as Local Program when it is simulated and `streamlined`, the only Local Program projects the simulation creates (concern R3). Each entry links to the matching dialog section. If any listed transition has tier ≥ 3, the line also says "partly based on research estimates, not San Francisco records". The copy says the number is the share of similar projects that finish, not this project's fate.
+    For a **Local Program project** the list starts with the `streamlinedForLocalProgram` provenance (tier 2: the Local Program uses the streamlined tables as a proxy). A project counts as Local Program when `ProjectCard.localProgram` is true (T6, round 3). Each entry links to the matching dialog section. If any listed transition has tier ≥ 3, the line also says "partly based on research estimates, not San Francisco records". The copy says the number is the share of similar projects that finish, not this project's fate.
   - **Timeline**: one row per `stages` entry (iterated from data, not from `STAGE_ORDER`), then `end` if non-null. Each row is "{entered label} · {date} · Recorded" when `actual`, else "Simulated". Actual dates are `Mon D, YYYY`; simulated dates are `Mon YYYY` (the day within the month is a uniform draw, T4). All dates are formatted in UTC.
   - **Sources**: one link per `sources` entry: "{dataset name} {id}: DataSF record (JSON)". The URL is `https://data.sf.gov/resource/{dataset}.json?{field}={encodeURIComponent(id)}`. `field` is `sources[].key` when present (T3/T6, round 2 "DataSF links"). Otherwise it is the dataset's record-id field from this table, with keys verified live on 2026-10-16:
 
@@ -387,6 +402,19 @@ There are no chart conventions in the repo (no chart, sparkline or SVG plotting 
 6. **"How projects change size":** `revision`. For each stage: the chance of a resize, the share that shrink and the share that grow.
 7. **"Which approval path":** `pathwayForNew` and `ppaShare`, as percentages. Before them, a fixed sentence: "New projects on Local Program parcels always take the streamlined path. That is a rule (administrative approval with a 180-day clock), tier 1. The shares below apply to other parcels." This follows the reconciliation, "New-project pathway and PPA".
 8. **"Targets and published estimates":** each T8 target `source` and each `references[].provenance`.
+   - Each reference names the series it is compared with.
+   - It adds the twin copy of §4.5 item 5a: the plan effect is this simulation minus the same city under the old zoning, with the same seed.
+   - It says "Simulated counts start on {asOf date}."
+9. **"Multi-phase projects"** (round 3):
+   - **Counts:** {s} phases scheduled from published Development Agreement phasing plans (tier 1, `pipeline/enrichment/multiphase.json`), and {e} phases estimated from past projects (tier 2).
+   - **How estimated phases are built:**
+     - phase size: the median completed building size;
+     - start gaps: `phaseGap`.
+
+     `phaseGap` has its own provenance entry when present in `calibration.json`.
+   - **Unenriched projects:** {u} projects with no phase data, simulated as one project and drawn as a single footprint. The dialog lists them by label.
+
+   The counts and the list come from the phasing summary (R4). Without it, this section says "Phase details are not available for this dataset."
 
 **Every entry shows:**
 
@@ -452,8 +480,18 @@ Real-world values are read from data, not hard-coded:
 - `src/lib/fzp/fixtures/timeline-score.ts`: a hand-made `TimelineScore` derived from the T8 rule, with `asOf` = 2026-10-16:
   - `months[0]` = 2026-10-01, ending at `months[290]` = 2050-12-01 (291 entries);
   - each value is the end-of-month state, so an event dated 2026-10-20 counts at index 0 and one dated 2026-11-01 at index 1;
-  - a partial band with `bandRuns` 40 of 101, and two references;
-- `src/lib/fzp/fixtures/cards.ts`: `ProjectCard`s that are real-actual, simulated (labelled "Block B, Lot L"), exited, revised, `massing: 'approximate'`, `multiPhase` with `massing: 'none'`, and with null `stories`;
+  - a partial band with `bandRuns` 40 of `bandRunsTotal` 101;
+  - `planEffect` and `planEffectBand` series, including negative early values;
+  - two references, with `measure` set to `planEffect.entitledNew` and `planEffect.completedNetNew`;
+- `src/lib/fzp/fixtures/cards.ts`: `ProjectCard`s that are:
+  - real-actual;
+  - simulated (labelled "Block B, Lot L"), including one with `localProgram: true`;
+  - exited;
+  - revised;
+  - `massing: 'approximate'`;
+  - a phase (`phase: { index: 3, of: 12 }`, label "Candlestick Point");
+  - an unenriched `multiPhase` row with `phase: null`;
+  - with null `stories`;
 - the fixture calibration: `e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json`, read from disk in server tests through `parseCalibration`. A copy with one provenance set to tier 3 covers the tier-3 notes;
 - `FakeScenarioWorker` (`src/lib/fzp/test/fake-worker.ts`): a fake `WorkerLike` behind the real `ScenarioClient`.
 
@@ -468,7 +506,7 @@ Real-world values are read from data, not hard-coded:
 - **`playback.spec.ts`:** advancing by dt × speed; the 100 ms clamp; stopping at horizon; Replay restarts; property test (fast-check): the day is monotonic and within range.
 - **`format.spec.ts`:** readout "March 2031"; actual and simulated date formats; UTC at midnight boundaries; percent rounding including "under 1%" and "over 99%".
 - **`score-view.spec.ts`:**
-  - `ScoreAt` from the fixture: total = baseline + completedNet; `entitledNew` passed through;
+  - `ScoreAt` from the fixture: total = baseline + completedNet; the plan-effect values and band (no baseline offset);
   - band offset by the baseline, and `null` when absent;
   - deadline fraction; stage order with an unknown key appended.
 - **`chart.spec.ts`:** `niceCeil`; the x and y scales; the band path closes; references start at `max(from, asOf)`, end at `by`, and are coloured by `measure`; table rows (Januaries, the deadline and the final month).
@@ -498,7 +536,9 @@ Real-world values are read from data, not hard-coded:
   - `setTime` called at most once per frame.
 - **`FzpScoreboard.svelte.spec.ts`:**
   - the values at a month;
-  - "still calculating" and `aria-busy` while `bandRuns < 101`, even when `complete` is true; neither shows at `bandRuns = 101`, even when `complete` is false;
+  - "still calculating" and `aria-busy` on both bands while `bandRuns < bandRunsTotal`, even when `complete` is true; neither shows at `bandRuns = bandRunsTotal`, even when `complete` is false;
+  - the "What the plan added" rows and the twin copy;
+  - the multi-phase footnote with counts, omitted without a summary;
   - the representative label;
   - the live region silent while playing and speaking 1 s after a pause;
   - the mobile bar and sheet, with focus moving and returning;
@@ -525,7 +565,7 @@ Real-world values are read from data, not hard-coded:
 - **Load and controls:** `/fzp` reaches `ready` (`__sfhFzp.phase`). The readout shows the `asOf` month. Keyboard Home shows the headline `baseline + score.shown[0].completedNet`, the end of `asOf`'s month. Keyboard End → "December 2050", and the headline equals `baseline + score.shown[score.months.length − 1].completedNet` from the hook, the index of the horizon's month.
 - **Reduced motion:** with `emulateMedia({ reducedMotion: 'reduce' })` the day stays at `asOf` for 2 s. Without it, the day advances.
 - **Reroll:** puts `?seed=N` in the URL with the day unchanged. Reloading `/fzp?seed=N` gives identical `score.shown`. `/fzp` twice gives the same seed (determinism).
-- **Card:** jump to the fixture's pipeline project (`jumpAndIdle` + `projectToPage`, `e2e/helpers/sharing.ts:53-72`). Click or tap opens a card with "Real project" and a DataSF link whose `href` matches the key table. The multi-phase row's card says "Multi-phase project; buildings not drawn".
+- **Card:** jump to the fixture's pipeline project (`jumpAndIdle` + `projectToPage`, `e2e/helpers/sharing.ts:53-72`). Click or tap opens a card with "Real project" and a DataSF link whose `href` matches the key table. A phase sub-project's card reads "Phase {n} of {m}, {label}" once that phase has filed.
 - **Sources dialog:** lists one entry per parameter in fixture-0's `calibration.json`.
 - **No scenario:** `page.route` strips `scenarios` from `manifest.json`, and the message and editor link show.
 - **Header:** the "Timelapse" link on `/` navigates to `/fzp`, and "Paint" returns.
@@ -546,8 +586,10 @@ Real-world values are read from data, not hard-coded:
    - every change calls `setTime` once with the new `Day`.
 4. Playback defaults to 1 year/s and offers 1 month/s and 3 years/s. Autoplay happens only without reduced motion, and any scrub input pauses it.
 5. The scoreboard shows, for the scrubbed month:
-   - actual-to-date, the two simulated completion lines and the simulated approvals (`entitledNew`), each separately;
-   - the 8-in-10 band, marked provisional until `complete`;
+   - actual-to-date and the two simulated completion lines, each separately, all from the FZP run;
+   - "What the plan added": the plan effect on completions with its band, the plan effect on approvals, and the twin explanation;
+   - the 8-in-10 band, marked provisional while `bandRuns < bandRunsTotal`;
+   - the multi-phase footnote: phases scheduled versus estimated, and unenriched rows;
    - RHNA and buffer progress, with the at-deadline values;
    - homes in progress by stage;
    - stopped homes;
@@ -560,7 +602,7 @@ Real-world values are read from data, not hard-coded:
    - the status at the current day;
    - the size and resizes;
    - recorded versus simulated dates, with no future stages;
-   - the massing or multi-phase note;
+   - "Phase N of M, {name}" for phases, and the massing or unenriched-row note;
    - the chance of finishing (from `chanceTable` via `monthsIn`), with its provenance;
    - DataSF links.
 
@@ -609,9 +651,18 @@ None remain. The design's reconciliation section, under "Page", answered all fou
 | R1 | hover vs tap | T7 `timelinePick.kind: 'hover' \| 'tap'`. fzp-mode shows a tooltip on hover and the card on tap, a deliberate narrowing ("Picking") |
 | R2 | client ownership | timelapse-sim ships `src/lib/sim/scenario-client.ts`; fzp-mode has no fallback client ("Client") |
 
+**Resolved by partner rulings round 3**
+
+| # | concern | resolved by |
+|---|---|---|
+| R3 | band total and Local Program flag | T6 `bandRunsTotal` and `ProjectCard.localProgram` |
+| — | reference lines and multi-phase notes (pending partner question) | the plan-effect twin (T8 `planEffect`, `planEffectBand`, `references[].measure`) and phase-by-phase simulation (T3 `phases`, T5/T6 `phase`) |
+
 **Still open**
 
-- **R3. The main thread cannot see two things it needs:**
-  - **The band-run total `N`.** T6 says the band is provisional until `bandRuns = N`, but `N` (101, timelapse-sim §4.6) is not in the message. fzp-mode imports it from timelapse-sim. Recommend that timelapse-sim export it as a named constant from `src/lib/timelapse/`, or add it to the `timeline` message.
-  - **Whether a card's project is Local Program.** `ProjectCard` has no `localProgram` flag. Simulated + `streamlined` is a correct proxy today, because only Local Program parcels force `streamlined` and the `pathwayForNew` share for streamlined is otherwise small. It would mis-cite for a simulated non-Local-Program streamlined project, and it misses real Local Program pipeline projects. Recommend `ProjectCard.localProgram: boolean`.
-- **Pending partner question:** the reference lines (§4.6) and the multi-phase notes (§4.8) are left as drafted until the partner rules.
+- **R4. The main thread has no phasing summary.** Round 3 requires the scoreboard footnote and the sources dialog to state how many phases were scheduled from published plans versus estimated, and to disclose unenriched rows. No message carries those counts:
+  - T8 has none;
+  - `ProjectCard.phase` has no source tier;
+  - the page does not load `projects.json`.
+
+  Recommend that T8 gain `phasing: { scheduled: number; estimated: number; unenriched: { id: string; label: string }[]; provenance: Provenance }`, computed by timelapse-sim from T3 `phases[].source` (null source = estimated). Until it exists, the footnote line and the dialog section are omitted or say "not available", as §4.5 and §4.10 specify.
