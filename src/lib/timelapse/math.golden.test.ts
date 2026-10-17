@@ -52,4 +52,10 @@ describe('math.ts cross-engine golden (server / V8)', () => {
     const source = readFileSync(new URL('./math.ts', import.meta.url), 'utf8');
     expect(source).not.toMatch(/Math\.(exp|log|pow|log1p|expm1)\b/);
   });
+
+  it('does not use the ** or **= operator in code (comments ignored)', () => {
+    const source = readFileSync(new URL('./math.ts', import.meta.url), 'utf8');
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    expect(code).not.toMatch(/\*\*/);
+  });
 });
