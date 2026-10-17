@@ -1,0 +1,82 @@
+{
+  "parcels": [
+    {
+      "id": "3607001",
+      "polygon": [
+        [
+          [-11.62, -11.63],
+          [18.38, -11.63],
+          [18.38, 0.37],
+          [0.38, 0.37],
+          [0.38, 18.37],
+          [-11.62, 18.37]
+        ]
+      ],
+      "labelPoint": [-122.4407903, 37.7528073],
+      "areaM2": 576,
+      "existingUnits": 0,
+      "existingFloorAreaM2": 0,
+      "existingHeightM": 0,
+      "landUse": "VACANT",
+      "eligible": true,
+      "neighborhood": "Mission"
+    },
+    {
+      "id": "3607002",
+      "polygon": [
+        [
+          [-8.59, -2.95],
+          [9.41, -2.95],
+          [9.41, 5.05],
+          [-8.59, 5.05]
+        ]
+      ],
+      "labelPoint": [-122.4406885, 37.7529273],
+      "areaM2": 144,
+      "existingUnits": 0,
+      "existingFloorAreaM2": 0,
+      "existingHeightM": 0,
+      "landUse": "VACANT",
+      "eligible": true,
+      "neighborhood": "Mission"
+    },
+    {
+      "id": "3607003",
+      "polygon": [
+        [
+          [-3.57, -5.07],
+          [4.43, -5.07],
+          [4.43, 4.93],
+          [-3.57, 4.93]
+        ]
+      ],
+      "labelPoint": [-122.440632, 37.7528563],
+      "areaM2": 80,
+      "existingUnits": 0,
+      "existingFloorAreaM2": 0,
+      "existingHeightM": 0,
+      "landUse": "VACANT",
+      "eligible": true,
+      "neighborhood": "Mission"
+    }
+  ],
+  "excluded": {
+    "id": "3607004",
+    "polygon": [
+      [
+        [-4.44, -5.28],
+        [5.56, -5.28],
+        [5.56, 4.72],
+        [-4.44, 4.72]
+      ]
+    ],
+    "labelPoint": [-122.4407356, 37.7528582],
+    "areaM2": 100,
+    "existingUnits": 0,
+    "existingFloorAreaM2": 0,
+    "existingHeightM": 0,
+    "landUse": "VACANT",
+    "eligible": true,
+    "neighborhood": "Mission"
+  }
+}

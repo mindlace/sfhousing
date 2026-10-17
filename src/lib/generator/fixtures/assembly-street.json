@@ -1,0 +1,42 @@
+{
+  "parcels": [
+    {
+      "id": "3606001",
+      "polygon": [
+        [
+          [-5, -15],
+          [5, -15],
+          [5, 15],
+          [-5, 15]
+        ]
+      ],
+      "labelPoint": [-122.4408655, 37.7528377],
+      "areaM2": 300,
+      "existingUnits": 0,
+      "existingFloorAreaM2": 0,
+      "existingHeightM": 0,
+      "landUse": "VACANT",
+      "eligible": true,
+      "neighborhood": "Mission"
+    },
+    {
+      "id": "3606002",
+      "polygon": [
+        [
+          [-3, -14.99],
+          [3, -14.99],
+          [3, 15.01],
+          [-3, 15.01]
+        ]
+      ],
+      "labelPoint": [-122.4405477, 37.7528376],
+      "areaM2": 180,
+      "existingUnits": 0,
+      "existingFloorAreaM2": 0,
+      "existingHeightM": 0,
+      "landUse": "VACANT",
+      "eligible": true,
+      "neighborhood": "Mission"
+    }
+  ]
+}
