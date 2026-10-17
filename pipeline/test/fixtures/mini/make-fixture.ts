@@ -198,7 +198,7 @@ const ZONING: Record<number, string> = {
   1: 'RH-2',
   2: 'RH-2',
   3: 'NCT',
-  4: 'RH-3',
+  4: 'NC-1',
   5: 'RH-1',
   6: 'RM-1',
   7: 'P',

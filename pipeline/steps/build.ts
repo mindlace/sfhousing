@@ -20,8 +20,9 @@ import { runSql } from '../lib/sql';
 import { codeTreeHash, computeDatasetVersion } from '../lib/version';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
 import { checkDataset, type InvariantResult } from './check';
-import { writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
+import { readParcelRecords, writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
 import { buildManifest, writeManifest } from './manifest';
+import { writeScenario } from './scenario';
 import { copyBasemap, installFonts, writeBuildingsTiles } from './tiles';
 import { writeTransit } from './transit';
 
@@ -35,6 +36,11 @@ export interface BuildOpts {
   builtAt?: string;
   profile: InvariantProfile;
   skipTiles?: boolean;
+  /**
+   * Pipeline-internal derived cache root (T13 parcel panel and lineage go to
+   * `<derivedRoot>/<datasetVersion>/`). Default `<repo>/pipeline/.cache/derived`.
+   */
+  derivedRoot?: string;
 }
 
 export class BuildError extends Error {}
@@ -43,6 +49,9 @@ const REPO_ROOT = resolve(import.meta.dirname, '../..');
 /** SF housing stock (2023 Housing Inventory, Table 1); spec §4.9 V1. */
 const HOUSING_STOCK = { end2022: 413208, end2023: 415803 };
 const FIXTURE_RE = /^fixture-\d+$/;
+const DERIVED_ROOT = join(REPO_ROOT, 'pipeline/.cache/derived');
+/** The three T11/T4 files whose presence puts `scenarios` in the manifest (spec §4.9). */
+const SCENARIO_FILES = ['parcels.bin', 'projects.json', 'calibration.json'];
 /** Spec §4.12: derivative databases of ODbL data are offered under ODbL-1.0 (share-alike). */
 const DERIVED_LICENSE = {
   derivedData: 'ODbL-1.0',
@@ -109,8 +118,10 @@ function chunkCounts(chunks: ChunkOut[]): Record<string, number> {
 }
 
 /**
- * Spec §4.2 `build`: verify the lock, normalise, SQL, chunks (+ in-run re-encode), neighborhoods,
- * tiles, basemap, fonts, manifest, invariants and report.json into `<outRoot>/<datasetVersion>/`.
+ * Spec §4.2 `build`: verify the lock, normalise, SQL, chunks (+ in-run re-encode), the scenario
+ * step (scenarios/fzp/parcels.bin; the T13 panel and lineage into the derived cache),
+ * neighborhoods, tiles, basemap, fonts, manifest, invariants and report.json into
+ * `<outRoot>/<datasetVersion>/`.
  * Throws BuildError when a raw file does not match the lock.
  */
 export async function build(
@@ -151,9 +162,22 @@ export async function build(
       await writeChunks(db, join(work, 'reencode'), datasetVersion, new Report());
       return sameFiles(join(outDir, 'parcels'), join(work, 'reencode', 'parcels'));
     });
-    const neighborhoodsBytes = await writeNeighborhoods(db, outDir);
-    // Transit spec §4.2 step 1: the service date is picked from the newest fetch date.
+    // Transit spec §4.2 step 1: the service date is picked from the newest fetch date. It is
+    // also the scenario step's "today" for the FZP density cap (the build's snapshot day).
     const newest = lock.sources.reduce((d, s) => (s.retrievedAt > d ? s.retrievedAt : d), '');
+    const scenario = await report.time('scenario', async () =>
+      writeScenario({
+        db,
+        outDir,
+        derivedDir: join(opts.derivedRoot ?? DERIVED_ROOT, datasetVersion),
+        datasetVersion,
+        records: await readParcelRecords(db),
+        capDay: Math.floor(Date.parse(newest) / 86400000),
+        report
+      })
+    );
+    report.warnings.push(...scenario.warnings);
+    const neighborhoodsBytes = await writeNeighborhoods(db, outDir);
     const transit = await report.time('transit', async () =>
       writeTransit({
         lock,
@@ -185,6 +209,7 @@ export async function build(
       chunks,
       overtureContrib,
       transit: true,
+      scenarios: SCENARIO_FILES.every((f) => existsSync(join(outDir, 'scenarios/fzp', f))),
       warn: (w) => report.warnings.push(w)
     });
     const manifestBytes = writeManifest(outDir, manifest);
@@ -196,6 +221,7 @@ export async function build(
       ...report.counts,
       ...chunkCounts(chunks),
       ...transit.counts,
+      ...scenario.counts,
       ...Object.fromEntries(overtureContrib.map((o) => [`overture.contrib.${o.dataset}`, o.n])),
       'units.total': totals.units,
       'parcels.height_max_m': totals.hmax,

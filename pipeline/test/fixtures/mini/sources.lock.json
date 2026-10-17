@@ -93,10 +93,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/09e5d72c19e77d97a03a6f60d4ed02adc43a1f9abc3ea0d39c75e2990b92cc7a.csv",
+          "archiveKey": "sources/14f8e55c720ceec030e8592ba2f422526293b1b696b09177de3e27a83b7525ed.csv",
           "bytes": 1367,
           "name": "datasf-parcel-attrs.page-000.csv",
-          "sha256": "09e5d72c19e77d97a03a6f60d4ed02adc43a1f9abc3ea0d39c75e2990b92cc7a",
+          "sha256": "14f8e55c720ceec030e8592ba2f422526293b1b696b09177de3e27a83b7525ed",
           "url": "https://fixture.invalid/datasf-parcel-attrs.page-000.csv"
         }
       ],

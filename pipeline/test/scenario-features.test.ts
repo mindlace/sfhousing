@@ -1,0 +1,193 @@
+// The single-definition rule (scenario-data spec §6): the T13 panel's latest-year rows and the
+// shipped T11 payload carry the same feature values and imputation mask, parcel by parcel.
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { inflateRawSync } from 'node:zlib';
+import { beforeAll, describe, expect, it } from 'vitest';
+import {
+  FILL_LEVELS,
+  decodeScenarioPayload,
+  featureValue,
+  type ScenarioParcels
+} from '../../src/lib/data/scenario-codec';
+import { FIXTURE_PROFILE } from '../config';
+import { openDuck, type Duck } from '../lib/duck';
+import { build } from '../steps/build';
+import { MINI } from './helpers';
+
+/** Spec §4.6, in order: T13's columns, then the additions. */
+const PANEL_COLUMNS = [
+  'mapblklot',
+  'roll_year',
+  'existing_units',
+  'existing_stories',
+  'year_built',
+  'land_value',
+  'improvement_value',
+  'use_code',
+  'land_use_class',
+  'zoning_code',
+  'base_stories',
+  'base_density_cap',
+  'base_yield',
+  'lien_day',
+  'lot_area_m2',
+  'improvement_share',
+  'rent_control_likely',
+  'imputed',
+  'potential_ratio_base',
+  'stories_gap_base',
+  'hostable_base'
+];
+
+interface PanelRow {
+  mapblklot: string;
+  roll_year: number;
+  existing_units: number;
+  existing_stories: number;
+  year_built: number;
+  land_use_class: number;
+  base_stories: number;
+  base_density_cap: number | null;
+  base_yield: number;
+  lot_area_m2: number;
+  improvement_share: number;
+  rent_control_likely: boolean;
+  imputed: number;
+  potential_ratio_base: number;
+  stories_gap_base: number;
+  hostable_base: boolean;
+}
+
+const F = FILL_LEVELS.length;
+let derived: string;
+let p: ScenarioParcels;
+let db: Duck;
+let counts: Record<string, number>;
+
+beforeAll(async () => {
+  const root = mkdtempSync(join(tmpdir(), 'sfh-scenario-features-'));
+  derived = join(root, 'derived', 'fixture-0');
+  const { outDir } = await build({
+    lockPath: join(MINI, 'sources.lock.json'),
+    rawDir: join(MINI, 'raw'),
+    rawByName: true,
+    outRoot: root,
+    datasetVersion: 'fixture-0',
+    builtAt: '2026-10-10T00:00:00.000Z',
+    profile: FIXTURE_PROFILE,
+    skipTiles: true,
+    derivedRoot: join(root, 'derived')
+  });
+  p = decodeScenarioPayload(
+    new Uint8Array(inflateRawSync(readFileSync(join(outDir, 'scenarios/fzp/parcels.bin'))))
+  );
+  counts = JSON.parse(readFileSync(join(outDir, 'report.json'), 'utf8')).counts;
+  db = await openDuck();
+});
+
+const panel = () =>
+  db.all<PanelRow>(
+    `SELECT * FROM read_parquet('${join(derived, 'parcel-panel.parquet')}')
+     ORDER BY mapblklot, roll_year`
+  );
+
+describe('scenario T13 panel and T11 features (mini fixture)', () => {
+  it("every parcel's 2025 panel row equals its T11 features and mask", async () => {
+    const rows = (await panel()).filter((r) => r.roll_year === 2025);
+    // Lots 9, 12 and 13 have no 2025 roll row (mini README), so 11 of the 14 parcels.
+    expect(rows).toHaveLength(11);
+    expect(p.rollYear).toBe(2025);
+    for (const r of rows) {
+      const i = p.index.get(r.mapblklot);
+      expect(i, r.mapblklot).toBeDefined();
+      const k = i as number;
+      expect(
+        {
+          existing_units: r.existing_units,
+          existing_stories: r.existing_stories,
+          lot_area_m2: r.lot_area_m2,
+          year_built: r.year_built,
+          improvement_share: r.improvement_share,
+          rent_control_likely: r.rent_control_likely ? 1 : 0,
+          land_use_class: r.land_use_class,
+          imputed: r.imputed,
+          potential_ratio_base: r.potential_ratio_base,
+          stories_gap_base: r.stories_gap_base,
+          base_stories: r.base_stories,
+          base_density_cap: r.base_density_cap ?? 0xffff,
+          base_yield: r.base_yield,
+          hostable_base: r.hostable_base ? 1 : 0
+        },
+        r.mapblklot
+      ).toEqual({
+        existing_units: featureValue(p, k, 'existingUnits', 'base'),
+        existing_stories: p.existingStories[k],
+        lot_area_m2: featureValue(p, k, 'lotAreaM2', 'base'),
+        year_built: featureValue(p, k, 'yearBuilt', 'base'),
+        improvement_share: featureValue(p, k, 'improvementShare', 'base'),
+        rent_control_likely: featureValue(p, k, 'rentControlLikely', 'base'),
+        land_use_class: featureValue(p, k, 'landUseClass', 'base'),
+        imputed: p.imputed[k],
+        potential_ratio_base: featureValue(p, k, 'potentialRatio', 'base'),
+        stories_gap_base: featureValue(p, k, 'storiesGap', 'base'),
+        base_stories: p.baseStories[k],
+        base_density_cap: p.baseCap[k],
+        base_yield: p.baseYield[k * F + F - 1],
+        hostable_base: p.hostableBase[k]
+      });
+    }
+    expect(counts['scenario.panel.feature_mismatch']).toBe(0);
+    expect(counts['scenario.roll.latest_eligible_matched']).toBe(10);
+  });
+
+  it('the panel has roll years 2024 and 2025 and every T13 column', async () => {
+    const rows = await panel();
+    expect([...new Set(rows.map((r) => r.roll_year))]).toEqual([2024, 2025]);
+    expect(counts['scenario.panel.years']).toBe(2);
+    const cols = await db.all<{ column_name: string; column_type: string }>(
+      `DESCRIBE SELECT * FROM read_parquet('${join(derived, 'parcel-panel.parquet')}')`
+    );
+    expect(cols.map((c) => c.column_name)).toEqual(PANEL_COLUMNS);
+    const type = Object.fromEntries(cols.map((c) => [c.column_name, c.column_type]));
+    expect(type.land_use_class).toBe('INTEGER');
+    expect(type.potential_ratio_base).toBe('FLOAT');
+    // Sorted by (mapblklot, roll_year) as written.
+    const raw = await db.all<{ mapblklot: string; roll_year: number }>(
+      `SELECT mapblklot, roll_year FROM read_parquet('${join(derived, 'parcel-panel.parquet')}')`
+    );
+    expect(raw).toEqual(rows.map((r) => ({ mapblklot: r.mapblklot, roll_year: r.roll_year })));
+    // Lot 12's 2024 row carries the retired 3512099's 7 units via lineage (spec §4.11).
+    expect(rows.find((r) => r.mapblklot === '3512012')).toMatchObject({
+      roll_year: 2024,
+      existing_units: 7
+    });
+  });
+
+  it('parcel-lineage.parquet has the retired rows', async () => {
+    const rows = await db.all<{
+      blklot: string;
+      retired_mapblklot: string;
+      current_mapblklot: string | null;
+      d: string;
+    }>(
+      `SELECT blklot, retired_mapblklot, current_mapblklot, strftime(date_rec_drop, '%Y-%m-%d') d
+       FROM read_parquet('${join(derived, 'parcel-lineage.parquet')}') ORDER BY blklot`
+    );
+    expect(rows).toEqual([
+      {
+        blklot: '3512098',
+        retired_mapblklot: '3512098',
+        current_mapblklot: '3512001',
+        d: '2019-03-01'
+      },
+      {
+        blklot: '3512099',
+        retired_mapblklot: '3512099',
+        current_mapblklot: '3512012',
+        d: '2024-06-30'
+      }
+    ]);
+  });
+});

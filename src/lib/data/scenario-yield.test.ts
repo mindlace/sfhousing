@@ -10,7 +10,7 @@ vi.mock('../generator', async (importOriginal) => {
 });
 
 import { fnv1a32 } from '../generator';
-import { scenarioYield } from './scenario-yield';
+import { capScenarioYield, scenarioYield } from './scenario-yield';
 
 function rec(over: Partial<ParcelRecord> = {}): ParcelRecord {
   return {
@@ -84,5 +84,23 @@ describe('scenarioYield', () => {
     scenarioYield(r, 7, null);
     expect(generateMock).toHaveBeenCalledTimes(1);
     expect(generateMock).toHaveBeenCalledWith(r, { maxStories: 7 }, fnv1a32('0042007'), 'max');
+  });
+});
+
+describe('capScenarioYield', () => {
+  it('equals scenarioYield with the cap, applied to the uncapped gross', () => {
+    for (const units of [0, 3, 10]) {
+      for (const existingUnits of [0, 2, 3, 5]) {
+        for (const cap of [null, 0, 2, 3, 4, 6, 12]) {
+          generateMock.mockReturnValue(building(units));
+          const r = rec({ existingUnits });
+          const gross = scenarioYield(r, 4, null);
+          expect(
+            capScenarioYield(gross, cap, existingUnits),
+            `${units} ${existingUnits} ${cap}`
+          ).toBe(scenarioYield(r, 4, cap));
+        }
+      }
+    }
   });
 });
