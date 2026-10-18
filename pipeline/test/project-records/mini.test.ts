@@ -464,10 +464,8 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(r.counts['multiphase.descendants.2012-000020PRX']).toBe(1);
     expect(r.counts['multiphase.descendants.2007.0001PRX']).toBe(1);
     expect(r.counts['multiphase.descendants.2010.0002PRX']).toBe(1);
-    // M11 holds the tracking lot without a DA row: flagged (it is also the project that nets M20).
-    expect(r.warnings).toContain(
-      '2012-000020PRX: descendant parcel 3512006 is held by PRJ:2026-000011PRJ, which is not a DA project'
-    );
+    // M11 holds the tracking lot without a DA row, but it nets M20, so it is not flagged (B2).
+    expect(r.warnings.filter((w) => w.includes('descendant parcel'))).toEqual([]);
   });
 
   it('a DQ-2-linked project nets no master (spec 4.10.2: it matches a pipeline row)', () => {

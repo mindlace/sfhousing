@@ -24,6 +24,17 @@ import { buildPhases, isoToDay, median } from './multiphase';
 import { permitCompletionDay, permitDays } from './stages';
 import type { Completion, LinkedProject, PipelineRow, ProjectRecordsInput } from './types';
 
+/**
+ * Ruling B1: the record ids a PRX case's base-case PRJ may carry, the case without its trailing
+ * 'PRX' (old format: `2007.0946PRX` → `2007.0946`) and that plus 'PRJ' (dash format:
+ * `2018-007883PRX` → `2018-007883PRJ`). [] for a case that does not end in 'PRX'.
+ */
+export function baseCaseIds(caseNo: string): string[] {
+  if (!caseNo.endsWith('PRX')) return [];
+  const base = caseNo.slice(0, -'PRX'.length);
+  return [base, `${base}PRJ`];
+}
+
 /** One `permits.parquet` row (spec 4.9): one per linked type 1/2 permit. */
 export interface PermitOut {
   permit_number: string;
@@ -258,15 +269,16 @@ export function permitRows(
   for (const r of pipeline) {
     if (r.bpaNo !== null && r.da !== null && !daOf.has(r.bpaNo)) daOf.set(r.bpaNo, r.da);
   }
-  // PRX rows by base case and by da; the lowest case number wins.
+  // PRX rows by base-case PRJ (Ruling B1) and by da; the lowest case number wins.
   const prxRows = pipeline
     .filter((r): r is PipelineRow & { caseNo: string } => r.prx && r.caseNo !== null)
     .sort((a, b) => cmp(a.caseNo, b.caseNo));
   const prxByBase = new Map<string, string>();
   const prxByDa = new Map<string, string>();
   for (const r of prxRows) {
-    const base = r.caseNo.slice(0, -'PRX'.length);
-    if (!prxByBase.has(base)) prxByBase.set(base, r.caseNo);
+    for (const base of baseCaseIds(r.caseNo)) {
+      if (!prxByBase.has(base)) prxByBase.set(base, r.caseNo);
+    }
     if (r.da !== null && !prxByDa.has(r.da)) prxByDa.set(r.da, r.caseNo);
   }
 
@@ -370,7 +382,7 @@ export interface MasterDa {
 /**
  * Spec 4.10.2 DA parcels of a master (a pipeline-only PRX project): the resolved tracking blklot,
  * the blklots of every pipeline row with the same non-null `da`, of every project holding the
- * base-case PRJ (case number without 'PRX') and of every phase in its `multiphase.json` entry.
+ * base-case PRJ (`baseCaseIds`, Ruling B1) and of every phase in its `multiphase.json` entry.
  * When the entry has `schedule: null`, or there is no entry, they also hold every current parcel
  * descended from the tracking blklot (main's ruling 3, Ruling D1 revised). The phase size u is the
  * median over completed permits of those base-case projects and of projects holding a row with
@@ -389,11 +401,11 @@ export function masterDa(
 ): MasterDa {
   const master = proj.pipelineRows[0];
   const caseNo = master.caseNo as string;
-  const baseCase = caseNo.slice(0, -'PRX'.length);
+  const baseIds = new Set(baseCaseIds(caseNo));
   const entry = o.multiphase.projects.find((e) => e.caseNo === caseNo) ?? null;
   const da = master.da;
   const baseProjects = o.projects.filter((p) =>
-    [...p.anchors, ...p.satellites].some((r) => r.recordId === baseCase)
+    [...p.anchors, ...p.satellites].some((r) => baseIds.has(r.recordId))
   );
   const daProjects =
     da === null ? [] : o.projects.filter((p) => p.pipelineRows.some((r) => r.da === da));
@@ -417,20 +429,22 @@ export function masterDa(
 }
 
 /**
- * Main's ruling 3 flag (no effect on netting): one warning per descendant parcel of a master held
- * by an in-flight project that is not a master, holds no pipeline row with the master's `da` and
- * does not hold the base-case PRJ. `inFlight` are the in-flight non-master projects before
- * netting, in id order; warnings come in (parcel, project id) order.
+ * Main's ruling 3 flag (no effect on netting), emitted after netting (Ruling B2): one warning per
+ * descendant parcel of a master held by an in-flight project that is not a master, holds no
+ * pipeline row with the master's `da`, does not hold the base-case PRJ and did not net this
+ * master (`nettedBy`, project ids). `inFlight` are the in-flight non-master projects, in id
+ * order; warnings come in (parcel, project id) order.
  */
 export function descendantWarnings(
   caseNo: string,
   da: MasterDa,
-  inFlight: readonly LinkedProject[]
+  inFlight: readonly LinkedProject[],
+  nettedBy: ReadonlySet<string>
 ): string[] {
   const out: string[] = [];
   for (const id of da.descendants) {
     for (const p of inFlight) {
-      if (da.daProjects.has(p) || !p.parcelIds.includes(id)) continue;
+      if (da.daProjects.has(p) || nettedBy.has(p.id) || !p.parcelIds.includes(id)) continue;
       out.push(`${caseNo}: descendant parcel ${id} is held by ${p.id}, which is not a DA project`);
     }
   }

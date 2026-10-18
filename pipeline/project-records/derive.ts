@@ -546,13 +546,11 @@ export function deriveProjects(
   const masters = assessed
     .filter((a) => a.status === 'inFlight' && a.multiPhase)
     .map((a) => ({ a, da: masterDa(a.proj, daCtx) }));
-  // Main's ruling 3: per-master descendant counts, and descendants held by non-DA projects.
+  // Main's ruling 3: per-master descendant counts.
   const nonMasters = assessed.filter((a) => a.status === 'inFlight' && !a.multiPhase);
-  const holders = nonMasters.map((x) => x.proj);
   for (const { a, da } of masters) {
     const caseNo = a.proj.pipelineRows[0].caseNo as string;
     counts[`multiphase.descendants.${caseNo}`] = da.descendants.length;
-    warnings.push(...descendantWarnings(caseNo, da, holders));
   }
   const netting = netMasters(
     masters.map(({ a, da }) => ({ id: a.proj.id, units: a.units ?? 0, daParcels: da.daParcels })),
@@ -560,6 +558,13 @@ export function deriveProjects(
       .filter((a) => a.proj.pipelineRows.length === 0)
       .map((a) => ({ id: a.proj.id, units: a.units ?? 0, parcelIds: a.proj.parcelIds }))
   );
+  // Main's ruling 3 flag, after netting (Ruling B2): descendants held by non-DA projects, skipping
+  // the projects that netted the master (they are DA-related by construction).
+  const holders = nonMasters.map((x) => x.proj);
+  masters.forEach(({ a, da }, k) => {
+    const caseNo = a.proj.pipelineRows[0].caseNo as string;
+    warnings.push(...descendantWarnings(caseNo, da, holders, new Set(netting[k].by)));
+  });
   const nettedR = new Map(netting.map((n) => [n.id, n.after]));
   const nettedOut = new Set<string>();
   masters.forEach(({ a }, k) => {

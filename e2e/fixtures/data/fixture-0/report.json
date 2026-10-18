@@ -463,7 +463,6 @@
     "2025-000017PRX: linked to 2025-000017PRJ with no units; excluded",
     "2025-000017PRX: linked to 2025-000017PRJ; multiphase entry unused",
     "2026-000018PRJ: no status date and no open Planning record on its lot; dropped",
-    "2012-000020PRX: descendant parcel 3512006 is held by PRJ:2026-000011PRJ, which is not a DA project",
     "2012-000020PRX: no free DA parcel; score-only",
     "rhna.xdhtLagDays 633 > 120: xdht-4php completions look stale"
   ]

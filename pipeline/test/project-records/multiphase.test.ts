@@ -10,6 +10,7 @@ import {
   type MultiphasePhase
 } from '../../enrichment/schema';
 import { parseProjectsFile } from '../../../src/lib/timelapse/projects';
+import { baseCaseIds } from '../../project-records/assemble';
 import { deriveProjects, type DeriveResult } from '../../project-records/derive';
 import { checkV21, checkV24 } from '../../project-records/invariants';
 import {
@@ -927,7 +928,7 @@ describe('deriveProjects: descendant DA parcels of schedule-null masters', () =>
     expect(wide.counts['multiphase.descendants.2010.0002PRX']).toBe(2);
   });
 
-  it('Balboa shape: a non-pipeline project on a descendant parcel nets the master', () => {
+  it('Balboa shape: a non-pipeline project on a descendant parcel nets the master, unflagged', () => {
     const control = baseRaw();
     addPermit(control, '008', 30);
     const before = deriveProjects(baseInput(control));
@@ -941,9 +942,8 @@ describe('deriveProjects: descendant DA parcels of schedule-null masters', () =>
     expect(r.checks.multiphase.masters[D].daParcels).toEqual(
       expect.arrayContaining(['3512006', '3512008'])
     );
-    expect(r.warnings).toContain(
-      '2010.0002PRX: descendant parcel 3512008 is held by BP:202608010011, which is not a DA project'
-    );
+    // Ruling B2: the flag runs after netting and skips the projects that netted this master.
+    expect(r.warnings.filter((w) => w.includes('descendant parcel'))).toEqual([]);
     expect(checkV24(r.checks)).toMatchObject({ id: 'V24', ok: true });
   });
 
@@ -972,5 +972,110 @@ describe('deriveProjects: descendant DA parcels of schedule-null masters', () =>
     expect(r.warnings).toContain(
       '2007.0001PRX: descendant parcel 3512004 is held by BP:202608010011, which is not a DA project'
     );
+  });
+});
+
+describe('baseCaseIds (Ruling B1)', () => {
+  it('gives the case without PRX and that plus PRJ', () => {
+    expect(baseCaseIds('2018-007883PRX')).toEqual(['2018-007883', '2018-007883PRJ']);
+    expect(baseCaseIds('2007.0946PRX')).toEqual(['2007.0946', '2007.0946PRJ']);
+    expect(baseCaseIds('2018-007883PRJ')).toEqual([]);
+  });
+});
+
+const DASH = 'CASE:2012-000002PRX';
+
+/** Renames master D to the dash-format case `2012-000002PRX` (row and multiphase entry). */
+function dashMaster(raw: Record<ProjectSourceId, RawRow[]>): MultiphaseFile {
+  const row = raw['datasf-dev-pipeline'].find((r) => r.case_no === '2010.0002PRX')!;
+  row.case_no = '2012-000002PRX';
+  const mp = baseMultiphase();
+  mp.projects[0].caseNo = '2012-000002PRX';
+  return mp;
+}
+
+// Ruling B1: a dash-format master's base-case PRJ is `<case>PRJ` (2018-007883PRX → 2018-007883PRJ).
+describe('deriveProjects: dash-format base-case PRJ (Ruling B1)', () => {
+  it('takes the base PRJ parcels as DA parcels, its completed permits as u, and prx_case_no', () => {
+    const raw = baseRaw();
+    const mp = dashMaster(raw);
+    raw['datasf-planning-projects'].push({
+      record_id: '2012-000002PRJ',
+      record_status: 'Closed',
+      block: '3512',
+      lot: '009',
+      open_date: ts('2012-01-05'),
+      building_permits: '201501150014',
+      number_of_units_prop: '40',
+      new_construction: 'CHECKED'
+    });
+    raw['datasf-planning-review'].push({
+      b1_alt_id: '2012-000002PRJ',
+      start_event_type: 'accepted',
+      start_event_date: ts('2012-02-01'),
+      end_event_type: 'approval',
+      end_event_date: ts('2013-03-01')
+    });
+    raw['datasf-permits-newcon'].push({
+      permit_number: '201501150014',
+      permit_type: '2',
+      block: '3512',
+      lot: '009',
+      status: 'complete',
+      status_date: ts('2017-04-01'),
+      filed_date: ts('2015-01-15'),
+      issued_date: ts('2015-06-01'),
+      first_construction_document_date: ts('2015-08-01'),
+      completed_date: ts('2017-04-01'),
+      proposed_units: '40',
+      site_permit: 'Y',
+      primary_address_flag: 'Y'
+    });
+    raw['datasf-unit-completions'].push({
+      building_permit_application: '201501150014',
+      date_issued: ts('2017-03-01'),
+      document_type: 'CFC',
+      number_of_units_certified: '40'
+    });
+    const r = deriveProjects(baseInput(raw, mp));
+    expect(r.checks.multiphase.masters[DASH].daParcels).toEqual(['3512001', '3512006', '3512009']);
+    expect(r.counts['multiphase.u.2012-000002PRX']).toBe(40);
+    expect(r.counts['multiphase.u.2012-000002PRX.n']).toBe(1);
+    const permit = r.permits.find((p) => p.permit_number === '201501150014')!;
+    expect(permit).toMatchObject({
+      prj_record_id: '2012-000002PRJ',
+      prx_case_no: '2012-000002PRX'
+    });
+    expect(checkV24(r.checks)).toMatchObject({ id: 'V24', ok: true });
+  });
+
+  it('does not flag an in-flight base-case PRJ project on a descendant parcel (Ruling B2)', () => {
+    // The base PRJ (lot 008, a descendant of the tracking lot 006) holds its own pipeline row with
+    // no da, so it neither nets the master nor is a same-da project: only the base-case match
+    // keeps it unflagged.
+    const raw = baseRaw();
+    const mp = dashMaster(raw);
+    raw['datasf-planning-projects'].push({
+      record_id: '2012-000002PRJ',
+      record_status: 'Open',
+      block: '3512',
+      lot: '008',
+      open_date: ts('2026-05-01'),
+      number_of_units_prop: '10',
+      new_construction: 'CHECKED'
+    });
+    raw['datasf-dev-pipeline'].push({
+      blklot: '3512008',
+      current_status: 'PL Filed',
+      current_status_date: ts('2026-06-01'),
+      case_no: '2012-000002PRJ',
+      new_pipeline_units: '10'
+    });
+    const r = deriveProjects(withDescendants(raw, { '3512006': ['3512006', '3512008'] }, mp));
+    expect(t3(r, 'PRJ:2012-000002PRJ')).toMatchObject({ parcelIds: ['3512008'] });
+    expect(r.counts['multiphase.descendants.2012-000002PRX']).toBe(2);
+    expect(r.counts['multiphase.netted.2012-000002PRX']).toBe(0);
+    expect(r.checks.multiphase.masters[DASH].daParcels).toContain('3512008');
+    expect(r.warnings.filter((w) => w.includes('descendant parcel'))).toEqual([]);
   });
 });
