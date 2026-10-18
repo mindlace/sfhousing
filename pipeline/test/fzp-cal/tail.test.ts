@@ -41,7 +41,7 @@ describe('tailFit', () => {
   it('p_j = (lambda_j / lambda)(1 - exp(-lambda)) on hand counts, 6 significant digits', () => {
     const f = tailFit(hand, 4, cal({ tailSpan: 2, tailMinEvents: 1 }));
     expect(f.k0).toBe(3);
-    expect(f.events).toBe(3);
+    expect(f.observedEvents).toBe(3);
     expect(f.personMonths).toBeCloseTo(7, 9);
     expect(f.lambda.advance).toBeCloseTo(1 / 7, 12);
     expect(f.lambda.withdrawn).toBeCloseTo(1 / 7, 12);
@@ -62,7 +62,7 @@ describe('tailFit', () => {
     expect(f.tail.advance).toBe(0.217641);
     expect(f.tail.exit.withdrawn).toBe(0.10882);
     expect(f.tail.exit.expired).toBe(0.10882);
-    expect(f.events).toBe(3);
+    expect(f.observedEvents).toBe(3);
   });
 
   /*
@@ -80,19 +80,19 @@ describe('tailFit', () => {
   it('k0 moves earlier until the span holds TAIL_MIN_EVENTS events', () => {
     const one = tailFit(spread, 4, cal({ tailSpan: 1, tailMinEvents: 1 }));
     expect(one.k0).toBe(4);
-    expect(one.events).toBe(1);
+    expect(one.observedEvents).toBe(1);
     expect(one.personMonths).toBeCloseTo(0.5 + 3, 9);
 
     const three = tailFit(spread, 4, cal({ tailSpan: 1, tailMinEvents: 3 }));
     expect(three.k0).toBe(2);
-    expect(three.events).toBe(3);
+    expect(three.observedEvents).toBe(3);
     expect(three.personMonths).toBeCloseTo(0.5 + 1.5 + 2.5 + 5, 9);
   });
 
   it('k0 stops at 1 when even the whole range holds too few events', () => {
     const f = tailFit(spread, 4, cal({ tailSpan: 1, tailMinEvents: 10 }));
     expect(f.k0).toBe(1);
-    expect(f.events).toBe(4);
+    expect(f.observedEvents).toBe(4);
     expect(f.personMonths).toBeCloseTo(0.5 + 1.5 + 2.5 + 3.5 + 6, 9);
   });
 
@@ -118,7 +118,8 @@ describe('tailFit', () => {
     const w = hand.map((s, i) => (i === 0 ? { ...s, w: 2 } : s));
     const f = tailFit(w, 4, cal({ tailSpan: 2, tailMinEvents: 1 }));
     expect(f.k0).toBe(3);
-    expect(f.events).toBe(4);
+    expect(f.observedEvents).toBe(3);
+    expect(f.weightedEvents).toBe(4);
     expect(f.personMonths).toBeCloseTo(8, 9);
     expect(f.lambda.advance).toBeCloseTo(1 / 4, 12);
     expect(f.lambda.withdrawn).toBeCloseTo(1 / 8, 12);
@@ -127,17 +128,22 @@ describe('tailFit', () => {
     expect(exposureFrom(hand, 2 * M) / M).toBe(tailFit(hand, 4, c).personMonths);
   });
 
-  it('weighted events move k0 like unit events', () => {
-    // the span from 3M holds the expired at 3.5M; weighted 3 it meets TAIL_MIN_EVENTS = 3
+  it('weights never move k0: TAIL_MIN_EVENTS counts observed events (ruling R18)', () => {
+    // the span from 3M holds one observed event, the expired at 3.5M; weighted 3 it would meet
+    // TAIL_MIN_EVENTS = 3 on its own, but k0 still moves to 2 as for unit weights
     const w = spread.map((s) => (s.outcome === 'expired' ? { ...s, w: 3 } : s));
-    const f = tailFit(w, 4, cal({ tailSpan: 1, tailMinEvents: 3 }));
-    expect(f.k0).toBe(4);
-    expect(f.events).toBe(3);
+    const c3 = cal({ tailSpan: 1, tailMinEvents: 3 });
+    const f = tailFit(w, 4, c3);
+    expect(f.k0).toBe(tailFit(spread, 4, c3).k0);
+    expect(f.k0).toBe(2);
+    expect(f.observedEvents).toBe(3);
+    // withdrawn at 1.5M, advance at 2.5M, expired at 3.5M weighted 3
+    expect(f.weightedEvents).toBe(5);
   });
 
   it('no exposure or no events gives a zero tail', () => {
     const f = tailFit([spell(0, 10, 'censored')], 1, LIVE_CAL);
-    expect(f.events).toBe(0);
+    expect(f.observedEvents).toBe(0);
     expect(f.tail.advance).toBe(0);
     expect(Object.values(f.tail.exit)).toEqual([0, 0, 0, 0]);
     expect(tailFit([], 1, LIVE_CAL).tail.advance).toBe(0);

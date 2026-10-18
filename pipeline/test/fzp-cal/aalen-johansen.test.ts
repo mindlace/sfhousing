@@ -1,6 +1,13 @@
 // Aalen–Johansen sweep and table extraction (stage-calibration spec §4.4, §6).
 import { describe, expect, it } from 'vitest';
-import { ajSweep, ajTable } from '../../lib/fzp-cal/aalen-johansen';
+import {
+  ajSweep,
+  ajTable,
+  atRisk,
+  countAtRisk,
+  riskIndex,
+  tableMonths
+} from '../../lib/fzp-cal/aalen-johansen';
 import type { Spell } from '../../lib/fzp-cal/types';
 import { mulberry32 } from '../../../src/lib/generator/seed';
 import { MONTH_DAYS } from '../../../src/lib/timelapse/time';
@@ -231,6 +238,14 @@ describe('weighted spells (ruling R13)', () => {
     expect(sw.n).toEqual([8, 6, 4, 3]);
     expect(sw.e.advance).toEqual([2, 0, 1, 0]);
     expect(sw.events.advance).toBe(3);
+    // the observed, unweighted count the ladder's N_EVENTS_MIN reads (ruling R18)
+    expect(sw.observed).toEqual({
+      advance: 2,
+      withdrawn: 1,
+      disapproved: 0,
+      cancelled: 0,
+      expired: 1
+    });
     expect(sw.spells).toBe(7);
     const { t } = table(w);
     expect(t.months).toBe(6);
@@ -238,5 +253,20 @@ describe('weighted spells (ruling R13)', () => {
     expect(t.exit.withdrawn).toEqual([0, 0, 0.125, 0.125, 0.125, 0.125]);
     expect(t.exit.expired).toEqual([0, 0, 0, 0.15625, 0.15625, 0.15625]);
     expect(t.S).toBeCloseTo(0.3125, 15);
+  });
+
+  /*
+   * nRiskMin 3: unweighted n(3M = 91.3) = 4 and n(4M = 121.7) = 7 - 5 = 2, so months = 3.
+   * With the censored spell at 200 weighted 5, the weighted risk set at 4M is 1 + 5 = 6 >= 3 (and
+   * at 6M it is 5): weights would lengthen the table to 6 months, and must not (ruling R18).
+   */
+  it('weights never lengthen the table: N_RISK_MIN counts observed records (ruling R18)', () => {
+    const w = golden.map((s, i) => (i === 6 ? { ...s, w: 5 } : s));
+    const idx = riskIndex(w);
+    expect(atRisk(idx, 4 * M)).toBe(6);
+    expect(countAtRisk(idx, 4 * M)).toBe(2);
+    expect(tableMonths(w, 240, 3)).toBe(3);
+    expect(tableMonths(golden, 240, 3)).toBe(3);
+    expect(table(w, 240, 3).t.months).toBe(3);
   });
 });

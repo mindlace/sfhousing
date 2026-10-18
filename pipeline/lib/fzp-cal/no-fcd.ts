@@ -25,9 +25,9 @@ export interface AdvanceWeighting {
   /** the weight applied to every advance */
   w: number;
   /**
-   * The conductor's guard: w > 1.5 or A < `nEventsMin`, on the cell's own X and A. The caller
-   * pools a flagged pathway-level subset (passing the pooled cell's w) and stops on a flagged
-   * pooled cell.
+   * The conductor's guard: w > 1.5 or A < `nEventsMin`, on the cell's own X and A (A counts
+   * observed records, ruling R18). The caller pools a flagged pathway-level subset (passing the
+   * pooled cell's w) and stops on a flagged pooled cell.
    */
   flagged: boolean;
 }
@@ -38,7 +38,8 @@ export interface AdvanceWeighting {
  * the same pathway subset. A no-FCD completion is in the cell iff it is of `stage`, its completion
  * day is >= `from` and, for `permitIssued`, it entered permitIssued before `asOf`. With A = 0 the
  * cell keeps its spells and drops X. `pooledW` is the pooled cell's w: a flagged subset takes it
- * instead of its own (the guard's pooling before weighting); an unflagged cell ignores it.
+ * instead of its own (the guard's pooling before weighting) when its own X > 0 (ruling R19: a
+ * flagged subset with no no-FCD completions keeps w = 1); an unflagged cell ignores it.
  */
 export function weightAdvances(
   spells: Spell[],
@@ -61,13 +62,17 @@ export function weightAdvances(
   let X = 0;
   for (const u of unobserved) {
     if (u.stage !== stage || u.complete < from) continue;
-    if (stage === 'permitIssued' && u.enteredPermitIssued >= asOf) continue;
+    if (stage === 'permitIssued') {
+      const entered = u.enteredPermitIssued;
+      if (entered === undefined || entered >= asOf) continue;
+    }
     X++;
   }
 
   const own = A > 0 ? 1 + X / A : 1;
   const flagged = own > 1.5 || A < cal.nEventsMin;
-  const w = A === 0 ? 1 : flagged && pooledW !== undefined ? pooledW : own;
+  // R19: only a subset with its own no-FCD completions (X > 0) takes the pooled w.
+  const w = A === 0 ? 1 : flagged && X > 0 && pooledW !== undefined ? pooledW : own;
   const dropped = A === 0 ? X : 0;
   if (w === 1) return { spells, added: 0, dropped, X, A, w, flagged };
 

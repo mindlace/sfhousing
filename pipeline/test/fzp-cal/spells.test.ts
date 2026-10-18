@@ -416,7 +416,8 @@ describe('buildSpells', () => {
 describe('gapImputeTally (DQ-4: counted over windowed histories)', () => {
   const tally = (hs: ProjectHistory[]) => {
     const r = normalise(hs, AS_OF);
-    return gapImputeTally(r.imputed, buildSpells(r.norm, AS_OF).spells);
+    const b = buildSpells(r.norm, AS_OF);
+    return gapImputeTally(r.imputed, b.spells, b.unobserved);
   };
   // permitFiled -> construction with permitIssued missing: step 1 imputes permitIssued.
   const gapped = (id: string, filed: string, built: string) =>
@@ -431,7 +432,8 @@ describe('gapImputeTally (DQ-4: counted over windowed histories)', () => {
     );
     const r = normalise([pre], AS_OF);
     expect(r.imputed.has('pre')).toBe(true);
-    expect(gapImputeTally(r.imputed, buildSpells(r.norm, AS_OF).spells)).toEqual({
+    const b = buildSpells(r.norm, AS_OF);
+    expect(gapImputeTally(r.imputed, b.spells, b.unobserved)).toEqual({
       fired: 0,
       of: 0,
       sample: []
@@ -550,6 +552,34 @@ describe('no-FCD completions (sc.stages.no-fcd-duration, partner ruling P1)', ()
     expect(r.perStage['sc.stages.no-fcd-duration']).toEqual({ permitIssued: 1, construction: 1 });
   });
 
+  it('drops the 0-day construction spell of a completion first seen at construction (P1)', () => {
+    // null pathway, first entered stage construction on the completion day: R7 forbids
+    // back-filling permitIssued, so only the construction advance is unobserved
+    const h = hist(
+      'nc',
+      null,
+      { construction: '2012-05-01', complete: '2012-05-01' },
+      done('2012-05-01')
+    );
+    const r = normalise([h], AS_OF);
+    expect(r.norm[0].noFcd).toBe(true);
+    expect(r.norm[0].eff.permitIssued).toBeUndefined();
+    expect(r.perStage['sc.stages.no-fcd-duration']).toEqual({ construction: 1 });
+    const b = buildSpells(r.norm, AS_OF);
+    expect(b.spells).toEqual([]);
+    expect(b.unobserved).toEqual([
+      { projectId: 'nc', pathway: null, stage: 'construction', complete: d('2012-05-01') }
+    ]);
+    expect(noFcdTally(r.norm, b.spells, b.unobserved)).toEqual({
+      fired: 1,
+      of: 1,
+      sample: ['nc']
+    });
+    // a null-pathway history seen only at completion has no permit-side spell: not no-FCD
+    const only = hist('oc', null, { complete: '2012-05-01' }, done('2012-05-01'));
+    expect(normalise([only], AS_OF).norm[0].noFcd).toBe(false);
+  });
+
   it('is never set on open or exit histories', () => {
     const issued = { permitFiled: '2016-01-01', permitIssued: '2016-06-01' };
     const r = normalise(
@@ -604,8 +634,8 @@ describe('no-FCD completions (sc.stages.no-fcd-duration, partner ruling P1)', ()
       of: 3,
       sample: ['b-late', 'z-nf']
     });
-    // gap-impute counts over the same windowed histories when given the unobserved advances
+    // gap-impute counts over the same windowed histories, the unobserved advances included
     expect(gapImputeTally(r.imputed, b.spells, b.unobserved).of).toBe(3);
-    expect(gapImputeTally(r.imputed, b.spells).of).toBe(2);
+    expect(gapImputeTally(r.imputed, b.spells, []).of).toBe(2);
   });
 });

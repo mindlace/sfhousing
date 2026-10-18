@@ -2,8 +2,11 @@
  * Aalen–Johansen cumulative incidence with delayed entry (stage-calibration spec §4.4).
  * One sorted sweep over the distinct event durations of a cell; every reason at a duration is
  * applied before S is updated, and the risk set counts events before censoring at ties.
- * A spell's weight `w` (default 1; ruling R13) scales its at-risk contribution and its event;
- * with every weight 1 the sums are exact integers, so results are those of plain counts.
+ * A spell's weight `w` (default 1; ruling R13) scales its at-risk contribution and its event
+ * in the estimates; with every weight 1 the sums are exact integers, so results are those of plain
+ * counts. With non-unit weights the float sums depend on input order, which is fixed by contract
+ * (spells sorted by pathway, stage, project id). Thresholds count observed, unweighted records
+ * (ruling R18): `tableMonths` reads `countAtRisk`, and the ladder reads `AjSweep.observed`.
  */
 import { MONTH_DAYS } from '../../../src/lib/timelapse/time';
 import { EXIT_ORDER, type ExitReason } from '../../../src/lib/timelapse/types';
@@ -23,8 +26,10 @@ export interface AjSweep {
   e: Record<Outcome, number[]>;
   /** spells in the cell (a count, unweighted) */
   spells: number;
-  /** total weighted events of each outcome */
+  /** total weighted events of each outcome (the estimates' mass) */
   events: Record<Outcome, number>;
+  /** observed events of each outcome, unweighted (what N_EVENTS_MIN counts, ruling R18) */
+  observed: Record<Outcome, number>;
 }
 
 /** The cause-specific hazard increment of outcome j at sweep index i. */
@@ -98,12 +103,19 @@ export function atRisk(idx: RiskIndex, t: number): number {
   return idx.wa[countAtMost(idx.a, t)] - idx.wx[countBelow(idx.x, t)];
 }
 
+/** #(a <= t) − #(x < t): the observed records at risk at t, unweighted (ruling R18). */
+export function countAtRisk(idx: RiskIndex, t: number): number {
+  return countAtMost(idx.a, t) - countBelow(idx.x, t);
+}
+
 /** The event grid of a cell: distinct event durations, risk sets and event counts. */
 export function ajSweep(spells: Spell[]): AjSweep {
   const byD = new Map<number, Record<Outcome, number>>();
   const events = perOutcome(() => 0);
+  const observed = perOutcome(() => 0);
   for (const s of spells) {
     if (s.outcome === 'censored') continue;
+    observed[s.outcome]++;
     let row = byD.get(s.x);
     if (!row) {
       row = perOutcome(() => 0);
@@ -122,17 +134,20 @@ export function ajSweep(spells: Spell[]): AjSweep {
     const row = byD.get(t)!;
     for (const j of OUTCOMES) e[j].push(row[j]);
   }
-  return { d, n, e, spells: spells.length, events };
+  return { d, n, e, spells: spells.length, events, observed };
 }
 
 /** Floors to 1e-6: keeps the table monotone and advance + sum(exit) <= 1. */
 const floor6 = (v: number): number => Math.floor(v * 1e6) / 1e6;
 
-/** The largest k <= kMax with n(k * MONTH_DAYS) >= nRiskMin over `spellsAll` (0 if none). */
+/**
+ * The largest k <= kMax with at least nRiskMin observed records at risk at k * MONTH_DAYS over
+ * `spellsAll` (0 if none). The count is unweighted (ruling R18): weights never lengthen a table.
+ */
 export function tableMonths(spellsAll: Spell[], kMax: number, nRiskMin: number): number {
   const idx = riskIndex(spellsAll);
   for (let k = kMax; k >= 1; k--) {
-    if (atRisk(idx, k * MONTH_DAYS) >= nRiskMin) return k;
+    if (countAtRisk(idx, k * MONTH_DAYS) >= nRiskMin) return k;
   }
   return 0;
 }

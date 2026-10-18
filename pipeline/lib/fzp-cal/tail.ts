@@ -11,10 +11,13 @@ import type { CalProfile, Spell } from './types';
 /** Rounds to 6 significant digits (ECMAScript `toPrecision` is exactly specified). */
 export const sig6 = (v: number): number => (v === 0 ? 0 : Number(v.toPrecision(6)));
 
-/** Weighted events (any outcome but censored) with x >= `from`, the start of the span in days. */
+/**
+ * Observed (unweighted) events, any outcome but censored, with x >= `from`, the start of the span
+ * in days: what TAIL_MIN_EVENTS counts (ruling R18).
+ */
 function spanEvents(spells: Spell[], from: number): number {
   let n = 0;
-  for (const s of spells) if (s.outcome !== 'censored' && s.x >= from) n += s.w ?? 1;
+  for (const s of spells) if (s.outcome !== 'censored' && s.x >= from) n++;
   return n;
 }
 
@@ -35,8 +38,10 @@ export function exposureFrom(spells: Spell[], from: number): number {
 /**
  * Occurrence/exposure over months k0 onward, to the end of observation. k0 starts at
  * max(1, months - TAIL_SPAN + 1) and moves earlier (down to 1) until the span holds
- * >= TAIL_MIN_EVENTS events. Person-months E = sum max(0, x - max(a, (k0 - 1) M)) / M;
- * events and person-months are weighted by each spell's `w` (default 1; ruling R13);
+ * >= TAIL_MIN_EVENTS observed events (unweighted, ruling R18: weights never move k0).
+ * Person-months E = sum max(0, x - max(a, (k0 - 1) M)) / M; the events and person-months of the
+ * estimate are weighted by each spell's `w` (default 1; ruling R13): `observedEvents` is the span's
+ * record count, `weightedEvents` its weighted mass (equal when every w is 1);
  * lambda_j = scale_j * events_j / E; p_j = (lambda_j / lambda)(1 - exp(-lambda)), 6 significant
  * digits. All four exit reasons are returned (dropping reasons with no events is the caller's).
  * With no exposure or no events the tail is all zeros, which `rejects` turns down.
@@ -48,22 +53,29 @@ export function tailFit(
   scale: Partial<Record<Outcome, number>> = {}
 ): {
   k0: number;
-  events: number;
+  /** observed (unweighted) events in the span */
+  observedEvents: number;
+  /** weighted events in the span, Σ_j of the λ numerators */
+  weightedEvents: number;
   personMonths: number;
   lambda: Record<Outcome, number>;
   tail: Transition['tail'];
 } {
   let k0 = Math.max(1, months - cal.tailSpan + 1);
-  let events = spanEvents(spells, (k0 - 1) * MONTH_DAYS);
-  while (events < cal.tailMinEvents && k0 > 1) {
+  let observedEvents = spanEvents(spells, (k0 - 1) * MONTH_DAYS);
+  while (observedEvents < cal.tailMinEvents && k0 > 1) {
     k0--;
-    events = spanEvents(spells, (k0 - 1) * MONTH_DAYS);
+    observedEvents = spanEvents(spells, (k0 - 1) * MONTH_DAYS);
   }
   const from = (k0 - 1) * MONTH_DAYS;
 
   const count = perOutcome(() => 0);
+  let weightedEvents = 0;
   for (const s of spells) {
-    if (s.outcome !== 'censored' && s.x >= from) count[s.outcome] += s.w ?? 1;
+    if (s.outcome !== 'censored' && s.x >= from) {
+      count[s.outcome] += s.w ?? 1;
+      weightedEvents += s.w ?? 1;
+    }
   }
   const personMonths = exposureFrom(spells, from) / MONTH_DAYS;
 
@@ -77,7 +89,14 @@ export function tailFit(
   const p = (j: Outcome): number => (total > 0 ? sig6((lambda[j] / total) * leave) : 0);
   const exit: Partial<Record<ExitReason, number>> = {};
   for (const r of EXIT_ORDER) exit[r] = p(r);
-  return { k0, events, personMonths, lambda, tail: { advance: p('advance'), exit } };
+  return {
+    k0,
+    observedEvents,
+    weightedEvents,
+    personMonths,
+    lambda,
+    tail: { advance: p('advance'), exit }
+  };
 }
 
 /**

@@ -191,6 +191,36 @@ describe('weightAdvances', () => {
     expect(own.w).toBe(1.1);
   });
 
+  it('R19: a flagged subset with X = 0 keeps w = 1 even when a pooled w is passed', () => {
+    const cell = advances(4);
+    const sub = weightAdvances(
+      cell,
+      unobserved(2, 'construction', isoToDay('2014-06-01')), // before the 2015 cut: X = 0
+      'construction',
+      isoToDay('2015-01-01'),
+      AS_OF,
+      LIVE_CAL,
+      1.25
+    );
+    expect(sub.flagged).toBe(true); // A = 4 < 20
+    expect({ X: sub.X, A: sub.A, w: sub.w, added: sub.added }).toEqual({
+      X: 0,
+      A: 4,
+      w: 1,
+      added: 0
+    });
+    expect(sub.spells).toBe(cell);
+  });
+
+  it('a construction-only unobserved advance (no permitIssued entry) counts in construction', () => {
+    const u: UnobservedAdvance[] = [
+      { projectId: 'nc', pathway: null, stage: 'construction', complete: isoToDay('2015-01-01') }
+    ];
+    const r = weightAdvances(advances(4), u, 'construction', V2007, AS_OF, FIXTURE_CAL);
+    expect(r.X).toBe(1);
+    expect(r.w).toBe(1.25);
+  });
+
   it('rejects spells of another stage', () => {
     expect(() =>
       weightAdvances(

@@ -72,8 +72,11 @@ export interface UnobservedAdvance {
   stage: 'permitIssued' | 'construction';
   /** completion day */
   complete: Day;
-  /** `eff.permitIssued` */
-  enteredPermitIssued: Day;
+  /**
+   * `eff.permitIssued`; set on every `permitIssued` entry, absent on a `construction` entry of a
+   * history that never entered permitIssued (a null-pathway history first seen at construction)
+   */
+  enteredPermitIssued?: Day;
 }
 
 /** A qualifying history after normalisation (spec §4.4 steps 1–6). */
@@ -90,8 +93,8 @@ export interface NormHistory {
   purgeCensored: boolean;
   /**
    * A completion with no construction start (no FCD: `entered.construction` missing or on the
-   * completion day) that entered `permitIssued`: its permitIssued and construction durations are
-   * unobserved (`sc.stages.no-fcd-duration`, partner ruling P1). `normalise` always sets it;
+   * completion day) that entered `permitIssued` or `construction`: its durations in those stages
+   * are unobserved (`sc.stages.no-fcd-duration`, partner ruling P1). `normalise` always sets it;
    * absent (hand-built histories) means false.
    */
   noFcd?: boolean;

@@ -161,11 +161,13 @@ export function normalise(
       }
     }
 
-    // P1: with permitIssued entered, the permitIssued and construction durations are unobserved.
-    const noFcd = noFcdEnd && eff.permitIssued !== undefined;
+    // P1: the construction duration is unobserved, and so is the permitIssued one when the
+    // history entered permitIssued. A history that entered neither (a null-pathway history first
+    // seen at completion) has no permit-side spell to leave out.
+    const noFcd = noFcdEnd && (eff.permitIssued !== undefined || eff.construction !== undefined);
     if (noFcd) {
       const t = perStage['sc.stages.no-fcd-duration'];
-      t.permitIssued = (t.permitIssued ?? 0) + 1;
+      if (eff.permitIssued !== undefined) t.permitIssued = (t.permitIssued ?? 0) + 1;
       t.construction = (t.construction ?? 0) + 1;
     }
 
@@ -251,9 +253,9 @@ const byKey = <T extends { pathway: Spell['pathway']; stage: CalStage; projectId
 /**
  * Spells at the pooled window starts (§4.4 "Spells"), sorted by (pathway, stage, project id).
  * A no-FCD completion (`noFcd`, partner ruling P1) builds no `permitIssued` or `construction`
- * spell; those two are `unobserved` instead, cut by the same pooled-window rule with the
- * completion day as their end: `construction` iff complete >= Wₛ, `permitIssued` iff
- * complete >= Wₛ and `eff.permitIssued` < asOf. Same sort.
+ * spell; those are `unobserved` instead (`permitIssued` only if it entered permitIssued), cut by
+ * the same pooled-window rule with the completion day as their end: `construction` iff
+ * complete >= Wₛ, `permitIssued` iff complete >= Wₛ and `eff.permitIssued` < asOf. Same sort.
  */
 export function buildSpells(
   norm: NormHistory[],
@@ -264,9 +266,15 @@ export function buildSpells(
   for (const h of norm) {
     if (h.noFcd) {
       const complete = h.eff.complete as Day;
-      const enteredPermitIssued = h.eff.permitIssued as Day;
+      const enteredPermitIssued = h.eff.permitIssued;
       for (const stage of ['permitIssued', 'construction'] as const) {
         if (complete < windowStart(stage, 'pooled')) continue;
+        if (enteredPermitIssued === undefined) {
+          if (stage === 'construction') {
+            unobserved.push({ projectId: h.id, pathway: h.pathway, stage, complete });
+          }
+          continue;
+        }
         if (stage === 'permitIssued' && enteredPermitIssued >= asOf) continue;
         unobserved.push({
           projectId: h.id,
@@ -311,7 +319,7 @@ function windowedIds(spells: Spell[], unobserved: UnobservedAdvance[]): Set<stri
 export function gapImputeTally(
   perHistory: ReadonlySet<string>,
   spells: Spell[],
-  unobserved: UnobservedAdvance[] = []
+  unobserved: UnobservedAdvance[]
 ): RuleTally {
   const windowed = windowedIds(spells, unobserved);
   const sample = [...windowed].filter((id) => perHistory.has(id)).sort();
