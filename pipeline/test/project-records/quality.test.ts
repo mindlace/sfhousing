@@ -84,8 +84,8 @@ const TABLE: Record<string, Spec> = {
     tier: 2,
     valueTier: 0,
     unitsWeighted: true,
-    warnShare: 0.01,
-    failShare: 0.1,
+    warnShare: 0.1,
+    failShare: 0.2,
     label: 'Dates taken from the Planning record on this lot'
   },
   'pr.pipeline.no-status-date': {

@@ -108,10 +108,10 @@ export const PR_RULES: readonly QualityRule[] = [
     maskBit: null,
     label: 'Dates taken from the Planning record on this lot',
     denominator: 'pipeline rows',
-    // Keeps the defaults: live it fires on 2 of 1,917 rows, and by units (6,069 of the
-    // pipeline's new units) it is expected to warn, which surfaces DQ-2 in every build.
-    warnShare: 0.01,
-    failShare: 0.1,
+    // Override (partner-approved): two mega-project pipeline rows (Freedom West in, Flower Mart
+    // out), outcomes per DQ-2; live units share 8.0%, rows 2 of 1,917.
+    warnShare: 0.1,
+    failShare: 0.2,
     unitsWeighted: true
   },
   {
