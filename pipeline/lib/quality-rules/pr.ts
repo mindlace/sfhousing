@@ -7,6 +7,7 @@ export const PR = {
   storiesParseRange: 'pr.stories.parse-range',
   stagesForwardClamp: 'pr.stages.forward-clamp',
   unitsCapacity: 'pr.units.capacity',
+  unitsCapacityCap: 'pr.units.capacity-cap',
   pipelineStatusDateLinked: 'pr.pipeline.status-date-linked',
   pipelineNoStatusDate: 'pr.pipeline.no-status-date',
   pipelineRecordsWin: 'pr.pipeline.records-win',
@@ -93,6 +94,25 @@ export const PR_RULES: readonly QualityRule[] = [
     label: "A permit's unit count was more than its lot could physically hold and was not used",
     denominator: 'permits with recorded stories and units on a project with parcels',
     warnShare: 0.01,
+    failShare: 0.1,
+    unitsWeighted: true
+  },
+  {
+    id: PR.unitsCapacityCap,
+    owner: OWNER,
+    source: 'datasf-permits-newcon',
+    field: 'proposed_units',
+    kind: 'outlier',
+    action: 'replace',
+    tier: 4,
+    valueTier: 4,
+    maskBit: null,
+    label:
+      "A permit's unit count was more than its lot could physically hold, so the most homes the lot can hold at the minimum space per home was used",
+    denominator: 'permits with recorded stories and units on a project with parcels',
+    // Override (partner-approved): two impossible permit records, 8500988 dominant; fallback or
+    // minimum-space cap. Live units share 4.52%.
+    warnShare: 0.05,
     failShare: 0.1,
     unitsWeighted: true
   },

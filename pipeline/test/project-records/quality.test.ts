@@ -78,6 +78,17 @@ const TABLE: Record<string, Spec> = {
     failShare: 0.1,
     label: "A permit's unit count was more than its lot could physically hold and was not used"
   },
+  'pr.units.capacity-cap': {
+    kind: 'outlier',
+    action: 'replace',
+    tier: 4,
+    valueTier: 4,
+    unitsWeighted: true,
+    warnShare: 0.05,
+    failShare: 0.1,
+    label:
+      "A permit's unit count was more than its lot could physically hold, so the most homes the lot can hold at the minimum space per home was used"
+  },
   'pr.pipeline.status-date-linked': {
     kind: 'shape',
     action: 'replace',
@@ -386,21 +397,52 @@ describe('pr.units.capacity (spec §4.8)', () => {
     for (const p of r.file.projects) expect(p.quality).not.toContain(PR.unitsCapacity);
   });
 
-  it('tally: fired counts permits, units and unitsOf are proposed units, sample is project ids', () => {
+  it('tally: fired counts permits on the fallback branch; the cap rule takes the rest', () => {
     const r = derive((raw) => {
       overfill(raw);
-      // F (lot 002, 102 m²) is stale-open and never becomes a record: 11 units on 1 story fail.
+      // F (lot 002, 102 m²) is stale-open, has no fallback and never becomes a record: 11 units on
+      // 1 story fail and are capped at floor(10.2) = 10.
       const f = raw['datasf-permits-newcon'].find((x) => x.permit_number === '201410070008');
       Object.assign(f ?? {}, { proposed_units: '11', number_of_proposed_stories: '1' });
     });
     expect(tally(r, PR.unitsCapacity)).toEqual({
-      fired: 2,
+      fired: 1,
       of: 3,
-      units: 5011,
+      units: 5000,
+      unitsOf: 24 + 5000 + 11
+    });
+    expect(tally(r, PR.unitsCapacityCap)).toEqual({
+      fired: 1,
+      of: 3,
+      units: 11,
       unitsOf: 24 + 5000 + 11
     });
     const call = callsFor(r.counts).find((c) => c.id === PR.unitsCapacity);
-    expect(call?.sample).toEqual(['BP:201410070008', 'BP:202403150003']);
+    expect(call?.sample).toEqual(['BP:202403150003']);
+    const cap = callsFor(r.counts).find((c) => c.id === PR.unitsCapacityCap);
+    expect(cap?.sample).toEqual(['BP:201410070008']);
+  });
+
+  // B with a pipeline row that states no units has no fallback source: 103 m² x 1 story, capped at 10.
+  const noFallback = (raw: Record<ProjectSourceId, RawRow[]>) => {
+    overfill(raw);
+    // Its pipeline row stays (it sets the cutoff) but states no units.
+    const row = raw['datasf-dev-pipeline'].find((x) => x.bpa_no === '202403150003');
+    delete row?.new_pipeline_units;
+  };
+
+  it('no fallback: the permit is capped, the project and history carry the cap id', () => {
+    const r = derive(noFallback);
+    const id = 'BP:202403150003';
+    expect(tally(r, PR.unitsCapacity)).toMatchObject({ fired: 0 });
+    expect(tally(r, PR.unitsCapacityCap)).toMatchObject({ fired: 1, units: 5000 });
+    expect(project(r, id)?.quality).toEqual([PR.unitsCapacityCap]);
+    expect(history(r, id)?.quality).toEqual([PR.unitsCapacityCap]);
+    expect(project(r, id)?.units).toBe(10);
+    expect(history(r, id)?.unitsAt).toMatchObject({ permitFiled: 10 });
+    expect(r.permits.find((q) => q.permit_number === '202403150003')?.proposed_units).toBe(10);
+    expect(r.file.qualityRules.map((q) => q.id)).toContain(PR.unitsCapacityCap);
+    expect(r.file.qualityRules.map((q) => q.id)).not.toContain(PR.unitsCapacity);
   });
 
   it('the project and its history carry the id; units fall through; permitFiled and the row follow', () => {

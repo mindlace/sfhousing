@@ -564,6 +564,7 @@ describe('capacity (pr.units.capacity, spec 4.8)', () => {
     expect(grossUnits(p)).toBe(5540);
     const capped = applyCapacity(p, area);
     expect(grossUnits(capped.proj)).toBe(10);
+    expect(capped.capped).toBe(false);
     expect(capped.failing.map((q) => q.number)).toEqual(['8500988']);
     expect(capped.checked.map((q) => q.number)).toEqual(['8500988']);
   });
@@ -583,6 +584,46 @@ describe('capacity (pr.units.capacity, spec 4.8)', () => {
     expect(p.permits[0]).toBe(bad);
     // The failing permit's other fields are kept.
     expect(capped.proj.permits[0]).toMatchObject({ number: '8500988', stories: 3 });
+  });
+
+  it('no fallback unit source: the failing permit is capped at its lot capacity (8500988)', () => {
+    // 289.7 m², 3 stories: floor(289.7 x 3 / 10) = 86.
+    const lot = (id: string) => (id === '0001001' ? 289.7 : 0);
+    const p = proj({ permits: [big()] });
+    const capped = applyCapacity(p, lot);
+    expect(capped.capped).toBe(true);
+    expect(capped.failing.map((q) => q.number)).toEqual(['8500988']);
+    expect(capped.failing[0].proposedUnits).toBe(5540);
+    expect(capped.proj.permits.map((q) => q.proposedUnits)).toEqual([86]);
+    expect(capped.proj.live.map((q) => q.proposedUnits)).toEqual([86]);
+    expect(capped.proj.lead?.proposedUnits).toBe(86);
+    expect(grossUnits(capped.proj)).toBe(86);
+    expect(unitsAt(capped.proj)).toEqual({ permitFiled: 86 });
+    expect(p.permits[0].proposedUnits).toBe(5540);
+    // The capped value now fits.
+    expect(capacityOk(capped.proj.permits[0], ['0001001'], lot)).toBe(true);
+  });
+
+  it('no fallback, two failing permits: both are capped', () => {
+    const p = proj({
+      permits: [big(), permit('9', { stories: 1, proposedUnits: 700 })]
+    });
+    const capped = applyCapacity(p, area);
+    expect(capped.capped).toBe(true);
+    expect(capped.failing.map((q) => q.number)).toEqual(['8500988', '9']);
+    // 300 m² x 3 / 10 = 90; 300 m² x 1 / 10 = 30.
+    expect(capped.proj.permits.map((q) => q.proposedUnits)).toEqual([90, 30]);
+    expect(grossUnits(capped.proj)).toBe(120);
+  });
+
+  it('a pipeline row that is not DQ-2 linked, or another permit with units, is a fallback', () => {
+    const withRow = proj({ permits: [big()], pipelineRows: [row({ newUnits: 12 })] });
+    expect(applyCapacity(withRow, area).capped).toBe(false);
+    expect(grossUnits(applyCapacity(withRow, area).proj)).toBe(12);
+    const withPermit = proj({ permits: [big(), permit('2', { proposedUnits: 3 })] });
+    expect(applyCapacity(withPermit, area).capped).toBe(false);
+    const prjZero = proj({ permits: [big()], anchors: [prj('A', { unitsProp: 0 })] });
+    expect(applyCapacity(prjZero, area).capped).toBe(true);
   });
 
   it('no stories, or no parcels: no check, the same project comes back', () => {

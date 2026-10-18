@@ -78,9 +78,12 @@ export function capacityOk(
   return permit.proposedUnits <= (area * Math.max(permit.stories, 1)) / MIN_GROSS_M2_PER_UNIT;
 }
 
-/** A project after the capacity rule, with what the `pr.units.capacity` tally needs. */
+/** A project after the capacity rule, with what the capacity tallies need. */
 export interface Capacity {
-  /** The project with every failing permit's `proposedUnits` set to null (same object if none). */
+  /**
+   * The project with every failing permit's `proposedUnits` set to null (same object if none), or,
+   * when `capped`, to its lot capacity.
+   */
   proj: LinkedProject;
   /** The project as linked. */
   original: LinkedProject;
@@ -88,12 +91,32 @@ export interface Capacity {
   checked: Permit[];
   /** The `checked` permits that fail `capacityOk` (original units). */
   failing: Permit[];
+  /**
+   * True when the project has failing permits and no fallback unit source once they are all
+   * voided: they are capped (`pr.units.capacity-cap`) instead of voided (`pr.units.capacity`).
+   */
+  capped: boolean;
+}
+
+/** The most homes a permit's project parcels can hold: `floor(Σ area x max(stories, 1) / MIN)`. */
+function lotCapacity(
+  permit: Permit,
+  parcelIds: readonly ParcelId[],
+  areaM2: ProjectRecordsInput['areaM2']
+): number {
+  let area = 0;
+  for (const id of parcelIds) area += areaM2(id);
+  return Math.floor((area * Math.max(permit.stories ?? 1, 1)) / MIN_GROSS_M2_PER_UNIT);
 }
 
 /**
  * Applies `capacityOk` once per permit, before any consumer reads units (rule 1 and `unitsAt`
- * here, the phase-size medians and `permits.parquet` in assemble). A failing permit is replaced
- * by a copy with null units in `permits`, `live` and `lead`; nothing else changes.
+ * here, the phase-size medians and `permits.parquet` in assemble). Every failing permit is first
+ * voided (null units in `permits`, `live` and `lead`); the project then keeps them voided
+ * (`pr.units.capacity`, units fall through) when a fallback unit source remains, that is when
+ * `grossUnits` still yields a number (another permit with units, the anchor PRJ's
+ * `number_of_units_prop` above 0, or a pipeline row not linked under DQ-2). With none, each failing
+ * permit takes its lot capacity instead (`pr.units.capacity-cap`). Nothing else changes.
  */
 export function applyCapacity(
   proj: LinkedProject,
@@ -108,19 +131,27 @@ export function applyCapacity(
       if (!capacityOk(q, proj.parcelIds, areaM2)) failing.push(q);
     }
   }
-  if (failing.length === 0) return { proj, original: proj, checked, failing };
-  const voided = new Map(failing.map((q) => [q, { ...q, proposedUnits: null }]));
-  const swap = (q: Permit): Permit => voided.get(q) ?? q;
-  return {
-    proj: {
+  if (failing.length === 0) return { proj, original: proj, checked, failing, capped: false };
+  const rebuild = (to: (q: Permit) => Permit): LinkedProject => {
+    const swapped = new Map(failing.map((q) => [q, to(q)]));
+    const swap = (q: Permit): Permit => swapped.get(q) ?? q;
+    return {
       ...proj,
       permits: proj.permits.map(swap),
       live: proj.live.map(swap),
       lead: proj.lead === null ? null : swap(proj.lead)
-    },
+    };
+  };
+  const voided = rebuild((q) => ({ ...q, proposedUnits: null }));
+  const capped = grossUnits(voided) === null;
+  return {
+    proj: capped
+      ? rebuild((q) => ({ ...q, proposedUnits: lotCapacity(q, proj.parcelIds, areaM2) }))
+      : voided,
     original: proj,
     checked,
-    failing
+    failing,
+    capped
   };
 }
 

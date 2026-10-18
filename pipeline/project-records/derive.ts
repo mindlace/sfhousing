@@ -111,10 +111,10 @@ const XDHT_LAG_WARN_DAYS = 120;
 
 /** One linked project after stages, end, units and the population / in-flight decision. */
 interface Assessed {
-  /** The project after `pr.units.capacity`: a failing permit has null units. */
+  /** The project after the capacity rules: a failing permit has null units, or its lot capacity. */
   proj: LinkedProject;
   /** Spec 4.8 capacity: the permits checked and the ones that failed (original units). */
-  capacity: Pick<Capacity, 'checked' | 'failing'>;
+  capacity: Pick<Capacity, 'checked' | 'failing' | 'capped'>;
   pathway: Pathway | null;
   entered: Entered;
   /** Null for pipeline-only projects (they have no history). */
@@ -210,10 +210,10 @@ function assess(
   if (heldRecords(cap.original).some((r) => parsed.clipped.has(r))) quality.add(PR.dateValidRange);
   if (clamped.length > 0) quality.add(PR.stagesForwardClamp);
   if (stories.discarded > 0) quality.add(PR.storiesParseRange);
-  if (cap.failing.length > 0) quality.add(PR.unitsCapacity);
+  if (cap.failing.length > 0) quality.add(cap.capped ? PR.unitsCapacityCap : PR.unitsCapacity);
   return {
     proj,
-    capacity: { checked: cap.checked, failing: cap.failing },
+    capacity: { checked: cap.checked, failing: cap.failing, capped: cap.capped },
     pathway,
     entered,
     end,
@@ -284,6 +284,20 @@ function positiveSum(xs: Iterable<number | null>): number {
   return s;
 }
 
+/** The capacity tallies: failing permits of the projects on one branch, of all checked permits. */
+function capacityTally(assessed: readonly Assessed[], capped: boolean): Tally {
+  const checked = assessed.flatMap((a) => a.capacity.checked);
+  const on = assessed.filter((a) => a.capacity.capped === capped);
+  const failing = on.flatMap((a) => a.capacity.failing);
+  return {
+    fired: failing.length,
+    of: checked.length,
+    units: positiveSum(failing.map((q) => q.proposedUnits)),
+    unitsOf: positiveSum(checked.map((q) => q.proposedUnits)),
+    sample: on.filter((a) => a.capacity.failing.length > 0).map((a) => a.proj.id)
+  };
+}
+
 /**
  * One tally per `pr.*` rule (spec 4.11 `of` column and on-records text). A later task that gives a
  * rule its behaviour replaces that rule's entry; the record ids it marks go in `Assessed.quality`.
@@ -311,20 +325,13 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
     return { fired: sample.length, of: withHistory.length, sample };
   },
   // Spec 4.8 capacity: permits with recorded stories and units on a project with parcels; the
-  // ones above their lot's physical limit; both weighted by their proposed units. The sample is
-  // the affected project ids (a rule acting after linking, spec 2), so it is never longer than
-  // `fired`.
-  [PR.unitsCapacity]: ({ assessed }) => {
-    const checked = assessed.flatMap((a) => a.capacity.checked);
-    const failing = assessed.flatMap((a) => a.capacity.failing);
-    return {
-      fired: failing.length,
-      of: checked.length,
-      units: positiveSum(failing.map((q) => q.proposedUnits)),
-      unitsOf: positiveSum(checked.map((q) => q.proposedUnits)),
-      sample: assessed.filter((a) => a.capacity.failing.length > 0).map((a) => a.proj.id)
-    };
-  },
+  // ones above their lot's physical limit on a project with a fallback unit source (voided); both
+  // weighted by their proposed units. The sample is the affected project ids (a rule acting after
+  // linking, spec 2), so it is never longer than `fired`.
+  [PR.unitsCapacity]: ({ assessed }) => capacityTally(assessed, false),
+  // Spec 4.8 capacity cap: the same denominator; the failing permits of projects with no fallback
+  // unit source (replaced by their lot capacity), with their original units.
+  [PR.unitsCapacityCap]: ({ assessed }) => capacityTally(assessed, true),
   // Spec 4.2 step 10: no-date rows linked to the Planning record on their lot, those whose
   // project has no units included. Of pipeline rows, weighted by new units; the sample is the
   // joined project ids (one linked row per project, so never longer than `fired`).
