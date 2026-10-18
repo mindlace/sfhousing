@@ -7,7 +7,8 @@ import {
   FZP_EFFECTIVE_DAY,
   UNVERIFIED_DISTRICTS,
   densityCap,
-  densityCapRule
+  densityCapRule,
+  isSpecNamedNoCap
 } from '../lib/density-caps';
 
 /** Square feet to square metres (international foot). */
@@ -183,6 +184,16 @@ describe('densityCapRule', () => {
     expect(densityCapRule('NCT')).toBe('generic-nc');
     expect(densityCapRule('UMU')).toBe('unlisted');
     expect(densityCapRule('C-3-G')).toBe('unlisted');
+  });
+});
+
+describe('isSpecNamedNoCap', () => {
+  it('matches exactly the families spec 4.4 names as no cap', () => {
+    const named = ['RTO-C', 'RTO-1', 'RTO-M', 'UMU', 'C-3-G', 'C-3-O(SD)', 'C-3-O', 'PDR-2'];
+    for (const z of [...named, 'PDR-1-B', 'P', ' P ']) expect(isSpecNamedNoCap(z), z).toBe(true);
+    const other = ['RC-4', 'C-2', 'P70-MU', 'PM-R', 'PPS-MU', 'M-1', 'MUG', 'RH-2', 'NCD', ''];
+    for (const z of [...other, 'RH-2|RM-1']) expect(isSpecNamedNoCap(z), z).toBe(false);
+    expect(isSpecNamedNoCap(null)).toBe(false);
   });
 });
 

@@ -330,6 +330,20 @@ export function densityCapRule(zoning: string | null): DensityCapRule {
   return BY_CODE.has(z) ? 'table' : 'unlisted';
 }
 
+/**
+ * Zoning codes in the families spec §4.4's catch-all row names as having no density cap ("anything
+ * else (named NCDs and NCTs, RTO, UMU, C-3, PDR, P…) → null"): RTO-*, UMU, C-3-*, PDR-* and the
+ * bare `P`. The matcher is exact: `RTO` or `RTO-…`, `UMU`, `C-3` or `C-3-…`, `PDR` or `PDR-…`, and
+ * `P` alone (so `P70-MU`, `PM-R` and `PPS-MU` are not in the family). Only meaningful for a code
+ * `densityCapRule` calls 'unlisted'; the cap itself is unchanged (null).
+ */
+const NAMED_NO_CAP = /^(?:RTO(?:-.+)?|UMU|C-3(?:-.+)?|PDR(?:-.+)?|P)$/;
+
+/** True when `zoning` (trimmed) is in a family the spec §4.4 catch-all row names as no cap. */
+export function isSpecNamedNoCap(zoning: string | null): boolean {
+  return NAMED_NO_CAP.test(zoning?.trim() ?? '');
+}
+
 function capOne(code: string, A: number, period: Period, inR4: boolean): number | null {
   const f = BY_CODE.get(code);
   return f === undefined ? null : f(A, period, inR4);

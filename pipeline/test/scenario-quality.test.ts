@@ -403,6 +403,19 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
       'hostable parcels',
       false
     ],
+    // F9 split (coordinator ruling): spec 4.4's catch-all families, observe · none.
+    [
+      'sd.zoning.named-no-cap',
+      'datasf-parcel-attrs',
+      'zoning_code',
+      'observe',
+      'none',
+      4,
+      null,
+      null,
+      'hostable parcels',
+      false
+    ],
     [
       'sd.yield.nonmonotone',
       'parcels.bin',
@@ -957,7 +970,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
 
   it('every scenario-data rule reports once (recordQuality throws on a second report)', () => {
     const ids = QUALITY_RULES.filter((r) => r.owner === 'scenario-data').map((r) => r.id);
-    expect(ids).toHaveLength(40);
+    expect(ids).toHaveLength(41);
     const got = Object.keys(s.quality)
       .filter((k) => k.endsWith('.fired'))
       .map((k) => k.slice('quality.'.length, -'.fired'.length))
@@ -1205,31 +1218,45 @@ describe('the vacant-lot definition rules on a synthetic copy of mini', () => {
   });
 });
 
-describe('sd.zoning.unlisted on a synthetic copy of mini', () => {
+describe('sd.zoning.unlisted and sd.zoning.named-no-cap on a synthetic copy of mini', () => {
   let s: Synthetic;
   beforeAll(async () => {
-    // An unlisted code (UMU) on lot 10 (hostable) and lot 7 (ineligible, so not hostable).
+    // RC-4 (unlisted, not in a family spec 4.4 names) on lot 10 and lot 7; UMU (a named family) on
+    // lot 11. Lot 7 is ineligible, so not hostable. Mini's lot 13 is C-3-O (named) already.
     s = await synthetic('zu', [
-      `UPDATE src_parcel_attrs SET zoning_code = 'UMU' WHERE mapblklot IN ('3512010', '3512007')`
+      `UPDATE src_parcel_attrs SET zoning_code = 'RC-4' WHERE mapblklot IN ('3512010', '3512007')`,
+      `UPDATE src_parcel_attrs SET zoning_code = 'UMU' WHERE mapblklot = '3512011'`
     ]);
   });
 
-  it('counts hostable parcels with an unlisted code (no density cap); the value stays null', async () => {
+  it('an unlisted code fires only sd.zoning.unlisted; the cap stays null', async () => {
     const hostable = s.scenarioCounts['scenario.hostable'];
     expect(hostable).toBe(8);
-    // Mini's lot 13 is C-3-O (unlisted, hostable) already; lot 10 joins it.
     expect(await reported(s, 'sd.zoning.unlisted')).toEqual({
-      fired: 2,
+      fired: 1,
       of: hostable,
-      sample: ['3512010', '3512013']
+      sample: ['3512010']
     });
     expect((await feature(s, '3512010', 2025)).base_density_cap).toBeNull();
   });
 
-  it('counts the fires by code, and keeps the all-parcel rule count', () => {
-    expect(s.scenarioCounts['scenario.density_cap.unlisted.UMU']).toBe(1);
-    expect(s.scenarioCounts['scenario.density_cap.unlisted.C-3-O']).toBe(1);
-    expect(s.scenarioCounts['scenario.density_cap.rule.unlisted']).toBeGreaterThanOrEqual(2);
+  it('a spec-named code fires only sd.zoning.named-no-cap; the cap stays null', async () => {
+    expect(await reported(s, 'sd.zoning.named-no-cap')).toEqual({
+      fired: 2,
+      of: s.scenarioCounts['scenario.hostable'],
+      sample: ['3512011', '3512013']
+    });
+    expect((await feature(s, '3512011', 2025)).base_density_cap).toBeNull();
+  });
+
+  it('counts the fires by code in separate keys, and keeps the all-parcel rule count', () => {
+    expect(s.scenarioCounts['scenario.density_cap.unlisted.RC-4']).toBe(1);
+    expect(s.scenarioCounts['scenario.density_cap.named_no_cap.UMU']).toBe(1);
+    expect(s.scenarioCounts['scenario.density_cap.named_no_cap.C-3-O']).toBe(1);
+    expect(s.scenarioCounts).not.toHaveProperty('scenario.density_cap.unlisted.UMU');
+    expect(s.scenarioCounts).not.toHaveProperty('scenario.density_cap.unlisted.C-3-O');
+    // Every unlisted-rule parcel, hostable or not: at least RC-4 x2 (lot 7 included), UMU, C-3-O.
+    expect(s.scenarioCounts['scenario.density_cap.rule.unlisted']).toBeGreaterThanOrEqual(4);
   });
 });
 

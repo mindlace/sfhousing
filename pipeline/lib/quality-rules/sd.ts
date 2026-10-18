@@ -326,7 +326,9 @@ export const SD_RULES: readonly QualityRule[] = [
   // counted it. A missing-value default at the kind default shares (warn 0.05, fail 0.10). The
   // field is the panel/T11 `base_density_cap`, which stays null; source and field name where the
   // value comes from and what the default fills. Fires are counted by code in
-  // `scenario.density_cap.unlisted.<code>`.
+  // `scenario.density_cap.unlisted.<code>`. Codes in the families the spec names as no cap fire
+  // `sd.zoning.named-no-cap` instead (coordinator ruling, F9: live, the spec-named families were
+  // 9.71% of hostable and the rest 2.25%).
   {
     ...SD,
     id: 'sd.zoning.unlisted',
@@ -338,10 +340,32 @@ export const SD_RULES: readonly QualityRule[] = [
     valueTier: 4,
     maskBit: null,
     label:
-      'A zoning code the density-cap table does not list (RTO, UMU, C-3, PDR, P and others) ' +
+      'A zoning code the density-cap table does not list, and spec 4.4 does not name as no cap, ' +
       'has no density cap',
     denominator: 'hostable parcels',
     ...MISSING_SHARES,
+    unitsWeighted: false
+  },
+  // Observation (coordinator ruling, F9): the zoning families spec §4.4's catch-all row names as
+  // having no density cap (RTO, UMU, C-3, PDR, P; matcher `isSpecNamedNoCap` in density-caps.ts)
+  // are spec-defined, not defaulted, so they are counted apart from sd.zoning.unlisted. Changes
+  // nothing. Default observe shares 0.01 / 0.10: live 9.71% of hostable parcels (14,277 of
+  // 147,057), so it warns, below failShare.
+  {
+    ...SD,
+    id: 'sd.zoning.named-no-cap',
+    source: 'datasf-parcel-attrs',
+    field: 'zoning_code',
+    kind: 'observe',
+    action: 'none',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label:
+      'Counts hostable parcels in a zoning family spec 4.4 names as having no density cap ' +
+      '(RTO, UMU, C-3, PDR, P); changes nothing',
+    denominator: 'hostable parcels',
+    ...SHARES,
     unitsWeighted: false
   },
   // Spec-stated behaviour, counted (final fix wave, review Important 1; observe · none, the 0.01
