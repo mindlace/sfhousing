@@ -22,6 +22,7 @@ function permit(number: string, filedDay: number | null): Permit {
     stories: null,
     existingUnits: null,
     proposedUnits: null,
+    valuation: null,
     rows: []
   };
 }

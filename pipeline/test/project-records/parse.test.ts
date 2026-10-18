@@ -147,6 +147,7 @@ describe('parseAll', () => {
       stories: null,
       existingUnits: null,
       proposedUnits: null,
+      valuation: null,
       rows: [
         { blklot: null, streetNumber: null, streetName: null, streetSuffix: null, primary: false }
       ]
@@ -185,7 +186,7 @@ describe('parseAll', () => {
     ]);
     expect(p.completions).toEqual([{ permit: 'P1', day: null, kind: null, units: null }]);
     expect(p.housing).toEqual([
-      { bpa: null, form: null, netUnits: null, firstCompletionDay: null }
+      { bpa: null, blklot: null, form: null, netUnits: null, firstCompletionDay: null }
     ]);
     expect(p.pipeline).toEqual([
       {
@@ -233,10 +234,16 @@ describe('parseAll', () => {
             number_of_proposed_stories: '5',
             existing_units: '0',
             proposed_units: '24',
+            estimated_cost: '900000.0',
+            revised_cost: '1100000.0',
             site_permit: 'Y',
             primary_address_flag: 'Y'
           },
-          { permit_number: '201906010002', permit_creation_date: '2019-05-30T00:00:00.000' }
+          {
+            permit_number: '201906010002',
+            permit_creation_date: '2019-05-30T00:00:00.000',
+            estimated_cost: '250000.0'
+          }
         ],
         'datasf-planning-projects': [
           {
@@ -331,7 +338,8 @@ describe('parseAll', () => {
       lastActivityDay: day(2021, 3, 4),
       stories: 5,
       existingUnits: 0,
-      proposedUnits: 24
+      proposedUnits: 24,
+      valuation: 1_100_000
     });
     expect(permit.rows).toEqual([
       {
@@ -343,6 +351,8 @@ describe('parseAll', () => {
       }
     ]);
     expect(p.permits.get('201906010002')!.filedDay).toBe(day(2019, 5, 30));
+    // Ruling E2: revised_cost ?? estimated_cost.
+    expect(p.permits.get('201906010002')!.valuation).toBe(250_000);
     expect(p.prjs.get('2019-000001PRJ')).toEqual({
       recordId: '2019-000001PRJ',
       status: 'Closed',
@@ -385,6 +395,7 @@ describe('parseAll', () => {
     });
     expect(p.housing[0]).toEqual({
       bpa: '201906010001',
+      blklot: '3512008',
       form: 'F1',
       netUnits: 24,
       firstCompletionDay: day(2021, 6, 1)

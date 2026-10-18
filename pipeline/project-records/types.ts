@@ -62,6 +62,8 @@ export interface Permit {
   stories: number | null;
   existingUnits: number | null;
   proposedUnits: number | null;
+  /** `revised_cost`, else `estimated_cost` (dollars); null when neither is a number (Ruling E2). */
+  valuation: number | null;
   rows: AddressRow[];
 }
 
@@ -111,6 +113,8 @@ export interface Completion {
 
 export interface HousingRow {
   bpa: string | null;
+  /** `blocklot` (block + lot), trimmed; null when missing. */
+  blklot: string | null;
   form: string | null;
   netUnits: number | null;
   firstCompletionDay: Day | null;

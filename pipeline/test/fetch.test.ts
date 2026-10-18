@@ -209,7 +209,7 @@ describe('fetchDatasf json sources (spec §4.1)', () => {
     'datasf-permits-newcon': {
       dataset: 'i98e-djp9',
       select:
-        'permit_number,permit_type,block,lot,street_number,street_name,street_suffix,status,status_date,filed_date,permit_creation_date,issued_date,first_construction_document_date,completed_date,last_permit_activity_date,number_of_proposed_stories,existing_units,proposed_units,site_permit,primary_address_flag',
+        'permit_number,permit_type,block,lot,street_number,street_name,street_suffix,status,status_date,filed_date,permit_creation_date,issued_date,first_construction_document_date,completed_date,last_permit_activity_date,number_of_proposed_stories,existing_units,proposed_units,estimated_cost,revised_cost,site_permit,primary_address_flag',
       where: "permit_type in('1','2')",
       license: 'PDDL-1.0',
       label: 'DataSF Building Permits (new construction)'

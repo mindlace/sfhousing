@@ -206,6 +206,9 @@ function parsePermits(
       stories: num(lead.number_of_proposed_stories),
       existingUnits: num(lead.existing_units),
       proposedUnits: num(lead.proposed_units),
+      // Ruling E2: the valuation that sets the Table B bracket is the value after project review
+      // when present, else the estimate at filing.
+      valuation: num(lead.revised_cost) ?? num(lead.estimated_cost),
       rows: group.map(addressRow).sort(compareAddress)
     };
     permits.set(number, d.done(permit, number));
@@ -330,6 +333,7 @@ export function parseAll(raw: Record<ProjectSourceId, RawRow[]>, asOf: Day): Par
     const d = dateReader(dates);
     const row: HousingRow = {
       bpa: str(r.bpa),
+      blklot: str(r.blocklot),
       form: str(r.form_no),
       netUnits: num(r.net_units_completed),
       firstCompletionDay: d.day(r.first_completion_date)

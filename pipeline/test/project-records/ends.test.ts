@@ -34,6 +34,7 @@ function permit(number: string, over: Partial<Permit> = {}): Permit {
     stories: null,
     existingUnits: null,
     proposedUnits: null,
+    valuation: null,
     rows: [],
     ...over
   };
