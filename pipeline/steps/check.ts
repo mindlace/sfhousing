@@ -724,6 +724,13 @@ export async function checkDataset(
       .map(([k, n]): [string, number] => [k.slice(capPrefix.length), n])
       .sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0));
     const capSum = capByCode.reduce((s, [, n]) => s + n, 0);
+    // Ord. 292-24 changed only the RM and RC maxima, so a cap-period difference on any other code
+    // (a split code counts when one of its components is RM or RC) means the exclusion hides a
+    // real mismatch.
+    const inFamily = (code: string) =>
+      code.split('|').some((z) => /^(?:RM-[1-4]|RC-[34])$/.test(z.trim()));
+    const outside = capByCode.filter(([k, n]) => n > 0 && !inFamily(k)).map(([k]) => k);
+    const baseCapMismatch = c['scenario.v18.basecap_mismatch'];
     const capDetail =
       capDiffers > 0
         ? `; base cap differs by period on ${capDiffers} parcels (base-cap features not ` +
@@ -756,6 +763,13 @@ export async function checkDataset(
         Number.isInteger(capDiffers) && capDiffers === capSum
           ? ''
           : `scenario.v18.cap_period_differs ${capDiffers} ≠ Σ by code ${capSum}`,
+        outside.length === 0
+          ? ''
+          : `cap-period difference outside the RM and RC families (Ord. 292-24): ${outside.join(', ')}`,
+        baseCapMismatch === 0
+          ? ''
+          : `scenario.v18.basecap_mismatch ${baseCapMismatch} ≠ 0 (T11 baseCap differs from ` +
+            'sc_parcel.cap_prefzp)',
         hbYears.length === panelYears
           ? ''
           : `hostable_base counted for ${hbYears.length} roll years ≠ ${panelYears}`,

@@ -389,6 +389,7 @@
     "scenario.roll.unmatched_units.2025": 0,
     "scenario.roll.years": 3,
     "scenario.units.total": 70,
+    "scenario.v18.basecap_mismatch": 0,
     "scenario.v18.cap_period_differs": 0,
     "scenario.yield.clamped": 0,
     "scenario.yield.fzp_net_total": 28,

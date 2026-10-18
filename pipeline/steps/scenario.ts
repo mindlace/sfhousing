@@ -901,6 +901,21 @@ export async function writeScenario(a: {
     }
   }
   c['scenario.panel.feature_mismatch'] = mismatch;
+  // V18 guard on the exclusion (coordinator, 2026-10-18): T11's baseCap must be each parcel's own
+  // pre-FZP cap, sc_parcel.cap_prefzp (the cap at FZP_EFFECTIVE_DAY - 1), so a cap-period
+  // difference can only come from the panel's lien-day cap, never from T11.
+  const preFzp = await db.all<{ id: string; cap: number | null }>(
+    'SELECT id, cap_prefzp AS cap FROM sc_parcel'
+  );
+  let baseCapMismatch = 0;
+  for (const r of preFzp) {
+    const i = decoded.index.get(r.id);
+    const cap =
+      i === undefined ? undefined : decoded.baseCap[i] === NULL_CAP ? null : decoded.baseCap[i];
+    if (cap !== r.cap) baseCapMismatch++;
+  }
+  if (preFzp.length !== decoded.count) baseCapMismatch += Math.abs(decoded.count - preFzp.length);
+  c['scenario.v18.basecap_mismatch'] = baseCapMismatch;
 
   // V17: the decoded hostable flags against this step's own uncapped full-fill yields, which the
   // payload does not carry (it ships the capped yields only).

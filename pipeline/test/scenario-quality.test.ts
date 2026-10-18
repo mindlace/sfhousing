@@ -1351,11 +1351,13 @@ describe('the researched density caps on a synthetic copy of mini', () => {
     expect(p.yield[i * 5 + 4]).toBeGreaterThan(p.baseYield[i * 5 + 4]);
   });
 
-  it('a split code fires the floor rule only when the floor sets its cap', () => {
+  it('a split code fires the floor rule only when the floor sets its cap', async () => {
     const i = p.index.get('8711023C')!;
     expect(p.hostable[i]).toBe(1);
+    // RM-4's 16 beats the C-2 floor's 4, so the floor does not set the cap and the rule skips it.
     expect(p.baseCap[i]).toBe(16);
     expect(s.scenarioCounts['scenario.density_cap.C-2|RM-4']).toBe(1);
+    expect((await reported(s, 'sd.zoning.c2-floor-approx')).sample).not.toContain('8711023C');
   });
 
   it('SALI caps at 0: base yield 0, still hostable on the uncapped yield (option c)', async () => {
@@ -1428,6 +1430,34 @@ describe('V18 cap-period exclusion on a synthetic copy of mini (coordinator ruli
   it('the unchanged fixture has no cap-period difference', () => {
     // Mini's own RM-1 lot is 2,797 sf: max(3, 3) = 3 in both periods.
     expect(p.baseCap[p.index.get('3512006')!]).toBe(3);
+  });
+});
+
+describe('sd.zoning.rc4-vanness-approx on a synthetic copy of mini', () => {
+  let s: Synthetic;
+  let p: ScenarioParcels;
+  beforeAll(async () => {
+    // Lot 10 (hostable, 65-X, outside R-4, 3 homes on 300 m² = 3,229 sf) becomes RC-4.
+    s = await synthetic('rc4', [
+      `UPDATE src_parcel_attrs SET zoning_code = 'RC-4' WHERE mapblklot = '3512010'`
+    ]);
+    p = readParcelsBin(join(s.outDir, PARCELS_BIN));
+  });
+
+  it('fires on the RC-4 parcel and applies the RC-4 cap (no Van Ness SUD exemption)', async () => {
+    expect(await reported(s, 'sd.zoning.rc4-vanness-approx')).toEqual({
+      fired: 1,
+      of: s.scenarioCounts['scenario.hostable'],
+      sample: ['3512010']
+    });
+    const i = p.index.get('3512010')!;
+    // T11 (2026-01-11): the bare 1 per 200 sf, floor(3,229 / 200) = 16.
+    expect(p.baseCap[i]).toBe(16);
+    // The 2025 panel row (lien 2025-01-01): max(3, 16) = 16, so no cap-period difference.
+    expect((await feature(s, '3512010', 2025)).base_density_cap).toBe(16);
+    expect(s.scenarioCounts['scenario.v18.cap_period_differs']).toBe(0);
+    expect(s.scenarioCounts['scenario.v18.basecap_mismatch']).toBe(0);
+    expect(s.scenarioCounts).not.toHaveProperty('scenario.density_cap.unlisted.RC-4');
   });
 });
 

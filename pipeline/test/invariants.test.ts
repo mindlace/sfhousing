@@ -503,6 +503,36 @@ describe('invariants', () => {
       /base cap differs by period on 3 parcels \(base-cap features not compared; RC-3 1, RM-1 2\)/
     );
   });
+  it('V18 fails when a T11 baseCap differs from the parcel’s own pre-FZP cap', async () => {
+    const v18 = await result(base, 'V18', { ...counts, 'scenario.v18.basecap_mismatch': 2 });
+    expect(v18.ok).toBe(false);
+    expect(v18.detail).toMatch(
+      /scenario\.v18\.basecap_mismatch 2 ≠ 0 \(T11 baseCap differs from sc_parcel\.cap_prefzp\)/
+    );
+    const c = { ...counts };
+    delete c['scenario.v18.basecap_mismatch'];
+    expect(await failed(base, c)).toContain('V18');
+  });
+  it('V18 fails when a code outside RM and RC differs by cap period', async () => {
+    const v18 = await result(base, 'V18', {
+      ...counts,
+      'scenario.v18.cap_period_differs': 3,
+      'scenario.v18.cap_period_differs.RM-1': 1,
+      'scenario.v18.cap_period_differs.NC-1': 1,
+      'scenario.v18.cap_period_differs.none': 1
+    });
+    expect(v18.ok).toBe(false);
+    expect(v18.detail).toMatch(
+      /cap-period difference outside the RM and RC families \(Ord\. 292-24\): NC-1, none/
+    );
+    // A split code with an RM or RC component is inside the families.
+    const split = await result(base, 'V18', {
+      ...counts,
+      'scenario.v18.cap_period_differs': 1,
+      'scenario.v18.cap_period_differs.RH-2|RM-1': 1
+    });
+    expect(split.ok).toBe(true);
+  });
   it('V18 still fails on a feature mismatch when caps differ by period', async () => {
     const v18 = await result(base, 'V18', {
       ...counts,

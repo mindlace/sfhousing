@@ -413,6 +413,7 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
     expect(counts['scenario.height.parse_fail']).toBe(0);
     expect(counts['scenario.panel.feature_mismatch']).toBe(0);
     expect(counts['scenario.v18.cap_period_differs']).toBe(0);
+    expect(counts['scenario.v18.basecap_mismatch']).toBe(0);
     expect(p.fillLevels).toEqual([...FILL_LEVELS]);
   });
 });
