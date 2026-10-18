@@ -1,6 +1,6 @@
 // Qualifying predicate, normalisation steps 1-4 and spell building (spec §4.4).
 import { describe, expect, it } from 'vitest';
-import { buildSpells, normalise, qualifies } from '../../lib/fzp-cal/spells';
+import { buildSpells, gapImputeTally, normalise, qualifies } from '../../lib/fzp-cal/spells';
 import { CalibrationError } from '../../lib/fzp-cal/types';
 import { isoToDay } from '../../project-records/multiphase';
 import type { Day, ProjectHistory, Stage } from '../../../src/lib/timelapse/types';
@@ -71,7 +71,7 @@ describe('qualifies', () => {
 });
 
 describe('normalise', () => {
-  it('imputes a missing stage between entered stages and tallies it once per history', () => {
+  it('imputes a missing stage between entered stages and records the history once', () => {
     const h = hist(
       'p1',
       'discretionary',
@@ -86,7 +86,8 @@ describe('normalise', () => {
     const other = hist('p0', 'discretionary', { filed: '2016-01-01' }, open('2020-01-01'));
     const r = normalise([other, h], AS_OF);
     expect(r.norm[1].eff.permitIssued).toBe(d('2017-05-01'));
-    expect(r.tallies['sc.stages.gap-impute']).toEqual({ fired: 1, of: 2, sample: ['p1'] });
+    expect([...r.imputed]).toEqual(['p1']);
+    expect(Object.keys(r.tallies)).not.toContain('sc.stages.gap-impute');
     expect(r.perStage['sc.stages.gap-impute']).toEqual({ permitIssued: 1 });
     expect(r.norm[1].src).toBe(h);
     expect(h.entered.permitIssued).toBeUndefined();
@@ -115,7 +116,7 @@ describe('normalise', () => {
     const r = normalise([h], AS_OF);
     expect(r.norm[0].eff.preApplication).toBeUndefined();
     expect(r.norm[0].eff.filed).toBeUndefined();
-    expect(r.tallies['sc.stages.gap-impute']).toEqual({ fired: 0, of: 1, sample: [] });
+    expect(r.imputed.size).toBe(0);
     // the same record under a known pathway still back-fills `filed`
     const known = hist(
       'k1',
@@ -141,7 +142,7 @@ describe('normalise', () => {
       complete: d('2018-01-01')
     });
     expect(r.perStage['sc.stages.gap-impute']).toEqual({ permitIssued: 1, construction: 1 });
-    expect(r.tallies['sc.stages.gap-impute'].sample).toEqual(['n1']);
+    expect([...r.imputed]).toEqual(['n1']);
   });
 
   it('counts complete as a later entered stage and never imputes after the last entered one', () => {
@@ -155,7 +156,7 @@ describe('normalise', () => {
     expect(r.norm[0].eff.permitIssued).toBe(d('2018-01-01'));
     expect(r.norm[0].eff.construction).toBe(d('2018-01-01'));
     const g = hist('p2', 'discretionary', { filed: '2016-01-01' }, open('2020-01-01'));
-    expect(normalise([g], AS_OF).tallies['sc.stages.gap-impute'].fired).toBe(0);
+    expect(normalise([g], AS_OF).imputed.size).toBe(0);
   });
 
   it('applies the running maximum and counts a history once', () => {
@@ -401,5 +402,54 @@ describe('buildSpells', () => {
       'streamlined:filed:a',
       'null:filed:b'
     ]);
+  });
+});
+
+describe('gapImputeTally (DQ-4: counted over windowed histories)', () => {
+  const tally = (hs: ProjectHistory[]) => {
+    const r = normalise(hs, AS_OF);
+    return gapImputeTally(r.imputed, buildSpells(r.norm, AS_OF));
+  };
+  // permitFiled -> construction with permitIssued missing: step 1 imputes permitIssued.
+  const gapped = (id: string, filed: string, built: string) =>
+    hist(id, 'permitOnly', { permitFiled: filed, construction: built }, open('2030-01-01'));
+
+  it('leaves out an imputed history whose spells all end before the pooled window', () => {
+    const pre = hist(
+      'pre',
+      'permitOnly',
+      { permitFiled: '2003-01-01', construction: '2005-01-01' },
+      { kind: 'exit', stage: 'construction', reason: 'withdrawn', day: d('2005-06-01') }
+    );
+    const r = normalise([pre], AS_OF);
+    expect(r.imputed.has('pre')).toBe(true);
+    expect(gapImputeTally(r.imputed, buildSpells(r.norm, AS_OF))).toEqual({
+      fired: 0,
+      of: 0,
+      sample: []
+    });
+  });
+
+  it('counts an imputed history with a 2010 permit-side spell in fired and of', () => {
+    expect(tally([gapped('g1', '2010-01-01', '2011-01-01')])).toEqual({
+      fired: 1,
+      of: 1,
+      sample: ['g1']
+    });
+  });
+
+  it('adds a non-imputed windowed history to of only, with distinct ids and sorted sample', () => {
+    const full = hist(
+      'a-full',
+      'permitOnly',
+      { permitFiled: '2010-01-01', permitIssued: '2010-06-01', construction: '2011-01-01' },
+      open('2030-01-01')
+    );
+    const t = tally([
+      gapped('z2', '2010-01-01', '2011-01-01'),
+      full,
+      gapped('b1', '2012-01-01', '2013-01-01')
+    ]);
+    expect(t).toEqual({ fired: 2, of: 3, sample: ['b1', 'z2'] });
   });
 });

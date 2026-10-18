@@ -25,7 +25,10 @@ const EXPECTED: Record<ScRuleId, QualityRule> = {
     tier: 2,
     valueTier: 2,
     label: "A missing stage between two recorded stages takes the next recorded stage's date",
-    denominator: 'qualifying histories'
+    denominator: 'qualifying histories that contribute a spell in a pooled window',
+    // conductor ruling C1 / partner DQ-4
+    warnShare: 0.1,
+    failShare: 0.2
   },
   'sc.stages.running-max': {
     ...common,
@@ -95,9 +98,9 @@ describe('sc.* quality rules', () => {
     expect(ids).toEqual([...SC_RULE_IDS].sort());
   });
 
-  it('has no missing-kind rule and keeps every kind default', () => {
+  it('has no missing-kind rule and departs from the kind defaults only at gap-impute', () => {
     expect(SC_RULES.some((r) => r.kind === 'missing')).toBe(false);
-    expect(kindDefaultDepartures(SC_RULES)).toEqual([]);
+    expect(kindDefaultDepartures(SC_RULES)).toEqual(['sc.stages.gap-impute']);
   });
 });
 

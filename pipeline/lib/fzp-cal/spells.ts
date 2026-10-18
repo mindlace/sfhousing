@@ -1,7 +1,8 @@
 /**
  * Qualifying predicate, normalisation steps 1-4 and spell building (stage-calibration spec §4.4).
  * Steps 1-3 are the registered `sc.*` rules (counted here, recorded by the build through
- * `recordQuality`); step 4 is a method count. Values change only in memory: `src` stays as read.
+ * `recordQuality`); step 4 is a method count. Steps 2 and 3 are counted over all qualifying
+ * histories; step 1 is counted over windowed histories only (`gapImputeTally`, DQ-4). Values change only in memory: `src` stays as read.
  */
 import { isoToDay } from '../../project-records/multiphase';
 import {
@@ -24,7 +25,7 @@ import {
   type Tallies
 } from './types';
 
-type StepRule = 'sc.stages.gap-impute' | 'sc.stages.running-max' | 'sc.exit.last-stage';
+type StepRule = 'sc.stages.running-max' | 'sc.exit.last-stage';
 
 /** Net units at the first recorded stage (STAGE_ORDER order) of at least 1. */
 export function qualifies(h: ProjectHistory): boolean {
@@ -44,6 +45,9 @@ function emptyTally(of: number): RuleTally {
 /**
  * Steps 1-4 of §4.4 in order, on qualifying histories sorted by id. Only the stages of the
  * history's pathway (`STAGE_ORDER` for a null pathway) are read; other `entered` keys are ignored.
+ * `tallies` holds the two rules counted over every qualifying history. `sc.stages.gap-impute` is
+ * counted over windowed histories, which only `buildSpells` can tell, so `imputed` returns the ids
+ * step 1 changed and `gapImputeTally` finishes the count; `perStage` keeps its per-stage detail.
  */
 export function normalise(
   hs: ProjectHistory[],
@@ -51,13 +55,13 @@ export function normalise(
 ): {
   norm: NormHistory[];
   tallies: Pick<Tallies, StepRule>;
+  imputed: Set<string>;
   method: { permitOnlyPre2015: { fired: number; of: number }; ppaPooled: number };
   perStage: Record<ScRuleId, Partial<Record<Stage, number>>>;
 } {
   void asOf;
   const exitsOf = hs.filter((h) => h.end.kind === 'exit').length;
   const tallies: Pick<Tallies, StepRule> = {
-    'sc.stages.gap-impute': emptyTally(hs.length),
     'sc.stages.running-max': emptyTally(hs.length),
     'sc.exit.last-stage': emptyTally(exitsOf)
   };
@@ -68,6 +72,7 @@ export function normalise(
     'sc.exit.purge-censor': {},
     'sc.revision.ratio-clamp': {}
   };
+  const imputed = new Set<string>();
   const method = {
     permitOnlyPre2015: { fired: 0, of: 0 },
     ppaPooled: 0
@@ -113,7 +118,8 @@ export function normalise(
         nextDay = observed[s];
       } else if (nextDay !== undefined && s !== 'preApplication' && i >= floor) {
         eff[s] = nextDay;
-        fire('sc.stages.gap-impute', h.id, s);
+        perStage['sc.stages.gap-impute'][s] = (perStage['sc.stages.gap-impute'][s] ?? 0) + 1;
+        imputed.add(h.id);
       }
     }
 
@@ -166,7 +172,7 @@ export function normalise(
     };
   });
 
-  return { norm, tallies, method, perStage };
+  return { norm, tallies, imputed, method, perStage };
 }
 
 interface RawSpell {
@@ -238,6 +244,17 @@ export function buildSpells(norm: NormHistory[], asOf: Day): Spell[] {
       stageIndex(p.stage) - stageIndex(q.stage) ||
       (p.projectId < q.projectId ? -1 : p.projectId > q.projectId ? 1 : 0)
   );
+}
+
+/**
+ * `sc.stages.gap-impute` over windowed histories (conductor ruling C1 / partner DQ-4): `of` is the
+ * distinct histories with a spell in `spells` (already cut to the pooled windows by `buildSpells`),
+ * `fired` those among them that step 1 changed (`imputed`), `sample` their ids in code-unit order.
+ */
+export function gapImputeTally(perHistory: ReadonlySet<string>, spells: Spell[]): RuleTally {
+  const windowed = new Set(spells.map((s) => s.projectId));
+  const sample = [...windowed].filter((id) => perHistory.has(id)).sort();
+  return { fired: sample.length, of: windowed.size, sample };
 }
 
 /** Re-cuts spells to a later window start: drops those ending before `from`, recomputes `a`. */

@@ -2,8 +2,9 @@ import type { QualityRule } from '../quality';
 
 /**
  * stage-calibration's T14 rules (design row T14; stage-calibration spec §4.4a). Each entry takes
- * its kind's default shares (`warnShare` 0.05 for `kind: 'missing'`, else 0.01; `failShare` 0.10);
- * none departs. The calibration step changes values only in its own memory.
+ * its kind's default shares (`warnShare` 0.05 for `kind: 'missing'`, else 0.01; `failShare` 0.10)
+ * except `sc.stages.gap-impute`, whose departure is stated at the entry. The calibration step
+ * changes values only in its own memory.
  */
 export const SC_RULES: readonly QualityRule[] = [
   {
@@ -17,9 +18,11 @@ export const SC_RULES: readonly QualityRule[] = [
     valueTier: 2,
     maskBit: null,
     label: "A missing stage between two recorded stages takes the next recorded stage's date",
-    denominator: 'qualifying histories',
-    warnShare: 0.01,
-    failShare: 0.1,
+    denominator: 'qualifying histories that contribute a spell in a pooled window',
+    // Departs from the `gap` defaults (conductor ruling C1 / partner DQ-4, 2026-10-18): stage model
+    // fills unrecorded intermediate stages; construction-start (FCD) dates sparse.
+    warnShare: 0.1,
+    failShare: 0.2,
     unitsWeighted: false
   },
   {
