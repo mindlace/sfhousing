@@ -65,7 +65,18 @@ The lock pins every input by sha256. `build` refuses to run if a cached file doe
 
 Every pipeline rule that nulls, replaces, defaults or drops a source value is a registered T14 rule, and so is an observation rule that only counts (action `none`). The registry is `QUALITY_RULES` in `pipeline/lib/quality.ts`; each owner declares its rules in `pipeline/lib/quality-rules/` (`sd.ts`, `pr.ts`, `sc.ts`). The tiers are those of the rule (its predicate and thresholds) and of the value it writes; the mask bit is the T11/T13 `imputed` bit the rule sets. This section is generated from the registry by `npm run pipeline -- quality-doc`: do not edit it by hand.
 
-No rules are registered.
+| id                               | label                                                                                                  | tier (rule / value) | kind    | action  | mask bit | warn / fail share |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------- | ------- | ------- | -------- | ----------------- |
+| `pr.date.valid-range`            | A date outside 1970 to the snapshot day was treated as missing                                         | 4 / —               | bound   | null    | —        | 0.01 / 0.1        |
+| `pr.multiphase.da-netting`       | Remaining Development Agreement homes reduced by projects filed after Planning's quarterly count       | 2 / 2               | shape   | replace | —        | 0.1 / 0.5         |
+| `pr.multiphase.score-only`       | Counted in the score but not drawn: no free lot in the plan area                                       | 4 / —               | shape   | none    | —        | 0.25 / 0.5        |
+| `pr.parcels.shared-existing`     | Existing homes counted once on a shared lot                                                            | 2 / 2               | shape   | replace | —        | 0.25 / 0.5        |
+| `pr.pipeline.no-status-date`     | A pipeline row with no status date and no Planning record on its lot was left out                      | 4 / —               | shape   | drop    | —        | 0.01 / 0.1        |
+| `pr.pipeline.records-win`        | The daily permit and Planning records disagree with the quarterly pipeline; the daily records are used | 4 / —               | observe | none    | —        | 0.01 / 0.1        |
+| `pr.pipeline.status-date-linked` | Dates taken from the Planning record on this lot                                                       | 2 / 0               | shape   | replace | —        | 0.01 / 0.1        |
+| `pr.stages.forward-clamp`        | A stage date earlier than the stage before it was moved up to that stage's date                        | 2 / 2               | shape   | replace | —        | 0.25 / 0.5        |
+| `pr.stories.parse-range`         | A story count read from the project description was outside 1 to 80 and was not used                   | 4 / —               | bound   | null    | —        | 0.01 / 0.1        |
+| `pr.units.capacity`              | A permit's unit count was more than its lot could physically hold and was not used                     | 4 / —               | outlier | null    | —        | 0.01 / 0.1        |
 
 Each build reports `quality.<id>.fired` and `quality.<id>.of` (plus `.units` and `.unitsOf` for a unit-weighted rule) in `report.json` and writes `pipeline/.cache/derived/<v>/quality-report.md` with one row per rule and its first 25 affected ids. V30 fails when a rule does not report or a `quality.*` key names no registered rule, and on a live build when a share exceeds its fail share; a share above its warn share warns.
 

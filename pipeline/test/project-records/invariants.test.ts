@@ -94,6 +94,31 @@ describe('checkV20', () => {
     expect(warn.detail).toMatch(/warning/);
   });
 
+  it('passes qualityRules entries equal to their QUALITY_RULES entries (pipeline side)', () => {
+    expect(good.file.qualityRules.map((q) => q.id)).toEqual(['pr.stages.forward-clamp']);
+    expect(v20(good.file).ok).toBe(true);
+  });
+
+  it('fails a qualityRules entry whose label or tier differs from the registry', () => {
+    const label = clone(good.file);
+    label.qualityRules[0].label = 'A stage date was moved';
+    const r = v20(label);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/pr\.stages\.forward-clamp.*QUALITY_RULES/);
+    const tier = clone(good.file);
+    tier.qualityRules[0].tier = 4;
+    expect(v20(tier).ok).toBe(false);
+  });
+
+  it('fails a qualityRules id that is not a registered project-records rule', () => {
+    const f = clone(good.file);
+    proj(f, 'PRJ:2019-000001PRJ').quality = ['pr.no.such'];
+    f.qualityRules = [{ id: 'pr.no.such', label: 'Made up', tier: 4, valueTier: null }];
+    const r = v20(f);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/pr\.no\.such/);
+  });
+
   it('fails unparseable bytes', () => {
     const r = checkV20(Buffer.from('{'), {
       asOf: ASOF,
@@ -230,6 +255,43 @@ describe('checkV23', () => {
 
   it('fails a rerun that is not identical', () => {
     expect(checkV23(good.checks, false).ok).toBe(false);
+  });
+
+  it('passes the derived history quality and fails unsorted or duplicated ids', () => {
+    expect(hist(good.checks, 'PRJ:2019-000001PRJ').quality).toEqual(['pr.stages.forward-clamp']);
+    const unsorted = inputs((x) => {
+      hist(x, 'PRJ:2019-000001PRJ').quality = ['pr.stages.forward-clamp', 'pr.date.valid-range'];
+    });
+    expect(checkV23(unsorted, true).detail).toMatch(/quality is not sorted and unique/);
+    const dup = inputs((x) => {
+      hist(x, 'PRJ:2019-000001PRJ').quality = [
+        'pr.stages.forward-clamp',
+        'pr.stages.forward-clamp'
+      ];
+    });
+    expect(checkV23(dup, true).ok).toBe(false);
+  });
+
+  it('fails a history quality id that is not a project-records rule', () => {
+    for (const id of ['pr.no.such', 'sd.roll.units-capacity']) {
+      const i = inputs((x) => {
+        hist(x, 'BP:201410070008').quality = [id];
+      });
+      const r = checkV23(i, true);
+      expect(r.ok, id).toBe(false);
+      expect(r.detail, id).toMatch(/not a project-records rule/);
+    }
+  });
+
+  it('fails the T3-only ids on a history', () => {
+    for (const id of ['pr.parcels.shared-existing', 'pr.multiphase.da-netting']) {
+      const i = inputs((x) => {
+        hist(x, 'BP:201410070008').quality = [id];
+      });
+      const r = checkV23(i, true);
+      expect(r.ok, id).toBe(false);
+      expect(r.detail, id).toMatch(/acts only on T3/);
+    }
   });
 });
 

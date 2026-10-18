@@ -139,8 +139,10 @@ const bytesOf = (r: DeriveResult, asOf: Day) =>
 
 /**
  * The project-records step. Needs runSql's parcel_out and src_parcels and the scenario step's
- * parcel_lineage and scenario_panel tables. `asOf` is the build's snapshot day. Returns the
- * report counts and warnings, the histories (for stage-calibration) and V21-V24.
+ * parcel_lineage and scenario_panel tables. `asOf` is the build's snapshot day. Writes every
+ * report count, the `pr.*` T14 rows included, into `counts` (the build's single counts); the
+ * determinism rerun records into a fresh object. Returns the warnings, the histories (for
+ * stage-calibration) and V21-V24.
  * Throws BuildError for a missing lock entry, an unreadable page or an invalid multiphase.json.
  */
 export async function writeProjectRecords(o: {
@@ -153,8 +155,8 @@ export async function writeProjectRecords(o: {
   multiphasePath: string;
   profile: InvariantProfile;
   asOf: Day;
-}): Promise<{
   counts: Record<string, number>;
+}): Promise<{
   warnings: string[];
   histories: ProjectHistory[];
   checks: InvariantResult[];
@@ -226,8 +228,9 @@ export async function writeProjectRecords(o: {
     areaM2: (id: ParcelId) => area.get(id) ?? 0,
     multiphase
   });
-  const r = deriveProjects(input());
-  const identical = bytesOf(r, asOf) === bytesOf(deriveProjects(input()), asOf);
+  const r = deriveProjects(input(), { counts: o.counts });
+  // V23 rerun identity. T14 rows are keyed per counts object, so the rerun gets its own.
+  const identical = bytesOf(r, asOf) === bytesOf(deriveProjects(input(), { counts: {} }), asOf);
 
   const projectsFile = join(o.outDir, PROJECTS_JSON);
   mkdirSync(dirname(projectsFile), { recursive: true });
@@ -240,13 +243,10 @@ export async function writeProjectRecords(o: {
   );
   await writePermits(db, r.permits, join(o.derivedDir, PERMITS_PARQUET));
 
+  o.counts['projects.asOf'] = asOf;
+  o.counts['projects.bytes'] = Buffer.byteLength(projects);
+  o.counts['permits.rows'] = r.permits.length;
   return {
-    counts: {
-      ...r.counts,
-      'projects.asOf': asOf,
-      'projects.bytes': Buffer.byteLength(projects),
-      'permits.rows': r.permits.length
-    },
     warnings: r.warnings,
     histories: r.histories,
     checks: [

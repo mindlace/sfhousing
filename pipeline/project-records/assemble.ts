@@ -18,6 +18,8 @@ import type {
   Stage
 } from '../../src/lib/timelapse/types';
 import type { MultiphaseFile } from '../enrichment/schema';
+import { qualityRule } from '../lib/quality';
+import { PR } from '../lib/quality-rules/pr';
 import { buildPhases, isoToDay, median } from './multiphase';
 import { permitCompletionDay, permitDays } from './stages';
 import type { Completion, LinkedProject, PipelineRow, ProjectRecordsInput } from './types';
@@ -48,6 +50,32 @@ type Phase = NonNullable<InFlightProject['phases']>[number];
 
 export function cmp(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * The rules that act only on T3 values (spec §4.8 T4d `quality`): a history never carries them.
+ */
+export const T3_ONLY_QUALITY: ReadonlySet<string> = new Set([
+  PR.parcelsSharedExisting,
+  PR.multiphaseDaNetting
+]);
+
+/** T3 `quality`: the rule ids carried by a project, sorted and unique. */
+export function projectQuality(ids: Iterable<string>): string[] {
+  return [...new Set(ids)].sort(cmp);
+}
+
+/** T4d `quality`: the T3 set without the rules that act only on T3. */
+export function historyQuality(ids: Iterable<string>): string[] {
+  return projectQuality(ids).filter((id) => !T3_ONLY_QUALITY.has(id));
+}
+
+/** `qualityRules` (spec §4.9 Outputs): one registry entry per id the projects use, by id. */
+export function qualityRulesOf(projects: readonly InFlightProject[]): QualityRuleRef[] {
+  return projectQuality(projects.flatMap((p) => p.quality)).map((id) => {
+    const r = qualityRule(id);
+    return { id, label: r.label, tier: r.tier, valueTier: r.valueTier };
+  });
 }
 
 /** A stage-keyed map rebuilt in `STAGE_ORDER`. */

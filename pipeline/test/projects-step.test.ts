@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FIXTURE_PROFILE } from '../config';
 import { createTableFromRows, openDuck, type CellValue, type Duck } from '../lib/duck';
 import type { Lock, LockEntry } from '../lib/lock';
+import { PR_RULES } from '../lib/quality-rules/pr';
 import { deriveProjects, serializeHistories, serializeProjects } from '../project-records/derive';
 import { PROJECT_SOURCE_IDS } from '../project-records/types';
 import { BuildError } from '../steps/build';
@@ -123,8 +124,10 @@ function dirs() {
 
 const run = (o: Partial<Parameters<typeof writeProjectRecords>[0]> = {}) => {
   const d = dirs();
+  const counts: Record<string, number> = o.counts ?? {};
   return {
     ...d,
+    counts,
     result: writeProjectRecords({
       db,
       lock,
@@ -134,15 +137,17 @@ const run = (o: Partial<Parameters<typeof writeProjectRecords>[0]> = {}) => {
       multiphasePath: MULTIPHASE,
       profile: FIXTURE_PROFILE,
       asOf: MINI_ASOF,
-      ...o
+      ...o,
+      counts
     })
   };
 };
 
 describe('writeProjectRecords', () => {
   it('writes projects.json and the histories equal to deriveProjects on the stub callbacks', async () => {
-    const { outDir, derivedDir, result } = run();
+    const { outDir, derivedDir, counts, result } = run();
     const r = await result;
+    expect(r).not.toHaveProperty('counts');
     const want = deriveProjects(miniProjectInput());
     const projects = readFileSync(join(outDir, 'scenarios/fzp/projects.json'), 'utf8');
     expect(projects).toBe(serializeProjects(want.file));
@@ -151,10 +156,10 @@ describe('writeProjectRecords', () => {
     );
     expect(r.histories).toEqual(want.histories);
     expect(r.warnings).toEqual(want.warnings);
-    for (const [k, v] of Object.entries(want.counts)) expect(r.counts[k], k).toBe(v);
-    expect(r.counts['projects.asOf']).toBe(MINI_ASOF);
-    expect(r.counts['projects.bytes']).toBe(Buffer.byteLength(projects));
-    expect(r.counts['permits.rows']).toBe(want.permits.length);
+    for (const [k, v] of Object.entries(want.counts)) expect(counts[k], k).toBe(v);
+    expect(counts['projects.asOf']).toBe(MINI_ASOF);
+    expect(counts['projects.bytes']).toBe(Buffer.byteLength(projects));
+    expect(counts['permits.rows']).toBe(want.permits.length);
     expect(r.checks.map((c) => [c.id, c.ok])).toEqual([
       ['V21', true],
       ['V22', true],
@@ -227,6 +232,26 @@ describe('writeProjectRecords', () => {
     const invalid = join(dir, 'invalid.json');
     writeFileSync(invalid, JSON.stringify({ schema: 2, projects: [] }));
     await expect(run({ multiphasePath: invalid }).result).rejects.toThrow(BuildError);
+  });
+
+  it('rerun uses a fresh counts: the build counts hold each quality.pr.* key exactly once', async () => {
+    const counts: Record<string, number> = { 'build.other': 1 };
+    // A second recordQuality into the same object would throw; the rerun must not touch it.
+    const r = await run({ counts }).result;
+    expect(r.checks.find((c) => c.id === 'V23')?.ok).toBe(true);
+    expect(counts['build.other']).toBe(1);
+    const want = deriveProjects(miniProjectInput()).counts;
+    const quality = (c: Record<string, number>) =>
+      Object.keys(c)
+        .filter((k) => k.startsWith('quality.pr.'))
+        .sort();
+    expect(quality(counts)).toEqual(quality(want));
+    for (const id of PR_RULES.map((x) => x.id)) {
+      expect(counts, id).toHaveProperty([`quality.${id}.fired`]);
+      expect(counts, id).toHaveProperty([`quality.${id}.of`]);
+    }
+    // Values are those of one run, not two summed.
+    for (const k of quality(want)) expect(counts[k], k).toBe(want[k]);
   });
 
   it('fails V21 when the coverage bound is above what the records give', async () => {

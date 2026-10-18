@@ -149,6 +149,13 @@ export interface Parsed {
   housing: HousingRow[];
   pipeline: PipelineRow[];
   counts: Record<string, number>;
+  /**
+   * Rule `pr.date.valid-range` (spec §4.1): non-empty date values read (`of`), those treated as
+   * missing (`fired`), and the sorted source ids of the records holding one (`sample`).
+   */
+  dates: { of: number; fired: number; sample: string[] };
+  /** The parsed records (any kind) that held a date `pr.date.valid-range` treated as missing. */
+  clipped: ReadonlySet<object>;
 }
 
 export interface ProjectRecordsInput {

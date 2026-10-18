@@ -118,7 +118,9 @@ function parsedOf(o: {
       ...r,
       prx: r.caseNo != null && r.caseNo.endsWith('PRX')
     })),
-    counts: {}
+    counts: {},
+    dates: { of: 0, fired: 0, sample: [] },
+    clipped: new Set()
   };
 }
 

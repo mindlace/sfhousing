@@ -6,9 +6,10 @@
 import type { ParcelId } from '../../src/lib/data/parcel';
 import type { InFlightProject } from '../../src/lib/timelapse/projects';
 import type { Day } from '../../src/lib/timelapse/time';
+import { STAGE_ORDER } from '../../src/lib/timelapse/types';
 import type { ProjectHistory, Stage } from '../../src/lib/timelapse/types';
 import { isNewConstruction } from './classify';
-import { permitCompletionDay } from './stages';
+import { permitCompletionDay, pipelineStage } from './stages';
 import { DATASET } from './types';
 import type { LinkedProject, Permit, ProjectRecordsInput } from './types';
 
@@ -126,8 +127,8 @@ function inRange(n: number): number | null {
   return Number.isInteger(n) && n >= 1 && n <= MAX_STORIES ? n : null;
 }
 
-/** Spec 4.8 stories rules 2 and 3 on one text; null when nothing in 1..80 is found. */
-export function parseStories(text: string | null): number | null {
+/** Spec 4.8 stories rules 2 and 3 on one text, before the 1..80 range check; null if none. */
+export function parseStoriesValue(text: string | null): number | null {
   if (text === null) return null;
   const kw = KEYWORD_RE.exec(text);
   if (kw === null) return null;
@@ -135,31 +136,57 @@ export function parseStories(text: string | null): number | null {
   const s = STORIES_RE.exec(rest);
   if (s !== null) {
     const token = s[1].toLowerCase();
-    return inRange(NUMBER_WORDS[token] ?? Number(token));
+    return NUMBER_WORDS[token] ?? Number(token);
   }
   const f = FEET_RE.exec(rest);
-  if (f !== null) return inRange(Math.floor(Number(f[1]) / 10));
+  if (f !== null) return Math.floor(Number(f[1]) / 10);
   return null;
 }
 
-/** Spec 4.8 `stories` and `storiesTier`. */
-export function storiesOf(proj: LinkedProject): { stories: number | null; tier: 0 | 3 | null } {
+/** Spec 4.8 stories rules 2 and 3 on one text; null when nothing in 1..80 is found. */
+export function parseStories(text: string | null): number | null {
+  const n = parseStoriesValue(text);
+  return n === null ? null : inRange(n);
+}
+
+/**
+ * Spec 4.8 `stories` and `storiesTier`, with the `pr.stories.parse-range` tally of the texts read:
+ * `parsed` values read from text and `discarded` ones outside 1..80 (the next text is then tried).
+ */
+export function storiesDetail(proj: LinkedProject): {
+  stories: number | null;
+  tier: 0 | 3 | null;
+  parsed: number;
+  discarded: number;
+} {
   let max = 0;
   for (const q of unitBearingPermits(proj)) {
     if (q.stories !== null && q.stories > max) max = q.stories;
   }
-  if (max > 0) return { stories: max, tier: 0 };
+  if (max > 0) return { stories: max, tier: 0, parsed: 0, discarded: 0 };
   const anchors = [...proj.anchors].sort((a, b) => (a.recordId < b.recordId ? -1 : 1));
   const ordered = proj.primary === null ? anchors : [proj.primary, ...anchors];
   const texts = [
     ...ordered.map((a) => a.description),
     ...proj.pipelineRows.map((r) => r.description)
   ];
+  let parsed = 0;
+  let discarded = 0;
   for (const t of texts) {
-    const n = parseStories(t);
-    if (n !== null) return { stories: n, tier: 3 };
+    const raw = parseStoriesValue(t);
+    if (raw === null) continue;
+    parsed++;
+    const n = inRange(raw);
+    if (n !== null) return { stories: n, tier: 3, parsed, discarded };
+    discarded++;
   }
-  return { stories: null, tier: null };
+  return { stories: null, tier: null, parsed, discarded };
+}
+
+/** Spec 4.8 `stories` and `storiesTier`. */
+export function storiesOf(proj: LinkedProject): { stories: number | null; tier: 0 | 3 | null } {
+  const { stories, tier } = storiesDetail(proj);
+  return { stories, tier };
 }
 
 function cmp(a: string, b: string): number {
@@ -297,7 +324,23 @@ export function inFlightStatus(
   return 'inFlight';
 }
 
-/** Spec 4.7: the records won over the quarterly pipeline (a pipeline row on a project that ended). */
-export function pipelineConflict(proj: LinkedProject, end: ProjectHistory['end'] | null): boolean {
-  return proj.pipelineRows.length >= 1 && end !== null && end.kind !== 'open';
+/**
+ * Spec 4.7 records win (`pr.pipeline.records-win`): the project holds a pipeline row and its
+ * history ends complete or exit, or its last entered stage differs from the stage a row's
+ * `current_status` maps to. A status that maps to no stage is not a mismatch.
+ */
+export function pipelineConflict(
+  proj: LinkedProject,
+  end: ProjectHistory['end'] | null,
+  entered: Partial<Record<Stage, Day>>
+): boolean {
+  if (proj.pipelineRows.length === 0) return false;
+  if (end !== null && end.kind !== 'open') return true;
+  let last: Stage | null = null;
+  for (const s of STAGE_ORDER) if (entered[s] !== undefined) last = s;
+  if (last === null) return false;
+  return proj.pipelineRows.some((r) => {
+    const s = pipelineStage(r.status);
+    return s !== null && s !== last;
+  });
 }

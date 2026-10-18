@@ -12,7 +12,9 @@ import {
 import type { Day } from '../../src/lib/timelapse/time';
 import { PATHWAYS, STAGE_ORDER } from '../../src/lib/timelapse/types';
 import type { ProjectHistory, Stage } from '../../src/lib/timelapse/types';
+import { QUALITY_RULES } from '../lib/quality';
 import type { InvariantResult } from '../steps/check';
+import { T3_ONLY_QUALITY } from './assemble';
 import { SCALE_BOUNDS } from './multiphase';
 import { checkRhna } from './rhna';
 
@@ -46,7 +48,26 @@ function result(id: InvariantResult['id'], problems: string[], okDetail: string)
   return { id, ok: false, detail: `${problems.length} problem(s): ${shown}${more}` };
 }
 
-/** V20: the T3 validator on the file bytes, plus the engineering size budget. */
+/** The registered project-records rules, by id. */
+const PR_REGISTRY = new Map(
+  QUALITY_RULES.filter((r) => r.owner === 'project-records').map((r) => [r.id, r])
+);
+
+/** V20 pipeline side: each `qualityRules` entry equals its project-records QUALITY_RULES entry. */
+function qualityRulesProblems(file: ProjectsFile): string[] {
+  const problems: string[] = [];
+  for (const q of file.qualityRules) {
+    const r = PR_REGISTRY.get(q.id);
+    if (r === undefined) {
+      problems.push(`qualityRules ${q.id}: not a project-records rule of QUALITY_RULES`);
+    } else if (q.label !== r.label || q.tier !== r.tier || q.valueTier !== r.valueTier) {
+      problems.push(`qualityRules ${q.id}: label, tier or valueTier differs from QUALITY_RULES`);
+    }
+  }
+  return problems;
+}
+
+/** V20: the T3 validator on the file bytes, the registry match, and the engineering size budget. */
 export function checkV20(
   bytes: Buffer,
   opts: { asOf: Day; parcelIds: ReadonlySet<ParcelId>; maxBytes: number; warnBytes: number }
@@ -64,6 +85,8 @@ export function checkV20(
     }
     throw e;
   }
+  const rules = qualityRulesProblems(file);
+  if (rules.length > 0) return result('V20', rules, '');
   if (size > opts.maxBytes) {
     return {
       id: 'V20',
@@ -133,12 +156,23 @@ function firstAndLast(entered: Partial<Record<Stage, Day>>): { first: Day; last:
   return first === null ? null : { first, last: last as Day };
 }
 
-/** V23: history integrity, a history per T3 pathway, and rerun identity. */
+/**
+ * V23: history integrity, `quality` sorted and unique with only project-records ids that act on
+ * histories, a history per T3 pathway, and rerun identity.
+ */
 export function checkV23(i: V2xInputs, rerunIdentical: boolean): InvariantResult {
   const problems: string[] = [];
   if (!rerunIdentical) problems.push('deriveProjects run twice gave different bytes');
   for (const h of i.histories) {
     const at = `history ${h.id}`;
+    const q = h.quality;
+    if (!q.every((id, k) => k === 0 || q[k - 1] < id)) {
+      problems.push(`${at}: quality is not sorted and unique`);
+    }
+    for (const id of q) {
+      if (!PR_REGISTRY.has(id)) problems.push(`${at}: quality ${id} is not a project-records rule`);
+      else if (T3_ONLY_QUALITY.has(id)) problems.push(`${at}: quality ${id} acts only on T3`);
+    }
     const span = firstAndLast(h.entered);
     if (span === null) {
       problems.push(`${at}: entered is empty`);

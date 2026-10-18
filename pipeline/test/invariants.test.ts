@@ -12,7 +12,7 @@ import {
 import { encodeTransit } from '../../src/lib/data/transit-codec';
 import { tinyNetwork } from '../../src/lib/data/fixtures/transit-tiny';
 import { FIXTURE_PROFILE, LIVE_PROFILE } from '../config';
-import { QUALITY_REPORT_MD, makeQuality } from '../lib/quality';
+import { QUALITY_REPORT_MD, QUALITY_RULES, makeQuality } from '../lib/quality';
 import { deriveProjects } from '../project-records/derive';
 import {
   checkV21,
@@ -557,7 +557,12 @@ describe('V30 data-quality registry', () => {
   it('the build writes quality-report.md into the derived folder', () => {
     const md = readFileSync(join(derived, 'fixture-0', QUALITY_REPORT_MD), 'utf8');
     expect(md).toMatch(/^# Data quality report: fixture-0\n/);
-    expect(md).toContain('No rules are registered.');
+    // One reported row per registered rule (project-records registers the pr.* rules).
+    for (const r of QUALITY_RULES) {
+      expect(md, r.id).toMatch(new RegExp(`^\\| \`${r.id.replaceAll('.', '\\.')}\` \\|`, 'm'));
+    }
+    expect(md).not.toContain('| not reported |');
+    expect(md).not.toContain('Not reported.');
   });
   it('fails when a registered rule does not report', () => {
     const v30 = checkV30({}, { qualityShares: false }, one.checkQuality);

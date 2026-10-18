@@ -104,6 +104,49 @@ function canonicalSort(rows: readonly RawRow[]): RawRow[] {
     .map(([, r]) => r);
 }
 
+/**
+ * The `pr.date.valid-range` tally (spec §4.1): every non-empty date value read, the values
+ * `dayOf` treated as missing, the source ids of the records that held one, and those records.
+ */
+interface DateCtx {
+  asOf: Day;
+  of: number;
+  fired: number;
+  ids: Set<string>;
+  clipped: Set<object>;
+}
+
+const isEmpty = (v: unknown) =>
+  v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
+
+/**
+ * Reads one record's dates through `dayOf`, counting each non-empty value and each one it
+ * clips; `done` marks the record (and its source id) when any value was clipped.
+ */
+function dateReader(ctx: DateCtx) {
+  let hit = false;
+  return {
+    day(v: unknown): Day | null {
+      const d = dayOf(v, ctx.asOf);
+      if (!isEmpty(v)) {
+        ctx.of++;
+        if (d === null) {
+          ctx.fired++;
+          hit = true;
+        }
+      }
+      return d;
+    },
+    done<T extends object>(rec: T, id: string | null): T {
+      if (hit) {
+        ctx.clipped.add(rec);
+        if (id !== null) ctx.ids.add(id);
+      }
+      return rec;
+    }
+  };
+}
+
 function bump(counts: Record<string, number>, key: string): void {
   counts[key] = (counts[key] ?? 0) + 1;
 }
@@ -130,7 +173,7 @@ function compareAddress(a: AddressRow, b: AddressRow): number {
 
 function parsePermits(
   rows: RawRow[],
-  asOf: Day,
+  dates: DateCtx,
   counts: Record<string, number>
 ): Map<string, Permit> {
   const id: ProjectSourceId = 'datasf-permits-newcon';
@@ -149,26 +192,32 @@ function parsePermits(
   for (const number of [...groups.keys()].sort(cmp)) {
     const group = groups.get(number)!; // already in canonical order
     const lead = group.find((r) => r.primary_address_flag === 'Y') ?? group[0];
-    permits.set(number, {
+    const d = dateReader(dates);
+    const permit: Permit = {
       number,
       sitePermit: lead.site_permit === 'Y',
       status: (str(lead.status) ?? '').toLowerCase(),
-      statusDay: dayOf(lead.status_date, asOf),
-      filedDay: dayOf(lead.filed_date, asOf) ?? dayOf(lead.permit_creation_date, asOf),
-      issuedDay: dayOf(lead.issued_date, asOf),
-      fcdDay: dayOf(lead.first_construction_document_date, asOf),
-      completedDateDay: dayOf(lead.completed_date, asOf),
-      lastActivityDay: dayOf(lead.last_permit_activity_date, asOf),
+      statusDay: d.day(lead.status_date),
+      filedDay: d.day(lead.filed_date) ?? d.day(lead.permit_creation_date),
+      issuedDay: d.day(lead.issued_date),
+      fcdDay: d.day(lead.first_construction_document_date),
+      completedDateDay: d.day(lead.completed_date),
+      lastActivityDay: d.day(lead.last_permit_activity_date),
       stories: num(lead.number_of_proposed_stories),
       existingUnits: num(lead.existing_units),
       proposedUnits: num(lead.proposed_units),
       rows: group.map(addressRow).sort(compareAddress)
-    });
+    };
+    permits.set(number, d.done(permit, number));
   }
   return permits;
 }
 
-function parsePrjs(rows: RawRow[], asOf: Day, counts: Record<string, number>): Map<string, Prj> {
+function parsePrjs(
+  rows: RawRow[],
+  dates: DateCtx,
+  counts: Record<string, number>
+): Map<string, Prj> {
   const id: ProjectSourceId = 'datasf-planning-projects';
   const found: Prj[] = [];
   for (const r of rows) {
@@ -177,16 +226,17 @@ function parsePrjs(rows: RawRow[], asOf: Day, counts: Record<string, number>): M
       bump(counts, `parse.dropped.${id}`);
       continue;
     }
-    found.push({
+    const d = dateReader(dates);
+    const prj: Prj = {
       recordId,
       status: str(r.record_status),
       address: str(r.project_address),
       blklot: blklotOf(r.block, r.lot),
-      openDay: dayOf(r.open_date, asOf),
-      closeDay: dayOf(r.close_date, asOf),
+      openDay: d.day(r.open_date),
+      closeDay: d.day(r.close_date),
       permits: splitPermits(r.building_permits),
       decision: str(r.project_decision),
-      decisionDay: dayOf(r.project_decision_date, asOf),
+      decisionDay: d.day(r.project_decision_date),
       unitsProp: num(r.number_of_units_prop),
       unitsExist: num(r.number_of_units_exist),
       newConstruction: r.new_construction === 'CHECKED',
@@ -194,7 +244,8 @@ function parsePrjs(rows: RawRow[], asOf: Day, counts: Record<string, number>): M
       hsd: r.housing_sustainability_dist === 'CHECKED',
       ab2162: r.ab2162 === 'CHECKED',
       description: str(r.description)
-    });
+    };
+    found.push(d.done(prj, recordId));
   }
   // Stable sort: ties keep canonical order, so the first duplicate is the canonical-first row.
   found.sort((a, b) => cmp(a.recordId, b.recordId));
@@ -206,14 +257,19 @@ function parsePrjs(rows: RawRow[], asOf: Day, counts: Record<string, number>): M
   return prjs;
 }
 
-/** Parses all seven row sets. `asOf` bounds every date. */
+/**
+ * Parses all seven row sets. `asOf` bounds every date: a non-empty date outside
+ * `[1970-01-01, asOf]` or not a calendar date is missing (rule `pr.date.valid-range`), counted in
+ * `dates` and its record put in `clipped`.
+ */
 export function parseAll(raw: Record<ProjectSourceId, RawRow[]>, asOf: Day): Parsed {
   const counts: Record<string, number> = {};
+  const dates: DateCtx = { asOf, of: 0, fired: 0, ids: new Set(), clipped: new Set() };
   const sorted = {} as Record<ProjectSourceId, RawRow[]>;
   for (const id of PROJECT_SOURCE_IDS) sorted[id] = canonicalSort(raw[id] ?? []);
 
-  const permits = parsePermits(sorted['datasf-permits-newcon'], asOf, counts);
-  const prjs = parsePrjs(sorted['datasf-planning-projects'], asOf, counts);
+  const permits = parsePermits(sorted['datasf-permits-newcon'], dates, counts);
+  const prjs = parsePrjs(sorted['datasf-planning-projects'], dates, counts);
 
   const children: Child[] = [];
   for (const r of sorted['datasf-planning-records']) {
@@ -222,15 +278,17 @@ export function parseAll(raw: Record<ProjectSourceId, RawRow[]>, asOf: Day): Par
       bump(counts, 'parse.dropped.datasf-planning-records');
       continue;
     }
-    children.push({
+    const d = dateReader(dates);
+    const child: Child = {
       recordId,
       type: str(r.record_type) ?? '',
       status: str(r.record_status),
       blklot: blklotOf(r.block, r.lot),
       parentId: str(r.parent_id),
-      openDay: dayOf(r.open_date, asOf),
-      closeDay: dayOf(r.close_date, asOf)
-    });
+      openDay: d.day(r.open_date),
+      closeDay: d.day(r.close_date)
+    };
+    children.push(d.done(child, recordId));
   }
 
   const reviews: Review[] = [];
@@ -240,13 +298,15 @@ export function parseAll(raw: Record<ProjectSourceId, RawRow[]>, asOf: Day): Par
       bump(counts, 'parse.dropped.datasf-planning-review');
       continue;
     }
-    reviews.push({
+    const d = dateReader(dates);
+    const review: Review = {
       recordId,
       startType: str(r.start_event_type),
-      startDay: dayOf(r.start_event_date, asOf),
+      startDay: d.day(r.start_event_date),
       endType: str(r.end_event_type),
-      endDay: dayOf(r.end_event_date, asOf)
-    });
+      endDay: d.day(r.end_event_date)
+    };
+    reviews.push(d.done(review, recordId));
   }
 
   const completions: Completion[] = [];
@@ -256,32 +316,40 @@ export function parseAll(raw: Record<ProjectSourceId, RawRow[]>, asOf: Day): Par
       bump(counts, 'parse.dropped.datasf-unit-completions');
       continue;
     }
-    completions.push({
+    const d = dateReader(dates);
+    const completion: Completion = {
       permit,
-      day: dayOf(r.date_issued, asOf),
+      day: d.day(r.date_issued),
       kind: docKind(r.document_type),
       units: num(r.number_of_units_certified)
-    });
+    };
+    completions.push(d.done(completion, permit));
   }
 
-  const housing: HousingRow[] = sorted['datasf-housing-production'].map((r) => ({
-    bpa: str(r.bpa),
-    form: str(r.form_no),
-    netUnits: num(r.net_units_completed),
-    firstCompletionDay: dayOf(r.first_completion_date, asOf)
-  }));
+  const housing: HousingRow[] = sorted['datasf-housing-production'].map((r) => {
+    const d = dateReader(dates);
+    const row: HousingRow = {
+      bpa: str(r.bpa),
+      form: str(r.form_no),
+      netUnits: num(r.net_units_completed),
+      firstCompletionDay: d.day(r.first_completion_date)
+    };
+    return d.done(row, row.bpa);
+  });
 
   const pipeline: PipelineRow[] = sorted['datasf-dev-pipeline'].map((r, idx) => {
     const caseNo = str(r.case_no);
-    return {
+    const bpaNo = str(r.bpa_no);
+    const d = dateReader(dates);
+    const row: PipelineRow = {
       idx,
       blklot: str(r.blklot),
       nameaddr: str(r.nameaddr),
       status: str(r.current_status),
-      statusDay: dayOf(r.current_status_date, asOf),
-      approvedDay: dayOf(r.approved_date_planning, asOf),
+      statusDay: d.day(r.current_status_date),
+      approvedDay: d.day(r.approved_date_planning),
       caseNo,
-      bpaNo: str(r.bpa_no),
+      bpaNo,
       newUnits: num(r.new_pipeline_units),
       existingUnits: num(r.existing_units),
       proposedUnits: num(r.proposed_units),
@@ -291,7 +359,20 @@ export function parseAll(raw: Record<ProjectSourceId, RawRow[]>, asOf: Day): Par
       da: str(r.da),
       prx: caseNo !== null && caseNo.endsWith('PRX')
     };
+    return d.done(row, caseNo ?? bpaNo);
   });
 
-  return { asOf, permits, prjs, children, reviews, completions, housing, pipeline, counts };
+  return {
+    asOf,
+    permits,
+    prjs,
+    children,
+    reviews,
+    completions,
+    housing,
+    pipeline,
+    counts,
+    dates: { of: dates.of, fired: dates.fired, sample: [...dates.ids].sort(cmp) },
+    clipped: dates.clipped
+  };
 }
