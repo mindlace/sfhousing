@@ -1,19 +1,16 @@
 <script module lang="ts">
   import type { Protocol as PmtilesProtocol } from 'pmtiles';
-  import { TOKENS as THEME_TOKENS } from './palette';
+  import { TOKENS as THEME_TOKENS, tokenCss, type TokenName } from './palette';
   import { attributionHtml } from './attribution';
 
   type MapLibreModule = typeof import('maplibre-gl');
 
   // CSS defaults for the --map-* tokens, so the SSR frame follows prefers-color-scheme before
   // JS resolves a theme (an explicit or JS-resolved theme overrides them inline).
-  const tokenVars = (t: 'light' | 'dark') =>
-    Object.entries(THEME_TOKENS[t])
-      .map(([k, v]) => `--map-${k.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())}: ${v}`)
-      .join('; ');
-  const DEFAULT_TOKENS_CSS =
-    `<style>.sim-map { ${tokenVars('light')} } ` +
-    `@media (prefers-color-scheme: dark) { .sim-map { ${tokenVars('dark')} } }</style>`;
+  const DEFAULT_TOKENS_CSS = `<style>${tokenCss(
+    '.sim-map',
+    Object.keys(THEME_TOKENS.light) as TokenName[]
+  )}</style>`;
 
   // One pmtiles protocol per page (spec §4.1). Removed only on a real unload, never when the
   // page enters the back/forward cache (a restored page keeps its live map).
