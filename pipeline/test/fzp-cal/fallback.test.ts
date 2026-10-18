@@ -475,6 +475,35 @@ describe('fitTransitions: rung selection', () => {
       /coverage gap: entitled 2017/
     );
   });
+
+  it('asserts full calendar years only and states partial years in method (ruling C4)', () => {
+    const { spells, unobserved } = world(7);
+    const guarded: CalProfile = { ...LIVE_CAL, coverageGuard: true };
+    // No preApplication entry in 2023 H1 (the live case): the partial year is not asserted.
+    const noPpa2023 = spells.filter(
+      (s) => !(s.stage === 'preApplication' && s.e >= isoToDay('2023-01-01'))
+    );
+    const r = fitTransitions(noPpa2023, unobserved, AS_OF, guarded, NO_CTX);
+    expect(r.coveragePartial.preApplication).toEqual([
+      { year: 2023, to: '2023-07-07', entries: 0 }
+    ]);
+    expect(r.coveragePartial.permitFiled).toEqual([
+      { year: 2026, to: '2026-06-30', entries: r.coverage.permitFiled![2026] }
+    ]);
+    for (const p of PATHWAYS) {
+      expect(r.transitions[p].preApplication!.provenance.method).toContain(
+        'partial year 2023 (to 2023-07-07): 0 entries, not asserted'
+      );
+    }
+    expect(r.transitions.discretionary.filed!.provenance.method).toContain(
+      `partial year 2026 (to 2026-06-30): ${r.coverage.filed![2026]} entries, not asserted`
+    );
+    // A rung-3 cell states it too.
+    const thin = fitTransitions([], [], AS_OF, LIVE, NO_CTX);
+    expect(thin.transitions.permitOnly.construction!.provenance.method).toContain(
+      'partial year 2026 (to 2026-06-30): 0 entries, not asserted'
+    );
+  });
 });
 
 describe('fitTransitions: every cell', () => {

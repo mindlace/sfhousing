@@ -39,7 +39,7 @@ import { phScale } from './ph-pool';
 import { datasf } from './provenance';
 import { cutSpells } from './spells';
 import { rejects, tailFit } from './tail';
-import { PPA_SERIES_END, coverageGuard, windowStart } from './window';
+import { PPA_SERIES_END, coverageGuard, windowStart, type PartialYear } from './window';
 import type {
   CalProfile,
   CalStage,
@@ -116,6 +116,11 @@ export interface FitResult {
   noFcdFlaggedPooled: number;
   /** entries per year of each stage's pooled window (the coverage guard's counts) */
   coverage: Partial<Record<CalStage, Record<number, number>>>;
+  /**
+   * per stage, the years only partly inside its guard window [Wₛ, entry end]: counted, not
+   * asserted (conductor ruling C4); every cell of the stage states them in its `method`
+   */
+  coveragePartial: Partial<Record<CalStage, PartialYear[]>>;
 }
 
 const PERMIT_SIDE: readonly CalStage[] = ['permitFiled', 'permitIssued', 'construction'];
@@ -235,7 +240,8 @@ const noFcdOf = (w: AdvanceWeighting): NoFcdCell => ({
  * Fits every occupiable pathway × stage cell (spec §4.5). `spells` and `unobserved` are
  * `buildSpells`' output (cut at the pooled window starts, sorted by pathway, stage, project id).
  * The coverage guard runs once per stage over its pooled window (preApplication's ends at
- * min(asOf, PPA_SERIES_END)); with `cal.coverageGuard` a year with no entry throws.
+ * min(asOf, PPA_SERIES_END)); with `cal.coverageGuard` a full calendar year with no entry throws,
+ * and a partial year is only counted and stated (conductor ruling C4).
  */
 export function fitTransitions(
   spells: Spell[],
@@ -253,6 +259,9 @@ export function fitTransitions(
   const warnings: string[] = [];
   const spellsCount: Record<string, number> = {};
   const coverage: FitResult['coverage'] = {};
+  const coveragePartial: FitResult['coveragePartial'] = {};
+  /** the current stage's partial-year sentences, stated in every cell's `method` */
+  let partialNotes: string[] = [];
   let ppaPooled = 0;
   let noFcdFlaggedPooled = 0;
 
@@ -301,6 +310,9 @@ export function fitTransitions(
     noFcd?: CellReport['noFcd']
   ): void => {
     const t = rung3(stage, p, exitShares(pooled), { n: pooled.length, window });
+    if (partialNotes.length > 0) {
+      t.provenance.method = [t.provenance.method, ...partialNotes].join('; ');
+    }
     transitions[p][stage] = t;
     warnings.push(`rung 3 (literature synthetic): ${p} ${stage}`);
     cells.push({
@@ -326,7 +338,12 @@ export function fitTransitions(
     const fromIso = isoOf(from);
     const window: [string, string] = [fromIso, asOfIso];
     const guardEnd = stage === 'preApplication' ? Math.min(asOf, isoToDay(PPA_SERIES_END)) : asOf;
-    coverage[stage] = coverageGuard(pooled, stage, from, guardEnd, cal.coverageGuard).perYear;
+    const guard = coverageGuard(pooled, stage, from, guardEnd, cal.coverageGuard);
+    coverage[stage] = guard.perYear;
+    coveragePartial[stage] = guard.partial;
+    partialNotes = guard.partial.map(
+      (y) => `partial year ${y.year} (to ${y.to}): ${y.entries} entries, not asserted`
+    );
     spellsCount[`calibration.spells.pooled.${stage}`] = pooled.length;
 
     if (!PERMIT_SIDE.includes(stage)) {
@@ -369,7 +386,7 @@ export function fitTransitions(
             );
           }
         }
-        parts.push(...imputeSentence(g), ...purgeSentence(k));
+        parts.push(...imputeSentence(g), ...purgeSentence(k), ...partialNotes);
         const tier = rung === 1 ? 0 : 2;
         const provenance: Provenance = {
           tier,
@@ -479,7 +496,7 @@ export function fitTransitions(
         );
       }
       if (stage === 'construction') parts.push(COMPLETION_DATING);
-      parts.push(...imputeSentence(g), ...purgeSentence(k));
+      parts.push(...imputeSentence(g), ...purgeSentence(k), ...partialNotes);
       const provenance: Provenance = {
         tier: 2,
         label: `SF permit records ${fromIso.slice(0, 4)}–${asOfYear}, pooled across pathways before 2015, scaled to ${p} ${v2015Iso.slice(0, 4)}–${asOfYear} (tier 2)`,
@@ -537,6 +554,7 @@ export function fitTransitions(
     ppaPooled,
     spellsCount,
     noFcdFlaggedPooled,
-    coverage
+    coverage,
+    coveragePartial
   };
 }

@@ -277,7 +277,7 @@ This replaces round 3's 1989 (`permitFiled`) and 2000 (`permitIssued`, `construc
 
 **Excluded volume.** A qualifying history whose spells all end before 2007-01-01 contributes no permit-side spell (and, since the Planning side starts in 2015, no spell at all). The step counts these as `calibration.window.preRoll`, and the report prints the count beside the table so the excluded volume is visible. A history with any spell ending on or after 2007-01-01 is not counted there.
 
-**Guard.** `COVERAGE_GUARD` is a method constant: **on in `LIVE_CAL`, off in `FIXTURE_CAL`** (round 2). When on, any year in a pooled window with zero qualifying entries raises `CalibrationError: coverage gap`. When off, the per-year counts are still reported.
+**Guard.** `COVERAGE_GUARD` is a method constant: **on in `LIVE_CAL`, off in `FIXTURE_CAL`** (round 2). When on, any **full calendar year** inside [Wₛ, entry end] with zero qualifying entries raises `CalibrationError: coverage gap`; the entry end is `PPA_SERIES_END` (2023-07-07) for preApplication and `asOf` for every other stage, and a year is full when its Jan 1 ≥ Wₛ and its Dec 31 ≤ the entry end (conductor ruling C4, 2026-10-18). A partial first or last year is not asserted: its entry count is still returned, stated in every affected Transition's `method` ("partial year 2023 (to 2023-07-07): 0 entries, not asserted") and printed in the report's window section. The same rule applies to every stage: preApplication checks 2015..2022, and with asOf 2026-10-17 every other stage checks through 2025. The ruling was motivated by the live data: 0 qualifying PPA entries in 2023-01-01..2023-07-07 (6 in 2022), a partial year the previous wording turned into a coverage gap. When off, the per-year counts are still reported.
 
 **What is recorded.**
 - Planning-side Transitions have `window` = [2015-01-01, asOf].
@@ -311,7 +311,7 @@ F_j += S · e_j(d) / n(d);   S *= 1 − e(d) / n(d)
     - `sources`: the Transition's sources.
 
     For rung 3 it copies the Transition's own tier and sources, because there the tail is the table.
-- **Rounding.** Table values are floored to 1e-6, which keeps them monotone and keeps Σ ≤ 1. Tail values are rounded to 6 significant digits. Rung-3 values (§4.5) are the one exception: they are rounded *up* to 1e-6 (controller ruling R25), so the synthetic median is never later than D; a one-month table with q ≤ 0.5 is trivially monotone with Σ ≤ 1, and a value on the 1e-6 grid already has at most 6 significant digits, so the tail equals the table value.
+- **Rounding.** Table values are floored to 1e-6, which keeps them monotone and keeps Σ ≤ 1. Tail values are rounded to 6 significant digits. Rung-3 values (§4.5) are the one exception: they are rounded *up* to 1e-6 (controller ruling R25), so the synthetic median is never later than ⌈D⌉ (exactly D for an integer D); a one-month table with q ≤ 0.5 is trivially monotone with Σ ≤ 1, and a value on the 1e-6 grid already has at most 6 significant digits, so the tail equals the table value.
 - **Rejection.** A cell is rejected, and goes to §4.5, unless C(K) ≤ 1 − 1e-6 and ρ > 0.
 - **Construction provenance.** The `construction` cells' `method` states: "completion = first TCO/CFC, else permit `completed_date`; TCO data start in 2018, so earlier completions are dated later (bias toward longer durations)".
 

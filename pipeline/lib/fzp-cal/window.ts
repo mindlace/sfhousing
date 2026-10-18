@@ -79,32 +79,49 @@ export function windowStart(stage: CalStage, level: 'pooled' | 'pathway'): Day {
   return isoToDay(level === 'pooled' ? row.pooledStart : row.pathwayStart);
 }
 
+/** A calendar year only partly inside a guard window: counted and reported, never asserted. */
+export interface PartialYear {
+  year: number;
+  /** the last day of the year inside the window (the entry end, or Dec 31) */
+  to: string;
+  entries: number;
+}
+
 /**
- * Entries per calendar year of `stage` spells, from `from` to `asOf` (an entry counts in the year
- * of max(e, from); entries after `asOf` are not counted). When `on`, a year with no entry throws
- * `CalibrationError('coverage gap: <stage> <year>')`; when off the counts are still returned.
+ * Entries per calendar year of `stage` spells, from `from` to the entry end `end` (`PPA_SERIES_END`
+ * for preApplication, `asOf` otherwise): an entry counts in the year of max(e, from); entries
+ * after `end` are not counted. `perYear` has every year from `from`'s to `end`'s. Only full
+ * calendar years inside [from, end] (Jan 1 >= from and Dec 31 <= end) are asserted (conductor
+ * ruling C4): when `on`, such a year with no entry throws
+ * `CalibrationError('coverage gap: <stage> <year>')`. A partial first or last year is listed in
+ * `partial` with its count instead. When off nothing throws and the counts are still returned.
  */
 export function coverageGuard(
   spells: Spell[],
   stage: CalStage,
   from: Day,
-  asOf: Day,
+  end: Day,
   on: boolean
-): { perYear: Record<number, number> } {
+): { perYear: Record<number, number>; partial: PartialYear[] } {
   const yearOf = (d: Day) => Number(isoOf(d).slice(0, 4));
   const first = yearOf(from);
-  const last = yearOf(asOf);
+  const last = yearOf(end);
   const perYear: Record<number, number> = {};
   for (let y = first; y <= last; y++) perYear[y] = 0;
   for (const s of spells) {
-    if (s.stage !== stage || s.e > asOf) continue;
+    if (s.stage !== stage || s.e > end) continue;
     const y = yearOf(Math.max(s.e, from));
     if (y in perYear) perYear[y]++;
   }
-  if (on) {
-    for (let y = first; y <= last; y++) {
-      if (perYear[y] === 0) throw new CalibrationError(`coverage gap: ${stage} ${y}`);
+  const partial: PartialYear[] = [];
+  for (let y = first; y <= last; y++) {
+    const jan1 = isoToDay(`${y}-01-01`);
+    const dec31 = isoToDay(`${y}-12-31`);
+    if (jan1 >= from && dec31 <= end) {
+      if (on && perYear[y] === 0) throw new CalibrationError(`coverage gap: ${stage} ${y}`);
+    } else {
+      partial.push({ year: y, to: isoOf(Math.min(dec31, end)), entries: perYear[y] });
     }
   }
-  return { perYear };
+  return { perYear, partial };
 }

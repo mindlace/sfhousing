@@ -118,6 +118,49 @@ describe('coverageGuard', () => {
     });
   });
 
+  describe('full calendar years only (conductor ruling C4)', () => {
+    const years = (from: number, to: number, stage: Spell['stage']) =>
+      Array.from({ length: to - from + 1 }, (_, i) => spell(`${from + i}-04-01`, stage));
+    const on = LIVE_CAL.coverageGuard;
+
+    it('preApplication entries 2015..2022 and none in 2023 H1 pass, 2023 partial', () => {
+      const ppa = years(2015, 2022, 'preApplication');
+      const r = coverageGuard(ppa, 'preApplication', from, isoToDay(PPA_SERIES_END), on);
+      expect(r.partial).toEqual([{ year: 2023, to: '2023-07-07', entries: 0 }]);
+      expect(r.perYear[2023]).toBe(0);
+      expect(Object.keys(r.perYear)).toHaveLength(9);
+    });
+
+    it('a full year with no entry still throws', () => {
+      const gap = years(2015, 2022, 'preApplication').filter((s) => s.projectId !== '2017-04-01');
+      expect(() =>
+        coverageGuard(gap, 'preApplication', from, isoToDay(PPA_SERIES_END), on)
+      ).toThrow(/coverage gap: preApplication 2017/);
+    });
+
+    it('asOf 2026-10-17 with no 2026 entry passes and reports 2026 as partial', () => {
+      const r = coverageGuard(
+        years(2015, 2025, 'filed'),
+        'filed',
+        from,
+        isoToDay('2026-10-17'),
+        on
+      );
+      expect(r.partial).toEqual([{ year: 2026, to: '2026-10-17', entries: 0 }]);
+    });
+
+    it('a window ending on Dec 31 has no partial year', () => {
+      const r = coverageGuard(
+        years(2015, 2016, 'filed'),
+        'filed',
+        from,
+        isoToDay('2016-12-31'),
+        on
+      );
+      expect(r.partial).toEqual([]);
+    });
+  });
+
   it('counts only the named stage', () => {
     const other = [...spells, spell('2016-04-01', 'entitled')];
     expect(coverageGuard(other, 'entitled', from, asOf, false).perYear).toEqual({
