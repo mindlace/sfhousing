@@ -25,6 +25,22 @@ function isBuilding(m: Massing): m is GeneratedBuilding {
   return 'parts' in m;
 }
 
+/**
+ * At least 3 distinct vertices: a smaller ring has no area, and an empty one would give its bar a
+ * NaN anchor (bars.ts). Stops at the third distinct vertex.
+ */
+function hasThreeVertices(r: readonly [number, number][]): boolean {
+  if (r.length < 3) return false;
+  const a = r[0];
+  let b: [number, number] | null = null;
+  for (const v of r) {
+    if (v[0] === a[0] && v[1] === a[1]) continue;
+    if (!b) b = v;
+    else if (v[0] !== b[0] || v[1] !== b[1]) return true;
+  }
+  return false;
+}
+
 export function packTimedCell(cellId: string, items: readonly TimedPackInput[]): TimedPackedCell {
   const fail = (projectId: string, why: string): never => {
     throw new Error(`packTimedCell ${cellId}: project ${projectId} ${why}`);
@@ -59,8 +75,16 @@ export function packTimedCell(cellId: string, items: readonly TimedPackInput[]):
     if (massings.length !== revisions.length)
       fail(id, `has ${massings.length} massings for ${revisions.length} revisions`);
     for (let i = 1; i < revisions.length; i++)
-      if (revisions[i].day < revisions[i - 1].day)
-        fail(id, `has revision ${i} on day ${revisions[i].day} before day ${revisions[i - 1].day}`);
+      if (revisions[i].day <= revisions[i - 1].day)
+        fail(
+          id,
+          `has revision ${i} on day ${revisions[i].day}, not after day ${revisions[i - 1].day}`
+        );
+    const ring = (r: [number, number][], i: number): [number, number][] => {
+      if (!hasThreeVertices(r))
+        fail(id, `has a ring of fewer than 3 distinct vertices in revision ${i}`);
+      return r;
+    };
 
     let finalStories = 0;
     let finalTypology = 0;
@@ -71,7 +95,7 @@ export function packTimedCell(cellId: string, items: readonly TimedPackInput[]):
         const ti = TYPOLOGY_ORDER.indexOf(m.typology);
         if (ti < 0) fail(id, `has unknown typology ${m.typology} on ${m.parcelId}`);
         for (const part of renderParts(m)) {
-          rings.push(part.ring);
+          rings.push(ring(part.ring, i));
           topM.push(part.topM);
           slots.push(s);
           typ.push(ti);
@@ -81,7 +105,7 @@ export function packTimedCell(cellId: string, items: readonly TimedPackInput[]):
         finalStories = m.stories;
         finalTypology = ti;
       } else {
-        rings.push(normaliseRing(m.footprint));
+        rings.push(ring(normaliseRing(m.footprint), i));
         topM.push(FOOTPRINT_M);
         slots.push(s);
         typ.push(0);

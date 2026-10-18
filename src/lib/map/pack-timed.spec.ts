@@ -210,19 +210,6 @@ describe('packTimedCell (§4.1.1)', () => {
     expect(Array.from(p.slotPathway)).toEqual([0, 1, 2]);
   });
 
-  it('allows equal revision days (an empty window)', () => {
-    const p = packTimedCell('c', [
-      item('p', [B[0], B[1]], {
-        revisions: [
-          { day: 100, units: 1, stories: 1 },
-          { day: 100, units: 2, stories: 1 }
-        ]
-      })
-    ]);
-    expect(p.partWindow[0]).toBe(100);
-    expect(p.partWindow[1]).toBe(100);
-  });
-
   it('is deterministic: the same input packs to byte-identical buffers', () => {
     const make = () =>
       packTimedCell('c', [
@@ -271,6 +258,28 @@ describe('packTimedCell (§4.1.1)', () => {
         ]
       });
       expect(() => packTimedCell('cell-9', [bad])).toThrow(/cell-9.*p-desc/);
+    });
+    it('on equal revision days (ruling R17: §4.1.1 "non-ascending")', () => {
+      const bad = item('p-equal', [B[0], B[1]], {
+        revisions: [
+          { day: 100, units: 1, stories: 1 },
+          { day: 100, units: 2, stories: 1 }
+        ]
+      });
+      expect(() => packTimedCell('cell-9', [bad])).toThrow(/cell-9.*p-equal.*day 100/);
+    });
+    it('on a footprint ring with fewer than 3 distinct vertices', () => {
+      const [a, b] = RING;
+      for (const footprint of [[], [a], [a, b], [a, b, a], [a, b, b, a]]) {
+        const bad = item('p-ring', [{ footprint }]);
+        expect(() => packTimedCell('cell-9', [bad])).toThrow(/cell-9.*p-ring.*3 distinct/);
+      }
+      expect(packTimedCell('c', [item('p', [{ footprint: [a, b, RING[2]] }])]).partCount).toBe(1);
+    });
+    it('on a building part ring with fewer than 3 distinct vertices', () => {
+      const b = structuredClone(B[0]);
+      b.parts[0].footprint = [b.parts[0].footprint[0]];
+      expect(() => packTimedCell('cell-9', [item('p-part', [b])])).toThrow(/cell-9.*p-part/);
     });
     it('on a duplicate projectId', () => {
       expect(() => packTimedCell('cell-9', [item('p-dup', [B[0]]), item('p-dup', [B[1]])])).toThrow(
