@@ -3,6 +3,7 @@
 import { expect, test } from '@playwright/test';
 import type { SfhBrushDebug } from '../../src/lib/brush/debug';
 import type { SfhMapDebug } from '../../src/lib/map/debug';
+import { BAR_MS, pct, verdict } from './bench-util';
 
 type Win = Window & { __sfhMap?: SfhMapDebug; __sfhBrush?: SfhBrushDebug };
 
@@ -15,14 +16,6 @@ const DOWNTOWN = {
 const PAN_MS = 10_000;
 /** Pan speed, scaled by each frame's delta so 60 Hz and 120 Hz displays pan alike. */
 const PAN_PX_PER_S = 360;
-const BAR_MS = 16.7;
-
-function pct(sorted: number[], p: number): number {
-  const i = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
-  return sorted[i];
-}
-
-const verdict = (p95: number): string => (p95 <= BAR_MS ? 'PASS' : 'FAIL');
 
 for (const complexity of ['representative', 'worst'] as const)
   test(`bench:map: ${complexity} whole city`, async ({ page }) => {

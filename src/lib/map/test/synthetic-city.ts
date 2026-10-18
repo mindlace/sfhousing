@@ -13,7 +13,7 @@ const W = -122.515,
 /** Cells per update after the snapshot. */
 const CELLS_PER_UPDATE = 10;
 
-function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
@@ -34,14 +34,13 @@ export function benchmarkExemplars(complexity: Complexity): GeneratedBuilding[] 
           (stories) => compositionDistrict(42, stories).buildings
         ));
 }
-function building(
+/** A copy of `source` for parcel `id`, translated so its first vertex sits at `(x, y)`. */
+export function placeBuilding(
+  source: GeneratedBuilding,
   id: string,
   x: number,
-  y: number,
-  rnd: () => number,
-  exemplars: GeneratedBuilding[]
+  y: number
 ): GeneratedBuilding {
-  const source = exemplars[Math.floor(rnd() * exemplars.length)];
   const anchor = source.parts[0].footprint[0];
   return {
     ...source,
@@ -51,6 +50,46 @@ function building(
       footprint: p.footprint.map(([lng, lat]) => [x + lng - anchor[0], y + lat - anchor[1]])
     }))
   };
+}
+function building(
+  id: string,
+  x: number,
+  y: number,
+  rnd: () => number,
+  exemplars: GeneratedBuilding[]
+): GeneratedBuilding {
+  return placeBuilding(exemplars[Math.floor(rnd() * exemplars.length)], id, x, y);
+}
+
+/** The synthetic city's grid: `n` sites in cells of `perCell` across the SF bbox. */
+export interface CityGrid {
+  nCells: number;
+  perCell: number;
+  cols: number;
+  cw: number;
+  ch: number;
+  side: number;
+}
+export function cityGrid(n: number, perCell: number): CityGrid {
+  const nCells = Math.ceil(n / perCell);
+  const cols = Math.ceil(Math.sqrt(nCells));
+  const rows = Math.ceil(nCells / cols);
+  return {
+    nCells,
+    perCell,
+    cols,
+    cw: (E - W) / cols,
+    ch: (N - S) / rows,
+    side: Math.ceil(Math.sqrt(perCell))
+  };
+}
+/** Site `i` of cell `c`, jittered by two `rnd` draws (x, then y). */
+export function gridSite(g: CityGrid, c: number, i: number, rnd: () => number): [number, number] {
+  const cx = W + (c % g.cols) * g.cw,
+    cy = S + Math.floor(c / g.cols) * g.ch;
+  const x = cx + ((i % g.side) + 0.1 + rnd() * 0.3) * (g.cw / g.side);
+  const y = cy + (Math.floor(i / g.side) + 0.05 + rnd() * 0.1) * (g.ch / g.side);
+  return [x, y];
 }
 
 /**
@@ -65,22 +104,14 @@ export function makeSyntheticCity(
 ): GeneratedUpdate[] {
   const rnd = mulberry32(seed);
   const exemplars = benchmarkExemplars(complexity);
-  const nCells = Math.ceil(n / perCell);
-  const cols = Math.ceil(Math.sqrt(nCells));
-  const rows = Math.ceil(nCells / cols);
-  const cw = (E - W) / cols,
-    ch = (N - S) / rows;
-  const side = Math.ceil(Math.sqrt(perCell));
+  const grid = cityGrid(n, perCell);
   const packs: PackedCell[] = [];
   let made = 0;
-  for (let c = 0; c < nCells; c++) {
-    const cx = W + (c % cols) * cw,
-      cy = S + Math.floor(c / cols) * ch;
+  for (let c = 0; c < grid.nCells; c++) {
     const count = Math.min(perCell, n - made);
     const items: PackInput[] = [];
     for (let i = 0; i < count; i++) {
-      const x = cx + ((i % side) + 0.1 + rnd() * 0.3) * (cw / side);
-      const y = cy + (Math.floor(i / side) + 0.05 + rnd() * 0.1) * (ch / side);
+      const [x, y] = gridSite(grid, c, i, rnd);
       const id = `S${seed}-${String(made + i).padStart(7, '0')}`;
       items.push({
         building: building(id, x, y, rnd, exemplars),

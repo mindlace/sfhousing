@@ -4,7 +4,7 @@ Spec: `docs/superpowers/specs/2026-10-10-map-view-design.md` §4.12.
 
 ## What the bench does
 
-`npm run bench:map` runs `e2e/bench/map-pan.bench.ts` with `playwright.bench.config.ts`:
+`npm run bench:map` runs `e2e/bench/map-pan.bench.ts` (and the timeline cases below) with `playwright.bench.config.ts`:
 
 1. Starts the same VITE_E2E preview server as `npm run test:e2e` (fixture-0 data on :4173), or
    reuses one that is already running. Kill a stale non-VITE_E2E server first
@@ -56,10 +56,33 @@ display refresh rate, so on a 120 Hz display the p50 is about 8.3 ms. The bar is
 | 2022 MacBook Air (M2)                                                     | —          | —                          | 2   | —      | —      | —       | not yet recorded                             |
 | Apple M5 Pro (same), both transit layers on, fixture-0 (8 stops)          | 2026-10-15 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 8.5 ms  | Yes (representative; worst-case p95 8.4 ms)  |
 | Apple M5 Pro (same), both transit layers on, live network (3,147 markers) | 2026-10-15 | Playwright Chromium, Metal | 2   | 1181   | 8.3 ms | 10.2 ms | Yes (representative; worst-case p95 10.0 ms) |
+| Apple M5 Pro (Mac17,9), timeline "playback", 30,000 projects, zoom 15.5   | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 10.3 ms | Yes                                          |
+| Apple M5 Pro (Mac17,9), timeline "drag", 30,000 projects, zoom 15.5       | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 9.0 ms  | Yes                                          |
 
 Run the bench with both transit layers on (the default View prefs). fixture-0 has only 8 stops, so its transit row measures the layer overhead. The live-network row ran the same bench against a local copy of the production dataset (`npm run data:local -- <version>`, then `npm run data:transit -- <version>`) served with `PUBLIC_DATASET_VERSION` set to that version instead of `fixture-0` (the bench config pins `fixture-0`, so this needs a one-off config override). Re-check against live data when the stop layers change.
 
 Add a row when you run the bench on new hardware or after a change to the rendering path.
+
+## Timeline cases (FZP timelapse renderer)
+
+Spec: `docs/superpowers/specs/2026-10-16-timelapse-render-design.md` §4.7 and §6.
+`e2e/bench/map-timeline.bench.ts` runs in the same `npm run bench:map` sweep as `map-pan.bench.ts` (the shared `pct`, `verdict` and `BAR_MS` live in `e2e/bench/bench-util.ts`). Each case is a fresh page load. After the worker's revision 0 lands, it calls `window.__sfhMap.loadSyntheticTimeline(1, 30000)`, which sets `SYNTHETIC_LOOKUPS` and applies `makeSyntheticTimeline(1, 30000)` through SimMap's `applyTimeline` (this puts SimMap in timeline mode). It waits for `timelineSnapshot().cells` to reach the cell count, calls `setTime(Day 20742)`, then jumps to downtown (`[-122.401, 37.789]`, zoom 15.5, pitch 55). 30,000 projects is a tier-4 stress size, about 1.5× the high end of the design's buildout expectations.
+
+Both cases then pan for 10 s exactly as `map-pan` does (360 px/s, direction flipping every 2.5 s), and call `setTime` once per frame as a triangle wave over Day 20742 to Day 29584:
+
+- **playback**: 1,095.7 simulated days/s (3 years/s, fzp-mode's fastest speed). It clamps at Day 29584 and reverses, so one 10 s run goes forward for about 8.1 s and back for the rest.
+- **drag**: the full range in 2 s, back and forth (4,421 days/s, a 4 s period).
+
+Each prints `p50`, `p95`, frames, parts, `pumpMaxOps` (the demolish pump's largest feature-state call count in one frame, from `demolishMaxFrameOps`; the "catch-up" figure in parentheses is its value before the pan, i.e. the revision-0 install), the renderer and PASS/FAIL, and asserts p95 ≤ 16.7 ms. The existing-building catch-up bound is 2,000 feature-state changes per frame.
+
+The synthetic parcel ids match no buildings-tile features. The pump's `setFeatureState` call count is real, but MapLibre's render-time cost on live tiles is not measured here.
+
+Pump max ops per frame, 2026-10-17 (full sweep; the earlier timeline-only run gave 48 and 155 ops at p95 10.0 ms and 8.5 ms):
+
+| Case     | p95     | Pump max ops/frame |
+| -------- | ------- | ------------------ |
+| playback | 10.3 ms | 48                 |
+| drag     | 9.0 ms  | 170                |
 
 ## CI
 
