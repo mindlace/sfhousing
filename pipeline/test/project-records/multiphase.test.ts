@@ -128,7 +128,19 @@ describe('MultiphaseFileSchema', () => {
   it('accepts the mini enrichment file', () => {
     const f = mini();
     expect(f.schema).toBe(1);
-    expect(f.projects.map((p) => p.caseNo)).toEqual(['2007.0001PRX', '2010.0002PRX']);
+    expect(f.projects.map((p) => p.caseNo)).toEqual([
+      '2007.0001PRX',
+      '2010.0002PRX',
+      '2012-000020PRX',
+      '2024-000016PRX',
+      '2025-000017PRX'
+    ]);
+    // M20, M16 and M17: no schedule, one searched URL each.
+    for (const e of f.projects.slice(2)) {
+      expect(e.schedule, e.caseNo).toBeNull();
+      expect(e.phases, e.caseNo).toEqual([]);
+      expect(e.searched, e.caseNo).toHaveLength(1);
+    }
     expect(f.projects[0].phases.map((p) => [p.name, p.units, p.blklots, p.status])).toEqual([
       ['Phase A', 120, ['3512014'], 'remaining'],
       ['Phase B', 180, ['3512002'], 'remaining'],
@@ -201,7 +213,11 @@ describe('checkMultiphaseFile', () => {
   const asOf = d('2026-10-16');
   const prx = [
     row({ idx: 1, caseNo: '2007.0001PRX', prx: true, newUnits: 300 }),
-    row({ idx: 2, caseNo: '2010.0002PRX', prx: true, newUnits: 100 })
+    row({ idx: 2, caseNo: '2010.0002PRX', prx: true, newUnits: 100 }),
+    // M20, and M16's and M17's no-date rows (their entries are unused but still name a PRX row).
+    row({ idx: 5, caseNo: '2012-000020PRX', prx: true, newUnits: 10 }),
+    row({ idx: 6, caseNo: '2024-000016PRX', prx: true, newUnits: 220 }),
+    row({ idx: 7, caseNo: '2025-000017PRX', prx: true, newUnits: 900 })
   ];
 
   it('passes the mini file against its PRX rows', () => {
@@ -211,7 +227,7 @@ describe('checkMultiphaseFile', () => {
   it('flags a caseNo absent from the pipeline and a PRX row with units lacking an entry', () => {
     const extra = [...prx, row({ idx: 3, caseNo: '2015.0003PRX', prx: true, newUnits: 5 })];
     const noUnits = row({ idx: 4, caseNo: '2016.0004PRX', prx: true, newUnits: 0 });
-    const problems = checkMultiphaseFile(mini(), [extra[1], extra[2], noUnits], asOf);
+    const problems = checkMultiphaseFile(mini(), [...extra.slice(1), noUnits], asOf);
     expect(problems).toHaveLength(2);
     expect(problems.join('\n')).toMatch(/2007\.0001PRX/);
     expect(problems.join('\n')).toMatch(/2015\.0003PRX/);

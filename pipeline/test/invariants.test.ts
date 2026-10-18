@@ -101,6 +101,11 @@ const result = async (dir: string, id: string, c = counts) =>
   (await checkDataset(dir, FIXTURE_PROFILE, { counts: c, reencodeIdentical: true })).find(
     (r) => r.id === id
   )!;
+/** V20 on `dir` with the snapshot day the build measured. */
+const measuredV20 = async (dir: string) =>
+  (await checkDataset(dir, FIXTURE_PROFILE, { counts, reencodeIdentical: true, ...measured })).find(
+    (r) => r.id === 'V20'
+  )!;
 /** Decode the copy's parcels.bin, mutate the decoded payload, re-encode and write it back. */
 const editScenario = (dir: string, f: (p: ScenarioParcels) => void) => {
   const file = join(dir, PARCELS_BIN);
@@ -455,6 +460,35 @@ describe('invariants', () => {
     });
     expect(await failed(e)).toEqual(['V20']);
   });
+  it('V20 passes the score-only M20 and fails empty parcelIds on a project that is not one', async () => {
+    const f = JSON.parse(readFileSync(join(base, PROJECTS_JSON), 'utf8')) as {
+      projects: { id: string; parcelIds: string[]; multiPhase: boolean; phases: unknown }[];
+    };
+    expect(f.projects.find((p) => p.id === 'CASE:2012-000020PRX')).toMatchObject({
+      parcelIds: [],
+      multiPhase: true,
+      phases: null
+    });
+    const d = copy();
+    editProjects(d, (j) => {
+      const m11 = j.projects.find((p) => p.id === 'PRJ:2026-000011PRJ')!;
+      m11.parcelIds = [];
+    });
+    expect(await failed(d)).toEqual(['V20']);
+    expect((await measuredV20(d)).detail).toMatch(/projects\[11\]\.parcelIds: must be non-empty/);
+    // A score-only master must carry pr.multiphase.score-only (the rule entry dropped with it).
+    const e = copy();
+    editProjects(e, (j) => {
+      const m20 = j.projects.find((p) => p.id === 'CASE:2012-000020PRX')!;
+      m20.quality = ['pr.multiphase.da-netting'];
+      const rules = (j as unknown as { qualityRules: { id: string }[] }).qualityRules;
+      (j as unknown as { qualityRules: { id: string }[] }).qualityRules = rules.filter(
+        (q) => q.id !== 'pr.multiphase.score-only'
+      );
+    });
+    expect(await failed(e)).toEqual(['V20']);
+    expect((await measuredV20(e)).detail).toMatch(/projects\[4\]\.parcelIds: must be non-empty/);
+  });
   it('V20 fails on a missing projects.json, an unknown snapshot day or the size budget', async () => {
     const d = copy();
     rmSync(join(d, PROJECTS_JSON));
@@ -488,7 +522,9 @@ describe('invariants', () => {
   });
   it('V21 fails when in-flight units no longer cover the pipeline rows', async () => {
     const i = inputs((x) => {
-      x.coverage.matchedUnits -= 1;
+      // Just under the fixture's 0.90 (mini covers 699 of 739 units).
+      x.coverage.matchedUnits =
+        Math.ceil(FIXTURE_PROFILE.pipelineCoverageMin * x.coverage.rowUnits) - 1;
     });
     expect(await failed(base, counts, { projectChecks: projectChecks(i) })).toEqual(['V21']);
   });
@@ -514,6 +550,29 @@ describe('invariants', () => {
       m.phases![0].units -= 1;
     });
     expect(await failed(base, counts, { projectChecks: projectChecks(i) })).toEqual(['V24']);
+  });
+  it('V24 fails when the last-resort M20 draws on a parcel another in-flight project holds', async () => {
+    // M20 is score-only; drawing on its DA parcel lot 6 collides with M11.
+    const i = inputs((x) => {
+      x.file.projects.find((p) => p.id === 'CASE:2012-000020PRX')!.parcelIds = ['3512006'];
+    });
+    const checks = projectChecks(i);
+    expect(await failed(base, counts, { projectChecks: checks })).toEqual(['V24']);
+    expect(checks.find((c) => c.id === 'V24')!.detail).toMatch(
+      /CASE:2012-000020PRX: last-resort parcel 3512006 is also in PRJ:2026-000011PRJ/
+    );
+  });
+  it('V24 fails when the score-only M20 has a free DA parcel', async () => {
+    // Lot 6 freed: M11 leaves flight and M6's completed history no longer holds it.
+    const i = inputs((x) => {
+      x.file.projects = x.file.projects.filter((p) => p.id !== 'PRJ:2026-000011PRJ');
+      x.histories.find((h) => h.id === 'PRJ:2016-000006PRJ')!.parcelIds = [];
+    });
+    const checks = projectChecks(i);
+    expect(await failed(base, counts, { projectChecks: checks })).toEqual(['V24']);
+    expect(checks.find((c) => c.id === 'V24')!.detail).toMatch(
+      /CASE:2012-000020PRX: score-only but DA parcel 3512006 is free/
+    );
   });
   it('V13 is reported as enforced at upload', async () => {
     const r = await checkDataset(base, FIXTURE_PROFILE, { counts, reencodeIdentical: true });

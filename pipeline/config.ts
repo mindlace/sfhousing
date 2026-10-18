@@ -183,7 +183,9 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   // (known answer, spec §4.11): 66, plus lot 3's 5,000 replaced by its LUDB 4 (RA1).
   scenarioUnitsRange: [70, 70],
   scenarioMaxBytes: LIVE_PROFILE.scenarioMaxBytes,
-  pipelineCoverageMin: 1,
+  // Project-records spec §4.9 V21 fixture "≥ 0.90": M16's linked row (220) and its record (200)
+  // disagree, and M18's dropped row matches nothing, so mini covers 699 of 739 (0.946).
+  pipelineCoverageMin: 0.9,
   hiNet: { 2023: 3, 2024: 2, 2025: -1 },
   rhnaYearTol: LIVE_PROFILE.rhnaYearTol,
   rhnaTotalTol: LIVE_PROFILE.rhnaTotalTol,
