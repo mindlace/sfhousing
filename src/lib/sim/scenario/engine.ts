@@ -393,13 +393,15 @@ function pipelinePass(run: Run, projects: readonly InFlightProject[], holds: Hol
 
 /**
  * The simulated rescaling rule (§4.4.5 steps 3-4) on T11 row i with `existing` units left:
- * `min(yield[F−1], max(existing + 1, round(r·u)))`, stories from the smallest level whose yield
- * reaches the new units.
+ * `min(max_f yield[f], max(existing + 1, round(r·u)))`, stories from the smallest level whose
+ * yield reaches the new units. A gaining level exists (hazard > 0), so the result is > existing.
  */
 function simulatedResize(parcels: ScenarioParcels, i: number, existing: number): Resize {
   const F = FILL_LEVELS.length;
   const env = parcels.envelopeStories[i];
-  const top = parcels.yield[i * F + F - 1];
+  // Ruling (spec §4.4.5 cap clarified for non-monotone yields): cap at the largest level's yield.
+  let top = 0;
+  for (let f = 0; f < F; f++) top = Math.max(top, parcels.yield[i * F + f]);
   return (units, _stories, ratio) => {
     const next = Math.min(top, Math.max(existing + 1, Math.round(ratio * units)));
     let f = 0;

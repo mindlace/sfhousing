@@ -6,6 +6,7 @@ import {
   type ScenarioParcels
 } from '$lib/data/scenario-codec';
 import { packTimedCell } from '$lib/map/pack-timed';
+import { log } from '$lib/timelapse/math';
 import { cumulativeIncidence, parseCalibration, sampleTransition } from '$lib/timelapse/model';
 import { parseProjectsFile, type InFlightProject } from '$lib/timelapse/projects';
 import { MONTH_DAYS, monthsIn } from '$lib/timelapse/time';
@@ -35,7 +36,7 @@ import {
   miniProjectsJson
 } from './fixtures/mini-projects';
 import { buildSimInput, precomputeOf } from './input';
-import { P, draw, jobEntity, stageRedraw } from './rng';
+import { P, draw, jobEntity, simEntity, stageRedraw } from './rng';
 import { simulate, simulateDetailed } from './simulate';
 import type { Schedule, SimInput } from './types';
 
@@ -766,7 +767,7 @@ describe('simulate: simulated initiation (§4.4.4)', () => {
         for (const [pid, list] of simsByParcel(simulate(inp, seed, H))) {
           const i = p.index.get(pid)!;
           const env = p.envelopeStories[i];
-          const top = p.yield[i * F + F - 1];
+          const top = Math.max(...p.yield.subarray(i * F, i * F + F)); // the ruled cap
           for (const s of list) {
             const ex = s.existingUnits;
             const r0 = s.revisions[0];
@@ -783,7 +784,7 @@ describe('simulate: simulated initiation (§4.4.4)', () => {
             for (const r of level < 0 ? s.revisions : s.revisions.slice(1)) {
               seen.revised++;
               if (r.units < ex + 1) bad.push(`${s.projectId} ${r.units} below the floor`);
-              if (r.units > top) bad.push(`${s.projectId} ${r.units} above yield[F − 1]`);
+              if (r.units > top) bad.push(`${s.projectId} ${r.units} above max yield`);
               const f = levelFor(p, i, r.units);
               if (r.stories !== fillStories(FILL_LEVELS[f], env))
                 bad.push(`${s.projectId} stories`);
@@ -798,6 +799,48 @@ describe('simulate: simulated initiation (§4.4.4)', () => {
     expect(seen.floor).toBeGreaterThan(0);
     expect(seen.cap).toBeGreaterThan(0);
     expect(seen.revised).toBeGreaterThan(100);
+  });
+
+  it('caps at the largest level on non-monotone yields: no forced downsize, never net-negative', () => {
+    // Ruling: spec §4.4.5's simulated cap is max_f yield[f], not yield[F − 1]. On the free LP
+    // parcel 0026T007, yields [4, 48, 90, 76, 60] with 70 existing units: the size draw allows only
+    // level 2 (90) and level 3 (76); a yield[F − 1] cap would force every revision down to 60.
+    const files = miniFiles();
+    const i = files.parcels.index.get('0026T007')!;
+    files.parcels.yield.set([4, 48, 90, 76, 60], i * F);
+    files.parcels.existingUnits[i] = 70;
+    const env = files.parcels.envelopeStories[i];
+    const up = withHazard(rigged({ entitled: 1.5, permitFiled: 1.5, permitIssued: 1.5 }), -2);
+    const down = withHazard(rigged({ entitled: 0.1, permitFiled: 0.1, permitIssued: 0.1 }), -2);
+    const bad: string[] = [];
+    let fromLevel2 = 0;
+    for (const cal of [up, down]) {
+      const inp = buildSimInput({ ...files, calibration: cal });
+      for (const seed of SEEDS.slice(0, 15)) {
+        for (const s of simsByParcel(simulate(inp, seed, H)).get('0026T007') ?? []) {
+          if (s.existingUnits !== 70) bad.push(`${s.projectId} existing ${s.existingUnits}`);
+          for (const [j, r] of s.revisions.entries()) {
+            if (r.units <= 70) bad.push(`${s.projectId} ${r.units} <= existingUnits`);
+            if (r.units > 90) bad.push(`${s.projectId} ${r.units} above the cap`);
+            const f = levelFor(files.parcels, i, r.units);
+            if (j > 0 && r.stories !== fillStories(FILL_LEVELS[f], env)) bad.push(`${s.projectId}`);
+            if (cal === up && j > 0 && r.units < s.revisions[j - 1].units) {
+              bad.push(`${s.projectId} upsize forced down to ${r.units}`);
+            }
+          }
+          const last = s.revisions.at(-1)!;
+          if (cal === up) {
+            // from 90: ×1.5 is capped at 90, no change; from 76: ×1.5 → 90 (level 2 stories)
+            if (last.units !== 90) bad.push(`${s.projectId} ends at ${last.units}`);
+            // drawn at level 2 (no same-day merge into [0]), revised on entering entitled
+            const r0 = s.revisions[0];
+            if (r0.units === 90 && s.entered.entitled !== r0.day) fromLevel2++;
+          } else if (last.units !== 71) bad.push(`${s.projectId} downsized to ${last.units}`);
+        }
+      }
+    }
+    expect(bad).toEqual([]);
+    expect(fromLevel2).toBeGreaterThan(0);
   });
 });
 
@@ -869,6 +912,69 @@ describe('simulate: demolished once (§4.4.6)', () => {
     expect(again).toBeGreaterThan(100);
     expect(builtSims).toBeGreaterThan(0);
     expect(smallAfter).toBeGreaterThan(0);
+  });
+
+  it('pins the §4.4.1 draw keys of the k = 0 and k = 1 projects on a free parcel', () => {
+    // The rig has no revisions, so revisions[0] is the size draw; construction always exits.
+    const inp = demolishInput();
+    const p = inp.parcels;
+    const cal = inp.calibration;
+    // even PPA odds on every pathway, so a wrong PPA key changes the first stage often
+    cal.ppaShare = { ...cal.ppaShare, discretionary: 0.5, streamlined: 0.5, permitOnly: 0.5 };
+    const id = '3512002'; // free, hostable, not Local Program, 0 existing units
+    const i = p.index.get(id)!;
+    expect(p.localProgram[i]).toBe(0);
+    const pre = precomputeOf(inp);
+    const ent = simEntity(id);
+    const l1mh = log(1 - pre.hazard[i]);
+    const dayOfK = (seed: number, k: number, r: number) => {
+      const T = Math.max(1, Math.ceil(log(1 - draw(seed, ent, k, P.INIT, 0)) / l1mh));
+      return r + 1 + Math.floor((T - 1 + draw(seed, ent, k, P.INIT_DAY, 0)) * MONTH_DAYS);
+    };
+    const pathwayOfK = (seed: number, k: number) => {
+      const w = cal.pathwayForNew;
+      const x = draw(seed, ent, k, P.PATHWAY, 0) * PATHWAYS.reduce((a, q) => a + w[q], 0);
+      let acc = 0;
+      return PATHWAYS.find((q) => x < (acc += w[q]))!;
+    };
+    const expected = (seed: number, k: number, r: number) => {
+      const pathway = pathwayOfK(seed, k);
+      const first =
+        draw(seed, ent, k, P.PPA, 0) < cal.ppaShare[pathway]
+          ? 'preApplication'
+          : pathway === 'permitOnly'
+            ? 'permitFiled'
+            : 'filed';
+      const u = draw(seed, ent, k, P.SIZE, 0);
+      const f = FILL_LEVELS.findIndex((_, g) => u < pre.sizeCum[i * F + g]);
+      const day = dayOfK(seed, k, r);
+      return {
+        day,
+        pathway,
+        first,
+        r0: {
+          day,
+          units: p.yield[i * F + f],
+          stories: fillStories(FILL_LEVELS[f], p.envelopeStories[i])
+        }
+      };
+    };
+    for (const seed of SEEDS.slice(0, 16)) {
+      const out = simulate(inp, seed, H);
+      let r = AS_OF;
+      for (const k of [0, 1]) {
+        const s = find(out, `sim:${id}:${k}`);
+        const e = expected(seed, k, r);
+        expect({
+          day: firstDay(s),
+          pathway: s.pathway,
+          first: firstStage(s),
+          r0: s.revisions[0]
+        }).toEqual({ day: e.day, pathway: e.pathway, first: e.first, r0: e.r0 });
+        expect(s.end.kind).toBe('exit');
+        if (s.end.kind === 'exit') r = s.end.day;
+      }
+    }
   });
 });
 
