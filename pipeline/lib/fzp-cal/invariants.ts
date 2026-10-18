@@ -8,7 +8,8 @@ import {
   cumulativeTotal,
   eventualProbabilities,
   parseCalibration,
-  sampleTransition
+  sampleTransition,
+  tailRate
 } from '../../../src/lib/timelapse/model';
 import { monthsIn, type Day } from '../../../src/lib/timelapse/time';
 import {
@@ -75,19 +76,12 @@ export function checkV25(
   return problems;
 }
 
-/** The total monthly tail hazard rho, summed advance first, then `EXIT_ORDER`. */
-function tailRho(t: Transition): number {
-  let rho = t.tail.advance;
-  for (const r of EXIT_ORDER) rho += t.tail.exit[r] ?? 0;
-  return rho;
-}
-
 /** Why a cell fails the §4.4 rejection checks (C(K) <= 1 - 1e-6 and rho > 0), or null. */
 function rejection(t: Transition): string | null {
   if (!Number.isInteger(t.months) || t.months < 1) return `months ${t.months} < 1`;
   const ck = cumulativeTotal(t, t.months);
   if (!(ck <= 1 - CELL_HEADROOM)) return `C(K) = ${ck} > 1 - 1e-6`;
-  const rho = tailRho(t);
+  const rho = tailRate(t);
   if (!(rho > 0)) return `tail rho = ${rho} is not positive`;
   return null;
 }

@@ -35,7 +35,7 @@ function reasonsOf(t: Transition): ExitReason[] {
 }
 
 /** rho: the tail's total monthly hazard, summed advance first, then `EXIT_ORDER`. */
-function tailRate(t: Transition): number {
+export function tailRate(t: Transition): number {
   let rho = t.tail.advance;
   for (const r of EXIT_ORDER) rho += t.tail.exit[r] ?? 0;
   return rho;

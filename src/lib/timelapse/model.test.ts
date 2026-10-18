@@ -527,6 +527,16 @@ function wrap(tr: Transition): Calibration {
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 describe('parseCalibration', () => {
+  it("accepts fixture-0's calibration.json (stage-calibration spec §4.12)", () => {
+    const file = new URL(
+      '../../../e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json',
+      import.meta.url
+    );
+    const parsed = parseCalibration(JSON.parse(readFileSync(file, 'utf8')));
+    expect(parsed.size.fillLevels).toHaveLength(5);
+    expect(Object.keys(parsed.transitions)).toEqual([...PATHWAYS]);
+  });
+
   const clone = (): any => structuredClone(cal);
   const disc = (c: any): any => c.transitions.discretionary.permitFiled;
   const prov = {

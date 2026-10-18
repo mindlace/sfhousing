@@ -9,6 +9,7 @@ import { parseCalibration } from '../../../src/lib/timelapse/model';
 import { parseProjectsFile } from '../../../src/lib/timelapse/projects';
 import type { Calibration, ProjectHistoriesFile } from '../../../src/lib/timelapse/types';
 import { FIXTURE_PROFILE } from '../../config';
+import { QUALITY_RULES } from '../../lib/quality';
 import { openDuck } from '../../lib/duck';
 import { calibrate, type CalInput } from '../../lib/fzp-cal/calibrate';
 import { FIXTURE_CAL } from '../../lib/fzp-cal/config';
@@ -68,6 +69,39 @@ describe('calibration invariants on fixture-0', () => {
     expect(rows.map((r) => r.id)).toEqual(ids);
     expect(rows.filter((r) => !r.ok)).toEqual([]);
     expect(rows.find((r) => r.id === 'V28')!.detail).toMatch(/fixture/);
+  });
+
+  it('pins the fixture-0 sc.* counts, method counts and pre-roll count (spec §4.4a, §4.12)', () => {
+    const rules: Record<string, [number, number]> = {
+      // [fired, of]: the mini histories have no gap, no missing first_construction_document_date,
+      // no out-of-order stage, no exit past the last stage and no purge window, by design.
+      'sc.stages.gap-impute': [0, 15],
+      'sc.stages.no-fcd-duration': [0, 15],
+      // Spec §4.4a "Fixture cases": these two must not fire on fixture-0 (of > 0).
+      'sc.stages.running-max': [0, 15],
+      'sc.exit.last-stage': [0, 2],
+      'sc.exit.purge-censor': [0, 2],
+      // Ruling R26: of = 0 because the mini histories have no revised pair to clamp.
+      'sc.revision.ratio-clamp': [0, 0]
+    };
+    expect(Object.keys(rules).sort()).toEqual(
+      QUALITY_RULES.filter((r) => r.id.startsWith('sc.'))
+        .map((r) => r.id)
+        .sort()
+    );
+    for (const [id, [fired, of]] of Object.entries(rules)) {
+      expect([counts[`quality.${id}.fired`], counts[`quality.${id}.of`]], id).toEqual([fired, of]);
+    }
+    expect(counts['quality.sc.stages.running-max.fired']).toBe(0);
+    expect(counts['quality.sc.stages.running-max.of']).toBeGreaterThan(0);
+    expect(counts['quality.sc.exit.last-stage.fired']).toBe(0);
+    expect(counts['quality.sc.exit.last-stage.of']).toBeGreaterThan(0);
+    expect({
+      permitOnlyPre2015: counts['calibration.method.permitOnlyPre2015'],
+      ppaPooled: counts['calibration.method.ppaPooled'],
+      sizeOverEnvelope: counts['calibration.method.sizeOverEnvelope'],
+      preRoll: counts['calibration.window.preRoll']
+    }).toEqual({ permitOnlyPre2015: 1, ppaPooled: 2, sizeOverEnvelope: 0, preRoll: 0 });
   });
 
   it('V25-V29 hold when the files are re-checked, in order and before V30', async () => {

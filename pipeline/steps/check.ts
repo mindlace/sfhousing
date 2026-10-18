@@ -192,7 +192,13 @@ function verdict(id: InvariantResult['id'], problems: string[], ok: string): Inv
  * §4.10). A missing or unreadable file fails the invariants that need it. The V27 sample size and
  * tolerance come from the calibration profile that matches the invariant profile.
  */
-function checkCalibrationFiles(outDir: string, profile: InvariantProfile): InvariantResult[] {
+/** Whether `outDir` holds a fixture dataset (`fixture-<n>`), by its manifest's datasetVersion. */
+function isFixtureDataset(outDir: string): boolean {
+  const { m } = readManifest(outDir);
+  return m !== null && /^fixture-\d+$/.test(m.datasetVersion);
+}
+
+function checkCalibrationFiles(outDir: string): InvariantResult[] {
   const calFile = join(outDir, CALIBRATION_JSON);
   const projFile = join(outDir, PROJECTS_JSON);
   if (!existsSync(calFile)) {
@@ -225,7 +231,11 @@ function checkCalibrationFiles(outDir: string, profile: InvariantProfile): Invar
 
   const v25 = checkV25(text, bytes, FILL_LEVELS, projectsAsOf);
   const out: InvariantResult[] = [
-    verdict('V25', v25, `parses, fill levels equal FILL_LEVELS, asOf matches, ${bytes} B`)
+    verdict(
+      'V25',
+      v25,
+      `parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), ${bytes} B`
+    )
   ];
 
   // V26 reads the cells even when parseCalibration rejects the file (a deleted cell is itself a
@@ -259,7 +269,9 @@ function checkCalibrationFiles(outDir: string, profile: InvariantProfile): Invar
     out.push({ id: 'V27', ok: false, detail: `${CALIBRATION_JSON} does not parse (V25)` });
     return out;
   }
-  const cal = profile.qualityShares ? LIVE_CAL : FIXTURE_CAL;
+  // The method constants follow the dataset version (as build.ts's fixtureMode does), not the
+  // T14 share flag; a dataset with no readable manifest is judged by the live constants.
+  const cal = isFixtureDataset(outDir) ? FIXTURE_CAL : LIVE_CAL;
   out.push(
     verdict(
       'V27',
@@ -694,7 +706,7 @@ export async function checkDataset(
 
   // V25–V27 calibration.json (stage-calibration spec §4.10), from the files; then V28, V29 from
   // the calibration step.
-  out.push(...checkCalibrationFiles(outDir, profile));
+  out.push(...checkCalibrationFiles(outDir));
   for (const id of CALIBRATION_CHECK_IDS) {
     const r = extras.calibrationChecks?.find((x) => x.id === id);
     out.push(r ? { id, ok: r.ok, detail: r.detail } : { id, ok: false, detail: 'not measured' });

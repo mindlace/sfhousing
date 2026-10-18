@@ -497,7 +497,7 @@
       "ok": true
     },
     {
-      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches, 34724 B",
+      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), 34724 B",
       "id": "V25",
       "ok": true
     },
