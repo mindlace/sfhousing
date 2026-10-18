@@ -3,7 +3,7 @@
  * the calibration's cumulative incidence, eventual shares and geometric tail (stage-calibration
  * spec §6, §7).
  */
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { mulberry32 } from '../generator/seed';
 import small from './fixtures/calibration-small.json';
 import { exp, log } from './math';
@@ -28,7 +28,11 @@ function draw(monthsElapsed: number) {
 }
 
 describe('AC-1: sampleTransition reproduces the calibration', () => {
-  const fromEntry = draw(0);
+  // In beforeAll, not the describe body, so a sampler exception fails the named tests.
+  let fromEntry: ReturnType<typeof draw>;
+  beforeAll(() => {
+    fromEntry = draw(0);
+  });
 
   it('expires 10% by month 12', () => {
     let expired = 0;

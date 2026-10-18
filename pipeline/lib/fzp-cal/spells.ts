@@ -14,7 +14,15 @@ import {
   type Stage
 } from '../../../src/lib/timelapse/types';
 import { PLANNING_START, PERMIT_POOLED_START, windowStart } from './window';
-import type { CalStage, NormHistory, RuleTally, ScRuleId, Spell, Tallies } from './types';
+import {
+  CalibrationError,
+  type CalStage,
+  type NormHistory,
+  type RuleTally,
+  type ScRuleId,
+  type Spell,
+  type Tallies
+} from './types';
 
 type StepRule = 'sc.stages.gap-impute' | 'sc.stages.running-max' | 'sc.exit.last-stage';
 
@@ -83,15 +91,27 @@ export function normalise(
       if (d !== undefined) observed[s] = d;
     }
 
+    // Input that valid T4d never produces fails loudly; it is not reshaped outside a rule.
+    if (h.end.kind === 'complete' && observed.complete === undefined) {
+      throw new CalibrationError(`${h.id}: ends complete but never entered the complete stage`);
+    }
+    if (h.end.kind === 'exit' && observed.complete !== undefined) {
+      throw new CalibrationError(`${h.id}: ends in an exit but entered the complete stage`);
+    }
+
     // Step 1: a missing stage with a later entered stage (complete counts) takes the next
     // entered stage's day. preApplication is optional on every pathway and is never imputed.
+    // A null-pathway history has no known path, so it is not imputed before its first entered
+    // stage (ruling R7); only interior gaps over STAGE_ORDER.
     const eff: Partial<Record<Stage, Day>> = { ...observed };
+    const firstEntered = used.findIndex((s) => observed[s] !== undefined);
+    const floor = h.pathway === null ? firstEntered : 0;
     let nextDay: Day | undefined;
     for (let i = used.length - 1; i >= 0; i--) {
       const s = used[i];
       if (observed[s] !== undefined) {
         nextDay = observed[s];
-      } else if (nextDay !== undefined && s !== 'preApplication') {
+      } else if (nextDay !== undefined && s !== 'preApplication' && i >= floor) {
         eff[s] = nextDay;
         fire('sc.stages.gap-impute', h.id, s);
       }
@@ -164,25 +184,29 @@ function rawSpells(h: NormHistory, asOf: Day): RawSpell[] {
     if (s === 'complete') return;
     const e = h.eff[s] as Day;
     const next = entered[i + 1];
+    const bad = (what: string) =>
+      new CalibrationError(`${h.id}: ${what} (stage ${s} entered ${e})`);
     let z: Day;
     let outcome: Spell['outcome'];
     if (next !== undefined) {
       z = h.eff[next] as Day;
       outcome = 'advance';
-    } else if (h.end.kind === 'exit' && h.purgeCensored) {
-      z = Math.min(h.end.day, asOf);
-      outcome = 'censored';
     } else if (h.end.kind === 'exit') {
+      // purgeCensor turns a censored exit into an open end; an exit marked censored is a bug.
+      if (h.purgeCensored) throw bad('purge-censored history still ends in an exit');
+      if (h.end.day < e) throw bad(`exit dated ${h.end.day}, before the stage entry`);
       z = h.end.day;
       outcome = h.end.reason satisfies ExitReason;
     } else if (h.end.kind === 'complete') {
-      z = h.end.day;
-      outcome = 'advance';
+      throw bad('ends complete but never entered the complete stage');
     } else {
+      if (h.end.lastObserved < e) {
+        throw bad(`open end last observed ${h.end.lastObserved}, before the stage entry`);
+      }
       z = Math.min(h.end.lastObserved, asOf);
       outcome = 'censored';
     }
-    out.push({ stage: s, e, z: Math.max(z, e), outcome });
+    out.push({ stage: s, e, z, outcome });
   });
   return out;
 }

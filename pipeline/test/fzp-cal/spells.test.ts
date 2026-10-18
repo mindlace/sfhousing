@@ -1,6 +1,7 @@
 // Qualifying predicate, normalisation steps 1-4 and spell building (spec §4.4).
 import { describe, expect, it } from 'vitest';
 import { buildSpells, normalise, qualifies } from '../../lib/fzp-cal/spells';
+import { CalibrationError } from '../../lib/fzp-cal/types';
 import { isoToDay } from '../../project-records/multiphase';
 import type { Day, ProjectHistory, Stage } from '../../../src/lib/timelapse/types';
 
@@ -102,6 +103,45 @@ describe('normalise', () => {
     expect(r.norm[0].eff.filed).toBe(d('2016-06-01'));
     expect(r.norm[0].eff.preApplication).toBeUndefined();
     expect(r.perStage['sc.stages.gap-impute']).toEqual({ filed: 1 });
+  });
+
+  it('does not impute stages before the first entered stage of a null-pathway history (R7)', () => {
+    const h = hist(
+      'n1',
+      null,
+      { entitled: '2016-06-01', permitFiled: '2016-09-01' },
+      open('2020-01-01')
+    );
+    const r = normalise([h], AS_OF);
+    expect(r.norm[0].eff.preApplication).toBeUndefined();
+    expect(r.norm[0].eff.filed).toBeUndefined();
+    expect(r.tallies['sc.stages.gap-impute']).toEqual({ fired: 0, of: 1, sample: [] });
+    // the same record under a known pathway still back-fills `filed`
+    const known = hist(
+      'k1',
+      'discretionary',
+      { entitled: '2016-06-01', permitFiled: '2016-09-01' },
+      open('2020-01-01')
+    );
+    expect(normalise([known], AS_OF).norm[0].eff.filed).toBe(d('2016-06-01'));
+  });
+
+  it('imputes only interior gaps of a null-pathway history, complete counting as later (R7)', () => {
+    const h = hist(
+      'n1',
+      null,
+      { permitFiled: '2016-01-01', complete: '2018-01-01' },
+      { kind: 'complete', day: d('2018-01-01') }
+    );
+    const r = normalise([h], AS_OF);
+    expect(r.norm[0].eff).toEqual({
+      permitFiled: d('2016-01-01'),
+      permitIssued: d('2018-01-01'),
+      construction: d('2018-01-01'),
+      complete: d('2018-01-01')
+    });
+    expect(r.perStage['sc.stages.gap-impute']).toEqual({ permitIssued: 1, construction: 1 });
+    expect(r.tallies['sc.stages.gap-impute'].sample).toEqual(['n1']);
   });
 
   it('counts complete as a later entered stage and never imputes after the last entered one', () => {
@@ -271,6 +311,72 @@ describe('buildSpells', () => {
     n[0].end = { kind: 'open', lastObserved: d('2017-12-31') };
     const s = buildSpells(n, AS_OF);
     expect(s[0]).toMatchObject({ outcome: 'censored', x: d('2017-12-31') - d('2016-01-01') });
+  });
+
+  it('throws on a purge-censored history that still ends in an exit', () => {
+    const h = hist(
+      'p1',
+      'discretionary',
+      { filed: '2016-01-01' },
+      { kind: 'exit', stage: 'filed', reason: 'withdrawn', day: d('2018-01-01') }
+    );
+    const n = normalise([h], AS_OF).norm;
+    n[0].purgeCensored = true;
+    expect(() => buildSpells(n, AS_OF)).toThrow(CalibrationError);
+    expect(() => buildSpells(n, AS_OF)).toThrow(/p1/);
+  });
+
+  it('throws on an open end observed before the stage it is in, instead of clamping', () => {
+    const h = hist('p1', 'discretionary', { filed: '2016-01-01' }, open('2015-06-01'));
+    expect(() => buildSpells(normalise([h], AS_OF).norm, AS_OF)).toThrow(/p1/);
+    const late = hist('p2', 'discretionary', { filed: '2026-07-01' }, open('2026-06-01'));
+    expect(() => buildSpells(normalise([late], AS_OF).norm, AS_OF)).toThrow(CalibrationError);
+  });
+
+  it('throws on a complete end with no entered complete stage', () => {
+    const h = hist(
+      'p1',
+      'permitOnly',
+      { permitFiled: '2016-01-01' },
+      {
+        kind: 'complete',
+        day: d('2018-01-01')
+      }
+    );
+    expect(() => normalise([h], AS_OF)).toThrow(CalibrationError);
+    expect(() => normalise([h], AS_OF)).toThrow(/p1/);
+    const ok = hist(
+      'p2',
+      'permitOnly',
+      { permitFiled: '2016-01-01', complete: '2018-01-01' },
+      { kind: 'complete', day: d('2018-01-01') }
+    );
+    const n = normalise([ok], AS_OF).norm;
+    n[0].eff = { permitFiled: d('2016-01-01') };
+    expect(() => buildSpells(n, AS_OF)).toThrow(/p2/);
+  });
+
+  it('throws on an exit history that also has an observed complete stage', () => {
+    const h = hist(
+      'p1',
+      'permitOnly',
+      { permitFiled: '2016-01-01', complete: '2018-01-01' },
+      { kind: 'exit', stage: 'permitFiled', reason: 'expired', day: d('2017-01-01') }
+    );
+    expect(() => normalise([h], AS_OF)).toThrow(CalibrationError);
+    expect(() => normalise([h], AS_OF)).toThrow(/p1/);
+  });
+
+  it('throws on an exit dated before the stage it exits from', () => {
+    const h = hist(
+      'p1',
+      'discretionary',
+      { filed: '2016-01-01' },
+      { kind: 'exit', stage: 'filed', reason: 'withdrawn', day: d('2018-01-01') }
+    );
+    const n = normalise([h], AS_OF).norm;
+    n[0].end = { kind: 'exit', stage: 'filed', reason: 'withdrawn', day: d('2015-01-01') };
+    expect(() => buildSpells(n, AS_OF)).toThrow(/p1/);
   });
 
   it('sorts by pathway (null last), stage, then project id', () => {

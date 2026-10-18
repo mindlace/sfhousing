@@ -242,22 +242,99 @@ describe('sampleTransition', () => {
   });
 
   it('stays finite when rho = 1 (log(1 - rho) = -Infinity)', () => {
-    const tt: Transition = { ...t, tail: { advance: 0.9, exit: { expired: 0.1 } } };
+    const tt: Transition = { ...t, tail: { advance: 0.75, exit: { expired: 0.25 } } };
+    expect(tt.tail.advance + tt.tail.exit.expired!).toBe(1);
     for (const u of [0.71, 0.9, 1 - 1e-12]) {
       expect(monthsIn(0, sampleTransition(tt, u, 0).days)).toBe(12);
     }
-    expect(monthsIn(0, sampleTransition(tt, 0.5, 20).days)).toBe(20);
+    expect(cumulativeTotal(tt, 20)).toBe(1);
+    for (const u of [0, 0.5, 0.74, 0.76, 1 - 1e-12]) {
+      const r = sampleTransition(tt, u, 20);
+      expect(monthsIn(0, r.days)).toBe(20);
+      expect(r.kind).toBe(u < 0.75 ? 'advance' : 'expired');
+    }
+  });
+
+  it('rejects u outside [0, 1) and non-finite u', () => {
+    for (const u of [-0.1, 1, 1.5, NaN, Infinity, -Infinity]) {
+      expect(() => sampleTransition(t, u, 0)).toThrow(RangeError);
+      expect(() => sampleTransition(t, u, 20)).toThrow(RangeError);
+    }
+  });
+
+  describe('deep in the tail (ruling R8: relative to m by memorylessness)', () => {
+    // Fixture table with tail advance 0.2 / expired 0.05: rho = 0.25, advance share 0.8.
+    const probe: Transition = { ...t, tail: { advance: 0.2, exit: { expired: 0.05 } } };
+    const N = 100000;
+    for (const m of [120, 140]) {
+      it(`m = ${m}: month m+1 has mass rho, kinds split p_j / rho, days spread`, () => {
+        const gap = 1 - cumulativeTotal(probe, m);
+        if (m === 120) expect(gap > 1e-15 && gap < 1e-14).toBe(true);
+        else expect(gap).toBe(0);
+        const rng = mulberry32(0x5eed);
+        let first = 0;
+        let firstAdvance = 0;
+        let fifth = 0;
+        let fifthAdvance = 0;
+        const firstDays = new Set<number>();
+        for (let i = 0; i < N; i++) {
+          const r = sampleTransition(probe, rng(), m);
+          const k = monthsIn(0, r.days) + 1;
+          expect(k).toBeGreaterThan(m);
+          if (k === m + 1) {
+            first++;
+            if (r.kind === 'advance') firstAdvance++;
+            firstDays.add(r.days);
+          } else if (k === m + 5) {
+            fifth++;
+            if (r.kind === 'advance') fifthAdvance++;
+          }
+        }
+        expect(Math.abs(first / N - 0.25)).toBeLessThanOrEqual(0.01);
+        expect(Math.abs(firstAdvance / first - 0.8)).toBeLessThanOrEqual(0.02);
+        expect(Math.abs(fifthAdvance / fifth - 0.8)).toBeLessThanOrEqual(0.02);
+        expect(firstDays.size).toBeGreaterThanOrEqual(25);
+      });
+    }
+
+    it('agrees with the literal spec §4.2 path for m = 13..20 on the same u', () => {
+      // Reference: c = C(m) + (1 - C(m)) u, k by linear scan of cumulativeTotal, tail slice.
+      function literal(u: number, m: number) {
+        const cm = cumulativeTotal(t, m);
+        const c = cm + (1 - cm) * u;
+        let k = m + 1;
+        while (cumulativeTotal(t, k) <= c) k++;
+        const lo = cumulativeTotal(t, k - 1);
+        const hi = cumulativeTotal(t, k);
+        const top = lo + (hi - lo) * (0.05 / 0.06);
+        const [kind, slo, shi] = c < top ? ['advance', lo, top] : ['expired', top, hi];
+        const phi = (c - (slo as number)) / ((shi as number) - (slo as number));
+        const first = Math.ceil((k - 1) * M);
+        const end = Math.ceil(k * M);
+        return { kind, days: Math.min(first + Math.floor(phi * (end - first)), end - 1) };
+      }
+      // Verified bit-for-bit: all 16,000 draws give the same kind and the same day.
+      const rng = mulberry32(0x5eed);
+      for (let m = 13; m <= 20; m++) {
+        for (let i = 0; i < 2000; i++) {
+          const u = rng();
+          expect(sampleTransition(t, u, m)).toEqual(literal(u, m));
+        }
+      }
+    });
   });
 
   it('stays finite when the tail cannot be resolved in double precision', () => {
     // rho so small that 1 - rho rounds to 1: C is flat past K, so the event month is capped.
     const flat: Transition = { ...t, tail: { advance: 1e-20, exit: {} } };
-    const r = sampleTransition(flat, 0.9, 0);
-    expect(r.kind).toBe('advance');
-    expect(Number.isFinite(r.days)).toBe(true);
-    expect(r.days).toBeLessThan(16777216);
-    expect(Math.fround(r.days)).toBe(r.days);
-    // u = 1 - 2^-53 with C(m) > 0 makes c round to exactly 1; the day is still finite.
+    for (const m of [0, 13]) {
+      const r = sampleTransition(flat, 0.9, m);
+      expect(r.kind).toBe('advance');
+      expect(monthsIn(0, r.days) + 1).toBe(Math.floor(16777216 / M));
+      expect(r.days).toBeLessThan(16777216);
+      expect(Math.fround(r.days)).toBe(r.days);
+    }
+    // u = 1 - 2^-53 with C(m) > 0 would make the literal c round to exactly 1; still finite.
     const top = 1 - 1 / 9007199254740992;
     for (const m of [13, 40]) {
       const cm = cumulativeTotal(t, m);

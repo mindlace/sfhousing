@@ -68,6 +68,21 @@ export interface NormHistory {
   src: ProjectHistory;
 }
 
+/**
+ * One administrative purge window found by step 6 (spec §4.4), for the calibration report.
+ * `exits`, `byReason`, `byStage` and `medianDays` cover every exit dated inside the window.
+ */
+export interface PurgeWindow {
+  first: Day;
+  last: Day;
+  exits: number;
+  censored: number;
+  byReason: Partial<Record<ExitReason, number>>;
+  byStage: Partial<Record<Stage, number>>;
+  /** median duration x (days in the exit stage) of the window's exits */
+  medianDays: number;
+}
+
 /** A row of the §4.4 fitting-window table. */
 export interface CoverageRow {
   stage: CalStage;

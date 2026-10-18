@@ -110,52 +110,63 @@ export function eventualProbabilities(t: Transition, monthsElapsed: number): Inc
 /**
  * The last event month `sampleTransition` returns: the greatest k with k * MONTH_DAYS <= 2^24,
  * so `days` stays an integer exact in Float32 (`Day`). 551,213 months is about 45,000 years:
- * "never" on any display, but finite. It bounds the tail search, and it is the month of a tail
- * whose 1 - rho rounds to 1 (C is then flat past K and nothing ever leaves).
+ * "never" on any display, but finite. It bounds the tail search. It is reached only by a tail
+ * too slow to leave within it, notably one whose 1 - rho rounds to 1 (log(1 - rho) = 0: C is
+ * flat past K and nothing ever leaves).
  */
 const MAX_EVENT_MONTH = Math.floor(16777216 / MONTH_DAYS);
 
-/**
- * The event month k: the least k > m with C(k) > c, given C(m) <= c (`resolved`). Table months
- * by binary search; beyond K the closed form, then stepped by one until C(k - 1) <= c < C(k) as
- * `cumulativeTotal` evaluates it, within [max(m, K) + 1, MAX_EVENT_MONTH]. A non-finite closed
- * form goes to the cap. When no month satisfies the inequality in double precision (c rounds
- * to 1, or C(m) is already 1 because rho = 1), the month is the memoryless one from
- * max(m, K): + max(1, ceil(log(1 - u) / log(1 - rho))), capped (`resolved` false).
- */
-function eventMonth(
-  t: Transition,
-  c: number,
-  u: number,
-  m: number
-): { k: number; resolved: boolean } {
-  const K = t.months;
-  if (m < K && c < tableSum(t, K)) {
-    let below = m; // invariant: C(below) <= c < C(above)
-    let above = K;
-    while (above - below > 1) {
-      const mid = (below + above) >>> 1;
-      if (tableSum(t, mid) > c) above = mid;
-      else below = mid;
-    }
-    return { k: above, resolved: true };
-  }
-  const floor = m > K ? m : K; // C(floor) <= c
-  const cap = Math.max(MAX_EVENT_MONTH, floor + 1);
-  const L = log(1 - tailRate(t));
-  const q = log((1 - c) / (1 - tableSum(t, K))) / L;
-  let k = Number.isFinite(q) ? K + Math.ceil(q) : cap;
-  k = Math.min(Math.max(k, floor + 1), cap);
-  while (k - 1 > floor && cumulativeTotal(t, k - 1) > c) k--;
-  while (k < cap && cumulativeTotal(t, k) <= c) k++;
-  if (cumulativeTotal(t, k) > c) return { k, resolved: true };
-  const n = Math.ceil(log(1 - u) / L);
-  const memoryless = L < 0 && Number.isFinite(n) ? floor + Math.max(1, n) : cap;
-  return { k: Math.min(memoryless, cap), resolved: false };
-}
-
 type Kind = 'advance' | ExitReason;
 type Slice = { kind: Kind; lo: number; hi: number };
+type Draw = { k: number; slice: Slice; x: number };
+
+/** The least k in (m, K] with C(k) > c, given C(m) <= c < C(K): binary search. */
+function tableMonth(t: Transition, c: number, m: number): number {
+  let below = m; // invariant: C(below) <= c < C(above)
+  let above = t.months;
+  while (above - below > 1) {
+    const mid = (below + above) >>> 1;
+    if (tableSum(t, mid) > c) above = mid;
+    else below = mid;
+  }
+  return above;
+}
+
+/**
+ * The literal tail month for m < K with C(K) <= c (spec §4.2 step 2): the closed form, clamped
+ * to [K + 1, MAX_EVENT_MONTH], then stepped by one until C(k - 1) <= c < C(k) as
+ * `cumulativeTotal` evaluates it. Null when no month satisfies that in double precision.
+ */
+function literalTailMonth(t: Transition, c: number): number | null {
+  const K = t.months;
+  const q = log((1 - c) / (1 - tableSum(t, K))) / log(1 - tailRate(t));
+  let k = Number.isFinite(q) ? K + Math.ceil(q) : MAX_EVENT_MONTH;
+  k = Math.min(Math.max(k, K + 1), MAX_EVENT_MONTH);
+  while (k - 1 > K && cumulativeTotal(t, k - 1) > c) k--;
+  while (k < MAX_EVENT_MONTH && cumulativeTotal(t, k) <= c) k++;
+  return cumulativeTotal(t, k) > c ? k : null;
+}
+
+/**
+ * A tail draw relative to `from` >= K whole months survived (controller ruling R8): by
+ * memorylessness, the months still to wait follow G(n) = 1 - (1 - rho)^n whatever `from` is,
+ * so this is spec §4.2 in exact arithmetic without forming c = C(m) + (1 - C(m)) * u, which
+ * loses every digit once 1 - C(m) nears 1e-16. n = the least n >= 1 with G(n) > v (closed form
+ * ceil(log(1 - v) / log(1 - rho)), then stepped by one), k = from + n, and the slice is
+ * [G(n - 1), G(n)) split by p_j / rho. If no n up to MAX_EVENT_MONTH qualifies (log(1 - rho) =
+ * 0, or a tail too slow for the cap), k is the cap and v is split over [0, 1) instead.
+ */
+function relativeTail(t: Transition, from: number, v: number): Draw {
+  const L = log(1 - tailRate(t));
+  const G = (n: number) => (n === 0 ? 0 : 1 - exp(n * L));
+  const top = Math.max(MAX_EVENT_MONTH - from, 1);
+  const q = Math.ceil(log(1 - v) / L);
+  let n = Number.isFinite(q) ? Math.min(Math.max(q, 1), top) : top;
+  while (n > 1 && G(n - 1) > v) n--;
+  while (n < top && G(n) <= v) n++;
+  if (G(n) > v) return { k: from + n, slice: tailSlice(t, G(n - 1), G(n), v), x: v };
+  return { k: from + top, slice: tailSlice(t, 0, 1, v), x: v };
+}
 
 /**
  * The sub-interval of table month k's mass [C(k - 1), C(k)) holding c, split by the increments
@@ -198,13 +209,30 @@ function tailSlice(t: Transition, lo: number, hi: number, x: number): Slice {
   return { kind: kinds[last], lo: from, hi };
 }
 
+/** The draw for m < K: spec §4.2 steps 1 to 3 literally (1 - C(m) >= 1 - C(K) >= 1e-6). */
+function literalDraw(t: Transition, u: number, m: number): Draw {
+  const cm = cumulativeTotal(t, m);
+  const c = cm + (1 - cm) * u;
+  if (c < tableSum(t, t.months)) {
+    const k = tableMonth(t, c, m);
+    return { k, slice: tableSlice(t, k, c), x: c };
+  }
+  const k = literalTailMonth(t, c);
+  if (k !== null) {
+    return { k, slice: tailSlice(t, cumulativeTotal(t, k - 1), cumulativeTotal(t, k), c), x: c };
+  }
+  // c rounded to 1, which needs 1 - u < ~1.1e-10 (below mulberry32's 2^-32 step), or the tail
+  // is flat: draw relative to K. u stands in for the lost (c - C(K)) / (1 - C(K)).
+  return relativeTail(t, t.months, u);
+}
+
 /**
  * One uniform u in [0, 1) to an outcome and a duration in days from stage entry, given
- * `monthsElapsed` whole months already survived (spec §4.2): target c = C(m) + (1 - C(m)) * u;
+ * `monthsElapsed` = m whole months already survived (spec §4.2): target c = C(m) + (1 - C(m))u;
  * event month k = the least k > m with C(k) > c; kind = the slice of month k's mass holding c;
- * the day within month k is uniform by c's position in that slice. monthsIn(0, days) = k - 1
- * and days >= ceil(m * MONTH_DAYS). When no month can hold c in double precision (see
- * `eventMonth`), kind and day position come from u split by the tail proportions instead.
+ * the day within month k is uniform by c's position in that slice. For m >= K the same mapping
+ * is evaluated relative to m by memorylessness (`relativeTail`, ruling R8). monthsIn(0, days) =
+ * k - 1 and days >= ceil(m * MONTH_DAYS).
  */
 export function sampleTransition(
   t: Transition,
@@ -212,16 +240,9 @@ export function sampleTransition(
   monthsElapsed: number
 ): { kind: Kind; days: number } {
   checkMonths(monthsElapsed);
-  const cm = cumulativeTotal(t, monthsElapsed);
-  const c = cm + (1 - cm) * u;
-  const { k, resolved } = eventMonth(t, c, u, monthsElapsed);
-  let slice: Slice;
-  let x = c;
-  if (!resolved) {
-    slice = tailSlice(t, 0, 1, u);
-    x = u;
-  } else if (k <= t.months) slice = tableSlice(t, k, c);
-  else slice = tailSlice(t, cumulativeTotal(t, k - 1), cumulativeTotal(t, k), c);
+  if (!(u >= 0 && u < 1)) throw new RangeError(`u must be in [0, 1), got ${u}`);
+  const { k, slice, x } =
+    monthsElapsed < t.months ? literalDraw(t, u, monthsElapsed) : relativeTail(t, monthsElapsed, u);
   const phi = (x - slice.lo) / (slice.hi - slice.lo);
   const first = Math.ceil((k - 1) * MONTH_DAYS);
   const end = Math.ceil(k * MONTH_DAYS);
