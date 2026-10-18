@@ -614,6 +614,45 @@ describe('GeneratedController (real deck)', () => {
     );
   });
 
+  it('C3b: deck draws a side wall on every edge of every packed ring', async () => {
+    h = await harness(BG_STYLE);
+    const c = h.controller();
+    const p = packOf('A', 0, 12);
+    c.apply(upd(0, { cells: [{ settled: p, rising: null }] }));
+    await idle(h.map);
+    await nextFrame();
+    type Tess = {
+      vertexStarts: ArrayLike<number>;
+      get(name: 'positions' | 'vertexValid'): ArrayLike<number>;
+    };
+    const lm = (h.overlay as unknown as { _deck: { layerManager: { getLayers(): Layer[] } } })._deck
+      .layerManager;
+    const live = lm.getLayers().find((l) => l.id === 'generated-A') as unknown as {
+      state: { polygonTesselator: Tess };
+    };
+    const tess = live.state.polygonTesselator;
+    const pos = tess.get('positions');
+    const valid = tess.get('vertexValid');
+    // The side model draws one quad from vertex i to vertex i + 1 wherever vertexValid[i] is set.
+    const key = (x: number, y: number) => `${Math.fround(x)},${Math.fround(y)}`;
+    let missing = 0;
+    for (let k = 0; k < p.partCount; k++) {
+      const drawn = new Set<string>();
+      for (let i = tess.vertexStarts[k]; i < tess.vertexStarts[k + 1] - 1; i++)
+        if (valid[i])
+          drawn.add(`${key(pos[3 * i], pos[3 * i + 1])}>${key(pos[3 * i + 3], pos[3 * i + 4])}`);
+      // Expected walls: every edge of the footprint, closing edge included.
+      const ring: string[] = [];
+      for (let v = p.startIndices[k]; v < p.startIndices[k + 1]; v++)
+        ring.push(key(p.positions[2 * v], p.positions[2 * v + 1]));
+      if (ring.length > 1 && ring[0] === ring[ring.length - 1]) ring.pop();
+      for (let i = 0; i < ring.length; i++)
+        if (!drawn.has(`${ring[i]}>${ring[(i + 1) % ring.length]}`)) missing++;
+    }
+    expect(p.partCount).toBeGreaterThan(0);
+    expect({ parts: p.partCount, missing }).toEqual({ parts: p.partCount, missing: 0 });
+  });
+
   it('C5: a 500-parcel update reaches its first rising frame within 30 ms', async () => {
     h = await harness(BUILDINGS_STYLE, { reducedMotion: () => false });
     const c = h.controller();
