@@ -46,7 +46,13 @@ export interface HousingIndex {
   byParcel: ReadonlyMap<ParcelId, Day[]>;
 }
 
-/** Indexes the valid xdht completion days; `resolve` maps a block-lot to its current parcels. */
+/** xdht-4php `form_no` values of new construction (Ruling C4). */
+const NEW_CONSTRUCTION_FORMS: ReadonlySet<string> = new Set(['1', '2']);
+
+/**
+ * Indexes the valid xdht completion days of new-construction rows (form 1 or 2, net units > 0;
+ * Ruling C4); `resolve` maps a block-lot to its current parcels.
+ */
 export function indexHousing(
   rows: readonly HousingRow[],
   resolve: (blklots: string[]) => ParcelId[]
@@ -60,6 +66,11 @@ export function indexHousing(
   };
   for (const r of rows) {
     if (r.firstCompletionDay === null) continue;
+    // Ruling C4: only new-construction completions; a demolition (form 6) or alteration (3, 8)
+    // row on the lot is often posted after the new permit's issuance and dates no completion.
+    if (!NEW_CONSTRUCTION_FORMS.has(r.form ?? '') || r.netUnits === null || r.netUnits <= 0) {
+      continue;
+    }
     if (r.bpa !== null) add(byPermit, r.bpa, r.firstCompletionDay);
     if (r.blklot !== null)
       for (const id of resolve([r.blklot])) add(byParcel, id, r.firstCompletionDay);
@@ -90,8 +101,9 @@ function yearOf(d: Day): number {
 
 /**
  * Ruling C2 evidence, build-time data only, (i) before (ii):
- * (i) the earliest xdht-4php `first_completion_date` on or after the construction day, on a row
- *     whose `bpa` is one of the project's permits or whose `blocklot` resolves into its parcels;
+ * (i) the earliest xdht-4php `first_completion_date` on or after the construction day, on a
+ *     new-construction row (form 1 or 2, net units > 0; Ruling C4) whose `bpa` is one of the
+ *     project's permits or whose `blocklot` resolves into its parcels;
  * (ii) the `lien_day` of the first roll year Y after the construction year in which Σ assessor
  *     units over the project's parcels exceed the baseline by at least min(units, ⌈units / 2⌉),
  *     or in which a parcel's `year_built` is at least the construction year. The baseline is the

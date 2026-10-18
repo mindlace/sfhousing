@@ -203,6 +203,29 @@ describe('construction evidence (Ruling C2)', () => {
     );
   });
 
+  it('(i) counts only new-construction completions: form 1 or 2 with net units > 0 (Ruling C4)', () => {
+    const idx = indexHousing(
+      [
+        housing({ bpa: '1', form: '6', netUnits: -1, firstCompletionDay: d('2016-01-01') }),
+        housing({
+          blklot: '3512011',
+          form: '8',
+          netUnits: -1,
+          firstCompletionDay: d('2016-02-01')
+        }),
+        housing({ bpa: '1', form: '3', netUnits: 2, firstCompletionDay: d('2016-03-01') }),
+        housing({ bpa: '1', form: '2', netUnits: 0, firstCompletionDay: d('2016-04-01') }),
+        housing({ bpa: '1', form: '2', netUnits: null, firstCompletionDay: d('2016-05-01') }),
+        housing({ blklot: '3512011', form: '1', netUnits: 3, firstCompletionDay: d('2019-06-01') })
+      ],
+      resolve
+    );
+    expect(evidenceDay(p, entered, 4, { housing: idx, assessor: NO_ASSESSOR })).toEqual({
+      day: d('2019-06-01'),
+      source: 'xdht'
+    });
+  });
+
   it('(i) beats (ii)', () => {
     const a = { ...NO_ASSESSOR, yearBuilt: () => 2016 };
     const idx = indexHousing([housing({ bpa: '1', firstCompletionDay: d('2020-02-02') })], resolve);
