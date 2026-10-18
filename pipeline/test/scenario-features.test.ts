@@ -11,6 +11,8 @@ import {
   featureValue,
   type ScenarioParcels
 } from '../../src/lib/data/scenario-codec';
+import { parseManifest } from '../../src/lib/data/manifest';
+import { decodeParcelChunk } from '../../src/lib/data/parcel-chunk';
 import { FIXTURE_PROFILE } from '../config';
 import { openDuck, type Duck } from '../lib/duck';
 import { readLock } from '../lib/lock';
@@ -69,6 +71,7 @@ interface PanelRow {
 
 const F = FILL_LEVELS.length;
 let derived: string;
+let outDir: string;
 let p: ScenarioParcels;
 let db: Duck;
 let counts: Record<string, number>;
@@ -76,7 +79,7 @@ let counts: Record<string, number>;
 beforeAll(async () => {
   const root = mkdtempSync(join(tmpdir(), 'sfh-scenario-features-'));
   derived = join(root, 'derived', 'fixture-0');
-  const { outDir } = await build({
+  ({ outDir } = await build({
     lockPath: join(MINI, 'sources.lock.json'),
     rawDir: join(MINI, 'raw'),
     rawByName: true,
@@ -86,7 +89,7 @@ beforeAll(async () => {
     profile: FIXTURE_PROFILE,
     skipTiles: true,
     derivedRoot: join(root, 'derived')
-  });
+  }));
   p = decodeScenarioPayload(
     new Uint8Array(inflateRawSync(readFileSync(join(outDir, 'scenarios/fzp/parcels.bin'))))
   );
@@ -206,6 +209,33 @@ describe('scenario T13 panel and T11 features (mini fixture)', () => {
         { floor: r.existing_floor_area_m2, imputed: r.imputed }
       );
     }
+  });
+
+  it('no-row parcels (lots 9, 12, 13) get imputed 95 and the rounded chunk floor area', async () => {
+    // Spec §4.5 step 5, AC 16: sd.roll.no-row sets bits 0–4 and sd.roll.floor-area-missing bit 6.
+    const m = parseManifest(JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf8')));
+    const recs = new Map(
+      m.chunks
+        .flatMap((c) =>
+          decodeParcelChunk(
+            readFileSync(join(outDir, c.url.replace('/data/fixture-0/', '')), 'utf8')
+          )
+        )
+        .map((r) => [r.id, r])
+    );
+    const latest = new Set(
+      (await panel()).filter((r) => r.roll_year === 2025).map((r) => r.mapblklot)
+    );
+    const noRow = p.id.filter((id) => !latest.has(id));
+    expect(noRow).toEqual(['3512009', '3512012', '3512013']);
+    for (const id of noRow) {
+      const i = p.index.get(id)!;
+      expect({ imputed: p.imputed[i], floor: p.existingFloorAreaM2[i] }, id).toEqual({
+        imputed: 95,
+        floor: Math.round(recs.get(id)!.existingFloorAreaM2)
+      });
+    }
+    expect(counts['scenario.imputed.no_roll']).toBe(3);
   });
 
   it('parcel-lineage.parquet has the retired rows', async () => {

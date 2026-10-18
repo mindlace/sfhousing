@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { Duck } from '../lib/duck';
 import { createTableFromRows } from '../lib/duck';
-import { createQualityTables } from '../lib/quality';
+import { createQualityTables, recordSqlQuality } from '../lib/quality';
 import { runSql } from '../lib/sql';
 import { readParcelRecords } from '../steps/chunks';
 import { runScenarioSql } from '../steps/scenario-sql';
@@ -154,7 +154,7 @@ describe('runScenarioSql on the mini fixture', () => {
     await createQualityTables(db);
     await runSql(db);
     const records = await readParcelRecords(db);
-    ({ parseFailures } = await runScenarioSql(db, records, {}));
+    ({ parseFailures } = await runScenarioSql(db, records));
   });
 
   it('readParcelRecords returns every parcel sorted by id with its cell', async () => {
@@ -405,7 +405,9 @@ describe('runScenarioSql on the mini fixture', () => {
 
   it('does not duplicate scenario counts or quality tallies when re-run on the same DB', async () => {
     const quality: Record<string, number> = {};
-    await runScenarioSql(db, await readParcelRecords(db), quality);
+    await runScenarioSql(db, await readParcelRecords(db));
+    // The scenario step reports the SQL tallies once, after T11 (writeScenario); here directly.
+    await recordSqlQuality(db, 'scenario-data', quality);
     const [r] = await db.all<{ n: number }>(
       `SELECT count(*) n FROM report_counts WHERE key = 'scenario.height.split'`
     );
@@ -457,7 +459,7 @@ describe('runScenarioSql on a copy with a far-away parcel and a bad height strin
     await db.run('USE syn');
     try {
       const records = await readParcelRecords(db);
-      ({ parseFailures } = await runScenarioSql(db, records, {}));
+      ({ parseFailures } = await runScenarioSql(db, records));
     } finally {
       await db.run('USE memory');
     }
@@ -545,7 +547,8 @@ describe('runScenarioSql units-spike rule on a copy (A12, sd.roll.units-spike)',
         rec: big.has(rec.id) ? { ...rec, areaM2: 1_000_000 } : rec,
         cellId
       }));
-      await runScenarioSql(db, records, quality);
+      await runScenarioSql(db, records);
+      await recordSqlQuality(db, 'scenario-data', quality);
     } finally {
       await db.run('USE memory');
     }

@@ -7,10 +7,12 @@
 -- Writes sc_district, sc_zoning, parcel_lineage, sc_roll_years, sc_roll_agg and
 -- scenario.height.* / scenario.roll.* counts. Every float sum is taken over an ordered list
 -- (list_sum), as in 60_attributes.sql, so the result does not depend on thread scheduling (V12).
--- T14 (spec §4.5 rule order step 1, §4.12): the row-level roll rules sd.roll.year-built-range,
--- sd.roll.stories-max and sd.roll.unmatched are applied here, each inserting exactly one
--- quality_tally row and one quality_sample row per affected roll row (id
--- `<parcel_number>:<closed_roll_year>`); runScenarioSql reports them through recordSqlQuality.
+-- T14 (spec §4.5 rule order steps 1 and 2, §4.12): the row-level roll rules sd.roll.no-year,
+-- sd.roll.year-built-range, sd.roll.stories-max and sd.roll.unmatched, and the aggregation rule
+-- sd.roll.units-missing, are applied here, each inserting exactly one quality_tally row and one
+-- quality_sample row per affected record (`<parcel_number>:<closed_roll_year>` for a roll row,
+-- `<parcel_number>` for one without a year, `<mapblklot>:<roll_year>` for a parcel-year);
+-- writeScenario reports them through recordSqlQuality after the T11 rows.
 -- sc_roll_agg is the aggregate before the parcel-year rules of 81_scenario_features.sql.
 -- District overlap is summed per normalised height string, not per polygon: adjacent polygons
 -- carrying the same string are one district, so a parcel straddling their shared edge is not
@@ -133,6 +135,16 @@ LEFT JOIN s_blklot_map m USING (blklot)
 WHERE NOT a.active
 ORDER BY a.blklot, a.mapblklot, a.date_rec_drop;
 
+-- sd.roll.no-year (DQ-4 registered rule, controller ruling F1 Task 3): a roll row without a
+-- closed_roll_year belongs to no roll year, so it is dropped (here and in s_roll below). 0 live
+-- rows: the fetch filters closed_roll_year >= 2007.
+INSERT INTO quality_tally
+SELECT 'sd.roll.no-year', count(*) FILTER (WHERE closed_roll_year IS NULL), count(*), NULL, NULL
+FROM src_roll;
+INSERT INTO quality_sample
+SELECT 'sd.roll.no-year', coalesce(parcel_number, '') FROM src_roll
+WHERE closed_roll_year IS NULL;
+
 -- The roll years in the lock (T13: the panel covers every one; sd.roll.year-gap carries into
 -- them).
 CREATE OR REPLACE TABLE sc_roll_years AS
@@ -163,6 +175,7 @@ SELECT r.* REPLACE (
        coalesce(r.parcel_number, '') || ':' || r.closed_roll_year AS record_id
 FROM src_roll r
 LEFT JOIN s_blklot_map m ON m.blklot = r.parcel_number
+-- sd.roll.no-year (tallied above).
 WHERE r.closed_roll_year IS NOT NULL;
 
 INSERT INTO quality_tally
@@ -225,6 +238,9 @@ JOIN sc_land_use_classes c ON c.name = CASE
 -- status_n: any row with status_code N (non-taxable, e.g. government).
 -- year_nulled / stories_nulled: a row of the parcel-year was nulled by sd.roll.year-built-range /
 -- sd.roll.stories-max, so the parcel-year's value is not the source's own (bits 0 and 1, §4.5).
+-- units_missing: every row of the parcel-year has a NULL number_of_units, so `units` is the
+-- coalesce default 0: sd.roll.units-missing (DQ-4 registered rule, controller ruling F1 Task 3;
+-- bit 3).
 CREATE OR REPLACE TEMP TABLE s_roll_sum AS
 SELECT id, closed_roll_year AS roll_year,
        coalesce(sum(number_of_units), 0)::INTEGER AS units,
@@ -245,7 +261,8 @@ SELECT id, closed_roll_year AS roll_year,
                 false) AS hotel,
        coalesce(bool_or(status_code = 'N'), false) AS status_n,
        bool_or(year_nulled) AS year_nulled,
-       bool_or(stories_nulled) AS stories_nulled
+       bool_or(stories_nulled) AS stories_nulled,
+       bool_and(number_of_units IS NULL) AS units_missing
 FROM s_roll
 WHERE id IS NOT NULL
 GROUP BY id, closed_roll_year;
@@ -256,10 +273,16 @@ CREATE OR REPLACE TABLE sc_roll_agg AS
 SELECT s.id, s.roll_year, s.units, s.stories, s.year_built,
        s.land, s.impr, s.floor_area_m2,
        c.use_code, c.land_use_class::INTEGER AS land_use_class, s.noncondo_units, s.hotel,
-       s.status_n, s.year_nulled, s.stories_nulled
+       s.status_n, s.year_nulled, s.stories_nulled, s.units_missing
 FROM s_roll_sum s
 JOIN s_roll_class c ON c.id = s.id AND c.closed_roll_year = s.roll_year
 ORDER BY s.id, s.roll_year;
+
+INSERT INTO quality_tally
+SELECT 'sd.roll.units-missing', count(*) FILTER (WHERE units_missing), count(*), NULL, NULL
+FROM sc_roll_agg;
+INSERT INTO quality_sample
+SELECT 'sd.roll.units-missing', id || ':' || roll_year FROM sc_roll_agg WHERE units_missing;
 
 -- scenario.height.*: `none` = parcels in a district whose string has no height (sentinels and
 -- parse failures); `no_district` = parcels overlapping no district (disjoint from `none`).

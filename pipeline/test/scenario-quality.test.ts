@@ -2,23 +2,30 @@
 // on synthetic cases in copies of the mini tables (the scenario-sql.test.ts precedent). Each case
 // asserts the written value, the mask bit, and the rule's fired/of and sample as recordSqlQuality
 // passes them to recordQuality (the counts it writes and the quality_sample rows it reads).
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ParcelRecord } from '../../src/lib/data/parcel';
+import { LAND_USE_CLASSES } from '../../src/lib/data/scenario-codec';
 import { FZP_EFFECTIVE_DAY, densityCap } from '../lib/density-caps';
 import type { Duck } from '../lib/duck';
-import { createQualityTables, qualityRule } from '../lib/quality';
+import {
+  QUALITY_RULES,
+  createQualityTables,
+  qualityRule,
+  writeQualityReport
+} from '../lib/quality';
 import { Report } from '../lib/report';
 import { runSql } from '../lib/sql';
 import { readParcelRecords } from '../steps/chunks';
 import { PARCELS_BIN, readParcelsBin, writeScenario } from '../steps/scenario';
-import { miniDuck } from './helpers';
+import { SUPERSEDED_SCENARIO_COUNTS, miniDuck } from './helpers';
 
 /** Bits of the T11/T13 `imputed` mask (RA1 mask convention). */
 const BIT = { year: 1, stories: 2, share: 4, units: 8, carried: 32, floor: 64 };
 const RESIDENTIAL = 0;
+const OTHER = LAND_USE_CLASSES.indexOf('other');
 
 interface Feature {
   mapblklot: string;
@@ -39,6 +46,9 @@ interface Synthetic {
   quality: Record<string, number>;
   scenarioCounts: Record<string, number>;
   outDir: string;
+  /** The chunk records the scenario step ran on, by id. */
+  records: Map<string, ParcelRecord>;
+  warnings: string[];
 }
 
 let db: Duck;
@@ -55,7 +65,8 @@ beforeAll(async () => {
 async function synthetic(
   schema: string,
   edit: string[],
-  recs: Record<string, Partial<ParcelRecord>> = {}
+  recs: Record<string, Partial<ParcelRecord>> = {},
+  datasetVersion = 'fixture-0'
 ): Promise<Synthetic> {
   await db.run(`ATTACH ':memory:' AS ${schema}`);
   for (const t of ['parcels', 'parcel_out', 'src_height_bulk', 'src_parcel_attrs', 'src_roll']) {
@@ -73,17 +84,24 @@ async function synthetic(
     const quality: Record<string, number> = {};
     const root = mkdtempSync(join(tmpdir(), `sfh-scenario-quality-${schema}-`));
     const outDir = join(root, 'out');
-    const { counts } = await writeScenario({
+    const { counts, warnings } = await writeScenario({
       db,
       outDir,
       derivedDir: join(root, 'derived'),
-      datasetVersion: 'fixture-0',
+      datasetVersion,
       records,
       capDay: Date.UTC(2026, 9, 10) / 86400000,
       report: new Report(),
       buildCounts: quality
     });
-    return { schema, quality, scenarioCounts: counts, outDir };
+    return {
+      schema,
+      quality,
+      scenarioCounts: counts,
+      outDir,
+      records: new Map(records.map(({ rec }) => [rec.id, rec])),
+      warnings
+    };
   } finally {
     await db.run('USE memory');
   }
@@ -122,6 +140,21 @@ async function tally(s: Synthetic, id: string) {
     sample: sample.map((r) => r.record_id)
   };
 }
+/**
+ * A TS-side rule's counts and its sample as recorded by recordQuality: the counts from `quality`,
+ * the sample from the rule's quality-report.md section (its first 25 ids, sorted).
+ */
+async function reported(s: Synthetic, id: string) {
+  const file = join(s.outDir, '..', `quality-${s.schema}.md`);
+  writeQualityReport(file, 'fixture-0', s.quality);
+  const [, section] = readFileSync(file, 'utf8').split(`### ${id}\n\n`);
+  const [first, ids] = section.split('\n\n');
+  return {
+    fired: s.quality[`quality.${id}.fired`],
+    of: s.quality[`quality.${id}.of`],
+    sample: first.startsWith('No affected ids') ? [] : ids.trim().split(', ')
+  };
+}
 const median = async (s: Synthetic, year: number, cls: number) => {
   const [m] = await db.all<{ year_built: number }>(
     `SELECT year_built FROM ${s.schema}.sc_medians WHERE roll_year = ${year}
@@ -130,7 +163,7 @@ const median = async (s: Synthetic, year: number, cls: number) => {
   return m.year_built;
 };
 
-describe('the SQL-side scenario-data rules in the registry (spec §4.12 tables)', () => {
+describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 rulings)', () => {
   // [id, source, field, kind, action, tier, valueTier, maskBit, denominator, unitsWeighted]
   const TABLE: [
     string,
@@ -299,6 +332,92 @@ describe('the SQL-side scenario-data rules in the registry (spec §4.12 tables)'
       6,
       'parcel-years',
       false
+    ],
+    // The TS-side rules (spec §4.12 tables; observation rules take tier 4).
+    [
+      'sd.roll.no-row',
+      'datasf-assessor-roll',
+      'every roll column',
+      'missing',
+      'default',
+      4,
+      4,
+      4,
+      'T11 parcels',
+      false
+    ],
+    [
+      'sd.zoning.split-code',
+      'datasf-parcel-attrs',
+      'zoning_code',
+      'shape',
+      'replace',
+      4,
+      4,
+      null,
+      'hostable parcels',
+      false
+    ],
+    [
+      'sd.zoning.generic-nc',
+      'datasf-parcel-attrs',
+      'zoning_code',
+      'shape',
+      'default',
+      4,
+      4,
+      null,
+      'hostable parcels',
+      false
+    ],
+    [
+      'sd.yield.nonmonotone',
+      'parcels.bin',
+      'yield',
+      'shape',
+      'none',
+      4,
+      null,
+      null,
+      'parcels',
+      false
+    ],
+    [
+      'sd.yield.zero-hostable',
+      'parcels.bin',
+      'yield',
+      'shape',
+      'none',
+      4,
+      null,
+      null,
+      'eligible parcels with envelopeStories ≥ 1',
+      false
+    ],
+    // DQ-4 registered rules (controller rulings, Task 3 review): as-built drop and default.
+    [
+      'sd.roll.no-year',
+      'datasf-assessor-roll',
+      'closed_roll_year',
+      'shape',
+      'drop',
+      4,
+      null,
+      null,
+      'roll rows',
+      false
+    ],
+    [
+      'sd.roll.units-missing',
+      'sc_roll_agg',
+      'number_of_units',
+      'missing',
+      'default',
+      4,
+      4,
+      3,
+      'observed parcel-years',
+      false
     ]
   ];
   it.each(TABLE)(
@@ -360,7 +479,12 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
         // Observation rules: 600 units in 2025 after 2 in 2024, on a lot whose capacity is 1,000.
         setRow('3512001', [2025], 'number_of_units = 600'),
         // sd.roll.floor-area-missing: no roll floor area on lot 11 in 2025.
-        setRow('3512011', [2025], 'property_area = 0')
+        setRow('3512011', [2025], 'property_area = 0'),
+        // sd.roll.units-missing: lot 6's only 2024 row has no units.
+        setRow('3512006', [2024], 'number_of_units = NULL'),
+        // sd.roll.no-year: a copy of lot 7's 2025 row (0 units) without a roll year.
+        `INSERT INTO src_roll SELECT * REPLACE (NULL AS closed_roll_year)
+         FROM src_roll WHERE parcel_number = '3512007' AND closed_roll_year = 2025`
       ],
       {
         '3512005': { areaM2: 255, existingUnits: 30 },
@@ -542,12 +666,68 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     const i = p.index.get('3512011')!;
     expect(p.existingFloorAreaM2[i]).toBe(601);
     expect(p.imputed[i] & BIT.floor).toBe(BIT.floor);
-    // Lot 7 (vacant) has no roll floor area in either year.
+    // Lot 7 (vacant) has no roll floor area in either year. The no-row parcels (lots 9, 12 and
+    // 13, which have no 2025 row) also fire it (spec §4.5 step 5): fired and of each gain 3.
     expect(await tally(s, 'sd.roll.floor-area-missing')).toEqual({
-      fired: 3,
-      of: 27,
-      sample: ['3512007:2024', '3512007:2025', '3512011:2025']
+      fired: 6,
+      of: 30,
+      sample: ['3512007:2024', '3512007:2025', '3512009', '3512011:2025', '3512012', '3512013']
     });
+  });
+
+  it('sd.roll.no-row: a parcel without a latest-year row gets the defaults and imputed 95', async () => {
+    const p = readParcelsBin(join(s.outDir, PARCELS_BIN));
+    for (const id of ['3512009', '3512012', '3512013']) {
+      const i = p.index.get(id)!;
+      const rec = s.records.get(id)!;
+      expect(
+        {
+          imputed: p.imputed[i],
+          existingUnits: p.existingUnits[i],
+          existingFloorAreaM2: p.existingFloorAreaM2[i],
+          landUseClass: p.landUseClass[i],
+          rentControlLikely: p.rentControlLikely[i]
+        },
+        id
+      ).toEqual({
+        imputed: 95,
+        existingUnits: 0,
+        existingFloorAreaM2: Math.round(rec.existingFloorAreaM2),
+        landUseClass: OTHER,
+        rentControlLikely: 0
+      });
+    }
+    // Lot 13 has a building height (21.3 m): round(21.3 / 3.1) = 7 stories; lot 9 has none.
+    expect(p.existingStories[p.index.get('3512013')!]).toBe(7);
+    expect(p.existingStories[p.index.get('3512009')!]).toBe(0);
+    expect(await reported(s, 'sd.roll.no-row')).toEqual({
+      fired: 3,
+      of: 14,
+      sample: ['3512009', '3512012', '3512013']
+    });
+    expect(s.scenarioCounts['scenario.imputed.no_roll']).toBe(3);
+    expect(s.scenarioCounts['scenario.imputed.floor_area']).toBe(5);
+  });
+
+  it('sd.roll.units-missing: a parcel-year whose rows all lack units has 0 and bit 3', async () => {
+    expect(await feature(s, '3512006', 2024)).toMatchObject({ existing_units: 0 });
+    expect((await feature(s, '3512006', 2024)).imputed & BIT.units).toBe(BIT.units);
+    expect((await feature(s, '3512006', 2025)).imputed & BIT.units).toBe(0);
+    expect(await tally(s, 'sd.roll.units-missing')).toEqual({
+      fired: 1,
+      of: 27,
+      sample: ['3512006:2024']
+    });
+  });
+
+  it('sd.roll.no-year drops a roll row without a roll year', async () => {
+    const [{ n }] = await db.all<{ n: number }>(
+      `SELECT count(*)::INTEGER n FROM q.src_roll WHERE closed_roll_year IS NULL`
+    );
+    expect(n).toBe(1);
+    expect(await tally(s, 'sd.roll.no-year')).toEqual({ fired: 1, of: 33, sample: ['3512007'] });
+    // The dropped row reaches no parcel-year: lot 7 keeps one row per roll year.
+    expect((await features(s, '3512007')).map((f) => f.roll_year)).toEqual([2024, 2025]);
   });
 
   it('sd.features.share-median and the median fallback', async () => {
@@ -587,30 +767,72 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     expect(s.scenarioCounts['scenario.panel.feature_mismatch']).toBe(0);
   });
 
-  it('every SQL-side rule reports (recordQuality throws on a second report)', () => {
-    const ids = [
-      'sd.features.median-fallback',
-      'sd.features.share-median',
-      'sd.features.stories-height',
-      'sd.features.year-built-median',
-      'sd.roll.floor-area-missing',
-      'sd.roll.stories-max',
-      'sd.roll.unmatched',
-      'sd.roll.units-capacity',
-      'sd.roll.units-large',
-      'sd.roll.units-latest-jump',
-      'sd.roll.units-spike',
-      'sd.roll.year-built-range',
-      'sd.roll.year-gap'
-    ];
-    const reported = Object.keys(s.quality)
+  it('every scenario-data rule reports once (recordQuality throws on a second report)', () => {
+    const ids = QUALITY_RULES.filter((r) => r.owner === 'scenario-data').map((r) => r.id);
+    expect(ids).toHaveLength(20);
+    const got = Object.keys(s.quality)
       .filter((k) => k.endsWith('.fired'))
-      .map((k) => k.slice('quality.'.length, -'.fired'.length));
-    expect(reported).toEqual(expect.arrayContaining(ids));
+      .map((k) => k.slice('quality.'.length, -'.fired'.length))
+      .sort();
+    expect(got).toEqual(ids);
     for (const id of ids) expect(s.quality[`quality.${id}.of`], id).toBeTypeOf('number');
-    // The superseded scenario.* counts are gone.
-    expect(s.scenarioCounts).not.toHaveProperty('scenario.roll.stories_implausible');
-    expect(s.scenarioCounts).not.toHaveProperty('scenario.roll.units_implausible');
+    // The superseded scenario.* counts are gone (spec §4.10).
+    for (const k of SUPERSEDED_SCENARIO_COUNTS) expect(s.scenarioCounts).not.toHaveProperty(k);
+  });
+});
+
+describe('the TS-side zoning and yield rules on a synthetic copy of mini', () => {
+  let s: Synthetic;
+  beforeAll(async () => {
+    // A split code on lot 10 (hostable) and on lot 7 (ineligible, so not hostable). Lot 3 keeps
+    // its generic NC code. A non-fixture version, so no fixture-only path hides a warning.
+    s = await synthetic(
+      'z',
+      [
+        `UPDATE src_parcel_attrs SET zoning_code = 'RH-2|RM-1'
+         WHERE mapblklot IN ('3512010', '3512007')`
+      ],
+      {},
+      'synthetic-0'
+    );
+  });
+
+  it('sd.zoning.split-code counts hostable parcels with a split code', async () => {
+    const hostable = s.scenarioCounts['scenario.hostable'];
+    expect(hostable).toBe(8);
+    expect(await reported(s, 'sd.zoning.split-code')).toEqual({
+      fired: 1,
+      of: hostable,
+      sample: ['3512010']
+    });
+  });
+
+  it('sd.zoning.generic-nc counts hostable parcels with a generic NC code', async () => {
+    expect(await reported(s, 'sd.zoning.generic-nc')).toEqual({
+      fired: 1,
+      of: 8,
+      sample: ['8711023C']
+    });
+  });
+
+  it('sd.yield.zero-hostable and sd.yield.nonmonotone count and change nothing', async () => {
+    // Eligible with an envelope: the 8 hostable parcels and lots 6, 8 and 14, whose yields are 0.
+    expect(await reported(s, 'sd.yield.zero-hostable')).toEqual({
+      fired: 3,
+      of: 11,
+      sample: ['3512006', '3512008', '3512014']
+    });
+    expect(await reported(s, 'sd.yield.nonmonotone')).toEqual({ fired: 0, of: 14, sample: [] });
+  });
+
+  it('keeps the unverified-districts warning and drops the ad hoc 10% warning', () => {
+    // Split 1 and generic NC 1 of 8 hostable parcels: 12.5%, above the old 10% line.
+    expect(s.warnings.some((w) => w.startsWith('scenario: density caps unverified for'))).toBe(
+      true
+    );
+    expect(s.warnings.some((w) => w.includes('exceed 10%'))).toBe(false);
+    expect(s.scenarioCounts['scenario.density_cap.rule.unlisted']).toBeTypeOf('number');
+    for (const k of SUPERSEDED_SCENARIO_COUNTS) expect(s.scenarioCounts).not.toHaveProperty(k);
   });
 });
 

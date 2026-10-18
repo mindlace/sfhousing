@@ -7,8 +7,10 @@ import type { QualityRule } from '../quality';
  * quality.ts, so it cannot call quality.ts's `defaultShares` at load time.
  *
  * The SQL-side rules below are applied and tallied in pipeline/sql/80_scenario.sql (row level) and
- * 81_scenario_features.sql (parcel-years), and reported by runScenarioSql through
- * recordSqlQuality. Their thresholds carry their tier and source where the SQL applies them.
+ * 81_scenario_features.sql (parcel-years); the TS-side rules (no-row defaults, zoning, yield) are
+ * applied and counted in pipeline/steps/scenario.ts. writeScenario reports them all once, after the
+ * T11 rows: the SQL tallies through recordSqlQuality, the TS rules through recordQuality. Their
+ * thresholds carry their tier and source where the code applies them.
  */
 const SD = { owner: 'scenario-data' } as const;
 /** Default shares (T14 row): every kind but `missing`. */
@@ -18,6 +20,24 @@ const MISSING_SHARES = { warnShare: 0.05, failShare: 0.1 } as const;
 
 export const SD_RULES: readonly QualityRule[] = [
   // ---- Row level, on src_roll (80_scenario.sql; spec §4.5 rule order step 1) ----
+  // DQ-4 registered rule (controller ruling, F1 Task 3 review; ledger 2026-10-17): the as-built
+  // `closed_roll_year IS NULL` drop. 0 live rows (the fetch filters closed_roll_year >= 2007). A
+  // drop of an unusable row, so `shape` at the 0.01 default (spec §4.12 "Default shares").
+  {
+    ...SD,
+    id: 'sd.roll.no-year',
+    source: 'datasf-assessor-roll',
+    field: 'closed_roll_year',
+    kind: 'shape',
+    action: 'drop',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label: 'Assessor rows without a roll year are dropped',
+    denominator: 'roll rows',
+    ...SHARES,
+    unitsWeighted: false
+  },
   {
     ...SD,
     id: 'sd.roll.year-built-range',
@@ -68,6 +88,25 @@ export const SD_RULES: readonly QualityRule[] = [
     denominator: 'roll rows',
     ...SHARES,
     unitsWeighted: true
+  },
+  // ---- Aggregation per parcel-year (80_scenario.sql; spec §4.5 rule order step 2) ----
+  // DQ-4 registered rule (controller ruling, F1 Task 3 review; ledger 2026-10-17): the as-built
+  // coalesce(sum(number_of_units), 0) of a parcel-year whose rows all have no units. 2 live
+  // parcel-years. Kind `missing`, so the 0.05 default.
+  {
+    ...SD,
+    id: 'sd.roll.units-missing',
+    source: 'sc_roll_agg',
+    field: 'number_of_units',
+    kind: 'missing',
+    action: 'default',
+    tier: 4,
+    valueTier: 4,
+    maskBit: 3,
+    label: 'A parcel-year whose assessor rows all lack a unit count has 0 units',
+    denominator: 'observed parcel-years',
+    ...MISSING_SHARES,
+    unitsWeighted: false
   },
   // ---- Parcel-years (81_scenario_features.sql; spec §4.5 rule order step 3) ----
   {
@@ -239,6 +278,94 @@ export const SD_RULES: readonly QualityRule[] = [
       '(land-use data, else the building footprints), rounded to whole m²',
     denominator: 'parcel-years',
     ...MISSING_SHARES,
+    unitsWeighted: false
+  },
+  // ---- TS side (pipeline/steps/scenario.ts; spec §4.5 step 5, §4.12) ----
+  {
+    ...SD,
+    id: 'sd.roll.no-row',
+    source: 'datasf-assessor-roll',
+    field: 'every roll column',
+    kind: 'missing',
+    action: 'default',
+    tier: 4,
+    valueTier: 4,
+    maskBit: 4,
+    label:
+      'A parcel with no latest-year assessor row has 0 homes, stories from the building height, ' +
+      'land-use class other, the latest year’s "other" medians for year built and improvement ' +
+      'share, no rent control, and the floor area of the map parcel record',
+    denominator: 'T11 parcels',
+    ...MISSING_SHARES,
+    unitsWeighted: false
+  },
+  {
+    ...SD,
+    id: 'sd.zoning.split-code',
+    source: 'datasf-parcel-attrs',
+    field: 'zoning_code',
+    kind: 'shape',
+    action: 'replace',
+    tier: 4,
+    valueTier: 4,
+    maskBit: null,
+    label:
+      'A split zoning code (two districts on one parcel) takes the density cap of its most ' +
+      'permissive component, or no cap when a component has none',
+    // Hostable parcels: ruling A9's escalation (> 10% of hostable parcels) is what the default
+    // failShare generalises (RA1).
+    denominator: 'hostable parcels',
+    ...SHARES,
+    unitsWeighted: false
+  },
+  {
+    ...SD,
+    id: 'sd.zoning.generic-nc',
+    source: 'datasf-parcel-attrs',
+    field: 'zoning_code',
+    kind: 'shape',
+    action: 'default',
+    tier: 4,
+    valueTier: 4,
+    maskBit: null,
+    label: 'A generic NCD or NCT zoning code names no district, so the parcel has no density cap',
+    denominator: 'hostable parcels',
+    ...SHARES,
+    unitsWeighted: false
+  },
+  // Observation rules take tier 4: QualityRule.tier admits only 2–4 and the design's table gives
+  // "—" (ledger SD rulings 2026-10-17).
+  {
+    ...SD,
+    id: 'sd.yield.nonmonotone',
+    source: 'parcels.bin',
+    field: 'yield',
+    kind: 'shape',
+    action: 'none',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label:
+      'Counts parcels whose units by fill level fall at some higher fill level; changes nothing',
+    denominator: 'parcels',
+    ...SHARES,
+    unitsWeighted: false
+  },
+  {
+    ...SD,
+    id: 'sd.yield.zero-hostable',
+    source: 'parcels.bin',
+    field: 'yield',
+    kind: 'shape',
+    action: 'none',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label:
+      'Counts eligible parcels with an envelope of at least one story whose top-fill yield is 0; ' +
+      'changes nothing',
+    denominator: 'eligible parcels with envelopeStories ≥ 1',
+    ...SHARES,
     unitsWeighted: false
   }
 ];

@@ -9,7 +9,8 @@ import { GOLDEN_DERIVED, fixture } from '../steps/fixture';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, dumpPermits } from '../steps/projects';
 import { PARCELS_BIN, SCENARIO_DUMP, formatScenarioDump, readParcelsBin } from '../steps/scenario';
 import { which } from '../lib/exec';
-import { MINI } from './helpers';
+import { QUALITY_RULES } from '../lib/quality';
+import { MINI, SUPERSEDED_SCENARIO_COUNTS } from './helpers';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
@@ -226,8 +227,71 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
   it('lot 13: not Local Program (non-R-4 //), base 40, envelope 40, no roll row', () => {
     const r = L(13);
     expect(r).toMatchObject({ localProgram: 0, baseStories: 40, envelopeStories: 40 });
-    expect(r.imputed & 0b10000).toBe(0b10000);
     expect(counts['scenario.height.dbl_non_r4']).toBe(1);
+  });
+
+  it('the RA1 mask: no-row lots 9, 12 and 13 are 95, lot 7 (no roll floor area) is 64', () => {
+    for (const n of [9, 12, 13]) expect(L(n).imputed, `lot ${n}`).toBe(95);
+    expect(L(7).imputed).toBe(64);
+    expect(L(11).imputed).toBe(4);
+    for (const n of [1, 2, 3, 4, 5, 6, 8, 10, 14]) expect(L(n).imputed, `lot ${n}`).toBe(0);
+    expect({
+      year_built: counts['scenario.imputed.year_built'],
+      existing_stories: counts['scenario.imputed.existing_stories'],
+      improvement_share: counts['scenario.imputed.improvement_share'],
+      existing_units: counts['scenario.imputed.existing_units'],
+      no_roll: counts['scenario.imputed.no_roll'],
+      carried: counts['scenario.imputed.carried'],
+      floor_area: counts['scenario.imputed.floor_area']
+    }).toEqual({
+      year_built: 3,
+      existing_stories: 3,
+      improvement_share: 4,
+      existing_units: 3,
+      no_roll: 3,
+      carried: 0,
+      floor_area: 4
+    });
+  });
+
+  it('report.json carries fired/of for every registered sd.* rule, with the golden values', () => {
+    // [fired, of] and, for a unit-weighted rule, [units, unitsOf] (spec §6, AC 3 and 14).
+    const want: Record<string, [number, number] | [number, number, number, number]> = {
+      'sd.features.median-fallback': [2, 3],
+      'sd.features.share-median': [2, 22],
+      'sd.features.stories-height': [0, 24],
+      'sd.features.year-built-median': [0, 22],
+      'sd.roll.floor-area-missing': [5, 27],
+      'sd.roll.no-row': [3, 14],
+      'sd.roll.no-year': [0, 28],
+      'sd.roll.stories-max': [0, 28],
+      'sd.roll.units-capacity': [0, 24, 0, 144],
+      'sd.roll.units-large': [0, 24],
+      'sd.roll.units-latest-jump': [0, 11],
+      'sd.roll.units-missing': [0, 24],
+      'sd.roll.units-spike': [0, 24, 0, 144],
+      'sd.roll.unmatched': [0, 28, 0, 144],
+      'sd.roll.year-built-range': [1, 26],
+      'sd.roll.year-gap': [0, 24],
+      'sd.yield.nonmonotone': [0, 14],
+      'sd.yield.zero-hostable': [3, 11],
+      'sd.zoning.generic-nc': [1, 8],
+      'sd.zoning.split-code': [0, 8]
+    };
+    const sd = QUALITY_RULES.filter((r) => r.owner === 'scenario-data');
+    expect(sd.map((r) => r.id)).toEqual(Object.keys(want));
+    for (const r of sd) {
+      const keys = r.unitsWeighted ? ['fired', 'of', 'units', 'unitsOf'] : ['fired', 'of'];
+      expect(
+        keys.map((k) => counts[`quality.${r.id}.${k}`]),
+        r.id
+      ).toEqual(want[r.id]);
+    }
+  });
+
+  it('report.json has none of the superseded scenario.* counts (spec §4.10)', () => {
+    for (const k of SUPERSEDED_SCENARIO_COUNTS) expect(counts, k).not.toHaveProperty(k);
+    expect(counts['scenario.density_cap.rule.unlisted']).toBe(5);
   });
 
   it('lot 14: R4 normalised to -R-4, Local Program, envelope 65', () => {

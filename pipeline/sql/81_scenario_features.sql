@@ -10,7 +10,9 @@
 -- sc_medians (roll_year, land_use_class, year_built, improvement_share) and sc_features.
 -- T14: every rule below inserts exactly one quality_tally row and one quality_sample row per
 -- affected record (`<mapblklot>:<roll_year>` for a parcel-year, `<mapblklot>` for a parcel);
--- runScenarioSql reports them through recordSqlQuality. Rule order (§4.5 step 3, then step 4):
+-- writeScenario reports them through recordSqlQuality after the T11 rows (it first adds the T11
+-- no-row parcels to sd.roll.floor-area-missing, spec §4.5 step 5). Rule order (§4.5 step 3, then
+-- step 4):
 --   1. existing stories (sd.features.stories-height);
 --   2. sd.roll.units-capacity, on observed parcel-years;
 --   3. sd.roll.units-spike, on the series step 2 produced;
@@ -136,11 +138,12 @@ LEFT JOIN f_spike_fix x ON x.id = f.id AND x.roll_year = f.roll_year;
 INSERT INTO quality_sample
 SELECT 'sd.roll.units-spike', id || ':' || roll_year FROM f_spike_fix;
 
--- The observed series after both units rules. units_replaced marks bit 3.
+-- The observed series after both units rules. units_replaced marks bit 3: replaced by either
+-- units rule, or defaulted to 0 by sd.roll.units-missing (80_scenario.sql), whose 0 passes both.
 CREATE OR REPLACE TEMP TABLE f_post AS
 SELECT f.* EXCLUDE (units_raw, cap_replaced)
            REPLACE (coalesce(x.units, f.units)::INTEGER AS units),
-       f.cap_replaced OR x.id IS NOT NULL AS units_replaced,
+       f.cap_replaced OR x.id IS NOT NULL OR f.units_missing AS units_replaced,
        false AS carried
 FROM f_post_cap f
 LEFT JOIN f_spike_fix x ON x.id = f.id AND x.roll_year = f.roll_year;
@@ -253,7 +256,8 @@ ORDER BY roll_year, land_use_class;
 -- Feature values and the T11/T13 mask flags (RA1 mask convention, §4.5 "Mask bits"):
 -- bit 0 yearBuilt: imputed (NULL in the source, or a row nulled by sd.roll.year-built-range);
 -- bit 1 existingStories: the height fallback, or a row nulled by sd.roll.stories-max;
--- bit 2 improvementShare imputed; bit 3 units replaced by a units rule (copied to carried rows);
+-- bit 2 improvementShare imputed; bit 3 units replaced or defaulted by a units rule (copied to
+-- carried rows);
 -- bit 5 carried; bit 6 floor area from the chunk record. Bit 4 (no roll row) is the scenario
 -- step's and never set here.
 CREATE OR REPLACE TEMP TABLE f_feat AS

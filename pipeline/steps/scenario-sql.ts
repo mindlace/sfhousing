@@ -2,15 +2,16 @@
 // join, lineage and roll aggregation in 80_scenario.sql, per-parcel density caps in TS, and the
 // per-year data-quality rules and features in 81_scenario_features.sql. Not part of SQL_FILES /
 // runSql: the scenario build step calls it after writeChunks, with the records writeChunks
-// encoded. The SQL-side T14 rules (spec §4.12) tally into quality_tally / quality_sample and are
-// reported here through recordSqlQuality into the build's single `counts` object.
+// encoded. The SQL-side T14 rules (spec §4.12) tally into quality_tally / quality_sample; the
+// scenario step (writeScenario) reports them through recordSqlQuality after the T11 rows, into the
+// build's single `counts` object.
 import path from 'node:path';
 import type { ParcelRecord } from '../../src/lib/data/parcel';
 import { LAND_USE_CLASSES } from '../../src/lib/data/scenario-codec';
 import { MAX_STORIES } from '../../src/lib/generator/constants';
 import { DENSITY_CAP_CHANGE_DAY, FZP_EFFECTIVE_DAY, densityCap } from '../lib/density-caps';
 import { createTableFromRows, runSqlFile, type CellValue, type Duck } from '../lib/duck';
-import { MIN_GROSS_M2_PER_UNIT, recordSqlQuality } from '../lib/quality';
+import { MIN_GROSS_M2_PER_UNIT } from '../lib/quality';
 import {
   HeightParseError,
   normaliseHeight,
@@ -21,8 +22,9 @@ import {
 const SQL_DIR = path.resolve(import.meta.dirname, '../sql');
 
 /**
- * The T14 rules 80_scenario.sql and 81_scenario_features.sql apply and tally (spec §4.12). Each
- * inserts exactly one quality_tally row per run.
+ * The T14 rules 80_scenario.sql and 81_scenario_features.sql apply and tally (spec §4.12, and the
+ * DQ-4 registered rules sd.roll.no-year and sd.roll.units-missing). Each inserts exactly one
+ * quality_tally row per run.
  */
 export const SCENARIO_SQL_RULES = [
   'sd.features.median-fallback',
@@ -30,11 +32,13 @@ export const SCENARIO_SQL_RULES = [
   'sd.features.stories-height',
   'sd.features.year-built-median',
   'sd.roll.floor-area-missing',
+  'sd.roll.no-year',
   'sd.roll.stories-max',
   'sd.roll.unmatched',
   'sd.roll.units-capacity',
   'sd.roll.units-large',
   'sd.roll.units-latest-jump',
+  'sd.roll.units-missing',
   'sd.roll.units-spike',
   'sd.roll.year-built-range',
   'sd.roll.year-gap'
@@ -141,14 +145,13 @@ async function writeParcelCaps(
  * `createQualityTables` has created quality_tally / quality_sample. `records` are
  * readParcelRecords' output. Writes sc_height_parse, sc_land_use_classes, sc_district, sc_zoning,
  * parcel_lineage, sc_roll_years, sc_roll_agg, sc_parcel, sc_roll_series, sc_medians and
- * sc_features, and scenario.* rows in report_counts. Reports the SQL-side T14 rules into
- * `counts`, the build's single report counts object (recordSqlQuality). Returns the height
- * strings that failed to parse (V16).
+ * sc_features, and scenario.* rows in report_counts. Leaves exactly one quality_tally row per
+ * rule of SCENARIO_SQL_RULES (and its quality_sample rows) for the caller to report once
+ * (writeScenario, after the T11 rows). Returns the height strings that failed to parse (V16).
  */
 export async function runScenarioSql(
   db: Duck,
-  records: { rec: ParcelRecord; cellId: string }[],
-  counts: Record<string, number>
+  records: { rec: ParcelRecord; cellId: string }[]
 ): Promise<{ parseFailures: string[] }> {
   // Idempotent on one database: drop this stage's counts and tallies from an earlier run.
   await db.run(
@@ -188,7 +191,7 @@ export async function runScenarioSql(
       `runScenarioSql: ${agg} roll aggregates and ${carried} carried rows but ${feat} feature rows`
     );
   }
-  // Every SQL rule tallies exactly once (spec §4.12); recordQuality then rejects a second report.
+  // Every SQL rule tallies exactly once (spec §4.12); recordQuality rejects a second report.
   const tallies = await db.all<{ rule_id: string; n: number }>(
     `SELECT rule_id, count(*)::INTEGER n FROM quality_tally WHERE rule_id IN (${ruleList})
      GROUP BY rule_id`
@@ -198,6 +201,5 @@ export async function runScenarioSql(
   if (bad.length > 0) {
     throw new Error(`runScenarioSql: rules without exactly one tally row: ${bad.join(', ')}`);
   }
-  await recordSqlQuality(db, 'scenario-data', counts);
   return { parseFailures };
 }
