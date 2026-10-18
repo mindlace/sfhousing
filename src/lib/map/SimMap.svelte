@@ -62,6 +62,9 @@
   import { GeneratedController, type ControllerDeps } from './generated-controller';
   import type { TimelineController, TimelinePartLookup } from './timeline-controller';
   import type { TimelineLookups } from './timelapse/types';
+  // Pure (no deck or luma): the handle validates before it stores or queues (ruling R18).
+  import { validateTimedCell } from './timelapse/encode';
+  import { packChanceTexture } from './timelapse/lookups';
   import { TOKENS } from './palette';
   import { cellAt, chunkStatusCollection, resolveExistingHit, tooltipPosition } from './pick';
   import {
@@ -337,10 +340,17 @@
     resyncCb = cb;
   }
 
-  /** Enters timeline mode on the first call; queues (revision 0 drops the queue) until ready. */
+  /**
+   * Enters timeline mode on the first call; queues (revision 0 drops the queue) until ready.
+   * Every cell is validated first (§4.1 "Validation"), so a malformed cell throws its TypeError
+   * whether or not the controller exists yet, and nothing is stored.
+   */
   export function applyTimeline(u: TimelineUpdate): void {
+    for (const c of u.cells) validateTimedCell(c);
     const t = live?.timeline;
     if (t) return t.apply(u);
+    // Generated updates queued for a GeneratedController will never drain in timeline mode.
+    if (!timelineMode) pendingApplies = [];
     timelineMode = true;
     if (mapState === 'error' || mapState === 'unsupported') return; // nothing will drain them
     if (u.revision === 0) pendingTimeline = [];
@@ -355,8 +365,12 @@
     live?.timeline?.setTime(day);
   }
 
-  /** Kept like the day. A controller rejects bad lookups (RangeError) before they are kept. */
+  /**
+   * Kept like the day. A chance row longer than 2048 throws a RangeError (§4.4.3) before
+   * anything is kept, with or without a controller.
+   */
   export function setTimelineLookups(l: TimelineLookups): void {
+    packChanceTexture(l.chance);
     live?.timeline?.setLookups(l);
     pendingLookups = l;
   }
@@ -423,7 +437,8 @@
       () => ({
         map: live?.map ?? null,
         controller: live?.controller ?? null,
-        timeline: live?.timeline ?? null
+        timeline: live?.timeline ?? null,
+        pendingGenerated: pendingApplies.length
       }),
       { applyTimeline, setTime, setTimelineLookups }
     )

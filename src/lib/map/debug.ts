@@ -53,6 +53,8 @@ export interface SfhMapDebug {
   timelineSnapshot(): TimelineSnapshot | null;
   /** The demolish pump's largest feature-state call count in one frame; 0 without a timeline. */
   readonly demolishMaxFrameOps: number;
+  /** Generated updates SimMap holds for a GeneratedController that does not exist yet. */
+  readonly pendingGenerated: number;
 }
 
 declare global {
@@ -66,6 +68,7 @@ export function installDebug(
     map: MapLibreMap | null;
     controller: GeneratedController | null;
     timeline: TimelineController | null;
+    pendingGenerated: number;
   },
   timeline: TimelineHandleFns
 ): () => void {
@@ -80,6 +83,9 @@ export function installDebug(
     timelineSnapshot: () => get().timeline?.debugSnapshot() ?? null,
     get demolishMaxFrameOps() {
       return get().timeline?.demolishMaxFrameOps ?? 0;
+    },
+    get pendingGenerated() {
+      return get().pendingGenerated;
     },
     snapshot: () => get().controller?.debugSnapshot() ?? null,
     get hiddenSize() {
