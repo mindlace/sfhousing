@@ -288,15 +288,44 @@ describe('runScenarioSql on the mini fixture', () => {
     expect(hotel.map((r) => r.hotel)).toEqual([true, true]);
     expect(hotel[0].land_use_class).toBe(2); // commercial (COMH)
     const lot4 = await agg(db, '0026T001A');
-    expect(lot4.map((r) => [r.noncondo_units, r.year_built, r.hotel])).toEqual([
-      [3, 1925, false],
-      [3, 1925, false]
+    // sc_roll_agg is the aggregate before the units rules: lot 4's 2024 still reads 900.
+    expect(lot4.map((r) => [r.roll_year, r.noncondo_units, r.year_built, r.hotel])).toEqual([
+      [2023, 3, 1925, false],
+      [2024, 900, 1925, false],
+      [2025, 3, 1925, false]
     ]);
+  });
+
+  it('lots 3 and 4 carry the RA1 units cases (spec §4.11)', async () => {
+    const units = async (id: string) =>
+      (
+        await db.all<Feature>(
+          `SELECT * FROM sc_features WHERE mapblklot = '${id}' ORDER BY roll_year`
+        )
+      ).map((r) => [r.roll_year, r.existing_units, r.imputed & 40]);
+    // Lot 3: 5,000 in 2023 and 2025 on 300 m² × 3 stories (capacity 90); no year passes and the
+    // LUDB 4 does (bit 3). 2024 is carried from 2023 (bits 3 and 5).
+    expect(await units('8711023C')).toEqual([
+      [2023, 4, 8],
+      [2024, 4, 40],
+      [2025, 4, 8]
+    ]);
+    // Lot 4: 3, 900, 3. 2023 and 2025 tie; the earlier wins (bit 3). The spike rule never fires.
+    expect(await units('0026T001A')).toEqual([
+      [2023, 3, 0],
+      [2024, 3, 8],
+      [2025, 3, 0]
+    ]);
+    const [spike] = await db.all<{ fired: number }>(
+      `SELECT fired FROM quality_tally WHERE rule_id = 'sd.roll.units-spike'`
+    );
+    expect(spike.fired).toBe(0);
   });
 
   it('counts the roll report keys', async () => {
     const c = await counts(db);
-    expect(c['scenario.roll.years']).toBe(2);
+    expect(c['scenario.roll.years']).toBe(3);
+    expect(c['scenario.roll.unmatched.2023']).toBe(0);
     expect(c['scenario.roll.latest']).toBe(2025);
     expect(c['scenario.roll.matched_parcels']).toBe(13);
     expect(c['scenario.roll.unmatched.2024']).toBe(0);
@@ -336,18 +365,19 @@ describe('runScenarioSql on the mini fixture', () => {
     expect(nct.cap_prefzp).toBeNull();
   });
 
-  it('the features table has exactly roll years 2024 and 2025 and every T13 column', async () => {
+  it('the features table has exactly roll years 2023 to 2025 and every T13 column', async () => {
     const years = await db.all<{ y: number }>(
       'SELECT DISTINCT roll_year y FROM sc_features ORDER BY y'
     );
-    expect(years.map((r) => r.y)).toEqual([2024, 2025]);
+    expect(years.map((r) => r.y)).toEqual([2023, 2024, 2025]);
     const cols = (await db.all<{ column_name: string }>('DESCRIBE sc_features')).map(
       (r) => r.column_name
     );
     for (const c of T13_COLUMNS) expect(cols, c).toContain(c);
     const [{ n }] = await db.all<{ n: number }>('SELECT count(*) n FROM sc_features');
     const [{ m }] = await db.all<{ m: number }>('SELECT count(*) m FROM sc_roll_agg');
-    expect(n).toBe(m);
+    // The observed parcel-years plus lot 3's carried 2024 row (sd.roll.year-gap).
+    expect(n).toBe(m + 1);
   });
 
   it('sets lien_day to 1 January of the roll year and the cap of that period', async () => {
@@ -398,7 +428,7 @@ describe('runScenarioSql on the mini fixture', () => {
     const rows = await db.all<{ roll_year: number; land_use_class: number; year_built: number }>(
       'SELECT * FROM sc_medians ORDER BY roll_year, land_use_class'
     );
-    expect(rows).toHaveLength(12);
+    expect(rows).toHaveLength(18);
     const r2024 = rows.find((r) => r.roll_year === 2024 && r.land_use_class === 0)!;
     expect(r2024.year_built).toBe(1940);
   });
@@ -416,7 +446,7 @@ describe('runScenarioSql on the mini fixture', () => {
       'SELECT count(*)::INTEGER n, count(DISTINCT rule_id)::INTEGER d FROM quality_tally'
     );
     expect(t.n).toBe(t.d);
-    expect(quality['quality.sd.roll.units-capacity.of']).toBe(24);
+    expect(quality['quality.sd.roll.units-capacity.of']).toBe(25);
   });
 });
 
@@ -576,7 +606,9 @@ describe('runScenarioSql units-spike rule on a copy (A12, sd.roll.units-spike)',
     ]);
     expect(quality['quality.sd.roll.units-spike.fired']).toBe(2);
     expect(quality['quality.sd.roll.units-spike.units']).toBe(100000);
-    expect(quality['quality.sd.roll.units-capacity.fired']).toBe(0);
+    // The capacity rule passes the big lots; it fires only on mini's own RA1 cases (lot 3 in 2023
+    // and 2025, lot 4 in 2024; spec §4.11).
+    expect(quality['quality.sd.roll.units-capacity.fired']).toBe(3);
   });
 
   it('leaves a one-sided change (0, 0, 300, 300) and a constant 4000 untouched', async () => {

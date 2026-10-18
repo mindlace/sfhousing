@@ -24,8 +24,9 @@ describe('normalise mini fixture', () => {
       ).map((r) => [r.t, r.n])
     );
     // parcels: 14 lots, lot 2 has 3 rows → 16, + 2 retired + 1 null-id = 19 (attrs likewise);
-    // height: 6 districts; roll: 13 rows in 2025 + 15 in 2024 (lot 13 and 3512099 only in 2024)
-    expect(counts).toEqual({ p: 19, l: 15, f: 3, n: 2, o: 12, h: 6, a: 19, r: 28 });
+    // height: 6 districts; roll: 13 rows in 2025 + 14 in 2024 (lot 13 and 3512099 only in 2024,
+    // lot 3 not in 2024) + 2 in 2023 (lots 3 and 4)
+    expect(counts).toEqual({ p: 19, l: 15, f: 3, n: 2, o: 12, h: 6, a: 19, r: 29 });
     const [ids] = await db.all<{ ok: boolean }>(
       `SELECT bool_and(mapblklot IS NULL OR typeof(mapblklot) = 'VARCHAR') ok FROM src_parcels`
     );

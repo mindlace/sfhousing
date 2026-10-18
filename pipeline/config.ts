@@ -176,8 +176,9 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   heightJoinMin: 1,
   // Ruling: 10 of the 12 eligible mini parcels have a 2025 roll row (lots 12 and 13 do not).
   rollJoinMin: 0.8,
-  // Spec §4.10 V18 "fixture exact": Σ 2025 roll units of the mini fixture (known answer).
-  scenarioUnitsRange: [66, 66],
+  // Spec §4.10 V18 "fixture exact": Σ 2025 roll units of the mini fixture after the units rules
+  // (known answer, spec §4.11): 66, plus lot 3's 5,000 replaced by its LUDB 4 (RA1).
+  scenarioUnitsRange: [70, 70],
   scenarioMaxBytes: LIVE_PROFILE.scenarioMaxBytes,
   pipelineCoverageMin: 1,
   hiNet: { 2023: 3, 2024: 2, 2025: -1 },

@@ -10,6 +10,8 @@ import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, dumpPermits } from '../
 import { PARCELS_BIN, SCENARIO_DUMP, formatScenarioDump, readParcelsBin } from '../steps/scenario';
 import { which } from '../lib/exec';
 import { QUALITY_RULES } from '../lib/quality';
+import { openDuck } from '../lib/duck';
+import { MINI_PARCELS, miniProjectInput } from './fixtures/mini/projects-raw';
 import { MINI, SUPERSEDED_SCENARIO_COUNTS } from './helpers';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -35,13 +37,20 @@ const decodeBin = (dir: string) => readParcelsBin(join(dir, PARCELS_BIN));
 const dumpOf = (dir: string) => formatScenarioDump(decodeBin(dir));
 
 describe('pipeline fixture', () => {
+  const a = mkdtempSync(join(tmpdir(), 'sfh-fx-a-'));
+  const b = mkdtempSync(join(tmpdir(), 'sfh-fx-b-'));
+  const da = mkdtempSync(join(tmpdir(), 'sfh-fx-da-'));
+  const db = mkdtempSync(join(tmpdir(), 'sfh-fx-db-'));
+  let built: [number, number];
+  beforeAll(async () => {
+    built = [
+      await fixture({ outDir: a, skipTiles, derivedRoot: da }),
+      await fixture({ outDir: b, skipTiles, derivedRoot: db })
+    ];
+  });
+
   it('matches the golden byte for byte and is identical across two builds (V12)', async () => {
-    const a = mkdtempSync(join(tmpdir(), 'sfh-fx-a-'));
-    const b = mkdtempSync(join(tmpdir(), 'sfh-fx-b-'));
-    const da = mkdtempSync(join(tmpdir(), 'sfh-fx-da-'));
-    const db = mkdtempSync(join(tmpdir(), 'sfh-fx-db-'));
-    expect(await fixture({ outDir: a, skipTiles, derivedRoot: da })).toBe(0);
-    expect(await fixture({ outDir: b, skipTiles, derivedRoot: db })).toBe(0);
+    expect(built).toEqual([0, 0]);
     const fa = files(a).filter(COMPARED);
     expect(fa).toEqual(files(golden).filter(COMPARED));
     for (const f of fa) {
@@ -98,6 +107,48 @@ describe('pipeline fixture', () => {
         'overture:Esri Community Maps'
       ])
     );
+  });
+
+  it('the panel holds roll years 2023–2025 and the RA1 rows of lots 3 and 4 (spec §4.11)', async () => {
+    expect(built).toEqual([0, 0]);
+    const duck = await openDuck();
+    try {
+      const file = join(da, 'fixture-0', 'parcel-panel.parquet');
+      const rows = await duck.all<{ id: string; y: number; u: number; m: number }>(
+        `SELECT mapblklot AS id, roll_year AS y, existing_units AS u, imputed AS m
+         FROM read_parquet('${file}') ORDER BY 1, 2`
+      );
+      expect([...new Set(rows.map((r) => r.y))].sort()).toEqual([2023, 2024, 2025]);
+      const of = (id: string) => rows.filter((r) => r.id === id).map((r) => [r.y, r.u, r.m & 40]);
+      // Lot 3: 5,000 in 2023 and 2025 on 300 m² × 3 stories (capacity 90); no year passes, LUDB 4
+      // does (bit 3). 2024 is carried from 2023 (bits 3 and 5).
+      expect(of('8711023C')).toEqual([
+        [2023, 4, 8],
+        [2024, 4, 40],
+        [2025, 4, 8]
+      ]);
+      // Lot 4: 3, 900, 3; 2024 takes 2023's 3 (the tie goes to the earlier year), bit 3 only.
+      expect(of('0026T001A')).toEqual([
+        [2023, 3, 0],
+        [2024, 3, 8],
+        [2025, 3, 0]
+      ]);
+      // Roll year 2023 has rows for lots 3 and 4 only.
+      expect(rows.filter((r) => r.y === 2023).map((r) => r.id)).toEqual(['0026T001A', '8711023C']);
+      // project-records' stub roll (projects-raw.ts) mirrors the built panel ("PR goldens follow
+      // SD"): the same units on every parcel-year, and null where the panel has no row.
+      const stub = miniProjectInput();
+      const panelUnits = new Map(rows.map((r) => [`${r.id}|${r.y}`, r.u]));
+      for (const id of MINI_PARCELS) {
+        for (const y of [2023, 2024, 2025]) {
+          expect(stub.assessorUnits(id, y), `${id} ${y}`).toBe(
+            panelUnits.get(`${id}|${y}`) ?? null
+          );
+        }
+      }
+    } finally {
+      duck.close();
+    }
   });
 
   it('e2e/fixtures/data/fixture-0 is the committed output of `pipeline fixture`', () => {
@@ -174,6 +225,18 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
     expect(counts['scenario.excluded.hotel']).toBe(1);
   });
 
+  it('lot 3 (RA1): 5,000 roll units in every year become the LUDB 4, bit 3 in T11', () => {
+    // 4 non-condo units built 1920: rent control likely too (spec §4.4).
+    expect(L(3)).toMatchObject({ existingUnits: 4, imputed: 8, rentControlLikely: 1 });
+    expect(counts['quality.sd.roll.units-capacity.fired']).toBe(3);
+    expect(counts['quality.sd.roll.year-gap.fired']).toBe(1);
+  });
+
+  it('lot 4 (RA1): T11 keeps the 2025 value 3; the spike rule never sees the 900', () => {
+    expect(L(4)).toMatchObject({ existingUnits: 3, imputed: 0 });
+    expect(counts['quality.sd.roll.units-spike.fired']).toBe(0);
+  });
+
   it('lot 4: rent-control excluded, envelope 4, pre-FZP NC-1 cap 4, FZP cap none (C2)', () => {
     const r = L(4);
     expect(r).toMatchObject({ localProgram: 0, envelopeStories: 4, baseStories: 4, baseCap: 4 });
@@ -181,7 +244,10 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
     // FZP yield is uncapped: it differs from the base yield where the generator exceeds 4 units.
     expect(r.yield.some((y) => y > 4)).toBe(true);
     expect(r.yield.map((y) => Math.min(y, 4))).toEqual(r.baseYield);
-    expect(counts['scenario.excluded.rent_control']).toBe(1);
+    // Lots 4 and 3: lot 3 is a hotel AND, after sd.roll.units-capacity, has 4 non-condo units
+    // built 1920, so it meets both exclusions, which are counted separately (spec §4.10;
+    // controller ruling, F1 Task 5: the §4.11 "all" row's 1 predates RA1).
+    expect(counts['scenario.excluded.rent_control']).toBe(2);
     expect(counts['scenario.density_cap.fzp_differs']).toBe(1);
     expect(counts['scenario.yield.nonlp_base_mismatch']).toBe(0);
   });
@@ -234,7 +300,8 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
     for (const n of [9, 12, 13]) expect(L(n).imputed, `lot ${n}`).toBe(95);
     expect(L(7).imputed).toBe(64);
     expect(L(11).imputed).toBe(4);
-    for (const n of [1, 2, 3, 4, 5, 6, 8, 10, 14]) expect(L(n).imputed, `lot ${n}`).toBe(0);
+    expect(L(3).imputed).toBe(8);
+    for (const n of [1, 2, 4, 5, 6, 8, 10, 14]) expect(L(n).imputed, `lot ${n}`).toBe(0);
     expect({
       year_built: counts['scenario.imputed.year_built'],
       existing_stories: counts['scenario.imputed.existing_stories'],
@@ -247,7 +314,7 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       year_built: 3,
       existing_stories: 3,
       improvement_share: 4,
-      existing_units: 3,
+      existing_units: 4,
       no_roll: 3,
       carried: 0,
       floor_area: 4
@@ -258,21 +325,21 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
     // [fired, of] and, for a unit-weighted rule, [units, unitsOf] (spec §6, AC 3 and 14).
     const want: Record<string, [number, number] | [number, number, number, number]> = {
       'sd.features.median-fallback': [2, 3],
-      'sd.features.share-median': [2, 22],
-      'sd.features.stories-height': [0, 24],
-      'sd.features.year-built-median': [0, 22],
-      'sd.roll.floor-area-missing': [5, 27],
+      'sd.features.share-median': [2, 24],
+      'sd.features.stories-height': [0, 25],
+      'sd.features.year-built-median': [0, 24],
+      'sd.roll.floor-area-missing': [5, 29],
       'sd.roll.no-row': [3, 14],
-      'sd.roll.no-year': [0, 28],
-      'sd.roll.stories-max': [0, 28],
-      'sd.roll.units-capacity': [0, 24, 0, 144],
-      'sd.roll.units-large': [0, 24],
+      'sd.roll.no-year': [0, 29],
+      'sd.roll.stories-max': [0, 29],
+      'sd.roll.units-capacity': [3, 25, 5000 + 5000 + 900, 11_044],
+      'sd.roll.units-large': [0, 26],
       'sd.roll.units-latest-jump': [0, 11],
-      'sd.roll.units-missing': [0, 24],
-      'sd.roll.units-spike': [0, 24, 0, 144],
-      'sd.roll.unmatched': [0, 28, 0, 144],
-      'sd.roll.year-built-range': [1, 26],
-      'sd.roll.year-gap': [0, 24],
+      'sd.roll.units-missing': [0, 25],
+      'sd.roll.units-spike': [0, 25, 0, 155],
+      'sd.roll.unmatched': [0, 29, 0, 11_044],
+      'sd.roll.year-built-range': [1, 27],
+      'sd.roll.year-gap': [1, 26],
       'sd.yield.nonmonotone': [0, 14],
       'sd.yield.zero-hostable': [3, 11],
       'sd.zoning.generic-nc': [1, 8],
@@ -303,7 +370,10 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
   });
 
   it('report totals', () => {
-    expect(counts['scenario.units.total']).toBe(66);
+    // 66 as built plus lot 3's 4 (RA1): FIXTURE_PROFILE.scenarioUnitsRange [70, 70].
+    expect(counts['scenario.units.total']).toBe(70);
+    expect(counts['scenario.roll.years']).toBe(3);
+    expect(counts['scenario.panel.years']).toBe(3);
     expect(counts['scenario.yield.clamped']).toBe(0);
     expect(counts['scenario.height.parse_fail']).toBe(0);
     expect(counts['scenario.panel.feature_mismatch']).toBe(0);

@@ -449,8 +449,8 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     s = await synthetic(
       'q',
       [
-        // Roll year 2023 for three lots (copies of their 2025 rows), and one unmatched row.
-        copyRow('0026T001A', 2025, { year: 2023, units: 2 }),
+        // Roll year 2023 for two more lots (copies of their 2025 rows; mini has lots 3 and 4 in
+        // 2023), and one unmatched row.
         copyRow('3512010', 2025, { year: 2023, units: 5 }),
         copyRow('3512014', 2025, { year: 2023, units: 50 }),
         copyRow('3512001', 2025, { parcel: '9999999', units: 7 }),
@@ -465,9 +465,10 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
         setRow('3512006', [2025], 'number_of_stories = 999'),
         setRow('3512101', [2025], 'number_of_stories = 999'),
         setRow('3512102', [2025], 'number_of_stories = 4'),
-        // sd.roll.units-capacity, each step of the chain.
-        setRow('0026T001A', [2024], 'number_of_units = 900'),
-        setRow('8711023C', [2024, 2025], 'number_of_units = 5000'),
+        // sd.roll.units-capacity, each step of the chain. Mini's own RA1 cases (spec §4.11) give
+        // lot 3 5,000 in 2023 and 2025 and lot 4 3, 900, 3; lot 4's 2023 becomes 2 here, so the
+        // earlier-first tie with 2025 shows in the value.
+        setRow('0026T001A', [2023], 'number_of_units = 2'),
         setRow('3512005', [2024, 2025], 'number_of_units = 1000'),
         setRow('3512008', [2025], 'number_of_units = 120'),
         // Capacity before spike: 5, 5,000, 5 on a 2-story 300 m² lot (capacity 60).
@@ -519,10 +520,10 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     const f = await feature(s, '3512013', 2024);
     expect(f.year_built).toBe(await median(s, 2024, RESIDENTIAL));
     expect(f.imputed & BIT.year).toBe(BIT.year);
-    // Of: the 27 observed parcel-years less lot 7's two vacant ones.
+    // Of: the 27 observed parcel-years and lot 3's carried 2024 row, less lot 7's two vacant ones.
     expect(await tally(s, 'sd.features.year-built-median')).toEqual({
       fired: 1,
-      of: 25,
+      of: 26,
       sample: ['3512013:2024']
     });
   });
@@ -576,9 +577,11 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
   });
 
   it('sd.roll.units-capacity: the LUDB value when no year passes, noncondo_units capped', async () => {
-    // Lot 3: 5,000 in both years, capacity 90; the chunk record's LUDB units 4 pass.
+    // Lot 3: 5,000 in 2023 and 2025, capacity 90; the chunk record's LUDB units 4 pass. Its 2024
+    // row is carried from 2023, bit 3 included.
     const f = await features(s, '8711023C');
     expect(f.map((r) => [r.existing_units, r.noncondo_units, r.imputed & BIT.units])).toEqual([
+      [4, 4, BIT.units],
       [4, 4, BIT.units],
       [4, 4, BIT.units]
     ]);
@@ -618,7 +621,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
         '3512005:2024',
         '3512005:2025',
         '3512010:2024',
-        '8711023C:2024',
+        '8711023C:2023',
         '8711023C:2025'
       ]
     });
@@ -667,10 +670,11 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     expect(p.existingFloorAreaM2[i]).toBe(601);
     expect(p.imputed[i] & BIT.floor).toBe(BIT.floor);
     // Lot 7 (vacant) has no roll floor area in either year. The no-row parcels (lots 9, 12 and
-    // 13, which have no 2025 row) also fire it (spec §4.5 step 5): fired and of each gain 3.
+    // 13, which have no 2025 row) also fire it (spec §4.5 step 5): fired and of each gain 3. Of:
+    // the 28 panel parcel-years (lot 3's carried 2024 row included) plus those 3.
     expect(await tally(s, 'sd.roll.floor-area-missing')).toEqual({
       fired: 6,
-      of: 30,
+      of: 31,
       sample: ['3512007:2024', '3512007:2025', '3512009', '3512011:2025', '3512012', '3512013']
     });
   });
@@ -734,7 +738,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     // Lot 11 (GOVT, other) has land + impr = 0; no other row of class other has a share.
     expect(await tally(s, 'sd.features.share-median')).toEqual({
       fired: 2,
-      of: 25,
+      of: 26,
       sample: ['3512011:2024', '3512011:2025']
     });
     // Of: every median-imputed value (four years, two shares); fired: the two shares.
@@ -757,13 +761,17 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     });
     expect(await tally(s, 'sd.roll.units-large')).toEqual({
       fired: 1,
-      of: 27,
+      of: 28,
       sample: ['3512001:2025']
     });
   });
 
-  it('sd.roll.year-gap reports with no gap, and the latest-year V18 equality holds', async () => {
-    expect(await tally(s, 'sd.roll.year-gap')).toEqual({ fired: 0, of: 27, sample: [] });
+  it('sd.roll.year-gap carries only mini lot 3’s 2024, and the latest-year V18 equality holds', async () => {
+    expect(await tally(s, 'sd.roll.year-gap')).toEqual({
+      fired: 1,
+      of: 28,
+      sample: ['8711023C:2024']
+    });
     expect(s.scenarioCounts['scenario.panel.feature_mismatch']).toBe(0);
   });
 
@@ -903,16 +911,24 @@ describe('sd.roll.year-gap on a synthetic copy of mini', () => {
   });
 
   it('reports the carried parcel-years against all panel parcel-years', async () => {
-    // Panel: mini's 24 observed parcel-years less lot 13's 2024 row, the 7 new rows, 5 carried.
+    // Panel: mini's 25 observed parcel-years less lot 13's 2024 row, the 7 new rows, 6 carried
+    // (the 5 above and mini's own lot 3 2024, spec §4.11).
     expect(await tally(s, 'sd.roll.year-gap')).toEqual({
-      fired: 5,
-      of: 35,
-      sample: ['3512009:2008', '3512009:2010', '3512009:2011', '3512013:2009', '3512013:2012']
+      fired: 6,
+      of: 37,
+      sample: [
+        '3512009:2008',
+        '3512009:2010',
+        '3512009:2011',
+        '3512013:2009',
+        '3512013:2012',
+        '8711023C:2024'
+      ]
     });
     const [{ n }] = await db.all<{ n: number }>(
       `SELECT count(*)::INTEGER n FROM g.scenario_panel WHERE (imputed & ${BIT.carried}) <> 0`
     );
-    expect(n).toBe(5);
+    expect(n).toBe(6);
     expect(s.scenarioCounts['scenario.panel.feature_mismatch']).toBe(0);
   });
 });
@@ -933,6 +949,7 @@ describe('the base cap date on a synthetic 2027 roll row', () => {
        ORDER BY roll_year`
     );
     expect(rows).toEqual([
+      { roll_year: 2023, base_density_cap: pre },
       { roll_year: 2024, base_density_cap: pre },
       { roll_year: 2025, base_density_cap: pre },
       { roll_year: 2027, base_density_cap: pre }

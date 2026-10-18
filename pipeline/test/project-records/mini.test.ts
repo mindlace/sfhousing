@@ -82,7 +82,7 @@ describe('mini project records: the stub roll mirrors the landed fixture roll', 
     const common = {
       '3512001': 2,
       '3512002': 3,
-      '8711023C': 0,
+      '8711023C': 4,
       '0026T001A': 3,
       '3512005': 1,
       '3512006': 2,

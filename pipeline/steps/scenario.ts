@@ -258,16 +258,20 @@ function provenance(capDay: Day, rollYear: number): ScenarioParcels['provenance'
       'Redevelopment features (assessor roll)',
       [SRC.roll, SRC.attrs],
       `Per parcel from the ${rollYear} secured roll (lien date 1 January), roll rows mapped to ` +
-        'current parcels through acdm-wktn (retired lots by centroid); rows without a roll year ' +
-        'or a current parcel are dropped. Data-quality rules (pipeline/lib/quality-rules/sd.ts, ' +
-        'tiers as rule / value, imputed bit in brackets): a year built before 1850 or after the ' +
+        'current parcels through acdm-wktn (retired lots by centroid). Data-quality rules ' +
+        '(pipeline/lib/quality-rules/sd.ts, tiers as rule / value, imputed bit in brackets): ' +
+        'rows without a roll year (4 / —) or a current parcel (2 / —) are dropped; a year built ' +
+        'before 1850 or after the ' +
         'roll year is treated as missing (4 / 2) [bit 0, also set when one of the parcel-year’s ' +
         'rows had its year nulled, even if another row supplies one]; a missing year built or ' +
         'improvement share takes the median of the same land-use class and roll year over ' +
         'observed rows (2 / 2) [bits 0, 2], falling back to the year-wide median, then 0, when ' +
         'the class has none (4 / 4); roll stories above 80 are missing (4 / 2) and missing ' +
         'stories come from the building height (2 / 3) [bit 1]; the units rules of the existing ' +
-        'homes [bit 3]; a roll year missing between two observed years copies the latest ' +
+        'homes (see existingUnits) [bit 3]: units missing on every row of a parcel-year are 0 ' +
+        '(4 / 4), units beyond the lot’s capacity are replaced (4 / 2), and a bracketed ' +
+        'implausible run is replaced (4 / 2); a roll year missing between two observed years ' +
+        'copies the latest ' +
         'earlier year (2 / 2) [bit 5]; a parcel-year without a roll floor area takes the map ' +
         'parcel record’s, rounded to whole m² (2 / 3) [bit 6]. A parcel without a latest-year ' +
         'roll row takes the no-row defaults (4 / 4) [bits 0–4 and 6, imputed 95]: 0 homes, ' +

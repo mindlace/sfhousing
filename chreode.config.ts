@@ -6,6 +6,10 @@ export default defineConfig({
     { match: ['docs/superpowers/**', '.superpowers/**'], triggers: [] },
     // Markdown is prettier-managed; eslint ignores it.
     // docs-index.spec.ts (in test:unit) asserts every docs/dev/*.md is linked from CLAUDE.md.
+    // pipeline/test/quality.test.ts (in test:pipeline) asserts pipeline.md's generated Data
+    // quality section equals qualityDocSection(). Before the docs/dev/** rule: the first matching
+    // rule wins.
+    { match: ['docs/dev/pipeline.md'], triggers: ['format', 'unit', 'pipeline'] },
     { match: ['CLAUDE.md', 'docs/dev/**'], triggers: ['format', 'unit'] },
     { match: ['**/*.md'], triggers: ['format'] },
     // The scenario step and the dataset-version code hash read these, so a change here also runs

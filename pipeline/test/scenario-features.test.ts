@@ -152,10 +152,10 @@ describe('scenario T13 panel and T11 features (mini fixture)', () => {
     expect(counts['scenario.roll.latest_eligible_matched']).toBe(10);
   });
 
-  it('the panel has roll years 2024 and 2025 and every T13 column', async () => {
+  it('the panel has roll years 2023 to 2025 and every T13 column', async () => {
     const rows = await panel();
-    expect([...new Set(rows.map((r) => r.roll_year))]).toEqual([2024, 2025]);
-    expect(counts['scenario.panel.years']).toBe(2);
+    expect([...new Set(rows.map((r) => r.roll_year))]).toEqual([2023, 2024, 2025]);
+    expect(counts['scenario.panel.years']).toBe(3);
     const cols = await db.all<{ column_name: string; column_type: string }>(
       `DESCRIBE SELECT * FROM read_parquet('${join(derived, 'parcel-panel.parquet')}')`
     );

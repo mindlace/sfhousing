@@ -263,6 +263,9 @@ export const SD_RULES: readonly QualityRule[] = [
     ...MISSING_SHARES,
     unitsWeighted: false
   },
+  // Its `of` is panel parcel-years plus the T11 no-row parcels, and `fired` includes those
+  // parcels: they take the same chunk-record floor area (controller ruling, F1 Task 3 review;
+  // spec §4.5 step 5). The SQL tally row is topped up in writeScenario before it is reported.
   {
     ...SD,
     id: 'sd.roll.floor-area-missing',
@@ -275,7 +278,8 @@ export const SD_RULES: readonly QualityRule[] = [
     maskBit: 6,
     label:
       'A parcel-year with no assessor floor area takes the floor area of the map parcel record ' +
-      '(land-use data, else the building footprints), rounded to whole m²',
+      '(land-use data, else the building footprints), rounded to whole m²; counted over panel ' +
+      'parcel-years plus the parcels with no latest-year roll row, which take it too',
     denominator: 'parcel-years',
     ...MISSING_SHARES,
     unitsWeighted: false

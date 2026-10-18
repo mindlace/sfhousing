@@ -558,7 +558,7 @@ describe('V30 data-quality registry', () => {
     const md = readFileSync(join(derived, 'fixture-0', QUALITY_REPORT_MD), 'utf8');
     expect(md).toMatch(/^# Data quality report: fixture-0\n/);
     // The scenario-data SQL rules recorded into the build's counts (none "not reported").
-    expect(md).toMatch(/\| `sd\.roll\.units-capacity` \|.*\| 0 \/ 24 \|/);
+    expect(md).toMatch(/\| `sd\.roll\.units-capacity` \|.*\| 3 \/ 25 \|/);
     expect(md).not.toContain('| not reported |');
   });
   it('fails when a registered rule does not report', () => {
