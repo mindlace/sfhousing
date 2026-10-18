@@ -1,9 +1,13 @@
 // Wire format "sfh-scenario/1" (scenario-data spec §4.8): `scenarios/fzp/parcels.bin`. Pure TS,
-// no dependencies: the pipeline writes it and the timelapse worker reads it. The declarations
-// below the imports are step 0 and fixed; only the function bodies are step 1.
+// worker-safe: its one value import is the generator's constants-only module. The pipeline writes
+// it and the timelapse worker reads it. The declarations below the imports are step 0 and fixed,
+// except what spec §2 authorises (RA1, IA-8): `existingFloorAreaM2`, `scenarioRecordFrom`,
+// `scenarioRecordOf` and the mask comment.
 import type { FeatureId, Provenance } from '../timelapse/types';
-import type { ParcelId } from './parcel';
+import type { ParcelId, ParcelRecord } from './parcel';
 import type { Envelope } from '../plan/types';
+// 3.1 m, the generator's floor-to-floor height (tier 3); constants only, so no generator code.
+import { FTF_M } from '../generator/constants';
 
 export const SCENARIO_FORMAT = 'sfh-scenario/1';
 /** T4b fill levels; F = FILL_LEVELS.length = 5. stage-calibration imports this constant. */
@@ -45,9 +49,15 @@ export interface ScenarioParcels {
   localProgram: Uint8Array; // 0/1
   hostable: Uint8Array; // 0/1: may receive a simulated project
   split: Uint8Array; // 0/1: largest district overlap < 90% of parcel area
-  imputed: Uint8Array; // bit 0 yearBuilt, 1 existingStories, 2 improvementShare, 3 existingUnits replaced (implausible roll value), 4 no roll row
+  // T11/T13 mask (RA1 mask convention): a bit is set exactly when that field's value is not the
+  // source's own value (imputed, replaced by a T14 rule, or carried). bit 0 yearBuilt,
+  // 1 existingStories, 2 improvementShare, 3 existingUnits, 4 no roll row (implies bits 0-3 and 6),
+  // 5 row carried from the previous roll year (interior gap), 6 existingFloorAreaM2 (chunk-record
+  // fallback), 7 reserved (always 0).
+  imputed: Uint8Array;
   baseCap: Uint16Array; // T11 base-zoning density cap in units; 0xFFFF = null (no cap)
-  existingUnits: Uint16Array;
+  existingUnits: Uint16Array; // latest roll, post-T14
+  existingFloorAreaM2: Uint32Array; // whole m²: the value the yields used (RA1, IA-8)
   existingStories: Uint8Array;
   lotAreaM2: Uint32Array;
   yearBuilt: Uint16Array;
@@ -92,6 +102,7 @@ const COLUMNS: { name: string; type: ColType; per: 1 | 'F' | 'id' }[] = [
   { name: 'flags', type: 'u8', per: 1 },
   { name: 'imputed', type: 'u8', per: 1 },
   { name: 'existingUnits', type: 'u16', per: 1 },
+  { name: 'existingFloorAreaM2', type: 'u32', per: 1 },
   { name: 'existingStories', type: 'u8', per: 1 },
   { name: 'lotAreaM2', type: 'u32', per: 1 },
   { name: 'yearBuilt', type: 'u16', per: 1 },
@@ -109,6 +120,9 @@ const FLAG_BITS = [
   'split',
   'hostableBase'
 ] as const;
+/** Reserved bits, spec §4.8: `flags` bits 5-7 and `imputed` bit 7 must be 0. */
+const FLAGS_RESERVED = 0xff & ~((1 << FLAG_BITS.length) - 1);
+const IMPUTED_RESERVED = 0x80;
 const PROVENANCE_KEYS = ['envelope', 'localProgram', 'features', 'existingUnits', 'yield'] as const;
 const HEADER_KEYS = [
   'format',
@@ -135,6 +149,10 @@ function fail(message: string): never {
 function inRange(a: ArrayLike<number>, name: string, size: number): void {
   for (let i = 0; i < a.length; i++)
     if (a[i] >= size) fail(`${name}[${i}] = ${a[i]} is past its dictionary (${size})`);
+}
+function noReserved(a: ArrayLike<number>, name: string, reserved: number): void {
+  for (let i = 0; i < a.length; i++)
+    if (a[i] & reserved) fail(`${name}[${i}] = ${a[i]} sets reserved bits`);
 }
 
 function checkFillLevels(f: unknown): number[] {
@@ -183,6 +201,8 @@ export function encodeScenarioPayload(p: ScenarioParcels): Uint8Array {
   inRange(p.cell, 'cell', p.cells.length);
   inRange(p.district, 'district', p.districts.length);
   inRange(p.landUseClass, 'landUseClass', LAND_USE_CLASSES.length);
+  // The decoder rejects a set reserved bit, so the encoder never writes one.
+  noReserved(p.imputed, 'imputed', IMPUTED_RESERVED);
   // Columns derived below (flags, improvementShare) must match N too.
   for (const k of ['improvementShare', ...FLAG_BITS] as const)
     if (p[k].length !== n) fail(`${k} has ${p[k].length} values, want ${n}`);
@@ -238,6 +258,7 @@ export function encodeScenarioPayload(p: ScenarioParcels): Uint8Array {
     flags,
     imputed: p.imputed,
     existingUnits: p.existingUnits,
+    existingFloorAreaM2: p.existingFloorAreaM2,
     existingStories: p.existingStories,
     lotAreaM2: p.lotAreaM2,
     yearBuilt: p.yearBuilt,
@@ -435,6 +456,9 @@ export function decodeScenarioPayload(bytes: Uint8Array): ScenarioParcels {
   inRange(landUseClass, 'landUseClass', LAND_USE_CLASSES.length);
 
   const flags = read(Uint8Array, 'flags');
+  noReserved(flags, 'flags', FLAGS_RESERVED);
+  const imputed = read(Uint8Array, 'imputed');
+  noReserved(imputed, 'imputed', IMPUTED_RESERVED);
   const flag = (b: number) => flags.map((v) => (v >> b) & 1);
   const shareRaw = read(Uint8Array, 'improvementShare');
   const improvementShare = new Float32Array(n);
@@ -477,9 +501,10 @@ export function decodeScenarioPayload(bytes: Uint8Array): ScenarioParcels {
     localProgram: flag(0),
     hostable: flag(2),
     split: flag(3),
-    imputed: read(Uint8Array, 'imputed'),
+    imputed,
     baseCap: read(Uint16Array, 'baseCap'),
     existingUnits,
+    existingFloorAreaM2: read(Uint32Array, 'existingFloorAreaM2'),
     existingStories,
     lotAreaM2: read(Uint32Array, 'lotAreaM2'),
     yearBuilt: read(Uint16Array, 'yearBuilt'),
@@ -560,6 +585,31 @@ export function featureValue(
 export function envelopeOf(p: ScenarioParcels, i: number): Envelope {
   return { maxStories: p.envelopeStories[i] };
 } // { maxStories: envelopeStories[i] }
+
+/** The scenario view of a chunk record (§4.5): units, floor area and height replaced. Pure. */
+export function scenarioRecordFrom(
+  rec: ParcelRecord,
+  v: { existingUnits: number; existingFloorAreaM2: number; existingStories: number }
+): ParcelRecord {
+  return {
+    ...rec,
+    existingUnits: v.existingUnits,
+    existingFloorAreaM2: v.existingFloorAreaM2,
+    existingHeightM: v.existingStories * FTF_M
+  };
+} // { ...rec, existingUnits, existingFloorAreaM2, existingHeightM: existingStories × FTF_M }
+
+/** T11: scenarioRecordFrom(rec, row i of p). Worker-safe. Throws RangeError if p.id[i] !== rec.id. */
+export function scenarioRecordOf(p: ScenarioParcels, i: number, rec: ParcelRecord): ParcelRecord {
+  if (p.id[i] !== rec.id) {
+    throw new RangeError(`scenarioRecordOf: row ${i} is ${String(p.id[i])}, not ${rec.id}`);
+  }
+  return scenarioRecordFrom(rec, {
+    existingUnits: p.existingUnits[i],
+    existingFloorAreaM2: p.existingFloorAreaM2[i],
+    existingStories: p.existingStories[i]
+  });
+}
 
 export class ScenarioFormatError extends Error {
   name = 'ScenarioFormatError';

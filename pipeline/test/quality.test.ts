@@ -130,9 +130,16 @@ describe('kind defaults', () => {
       'sd.test.fail-high'
     ]);
   });
-  it('every registered sd.* rule takes its kind default (spec §4.12 tables)', () => {
+  it('every registered sd.* rule takes its kind default but the four approved overrides', () => {
+    // Partner DQ-4 share overrides, 2026-10-17 (design RA1 "Share overrides approved"); each
+    // states its reason at its entry in quality-rules/sd.ts.
     expect(kindDefaultDepartures(QUALITY_RULES.filter((r) => r.owner === 'scenario-data'))).toEqual(
-      []
+      [
+        'sd.roll.floor-area-missing',
+        'sd.roll.units-capacity',
+        'sd.yield.zero-hostable',
+        'sd.zoning.generic-nc'
+      ]
     );
   });
 });
@@ -185,6 +192,16 @@ describe('recordQuality', () => {
       /non-negative integer/
     ],
     ['NaN', 'sd.test.bound', { fired: NaN, of: 1 }, /non-negative integer/],
+    // Runtime callers (recordSqlQuality, JS) can omit a required count despite the type.
+    ['a missing fired', 'sd.test.bound', { of: 1 } as never, /fired must be/],
+    ['a missing of', 'sd.test.bound', { fired: 0 } as never, /of must be/],
+    ['an undefined fired', 'sd.test.bound', { fired: undefined, of: 1 } as never, /fired must be/],
+    [
+      'a null of on a weighted rule',
+      'sd.test.weighted',
+      { fired: 0, of: null, units: 0, unitsOf: 0 } as never,
+      /of must be/
+    ],
     ['fired > of', 'sd.test.bound', { fired: 2, of: 1 }, /fired 2 > of 1/],
     [
       'units > unitsOf',
@@ -309,8 +326,13 @@ describe('checkQuality', () => {
       warnings: []
     });
   });
-  it('the public checkQuality passes on the real registry with no quality keys', () => {
-    expect(checkQuality({ other: 1 }, { shares: true }).ok).toBe(true);
+  it('the public checkQuality uses the real registry: every rule must report', () => {
+    const c = checkQuality({ other: 1 }, { shares: true });
+    expect(c.ok).toBe(false);
+    expect(c.failures).toHaveLength(QUALITY_RULES.length);
+    expect(c.failures).toContain(
+      'sd.roll.units-capacity: not reported (no .fired, .of, .units, .unitsOf)'
+    );
   });
   it('fails on a missing count', () => {
     for (const k of ['fired', 'of', 'units', 'unitsOf']) {
@@ -438,10 +460,12 @@ describe('writeQualityReport', () => {
     expect(rows[1]).toMatch(/\| 0 \/ 12 \| — \| 0\.00% \|/);
     expect(rows[2]).toMatch(/\| 30 \/ 1000 \| 50 \/ 9000 \| 3\.00% rows, 0\.56% units \|/);
   });
-  it('the public writeQualityReport writes the empty registry', () => {
+  it('the public writeQualityReport lists every registered rule', () => {
     const file = join(dir, 'e', 'quality-report.md');
     writeQualityReport(file, 'fixture-0', {});
-    expect(readFileSync(file, 'utf8')).toMatch(/No rules are registered/);
+    const md = readFileSync(file, 'utf8');
+    for (const r of QUALITY_RULES) expect(md).toContain(`| \`${r.id}\` |`);
+    expect(md).toMatch(/`sd\.roll\.units-capacity` \|.*\| not reported \|/);
   });
 });
 

@@ -14,6 +14,7 @@ interface Row {
   imputed: number;
   baseCap: number;
   existingUnits: number;
+  existingFloorAreaM2: number;
   existingStories: number;
   lotAreaM2: number;
   yearBuilt: number;
@@ -41,6 +42,7 @@ const ROWS: Row[] = [
     imputed: 0,
     baseCap: 12,
     existingUnits: 2,
+    existingFloorAreaM2: 186,
     existingStories: 2,
     lotAreaM2: 450,
     yearBuilt: 1925,
@@ -51,7 +53,7 @@ const ROWS: Row[] = [
     baseYield: [0, 3, 4, 4, 4],
     yield: [0, 4, 8, 8, 10]
   },
-  // No roll row: every imputed bit set (0, 1, 2, 4); no density cap.
+  // No roll row: imputed 95 (bits 0-4 and 6, the RA1 no-row mask); no density cap.
   {
     id: '3512001',
     cell: 0,
@@ -62,9 +64,10 @@ const ROWS: Row[] = [
     localProgram: 0,
     hostable: 1,
     split: 1,
-    imputed: 0b10111,
+    imputed: 0b1011111,
     baseCap: 0xffff,
     existingUnits: 0,
+    existingFloorAreaM2: 0,
     existingStories: 0,
     lotAreaM2: 230,
     yearBuilt: 0,
@@ -89,6 +92,7 @@ const ROWS: Row[] = [
     imputed: 0b00100,
     baseCap: 3,
     existingUnits: 0,
+    existingFloorAreaM2: 0,
     existingStories: 0,
     lotAreaM2: 210,
     yearBuilt: 0,
@@ -99,7 +103,8 @@ const ROWS: Row[] = [
     baseYield: [1, 2, 3, 3, 3],
     yield: [1, 2, 3, 3, 3]
   },
-  // First row of the second cell: front-coded against 3512002 across the cell boundary.
+  // First row of the second cell: front-coded against 3512002 across the cell boundary. Its floor
+  // area is the u32 ceiling, 2^32 - 1.
   {
     id: '3512008',
     cell: 1,
@@ -113,6 +118,7 @@ const ROWS: Row[] = [
     imputed: 0,
     baseCap: 2,
     existingUnits: 6,
+    existingFloorAreaM2: 0xffffffff,
     existingStories: 3,
     lotAreaM2: 280,
     yearBuilt: 1962,
@@ -137,6 +143,7 @@ const ROWS: Row[] = [
     imputed: 0b00010,
     baseCap: 0xffff,
     existingUnits: 1,
+    existingFloorAreaM2: 1250,
     existingStories: 1,
     lotAreaM2: 1800,
     yearBuilt: 1950,
@@ -161,6 +168,7 @@ const ROWS: Row[] = [
     imputed: 0,
     baseCap: 0xffff,
     existingUnits: 0,
+    existingFloorAreaM2: 77,
     existingStories: 0,
     lotAreaM2: 95,
     yearBuilt: 1990,
@@ -233,6 +241,7 @@ export function scenarioTiny(): ScenarioParcels {
     imputed: col(Uint8Array, (r) => r.imputed),
     baseCap: col(Uint16Array, (r) => r.baseCap),
     existingUnits: col(Uint16Array, (r) => r.existingUnits),
+    existingFloorAreaM2: col(Uint32Array, (r) => r.existingFloorAreaM2),
     existingStories: col(Uint8Array, (r) => r.existingStories),
     lotAreaM2: col(Uint32Array, (r) => r.lotAreaM2),
     yearBuilt: col(Uint16Array, (r) => r.yearBuilt),

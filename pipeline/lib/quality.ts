@@ -183,7 +183,10 @@ export function makeQuality(input: readonly QualityRule[]) {
   function recordQuality(counts: Counts, id: string, c: CountInput): void {
     const r = qualityRule(id);
     for (const k of COUNT_KEYS) {
-      if (c[k] !== undefined && !isCount(c[k]))
+      // fired and of are required even from a caller that bypasses the type (recordSqlQuality,
+      // plain JS); units and unitsOf are checked against the rule below.
+      const required = k === 'fired' || k === 'of';
+      if ((required || c[k] !== undefined) && !isCount(c[k]))
         throw new Error(`${id}: ${k} must be a non-negative integer, got ${c[k]}`);
     }
     const hasUnits = c.units !== undefined || c.unitsOf !== undefined;

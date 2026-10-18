@@ -525,6 +525,9 @@ const ROLL = fileURLToPath(new URL('./raw/datasf-assessor-roll.page-000.csv', im
  * scenario-data's `sc_roll_agg` does (pipeline/sql/80_scenario.sql): each row's `parcel_number`
  * maps through lineage (condo sub-lots and retired lots to their current parcel), then
  * `number_of_units` is summed per (parcel, year). A (parcel, year) with no roll row is absent.
+ * The panel's `existing_units` then applies scenario-data's units rules (scenario-data spec §4.11
+ * and §4.12, RA1), which on mini touch lots 3 and 4 only; `RA1_PANEL_UNITS` gives those values.
+ * pipeline/test/golden.test.ts checks this stub against the built panel for every parcel-year.
  */
 function rollUnits(): Map<string, number> {
   const lines = readFileSync(ROLL, 'utf8').trim().split('\n');
@@ -544,12 +547,25 @@ function rollUnits(): Map<string, number> {
     const key = `${id}|${Number(f[yearCol])}`;
     sums.set(key, (sums.get(key) ?? 0) + (f[unitsCol] === '' ? 0 : Number(f[unitsCol])));
   }
+  for (const [key, units] of Object.entries(RA1_PANEL_UNITS)) sums.set(key, units);
   return sums;
 }
 
 /**
+ * The panel's post-rule units where they differ from the roll sum (scenario-data spec §4.11):
+ * lot 3's 5,000 in 2023 and 2025 become its LUDB 4 (sd.roll.units-capacity), and its missing 2024
+ * is carried from 2023 (sd.roll.year-gap); lot 4's 900 in 2024 becomes 2023's 3.
+ */
+const RA1_PANEL_UNITS: Record<string, number> = {
+  '8711023C|2023': 4,
+  '8711023C|2024': 4,
+  '8711023C|2025': 4,
+  '0026T001A|2024': 3
+};
+
+/**
  * The deriveProjects input for the mini records, with stub callbacks mirroring scenario-data's
- * fixture: lineage above; assessor units summed from the landed fixture roll (2024 and 2025);
+ * fixture: lineage above; assessor units as the panel has them (2023 to 2025, see rollUnits);
  * no base stories; every parcel 300 m2; fixture `hiNet`; the mini `multiphase.json`.
  */
 export function miniProjectInput(): ProjectRecordsInput {

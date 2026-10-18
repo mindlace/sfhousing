@@ -3,10 +3,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/0d65e6b6d99674eec0557f35bb8af90ba45c4308fc6291268ea984e393148b80.csv",
-          "bytes": 2496,
+          "archiveKey": "sources/afa7c86f32846d1f7861b3b2e5b7f51af49c04e32ee55d58a808f5dd064120ca.csv",
+          "bytes": 2589,
           "name": "datasf-assessor-roll.page-000.csv",
-          "sha256": "0d65e6b6d99674eec0557f35bb8af90ba45c4308fc6291268ea984e393148b80",
+          "sha256": "afa7c86f32846d1f7861b3b2e5b7f51af49c04e32ee55d58a808f5dd064120ca",
           "url": "https://fixture.invalid/datasf-assessor-roll.page-000.csv"
         }
       ],
@@ -15,7 +15,7 @@
       "label": "DataSF Assessor Historical Secured Property Tax Rolls",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 28,
+      "rowCount": 29,
       "upstreamVersion": "fixture"
     },
     {

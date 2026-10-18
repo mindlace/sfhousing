@@ -244,7 +244,7 @@ const parcelAttrs = parcelRows.map((r) => {
   ];
 });
 
-// ---- assessor secured roll (wv5m-vpq2 CSV, roll years 2025 and 2024) ----
+// ---- assessor secured roll (wv5m-vpq2 CSV, roll years 2025, 2024 and 2023) ----
 const ROLL_HEADER = [
   'closed_roll_year',
   'parcel_number',
@@ -258,7 +258,10 @@ const ROLL_HEADER = [
   'assessed_improvement_value',
   'status_code'
 ];
-/** One roll row per year in `years`; `built` is SODA text (null = empty), `builtIn` overrides it. */
+/**
+ * One roll row per year in `years`; `built` is SODA text (null = empty), `builtIn` overrides it,
+ * and `unitsIn` overrides `units` for one year.
+ */
 interface RollSpec {
   p: string;
   use: string;
@@ -272,7 +275,10 @@ interface RollSpec {
   years: number[];
   status: string;
   builtIn: Record<number, string>;
+  unitsIn: Record<number, number>;
 }
+/** Roll years in file order. 2023 has rows for lots 3 and 4 only (spec §4.11, RA1 cases). */
+const ROLL_YEARS = [2025, 2024, 2023];
 const BOTH = [2025, 2024];
 function rr(
   p: string,
@@ -280,20 +286,25 @@ function rr(
   built: string | null,
   [stories, units, area]: [number, number, number],
   [land, impr]: [number, number],
-  opts: Partial<Pick<RollSpec, 'years' | 'status' | 'builtIn'>> = {}
+  opts: Partial<Pick<RollSpec, 'years' | 'status' | 'builtIn' | 'unitsIn'>> = {}
 ): RollSpec {
   const [use, cls] = useCls.split('/');
-  const { years = BOTH, status = 'NA', builtIn = {} } = opts;
-  return { p, use, cls, built, stories, units, area, land, impr, years, status, builtIn };
+  const { years = BOTH, status = 'NA', builtIn = {}, unitsIn = {} } = opts;
+  return { p, use, cls, built, stories, units, area, land, impr, years, status, builtIn, unitsIn };
 }
-// Scenario-data plan Task 6 table (spec §4.11; lot 2 built 1975, ruled).
+// Scenario-data plan Task 6 table (spec §4.11; lot 2 built 1975, ruled). Lots 3 and 4 carry the
+// RA1 units cases: lot 3 has 5,000 units in 2023 and 2025 (no 2024 row) on a 300 m², 3-story lot
+// (capacity 90), so no year is plausible; lot 4 has 3, 900, 3 in 2023-2025.
 const ROLL: RollSpec[] = [
   rr('3512001', 'SRES/F', '1912', [2, 2, 2000], [400000, 300000]),
   rr('3512101', 'SRES/Z', '1975', [3, 1, 800], [200000, 300000]),
   rr('3512102', 'SRES/Z', '1975', [3, 1, 800], [200000, 300000]),
   rr('3512103', 'SRES/Z', '1975', [3, 1, 800], [200000, 300000]),
-  rr('8711023C', 'COMH/H1', '1920', [3, 0, 3000], [500000, 500000]),
-  rr('0026T001A', 'MRES/A', '1925', [3, 3, 3000], [300000, 600000]),
+  rr('8711023C', 'COMH/H1', '1920', [3, 5000, 3000], [500000, 500000], { years: [2025, 2023] }),
+  rr('0026T001A', 'MRES/A', '1925', [3, 3, 3000], [300000, 600000], {
+    years: ROLL_YEARS,
+    unitsIn: { 2024: 900 }
+  }),
   rr('3512005', 'SRES/D', '1950', [1, 1, 1000], [300000, 100000], { builtIn: { 2024: '0' } }),
   rr('3512006', 'MRES/F', '1940', [2, 2, 2200], [350000, 250000]),
   rr('3512007', 'MISC/V', null, [0, 0, 0], [100000, 0]),
@@ -304,7 +315,7 @@ const ROLL: RollSpec[] = [
   rr('3512014', 'MRES/A', '2015', [6, 40, 30000], [3000000, 9000000]),
   rr('3512099', 'MRES/A', '1910', [2, 7, 5600], [300000, 200000], { years: [2024] })
 ];
-const roll = BOTH.flatMap((year) =>
+const roll = ROLL_YEARS.flatMap((year) =>
   ROLL.filter((r) => r.years.includes(year)).map((r) => [
     String(year),
     r.p,
@@ -312,7 +323,7 @@ const roll = BOTH.flatMap((year) =>
     r.cls,
     r.builtIn[year] ?? r.built,
     n1(r.stories),
-    n1(r.units),
+    n1(r.unitsIn[year] ?? r.units),
     n1(r.area),
     n1(r.land),
     n1(r.impr),

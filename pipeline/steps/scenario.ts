@@ -13,6 +13,8 @@ import {
   decodeScenarioPayload,
   encodeScenarioPayload,
   fillStories,
+  scenarioRecordFrom,
+  scenarioRecordOf,
   type ScenarioParcels
 } from '../../src/lib/data/scenario-codec';
 import { capScenarioYield, scenarioYield } from '../../src/lib/data/scenario-yield';
@@ -29,6 +31,7 @@ import {
 import { createTableFromRows, type CellValue, type Duck } from '../lib/duck';
 import type { HeightDistrict } from '../lib/heights';
 import { localProgramEnvelope } from '../lib/local-program';
+import { recordQuality, recordSqlQuality } from '../lib/quality';
 import type { Report } from '../lib/report';
 import { PARCELS_BIN } from '../lib/scenario-files';
 import { runScenarioSql } from './scenario-sql';
@@ -42,8 +45,13 @@ const F = FILL_LEVELS.length;
 const U16_MAX = 0xffff;
 /** T11 `baseCap` sentinel for "no cap" (spec §2 internal types). */
 const NULL_CAP = 0xffff;
-/** Storey height for existingHeightM = existingStories × 3.1 (SQL_VARS.floors_m, tier 3). */
+/**
+ * Storey height of the no-roll stories fallback, round(height / 3.1) (SQL_VARS.floors_m, the
+ * codec's FTF_M, tier 3).
+ */
 const FLOORS_M = SQL_VARS.floors_m;
+/** u32 column ceiling (codec width, spec §4.8) for the whole-m² floor area. */
+const U32_MAX = 0xffffffff;
 /** Rent Ordinance year: pre-1979 buildings (spec §4.4, tier 2, I). */
 const RENT_CONTROL_BEFORE = 1979;
 /**
@@ -52,10 +60,21 @@ const RENT_CONTROL_BEFORE = 1979;
  */
 const RENT_CONTROL_MIN_UNITS = 3;
 /**
- * Main ruling 4c: warn (report to main) when split or generic-NC parcels exceed 10% of hostable
- * ones. A reporting threshold set by main, not a simulation parameter.
+ * T11 `imputed` of a parcel with no latest-year roll row (sd.roll.no-row, RA1 mask convention):
+ * bit 4 implies bits 0–3 (every feature imputed), and sd.roll.floor-area-missing sets bit 6
+ * because the floor area always comes from the chunk record (spec §4.5 step 5): 0b1011111.
  */
-const UNVERIFIED_SHARE_WARN = 0.1;
+const NO_ROW_MASK = 95;
+/** RA1 mask bits counted in scenario.imputed.* on T11 rows (spec §4.5 "Mask bits"). */
+const MASK_COUNTS: [bit: number, key: string][] = [
+  [0, 'year_built'],
+  [1, 'existing_stories'],
+  [2, 'improvement_share'],
+  [3, 'existing_units'],
+  [4, 'no_roll'],
+  [5, 'carried'],
+  [6, 'floor_area']
+];
 const OTHER = LAND_USE_CLASSES.indexOf('other');
 const FIXTURE_RE = /^fixture-\d+$/;
 
@@ -72,42 +91,28 @@ const SRC = {
 };
 const CAP_RULES =
   'Base-zoning density caps from the Planning Code (tier 1, pipeline/lib/density-caps.ts); a ' +
-  'split zoning code takes its most permissive component and generic NCD/NCT codes have no ' +
-  'cap (both tier 4, made up); districts not verified against the official Code default to no ' +
-  `cap (${UNVERIFIED_DISTRICTS.join(', ')}).`;
+  'split zoning code takes its most permissive component (sd.zoning.split-code) and generic ' +
+  'NCD/NCT codes have no cap (sd.zoning.generic-nc), both tier 4, made up; districts not ' +
+  `verified against the official Code default to no cap (${UNVERIFIED_DISTRICTS.join(', ')}).`;
 
-/** One sc_features row: the inputs of `scenarioRecord`. */
+/** One sc_features row: the inputs of the codec's `scenarioRecordFrom` and the base cap. */
 interface FeatureRow {
   mapblklot: string;
   existing_units: number;
+  /** INTEGER, whole m² (81_scenario_features.sql): the value T11 ships. */
   existing_floor_area_m2: number;
   existing_stories: number;
   base_stories: number;
   base_density_cap: number | null;
 }
 
-/**
- * Spec §4.5 "one scenario view of a parcel": the chunk record with units, floor area and height
- * from the roll features (existingHeightM = existingStories × 3.1).
- */
-function scenarioRecord(
-  rec: ParcelRecord,
-  f: { existingUnits: number; existingFloorAreaM2: number; existingStories: number }
-): ParcelRecord {
-  return {
-    ...rec,
-    existingUnits: f.existingUnits,
-    existingFloorAreaM2: f.existingFloorAreaM2,
-    existingHeightM: f.existingStories * FLOORS_M
-  };
-}
-
 const sqlStr = (s: string) => `'${s.replaceAll("'", "''")}'`;
 
 /**
- * Panel base yields (spec §4.7): `scenarioYield(scenarioRecord(rec, row), base_stories,
- * base_density_cap)` for every sc_features row, memoised on the inputs, streamed one roll year
- * at a time. Writes sc_base_yield (one row per distinct input) and returns its size.
+ * Panel base yields (spec §4.7): `scenarioYield(scenarioRecordFrom(rec, that year's values),
+ * base_stories, base_density_cap)` for every sc_features row, memoised on the inputs (the floor
+ * area is the integer m² value), streamed one roll year at a time. Writes sc_base_yield (one row
+ * per distinct input) and returns its size.
  */
 async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Promise<number> {
   const years = await db.all<{ y: number }>(
@@ -121,7 +126,7 @@ async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Pr
        FROM sc_features WHERE roll_year = ${y} ORDER BY mapblklot`
     );
     for (const r of rows) {
-      // String(double) is the shortest round-trip form, so equal keys mean equal inputs.
+      // Every input is an integer (or null), so equal keys mean equal inputs.
       const key = [
         r.mapblklot,
         r.existing_units,
@@ -133,7 +138,7 @@ async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Pr
       if (memo.has(key)) continue;
       const rec = recById.get(r.mapblklot);
       if (!rec) throw new Error(`scenario: panel parcel ${r.mapblklot} has no chunk record`);
-      const view = scenarioRecord(rec, {
+      const view = scenarioRecordFrom(rec, {
         existingUnits: r.existing_units,
         existingFloorAreaM2: r.existing_floor_area_m2,
         existingStories: r.existing_stories
@@ -155,7 +160,7 @@ async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Pr
     [
       ['mapblklot', 'VARCHAR'],
       ['existing_units', 'INTEGER'],
-      ['existing_floor_area_m2', 'DOUBLE'],
+      ['existing_floor_area_m2', 'INTEGER'],
       ['existing_stories', 'INTEGER'],
       ['base_stories', 'INTEGER'],
       ['base_density_cap', 'INTEGER'],
@@ -167,16 +172,17 @@ async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Pr
 }
 
 /**
- * T13 panel, spec §4.6: exactly T13's columns plus the listed additions, sorted by (mapblklot,
- * roll_year). potential_ratio_base is FLOAT, rounded as T11's Float32 `potentialRatio.base`.
+ * T13 panel, spec §4.6: exactly the T13 row's contract columns, in its order, sorted by
+ * (mapblklot, roll_year). potential_ratio_base is FLOAT, rounded as T11's Float32
+ * `potentialRatio.base`.
  */
 const PANEL_SQL = `
 CREATE OR REPLACE TABLE scenario_panel AS
-SELECT f.mapblklot, f.roll_year,
+SELECT f.mapblklot, f.roll_year, f.lien_day,
        f.existing_units, f.existing_stories, f.year_built, f.land_value, f.improvement_value,
        f.use_code, f.land_use_class::INTEGER AS land_use_class, f.zoning_code,
        f.base_stories, f.base_density_cap, y.base_yield,
-       f.lien_day, f.lot_area_m2, f.improvement_share, f.rent_control_likely, f.imputed,
+       f.lot_area_m2, f.improvement_share, f.rent_control_likely, f.imputed,
        (y.base_yield / greatest(f.existing_units, 1))::FLOAT AS potential_ratio_base,
        (f.base_stories - f.existing_stories)::INTEGER AS stories_gap_base,
        (f.eligible AND f.base_stories >= 1 AND y.base_yield > 0) AS hostable_base
@@ -254,24 +260,39 @@ function provenance(capDay: Day, rollYear: number): ScenarioParcels['provenance'
       'Redevelopment features (assessor roll)',
       [SRC.roll, SRC.attrs],
       `Per parcel from the ${rollYear} secured roll (lien date 1 January), roll rows mapped to ` +
-        'current parcels through acdm-wktn (retired lots by centroid). Imputations are tier 2: ' +
-        'missing year built and improvement share take the median of the same land-use class ' +
-        'and roll year (a year-wide median, then 0, when the class has none: tier 4); missing ' +
-        'stories come from the building height. Sanity rules (tier 4, made up): roll stories ' +
-        'above 80 are missing; a bracketed run of implausible units (≥ 100 and over 10× its ' +
-        'neighbouring years) takes the previous year’s units (imputed bit 3). Parcels without ' +
-        'a latest-year roll row take ' +
-        'the "other" class medians. Assessed values reflect the Prop 13 acquisition basis, not ' +
-        `market value. ${CAP_RULES}`
+        'current parcels through acdm-wktn (retired lots by centroid). Data-quality rules ' +
+        '(pipeline/lib/quality-rules/sd.ts, tiers as rule / value, imputed bit in brackets): ' +
+        'rows without a roll year (4 / —) or a current parcel (2 / —) are dropped; a year built ' +
+        'before 1850 or after the roll year is treated as missing (4 / 2) [bit 0, also set when ' +
+        'one of the parcel-year’s rows had its year nulled, even if another row supplies one]; a ' +
+        'missing year built or improvement share takes the median of the same land-use class and ' +
+        'roll year over observed rows (2 / 2) [bits 0, 2], falling back to the year-wide median, ' +
+        'then 0, when the class has none (4 / 4); roll stories above 80 are missing (4 / 2) and ' +
+        'missing stories come from the building height (2 / 3) [bit 1]; the units rules of the ' +
+        'existing homes (see existingUnits) [bit 3]: units missing on every row of a parcel-year ' +
+        'are 0 (4 / 4), units beyond the lot’s capacity are replaced (4 / 2), and a bracketed ' +
+        'implausible run is replaced (4 / 2); a roll year missing between two observed years ' +
+        'copies the latest earlier year (2 / 2) [bit 5]; a parcel-year without a roll floor area ' +
+        'takes the map parcel record’s, rounded to whole m² (2 / 3) [bit 6]. A parcel without a ' +
+        'latest-year roll row takes the no-row defaults (4 / 4) [bits 0–4 and 6, imputed 95]: 0 ' +
+        'homes, stories from the building height (else 0), land-use class other, the latest ' +
+        'year’s "other" medians for year built and improvement share, no rent control, and the ' +
+        'map parcel record’s floor area. Assessed values reflect the Prop 13 acquisition basis, ' +
+        `not market value. ${CAP_RULES}`
     ),
     existingUnits: p(
       0,
       'Existing homes (assessor)',
       [SRC.roll],
       `Σ number_of_units over the parcel’s roll rows in the latest roll year (${rollYear}); no ` +
-        'LUDB fallback. A parcel without a latest-year row has 0. An implausible bracketed run ' +
-        '(≥ 100 units and over 10× the neighbouring years) takes the previous year’s value ' +
-        '(tier 4, imputed bit 3).'
+        'general LUDB fallback. Units rules (tiers as rule / value, imputed bit 3), in order: a ' +
+        'parcel-year whose rows all lack a unit count has 0 (4 / 4); units that would leave under ' +
+        '10 m² of lot area × stories per home take the units of the nearest plausible roll year, ' +
+        'else the city land-use (LUDB) count if plausible, else the most homes that fit (4 / 2); ' +
+        'a bracketed run of implausible units (≥ 100 and over 10× the neighbouring years) takes ' +
+        'the previous year’s value (4 / 2). A roll year missing between two observed years ' +
+        'copies the latest earlier year, its bit 3 included (2 / 2, bit 5). A parcel without a ' +
+        'latest-year row has 0 (the no-row default, 4 / 4, imputed 95).'
     ),
     yield: p(
       3,
@@ -325,6 +346,7 @@ export function scenarioDump(p: ScenarioParcels): unknown {
     imputed: a(p.imputed),
     baseCap: a(p.baseCap),
     existingUnits: a(p.existingUnits),
+    existingFloorAreaM2: a(p.existingFloorAreaM2),
     existingStories: a(p.existingStories),
     lotAreaM2: a(p.lotAreaM2),
     yearBuilt: a(p.yearBuilt),
@@ -358,7 +380,10 @@ export function readParcelsBin(file: string): ScenarioParcels {
  * (readParcelRecords). Writes the DuckDB tables scenario_panel and parcel_lineage (kept for
  * later steps of the same build), `<derivedDir>/parcel-panel.parquet`,
  * `<derivedDir>/parcel-lineage.parquet` and `<outDir>/scenarios/fzp/parcels.bin`. `capDay` is
- * "today" for the FZP cap (the build's snapshot day). Returns every scenario.* count (the SQL
+ * "today" for the FZP cap (the build's snapshot day). `buildCounts` is the build's single report
+ * `counts` object (T14): every scenario-data rule records its `quality.*` counts into it exactly
+ * once, after the T11 rows (the SQL tallies via recordSqlQuality, the TS rules via
+ * recordQuality), never into a step-local object. Returns every scenario.* count (the SQL
  * stage's included) and warnings. Throws when the written file does not decode.
  */
 export async function writeScenario(a: {
@@ -369,6 +394,7 @@ export async function writeScenario(a: {
   records: { rec: ParcelRecord; cellId: string }[];
   capDay: Day;
   report: Report;
+  buildCounts: Record<string, number>;
 }): Promise<{ counts: Record<string, number>; warnings: string[] }> {
   const { db, report } = a;
   const warnings: string[] = [];
@@ -470,6 +496,7 @@ export async function writeScenario(a: {
     imputed: new Uint8Array(n),
     baseCap: new Uint16Array(n),
     existingUnits: new Uint16Array(n),
+    existingFloorAreaM2: new Uint32Array(n),
     existingStories: new Uint8Array(n),
     lotAreaM2: new Uint32Array(n),
     yearBuilt: new Uint16Array(n),
@@ -496,23 +523,22 @@ export async function writeScenario(a: {
     'roll.latest_eligible_matched',
     'density_cap.none',
     'density_cap.fzp_differs',
-    'density_cap.rule.split',
-    'density_cap.rule.generic_nc',
     'density_cap.rule.unlisted',
-    'density_cap.rule.split_hostable',
-    'density_cap.rule.generic_nc_hostable',
-    'imputed.year_built',
-    'imputed.existing_stories',
-    'imputed.improvement_share',
-    'imputed.no_roll',
+    ...MASK_COUNTS.map(([, key]) => `imputed.${key}`),
     'units.total',
     'yield.fzp_net_total',
-    'yield.zero_hostable_eligible',
-    'yield.nonmonotone',
     'yield.clamped',
     'yield.nonlp_base_mismatch'
   ])
     inc(k, 0);
+  // Affected parcel ids of the TS-side T14 rules (spec §4.12), reported after the T11 rows.
+  const noRow: string[] = [];
+  const zoning = { split: [] as string[], genericNc: [] as string[], missing: [] as string[] };
+  /** Parcels per tier-4 cap rule, hostable or not, for the unverified-districts warning. */
+  const capRuleAll = { split: 0, genericNc: 0 };
+  const nonmonotone: string[] = [];
+  const zeroHostable: string[] = [];
+  let envelopeEligible = 0;
 
   const u16 = (v: number) => {
     if (v <= U16_MAX) return v;
@@ -557,29 +583,30 @@ export async function writeScenario(a: {
       p.imputed[i] = lat.imputed;
       inc('roll.latest_eligible_matched', rec.eligible ? 1 : 0);
     } else {
+      // sd.roll.no-row (tier 4 / 4; spec §4.5 step 5): the no-row defaults.
+      noRow.push(rec.id);
       existingUnits = 0;
-      // Same fallback as 81_scenario_features.sql: round(height / 3.1), at least 1 (bit 1).
-      const fromHeight = rec.existingHeightM > 0;
-      existingStories = fromHeight ? Math.max(1, Math.round(rec.existingHeightM / FLOORS_M)) : 0;
-      floorArea = rec.existingFloorAreaM2;
+      // Same fallback as 81_scenario_features.sql: round(height / 3.1), at least 1, else 0.
+      existingStories =
+        rec.existingHeightM > 0 ? Math.max(1, Math.round(rec.existingHeightM / FLOORS_M)) : 0;
+      // Whole m², as 81_scenario_features.sql rounds the chunk-record fallback
+      // (sd.roll.floor-area-missing, which writeScenario also counts for this parcel below).
+      floorArea = Math.round(rec.existingFloorAreaM2);
       p.yearBuilt[i] = fit('yearBuilt', t11.med.year_built, 0xffff);
       p.improvementShare[i] = t11.med.improvement_share;
       p.rentControlLikely[i] = 0;
       p.landUseClass[i] = OTHER;
-      p.imputed[i] = 0b10101 | (fromHeight ? 0b10 : 0);
+      p.imputed[i] = NO_ROW_MASK;
     }
     p.existingUnits[i] = fit('existingUnits', existingUnits, 0xffff);
+    p.existingFloorAreaM2[i] = fit('existingFloorAreaM2', floorArea, U32_MAX);
     p.existingStories[i] = fit('existingStories', existingStories, 0xff);
     inc('units.total', existingUnits);
     if (lat?.status_n && lat.existing_units === 0 && rec.existingUnits > 0) {
       inc('roll.gov_zero_units');
       inc('roll.gov_zero_units_ludb_units', rec.existingUnits);
     }
-    const bits = p.imputed[i];
-    if (bits & 0b1) inc('imputed.year_built');
-    if (bits & 0b10) inc('imputed.existing_stories');
-    if (bits & 0b100) inc('imputed.improvement_share');
-    if (bits & 0b10000) inc('imputed.no_roll');
+    for (const [bit, key] of MASK_COUNTS) if (p.imputed[i] & (1 << bit)) inc(`imputed.${key}`);
 
     // Local Program and envelope (spec §4.4). Exclusions read the latest roll year.
     const rentControl =
@@ -608,12 +635,9 @@ export async function writeScenario(a: {
     else inc(`density_cap.${d.zoning_code}`);
     if (baseCap !== fzpCap) inc('density_cap.fzp_differs');
 
-    // Yields (spec §4.7): each distinct story count generated once, then capped per variant.
-    const view = scenarioRecord(rec, {
-      existingUnits,
-      existingFloorAreaM2: floorArea,
-      existingStories
-    });
+    // Yields (spec §4.7) on the record the worker rebuilds from row i (IA-8): each distinct
+    // story count generated once, then capped per variant.
+    const view = scenarioRecordOf(p, i, rec);
     const gross = new Map<number, number>();
     const grossAt = (stories: number) => {
       let g = gross.get(stories);
@@ -652,12 +676,17 @@ export async function writeScenario(a: {
     p.storiesGap.fzp[i] = env.envelopeStories - existingStories;
     p.storiesGap.base[i] = env.baseStories - existingStories;
     if (p.hostable[i]) inc('hostable');
-    if (rec.eligible && env.envelopeStories >= 1 && top === 0) inc('yield.zero_hostable_eligible');
+    // sd.yield.zero-hostable (observation, tier 4): of eligible parcels with an envelope.
+    if (rec.eligible && env.envelopeStories >= 1) {
+      envelopeEligible++;
+      if (top === 0) zeroHostable.push(rec.id);
+    }
     if (p.hostable[i] && env.localProgram)
       inc('yield.fzp_net_total', Math.max(0, top - existingUnits));
+    // sd.yield.nonmonotone (observation, tier 4): yield[k] < yield[k−1] for some k.
     for (let k = 1; k < F; k++) {
       if (p.yield[i * F + k] < p.yield[i * F + k - 1]) {
-        inc('yield.nonmonotone');
+        nonmonotone.push(rec.id);
         break;
       }
     }
@@ -670,12 +699,17 @@ export async function writeScenario(a: {
       }
     }
 
-    // Main ruling 4c: parcels per tier-4 cap rule, all and hostable.
+    // The tier-4 cap rules (main ruling 4c): sd.zoning.split-code and sd.zoning.generic-nc fire
+    // on hostable parcels (their denominator, RA1); unlisted districts keep their scenario count.
+    // sd.zoning.missing (observation) counts hostable parcels with no zoning code (rule 'none').
     const rule = densityCapRule(d.zoning_code);
-    if (rule === 'split' || rule === 'generic-nc' || rule === 'unlisted') {
-      const key = rule === 'generic-nc' ? 'generic_nc' : rule;
-      inc(`density_cap.rule.${key}`);
-      if (rule !== 'unlisted' && p.hostable[i]) inc(`density_cap.rule.${key}_hostable`);
+    if (rule === 'unlisted') inc('density_cap.rule.unlisted');
+    else if (rule === 'none') {
+      if (p.hostable[i]) zoning.missing.push(rec.id);
+    } else if (rule === 'split' || rule === 'generic-nc') {
+      const key = rule === 'split' ? 'split' : 'genericNc';
+      capRuleAll[key]++;
+      if (p.hostable[i]) zoning[key].push(rec.id);
     }
   });
   c['scenario.parcels'] = n;
@@ -694,13 +728,15 @@ export async function writeScenario(a: {
   const decoded = readParcelsBin(file);
   report.timings['scenario.t11'] = Math.round(performance.now() - t0);
 
-  // V18: the decoded T11 features (base variant) and mask equal the latest-year panel row.
+  // V18: the decoded T11 features (base variant), floor area and mask equal the latest-year panel
+  // row.
   let mismatch = 0;
   for (const r of t11.latestById.values()) {
     const i = decoded.index.get(r.mapblklot);
     const same =
       i !== undefined &&
       decoded.existingUnits[i] === r.existing_units &&
+      decoded.existingFloorAreaM2[i] === r.existing_floor_area_m2 &&
       decoded.existingStories[i] === r.existing_stories &&
       decoded.lotAreaM2[i] === r.lot_area_m2 &&
       decoded.yearBuilt[i] === r.year_built &&
@@ -714,27 +750,58 @@ export async function writeScenario(a: {
   }
   c['scenario.panel.feature_mismatch'] = mismatch;
 
-  const hostable = c['scenario.hostable'];
-  const split = c['scenario.density_cap.rule.split'];
-  const splitH = c['scenario.density_cap.rule.split_hostable'];
-  const nc = c['scenario.density_cap.rule.generic_nc'];
-  const ncH = c['scenario.density_cap.rule.generic_nc_hostable'];
+  // The hostable shares of the cap rules are V30's (quality.sd.zoning.*), which replace the old
+  // ad hoc 10% warning (spec §4.10; RA1: the 10% fail share generalises ruling A9).
   warnings.push(
     `scenario: density caps unverified for ${UNVERIFIED_DISTRICTS.join(', ')} (no cap); ` +
-      `tier-4 cap rules cover split ${split} parcels (${splitH} hostable), generic NC ${nc} ` +
-      `(${ncH} hostable), unlisted ${c['scenario.density_cap.rule.unlisted']}`
+      `tier-4 cap rules cover split ${capRuleAll.split} parcels (${zoning.split.length} ` +
+      `hostable), generic NC ${capRuleAll.genericNc} (${zoning.genericNc.length} hostable), ` +
+      `unlisted ${c['scenario.density_cap.rule.unlisted']}`
   );
-  // Fixture builds keep the counts but not this line: on mini it fires on lot 3 alone.
-  if (
-    !FIXTURE_RE.test(a.datasetVersion) &&
-    hostable > 0 &&
-    (splitH > UNVERIFIED_SHARE_WARN * hostable || ncH > UNVERIFIED_SHARE_WARN * hostable)
-  ) {
-    warnings.push(
-      `scenario: split (${splitH}) or generic-NC (${ncH}) parcels exceed 10% of the ${hostable} ` +
-        'hostable parcels (main ruling 4c: report to main)'
+
+  // ---- T14: report every scenario-data rule once, after the T11 rows (spec §4.12) ----
+  // sd.roll.floor-area-missing also fires on each no-row parcel (spec §4.5 step 5), which has no
+  // panel row: add them to the rule's single SQL tally row (fired and of each + n), with their
+  // `<mapblklot>` sample ids, before the SQL tallies are reported.
+  if (noRow.length > 0) {
+    await db.run(
+      `UPDATE quality_tally SET fired = fired + ${noRow.length}, "of" = "of" + ${noRow.length}
+       WHERE rule_id = 'sd.roll.floor-area-missing'`
+    );
+    await db.run(
+      `INSERT INTO quality_sample VALUES ${noRow
+        .map((id) => `('sd.roll.floor-area-missing', ${sqlStr(id)})`)
+        .join(', ')}`
     );
   }
+  await recordSqlQuality(db, 'scenario-data', a.buildCounts);
+  recordQuality(a.buildCounts, 'sd.roll.no-row', { fired: noRow.length, of: n, sample: noRow });
+  const hostable = c['scenario.hostable'];
+  recordQuality(a.buildCounts, 'sd.zoning.split-code', {
+    fired: zoning.split.length,
+    of: hostable,
+    sample: zoning.split
+  });
+  recordQuality(a.buildCounts, 'sd.zoning.generic-nc', {
+    fired: zoning.genericNc.length,
+    of: hostable,
+    sample: zoning.genericNc
+  });
+  recordQuality(a.buildCounts, 'sd.zoning.missing', {
+    fired: zoning.missing.length,
+    of: hostable,
+    sample: zoning.missing
+  });
+  recordQuality(a.buildCounts, 'sd.yield.nonmonotone', {
+    fired: nonmonotone.length,
+    of: n,
+    sample: nonmonotone
+  });
+  recordQuality(a.buildCounts, 'sd.yield.zero-hostable', {
+    fired: zeroHostable.length,
+    of: envelopeEligible,
+    sample: zeroHostable
+  });
 
   const sqlCounts = await db.all<{ key: string; value: number }>(
     `SELECT key, value FROM report_counts WHERE key LIKE 'scenario.%' ORDER BY key`

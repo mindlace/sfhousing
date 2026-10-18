@@ -105,6 +105,8 @@ describe('densityCap: one case per district', () => {
 
   it('the R-4 NC rule starts on FZP_EFFECTIVE_DAY (ruling C2)', () => {
     expect(densityCap('NC-3', m2(6000), true, day(2025, 6, 1))).toBe(10);
+    // The panel's base cap day, min(lien_day, 2026-01-11), is the last day of the old rule.
+    expect(densityCap('NC-3', m2(6000), true, FZP_EFFECTIVE_DAY - 1)).toBe(10);
     expect(densityCap('NC-3', m2(6000), true, day(2026, 1, 12))).toBeNull();
     expect(densityCap('NC-1', m2(3226), true, day(2026, 1, 11))).toBe(4);
     expect(densityCap('NC-1', m2(3226), true, day(2026, 10, 10))).toBeNull();

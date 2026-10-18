@@ -7,6 +7,21 @@ import { loadNormalised, normaliseAll } from '../sources/normalise';
 
 export const MINI = 'pipeline/test/fixtures/mini';
 
+/**
+ * scenario.* report counts superseded by T14 counts (scenario-data spec §4.10 "Superseded by T14
+ * counts"): no build may write them.
+ */
+export const SUPERSEDED_SCENARIO_COUNTS = [
+  'scenario.roll.stories_implausible',
+  'scenario.roll.units_implausible',
+  'scenario.density_cap.rule.split',
+  'scenario.density_cap.rule.split_hostable',
+  'scenario.density_cap.rule.generic_nc',
+  'scenario.density_cap.rule.generic_nc_hostable',
+  'scenario.yield.nonmonotone',
+  'scenario.yield.zero_hostable_eligible'
+];
+
 let memo: Promise<Duck> | undefined;
 
 /** openDuck + normalise every mini source into a temp norm dir + loadNormalised (memoised per file). */

@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { Duck } from '../lib/duck';
 import { createTableFromRows } from '../lib/duck';
+import { createQualityTables, recordSqlQuality } from '../lib/quality';
 import { runSql } from '../lib/sql';
 import { readParcelRecords } from '../steps/chunks';
 import { runScenarioSql } from '../steps/scenario-sql';
@@ -150,6 +151,7 @@ describe('runScenarioSql on the mini fixture', () => {
   let parseFailures: string[];
   beforeAll(async () => {
     db = await miniDuck();
+    await createQualityTables(db);
     await runSql(db);
     const records = await readParcelRecords(db);
     ({ parseFailures } = await runScenarioSql(db, records));
@@ -286,15 +288,44 @@ describe('runScenarioSql on the mini fixture', () => {
     expect(hotel.map((r) => r.hotel)).toEqual([true, true]);
     expect(hotel[0].land_use_class).toBe(2); // commercial (COMH)
     const lot4 = await agg(db, '0026T001A');
-    expect(lot4.map((r) => [r.noncondo_units, r.year_built, r.hotel])).toEqual([
-      [3, 1925, false],
-      [3, 1925, false]
+    // sc_roll_agg is the aggregate before the units rules: lot 4's 2024 still reads 900.
+    expect(lot4.map((r) => [r.roll_year, r.noncondo_units, r.year_built, r.hotel])).toEqual([
+      [2023, 3, 1925, false],
+      [2024, 900, 1925, false],
+      [2025, 3, 1925, false]
     ]);
+  });
+
+  it('lots 3 and 4 carry the RA1 units cases (spec §4.11)', async () => {
+    const units = async (id: string) =>
+      (
+        await db.all<Feature>(
+          `SELECT * FROM sc_features WHERE mapblklot = '${id}' ORDER BY roll_year`
+        )
+      ).map((r) => [r.roll_year, r.existing_units, r.imputed & 40]);
+    // Lot 3: 5,000 in 2023 and 2025 on 300 m² × 3 stories (capacity 90); no year passes and the
+    // LUDB 4 does (bit 3). 2024 is carried from 2023 (bits 3 and 5).
+    expect(await units('8711023C')).toEqual([
+      [2023, 4, 8],
+      [2024, 4, 40],
+      [2025, 4, 8]
+    ]);
+    // Lot 4: 3, 900, 3. 2023 and 2025 tie; the earlier wins (bit 3). The spike rule never fires.
+    expect(await units('0026T001A')).toEqual([
+      [2023, 3, 0],
+      [2024, 3, 8],
+      [2025, 3, 0]
+    ]);
+    const [spike] = await db.all<{ fired: number }>(
+      `SELECT fired FROM quality_tally WHERE rule_id = 'sd.roll.units-spike'`
+    );
+    expect(spike.fired).toBe(0);
   });
 
   it('counts the roll report keys', async () => {
     const c = await counts(db);
-    expect(c['scenario.roll.years']).toBe(2);
+    expect(c['scenario.roll.years']).toBe(3);
+    expect(c['scenario.roll.unmatched.2023']).toBe(0);
     expect(c['scenario.roll.latest']).toBe(2025);
     expect(c['scenario.roll.matched_parcels']).toBe(13);
     expect(c['scenario.roll.unmatched.2024']).toBe(0);
@@ -303,34 +334,50 @@ describe('runScenarioSql on the mini fixture', () => {
     expect(c['scenario.roll.lineage_retired']).toBe(1);
   });
 
-  it('builds sc_parcel caps for the three periods', async () => {
+  it('builds sc_parcel with the two base cap periods and the chunk record values', async () => {
     const [p] = await db.all<{
       lot_area_m2: number;
       base_stories: number;
+      cap_pre2022: number | null;
       cap_prefzp: number | null;
-      cap_fzp: number | null;
       eligible: boolean;
+      ludb_units: number;
+      rec_floor_area_m2: number;
     }>(`SELECT * FROM sc_parcel WHERE id = '3512005'`);
-    // Lot 5: two parts, 10 x 18 + 10 x 8 = 260 m²; 65-X -> 6 stories; RH-1 fourplex rule.
-    expect(p).toMatchObject({ lot_area_m2: 260, base_stories: 6, cap_prefzp: 4, cap_fzp: 4 });
+    // Lot 5: two parts, 10 x 18 + 10 x 8 = 260 m²; 65-X -> 6 stories; RH-1: 1 per lot before
+    // 2022-11-27, the fourplex rule after. Its chunk record has LUDB 1 unit and 80 m².
+    expect(p).toMatchObject({
+      lot_area_m2: 260,
+      base_stories: 6,
+      cap_pre2022: 1,
+      cap_prefzp: 4,
+      ludb_units: 1,
+      rec_floor_area_m2: 80
+    });
+    // The base cap date is min(lien_day, 2026-01-11), so the panel path has no FZP period.
+    const cols = (await db.all<{ column_name: string }>('DESCRIBE sc_parcel')).map(
+      (r) => r.column_name
+    );
+    expect(cols).not.toContain('cap_fzp');
     const [nct] = await db.all<{ cap_prefzp: number | null }>(
       `SELECT cap_prefzp FROM sc_parcel WHERE id = '8711023C'`
     );
     expect(nct.cap_prefzp).toBeNull();
   });
 
-  it('the features table has exactly roll years 2024 and 2025 and every T13 column', async () => {
+  it('the features table has exactly roll years 2023 to 2025 and every T13 column', async () => {
     const years = await db.all<{ y: number }>(
       'SELECT DISTINCT roll_year y FROM sc_features ORDER BY y'
     );
-    expect(years.map((r) => r.y)).toEqual([2024, 2025]);
+    expect(years.map((r) => r.y)).toEqual([2023, 2024, 2025]);
     const cols = (await db.all<{ column_name: string }>('DESCRIBE sc_features')).map(
       (r) => r.column_name
     );
     for (const c of T13_COLUMNS) expect(cols, c).toContain(c);
     const [{ n }] = await db.all<{ n: number }>('SELECT count(*) n FROM sc_features');
     const [{ m }] = await db.all<{ m: number }>('SELECT count(*) m FROM sc_roll_agg');
-    expect(n).toBe(m);
+    // The observed parcel-years plus lot 3's carried 2024 row (sd.roll.year-gap).
+    expect(n).toBe(m + 1);
   });
 
   it('sets lien_day to 1 January of the roll year and the cap of that period', async () => {
@@ -365,26 +412,41 @@ describe('runScenarioSql on the mini fixture', () => {
     expect((await feature(db, '3512014', 2025)).rent_control_likely).toBe(false);
   });
 
-  it('lot 7 is vacant with year 0 and share 0, no imputed bits', async () => {
+  it('lot 7 is vacant with year 0 and share 0; only bit 6 (no roll floor area)', async () => {
     const f = await feature(db, '3512007', 2025);
-    expect(f).toMatchObject({ land_use_class: 4, year_built: 0, improvement_share: 0, imputed: 0 });
+    // Vacant lots take 0 with no imputation (spec §4.5); the roll's property_area is 0, so the
+    // floor area is the chunk record's (0 m²) under sd.roll.floor-area-missing, bit 6.
+    expect(f).toMatchObject({
+      land_use_class: 4,
+      year_built: 0,
+      improvement_share: 0,
+      imputed: 64
+    });
   });
 
   it('writes sc_medians for every roll year and class', async () => {
     const rows = await db.all<{ roll_year: number; land_use_class: number; year_built: number }>(
       'SELECT * FROM sc_medians ORDER BY roll_year, land_use_class'
     );
-    expect(rows).toHaveLength(12);
+    expect(rows).toHaveLength(18);
     const r2024 = rows.find((r) => r.roll_year === 2024 && r.land_use_class === 0)!;
     expect(r2024.year_built).toBe(1940);
   });
 
-  it('does not duplicate scenario counts when re-run on the same DB', async () => {
+  it('does not duplicate scenario counts or quality tallies when re-run on the same DB', async () => {
+    const quality: Record<string, number> = {};
     await runScenarioSql(db, await readParcelRecords(db));
+    // The scenario step reports the SQL tallies once, after T11 (writeScenario); here directly.
+    await recordSqlQuality(db, 'scenario-data', quality);
     const [r] = await db.all<{ n: number }>(
       `SELECT count(*) n FROM report_counts WHERE key = 'scenario.height.split'`
     );
     expect(r.n).toBe(1);
+    const [t] = await db.all<{ n: number; d: number }>(
+      'SELECT count(*)::INTEGER n, count(DISTINCT rule_id)::INTEGER d FROM quality_tally'
+    );
+    expect(t.n).toBe(t.d);
+    expect(quality['quality.sd.roll.units-capacity.of']).toBe(25);
   });
 });
 
@@ -399,6 +461,8 @@ describe('runScenarioSql on a copy with a far-away parcel and a bad height strin
       await db.run(`CREATE TABLE syn.${t} AS SELECT * FROM memory.${t}`);
     }
     await db.run('CREATE TABLE syn.report_counts AS SELECT * FROM memory.report_counts');
+    await db.run('CREATE TABLE syn.quality_tally AS SELECT * FROM memory.quality_tally LIMIT 0');
+    await db.run('CREATE TABLE syn.quality_sample AS SELECT * FROM memory.quality_sample LIMIT 0');
     // Lot 1 moved 5 km east (outside every district), as a new id.
     await db.run(
       `INSERT INTO syn.parcels SELECT * REPLACE ('9999001' AS id,
@@ -468,11 +532,12 @@ describe('runScenarioSql on a copy with a far-away parcel and a bad height strin
   });
 });
 
-describe('runScenarioSql roll sanity rules on a copy (tier 4)', () => {
+describe('runScenarioSql units-spike rule on a copy (A12, sd.roll.units-spike)', () => {
   let db: Duck;
-  const roll = (id: string) =>
-    db.all<{ roll_year: number; units: number; stories: number; units_replaced: boolean }>(
-      `SELECT roll_year, units, stories, units_replaced FROM syn2.sc_roll_agg
+  const quality: Record<string, number> = {};
+  const series = (id: string) =>
+    db.all<{ roll_year: number; units: number; units_replaced: boolean }>(
+      `SELECT roll_year, units, units_replaced FROM syn2.sc_roll_series
        WHERE id = '${id}' ORDER BY roll_year`
     );
   // A copy of a parcel's roll row in another year with another unit count.
@@ -490,11 +555,6 @@ describe('runScenarioSql roll sanity rules on a copy (tier 4)', () => {
       await db.run(`CREATE TABLE syn2.${t} AS SELECT * FROM memory.${t}`);
     }
     await db.run('CREATE TABLE syn2.report_counts AS SELECT * FROM memory.report_counts');
-    // Stories 999 on lot 6's 2025 row (live rows reach 999, wv5m-vpq2 2026-10-16).
-    await db.run(
-      `UPDATE syn2.src_roll SET number_of_stories = 999
-       WHERE parcel_number = '3512006' AND closed_roll_year = 2025`
-    );
     // Lot 1 (2 units in 2024 and 2025): 2, 50000, 50000, 2, 2 over 2021-2025, bracketed.
     await yearRow('3512001', 2024, 2021, 2);
     await yearRow('3512001', 2024, 2022, 50000);
@@ -509,34 +569,23 @@ describe('runScenarioSql roll sanity rules on a copy (tier 4)', () => {
     await yearRow('3512010', 2024, 2023, 4000);
     await db.run('USE syn2');
     try {
-      await runScenarioSql(db, await readParcelRecords(db));
+      await createQualityTables(db);
+      // Lots of 1,000,000 m², so sd.roll.units-capacity (which runs first) passes every year:
+      // 50,000 units on 2 stories need 250,000 m².
+      const big = new Set(['3512001', '3512008', '3512010']);
+      const records = (await readParcelRecords(db)).map(({ rec, cellId }) => ({
+        rec: big.has(rec.id) ? { ...rec, areaM2: 1_000_000 } : rec,
+        cellId
+      }));
+      await runScenarioSql(db, records);
+      await recordSqlQuality(db, 'scenario-data', quality);
     } finally {
       await db.run('USE memory');
     }
   });
 
-  const count = async (key: string) => {
-    const [c] = await db.all<{ value: number }>(
-      `SELECT value FROM syn2.report_counts WHERE key = '${key}'`
-    );
-    return c?.value;
-  };
-
-  it('treats roll stories above 80 as missing and counts the rows', async () => {
-    const [r] = (await roll('3512006')).filter((x) => x.roll_year === 2025);
-    expect(r.stories).toBe(0);
-    const [f] = await db.all<{ existing_stories: number; imputed: number }>(
-      `SELECT existing_stories, imputed FROM syn2.sc_features
-       WHERE mapblklot = '3512006' AND roll_year = 2025`
-    );
-    // The height fallback applies: imputed bit 1.
-    expect(f.imputed & 2).toBe(2);
-    expect(f.existing_stories).toBeLessThanOrEqual(80);
-    expect(await count('scenario.roll.stories_implausible')).toBe(1);
-  });
-
   it('replaces a bracketed implausible units run with the previous value, imputed bit 3', async () => {
-    const rows = await roll('3512001');
+    const rows = await series('3512001');
     expect(rows.map((r) => [r.roll_year, r.units, r.units_replaced])).toEqual([
       [2021, 2, false],
       [2022, 2, true],
@@ -555,17 +604,21 @@ describe('runScenarioSql roll sanity rules on a copy (tier 4)', () => {
       [2024, 2, 0],
       [2025, 2, 0]
     ]);
-    expect(await count('scenario.roll.units_implausible')).toBe(2);
+    expect(quality['quality.sd.roll.units-spike.fired']).toBe(2);
+    expect(quality['quality.sd.roll.units-spike.units']).toBe(100000);
+    // The capacity rule passes the big lots; it fires only on mini's own RA1 cases (lot 3 in 2023
+    // and 2025, lot 4 in 2024; spec §4.11).
+    expect(quality['quality.sd.roll.units-capacity.fired']).toBe(3);
   });
 
   it('leaves a one-sided change (0, 0, 300, 300) and a constant 4000 untouched', async () => {
-    expect((await roll('3512008')).map((r) => [r.units, r.units_replaced])).toEqual([
+    expect((await series('3512008')).map((r) => [r.units, r.units_replaced])).toEqual([
       [0, false],
       [0, false],
       [300, false],
       [300, false]
     ]);
-    expect((await roll('3512010')).map((r) => [r.units, r.units_replaced])).toEqual([
+    expect((await series('3512010')).map((r) => [r.units, r.units_replaced])).toEqual([
       [4000, false],
       [4000, false],
       [4000, false],

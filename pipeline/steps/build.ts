@@ -130,8 +130,8 @@ function chunkCounts(chunks: ChunkOut[]): Record<string, number> {
  * Spec §4.2 `build`: verify the lock, normalise, SQL, chunks (+ in-run re-encode), the scenario
  * step (scenarios/fzp/parcels.bin; the T13 panel and lineage into the derived cache), the project
  * records (scenarios/fzp/projects.json; histories and permits.parquet into the derived cache),
- * the T14 quality report (quality-report.md into the derived cache), neighborhoods, tiles, basemap, fonts, manifest, invariants and report.json into
- * `<outRoot>/<datasetVersion>/`.
+ * the T14 quality report (quality-report.md into the derived cache), neighborhoods, tiles,
+ * basemap, fonts, manifest, invariants and report.json into `<outRoot>/<datasetVersion>/`.
  * Throws BuildError when a raw file does not match the lock.
  */
 export async function build(
@@ -191,7 +191,8 @@ export async function build(
         datasetVersion,
         records: await readParcelRecords(db),
         capDay: asOf,
-        report
+        report,
+        buildCounts: counts
       })
     );
     report.warnings.push(...scenario.warnings);
