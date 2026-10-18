@@ -462,6 +462,41 @@ describe('pr.pipeline.no-status-date', () => {
   });
 });
 
+describe('pr.pipeline.status-date-linked (spec §4.2 step 10)', () => {
+  it('samples the joined project id; the dropped row is not counted as dropped', () => {
+    const r = derive((raw) => {
+      raw['datasf-planning-projects'].push({
+        record_id: '2020-006887PRJ',
+        record_status: 'Under Review',
+        block: '3512',
+        lot: '008',
+        open_date: '2020-07-24T00:00:00.000',
+        number_of_units_prop: '2387',
+        new_construction: 'CHECKED'
+      });
+      raw['datasf-dev-pipeline'].push({
+        blklot: '3512008',
+        current_status: 'PL Filed',
+        case_no: '2026-000018PRJ',
+        new_pipeline_units: '20'
+      });
+    });
+    expect(tally(r, PR.pipelineStatusDateLinked)).toEqual({
+      fired: 1,
+      of: 6,
+      units: 20,
+      unitsOf: 155
+    });
+    const linked = callsFor(r.counts).find((c) => c.id === PR.pipelineStatusDateLinked);
+    expect(linked?.sample).toEqual(['PRJ:2020-006887PRJ']);
+    expect(tally(r, PR.pipelineNoStatusDate)).toMatchObject({ fired: 0, units: 0 });
+    const dropped = callsFor(r.counts).find((c) => c.id === PR.pipelineNoStatusDate);
+    expect(dropped?.sample).toEqual([]);
+    expect(project(r, 'PRJ:2020-006887PRJ')?.quality).toEqual([PR.pipelineStatusDateLinked]);
+    expect(history(r, 'PRJ:2020-006887PRJ')?.quality).toEqual([PR.pipelineStatusDateLinked]);
+  });
+});
+
 describe('quality on records', () => {
   it('T3 quality is sorted and unique; qualityRules lists exactly the ids used, from the registry', () => {
     const r = derive((raw) => {

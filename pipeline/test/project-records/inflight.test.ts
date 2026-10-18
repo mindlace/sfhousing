@@ -202,6 +202,11 @@ describe('labelOf', () => {
     expect(labelOf(p, null)).toBe('Mission Bay Block 9');
     expect(labelOf(proj(), null)).toBeNull();
   });
+
+  it('rule 3 skips a row linked under DQ-2 (spec §4.2 step 10)', () => {
+    const p = proj({ pipelineRows: [row({ nameaddr: 'Freedom West', linkedNoDate: true })] });
+    expect(labelOf(p, null)).toBeNull();
+  });
 });
 
 describe('unitBearingPermits and grossUnits', () => {
@@ -243,6 +248,14 @@ describe('unitBearingPermits and grossUnits', () => {
     });
     expect(grossUnits(p)).toBe(12);
     expect(grossUnits(proj())).toBeNull();
+  });
+
+  it('rule 3 skips a row linked under DQ-2 (spec §4.2 step 10)', () => {
+    const p = proj({
+      anchors: [prj('A', { unitsProp: 0 })],
+      pipelineRows: [row({ newUnits: 2537, linkedNoDate: true })]
+    });
+    expect(grossUnits(p)).toBeNull();
   });
 
   it('pipeline-only rows use newUnits', () => {
@@ -454,6 +467,11 @@ describe('inFlightStatus', () => {
 
   it('pipeline match: in flight however old', () => {
     expect(inFlightStatus(withPipe, base)).toBe('inFlight');
+  });
+
+  it('a DQ-2 linked row is a pipeline match (spec §4.7)', () => {
+    const linked = proj({ pipelineRows: [row({ statusDay: null, linkedNoDate: true })] });
+    expect(inFlightStatus(linked, base)).toBe('inFlight');
   });
 
   it('after-cutoff window: first entered 2026-04-28 is in, 2026-04-27 is stale', () => {

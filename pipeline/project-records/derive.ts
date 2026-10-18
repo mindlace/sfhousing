@@ -54,6 +54,7 @@ import {
 import type { V2xInputs } from './invariants';
 import { linkProjects } from './link';
 import { checkMultiphaseFile } from './multiphase';
+import { linkNoDateRows, rowKey } from './nodate';
 import { resolveParcels } from './parcels';
 import { parseAll } from './parse';
 import { rhnaCompletedNet } from './rhna';
@@ -64,7 +65,7 @@ import {
   pipelineOnlyHistory,
   rawStages
 } from './stages';
-import type { LinkedProject, Parsed, ProjectRecordsInput } from './types';
+import type { LinkedProject, Parsed, PipelineRow, ProjectRecordsInput } from './types';
 
 export type { PermitOut } from './assemble';
 
@@ -155,6 +156,19 @@ function heldRecords(proj: LinkedProject): object[] {
   ];
 }
 
+/** Spec 4.7 in-flight decision; a population project with no entered stage is `noDates`. */
+function statusOf(
+  proj: LinkedProject,
+  a: Pick<
+    Assessed,
+    'inPopulation' | 'end' | 'units' | 'existingLatest' | 'firstEntered' | 'multiPhase'
+  >,
+  pipelineCutoff: Day
+): Status {
+  if (a.inPopulation && a.firstEntered === null) return 'noDates';
+  return inFlightStatus(proj, { ...a, pipelineCutoff });
+}
+
 function assess(
   cap: Capacity,
   input: ProjectRecordsInput,
@@ -182,18 +196,11 @@ function assess(
   const inPopulation = isPopulation(proj, units, existingAtFiling);
   // A PRX row joined to a fetched permit is an ordinary graph project (Ruling F1).
   const multiPhase = pipelineOnly && proj.pipelineRows[0].prx;
-  const status: Status =
-    inPopulation && firstEntered === null
-      ? 'noDates'
-      : inFlightStatus(proj, {
-          inPopulation,
-          end,
-          units,
-          existingLatest,
-          firstEntered,
-          pipelineCutoff,
-          multiPhase
-        });
+  const status = statusOf(
+    proj,
+    { inPopulation, end, units, existingLatest, firstEntered, multiPhase },
+    pipelineCutoff
+  );
   const stories = storiesDetail(proj);
   const quality = new Set<string>();
   // `parsed.clipped` holds the records as parsed, so read them off the project as linked.
@@ -255,6 +262,14 @@ interface TallyInput {
   withHistory: readonly Assessed[];
   /** Assessed projects that became a T3 project, with it. */
   inFlight: readonly { a: Assessed; p: InFlightProject }[];
+  /**
+   * DQ-2 (spec 4.2 step 10): the no-date rows joined to a project (by the joined project's id)
+   * and the ones dropped (by their `CASE:` id).
+   */
+  noDate: {
+    linked: readonly { id: string; row: PipelineRow }[];
+    dropped: readonly { id: string; row: PipelineRow }[];
+  };
 }
 
 /** Σ of the positive values; null and negative count as 0. */
@@ -305,28 +320,25 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
       sample: assessed.filter((a) => a.capacity.failing.length > 0).map((a) => a.proj.id)
     };
   },
-  // Spec 4.2 step 10 (behaviour lands with its task): pipeline rows, weighted by new units.
-  [PR.pipelineStatusDateLinked]: ({ parsed }) => ({
-    fired: 0,
+  // Spec 4.2 step 10: no-date rows linked to the Planning record on their lot, those whose
+  // project has no units included. Of pipeline rows, weighted by new units; the sample is the
+  // joined project ids (one linked row per project, so never longer than `fired`).
+  [PR.pipelineStatusDateLinked]: ({ parsed, noDate }) => ({
+    fired: noDate.linked.length,
     of: parsed.pipeline.length,
-    units: 0,
+    units: positiveSum(noDate.linked.map((x) => x.row.newUnits)),
     unitsOf: positiveSum(parsed.pipeline.map((r) => r.newUnits)),
-    sample: []
+    sample: [...new Set(noDate.linked.map((x) => x.id))]
   }),
-  // Spec 4.2 step 10: a pipeline-only row with no valid status date is dropped (today every such
-  // row; DQ-2 linking lands with its task). Of pipeline rows, weighted by new units.
-  [PR.pipelineNoStatusDate]: ({ parsed, assessed }) => {
-    const dropped = assessed.filter(
-      (a) => a.proj.kind === 'pipelineOnly' && a.proj.pipelineRows[0].statusDay === null
-    );
-    return {
-      fired: dropped.length,
-      of: parsed.pipeline.length,
-      units: positiveSum(dropped.map((a) => a.proj.pipelineRows[0].newUnits)),
-      unitsOf: positiveSum(parsed.pipeline.map((r) => r.newUnits)),
-      sample: dropped.map((a) => a.proj.id)
-    };
-  },
+  // Spec 4.2 step 10: no-date rows dropped (no candidate, or the winner already holds a row). Of
+  // pipeline rows, weighted by new units; the sample is their `CASE:` ids.
+  [PR.pipelineNoStatusDate]: ({ parsed, noDate }) => ({
+    fired: noDate.dropped.length,
+    of: parsed.pipeline.length,
+    units: positiveSum(noDate.dropped.map((x) => x.row.newUnits)),
+    unitsOf: positiveSum(parsed.pipeline.map((r) => r.newUnits)),
+    sample: noDate.dropped.map((x) => x.id)
+  }),
   // Spec 4.7 (observe; no record carries it): population projects matching at least one pipeline
   // row (pipeline-only projects are rows, not matches); conflicts per `pipelineConflict`.
   [PR.pipelineRecordsWin]: ({ assessed }) => {
@@ -379,6 +391,7 @@ function zeroCounts(): Record<string, number> {
     'projects.staleOpenUnits',
     'projects.pathwayDefaulted',
     'projects.excludedAlterationUnits',
+    'projects.excludedNoUnits',
     'projects.netDropped',
     'projects.stories.tier0',
     'projects.stories.tier3',
@@ -451,7 +464,45 @@ export function deriveProjects(
   // phase-size medians and the permits rows all see `capped`, never `link.projects`.
   const capped = link.projects.map((p) => applyCapacity(p, input.areaM2));
   const linked = capped.map((c) => c.proj);
-  const assessed = capped.map((c) => assess(c, input, parsed, link.ppaLag.days, pipelineCutoff));
+  const all = capped.map((c) => assess(c, input, parsed, link.ppaLag.days, pipelineCutoff));
+
+  // DQ-2 (spec 4.2 step 10), once every graph project's end is known: each pipeline-only row
+  // with no valid status date joins the open PRJ on its lot, or is dropped. A linked row leaves
+  // `assessed`; its project keeps its id, dates, units, label and parcels, and is re-decided with
+  // the row as a pipeline match (4.7). Units and population stay those of 4.8 rules 1-2: a winner
+  // holds no other row, so rule 3 had nothing to read.
+  const noDateRows = all
+    .filter((a) => a.proj.kind === 'pipelineOnly' && a.proj.pipelineRows[0].statusDay === null)
+    .map((a) => ({ id: a.proj.id, row: a.proj.pipelineRows[0] }));
+  const dq2 = linkNoDateRows(
+    noDateRows,
+    all.map((a) => ({ a, proj: a.proj, open: a.end?.kind === 'open' })),
+    resolve
+  );
+  const linkedIds = new Set(dq2.linked.map((x) => x.from.id));
+  const assessed = all.filter((a) => !linkedIds.has(a.proj.id));
+  const dq2Warnings = dq2.dropped.map((x) => x.warning);
+  for (const { from, target, recordId } of dq2.linked) {
+    const { a } = target;
+    const row: PipelineRow = { ...from.row, linkedNoDate: true };
+    a.proj = { ...a.proj, pipelineRows: [...a.proj.pipelineRows, row] };
+    a.status = statusOf(a.proj, a, pipelineCutoff);
+    a.quality.add(PR.pipelineStatusDateLinked);
+    // The row is held now, so a date the parse clipped from it marks the project (spec 4.1).
+    if (parsed.clipped.has(from.row)) a.quality.add(PR.dateValidRange);
+    const caseNo = rowKey(from.row);
+    if (!a.inPopulation) {
+      dq2Warnings.push(`${caseNo}: linked to ${recordId} with no units; excluded`);
+    }
+    if (from.row.prx && curatedCases.has(caseNo)) {
+      dq2Warnings.push(`${caseNo}: linked to ${recordId}; multiphase entry unused`);
+    }
+  }
+  warnings.push(...dq2Warnings.sort(cmp));
+  const noDate = {
+    linked: dq2.linked.map((x) => ({ id: x.target.a.proj.id, row: x.from.row })),
+    dropped: dq2.dropped.map((x) => x.from)
+  };
 
   // Histories: population projects that are not pipeline-only, with at least one entered stage.
   const histories: ProjectHistory[] = [];
@@ -468,11 +519,16 @@ export function deriveProjects(
 
   // Population / in-flight bookkeeping.
   let excludedAlterationUnits = 0;
+  let excludedNoUnits = 0;
   for (const r of link.excludedRows) excludedAlterationUnits += r.newUnits ?? 0;
   for (const a of assessed) {
     counts[`projects.status.${a.status}`]++;
     if (!a.inPopulation) {
-      for (const r of a.proj.pipelineRows) excludedAlterationUnits += r.newUnits ?? 0;
+      // A DQ-2 linked row on a project outside the population counts apart (spec 4.3).
+      for (const r of a.proj.pipelineRows) {
+        if (r.linkedNoDate) excludedNoUnits += r.newUnits ?? 0;
+        else excludedAlterationUnits += r.newUnits ?? 0;
+      }
       continue;
     }
     if (a.status === 'staleOpen') {
@@ -482,6 +538,7 @@ export function deriveProjects(
     if (a.status === 'netDropped') counts['projects.netDropped']++;
   }
   counts['projects.excludedAlterationUnits'] = excludedAlterationUnits;
+  counts['projects.excludedNoUnits'] = excludedNoUnits;
 
   // Masters are phased after the non-master in-flight set is fixed.
   const inFlight = assessed.filter((a) => a.status === 'inFlight');
@@ -582,7 +639,7 @@ export function deriveProjects(
   for (const k of Object.keys(parsed.counts).sort(cmp)) counts[k] = parsed.counts[k];
 
   // T14: every pr.* rule, zeros included, once into the caller's counts (spec 4.11 Counting).
-  const tallyInput: TallyInput = { parsed, assessed, withHistory, inFlight: t3 };
+  const tallyInput: TallyInput = { parsed, assessed, withHistory, inFlight: t3, noDate };
   for (const r of PR_RULES) recordQuality(counts, r.id, PR_TALLIES[r.id as PrRuleId](tallyInput));
 
   const file: ProjectsFile = {

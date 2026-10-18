@@ -407,6 +407,7 @@ describe('deriveProjects: values', () => {
       'projects.staleOpenUnits',
       'projects.pathwayDefaulted',
       'projects.excludedAlterationUnits',
+      'projects.excludedNoUnits',
       'projects.netDropped',
       'projects.stories.tier0',
       'projects.stories.tier3',
@@ -454,6 +455,7 @@ describe('deriveProjects: values', () => {
       'projects.staleOpenUnits': 3,
       'projects.pathwayDefaulted': 0,
       'projects.excludedAlterationUnits': 4,
+      'projects.excludedNoUnits': 0,
       'projects.netDropped': 0,
       'projects.stories.tier0': 1,
       'projects.stories.tier3': 0,
@@ -666,12 +668,39 @@ describe('deriveProjects: exits before later stages', () => {
   });
 });
 
+/** DQ-2: two no-date rows contend for one open PRJ on lot 008 (the first in row order wins). */
+function withNoDateRows(): ProjectRecordsInput {
+  const raw = baseRaw();
+  raw['datasf-planning-projects'].push({
+    record_id: '2020-006887PRJ',
+    record_status: 'Under Review',
+    block: '3512',
+    lot: '008',
+    open_date: ts('2020-07-24'),
+    number_of_units_prop: '2387',
+    new_construction: 'CHECKED'
+  });
+  for (const [caseNo, units] of [
+    ['2023-007911PRJ', '2537'],
+    ['2024-000030PRJ', '12']
+  ]) {
+    raw['datasf-dev-pipeline'].push({
+      blklot: '3512008',
+      current_status: 'PL Filed',
+      case_no: caseNo,
+      new_pipeline_units: units
+    });
+  }
+  return baseInput(raw);
+}
+
 describe('deriveProjects: determinism', () => {
   for (const [name, make] of [
     ['base', () => baseInput()],
     ['base case', withBaseCase],
     ['earlier master', withEarlierMaster],
-    ['enriched', withEnrichedMaster]
+    ['enriched', withEnrichedMaster],
+    ['no-date rows', withNoDateRows]
   ] as const) {
     it(`permuting every raw array leaves the output byte-identical (${name})`, () => {
       const input = make();

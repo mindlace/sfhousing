@@ -108,6 +108,7 @@
     "projects.byStage.preApplication": 1,
     "projects.bytes": 5461,
     "projects.excludedAlterationUnits": 0,
+    "projects.excludedNoUnits": 0,
     "projects.inFlight": 9,
     "projects.inFlightUnits": 503,
     "projects.netDropped": 0,

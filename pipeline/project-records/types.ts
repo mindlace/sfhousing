@@ -135,6 +135,12 @@ export interface PipelineRow {
   da: string | null;
   /** `caseNo` ends with 'PRX'. */
   prx: boolean;
+  /**
+   * Set on the copy of a pipeline-only row with no valid status date that DQ-2 joined to a graph
+   * project (spec 4.2 step 10). Such a row gives the project only its `sources` entry and the
+   * pipeline match of 4.7: no date, units, label or stories are read from it.
+   */
+  linkedNoDate?: true;
 }
 
 export interface Parsed {

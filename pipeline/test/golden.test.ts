@@ -419,6 +419,7 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
       'projects.staleOpenUnits',
       'projects.pathwayDefaulted',
       'projects.excludedAlterationUnits',
+      'projects.excludedNoUnits',
       'projects.netDropped',
       'projects.stories.tier0',
       'projects.stories.tier3',

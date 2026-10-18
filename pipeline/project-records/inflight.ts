@@ -52,6 +52,8 @@ export function labelOf(proj: LinkedProject, curated: string | null): string | n
   const address = nonBlank(proj.primary?.address);
   if (address !== null) return address;
   for (const r of proj.pipelineRows) {
+    // Not from a row linked under DQ-2 (spec 4.2 step 10).
+    if (r.linkedNoDate) continue;
     const name = nonBlank(r.nameaddr);
     if (name !== null) return name;
   }
@@ -148,7 +150,8 @@ export function grossUnits(proj: LinkedProject): number | null {
   if (permitSum !== null) return permitSum;
   const prop = proj.primary?.unitsProp ?? null;
   if (prop !== null && prop > 0) return prop;
-  for (const r of proj.pipelineRows) if (r.newUnits !== null) return r.newUnits;
+  // Rule 3 stops short of a row linked under DQ-2 (spec 4.2 step 10).
+  for (const r of proj.pipelineRows) if (!r.linkedNoDate && r.newUnits !== null) return r.newUnits;
   return null;
 }
 
@@ -234,7 +237,8 @@ export function storiesDetail(proj: LinkedProject): {
   const ordered = proj.primary === null ? anchors : [proj.primary, ...anchors];
   const texts = [
     ...ordered.map((a) => a.description),
-    ...proj.pipelineRows.map((r) => r.description)
+    // A row linked under DQ-2 contributes only its source and the pipeline match (spec 4.2 step 10).
+    ...proj.pipelineRows.filter((r) => !r.linkedNoDate).map((r) => r.description)
   ];
   let parsed = 0;
   let discarded = 0;

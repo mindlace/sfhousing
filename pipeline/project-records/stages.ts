@@ -105,7 +105,10 @@ function entitledDay(proj: LinkedProject): Day | null {
     proj.anchors.filter((a) => a.decision === 'Approved').map((a) => a.decisionDay)
   );
   if (decided !== null) return decided;
-  const planning = minOf(proj.pipelineRows.map((r) => r.approvedDay));
+  // Not from a row linked under DQ-2 (spec 4.2 step 10).
+  const planning = minOf(
+    proj.pipelineRows.filter((r) => !r.linkedNoDate).map((r) => r.approvedDay)
+  );
   if (planning !== null) return planning;
   return maxOf(
     proj.children

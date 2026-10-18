@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { PR } from '../../lib/quality-rules/pr';
+import { deriveProjects, type DeriveResult } from '../../project-records/derive';
 import { DEAD_STATUSES, linkProjects, type LinkedProject } from '../../project-records/link';
 import type {
   AddressRow,
@@ -8,9 +10,12 @@ import type {
   Permit,
   PipelineRow,
   Prj,
+  ProjectSourceId,
+  RawRow,
   Review
 } from '../../project-records/types';
 import type { Day } from '../../../src/lib/timelapse/time';
+import { baseInput, baseMultiphase, baseRaw, day as isoDay } from './derive-input';
 
 const day = (y: number, m: number, d: number) => Date.UTC(y, m - 1, d) / 864e5;
 const ASOF = day(2026, 10, 16);
@@ -575,5 +580,290 @@ describe('joins', () => {
     const p = r.projects[0];
     expect(p.reviews).toEqual([review]);
     expect(p.completions.map((c) => c.permit)).toEqual(['P1']);
+  });
+});
+
+/**
+ * DQ-2 (spec §4.2 step 10) needs each project's §4.6 end, so these run deriveProjects over the
+ * derive-input base (lots 008 and 009 hold no project there; the pipeline cutoff is 2026-07-28).
+ */
+describe('DQ-2: a pipeline-only row with no status date (spec §4.2 step 10)', () => {
+  type Raw = Record<ProjectSourceId, RawRow[]>;
+  const ts = (iso: string) => `${iso}T00:00:00.000`;
+
+  function addPrj(
+    raw: Raw,
+    o: { id: string; lot: string; open: string; units: number; status?: string; newCon?: boolean }
+  ): void {
+    raw['datasf-planning-projects'].push({
+      record_id: o.id,
+      record_status: o.status ?? 'Under Review',
+      block: '3512',
+      lot: o.lot,
+      open_date: ts(o.open),
+      number_of_units_prop: String(o.units),
+      ...(o.newCon === false ? {} : { new_construction: 'CHECKED' })
+    });
+  }
+
+  /** A row with no `current_status_date`; `nameaddr` and `approved_date_planning` are set. */
+  function addRow(raw: Raw, o: { caseNo: string; lot: string; units: number }): void {
+    raw['datasf-dev-pipeline'].push({
+      blklot: `3512${o.lot}`,
+      current_status: 'PL Filed',
+      case_no: o.caseNo,
+      new_pipeline_units: String(o.units),
+      nameaddr: `${o.caseNo} row name`,
+      approved_date_planning: ts('2021-01-04')
+    });
+  }
+
+  function derive(edit: (raw: Raw) => void, prx: string[] = []): DeriveResult {
+    const raw = baseRaw();
+    edit(raw);
+    const mp = baseMultiphase();
+    for (const caseNo of prx) {
+      mp.projects.push({
+        caseNo,
+        label: `${caseNo} curated`,
+        schedule: null,
+        searched: [{ url: 'https://example.invalid/search', retrieved: '2026-10-01' }],
+        phases: []
+      });
+    }
+    return deriveProjects(baseInput(raw, mp));
+  }
+
+  const ids = (r: DeriveResult) => r.file.projects.map((p) => p.id);
+  const holder = (r: DeriveResult, caseNo: string) =>
+    r.file.projects.find((p) => p.sources.some((s) => s.dataset === '6jgi-cpb4' && s.id === caseNo))
+      ?.id ?? null;
+  const freedomWest = (raw: Raw) => {
+    addPrj(raw, { id: '2020-006887PRJ', lot: '008', open: '2020-07-24', units: 2387 });
+    addRow(raw, { caseNo: '2023-007911PRX', lot: '008', units: 2537 });
+  };
+
+  it('Freedom West: joins the open PRJ on its lot, keeping its id, dates and units', () => {
+    const alone = derive((raw) => {
+      addPrj(raw, { id: '2020-006887PRJ', lot: '008', open: '2020-07-24', units: 2387 });
+    });
+    // Without the row the PRJ is stale-open (filed long before the cutoff).
+    expect(ids(alone)).not.toContain('PRJ:2020-006887PRJ');
+    expect(alone.counts['projects.staleOpen']).toBe(2);
+
+    const r = derive(freedomWest, ['2023-007911PRX']);
+    expect(ids(r)).not.toContain('CASE:2023-007911PRX');
+    const p = r.file.projects.find((x) => x.id === 'PRJ:2020-006887PRJ');
+    expect(p).toMatchObject({
+      stage: 'filed',
+      history: { filed: isoDay('2020-07-24') },
+      units: 2387,
+      // Label rule 3 (pipeline nameaddr) is not read from a linked row.
+      label: null,
+      multiPhase: false,
+      phases: null,
+      quality: [PR.pipelineStatusDateLinked]
+    });
+    // No entitled date from the row's approved_date_planning.
+    expect(Object.keys(p!.history)).toEqual(['filed']);
+    expect(p!.sources).toContainEqual({
+      dataset: '6jgi-cpb4',
+      id: '2023-007911PRX',
+      key: 'case_no'
+    });
+    const h = r.histories.find((x) => x.id === 'PRJ:2020-006887PRJ');
+    expect(h?.entered).toEqual({ filed: isoDay('2020-07-24') });
+    expect(h?.quality).toEqual([PR.pipelineStatusDateLinked]);
+    expect(h?.sources).toContainEqual({
+      dataset: '6jgi-cpb4',
+      id: '2023-007911PRX',
+      key: 'case_no'
+    });
+    expect(r.counts['projects.staleOpen']).toBe(1);
+    expect(r.counts['projects.status.noDates']).toBe(0);
+    expect(r.warnings).toContain(
+      '2023-007911PRX: linked to 2020-006887PRJ; multiphase entry unused'
+    );
+    expect(r.checks.multiphase.fileProblems).toEqual([]);
+    // V21: the linked row counts, with the project's units (not the row's).
+    const base = deriveProjects(baseInput());
+    expect(r.checks.coverage).toEqual({
+      matchedUnits: base.checks.coverage.matchedUnits + 2387,
+      rowUnits: base.checks.coverage.rowUnits + 2537,
+      rows: base.checks.coverage.rows + 1
+    });
+  });
+
+  it("a child's block/lot qualifies", () => {
+    const r = derive((raw) => {
+      addPrj(raw, { id: '2022-000001PRJ', lot: '008', open: '2022-01-01', units: 30 });
+      raw['datasf-planning-records'].push({
+        record_id: '2022-000001ENV',
+        record_type: 'ENV',
+        record_status: 'Open',
+        block: '3512',
+        lot: '009',
+        parent_id: '2022-000001PRJ',
+        open_date: ts('2022-02-01')
+      });
+      addRow(raw, { caseNo: '2023-000009PRJ', lot: '009', units: 40 });
+    });
+    expect(holder(r, '2023-000009PRJ')).toBe('PRJ:2022-000001PRJ');
+    // The project keeps its parcels: the row's lot is not added.
+    expect(r.file.projects.find((x) => x.id === 'PRJ:2022-000001PRJ')?.parcelIds).toEqual([
+      '3512008'
+    ]);
+  });
+
+  it('the latest-opened PRJ wins; ties go to the smallest record_id', () => {
+    const latest = derive((raw) => {
+      addPrj(raw, { id: '2021-000002PRJ', lot: '008', open: '2021-03-01', units: 30 });
+      addPrj(raw, { id: '2021-000001PRJ', lot: '008', open: '2022-03-01', units: 30 });
+      addRow(raw, { caseNo: '2023-000008PRJ', lot: '008', units: 40 });
+    });
+    expect(holder(latest, '2023-000008PRJ')).toBe('PRJ:2021-000001PRJ');
+    const later = derive((raw) => {
+      addPrj(raw, { id: '2021-000002PRJ', lot: '008', open: '2022-03-01', units: 30 });
+      addPrj(raw, { id: '2021-000001PRJ', lot: '008', open: '2021-03-01', units: 30 });
+      addRow(raw, { caseNo: '2023-000008PRJ', lot: '008', units: 40 });
+    });
+    expect(holder(later, '2023-000008PRJ')).toBe('PRJ:2021-000002PRJ');
+    const tie = derive((raw) => {
+      addPrj(raw, { id: '2021-000002PRJ', lot: '008', open: '2022-03-01', units: 30 });
+      addPrj(raw, { id: '2021-000001PRJ', lot: '008', open: '2022-03-01', units: 30 });
+      addRow(raw, { caseNo: '2023-000008PRJ', lot: '008', units: 40 });
+    });
+    expect(holder(tie, '2023-000008PRJ')).toBe('PRJ:2021-000001PRJ');
+    // The loser stays stale-open.
+    expect(ids(tie)).not.toContain('PRJ:2021-000002PRJ');
+  });
+
+  it('a PRJ whose project ended is not a candidate', () => {
+    const withdrawn = (raw: Raw) =>
+      addPrj(raw, {
+        id: '2024-000001PRJ',
+        lot: '008',
+        open: '2024-03-01',
+        units: 30,
+        status: 'Closed - Withdrawn'
+      });
+    const r = derive((raw) => {
+      addPrj(raw, { id: '2021-000001PRJ', lot: '008', open: '2021-03-01', units: 30 });
+      withdrawn(raw);
+      addRow(raw, { caseNo: '2023-000008PRJ', lot: '008', units: 40 });
+    });
+    expect(r.histories.find((h) => h.id === 'PRJ:2024-000001PRJ')?.end.kind).toBe('exit');
+    expect(holder(r, '2023-000008PRJ')).toBe('PRJ:2021-000001PRJ');
+    const only = derive((raw) => {
+      withdrawn(raw);
+      addRow(raw, { caseNo: '2023-000008PRJ', lot: '008', units: 40 });
+    });
+    expect(only.counts['quality.pr.pipeline.no-status-date.fired']).toBe(1);
+    expect(only.counts['quality.pr.pipeline.status-date-linked.fired']).toBe(0);
+  });
+
+  it('a winner whose project already holds a pipeline row drops the row, naming both', () => {
+    // A (PRJ:2019-000001PRJ, lot 001) holds the dated row 2019-000001PRJ.
+    const r = derive((raw) => addRow(raw, { caseNo: '2026-000021PRJ', lot: '001', units: 7 }));
+    expect(r.warnings).toContain(
+      '2026-000021PRJ: no status date and winner 2019-000001PRJ already holds pipeline row 2019-000001PRJ; dropped'
+    );
+    expect(r.counts['quality.pr.pipeline.no-status-date.fired']).toBe(1);
+    expect(r.counts['quality.pr.pipeline.no-status-date.units']).toBe(7);
+    expect(r.counts['quality.pr.pipeline.status-date-linked.fired']).toBe(0);
+    expect(holder(r, '2026-000021PRJ')).toBeNull();
+  });
+
+  it('a second no-date row on one winner is dropped, naming the first', () => {
+    const r = derive(
+      (raw) => {
+        freedomWest(raw);
+        addRow(raw, { caseNo: '2024-000030PRJ', lot: '008', units: 12 });
+      },
+      ['2023-007911PRX']
+    );
+    expect(holder(r, '2023-007911PRX')).toBe('PRJ:2020-006887PRJ');
+    expect(r.warnings).toContain(
+      '2024-000030PRJ: no status date and winner 2020-006887PRJ already holds pipeline row 2023-007911PRX; dropped'
+    );
+    expect(r.counts['quality.pr.pipeline.status-date-linked.fired']).toBe(1);
+    expect(r.counts['quality.pr.pipeline.no-status-date.fired']).toBe(1);
+  });
+
+  it('no candidate drops the row', () => {
+    const r = derive((raw) => addRow(raw, { caseNo: '2026-000018PRJ', lot: '009', units: 20 }));
+    expect(r.warnings).toContain(
+      '2026-000018PRJ: no status date and no open Planning record on its lot; dropped'
+    );
+    expect(r.counts['quality.pr.pipeline.no-status-date.fired']).toBe(1);
+    expect(r.counts['quality.pr.pipeline.no-status-date.units']).toBe(20);
+    expect(ids(r)).not.toContain('CASE:2026-000018PRJ');
+  });
+
+  it('a no-units winner counts projects.excludedNoUnits and is named', () => {
+    const base = deriveProjects(baseInput());
+    expect(base.counts['projects.excludedNoUnits']).toBe(0);
+    const r = derive(
+      (raw) => {
+        addPrj(raw, {
+          id: '2025-000017PRJ',
+          lot: '009',
+          open: '2025-09-12',
+          units: 0,
+          newCon: false
+        });
+        addRow(raw, { caseNo: '2025-000017PRX', lot: '009', units: 900 });
+      },
+      ['2025-000017PRX']
+    );
+    expect(r.counts['projects.excludedNoUnits']).toBe(900);
+    expect(r.counts['projects.excludedAlterationUnits']).toBe(
+      base.counts['projects.excludedAlterationUnits']
+    );
+    expect(r.warnings).toContain(
+      '2025-000017PRX: linked to 2025-000017PRJ with no units; excluded'
+    );
+    expect(r.warnings).toContain(
+      '2025-000017PRX: linked to 2025-000017PRJ; multiphase entry unused'
+    );
+    expect(ids(r)).not.toContain('PRJ:2025-000017PRJ');
+    expect(ids(r)).not.toContain('CASE:2025-000017PRX');
+    expect(r.histories.map((h) => h.id)).not.toContain('PRJ:2025-000017PRJ');
+    expect(r.counts['quality.pr.pipeline.status-date-linked.fired']).toBe(1);
+    expect(r.counts['quality.pr.pipeline.status-date-linked.units']).toBe(900);
+    expect(r.counts['quality.pr.pipeline.no-status-date.fired']).toBe(0);
+    // Out of the population, so not in V21 coverage.
+    expect(r.checks.coverage).toEqual(base.checks.coverage);
+  });
+
+  it('both rule tallies: linked rows (no-units ones included) and dropped rows', () => {
+    const r = derive(
+      (raw) => {
+        freedomWest(raw);
+        addPrj(raw, {
+          id: '2025-000017PRJ',
+          lot: '009',
+          open: '2025-09-12',
+          units: 0,
+          newCon: false
+        });
+        addRow(raw, { caseNo: '2025-000017PRX', lot: '009', units: 900 });
+        addRow(raw, { caseNo: '2026-000018PRJ', lot: '005', units: 20 });
+      },
+      ['2023-007911PRX', '2025-000017PRX']
+    );
+    // Base: five rows, 135 new units. Lot 005 holds only E's pipeline-only row (no PRJ).
+    const unitsOf = 135 + 2537 + 900 + 20;
+    expect(r.counts).toMatchObject({
+      'quality.pr.pipeline.status-date-linked.fired': 2,
+      'quality.pr.pipeline.status-date-linked.of': 8,
+      'quality.pr.pipeline.status-date-linked.units': 2537 + 900,
+      'quality.pr.pipeline.status-date-linked.unitsOf': unitsOf,
+      'quality.pr.pipeline.no-status-date.fired': 1,
+      'quality.pr.pipeline.no-status-date.of': 8,
+      'quality.pr.pipeline.no-status-date.units': 20,
+      'quality.pr.pipeline.no-status-date.unitsOf': unitsOf
+    });
+    expect(r.file.qualityRules.map((q) => q.id)).toContain(PR.pipelineStatusDateLinked);
   });
 });
