@@ -127,7 +127,8 @@ const TABLE: Record<string, Spec> = {
     tier: 2,
     valueTier: null,
     unitsWeighted: false,
-    warnShare: 0.01,
+    // Partner ruling: warn share 0.03 (live 48/2,569 = 1.87%).
+    warnShare: 0.03,
     failShare: 0.1,
     label:
       "A building's filing-stage home count was not taken from the whole Planning case it was split from"
