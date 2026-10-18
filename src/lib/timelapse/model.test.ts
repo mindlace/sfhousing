@@ -2,18 +2,28 @@ import { describe, expect, it } from 'vitest';
 import { mulberry32 } from '../generator/seed';
 import small from './fixtures/calibration-small.json';
 import { exp, log } from './math';
+import { readFileSync } from 'node:fs';
 import {
+  CalibrationFormatError,
   binIndex,
   chanceTable,
   cumulativeIncidence,
   cumulativeTotal,
   eventualProbabilities,
   initiationHazard,
+  parseCalibration,
   sampleTransition,
   typicalMonths
 } from './model';
 import { MONTH_DAYS, monthsIn } from './time';
-import { EXIT_ORDER, PATHWAYS, type Calibration, type FeatureId, type Transition } from './types';
+import {
+  EXIT_ORDER,
+  PATHWAYS,
+  pathwayStages,
+  type Calibration,
+  type FeatureId,
+  type Transition
+} from './types';
 
 const cal = small as unknown as Calibration;
 const t = cal.transitions.discretionary.permitFiled as Transition;
@@ -442,6 +452,13 @@ describe('chanceTable', () => {
     );
   });
 
+  it('has exactly the occupiable stages of each pathway, in order', () => {
+    const table = chanceTable(cal);
+    for (const p of PATHWAYS) {
+      expect(Object.keys(table[p])).toEqual(pathwayStages(p).filter((s) => s !== 'complete'));
+    }
+  });
+
   it('returns fresh objects on every call', () => {
     const a = chanceTable(cal);
     const b = chanceTable(cal);
@@ -507,3 +524,282 @@ function wrap(tr: Transition): Calibration {
     transitions: { ...cal.transitions, discretionary: { filed: tr } }
   } as Calibration;
 }
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+describe('parseCalibration', () => {
+  const clone = (): any => structuredClone(cal);
+  const disc = (c: any): any => c.transitions.discretionary.permitFiled;
+  const prov = {
+    tier: 4,
+    label: 'x',
+    sources: [{ label: 's', url: 'https://x.org' }],
+    method: 'm'
+  };
+
+  function rejection(c: unknown): CalibrationFormatError {
+    try {
+      parseCalibration(c);
+    } catch (e) {
+      expect(e).toBeInstanceOf(CalibrationFormatError);
+      return e as CalibrationFormatError;
+    }
+    throw new Error('expected parseCalibration to throw');
+  }
+
+  it('accepts the small fixture, returns it, and does not mutate it', () => {
+    const before = JSON.stringify(cal);
+    expect(parseCalibration(cal)).toBe(cal);
+    expect(JSON.stringify(cal)).toBe(before);
+  });
+
+  it('starts every message with the path', () => {
+    const c = clone();
+    disc(c).advance[3] = 2;
+    const e = rejection(c);
+    expect(e.path).toBe('transitions.discretionary.permitFiled.advance[3]');
+    expect(e.message.startsWith(`${e.path}: `)).toBe(true);
+    expect(e.name).toBe('CalibrationFormatError');
+  });
+
+  it('rejects a non-object at the root', () => {
+    expect(rejection(42).path).toBe('$');
+    expect(rejection(null).path).toBe('$');
+    expect(rejection([]).path).toBe('$');
+  });
+
+  const cases: [string, (c: any) => void, string][] = [
+    ['schema 2', (c) => (c.schema = 2), 'schema'],
+    ['asOf 1.5', (c) => (c.asOf = 1.5), 'asOf'],
+    // transitions: shape
+    [
+      'sum above 1',
+      (c) => {
+        for (let k = 5; k < 12; k++) {
+          disc(c).advance[k] = 0.95;
+          disc(c).exit.expired[k] = 0.1;
+        }
+      },
+      'transitions.discretionary.permitFiled'
+    ],
+    [
+      'decreasing advance',
+      (c) => (disc(c).advance[4] = 0.01),
+      'transitions.discretionary.permitFiled.advance[4]'
+    ],
+    ['short array', (c) => disc(c).advance.pop(), 'permitFiled.advance'],
+    ['long exit array', (c) => disc(c).exit.expired.push(0.1), 'permitFiled.exit.expired'],
+    ['value above 1', (c) => (disc(c).advance[11] = 1.5), 'permitFiled.advance[11]'],
+    ['non-finite value', (c) => (disc(c).advance[0] = null), 'permitFiled.advance[0]'],
+    ['months 0', (c) => (disc(c).months = 0), 'permitFiled.months'],
+    ['months 241', (c) => (disc(c).months = 241), 'permitFiled.months'],
+    ['fractional months', (c) => (disc(c).months = 12.5), 'permitFiled.months'],
+    ['unknown exit reason', (c) => (disc(c).exit.vanished = [0.1]), 'permitFiled.exit.vanished'],
+    [
+      'C(K) too close to 1',
+      (c) => {
+        for (let k = 8; k < 12; k++) disc(c).advance[k] = 1 - 5e-7;
+        disc(c).exit = {};
+        disc(c).tail.exit = {};
+      },
+      'transitions.discretionary.permitFiled'
+    ],
+    [
+      'tail all zeros',
+      (c) => (disc(c).tail = { advance: 0, exit: { expired: 0 } }),
+      'permitFiled.tail'
+    ],
+    ['tail above 1', (c) => (disc(c).tail.advance = 1.5), 'permitFiled.tail'],
+    ['negative tail value', (c) => (disc(c).tail.exit.expired = -0.01), 'permitFiled.tail.exit'],
+    ['non-finite tail value', (c) => (disc(c).tail.advance = 'x'), 'permitFiled.tail.advance'],
+    [
+      'unknown tail reason',
+      (c) => (disc(c).tail.exit.vanished = 0.1),
+      'permitFiled.tail.exit.vanished'
+    ],
+    ['missing tailProvenance', (c) => delete disc(c).tailProvenance, 'permitFiled.tailProvenance'],
+    // transitions: pairs
+    [
+      'missing permitOnly.construction',
+      (c) => delete c.transitions.permitOnly.construction,
+      'transitions.permitOnly.construction'
+    ],
+    [
+      'extra permitOnly.filed',
+      (c) => (c.transitions.permitOnly.filed = disc(c)),
+      'transitions.permitOnly.filed'
+    ],
+    [
+      'stage complete',
+      (c) => (c.transitions.permitOnly.complete = disc(c)),
+      'transitions.permitOnly.complete'
+    ],
+    ['missing pathway', (c) => delete c.transitions.streamlined, 'transitions.streamlined'],
+    // initiation
+    ['initiation kind', (c) => (c.initiation.kind = 'probit'), 'initiation.kind'],
+    ['initiation intercept', (c) => (c.initiation.intercept = null), 'initiation.intercept'],
+    [
+      'initiation unknown feature',
+      (c) => (c.initiation.terms[0].feature = 'colour'),
+      'initiation.terms[0].feature'
+    ],
+    [
+      'initiation empty bins',
+      (c) => {
+        c.initiation.terms[0].bins = [];
+        c.initiation.terms[0].coef = [];
+      },
+      'initiation.terms[0].bins'
+    ],
+    [
+      'initiation unsorted bins',
+      (c) => (c.initiation.terms[0].bins = [0, 5, 2]),
+      'initiation.terms[0].bins'
+    ],
+    [
+      'initiation repeated bins',
+      (c) => (c.initiation.terms[0].bins = [0, 2, 2]),
+      'initiation.terms[0].bins'
+    ],
+    ['initiation coef length', (c) => c.initiation.terms[0].coef.pop(), 'initiation.terms[0].coef'],
+    [
+      'initiation non-finite coef',
+      (c) => (c.initiation.terms[0].coef[1] = 'x'),
+      'initiation.terms[0].coef[1]'
+    ],
+    // size
+    ['fillLevels not ending at 1', (c) => (c.size.fillLevels = [0.5, 0.9]), 'size.fillLevels'],
+    ['fillLevels descending', (c) => (c.size.fillLevels = [0.5, 0.25, 1]), 'size.fillLevels'],
+    ['fillLevels empty', (c) => (c.size.fillLevels = []), 'size.fillLevels'],
+    ['fillLevels zero', (c) => (c.size.fillLevels = [0, 1]), 'size.fillLevels'],
+    [
+      'probs length 4',
+      (c) => (c.size.byEnvelope[0].probs = [0.25, 0.25, 0.25, 0.25]),
+      'size.byEnvelope[0].probs'
+    ],
+    [
+      'probs sum 0.99',
+      (c) => (c.size.byEnvelope[0].probs = [0.1, 0.2, 0.3, 0.2, 0.19]),
+      'size.byEnvelope[0].probs'
+    ],
+    [
+      'probs negative',
+      (c) => (c.size.byEnvelope[0].probs = [-0.1, 0.4, 0.3, 0.2, 0.2]),
+      'size.byEnvelope[0].probs[0]'
+    ],
+    ['byEnvelope empty', (c) => (c.size.byEnvelope = []), 'size.byEnvelope'],
+    [
+      'byEnvelope descending',
+      (c) =>
+        (c.size.byEnvelope = [
+          { maxStoriesUpTo: 99, probs: [0.2, 0.2, 0.2, 0.2, 0.2] },
+          { maxStoriesUpTo: 9, probs: [0.2, 0.2, 0.2, 0.2, 0.2] }
+        ]),
+      'size.byEnvelope[1].maxStoriesUpTo'
+    ],
+    // revision
+    [
+      'revision edges without 1',
+      (c) => (c.revision.at[0].ratio.edges = [0.5, 2]),
+      'revision.at[0].ratio.edges'
+    ],
+    [
+      'revision edges unsorted',
+      (c) => (c.revision.at[0].ratio.edges = [2, 1, 0.5]),
+      'revision.at[0].ratio.edges'
+    ],
+    [
+      'revision probs length',
+      (c) => (c.revision.at[0].ratio.probs = [1]),
+      'revision.at[0].ratio.probs'
+    ],
+    [
+      'revision probs sum',
+      (c) => (c.revision.at[0].ratio.probs = [0.5, 0.4]),
+      'revision.at[0].ratio.probs'
+    ],
+    [
+      'revision at construction',
+      (c) => (c.revision.at[0].stage = 'construction'),
+      'revision.at[0].stage'
+    ],
+    ['revision at complete', (c) => (c.revision.at[0].stage = 'complete'), 'revision.at[0].stage'],
+    ['revision at unknown stage', (c) => (c.revision.at[0].stage = 'x'), 'revision.at[0].stage'],
+    [
+      'revision probability',
+      (c) => (c.revision.at[0].probability = 1.1),
+      'revision.at[0].probability'
+    ],
+    // pathway mixes
+    ['pathwayForNew sum 0.9', (c) => (c.pathwayForNew.permitOnly = 0), 'pathwayForNew'],
+    ['ppaShare 1.2', (c) => (c.ppaShare.permitOnly = 1.2), 'ppaShare.permitOnly'],
+    // provenance
+    [
+      'http url',
+      (c) => (c.pathwayForNew.provenance.sources[0].url = 'http://x.org'),
+      'pathwayForNew.provenance.sources[0].url'
+    ],
+    [
+      'tier 2 without window',
+      (c) => (disc(c).provenance = { ...prov, tier: 2, n: 5 }),
+      'permitFiled.provenance.window'
+    ],
+    [
+      'tier 0 without n',
+      (c) => (disc(c).provenance = { ...prov, tier: 0, window: ['2010-01-01', '2020-01-01'] }),
+      'permitFiled.provenance.n'
+    ],
+    ['tier 5', (c) => (disc(c).provenance.tier = 5), 'permitFiled.provenance.tier'],
+    ['empty label', (c) => (disc(c).provenance.label = ''), 'permitFiled.provenance.label'],
+    ['empty method', (c) => (disc(c).provenance.method = ''), 'permitFiled.provenance.method'],
+    ['no sources', (c) => (disc(c).provenance.sources = []), 'permitFiled.provenance.sources'],
+    [
+      'missing streamlinedForLocalProgram',
+      (c) => delete c.streamlinedForLocalProgram,
+      'streamlinedForLocalProgram'
+    ],
+    ['missing phaseGap provenance', (c) => delete c.phaseGap.provenance, 'phaseGap.provenance'],
+    // phaseGap
+    ['phaseGap empty', (c) => (c.phaseGap.days = []), 'phaseGap.days'],
+    ['phaseGap descending', (c) => (c.phaseGap.days = [3, 2]), 'phaseGap.days'],
+    ['phaseGap zero', (c) => (c.phaseGap.days = [0]), 'phaseGap.days'],
+    ['phaseGap fractional', (c) => (c.phaseGap.days = [1.5]), 'phaseGap.days']
+  ];
+
+  it.each(cases)('rejects %s', (_name, mutate, path) => {
+    const c = clone();
+    mutate(c);
+    const e = rejection(c);
+    expect(e.message).toContain(path);
+    expect(e.path).toContain(path);
+  });
+
+  it('accepts equal phase gaps (empirical ties)', () => {
+    const c = clone();
+    c.phaseGap.days = [30, 30, 60];
+    expect(parseCalibration(c)).toBe(c);
+  });
+
+  it('accepts a tail summing to exactly 1', () => {
+    const c = clone();
+    disc(c).tail = { advance: 0.75, exit: { expired: 0.25 } };
+    expect(parseCalibration(c)).toBe(c);
+  });
+
+  it('A2: accepts valid fill levels that differ from FILL_LEVELS', () => {
+    const c = clone();
+    c.size.fillLevels = [0.5, 1];
+    c.size.byEnvelope = [
+      { maxStoriesUpTo: 9, probs: [0.4, 0.6] },
+      { maxStoriesUpTo: 99, probs: [0.5, 0.5] }
+    ];
+    expect(parseCalibration(c)).toBe(c);
+  });
+
+  it('AC-7: model.ts imports only ./types, ./time and ./math, and no zod', () => {
+    const src = readFileSync(new URL('./model.ts', import.meta.url), 'utf8');
+    const specifiers = [...src.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]);
+    expect(specifiers.length).toBeGreaterThan(0);
+    for (const sp of specifiers) expect(sp).toMatch(/^\.\/(types|time|math)$/);
+    expect(src).not.toContain('zod');
+  });
+});

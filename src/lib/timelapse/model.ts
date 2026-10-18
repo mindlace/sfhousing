@@ -1,14 +1,14 @@
 /**
- * Calibration model (design doc T12): pure, zod-free and worker-safe. Functions still marked
- * `not implemented` are signature stubs so every consumer compiles against the final API; their
- * bodies land in later stage-calibration steps. Only `./types`, `./time` and `./math` are
- * imported, and `exp`/`log` come from `./math` so results are bit-reproducible.
+ * Calibration model (design doc T12): pure, free of any schema library and worker-safe. Only
+ * `./types`, `./time` and `./math` are imported, and `exp`/`log` come from `./math` so results
+ * are bit-reproducible.
  */
 import { exp, log } from './math';
 import { MONTH_DAYS } from './time';
 import {
   EXIT_ORDER,
   PATHWAYS,
+  STAGE_ORDER,
   pathwayStages,
   type Calibration,
   type ExitReason,
@@ -278,7 +278,9 @@ type Tabled = Exclude<Stage, 'complete'>;
  * (1 for `complete`). Beyond 240 callers use index 240, which is the tail value since K <= 240.
  * A stage whose transition, or whose successor's, is missing has no entry.
  */
-export function chanceTable(cal: Calibration): Record<Pathway, Partial<Record<Tabled, Float32Array>>> {
+export function chanceTable(
+  cal: Calibration
+): Record<Pathway, Partial<Record<Tabled, Float32Array>>> {
   const out = {} as Record<Pathway, Partial<Record<Tabled, Float32Array>>>;
   for (const p of PATHWAYS) {
     const stages = pathwayStages(p);
@@ -333,6 +335,315 @@ export function typicalMonths(cal: Calibration): Record<Pathway, Partial<Record<
   return out;
 }
 
-export function parseCalibration(_json: unknown): Calibration {
-  throw new Error('not implemented');
+/** A `parseCalibration` violation; `path` locates it and the message starts with it. */
+export class CalibrationFormatError extends Error {
+  constructor(
+    readonly path: string,
+    message: string
+  ) {
+    super(`${path}: ${message}`);
+    this.name = 'CalibrationFormatError';
+  }
+}
+
+const TOLERANCE = 1e-9;
+const MAX_MONTHS = 240;
+const FEATURE_IDS = Object.keys({
+  potentialRatio: 0,
+  existingUnits: 0,
+  lotAreaM2: 0,
+  yearBuilt: 0,
+  storiesGap: 0,
+  improvementShare: 0,
+  rentControlLikely: 0,
+  landUseClass: 0
+} satisfies Record<FeatureId, 0>);
+
+function fail(path: string, message: string): never {
+  throw new CalibrationFormatError(path, message);
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function record(v: unknown, path: string): Record<string, unknown> {
+  if (!isRecord(v)) fail(path, 'expected an object');
+  return v;
+}
+
+function array(v: unknown, path: string): unknown[] {
+  if (!Array.isArray(v)) fail(path, 'expected an array');
+  return v;
+}
+
+function finite(v: unknown, path: string): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) fail(path, 'expected a finite number');
+  return v;
+}
+
+function integer(v: unknown, path: string): number {
+  if (typeof v !== 'number' || !Number.isInteger(v)) fail(path, 'expected an integer');
+  return v;
+}
+
+function unit(v: unknown, path: string): number {
+  const x = finite(v, path);
+  if (x < 0 || x > 1) fail(path, `expected a number in [0, 1], got ${x}`);
+  return x;
+}
+
+function text(v: unknown, path: string): string {
+  if (typeof v !== 'string' || v === '') fail(path, 'expected a non-empty string');
+  return v;
+}
+
+function numbers(v: unknown, path: string): number[] {
+  return array(v, path).map((x, i) => finite(x, `${path}[${i}]`));
+}
+
+/** Every key of `obj` must be one of `allowed`; the caller checks presence. */
+function checkKeys(obj: Record<string, unknown>, path: string, allowed: readonly string[]): void {
+  for (const k of Object.keys(obj)) {
+    if (!allowed.includes(k)) fail(`${path}.${k}`, 'unexpected key');
+  }
+}
+
+function checkSumsToOne(xs: number[], path: string): void {
+  let s = 0;
+  for (const x of xs) s += x;
+  if (!(Math.abs(s - 1) <= TOLERANCE)) fail(path, `expected values summing to 1, got ${s}`);
+}
+
+function checkProvenance(v: unknown, path: string): void {
+  const p = record(v, path);
+  const tier = p.tier;
+  if (typeof tier !== 'number' || !Number.isInteger(tier) || tier < 0 || tier > 4) {
+    fail(`${path}.tier`, 'expected an integer tier 0..4');
+  }
+  text(p.label, `${path}.label`);
+  text(p.method, `${path}.method`);
+  const sources = array(p.sources, `${path}.sources`);
+  if (sources.length === 0) fail(`${path}.sources`, 'expected at least one source');
+  sources.forEach((s, i) => {
+    const sp = `${path}.sources[${i}]`;
+    const src = record(s, sp);
+    text(src.label, `${sp}.label`);
+    const url = text(src.url, `${sp}.url`);
+    let protocol = '';
+    try {
+      protocol = new URL(url).protocol;
+    } catch {
+      // not a URL: reported below
+    }
+    if (protocol !== 'https:') fail(`${sp}.url`, `expected an https: URL, got ${url}`);
+  });
+  if (tier <= 2 || p.n !== undefined) {
+    if (p.n === undefined) fail(`${path}.n`, `expected n for tier ${tier}`);
+    const n = finite(p.n, `${path}.n`);
+    if (n < 0) fail(`${path}.n`, 'expected a non-negative n');
+  }
+  if (tier <= 2 || p.window !== undefined) {
+    if (p.window === undefined) fail(`${path}.window`, `expected window for tier ${tier}`);
+    const w = array(p.window, `${path}.window`);
+    if (w.length !== 2) fail(`${path}.window`, 'expected [from, to]');
+    text(w[0], `${path}.window[0]`);
+    text(w[1], `${path}.window[1]`);
+  }
+}
+
+/** A cumulative array: length `months`, values in [0, 1], non-decreasing. */
+function checkCumulative(v: unknown, path: string, months: number): number[] {
+  const xs = array(v, path);
+  if (xs.length !== months) fail(path, `expected length ${months}, got ${xs.length}`);
+  let prev = 0;
+  return xs.map((x, i) => {
+    const y = unit(x, `${path}[${i}]`);
+    if (y < prev) fail(`${path}[${i}]`, `expected a non-decreasing array, ${y} < ${prev}`);
+    prev = y;
+    return y;
+  });
+}
+
+function checkTransition(v: unknown, path: string): void {
+  const t = record(v, path);
+  const months = integer(t.months, `${path}.months`);
+  if (months < 1 || months > MAX_MONTHS) {
+    fail(`${path}.months`, `expected 1..${MAX_MONTHS}, got ${months}`);
+  }
+  const advance = checkCumulative(t.advance, `${path}.advance`, months);
+  const exitObj = record(t.exit, `${path}.exit`);
+  checkKeys(exitObj, `${path}.exit`, EXIT_ORDER);
+  const exits = EXIT_ORDER.filter((r) => exitObj[r] !== undefined).map((r) =>
+    checkCumulative(exitObj[r], `${path}.exit.${r}`, months)
+  );
+  let c = 0;
+  for (let k = 0; k < months; k++) {
+    c = advance[k];
+    for (const e of exits) c += e[k];
+    if (c > 1 + TOLERANCE) {
+      fail(`${path}.advance[${k}]`, `advance + exits is ${c} > 1 + 1e-9 at month ${k + 1}`);
+    }
+  }
+  if (c > 1 - 1e-6) fail(path, `cumulative incidence at month ${months} is ${c} > 1 - 1e-6`);
+
+  const tail = record(t.tail, `${path}.tail`);
+  checkKeys(tail, `${path}.tail`, ['advance', 'exit']);
+  let rho = finite(tail.advance, `${path}.tail.advance`);
+  if (rho < 0) fail(`${path}.tail.advance`, `expected a value >= 0, got ${rho}`);
+  const tailExit = record(tail.exit, `${path}.tail.exit`);
+  checkKeys(tailExit, `${path}.tail.exit`, EXIT_ORDER);
+  for (const r of EXIT_ORDER) {
+    if (tailExit[r] === undefined) continue;
+    const x = finite(tailExit[r], `${path}.tail.exit.${r}`);
+    if (x < 0) fail(`${path}.tail.exit.${r}`, `expected a value >= 0, got ${x}`);
+    rho += x;
+  }
+  if (!(rho > 0 && rho <= 1)) fail(`${path}.tail`, `expected 0 < rho <= 1, got ${rho}`);
+  checkProvenance(t.provenance, `${path}.provenance`);
+  checkProvenance(t.tailProvenance, `${path}.tailProvenance`);
+}
+
+function checkTransitions(v: unknown): void {
+  const path = 'transitions';
+  const all = record(v, path);
+  checkKeys(all, path, PATHWAYS);
+  for (const p of PATHWAYS) {
+    const row = record(all[p], `${path}.${p}`);
+    const stages = pathwayStages(p).filter((s) => s !== 'complete');
+    checkKeys(row, `${path}.${p}`, stages);
+    for (const s of stages) {
+      if (row[s] === undefined) fail(`${path}.${p}.${s}`, 'missing transition');
+      checkTransition(row[s], `${path}.${p}.${s}`);
+    }
+  }
+}
+
+function checkInitiation(v: unknown): void {
+  const path = 'initiation';
+  const m = record(v, path);
+  if (m.kind !== 'logit-monthly') fail(`${path}.kind`, "expected 'logit-monthly'");
+  finite(m.intercept, `${path}.intercept`);
+  array(m.terms, `${path}.terms`).forEach((term, i) => {
+    const tp = `${path}.terms[${i}]`;
+    const t = record(term, tp);
+    if (typeof t.feature !== 'string' || !FEATURE_IDS.includes(t.feature)) {
+      fail(`${tp}.feature`, `expected one of ${FEATURE_IDS.join(', ')}`);
+    }
+    const bins = numbers(t.bins, `${tp}.bins`);
+    if (bins.length === 0) fail(`${tp}.bins`, 'expected at least one bin');
+    for (let j = 1; j < bins.length; j++) {
+      if (!(bins[j] > bins[j - 1])) fail(`${tp}.bins`, 'expected strictly ascending bins');
+    }
+    const coef = numbers(t.coef, `${tp}.coef`);
+    if (coef.length !== bins.length) {
+      fail(`${tp}.coef`, `expected length ${bins.length} (one per bin), got ${coef.length}`);
+    }
+  });
+  checkProvenance(m.provenance, `${path}.provenance`);
+}
+
+function checkSize(v: unknown): void {
+  const path = 'size';
+  const s = record(v, path);
+  const levels = numbers(s.fillLevels, `${path}.fillLevels`);
+  if (levels.length === 0) fail(`${path}.fillLevels`, 'expected at least one fill level');
+  levels.forEach((x, i) => {
+    if (!(x > 0 && x <= 1))
+      fail(`${path}.fillLevels[${i}]`, `expected a value in (0, 1], got ${x}`);
+    if (i > 0 && !(x > levels[i - 1])) fail(`${path}.fillLevels`, 'expected strictly ascending');
+  });
+  if (levels[levels.length - 1] !== 1)
+    fail(`${path}.fillLevels`, 'expected the last level to be 1');
+  const rows = array(s.byEnvelope, `${path}.byEnvelope`);
+  if (rows.length === 0) fail(`${path}.byEnvelope`, 'expected at least one entry');
+  let prev = -Infinity;
+  rows.forEach((row, i) => {
+    const rp = `${path}.byEnvelope[${i}]`;
+    const r = record(row, rp);
+    const upTo = finite(r.maxStoriesUpTo, `${rp}.maxStoriesUpTo`);
+    if (upTo < prev) fail(`${rp}.maxStoriesUpTo`, 'expected ascending maxStoriesUpTo');
+    prev = upTo;
+    const probs = array(r.probs, `${rp}.probs`);
+    if (probs.length !== levels.length) {
+      fail(`${rp}.probs`, `expected length ${levels.length} (fillLevels), got ${probs.length}`);
+    }
+    checkSumsToOne(
+      probs.map((x, j) => unit(x, `${rp}.probs[${j}]`)),
+      `${rp}.probs`
+    );
+  });
+  checkProvenance(s.provenance, `${path}.provenance`);
+}
+
+/** Stages from `construction` on: no revision applies there (T4c). */
+const NO_REVISION: Stage[] = ['construction', 'complete'];
+
+function checkRevision(v: unknown): void {
+  const path = 'revision';
+  const r = record(v, path);
+  array(r.at, `${path}.at`).forEach((entry, i) => {
+    const ap = `${path}.at[${i}]`;
+    const a = record(entry, ap);
+    const stage = a.stage as Stage;
+    if (!STAGE_ORDER.includes(stage)) fail(`${ap}.stage`, `expected a stage, got ${String(stage)}`);
+    if (NO_REVISION.includes(stage)) fail(`${ap}.stage`, `no revision applies at ${stage}`);
+    unit(a.probability, `${ap}.probability`);
+    const ratio = record(a.ratio, `${ap}.ratio`);
+    const edges = numbers(ratio.edges, `${ap}.ratio.edges`);
+    for (let j = 1; j < edges.length; j++) {
+      if (!(edges[j] > edges[j - 1])) fail(`${ap}.ratio.edges`, 'expected strictly ascending');
+    }
+    if (!edges.includes(1)) fail(`${ap}.ratio.edges`, 'expected the edges to include 1');
+    const probs = array(ratio.probs, `${ap}.ratio.probs`);
+    if (probs.length !== edges.length - 1) {
+      fail(`${ap}.ratio.probs`, `expected length ${edges.length - 1}, got ${probs.length}`);
+    }
+    const ps = probs.map((x, j) => unit(x, `${ap}.ratio.probs[${j}]`));
+    if (ps.length > 0) checkSumsToOne(ps, `${ap}.ratio.probs`);
+  });
+  checkProvenance(r.provenance, `${path}.provenance`);
+}
+
+function checkPathwayMap(v: unknown, path: string, sumsToOne: boolean): void {
+  const m = record(v, path);
+  checkKeys(m, path, [...PATHWAYS, 'provenance']);
+  const xs = PATHWAYS.map((p) => unit(m[p], `${path}.${p}`));
+  if (sumsToOne) checkSumsToOne(xs, path);
+  checkProvenance(m.provenance, `${path}.provenance`);
+}
+
+function checkPhaseGap(v: unknown): void {
+  const path = 'phaseGap';
+  const g = record(v, path);
+  const days = array(g.days, `${path}.days`);
+  if (days.length === 0) fail(`${path}.days`, 'expected at least one gap');
+  days.forEach((d, i) => {
+    if (integer(d, `${path}.days[${i}]`) < 1) fail(`${path}.days[${i}]`, 'expected a positive day');
+    if (i > 0 && (d as number) < (days[i - 1] as number))
+      fail(`${path}.days`, 'expected ascending');
+  });
+  checkProvenance(g.provenance, `${path}.provenance`);
+}
+
+/**
+ * Validate a parsed `calibration.json` (design doc T12, spec section 4.2). Throws a
+ * `CalibrationFormatError` naming the path of the first violation; otherwise returns the same
+ * value, typed. The input is never mutated or copied. `size.fillLevels` is checked internally
+ * only (ruling A2): equality with T11's `FILL_LEVELS` is V25's and timelapse-sim's job.
+ */
+export function parseCalibration(json: unknown): Calibration {
+  const c = record(json, '$');
+  if (c.schema !== 1) fail('schema', `expected 1, got ${String(c.schema)}`);
+  integer(c.asOf, 'asOf');
+  checkTransitions(c.transitions);
+  checkInitiation(c.initiation);
+  checkPathwayMap(c.pathwayForNew, 'pathwayForNew', true);
+  checkPathwayMap(c.ppaShare, 'ppaShare', false);
+  checkSize(c.size);
+  checkRevision(c.revision);
+  if (c.streamlinedForLocalProgram === undefined) fail('streamlinedForLocalProgram', 'missing');
+  checkProvenance(c.streamlinedForLocalProgram, 'streamlinedForLocalProgram');
+  checkPhaseGap(c.phaseGap);
+  return json as Calibration;
 }

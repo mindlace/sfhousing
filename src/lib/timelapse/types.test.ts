@@ -239,9 +239,3 @@ describe('stage constants', () => {
     expect(pathwayStages('permitOnly')).toHaveLength(5);
   });
 });
-
-describe('model stubs', () => {
-  it('remaining T12 stubs throw not implemented', () => {
-    expect(() => parseCalibration({})).toThrow('not implemented');
-  });
-});

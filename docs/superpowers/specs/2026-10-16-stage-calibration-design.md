@@ -194,7 +194,7 @@ It is the one implementation of "the share that has advanced or died by month *k
 
 Beyond index 240, callers use index 240, which equals the tail value because K ≤ 240.
 
-**`typicalMonths(cal)`**: for each pathway and stage, the least *k* ≥ 1 with C(k) ≥ 0.5. That is the median month of leaving the stage, by any outcome. Beyond K it is solved in closed form.
+**`typicalMonths(cal)`**: for each pathway and stage, the least *k* ≥ 1 with C(k) ≥ 0.5. That is the median month of leaving the stage, by any outcome. Beyond K it is solved in closed form. The result is finite: when the tail cannot reach 0.5 before the sampler's event-month cap (`floor(2^24 / MONTH_DAYS)` = 551,213), it is that cap, which is the median under `sampleTransition`'s own semantics (ruling R12).
 
 **`initiationHazard(m, f)`** = 1 / (1 + exp(−(intercept + Σ_terms coef[binIndex(bins, f[feature])]))). Here `exp` is `math.ts` `exp`, and the terms are summed in array order.
 
