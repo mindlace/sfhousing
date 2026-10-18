@@ -118,7 +118,7 @@ export const PR_RULES: readonly QualityRule[] = [
     maskBit: null,
     label:
       'A building the records show as finished but never certified complete was treated as complete',
-    denominator: 'open histories at construction with no complete or dead permit',
+    denominator: 'open histories at construction with no dead permit',
     warnShare: 0.01,
     failShare: 0.1,
     unitsWeighted: false

@@ -628,6 +628,7 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     // No units were certified, so none is recorded at complete.
     expect(h.unitsAt).toEqual({ permitFiled: 4 });
     expect(h.quality).toEqual(['pr.stages.complete-from-evidence']);
+    expect(h.sources).toContainEqual({ dataset: 'xdht-4php', id: '201409010025', key: 'bpa' });
   });
 
   it('M26: activity after the deadline keeps it open; the unknown verdict changes nothing', () => {

@@ -40,10 +40,16 @@ function hasTerminalPermit(proj: LinkedProject): boolean {
   return proj.permits.some((q) => !proj.superseded.has(q.number) && DEAD_STATUSES.has(q.status));
 }
 
-/** xdht-4php completion days by permit number and by resolved parcel, ascending. */
+/** One xdht-4php completion: its day and its `bpa` (the row's id; null when absent). */
+export interface HousingCompletion {
+  day: Day;
+  bpa: string | null;
+}
+
+/** xdht-4php completions by permit number and by resolved parcel, ascending by day, then bpa. */
 export interface HousingIndex {
-  byPermit: ReadonlyMap<string, Day[]>;
-  byParcel: ReadonlyMap<ParcelId, Day[]>;
+  byPermit: ReadonlyMap<string, HousingCompletion[]>;
+  byParcel: ReadonlyMap<ParcelId, HousingCompletion[]>;
 }
 
 /** xdht-4php `form_no` values of new construction (Ruling C4). */
@@ -57,12 +63,12 @@ export function indexHousing(
   rows: readonly HousingRow[],
   resolve: (blklots: string[]) => ParcelId[]
 ): HousingIndex {
-  const byPermit = new Map<string, Day[]>();
-  const byParcel = new Map<ParcelId, Day[]>();
-  const add = <K>(m: Map<K, Day[]>, k: K, d: Day) => {
+  const byPermit = new Map<string, HousingCompletion[]>();
+  const byParcel = new Map<ParcelId, HousingCompletion[]>();
+  const add = <K>(m: Map<K, HousingCompletion[]>, k: K, c: HousingCompletion) => {
     const xs = m.get(k);
-    if (xs) xs.push(d);
-    else m.set(k, [d]);
+    if (xs) xs.push(c);
+    else m.set(k, [c]);
   };
   for (const r of rows) {
     if (r.firstCompletionDay === null) continue;
@@ -71,11 +77,13 @@ export function indexHousing(
     if (!NEW_CONSTRUCTION_FORMS.has(r.form ?? '') || r.netUnits === null || r.netUnits <= 0) {
       continue;
     }
-    if (r.bpa !== null) add(byPermit, r.bpa, r.firstCompletionDay);
-    if (r.blklot !== null)
-      for (const id of resolve([r.blklot])) add(byParcel, id, r.firstCompletionDay);
+    const c = { day: r.firstCompletionDay, bpa: r.bpa };
+    if (r.bpa !== null) add(byPermit, r.bpa, c);
+    if (r.blklot !== null) for (const id of resolve([r.blklot])) add(byParcel, id, c);
   }
-  for (const m of [byPermit, byParcel]) for (const xs of m.values()) xs.sort((a, b) => a - b);
+  const order = (a: HousingCompletion, b: HousingCompletion) =>
+    a.day - b.day || ((a.bpa ?? '') < (b.bpa ?? '') ? -1 : (a.bpa ?? '') > (b.bpa ?? '') ? 1 : 0);
+  for (const m of [byPermit, byParcel]) for (const xs of m.values()) xs.sort(order);
   return { byPermit, byParcel };
 }
 
@@ -87,7 +95,7 @@ export type AssessorCtx = Pick<
 
 /**
  * Ruling C2 applies: the history is open, its last entered stage is `construction`, and no
- * non-superseded permit is complete or dead.
+ * non-superseded permit is dead (a `complete` permit does not stop it; see `hasTerminalPermit`).
  */
 export function evidenceApplies(proj: LinkedProject, entered: Entered, end: End): boolean {
   return (
@@ -109,24 +117,27 @@ function yearOf(d: Day): number {
  *     or in which a parcel's `year_built` is at least the construction year. The baseline is the
  *     last roll year at or before the construction year, clamped to 2007..latest (no roll exists
  *     before 2007); a parcel with no roll row counts 0 units, as in `existingUnitsAt`.
- * Null when neither holds.
+ * `bpas` are the sorted, unique `bpa` ids of the xdht rows that date an (i) completion (the
+ * history lists them in `sources`); [] for (ii). Null when neither holds.
  */
 export function evidenceDay(
   proj: LinkedProject,
   entered: Entered,
   units: number,
   ctx: { housing: HousingIndex; assessor: AssessorCtx }
-): { day: Day; source: 'xdht' | 'assessor' } | null {
+): { day: Day; source: 'xdht' | 'assessor'; bpas: string[] } | null {
   const start = entered.construction;
   if (start === undefined) return null;
-  let best: Day | null = null;
-  const see = (days: readonly Day[] | undefined) => {
-    const d = days?.find((x) => x >= start);
-    if (d !== undefined && (best === null || d < best)) best = d;
-  };
-  for (const q of proj.permits) see(ctx.housing.byPermit.get(q.number));
-  for (const id of proj.parcelIds) see(ctx.housing.byParcel.get(id));
-  if (best !== null) return { day: best, source: 'xdht' };
+  const candidates: HousingCompletion[] = [];
+  for (const q of proj.permits) candidates.push(...(ctx.housing.byPermit.get(q.number) ?? []));
+  for (const id of proj.parcelIds) candidates.push(...(ctx.housing.byParcel.get(id) ?? []));
+  const after = candidates.filter((c) => c.day >= start);
+  if (after.length > 0) {
+    const day = Math.min(...after.map((c) => c.day));
+    const bpas = new Set<string>();
+    for (const c of after) if (c.day === day && c.bpa !== null) bpas.add(c.bpa);
+    return { day, source: 'xdht', bpas: [...bpas].sort() };
+  }
 
   const a = ctx.assessor;
   const startYear = yearOf(start);
@@ -142,7 +153,7 @@ export function evidenceDay(
     const built = proj.parcelIds.some((id) => (a.yearBuilt(id, y) ?? -Infinity) >= startYear);
     if ((units >= 1 && sum(y) - base >= need) || built) {
       const lien = a.lienDay(y);
-      if (lien !== null) return { day: lien, source: 'assessor' };
+      if (lien !== null) return { day: lien, source: 'assessor', bpas: [] };
     }
   }
   return null;

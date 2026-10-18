@@ -134,6 +134,18 @@ describe('stale open histories (deriveProjects)', () => {
     expect(h.unitsAt.complete).toBeUndefined();
     expect(h.quality).toContain('pr.stages.complete-from-evidence');
     expect(h.quality).not.toContain('pr.stages.statutory-expiry');
+    // The dating xdht row is a source, sorted among the others.
+    expect(h.sources).toEqual([
+      { dataset: 'i98e-djp9', id: '201409010025', key: 'permit_number' },
+      { dataset: 'xdht-4php', id: '201409010025', key: 'bpa' }
+    ]);
+    // Histories not completed from xdht evidence list no xdht row.
+    for (const x of r.histories.filter((y) => y.id !== h.id)) {
+      expect(
+        x.sources.some((s) => s.dataset === 'xdht-4php'),
+        x.id
+      ).toBe(false);
+    }
   });
 
   it('activity after the deadline keeps the history open', () => {

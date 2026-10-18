@@ -167,15 +167,19 @@ describe('construction evidence (Ruling C2)', () => {
     const idx = indexHousing(
       [
         housing({ bpa: '1', firstCompletionDay: d('2018-03-01') }),
-        housing({ blklot: '3512099', firstCompletionDay: d('2017-09-01') }),
+        housing({ bpa: '7', blklot: '3512099', firstCompletionDay: d('2017-09-01') }),
+        // Same day, by lot, no bpa: dates it too, but names no source id.
+        housing({ blklot: '3512011', firstCompletionDay: d('2017-09-01') }),
         housing({ bpa: '1', firstCompletionDay: d('2015-01-01') }),
         housing({ blklot: '3512001', firstCompletionDay: d('2016-01-01') })
       ],
       resolve
     );
+    // The dating row's bpa is returned for the history's sources.
     expect(evidenceDay(p, entered, 4, { housing: idx, assessor: NO_ASSESSOR })).toEqual({
       day: d('2017-09-01'),
-      source: 'xdht'
+      source: 'xdht',
+      bpas: ['7']
     });
   });
 
@@ -186,7 +190,8 @@ describe('construction evidence (Ruling C2)', () => {
     // 5 units need 3; 2017 gains only 1, 2019 gains 3.
     expect(evidenceDay(p, entered, 5, { housing: none, assessor: a })).toEqual({
       day: d('2019-01-01'),
-      source: 'assessor'
+      source: 'assessor',
+      bpas: []
     });
     // 1 unit needs 1: 2017.
     expect(evidenceDay(p, entered, 1, { housing: none, assessor: a })?.day).toBe(d('2017-01-01'));
@@ -222,7 +227,8 @@ describe('construction evidence (Ruling C2)', () => {
     );
     expect(evidenceDay(p, entered, 4, { housing: idx, assessor: NO_ASSESSOR })).toEqual({
       day: d('2019-06-01'),
-      source: 'xdht'
+      source: 'xdht',
+      bpas: []
     });
   });
 
@@ -231,7 +237,8 @@ describe('construction evidence (Ruling C2)', () => {
     const idx = indexHousing([housing({ bpa: '1', firstCompletionDay: d('2020-02-02') })], resolve);
     expect(evidenceDay(p, entered, 4, { housing: idx, assessor: a })).toEqual({
       day: d('2020-02-02'),
-      source: 'xdht'
+      source: 'xdht',
+      bpas: ['1']
     });
   });
 

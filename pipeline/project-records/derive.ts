@@ -165,6 +165,8 @@ interface Assessed {
 interface StaleState {
   evidenceOf: boolean;
   evidence: 'xdht' | 'assessor' | null;
+  /** The `bpa` ids of the xdht rows that dated an evidence completion (listed in `sources`). */
+  evidenceBpas: string[];
   expiryOf: boolean;
   /** Unit-bearing permits whose deadline read a Table B bracket; those with no valuation. */
   expiryPermits: number;
@@ -176,6 +178,7 @@ interface StaleState {
 const NO_STALE: StaleState = {
   evidenceOf: false,
   evidence: null,
+  evidenceBpas: [],
   expiryOf: false,
   expiryPermits: 0,
   expiryNoValuation: 0,
@@ -346,6 +349,7 @@ function applyStale(
     const ev = evidenceDay(a.proj, a.histEntered, a.units ?? 0, ctx);
     if (ev !== null) {
       st.evidence = ev.source;
+      st.evidenceBpas = ev.bpas;
       complete(ev.day, PR.stagesCompleteFromEvidence);
     }
   }
@@ -374,6 +378,22 @@ function applyStale(
   replace(r.end, r.entered, PR.stagesVerifiedConstruction);
 }
 
+/**
+ * A history's `sources` plus the xdht-4php rows that dated its evidence completion (Ruling C2),
+ * as `{ dataset: 'xdht-4php', id: <bpa>, key: 'bpa' }`; sorted and unique, as `sourcesOf`.
+ */
+function withEvidenceSources(
+  sources: ProjectHistory['sources'],
+  bpas: readonly string[]
+): ProjectHistory['sources'] {
+  if (bpas.length === 0) return sources;
+  const all = [...sources, ...bpas.map((id) => ({ dataset: 'xdht-4php', id, key: 'bpa' }))];
+  const seen = new Map(all.map((s) => [`${s.dataset}\0${s.id}\0${s.key ?? ''}`, s]));
+  return [...seen.values()].sort(
+    (x, y) => cmp(x.dataset, y.dataset) || cmp(x.id, y.id) || cmp(x.key ?? '', y.key ?? '')
+  );
+}
+
 function history(a: Assessed, input: ProjectRecordsInput): ProjectHistory {
   const at = unitsAt(a.proj);
   // A completion from evidence or a verdict certifies no units, so it sets no unitsAt.complete.
@@ -390,7 +410,7 @@ function history(a: Assessed, input: ProjectRecordsInput): ProjectHistory {
     existingUnits: existingUnitsAt(a.proj.parcelIds, a.rollYear, input.assessorUnits),
     storiesProposed: a.stories.stories,
     baseStoriesAtFiling: baseStoriesAt(a.proj.parcelIds, a.rollYear, input.baseStories),
-    sources: sourcesOf(a.proj),
+    sources: withEvidenceSources(sourcesOf(a.proj), a.stale.evidenceBpas),
     quality: historyQuality(a.quality)
   };
 }
@@ -480,7 +500,7 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
     const sample = open.filter((a) => a.lastObservedRaised).map((a) => a.proj.id);
     return { fired: sample.length, of: open.length, sample };
   },
-  // Spec 4.6 Ruling C2: open histories at construction with no complete or dead permit, of
+  // Spec 4.6 Ruling C2: open histories at construction with no dead (terminal) permit, of
   // projects not in flight; the ones completed from evidence (they carry the id); their ids.
   [PR.stagesCompleteFromEvidence]: ({ withHistory }) => {
     const of = withHistory.filter((a) => a.stale.evidenceOf);
