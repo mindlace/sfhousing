@@ -144,6 +144,54 @@ describe('densityCap: uncapped and unknown codes', () => {
   });
 });
 
+describe('densityCap: researched additions (partner rulings 2026-10-18, F9 research)', () => {
+  const PERIODS: Day[] = [BEFORE, AFTER, day(2025, 6, 1), FZP_EFFECTIVE_DAY - 1, TODAY];
+
+  it('C-2: the 1 per 800 sf floor in every period outside R-4 (sd.zoning.c2-floor-approx)', () => {
+    for (const d of PERIODS) {
+      expect(densityCap('C-2', m2(8000), false, d)).toBe(10);
+      expect(densityCap('C-2', m2(500), false, d)).toBe(1);
+    }
+  });
+
+  it('C-2 inside R-4: the floor up to 2026-01-11, no limit from FZP_EFFECTIVE_DAY', () => {
+    expect(densityCap('C-2', m2(8000), true, BEFORE)).toBe(10);
+    expect(densityCap('C-2', m2(8000), true, FZP_EFFECTIVE_DAY - 1)).toBe(10);
+    expect(densityCap('C-2', m2(8000), true, FZP_EFFECTIVE_DAY)).toBeNull();
+    expect(densityCap('C-2', m2(8000), true, TODAY)).toBeNull();
+  });
+
+  it('M-1: the 1 per 800 sf floor in every period, R-4 or not (sd.zoning.m1-floor-approx)', () => {
+    for (const d of PERIODS) {
+      for (const r4 of [false, true]) expect(densityCap('M-1', m2(4000), r4, d)).toBe(5);
+    }
+  });
+
+  it('SALI: 0 in every period (residential not permitted)', () => {
+    for (const d of PERIODS) {
+      for (const r4 of [false, true]) expect(densityCap('SALI', m2(20000), r4, d)).toBe(0);
+    }
+  });
+
+  it('the eight no-limit codes are explicit null table entries in every period', () => {
+    for (const z of ['CMUO', 'MUG', 'MUO', 'MUR', 'RED', 'RED-MX', 'WMUG', 'RCD']) {
+      expect(densityCapRule(z), z).toBe('table');
+      for (const d of PERIODS) {
+        for (const r4 of [false, true]) expect(densityCap(z, m2(8000), r4, d), z).toBeNull();
+      }
+    }
+  });
+
+  it('split codes now see the new entries', () => {
+    // C-2 floor on 8,000 sf: 10; RH-3 after the change day: max(4, 3, 8) = 8.
+    expect(densityCap('C-2|RH-3', m2(8000), false, AFTER)).toBe(10);
+    expect(densityCap('C-2|M-1', m2(8000), false, AFTER)).toBe(10);
+    // A no-limit component makes the split null; SALI's 0 loses to any positive component.
+    expect(densityCap('MUR|RH-2', m2(8000), false, AFTER)).toBeNull();
+    expect(densityCap('C-2|P', m2(8000), false, AFTER)).toBeNull();
+  });
+});
+
 describe('densityCap: split codes (tier 4, most permissive)', () => {
   it('split RH-2|RM-1 takes the larger cap', () => {
     // RH-2 on 6,000 sf: max(4, 4) = 4; RM-1: floor(6000 / 800) = 7.
@@ -208,7 +256,7 @@ describe('DENSITY_CAP_TABLE provenance', () => {
     }
   });
 
-  it('covers every RH, RM, NC and NCT district of spec §4.4 exactly once', () => {
+  it('covers every spec §4.4 district and the researched additions exactly once', () => {
     const codes = DENSITY_CAP_TABLE.flatMap((e) => e.codes).sort();
     expect(codes).toEqual(
       [
@@ -227,7 +275,19 @@ describe('DENSITY_CAP_TABLE provenance', () => {
         'NC-S',
         'NCT-1',
         'NCT-2',
-        'NCT-3'
+        'NCT-3',
+        // Partner rulings 2026-10-18 (F9 research): C-2, M-1, SALI and the explicit no-limit codes.
+        'C-2',
+        'M-1',
+        'SALI',
+        'CMUO',
+        'MUG',
+        'MUO',
+        'MUR',
+        'RED',
+        'RED-MX',
+        'WMUG',
+        'RCD'
       ].sort()
     );
     expect(new Set(codes).size).toBe(codes.length);
@@ -244,6 +304,14 @@ describe('DENSITY_CAP_TABLE provenance', () => {
   it('every table code resolves by rule table', () => {
     for (const c of DENSITY_CAP_TABLE.flatMap((e) => e.codes)) {
       expect(densityCapRule(c)).toBe('table');
+    }
+  });
+
+  it('every entry cites a page-anchored official PDF or the code summary', () => {
+    for (const e of DENSITY_CAP_TABLE) {
+      expect(e.url, e.codes.join()).toMatch(
+        /^https:\/\/sfbos\.archive\.sf\.gov\/.+\.pdf#page=\d+$/
+      );
     }
   });
 

@@ -416,6 +416,31 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
       'hostable parcels',
       false
     ],
+    // Partner rulings 2026-10-18: the nearest-R-District floors, shape · replace.
+    [
+      'sd.zoning.c2-floor-approx',
+      'datasf-parcel-attrs',
+      'zoning_code',
+      'shape',
+      'replace',
+      4,
+      4,
+      null,
+      'hostable parcels',
+      false
+    ],
+    [
+      'sd.zoning.m1-floor-approx',
+      'datasf-parcel-attrs',
+      'zoning_code',
+      'shape',
+      'replace',
+      4,
+      4,
+      null,
+      'hostable parcels',
+      false
+    ],
     [
       'sd.yield.nonmonotone',
       'parcels.bin',
@@ -602,11 +627,15 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
       false
     ]
   ];
-  /** Partner-approved share overrides (DQ-4, 2026-10-17; design RA1 "Share overrides"). */
+  /**
+   * Partner-approved share overrides (DQ-4, 2026-10-17; design RA1 "Share overrides"; and
+   * 2026-10-18 for sd.zoning.named-no-cap).
+   */
   const OVERRIDES: Record<string, { warnShare: number; failShare: number }> = {
     'sd.roll.units-capacity': { warnShare: 0.05, failShare: 0.1 },
     'sd.roll.floor-area-missing': { warnShare: 0.07, failShare: 0.15 },
     'sd.zoning.generic-nc': { warnShare: 0.05, failShare: 0.1 },
+    'sd.zoning.named-no-cap': { warnShare: 0.12, failShare: 0.2 },
     'sd.yield.zero-hostable': { warnShare: 0.09, failShare: 0.15 }
   };
   it('lists every registered scenario-data rule', () => {
@@ -970,7 +999,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
 
   it('every scenario-data rule reports once (recordQuality throws on a second report)', () => {
     const ids = QUALITY_RULES.filter((r) => r.owner === 'scenario-data').map((r) => r.id);
-    expect(ids).toHaveLength(41);
+    expect(ids).toHaveLength(43);
     const got = Object.keys(s.quality)
       .filter((k) => k.endsWith('.fired'))
       .map((k) => k.slice('quality.'.length, -'.fired'.length))
@@ -1221,10 +1250,10 @@ describe('the vacant-lot definition rules on a synthetic copy of mini', () => {
 describe('sd.zoning.unlisted and sd.zoning.named-no-cap on a synthetic copy of mini', () => {
   let s: Synthetic;
   beforeAll(async () => {
-    // RC-4 (unlisted, not in a family spec 4.4 names) on lot 10 and lot 7; UMU (a named family) on
+    // CCB (unlisted, not in a family spec 4.4 names) on lot 10 and lot 7; UMU (a named family) on
     // lot 11. Lot 7 is ineligible, so not hostable. Mini's lot 13 is C-3-O (named) already.
     s = await synthetic('zu', [
-      `UPDATE src_parcel_attrs SET zoning_code = 'RC-4' WHERE mapblklot IN ('3512010', '3512007')`,
+      `UPDATE src_parcel_attrs SET zoning_code = 'CCB' WHERE mapblklot IN ('3512010', '3512007')`,
       `UPDATE src_parcel_attrs SET zoning_code = 'UMU' WHERE mapblklot = '3512011'`
     ]);
   });
@@ -1250,13 +1279,91 @@ describe('sd.zoning.unlisted and sd.zoning.named-no-cap on a synthetic copy of m
   });
 
   it('counts the fires by code in separate keys, and keeps the all-parcel rule count', () => {
-    expect(s.scenarioCounts['scenario.density_cap.unlisted.RC-4']).toBe(1);
+    expect(s.scenarioCounts['scenario.density_cap.unlisted.CCB']).toBe(1);
     expect(s.scenarioCounts['scenario.density_cap.named_no_cap.UMU']).toBe(1);
     expect(s.scenarioCounts['scenario.density_cap.named_no_cap.C-3-O']).toBe(1);
     expect(s.scenarioCounts).not.toHaveProperty('scenario.density_cap.unlisted.UMU');
     expect(s.scenarioCounts).not.toHaveProperty('scenario.density_cap.unlisted.C-3-O');
-    // Every unlisted-rule parcel, hostable or not: at least RC-4 x2 (lot 7 included), UMU, C-3-O.
+    // Every unlisted-rule parcel, hostable or not: at least CCB x2 (lot 7 included), UMU, C-3-O.
     expect(s.scenarioCounts['scenario.density_cap.rule.unlisted']).toBeGreaterThanOrEqual(4);
+  });
+});
+
+// Partner rulings 2026-10-18 (F9 research).
+describe('the researched density caps on a synthetic copy of mini', () => {
+  let s: Synthetic;
+  let p: ScenarioParcels;
+  /** Per-area cap on the parcel's own lot: max(1, floor(sf / 800)). */
+  const floor800 = (lotAreaM2: number) => Math.max(1, Math.floor(lotAreaM2 / 0.09290304 / 800));
+  beforeAll(async () => {
+    // Hostable on mini: lot 10 C-2 (65-X), lot 4 C-2 (inside R-4, rent-control excluded, so not
+    // Local Program), lot 11 M-1 (Local Program), lot 13 SALI; lot 5 MUG (an explicit no-cap
+    // code). Lot 7 is C-2 too, but ineligible, so not hostable.
+    s = await synthetic('zc', [
+      `UPDATE src_parcel_attrs SET zoning_code = 'C-2'
+       WHERE mapblklot IN ('3512010', '3512007', '0026T001A')`,
+      `UPDATE src_parcel_attrs SET zoning_code = 'M-1' WHERE mapblklot = '3512011'`,
+      `UPDATE src_parcel_attrs SET zoning_code = 'SALI' WHERE mapblklot = '3512013'`,
+      `UPDATE src_parcel_attrs SET zoning_code = 'MUG' WHERE mapblklot = '3512005'`
+    ]);
+    p = readParcelsBin(join(s.outDir, PARCELS_BIN));
+  });
+
+  it('C-2 and M-1 take the 1 per 800 sf floor and fire their approximation rules', async () => {
+    const hostable = s.scenarioCounts['scenario.hostable'];
+    expect(await reported(s, 'sd.zoning.c2-floor-approx')).toEqual({
+      fired: 2,
+      of: hostable,
+      sample: ['0026T001A', '3512010']
+    });
+    expect(await reported(s, 'sd.zoning.m1-floor-approx')).toEqual({
+      fired: 1,
+      of: hostable,
+      sample: ['3512011']
+    });
+    for (const lot of ['3512010', '0026T001A', '3512011']) {
+      const i = p.index.get(lot)!;
+      expect(p.baseCap[i], lot).toBe(floor800(p.lotAreaM2[i]));
+      expect((await feature(s, lot, 2025)).base_density_cap, lot).toBe(floor800(p.lotAreaM2[i]));
+    }
+  });
+
+  it('C-2 inside R-4 keeps the floor as base and has no limit under the FZP', () => {
+    const i = p.index.get('0026T001A')!;
+    expect(p.localProgram[i]).toBe(0);
+    // Mini's lot 4 is the one fzp_differs parcel as NC-1; as C-2 it still is.
+    expect(s.scenarioCounts['scenario.density_cap.fzp_differs']).toBe(1);
+    expect(p.yield[i * 5 + 4]).toBeGreaterThan(p.baseYield[i * 5 + 4]);
+  });
+
+  it('SALI caps at 0: base yield 0, still hostable on the uncapped yield (option c)', () => {
+    const i = p.index.get('3512013')!;
+    // Lot 13 has no roll row, so no panel row: T11 only.
+    expect(p.baseCap[i]).toBe(0);
+    for (let k = 0; k < FILL_LEVELS.length; k++) {
+      expect(p.baseYield[i * FILL_LEVELS.length + k]).toBe(0);
+      expect(p.yield[i * FILL_LEVELS.length + k]).toBe(0);
+    }
+    expect(p.potentialRatio.base[i]).toBe(0);
+    expect(p.hostable[i]).toBe(1);
+    expect(p.hostableBase[i]).toBe(1);
+  });
+
+  it('the new table codes leave sd.zoning.unlisted and named-no-cap', async () => {
+    expect((await reported(s, 'sd.zoning.unlisted')).sample).toEqual([]);
+    for (const z of ['C-2', 'M-1', 'SALI', 'MUG']) {
+      expect(s.scenarioCounts, z).not.toHaveProperty(`scenario.density_cap.unlisted.${z}`);
+    }
+    // MUG is an explicit null: no cap, no rule.
+    expect(p.baseCap[p.index.get('3512005')!]).toBe(0xffff);
+    expect(s.scenarioCounts['scenario.density_cap.SALI']).toBe(1);
+  });
+
+  it('V17 and V18 hold: no base mismatch, every latest-year feature equal', () => {
+    expect(s.scenarioCounts['scenario.yield.nonlp_base_mismatch']).toBe(0);
+    expect(s.scenarioCounts['scenario.panel.feature_mismatch']).toBe(0);
+    expect(s.scenarioCounts['scenario.hostable_mismatch']).toBe(0);
+    expect(s.scenarioCounts['scenario.hostable_base_mismatch']).toBe(0);
   });
 });
 

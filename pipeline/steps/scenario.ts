@@ -95,7 +95,12 @@ const CAP_RULES =
   'Base-zoning density caps from the Planning Code (tier 1, pipeline/lib/density-caps.ts); a ' +
   'split zoning code takes its most permissive component (sd.zoning.split-code) and generic ' +
   'NCD/NCT codes have no cap (sd.zoning.generic-nc), both tier 4, made up; districts not ' +
-  `verified against the official Code default to no cap (${UNVERIFIED_DISTRICTS.join(', ')}).`;
+  `verified against the official Code default to no cap (${UNVERIFIED_DISTRICTS.join(', ')}). ` +
+  'C-2 and M-1 take the 1 unit per 800 sf floor of their nearest-R-District rule, an ' +
+  'approximation that understates (sd.zoning.c2-floor-approx, sd.zoning.m1-floor-approx, tier ' +
+  '4; C-2’s Note 8 no-limit area is not modelled; M-1 allows homes only as a conditional use). ' +
+  'SALI has a cap of 0 (residential not permitted); its exceptions, qualifying affordable ' +
+  'housing projects and ADUs, are not modelled.';
 
 /** One sc_features row: the inputs of the codec's `scenarioRecordFrom` and the base cap. */
 interface FeatureRow {
@@ -571,7 +576,9 @@ export async function writeScenario(a: {
     genericNc: [] as string[],
     missing: [] as string[],
     unlisted: [] as string[],
-    namedNoCap: [] as string[]
+    namedNoCap: [] as string[],
+    c2Floor: [] as string[],
+    m1Floor: [] as string[]
   };
   /** Parcels per tier-4 cap rule, hostable or not, for the unverified-districts warning. */
   const capRuleAll = { split: 0, genericNc: 0 };
@@ -764,6 +771,14 @@ export async function writeScenario(a: {
     // code in `density_cap.named_no_cap.<code>`; every other unlisted code fires sd.zoning.unlisted,
     // counted by code in `density_cap.unlisted.<code>`. `density_cap.rule.unlisted` counts both
     // groups on all parcels.
+    // sd.zoning.c2-floor-approx / m1-floor-approx (tier 4, partner rulings 2026-10-18): hostable
+    // parcels with a C-2 (M-1) code or split component whose base cap is not null, so the
+    // 1-per-800-sf floor enters it.
+    if (p.hostable[i] && baseCap !== null) {
+      const parts = (d.zoning_code ?? '').split('|').map((z) => z.trim());
+      if (parts.includes('C-2')) zoning.c2Floor.push(rec.id);
+      if (parts.includes('M-1')) zoning.m1Floor.push(rec.id);
+    }
     const rule = densityCapRule(d.zoning_code);
     if (rule === 'unlisted') {
       inc('density_cap.rule.unlisted');
@@ -921,6 +936,16 @@ export async function writeScenario(a: {
     fired: zoning.unlisted.length,
     of: hostable,
     sample: zoning.unlisted
+  });
+  recordQuality(a.buildCounts, 'sd.zoning.c2-floor-approx', {
+    fired: zoning.c2Floor.length,
+    of: hostable,
+    sample: zoning.c2Floor
+  });
+  recordQuality(a.buildCounts, 'sd.zoning.m1-floor-approx', {
+    fired: zoning.m1Floor.length,
+    of: hostable,
+    sample: zoning.m1Floor
   });
   recordQuality(a.buildCounts, 'sd.zoning.missing', {
     fired: zoning.missing.length,

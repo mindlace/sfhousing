@@ -328,7 +328,9 @@ export const SD_RULES: readonly QualityRule[] = [
   // value comes from and what the default fills. Fires are counted by code in
   // `scenario.density_cap.unlisted.<code>`. Codes in the families the spec names as no cap fire
   // `sd.zoning.named-no-cap` instead (coordinator ruling, F9: live, the spec-named families were
-  // 9.71% of hostable and the rest 2.25%).
+  // 9.71% of hostable and the rest 2.25%). The researched caps (partner rulings 2026-10-18: C-2,
+  // M-1, SALI and eight explicit no-limit codes) left it at 0.87% (1,286 of 147,057, live
+  // 2026-10-17-6c4c0d39).
   {
     ...SD,
     id: 'sd.zoning.unlisted',
@@ -349,8 +351,10 @@ export const SD_RULES: readonly QualityRule[] = [
   // Observation (coordinator ruling, F9): the zoning families spec §4.4's catch-all row names as
   // having no density cap (RTO, UMU, C-3, PDR, P; matcher `isSpecNamedNoCap` in density-caps.ts)
   // are spec-defined, not defaulted, so they are counted apart from sd.zoning.unlisted. Changes
-  // nothing. Default observe shares 0.01 / 0.10: live 9.71% of hostable parcels (14,277 of
-  // 147,057), so it warns, below failShare.
+  // nothing.
+  // Share override approved (partner, DQ-4, 2026-10-18): measured 9.71% of hostable live;
+  // spec-defined no-cap districts (RTO, UMU, C-3, PDR, P) are a stable share of hostable parcels.
+  // Warn above 12%, fail above 20%.
   {
     ...SD,
     id: 'sd.zoning.named-no-cap',
@@ -364,6 +368,51 @@ export const SD_RULES: readonly QualityRule[] = [
     label:
       'Counts hostable parcels in a zoning family spec 4.4 names as having no density cap ' +
       '(RTO, UMU, C-3, PDR, P); changes nothing',
+    denominator: 'hostable parcels',
+    warnShare: 0.12,
+    failShare: 0.2,
+    unitsWeighted: false
+  },
+  // Partner rulings (2026-10-18, F9 research): C-2 (§210.1) and M-1 (§210.4) allow the density of
+  // the nearest R District, never less than 1 unit per 800 sf of lot area; C-2 also has Table
+  // 210.1 Note 8's no-limit area (Ord. 122-23). Both need geography the pipeline does not have, so
+  // density-caps.ts applies the 1 per 800 sf floor, which understates the cap. Tier 4 / 4: the
+  // floor is the Code's own lower bound (tier 1), but using it as the whole cap is made up. Fired
+  // on hostable parcels whose zoning code, or a split component, is C-2 (M-1) and whose base cap
+  // is not null, so the floor enters it. The default shares: live 332 (C-2) and 72 (M-1) of
+  // 147,057 hostable parcels (0.23% and 0.05%, 2026-10-17-6c4c0d39).
+  {
+    ...SD,
+    id: 'sd.zoning.c2-floor-approx',
+    source: 'datasf-parcel-attrs',
+    field: 'zoning_code',
+    kind: 'shape',
+    action: 'replace',
+    tier: 4,
+    valueTier: 4,
+    maskBit: null,
+    label:
+      'A C-2 parcel takes the 1 unit per 800 sf floor of its density rule: the nearest R ' +
+      'District density and the no-limit area of Note 8 are not modelled (an approximation that ' +
+      'understates)',
+    denominator: 'hostable parcels',
+    ...SHARES,
+    unitsWeighted: false
+  },
+  {
+    ...SD,
+    id: 'sd.zoning.m1-floor-approx',
+    source: 'datasf-parcel-attrs',
+    field: 'zoning_code',
+    kind: 'shape',
+    action: 'replace',
+    tier: 4,
+    valueTier: 4,
+    maskBit: null,
+    label:
+      'An M-1 parcel takes the 1 unit per 800 sf floor of its density rule: the nearest R ' +
+      'District density is not modelled (an approximation that understates), and M-1 allows ' +
+      'homes only as a conditional use',
     denominator: 'hostable parcels',
     ...SHARES,
     unitsWeighted: false
