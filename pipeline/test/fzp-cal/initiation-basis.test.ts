@@ -436,3 +436,37 @@ describe('fitInitiation', () => {
     expect(fr.fzpPerYear).toBeCloseTo(3 * 12 * initiationHazard(fm, FZP_BASE), 9);
   });
 });
+
+describe('fitInitiation review minors (Task 13 review, folded into Task 16)', () => {
+  /** `panel` with every cell of one basis removed. */
+  function withoutBasis(panel: PanelResult, basis: 0 | 1): PanelResult {
+    const cells = new Map([...panel.cells].filter(([, c]) => c.basis !== basis));
+    return {
+      ...panel,
+      cells,
+      events: basis === 1 ? { ...panel.events, permit: 0 } : { ...panel.events, record: 0 }
+    };
+  }
+
+  it('live: a detection basis with no data is a CalibrationError', () => {
+    const panel = simPanel(30_000);
+    for (const b of [0, 1] as const) {
+      expect(() => fitInitiation(withoutBasis(panel, b), LIVE_CAL, fzpApp)).toThrow(
+        'initiation: one detection basis has no data'
+      );
+    }
+  });
+
+  it('fixture: no basis guard (the back-cast gate is live-only)', () => {
+    const { report } = fitInitiation(withoutBasis(simPanel(50), 1), FIXTURE_CAL, fzpApp);
+    expect(report.events.permit).toBe(0);
+  });
+
+  it('method tags RIDGE_LAMBDA and MIN_BIN_EVENTS tier 4 and names permitOnlyPre2015', () => {
+    const ctx = { permitOnlyPre2015: { fired: 7, of: 40 } };
+    const { model } = fitInitiation(simPanel(30_000), LIVE_CAL, fzpApp, ctx);
+    expect(model.provenance.method).toContain('RIDGE_LAMBDA = 1 (tier 4)');
+    expect(model.provenance.method).toContain('MIN_BIN_EVENTS = 10 (tier 4)');
+    expect(model.provenance.method).toContain('n = 7 of 40 (calibration.method.permitOnlyPre2015)');
+  });
+});

@@ -517,9 +517,19 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
     );
   });
 
-  it('keeps scenarios out of the manifest until calibration.json exists', () => {
-    const m = JSON.parse(readFileSync(join(e2e, 'manifest.json'), 'utf8')) as object;
-    expect(existsSync(join(e2e, PROJECTS_JSON))).toBe(true);
-    expect('scenarios' in m).toBe(false);
+  it('names the three scenario files in the manifest once calibration.json exists', () => {
+    const m = JSON.parse(readFileSync(join(e2e, 'manifest.json'), 'utf8')) as {
+      scenarios?: unknown;
+    };
+    for (const f of ['parcels.bin', 'projects.json', 'calibration.json']) {
+      expect(existsSync(join(e2e, 'scenarios/fzp', f)), f).toBe(true);
+    }
+    expect(m.scenarios).toEqual({
+      fzp: {
+        parcels: '/data/fixture-0/scenarios/fzp/parcels.bin',
+        projects: '/data/fixture-0/scenarios/fzp/projects.json',
+        calibration: '/data/fixture-0/scenarios/fzp/calibration.json'
+      }
+    });
   });
 });

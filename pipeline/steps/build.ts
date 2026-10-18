@@ -22,6 +22,8 @@ import { runSql } from '../lib/sql';
 import { codeTreeHash, computeDatasetVersion } from '../lib/version';
 import { asOfFromLock } from '../project-records/parse';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
+import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
+import { writeCalibration } from './calibration';
 import { checkDataset, type InvariantResult } from './check';
 import { readParcelRecords, writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
 import { buildManifest, writeManifest } from './manifest';
@@ -130,6 +132,7 @@ function chunkCounts(chunks: ChunkOut[]): Record<string, number> {
  * Spec §4.2 `build`: verify the lock, normalise, SQL, chunks (+ in-run re-encode), the scenario
  * step (scenarios/fzp/parcels.bin; the T13 panel and lineage into the derived cache), the project
  * records (scenarios/fzp/projects.json; histories and permits.parquet into the derived cache),
+ * the calibration (scenarios/fzp/calibration.json; calibration-report.md into the derived cache),
  * the T14 quality report (quality-report.md into the derived cache), neighborhoods, tiles,
  * basemap, fonts, manifest, invariants and report.json into `<outRoot>/<datasetVersion>/`.
  * Throws BuildError when a raw file does not match the lock.
@@ -214,6 +217,22 @@ export async function build(
       })
     );
     report.warnings.push(...projects.warnings);
+    // Stage-calibration spec §4.3: after the scenario and projects steps (it reads parcels.bin,
+    // projects.json, permits.parquet and scenario_panel), before the manifest. Its sc.* tallies
+    // and calibration.* counts go into the same counts. A CalibrationError aborts the build.
+    const calibration = await report.time('calibration', () =>
+      writeCalibration({
+        db,
+        outDir,
+        derivedDir,
+        datasetVersion,
+        asOf,
+        histories: { schema: 1, asOf, histories: projects.histories },
+        cal: fixtureMode ? FIXTURE_CAL : LIVE_CAL,
+        counts
+      })
+    );
+    report.warnings.push(...calibration.warnings);
     // After the last step that records T14 counts (spec §4.10), so the report covers every owner.
     writeQualityReport(join(derivedDir, QUALITY_REPORT_MD), datasetVersion, counts);
     const neighborhoodsBytes = await writeNeighborhoods(db, outDir);

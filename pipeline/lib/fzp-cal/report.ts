@@ -1,0 +1,732 @@
+/**
+ * `calibration-report.md` (stage-calibration spec §4.10): the ten sections in order, deterministic
+ * Markdown with no wall-clock time. Pipeline-internal, never shipped. Every number is printed by
+ * `num`, which writes a non-finite value as "none".
+ */
+import { isoOf } from '../../project-records/parse';
+import { MONTH_DAYS } from '../../../src/lib/timelapse/time';
+import { eventualProbabilities, typicalMonths } from '../../../src/lib/timelapse/model';
+import {
+  EXIT_ORDER,
+  PATHWAYS,
+  STAGE_ORDER,
+  type Calibration,
+  type Pathway,
+  type ProjectHistory,
+  type Provenance,
+  type Stage
+} from '../../../src/lib/timelapse/types';
+import { qualityRule } from '../quality';
+import { OUTCOMES, ajSweep } from './aalen-johansen';
+import {
+  FZP_BAND,
+  INITIAL_EDGES,
+  type InitiationReport,
+  type InitiationTermReport
+} from './initiation';
+import type { FitCell, InitiationEvents, PanelResult } from './panel';
+import type { PurgeExit } from './purge';
+import { REVISION_EDGES } from './revision';
+import { SIZE_EDGES } from './size';
+import type { CellReport, FitResult, NoFcdCell } from './transitions';
+import {
+  SC_RULE_IDS,
+  type CalProfile,
+  type CalStage,
+  type NormHistory,
+  type PermitRow,
+  type PurgeWindow,
+  type RuleTally,
+  type ScRuleId,
+  type Spell,
+  type Tallies
+} from './types';
+import {
+  COVERAGE,
+  LOCAL_PROGRAM_START,
+  PANEL_FIRST_MONTH,
+  PANEL_LAST_MONTH,
+  PHASE_GAP_START
+} from './window';
+
+export interface ReportInput {
+  datasetVersion: string;
+  cal: CalProfile;
+  calibration: Calibration;
+  /** the `calibration.*` counts */
+  counts: Record<string, number>;
+  tallies: Tallies;
+  /** qualifying histories after normalisation and purge censoring, sorted by id */
+  norm: NormHistory[];
+  spells: Spell[];
+  permits: PermitRow[];
+  perStage: Record<ScRuleId, Partial<Record<Stage, number>>>;
+  /** `purgeCensor`'s unwindowed tally, every window and every exit */
+  purge: { tally: RuleTally; windows: PurgeWindow[]; exits: PurgeExit[] };
+  permitOnlyPre2015: { fired: number; of: number };
+  sizeOverEnvelope: { fired: number; of: number };
+  fit: FitResult;
+  initiation: InitiationReport;
+  panel: PanelResult;
+  events: Omit<InitiationEvents, 'timeline'>;
+  backcast: { ok: boolean; detail: string };
+  lpDiag: { filings: number; medianFiledToEntitled: number | null };
+  phaseGap: { rung: 1 | 2 | 3; groups: number };
+  warnings: string[];
+}
+
+/** The ten section headings, in order (spec §4.10). */
+export const REPORT_SECTIONS = [
+  '# Calibration report',
+  '## 2. Fitting windows',
+  '## 3. Transition tables',
+  '## 4. Construction duration: TCO versus completed_date',
+  '## 5. Initiation',
+  '## 6. Size and revision',
+  '## 7. New projects: pathway mix and ppaShare',
+  '## 8. Parameter index',
+  '## 9. Method constants',
+  '## 10. Data-quality rules (sc.*) and method counts'
+] as const;
+
+/** A number for the report: integers as is, others to 6 significant digits, non-finite "none". */
+export function num(x: number | null | undefined): string {
+  if (x === null || x === undefined || !Number.isFinite(x)) return 'none';
+  if (Number.isInteger(x)) return String(x);
+  return String(Number(x.toPrecision(6)));
+}
+
+const share = (a: number, b: number): string => (b > 0 ? `${num((100 * a) / b)}%` : 'none');
+
+function table(head: string[], rows: (string | number)[][]): string[] {
+  const cell = (v: string | number) =>
+    (typeof v === 'number' ? num(v) : v).replaceAll('|', '\\|').replaceAll('\n', ' ');
+  return [
+    `| ${head.map(cell).join(' | ')} |`,
+    `|${head.map(() => '---').join('|')}|`,
+    ...rows.map((r) => `| ${r.map(cell).join(' | ')} |`)
+  ];
+}
+
+function median(xs: number[]): number | null {
+  if (xs.length === 0) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+/** Net units at the first recorded stage (the qualifying predicate's value). */
+function netUnits(h: ProjectHistory): number {
+  for (const s of STAGE_ORDER) {
+    const u = h.unitsAt[s];
+    if (typeof u === 'number' && Number.isFinite(u)) return u - h.existingUnits;
+  }
+  return 0;
+}
+
+/** AJ cumulative incidence at the end of observation (no table, no tail), weighted as given. */
+function ajEnd(spells: Spell[]): { advance: number; exit: number } | null {
+  const sw = ajSweep(spells);
+  if (sw.d.length === 0) return null;
+  let S = 1;
+  let advance = 0;
+  let exit = 0;
+  for (let i = 0; i < sw.d.length; i++) {
+    let sum = 0;
+    for (const j of OUTCOMES) {
+      const h = sw.e[j][i] / sw.n[i];
+      if (j === 'advance') advance += S * h;
+      else exit += S * h;
+      sum += h;
+    }
+    S *= 1 - sum;
+  }
+  return { advance, exit };
+}
+
+function header(x: ReportInput): string[] {
+  const c = x.counts;
+  return [
+    `${REPORT_SECTIONS[0]}: ${x.datasetVersion}`,
+    '',
+    `Profile \`${x.cal.name}\`; as of ${isoOf(x.calibration.asOf)}. Generated by the stage-calibration build step; deterministic (no wall-clock time). Not shipped.`,
+    '',
+    `- histories: ${num(c['calibration.histories'])}; qualifying (≥ 1 net unit at the first recorded stage): ${num(c['calibration.qualifying'])}; pathway unknown after normalisation (T4d nulls plus calibration.method.permitOnlyPre2015): ${num(c['calibration.pathwayNull'])}`,
+    `- spells in the pooled windows: ${x.spells.length}; rung-3 cells: ${num(c['calibration.rung3'])}; calibration.json bytes: ${Buffer.byteLength(JSON.stringify(x.calibration))}`,
+    `- warnings:${x.warnings.length === 0 ? ' none' : ''}`,
+    ...x.warnings.map((w) => `  - ${w}`)
+  ];
+}
+
+function windows(x: ReportInput): string[] {
+  const out = [
+    REPORT_SECTIONS[1],
+    '',
+    ...table(
+      ['stage', 'side', 'pooled window start', 'pathway window start', 'entry end', 'evidence'],
+      COVERAGE.map((r) => [
+        r.stage,
+        r.side,
+        r.pooledStart,
+        r.pathwayStart,
+        r.entryEnd ?? 'none',
+        r.evidence
+      ])
+    ),
+    '',
+    `A spell is kept iff it ends on or after its window start and was entered before as-of; it enters the risk set at the window start (left truncation). \`phaseGap\` uses its own window from ${PHASE_GAP_START}; the initiation panel runs ${PANEL_FIRST_MONTH} to ${PANEL_LAST_MONTH}.`,
+    '',
+    `calibration.window.preRoll = ${num(x.counts['calibration.window.preRoll'])} qualifying histories whose spells all end before the first assessor roll (2007-01-01) contribute no spell.`,
+    '',
+    `COVERAGE_GUARD is ${x.cal.coverageGuard ? 'on' : 'off'}. Entries per year of each stage's pooled window:`,
+    ''
+  ];
+  const stages = STAGE_ORDER.filter(
+    (s): s is CalStage => s !== 'complete' && x.fit.coverage[s] !== undefined
+  );
+  const years = new Set<number>();
+  for (const s of stages) for (const y of Object.keys(x.fit.coverage[s]!)) years.add(Number(y));
+  const sorted = [...years].sort((a, b) => a - b);
+  out.push(
+    ...table(
+      ['year', ...stages],
+      sorted.map((y) => [
+        String(y),
+        ...stages.map((s) => {
+          const v = x.fit.coverage[s]![y];
+          return v === undefined ? '' : num(v);
+        })
+      ])
+    )
+  );
+  const partial = stages.flatMap((s) =>
+    (x.fit.coveragePartial[s] ?? []).map((p) => [s, String(p.year), p.to, p.entries])
+  );
+  out.push(
+    '',
+    'Partial calendar years of each window (not asserted by the guard; conductor ruling C4):',
+    '',
+    ...(partial.length === 0 ? ['none'] : table(['stage', 'year', 'to', 'entries'], partial))
+  );
+  return out;
+}
+
+function noFcdText(c: NoFcdCell): string {
+  return `X=${c.X}, A=${c.A}, w=${num(c.w)}, flagged=${c.flagged}, dropped=${c.dropped}`;
+}
+
+function cellDetail(c: CellReport): string[] {
+  const parts: string[] = [];
+  if (c.theta) {
+    const th = OUTCOMES.filter((j) => c.theta![j] !== undefined)
+      .map((j) => `${j} ${num(c.theta![j])}`)
+      .join(', ');
+    parts.push(
+      `θ: ${th}; thin=${c.thin}; maxDiff=${num(c.maxDiff)}; capped=${num(c.capped)}; cappedInTable=${num(c.cappedInTable)}; pathway spells since 2015 = ${num(c.pathwaySpells)}`
+    );
+  }
+  if (c.noFcd) {
+    parts.push(
+      `no-FCD weighting: pooled ${noFcdText(c.noFcd.pooled)}; ${c.pathway} ${noFcdText(c.noFcd.pathway)}`
+    );
+  }
+  return parts.map((p) => `- ${c.stage}: ${p}`);
+}
+
+function transitionsSection(x: ReportInput): string[] {
+  const typical = typicalMonths(x.calibration);
+  const units = new Map(x.norm.map((h) => [h.id, netUnits(h.src)]));
+  const out: string[] = [
+    REPORT_SECTIONS[2],
+    '',
+    'Eventual shares (project-weighted) are the published table and tail from month 0 (`eventualProbabilities`). The unit-weighted shares are the Aalen–Johansen incidence at the end of observation of the pathway’s own spells in the pooled window (preApplication: all pathways), each spell weighted by its net units; report only, no tail.',
+    ''
+  ];
+  for (const p of PATHWAYS) {
+    out.push(`### ${p}`, '');
+    const cells = x.fit.cells.filter((c) => c.pathway === p);
+    out.push(
+      ...table(
+        [
+          'stage',
+          'rung',
+          'tier',
+          'n',
+          'events',
+          'window',
+          'months',
+          'k₀',
+          'tail events',
+          'advance (projects)',
+          'exit (projects)',
+          'advance (units)',
+          'exit (units)',
+          'typicalMonths',
+          'purge-censored'
+        ],
+        cells.map((c) => {
+          const t = x.calibration.transitions[p][c.stage]!;
+          const ev = eventualProbabilities(t, 0);
+          let exit = 0;
+          for (const r of EXIT_ORDER) exit += ev.exit[r] ?? 0;
+          const own = x.spells
+            .filter((s) => s.stage === c.stage && (c.stage === 'preApplication' || s.pathway === p))
+            .map((s) => ({ ...s, w: units.get(s.projectId) ?? 1 }));
+          const uw = own.length > 0 ? ajEnd(own) : null;
+          return [
+            c.stage,
+            String(c.rung),
+            c.tier,
+            c.n,
+            c.events,
+            `${c.window[0]} to ${c.window[1]}`,
+            c.months,
+            num(c.k0),
+            num(c.tailEvents),
+            ev.advance,
+            exit,
+            num(uw?.advance),
+            num(uw?.exit),
+            num(typical[p][c.stage]),
+            c.purgeCensored
+          ];
+        })
+      ),
+      ''
+    );
+    const detail = cells.flatMap(cellDetail);
+    if (detail.length > 0) out.push(...detail, '');
+  }
+  out.push(
+    'Per-stage `sc.*` rule counts (records changed at each stage; gap-impute, no-FCD, running-max and last-stage over all qualifying histories, purge-censor over all qualifying exits, ratio-clamp over revised pairs; the windowed rule totals are in section 10):',
+    ''
+  );
+  const purgeByStage: Partial<Record<Stage, number>> = {};
+  for (const e of x.purge.exits) {
+    if (e.censored) purgeByStage[e.stage] = (purgeByStage[e.stage] ?? 0) + 1;
+  }
+  const clampByStage: Partial<Record<Stage, number>> = {};
+  for (const s of x.tallies['sc.revision.ratio-clamp'].sample) {
+    const stage = s.slice(s.lastIndexOf(':') + 1) as Stage;
+    clampByStage[stage] = (clampByStage[stage] ?? 0) + 1;
+  }
+  const perStage = (id: ScRuleId, s: Stage): number =>
+    id === 'sc.exit.purge-censor'
+      ? (purgeByStage[s] ?? 0)
+      : id === 'sc.revision.ratio-clamp'
+        ? (clampByStage[s] ?? 0)
+        : (x.perStage[id][s] ?? 0);
+  out.push(
+    ...table(
+      ['stage', ...SC_RULE_IDS],
+      STAGE_ORDER.map((s) => [s, ...SC_RULE_IDS.map((id) => perStage(id, s))])
+    )
+  );
+  return out;
+}
+
+function tcoSection(x: ReportInput): string[] {
+  const completeBy = new Map<string, number>();
+  for (const r of x.permits) {
+    if (r.project_id === null || r.complete_day === null) continue;
+    const cur = completeBy.get(r.project_id);
+    if (cur === undefined || r.complete_day < cur) completeBy.set(r.project_id, r.complete_day);
+  }
+  const tco: number[] = [];
+  const permit: number[] = [];
+  for (const h of x.norm) {
+    if (h.end.kind !== 'complete' || h.noFcd) continue;
+    const start = h.eff.construction;
+    const done = h.eff.complete;
+    const pc = completeBy.get(h.id);
+    if (start === undefined || done === undefined || pc === undefined) continue;
+    tco.push(done - start);
+    permit.push(pc - start);
+  }
+  const out = [REPORT_SECTIONS[3], ''];
+  if (tco.length === 0) {
+    out.push(
+      'not measurable: no completed history (with a construction start) has both a completion day and a permit `complete_day`.'
+    );
+    return out;
+  }
+  const mt = median(tco)!;
+  const mp = median(permit)!;
+  out.push(
+    `Over ${tco.length} completed histories with a construction start and permit rows with a \`complete_day\`: median construction duration to the history's completion (first TCO/CFC, else permit \`completed_date\`) = ${num(mt)} days (${num(mt / MONTH_DAYS)} months); to the earliest permit \`complete_day\` = ${num(mp)} days (${num(mp / MONTH_DAYS)} months); difference ${num(mt - mp)} days. TCO data start in 2018, so earlier completions are dated later.`
+  );
+  return out;
+}
+
+/**
+ * Exactly aliased bin indicators of different terms: merged bins that hold the same non-empty,
+ * non-total set of design rows (merged bins, basis), so the ridge splits one effect between them.
+ * Each group lists its bins as `<feature> bin <i> (≥ <lower edge>)`.
+ */
+export function aliasGroups(
+  terms: Pick<InitiationTermReport, 'feature' | 'edges' | 'map'>[],
+  cells: Iterable<FitCell>
+): string[][] {
+  const rows = new Set<string>();
+  const merged: number[][] = [];
+  const keys: string[] = [];
+  for (const cell of cells) {
+    const bins = cell.bins.map((b, t) => terms[t].map[b]);
+    const key = `${bins.join(',')}|${cell.basis}`;
+    if (rows.has(key)) continue;
+    rows.add(key);
+    merged.push(bins);
+    keys.push(key);
+  }
+  const order = keys.map((_, i) => i).sort((a, b) => (keys[a] < keys[b] ? -1 : 1));
+  const bySig = new Map<string, { feature: string; label: string }[]>();
+  terms.forEach((term, t) => {
+    term.edges.forEach((lo, b) => {
+      const members = order.filter((i) => merged[i][t] === b);
+      if (members.length === 0 || members.length === order.length) return;
+      const sig = members.map((i) => keys[i]).join(';');
+      const list = bySig.get(sig) ?? [];
+      list.push({ feature: term.feature, label: `${term.feature} bin ${b} (≥ ${num(lo)})` });
+      bySig.set(sig, list);
+    });
+  });
+  const groups: string[][] = [];
+  for (const list of bySig.values()) {
+    if (new Set(list.map((l) => l.feature)).size >= 2) groups.push(list.map((l) => l.label));
+  }
+  return groups.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+}
+
+function initiationSection(x: ReportInput): string[] {
+  const r = x.initiation;
+  const ev = x.events;
+  const out: string[] = [
+    REPORT_SECTIONS[4],
+    '',
+    `Mode: ${r.mode}. Events ${r.events.total} (record basis ${r.events.record}, permit basis ${r.events.permit}); exposure ${r.exposureMonths} parcel-months over ${r.parcelYears} hostable parcel-years; parcel-years excluded ${r.parcelYearsExcluded}; events off the panel ${r.eventsOffPanel}; events on covered parcel-months ${r.eventsCovered}.`,
+    `Histories with no initiation event: no start ${ev.noStart}, no permit filing before 2015 ${ev.noPermit}, no parcel ${ev.noParcel}; event month outside the panel ${ev.outOfRange}.`,
+    '',
+    'Parcel-years excluded by roll year:',
+    '',
+    ...table(
+      ['roll year', 'excluded'],
+      Object.keys(r.parcelYearsExcludedByYear)
+        .map(Number)
+        .sort((a, b) => a - b)
+        .map((y) => [String(y), r.parcelYearsExcludedByYear[y]])
+    ),
+    '',
+    `Intercept ${num(r.intercept)}; measurement-basis coefficient (not shipped) ${num(r.basis)}; IRLS iterations ${num(r.iterations)}; MIN_BIN_EVENTS ${r.minBinEvents}; RIDGE_LAMBDA ${num(r.ridgeLambda)}.`,
+    ''
+  ];
+  for (const t of r.terms) {
+    out.push(
+      `### ${t.feature}${t.categorical ? ' (categorical)' : ''}`,
+      '',
+      `Initial edges ${t.initialEdges.map(num).join(', ')}; merged edges ${t.edges.map(num).join(', ')}.`,
+      '',
+      ...table(
+        ['bin ≥', 'exposure', 'events', 'predicted', 'coefficient'],
+        t.bins.map((b) => [num(b.lo), b.exposure, b.events, b.predicted, num(b.coef)])
+      ),
+      ''
+    );
+  }
+  out.push(
+    '### Back-cast',
+    '',
+    ...table(
+      ['basis', 'observed', 'predicted'],
+      r.backcast.byBasis.map((b) => [b.basis === 1 ? 'permit' : 'record', b.observed, b.predicted])
+    ),
+    '',
+    `V28 (${x.cal.backcastGate ? 'gating' : 'live only; not gating in this build'}): ${x.backcast.ok ? 'ok' : 'outside 2%'}: ${x.backcast.detail}`,
+    '',
+    ...table(
+      ['year', 'basis', 'exposure', 'observed', 'predicted'],
+      r.backcast.byYear.map((b) => [
+        String(b.year),
+        b.basis === 1 ? 'permit' : 'record',
+        b.exposure,
+        b.observed,
+        b.predicted
+      ])
+    ),
+    ''
+  );
+  const ho = r.holdOut;
+  if (ho === null) out.push('Hold-out: none (fixture model).', '');
+  else if ('error' in ho) out.push(`Hold-out: refit failed: ${ho.error}`, '');
+  else {
+    out.push(
+      `Hold-out: fit through ${ho.fitThrough}; observed ${num(ho.observed)}, predicted ${num(ho.predicted)}.`,
+      '',
+      ...table(
+        ['year', 'observed', 'predicted'],
+        ho.rows.map((h) => [String(h.year), h.observed, h.predicted])
+      ),
+      ''
+    );
+  }
+  const aliases = aliasGroups(r.terms, x.panel.cells.values());
+  const aliasOf = (feature: string): string[] =>
+    aliases.filter((g) => g.some((l) => l.startsWith(`${feature} `))).map((g) => g.join(' ≡ '));
+  out.push(
+    '### Plausibility',
+    '',
+    ...table(
+      ['year', 'implied (published hazard)', 'observed'],
+      Object.keys(r.impliedPerYear)
+        .map(Number)
+        .sort((a, b) => a - b)
+        .map((y) => [String(y), r.impliedPerYear[y], r.observedPerYear[y] ?? 0])
+    ),
+    '',
+    `- impliedSteadyState ${num(r.impliedSteadyState)} per year; fzpPerYear ${num(r.fzpPerYear)} over ${r.hostable} hostable unoccupied parcels; fzpRatio ${num(r.fzpRatio)}`,
+    `- historical mean ${num(r.historicalMean)} events per year; FZP ÷ historical ${num(r.fzpVsHistorical)} (band ${FZP_BAND[0]} to ${FZP_BAND[1]}, tier 4)${r.fzpWarning ? ': outside the band (warned)' : ''}`,
+    `- extrapolation: ${r.extrapolation.parcels} parcels (${num(100 * r.extrapolation.parcelShare)}% of hostable, ${num(100 * r.extrapolation.filingsShare)}% of FZP expected filings) beyond the at-risk maximum potentialRatio ${num(r.extrapolation.maxAtRisk.potentialRatio)}, storiesGap ${num(r.extrapolation.maxAtRisk.storiesGap)}`,
+    `- topEffects (coefficient range):${r.topEffects.length === 0 ? ' none (no fitted terms)' : ''}`,
+    ...r.topEffects.map((e) => {
+      const a = aliasOf(e.feature);
+      return `  - ${e.feature} ${num(e.range)}${a.length > 0 ? ` (aliased with ${a.join('; ')}: effects split by the ridge)` : ''}`;
+    }),
+    `- exactly aliased bin indicators (same design rows): ${aliases.length === 0 ? 'none' : aliases.map((g) => g.join(' ≡ ')).join('; ')}`,
+    '',
+    'Exposure and event shares per `imputed` mask bit (T11/T13: 0 yearBuilt, 1 existingStories, 2 improvementShare, 3 existingUnits, 4 no roll row, 5 carried, 6 floor area):',
+    '',
+    ...table(
+      ['bit', 'exposure share', 'event share'],
+      [
+        ...r.mask.exposureShare.map((e, b) => [String(b), e, r.mask.eventShare[b]]),
+        ['any', r.mask.anyExposure, r.mask.anyEvents]
+      ]
+    )
+  );
+  return out;
+}
+
+function sizeRevisionSection(x: ReportInput): string[] {
+  const s = x.calibration.size;
+  const v = x.calibration.revision;
+  const clamp = x.tallies['sc.revision.ratio-clamp'];
+  return [
+    REPORT_SECTIONS[5],
+    '',
+    `### Size (tier ${s.provenance.tier}, n = ${num(s.provenance.n)})`,
+    '',
+    `Fill levels ${s.fillLevels.map(num).join(', ')}; bucket edges ${SIZE_EDGES.join(', ')}; calibration.method.sizeOverEnvelope = ${x.sizeOverEnvelope.fired} of ${x.sizeOverEnvelope.of} (r > 1 mapped to fill 1).`,
+    '',
+    ...table(
+      ['max stories up to', ...s.fillLevels.map((f) => `fill ${num(f)}`)],
+      s.byEnvelope.map((b) => [num(b.maxStoriesUpTo), ...b.probs])
+    ),
+    '',
+    `### Revision (tier ${v.provenance.tier}, n = ${num(v.provenance.n)})`,
+    '',
+    `Ratio edges ${REVISION_EDGES.join(', ')}; sc.revision.ratio-clamp ${clamp.fired} of ${clamp.of} revised pairs.`,
+    '',
+    ...table(
+      ['stage', 'probability', 'ratio probs'],
+      v.at.map((a) => [a.stage, a.probability, a.ratio.probs.map(num).join(', ')])
+    )
+  ];
+}
+
+function newProjectsSection(x: ReportInput): string[] {
+  const c = x.calibration;
+  const lp = x.lpDiag;
+  const days = c.phaseGap.days;
+  return [
+    REPORT_SECTIONS[6],
+    '',
+    ...table(
+      ['pathway', 'pathwayForNew', 'ppaShare'],
+      PATHWAYS.map((p: Pathway) => [p, c.pathwayForNew[p], c.ppaShare[p]])
+    ),
+    '',
+    `- pathwayForNew: tier ${c.pathwayForNew.provenance.tier}, n = ${num(c.pathwayForNew.provenance.n)}`,
+    `- ppaShare: tier ${c.ppaShare.provenance.tier}, n = ${num(c.ppaShare.provenance.n)}`,
+    `- streamlinedForLocalProgram: tier ${c.streamlinedForLocalProgram.tier}, n = ${num(c.streamlinedForLocalProgram.n)} streamlined spells`,
+    `- Local Program diagnostic (not used): ${lp.filings} filings since ${LOCAL_PROGRAM_START}; median days filed to entitled ${num(lp.medianFiledToEntitled)} (against the 180-day clock)`,
+    `- phaseGap: rung ${x.phaseGap.rung}, ${x.phaseGap.groups} groups, ${days.length} gaps, median ${num(median(days))} days`
+  ];
+}
+
+function provenanceIndex(c: Calibration): [string, Provenance][] {
+  const out: [string, Provenance][] = [];
+  for (const p of PATHWAYS) {
+    for (const s of STAGE_ORDER) {
+      if (s === 'complete') continue;
+      const t = c.transitions[p][s];
+      if (!t) continue;
+      out.push([`transitions.${p}.${s}.provenance`, t.provenance]);
+      out.push([`transitions.${p}.${s}.tailProvenance`, t.tailProvenance]);
+    }
+  }
+  out.push(
+    ['initiation.provenance', c.initiation.provenance],
+    ['pathwayForNew.provenance', c.pathwayForNew.provenance],
+    ['ppaShare.provenance', c.ppaShare.provenance],
+    ['size.provenance', c.size.provenance],
+    ['revision.provenance', c.revision.provenance],
+    ['streamlinedForLocalProgram', c.streamlinedForLocalProgram],
+    ['phaseGap.provenance', c.phaseGap.provenance]
+  );
+  return out;
+}
+
+function indexSection(x: ReportInput): string[] {
+  return [
+    REPORT_SECTIONS[7],
+    '',
+    ...table(
+      ['path', 'tier', 'label', 'first source'],
+      provenanceIndex(x.calibration).map(([path, p]) => [
+        path,
+        p.tier,
+        p.label,
+        p.sources.length > 0 ? `${p.sources[0].label} <${p.sources[0].url}>` : 'none'
+      ])
+    )
+  ];
+}
+
+const CONSTANT_NAMES: Record<keyof CalProfile, string> = {
+  name: 'profile',
+  nSpellsMin: 'N_SPELLS_MIN',
+  nEventsMin: 'N_EVENTS_MIN',
+  nRiskMin: 'N_RISK_MIN',
+  kMax: 'K_MAX (months)',
+  tailSpan: 'TAIL_SPAN',
+  tailMinEvents: 'TAIL_MIN_EVENTS',
+  minBinEvents: 'MIN_BIN_EVENTS',
+  ridgeLambda: 'RIDGE_LAMBDA',
+  initMinEvents: 'INIT_MIN_EVENTS',
+  sizeMinN: 'SIZE_MIN_N',
+  revMinN: 'REV_MIN_N',
+  v27N: 'V27 draws',
+  v27Tol: 'V27 tolerance',
+  coverageGuard: 'COVERAGE_GUARD',
+  purgeMinExits: 'PURGE_MIN_EXITS',
+  purgeRatio: 'PURGE_RATIO',
+  purgeMinDays: 'PURGE_MIN_DAYS',
+  purgeGapDays: 'PURGE_GAP_DAYS',
+  phPrior: 'PH_PRIOR κ',
+  phaseMinUnits: 'PHASE_MIN_UNITS',
+  phaseMinGaps: 'PHASE_MIN_GAPS',
+  fixtureInitiation: 'fixture initiation model',
+  backcastGate: 'V28 back-cast gate'
+};
+
+function constantsSection(x: ReportInput): string[] {
+  const value = (v: unknown): string =>
+    typeof v === 'number' ? num(v) : v === null ? 'n/a' : String(v);
+  return [
+    REPORT_SECTIONS[8],
+    '',
+    'Tier 4 (made up) unless noted.',
+    '',
+    ...table(
+      ['constant', 'value'],
+      [
+        ...(Object.keys(CONSTANT_NAMES) as (keyof CalProfile)[]).map((k) => [
+          CONSTANT_NAMES[k],
+          value(x.cal[k])
+        ]),
+        ['MONTH_DAYS (definitional)', num(MONTH_DAYS)],
+        ['size bucket edges', SIZE_EDGES.join(', ')],
+        ['revision ratio edges', REVISION_EDGES.join(', ')],
+        ['FZP filings band', `${FZP_BAND[0]} to ${FZP_BAND[1]}`],
+        ...Object.entries(INITIAL_EDGES).map(([f, e]) => [`initial bins: ${f}`, e.join(', ')])
+      ]
+    )
+  ];
+}
+
+function rulesSection(x: ReportInput): string[] {
+  const pw = x.purge;
+  const out = [
+    REPORT_SECTIONS[9],
+    '',
+    'The `fired` and `of` counts `recordQuality` writes into report.json; the top-25 record lists are in `quality-report.md`.',
+    '',
+    ...table(
+      ['id', 'label', 'tier', 'action', 'fired', 'of', 'share'],
+      SC_RULE_IDS.map((id) => {
+        const r = qualityRule(id);
+        const t = x.tallies[id];
+        return [id, r.label, r.tier, r.action, t.fired, t.of, share(t.fired, t.of)];
+      })
+    ),
+    '',
+    `sc.exit.purge-censor, unwindowed (all qualifying exits): ${pw.tally.fired} censored of ${pw.tally.of} exits; ${pw.windows.length} purge windows.`,
+    ''
+  ];
+  if (pw.windows.length > 0) {
+    const counts = (o: Partial<Record<string, number>>) =>
+      Object.keys(o)
+        .sort()
+        .map((k) => `${k} ${o[k]}`)
+        .join(', ');
+    out.push(
+      ...table(
+        ['first', 'last', 'exits', 'censored', 'by reason', 'by stage', 'median days'],
+        pw.windows.map((w) => [
+          isoOf(w.first),
+          isoOf(w.last),
+          w.exits,
+          w.censored,
+          counts(w.byReason),
+          counts(w.byStage),
+          w.medianDays
+        ])
+      ),
+      ''
+    );
+  }
+  const c = x.counts;
+  out.push(
+    'Method counts (model choices, not T14 rules):',
+    '',
+    ...table(
+      ['count', 'value', 'of'],
+      [
+        [
+          'calibration.method.permitOnlyPre2015',
+          x.permitOnlyPre2015.fired,
+          `${x.permitOnlyPre2015.of} qualifying permitOnly histories`
+        ],
+        [
+          'calibration.method.ppaPooled',
+          c['calibration.method.ppaPooled'],
+          'preApplication spells'
+        ],
+        [
+          'calibration.method.sizeOverEnvelope',
+          x.sizeOverEnvelope.fired,
+          `${x.sizeOverEnvelope.of} measured size histories`
+        ],
+        ['calibration.window.preRoll', c['calibration.window.preRoll'], 'qualifying histories'],
+        ['calibration.noFcd.flaggedPooled', c['calibration.noFcd.flaggedPooled'], 'pooled cells']
+      ]
+    )
+  );
+  return out;
+}
+
+/** The calibration report (spec §4.10): ten sections, deterministic. */
+export function calibrationReport(x: ReportInput): string {
+  const sections = [
+    header(x),
+    windows(x),
+    transitionsSection(x),
+    tcoSection(x),
+    initiationSection(x),
+    sizeRevisionSection(x),
+    newProjectsSection(x),
+    indexSection(x),
+    constantsSection(x),
+    rulesSection(x)
+  ];
+  return sections.map((s) => s.join('\n')).join('\n\n') + '\n';
+}
