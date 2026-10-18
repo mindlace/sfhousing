@@ -70,7 +70,7 @@
           "url": "https://data.sf.gov/d/acdm-wktn"
         }
       ],
-      "method": "Per parcel from the 2025 secured roll (lien date 1 January), roll rows mapped to current parcels through acdm-wktn (retired lots by centroid). Imputations are tier 2: missing year built and improvement share take the median of the same land-use class and roll year (a year-wide median, then 0, when the class has none: tier 4); missing stories come from the building height. Sanity rules (tier 4, made up): roll stories above 80 are missing; a bracketed run of implausible units (≥ 100 and over 10× its neighbouring years) takes the previous year’s units (imputed bit 3). Parcels without a latest-year roll row take the \"other\" class medians. Assessed values reflect the Prop 13 acquisition basis, not market value. Base-zoning density caps from the Planning Code (tier 1, pipeline/lib/density-caps.ts); a split zoning code takes its most permissive component and generic NCD/NCT codes have no cap (both tier 4, made up); districts not verified against the official Code default to no cap (NCD, NCT)."
+      "method": "Per parcel from the 2025 secured roll (lien date 1 January), roll rows mapped to current parcels through acdm-wktn (retired lots by centroid). Data-quality rules (pipeline/lib/quality-rules/sd.ts, tiers as rule / value, imputed bit in brackets): rows without a roll year (4 / —) or a current parcel (2 / —) are dropped; a year built before 1850 or after the roll year is treated as missing (4 / 2) [bit 0, also set when one of the parcel-year’s rows had its year nulled, even if another row supplies one]; a missing year built or improvement share takes the median of the same land-use class and roll year over observed rows (2 / 2) [bits 0, 2], falling back to the year-wide median, then 0, when the class has none (4 / 4); roll stories above 80 are missing (4 / 2) and missing stories come from the building height (2 / 3) [bit 1]; the units rules of the existing homes (see existingUnits) [bit 3]: units missing on every row of a parcel-year are 0 (4 / 4), units beyond the lot’s capacity are replaced (4 / 2), and a bracketed implausible run is replaced (4 / 2); a roll year missing between two observed years copies the latest earlier year (2 / 2) [bit 5]; a parcel-year without a roll floor area takes the map parcel record’s, rounded to whole m² (2 / 3) [bit 6]. A parcel without a latest-year roll row takes the no-row defaults (4 / 4) [bits 0–4 and 6, imputed 95]: 0 homes, stories from the building height (else 0), land-use class other, the latest year’s \"other\" medians for year built and improvement share, no rent control, and the map parcel record’s floor area. Assessed values reflect the Prop 13 acquisition basis, not market value. Base-zoning density caps from the Planning Code (tier 1, pipeline/lib/density-caps.ts); a split zoning code takes its most permissive component (sd.zoning.split-code) and generic NCD/NCT codes have no cap (sd.zoning.generic-nc), both tier 4, made up; districts not verified against the official Code default to no cap (NCD, NCT)."
     },
     "existingUnits": {
       "tier": 0,
@@ -81,7 +81,7 @@
           "url": "https://data.sf.gov/d/wv5m-vpq2"
         }
       ],
-      "method": "Σ number_of_units over the parcel’s roll rows in the latest roll year (2025); no LUDB fallback. A parcel without a latest-year row has 0. An implausible bracketed run (≥ 100 units and over 10× the neighbouring years) takes the previous year’s value (tier 4, imputed bit 3)."
+      "method": "Σ number_of_units over the parcel’s roll rows in the latest roll year (2025); no general LUDB fallback. Units rules (tiers as rule / value, imputed bit 3), in order: a parcel-year whose rows all lack a unit count has 0 (4 / 4); units that would leave under 10 m² of lot area × stories per home take the units of the nearest plausible roll year, else the city land-use (LUDB) count if plausible, else the most homes that fit (4 / 2); a bracketed run of implausible units (≥ 100 and over 10× the neighbouring years) takes the previous year’s value (4 / 2). A roll year missing between two observed years copies the latest earlier year, its bit 3 included (2 / 2, bit 5). A parcel without a latest-year row has 0 (the no-row default, 4 / 4, imputed 95)."
     },
     "yield": {
       "tier": 3,
@@ -100,7 +100,7 @@
           "url": "https://data.sf.gov/d/acdm-wktn"
         }
       ],
-      "method": "Gross units from the project’s typology generator (src/lib/generator, mode max, seed fnv1a32(id)), replacement typologies only, at max(1, round(fill × stories)) for each FILL_LEVELS fill (a tier-4 quantisation grid). FZP yields have no density cap on Local Program parcels and the cap on 2026-10-10 elsewhere; base yields use the base height and the pre-FZP cap (2026-01-11). Base-zoning density caps from the Planning Code (tier 1, pipeline/lib/density-caps.ts); a split zoning code takes its most permissive component and generic NCD/NCT codes have no cap (both tier 4, made up); districts not verified against the official Code default to no cap (NCD, NCT)."
+      "method": "Gross units from the project’s typology generator (src/lib/generator, mode max, seed fnv1a32(id)), replacement typologies only, at max(1, round(fill × stories)) for each FILL_LEVELS fill (a tier-4 quantisation grid). FZP yields have no density cap on Local Program parcels and the cap on 2026-10-10 elsewhere; base yields use the base height and the pre-FZP cap (2026-01-11). Base-zoning density caps from the Planning Code (tier 1, pipeline/lib/density-caps.ts); a split zoning code takes its most permissive component (sd.zoning.split-code) and generic NCD/NCT codes have no cap (sd.zoning.generic-nc), both tier 4, made up; districts not verified against the official Code default to no cap (NCD, NCT)."
     }
   },
   "id": [
@@ -267,15 +267,15 @@
     0,
     0,
     0,
+    64,
     0,
-    0,
-    21,
+    95,
     0,
     4,
-    21,
-    23,
+    95,
+    95,
     0,
-    0
+    8
   ],
   "baseCap": [
     4,
@@ -307,7 +307,23 @@
     0,
     0,
     40,
-    0
+    4
+  ],
+  "existingFloorAreaM2": [
+    279,
+    186,
+    223,
+    93,
+    204,
+    0,
+    929,
+    0,
+    279,
+    557,
+    560,
+    840,
+    2787,
+    279
   ],
   "existingStories": [
     3,
@@ -387,7 +403,7 @@
     0,
     0,
     0,
-    0
+    1
   ],
   "landUseClass": [
     0,
@@ -488,8 +504,8 @@
     0,
     0,
     0,
-    3,
-    4,
+    0,
+    0,
     9,
     9
   ],
@@ -560,8 +576,8 @@
     0,
     0,
     0,
-    3,
-    4,
+    0,
+    0,
     9,
     9
   ],
@@ -580,7 +596,7 @@
       0,
       11,
       0,
-      9
+      2.25
     ],
     "base": [
       1.3333333730697632,
@@ -596,7 +612,7 @@
       0,
       11,
       0,
-      9
+      2.25
     ]
   },
   "storiesGap": {

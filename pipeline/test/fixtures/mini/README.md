@@ -25,8 +25,8 @@ not download them.
 | --- | ------------------------------------------------ | --------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------- | --------- | ------------------------------ | ---------------------------------------------------------------------------------------- |
 | 1   | `3512001`                                        | 1, Mission                                                      | RESIDENT, resunits 2, res 2000, totalcomm 0                  | b01 h=12 (`hs=0`)                                                                                | basic; colliding orphan target                        | RH-2      | `40//65-R-4`                   | SRES/F 1912, 2 st, 2 u, 2000 sf, 400k/300k; 2025+2024                                    |
 | 2   | map lot `3512002`                                | 3 condo rows `3512101/102/103`; `3512103` polygon 0.2 m shorter | RESIDENT, 6 units                                            | b02 h=15                                                                                         | condo dedupe (smallest blklot), sub-lot warning       | RH-2 (x3) | `40//65-R-4`                   | 3 condo rows `3512101/102/103` SRES/Z 1975, 3 st, 1 u, 800 sf, 200k/300k each; 2025+2024 |
-| 3   | `8711023C`                                       | 1                                                               | MIXRES 4 u res 3000 comm 500; RETAIL/ENT 0 u res 0 comm 4000 | b03 no height, num_floors 0 -> `hs=3`                                                            | duplicate rows summed; default height                 | NCT       | `40//65-R-4`                   | `8711023C` COMH/H1 hotel 1920, 3 st, 0 u, 3000 sf, 500k/500k; 2025+2024                  |
-| 4   | `0026T001A`                                      | 1                                                               | MIXED 3 units                                                | b04 no height, num_floors 4 -> `hs=2`                                                            | 9-char id; floors rule                                | NC-1      | `40//65-R-4`                   | `0026T001A` MRES/A 1925, 3 st, 3 u, 3000 sf, 300k/600k; 2025+2024                        |
+| 3   | `8711023C`                                       | 1                                                               | MIXRES 4 u res 3000 comm 500; RETAIL/ENT 0 u res 0 comm 4000 | b03 no height, num_floors 0 -> `hs=3`                                                            | duplicate rows summed; default height                 | NCT       | `40//65-R-4`                   | `8711023C` COMH/H1 hotel 1920, 3 st, 5000 u, 3000 sf, 500k/500k; 2025+2023 (no 2024)     |
+| 4   | `0026T001A`                                      | 1                                                               | MIXED 3 units                                                | b04 no height, num_floors 4 -> `hs=2`                                                            | 9-char id; floors rule                                | NC-1      | `40//65-R-4`                   | `0026T001A` MRES/A 1925, 3 st, 3 u (2024: 900 u), 3000 sf, 300k/600k; 2025+2024+2023     |
 | 5   | `3512005`                                        | 1 MultiPolygon: A x[40,50] y[0,18], B x[40,50] y[22,30]         | RESIDENT 1 unit                                              | none                                                                                             | multipart ring order                                  | RH-1      | 40% `40//65-R-4`, 60% `65-X`   | SRES/D 1950 (2024: `"0"`), 1 st, 1 u, 1000 sf, 300k/100k; 2025+2024                      |
 | 6   | `3512006`                                        | polygon with hole x[53,57] y[10,20]                             | RESIDENT 2 units                                             | b06 courtyard h=9 (outer x[51,59] y[5,25], hole x[54,56] y[12,18]); besri 1.2 m x 1.2 m h=4      | holed parcel; sliver dropped                          | RM-1      | `65-X`                         | MRES/F 1940, 2 st, 2 u, 2200 sf, 350k/250k; 2025+2024                                    |
 | 7   | `3512007`                                        | 1                                                               | OPENSPACE 0 units                                            | none                                                                                             | ineligible                                            | P         | `65-X`                         | MISC/V built empty, 0 st, 0 u, 0 sf, 100k/0; 2025+2024                                   |
@@ -60,24 +60,30 @@ Extras:
   and `2019-03-01` for `3512098`; `date_rec_add` is empty throughout (mostly empty in live acdm-wktn).
   Lot 4 is `NC-1` (ruling C2): an NC lot inside R-4 that is not Local Program, so its pre-FZP cap (4)
   differs from its FZP cap (none, form-based density).
-- Assessor roll (`datasf-assessor-roll`, wv5m-vpq2 CSV): roll years 2025 then 2024, `status_code` `NA`
-  unless stated in the lot table. Lots 9 and 12 have no rows; lot 13 has no 2025 row; retired `3512099`
+- Assessor roll (`datasf-assessor-roll`, wv5m-vpq2 CSV): roll years 2025, 2024, then 2023, `status_code`
+  `NA` unless stated in the lot table. Lots 9 and 12 have no rows; lot 13 has no 2025 row; retired `3512099`
   (centroid in lot 12) has a 2024 row only: MRES/A 1910, 2 st, 7 u, 5600 sf, 300k/200k. Lot 2's condos are
   built 1975, not 1985 as in scenario-data spec §4.11 (ruled), so the condo rule of the rent-control
   exclusion is exercised.
+- Roll year 2023 has rows for lots 3 and 4 only: they carry the RA1 units cases of scenario-data spec
+  §4.11. Lot 3's 5,000 units (2023 and 2025) exceed its capacity of 90 (300 m² × 3 stories / 10 m²) in
+  every year, so `sd.roll.units-capacity` replaces both with its LUDB 4 (bit 3), and its missing 2024 is
+  carried from 2023 (`sd.roll.year-gap`, bits 3 and 5); T11 `existingUnits` is 4. Lot 4's 900 in 2024
+  fails the same rule, and the tie between 2023 and 2025 goes to the earlier year (3); the spike rule
+  never sees it. `scenario.units.total` is 70 (`FIXTURE_PROFILE.scenarioUnitsRange`).
 
 ## Derived row counts (`src_*` after normalisation)
 
-| table               | rows | derivation                                                                  |
-| ------------------- | ---- | --------------------------------------------------------------------------- |
-| `src_parcels`       | 19   | 14 lots, lot 2 has 3 rows (16), + 2 retired + 1 null-id                     |
-| `src_landuse`       | 15   | lots 1, 2, 3 (x2), 4, 5, 6, 7, 8, 10, 11, 13, 14 = 13, + 2 orphans          |
-| `src_footprints`    | 3    | SF3512013, SF3512001, CN0000001                                             |
-| `src_neighborhoods` | 2    | Mission, Noe Valley                                                         |
-| `src_overture`      | 12   | b01 b02 b03 b04 b06 b10 b13 b14 + bpier bunder bmarin besri                 |
-| `src_height_bulk`   | 6    | the six districts                                                           |
-| `src_parcel_attrs`  | 19   | as `src_parcels`                                                            |
-| `src_roll`          | 28   | 2025: 13 (lots 1, 2 x3, 3–8, 10, 11, 14); 2024: those + 13 + `3512099` = 15 |
+| table               | rows | derivation                                                                                               |
+| ------------------- | ---- | -------------------------------------------------------------------------------------------------------- |
+| `src_parcels`       | 19   | 14 lots, lot 2 has 3 rows (16), + 2 retired + 1 null-id                                                  |
+| `src_landuse`       | 15   | lots 1, 2, 3 (x2), 4, 5, 6, 7, 8, 10, 11, 13, 14 = 13, + 2 orphans                                       |
+| `src_footprints`    | 3    | SF3512013, SF3512001, CN0000001                                                                          |
+| `src_neighborhoods` | 2    | Mission, Noe Valley                                                                                      |
+| `src_overture`      | 12   | b01 b02 b03 b04 b06 b10 b13 b14 + bpier bunder bmarin besri                                              |
+| `src_height_bulk`   | 6    | the six districts                                                                                        |
+| `src_parcel_attrs`  | 19   | as `src_parcels`                                                                                         |
+| `src_roll`          | 29   | 2025: 13 (lots 1, 2 x3, 3–8, 10, 11, 14); 2024: those less 3, + 13 + `3512099` = 14; 2023: lots 3, 4 = 2 |
 
 ## Transit
 

@@ -51,6 +51,18 @@ describe('sfh-scenario/1 codec', () => {
     expect(decodeScenarioPayload(encodeScenarioPayload(t))).toEqual(t);
   });
 
+  it('round-trips existingFloorAreaM2 at 0, a typical value and 2^32 - 1', () => {
+    const d = decodeScenarioPayload(encodeScenarioPayload(scenarioTiny()));
+    expect(d.existingFloorAreaM2).toBeInstanceOf(Uint32Array);
+    expect([...d.existingFloorAreaM2]).toEqual([186, 0, 0, 0xffffffff, 1250, 77]);
+  });
+
+  it('decodes a row with imputed bit 6 (existingFloorAreaM2 from the chunk record)', () => {
+    const d = decodeScenarioPayload(encodeScenarioPayload(scenarioTiny()));
+    expect(d.imputed[1]).toBe(95);
+    expect(d.imputed[1] & 0b1000000).toBe(0b1000000);
+  });
+
   it('encodes deterministically', () => {
     expect(encodeScenarioPayload(scenarioTiny())).toEqual(encodeScenarioPayload(scenarioTiny()));
   });
@@ -90,6 +102,7 @@ describe('sfh-scenario/1 codec', () => {
       'flags',
       'imputed',
       'existingUnits',
+      'existingFloorAreaM2',
       'existingStories',
       'lotAreaM2',
       'yearBuilt',
@@ -170,6 +183,32 @@ describe('sfh-scenario/1 codec', () => {
       rejects(b, /column cell is 10 bytes, want 12/);
     });
 
+    it('a missing existingFloorAreaM2 column (a file written before RA1)', () => {
+      rejects(
+        withHeader(good(), (h) => {
+          h.columns = h.columns.filter((c) => c.name !== 'existingFloorAreaM2');
+        }),
+        /column existingFloorAreaM2 is missing/
+      );
+    });
+
+    /** Sets `bit` in row `row` of the u8 column `name`, in place in the column bytes. */
+    const withBit = (name: string, row: number, bit: number) => {
+      const b = good();
+      const c = header(b).columns.find((c) => c.name === name)!;
+      b[c.offset + row] |= 1 << bit;
+      return b;
+    };
+
+    it('a set reserved bit 7 in imputed', () => {
+      rejects(withBit('imputed', 2, 7), /imputed\[2\] = \d+ sets reserved bits/);
+    });
+
+    it('a set reserved bit 5, 6 or 7 in flags', () => {
+      for (const bit of [5, 6, 7])
+        rejects(withBit('flags', 0, bit), /flags\[0\] = \d+ sets reserved bits/);
+    });
+
     it('a district index past districts', () => {
       rejects(
         withHeader(good(), (h) => (h.districts = [''])),
@@ -202,6 +241,23 @@ describe('sfh-scenario/1 codec', () => {
     const t = scenarioTiny();
     t.yield = Object.assign([...t.yield], { 4: 65536 }) as unknown as Uint16Array;
     expect(() => encodeScenarioPayload(t)).toThrow(ScenarioFormatError);
+  });
+
+  it('encode rejects a negative or non-integer existingFloorAreaM2', () => {
+    for (const v of [-1, 12.5, 2 ** 32]) {
+      const t = scenarioTiny();
+      t.existingFloorAreaM2 = Object.assign([...t.existingFloorAreaM2], {
+        0: v
+      }) as unknown as Uint32Array;
+      expect(() => encodeScenarioPayload(t), String(v)).toThrow(ScenarioFormatError);
+      expect(() => encodeScenarioPayload(t), String(v)).toThrow(/existingFloorAreaM2\[0\]/);
+    }
+  });
+
+  it('encode rejects a set reserved bit 7 in imputed', () => {
+    const t = scenarioTiny();
+    t.imputed[0] = 0x80;
+    expect(() => encodeScenarioPayload(t)).toThrow(/imputed\[0\] = 128 sets reserved bits/);
   });
 
   it('featureValue covers every FeatureId × env', () => {

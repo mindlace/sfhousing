@@ -522,7 +522,7 @@ describe('invariants', () => {
 });
 
 describe('V30 data-quality registry', () => {
-  /** A one-rule test registry: the real registry is empty until the owners register rules. */
+  /** A one-rule test registry, so the share checks do not depend on the real sd.* and pr.* rules. */
   const one = makeQuality([
     {
       id: 'sd.test.bound',
@@ -557,10 +557,14 @@ describe('V30 data-quality registry', () => {
   it('the build writes quality-report.md into the derived folder', () => {
     const md = readFileSync(join(derived, 'fixture-0', QUALITY_REPORT_MD), 'utf8');
     expect(md).toMatch(/^# Data quality report: fixture-0\n/);
-    // One reported row per registered rule (project-records registers the pr.* rules).
+    // One reported row per registered rule, scenario-data's sd.* and project-records' pr.* alike.
+    const owners = new Set(QUALITY_RULES.map((r) => r.owner));
+    expect(owners.has('scenario-data') && owners.has('project-records')).toBe(true);
     for (const r of QUALITY_RULES) {
       expect(md, r.id).toMatch(new RegExp(`^\\| \`${r.id.replaceAll('.', '\\.')}\` \\|`, 'm'));
     }
+    // The scenario-data SQL rules recorded into the build's counts.
+    expect(md).toMatch(/\| `sd\.roll\.units-capacity` \|.*\| 3 \/ 25 \|/);
     expect(md).not.toContain('| not reported |');
     expect(md).not.toContain('Not reported.');
   });

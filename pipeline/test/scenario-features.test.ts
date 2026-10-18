@@ -11,15 +11,25 @@ import {
   featureValue,
   type ScenarioParcels
 } from '../../src/lib/data/scenario-codec';
+import { parseManifest } from '../../src/lib/data/manifest';
+import { decodeParcelChunk } from '../../src/lib/data/parcel-chunk';
 import { FIXTURE_PROFILE } from '../config';
 import { openDuck, type Duck } from '../lib/duck';
+import { readLock } from '../lib/lock';
+import { createQualityTables } from '../lib/quality';
+import { Report } from '../lib/report';
+import { runSql } from '../lib/sql';
+import { asOfFromLock } from '../project-records/parse';
 import { build } from '../steps/build';
-import { MINI } from './helpers';
+import { readParcelRecords } from '../steps/chunks';
+import { PARCELS_BIN, readParcelsBin, writeScenario } from '../steps/scenario';
+import { MINI, miniDuck } from './helpers';
 
-/** Spec §4.6, in order: T13's columns, then the additions. */
+/** Spec §4.6 and the T13 row: exactly the contract columns, in this order. */
 const PANEL_COLUMNS = [
   'mapblklot',
   'roll_year',
+  'lien_day',
   'existing_units',
   'existing_stories',
   'year_built',
@@ -31,7 +41,6 @@ const PANEL_COLUMNS = [
   'base_stories',
   'base_density_cap',
   'base_yield',
-  'lien_day',
   'lot_area_m2',
   'improvement_share',
   'rent_control_likely',
@@ -62,6 +71,7 @@ interface PanelRow {
 
 const F = FILL_LEVELS.length;
 let derived: string;
+let outDir: string;
 let p: ScenarioParcels;
 let db: Duck;
 let counts: Record<string, number>;
@@ -69,7 +79,7 @@ let counts: Record<string, number>;
 beforeAll(async () => {
   const root = mkdtempSync(join(tmpdir(), 'sfh-scenario-features-'));
   derived = join(root, 'derived', 'fixture-0');
-  const { outDir } = await build({
+  ({ outDir } = await build({
     lockPath: join(MINI, 'sources.lock.json'),
     rawDir: join(MINI, 'raw'),
     rawByName: true,
@@ -79,7 +89,7 @@ beforeAll(async () => {
     profile: FIXTURE_PROFILE,
     skipTiles: true,
     derivedRoot: join(root, 'derived')
-  });
+  }));
   p = decodeScenarioPayload(
     new Uint8Array(inflateRawSync(readFileSync(join(outDir, 'scenarios/fzp/parcels.bin'))))
   );
@@ -142,10 +152,10 @@ describe('scenario T13 panel and T11 features (mini fixture)', () => {
     expect(counts['scenario.roll.latest_eligible_matched']).toBe(10);
   });
 
-  it('the panel has roll years 2024 and 2025 and every T13 column', async () => {
+  it('the panel has roll years 2023 to 2025 and every T13 column', async () => {
     const rows = await panel();
-    expect([...new Set(rows.map((r) => r.roll_year))]).toEqual([2024, 2025]);
-    expect(counts['scenario.panel.years']).toBe(2);
+    expect([...new Set(rows.map((r) => r.roll_year))]).toEqual([2023, 2024, 2025]);
+    expect(counts['scenario.panel.years']).toBe(3);
     const cols = await db.all<{ column_name: string; column_type: string }>(
       `DESCRIBE SELECT * FROM read_parquet('${join(derived, 'parcel-panel.parquet')}')`
     );
@@ -163,6 +173,69 @@ describe('scenario T13 panel and T11 features (mini fixture)', () => {
       roll_year: 2024,
       existing_units: 7
     });
+  });
+
+  it("every parcel's T11 floor area and mask equal its latest-year sc_features row", async () => {
+    // sc_features holds existing_floor_area_m2 (not a T13 contract column), so this runs the
+    // scenario step on its own database and reads the table directly (IA-8, V18).
+    const sdb = await miniDuck();
+    await createQualityTables(sdb);
+    await runSql(sdb);
+    const root = mkdtempSync(join(tmpdir(), 'sfh-scenario-features-sql-'));
+    await writeScenario({
+      db: sdb,
+      outDir: join(root, 'out'),
+      derivedDir: join(root, 'derived'),
+      datasetVersion: 'fixture-0',
+      records: await readParcelRecords(sdb),
+      capDay: asOfFromLock(readLock(join(MINI, 'sources.lock.json'))),
+      report: new Report(),
+      buildCounts: {}
+    });
+    const t11 = readParcelsBin(join(root, 'out', PARCELS_BIN));
+    const rows = await sdb.all<{
+      mapblklot: string;
+      existing_floor_area_m2: number;
+      imputed: number;
+    }>(
+      `SELECT mapblklot, existing_floor_area_m2, imputed FROM sc_features
+       WHERE roll_year = (SELECT max(roll_year) FROM sc_features) ORDER BY mapblklot`
+    );
+    expect(rows).toHaveLength(11);
+    for (const r of rows) {
+      const i = t11.index.get(r.mapblklot);
+      expect(i, r.mapblklot).toBeDefined();
+      expect({ floor: t11.existingFloorAreaM2[i!], imputed: t11.imputed[i!] }, r.mapblklot).toEqual(
+        { floor: r.existing_floor_area_m2, imputed: r.imputed }
+      );
+    }
+  });
+
+  it('no-row parcels (lots 9, 12, 13) get imputed 95 and the rounded chunk floor area', async () => {
+    // Spec §4.5 step 5, AC 16: sd.roll.no-row sets bits 0–4 and sd.roll.floor-area-missing bit 6.
+    const m = parseManifest(JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf8')));
+    const recs = new Map(
+      m.chunks
+        .flatMap((c) =>
+          decodeParcelChunk(
+            readFileSync(join(outDir, c.url.replace('/data/fixture-0/', '')), 'utf8')
+          )
+        )
+        .map((r) => [r.id, r])
+    );
+    const latest = new Set(
+      (await panel()).filter((r) => r.roll_year === 2025).map((r) => r.mapblklot)
+    );
+    const noRow = p.id.filter((id) => !latest.has(id));
+    expect(noRow).toEqual(['3512009', '3512012', '3512013']);
+    for (const id of noRow) {
+      const i = p.index.get(id)!;
+      expect({ imputed: p.imputed[i], floor: p.existingFloorAreaM2[i] }, id).toEqual({
+        imputed: 95,
+        floor: Math.round(recs.get(id)!.existingFloorAreaM2)
+      });
+    }
+    expect(counts['scenario.imputed.no_roll']).toBe(3);
   });
 
   it('parcel-lineage.parquet has the retired rows', async () => {

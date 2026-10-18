@@ -4,17 +4,29 @@
 -- Reads parcels, parcel_out, src_height_bulk, src_parcel_attrs, src_roll, and two tables the TS
 -- step writes first: sc_height_parse (one parsed row per distinct height string) and
 -- sc_land_use_classes (idx, name: LAND_USE_CLASSES of src/lib/data/scenario-codec.ts).
--- Writes sc_district, sc_zoning, parcel_lineage, sc_roll_agg and scenario.height.* /
--- scenario.roll.* counts. Every float sum is taken over an ordered list (list_sum), as in
--- 60_attributes.sql, so the result does not depend on thread scheduling (V12).
+-- Writes sc_district, sc_zoning, parcel_lineage, sc_roll_years, sc_roll_agg and
+-- scenario.height.* / scenario.roll.* counts. Every float sum is taken over an ordered list
+-- (list_sum), as in 60_attributes.sql, so the result does not depend on thread scheduling (V12).
+-- T14 (spec §4.5 rule order steps 1 and 2, §4.12): the row-level roll rules sd.roll.no-year,
+-- sd.roll.year-built-range, sd.roll.stories-max and sd.roll.unmatched, and the aggregation rule
+-- sd.roll.units-missing, are applied here, each inserting exactly one quality_tally row and one
+-- quality_sample row per affected record (`<parcel_number>:<closed_roll_year>` for a roll row,
+-- `<parcel_number>` for one without a year, `<mapblklot>:<roll_year>` for a parcel-year);
+-- writeScenario reports them through recordSqlQuality after the T11 rows. So are the final fix
+-- wave's DQ-4 rules: the normalise casts (sd.roll.*-cast, sd.attrs.*-cast; normalise flags the
+-- row in cast_flags, the rewrite itself happened there), sd.attrs.active-unknown,
+-- sd.attrs.no-blklot (sample `<blklot>`, or `<mapblklot>` for a row without one) and
+-- sd.height.blank (sample: the polygon's ordinal hid).
+-- sc_roll_agg is the aggregate before the parcel-year rules of 81_scenario_features.sql.
 -- District overlap is summed per normalised height string, not per polygon: adjacent polygons
 -- carrying the same string are one district, so a parcel straddling their shared edge is not
 -- split between them. overlap_frac is clamped to at most 1; a raw sum above 1.0001 (overlapping
 -- same-string polygons) is counted in scenario.height.overlap_gt1.
 
 -- Height polygons in EPSG:7131 (as 10_parcels.sql:6) with their parsed string. A polygon with no
--- string (normalised '') carries no district and is left out.
-CREATE OR REPLACE TEMP TABLE s_hb AS
+-- string (NULL or blank, normalised '') carries no district and is left out: sd.height.blank
+-- (DQ-4 registered rule, final fix wave), sampled by its ordinal `hid`.
+CREATE OR REPLACE TEMP TABLE s_hb_all AS
 SELECT h.hid, p.normalised, h.geom
 FROM (
   SELECT row_number() OVER (ORDER BY height, gen_hght, ST_AsHEXWKB(geom)) AS hid,
@@ -23,8 +35,16 @@ FROM (
                       always_xy := true) AS geom
   FROM src_height_bulk
 ) h
-JOIN sc_height_parse p USING (height)
-WHERE p.normalised <> '';
+JOIN sc_height_parse p USING (height);
+
+INSERT INTO quality_tally
+SELECT 'sd.height.blank', count(*) FILTER (WHERE normalised = ''), count(*), NULL, NULL
+FROM s_hb_all;
+INSERT INTO quality_sample
+SELECT 'sd.height.blank', hid::VARCHAR FROM s_hb_all WHERE normalised = '';
+
+CREATE OR REPLACE TEMP TABLE s_hb AS
+SELECT * FROM s_hb_all WHERE normalised <> '';
 
 -- The parse of a normalised string (parseHeightDistrict depends on the normalised form only).
 CREATE OR REPLACE TEMP TABLE s_hp AS
@@ -88,6 +108,54 @@ LEFT JOIN (
 ) z ON z.mapblklot = p.id
 ORDER BY p.id;
 
+-- ---- T14 rules on src_parcel_attrs (DQ-4 registered rules, final fix wave) ----
+-- The normalise casts (sd.attrs.*-cast): cast_flags bits of pipeline/sources/normalise.ts
+-- ATTRS_CAST_BITS (1 latitude, 2 longitude, 4 date_rec_add, 8 date_rec_drop), over the rows with a
+-- value in the field (a flagged row has none left, so it is added back). Sample: the blklot.
+INSERT INTO quality_tally
+SELECT 'sd.attrs.latitude-cast', count(*) FILTER (WHERE (cast_flags & 1) <> 0),
+       count(*) FILTER (WHERE centroid_latitude IS NOT NULL OR (cast_flags & 1) <> 0), NULL, NULL
+FROM src_parcel_attrs;
+INSERT INTO quality_sample
+SELECT 'sd.attrs.latitude-cast', coalesce(blklot, mapblklot, '') FROM src_parcel_attrs
+WHERE (cast_flags & 1) <> 0;
+INSERT INTO quality_tally
+SELECT 'sd.attrs.longitude-cast', count(*) FILTER (WHERE (cast_flags & 2) <> 0),
+       count(*) FILTER (WHERE centroid_longitude IS NOT NULL OR (cast_flags & 2) <> 0), NULL, NULL
+FROM src_parcel_attrs;
+INSERT INTO quality_sample
+SELECT 'sd.attrs.longitude-cast', coalesce(blklot, mapblklot, '') FROM src_parcel_attrs
+WHERE (cast_flags & 2) <> 0;
+INSERT INTO quality_tally
+SELECT 'sd.attrs.added-date-cast', count(*) FILTER (WHERE (cast_flags & 4) <> 0),
+       count(*) FILTER (WHERE date_rec_add IS NOT NULL OR (cast_flags & 4) <> 0), NULL, NULL
+FROM src_parcel_attrs;
+INSERT INTO quality_sample
+SELECT 'sd.attrs.added-date-cast', coalesce(blklot, mapblklot, '') FROM src_parcel_attrs
+WHERE (cast_flags & 4) <> 0;
+INSERT INTO quality_tally
+SELECT 'sd.attrs.dropped-date-cast', count(*) FILTER (WHERE (cast_flags & 8) <> 0),
+       count(*) FILTER (WHERE date_rec_drop IS NOT NULL OR (cast_flags & 8) <> 0), NULL, NULL
+FROM src_parcel_attrs;
+INSERT INTO quality_sample
+SELECT 'sd.attrs.dropped-date-cast', coalesce(blklot, mapblklot, '') FROM src_parcel_attrs
+WHERE (cast_flags & 8) <> 0;
+-- sd.attrs.active-unknown: an active flag normalise could not read (NULL) is retired below
+-- (coalesce, and `WHERE active` in sc_zoning above).
+INSERT INTO quality_tally
+SELECT 'sd.attrs.active-unknown', count(*) FILTER (WHERE active IS NULL), count(*), NULL, NULL
+FROM src_parcel_attrs;
+INSERT INTO quality_sample
+SELECT 'sd.attrs.active-unknown', coalesce(blklot, mapblklot, '') FROM src_parcel_attrs
+WHERE active IS NULL;
+-- sd.attrs.no-blklot: a row without a blklot cannot map a roll parcel_number, so s_attr drops
+-- it. Sample: its mapblklot.
+INSERT INTO quality_tally
+SELECT 'sd.attrs.no-blklot', count(*) FILTER (WHERE blklot IS NULL), count(*), NULL, NULL
+FROM src_parcel_attrs;
+INSERT INTO quality_sample
+SELECT 'sd.attrs.no-blklot', coalesce(mapblklot, '') FROM src_parcel_attrs WHERE blklot IS NULL;
+
 -- Roll parcel_number = acdm-wktn blklot (spec §4.5). Attrs rows with a blklot, centroid in 7131.
 CREATE OR REPLACE TEMP TABLE s_attr AS
 SELECT mapblklot, blklot, coalesce(active, false) AS active, date_rec_drop,
@@ -128,18 +196,106 @@ LEFT JOIN s_blklot_map m USING (blklot)
 WHERE NOT a.active
 ORDER BY a.blklot, a.mapblklot, a.date_rec_drop;
 
--- Every roll row with its current parcel (id NULL = unmatched) and the rule that mapped it.
--- Sanity rule (tier 4, made up; coordinator ruling, Task 8 fix round 1): number_of_stories above
--- getvariable('max_stories') (the generator's MAX_STORIES, 80; SF's tallest building has 61) is
--- missing, so the height fallback applies. Live rows reach 999 (wv5m-vpq2, 2026-10-16).
+-- sd.roll.no-year (DQ-4 registered rule, controller ruling F1 Task 3): a roll row without a
+-- closed_roll_year belongs to no roll year, so it is dropped (here and in s_roll below). 0 live
+-- rows: the fetch filters closed_roll_year >= 2007.
+INSERT INTO quality_tally
+SELECT 'sd.roll.no-year', count(*) FILTER (WHERE closed_roll_year IS NULL), count(*), NULL, NULL
+FROM src_roll;
+INSERT INTO quality_sample
+SELECT 'sd.roll.no-year', coalesce(parcel_number, '') FROM src_roll
+WHERE closed_roll_year IS NULL;
+
+-- The normalise casts (sd.roll.*-cast, DQ-4 registered rules, final fix wave): cast_flags bits of
+-- pipeline/sources/normalise.ts ROLL_CAST_BITS (1 closed_roll_year, 2 year_property_built,
+-- 4 number_of_stories, 8 number_of_units, 16 property_area, 32 assessed_land_value,
+-- 64 assessed_improvement_value), over every roll row with a value in the field (a row whose text
+-- was nulled has none left, so flagged rows are added back). s_roll_sum below carries the flags
+-- to the parcel-year, whose feature bit 81_scenario_features.sql sets.
+CREATE OR REPLACE TEMP TABLE s_roll_cast AS
+SELECT * FROM (VALUES
+  ('sd.roll.roll-year-cast', 1), ('sd.roll.year-built-cast', 2), ('sd.roll.stories-cast', 4),
+  ('sd.roll.units-cast', 8), ('sd.roll.floor-area-cast', 16), ('sd.roll.land-value-cast', 32),
+  ('sd.roll.improvement-value-cast', 64)
+) t(rule_id, bit);
+
+INSERT INTO quality_tally
+SELECT c.rule_id,
+       count(*) FILTER (WHERE (r.cast_flags & c.bit) <> 0),
+       count(*) FILTER (WHERE (r.cast_flags & c.bit) <> 0 OR CASE c.bit
+         WHEN 1 THEN r.closed_roll_year IS NOT NULL
+         WHEN 2 THEN r.year_property_built IS NOT NULL
+         WHEN 4 THEN r.number_of_stories IS NOT NULL
+         WHEN 8 THEN r.number_of_units IS NOT NULL
+         WHEN 16 THEN r.property_area IS NOT NULL
+         WHEN 32 THEN r.assessed_land_value IS NOT NULL
+         ELSE r.assessed_improvement_value IS NOT NULL END),
+       NULL, NULL
+FROM s_roll_cast c
+LEFT JOIN src_roll r ON true -- one tally row per rule even on an empty roll
+GROUP BY c.rule_id;
+INSERT INTO quality_sample
+SELECT c.rule_id, coalesce(r.parcel_number, '') || coalesce(':' || r.closed_roll_year, '')
+FROM s_roll_cast c
+JOIN src_roll r ON (r.cast_flags & c.bit) <> 0;
+
+-- The roll years in the lock (T13: the panel covers every one; sd.roll.year-gap carries into
+-- them).
+CREATE OR REPLACE TABLE sc_roll_years AS
+SELECT DISTINCT closed_roll_year AS roll_year FROM src_roll
+WHERE closed_roll_year IS NOT NULL
+ORDER BY roll_year;
+
+-- Every roll row with its current parcel (id NULL = unmatched) and the rule that mapped it, after
+-- the two row-level bound rules (spec §4.5 rule order step 1):
+-- - sd.roll.year-built-range (tier 4, made up; spec §4.1): year_property_built outside
+--   [1850, closed_roll_year] (SODA has "0") is NULL, then imputed in 81 (bit 0).
+-- - sd.roll.stories-max (tier 4, made up; coordinator ruling, Task 8 fix round 1):
+--   number_of_stories above getvariable('max_stories') (the generator's MAX_STORIES, 80; SF's
+--   tallest building has 61) is NULL, so the other rows' stories or the height fallback apply
+--   (bit 1). Live rows reach 999 (wv5m-vpq2, 2026-10-16).
 CREATE OR REPLACE TEMP TABLE s_roll AS
-SELECT r.* REPLACE (CASE WHEN r.number_of_stories > getvariable('max_stories') THEN NULL
-                         ELSE r.number_of_stories END AS number_of_stories),
+SELECT r.* REPLACE (
+         CASE WHEN r.year_property_built BETWEEN 1850 AND r.closed_roll_year
+              THEN r.year_property_built END AS year_property_built,
+         CASE WHEN r.number_of_stories > getvariable('max_stories') THEN NULL
+              ELSE r.number_of_stories END AS number_of_stories,
+         coalesce(r.cast_flags, 0)::UTINYINT AS cast_flags),
        m.current_id AS id, m.how,
-       coalesce(r.number_of_stories > getvariable('max_stories'), false) AS stories_implausible
+       r.year_property_built IS NOT NULL AS has_year,
+       coalesce(r.year_property_built NOT BETWEEN 1850 AND r.closed_roll_year, false)
+         AS year_nulled,
+       r.number_of_stories IS NOT NULL AS has_stories,
+       coalesce(r.number_of_stories > getvariable('max_stories'), false) AS stories_nulled,
+       coalesce(r.parcel_number, '') || ':' || r.closed_roll_year AS record_id
 FROM src_roll r
 LEFT JOIN s_blklot_map m ON m.blklot = r.parcel_number
+-- sd.roll.no-year (tallied above).
 WHERE r.closed_roll_year IS NOT NULL;
+
+INSERT INTO quality_tally
+SELECT 'sd.roll.year-built-range', count(*) FILTER (WHERE year_nulled),
+       count(*) FILTER (WHERE has_year), NULL, NULL
+FROM s_roll;
+INSERT INTO quality_sample
+SELECT 'sd.roll.year-built-range', record_id FROM s_roll WHERE year_nulled;
+
+INSERT INTO quality_tally
+SELECT 'sd.roll.stories-max', count(*) FILTER (WHERE stories_nulled),
+       count(*) FILTER (WHERE has_stories), NULL, NULL
+FROM s_roll;
+INSERT INTO quality_sample
+SELECT 'sd.roll.stories-max', record_id FROM s_roll WHERE stories_nulled;
+
+-- sd.roll.unmatched (spec §4.5 join rule (c)): rows that map to no current parcel are dropped
+-- below (`WHERE id IS NOT NULL`). Weighted by number_of_units.
+INSERT INTO quality_tally
+SELECT 'sd.roll.unmatched', count(*) FILTER (WHERE id IS NULL), count(*),
+       coalesce(sum(number_of_units) FILTER (WHERE id IS NULL), 0),
+       coalesce(sum(number_of_units), 0)
+FROM s_roll;
+INSERT INTO quality_sample
+SELECT 'sd.roll.unmatched', record_id FROM s_roll WHERE id IS NULL;
 
 -- landUseClass from the mapped row with the largest property_area; ties by the smallest
 -- parcel_number, then use_code (then class code, for a total order).
@@ -167,13 +323,24 @@ JOIN sc_land_use_classes c ON c.name = CASE
 
 -- Aggregation per (current parcel, roll year), spec §4.5:
 -- units = Σ units; stories = max; year_built = min valid year over rows with units > 0, else over
--- all rows (invalid years are already NULL, normalise); land/impr = Σ assessed values;
+-- all rows (out-of-range years are already NULL, sd.roll.year-built-range); land/impr = Σ assessed
+-- values;
 -- floor_area_m2 = Σ property_area × 0.09290304 (m² per sf, exact by definition, tier 0).
 -- noncondo_units: Σ units over rows outside the condo classes (spec §4.4 rent-control exclusion,
 -- tier 2: Z ZBM ZEU LZ LZBM CZ OZ PZ IZ GZ BZ OZEU, Costa-Hawkins, I).
 -- hotel: any row in the hotel classes (spec §4.4, tier 2: H H1 H2 HC HG RH RH1 RHG, codes V from
 -- the 2025 $group; M/MG motels are not hotels, Bulletin 11 footnote 4).
 -- status_n: any row with status_code N (non-taxable, e.g. government).
+-- year_nulled / stories_nulled: a row of the parcel-year was nulled by sd.roll.year-built-range /
+-- sd.roll.stories-max, so the parcel-year's value is not the source's own (bits 0 and 1, §4.5).
+-- units_missing: every row of the parcel-year has a NULL number_of_units, so `units` is the
+-- coalesce default 0: sd.roll.units-missing (DQ-4 registered rule, controller ruling F1 Task 3;
+-- bit 3).
+-- stories_missing: no row of the parcel-year has stories (a source NULL, or nulled by
+-- sd.roll.stories-max), for sd.features.no-building.
+-- year_cast / stories_cast / units_cast / area_cast / value_cast: a row of the parcel-year had
+-- that field rewritten by its normalise cast (the sd.roll.*-cast rules above), so the
+-- parcel-year's value is not the source's own (bits 0, 1, 3, 6 and 2 in 81).
 CREATE OR REPLACE TEMP TABLE s_roll_sum AS
 SELECT id, closed_roll_year AS roll_year,
        coalesce(sum(number_of_units), 0)::INTEGER AS units,
@@ -192,49 +359,37 @@ SELECT id, closed_roll_year AS roll_year,
                                         'GZ', 'BZ', 'OZEU')), 0)::INTEGER AS noncondo_units,
        coalesce(bool_or(property_class_code IN ('H', 'H1', 'H2', 'HC', 'HG', 'RH', 'RH1', 'RHG')),
                 false) AS hotel,
-       coalesce(bool_or(status_code = 'N'), false) AS status_n
+       coalesce(bool_or(status_code = 'N'), false) AS status_n,
+       bool_or(year_nulled) AS year_nulled,
+       bool_or(stories_nulled) AS stories_nulled,
+       bool_and(number_of_units IS NULL) AS units_missing,
+       bool_and(number_of_stories IS NULL) AS stories_missing,
+       bool_or((cast_flags & 2) <> 0) AS year_cast,
+       bool_or((cast_flags & 4) <> 0) AS stories_cast,
+       bool_or((cast_flags & 8) <> 0) AS units_cast,
+       bool_or((cast_flags & 16) <> 0) AS area_cast,
+       bool_or((cast_flags & 96) <> 0) AS value_cast
 FROM s_roll
 WHERE id IS NOT NULL
 GROUP BY id, closed_roll_year;
 
--- Sanity rule for units (tier 4, made up; coordinator ruling, Task 8 fix round 1). Over each
--- parcel's units series by roll year, a maximal run of equal values v is implausible when it has
--- a bracketing year on both sides (the nearest roll years outside the run, units prev and next),
--- v >= 100 and v > 10 * max(1, prev, next). Every year of the run takes prev. Live example:
--- 0827025 has 5 units except 50,000 in 2022-2023. A one-sided change (redevelopment that stays)
--- is never touched. noncondo_units is left as is: a bracketed run is never the latest year, the
--- only year the Local Program exclusions read.
-CREATE OR REPLACE TEMP TABLE s_units_seq AS
-SELECT id, roll_year, units,
-       sum(CASE WHEN lag_units IS DISTINCT FROM units THEN 1 ELSE 0 END) OVER (
-         PARTITION BY id ORDER BY roll_year ROWS UNBOUNDED PRECEDING) AS run
-FROM (SELECT id, roll_year, units,
-             lag(units) OVER (PARTITION BY id ORDER BY roll_year) AS lag_units
-      FROM s_roll_sum);
-
-CREATE OR REPLACE TEMP TABLE s_units_run AS
-SELECT id, run, v,
-       lag(v) OVER (PARTITION BY id ORDER BY run) AS prev,
-       lead(v) OVER (PARTITION BY id ORDER BY run) AS next
-FROM (SELECT id, run, any_value(units) AS v FROM s_units_seq GROUP BY id, run);
-
-CREATE OR REPLACE TEMP TABLE s_units_fix AS
-SELECT q.id, q.roll_year, r.prev AS units
-FROM s_units_seq q
-JOIN s_units_run r USING (id, run)
-WHERE r.prev IS NOT NULL AND r.next IS NOT NULL AND r.v >= 100
-  AND r.v > 10 * greatest(1, r.prev, r.next);
-
--- units_replaced marks the parcel-years the units rule rewrote (T11/T13 imputed bit 3).
+-- One row per observed parcel-year (at least one mapped roll row), before the parcel-year rules
+-- (the units rules and the gap carry run in 81_scenario_features.sql, which needs sc_parcel).
 CREATE OR REPLACE TABLE sc_roll_agg AS
-SELECT s.id, s.roll_year, coalesce(x.units, s.units)::INTEGER AS units, s.stories, s.year_built,
+SELECT s.id, s.roll_year, s.units, s.stories, s.year_built,
        s.land, s.impr, s.floor_area_m2,
        c.use_code, c.land_use_class::INTEGER AS land_use_class, s.noncondo_units, s.hotel,
-       s.status_n, x.id IS NOT NULL AS units_replaced
+       s.status_n, s.year_nulled, s.stories_nulled, s.units_missing, s.stories_missing,
+       s.year_cast, s.stories_cast, s.units_cast, s.area_cast, s.value_cast
 FROM s_roll_sum s
 JOIN s_roll_class c ON c.id = s.id AND c.closed_roll_year = s.roll_year
-LEFT JOIN s_units_fix x ON x.id = s.id AND x.roll_year = s.roll_year
 ORDER BY s.id, s.roll_year;
+
+INSERT INTO quality_tally
+SELECT 'sd.roll.units-missing', count(*) FILTER (WHERE units_missing), count(*), NULL, NULL
+FROM sc_roll_agg;
+INSERT INTO quality_sample
+SELECT 'sd.roll.units-missing', id || ':' || roll_year FROM sc_roll_agg WHERE units_missing;
 
 -- scenario.height.*: `none` = parcels in a district whose string has no height (sentinels and
 -- parse failures); `no_district` = parcels overlapping no district (disjoint from `none`).
@@ -273,8 +428,3 @@ SELECT 'scenario.roll.unmatched_units.' || closed_roll_year,
 FROM s_roll GROUP BY closed_roll_year ORDER BY closed_roll_year;
 INSERT INTO report_counts
 SELECT 'scenario.roll.lineage_retired', count(*) FROM s_roll WHERE how = 'b';
--- Tier-4 sanity rules: roll rows whose stories were nulled; parcel-years whose units were replaced.
-INSERT INTO report_counts
-SELECT 'scenario.roll.stories_implausible', count(*) FILTER (WHERE stories_implausible) FROM s_roll;
-INSERT INTO report_counts
-SELECT 'scenario.roll.units_implausible', count(*) FROM s_units_fix;

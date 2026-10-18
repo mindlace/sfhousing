@@ -45,7 +45,7 @@ describe('live raw layout (<rawDir>/<sha256>, no extension)', () => {
         'datasf-neighborhoods': 2,
         'datasf-height-bulk': 6,
         'datasf-parcel-attrs': 19,
-        'datasf-assessor-roll': 28,
+        'datasf-assessor-roll': 29,
         'overture-buildings': 12
       });
       await loadNormalised(db, norm);
@@ -56,7 +56,8 @@ describe('live raw layout (<rawDir>/<sha256>, no extension)', () => {
         `SELECT count(DISTINCT parcel_number) n, sum(number_of_units) u FROM src_roll
          WHERE closed_roll_year = 2025`
       );
-      expect(roll).toEqual({ n: 13, u: 66 });
+      // The raw 2025 units: 66 plus lot 3's 5,000 (spec §4.11 RA1 case, before the units rules).
+      expect(roll).toEqual({ n: 13, u: 5066 });
     } finally {
       db.close();
     }

@@ -130,9 +130,16 @@ describe('kind defaults', () => {
       'sd.test.fail-high'
     ]);
   });
-  it('every registered sd.* rule takes its kind default (spec §4.12 tables)', () => {
+  it('every registered sd.* rule takes its kind default but the four approved overrides', () => {
+    // Partner DQ-4 share overrides, 2026-10-17 (design RA1 "Share overrides approved"); each
+    // states its reason at its entry in quality-rules/sd.ts.
     expect(kindDefaultDepartures(QUALITY_RULES.filter((r) => r.owner === 'scenario-data'))).toEqual(
-      []
+      [
+        'sd.roll.floor-area-missing',
+        'sd.roll.units-capacity',
+        'sd.yield.zero-hostable',
+        'sd.zoning.generic-nc'
+      ]
     );
   });
 });
@@ -185,6 +192,16 @@ describe('recordQuality', () => {
       /non-negative integer/
     ],
     ['NaN', 'sd.test.bound', { fired: NaN, of: 1 }, /non-negative integer/],
+    // Runtime callers (recordSqlQuality, JS) can omit a required count despite the type.
+    ['a missing fired', 'sd.test.bound', { of: 1 } as never, /fired must be/],
+    ['a missing of', 'sd.test.bound', { fired: 0 } as never, /of must be/],
+    ['an undefined fired', 'sd.test.bound', { fired: undefined, of: 1 } as never, /fired must be/],
+    [
+      'a null of on a weighted rule',
+      'sd.test.weighted',
+      { fired: 0, of: null, units: 0, unitsOf: 0 } as never,
+      /of must be/
+    ],
     ['fired > of', 'sd.test.bound', { fired: 2, of: 1 }, /fired 2 > of 1/],
     [
       'units > unitsOf',
@@ -309,12 +326,16 @@ describe('checkQuality', () => {
       warnings: []
     });
   });
-  it('the public checkQuality reports every registered rule as not reported with no quality keys', () => {
-    const r = checkQuality({ other: 1 }, { shares: true });
-    expect(r.ok).toBe(QUALITY_RULES.length === 0);
-    expect(r.failures).toEqual(
+  it('the public checkQuality uses the real registry: every sd.* and pr.* rule must report', () => {
+    const c = checkQuality({ other: 1 }, { shares: true });
+    expect(c.ok).toBe(false);
+    expect(c.failures).toEqual(
       QUALITY_RULES.map((x) => expect.stringMatching(`^${x.id}: not reported`))
     );
+    expect(c.failures).toContain(
+      'sd.roll.units-capacity: not reported (no .fired, .of, .units, .unitsOf)'
+    );
+    expect(c.failures.some((f) => f.startsWith('pr.'))).toBe(true);
   });
   it('fails on a missing count', () => {
     for (const k of ['fired', 'of', 'units', 'unitsOf']) {
@@ -446,11 +467,13 @@ describe('writeQualityReport', () => {
     const file = join(dir, 'e', 'quality-report.md');
     writeQualityReport(file, 'fixture-0', {});
     const md = readFileSync(file, 'utf8');
-    if (QUALITY_RULES.length === 0) expect(md).toMatch(/No rules are registered/);
+    expect(md).not.toMatch(/No rules are registered/);
     for (const r of QUALITY_RULES) {
       expect(md, r.id).toContain(`| \`${r.id}\` |`);
       expect(md, r.id).toContain(`### ${r.id}\n\nNot reported.`);
     }
+    expect(md).toMatch(/`sd\.roll\.units-capacity` \|.*\| not reported \|/);
+    expect(md).toMatch(/`pr\.units\.capacity` \|.*\| not reported \|/);
   });
 });
 
