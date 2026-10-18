@@ -25,7 +25,14 @@ import {
   type Provenance,
   type Transition
 } from '../../../src/lib/timelapse/types';
-import { OUTCOMES, ajSweep, ajTable, tableMonths, type Outcome } from './aalen-johansen';
+import {
+  OUTCOMES,
+  ajSweep,
+  ajTable,
+  tableMonths,
+  type AjSweep,
+  type Outcome
+} from './aalen-johansen';
 import { rung3 } from './fallback';
 import { weightAdvances, type AdvanceWeighting } from './no-fcd';
 import { phScale } from './ph-pool';
@@ -80,12 +87,16 @@ export interface CellReport {
   noFcd?: { pooled: NoFcdCell; pathway: NoFcdCell };
   /** the cell's spells censored by `sc.exit.purge-censor` */
   purgeCensored: number;
+  /** the cell's spells whose history had a stage date imputed by `sc.stages.gap-impute` */
+  gapImputed: number;
 }
 
 /** Inputs of the provenance `method` text that the spells do not carry. */
 export interface FitContext {
   /** every purge window (unwindowed) and the windowed rule tally (`purgeCensorTally`, C3) */
   purge: { windows: PurgeWindow[]; windowed: RuleTally };
+  /** the history ids step 1 changed (`normalise(...).imputed`, rule `sc.stages.gap-impute`) */
+  gapImpute: { ids: ReadonlySet<string> };
   /** `calibration.method.permitOnlyPre2015` (§4.4 step 4) */
   permitOnlyPre2015: { fired: number; of: number };
 }
@@ -129,9 +140,10 @@ function permitSources(stage: CalStage): Source[] {
   return s;
 }
 
-function observedEvents(spells: Spell[]): number {
+/** Observed (unweighted) events of a cell, Σ `AjSweep.observed` (what N_EVENTS_MIN counts, R18). */
+function observedEvents(sw: AjSweep): number {
   let n = 0;
-  for (const s of spells) if (s.outcome !== 'censored') n++;
+  for (const j of OUTCOMES) n += sw.observed[j];
   return n;
 }
 
@@ -201,8 +213,7 @@ function tailProv(
 /** A plain AJ cell: table, tail, rejection and the ladder thresholds. */
 function ajCell(spells: Spell[], cal: CalProfile) {
   const sw = ajSweep(spells);
-  let events = 0;
-  for (const j of OUTCOMES) events += sw.observed[j];
+  const events = observedEvents(sw);
   const table = ajTable(sw, undefined, cal.kMax, cal.nRiskMin, spells);
   const tail = tailFit(spells, table.months, cal);
   const ok =
@@ -265,13 +276,29 @@ export function fitTransitions(
           `${k} exits in administrative purge windows [${windowsText}] censored (rule sc.exit.purge-censor: tier 2 detection, tier-4 thresholds)`
         ]
       : [];
+  const imputed = ctx.gapImpute.ids;
+  const imputedCount = (cell: Spell[]): number => {
+    let k = 0;
+    for (const s of cell) if (imputed.has(s.projectId)) k++;
+    return k;
+  };
+  const imputeSentence = (k: number): string[] =>
+    k > 0
+      ? [
+          `${k} spells from histories with an imputed stage date (rule sc.stages.gap-impute; bias toward zero-duration spells)`
+        ]
+      : [];
   const pre2015 = `permit-only histories before 2015 count as pathway unknown: n = ${ctx.permitOnlyPre2015.fired} of ${ctx.permitOnlyPre2015.of} (calibration.method.permitOnlyPre2015)`;
 
+  // Rung 3 uses no durations, so it carries no duration caveat (completion dating, imputation);
+  // its CellReport still records the pooled cell's purge, imputation and no-FCD counts.
   const fallback = (
     p: Pathway,
     stage: CalStage,
     pooled: Spell[],
-    window: [string, string]
+    pooledEvents: number,
+    window: [string, string],
+    noFcd?: CellReport['noFcd']
   ): void => {
     const t = rung3(stage, p, exitShares(pooled), { n: pooled.length, window });
     transitions[p][stage] = t;
@@ -282,10 +309,12 @@ export function fitTransitions(
       rung: 3,
       tier: t.provenance.tier,
       n: pooled.length,
-      events: observedEvents(pooled),
+      events: pooledEvents,
       window,
       months: 1,
-      purgeCensored: 0
+      ...(noFcd ? { noFcd } : {}),
+      purgeCensored: purgeCount(pooled),
+      gapImputed: imputedCount(pooled)
     });
   };
 
@@ -316,12 +345,13 @@ export function fitTransitions(
         }
         if (!fit && pool.ok) fit = { cell: pooled, fit: pool, rung: 2 };
         if (!fit) {
-          fallback(p, stage, pooled, window);
+          fallback(p, stage, pooled, pool.events, window);
           continue;
         }
         const { cell, rung } = fit;
         const { table, tail, events } = fit.fit;
         const k = purgeCount(cell);
+        const g = imputedCount(cell);
         const parts: string[] = [AJ_METHOD];
         if (rung === 1) {
           parts.push(`${p} spells since ${fromIso}: n = ${cell.length}, events = ${events}`);
@@ -339,7 +369,7 @@ export function fitTransitions(
             );
           }
         }
-        parts.push(...purgeSentence(k));
+        parts.push(...imputeSentence(g), ...purgeSentence(k));
         const tier = rung === 1 ? 0 : 2;
         const provenance: Provenance = {
           tier,
@@ -370,27 +400,31 @@ export function fitTransitions(
           k0: tail.k0,
           tailEvents: tail.observedEvents,
           ...(rung === 1 ? { pathwaySpells: own.length } : {}),
-          purgeCensored: k
+          purgeCensored: k,
+          gapImputed: g
         });
       }
       continue;
     }
 
     // Permit side: pooled shape over [Wₛ, asOf], pathway level from 2015+ (phScale), rung 3.
-    const weighted = stage === 'permitIssued' || stage === 'construction';
-    const pooledW = weighted ? weightAdvances(pooled, unobserved, stage, from, asOf, cal) : null;
-    if (pooledW?.flagged) {
+    const nfStage = stage === 'permitIssued' || stage === 'construction' ? stage : null;
+    const pooledW = nfStage ? weightAdvances(pooled, unobserved, nfStage, from, asOf, cal) : null;
+    // Ruling R24: with X = 0 the weighting is a no-op, so only a flagged pooled cell with X > 0
+    // is escalated; `flagged` itself is reported unchanged.
+    if (pooledW?.flagged && pooledW.X > 0) {
       noFcdFlaggedPooled++;
       warnings.push(
         `no-FCD weighting flagged at pooled level: ${stage} X=${pooledW.X} A=${pooledW.A} w=${fmt(pooledW.w)}`
       );
     }
     const pooledFit = pooledW ? pooledW.spells : pooled;
-    const pooledEvents = observedEvents(pooled);
+    const pooledEvents = observedEvents(ajSweep(pooled));
     const v2015 = windowStart(stage, 'pathway');
     const pooledOk = pooled.length >= cal.nSpellsMin && pooledEvents >= cal.nEventsMin;
     const reasons = keptReasons(pooled);
     const k = purgeCount(pooled);
+    const g = imputedCount(pooled);
     const months = pooledOk ? tableMonths(pooledFit, cal.kMax, cal.nRiskMin) : 0;
     const pooledTail = pooledOk ? tailFit(pooledFit, months, cal) : null;
 
@@ -400,25 +434,27 @@ export function fitTransitions(
         v2015
       );
       spellsCount[`calibration.spells.${p}.${stage}`] = own.length;
-      if (!pooledOk || !pooledTail) {
-        fallback(p, stage, pooled, window);
-        continue;
-      }
       const ownW =
-        stage === 'permitIssued' || stage === 'construction'
+        pooledW && nfStage
           ? weightAdvances(
               own,
               unobserved.filter((u) => u.pathway === p),
-              stage,
+              nfStage,
               v2015,
               asOf,
               cal,
-              pooledW!.w
+              pooledW.w
             )
           : null;
+      const noFcd =
+        pooledW && ownW ? { pooled: noFcdOf(pooledW), pathway: noFcdOf(ownW) } : undefined;
+      if (!pooledOk || !pooledTail) {
+        fallback(p, stage, pooled, pooledEvents, window, noFcd);
+        continue;
+      }
       const ph = phScale(pooledFit, ownW ? ownW.spells : own, cal);
       if (rejects(ph.advance, ph.exit, ph.tail)) {
-        fallback(p, stage, pooled, window);
+        fallback(p, stage, pooled, pooledEvents, window, noFcd);
         continue;
       }
       const thetaText = (['advance', ...reasons] as Outcome[])
@@ -443,7 +479,7 @@ export function fitTransitions(
         );
       }
       if (stage === 'construction') parts.push(COMPLETION_DATING);
-      parts.push(...purgeSentence(k));
+      parts.push(...imputeSentence(g), ...purgeSentence(k));
       const provenance: Provenance = {
         tier: 2,
         label: `SF permit records ${fromIso.slice(0, 4)}–${asOfYear}, pooled across pathways before 2015, scaled to ${p} ${v2015Iso.slice(0, 4)}–${asOfYear} (tier 2)`,
@@ -482,8 +518,9 @@ export function fitTransitions(
         maxDiff: ph.maxDiff,
         capped: ph.capped,
         cappedInTable: ph.cappedInTable,
-        ...(pooledW && ownW ? { noFcd: { pooled: noFcdOf(pooledW), pathway: noFcdOf(ownW) } } : {}),
-        purgeCensored: k
+        ...(noFcd ? { noFcd } : {}),
+        purgeCensored: k,
+        gapImputed: g
       });
     }
   }

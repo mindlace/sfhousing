@@ -27,6 +27,7 @@ const AS_OF = isoToDay('2026-06-30');
 const LIVE: CalProfile = { ...LIVE_CAL, coverageGuard: false };
 const NO_CTX: FitContext = {
   purge: { windows: [], windowed: { fired: 0, of: 0, sample: [] } },
+  gapImpute: { ids: new Set() },
   permitOnlyPre2015: { fired: 0, of: 0 }
 };
 
@@ -351,8 +352,53 @@ describe('fitTransitions: rung selection', () => {
     expect(m).toContain(`X=10, A=${advances}, w=`);
     expect(m).toContain('completion = first TCO/CFC, else permit `completed_date`');
     expect(r.warnings.some((w) => w.includes('flagged at pooled level: construction'))).toBe(false);
-    // The empty permitIssued pooled cell (A = 0 < N_EVENTS_MIN) is flagged, as the guard reads.
+    // The empty permitIssued pooled cell (A = 0 < N_EVENTS_MIN) is flagged, but with X = 0 the
+    // weighting is a no-op, so it is not escalated (ruling R24); it goes to rung 3 and its
+    // CellReport keeps the no-FCD record.
+    expect(r.noFcdFlaggedPooled).toBe(0);
+    const empty = cellOf(r, 'discretionary', 'permitIssued');
+    expect(empty).toMatchObject({ rung: 3, noFcd: { pooled: { X: 0, A: 0, flagged: true } } });
+  });
+
+  it('rung-3 permit-side cells keep the no-FCD, purge and imputation counts', () => {
+    // 10 spells: below N_SPELLS_MIN, so the pooled cell fails; 2 expired exits observed.
+    const pooled = cell(null, 'permitIssued', 'N', 10, 10, 'expired');
+    const unobserved: UnobservedAdvance[] = [
+      {
+        projectId: 'X0',
+        pathway: null,
+        stage: 'permitIssued',
+        complete: isoToDay('2020-01-01'),
+        enteredPermitIssued: isoToDay('2018-01-01')
+      }
+    ];
+    const r = fitTransitions(sorted(pooled), unobserved, AS_OF, LIVE, {
+      ...NO_CTX,
+      purge: { windows: [], windowed: { fired: 0, of: 0, sample: [] } },
+      gapImpute: { ids: new Set(['N0000', 'N0001', 'N0002']) }
+    });
+    const c = cellOf(r, 'streamlined', 'permitIssued');
+    expect(c).toMatchObject({ rung: 3, tier: 2, n: 10, events: 10, gapImputed: 3 });
+    expect(c.noFcd?.pooled).toMatchObject({ X: 1, A: 8, flagged: true });
+    // Observed exit shares make E tier 2; D (tier 1) and A (tier 2) keep the cell at tier 2.
+    const t = r.transitions.streamlined.permitIssued!;
+    expect(t.provenance).toMatchObject({ tier: 2, n: 10, window: ['2007-01-01', '2026-06-30'] });
+    expect(Object.keys(t.exit)).toEqual(['expired']);
+    // Flagged with X = 1 > 0: escalated.
     expect(r.noFcdFlaggedPooled).toBe(1);
+  });
+
+  it('states the spells of histories with an imputed stage date', () => {
+    const spells = cell('discretionary', 'filed', 'D', 40, 25);
+    const r = fitTransitions(sorted(spells), [], AS_OF, LIVE, {
+      ...NO_CTX,
+      gapImpute: { ids: new Set(['D0000', 'D0005', 'Q9999']) }
+    });
+    expect(r.transitions.discretionary.filed!.provenance.method).toContain(
+      '2 spells from histories with an imputed stage date (rule sc.stages.gap-impute; bias toward zero-duration spells)'
+    );
+    expect(cellOf(r, 'discretionary', 'filed').gapImputed).toBe(2);
+    expect(r.transitions.discretionary.entitled!.provenance.method).not.toContain('gap-impute');
   });
 
   it('a flagged pooled no-FCD cell warns and is counted (the controller escalates)', () => {
@@ -368,8 +414,9 @@ describe('fitTransitions: rung selection', () => {
       });
     }
     const r = fitTransitions(sorted(pooled), unobserved, AS_OF, LIVE, NO_CTX);
-    // permitIssued (w = 2.5) and the empty construction cell (A = 0).
-    expect(r.noFcdFlaggedPooled).toBe(2);
+    // permitIssued (w = 2.5) only: the empty construction cell (A = 0) has X = 0 (ruling R24).
+    expect(r.noFcdFlaggedPooled).toBe(1);
+    expect(r.warnings.filter((w) => w.includes('flagged at pooled level'))).toHaveLength(1);
     expect(r.warnings).toContain(
       'no-FCD weighting flagged at pooled level: permitIssued X=30 A=20 w=2.5'
     );

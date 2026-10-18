@@ -311,7 +311,7 @@ F_j += S · e_j(d) / n(d);   S *= 1 − e(d) / n(d)
     - `sources`: the Transition's sources.
 
     For rung 3 it copies the Transition's own tier and sources, because there the tail is the table.
-- **Rounding.** Table values are floored to 1e-6, which keeps them monotone and keeps Σ ≤ 1. Tail values are rounded to 6 significant digits.
+- **Rounding.** Table values are floored to 1e-6, which keeps them monotone and keeps Σ ≤ 1. Tail values are rounded to 6 significant digits. Rung-3 values (§4.5) are the one exception: they are rounded *up* to 1e-6 (controller ruling R25), so the synthetic median is never later than D; a one-month table with q ≤ 0.5 is trivially monotone with Σ ≤ 1, and a value on the 1e-6 grid already has at most 6 significant digits, so the tail equals the table value.
 - **Rejection.** A cell is rejected, and goes to §4.5, unless C(K) ≤ 1 − 1e-6 and ρ > 0.
 - **Construction provenance.** The `construction` cells' `method` states: "completion = first TCO/CFC, else permit `completed_date`; TCO data start in 2018, so earlier completions are dated later (bias toward longer durations)".
 
@@ -386,7 +386,8 @@ A rung passes when the cell has spells ≥ `N_SPELLS_MIN` and events ≥ `N_EVEN
    - q = 1 − 2^{−1/D};
    - `advance[0]` = tail.advance = A·q;
    - exit_j = E_j·q, where E_j = (1 − A) × the stage's observed exit-reason shares across all spells in the window (tier 2), or all of it on the primary reason if no exits are observed (tier 4);
-   - the tier is the worst of D, A and E.
+   - the tier is the worst of D, A and E;
+   - every value is rounded up to 1e-6 (controller ruling R25; §4.4 "Rounding"), which keeps C(k) ≥ 1 − 2^{−k/D}, so the median month (`typicalMonths`) is never later than ⌈D⌉ (exactly D for an integer D).
 
 | stage | D (months) — tier, source | A — tier, source | primary exit (tier 4) |
 |---|---|---|---|
