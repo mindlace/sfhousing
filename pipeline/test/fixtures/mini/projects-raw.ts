@@ -26,6 +26,9 @@
  * | M18 2026-000018PRJ     | lot 009; no-date row, no such record, no open PRJ on the lot: dropped     |
  * | M19 BP 202501150019    | lot 001; type 1 permit, shares lot 1 with M10; pipeline BP Filed          |
  * | M20 2012-000020PRX     | lot 006; pipeline-only, 10 units, da 'Fixture Yards'; netted by M11       |
+ * | M21 BP 201803010021    | lot 011; type 1 permit issued 2019, no FCD, expired 2022: exit at issued  |
+ * | M22 BP 201702010022    | lot 011; site permit issued and FCD 2018, cancelled 2021: exit at constr. |
+ * | M23 2009-000023PRJ     | lot 011; 100 units, permits of 40 and 60 (complete 2014), 2 rows: split   |
  * | xdht extras            | forms 2 (+3), 3 (+2) and 6 (-1): rhnaCompletedNet 4                       |
  *
  * Every pipeline row's `new_pipeline_units` equals its project's units, except M16's (220 against
@@ -260,6 +263,56 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       statusDate: '2025-01-15',
       filed: '2025-01-15',
       units: 3
+    }),
+    // M21 (Ruling E1): issued, never started (a site permit with no FCD), then expired. Lot 011
+    // holds 0 units in every roll year and no in-flight project or DA uses it as its own.
+    permit({
+      number: '201803010021',
+      type: '1',
+      lot: '011',
+      status: 'expired',
+      statusDate: '2022-05-02',
+      filed: '2018-03-01',
+      issued: '2019-04-01',
+      units: 3
+    }),
+    // M22 (Ruling E1): a site permit issued and started (FCD), then cancelled; also on lot 011.
+    permit({
+      number: '201702010022',
+      type: '2',
+      lot: '011',
+      status: 'cancelled',
+      statusDate: '2021-06-01',
+      filed: '2017-02-01',
+      issued: '2018-01-10',
+      fcd: '2018-03-01',
+      units: 8
+    }),
+    // M23 (Ruling S2): PRJ 2009-000023PRJ (100 units) names both; two pipeline rows split it. Both
+    // completed in 2014, before the citywide phase-size window (2015 on), so M20 keeps no u.
+    permit({
+      number: '201102010023',
+      type: '2',
+      lot: '011',
+      status: 'complete',
+      statusDate: '2014-03-03',
+      filed: '2011-02-01',
+      issued: '2011-09-01',
+      fcd: '2011-10-03',
+      completed: '2014-03-03',
+      units: 40
+    }),
+    permit({
+      number: '201102020023',
+      type: '2',
+      lot: '011',
+      status: 'complete',
+      statusDate: '2014-06-02',
+      filed: '2011-02-02',
+      issued: '2011-09-01',
+      fcd: '2011-10-03',
+      completed: '2014-06-02',
+      units: 60
     })
   ],
   'datasf-planning-projects': [
@@ -395,6 +448,17 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       lot: '007',
       open_date: ts('2025-09-12'),
       number_of_units_prop: '0'
+    },
+    // M23: one Planning case for two buildings; its pipeline rows split it (spec 4.2 step 7).
+    {
+      record_id: '2009-000023PRJ',
+      record_status: 'Closed',
+      block: '3512',
+      lot: '011',
+      open_date: ts('2009-03-02'),
+      building_permits: '201102010023,201102020023',
+      number_of_units_prop: '100',
+      new_construction: 'CHECKED'
     }
   ],
   'datasf-planning-records': [
@@ -490,6 +554,14 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       b1_alt_id: '2024-000016PRJ',
       start_event_type: 'accepted',
       start_event_date: ts('2024-04-15')
+    },
+    // M23's approval (discretionary, entitled before either permit was filed: no clamp).
+    {
+      b1_alt_id: '2009-000023PRJ',
+      start_event_type: 'accepted',
+      start_event_date: ts('2009-03-16'),
+      end_event_type: 'approval',
+      end_event_date: ts('2010-06-01')
     }
   ],
   'datasf-unit-completions': [
@@ -601,6 +673,24 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       statusDate: '2026-05-01',
       bpaNo: '202501150019',
       units: 3
+    }),
+    // M23: two rows on one PRJ, each naming its own permit, so the component splits. Both rows
+    // predate the cutoff, and both projects ended complete (pr.pipeline.records-win fires twice).
+    pipeline({
+      blklot: '3512011',
+      status: 'Construction',
+      statusDate: '2012-01-17',
+      caseNo: '2009-000023PRJ',
+      bpaNo: '201102010023',
+      units: 40
+    }),
+    pipeline({
+      blklot: '3512011',
+      status: 'Construction',
+      statusDate: '2012-01-17',
+      caseNo: '2009-000023PRJ',
+      bpaNo: '201102020023',
+      units: 60
     }),
     // M20 (DA netting, score-only): M11 (3 units, lot 006, no pipeline row) nets it to 7.
     pipeline({

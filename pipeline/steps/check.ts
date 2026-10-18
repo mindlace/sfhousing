@@ -81,6 +81,12 @@ const FZP_NET_CAPACITY = 780e3;
 const FZP_NET_BAND = [0.25, 4] as const;
 /** V17: at least this share of eligible parcels is hostable (spec §4.10, tier 4 check bound). */
 const HOSTABLE_MIN = 0.5;
+/**
+ * V18: `hostable_base` changes by at most this share between consecutive roll years, with no
+ * exemptions (partner ruling, option c: a density-cap change such as the 2022-11-27 fourplex
+ * ordinance must not flip the at-risk set; tier 4 check bound, made up).
+ */
+const HOSTABLE_BASE_STEP_MAX = 0.05;
 /** V19 warns (still passes) when parcels.bin is larger (spec §4.10, tier 4). */
 const SCENARIO_WARN_BYTES = 3.0e6;
 
@@ -178,7 +184,7 @@ export function checkV30(
   return { id: 'V30', ok: q.ok, detail: [...parts, warn].filter(Boolean).join('; ') };
 }
 
-/** `a` rendered as a list of problems, or `ok` text when there are none. */
+/** Invariant `id`'s result: its problems joined by '; ', or the `ok` text when there are none. */
 function verdict(id: InvariantResult['id'], problems: string[], ok: string): InvariantResult {
   return {
     id,
@@ -187,17 +193,17 @@ function verdict(id: InvariantResult['id'], problems: string[], ok: string): Inv
   };
 }
 
-/**
- * V25–V27 over `scenarios/fzp/calibration.json` and `projects.json` (stage-calibration spec
- * §4.10). A missing or unreadable file fails the invariants that need it. The V27 sample size and
- * tolerance come from the calibration profile that matches the invariant profile.
- */
 /** Whether `outDir` holds a fixture dataset (`fixture-<n>`), by its manifest's datasetVersion. */
 function isFixtureDataset(outDir: string): boolean {
   const { m } = readManifest(outDir);
   return m !== null && /^fixture-\d+$/.test(m.datasetVersion);
 }
 
+/**
+ * V25–V27 over `scenarios/fzp/calibration.json` and `projects.json` (stage-calibration spec
+ * §4.10). A missing or unreadable file fails the invariants that need it. The V27 sample size and
+ * tolerance come from the calibration profile that matches the invariant profile.
+ */
 function checkCalibrationFiles(outDir: string): InvariantResult[] {
   const calFile = join(outDir, CALIBRATION_JSON);
   const projFile = join(outDir, PROJECTS_JSON);
@@ -280,6 +286,41 @@ function checkCalibrationFiles(outDir: string): InvariantResult[] {
     )
   );
   return out;
+}
+
+/** The `scenario.panel.hostable_base.<roll year>` counts the scenario step writes (V18). */
+const HOSTABLE_BASE_KEY = /^scenario\.panel\.hostable_base\.(\d{4})$/;
+
+/**
+ * V18's hostable_base stability input: the panel roll years with a
+ * `scenario.panel.hostable_base.<year>` count, ascending, and for each later year y, paired with
+ * the previous panel year, the change over the parcels with a row in both,
+ * |both − both_prev| / both_prev (`.<y>.both`, `.<y>.both_prev`; 0 when both are 0, Infinity when
+ * only the earlier one is). `problem` is 'missing' when a pair count is absent and 'no-overlap'
+ * when no parcel has a row in both years (`.<y>.both_rows` = 0), so no pair passes unmeasured.
+ */
+export function hostableBaseSteps(counts: Record<string, number>): {
+  years: number[];
+  steps: { from: number; to: number; change: number; problem?: 'missing' | 'no-overlap' }[];
+} {
+  const years: number[] = [];
+  for (const k of Object.keys(counts)) {
+    const m = HOSTABLE_BASE_KEY.exec(k);
+    if (m) years.push(Number(m[1]));
+  }
+  years.sort((a, b) => a - b);
+  const steps = years.slice(1).map((to, k) => {
+    const from = years[k];
+    const rows = counts[`scenario.panel.hostable_base.${to}.both_rows`];
+    const a = counts[`scenario.panel.hostable_base.${to}.both_prev`];
+    const b = counts[`scenario.panel.hostable_base.${to}.both`];
+    if (rows === undefined || a === undefined || b === undefined)
+      return { from, to, change: NaN, problem: 'missing' as const };
+    if (rows === 0) return { from, to, change: NaN, problem: 'no-overlap' as const };
+    const change = a === 0 ? (b === 0 ? 0 : Infinity) : Math.abs(b - a) / a;
+    return { from, to, change };
+  });
+  return { years, steps };
 }
 
 /** Max without spreading (spread overflows the call stack at ~150k elements). */
@@ -599,14 +640,21 @@ export async function checkDataset(
   }
 
   // V17 fill levels, no clamped u16, hostable masks, non-LP base = FZP, hostable share; warn on
-  // the FZP net capacity cross-check.
+  // the FZP net capacity cross-check. The hostable flags read the uncapped full-fill yields
+  // (partner ruling, option c), which the payload does not carry: V17 checks the conditions the
+  // payload can show (hostable ⇒ eligible ∧ stories ≥ 1; eligible ∧ stories ≥ 1 ∧ capped
+  // yield[F−1] > 0 ⇒ hostable, since capped > 0 implies uncapped > 0) and the step's counts of
+  // flags that disagree with its own uncapped yields.
   {
     const clamped = c['scenario.yield.clamped'];
     const nonlp = c['scenario.yield.nonlp_base_mismatch'];
+    const zero = (k: string) => (c[k] === 0 ? '' : `${k} ${c[k]} ≠ 0`);
     const problems = [
       fileProblem,
       clamped === 0 ? '' : `scenario.yield.clamped ${clamped} ≠ 0`,
-      nonlp === 0 ? '' : `scenario.yield.nonlp_base_mismatch ${nonlp} ≠ 0`
+      nonlp === 0 ? '' : `scenario.yield.nonlp_base_mismatch ${nonlp} ≠ 0`,
+      zero('scenario.hostable_mismatch'),
+      zero('scenario.hostable_base_mismatch')
     ];
     let hostable = 0;
     if (p) {
@@ -618,10 +666,12 @@ export async function checkDataset(
       let badB = 0;
       for (let i = 0; i < p.count; i++) {
         const elig = eligibleById.get(p.id[i]) ?? false;
-        const h = elig && p.envelopeStories[i] >= 1 && p.yield[i * F + F - 1] > 0;
-        const hb = elig && p.baseStories[i] >= 1 && p.baseYield[i * F + F - 1] > 0;
-        if (p.hostable[i] !== (h ? 1 : 0)) badH++;
-        if (p.hostableBase[i] !== (hb ? 1 : 0)) badB++;
+        const canH = elig && p.envelopeStories[i] >= 1;
+        const canB = elig && p.baseStories[i] >= 1;
+        const mustH = canH && p.yield[i * F + F - 1] > 0;
+        const mustB = canB && p.baseYield[i * F + F - 1] > 0;
+        if (p.hostable[i] ? !canH : mustH) badH++;
+        if (p.hostableBase[i] ? !canB : mustB) badB++;
         hostable += p.hostable[i];
       }
       if (badH) problems.push(`${badH} hostable flag(s) disagree with eligibility and yield`);
@@ -639,7 +689,8 @@ export async function checkDataset(
     addProblems('V17', problems, `hostable ${hostable}/${eligible.length} eligible${warn}`);
   }
 
-  // V18 panel covers every roll year; latest-year roll join; Σ units; panel = T11 features.
+  // V18 panel covers every roll year; latest-year roll join; Σ units; panel = T11 features;
+  // hostable_base stable year on year.
   {
     const panelYears = c['scenario.panel.years'];
     const rollYears = c['scenario.roll.years'];
@@ -648,6 +699,14 @@ export async function checkDataset(
     const mismatch = c['scenario.panel.feature_mismatch'];
     const share = ratio(matched, eligible.length);
     const [ulo, uhi] = profile.scenarioUnitsRange;
+    const { years: hbYears, steps } = hostableBaseSteps(c);
+    const maxStep = steps.length ? maxOf(steps.map((s) => s.change)) : 0;
+    const stepProblem = (s: (typeof steps)[number]) =>
+      s.problem === 'missing'
+        ? `hostable_base ${s.from} → ${s.to} has no both-years counts`
+        : s.problem === 'no-overlap'
+          ? `hostable_base ${s.from} → ${s.to}: no parcel has a row in both years`
+          : `hostable_base ${s.from} → ${s.to} changes by ${pct(s.change)} > ${thr(HOSTABLE_BASE_STEP_MAX)}`;
     addProblems(
       'V18',
       [
@@ -661,9 +720,13 @@ export async function checkDataset(
         unitsTotal >= ulo && unitsTotal <= uhi
           ? ''
           : `scenario.units.total ${unitsTotal} outside [${ulo}, ${uhi}]`,
-        mismatch === 0 ? '' : `scenario.panel.feature_mismatch ${mismatch} ≠ 0`
+        mismatch === 0 ? '' : `scenario.panel.feature_mismatch ${mismatch} ≠ 0`,
+        hbYears.length === panelYears
+          ? ''
+          : `hostable_base counted for ${hbYears.length} roll years ≠ ${panelYears}`,
+        ...steps.filter((s) => !(s.change <= HOSTABLE_BASE_STEP_MAX)).map(stepProblem)
       ],
-      `${panelYears} roll years; eligible with a latest-year roll row ${matched}/${eligible.length}; Σ units ${unitsTotal} in [${ulo}, ${uhi}]`
+      `${panelYears} roll years; eligible with a latest-year roll row ${matched}/${eligible.length}; Σ units ${unitsTotal} in [${ulo}, ${uhi}]; hostable_base year-on-year change (parcels in both years) ≤ ${thr(maxStep)} ≤ ${thr(HOSTABLE_BASE_STEP_MAX)}`
     );
   }
 

@@ -10,6 +10,7 @@ export const PR = {
   unitsCapacity: 'pr.units.capacity',
   unitsCapacityCap: 'pr.units.capacity-cap',
   unitsCapacityUnmapped: 'pr.units.capacity-unmapped',
+  unitsSplitFiled: 'pr.units.split-filed',
   pipelineStatusDateLinked: 'pr.pipeline.status-date-linked',
   pipelineNoStatusDate: 'pr.pipeline.no-status-date',
   pipelineRecordsWin: 'pr.pipeline.records-win',
@@ -148,6 +149,24 @@ export const PR_RULES: readonly QualityRule[] = [
     label:
       "A permit's unit count was not checked against its lot because the permit's lot could not be matched to a parcel",
     denominator: 'permits with recorded stories and units on a project with parcels',
+    warnShare: 0.01,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
+    // Ruling S2 (stage-calibration finding 2): T4d only; no T3 value changes.
+    id: PR.unitsSplitFiled,
+    owner: OWNER,
+    source: 'datasf-planning-projects',
+    field: 'unitsAt.filed',
+    kind: 'shape',
+    action: 'null',
+    tier: 2,
+    valueTier: null,
+    maskBit: null,
+    label:
+      "A building's filing-stage home count was not taken from the whole Planning case it was split from",
+    denominator: 'histories whose primary Planning record has a proposed unit count',
     warnShare: 0.01,
     failShare: 0.1,
     unitsWeighted: false

@@ -16,9 +16,9 @@ import {
   sourcesOf,
   storiesOf,
   titleCase,
-  unitBearingPermits,
   unitsAt
 } from '../../project-records/inflight';
+import { unitBearingPermits } from '../../project-records/stages';
 import { shareExisting } from '../../project-records/assemble';
 import { DEAD_STATUSES } from '../../project-records/link';
 import type {

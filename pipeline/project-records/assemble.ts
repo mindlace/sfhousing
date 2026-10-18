@@ -71,14 +71,24 @@ export const T3_ONLY_QUALITY: ReadonlySet<string> = new Set([
   PR.multiphaseDaNetting
 ]);
 
-/** T3 `quality`: the rule ids carried by a project, sorted and unique. */
-export function projectQuality(ids: Iterable<string>): string[] {
+/**
+ * The rules that act only on T4d values (spec §4.8 `unitsAt`; Ruling S2): a T3 project never
+ * carries them, so they never reach `qualityRules`.
+ */
+export const T4D_ONLY_QUALITY: ReadonlySet<string> = new Set([PR.unitsSplitFiled]);
+
+function sortedIds(ids: Iterable<string>): string[] {
   return [...new Set(ids)].sort(cmp);
 }
 
-/** T4d `quality`: the T3 set without the rules that act only on T3. */
+/** T3 `quality`: the rule ids carried by a project, sorted and unique, without T4d-only rules. */
+export function projectQuality(ids: Iterable<string>): string[] {
+  return sortedIds(ids).filter((id) => !T4D_ONLY_QUALITY.has(id));
+}
+
+/** T4d `quality`: the rule ids, sorted and unique, without the rules that act only on T3. */
 export function historyQuality(ids: Iterable<string>): string[] {
-  return projectQuality(ids).filter((id) => !T3_ONLY_QUALITY.has(id));
+  return sortedIds(ids).filter((id) => !T3_ONLY_QUALITY.has(id));
 }
 
 /**

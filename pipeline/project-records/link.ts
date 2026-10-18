@@ -192,6 +192,14 @@ function makeProject(
   };
 }
 
+/**
+ * A split part holding permits (spec 4.2 step 7): `graphId` gives it `PRJ:<primary>:BP:<lead>`,
+ * and no other project id has that shape. A split remainder with no permits keeps `PRJ:<primary>`.
+ */
+export function isSplitPart(id: string): boolean {
+  return /^PRJ:.+:BP:[^:]+$/.test(id);
+}
+
 /** `PRJ:<primary>`, `PRJ:<primary>:BP:<lead>` (split), else `BP:<lead>`. */
 function graphId(proj: LinkedProject, split: boolean): string {
   const prj = proj.primary?.recordId;

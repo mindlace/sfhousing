@@ -75,12 +75,12 @@ describe('calibration invariants on fixture-0', () => {
     const rules: Record<string, [number, number]> = {
       // [fired, of]: the mini histories have no gap, no missing first_construction_document_date,
       // no out-of-order stage, no exit past the last stage and no purge window, by design.
-      'sc.stages.gap-impute': [0, 15],
-      'sc.stages.no-fcd-duration': [0, 15],
+      'sc.stages.gap-impute': [0, 19],
+      'sc.stages.no-fcd-duration': [0, 19],
       // Spec §4.4a "Fixture cases": these two must not fire on fixture-0 (of > 0).
-      'sc.stages.running-max': [0, 15],
-      'sc.exit.last-stage': [0, 2],
-      'sc.exit.purge-censor': [0, 2],
+      'sc.stages.running-max': [0, 19],
+      'sc.exit.last-stage': [0, 4],
+      'sc.exit.purge-censor': [0, 4],
       // Ruling R26: of = 0 because the mini histories have no revised pair to clamp.
       'sc.revision.ratio-clamp': [0, 0]
     };

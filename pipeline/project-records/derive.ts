@@ -55,7 +55,7 @@ import {
   type InFlightStatus
 } from './inflight';
 import type { V2xInputs } from './invariants';
-import { linkProjects } from './link';
+import { isSplitPart, linkProjects } from './link';
 import { checkMultiphaseFile, netMasters, type Netting } from './multiphase';
 import { linkNoDateRows, rowKey } from './nodate';
 import { resolveParcels } from './parcels';
@@ -226,6 +226,9 @@ function assess(
   if (stories.discarded > 0) quality.add(PR.storiesParseRange);
   if (proj.crossBlock.dropped.length > 0) quality.add(PR.parcelsCrossBlock);
   if (cap.failing.length > 0) quality.add(cap.capped ? PR.unitsCapacityCap : PR.unitsCapacity);
+  // Ruling S2: a split part holds only its own permits, so the whole PRJ's proposed units are not
+  // its filing-stage size; its history omits `unitsAt.filed` (T4d only, see T4D_ONLY_QUALITY).
+  if (isSplitPart(proj.id) && filedUnitsSource(proj)) quality.add(PR.unitsSplitFiled);
   return {
     proj,
     capacity: {
@@ -251,9 +254,15 @@ function assess(
   };
 }
 
+/** Spec 4.8 `unitsAt.filed` has a source: the primary PRJ's `number_of_units_prop` is recorded. */
+function filedUnitsSource(proj: LinkedProject): boolean {
+  return (proj.primary?.unitsProp ?? null) !== null;
+}
+
 function history(a: Assessed, input: ProjectRecordsInput): ProjectHistory {
   const at = unitsAt(a.proj);
   if (a.entered.complete === undefined) delete at.complete;
+  if (a.quality.has(PR.unitsSplitFiled)) delete at.filed;
   return {
     id: a.proj.id,
     pathway: a.pathway,
@@ -370,6 +379,15 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
       of: assessed.reduce((n, a) => n + a.capacity.checked.length, 0),
       sample: skipped.map((a) => a.proj.id)
     };
+  },
+  // Spec 4.8 `unitsAt`, Ruling S2: of the histories whose primary PRJ records proposed units
+  // (the histories `unitsAt.filed` would come from); the split parts among them, whose
+  // `unitsAt.filed` is omitted (they carry the id); their ids. The ruling's narrower `of` (split
+  // parts only) would make the share 1 and fail V30 wherever one split exists.
+  [PR.unitsSplitFiled]: ({ withHistory }) => {
+    const sourced = withHistory.filter((a) => filedUnitsSource(a.proj));
+    const sample = sourced.filter((a) => a.quality.has(PR.unitsSplitFiled)).map((a) => a.proj.id);
+    return { fired: sample.length, of: sourced.length, sample };
   },
   // Spec 4.2 step 10: no-date rows linked to the Planning record on their lot, those whose
   // project has no units included. Of pipeline rows, weighted by new units; the sample is the

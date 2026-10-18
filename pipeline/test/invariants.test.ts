@@ -390,6 +390,36 @@ describe('invariants', () => {
     expect(v17.ok).toBe(false);
     expect(v17.detail).toMatch(/1 hostable flag\(s\) disagree/);
   });
+  it("V17 fails when the step's hostable flags disagree with its uncapped yields", async () => {
+    for (const k of ['scenario.hostable_mismatch', 'scenario.hostable_base_mismatch']) {
+      const v17 = await result(base, 'V17', { ...counts, [k]: 1 });
+      expect(v17.ok, k).toBe(false);
+      expect(v17.detail, k).toContain(`${k} 1 ≠ 0`);
+    }
+  });
+  it('V17 fails when a parcel without an envelope is hostable', async () => {
+    const d = copy();
+    editScenario(d, (p) => {
+      const i = p.index.get('3512012')!; // lot 12: eligible, envelope 0
+      p.hostable[i] = 1;
+      p.hostableBase[i] = 1;
+    });
+    const v17 = await result(d, 'V17');
+    expect(v17.ok).toBe(false);
+    expect(v17.detail).toMatch(/1 hostable flag\(s\) disagree/);
+    expect(v17.detail).toMatch(/1 hostableBase flag\(s\) disagree/);
+  });
+  it('V17 lets an eligible parcel with an envelope and a capped yield of 0 be hostable', async () => {
+    // The payload ships capped yields only, so V17 checks the necessary conditions; the step's
+    // scenario.hostable_mismatch covers the uncapped rule (partner ruling, option c).
+    const d = copy();
+    editScenario(d, (p) => {
+      const i = p.index.get('3512006')!; // lot 6: eligible, envelope 6, yields 0
+      p.hostable[i] = 1;
+      p.hostableBase[i] = 1;
+    });
+    expect((await result(d, 'V17')).ok).toBe(true);
+  });
   it('V17 fails when fillLevels differ from FILL_LEVELS', async () => {
     const d = copy();
     editScenario(d, (p) => {
@@ -427,6 +457,68 @@ describe('invariants', () => {
     });
     expect(v18.ok).toBe(false);
     expect(v18.detail).toMatch(/eligible with a latest-year roll row 75\.0% < 80%/);
+  });
+  it('V18 counts hostable_base for every panel roll year, each within 5% of the year before', async () => {
+    const keys = Object.keys(counts)
+      .filter((k) => k.startsWith('scenario.panel.hostable_base.'))
+      .sort();
+    expect(keys).toEqual([
+      'scenario.panel.hostable_base.2023',
+      'scenario.panel.hostable_base.2024',
+      'scenario.panel.hostable_base.2024.both',
+      'scenario.panel.hostable_base.2024.both_prev',
+      'scenario.panel.hostable_base.2024.both_rows',
+      'scenario.panel.hostable_base.2025',
+      'scenario.panel.hostable_base.2025.both',
+      'scenario.panel.hostable_base.2025.both_prev',
+      'scenario.panel.hostable_base.2025.both_rows'
+    ]);
+    const v18 = await result(base, 'V18');
+    expect(v18.ok).toBe(true);
+    expect(v18.detail).toMatch(
+      /hostable_base year-on-year change \(parcels in both years\) ≤ 0% ≤ 5%/
+    );
+  });
+  it('V18 fails when hostable_base changes by more than 5% between roll years', async () => {
+    const prev = counts['scenario.panel.hostable_base.2025.both_prev'];
+    const v18 = await result(base, 'V18', {
+      ...counts,
+      'scenario.panel.hostable_base.2025.both': Math.ceil(prev * 1.05) + 1
+    });
+    expect(v18.ok).toBe(false);
+    expect(v18.detail).toMatch(/hostable_base 2024 → 2025 changes by \S+% > 5%/);
+    // A change of exactly 5%, up or down, passes.
+    const at = await result(base, 'V18', {
+      ...counts,
+      'scenario.panel.hostable_base.2024.both_prev': 100,
+      'scenario.panel.hostable_base.2024.both': 105,
+      'scenario.panel.hostable_base.2025.both_prev': 100,
+      'scenario.panel.hostable_base.2025.both': 95
+    });
+    expect(at.ok).toBe(true);
+  });
+  it('V18 fails when a roll year has no hostable_base counts', async () => {
+    const c = { ...counts };
+    delete c['scenario.panel.hostable_base.2024'];
+    const v18 = await result(base, 'V18', c);
+    expect(v18.ok).toBe(false);
+    expect(v18.detail).toMatch(/hostable_base counted for 2 roll years ≠ 3/);
+    const d = { ...counts };
+    delete d['scenario.panel.hostable_base.2025.both'];
+    expect((await result(base, 'V18', d)).detail).toMatch(
+      /hostable_base 2024 → 2025 has no both-years counts/
+    );
+  });
+  it('V18 fails when two consecutive panel years share no parcel', async () => {
+    // 0 of 0 would otherwise pass as a 0% change, exempting the pair silently.
+    const v18 = await result(base, 'V18', {
+      ...counts,
+      'scenario.panel.hostable_base.2025.both_rows': 0,
+      'scenario.panel.hostable_base.2025.both_prev': 0,
+      'scenario.panel.hostable_base.2025.both': 0
+    });
+    expect(v18.ok).toBe(false);
+    expect(v18.detail).toMatch(/hostable_base 2024 → 2025: no parcel has a row in both years/);
   });
   it('V18 fails when units fall outside the range', async () => {
     expect(await failed(base, { ...counts, 'scenario.units.total': 65 })).toContain('V18');
