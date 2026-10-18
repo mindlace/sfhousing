@@ -14,7 +14,7 @@ import { PATHWAYS, STAGE_ORDER } from '../../src/lib/timelapse/types';
 import type { ProjectHistory, Stage } from '../../src/lib/timelapse/types';
 import { QUALITY_RULES } from '../lib/quality';
 import type { InvariantResult } from '../steps/check';
-import { T3_ONLY_QUALITY } from './assemble';
+import { T3_ONLY_QUALITY, T4D_ONLY_QUALITY } from './assemble';
 import { SCALE_BOUNDS } from './multiphase';
 import { checkRhna } from './rhna';
 
@@ -65,6 +65,8 @@ function qualityRulesProblems(file: ProjectsFile): string[] {
     const r = PR_REGISTRY.get(q.id);
     if (r === undefined) {
       problems.push(`qualityRules ${q.id}: not a project-records rule of QUALITY_RULES`);
+    } else if (T4D_ONLY_QUALITY.has(q.id)) {
+      problems.push(`qualityRules ${q.id}: acts only on histories, so no T3 project carries it`);
     } else if (q.label !== r.label || q.tier !== r.tier || q.valueTier !== r.valueTier) {
       problems.push(`qualityRules ${q.id}: label, tier or valueTier differs from QUALITY_RULES`);
     }

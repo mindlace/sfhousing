@@ -121,6 +121,17 @@ const TABLE: Record<string, Spec> = {
     label:
       "A permit's unit count was more than its lot could physically hold, so the most homes the lot can hold at the minimum space per home was used"
   },
+  'pr.units.split-filed': {
+    kind: 'shape',
+    action: 'null',
+    tier: 2,
+    valueTier: null,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label:
+      "A building's filing-stage home count was not taken from the whole Planning case it was split from"
+  },
   'pr.pipeline.status-date-linked': {
     kind: 'shape',
     action: 'replace',
@@ -698,6 +709,73 @@ describe('pr.pipeline.status-date-linked (spec §4.2 step 10)', () => {
     expect(dropped?.sample).toEqual([]);
     expect(project(r, 'PRJ:2020-006887PRJ')?.quality).toEqual([PR.pipelineStatusDateLinked]);
     expect(history(r, 'PRJ:2020-006887PRJ')?.quality).toEqual([PR.pipelineStatusDateLinked]);
+  });
+});
+
+describe('pr.units.split-filed (spec §4.8 unitsAt, Ruling S2)', () => {
+  const A = 'PRJ:2019-000001PRJ';
+  const A1 = 'PRJ:2019-000001PRJ:BP:201906010001';
+  const A2 = 'PRJ:2019-000001PRJ:BP:201906020002';
+
+  /** A second permit (10 units) and a second pipeline row naming it split A in two. */
+  const split = () =>
+    derive((raw) => {
+      raw['datasf-planning-projects'][0].building_permits = '201906010001,201906020002';
+      raw['datasf-permits-newcon'].push({
+        ...raw['datasf-permits-newcon'][0],
+        permit_number: '201906020002',
+        filed_date: '2019-06-02T00:00:00.000',
+        proposed_units: '10'
+      });
+      raw['datasf-dev-pipeline'].push({
+        ...raw['datasf-dev-pipeline'][0],
+        bpa_no: '201906020002',
+        new_pipeline_units: '10'
+      });
+    });
+
+  it('a non-split PRJ keeps unitsAt.filed and the rule records zero over sourced histories', () => {
+    const r = derive();
+    expect(history(r, A)?.unitsAt.filed).toBe(24);
+    expect(history(r, 'PRJ:2016-000006PRJ')?.unitsAt.filed).toBe(60);
+    for (const h of r.histories) expect(h.quality).not.toContain(PR.unitsSplitFiled);
+    // A and C: the histories whose primary PRJ records number_of_units_prop.
+    expect(tally(r, PR.unitsSplitFiled)).toMatchObject({ fired: 0, of: 2 });
+  });
+
+  it('split rows omit unitsAt.filed and carry the id on the history only', () => {
+    const r = split();
+    expect(r.histories.map((h) => h.id)).toEqual(expect.arrayContaining([A1, A2]));
+    for (const id of [A1, A2]) {
+      const h = history(r, id);
+      expect(h?.unitsAt, id).not.toHaveProperty('filed');
+      expect(h?.quality, id).toContain(PR.unitsSplitFiled);
+    }
+    expect(history(r, A1)?.unitsAt.permitFiled).toBe(24);
+    expect(history(r, A2)?.unitsAt.permitFiled).toBe(10);
+    // C is not split and keeps the PRJ's units at filing.
+    expect(history(r, 'PRJ:2016-000006PRJ')?.unitsAt.filed).toBe(60);
+    // No T3 value changes, so no T3 project and no qualityRules entry carries it.
+    for (const p of r.file.projects) expect(p.quality).not.toContain(PR.unitsSplitFiled);
+    expect(r.file.qualityRules.map((q) => q.id)).not.toContain(PR.unitsSplitFiled);
+    expect(tally(r, PR.unitsSplitFiled)).toMatchObject({ fired: 2, of: 3 });
+    const call = callsFor(r.counts).find((c) => c.id === PR.unitsSplitFiled);
+    expect(call?.sample).toEqual([A1, A2]);
+  });
+
+  it('a split row whose PRJ records no proposed units is outside the denominator', () => {
+    const r = derive((raw) => {
+      raw['datasf-planning-projects'][0].building_permits = '201906010001,201906020002';
+      delete raw['datasf-planning-projects'][0].number_of_units_prop;
+      raw['datasf-permits-newcon'].push({
+        ...raw['datasf-permits-newcon'][0],
+        permit_number: '201906020002',
+        proposed_units: '10'
+      });
+      raw['datasf-dev-pipeline'].push({ ...raw['datasf-dev-pipeline'][0], bpa_no: '201906020002' });
+    });
+    expect(history(r, A1)?.quality).not.toContain(PR.unitsSplitFiled);
+    expect(tally(r, PR.unitsSplitFiled)).toMatchObject({ fired: 0, of: 1 });
   });
 });
 

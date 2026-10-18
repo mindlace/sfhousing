@@ -1,5 +1,5 @@
 /**
- * The mini fixture's project records (spec 4.9 Fixture table, M1-M22 and the xdht extras) through
+ * The mini fixture's project records (spec 4.9 Fixture table, M1-M23 and the xdht extras) through
  * deriveProjects with stub callbacks that mirror scenario-data's fixture. V21-V24 use literal
  * fixture thresholds: coverage min 0.9, RHNA tolerance year 0.1 and total 0.05. M15-M20 values are
  * qualitative in the spec; the exact values asserted here are the goldens computed at
@@ -64,7 +64,9 @@ const HISTORIES_ONLY = [
   'PRJ:2015-000013PRJ',
   'PRJ:2010.0002',
   'BP:201803010021',
-  'BP:201702010022'
+  'BP:201702010022',
+  'PRJ:2009-000023PRJ:BP:201102010023',
+  'PRJ:2009-000023PRJ:BP:201102020023'
 ];
 
 /**
@@ -546,6 +548,34 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     const at = (s: Stage) => exits.filter((h) => h.end.kind === 'exit' && h.end.stage === s);
     expect(at('permitIssued').map((h) => h.id)).toEqual(['BP:201803010021']);
     expect(at('construction').map((h) => h.id)).toEqual(['BP:201702010022']);
+  });
+
+  it('M23: two pipeline rows split the 100-unit PRJ; the split histories omit unitsAt.filed', () => {
+    const ids = ['PRJ:2009-000023PRJ:BP:201102010023', 'PRJ:2009-000023PRJ:BP:201102020023'];
+    const [a, b] = ids.map(history);
+    for (const h of [a, b]) {
+      expect(h.pathway, h.id).toBe('discretionary');
+      expect(h.parcelIds, h.id).toEqual(['3512011']);
+      expect(h.unitsAt, h.id).not.toHaveProperty('filed');
+      expect(h.quality, h.id).toEqual(['pr.units.split-filed']);
+      expect(h.entered.filed, h.id).toBe(day('2009-03-02'));
+      expect(h.entered.entitled, h.id).toBe(day('2010-06-01'));
+      expect(h.existingUnits, h.id).toBe(0);
+    }
+    expect(a.unitsAt).toEqual({ permitFiled: 40 });
+    expect(b.unitsAt).toEqual({ permitFiled: 60 });
+    expect(a.end).toEqual({ kind: 'complete', day: day('2014-03-03') });
+    expect(b.end).toEqual({ kind: 'complete', day: day('2014-06-02') });
+    // A PRJ that is not split keeps its proposed units at filing (M1).
+    expect(history('PRJ:2019-000001PRJ').unitsAt.filed).toBe(24);
+    expect(r.counts['link.splitComponents']).toBe(1);
+    expect(r.counts['quality.pr.units.split-filed.fired']).toBe(2);
+    // Of the 13 histories whose primary PRJ records number_of_units_prop.
+    expect(r.counts['quality.pr.units.split-filed.of']).toBe(13);
+    // Both ended complete while the pipeline lists them (observe rule; neither carries it).
+    expect(r.counts['quality.pr.pipeline.records-win.fired']).toBe(2);
+    // T3 is unchanged: no project carries the id and qualityRules does not list it.
+    expect(r.file.qualityRules.map((q) => q.id)).not.toContain('pr.units.split-filed');
   });
 
   it('a DQ-2-linked project nets no master (spec 4.10.2: it matches a pipeline row)', () => {
