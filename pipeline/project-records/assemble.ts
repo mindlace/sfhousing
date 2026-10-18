@@ -349,27 +349,74 @@ function completedUnits(
 
 export interface MasterOut {
   phases: InFlightProject['phases'];
-  /** The master's final parcels: available DA parcels plus phase parcels. */
+  /** The master's final parcels: free DA parcels plus phase parcels; [] when score-only. */
   parcelIds: ParcelId[];
+  /** DQ-3: a last resort with no free DA parcel. */
+  scoreOnly: boolean;
+}
+
+/** A master's DA parcels and tracking parcels (spec 4.10.2), and its project phase size. */
+export interface MasterDa {
+  daParcels: ParcelId[];
+  trackingParcels: ParcelId[];
+  /** Median proposed units of the completed buildings of its base-case and same-`da` projects. */
+  projectU: { u: number; n: number } | null;
 }
 
 /**
- * Phases every in-flight PRX master in the given (id) order. `excluded` starts as the parcels of
- * every non-master in-flight project and of every history ending complete; each master's final
- * parcels are added before the next master, and each master also excludes every other in-flight
- * master's own (tracking) parcels. Per master, the DA parcels are the resolved tracking
- * blklot, the blklots of every pipeline row with the same non-null `da`, of every project holding
- * the base-case PRJ (case number without 'PRX') and of every phase in the entry. The phase size u
- * is the median over completed permits of those base-case projects and of projects holding a row
- * with the same `da`, else the citywide median (>= 50 units, completed since 2015-01-01);
- * `multiphase.u.<caseNo>` reports the u buildPhases used (fallback only).
- * Adds the `multiphase.*` counts and the buildPhases warnings to `counts` and `warnings`.
+ * Spec 4.10.2 DA parcels of a master (a pipeline-only PRX project): the resolved tracking blklot,
+ * the blklots of every pipeline row with the same non-null `da`, of every project holding the
+ * base-case PRJ (case number without 'PRX') and of every phase in its `multiphase.json` entry. The
+ * phase size u is the median over completed permits of those base-case projects and of projects
+ * holding a row with the same `da`. `projects` are the linked projects after DQ-2, so a linked
+ * row counts as the project's.
+ */
+export function masterDa(
+  proj: LinkedProject,
+  o: {
+    projects: readonly LinkedProject[];
+    pipeline: readonly PipelineRow[];
+    multiphase: MultiphaseFile;
+    resolve: (blklots: string[]) => ParcelId[];
+  }
+): MasterDa {
+  const master = proj.pipelineRows[0];
+  const caseNo = master.caseNo as string;
+  const baseCase = caseNo.slice(0, -'PRX'.length);
+  const entry = o.multiphase.projects.find((e) => e.caseNo === caseNo) ?? null;
+  const da = master.da;
+  const baseProjects = o.projects.filter((p) =>
+    [...p.anchors, ...p.satellites].some((r) => r.recordId === baseCase)
+  );
+  const daProjects =
+    da === null ? [] : o.projects.filter((p) => p.pipelineRows.some((r) => r.da === da));
+  const blklots = new Set<string>();
+  if (master.blklot !== null) blklots.add(master.blklot);
+  for (const r of o.pipeline) if (da !== null && r.da === da && r.blklot) blklots.add(r.blklot);
+  for (const p of baseProjects) for (const b of p.blklots) blklots.add(b);
+  for (const ph of entry?.phases ?? []) for (const b of ph.blklots) blklots.add(b);
+  return {
+    daParcels: o.resolve([...blklots].sort(cmp)),
+    trackingParcels: master.blklot === null ? [] : o.resolve([master.blklot]),
+    projectU: medianOf(completedUnits(new Set([...baseProjects, ...daProjects])))
+  };
+}
+
+/**
+ * Phases every in-flight PRX master (after DA netting: a master netted to 0 is not passed) in the
+ * given (id) order, each with its netted R as `units` and its `masterDa`. `excluded` starts as
+ * the parcels of every non-master in-flight project and of every history ending complete; each
+ * master's final parcels are added before the next master, and each master also excludes every
+ * other given master's tracking parcels. The phase size u is the master's project median, else the
+ * citywide median (>= 50 units, completed since 2015-01-01); `multiphase.u.<caseNo>` reports the u
+ * buildPhases used (fallback only). A last resort with no free DA parcel is score-only (DQ-3),
+ * counted in `multiphase.scoreOnly` and named in a warning. Adds the `multiphase.*` counts and
+ * the buildPhases warnings to `counts` and `warnings`.
  */
 export function phaseMasters(o: {
-  masters: readonly { proj: LinkedProject; entitled: Day | null }[];
+  masters: readonly { proj: LinkedProject; entitled: Day | null; units: number; da: MasterDa }[];
   excluded: Set<ParcelId>;
   projects: readonly LinkedProject[];
-  pipeline: readonly PipelineRow[];
   multiphase: MultiphaseFile;
   areaM2: ProjectRecordsInput['areaM2'];
   resolve: (blklots: string[]) => ParcelId[];
@@ -396,39 +443,24 @@ export function phaseMasters(o: {
   );
   const entries = new Map(o.multiphase.projects.map((e) => [e.caseNo, e]));
 
-  for (const { proj, entitled } of o.masters) {
+  for (const { proj, entitled, units, da } of o.masters) {
     const master = proj.pipelineRows[0];
     const caseNo = master.caseNo as string;
-    const baseCase = caseNo.slice(0, -'PRX'.length);
-    const entry = entries.get(caseNo) ?? null;
-    const da = master.da;
-
-    const baseProjects = o.projects.filter((p) =>
-      [...p.anchors, ...p.satellites].some((r) => r.recordId === baseCase)
-    );
-    const daProjects =
-      da === null ? [] : o.projects.filter((p) => p.pipelineRows.some((r) => r.da === da));
-    const blklots = new Set<string>();
-    if (master.blklot !== null) blklots.add(master.blklot);
-    for (const r of o.pipeline) if (da !== null && r.da === da && r.blklot) blklots.add(r.blklot);
-    for (const p of baseProjects) for (const b of p.blklots) blklots.add(b);
-    for (const ph of entry?.phases ?? []) for (const b of ph.blklots) blklots.add(b);
-
-    const projectU = medianOf(completedUnits(new Set([...baseProjects, ...daProjects])));
-    // Every other in-flight master's own parcels are another in-flight project's parcels.
+    // Every other in-flight master's tracking parcels are another in-flight project's parcels.
     const mine = new Set(excluded);
     for (const other of o.masters) {
-      if (other.proj !== proj) for (const id of other.proj.parcelIds) mine.add(id);
+      if (other.proj !== proj) for (const id of other.da.trackingParcels) mine.add(id);
     }
 
     const r = buildPhases({
       master,
-      entry,
+      entry: entries.get(caseNo) ?? null,
       masterEntitled: entitled,
-      daParcels: resolve([...blklots].sort(cmp)),
+      units,
+      daParcels: da.daParcels,
       excluded: mine,
-      trackingParcels: master.blklot === null ? [] : resolve([master.blklot]),
-      projectU,
+      trackingParcels: da.trackingParcels,
+      projectU: da.projectU,
       citywideU: citywide,
       resolve,
       areaM2: o.areaM2
@@ -439,6 +471,10 @@ export function phaseMasters(o: {
     counts['multiphase.merged'] += r.merged;
     if (r.mode === 'lastResort') lastResort.push(proj.id);
     else counts[`multiphase.phases.${r.mode}`] += r.phases?.length ?? 0;
+    if (r.scoreOnly) {
+      counts['multiphase.scoreOnly']++;
+      o.warnings.push(`${caseNo}: no free DA parcel; score-only`);
+    }
     if (r.u !== null) {
       counts[`multiphase.u.${caseNo}`] = r.u.u;
       counts[`multiphase.u.${caseNo}.n`] = r.u.n;
@@ -447,7 +483,7 @@ export function phaseMasters(o: {
       counts[`multiphase.scale.${caseNo}`] = r.scale;
       scales[caseNo] = r.scale;
     }
-    byId.set(proj.id, { phases: r.phases, parcelIds: r.parcelIds });
+    byId.set(proj.id, { phases: r.phases, parcelIds: r.parcelIds, scoreOnly: r.scoreOnly });
     for (const id of r.parcelIds) excluded.add(id);
   }
   return { byId, problems, lastResort, scales };

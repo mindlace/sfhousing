@@ -488,7 +488,10 @@ describe('deriveProjects: values', () => {
       problems: [],
       fileProblems: [],
       lastResort: [],
-      scales: {}
+      scales: {},
+      masters: {
+        'CASE:2010.0002PRX': { daParcels: ['3512001', '3512006'], trackingParcels: ['3512006'] }
+      }
     });
   });
 });

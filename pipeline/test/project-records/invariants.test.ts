@@ -356,6 +356,59 @@ describe('checkV24', () => {
     expect(checkV24(i).ok).toBe(true);
   });
 
+  it('carries each in-flight master DA parcels and tracking parcels', () => {
+    expect(good.checks.multiphase.masters).toEqual({
+      [D]: { daParcels: ['3512001', '3512006'], trackingParcels: ['3512006'] }
+    });
+  });
+
+  /** D as a last resort drawing on `parcelIds`. */
+  const lastResort = (parcelIds: string[]) =>
+    inputs((x) => {
+      const d = proj(x.file, D);
+      d.phases = null;
+      d.parcelIds = parcelIds;
+      x.multiphase.lastResort = [D];
+    });
+
+  it('passes a drawing last-resort master on a free DA parcel', () => {
+    expect(checkV24(lastResort(['3512006']))).toMatchObject({ id: 'V24', ok: true });
+  });
+
+  it("fails a drawing last-resort master on another in-flight project's parcel", () => {
+    const r = checkV24(lastResort(['3512001', '3512006']));
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/3512001.*PRJ:2019-000001PRJ/);
+  });
+
+  it('fails a drawing last-resort master on a parcel that is not a DA parcel', () => {
+    const r = checkV24(lastResort(['3512006', '3512008']));
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/3512008 is not a DA parcel/);
+  });
+
+  it('fails a score-only master with a free DA parcel', () => {
+    // Lot 001 is A's; lot 006 (D's tracking lot) is held by no other project.
+    const r = checkV24(lastResort([]));
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/score-only.*3512006/);
+    expect(r.detail).not.toMatch(/3512001/);
+  });
+
+  it('passes a score-only master whose DA parcels are all held', () => {
+    const held = lastResort([]);
+    // A completed history on lot 006 holds it.
+    hist(held, 'PRJ:2016-000006PRJ').parcelIds.push('3512006');
+    expect(checkV24(held)).toMatchObject({ id: 'V24', ok: true });
+    // So does another in-flight master's tracking parcel.
+    const tracking = lastResort([]);
+    tracking.multiphase.masters['CASE:2007.0001PRX'] = {
+      daParcels: ['3512006'],
+      trackingParcels: ['3512006']
+    };
+    expect(checkV24(tracking)).toMatchObject({ id: 'V24', ok: true });
+  });
+
   it('fails on buildPhases problems and multiphase file problems', () => {
     expect(checkV24(inputs((x) => x.multiphase.problems.push('p'))).ok).toBe(false);
     expect(checkV24(inputs((x) => x.multiphase.fileProblems.push('f'))).ok).toBe(false);

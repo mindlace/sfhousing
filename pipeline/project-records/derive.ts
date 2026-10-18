@@ -24,6 +24,7 @@ import {
   cmp,
   historyQuality,
   inStageOrder,
+  masterDa,
   orderHistoriesFile,
   orderProject,
   orderProjectsFile,
@@ -54,7 +55,7 @@ import {
 } from './inflight';
 import type { V2xInputs } from './invariants';
 import { linkProjects } from './link';
-import { checkMultiphaseFile } from './multiphase';
+import { checkMultiphaseFile, netMasters, type Netting } from './multiphase';
 import { linkNoDateRows, rowKey } from './nodate';
 import { resolveParcels } from './parcels';
 import { parseAll } from './parse';
@@ -271,6 +272,8 @@ interface TallyInput {
     linked: readonly { id: string; row: PipelineRow }[];
     dropped: readonly { id: string; row: PipelineRow }[];
   };
+  /** Spec 4.10.2 DA netting of every master in flight before netting, in id order. */
+  netting: readonly Netting[];
 }
 
 /** Σ of the positive values; null and negative count as 0. */
@@ -359,28 +362,29 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
       .map((x) => x.p.id);
     return { fired: sample.length, of: inFlight.length, sample };
   },
-  // Spec 4.10.2 DQ-3 (behaviour lands with its task): in-flight PRX masters after netting,
-  // weighted by their R after netting.
+  // Spec 4.10.2 DQ-3: in-flight PRX masters after netting; the score-only ones (they carry the
+  // id); both weighted by R after netting (their T3 units); their ids.
   [PR.multiphaseScoreOnly]: ({ inFlight }) => {
     const masters = inFlight.filter((x) => x.p.multiPhase);
+    const scoreOnly = masters.filter((x) => x.p.quality.includes(PR.multiphaseScoreOnly));
     return {
-      fired: 0,
+      fired: scoreOnly.length,
       of: masters.length,
-      units: 0,
+      units: positiveSum(scoreOnly.map((x) => x.p.units)),
       unitsOf: positiveSum(masters.map((x) => x.p.units)),
-      sample: []
+      sample: scoreOnly.map((x) => x.p.id)
     };
   },
-  // Spec 4.10.2 DA netting (behaviour lands with its task): in-flight PRX masters before netting,
-  // weighted by R before netting (the row's new units).
-  [PR.multiphaseDaNetting]: ({ assessed }) => {
-    const masters = assessed.filter((a) => a.status === 'inFlight' && a.multiPhase);
+  // Spec 4.10.2 DA netting: in-flight PRX masters before netting; the ones with a reduction > 0
+  // (they carry the id); units netted, of Σ R before netting; their ids.
+  [PR.multiphaseDaNetting]: ({ netting }) => {
+    const netted = netting.filter((n) => n.after < n.before);
     return {
-      fired: 0,
-      of: masters.length,
-      units: 0,
-      unitsOf: positiveSum(masters.map((a) => a.units)),
-      sample: []
+      fired: netted.length,
+      of: netting.length,
+      units: positiveSum(netted.map((n) => n.before - n.after)),
+      unitsOf: positiveSum(netting.map((n) => n.before)),
+      sample: netted.map((n) => n.id)
     };
   }
 };
@@ -415,8 +419,10 @@ function zeroCounts(): Record<string, number> {
     'multiphase.fallback',
     'multiphase.lastResort',
     'multiphase.merged',
+    'multiphase.nettedOut',
     'multiphase.phases.enriched',
-    'multiphase.phases.fallback'
+    'multiphase.phases.fallback',
+    'multiphase.scoreOnly'
   ]) {
     c[k] = 0;
   }
@@ -524,6 +530,41 @@ export function deriveProjects(
     histories.push(history(a, input));
   }
 
+  // Spec 4.10.2 DA netting, before phasing, in master id order (assessed is in id order). The
+  // netting projects are in-flight non-masters matching no pipeline row once DQ-2 has run (a
+  // linked row is a match). A master netted to 0 fails the has-units test (4.7): it leaves flight
+  // with status noUnits, and its parcels exclude nothing.
+  const postDq2 = assessed.map((a) => a.proj);
+  const daCtx = {
+    projects: postDq2,
+    pipeline: parsed.pipeline,
+    multiphase: input.multiphase,
+    resolve
+  };
+  const masters = assessed
+    .filter((a) => a.status === 'inFlight' && a.multiPhase)
+    .map((a) => ({ a, da: masterDa(a.proj, daCtx) }));
+  const netting = netMasters(
+    masters.map(({ a, da }) => ({ id: a.proj.id, units: a.units ?? 0, daParcels: da.daParcels })),
+    assessed
+      .filter((a) => a.status === 'inFlight' && !a.multiPhase && a.proj.pipelineRows.length === 0)
+      .map((a) => ({ id: a.proj.id, units: a.units ?? 0, parcelIds: a.proj.parcelIds }))
+  );
+  const nettedR = new Map(netting.map((n) => [n.id, n.after]));
+  const nettedOut = new Set<string>();
+  masters.forEach(({ a }, k) => {
+    const n = netting[k];
+    const caseNo = a.proj.pipelineRows[0].caseNo as string;
+    counts[`multiphase.netted.${caseNo}`] = n.before - n.after;
+    if (n.after < n.before) a.quality.add(PR.multiphaseDaNetting);
+    if (n.after === 0) {
+      nettedOut.add(a.proj.id);
+      a.status = 'noUnits';
+      counts['multiphase.nettedOut']++;
+      warnings.push(`${caseNo}: netted to 0 by ${n.by.join(', ')}; not in flight`);
+    }
+  });
+
   // Population / in-flight bookkeeping.
   let excludedAlterationUnits = 0;
   let excludedNoUnits = 0;
@@ -554,13 +595,16 @@ export function deriveProjects(
   for (const h of histories) {
     if (h.end.kind === 'complete') for (const id of h.parcelIds) excluded.add(id);
   }
+  const inFlightMasters = masters.filter(({ a }) => !nettedOut.has(a.proj.id));
   const masterOut = phaseMasters({
-    masters: inFlight
-      .filter((a) => a.multiPhase)
-      .map((a) => ({ proj: a.proj, entitled: a.entered.entitled ?? null })),
+    masters: inFlightMasters.map(({ a, da }) => ({
+      proj: a.proj,
+      entitled: a.entered.entitled ?? null,
+      units: nettedR.get(a.proj.id) as number,
+      da
+    })),
     excluded,
-    projects: linked,
-    pipeline: parsed.pipeline,
+    projects: postDq2,
     multiphase: input.multiphase,
     areaM2: input.areaM2,
     resolve,
@@ -579,6 +623,7 @@ export function deriveProjects(
     const curated = a.multiPhase && caseNo !== null ? (entries.get(caseNo)?.label ?? null) : null;
     const pathway = a.pathway ?? 'discretionary';
     if (a.pathway === null) counts['projects.pathwayDefaulted']++;
+    if (m?.scoreOnly) a.quality.add(PR.multiphaseScoreOnly);
     const { stories, tier } = a.stories;
     const p: InFlightProject = orderProject({
       id: a.proj.id,
@@ -587,7 +632,7 @@ export function deriveProjects(
       pathway,
       stage: lastStage(a.entered),
       history: a.entered,
-      units: a.units as number,
+      units: nettedR.get(a.proj.id) ?? (a.units as number),
       existingUnits: m
         ? existingUnitsAt(parcelIds, input.latestRollYear, input.assessorUnits)
         : a.existingLatest,
@@ -619,7 +664,9 @@ export function deriveProjects(
     t3[i] = { a: t3[i].a, p: shared[i] };
   }
 
-  // V21 coverage: pipeline rows of population projects, rows of projects that ended excluded.
+  // V21 coverage: pipeline rows of population projects, rows of projects that ended excluded. A
+  // master covers its rows with R before netting, even when netted out of flight (the netted units
+  // are in flight as other projects).
   const coverage = { matchedUnits: 0, rowUnits: 0, rows: 0 };
   for (const a of assessed) {
     if (!a.inPopulation || a.proj.pipelineRows.length === 0) continue;
@@ -628,7 +675,7 @@ export function deriveProjects(
       coverage.rows++;
       coverage.rowUnits += r.newUnits ?? 0;
     }
-    if (a.status === 'inFlight') coverage.matchedUnits += a.units ?? 0;
+    if (a.status === 'inFlight' || nettedOut.has(a.proj.id)) coverage.matchedUnits += a.units ?? 0;
   }
 
   // RHNA completed net.
@@ -658,7 +705,14 @@ export function deriveProjects(
   for (const k of Object.keys(parsed.counts).sort(cmp)) counts[k] = parsed.counts[k];
 
   // T14: every pr.* rule, zeros included, once into the caller's counts (spec 4.11 Counting).
-  const tallyInput: TallyInput = { parsed, assessed, withHistory, inFlight: t3, noDate };
+  const tallyInput: TallyInput = {
+    parsed,
+    assessed,
+    withHistory,
+    inFlight: t3,
+    noDate,
+    netting
+  };
   for (const r of PR_RULES) recordQuality(counts, r.id, PR_TALLIES[r.id as PrRuleId](tallyInput));
 
   const file: ProjectsFile = {
@@ -690,7 +744,13 @@ export function deriveProjects(
           asOf
         ),
         lastResort: masterOut.lastResort,
-        scales: masterOut.scales
+        scales: masterOut.scales,
+        masters: Object.fromEntries(
+          inFlightMasters.map(({ a, da }) => [
+            a.proj.id,
+            { daParcels: da.daParcels, trackingParcels: da.trackingParcels }
+          ])
+        )
       }
     }
   };

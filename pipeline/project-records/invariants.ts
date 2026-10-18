@@ -22,7 +22,10 @@ export interface V2xInputs {
   asOf: Day;
   file: ProjectsFile;
   histories: ProjectHistory[];
-  /** V21: in-flight units matched to population pipeline rows, rows the records show ended excluded. */
+  /**
+   * V21: in-flight units matched to population pipeline rows, rows the records show ended
+   * excluded; a PRX master counts its R before DA netting, even when netted out of flight.
+   */
   coverage: { matchedUnits: number; rowUnits: number; rows: number };
   /** V22: net units per calendar year wholly inside the window, and the headline total. */
   rhna: { byYear: Record<number, number>; total: number };
@@ -33,8 +36,10 @@ export interface V2xInputs {
     fileProblems: string[];
     /** Ids of in-flight masters left with `phases: null` (last resort). */
     lastResort: string[];
-    /** Enriched masters' scale factor R / Σ, by case number. */
+    /** Enriched masters' scale factor R before netting / Σ, by case number. */
     scales: Record<string, number>;
+    /** Every in-flight master's DA parcels and tracking parcels (spec 4.10.2), by project id. */
+    masters: Record<string, { daParcels: ParcelId[]; trackingParcels: ParcelId[] }>;
   };
 }
 
@@ -210,6 +215,43 @@ export function checkV23(i: V2xInputs, rerunIdentical: boolean): InvariantResult
   return result('V23', problems, `${i.histories.length} histories`);
 }
 
+/**
+ * V24 for a last-resort master (DQ-3): a drawing one's parcels are DA parcels disjoint from every
+ * other in-flight project's parcels (phase parcels are among them); a score-only one has every DA
+ * parcel held by another in-flight project (its parcels, or another master's tracking parcels) or
+ * by a completed history.
+ */
+function lastResortProblems(i: V2xInputs, p: ProjectsFile['projects'][number]): string[] {
+  const at = p.id;
+  const m = i.multiphase.masters[p.id];
+  if (m === undefined) return [`${at}: last resort with no DA parcels recorded`];
+  const holders = new Map<ParcelId, string>();
+  const hold = (id: ParcelId, by: string) => {
+    if (!holders.has(id)) holders.set(id, by);
+  };
+  for (const q of i.file.projects) if (q.id !== p.id) for (const id of q.parcelIds) hold(id, q.id);
+  const problems: string[] = [];
+  if (p.parcelIds.length > 0) {
+    const da = new Set(m.daParcels);
+    for (const id of p.parcelIds) {
+      if (!da.has(id)) problems.push(`${at}: last-resort parcel ${id} is not a DA parcel`);
+      const other = holders.get(id);
+      if (other !== undefined) problems.push(`${at}: last-resort parcel ${id} is also in ${other}`);
+    }
+    return problems;
+  }
+  for (const [id, o] of Object.entries(i.multiphase.masters)) {
+    if (id !== p.id) for (const t of o.trackingParcels) hold(t, id);
+  }
+  for (const h of i.histories) {
+    if (h.end.kind === 'complete') for (const id of h.parcelIds) hold(id, h.id);
+  }
+  for (const id of m.daParcels) {
+    if (!holders.has(id)) problems.push(`${at}: score-only but DA parcel ${id} is free`);
+  }
+  return problems;
+}
+
 /** V24: multi-phase phasing (spec 4.10), recomputed from the file plus the build's problems. */
 export function checkV24(i: V2xInputs): InvariantResult {
   const problems = [...i.multiphase.problems, ...i.multiphase.fileProblems];
@@ -230,6 +272,7 @@ export function checkV24(i: V2xInputs): InvariantResult {
     const at = p.id;
     if (p.phases === null) {
       if (!lastResort.has(p.id)) problems.push(`${at}: phases is null and it is not a last resort`);
+      else problems.push(...lastResortProblems(i, p));
       continue;
     }
     if (p.phases.length === 0) {
