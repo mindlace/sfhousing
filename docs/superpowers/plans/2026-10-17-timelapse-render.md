@@ -415,3 +415,38 @@ Rules: spec §6 "Bench". Reuse `map-pan.bench.ts`'s structure (copy its `pct`/ve
 - [ ] **Step 3: Record** the results row in `docs/dev/map-perf.md` (machine, date, browser, DPR, frames, p50, p95, pump max ops, pass) if it ran.
 - [ ] **Step 4: Verify** `npm run check`, `npm run lint` and `npm run test:unit` pass on the whole branch.
 - [ ] **Step 5: Commit** `test(bench): add timeline playback and drag bench cases`
+
+---
+
+## Fix round F1 (reappraisal 1)
+
+Spec revised at package commit 35b36f6 (branch `worktree-fzp-timelapse`): `/Users/mindlace/Projects/sfhousing/.claude/worktrees/fzp-timelapse/docs/superpowers/specs/2026-10-16-timelapse-render-design.md` — §9 lists the fix round; §4.6.1, §4.8.1, §6 and AC14–AC16 are normative. Port rule for every F1 task: Playwright and bench run with `SFH_E2E_PORT=4202` only (4173 is integration's, 4201 scenario-data's).
+
+### Task 15: Bring the branch current
+
+**Files:** merge commits only, plus conflict resolutions in `docs/dev/map-perf.md`, `src/lib/map/SimMap.svelte`, `src/lib/map/pack.ts` (and any others git reports); `docs/superpowers/specs/2026-10-16-timelapse-render-design.md` (replaced by the 35b36f6 revision).
+
+- [ ] **Step 1:** `git -C <worktree> merge --no-ff dda6252` (integration `superconductor/fzp-timelapse`); expected near-trivial.
+- [ ] **Step 2:** `git -C <worktree> merge --no-ff 0fbef45` (origin/main: #21 closed rings in `normaliseRing`, #22 generator flake fix, #23 deck viewport resync `onDeviceInitialized` → `map.fire('move')` in a microtask + `SimMap.deck-viewport.svelte.spec.ts`). Resolve conflicts keeping all three behaviours: closed rings through the shared `normaliseRing` (pack-timed keeps calling it, no ring logic of its own), #23's resync, and timeline mode (`deviceProps.onError`, lazy timeline load, picking). `map-perf.md` keeps every results row from both sides in one contiguous table.
+- [ ] **Step 3:** Replace the branch's spec copy with the 35b36f6 revision (`git -C <worktree> show 35b36f6:docs/superpowers/specs/2026-10-16-timelapse-render-design.md`); commit `docs(specs): adopt timelapse-render reappraisal 1`.
+- [ ] **Step 4:** Full verification on the merged branch: `npm run check`, `npm run lint`, `npm run test:unit` (all GPU pixel specs and `SimMap.deck-viewport.svelte.spec.ts` included), `SFH_E2E_PORT=4202 npx playwright test e2e/timelapse-render.spec.ts e2e/map.spec.ts`.
+- [ ] **Step 5:** Recheck the side-wall test in `timelapse-extension.gpu.svelte.spec.ts` now that rings are closed: its `mean()` averages every stored vertex (a closing duplicate biases it toward the first corner). Make the probe ring-agnostic (bbox or distinct-vertex mean) and update the comment that says the closing wall is not drawn (it now is). Re-run the GPU spec.
+- [ ] **Step 6:** If any render-path file changed in the merge resolution beyond #23's resync, run `SFH_E2E_PORT=4202 npm run bench:map` and record p95s.
+
+### Task 16: Pick misses carry their kind (IA-1, T7)
+
+**Files:** `src/lib/map/types.ts` (step-0 T7 types — authorised by the package), `src/lib/map/timeline-types.spec.ts`, `src/lib/map/SimMap.svelte` (`deliver`, `unreportHover`, doc comment), `src/lib/map/SimMap.timeline.svelte.spec.ts`, any other spec asserting `null`.
+
+- [ ] **Step 1:** `types.ts`: export `TimelinePick` exactly as spec §2.1; `SimMapProps.timelinePick?: (p: TimelinePick) => void`. `timeline-types.spec.ts` restates the amended T7 row from the design's current table (35b36f6) and still compiles the Equals check.
+- [ ] **Step 2:** Replace the pinning test (~`:362-424`) with the §6 pick-miss test, every bullet as written there (hover leave to building / to empty, `pointerleave`, suppressed move, click on empty ×2, click on building, touch tap on building with card, touch tap while mouse hover reported, never `null`, exact keys, no console errors). Run it: RED.
+- [ ] **Step 3:** `SimMap.svelte` `deliver()` and `unreportHover()` exactly as §4.8.1 "Code changes"; update the `deliver` doc comment. GREEN; client `src/lib/map/` green.
+- [ ] **Step 4:** Commit `feat(map)!: report timeline pick misses with their kind` (T7 interface change).
+
+### Task 17: `timelineTokenCss` (IA-3, T7)
+
+**Files:** `src/lib/map/palette.ts`, `src/lib/map/SimMap.svelte` (`DEFAULT_TOKENS_CSS` built on the helper), `src/lib/map/palette.spec.ts`.
+
+- [ ] **Step 1:** Before changing code, capture today's `DEFAULT_TOKENS_CSS` string (the body inside `<style>…</style>`) as a literal for the byte-identity test.
+- [ ] **Step 2:** Tests per spec §6 palette bullets for `timelineTokenCss('.x')` (every `tl-*` and every `TIMELINE_LEGEND`-named token exactly once, light block then dark under `@media (prefers-color-scheme: dark)`, no other token, deterministic, `TypeError` for `''`, `'  '` and selectors containing `{`, `}`, `<`, `;`) and the byte-identity of the helper over all tokens and `.sim-map`. RED.
+- [ ] **Step 3:** `palette.ts`: internal `tokenCss(selector, names)` and exported `timelineTokenCss(selector)` per §4.6.1 (pure, DOM-free, `TOKENS` key order, `; ` joins, camelCase → kebab). `SimMap.svelte`'s module script builds `DEFAULT_TOKENS_CSS` from `tokenCss` over every token. GREEN; `SimMap.ssr.spec.ts` and the editor specs unmodified and green.
+- [ ] **Step 4:** Commit `feat(map): add timelineTokenCss for outside legends`.
