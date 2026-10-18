@@ -84,7 +84,7 @@ export function pathwayForNew(
       ...roundedShares(counts),
       provenance: {
         tier: 0,
-        label: 'SF permit & Planning records 2015–2026: pathway of new projects (tier 0)',
+        label: `SF permit & Planning records ${window[0].slice(0, 4)}–${window[1].slice(0, 4)}: pathway of new projects (tier 0)`,
         sources,
         method: `Pathway shares among ${n} qualifying histories with a known pathway whose first record falls in ${window[0]} to ${window[1]} (Planning-reliable: the pathway is known only from then); ${countsText(counts)}; shares rounded to 6 decimals, the residual to the largest`,
         n,
@@ -114,7 +114,7 @@ export function pathwayForNew(
       ...roundedShares(counts),
       provenance: {
         tier: 0,
-        label: 'SF permit & Planning records 2015–2026: pathway of new projects (tier 0)',
+        label: `SF permit & Planning records ${window[0].slice(0, 4)}–${window[1].slice(0, 4)}: pathway of new projects (tier 0)`,
         sources,
         method: `Only ${n} qualifying histories with a known pathway have a first record in ${window[0]} to ${window[1]} (fewer than N_SPELLS_MIN = ${cal.nSpellsMin}) and there are no in-flight projects to fall back on; ${countsText(counts)}; shares rounded to 6 decimals, the residual to the largest`,
         n,

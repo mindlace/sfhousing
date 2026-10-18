@@ -415,7 +415,7 @@ describe('duckPanelSource', () => {
           2,
           300,
           1925,
-          4,
+          7,
           0.25,
           true,
           5
@@ -427,7 +427,7 @@ describe('duckPanelSource', () => {
     expect(src.years).toEqual([2015, 2016]);
     const r2015 = await src.read(2015);
     expect(r2015.map((r) => r.mapblklot)).toEqual(['A', 'B']);
-    // Every feature has a distinct value, so a swapped column mapping fails.
+    // Every feature and `imputed` has a distinct value, so a swapped column mapping fails.
     expect(r2015[1]).toEqual({
       mapblklot: 'B',
       hostableBase: true,
@@ -437,7 +437,7 @@ describe('duckPanelSource', () => {
         existingUnits: 2,
         lotAreaM2: 300,
         yearBuilt: 1925,
-        storiesGap: 4,
+        storiesGap: 7,
         improvementShare: 0.25,
         rentControlLikely: 1,
         landUseClass: 5

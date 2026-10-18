@@ -40,13 +40,14 @@ import { datasf } from './provenance';
 import { cutSpells } from './spells';
 import { rejects, tailFit } from './tail';
 import { PPA_SERIES_END, coverageGuard, windowStart, type PartialYear } from './window';
-import type {
-  CalProfile,
-  CalStage,
-  PurgeWindow,
-  RuleTally,
-  Spell,
-  UnobservedAdvance
+import {
+  CalibrationError,
+  type CalProfile,
+  type CalStage,
+  type PurgeWindow,
+  type RuleTally,
+  type Spell,
+  type UnobservedAdvance
 } from './types';
 
 type Source = { label: string; url: string };
@@ -112,7 +113,10 @@ export interface FitResult {
   ppaPooled: number;
   /** `calibration.spells.<pathway|pooled>.<stage>`: observed spells of each fitted cell */
   spellsCount: Record<string, number>;
-  /** pooled permit-side cells flagged by the no-FCD guard (`calibration.noFcd.flaggedPooled`) */
+  /**
+   * pooled permit-side cells flagged by the no-FCD guard (`calibration.noFcd.flaggedPooled`);
+   * always 0 in the live build, where such a cell throws
+   */
   noFcdFlaggedPooled: number;
   /** entries per year of each stage's pooled window (the coverage guard's counts) */
   coverage: Partial<Record<CalStage, Record<number, number>>>;
@@ -428,12 +432,13 @@ export function fitTransitions(
     const nfStage = stage === 'permitIssued' || stage === 'construction' ? stage : null;
     const pooledW = nfStage ? weightAdvances(pooled, unobserved, nfStage, from, asOf, cal) : null;
     // Ruling R24: with X = 0 the weighting is a no-op, so only a flagged pooled cell with X > 0
-    // is escalated; `flagged` itself is reported unchanged.
+    // is escalated; `flagged` itself is reported unchanged. §4.4 step 1 (ruling R29): in the live
+    // build it stops the build; the fixture build warns and counts it.
     if (pooledW?.flagged && pooledW.X > 0) {
+      const msg = `no-FCD weighting flagged at pooled level: ${stage} X=${pooledW.X} A=${pooledW.A} w=${fmt(pooledW.w)}`;
+      if (cal.name === 'live') throw new CalibrationError(msg);
       noFcdFlaggedPooled++;
-      warnings.push(
-        `no-FCD weighting flagged at pooled level: ${stage} X=${pooledW.X} A=${pooledW.A} w=${fmt(pooledW.w)}`
-      );
+      warnings.push(msg);
     }
     const pooledFit = pooledW ? pooledW.spells : pooled;
     const pooledEvents = observedEvents(ajSweep(pooled));

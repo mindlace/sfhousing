@@ -735,6 +735,11 @@ describe('parseCalibration', () => {
     ['revision at complete', (c) => (c.revision.at[0].stage = 'complete'), 'revision.at[0].stage'],
     ['revision at unknown stage', (c) => (c.revision.at[0].stage = 'x'), 'revision.at[0].stage'],
     [
+      'two revisions at one stage',
+      (c) => c.revision.at.push(structuredClone(c.revision.at[0])),
+      'revision.at[1].stage'
+    ],
+    [
       'revision probability',
       (c) => (c.revision.at[0].probability = 1.1),
       'revision.at[0].probability'

@@ -263,7 +263,12 @@ export function sampleTransition(
   return { kind: slice.kind, days: Math.min(first + Math.floor(phi * (end - first)), end - 1) };
 }
 
-/** Monthly initiation probability: logistic of the intercept plus the binned coefficients. */
+/**
+ * Monthly initiation probability: logistic of the intercept plus the binned coefficients.
+ * `f` must hold a finite value for every term's feature; this hot-loop function does not check.
+ * A missing or NaN feature silently takes bin 0's coefficient (`edge <= NaN` is false), so
+ * callers validate their feature records once, before the loop.
+ */
 export function initiationHazard(m: InitiationModel, f: Record<FeatureId, number>): number {
   let z = m.intercept;
   for (const term of m.terms) z += term.coef[binIndex(term.bins, f[term.feature])];
@@ -582,12 +587,15 @@ const NO_REVISION: Stage[] = ['construction', 'complete'];
 function checkRevision(v: unknown): void {
   const path = 'revision';
   const r = record(v, path);
+  const seen: Stage[] = [];
   array(r.at, `${path}.at`).forEach((entry, i) => {
     const ap = `${path}.at[${i}]`;
     const a = record(entry, ap);
     const stage = a.stage as Stage;
     if (!STAGE_ORDER.includes(stage)) fail(`${ap}.stage`, `expected a stage, got ${String(stage)}`);
     if (NO_REVISION.includes(stage)) fail(`${ap}.stage`, `no revision applies at ${stage}`);
+    if (seen.includes(stage)) fail(`${ap}.stage`, `a second revision at ${stage}`);
+    seen.push(stage);
     unit(a.probability, `${ap}.probability`);
     const ratio = record(a.ratio, `${ap}.ratio`);
     const edges = numbers(ratio.edges, `${ap}.ratio.edges`);

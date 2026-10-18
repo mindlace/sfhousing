@@ -5,7 +5,13 @@ import { LIVE_CAL, FIXTURE_CAL } from '../../lib/fzp-cal/config';
 import { LITERATURE, rung3 } from '../../lib/fzp-cal/fallback';
 import { fitTransitions, type FitContext } from '../../lib/fzp-cal/transitions';
 import { windowStart } from '../../lib/fzp-cal/window';
-import type { CalProfile, CalStage, Spell, UnobservedAdvance } from '../../lib/fzp-cal/types';
+import {
+  CalibrationError,
+  type CalProfile,
+  type CalStage,
+  type Spell,
+  type UnobservedAdvance
+} from '../../lib/fzp-cal/types';
 import { isoToDay } from '../../project-records/multiphase';
 import calibrationSmall from '../../../src/lib/timelapse/fixtures/calibration-small.json';
 import { mulberry32 } from '../../../src/lib/generator/seed';
@@ -25,6 +31,8 @@ import {
 const M = MONTH_DAYS;
 const AS_OF = isoToDay('2026-06-30');
 const LIVE: CalProfile = { ...LIVE_CAL, coverageGuard: false };
+/** Live thresholds in fixture mode: a flagged pooled no-FCD cell warns instead of throwing. */
+const LIVE_WARN: CalProfile = { ...LIVE, name: 'fixture' };
 const NO_CTX: FitContext = {
   purge: { windows: [], windowed: { fired: 0, of: 0, sample: [] } },
   gapImpute: { ids: new Set() },
@@ -372,7 +380,8 @@ describe('fitTransitions: rung selection', () => {
         enteredPermitIssued: isoToDay('2018-01-01')
       }
     ];
-    const r = fitTransitions(sorted(pooled), unobserved, AS_OF, LIVE, {
+    // Fixture mode: in live mode this flagged pooled cell (X = 1 > 0) stops the build.
+    const r = fitTransitions(sorted(pooled), unobserved, AS_OF, LIVE_WARN, {
       ...NO_CTX,
       purge: { windows: [], windowed: { fired: 0, of: 0, sample: [] } },
       gapImpute: { ids: new Set(['N0000', 'N0001', 'N0002']) }
@@ -401,7 +410,8 @@ describe('fitTransitions: rung selection', () => {
     expect(r.transitions.discretionary.entitled!.provenance.method).not.toContain('gap-impute');
   });
 
-  it('a flagged pooled no-FCD cell warns and is counted (the controller escalates)', () => {
+  /** 40 pooled permitIssued spells (20 advances) and 30 no-FCD completions: w = 2.5, flagged. */
+  function flaggedPermitIssued(): [Spell[], UnobservedAdvance[]] {
     const pooled = cell(null, 'permitIssued', 'N', 40, 25);
     const unobserved: UnobservedAdvance[] = [];
     for (let i = 0; i < 30; i++) {
@@ -413,7 +423,19 @@ describe('fitTransitions: rung selection', () => {
         enteredPermitIssued: isoToDay('2018-01-01')
       });
     }
-    const r = fitTransitions(sorted(pooled), unobserved, AS_OF, LIVE, NO_CTX);
+    return [sorted(pooled), unobserved];
+  }
+
+  it('live: a flagged pooled no-FCD cell with X > 0 stops the build (§4.4 step 1)', () => {
+    const [pooled, unobserved] = flaggedPermitIssued();
+    const run = () => fitTransitions(pooled, unobserved, AS_OF, LIVE, NO_CTX);
+    expect(run).toThrow(CalibrationError);
+    expect(run).toThrow('no-FCD weighting flagged at pooled level: permitIssued X=30 A=20 w=2.5');
+  });
+
+  it('fixture: a flagged pooled no-FCD cell warns and is counted', () => {
+    const [pooled, unobserved] = flaggedPermitIssued();
+    const r = fitTransitions(pooled, unobserved, AS_OF, LIVE_WARN, NO_CTX);
     // permitIssued (w = 2.5) only: the empty construction cell (A = 0) has X = 0 (ruling R24).
     expect(r.noFcdFlaggedPooled).toBe(1);
     expect(r.warnings.filter((w) => w.includes('flagged at pooled level'))).toHaveLength(1);

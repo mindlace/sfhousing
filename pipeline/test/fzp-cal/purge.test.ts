@@ -213,6 +213,7 @@ describe('purgeCensorTally (conductor ruling C3: windowed exits)', () => {
     const r = purgeCensor([...burst('a', d('2026-09-15'), 10, 2)], LIVE_CAL);
     expect(r.exits.map((e) => e.id)).toEqual([...r.exits.map((e) => e.id)].sort());
     expect(r.exits).toHaveLength(12);
+    expect(r.tally.fired).toBe(10);
     expect(r.exits.filter((e) => e.censored).map((e) => `${e.id}:${e.stage}`)).toEqual(
       r.tally.sample
     );

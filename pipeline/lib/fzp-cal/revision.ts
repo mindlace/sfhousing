@@ -149,7 +149,7 @@ export function revisionModel(
       provenance: evidence
         ? {
             tier: 2,
-            label: 'SF Planning & permit records 2015–2026: resizing before construction (tier 2)',
+            label: `SF Planning & permit records ${window[0].slice(0, 4)}–${window[1].slice(0, 4)}: resizing before construction (tier 2)`,
             sources,
             method: common,
             n: pairs.length,

@@ -162,7 +162,7 @@ function rareEventCells(): FitCell[] {
   for (let a = 0; a < pr.length; a++) {
     for (let b = 0; b < is.length; b++) {
       const exposure = (pr[a][0] * is[b][0]) / total;
-      const rate = (pr[a][1] / pr[a][0]) * (is[b][1] / is[b][0]) / base;
+      const rate = ((pr[a][1] / pr[a][0]) * (is[b][1] / is[b][0])) / base;
       for (const basis of [0, 1] as const) {
         const e = Math.round(exposure * (basis ? 0.42 : 0.58));
         cells.push(cell([a, b], e, Math.round(e * rate * (basis ? 0.85 : 1.1)), basis));
@@ -196,17 +196,47 @@ describe('fitLogit step control and degenerate-fit guard (fix-v28)', () => {
 
   it('checkLogitFit rejects the degenerate live fit (hazard 0 everywhere): CalibrationError', () => {
     // The shape of the fit the undamped IRLS returned on 2026-10-17-4000b4e3: intercept and
-    // basis frozen at absurd values, so every cell's hazard is 0.
+    // basis frozen at absurd values, so every cell's hazard is 0, and each bin coefficient equal
+    // to its bin's events (λ = 1), which zeroes every bin score. Only the score path rejects it:
+    // the intercept score is Σevents.
+    const binEvents = nBins.map((n) => new Array<number>(n).fill(0));
+    let events = 0;
+    for (const c of cells) {
+      c.bins.forEach((b, t) => (binEvents[t][b] += c.events));
+      events += c.events;
+    }
     const degenerate = {
-      intercept: -198743000000000,
-      coef: nBins.map((n) => new Array<number>(n).fill(50)),
+      intercept: -1.98743e14,
+      coef: binEvents,
       basis: -61090.7,
       iterations: 6
     };
-    expect(() => checkLogitFit(cells, nBins, 1, degenerate)).toThrow(CalibrationError);
-    expect(() => checkLogitFit(cells, nBins, 1, degenerate)).toThrow('IRLS: degenerate fit');
+    const check = () => checkLogitFit(cells, nBins, 1, degenerate);
+    expect(check).toThrow(CalibrationError);
+    expect(check).toThrow(`IRLS: degenerate fit (intercept score ${events}, above`);
     const nan = { ...fitLogit(cells, nBins, 1), basis: Number.NaN };
     expect(() => checkLogitFit(cells, nBins, 1, nan)).toThrow('IRLS: degenerate fit');
+  });
+
+  it('an all-basis-1 panel (basis aliased with the intercept) is a degenerate fit', () => {
+    const all1 = cells.map((c) => ({ ...c, basis: 1 as const }));
+    const fit = () => fitLogit(all1, nBins, 1);
+    expect(fit).toThrow(CalibrationError);
+    expect(fit).toThrow(
+      'IRLS: degenerate fit (the basis column has no weight or is aliased with the intercept at iteration 1)'
+    );
+  });
+
+  it('no Newton step that improves the fit is a CalibrationError (objective overflow)', () => {
+    // The objective is concave, so only a non-finite objective defeats step-halving: at the start
+    // (logit(1.59/0.11) ≈ 2.67) events·z and exposure·softplus(z) of the first cell overflow to
+    // +∞, and their difference is NaN.
+    const huge = [cell([0], 0.9e308, 0.89e308), cell([1], 0.8e308, 0.7e308)];
+    const fit = () => fitLogit(huge, [2], 1);
+    expect(fit).toThrow(CalibrationError);
+    expect(fit).toThrow(
+      'IRLS: no Newton step of size at least 2^-30 improves the fit at iteration 1'
+    );
   });
 
   it('checkLogitFit rejects a finite fit whose intercept score is not zero', () => {

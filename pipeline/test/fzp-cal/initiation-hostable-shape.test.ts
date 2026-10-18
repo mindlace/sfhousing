@@ -3,7 +3,7 @@
 // potentialRatio 0 (about 60% of exposure before 2023, 5% from 2023) and almost no events, beside
 // a thin high-hazard improvementShare bin. The undamped Newton step overshot to a fit with
 // hazard 0 in every cell (live: intercept -1.98743e14, back-cast 0 vs 697 / 390).
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { LIVE_CAL } from '../../lib/fzp-cal/config';
 import {
   INITIAL_EDGES,
@@ -132,7 +132,12 @@ describe('fitInitiation on the decoupled-hostable panel shape (V28 regression)',
     expect(panel.events.permit).toBeGreaterThan(0);
   });
 
-  const { model, report } = fitInitiation(panel, LIVE_CAL, FZP, NO_CTX);
+  // Fitted in beforeAll, so a throw fails the tests by name rather than collection.
+  let model: ReturnType<typeof fitInitiation>['model'];
+  let report: ReturnType<typeof fitInitiation>['report'];
+  beforeAll(() => {
+    ({ model, report } = fitInitiation(panel, LIVE_CAL, FZP, NO_CTX));
+  });
 
   it('back-casts each detection basis within 2% of observed, both non-zero (V28)', () => {
     expect(backcastGate(report).ok).toBe(true);

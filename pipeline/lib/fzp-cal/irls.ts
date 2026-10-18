@@ -26,11 +26,6 @@ const PIVOT_TOL = 1e-10;
 const MAX_HALVINGS = 30;
 /** Relative slack on "the objective did not fall": rounding in Σ over ~25k cells. */
 const OBJ_TOL = 1e-12;
-/**
- * |coefficient| above this on the logit scale is a degenerate fit (a monthly hazard below 2e-22 or
- * above 1 − 2e-22): tier 4 sanity bound, far outside any parcel-month hazard.
- */
-export const COEF_MAX = 50;
 /** A converged fit's penalised score per column, relative to 1 + Σevents: at most this. */
 const SCORE_TOL = 1e-6;
 
@@ -117,10 +112,12 @@ function objective(
 }
 
 /**
- * Rejects a degenerate fit with a `CalibrationError` ("IRLS: degenerate fit (…)"): a non-finite
- * coefficient, one with |β| > COEF_MAX, or a penalised score Σ(events − exposure·μ) − λβ over any
- * column (intercept, each bin, basis) above SCORE_TOL·(1 + Σevents). At a true optimum every score
- * is 0; in particular the intercept and basis scores are the per-basis back-cast identity (V28).
+ * Rejects a degenerate fit with a `CalibrationError` ("IRLS: degenerate fit (…)"): a penalised
+ * score Σ(events − exposure·μ) − λβ over any column (intercept, each bin, basis) above
+ * SCORE_TOL·(1 + Σevents), or not finite (a non-finite coefficient gives a non-finite score,
+ * except for a bin no cell uses when λ = 0). At a true optimum every score is 0; in particular the
+ * intercept and basis scores are the per-basis back-cast identity (V28). There is no bound on |β|:
+ * a finite optimum with zero score is a valid fit.
  */
 export function checkLogitFit(
   cells: FitCell[],
@@ -138,13 +135,6 @@ export function checkLogitFit(
     for (let b = 0; b < nBins[t]; b++) beta[offset[t] + b] = fit.coef[t][b];
   }
   beta[basisCol] = fit.basis;
-  for (let j = 0; j < p; j++) {
-    if (!(Math.abs(beta[j]) <= COEF_MAX)) {
-      throw new CalibrationError(
-        `IRLS: degenerate fit (coefficient ${j} = ${beta[j]}, |β| above ${COEF_MAX} or not finite)`
-      );
-    }
-  }
   const sorted = [...cells].sort(compareCells);
   const score = new Float64Array(p);
   let events = 0;
@@ -279,9 +269,10 @@ export function fitLogit(cells: FitCell[], nBins: number[], lambda: number): Log
     }
     const { x: delta, dropped } = choleskySolve(h, g);
     if (dropped[0] || (dropped[basisCol] && hasBasis)) {
-      throw new CalibrationError(
-        `IRLS: degenerate fit (the ${dropped[0] ? 'intercept' : 'basis'} column has no weight at iteration ${iter})`
-      );
+      const what = dropped[0]
+        ? 'intercept column has no weight'
+        : 'basis column has no weight or is aliased with the intercept';
+      throw new CalibrationError(`IRLS: degenerate fit (the ${what} at iteration ${iter})`);
     }
     let maxStep = 0;
     let finite = true;

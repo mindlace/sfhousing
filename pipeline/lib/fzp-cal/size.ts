@@ -132,7 +132,7 @@ export function sizeModel(
       byEnvelope: groups.map((g) => ({ maxStoriesUpTo: g.upTo, probs: roundShares(g.counts) })),
       provenance: {
         tier: 2,
-        label: 'SF Planning & permit records 2015–2026: new-project size (tier 2)',
+        label: `SF Planning & permit records ${window[0].slice(0, 4)}–${window[1].slice(0, 4)}: new-project size (tier 2)`,
         sources,
         method: `ratio r = proposed stories ÷ base stories at filing over ${n} qualifying histories with a first record in ${window[0]} to ${window[1]}, snapped to the nearest fill level of the envelope (ties up); ${overText} (a model choice, not a data-quality rule); buckets on base stories at filing with edges ${SIZE_EDGES.join(', ')} (tier 4, 999 = any); a bucket with fewer than SIZE_MIN_N = ${cal.sizeMinN} histories merges into its lower neighbour, the first into its upper one; ${mergedText}; probs rounded to 6 decimals, the residual to the largest; base stories at filing is a tier-3 proxy (the current base height, no pre-FZP height map exists)`,
         n,
