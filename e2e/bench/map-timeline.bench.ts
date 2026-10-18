@@ -115,6 +115,8 @@ for (const { name, daysPerS } of CASES)
       return { cells: s?.cells ?? 0, parts: s?.parts ?? 0, pumpMaxOps: m.demolishMaxFrameOps };
     });
     expect(after.cells).toBe(cells);
+    // The pump actually ran: playback and drag both cross demolition days.
+    expect(after.pumpMaxOps).toBeGreaterThan(0);
 
     const sorted = [...deltas].sort((a, b) => a - b);
     const p50 = pct(sorted, 50);
