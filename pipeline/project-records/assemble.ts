@@ -361,15 +361,21 @@ export interface MasterDa {
   trackingParcels: ParcelId[];
   /** Median proposed units of the completed buildings of its base-case and same-`da` projects. */
   projectU: { u: number; n: number } | null;
+  /** `descendants(tracking blklot)`, for every master ([] with no tracking blklot). */
+  descendants: ParcelId[];
+  /** The projects holding the base-case PRJ and those holding a row with the same `da`. */
+  daProjects: ReadonlySet<LinkedProject>;
 }
 
 /**
  * Spec 4.10.2 DA parcels of a master (a pipeline-only PRX project): the resolved tracking blklot,
  * the blklots of every pipeline row with the same non-null `da`, of every project holding the
- * base-case PRJ (case number without 'PRX') and of every phase in its `multiphase.json` entry. The
- * phase size u is the median over completed permits of those base-case projects and of projects
- * holding a row with the same `da`. `projects` are the linked projects after DQ-2, so a linked
- * row counts as the project's.
+ * base-case PRJ (case number without 'PRX') and of every phase in its `multiphase.json` entry.
+ * When the entry has `schedule: null`, or there is no entry, they also hold every current parcel
+ * descended from the tracking blklot (main's ruling 3, Ruling D1 revised). The phase size u is the
+ * median over completed permits of those base-case projects and of projects holding a row with
+ * the same `da`. `projects` are the linked projects after DQ-2, so a linked row counts as the
+ * project's.
  */
 export function masterDa(
   proj: LinkedProject,
@@ -378,6 +384,7 @@ export function masterDa(
     pipeline: readonly PipelineRow[];
     multiphase: MultiphaseFile;
     resolve: (blklots: string[]) => ParcelId[];
+    descendants: ProjectRecordsInput['descendants'];
   }
 ): MasterDa {
   const master = proj.pipelineRows[0];
@@ -395,11 +402,39 @@ export function masterDa(
   for (const r of o.pipeline) if (da !== null && r.da === da && r.blklot) blklots.add(r.blklot);
   for (const p of baseProjects) for (const b of p.blklots) blklots.add(b);
   for (const ph of entry?.phases ?? []) for (const b of ph.blklots) blklots.add(b);
+  const descendants = master.blklot === null ? [] : o.descendants(master.blklot);
+  const daParcels = o.resolve([...blklots].sort(cmp));
+  // Main's ruling 3: a schedule-null (or uncurated) master's DA parcels add the descendants.
+  const unenriched = entry === null || entry.schedule === null;
+  const related = new Set([...baseProjects, ...daProjects]);
   return {
-    daParcels: o.resolve([...blklots].sort(cmp)),
+    daParcels: unenriched ? [...new Set([...daParcels, ...descendants])].sort(cmp) : daParcels,
     trackingParcels: master.blklot === null ? [] : o.resolve([master.blklot]),
-    projectU: medianOf(completedUnits(new Set([...baseProjects, ...daProjects])))
+    projectU: medianOf(completedUnits(related)),
+    descendants,
+    daProjects: related
   };
+}
+
+/**
+ * Main's ruling 3 flag (no effect on netting): one warning per descendant parcel of a master held
+ * by an in-flight project that is not a master, holds no pipeline row with the master's `da` and
+ * does not hold the base-case PRJ. `inFlight` are the in-flight non-master projects before
+ * netting, in id order; warnings come in (parcel, project id) order.
+ */
+export function descendantWarnings(
+  caseNo: string,
+  da: MasterDa,
+  inFlight: readonly LinkedProject[]
+): string[] {
+  const out: string[] = [];
+  for (const id of da.descendants) {
+    for (const p of inFlight) {
+      if (da.daProjects.has(p) || !p.parcelIds.includes(id)) continue;
+      out.push(`${caseNo}: descendant parcel ${id} is held by ${p.id}, which is not a DA project`);
+    }
+  }
+  return out;
 }
 
 /**

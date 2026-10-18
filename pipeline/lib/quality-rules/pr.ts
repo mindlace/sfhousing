@@ -172,7 +172,8 @@ export const PR_RULES: readonly QualityRule[] = [
     field: 'parcelIds',
     kind: 'shape',
     action: 'none',
-    tier: 4,
+    // Main's ruling 5 (F2 live; Ruling Q1 overturned): tier 2, as in the design's rules table.
+    tier: 2,
     valueTier: null,
     maskBit: null,
     label: 'Counted in the score but not drawn: no free lot in the plan area',

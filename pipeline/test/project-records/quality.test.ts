@@ -122,7 +122,8 @@ const TABLE: Record<string, Spec> = {
   'pr.multiphase.score-only': {
     kind: 'shape',
     action: 'none',
-    tier: 4,
+    // Main's ruling 5 (F2 live): tier 2, as the design's rules table has it (Ruling Q1 overturned).
+    tier: 2,
     valueTier: null,
     unitsWeighted: true,
     warnShare: 0.25,

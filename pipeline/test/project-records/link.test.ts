@@ -762,11 +762,57 @@ describe('DQ-2: a pipeline-only row with no status date (spec §4.2 step 10)', (
     expect(only.counts['quality.pr.pipeline.status-date-linked.fired']).toBe(0);
   });
 
-  it('a winner whose project already holds a pipeline row drops the row, naming both', () => {
+  /** A dated PL Filed row naming the PRJ itself, so its project holds a pipeline row. */
+  function addOwnRow(raw: Raw, o: { caseNo: string; lot: string; units: number }): void {
+    raw['datasf-dev-pipeline'].push({
+      blklot: `3512${o.lot}`,
+      current_status: 'PL Filed',
+      current_status_date: ts('2026-06-01'),
+      case_no: o.caseNo,
+      new_pipeline_units: String(o.units)
+    });
+  }
+
+  // Main's ruling 2 (F2 live): the winner is the latest-opened candidate holding no row.
+  it('Freedom West shape: a newer open PRJ holding its own row is passed over', () => {
+    const r = derive(
+      (raw) => {
+        freedomWest(raw);
+        addPrj(raw, { id: '2024-003742PRJ', lot: '008', open: '2024-05-01', units: 150 });
+        addOwnRow(raw, { caseNo: '2024-003742PRJ', lot: '008', units: 150 });
+      },
+      ['2023-007911PRX']
+    );
+    expect(holder(r, '2023-007911PRX')).toBe('PRJ:2020-006887PRJ');
+    expect(holder(r, '2024-003742PRJ')).toBe('PRJ:2024-003742PRJ');
+    expect(r.counts['quality.pr.pipeline.status-date-linked.fired']).toBe(1);
+    expect(r.counts['quality.pr.pipeline.no-status-date.fired']).toBe(0);
+  });
+
+  it('drops the row when every candidate holds a row, naming the latest-opened one', () => {
+    const r = derive(
+      (raw) => {
+        addPrj(raw, { id: '2020-006887PRJ', lot: '008', open: '2020-07-24', units: 2387 });
+        addOwnRow(raw, { caseNo: '2020-006887PRJ', lot: '008', units: 2387 });
+        addPrj(raw, { id: '2024-003742PRJ', lot: '008', open: '2024-05-01', units: 150 });
+        addOwnRow(raw, { caseNo: '2024-003742PRJ', lot: '008', units: 150 });
+        addRow(raw, { caseNo: '2023-007911PRX', lot: '008', units: 2537 });
+      },
+      ['2023-007911PRX']
+    );
+    expect(r.warnings).toContain(
+      '2023-007911PRX: no status date and every open Planning record on its lot already holds a pipeline row (2024-003742PRJ holds 2024-003742PRJ); dropped'
+    );
+    expect(holder(r, '2023-007911PRX')).toBeNull();
+    expect(r.counts['quality.pr.pipeline.no-status-date.fired']).toBe(1);
+    expect(r.counts['quality.pr.pipeline.status-date-linked.fired']).toBe(0);
+  });
+
+  it('a lone candidate already holding a pipeline row drops the row, naming both', () => {
     // A (PRJ:2019-000001PRJ, lot 001) holds the dated row 2019-000001PRJ.
     const r = derive((raw) => addRow(raw, { caseNo: '2026-000021PRJ', lot: '001', units: 7 }));
     expect(r.warnings).toContain(
-      '2026-000021PRJ: no status date and winner 2019-000001PRJ already holds pipeline row 2019-000001PRJ; dropped'
+      '2026-000021PRJ: no status date and every open Planning record on its lot already holds a pipeline row (2019-000001PRJ holds 2019-000001PRJ); dropped'
     );
     expect(r.counts['quality.pr.pipeline.no-status-date.fired']).toBe(1);
     expect(r.counts['quality.pr.pipeline.no-status-date.units']).toBe(7);
@@ -784,7 +830,7 @@ describe('DQ-2: a pipeline-only row with no status date (spec §4.2 step 10)', (
     );
     expect(holder(r, '2023-007911PRX')).toBe('PRJ:2020-006887PRJ');
     expect(r.warnings).toContain(
-      '2024-000030PRJ: no status date and winner 2020-006887PRJ already holds pipeline row 2023-007911PRX; dropped'
+      '2024-000030PRJ: no status date and every open Planning record on its lot already holds a pipeline row (2020-006887PRJ holds 2023-007911PRX); dropped'
     );
     expect(r.counts['quality.pr.pipeline.status-date-linked.fired']).toBe(1);
     expect(r.counts['quality.pr.pipeline.no-status-date.fired']).toBe(1);

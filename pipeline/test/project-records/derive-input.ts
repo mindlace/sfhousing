@@ -314,6 +314,8 @@ export function baseInput(
     raw,
     parcelIds: PARCELS,
     lineage: (b) => (PARCELS.has(b) ? b : null),
+    // Every base lot is active, so each descends only to itself (Ruling D1, revised).
+    descendants: (b) => (PARCELS.has(b) ? [b] : []),
     assessorUnits: (id) => (id === '3512002' ? 1 : null),
     latestRollYear: 2025,
     baseStories: () => 4,

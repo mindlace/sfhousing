@@ -31,6 +31,35 @@ let db: Duck;
 let rawDir: string;
 let lock: Lock;
 
+/**
+ * src_parcel_attrs as normalise.ts leaves the mini attrs CSV (blklot, mapblklot, active,
+ * date_rec_add, date_rec_drop), which miniProjectInput's `descendants` stub reads.
+ */
+const MINI_ATTRS: CellValue[][] = [
+  ...[...MINI_PARCELS]
+    .filter((id) => id !== '3512002')
+    .map((id): CellValue[] => [id, id, true, null, null]),
+  ...Object.entries(CONDO).map(([b, m]): CellValue[] => [b, m, true, null, null]),
+  ['3512099', '3512099', false, null, '2024-06-30'],
+  ['3512098', '3512098', false, null, '2019-03-01'],
+  ['3512097', null, true, null, null]
+];
+
+async function createAttrs(rows: CellValue[][]): Promise<void> {
+  await createTableFromRows(
+    db,
+    'src_parcel_attrs',
+    [
+      ['blklot', 'VARCHAR'],
+      ['mapblklot', 'VARCHAR'],
+      ['active', 'BOOLEAN'],
+      ['date_rec_add', 'DATE'],
+      ['date_rec_drop', 'DATE']
+    ],
+    rows
+  );
+}
+
 function entry(id: string): LockEntry {
   const name = `${id}.page-000.json`;
   return {
@@ -92,6 +121,7 @@ beforeAll(async () => {
       ['3512098', '3512098', null, '2019-01-01']
     ]
   );
+  await createAttrs(MINI_ATTRS);
   const stub = miniProjectInput();
   const panel: CellValue[][] = [];
   for (const id of ids) {
@@ -252,6 +282,29 @@ describe('writeProjectRecords', () => {
     }
     // Values are those of one run, not two summed.
     for (const k of quality(want)) expect(counts[k], k).toBe(want[k]);
+  });
+
+  it('serves descendants from the src_parcel_attrs subdivision chain (Ruling D1, revised)', async () => {
+    // M20's tracking lot 006 retired on 2020-01-01, when lot 013 (M2's) was added on its block.
+    const chain = MINI_ATTRS.map((r): CellValue[] =>
+      r[0] === '3512006'
+        ? ['3512006', '3512006', false, null, '2020-01-01']
+        : r[0] === '3512013'
+          ? ['3512013', '3512013', true, '2020-01-01', null]
+          : r
+    );
+    await createAttrs(chain);
+    try {
+      const { counts, result } = run();
+      const r = await result;
+      expect(counts['multiphase.descendants.2012-000020PRX']).toBe(2);
+      expect(counts['multiphase.descendants.2010.0002PRX']).toBe(1);
+      expect(r.warnings).toContain(
+        '2012-000020PRX: descendant parcel 3512013 is held by PRJ:2026-000002PRJ, which is not a DA project'
+      );
+    } finally {
+      await createAttrs(MINI_ATTRS);
+    }
   });
 
   it('fails V21 when the coverage bound is above what the records give', async () => {

@@ -169,6 +169,11 @@ export interface ProjectRecordsInput {
   raw: Record<ProjectSourceId, RawRow[]>;
   parcelIds: ReadonlySet<ParcelId>;
   lineage(blklot: string): ParcelId | null;
+  /**
+   * The current parcels descended from a block-lot through the subdivision chain (main's ruling 3,
+   * Ruling D1 revised; `descendantsIndex`): sorted, unique, every element in `parcelIds`.
+   */
+  descendants(blklot: string): ParcelId[];
   assessorUnits(id: ParcelId, rollYear: number): number | null;
   latestRollYear: number;
   baseStories(id: ParcelId, rollYear: number): number | null;

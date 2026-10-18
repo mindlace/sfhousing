@@ -43,13 +43,23 @@ export function rowKey(r: PipelineRow): string {
   return r.caseNo ?? r.bpaNo ?? `pipeline row ${r.idx}`;
 }
 
+/** The latest `open_date` first, ties to the smallest `record_id`. */
+function better(a: Prj, best: Prj | null): boolean {
+  return (
+    best === null ||
+    laterOpen(a.openDay, best.openDay) ||
+    (a.openDay === best.openDay && cmp(a.recordId, best.recordId) < 0)
+  );
+}
+
 /**
  * Candidates are the anchor PRJs of open graph projects whose own block-lot, or a block-lot of one
  * of their children (by `parent_id`), resolves to a parcel the row's `blklot` resolves to. The
- * latest `open_date` wins, ties to the smallest `record_id`; when split projects share the winning
- * PRJ, the smallest project id holds it (spec silent; implementation choice). A row is dropped when
- * it has no candidate, or when that project already holds a pipeline row, including one linked
- * earlier in this pass (rows go in `idx` order).
+ * winner is chosen only among candidates whose project holds no pipeline row, including one linked
+ * earlier in this pass (rows go in `idx` order): the latest `open_date` wins, ties to the smallest
+ * `record_id`. When split projects share a PRJ, the smallest project id holds it (spec silent;
+ * implementation choice). A row is dropped when it has no candidate, or when every candidate's
+ * project already holds a row (the warning names the latest-opened candidate and its row).
  */
 export function linkNoDateRows<T extends NoDateTarget>(
   rows: readonly NoDateRow[],
@@ -90,35 +100,38 @@ export function linkNoDateRows<T extends NoDateTarget>(
   for (const from of ordered) {
     const { row } = from;
     const name = rowKey(row);
+    // Main's ruling 2 (F2 live): the winner is picked only among candidates holding no row.
     let best: Prj | null = null;
+    let bestHeld: Prj | null = null;
     const ids = row.blklot === null ? [] : resolve([row.blklot]);
     for (const id of ids) {
       for (const a of byParcel.get(id) ?? []) {
-        if (
-          best === null ||
-          laterOpen(a.openDay, best.openDay) ||
-          (a.openDay === best.openDay && cmp(a.recordId, best.recordId) < 0)
-        ) {
+        if (held.has(holders.get(a.recordId)![0])) {
+          if (better(a, bestHeld)) bestHeld = a;
+        } else if (better(a, best)) {
           best = a;
         }
       }
     }
-    if (best === null) {
+    if (best === null && bestHeld === null) {
       out.dropped.push({
         from,
         warning: `${name}: no status date and no open Planning record on its lot; dropped`
       });
       continue;
     }
-    const target = holders.get(best.recordId)![0];
-    const other = held.get(target);
-    if (other !== undefined) {
+    if (best === null) {
+      const prj = (bestHeld as Prj).recordId;
+      const other = held.get(holders.get(prj)![0]);
       out.dropped.push({
         from,
-        warning: `${name}: no status date and winner ${best.recordId} already holds pipeline row ${other}; dropped`
+        warning:
+          `${name}: no status date and every open Planning record on its lot already holds a ` +
+          `pipeline row (${prj} holds ${other}); dropped`
       });
       continue;
     }
+    const target = holders.get(best.recordId)![0];
     held.set(target, name);
     out.linked.push({ from, target, recordId: best.recordId });
   }

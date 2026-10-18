@@ -460,6 +460,14 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(r.checks.multiphase.masters['CASE:2012-000020PRX'].daParcels).toEqual(['3512006']);
     expect(r.warnings).toContain('2012-000020PRX: no free DA parcel; score-only');
     expect(r.histories.map((h) => h.id)).not.toContain('CASE:2012-000020PRX');
+    // Ruling D1 (revised): every mini tracking lot is active, so each descends only to itself.
+    expect(r.counts['multiphase.descendants.2012-000020PRX']).toBe(1);
+    expect(r.counts['multiphase.descendants.2007.0001PRX']).toBe(1);
+    expect(r.counts['multiphase.descendants.2010.0002PRX']).toBe(1);
+    // M11 holds the tracking lot without a DA row: flagged (it is also the project that nets M20).
+    expect(r.warnings).toContain(
+      '2012-000020PRX: descendant parcel 3512006 is held by PRJ:2026-000011PRJ, which is not a DA project'
+    );
   });
 
   it('a DQ-2-linked project nets no master (spec 4.10.2: it matches a pipeline row)', () => {
@@ -496,12 +504,12 @@ describe('mini project records: V20-V24 with the fixture thresholds', () => {
     expect(v).toMatchObject({ id: 'V20', ok: true });
   });
 
-  it('passes V21 at 0.9, below 1.0 because M16 and M18 cover less than their rows', () => {
+  it('passes V21 at 0.9, below 1.0 because M16 covers less than its row', () => {
     expect(checkV21(r.checks, 0.9)).toMatchObject({ id: 'V21', ok: true });
-    // M16's row says 220, its record 200; M18's dropped 20 match nothing; M17's row is outside the
-    // population and not counted.
-    expect(r.checks.coverage).toEqual({ matchedUnits: 699, rowUnits: 739, rows: 12 });
-    expect(checkV21(r.checks, 0.95).ok).toBe(false);
+    // M16's row says 220, its record 200; M17's row is outside the population and not counted.
+    // Ruling V1: M18's dropped no-date row (20 units) has no project and leaves V21 entirely.
+    expect(r.checks.coverage).toEqual({ matchedUnits: 699, rowUnits: 719, rows: 11 });
+    expect(checkV21(r.checks, 0.98).ok).toBe(false);
   });
 
   it('passes V22 against the fixture hiNet', () => {

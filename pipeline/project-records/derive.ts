@@ -22,6 +22,7 @@ import type {
 } from '../../src/lib/timelapse/types';
 import {
   cmp,
+  descendantWarnings,
   historyQuality,
   inStageOrder,
   masterDa,
@@ -539,15 +540,24 @@ export function deriveProjects(
     projects: postDq2,
     pipeline: parsed.pipeline,
     multiphase: input.multiphase,
-    resolve
+    resolve,
+    descendants: input.descendants
   };
   const masters = assessed
     .filter((a) => a.status === 'inFlight' && a.multiPhase)
     .map((a) => ({ a, da: masterDa(a.proj, daCtx) }));
+  // Main's ruling 3: per-master descendant counts, and descendants held by non-DA projects.
+  const nonMasters = assessed.filter((a) => a.status === 'inFlight' && !a.multiPhase);
+  const holders = nonMasters.map((x) => x.proj);
+  for (const { a, da } of masters) {
+    const caseNo = a.proj.pipelineRows[0].caseNo as string;
+    counts[`multiphase.descendants.${caseNo}`] = da.descendants.length;
+    warnings.push(...descendantWarnings(caseNo, da, holders));
+  }
   const netting = netMasters(
     masters.map(({ a, da }) => ({ id: a.proj.id, units: a.units ?? 0, daParcels: da.daParcels })),
-    assessed
-      .filter((a) => a.status === 'inFlight' && !a.multiPhase && a.proj.pipelineRows.length === 0)
+    nonMasters
+      .filter((a) => a.proj.pipelineRows.length === 0)
       .map((a) => ({ id: a.proj.id, units: a.units ?? 0, parcelIds: a.proj.parcelIds }))
   );
   const nettedR = new Map(netting.map((n) => [n.id, n.after]));
@@ -666,10 +676,13 @@ export function deriveProjects(
 
   // V21 coverage: pipeline rows of population projects, rows of projects that ended excluded. A
   // master covers its rows with R before netting, even when netted out of flight (the netted units
-  // are in flight as other projects).
+  // are in flight as other projects). Ruling V1: a row DQ-2 dropped has no project and leaves V21
+  // (its T14 rule counts it).
+  const droppedIds = new Set(noDate.dropped.map((x) => x.id));
   const coverage = { matchedUnits: 0, rowUnits: 0, rows: 0 };
   for (const a of assessed) {
     if (!a.inPopulation || a.proj.pipelineRows.length === 0) continue;
+    if (droppedIds.has(a.proj.id)) continue;
     if (a.end !== null && a.end.kind !== 'open') continue;
     for (const r of a.proj.pipelineRows) {
       coverage.rows++;

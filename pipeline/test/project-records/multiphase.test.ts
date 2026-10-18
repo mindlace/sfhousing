@@ -874,3 +874,103 @@ describe('deriveProjects: DA netting (pr.multiphase.da-netting) and DQ-3 score-o
     expect(checkV24(r.checks)).toMatchObject({ id: 'V24', ok: true });
   });
 });
+
+/** baseInput with `descendants` overridden for the listed block-lots (others keep the default). */
+function withDescendants(
+  raw: Record<ProjectSourceId, RawRow[]>,
+  map: Record<string, string[]>,
+  mp: MultiphaseFile = baseMultiphase()
+) {
+  const input = baseInput(raw, mp);
+  return { ...input, descendants: (b: string) => map[b] ?? input.descendants(b) };
+}
+
+/** An enriched master H `2007.0001PRX` (lot 008, 300 units, own da) with one phase on lot 008. */
+function addEnrichedMaster(raw: Record<ProjectSourceId, RawRow[]>): MultiphaseFile {
+  raw['datasf-dev-pipeline'].push({
+    blklot: '3512008',
+    current_status: 'PL Approved',
+    current_status_date: ts('2008-06-12'),
+    case_no: '2007.0001PRX',
+    new_pipeline_units: '300',
+    da: 'Fixture Shipyard'
+  });
+  const fact = { url: 'https://example.invalid/da.pdf', retrieved: '2026-10-01', locator: 'B' };
+  const mp = baseMultiphase();
+  mp.projects.unshift({
+    caseNo: '2007.0001PRX',
+    label: 'Fixture Shipyard',
+    schedule: { label: 'Fixture Shipyard schedule', url: fact.url, retrieved: '2026-10-01' },
+    searched: [],
+    phases: [
+      {
+        name: 'Phase A',
+        units: 300,
+        blklots: ['3512008'],
+        plannedPermitFiled: null,
+        status: 'remaining',
+        facts: { units: fact, blklots: fact }
+      }
+    ]
+  });
+  return mp;
+}
+
+// Main's ruling 3 and Ruling D1 (revised): a schedule-null master's DA parcels add every current
+// parcel descended from its tracking lot.
+describe('deriveProjects: descendant DA parcels of schedule-null masters', () => {
+  it('reports the descendant count for every master', () => {
+    const r = deriveProjects(baseInput());
+    expect(r.counts['multiphase.descendants.2010.0002PRX']).toBe(1);
+    const raw = baseRaw();
+    const wide = deriveProjects(withDescendants(raw, { '3512006': ['3512006', '3512008'] }));
+    expect(wide.counts['multiphase.descendants.2010.0002PRX']).toBe(2);
+  });
+
+  it('Balboa shape: a non-pipeline project on a descendant parcel nets the master', () => {
+    const control = baseRaw();
+    addPermit(control, '008', 30);
+    const before = deriveProjects(baseInput(control));
+    expect(before.counts['multiphase.netted.2010.0002PRX']).toBe(0);
+
+    const raw = baseRaw();
+    addPermit(raw, '008', 30);
+    const r = deriveProjects(withDescendants(raw, { '3512006': ['3512006', '3512008'] }));
+    expect(r.counts['multiphase.netted.2010.0002PRX']).toBe(30);
+    expect(t3(r, D)).toMatchObject({ units: 70, quality: [NET] });
+    expect(r.checks.multiphase.masters[D].daParcels).toEqual(
+      expect.arrayContaining(['3512006', '3512008'])
+    );
+    expect(r.warnings).toContain(
+      '2010.0002PRX: descendant parcel 3512008 is held by BP:202608010011, which is not a DA project'
+    );
+    expect(checkV24(r.checks)).toMatchObject({ id: 'V24', ok: true });
+  });
+
+  it('flags a descendant held by an unrelated pipeline project without netting it', () => {
+    // Lot 003: BP:202403150003 matches its own pipeline row (no da). Lot 001: A holds a row with
+    // D's da, so it is a DA project and is not flagged.
+    const raw = baseRaw();
+    const r = deriveProjects(
+      withDescendants(raw, { '3512006': ['3512001', '3512003', '3512006'] })
+    );
+    expect(r.counts['multiphase.netted.2010.0002PRX']).toBe(0);
+    expect(r.warnings).toContain(
+      '2010.0002PRX: descendant parcel 3512003 is held by BP:202403150003, which is not a DA project'
+    );
+    expect(r.warnings.filter((w) => w.includes('descendant parcel'))).toHaveLength(1);
+  });
+
+  it("keeps an enriched master's DA parcels: its descendants do not net it", () => {
+    const raw = baseRaw();
+    const mp = addEnrichedMaster(raw);
+    addPermit(raw, '004', 30);
+    const r = deriveProjects(withDescendants(raw, { '3512008': ['3512004', '3512008'] }, mp));
+    expect(r.counts['multiphase.netted.2007.0001PRX']).toBe(0);
+    expect(r.counts['multiphase.descendants.2007.0001PRX']).toBe(2);
+    expect(r.checks.multiphase.masters[H].daParcels).not.toContain('3512004');
+    expect(r.warnings).toContain(
+      '2007.0001PRX: descendant parcel 3512004 is held by BP:202608010011, which is not a DA project'
+    );
+  });
+});

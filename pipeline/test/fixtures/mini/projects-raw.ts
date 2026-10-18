@@ -39,6 +39,7 @@ import { fileURLToPath } from 'node:url';
 import type { ParcelId } from '../../../../src/lib/data/parcel';
 import type { Day } from '../../../../src/lib/timelapse/time';
 import { parseMultiphase } from '../../../enrichment/schema';
+import { descendantsIndex, type ParcelAttrsRow } from '../../../project-records/descendants';
 import type { ProjectRecordsInput, ProjectSourceId, RawRow } from '../../../project-records/types';
 
 export const MINI_ASOF: Day = Date.parse('2026-10-10T00:00:00Z') / 86_400_000;
@@ -626,6 +627,37 @@ const LINEAGE: Record<string, ParcelId> = {
 const lineage = (b: string): ParcelId | null => LINEAGE[b] ?? (MINI_PARCELS.has(b) ? b : null);
 
 const ROLL = fileURLToPath(new URL('./raw/datasf-assessor-roll.page-000.csv', import.meta.url));
+const ATTRS = fileURLToPath(new URL('./raw/datasf-parcel-attrs.page-000.csv', import.meta.url));
+
+/**
+ * The landed mini parcel attrs as src_parcel_attrs holds them (pipeline/sources/normalise.ts:
+ * trimmed upper-case block-lots, '' as null, `active` true/1/false/0 else null, dates as days),
+ * for the `descendants` callback (main's ruling 3, Ruling D1 revised). Every mini tracking lot is
+ * active, so each descends only to itself.
+ */
+function attrsRows(): ParcelAttrsRow[] {
+  const lines = readFileSync(ATTRS, 'utf8').trim().split('\n');
+  const unquote = (s: string) => s.replace(/^"|"$/g, '').trim();
+  const header = lines[0].split(',').map(unquote);
+  const col = (name: string) => header.indexOf(name);
+  const text = (s: string) => (s === '' ? null : s.toUpperCase());
+  const flag = (s: string) =>
+    s === 'true' || s === '1' ? true : s === 'false' || s === '0' ? false : null;
+  const out: ParcelAttrsRow[] = [];
+  for (const line of lines.slice(1)) {
+    const f = line.split(',').map(unquote);
+    const blklot = text(f[col('blklot')]);
+    if (blklot === null) continue;
+    out.push({
+      blklot,
+      mapblklot: text(f[col('mapblklot')]),
+      active: flag(f[col('active')].toLowerCase()),
+      added: f[col('date_rec_add')].slice(0, 10) || null,
+      dropped: f[col('date_rec_drop')].slice(0, 10) || null
+    });
+  }
+  return out;
+}
 
 /**
  * Assessor units per `<current parcel>|<roll year>`, aggregated from the landed fixture roll as
@@ -672,7 +704,8 @@ const RA1_PANEL_UNITS: Record<string, number> = {
 
 /**
  * The deriveProjects input for the mini records, with stub callbacks mirroring scenario-data's
- * fixture: lineage above; assessor units as the panel has them (2023 to 2025, see rollUnits);
+ * fixture: lineage above; descendants from the landed parcel attrs (attrsRows); assessor units
+ * as the panel has them (2023 to 2025, see rollUnits);
  * no base stories; every parcel 300 m2; fixture `hiNet`; the mini `multiphase.json`.
  */
 export function miniProjectInput(): ProjectRecordsInput {
@@ -682,6 +715,7 @@ export function miniProjectInput(): ProjectRecordsInput {
     raw: PROJECT_RAW,
     parcelIds: MINI_PARCELS,
     lineage,
+    descendants: descendantsIndex(attrsRows(), { parcelIds: MINI_PARCELS, lineage }),
     assessorUnits: (id, year) => units.get(`${id}|${year}`) ?? null,
     latestRollYear: 2025,
     baseStories: () => null,

@@ -1,7 +1,7 @@
 // Project-records build step (project-records spec §4.9): reads the seven DataSF project sources
 // from the lock, serves deriveProjects its callbacks from the build's DuckDB tables (parcel_out,
-// active src_parcels, scenario-data's parcel_lineage and scenario_panel), runs it twice (V23
-// rerun identity) and writes `scenarios/fzp/projects.json` to the dataset, and
+// active src_parcels, scenario-data's parcel_lineage, scenario_panel and src_parcel_attrs), runs
+// it twice (V23 rerun identity) and writes `scenarios/fzp/projects.json` to the dataset, and
 // `project-histories.json` and `permits.parquet` to the derived cache. Pure TS, like writeTransit.
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -21,6 +21,7 @@ import {
   type DeriveResult,
   type PermitOut
 } from '../project-records/derive';
+import { descendantsIndex, type ParcelAttrsRow } from '../project-records/descendants';
 import { checkV21, checkV22, checkV23, checkV24 } from '../project-records/invariants';
 import { PROJECT_SOURCE_IDS, type ProjectSourceId, type RawRow } from '../project-records/types';
 import type { InvariantResult } from './check';
@@ -138,8 +139,8 @@ const bytesOf = (r: DeriveResult, asOf: Day) =>
   ]);
 
 /**
- * The project-records step. Needs runSql's parcel_out and src_parcels and the scenario step's
- * parcel_lineage and scenario_panel tables. `asOf` is the build's snapshot day. Writes every
+ * The project-records step. Needs runSql's parcel_out and src_parcels, the normalised
+ * src_parcel_attrs and the scenario step's parcel_lineage and scenario_panel tables. `asOf` is the build's snapshot day. Writes every
  * report count, the `pr.*` T14 rows included, into `counts` (the build's single counts); the
  * determinism rerun records into a fresh object. Returns the warnings, the histories (for
  * stage-calibration) and V21-V24.
@@ -184,6 +185,18 @@ export async function writeProjectRecords(o: {
        WHERE blklot IS NOT NULL AND current_mapblklot IS NOT NULL ORDER BY k, v`
     )
   );
+  const parcelIds = new Set<ParcelId>(area.keys());
+  const lineage = (b: string): ParcelId | null => active.get(b) ?? retired.get(b) ?? null;
+  // Main's ruling 3, Ruling D1 (revised): the subdivision chain of scenario-data's
+  // src_parcel_attrs, read once and walked in TS (descendantsIndex).
+  const descendants = descendantsIndex(
+    await db.all<ParcelAttrsRow>(
+      `SELECT blklot, mapblklot, active, CAST(date_rec_add AS VARCHAR) AS added,
+         CAST(date_rec_drop AS VARCHAR) AS dropped
+       FROM src_parcel_attrs WHERE blklot IS NOT NULL ORDER BY ALL`
+    ),
+    { parcelIds, lineage }
+  );
   // The T13 panel, one roll year at a time into per-year columns over the parcel_out ids (NaN =
   // no panel row or a null value): the live panel has millions of (parcel, year) rows.
   const index = new Map([...area.keys()].map((id, i) => [id, i]));
@@ -219,8 +232,9 @@ export async function writeProjectRecords(o: {
   const input = () => ({
     asOf,
     raw,
-    parcelIds: new Set<ParcelId>(area.keys()),
-    lineage: (b: string): ParcelId | null => active.get(b) ?? retired.get(b) ?? null,
+    parcelIds,
+    lineage,
+    descendants,
     assessorUnits: (id: ParcelId, y: number) => at(units, id, y),
     latestRollYear,
     baseStories: (id: ParcelId, y: number) => at(stories, id, y),

@@ -56,6 +56,9 @@
     "link.satellites": 0,
     "link.splitComponents": 0,
     "manifest.bytes": 4798,
+    "multiphase.descendants.2007.0001PRX": 1,
+    "multiphase.descendants.2010.0002PRX": 1,
+    "multiphase.descendants.2012-000020PRX": 1,
     "multiphase.enriched": 1,
     "multiphase.fallback": 1,
     "multiphase.lastResort": 1,
@@ -412,7 +415,7 @@
       "ok": true
     },
     {
-      "detail": "coverage 0.9459 (699 of 739 units, 12 rows), min 0.9",
+      "detail": "coverage 0.9722 (699 of 719 units, 11 rows), min 0.9",
       "id": "V21",
       "ok": true
     },
@@ -460,6 +463,7 @@
     "2025-000017PRX: linked to 2025-000017PRJ with no units; excluded",
     "2025-000017PRX: linked to 2025-000017PRJ; multiphase entry unused",
     "2026-000018PRJ: no status date and no open Planning record on its lot; dropped",
+    "2012-000020PRX: descendant parcel 3512006 is held by PRJ:2026-000011PRJ, which is not a DA project",
     "2012-000020PRX: no free DA parcel; score-only",
     "rhna.xdhtLagDays 633 > 120: xdht-4php completions look stale"
   ]
