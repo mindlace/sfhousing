@@ -734,6 +734,12 @@ describe('pr.units.split-filed (spec §4.8 unitsAt, Ruling S2)', () => {
       });
     });
 
+  it('declares the Ruling S3 denominator', () => {
+    expect(qualityRule(PR.unitsSplitFiled).denominator).toBe(
+      'histories whose primary Planning record has a proposed unit count'
+    );
+  });
+
   it('a non-split PRJ keeps unitsAt.filed and the rule records zero over sourced histories', () => {
     const r = derive();
     expect(history(r, A)?.unitsAt.filed).toBe(24);

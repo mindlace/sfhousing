@@ -166,7 +166,7 @@ export const PR_RULES: readonly QualityRule[] = [
     maskBit: null,
     label:
       "A building's filing-stage home count was not taken from the whole Planning case it was split from",
-    denominator: 'split-row histories whose Planning record has a proposed unit count',
+    denominator: 'histories whose primary Planning record has a proposed unit count',
     warnShare: 0.01,
     failShare: 0.1,
     unitsWeighted: false
