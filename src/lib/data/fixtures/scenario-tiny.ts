@@ -22,6 +22,7 @@ interface Row {
   rentControlLikely: number;
   landUseClass: number;
   hostableBase: number;
+  eligible: number;
   baseYield: number[];
   yield: number[];
 }
@@ -50,6 +51,7 @@ const ROWS: Row[] = [
     rentControlLikely: 1,
     landUseClass: 1,
     hostableBase: 1,
+    eligible: 1,
     baseYield: [0, 3, 4, 4, 4],
     yield: [0, 4, 8, 8, 10]
   },
@@ -75,6 +77,7 @@ const ROWS: Row[] = [
     rentControlLikely: 0,
     landUseClass: 5,
     hostableBase: 1,
+    eligible: 1,
     baseYield: [2, 3, 5, 6, 6],
     yield: [2, 3, 5, 6, 6]
   },
@@ -100,11 +103,12 @@ const ROWS: Row[] = [
     rentControlLikely: 0,
     landUseClass: 4,
     hostableBase: 1,
+    eligible: 1,
     baseYield: [1, 2, 3, 3, 3],
     yield: [1, 2, 3, 3, 3]
   },
   // First row of the second cell: front-coded against 3512002 across the cell boundary. Its floor
-  // area is the u32 ceiling, 2^32 - 1.
+  // area is the u32 ceiling, 2^32 - 1. Not eligible (an OPENSPACE chunk record), so not hostable.
   {
     id: '3512008',
     cell: 1,
@@ -126,10 +130,13 @@ const ROWS: Row[] = [
     rentControlLikely: 1,
     landUseClass: 0,
     hostableBase: 0,
+    eligible: 0,
     baseYield: [0, 0, 0, 0, 0],
     yield: [0, 0, 0, 0, 0]
   },
-  // Commercial Local Program parcel with a tall envelope and no base cap.
+  // Commercial Local Program parcel with a tall envelope and no base cap. Its chunk record has no
+  // land-use row (`landUse` 'NONE', `eligible: false`), but the roll shows a home, so it is
+  // eligible in the scenario (T14 sd.landuse.none-with-units, flags bit 5).
   {
     id: '3512010',
     cell: 1,
@@ -151,6 +158,7 @@ const ROWS: Row[] = [
     rentControlLikely: 0,
     landUseClass: 2,
     hostableBase: 1,
+    eligible: 1,
     baseYield: [8, 16, 24, 28, 32],
     yield: [40, 90, 135, 160, 182]
   },
@@ -176,6 +184,7 @@ const ROWS: Row[] = [
     rentControlLikely: 0,
     landUseClass: 3,
     hostableBase: 0,
+    eligible: 1,
     baseYield: [0, 0, 0, 0, 0],
     yield: [0, 0, 0, 0, 0]
   }
@@ -249,6 +258,7 @@ export function scenarioTiny(): ScenarioParcels {
     rentControlLikely: col(Uint8Array, (r) => r.rentControlLikely),
     landUseClass: col(Uint8Array, (r) => r.landUseClass),
     hostableBase: col(Uint8Array, (r) => r.hostableBase),
+    eligible: col(Uint8Array, (r) => r.eligible),
     baseYield,
     yield: yieldCol,
     potentialRatio: { fzp: ratio(yieldCol), base: ratio(baseYield) },

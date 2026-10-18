@@ -33,6 +33,7 @@ import type { HeightDistrict } from '../lib/heights';
 import { localProgramEnvelope } from '../lib/local-program';
 import { recordQuality, recordSqlQuality } from '../lib/quality';
 import type { Report } from '../lib/report';
+import { scenarioEligible } from '../lib/scenario-eligibility';
 import { PARCELS_BIN } from '../lib/scenario-files';
 import { runScenarioSql } from './scenario-sql';
 
@@ -113,14 +114,20 @@ const sqlStr = (s: string) => `'${s.replaceAll("'", "''")}'`;
  * base_stories, base_density_cap)` for every sc_features row, memoised on the inputs (the floor
  * area is the integer m² value), streamed one roll year at a time. Each is the uncapped gross
  * (`scenarioYield(…, null)`, kept as `base_gross` for `hostable_base`, partner ruling option c)
- * capped by `capScenarioYield`. Writes sc_base_yield (one row per distinct input) and returns its
- * size.
+ * capped by `capScenarioYield`. That year's values include the scenario eligibility on that
+ * year's units (`eligible`, sd.landuse.none-with-units), a function of the memo key's parcel and
+ * units. Writes sc_base_yield (one row per distinct input) and returns its size and the number of
+ * sc_features rows (panel parcel-years) the rule makes eligible.
  */
-async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Promise<number> {
+async function writeBaseYields(
+  db: Duck,
+  recById: Map<string, ParcelRecord>
+): Promise<{ memoSize: number; noneWithUnits: number }> {
   const years = await db.all<{ y: number }>(
     'SELECT DISTINCT roll_year y FROM sc_features ORDER BY y'
   );
   const memo = new Map<string, CellValue[]>();
+  let noneWithUnits = 0;
   for (const { y } of years) {
     const rows = await db.all<FeatureRow>(
       `SELECT mapblklot, existing_units, existing_floor_area_m2, existing_stories, base_stories,
@@ -137,13 +144,16 @@ async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Pr
         r.base_stories,
         r.base_density_cap
       ].join('|');
-      if (memo.has(key)) continue;
       const rec = recById.get(r.mapblklot);
       if (!rec) throw new Error(`scenario: panel parcel ${r.mapblklot} has no chunk record`);
+      const eligible = scenarioEligible(rec, r.existing_units);
+      if (eligible && !rec.eligible) noneWithUnits++;
+      if (memo.has(key)) continue;
       const view = scenarioRecordFrom(rec, {
         existingUnits: r.existing_units,
         existingFloorAreaM2: r.existing_floor_area_m2,
-        existingStories: r.existing_stories
+        existingStories: r.existing_stories,
+        eligible
       });
       const gross = scenarioYield(view, r.base_stories, null);
       memo.set(key, [
@@ -154,7 +164,8 @@ async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Pr
         r.base_stories,
         r.base_density_cap,
         capScenarioYield(gross, r.base_density_cap, r.existing_units),
-        gross
+        gross,
+        eligible
       ]);
     }
   }
@@ -169,11 +180,12 @@ async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Pr
       ['base_stories', 'INTEGER'],
       ['base_density_cap', 'INTEGER'],
       ['base_yield', 'INTEGER'],
-      ['base_gross', 'INTEGER']
+      ['base_gross', 'INTEGER'],
+      ['eligible', 'BOOLEAN']
     ],
     [...memo.values()]
   );
-  return memo.size;
+  return { memoSize: memo.size, noneWithUnits };
 }
 
 /**
@@ -181,7 +193,8 @@ async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Pr
  * (mapblklot, roll_year). potential_ratio_base is FLOAT, rounded as T11's Float32
  * `potentialRatio.base`. hostable_base reads the uncapped base gross, so the density cap shapes
  * base_yield but never the at-risk set (partner ruling, option c): gross > 0 is "more homes than
- * existingUnits", since the generator gives none otherwise.
+ * existingUnits", since the generator gives none otherwise. Its eligibility is the scenario
+ * eligibility on that roll year's units (sc_base_yield.eligible, sd.landuse.none-with-units).
  */
 const PANEL_SQL = `
 CREATE OR REPLACE TABLE scenario_panel AS
@@ -192,7 +205,7 @@ SELECT f.mapblklot, f.roll_year, f.lien_day,
        f.lot_area_m2, f.improvement_share, f.rent_control_likely, f.imputed,
        (y.base_yield / greatest(f.existing_units, 1))::FLOAT AS potential_ratio_base,
        (f.base_stories - f.existing_stories)::INTEGER AS stories_gap_base,
-       (f.eligible AND f.base_stories >= 1 AND y.base_gross > 0) AS hostable_base
+       (y.eligible AND f.base_stories >= 1 AND y.base_gross > 0) AS hostable_base
 FROM sc_features f
 JOIN sc_base_yield y
   ON y.mapblklot = f.mapblklot AND y.existing_units = f.existing_units
@@ -310,7 +323,10 @@ function provenance(capDay: Day, rollYear: number): ScenarioParcels['provenance'
         'fnv1a32(id)), replacement typologies only, at max(1, round(fill × stories)) for each ' +
         'FILL_LEVELS fill (a tier-4 quantisation grid). FZP yields have no density cap on ' +
         `Local Program parcels and the cap on ${capDate} elsewhere; base yields use the base ` +
-        `height and the pre-FZP cap (${preFzp}). ${CAP_RULES}`
+        `height and the pre-FZP cap (${preFzp}). Ineligible parcels (open space, or no city ` +
+        'land-use record and no homes on the roll) have 0: a parcel without a land-use record ' +
+        'is eligible when the roll shows homes on it (sd.landuse.none-with-units, 2 / 2), in ' +
+        `the panel on each roll year's homes. ${CAP_RULES}`
     )
   };
 }
@@ -362,6 +378,7 @@ export function scenarioDump(p: ScenarioParcels): unknown {
     rentControlLikely: a(p.rentControlLikely),
     landUseClass: a(p.landUseClass),
     hostableBase: a(p.hostableBase),
+    eligible: a(p.eligible),
     baseYield: a(p.baseYield),
     yield: a(p.yield),
     potentialRatio: { fzp: a(p.potentialRatio.fzp), base: a(p.potentialRatio.base) },
@@ -413,7 +430,10 @@ export async function writeScenario(a: {
   const recById = new Map(a.records.map(({ rec }) => [rec.id, rec]));
 
   // ---- T13 panel and lineage ----
-  const memoSize = await report.time('scenario.base_yield', () => writeBaseYields(db, recById));
+  const { memoSize, noneWithUnits: panelNoneWithUnits } = await report.time(
+    'scenario.base_yield',
+    () => writeBaseYields(db, recById)
+  );
   await db.run(PANEL_SQL);
   const [{ panel, feat, years, latest }] = await db.all<{
     panel: number;
@@ -512,6 +532,7 @@ export async function writeScenario(a: {
     rentControlLikely: new Uint8Array(n),
     landUseClass: new Uint8Array(n),
     hostableBase: new Uint8Array(n),
+    eligible: new Uint8Array(n),
     baseYield: new Uint16Array(n * F),
     yield: new Uint16Array(n * F),
     potentialRatio: { fzp: new Float32Array(n), base: new Float32Array(n) },
@@ -521,6 +542,7 @@ export async function writeScenario(a: {
   const c: Record<string, number> = {};
   const inc = (k: string, by = 1) => (c[`scenario.${k}`] = (c[`scenario.${k}`] ?? 0) + by);
   for (const k of [
+    'eligible',
     'hostable',
     'local_program',
     'excluded.rent_control',
@@ -541,6 +563,8 @@ export async function writeScenario(a: {
     inc(k, 0);
   // Affected parcel ids of the TS-side T14 rules (spec §4.12), reported after the T11 rows.
   const noRow: string[] = [];
+  /** sd.landuse.none-with-units: no land-use row, latest-roll units > 0, so eligible. */
+  const noneWithUnits: string[] = [];
   const zoning = { split: [] as string[], genericNc: [] as string[], missing: [] as string[] };
   /** Parcels per tier-4 cap rule, hostable or not, for the unverified-districts warning. */
   const capRuleAll = { split: 0, genericNc: 0 };
@@ -593,7 +617,6 @@ export async function writeScenario(a: {
       p.rentControlLikely[i] = lat.rent_control_likely ? 1 : 0;
       p.landUseClass[i] = fit('landUseClass', lat.land_use_class, LAND_USE_CLASSES.length - 1);
       p.imputed[i] = lat.imputed;
-      inc('roll.latest_eligible_matched', rec.eligible ? 1 : 0);
     } else {
       // sd.roll.no-row (tier 4 / 4; spec §4.5 step 5): the no-row defaults.
       noRow.push(rec.id);
@@ -613,6 +636,13 @@ export async function writeScenario(a: {
     p.existingUnits[i] = fit('existingUnits', existingUnits, 0xffff);
     p.existingFloorAreaM2[i] = fit('existingFloorAreaM2', floorArea, U32_MAX);
     p.existingStories[i] = fit('existingStories', existingStories, 0xff);
+    // Scenario eligibility (flags bit 5) on the latest roll's units, before the yields: the
+    // generator reads it through scenarioRecordOf (sd.landuse.none-with-units).
+    const eligible = scenarioEligible(rec, existingUnits);
+    p.eligible[i] = eligible ? 1 : 0;
+    if (eligible) inc('eligible');
+    if (eligible && !rec.eligible) noneWithUnits.push(rec.id);
+    if (lat && eligible) inc('roll.latest_eligible_matched');
     inc('units.total', existingUnits);
     if (lat?.status_n && lat.existing_units === 0 && rec.existingUnits > 0) {
       inc('roll.gov_zero_units');
@@ -688,16 +718,16 @@ export async function writeScenario(a: {
     const full = FILL_LEVELS[F - 1];
     grossTop[i] = env.envelopeStories === 0 ? 0 : grossAt(fillStories(full, env.envelopeStories));
     grossBaseTop[i] = env.baseStories === 0 ? 0 : grossAt(fillStories(full, env.baseStories));
-    eligibleRow[i] = rec.eligible ? 1 : 0;
-    p.hostable[i] = rec.eligible && env.envelopeStories >= 1 && grossTop[i] > 0 ? 1 : 0;
-    p.hostableBase[i] = rec.eligible && env.baseStories >= 1 && grossBaseTop[i] > 0 ? 1 : 0;
+    eligibleRow[i] = p.eligible[i];
+    p.hostable[i] = eligible && env.envelopeStories >= 1 && grossTop[i] > 0 ? 1 : 0;
+    p.hostableBase[i] = eligible && env.baseStories >= 1 && grossBaseTop[i] > 0 ? 1 : 0;
     p.potentialRatio.fzp[i] = top / Math.max(existingUnits, 1);
     p.potentialRatio.base[i] = baseTop / Math.max(existingUnits, 1);
     p.storiesGap.fzp[i] = env.envelopeStories - existingStories;
     p.storiesGap.base[i] = env.baseStories - existingStories;
     if (p.hostable[i]) inc('hostable');
-    // sd.yield.zero-hostable (observation, tier 4): of eligible parcels with an envelope.
-    if (rec.eligible && env.envelopeStories >= 1) {
+    // sd.yield.zero-hostable (observation, tier 4): of scenario-eligible parcels with an envelope.
+    if (eligible && env.envelopeStories >= 1) {
       envelopeEligible++;
       if (top === 0) zeroHostable.push(rec.id);
     }
@@ -735,6 +765,9 @@ export async function writeScenario(a: {
   c['scenario.parcels'] = n;
   c['scenario.panel.years'] = years;
   c['scenario.panel.base_yield_memo'] = memoSize;
+  // sd.landuse.none-with-units on the panel: parcel-years eligible by the rule (reported here; the
+  // rule's fired/of is on T11).
+  c['scenario.panel.landuse_none_with_units'] = panelNoneWithUnits;
 
   // ---- File: encode, deflate, write, then decode what was written ----
   const payload = encodeScenarioPayload(p);
@@ -841,6 +874,11 @@ export async function writeScenario(a: {
   }
   await recordSqlQuality(db, 'scenario-data', a.buildCounts);
   recordQuality(a.buildCounts, 'sd.roll.no-row', { fired: noRow.length, of: n, sample: noRow });
+  recordQuality(a.buildCounts, 'sd.landuse.none-with-units', {
+    fired: noneWithUnits.length,
+    of: n,
+    sample: noneWithUnits
+  });
   const hostable = c['scenario.hostable'];
   recordQuality(a.buildCounts, 'sd.zoning.split-code', {
     fired: zoning.split.length,

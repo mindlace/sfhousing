@@ -572,6 +572,33 @@ export const SD_RULES: readonly QualityRule[] = [
     ...MISSING_SHARES,
     unitsWeighted: false
   },
+  // Coordinator ruling (scenario eligibility, 2026-10-18): a parcel with no LUDB row has chunk
+  // `eligible` false (20_landuse.sql, unchanged, as is the editor); in the scenario it is eligible
+  // when the assessor roll shows units > 0 (pipeline/lib/scenario-eligibility.ts), so the yields,
+  // the hostable flags and T11 flags bit 5 read it. The panel applies it per roll year to that
+  // year's post-rule units, T11 to the latest year's. No mask bit: eligibility is not a T4a
+  // feature. Value tier 2: the roll's units are tier 0 evidence that the parcel holds homes, but
+  // that such a parcel is a developable residential lot like one with an LUDB row is an inference.
+  // Kind `missing`, so the 0.05 default. Fired on T11 parcels only (live 2026-10-17: 386 parcels
+  // with 8,626 roll units, of 155,020); the panel's parcel-years are counted in
+  // scenario.panel.landuse_none_with_units.
+  {
+    ...SD,
+    id: 'sd.landuse.none-with-units',
+    source: 'datasf-landuse-2023',
+    field: 'eligible',
+    kind: 'missing',
+    action: 'default',
+    tier: 2,
+    valueTier: 2,
+    maskBit: null,
+    label:
+      'A parcel with no city land-use record is treated as eligible when the assessor roll shows ' +
+      'homes on it; with no homes it stays ineligible',
+    denominator: 'T11 parcels',
+    ...MISSING_SHARES,
+    unitsWeighted: false
+  },
   {
     ...SD,
     id: 'sd.zoning.split-code',
@@ -668,6 +695,7 @@ export const SD_RULES: readonly QualityRule[] = [
     label:
       'Counts eligible parcels with an envelope of at least one story whose top-fill yield is 0; ' +
       'changes nothing',
+    // Eligible in the scenario (T11 flags bit 5, sd.landuse.none-with-units).
     denominator: 'eligible parcels with envelopeStories ≥ 1',
     warnShare: 0.09,
     failShare: 0.15,

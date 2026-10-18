@@ -100,7 +100,7 @@
           "url": "https://data.sf.gov/d/acdm-wktn"
         }
       ],
-      "method": "Gross units from the project’s typology generator (src/lib/generator, mode max, seed fnv1a32(id)), replacement typologies only, at max(1, round(fill × stories)) for each FILL_LEVELS fill (a tier-4 quantisation grid). FZP yields have no density cap on Local Program parcels and the cap on 2026-10-10 elsewhere; base yields use the base height and the pre-FZP cap (2026-01-11). Base-zoning density caps from the Planning Code (tier 1, pipeline/lib/density-caps.ts); a split zoning code takes its most permissive component (sd.zoning.split-code) and generic NCD/NCT codes have no cap (sd.zoning.generic-nc), both tier 4, made up; districts not verified against the official Code default to no cap (NCD, NCT)."
+      "method": "Gross units from the project’s typology generator (src/lib/generator, mode max, seed fnv1a32(id)), replacement typologies only, at max(1, round(fill × stories)) for each FILL_LEVELS fill (a tier-4 quantisation grid). FZP yields have no density cap on Local Program parcels and the cap on 2026-10-10 elsewhere; base yields use the base height and the pre-FZP cap (2026-01-11). Ineligible parcels (open space, or no city land-use record and no homes on the roll) have 0: a parcel without a land-use record is eligible when the roll shows homes on it (sd.landuse.none-with-units, 2 / 2), in the panel on each roll year's homes. Base-zoning density caps from the Planning Code (tier 1, pipeline/lib/density-caps.ts); a split zoning code takes its most permissive component (sd.zoning.split-code) and generic NCD/NCT codes have no cap (sd.zoning.generic-nc), both tier 4, made up; districts not verified against the official Code default to no cap (NCD, NCT)."
     }
   },
   "id": [
@@ -435,6 +435,22 @@
     0,
     1,
     0,
+    1
+  ],
+  "eligible": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    0,
+    1,
+    0,
+    1,
+    1,
+    1,
+    1,
+    1,
     1
   ],
   "baseYield": [
