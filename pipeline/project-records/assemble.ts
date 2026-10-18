@@ -70,6 +70,54 @@ export function historyQuality(ids: Iterable<string>): string[] {
   return projectQuality(ids).filter((id) => !T3_ONLY_QUALITY.has(id));
 }
 
+/**
+ * Spec 4.8 `existingUnits` for T3, rule `pr.parcels.shared-existing`: each parcel's assessor units
+ * count once across the in-flight projects. A parcel's holder is the project on it whose `history`
+ * has the earliest first day (ties to the smallest id); a non-holder gets 0 from it. Every project
+ * on a parcel with two or more projects and units > 0 carries the rule id, the holder included.
+ * Run once, after the set, DA netting and phasing are final: `parcelIds` already hold a master's
+ * phase parcels, and a score-only master has none. It only lowers values, so net >= 1 (V20) holds
+ * for the non-master projects and multiPhase rows are exempt. Pure; unchanged projects are
+ * returned as they are.
+ */
+export function shareExisting(
+  projects: readonly InFlightProject[],
+  unitsOf: (id: ParcelId) => number
+): InFlightProject[] {
+  const firstDay = (p: InFlightProject): number => Math.min(...Object.values(p.history));
+  const on = new Map<ParcelId, InFlightProject[]>();
+  for (const p of projects) {
+    for (const id of p.parcelIds) {
+      const list = on.get(id);
+      if (list) list.push(p);
+      else on.set(id, [p]);
+    }
+  }
+  const holder = new Map<ParcelId, string>();
+  for (const [id, list] of on) {
+    const best = list.reduce((a, b) => {
+      const d = firstDay(a) - firstDay(b);
+      return d < 0 || (d === 0 && cmp(a.id, b.id) <= 0) ? a : b;
+    });
+    holder.set(id, best.id);
+  }
+  return projects.map((p) => {
+    let existing = 0;
+    let shared = false;
+    for (const id of p.parcelIds) {
+      const units = unitsOf(id);
+      if (holder.get(id) === p.id) existing += units;
+      if (units > 0 && (on.get(id)?.length ?? 0) >= 2) shared = true;
+    }
+    if (existing === p.existingUnits && !shared) return p;
+    return {
+      ...p,
+      existingUnits: existing,
+      quality: shared ? projectQuality([...p.quality, PR.parcelsSharedExisting]) : p.quality
+    };
+  });
+}
+
 /** `qualityRules` (spec §4.9 Outputs): one registry entry per id the projects use, by id. */
 export function qualityRulesOf(projects: readonly InFlightProject[]): QualityRuleRef[] {
   return projectQuality(projects.flatMap((p) => p.quality)).map((id) => {

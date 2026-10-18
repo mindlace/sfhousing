@@ -31,6 +31,7 @@ import {
   phaseMasters,
   projectQuality,
   qualityRulesOf,
+  shareExisting,
   type PermitOut
 } from './assemble';
 import { REFERRAL_TOLERANCE_DAYS, pathwayOf } from './classify';
@@ -350,8 +351,14 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
       .map((a) => a.proj.id);
     return { fired: sample.length, of: matched.length, sample };
   },
-  // Spec 4.8 shared parcels (behaviour lands with its task): of in-flight projects.
-  [PR.parcelsSharedExisting]: ({ inFlight }) => ({ fired: 0, of: inFlight.length, sample: [] }),
+  // Spec 4.8 shared parcels: of in-flight projects; the ones on a parcel with units > 0 that
+  // another in-flight project is also on (they carry the id); their ids.
+  [PR.parcelsSharedExisting]: ({ inFlight }) => {
+    const sample = inFlight
+      .filter((x) => x.p.quality.includes(PR.parcelsSharedExisting))
+      .map((x) => x.p.id);
+    return { fired: sample.length, of: inFlight.length, sample };
+  },
   // Spec 4.10.2 DQ-3 (behaviour lands with its task): in-flight PRX masters after netting,
   // weighted by their R after netting.
   [PR.multiphaseScoreOnly]: ({ inFlight }) => {
@@ -598,6 +605,18 @@ export function deriveProjects(
     counts[`projects.byPathway.${p.pathway}`]++;
     counts[`projects.byStage.${p.stage}`]++;
     counts[`projects.stories.${tier === null ? 'null' : `tier${tier}`}`]++;
+  }
+
+  // Spec 4.8 shared parcels, once the set, DA netting and phasing are final: each parcel's
+  // assessor units count once, for the project that entered it first. Histories keep their
+  // at-filing value and never carry the rule.
+  const shared = shareExisting(
+    projects,
+    (id) => input.assessorUnits(id, input.latestRollYear) ?? 0
+  );
+  for (let i = 0; i < projects.length; i++) {
+    projects[i] = shared[i];
+    t3[i] = { a: t3[i].a, p: shared[i] };
   }
 
   // V21 coverage: pipeline rows of population projects, rows of projects that ended excluded.

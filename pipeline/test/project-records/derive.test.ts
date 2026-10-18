@@ -624,6 +624,39 @@ describe('deriveProjects: PRX rows', () => {
   });
 });
 
+describe('deriveProjects: shared parcels (pr.parcels.shared-existing)', () => {
+  const ID = 'pr.parcels.shared-existing';
+
+  it('is a zero tally when no in-flight project shares a parcel', () => {
+    const r = deriveProjects(baseInput());
+    expect(r.counts[`quality.${ID}.fired`]).toBe(0);
+    expect(r.counts[`quality.${ID}.of`]).toBe(r.file.projects.length);
+    expect(r.file.projects.every((p) => !p.quality.includes(ID))).toBe(true);
+  });
+
+  it("counts a lot's 1 assessor unit once: the earlier project holds it, both carry the id", () => {
+    const raw = baseRaw();
+    // E's pipeline row moves onto lot 002, which A (filed 2019) already holds with 1 unit.
+    const e = raw['datasf-dev-pipeline'].find((x) => x.case_no === '2099-000099PRJ')!;
+    e.blklot = '3512002';
+    const base = deriveProjects(baseInput());
+    const r = deriveProjects(baseInput(raw));
+    expect(project(r, 'PRJ:2019-000001PRJ')).toMatchObject({ existingUnits: 1 });
+    expect(project(r, 'PRJ:2019-000001PRJ').quality).toContain(ID);
+    expect(project(r, 'CASE:2099-000099PRJ')).toMatchObject({ units: 5, existingUnits: 0 });
+    expect(project(r, 'CASE:2099-000099PRJ').quality).toEqual([ID]);
+    expect(r.counts[`quality.${ID}.fired`]).toBe(2);
+    expect(r.counts[`quality.${ID}.of`]).toBe(r.file.projects.length);
+    // Σ existing across in-flight projects no longer double counts lot 002.
+    const sum = (x: DeriveResult) => x.file.projects.reduce((s, p) => s + p.existingUnits, 0);
+    expect(sum(r)).toBe(sum(base));
+    // Histories keep their at-filing value and never carry the id.
+    expect(history(r, 'PRJ:2019-000001PRJ').quality).not.toContain(ID);
+    expect(r.histories.every((h) => !h.quality.includes(ID))).toBe(true);
+    expect(checkV23(r.checks, true)).toMatchObject({ id: 'V23', ok: true });
+  });
+});
+
 describe('deriveProjects: exits before later stages', () => {
   it('moves a permit exit that precedes later entered stages to the last stage (V23)', () => {
     const raw = baseRaw();

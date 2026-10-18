@@ -19,6 +19,7 @@ import {
   unitBearingPermits,
   unitsAt
 } from '../../project-records/inflight';
+import { shareExisting } from '../../project-records/assemble';
 import { DEAD_STATUSES } from '../../project-records/link';
 import type {
   AddressRow,
@@ -30,6 +31,7 @@ import type {
   Prj,
   Review
 } from '../../project-records/types';
+import type { InFlightProject } from '../../../src/lib/timelapse/projects';
 import type { ProjectHistory } from '../../../src/lib/timelapse/types';
 
 function d(iso: string): number {
@@ -621,5 +623,111 @@ describe('capacity (pr.units.capacity, spec 4.8)', () => {
     const capped = applyCapacity(p, area);
     expect(capped.checked.map((q) => q.number)).toEqual(['8500988', '2']);
     expect(capped.failing.map((q) => q.number)).toEqual(['8500988']);
+  });
+});
+
+describe('shared parcels (pr.parcels.shared-existing, spec 4.8)', () => {
+  const ID = 'pr.parcels.shared-existing';
+  const units = (id: string): number => ({ L1: 2, L2: 5, L3: 0 })[id as 'L1'] ?? 0;
+
+  function t3(id: string, first: string, parcelIds: string[], quality: string[] = []) {
+    const base: InFlightProject = {
+      id,
+      label: null,
+      parcelIds,
+      pathway: 'discretionary',
+      stage: 'filed',
+      history: { filed: d(first) },
+      units: 10,
+      existingUnits: parcelIds.reduce((s, p) => s + units(p), 0),
+      stories: null,
+      storiesTier: null,
+      multiPhase: false,
+      phases: null,
+      sources: [{ dataset: 'x', id }],
+      quality
+    };
+    return base;
+  }
+
+  const by = (ps: InFlightProject[], id: string) => ps.find((p) => p.id === id)!;
+
+  it('the earliest first day holds the parcel; the others get 0; all carry the id', () => {
+    const out = shareExisting(
+      [t3('B', '2021-01-01', ['L1']), t3('A', '2022-01-01', ['L1', 'L2'])],
+      units
+    );
+    expect(by(out, 'B').existingUnits).toBe(2);
+    expect(by(out, 'A').existingUnits).toBe(5);
+    expect(by(out, 'B').quality).toEqual([ID]);
+    expect(by(out, 'A').quality).toEqual([ID]);
+  });
+
+  it('a tie goes to the smallest id', () => {
+    const out = shareExisting(
+      [t3('PRJ:2', '2021-01-01', ['L1']), t3('BP:9', '2021-01-01', ['L1'])],
+      units
+    );
+    expect(by(out, 'BP:9').existingUnits).toBe(2);
+    expect(by(out, 'PRJ:2').existingUnits).toBe(0);
+  });
+
+  it('the first day is the minimum of the whole history, not the current stage', () => {
+    const early = t3('Z', '2020-01-01', ['L1']);
+    early.history = { filed: d('2020-01-01'), entitled: d('2024-01-01') };
+    const out = shareExisting([t3('A', '2021-01-01', ['L1']), early], units);
+    expect(by(out, 'Z').existingUnits).toBe(2);
+    expect(by(out, 'A').existingUnits).toBe(0);
+  });
+
+  it('a shared parcel with 0 units marks nobody', () => {
+    const ps = [t3('A', '2021-01-01', ['L3']), t3('B', '2022-01-01', ['L3'])];
+    const out = shareExisting(ps, units);
+    expect(out.map((p) => p.quality)).toEqual([[], []]);
+    expect(out.map((p) => p.existingUnits)).toEqual([0, 0]);
+  });
+
+  it('a project on one shared and one unshared parcel carries the id', () => {
+    const out = shareExisting(
+      [t3('A', '2021-01-01', ['L1']), t3('B', '2022-01-01', ['L1', 'L2'])],
+      units
+    );
+    expect(by(out, 'B').quality).toEqual([ID]);
+    expect(by(out, 'B').existingUnits).toBe(5);
+  });
+
+  it('an unshared project keeps its value and quality; quality stays sorted', () => {
+    const out = shareExisting(
+      [
+        t3('A', '2021-01-01', ['L2'], ['pr.stages.forward-clamp']),
+        t3('B', '2021-01-01', ['L1'], ['pr.units.capacity']),
+        t3('C', '2022-01-01', ['L1'], ['pr.units.capacity'])
+      ],
+      units
+    );
+    expect(by(out, 'A')).toMatchObject({ existingUnits: 5, quality: ['pr.stages.forward-clamp'] });
+    expect(by(out, 'B').quality).toEqual([ID, 'pr.units.capacity']);
+    expect(by(out, 'C').quality).toEqual([ID, 'pr.units.capacity']);
+  });
+
+  it('a score-only master (no parcels) is untouched; a phased master holds by its parcelIds', () => {
+    const score = { ...t3('S', '2019-01-01', []), multiPhase: true };
+    const master = { ...t3('M', '2020-01-01', ['L1', 'L2']), multiPhase: true };
+    const out = shareExisting([score, master, t3('A', '2021-01-01', ['L2'])], units);
+    expect(by(out, 'S')).toMatchObject({ existingUnits: 0, quality: [] });
+    expect(by(out, 'M').existingUnits).toBe(7);
+    expect(by(out, 'A').existingUnits).toBe(0);
+  });
+
+  it('does not mutate its input and leaves untouched projects identical', () => {
+    const ps = [
+      t3('A', '2021-01-01', ['L1']),
+      t3('B', '2022-01-01', ['L1']),
+      t3('C', '2022-01-01', ['L2'])
+    ];
+    const before = JSON.stringify(ps);
+    const out = shareExisting(ps, units);
+    expect(JSON.stringify(ps)).toBe(before);
+    expect(out[2]).toBe(ps[2]);
   });
 });
