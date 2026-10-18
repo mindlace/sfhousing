@@ -58,14 +58,14 @@ function countBelow(sorted: Float64Array, t: number): number {
 }
 
 /** Entry ages and end durations of the spells, each sorted ascending. */
-function riskIndex(spells: Spell[]): { a: Float64Array; x: Float64Array } {
+export function riskIndex(spells: Spell[]): { a: Float64Array; x: Float64Array } {
   const a = Float64Array.from(spells, (s) => s.a).sort();
   const x = Float64Array.from(spells, (s) => s.x).sort();
   return { a, x };
 }
 
 /** n(t) = #(a <= t) - #(x < t): events (and censorings) at t are still at risk at t. */
-function atRisk(idx: { a: Float64Array; x: Float64Array }, t: number): number {
+export function atRisk(idx: { a: Float64Array; x: Float64Array }, t: number): number {
   return countAtMost(idx.a, t) - countBelow(idx.x, t);
 }
 

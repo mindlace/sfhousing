@@ -126,6 +126,11 @@ describe('rejects', () => {
     expect(rejects([0.5, 0.6], { expired: [0.2, 0.3999995] }, tail)).toBe(true);
   });
 
+  it('rejects rho > 1 (6-significant-digit rounding can push the sum over 1) and accepts 1', () => {
+    expect(rejects([0.1], {}, { advance: 0.6, exit: { expired: 0.400001 } })).toBe(true);
+    expect(rejects([0.1], {}, { advance: 0.6, exit: { expired: 0.4 } })).toBe(false);
+  });
+
   it('rejects an empty table', () => {
     expect(rejects([], {}, tail)).toBe(true);
   });

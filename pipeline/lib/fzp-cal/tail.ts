@@ -70,7 +70,8 @@ export function tailFit(
 }
 
 /**
- * A cell is rejected (and goes to the §4.5 fallback) unless C(K) <= 1 - 1e-6 and rho > 0.
+ * A cell is rejected (and goes to the §4.5 fallback) unless C(K) <= 1 - 1e-6 and 0 < rho <= 1
+ * (the 6-significant-digit rounding of the p_j can push their sum above 1).
  * An empty table (months 0) is rejected too: `parseCalibration` requires 1 <= months.
  */
 export function rejects(
@@ -84,5 +85,5 @@ export function rejects(
   for (const r of EXIT_ORDER) c += exit[r]?.[K - 1] ?? 0;
   let rho = tail.advance;
   for (const r of EXIT_ORDER) rho += tail.exit[r] ?? 0;
-  return !(c <= 1 - 1e-6 && rho > 0);
+  return !(c <= 1 - 1e-6 && rho > 0 && rho <= 1);
 }
