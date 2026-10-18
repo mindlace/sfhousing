@@ -15,6 +15,8 @@ import {
   windowStart
 } from '../../lib/fzp-cal/window';
 import { isoToDay } from '../../project-records/multiphase';
+import { buildSpells, cutSpells, normalise, preRollCount } from '../../lib/fzp-cal/spells';
+import type { Day, ProjectHistory, Stage } from '../../../src/lib/timelapse/types';
 
 const spell = (iso: string, stage: Spell['stage'] = 'filed'): Spell => ({
   pathway: 'discretionary',
@@ -123,5 +125,94 @@ describe('coverageGuard', () => {
       2016: 1,
       2017: 0
     });
+  });
+});
+
+const d = isoToDay;
+const AS_OF = d('2026-06-30');
+
+function hist(
+  id: string,
+  pathway: ProjectHistory['pathway'],
+  entered: Partial<Record<Stage, string>>,
+  end: ProjectHistory['end']
+): ProjectHistory {
+  const e: Partial<Record<Stage, Day>> = {};
+  for (const [s, iso] of Object.entries(entered)) e[s as Stage] = d(iso as string);
+  return {
+    id,
+    pathway,
+    parcelIds: [],
+    entered: e,
+    end,
+    unitsAt: { filed: 10 },
+    existingUnits: 0,
+    storiesProposed: null,
+    baseStoriesAtFiling: null,
+    sources: []
+  };
+}
+
+const open = (iso: string): ProjectHistory['end'] => ({ kind: 'open', lastObserved: d(iso) });
+
+describe('cutSpells and preRollCount', () => {
+  it('cuts Planning-side spells at 2015 and keeps permit-side ones at 2007', () => {
+    const h = hist(
+      'p1',
+      'discretionary',
+      {
+        filed: '2011-01-01',
+        entitled: '2012-01-01',
+        permitFiled: '2013-01-01',
+        permitIssued: '2014-01-01',
+        construction: '2016-01-01'
+      },
+      open('2020-01-01')
+    );
+    const s = buildSpells(normalise([h], AS_OF).norm, AS_OF);
+    expect(s.map((x) => x.stage)).toEqual(['permitFiled', 'permitIssued', 'construction']);
+    const cut = cutSpells(s, d('2015-01-01'));
+    expect(cut.map((x) => x.stage)).toEqual(['permitIssued', 'construction']);
+  });
+
+  it('keeps a Planning-side spell entering before 2015 by left truncation at 2015', () => {
+    const h = hist('p1', 'discretionary', { filed: '2014-01-01' }, open('2020-01-01'));
+    const s = buildSpells(normalise([h], AS_OF).norm, AS_OF);
+    expect(s).toHaveLength(1);
+    expect(s[0].a).toBe(d('2015-01-01') - d('2014-01-01'));
+  });
+
+  it('recomputes a for a left-truncated permit spell', () => {
+    const h = hist(
+      'p1',
+      'permitOnly',
+      { permitFiled: '2004-01-01', permitIssued: '2004-03-01' },
+      open('2020-01-01')
+    );
+    const s = buildSpells(normalise([h], AS_OF).norm, AS_OF);
+    expect(s[0].a).toBe(d('2007-01-01') - d('2004-03-01'));
+    const cut = cutSpells(s, d('2015-01-01'));
+    expect(cut[0].a).toBe(d('2015-01-01') - d('2004-03-01'));
+    expect(cut[0].x).toBe(s[0].x);
+    expect(cutSpells(s, d('2021-01-01'))).toEqual([]);
+  });
+
+  it('counts a history whose spells all end before 2007 once, and not one reaching 2007-01-01', () => {
+    const pre = hist(
+      'p1',
+      'permitOnly',
+      { permitFiled: '2003-01-01', permitIssued: '2004-01-01' },
+      { kind: 'exit', stage: 'permitIssued', reason: 'expired', day: d('2005-06-01') }
+    );
+    const edge = hist(
+      'p2',
+      'permitOnly',
+      { permitFiled: '2003-01-01', permitIssued: '2004-01-01' },
+      { kind: 'exit', stage: 'permitIssued', reason: 'expired', day: d('2007-01-01') }
+    );
+    const later = hist('p3', 'permitOnly', { permitFiled: '2003-01-01' }, open('2012-01-01'));
+    const n = normalise([pre, edge, later], AS_OF).norm;
+    expect(preRollCount(n)).toBe(1);
+    expect(buildSpells(n, AS_OF).map((s) => s.projectId)).toEqual(['p3', 'p2']);
   });
 });
