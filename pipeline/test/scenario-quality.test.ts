@@ -7,7 +7,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ParcelRecord } from '../../src/lib/data/parcel';
-import { LAND_USE_CLASSES } from '../../src/lib/data/scenario-codec';
+import {
+  FILL_LEVELS,
+  LAND_USE_CLASSES,
+  fillStories,
+  scenarioRecordOf,
+  type ScenarioParcels
+} from '../../src/lib/data/scenario-codec';
+import { scenarioYield } from '../../src/lib/data/scenario-yield';
 import { FZP_EFFECTIVE_DAY, densityCap } from '../lib/density-caps';
 import type { Duck } from '../lib/duck';
 import {
@@ -26,6 +33,7 @@ import { SUPERSEDED_SCENARIO_COUNTS, miniDuck } from './helpers';
 const BIT = { year: 1, stories: 2, share: 4, units: 8, carried: 32, floor: 64 };
 const RESIDENTIAL = 0;
 const OTHER = LAND_USE_CLASSES.indexOf('other');
+const F = FILL_LEVELS.length;
 
 interface Feature {
   mapblklot: string;
@@ -1305,6 +1313,52 @@ describe('the base cap date on a synthetic 2027 roll row', () => {
     ]);
     const p = readParcelsBin(join(s.outDir, PARCELS_BIN));
     expect(p.rollYear).toBe(2027);
+    expect(s.scenarioCounts['scenario.panel.feature_mismatch']).toBe(0);
+  });
+});
+
+describe('the hostable flags on the uncapped yield (partner ruling, option c)', () => {
+  let s: Synthetic;
+  let p: ScenarioParcels;
+  beforeAll(async () => {
+    // Lot 10 (RH-3, cap 4) at 4 homes: its cap no longer exceeds its homes, so its capped yields
+    // are 0, but the generator still fits more than 4 homes on it.
+    s = await synthetic('h', [setRow('3512010', [2024, 2025], 'number_of_units = 4')]);
+    p = readParcelsBin(join(s.outDir, PARCELS_BIN));
+  });
+
+  it('a parcel whose cap is at most its homes is still hostable, base and FZP', async () => {
+    const i = p.index.get('3512010')!;
+    expect({
+      existingUnits: p.existingUnits[i],
+      baseCap: p.baseCap[i],
+      top: p.yield[i * F + F - 1],
+      baseTop: p.baseYield[i * F + F - 1],
+      hostable: p.hostable[i],
+      hostableBase: p.hostableBase[i]
+    }).toEqual({ existingUnits: 4, baseCap: 4, top: 0, baseTop: 0, hostable: 1, hostableBase: 1 });
+    const rows = await db.all<{ roll_year: number; base_yield: number; hostable_base: boolean }>(
+      `SELECT roll_year, base_yield, hostable_base FROM h.scenario_panel
+       WHERE mapblklot = '3512010' AND roll_year >= 2024 ORDER BY roll_year`
+    );
+    expect(rows).toEqual([
+      { roll_year: 2024, base_yield: 0, hostable_base: true },
+      { roll_year: 2025, base_yield: 0, hostable_base: true }
+    ]);
+  });
+
+  it('every flag is eligible ∧ stories ≥ 1 ∧ the uncapped full-fill yield > 0', () => {
+    for (let i = 0; i < p.count; i++) {
+      const rec = s.records.get(p.id[i])!;
+      const view = scenarioRecordOf(p, i, rec);
+      const gross = (stories: number) => scenarioYield(view, fillStories(1, stories), null);
+      expect({ h: p.hostable[i], hb: p.hostableBase[i] }, p.id[i]).toEqual({
+        h: rec.eligible && p.envelopeStories[i] >= 1 && gross(p.envelopeStories[i]) > 0 ? 1 : 0,
+        hb: rec.eligible && p.baseStories[i] >= 1 && gross(p.baseStories[i]) > 0 ? 1 : 0
+      });
+    }
+    expect(s.scenarioCounts['scenario.hostable_mismatch']).toBe(0);
+    expect(s.scenarioCounts['scenario.hostable_base_mismatch']).toBe(0);
     expect(s.scenarioCounts['scenario.panel.feature_mismatch']).toBe(0);
   });
 });

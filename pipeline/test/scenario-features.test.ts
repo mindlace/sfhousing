@@ -152,6 +152,31 @@ describe('scenario T13 panel and T11 features (mini fixture)', () => {
     expect(counts['scenario.roll.latest_eligible_matched']).toBe(10);
   });
 
+  it('hostable_base changes by at most 5% between consecutive roll years (no exemptions)', async () => {
+    // Partner ruling (option c): the density cap no longer gates the at-risk set, so a cap change
+    // such as the 2022-11-27 fourplex ordinance cannot flip it. Trivially true on mini (all its
+    // roll years follow the ordinance), still asserted; V18 asserts it on every build. Compared
+    // over the parcels with a row in both years: mini's panel grows from 2 rows (2023) to 13
+    // (2024) and 11 (2025), which is coverage, not flips.
+    const rows = await panel();
+    const years = [...new Set(rows.map((r) => r.roll_year))].sort();
+    expect(years.map((y) => counts[`scenario.panel.hostable_base.${y}`])).toEqual(
+      years.map((y) => rows.filter((r) => r.roll_year === y && r.hostable_base).length)
+    );
+    expect(years.map((y) => counts[`scenario.panel.hostable_base.${y}`])).toEqual([2, 8, 7]);
+    const at = new Map(rows.map((r) => [`${r.mapblklot}:${r.roll_year}`, r.hostable_base]));
+    for (const y of years.slice(1)) {
+      const both = rows.filter((r) => r.roll_year === y && at.has(`${r.mapblklot}:${y - 1}`));
+      const cur = both.filter((r) => r.hostable_base).length;
+      const prev = both.filter((r) => at.get(`${r.mapblklot}:${y - 1}`)).length;
+      expect({ cur, prev }, String(y)).toEqual({
+        cur: counts[`scenario.panel.hostable_base.${y}.both`],
+        prev: counts[`scenario.panel.hostable_base.${y}.both_prev`]
+      });
+      expect(Math.abs(cur - prev), `${y - 1} → ${y}`).toBeLessThanOrEqual(0.05 * prev);
+    }
+  });
+
   it('the panel has roll years 2023 to 2025 and every T13 column', async () => {
     const rows = await panel();
     expect([...new Set(rows.map((r) => r.roll_year))]).toEqual([2023, 2024, 2025]);
