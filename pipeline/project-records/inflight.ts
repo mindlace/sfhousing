@@ -9,7 +9,7 @@ import type { Day } from '../../src/lib/timelapse/time';
 import type { ProjectHistory, Stage } from '../../src/lib/timelapse/types';
 import { MIN_GROSS_M2_PER_UNIT } from '../lib/quality';
 import { isNewConstruction } from './classify';
-import { permitCompletionDay } from './stages';
+import { permitCompletionDay, unitBearingPermits } from './stages';
 import { DATASET } from './types';
 import type { LinkedProject, Permit, ProjectRecordsInput } from './types';
 
@@ -170,12 +170,6 @@ export function applyCapacity(
     skipped,
     capped
   };
-}
-
-/** The live set, else (all permits dead) the non-superseded permits. */
-export function unitBearingPermits(proj: LinkedProject): Permit[] {
-  if (proj.live.length > 0) return proj.live;
-  return proj.permits.filter((q) => !proj.superseded.has(q.number));
 }
 
 function sumProposed(permits: Permit[]): number | null {

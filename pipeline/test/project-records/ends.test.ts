@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { endOf, lastObserved } from '../../project-records/ends';
 import { DEAD_STATUSES } from '../../project-records/link';
+import { clampStages, rawStages } from '../../project-records/stages';
 import type {
   Child,
   LinkedProject,
@@ -238,6 +239,77 @@ describe('endOf rule 2: permit exit', () => {
       stage: 'permitFiled',
       reason: 'withdrawn',
       day: 6678
+    });
+  });
+});
+
+describe('endOf rule 2 after rawStages (Ruling E1: dead issued permits exit at their stage)', () => {
+  function endAfterStages(p: LinkedProject) {
+    const { entered: e } = clampStages(rawStages(p, 'permitOnly'));
+    return { entered: e, end: endOf(p, e, CTX) };
+  }
+
+  it('an issued, then expired, permit exits expired at permitIssued on its status day', () => {
+    const p = proj({
+      permits: [
+        permit('1', {
+          status: 'expired',
+          statusDay: d('2022-05-01'),
+          sitePermit: true,
+          filedDay: d('2018-03-01'),
+          issuedDay: d('2019-04-01')
+        })
+      ]
+    });
+    const { entered: e, end } = endAfterStages(p);
+    expect(e.permitIssued).toBe(d('2019-04-01'));
+    expect(end).toEqual({
+      kind: 'exit',
+      stage: 'permitIssued',
+      reason: 'expired',
+      day: d('2022-05-01')
+    });
+  });
+
+  it('a site permit with an FCD, then cancelled, exits cancelled at construction', () => {
+    const p = proj({
+      permits: [
+        permit('1', {
+          status: 'cancelled',
+          statusDay: d('2021-06-01'),
+          sitePermit: true,
+          filedDay: d('2017-02-01'),
+          issuedDay: d('2018-01-10'),
+          fcdDay: d('2018-03-01')
+        })
+      ]
+    });
+    expect(endAfterStages(p).end).toEqual({
+      kind: 'exit',
+      stage: 'construction',
+      reason: 'cancelled',
+      day: d('2021-06-01')
+    });
+  });
+
+  it('a superseded issued permit does not lift the exit past the refile’s stage', () => {
+    const old = permit('1', {
+      status: 'expired',
+      statusDay: d('2016-01-01'),
+      filedDay: d('2015-01-01'),
+      issuedDay: d('2015-06-01')
+    });
+    const refile = permit('2', {
+      status: 'withdrawn',
+      statusDay: d('2019-01-01'),
+      filedDay: d('2018-01-01')
+    });
+    const p = proj({ permits: [old, refile], superseded: new Set(['1']) });
+    expect(endAfterStages(p).end).toEqual({
+      kind: 'exit',
+      stage: 'permitFiled',
+      reason: 'withdrawn',
+      day: d('2019-01-01')
     });
   });
 });

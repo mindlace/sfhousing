@@ -119,6 +119,22 @@ describe('checkV20', () => {
     expect(r.detail).toMatch(/pr\.no\.such/);
   });
 
+  it('fails a qualityRules entry for a rule that acts only on histories (Ruling S2)', () => {
+    const f = clone(good.file);
+    const rule = {
+      id: 'pr.units.split-filed',
+      label:
+        "A building's filing-stage home count was not taken from the whole Planning case it was split from",
+      tier: 2 as const,
+      valueTier: null
+    };
+    proj(f, 'PRJ:2019-000001PRJ').quality = ['pr.stages.forward-clamp', rule.id];
+    f.qualityRules = [...f.qualityRules, rule];
+    const r = v20(f);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/pr\.units\.split-filed: acts only on histories/);
+  });
+
   it('fails unparseable bytes', () => {
     const r = checkV20(Buffer.from('{'), {
       asOf: ASOF,

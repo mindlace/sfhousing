@@ -438,6 +438,72 @@ describe('rawStages', () => {
       expect(rawStages(p, 'streamlined').permitFiled).toBe(d('2020-01-01'));
     });
 
+    describe('Ruling E1: permitIssued and construction over the unit-bearing set', () => {
+      it('an issued, then expired, permit enters permitIssued (live set empty)', () => {
+        const dead = permit('X', {
+          status: 'expired',
+          statusDay: d('2022-05-01'),
+          sitePermit: true,
+          filedDay: d('2018-03-01'),
+          issuedDay: d('2019-04-01')
+        });
+        const p = proj({ permits: [dead], live: [] });
+        const raw = rawStages(p, 'permitOnly');
+        expect(raw).toEqual({ permitFiled: d('2018-03-01'), permitIssued: d('2019-04-01') });
+      });
+
+      it('a cancelled site permit with an FCD enters construction', () => {
+        const dead = permit('Y', {
+          status: 'cancelled',
+          statusDay: d('2021-06-01'),
+          sitePermit: true,
+          filedDay: d('2017-02-01'),
+          issuedDay: d('2018-01-10'),
+          fcdDay: d('2018-03-01')
+        });
+        const p = proj({ permits: [dead], live: [] });
+        const raw = rawStages(p, 'permitOnly');
+        expect(raw.permitIssued).toBe(d('2018-01-10'));
+        expect(raw.construction).toBe(d('2018-03-01'));
+        expect(raw.complete).toBeUndefined();
+      });
+
+      it('a dead issued permit keeps a discretionary project’s permitFiled', () => {
+        const dead = permit('X', {
+          status: 'expired',
+          filedDay: d('2018-03-01'),
+          issuedDay: d('2019-04-01')
+        });
+        const p = proj({ anchors: [prj('PRJ-1')], permits: [dead], live: [] });
+        const raw = rawStages(p, 'discretionary');
+        expect(raw.permitFiled).toBe(d('2018-03-01'));
+        expect(raw.permitIssued).toBe(d('2019-04-01'));
+      });
+
+      it('a superseded dead permit does not drive permitIssued when a later permit exists', () => {
+        const old = permit('A', {
+          status: 'expired',
+          filedDay: d('2015-01-01'),
+          issuedDay: d('2015-06-01'),
+          fcdDay: d('2015-07-01'),
+          sitePermit: true
+        });
+        const refile = permit('B', { status: 'withdrawn', filedDay: d('2018-01-01') });
+        const p = proj({ permits: [old, refile], live: [], superseded: new Set(['A']) });
+        const raw = rawStages(p, 'permitOnly');
+        expect(raw).toEqual({ permitFiled: d('2015-01-01') });
+      });
+
+      it('the live set still decides when it is non-empty', () => {
+        const old = permit('A', { status: 'expired', issuedDay: d('2015-06-01') });
+        const live = permit('B', { filedDay: d('2018-01-01'), issuedDay: d('2019-01-01') });
+        const p = proj({ permits: [old, live], live: [live], superseded: new Set(['A']) });
+        const raw = rawStages(p, 'permitOnly');
+        expect(raw.permitIssued).toBe(d('2019-01-01'));
+        expect(raw.construction).toBe(d('2019-01-01'));
+      });
+    });
+
     it('permitFiled is kept for permitOnly with nothing else', () => {
       const pm = permit('P', { status: 'filed', filedDay: d('2020-01-01') });
       const p = proj({ permits: [pm], live: [pm] });

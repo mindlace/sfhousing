@@ -63,6 +63,16 @@ export function permitCompletionDay(p: Permit, completions: Completion[]): Day |
   return p.status === 'complete' ? p.completedDateDay : null;
 }
 
+/**
+ * The unit-bearing set (spec 4.2): the live set, else (all permits dead) the non-superseded
+ * permits. Units, stories and `unitsAt.permitFiled` read it (Task 7), and so do the
+ * `permitIssued` and `construction` raw days (Ruling E1).
+ */
+export function unitBearingPermits(proj: LinkedProject): Permit[] {
+  if (proj.live.length > 0) return proj.live;
+  return proj.permits.filter((q) => !proj.superseded.has(q.number));
+}
+
 /** The §4.5 rules applied to one permit alone, without a clamp. */
 export function permitDays(
   p: Permit,
@@ -142,7 +152,10 @@ export function rawStages(
   const entitled = permitOnly ? null : entitledDay(proj);
   if (entitled !== null) raw.entitled = entitled;
 
-  const issued = minOf(proj.live.map((p) => p.issuedDay));
+  // Ruling E1: a project whose permits all died still enters permitIssued and construction from
+  // its non-superseded permits, so its permit exit (spec 4.6 rule 2) lands at that stage.
+  const bearing = unitBearingPermits(proj);
+  const issued = minOf(bearing.map((p) => p.issuedDay));
   const permitFiled = minOf(proj.permits.map((p) => p.filedDay));
   // A permit filed in parallel with Planning review leaves a discretionary project at `filed`.
   if (permitFiled !== null && (permitOnly || entitled !== null || issued !== null)) {
@@ -150,7 +163,7 @@ export function rawStages(
   }
   if (issued !== null) raw.permitIssued = issued;
 
-  const construction = minOf(proj.live.map((p) => permitDays(p, proj.completions).construction));
+  const construction = minOf(bearing.map((p) => permitDays(p, proj.completions).construction));
   if (construction !== null) raw.construction = construction;
 
   if (proj.live.length > 0) {

@@ -480,9 +480,11 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
     // M20, netted by M11 and score-only.
     expect(c['quality.pr.multiphase.da-netting.fired']).toBe(1);
     expect(c['quality.pr.multiphase.score-only.fired']).toBe(1);
-    // As computed: no matched project's records disagree with its pipeline row.
-    expect(c['quality.pr.pipeline.records-win.fired']).toBe(0);
-    expect(c['quality.pr.pipeline.records-win.of']).toBe(8);
+    // As computed: M23's two split rows list projects whose records show them complete.
+    expect(c['quality.pr.pipeline.records-win.fired']).toBe(2);
+    expect(c['quality.pr.pipeline.records-win.of']).toBe(10);
+    // M23's two split rows omit unitsAt.filed (Ruling S2).
+    expect(c['quality.pr.units.split-filed.fired']).toBe(2);
     expect(c['projects.excludedNoUnits']).toBe(900);
     expect(c['multiphase.netted.2012-000020PRX']).toBe(3);
     expect(c['multiphase.lastResort']).toBe(1);
