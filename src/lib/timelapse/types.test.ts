@@ -241,9 +241,6 @@ describe('stage constants', () => {
 
 describe('model stubs', () => {
   it('remaining T12 stubs throw not implemented', () => {
-    const cal = {} as Calibration;
-    expect(() => chanceTable(cal)).toThrow('not implemented');
-    expect(() => typicalMonths(cal)).toThrow('not implemented');
     expect(() => parseCalibration({})).toThrow('not implemented');
   });
 });

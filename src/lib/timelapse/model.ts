@@ -8,6 +8,8 @@ import { exp, log } from './math';
 import { MONTH_DAYS } from './time';
 import {
   EXIT_ORDER,
+  PATHWAYS,
+  pathwayStages,
   type Calibration,
   type ExitReason,
   type FeatureId,
@@ -116,6 +118,9 @@ export function eventualProbabilities(t: Transition, monthsElapsed: number): Inc
  */
 const MAX_EVENT_MONTH = Math.floor(16777216 / MONTH_DAYS);
 
+/** `chanceTable` arrays cover months in stage 0..240 (K <= 240). */
+const CHANCE_MONTHS = 241;
+
 type Kind = 'advance' | ExitReason;
 type Slice = { kind: Kind; lo: number; hi: number };
 type Draw = { k: number; slice: Slice; x: number };
@@ -133,18 +138,24 @@ function tableMonth(t: Transition, c: number, m: number): number {
 }
 
 /**
- * The literal tail month for m < K with C(K) <= c (spec §4.2 step 2): the closed form, clamped
- * to [K + 1, MAX_EVENT_MONTH], then stepped by one until C(k - 1) <= c < C(k) as
- * `cumulativeTotal` evaluates it. Null when no month satisfies that in double precision.
+ * The least tail month k > K whose C(k) reaches c (strictly above c, or at least c when
+ * `inclusive`): the closed form K + ceil(log((1 - c) / (1 - C(K))) / log(1 - rho)), clamped to
+ * [K + 1, MAX_EVENT_MONTH], then stepped by one until the test holds at k and fails at k - 1 as
+ * `cumulativeTotal` evaluates it (spec §4.2 step 2). Null when no month satisfies that in
+ * double precision. `sampleTransition` (m < K) and `typicalMonths` share it.
  */
-function literalTailMonth(t: Transition, c: number): number | null {
+function tailMonth(t: Transition, c: number, inclusive: boolean): number | null {
   const K = t.months;
+  const reached = (k: number) => {
+    const ck = cumulativeTotal(t, k);
+    return inclusive ? ck >= c : ck > c;
+  };
   const q = log((1 - c) / (1 - tableSum(t, K))) / log(1 - tailRate(t));
   let k = Number.isFinite(q) ? K + Math.ceil(q) : MAX_EVENT_MONTH;
   k = Math.min(Math.max(k, K + 1), MAX_EVENT_MONTH);
-  while (k - 1 > K && cumulativeTotal(t, k - 1) > c) k--;
-  while (k < MAX_EVENT_MONTH && cumulativeTotal(t, k) <= c) k++;
-  return cumulativeTotal(t, k) > c ? k : null;
+  while (k - 1 > K && reached(k - 1)) k--;
+  while (k < MAX_EVENT_MONTH && !reached(k)) k++;
+  return reached(k) ? k : null;
 }
 
 /**
@@ -154,7 +165,8 @@ function literalTailMonth(t: Transition, c: number): number | null {
  * loses every digit once 1 - C(m) nears 1e-16. n = the least n >= 1 with G(n) > v (closed form
  * ceil(log(1 - v) / log(1 - rho)), then stepped by one), k = from + n, and the slice is
  * [G(n - 1), G(n)) split by p_j / rho. If no n up to MAX_EVENT_MONTH qualifies (log(1 - rho) =
- * 0, or a tail too slow for the cap), k is the cap and v is split over [0, 1) instead.
+ * 0, or a tail too slow for the cap), k is the cap and v is split over the mass the search
+ * never reached, [G(top), 1).
  */
 function relativeTail(t: Transition, from: number, v: number): Draw {
   const L = log(1 - tailRate(t));
@@ -165,7 +177,7 @@ function relativeTail(t: Transition, from: number, v: number): Draw {
   while (n > 1 && G(n - 1) > v) n--;
   while (n < top && G(n) <= v) n++;
   if (G(n) > v) return { k: from + n, slice: tailSlice(t, G(n - 1), G(n), v), x: v };
-  return { k: from + top, slice: tailSlice(t, 0, 1, v), x: v };
+  return { k: from + top, slice: tailSlice(t, G(top), 1, v), x: v };
 }
 
 /**
@@ -217,13 +229,15 @@ function literalDraw(t: Transition, u: number, m: number): Draw {
     const k = tableMonth(t, c, m);
     return { k, slice: tableSlice(t, k, c), x: c };
   }
-  const k = literalTailMonth(t, c);
+  const k = tailMonth(t, c, false);
   if (k !== null) {
     return { k, slice: tailSlice(t, cumulativeTotal(t, k - 1), cumulativeTotal(t, k), c), x: c };
   }
-  // c rounded to 1, which needs 1 - u < ~1.1e-10 (below mulberry32's 2^-32 step), or the tail
-  // is flat: draw relative to K. u stands in for the lost (c - C(K)) / (1 - C(K)).
-  return relativeTail(t, t.months, u);
+  // Past the cap (a flat or very slow tail), or c rounded to 1, which needs 1 - u < ~1.1e-10
+  // (below mulberry32's 2^-32 step): draw relative to K at v = (c - C(K)) / (1 - C(K)), the
+  // position within the tail. Only a c that rounded to 1 has lost it, and u stands in.
+  const ck = tableSum(t, t.months);
+  return relativeTail(t, t.months, c < 1 ? (c - ck) / (1 - ck) : u);
 }
 
 /**
@@ -256,16 +270,67 @@ export function initiationHazard(m: InitiationModel, f: Record<FeatureId, number
   return 1 / (1 + exp(-z));
 }
 
-export function chanceTable(
-  _cal: Calibration
-): Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, Float32Array>>> {
-  throw new Error('not implemented');
+type Tabled = Exclude<Stage, 'complete'>;
+
+/**
+ * Per pathway and stage, the chance by month in stage m = 0..240 of eventually reaching
+ * `complete`: eventual advance from the stage, times the chance from the start of the next stage
+ * (1 for `complete`). Beyond 240 callers use index 240, which is the tail value since K <= 240.
+ * A stage whose transition, or whose successor's, is missing has no entry.
+ */
+export function chanceTable(cal: Calibration): Record<Pathway, Partial<Record<Tabled, Float32Array>>> {
+  const out = {} as Record<Pathway, Partial<Record<Tabled, Float32Array>>>;
+  for (const p of PATHWAYS) {
+    const stages = pathwayStages(p);
+    const built: Partial<Record<Tabled, Float32Array>> = {};
+    let next0: number | undefined = 1; // chance(p, next, 0) in double precision
+    for (let i = stages.length - 2; i >= 0; i--) {
+      const stage = stages[i] as Tabled;
+      const tr = cal.transitions[p][stage];
+      if (tr === undefined || next0 === undefined) {
+        next0 = undefined;
+        continue;
+      }
+      const arr = new Float32Array(CHANCE_MONTHS);
+      let first = 0;
+      for (let m = 0; m < CHANCE_MONTHS; m++) {
+        const v = eventualProbabilities(tr, m).advance * next0;
+        if (m === 0) first = v;
+        arr[m] = v;
+      }
+      built[stage] = arr;
+      next0 = first;
+    }
+    // Built back to front; emit in pathway order.
+    const ordered: Partial<Record<Tabled, Float32Array>> = {};
+    for (const stage of stages) {
+      if (stage !== 'complete' && built[stage]) ordered[stage] = built[stage];
+    }
+    out[p] = ordered;
+  }
+  return out;
 }
 
-export function typicalMonths(
-  _cal: Calibration
-): Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, number>>> {
-  throw new Error('not implemented');
+/**
+ * Per pathway and stage, the median month of leaving the stage by any outcome: the least k >= 1
+ * with C(k) >= 0.5. Inside the table a scan; beyond K the shared closed-form `tailMonth`. A tail
+ * too slow to reach 0.5 within the event-month cap reports `MAX_EVENT_MONTH` (finite).
+ */
+export function typicalMonths(cal: Calibration): Record<Pathway, Partial<Record<Tabled, number>>> {
+  const out = {} as Record<Pathway, Partial<Record<Tabled, number>>>;
+  for (const p of PATHWAYS) {
+    const row: Partial<Record<Tabled, number>> = {};
+    for (const stage of pathwayStages(p)) {
+      if (stage === 'complete') continue;
+      const tr = cal.transitions[p][stage];
+      if (tr === undefined) continue;
+      let k = 1;
+      while (k <= tr.months && tableSum(tr, k) < 0.5) k++;
+      row[stage] = k <= tr.months ? k : (tailMonth(tr, 0.5, true) ?? MAX_EVENT_MONTH);
+    }
+    out[p] = row;
+  }
+  return out;
 }
 
 export function parseCalibration(_json: unknown): Calibration {

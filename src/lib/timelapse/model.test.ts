@@ -4,14 +4,16 @@ import small from './fixtures/calibration-small.json';
 import { exp, log } from './math';
 import {
   binIndex,
+  chanceTable,
   cumulativeIncidence,
   cumulativeTotal,
   eventualProbabilities,
   initiationHazard,
-  sampleTransition
+  sampleTransition,
+  typicalMonths
 } from './model';
 import { MONTH_DAYS, monthsIn } from './time';
-import { EXIT_ORDER, type Calibration, type FeatureId, type Transition } from './types';
+import { EXIT_ORDER, PATHWAYS, type Calibration, type FeatureId, type Transition } from './types';
 
 const cal = small as unknown as Calibration;
 const t = cal.transitions.discretionary.permitFiled as Transition;
@@ -346,6 +348,25 @@ describe('sampleTransition', () => {
     }
   });
 
+  it('cap-month draws keep the tail kind split for a flat or very slow multi-kind tail', () => {
+    // rho = 1e-6 (advance share 0.8): G(cap) is about 0.42, so many draws land on the cap month.
+    const slow: Transition = { ...t, tail: { advance: 0.8e-6, exit: { expired: 0.2e-6 } } };
+    const cap = Math.floor(16777216 / M);
+    for (const m of [0, 12]) {
+      const rng = mulberry32(0x5eed);
+      let atCap = 0;
+      let advance = 0;
+      for (let i = 0; i < 100000; i++) {
+        const r = sampleTransition(slow, rng(), m);
+        if (monthsIn(0, r.days) + 1 !== cap) continue;
+        atCap++;
+        if (r.kind === 'advance') advance++;
+      }
+      expect(atCap).toBeGreaterThan(10000);
+      expect(Math.abs(advance / atCap - 0.8)).toBeLessThanOrEqual(0.02);
+    }
+  });
+
   it('maps every month day range back to that month, up to the Float32-exact cap', () => {
     let bad = 0;
     const cap = Math.floor(16777216 / M);
@@ -362,3 +383,127 @@ describe('sampleTransition', () => {
     expect(() => sampleTransition(t, 0.5, 2.5)).toThrow(RangeError);
   });
 });
+
+describe('chanceTable', () => {
+  const T = cal.transitions;
+  const adv = (p: 'permitOnly' | 'discretionary', st: string, m = 0) =>
+    eventualProbabilities((T[p] as Record<string, Transition>)[st], m).advance;
+
+  it('is the product of eventual advance probabilities along a permitOnly chain', () => {
+    const chain =
+      adv('permitOnly', 'preApplication') *
+      (adv('permitOnly', 'permitFiled') *
+        (adv('permitOnly', 'permitIssued') * (adv('permitOnly', 'construction') * 1)));
+    const table = chanceTable(cal);
+    expect(table.permitOnly.preApplication![0]).toBe(Math.fround(chain));
+    expect(table.permitOnly.construction![0]).toBe(
+      Math.fround(eventualProbabilities(T.permitOnly.construction!, 0).advance)
+    );
+  });
+
+  it('runs a discretionary chain through filed and entitled', () => {
+    const stages = ['preApplication', 'filed', 'entitled', 'permitFiled', 'permitIssued'];
+    let next = adv('discretionary', 'construction');
+    for (let i = stages.length - 1; i >= 0; i--) {
+      next = adv('discretionary', stages[i]) * next;
+    }
+    expect(chanceTable(cal).discretionary.preApplication![0]).toBe(Math.fround(next));
+  });
+
+  it('has 241 months per array and no filed/entitled on permitOnly', () => {
+    const table = chanceTable(cal);
+    for (const p of PATHWAYS) {
+      for (const arr of Object.values(table[p])) {
+        expect(arr).toBeInstanceOf(Float32Array);
+        expect(arr).toHaveLength(241);
+      }
+    }
+    expect(Object.keys(table.permitOnly)).toEqual([
+      'preApplication',
+      'permitFiled',
+      'permitIssued',
+      'construction'
+    ]);
+    expect(Object.keys(table.discretionary)).not.toContain('complete');
+  });
+
+  it('index 240 is the tail value times the next stage chance, and beyond-K is flat', () => {
+    const table = chanceTable(cal);
+    const tf = T.discretionary.permitFiled!;
+    const next0 = adv('discretionary', 'permitIssued') * adv('discretionary', 'construction');
+    const tailAdvance = 0.05 / (0.05 + 0.01);
+    expect(table.discretionary.permitFiled![240]).toBe(
+      Math.fround(eventualProbabilities(tf, 240).advance * next0)
+    );
+    expect(table.discretionary.permitFiled![240]).toBeCloseTo(tailAdvance * next0, 6);
+    expect(table.discretionary.permitFiled![tf.months]).toBe(table.discretionary.permitFiled![240]);
+    expect(table.discretionary.permitFiled![0]).toBe(
+      Math.fround(eventualProbabilities(tf, 0).advance * next0)
+    );
+  });
+
+  it('returns fresh objects on every call', () => {
+    const a = chanceTable(cal);
+    const b = chanceTable(cal);
+    expect(a).not.toBe(b);
+    expect(a.permitOnly).not.toBe(b.permitOnly);
+    expect(a.permitOnly.construction).not.toBe(b.permitOnly.construction);
+    a.permitOnly.construction![0] = 0;
+    expect(b.permitOnly.construction![0]).toBeGreaterThan(0);
+  });
+});
+
+describe('typicalMonths', () => {
+  it('finds the median month inside the table', () => {
+    // C(k) = k * (0.05 + 0.10 / 12): C(8) = 0.467, C(9) = 0.525.
+    expect(typicalMonths(cal).discretionary.permitFiled).toBe(9);
+  });
+
+  it('solves the tail in closed form when C(K) < 0.5', () => {
+    // months 1, C(1) = 0.12, rho = 0.12: least k with 1 - 0.88^k >= 0.5 is 6.
+    expect(typicalMonths(cal).discretionary.filed).toBe(6);
+    expect(cumulativeTotal(cal.transitions.discretionary.filed!, 5)).toBeLessThan(0.5);
+    expect(cumulativeTotal(cal.transitions.discretionary.filed!, 6)).toBeGreaterThanOrEqual(0.5);
+  });
+
+  it('is the least k with C(k) >= 0.5 for every cell, and a fresh object per call', () => {
+    const tm = typicalMonths(cal);
+    for (const p of PATHWAYS) {
+      for (const [st, tr] of Object.entries(cal.transitions[p])) {
+        const k = (tm[p] as Record<string, number>)[st];
+        expect(cumulativeTotal(tr, k)).toBeGreaterThanOrEqual(0.5);
+        expect(cumulativeTotal(tr, k - 1)).toBeLessThan(0.5);
+      }
+    }
+    expect(typicalMonths(cal)).not.toBe(tm);
+  });
+
+  it('returns the first table month when C(K) crosses exactly at the median', () => {
+    const exact: Transition = {
+      ...t,
+      months: 1,
+      advance: [0.5],
+      exit: {},
+      tail: { advance: 0.1, exit: {} }
+    };
+    expect(typicalMonths(wrap(exact)).discretionary.filed).toBe(1);
+  });
+
+  it('is capped at the last representable event month for a flat tail', () => {
+    const flat: Transition = {
+      ...t,
+      months: 1,
+      advance: [0.1],
+      exit: {},
+      tail: { advance: 1e-20, exit: {} }
+    };
+    expect(typicalMonths(wrap(flat)).discretionary.filed).toBe(Math.floor(16777216 / MONTH_DAYS));
+  });
+});
+
+function wrap(tr: Transition): Calibration {
+  return {
+    ...cal,
+    transitions: { ...cal.transitions, discretionary: { filed: tr } }
+  } as Calibration;
+}
