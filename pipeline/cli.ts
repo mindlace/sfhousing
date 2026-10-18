@@ -2,7 +2,12 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from '
 import { join, resolve } from 'node:path';
 import { FIXTURE_PROFILE, LIVE_PROFILE } from './config';
 import { build, printResults } from './steps/build';
-import { PROJECT_CHECK_IDS, checkDataset, type InvariantResult } from './steps/check';
+import {
+  CALIBRATION_CHECK_IDS,
+  PROJECT_CHECK_IDS,
+  checkDataset,
+  type InvariantResult
+} from './steps/check';
 import { doctor } from './steps/doctor';
 import { fetchAll } from './steps/fetch';
 import { fixture } from './steps/fixture';
@@ -109,6 +114,10 @@ const steps: Record<string, { help: string; run: Step }> = {
         asOf: report.counts['projects.asOf'],
         projectChecks: report.invariants?.filter((r) =>
           (PROJECT_CHECK_IDS as readonly string[]).includes(r.id)
+        ),
+        // V28 and V29 likewise come from the calibration step's in-memory computation.
+        calibrationChecks: report.invariants?.filter((r) =>
+          (CALIBRATION_CHECK_IDS as readonly string[]).includes(r.id)
         )
       });
       return printResults(results);

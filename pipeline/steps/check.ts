@@ -13,10 +13,15 @@ import {
 } from '../../src/lib/data/scenario-codec';
 import { decodeTransit } from '../../src/lib/data/transit-codec';
 import type { Day } from '../../src/lib/timelapse/time';
+import type { Calibration, Pathway, Stage } from '../../src/lib/timelapse/types';
 import { BBOX, type InvariantProfile } from '../config';
 import { checkQuality } from '../lib/quality';
 import { pointStrictlyInside } from '../lib/rings';
+import { parseProjectsFile } from '../../src/lib/timelapse/projects';
+import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
+import { checkV25, checkV26, checkV27, parseCalibrationText } from '../lib/fzp-cal/invariants';
 import { checkV20 } from '../project-records/invariants';
+import { CALIBRATION_JSON } from './calibration';
 import { PROJECTS_JSON } from './projects';
 import { PARCELS_BIN } from '../lib/scenario-files';
 import { z12TileBytes } from './tiles';
@@ -43,10 +48,18 @@ export interface CheckExtras {
    * `check` carries them from report.json; when absent they fail as not measured.
    */
   projectChecks?: InvariantResult[];
+  /**
+   * V28 and V29 from the calibration step (they need the in-memory computation). A standalone
+   * `check` carries them from report.json; when absent they fail as not measured.
+   */
+  calibrationChecks?: InvariantResult[];
 }
 
 /** The project-records invariants measured in the build, not from the files. */
 export const PROJECT_CHECK_IDS = ['V21', 'V22', 'V23', 'V24'] as const;
+
+/** The stage-calibration invariants measured in the build, not from the files. */
+export const CALIBRATION_CHECK_IDS = ['V28', 'V29'] as const;
 
 interface Chunk {
   cellId: string;
@@ -163,6 +176,98 @@ export function checkV30(
       ]
     : q.failures;
   return { id: 'V30', ok: q.ok, detail: [...parts, warn].filter(Boolean).join('; ') };
+}
+
+/** `a` rendered as a list of problems, or `ok` text when there are none. */
+function verdict(id: InvariantResult['id'], problems: string[], ok: string): InvariantResult {
+  return {
+    id,
+    ok: problems.length === 0,
+    detail: problems.length === 0 ? ok : problems.join('; ')
+  };
+}
+
+/**
+ * V25–V27 over `scenarios/fzp/calibration.json` and `projects.json` (stage-calibration spec
+ * §4.10). A missing or unreadable file fails the invariants that need it. The V27 sample size and
+ * tolerance come from the calibration profile that matches the invariant profile.
+ */
+function checkCalibrationFiles(outDir: string, profile: InvariantProfile): InvariantResult[] {
+  const calFile = join(outDir, CALIBRATION_JSON);
+  const projFile = join(outDir, PROJECTS_JSON);
+  if (!existsSync(calFile)) {
+    const d = `${CALIBRATION_JSON} missing`;
+    return (['V25', 'V26', 'V27'] as const).map((id) => ({ id, ok: false, detail: d }));
+  }
+  const text = readFileSync(calFile, 'utf8');
+  const bytes = statSync(calFile).size;
+
+  // T3's asOf and in-flight projects. A projects.json that is missing or invalid is V20's to
+  // report: here it only means the asOf or in-flight comparison is not made. (T4d's asOf is
+  // checked by the calibration step itself, which throws on a mismatch.)
+  let projectsAsOf: Day | undefined;
+  let inFlight: { pathway: Pathway; stage: Stage }[] | undefined;
+  if (existsSync(projFile)) {
+    let json: unknown;
+    try {
+      json = JSON.parse(readFileSync(projFile, 'utf8'));
+    } catch {
+      json = undefined;
+    }
+    const asOf = (json as { asOf?: unknown } | undefined)?.asOf;
+    if (Number.isInteger(asOf)) projectsAsOf = asOf as Day;
+    try {
+      inFlight = parseProjectsFile(json).projects;
+    } catch {
+      inFlight = undefined;
+    }
+  }
+
+  const v25 = checkV25(text, bytes, FILL_LEVELS, projectsAsOf);
+  const out: InvariantResult[] = [
+    verdict('V25', v25, `parses, fill levels equal FILL_LEVELS, asOf matches, ${bytes} B`)
+  ];
+
+  // V26 reads the cells even when parseCalibration rejects the file (a deleted cell is itself a
+  // parse failure); V27 samples only a file that parses.
+  const parsed = parseCalibrationText(text);
+  let raw: Calibration | undefined;
+  if ('cal' in parsed) raw = parsed.cal;
+  else {
+    try {
+      raw = JSON.parse(text) as Calibration;
+    } catch {
+      raw = undefined;
+    }
+  }
+  if (raw === undefined || raw === null || typeof raw !== 'object') {
+    const d = `${CALIBRATION_JSON} is not a JSON object (V25)`;
+    out.push({ id: 'V26', ok: false, detail: d }, { id: 'V27', ok: false, detail: d });
+    return out;
+  }
+  const v26 = checkV26(raw, inFlight ?? []);
+  out.push(
+    verdict(
+      'V26',
+      v26,
+      inFlight
+        ? `every occupiable pathway x stage cell present (${inFlight.length} in flight)`
+        : 'every occupiable pathway x stage cell present (in-flight cells not checked)'
+    )
+  );
+  if ('error' in parsed) {
+    out.push({ id: 'V27', ok: false, detail: `${CALIBRATION_JSON} does not parse (V25)` });
+    return out;
+  }
+  const cal = profile.qualityShares ? LIVE_CAL : FIXTURE_CAL;
+  out.push(
+    verdict(
+      'V27',
+      checkV27(parsed.cal, cal.v27N, cal.v27Tol),
+      `sampling reproduces every table within ${cal.v27Tol} (${cal.v27N} draws per cell)`
+    )
+  );
+  return out;
 }
 
 /** Max without spreading (spread overflows the call stack at ~150k elements). */
@@ -584,6 +689,14 @@ export async function checkDataset(
   // V21–V24: measured by the project-records step.
   for (const id of PROJECT_CHECK_IDS) {
     const r = extras.projectChecks?.find((x) => x.id === id);
+    out.push(r ? { id, ok: r.ok, detail: r.detail } : { id, ok: false, detail: 'not measured' });
+  }
+
+  // V25–V27 calibration.json (stage-calibration spec §4.10), from the files; then V28, V29 from
+  // the calibration step.
+  out.push(...checkCalibrationFiles(outDir, profile));
+  for (const id of CALIBRATION_CHECK_IDS) {
+    const r = extras.calibrationChecks?.find((x) => x.id === id);
     out.push(r ? { id, ok: r.ok, detail: r.detail } : { id, ok: false, detail: 'not measured' });
   }
 

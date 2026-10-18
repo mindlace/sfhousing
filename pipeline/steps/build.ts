@@ -293,7 +293,8 @@ export async function build(
         skipTiles: opts.skipTiles ?? false,
         stableDetail: fixtureMode,
         asOf,
-        projectChecks: projects.checks
+        projectChecks: projects.checks,
+        calibrationChecks: calibration.checks
       })
     );
     const body: Record<string, unknown> = {

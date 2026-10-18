@@ -497,6 +497,31 @@
       "ok": true
     },
     {
+      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches, 34724 B",
+      "id": "V25",
+      "ok": true
+    },
+    {
+      "detail": "every occupiable pathway x stage cell present (13 in flight)",
+      "id": "V26",
+      "ok": true
+    },
+    {
+      "detail": "sampling reproduces every table within 0.005 (100000 draws per cell)",
+      "id": "V27",
+      "ok": true
+    },
+    {
+      "detail": "fixture: back-cast gate is live-only",
+      "id": "V28",
+      "ok": true
+    },
+    {
+      "detail": "two in-run computations are byte-identical",
+      "id": "V29",
+      "ok": true
+    },
+    {
       "detail": "every registered rule reports; shares not checked on this profile",
       "id": "V30",
       "ok": true

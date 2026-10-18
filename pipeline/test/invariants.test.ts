@@ -37,8 +37,8 @@ let base: string;
 /** The fixture build's derived cache root (kept, so the T14 report can be read). */
 let derived: string;
 let counts: Record<string, number>;
-/** What the build measured: V20's snapshot day and V21-V24, carried as `check` does. */
-let measured: Pick<CheckExtras, 'asOf' | 'projectChecks'>;
+/** What the build measured: V20's snapshot day, V21-V24 and V28-V29, carried as `check` does. */
+let measured: Pick<CheckExtras, 'asOf' | 'projectChecks' | 'calibrationChecks'>;
 beforeAll(async () => {
   base = mkdtempSync(join(tmpdir(), 'sfh-inv-'));
   derived = mkdtempSync(join(tmpdir(), 'sfh-inv-derived-'));
@@ -50,7 +50,8 @@ beforeAll(async () => {
   counts = report.counts;
   measured = {
     asOf: counts['projects.asOf'],
-    projectChecks: report.invariants.filter((r) => ['V21', 'V22', 'V23', 'V24'].includes(r.id))
+    projectChecks: report.invariants.filter((r) => ['V21', 'V22', 'V23', 'V24'].includes(r.id)),
+    calibrationChecks: report.invariants.filter((r) => ['V28', 'V29'].includes(r.id))
   };
 });
 const copy = () => {
