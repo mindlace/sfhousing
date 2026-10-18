@@ -300,6 +300,12 @@ SELECT b.id, b.roll_year,
        (NOT b.vacant AND (b.share_raw IS NULL OR b.value_cast)) AS share_bit,
        (NOT b.vacant AND b.share_raw IS NULL AND m.share_fallback) AS share_fell_back,
        b.vacant,
+       -- The vacant-lot definition (observation rules sd.features.vacant-year-built and
+       -- sd.features.vacant-share): a vacant parcel-year's 0 overwrites a source year built, or
+       -- an improvement share that is not already 0 at the 1/200 grid.
+       (b.vacant AND b.year_built IS NOT NULL) AS vacant_year_overwritten,
+       (b.vacant AND b.share_raw IS NOT NULL AND round(b.share_raw * 200) / 200 <> 0)
+         AS vacant_share_overwritten,
        b.land, b.impr, b.use_code, b.land_use_class,
        -- existingFloorAreaM2 in whole m² (spec §4.5 step 4, RA1, IA-8): the roll's
        -- Σ property_area × 0.09290304 when > 0, else the chunk record's floor area
@@ -345,6 +351,23 @@ SELECT 'sd.roll.floor-area-missing', count(*) FILTER (WHERE floor_missing), coun
 FROM f_feat;
 INSERT INTO quality_sample
 SELECT 'sd.roll.floor-area-missing', id || ':' || roll_year FROM f_feat WHERE floor_missing;
+
+-- The vacant-lot definition, counted over every panel parcel-year (observation rules; spec §4.5
+-- "Vacant lots get 0", "Vacant is 0"). They change nothing.
+INSERT INTO quality_tally
+SELECT 'sd.features.vacant-year-built', count(*) FILTER (WHERE vacant_year_overwritten), count(*),
+       NULL, NULL
+FROM f_feat;
+INSERT INTO quality_sample
+SELECT 'sd.features.vacant-year-built', id || ':' || roll_year FROM f_feat
+WHERE vacant_year_overwritten;
+INSERT INTO quality_tally
+SELECT 'sd.features.vacant-share', count(*) FILTER (WHERE vacant_share_overwritten), count(*),
+       NULL, NULL
+FROM f_feat;
+INSERT INTO quality_sample
+SELECT 'sd.features.vacant-share', id || ':' || roll_year FROM f_feat
+WHERE vacant_share_overwritten;
 
 CREATE OR REPLACE TABLE sc_features AS
 SELECT f.id AS mapblklot,

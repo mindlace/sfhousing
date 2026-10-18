@@ -489,6 +489,47 @@ export const SD_RULES: readonly QualityRule[] = [
   // Its `of` is panel parcel-years plus the T11 no-row parcels, and `fired` includes those
   // parcels: they take the same chunk-record floor area (controller ruling, F1 Task 3 review;
   // spec §4.5 step 5). The SQL tally row is topped up in writeScenario before it is reported.
+  // The vacant-lot definition (coordinator ruling, final fix wave; observe · none, one rule per
+  // field, the 0.01 default): spec §4.5 "Vacant lots get 0 and no imputation", "Vacant is 0". A
+  // vacant lot has no building, so its year built and improvement share are 0 by definition, and
+  // a non-null source value is overwritten. `fired` counts the vacant parcel-years whose source
+  // value is overwritten: a year built (after sd.roll.year-built-range), or an improvement share
+  // that is not already 0 at the 1/200 grid. No mask bit. Live 2026-10-17: 3,845 years and 3,568
+  // shares (6,435 parcel-years with either) of 2,920,785 panel parcel-years.
+  {
+    ...SD,
+    id: 'sd.features.vacant-year-built',
+    source: 'sc_roll_agg',
+    field: 'year_built',
+    kind: 'observe',
+    action: 'none',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label:
+      'Counts vacant parcel-years whose assessor year built is overwritten with 0: by definition ' +
+      'a vacant lot has no building, so no year built',
+    denominator: 'panel parcel-years',
+    ...SHARES,
+    unitsWeighted: false
+  },
+  {
+    ...SD,
+    id: 'sd.features.vacant-share',
+    source: 'sc_roll_agg',
+    field: 'land, impr',
+    kind: 'observe',
+    action: 'none',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label:
+      'Counts vacant parcel-years whose assessed improvement share is overwritten with 0: by ' +
+      'definition a vacant lot has no building, so no improvement share',
+    denominator: 'panel parcel-years',
+    ...SHARES,
+    unitsWeighted: false
+  },
   // Share override approved (partner, DQ-4, 2026-10-17): measured 5.90% of rows live (172,322 of
   // 2,921,640); 146,421 of the 171,467 bit-6 panel rows have 0 units, mostly non-residential
   // parcel-years whose roll floor area is 0, so the routine 5% default warns on every build. Warn

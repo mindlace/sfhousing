@@ -529,6 +529,31 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
       null,
       'observed parcel-years',
       false
+    ],
+    // The vacant-lot definition (coordinator ruling, final fix wave): observe · none per field.
+    [
+      'sd.features.vacant-year-built',
+      'sc_roll_agg',
+      'year_built',
+      'observe',
+      'none',
+      4,
+      null,
+      null,
+      'panel parcel-years',
+      false
+    ],
+    [
+      'sd.features.vacant-share',
+      'sc_roll_agg',
+      'land, impr',
+      'observe',
+      'none',
+      4,
+      null,
+      null,
+      'panel parcel-years',
+      false
     ]
   ];
   /** Partner-approved share overrides (DQ-4, 2026-10-17; design RA1 "Share overrides"). */
@@ -899,7 +924,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
 
   it('every scenario-data rule reports once (recordQuality throws on a second report)', () => {
     const ids = QUALITY_RULES.filter((r) => r.owner === 'scenario-data').map((r) => r.id);
-    expect(ids).toHaveLength(36);
+    expect(ids).toHaveLength(38);
     const got = Object.keys(s.quality)
       .filter((k) => k.endsWith('.fired'))
       .map((k) => k.slice('quality.'.length, -'.fired'.length))
@@ -1080,6 +1105,70 @@ describe('the cast, attrs, height and no-building rules on a synthetic copy of m
       expect(f.imputed & BIT.stories).toBe(0);
       expect((await feature(s, '3512007', y)).existing_stories).toBe(0);
     }
+  });
+});
+
+describe('the vacant-lot definition rules on a synthetic copy of mini', () => {
+  // Lot 10 becomes vacant in 2025 (a V property class) while its row keeps a year built and
+  // assessed values, so both fields are overwritten with 0. Lot 11 becomes vacant in 2025 with no
+  // assessed values (share NULL) and no year: nothing is overwritten. `v0` is the baseline.
+  let s: Synthetic;
+  let s0: Synthetic;
+  beforeAll(async () => {
+    s0 = await synthetic('v0', []);
+    s = await synthetic('v', [
+      setRow('3512010', [2025], `property_class_code = 'V'`),
+      setRow(
+        '3512011',
+        [2025],
+        `property_class_code = 'V', year_property_built = NULL, assessed_land_value = 0,
+         assessed_improvement_value = 0`
+      )
+    ]);
+  });
+
+  it('counts vacant parcel-years whose source year or share is overwritten with 0', async () => {
+    const [src] = await db.all<{ y: number | null; land: number; impr: number }>(
+      `SELECT year_property_built y, assessed_land_value land, assessed_improvement_value impr
+       FROM v.src_roll WHERE parcel_number = '3512010' AND closed_roll_year = 2025`
+    );
+    expect(src.y).not.toBeNull();
+    expect(src.impr).toBeGreaterThan(0);
+    expect(await tally(s, 'sd.features.vacant-year-built')).toEqual({
+      fired: 1,
+      of: 26,
+      sample: ['3512010:2025']
+    });
+    expect(await tally(s, 'sd.features.vacant-share')).toEqual({
+      fired: 1,
+      of: 26,
+      sample: ['3512010:2025']
+    });
+    for (const id of ['sd.features.vacant-year-built', 'sd.features.vacant-share'])
+      expect(await tally(s0, id)).toEqual({ fired: 0, of: 26, sample: [] });
+  });
+
+  it('changes no value: vacant is 0 and 0, with no bit, as before the rules', async () => {
+    for (const lot of ['3512010', '3512011']) {
+      const f = await feature(s, lot, 2025);
+      const [{ share }] = await db.all<{ share: number }>(
+        `SELECT improvement_share AS "share" FROM v.sc_features
+         WHERE mapblklot = '${lot}' AND roll_year = 2025`
+      );
+      expect(f.year_built).toBe(0);
+      expect(share).toBe(0);
+      expect(f.imputed & (BIT.year | BIT.share)).toBe(0);
+    }
+    // The rules' fields aside, the vacant parcel-year keeps the baseline's values.
+    const pick = ({
+      existing_units,
+      existing_stories,
+      existing_floor_area_m2,
+      base_density_cap
+    }: Feature) => ({ existing_units, existing_stories, existing_floor_area_m2, base_density_cap });
+    expect(pick(await feature(s, '3512010', 2025))).toEqual(
+      pick(await feature(s0, '3512010', 2025))
+    );
   });
 });
 

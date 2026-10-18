@@ -335,6 +335,8 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       'sd.features.no-building': [0, 25],
       'sd.features.share-median': [2, 24],
       'sd.features.stories-height': [0, 25],
+      'sd.features.vacant-share': [0, 26],
+      'sd.features.vacant-year-built': [0, 26],
       'sd.features.year-built-median': [0, 24],
       'sd.height.blank': [0, 6],
       'sd.roll.floor-area-cast': [0, 29],
