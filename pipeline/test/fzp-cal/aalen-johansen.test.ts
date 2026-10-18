@@ -187,3 +187,56 @@ describe('ajSweep and ajTable', () => {
     expect(ajSweep(rev)).toEqual(ajSweep(golden));
   });
 });
+
+describe('weighted spells (ruling R13)', () => {
+  const golden = [
+    spell(0, 40, 'advance'),
+    spell(0, 70, 'censored'),
+    spell(0, 70, 'withdrawn'),
+    spell(10, 100, 'advance'),
+    spell(0, 120, 'expired'),
+    spell(0, 150, 'censored'),
+    spell(0, 200, 'censored')
+  ];
+
+  it('every w = 1 gives the unweighted golden sweep and table bit for bit', () => {
+    const ones = golden.map((s) => ({ ...s, w: 1 }));
+    expect(ajSweep(ones)).toEqual(ajSweep(golden));
+    expect(table(ones).t).toEqual(table(golden).t);
+    const rand = mulberry32(0x5eed);
+    const outcomes: Spell['outcome'][] = [...KINDS, 'censored', 'censored'];
+    const many: Spell[] = [];
+    for (let i = 0; i < 2000; i++) {
+      const x = Math.floor(rand() * 3000);
+      const a = rand() < 0.3 ? Math.floor(rand() * x) : 0;
+      many.push(spell(a, x, outcomes[Math.floor(rand() * outcomes.length)]));
+    }
+    const manyOnes = many.map((s) => ({ ...s, w: 1 }));
+    expect(ajSweep(manyOnes)).toEqual(ajSweep(many));
+    expect(table(manyOnes, 240, 5).t).toEqual(table(many, 240, 5).t);
+  });
+
+  /*
+   * The golden spells with the first advance (x = 40) weighted 2: total weight 8.
+   *   n(40) = 8, n(70) = 8 - 2 = 6, n(100) = 8 - 4 = 4, n(120) = 3; e_adv = 2, 0, 1, 0.
+   *   d=40  F_adv = 2/8 = 0.25,                S = 0.75
+   *   d=70  F_w   = 0.75/6 = 0.125,            S = 0.625
+   *   d=100 F_adv = 0.25 + 0.625/4 = 0.40625,  S = 0.46875
+   *   d=120 F_exp = 0.46875/3 = 0.15625,       S = 0.3125
+   * months: n(6M) = 8 - 7 = 1, n(7M) = 0, so 6. The floored table values are exact.
+   */
+  it('a weight scales the spell its at-risk contribution and its event', () => {
+    const w = golden.map((s, i) => (i === 0 ? { ...s, w: 2 } : s));
+    const sw = ajSweep(w);
+    expect(sw.n).toEqual([8, 6, 4, 3]);
+    expect(sw.e.advance).toEqual([2, 0, 1, 0]);
+    expect(sw.events.advance).toBe(3);
+    expect(sw.spells).toBe(7);
+    const { t } = table(w);
+    expect(t.months).toBe(6);
+    expect(t.advance).toEqual([0, 0.25, 0.25, 0.40625, 0.40625, 0.40625]);
+    expect(t.exit.withdrawn).toEqual([0, 0, 0.125, 0.125, 0.125, 0.125]);
+    expect(t.exit.expired).toEqual([0, 0, 0, 0.15625, 0.15625, 0.15625]);
+    expect(t.S).toBeCloseTo(0.3125, 15);
+  });
+});

@@ -87,7 +87,8 @@ const DOUBLED: Rates = { advance: 1 / 12, expired: 2 / 36 };
 /** max |p - q| over months 1..K and every outcome. */
 function worst(K: number, p: (j: Outcome, k: number) => number, q: typeof p): number {
   let w = 0;
-  for (let k = 1; k <= K; k++) for (const j of OUTCOMES) w = Math.max(w, Math.abs(p(j, k) - q(j, k)));
+  for (let k = 1; k <= K; k++)
+    for (const j of OUTCOMES) w = Math.max(w, Math.abs(p(j, k) - q(j, k)));
   return w;
 }
 
@@ -110,6 +111,11 @@ describe('phScale: identical pathway and pooled hazards', () => {
     expect(r.months).toBe(plain.months);
     expect(r.months).toBeGreaterThanOrEqual(24);
     expect(worst(r.months, at(r), at(plain))).toBeLessThan(0.01);
+  });
+
+  it('every w = 1 gives the same result bit for bit', () => {
+    const one = (ss: Spell[]) => ss.map((s) => ({ ...s, w: 1 }));
+    expect(phScale(one(pooled), one(cutSpells(own, V2015)), LIVE_CAL)).toEqual(r);
   });
 });
 
@@ -166,43 +172,19 @@ describe('phScale: a pathway with doubled exit hazard since 2015', () => {
       tailProvenance: small.tailProvenance
     };
 
-    it('passes parseCalibration (or, while it is a stub, the invariants it checks)', () => {
+    it('passes parseCalibration', () => {
       const copy = structuredClone(calibrationSmall);
       (copy.transitions.discretionary as Record<string, unknown>).permitFiled = t;
-      let stub = false;
-      try {
-        parseCalibration(copy);
-      } catch (err) {
-        if ((err as Error).message !== 'not implemented') throw err;
-        stub = true;
-      }
-      expect(typeof stub).toBe('boolean');
-      // The invariants parseCalibration enforces on a Transition.
-      let prev = 0;
-      for (let k = 1; k <= t.months; k++) {
-        let c = t.advance[k - 1];
-        expect(t.advance[k - 1]).toBeGreaterThanOrEqual(k === 1 ? 0 : t.advance[k - 2]);
-        for (const reason of EXIT_ORDER) {
-          const v = t.exit[reason];
-          if (!v) continue;
-          expect(v[k - 1]).toBeGreaterThanOrEqual(k === 1 ? 0 : v[k - 2]);
-          expect(v[k - 1]).toBeLessThanOrEqual(1);
-          c += v[k - 1];
-        }
-        expect(c).toBeLessThanOrEqual(1 + 1e-9);
-        expect(c).toBeGreaterThanOrEqual(prev);
-        prev = c;
-      }
-      const rho = t.tail.advance + Object.values(t.tail.exit).reduce((s, v) => s + v!, 0);
-      expect(rho).toBeGreaterThan(0);
-      expect(rho).toBeLessThanOrEqual(1);
+      expect(() => parseCalibration(copy)).not.toThrow();
     });
 
     it('20,000 sampleTransition draws match its cumulativeIncidence within 0.01', () => {
       const N = 20000;
       const rng = mulberry32(0x5eed);
       const kinds: Outcome[] = ['advance', ...(Object.keys(exit) as ExitReason[])];
-      const hist = new Map<Outcome, number[]>(kinds.map((j) => [j, new Array(t.months + 1).fill(0)]));
+      const hist = new Map<Outcome, number[]>(
+        kinds.map((j) => [j, new Array(t.months + 1).fill(0)])
+      );
       for (let i = 0; i < N; i++) {
         const d = sampleTransition(t, rng(), 0);
         // event month k: ceil((k - 1) M) <= days < ceil(k M)
@@ -277,6 +259,11 @@ describe('phScale: a pathway with no 2015+ events', () => {
     expect(r.exit).toEqual(plain.exit);
   });
 
+  it('every w = 1 gives the hand example bit for bit', () => {
+    const one = (ss: Spell[]) => ss.map((s) => ({ ...s, w: 1 }));
+    expect(phScale(one(pooled), one([q1, q2]), hc)).toEqual(phScale(pooled, [q1, q2], hc));
+  });
+
   it('rejects spells of more than one stage', () => {
     expect(() => phScale(pooled, [{ ...q1, stage: 'construction' }], hc)).toThrow(/one stage/);
   });
@@ -301,6 +288,9 @@ describe('scaledTable: the Σh > 1 cap', () => {
     expect(r.capped).toBeGreaterThan(0);
     // 50 * 1 / (41 - i) > 1 for every grid point
     expect(r.capped).toBe(40);
+    // months 20 (n(20M) = 1): the grid point at d = 20M is past the table
+    expect(r.months).toBe(20);
+    expect(r.cappedInTable).toBe(39);
     // the first grid point takes everything: S = 0 after it
     expect(r.advance[0]).toBe(1);
     for (let k = 1; k <= r.months; k++) {
@@ -315,6 +305,7 @@ describe('scaledTable: the Σh > 1 cap', () => {
     const r = scaledTable(sw, one, LIVE_CAL.kMax, 1, spells);
     const plain = ajTable(sw, undefined, LIVE_CAL.kMax, 1, spells);
     expect(r.capped).toBe(0);
+    expect(r.cappedInTable).toBe(0);
     expect(r.advance).toEqual(plain.advance);
     expect(r.exit).toEqual(plain.exit);
   });
@@ -335,5 +326,47 @@ describe('scaledTable: the Σh > 1 cap', () => {
     const r = phScale(pool, own, hc);
     expect(r.theta.advance).toBeGreaterThan(1);
     expect(r.capped).toBeGreaterThan(0);
+    expect(r.cappedInTable).toBeLessThanOrEqual(r.capped);
   });
+});
+
+/*
+ * R14 identity: with the pathway spells identical to the pooled ones, E_j = O_j for every
+ * outcome (the table part sums n(d)·e_j(d)/n(d) below the tail span, the tail part is the same
+ * occurrence/exposure over the span), so every θ_j = (O_j + κ)/(E_j + κ) = 1. The spells all enter
+ * on or after 2015-01-01, so the cut at the pathway window start leaves them unchanged.
+ */
+describe('phScale: R14 identity (pathway = pooled)', () => {
+  function since2015(weighted: boolean): Spell[] {
+    const rand = mulberry32(0x5eed);
+    const out: Spell[] = [];
+    for (let i = 0; i < 600; i++) {
+      const e = V2015 + rand() * (AS_OF - V2015);
+      const dur = -log(1 - rand()) / ((1 / 12 + 1 / 36) / M);
+      const kind: Spell['outcome'] = rand() < 0.75 ? 'advance' : 'expired';
+      const z = e + dur;
+      const censored = z > AS_OF;
+      const s: Spell = {
+        pathway: 'discretionary',
+        stage: 'construction',
+        a: 0,
+        e,
+        x: (censored ? AS_OF : z) - e,
+        outcome: censored ? 'censored' : kind,
+        projectId: `r${String(i).padStart(4, '0')}`
+      };
+      out.push(weighted && s.outcome === 'advance' ? { ...s, w: 1 + (i % 3) / 7 } : s);
+    }
+    return out;
+  }
+
+  for (const weighted of [false, true]) {
+    it(`every theta_j = 1 within 1e-12 (${weighted ? 'non-unit weights' : 'unit weights'})`, () => {
+      const spells = since2015(weighted);
+      expect(cutSpells(spells, V2015)).toEqual(spells);
+      const r = phScale(spells, spells, LIVE_CAL);
+      expect(r.thin).toBe(false);
+      for (const j of OUTCOMES) expect(Math.abs(r.theta[j] - 1)).toBeLessThan(1e-12);
+    });
+  }
 });

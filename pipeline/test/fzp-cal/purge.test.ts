@@ -33,7 +33,8 @@ function exitHist(
       existingUnits: 0,
       storiesProposed: null,
       baseStoriesAtFiling: null,
-      sources: []
+      sources: [],
+      quality: []
     }
   };
 }

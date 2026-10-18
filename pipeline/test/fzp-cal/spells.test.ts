@@ -1,6 +1,12 @@
 // Qualifying predicate, normalisation steps 1-4 and spell building (spec §4.4).
 import { describe, expect, it } from 'vitest';
-import { buildSpells, gapImputeTally, normalise, qualifies } from '../../lib/fzp-cal/spells';
+import {
+  buildSpells,
+  gapImputeTally,
+  noFcdTally,
+  normalise,
+  qualifies
+} from '../../lib/fzp-cal/spells';
 import { CalibrationError } from '../../lib/fzp-cal/types';
 import { isoToDay } from '../../project-records/multiphase';
 import type { Day, ProjectHistory, Stage } from '../../../src/lib/timelapse/types';
@@ -30,6 +36,7 @@ function hist(
     storiesProposed: null,
     baseStoriesAtFiling: null,
     sources: [],
+    quality: [],
     ...extra
   };
 }
@@ -135,14 +142,15 @@ describe('normalise', () => {
       { kind: 'complete', day: d('2018-01-01') }
     );
     const r = normalise([h], AS_OF);
+    // construction is not imputed for a completion without an FCD (sc.stages.no-fcd-duration)
     expect(r.norm[0].eff).toEqual({
       permitFiled: d('2016-01-01'),
       permitIssued: d('2018-01-01'),
-      construction: d('2018-01-01'),
       complete: d('2018-01-01')
     });
-    expect(r.perStage['sc.stages.gap-impute']).toEqual({ permitIssued: 1, construction: 1 });
+    expect(r.perStage['sc.stages.gap-impute']).toEqual({ permitIssued: 1 });
     expect([...r.imputed]).toEqual(['n1']);
+    expect(r.norm[0].noFcd).toBe(true);
   });
 
   it('counts complete as a later entered stage and never imputes after the last entered one', () => {
@@ -154,7 +162,7 @@ describe('normalise', () => {
     );
     const r = normalise([h], AS_OF);
     expect(r.norm[0].eff.permitIssued).toBe(d('2018-01-01'));
-    expect(r.norm[0].eff.construction).toBe(d('2018-01-01'));
+    expect(r.norm[0].eff.construction).toBeUndefined();
     const g = hist('p2', 'discretionary', { filed: '2016-01-01' }, open('2020-01-01'));
     expect(normalise([g], AS_OF).imputed.size).toBe(0);
   });
@@ -221,12 +229,12 @@ describe('normalise', () => {
     );
     const r = normalise([h], AS_OF);
     expect(r.norm[0].eff.filed).toBeUndefined();
-    expect(buildSpells(r.norm, AS_OF).map((s) => s.stage)).toEqual(['permitFiled']);
+    expect(buildSpells(r.norm, AS_OF).spells.map((s) => s.stage)).toEqual(['permitFiled']);
   });
 });
 
 describe('buildSpells', () => {
-  const spellsOf = (h: ProjectHistory) => buildSpells(normalise([h], AS_OF).norm, AS_OF);
+  const spellsOf = (h: ProjectHistory) => buildSpells(normalise([h], AS_OF).norm, AS_OF).spells;
 
   it('builds advance, exit and censored spells with e, x and a', () => {
     const exit = hist(
@@ -310,7 +318,7 @@ describe('buildSpells', () => {
     const n = normalise([h], AS_OF).norm;
     n[0].purgeCensored = true;
     n[0].end = { kind: 'open', lastObserved: d('2017-12-31') };
-    const s = buildSpells(n, AS_OF);
+    const s = buildSpells(n, AS_OF).spells;
     expect(s[0]).toMatchObject({ outcome: 'censored', x: d('2017-12-31') - d('2016-01-01') });
   });
 
@@ -393,7 +401,7 @@ describe('buildSpells', () => {
       ),
       hist('c', 'discretionary', { filed: '2016-01-01' }, open('2020-01-01'))
     ];
-    const s = buildSpells(normalise(hs, AS_OF).norm, AS_OF);
+    const s = buildSpells(normalise(hs, AS_OF).norm, AS_OF).spells;
     expect(s.map((x) => `${x.pathway}:${x.stage}:${x.projectId}`)).toEqual([
       'discretionary:filed:c',
       'discretionary:filed:y',
@@ -408,7 +416,7 @@ describe('buildSpells', () => {
 describe('gapImputeTally (DQ-4: counted over windowed histories)', () => {
   const tally = (hs: ProjectHistory[]) => {
     const r = normalise(hs, AS_OF);
-    return gapImputeTally(r.imputed, buildSpells(r.norm, AS_OF));
+    return gapImputeTally(r.imputed, buildSpells(r.norm, AS_OF).spells);
   };
   // permitFiled -> construction with permitIssued missing: step 1 imputes permitIssued.
   const gapped = (id: string, filed: string, built: string) =>
@@ -423,7 +431,7 @@ describe('gapImputeTally (DQ-4: counted over windowed histories)', () => {
     );
     const r = normalise([pre], AS_OF);
     expect(r.imputed.has('pre')).toBe(true);
-    expect(gapImputeTally(r.imputed, buildSpells(r.norm, AS_OF))).toEqual({
+    expect(gapImputeTally(r.imputed, buildSpells(r.norm, AS_OF).spells)).toEqual({
       fired: 0,
       of: 0,
       sample: []
@@ -451,5 +459,153 @@ describe('gapImputeTally (DQ-4: counted over windowed histories)', () => {
       gapped('b1', '2012-01-01', '2013-01-01')
     ]);
     expect(t).toEqual({ fired: 2, of: 3, sample: ['b1', 'z2'] });
+  });
+});
+
+describe('no-FCD completions (sc.stages.no-fcd-duration, partner ruling P1)', () => {
+  const done = (iso: string): ProjectHistory['end'] => ({ kind: 'complete', day: d(iso) });
+  const noFcd = (id: string, extra: Entered = {}, complete = '2012-05-01') =>
+    hist(
+      id,
+      'discretionary',
+      {
+        filed: '2008-01-01',
+        entitled: '2008-06-01',
+        permitFiled: '2009-06-01',
+        permitIssued: '2010-03-01',
+        complete,
+        ...extra
+      },
+      done(complete)
+    );
+
+  it('does not impute construction = completion day and moves both spells to unobserved', () => {
+    const r = normalise([noFcd('nf')], AS_OF);
+    expect(r.imputed.size).toBe(0);
+    expect(r.perStage['sc.stages.gap-impute']).toEqual({});
+    expect(r.norm[0].noFcd).toBe(true);
+    expect(r.norm[0].eff.construction).toBeUndefined();
+    const b = buildSpells(r.norm, AS_OF);
+    expect(b.spells.map((s) => s.stage)).toEqual(['permitFiled']);
+    expect(b.unobserved).toEqual([
+      {
+        projectId: 'nf',
+        pathway: 'discretionary',
+        stage: 'permitIssued',
+        complete: d('2012-05-01'),
+        enteredPermitIssued: d('2010-03-01')
+      },
+      {
+        projectId: 'nf',
+        pathway: 'discretionary',
+        stage: 'construction',
+        complete: d('2012-05-01'),
+        enteredPermitIssued: d('2010-03-01')
+      }
+    ]);
+  });
+
+  it('treats a construction start on the completion day as no FCD', () => {
+    const r = normalise([noFcd('nf', { construction: '2012-05-01' })], AS_OF);
+    expect(r.imputed.size).toBe(0);
+    expect(r.norm[0].noFcd).toBe(true);
+    const b = buildSpells(r.norm, AS_OF);
+    expect(b.spells.map((s) => s.stage)).toEqual(['permitFiled']);
+    expect(b.unobserved.map((u) => [u.stage, u.complete, u.enteredPermitIssued])).toEqual([
+      ['permitIssued', d('2012-05-01'), d('2010-03-01')],
+      ['construction', d('2012-05-01'), d('2010-03-01')]
+    ]);
+  });
+
+  it('leaves a completion with a real FCD unaffected', () => {
+    const r = normalise([noFcd('ok', { construction: '2010-09-01' })], AS_OF);
+    expect(r.norm[0].noFcd).toBe(false);
+    const b = buildSpells(r.norm, AS_OF);
+    expect(b.spells.map((s) => [s.stage, s.outcome])).toEqual([
+      ['permitFiled', 'advance'],
+      ['permitIssued', 'advance'],
+      ['construction', 'advance']
+    ]);
+    expect(b.unobserved).toEqual([]);
+  });
+
+  it('still imputes a missing entitled on a no-FCD completion (gap-impute fires)', () => {
+    const h = hist(
+      'nf',
+      'discretionary',
+      {
+        filed: '2016-01-01',
+        permitFiled: '2016-09-01',
+        permitIssued: '2017-03-01',
+        complete: '2019-05-01'
+      },
+      done('2019-05-01')
+    );
+    const r = normalise([h], AS_OF);
+    expect(r.norm[0].eff.entitled).toBe(d('2016-09-01'));
+    expect(r.norm[0].eff.construction).toBeUndefined();
+    expect(r.perStage['sc.stages.gap-impute']).toEqual({ entitled: 1 });
+    expect([...r.imputed]).toEqual(['nf']);
+    expect(r.norm[0].noFcd).toBe(true);
+    expect(r.perStage['sc.stages.no-fcd-duration']).toEqual({ permitIssued: 1, construction: 1 });
+  });
+
+  it('is never set on open or exit histories', () => {
+    const issued = { permitFiled: '2016-01-01', permitIssued: '2016-06-01' };
+    const r = normalise(
+      [
+        hist('o', 'permitOnly', issued, open('2020-01-01')),
+        hist('x', 'permitOnly', issued, {
+          kind: 'exit',
+          stage: 'permitIssued',
+          reason: 'expired',
+          day: d('2018-01-01')
+        })
+      ],
+      AS_OF
+    );
+    expect(r.norm.map((n) => n.noFcd)).toEqual([false, false]);
+    expect(buildSpells(r.norm, AS_OF).unobserved).toEqual([]);
+  });
+
+  it('cuts unobserved advances at the pooled window: completion on or after 2007-01-01', () => {
+    const pre = hist(
+      'pre',
+      'permitOnly',
+      { permitFiled: '2003-01-01', permitIssued: '2004-01-01', complete: '2006-12-31' },
+      done('2006-12-31')
+    );
+    const b = buildSpells(normalise([pre], AS_OF).norm, AS_OF);
+    expect(b.spells).toEqual([]);
+    expect(b.unobserved).toEqual([]);
+  });
+
+  it('noFcdTally: fired = windowed no-FCD completions, of = histories with a spell or one', () => {
+    // b-late's permitFiled spell ends before 2007: it contributes only unobserved advances
+    const late = hist(
+      'b-late',
+      'permitOnly',
+      { permitFiled: '2005-01-01', permitIssued: '2006-06-01', complete: '2008-01-01' },
+      done('2008-01-01')
+    );
+    const pre = hist(
+      'pre',
+      'permitOnly',
+      { permitFiled: '2003-01-01', permitIssued: '2004-01-01', complete: '2005-01-01' },
+      done('2005-01-01')
+    );
+    const r = normalise(
+      [noFcd('z-nf'), noFcd('a-ok', { construction: '2010-09-01' }), late, pre],
+      AS_OF
+    );
+    const b = buildSpells(r.norm, AS_OF);
+    expect(noFcdTally(r.norm, b.spells, b.unobserved)).toEqual({
+      fired: 2,
+      of: 3,
+      sample: ['b-late', 'z-nf']
+    });
+    // gap-impute counts over the same windowed histories when given the unobserved advances
+    expect(gapImputeTally(r.imputed, b.spells, b.unobserved).of).toBe(3);
+    expect(gapImputeTally(r.imputed, b.spells).of).toBe(2);
   });
 });

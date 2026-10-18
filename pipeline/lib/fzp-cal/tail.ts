@@ -5,23 +5,38 @@
 import { exp } from '../../../src/lib/timelapse/math';
 import { MONTH_DAYS } from '../../../src/lib/timelapse/time';
 import { EXIT_ORDER, type ExitReason, type Transition } from '../../../src/lib/timelapse/types';
-import { OUTCOMES, type Outcome } from './aalen-johansen';
+import { OUTCOMES, perOutcome, type Outcome } from './aalen-johansen';
 import type { CalProfile, Spell } from './types';
 
 /** Rounds to 6 significant digits (ECMAScript `toPrecision` is exactly specified). */
 export const sig6 = (v: number): number => (v === 0 ? 0 : Number(v.toPrecision(6)));
 
-/** Events (any outcome but censored) with x >= `from`, the start of the span in days. */
+/** Weighted events (any outcome but censored) with x >= `from`, the start of the span in days. */
 function spanEvents(spells: Spell[], from: number): number {
   let n = 0;
-  for (const s of spells) if (s.outcome !== 'censored' && s.x >= from) n++;
+  for (const s of spells) if (s.outcome !== 'censored' && s.x >= from) n += s.w ?? 1;
   return n;
+}
+
+/**
+ * Weighted person-days of the spells at durations >= `from`: Σ w·max(0, x − max(a, from)).
+ * The tail fit and the PH scaling's expected counts (`ph-pool.ts`) both use it, which keeps the
+ * R14 identity E = O exact in the tail part.
+ */
+export function exposureFrom(spells: Spell[], from: number): number {
+  let days = 0;
+  for (const s of spells) {
+    const start = s.a > from ? s.a : from;
+    if (s.x > start) days += (s.w ?? 1) * (s.x - start);
+  }
+  return days;
 }
 
 /**
  * Occurrence/exposure over months k0 onward, to the end of observation. k0 starts at
  * max(1, months - TAIL_SPAN + 1) and moves earlier (down to 1) until the span holds
  * >= TAIL_MIN_EVENTS events. Person-months E = sum max(0, x - max(a, (k0 - 1) M)) / M;
+ * events and person-months are weighted by each spell's `w` (default 1; ruling R13);
  * lambda_j = scale_j * events_j / E; p_j = (lambda_j / lambda)(1 - exp(-lambda)), 6 significant
  * digits. All four exit reasons are returned (dropping reasons with no events is the caller's).
  * With no exposure or no events the tail is all zeros, which `rejects` turns down.
@@ -46,15 +61,11 @@ export function tailFit(
   }
   const from = (k0 - 1) * MONTH_DAYS;
 
-  let exposure = 0;
-  const count = {} as Record<Outcome, number>;
-  for (const j of OUTCOMES) count[j] = 0;
+  const count = perOutcome(() => 0);
   for (const s of spells) {
-    const start = s.a > from ? s.a : from;
-    if (s.x > start) exposure += s.x - start;
-    if (s.outcome !== 'censored' && s.x >= from) count[s.outcome]++;
+    if (s.outcome !== 'censored' && s.x >= from) count[s.outcome] += s.w ?? 1;
   }
-  const personMonths = exposure / MONTH_DAYS;
+  const personMonths = exposureFrom(spells, from) / MONTH_DAYS;
 
   const lambda = {} as Record<Outcome, number>;
   let total = 0;

@@ -149,7 +149,8 @@ function hist(
     existingUnits: 0,
     storiesProposed: null,
     baseStoriesAtFiling: null,
-    sources: []
+    sources: [],
+    quality: []
   };
 }
 
@@ -169,7 +170,7 @@ describe('cutSpells and preRollCount', () => {
       },
       open('2020-01-01')
     );
-    const s = buildSpells(normalise([h], AS_OF).norm, AS_OF);
+    const s = buildSpells(normalise([h], AS_OF).norm, AS_OF).spells;
     expect(s.map((x) => x.stage)).toEqual(['permitFiled', 'permitIssued', 'construction']);
     const cut = cutSpells(s, d('2015-01-01'));
     expect(cut.map((x) => x.stage)).toEqual(['permitIssued', 'construction']);
@@ -177,7 +178,7 @@ describe('cutSpells and preRollCount', () => {
 
   it('keeps a Planning-side spell entering before 2015 by left truncation at 2015', () => {
     const h = hist('p1', 'discretionary', { filed: '2014-01-01' }, open('2020-01-01'));
-    const s = buildSpells(normalise([h], AS_OF).norm, AS_OF);
+    const s = buildSpells(normalise([h], AS_OF).norm, AS_OF).spells;
     expect(s).toHaveLength(1);
     expect(s[0].a).toBe(d('2015-01-01') - d('2014-01-01'));
   });
@@ -189,7 +190,7 @@ describe('cutSpells and preRollCount', () => {
       { permitFiled: '2004-01-01', permitIssued: '2004-03-01' },
       open('2020-01-01')
     );
-    const s = buildSpells(normalise([h], AS_OF).norm, AS_OF);
+    const s = buildSpells(normalise([h], AS_OF).norm, AS_OF).spells;
     expect(s[0].a).toBe(d('2007-01-01') - d('2004-03-01'));
     const cut = cutSpells(s, d('2015-01-01'));
     expect(cut[0].a).toBe(d('2015-01-01') - d('2004-03-01'));
@@ -213,6 +214,6 @@ describe('cutSpells and preRollCount', () => {
     const later = hist('p3', 'permitOnly', { permitFiled: '2003-01-01' }, open('2012-01-01'));
     const n = normalise([pre, edge, later], AS_OF).norm;
     expect(preRollCount(n)).toBe(1);
-    expect(buildSpells(n, AS_OF).map((s) => s.projectId)).toEqual(['p3', 'p2']);
+    expect(buildSpells(n, AS_OF).spells.map((s) => s.projectId)).toEqual(['p3', 'p2']);
   });
 });

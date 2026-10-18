@@ -30,6 +30,24 @@ const EXPECTED: Record<ScRuleId, QualityRule> = {
     warnShare: 0.1,
     failShare: 0.2
   },
+  // partner ruling P1 / controller ruling R13 (2026-10-18); kind-default shares for `missing`
+  'sc.stages.no-fcd-duration': {
+    id: 'sc.stages.no-fcd-duration',
+    owner: 'stage-calibration',
+    source: 'project-histories',
+    field: 'entered',
+    kind: 'missing',
+    action: 'drop',
+    tier: 2,
+    valueTier: null,
+    maskBit: null,
+    label:
+      'A completed project with no recorded construction start counts as finished, but not in the time spent in permit and construction',
+    denominator: 'qualifying histories that contribute a spell in a pooled window',
+    warnShare: 0.05,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
   'sc.stages.running-max': {
     ...common,
     id: 'sc.stages.running-max',
@@ -79,7 +97,7 @@ const EXPECTED: Record<ScRuleId, QualityRule> = {
 };
 
 describe('sc.* quality rules', () => {
-  it('SC_RULE_IDS lists the five ids', () => {
+  it('SC_RULE_IDS lists the six ids', () => {
     expect([...SC_RULE_IDS].sort()).toEqual(Object.keys(EXPECTED).sort());
   });
 
@@ -91,15 +109,18 @@ describe('sc.* quality rules', () => {
     });
   }
 
-  it('stage-calibration owns exactly the five rules', () => {
+  it('stage-calibration owns exactly the six rules', () => {
     const ids = QUALITY_RULES.filter((r) => r.owner === 'stage-calibration')
       .map((r) => r.id)
       .sort();
     expect(ids).toEqual([...SC_RULE_IDS].sort());
   });
 
-  it('has no missing-kind rule and departs from the kind defaults only at gap-impute', () => {
-    expect(SC_RULES.some((r) => r.kind === 'missing')).toBe(false);
+  it('has six rules, one of kind missing, and departs from the kind defaults only at gap-impute', () => {
+    expect(SC_RULES).toHaveLength(6);
+    expect(SC_RULES.filter((r) => r.kind === 'missing').map((r) => r.id)).toEqual([
+      'sc.stages.no-fcd-duration'
+    ]);
     expect(kindDefaultDepartures(SC_RULES)).toEqual(['sc.stages.gap-impute']);
   });
 });

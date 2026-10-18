@@ -2,8 +2,9 @@
  * Qualifying predicate, normalisation steps 1-4 and spell building (stage-calibration spec §4.4).
  * Steps 1-3 are the registered `sc.*` rules (counted here, recorded by the build through
  * `recordQuality`); step 4 is a method count. Steps 2 and 3 are counted over all qualifying
- * histories; step 1 is counted over windowed histories only (`gapImputeTally`, DQ-4). Values
- * change only in memory: `src` stays as read.
+ * histories; step 1 and its no-FCD amendment (`sc.stages.no-fcd-duration`, partner ruling P1) are
+ * counted over windowed histories only (`gapImputeTally`, `noFcdTally`; DQ-4). Values change only
+ * in memory: `src` stays as read.
  */
 import { isoToDay } from '../../project-records/multiphase';
 import {
@@ -23,7 +24,8 @@ import {
   type RuleTally,
   type ScRuleId,
   type Spell,
-  type Tallies
+  type Tallies,
+  type UnobservedAdvance
 } from './types';
 
 type StepRule = 'sc.stages.running-max' | 'sc.exit.last-stage';
@@ -68,6 +70,7 @@ export function normalise(
   };
   const perStage: Record<ScRuleId, Partial<Record<Stage, number>>> = {
     'sc.stages.gap-impute': {},
+    'sc.stages.no-fcd-duration': {},
     'sc.stages.running-max': {},
     'sc.exit.last-stage': {},
     'sc.exit.purge-censor': {},
@@ -108,7 +111,12 @@ export function normalise(
     // Step 1: a missing stage with a later entered stage (complete counts) takes the next
     // entered stage's day. preApplication is optional on every pathway and is never imputed.
     // A null-pathway history has no known path, so it is not imputed before its first entered
-    // stage (ruling R7); only interior gaps over STAGE_ORDER.
+    // stage (ruling R7); only interior gaps over STAGE_ORDER. A completion with no construction
+    // start (no FCD: none recorded, or one on the completion day) is not given construction =
+    // completion day (partner ruling P1): its construction start is unobserved.
+    const noFcdEnd =
+      h.end.kind === 'complete' &&
+      (observed.construction === undefined || observed.construction === observed.complete);
     const eff: Partial<Record<Stage, Day>> = { ...observed };
     const firstEntered = used.findIndex((s) => observed[s] !== undefined);
     const floor = h.pathway === null ? firstEntered : 0;
@@ -117,6 +125,8 @@ export function normalise(
       const s = used[i];
       if (observed[s] !== undefined) {
         nextDay = observed[s];
+      } else if (s === 'construction' && noFcdEnd) {
+        continue;
       } else if (nextDay !== undefined && s !== 'preApplication' && i >= floor) {
         eff[s] = nextDay;
         perStage['sc.stages.gap-impute'][s] = (perStage['sc.stages.gap-impute'][s] ?? 0) + 1;
@@ -151,6 +161,14 @@ export function normalise(
       }
     }
 
+    // P1: with permitIssued entered, the permitIssued and construction durations are unobserved.
+    const noFcd = noFcdEnd && eff.permitIssued !== undefined;
+    if (noFcd) {
+      const t = perStage['sc.stages.no-fcd-duration'];
+      t.permitIssued = (t.permitIssued ?? 0) + 1;
+      t.construction = (t.construction ?? 0) + 1;
+    }
+
     // Step 4: a permit-only history filed before 2015 counts as pathway unknown.
     let pathway = h.pathway;
     if (h.pathway === 'permitOnly') {
@@ -169,6 +187,7 @@ export function normalise(
       eff,
       end,
       purgeCensored: false,
+      noFcd,
       src: h
     };
   });
@@ -221,11 +240,45 @@ function rawSpells(h: NormHistory, asOf: Day): RawSpell[] {
 const pathwayRank = (p: Spell['pathway']): number =>
   p === null ? PATHWAYS.length : PATHWAYS.indexOf(p);
 
-/** Spells at the pooled window starts (§4.4 "Spells"), sorted by (pathway, stage, project id). */
-export function buildSpells(norm: NormHistory[], asOf: Day): Spell[] {
+const byKey = <T extends { pathway: Spell['pathway']; stage: CalStage; projectId: string }>(
+  p: T,
+  q: T
+): number =>
+  pathwayRank(p.pathway) - pathwayRank(q.pathway) ||
+  stageIndex(p.stage) - stageIndex(q.stage) ||
+  (p.projectId < q.projectId ? -1 : p.projectId > q.projectId ? 1 : 0);
+
+/**
+ * Spells at the pooled window starts (§4.4 "Spells"), sorted by (pathway, stage, project id).
+ * A no-FCD completion (`noFcd`, partner ruling P1) builds no `permitIssued` or `construction`
+ * spell; those two are `unobserved` instead, cut by the same pooled-window rule with the
+ * completion day as their end: `construction` iff complete >= Wₛ, `permitIssued` iff
+ * complete >= Wₛ and `eff.permitIssued` < asOf. Same sort.
+ */
+export function buildSpells(
+  norm: NormHistory[],
+  asOf: Day
+): { spells: Spell[]; unobserved: UnobservedAdvance[] } {
   const spells: Spell[] = [];
+  const unobserved: UnobservedAdvance[] = [];
   for (const h of norm) {
+    if (h.noFcd) {
+      const complete = h.eff.complete as Day;
+      const enteredPermitIssued = h.eff.permitIssued as Day;
+      for (const stage of ['permitIssued', 'construction'] as const) {
+        if (complete < windowStart(stage, 'pooled')) continue;
+        if (stage === 'permitIssued' && enteredPermitIssued >= asOf) continue;
+        unobserved.push({
+          projectId: h.id,
+          pathway: h.pathway,
+          stage,
+          complete,
+          enteredPermitIssued
+        });
+      }
+    }
     for (const r of rawSpells(h, asOf)) {
+      if (h.noFcd && (r.stage === 'permitIssued' || r.stage === 'construction')) continue;
       const v = windowStart(r.stage, 'pooled');
       if (r.z < v || r.e >= asOf) continue;
       spells.push({
@@ -239,23 +292,47 @@ export function buildSpells(norm: NormHistory[], asOf: Day): Spell[] {
       });
     }
   }
-  return spells.sort(
-    (p, q) =>
-      pathwayRank(p.pathway) - pathwayRank(q.pathway) ||
-      stageIndex(p.stage) - stageIndex(q.stage) ||
-      (p.projectId < q.projectId ? -1 : p.projectId > q.projectId ? 1 : 0)
-  );
+  return { spells: spells.sort(byKey), unobserved: unobserved.sort(byKey) };
+}
+
+/** Distinct histories with a spell or an unobserved advance in the pooled windows. */
+function windowedIds(spells: Spell[], unobserved: UnobservedAdvance[]): Set<string> {
+  const ids = new Set(spells.map((s) => s.projectId));
+  for (const u of unobserved) ids.add(u.projectId);
+  return ids;
 }
 
 /**
  * `sc.stages.gap-impute` over windowed histories (conductor ruling C1 / partner DQ-4): `of` is the
- * distinct histories with a spell in `spells` (already cut to the pooled windows by `buildSpells`),
- * `fired` those among them that step 1 changed (`imputed`), `sample` their ids in code-unit order.
+ * distinct histories with a spell in `spells` or an advance in `unobserved` (both already cut to
+ * the pooled windows by `buildSpells`), `fired` those among them that step 1 changed (`imputed`),
+ * `sample` their ids in code-unit order.
  */
-export function gapImputeTally(perHistory: ReadonlySet<string>, spells: Spell[]): RuleTally {
-  const windowed = new Set(spells.map((s) => s.projectId));
+export function gapImputeTally(
+  perHistory: ReadonlySet<string>,
+  spells: Spell[],
+  unobserved: UnobservedAdvance[] = []
+): RuleTally {
+  const windowed = windowedIds(spells, unobserved);
   const sample = [...windowed].filter((id) => perHistory.has(id)).sort();
   return { fired: sample.length, of: windowed.size, sample };
+}
+
+/**
+ * `sc.stages.no-fcd-duration` (partner ruling P1): `fired` is the no-FCD completions with an
+ * advance in at least one permit-side pooled cell (`unobserved`, as cut by `buildSpells`), `of`
+ * the same windowed denominator as `gapImputeTally`, `sample` the fired ids in code-unit order.
+ */
+export function noFcdTally(
+  norm: NormHistory[],
+  spells: Spell[],
+  unobserved: UnobservedAdvance[]
+): RuleTally {
+  const noFcd = new Set(norm.filter((h) => h.noFcd).map((h) => h.id));
+  const sample = [...new Set(unobserved.map((u) => u.projectId))]
+    .filter((id) => noFcd.has(id))
+    .sort();
+  return { fired: sample.length, of: windowedIds(spells, unobserved).size, sample };
 }
 
 /** Re-cuts spells to a later window start: drops those ending before `from`, recomputes `a`. */

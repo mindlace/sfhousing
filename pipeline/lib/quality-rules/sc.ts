@@ -26,6 +26,26 @@ export const SC_RULES: readonly QualityRule[] = [
     unitsWeighted: false
   },
   {
+    // Partner ruling P1 / controller ruling R13 (2026-10-18): a completion with no construction
+    // start keeps its incidence; its permit and construction durations are left out (the cells'
+    // observed advances are up-weighted instead, pipeline/lib/fzp-cal/no-fcd.ts).
+    id: 'sc.stages.no-fcd-duration',
+    owner: 'stage-calibration',
+    source: 'project-histories',
+    field: 'entered',
+    kind: 'missing',
+    action: 'drop',
+    tier: 2,
+    valueTier: null,
+    maskBit: null,
+    label:
+      'A completed project with no recorded construction start counts as finished, but not in the time spent in permit and construction',
+    denominator: 'qualifying histories that contribute a spell in a pooled window',
+    warnShare: 0.05,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
     id: 'sc.stages.running-max',
     owner: 'stage-calibration',
     source: 'project-histories',

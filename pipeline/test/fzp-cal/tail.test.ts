@@ -1,6 +1,6 @@
 // Constant-hazard tail fit and the cell rejection rule (stage-calibration spec §4.4).
 import { describe, expect, it } from 'vitest';
-import { rejects, tailFit } from '../../lib/fzp-cal/tail';
+import { exposureFrom, rejects, tailFit } from '../../lib/fzp-cal/tail';
 import { LIVE_CAL } from '../../lib/fzp-cal/config';
 import type { CalProfile, Spell } from '../../lib/fzp-cal/types';
 import { MONTH_DAYS } from '../../../src/lib/timelapse/time';
@@ -98,6 +98,41 @@ describe('tailFit', () => {
 
   it('a short table starts the span at k0 = 1', () => {
     expect(tailFit(spread, 2, LIVE_CAL).k0).toBe(1);
+  });
+
+  it('every w = 1 gives the unweighted fits bit for bit', () => {
+    const c = cal({ tailSpan: 2, tailMinEvents: 1 });
+    const ones = hand.map((s) => ({ ...s, w: 1 }));
+    expect(tailFit(ones, 4, c)).toEqual(tailFit(hand, 4, c));
+    expect(tailFit(ones, 4, c, { advance: 2 })).toEqual(tailFit(hand, 4, c, { advance: 2 }));
+    const spreadOnes = spread.map((s) => ({ ...s, w: 1 }));
+    const c3 = cal({ tailSpan: 1, tailMinEvents: 3 });
+    expect(tailFit(spreadOnes, 4, c3)).toEqual(tailFit(spread, 4, c3));
+  });
+
+  /*
+   * hand with the advance at 3M weighted 2: exposure 2*1 + 2 + 3 + 0 + 1 = 8 person-months;
+   * span events advance 2, withdrawn 1, expired 1 (4 in all): lambda_adv = 1/4, the others 1/8.
+   */
+  it('weights the person-months and the events of the span', () => {
+    const w = hand.map((s, i) => (i === 0 ? { ...s, w: 2 } : s));
+    const f = tailFit(w, 4, cal({ tailSpan: 2, tailMinEvents: 1 }));
+    expect(f.k0).toBe(3);
+    expect(f.events).toBe(4);
+    expect(f.personMonths).toBeCloseTo(8, 9);
+    expect(f.lambda.advance).toBeCloseTo(1 / 4, 12);
+    expect(f.lambda.withdrawn).toBeCloseTo(1 / 8, 12);
+    expect(exposureFrom(w, 2 * M) / M).toBeCloseTo(8, 9);
+    const c = cal({ tailSpan: 2, tailMinEvents: 1 });
+    expect(exposureFrom(hand, 2 * M) / M).toBe(tailFit(hand, 4, c).personMonths);
+  });
+
+  it('weighted events move k0 like unit events', () => {
+    // the span from 3M holds the expired at 3.5M; weighted 3 it meets TAIL_MIN_EVENTS = 3
+    const w = spread.map((s) => (s.outcome === 'expired' ? { ...s, w: 3 } : s));
+    const f = tailFit(w, 4, cal({ tailSpan: 1, tailMinEvents: 3 }));
+    expect(f.k0).toBe(4);
+    expect(f.events).toBe(3);
   });
 
   it('no exposure or no events gives a zero tail', () => {

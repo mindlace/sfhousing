@@ -11,12 +11,14 @@ import {
   ajSweep,
   ajTable,
   atRisk,
+  perOutcome,
   riskIndex,
+  tableMonths,
   type AjSweep,
   type Outcome
 } from './aalen-johansen';
 import { cutSpells } from './spells';
-import { tailFit } from './tail';
+import { exposureFrom, tailFit } from './tail';
 import { windowStart } from './window';
 import { CalibrationError, type CalProfile, type Spell } from './types';
 
@@ -31,8 +33,10 @@ export interface PhScaled {
   advance: number[];
   exit: Partial<Record<ExitReason, number[]>>;
   tail: Transition['tail'];
-  /** pooled grid points where Σ_j θ_j·ĥ_j exceeded 1 and was scaled down to 1 */
+  /** pooled grid points where Σ_j θ_j·ĥ_j exceeded 1 and was scaled down to 1 (whole sweep) */
   capped: number;
+  /** the capped grid points inside the table (d < months·M) */
+  cappedInTable: number;
   /**
    * max |scaled − the pathway's own 2015+ AJ| over months 1..min(both months) and every outcome
    * (the report's diagnostic; the build warns above 0.05). 0 when the own table has no months.
@@ -40,17 +44,12 @@ export interface PhScaled {
   maxDiff: number;
 }
 
-const perOutcome = <T>(make: () => T): Record<Outcome, T> => {
-  const r = {} as Record<Outcome, T>;
-  for (const j of OUTCOMES) r[j] = make();
-  return r;
-};
-
 /**
  * The AJ recursion on the pooled grid with h_j(i) = θ_j·e_j(i)/n(i). Where Σ_j h_j(i) > 1 every
  * h_j(i) is scaled down so the sum (taken in `OUTCOMES` order, as `ajTable` takes it) is at most
- * 1, which keeps S >= 0; `capped` counts those grid points over the whole sweep. With θ = 1 this
- * is exactly `ajTable`'s default table.
+ * 1, which keeps S >= 0; `capped` counts those grid points over the whole sweep and
+ * `cappedInTable` those inside the table (d < months·M). With θ = 1 this is exactly `ajTable`'s
+ * default table.
  */
 export function scaledTable(
   sw: AjSweep,
@@ -58,9 +57,9 @@ export function scaledTable(
   kMax: number,
   nRiskMin: number,
   spellsAll: Spell[]
-): ReturnType<typeof ajTable> & { capped: number } {
+): ReturnType<typeof ajTable> & { capped: number; cappedInTable: number } {
   const H = perOutcome<number[]>(() => []);
-  let capped = 0;
+  const cappedAt: number[] = [];
   for (let i = 0; i < sw.d.length; i++) {
     let sum = 0;
     for (const j of OUTCOMES) {
@@ -69,7 +68,7 @@ export function scaledTable(
       sum += h;
     }
     if (sum <= 1) continue;
-    capped++;
+    cappedAt.push(sw.d[i]);
     let c = 1 / sum;
     for (;;) {
       let s = 0;
@@ -80,17 +79,9 @@ export function scaledTable(
     for (const j of OUTCOMES) H[j][i] *= c;
   }
   const table = ajTable(sw, (j, i) => H[j][i], kMax, nRiskMin, spellsAll);
-  return { ...table, capped };
-}
-
-/** Person-days of the spells at durations >= `from`: Σ max(0, x − max(a, from)). */
-function exposureFrom(spells: Spell[], from: number): number {
-  let days = 0;
-  for (const s of spells) {
-    const start = s.a > from ? s.a : from;
-    if (s.x > start) days += s.x - start;
-  }
-  return days;
+  const end = table.months * MONTH_DAYS;
+  const cappedInTable = cappedAt.filter((d) => d < end).length;
+  return { ...table, capped: cappedAt.length, cappedInTable };
 }
 
 /** The one stage every spell is in (undefined when there are none). */
@@ -116,14 +107,16 @@ function oneStage(spells: Spell[]): Spell['stage'] | undefined {
  * θ_j = (O_j + κ)/(E_j + κ), κ = `phPrior`; a thin pathway keeps θ = 1. The table re-runs the AJ
  * recursion with θ_j·ĥ_j (capped, `scaledTable`); the tail is the pooled tail with λ_j scaled by
  * θ_j. Every exit reason gets an array and a tail value, in `EXIT_ORDER`: dropping reasons with
- * no events is the caller's, as for `ajTable` and `tailFit`.
+ * no events is the caller's, as for `ajTable` and `tailFit`. Spell weights `w` (ruling R13) count
+ * in the pooled sweep and tail, in nₚ(d), in the pathway person-months and in O_j alike.
  */
 export function phScale(pooled: Spell[], pathwaySpells2015: Spell[], cal: CalProfile): PhScaled {
   const stage = oneStage([...pooled, ...pathwaySpells2015]);
-  const own = stage === undefined ? [] : cutSpells(pathwaySpells2015, windowStart(stage, 'pathway'));
+  const own =
+    stage === undefined ? [] : cutSpells(pathwaySpells2015, windowStart(stage, 'pathway'));
 
   const sw = ajSweep(pooled);
-  const { months } = ajTable(sw, undefined, cal.kMax, cal.nRiskMin, pooled);
+  const months = tableMonths(pooled, cal.kMax, cal.nRiskMin);
   const pooledTail = tailFit(pooled, months, cal);
 
   const thin = own.length < cal.nSpellsMin;
@@ -139,7 +132,7 @@ export function phScale(pooled: Spell[], pathwaySpells2015: Spell[], cal: CalPro
     }
     const personMonths = exposureFrom(own, from) / MONTH_DAYS;
     const O = perOutcome(() => 0);
-    for (const s of own) if (s.outcome !== 'censored') O[s.outcome]++;
+    for (const s of own) if (s.outcome !== 'censored') O[s.outcome] += s.w ?? 1;
     const k = cal.phPrior;
     for (const j of OUTCOMES) {
       E[j] += personMonths * pooledTail.lambda[j];
@@ -170,6 +163,7 @@ export function phScale(pooled: Spell[], pathwaySpells2015: Spell[], cal: CalPro
     exit: table.exit,
     tail,
     capped: table.capped,
+    cappedInTable: table.cappedInTable,
     maxDiff
   };
 }

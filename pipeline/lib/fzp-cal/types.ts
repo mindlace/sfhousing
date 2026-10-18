@@ -14,9 +14,10 @@ import type {
 /** A stage a project can wait in: every stage but the terminal `complete`. */
 export type CalStage = Exclude<Stage, 'complete'>;
 
-/** The five registered `sc.*` T14 rules (spec §4.4a). */
+/** The six registered `sc.*` T14 rules (spec §4.4a). */
 export type ScRuleId =
   | 'sc.stages.gap-impute'
+  | 'sc.stages.no-fcd-duration'
   | 'sc.stages.running-max'
   | 'sc.exit.last-stage'
   | 'sc.exit.purge-censor'
@@ -24,6 +25,7 @@ export type ScRuleId =
 
 export const SC_RULE_IDS: readonly ScRuleId[] = [
   'sc.stages.gap-impute',
+  'sc.stages.no-fcd-duration',
   'sc.stages.running-max',
   'sc.exit.last-stage',
   'sc.exit.purge-censor',
@@ -51,6 +53,27 @@ export interface Spell {
   x: number;
   outcome: 'advance' | ExitReason | 'censored';
   projectId: string;
+  /**
+   * Weight of the spell's at-risk contribution and event (default 1). Only observed advances of a
+   * permit-side cell are weighted, to carry its no-FCD completions (ruling R13, `no-fcd.ts`).
+   */
+  w?: number;
+}
+
+/**
+ * A `permitIssued` or `construction` spell of a no-FCD completion (partner ruling P1): the
+ * project passed the stage, but when it left is unobserved, so it is not a spell. It counts in
+ * the incidence of the cells it belongs to through `weightAdvances`.
+ */
+export interface UnobservedAdvance {
+  projectId: string;
+  /** after the defensive pathway rule */
+  pathway: Pathway | null;
+  stage: 'permitIssued' | 'construction';
+  /** completion day */
+  complete: Day;
+  /** `eff.permitIssued` */
+  enteredPermitIssued: Day;
 }
 
 /** A qualifying history after normalisation (spec §4.4 steps 1–6). */
@@ -65,6 +88,13 @@ export interface NormHistory {
   end: ProjectHistory['end'];
   /** step 6 turned this history's exit into a censored observation */
   purgeCensored: boolean;
+  /**
+   * A completion with no construction start (no FCD: `entered.construction` missing or on the
+   * completion day) that entered `permitIssued`: its permitIssued and construction durations are
+   * unobserved (`sc.stages.no-fcd-duration`, partner ruling P1). `normalise` always sets it;
+   * absent (hand-built histories) means false.
+   */
+  noFcd?: boolean;
   src: ProjectHistory;
 }
 
