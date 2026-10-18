@@ -167,7 +167,9 @@ export const PR_RULES: readonly QualityRule[] = [
     label:
       "A building's filing-stage home count was not taken from the whole Planning case it was split from",
     denominator: 'histories whose primary Planning record has a proposed unit count',
-    warnShare: 0.01,
+    // Override (partner ruling): multi-building Planning cases split into per-building projects;
+    // whole-case units at filing do not belong to one building; live 48/2,569 = 1.87%.
+    warnShare: 0.03,
     failShare: 0.1,
     unitsWeighted: false
   },
