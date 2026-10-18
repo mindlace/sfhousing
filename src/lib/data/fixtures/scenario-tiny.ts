@@ -10,6 +10,7 @@ interface Row {
   baseStories: number;
   localProgram: number;
   hostable: number;
+  eligible: number;
   split: number;
   imputed: number;
   baseCap: number;
@@ -22,7 +23,6 @@ interface Row {
   rentControlLikely: number;
   landUseClass: number;
   hostableBase: number;
-  eligible: number;
   baseYield: number[];
   yield: number[];
 }
@@ -39,6 +39,7 @@ const ROWS: Row[] = [
     baseStories: 4,
     localProgram: 1,
     hostable: 1,
+    eligible: 1,
     split: 0,
     imputed: 0,
     baseCap: 12,
@@ -51,7 +52,6 @@ const ROWS: Row[] = [
     rentControlLikely: 1,
     landUseClass: 1,
     hostableBase: 1,
-    eligible: 1,
     baseYield: [0, 3, 4, 4, 4],
     yield: [0, 4, 8, 8, 10]
   },
@@ -65,6 +65,7 @@ const ROWS: Row[] = [
     baseStories: 4,
     localProgram: 0,
     hostable: 1,
+    eligible: 1,
     split: 1,
     imputed: 0b1011111,
     baseCap: 0xffff,
@@ -77,7 +78,6 @@ const ROWS: Row[] = [
     rentControlLikely: 0,
     landUseClass: 5,
     hostableBase: 1,
-    eligible: 1,
     baseYield: [2, 3, 5, 6, 6],
     yield: [2, 3, 5, 6, 6]
   },
@@ -91,6 +91,7 @@ const ROWS: Row[] = [
     baseStories: 4,
     localProgram: 0,
     hostable: 1,
+    eligible: 1,
     split: 0,
     imputed: 0b00100,
     baseCap: 3,
@@ -103,7 +104,6 @@ const ROWS: Row[] = [
     rentControlLikely: 0,
     landUseClass: 4,
     hostableBase: 1,
-    eligible: 1,
     baseYield: [1, 2, 3, 3, 3],
     yield: [1, 2, 3, 3, 3]
   },
@@ -118,6 +118,7 @@ const ROWS: Row[] = [
     baseStories: 4,
     localProgram: 0,
     hostable: 0,
+    eligible: 0,
     split: 0,
     imputed: 0,
     baseCap: 2,
@@ -130,7 +131,6 @@ const ROWS: Row[] = [
     rentControlLikely: 1,
     landUseClass: 0,
     hostableBase: 0,
-    eligible: 0,
     baseYield: [0, 0, 0, 0, 0],
     yield: [0, 0, 0, 0, 0]
   },
@@ -146,6 +146,7 @@ const ROWS: Row[] = [
     baseStories: 8,
     localProgram: 1,
     hostable: 1,
+    eligible: 1,
     split: 0,
     imputed: 0b00010,
     baseCap: 0xffff,
@@ -158,7 +159,6 @@ const ROWS: Row[] = [
     rentControlLikely: 0,
     landUseClass: 2,
     hostableBase: 1,
-    eligible: 1,
     baseYield: [8, 16, 24, 28, 32],
     yield: [40, 90, 135, 160, 182]
   },
@@ -172,6 +172,7 @@ const ROWS: Row[] = [
     baseStories: 0,
     localProgram: 0,
     hostable: 0,
+    eligible: 1,
     split: 0,
     imputed: 0,
     baseCap: 0xffff,
@@ -184,7 +185,6 @@ const ROWS: Row[] = [
     rentControlLikely: 0,
     landUseClass: 3,
     hostableBase: 0,
-    eligible: 1,
     baseYield: [0, 0, 0, 0, 0],
     yield: [0, 0, 0, 0, 0]
   }
@@ -246,6 +246,7 @@ export function scenarioTiny(): ScenarioParcels {
     baseStories: col(Uint8Array, (r) => r.baseStories),
     localProgram: col(Uint8Array, (r) => r.localProgram),
     hostable: col(Uint8Array, (r) => r.hostable),
+    eligible: col(Uint8Array, (r) => r.eligible),
     split: col(Uint8Array, (r) => r.split),
     imputed: col(Uint8Array, (r) => r.imputed),
     baseCap: col(Uint16Array, (r) => r.baseCap),
@@ -258,7 +259,6 @@ export function scenarioTiny(): ScenarioParcels {
     rentControlLikely: col(Uint8Array, (r) => r.rentControlLikely),
     landUseClass: col(Uint8Array, (r) => r.landUseClass),
     hostableBase: col(Uint8Array, (r) => r.hostableBase),
-    eligible: col(Uint8Array, (r) => r.eligible),
     baseYield,
     yield: yieldCol,
     potentialRatio: { fzp: ratio(yieldCol), base: ratio(baseYield) },

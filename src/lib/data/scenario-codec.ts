@@ -50,6 +50,7 @@ export interface ScenarioParcels {
   baseStories: Uint8Array;
   localProgram: Uint8Array; // 0/1
   hostable: Uint8Array; // 0/1: may receive a simulated project
+  eligible: Uint8Array; // 0/1: scenario eligibility (flags bit 5); can differ from the chunk's eligible (sd.landuse.none-with-units)
   split: Uint8Array; // 0/1: largest district overlap < 90% of parcel area
   // T11/T13 mask (RA1 mask convention): a bit is set exactly when that field's value is not the
   // source's own value (imputed, replaced by a T14 rule, or carried). bit 0 yearBuilt,
@@ -67,7 +68,6 @@ export interface ScenarioParcels {
   rentControlLikely: Uint8Array;
   landUseClass: Uint8Array; // index into LAND_USE_CLASSES
   hostableBase: Uint8Array; // 0/1: T11 hostable_base (eligible, baseStories ≥ 1, uncapped base yield at full fill > 0)
-  eligible: Uint8Array; // 0/1: scenario eligibility, flags bit 5 (the value the yields used)
   baseYield: Uint16Array; // count × F: gross units at each fill level of the base envelope, density-capped
   yield: Uint16Array; // count × F, row-major: yield[i * F + k]
   potentialRatio: { fzp: Float32Array; base: Float32Array }; // derived at decode
@@ -508,6 +508,7 @@ export function decodeScenarioPayload(bytes: Uint8Array): ScenarioParcels {
     baseStories,
     localProgram: flag(0),
     hostable: flag(2),
+    eligible: flag(5),
     split: flag(3),
     imputed,
     baseCap: read(Uint16Array, 'baseCap'),
@@ -520,7 +521,6 @@ export function decodeScenarioPayload(bytes: Uint8Array): ScenarioParcels {
     rentControlLikely: flag(1),
     landUseClass,
     hostableBase: flag(4),
-    eligible: flag(5),
     baseYield,
     yield: yieldCol,
     potentialRatio: { fzp: ratio(yieldCol), base: ratio(baseYield) },
@@ -595,10 +595,7 @@ export function envelopeOf(p: ScenarioParcels, i: number): Envelope {
   return { maxStories: p.envelopeStories[i] };
 } // { maxStories: envelopeStories[i] }
 
-/**
- * The scenario view of a chunk record (§4.5): units, floor area, height and eligibility replaced,
- * so the generator sees the scenario eligibility (T14 sd.landuse.none-with-units). Pure.
- */
+/** The scenario view of a chunk record (§4.5): units, floor area, height and eligible replaced. Pure. */
 export function scenarioRecordFrom(
   rec: ParcelRecord,
   v: {
@@ -617,10 +614,7 @@ export function scenarioRecordFrom(
   };
 } // { ...rec, existingUnits, existingFloorAreaM2, existingHeightM: existingStories × FTF_M, eligible }
 
-/**
- * T11: scenarioRecordFrom(rec, row i of p), with `eligible` from flags bit 5. Worker-safe. Throws
- * RangeError if p.id[i] !== rec.id.
- */
+/** T11: scenarioRecordFrom(rec, row i of p). Worker-safe. Throws RangeError if p.id[i] !== rec.id. */
 export function scenarioRecordOf(p: ScenarioParcels, i: number, rec: ParcelRecord): ParcelRecord {
   if (p.id[i] !== rec.id) {
     throw new RangeError(`scenarioRecordOf: row ${i} is ${String(p.id[i])}, not ${rec.id}`);
