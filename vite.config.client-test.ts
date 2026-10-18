@@ -4,6 +4,14 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { playwright } from '@vitest/browser-playwright';
 import { defineConfig } from 'vitest/config';
 
+// SFH_BROWSER picks the engine for a one-off run (the AC-11 cross-engine goldens); the default
+// stays chromium so `npm run test:unit` is unchanged.
+const ENGINES = ['chromium', 'webkit', 'firefox'] as const;
+const engine = process.env.SFH_BROWSER ?? 'chromium';
+if (!(ENGINES as readonly string[]).includes(engine)) {
+  throw new Error(`SFH_BROWSER must be one of ${ENGINES.join(', ')}, got "${engine}"`);
+}
+
 export default defineConfig({
   plugins: [tailwindcss(), svelte()],
   resolve: {
@@ -36,7 +44,7 @@ export default defineConfig({
     browser: {
       enabled: true,
       provider: playwright({ contextOptions: { reducedMotion: 'reduce' } }),
-      instances: [{ browser: 'chromium', headless: true }]
+      instances: [{ browser: engine as (typeof ENGINES)[number], headless: true }]
     },
     include: ['src/**/*.svelte.{test,spec}.ts'],
     // Browser test files share one renderer main thread. Run them one at a time so the

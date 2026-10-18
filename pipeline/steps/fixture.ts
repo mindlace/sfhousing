@@ -16,6 +16,7 @@ import { DATASET_VERSION_RE } from '../../src/lib/data/dataset-version';
 import { FIXTURE_PROFILE } from '../config';
 import { readLock } from '../lib/lock';
 import { build, printResults } from './build';
+import { CALIBRATION_JSON, CALIBRATION_REPORT_MD } from './calibration';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, dumpPermits } from './projects';
 import { PARCELS_BIN, SCENARIO_DUMP, formatScenarioDump, readParcelsBin } from './scenario';
 
@@ -33,13 +34,19 @@ const GOLDEN_FILES = [
   'neighborhoods.geojson',
   'report.json',
   'transit.json',
-  PROJECTS_JSON
+  PROJECTS_JSON,
+  CALIBRATION_JSON
 ];
 /**
  * Derived-cache outputs pinned by golden.test.ts (project-records spec §4.9), under
- * `golden/derived/`: the histories byte for byte, permits.parquet by its row values.
+ * `golden/derived/`: the histories byte for byte, permits.parquet by its row values, and the
+ * calibration report (stage-calibration spec §4.10) byte for byte.
  */
-export const GOLDEN_DERIVED = { histories: HISTORIES_JSON, permits: 'permits.json' } as const;
+export const GOLDEN_DERIVED = {
+  histories: HISTORIES_JSON,
+  permits: 'permits.json',
+  calibrationReport: CALIBRATION_REPORT_MD
+} as const;
 
 const README = `# fixture-0
 
@@ -162,6 +169,10 @@ export async function fixture(opts: FixtureOpts = {}): Promise<number> {
       writeFileSync(
         join(GOLDEN, 'derived', GOLDEN_DERIVED.permits),
         await dumpPermits(join(derived, PERMITS_PARQUET))
+      );
+      cpSync(
+        join(derived, CALIBRATION_REPORT_MD),
+        join(GOLDEN, 'derived', GOLDEN_DERIVED.calibrationReport)
       );
     }
     return 0;

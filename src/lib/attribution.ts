@@ -14,6 +14,11 @@ export const SOFTWARE: { name: string; license: string; url: string }[] = [
     name: 'Clipper2 (clipper2-ts)',
     license: 'BSL-1.0',
     url: 'https://github.com/countertype/clipper2-ts'
+  },
+  {
+    name: 'fdlibm (exp, log)',
+    license: 'Sun Microsystems permissive notice',
+    url: 'https://www.netlib.org/fdlibm/'
   }
 ];
 
