@@ -94,7 +94,7 @@ const TABLE: Record<string, Spec> = {
     tier: 4,
     valueTier: null,
     unitsWeighted: false,
-    warnShare: 0.01,
+    warnShare: 0.03,
     failShare: 0.1,
     label:
       "A parcel from the Planning record on a different block from the permits' lots was not used"
