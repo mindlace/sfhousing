@@ -1,13 +1,16 @@
 // Scenario SQL stage (scenario-data spec §4.3–§4.6): height strings parsed in TS, the district
 // join, lineage and roll aggregation in 80_scenario.sql, per-parcel density caps in TS, and the
-// per-year features in 81_scenario_features.sql. Not part of SQL_FILES / runSql: the scenario
-// build step calls it after writeChunks, with the records writeChunks encoded.
+// per-year data-quality rules and features in 81_scenario_features.sql. Not part of SQL_FILES /
+// runSql: the scenario build step calls it after writeChunks, with the records writeChunks
+// encoded. The SQL-side T14 rules (spec §4.12) tally into quality_tally / quality_sample and are
+// reported here through recordSqlQuality into the build's single `counts` object.
 import path from 'node:path';
 import type { ParcelRecord } from '../../src/lib/data/parcel';
 import { LAND_USE_CLASSES } from '../../src/lib/data/scenario-codec';
 import { MAX_STORIES } from '../../src/lib/generator/constants';
 import { DENSITY_CAP_CHANGE_DAY, FZP_EFFECTIVE_DAY, densityCap } from '../lib/density-caps';
 import { createTableFromRows, runSqlFile, type CellValue, type Duck } from '../lib/duck';
+import { MIN_GROSS_M2_PER_UNIT, recordSqlQuality } from '../lib/quality';
 import {
   HeightParseError,
   normaliseHeight,
@@ -16,6 +19,26 @@ import {
 } from '../lib/heights';
 
 const SQL_DIR = path.resolve(import.meta.dirname, '../sql');
+
+/**
+ * The T14 rules 80_scenario.sql and 81_scenario_features.sql apply and tally (spec §4.12). Each
+ * inserts exactly one quality_tally row per run.
+ */
+export const SCENARIO_SQL_RULES = [
+  'sd.features.median-fallback',
+  'sd.features.share-median',
+  'sd.features.stories-height',
+  'sd.features.year-built-median',
+  'sd.roll.floor-area-missing',
+  'sd.roll.stories-max',
+  'sd.roll.unmatched',
+  'sd.roll.units-capacity',
+  'sd.roll.units-large',
+  'sd.roll.units-latest-jump',
+  'sd.roll.units-spike',
+  'sd.roll.year-built-range',
+  'sd.roll.year-gap'
+] as const;
 
 /** sc_height_parse row for a string with no height (sentinel or parse failure). */
 const noneRow = (height: string): CellValue[] => [
@@ -61,9 +84,12 @@ async function writeHeightParse(db: Duck): Promise<string[]> {
 }
 
 /**
- * Step 3: per-parcel lot area, base stories and the base-zoning cap in each of the three cap
- * periods (main ruling C2), evaluated on one day inside each: the day before
- * DENSITY_CAP_CHANGE_DAY, the day before FZP_EFFECTIVE_DAY, and FZP_EFFECTIVE_DAY.
+ * Step 3: per-parcel lot area, base stories, the base-zoning cap and the chunk record's LUDB units
+ * and floor area. The panel's base cap is the cap at min(lien_day, 2026-01-11) (spec §4.4 "Base
+ * cap date", RA1), so only two of the three cap periods (main ruling C2) are needed, each
+ * evaluated on its last day: the day before DENSITY_CAP_CHANGE_DAY and the day before
+ * FZP_EFFECTIVE_DAY. T11's FZP cap is the scenario step's (densityCap at capDay). `ludb_units`
+ * feeds sd.roll.units-capacity's second step and `rec_floor_area_m2` sd.roll.floor-area-missing.
  */
 async function writeParcelCaps(
   db: Duck,
@@ -89,7 +115,8 @@ async function writeParcelCaps(
       d.base_ft === null ? 0 : storiesFromFt(d.base_ft),
       cap(DENSITY_CAP_CHANGE_DAY - 1),
       cap(FZP_EFFECTIVE_DAY - 1),
-      cap(FZP_EFFECTIVE_DAY)
+      rec.existingUnits,
+      rec.existingFloorAreaM2
     ];
   });
   await createTableFromRows(
@@ -102,26 +129,34 @@ async function writeParcelCaps(
       ['base_stories', 'INTEGER'],
       ['cap_pre2022', 'INTEGER'],
       ['cap_prefzp', 'INTEGER'],
-      ['cap_fzp', 'INTEGER']
+      ['ludb_units', 'INTEGER'],
+      ['rec_floor_area_m2', 'DOUBLE']
     ],
     out
   );
 }
 
 /**
- * Run the scenario SQL stage on a database where runSql has run (parcels, parcel_out, src_*).
- * `records` are readParcelRecords' output. Writes sc_height_parse, sc_land_use_classes,
- * sc_district, sc_zoning, parcel_lineage, sc_roll_agg, sc_parcel, sc_medians and sc_features,
- * and scenario.* rows in report_counts. Returns the height strings that failed to parse (V16).
+ * Run the scenario SQL stage on a database where runSql has run (parcels, parcel_out, src_*) and
+ * `createQualityTables` has created quality_tally / quality_sample. `records` are
+ * readParcelRecords' output. Writes sc_height_parse, sc_land_use_classes, sc_district, sc_zoning,
+ * parcel_lineage, sc_roll_years, sc_roll_agg, sc_parcel, sc_roll_series, sc_medians and
+ * sc_features, and scenario.* rows in report_counts. Reports the SQL-side T14 rules into
+ * `counts`, the build's single report counts object (recordSqlQuality). Returns the height
+ * strings that failed to parse (V16).
  */
 export async function runScenarioSql(
   db: Duck,
-  records: { rec: ParcelRecord; cellId: string }[]
+  records: { rec: ParcelRecord; cellId: string }[],
+  counts: Record<string, number>
 ): Promise<{ parseFailures: string[] }> {
-  // Idempotent on one database: drop this stage's counts from an earlier run.
+  // Idempotent on one database: drop this stage's counts and tallies from an earlier run.
   await db.run(
     `DELETE FROM report_counts WHERE key LIKE 'scenario.height.%' OR key LIKE 'scenario.roll.%'`
   );
+  const ruleList = SCENARIO_SQL_RULES.map((id) => `'${id}'`).join(', ');
+  await db.run(`DELETE FROM quality_tally WHERE rule_id IN (${ruleList})`);
+  await db.run(`DELETE FROM quality_sample WHERE rule_id IN (${ruleList})`);
   const parseFailures = await writeHeightParse(db);
   await db.run(
     `INSERT INTO report_counts VALUES ('scenario.height.parse_fail', ${parseFailures.length})`
@@ -135,18 +170,34 @@ export async function runScenarioSql(
     ],
     LAND_USE_CLASSES.map((name, idx) => [idx, name])
   );
-  // Roll stories above the generator's MAX_STORIES are missing (tier-4 sanity rule, 80_scenario).
+  // sd.roll.stories-max: roll stories above the generator's MAX_STORIES are nulled (80_scenario).
   await db.run(`SET VARIABLE max_stories = ${MAX_STORIES}::INTEGER`);
   await runSqlFile(db, path.join(SQL_DIR, '80_scenario.sql'));
   await writeParcelCaps(db, records);
   await db.run(`SET VARIABLE density_cap_change_day = ${DENSITY_CAP_CHANGE_DAY}::INTEGER`);
-  await db.run(`SET VARIABLE fzp_effective_day = ${FZP_EFFECTIVE_DAY}::INTEGER`);
+  // sd.roll.units-capacity: 10 m² of lot area × stories per home (tier 4, pipeline/lib/quality.ts).
+  await db.run(`SET VARIABLE min_gross_m2_per_unit = ${MIN_GROSS_M2_PER_UNIT}::INTEGER`);
   await runSqlFile(db, path.join(SQL_DIR, '81_scenario_features.sql'));
-  const [{ agg, feat }] = await db.all<{ agg: number; feat: number }>(
-    'SELECT (SELECT count(*) FROM sc_roll_agg) agg, (SELECT count(*) FROM sc_features) feat'
+  const [{ agg, carried, feat }] = await db.all<{ agg: number; carried: number; feat: number }>(
+    `SELECT (SELECT count(*) FROM sc_roll_agg) agg,
+            (SELECT count(*) FROM sc_roll_series WHERE carried) carried,
+            (SELECT count(*) FROM sc_features) feat`
   );
-  if (agg !== feat) {
-    throw new Error(`runScenarioSql: ${agg} roll aggregates but ${feat} feature rows`);
+  if (agg + carried !== feat) {
+    throw new Error(
+      `runScenarioSql: ${agg} roll aggregates and ${carried} carried rows but ${feat} feature rows`
+    );
   }
+  // Every SQL rule tallies exactly once (spec §4.12); recordQuality then rejects a second report.
+  const tallies = await db.all<{ rule_id: string; n: number }>(
+    `SELECT rule_id, count(*)::INTEGER n FROM quality_tally WHERE rule_id IN (${ruleList})
+     GROUP BY rule_id`
+  );
+  const n = new Map(tallies.map((t) => [t.rule_id, t.n]));
+  const bad = SCENARIO_SQL_RULES.filter((id) => n.get(id) !== 1);
+  if (bad.length > 0) {
+    throw new Error(`runScenarioSql: rules without exactly one tally row: ${bad.join(', ')}`);
+  }
+  await recordSqlQuality(db, 'scenario-data', counts);
   return { parseFailures };
 }

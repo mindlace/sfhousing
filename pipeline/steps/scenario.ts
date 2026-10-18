@@ -351,8 +351,10 @@ export function readParcelsBin(file: string): ScenarioParcels {
  * (readParcelRecords). Writes the DuckDB tables scenario_panel and parcel_lineage (kept for
  * later steps of the same build), `<derivedDir>/parcel-panel.parquet`,
  * `<derivedDir>/parcel-lineage.parquet` and `<outDir>/scenarios/fzp/parcels.bin`. `capDay` is
- * "today" for the FZP cap (the build's snapshot day). Returns every scenario.* count (the SQL
- * stage's included) and warnings. Throws when the written file does not decode.
+ * "today" for the FZP cap (the build's snapshot day). `buildCounts` is the build's single report
+ * `counts` object (T14): the scenario-data rules record their `quality.*` counts into it, never
+ * into a step-local object. Returns every scenario.* count (the SQL stage's included) and
+ * warnings. Throws when the written file does not decode.
  */
 export async function writeScenario(a: {
   db: Duck;
@@ -362,10 +364,13 @@ export async function writeScenario(a: {
   records: { rec: ParcelRecord; cellId: string }[];
   capDay: Day;
   report: Report;
+  buildCounts: Record<string, number>;
 }): Promise<{ counts: Record<string, number>; warnings: string[] }> {
   const { db, report } = a;
   const warnings: string[] = [];
-  const { parseFailures } = await report.time('scenario.sql', () => runScenarioSql(db, a.records));
+  const { parseFailures } = await report.time('scenario.sql', () =>
+    runScenarioSql(db, a.records, a.buildCounts)
+  );
   if (parseFailures.length > 0) {
     warnings.push(`scenario: height strings that do not parse: ${parseFailures.join(' | ')}`);
   }

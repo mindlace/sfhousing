@@ -191,7 +191,8 @@ export async function build(
         datasetVersion,
         records: await readParcelRecords(db),
         capDay: asOf,
-        report
+        report,
+        buildCounts: counts
       })
     );
     report.warnings.push(...scenario.warnings);

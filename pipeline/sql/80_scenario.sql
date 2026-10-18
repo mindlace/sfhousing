@@ -4,9 +4,14 @@
 -- Reads parcels, parcel_out, src_height_bulk, src_parcel_attrs, src_roll, and two tables the TS
 -- step writes first: sc_height_parse (one parsed row per distinct height string) and
 -- sc_land_use_classes (idx, name: LAND_USE_CLASSES of src/lib/data/scenario-codec.ts).
--- Writes sc_district, sc_zoning, parcel_lineage, sc_roll_agg and scenario.height.* /
--- scenario.roll.* counts. Every float sum is taken over an ordered list (list_sum), as in
--- 60_attributes.sql, so the result does not depend on thread scheduling (V12).
+-- Writes sc_district, sc_zoning, parcel_lineage, sc_roll_years, sc_roll_agg and
+-- scenario.height.* / scenario.roll.* counts. Every float sum is taken over an ordered list
+-- (list_sum), as in 60_attributes.sql, so the result does not depend on thread scheduling (V12).
+-- T14 (spec §4.5 rule order step 1, §4.12): the row-level roll rules sd.roll.year-built-range,
+-- sd.roll.stories-max and sd.roll.unmatched are applied here, each inserting exactly one
+-- quality_tally row and one quality_sample row per affected roll row (id
+-- `<parcel_number>:<closed_roll_year>`); runScenarioSql reports them through recordSqlQuality.
+-- sc_roll_agg is the aggregate before the parcel-year rules of 81_scenario_features.sql.
 -- District overlap is summed per normalised height string, not per polygon: adjacent polygons
 -- carrying the same string are one district, so a parcel straddling their shared edge is not
 -- split between them. overlap_frac is clamped to at most 1; a raw sum above 1.0001 (overlapping
@@ -128,18 +133,61 @@ LEFT JOIN s_blklot_map m USING (blklot)
 WHERE NOT a.active
 ORDER BY a.blklot, a.mapblklot, a.date_rec_drop;
 
--- Every roll row with its current parcel (id NULL = unmatched) and the rule that mapped it.
--- Sanity rule (tier 4, made up; coordinator ruling, Task 8 fix round 1): number_of_stories above
--- getvariable('max_stories') (the generator's MAX_STORIES, 80; SF's tallest building has 61) is
--- missing, so the height fallback applies. Live rows reach 999 (wv5m-vpq2, 2026-10-16).
+-- The roll years in the lock (T13: the panel covers every one; sd.roll.year-gap carries into
+-- them).
+CREATE OR REPLACE TABLE sc_roll_years AS
+SELECT DISTINCT closed_roll_year AS roll_year FROM src_roll
+WHERE closed_roll_year IS NOT NULL
+ORDER BY roll_year;
+
+-- Every roll row with its current parcel (id NULL = unmatched) and the rule that mapped it, after
+-- the two row-level bound rules (spec §4.5 rule order step 1):
+-- - sd.roll.year-built-range (tier 4, made up; spec §4.1): year_property_built outside
+--   [1850, closed_roll_year] (SODA has "0") is NULL, then imputed in 81 (bit 0).
+-- - sd.roll.stories-max (tier 4, made up; coordinator ruling, Task 8 fix round 1):
+--   number_of_stories above getvariable('max_stories') (the generator's MAX_STORIES, 80; SF's
+--   tallest building has 61) is NULL, so the other rows' stories or the height fallback apply
+--   (bit 1). Live rows reach 999 (wv5m-vpq2, 2026-10-16).
 CREATE OR REPLACE TEMP TABLE s_roll AS
-SELECT r.* REPLACE (CASE WHEN r.number_of_stories > getvariable('max_stories') THEN NULL
-                         ELSE r.number_of_stories END AS number_of_stories),
+SELECT r.* REPLACE (
+         CASE WHEN r.year_property_built BETWEEN 1850 AND r.closed_roll_year
+              THEN r.year_property_built END AS year_property_built,
+         CASE WHEN r.number_of_stories > getvariable('max_stories') THEN NULL
+              ELSE r.number_of_stories END AS number_of_stories),
        m.current_id AS id, m.how,
-       coalesce(r.number_of_stories > getvariable('max_stories'), false) AS stories_implausible
+       r.year_property_built IS NOT NULL AS has_year,
+       coalesce(r.year_property_built NOT BETWEEN 1850 AND r.closed_roll_year, false)
+         AS year_nulled,
+       r.number_of_stories IS NOT NULL AS has_stories,
+       coalesce(r.number_of_stories > getvariable('max_stories'), false) AS stories_nulled,
+       coalesce(r.parcel_number, '') || ':' || r.closed_roll_year AS record_id
 FROM src_roll r
 LEFT JOIN s_blklot_map m ON m.blklot = r.parcel_number
 WHERE r.closed_roll_year IS NOT NULL;
+
+INSERT INTO quality_tally
+SELECT 'sd.roll.year-built-range', count(*) FILTER (WHERE year_nulled),
+       count(*) FILTER (WHERE has_year), NULL, NULL
+FROM s_roll;
+INSERT INTO quality_sample
+SELECT 'sd.roll.year-built-range', record_id FROM s_roll WHERE year_nulled;
+
+INSERT INTO quality_tally
+SELECT 'sd.roll.stories-max', count(*) FILTER (WHERE stories_nulled),
+       count(*) FILTER (WHERE has_stories), NULL, NULL
+FROM s_roll;
+INSERT INTO quality_sample
+SELECT 'sd.roll.stories-max', record_id FROM s_roll WHERE stories_nulled;
+
+-- sd.roll.unmatched (spec §4.5 join rule (c)): rows that map to no current parcel are dropped
+-- below (`WHERE id IS NOT NULL`). Weighted by number_of_units.
+INSERT INTO quality_tally
+SELECT 'sd.roll.unmatched', count(*) FILTER (WHERE id IS NULL), count(*),
+       coalesce(sum(number_of_units) FILTER (WHERE id IS NULL), 0),
+       coalesce(sum(number_of_units), 0)
+FROM s_roll;
+INSERT INTO quality_sample
+SELECT 'sd.roll.unmatched', record_id FROM s_roll WHERE id IS NULL;
 
 -- landUseClass from the mapped row with the largest property_area; ties by the smallest
 -- parcel_number, then use_code (then class code, for a total order).
@@ -167,13 +215,16 @@ JOIN sc_land_use_classes c ON c.name = CASE
 
 -- Aggregation per (current parcel, roll year), spec §4.5:
 -- units = Σ units; stories = max; year_built = min valid year over rows with units > 0, else over
--- all rows (invalid years are already NULL, normalise); land/impr = Σ assessed values;
+-- all rows (out-of-range years are already NULL, sd.roll.year-built-range); land/impr = Σ assessed
+-- values;
 -- floor_area_m2 = Σ property_area × 0.09290304 (m² per sf, exact by definition, tier 0).
 -- noncondo_units: Σ units over rows outside the condo classes (spec §4.4 rent-control exclusion,
 -- tier 2: Z ZBM ZEU LZ LZBM CZ OZ PZ IZ GZ BZ OZEU, Costa-Hawkins, I).
 -- hotel: any row in the hotel classes (spec §4.4, tier 2: H H1 H2 HC HG RH RH1 RHG, codes V from
 -- the 2025 $group; M/MG motels are not hotels, Bulletin 11 footnote 4).
 -- status_n: any row with status_code N (non-taxable, e.g. government).
+-- year_nulled / stories_nulled: a row of the parcel-year was nulled by sd.roll.year-built-range /
+-- sd.roll.stories-max, so the parcel-year's value is not the source's own (bits 0 and 1, §4.5).
 CREATE OR REPLACE TEMP TABLE s_roll_sum AS
 SELECT id, closed_roll_year AS roll_year,
        coalesce(sum(number_of_units), 0)::INTEGER AS units,
@@ -192,48 +243,22 @@ SELECT id, closed_roll_year AS roll_year,
                                         'GZ', 'BZ', 'OZEU')), 0)::INTEGER AS noncondo_units,
        coalesce(bool_or(property_class_code IN ('H', 'H1', 'H2', 'HC', 'HG', 'RH', 'RH1', 'RHG')),
                 false) AS hotel,
-       coalesce(bool_or(status_code = 'N'), false) AS status_n
+       coalesce(bool_or(status_code = 'N'), false) AS status_n,
+       bool_or(year_nulled) AS year_nulled,
+       bool_or(stories_nulled) AS stories_nulled
 FROM s_roll
 WHERE id IS NOT NULL
 GROUP BY id, closed_roll_year;
 
--- Sanity rule for units (tier 4, made up; coordinator ruling, Task 8 fix round 1). Over each
--- parcel's units series by roll year, a maximal run of equal values v is implausible when it has
--- a bracketing year on both sides (the nearest roll years outside the run, units prev and next),
--- v >= 100 and v > 10 * max(1, prev, next). Every year of the run takes prev. Live example:
--- 0827025 has 5 units except 50,000 in 2022-2023. A one-sided change (redevelopment that stays)
--- is never touched. noncondo_units is left as is: a bracketed run is never the latest year, the
--- only year the Local Program exclusions read.
-CREATE OR REPLACE TEMP TABLE s_units_seq AS
-SELECT id, roll_year, units,
-       sum(CASE WHEN lag_units IS DISTINCT FROM units THEN 1 ELSE 0 END) OVER (
-         PARTITION BY id ORDER BY roll_year ROWS UNBOUNDED PRECEDING) AS run
-FROM (SELECT id, roll_year, units,
-             lag(units) OVER (PARTITION BY id ORDER BY roll_year) AS lag_units
-      FROM s_roll_sum);
-
-CREATE OR REPLACE TEMP TABLE s_units_run AS
-SELECT id, run, v,
-       lag(v) OVER (PARTITION BY id ORDER BY run) AS prev,
-       lead(v) OVER (PARTITION BY id ORDER BY run) AS next
-FROM (SELECT id, run, any_value(units) AS v FROM s_units_seq GROUP BY id, run);
-
-CREATE OR REPLACE TEMP TABLE s_units_fix AS
-SELECT q.id, q.roll_year, r.prev AS units
-FROM s_units_seq q
-JOIN s_units_run r USING (id, run)
-WHERE r.prev IS NOT NULL AND r.next IS NOT NULL AND r.v >= 100
-  AND r.v > 10 * greatest(1, r.prev, r.next);
-
--- units_replaced marks the parcel-years the units rule rewrote (T11/T13 imputed bit 3).
+-- One row per observed parcel-year (at least one mapped roll row), before the parcel-year rules
+-- (the units rules and the gap carry run in 81_scenario_features.sql, which needs sc_parcel).
 CREATE OR REPLACE TABLE sc_roll_agg AS
-SELECT s.id, s.roll_year, coalesce(x.units, s.units)::INTEGER AS units, s.stories, s.year_built,
+SELECT s.id, s.roll_year, s.units, s.stories, s.year_built,
        s.land, s.impr, s.floor_area_m2,
        c.use_code, c.land_use_class::INTEGER AS land_use_class, s.noncondo_units, s.hotel,
-       s.status_n, x.id IS NOT NULL AS units_replaced
+       s.status_n, s.year_nulled, s.stories_nulled
 FROM s_roll_sum s
 JOIN s_roll_class c ON c.id = s.id AND c.closed_roll_year = s.roll_year
-LEFT JOIN s_units_fix x ON x.id = s.id AND x.roll_year = s.roll_year
 ORDER BY s.id, s.roll_year;
 
 -- scenario.height.*: `none` = parcels in a district whose string has no height (sentinels and
@@ -273,8 +298,3 @@ SELECT 'scenario.roll.unmatched_units.' || closed_roll_year,
 FROM s_roll GROUP BY closed_roll_year ORDER BY closed_roll_year;
 INSERT INTO report_counts
 SELECT 'scenario.roll.lineage_retired', count(*) FROM s_roll WHERE how = 'b';
--- Tier-4 sanity rules: roll rows whose stories were nulled; parcel-years whose units were replaced.
-INSERT INTO report_counts
-SELECT 'scenario.roll.stories_implausible', count(*) FILTER (WHERE stories_implausible) FROM s_roll;
-INSERT INTO report_counts
-SELECT 'scenario.roll.units_implausible', count(*) FROM s_units_fix;

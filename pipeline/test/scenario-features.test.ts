@@ -13,8 +13,15 @@ import {
 } from '../../src/lib/data/scenario-codec';
 import { FIXTURE_PROFILE } from '../config';
 import { openDuck, type Duck } from '../lib/duck';
+import { readLock } from '../lib/lock';
+import { createQualityTables } from '../lib/quality';
+import { Report } from '../lib/report';
+import { runSql } from '../lib/sql';
+import { asOfFromLock } from '../project-records/parse';
 import { build } from '../steps/build';
-import { MINI } from './helpers';
+import { readParcelRecords } from '../steps/chunks';
+import { PARCELS_BIN, readParcelsBin, writeScenario } from '../steps/scenario';
+import { MINI, miniDuck } from './helpers';
 
 /** Spec §4.6, in order: T13's columns, then the additions. */
 const PANEL_COLUMNS = [
@@ -163,6 +170,42 @@ describe('scenario T13 panel and T11 features (mini fixture)', () => {
       roll_year: 2024,
       existing_units: 7
     });
+  });
+
+  it("every parcel's T11 floor area and mask equal its latest-year sc_features row", async () => {
+    // sc_features holds existing_floor_area_m2 (not a T13 contract column), so this runs the
+    // scenario step on its own database and reads the table directly (IA-8, V18).
+    const sdb = await miniDuck();
+    await createQualityTables(sdb);
+    await runSql(sdb);
+    const root = mkdtempSync(join(tmpdir(), 'sfh-scenario-features-sql-'));
+    await writeScenario({
+      db: sdb,
+      outDir: join(root, 'out'),
+      derivedDir: join(root, 'derived'),
+      datasetVersion: 'fixture-0',
+      records: await readParcelRecords(sdb),
+      capDay: asOfFromLock(readLock(join(MINI, 'sources.lock.json'))),
+      report: new Report(),
+      buildCounts: {}
+    });
+    const t11 = readParcelsBin(join(root, 'out', PARCELS_BIN));
+    const rows = await sdb.all<{
+      mapblklot: string;
+      existing_floor_area_m2: number;
+      imputed: number;
+    }>(
+      `SELECT mapblklot, existing_floor_area_m2, imputed FROM sc_features
+       WHERE roll_year = (SELECT max(roll_year) FROM sc_features) ORDER BY mapblklot`
+    );
+    expect(rows).toHaveLength(11);
+    for (const r of rows) {
+      const i = t11.index.get(r.mapblklot);
+      expect(i, r.mapblklot).toBeDefined();
+      expect({ floor: t11.existingFloorAreaM2[i!], imputed: t11.imputed[i!] }, r.mapblklot).toEqual(
+        { floor: r.existing_floor_area_m2, imputed: r.imputed }
+      );
+    }
   });
 
   it('parcel-lineage.parquet has the retired rows', async () => {

@@ -115,14 +115,16 @@ async function buildSelect(
         ${sel(cols, 'centroid_latitude', 'DOUBLE')}, ${sel(cols, 'centroid_longitude', 'DOUBLE')}
         FROM ${p} ORDER BY ALL`;
     case 'datasf-assessor-roll':
-      // Spec §4.1: a year built outside [1850, roll year] (SODA has `"0"`) becomes NULL.
+      // Spec §4.1: normalise rewrites no value. A year built outside [1850, roll year] (SODA has
+      // `"0"`) is kept here; the registered rule sd.roll.year-built-range nulls it in
+      // 80_scenario.sql, where its firings are counted.
       return `SELECT closed_roll_year, parcel_number, use_code, property_class_code,
-        CASE WHEN yb BETWEEN 1850 AND closed_roll_year THEN yb END AS year_property_built,
+        year_property_built,
         number_of_stories, number_of_units, property_area, assessed_land_value,
         assessed_improvement_value, status_code
         FROM (SELECT ${int(cols, 'closed_roll_year')}, ${txt(cols, 'parcel_number', true)},
           ${txt(cols, 'use_code')}, ${txt(cols, 'property_class_code')},
-          ${int(cols, 'year_property_built', 'yb')},
+          ${int(cols, 'year_property_built')},
           ${int(cols, 'number_of_stories')}, ${int(cols, 'number_of_units')},
           ${sel(cols, 'property_area', 'DOUBLE')}, ${sel(cols, 'assessed_land_value', 'DOUBLE')},
           ${sel(cols, 'assessed_improvement_value', 'DOUBLE')}, ${txt(cols, 'status_code')}

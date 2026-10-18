@@ -96,14 +96,15 @@ describe('normalise mini fixture', () => {
     expect(r).toEqual({ u: 3, s: 3, a: 3000, land: 300000 });
   });
 
-  it('year 0 and years after the roll year become NULL', async () => {
+  it('keeps year 0 and years outside [1850, roll year] unchanged (sd.roll.year-built-range)', async () => {
+    // Spec §4.1: normalise rewrites no value; the range check is a registered T14 rule.
     const db = await miniDuck();
     const rows = await db.all<{ y: number; b: number | null }>(
       `SELECT closed_roll_year y, year_property_built b FROM src_roll
        WHERE parcel_number = '3512005' ORDER BY 1`
     );
     expect(rows).toEqual([
-      { y: 2024, b: null },
+      { y: 2024, b: 0 },
       { y: 2025, b: 1950 }
     ]);
     const csv = join(tmp(), 'roll'); // extensionless, like a live raw file
@@ -122,8 +123,8 @@ describe('normalise mini fixture', () => {
          FROM read_parquet('${out}') ORDER BY p`
       );
       expect(got).toEqual([
-        { p: '3512001', b: null, u: 1, c: null },
-        { p: '3512002', b: null, u: 2, c: null },
+        { p: '3512001', b: 2025, u: 1, c: null },
+        { p: '3512002', b: 1849, u: 2, c: null },
         { p: '3512003', b: 1850, u: 3, c: null },
         { p: '3512004', b: 2024, u: null, c: null }
       ]);

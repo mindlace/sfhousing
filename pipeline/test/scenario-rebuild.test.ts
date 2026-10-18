@@ -48,7 +48,8 @@ beforeAll(async () => {
     datasetVersion: 'fixture-0',
     records,
     capDay,
-    report: new Report()
+    report: new Report(),
+    buildCounts: {}
   });
   p = readParcelsBin(join(root, 'out', PARCELS_BIN));
   const rows = await db.all<{ id: string; r4: boolean; zoning_code: string | null }>(
@@ -105,7 +106,7 @@ describe('scenario yields rebuild from parcels.bin and the chunk record (IA-8)',
   });
 
   it('pipeline/steps/scenario.ts builds no scenario record of its own', () => {
-    const src = readFileSync('pipeline/steps/scenario.ts', 'utf8');
+    const src = readFileSync(new URL('../steps/scenario.ts', import.meta.url), 'utf8');
     expect(src).not.toMatch(/function scenarioRecord\b/);
     expect(src).not.toMatch(/existingHeightM\s*:/);
     expect(src).toMatch(/scenarioRecordOf\(p, i, rec\)/);
