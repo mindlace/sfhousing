@@ -28,14 +28,19 @@ describe('packCell (U1)', () => {
       expect(p.startIndices[k]).toBeGreaterThan(p.startIndices[k - 1]);
     expect(p.startIndices[p.partCount]).toBe(p.positions.length / 2);
   });
-  it('rings are open and CW', () => {
+  it('rings are closed exactly once and CW', () => {
+    // deck gets these with _normalize: false and draws no wall from a ring's last vertex, so the
+    // closing vertex is what puts a wall on the last edge.
     expect(p.partCount).toBeGreaterThan(0);
     for (let k = 0; k < p.partCount; k++) {
       const a = p.startIndices[k],
         b = p.startIndices[k + 1];
+      expect(b - a).toBeGreaterThanOrEqual(4);
       const first = [p.positions[2 * a], p.positions[2 * a + 1]];
       const last = [p.positions[2 * (b - 1)], p.positions[2 * (b - 1) + 1]];
-      expect(first).not.toEqual(last);
+      const beforeLast = [p.positions[2 * (b - 2)], p.positions[2 * (b - 2) + 1]];
+      expect(last).toEqual(first);
+      expect(beforeLast).not.toEqual(first);
       expect(signedArea(p.positions, a, b)).toBeLessThan(0);
     }
   });
@@ -94,8 +99,28 @@ describe('packCell (U1)', () => {
       ]
     };
     const r = packCell('c', [{ building: b, existingUnits: 0 }]);
-    expect(r.positions.length).toBe(8);
-    expect(signedArea(r.positions, 0, 4)).toBeLessThan(0);
+    expect([...r.positions]).toEqual([0, 1, 1, 1, 1, 0, 0, 0, 0, 1]);
+    expect(signedArea(r.positions, 0, 5)).toBeLessThan(0);
+  });
+  it('an open input ring is closed', () => {
+    const part = { ...items[0].building.parts[0], baseM: 0, topM: 9 };
+    const b = {
+      ...items[0].building,
+      parts: [
+        {
+          ...part,
+          footprint: [
+            [0, 0],
+            [0, 1],
+            [1, 1],
+            [1, 0]
+          ] as [number, number][]
+        }
+      ]
+    };
+    const r = packCell('c', [{ building: b, existingUnits: 0 }]);
+    expect([...r.startIndices]).toEqual([0, 5]);
+    expect([...r.positions]).toEqual([0, 0, 0, 1, 1, 1, 1, 0, 0, 0]);
   });
   it('a building with no parts contributes a slot and no parts', () => {
     const r = packCell('c', [{ building: { ...items[0].building, parts: [] }, existingUnits: 1 }]);
