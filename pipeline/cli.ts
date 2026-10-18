@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { FIXTURE_PROFILE, LIVE_PROFILE } from './config';
 import { build, printResults } from './steps/build';
-import { checkDataset } from './steps/check';
+import { PROJECT_CHECK_IDS, checkDataset, type InvariantResult } from './steps/check';
 import { doctor } from './steps/doctor';
 import { fetchAll } from './steps/fetch';
 import { fixture } from './steps/fixture';
@@ -96,13 +96,18 @@ const steps: Record<string, { help: string; run: Step }> = {
       }
       const report = JSON.parse(readFileSync(join(dir, 'report.json'), 'utf8')) as {
         counts: Record<string, number>;
-        invariants?: { id: string; ok: boolean }[];
+        invariants?: InvariantResult[];
       };
       const fixtureV = v.startsWith('fixture-');
       const results = await checkDataset(dir, fixtureV ? FIXTURE_PROFILE : LIVE_PROFILE, {
         counts: report.counts,
         reencodeIdentical: report.invariants?.find((r) => r.id === 'V12')?.ok,
-        skipTiles: fixtureV ? undefined : false
+        skipTiles: fixtureV ? undefined : false,
+        // V20 against the build's snapshot day; V21-V24 need the build's in-memory derivation.
+        asOf: report.counts['projects.asOf'],
+        projectChecks: report.invariants?.filter((r) =>
+          (PROJECT_CHECK_IDS as readonly string[]).includes(r.id)
+        )
       });
       return printResults(results);
     }

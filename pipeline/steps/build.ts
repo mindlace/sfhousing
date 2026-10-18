@@ -12,16 +12,19 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { TOOL_VERSIONS, type InvariantProfile } from '../config';
+import { BuildError } from '../lib/build-error';
 import { run } from '../lib/exec';
 import { openDuck, type Duck } from '../lib/duck';
 import { lockSha256, rawPath, readLock, sortKeys, verifyRaw, type Lock } from '../lib/lock';
 import { Report } from '../lib/report';
 import { runSql } from '../lib/sql';
 import { codeTreeHash, computeDatasetVersion } from '../lib/version';
+import { asOfFromLock } from '../project-records/parse';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
 import { checkDataset, type InvariantResult } from './check';
 import { readParcelRecords, writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
 import { buildManifest, writeManifest } from './manifest';
+import { writeProjectRecords } from './projects';
 import { writeScenario } from './scenario';
 import { copyBasemap, installFonts, writeBuildingsTiles } from './tiles';
 import { writeTransit } from './transit';
@@ -43,13 +46,18 @@ export interface BuildOpts {
   derivedRoot?: string;
 }
 
-export class BuildError extends Error {}
+export { BuildError };
 
 const REPO_ROOT = resolve(import.meta.dirname, '../..');
 /** SF housing stock (2023 Housing Inventory, Table 1); spec §4.9 V1. */
 const HOUSING_STOCK = { end2022: 413208, end2023: 415803 };
 const FIXTURE_RE = /^fixture-\d+$/;
 const DERIVED_ROOT = join(REPO_ROOT, 'pipeline/.cache/derived');
+/** Curated DA phasing (project-records spec §4.10.1): live, and the mini fixture's. */
+const MULTIPHASE = {
+  live: join(REPO_ROOT, 'pipeline/enrichment/multiphase.json'),
+  fixture: join(REPO_ROOT, 'pipeline/test/fixtures/mini/enrichment/multiphase.json')
+};
 /** The three T11/T4 files whose presence puts `scenarios` in the manifest (spec §4.9). */
 const SCENARIO_FILES = ['parcels.bin', 'projects.json', 'calibration.json'];
 /** Spec §4.12: derivative databases of ODbL data are offered under ODbL-1.0 (share-alike). */
@@ -119,7 +127,8 @@ function chunkCounts(chunks: ChunkOut[]): Record<string, number> {
 
 /**
  * Spec §4.2 `build`: verify the lock, normalise, SQL, chunks (+ in-run re-encode), the scenario
- * step (scenarios/fzp/parcels.bin; the T13 panel and lineage into the derived cache),
+ * step (scenarios/fzp/parcels.bin; the T13 panel and lineage into the derived cache), the project
+ * records (scenarios/fzp/projects.json; histories and permits.parquet into the derived cache),
  * neighborhoods, tiles, basemap, fonts, manifest, invariants and report.json into
  * `<outRoot>/<datasetVersion>/`.
  * Throws BuildError when a raw file does not match the lock.
@@ -162,21 +171,40 @@ export async function build(
       await writeChunks(db, join(work, 'reencode'), datasetVersion, new Report());
       return sameFiles(join(outDir, 'parcels'), join(work, 'reencode', 'parcels'));
     });
-    // Transit spec §4.2 step 1: the service date is picked from the newest fetch date. It is
-    // also the scenario step's "today" for the FZP density cap (the build's snapshot day).
+    // Transit spec §4.2 step 1: the service date is picked from the newest fetch date. Its UTC
+    // day is the build's snapshot day: the scenario step's "today" for the FZP density cap and
+    // the project records' `asOf` (project-records spec §4.9 Determinism).
     const newest = lock.sources.reduce((d, s) => (s.retrievedAt > d ? s.retrievedAt : d), '');
+    const asOf = asOfFromLock(lock);
+    const derivedDir = join(opts.derivedRoot ?? DERIVED_ROOT, datasetVersion);
     const scenario = await report.time('scenario', async () =>
       writeScenario({
         db,
         outDir,
-        derivedDir: join(opts.derivedRoot ?? DERIVED_ROOT, datasetVersion),
+        derivedDir,
         datasetVersion,
         records: await readParcelRecords(db),
-        capDay: Math.floor(Date.parse(newest) / 86400000),
+        capDay: asOf,
         report
       })
     );
     report.warnings.push(...scenario.warnings);
+    // Project-records spec §4.9: after the scenario step (it reads parcel_lineage and
+    // scenario_panel), before the manifest and the invariants.
+    const projects = await report.time('projects', () =>
+      writeProjectRecords({
+        db,
+        lock,
+        rawDir: opts.rawDir,
+        byName,
+        outDir,
+        derivedDir,
+        multiphasePath: fixtureMode ? MULTIPHASE.fixture : MULTIPHASE.live,
+        profile: opts.profile,
+        asOf
+      })
+    );
+    report.warnings.push(...projects.warnings);
     const neighborhoodsBytes = await writeNeighborhoods(db, outDir);
     const transit = await report.time('transit', async () =>
       writeTransit({
@@ -222,6 +250,7 @@ export async function build(
       ...chunkCounts(chunks),
       ...transit.counts,
       ...scenario.counts,
+      ...projects.counts,
       ...Object.fromEntries(overtureContrib.map((o) => [`overture.contrib.${o.dataset}`, o.n])),
       'units.total': totals.units,
       'parcels.height_max_m': totals.hmax,
@@ -233,7 +262,9 @@ export async function build(
         counts,
         reencodeIdentical,
         skipTiles: opts.skipTiles ?? false,
-        stableDetail: fixtureMode
+        stableDetail: fixtureMode,
+        asOf,
+        projectChecks: projects.checks
       })
     );
     const body: Record<string, unknown> = {

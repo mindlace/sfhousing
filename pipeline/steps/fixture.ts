@@ -16,6 +16,7 @@ import { DATASET_VERSION_RE } from '../../src/lib/data/dataset-version';
 import { FIXTURE_PROFILE } from '../config';
 import { readLock } from '../lib/lock';
 import { build, printResults } from './build';
+import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, dumpPermits } from './projects';
 import { PARCELS_BIN, SCENARIO_DUMP, formatScenarioDump, readParcelsBin } from './scenario';
 
 const REPO_ROOT = resolve(import.meta.dirname, '../..');
@@ -31,8 +32,14 @@ const GOLDEN_FILES = [
   'manifest.json',
   'neighborhoods.geojson',
   'report.json',
-  'transit.json'
+  'transit.json',
+  PROJECTS_JSON
 ];
+/**
+ * Derived-cache outputs pinned by golden.test.ts (project-records spec §4.9), under
+ * `golden/derived/`: the histories byte for byte, permits.parquet by its row values.
+ */
+export const GOLDEN_DERIVED = { histories: HISTORIES_JSON, permits: 'permits.json' } as const;
 
 const README = `# fixture-0
 
@@ -49,6 +56,11 @@ export interface FixtureOpts {
   skipTiles?: boolean;
   /** Also copy the deterministic outputs into pipeline/test/fixtures/mini/golden/. */
   updateGolden?: boolean;
+  /**
+   * Derived cache root to keep (outputs land in `<derivedRoot>/<version>/`); default a per-run
+   * temp dir that is removed afterwards.
+   */
+  derivedRoot?: string;
 }
 
 function replaceDir(dst: string, src: string, keep: string[] = []): void {
@@ -110,6 +122,7 @@ export async function fixture(opts: FixtureOpts = {}): Promise<number> {
   const lockPath = join(MINI, 'sources.lock.json');
   const newest = Math.max(...readLock(lockPath).sources.map((s) => Date.parse(s.retrievedAt)));
   const outRoot = mkdtempSync(join(tmpdir(), 'sfh-fixture-'));
+  const derivedRoot = opts.derivedRoot ?? join(outRoot, 'derived');
   try {
     const { outDir, results } = await build({
       lockPath,
@@ -117,7 +130,7 @@ export async function fixture(opts: FixtureOpts = {}): Promise<number> {
       rawByName: true,
       outRoot,
       // A per-run derived cache, so parallel fixture builds never share pipeline/.cache/derived.
-      derivedRoot: join(outRoot, 'derived'),
+      derivedRoot,
       datasetVersion: version,
       builtAt: new Date(newest).toISOString(),
       profile: FIXTURE_PROFILE,
@@ -134,11 +147,21 @@ export async function fixture(opts: FixtureOpts = {}): Promise<number> {
     if (opts.updateGolden) {
       rmSync(GOLDEN, { recursive: true, force: true });
       mkdirSync(GOLDEN, { recursive: true });
-      for (const f of GOLDEN_FILES) cpSync(join(outDir, f), join(GOLDEN, f), { recursive: true });
+      for (const f of GOLDEN_FILES) {
+        mkdirSync(dirname(join(GOLDEN, f)), { recursive: true });
+        cpSync(join(outDir, f), join(GOLDEN, f), { recursive: true });
+      }
       mkdirSync(dirname(join(GOLDEN, SCENARIO_DUMP)), { recursive: true });
       writeFileSync(
         join(GOLDEN, SCENARIO_DUMP),
         formatScenarioDump(readParcelsBin(join(outDir, PARCELS_BIN)))
+      );
+      const derived = join(derivedRoot, version);
+      mkdirSync(join(GOLDEN, 'derived'), { recursive: true });
+      cpSync(join(derived, HISTORIES_JSON), join(GOLDEN, 'derived', GOLDEN_DERIVED.histories));
+      writeFileSync(
+        join(GOLDEN, 'derived', GOLDEN_DERIVED.permits),
+        await dumpPermits(join(derived, PERMITS_PARQUET))
       );
     }
     return 0;

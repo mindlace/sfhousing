@@ -567,6 +567,24 @@
     {
       "files": [
         {
+          "archiveKey": "sources/d8e4226ec572772ca3658c1536e4ebaed237be67eda67286e3ee5f35a442c951.json",
+          "bytes": 1293615,
+          "name": "datasf-dev-pipeline.page-000.json",
+          "sha256": "d8e4226ec572772ca3658c1536e4ebaed237be67eda67286e3ee5f35a442c951",
+          "url": "https://data.sf.gov/resource/6jgi-cpb4.json?%24select=blklot%2Cnameaddr%2Ccurrent_status%2Ccurrent_status_date%2Capproved_date_planning%2Ccase_no%2Cbpa_no%2Cnew_pipeline_units%2Cexisting_units%2Cproposed_units%2Ccompleted_new_units%2Cnet_pipeline_units%2Cdescription_planning%2Cda&%24order=%3Aid&%24limit=50000&%24offset=0"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/6jgi-cpb4",
+      "id": "datasf-dev-pipeline",
+      "label": "DataSF SF Development Pipeline",
+      "license": "CC0-1.0",
+      "retrievedAt": "2026-10-17T18:33:02.652Z",
+      "rowCount": 1917,
+      "upstreamVersion": "Fri, 28 Aug 2026 22:33:26 GMT"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/815431cd5587abd99dbfdaf812201bf8776ff1d46727f63bc62a8e689e152975.geojson",
           "bytes": 45589486,
           "name": "datasf-footprints.page-000.geojson",
@@ -620,6 +638,24 @@
       "retrievedAt": "2026-10-17T06:59:32.528Z",
       "rowCount": 5292,
       "upstreamVersion": "Fri, 16 Oct 2026 11:05:53 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/74d3bb5ba2077bf67811617c752306b7f533fa90c8c9204a53c62863f2f529f3.json",
+          "bytes": 833737,
+          "name": "datasf-housing-production.page-000.json",
+          "sha256": "74d3bb5ba2077bf67811617c752306b7f533fa90c8c9204a53c62863f2f529f3",
+          "url": "https://data.sf.gov/resource/xdht-4php.json?%24select=bpa%2Cblocklot%2Cform_no%2Cnet_units_completed%2Cfirst_completion_date&%24order=%3Aid&%24limit=50000&%24offset=0"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/xdht-4php",
+      "id": "datasf-housing-production",
+      "label": "DataSF Housing Production",
+      "license": "public-domain",
+      "retrievedAt": "2026-10-17T18:33:02.187Z",
+      "rowCount": 6157,
+      "upstreamVersion": "Fri, 16 Oct 2026 05:11:48 GMT"
     },
     {
       "files": [
@@ -769,6 +805,103 @@
       "retrievedAt": "2026-10-16T17:01:54.669Z",
       "rowCount": 227967,
       "upstreamVersion": "Thu, 15 Oct 2026 17:30:29 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/e01ff0d91bd4bb0c2368508128d9dbf9895a8520f54c145e3d8f884c57bf7006.json",
+          "bytes": 7827621,
+          "name": "datasf-permits-newcon.page-000.json",
+          "sha256": "e01ff0d91bd4bb0c2368508128d9dbf9895a8520f54c145e3d8f884c57bf7006",
+          "url": "https://data.sf.gov/resource/i98e-djp9.json?%24select=permit_number%2Cpermit_type%2Cblock%2Clot%2Cstreet_number%2Cstreet_name%2Cstreet_suffix%2Cstatus%2Cstatus_date%2Cfiled_date%2Cpermit_creation_date%2Cissued_date%2Cfirst_construction_document_date%2Ccompleted_date%2Clast_permit_activity_date%2Cnumber_of_proposed_stories%2Cexisting_units%2Cproposed_units%2Csite_permit%2Cprimary_address_flag&%24where=permit_type+in%28%271%27%2C%272%27%29&%24order=%3Aid&%24limit=50000&%24offset=0"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/i98e-djp9",
+      "id": "datasf-permits-newcon",
+      "label": "DataSF Building Permits (new construction)",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-17T18:32:40.268Z",
+      "rowCount": 15654,
+      "upstreamVersion": "Sat, 17 Oct 2026 12:33:54 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/de31e8795a9732cb808184d38aeabcb74c87828b5036b942df74eed7abe23b25.json",
+          "bytes": 23566736,
+          "name": "datasf-planning-projects.page-000.json",
+          "sha256": "de31e8795a9732cb808184d38aeabcb74c87828b5036b942df74eed7abe23b25",
+          "url": "https://data.sf.gov/resource/qvu5-m3a2.json?%24select=record_id%2Crecord_status%2Cproject_address%2Cblock%2Clot%2Copen_date%2Cclose_date%2Cbuilding_permits%2Cproject_decision%2Cproject_decision_date%2Cnumber_of_units_prop%2Cnumber_of_units_exist%2Cnew_construction%2Csb35%2Chousing_sustainability_dist%2Cab2162%2Cdescription&%24order=%3Aid&%24limit=50000&%24offset=0"
+        },
+        {
+          "archiveKey": "sources/8d4d78bb87751d26f949f94aa0f614c6b5434d2aa7474fd81895f8c624fc26a6.json",
+          "bytes": 1747857,
+          "name": "datasf-planning-projects.page-001.json",
+          "sha256": "8d4d78bb87751d26f949f94aa0f614c6b5434d2aa7474fd81895f8c624fc26a6",
+          "url": "https://data.sf.gov/resource/qvu5-m3a2.json?%24select=record_id%2Crecord_status%2Cproject_address%2Cblock%2Clot%2Copen_date%2Cclose_date%2Cbuilding_permits%2Cproject_decision%2Cproject_decision_date%2Cnumber_of_units_prop%2Cnumber_of_units_exist%2Cnew_construction%2Csb35%2Chousing_sustainability_dist%2Cab2162%2Cdescription&%24order=%3Aid&%24limit=50000&%24offset=50000"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/qvu5-m3a2",
+      "id": "datasf-planning-projects",
+      "label": "DataSF Planning Projects",
+      "license": "public-domain",
+      "retrievedAt": "2026-10-17T18:32:41.960Z",
+      "rowCount": 54647,
+      "upstreamVersion": "Sat, 17 Oct 2026 06:09:50 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/7746e76a49e5a19f9fb967186a93c85f4b484512acd10f9f6c99513c7d683455.json",
+          "bytes": 10145812,
+          "name": "datasf-planning-records.page-000.json",
+          "sha256": "7746e76a49e5a19f9fb967186a93c85f4b484512acd10f9f6c99513c7d683455",
+          "url": "https://data.sf.gov/resource/y673-d69b.json?%24select=record_id%2Crecord_type%2Crecord_status%2Cblock%2Clot%2Cparent_id%2Copen_date%2Cclose_date&%24where=record_type+in%28%27PPA%27%2C%27ENV%27%2C%27CUA%27%2C%27VAR%27%2C%27DNX%27%2C%27ENX%27%2C%27OFA%27%2C%27AHB%27%2C%27PHA%27%2C%27DVA%27%2C%27COA%27%2C%27PTA%27%2C%27MAP%27%2C%27PCA%27%2C%27GPA%27%2C%27CTZ%27%2C%27DRP%27%2C%27DRM%27%29&%24order=%3Aid&%24limit=50000&%24offset=0"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/y673-d69b",
+      "id": "datasf-planning-records",
+      "label": "DataSF Planning Records",
+      "license": "public-domain",
+      "retrievedAt": "2026-10-17T18:32:59.596Z",
+      "rowCount": 49727,
+      "upstreamVersion": "Sat, 17 Oct 2026 06:12:05 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/7aaebdeb75e3ca8ffe57c05f1377a4cd7b2b7df6698d5a38673942d20da9c2cb.json",
+          "bytes": 2866564,
+          "name": "datasf-planning-review.page-000.json",
+          "sha256": "7aaebdeb75e3ca8ffe57c05f1377a4cd7b2b7df6698d5a38673942d20da9c2cb",
+          "url": "https://data.sf.gov/resource/d4jk-jw33.json?%24select=b1_alt_id%2Cstart_event_type%2Cstart_event_date%2Cend_event_type%2Cend_event_date&%24where=project_stage%3D%27accepted+to+approved%27&%24order=%3Aid&%24limit=50000&%24offset=0"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/d4jk-jw33",
+      "id": "datasf-planning-review",
+      "label": "DataSF Planning Review Time Metrics",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-17T18:33:00.378Z",
+      "rowCount": 16143,
+      "upstreamVersion": "Sat, 17 Oct 2026 14:21:51 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/e47d8189511602491133997fdb88e0119a796a843a0f726e4e774a0e76a92051.json",
+          "bytes": 366123,
+          "name": "datasf-unit-completions.page-000.json",
+          "sha256": "e47d8189511602491133997fdb88e0119a796a843a0f726e4e774a0e76a92051",
+          "url": "https://data.sf.gov/resource/j67f-aayr.json?%24select=building_permit_application%2Cdate_issued%2Cdocument_type%2Cnumber_of_units_certified&%24order=%3Aid&%24limit=50000&%24offset=0"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/j67f-aayr",
+      "id": "datasf-unit-completions",
+      "label": "DataSF Dwelling Unit Completions",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-17T18:33:00.639Z",
+      "rowCount": 2559,
+      "upstreamVersion": "Wed, 14 Oct 2026 16:34:21 GMT"
     },
     {
       "files": [

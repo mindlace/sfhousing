@@ -9,8 +9,11 @@ import { fileURLToPath } from 'node:url';
 import proj4 from 'proj4';
 import { BASEMAP_BUILD, FONTS_COMMIT, FONT_STACKS } from '../../../config';
 import { archiveKeyFor, type Lock, type LockEntry, sha256File, writeLock } from '../../../lib/lock';
+import { PROJECT_SOURCE_IDS } from '../../../project-records/types';
+import { DATASF } from '../../../sources/datasf';
 import { GTFS_FEEDS } from '../../../transit-config';
 import { every, tripTables, type TripSpec } from '../../gtfs-builder';
+import { PROJECT_RAW } from './projects-raw';
 
 proj4.defs(
   'EPSG:7131',
@@ -566,6 +569,15 @@ const CSV_SOURCES = [
   }
 ];
 
+// Project-records spec §4.9 Fixture: the seven project sources as SODA JSON row arrays.
+const JSON_SOURCES = PROJECT_SOURCE_IDS.map((id) => ({
+  id,
+  rows: PROJECT_RAW[id],
+  license: DATASF[id].license,
+  homepage: DATASF[id].homepage,
+  label: DATASF[id].label
+}));
+
 const pages = [
   ...SOURCES.map((src) => ({
     ...src,
@@ -577,6 +589,12 @@ const pages = [
     ...src,
     name: `${src.id}.page-000.csv`,
     body: sodaCsv(src.header, src.rows),
+    rowCount: src.rows.length
+  })),
+  ...JSON_SOURCES.map((src) => ({
+    ...src,
+    name: `${src.id}.page-000.json`,
+    body: JSON.stringify(src.rows) + '\n',
     rowCount: src.rows.length
   }))
 ];

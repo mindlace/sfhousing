@@ -72,6 +72,21 @@ export interface InvariantProfile {
   scenarioUnitsRange: [number, number];
   /** V19: maximum size of scenarios/fzp/parcels.bin on disk, bytes. */
   scenarioMaxBytes: number;
+  /** V21: Σ in-flight units ≥ this × Σ `new_pipeline_units` of the matched population rows. */
+  pipelineCoverageMin: number;
+  /**
+   * V22: Housing Inventory net units per calendar year (2025 HI Table 2 "Net Change in Number of
+   * Units", p.17; project-records spec §4.9).
+   */
+  hiNet: Record<number, number>;
+  /** V22: relative tolerance per cross-check year. */
+  rhnaYearTol: number;
+  /** V22: relative tolerance on the cross-check total. */
+  rhnaTotalTol: number;
+  /** V20: projects.json size limit (engineering budget). */
+  projectsMaxBytes: number;
+  /** V20: above this projects.json passes with a warning. */
+  projectsWarnBytes: number;
 }
 
 /**
@@ -118,7 +133,13 @@ export const LIVE_PROFILE: InvariantProfile = {
   // Inventory Table 1, tier 1); the live roll Σ is ≈ 389,527 ≈ 0.943 × 413,208 (verified against live wv5m-vpq2, spec §4.10).
   scenarioUnitsRange: [0.9 * HOUSING_STOCK_END_2022, 1.02 * HOUSING_STOCK_END_2022],
   // Spec §4.10 V19: size budget for parcels.bin (tier 4; the file is expected ≈ 2.3–2.8 MB).
-  scenarioMaxBytes: 3.5e6
+  scenarioMaxBytes: 3.5e6,
+  pipelineCoverageMin: 0.9,
+  hiNet: { 2023: 2544, 2024: 1603, 2025: 2669 },
+  rhnaYearTol: 0.1,
+  rhnaTotalTol: 0.05,
+  projectsMaxBytes: 2e6,
+  projectsWarnBytes: 1e6
 };
 
 /**
@@ -153,5 +174,11 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   rollJoinMin: 0.8,
   // Spec §4.10 V18 "fixture exact": Σ 2025 roll units of the mini fixture (known answer).
   scenarioUnitsRange: [66, 66],
-  scenarioMaxBytes: LIVE_PROFILE.scenarioMaxBytes
+  scenarioMaxBytes: LIVE_PROFILE.scenarioMaxBytes,
+  pipelineCoverageMin: 1,
+  hiNet: { 2023: 3, 2024: 2, 2025: -1 },
+  rhnaYearTol: LIVE_PROFILE.rhnaYearTol,
+  rhnaTotalTol: LIVE_PROFILE.rhnaTotalTol,
+  projectsMaxBytes: LIVE_PROFILE.projectsMaxBytes,
+  projectsWarnBytes: LIVE_PROFILE.projectsWarnBytes
 };

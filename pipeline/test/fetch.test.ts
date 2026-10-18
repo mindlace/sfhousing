@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { RunFn } from '../lib/r2';
 import type { R2Target } from '../lib/r2';
 import type { Lock } from '../lib/lock';
-import { fetchDatasf } from '../sources/datasf';
+import { DATASF, fetchDatasf, type DatasfId } from '../sources/datasf';
 import { fetchGtfs } from '../sources/gtfs';
 import { latestOvertureRelease } from '../sources/overture';
 import { fetchBasemap } from '../sources/protomaps';
@@ -33,6 +33,23 @@ function fakeHttp(pageSizes: number[]) {
         status: 200,
         headers: new Headers({ 'X-SODA2-Truth-Last-Modified': 'Tue, 07 Oct 2026 10:00:00 GMT' }),
         body: new TextEncoder().encode(JSON.stringify(fc))
+      };
+    }
+  };
+}
+
+function fakeJsonHttp(pageSizes: number[]) {
+  const urls: string[] = [];
+  return {
+    urls,
+    get: async (url: string) => {
+      urls.push(url);
+      const n = pageSizes[urls.length - 1] ?? 0;
+      const rows = Array.from({ length: n }, (_, i) => ({ record_id: `${urls.length}-${i}` }));
+      return {
+        status: 200,
+        headers: new Headers({ 'X-SODA2-Truth-Last-Modified': 'Tue, 07 Oct 2026 10:00:00 GMT' }),
+        body: new TextEncoder().encode(JSON.stringify(rows))
       };
     }
   };
@@ -181,6 +198,157 @@ describe('fetchDatasf', () => {
       homepage: 'https://data.sf.gov/d/h9wh-cg3m',
       label: 'DataSF Zoning Map – Height and Bulk Districts'
     });
+  });
+});
+
+describe('fetchDatasf json sources (spec §4.1)', () => {
+  const SEVEN: Record<
+    string,
+    { dataset: string; select: string; where?: string; license: string; label: string }
+  > = {
+    'datasf-permits-newcon': {
+      dataset: 'i98e-djp9',
+      select:
+        'permit_number,permit_type,block,lot,street_number,street_name,street_suffix,status,status_date,filed_date,permit_creation_date,issued_date,first_construction_document_date,completed_date,last_permit_activity_date,number_of_proposed_stories,existing_units,proposed_units,site_permit,primary_address_flag',
+      where: "permit_type in('1','2')",
+      license: 'PDDL-1.0',
+      label: 'DataSF Building Permits (new construction)'
+    },
+    'datasf-planning-projects': {
+      dataset: 'qvu5-m3a2',
+      select:
+        'record_id,record_status,project_address,block,lot,open_date,close_date,building_permits,project_decision,project_decision_date,number_of_units_prop,number_of_units_exist,new_construction,sb35,housing_sustainability_dist,ab2162,description',
+      license: 'public-domain',
+      label: 'DataSF Planning Projects'
+    },
+    'datasf-planning-records': {
+      dataset: 'y673-d69b',
+      select: 'record_id,record_type,record_status,block,lot,parent_id,open_date,close_date',
+      where:
+        "record_type in('PPA','ENV','CUA','VAR','DNX','ENX','OFA','AHB','PHA','DVA','COA','PTA','MAP','PCA','GPA','CTZ','DRP','DRM')",
+      license: 'public-domain',
+      label: 'DataSF Planning Records'
+    },
+    'datasf-planning-review': {
+      dataset: 'd4jk-jw33',
+      select: 'b1_alt_id,start_event_type,start_event_date,end_event_type,end_event_date',
+      where: "project_stage='accepted to approved'",
+      license: 'PDDL-1.0',
+      label: 'DataSF Planning Review Time Metrics'
+    },
+    'datasf-unit-completions': {
+      dataset: 'j67f-aayr',
+      select: 'building_permit_application,date_issued,document_type,number_of_units_certified',
+      license: 'PDDL-1.0',
+      label: 'DataSF Dwelling Unit Completions'
+    },
+    'datasf-housing-production': {
+      dataset: 'xdht-4php',
+      select: 'bpa,blocklot,form_no,net_units_completed,first_completion_date',
+      license: 'public-domain',
+      label: 'DataSF Housing Production'
+    },
+    'datasf-dev-pipeline': {
+      dataset: '6jgi-cpb4',
+      select:
+        'blklot,nameaddr,current_status,current_status_date,approved_date_planning,case_no,bpa_no,new_pipeline_units,existing_units,proposed_units,completed_new_units,net_pipeline_units,description_planning,da',
+      license: 'CC0-1.0',
+      label: 'DataSF SF Development Pipeline'
+    }
+  };
+  const ids = Object.keys(SEVEN) as DatasfId[];
+
+  it('json entry pages and counts array rows', async () => {
+    const http = fakeJsonHttp([50000, 3]);
+    const raw = tmp();
+    const entry = await fetchDatasf('datasf-planning-projects', raw, http);
+    expect(entry.rowCount).toBe(50003);
+    expect(entry.files.map((f) => f.name)).toEqual([
+      'datasf-planning-projects.page-000.json',
+      'datasf-planning-projects.page-001.json'
+    ]);
+    expect(entry.files[0].archiveKey).toBe(`sources/${entry.files[0].sha256}.json`);
+    for (const u of http.urls) {
+      expect(u.startsWith('https://data.sf.gov/resource/qvu5-m3a2.json?')).toBe(true);
+    }
+  });
+
+  it('urls carry the §4.1 select and where', async () => {
+    for (const id of ids) {
+      const http = fakeJsonHttp([1]);
+      await fetchDatasf(id, tmp(), http);
+      const u = new URL(http.urls[0]);
+      expect(u.pathname).toBe(`/resource/${SEVEN[id].dataset}.json`);
+      expect(u.searchParams.get('$select')).toBe(SEVEN[id].select);
+      expect(u.searchParams.get('$where')).toBe(SEVEN[id].where ?? null);
+    }
+    expect(DATASF['datasf-permits-newcon'].where).toBe("permit_type in('1','2')");
+    expect(DATASF['datasf-planning-review'].where).toBe("project_stage='accepted to approved'");
+    expect(DATASF['datasf-planning-records'].where).toBe(
+      "record_type in('PPA','ENV','CUA','VAR','DNX','ENX','OFA','AHB','PHA','DVA','COA','PTA','MAP','PCA','GPA','CTZ','DRP','DRM')"
+    );
+  });
+
+  it('exactly-full json page then empty page locks only the full page', async () => {
+    const entry = await fetchDatasf('datasf-dev-pipeline', tmp(), fakeJsonHttp([50000, 0]));
+    expect(entry.files).toHaveLength(1);
+    expect(entry.rowCount).toBe(50000);
+  });
+
+  it('rejects a 200 json response whose body is not an array', async () => {
+    const url = 'https://data.sf.gov/resource/qvu5-m3a2.json';
+    await expect(
+      fetchDatasf('datasf-planning-projects', tmp(), {
+        get: async () => ({
+          status: 200,
+          headers: new Headers(),
+          body: new TextEncoder().encode('{"error":true}')
+        })
+      })
+    ).rejects.toThrow(new RegExp(url.replace(/[.]/g, '\\.')));
+  });
+
+  it('licences, labels, homepages and format', () => {
+    expect(
+      ids.map((id) => [
+        DATASF[id].license,
+        DATASF[id].label,
+        DATASF[id].homepage,
+        DATASF[id].format
+      ])
+    ).toEqual(
+      ids.map((id) => [
+        SEVEN[id].license,
+        SEVEN[id].label,
+        `https://data.sf.gov/d/${SEVEN[id].dataset}`,
+        'json'
+      ])
+    );
+    expect(ids.map((id) => DATASF[id].license)).toEqual([
+      'PDDL-1.0',
+      'public-domain',
+      'public-domain',
+      'PDDL-1.0',
+      'PDDL-1.0',
+      'public-domain',
+      'CC0-1.0'
+    ]);
+  });
+
+  it('the four existing entries keep geojson format and URLs', async () => {
+    for (const id of [
+      'datasf-parcels',
+      'datasf-landuse-2023',
+      'datasf-footprints',
+      'datasf-neighborhoods'
+    ] as const) {
+      expect(DATASF[id].format).toBe('geojson');
+      const http = fakeHttp([1]);
+      await fetchDatasf(id, tmp(), http);
+      expect(
+        http.urls[0].startsWith(`https://data.sf.gov/resource/${DATASF[id].dataset}.geojson?`)
+      ).toBe(true);
+    }
   });
 });
 

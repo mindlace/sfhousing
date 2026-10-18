@@ -12,8 +12,11 @@ import {
   type ScenarioParcels
 } from '../../src/lib/data/scenario-codec';
 import { decodeTransit } from '../../src/lib/data/transit-codec';
+import type { Day } from '../../src/lib/timelapse/time';
 import { BBOX, type InvariantProfile } from '../config';
 import { pointStrictlyInside } from '../lib/rings';
+import { checkV20 } from '../project-records/invariants';
+import { PROJECTS_JSON } from './projects';
 import { PARCELS_BIN } from '../lib/scenario-files';
 import { z12TileBytes } from './tiles';
 
@@ -32,7 +35,17 @@ export interface CheckExtras {
   skipTiles?: boolean;
   /** Leave machine-dependent numbers (tile and gzip bytes) out of `detail` (fixture report). */
   stableDetail?: boolean;
+  /** V20: the build's snapshot day; V20 fails when it is not given. */
+  asOf?: Day;
+  /**
+   * V21-V24 from the project-records step (they need the in-memory derivation). A standalone
+   * `check` carries them from report.json; when absent they fail as not measured.
+   */
+  projectChecks?: InvariantResult[];
 }
+
+/** The project-records invariants measured in the build, not from the files. */
+export const PROJECT_CHECK_IDS = ['V21', 'V22', 'V23', 'V24'] as const;
 
 interface Chunk {
   cellId: string;
@@ -135,8 +148,9 @@ export function maxOf(xs: readonly number[]): number {
 }
 
 /**
- * Spec §4.9 invariants V1–V13 and transit spec §4.3 V14 over a built dataset directory.
- * Never throws.
+ * Spec §4.9 invariants V1–V13, transit spec §4.3 V14, scenario-data spec §4.10 V15–V19 and
+ * project-records spec §4.9 V20 over a built dataset directory, then V21–V24 from
+ * `extras.projectChecks`. Never throws.
  */
 export async function checkDataset(
   outDir: string,
@@ -525,6 +539,29 @@ export async function checkDataset(
         ? `parcels.bin ${ok ? 'within' : 'over'} budget${warn}`
         : `parcels.bin ${b}/${max} B${warn}`;
     add('V19', ok, detail);
+  }
+
+  // V20 projects.json (project-records spec §4.9): the T3 validator against the chunk parcels.
+  {
+    const file = join(outDir, PROJECTS_JSON);
+    if (extras.asOf === undefined) add('V20', false, 'snapshot day (asOf) not given');
+    else if (!existsSync(file)) add('V20', false, `${PROJECTS_JSON} is missing`);
+    else {
+      out.push(
+        checkV20(readFileSync(file), {
+          asOf: extras.asOf,
+          parcelIds: new Set(recs.map((r) => r.id)),
+          maxBytes: profile.projectsMaxBytes,
+          warnBytes: profile.projectsWarnBytes
+        })
+      );
+    }
+  }
+
+  // V21–V24: measured by the project-records step.
+  for (const id of PROJECT_CHECK_IDS) {
+    const r = extras.projectChecks?.find((x) => x.id === id);
+    out.push(r ? { id, ok: r.ok, detail: r.detail } : { id, ok: false, detail: 'not measured' });
   }
   return out;
 }
