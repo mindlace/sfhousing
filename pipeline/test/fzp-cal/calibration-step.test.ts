@@ -1,10 +1,16 @@
 // The calibration build step on fixture-0 (stage-calibration spec §4.3, §4.4a, §4.10).
-import { existsSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { parseCalibration } from '../../../src/lib/timelapse/model';
-import { which } from '../../lib/exec';
 import { openDuck } from '../../lib/duck';
 import { FIXTURE_CAL } from '../../lib/fzp-cal/config';
 import { CalibrationError, SC_RULE_IDS } from '../../lib/fzp-cal/types';
@@ -14,11 +20,11 @@ import {
   PERMIT_ROW_COLUMNS,
   writeCalibration
 } from '../../steps/calibration';
+import { PARCELS_BIN } from '../../lib/scenario-files';
 import { fixture } from '../../steps/fixture';
 import { PERMITS_PARQUET, PROJECTS_JSON } from '../../steps/projects';
 
 const REPO = join(import.meta.dirname, '../../..');
-const skipTiles = !(await which('tippecanoe'));
 
 describe('calibration step on fixture-0', () => {
   const outDir = mkdtempSync(join(tmpdir(), 'sfh-cal-out-'));
@@ -26,7 +32,7 @@ describe('calibration step on fixture-0', () => {
   let code: number;
   let counts: Record<string, number>;
   beforeAll(async () => {
-    code = await fixture({ outDir, skipTiles, derivedRoot });
+    code = await fixture({ outDir, skipTiles: true, derivedRoot });
     counts = JSON.parse(readFileSync(join(outDir, 'report.json'), 'utf8')).counts;
   });
 
@@ -107,16 +113,23 @@ describe('calibration step on fixture-0', () => {
   });
 
   it('an asOf mismatch is a CalibrationError, before anything is written', async () => {
+    // A temp copy of the inputs: the committed fixture tree is never an output directory.
     const e2e = join(REPO, 'e2e/fixtures/data/fixture-0');
-    const asOf = (JSON.parse(readFileSync(join(e2e, PROJECTS_JSON), 'utf8')) as { asOf: number })
+    const tmp = mkdtempSync(join(tmpdir(), 'sfh-cal-asof-out-'));
+    for (const f of [PROJECTS_JSON, PARCELS_BIN]) {
+      mkdirSync(dirname(join(tmp, f)), { recursive: true });
+      copyFileSync(join(e2e, f), join(tmp, f));
+    }
+    const derivedDir = mkdtempSync(join(tmpdir(), 'sfh-cal-asof-'));
+    const asOf = (JSON.parse(readFileSync(join(tmp, PROJECTS_JSON), 'utf8')) as { asOf: number })
       .asOf;
     const db = await openDuck();
     try {
       await expect(
         writeCalibration({
           db,
-          outDir: e2e,
-          derivedDir: mkdtempSync(join(tmpdir(), 'sfh-cal-asof-')),
+          outDir: tmp,
+          derivedDir,
           datasetVersion: 'fixture-0',
           asOf,
           histories: { schema: 1, asOf: asOf - 1, histories: [] },
@@ -127,5 +140,7 @@ describe('calibration step on fixture-0', () => {
     } finally {
       db.close();
     }
+    expect(existsSync(join(tmp, CALIBRATION_JSON))).toBe(false);
+    expect(readdirSync(derivedDir)).toEqual([]);
   });
 });

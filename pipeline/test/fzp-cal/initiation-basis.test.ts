@@ -298,9 +298,11 @@ describe('mergeBins', () => {
   });
 });
 
+const NO_CTX = { permitOnlyPre2015: { fired: 0, of: 0 } };
+
 describe('fitInitiation', () => {
   const panel = simPanel(30_000);
-  const { model, report } = fitInitiation(panel, LIVE_CAL, fzpApp);
+  const { model, report } = fitInitiation(panel, LIVE_CAL, fzpApp, NO_CTX);
   const term = (f: FeatureId) => {
     const t = model.terms.find((x) => x.feature === f);
     if (!t) throw new Error(`no term ${f}`);
@@ -409,7 +411,7 @@ describe('fitInitiation', () => {
   });
 
   it('is deterministic: a second run is byte-identical', () => {
-    expect(JSON.stringify(fitInitiation(simPanel(30_000), LIVE_CAL, fzpApp))).toBe(
+    expect(JSON.stringify(fitInitiation(simPanel(30_000), LIVE_CAL, fzpApp, NO_CTX))).toBe(
       JSON.stringify({ model, report })
     );
   });
@@ -417,12 +419,12 @@ describe('fitInitiation', () => {
   it('live: fewer than INIT_MIN_EVENTS events is a CalibrationError', () => {
     const small = simPanel(50);
     expect(small.events.record + small.events.permit).toBeLessThan(100);
-    expect(() => fitInitiation(small, LIVE_CAL, fzpApp)).toThrow(CalibrationError);
+    expect(() => fitInitiation(small, LIVE_CAL, fzpApp, NO_CTX)).toThrow(CalibrationError);
   });
 
   it('fixture: the fixed high-hazard tier-4 model, report from the panel counts', () => {
     const small = simPanel(50);
-    const { model: fm, report: fr } = fitInitiation(small, FIXTURE_CAL, fzpApp);
+    const { model: fm, report: fr } = fitInitiation(small, FIXTURE_CAL, fzpApp, NO_CTX);
     expect(fm.kind).toBe('logit-monthly');
     expect(fm.terms).toEqual([]);
     expect(fm.intercept).toBe(Number(log(0.05 / 0.95).toPrecision(6)));
@@ -451,14 +453,14 @@ describe('fitInitiation review minors (Task 13 review, folded into Task 16)', ()
   it('live: a detection basis with no data is a CalibrationError', () => {
     const panel = simPanel(30_000);
     for (const b of [0, 1] as const) {
-      expect(() => fitInitiation(withoutBasis(panel, b), LIVE_CAL, fzpApp)).toThrow(
+      expect(() => fitInitiation(withoutBasis(panel, b), LIVE_CAL, fzpApp, NO_CTX)).toThrow(
         'initiation: one detection basis has no data'
       );
     }
   });
 
   it('fixture: no basis guard (the back-cast gate is live-only)', () => {
-    const { report } = fitInitiation(withoutBasis(simPanel(50), 1), FIXTURE_CAL, fzpApp);
+    const { report } = fitInitiation(withoutBasis(simPanel(50), 1), FIXTURE_CAL, fzpApp, NO_CTX);
     expect(report.events.permit).toBe(0);
   });
 
@@ -468,5 +470,16 @@ describe('fitInitiation review minors (Task 13 review, folded into Task 16)', ()
     expect(model.provenance.method).toContain('RIDGE_LAMBDA = 1 (tier 4)');
     expect(model.provenance.method).toContain('MIN_BIN_EVENTS = 10 (tier 4)');
     expect(model.provenance.method).toContain('n = 7 of 40 (calibration.method.permitOnlyPre2015)');
+  });
+
+  it('shipped method prints a non-finite at-risk maximum as "none", never Infinity or NaN', () => {
+    const p = simPanel(30_000);
+    const empty = {
+      ...p,
+      maxAtRisk: { potentialRatio: -Infinity, storiesGap: Number.NaN }
+    };
+    const { model } = fitInitiation(empty, LIVE_CAL, fzpApp, NO_CTX);
+    expect(model.provenance.method).not.toMatch(/Infinity|NaN/);
+    expect(model.provenance.method).toContain('at-risk maximum (none, none)');
   });
 });

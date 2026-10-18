@@ -241,6 +241,9 @@ function panelCells(panel: PanelResult): YearCell[] {
 
 const share = (a: number, b: number): number => (b > 0 ? a / b : 0);
 const pct = (x: number): string => `${(100 * x).toFixed(2)}%`;
+/** A number in shipped provenance: 6 significant digits, non-finite "none" (never Infinity/NaN). */
+const fin = (x: number | null): string =>
+  x !== null && Number.isFinite(x) ? String(Number(x.toPrecision(6))) : 'none';
 
 /** Hazard of a merged bin tuple under the published model (basis 0). */
 function publishedHazard(model: InitiationModel, bins: number[]): number {
@@ -265,7 +268,7 @@ export function fitInitiation(
   panel: PanelResult,
   cal: CalProfile,
   fzp: FzpApplication,
-  ctx?: InitiationContext
+  ctx: InitiationContext
 ): { model: InitiationModel; report: InitiationReport } {
   for (let t = 0; t < TERM_ORDER.length; t++) {
     if (TERM_ORDER[t] !== PANEL_FEATURES[t]) {
@@ -525,12 +528,10 @@ function fittedProvenance(
   r: InitiationReport,
   n: number,
   cal: CalProfile,
-  ctx: InitiationContext | undefined
+  ctx: InitiationContext
 ): Provenance {
   const x = r.extrapolation;
-  const pre2015 = ctx
-    ? `; permit-only histories before 2015 count as pathway unknown: n = ${ctx.permitOnlyPre2015.fired} of ${ctx.permitOnlyPre2015.of} (calibration.method.permitOnlyPre2015); the initiation event does not depend on the pathway`
-    : '';
+  const pre2015 = `; permit-only histories before 2015 count as pathway unknown: n = ${ctx.permitOnlyPre2015.fired} of ${ctx.permitOnlyPre2015.of} (calibration.method.permitOnlyPre2015); the initiation event does not depend on the pathway`;
   return {
     tier: 2,
     label:
@@ -544,9 +545,9 @@ function fittedProvenance(
     method:
       `discrete-time hazard: binomial logit on hostable parcel-months 2007-01 to 2025-12 (one trial per parcel-month), ridge IRLS with RIDGE_LAMBDA = ${cal.ridgeLambda} (tier 4) on the bin coefficients, bins merged to at least MIN_BIN_EVENTS = ${cal.minBinEvents} (tier 4) events (binning tier 4); ` +
       `events ${r.events.record} by first Planning record (2015 on, tier 0 dates) and ${r.events.permit} by first permit filing (before 2015); ` +
-      `pre-2015 events detected by first new-construction permit filing (tier 2 proxy); a measurement-definition term (permit-filing proxy vs first Planning record) is fitted and not shipped, so the published level is set by 2015+ first-record events; this is not a market adjustment; basis coefficient = ${r.basis}; ` +
+      `pre-2015 events detected by first new-construction permit filing (tier 2 proxy); a measurement-definition term (permit-filing proxy vs first Planning record) is fitted and not shipped, so the published level is set by 2015+ first-record events; this is not a market adjustment; basis coefficient = ${fin(r.basis)}; ` +
       'the event is a tier 2 proxy for project initiation (it misses projects that died before filing and dates the rest later); the panel base heights are the tier-3 pre-FZP heights proxy; ' +
-      `FZP values above the top bin edge take the top bin (clamp): ${pct(x.parcelShare)} of hostable parcels and ${pct(x.filingsShare)} of FZP expected filings have potentialRatio or storiesGap above the panel's at-risk maximum (${x.maxAtRisk.potentialRatio}, ${x.maxAtRisk.storiesGap}), tier 2, applied beyond historical support (top-bin clamp)${pre2015}`,
+      `FZP values above the top bin edge take the top bin (clamp): ${pct(x.parcelShare)} of hostable parcels and ${pct(x.filingsShare)} of FZP expected filings have potentialRatio or storiesGap above the panel's at-risk maximum (${fin(x.maxAtRisk.potentialRatio)}, ${fin(x.maxAtRisk.storiesGap)}), tier 2, applied beyond historical support (top-bin clamp)${pre2015}`,
     n,
     window: ['2007-01-01', '2025-12-31']
   };

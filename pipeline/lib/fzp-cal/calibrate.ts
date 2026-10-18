@@ -9,7 +9,9 @@ import { featureValue } from '../../../src/lib/data/scenario-codec';
 import { CalibrationFormatError, parseCalibration } from '../../../src/lib/timelapse/model';
 import type { InFlightProject } from '../../../src/lib/timelapse/projects';
 import type { Calibration, Day, FeatureId, ProjectHistory } from '../../../src/lib/timelapse/types';
+import { isoToDay } from '../../project-records/multiphase';
 import {
+  FZP_BAND,
   INITIAL_EDGES,
   TERM_ORDER,
   backcastGate,
@@ -39,6 +41,7 @@ import {
 } from './spells';
 import { fitTransitions } from './transitions';
 import { CalibrationError, type CalProfile, type PermitRow, type Tallies } from './types';
+import { PLANNING_START } from './window';
 
 export interface CalInput {
   asOf: Day;
@@ -129,7 +132,11 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
   const forNew = pathwayForNew(p.norm, input.inFlight, asOf, cal);
   const ppa = ppaShare(p.norm, asOf);
   const lpDiag = localProgramDiagnostic(p.norm, asOf);
-  const streamlinedSpells = spells.filter((s) => s.pathway === 'streamlined').length;
+  // The provenance window is [PLANNING_START, asOf]: count the spells that end inside it.
+  const planningStart = isoToDay(PLANNING_START);
+  const streamlinedSpells = spells.filter(
+    (s) => s.pathway === 'streamlined' && s.e + s.x >= planningStart
+  ).length;
   const localProgram = streamlinedForLocalProgram(streamlinedSpells, asOf, lpDiag);
   const size = sizeModel(p.norm, asOf, cal, input.fillLevels);
   const rev = revisionModel(p.norm, asOf, cal);
@@ -169,7 +176,7 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
   const counts: Record<string, number> = {
     'calibration.histories': input.histories.length,
     'calibration.qualifying': q.length,
-    'calibration.pathwayNull': p.norm.filter((h) => h.pathway === null).length,
+    'calibration.pathwayNull': q.filter((h) => h.pathway === null).length,
     'calibration.window.preRoll': preRollCount(p.norm),
     'calibration.method.permitOnlyPre2015': n.method.permitOnlyPre2015.fired,
     'calibration.method.ppaPooled': fit.ppaPooled,
@@ -195,7 +202,7 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
   if (r.fzpWarning) {
     const ratio = r.fzpVsHistorical === null ? 'none' : sig(r.fzpVsHistorical);
     warnings.push(
-      `initiation: FZP expected filings ${sig(r.fzpPerYear)} per year vs historical mean ${sig(r.historicalMean)} (ratio ${ratio}) outside the [0.5, 20] band`
+      `initiation: FZP expected filings ${sig(r.fzpPerYear)} per year vs historical mean ${sig(r.historicalMean)} (ratio ${ratio}) outside the [${FZP_BAND[0]}, ${FZP_BAND[1]}] band`
     );
   }
   const backcast = backcastGate(r);

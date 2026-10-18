@@ -245,6 +245,104 @@ describe('calibrate', () => {
   });
 });
 
+/** A permit-only history through every stage from `start` (post-2015 unless told otherwise). */
+function permitOnlyHistory(id: string, start: Day, complete: boolean): ProjectHistory {
+  const stages = pathwayStages('permitOnly').filter((s) => s !== 'preApplication');
+  const entered: Partial<Record<Stage, Day>> = {};
+  const reach = complete ? stages.length : 2;
+  for (let k = 0; k < reach; k++) entered[stages[k]] = start + 90 * k;
+  return {
+    id,
+    pathway: 'permitOnly',
+    parcelIds: [],
+    entered,
+    end: complete
+      ? { kind: 'complete', day: entered.complete! }
+      : { kind: 'open', lastObserved: start + 90 },
+    unitsAt: { permitFiled: 12, ...(complete ? { complete: 12 } : {}) },
+    existingUnits: 0,
+    storiesProposed: 4,
+    baseStoriesAtFiling: 4,
+    sources: [],
+    quality: []
+  };
+}
+
+async function runWith(extra: ProjectHistory[], completeDayOf?: (h: ProjectHistory) => number) {
+  const histories = [...input.histories, ...extra].sort((x, y) => (x.id < y.id ? -1 : 1));
+  const permits = permitRows(histories).map((r) => {
+    const h = extra.find((e) => e.id === r.project_id);
+    return h && completeDayOf ? { ...r, complete_day: completeDayOf(h) } : r;
+  });
+  return calibrate({ ...input, histories, permits }, FIXTURE_CAL);
+}
+
+const tcoCounts = (md: string): { differ: number; of: number; median: string } => {
+  const m = md.match(
+    /Over (\d+) completed histories[^\n]*?(\d+) of them have a completion day different from[^\n]*?paired median[^\n]*? = (-?[\d.]+|none) days/
+  );
+  if (!m) throw new Error('no TCO diagnostic line');
+  return { of: Number(m[1]), differ: Number(m[2]), median: m[3] };
+};
+
+describe('report diagnostics and counts (Task 16b)', () => {
+  it('TCO diagnostic counts histories whose completion differs from the permit and pairs them', async () => {
+    const base = tcoCounts(a.reportMd);
+    expect(base.differ).toBeGreaterThan(0);
+    expect(base.differ).toBe(base.of);
+    // permit rows are the completion day plus 20: the paired median is -20 days
+    expect(base.median).toBe('-20');
+    // a completed history whose permit complete_day equals its completion is not counted
+    const same = permitOnlyHistory('PRJ:Z01', d('2019-01-01'), true);
+    const withSame = await runWith([same], (h) => h.entered.complete!);
+    const t = tcoCounts(withSame.reportMd);
+    expect(t.of).toBe(base.of + 1);
+    expect(t.differ).toBe(base.differ);
+    expect(t.median).toBe('-20');
+    // the subset is empty: "none"
+    const only = [permitOnlyHistory('PRJ:Z02', d('2019-02-01'), true)];
+    const alone = await calibrate(
+      {
+        ...input,
+        histories: only,
+        permits: permitRows(only).map((r) => ({
+          ...r,
+          complete_day: only[0].entered.complete!
+        }))
+      },
+      FIXTURE_CAL
+    );
+    expect(tcoCounts(alone.reportMd)).toEqual({ of: 1, differ: 0, median: 'none' });
+  });
+
+  it('pathwayNull counts T4d nulls only, additive with permitOnlyPre2015', async () => {
+    expect(a.counts['calibration.pathwayNull']).toBe(0);
+    expect(a.counts['calibration.method.permitOnlyPre2015']).toBe(0);
+    const nullPathway: ProjectHistory = {
+      ...permitOnlyHistory('PRJ:Z03', d('2019-03-01'), false),
+      pathway: null,
+      unitsAt: { permitFiled: 12 }
+    };
+    const pre2015 = permitOnlyHistory('PRJ:Z04', d('2012-03-01'), false);
+    const out = await runWith([nullPathway, pre2015]);
+    expect(out.counts['calibration.pathwayNull']).toBe(1);
+    expect(out.counts['calibration.method.permitOnlyPre2015']).toBe(1);
+    expect(out.reportMd).toContain('T4d nulls');
+  });
+
+  it('shows the unweighted raw column beside the unit-weighted one', () => {
+    expect(a.reportMd).toContain('advance (published table)');
+    expect(a.reportMd).toContain('advance (raw, unweighted)');
+    expect(a.reportMd).toContain('advance (units)');
+  });
+
+  it('counts the streamlined spells that end on or after the provenance window start', () => {
+    const lp = a.calibration.streamlinedForLocalProgram;
+    expect(lp.n).toBeGreaterThan(0);
+    expect(lp.window?.[0]).toBe('2015-01-01');
+  });
+});
+
 describe('report helpers', () => {
   it('num writes non-finite values as "none"', () => {
     expect(num(-Infinity)).toBe('none');
