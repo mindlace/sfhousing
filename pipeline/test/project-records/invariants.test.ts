@@ -94,6 +94,31 @@ describe('checkV20', () => {
     expect(warn.detail).toMatch(/warning/);
   });
 
+  it('passes qualityRules entries equal to their QUALITY_RULES entries (pipeline side)', () => {
+    expect(good.file.qualityRules.map((q) => q.id)).toEqual(['pr.stages.forward-clamp']);
+    expect(v20(good.file).ok).toBe(true);
+  });
+
+  it('fails a qualityRules entry whose label or tier differs from the registry', () => {
+    const label = clone(good.file);
+    label.qualityRules[0].label = 'A stage date was moved';
+    const r = v20(label);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/pr\.stages\.forward-clamp.*QUALITY_RULES/);
+    const tier = clone(good.file);
+    tier.qualityRules[0].tier = 4;
+    expect(v20(tier).ok).toBe(false);
+  });
+
+  it('fails a qualityRules id that is not a registered project-records rule', () => {
+    const f = clone(good.file);
+    proj(f, 'PRJ:2019-000001PRJ').quality = ['pr.no.such'];
+    f.qualityRules = [{ id: 'pr.no.such', label: 'Made up', tier: 4, valueTier: null }];
+    const r = v20(f);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/pr\.no\.such/);
+  });
+
   it('fails unparseable bytes', () => {
     const r = checkV20(Buffer.from('{'), {
       asOf: ASOF,
@@ -211,6 +236,16 @@ describe('checkV23', () => {
     expect(checkV23(early, true).ok).toBe(false);
   });
 
+  it('fails an open history whose lastObserved precedes a later entered day', () => {
+    const i = inputs((x) => {
+      const h = hist(x, 'PRJ:2019-000001PRJ');
+      h.end = { kind: 'open', lastObserved: h.entered.filed as number };
+    });
+    const r = checkV23(i, true);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/lastObserved .* precedes the last entered day/);
+  });
+
   it('fails a T3 pathway with no history', () => {
     const i = inputs((x) => {
       x.histories = x.histories.filter((h) => h.pathway !== 'permitOnly');
@@ -230,6 +265,43 @@ describe('checkV23', () => {
 
   it('fails a rerun that is not identical', () => {
     expect(checkV23(good.checks, false).ok).toBe(false);
+  });
+
+  it('passes the derived history quality and fails unsorted or duplicated ids', () => {
+    expect(hist(good.checks, 'PRJ:2019-000001PRJ').quality).toEqual(['pr.stages.forward-clamp']);
+    const unsorted = inputs((x) => {
+      hist(x, 'PRJ:2019-000001PRJ').quality = ['pr.stages.forward-clamp', 'pr.date.valid-range'];
+    });
+    expect(checkV23(unsorted, true).detail).toMatch(/quality is not sorted and unique/);
+    const dup = inputs((x) => {
+      hist(x, 'PRJ:2019-000001PRJ').quality = [
+        'pr.stages.forward-clamp',
+        'pr.stages.forward-clamp'
+      ];
+    });
+    expect(checkV23(dup, true).ok).toBe(false);
+  });
+
+  it('fails a history quality id that is not a project-records rule', () => {
+    for (const id of ['pr.no.such', 'sd.roll.units-capacity']) {
+      const i = inputs((x) => {
+        hist(x, 'BP:201410070008').quality = [id];
+      });
+      const r = checkV23(i, true);
+      expect(r.ok, id).toBe(false);
+      expect(r.detail, id).toMatch(/not a project-records rule/);
+    }
+  });
+
+  it('fails the T3-only ids on a history', () => {
+    for (const id of ['pr.parcels.shared-existing', 'pr.multiphase.da-netting']) {
+      const i = inputs((x) => {
+        hist(x, 'BP:201410070008').quality = [id];
+      });
+      const r = checkV23(i, true);
+      expect(r.ok, id).toBe(false);
+      expect(r.detail, id).toMatch(/acts only on T3/);
+    }
   });
 });
 
@@ -292,6 +364,59 @@ describe('checkV24', () => {
     expect(checkV24(i).ok).toBe(false);
     i.multiphase.lastResort = [D];
     expect(checkV24(i).ok).toBe(true);
+  });
+
+  it('carries each in-flight master DA parcels and tracking parcels', () => {
+    expect(good.checks.multiphase.masters).toEqual({
+      [D]: { daParcels: ['3512001', '3512006'], trackingParcels: ['3512006'] }
+    });
+  });
+
+  /** D as a last resort drawing on `parcelIds`. */
+  const lastResort = (parcelIds: string[]) =>
+    inputs((x) => {
+      const d = proj(x.file, D);
+      d.phases = null;
+      d.parcelIds = parcelIds;
+      x.multiphase.lastResort = [D];
+    });
+
+  it('passes a drawing last-resort master on a free DA parcel', () => {
+    expect(checkV24(lastResort(['3512006']))).toMatchObject({ id: 'V24', ok: true });
+  });
+
+  it("fails a drawing last-resort master on another in-flight project's parcel", () => {
+    const r = checkV24(lastResort(['3512001', '3512006']));
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/3512001.*PRJ:2019-000001PRJ/);
+  });
+
+  it('fails a drawing last-resort master on a parcel that is not a DA parcel', () => {
+    const r = checkV24(lastResort(['3512006', '3512008']));
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/3512008 is not a DA parcel/);
+  });
+
+  it('fails a score-only master with a free DA parcel', () => {
+    // Lot 001 is A's; lot 006 (D's tracking lot) is held by no other project.
+    const r = checkV24(lastResort([]));
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/score-only.*3512006/);
+    expect(r.detail).not.toMatch(/3512001/);
+  });
+
+  it('passes a score-only master whose DA parcels are all held', () => {
+    const held = lastResort([]);
+    // A completed history on lot 006 holds it.
+    hist(held, 'PRJ:2016-000006PRJ').parcelIds.push('3512006');
+    expect(checkV24(held)).toMatchObject({ id: 'V24', ok: true });
+    // So does another in-flight master's tracking parcel.
+    const tracking = lastResort([]);
+    tracking.multiphase.masters['CASE:2007.0001PRX'] = {
+      daParcels: ['3512006'],
+      trackingParcels: ['3512006']
+    };
+    expect(checkV24(tracking)).toMatchObject({ id: 'V24', ok: true });
   });
 
   it('fails on buildPhases problems and multiphase file problems', () => {

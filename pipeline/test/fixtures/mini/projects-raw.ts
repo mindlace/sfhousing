@@ -20,9 +20,16 @@
  * | M13 2015-000013PRJ     | lot 012; Closed, no decision, closed 2016-05-02                           |
  * | M14 2010.0002PRX       | pipeline-only, lot 009, 100 units, da 'Fixture Village' (fallback);       |
  * |                        | base case PRJ 2010.0002 (lot 007) with completed permit 201501150014      |
+ * | M15 2025-000015PRJ     | lot 3; referral PRJ (10 units); permit 202504010015, 5,540 units, 3 stories |
+ * | M16 2024-000016PRX     | lot 4; no-date PRX row linked to PRJ 2024-000016PRJ (200 units, ENV, d4jk) |
+ * | M17 2025-000017PRX     | lot 007; no-date PRX row linked to PRJ 2025-000017PRJ (0 units): excluded  |
+ * | M18 2026-000018PRJ     | lot 009; no-date row, no such record, no open PRJ on the lot: dropped     |
+ * | M19 BP 202501150019    | lot 001; type 1 permit, shares lot 1 with M10; pipeline BP Filed          |
+ * | M20 2012-000020PRX     | lot 006; pipeline-only, 10 units, da 'Fixture Yards'; netted by M11       |
  * | xdht extras            | forms 2 (+3), 3 (+2) and 6 (-1): rhnaCompletedNet 4                       |
  *
- * Every pipeline row's `new_pipeline_units` equals its project's units (V21 coverage 1.0).
+ * Every pipeline row's `new_pipeline_units` equals its project's units, except M16's (220 against
+ * the record's 200), so V21 coverage is below 1.0 (spec 4.9 V21).
  * `miniProjectInput()` serves the callbacks as stubs mirroring scenario-data's fixture (lineage,
  * and assessor units aggregated from the landed roll CSV), so Task 12 can compare it with the real
  * panel.
@@ -32,6 +39,7 @@ import { fileURLToPath } from 'node:url';
 import type { ParcelId } from '../../../../src/lib/data/parcel';
 import type { Day } from '../../../../src/lib/timelapse/time';
 import { parseMultiphase } from '../../../enrichment/schema';
+import { descendantsIndex, type ParcelAttrsRow } from '../../../project-records/descendants';
 import type { ProjectRecordsInput, ProjectSourceId, RawRow } from '../../../project-records/types';
 
 export const MINI_ASOF: Day = Date.parse('2026-10-10T00:00:00Z') / 86_400_000;
@@ -59,6 +67,8 @@ const ts = (iso: string) => `${iso}T00:00:00.000`;
 
 interface PermitSpec {
   number: string;
+  /** Default '3512'; lots 3 (`8711023C`) and 4 (`0026T001A`) have their own blocks. */
+  block?: string;
   type: '1' | '2';
   lot: string;
   status: string;
@@ -78,7 +88,7 @@ function permit(o: PermitSpec): RawRow {
   const r: RawRow = {
     permit_number: o.number,
     permit_type: o.type,
-    block: '3512',
+    block: o.block ?? '3512',
     lot: o.lot
   };
   if (o.street) {
@@ -102,7 +112,8 @@ function permit(o: PermitSpec): RawRow {
 interface PipelineSpec {
   blklot: string;
   status: string;
-  statusDate: string;
+  /** Absent for a DQ-2 row (no `current_status_date`). */
+  statusDate?: string;
   caseNo?: string;
   bpaNo?: string;
   units: number;
@@ -111,11 +122,8 @@ interface PipelineSpec {
 
 /** One 6jgi-cpb4 row. */
 function pipeline(o: PipelineSpec): RawRow {
-  const r: RawRow = {
-    blklot: o.blklot,
-    current_status: o.status,
-    current_status_date: ts(o.statusDate)
-  };
+  const r: RawRow = { blklot: o.blklot, current_status: o.status };
+  if (o.statusDate) r.current_status_date = ts(o.statusDate);
   if (o.caseNo) r.case_no = o.caseNo;
   if (o.bpaNo) r.bpa_no = o.bpaNo;
   r.new_pipeline_units = String(o.units);
@@ -229,6 +237,29 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       fcd: '2015-08-01',
       completed: '2017-04-01',
       units: 40
+    }),
+    // M15 (pr.units.capacity, modelled on live 8500988): 5,540 units on 3 stories of a 300 m2 lot
+    // exceed 300 x 3 / 10 = 90, so the permit's units are missing.
+    permit({
+      number: '202504010015',
+      type: '2',
+      block: '8711',
+      lot: '023C',
+      status: 'filed',
+      statusDate: '2025-04-01',
+      filed: '2025-04-01',
+      units: 5540,
+      stories: 3
+    }),
+    // M19 (pr.parcels.shared-existing): on lot 001 with M10, which entered earlier.
+    permit({
+      number: '202501150019',
+      type: '1',
+      lot: '001',
+      status: 'filed',
+      statusDate: '2025-01-15',
+      filed: '2025-01-15',
+      units: 3
     })
   ],
   'datasf-planning-projects': [
@@ -333,6 +364,37 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       building_permits: '201501150014',
       number_of_units_prop: '40',
       new_construction: 'CHECKED'
+    },
+    // M15: a referral (opened 12 days before its permit was filed, no evidence) with 10 units.
+    {
+      record_id: '2025-000015PRJ',
+      record_status: 'Under Review',
+      block: '8711',
+      lot: '023C',
+      open_date: ts('2025-03-20'),
+      building_permits: '202504010015',
+      number_of_units_prop: '10',
+      new_construction: 'CHECKED'
+    },
+    // M16: the Planning record M16's no-date PRX row links to (DQ-2); no pipeline row of its own.
+    {
+      record_id: '2024-000016PRJ',
+      record_status: 'Under Review',
+      block: '0026T',
+      lot: '001A',
+      open_date: ts('2024-02-01'),
+      number_of_units_prop: '200',
+      new_construction: 'CHECKED'
+    },
+    // M17: the open record on lot 007 that M17's no-date PRX row links to; no units, so the row is
+    // excluded (projects.excludedNoUnits). Lot 7's other PRJ, 2010.0002, ended complete.
+    {
+      record_id: '2025-000017PRJ',
+      record_status: 'Under Review',
+      block: '3512',
+      lot: '007',
+      open_date: ts('2025-09-12'),
+      number_of_units_prop: '0'
     }
   ],
   'datasf-planning-records': [
@@ -382,6 +444,15 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       lot: '008',
       parent_id: '2026-000012PRJ',
       open_date: ts('2026-08-03')
+    },
+    {
+      record_id: '2024-000016ENV',
+      record_type: 'ENV',
+      record_status: 'Open',
+      block: '0026T',
+      lot: '001A',
+      parent_id: '2024-000016PRJ',
+      open_date: ts('2024-03-01')
     }
   ],
   'datasf-planning-review': [
@@ -412,6 +483,13 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       start_event_date: ts('2010-02-01'),
       end_event_type: 'approval',
       end_event_date: ts('2012-03-01')
+    },
+    // M16's review, accepted and not yet decided: the discretionary evidence (spec 4.4 rule 2; an
+    // ENV child alone is filing evidence, not pathway evidence).
+    {
+      b1_alt_id: '2024-000016PRJ',
+      start_event_type: 'accepted',
+      start_event_date: ts('2024-04-15')
     }
   ],
   'datasf-unit-completions': [
@@ -502,6 +580,36 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       caseNo: '2010.0002PRX',
       units: 100,
       da: 'Fixture Village'
+    }),
+    // M15: the capacity case's pipeline row.
+    pipeline({
+      blklot: '8711023C',
+      status: 'BP Filed',
+      statusDate: '2026-06-01',
+      bpaNo: '202504010015',
+      units: 10
+    }),
+    // M16 (DQ-2, linked): no status date; joins 2024-000016PRJ on lot 4. Its 220 units are not used.
+    pipeline({ blklot: '0026T001A', status: 'PL Filed', caseNo: '2024-000016PRX', units: 220 }),
+    // M17 (DQ-2, no units): no status date; joins 2025-000017PRJ on lot 7, which has no units.
+    pipeline({ blklot: '3512007', status: 'PL Filed', caseNo: '2025-000017PRX', units: 900 }),
+    // M18 (no status date, no PRJ): no record 2026-000018PRJ exists and lot 009 has no open PRJ.
+    pipeline({ blklot: '3512009', status: 'PL Filed', caseNo: '2026-000018PRJ', units: 20 }),
+    pipeline({
+      blklot: '3512001',
+      status: 'BP Filed',
+      statusDate: '2026-05-01',
+      bpaNo: '202501150019',
+      units: 3
+    }),
+    // M20 (DA netting, score-only): M11 (3 units, lot 006, no pipeline row) nets it to 7.
+    pipeline({
+      blklot: '3512006',
+      status: 'PL Approved',
+      statusDate: '2013-05-01',
+      caseNo: '2012-000020PRX',
+      units: 10,
+      da: 'Fixture Yards'
     })
   ]
 };
@@ -519,6 +627,37 @@ const LINEAGE: Record<string, ParcelId> = {
 const lineage = (b: string): ParcelId | null => LINEAGE[b] ?? (MINI_PARCELS.has(b) ? b : null);
 
 const ROLL = fileURLToPath(new URL('./raw/datasf-assessor-roll.page-000.csv', import.meta.url));
+const ATTRS = fileURLToPath(new URL('./raw/datasf-parcel-attrs.page-000.csv', import.meta.url));
+
+/**
+ * The landed mini parcel attrs as src_parcel_attrs holds them (pipeline/sources/normalise.ts:
+ * trimmed upper-case block-lots, '' as null, `active` true/1/false/0 else null, dates as days),
+ * for the `descendants` callback (main's ruling 3, Ruling D1 revised). Every mini tracking lot is
+ * active, so each descends only to itself.
+ */
+function attrsRows(): ParcelAttrsRow[] {
+  const lines = readFileSync(ATTRS, 'utf8').trim().split('\n');
+  const unquote = (s: string) => s.replace(/^"|"$/g, '').trim();
+  const header = lines[0].split(',').map(unquote);
+  const col = (name: string) => header.indexOf(name);
+  const text = (s: string) => (s === '' ? null : s.toUpperCase());
+  const flag = (s: string) =>
+    s === 'true' || s === '1' ? true : s === 'false' || s === '0' ? false : null;
+  const out: ParcelAttrsRow[] = [];
+  for (const line of lines.slice(1)) {
+    const f = line.split(',').map(unquote);
+    const blklot = text(f[col('blklot')]);
+    if (blklot === null) continue;
+    out.push({
+      blklot,
+      mapblklot: text(f[col('mapblklot')]),
+      active: flag(f[col('active')].toLowerCase()),
+      added: f[col('date_rec_add')].slice(0, 10) || null,
+      dropped: f[col('date_rec_drop')].slice(0, 10) || null
+    });
+  }
+  return out;
+}
 
 /**
  * Assessor units per `<current parcel>|<roll year>`, aggregated from the landed fixture roll as
@@ -565,7 +704,8 @@ const RA1_PANEL_UNITS: Record<string, number> = {
 
 /**
  * The deriveProjects input for the mini records, with stub callbacks mirroring scenario-data's
- * fixture: lineage above; assessor units as the panel has them (2023 to 2025, see rollUnits);
+ * fixture: lineage above; descendants from the landed parcel attrs (attrsRows); assessor units
+ * as the panel has them (2023 to 2025, see rollUnits);
  * no base stories; every parcel 300 m2; fixture `hiNet`; the mini `multiphase.json`.
  */
 export function miniProjectInput(): ProjectRecordsInput {
@@ -575,6 +715,7 @@ export function miniProjectInput(): ProjectRecordsInput {
     raw: PROJECT_RAW,
     parcelIds: MINI_PARCELS,
     lineage,
+    descendants: descendantsIndex(attrsRows(), { parcelIds: MINI_PARCELS, lineage }),
     assessorUnits: (id, year) => units.get(`${id}|${year}`) ?? null,
     latestRollYear: 2025,
     baseStories: () => null,

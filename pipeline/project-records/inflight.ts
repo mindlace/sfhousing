@@ -7,6 +7,7 @@ import type { ParcelId } from '../../src/lib/data/parcel';
 import type { InFlightProject } from '../../src/lib/timelapse/projects';
 import type { Day } from '../../src/lib/timelapse/time';
 import type { ProjectHistory, Stage } from '../../src/lib/timelapse/types';
+import { MIN_GROSS_M2_PER_UNIT } from '../lib/quality';
 import { isNewConstruction } from './classify';
 import { permitCompletionDay } from './stages';
 import { DATASET } from './types';
@@ -50,10 +51,125 @@ export function labelOf(proj: LinkedProject, curated: string | null): string | n
   const address = nonBlank(proj.primary?.address);
   if (address !== null) return address;
   for (const r of proj.pipelineRows) {
+    // Not from a row linked under DQ-2 (spec 4.2 step 10).
+    if (r.linkedNoDate) continue;
     const name = nonBlank(r.nameaddr);
     if (name !== null) return name;
   }
   return null;
+}
+
+/**
+ * Spec 4.8 capacity (`pr.units.capacity`): false when the permit's `proposed_units` exceeds
+ * `Σ areaM2(parcelIds) x max(stories, 1) / MIN_GROSS_M2_PER_UNIT`, i.e. cannot physically fit. The
+ * check needs the permit's own recorded stories and units and at least one parcel; without them it
+ * passes. `parcelIds` are the permit's project parcels.
+ */
+export function capacityOk(
+  permit: Permit,
+  parcelIds: readonly ParcelId[],
+  areaM2: ProjectRecordsInput['areaM2']
+): boolean {
+  if (permit.stories === null || permit.proposedUnits === null || parcelIds.length === 0) {
+    return true;
+  }
+  let area = 0;
+  for (const id of parcelIds) area += areaM2(id);
+  return permit.proposedUnits <= (area * Math.max(permit.stories, 1)) / MIN_GROSS_M2_PER_UNIT;
+}
+
+/** A project after the capacity rule, with what the capacity tallies need. */
+export interface Capacity {
+  /**
+   * The project with every failing permit's `proposedUnits` set to null (same object if none), or,
+   * when `capped`, to its lot capacity.
+   */
+  proj: LinkedProject;
+  /** The project as linked. */
+  original: LinkedProject;
+  /** Permits with recorded stories and units on a project with parcels (original units). */
+  checked: Permit[];
+  /** The `checked` permits that fail `capacityOk` (original units). */
+  failing: Permit[];
+  /**
+   * The `checked` permits not tested because none of their own address lots is among the
+   * project's parcels (`pr.units.capacity-unmapped`); their units are untouched.
+   */
+  skipped: Permit[];
+  /**
+   * True when the project has failing permits and no fallback unit source once they are all
+   * voided: they are capped (`pr.units.capacity-cap`) instead of voided (`pr.units.capacity`).
+   */
+  capped: boolean;
+}
+
+/** The most homes a permit's project parcels can hold: `floor(Σ area x max(stories, 1) / MIN)`. */
+function lotCapacity(
+  permit: Permit,
+  parcelIds: readonly ParcelId[],
+  areaM2: ProjectRecordsInput['areaM2']
+): number {
+  let area = 0;
+  for (const id of parcelIds) area += areaM2(id);
+  return Math.floor((area * Math.max(permit.stories ?? 1, 1)) / MIN_GROSS_M2_PER_UNIT);
+}
+
+/**
+ * Applies `capacityOk` once per permit, before any consumer reads units (rule 1 and `unitsAt`
+ * here, the phase-size medians and `permits.parquet` in assemble). Every failing permit is first
+ * voided (null units in `permits`, `live` and `lead`); the project then keeps them voided
+ * (`pr.units.capacity`, units fall through) when a fallback unit source remains, that is when
+ * `grossUnits` still yields at least 1 unit (another permit with units, the anchor PRJ's
+ * `number_of_units_prop` above 0, or a pipeline row not linked under DQ-2). With none, each failing
+ * permit takes its lot capacity instead (`pr.units.capacity-cap`). A permit whose own address
+ * lots (every row's blklot, resolved) include none of the project's parcels is not checked at all
+ * and is listed in `skipped`. Nothing else changes.
+ */
+export function applyCapacity(
+  proj: LinkedProject,
+  areaM2: ProjectRecordsInput['areaM2'],
+  resolve: (blklots: string[]) => ParcelId[]
+): Capacity {
+  const checked: Permit[] = [];
+  const failing: Permit[] = [];
+  const skipped: Permit[] = [];
+  if (proj.parcelIds.length > 0) {
+    const inProject = new Set<string>(proj.parcelIds);
+    for (const q of proj.permits) {
+      if (q.stories === null || q.proposedUnits === null) continue;
+      checked.push(q);
+      // The check needs the permit's own lot (any address row) among the project's parcels.
+      const lots = [...new Set(q.rows.flatMap((r) => (r.blklot === null ? [] : [r.blklot])))];
+      if (!resolve(lots).some((id) => inProject.has(id))) skipped.push(q);
+      else if (!capacityOk(q, proj.parcelIds, areaM2)) failing.push(q);
+    }
+  }
+  if (failing.length === 0) {
+    return { proj, original: proj, checked, failing, skipped, capped: false };
+  }
+  const rebuild = (to: (q: Permit) => Permit): LinkedProject => {
+    const swapped = new Map(failing.map((q) => [q, to(q)]));
+    const swap = (q: Permit): Permit => swapped.get(q) ?? q;
+    return {
+      ...proj,
+      permits: proj.permits.map(swap),
+      live: proj.live.map(swap),
+      lead: proj.lead === null ? null : swap(proj.lead)
+    };
+  };
+  const voided = rebuild((q) => ({ ...q, proposedUnits: null }));
+  const left = grossUnits(voided);
+  const capped = left === null || left < 1;
+  return {
+    proj: capped
+      ? rebuild((q) => ({ ...q, proposedUnits: lotCapacity(q, proj.parcelIds, areaM2) }))
+      : voided,
+    original: proj,
+    checked,
+    failing,
+    skipped,
+    capped
+  };
 }
 
 /** The live set, else (all permits dead) the non-superseded permits. */
@@ -81,7 +197,8 @@ export function grossUnits(proj: LinkedProject): number | null {
   if (permitSum !== null) return permitSum;
   const prop = proj.primary?.unitsProp ?? null;
   if (prop !== null && prop > 0) return prop;
-  for (const r of proj.pipelineRows) if (r.newUnits !== null) return r.newUnits;
+  // Rule 3 stops short of a row linked under DQ-2 (spec 4.2 step 10).
+  for (const r of proj.pipelineRows) if (!r.linkedNoDate && r.newUnits !== null) return r.newUnits;
   return null;
 }
 
@@ -126,8 +243,8 @@ function inRange(n: number): number | null {
   return Number.isInteger(n) && n >= 1 && n <= MAX_STORIES ? n : null;
 }
 
-/** Spec 4.8 stories rules 2 and 3 on one text; null when nothing in 1..80 is found. */
-export function parseStories(text: string | null): number | null {
+/** Spec 4.8 stories rules 2 and 3 on one text, before the 1..80 range check; null if none. */
+export function parseStoriesValue(text: string | null): number | null {
   if (text === null) return null;
   const kw = KEYWORD_RE.exec(text);
   if (kw === null) return null;
@@ -135,31 +252,58 @@ export function parseStories(text: string | null): number | null {
   const s = STORIES_RE.exec(rest);
   if (s !== null) {
     const token = s[1].toLowerCase();
-    return inRange(NUMBER_WORDS[token] ?? Number(token));
+    return NUMBER_WORDS[token] ?? Number(token);
   }
   const f = FEET_RE.exec(rest);
-  if (f !== null) return inRange(Math.floor(Number(f[1]) / 10));
+  if (f !== null) return Math.floor(Number(f[1]) / 10);
   return null;
 }
 
-/** Spec 4.8 `stories` and `storiesTier`. */
-export function storiesOf(proj: LinkedProject): { stories: number | null; tier: 0 | 3 | null } {
+/** Spec 4.8 stories rules 2 and 3 on one text; null when nothing in 1..80 is found. */
+export function parseStories(text: string | null): number | null {
+  const n = parseStoriesValue(text);
+  return n === null ? null : inRange(n);
+}
+
+/**
+ * Spec 4.8 `stories` and `storiesTier`, with the `pr.stories.parse-range` tally of the texts read:
+ * `parsed` values read from text and `discarded` ones outside 1..80 (the next text is then tried).
+ */
+export function storiesDetail(proj: LinkedProject): {
+  stories: number | null;
+  tier: 0 | 3 | null;
+  parsed: number;
+  discarded: number;
+} {
   let max = 0;
   for (const q of unitBearingPermits(proj)) {
     if (q.stories !== null && q.stories > max) max = q.stories;
   }
-  if (max > 0) return { stories: max, tier: 0 };
+  if (max > 0) return { stories: max, tier: 0, parsed: 0, discarded: 0 };
   const anchors = [...proj.anchors].sort((a, b) => (a.recordId < b.recordId ? -1 : 1));
   const ordered = proj.primary === null ? anchors : [proj.primary, ...anchors];
   const texts = [
     ...ordered.map((a) => a.description),
-    ...proj.pipelineRows.map((r) => r.description)
+    // A row linked under DQ-2 contributes only its source and the pipeline match (spec 4.2 step 10).
+    ...proj.pipelineRows.filter((r) => !r.linkedNoDate).map((r) => r.description)
   ];
+  let parsed = 0;
+  let discarded = 0;
   for (const t of texts) {
-    const n = parseStories(t);
-    if (n !== null) return { stories: n, tier: 3 };
+    const raw = parseStoriesValue(t);
+    if (raw === null) continue;
+    parsed++;
+    const n = inRange(raw);
+    if (n !== null) return { stories: n, tier: 3, parsed, discarded };
+    discarded++;
   }
-  return { stories: null, tier: null };
+  return { stories: null, tier: null, parsed, discarded };
+}
+
+/** Spec 4.8 `stories` and `storiesTier`. */
+export function storiesOf(proj: LinkedProject): { stories: number | null; tier: 0 | 3 | null } {
+  const { stories, tier } = storiesDetail(proj);
+  return { stories, tier };
 }
 
 function cmp(a: string, b: string): number {
@@ -297,7 +441,11 @@ export function inFlightStatus(
   return 'inFlight';
 }
 
-/** Spec 4.7: the records won over the quarterly pipeline (a pipeline row on a project that ended). */
+/**
+ * Spec 4.7 records win (`pr.pipeline.records-win`, partner ruling: ended projects only): the
+ * project holds a pipeline row and its daily-record history ends `complete` or `exit`. A last
+ * entered stage that differs from a row's `current_status` stage is not a conflict.
+ */
 export function pipelineConflict(proj: LinkedProject, end: ProjectHistory['end'] | null): boolean {
-  return proj.pipelineRows.length >= 1 && end !== null && end.kind !== 'open';
+  return proj.pipelineRows.length > 0 && end !== null && end.kind !== 'open';
 }

@@ -12,7 +12,7 @@ import {
 import { encodeTransit } from '../../src/lib/data/transit-codec';
 import { tinyNetwork } from '../../src/lib/data/fixtures/transit-tiny';
 import { FIXTURE_PROFILE, LIVE_PROFILE } from '../config';
-import { QUALITY_REPORT_MD, makeQuality } from '../lib/quality';
+import { QUALITY_REPORT_MD, QUALITY_RULES, makeQuality } from '../lib/quality';
 import { deriveProjects } from '../project-records/derive';
 import {
   checkV21,
@@ -100,6 +100,11 @@ const editChunk = (dir: string, f: (c: Record<string, unknown>) => void) => {
 const result = async (dir: string, id: string, c = counts) =>
   (await checkDataset(dir, FIXTURE_PROFILE, { counts: c, reencodeIdentical: true })).find(
     (r) => r.id === id
+  )!;
+/** V20 on `dir` with the snapshot day the build measured. */
+const measuredV20 = async (dir: string) =>
+  (await checkDataset(dir, FIXTURE_PROFILE, { counts, reencodeIdentical: true, ...measured })).find(
+    (r) => r.id === 'V20'
   )!;
 /** Decode the copy's parcels.bin, mutate the decoded payload, re-encode and write it back. */
 const editScenario = (dir: string, f: (p: ScenarioParcels) => void) => {
@@ -455,6 +460,35 @@ describe('invariants', () => {
     });
     expect(await failed(e)).toEqual(['V20']);
   });
+  it('V20 passes the score-only M20 and fails empty parcelIds on a project that is not one', async () => {
+    const f = JSON.parse(readFileSync(join(base, PROJECTS_JSON), 'utf8')) as {
+      projects: { id: string; parcelIds: string[]; multiPhase: boolean; phases: unknown }[];
+    };
+    expect(f.projects.find((p) => p.id === 'CASE:2012-000020PRX')).toMatchObject({
+      parcelIds: [],
+      multiPhase: true,
+      phases: null
+    });
+    const d = copy();
+    editProjects(d, (j) => {
+      const m11 = j.projects.find((p) => p.id === 'PRJ:2026-000011PRJ')!;
+      m11.parcelIds = [];
+    });
+    expect(await failed(d)).toEqual(['V20']);
+    expect((await measuredV20(d)).detail).toMatch(/projects\[11\]\.parcelIds: must be non-empty/);
+    // A score-only master must carry pr.multiphase.score-only (the rule entry dropped with it).
+    const e = copy();
+    editProjects(e, (j) => {
+      const m20 = j.projects.find((p) => p.id === 'CASE:2012-000020PRX')!;
+      m20.quality = ['pr.multiphase.da-netting'];
+      const rules = (j as unknown as { qualityRules: { id: string }[] }).qualityRules;
+      (j as unknown as { qualityRules: { id: string }[] }).qualityRules = rules.filter(
+        (q) => q.id !== 'pr.multiphase.score-only'
+      );
+    });
+    expect(await failed(e)).toEqual(['V20']);
+    expect((await measuredV20(e)).detail).toMatch(/projects\[4\]\.parcelIds: must be non-empty/);
+  });
   it('V20 fails on a missing projects.json, an unknown snapshot day or the size budget', async () => {
     const d = copy();
     rmSync(join(d, PROJECTS_JSON));
@@ -488,7 +522,9 @@ describe('invariants', () => {
   });
   it('V21 fails when in-flight units no longer cover the pipeline rows', async () => {
     const i = inputs((x) => {
-      x.coverage.matchedUnits -= 1;
+      // Just under the fixture's 0.90 (mini covers 699 of 739 units).
+      x.coverage.matchedUnits =
+        Math.ceil(FIXTURE_PROFILE.pipelineCoverageMin * x.coverage.rowUnits) - 1;
     });
     expect(await failed(base, counts, { projectChecks: projectChecks(i) })).toEqual(['V21']);
   });
@@ -515,6 +551,29 @@ describe('invariants', () => {
     });
     expect(await failed(base, counts, { projectChecks: projectChecks(i) })).toEqual(['V24']);
   });
+  it('V24 fails when the last-resort M20 draws on a parcel another in-flight project holds', async () => {
+    // M20 is score-only; drawing on its DA parcel lot 6 collides with M11.
+    const i = inputs((x) => {
+      x.file.projects.find((p) => p.id === 'CASE:2012-000020PRX')!.parcelIds = ['3512006'];
+    });
+    const checks = projectChecks(i);
+    expect(await failed(base, counts, { projectChecks: checks })).toEqual(['V24']);
+    expect(checks.find((c) => c.id === 'V24')!.detail).toMatch(
+      /CASE:2012-000020PRX: last-resort parcel 3512006 is also in PRJ:2026-000011PRJ/
+    );
+  });
+  it('V24 fails when the score-only M20 has a free DA parcel', async () => {
+    // Lot 6 freed: M11 leaves flight and M6's completed history no longer holds it.
+    const i = inputs((x) => {
+      x.file.projects = x.file.projects.filter((p) => p.id !== 'PRJ:2026-000011PRJ');
+      x.histories.find((h) => h.id === 'PRJ:2016-000006PRJ')!.parcelIds = [];
+    });
+    const checks = projectChecks(i);
+    expect(await failed(base, counts, { projectChecks: checks })).toEqual(['V24']);
+    expect(checks.find((c) => c.id === 'V24')!.detail).toMatch(
+      /CASE:2012-000020PRX: score-only but DA parcel 3512006 is free/
+    );
+  });
   it('V13 is reported as enforced at upload', async () => {
     const r = await checkDataset(base, FIXTURE_PROFILE, { counts, reencodeIdentical: true });
     expect(r.find((x) => x.id === 'V13')).toMatchObject({ ok: true, detail: 'enforced at upload' });
@@ -522,7 +581,7 @@ describe('invariants', () => {
 });
 
 describe('V30 data-quality registry', () => {
-  /** A one-rule test registry: the real registry is empty until the owners register rules. */
+  /** A one-rule test registry, so the share checks do not depend on the real sd.* and pr.* rules. */
   const one = makeQuality([
     {
       id: 'sd.test.bound',
@@ -557,9 +616,16 @@ describe('V30 data-quality registry', () => {
   it('the build writes quality-report.md into the derived folder', () => {
     const md = readFileSync(join(derived, 'fixture-0', QUALITY_REPORT_MD), 'utf8');
     expect(md).toMatch(/^# Data quality report: fixture-0\n/);
-    // The scenario-data SQL rules recorded into the build's counts (none "not reported").
+    // One reported row per registered rule, scenario-data's sd.* and project-records' pr.* alike.
+    const owners = new Set(QUALITY_RULES.map((r) => r.owner));
+    expect(owners.has('scenario-data') && owners.has('project-records')).toBe(true);
+    for (const r of QUALITY_RULES) {
+      expect(md, r.id).toMatch(new RegExp(`^\\| \`${r.id.replaceAll('.', '\\.')}\` \\|`, 'm'));
+    }
+    // The scenario-data SQL rules recorded into the build's counts.
     expect(md).toMatch(/\| `sd\.roll\.units-capacity` \|.*\| 3 \/ 25 \|/);
     expect(md).not.toContain('| not reported |');
+    expect(md).not.toContain('Not reported.');
   });
   it('fails when a registered rule does not report', () => {
     const v30 = checkV30({}, { qualityShares: false }, one.checkQuality);

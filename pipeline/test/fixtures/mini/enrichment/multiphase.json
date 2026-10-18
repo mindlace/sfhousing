@@ -86,6 +86,42 @@
         }
       ],
       "phases": []
+    },
+    {
+      "caseNo": "2012-000020PRX",
+      "label": "Fixture Yards",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://example.invalid/fixture-yards-search",
+          "retrieved": "2026-10-01"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2024-000016PRX",
+      "label": "Fixture Terrace",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://example.invalid/fixture-terrace-search",
+          "retrieved": "2026-10-01"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2025-000017PRX",
+      "label": "Fixture Market",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://example.invalid/fixture-market-search",
+          "retrieved": "2026-10-01"
+        }
+      ],
+      "phases": []
     }
   ]
 }

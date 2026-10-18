@@ -72,7 +72,7 @@ describe('rhnaCompletedNet', () => {
       n: 1,
       window: ['2022-06-30', isoOf(ASOF)]
     });
-    const file = { schema: 1, asOf: ASOF, rhnaCompletedNet: value, projects: [] };
+    const file = { schema: 1, asOf: ASOF, rhnaCompletedNet: value, qualityRules: [], projects: [] };
     const parsed = parseProjectsFile(JSON.parse(JSON.stringify(file)), { asOf: ASOF });
     expect(parsed.rhnaCompletedNet.units).toBe(1);
   });

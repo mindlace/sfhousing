@@ -109,6 +109,7 @@ function proj(over: Partial<LinkedProject> = {}): LinkedProject {
     pipelineRows: [],
     blklots: [],
     parcelIds: [],
+    crossBlock: { applies: false, dropped: [] },
     ...over
   };
 }
@@ -345,6 +346,14 @@ describe('rawStages', () => {
         pipelineRows: [row({ approvedDay: d('2020-05-01') })]
       });
       expect(rawStages(p, 'discretionary').entitled).toBe(d('2020-08-01'));
+    });
+
+    it('not from a row linked under DQ-2 (spec §4.2 step 10)', () => {
+      const p = proj({
+        anchors: [prj('PRJ-1')],
+        pipelineRows: [row({ approvedDay: d('2020-05-01'), linkedNoDate: true })]
+      });
+      expect(rawStages(p, 'discretionary').entitled).toBeUndefined();
     });
 
     it('does not take a non-Approved decision', () => {

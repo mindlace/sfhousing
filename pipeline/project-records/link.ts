@@ -125,6 +125,11 @@ function sortedUnique(xs: Iterable<string | null>): string[] {
   return [...s].sort(cmp);
 }
 
+/** A parcel id's block: its `^\d{4}[A-Z]?` prefix. */
+function blockOf(id: ParcelId): string {
+  return /^\d{4}[A-Z]?/.exec(id)?.[0] ?? id;
+}
+
 /** Builds a project (id left empty) from its parts; arrays are copied. */
 function makeProject(
   kind: LinkedProject['kind'],
@@ -146,12 +151,26 @@ function makeProject(
   const lead = leadOf(live.length > 0 ? live : permits);
   const leadPrj = lead ? assignedTo.get(lead.number) : undefined;
   const primary = anchors.find((a) => a === leadPrj) ?? earliestOpen(anchors);
-  const blklots = sortedUnique([
-    ...permits.flatMap((q) => q.rows.map((r) => r.blklot)),
-    ...anchors.map((a) => a.blklot),
-    ...rows.map((r) => r.blklot),
-    ...extraBlklots
-  ]);
+  const permitLots = sortedUnique(permits.flatMap((q) => q.rows.map((r) => r.blklot)));
+  const prjLots = sortedUnique([...anchors.map((a) => a.blklot), ...extraBlklots]);
+  const blklots = sortedUnique([...permitLots, ...prjLots, ...rows.map((r) => r.blklot)]);
+  // `pr.parcels.cross-block`: with a resolved permit address parcel, a parcel that only the PRJ's
+  // (or PPA's) lot gives, on a block that holds no permit parcel, is dropped. Permit and pipeline
+  // row parcels, and PRJ parcels on a permit block, stay.
+  const permitParcels = resolve(permitLots);
+  let parcelIds = resolve(blklots);
+  const dropped: ParcelId[] = [];
+  if (permitParcels.length > 0) {
+    const permitBlocks = new Set(permitParcels.map(blockOf));
+    const kept = new Set<ParcelId>([
+      ...permitParcels,
+      ...resolve(sortedUnique(rows.map((r) => r.blklot)))
+    ]);
+    for (const id of resolve(prjLots)) {
+      if (!kept.has(id) && !permitBlocks.has(blockOf(id))) dropped.push(id);
+    }
+    if (dropped.length > 0) parcelIds = parcelIds.filter((id) => !dropped.includes(id));
+  }
   return {
     id: '',
     kind,
@@ -168,7 +187,8 @@ function makeProject(
     completions: [],
     pipelineRows: [...rows],
     blklots,
-    parcelIds: resolve(blklots)
+    parcelIds,
+    crossBlock: { applies: permitParcels.length > 0, dropped }
   };
 }
 

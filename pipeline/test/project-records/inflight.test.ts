@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_STORIES,
   STALE_WINDOW_DAYS,
+  applyCapacity,
   baseStoriesAt,
+  capacityOk,
   existingUnitsAt,
   grossUnits,
   inFlightStatus,
@@ -17,6 +19,7 @@ import {
   unitBearingPermits,
   unitsAt
 } from '../../project-records/inflight';
+import { shareExisting } from '../../project-records/assemble';
 import { DEAD_STATUSES } from '../../project-records/link';
 import type {
   AddressRow,
@@ -28,6 +31,7 @@ import type {
   Prj,
   Review
 } from '../../project-records/types';
+import type { InFlightProject } from '../../../src/lib/timelapse/projects';
 import type { ProjectHistory } from '../../../src/lib/timelapse/types';
 
 function d(iso: string): number {
@@ -140,6 +144,7 @@ function proj(over: Partial<LinkedProject> = {}): LinkedProject {
     pipelineRows: [],
     blklots: [],
     parcelIds: ['0001001'],
+    crossBlock: { applies: false, dropped: [] },
     ...over
   };
 }
@@ -200,6 +205,11 @@ describe('labelOf', () => {
     expect(labelOf(p, null)).toBe('Mission Bay Block 9');
     expect(labelOf(proj(), null)).toBeNull();
   });
+
+  it('rule 3 skips a row linked under DQ-2 (spec §4.2 step 10)', () => {
+    const p = proj({ pipelineRows: [row({ nameaddr: 'Freedom West', linkedNoDate: true })] });
+    expect(labelOf(p, null)).toBeNull();
+  });
 });
 
 describe('unitBearingPermits and grossUnits', () => {
@@ -241,6 +251,14 @@ describe('unitBearingPermits and grossUnits', () => {
     });
     expect(grossUnits(p)).toBe(12);
     expect(grossUnits(proj())).toBeNull();
+  });
+
+  it('rule 3 skips a row linked under DQ-2 (spec §4.2 step 10)', () => {
+    const p = proj({
+      anchors: [prj('A', { unitsProp: 0 })],
+      pipelineRows: [row({ newUnits: 2537, linkedNoDate: true })]
+    });
+    expect(grossUnits(p)).toBeNull();
   });
 
   it('pipeline-only rows use newUnits', () => {
@@ -454,6 +472,11 @@ describe('inFlightStatus', () => {
     expect(inFlightStatus(withPipe, base)).toBe('inFlight');
   });
 
+  it('a DQ-2 linked row is a pipeline match (spec §4.7)', () => {
+    const linked = proj({ pipelineRows: [row({ statusDay: null, linkedNoDate: true })] });
+    expect(inFlightStatus(linked, base)).toBe('inFlight');
+  });
+
   it('after-cutoff window: first entered 2026-04-28 is in, 2026-04-27 is stale', () => {
     const p = proj();
     expect(inFlightStatus(p, { ...base, firstEntered: d('2026-04-28') })).toBe('inFlight');
@@ -479,6 +502,14 @@ describe('inFlightStatus', () => {
     expect(pipelineConflict(withPipe, { kind: 'complete', day: 5 })).toBe(true);
   });
 
+  it('conflict: a stage mismatch alone is not a conflict (partner ruling, ended only)', () => {
+    const at = (status: string | null) => proj({ pipelineRows: [row({ status })] });
+    expect(pipelineConflict(at('PL Approved'), open)).toBe(false);
+    expect(pipelineConflict(at('PL Filed'), open)).toBe(false);
+    expect(pipelineConflict(at(null), open)).toBe(false);
+    expect(pipelineConflict(at('PL Filed'), { kind: 'complete', day: 5 })).toBe(true);
+  });
+
   it('pipeline-only rows have a null end and are in flight', () => {
     const p = proj({ kind: 'pipelineOnly', pipelineRows: [row()] });
     expect(inFlightStatus(p, { ...base, end: null })).toBe('inFlight');
@@ -500,5 +531,282 @@ describe('inFlightStatus', () => {
     expect(
       inFlightStatus(withPipe, { ...base, units: 3, existingLatest: 3, multiPhase: true })
     ).toBe('inFlight');
+  });
+});
+
+describe('capacity (pr.units.capacity, spec 4.8)', () => {
+  // Σ area x max(stories, 1) / MIN_GROSS_M2_PER_UNIT (10): 300 m² on 3 stories holds 90.
+  const area = (id: string) => (id === '0001001' ? 300 : 0);
+  // A permit's own address lot is the parcel its address row names; `same` resolves it to itself.
+  const same = (blklots: string[]) => blklots;
+  const at = (blklot: string | null) => [
+    { blklot, streetNumber: null, streetName: null, streetSuffix: null, primary: true }
+  ];
+  const here = (number: string, over: Partial<Permit> = {}) =>
+    permit(number, { rows: at('0001001'), ...over });
+  const big = (over: Partial<Permit> = {}) =>
+    here('8500988', { stories: 3, proposedUnits: 5540, ...over });
+
+  it('capacityOk: 5,540 units on 3 stories over 300 m² fail (limit 90); the limit itself passes', () => {
+    expect(capacityOk(big(), ['0001001'], area)).toBe(false);
+    expect(capacityOk(big({ proposedUnits: 91 }), ['0001001'], area)).toBe(false);
+    expect(capacityOk(big({ proposedUnits: 90 }), ['0001001'], area)).toBe(true);
+  });
+
+  it('capacityOk: stories below 1 count as 1, the area sums over parcels', () => {
+    expect(capacityOk(big({ stories: 0, proposedUnits: 31 }), ['0001001'], area)).toBe(false);
+    expect(capacityOk(big({ stories: 0, proposedUnits: 30 }), ['0001001'], area)).toBe(true);
+    const two = (id: string) => (id === 'a' || id === 'b' ? 150 : 0);
+    expect(capacityOk(big({ proposedUnits: 90 }), ['a', 'b'], two)).toBe(true);
+    expect(capacityOk(big({ proposedUnits: 91 }), ['a', 'b'], two)).toBe(false);
+  });
+
+  it('capacityOk: no check without recorded stories, without units or without parcels', () => {
+    expect(capacityOk(big({ stories: null }), ['0001001'], area)).toBe(true);
+    expect(capacityOk(big({ proposedUnits: null }), ['0001001'], area)).toBe(true);
+    expect(capacityOk(big(), [], area)).toBe(true);
+  });
+
+  it('a failing permit has missing units: grossUnits falls through to the PRJ', () => {
+    const p = proj({ permits: [big()], anchors: [prj('A', { unitsProp: 10 })] });
+    expect(grossUnits(p)).toBe(5540);
+    const capped = applyCapacity(p, area, same);
+    expect(grossUnits(capped.proj)).toBe(10);
+    expect(capped.capped).toBe(false);
+    expect(capped.failing.map((q) => q.number)).toEqual(['8500988']);
+    expect(capped.checked.map((q) => q.number)).toEqual(['8500988']);
+  });
+
+  it('only the failing permit loses its units; live and lead follow; the input is untouched', () => {
+    const bad = big();
+    const good = here('2', { stories: 3, proposedUnits: 40 });
+    const p = proj({ permits: [bad, good] });
+    const capped = applyCapacity(p, area, same);
+    expect(grossUnits(capped.proj)).toBe(40);
+    expect(capped.proj.permits.map((q) => q.proposedUnits)).toEqual([null, 40]);
+    expect(capped.proj.live.map((q) => q.proposedUnits)).toEqual([null, 40]);
+    expect(capped.proj.lead?.proposedUnits).toBeNull();
+    expect(capped.proj.lead?.number).toBe('8500988');
+    expect(capped.original).toBe(p);
+    expect(bad.proposedUnits).toBe(5540);
+    expect(p.permits[0]).toBe(bad);
+    // The failing permit's other fields are kept.
+    expect(capped.proj.permits[0]).toMatchObject({ number: '8500988', stories: 3 });
+  });
+
+  it('no fallback unit source: the failing permit is capped at its lot capacity (8500988)', () => {
+    // 289.7 m², 3 stories: floor(289.7 x 3 / 10) = 86.
+    const lot = (id: string) => (id === '0001001' ? 289.7 : 0);
+    const p = proj({ permits: [big()] });
+    const capped = applyCapacity(p, lot, same);
+    expect(capped.capped).toBe(true);
+    expect(capped.failing.map((q) => q.number)).toEqual(['8500988']);
+    expect(capped.failing[0].proposedUnits).toBe(5540);
+    expect(capped.proj.permits.map((q) => q.proposedUnits)).toEqual([86]);
+    expect(capped.proj.live.map((q) => q.proposedUnits)).toEqual([86]);
+    expect(capped.proj.lead?.proposedUnits).toBe(86);
+    expect(grossUnits(capped.proj)).toBe(86);
+    expect(unitsAt(capped.proj)).toEqual({ permitFiled: 86 });
+    expect(p.permits[0].proposedUnits).toBe(5540);
+    // The capped value now fits.
+    expect(capacityOk(capped.proj.permits[0], ['0001001'], lot)).toBe(true);
+  });
+
+  it('no fallback, two failing permits: both are capped', () => {
+    const p = proj({
+      permits: [big(), here('9', { stories: 1, proposedUnits: 700 })]
+    });
+    const capped = applyCapacity(p, area, same);
+    expect(capped.capped).toBe(true);
+    expect(capped.failing.map((q) => q.number)).toEqual(['8500988', '9']);
+    // 300 m² x 3 / 10 = 90; 300 m² x 1 / 10 = 30.
+    expect(capped.proj.permits.map((q) => q.proposedUnits)).toEqual([90, 30]);
+    expect(grossUnits(capped.proj)).toBe(120);
+  });
+
+  it('a pipeline row that is not DQ-2 linked, or another permit with units, is a fallback', () => {
+    const withRow = proj({ permits: [big()], pipelineRows: [row({ newUnits: 12 })] });
+    expect(applyCapacity(withRow, area, same).capped).toBe(false);
+    expect(grossUnits(applyCapacity(withRow, area, same).proj)).toBe(12);
+    const withPermit = proj({ permits: [big(), here('2', { proposedUnits: 3 })] });
+    expect(applyCapacity(withPermit, area, same).capped).toBe(false);
+    const prjZero = proj({ permits: [big()], anchors: [prj('A', { unitsProp: 0 })] });
+    expect(applyCapacity(prjZero, area, same).capped).toBe(true);
+  });
+
+  it('a fallback must yield at least 1 unit: a 0-unit pipeline row or permit sum is capped', () => {
+    const zeroRow = proj({ permits: [big()], pipelineRows: [row({ newUnits: 0 })] });
+    const a = applyCapacity(zeroRow, area, same);
+    expect(a.capped).toBe(true);
+    expect(a.proj.permits.map((q) => q.proposedUnits)).toEqual([90]);
+    expect(grossUnits(a.proj)).toBe(90);
+    const zeroPermit = proj({ permits: [big(), here('2', { proposedUnits: 0 })] });
+    expect(applyCapacity(zeroPermit, area, same).capped).toBe(true);
+  });
+
+  it('own lot not among the project parcels, or unresolvable: the check is skipped (Bluxome)', () => {
+    const away = proj({ permits: [big({ rows: at('0009009') })] });
+    const a1 = applyCapacity(away, area, same);
+    expect(a1.proj).toBe(away);
+    expect(a1.failing).toEqual([]);
+    expect(a1.capped).toBe(false);
+    expect(a1.checked.map((q) => q.number)).toEqual(['8500988']);
+    expect(a1.skipped.map((q) => q.number)).toEqual(['8500988']);
+    expect(grossUnits(a1.proj)).toBe(5540);
+    // A lot that resolves to no parcel, no lot at all, and no address row skip alike.
+    const none = (): string[] => [];
+    for (const rows of [at('0001001'), at(null), []]) {
+      const q = proj({ permits: [big({ rows })] });
+      expect(applyCapacity(q, area, none).skipped).toHaveLength(1);
+    }
+  });
+
+  it('any address row counts, not only the primary one; a checked permit is not skipped', () => {
+    const two = [{ ...at('0009009')[0] }, { ...at('0001001')[0], primary: false }];
+    const p = proj({ permits: [big({ rows: two })] });
+    const c = applyCapacity(p, area, same);
+    expect(c.skipped).toEqual([]);
+    expect(c.failing.map((q) => q.number)).toEqual(['8500988']);
+    expect(c.capped).toBe(true);
+  });
+
+  it('no stories, or no parcels: no check, the same project comes back', () => {
+    const noStories = proj({ permits: [big({ stories: null })] });
+    const a = applyCapacity(noStories, area, same);
+    expect(a.proj).toBe(noStories);
+    expect(a.failing).toEqual([]);
+    expect(a.checked).toEqual([]);
+    expect(grossUnits(a.proj)).toBe(5540);
+    const noParcels = proj({ permits: [big()], parcelIds: [] });
+    const b = applyCapacity(noParcels, area, same);
+    expect(b.proj).toBe(noParcels);
+    expect(b.checked).toEqual([]);
+    expect(grossUnits(b.proj)).toBe(5540);
+  });
+
+  it('unitsAt.permitFiled follows: absent when no permit keeps units', () => {
+    const p = proj({ permits: [big()], anchors: [prj('A', { unitsProp: 10 })] });
+    expect(unitsAt(p)).toEqual({ filed: 10, permitFiled: 5540 });
+    expect(unitsAt(applyCapacity(p, area, same).proj)).toEqual({ filed: 10 });
+  });
+
+  it('checked holds permits with stories and units, whether or not they fail', () => {
+    const p = proj({
+      permits: [
+        big(),
+        here('2', { stories: 3, proposedUnits: 40 }),
+        here('3', { proposedUnits: 7 }),
+        here('4', { stories: 2 })
+      ]
+    });
+    const capped = applyCapacity(p, area, same);
+    expect(capped.checked.map((q) => q.number)).toEqual(['8500988', '2']);
+    expect(capped.failing.map((q) => q.number)).toEqual(['8500988']);
+  });
+});
+
+describe('shared parcels (pr.parcels.shared-existing, spec 4.8)', () => {
+  const ID = 'pr.parcels.shared-existing';
+  const units = (id: string): number => ({ L1: 2, L2: 5, L3: 0 })[id as 'L1'] ?? 0;
+
+  function t3(id: string, first: string, parcelIds: string[], quality: string[] = []) {
+    const base: InFlightProject = {
+      id,
+      label: null,
+      parcelIds,
+      pathway: 'discretionary',
+      stage: 'filed',
+      history: { filed: d(first) },
+      units: 10,
+      existingUnits: parcelIds.reduce((s, p) => s + units(p), 0),
+      stories: null,
+      storiesTier: null,
+      multiPhase: false,
+      phases: null,
+      sources: [{ dataset: 'x', id }],
+      quality
+    };
+    return base;
+  }
+
+  const by = (ps: InFlightProject[], id: string) => ps.find((p) => p.id === id)!;
+
+  it('the earliest first day holds the parcel; the others get 0; all carry the id', () => {
+    const out = shareExisting(
+      [t3('B', '2021-01-01', ['L1']), t3('A', '2022-01-01', ['L1', 'L2'])],
+      units
+    );
+    expect(by(out, 'B').existingUnits).toBe(2);
+    expect(by(out, 'A').existingUnits).toBe(5);
+    expect(by(out, 'B').quality).toEqual([ID]);
+    expect(by(out, 'A').quality).toEqual([ID]);
+  });
+
+  it('a tie goes to the smallest id', () => {
+    const out = shareExisting(
+      [t3('PRJ:2', '2021-01-01', ['L1']), t3('BP:9', '2021-01-01', ['L1'])],
+      units
+    );
+    expect(by(out, 'BP:9').existingUnits).toBe(2);
+    expect(by(out, 'PRJ:2').existingUnits).toBe(0);
+  });
+
+  it('the first day is the minimum of the whole history, not the current stage', () => {
+    const early = t3('Z', '2020-01-01', ['L1']);
+    early.history = { filed: d('2020-01-01'), entitled: d('2024-01-01') };
+    const out = shareExisting([t3('A', '2021-01-01', ['L1']), early], units);
+    expect(by(out, 'Z').existingUnits).toBe(2);
+    expect(by(out, 'A').existingUnits).toBe(0);
+  });
+
+  it('a shared parcel with 0 units marks nobody', () => {
+    const ps = [t3('A', '2021-01-01', ['L3']), t3('B', '2022-01-01', ['L3'])];
+    const out = shareExisting(ps, units);
+    expect(out.map((p) => p.quality)).toEqual([[], []]);
+    expect(out.map((p) => p.existingUnits)).toEqual([0, 0]);
+  });
+
+  it('a project on one shared and one unshared parcel carries the id', () => {
+    const out = shareExisting(
+      [t3('A', '2021-01-01', ['L1']), t3('B', '2022-01-01', ['L1', 'L2'])],
+      units
+    );
+    expect(by(out, 'B').quality).toEqual([ID]);
+    expect(by(out, 'B').existingUnits).toBe(5);
+  });
+
+  it('an unshared project keeps its value and quality; quality stays sorted', () => {
+    const out = shareExisting(
+      [
+        t3('A', '2021-01-01', ['L2'], ['pr.stages.forward-clamp']),
+        t3('B', '2021-01-01', ['L1'], ['pr.units.capacity']),
+        t3('C', '2022-01-01', ['L1'], ['pr.units.capacity'])
+      ],
+      units
+    );
+    expect(by(out, 'A')).toMatchObject({ existingUnits: 5, quality: ['pr.stages.forward-clamp'] });
+    expect(by(out, 'B').quality).toEqual([ID, 'pr.units.capacity']);
+    expect(by(out, 'C').quality).toEqual([ID, 'pr.units.capacity']);
+  });
+
+  it('a score-only master (no parcels) is untouched; a phased master holds by its parcelIds', () => {
+    const score = { ...t3('S', '2019-01-01', []), multiPhase: true };
+    const master = { ...t3('M', '2020-01-01', ['L1', 'L2']), multiPhase: true };
+    const out = shareExisting([score, master, t3('A', '2021-01-01', ['L2'])], units);
+    expect(by(out, 'S')).toMatchObject({ existingUnits: 0, quality: [] });
+    expect(by(out, 'M').existingUnits).toBe(7);
+    expect(by(out, 'A').existingUnits).toBe(0);
+  });
+
+  it('does not mutate its input and leaves untouched projects identical', () => {
+    const ps = [
+      t3('A', '2021-01-01', ['L1']),
+      t3('B', '2022-01-01', ['L1']),
+      t3('C', '2022-01-01', ['L2'])
+    ];
+    const before = JSON.stringify(ps);
+    const out = shareExisting(ps, units);
+    expect(JSON.stringify(ps)).toBe(before);
+    expect(out[2]).toBe(ps[2]);
   });
 });

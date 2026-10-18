@@ -417,9 +417,9 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
       ...STAGE_ORDER.map((s) => `projects.byStage.${s}`),
       'projects.staleOpen',
       'projects.staleOpenUnits',
-      'projects.pipelineConflicts',
       'projects.pathwayDefaulted',
       'projects.excludedAlterationUnits',
+      'projects.excludedNoUnits',
       'projects.netDropped',
       'projects.stories.tier0',
       'projects.stories.tier3',
@@ -427,7 +427,6 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
       'projects.parcels.mapped',
       'projects.parcels.unmapped',
       'histories.total',
-      ...STAGE_ORDER.map((s) => `histories.clamped.${s}`),
       'histories.ppaLagDays',
       'histories.ppaLagN',
       'rhna.units',
@@ -443,6 +442,11 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
       'multiphase.fallback',
       'multiphase.lastResort',
       'multiphase.merged',
+      'multiphase.scoreOnly',
+      'multiphase.nettedOut',
+      'multiphase.netted.2007.0001PRX',
+      'multiphase.netted.2010.0002PRX',
+      'multiphase.netted.2012-000020PRX',
       'multiphase.phases.enriched',
       'multiphase.phases.fallback',
       'multiphase.scale.2007.0001PRX',
@@ -454,6 +458,57 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
     for (const k of want) expect(keys, k).toContain(k);
     expect(keys.some((k) => k.startsWith('link.'))).toBe(true);
     expect(report().counts['projects.asOf']).toBe(Date.parse('2026-10-10') / 86_400_000);
+  });
+
+  it('reports the pr.* tallies the fixture pins (spec §6 Golden)', () => {
+    const c = report().counts;
+    // M1 (permit filed before its approval) and M10 (permit B filed before its approval).
+    expect(c['quality.pr.stages.forward-clamp.fired']).toBeGreaterThanOrEqual(2);
+    expect(c['quality.pr.stages.forward-clamp.of']).toBe(c['histories.total']);
+    // M1's completed_date 1909-06-02.
+    expect(c['quality.pr.date.valid-range.fired']).toBeGreaterThanOrEqual(1);
+    expect(c['quality.pr.stories.parse-range.fired']).toBe(0);
+    // M15's 5,540-unit permit on 3 stories of a 300 m² lot.
+    expect(c['quality.pr.units.capacity.fired']).toBe(1);
+    expect(c['quality.pr.units.capacity.units']).toBe(5540);
+    // M16 and M17 link; M18 is dropped.
+    expect(c['quality.pr.pipeline.status-date-linked.fired']).toBe(2);
+    expect(c['quality.pr.pipeline.no-status-date.fired']).toBe(1);
+    expect(c['quality.pr.pipeline.no-status-date.units']).toBe(20);
+    // M10 and M19 on lot 1.
+    expect(c['quality.pr.parcels.shared-existing.fired']).toBe(2);
+    // M20, netted by M11 and score-only.
+    expect(c['quality.pr.multiphase.da-netting.fired']).toBe(1);
+    expect(c['quality.pr.multiphase.score-only.fired']).toBe(1);
+    // As computed: no matched project's records disagree with its pipeline row.
+    expect(c['quality.pr.pipeline.records-win.fired']).toBe(0);
+    expect(c['quality.pr.pipeline.records-win.of']).toBe(8);
+    expect(c['projects.excludedNoUnits']).toBe(900);
+    expect(c['multiphase.netted.2012-000020PRX']).toBe(3);
+    expect(c['multiphase.lastResort']).toBe(1);
+    expect(c['multiphase.scoreOnly']).toBe(1);
+  });
+
+  it('names the DQ-2 and score-only rows in the build warnings (spec 4.2 step 10, 4.10.2)', () => {
+    const w = report().warnings;
+    for (const line of [
+      '2024-000016PRX: linked to 2024-000016PRJ; multiphase entry unused',
+      '2025-000017PRX: linked to 2025-000017PRJ with no units; excluded',
+      '2026-000018PRJ: no status date and no open Planning record on its lot; dropped',
+      '2012-000020PRX: no free DA parcel; score-only'
+    ]) {
+      expect(w).toContain(line);
+    }
+  });
+
+  it('M1 carries pr.date.valid-range and pr.stages.forward-clamp (spec §4.9 fixture table)', () => {
+    const f = JSON.parse(readFileSync(join(e2e, PROJECTS_JSON), 'utf8')) as {
+      projects: { id: string; quality: string[] }[];
+    };
+    const m1 = f.projects.find((p) => p.id === 'PRJ:2019-000001PRJ');
+    expect(m1?.quality).toEqual(['pr.date.valid-range', 'pr.stages.forward-clamp']);
+    const m10 = f.projects.find((p) => p.id === 'PRJ:2020-000010PRJ');
+    expect(m10?.quality).toEqual(['pr.parcels.shared-existing', 'pr.stages.forward-clamp']);
   });
 
   it('warns that the fixture xdht-4php completions are stale (633 days)', () => {

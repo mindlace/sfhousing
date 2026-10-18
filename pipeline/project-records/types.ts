@@ -135,6 +135,12 @@ export interface PipelineRow {
   da: string | null;
   /** `caseNo` ends with 'PRX'. */
   prx: boolean;
+  /**
+   * Set on the copy of a pipeline-only row with no valid status date that DQ-2 joined to a graph
+   * project (spec 4.2 step 10). Such a row gives the project only its `sources` entry and the
+   * pipeline match of 4.7: no date, units, label or stories are read from it.
+   */
+  linkedNoDate?: true;
 }
 
 export interface Parsed {
@@ -149,6 +155,13 @@ export interface Parsed {
   housing: HousingRow[];
   pipeline: PipelineRow[];
   counts: Record<string, number>;
+  /**
+   * Rule `pr.date.valid-range` (spec §4.1): non-empty date values read (`of`), those treated as
+   * missing (`fired`), and the sorted source ids of the records holding one (`sample`).
+   */
+  dates: { of: number; fired: number; sample: string[] };
+  /** The parsed records (any kind) that held a date `pr.date.valid-range` treated as missing. */
+  clipped: ReadonlySet<object>;
 }
 
 export interface ProjectRecordsInput {
@@ -156,6 +169,11 @@ export interface ProjectRecordsInput {
   raw: Record<ProjectSourceId, RawRow[]>;
   parcelIds: ReadonlySet<ParcelId>;
   lineage(blklot: string): ParcelId | null;
+  /**
+   * The current parcels descended from a block-lot through the subdivision chain (main's ruling 3,
+   * Ruling D1 revised; `descendantsIndex`): sorted, unique, every element in `parcelIds`.
+   */
+  descendants(blklot: string): ParcelId[];
   assessorUnits(id: ParcelId, rollYear: number): number | null;
   latestRollYear: number;
   baseStories(id: ParcelId, rollYear: number): number | null;
@@ -194,6 +212,12 @@ export interface LinkedProject {
   pipelineRows: PipelineRow[];
   /** Candidate block-lots (spec 4.2 Parcels), sorted unique. */
   blklots: string[];
-  /** `resolve(blklots)`. */
+  /** `resolve(blklots)` less the parcels `pr.parcels.cross-block` dropped. */
   parcelIds: ParcelId[];
+  /**
+   * Spec 4.2 Parcels, `pr.parcels.cross-block`: `applies` when at least one permit address lot
+   * resolves to a parcel; `dropped` the PRJ-only parcels left out because their block holds no
+   * permit parcel.
+   */
+  crossBlock: { applies: boolean; dropped: ParcelId[] };
 }
