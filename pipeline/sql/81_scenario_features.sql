@@ -2,8 +2,7 @@
 -- year) T4a feature values with imputation: the T13 parcel panel minus its yield columns
 -- (scenario-data spec §4.5 rule order steps 3 and 4, §4.6, §4.12). Run by
 -- pipeline/steps/scenario-sql.ts after 80_scenario.sql and after it writes sc_parcel
--- (id, lot_area_m2, eligible, base_stories, cap_pre2022, cap_prefzp, ludb_units,
--- rec_floor_area_m2) and the variables floors_m, min_gross_m2_per_unit (MIN_GROSS_M2_PER_UNIT,
+-- (id, lot_area_m2, base_stories, cap_pre2022, cap_prefzp, ludb_units, rec_floor_area_m2) and the variables floors_m, min_gross_m2_per_unit (MIN_GROSS_M2_PER_UNIT,
 -- pipeline/lib/quality.ts) and density_cap_change_day (a Day, pipeline/lib/density-caps.ts).
 -- Reads sc_roll_agg, sc_roll_years, sc_parcel, sc_zoning, sc_land_use_classes, parcel_out.
 -- Writes sc_roll_series (observed parcel-years after the units rules, plus the carried rows),
@@ -398,7 +397,6 @@ SELECT f.id AS mapblklot,
         | (CASE WHEN f.carried THEN 32 ELSE 0 END)
         | (CASE WHEN f.floor_bit THEN 64 ELSE 0 END))::UTINYINT AS imputed,
        f.existing_floor_area_m2,
-       s.eligible,
        f.noncondo_units,
        f.hotel,
        f.status_n

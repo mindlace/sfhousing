@@ -113,6 +113,8 @@ async function writeHeightParse(db: Duck): Promise<string[]> {
  * evaluated on its last day: the day before DENSITY_CAP_CHANGE_DAY and the day before
  * FZP_EFFECTIVE_DAY. T11's FZP cap is the scenario step's (densityCap at capDay). `ludb_units`
  * feeds sd.roll.units-capacity's second step and `rec_floor_area_m2` sd.roll.floor-area-missing.
+ * Eligibility is not stored here: the scenario step derives it per parcel-year from the chunk
+ * record and the units (pipeline/lib/scenario-eligibility.ts, sd.landuse.none-with-units).
  */
 async function writeParcelCaps(
   db: Duck,
@@ -134,7 +136,6 @@ async function writeParcelCaps(
     return [
       rec.id,
       lotAreaM2,
-      rec.eligible,
       d.base_ft === null ? 0 : storiesFromFt(d.base_ft),
       cap(DENSITY_CAP_CHANGE_DAY - 1),
       cap(FZP_EFFECTIVE_DAY - 1),
@@ -148,7 +149,6 @@ async function writeParcelCaps(
     [
       ['id', 'VARCHAR'],
       ['lot_area_m2', 'INTEGER'],
-      ['eligible', 'BOOLEAN'],
       ['base_stories', 'INTEGER'],
       ['cap_pre2022', 'INTEGER'],
       ['cap_prefzp', 'INTEGER'],

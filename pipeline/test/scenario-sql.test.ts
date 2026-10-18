@@ -340,7 +340,6 @@ describe('runScenarioSql on the mini fixture', () => {
       base_stories: number;
       cap_pre2022: number | null;
       cap_prefzp: number | null;
-      eligible: boolean;
       ludb_units: number;
       rec_floor_area_m2: number;
     }>(`SELECT * FROM sc_parcel WHERE id = '3512005'`);

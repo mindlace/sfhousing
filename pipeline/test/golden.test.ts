@@ -356,6 +356,8 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       'sd.features.vacant-year-built': [0, 26],
       'sd.features.year-built-median': [0, 24],
       'sd.height.blank': [0, 6],
+      // Lot 9, mini's one parcel with no land-use row, has no roll row, so it stays ineligible.
+      'sd.landuse.none-with-units': [0, 14],
       'sd.roll.floor-area-cast': [0, 29],
       'sd.roll.floor-area-missing': [5, 29],
       'sd.roll.improvement-value-cast': [0, 29],

@@ -10,6 +10,7 @@ interface Row {
   baseStories: number;
   localProgram: number;
   hostable: number;
+  eligible: number;
   split: number;
   imputed: number;
   baseCap: number;
@@ -38,6 +39,7 @@ const ROWS: Row[] = [
     baseStories: 4,
     localProgram: 1,
     hostable: 1,
+    eligible: 1,
     split: 0,
     imputed: 0,
     baseCap: 12,
@@ -63,6 +65,7 @@ const ROWS: Row[] = [
     baseStories: 4,
     localProgram: 0,
     hostable: 1,
+    eligible: 1,
     split: 1,
     imputed: 0b1011111,
     baseCap: 0xffff,
@@ -88,6 +91,7 @@ const ROWS: Row[] = [
     baseStories: 4,
     localProgram: 0,
     hostable: 1,
+    eligible: 1,
     split: 0,
     imputed: 0b00100,
     baseCap: 3,
@@ -104,7 +108,7 @@ const ROWS: Row[] = [
     yield: [1, 2, 3, 3, 3]
   },
   // First row of the second cell: front-coded against 3512002 across the cell boundary. Its floor
-  // area is the u32 ceiling, 2^32 - 1.
+  // area is the u32 ceiling, 2^32 - 1. Not eligible (an OPENSPACE chunk record), so not hostable.
   {
     id: '3512008',
     cell: 1,
@@ -114,6 +118,7 @@ const ROWS: Row[] = [
     baseStories: 4,
     localProgram: 0,
     hostable: 0,
+    eligible: 0,
     split: 0,
     imputed: 0,
     baseCap: 2,
@@ -129,7 +134,9 @@ const ROWS: Row[] = [
     baseYield: [0, 0, 0, 0, 0],
     yield: [0, 0, 0, 0, 0]
   },
-  // Commercial Local Program parcel with a tall envelope and no base cap.
+  // Commercial Local Program parcel with a tall envelope and no base cap. Its chunk record has no
+  // land-use row (`landUse` 'NONE', `eligible: false`), but the roll shows a home, so it is
+  // eligible in the scenario (T14 sd.landuse.none-with-units, flags bit 5).
   {
     id: '3512010',
     cell: 1,
@@ -139,6 +146,7 @@ const ROWS: Row[] = [
     baseStories: 8,
     localProgram: 1,
     hostable: 1,
+    eligible: 1,
     split: 0,
     imputed: 0b00010,
     baseCap: 0xffff,
@@ -164,6 +172,7 @@ const ROWS: Row[] = [
     baseStories: 0,
     localProgram: 0,
     hostable: 0,
+    eligible: 1,
     split: 0,
     imputed: 0,
     baseCap: 0xffff,
@@ -237,6 +246,7 @@ export function scenarioTiny(): ScenarioParcels {
     baseStories: col(Uint8Array, (r) => r.baseStories),
     localProgram: col(Uint8Array, (r) => r.localProgram),
     hostable: col(Uint8Array, (r) => r.hostable),
+    eligible: col(Uint8Array, (r) => r.eligible),
     split: col(Uint8Array, (r) => r.split),
     imputed: col(Uint8Array, (r) => r.imputed),
     baseCap: col(Uint16Array, (r) => r.baseCap),
