@@ -330,7 +330,7 @@ export const SD_RULES: readonly QualityRule[] = [
   // `sd.zoning.named-no-cap` instead (coordinator ruling, F9: live, the spec-named families were
   // 9.71% of hostable and the rest 2.25%). The researched caps (partner rulings 2026-10-18: C-2,
   // M-1, SALI and eight explicit no-limit codes) left it at 0.87% (1,286 of 147,057, live
-  // 2026-10-17-6c4c0d39).
+  // 2026-10-17-6c4c0d39), and RC-3/RC-4 at 0.42% (611, live 2026-10-17-bc65ef7e).
   {
     ...SD,
     id: 'sd.zoning.unlisted',
@@ -378,9 +378,9 @@ export const SD_RULES: readonly QualityRule[] = [
   // 210.1 Note 8's no-limit area (Ord. 122-23). Both need geography the pipeline does not have, so
   // density-caps.ts applies the 1 per 800 sf floor, which understates the cap. Tier 4 / 4: the
   // floor is the Code's own lower bound (tier 1), but using it as the whole cap is made up. Fired
-  // on hostable parcels whose zoning code, or a split component, is C-2 (M-1) and whose base cap
-  // is not null, so the floor enters it. The default shares: live 332 (C-2) and 72 (M-1) of
-  // 147,057 hostable parcels (0.23% and 0.05%, 2026-10-17-6c4c0d39).
+  // on hostable parcels whose zoning code is C-2 (M-1), or a split code whose C-2 (M-1) component
+  // sets the base cap (its own cap equals the split's chosen cap). The default shares: live 329
+  // (C-2) and 72 (M-1) of 147,057 hostable parcels (0.22% and 0.05%, 2026-10-17-bc65ef7e).
   {
     ...SD,
     id: 'sd.zoning.c2-floor-approx',
@@ -395,6 +395,30 @@ export const SD_RULES: readonly QualityRule[] = [
       'A C-2 parcel takes the 1 unit per 800 sf floor of its density rule: the nearest R ' +
       'District density and the no-limit area of Note 8 are not modelled (an approximation that ' +
       'understates)',
+    denominator: 'hostable parcels',
+    ...SHARES,
+    unitsWeighted: false
+  },
+  // Operator ruling (2026-10-18): RC-4 parcels in the Van Ness Special Use District (§243) have no
+  // density limit in any period, but no source the pipeline reads names the SUD (acdm-wktn has no
+  // SUD field; its zoning_district is the base district's name; one h9wh-cg3m polygon is 130-V),
+  // so the RC-4 numeric cap applies citywide. Cost if wrong: RC-4 parcels in Van Ness are
+  // over-capped. Tier 4 / 4; fired on hostable parcels with an RC-4 code, or a split code whose
+  // RC-4 component sets the base cap. The default shares: live 546 of 147,057 hostable parcels
+  // (0.37%; 973 RC-4 parcels in all, 2026-10-17-bc65ef7e).
+  {
+    ...SD,
+    id: 'sd.zoning.rc4-vanness-approx',
+    source: 'datasf-parcel-attrs',
+    field: 'zoning_code',
+    kind: 'shape',
+    action: 'replace',
+    tier: 4,
+    valueTier: 4,
+    maskBit: null,
+    label:
+      'RC-4 inside the Van Ness SUD has no density limit, but is capped here because SUD ' +
+      "membership isn't in the data.",
     denominator: 'hostable parcels',
     ...SHARES,
     unitsWeighted: false

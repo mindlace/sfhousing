@@ -491,6 +491,40 @@ describe('invariants', () => {
       'V18'
     );
   });
+  it('V18 reports the cap-period exclusions by code and stays ok', async () => {
+    const v18 = await result(base, 'V18', {
+      ...counts,
+      'scenario.v18.cap_period_differs': 3,
+      'scenario.v18.cap_period_differs.RM-1': 2,
+      'scenario.v18.cap_period_differs.RC-3': 1
+    });
+    expect(v18.ok).toBe(true);
+    expect(v18.detail).toMatch(
+      /base cap differs by period on 3 parcels \(base-cap features not compared; RC-3 1, RM-1 2\)/
+    );
+  });
+  it('V18 still fails on a feature mismatch when caps differ by period', async () => {
+    const v18 = await result(base, 'V18', {
+      ...counts,
+      'scenario.v18.cap_period_differs': 1,
+      'scenario.v18.cap_period_differs.RM-1': 1,
+      'scenario.panel.feature_mismatch': 1
+    });
+    expect(v18.ok).toBe(false);
+    expect(v18.detail).toMatch(/scenario\.panel\.feature_mismatch 1 ≠ 0/);
+  });
+  it('V18 fails when the cap-period count is missing or disagrees with its breakdown', async () => {
+    const c = { ...counts };
+    delete c['scenario.v18.cap_period_differs'];
+    expect(await failed(base, c)).toContain('V18');
+    expect(
+      await failed(base, {
+        ...counts,
+        'scenario.v18.cap_period_differs': 2,
+        'scenario.v18.cap_period_differs.RM-1': 1
+      })
+    ).toContain('V18');
+  });
   it('V18 fails when too few eligible parcels have a latest-year roll row', async () => {
     const v18 = await result(base, 'V18', {
       ...counts,

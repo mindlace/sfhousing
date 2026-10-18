@@ -318,6 +318,8 @@
     "quality.sd.zoning.missing.of": 8,
     "quality.sd.zoning.named-no-cap.fired": 1,
     "quality.sd.zoning.named-no-cap.of": 8,
+    "quality.sd.zoning.rc4-vanness-approx.fired": 0,
+    "quality.sd.zoning.rc4-vanness-approx.of": 8,
     "quality.sd.zoning.split-code.fired": 0,
     "quality.sd.zoning.split-code.of": 8,
     "quality.sd.zoning.unlisted.fired": 0,
@@ -327,7 +329,7 @@
     "rhna.crossCheck.2025": -1,
     "rhna.units": 4,
     "rhna.xdhtLagDays": 633,
-    "scenario.bytes.payload": 9364,
+    "scenario.bytes.payload": 9660,
     "scenario.density_cap.NC-1": 1,
     "scenario.density_cap.RH-1": 1,
     "scenario.density_cap.RH-2": 3,
@@ -387,6 +389,7 @@
     "scenario.roll.unmatched_units.2025": 0,
     "scenario.roll.years": 3,
     "scenario.units.total": 70,
+    "scenario.v18.cap_period_differs": 0,
     "scenario.yield.clamped": 0,
     "scenario.yield.fzp_net_total": 28,
     "scenario.yield.nonlp_base_mismatch": 0,
@@ -488,7 +491,7 @@
       "ok": true
     },
     {
-      "detail": "3 roll years; eligible with a latest-year roll row 10/12; Σ units 70 in [70, 70]; hostable_base year-on-year change (parcels in both years) ≤ 0% ≤ 5%",
+      "detail": "3 roll years; eligible with a latest-year roll row 10/12; Σ units 70 in [70, 70]; hostable_base year-on-year change (parcels in both years) ≤ 0% ≤ 5%; base cap differs by period on 0 parcels",
       "id": "V18",
       "ok": true
     },

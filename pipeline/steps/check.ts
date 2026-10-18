@@ -715,6 +715,20 @@ export async function checkDataset(
     const matched = c['scenario.roll.latest_eligible_matched'];
     const unitsTotal = c['scenario.units.total'];
     const mismatch = c['scenario.panel.feature_mismatch'];
+    // Coordinator ruling 2026-10-18: parcels whose panel and T11 base caps differ by period (each
+    // correct for its own date) are not compared on base-cap features; reported here by code.
+    const capDiffers = c['scenario.v18.cap_period_differs'];
+    const capPrefix = 'scenario.v18.cap_period_differs.';
+    const capByCode = Object.entries(c)
+      .filter(([k]) => k.startsWith(capPrefix))
+      .map(([k, n]): [string, number] => [k.slice(capPrefix.length), n])
+      .sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0));
+    const capSum = capByCode.reduce((s, [, n]) => s + n, 0);
+    const capDetail =
+      capDiffers > 0
+        ? `; base cap differs by period on ${capDiffers} parcels (base-cap features not ` +
+          `compared; ${capByCode.map(([k, n]) => `${k} ${n}`).join(', ')})`
+        : '; base cap differs by period on 0 parcels';
     const share = ratio(matched, eligibleN);
     const [ulo, uhi] = profile.scenarioUnitsRange;
     const { years: hbYears, steps } = hostableBaseSteps(c);
@@ -739,12 +753,15 @@ export async function checkDataset(
           ? ''
           : `scenario.units.total ${unitsTotal} outside [${ulo}, ${uhi}]`,
         mismatch === 0 ? '' : `scenario.panel.feature_mismatch ${mismatch} ≠ 0`,
+        Number.isInteger(capDiffers) && capDiffers === capSum
+          ? ''
+          : `scenario.v18.cap_period_differs ${capDiffers} ≠ Σ by code ${capSum}`,
         hbYears.length === panelYears
           ? ''
           : `hostable_base counted for ${hbYears.length} roll years ≠ ${panelYears}`,
         ...steps.filter((s) => !(s.change <= HOSTABLE_BASE_STEP_MAX)).map(stepProblem)
       ],
-      `${panelYears} roll years; eligible with a latest-year roll row ${matched}/${eligibleN}; Σ units ${unitsTotal} in [${ulo}, ${uhi}]; hostable_base year-on-year change (parcels in both years) ≤ ${thr(maxStep)} ≤ ${thr(HOSTABLE_BASE_STEP_MAX)}`
+      `${panelYears} roll years; eligible with a latest-year roll row ${matched}/${eligibleN}; Σ units ${unitsTotal} in [${ulo}, ${uhi}]; hostable_base year-on-year change (parcels in both years) ≤ ${thr(maxStep)} ≤ ${thr(HOSTABLE_BASE_STEP_MAX)}${capDetail}`
     );
   }
 

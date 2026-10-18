@@ -384,6 +384,7 @@ SELECT f.id AS mapblklot,
        -- The base-zoning cap at min(lien_day, 2026-01-11) (spec §4.4 "Base cap date", RA1): base
        -- always means the zoning before the FZP, so a post-FZP roll year keeps the pre-FZP cap.
        CASE WHEN f.lien_day < getvariable('density_cap_change_day') THEN s.cap_pre2022
+            WHEN f.lien_day < getvariable('ord_292_24_day') THEN s.cap_pre2025
             ELSE s.cap_prefzp END AS base_density_cap,
        s.lot_area_m2,
        f.improvement_share,

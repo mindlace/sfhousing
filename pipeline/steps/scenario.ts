@@ -99,6 +99,8 @@ const CAP_RULES =
   'C-2 and M-1 take the 1 unit per 800 sf floor of their nearest-R-District rule, an ' +
   'approximation that understates (sd.zoning.c2-floor-approx, sd.zoning.m1-floor-approx, tier ' +
   '4; C-2’s Note 8 no-limit area is not modelled; M-1 allows homes only as a conditional use). ' +
+  'RC-4 inside the Van Ness SUD has no density limit, but is capped here because SUD ' +
+  "membership isn't in the data (sd.zoning.rc4-vanness-approx, tier 4). " +
   'SALI has a cap of 0 (residential not permitted); its exceptions, qualifying affordable ' +
   'housing projects and ADUs, are not modelled.';
 
@@ -220,21 +222,77 @@ JOIN sc_base_yield y
  AND y.base_density_cap IS NOT DISTINCT FROM f.base_density_cap
 ORDER BY f.mapblklot, f.roll_year`;
 
-/** The latest-year panel row of a parcel with the exclusion inputs from sc_features. */
-interface LatestRow {
-  mapblklot: string;
+/** The latest-year panel values V18 compares with T11 (spec §4.10). */
+export interface V18Row {
   existing_units: number;
+  existing_floor_area_m2: number;
   existing_stories: number;
-  year_built: number;
   lot_area_m2: number;
+  year_built: number;
   improvement_share: number;
   rent_control_likely: boolean;
   land_use_class: number;
   imputed: number;
+  base_density_cap: number | null;
   potential_ratio_base: number;
   stories_gap_base: number;
   hostable_base: boolean;
-  existing_floor_area_m2: number;
+}
+
+/** The decoded T11 columns V18 compares with the latest panel row. */
+export type V18Panel = Pick<
+  ScenarioParcels,
+  | 'existingUnits'
+  | 'existingFloorAreaM2'
+  | 'existingStories'
+  | 'lotAreaM2'
+  | 'yearBuilt'
+  | 'improvementShare'
+  | 'rentControlLikely'
+  | 'landUseClass'
+  | 'imputed'
+  | 'baseCap'
+  | 'potentialRatio'
+  | 'storiesGap'
+  | 'hostableBase'
+>;
+
+/**
+ * V18's per-parcel comparison of T11 row `i` with the parcel's latest-year panel row (coordinator
+ * ruling 2026-10-18). The panel's base cap is the cap on its lien day (2025-01-01 for the 2025
+ * roll) and T11's on 2026-01-11 (spec §4.4); between them Ord. 292-24 (2025-01-19) changed the
+ * RM/RC maximum, so the two caps can differ, each correct for its own date. Where they differ
+ * (`capPeriodDiffers`), the features derived from the base cap (`potentialRatio.base`, from the
+ * capped base yield) are not compared; every other feature, the mask and `hostableBase` (which
+ * reads no cap) are compared on every parcel.
+ */
+export function v18Compare(
+  t: V18Panel,
+  i: number,
+  r: V18Row
+): { capPeriodDiffers: boolean; mismatch: boolean } {
+  const t11Cap = t.baseCap[i] === NULL_CAP ? null : t.baseCap[i];
+  const capPeriodDiffers = t11Cap !== r.base_density_cap;
+  const same =
+    t.existingUnits[i] === r.existing_units &&
+    t.existingFloorAreaM2[i] === r.existing_floor_area_m2 &&
+    t.existingStories[i] === r.existing_stories &&
+    t.lotAreaM2[i] === r.lot_area_m2 &&
+    t.yearBuilt[i] === r.year_built &&
+    t.improvementShare[i] === r.improvement_share &&
+    t.rentControlLikely[i] === (r.rent_control_likely ? 1 : 0) &&
+    t.landUseClass[i] === r.land_use_class &&
+    t.imputed[i] === r.imputed &&
+    (capPeriodDiffers || t.potentialRatio.base[i] === r.potential_ratio_base) &&
+    t.storiesGap.base[i] === r.stories_gap_base &&
+    t.hostableBase[i] === (r.hostable_base ? 1 : 0);
+  return { capPeriodDiffers, mismatch: !same };
+}
+
+/** The latest-year panel row of a parcel with the exclusion inputs from sc_features. */
+interface LatestRow extends V18Row {
+  mapblklot: string;
+  zoning_code: string | null;
   noncondo_units: number;
   hotel: boolean;
   status_n: boolean;
@@ -473,7 +531,7 @@ export async function writeScenario(a: {
       `SELECT p.mapblklot, p.existing_units, p.existing_stories, p.year_built, p.lot_area_m2,
               p.improvement_share, p.rent_control_likely, p.land_use_class, p.imputed,
               p.potential_ratio_base, p.stories_gap_base, p.hostable_base,
-              f.existing_floor_area_m2, f.noncondo_units, f.hotel, f.status_n
+              p.base_density_cap, p.zoning_code, f.existing_floor_area_m2, f.noncondo_units, f.hotel, f.status_n
        FROM scenario_panel p JOIN sc_features f USING (mapblklot, roll_year)
        WHERE p.roll_year = ${rollYear} ORDER BY p.mapblklot`
     );
@@ -578,7 +636,8 @@ export async function writeScenario(a: {
     unlisted: [] as string[],
     namedNoCap: [] as string[],
     c2Floor: [] as string[],
-    m1Floor: [] as string[]
+    m1Floor: [] as string[],
+    rc4VanNess: [] as string[]
   };
   /** Parcels per tier-4 cap rule, hostable or not, for the unverified-districts warning. */
   const capRuleAll = { split: 0, genericNc: 0 };
@@ -771,13 +830,18 @@ export async function writeScenario(a: {
     // code in `density_cap.named_no_cap.<code>`; every other unlisted code fires sd.zoning.unlisted,
     // counted by code in `density_cap.unlisted.<code>`. `density_cap.rule.unlisted` counts both
     // groups on all parcels.
-    // sd.zoning.c2-floor-approx / m1-floor-approx (tier 4, partner rulings 2026-10-18): hostable
-    // parcels with a C-2 (M-1) code or split component whose base cap is not null, so the
-    // 1-per-800-sf floor enters it.
+    // sd.zoning.c2-floor-approx / m1-floor-approx / rc4-vanness-approx (tier 4, partner rulings
+    // 2026-10-18): hostable parcels with a non-null base cap set by a C-2 (M-1, RC-4) component.
+    // On a split code the component must set the cap: its own cap equals the split's chosen one
+    // (review minor, 2026-10-18), so C-2|RM-4 with the larger RM-4 cap does not fire.
     if (p.hostable[i] && baseCap !== null) {
       const parts = (d.zoning_code ?? '').split('|').map((z) => z.trim());
-      if (parts.includes('C-2')) zoning.c2Floor.push(rec.id);
-      if (parts.includes('M-1')) zoning.m1Floor.push(rec.id);
+      const sets = (code: string) =>
+        parts.includes(code) &&
+        densityCap(code, lotAreaM2, d.r4, FZP_EFFECTIVE_DAY - 1) === baseCap;
+      if (sets('C-2')) zoning.c2Floor.push(rec.id);
+      if (sets('M-1')) zoning.m1Floor.push(rec.id);
+      if (sets('RC-4')) zoning.rc4VanNess.push(rec.id);
     }
     const rule = densityCapRule(d.zoning_code);
     if (rule === 'unlisted') {
@@ -819,25 +883,22 @@ export async function writeScenario(a: {
   report.timings['scenario.t11'] = Math.round(performance.now() - t0);
 
   // V18: the decoded T11 features (base variant), floor area, mask and hostableBase equal the
-  // latest-year panel row.
+  // latest-year panel row; the base-cap features only where the two base caps agree (v18Compare).
+  // Parcels whose caps differ by period are counted, in all and by zoning code.
   let mismatch = 0;
+  c['scenario.v18.cap_period_differs'] = 0;
   for (const r of t11.latestById.values()) {
     const i = decoded.index.get(r.mapblklot);
-    const same =
-      i !== undefined &&
-      decoded.existingUnits[i] === r.existing_units &&
-      decoded.existingFloorAreaM2[i] === r.existing_floor_area_m2 &&
-      decoded.existingStories[i] === r.existing_stories &&
-      decoded.lotAreaM2[i] === r.lot_area_m2 &&
-      decoded.yearBuilt[i] === r.year_built &&
-      decoded.improvementShare[i] === r.improvement_share &&
-      decoded.rentControlLikely[i] === (r.rent_control_likely ? 1 : 0) &&
-      decoded.landUseClass[i] === r.land_use_class &&
-      decoded.imputed[i] === r.imputed &&
-      decoded.potentialRatio.base[i] === r.potential_ratio_base &&
-      decoded.storiesGap.base[i] === r.stories_gap_base &&
-      decoded.hostableBase[i] === (r.hostable_base ? 1 : 0);
-    if (!same) mismatch++;
+    if (i === undefined) {
+      mismatch++;
+      continue;
+    }
+    const v = v18Compare(decoded, i, r);
+    if (v.mismatch) mismatch++;
+    if (v.capPeriodDiffers) {
+      c['scenario.v18.cap_period_differs']++;
+      inc(`v18.cap_period_differs.${r.zoning_code ?? 'none'}`);
+    }
   }
   c['scenario.panel.feature_mismatch'] = mismatch;
 
@@ -946,6 +1007,11 @@ export async function writeScenario(a: {
     fired: zoning.m1Floor.length,
     of: hostable,
     sample: zoning.m1Floor
+  });
+  recordQuality(a.buildCounts, 'sd.zoning.rc4-vanness-approx', {
+    fired: zoning.rc4VanNess.length,
+    of: hostable,
+    sample: zoning.rc4VanNess
   });
   recordQuality(a.buildCounts, 'sd.zoning.missing', {
     fired: zoning.missing.length,

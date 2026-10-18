@@ -376,6 +376,7 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       'sd.zoning.m1-floor-approx': [0, 8],
       'sd.zoning.missing': [0, 8],
       'sd.zoning.named-no-cap': [1, 8],
+      'sd.zoning.rc4-vanness-approx': [0, 8],
       'sd.zoning.split-code': [0, 8],
       'sd.zoning.unlisted': [0, 8]
     };
@@ -411,6 +412,7 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
     expect(counts['scenario.yield.clamped']).toBe(0);
     expect(counts['scenario.height.parse_fail']).toBe(0);
     expect(counts['scenario.panel.feature_mismatch']).toBe(0);
+    expect(counts['scenario.v18.cap_period_differs']).toBe(0);
     expect(p.fillLevels).toEqual([...FILL_LEVELS]);
   });
 });
