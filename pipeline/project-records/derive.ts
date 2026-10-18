@@ -275,6 +275,10 @@ function assess(
   const quality = new Set<string>();
   // `parsed.clipped` holds the records as parsed, so read them off the project as linked.
   if (heldRecords(cap.original).some((r) => parsed.clipped.has(r))) quality.add(PR.dateValidRange);
+  // Main's ruling 4: a project holding a permit whose placeholder valuation was replaced.
+  if (cap.original.permits.some((q) => parsed.placeholderPermits.has(q.number))) {
+    quality.add(PR.permitsPlaceholderValuation);
+  }
   if (clamped.length > 0) quality.add(PR.stagesForwardClamp);
   if (lastObservedRaised) quality.add(PR.stagesLastObservedClamp);
   if (stories.discarded > 0) quality.add(PR.storiesParseRange);
@@ -492,6 +496,9 @@ function capacityTally(assessed: readonly Assessed[], capped: boolean): Tally {
 const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
   // Spec 4.1: non-empty date values parsed; values treated as missing; source record ids.
   [PR.dateValidRange]: ({ parsed }) => ({ ...parsed.dates }),
+  // Spec 4.1 valuation (main's ruling 4): permits with a revised_cost; the placeholders under
+  // $1,000 replaced by estimated_cost; their permit numbers (the projects holding one carry it).
+  [PR.permitsPlaceholderValuation]: ({ parsed }) => ({ ...parsed.placeholderValuation }),
   // Spec 4.8: story values parsed from text, over the projects that became a record; values
   // outside 1..80 discarded; their project ids.
   [PR.storiesParseRange]: ({ withHistory, inFlight }) => {
@@ -789,8 +796,10 @@ export function deriveProjects(
   };
 
   // Histories: population projects that are not pipeline-only, with at least one entered stage.
-  // The stale-open rulings (spec 4.6) rewrite the history of a project that is not in flight;
-  // statuses are final here (DQ-2 has run, and netting changes masters only, which have none).
+  // The stale-open rulings (spec 4.6) rewrite histories here, after DQ-2 and before DA netting:
+  // all three on a project not in flight (a `suspended` one included, so one past its deadline
+  // still expires), and the statutory exit alone on an in-flight one, which then leaves flight
+  // (Ruling I4). Netting changes masters only, which have no history.
   const histories: ProjectHistory[] = [];
   const withHistory: Assessed[] = [];
   const staleCtx = {
@@ -810,7 +819,9 @@ export function deriveProjects(
   const leftFlight: string[] = [];
   for (const a of assessed) {
     if (a.status === 'suspended') {
-      // Main's ruling 5 (Ruling I4): every unit-bearing permit suspended; the history stays open.
+      // Main's ruling 5 (Ruling I4): every unit-bearing permit suspended, so it leaves flight. Its
+      // history stays open unless the history rules below end it: `suspend` does not block the
+      // statutory exit, so a suspended project past its deadline still expires.
       counts['projects.excludedSuspended']++;
       counts['projects.excludedSuspendedUnits'] += a.units ?? 0;
       leftFlight.push(`${a.proj.id}: every permit suspended; left flight`);

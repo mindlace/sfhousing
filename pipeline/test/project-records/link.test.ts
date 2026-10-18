@@ -127,7 +127,9 @@ function parsedOf(o: {
     })),
     counts: {},
     dates: { of: 0, fired: 0, sample: [] },
-    clipped: new Set()
+    clipped: new Set(),
+    placeholderValuation: { of: 0, fired: 0, sample: [] },
+    placeholderPermits: new Set()
   };
 }
 

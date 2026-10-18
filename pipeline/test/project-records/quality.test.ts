@@ -121,6 +121,16 @@ const TABLE: Record<string, Spec> = {
     failShare: 0.1,
     label: 'A stalled project was ended by a check of street or aerial imagery'
   },
+  'pr.permits.placeholder-valuation': {
+    kind: 'bound',
+    action: 'replace',
+    tier: 4,
+    valueTier: 0,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label: "A placeholder permit valuation under $1,000 was replaced by the permit's own estimate"
+  },
   'pr.units.capacity': {
     kind: 'outlier',
     action: 'null',

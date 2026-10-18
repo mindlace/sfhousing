@@ -213,13 +213,16 @@ export function expiryTest(
   const excludedComplete = open.some(
     (q) => q.status === 'complete' || permitCompletionDay(q, proj.completions) !== null
   );
+  // The not-complete, E0-E2 permits: the deadlines read from a Table B bracket (spec 4.11).
   const bracketed = open.filter((q) => {
     const era = eraOf(q);
-    return era !== null && era !== 'E3';
+    return q.status !== 'complete' && era !== null && era !== 'E3';
   });
   const noValuation = bracketed.filter((q) => q.valuation === null).length;
   let day: Day | null = null;
   let pass = open.length > 0 && !excludedComplete;
+  // An excluded history reads no deadline, so none of its permits counts (spec 4.11).
+  if (excludedComplete) return { day: null, permits: 0, noValuation: 0, excludedComplete };
   for (const q of open) {
     const deadline = permitDeadline(q);
     if (deadline === null || deadline >= asOf) pass = false;

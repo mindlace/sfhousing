@@ -156,6 +156,8 @@
     "quality.pr.parcels.cross-block.of": 18,
     "quality.pr.parcels.shared-existing.fired": 2,
     "quality.pr.parcels.shared-existing.of": 13,
+    "quality.pr.permits.placeholder-valuation.fired": 0,
+    "quality.pr.permits.placeholder-valuation.of": 1,
     "quality.pr.pipeline.no-status-date.fired": 1,
     "quality.pr.pipeline.no-status-date.of": 17,
     "quality.pr.pipeline.no-status-date.units": 20,

@@ -167,6 +167,13 @@ export interface Parsed {
   dates: { of: number; fired: number; sample: string[] };
   /** The parsed records (any kind) that held a date `pr.date.valid-range` treated as missing. */
   clipped: ReadonlySet<object>;
+  /**
+   * Rule `pr.permits.placeholder-valuation`: permits with a `revised_cost` (`of`), those whose
+   * placeholder under $1,000 was replaced by `estimated_cost` (`fired`), their numbers (`sample`).
+   */
+  placeholderValuation: { of: number; fired: number; sample: string[] };
+  /** The permit numbers `pr.permits.placeholder-valuation` replaced. */
+  placeholderPermits: ReadonlySet<string>;
 }
 
 export interface ProjectRecordsInput {

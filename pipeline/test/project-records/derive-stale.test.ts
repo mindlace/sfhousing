@@ -213,6 +213,36 @@ describe('stale open histories (deriveProjects)', () => {
     expect(r.warnings).toContain('PRJ:2019-000001PRJ: every permit suspended; left flight');
   });
 
+  it('a suspended project past its deadline leaves flight and its history still expires', () => {
+    // No valuation: past its 2026-01-06 deadline; suspend does not block the statutory exit.
+    const r = deriveProjects(withA({ status: 'suspend' }));
+    expect(r.counts['projects.excludedSuspended']).toBe(1);
+    expect(r.counts['projects.excludedStatutory']).toBe(0);
+    expect(history(r, 'PRJ:2019-000001PRJ').end).toMatchObject({
+      kind: 'exit',
+      reason: 'expired'
+    });
+  });
+
+  it('a placeholder revised_cost is replaced by the estimate and its project carries the rule', () => {
+    const raw = staleInput().raw;
+    for (const p of raw['datasf-permits-newcon']) {
+      if (p.permit_number === '200406010024') p.revised_cost = '1.0';
+    }
+    const r = deriveProjects({ ...staleInput(), raw });
+    // Still $200k (the estimate), so the same E0 deadline; the history carries both rules.
+    const h = history(r, 'BP:200406010024');
+    expect(h.end).toMatchObject({ kind: 'exit', day: day('2005-03-01') + 360 + 90 });
+    expect(h.quality).toEqual(['pr.permits.placeholder-valuation', 'pr.stages.statutory-expiry']);
+    // Of the permits with a revised_cost: this one and FINISHED's (1,100,000).
+    expect(reportRowsOf(r.counts).get('pr.permits.placeholder-valuation')).toMatchObject({
+      fired: 1,
+      of: 2,
+      sample: ['200406010024']
+    });
+    expect(history(r, 'BP:201409010025').quality).not.toContain('pr.permits.placeholder-valuation');
+  });
+
   it('a history with a completed unit-bearing permit is excluded from expiry (I3 rejected)', () => {
     const raw = staleInput().raw;
     // A second, completed building, joined to EXPIRED by one Planning record.

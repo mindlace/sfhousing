@@ -174,17 +174,31 @@ function compareAddress(a: AddressRow, b: AddressRow): number {
 /** Below this, `revised_cost` is a placeholder, not a valuation (main's ruling 4; tier 4). */
 export const PLACEHOLDER_REVISED_COST = 1000;
 
-/** Ruling E2 valuation: `revised_cost` unless missing or a placeholder, else `estimated_cost`. */
-function valuationOf(r: RawRow): number | null {
+/** Rule `pr.permits.placeholder-valuation`: permits with a `revised_cost`, and those replaced. */
+interface ValuationCtx {
+  of: number;
+  replaced: Set<string>;
+}
+
+/**
+ * Ruling E2 valuation: `revised_cost` unless missing or a placeholder, else `estimated_cost`. A
+ * placeholder is replaced by the permit's own estimate (rule `pr.permits.placeholder-valuation`).
+ */
+function valuationOf(r: RawRow, number: string, ctx: ValuationCtx): number | null {
   const revised = num(r.revised_cost);
-  if (revised !== null && revised >= PLACEHOLDER_REVISED_COST) return revised;
+  if (revised !== null) {
+    ctx.of++;
+    if (revised >= PLACEHOLDER_REVISED_COST) return revised;
+    ctx.replaced.add(number);
+  }
   return num(r.estimated_cost);
 }
 
 function parsePermits(
   rows: RawRow[],
   dates: DateCtx,
-  counts: Record<string, number>
+  counts: Record<string, number>,
+  valuation: ValuationCtx
 ): Map<string, Permit> {
   const id: ProjectSourceId = 'datasf-permits-newcon';
   const groups = new Map<string, RawRow[]>();
@@ -220,7 +234,7 @@ function parsePermits(
       // when present, else the estimate at filing; a `revised_cost` under $1,000 is a
       // placeholder (live, e.g. 1.0 against an estimate of 510,000) and falls back to the
       // estimate (main's ruling 4).
-      valuation: valuationOf(lead),
+      valuation: valuationOf(lead, number, valuation),
       rows: group.map(addressRow).sort(compareAddress)
     };
     permits.set(number, d.done(permit, number));
@@ -283,7 +297,8 @@ export function parseAll(raw: Record<ProjectSourceId, RawRow[]>, asOf: Day): Par
   const sorted = {} as Record<ProjectSourceId, RawRow[]>;
   for (const id of PROJECT_SOURCE_IDS) sorted[id] = canonicalSort(raw[id] ?? []);
 
-  const permits = parsePermits(sorted['datasf-permits-newcon'], dates, counts);
+  const valuation: ValuationCtx = { of: 0, replaced: new Set() };
+  const permits = parsePermits(sorted['datasf-permits-newcon'], dates, counts, valuation);
   const prjs = parsePrjs(sorted['datasf-planning-projects'], dates, counts);
 
   const children: Child[] = [];
@@ -389,6 +404,12 @@ export function parseAll(raw: Record<ProjectSourceId, RawRow[]>, asOf: Day): Par
     pipeline,
     counts,
     dates: { of: dates.of, fired: dates.fired, sample: [...dates.ids].sort(cmp) },
-    clipped: dates.clipped
+    clipped: dates.clipped,
+    placeholderValuation: {
+      of: valuation.of,
+      fired: valuation.replaced.size,
+      sample: [...valuation.replaced].sort(cmp)
+    },
+    placeholderPermits: valuation.replaced
   };
 }

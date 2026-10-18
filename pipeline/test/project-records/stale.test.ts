@@ -111,6 +111,15 @@ describe('expiryTest (Ruling E2)', () => {
       completions: [{ permit: '6', day: d('2008-02-01'), kind: 'TCO', units: 3 }]
     });
     expect(expiryTest(tco, ASOF)).toMatchObject({ day: null, excludedComplete: true });
+    // Status 'complete' with no completion day still excludes; no permit counts toward the
+    // no-valuation twin (the excluded history reads no deadline).
+    const bare = permit('7', { status: 'complete', valuation: null });
+    expect(expiryTest(proj([permit('1', { valuation: null }), bare]), ASOF)).toEqual({
+      day: null,
+      permits: 0,
+      noValuation: 0,
+      excludedComplete: true
+    });
     // A TCO with no units is no completion day.
     const empty = proj([permit('1'), permit('6')], {
       completions: [{ permit: '6', day: d('2008-02-01'), kind: 'TCO', units: 0 }]

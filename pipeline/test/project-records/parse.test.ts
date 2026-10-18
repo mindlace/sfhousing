@@ -431,6 +431,20 @@ describe('parseAll', () => {
     expect(v({ revised_cost: '1000.0', estimated_cost: '200000.0' })).toBe(1000);
     expect(v({ revised_cost: '0.0' })).toBeNull();
     expect(v({ estimated_cost: '75000.0' })).toBe(75_000);
+    // The pr.permits.placeholder-valuation tally: of = permits with a revised_cost.
+    const p = parseAll(
+      raw({
+        'datasf-permits-newcon': [
+          { permit_number: 'P1', revised_cost: '1.0', estimated_cost: '510000.0' },
+          { permit_number: 'P2', revised_cost: '250000.0' },
+          { permit_number: 'P3', estimated_cost: '90000.0' },
+          { permit_number: 'P4', revised_cost: '0.0' }
+        ]
+      }),
+      ASOF
+    );
+    expect(p.placeholderValuation).toEqual({ of: 3, fired: 2, sample: ['P1', 'P4'] });
+    expect([...p.placeholderPermits].sort()).toEqual(['P1', 'P4']);
   });
 
   it('takes permit-level fields from the primary row, in either input order', () => {

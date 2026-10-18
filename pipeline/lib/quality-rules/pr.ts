@@ -11,6 +11,7 @@ export const PR = {
   stagesStatutoryExpiry: 'pr.stages.statutory-expiry',
   stagesExpiryNoValuation: 'pr.stages.expiry-no-valuation',
   stagesVerifiedConstruction: 'pr.stages.verified-construction',
+  permitsPlaceholderValuation: 'pr.permits.placeholder-valuation',
   unitsCapacity: 'pr.units.capacity',
   unitsCapacityCap: 'pr.units.capacity-cap',
   unitsCapacityUnmapped: 'pr.units.capacity-unmapped',
@@ -180,6 +181,24 @@ export const PR_RULES: readonly QualityRule[] = [
     maskBit: null,
     label: 'A stalled project was ended by a check of street or aerial imagery',
     denominator: 'curated verdict entries',
+    warnShare: 0.01,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
+    // Main's ruling 4: a revised_cost under $1,000 is a placeholder (live, e.g. 1.0 against an
+    // estimate of 510,000); the permit's own estimated_cost is used (valueTier 0: a source value).
+    id: PR.permitsPlaceholderValuation,
+    owner: OWNER,
+    source: 'datasf-permits-newcon',
+    field: 'revised_cost',
+    kind: 'bound',
+    action: 'replace',
+    tier: 4,
+    valueTier: 0,
+    maskBit: null,
+    label: "A placeholder permit valuation under $1,000 was replaced by the permit's own estimate",
+    denominator: 'permits with a revised cost',
     warnShare: 0.01,
     failShare: 0.1,
     unitsWeighted: false
