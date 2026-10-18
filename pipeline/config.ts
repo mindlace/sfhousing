@@ -87,6 +87,8 @@ export interface InvariantProfile {
   projectsMaxBytes: number;
   /** V20: above this projects.json passes with a warning. */
   projectsWarnBytes: number;
+  /** V30: judge each T14 rule's share against its warnShare and failShare (live only). */
+  qualityShares: boolean;
 }
 
 /**
@@ -139,7 +141,9 @@ export const LIVE_PROFILE: InvariantProfile = {
   rhnaYearTol: 0.1,
   rhnaTotalTol: 0.05,
   projectsMaxBytes: 2e6,
-  projectsWarnBytes: 1e6
+  projectsWarnBytes: 1e6,
+  // Spec §4.10 V30: live shares are judged against each rule's warnShare and failShare.
+  qualityShares: true
 };
 
 /**
@@ -180,5 +184,8 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   rhnaYearTol: LIVE_PROFILE.rhnaYearTol,
   rhnaTotalTol: LIVE_PROFILE.rhnaTotalTol,
   projectsMaxBytes: LIVE_PROFILE.projectsMaxBytes,
-  projectsWarnBytes: LIVE_PROFILE.projectsWarnBytes
+  projectsWarnBytes: LIVE_PROFILE.projectsWarnBytes,
+  // Spec §4.10 V30: the mini fixture fires rules on a handful of rows by design, so its shares
+  // mean nothing; V30 still requires every rule to report.
+  qualityShares: false
 };

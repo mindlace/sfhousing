@@ -323,6 +323,11 @@
       "detail": "2 multi-phase projects, 0 last resort",
       "id": "V24",
       "ok": true
+    },
+    {
+      "detail": "every registered rule reports; shares not checked on this profile",
+      "id": "V30",
+      "ok": true
     }
   ],
   "license": {
