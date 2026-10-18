@@ -11,7 +11,8 @@ import {
 } from '../../src/lib/data/scenario-codec';
 import { encodeTransit } from '../../src/lib/data/transit-codec';
 import { tinyNetwork } from '../../src/lib/data/fixtures/transit-tiny';
-import { FIXTURE_PROFILE } from '../config';
+import { FIXTURE_PROFILE, LIVE_PROFILE } from '../config';
+import { QUALITY_REPORT_MD, makeQuality } from '../lib/quality';
 import { deriveProjects } from '../project-records/derive';
 import {
   checkV21,
@@ -20,19 +21,28 @@ import {
   checkV24,
   type V2xInputs
 } from '../project-records/invariants';
-import { checkDataset, maxOf, type CheckExtras, type InvariantResult } from '../steps/check';
+import {
+  checkDataset,
+  checkV30,
+  maxOf,
+  type CheckExtras,
+  type InvariantResult
+} from '../steps/check';
 import { fixture } from '../steps/fixture';
 import { PROJECTS_JSON } from '../steps/projects';
 import { miniProjectInput } from './fixtures/mini/projects-raw';
 import { PARCELS_BIN } from '../lib/scenario-files';
 
 let base: string;
+/** The fixture build's derived cache root (kept, so the T14 report can be read). */
+let derived: string;
 let counts: Record<string, number>;
 /** What the build measured: V20's snapshot day and V21-V24, carried as `check` does. */
 let measured: Pick<CheckExtras, 'asOf' | 'projectChecks'>;
 beforeAll(async () => {
   base = mkdtempSync(join(tmpdir(), 'sfh-inv-'));
-  expect(await fixture({ outDir: base, skipTiles: true })).toBe(0);
+  derived = mkdtempSync(join(tmpdir(), 'sfh-inv-derived-'));
+  expect(await fixture({ outDir: base, skipTiles: true, derivedRoot: derived })).toBe(0);
   const report = JSON.parse(readFileSync(join(base, 'report.json'), 'utf8')) as {
     counts: Record<string, number>;
     invariants: InvariantResult[];
@@ -508,6 +518,75 @@ describe('invariants', () => {
   it('V13 is reported as enforced at upload', async () => {
     const r = await checkDataset(base, FIXTURE_PROFILE, { counts, reencodeIdentical: true });
     expect(r.find((x) => x.id === 'V13')).toMatchObject({ ok: true, detail: 'enforced at upload' });
+  });
+});
+
+describe('V30 data-quality registry', () => {
+  /** A one-rule test registry: the real registry is empty until the owners register rules. */
+  const one = makeQuality([
+    {
+      id: 'sd.test.bound',
+      owner: 'scenario-data',
+      source: 'test-source',
+      field: 'test_field',
+      kind: 'bound',
+      action: 'replace',
+      tier: 4,
+      valueTier: 2,
+      maskBit: 0,
+      label: 'A test bound',
+      denominator: 'test rows',
+      warnShare: 0.01,
+      failShare: 0.1,
+      unitsWeighted: false
+    }
+  ]);
+  const reported = (fired: number, of: number) => {
+    const c: Record<string, number> = {};
+    one.recordQuality(c, 'sd.test.bound', { fired, of });
+    return c;
+  };
+  it('passes on mini with a stable detail', async () => {
+    const v30 = await result(base, 'V30');
+    expect(v30).toEqual({
+      id: 'V30',
+      ok: true,
+      detail: 'every registered rule reports; shares not checked on this profile'
+    });
+  });
+  it('the build writes quality-report.md into the derived folder', () => {
+    const md = readFileSync(join(derived, 'fixture-0', QUALITY_REPORT_MD), 'utf8');
+    expect(md).toMatch(/^# Data quality report: fixture-0\n/);
+    expect(md).toContain('No rules are registered.');
+  });
+  it('fails when a registered rule does not report', () => {
+    const v30 = checkV30({}, { qualityShares: false }, one.checkQuality);
+    expect(v30.ok).toBe(false);
+    expect(v30.detail).toMatch(/sd\.test\.bound: not reported/);
+  });
+  it('fails on an unregistered quality.* key in counts', async () => {
+    expect(await failed(base, { ...counts, 'quality.sd.no.such.fired': 0 })).toEqual(['V30']);
+  });
+  it('with qualityShares fails on a share above failShare; without it passes', () => {
+    const c = reported(11, 100);
+    const v30 = checkV30(c, { qualityShares: true }, one.checkQuality);
+    expect(v30).toEqual({
+      id: 'V30',
+      ok: false,
+      detail: 'sd.test.bound: share 11.00% > failShare 10.00%'
+    });
+    expect(checkV30(c, FIXTURE_PROFILE, one.checkQuality).ok).toBe(true);
+    expect(LIVE_PROFILE.qualityShares).toBe(true);
+    expect(FIXTURE_PROFILE.qualityShares).toBe(false);
+  });
+  it('warns above warnShare and still passes', () => {
+    const v30 = checkV30(reported(2, 100), { qualityShares: true }, one.checkQuality);
+    expect(v30).toEqual({
+      id: 'V30',
+      ok: true,
+      detail:
+        'every registered rule reports; no share above failShare; warn: sd.test.bound: share 2.00% > warnShare 1.00%'
+    });
   });
 });
 

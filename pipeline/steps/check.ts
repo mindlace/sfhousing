@@ -14,6 +14,7 @@ import {
 import { decodeTransit } from '../../src/lib/data/transit-codec';
 import type { Day } from '../../src/lib/timelapse/time';
 import { BBOX, type InvariantProfile } from '../config';
+import { checkQuality } from '../lib/quality';
 import { pointStrictlyInside } from '../lib/rings';
 import { checkV20 } from '../project-records/invariants';
 import { PROJECTS_JSON } from './projects';
@@ -142,6 +143,28 @@ function neighborhoodNames(outDir: string, profile: InvariantProfile): string[] 
   return fc.features.map((f) => f.properties.name);
 }
 
+/**
+ * V30 (scenario-data spec §4.10, T14): every registered rule reports, no `quality.*` key names an
+ * unregistered rule, and with `profile.qualityShares` no share exceeds its rule's failShare (a
+ * share above warnShare warns). `check` is the registry's checker; tests pass a crafted one.
+ */
+export function checkV30(
+  counts: Record<string, number>,
+  profile: Pick<InvariantProfile, 'qualityShares'>,
+  check: typeof checkQuality = checkQuality
+): InvariantResult {
+  const shares = profile.qualityShares;
+  const q = check(counts, { shares });
+  const warn = q.warnings.length ? `warn: ${q.warnings.join('; ')}` : '';
+  const parts = q.ok
+    ? [
+        'every registered rule reports',
+        shares ? 'no share above failShare' : 'shares not checked on this profile'
+      ]
+    : q.failures;
+  return { id: 'V30', ok: q.ok, detail: [...parts, warn].filter(Boolean).join('; ') };
+}
+
 /** Max without spreading (spread overflows the call stack at ~150k elements). */
 export function maxOf(xs: readonly number[]): number {
   return xs.reduce((a, b) => (b > a ? b : a), -Infinity);
@@ -150,7 +173,7 @@ export function maxOf(xs: readonly number[]): number {
 /**
  * Spec §4.9 invariants V1–V13, transit spec §4.3 V14, scenario-data spec §4.10 V15–V19 and
  * project-records spec §4.9 V20 over a built dataset directory, then V21–V24 from
- * `extras.projectChecks`. Never throws.
+ * `extras.projectChecks` and V30 (T14) from the counts. Never throws.
  */
 export async function checkDataset(
   outDir: string,
@@ -563,5 +586,8 @@ export async function checkDataset(
     const r = extras.projectChecks?.find((x) => x.id === id);
     out.push(r ? { id, ok: r.ok, detail: r.detail } : { id, ok: false, detail: 'not measured' });
   }
+
+  // V30 data-quality registry (T14): every rule reports; live shares within failShare.
+  out.push(checkV30(c, profile));
   return out;
 }
