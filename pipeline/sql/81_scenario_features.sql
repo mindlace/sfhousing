@@ -72,7 +72,10 @@ SELECT b.id, b.roll_year,
             ELSE m.improvement_share END::FLOAT AS improvement_share,
        (NOT b.vacant AND b.share_raw IS NULL) AS share_imputed,
        b.land, b.impr, b.use_code, b.land_use_class,
-       CASE WHEN b.floor_area_m2 > 0 THEN b.floor_area_m2 ELSE o.floor_area_m2 END::DOUBLE
+       -- existingFloorAreaM2 in whole m² (spec §4.5 step 4, RA1, IA-8): the roll's
+       -- Σ property_area × 0.09290304 when > 0, else the chunk record's floor area. Every yield
+       -- and T11 use this rounded value, so the worker rebuilds the same record.
+       round(CASE WHEN b.floor_area_m2 > 0 THEN b.floor_area_m2 ELSE o.floor_area_m2 END)::INTEGER
          AS existing_floor_area_m2,
        b.noncondo_units, b.hotel, b.status_n, b.units_replaced
 FROM f_base b

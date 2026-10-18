@@ -13,6 +13,8 @@ import {
   decodeScenarioPayload,
   encodeScenarioPayload,
   fillStories,
+  scenarioRecordFrom,
+  scenarioRecordOf,
   type ScenarioParcels
 } from '../../src/lib/data/scenario-codec';
 import { capScenarioYield, scenarioYield } from '../../src/lib/data/scenario-yield';
@@ -42,8 +44,12 @@ const F = FILL_LEVELS.length;
 const U16_MAX = 0xffff;
 /** T11 `baseCap` sentinel for "no cap" (spec §2 internal types). */
 const NULL_CAP = 0xffff;
-/** Storey height for existingHeightM = existingStories × 3.1 (SQL_VARS.floors_m, tier 3). */
+/**
+ * Storey height of the no-roll stories fallback, round(height / 3.1) (SQL_VARS.floors_m, tier 3).
+ */
 const FLOORS_M = SQL_VARS.floors_m;
+/** u32 column ceiling (codec width, spec §4.8) for the whole-m² floor area. */
+const U32_MAX = 0xffffffff;
 /** Rent Ordinance year: pre-1979 buildings (spec §4.4, tier 2, I). */
 const RENT_CONTROL_BEFORE = 1979;
 /**
@@ -76,38 +82,24 @@ const CAP_RULES =
   'cap (both tier 4, made up); districts not verified against the official Code default to no ' +
   `cap (${UNVERIFIED_DISTRICTS.join(', ')}).`;
 
-/** One sc_features row: the inputs of `scenarioRecord`. */
+/** One sc_features row: the inputs of the codec's `scenarioRecordFrom` and the base cap. */
 interface FeatureRow {
   mapblklot: string;
   existing_units: number;
+  /** INTEGER, whole m² (81_scenario_features.sql): the value T11 ships. */
   existing_floor_area_m2: number;
   existing_stories: number;
   base_stories: number;
   base_density_cap: number | null;
 }
 
-/**
- * Spec §4.5 "one scenario view of a parcel": the chunk record with units, floor area and height
- * from the roll features (existingHeightM = existingStories × 3.1).
- */
-function scenarioRecord(
-  rec: ParcelRecord,
-  f: { existingUnits: number; existingFloorAreaM2: number; existingStories: number }
-): ParcelRecord {
-  return {
-    ...rec,
-    existingUnits: f.existingUnits,
-    existingFloorAreaM2: f.existingFloorAreaM2,
-    existingHeightM: f.existingStories * FLOORS_M
-  };
-}
-
 const sqlStr = (s: string) => `'${s.replaceAll("'", "''")}'`;
 
 /**
- * Panel base yields (spec §4.7): `scenarioYield(scenarioRecord(rec, row), base_stories,
- * base_density_cap)` for every sc_features row, memoised on the inputs, streamed one roll year
- * at a time. Writes sc_base_yield (one row per distinct input) and returns its size.
+ * Panel base yields (spec §4.7): `scenarioYield(scenarioRecordFrom(rec, that year's values),
+ * base_stories, base_density_cap)` for every sc_features row, memoised on the inputs (the floor
+ * area is the integer m² value), streamed one roll year at a time. Writes sc_base_yield (one row
+ * per distinct input) and returns its size.
  */
 async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Promise<number> {
   const years = await db.all<{ y: number }>(
@@ -121,7 +113,7 @@ async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Pr
        FROM sc_features WHERE roll_year = ${y} ORDER BY mapblklot`
     );
     for (const r of rows) {
-      // String(double) is the shortest round-trip form, so equal keys mean equal inputs.
+      // Every input is an integer (or null), so equal keys mean equal inputs.
       const key = [
         r.mapblklot,
         r.existing_units,
@@ -133,7 +125,7 @@ async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Pr
       if (memo.has(key)) continue;
       const rec = recById.get(r.mapblklot);
       if (!rec) throw new Error(`scenario: panel parcel ${r.mapblklot} has no chunk record`);
-      const view = scenarioRecord(rec, {
+      const view = scenarioRecordFrom(rec, {
         existingUnits: r.existing_units,
         existingFloorAreaM2: r.existing_floor_area_m2,
         existingStories: r.existing_stories
@@ -155,7 +147,7 @@ async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Pr
     [
       ['mapblklot', 'VARCHAR'],
       ['existing_units', 'INTEGER'],
-      ['existing_floor_area_m2', 'DOUBLE'],
+      ['existing_floor_area_m2', 'INTEGER'],
       ['existing_stories', 'INTEGER'],
       ['base_stories', 'INTEGER'],
       ['base_density_cap', 'INTEGER'],
@@ -325,6 +317,7 @@ export function scenarioDump(p: ScenarioParcels): unknown {
     imputed: a(p.imputed),
     baseCap: a(p.baseCap),
     existingUnits: a(p.existingUnits),
+    existingFloorAreaM2: a(p.existingFloorAreaM2),
     existingStories: a(p.existingStories),
     lotAreaM2: a(p.lotAreaM2),
     yearBuilt: a(p.yearBuilt),
@@ -470,6 +463,7 @@ export async function writeScenario(a: {
     imputed: new Uint8Array(n),
     baseCap: new Uint16Array(n),
     existingUnits: new Uint16Array(n),
+    existingFloorAreaM2: new Uint32Array(n),
     existingStories: new Uint8Array(n),
     lotAreaM2: new Uint32Array(n),
     yearBuilt: new Uint16Array(n),
@@ -561,7 +555,8 @@ export async function writeScenario(a: {
       // Same fallback as 81_scenario_features.sql: round(height / 3.1), at least 1 (bit 1).
       const fromHeight = rec.existingHeightM > 0;
       existingStories = fromHeight ? Math.max(1, Math.round(rec.existingHeightM / FLOORS_M)) : 0;
-      floorArea = rec.existingFloorAreaM2;
+      // Whole m², as 81_scenario_features.sql rounds the chunk-record fallback (spec §4.5 step 5).
+      floorArea = Math.round(rec.existingFloorAreaM2);
       p.yearBuilt[i] = fit('yearBuilt', t11.med.year_built, 0xffff);
       p.improvementShare[i] = t11.med.improvement_share;
       p.rentControlLikely[i] = 0;
@@ -569,6 +564,7 @@ export async function writeScenario(a: {
       p.imputed[i] = 0b10101 | (fromHeight ? 0b10 : 0);
     }
     p.existingUnits[i] = fit('existingUnits', existingUnits, 0xffff);
+    p.existingFloorAreaM2[i] = fit('existingFloorAreaM2', floorArea, U32_MAX);
     p.existingStories[i] = fit('existingStories', existingStories, 0xff);
     inc('units.total', existingUnits);
     if (lat?.status_n && lat.existing_units === 0 && rec.existingUnits > 0) {
@@ -608,12 +604,9 @@ export async function writeScenario(a: {
     else inc(`density_cap.${d.zoning_code}`);
     if (baseCap !== fzpCap) inc('density_cap.fzp_differs');
 
-    // Yields (spec §4.7): each distinct story count generated once, then capped per variant.
-    const view = scenarioRecord(rec, {
-      existingUnits,
-      existingFloorAreaM2: floorArea,
-      existingStories
-    });
+    // Yields (spec §4.7) on the record the worker rebuilds from row i (IA-8): each distinct
+    // story count generated once, then capped per variant.
+    const view = scenarioRecordOf(p, i, rec);
     const gross = new Map<number, number>();
     const grossAt = (stories: number) => {
       let g = gross.get(stories);
@@ -694,13 +687,15 @@ export async function writeScenario(a: {
   const decoded = readParcelsBin(file);
   report.timings['scenario.t11'] = Math.round(performance.now() - t0);
 
-  // V18: the decoded T11 features (base variant) and mask equal the latest-year panel row.
+  // V18: the decoded T11 features (base variant), floor area and mask equal the latest-year panel
+  // row.
   let mismatch = 0;
   for (const r of t11.latestById.values()) {
     const i = decoded.index.get(r.mapblklot);
     const same =
       i !== undefined &&
       decoded.existingUnits[i] === r.existing_units &&
+      decoded.existingFloorAreaM2[i] === r.existing_floor_area_m2 &&
       decoded.existingStories[i] === r.existing_stories &&
       decoded.lotAreaM2[i] === r.lot_area_m2 &&
       decoded.yearBuilt[i] === r.year_built &&
