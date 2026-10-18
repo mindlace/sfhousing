@@ -7,10 +7,10 @@ import { isoOf } from '../../project-records/parse';
 import { isoToDay } from '../../project-records/multiphase';
 import type { Day, SizeModel } from '../../../src/lib/timelapse/types';
 import { HOUSING_ELEMENT_APPENDIX_B, datasf } from './provenance';
+import { roundShares } from './round';
 import type { CalProfile, NormHistory } from './types';
 import { PLANNING_START } from './window';
 
-const MICRO = 1_000_000;
 /** Bucket edges on the base stories at filing (tier 4); 999 stands for any. */
 export const SIZE_EDGES = [4, 6, 8, 12, 999];
 /** Tolerance for treating r as exactly halfway between two fill levels. */
@@ -32,16 +32,6 @@ function snap(r: number, levels: readonly number[]): number {
     if (r < mid - TIE_TOL) return i;
   }
   return levels.length - 1;
-}
-
-/** Counts per fill level, rounded to 6 decimals with the residual added to the largest. */
-function roundedProbs(counts: number[]): number[] {
-  const total = counts.reduce((a, b) => a + b, 0);
-  const micro = counts.map((c) => Math.round((c / total) * MICRO));
-  let largest = 0;
-  for (let i = 1; i < micro.length; i++) if (micro[i] > micro[largest]) largest = i;
-  micro[largest] += MICRO - micro.reduce((a, b) => a + b, 0);
-  return micro.map((m) => m / MICRO);
 }
 
 /**
@@ -78,7 +68,9 @@ export function sizeModel(
     } else {
       level = snap(r, levels);
     }
-    const bucket = SIZE_EDGES.findIndex((edge) => base <= edge);
+    // 999 means any: a base above every edge belongs to the last bucket
+    const found = SIZE_EDGES.findIndex((edge) => base <= edge);
+    const bucket = found === -1 ? SIZE_EDGES.length - 1 : found;
     perBucket[bucket][level]++;
     n++;
   }
@@ -137,7 +129,7 @@ export function sizeModel(
   return {
     size: {
       fillLevels: levels,
-      byEnvelope: groups.map((g) => ({ maxStoriesUpTo: g.upTo, probs: roundedProbs(g.counts) })),
+      byEnvelope: groups.map((g) => ({ maxStoriesUpTo: g.upTo, probs: roundShares(g.counts) })),
       provenance: {
         tier: 2,
         label: 'SF Planning & permit records 2015–2026: new-project size (tier 2)',

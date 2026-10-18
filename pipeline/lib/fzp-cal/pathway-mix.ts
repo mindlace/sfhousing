@@ -12,10 +12,9 @@ import {
   type Provenance
 } from '../../../src/lib/timelapse/types';
 import { PLANNING_DIRECTOR_BULLETIN_11, datasf } from './provenance';
+import { round6, roundShares } from './round';
 import type { CalProfile, NormHistory } from './types';
 import { LOCAL_PROGRAM_START, PLANNING_START, PPA_SERIES_END } from './window';
-
-const MICRO = 1_000_000;
 
 /** First day of the `ppaShare` window: the day after the PPA record series ended. */
 const PPA_WINDOW_START = isoToDay(PPA_SERIES_END) + 1;
@@ -45,18 +44,11 @@ function emptyCounts(): Record<Pathway, number> {
 
 /**
  * Shares of `counts`, rounded to 6 decimals, the rounding residual added to the largest share
- * (the first of equals in `PATHWAYS` order) so the shares sum to 1. `total` must be > 0.
+ * (the first of equals in `PATHWAYS` order) so the shares sum to 1. The counts' sum must be > 0.
  */
-function roundedShares(counts: Record<Pathway, number>, total: number): Record<Pathway, number> {
-  const micro = PATHWAYS.map((p) => Math.round((counts[p] / total) * MICRO));
-  let largest = 0;
-  for (let i = 1; i < micro.length; i++) if (micro[i] > micro[largest]) largest = i;
-  micro[largest] += MICRO - micro.reduce((a, b) => a + b, 0);
-  return {
-    discretionary: micro[0] / MICRO,
-    streamlined: micro[1] / MICRO,
-    permitOnly: micro[2] / MICRO
-  };
+function roundedShares(counts: Record<Pathway, number>): Record<Pathway, number> {
+  const [discretionary, streamlined, permitOnly] = roundShares(PATHWAYS.map((p) => counts[p]));
+  return { discretionary, streamlined, permitOnly };
 }
 
 function countsText(c: Record<Pathway, number>): string {
@@ -89,7 +81,7 @@ export function pathwayForNew(
 
   if (n >= cal.nSpellsMin) {
     return {
-      ...roundedShares(counts, n),
+      ...roundedShares(counts),
       provenance: {
         tier: 0,
         label: 'SF permit & Planning records 2015–2026: pathway of new projects (tier 0)',
@@ -106,7 +98,7 @@ export function pathwayForNew(
   if (inFlight.length > 0) {
     const day = isoOf(asOf);
     return {
-      ...roundedShares(flight, inFlight.length),
+      ...roundedShares(flight),
       provenance: {
         tier: 0,
         label: 'Pathway mix of in-flight projects at the as-of day (tier 0)',
@@ -119,7 +111,7 @@ export function pathwayForNew(
   }
   if (n > 0) {
     return {
-      ...roundedShares(counts, n),
+      ...roundedShares(counts),
       provenance: {
         tier: 0,
         label: 'SF permit & Planning records 2015–2026: pathway of new projects (tier 0)',
@@ -131,7 +123,7 @@ export function pathwayForNew(
     };
   }
   return {
-    ...roundedShares({ discretionary: 1, streamlined: 1, permitOnly: 1 }, 3),
+    ...roundedShares({ discretionary: 1, streamlined: 1, permitOnly: 1 }),
     provenance: {
       tier: 4,
       label: 'Pathway mix of new projects (tier 4, made up)',
@@ -175,7 +167,7 @@ export function ppaShare(norm: NormHistory[], asOf: Day): Calibration['ppaShare'
       }
     };
   }
-  const share = (p: Pathway) => (filings[p] === 0 ? 0 : withPpa[p] / filings[p]);
+  const share = (p: Pathway) => (filings[p] === 0 ? 0 : round6(withPpa[p] / filings[p]));
   return {
     discretionary: share('discretionary'),
     streamlined: share('streamlined'),
@@ -217,10 +209,13 @@ function median(xs: number[]): number {
 }
 
 /**
- * Report diagnostic (spec §4.7): filings since the Local Program began (2026-01-12), and their
+ * Report diagnostic (spec §4.7): filings from the Local Program's start (2026-01-12) to `asOf`, and their
  * median days from `filed` to `entitled`, null if none has been entitled. Nothing uses it.
  */
-export function localProgramDiagnostic(norm: NormHistory[]): {
+export function localProgramDiagnostic(
+  norm: NormHistory[],
+  asOf: Day
+): {
   filings: number;
   medianFiledToEntitled: number | null;
 } {
@@ -229,7 +224,7 @@ export function localProgramDiagnostic(norm: NormHistory[]): {
   const days: number[] = [];
   for (const h of norm) {
     const first = firstNonPpa(h);
-    if (first === null || first < start) continue;
+    if (first === null || first < start || first > asOf) continue;
     filings++;
     const { filed, entitled } = h.eff;
     if (filed !== undefined && entitled !== undefined) days.push(entitled - filed);

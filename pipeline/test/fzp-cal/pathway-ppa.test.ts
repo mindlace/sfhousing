@@ -122,7 +122,12 @@ describe('pathwayForNew', () => {
     expect(r.provenance.method).toContain('in-flight');
     checkProvenance(r.provenance);
     // exactly N_SPELLS_MIN qualifies: no fallback
-    const at = pathwayForNew(many('a', 'discretionary', 30, '2018-01-01'), inFlight, ASOF, LIVE_CAL);
+    const at = pathwayForNew(
+      many('a', 'discretionary', 30, '2018-01-01'),
+      inFlight,
+      ASOF,
+      LIVE_CAL
+    );
     expect(at.discretionary).toBe(1);
     expect(at.provenance.method).not.toContain('in-flight');
   });
@@ -154,6 +159,15 @@ describe('ppaShare', () => {
       'measured after the PPA record series ended (2023-07-07)'
     );
     checkProvenance(r.provenance);
+  });
+
+  it('rounds each share to 6 decimals', () => {
+    const norm = [
+      hist('a', 'discretionary', { preApplication: d('2023-07-20'), filed: d('2023-09-01') }),
+      hist('b', 'discretionary', { filed: d('2023-09-01') }),
+      hist('c', 'discretionary', { filed: d('2023-09-01') })
+    ];
+    expect(ppaShare(norm, ASOF).discretionary).toBe(0.333333);
   });
 
   it('uses the first non-PPA entry, not the PPA entry, as the filing day', () => {
@@ -203,17 +217,22 @@ describe('localProgramDiagnostic', () => {
       hist('a', 'streamlined', { filed: d('2026-01-12'), entitled: d('2026-03-12') }),
       hist('b', 'streamlined', { filed: d('2026-02-01'), entitled: d('2026-06-01') }),
       hist('c', 'discretionary', { preApplication: d('2026-01-02'), filed: d('2026-03-01') }),
-      hist('d', 'streamlined', { filed: d('2026-04-01'), entitled: d('2026-04-11') })
+      hist('d', 'streamlined', { filed: d('2026-04-01'), entitled: d('2026-04-11') }),
+      // filed after asOf: not counted
+      hist('late', 'streamlined', { filed: ASOF + 1, entitled: ASOF + 2 })
     ];
-    const r = localProgramDiagnostic(norm);
+    const r = localProgramDiagnostic(norm, ASOF);
     expect(r.filings).toBe(4);
     // a = 59 days, b = 120, d = 10 -> median 59
     expect(r.medianFiledToEntitled).toBe(59);
   });
 
   it('is null when nothing was entitled yet', () => {
-    const r = localProgramDiagnostic([hist('c', 'discretionary', { filed: d('2026-03-01') })]);
+    const r = localProgramDiagnostic(
+      [hist('c', 'discretionary', { filed: d('2026-03-01') })],
+      ASOF
+    );
     expect(r).toEqual({ filings: 1, medianFiledToEntitled: null });
-    expect(localProgramDiagnostic([])).toEqual({ filings: 0, medianFiledToEntitled: null });
+    expect(localProgramDiagnostic([], ASOF)).toEqual({ filings: 0, medianFiledToEntitled: null });
   });
 });

@@ -189,6 +189,17 @@ describe('sizeModel: buckets, merging and rounding', () => {
     expect(Math.round(sum(probs) * 1e6)).toBe(1_000_000);
   });
 
+  it('puts a base above every edge in the last bucket (999 = any)', () => {
+    const { size, overEnvelope } = sizeModel(
+      [...group('a', 3, 500, 1200), ...group('b', 2, 600, 1000)],
+      ASOF,
+      FIXTURE_CAL,
+      FILL_LEVELS
+    );
+    expect(overEnvelope.of).toBe(5);
+    expect(size.byEnvelope.map((b) => b.maxStoriesUpTo)).toEqual([999]);
+  });
+
   it('is deterministic under input order', () => {
     const norm = [...group('a', 3, 5, 10), ...group('b', 4, 9, 10), ...group('c', 2, 14, 10)];
     const a = sizeModel(norm, ASOF, FIXTURE_CAL, FILL_LEVELS);

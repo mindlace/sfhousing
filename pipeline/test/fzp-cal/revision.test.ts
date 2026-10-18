@@ -147,6 +147,55 @@ describe('revisionModel: pair types', () => {
     expect(revisionModel([edge], ASOF, FIXTURE_CAL).clamp.of).toBe(1);
   });
 
+  it('permitIssued pair: a completed history with complete before 2015 is not counted, within is', () => {
+    const at = (id: string, completeDay: Day) =>
+      hist(
+        id,
+        {
+          filed: d('2012-01-01'),
+          permitFiled: d('2013-01-01'),
+          permitIssued: d('2013-06-01'),
+          construction: d('2013-09-01'),
+          complete: completeDay
+        },
+        { permitFiled: 4, complete: 8 },
+        true
+      );
+    expect(revisionModel([at('old', d('2014-12-31'))], ASOF, FIXTURE_CAL).clamp.of).toBe(0);
+    expect(revisionModel([at('in', d('2015-01-01'))], ASOF, FIXTURE_CAL).clamp.of).toBe(1);
+    expect(revisionModel([at('after', ASOF + 1)], ASOF, FIXTURE_CAL).clamp.of).toBe(0);
+  });
+
+  it('permitIssued pair: the end day stands in when a completed history has no complete day', () => {
+    const eff: Partial<Record<Stage, Day>> = {
+      filed: d('2018-01-01'),
+      permitFiled: d('2019-01-01'),
+      permitIssued: d('2020-01-01')
+    };
+    const make = (id: string, endDay: Day): NormHistory => {
+      const h = hist(id, eff, { permitFiled: 4, complete: 8 }, true);
+      return { ...h, end: { kind: 'complete', day: endDay } };
+    };
+    expect(revisionModel([make('in', d('2023-01-01'))], ASOF, FIXTURE_CAL).clamp.of).toBe(1);
+    expect(revisionModel([make('old', d('2014-01-01'))], ASOF, FIXTURE_CAL).clamp.of).toBe(0);
+  });
+
+  it('permitIssued pair: skipped when permitIssued is the first stage', () => {
+    const first = hist(
+      'first',
+      { permitIssued: d('2020-01-01'), complete: d('2023-01-01') },
+      { permitFiled: 4, complete: 8 },
+      true
+    );
+    expect(revisionModel([first], ASOF, FIXTURE_CAL).clamp.of).toBe(0);
+  });
+
+  it('rounds probability to 6 decimals', () => {
+    const norm = [pf('a', 10, 5), pf('b', 10, 10), pf('c', 10, 10)];
+    const cal: CalProfile = { ...FIXTURE_CAL, revMinN: 3 };
+    expect(at(revisionModel(norm, ASOF, cal).revision, 'permitFiled').probability).toBe(0.333333);
+  });
+
   it('never revises a first stage', () => {
     // a project whose first stage is permitFiled has no earlier stage to compare
     const first = hist('first', { permitFiled: d('2019-01-01') }, { filed: 4, permitFiled: 8 });
@@ -227,8 +276,8 @@ describe('revisionModel: pooling and fallback', () => {
     const { revision } = revisionModel(norm, ASOF, cal);
     const own = at(revision, 'permitFiled');
     const pooled = at(revision, 'permitIssued');
-    expect(own.probability).toBeCloseTo(1 / 3, 9);
-    expect(pooled.probability).toBeCloseTo(3 / 5, 9); // 5 pairs, 3 revised
+    expect(own.probability).toBe(0.333333);
+    expect(pooled.probability).toBe(0.6); // 5 pairs, 3 revised
     expect(pooled.ratio.probs[1]).toBeCloseTo(1 / 3, 5); // 0.5
     expect(pooled.ratio.probs[8]).toBeCloseTo(2 / 3, 5); // 2.0 in [2, 3]
     expect(revision.provenance.tier).toBe(2);

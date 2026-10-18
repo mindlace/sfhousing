@@ -13,10 +13,10 @@ import {
   type Stage
 } from '../../../src/lib/timelapse/types';
 import { datasf } from './provenance';
+import { round6, roundShares } from './round';
 import type { CalProfile, NormHistory, RuleTally } from './types';
 import { PLANNING_START } from './window';
 
-const MICRO = 1_000_000;
 /** Ratio histogram edges (tier 4); they include 1 so shrink and grow shares are separable. */
 export const REVISION_EDGES = [0.25, 0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 2, 3];
 const RATIO_MIN = REVISION_EDGES[0];
@@ -48,16 +48,6 @@ function firstStage(h: NormHistory): Stage | null {
   return STAGE_ORDER.find((s) => h.eff[s] !== undefined) ?? null;
 }
 
-/** 6-decimal probabilities from counts, the residual added to the largest (first of equals). */
-function roundedProbs(counts: number[]): number[] {
-  const total = counts.reduce((a, b) => a + b, 0);
-  const micro = counts.map((c) => Math.round((c / total) * MICRO));
-  let largest = 0;
-  for (let i = 1; i < micro.length; i++) if (micro[i] > micro[largest]) largest = i;
-  micro[largest] += MICRO - micro.reduce((a, b) => a + b, 0);
-  return micro.map((m) => m / MICRO);
-}
-
 const bin = (ratio: number) => Math.min(binIndex(REVISION_EDGES, ratio), BINS - 1);
 
 /** The ratio histogram of `pairs`' revised members; no revised pair: a point mass at "no change". */
@@ -70,7 +60,7 @@ function ratioProbs(pairs: Pair[]): number[] {
     revised++;
   }
   if (revised === 0) counts[bin(1)] = 1;
-  return roundedProbs(counts);
+  return roundShares(counts);
 }
 
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
@@ -145,7 +135,7 @@ export function revisionModel(
     const revised = use.filter((p) => p.revised).length;
     return {
       stage: t.at,
-      probability: revised / use.length,
+      probability: round6(revised / use.length),
       ratio: { edges: [...REVISION_EDGES], probs: ratioProbs(use) }
     };
   });
