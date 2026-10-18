@@ -79,10 +79,13 @@ describe('calibration invariants on fixture-0', () => {
       // BP:201410010027, BP:202503010028 (M24-M28): +5 qualifying, running-max 24; BP:200406010024
       // ends before the first roll (preRoll 1) so the windowed denominators gain 4 (23); of 3
       // ended, 2 of them exits, so last-stage 7 and purge-censor 6.
-      'sc.stages.gap-impute': [0, 23],
-      'sc.stages.no-fcd-duration': [0, 23],
+      // Then M29 (PRJ:2016-000029PRJ, Ruling F1a): open at permitFiled since 2016, qualifying on its
+      // permit's 2 units, so +1 to running-max (25) and the windowed denominators (24); it is
+      // open (last-stage, purge-censor unchanged) and filed after 2015 (permitOnlyPre2015 stays 5).
+      'sc.stages.gap-impute': [0, 24],
+      'sc.stages.no-fcd-duration': [0, 24],
       // Spec §4.4a "Fixture cases": these two must not fire on fixture-0 (of > 0).
-      'sc.stages.running-max': [0, 24],
+      'sc.stages.running-max': [0, 25],
       'sc.exit.last-stage': [0, 7],
       'sc.exit.purge-censor': [0, 6],
       // Ruling R26: of = 0 because the mini histories have no revised pair to clamp.

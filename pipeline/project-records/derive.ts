@@ -287,6 +287,10 @@ function assess(
   // Ruling S2: a split part holds only its own permits, so the whole PRJ's proposed units are not
   // its filing-stage size; its history omits `unitsAt.filed` (T4d only, see T4D_ONLY_QUALITY).
   if (isSplitPart(proj.id) && filedUnitsSource(proj)) quality.add(PR.unitsSplitFiled);
+  // Ruling F1a: a primary PRJ `number_of_units_prop` of 0 is not a recorded size (spec 4.8 units
+  // rule 2 needs > 0); the history omits `unitsAt.filed` (T4d only). A split part is counted under
+  // pr.units.split-filed only, which is checked first.
+  else if (proj.primary?.unitsProp === 0) quality.add(PR.unitsFiledZero);
   return {
     proj,
     capacity: {
@@ -421,7 +425,7 @@ function history(a: Assessed, input: ProjectRecordsInput): ProjectHistory {
   // A completion from evidence or a verdict certifies no units, so it sets no unitsAt.complete.
   const ruled = a.stale.evidence !== null || a.stale.verdict;
   if (a.histEntered.complete === undefined || ruled) delete at.complete;
-  if (a.quality.has(PR.unitsSplitFiled)) delete at.filed;
+  if (a.quality.has(PR.unitsSplitFiled) || a.quality.has(PR.unitsFiledZero)) delete at.filed;
   return {
     id: a.proj.id,
     pathway: a.pathway,
@@ -582,6 +586,13 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
   // (the histories `unitsAt.filed` would come from); the split parts among them, whose
   // `unitsAt.filed` is omitted (they carry the id); their ids. The ruling's narrower `of` (split
   // parts only) would make the share 1 and fail V30 wherever one split exists.
+  // Ruling F1a: of the same histories; the ones whose primary PRJ records 0 (not split parts,
+  // which split-filed counts), whose `unitsAt.filed` is omitted (they carry the id); their ids.
+  [PR.unitsFiledZero]: ({ withHistory }) => {
+    const sourced = withHistory.filter((a) => filedUnitsSource(a.proj));
+    const sample = sourced.filter((a) => a.quality.has(PR.unitsFiledZero)).map((a) => a.proj.id);
+    return { fired: sample.length, of: sourced.length, sample };
+  },
   [PR.unitsSplitFiled]: ({ withHistory }) => {
     const sourced = withHistory.filter((a) => filedUnitsSource(a.proj));
     const sample = sourced.filter((a) => a.quality.has(PR.unitsSplitFiled)).map((a) => a.proj.id);

@@ -16,6 +16,7 @@ export const PR = {
   unitsCapacityCap: 'pr.units.capacity-cap',
   unitsCapacityUnmapped: 'pr.units.capacity-unmapped',
   unitsSplitFiled: 'pr.units.split-filed',
+  unitsFiledZero: 'pr.units.filed-zero',
   pipelineStatusDateLinked: 'pr.pipeline.status-date-linked',
   pipelineNoStatusDate: 'pr.pipeline.no-status-date',
   pipelineRecordsWin: 'pr.pipeline.records-win',
@@ -251,6 +252,25 @@ export const PR_RULES: readonly QualityRule[] = [
     label:
       "A permit's unit count was not checked against its lot because the permit's lot could not be matched to a parcel",
     denominator: 'permits with recorded stories and units on a project with parcels',
+    warnShare: 0.01,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
+    // Ruling F1a (comprehension gate F1): T4d only. A Planning record's number_of_units_prop of 0
+    // is not a recorded size (units precedence, spec 4.8 rule 2, needs > 0), so the history
+    // omits unitsAt.filed; a split part is counted under pr.units.split-filed only.
+    id: PR.unitsFiledZero,
+    owner: OWNER,
+    source: 'datasf-planning-projects',
+    field: 'unitsAt.filed',
+    kind: 'shape',
+    action: 'null',
+    tier: 2,
+    valueTier: null,
+    maskBit: null,
+    label: "A Planning record's home count of zero was treated as not recorded",
+    denominator: 'histories whose primary Planning record has a proposed unit count',
     warnShare: 0.01,
     failShare: 0.1,
     unitsWeighted: false

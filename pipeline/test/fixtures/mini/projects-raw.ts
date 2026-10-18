@@ -34,6 +34,7 @@
  * | M26 BP 201112010026    | lot 011; issued 2012, no valuation; activity 2016 after deadline: open    |
  * | M27 BP 201410010027    | lot 011; in the pipeline, past its 2020 deadline: expired, leaves flight  |
  * | M28 BP 202503010028    | lot 011; in the pipeline, every permit suspended: leaves flight, open     |
+ * | M29 2016-000029PRJ     | lot 011; referral PRJ recording 0 units, permit filed (2): no unitsAt.filed |
  * | xdht extras            | forms 2 (+3), 3 (+2) and 6 (-1): rhnaCompletedNet 4                       |
  *
  * `enrichment/construction-verified.json` (Ruling C3): M7 `dead` (exit withdrawn at permitFiled on
@@ -394,6 +395,16 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       estimatedCost: 500000,
       units: 2
     }),
+    // M29 (Ruling F1a): the permit of a referral PRJ that records 0 units.
+    permit({
+      number: '201606010029',
+      type: '2',
+      lot: '011',
+      status: 'filed',
+      statusDate: '2016-06-01',
+      filed: '2016-06-01',
+      units: 2
+    }),
     // M28 (Ruling I4): every permit suspended; in the pipeline; within its statutory time.
     permit({
       number: '202503010028',
@@ -540,6 +551,18 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       lot: '007',
       open_date: ts('2025-09-12'),
       number_of_units_prop: '0'
+    },
+    // M29 (Ruling F1a): a referral (opened after its permit was filed, no evidence) whose
+    // number_of_units_prop is 0, so its history omits unitsAt.filed (pr.units.filed-zero).
+    {
+      record_id: '2016-000029PRJ',
+      record_status: 'Open',
+      block: '3512',
+      lot: '011',
+      open_date: ts('2016-06-15'),
+      building_permits: '201606010029',
+      number_of_units_prop: '0',
+      new_construction: 'CHECKED'
     },
     // M23: one Planning case for two buildings; its pipeline rows split it (spec 4.2 step 7).
     {

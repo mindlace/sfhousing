@@ -71,7 +71,8 @@ const HISTORIES_ONLY = [
   'BP:201409010025',
   'BP:201112010026',
   'BP:201410010027',
-  'BP:202503010028'
+  'BP:202503010028',
+  'PRJ:2016-000029PRJ'
 ];
 
 /**
@@ -283,9 +284,9 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
       day: day('2026-09-01')
     });
     expect(h.quality).toEqual(['pr.stages.verified-construction']);
-    // The in-flight decision reads the spec 4.6 end: M7, M24, M25 and M26 are stale-open.
-    expect(r.counts['projects.staleOpen']).toBe(4);
-    expect(r.counts['projects.staleOpenUnits']).toBe(12);
+    // The in-flight decision reads the spec 4.6 end: M7, M24, M25, M26 and M29 are stale-open.
+    expect(r.counts['projects.staleOpen']).toBe(5);
+    expect(r.counts['projects.staleOpenUnits']).toBe(14);
   });
 
   it('M8: a referral PRJ is permitOnly, on the retired lot mapped to lot 12', () => {
@@ -587,8 +588,8 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(history('PRJ:2019-000001PRJ').unitsAt.filed).toBe(24);
     expect(r.counts['link.splitComponents']).toBe(1);
     expect(r.counts['quality.pr.units.split-filed.fired']).toBe(2);
-    // Of the 13 histories whose primary PRJ records number_of_units_prop.
-    expect(r.counts['quality.pr.units.split-filed.of']).toBe(13);
+    // Of the 14 histories whose primary PRJ records number_of_units_prop (M29's 0 included).
+    expect(r.counts['quality.pr.units.split-filed.of']).toBe(14);
     // Both ended complete while the pipeline lists them (observe rule; neither carries it).
     expect(r.counts['quality.pr.pipeline.records-win.fired']).toBe(2);
     // T3 is unchanged: no project carries the id and qualityRules does not list it.
@@ -685,6 +686,16 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(r.counts['projects.excludedSuspended']).toBe(1);
     expect(r.counts['projects.excludedSuspendedUnits']).toBe(2);
     expect(r.warnings).toContain('BP:202503010028: every permit suspended; left flight');
+  });
+
+  it('M29: a referral PRJ recording 0 units omits unitsAt.filed (Ruling F1a)', () => {
+    const h = history('PRJ:2016-000029PRJ');
+    expect(h.pathway).toBe('permitOnly');
+    expect(h.end.kind).toBe('open');
+    expect(h.unitsAt).toEqual({ permitFiled: 2 });
+    expect(h.quality).toEqual(['pr.units.filed-zero']);
+    expect(r.counts['quality.pr.units.filed-zero.fired']).toBe(1);
+    expect(r.counts['quality.pr.units.filed-zero.of']).toBe(14);
   });
 
   it('xdht extras: rhnaCompletedNet is 4 units over 3 rows', () => {

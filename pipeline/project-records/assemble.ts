@@ -78,6 +78,7 @@ export const T3_ONLY_QUALITY: ReadonlySet<string> = new Set([
  */
 export const T4D_ONLY_QUALITY: ReadonlySet<string> = new Set([
   PR.unitsSplitFiled,
+  PR.unitsFiledZero,
   PR.stagesCompleteFromEvidence,
   PR.stagesStatutoryExpiry,
   PR.stagesVerifiedConstruction

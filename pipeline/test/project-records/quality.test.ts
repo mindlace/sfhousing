@@ -131,6 +131,16 @@ const TABLE: Record<string, Spec> = {
     failShare: 0.1,
     label: "A placeholder permit valuation under $1,000 was replaced by the permit's own estimate"
   },
+  'pr.units.filed-zero': {
+    kind: 'shape',
+    action: 'null',
+    tier: 2,
+    valueTier: null,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label: "A Planning record's home count of zero was treated as not recorded"
+  },
   'pr.units.capacity': {
     kind: 'outlier',
     action: 'null',
@@ -836,6 +846,63 @@ describe('pr.units.split-filed (spec §4.8 unitsAt, Ruling S2)', () => {
     });
     expect(history(r, A1)?.quality).not.toContain(PR.unitsSplitFiled);
     expect(tally(r, PR.unitsSplitFiled)).toMatchObject({ fired: 0, of: 1 });
+  });
+});
+
+describe('pr.units.filed-zero (spec §4.8 unitsAt, Ruling F1a)', () => {
+  const A = 'PRJ:2019-000001PRJ';
+  const C = 'PRJ:2016-000006PRJ';
+
+  it('a PRJ recording 0 units omits unitsAt.filed and carries the id on the history only', () => {
+    const r = derive((raw) => {
+      for (const p of raw['datasf-planning-projects']) p.number_of_units_prop = '0';
+    });
+    for (const id of [A, C]) {
+      expect(history(r, id)?.unitsAt, id).not.toHaveProperty('filed');
+      expect(history(r, id)?.quality, id).toContain(PR.unitsFiledZero);
+    }
+    // The permit sizes stay.
+    expect(history(r, A)?.unitsAt.permitFiled).toBe(24);
+    // A is in flight: T3 carries no T4d-only id, and qualityRules does not list it.
+    expect(project(r, A)?.quality).not.toContain(PR.unitsFiledZero);
+    expect(r.file.qualityRules.map((q) => q.id)).not.toContain(PR.unitsFiledZero);
+    expect(tally(r, PR.unitsFiledZero)).toMatchObject({ fired: 2, of: 2 });
+    expect(callsFor(r.counts).find((c) => c.id === PR.unitsFiledZero)?.sample).toEqual([C, A]);
+  });
+
+  it('a non-zero PRJ keeps unitsAt.filed; a missing one is outside the denominator', () => {
+    const r = derive((raw) => {
+      delete raw['datasf-planning-projects'][1].number_of_units_prop;
+    });
+    expect(history(r, A)?.unitsAt.filed).toBe(24);
+    expect(history(r, A)?.quality).not.toContain(PR.unitsFiledZero);
+    expect(tally(r, PR.unitsFiledZero)).toMatchObject({ fired: 0, of: 1 });
+  });
+
+  it('a split part whose PRJ records 0 counts under split-filed only (split-filed first)', () => {
+    const r = derive((raw) => {
+      raw['datasf-planning-projects'][0].building_permits = '201906010001,201906020002';
+      raw['datasf-planning-projects'][0].number_of_units_prop = '0';
+      raw['datasf-permits-newcon'].push({
+        ...raw['datasf-permits-newcon'][0],
+        permit_number: '201906020002',
+        filed_date: '2019-06-02T00:00:00.000',
+        proposed_units: '10'
+      });
+      raw['datasf-dev-pipeline'].push({
+        ...raw['datasf-dev-pipeline'][0],
+        bpa_no: '201906020002',
+        new_pipeline_units: '10'
+      });
+    });
+    const parts = ['PRJ:2019-000001PRJ:BP:201906010001', 'PRJ:2019-000001PRJ:BP:201906020002'];
+    for (const id of parts) {
+      expect(history(r, id)?.unitsAt, id).not.toHaveProperty('filed');
+      expect(history(r, id)?.quality, id).toContain(PR.unitsSplitFiled);
+      expect(history(r, id)?.quality, id).not.toContain(PR.unitsFiledZero);
+    }
+    expect(tally(r, PR.unitsFiledZero)).toMatchObject({ fired: 0 });
+    expect(tally(r, PR.unitsSplitFiled)).toMatchObject({ fired: 2 });
   });
 });
 
