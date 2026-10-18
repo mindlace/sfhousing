@@ -1362,3 +1362,37 @@ describe('the hostable flags on the uncapped yield (partner ruling, option c)', 
     expect(s.scenarioCounts['scenario.panel.feature_mismatch']).toBe(0);
   });
 });
+
+describe('the hostable_base year pairs across a missing roll year', () => {
+  let s: Synthetic;
+  beforeAll(async () => {
+    // No 2024 roll at all: the panel has 2023 (lots 3 and 4) and 2025, so 2025 pairs with 2023,
+    // the previous panel year, not with the absent 2024.
+    s = await synthetic('hgap', ['DELETE FROM src_roll WHERE closed_roll_year = 2024']);
+  });
+
+  it('pairs each panel year with the previous panel year', async () => {
+    const keys = Object.keys(s.scenarioCounts)
+      .filter((k) => k.startsWith('scenario.panel.hostable_base.'))
+      .sort();
+    expect(keys).toEqual([
+      'scenario.panel.hostable_base.2023',
+      'scenario.panel.hostable_base.2025',
+      'scenario.panel.hostable_base.2025.both',
+      'scenario.panel.hostable_base.2025.both_prev',
+      'scenario.panel.hostable_base.2025.both_rows'
+    ]);
+    const [pair] = await db.all<{ rows: number; prev: number; cur: number }>(
+      `SELECT count(*)::INTEGER AS rows, count(*) FILTER (WHERE a.hostable_base)::INTEGER AS prev,
+              count(*) FILTER (WHERE b.hostable_base)::INTEGER AS cur
+       FROM hgap.scenario_panel b JOIN hgap.scenario_panel a
+         ON a.mapblklot = b.mapblklot AND a.roll_year = 2023 AND b.roll_year = 2025`
+    );
+    expect(pair.rows).toBe(2); // lots 3 and 4
+    expect({
+      rows: s.scenarioCounts['scenario.panel.hostable_base.2025.both_rows'],
+      prev: s.scenarioCounts['scenario.panel.hostable_base.2025.both_prev'],
+      cur: s.scenarioCounts['scenario.panel.hostable_base.2025.both']
+    }).toEqual(pair);
+  });
+});

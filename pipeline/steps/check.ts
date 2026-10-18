@@ -175,14 +175,16 @@ export function checkV30(
 const HOSTABLE_BASE_KEY = /^scenario\.panel\.hostable_base\.(\d{4})$/;
 
 /**
- * V18's hostable_base stability input: the roll years with a `scenario.panel.hostable_base.<year>`
- * count, ascending, and for each later year y the change over the parcels with a row in both
- * y − 1 and y, |both − both_prev| / both_prev (`.<y>.both`, `.<y>.both_prev`; 0 when both are 0,
- * Infinity when only the earlier one is, NaN when either count is missing).
+ * V18's hostable_base stability input: the panel roll years with a
+ * `scenario.panel.hostable_base.<year>` count, ascending, and for each later year y, paired with
+ * the previous panel year, the change over the parcels with a row in both,
+ * |both − both_prev| / both_prev (`.<y>.both`, `.<y>.both_prev`; 0 when both are 0, Infinity when
+ * only the earlier one is). `problem` is 'missing' when a pair count is absent and 'no-overlap'
+ * when no parcel has a row in both years (`.<y>.both_rows` = 0), so no pair passes unmeasured.
  */
 export function hostableBaseSteps(counts: Record<string, number>): {
   years: number[];
-  steps: { from: number; to: number; change: number }[];
+  steps: { from: number; to: number; change: number; problem?: 'missing' | 'no-overlap' }[];
 } {
   const years: number[] = [];
   for (const k of Object.keys(counts)) {
@@ -191,17 +193,15 @@ export function hostableBaseSteps(counts: Record<string, number>): {
   }
   years.sort((a, b) => a - b);
   const steps = years.slice(1).map((to, k) => {
+    const from = years[k];
+    const rows = counts[`scenario.panel.hostable_base.${to}.both_rows`];
     const a = counts[`scenario.panel.hostable_base.${to}.both_prev`];
     const b = counts[`scenario.panel.hostable_base.${to}.both`];
-    const change =
-      a === undefined || b === undefined
-        ? NaN
-        : a === 0
-          ? b === 0
-            ? 0
-            : Infinity
-          : Math.abs(b - a) / a;
-    return { from: years[k], to, change };
+    if (rows === undefined || a === undefined || b === undefined)
+      return { from, to, change: NaN, problem: 'missing' as const };
+    if (rows === 0) return { from, to, change: NaN, problem: 'no-overlap' as const };
+    const change = a === 0 ? (b === 0 ? 0 : Infinity) : Math.abs(b - a) / a;
+    return { from, to, change };
   });
   return { years, steps };
 }
@@ -585,9 +585,11 @@ export async function checkDataset(
     const { years: hbYears, steps } = hostableBaseSteps(c);
     const maxStep = steps.length ? maxOf(steps.map((s) => s.change)) : 0;
     const stepProblem = (s: (typeof steps)[number]) =>
-      Number.isNaN(s.change)
+      s.problem === 'missing'
         ? `hostable_base ${s.from} → ${s.to} has no both-years counts`
-        : `hostable_base ${s.from} → ${s.to} changes by ${pct(s.change)} > ${thr(HOSTABLE_BASE_STEP_MAX)}`;
+        : s.problem === 'no-overlap'
+          ? `hostable_base ${s.from} → ${s.to}: no parcel has a row in both years`
+          : `hostable_base ${s.from} → ${s.to} changes by ${pct(s.change)} > ${thr(HOSTABLE_BASE_STEP_MAX)}`;
     addProblems(
       'V18',
       [

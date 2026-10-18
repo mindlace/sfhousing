@@ -784,24 +784,33 @@ export async function writeScenario(a: {
   c['scenario.hostable_mismatch'] = hostableMismatch;
   c['scenario.hostable_base_mismatch'] = hostableBaseMismatch;
 
-  // V18: hostable_base per panel roll year (`.<y>`), and over the parcels with a row in both y − 1
-  // and y, their count in y − 1 (`.<y>.both_prev`) and in y (`.<y>.both`): the year-on-year
-  // stability bound compares the latter, so parcels entering or leaving the panel (mini's lots
-  // with 2024 and 2025 rows only) do not count as flips.
+  // V18: hostable_base per panel roll year (`.<y>`), and for each panel year y after the first,
+  // paired with the previous *panel* year p (so a missing roll year is spanned, never skipped):
+  // the parcels with a row in both p and y (`.<y>.both_rows`), and their hostable_base count in p
+  // (`.<y>.both_prev`) and in y (`.<y>.both`). The year-on-year stability bound compares the
+  // latter two, so parcels entering or leaving the panel (mini's lots with 2024 and 2025 rows
+  // only) do not count as flips; V18 fails a pair with no shared parcel.
   const hostableByYear = await db.all<{ y: number; n: number }>(
     `SELECT roll_year y, count(*) FILTER (WHERE hostable_base)::INTEGER n FROM scenario_panel
      GROUP BY roll_year ORDER BY roll_year`
   );
   for (const r of hostableByYear) c[`scenario.panel.hostable_base.${r.y}`] = r.n;
-  const hostableBoth = await db.all<{ y: number; prev: number; cur: number }>(
-    `SELECT b.roll_year y, count(*) FILTER (WHERE a.hostable_base)::INTEGER prev,
-            count(*) FILTER (WHERE b.hostable_base)::INTEGER cur
-     FROM scenario_panel b JOIN scenario_panel a
-       ON a.mapblklot = b.mapblklot AND a.roll_year = b.roll_year - 1
-     GROUP BY b.roll_year ORDER BY b.roll_year`
+  const hostableBoth = await db.all<{ y: number; rows: number; prev: number; cur: number }>(
+    `WITH yrs AS (
+       SELECT roll_year y, lag(roll_year) OVER (ORDER BY roll_year) p
+       FROM (SELECT DISTINCT roll_year FROM scenario_panel)
+     )
+     SELECT yrs.y, count(*)::INTEGER AS rows,
+            count(*) FILTER (WHERE a.hostable_base)::INTEGER AS prev,
+            count(*) FILTER (WHERE b.hostable_base)::INTEGER AS cur
+     FROM yrs
+     JOIN scenario_panel b ON b.roll_year = yrs.y
+     JOIN scenario_panel a ON a.mapblklot = b.mapblklot AND a.roll_year = yrs.p
+     GROUP BY yrs.y ORDER BY yrs.y`
   );
   const both = new Map(hostableBoth.map((r) => [r.y, r]));
   for (const { y } of hostableByYear.slice(1)) {
+    c[`scenario.panel.hostable_base.${y}.both_rows`] = both.get(y)?.rows ?? 0;
     c[`scenario.panel.hostable_base.${y}.both_prev`] = both.get(y)?.prev ?? 0;
     c[`scenario.panel.hostable_base.${y}.both`] = both.get(y)?.cur ?? 0;
   }

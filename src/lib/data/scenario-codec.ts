@@ -64,7 +64,7 @@ export interface ScenarioParcels {
   improvementShare: Float32Array;
   rentControlLikely: Uint8Array;
   landUseClass: Uint8Array; // index into LAND_USE_CLASSES
-  hostableBase: Uint8Array; // 0/1: T11 hostable_base (eligible, baseStories ≥ 1, baseYield[F−1] > 0)
+  hostableBase: Uint8Array; // 0/1: T11 hostable_base (eligible, baseStories ≥ 1, uncapped base yield at full fill > 0)
   baseYield: Uint16Array; // count × F: gross units at each fill level of the base envelope, density-capped
   yield: Uint16Array; // count × F, row-major: yield[i * F + k]
   potentialRatio: { fzp: Float32Array; base: Float32Array }; // derived at decode

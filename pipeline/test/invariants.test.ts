@@ -466,9 +466,11 @@ describe('invariants', () => {
       'scenario.panel.hostable_base.2024',
       'scenario.panel.hostable_base.2024.both',
       'scenario.panel.hostable_base.2024.both_prev',
+      'scenario.panel.hostable_base.2024.both_rows',
       'scenario.panel.hostable_base.2025',
       'scenario.panel.hostable_base.2025.both',
-      'scenario.panel.hostable_base.2025.both_prev'
+      'scenario.panel.hostable_base.2025.both_prev',
+      'scenario.panel.hostable_base.2025.both_rows'
     ]);
     const v18 = await result(base, 'V18');
     expect(v18.ok).toBe(true);
@@ -505,6 +507,17 @@ describe('invariants', () => {
     expect((await result(base, 'V18', d)).detail).toMatch(
       /hostable_base 2024 → 2025 has no both-years counts/
     );
+  });
+  it('V18 fails when two consecutive panel years share no parcel', async () => {
+    // 0 of 0 would otherwise pass as a 0% change, exempting the pair silently.
+    const v18 = await result(base, 'V18', {
+      ...counts,
+      'scenario.panel.hostable_base.2025.both_rows': 0,
+      'scenario.panel.hostable_base.2025.both_prev': 0,
+      'scenario.panel.hostable_base.2025.both': 0
+    });
+    expect(v18.ok).toBe(false);
+    expect(v18.detail).toMatch(/hostable_base 2024 → 2025: no parcel has a row in both years/);
   });
   it('V18 fails when units fall outside the range', async () => {
     expect(await failed(base, { ...counts, 'scenario.units.total': 65 })).toContain('V18');
