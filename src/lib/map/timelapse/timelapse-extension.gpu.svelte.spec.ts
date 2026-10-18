@@ -453,11 +453,9 @@ describe('TimelapseExtension on the GPU', () => {
   // At that pitch the ray through a wall point below 10 m reaches the ground inside the 20 m
   // footprint, so the facing wall is the only surface on it. fx-1 (SW) is seen on its west wall
   // from the west (bearing 90); fx-3 (NW) on its north wall from the north (bearing 180).
-  // Neither is a ring's closing edge (SE → SW). Packed rings are open today, and with
-  // `_normalize: false` deck draws no wall along that edge (polygon-tesselator.ts
-  // `_updateVertexValid`). Once the map-view fix (PR #21) lands, rings end with a repeated closing
-  // vertex and the closing-edge wall is drawn too. The test deliberately samples non-closing
-  // walls, so it passes either way.
+  // Packed rings are closed (PR #21): the last vertex repeats the first, so with
+  // `_normalize: false` deck draws every wall, the closing edge's included. The probe point is
+  // the middle of the wall's bounding-box side, which a repeated vertex cannot bias.
   const SIDE_CASES: { k: number; bearing: 90 | 180; h: number; day: number }[] = [
     { k: 0, bearing: 90, h: 6, day: B + 320 }, // ready ghost
     { k: 0, bearing: 90, h: 6, day: B + 600 }, // constructing, zCut 3.1: ghost above the cut
@@ -481,12 +479,12 @@ describe('TimelapseExtension on the GPU', () => {
         clock.day = day;
         deck.redraw('test');
         const ring = ringOf(k);
-        const mean = (i: 0 | 1) => ring.reduce((sum, v) => sum + v[i], 0) / ring.length;
+        const lo = (i: 0 | 1) => Math.min(...ring.map((v) => v[i]));
+        const hi = (i: 0 | 1) => Math.max(...ring.map((v) => v[i]));
+        const mid = (i: 0 | 1) => (lo(i) + hi(i)) / 2;
         // West wall: the smallest longitude; north wall: the largest latitude.
         const at: [number, number, number] =
-          bearing === 90
-            ? [Math.min(...ring.map((v) => v[0])), mean(1), h]
-            : [mean(0), Math.max(...ring.map((v) => v[1])), h];
+          bearing === 90 ? [lo(0), mid(1), h] : [mid(0), hi(1), h];
         const [x, y] = deck.getViewports()[0].project(at);
         expect(x > 2 && x < SIZE - 2 && y > 2 && y < SIZE - 2).toBe(true);
         const e = evalPart(partAttrs(ENC, k), day);
