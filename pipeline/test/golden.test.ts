@@ -114,8 +114,16 @@ describe('pipeline fixture', () => {
     const duck = await openDuck();
     try {
       const file = join(da, 'fixture-0', 'parcel-panel.parquet');
-      const rows = await duck.all<{ id: string; y: number; u: number; m: number }>(
-        `SELECT mapblklot AS id, roll_year AS y, existing_units AS u, imputed AS m
+      const rows = await duck.all<{
+        id: string;
+        y: number;
+        u: number;
+        m: number;
+        b: number | null;
+        l: number;
+      }>(
+        `SELECT mapblklot AS id, roll_year AS y, existing_units AS u, imputed AS m,
+           year_built AS b, lien_day AS l
          FROM read_parquet('${file}') ORDER BY 1, 2`
       );
       expect([...new Set(rows.map((r) => r.y))].sort()).toEqual([2023, 2024, 2025]);
@@ -139,13 +147,18 @@ describe('pipeline fixture', () => {
       // SD"): the same units on every parcel-year, and null where the panel has no row.
       const stub = miniProjectInput();
       const panelUnits = new Map(rows.map((r) => [`${r.id}|${r.y}`, r.u]));
+      const panelBuilt = new Map(rows.map((r) => [`${r.id}|${r.y}`, r.b]));
       for (const id of MINI_PARCELS) {
         for (const y of [2023, 2024, 2025]) {
           expect(stub.assessorUnits(id, y), `${id} ${y}`).toBe(
             panelUnits.get(`${id}|${y}`) ?? null
           );
+          expect(stub.yearBuilt(id, y), `${id} ${y} year_built`).toBe(
+            panelBuilt.get(`${id}|${y}`) ?? null
+          );
         }
       }
+      for (const r of rows) expect(stub.lienDay(r.y), `lien_day ${r.y}`).toBe(r.l);
     } finally {
       duck.close();
     }

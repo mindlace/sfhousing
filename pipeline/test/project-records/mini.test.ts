@@ -66,7 +66,10 @@ const HISTORIES_ONLY = [
   'BP:201803010021',
   'BP:201702010022',
   'PRJ:2009-000023PRJ:BP:201102010023',
-  'PRJ:2009-000023PRJ:BP:201102020023'
+  'PRJ:2009-000023PRJ:BP:201102020023',
+  'BP:200406010024',
+  'BP:201409010025',
+  'BP:201112010026'
 ];
 
 /**
@@ -268,12 +271,19 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(h.unitsAt.complete).toBe(12);
   });
 
-  it('M7: open, last observed at its filing, and the only stale-open project', () => {
-    expect(history('BP:201410070008').end).toEqual({
-      kind: 'open',
-      lastObserved: day('2014-10-07')
+  it('M7: stale-open; the curated dead verdict ends its history (Ruling C3)', () => {
+    const h = history('BP:201410070008');
+    // An imagery check found no building: withdrawn at the last stage, dated by the check.
+    expect(h.end).toEqual({
+      kind: 'exit',
+      stage: 'permitFiled',
+      reason: 'withdrawn',
+      day: day('2026-09-01')
     });
-    expect(r.counts['projects.staleOpen']).toBe(1);
+    expect(h.quality).toEqual(['pr.stages.verified-construction']);
+    // The in-flight decision reads the spec 4.6 end: M7, M24, M25 and M26 are stale-open.
+    expect(r.counts['projects.staleOpen']).toBe(4);
+    expect(r.counts['projects.staleOpenUnits']).toBe(12);
   });
 
   it('M8: a referral PRJ is permitOnly, on the retired lot mapped to lot 12', () => {
@@ -546,7 +556,8 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(covered).toEqual({ permitIssued: 1, construction: 1 });
     const exits = r.histories.filter((h) => h.end.kind === 'exit');
     const at = (s: Stage) => exits.filter((h) => h.end.kind === 'exit' && h.end.stage === s);
-    expect(at('permitIssued').map((h) => h.id)).toEqual(['BP:201803010021']);
+    // M24 exits there too, by the statutory-expiry rule (a live permit, so not covered above).
+    expect(at('permitIssued').map((h) => h.id)).toEqual(['BP:200406010024', 'BP:201803010021']);
     expect(at('construction').map((h) => h.id)).toEqual(['BP:201702010022']);
   });
 
@@ -593,6 +604,56 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     const m20 = moved.file.projects.find((x) => x.id === 'CASE:2012-000020PRX');
     expect(m20?.units).toBe(10);
     expect(m20?.quality).not.toContain('pr.multiphase.da-netting');
+  });
+
+  it('M24: an E0 permit, $200k, still issued, is expired at permitIssued (Ruling E2)', () => {
+    const h = history('BP:200406010024');
+    expect(h.pathway).toBe('permitOnly');
+    expect(h.entered).toEqual({ permitFiled: day('2004-06-01'), permitIssued: day('2005-03-01') });
+    // Table B 360 days + one 90-day extension.
+    expect(h.end).toEqual({
+      kind: 'exit',
+      stage: 'permitIssued',
+      reason: 'expired',
+      day: day('2006-05-25')
+    });
+    expect(h.quality).toEqual(['pr.stages.statutory-expiry']);
+  });
+
+  it('M25: open at construction with an xdht completion is complete, not expired (Ruling C2)', () => {
+    const h = history('BP:201409010025');
+    expect(h.entered.construction).toBe(day('2015-06-01'));
+    expect(h.end).toEqual({ kind: 'complete', day: day('2018-03-01') });
+    expect(h.entered.complete).toBe(day('2018-03-01'));
+    // No units were certified, so none is recorded at complete.
+    expect(h.unitsAt).toEqual({ permitFiled: 4 });
+    expect(h.quality).toEqual(['pr.stages.complete-from-evidence']);
+  });
+
+  it('M26: activity after the deadline keeps it open; the unknown verdict changes nothing', () => {
+    const h = history('BP:201112010026');
+    expect(h.end).toEqual({ kind: 'open', lastObserved: day('2016-01-04') });
+    expect(h.quality).toEqual([]);
+  });
+
+  it('stale-open rules: T14 rows, the verdict warning and the in-flight counts', () => {
+    const q = (id: string) => [r.counts[`quality.${id}.fired`], r.counts[`quality.${id}.of`]];
+    // Open at construction, no terminal permit, not in flight: M25.
+    expect(q('pr.stages.complete-from-evidence')).toEqual([1, 1]);
+    // Then open at permitIssued or construction, not in flight: M24 and M26.
+    expect(q('pr.stages.statutory-expiry')).toEqual([1, 2]);
+    // Their bracketed permits: M24 (valued) and M26 (no valuation).
+    expect(q('pr.stages.expiry-no-valuation')).toEqual([1, 2]);
+    // Three entries; M7's dead verdict applied.
+    expect(q('pr.stages.verified-construction')).toEqual([1, 3]);
+    expect(r.warnings).toContain(
+      'construction-verified.json: BP:209901010099 names no open history; not applied'
+    );
+    // M1 (24 units) and M8 (4) are in flight past their deadline (no valuation): counted only.
+    expect(r.counts['projects.inFlightPastStatutory']).toBe(2);
+    expect(r.counts['projects.inFlightPastStatutoryUnits']).toBe(28);
+    expect(r.counts['projects.inFlightSuspendedOnly']).toBe(0);
+    expect(history('PRJ:2019-000001PRJ').end.kind).toBe('open');
   });
 
   it('xdht extras: rhnaCompletedNet is 4 units over 3 rows', () => {

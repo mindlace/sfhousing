@@ -78,6 +78,49 @@ const TABLE: Record<string, Spec> = {
     failShare: 0.5,
     label: "A stage date earlier than the stage before it was moved up to that stage's date"
   },
+  'pr.stages.complete-from-evidence': {
+    kind: 'gap',
+    action: 'replace',
+    tier: 2,
+    valueTier: 2,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label:
+      'A building the records show as finished but never certified complete was treated as complete'
+  },
+  'pr.stages.statutory-expiry': {
+    kind: 'gap',
+    action: 'replace',
+    tier: 2,
+    valueTier: 2,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label:
+      'A permit past its legal completion deadline with no recorded extension was treated as expired'
+  },
+  'pr.stages.expiry-no-valuation': {
+    kind: 'observe',
+    action: 'none',
+    tier: 4,
+    valueTier: null,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label:
+      'A permit with no recorded valuation was given the middle valuation bracket for its legal completion deadline'
+  },
+  'pr.stages.verified-construction': {
+    kind: 'gap',
+    action: 'replace',
+    tier: 3,
+    valueTier: 3,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label: 'A stalled project was ended by a check of street or aerial imagery'
+  },
   'pr.units.capacity': {
     kind: 'outlier',
     action: 'null',

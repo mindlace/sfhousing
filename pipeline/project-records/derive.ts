@@ -62,12 +62,26 @@ import { resolveParcels } from './parcels';
 import { parseAll } from './parse';
 import { rhnaCompletedNet } from './rhna';
 import {
+  completeAt,
+  evidenceApplies,
+  evidenceDay,
+  expiryApplies,
+  expiryExit,
+  expiryTest,
+  indexHousing,
+  verdictEnd,
+  type AssessorCtx,
+  type HousingIndex
+} from './stale';
+import {
   PPA_UMBRELLA_DAYS,
   clampStages,
   filedEvidenceDay,
   pipelineOnlyHistory,
-  rawStages
+  rawStages,
+  unitBearingPermits
 } from './stages';
+import type { ConstructionVerdict } from '../enrichment/construction-schema';
 import type { LinkedProject, Parsed, PipelineRow, ProjectRecordsInput } from './types';
 
 export type { PermitOut } from './assemble';
@@ -117,8 +131,20 @@ interface Assessed {
   capacity: Pick<Capacity, 'checked' | 'failing' | 'skipped' | 'capped'>;
   pathway: Pathway | null;
   entered: Entered;
-  /** Null for pipeline-only projects (they have no history). */
+  /**
+   * The spec 4.6 end; null for pipeline-only projects (they have no history). The in-flight
+   * decision, DQ-2, V21 and the masters' exclusions read it.
+   */
   end: ProjectHistory['end'] | null;
+  /**
+   * The T4d history's stage map and end: `entered` and `end`, then the stale-open rulings of spec
+   * 4.6 (complete-from-evidence, statutory expiry, curated verdicts), which never touch an
+   * in-flight project's history (T3 unchanged).
+   */
+  histEntered: Entered;
+  histEnd: ProjectHistory['end'] | null;
+  /** What the stale-open rulings saw and did (their T14 tallies). */
+  stale: StaleState;
   /** Spec 4.7: an open end's `lastObserved` was raised to the latest entered day. */
   lastObservedRaised: boolean;
   clamped: Stage[];
@@ -134,6 +160,28 @@ interface Assessed {
   /** T14 rule ids that changed or estimated one of this project's values (spec 4.11). */
   quality: Set<string>;
 }
+
+/** Per history: which stale-open rule examined it (`*Of`) and which acted. */
+interface StaleState {
+  evidenceOf: boolean;
+  evidence: 'xdht' | 'assessor' | null;
+  expiryOf: boolean;
+  /** Unit-bearing permits whose deadline read a Table B bracket; those with no valuation. */
+  expiryPermits: number;
+  expiryNoValuation: number;
+  expired: boolean;
+  verdict: boolean;
+}
+
+const NO_STALE: StaleState = {
+  evidenceOf: false,
+  evidence: null,
+  expiryOf: false,
+  expiryPermits: 0,
+  expiryNoValuation: 0,
+  expired: false,
+  verdict: false
+};
 
 function firstDay(entered: Entered): Day | null {
   for (const s of STAGE_ORDER) if (entered[s] !== undefined) return entered[s] as Day;
@@ -240,6 +288,9 @@ function assess(
     pathway,
     entered,
     end,
+    histEntered: entered,
+    histEnd: end,
+    stale: { ...NO_STALE },
     lastObservedRaised,
     clamped,
     units,
@@ -259,16 +310,82 @@ function filedUnitsSource(proj: LinkedProject): boolean {
   return (proj.primary?.unitsProp ?? null) !== null;
 }
 
+/**
+ * Spec 4.6 stale open histories, in order, on a history whose project is not in flight: (1)
+ * completion from construction evidence (Ruling C2), (2) the statutory permit expiry exit (Ruling
+ * E2; a building shown finished is not expired), (3) the curated verdict for its id (Ruling C3),
+ * taken from `verdicts` when it meets an open history. A replaced open end drops
+ * `pr.stages.last-observed-clamp` (its value is gone). A completion here sets `entered.complete`
+ * but never `unitsAt.complete` (no units were certified; see `history`).
+ */
+function applyStale(
+  a: Assessed,
+  ctx: { asOf: Day; housing: HousingIndex; assessor: AssessorCtx },
+  verdicts: Map<string, ConstructionVerdict>,
+  warnings: string[]
+): void {
+  const st = a.stale;
+  const replace = (end: ProjectHistory['end'], entered: Entered, id: string) => {
+    a.histEnd = end;
+    a.histEntered = entered;
+    a.quality.add(id);
+    a.quality.delete(PR.stagesLastObservedClamp);
+  };
+  const clampedComplete = () => {
+    a.clamped = [...a.clamped, 'complete'];
+    a.quality.add(PR.stagesForwardClamp);
+  };
+  const complete = (day: Day, id: string) => {
+    const c = completeAt(a.histEntered, day);
+    if (c.clamped) clampedComplete();
+    replace({ kind: 'complete', day: c.entered.complete as Day }, c.entered, id);
+  };
+  if (a.histEnd === null) return;
+  if (evidenceApplies(a.proj, a.histEntered, a.histEnd)) {
+    st.evidenceOf = true;
+    const ev = evidenceDay(a.proj, a.histEntered, a.units ?? 0, ctx);
+    if (ev !== null) {
+      st.evidence = ev.source;
+      complete(ev.day, PR.stagesCompleteFromEvidence);
+    }
+  }
+  if (expiryApplies(a.histEntered, a.histEnd)) {
+    st.expiryOf = true;
+    const t = expiryTest(a.proj, ctx.asOf);
+    st.expiryPermits = t.permits;
+    st.expiryNoValuation = t.noValuation;
+    const end = t.day === null ? null : expiryExit(a.histEntered, t.day);
+    if (end !== null) {
+      st.expired = true;
+      replace(end, a.histEntered, PR.stagesStatutoryExpiry);
+    }
+  }
+  const v = verdicts.get(a.proj.id);
+  if (v === undefined || a.histEnd.kind !== 'open') return;
+  verdicts.delete(a.proj.id);
+  const r = verdictEnd(a.histEntered, v, ctx.asOf);
+  if (r === null) return;
+  if ('skip' in r) {
+    warnings.push(`construction-verified.json: ${v.id}: ${r.skip}; not applied`);
+    return;
+  }
+  st.verdict = true;
+  if (r.clamped) clampedComplete();
+  replace(r.end, r.entered, PR.stagesVerifiedConstruction);
+}
+
 function history(a: Assessed, input: ProjectRecordsInput): ProjectHistory {
   const at = unitsAt(a.proj);
-  if (a.entered.complete === undefined) delete at.complete;
+  // A completion from evidence or a verdict certifies no units, so it sets no unitsAt.complete.
+  const ruled = a.stale.evidence !== null || a.stale.verdict;
+  if (a.histEntered.complete === undefined || ruled) delete at.complete;
   if (a.quality.has(PR.unitsSplitFiled)) delete at.filed;
   return {
     id: a.proj.id,
     pathway: a.pathway,
     parcelIds: [...a.proj.parcelIds],
-    entered: inStageOrder(a.entered),
-    end: a.end as ProjectHistory['end'],
+    entered: inStageOrder(a.histEntered),
+    end: a.histEnd as ProjectHistory['end'],
     unitsAt: inStageOrder(at),
     existingUnits: existingUnitsAt(a.proj.parcelIds, a.rollYear, input.assessorUnits),
     storiesProposed: a.stories.stories,
@@ -305,6 +422,8 @@ interface TallyInput {
   };
   /** Spec 4.10.2 DA netting of every master in flight before netting, in id order. */
   netting: readonly Netting[];
+  /** Entries in construction-verified.json (spec 4.6, Ruling C3). */
+  verdictEntries: number;
 }
 
 /** Σ of the positive values; null and negative count as 0. */
@@ -357,9 +476,40 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
   // Spec 4.7: open histories; the ones whose `lastObserved` was raised (they and their T3
   // project carry the id); their ids.
   [PR.stagesLastObservedClamp]: ({ withHistory }) => {
-    const open = withHistory.filter((a) => a.end?.kind === 'open');
+    const open = withHistory.filter((a) => a.histEnd?.kind === 'open');
     const sample = open.filter((a) => a.lastObservedRaised).map((a) => a.proj.id);
     return { fired: sample.length, of: open.length, sample };
+  },
+  // Spec 4.6 Ruling C2: open histories at construction with no complete or dead permit, of
+  // projects not in flight; the ones completed from evidence (they carry the id); their ids.
+  [PR.stagesCompleteFromEvidence]: ({ withHistory }) => {
+    const of = withHistory.filter((a) => a.stale.evidenceOf);
+    const sample = of.filter((a) => a.stale.evidence !== null).map((a) => a.proj.id);
+    return { fired: sample.length, of: of.length, sample };
+  },
+  // Spec 4.6 Ruling E2: open histories (after Ruling C2) whose last stage is permitIssued or
+  // construction, of projects not in flight; the ones exited expired (they carry the id).
+  [PR.stagesStatutoryExpiry]: ({ withHistory }) => {
+    const of = withHistory.filter((a) => a.stale.expiryOf);
+    const sample = of.filter((a) => a.stale.expired).map((a) => a.proj.id);
+    return { fired: sample.length, of: of.length, sample };
+  },
+  // Ruling E2 (observe; no record carries it): the unit-bearing permits of those histories whose
+  // deadline read a Table B bracket; the ones with no valuation (middle bracket); their history
+  // ids.
+  [PR.stagesExpiryNoValuation]: ({ withHistory }) => {
+    const of = withHistory.filter((a) => a.stale.expiryOf);
+    return {
+      fired: of.reduce((n, a) => n + a.stale.expiryNoValuation, 0),
+      of: of.reduce((n, a) => n + a.stale.expiryPermits, 0),
+      sample: of.filter((a) => a.stale.expiryNoValuation > 0).map((a) => a.proj.id)
+    };
+  },
+  // Spec 4.6 Ruling C3: the entries of construction-verified.json; the verdicts applied to an
+  // open history (they carry the id); their ids.
+  [PR.stagesVerifiedConstruction]: ({ withHistory, verdictEntries }) => {
+    const sample = withHistory.filter((a) => a.stale.verdict).map((a) => a.proj.id);
+    return { fired: sample.length, of: verdictEntries, sample };
   },
   // Spec 4.8 capacity: permits with recorded stories and units on a project with parcels; the
   // ones above their lot's physical limit on a project with a fallback unit source (voided); both
@@ -467,7 +617,11 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
 function zeroCounts(): Record<string, number> {
   const c: Record<string, number> = {
     'projects.inFlight': 0,
-    'projects.inFlightUnits': 0
+    'projects.inFlightUnits': 0,
+    'projects.inFlightSuspendedOnly': 0,
+    'projects.inFlightSuspendedOnlyUnits': 0,
+    'projects.inFlightPastStatutory': 0,
+    'projects.inFlightPastStatutoryUnits': 0
   };
   for (const p of PATHWAYS) c[`projects.byPathway.${p}`] = 0;
   for (const s of STAGE_ORDER) c[`projects.byStage.${s}`] = 0;
@@ -593,8 +747,23 @@ export function deriveProjects(
   };
 
   // Histories: population projects that are not pipeline-only, with at least one entered stage.
+  // The stale-open rulings (spec 4.6) rewrite the history of a project that is not in flight;
+  // statuses are final here (DQ-2 has run, and netting changes masters only, which have none).
   const histories: ProjectHistory[] = [];
   const withHistory: Assessed[] = [];
+  const staleCtx = {
+    asOf,
+    housing: indexHousing(parsed.housing, resolve),
+    assessor: {
+      assessorUnits: input.assessorUnits,
+      yearBuilt: input.yearBuilt,
+      lienDay: input.lienDay,
+      latestRollYear: input.latestRollYear
+    }
+  };
+  const verdicts = new Map(input.constructionVerified.projects.map((v) => [v.id, v]));
+  const verdictWarnings: string[] = [];
+  const inFlightHistories = new Set<string>();
   for (const a of assessed) {
     if (a.proj.kind === 'pipelineOnly' || !a.inPopulation) continue;
     if (a.firstEntered === null) {
@@ -602,8 +771,19 @@ export function deriveProjects(
       continue;
     }
     withHistory.push(a);
+    if (a.status === 'inFlight') inFlightHistories.add(a.proj.id);
+    else applyStale(a, staleCtx, verdicts, verdictWarnings);
     histories.push(history(a, input));
   }
+  // Ruling C3: an entry that met no open history (an unknown verdict there is simply unused).
+  for (const v of verdicts.values()) {
+    verdictWarnings.push(
+      inFlightHistories.has(v.id)
+        ? `construction-verified.json: ${v.id} is in flight; not applied (T3 is unchanged)`
+        : `construction-verified.json: ${v.id} names no open history; not applied`
+    );
+  }
+  warnings.push(...verdictWarnings.sort(cmp));
 
   // Spec 4.10.2 DA netting, before phasing, in master id order (assessed is in id order). The
   // netting projects are in-flight non-masters matching no pipeline row once DQ-2 has run (a
@@ -681,8 +861,9 @@ export function deriveProjects(
   const inFlight = assessed.filter((a) => a.status === 'inFlight');
   const excluded = new Set<ParcelId>();
   for (const a of inFlight) if (!a.multiPhase) for (const id of a.proj.parcelIds) excluded.add(id);
-  for (const h of histories) {
-    if (h.end.kind === 'complete') for (const id of h.parcelIds) excluded.add(id);
+  // Spec 4.6 ends only: a stale-open completion (T4d only) must not move a master's phases (T3).
+  for (const a of withHistory) {
+    if (a.end?.kind === 'complete') for (const id of a.proj.parcelIds) excluded.add(id);
   }
   const inFlightMasters = masters.filter(({ a }) => !nettedOut.has(a.proj.id));
   const masterOut = phaseMasters({
@@ -736,6 +917,19 @@ export function deriveProjects(
     t3.push({ a, p });
     counts['projects.inFlight']++;
     counts['projects.inFlightUnits'] += p.units;
+    // Spec 4.6 (report only; T3 unchanged): in-flight projects whose unit-bearing permits are
+    // all suspended, and those that meet the statutory-expiry exit test.
+    if (a.proj.kind !== 'pipelineOnly' && a.end !== null) {
+      const bearing = unitBearingPermits(a.proj);
+      if (bearing.length > 0 && bearing.every((q) => q.status === 'suspend')) {
+        counts['projects.inFlightSuspendedOnly']++;
+        counts['projects.inFlightSuspendedOnlyUnits'] += p.units;
+      }
+      if (expiryApplies(a.entered, a.end) && expiryTest(a.proj, asOf).day !== null) {
+        counts['projects.inFlightPastStatutory']++;
+        counts['projects.inFlightPastStatutoryUnits'] += p.units;
+      }
+    }
     counts[`projects.byPathway.${p.pathway}`]++;
     counts[`projects.byStage.${p.stage}`]++;
     counts[`projects.stories.${tier === null ? 'null' : `tier${tier}`}`]++;
@@ -803,7 +997,8 @@ export function deriveProjects(
     withHistory,
     inFlight: t3,
     noDate,
-    netting
+    netting,
+    verdictEntries: input.constructionVerified.projects.length
   };
   for (const r of PR_RULES) recordQuality(counts, r.id, PR_TALLIES[r.id as PrRuleId](tallyInput));
 

@@ -13,6 +13,7 @@
  */
 import type { ParcelId } from '../../../src/lib/data/parcel';
 import type { Day } from '../../../src/lib/timelapse/time';
+import type { ConstructionVerifiedFile } from '../../enrichment/construction-schema';
 import type { MultiphaseFile } from '../../enrichment/schema';
 import type { ProjectRecordsInput, ProjectSourceId, RawRow } from '../../project-records/types';
 
@@ -307,7 +308,8 @@ export function baseMultiphase(): MultiphaseFile {
 
 export function baseInput(
   raw: Record<ProjectSourceId, RawRow[]> = baseRaw(),
-  multiphase: MultiphaseFile = baseMultiphase()
+  multiphase: MultiphaseFile = baseMultiphase(),
+  constructionVerified: ConstructionVerifiedFile = { schema: 1, projects: [] }
 ): ProjectRecordsInput {
   return {
     asOf: ASOF,
@@ -317,10 +319,13 @@ export function baseInput(
     // Every base lot is active, so each descends only to itself (Ruling D1, revised).
     descendants: (b) => (PARCELS.has(b) ? [b] : []),
     assessorUnits: (id) => (id === '3512002' ? 1 : null),
+    yearBuilt: () => null,
+    lienDay: (y) => day(`${y}-01-01`),
     latestRollYear: 2025,
     baseStories: () => 4,
     hiNet: { 2023: 3, 2024: 2, 2025: -1 },
     areaM2: (id) => 100 + Number(id.slice(-1)),
-    multiphase
+    multiphase,
+    constructionVerified
   };
 }

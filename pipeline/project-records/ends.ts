@@ -93,7 +93,7 @@ export function lastObserved(proj: LinkedProject, entered: Entered, asOf: Day): 
  * entered stage is then on or before the clamped day, so the stage is always the last entered
  * one. Null when nothing is entered (deriveProjects drops such histories later).
  */
-function exitAt(
+export function exitAt(
   entered: Entered,
   reason: ExitReason,
   day: Day

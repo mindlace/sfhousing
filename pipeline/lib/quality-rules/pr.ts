@@ -7,6 +7,10 @@ export const PR = {
   storiesParseRange: 'pr.stories.parse-range',
   stagesForwardClamp: 'pr.stages.forward-clamp',
   stagesLastObservedClamp: 'pr.stages.last-observed-clamp',
+  stagesCompleteFromEvidence: 'pr.stages.complete-from-evidence',
+  stagesStatutoryExpiry: 'pr.stages.statutory-expiry',
+  stagesExpiryNoValuation: 'pr.stages.expiry-no-valuation',
+  stagesVerifiedConstruction: 'pr.stages.verified-construction',
   unitsCapacity: 'pr.units.capacity',
   unitsCapacityCap: 'pr.units.capacity-cap',
   unitsCapacityUnmapped: 'pr.units.capacity-unmapped',
@@ -97,6 +101,77 @@ export const PR_RULES: readonly QualityRule[] = [
     maskBit: null,
     label: 'The last day a project was seen was moved up to its latest stage date',
     denominator: 'open histories',
+    warnShare: 0.01,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
+    // Ruling C2 (partner): T4d only; never on an in-flight project's history, so no T3 value.
+    id: PR.stagesCompleteFromEvidence,
+    owner: OWNER,
+    source: 'datasf-housing-production, scenario_panel',
+    field: 'end',
+    kind: 'gap',
+    action: 'replace',
+    tier: 2,
+    valueTier: 2,
+    maskBit: null,
+    label:
+      'A building the records show as finished but never certified complete was treated as complete',
+    denominator: 'open histories at construction with no complete or dead permit',
+    warnShare: 0.01,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
+    // Ruling E2 (partner): SFBC 106A.4.4 Table B (pipeline/project-records/expiry.ts); T4d only.
+    id: PR.stagesStatutoryExpiry,
+    owner: OWNER,
+    source: 'datasf-permits-newcon',
+    field: 'end',
+    kind: 'gap',
+    action: 'replace',
+    tier: 2,
+    valueTier: 2,
+    maskBit: null,
+    label:
+      'A permit past its legal completion deadline with no recorded extension was treated as expired',
+    denominator: 'open histories whose last stage is permit issued or construction',
+    warnShare: 0.01,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
+    // Ruling E2's no-valuation case, counted apart (observe; no record carries it).
+    id: PR.stagesExpiryNoValuation,
+    owner: OWNER,
+    source: 'datasf-permits-newcon',
+    field: 'revised_cost, estimated_cost',
+    kind: 'observe',
+    action: 'none',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label:
+      'A permit with no recorded valuation was given the middle valuation bracket for its legal completion deadline',
+    denominator: 'unit-bearing permits whose deadline the statutory-expiry rule read from Table B',
+    warnShare: 0.01,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
+    // Ruling C3 (partner): pipeline/enrichment/construction-verified.json; T4d only.
+    id: PR.stagesVerifiedConstruction,
+    owner: OWNER,
+    source: 'pipeline/enrichment/construction-verified.json',
+    field: 'end',
+    kind: 'gap',
+    action: 'replace',
+    tier: 3,
+    valueTier: 3,
+    maskBit: null,
+    label: 'A stalled project was ended by a check of street or aerial imagery',
+    denominator: 'curated verdict entries',
     warnShare: 0.01,
     failShare: 0.1,
     unitsWeighted: false

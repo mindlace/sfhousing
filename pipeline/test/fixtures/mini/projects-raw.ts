@@ -29,7 +29,15 @@
  * | M21 BP 201803010021    | lot 011; type 1 permit issued 2019, no FCD, expired 2022: exit at issued  |
  * | M22 BP 201702010022    | lot 011; site permit issued and FCD 2018, cancelled 2021: exit at constr. |
  * | M23 2009-000023PRJ     | lot 011; 100 units, permits of 40 and 60 (complete 2014), 2 rows: split   |
+ * | M24 BP 200406010024    | lot 011; issued 2005, $200k, still issued: expired at issued 2006-05-25   |
+ * | M25 BP 201409010025    | lot 011; started 2015, still issued; xdht completion 2018: complete       |
+ * | M26 BP 201112010026    | lot 011; issued 2012, no valuation; activity 2016 after deadline: open    |
  * | xdht extras            | forms 2 (+3), 3 (+2) and 6 (-1): rhnaCompletedNet 4                       |
+ *
+ * `enrichment/construction-verified.json` (Ruling C3): M7 `dead` (exit withdrawn at permitFiled on
+ * the check day), M26 `unknown` (no change), and an id that names no history (a build warning).
+ * M1 and M8 are in flight past their statutory deadline (no valuation, middle bracket), so they
+ * are only counted (`projects.inFlightPastStatutory` 2, 28 units).
  *
  * Every pipeline row's `new_pipeline_units` equals its project's units, except M16's (220 against
  * the record's 200), so V21 coverage is below 1.0 (spec 4.9 V21).
@@ -41,6 +49,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { ParcelId } from '../../../../src/lib/data/parcel';
 import type { Day } from '../../../../src/lib/timelapse/time';
+import { parseConstructionVerified } from '../../../enrichment/construction-schema';
 import { parseMultiphase } from '../../../enrichment/schema';
 import { descendantsIndex, type ParcelAttrsRow } from '../../../project-records/descendants';
 import type { ProjectRecordsInput, ProjectSourceId, RawRow } from '../../../project-records/types';
@@ -80,6 +89,10 @@ interface PermitSpec {
   issued?: string;
   fcd?: string;
   completed?: string;
+  lastActivity?: string;
+  /** `estimated_cost` and `revised_cost`, dollars (Ruling E2 valuation). */
+  estimatedCost?: number;
+  revisedCost?: number;
   units: number;
   stories?: number;
   primary?: boolean;
@@ -105,8 +118,11 @@ function permit(o: PermitSpec): RawRow {
   if (o.issued) r.issued_date = ts(o.issued);
   if (o.fcd) r.first_construction_document_date = ts(o.fcd);
   if (o.completed) r.completed_date = ts(o.completed);
+  if (o.lastActivity) r.last_permit_activity_date = ts(o.lastActivity);
   if (o.stories !== undefined) r.number_of_proposed_stories = String(o.stories);
   r.proposed_units = String(o.units);
+  if (o.estimatedCost !== undefined) r.estimated_cost = `${o.estimatedCost}.0`;
+  if (o.revisedCost !== undefined) r.revised_cost = `${o.revisedCost}.0`;
   r.site_permit = 'Y';
   r.primary_address_flag = o.primary === false ? 'N' : 'Y';
   return r;
@@ -313,6 +329,48 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       fcd: '2011-10-03',
       completed: '2014-06-02',
       units: 60
+    }),
+    // M24 (Ruling E2): a site permit issued 2005 (E0), never started, $200k, still `issued` with no
+    // activity: Table B 360 days + one 90-day extension, so it expired on 2006-05-25.
+    permit({
+      number: '200406010024',
+      type: '1',
+      lot: '011',
+      status: 'issued',
+      statusDate: '2005-03-01',
+      filed: '2004-06-01',
+      issued: '2005-03-01',
+      estimatedCost: 200000,
+      units: 3
+    }),
+    // M25 (Ruling C2): started 2015 (E2, $1.1M after review: 1,080 + 720 days, past by 2020) and
+    // never certified complete, but xdht-4php records its completion on 2018-03-01. Evidence runs
+    // first, so it is complete, not expired.
+    permit({
+      number: '201409010025',
+      type: '2',
+      lot: '011',
+      status: 'issued',
+      statusDate: '2015-03-02',
+      filed: '2014-09-01',
+      issued: '2015-03-02',
+      fcd: '2015-06-01',
+      estimatedCost: 900000,
+      revisedCost: 1100000,
+      units: 4
+    }),
+    // M26 (Ruling E2): issued 2012 (E1) with no valuation (middle bracket, 1,080 + 180 days, due
+    // 2015-08-13), but its last activity, 2016-01-04, is after that: it stays open.
+    permit({
+      number: '201112010026',
+      type: '1',
+      lot: '011',
+      status: 'issued',
+      statusDate: '2012-03-01',
+      filed: '2011-12-01',
+      issued: '2012-03-01',
+      lastActivity: '2016-01-04',
+      units: 2
     })
   ],
   'datasf-planning-projects': [
@@ -596,6 +654,15 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       form_no: '6',
       net_units_completed: '-1',
       first_completion_date: ts('2025-01-15')
+    },
+    // M25's completion (Ruling C2 evidence (i)); before the RHNA window, so rhnaCompletedNet and
+    // xdhtLagDays are unchanged.
+    {
+      bpa: '201409010025',
+      blocklot: '3512011',
+      form_no: '2',
+      net_units_completed: '4',
+      first_completion_date: ts('2018-03-01')
     }
   ],
   'datasf-dev-pipeline': [
@@ -705,6 +772,7 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
 };
 
 const MULTIPHASE = fileURLToPath(new URL('./enrichment/multiphase.json', import.meta.url));
+const VERIFIED = fileURLToPath(new URL('./enrichment/construction-verified.json', import.meta.url));
 
 /** Retired and condo block-lots (scenario-data's mini lineage). */
 const LINEAGE: Record<string, ParcelId> = {
@@ -793,10 +861,49 @@ const RA1_PANEL_UNITS: Record<string, number> = {
 };
 
 /**
+ * The panel's `year_built` per `<parcel>|<roll year>` (scenario-data's fixture panel, after its
+ * year rules: lot 5's 2024 "0" is imputed 1940; lot 7 has 0). golden.test.ts checks this stub
+ * against the built panel for every parcel-year.
+ */
+const PANEL_YEAR_BUILT: Record<string, number> = {
+  '0026T001A|2023': 1925,
+  '0026T001A|2024': 1925,
+  '0026T001A|2025': 1925,
+  '3512001|2024': 1912,
+  '3512001|2025': 1912,
+  '3512002|2024': 1975,
+  '3512002|2025': 1975,
+  '3512005|2024': 1940,
+  '3512005|2025': 1950,
+  '3512006|2024': 1940,
+  '3512006|2025': 1940,
+  '3512007|2024': 0,
+  '3512007|2025': 0,
+  '3512008|2024': 1960,
+  '3512008|2025': 1960,
+  '3512010|2024': 1930,
+  '3512010|2025': 1930,
+  '3512011|2024': 1955,
+  '3512011|2025': 1955,
+  '3512012|2024': 1910,
+  '3512013|2024': 1970,
+  '3512014|2024': 2015,
+  '3512014|2025': 2015,
+  '8711023C|2023': 1920,
+  '8711023C|2024': 1920,
+  '8711023C|2025': 1920
+};
+
+/** The panel's `lien_day`: 1 January of the roll year (pipeline/sql/81_scenario_features.sql). */
+export const miniLienDay = (y: number): Day | null =>
+  y >= 2023 && y <= 2025 ? Date.UTC(y, 0, 1) / 86_400_000 : null;
+
+/**
  * The deriveProjects input for the mini records, with stub callbacks mirroring scenario-data's
  * fixture: lineage above; descendants from the landed parcel attrs (attrsRows); assessor units
- * as the panel has them (2023 to 2025, see rollUnits);
- * no base stories; every parcel 300 m2; fixture `hiNet`; the mini `multiphase.json`.
+ * as the panel has them (2023 to 2025, see rollUnits), and its year built and lien days;
+ * no base stories; every parcel 300 m2; fixture `hiNet`; the mini `multiphase.json` and
+ * `construction-verified.json`.
  */
 export function miniProjectInput(): ProjectRecordsInput {
   const units = rollUnits();
@@ -807,10 +914,13 @@ export function miniProjectInput(): ProjectRecordsInput {
     lineage,
     descendants: descendantsIndex(attrsRows(), { parcelIds: MINI_PARCELS, lineage }),
     assessorUnits: (id, year) => units.get(`${id}|${year}`) ?? null,
+    yearBuilt: (id, year) => PANEL_YEAR_BUILT[`${id}|${year}`] ?? null,
+    lienDay: miniLienDay,
     latestRollYear: 2025,
     baseStories: () => null,
     hiNet: { 2023: 3, 2024: 2, 2025: -1 },
     areaM2: () => 300,
-    multiphase: parseMultiphase(JSON.parse(readFileSync(MULTIPHASE, 'utf8')))
+    multiphase: parseMultiphase(JSON.parse(readFileSync(MULTIPHASE, 'utf8'))),
+    constructionVerified: parseConstructionVerified(JSON.parse(readFileSync(VERIFIED, 'utf8')))
   };
 }

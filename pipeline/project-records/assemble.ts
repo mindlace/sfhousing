@@ -72,10 +72,16 @@ export const T3_ONLY_QUALITY: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The rules that act only on T4d values (spec §4.8 `unitsAt`; Ruling S2): a T3 project never
- * carries them, so they never reach `qualityRules`.
+ * The rules that act only on T4d values (spec §4.8 `unitsAt`, Ruling S2; spec §4.6 stale open
+ * histories, Rulings C2, E2 and C3): a T3 project never carries them, so they never reach
+ * `qualityRules`.
  */
-export const T4D_ONLY_QUALITY: ReadonlySet<string> = new Set([PR.unitsSplitFiled]);
+export const T4D_ONLY_QUALITY: ReadonlySet<string> = new Set([
+  PR.unitsSplitFiled,
+  PR.stagesCompleteFromEvidence,
+  PR.stagesStatutoryExpiry,
+  PR.stagesVerifiedConstruction
+]);
 
 function sortedIds(ids: Iterable<string>): string[] {
   return [...new Set(ids)].sort(cmp);

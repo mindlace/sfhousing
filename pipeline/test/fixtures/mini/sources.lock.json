@@ -75,10 +75,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/74e376f7ae85e49cbe3d727080177ad8c49538a7a337594f8fadfba4ccebfd60.json",
-          "bytes": 342,
+          "archiveKey": "sources/c6f020ea5f95e7e0f0689a088e35c04efb5495db4bd0c50da147db55bea35cf7.json",
+          "bytes": 476,
           "name": "datasf-housing-production.page-000.json",
-          "sha256": "74e376f7ae85e49cbe3d727080177ad8c49538a7a337594f8fadfba4ccebfd60",
+          "sha256": "c6f020ea5f95e7e0f0689a088e35c04efb5495db4bd0c50da147db55bea35cf7",
           "url": "https://fixture.invalid/datasf-housing-production.page-000.json"
         }
       ],
@@ -87,7 +87,7 @@
       "label": "DataSF Housing Production",
       "license": "public-domain",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 3,
+      "rowCount": 4,
       "upstreamVersion": "fixture"
     },
     {
@@ -165,10 +165,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/5ed103560e31092c117b3ae407fcc7b39c92b61dd310e4211befa9fa16d06653.json",
-          "bytes": 4848,
+          "archiveKey": "sources/108e681f16d2226e37a2ababe71b60883d515ed2edd9ed0c980530abe60aa78f.json",
+          "bytes": 5889,
           "name": "datasf-permits-newcon.page-000.json",
-          "sha256": "5ed103560e31092c117b3ae407fcc7b39c92b61dd310e4211befa9fa16d06653",
+          "sha256": "108e681f16d2226e37a2ababe71b60883d515ed2edd9ed0c980530abe60aa78f",
           "url": "https://fixture.invalid/datasf-permits-newcon.page-000.json"
         }
       ],
@@ -177,7 +177,7 @@
       "label": "DataSF Building Permits (new construction)",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 15,
+      "rowCount": 18,
       "upstreamVersion": "fixture"
     },
     {

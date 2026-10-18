@@ -20,6 +20,7 @@ import {
 } from './fixtures/mini/projects-raw';
 
 const MULTIPHASE = 'pipeline/test/fixtures/mini/enrichment/multiphase.json';
+const VERIFIED = 'pipeline/test/fixtures/mini/enrichment/construction-verified.json';
 /** Condo sub-lots (active) and the retired lot of scenario-data's mini lineage. */
 const CONDO: Record<string, string> = {
   '3512101': '3512002',
@@ -125,9 +126,10 @@ beforeAll(async () => {
   const stub = miniProjectInput();
   const panel: CellValue[][] = [];
   for (const id of ids) {
-    for (const year of [2024, 2025]) {
+    for (const year of [2023, 2024, 2025]) {
       const u = stub.assessorUnits(id, year);
-      if (u !== null) panel.push([id, year, u, null]);
+      const b = stub.yearBuilt(id, year);
+      if (u !== null || b !== null) panel.push([id, year, stub.lienDay(year), u, null, b]);
     }
   }
   await createTableFromRows(
@@ -136,8 +138,10 @@ beforeAll(async () => {
     [
       ['mapblklot', 'VARCHAR'],
       ['roll_year', 'INTEGER'],
+      ['lien_day', 'INTEGER'],
       ['existing_units', 'INTEGER'],
-      ['base_stories', 'INTEGER']
+      ['base_stories', 'INTEGER'],
+      ['year_built', 'INTEGER']
     ],
     panel
   );
@@ -165,6 +169,7 @@ const run = (o: Partial<Parameters<typeof writeProjectRecords>[0]> = {}) => {
       byName: true,
       ...d,
       multiphasePath: MULTIPHASE,
+      constructionVerifiedPath: VERIFIED,
       profile: FIXTURE_PROFILE,
       asOf: MINI_ASOF,
       ...o,
@@ -262,6 +267,24 @@ describe('writeProjectRecords', () => {
     const invalid = join(dir, 'invalid.json');
     writeFileSync(invalid, JSON.stringify({ schema: 2, projects: [] }));
     await expect(run({ multiphasePath: invalid }).result).rejects.toThrow(BuildError);
+  });
+
+  it('throws BuildError on a construction-verified.json that does not parse or validate', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sfh-prj-cv-'));
+    const broken = join(dir, 'broken.json');
+    writeFileSync(broken, '{"schema": 1, "projects": [');
+    await expect(run({ constructionVerifiedPath: broken }).result).rejects.toThrow(BuildError);
+    const invalid = join(dir, 'invalid.json');
+    writeFileSync(
+      invalid,
+      JSON.stringify({
+        schema: 1,
+        projects: [{ id: 'BP:1', verdict: 'complete', checked: '2026-01-01', source: 'x' }]
+      })
+    );
+    await expect(run({ constructionVerifiedPath: invalid }).result).rejects.toThrow(
+      /completeDay is required/
+    );
   });
 
   it('rerun uses a fresh counts: the build counts hold each quality.pr.* key exactly once', async () => {

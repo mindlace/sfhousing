@@ -59,6 +59,11 @@ const MULTIPHASE = {
   live: join(REPO_ROOT, 'pipeline/enrichment/multiphase.json'),
   fixture: join(REPO_ROOT, 'pipeline/test/fixtures/mini/enrichment/multiphase.json')
 };
+/** Curated imagery verdicts (project-records spec §4.6, Ruling C3): live, and the mini fixture's. */
+const CONSTRUCTION_VERIFIED = {
+  live: join(REPO_ROOT, 'pipeline/enrichment/construction-verified.json'),
+  fixture: join(REPO_ROOT, 'pipeline/test/fixtures/mini/enrichment/construction-verified.json')
+};
 /** The three T11/T4 files whose presence puts `scenarios` in the manifest (spec §4.9). */
 const SCENARIO_FILES = ['parcels.bin', 'projects.json', 'calibration.json'];
 /** Spec §4.12: derivative databases of ODbL data are offered under ODbL-1.0 (share-alike). */
@@ -208,6 +213,9 @@ export async function build(
         outDir,
         derivedDir,
         multiphasePath: fixtureMode ? MULTIPHASE.fixture : MULTIPHASE.live,
+        constructionVerifiedPath: fixtureMode
+          ? CONSTRUCTION_VERIFIED.fixture
+          : CONSTRUCTION_VERIFIED.live,
         profile: opts.profile,
         asOf,
         counts

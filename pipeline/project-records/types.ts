@@ -4,6 +4,7 @@
  */
 import type { ParcelId } from '../../src/lib/data/parcel';
 import type { Day } from '../../src/lib/timelapse/time';
+import type { ConstructionVerifiedFile } from '../enrichment/construction-schema';
 import type { MultiphaseFile } from '../enrichment/schema';
 
 export type ProjectSourceId =
@@ -179,12 +180,18 @@ export interface ProjectRecordsInput {
    */
   descendants(blklot: string): ParcelId[];
   assessorUnits(id: ParcelId, rollYear: number): number | null;
+  /** T13 `scenario_panel.year_built` for a parcel and roll year; null when absent. */
+  yearBuilt(id: ParcelId, rollYear: number): number | null;
+  /** T13 `scenario_panel.lien_day` of a roll year; null when the panel has no such year. */
+  lienDay(rollYear: number): Day | null;
   latestRollYear: number;
   baseStories(id: ParcelId, rollYear: number): number | null;
   hiNet: Record<number, number>;
   areaM2(id: ParcelId): number;
   /** Parsed `multiphase.json` (spec 4.10.1). */
   multiphase: MultiphaseFile;
+  /** Parsed `construction-verified.json` (spec 4.6, curated verdicts). */
+  constructionVerified: ConstructionVerifiedFile;
 }
 
 /** A project after linking (spec 4.2): one connected component, or one split of it. */
