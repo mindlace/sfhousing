@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PR } from '../../lib/quality-rules/pr';
+import { masterDa } from '../../project-records/assemble';
 import { deriveProjects, type DeriveResult } from '../../project-records/derive';
 import { DEAD_STATUSES, linkProjects, type LinkedProject } from '../../project-records/link';
 import type {
@@ -975,5 +976,29 @@ describe('cross-block PRJ parcels (pr.parcels.cross-block, spec §4.2 Parcels)',
     });
     expect(p.parcelIds).toEqual(['3512001']);
     expect(p.crossBlock.dropped).toEqual([]);
+  });
+});
+
+describe('DA parcels keep the unfiltered base-case lots (Ruling X2)', () => {
+  it('a base-case PRJ cross-block lot stays a DA parcel while the project parcelIds drops it', () => {
+    const parsed = parsedOf({
+      permits: [permit('P1', { rows: rows('5087003') })],
+      prjs: [prj('2010.0002', { permits: ['P1'], blklot: '5066B020' })],
+      pipeline: [{ caseNo: '2010.0002PRX', blklot: '3512006', da: 'DA1', newUnits: 100 }]
+    });
+    const r = link(parsed);
+    const base = byId(r, 'PRJ:2010.0002');
+    expect(base.parcelIds).toEqual(['5087003']);
+    expect(base.crossBlock.dropped).toEqual(['5066B020']);
+    const master = byId(r, 'CASE:2010.0002PRX');
+    const da = masterDa(master, {
+      projects: r.projects,
+      pipeline: parsed.pipeline,
+      multiphase: { ...baseMultiphase(), projects: [] },
+      resolve,
+      descendants: () => []
+    });
+    expect(da.daParcels).toEqual(['3512006', '5066B020', '5087003']);
+    expect(da.daProjects.has(base)).toBe(true);
   });
 });
