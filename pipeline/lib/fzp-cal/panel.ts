@@ -58,8 +58,16 @@ export type PanelSource = {
   read(rollYear: number): Promise<PanelYearRow[]>;
 };
 
+/**
+ * The result of `initiationEvents`. A history lands in at most one exclusion count, checked in
+ * this order: `noStart`, then `noPermit`, then `noParcel` (a history with neither a permit
+ * filing nor a parcel counts only as `noPermit`).
+ */
 export interface InitiationEvents {
-  /** per parcel, PANEL_MONTHS values: -1 not at risk, 0 at risk, 1 event basis record, 2 event basis permit */
+  /**
+   * per parcel, PANEL_MONTHS values: -1 not at risk, 0 at risk, 1 event basis record,
+   * 2 event basis permit
+   */
   timeline: Map<ParcelId, Int8Array>;
   /** F before 2015 and no permit filing: invisible, no event and no coverage */
   noPermit: number;
@@ -69,7 +77,10 @@ export interface InitiationEvents {
   noStart: number;
   /** event month outside 2007-01 .. 2025-12: no panel event (coverage still applies) */
   outOfRange: number;
-  /** event on a parcel-month another history already covers (or already has an event): not counted */
+  /**
+   * event on a parcel-month another history already covers (or that already holds an event):
+   * not marked, not a panel event
+   */
   eventsCovered: number;
 }
 
@@ -198,6 +209,13 @@ export interface PanelResult {
   years: number[];
   /** hostable_base parcel-years read */
   parcelYears: number;
+  /**
+   * parcel-years left out (spec §4.6 "Parcels"): rows read with hostable_base false, plus
+   * timeline parcels with no row that roll year
+   */
+  parcelYearsExcluded: number;
+  /** `parcelYearsExcluded` per processed roll year (0 included) */
+  parcelYearsExcludedByYear: Record<number, number>;
   exposureMonths: number;
   events: { record: number; permit: number };
   /** timeline events whose parcel-year has no panel row or is not hostable_base */
@@ -233,6 +251,8 @@ export async function aggregatePanel(
     cells: new Map(),
     years,
     parcelYears: 0,
+    parcelYearsExcluded: 0,
+    parcelYearsExcludedByYear: {},
     exposureMonths: 0,
     events: { record: 0, permit: 0 },
     eventsOffPanel: 0,
@@ -252,6 +272,8 @@ export async function aggregatePanel(
     const rows = await src.read(y);
     const base = (y - FIRST_YEAR) * 12;
     let prev: string | undefined;
+    let excluded = 0;
+    let timelineRows = 0;
     for (const r of rows) {
       if (prev !== undefined && !(r.mapblklot > prev)) {
         throw new CalibrationError(`panel rows not sorted by mapblklot: ${r.mapblklot} ${y}`);
@@ -262,11 +284,15 @@ export async function aggregatePanel(
         throw new CalibrationError(`panel imputed invalid: ${r.mapblklot} ${y}`);
       }
       if (imp & 0x80) throw new CalibrationError(`panel imputed bit 7 set: ${r.mapblklot} ${y}`);
-      if (!r.hostableBase) continue;
+      const t = ev.timeline.get(r.mapblklot);
+      if (t) timelineRows++;
+      if (!r.hostableBase) {
+        excluded++;
+        continue;
+      }
       res.parcelYears++;
 
       exposure[0] = exposure[1] = events[0] = events[1] = 0;
-      const t = ev.timeline.get(r.mapblklot);
       for (let k = 0; k < 12; k++) {
         const month = base + k;
         const v = t ? t[month] : 0;
@@ -324,6 +350,9 @@ export async function aggregatePanel(
       if (pr > res.maxAtRisk.potentialRatio) res.maxAtRisk.potentialRatio = pr;
       if (sg > res.maxAtRisk.storiesGap) res.maxAtRisk.storiesGap = sg;
     }
+    excluded += ev.timeline.size - timelineRows;
+    res.parcelYearsExcludedByYear[y] = excluded;
+    res.parcelYearsExcluded += excluded;
   }
   res.eventsOffPanel = timelineEvents - res.events.record - res.events.permit;
   return res;
@@ -331,10 +360,19 @@ export async function aggregatePanel(
 
 const num = (v: unknown): number => (v === null || v === undefined ? NaN : Number(v));
 
+/** `hostable_base` is BOOLEAN and never null under T13; a null breaks the panel contract. */
+function hostable(v: unknown, mapblklot: unknown, y: number): boolean {
+  if (typeof v !== 'boolean') {
+    throw new CalibrationError(`panel hostable_base null: ${String(mapblklot)} ${y}`);
+  }
+  return v;
+}
+
 /** A `PanelSource` over the build's `scenario_panel` table, read one roll year at a time. */
 export async function duckPanelSource(db: Duck): Promise<PanelSource> {
   const ys = await db.all<{ roll_year: number }>(
-    `SELECT DISTINCT roll_year FROM scenario_panel WHERE roll_year BETWEEN ${FIRST_YEAR} AND ${LAST_YEAR} ORDER BY 1`
+    'SELECT DISTINCT roll_year FROM scenario_panel ' +
+      `WHERE roll_year BETWEEN ${FIRST_YEAR} AND ${LAST_YEAR} ORDER BY 1`
   );
   return {
     years: ys.map((r) => r.roll_year),
@@ -348,7 +386,7 @@ export async function duckPanelSource(db: Duck): Promise<PanelSource> {
       );
       return rows.map((r) => ({
         mapblklot: String(r.mapblklot),
-        hostableBase: r.hostable_base === true,
+        hostableBase: hostable(r.hostable_base, r.mapblklot, y),
         imputed: num(r.imputed),
         features: {
           potentialRatio: num(r.potential_ratio_base),

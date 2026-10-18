@@ -26,18 +26,16 @@ function hist(
   end: ProjectHistory['end'] = { kind: 'open', lastObserved: d('2026-09-30') },
   purgeCensored = false
 ): NormHistory {
-  // A variable, not a returned literal: NormHistory is gaining fields concurrently (noFcd).
-  const h = {
+  return {
     id,
-    pathway: 'discretionary' as const,
+    pathway: 'discretionary',
     parcelIds,
     eff: { ...entered },
     end,
     purgeCensored,
-    noFcd: false,
     src: {
       id,
-      pathway: 'discretionary' as const,
+      pathway: 'discretionary',
       parcelIds,
       entered,
       end,
@@ -49,7 +47,6 @@ function hist(
       quality: []
     }
   };
-  return h;
 }
 
 const area = (areas: Record<string, number>) => (id: string) => areas[id] ?? 0;
@@ -296,23 +293,67 @@ describe('aggregatePanel', () => {
     expect(res.maxAtRisk).toEqual({ potentialRatio: 3, storiesGap: 4 });
   });
 
-  it('counts mask bits over exposure and event months', async () => {
-    // A: event 2020-04 (4 at-risk months in 2020, then covered); B: 12 months; C: 12 months.
-    const ev = initiationEvents([hist('h', ['A'], { filed: d('2020-04-02') })], new Map(), noArea);
+  it('counts each mask bit 0..6 over exposure and event months', async () => {
+    // Events (open, so covered afterwards): A 2020-04 (4 at-risk months in 2020), D 2020-01
+    // (1 month), G 2020-07 (7 months). Every other row is at risk all 12 months.
+    //   row  bits         exposure  events
+    //   A    0, 1         4         1
+    //   B    2            12        0
+    //   C    3, 4         12        0
+    //   D    5            1         1
+    //   E    none         12        0
+    //   G    6            7         1     (an event on bit 6 alone)
+    //   H    3, 6         12        0
+    const ev = initiationEvents(
+      [
+        hist('hA', ['A'], { filed: d('2020-04-02') }),
+        hist('hD', ['D'], { filed: d('2020-01-15') }),
+        hist('hG', ['G'], { filed: d('2020-07-20') })
+      ],
+      new Map(),
+      noArea
+    );
     const res = await aggregatePanel(
       source([2020], () => [
-        row('A', { imputed: 0b0000101 }),
-        row('B', { imputed: 0b1000000 }),
-        row('C', { imputed: 0 })
+        row('A', { imputed: 0b0000011 }),
+        row('B', { imputed: 0b0000100 }),
+        row('C', { imputed: 0b0011000 }),
+        row('D', { imputed: 0b0100000 }),
+        row('E', { imputed: 0 }),
+        row('G', { imputed: 0b1000000 }),
+        row('H', { imputed: 0b1001000 })
       ]),
       ev,
       EDGES
     );
-    expect(res.exposureMonths).toBe(28);
-    expect(res.mask.exposure).toEqual([4, 0, 4, 0, 0, 0, 12]);
-    expect(res.mask.events).toEqual([1, 0, 1, 0, 0, 0, 0]);
-    expect(res.mask.anyExposure).toBe(16);
-    expect(res.mask.anyEvents).toBe(1);
+    expect(res.exposureMonths).toBe(60);
+    expect(res.events).toEqual({ record: 3, permit: 0 });
+    expect(res.mask.exposure).toEqual([4, 4, 12, 24, 12, 1, 19]);
+    expect(res.mask.events).toEqual([1, 1, 0, 0, 0, 1, 1]);
+    expect(res.mask.anyExposure).toBe(48);
+    expect(res.mask.anyEvents).toBe(3);
+  });
+
+  it('counts excluded parcel-years: non-hostable rows, timeline parcels with no row', async () => {
+    // Timeline parcels: A (event 2016-03) and Z (no row in any year).
+    const ev = initiationEvents(
+      [hist('h', ['A'], { filed: d('2016-03-10') }), hist('z', ['Z'], { filed: d('2016-05-01') })],
+      new Map(),
+      noArea
+    );
+    const res = await aggregatePanel(
+      source([2015, 2016, 2017], (y) =>
+        y === 2017
+          ? [row('A'), row('B', { hostableBase: false })]
+          : [row('A', { hostableBase: y !== 2016 }), row('B', { hostableBase: false })]
+      ),
+      ev,
+      EDGES
+    );
+    // 2015: B + Z; 2016: A + B + Z; 2017: B + Z.
+    expect(res.parcelYearsExcludedByYear).toEqual({ 2015: 2, 2016: 3, 2017: 2 });
+    expect(res.parcelYearsExcluded).toBe(7);
+    expect(res.parcelYears).toBe(2);
   });
 
   it('throws CalibrationError on imputed bit 7', async () => {
@@ -370,14 +411,14 @@ describe('duckPanelSource', () => {
           y,
           p === 'A' || y !== 2016,
           p === 'B' ? 4 : 0,
-          3,
+          3.5,
           2,
           300,
           1925,
           4,
           0.25,
           true,
-          2
+          5
         ]);
       }
     }
@@ -386,11 +427,21 @@ describe('duckPanelSource', () => {
     expect(src.years).toEqual([2015, 2016]);
     const r2015 = await src.read(2015);
     expect(r2015.map((r) => r.mapblklot)).toEqual(['A', 'B']);
+    // Every feature has a distinct value, so a swapped column mapping fails.
     expect(r2015[1]).toEqual({
       mapblklot: 'B',
       hostableBase: true,
       imputed: 4,
-      features: { ...FEATS, improvementShare: 0.25 }
+      features: {
+        potentialRatio: 3.5,
+        existingUnits: 2,
+        lotAreaM2: 300,
+        yearBuilt: 1925,
+        storiesGap: 4,
+        improvementShare: 0.25,
+        rentControlLikely: 1,
+        landUseClass: 5
+      }
     });
 
     const ev = initiationEvents([hist('h', ['A'], { filed: d('2016-03-10') })], new Map(), noArea);
@@ -399,5 +450,13 @@ describe('duckPanelSource', () => {
     expect(fromDuck.events).toEqual({ record: 1, permit: 0 });
     expect(fromDuck.mask.exposure[2]).toBe(12);
     expect(fromDuck.years).toEqual([2015, 2016]);
+    expect(fromDuck.parcelYearsExcludedByYear).toEqual({ 2015: 0, 2016: 1 });
+
+    // A null hostable_base breaks the T13 contract (BOOLEAN, never null).
+    await db.run(
+      "UPDATE scenario_panel SET hostable_base = NULL WHERE mapblklot = 'A' AND roll_year = 2015"
+    );
+    await expect(src.read(2015)).rejects.toThrow(CalibrationError);
+    await expect(src.read(2015)).rejects.toThrow('panel hostable_base null: A 2015');
   });
 });
