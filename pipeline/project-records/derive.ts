@@ -114,7 +114,7 @@ interface Assessed {
   /** The project after the capacity rules: a failing permit has null units, or its lot capacity. */
   proj: LinkedProject;
   /** Spec 4.8 capacity: the permits checked and the ones that failed (original units). */
-  capacity: Pick<Capacity, 'checked' | 'failing' | 'capped'>;
+  capacity: Pick<Capacity, 'checked' | 'failing' | 'skipped' | 'capped'>;
   pathway: Pathway | null;
   entered: Entered;
   /** Null for pipeline-only projects (they have no history). */
@@ -213,7 +213,12 @@ function assess(
   if (cap.failing.length > 0) quality.add(cap.capped ? PR.unitsCapacityCap : PR.unitsCapacity);
   return {
     proj,
-    capacity: { checked: cap.checked, failing: cap.failing, capped: cap.capped },
+    capacity: {
+      checked: cap.checked,
+      failing: cap.failing,
+      skipped: cap.skipped,
+      capped: cap.capped
+    },
     pathway,
     entered,
     end,
@@ -332,6 +337,17 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
   // Spec 4.8 capacity cap: the same denominator; the failing permits of projects with no fallback
   // unit source (replaced by their lot capacity), with their original units.
   [PR.unitsCapacityCap]: ({ assessed }) => capacityTally(assessed, true),
+  // Spec 4.8 capacity, unmapped lots (observe; no record carries it): the same denominator
+  // (skipped permits stay in it); the permits not checked because none of their own address lots is
+  // among the project's parcels; their project ids.
+  [PR.unitsCapacityUnmapped]: ({ assessed }) => {
+    const skipped = assessed.filter((a) => a.capacity.skipped.length > 0);
+    return {
+      fired: skipped.reduce((n, a) => n + a.capacity.skipped.length, 0),
+      of: assessed.reduce((n, a) => n + a.capacity.checked.length, 0),
+      sample: skipped.map((a) => a.proj.id)
+    };
+  },
   // Spec 4.2 step 10: no-date rows linked to the Planning record on their lot, those whose
   // project has no units included. Of pipeline rows, weighted by new units; the sample is the
   // joined project ids (one linked row per project, so never longer than `fired`).
@@ -482,7 +498,7 @@ export function deriveProjects(
 
   // Spec 4.8 capacity, once per permit before anything reads units: units rule 1, unitsAt, the
   // phase-size medians and the permits rows all see `capped`, never `link.projects`.
-  const capped = link.projects.map((p) => applyCapacity(p, input.areaM2));
+  const capped = link.projects.map((p) => applyCapacity(p, input.areaM2, resolve));
   const linked = capped.map((c) => c.proj);
   const all = capped.map((c) => assess(c, input, parsed, link.ppaLag.days, pipelineCutoff));
 

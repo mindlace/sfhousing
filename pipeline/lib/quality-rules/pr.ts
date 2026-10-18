@@ -8,6 +8,7 @@ export const PR = {
   stagesForwardClamp: 'pr.stages.forward-clamp',
   unitsCapacity: 'pr.units.capacity',
   unitsCapacityCap: 'pr.units.capacity-cap',
+  unitsCapacityUnmapped: 'pr.units.capacity-unmapped',
   pipelineStatusDateLinked: 'pr.pipeline.status-date-linked',
   pipelineNoStatusDate: 'pr.pipeline.no-status-date',
   pipelineRecordsWin: 'pr.pipeline.records-win',
@@ -115,6 +116,23 @@ export const PR_RULES: readonly QualityRule[] = [
     warnShare: 0.05,
     failShare: 0.1,
     unitsWeighted: true
+  },
+  {
+    id: PR.unitsCapacityUnmapped,
+    owner: OWNER,
+    source: 'datasf-permits-newcon',
+    field: 'block, lot (the permit address rows)',
+    kind: 'observe',
+    action: 'none',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label:
+      "A permit's unit count was not checked against its lot because the permit's lot could not be matched to a parcel",
+    denominator: 'permits with recorded stories and units on a project with parcels',
+    warnShare: 0.01,
+    failShare: 0.1,
+    unitsWeighted: false
   },
   {
     id: PR.pipelineStatusDateLinked,

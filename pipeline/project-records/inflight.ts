@@ -92,6 +92,11 @@ export interface Capacity {
   /** The `checked` permits that fail `capacityOk` (original units). */
   failing: Permit[];
   /**
+   * The `checked` permits not tested because none of their own address lots is among the
+   * project's parcels (`pr.units.capacity-unmapped`); their units are untouched.
+   */
+  skipped: Permit[];
+  /**
    * True when the project has failing permits and no fallback unit source once they are all
    * voided: they are capped (`pr.units.capacity-cap`) instead of voided (`pr.units.capacity`).
    */
@@ -116,22 +121,32 @@ function lotCapacity(
  * (`pr.units.capacity`, units fall through) when a fallback unit source remains, that is when
  * `grossUnits` still yields at least 1 unit (another permit with units, the anchor PRJ's
  * `number_of_units_prop` above 0, or a pipeline row not linked under DQ-2). With none, each failing
- * permit takes its lot capacity instead (`pr.units.capacity-cap`). Nothing else changes.
+ * permit takes its lot capacity instead (`pr.units.capacity-cap`). A permit whose own address
+ * lots (every row's blklot, resolved) include none of the project's parcels is not checked at all
+ * and is listed in `skipped`. Nothing else changes.
  */
 export function applyCapacity(
   proj: LinkedProject,
-  areaM2: ProjectRecordsInput['areaM2']
+  areaM2: ProjectRecordsInput['areaM2'],
+  resolve: (blklots: string[]) => ParcelId[]
 ): Capacity {
   const checked: Permit[] = [];
   const failing: Permit[] = [];
+  const skipped: Permit[] = [];
   if (proj.parcelIds.length > 0) {
+    const inProject = new Set<string>(proj.parcelIds);
     for (const q of proj.permits) {
       if (q.stories === null || q.proposedUnits === null) continue;
       checked.push(q);
-      if (!capacityOk(q, proj.parcelIds, areaM2)) failing.push(q);
+      // The check needs the permit's own lot (any address row) among the project's parcels.
+      const lots = [...new Set(q.rows.flatMap((r) => (r.blklot === null ? [] : [r.blklot])))];
+      if (!resolve(lots).some((id) => inProject.has(id))) skipped.push(q);
+      else if (!capacityOk(q, proj.parcelIds, areaM2)) failing.push(q);
     }
   }
-  if (failing.length === 0) return { proj, original: proj, checked, failing, capped: false };
+  if (failing.length === 0) {
+    return { proj, original: proj, checked, failing, skipped, capped: false };
+  }
   const rebuild = (to: (q: Permit) => Permit): LinkedProject => {
     const swapped = new Map(failing.map((q) => [q, to(q)]));
     const swap = (q: Permit): Permit => swapped.get(q) ?? q;
@@ -152,6 +167,7 @@ export function applyCapacity(
     original: proj,
     checked,
     failing,
+    skipped,
     capped
   };
 }

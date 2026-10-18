@@ -78,6 +78,17 @@ const TABLE: Record<string, Spec> = {
     failShare: 0.1,
     label: "A permit's unit count was more than its lot could physically hold and was not used"
   },
+  'pr.units.capacity-unmapped': {
+    kind: 'observe',
+    action: 'none',
+    tier: 4,
+    valueTier: null,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label:
+      "A permit's unit count was not checked against its lot because the permit's lot could not be matched to a parcel"
+  },
   'pr.units.capacity-cap': {
     kind: 'outlier',
     action: 'replace',
@@ -458,6 +469,28 @@ describe('pr.units.capacity (spec §4.8)', () => {
     expect(r.permits.find((q) => q.permit_number === '201906010001')?.proposed_units).toBe(24);
     expect(project(r, 'PRJ:2019-000001PRJ')?.quality).not.toContain(PR.unitsCapacity);
     expect(r.file.qualityRules.map((q) => q.id)).toContain(PR.unitsCapacity);
+  });
+
+  it('a permit whose own lot is unmapped is skipped and counted, with its units untouched', () => {
+    const r = derive((raw) => {
+      overfill(raw);
+      // B's address lot 3512099 is in no parcel set; the project still has lot 003 from its row.
+      const b = raw['datasf-permits-newcon'].find((x) => x.permit_number === '202403150003');
+      Object.assign(b ?? {}, { lot: '099' });
+    });
+    const id = 'BP:202403150003';
+    expect(tally(r, PR.unitsCapacity)).toMatchObject({ fired: 0, of: 2 });
+    expect(tally(r, PR.unitsCapacityCap)).toMatchObject({ fired: 0, of: 2 });
+    expect(tally(r, PR.unitsCapacityUnmapped)).toMatchObject({ fired: 1, of: 2 });
+    expect(callsFor(r.counts).find((c) => c.id === PR.unitsCapacityUnmapped)?.sample).toEqual([id]);
+    expect(project(r, id)?.units).toBe(5000);
+    expect(project(r, id)?.quality).toEqual([]);
+    expect(history(r, id)?.quality).toEqual([]);
+    expect(r.file.qualityRules.map((q) => q.id)).not.toContain(PR.unitsCapacityUnmapped);
+  });
+
+  it('a clean build skips nothing', () => {
+    expect(tally(derive(), PR.unitsCapacityUnmapped)).toMatchObject({ fired: 0, of: 1 });
   });
 
   it('no recorded stories, or no parcels: no check', () => {
