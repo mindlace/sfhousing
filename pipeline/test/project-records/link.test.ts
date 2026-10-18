@@ -34,6 +34,7 @@ function rows(...blklots: (string | null)[]): AddressRow[] {
 function permit(number: string, over: Partial<Permit> = {}): Permit {
   return {
     number,
+    type: '2',
     sitePermit: true,
     status: 'issued',
     statusDay: null,
@@ -1003,5 +1004,120 @@ describe('DA parcels keep the unfiltered base-case lots (Ruling X2)', () => {
     });
     expect(da.daParcels).toEqual(['3512006', '5066B020', '5087003']);
     expect(da.daProjects.has(base)).toBe(true);
+  });
+});
+
+describe('BP-only projects join the PRJ on their lot (Ruling L2)', () => {
+  /** A PRJ on a lot, its component holding no type 1/2 permit; its anchor day is its open day. */
+  const prjOn = (id: string, lot: string, open: Day, extra: Partial<Prj> = {}) =>
+    prj(id, { blklot: lot, openDay: open, ...extra });
+  const bp = (n: string, lot: string, filed: Day, over: Partial<Permit> = {}) =>
+    permit(n, { rows: rows(lot), filedDay: filed, ...over });
+  const anchorDay = (proj: LinkedProject) => {
+    const ds = proj.anchors.map((a) => a.openDay).filter((d): d is Day => d !== null);
+    return ds.length ? Math.min(...ds) : null;
+  };
+  const linkL2 = (p: Parsed, descendants?: (b: string) => string[]) =>
+    linkProjects(p, { resolve, filedDay, anchorDay, descendants });
+
+  it('merges a BP on an overlapping lot filed within a year before the PRJ anchor day', () => {
+    const r = linkL2(
+      parsedOf({
+        prjs: [prjOn('2020-000001PRJ', '3512001', day(2020, 1, 1))],
+        permits: [bp('201906010009', '3512001', day(2019, 6, 1))]
+      })
+    );
+    expect(ids(r)).toEqual(['PRJ:2020-000001PRJ']);
+    expect(nums(byId(r, 'PRJ:2020-000001PRJ').permits)).toEqual(['201906010009']);
+    expect(r.counts['link.bpMerged']).toBe(1);
+  });
+
+  it('keeps a BP filed more than a year before the anchor day apart', () => {
+    const r = linkL2(
+      parsedOf({
+        prjs: [prjOn('2020-000001PRJ', '3512001', day(2020, 1, 1))],
+        permits: [bp('201812010009', '3512001', day(2018, 12, 1))]
+      })
+    );
+    expect(ids(r)).toEqual(['BP:201812010009', 'PRJ:2020-000001PRJ']);
+    expect(r.counts['link.bpMerged']).toBe(0);
+  });
+
+  it('never merges into a PRJ whose component holds its own type 1/2 permit', () => {
+    const r = linkL2(
+      parsedOf({
+        prjs: [prjOn('2020-000001PRJ', '3512001', day(2020, 1, 1), { permits: ['202002010001'] })],
+        permits: [
+          bp('202002010001', '3512001', day(2020, 2, 1)),
+          bp('202006010009', '3512001', day(2020, 6, 1))
+        ]
+      })
+    );
+    expect(ids(r)).toEqual(['BP:202006010009', 'PRJ:2020-000001PRJ']);
+  });
+
+  it('a named type 3 permit does not stop the merge (it is not new construction)', () => {
+    const r = linkL2(
+      parsedOf({
+        prjs: [prjOn('2020-000001PRJ', '3512001', day(2020, 1, 1), { permits: ['202002010003'] })],
+        permits: [
+          bp('202002010003', '3512001', day(2020, 2, 1), { type: '3' }),
+          bp('202006010009', '3512001', day(2020, 6, 1))
+        ]
+      })
+    );
+    expect(ids(r)).toEqual(['PRJ:2020-000001PRJ']);
+    expect(nums(byId(r, 'PRJ:2020-000001PRJ').permits)).toEqual(['202002010003', '202006010009']);
+  });
+
+  it('does not merge without parcel overlap; a descendant of the PRJ lot overlaps', () => {
+    const p = () =>
+      parsedOf({
+        prjs: [prjOn('2020-000001PRJ', '3512001', day(2020, 1, 1))],
+        permits: [bp('202006010009', '3512005', day(2020, 6, 1))]
+      });
+    expect(ids(linkL2(p()))).toEqual(['BP:202006010009', 'PRJ:2020-000001PRJ']);
+    const desc = (b: string) => (b === '3512001' ? ['3512005', '3512006'] : [b]);
+    expect(ids(linkL2(p(), desc))).toEqual(['PRJ:2020-000001PRJ']);
+  });
+
+  it('several candidates: the latest anchor day on or before the BP filed day; ties lowest id', () => {
+    const r = linkL2(
+      parsedOf({
+        prjs: [
+          prjOn('2018-000001PRJ', '3512001', day(2018, 1, 1)),
+          prjOn('2019-000002PRJ', '3512001', day(2019, 3, 1)),
+          prjOn('2019-000003PRJ', '3512001', day(2019, 3, 1)),
+          prjOn('2020-000004PRJ', '3512001', day(2020, 3, 1))
+        ],
+        permits: [bp('201906010009', '3512001', day(2019, 6, 1))]
+      })
+    );
+    expect(nums(byId(r, 'PRJ:2019-000002PRJ').permits)).toEqual(['201906010009']);
+    expect(ids(r)).not.toContain('BP:201906010009');
+  });
+
+  it('with only later anchors in the window, the earliest one takes the BP', () => {
+    const r = linkL2(
+      parsedOf({
+        prjs: [
+          prjOn('2020-000004PRJ', '3512001', day(2020, 3, 1)),
+          prjOn('2020-000005PRJ', '3512001', day(2020, 1, 1))
+        ],
+        permits: [bp('201906010009', '3512001', day(2019, 6, 1))]
+      })
+    );
+    expect(nums(byId(r, 'PRJ:2020-000005PRJ').permits)).toEqual(['201906010009']);
+  });
+
+  it('is off without an anchorDay option (link-only callers keep the old behaviour)', () => {
+    const r = linkProjects(
+      parsedOf({
+        prjs: [prjOn('2020-000001PRJ', '3512001', day(2020, 1, 1))],
+        permits: [bp('201906010009', '3512001', day(2019, 6, 1))]
+      }),
+      { resolve, filedDay }
+    );
+    expect(ids(r)).toEqual(['BP:201906010009', 'PRJ:2020-000001PRJ']);
   });
 });

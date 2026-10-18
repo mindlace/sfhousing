@@ -27,9 +27,10 @@ function raw(over: Partial<Record<ProjectSourceId, RawRow[]>> = {}) {
 }
 
 describe('source ids', () => {
-  it('lists the seven ids in order and maps them to the locked DataSF datasets', () => {
+  it('lists the eight ids in order and maps them to the locked DataSF datasets', () => {
     expect([...PROJECT_SOURCE_IDS]).toEqual([
       'datasf-permits-newcon',
+      'datasf-permits-named',
       'datasf-planning-projects',
       'datasf-planning-records',
       'datasf-planning-review',
@@ -38,6 +39,59 @@ describe('source ids', () => {
       'datasf-dev-pipeline'
     ]);
     for (const id of PROJECT_SOURCE_IDS) expect(DATASET[id]).toBe(DATASF[id].dataset);
+  });
+});
+
+describe('named unit-adding permits (Ruling L1)', () => {
+  const named = (n: string, extra: RawRow = {}): RawRow => ({
+    permit_number: n,
+    permit_type: '3',
+    block: '3512',
+    lot: '001',
+    status: 'issued',
+    proposed_units: '4.0',
+    existing_units: '1.0',
+    ...extra
+  });
+
+  it('keeps a type 3/8 permit only when a PRJ names it; the newcon row wins on overlap', () => {
+    const p = parseAll(
+      raw({
+        'datasf-permits-newcon': [
+          { permit_number: 'N1', permit_type: '2', status: 'filed', proposed_units: '20.0' }
+        ],
+        'datasf-permits-named': [
+          named('A1'),
+          named('A2', { permit_type: '8' }),
+          named('ADU'),
+          named('N1', { proposed_units: '99.0' })
+        ],
+        'datasf-planning-projects': [
+          { record_id: '2019-000001PRJ', building_permits: 'A1, N1' },
+          { record_id: '2020-000002PRJ', building_permits: 'A2' }
+        ]
+      }),
+      ASOF
+    );
+    expect([...p.permits.keys()]).toEqual(['A1', 'A2', 'N1']);
+    expect(p.permits.get('A1')).toMatchObject({ type: '3', proposedUnits: 4, existingUnits: 1 });
+    expect(p.permits.get('A2')?.type).toBe('8');
+    // N1 is in both sources: the new-construction row is used.
+    expect(p.permits.get('N1')).toMatchObject({ type: '2', proposedUnits: 20 });
+    expect(p.counts['parse.named.kept']).toBe(2);
+    expect(p.counts['parse.named.unnamed']).toBe(1);
+    expect(p.counts['parse.named.inNewcon']).toBe(1);
+  });
+
+  it('reads no date of a dropped named permit (pr.date.valid-range counts only kept ones)', () => {
+    const p = parseAll(
+      raw({
+        'datasf-permits-named': [named('ADU', { filed_date: '1909-06-02T00:00:00.000' })]
+      }),
+      ASOF
+    );
+    expect(p.permits.size).toBe(0);
+    expect(p.dates).toEqual({ of: 0, fired: 0, sample: [] });
   });
 });
 
@@ -136,6 +190,7 @@ describe('parseAll', () => {
     expect(p.asOf).toBe(ASOF);
     expect(p.permits.get('P1')).toEqual({
       number: 'P1',
+      type: '',
       sitePermit: false,
       status: '',
       statusDay: null,

@@ -25,6 +25,7 @@ const OPEN: ProjectHistory['end'] = { kind: 'open', lastObserved: d('2020-01-01'
 function permit(number: string, over: Partial<Permit> = {}): Permit {
   return {
     number,
+    type: '2',
     sitePermit: true,
     status: 'issued',
     statusDay: null,

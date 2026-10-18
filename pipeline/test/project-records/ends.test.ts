@@ -23,6 +23,7 @@ const CTX = { asOf: ASOF, ppaLag: 100 };
 function permit(number: string, over: Partial<Permit> = {}): Permit {
   return {
     number,
+    type: '2',
     sitePermit: false,
     status: 'issued',
     statusDay: null,

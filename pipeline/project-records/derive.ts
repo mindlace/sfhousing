@@ -77,6 +77,7 @@ import {
 import {
   PPA_UMBRELLA_DAYS,
   clampStages,
+  entitledDay,
   filedEvidenceDay,
   pipelineOnlyHistory,
   rawStages
@@ -690,7 +691,10 @@ function zeroCounts(): Record<string, number> {
     'projects.excludedSuspendedUnits': 0,
     'histories.statutoryExpiry.excludedCompletePermit': 0,
     'histories.unitsFiledCarried': 0,
-    'histories.unitsFiledOmitted': 0
+    'histories.unitsFiledOmitted': 0,
+    'parse.named.kept': 0,
+    'parse.named.unnamed': 0,
+    'parse.named.inNewcon': 0
   };
   for (const p of PATHWAYS) c[`projects.byPathway.${p}`] = 0;
   for (const s of STAGE_ORDER) c[`projects.byStage.${s}`] = 0;
@@ -740,7 +744,14 @@ export function deriveProjects(
   const warnings: string[] = [];
   const parsed = parseAll(input.raw, asOf);
   const resolve = (blklots: string[]) => resolveParcels(blklots, input).ids;
-  const link = linkProjects(parsed, { resolve, filedDay: filedEvidenceDay });
+  // Ruling L2: a BP-only project joins the PRJ on its lot; the PRJ's anchor day is its entitled
+  // day, else its filing-evidence day, both known at link time.
+  const link = linkProjects(parsed, {
+    resolve,
+    filedDay: filedEvidenceDay,
+    anchorDay: (p) => entitledDay(p) ?? filedEvidenceDay(p),
+    descendants: input.descendants
+  });
   const counts = Object.assign(opts.counts ?? {}, zeroCounts());
 
   // A curated entry for a PRX row that joined its permit's project is valid but unused.

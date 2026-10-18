@@ -72,7 +72,9 @@ const HISTORIES_ONLY = [
   'BP:201112010026',
   'BP:201410010027',
   'BP:202503010028',
-  'PRJ:2016-000029PRJ'
+  'PRJ:2016-000029PRJ',
+  'PRJ:2018-000030PRJ',
+  'PRJ:2019-000031PRJ'
 ];
 
 /**
@@ -284,9 +286,10 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
       day: day('2026-09-01')
     });
     expect(h.quality).toEqual(['pr.stages.verified-construction']);
-    // The in-flight decision reads the spec 4.6 end: M7, M24, M25, M26 and M29 are stale-open.
-    expect(r.counts['projects.staleOpen']).toBe(5);
-    expect(r.counts['projects.staleOpenUnits']).toBe(14);
+    // The in-flight decision reads the spec 4.6 end: M7, M24, M25, M26, M29, M30 and M31 are
+    // stale-open.
+    expect(r.counts['projects.staleOpen']).toBe(7);
+    expect(r.counts['projects.staleOpenUnits']).toBe(25);
   });
 
   it('M8: a referral PRJ is permitOnly, on the retired lot mapped to lot 12', () => {
@@ -588,8 +591,8 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(history('PRJ:2019-000001PRJ').unitsAt.filed).toBe(24);
     expect(r.counts['link.splitComponents']).toBe(1);
     expect(r.counts['quality.pr.units.split-filed.fired']).toBe(2);
-    // Of the 14 histories whose primary PRJ records number_of_units_prop (M29's 0 included).
-    expect(r.counts['quality.pr.units.split-filed.of']).toBe(14);
+    // Of the 16 histories whose primary PRJ records number_of_units_prop (M29's 0, M30, M31).
+    expect(r.counts['quality.pr.units.split-filed.of']).toBe(16);
     // Both ended complete while the pipeline lists them (observe rule; neither carries it).
     expect(r.counts['quality.pr.pipeline.records-win.fired']).toBe(2);
     // T3 is unchanged: no project carries the id and qualityRules does not list it.
@@ -648,10 +651,10 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     const q = (id: string) => [r.counts[`quality.${id}.fired`], r.counts[`quality.${id}.of`]];
     // Of the 7 histories that entered construction (M1, M6, PRJ:2010.0002, M22, M23 x2, M25).
     expect(q('pr.stages.complete-from-evidence')).toEqual([1, 7]);
-    // Of the 13 that entered permitIssued: M24 and M27.
-    expect(q('pr.stages.statutory-expiry')).toEqual([2, 13]);
-    // The bracketed permits of the histories examined (M1, M8, M24, M26, M27, M28): M26's.
-    expect(q('pr.stages.expiry-no-valuation')).toEqual([1, 6]);
+    // Of the 14 that entered permitIssued (M30 included): M24 and M27.
+    expect(q('pr.stages.statutory-expiry')).toEqual([2, 14]);
+    // The bracketed permits of the histories examined (M1, M8, M24, M26, M27, M28, M30): M26's.
+    expect(q('pr.stages.expiry-no-valuation')).toEqual([1, 7]);
     // Three entries; M7's dead verdict applied.
     expect(q('pr.stages.verified-construction')).toEqual([1, 3]);
     expect(r.warnings).toContain(
@@ -698,7 +701,45 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(r.counts['histories.unitsFiledCarried']).toBe(3);
     expect(r.counts['histories.unitsFiledOmitted']).toBe(0);
     expect(r.counts['quality.pr.units.filed-zero.fired']).toBe(1);
-    expect(r.counts['quality.pr.units.filed-zero.of']).toBe(14);
+    expect(r.counts['quality.pr.units.filed-zero.of']).toBe(16);
+  });
+
+  it('M30: a PRJ-named type 3 alteration advances the entitled PRJ to permitIssued (Ruling L1)', () => {
+    const h = history('PRJ:2018-000030PRJ');
+    expect(h.pathway).toBe('discretionary');
+    expect(h.entered).toEqual({
+      filed: day('2018-03-01'),
+      entitled: day('2018-10-01'),
+      permitFiled: day('2019-01-15'),
+      permitIssued: day('2019-06-03')
+    });
+    expect(h.unitsAt).toEqual({ filed: 5, permitFiled: 5 });
+    expect(h.end.kind).toBe('open');
+    expect(h.sources).toContainEqual({
+      dataset: 'i98e-djp9',
+      id: '201901150030',
+      key: 'permit_number'
+    });
+    // Not a new-construction permit: no permits.parquet row.
+    expect(r.permits.map((p) => p.permit_number)).not.toContain('201901150030');
+    // The unnamed ADU is dropped and seeds no project.
+    expect(r.histories.map((x) => x.id)).not.toContain('BP:202001010032');
+    expect(r.counts['parse.named.kept']).toBe(1);
+    expect(r.counts['parse.named.unnamed']).toBe(1);
+  });
+
+  it('M31: an unnamed BP on the entitled PRJ lot joins it (Ruling L2)', () => {
+    const h = history('PRJ:2019-000031PRJ');
+    expect(h.entered).toMatchObject({
+      entitled: day('2019-09-03'),
+      permitFiled: day('2020-03-02')
+    });
+    expect(h.unitsAt).toEqual({ filed: 6, permitFiled: 6 });
+    expect(r.histories.map((x) => x.id)).not.toContain('BP:202003020031');
+    expect(r.permits.find((p) => p.permit_number === '202003020031')?.project_id).toBe(
+      'PRJ:2019-000031PRJ'
+    );
+    expect(r.counts['link.bpMerged']).toBe(1);
   });
 
   it('xdht extras: rhnaCompletedNet is 4 units over 3 rows', () => {

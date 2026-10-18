@@ -10,6 +10,7 @@ export type DatasfId =
   | 'datasf-footprints'
   | 'datasf-neighborhoods'
   | 'datasf-permits-newcon'
+  | 'datasf-permits-named'
   | 'datasf-planning-projects'
   | 'datasf-planning-records'
   | 'datasf-planning-review'
@@ -78,6 +79,19 @@ export const DATASF: Record<
     license: 'PDDL-1.0',
     homepage: 'https://data.sf.gov/d/i98e-djp9',
     label: 'DataSF Building Permits (new construction)'
+  },
+  // Project-records Ruling L1: unit-adding alterations (types 3 and 8 with proposed units above
+  // existing), the same columns as the new-construction source. The build keeps only the permits
+  // a Planning record's building_permits names; the rest (ADUs and the like) are dropped.
+  'datasf-permits-named': {
+    dataset: 'i98e-djp9',
+    format: 'json',
+    select:
+      'permit_number,permit_type,block,lot,street_number,street_name,street_suffix,status,status_date,filed_date,permit_creation_date,issued_date,first_construction_document_date,completed_date,last_permit_activity_date,number_of_proposed_stories,existing_units,proposed_units,estimated_cost,revised_cost,site_permit,primary_address_flag',
+    where: "permit_type in('3','8') and proposed_units > existing_units",
+    license: 'PDDL-1.0',
+    homepage: 'https://data.sf.gov/d/i98e-djp9',
+    label: 'DataSF Building Permits (unit-adding alterations)'
   },
   'datasf-planning-projects': {
     dataset: 'qvu5-m3a2',

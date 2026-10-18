@@ -175,6 +175,7 @@ export function baseRaw(): Record<ProjectSourceId, RawRow[]> {
         units: 8
       })
     ],
+    'datasf-permits-named': [],
     'datasf-planning-projects': [
       {
         record_id: '2019-000001PRJ',

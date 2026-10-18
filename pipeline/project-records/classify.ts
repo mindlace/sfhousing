@@ -82,9 +82,12 @@ export function pathwayOf(proj: LinkedProject): Pathway | null {
 }
 
 /** Spec 4.3 first condition: a permit, or an anchor PRJ flagged new construction with units. */
+/** New-construction permit types (spec 4.3): a named alteration (3/8, Ruling L1) is not one. */
+export const NEW_CONSTRUCTION_PERMIT_TYPES: ReadonlySet<string> = new Set(['1', '2']);
+
 export function isNewConstruction(proj: LinkedProject): boolean {
   return (
-    proj.permits.length > 0 ||
+    proj.permits.some((q) => NEW_CONSTRUCTION_PERMIT_TYPES.has(q.type)) ||
     proj.anchors.some((a) => a.newConstruction && a.unitsProp !== null && a.unitsProp >= 1)
   );
 }

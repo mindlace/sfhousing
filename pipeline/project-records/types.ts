@@ -9,6 +9,7 @@ import type { MultiphaseFile } from '../enrichment/schema';
 
 export type ProjectSourceId =
   | 'datasf-permits-newcon'
+  | 'datasf-permits-named'
   | 'datasf-planning-projects'
   | 'datasf-planning-records'
   | 'datasf-planning-review'
@@ -18,6 +19,7 @@ export type ProjectSourceId =
 
 export const PROJECT_SOURCE_IDS: readonly ProjectSourceId[] = [
   'datasf-permits-newcon',
+  'datasf-permits-named',
   'datasf-planning-projects',
   'datasf-planning-records',
   'datasf-planning-review',
@@ -29,6 +31,7 @@ export const PROJECT_SOURCE_IDS: readonly ProjectSourceId[] = [
 /** Lock id to DataSF dataset id. */
 export const DATASET: Record<ProjectSourceId, string> = {
   'datasf-permits-newcon': 'i98e-djp9',
+  'datasf-permits-named': 'i98e-djp9',
   'datasf-planning-projects': 'qvu5-m3a2',
   'datasf-planning-records': 'y673-d69b',
   'datasf-planning-review': 'd4jk-jw33',
@@ -50,6 +53,9 @@ export interface AddressRow {
 
 export interface Permit {
   number: string;
+  /** `permit_type`, trimmed; '' if absent. Types 1/2 are new construction; 3/8 (Ruling L1) are
+   *  unit-adding alterations a Planning record names. */
+  type: string;
   sitePermit: boolean;
   /** Trimmed, lower-case; '' if absent. */
   status: string;

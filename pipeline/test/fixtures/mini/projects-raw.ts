@@ -35,6 +35,9 @@
  * | M27 BP 201410010027    | lot 011; in the pipeline, past its 2020 deadline: expired, leaves flight  |
  * | M28 BP 202503010028    | lot 011; in the pipeline, every permit suspended: leaves flight, open     |
  * | M29 2016-000029PRJ     | lot 011; referral PRJ recording 0 units, permit filed (2): no unitsAt.filed |
+ * | M30 2018-000030PRJ     | lot 012; entitled 2018; names type 3 permit 201901150030 (+5): permitIssued |
+ * | M31 2019-000031PRJ     | lot 010; entitled 2019; unnamed BP 202003020031 on its lot joins it (L2)   |
+ * | named extras           | type 3 ADU 202001010032 (+1) named by no PRJ: dropped (Ruling L1)          |
  * | xdht extras            | forms 2 (+3), 3 (+2) and 6 (-1): rhnaCompletedNet 4                       |
  *
  * `enrichment/construction-verified.json` (Ruling C3): M7 `dead` (exit withdrawn at permitFiled on
@@ -83,9 +86,12 @@ const ts = (iso: string) => `${iso}T00:00:00.000`;
 
 interface PermitSpec {
   number: string;
+  /** `permit_type`; default '2' for the new-construction source. */
   /** Default '3512'; lots 3 (`8711023C`) and 4 (`0026T001A`) have their own blocks. */
   block?: string;
-  type: '1' | '2';
+  type: '1' | '2' | '3' | '8';
+  /** Existing units (named alterations, Ruling L1). */
+  existing?: number;
   lot: string;
   status: string;
   statusDate: string;
@@ -125,6 +131,7 @@ function permit(o: PermitSpec): RawRow {
   if (o.lastActivity) r.last_permit_activity_date = ts(o.lastActivity);
   if (o.stories !== undefined) r.number_of_proposed_stories = String(o.stories);
   r.proposed_units = String(o.units);
+  if (o.existing !== undefined) r.existing_units = String(o.existing);
   if (o.estimatedCost !== undefined) r.estimated_cost = `${o.estimatedCost}.0`;
   if (o.revisedCost !== undefined) r.revised_cost = `${o.revisedCost}.0`;
   r.site_permit = 'Y';
@@ -395,6 +402,16 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       estimatedCost: 500000,
       units: 2
     }),
+    // M31 (Ruling L2): a type 2 permit on lot 010 that no PRJ names; it joins 2019-000031PRJ.
+    permit({
+      number: '202003020031',
+      type: '2',
+      lot: '010',
+      status: 'filed',
+      statusDate: '2020-03-02',
+      filed: '2020-03-02',
+      units: 6
+    }),
     // M29 (Ruling F1a): the permit of a referral PRJ that records 0 units.
     permit({
       number: '201606010029',
@@ -415,6 +432,35 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       filed: '2025-03-01',
       issued: '2025-06-02',
       estimatedCost: 400000,
+      units: 2
+    })
+  ],
+  // Ruling L1: unit-adding alterations (types 3/8); kept only where a PRJ names them.
+  'datasf-permits-named': [
+    // M30: the named alteration, adding 5 homes on lot 012 (existing 0); $3M, within its time.
+    permit({
+      number: '201901150030',
+      type: '3',
+      lot: '012',
+      status: 'issued',
+      statusDate: '2019-06-03',
+      filed: '2019-01-15',
+      issued: '2019-06-03',
+      estimatedCost: 3000000,
+      existing: 0,
+      units: 5
+    }),
+    // An ADU (+1) on lot 005 that no PRJ names: dropped.
+    permit({
+      number: '202001010032',
+      type: '3',
+      lot: '005',
+      status: 'complete',
+      statusDate: '2020-11-02',
+      filed: '2020-01-01',
+      issued: '2020-03-02',
+      completed: '2020-11-02',
+      existing: 1,
       units: 2
     })
   ],
@@ -552,6 +598,27 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       open_date: ts('2025-09-12'),
       number_of_units_prop: '0'
     },
+    // M30 (Ruling L1): entitled 2018, its building is a named type 3 alteration (+5 homes).
+    {
+      record_id: '2018-000030PRJ',
+      record_status: 'Open',
+      block: '3512',
+      lot: '012',
+      open_date: ts('2018-03-01'),
+      building_permits: '201901150030',
+      number_of_units_prop: '5',
+      new_construction: 'CHECKED'
+    },
+    // M31 (Ruling L2): entitled 2019, no permit of its own named; the BP on its lot joins it.
+    {
+      record_id: '2019-000031PRJ',
+      record_status: 'Open',
+      block: '3512',
+      lot: '010',
+      open_date: ts('2019-02-01'),
+      number_of_units_prop: '6',
+      new_construction: 'CHECKED'
+    },
     // M29 (Ruling F1a): a referral (opened after its permit was filed, no evidence) whose
     // number_of_units_prop is 0, so its history omits unitsAt.filed (pr.units.filed-zero).
     {
@@ -669,6 +736,21 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       b1_alt_id: '2024-000016PRJ',
       start_event_type: 'accepted',
       start_event_date: ts('2024-04-15')
+    },
+    // M30's and M31's approvals.
+    {
+      b1_alt_id: '2018-000030PRJ',
+      start_event_type: 'accepted',
+      start_event_date: ts('2018-03-15'),
+      end_event_type: 'approval',
+      end_event_date: ts('2018-10-01')
+    },
+    {
+      b1_alt_id: '2019-000031PRJ',
+      start_event_type: 'accepted',
+      start_event_date: ts('2019-02-15'),
+      end_event_type: 'approval',
+      end_event_date: ts('2019-09-03')
     },
     // M23's approval (discretionary, entitled before either permit was filed: no clamp).
     {

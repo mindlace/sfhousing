@@ -809,6 +809,24 @@
     {
       "files": [
         {
+          "archiveKey": "sources/de887416a6cbd161541d6f79ed1336027a7c4a28c667cac4764d82b51e1f1e27.json",
+          "bytes": 9520613,
+          "name": "datasf-permits-named.page-000.json",
+          "sha256": "de887416a6cbd161541d6f79ed1336027a7c4a28c667cac4764d82b51e1f1e27",
+          "url": "https://data.sf.gov/resource/i98e-djp9.json?%24select=permit_number%2Cpermit_type%2Cblock%2Clot%2Cstreet_number%2Cstreet_name%2Cstreet_suffix%2Cstatus%2Cstatus_date%2Cfiled_date%2Cpermit_creation_date%2Cissued_date%2Cfirst_construction_document_date%2Ccompleted_date%2Clast_permit_activity_date%2Cnumber_of_proposed_stories%2Cexisting_units%2Cproposed_units%2Cestimated_cost%2Crevised_cost%2Csite_permit%2Cprimary_address_flag&%24where=permit_type+in%28%273%27%2C%278%27%29+and+proposed_units+%3E+existing_units&%24order=%3Aid&%24limit=50000&%24offset=0"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/i98e-djp9",
+      "id": "datasf-permits-named",
+      "label": "DataSF Building Permits (unit-adding alterations)",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-18T23:09:10.088Z",
+      "rowCount": 17214,
+      "upstreamVersion": "Sun, 18 Oct 2026 12:41:05 GMT"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/81d52437e401c46a2c2eb5056583261de34d295eb91fcc477f111295f3927580.json",
           "bytes": 8471243,
           "name": "datasf-permits-newcon.page-000.json",

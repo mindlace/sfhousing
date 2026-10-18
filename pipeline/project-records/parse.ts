@@ -196,11 +196,11 @@ function valuationOf(r: RawRow, number: string, ctx: ValuationCtx): number | nul
 
 function parsePermits(
   rows: RawRow[],
+  id: ProjectSourceId,
   dates: DateCtx,
   counts: Record<string, number>,
   valuation: ValuationCtx
 ): Map<string, Permit> {
-  const id: ProjectSourceId = 'datasf-permits-newcon';
   const groups = new Map<string, RawRow[]>();
   for (const r of rows) {
     const number = str(r.permit_number);
@@ -219,6 +219,7 @@ function parsePermits(
     const d = dateReader(dates);
     const permit: Permit = {
       number,
+      type: str(lead.permit_type) ?? '',
       sitePermit: lead.site_permit === 'Y',
       status: (str(lead.status) ?? '').toLowerCase(),
       statusDay: d.day(lead.status_date),
@@ -287,7 +288,50 @@ function parsePrjs(
 }
 
 /**
- * Parses all seven row sets. `asOf` bounds every date: a non-empty date outside
+ * Ruling L1: the `datasf-permits-named` rows to parse: those of permits a PRJ's building_permits
+ * names and the new-construction source lacks (that row wins). Counts distinct permit numbers in
+ * `parse.named.kept`, `parse.named.unnamed` (dropped: no PRJ names them, e.g. ADUs) and
+ * `parse.named.inNewcon`; a row with no permit number is `parse.dropped.datasf-permits-named`.
+ */
+function namedPermitRows(
+  rows: RawRow[],
+  newcon: RawRow[],
+  prjs: ReadonlyMap<string, Prj>,
+  counts: Record<string, number>
+): RawRow[] {
+  const nameable = new Set<string>();
+  for (const prj of prjs.values()) for (const n of prj.permits) nameable.add(n);
+  const inNewcon = new Set<string>();
+  for (const r of newcon) {
+    const n = str(r.permit_number);
+    if (n !== null) inNewcon.add(n);
+  }
+  const kept = new Set<string>();
+  const unnamed = new Set<string>();
+  const both = new Set<string>();
+  const out: RawRow[] = [];
+  for (const r of rows) {
+    const n = str(r.permit_number);
+    if (n === null) {
+      bump(counts, 'parse.dropped.datasf-permits-named');
+    } else if (inNewcon.has(n)) {
+      both.add(n);
+    } else if (!nameable.has(n)) {
+      unnamed.add(n);
+    } else {
+      kept.add(n);
+      out.push(r);
+    }
+  }
+  // Written only when non-zero; deriveProjects zero-initialises them for the report.
+  if (kept.size > 0) counts['parse.named.kept'] = kept.size;
+  if (unnamed.size > 0) counts['parse.named.unnamed'] = unnamed.size;
+  if (both.size > 0) counts['parse.named.inNewcon'] = both.size;
+  return out;
+}
+
+/**
+ * Parses all eight row sets. `asOf` bounds every date: a non-empty date outside
  * `[1970-01-01, asOf]` or not a calendar date is missing (rule `pr.date.valid-range`), counted in
  * `dates` and its record put in `clipped`.
  */
@@ -298,8 +342,15 @@ export function parseAll(raw: Record<ProjectSourceId, RawRow[]>, asOf: Day): Par
   for (const id of PROJECT_SOURCE_IDS) sorted[id] = canonicalSort(raw[id] ?? []);
 
   const valuation: ValuationCtx = { of: 0, replaced: new Set() };
-  const permits = parsePermits(sorted['datasf-permits-newcon'], dates, counts, valuation);
   const prjs = parsePrjs(sorted['datasf-planning-projects'], dates, counts);
+  const newcon = sorted['datasf-permits-newcon'];
+  const named = namedPermitRows(sorted['datasf-permits-named'], newcon, prjs, counts);
+  const permits = new Map(
+    [
+      ...parsePermits(newcon, 'datasf-permits-newcon', dates, counts, valuation),
+      ...parsePermits(named, 'datasf-permits-named', dates, counts, valuation)
+    ].sort((a, b) => cmp(a[0], b[0]))
+  );
 
   const children: Child[] = [];
   for (const r of sorted['datasf-planning-records']) {
