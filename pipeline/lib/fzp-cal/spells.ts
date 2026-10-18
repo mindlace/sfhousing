@@ -2,7 +2,8 @@
  * Qualifying predicate, normalisation steps 1-4 and spell building (stage-calibration spec §4.4).
  * Steps 1-3 are the registered `sc.*` rules (counted here, recorded by the build through
  * `recordQuality`); step 4 is a method count. Steps 2 and 3 are counted over all qualifying
- * histories; step 1 is counted over windowed histories only (`gapImputeTally`, DQ-4). Values change only in memory: `src` stays as read.
+ * histories; step 1 is counted over windowed histories only (`gapImputeTally`, DQ-4). Values
+ * change only in memory: `src` stays as read.
  */
 import { isoToDay } from '../../project-records/multiphase';
 import {
