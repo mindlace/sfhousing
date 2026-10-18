@@ -508,7 +508,17 @@
     const overlay = new MapLibreOverlay({
       interleaved: true,
       layers: [],
-      layerFilter: generatedCellFilter
+      layerFilter: generatedCellFilter,
+      // deck seeds its view state from the camera at addControl, then creates its luma device
+      // asynchronously and follows map `move` only from its onLoad. onready (below) runs in
+      // between, so a camera change there (setBottomInset, a consumer's jumpTo, a drag) left
+      // deck's picking viewport behind until the next move. onDeviceInitialized runs in the same
+      // synchronous turn as deck's onLoad, so one `move` after that turn resyncs deck. (Not
+      // onLoad: the overlay wraps it, and a later setProps would replace the wrapper.)
+      onDeviceInitialized: () =>
+        queueMicrotask(() => {
+          if (!l.dead && l.map === map) map.fire('move');
+        })
     });
     map.addControl(overlay);
     l.overlay = overlay;
