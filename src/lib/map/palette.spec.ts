@@ -194,7 +194,8 @@ describe('TIMELINE_LEGEND', () => {
 });
 
 // The body of SimMap's DEFAULT_TOKENS_CSS (between <style> and </style>) as rendered by the code
-// at HEAD 0784133, before the helper existed. Pinned byte for byte (spec §4.6.1, AC15).
+// before the helper existed. This literal is dda6252's output, which is unchanged at 0784133.
+// Pinned byte for byte (spec §4.6.1, AC15).
 const DEFAULT_TOKENS_BODY =
   '.sim-map { --map-land: #F3EFE6; --map-water: #C7D3D6; --map-park: #E2E4D3; ' +
   '--map-road: #FFFFFF; --map-road-minor: #EAE5DA; --map-label: #5E5A52; ' +

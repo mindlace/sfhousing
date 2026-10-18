@@ -89,7 +89,7 @@ Pump max ops per frame, 2026-10-17 (full sweep; the earlier timeline-only run ga
 | playback, closed rings (after #21) | 10.3 ms | 53                 |
 | drag, closed rings (after #21)     | 10.3 ms | 171                |
 
-The first two rows were measured on open packed rings; the "closed rings (after #21)" rows were re-run after the closing vertex landed (every timeline part has one more wall). Both pump maxima stay far under the 2,000 feature-state cap.
+The first two rows were measured on open packed rings; the "closed rings (after #21)" rows were re-run after the closing vertex landed (every timeline part has one more wall). The closed-ring deltas (pump 48 to 53 ops, drag p95 9.0 to 10.3 ms) are run-to-run spread, not an effect of the extra wall: pump op counts do not depend on wall count, and earlier runs already varied by this much. Other preview servers were running on the machine during the closed-ring run, which adds to the noise. Both pump maxima stay far under the 2,000 feature-state cap.
 
 ## CI
 
