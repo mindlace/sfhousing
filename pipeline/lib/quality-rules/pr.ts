@@ -124,7 +124,10 @@ export const PR_RULES: readonly QualityRule[] = [
     label:
       'A building the records show as finished but never certified complete was treated as complete',
     denominator: 'histories that entered construction',
-    warnShare: 0.01,
+    // Override (partner-approved): DataSF never records permit expiry or completion for these;
+    // the rules supply them from the building code (§106A.4.4) and the assessor roll / xdht;
+    // live 2.99% / 3.76%.
+    warnShare: 0.05,
     failShare: 0.1,
     unitsWeighted: false
   },
@@ -147,7 +150,10 @@ export const PR_RULES: readonly QualityRule[] = [
     label:
       'A permit past its legal completion deadline with no recorded extension was treated as expired',
     denominator: 'histories that entered permit issued',
-    warnShare: 0.01,
+    // Override (partner-approved): DataSF never records permit expiry or completion for these;
+    // the rules supply them from the building code (§106A.4.4) and the assessor roll / xdht;
+    // live 2.99% / 3.76%.
+    warnShare: 0.05,
     failShare: 0.1,
     unitsWeighted: false
   },

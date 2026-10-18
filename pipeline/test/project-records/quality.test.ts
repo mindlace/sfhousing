@@ -84,7 +84,7 @@ const TABLE: Record<string, Spec> = {
     tier: 2,
     valueTier: 2,
     unitsWeighted: false,
-    warnShare: 0.01,
+    warnShare: 0.05,
     failShare: 0.1,
     label:
       'A building the records show as finished but never certified complete was treated as complete'
@@ -95,7 +95,7 @@ const TABLE: Record<string, Spec> = {
     tier: 2,
     valueTier: 2,
     unitsWeighted: false,
-    warnShare: 0.01,
+    warnShare: 0.05,
     failShare: 0.1,
     label:
       'A permit past its legal completion deadline with no recorded extension was treated as expired'
