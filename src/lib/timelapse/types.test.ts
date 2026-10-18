@@ -240,9 +240,8 @@ describe('stage constants', () => {
 });
 
 describe('model stubs', () => {
-  it('every T12 function throws not implemented until step 2', () => {
+  it('remaining T12 stubs throw not implemented', () => {
     const cal = {} as Calibration;
-    expect(() => sampleTransition({} as Transition, 0.5, 0)).toThrow('not implemented');
     expect(() => chanceTable(cal)).toThrow('not implemented');
     expect(() => typicalMonths(cal)).toThrow('not implemented');
     expect(() => parseCalibration({})).toThrow('not implemented');
