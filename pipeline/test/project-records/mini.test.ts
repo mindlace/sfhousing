@@ -1,12 +1,12 @@
 /**
- * The mini fixture's project records (spec 4.9 Fixture table, M1-M20 and the xdht extras) through
+ * The mini fixture's project records (spec 4.9 Fixture table, M1-M22 and the xdht extras) through
  * deriveProjects with stub callbacks that mirror scenario-data's fixture. V21-V24 use literal
  * fixture thresholds: coverage min 0.9, RHNA tolerance year 0.1 and total 0.05. M15-M20 values are
  * qualitative in the spec; the exact values asserted here are the goldens computed at
  * implementation (Task F2-7).
  */
 import { describe, expect, it } from 'vitest';
-import type { ProjectHistory } from '../../../src/lib/timelapse/types';
+import type { ProjectHistory, Stage } from '../../../src/lib/timelapse/types';
 import { STAGE_ORDER } from '../../../src/lib/timelapse/types';
 import {
   deriveProjects,
@@ -62,8 +62,46 @@ const HISTORIES_ONLY = [
   'PRJ:2016-000006PRJ',
   'BP:201410070008',
   'PRJ:2015-000013PRJ',
-  'PRJ:2010.0002'
+  'PRJ:2010.0002',
+  'BP:201803010021',
+  'BP:201702010022'
 ];
+
+/**
+ * Ruling E1 (stage-calibration finding): a project whose permits are all dead exits no earlier
+ * than `permitIssued` when one of its non-superseded permits was issued, and no earlier than
+ * `construction` when one has a construction day. Returns the problems and, per expected stage,
+ * the histories the check covered, so a caller can assert the records exist.
+ */
+function deadIssuedExitCheck(
+  histories: ProjectHistory[],
+  permits: typeof r.permits
+): { problems: string[]; covered: Partial<Record<Stage, number>> } {
+  const byProject = new Map<string, typeof r.permits>();
+  for (const q of permits) {
+    byProject.set(q.project_id, [...(byProject.get(q.project_id) ?? []), q]);
+  }
+  const problems: string[] = [];
+  const covered: Partial<Record<Stage, number>> = {};
+  for (const h of histories) {
+    const rows = byProject.get(h.id) ?? [];
+    if (rows.length === 0 || rows.some((q) => q.live)) continue;
+    const bearing = rows.filter((q) => !q.superseded);
+    const floor: Stage | null = bearing.some((q) => q.construction_day !== null)
+      ? 'construction'
+      : bearing.some((q) => q.issued_day !== null)
+        ? 'permitIssued'
+        : null;
+    if (floor === null) continue;
+    covered[floor] = (covered[floor] ?? 0) + 1;
+    if (h.end.kind !== 'exit') {
+      problems.push(`${h.id}: ${h.end.kind}, expected an exit at ${floor} or later`);
+    } else if (STAGE_ORDER.indexOf(h.end.stage) < STAGE_ORDER.indexOf(floor)) {
+      problems.push(`${h.id}: exit at ${h.end.stage}, expected ${floor} or later`);
+    }
+  }
+  return { problems, covered };
+}
 
 describe('mini project records: raw shape', () => {
   it('has a SODA-shaped row array for every project source', () => {
@@ -466,6 +504,48 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(r.counts['multiphase.descendants.2010.0002PRX']).toBe(1);
     // M11 holds the tracking lot without a DA row, but it nets M20, so it is not flagged (B2).
     expect(r.warnings.filter((w) => w.includes('descendant parcel'))).toEqual([]);
+  });
+
+  it('M21: an issued permit that expired unstarted exits expired at permitIssued', () => {
+    const h = history('BP:201803010021');
+    expect(h.pathway).toBe('permitOnly');
+    expect(h.entered).toEqual({
+      permitFiled: day('2018-03-01'),
+      permitIssued: day('2019-04-01')
+    });
+    expect(h.end).toEqual({
+      kind: 'exit',
+      stage: 'permitIssued',
+      reason: 'expired',
+      day: day('2022-05-02')
+    });
+    expect(h.existingUnits).toBe(0);
+  });
+
+  it('M22: a started site permit, then cancelled, exits cancelled at construction', () => {
+    const h = history('BP:201702010022');
+    expect(h.pathway).toBe('permitOnly');
+    expect(h.entered).toEqual({
+      permitFiled: day('2017-02-01'),
+      permitIssued: day('2018-01-10'),
+      construction: day('2018-03-01')
+    });
+    expect(h.end).toEqual({
+      kind: 'exit',
+      stage: 'construction',
+      reason: 'cancelled',
+      day: day('2021-06-01')
+    });
+  });
+
+  it('Ruling E1: dead issued permits exit at permitIssued and construction (M21, M22)', () => {
+    const { problems, covered } = deadIssuedExitCheck(r.histories, r.permits);
+    expect(problems).toEqual([]);
+    expect(covered).toEqual({ permitIssued: 1, construction: 1 });
+    const exits = r.histories.filter((h) => h.end.kind === 'exit');
+    const at = (s: Stage) => exits.filter((h) => h.end.kind === 'exit' && h.end.stage === s);
+    expect(at('permitIssued').map((h) => h.id)).toEqual(['BP:201803010021']);
+    expect(at('construction').map((h) => h.id)).toEqual(['BP:201702010022']);
   });
 
   it('a DQ-2-linked project nets no master (spec 4.10.2: it matches a pipeline row)', () => {

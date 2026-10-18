@@ -165,10 +165,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/8ab9ca1d4a2584b88d8d41243546cdf25a4aaa6d93a5443473c30fde42336f22.json",
-          "bytes": 3445,
+          "archiveKey": "sources/57b173291ef986c005e078feda6b9ffb02ac31b8ee3ab0089b836b3681e28119.json",
+          "bytes": 4072,
           "name": "datasf-permits-newcon.page-000.json",
-          "sha256": "8ab9ca1d4a2584b88d8d41243546cdf25a4aaa6d93a5443473c30fde42336f22",
+          "sha256": "57b173291ef986c005e078feda6b9ffb02ac31b8ee3ab0089b836b3681e28119",
           "url": "https://fixture.invalid/datasf-permits-newcon.page-000.json"
         }
       ],
@@ -177,7 +177,7 @@
       "label": "DataSF Building Permits (new construction)",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 11,
+      "rowCount": 13,
       "upstreamVersion": "fixture"
     },
     {

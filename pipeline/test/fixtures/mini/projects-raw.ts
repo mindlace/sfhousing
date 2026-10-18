@@ -26,6 +26,8 @@
  * | M18 2026-000018PRJ     | lot 009; no-date row, no such record, no open PRJ on the lot: dropped     |
  * | M19 BP 202501150019    | lot 001; type 1 permit, shares lot 1 with M10; pipeline BP Filed          |
  * | M20 2012-000020PRX     | lot 006; pipeline-only, 10 units, da 'Fixture Yards'; netted by M11       |
+ * | M21 BP 201803010021    | lot 011; type 1 permit issued 2019, no FCD, expired 2022: exit at issued  |
+ * | M22 BP 201702010022    | lot 011; site permit issued and FCD 2018, cancelled 2021: exit at constr. |
  * | xdht extras            | forms 2 (+3), 3 (+2) and 6 (-1): rhnaCompletedNet 4                       |
  *
  * Every pipeline row's `new_pipeline_units` equals its project's units, except M16's (220 against
@@ -260,6 +262,30 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       statusDate: '2025-01-15',
       filed: '2025-01-15',
       units: 3
+    }),
+    // M21 (Ruling E1): issued, never started (a site permit with no FCD), then expired. Lot 011
+    // holds 0 units in every roll year and no in-flight project or DA uses it as its own.
+    permit({
+      number: '201803010021',
+      type: '1',
+      lot: '011',
+      status: 'expired',
+      statusDate: '2022-05-02',
+      filed: '2018-03-01',
+      issued: '2019-04-01',
+      units: 3
+    }),
+    // M22 (Ruling E1): a site permit issued and started (FCD), then cancelled; also on lot 011.
+    permit({
+      number: '201702010022',
+      type: '2',
+      lot: '011',
+      status: 'cancelled',
+      statusDate: '2021-06-01',
+      filed: '2017-02-01',
+      issued: '2018-01-10',
+      fcd: '2018-03-01',
+      units: 8
     })
   ],
   'datasf-planning-projects': [
