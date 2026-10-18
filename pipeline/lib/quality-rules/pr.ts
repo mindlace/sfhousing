@@ -218,7 +218,9 @@ export const PR_RULES: readonly QualityRule[] = [
     label:
       "A parcel from the Planning record on a different block from the permits' lots was not used",
     denominator: 'projects with a resolved permit address parcel',
-    warnShare: 0.01,
+    // Override (partner-approved): umbrella Planning cases on multi-block master plans record one
+    // tracking lot; split building permits sit on other blocks; live 39/3,384 = 1.15%.
+    warnShare: 0.03,
     failShare: 0.1,
     unitsWeighted: false
   },
