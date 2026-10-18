@@ -22,24 +22,41 @@ import {
 const SQL_DIR = path.resolve(import.meta.dirname, '../sql');
 
 /**
- * The T14 rules 80_scenario.sql and 81_scenario_features.sql apply and tally (spec §4.12, and the
- * DQ-4 registered rules sd.roll.no-year and sd.roll.units-missing). Each inserts exactly one
- * quality_tally row per run.
+ * The T14 rules 80_scenario.sql and 81_scenario_features.sql apply and tally (spec §4.12, the DQ-4
+ * registered rules sd.roll.no-year and sd.roll.units-missing, and the final fix wave's: the
+ * normalise casts, which normalise flags in cast_flags, the attrs and height drops and default,
+ * and the sd.features.no-building observation). Each inserts exactly one quality_tally row per
+ * run.
  */
 export const SCENARIO_SQL_RULES = [
+  'sd.attrs.active-unknown',
+  'sd.attrs.added-date-cast',
+  'sd.attrs.dropped-date-cast',
+  'sd.attrs.latitude-cast',
+  'sd.attrs.longitude-cast',
+  'sd.attrs.no-blklot',
   'sd.features.median-fallback',
+  'sd.features.no-building',
   'sd.features.share-median',
   'sd.features.stories-height',
   'sd.features.year-built-median',
+  'sd.height.blank',
+  'sd.roll.floor-area-cast',
   'sd.roll.floor-area-missing',
+  'sd.roll.improvement-value-cast',
+  'sd.roll.land-value-cast',
   'sd.roll.no-year',
+  'sd.roll.roll-year-cast',
+  'sd.roll.stories-cast',
   'sd.roll.stories-max',
   'sd.roll.unmatched',
   'sd.roll.units-capacity',
+  'sd.roll.units-cast',
   'sd.roll.units-large',
   'sd.roll.units-latest-jump',
   'sd.roll.units-missing',
   'sd.roll.units-spike',
+  'sd.roll.year-built-cast',
   'sd.roll.year-built-range',
   'sd.roll.year-gap'
 ] as const;

@@ -294,7 +294,7 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
       2,
       3,
       1,
-      'parcel-years',
+      'observed parcel-years',
       false
     ],
     [
@@ -330,7 +330,7 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
       2,
       3,
       6,
-      'parcel-years',
+      'panel parcel-years plus T11 no-row parcels',
       false
     ],
     // The TS-side rules (spec §4.12 tables; observation rules take tier 4).
@@ -418,8 +418,131 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
       3,
       'observed parcel-years',
       false
+    ],
+    // DQ-4 registered rules (final fix wave, review Important 1): the normalise TRY_CAST
+    // rewrites, flagged per row in cast_flags and tallied in 80_scenario.sql.
+    ...(
+      [
+        ['sd.roll.roll-year-cast', 'closed_roll_year', 'replace', 0, null, 'a roll year'],
+        ['sd.roll.year-built-cast', 'year_property_built', 'replace', 0, 0, 'a year'],
+        ['sd.roll.stories-cast', 'number_of_stories', 'replace', 0, 1, 'stories'],
+        ['sd.roll.units-cast', 'number_of_units', 'replace', 0, 3, 'units'],
+        ['sd.roll.floor-area-cast', 'property_area', 'null', null, 6, 'a floor area'],
+        ['sd.roll.land-value-cast', 'assessed_land_value', 'null', null, 2, 'a land value'],
+        [
+          'sd.roll.improvement-value-cast',
+          'assessed_improvement_value',
+          'null',
+          null,
+          2,
+          'an improvement value'
+        ]
+      ] as const
+    ).map(([id, field, action, valueTier, bit, what]): (typeof TABLE)[number] => [
+      id,
+      'datasf-assessor-roll',
+      field,
+      'shape',
+      action,
+      4,
+      valueTier,
+      bit,
+      `roll rows with ${what}`,
+      false
+    ]),
+    ...(
+      [
+        ['sd.attrs.latitude-cast', 'centroid_latitude', 'null', null, 'a latitude'],
+        ['sd.attrs.longitude-cast', 'centroid_longitude', 'null', null, 'a longitude'],
+        ['sd.attrs.added-date-cast', 'date_rec_add', 'replace', 0, 'an added date'],
+        ['sd.attrs.dropped-date-cast', 'date_rec_drop', 'replace', 0, 'a dropped date']
+      ] as const
+    ).map(([id, field, action, valueTier, what]): (typeof TABLE)[number] => [
+      id,
+      'datasf-parcel-attrs',
+      field,
+      'shape',
+      action,
+      4,
+      valueTier,
+      null,
+      `parcel rows with ${what}`,
+      false
+    ]),
+    [
+      'sd.attrs.active-unknown',
+      'datasf-parcel-attrs',
+      'active',
+      'shape',
+      'default',
+      4,
+      4,
+      null,
+      'parcel rows',
+      false
+    ],
+    [
+      'sd.attrs.no-blklot',
+      'datasf-parcel-attrs',
+      'blklot',
+      'shape',
+      'drop',
+      4,
+      null,
+      null,
+      'parcel rows',
+      false
+    ],
+    [
+      'sd.height.blank',
+      'datasf-height-bulk',
+      'height',
+      'shape',
+      'drop',
+      4,
+      null,
+      null,
+      'height polygons',
+      false
+    ],
+    // Spec-stated behaviour, counted (final fix wave): observe · none.
+    [
+      'sd.zoning.missing',
+      'datasf-parcel-attrs',
+      'zoning_code',
+      'observe',
+      'none',
+      4,
+      null,
+      null,
+      'hostable parcels',
+      false
+    ],
+    [
+      'sd.features.no-building',
+      'sc_roll_agg',
+      'stories',
+      'observe',
+      'none',
+      4,
+      null,
+      null,
+      'observed parcel-years',
+      false
     ]
   ];
+  /** Partner-approved share overrides (DQ-4, 2026-10-17; design RA1 "Share overrides"). */
+  const OVERRIDES: Record<string, { warnShare: number; failShare: number }> = {
+    'sd.roll.units-capacity': { warnShare: 0.05, failShare: 0.1 },
+    'sd.roll.floor-area-missing': { warnShare: 0.07, failShare: 0.15 },
+    'sd.zoning.generic-nc': { warnShare: 0.05, failShare: 0.1 },
+    'sd.yield.zero-hostable': { warnShare: 0.09, failShare: 0.15 }
+  };
+  it('lists every registered scenario-data rule', () => {
+    expect(TABLE.map(([id]) => id).sort()).toEqual(
+      QUALITY_RULES.filter((r) => r.owner === 'scenario-data').map((r) => r.id)
+    );
+  });
   it.each(TABLE)(
     '%s',
     (id, source, field, kind, action, tier, valueTier, maskBit, denominator, unitsWeighted) => {
@@ -435,8 +558,7 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
         maskBit,
         denominator,
         unitsWeighted,
-        warnShare: kind === 'missing' ? 0.05 : 0.01,
-        failShare: 0.1
+        ...(OVERRIDES[id] ?? { warnShare: kind === 'missing' ? 0.05 : 0.01, failShare: 0.1 })
       });
       expect(r.label.length).toBeGreaterThan(10);
     }
@@ -777,7 +899,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
 
   it('every scenario-data rule reports once (recordQuality throws on a second report)', () => {
     const ids = QUALITY_RULES.filter((r) => r.owner === 'scenario-data').map((r) => r.id);
-    expect(ids).toHaveLength(20);
+    expect(ids).toHaveLength(36);
     const got = Object.keys(s.quality)
       .filter((k) => k.endsWith('.fired'))
       .map((k) => k.slice('quality.'.length, -'.fired'.length))
@@ -841,6 +963,144 @@ describe('the TS-side zoning and yield rules on a synthetic copy of mini', () =>
     expect(s.warnings.some((w) => w.includes('exceed 10%'))).toBe(false);
     expect(s.scenarioCounts['scenario.density_cap.rule.unlisted']).toBeTypeOf('number');
     for (const k of SUPERSEDED_SCENARIO_COUNTS) expect(s.scenarioCounts).not.toHaveProperty(k);
+  });
+});
+
+describe('the cast, attrs, height and no-building rules on a synthetic copy of mini', () => {
+  // `cast_flags` is what normalise writes when a TRY_CAST rewrote the raw text (normalise.test.ts
+  // covers the raw-text side); here the flags are set on rows whose value is left as it was, so
+  // each rule must count and set its bit without changing a value. `c0` is the unedited baseline.
+  let s: Synthetic;
+  let s0: Synthetic;
+  const flag = (id: string, year: number, bits: number) =>
+    `UPDATE src_roll SET cast_flags = ${bits} WHERE parcel_number = '${id}'
+     AND closed_roll_year = ${year}`;
+  beforeAll(async () => {
+    s0 = await synthetic('c0', []);
+    s = await synthetic('c', [
+      flag('3512001', 2025, 1), // sd.roll.roll-year-cast (no bit)
+      flag('3512008', 2025, 2), // sd.roll.year-built-cast, bit 0
+      flag('3512010', 2025, 4), // sd.roll.stories-cast, bit 1
+      flag('3512011', 2025, 8), // sd.roll.units-cast, bit 3
+      flag('3512014', 2025, 16), // sd.roll.floor-area-cast, bit 6
+      flag('3512006', 2025, 32), // sd.roll.land-value-cast, bit 2
+      flag('3512006', 2024, 64), // sd.roll.improvement-value-cast, bit 2
+      // sd.attrs.no-blklot: a copy of lot 1's row without a blklot (before the flags below).
+      `INSERT INTO src_parcel_attrs SELECT * REPLACE (NULL AS blklot)
+       FROM src_parcel_attrs WHERE blklot = '3512001'`,
+      `UPDATE src_parcel_attrs SET cast_flags = 1 WHERE blklot = '3512001'`,
+      `UPDATE src_parcel_attrs SET cast_flags = 2 WHERE blklot = '3512010'`,
+      `UPDATE src_parcel_attrs SET cast_flags = 4 WHERE blklot = '3512011'`,
+      `UPDATE src_parcel_attrs SET cast_flags = 8 WHERE blklot = '3512098'`,
+      // sd.attrs.active-unknown: one of lot 2's three condo rows (all RH-2).
+      `UPDATE src_parcel_attrs SET active = NULL WHERE blklot = '3512102'`,
+      // sd.height.blank: a blank copy of the 520 polygon (it sorts first, so hid 1).
+      `INSERT INTO src_height_bulk SELECT * REPLACE ('   ' AS height)
+       FROM src_height_bulk WHERE gen_hght = '520'`,
+      // sd.features.no-building: lot 5 (no building height) loses its roll stories; lot 7 keeps
+      // its source 0, which is the source's own value and does not fire.
+      `UPDATE src_roll SET number_of_stories = NULL WHERE parcel_number = '3512005'`
+    ]);
+  });
+
+  /** Every feature value of a parcel-year except the mask. */
+  const values = async (x: Synthetic, id: string, year: number) => {
+    const { imputed: _, ...rest } = await feature(x, id, year);
+    return rest;
+  };
+
+  // [id, lot, roll year, bit, of, baseline of]: `of` is the roll rows with a value in the field
+  // (mini: 27 with a year; lot 5's two rows lose their stories below).
+  it.each([
+    ['sd.roll.roll-year-cast', '3512001', 2025, 0, 29, 29],
+    ['sd.roll.year-built-cast', '3512008', 2025, BIT.year, 27, 27],
+    ['sd.roll.stories-cast', '3512010', 2025, BIT.stories, 27, 29],
+    ['sd.roll.units-cast', '3512011', 2025, BIT.units, 29, 29],
+    ['sd.roll.floor-area-cast', '3512014', 2025, BIT.floor, 29, 29],
+    ['sd.roll.land-value-cast', '3512006', 2025, BIT.share, 29, 29],
+    ['sd.roll.improvement-value-cast', '3512006', 2024, BIT.share, 29, 29]
+  ])(
+    '%s counts the flagged row and sets its bit; no value changes',
+    async (id, lot, y, bit, of, of0) => {
+      expect(await tally(s, id)).toEqual({ fired: 1, of, sample: [`${lot}:${y}`] });
+      expect(await tally(s0, id)).toEqual({ fired: 0, of: of0, sample: [] });
+      expect(await values(s, lot, y)).toEqual(await values(s0, lot, y));
+      const was = (await feature(s0, lot, y)).imputed;
+      expect((await feature(s, lot, y)).imputed).toBe(was | bit);
+    }
+  );
+
+  // [id, blklot, of]: every parcel row has a centroid (19, plus the no-blklot copy); mini leaves
+  // date_rec_add empty (only the flagged row counts) and dates its two retired rows.
+  it.each([
+    ['sd.attrs.latitude-cast', '3512001', 20],
+    ['sd.attrs.longitude-cast', '3512010', 20],
+    ['sd.attrs.added-date-cast', '3512011', 1],
+    ['sd.attrs.dropped-date-cast', '3512098', 2]
+  ])('%s counts the flagged parcel row', async (id, blklot, of) => {
+    expect(await tally(s, id)).toEqual({ fired: 1, of, sample: [blklot] });
+  });
+
+  it('sd.attrs.active-unknown reads NULL as retired, counted; zoning and lineage unchanged', async () => {
+    expect(await tally(s, 'sd.attrs.active-unknown')).toEqual({
+      fired: 1,
+      of: 20,
+      sample: ['3512102']
+    });
+    expect(await tally(s0, 'sd.attrs.active-unknown')).toEqual({ fired: 0, of: 19, sample: [] });
+    expect(await values(s, '3512002', 2025)).toEqual(await values(s0, '3512002', 2025));
+  });
+
+  it('sd.attrs.no-blklot drops a parcel row without a blklot, counted', async () => {
+    expect(await tally(s, 'sd.attrs.no-blklot')).toEqual({
+      fired: 1,
+      of: 20,
+      sample: ['3512001']
+    });
+    expect(await values(s, '3512001', 2025)).toEqual(await values(s0, '3512001', 2025));
+  });
+
+  it('sd.height.blank drops a height polygon with a blank string, counted', async () => {
+    expect(await tally(s, 'sd.height.blank')).toEqual({ fired: 1, of: 7, sample: ['1'] });
+    expect(await tally(s0, 'sd.height.blank')).toEqual({ fired: 0, of: 6, sample: [] });
+    const district = (x: Synthetic) => db.all(`SELECT * FROM ${x.schema}.sc_district ORDER BY id`);
+    expect(await district(s)).toEqual(await district(s0));
+  });
+
+  it('sd.features.no-building counts missing stories without a height (0, no bit), not a 0', async () => {
+    expect(await tally(s, 'sd.features.no-building')).toEqual({
+      fired: 2,
+      of: 25,
+      sample: ['3512005:2024', '3512005:2025']
+    });
+    expect(await tally(s0, 'sd.features.no-building')).toEqual({ fired: 0, of: 25, sample: [] });
+    for (const y of [2024, 2025]) {
+      const f = await feature(s, '3512005', y);
+      expect(f.existing_stories).toBe(0);
+      expect(f.imputed & BIT.stories).toBe(0);
+      expect((await feature(s, '3512007', y)).existing_stories).toBe(0);
+    }
+  });
+});
+
+describe('sd.zoning.missing on a synthetic copy of mini', () => {
+  let s: Synthetic;
+  beforeAll(async () => {
+    // No zoning code on lot 10 (hostable) and lot 7 (ineligible, so not hostable).
+    s = await synthetic('zm', [
+      `UPDATE src_parcel_attrs SET zoning_code = NULL WHERE mapblklot IN ('3512010', '3512007')`
+    ]);
+  });
+
+  it('counts hostable parcels with no zoning code (no density cap); changes nothing else', async () => {
+    const hostable = s.scenarioCounts['scenario.hostable'];
+    expect(hostable).toBe(8);
+    expect(await reported(s, 'sd.zoning.missing')).toEqual({
+      fired: 1,
+      of: hostable,
+      sample: ['3512010']
+    });
+    expect((await feature(s, '3512010', 2025)).base_density_cap).toBeNull();
   });
 });
 

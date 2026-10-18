@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { openDuck } from '../lib/duck';
-import { normalise } from '../sources/normalise';
+import { ATTRS_CAST_BITS, ROLL_CAST_BITS, normalise } from '../sources/normalise';
 import { miniDuck } from './helpers';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'sfh-norm-'));
@@ -55,7 +55,8 @@ describe('normalise mini fixture', () => {
       'date_rec_add DATE',
       'date_rec_drop DATE',
       'centroid_latitude DOUBLE',
-      'centroid_longitude DOUBLE'
+      'centroid_longitude DOUBLE',
+      'cast_flags UTINYINT'
     ]);
     expect(await types('src_roll')).toEqual([
       'closed_roll_year INTEGER',
@@ -68,7 +69,8 @@ describe('normalise mini fixture', () => {
       'property_area DOUBLE',
       'assessed_land_value DOUBLE',
       'assessed_improvement_value DOUBLE',
-      'status_code VARCHAR'
+      'status_code VARCHAR',
+      'cast_flags UTINYINT'
     ]);
     const [h] = await db.all<{ height: string; gen_hght: string }>(
       `SELECT height, gen_hght FROM src_height_bulk WHERE gen_hght = '520'`
@@ -174,6 +176,89 @@ describe('normalise mini fixture', () => {
       });
     } finally {
       db.close();
+    }
+  });
+});
+
+describe('normalise flags every TRY_CAST rewrite (cast_flags; the sd.roll / sd.attrs cast rules)', () => {
+  it('roll: non-numeric text becomes NULL and a fraction is rounded, each flagged by field', async () => {
+    expect(ROLL_CAST_BITS).toEqual({
+      closed_roll_year: 1,
+      year_property_built: 2,
+      number_of_stories: 4,
+      number_of_units: 8,
+      property_area: 16,
+      assessed_land_value: 32,
+      assessed_improvement_value: 64
+    });
+    const csv = join(tmp(), 'roll');
+    writeFileSync(
+      csv,
+      '"closed_roll_year","parcel_number","year_property_built","number_of_stories",' +
+        '"number_of_units","property_area","assessed_land_value","assessed_improvement_value"\n' +
+        '"2024","3512001","1950.0","3","abc","1000","x1","5"\n' +
+        '"2024","3512002","19x0","2.4","3.5","n/a","10","20"\n' +
+        '"2024.0","3512003","1950","3","2.0","1000","10","20.5"\n' +
+        '"2024.5","3512004","","","","","",""\n'
+    );
+    const own = await openDuck();
+    try {
+      const out = join(tmp(), 'roll.parquet');
+      await normalise(own, 'datasf-assessor-roll', [csv], out);
+      const got = await own.all(
+        `SELECT parcel_number p, closed_roll_year y, year_property_built b, number_of_stories s,
+                number_of_units u, property_area a, assessed_land_value l,
+                assessed_improvement_value i, cast_flags f
+         FROM read_parquet('${out}') ORDER BY p`
+      );
+      expect(got).toEqual([
+        { p: '3512001', y: 2024, b: 1950, s: 3, u: null, a: 1000, l: null, i: 5, f: 8 | 32 },
+        { p: '3512002', y: 2024, b: null, s: 2, u: 4, a: null, l: 10, i: 20, f: 2 | 4 | 8 | 16 },
+        { p: '3512003', y: 2024, b: 1950, s: 3, u: 2, a: 1000, l: 10, i: 20.5, f: 0 },
+        // Blank text is a source NULL, not a rewrite; DuckDB casts half to even, so "2024.5" is
+        // 2024 (and "3.5" above is 4): either way a fraction is flagged.
+        { p: '3512004', y: 2024, b: null, s: null, u: null, a: null, l: null, i: null, f: 1 }
+      ]);
+    } finally {
+      own.close();
+    }
+  });
+
+  it('attrs: casts flagged by field; an unrecognised active is NULL (sd.attrs.active-unknown)', async () => {
+    expect(ATTRS_CAST_BITS).toEqual({
+      centroid_latitude: 1,
+      centroid_longitude: 2,
+      date_rec_add: 4,
+      date_rec_drop: 8
+    });
+    const csv = join(tmp(), 'attrs');
+    writeFileSync(
+      csv,
+      '"mapblklot","blklot","active","date_rec_add","date_rec_drop","centroid_latitude",' +
+        '"centroid_longitude"\n' +
+        '"3512001","3512001","TRUE ","","","37.7","-122.4"\n' +
+        '"3512002","3512002","maybe","not a date","2019-03-01T05:30:00.000","x","-122.4"\n' +
+        '"3512003","3512003","0","2009-10-14T00:00:00.000","","37.7","west"\n' +
+        '"3512004","3512004","","","","",""\n'
+    );
+    const own = await openDuck();
+    try {
+      const out = join(tmp(), 'attrs.parquet');
+      await normalise(own, 'datasf-parcel-attrs', [csv], out);
+      const got = await own.all<Record<string, unknown>>(
+        `SELECT blklot b, active a, strftime(date_rec_add, '%Y-%m-%d') ad,
+                strftime(date_rec_drop, '%Y-%m-%d') dd, centroid_latitude lat,
+                centroid_longitude lon, cast_flags f
+         FROM read_parquet('${out}') ORDER BY b`
+      );
+      expect(got).toEqual([
+        { b: '3512001', a: true, ad: null, dd: null, lat: 37.7, lon: -122.4, f: 0 },
+        { b: '3512002', a: null, ad: null, dd: '2019-03-01', lat: null, lon: -122.4, f: 1 | 4 | 8 },
+        { b: '3512003', a: false, ad: '2009-10-14', dd: null, lat: 37.7, lon: null, f: 2 },
+        { b: '3512004', a: null, ad: null, dd: null, lat: null, lon: null, f: 0 }
+      ]);
+    } finally {
+      own.close();
     }
   });
 });

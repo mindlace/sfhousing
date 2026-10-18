@@ -25,10 +25,11 @@ import { readParcelRecords } from '../steps/chunks';
 import { PARCELS_BIN, readParcelsBin, writeScenario } from '../steps/scenario';
 import { MINI, miniDuck } from './helpers';
 
-/** Spec §4.6, in order: T13's columns, then the additions. */
+/** Spec §4.6 and the T13 row: exactly the contract columns, in this order. */
 const PANEL_COLUMNS = [
   'mapblklot',
   'roll_year',
+  'lien_day',
   'existing_units',
   'existing_stories',
   'year_built',
@@ -40,7 +41,6 @@ const PANEL_COLUMNS = [
   'base_stories',
   'base_density_cap',
   'base_yield',
-  'lien_day',
   'lot_area_m2',
   'improvement_share',
   'rent_control_likely',

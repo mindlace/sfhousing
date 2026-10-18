@@ -13,6 +13,8 @@ import {
   type ScenarioParcels
 } from '../../src/lib/data/scenario-codec';
 import { scenarioYield } from '../../src/lib/data/scenario-yield';
+import { FTF_M } from '../../src/lib/generator/constants';
+import { SQL_VARS } from '../config';
 import { FZP_EFFECTIVE_DAY, densityCap } from '../lib/density-caps';
 import { readLock } from '../lib/lock';
 import { createQualityTables } from '../lib/quality';
@@ -103,6 +105,14 @@ describe('scenario yields rebuild from parcels.bin and the chunk record (IA-8)',
       );
     });
     expect(differs.length).toBeGreaterThan(0);
+  });
+
+  it('the storey height has one source: SQL_VARS.floors_m is the codec’s FTF_M', () => {
+    // The stories fallback (81_scenario_features.sql, the no-row defaults) divides by floors_m;
+    // the worker's existingHeightM multiplies by FTF_M. One value keeps the height round-trip.
+    expect(SQL_VARS.floors_m).toBe(FTF_M);
+    const src = readFileSync(new URL('../config.ts', import.meta.url), 'utf8');
+    expect(src).toMatch(/floors_m: FTF_M\b/);
   });
 
   it('pipeline/steps/scenario.ts builds no scenario record of its own', () => {

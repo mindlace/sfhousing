@@ -74,8 +74,12 @@ describe('mini project records: raw shape', () => {
   });
 });
 
-describe('mini project records: the stub roll mirrors the landed fixture roll', () => {
-  it('sums number_of_units per current parcel and roll year, through lineage', () => {
+describe('mini project records: the stub roll mirrors the built panel’s existing units', () => {
+  // The stub sums the landed fixture roll's number_of_units per current parcel and roll year,
+  // through lineage, then overlays scenario-data's post-rule values (RA1_PANEL_UNITS in
+  // fixtures/mini/projects-raw.ts: lot 3's 5,000 becomes 4, lot 4's 2024 900 becomes 3).
+  // golden.test.ts checks the stub against the built panel on every parcel-year.
+  it('gives the panel’s post-rule units per current parcel and roll year, through lineage', () => {
     const input = miniProjectInput();
     const table = (year: number) =>
       Object.fromEntries([...MINI_PARCELS].map((id) => [id, input.assessorUnits(id, year)]));

@@ -324,25 +324,42 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
   it('report.json carries fired/of for every registered sd.* rule, with the golden values', () => {
     // [fired, of] and, for a unit-weighted rule, [units, unitsOf] (spec §6, AC 3 and 14).
     const want: Record<string, [number, number] | [number, number, number, number]> = {
+      // 19 parcel rows (mini dates only its 2 retired rows and leaves date_rec_add empty).
+      'sd.attrs.active-unknown': [0, 19],
+      'sd.attrs.added-date-cast': [0, 0],
+      'sd.attrs.dropped-date-cast': [0, 2],
+      'sd.attrs.latitude-cast': [0, 19],
+      'sd.attrs.longitude-cast': [0, 19],
+      'sd.attrs.no-blklot': [0, 19],
       'sd.features.median-fallback': [2, 3],
+      'sd.features.no-building': [0, 25],
       'sd.features.share-median': [2, 24],
       'sd.features.stories-height': [0, 25],
       'sd.features.year-built-median': [0, 24],
+      'sd.height.blank': [0, 6],
+      'sd.roll.floor-area-cast': [0, 29],
       'sd.roll.floor-area-missing': [5, 29],
+      'sd.roll.improvement-value-cast': [0, 29],
+      'sd.roll.land-value-cast': [0, 29],
       'sd.roll.no-row': [3, 14],
       'sd.roll.no-year': [0, 29],
+      'sd.roll.roll-year-cast': [0, 29],
+      'sd.roll.stories-cast': [0, 29],
       'sd.roll.stories-max': [0, 29],
       'sd.roll.units-capacity': [3, 25, 5000 + 5000 + 900, 11_044],
+      'sd.roll.units-cast': [0, 29],
       'sd.roll.units-large': [0, 26],
       'sd.roll.units-latest-jump': [0, 11],
       'sd.roll.units-missing': [0, 25],
       'sd.roll.units-spike': [0, 25, 0, 155],
       'sd.roll.unmatched': [0, 29, 0, 11_044],
+      'sd.roll.year-built-cast': [0, 27],
       'sd.roll.year-built-range': [1, 27],
       'sd.roll.year-gap': [1, 26],
       'sd.yield.nonmonotone': [0, 14],
       'sd.yield.zero-hostable': [3, 11],
       'sd.zoning.generic-nc': [1, 8],
+      'sd.zoning.missing': [0, 8],
       'sd.zoning.split-code': [0, 8]
     };
     const sd = QUALITY_RULES.filter((r) => r.owner === 'scenario-data');

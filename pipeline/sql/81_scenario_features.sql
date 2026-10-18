@@ -13,7 +13,7 @@
 -- writeScenario reports them through recordSqlQuality after the T11 rows (it first adds the T11
 -- no-row parcels to sd.roll.floor-area-missing, spec §4.5 step 5). Rule order (§4.5 step 3, then
 -- step 4):
---   1. existing stories (sd.features.stories-height);
+--   1. existing stories (sd.features.stories-height, and the observation sd.features.no-building);
 --   2. sd.roll.units-capacity, on observed parcel-years;
 --   3. sd.roll.units-spike, on the series step 2 produced;
 --   4. sd.roll.year-gap: interior missing roll years carried from the previous observed year;
@@ -24,13 +24,17 @@
 -- ---- Step 3.1: existing stories, on observed parcel-years ----
 -- existingStories: roll stories, else round(height / floors_m) with floors_m = 3.1 m per storey
 -- (SQL_VARS, the generator's FTF_M, tier 3), at least 1, when a height exists
--- (sd.features.stories-height, bit 1); else 0, "no building", no bit.
+-- (sd.features.stories-height, bit 1; counted on observed parcel-years, which carried rows copy);
+-- else 0, "no building", no bit. That last branch is counted by the observation rule
+-- sd.features.no-building where the parcel-year has no stories at all (a source 0 is the
+-- source's own value).
 CREATE OR REPLACE TEMP TABLE f_obs AS
 SELECT r.*,
        CASE WHEN r.stories > 0 THEN r.stories
             WHEN o.height_m > 0 THEN greatest(1, round(o.height_m / getvariable('floors_m')))
             ELSE 0 END::INTEGER AS existing_stories,
        (r.stories <= 0 AND o.height_m > 0) AS stories_fallback,
+       (r.stories_missing AND NOT coalesce(o.height_m > 0, false)) AS no_building,
        s.lot_area_m2, s.ludb_units
 FROM sc_roll_agg r
 JOIN parcel_out o ON o.id = r.id
@@ -42,6 +46,12 @@ SELECT 'sd.features.stories-height', count(*) FILTER (WHERE stories_fallback), c
 FROM f_obs;
 INSERT INTO quality_sample
 SELECT 'sd.features.stories-height', id || ':' || roll_year FROM f_obs WHERE stories_fallback;
+
+INSERT INTO quality_tally
+SELECT 'sd.features.no-building', count(*) FILTER (WHERE no_building), count(*), NULL, NULL
+FROM f_obs;
+INSERT INTO quality_sample
+SELECT 'sd.features.no-building', id || ':' || roll_year FROM f_obs WHERE no_building;
 
 -- ---- Step 3.2: sd.roll.units-capacity (spec §4.12 "exactly") ----
 -- capacity(p, y) = lot_area_m2 × max(existing_stories, 1) / MIN_GROSS_M2_PER_UNIT (10 m² per
@@ -260,20 +270,26 @@ ORDER BY roll_year, land_use_class;
 -- carried rows);
 -- bit 5 carried; bit 6 floor area from the chunk record. Bit 4 (no roll row) is the scenario
 -- step's and never set here.
+-- The normalise casts (the sd.roll.*-cast rules, 80_scenario.sql) set the bit of the feature
+-- their field feeds when a row of the parcel-year was rewritten: year built bit 0, stories bit 1,
+-- land or improvement value bit 2, units bit 3, floor area bit 6. They change no value here.
 CREATE OR REPLACE TEMP TABLE f_feat AS
 SELECT b.id, b.roll_year,
        -- T1 Day of 1 January roll_year: the CA lien date (spec §4.5, I).
        datediff('day', DATE '1970-01-01', make_date(b.roll_year, 1, 1))::INTEGER AS lien_day,
        b.units,
        b.existing_stories,
-       b.stories_fallback OR b.stories_nulled AS stories_bit,
+       b.stories_fallback OR b.stories_nulled OR b.stories_cast AS stories_bit,
        CASE WHEN b.vacant THEN 0 ELSE coalesce(b.year_built, m.year_built) END::INTEGER
          AS year_built,
        (NOT b.vacant AND b.year_built IS NULL) AS year_imputed,
-       -- A source NULL (sd.features.year-built-median), not a year the range rule nulled.
+       -- A parcel-year whose aggregated year is NULL and none of whose rows the range rule nulled
+       -- (sd.features.year-built-median). In the mixed case, one row range-nulled and another a
+       -- source NULL, only sd.roll.year-built-range counts the parcel-year; bit 0 is set either
+       -- way.
        (NOT b.vacant AND b.year_built IS NULL AND NOT b.year_nulled) AS year_median_rule,
-       -- A nulled row whose siblings still carry a year changes the aggregate too.
-       (NOT b.vacant AND (b.year_built IS NULL OR b.year_nulled)) AS year_bit,
+       -- A nulled or cast row whose siblings still carry a year changes the aggregate too.
+       (NOT b.vacant AND (b.year_built IS NULL OR b.year_nulled OR b.year_cast)) AS year_bit,
        (NOT b.vacant AND b.year_built IS NULL AND m.year_fallback) AS year_fell_back,
        -- improvement ÷ (land + improvement), rounded to 1/200 (a tier-4 quantisation grid,
        -- T11 spec §4.8); vacant 0.
@@ -281,6 +297,7 @@ SELECT b.id, b.roll_year,
             WHEN b.share_raw IS NOT NULL THEN round(b.share_raw * 200) / 200
             ELSE m.improvement_share END::FLOAT AS improvement_share,
        (NOT b.vacant AND b.share_raw IS NULL) AS share_imputed,
+       (NOT b.vacant AND (b.share_raw IS NULL OR b.value_cast)) AS share_bit,
        (NOT b.vacant AND b.share_raw IS NULL AND m.share_fallback) AS share_fell_back,
        b.vacant,
        b.land, b.impr, b.use_code, b.land_use_class,
@@ -291,6 +308,8 @@ SELECT b.id, b.roll_year,
        round(CASE WHEN b.floor_area_m2 > 0 THEN b.floor_area_m2
                   ELSE s.rec_floor_area_m2 END)::INTEGER AS existing_floor_area_m2,
        NOT (b.floor_area_m2 > 0) AS floor_missing,
+       NOT (b.floor_area_m2 > 0) OR b.area_cast AS floor_bit,
+       b.units_replaced OR b.units_cast AS units_bit,
        b.noncondo_units, b.hotel, b.status_n, b.units_replaced, b.carried
 FROM f_base b
 JOIN sc_parcel s ON s.id = b.id
@@ -351,10 +370,10 @@ SELECT f.id AS mapblklot,
        (f.units >= 2 AND f.year_built < 1979) AS rent_control_likely,
        ((CASE WHEN f.year_bit THEN 1 ELSE 0 END)
         | (CASE WHEN f.stories_bit THEN 2 ELSE 0 END)
-        | (CASE WHEN f.share_imputed THEN 4 ELSE 0 END)
-        | (CASE WHEN f.units_replaced THEN 8 ELSE 0 END)
+        | (CASE WHEN f.share_bit THEN 4 ELSE 0 END)
+        | (CASE WHEN f.units_bit THEN 8 ELSE 0 END)
         | (CASE WHEN f.carried THEN 32 ELSE 0 END)
-        | (CASE WHEN f.floor_missing THEN 64 ELSE 0 END))::UTINYINT AS imputed,
+        | (CASE WHEN f.floor_bit THEN 64 ELSE 0 END))::UTINYINT AS imputed,
        f.existing_floor_area_m2,
        s.eligible,
        f.noncondo_units,

@@ -46,7 +46,8 @@ const U16_MAX = 0xffff;
 /** T11 `baseCap` sentinel for "no cap" (spec §2 internal types). */
 const NULL_CAP = 0xffff;
 /**
- * Storey height of the no-roll stories fallback, round(height / 3.1) (SQL_VARS.floors_m, tier 3).
+ * Storey height of the no-roll stories fallback, round(height / 3.1) (SQL_VARS.floors_m, the
+ * codec's FTF_M, tier 3).
  */
 const FLOORS_M = SQL_VARS.floors_m;
 /** u32 column ceiling (codec width, spec §4.8) for the whole-m² floor area. */
@@ -171,16 +172,17 @@ async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Pr
 }
 
 /**
- * T13 panel, spec §4.6: exactly T13's columns plus the listed additions, sorted by (mapblklot,
- * roll_year). potential_ratio_base is FLOAT, rounded as T11's Float32 `potentialRatio.base`.
+ * T13 panel, spec §4.6: exactly the T13 row's contract columns, in its order, sorted by
+ * (mapblklot, roll_year). potential_ratio_base is FLOAT, rounded as T11's Float32
+ * `potentialRatio.base`.
  */
 const PANEL_SQL = `
 CREATE OR REPLACE TABLE scenario_panel AS
-SELECT f.mapblklot, f.roll_year,
+SELECT f.mapblklot, f.roll_year, f.lien_day,
        f.existing_units, f.existing_stories, f.year_built, f.land_value, f.improvement_value,
        f.use_code, f.land_use_class::INTEGER AS land_use_class, f.zoning_code,
        f.base_stories, f.base_density_cap, y.base_yield,
-       f.lien_day, f.lot_area_m2, f.improvement_share, f.rent_control_likely, f.imputed,
+       f.lot_area_m2, f.improvement_share, f.rent_control_likely, f.imputed,
        (y.base_yield / greatest(f.existing_units, 1))::FLOAT AS potential_ratio_base,
        (f.base_stories - f.existing_stories)::INTEGER AS stories_gap_base,
        (f.eligible AND f.base_stories >= 1 AND y.base_yield > 0) AS hostable_base
@@ -261,24 +263,22 @@ function provenance(capDay: Day, rollYear: number): ScenarioParcels['provenance'
         'current parcels through acdm-wktn (retired lots by centroid). Data-quality rules ' +
         '(pipeline/lib/quality-rules/sd.ts, tiers as rule / value, imputed bit in brackets): ' +
         'rows without a roll year (4 / —) or a current parcel (2 / —) are dropped; a year built ' +
-        'before 1850 or after the ' +
-        'roll year is treated as missing (4 / 2) [bit 0, also set when one of the parcel-year’s ' +
-        'rows had its year nulled, even if another row supplies one]; a missing year built or ' +
-        'improvement share takes the median of the same land-use class and roll year over ' +
-        'observed rows (2 / 2) [bits 0, 2], falling back to the year-wide median, then 0, when ' +
-        'the class has none (4 / 4); roll stories above 80 are missing (4 / 2) and missing ' +
-        'stories come from the building height (2 / 3) [bit 1]; the units rules of the existing ' +
-        'homes (see existingUnits) [bit 3]: units missing on every row of a parcel-year are 0 ' +
-        '(4 / 4), units beyond the lot’s capacity are replaced (4 / 2), and a bracketed ' +
+        'before 1850 or after the roll year is treated as missing (4 / 2) [bit 0, also set when ' +
+        'one of the parcel-year’s rows had its year nulled, even if another row supplies one]; a ' +
+        'missing year built or improvement share takes the median of the same land-use class and ' +
+        'roll year over observed rows (2 / 2) [bits 0, 2], falling back to the year-wide median, ' +
+        'then 0, when the class has none (4 / 4); roll stories above 80 are missing (4 / 2) and ' +
+        'missing stories come from the building height (2 / 3) [bit 1]; the units rules of the ' +
+        'existing homes (see existingUnits) [bit 3]: units missing on every row of a parcel-year ' +
+        'are 0 (4 / 4), units beyond the lot’s capacity are replaced (4 / 2), and a bracketed ' +
         'implausible run is replaced (4 / 2); a roll year missing between two observed years ' +
-        'copies the latest ' +
-        'earlier year (2 / 2) [bit 5]; a parcel-year without a roll floor area takes the map ' +
-        'parcel record’s, rounded to whole m² (2 / 3) [bit 6]. A parcel without a latest-year ' +
-        'roll row takes the no-row defaults (4 / 4) [bits 0–4 and 6, imputed 95]: 0 homes, ' +
-        'stories from the building height (else 0), land-use class other, the latest year’s ' +
-        '"other" medians for year built and improvement share, no rent control, and the map ' +
-        'parcel record’s floor area. Assessed values reflect the Prop 13 acquisition basis, not ' +
-        `market value. ${CAP_RULES}`
+        'copies the latest earlier year (2 / 2) [bit 5]; a parcel-year without a roll floor area ' +
+        'takes the map parcel record’s, rounded to whole m² (2 / 3) [bit 6]. A parcel without a ' +
+        'latest-year roll row takes the no-row defaults (4 / 4) [bits 0–4 and 6, imputed 95]: 0 ' +
+        'homes, stories from the building height (else 0), land-use class other, the latest ' +
+        'year’s "other" medians for year built and improvement share, no rent control, and the ' +
+        'map parcel record’s floor area. Assessed values reflect the Prop 13 acquisition basis, ' +
+        `not market value. ${CAP_RULES}`
     ),
     existingUnits: p(
       0,
@@ -533,7 +533,7 @@ export async function writeScenario(a: {
     inc(k, 0);
   // Affected parcel ids of the TS-side T14 rules (spec §4.12), reported after the T11 rows.
   const noRow: string[] = [];
-  const zoning = { split: [] as string[], genericNc: [] as string[] };
+  const zoning = { split: [] as string[], genericNc: [] as string[], missing: [] as string[] };
   /** Parcels per tier-4 cap rule, hostable or not, for the unverified-districts warning. */
   const capRuleAll = { split: 0, genericNc: 0 };
   const nonmonotone: string[] = [];
@@ -701,9 +701,12 @@ export async function writeScenario(a: {
 
     // The tier-4 cap rules (main ruling 4c): sd.zoning.split-code and sd.zoning.generic-nc fire
     // on hostable parcels (their denominator, RA1); unlisted districts keep their scenario count.
+    // sd.zoning.missing (observation) counts hostable parcels with no zoning code (rule 'none').
     const rule = densityCapRule(d.zoning_code);
     if (rule === 'unlisted') inc('density_cap.rule.unlisted');
-    else if (rule === 'split' || rule === 'generic-nc') {
+    else if (rule === 'none') {
+      if (p.hostable[i]) zoning.missing.push(rec.id);
+    } else if (rule === 'split' || rule === 'generic-nc') {
       const key = rule === 'split' ? 'split' : 'genericNc';
       capRuleAll[key]++;
       if (p.hostable[i]) zoning[key].push(rec.id);
@@ -783,6 +786,11 @@ export async function writeScenario(a: {
     fired: zoning.genericNc.length,
     of: hostable,
     sample: zoning.genericNc
+  });
+  recordQuality(a.buildCounts, 'sd.zoning.missing', {
+    fired: zoning.missing.length,
+    of: hostable,
+    sample: zoning.missing
   });
   recordQuality(a.buildCounts, 'sd.yield.nonmonotone', {
     fired: nonmonotone.length,

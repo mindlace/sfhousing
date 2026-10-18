@@ -12,7 +12,11 @@
 -- sd.roll.units-missing, are applied here, each inserting exactly one quality_tally row and one
 -- quality_sample row per affected record (`<parcel_number>:<closed_roll_year>` for a roll row,
 -- `<parcel_number>` for one without a year, `<mapblklot>:<roll_year>` for a parcel-year);
--- writeScenario reports them through recordSqlQuality after the T11 rows.
+-- writeScenario reports them through recordSqlQuality after the T11 rows. So are the final fix
+-- wave's DQ-4 rules: the normalise casts (sd.roll.*-cast, sd.attrs.*-cast; normalise flags the
+-- row in cast_flags, the rewrite itself happened there), sd.attrs.active-unknown,
+-- sd.attrs.no-blklot (sample `<blklot>`, or `<mapblklot>` for a row without one) and
+-- sd.height.blank (sample: the polygon's ordinal hid).
 -- sc_roll_agg is the aggregate before the parcel-year rules of 81_scenario_features.sql.
 -- District overlap is summed per normalised height string, not per polygon: adjacent polygons
 -- carrying the same string are one district, so a parcel straddling their shared edge is not
@@ -20,8 +24,9 @@
 -- same-string polygons) is counted in scenario.height.overlap_gt1.
 
 -- Height polygons in EPSG:7131 (as 10_parcels.sql:6) with their parsed string. A polygon with no
--- string (normalised '') carries no district and is left out.
-CREATE OR REPLACE TEMP TABLE s_hb AS
+-- string (NULL or blank, normalised '') carries no district and is left out: sd.height.blank
+-- (DQ-4 registered rule, final fix wave), sampled by its ordinal `hid`.
+CREATE OR REPLACE TEMP TABLE s_hb_all AS
 SELECT h.hid, p.normalised, h.geom
 FROM (
   SELECT row_number() OVER (ORDER BY height, gen_hght, ST_AsHEXWKB(geom)) AS hid,
@@ -30,8 +35,16 @@ FROM (
                       always_xy := true) AS geom
   FROM src_height_bulk
 ) h
-JOIN sc_height_parse p USING (height)
-WHERE p.normalised <> '';
+JOIN sc_height_parse p USING (height);
+
+INSERT INTO quality_tally
+SELECT 'sd.height.blank', count(*) FILTER (WHERE normalised = ''), count(*), NULL, NULL
+FROM s_hb_all;
+INSERT INTO quality_sample
+SELECT 'sd.height.blank', hid::VARCHAR FROM s_hb_all WHERE normalised = '';
+
+CREATE OR REPLACE TEMP TABLE s_hb AS
+SELECT * FROM s_hb_all WHERE normalised <> '';
 
 -- The parse of a normalised string (parseHeightDistrict depends on the normalised form only).
 CREATE OR REPLACE TEMP TABLE s_hp AS
@@ -95,6 +108,54 @@ LEFT JOIN (
 ) z ON z.mapblklot = p.id
 ORDER BY p.id;
 
+-- ---- T14 rules on src_parcel_attrs (DQ-4 registered rules, final fix wave) ----
+-- The normalise casts (sd.attrs.*-cast): cast_flags bits of pipeline/sources/normalise.ts
+-- ATTRS_CAST_BITS (1 latitude, 2 longitude, 4 date_rec_add, 8 date_rec_drop), over the rows with a
+-- value in the field (a flagged row has none left, so it is added back). Sample: the blklot.
+INSERT INTO quality_tally
+SELECT 'sd.attrs.latitude-cast', count(*) FILTER (WHERE (cast_flags & 1) <> 0),
+       count(*) FILTER (WHERE centroid_latitude IS NOT NULL OR (cast_flags & 1) <> 0), NULL, NULL
+FROM src_parcel_attrs;
+INSERT INTO quality_sample
+SELECT 'sd.attrs.latitude-cast', coalesce(blklot, mapblklot, '') FROM src_parcel_attrs
+WHERE (cast_flags & 1) <> 0;
+INSERT INTO quality_tally
+SELECT 'sd.attrs.longitude-cast', count(*) FILTER (WHERE (cast_flags & 2) <> 0),
+       count(*) FILTER (WHERE centroid_longitude IS NOT NULL OR (cast_flags & 2) <> 0), NULL, NULL
+FROM src_parcel_attrs;
+INSERT INTO quality_sample
+SELECT 'sd.attrs.longitude-cast', coalesce(blklot, mapblklot, '') FROM src_parcel_attrs
+WHERE (cast_flags & 2) <> 0;
+INSERT INTO quality_tally
+SELECT 'sd.attrs.added-date-cast', count(*) FILTER (WHERE (cast_flags & 4) <> 0),
+       count(*) FILTER (WHERE date_rec_add IS NOT NULL OR (cast_flags & 4) <> 0), NULL, NULL
+FROM src_parcel_attrs;
+INSERT INTO quality_sample
+SELECT 'sd.attrs.added-date-cast', coalesce(blklot, mapblklot, '') FROM src_parcel_attrs
+WHERE (cast_flags & 4) <> 0;
+INSERT INTO quality_tally
+SELECT 'sd.attrs.dropped-date-cast', count(*) FILTER (WHERE (cast_flags & 8) <> 0),
+       count(*) FILTER (WHERE date_rec_drop IS NOT NULL OR (cast_flags & 8) <> 0), NULL, NULL
+FROM src_parcel_attrs;
+INSERT INTO quality_sample
+SELECT 'sd.attrs.dropped-date-cast', coalesce(blklot, mapblklot, '') FROM src_parcel_attrs
+WHERE (cast_flags & 8) <> 0;
+-- sd.attrs.active-unknown: an active flag normalise could not read (NULL) is retired below
+-- (coalesce, and `WHERE active` in sc_zoning above).
+INSERT INTO quality_tally
+SELECT 'sd.attrs.active-unknown', count(*) FILTER (WHERE active IS NULL), count(*), NULL, NULL
+FROM src_parcel_attrs;
+INSERT INTO quality_sample
+SELECT 'sd.attrs.active-unknown', coalesce(blklot, mapblklot, '') FROM src_parcel_attrs
+WHERE active IS NULL;
+-- sd.attrs.no-blklot: a row without a blklot cannot map a roll parcel_number, so s_attr drops
+-- it. Sample: its mapblklot.
+INSERT INTO quality_tally
+SELECT 'sd.attrs.no-blklot', count(*) FILTER (WHERE blklot IS NULL), count(*), NULL, NULL
+FROM src_parcel_attrs;
+INSERT INTO quality_sample
+SELECT 'sd.attrs.no-blklot', coalesce(mapblklot, '') FROM src_parcel_attrs WHERE blklot IS NULL;
+
 -- Roll parcel_number = acdm-wktn blklot (spec §4.5). Attrs rows with a blklot, centroid in 7131.
 CREATE OR REPLACE TEMP TABLE s_attr AS
 SELECT mapblklot, blklot, coalesce(active, false) AS active, date_rec_drop,
@@ -145,6 +206,39 @@ INSERT INTO quality_sample
 SELECT 'sd.roll.no-year', coalesce(parcel_number, '') FROM src_roll
 WHERE closed_roll_year IS NULL;
 
+-- The normalise casts (sd.roll.*-cast, DQ-4 registered rules, final fix wave): cast_flags bits of
+-- pipeline/sources/normalise.ts ROLL_CAST_BITS (1 closed_roll_year, 2 year_property_built,
+-- 4 number_of_stories, 8 number_of_units, 16 property_area, 32 assessed_land_value,
+-- 64 assessed_improvement_value), over every roll row with a value in the field (a row whose text
+-- was nulled has none left, so flagged rows are added back). s_roll_sum below carries the flags
+-- to the parcel-year, whose feature bit 81_scenario_features.sql sets.
+CREATE OR REPLACE TEMP TABLE s_roll_cast AS
+SELECT * FROM (VALUES
+  ('sd.roll.roll-year-cast', 1), ('sd.roll.year-built-cast', 2), ('sd.roll.stories-cast', 4),
+  ('sd.roll.units-cast', 8), ('sd.roll.floor-area-cast', 16), ('sd.roll.land-value-cast', 32),
+  ('sd.roll.improvement-value-cast', 64)
+) t(rule_id, bit);
+
+INSERT INTO quality_tally
+SELECT c.rule_id,
+       count(*) FILTER (WHERE (r.cast_flags & c.bit) <> 0),
+       count(*) FILTER (WHERE (r.cast_flags & c.bit) <> 0 OR CASE c.bit
+         WHEN 1 THEN r.closed_roll_year IS NOT NULL
+         WHEN 2 THEN r.year_property_built IS NOT NULL
+         WHEN 4 THEN r.number_of_stories IS NOT NULL
+         WHEN 8 THEN r.number_of_units IS NOT NULL
+         WHEN 16 THEN r.property_area IS NOT NULL
+         WHEN 32 THEN r.assessed_land_value IS NOT NULL
+         ELSE r.assessed_improvement_value IS NOT NULL END),
+       NULL, NULL
+FROM s_roll_cast c
+LEFT JOIN src_roll r ON true -- one tally row per rule even on an empty roll
+GROUP BY c.rule_id;
+INSERT INTO quality_sample
+SELECT c.rule_id, coalesce(r.parcel_number, '') || coalesce(':' || r.closed_roll_year, '')
+FROM s_roll_cast c
+JOIN src_roll r ON (r.cast_flags & c.bit) <> 0;
+
 -- The roll years in the lock (T13: the panel covers every one; sd.roll.year-gap carries into
 -- them).
 CREATE OR REPLACE TABLE sc_roll_years AS
@@ -165,7 +259,8 @@ SELECT r.* REPLACE (
          CASE WHEN r.year_property_built BETWEEN 1850 AND r.closed_roll_year
               THEN r.year_property_built END AS year_property_built,
          CASE WHEN r.number_of_stories > getvariable('max_stories') THEN NULL
-              ELSE r.number_of_stories END AS number_of_stories),
+              ELSE r.number_of_stories END AS number_of_stories,
+         coalesce(r.cast_flags, 0)::UTINYINT AS cast_flags),
        m.current_id AS id, m.how,
        r.year_property_built IS NOT NULL AS has_year,
        coalesce(r.year_property_built NOT BETWEEN 1850 AND r.closed_roll_year, false)
@@ -241,6 +336,11 @@ JOIN sc_land_use_classes c ON c.name = CASE
 -- units_missing: every row of the parcel-year has a NULL number_of_units, so `units` is the
 -- coalesce default 0: sd.roll.units-missing (DQ-4 registered rule, controller ruling F1 Task 3;
 -- bit 3).
+-- stories_missing: no row of the parcel-year has stories (a source NULL, or nulled by
+-- sd.roll.stories-max), for sd.features.no-building.
+-- year_cast / stories_cast / units_cast / area_cast / value_cast: a row of the parcel-year had
+-- that field rewritten by its normalise cast (the sd.roll.*-cast rules above), so the
+-- parcel-year's value is not the source's own (bits 0, 1, 3, 6 and 2 in 81).
 CREATE OR REPLACE TEMP TABLE s_roll_sum AS
 SELECT id, closed_roll_year AS roll_year,
        coalesce(sum(number_of_units), 0)::INTEGER AS units,
@@ -262,7 +362,13 @@ SELECT id, closed_roll_year AS roll_year,
        coalesce(bool_or(status_code = 'N'), false) AS status_n,
        bool_or(year_nulled) AS year_nulled,
        bool_or(stories_nulled) AS stories_nulled,
-       bool_and(number_of_units IS NULL) AS units_missing
+       bool_and(number_of_units IS NULL) AS units_missing,
+       bool_and(number_of_stories IS NULL) AS stories_missing,
+       bool_or((cast_flags & 2) <> 0) AS year_cast,
+       bool_or((cast_flags & 4) <> 0) AS stories_cast,
+       bool_or((cast_flags & 8) <> 0) AS units_cast,
+       bool_or((cast_flags & 16) <> 0) AS area_cast,
+       bool_or((cast_flags & 96) <> 0) AS value_cast
 FROM s_roll
 WHERE id IS NOT NULL
 GROUP BY id, closed_roll_year;
@@ -273,7 +379,8 @@ CREATE OR REPLACE TABLE sc_roll_agg AS
 SELECT s.id, s.roll_year, s.units, s.stories, s.year_built,
        s.land, s.impr, s.floor_area_m2,
        c.use_code, c.land_use_class::INTEGER AS land_use_class, s.noncondo_units, s.hotel,
-       s.status_n, s.year_nulled, s.stories_nulled, s.units_missing
+       s.status_n, s.year_nulled, s.stories_nulled, s.units_missing, s.stories_missing,
+       s.year_cast, s.stories_cast, s.units_cast, s.area_cast, s.value_cast
 FROM s_roll_sum s
 JOIN s_roll_class c ON c.id = s.id AND c.closed_roll_year = s.roll_year
 ORDER BY s.id, s.roll_year;
