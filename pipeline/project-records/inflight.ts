@@ -347,6 +347,20 @@ export function rollYearOf(day: Day, latest: number): number {
   return Math.min(Math.max(year, 2007), latest);
 }
 
+/**
+ * Ruling U1 (partner: "carry the next real unit value backwards"): the `unitsAt.filed` of a
+ * history whose Planning value is unusable (`pr.units.filed-zero`, `pr.units.split-filed`) is its
+ * next recorded count in stage order after `filed`: `permitFiled`, else `complete`, whichever is
+ * first present and > 0. Null when neither is, so `filed` stays omitted.
+ */
+export function carriedFiledUnits(at: Partial<Record<Stage, number>>): number | null {
+  for (const s of ['permitFiled', 'complete'] as const) {
+    const u = at[s];
+    if (u !== undefined && u > 0) return u;
+  }
+  return null;
+}
+
 /** Spec 4.8 `unitsAt` (tier 2: current values across records, not snapshots). */
 export function unitsAt(proj: LinkedProject): Partial<Record<Stage, number>> {
   const out: Partial<Record<Stage, number>> = {};

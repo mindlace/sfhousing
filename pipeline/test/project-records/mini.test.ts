@@ -568,20 +568,20 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(at('construction').map((h) => h.id)).toEqual(['BP:201702010022']);
   });
 
-  it('M23: two pipeline rows split the 100-unit PRJ; the split histories omit unitsAt.filed', () => {
+  it('M23: two pipeline rows split the 100-unit PRJ; each part carries its own count to filing', () => {
     const ids = ['PRJ:2009-000023PRJ:BP:201102010023', 'PRJ:2009-000023PRJ:BP:201102020023'];
     const [a, b] = ids.map(history);
     for (const h of [a, b]) {
       expect(h.pathway, h.id).toBe('discretionary');
       expect(h.parcelIds, h.id).toEqual(['3512011']);
-      expect(h.unitsAt, h.id).not.toHaveProperty('filed');
       expect(h.quality, h.id).toEqual(['pr.units.split-filed']);
       expect(h.entered.filed, h.id).toBe(day('2009-03-02'));
       expect(h.entered.entitled, h.id).toBe(day('2010-06-01'));
       expect(h.existingUnits, h.id).toBe(0);
     }
-    expect(a.unitsAt).toEqual({ permitFiled: 40 });
-    expect(b.unitsAt).toEqual({ permitFiled: 60 });
+    // Ruling U1: not the whole case's 100, but each part's own permit count, carried back.
+    expect(a.unitsAt).toEqual({ filed: 40, permitFiled: 40 });
+    expect(b.unitsAt).toEqual({ filed: 60, permitFiled: 60 });
     expect(a.end).toEqual({ kind: 'complete', day: day('2014-03-03') });
     expect(b.end).toEqual({ kind: 'complete', day: day('2014-06-02') });
     // A PRJ that is not split keeps its proposed units at filing (M1).
@@ -688,12 +688,15 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(r.warnings).toContain('BP:202503010028: every permit suspended; left flight');
   });
 
-  it('M29: a referral PRJ recording 0 units omits unitsAt.filed (Ruling F1a)', () => {
+  it('M29: a referral PRJ recording 0 units takes its permit count at filing (F1a, U1)', () => {
     const h = history('PRJ:2016-000029PRJ');
     expect(h.pathway).toBe('permitOnly');
     expect(h.end.kind).toBe('open');
-    expect(h.unitsAt).toEqual({ permitFiled: 2 });
+    expect(h.unitsAt).toEqual({ filed: 2, permitFiled: 2 });
     expect(h.quality).toEqual(['pr.units.filed-zero']);
+    // M23's two parts and M29 carried a count back; none of the fixture's is left omitted.
+    expect(r.counts['histories.unitsFiledCarried']).toBe(3);
+    expect(r.counts['histories.unitsFiledOmitted']).toBe(0);
     expect(r.counts['quality.pr.units.filed-zero.fired']).toBe(1);
     expect(r.counts['quality.pr.units.filed-zero.of']).toBe(14);
   });

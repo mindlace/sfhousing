@@ -263,42 +263,50 @@ export const PR_RULES: readonly QualityRule[] = [
     unitsWeighted: false
   },
   {
-    // Ruling F1a (comprehension gate F1): T4d only. A Planning record's number_of_units_prop of 0
-    // is not a recorded size (units precedence, spec 4.8 rule 2, needs > 0), so the history
-    // omits unitsAt.filed; a split part is counted under pr.units.split-filed only.
+    // Ruling F1a (comprehension gate F1), Ruling U1: T4d only. A Planning record's
+    // number_of_units_prop of 0 is not a recorded size (units precedence, spec 4.8 rule 2, needs
+    // > 0); the history's unitsAt.filed is its next recorded count (permitFiled, else complete),
+    // or omitted when it has none. A split part is counted under pr.units.split-filed only.
     id: PR.unitsFiledZero,
     owner: OWNER,
     source: 'datasf-planning-projects',
     field: 'unitsAt.filed',
     kind: 'shape',
-    action: 'null',
+    action: 'replace',
     tier: 2,
-    valueTier: null,
+    valueTier: 2,
     maskBit: null,
-    label: "A Planning record's home count of zero was treated as not recorded",
+    label:
+      "A Planning record's home count of zero was replaced by the next recorded count (building permit, else completion)",
     denominator: 'histories whose primary Planning record has a proposed unit count',
-    warnShare: 0.01,
-    failShare: 0.1,
+    // Override (partner ruling): Planning records often carry no usable unit count at filing
+    // (zero, or the whole multi-building case); the model carries the next recorded count
+    // backwards. Live 859 / 2,569 = 33.4%.
+    warnShare: 0.4,
+    failShare: 0.5,
     unitsWeighted: false
   },
   {
-    // Ruling S2 (stage-calibration finding 2): T4d only; no T3 value changes.
+    // Ruling S2 (stage-calibration finding 2), Ruling U1: T4d only; no T3 value changes. A split
+    // part's unitsAt.filed is its own next recorded count (permitFiled, else complete), or
+    // omitted when it has none.
     id: PR.unitsSplitFiled,
     owner: OWNER,
     source: 'datasf-planning-projects',
     field: 'unitsAt.filed',
     kind: 'shape',
-    action: 'null',
+    action: 'replace',
     tier: 2,
-    valueTier: null,
+    valueTier: 2,
     maskBit: null,
     label:
-      "A building's filing-stage home count was not taken from the whole Planning case it was split from",
+      'A building split from a multi-building Planning case takes its own next recorded home count at filing',
     denominator: 'histories whose primary Planning record has a proposed unit count',
-    // Override (partner ruling): multi-building Planning cases split into per-building projects;
-    // whole-case units at filing do not belong to one building; live 48/2,569 = 1.87%.
-    warnShare: 0.03,
-    failShare: 0.1,
+    // Override (partner ruling): Planning records often carry no usable unit count at filing
+    // (zero, or the whole multi-building case); the model carries the next recorded count
+    // backwards. Live 48 / 2,569 = 1.9%.
+    warnShare: 0.4,
+    failShare: 0.5,
     unitsWeighted: false
   },
   {

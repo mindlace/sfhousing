@@ -50,6 +50,7 @@ import {
   rollYearOf,
   sourcesOf,
   storiesDetail,
+  carriedFiledUnits,
   unitsAt,
   type Capacity,
   type InFlightStatus
@@ -425,7 +426,13 @@ function history(a: Assessed, input: ProjectRecordsInput): ProjectHistory {
   // A completion from evidence or a verdict certifies no units, so it sets no unitsAt.complete.
   const ruled = a.stale.evidence !== null || a.stale.verdict;
   if (a.histEntered.complete === undefined || ruled) delete at.complete;
-  if (a.quality.has(PR.unitsSplitFiled) || a.quality.has(PR.unitsFiledZero)) delete at.filed;
+  if (a.quality.has(PR.unitsSplitFiled) || a.quality.has(PR.unitsFiledZero)) {
+    // Ruling U1: the Planning value is not this history's size at filing; carry the next
+    // recorded count (its own permits, else its certified completion) backwards, if any.
+    delete at.filed;
+    const carried = carriedFiledUnits(at);
+    if (carried !== null) at.filed = carried;
+  }
   return {
     id: a.proj.id,
     pathway: a.pathway,
@@ -681,7 +688,9 @@ function zeroCounts(): Record<string, number> {
     'projects.excludedStatutoryUnits': 0,
     'projects.excludedSuspended': 0,
     'projects.excludedSuspendedUnits': 0,
-    'histories.statutoryExpiry.excludedCompletePermit': 0
+    'histories.statutoryExpiry.excludedCompletePermit': 0,
+    'histories.unitsFiledCarried': 0,
+    'histories.unitsFiledOmitted': 0
   };
   for (const p of PATHWAYS) c[`projects.byPathway.${p}`] = 0;
   for (const s of STAGE_ORDER) c[`projects.byStage.${s}`] = 0;
@@ -860,7 +869,17 @@ export function deriveProjects(
     if (a.stale.expiryExcludedComplete) {
       counts['histories.statutoryExpiry.excludedCompletePermit']++;
     }
-    histories.push(history(a, input));
+    const h = history(a, input);
+    histories.push(h);
+    // Ruling U1: of the histories the two filing rules fire on, those that carried a later count
+    // back to filing and those left with no `unitsAt.filed`.
+    if (a.quality.has(PR.unitsSplitFiled) || a.quality.has(PR.unitsFiledZero)) {
+      counts[
+        h.unitsAt.filed === undefined
+          ? 'histories.unitsFiledOmitted'
+          : 'histories.unitsFiledCarried'
+      ]++;
+    }
   }
   warnings.push(...leftFlight.sort(cmp));
   // Ruling C3: an entry that met no open history (an unknown verdict there is simply unused).
