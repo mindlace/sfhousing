@@ -592,7 +592,8 @@ export const SD_RULES: readonly QualityRule[] = [
     unitsWeighted: false
   },
   // Share override approved (partner, DQ-4, 2026-10-17): measured 4.23% of hostable parcels live
-  // (5,945 of 140,529); acdm-wktn writes the bare NCD/NCT code for the named
+  // (5,945 of 140,529, capped hostable rule); measured 2026-10-17 on the uncapped rule (partner
+  // ruling, option c): 4.05% (5,945 of 146,727). acdm-wktn writes the bare NCD/NCT code for the named
   // neighbourhood-commercial districts it does not name (ruling A9), so the share is a property of
   // the source. Warn above 5%; A9's escalation line, 10% of hostable parcels, still fails.
   {
@@ -615,7 +616,8 @@ export const SD_RULES: readonly QualityRule[] = [
   // default): a missing zoning code reads as "anything else" in the density-cap table, so no cap
   // (spec §4.4, §4.6 "NULL if none"). densityCapRule calls it 'none': a NULL or blank code on the
   // chosen active acdm-wktn row, or no active row at all. 758 parcels live, every one with an
-  // active row whose code is NULL; 2 of them hostable (2 of 140,529, 0.001%).
+  // active row whose code is NULL; 2 of them hostable (2 of 146,727, 0.001%; measured 2026-10-17
+  // on the uncapped hostable rule).
   {
     ...SD,
     id: 'sd.zoning.missing',
