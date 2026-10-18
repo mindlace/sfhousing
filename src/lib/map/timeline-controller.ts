@@ -85,8 +85,12 @@ function accessorsFor(pack: TimedPackedCell, theme: Theme) {
 
 interface Cell {
   pack: TimedPackedCell;
-  /** Re-encoded by `setLookups` (tlC depends on typical durations). */
+  /** Re-encoded after `setLookups`, in slices (tlC depends on typical durations). */
   enc: EncodedParts;
+  /** The lookups `enc` was encoded with. */
+  encodedWith: TimelineLookups | null;
+  /** The cell layers' `updateTriggers.getTlC`: the controller's `tlcVersion` at encode time. */
+  tlc: number;
   /** Per-cell attribute accessors; they read `enc` at call time. */
   tl: { getTlA: Accessor<number[]>; getTlB: Accessor<number[]>; getTlC: Accessor<number[]> };
   solid: Layer | null; // null when the cell has no parts
@@ -96,6 +100,8 @@ interface Cell {
 interface Slice {
   cells: TimedPackedCell[];
   removed: string[];
+  /** Installed cells to re-encode with the current lookups (`setLookups`). */
+  reencode: string[];
 }
 
 const RESERVED = /^(generated|rising|timeline)-/;
@@ -129,7 +135,7 @@ export class TimelineController {
   private readonly pump: DemolishPump;
   private lookups: TimelineLookups | null = null;
   private chance: ChanceTexture | null = null;
-  /** Bumped by `setLookups`: the cell layers' `updateTriggers.getTlC`. */
+  /** Bumped by `setLookups`; a cell takes it as its `tlc` when it is (re-)encoded. */
   private tlcVersion = 0;
   private bars: BarAttrs[] = [];
   private barsLayer: Layer | null = null;
@@ -196,9 +202,12 @@ export class TimelineController {
   }
 
   /**
-   * Stores the lookups and uploads a new chance texture; re-encodes every installed cell's tlC
-   * (typical construction days) and rebuilds the bars once the slice queue has drained.
-   * `packChanceTexture` throws a `RangeError` on a row longer than 2048; nothing changes then.
+   * Stores the lookups and packs a new chance texture. Every installed cell's tlC (typical
+   * construction days) is re-encoded in the slice queue, at most MAX_CELLS_PER_SLICE cells a
+   * frame and none in this call, so a revision 0 that follows in the same task drops the work.
+   * Cells a queued slice is about to install are skipped: they install with these lookups. The
+   * bars are rebuilt once the queue has drained. `packChanceTexture` throws a `RangeError` on a
+   * row longer than 2048; nothing changes then.
    */
   setLookups(l: TimelineLookups): void {
     if (this.destroyed) return;
@@ -207,12 +216,14 @@ export class TimelineController {
     this.chance = chance;
     this.tlcVersion++;
     if (this.lastRevision < 0) return;
-    for (const cell of this.cells.values()) {
-      cell.enc = encodeParts(cell.pack, l);
-      this.buildCellLayers(cell);
-    }
+    const queued = new Set<string>();
+    for (const s of this.queue) for (const c of s.cells) queued.add(c.cellId);
+    const ids = [...this.cells.keys()].filter((id) => !queued.has(id)).sort();
     this.barsDirty = true;
-    if (this.queue.length === 0) this.rebuildBars();
+    for (let i = 0; i < ids.length; i += MAX_CELLS_PER_SLICE)
+      this.queue.push({ cells: [], removed: [], reencode: ids.slice(i, i + MAX_CELLS_PER_SLICE) });
+    if (this.queue.length > 0) return this.schedule();
+    this.rebuildBars(); // no cells: only the bars depend on the lookups
     this.emit();
   }
 
@@ -297,7 +308,7 @@ export class TimelineController {
     this.pump.replace(u.demolish);
     this.lastRevision = 0;
     const slices = planTimelineSlices(u);
-    this.queue = slices.length > 0 ? slices : [{ cells: [], removed: [] }];
+    this.queue = slices.length > 0 ? slices : [{ cells: [], removed: [], reencode: [] }];
     this.runSlice(this.queue.shift()!);
     this.schedule();
   }
@@ -305,6 +316,13 @@ export class TimelineController {
   private runSlice(slice: Slice): void {
     for (const id of slice.removed) if (this.cells.delete(id)) this.barsDirty = true;
     for (const pack of slice.cells) this.install(pack);
+    for (const id of slice.reencode) {
+      const cell = this.cells.get(id);
+      // Gone (a removed cell), or (re)installed with the current lookups since the slice was made.
+      if (!cell || cell.encodedWith === this.lookups) continue;
+      this.encode(cell);
+      this.buildCellLayers(cell);
+    }
     // Bars are rebuilt once per update, when its last slice has installed.
     if (this.queue.length === 0 && this.barsDirty) this.rebuildBars();
     this.emit();
@@ -319,7 +337,8 @@ export class TimelineController {
           'no solid floors until completion'
       );
     }
-    const cell = { pack, enc: encodeParts(pack, l) } as Cell;
+    const cell = { pack } as Cell;
+    this.encode(cell);
     cell.tl = {
       getTlA: vec4Accessor(cell, 'tlA'),
       getTlB: vec4Accessor(cell, 'tlB'),
@@ -328,6 +347,12 @@ export class TimelineController {
     this.buildCellLayers(cell);
     this.cells.set(pack.cellId, cell);
     this.barsDirty = true;
+  }
+
+  private encode(cell: Cell): void {
+    cell.enc = encodeParts(cell.pack, this.lookups);
+    cell.encodedWith = this.lookups;
+    cell.tlc = this.tlcVersion;
   }
 
   private rebuildBars(): void {
@@ -386,7 +411,7 @@ export class TimelineController {
       elevationScale: 1,
       extensions: [this.ext],
       timelapsePass: pass,
-      updateTriggers: { getFillColor: theme, getTlC: this.tlcVersion },
+      updateTriggers: { getFillColor: theme, getTlC: cell.tlc },
       pickable: true,
       ...(pass === 0
         ? { autoHighlight: true, highlightColor: hexToRgba(TOKENS[theme].highlight) }
@@ -423,7 +448,7 @@ function planTimelineSlices(u: TimelineUpdate): Slice[] {
   ];
   const out: Slice[] = [];
   for (let i = 0; i < units.length; i += MAX_CELLS_PER_SLICE) {
-    const slice: Slice = { cells: [], removed: [] };
+    const slice: Slice = { cells: [], removed: [], reencode: [] };
     for (const [c, id] of units.slice(i, i + MAX_CELLS_PER_SLICE)) {
       if (c) slice.cells.push(c);
       else slice.removed.push(id!);

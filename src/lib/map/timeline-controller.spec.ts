@@ -352,6 +352,7 @@ describe('TimelineController lookups', () => {
     const solidBefore = props(byId(deps, solid(A)));
     const tlcBefore = ghostBefore.getTlC(null, { index: 0 })[1];
     c.setLookups(timelineLookups);
+    deps.flushFrame(); // the re-encode slice
     const ghostAfter = props(byId(deps, ghost(A)));
     expect(ghostAfter.updateTriggers.getTlC).not.toEqual(ghostBefore.updateTriggers.getTlC);
     expect(props(byId(deps, solid(A))).updateTriggers.getTlC).not.toEqual(
@@ -361,6 +362,64 @@ describe('TimelineController lookups', () => {
     expect(ids(deps)).toEqual([solid(A), solid(B), ghost(A), ghost(B), 'timeline-bars']);
     expect(c.debugSnapshot().revision).toBe(0);
     expect(c.debugSnapshot().bars).toBeGreaterThan(0);
+  });
+
+  it('re-encodes installed cells in the slice queue, 4 a frame, none in the call', () => {
+    const c = controller();
+    c.apply(update(0, { cells: manyCells(9) }));
+    while (c.debugSnapshot().pending > 0) deps.flushFrame();
+    const tlc = (id: string) => props(byId(deps, solid(id))).updateTriggers.getTlC;
+    const before = tlc('n00');
+    const emits = deps.layerHistory.length;
+    const bars = byId(deps, 'timeline-bars');
+    c.setLookups({ ...timelineLookups });
+    expect(deps.layerHistory).toHaveLength(emits);
+    expect(c.debugSnapshot().pending).toBe(3);
+    const done = () => manyCells(9).filter((x) => tlc(x.cellId) !== before).length;
+    const counts: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      deps.flushFrame();
+      counts.push(done());
+      // The bars are rebuilt once, when the last re-encode slice has run.
+      expect(byId(deps, 'timeline-bars') === bars).toBe(i < 2);
+    }
+    expect(counts).toEqual([4, 8, 9]);
+    expect(c.debugSnapshot().pending).toBe(0);
+  });
+
+  it('skips cells a queued slice is about to install', () => {
+    const c = controller();
+    c.apply(update(0, { cells: manyCells(9) })); // 4 installed, 5 queued in 2 slices
+    c.setLookups({ ...timelineLookups });
+    expect(c.debugSnapshot().pending).toBe(3); // one re-encode slice, for the 4 installed
+    while (c.debugSnapshot().pending > 0) deps.flushFrame();
+    const triggers = new Set(
+      manyCells(9).map((x) => props(byId(deps, solid(x.cellId))).updateTriggers.getTlC)
+    );
+    expect(triggers.size).toBe(1);
+    expect(ids(deps)).toContain('timeline-bars');
+  });
+
+  it('a revision 0 right after setLookups drops the queued re-encode', () => {
+    const c = controller();
+    c.apply(update(0, { cells: manyCells(9) }));
+    while (c.debugSnapshot().pending > 0) deps.flushFrame();
+    c.setLookups({ ...timelineLookups });
+    expect(c.debugSnapshot().pending).toBe(3);
+    c.apply(update(0, { cells: manyCells(9) }));
+    expect(c.debugSnapshot().pending).toBe(2); // revision 0's own slices only
+    let frames = 0;
+    for (; c.debugSnapshot().pending > 0; frames++) deps.flushFrame();
+    expect(frames).toBe(2);
+  });
+
+  it('setLookups with no cells installed rebuilds the bars at once', () => {
+    const c = controller();
+    c.apply(update(0));
+    const emits = deps.layerHistory.length;
+    c.setLookups({ ...timelineLookups });
+    expect(deps.layerHistory).toHaveLength(emits + 1);
+    expect(c.debugSnapshot().pending).toBe(0);
   });
 
   it('stores lookups set before the first apply without emitting', () => {
@@ -392,6 +451,7 @@ describe('TimelineController lookups', () => {
     c.apply(timelineSmall);
     const before = props(byId(deps, 'timeline-bars')).chance;
     c.setLookups(timelineLookups);
+    deps.flushFrame(); // the re-encode slice, then the bars
     expect(props(byId(deps, 'timeline-bars')).chance).not.toBe(before);
   });
 });

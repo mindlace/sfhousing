@@ -11,7 +11,8 @@ import type { Manifest } from '$lib/data/manifest';
 import '../../routes/layout.css';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import SimMap from './SimMap.svelte';
-import { SLICE_IDS } from './hide';
+import { MAX_CELLS_PER_SLICE, SLICE_IDS } from './hide';
+import { TimelineController } from './timeline-controller';
 import { buildBars } from './timelapse/bars';
 import { StageBarLayer, TimelapseExtension } from './timelapse/deck';
 import { declutter } from './timelapse/declutter';
@@ -36,8 +37,12 @@ const SET_TIME_RATIO = 1.5;
 const PUMP_FRAME_MS = 8;
 /** §4.7 pass bar: per-frame map-view JS during playback with no demolitions crossing. */
 const FRAME_JS_MS = 0.5;
+/** Sanity bound on the single worst frame (ruling R16: the budget above is held at p95). */
+const FRAME_JS_MAX_MS = 2;
 /** §6 client budget. */
 const DECLUTTER_MS = 20;
+/** One 60 fps frame: the synchronous part of `setTimelineLookups` (final review Minor 2). */
+const SET_LOOKUPS_MS = 16;
 
 /** Timed `setTime` samples per run, of each kind (single calls and batches). */
 const SAMPLES = 2000;
@@ -256,6 +261,43 @@ describe('timeline perf (real map)', { timeout: 600_000 }, () => {
     expect(frames[0]).toBeLessThanOrEqual(PUMP_FRAME_MS);
     expect(Math.max(...frames)).toBeLessThanOrEqual(PUMP_FRAME_MS);
   });
+
+  // Final review Minor 2: the call re-encoded every installed cell synchronously (63–72 ms here
+  // at 30k). The re-encode now runs in the slice queue; its slices are reported, not asserted
+  // (the last one also rebuilds and declutters the bars, as a revision 0's last slice does).
+  it('a second setTimelineLookups at 30,000 projects takes ≤ 16 ms', async () => {
+    const { h, map } = await mountReady();
+    overlayOf(map).setProps({ layerFilter: () => false }); // main-thread JS only, as above
+    await load(h, 30_000);
+    // runSlice is private in TS; wrapped here only to time each slice.
+    const proto = TimelineController.prototype as unknown as { runSlice: (s: unknown) => void };
+    const sliceMs: number[] = [];
+    const orig = proto.runSlice;
+    proto.runSlice = function (this: unknown, s: unknown) {
+      const t0 = performance.now();
+      orig.call(this, s);
+      sliceMs.push(performance.now() - t0);
+    };
+    const times: number[] = [];
+    try {
+      for (let run = 0; run < 3; run++) {
+        const t0 = performance.now();
+        h.setTimelineLookups({ ...SYNTHETIC_LOOKUPS }); // a new object: a full re-encode
+        times.push(performance.now() - t0);
+        await converged();
+      }
+    } finally {
+      proto.runSlice = orig;
+    }
+    const cells = dbg().timelineSnapshot()!.cells;
+    console.info(
+      `[timeline-perf] setTimelineLookups at 30k (${cells} cells): call ` +
+        `[${times.map((t) => t.toFixed(2))}] ms; ${sliceMs.length} re-encode slices, ` +
+        `[${sliceMs.map((t) => t.toFixed(1))}] ms`
+    );
+    expect(sliceMs.length).toBe(3 * Math.ceil(cells / MAX_CELLS_PER_SLICE));
+    expect(Math.max(...times)).toBeLessThanOrEqual(SET_LOOKUPS_MS);
+  });
 });
 
 /**
@@ -291,8 +333,10 @@ describe('timeline perf (per-frame JS)', { timeout: 600_000 }, () => {
   // `demolish` is emptied so no frame crosses a demolition, and playback runs at 3 years/s from
   // Day 20742.
   // Timer caveat: each reading is clamped to 100 µs ticks, so a frame's sum of its ~4 readings
-  // (setTime, the visible cells' extension draws, the bars) is unbiased but noisy; the max over
-  // frames is asserted as §4.7 states it.
+  // (setTime, the visible cells' extension draws, the bars) is unbiased but noisy.
+  // Ruling R16: §4.7 is a per-frame budget, not a hard maximum, and signoff runs this with no
+  // retries, so the p95 over the frames is held to 0.5 ms; a single worst frame is exposed to GC
+  // and scheduler noise and gets only a loose sanity bound (FRAME_JS_MAX_MS).
   it('per-frame timeline JS ≤ 0.5 ms during playback at 300 and 30,000 projects', async () => {
     const { h, map } = await mountReady();
     map.jumpTo({ center: CITY_CORNER, zoom: 16, pitch: 0, bearing: 0 });
@@ -344,7 +388,9 @@ describe('timeline perf (per-frame JS)', { timeout: 600_000 }, () => {
         r.parts[r.frames.indexOf(Math.max(...r.frames))].map((x) => x.toFixed(1)).join('/');
       const report = (r: typeof small) =>
         `layers ${r.layers}, draws/frame ${Math.min(...r.draws)}–${Math.max(...r.draws)}, ` +
-        `mean ${mean(r.frames).toFixed(3)} ms, max ${Math.max(...r.frames).toFixed(3)} ms ` +
+        `mean ${mean(r.frames).toFixed(3)} ms, ` +
+        `p95 ${p95(Float64Array.from(r.frames)).toFixed(3)} ms, ` +
+        `max ${Math.max(...r.frames).toFixed(3)} ms ` +
         `(setTime/extension/bars ${worst(r)})`;
       console.info(
         `[timeline-perf] per-frame timeline JS over ${PLAYBACK_FRAMES} frames: ` +
@@ -354,8 +400,10 @@ describe('timeline perf (per-frame JS)', { timeout: 600_000 }, () => {
       // Every frame rendered: at least one cell's solid and ghost passes plus the bars.
       for (const r of [small, large]) expect(Math.min(...r.draws)).toBeGreaterThanOrEqual(3);
       expect(large.layers).toBe(41);
-      expect(Math.max(...small.frames)).toBeLessThanOrEqual(FRAME_JS_MS);
-      expect(Math.max(...large.frames)).toBeLessThanOrEqual(FRAME_JS_MS);
+      for (const r of [small, large]) {
+        expect(p95(Float64Array.from(r.frames))).toBeLessThanOrEqual(FRAME_JS_MS);
+        expect(Math.max(...r.frames)).toBeLessThanOrEqual(FRAME_JS_MAX_MS);
+      }
     } finally {
       for (const r of restore) r();
     }
