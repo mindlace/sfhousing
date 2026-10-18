@@ -107,7 +107,7 @@ const TABLE: Record<string, Spec> = {
     warnShare: 0.01,
     failShare: 0.1,
     label:
-      'The daily permit and Planning records disagree with the quarterly pipeline; the daily records are used'
+      'The quarterly pipeline lists a project that the daily permit and Planning records show has finished or ended; the daily records are used'
   },
   'pr.parcels.shared-existing': {
     kind: 'shape',
@@ -326,16 +326,25 @@ describe('pr.stories.parse-range (spec §4.8)', () => {
 });
 
 describe('pr.pipeline.records-win (spec §4.7, observe)', () => {
-  it('counts a stage-mismatch conflict over population projects matching a row', () => {
+  it('a stage mismatch alone no longer fires', () => {
     const base = derive();
     // A (Construction = construction) and B (BP Filed = permitFiled) agree with the pipeline.
     expect(tally(base, PR.pipelineRecordsWin)).toMatchObject({ fired: 0, of: 2 });
     const r = derive((raw) => {
       raw['datasf-dev-pipeline'][0].current_status = 'BP Issued';
     });
+    expect(tally(r, PR.pipelineRecordsWin)).toMatchObject({ fired: 0, of: 2 });
+  });
+
+  it('counts a matched project whose history ends exit, over projects matching a row', () => {
+    const r = derive((raw) => {
+      const b = raw['datasf-permits-newcon'].find((x) => x.permit_number === '202403150003');
+      Object.assign(b ?? {}, { status: 'withdrawn', status_date: '2026-01-05T00:00:00.000' });
+    });
+    expect(r.histories.find((h) => h.id === 'BP:202403150003')?.end?.kind).toBe('exit');
     expect(tally(r, PR.pipelineRecordsWin)).toMatchObject({ fired: 1, of: 2 });
     const call = callsFor(r.counts).find((c) => c.id === PR.pipelineRecordsWin);
-    expect(call?.sample).toEqual(['PRJ:2019-000001PRJ']);
+    expect(call?.sample).toEqual(['BP:202403150003']);
     for (const p of r.file.projects) expect(p.quality).not.toContain(PR.pipelineRecordsWin);
     for (const h of r.histories) expect(h.quality).not.toContain(PR.pipelineRecordsWin);
   });
@@ -355,7 +364,7 @@ describe('pr.pipeline.records-win (spec §4.7, observe)', () => {
     expect(call?.sample).toEqual(['PRJ:2016-000006PRJ']);
   });
 
-  it('a row whose status maps to no stage is not a mismatch', () => {
+  it('a row whose status maps to no stage is not a conflict', () => {
     const r = derive((raw) => {
       raw['datasf-dev-pipeline'][0].current_status = 'Something Else';
     });

@@ -134,15 +134,15 @@ export const PR_RULES: readonly QualityRule[] = [
     id: PR.pipelineRecordsWin,
     owner: OWNER,
     source: 'datasf-dev-pipeline',
-    field: 'current_status',
+    field: 'current_status (against the end of the daily-record history)',
     kind: 'observe',
     action: 'none',
     tier: 4,
     valueTier: null,
     maskBit: null,
     label:
-      'The daily permit and Planning records disagree with the quarterly pipeline; the daily records are used',
-    denominator: 'population projects matching a pipeline row',
+      'The quarterly pipeline lists a project that the daily permit and Planning records show has finished or ended; the daily records are used',
+    denominator: 'population projects matching at least one pipeline row',
     warnShare: 0.01,
     failShare: 0.1,
     unitsWeighted: false

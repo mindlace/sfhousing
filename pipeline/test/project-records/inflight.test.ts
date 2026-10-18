@@ -493,26 +493,20 @@ describe('inFlightStatus', () => {
       reason: 'withdrawn',
       day: d('2026-01-01')
     };
-    const entered = { filed: d('2020-01-01') };
-    expect(pipelineConflict(withPipe, exit, entered)).toBe(true);
+    expect(pipelineConflict(withPipe, exit)).toBe(true);
     expect(inFlightStatus(withPipe, { ...base, end: exit })).toBe('ended');
-    expect(pipelineConflict(withPipe, open, entered)).toBe(false);
-    expect(pipelineConflict(proj(), exit, entered)).toBe(false);
-    expect(pipelineConflict(withPipe, null, entered)).toBe(false);
-    expect(pipelineConflict(withPipe, { kind: 'complete', day: 5 }, entered)).toBe(true);
+    expect(pipelineConflict(withPipe, open)).toBe(false);
+    expect(pipelineConflict(proj(), exit)).toBe(false);
+    expect(pipelineConflict(withPipe, null)).toBe(false);
+    expect(pipelineConflict(withPipe, { kind: 'complete', day: 5 })).toBe(true);
   });
 
-  it('conflict: the last entered stage differs from a row status stage (records win)', () => {
-    const entered = { filed: d('2020-01-01'), entitled: d('2021-01-01') };
+  it('conflict: a stage mismatch alone is not a conflict (partner ruling, ended only)', () => {
     const at = (status: string | null) => proj({ pipelineRows: [row({ status })] });
-    expect(pipelineConflict(at('PL Approved'), open, entered)).toBe(false);
-    expect(pipelineConflict(at('PL Filed'), open, entered)).toBe(true);
-    expect(pipelineConflict(at(' BP Issued '), open, entered)).toBe(true);
-    // A status that maps to no stage, or none at all, is not a mismatch.
-    expect(pipelineConflict(at('Something Else'), open, entered)).toBe(false);
-    expect(pipelineConflict(at(null), open, entered)).toBe(false);
-    // No entered stage: nothing to compare.
-    expect(pipelineConflict(at('PL Filed'), open, {})).toBe(false);
+    expect(pipelineConflict(at('PL Approved'), open)).toBe(false);
+    expect(pipelineConflict(at('PL Filed'), open)).toBe(false);
+    expect(pipelineConflict(at(null), open)).toBe(false);
+    expect(pipelineConflict(at('PL Filed'), { kind: 'complete', day: 5 })).toBe(true);
   });
 
   it('pipeline-only rows have a null end and are in flight', () => {

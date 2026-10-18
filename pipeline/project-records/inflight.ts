@@ -6,11 +6,10 @@
 import type { ParcelId } from '../../src/lib/data/parcel';
 import type { InFlightProject } from '../../src/lib/timelapse/projects';
 import type { Day } from '../../src/lib/timelapse/time';
-import { STAGE_ORDER } from '../../src/lib/timelapse/types';
 import type { ProjectHistory, Stage } from '../../src/lib/timelapse/types';
 import { MIN_GROSS_M2_PER_UNIT } from '../lib/quality';
 import { isNewConstruction } from './classify';
-import { permitCompletionDay, pipelineStage } from './stages';
+import { permitCompletionDay } from './stages';
 import { DATASET } from './types';
 import type { LinkedProject, Permit, ProjectRecordsInput } from './types';
 
@@ -395,22 +394,10 @@ export function inFlightStatus(
 }
 
 /**
- * Spec 4.7 records win (`pr.pipeline.records-win`): the project holds a pipeline row and its
- * history ends complete or exit, or its last entered stage differs from the stage a row's
- * `current_status` maps to. A status that maps to no stage is not a mismatch.
+ * Spec 4.7 records win (`pr.pipeline.records-win`, partner ruling: ended projects only): the
+ * project holds a pipeline row and its daily-record history ends `complete` or `exit`. A last
+ * entered stage that differs from a row's `current_status` stage is not a conflict.
  */
-export function pipelineConflict(
-  proj: LinkedProject,
-  end: ProjectHistory['end'] | null,
-  entered: Partial<Record<Stage, Day>>
-): boolean {
-  if (proj.pipelineRows.length === 0) return false;
-  if (end !== null && end.kind !== 'open') return true;
-  let last: Stage | null = null;
-  for (const s of STAGE_ORDER) if (entered[s] !== undefined) last = s;
-  if (last === null) return false;
-  return proj.pipelineRows.some((r) => {
-    const s = pipelineStage(r.status);
-    return s !== null && s !== last;
-  });
+export function pipelineConflict(proj: LinkedProject, end: ProjectHistory['end'] | null): boolean {
+  return proj.pipelineRows.length > 0 && end !== null && end.kind !== 'open';
 }

@@ -345,14 +345,13 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
     sample: noDate.dropped.map((x) => x.id)
   }),
   // Spec 4.7 (observe; no record carries it): population projects matching at least one pipeline
-  // row (pipeline-only projects are rows, not matches); conflicts per `pipelineConflict`.
+  // row (pipeline-only projects are rows, not matches); conflicts are matched projects whose
+  // history ends complete or exit (`pipelineConflict`).
   [PR.pipelineRecordsWin]: ({ assessed }) => {
     const matched = assessed.filter(
       (a) => a.inPopulation && a.proj.kind !== 'pipelineOnly' && a.proj.pipelineRows.length > 0
     );
-    const sample = matched
-      .filter((a) => pipelineConflict(a.proj, a.end, a.entered))
-      .map((a) => a.proj.id);
+    const sample = matched.filter((a) => pipelineConflict(a.proj, a.end)).map((a) => a.proj.id);
     return { fired: sample.length, of: matched.length, sample };
   },
   // Spec 4.8 shared parcels: of in-flight projects; the ones on a parcel with units > 0 that
