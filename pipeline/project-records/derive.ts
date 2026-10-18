@@ -187,7 +187,8 @@ function history(a: Assessed, input: ProjectRecordsInput): ProjectHistory {
     existingUnits: existingUnitsAt(a.proj.parcelIds, a.rollYear, input.assessorUnits),
     storiesProposed: storiesOf(a.proj).stories,
     baseStoriesAtFiling: baseStoriesAt(a.proj.parcelIds, a.rollYear, input.baseStories),
-    sources: sourcesOf(a.proj)
+    sources: sourcesOf(a.proj),
+    quality: []
   };
 }
 
@@ -345,7 +346,8 @@ export function deriveProjects(input: ProjectRecordsInput): DeriveResult {
       storiesTier: tier,
       multiPhase: a.multiPhase,
       phases: m ? m.phases : null,
-      sources: sourcesOf(a.proj)
+      sources: sourcesOf(a.proj),
+      quality: []
     });
     projects.push(p);
     counts['projects.inFlight']++;
@@ -397,6 +399,7 @@ export function deriveProjects(input: ProjectRecordsInput): DeriveResult {
     schema: 1,
     asOf,
     rhnaCompletedNet: rhna.value,
+    qualityRules: [],
     projects
   };
   const permits = permitRows(link.projects, parsed.pipeline, parsed.completions, resolve);

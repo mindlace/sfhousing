@@ -113,7 +113,7 @@
     "projects.byStage.permitFiled": 2,
     "projects.byStage.permitIssued": 1,
     "projects.byStage.preApplication": 1,
-    "projects.bytes": 4981,
+    "projects.bytes": 5116,
     "projects.excludedAlterationUnits": 0,
     "projects.inFlight": 9,
     "projects.inFlightUnits": 503,
@@ -300,7 +300,7 @@
       "ok": true
     },
     {
-      "detail": "9 projects, 4981 bytes",
+      "detail": "9 projects, 5116 bytes",
       "id": "V20",
       "ok": true
     },

@@ -3,9 +3,11 @@ import type { ParcelId } from '../data/parcel';
 import {
   PROJECT_ID_RE,
   ProjectsFormatError,
+  SCORE_ONLY_QUALITY_ID,
   parseProjectsFile,
   type InFlightProject,
-  type ProjectsFile
+  type ProjectsFile,
+  type QualityRuleRef
 } from './projects';
 import type { Day } from './time';
 import type { Pathway, Provenance, Stage } from './types';
@@ -36,17 +38,37 @@ interface RowInFlightProject {
       }[]
     | null;
   sources: { dataset: string; id: string; key?: string }[];
+  quality: string[];
 }
+type RowQualityRuleRef = {
+  id: string;
+  label: string;
+  tier: 2 | 3 | 4;
+  valueTier: 0 | 1 | 2 | 3 | 4 | null;
+};
 type RowProjectsFile = {
   schema: 1;
   asOf: Day;
   rhnaCompletedNet: { units: number; since: Day; provenance: Provenance };
+  qualityRules: RowQualityRuleRef[];
   projects: RowInFlightProject[];
 };
+type RowParseProjectsFile = (
+  json: unknown,
+  opts?: {
+    asOf?: Day;
+    parcelIds?: ReadonlySet<ParcelId>;
+    onInvalid?: (path: string, message: string) => void;
+  }
+) => ProjectsFile;
 
 const rowsMatch: Assert<
   Equals<InFlightProject, RowInFlightProject> extends true
-    ? Equals<ProjectsFile, RowProjectsFile>
+    ? Equals<ProjectsFile, RowProjectsFile> extends true
+      ? Equals<QualityRuleRef, RowQualityRuleRef> extends true
+        ? Equals<typeof parseProjectsFile, RowParseProjectsFile>
+        : false
+      : false
     : false
 > = true;
 
@@ -57,6 +79,8 @@ describe('compile-time row checks', () => {
 });
 
 const ASOF = 20371;
+const VALID_RANGE = 'pr.date.valid-range';
+const FORWARD_CLAMP = 'pr.stages.forward-clamp';
 
 function validFile(): ProjectsFile {
   return {
@@ -74,6 +98,10 @@ function validFile(): ProjectsFile {
         window: ['2022-06-30', '2025-12-31']
       }
     },
+    qualityRules: [
+      { id: VALID_RANGE, label: 'Dates outside the valid range', tier: 2, valueTier: null },
+      { id: FORWARD_CLAMP, label: 'Stage dates clamped forward', tier: 3, valueTier: 2 }
+    ],
     projects: [
       {
         id: 'PRJ:2020-001234PRJ',
@@ -88,7 +116,8 @@ function validFile(): ProjectsFile {
         storiesTier: 0,
         multiPhase: false,
         phases: null,
-        sources: [{ dataset: 'p7e5-vtjv', id: '2020-001234PRJ', key: 'case_no' }]
+        sources: [{ dataset: 'p7e5-vtjv', id: '2020-001234PRJ', key: 'case_no' }],
+        quality: [VALID_RANGE, FORWARD_CLAMP]
       },
       {
         id: 'BP:202001011234',
@@ -103,7 +132,8 @@ function validFile(): ProjectsFile {
         storiesTier: null,
         multiPhase: false,
         phases: null,
-        sources: [{ dataset: 'i98e-djp9', id: '202001011234' }]
+        sources: [{ dataset: 'i98e-djp9', id: '202001011234' }],
+        quality: []
       },
       {
         id: 'CASE:2007.0001PRX',
@@ -118,10 +148,25 @@ function validFile(): ProjectsFile {
         storiesTier: 3,
         multiPhase: true,
         phases: null,
-        sources: [{ dataset: '6jgi-cpb4', id: '2007.0001PRX', key: 'case_no' }]
+        sources: [{ dataset: '6jgi-cpb4', id: '2007.0001PRX', key: 'case_no' }],
+        quality: [FORWARD_CLAMP]
       }
     ]
   };
+}
+
+/** Makes projects[2] a score-only master: multiPhase, phases null, parcelIds [] (DQ-3). */
+function scoreOnly(f: ProjectsFile): void {
+  f.qualityRules.push({
+    id: SCORE_ONLY_QUALITY_ID,
+    label: 'Master with no free parcel',
+    tier: 4,
+    valueTier: null
+  });
+  f.qualityRules.sort((a, b) => (a.id < b.id ? -1 : 1));
+  f.projects[2].parcelIds = [];
+  f.projects[2].phases = null;
+  f.projects[2].quality = [SCORE_ONLY_QUALITY_ID, FORWARD_CLAMP];
 }
 
 describe('parseProjectsFile accepts', () => {
@@ -142,10 +187,34 @@ describe('parseProjectsFile accepts', () => {
     expect(parseProjectsFile(f)).toBe(f);
   });
 
-  it('an empty projects array', () => {
+  it('an empty projects array, with no quality rules', () => {
     const f = validFile();
     f.projects = [];
+    f.qualityRules = [];
     expect(parseProjectsFile(f)).toBe(f);
+  });
+
+  it('projects with no quality and an empty qualityRules', () => {
+    const f = validFile();
+    for (const p of f.projects) p.quality = [];
+    f.qualityRules = [];
+    expect(parseProjectsFile(f)).toBe(f);
+  });
+
+  it('a score-only master (multiPhase, phases null, parcelIds [])', () => {
+    const f = validFile();
+    scoreOnly(f);
+    expect(parseProjectsFile(f)).toBe(f);
+  });
+
+  it('every valueTier 0..4 and null, and every tier 2..4', () => {
+    for (const valueTier of [0, 1, 2, 3, 4, null] as const) {
+      for (const tier of [2, 3, 4] as const) {
+        const f = validFile();
+        f.qualityRules[0] = { ...f.qualityRules[0], tier, valueTier };
+        expect(parseProjectsFile(f)).toBe(f);
+      }
+    }
   });
 
   it('enriched phases, with and without a source', () => {
@@ -257,8 +326,64 @@ const cases: Case[] = [
   ],
   ['projects not array', (f) => (f.projects = {}), 'projects'],
   ['projects missing', (f) => delete f.projects, 'projects'],
+  ['qualityRules missing', (f) => delete f.qualityRules, 'qualityRules'],
+  ['qualityRules object', (f) => (f.qualityRules = {}), 'qualityRules'],
+  ['qualityRule null', (f) => (f.qualityRules[0] = null), 'qualityRules[0]'],
+  ['qualityRule array', (f) => (f.qualityRules[0] = []), 'qualityRules[0]'],
+  ['qualityRule id number', (f) => (f.qualityRules[0].id = 7), 'qualityRules[0].id'],
+  ['qualityRule id missing', (f) => delete f.qualityRules[0].id, 'qualityRules[0].id'],
+  ['qualityRule label empty', (f) => (f.qualityRules[0].label = ''), 'qualityRules[0].label'],
+  ['qualityRule label number', (f) => (f.qualityRules[0].label = 1), 'qualityRules[0].label'],
+  ['qualityRule label missing', (f) => delete f.qualityRules[0].label, 'qualityRules[0].label'],
+  ['qualityRule tier 1', (f) => (f.qualityRules[0].tier = 1), 'qualityRules[0].tier'],
+  ['qualityRule tier 5', (f) => (f.qualityRules[0].tier = 5), 'qualityRules[0].tier'],
+  ['qualityRule tier 2.5', (f) => (f.qualityRules[0].tier = 2.5), 'qualityRules[0].tier'],
+  ['qualityRule tier string', (f) => (f.qualityRules[0].tier = '2'), 'qualityRules[0].tier'],
+  [
+    'qualityRule valueTier 5',
+    (f) => (f.qualityRules[0].valueTier = 5),
+    'qualityRules[0].valueTier'
+  ],
+  [
+    'qualityRule valueTier -1',
+    (f) => (f.qualityRules[0].valueTier = -1),
+    'qualityRules[0].valueTier'
+  ],
+  [
+    'qualityRule valueTier 1.5',
+    (f) => (f.qualityRules[0].valueTier = 1.5),
+    'qualityRules[0].valueTier'
+  ],
+  [
+    'qualityRule valueTier missing',
+    (f) => delete f.qualityRules[0].valueTier,
+    'qualityRules[0].valueTier'
+  ],
+  [
+    'qualityRules unsorted',
+    (f) => (f.qualityRules = [f.qualityRules[1], f.qualityRules[0]]),
+    'qualityRules[1].id'
+  ],
+  [
+    'qualityRules duplicate id',
+    (f) => f.qualityRules.splice(1, 0, { ...f.qualityRules[0] }),
+    'qualityRules[1].id'
+  ],
+  [
+    'qualityRule no project uses',
+    (f) => f.qualityRules.push({ id: 'pr.zz.unused', label: 'x', tier: 2, valueTier: null }),
+    'qualityRules[2].id'
+  ],
+  [
+    'qualityRule used only by a malformed quality',
+    (f) => {
+      f.projects[0].quality = [VALID_RANGE];
+      f.projects[2].quality = FORWARD_CLAMP;
+    },
+    'qualityRules[1].id'
+  ],
   ['project null', (f) => (f.projects[1] = null), 'projects[1]'],
-  ['project array', (f) => (f.projects[0] = []), 'projects[0]'],
+  ['project array', (f) => (f.projects[1] = []), 'projects[1]'],
   ['id number', (f) => (f.projects[0].id = 5), `${P}.id`],
   ['id bad prefix', (f) => (f.projects[0].id = 'XYZ:1'), `${P}.id`],
   ['id bad shape', (f) => (f.projects[0].id = 'BP:a:b'), `${P}.id`],
@@ -267,6 +392,35 @@ const cases: Case[] = [
   ['label undefined', (f) => delete f.projects[0].label, `${P}.label`],
   ['parcelIds not array', (f) => (f.projects[0].parcelIds = '0001001'), `${P}.parcelIds`],
   ['parcelIds empty', (f) => (f.projects[0].parcelIds = []), `${P}.parcelIds`],
+  [
+    'parcelIds empty on a phased master',
+    (f) => {
+      scoreOnly(f);
+      f.projects[2].phases = [
+        { units: 300, parcelIds: ['0003001'], plannedPermitFiled: null, source: null }
+      ];
+    },
+    'projects[2].parcelIds'
+  ],
+  [
+    'parcelIds empty on a master without the score-only rule',
+    (f) => {
+      scoreOnly(f);
+      f.projects[2].quality = [FORWARD_CLAMP];
+      f.qualityRules = f.qualityRules.filter((r: QualityRuleRef) => r.id !== SCORE_ONLY_QUALITY_ID);
+    },
+    'projects[2].parcelIds'
+  ],
+  [
+    'parcelIds empty on a non-multiPhase project with the score-only rule',
+    (f) => {
+      scoreOnly(f);
+      f.projects[2].quality = [FORWARD_CLAMP];
+      f.projects[0].parcelIds = [];
+      f.projects[0].quality = [VALID_RANGE, SCORE_ONLY_QUALITY_ID, FORWARD_CLAMP];
+    },
+    `${P}.parcelIds`
+  ],
   ['parcelIds number', (f) => (f.projects[0].parcelIds = ['0001001', 5]), `${P}.parcelIds[1]`],
   [
     'parcelIds descending',
@@ -380,6 +534,24 @@ const cases: Case[] = [
   ],
   ['source id missing', (f) => delete f.projects[0].sources[0].id, `${P}.sources[0].id`],
   ['source key number', (f) => (f.projects[0].sources[0].key = 1), `${P}.sources[0].key`],
+  ['quality missing', (f) => delete f.projects[1].quality, 'projects[1].quality'],
+  ['quality null', (f) => (f.projects[1].quality = null), 'projects[1].quality'],
+  ['quality number entry', (f) => (f.projects[0].quality[1] = 3), `${P}.quality[1]`],
+  [
+    'quality unsorted',
+    (f) => (f.projects[0].quality = [FORWARD_CLAMP, VALID_RANGE]),
+    `${P}.quality[1]`
+  ],
+  [
+    'quality duplicated',
+    (f) => (f.projects[0].quality = [VALID_RANGE, VALID_RANGE]),
+    `${P}.quality[1]`
+  ],
+  [
+    'quality id absent from qualityRules',
+    (f) => (f.projects[1].quality = ['pr.nope.rule']),
+    'projects[1].quality[0]'
+  ],
   ['second project, deep path', (f) => (f.projects[1].units = 0), 'projects[1].units']
 ];
 
@@ -419,7 +591,7 @@ describe('parseProjectsFile rejects', () => {
 
   it('never throws anything but ProjectsFormatError on garbage fields', () => {
     const garbage: unknown[] = [null, undefined, 0, 'x', [], {}, true, NaN, () => 1];
-    const fields = ['schema', 'asOf', 'rhnaCompletedNet', 'projects'];
+    const fields = ['schema', 'asOf', 'rhnaCompletedNet', 'qualityRules', 'projects'];
     for (const field of fields) {
       for (const g of garbage) {
         const f = validFile() as unknown as Record<string, unknown>;
@@ -474,6 +646,171 @@ describe('parseProjectsFile rejects', () => {
     } catch (e) {
       expect((e as ProjectsFormatError).path).toBe('projects[0].units');
     }
+  });
+
+  it('throws a file-level violation before any project-level one', () => {
+    const f = validFile();
+    f.projects[0].units = 0;
+    f.qualityRules.push({ id: 'pr.zz.unused', label: 'x', tier: 2, valueTier: null });
+    try {
+      parseProjectsFile(f);
+      expect.unreachable();
+    } catch (e) {
+      expect((e as ProjectsFormatError).path).toBe('qualityRules[2].id');
+    }
+  });
+});
+
+describe('parseProjectsFile with onInvalid', () => {
+  type Call = [path: string, message: string];
+
+  function run(f: unknown): { out: ProjectsFile; calls: Call[] } {
+    const calls: Call[] = [];
+    const out = parseProjectsFile(f, { onInvalid: (path, message) => calls.push([path, message]) });
+    return { out, calls };
+  }
+
+  it('reports one invalid project once, with its path, and leaves it out', () => {
+    const f = validFile();
+    f.projects[1].units = 0;
+    const before = structuredClone(f);
+    const { out, calls } = run(f);
+    expect(calls).toEqual([['projects[1].units', 'projects.json projects[1].units: must be >= 1']]);
+    expect(out.projects).toEqual([before.projects[0], before.projects[2]]);
+    expect(out.projects[0]).toBe(f.projects[0]);
+    expect(out.projects[1]).toBe(f.projects[2]);
+    expect(f).toEqual(before);
+  });
+
+  it('returns a shallow copy, never the input, and does not mutate it', () => {
+    const f = validFile();
+    const before = structuredClone(f);
+    const { out, calls } = run(f);
+    expect(calls).toEqual([]);
+    expect(out).not.toBe(f);
+    expect(out.projects).not.toBe(f.projects);
+    expect(out).toEqual(before);
+    expect(out.rhnaCompletedNet).toBe(f.rhnaCompletedNet);
+    expect(out.qualityRules).toBe(f.qualityRules);
+    expect(f).toEqual(before);
+  });
+
+  it('reports only the first violation of a project with several', () => {
+    const f = validFile();
+    f.projects[0].units = 0;
+    f.projects[0].sources = [];
+    const { out, calls } = run(f);
+    expect(calls.map((c) => c[0])).toEqual(['projects[0].units']);
+    expect(out.projects.map((p) => p.id)).toEqual(['BP:202001011234', 'CASE:2007.0001PRX']);
+  });
+
+  it('reports each invalid project, in input order, and may return none', () => {
+    const f = validFile() as Loose;
+    f.qualityRules = [];
+    f.projects[0] = null;
+    f.projects[1].stories = 99;
+    f.projects[2].quality = [VALID_RANGE];
+    const { out, calls } = run(f);
+    expect(calls.map((c) => c[0])).toEqual([
+      'projects[0]',
+      'projects[1].stories',
+      'projects[2].quality[0]'
+    ]);
+    expect(out.projects).toEqual([]);
+  });
+
+  it('judges qualityRules usage on the input array, so a rule used only by a dropped project passes', () => {
+    const f = validFile();
+    f.projects[2].quality = [];
+    f.projects[0].units = 0; // the only user of both rules, and invalid
+    const { out, calls } = run(f);
+    expect(calls.map((c) => c[0])).toEqual(['projects[0].units']);
+    expect(out.qualityRules).toEqual(f.qualityRules);
+    expect(out.projects.map((p) => p.id)).toEqual(['BP:202001011234', 'CASE:2007.0001PRX']);
+  });
+
+  it('a duplicate id: the later project is the invalid one', () => {
+    const f = validFile();
+    f.projects[2].id = f.projects[0].id;
+    const { out, calls } = run(f);
+    expect(calls).toEqual([
+      ['projects[2].id', `projects.json projects[2].id: duplicate id ${f.projects[0].id}`]
+    ]);
+    expect(out.projects).toEqual([f.projects[0], f.projects[1]]);
+  });
+
+  it.each([
+    ['unsorted', [FORWARD_CLAMP, VALID_RANGE], 'projects[0].quality[1]'],
+    ['duplicated', [VALID_RANGE, VALID_RANGE], 'projects[0].quality[1]'],
+    ['absent from qualityRules', [VALID_RANGE, 'pr.nope.rule'], 'projects[0].quality[1]']
+  ])('a quality array %s makes the project invalid', (_name, quality, path) => {
+    const f = validFile();
+    f.projects[0].quality = quality;
+    const { out, calls } = run(f);
+    expect(calls.map((c) => c[0])).toEqual([path]);
+    expect(out.projects.map((p) => p.id)).toEqual(['BP:202001011234', 'CASE:2007.0001PRX']);
+  });
+
+  it('keeps a score-only master and drops a non-master with empty parcelIds', () => {
+    const f = validFile();
+    scoreOnly(f);
+    f.projects[1].parcelIds = [];
+    const { out, calls } = run(f);
+    expect(calls.map((c) => c[0])).toEqual(['projects[1].parcelIds']);
+    expect(out.projects.map((p) => p.id)).toEqual(['PRJ:2020-001234PRJ', 'CASE:2007.0001PRX']);
+  });
+
+  it('applies opts.parcelIds per project', () => {
+    const f = validFile();
+    const calls: Call[] = [];
+    const out = parseProjectsFile(f, {
+      asOf: ASOF,
+      parcelIds: new Set(['0001001', '0001002', '0003001']),
+      onInvalid: (path, message) => calls.push([path, message])
+    });
+    expect(calls.map((c) => c[0])).toEqual(['projects[1].parcelIds[0]']);
+    expect(out.projects).toHaveLength(2);
+  });
+
+  it.each<Case>([
+    ['bad schema', (f) => (f.schema = 2), 'schema'],
+    ['opts-free asOf garbage', (f) => (f.asOf = 'x'), 'asOf'],
+    ['bad rhnaCompletedNet', (f) => (f.rhnaCompletedNet = null), 'rhnaCompletedNet'],
+    ['projects not an array', (f) => (f.projects = {}), 'projects'],
+    [
+      'unsorted qualityRules',
+      (f) => (f.qualityRules = [f.qualityRules[1], f.qualityRules[0]]),
+      'qualityRules[1].id'
+    ],
+    [
+      'a listed rule no project uses',
+      (f) => f.qualityRules.push({ id: 'pr.zz.unused', label: 'x', tier: 2, valueTier: null }),
+      'qualityRules[2].id'
+    ],
+    ['a bad qualityRules tier', (f) => (f.qualityRules[0].tier = 1), 'qualityRules[0].tier']
+  ])('a file-level violation still throws: %s', (_name, mutate, path) => {
+    const f = validFile();
+    f.projects[0].units = 0; // a project-level violation too: never reported
+    mutate(f);
+    const calls: Call[] = [];
+    try {
+      parseProjectsFile(f, { onInvalid: (p, m) => calls.push([p, m]) });
+      expect.unreachable();
+    } catch (e) {
+      expect(e).toBeInstanceOf(ProjectsFormatError);
+      expect((e as ProjectsFormatError).path).toBe(path);
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it('opts.asOf mismatch still throws', () => {
+    const f = validFile();
+    const onInvalid = () => expect.unreachable();
+    expect(() => parseProjectsFile(f, { asOf: ASOF + 1, onInvalid })).toThrow(ProjectsFormatError);
+  });
+
+  it('a garbage root still throws', () => {
+    expect(() => parseProjectsFile(null, { onInvalid: () => {} })).toThrow(ProjectsFormatError);
   });
 });
 

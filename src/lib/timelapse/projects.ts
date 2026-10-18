@@ -15,7 +15,7 @@ export interface InFlightProject {
   id: string;
   /** street address from the records, if any */
   label: string | null;
-  /** current mapblklot, mapped through retired-parcel lineage */
+  /** current mapblklot, mapped through retired-parcel lineage; [] only for a score-only last-resort master (multiPhase, phases null, quality includes 'pr.multiphase.score-only'): no free DA parcel (DQ-3) */
   parcelIds: ParcelId[];
   pathway: Pathway;
   stage: Stage;
@@ -44,6 +44,19 @@ export interface InFlightProject {
     /** field to query, e.g. 'case_no'; absent = the dataset's record-id field */
     key?: string;
   }[];
+  /** sorted T14 rule ids that changed or estimated a value of this project; [] if none */
+  quality: string[];
+}
+
+/** One `qualityRules` entry: a T14 rule named by some project's `quality`. */
+export interface QualityRuleRef {
+  id: string;
+  /** generic, about the rule, never naming a record */
+  label: string;
+  /** of the rule */
+  tier: 2 | 3 | 4;
+  /** of the value it writes; null if it writes none */
+  valueTier: 0 | 1 | 2 | 3 | 4 | null;
 }
 
 /** The `scenarios/fzp/projects.json` object. Projects are new construction only. */
@@ -57,10 +70,15 @@ export type ProjectsFile = {
     since: Day;
     provenance: Provenance;
   };
+  /** every id used in any project's quality, sorted by id */
+  qualityRules: QualityRuleRef[];
   projects: InFlightProject[];
 };
 
 export const PROJECT_ID_RE = /^(PRJ:[^:]+(:BP:[^:]+)?|BP:[^:]+|CASE:[^:]+|PPA:[^:]+)$/;
+
+/** The `quality` id that marks a score-only master, the only project with empty `parcelIds`. */
+export const SCORE_ONLY_QUALITY_ID = 'pr.multiphase.score-only';
 
 /** Thrown at the first violation. `path` locates it, e.g. `projects[3].history.filed`. */
 export class ProjectsFormatError extends Error {
@@ -182,12 +200,67 @@ function checkPhase(v: unknown, path: string): void {
   }
 }
 
+/** `prev` and `cur` are consecutive entries of a list that must be sorted and unique. */
+function checkAfter(prev: string, cur: string, path: string): void {
+  if (cur === prev) fail(path, `duplicate id ${cur}`);
+  if (cur < prev) fail(path, 'must be sorted ascending');
+}
+
+/** A score-only last-resort master (DQ-3): the only project allowed empty `parcelIds`. */
+function isScoreOnly(p: Obj): boolean {
+  return (
+    p.multiPhase === true &&
+    p.phases === null &&
+    Array.isArray(p.quality) &&
+    p.quality.includes(SCORE_ONLY_QUALITY_ID)
+  );
+}
+
+function checkQuality(v: unknown, path: string, ruleIds: ReadonlySet<string>): void {
+  const ids = arr(v, path);
+  ids.forEach((id, i) => {
+    const p = `${path}[${i}]`;
+    str(id, p);
+    if (i > 0) checkAfter(ids[i - 1] as string, id as string, p);
+    if (!ruleIds.has(id as string)) fail(p, 'is not in qualityRules');
+  });
+}
+
+/** The file-level `qualityRules` checks; returns the listed ids. */
+function checkQualityRules(v: unknown, projects: unknown[]): Set<string> {
+  const used = new Set<string>();
+  for (const p of projects) {
+    if (!isObj(p) || !Array.isArray(p.quality)) continue;
+    for (const id of p.quality) if (typeof id === 'string') used.add(id);
+  }
+  const rules = arr(v, 'qualityRules');
+  const ids = new Set<string>();
+  rules.forEach((r, i) => {
+    const path = `qualityRules[${i}]`;
+    const rule = obj(r, path);
+    const id = str(rule.id, `${path}.id`);
+    if (i > 0) checkAfter((rules[i - 1] as Obj).id as string, id, `${path}.id`);
+    if (!used.has(id)) fail(`${path}.id`, 'is not used by any project');
+    if (str(rule.label, `${path}.label`) === '') fail(`${path}.label`, 'must be non-empty');
+    if (rule.tier !== 2 && rule.tier !== 3 && rule.tier !== 4) {
+      fail(`${path}.tier`, 'must be 2, 3 or 4');
+    }
+    if (rule.valueTier !== null) {
+      const vt = int(rule.valueTier, `${path}.valueTier`);
+      if (vt < 0 || vt > 4) fail(`${path}.valueTier`, 'must be an integer 0..4 or null');
+    }
+    ids.add(id);
+  });
+  return ids;
+}
+
 function checkProject(
   v: unknown,
   path: string,
   asOf: number,
   seen: Set<string>,
-  parcelIds: ReadonlySet<ParcelId> | undefined
+  parcelIds: ReadonlySet<ParcelId> | undefined,
+  ruleIds: ReadonlySet<string>
 ): void {
   const p = obj(v, path);
 
@@ -198,7 +271,7 @@ function checkProject(
 
   if (p.label !== null) str(p.label, `${path}.label`);
 
-  checkParcelIds(p.parcelIds, `${path}.parcelIds`, true, parcelIds, true);
+  checkParcelIds(p.parcelIds, `${path}.parcelIds`, !isScoreOnly(p), parcelIds, true);
 
   if (!(PATHWAYS as readonly unknown[]).includes(p.pathway)) {
     fail(`${path}.pathway`, 'is not a pathway');
@@ -239,16 +312,31 @@ function checkProject(
     str(so.id, `${sp}.id`);
     if (so.key !== undefined) str(so.key, `${sp}.key`);
   });
+
+  checkQuality(p.quality, `${path}.quality`, ruleIds);
 }
 
 /**
- * Validates a parsed `projects.json`, throwing `ProjectsFormatError` at the first violation.
- * With `opts.asOf` the file's `asOf` must match it; with `opts.parcelIds` every parcel id must be
- * in the set. Returns the input, typed.
+ * Validates a parsed `projects.json`. With `opts.asOf` the file's `asOf` must match it; with
+ * `opts.parcelIds` every parcel id must be in the set.
+ *
+ * File-level checks (`schema`, `asOf`, `rhnaCompletedNet`, `projects` being an array, and every
+ * `qualityRules` check, whose "used by a project" check reads the input array) always throw
+ * `ProjectsFormatError`, before any project is checked. Project-level checks cover one element
+ * of `projects`; of two elements with the same id, the later is invalid.
+ *
+ * Without `opts.onInvalid` the first violation throws and the input is returned, typed (V20).
+ * With it, each invalid project is reported once, with its first violation's path and message,
+ * and left out; the result is a shallow copy of the input with the remaining `projects`, and
+ * the input is not mutated.
  */
 export function parseProjectsFile(
   json: unknown,
-  opts?: { asOf?: Day; parcelIds?: ReadonlySet<ParcelId> }
+  opts?: {
+    asOf?: Day;
+    parcelIds?: ReadonlySet<ParcelId>;
+    onInvalid?: (path: string, message: string) => void;
+  }
 ): ProjectsFile {
   const root = obj(json, '$');
   if (root.schema !== 1) fail('schema', 'must be 1');
@@ -262,9 +350,26 @@ export function parseProjectsFile(
   int(rhna.since, 'rhnaCompletedNet.since');
   checkProvenance(rhna.provenance, 'rhnaCompletedNet.provenance');
 
+  const projects = arr(root.projects, 'projects');
+  const ruleIds = checkQualityRules(root.qualityRules, projects);
+
   const seen = new Set<string>();
-  arr(root.projects, 'projects').forEach((proj, i) =>
-    checkProject(proj, `projects[${i}]`, asOf, seen, opts?.parcelIds)
-  );
-  return json as ProjectsFile;
+  const onInvalid = opts?.onInvalid;
+  if (!onInvalid) {
+    projects.forEach((proj, i) =>
+      checkProject(proj, `projects[${i}]`, asOf, seen, opts?.parcelIds, ruleIds)
+    );
+    return json as ProjectsFile;
+  }
+  const kept = projects.filter((proj, i) => {
+    try {
+      checkProject(proj, `projects[${i}]`, asOf, seen, opts.parcelIds, ruleIds);
+      return true;
+    } catch (e) {
+      if (!(e instanceof ProjectsFormatError)) throw e;
+      onInvalid(e.path, e.message);
+      return false;
+    }
+  });
+  return { ...(root as ProjectsFile), projects: kept as InFlightProject[] };
 }

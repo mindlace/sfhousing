@@ -25,7 +25,8 @@ const T3_KEYS = [
   'storiesTier',
   'multiPhase',
   'phases',
-  'sources'
+  'sources',
+  'quality'
 ];
 
 const T4D_KEYS = [
@@ -38,7 +39,8 @@ const T4D_KEYS = [
   'existingUnits',
   'storiesProposed',
   'baseStoriesAtFiling',
-  'sources'
+  'sources',
+  'quality'
 ];
 
 function project(r: DeriveResult, id: string) {
@@ -264,7 +266,16 @@ describe('deriveProjects: output shape', () => {
     expect(Object.keys(reversed)[0]).toBe('projects');
     expect(serializeProjects(reversed)).toBe(s);
     const top = JSON.parse(s);
-    expect(Object.keys(top)).toEqual(['schema', 'asOf', 'rhnaCompletedNet', 'projects']);
+    expect(Object.keys(top)).toEqual([
+      'schema',
+      'asOf',
+      'rhnaCompletedNet',
+      'qualityRules',
+      'projects'
+    ]);
+    const rule = { valueTier: null, tier: 2, label: 'x', id: 'pr.a.b' } as const;
+    const withRule = JSON.parse(serializeProjects({ ...reversed, qualityRules: [rule] }));
+    expect(Object.keys(withRule.qualityRules[0])).toEqual(['id', 'label', 'tier', 'valueTier']);
     expect(Object.keys(top.rhnaCompletedNet)).toEqual(['units', 'since', 'provenance']);
     expect(Object.keys(top.rhnaCompletedNet.provenance)).toEqual([
       'tier',

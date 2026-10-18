@@ -4,7 +4,11 @@
  * on how an object was built) and the `permits.parquet` rows (spec 4.9 Outputs).
  */
 import type { ParcelId } from '../../src/lib/data/parcel';
-import type { InFlightProject, ProjectsFile } from '../../src/lib/timelapse/projects';
+import type {
+  InFlightProject,
+  ProjectsFile,
+  QualityRuleRef
+} from '../../src/lib/timelapse/projects';
 import type { Day } from '../../src/lib/timelapse/time';
 import { STAGE_ORDER } from '../../src/lib/timelapse/types';
 import type {
@@ -86,8 +90,13 @@ export function orderProject(p: InFlightProject): InFlightProject {
     storiesTier: p.storiesTier,
     multiPhase: p.multiPhase,
     phases: p.phases === null ? null : p.phases.map(orderPhase),
-    sources: p.sources.map(orderSource)
+    sources: p.sources.map(orderSource),
+    quality: [...p.quality]
   };
+}
+
+function orderQualityRule(r: QualityRuleRef): QualityRuleRef {
+  return { id: r.id, label: r.label, tier: r.tier, valueTier: r.valueTier };
 }
 
 function orderProvenance(p: Provenance): Provenance {
@@ -111,6 +120,7 @@ export function orderProjectsFile(f: ProjectsFile): ProjectsFile {
       since: f.rhnaCompletedNet.since,
       provenance: orderProvenance(f.rhnaCompletedNet.provenance)
     },
+    qualityRules: f.qualityRules.map(orderQualityRule),
     projects: f.projects.map(orderProject)
   };
 }
@@ -134,7 +144,8 @@ export function orderHistory(h: ProjectHistory): ProjectHistory {
     existingUnits: h.existingUnits,
     storiesProposed: h.storiesProposed,
     baseStoriesAtFiling: h.baseStoriesAtFiling,
-    sources: h.sources.map(orderSource)
+    sources: h.sources.map(orderSource),
+    quality: [...h.quality]
   };
 }
 
