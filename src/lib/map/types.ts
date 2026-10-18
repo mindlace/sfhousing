@@ -121,13 +121,13 @@ export interface SimMapProps {
    * T7: timeline part pick callback. When set, SimMap's built-in tooltip is suppressed over
    * timeline parts (implemented by timelapse-render step 1).
    */
-  timelinePick?: (
-    p: {
-      projectId: string;
-      parcelId: ParcelId;
-      x: number;
-      y: number;
-      kind: 'hover' | 'tap';
-    } | null
-  ) => void;
+  timelinePick?: (p: TimelinePick) => void;
 }
+
+/**
+ * T7: a timeline pick. A hit names the slot's project and pick parcel; a miss is
+ * `{ projectId: null, kind }` (timelapse-render spec §4.8.1). `null` is never sent.
+ */
+export type TimelinePick =
+  | { projectId: string; parcelId: ParcelId; x: number; y: number; kind: 'hover' | 'tap' }
+  | { projectId: null; kind: 'hover' | 'tap' }; // a miss (§4.8.1)

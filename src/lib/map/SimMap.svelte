@@ -221,7 +221,7 @@
   let pendingDay: Day | null = null;
   let pendingLookups: TimelineLookups | null = null;
   let warnedGenerated = false;
-  /** The last hover report to `timelinePick` was a part: the next miss reports null once. */
+  /** The last hover report to `timelinePick` was a part: the next hover miss is sent once. */
   let hoverReported = false;
 
   // Hovered/tapped existing parcel: summary requests are latest-wins.
@@ -1066,8 +1066,10 @@
 
   /**
    * Routes a pick (§4.8): with `timelinePick` set, timeline parts go to it and suppress SimMap's
-   * own surface, and a miss reports null (a hover miss only after a hover hit). Without it, a part
-   * shows the generated tooltip or card. Everything else presents as in the editor.
+   * own surface. A miss reports `{ projectId: null, kind }` (§4.8.1): every tap or click miss
+   * sends a tap miss and leaves `hoverReported` alone; a hover miss is sent once, only after a
+   * hover hit. Without it, a part shows the generated tooltip or card. Everything else presents as
+   * in the editor.
    */
   function deliver(kind: PickKind, x: number, y: number, r: PickResult): void {
     const surface: Surface = kind === 'hover' ? 'tooltip' : 'card';
@@ -1083,18 +1085,22 @@
       const hit = { kind: 'generated', parcelId, typology, stories, units, existingUnits } as const;
       return present(surface, x, y, { hit, cell: null });
     }
-    if (report && (kind !== 'hover' || hoverReported)) {
-      hoverReported = false;
-      report(null);
+    if (report) {
+      if (kind !== 'hover') report({ projectId: null, kind: 'tap' });
+      else if (hoverReported) {
+        hoverReported = false;
+        report({ projectId: null, kind: 'hover' });
+      }
     }
     if (kind !== 'click') present(surface, x, y, r);
   }
 
-  /** A pointer left the parts with nothing new under it (leave, move, suppression): one null. */
+  /** A pointer left the parts with nothing new under it (leave, suppression, movestart, teardown):
+   *  one hover miss. */
   function unreportHover(): void {
     if (!hoverReported) return;
     hoverReported = false;
-    timelinePick?.(null);
+    timelinePick?.({ projectId: null, kind: 'hover' });
   }
 
   function present(

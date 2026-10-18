@@ -8,6 +8,7 @@ import type {
   SimMapHandle,
   SimMapProps,
   TimedPackedCell,
+  TimelinePick,
   TimelineUpdate
 } from './types';
 
@@ -40,13 +41,9 @@ type RowSetTimelineLookups = (l: {
   typicalMonths: ReturnType<typeof typicalMonths>;
 }) => void;
 type RowTimelinePick = (
-  p: {
-    projectId: string;
-    parcelId: ParcelId;
-    x: number;
-    y: number;
-    kind: 'hover' | 'tap';
-  } | null
+  p:
+    | { projectId: string; parcelId: ParcelId; x: number; y: number; kind: 'hover' | 'tap' }
+    | { projectId: null; kind: 'hover' | 'tap' }
 ) => void;
 
 const rowsMatch: Assert<
@@ -56,7 +53,9 @@ const rowsMatch: Assert<
         ? Equals<SimMapHandle['setTime'], RowSetTime> extends true
           ? Equals<SimMapHandle['setTimelineLookups'], RowSetTimelineLookups> extends true
             ? Equals<SimMapProps['timelinePick'], RowTimelinePick | undefined> extends true
-              ? true
+              ? Equals<TimelinePick, Parameters<RowTimelinePick>[0]> extends true
+                ? true
+                : false
               : false
             : false
           : false
