@@ -23,7 +23,7 @@ const PARCELS = parcelsJson as unknown as ParcelRecord[];
  * completion or exit, and `rev0`, `rev1`, … for revision days. `start`/`horizon` bound them.
  */
 export const DAYS = {
-  start: 20742, // 2026-10-15
+  start: 20742, // 2026-10-16
   horizon: 29584, // 2050-12-31
   // (a) discretionary with PPA, completes. Walkup, 5 stories.
   a: {

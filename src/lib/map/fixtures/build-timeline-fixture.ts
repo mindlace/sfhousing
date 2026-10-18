@@ -31,7 +31,7 @@ interface Spec {
   end: Schedule['end'];
 }
 
-// Days are days since 1970-01-01; 20742 is 2026-10-15 (the timeline start).
+// Days are days since 1970-01-01; 20742 is 2026-10-16 (the timeline start).
 const SPECS: Spec[] = [
   {
     // Constructs on 21400, completes on 22300: one demolish entry (day 21400).
