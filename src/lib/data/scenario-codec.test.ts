@@ -63,6 +63,29 @@ describe('sfh-scenario/1 codec', () => {
     expect(d.imputed[1] & 0b1000000).toBe(0b1000000);
   });
 
+  it('round-trips the scenario eligibility as flags bit 5 and decodes it as 0/1', () => {
+    const t = scenarioTiny();
+    const b = encodeScenarioPayload(t);
+    const flags = header(b).columns.find((c) => c.name === 'flags')!;
+    const bit5 = Array.from({ length: t.count }, (_, i) => (b[flags.offset + i] >> 5) & 1);
+    expect(bit5).toEqual([1, 1, 1, 0, 1, 1]);
+    const d = decodeScenarioPayload(b);
+    expect(d.eligible).toBeInstanceOf(Uint8Array);
+    expect([...d.eligible]).toEqual([1, 1, 1, 0, 1, 1]);
+    // Bit 5 is independent of the other flags: clearing it leaves hostable and hostableBase.
+    t.eligible[4] = 0;
+    const e = decodeScenarioPayload(encodeScenarioPayload(t));
+    expect([e.eligible[4], e.hostable[4], e.hostableBase[4], e.localProgram[4]]).toEqual([
+      0, 1, 1, 1
+    ]);
+  });
+
+  it('encode rejects an eligible value that is not 0/1', () => {
+    const t = scenarioTiny();
+    t.eligible[2] = 2;
+    expect(() => encodeScenarioPayload(t)).toThrow(/eligible\[2\] = 2 is not 0\/1/);
+  });
+
   it('encodes deterministically', () => {
     expect(encodeScenarioPayload(scenarioTiny())).toEqual(encodeScenarioPayload(scenarioTiny()));
   });
@@ -204,9 +227,14 @@ describe('sfh-scenario/1 codec', () => {
       rejects(withBit('imputed', 2, 7), /imputed\[2\] = \d+ sets reserved bits/);
     });
 
-    it('a set reserved bit 5, 6 or 7 in flags', () => {
-      for (const bit of [5, 6, 7])
+    it('a set reserved bit 6 or 7 in flags', () => {
+      for (const bit of [6, 7])
         rejects(withBit('flags', 0, bit), /flags\[0\] = \d+ sets reserved bits/);
+    });
+
+    it('not flags bit 5: it is the eligibility flag', () => {
+      // Row 3 (3512008) is not eligible; setting its bit 5 decodes as eligible.
+      expect(decodeScenarioPayload(withBit('flags', 3, 5)).eligible[3]).toBe(1);
     });
 
     it('a district index past districts', () => {

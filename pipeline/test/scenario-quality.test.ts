@@ -355,6 +355,18 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
       false
     ],
     [
+      'sd.landuse.none-with-units',
+      'datasf-landuse-2023',
+      'eligible',
+      'missing',
+      'default',
+      4,
+      4,
+      null,
+      'T11 parcels',
+      false
+    ],
+    [
       'sd.zoning.split-code',
       'datasf-parcel-attrs',
       'zoning_code',
@@ -932,7 +944,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
 
   it('every scenario-data rule reports once (recordQuality throws on a second report)', () => {
     const ids = QUALITY_RULES.filter((r) => r.owner === 'scenario-data').map((r) => r.id);
-    expect(ids).toHaveLength(38);
+    expect(ids).toHaveLength(39);
     const got = Object.keys(s.quality)
       .filter((k) => k.endsWith('.fired'))
       .map((k) => k.slice('quality.'.length, -'.fired'.length))
@@ -1394,5 +1406,147 @@ describe('the hostable_base year pairs across a missing roll year', () => {
       prev: s.scenarioCounts['scenario.panel.hostable_base.2025.both_prev'],
       cur: s.scenarioCounts['scenario.panel.hostable_base.2025.both']
     }).toEqual(pair);
+  });
+});
+
+describe('sd.landuse.none-with-units: no land-use record, assessor units (coordinator ruling)', () => {
+  let s: Synthetic;
+  let p: ScenarioParcels;
+  const NONE = { landUse: 'NONE', eligible: false };
+  beforeAll(async () => {
+    // Three eligible lots lose their land-use row (chunk `eligible` false, as 20_landuse.sql gives
+    // a parcel with no LUDB row): lot 10 has 3 roll units in 2024 and 2025; lot 11 has 0 in both;
+    // lot 1 has 0 in 2024 and 2 in 2025.
+    s = await synthetic('el', [setRow('3512001', [2024], 'number_of_units = 0')], {
+      '3512010': NONE,
+      '3512011': NONE,
+      '3512001': NONE
+    });
+    p = readParcelsBin(join(s.outDir, PARCELS_BIN));
+  });
+  const top = (i: number) => p.yield[i * F + F - 1];
+  const panel = (id: string) =>
+    db.all<{
+      roll_year: number;
+      existing_units: number;
+      base_yield: number;
+      hostable_base: boolean;
+    }>(
+      `SELECT roll_year, existing_units, base_yield, hostable_base FROM el.scenario_panel
+       WHERE mapblklot = '${id}' ORDER BY roll_year`
+    );
+
+  it('a NONE parcel with roll units is eligible, gets yields and is hostable', async () => {
+    const i = p.index.get('3512010')!;
+    const rec = s.records.get('3512010')!;
+    expect(rec.eligible).toBe(false);
+    expect({ units: p.existingUnits[i], eligible: p.eligible[i] }).toEqual({
+      units: 3,
+      eligible: 1
+    });
+    expect(top(i)).toBeGreaterThan(0);
+    expect(p.baseYield[i * F + F - 1]).toBeGreaterThan(0);
+    expect({ h: p.hostable[i], hb: p.hostableBase[i] }).toEqual({ h: 1, hb: 1 });
+    // The yields are sized on the scenario record: the chunk record alone would get none.
+    const view = scenarioRecordOf(p, i, rec);
+    expect(view.eligible).toBe(true);
+    expect(scenarioYield(view, p.envelopeStories[i], null)).toBeGreaterThan(0);
+    expect(scenarioYield(rec, p.envelopeStories[i], null)).toBe(0);
+    expect((await panel('3512010')).map((r) => r.hostable_base)).toEqual([true, true]);
+  });
+
+  it('rebuilds the shipped yields of a rule-eligible row exactly from scenarioRecordOf', async () => {
+    // The worker's rebuild (IA-8): the decoded row and the chunk record (eligible false) give back
+    // exactly yield and baseYield, through the eligibility the row carries in flags bit 5.
+    const capDay = Date.UTC(2026, 9, 10) / 86400000;
+    for (const id of ['3512010', '3512001']) {
+      const i = p.index.get(id)!;
+      const rec = s.records.get(id)!;
+      expect(rec.eligible, id).toBe(false);
+      const [z] = await db.all<{ r4: boolean; zoning_code: string | null }>(
+        `SELECT d.r4, z.zoning_code FROM el.sc_district d JOIN el.sc_zoning z USING (id)
+         WHERE id = '${id}'`
+      );
+      const baseCap = densityCap(z.zoning_code, p.lotAreaM2[i], z.r4, FZP_EFFECTIVE_DAY - 1);
+      const fzpCap = p.localProgram[i]
+        ? null
+        : densityCap(z.zoning_code, p.lotAreaM2[i], z.r4, capDay);
+      const view = scenarioRecordOf(p, i, rec);
+      const at = (stories: number, k: number, cap: number | null) =>
+        stories === 0 ? 0 : scenarioYield(view, fillStories(FILL_LEVELS[k], stories), cap);
+      const want = {
+        yield: FILL_LEVELS.map((_, k) => at(p.envelopeStories[i], k, fzpCap)),
+        baseYield: FILL_LEVELS.map((_, k) => at(p.baseStories[i], k, baseCap))
+      };
+      expect(
+        want.yield.some((v) => v > 0),
+        id
+      ).toBe(true);
+      expect(
+        {
+          yield: [...p.yield.subarray(i * F, i * F + F)],
+          baseYield: [...p.baseYield.subarray(i * F, i * F + F)]
+        },
+        id
+      ).toEqual(want);
+    }
+  });
+
+  it('a NONE parcel with 0 roll units stays ineligible, with no yields', async () => {
+    const i = p.index.get('3512011')!;
+    expect(p.existingUnits[i]).toBe(0);
+    expect({ eligible: p.eligible[i], h: p.hostable[i], hb: p.hostableBase[i] }).toEqual({
+      eligible: 0,
+      h: 0,
+      hb: 0
+    });
+    expect([...p.yield.subarray(i * F, i * F + F)]).toEqual([0, 0, 0, 0, 0]);
+    expect([...p.baseYield.subarray(i * F, i * F + F)]).toEqual([0, 0, 0, 0, 0]);
+    const rows = await panel('3512011');
+    expect(rows.map((r) => [r.base_yield, r.hostable_base])).toEqual([
+      [0, false],
+      [0, false]
+    ]);
+  });
+
+  it('the panel takes each roll year’s units: eligible only in the years with units', async () => {
+    const rows = await panel('3512001');
+    expect(rows.map((r) => [r.roll_year, r.existing_units, r.hostable_base])).toEqual([
+      [2024, 0, false],
+      [2025, 2, true]
+    ]);
+    expect(rows[0].base_yield).toBe(0);
+    expect(rows[1].base_yield).toBeGreaterThan(0);
+    // T11 reads the latest year: 2 units, so eligible.
+    expect(p.eligible[p.index.get('3512001')!]).toBe(1);
+    // Parcel-years eligible by the rule: lot 10 in 2024 and 2025, lot 1 in 2025.
+    expect(s.scenarioCounts['scenario.panel.landuse_none_with_units']).toBe(3);
+  });
+
+  it('fires on the T11 parcels it makes eligible, of every T11 parcel, recorded once', async () => {
+    expect(await reported(s, 'sd.landuse.none-with-units')).toEqual({
+      fired: 2,
+      of: 14,
+      sample: ['3512001', '3512010']
+    });
+    // Mini has 12 eligible chunk records; three lose their land-use row and two regain eligibility.
+    expect(s.scenarioCounts['scenario.eligible']).toBe(11);
+  });
+
+  it('every flag reads the scenario eligibility, and the step agrees with itself', () => {
+    for (let i = 0; i < p.count; i++) {
+      const rec = s.records.get(p.id[i])!;
+      const elig = rec.eligible || (rec.landUse === 'NONE' && p.existingUnits[i] > 0);
+      const view = scenarioRecordOf(p, i, rec);
+      const gross = (stories: number) => scenarioYield(view, fillStories(1, stories), null);
+      expect({ e: p.eligible[i], h: p.hostable[i], hb: p.hostableBase[i] }, p.id[i]).toEqual({
+        e: elig ? 1 : 0,
+        h: elig && p.envelopeStories[i] >= 1 && gross(p.envelopeStories[i]) > 0 ? 1 : 0,
+        hb: elig && p.baseStories[i] >= 1 && gross(p.baseStories[i]) > 0 ? 1 : 0
+      });
+    }
+    expect(s.scenarioCounts['scenario.hostable_mismatch']).toBe(0);
+    expect(s.scenarioCounts['scenario.hostable_base_mismatch']).toBe(0);
+    expect(s.scenarioCounts['scenario.panel.feature_mismatch']).toBe(0);
   });
 });

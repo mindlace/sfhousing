@@ -16,6 +16,7 @@ import type { Day } from '../../src/lib/timelapse/time';
 import { BBOX, type InvariantProfile } from '../config';
 import { checkQuality } from '../lib/quality';
 import { pointStrictlyInside } from '../lib/rings';
+import { scenarioEligible } from '../lib/scenario-eligibility';
 import { checkV20 } from '../project-records/invariants';
 import { PROJECTS_JSON } from './projects';
 import { PARCELS_BIN } from '../lib/scenario-files';
@@ -66,7 +67,10 @@ const TRANSIT_TARGET_BYTES = 400e3;
 const FZP_NET_CAPACITY = 780e3;
 /** V17 warns (still passes) outside [0.25×, 4×] FZP_NET_CAPACITY (spec §4.10, tier 4 band). */
 const FZP_NET_BAND = [0.25, 4] as const;
-/** V17: at least this share of eligible parcels is hostable (spec §4.10, tier 4 check bound). */
+/**
+ * V17: at least this share of (scenario-)eligible parcels is hostable (spec §4.10, tier 4 check
+ * bound).
+ */
 const HOSTABLE_MIN = 0.5;
 /**
  * V18: `hostable_base` changes by at most this share between consecutive roll years, with no
@@ -449,8 +453,13 @@ export async function checkDataset(
   // V15–V19 scenario file (scenario-data spec §4.10).
   const sc = readScenario(outDir);
   const p = sc.p;
-  const eligible = recs.filter((r) => r.eligible);
-  const eligibleById = new Map(recs.map((r) => [r.id, r.eligible]));
+  // V16-V18 count eligibility as the scenario does: parcels.bin's flags bit 5 (the chunk record's
+  // `eligible`, or no land-use row with latest-roll units, sd.landuse.none-with-units), the value
+  // its yields and hostable flags used. V17 checks the flag against the chunk records.
+  const eligibleRows: number[] = [];
+  if (p) for (let i = 0; i < p.count; i++) if (p.eligible[i]) eligibleRows.push(i);
+  const eligibleN = eligibleRows.length;
+  const recById = new Map(recs.map((r) => [r.id, r]));
   const fileProblem = sc.error ?? '';
   const addProblems = (id: InvariantResult['id'], problems: string[], okDetail: string) => {
     const ps = problems.filter(Boolean);
@@ -503,12 +512,9 @@ export async function checkDataset(
   {
     const parseFail = c['scenario.height.parse_fail'];
     const withDistrict = p
-      ? eligible.filter((r) => {
-          const i = p.index.get(r.id);
-          return i !== undefined && p.districts[p.district[i]] !== '';
-        }).length
+      ? eligibleRows.filter((i) => p.districts[p.district[i]] !== '').length
       : 0;
-    const share = ratio(withDistrict, eligible.length);
+    const share = ratio(withDistrict, eligibleN);
     addProblems(
       'V16',
       [
@@ -518,7 +524,7 @@ export async function checkDataset(
           ? `eligible with a district ${pct(share)} < ${thr(profile.heightJoinMin)}`
           : ''
       ],
-      `0 parse failures; eligible with a district ${withDistrict}/${eligible.length} ≥ ${thr(profile.heightJoinMin)}`
+      `0 parse failures; eligible with a district ${withDistrict}/${eligibleN} ≥ ${thr(profile.heightJoinMin)}`
     );
   }
 
@@ -527,7 +533,8 @@ export async function checkDataset(
   // (partner ruling, option c), which the payload does not carry: V17 checks the conditions the
   // payload can show (hostable ⇒ eligible ∧ stories ≥ 1; eligible ∧ stories ≥ 1 ∧ capped
   // yield[F−1] > 0 ⇒ hostable, since capped > 0 implies uncapped > 0) and the step's counts of
-  // flags that disagree with its own uncapped yields.
+  // flags that disagree with its own uncapped yields. Eligibility is flags bit 5, which must equal
+  // the chunk record's `eligible` or sd.landuse.none-with-units on the row's latest-roll units.
   {
     const clamped = c['scenario.yield.clamped'];
     const nonlp = c['scenario.yield.nonlp_base_mismatch'];
@@ -547,8 +554,15 @@ export async function checkDataset(
       const F = fl.length;
       let badH = 0;
       let badB = 0;
+      let badE = 0;
       for (let i = 0; i < p.count; i++) {
-        const elig = eligibleById.get(p.id[i]) ?? false;
+        const rec = recById.get(p.id[i]);
+        if (
+          (p.eligible[i] === 1) !==
+          (rec !== undefined && scenarioEligible(rec, p.existingUnits[i]))
+        )
+          badE++;
+        const elig = p.eligible[i] === 1;
         const canH = elig && p.envelopeStories[i] >= 1;
         const canB = elig && p.baseStories[i] >= 1;
         const mustH = canH && p.yield[i * F + F - 1] > 0;
@@ -559,7 +573,11 @@ export async function checkDataset(
       }
       if (badH) problems.push(`${badH} hostable flag(s) disagree with eligibility and yield`);
       if (badB) problems.push(`${badB} hostableBase flag(s) disagree with eligibility and yield`);
-      const share = ratio(hostable, eligible.length);
+      if (badE)
+        problems.push(
+          `${badE} eligible flag(s) disagree with the chunk record and sd.landuse.none-with-units`
+        );
+      const share = ratio(hostable, eligibleN);
       if (!(share >= HOSTABLE_MIN))
         problems.push(`hostable ${pct(share)} of eligible < ${thr(HOSTABLE_MIN)}`);
     }
@@ -569,7 +587,7 @@ export async function checkDataset(
       net >= lo && net <= hi
         ? ''
         : `; warn: FZP net capacity ${net} outside [${lo}, ${hi}] (Planning ~${FZP_NET_CAPACITY}, tier 1)`;
-    addProblems('V17', problems, `hostable ${hostable}/${eligible.length} eligible${warn}`);
+    addProblems('V17', problems, `hostable ${hostable}/${eligibleN} eligible${warn}`);
   }
 
   // V18 panel covers every roll year; latest-year roll join; Σ units; panel = T11 features;
@@ -580,7 +598,7 @@ export async function checkDataset(
     const matched = c['scenario.roll.latest_eligible_matched'];
     const unitsTotal = c['scenario.units.total'];
     const mismatch = c['scenario.panel.feature_mismatch'];
-    const share = ratio(matched, eligible.length);
+    const share = ratio(matched, eligibleN);
     const [ulo, uhi] = profile.scenarioUnitsRange;
     const { years: hbYears, steps } = hostableBaseSteps(c);
     const maxStep = steps.length ? maxOf(steps.map((s) => s.change)) : 0;
@@ -609,7 +627,7 @@ export async function checkDataset(
           : `hostable_base counted for ${hbYears.length} roll years ≠ ${panelYears}`,
         ...steps.filter((s) => !(s.change <= HOSTABLE_BASE_STEP_MAX)).map(stepProblem)
       ],
-      `${panelYears} roll years; eligible with a latest-year roll row ${matched}/${eligible.length}; Σ units ${unitsTotal} in [${ulo}, ${uhi}]; hostable_base year-on-year change (parcels in both years) ≤ ${thr(maxStep)} ≤ ${thr(HOSTABLE_BASE_STEP_MAX)}`
+      `${panelYears} roll years; eligible with a latest-year roll row ${matched}/${eligibleN}; Σ units ${unitsTotal} in [${ulo}, ${uhi}]; hostable_base year-on-year change (parcels in both years) ≤ ${thr(maxStep)} ≤ ${thr(HOSTABLE_BASE_STEP_MAX)}`
     );
   }
 
