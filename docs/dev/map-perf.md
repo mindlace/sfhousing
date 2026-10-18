@@ -4,7 +4,7 @@ Spec: `docs/superpowers/specs/2026-10-10-map-view-design.md` §4.12.
 
 ## What the bench does
 
-`npm run bench:map` runs `e2e/bench/map-pan.bench.ts` with `playwright.bench.config.ts`:
+`npm run bench:map` runs `e2e/bench/map-pan.bench.ts` (and the timeline cases below) with `playwright.bench.config.ts`:
 
 1. Starts the same VITE_E2E preview server as `npm run test:e2e` (fixture-0 data on :4173), or
    reuses one that is already running. Kill a stale non-VITE_E2E server first
