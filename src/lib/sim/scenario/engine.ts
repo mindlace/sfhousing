@@ -10,11 +10,13 @@
 // Every pass steps stages with `runStages` and revises with `pushRevision`, and hands each result
 // to the `Sink`, so the detailed and the net consumers share one engine.
 import type { ParcelId } from '$lib/data/parcel';
-import { FILL_LEVELS, type ScenarioParcels } from '$lib/data/scenario-codec';
+import { FILL_LEVELS, fillStories, type ScenarioParcels } from '$lib/data/scenario-codec';
+import { log } from '$lib/timelapse/math';
 import { sampleTransition } from '$lib/timelapse/model';
 import type { InFlightProject } from '$lib/timelapse/projects';
-import { monthsIn, type Day } from '$lib/timelapse/time';
+import { MONTH_DAYS, monthsIn, type Day } from '$lib/timelapse/time';
 import {
+  PATHWAYS,
   STAGE_ORDER,
   type Calibration,
   type ExitReason,
@@ -22,7 +24,8 @@ import {
   type RevisionModel,
   type Stage
 } from '$lib/timelapse/types';
-import { P, draw, jobEntity, stageRedraw } from './rng';
+import { precomputeOf, sizeCumAgainst, type Precompute } from './input';
+import { P, draw, jobEntity, simEntity, stageRedraw } from './rng';
 import type { Master } from './simulate';
 import type { Schedule, SimInput } from './types';
 
@@ -68,6 +71,9 @@ interface Run {
   asOf: Day;
   cal: Calibration;
   parcels: ScenarioParcels;
+  input: SimInput;
+  /** the per-input precompute (memoised by input identity): hazards, log(1 − h), size rows */
+  pre: Precompute;
   /** by STAGE_ORDER index: the first `revision.at` entry for the stage, if any */
   revisionAt: (RevisionModel['at'][number] | undefined)[];
 }
@@ -84,6 +90,8 @@ function runOf(input: SimInput, seed: number, horizon: Day): Run {
     asOf: input.asOf,
     cal: input.calibration,
     parcels: input.parcels,
+    input,
+    pre: precomputeOf(input),
     revisionAt
   };
 }
@@ -130,10 +138,10 @@ export function revisionRatio(h: Histogram, u: number): number {
 }
 
 /**
- * Records a revision with the same-day merge (§4.4.5 step 6): a revision due on (or, defensively,
- * before) the last entry's day replaces that entry's units and stories, keeping its day; if the
- * merged entry then equals its predecessor in both fields it is removed. `revisions[0]` is never
- * removed. Revision days therefore stay strictly ascending.
+ * Records a revision with the same-day merge (§4.4.5 step 6): a revision due on the last entry's
+ * day replaces that entry's units and stories, keeping its day; if the merged entry then equals
+ * its predecessor in both fields it is removed. `revisions[0]` is never removed. Revision days
+ * therefore stay strictly ascending. A day before the last entry's is a caller bug and throws.
  */
 export function pushRevision(
   revisions: Revision[],
@@ -145,6 +153,9 @@ export function pushRevision(
   if (day > last.day) {
     revisions.push({ day, units, stories });
     return;
+  }
+  if (day < last.day) {
+    throw new Error(`pushRevision: day ${day} is before the last revision day ${last.day}`);
   }
   last.units = units;
   last.stories = stories;
@@ -245,11 +256,17 @@ function runStages(run: Run, job: Job, stage: Stage, e: Day, inFlight: boolean):
   }
 }
 
-/** How the in-flight projects on one T11 parcel end (for the simulated pass's risk set). */
+/**
+ * How the in-flight projects on one T11 parcel end (for the simulated pass's risk set). A parcel
+ * with no Hold is free at `asOf`.
+ */
 export interface Hold {
   /** latest exit day among holders that exited; null if none did */
   lastExit: Day | null;
-  /** a holder completed or is still open at the horizon: the parcel is never at risk */
+  /**
+   * a holder completed or is still open at the horizon, or the holder never ends in the run (a
+   * row the engine skips): the parcel is never at risk
+   */
   blocked: boolean;
   /** first `entered.construction` of any project on the parcel (its demolition); null if none */
   demolished: Day | null;
@@ -353,13 +370,159 @@ function pipelineRow(run: Run, p: InFlightProject): Schedule {
   };
 }
 
-/** The pipeline pass: every runnable unphased row, its parcels recorded in `holds`. */
+/** A holder end that never frees its parcels (see `Hold.blocked`). */
+const HELD: End = { kind: 'open' };
+
+/**
+ * The pipeline pass: every runnable unphased row, its parcels recorded in `holds`. A skipped row
+ * holds its parcels for the whole run: a complete row is a completion on them, and a permitOnly
+ * row at a Planning stage is in flight but never ends here (risk table, §4.4.4).
+ */
 function pipelinePass(run: Run, projects: readonly InFlightProject[], holds: Holds, sink: Sink) {
   for (const p of projects) {
-    if (isSkipped(p) || isPhased(p)) continue;
+    if (isSkipped(p)) {
+      addHold(holds, run.parcels, p.parcelIds, p.history, HELD);
+      continue;
+    }
+    if (isPhased(p)) continue;
     const s = pipelineRow(run, p);
     addHold(holds, run.parcels, s.parcelIds, s.entered, s.end);
     sink.schedule(s);
+  }
+}
+
+/**
+ * The simulated rescaling rule (§4.4.5 steps 3-4) on T11 row i with `existing` units left:
+ * `min(yield[F−1], max(existing + 1, round(r·u)))`, stories from the smallest level whose yield
+ * reaches the new units.
+ */
+function simulatedResize(parcels: ScenarioParcels, i: number, existing: number): Resize {
+  const F = FILL_LEVELS.length;
+  const env = parcels.envelopeStories[i];
+  const top = parcels.yield[i * F + F - 1];
+  return (units, _stories, ratio) => {
+    const next = Math.min(top, Math.max(existing + 1, Math.round(ratio * units)));
+    let f = 0;
+    while (f < F - 1 && parcels.yield[i * F + f] < next) f++;
+    return { units: next, stories: fillStories(FILL_LEVELS[f], env) };
+  };
+}
+
+/** A new project's pathway from the normalised `pathwayForNew`, in `PATHWAYS` order (§4.4.4). */
+function newPathway(run: Run, entity: number, k: number): Pathway {
+  const w = run.cal.pathwayForNew;
+  let total = 0;
+  for (const p of PATHWAYS) if (w[p] > 0) total += w[p];
+  const x = draw(run.seed, entity, k, P.PATHWAY, 0) * total;
+  let acc = 0;
+  let last: Pathway | null = null;
+  for (const p of PATHWAYS) {
+    if (!(w[p] > 0)) continue;
+    acc += w[p];
+    last = p;
+    if (x < acc) return p;
+  }
+  if (last === null) throw new Error('calibration pathwayForNew has no positive share');
+  return last; // x at a total that rounded up
+}
+
+/**
+ * The k-th initiation day on a parcel at risk from day `r` (§4.4.4 steps 1-3): the geometric
+ * month `T = max(1, ceil(log(1 − u) / log(1 − h)))` by inverse CDF, placed uniformly within the
+ * month. Null when it falls after the horizon. `log1mh` must be < 0 (h > 0).
+ */
+function initiationDay(run: Run, entity: number, k: number, log1mh: number, r: Day): Day | null {
+  const u = draw(run.seed, entity, k, P.INIT, 0);
+  const T = Math.max(1, Math.ceil(log(1 - u) / log1mh));
+  const v = draw(run.seed, entity, k, P.INIT_DAY, 0);
+  const day = r + 1 + Math.floor((T - 1 + v) * MONTH_DAYS);
+  return day > run.horizon ? null : day;
+}
+
+/**
+ * The k-th simulated project on T11 row i, initiated on `day` with `existing` units on the parcel
+ * (0 once it has been demolished in the run): pathway, first stage and size (§4.4.4), then the
+ * ordinary stage steps with the simulated revision rule. Null if no size level gains a home.
+ */
+function simulatedProject(
+  run: Run,
+  i: number,
+  entity: number,
+  k: number,
+  day: Day,
+  existing: number
+): Schedule | null {
+  const p = run.parcels;
+  const F = FILL_LEVELS.length;
+  const pathway: Pathway = p.localProgram[i] === 1 ? 'streamlined' : newPathway(run, entity, k);
+  const first: Stage =
+    draw(run.seed, entity, k, P.PPA, 0) < run.cal.ppaShare[pathway]
+      ? 'preApplication'
+      : pathway === 'permitOnly'
+        ? 'permitFiled'
+        : 'filed';
+  // the precomputed row is against T11 existingUnits; a demolished parcel needs its own (rare)
+  const own = existing === p.existingUnits[i];
+  const cum = own ? run.pre.sizeCum : sizeCumAgainst(run.input, i, existing);
+  const at = own ? i * F : 0;
+  const u = draw(run.seed, entity, k, P.SIZE, 0);
+  let f = 0;
+  while (f < F && !(u < cum[at + f])) f++;
+  if (f === F) return null;
+  const entered: Partial<Record<Stage, Day>> = {};
+  entered[first] = day;
+  const job: Job = {
+    entity,
+    k,
+    pathway,
+    entered,
+    revisions: [
+      { day, units: p.yield[i * F + f], stories: fillStories(FILL_LEVELS[f], p.envelopeStories[i]) }
+    ],
+    resize: simulatedResize(p, i, existing)
+  };
+  const end = runStages(run, job, first, day, false);
+  return {
+    projectId: `sim:${p.id[i]}:${k}`,
+    origin: 'simulated',
+    parcelIds: [p.id[i]],
+    pathway,
+    entered,
+    end,
+    revisions: job.revisions,
+    existingUnits: existing,
+    multiPhase: false,
+    phase: null
+  };
+}
+
+/**
+ * The simulated pass (§4.4.4, §4.4.6), after every in-flight pass has filled `holds`. Each
+ * hostable parcel with a hazard is at risk from `asOf` (no hold) or from its holders' last exit,
+ * with k = 0, unless a holder blocks it. After a simulated exit on day x it is at risk again from
+ * x with k + 1; a completion or an open end finishes it. The parcel is demolished at the first
+ * construction entry of any project on it, and every later project on it has 0 existing units.
+ */
+function simulatedPass(run: Run, holds: Holds, sink: Sink): void {
+  const { parcels, pre } = run;
+  for (let i = 0; i < parcels.count; i++) {
+    // log1mh is 0 for h = 0, and for an h so small that 1 − h rounds to 1: never initiates
+    if (parcels.hostable[i] !== 1 || !(pre.hazard[i] > 0) || !(pre.log1mh[i] < 0)) continue;
+    const hold = holds.get(i);
+    if (hold?.blocked) continue;
+    let r = Math.max(run.asOf, hold?.lastExit ?? run.asOf);
+    let demolished = hold !== undefined && hold.demolished !== null;
+    const entity = simEntity(parcels.id[i]);
+    for (let k = 0; ; k++) {
+      const day = initiationDay(run, entity, k, pre.log1mh[i], r);
+      if (day === null) break;
+      const s = simulatedProject(run, i, entity, k, day, demolished ? 0 : parcels.existingUnits[i]);
+      if (s === null) break;
+      sink.schedule(s);
+      if (s.entered.construction !== undefined) demolished = true;
+      if (s.end.kind !== 'exit') break;
+      r = s.end.day;
+    }
   }
 }
 
@@ -372,4 +535,6 @@ export function runEngine(input: SimInput, seed: number, horizon: Day, sink: Sin
   const run = runOf(input, seed, horizon);
   const holds: Holds = new Map();
   pipelinePass(run, input.projects, holds, sink);
+  // Task 6: the multi-phase pass goes here, recording master and phase parcels with addHold.
+  simulatedPass(run, holds, sink);
 }

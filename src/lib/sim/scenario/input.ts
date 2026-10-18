@@ -85,10 +85,19 @@ function bucketOf(cal: Calibration, stories: number): number[] {
   return rows[rows.length - 1].probs;
 }
 
-/** Fills row i of `sizeCum`; false when no level gains a home (the row stays 0). */
-function fillSizeRow(p: ScenarioParcels, i: number, probs: number[], out: Float32Array): boolean {
+/**
+ * Fills row i of a `sizeCum`-shaped array `out` (at offset `at`) against `existing` units; false
+ * when no level gains a home (the row stays 0).
+ */
+function fillSizeRow(
+  p: ScenarioParcels,
+  i: number,
+  probs: number[],
+  existing: number,
+  out: Float32Array,
+  at: number
+): boolean {
   const F = FILL_LEVELS.length;
-  const existing = p.existingUnits[i];
   let total = 0;
   let last = -1;
   for (let f = 0; f < F; f++) {
@@ -100,13 +109,25 @@ function fillSizeRow(p: ScenarioParcels, i: number, probs: number[], out: Float3
   if (last < 0) return false;
   let acc = 0;
   for (let f = 0; f < F; f++) {
-    if (f >= last) out[i * F + f] = 1;
+    if (f >= last) out[at + f] = 1;
     else {
       if (p.yield[i * F + f] > existing) acc += probs[f];
-      out[i * F + f] = acc / total;
+      out[at + f] = acc / total;
     }
   }
   return true;
+}
+
+/**
+ * Parcel i's cumulative size row (as in `Precompute.sizeCum`) against `existing` units instead of
+ * T11 `existingUnits[i]`: the size draw of a later project on a parcel already demolished in the
+ * run (§4.4.6), which uses 0. All 0 when no level qualifies.
+ */
+export function sizeCumAgainst(input: SimInput, i: number, existing: number): Float32Array {
+  const p = input.parcels;
+  const out = new Float32Array(FILL_LEVELS.length);
+  fillSizeRow(p, i, bucketOf(input.calibration, p.envelopeStories[i]), existing, out, 0);
+  return out;
 }
 
 /**
@@ -129,7 +150,8 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
   let bad = 0;
   let firstBad = '';
   for (let i = 0; i < n; i++) {
-    const sized = fillSizeRow(p, i, bucketOf(input.calibration, p.envelopeStories[i]), sizeCum);
+    const probs = bucketOf(input.calibration, p.envelopeStories[i]);
+    const sized = fillSizeRow(p, i, probs, p.existingUnits[i], sizeCum, i * F);
     if (p.hostable[i] === 1) {
       let finite = true;
       for (const t of model.terms) {

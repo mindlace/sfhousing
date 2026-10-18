@@ -66,7 +66,8 @@ function cohort(p: Pathway, stage: Stage, entered: number): { kind: Kind; day: n
     quality: []
   }));
   const input: SimInput = { parcels, projects, calibration: cal, asOf: AS_OF };
-  return simulate(input, 20261018, HORIZON).map((s) => {
+  const pipeline = simulate(input, 20261018, HORIZON).filter((s) => s.origin === 'pipeline');
+  return pipeline.map((s) => {
     const ev = leave(s, stage);
     if (ev === null) throw new Error(`${s.projectId} never left ${stage}`);
     return ev;

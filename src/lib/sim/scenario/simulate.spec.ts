@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
-import { FILL_LEVELS, readScenarioParcels, type ScenarioParcels } from '$lib/data/scenario-codec';
+import {
+  FILL_LEVELS,
+  fillStories,
+  readScenarioParcels,
+  type ScenarioParcels
+} from '$lib/data/scenario-codec';
 import { packTimedCell } from '$lib/map/pack-timed';
 import { cumulativeIncidence, parseCalibration, sampleTransition } from '$lib/timelapse/model';
 import { parseProjectsFile, type InFlightProject } from '$lib/timelapse/projects';
@@ -17,14 +22,19 @@ import { dayOf } from './dates';
 import { addHold, nextStage, pushRevision, revisionRatio, type Holds } from './engine';
 import { miniBin } from './fixtures/mini-bin';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
-import { miniCity } from './fixtures/mini-parcels';
+import {
+  MINI_INELIGIBLE_ID,
+  MINI_NO_ENVELOPE_ID,
+  MINI_NO_GAIN_ID,
+  miniCity
+} from './fixtures/mini-parcels';
 import {
   MINI_AS_OF,
   MINI_HORIZON,
   MINI_PROJECTS,
   miniProjectsJson
 } from './fixtures/mini-projects';
-import { buildSimInput } from './input';
+import { buildSimInput, precomputeOf } from './input';
 import { P, draw, jobEntity, stageRedraw } from './rng';
 import { simulate, simulateDetailed } from './simulate';
 import type { Schedule, SimInput } from './types';
@@ -62,6 +72,8 @@ const isSkipped = (p: InFlightProject) =>
   p.stage === 'complete' ||
   (p.pathway === 'permitOnly' && (p.stage === 'filed' || p.stage === 'entitled'));
 const isPhased = (p: InFlightProject) => p.multiPhase && p.phases !== null;
+const pipelineOf = (ss: Schedule[]) => ss.filter((s) => s.origin === 'pipeline');
+const simulatedOf = (ss: Schedule[]) => ss.filter((s) => s.origin === 'simulated');
 
 /** Σ yield[F − 1] and max envelope stories over the project's parcels present in T11. */
 function capsOf(parcels: ScenarioParcels, ids: string[]): { y: number; env: number } {
@@ -177,6 +189,18 @@ describe('pushRevision (same-day merge)', () => {
     pushRevision(revs, 10, 9, null);
     expect(revs).toEqual([{ day: 10, units: 9, stories: null }]);
   });
+
+  it('throws on a day before the last entry, leaving the list unchanged', () => {
+    const revs = [
+      { day: 10, units: 9, stories: 6 },
+      { day: 20, units: 18, stories: 12 }
+    ];
+    expect(() => pushRevision(revs, 19, 27, 14)).toThrow(/before/);
+    expect(revs).toEqual([
+      { day: 10, units: 9, stories: 6 },
+      { day: 20, units: 18, stories: 12 }
+    ]);
+  });
 });
 
 describe('addHold', () => {
@@ -238,15 +262,22 @@ describe('simulate: pipeline projects', () => {
     const inp = miniInput();
     const d = simulateDetailed(inp, 5, H);
     expect(simulate(inp, 5, H)).toEqual(d.schedules);
-    const ids = d.schedules.map((s) => s.projectId);
-    expect(ids).toEqual([...ids].sort((x, y) => (x < y ? -1 : x > y ? 1 : 0)));
-    expect(d.schedules.every((s) => s.origin === 'pipeline')).toBe(true);
+    const n = d.schedules.findIndex((s) => s.origin === 'simulated');
+    expect(n).toBeGreaterThan(0);
+    const pipe = d.schedules.slice(0, n);
+    const sim = d.schedules.slice(n);
+    expect(pipe.every((s) => s.origin === 'pipeline')).toBe(true);
+    expect(sim.every((s) => s.origin === 'simulated')).toBe(true);
+    for (const block of [pipe, sim]) {
+      const ids = block.map((s) => s.projectId);
+      expect(ids).toEqual([...ids].sort((x, y) => (x < y ? -1 : x > y ? 1 : 0)));
+    }
     expect(d.masters).toEqual([]);
   });
 
   it('covers every runnable unphased row, skips complete and invalid rows, copies T3 fields', () => {
     const inp = miniInput();
-    const out = simulate(inp, 3, H);
+    const out = pipelineOf(simulate(inp, 3, H));
     const expected = inp.projects
       .filter((p) => !isSkipped(p) && !isPhased(p))
       .map((p) => p.id)
@@ -296,7 +327,7 @@ describe('simulate: pipeline projects', () => {
     );
     const bad: string[] = [];
     for (const seed of SEEDS) {
-      for (const s of simulate(inp, seed, H)) {
+      for (const s of pipelineOf(simulate(inp, seed, H))) {
         const p = inp.projects.find((q) => q.id === s.projectId)!;
         let prev = -Infinity;
         for (const st of STAGE_ORDER) {
@@ -390,7 +421,7 @@ describe('simulate: pipeline projects', () => {
     const bad: string[] = [];
     let atCap = 0;
     for (const seed of SEEDS.slice(0, 20)) {
-      for (const s of simulate(inp, seed, H)) {
+      for (const s of pipelineOf(simulate(inp, seed, H))) {
         const p = inp.projects.find((q) => q.id === s.projectId)!;
         const { y, env } = capsOf(inp.parcels, p.parcelIds);
         for (let i = 1; i < s.revisions.length; i++) {
@@ -568,7 +599,9 @@ describe('simulate: in-flight redraw (§4.4.2)', () => {
         history: { filed: e }
       }))
     };
-    const events = simulate(inp, 2026, AS_OF + 400 * 365).map((s) => firstEvent(s, 'filed'));
+    const events = pipelineOf(simulate(inp, 2026, AS_OF + 400 * 365)).map((s) =>
+      firstEvent(s, 'filed')
+    );
     expect(events.every((ev) => ev !== null && ev.day > AS_OF)).toBe(true);
 
     // F_j at asOf: month 11's integer days are equally likely, so interpolate by rejected days.
@@ -589,6 +622,266 @@ describe('simulate: in-flight redraw (§4.4.2)', () => {
         const se = Math.sqrt((expected * (1 - expected)) / N);
         expect(Math.abs(got - expected), `${j} by month ${k}`).toBeLessThanOrEqual(4 * se + 1 / N);
       }
+    }
+  });
+});
+
+/** The calibration with a constant monthly initiation hazard 1 / (1 + exp(−z)) on every parcel. */
+function withHazard(cal: Calibration, z: number): Calibration {
+  cal.initiation = { ...cal.initiation, intercept: z, terms: [] };
+  return cal;
+}
+const firstDay = (s: Schedule) => s.revisions[0].day;
+const firstStage = (s: Schedule) => STAGE_ORDER.find((st) => s.entered[st] !== undefined)!;
+
+/** Simulated schedules by parcel, in k order; checks the id, k sequence and fixed fields. */
+function simsByParcel(ss: Schedule[]): Map<string, Schedule[]> {
+  const out = new Map<string, Schedule[]>();
+  const bad: string[] = [];
+  for (const s of simulatedOf(ss)) {
+    const m = /^sim:(.+):(\d+)$/.exec(s.projectId);
+    if (!m) throw new Error(`bad simulated id ${s.projectId}`);
+    if (s.parcelIds.length !== 1 || s.parcelIds[0] !== m[1]) bad.push(`${s.projectId} parcels`);
+    if (s.multiPhase || s.phase !== null) bad.push(`${s.projectId} phase fields`);
+    out.set(m[1], [...(out.get(m[1]) ?? []), s]);
+  }
+  for (const [pid, list] of out) {
+    const k = (s: Schedule) => Number(s.projectId.slice(`sim:${pid}:`.length));
+    list.sort((a, b) => k(a) - k(b));
+    list.forEach((s, j) => {
+      if (k(s) !== j) bad.push(`${s.projectId} is not k = ${j}`);
+    });
+  }
+  expect(bad).toEqual([]);
+  return out;
+}
+
+/** The smallest level whose yield reaches `units` (the simulated revision's stories rule). */
+function levelFor(parcels: ScenarioParcels, i: number, units: number): number {
+  for (let f = 0; f < F; f++) if (parcels.yield[i * F + f] >= units) return f;
+  return -1;
+}
+
+describe('simulate: simulated initiation (§4.4.4)', () => {
+  it('initiates only on hostable parcels with a hazard; a Local Program parcel is streamlined', () => {
+    const inp = withCalibration(miniInput(), withHazard(miniCalibration(), -2));
+    const pre = precomputeOf(inp);
+    const p = inp.parcels;
+    const bad: string[] = [];
+    const nonLp = new Set<string>();
+    const starts = new Set<string>();
+    let lp = 0;
+    let n = 0;
+    for (const seed of SEEDS.slice(0, 20)) {
+      for (const [pid, list] of simsByParcel(simulate(inp, seed, H))) {
+        const i = p.index.get(pid)!;
+        if (p.hostable[i] !== 1 || !(pre.hazard[i] > 0)) bad.push(`${pid} initiated`);
+        for (const s of list) {
+          n++;
+          starts.add(`${s.pathway} ${firstStage(s)}`);
+          if (p.localProgram[i] === 1) {
+            lp++;
+            if (s.pathway !== 'streamlined') bad.push(`${s.projectId} ${s.pathway}`);
+          } else nonLp.add(s.pathway);
+          if (firstDay(s) !== s.entered[firstStage(s)]) bad.push(`${s.projectId} revisions[0]`);
+        }
+      }
+    }
+    expect(bad).toEqual([]);
+    expect(n).toBeGreaterThan(500);
+    expect(lp).toBeGreaterThan(0);
+    expect([...nonLp].sort()).toEqual(['discretionary', 'permitOnly', 'streamlined']);
+    // ppaShare: discretionary 0.1, the others 0
+    expect([...starts].sort()).toEqual([
+      'discretionary filed',
+      'discretionary preApplication',
+      'permitOnly permitFiled',
+      'streamlined filed'
+    ]);
+    for (const id of [MINI_NO_GAIN_ID, MINI_NO_ENVELOPE_ID, MINI_INELIGIBLE_ID]) {
+      expect(pre.hazard[p.index.get(id)!]).toBe(0);
+    }
+  });
+
+  it('follows the risk set: held parcels wait for the last exit, k + 1 after an exit, done after a completion', () => {
+    const inp = withCalibration(miniInput(), withHazard(miniCalibration(), -2));
+    // rows the engine does not run hold their parcels for the whole horizon
+    const skippedParcels = new Set(inp.projects.filter(isSkipped).flatMap((p) => p.parcelIds));
+    expect(skippedParcels.has('2999A007')).toBe(true); // the complete row, on a hostable parcel
+    const bad: string[] = [];
+    let freed = 0;
+    let reinit = 0;
+    let heldOut = 0;
+    for (const seed of SEEDS) {
+      const out = simulate(inp, seed, H);
+      const holders = new Map<string, Schedule[]>();
+      for (const s of pipelineOf(out)) {
+        for (const id of s.parcelIds) holders.set(id, [...(holders.get(id) ?? []), s]);
+      }
+      const sims = simsByParcel(out);
+      for (const [pid, hs] of holders) {
+        if (hs.some((h) => h.end.kind !== 'exit') && inp.parcels.index.has(pid)) heldOut++;
+      }
+      for (const [pid, list] of sims) {
+        if (skippedParcels.has(pid)) bad.push(`${seed} ${pid} held by a skipped row`);
+        const hs = holders.get(pid) ?? [];
+        if (hs.some((h) => h.end.kind !== 'exit')) bad.push(`${seed} ${pid} held to the horizon`);
+        const exits = hs.map((h) => (h.end.kind === 'exit' ? h.end.day : AS_OF));
+        const from = Math.max(AS_OF, ...exits);
+        if (hs.length > 0) freed++;
+        if (!(firstDay(list[0]) >= from + 1)) bad.push(`${seed} ${pid} starts before ${from + 1}`);
+        for (let j = 0; j < list.length; j++) {
+          const s = list[j];
+          for (const d of Object.values(s.entered) as number[]) {
+            if (!(d > AS_OF && d <= H)) bad.push(`${s.projectId} day ${d}`);
+          }
+          if (j === list.length - 1) continue;
+          if (s.end.kind !== 'exit') {
+            bad.push(`${s.projectId} ended ${s.end.kind} but ${list[j + 1].projectId} follows`);
+            continue;
+          }
+          reinit++;
+          if (!(firstDay(list[j + 1]) >= s.end.day + 1)) bad.push(`${list[j + 1].projectId} day`);
+        }
+      }
+    }
+    expect(bad).toEqual([]);
+    expect(freed).toBeGreaterThan(0);
+    expect(reinit).toBeGreaterThan(0);
+    expect(heldOut).toBeGreaterThan(0);
+  });
+
+  it('never draws a size at or below existingUnits; revisions keep the floor, the cap and the level stories', () => {
+    const down = withHazard(
+      rigged({ filed: 0.1, entitled: 0.1, permitFiled: 0.1, permitIssued: 0.1 }),
+      -2
+    );
+    const up = withHazard(rigged({ filed: 4, entitled: 4, permitFiled: 4, permitIssued: 4 }), -2);
+    const bad: string[] = [];
+    const seen = { floor: 0, cap: 0, revised: 0 };
+    for (const cal of [down, up, withHazard(miniCalibration(), -2)]) {
+      const inp = withCalibration(miniInput(), cal);
+      const p = inp.parcels;
+      for (const seed of SEEDS.slice(0, 15)) {
+        for (const [pid, list] of simsByParcel(simulate(inp, seed, H))) {
+          const i = p.index.get(pid)!;
+          const env = p.envelopeStories[i];
+          const top = p.yield[i * F + F - 1];
+          for (const s of list) {
+            const ex = s.existingUnits;
+            const r0 = s.revisions[0];
+            const level = FILL_LEVELS.findIndex(
+              (fill, f) => p.yield[i * F + f] === r0.units && fillStories(fill, env) === r0.stories
+            );
+            // a revision on a stage entered the same day as the first stage merges into [0]
+            const merged = STAGE_ORDER.some(
+              (st) => st !== firstStage(s) && s.entered[st] === r0.day
+            );
+            if (level < 0 && !merged) bad.push(`${s.projectId} size ${r0.units} is no level`);
+            if (!(r0.units > ex)) bad.push(`${s.projectId} size ${r0.units} <= ${ex}`);
+            // [0] is the size draw, or (merged, no level) a revision held to the same rules
+            for (const r of level < 0 ? s.revisions : s.revisions.slice(1)) {
+              seen.revised++;
+              if (r.units < ex + 1) bad.push(`${s.projectId} ${r.units} below the floor`);
+              if (r.units > top) bad.push(`${s.projectId} ${r.units} above yield[F − 1]`);
+              const f = levelFor(p, i, r.units);
+              if (r.stories !== fillStories(FILL_LEVELS[f], env))
+                bad.push(`${s.projectId} stories`);
+              if (cal === down && r.units === ex + 1 && ex > 0) seen.floor++;
+              if (cal === up && r.units === top) seen.cap++;
+            }
+          }
+        }
+      }
+    }
+    expect(bad).toEqual([]);
+    expect(seen.floor).toBeGreaterThan(0);
+    expect(seen.cap).toBeGreaterThan(0);
+    expect(seen.revised).toBeGreaterThan(100);
+  });
+});
+
+describe('simulate: demolished once (§4.4.6)', () => {
+  // Every stage advances within a month except construction, which always exits: each simulated
+  // project demolishes its parcel, dies in construction, and the parcel is at risk again.
+  const EXIT_AT_BUILD: Transition = {
+    months: 1,
+    advance: [0],
+    exit: { cancelled: [1] },
+    tail: { advance: 0.01, exit: { cancelled: 0.99 } },
+    provenance: PROVENANCE,
+    tailProvenance: PROVENANCE
+  };
+  const RAISED = '0026T011'; // yields [4, 11, 11, 11, 11]; existing raised from 2 to 5 below
+  const BUILT = '2999A005'; // the pipeline project in construction since 2024 (existing 3)
+
+  function demolishInput(): SimInput {
+    const files = miniFiles();
+    files.parcels.existingUnits[files.parcels.index.get(RAISED)!] = 5;
+    const cal = withHazard(rigged({}), 0);
+    for (const p of PATHWAYS) cal.transitions[p].construction = structuredClone(EXIT_AT_BUILD);
+    return buildSimInput({ ...files, calibration: cal });
+  }
+
+  it('a re-initiated project takes 0 existing units, and only one schedule subtracts them', () => {
+    const inp = demolishInput();
+    const p = inp.parcels;
+    expect(inp.projects.find((q) => q.id === MINI_PROJECTS.construction)!.parcelIds).toEqual([
+      BUILT
+    ]);
+    const bad: string[] = [];
+    let again = 0;
+    let smallAfter = 0;
+    let builtSims = 0;
+    for (const seed of SEEDS.slice(0, 10)) {
+      const out = simulate(inp, seed, H);
+      const pipeParcels = new Set(pipelineOf(out).flatMap((s) => s.parcelIds));
+      const sims = simsByParcel(out);
+      for (const [pid, list] of sims) {
+        const ex = p.existingUnits[p.index.get(pid)!];
+        if (pid === BUILT) {
+          builtSims += list.length;
+          // demolished at the pipeline project's construction start, before asOf
+          if (list.some((s) => s.existingUnits !== 0)) bad.push(`${seed} ${pid} not demolished`);
+          continue;
+        }
+        if (pipeParcels.has(pid)) continue;
+        if (list[0].existingUnits !== ex) bad.push(`${list[0].projectId} existing`);
+        let subtracted = 0;
+        for (const [j, s] of list.entries()) {
+          if (s.entered.construction !== undefined) subtracted += s.existingUnits;
+          if (j === 0) continue;
+          again++;
+          if (s.existingUnits !== 0) bad.push(`${s.projectId} existing ${s.existingUnits}`);
+          if (pid === RAISED && s.revisions[0].units === 4) smallAfter++;
+        }
+        if (list[0].entered.construction !== undefined && subtracted !== ex) {
+          bad.push(`${seed} ${pid} subtracted ${subtracted} of ${ex}`);
+        }
+        if (list.length > 1 && list[0].entered.construction === undefined) {
+          bad.push(`${seed} ${pid} re-initiated without a demolition`);
+        }
+        // level 0 (4 units) is not a gain over 5 existing units, so only a later project uses it
+        if (pid === RAISED && list[0].revisions[0].units <= 5) bad.push(`${pid} k = 0 size`);
+      }
+    }
+    expect(bad).toEqual([]);
+    expect(again).toBeGreaterThan(100);
+    expect(builtSims).toBeGreaterThan(0);
+    expect(smallAfter).toBeGreaterThan(0);
+  });
+});
+
+describe('simulate: score-only master (DQ-3)', () => {
+  it('has a Schedule with no parcels and blocks no parcel', () => {
+    const inp = withCalibration(miniInput(), withHazard(miniCalibration(), -2));
+    const without = withProjects(inp, (ps) => ps.filter((q) => q.id !== MINI_PROJECTS.scoreOnly));
+    for (const seed of SEEDS.slice(0, 10)) {
+      const out = simulate(inp, seed, H);
+      const so = find(out, MINI_PROJECTS.scoreOnly);
+      expect(so.origin).toBe('pipeline');
+      expect(so.parcelIds).toEqual([]);
+      expect(simulatedOf(out)).toEqual(simulatedOf(simulate(without, seed, H)));
     }
   });
 });
