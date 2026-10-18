@@ -1010,7 +1010,7 @@ describe('DA parcels keep the unfiltered base-case lots (Ruling X2)', () => {
 describe('BP-only projects join the PRJ on their lot (Ruling L2)', () => {
   /** A PRJ on a lot, its component holding no type 1/2 permit; its anchor day is its open day. */
   const prjOn = (id: string, lot: string, open: Day, extra: Partial<Prj> = {}) =>
-    prj(id, { blklot: lot, openDay: open, ...extra });
+    prj(id, { blklot: lot, openDay: open, newConstruction: true, unitsProp: 5, ...extra });
   const bp = (n: string, lot: string, filed: Day, over: Partial<Permit> = {}) =>
     permit(n, { rows: rows(lot), filedDay: filed, ...over });
   const anchorDay = (proj: LinkedProject) => {
@@ -1054,6 +1054,18 @@ describe('BP-only projects join the PRJ on their lot (Ruling L2)', () => {
       })
     );
     expect(ids(r)).toEqual(['BP:202006010009', 'PRJ:2020-000001PRJ']);
+  });
+
+  it('never merges into a PRJ that is not a new-construction record (Ruling L2a)', () => {
+    for (const extra of [{ newConstruction: false }, { unitsProp: 0 }, { unitsProp: null }]) {
+      const r = linkL2(
+        parsedOf({
+          prjs: [prjOn('2020-000001PRJ', '3512001', day(2020, 1, 1), extra)],
+          permits: [bp('201906010009', '3512001', day(2019, 6, 1))]
+        })
+      );
+      expect(ids(r), JSON.stringify(extra)).toEqual(['BP:201906010009', 'PRJ:2020-000001PRJ']);
+    }
   });
 
   it('a named type 3 permit does not stop the merge (it is not new construction)', () => {

@@ -279,7 +279,8 @@ interface Built {
 
 /**
  * Ruling L2: a BP-only graph project (no PRJ anchor or satellite) joins a PRJ-anchored project
- * whose component was not split and holds no type 1/2 permit, when their parcels overlap (the
+ * whose component was not split, holds a new-construction anchor (`new_construction` and
+ * `number_of_units_prop` >= 1; Ruling L2a) and no type 1/2 permit, when their parcels overlap (the
  * PRJ project's parcels, plus the parcels descended from its lots when `descendants` is given) and
  * the BP's earliest permit filed day is at least the PRJ project's anchor day − 365. With several
  * candidates the latest anchor day on or before the BP's filed day wins (ties: lowest id); with
@@ -298,7 +299,8 @@ function mergeBpOnly(
     .filter(
       (b) =>
         b.whole &&
-        b.proj.anchors.length > 0 &&
+        // Ruling L2a: a new-construction Planning record (an alteration or ADU record is not).
+        b.proj.anchors.some((a) => a.newConstruction && a.unitsProp !== null && a.unitsProp >= 1) &&
         !b.proj.permits.some((q) => NEW_CONSTRUCTION_PERMIT_TYPES.has(q.type))
     )
     .map((b) => {

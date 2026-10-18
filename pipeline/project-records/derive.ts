@@ -287,10 +287,12 @@ function assess(
   if (proj.crossBlock.dropped.length > 0) quality.add(PR.parcelsCrossBlock);
   if (cap.failing.length > 0) quality.add(cap.capped ? PR.unitsCapacityCap : PR.unitsCapacity);
   // Ruling S2: a split part holds only its own permits, so the whole PRJ's proposed units are not
-  // its filing-stage size; its history omits `unitsAt.filed` (T4d only, see T4D_ONLY_QUALITY).
+  // its filing-stage size; its history's `unitsAt.filed` is its next recorded count, or omitted
+  // when it has none (Ruling U1; T4d only, see T4D_ONLY_QUALITY).
   if (isSplitPart(proj.id) && filedUnitsSource(proj)) quality.add(PR.unitsSplitFiled);
   // Ruling F1a: a primary PRJ `number_of_units_prop` of 0 is not a recorded size (spec 4.8 units
-  // rule 2 needs > 0); the history omits `unitsAt.filed` (T4d only). A split part is counted under
+  // rule 2 needs > 0); the history's `unitsAt.filed` is its next recorded count, or omitted when it
+  // has none (Ruling U1; T4d only). A split part is counted under
   // pr.units.split-filed only, which is checked first.
   else if (proj.primary?.unitsProp === 0) quality.add(PR.unitsFiledZero);
   return {
@@ -592,10 +594,12 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
   },
   // Spec 4.8 `unitsAt`, Ruling S2: of the histories whose primary PRJ records proposed units
   // (the histories `unitsAt.filed` would come from); the split parts among them, whose
-  // `unitsAt.filed` is omitted (they carry the id); their ids. The ruling's narrower `of` (split
+  // `unitsAt.filed` is carried from their next recorded count, or omitted (Ruling U1; they carry
+  // the id); their ids. The ruling's narrower `of` (split
   // parts only) would make the share 1 and fail V30 wherever one split exists.
   // Ruling F1a: of the same histories; the ones whose primary PRJ records 0 (not split parts,
-  // which split-filed counts), whose `unitsAt.filed` is omitted (they carry the id); their ids.
+  // which split-filed counts), whose `unitsAt.filed` is carried from their next recorded count, or
+  // omitted (Ruling U1; they carry the id); their ids.
   [PR.unitsFiledZero]: ({ withHistory }) => {
     const sourced = withHistory.filter((a) => filedUnitsSource(a.proj));
     const sample = sourced.filter((a) => a.quality.has(PR.unitsFiledZero)).map((a) => a.proj.id);

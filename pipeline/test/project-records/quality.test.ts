@@ -913,6 +913,8 @@ describe('carriedFiledUnits (Ruling U1)', () => {
   const A = 'PRJ:2019-000001PRJ';
   it('takes permitFiled, else complete, when present and > 0; else nothing', () => {
     expect(carriedFiledUnits({ permitFiled: 12, complete: 10 })).toBe(12);
+    // permitFiled comes first in stage order even when complete is larger.
+    expect(carriedFiledUnits({ permitFiled: 5, complete: 10 })).toBe(5);
     expect(carriedFiledUnits({ permitFiled: 0, complete: 10 })).toBe(10);
     expect(carriedFiledUnits({ complete: 7 })).toBe(7);
     expect(carriedFiledUnits({ permitFiled: 0 })).toBeNull();
