@@ -388,7 +388,7 @@ The derived folder comes from scenario-data's `derivedRoot` build option (ruling
   - `project_id` VARCHAR: the T3/T4d id of the permit's project.
   - `prj_record_id` VARCHAR NULL: the anchor PRJ.
   - `dva_record_id` VARCHAR NULL: the anchor PRJ's `DVA` child (Development Agreement), with the lowest id if several.
-  - `prx_case_no` VARCHAR NULL: the PRX row whose case without `PRX` equals `prj_record_id`, or whose `da` equals this permit's pipeline row `da`.
+  - `prx_case_no` VARCHAR NULL: the PRX row whose base-case PRJ (§4.10.2: the case without its trailing `PRX`, or that plus `PRJ`; Ruling B1) equals `prj_record_id`, or whose `da` equals this permit's pipeline row `da`.
   - `da` VARCHAR NULL: the pipeline `da` of the row naming this permit.
   - `parcel_ids` VARCHAR[]: resolved per §4.2.
   - `proposed_units` INTEGER NULL: null when missing or nulled by `pr.units.capacity`.
@@ -517,7 +517,7 @@ interface MultiphaseFile {
 The **DA parcels** are the resolved parcels of:
 - the tracking `blklot`;
 - every pipeline row with the same non-null `da`;
-- every project holding the anchor PRJ whose `record_id` is the case number without `PRX`, and that PRJ's permits;
+- every project holding the **base-case PRJ**, and that PRJ's permits. The base-case PRJ is the anchor PRJ whose `record_id` is the case number without its trailing `PRX`, or that value plus `PRJ` (Ruling B1): `2007.0946PRX` → `2007.0946`, `2018-007883PRX` → `2018-007883PRJ`;
 - every `blklots` entry in the file;
 - for a master whose `multiphase.json` entry has `schedule: null`, or that has no entry, every current parcel descended from the tracking `blklot` (main's ruling 3 and Ruling D1, revised, wave F2). Masters with an enriched schedule keep the four sources above.
 
@@ -527,7 +527,7 @@ The **DA parcels** are the resolved parcels of:
 - The block is the `^\d{4}[A-Z]?` prefix of the block-lot; the lot is the remaining `\d{3}[A-Z]?`.
 - A lot with no dates, or with no attrs row, yields only its lineage mapping.
 - The build reads the table with one query and walks the chain in TS (sorted keys, cycle guard). Live: 3180190 (dropped 2022-12-20) yields 3180199–3180203 (added 2022-12-20); 3180204–3180214 (added 2025-07-02) come in only if a lot dropped on 2025-07-02 is itself a descendant.
-- The report gives `multiphase.descendants.<caseNo>`, the number of descendant parcels, for every in-flight master. A build warning `'<caseNo>: descendant parcel <id> is held by <projectId>, which is not a DA project'` flags each descendant parcel held by an in-flight project that is not a master, holds none of the DA's pipeline rows (same `da`), and is not a base-case PRJ project. The flag does not change netting.
+- The report gives `multiphase.descendants.<caseNo>`, the number of descendant parcels, for every in-flight master. A build warning `'<caseNo>: descendant parcel <id> is held by <projectId>, which is not a DA project'` flags each descendant parcel held by an in-flight project that is not a master, holds none of the DA's pipeline rows (same `da`), is not a base-case PRJ project, and did not net this master. The flag is emitted after DA netting (Ruling B2): a master's own netting projects are DA-related by construction. The flag does not change netting.
 
 **DA netting** (rule `pr.multiphase.da-netting`). Planning's remaining count, the PRX row's `new_pipeline_units`, already nets the DA's other **pipeline rows**, including rows with no `da` (DQ-3 identities; Balboa's 438 = 128 + 151 + 159). It cannot net projects that entered the daily records after the quarterly snapshot. So, before phasing and in master id order:
 - The **netting projects** of a master are the in-flight projects that are not PRX masters, match no pipeline row, have at least one parcel among the master's DA parcels, and have not already netted an earlier master. Each netting project nets at most one master.
@@ -547,7 +547,7 @@ The remaining units R below are the netted R.
    - `source` = `{ label: schedule.label, url: facts.units.url, retrieved: facts.units.retrieved }`.
    - If Σ units ≠ R, units are scaled by R / Σ, using largest-remainder rounding with ties to the earlier phase; a phase scaled to 0 merges as above. Planning's remaining count is the tier-1 control total. The curation check uses the factor with R **before** netting: it goes in `multiphase.scale.<caseNo>`, and V24 fails outside [0.8, 1.25] (tier-4 check bound). Netting is reported separately, so a netted master does not fail the curation bound.
 2. **Fallback** (no schedule):
-   - **Phase size u.** u is the median `proposed_units` of the project's completed buildings (tier 0 → 2), where those are completed type 1/2 permits in the components of the base-case PRJ or of pipeline rows sharing the `da`, with n ≥ 1. If there are none, u is the median `proposed_units` of all completed type 1/2 permits with ≥ 50 units and a completion day on or after 2015-01-01 (tier 2). Both are computed every build and reported as `multiphase.u.<caseNo>` with `n`. Units nulled by `pr.units.capacity` are left out.
+   - **Phase size u.** u is the median `proposed_units` of the project's completed buildings (tier 0 → 2), where those are completed type 1/2 permits in the components of the base-case PRJ (as in the DA parcels above, either id form) or of pipeline rows sharing the `da`, with n ≥ 1. If there are none, u is the median `proposed_units` of all completed type 1/2 permits with ≥ 50 units and a completion day on or after 2015-01-01 (tier 2). Both are computed every build and reported as `multiphase.u.<caseNo>` with `n`. Units nulled by `pr.units.capacity` are left out.
    - **Phases** (round 4, N8 option (a)). Let P be the number of free DA parcels. Then k = min(P, max(1, round-half-up(R / u))). Units split evenly across k phases, with the first `R mod k` phases getting +1, so the units beyond P phases are spread over the existing ones.
    - **Parcels.** Sort the free DA parcels by `areaM2` descending, then by id. Phase i gets parcel i, so each phase is its own lot and no parcel draws twice. When P = 1 the row has a single phase on that parcel. timelapse-sim still staggers it after entitlement with the first-phase `phaseGap` proxy, and the disclosure names it.
    - `plannedPermitFiled` = null, because stage-calibration's `phaseGap` drives the stagger (round 3). `source` = null.
@@ -635,7 +635,7 @@ All in `npm run test:pipeline`, except the validator tests, which run in the Vit
   - all five id forms;
   - superseded refiles;
   - a PRX row whose `bpa_no` names a fetched permit joins the graph (F1);
-  - **DQ-2:** a no-date row joins the open PRJ on its lot; a child's block/lot qualifies; the latest-opened PRJ wins and ties go to the smallest id; a PRJ whose project ended is not a candidate; a winner whose project already holds a pipeline row drops the row; no candidate drops the row; the linked project keeps its id, dates and units (not the row's); a no-units winner counts `projects.excludedNoUnits` and is named; both rule tallies.
+  - **DQ-2:** a no-date row joins the open PRJ on its lot; a child's block/lot qualifies; the latest-opened PRJ wins and ties go to the smallest id; a PRJ whose project ended is not a candidate; a candidate whose project already holds a pipeline row is skipped, and the row drops only when no candidate qualifies (there is none, or every one holds a row); the linked project keeps its id, dates and units (not the row's); a no-units winner counts `projects.excludedNoUnits` and is named; both rule tallies.
 - **`project-records/parcels.test.ts`**:
   - condo `blklot` → `mapblklot`;
   - a retired lot maps via lineage;
