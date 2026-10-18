@@ -35,7 +35,7 @@ export interface PackedCell {
   parcelMeta: Uint32Array; // per parcel slot: [units, existingUnits, stories, typologyIdx]
   partCount: number;
   startIndices: Uint32Array; // length partCount + 1 (vertex index where each part starts; last = vertex count)
-  positions: Float64Array; // [lng, lat]*, rings open (no repeated closing vertex), CW
+  positions: Float64Array; // [lng, lat]*, rings closed (last vertex repeats the first), CW
   partTopM: Float32Array; // per part: topM (ground-up rendering, §4.4)
   partSlot: Uint32Array; // per part → parcel slot
   partAppearance: Uint8Array; // tone + 4 for a roof accent

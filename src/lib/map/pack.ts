@@ -24,7 +24,12 @@ export function emptyPack(cellId: string): PackedCell {
   };
 }
 
-/** Open (no repeated closing vertex), clockwise in lng/lat. */
+/**
+ * Closed (last vertex repeats the first), clockwise in lng/lat. The layer passes
+ * `_normalize: false`, so deck takes these rings as already normalised: its side model draws a
+ * wall from each vertex to the next and none from a ring's last vertex, which only covers the
+ * closing edge when that vertex repeats the first.
+ */
 export function normaliseRing(ring: readonly (readonly [number, number])[]): [number, number][] {
   let r = ring.map((v) => [v[0], v[1]] as [number, number]);
   const f = r[0],
@@ -36,12 +41,13 @@ export function normaliseRing(ring: readonly (readonly [number, number])[]): [nu
     area += r[i][0] * r[j][1] - r[j][0] * r[i][1];
   }
   if (area > 0) r.reverse();
+  if (r.length > 0) r.push([r[0][0], r[0][1]]);
   return r;
 }
 
 /**
- * A building's render parts: runs of identical occupied parts merged, rings normalised (open, CW),
- * appearance encoded. Shared by `packCell` and `packTimedCell`.
+ * A building's render parts: runs of identical occupied parts merged, rings normalised (closed,
+ * CW), appearance encoded. Shared by `packCell` and `packTimedCell`.
  */
 export function renderParts(
   b: GeneratedBuilding
