@@ -111,8 +111,10 @@ const sqlStr = (s: string) => `'${s.replaceAll("'", "''")}'`;
 /**
  * Panel base yields (spec §4.7): `scenarioYield(scenarioRecordFrom(rec, that year's values),
  * base_stories, base_density_cap)` for every sc_features row, memoised on the inputs (the floor
- * area is the integer m² value), streamed one roll year at a time. Writes sc_base_yield (one row
- * per distinct input) and returns its size.
+ * area is the integer m² value), streamed one roll year at a time. Each is the uncapped gross
+ * (`scenarioYield(…, null)`, kept as `base_gross` for `hostable_base`, partner ruling option c)
+ * capped by `capScenarioYield`. Writes sc_base_yield (one row per distinct input) and returns its
+ * size.
  */
 async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Promise<number> {
   const years = await db.all<{ y: number }>(
@@ -143,6 +145,7 @@ async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Pr
         existingFloorAreaM2: r.existing_floor_area_m2,
         existingStories: r.existing_stories
       });
+      const gross = scenarioYield(view, r.base_stories, null);
       memo.set(key, [
         r.mapblklot,
         r.existing_units,
@@ -150,7 +153,8 @@ async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Pr
         r.existing_stories,
         r.base_stories,
         r.base_density_cap,
-        scenarioYield(view, r.base_stories, r.base_density_cap)
+        capScenarioYield(gross, r.base_density_cap, r.existing_units),
+        gross
       ]);
     }
   }
@@ -164,7 +168,8 @@ async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Pr
       ['existing_stories', 'INTEGER'],
       ['base_stories', 'INTEGER'],
       ['base_density_cap', 'INTEGER'],
-      ['base_yield', 'INTEGER']
+      ['base_yield', 'INTEGER'],
+      ['base_gross', 'INTEGER']
     ],
     [...memo.values()]
   );
@@ -174,7 +179,9 @@ async function writeBaseYields(db: Duck, recById: Map<string, ParcelRecord>): Pr
 /**
  * T13 panel, spec §4.6: exactly the T13 row's contract columns, in its order, sorted by
  * (mapblklot, roll_year). potential_ratio_base is FLOAT, rounded as T11's Float32
- * `potentialRatio.base`.
+ * `potentialRatio.base`. hostable_base reads the uncapped base gross, so the density cap shapes
+ * base_yield but never the at-risk set (partner ruling, option c): gross > 0 is "more homes than
+ * existingUnits", since the generator gives none otherwise.
  */
 const PANEL_SQL = `
 CREATE OR REPLACE TABLE scenario_panel AS
@@ -185,7 +192,7 @@ SELECT f.mapblklot, f.roll_year, f.lien_day,
        f.lot_area_m2, f.improvement_share, f.rent_control_likely, f.imputed,
        (y.base_yield / greatest(f.existing_units, 1))::FLOAT AS potential_ratio_base,
        (f.base_stories - f.existing_stories)::INTEGER AS stories_gap_base,
-       (f.eligible AND f.base_stories >= 1 AND y.base_yield > 0) AS hostable_base
+       (f.eligible AND f.base_stories >= 1 AND y.base_gross > 0) AS hostable_base
 FROM sc_features f
 JOIN sc_base_yield y
   ON y.mapblklot = f.mapblklot AND y.existing_units = f.existing_units
@@ -207,6 +214,7 @@ interface LatestRow {
   imputed: number;
   potential_ratio_base: number;
   stories_gap_base: number;
+  hostable_base: boolean;
   existing_floor_area_m2: number;
   noncondo_units: number;
   hotel: boolean;
@@ -438,7 +446,7 @@ export async function writeScenario(a: {
     const latestRows = await db.all<LatestRow>(
       `SELECT p.mapblklot, p.existing_units, p.existing_stories, p.year_built, p.lot_area_m2,
               p.improvement_share, p.rent_control_likely, p.land_use_class, p.imputed,
-              p.potential_ratio_base, p.stories_gap_base,
+              p.potential_ratio_base, p.stories_gap_base, p.hostable_base,
               f.existing_floor_area_m2, f.noncondo_units, f.hotel, f.status_n
        FROM scenario_panel p JOIN sc_features f USING (mapblklot, roll_year)
        WHERE p.roll_year = ${rollYear} ORDER BY p.mapblklot`
@@ -539,6 +547,10 @@ export async function writeScenario(a: {
   const nonmonotone: string[] = [];
   const zeroHostable: string[] = [];
   let envelopeEligible = 0;
+  /** Uncapped full-fill yields (FZP and base envelope) per row, for the hostable mismatch counts. */
+  const grossTop = new Uint32Array(n);
+  const grossBaseTop = new Uint32Array(n);
+  const eligibleRow = new Uint8Array(n);
 
   const u16 = (v: number) => {
     if (v <= U16_MAX) return v;
@@ -669,8 +681,16 @@ export async function writeScenario(a: {
     }
     const top = p.yield[i * F + F - 1];
     const baseTop = p.baseYield[i * F + F - 1];
-    p.hostable[i] = rec.eligible && env.envelopeStories >= 1 && top > 0 ? 1 : 0;
-    p.hostableBase[i] = rec.eligible && env.baseStories >= 1 && baseTop > 0 ? 1 : 0;
+    // Hostable flags on the uncapped full-fill yields (partner ruling, option c): the density cap
+    // shapes `yield`/`baseYield` but never which parcels may host a project, so a cap change (the
+    // 2022-11-27 fourplex ordinance) cannot flip them. On Local Program parcels the FZP yield is
+    // already uncapped.
+    const full = FILL_LEVELS[F - 1];
+    grossTop[i] = env.envelopeStories === 0 ? 0 : grossAt(fillStories(full, env.envelopeStories));
+    grossBaseTop[i] = env.baseStories === 0 ? 0 : grossAt(fillStories(full, env.baseStories));
+    eligibleRow[i] = rec.eligible ? 1 : 0;
+    p.hostable[i] = rec.eligible && env.envelopeStories >= 1 && grossTop[i] > 0 ? 1 : 0;
+    p.hostableBase[i] = rec.eligible && env.baseStories >= 1 && grossBaseTop[i] > 0 ? 1 : 0;
     p.potentialRatio.fzp[i] = top / Math.max(existingUnits, 1);
     p.potentialRatio.base[i] = baseTop / Math.max(existingUnits, 1);
     p.storiesGap.fzp[i] = env.envelopeStories - existingStories;
@@ -728,8 +748,8 @@ export async function writeScenario(a: {
   const decoded = readParcelsBin(file);
   report.timings['scenario.t11'] = Math.round(performance.now() - t0);
 
-  // V18: the decoded T11 features (base variant), floor area and mask equal the latest-year panel
-  // row.
+  // V18: the decoded T11 features (base variant), floor area, mask and hostableBase equal the
+  // latest-year panel row.
   let mismatch = 0;
   for (const r of t11.latestById.values()) {
     const i = decoded.index.get(r.mapblklot);
@@ -745,10 +765,55 @@ export async function writeScenario(a: {
       decoded.landUseClass[i] === r.land_use_class &&
       decoded.imputed[i] === r.imputed &&
       decoded.potentialRatio.base[i] === r.potential_ratio_base &&
-      decoded.storiesGap.base[i] === r.stories_gap_base;
+      decoded.storiesGap.base[i] === r.stories_gap_base &&
+      decoded.hostableBase[i] === (r.hostable_base ? 1 : 0);
     if (!same) mismatch++;
   }
   c['scenario.panel.feature_mismatch'] = mismatch;
+
+  // V17: the decoded hostable flags against this step's own uncapped full-fill yields, which the
+  // payload does not carry (it ships the capped yields only).
+  let hostableMismatch = 0;
+  let hostableBaseMismatch = 0;
+  for (let i = 0; i < n; i++) {
+    const h = eligibleRow[i] && decoded.envelopeStories[i] >= 1 && grossTop[i] > 0;
+    const hb = eligibleRow[i] && decoded.baseStories[i] >= 1 && grossBaseTop[i] > 0;
+    if (decoded.hostable[i] !== (h ? 1 : 0)) hostableMismatch++;
+    if (decoded.hostableBase[i] !== (hb ? 1 : 0)) hostableBaseMismatch++;
+  }
+  c['scenario.hostable_mismatch'] = hostableMismatch;
+  c['scenario.hostable_base_mismatch'] = hostableBaseMismatch;
+
+  // V18: hostable_base per panel roll year (`.<y>`), and for each panel year y after the first,
+  // paired with the previous *panel* year p (so a missing roll year is spanned, never skipped):
+  // the parcels with a row in both p and y (`.<y>.both_rows`), and their hostable_base count in p
+  // (`.<y>.both_prev`) and in y (`.<y>.both`). The year-on-year stability bound compares the
+  // latter two, so parcels entering or leaving the panel (mini's lots with 2024 and 2025 rows
+  // only) do not count as flips; V18 fails a pair with no shared parcel.
+  const hostableByYear = await db.all<{ y: number; n: number }>(
+    `SELECT roll_year y, count(*) FILTER (WHERE hostable_base)::INTEGER n FROM scenario_panel
+     GROUP BY roll_year ORDER BY roll_year`
+  );
+  for (const r of hostableByYear) c[`scenario.panel.hostable_base.${r.y}`] = r.n;
+  const hostableBoth = await db.all<{ y: number; rows: number; prev: number; cur: number }>(
+    `WITH yrs AS (
+       SELECT roll_year y, lag(roll_year) OVER (ORDER BY roll_year) p
+       FROM (SELECT DISTINCT roll_year FROM scenario_panel)
+     )
+     SELECT yrs.y, count(*)::INTEGER AS rows,
+            count(*) FILTER (WHERE a.hostable_base)::INTEGER AS prev,
+            count(*) FILTER (WHERE b.hostable_base)::INTEGER AS cur
+     FROM yrs
+     JOIN scenario_panel b ON b.roll_year = yrs.y
+     JOIN scenario_panel a ON a.mapblklot = b.mapblklot AND a.roll_year = yrs.p
+     GROUP BY yrs.y ORDER BY yrs.y`
+  );
+  const both = new Map(hostableBoth.map((r) => [r.y, r]));
+  for (const { y } of hostableByYear.slice(1)) {
+    c[`scenario.panel.hostable_base.${y}.both_rows`] = both.get(y)?.rows ?? 0;
+    c[`scenario.panel.hostable_base.${y}.both_prev`] = both.get(y)?.prev ?? 0;
+    c[`scenario.panel.hostable_base.${y}.both`] = both.get(y)?.cur ?? 0;
+  }
 
   // The hostable shares of the cap rules are V30's (quality.sd.zoning.*), which replace the old
   // ad hoc 10% warning (spec §4.10; RA1: the 10% fail share generalises ruling A9).
