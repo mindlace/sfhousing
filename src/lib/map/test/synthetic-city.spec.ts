@@ -21,5 +21,6 @@ it('exercises the full solid and vertex budgets in the stress fixture', () => {
   expect(b.parts.reduce((n, p) => n + p.footprint.length, 0)).toBe(128);
   const pack = makeSyntheticCity(1, 1, 1, 'worst')[0].cells[0].settled;
   expect(pack.partCount).toBe(10);
-  expect(pack.positions.length / 2).toBe(128);
+  // 128 input vertices plus one closing vertex per packed ring.
+  expect(pack.positions.length / 2).toBe(128 + pack.partCount);
 });
