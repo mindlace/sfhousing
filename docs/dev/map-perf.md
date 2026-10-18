@@ -56,8 +56,11 @@ display refresh rate, so on a 120 Hz display the p50 is about 8.3 ms. The bar is
 | 2022 MacBook Air (M2)                                                     | —          | —                          | 2   | —      | —      | —       | not yet recorded                             |
 | Apple M5 Pro (same), both transit layers on, fixture-0 (8 stops)          | 2026-10-15 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 8.5 ms  | Yes (representative; worst-case p95 8.4 ms)  |
 | Apple M5 Pro (same), both transit layers on, live network (3,147 markers) | 2026-10-15 | Playwright Chromium, Metal | 2   | 1181   | 8.3 ms | 10.2 ms | Yes (representative; worst-case p95 10.0 ms) |
+| Apple M5 Pro (same), closed packed rings (one more wall per part)         | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 9.3 ms  | Yes (representative; worst-case p95 8.6 ms)  |
 | Apple M5 Pro (Mac17,9), timeline "playback", 30,000 projects, zoom 15.5   | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 10.3 ms | Yes                                          |
 | Apple M5 Pro (Mac17,9), timeline "drag", 30,000 projects, zoom 15.5       | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 9.0 ms  | Yes                                          |
+| Apple M5 Pro (same), timeline "playback", closed rings (after #21)        | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 10.3 ms | Yes                                          |
+| Apple M5 Pro (same), timeline "drag", closed rings (after #21)            | 2026-10-17 | Playwright Chromium, Metal | 2   | 1200   | 8.3 ms | 10.3 ms | Yes                                          |
 
 Run the bench with both transit layers on (the default View prefs). fixture-0 has only 8 stops, so its transit row measures the layer overhead. The live-network row ran the same bench against a local copy of the production dataset (`npm run data:local -- <version>`, then `npm run data:transit -- <version>`) served with `PUBLIC_DATASET_VERSION` set to that version instead of `fixture-0` (the bench config pins `fixture-0`, so this needs a one-off config override). Re-check against live data when the stop layers change.
 
@@ -79,10 +82,14 @@ The synthetic parcel ids match no buildings-tile features. The pump's `setFeatur
 
 Pump max ops per frame, 2026-10-17 (full sweep; the earlier timeline-only run gave 48 and 155 ops at p95 10.0 ms and 8.5 ms):
 
-| Case     | p95     | Pump max ops/frame |
-| -------- | ------- | ------------------ |
-| playback | 10.3 ms | 48                 |
-| drag     | 9.0 ms  | 170                |
+| Case                               | p95     | Pump max ops/frame |
+| ---------------------------------- | ------- | ------------------ |
+| playback                           | 10.3 ms | 48                 |
+| drag                               | 9.0 ms  | 170                |
+| playback, closed rings (after #21) | 10.3 ms | 53                 |
+| drag, closed rings (after #21)     | 10.3 ms | 171                |
+
+The first two rows were measured on open packed rings; the "closed rings (after #21)" rows were re-run after the closing vertex landed (every timeline part has one more wall). The closed-ring deltas (pump 48 to 53 ops, drag p95 9.0 to 10.3 ms) are run-to-run spread, not an effect of the extra wall: pump op counts do not depend on wall count, and earlier runs already varied by this much. Other preview servers were running on the machine during the closed-ring run, which adds to the noise. Both pump maxima stay far under the 2,000 feature-state cap.
 
 ## CI
 

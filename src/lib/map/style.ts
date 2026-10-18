@@ -287,7 +287,11 @@ const STOP_LAYER: Record<
   'transit-stops-regional': { cls: 'regional-rail', token: 'transit-regional' }
 };
 
-/** Bus at z15+, rail at z13+, regional rail always (transit spec §6.1); on top of the labels. */
+/**
+ * Bus at z15+, rail at z13+, regional rail always (transit spec §6.1). Discs lie flat on the map
+ * plane (they tilt with the pitch rather than facing the viewer); buildStyle puts them under the
+ * roads.
+ */
 export function transitStopLayers(theme: Theme): LayerSpecification[] {
   const t = TOKENS[theme];
   return TRANSIT_STOP_LAYERS.map((id) => {
@@ -303,6 +307,8 @@ export function transitStopLayers(theme: Theme): LayerSpecification[] {
         'circle-color': t[token],
         'circle-stroke-color': t['transit-stroke'],
         'circle-stroke-width': 1,
+        'circle-pitch-alignment': 'map',
+        'circle-pitch-scale': 'map',
         'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, STOP_R, 16, ['*', 3, STOP_R]]
       }
     } as LayerSpecification;
@@ -315,14 +321,19 @@ const emptyCollection = (): GeoJSONSourceSpecification => ({
 });
 
 /**
- * Stack: base, transit-access, existing-buildings, chunk layers, labels, transit stops,
- * overlay-anchor. The transit sources and layers exist only when the manifest names a transit
+ * Stack: terrain and water, transit-access, transit stops, roads, existing-buildings, chunk
+ * layers, labels, overlay-anchor. The transit sources and layers exist only when the manifest names a transit
  * network. The deck layers go beneath the labels at runtime: SimMap gives them `beforeId` =
  * `firstSymbolLayerId(style)` (§4.4). No sprite is ever set: pois and icon layers are dropped.
  */
 export function buildStyle(manifest: Manifest, theme: Theme): StyleSpecification {
   const { base, labels } = protomapsLayers(theme);
   const transit = manifest.transit !== undefined;
+  // Stops sit above terrain, landuse and water but beneath the roads. Airport runways draw before
+  // water, so look for the first road after it (the tunnels).
+  const water = base.findIndex((l) => l.id === 'water');
+  const roads = base.findIndex((l, i) => i > water && l.id.startsWith('roads_'));
+  const split = transit && roads >= 0 ? roads : base.length;
   return {
     version: 8,
     glyphs: manifest.glyphs,
@@ -335,12 +346,12 @@ export function buildStyle(manifest: Manifest, theme: Theme): StyleSpecification
         : {})
     },
     layers: [
-      ...base,
-      ...(transit ? [transitAccessLayer(theme)] : []),
+      ...base.slice(0, split),
+      ...(transit ? [transitAccessLayer(theme), ...transitStopLayers(theme)] : []),
+      ...base.slice(split),
       existingBuildingsLayer(theme),
       ...chunkLayers(theme),
       ...labels,
-      ...(transit ? transitStopLayers(theme) : []),
       { id: OVERLAY_ANCHOR, type: 'background', layout: { visibility: 'none' } }
     ]
   } as StyleSpecification;

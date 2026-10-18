@@ -15,7 +15,13 @@ import { timelineLookups } from './fixtures/timeline-lookups';
 import { packTimedCell } from './pack-timed';
 import { encodeParts } from './timelapse/encode';
 import { TIMELINE_PART_LAYER } from './timeline-controller';
-import type { SimMapHandle, SimMapProps, TimedPackedCell, TimelineUpdate } from './types';
+import type {
+  SimMapHandle,
+  SimMapProps,
+  TimedPackedCell,
+  TimelinePick,
+  TimelineUpdate
+} from './types';
 
 // See SimMap.svelte.spec.ts: the committed fixture dataset is served by Vitest's dev server.
 const FIXTURE = '/e2e/fixtures/data/fixture-0/';
@@ -342,7 +348,12 @@ describe('SimMap timeline picking', { timeout: 60_000 }, () => {
     await jumpIdle(map, center, 18);
     await converged(map);
     const at = (ll: [number, number]) => map.project(ll);
-    const fire = (type: string, pointerType: string, p: { x: number; y: number }) => {
+    const fire = (
+      type: string,
+      pointerType: string,
+      p: { x: number; y: number },
+      init: PointerEventInit = {}
+    ) => {
       const r = map.getCanvas().getBoundingClientRect();
       map.getCanvas().dispatchEvent(
         new PointerEvent(type, {
@@ -351,7 +362,8 @@ describe('SimMap timeline picking', { timeout: 60_000 }, () => {
           clientY: r.top + p.y,
           pointerType,
           pointerId: 7,
-          isPrimary: true
+          isPrimary: true,
+          ...init
         })
       );
     };
@@ -359,23 +371,40 @@ describe('SimMap timeline picking', { timeout: 60_000 }, () => {
   }
   const tooltip = () => document.querySelector('[role="tooltip"]');
 
-  // Pins the current miss semantics on purpose (2026-10-17 conductor ruling: `timelinePick(null)`
-  // stays kind-less): leaving a part after a hover sends one null; a click or tap off a part
-  // sends null. A later T7 change to null's meaning must show up here.
-  it('reports hover and click, suppresses the tooltip, and sends one null on leaving', async () => {
-    const timelinePick = vi.fn();
+  const HOVER_MISS = { projectId: null, kind: 'hover' } as const;
+  const TAP_MISS = { projectId: null, kind: 'tap' } as const;
+  const card = () => document.querySelector('.sim-map-card');
+
+  it('reports hits, and misses with their kind, never null (§4.8.1)', async () => {
+    const consoleError = vi.spyOn(console, 'error');
+    const timelinePick = vi.fn<(p: TimelinePick) => void>();
     const { at, fire } = await readyOverPart({ timelinePick });
     const part = at(FP);
     const building = at(AT);
     const empty = { x: 8, y: 8 };
+    const calls = () => timelinePick.mock.calls.length;
+    const click = (p: { x: number; y: number }, pointerType = 'mouse') => {
+      fire('pointerdown', pointerType, p);
+      fire('pointerup', pointerType, p);
+    };
+    /** A mouse hover hit on the part: exactly one more call, the hit. */
+    const hoverPart = async () => {
+      const n = calls();
+      fire('pointermove', 'mouse', part);
+      await expect.poll(calls).toBe(n + 1);
+      expect(timelinePick).toHaveBeenLastCalledWith(
+        expect.objectContaining({ projectId: 'fx-p', kind: 'hover' })
+      );
+    };
 
     // An existing building first: SimMap's own tooltip, nothing reported.
     fire('pointermove', 'mouse', building);
     await expect.poll(() => tooltip()?.textContent ?? '').toContain(`Parcel ${P}`);
     expect(timelinePick).not.toHaveBeenCalled();
 
+    // Hits: a hover with x and y, the tooltip suppressed, then a click.
     fire('pointermove', 'mouse', part);
-    await expect.poll(() => timelinePick.mock.calls.length).toBe(1);
+    await expect.poll(calls).toBe(1);
     expect(timelinePick).toHaveBeenLastCalledWith({
       projectId: 'fx-p',
       parcelId: '9100001',
@@ -384,20 +413,19 @@ describe('SimMap timeline picking', { timeout: 60_000 }, () => {
       kind: 'hover'
     });
     await expect.poll(tooltip).toBeNull();
-
-    fire('pointerdown', 'mouse', part);
-    fire('pointerup', 'mouse', part);
-    await expect.poll(() => timelinePick.mock.calls.length).toBe(2);
+    click(part);
+    await expect.poll(calls).toBe(2);
     expect(timelinePick).toHaveBeenLastCalledWith(
       expect.objectContaining({ projectId: 'fx-p', parcelId: '9100001', kind: 'tap' })
     );
     expect(tooltip()).toBeNull();
 
-    // Part → existing building: exactly one null, and the building's tooltip still works.
+    // Part → existing building (hover): exactly one hover miss, and the building's tooltip still
+    // shows; further moves over the building and onto empty map add no call.
     fire('pointermove', 'mouse', building);
     await expect.poll(() => tooltip()?.textContent ?? '').toContain(`Parcel ${P}`);
     expect(timelinePick).toHaveBeenCalledTimes(3);
-    expect(timelinePick).toHaveBeenLastCalledWith(null);
+    expect(timelinePick).toHaveBeenLastCalledWith(HOVER_MISS);
     fire('pointermove', 'mouse', { x: building.x + 1, y: building.y });
     await frames(3);
     fire('pointermove', 'mouse', empty);
@@ -405,24 +433,106 @@ describe('SimMap timeline picking', { timeout: 60_000 }, () => {
     await frames(3);
     expect(timelinePick).toHaveBeenCalledTimes(3);
 
-    // Part → empty map: one null; two further misses add nothing.
-    fire('pointermove', 'mouse', part);
-    await expect.poll(() => timelinePick.mock.calls.length).toBe(4);
+    // Part → empty map (hover): one hover miss; two further misses add nothing.
+    await hoverPart();
     fire('pointermove', 'mouse', empty);
-    await expect.poll(() => timelinePick.mock.calls.length).toBe(5);
-    expect(timelinePick).toHaveBeenLastCalledWith(null);
+    await expect.poll(calls).toBe(5);
+    expect(timelinePick).toHaveBeenLastCalledWith(HOVER_MISS);
     fire('pointermove', 'mouse', { x: empty.x + 1, y: empty.y });
     await frames(3);
     fire('pointermove', 'mouse', { x: empty.x + 2, y: empty.y });
     await frames(3);
     expect(timelinePick).toHaveBeenCalledTimes(5);
 
-    // A click on empty map reports null.
-    fire('pointerdown', 'mouse', empty);
-    fire('pointerup', 'mouse', empty);
-    await expect.poll(() => timelinePick.mock.calls.length).toBe(6);
-    expect(timelinePick).toHaveBeenLastCalledWith(null);
+    // pointerleave after a hover hit: one hover miss; a second pointerleave adds nothing.
+    await hoverPart();
+    fire('pointerleave', 'mouse', part);
+    expect(timelinePick).toHaveBeenCalledTimes(7);
+    expect(timelinePick).toHaveBeenLastCalledWith(HOVER_MISS);
+    fire('pointerleave', 'mouse', part);
+    await frames(3);
+    expect(timelinePick).toHaveBeenCalledTimes(7);
+
+    // A suppressed move (button down) after a hover hit: one hover miss.
+    await hoverPart();
+    fire('pointermove', 'mouse', part, { buttons: 1 });
+    expect(timelinePick).toHaveBeenCalledTimes(9);
+    expect(timelinePick).toHaveBeenLastCalledWith(HOVER_MISS);
+    await frames(3);
+    expect(timelinePick).toHaveBeenCalledTimes(9);
+
+    // A mouse click on empty map: a tap miss; a second click: a second tap miss.
+    click(empty);
+    await expect.poll(calls).toBe(10);
+    expect(timelinePick).toHaveBeenLastCalledWith(TAP_MISS);
+    click(empty);
+    await expect.poll(calls).toBe(11);
+    expect(timelinePick).toHaveBeenLastCalledWith(TAP_MISS);
+
+    // A mouse click on an existing building: a tap miss, and no card.
+    click(building);
+    await expect.poll(calls).toBe(12);
+    expect(timelinePick).toHaveBeenLastCalledWith(TAP_MISS);
+    await frames(3);
+    expect(card()).toBeNull();
+
+    // A touch tap on an existing building: a tap miss, and SimMap's existing card still shows.
+    click(building, 'touch');
+    await expect.poll(calls).toBe(13);
+    expect(timelinePick).toHaveBeenLastCalledWith(TAP_MISS);
+    await expect.poll(() => card()?.textContent ?? '').toContain(`Parcel ${P}`);
+
+    // A touch tap on empty map while a mouse hover hit is reported: a tap miss that does not
+    // consume the hover miss, so the mouse leaving afterwards still sends one hover miss.
+    await hoverPart();
+    click(empty, 'touch');
+    await expect.poll(calls).toBe(15);
+    expect(timelinePick).toHaveBeenLastCalledWith(TAP_MISS);
+    fire('pointermove', 'mouse', empty);
+    await expect.poll(calls).toBe(16);
+    expect(timelinePick).toHaveBeenLastCalledWith(HOVER_MISS);
+    await frames(3);
+    expect(timelinePick).toHaveBeenCalledTimes(16);
+
+    // Over the whole test: never null, and every miss has exactly the keys projectId and kind.
+    expect(timelinePick.mock.calls.every(([p]) => p !== null)).toBe(true);
+    const misses = timelinePick.mock.calls.map(([p]) => p).filter((p) => p.projectId === null);
+    expect(misses.map((m) => m.kind)).toEqual([
+      'hover',
+      'hover',
+      'hover',
+      'hover',
+      'tap',
+      'tap',
+      'tap',
+      'tap',
+      'tap',
+      'hover'
+    ]);
+    for (const m of misses) expect(Object.keys(m).sort()).toEqual(['kind', 'projectId']);
+    expect(consoleError).not.toHaveBeenCalled();
     expect(errors).toEqual([]);
+  });
+
+  it('movestart and teardown after a hover hit each send one hover miss', async () => {
+    const timelinePick = vi.fn<(p: TimelinePick) => void>();
+    const { at, fire, map, screen } = await readyOverPart({ timelinePick });
+    fire('pointermove', 'mouse', at(FP));
+    await expect.poll(() => timelinePick.mock.calls.length).toBe(1);
+    map.jumpTo({ center: [AT[0] + 0.00001, AT[1]] });
+    expect(timelinePick).toHaveBeenCalledTimes(2);
+    expect(timelinePick).toHaveBeenLastCalledWith(HOVER_MISS);
+    await new Promise<void>((r) => {
+      map.once('idle', () => r());
+      map.triggerRepaint();
+    });
+    fire('pointermove', 'mouse', at(FP));
+    await expect.poll(() => timelinePick.mock.calls.length).toBe(3);
+    expect(timelinePick).toHaveBeenLastCalledWith(expect.objectContaining({ projectId: 'fx-p' }));
+    await screen.unmount();
+    expect(timelinePick).toHaveBeenCalledTimes(4);
+    expect(timelinePick).toHaveBeenLastCalledWith(HOVER_MISS);
+    expect(timelinePick.mock.calls.every(([p]) => p !== null)).toBe(true);
   });
 
   it('a touch tap on a part reports a tap and shows no card', async () => {

@@ -183,3 +183,44 @@ export const TIMELINE_LEGEND: readonly TimelineLegendEntry[] = [
   },
   { id: 'bar-stopped', kind: 'bar', tokens: ['tl-bar-dead'], label: 'Bar: project stopped' }
 ];
+
+const customProp = (name: TokenName) =>
+  `--map-${name.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())}`;
+
+/**
+ * The `--map-*` custom-property CSS for `names`: the light values scoped to `selector`, then the
+ * dark values under `prefers-color-scheme: dark` (spec §4.6.1). Declarations keep `TOKENS` key
+ * order whatever the order of `names`. Pure and DOM-free (runs in SSR). Not part of the public
+ * surface: exported only so SimMap can build its default stylesheet on it. The selector is spliced
+ * into CSS unescaped, so callers pass a trusted selector; `timelineTokenCss` validates its own.
+ */
+export function tokenCss(selector: string, names: readonly TokenName[]): string {
+  const wanted = new Set(names);
+  const vars = (theme: Theme) =>
+    (Object.keys(TOKENS[theme]) as TokenName[])
+      .filter((n) => wanted.has(n))
+      .map((n) => `${customProp(n)}: ${TOKENS[theme][n]}`)
+      .join('; ');
+  return (
+    `${selector} { ${vars('light')} } ` +
+    `@media (prefers-color-scheme: dark) { ${selector} { ${vars('dark')} } }`
+  );
+}
+
+/**
+ * T7 (spec §4.6.1): the `--map-*` properties a legend outside SimMap needs, scoped to `selector`:
+ * every `tl-*` token plus every token `TIMELINE_LEGEND` names, light then dark under
+ * `prefers-color-scheme`. CSS text without a `<style>` wrapper. Follows the system theme only;
+ * a page that passes SimMap an explicit `theme` sets its legend variables itself.
+ * Throws `TypeError` for a selector that is blank or contains `{`, `}`, `<` or `;`.
+ */
+export function timelineTokenCss(selector: string): string {
+  if (typeof selector !== 'string' || selector.trim() === '' || /[{}<;]/.test(selector)) {
+    throw new TypeError(
+      `timelineTokenCss: selector must be non-blank and contain none of { } < ; (got ${JSON.stringify(selector)})`
+    );
+  }
+  const names = new Set<TokenName>(TIMELINE_LEGEND.flatMap((e) => e.tokens));
+  for (const n of Object.keys(TOKENS.light) as TokenName[]) if (n.startsWith('tl-')) names.add(n);
+  return tokenCss(selector, [...names]);
+}

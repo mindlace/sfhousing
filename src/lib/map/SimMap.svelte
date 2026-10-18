@@ -1,19 +1,16 @@
 <script module lang="ts">
   import type { Protocol as PmtilesProtocol } from 'pmtiles';
-  import { TOKENS as THEME_TOKENS } from './palette';
+  import { TOKENS as THEME_TOKENS, tokenCss, type TokenName } from './palette';
   import { attributionHtml } from './attribution';
 
   type MapLibreModule = typeof import('maplibre-gl');
 
   // CSS defaults for the --map-* tokens, so the SSR frame follows prefers-color-scheme before
   // JS resolves a theme (an explicit or JS-resolved theme overrides them inline).
-  const tokenVars = (t: 'light' | 'dark') =>
-    Object.entries(THEME_TOKENS[t])
-      .map(([k, v]) => `--map-${k.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())}: ${v}`)
-      .join('; ');
-  const DEFAULT_TOKENS_CSS =
-    `<style>.sim-map { ${tokenVars('light')} } ` +
-    `@media (prefers-color-scheme: dark) { .sim-map { ${tokenVars('dark')} } }</style>`;
+  const DEFAULT_TOKENS_CSS = `<style>${tokenCss(
+    '.sim-map',
+    Object.keys(THEME_TOKENS.light) as TokenName[]
+  )}</style>`;
 
   // One pmtiles protocol per page (spec §4.1). Removed only on a real unload, never when the
   // page enters the back/forward cache (a restored page keeps its live map).
@@ -221,7 +218,7 @@
   let pendingDay: Day | null = null;
   let pendingLookups: TimelineLookups | null = null;
   let warnedGenerated = false;
-  /** The last hover report to `timelinePick` was a part: the next miss reports null once. */
+  /** The last hover report to `timelinePick` was a part: the next hover miss is sent once. */
   let hoverReported = false;
 
   // Hovered/tapped existing parcel: summary requests are latest-wins.
@@ -605,7 +602,17 @@
       layers: [],
       layerFilter: generatedCellFilter,
       // luma reports shader compile/link failures here, not to deck's onError (ruling R10).
-      deviceProps: { onError: (e: Error) => onDeviceError(l, e) }
+      deviceProps: { onError: (e: Error) => onDeviceError(l, e) },
+      // deck seeds its view state from the camera at addControl, then creates its luma device
+      // asynchronously and follows map `move` only from its onLoad. onready (below) runs in
+      // between, so a camera change there (setBottomInset, a consumer's jumpTo, a drag) left
+      // deck's picking viewport behind until the next move. onDeviceInitialized runs in the same
+      // synchronous turn as deck's onLoad, so one `move` after that turn resyncs deck. (Not
+      // onLoad: the overlay wraps it, and a later setProps would replace the wrapper.)
+      onDeviceInitialized: () =>
+        queueMicrotask(() => {
+          if (!l.dead && l.map === map) map.fire('move');
+        })
     });
     map.addControl(overlay);
     l.overlay = overlay;
@@ -1056,8 +1063,10 @@
 
   /**
    * Routes a pick (§4.8): with `timelinePick` set, timeline parts go to it and suppress SimMap's
-   * own surface, and a miss reports null (a hover miss only after a hover hit). Without it, a part
-   * shows the generated tooltip or card. Everything else presents as in the editor.
+   * own surface. A miss reports `{ projectId: null, kind }` (§4.8.1): every tap or click miss
+   * sends a tap miss and leaves `hoverReported` alone; a hover miss is sent once, only after a
+   * hover hit. Without it, a part shows the generated tooltip or card. Everything else presents as
+   * in the editor.
    */
   function deliver(kind: PickKind, x: number, y: number, r: PickResult): void {
     const surface: Surface = kind === 'hover' ? 'tooltip' : 'card';
@@ -1073,18 +1082,22 @@
       const hit = { kind: 'generated', parcelId, typology, stories, units, existingUnits } as const;
       return present(surface, x, y, { hit, cell: null });
     }
-    if (report && (kind !== 'hover' || hoverReported)) {
-      hoverReported = false;
-      report(null);
+    if (report) {
+      if (kind !== 'hover') report({ projectId: null, kind: 'tap' });
+      else if (hoverReported) {
+        hoverReported = false;
+        report({ projectId: null, kind: 'hover' });
+      }
     }
     if (kind !== 'click') present(surface, x, y, r);
   }
 
-  /** A pointer left the parts with nothing new under it (leave, move, suppression): one null. */
+  /** A pointer left the parts with nothing new under it (leave, suppression, movestart, teardown):
+   *  one hover miss. */
   function unreportHover(): void {
     if (!hoverReported) return;
     hoverReported = false;
-    timelinePick?.(null);
+    timelinePick?.({ projectId: null, kind: 'hover' });
   }
 
   function present(

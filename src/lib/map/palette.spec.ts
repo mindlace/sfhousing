@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { differenceCiede2000, hsl, lab, parse } from 'culori';
-import { TOKENS, TIMELINE_LEGEND, colorFor, GEN_RGBA, type TokenName } from './palette';
+import {
+  TOKENS,
+  TIMELINE_LEGEND,
+  colorFor,
+  GEN_RGBA,
+  tokenCss,
+  timelineTokenCss,
+  type TokenName
+} from './palette';
 import { TYPOLOGY_ORDER } from './types';
 
 const de = differenceCiede2000();
@@ -182,5 +190,107 @@ describe('TIMELINE_LEGEND', () => {
     expect(byId('stopped').tokens).toEqual(['tl-ghost-dying']);
     expect(byId('chance').tokens).toEqual(['tl-bar-unlikely', 'tl-bar-uncertain', 'tl-bar-likely']);
     expect(byId('bar-stopped').tokens).toEqual(['tl-bar-dead']);
+  });
+});
+
+// The body of SimMap's DEFAULT_TOKENS_CSS (between <style> and </style>) as rendered by the code
+// before the helper existed. This literal is dda6252's output, which is unchanged at 0784133.
+// Pinned byte for byte (spec §4.6.1, AC15).
+const DEFAULT_TOKENS_BODY =
+  '.sim-map { --map-land: #F3EFE6; --map-water: #C7D3D6; --map-park: #E2E4D3; ' +
+  '--map-road: #FFFFFF; --map-road-minor: #EAE5DA; --map-label: #5E5A52; ' +
+  '--map-existing: #D6D0C4; --map-replaced: #E3DACA; ' +
+  '--map-highlight: rgba(255,255,255,0.45); --map-chunk-loading: #8A8478; ' +
+  '--map-chunk-error: #B3261E; --map-gen-adu: #E9A487; --map-gen-plex: #E08A68; ' +
+  '--map-gen-walkup: #D2704E; --map-gen-podium: #BF5A3A; --map-gen-midrise: #A3472C; ' +
+  '--map-gen-tower: #84371F; --map-transit-access-1: #E4EEF3; ' +
+  '--map-transit-access-2: #BED7E3; --map-transit-access-3: #8DB9CF; ' +
+  '--map-transit-access-4: #5596B5; --map-transit-access-5: #2C6E8F; ' +
+  '--map-transit-bus: #5F6B66; --map-transit-rail: #7B3FA0; ' +
+  '--map-transit-regional: #1F5FBF; --map-transit-stroke: #FFFFFF; ' +
+  '--map-tl-ghost-planning: #9DB0FF; --map-tl-ghost-permit: #6F86F0; ' +
+  '--map-tl-ghost-ready: #4257D6; --map-tl-ghost-dying: #D84A4A; ' +
+  '--map-tl-bar-track: #FFFFFF; --map-tl-bar-edge: #5E5A52; ' +
+  '--map-tl-bar-likely: #2E7D32; --map-tl-bar-uncertain: #B26A00; ' +
+  '--map-tl-bar-unlikely: #C62828; ' +
+  '--map-tl-bar-dead: #8A8478 } ' +
+  '@media (prefers-color-scheme: dark) { .sim-map { --map-land: #1C1D1F; ' +
+  '--map-water: #10181C; --map-park: #1F2420; --map-road: #2C2E31; ' +
+  '--map-road-minor: #252729; --map-label: #A9A59C; --map-existing: #3B3D41; ' +
+  '--map-replaced: #2A2B2E; --map-highlight: rgba(255,255,255,0.30); ' +
+  '--map-chunk-loading: #8F8A80; --map-chunk-error: #F2B8B5; --map-gen-adu: #6E3B22; ' +
+  '--map-gen-plex: #8A4A28; --map-gen-walkup: #A65C2E; --map-gen-podium: #C27236; ' +
+  '--map-gen-midrise: #DB8B42; --map-gen-tower: #F0A752; ' +
+  '--map-transit-access-1: #1E2A31; --map-transit-access-2: #24414F; ' +
+  '--map-transit-access-3: #2D5D72; --map-transit-access-4: #3A7F9C; ' +
+  '--map-transit-access-5: #5BA6C6; --map-transit-bus: #A3ADA6; ' +
+  '--map-transit-rail: #C59BE0; --map-transit-regional: #7FB2FF; ' +
+  '--map-transit-stroke: #111214; --map-tl-ghost-planning: #5466B8; ' +
+  '--map-tl-ghost-permit: #7D90F0; --map-tl-ghost-ready: #AEBBFF; ' +
+  '--map-tl-ghost-dying: #FF6E6E; --map-tl-bar-track: #2C2E31; ' +
+  '--map-tl-bar-edge: #A9A59C; --map-tl-bar-likely: #81C784; ' +
+  '--map-tl-bar-uncertain: #FFB74D; --map-tl-bar-unlikely: #FF8A80; ' +
+  '--map-tl-bar-dead: #8F8A80 } }';
+
+describe('tokenCss / timelineTokenCss (spec §4.6.1)', () => {
+  const kebab = (n: string) => n.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+  const ALL = Object.keys(TOKENS.light) as TokenName[];
+  const expected = new Set<TokenName>([
+    ...ALL.filter((n) => n.startsWith('tl-')),
+    ...TIMELINE_LEGEND.flatMap((e) => e.tokens)
+  ]);
+  const declared = (block: string) =>
+    [...block.matchAll(/--map-([a-z0-9-]+): ([^;}]+)/g)].map((m) => [m[1], m[2].trim()]);
+  const split = (css: string) => {
+    const at = css.indexOf(' @media (prefers-color-scheme: dark) { ');
+    return { light: css.slice(0, at), dark: css.slice(at) };
+  };
+
+  it('tokenCss over every token and .sim-map reproduces the pinned DEFAULT_TOKENS_CSS body', () => {
+    expect(tokenCss('.sim-map', ALL)).toBe(DEFAULT_TOKENS_BODY);
+  });
+
+  it('declares every tl-* and legend-named token exactly once, and nothing else', () => {
+    const css = timelineTokenCss('.x');
+    const { light, dark } = split(css);
+    const want = ALL.filter((n) => expected.has(n)).map(kebab);
+    expect(declared(light).map(([n]) => n)).toEqual(want);
+    expect(declared(dark).map(([n]) => n)).toEqual(want);
+    expect(new Set(want).size).toBe(want.length);
+    // the superset is exactly: every tl-* token plus the six gen-* typology tokens
+    expect(want.filter((n) => !n.startsWith('tl-'))).toEqual(TYPOLOGY_ORDER.map((t) => `gen-${t}`));
+    expect(want.filter((n) => n.startsWith('tl-'))).toEqual(ALL.filter((n) => n.startsWith('tl-')));
+    expect(css).not.toContain('--map-land');
+    expect(css).not.toContain('--map-transit-');
+  });
+
+  it('puts light values in the first block and dark values under prefers-color-scheme: dark', () => {
+    const { light, dark } = split(timelineTokenCss('.x'));
+    expect(light.startsWith('.x { ')).toBe(true);
+    expect(light.endsWith(' }')).toBe(true);
+    expect(dark.startsWith(' @media (prefers-color-scheme: dark) { .x { ')).toBe(true);
+    expect(dark.endsWith(' } }')).toBe(true);
+    expect(light).not.toContain('@media');
+    for (const [n, v] of declared(light)) {
+      expect(v, n).toBe(TOKENS.light[n as TokenName]);
+    }
+    for (const [n, v] of declared(dark)) {
+      expect(v, n).toBe(TOKENS.dark[n as TokenName]);
+    }
+  });
+
+  it('is identical across calls and scoped to the selector as given', () => {
+    expect(timelineTokenCss('.x')).toBe(timelineTokenCss('.x'));
+    const css = timelineTokenCss('#legend > ul');
+    expect(css.startsWith('#legend > ul { ')).toBe(true);
+    expect(css.match(/#legend > ul \{/g)).toHaveLength(2);
+    expect(css).not.toContain('<style');
+  });
+
+  it('throws a TypeError for an empty selector or one containing { } < ;', () => {
+    for (const bad of ['', '  ', '\t\n', '.a{', '.a}', 'a { b', '</style>', '.a;b', '.a<b']) {
+      expect(() => timelineTokenCss(bad), JSON.stringify(bad)).toThrow(TypeError);
+      expect(() => timelineTokenCss(bad), JSON.stringify(bad)).toThrow(/selector/);
+    }
   });
 });

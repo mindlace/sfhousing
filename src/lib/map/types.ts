@@ -35,7 +35,7 @@ export interface PackedCell {
   parcelMeta: Uint32Array; // per parcel slot: [units, existingUnits, stories, typologyIdx]
   partCount: number;
   startIndices: Uint32Array; // length partCount + 1 (vertex index where each part starts; last = vertex count)
-  positions: Float64Array; // [lng, lat]*, rings open (no repeated closing vertex), CW
+  positions: Float64Array; // [lng, lat]*, rings closed (last vertex repeats the first), CW
   partTopM: Float32Array; // per part: topM (ground-up rendering, §4.4)
   partSlot: Uint32Array; // per part → parcel slot
   partAppearance: Uint8Array; // tone + 4 for a roof accent
@@ -121,13 +121,13 @@ export interface SimMapProps {
    * T7: timeline part pick callback. When set, SimMap's built-in tooltip is suppressed over
    * timeline parts (implemented by timelapse-render step 1).
    */
-  timelinePick?: (
-    p: {
-      projectId: string;
-      parcelId: ParcelId;
-      x: number;
-      y: number;
-      kind: 'hover' | 'tap';
-    } | null
-  ) => void;
+  timelinePick?: (p: TimelinePick) => void;
 }
+
+/**
+ * T7: a timeline pick. A hit names the slot's project and pick parcel; a miss is
+ * `{ projectId: null, kind }` (timelapse-render spec §4.8.1). `null` is never sent.
+ */
+export type TimelinePick =
+  | { projectId: string; parcelId: ParcelId; x: number; y: number; kind: 'hover' | 'tap' }
+  | { projectId: null; kind: 'hover' | 'tap' }; // a miss (§4.8.1)
