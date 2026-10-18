@@ -381,7 +381,7 @@ describe('pr.pipeline.no-status-date', () => {
       unitsOf: 155
     });
     const call = callsFor(r.counts).find((c) => c.id === PR.pipelineNoStatusDate);
-    expect(call?.sample).toEqual(['2026-000018PRJ']);
+    expect(call?.sample).toEqual(['CASE:2026-000018PRJ']);
     expect(project(r, 'CASE:2026-000018PRJ')).toBeUndefined();
   });
 });

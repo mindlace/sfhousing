@@ -62,7 +62,7 @@ import {
   pipelineOnlyHistory,
   rawStages
 } from './stages';
-import type { LinkedProject, Parsed, PipelineRow, ProjectRecordsInput } from './types';
+import type { LinkedProject, Parsed, ProjectRecordsInput } from './types';
 
 export type { PermitOut } from './assemble';
 
@@ -136,6 +136,7 @@ function lastStage(entered: Entered): Stage {
 }
 
 /** Every parsed record a project holds (spec 4.1: the records `pr.date.valid-range` marks). */
+// Matched against `Parsed.clipped` by identity: linkProjects must pass the parsed objects through.
 function heldRecords(proj: LinkedProject): object[] {
   return [
     ...proj.anchors,
@@ -254,8 +255,6 @@ function positiveSum(xs: Iterable<number | null>): number {
   return s;
 }
 
-const rowId = (r: PipelineRow) => r.caseNo ?? r.bpaNo;
-
 /**
  * One tally per `pr.*` rule (spec 4.11 `of` column and on-records text). A later task that gives a
  * rule its behaviour replaces that rule's entry; the record ids it marks go in `Assessed.quality`.
@@ -308,15 +307,15 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
   // Spec 4.2 step 10: a pipeline-only row with no valid status date is dropped (today every such
   // row; DQ-2 linking lands with its task). Of pipeline rows, weighted by new units.
   [PR.pipelineNoStatusDate]: ({ parsed, assessed }) => {
-    const dropped = assessed
-      .filter((a) => a.proj.kind === 'pipelineOnly' && a.proj.pipelineRows[0].statusDay === null)
-      .map((a) => a.proj.pipelineRows[0]);
+    const dropped = assessed.filter(
+      (a) => a.proj.kind === 'pipelineOnly' && a.proj.pipelineRows[0].statusDay === null
+    );
     return {
       fired: dropped.length,
       of: parsed.pipeline.length,
-      units: positiveSum(dropped.map((r) => r.newUnits)),
+      units: positiveSum(dropped.map((a) => a.proj.pipelineRows[0].newUnits)),
       unitsOf: positiveSum(parsed.pipeline.map((r) => r.newUnits)),
-      sample: dropped.map(rowId).filter((id): id is string => id !== null)
+      sample: dropped.map((a) => a.proj.id)
     };
   },
   // Spec 4.7 (observe; no record carries it): population projects matching at least one pipeline
