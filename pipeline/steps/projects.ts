@@ -229,17 +229,21 @@ export async function writeProjectRecords(o: {
   const units = new Map<number, Float64Array>();
   const stories = new Map<number, Float64Array>();
   const built = new Map<number, Float64Array>();
+  const imputed = new Map<number, Float64Array>();
   for (const y of years) {
     const u = new Float64Array(index.size).fill(NaN);
     const s = new Float64Array(index.size).fill(NaN);
     const b = new Float64Array(index.size).fill(NaN);
+    const m = new Float64Array(index.size).fill(NaN);
     const rows = await db.all<{
       id: string;
       u: number | null;
       s: number | null;
       b: number | null;
+      m: number | null;
     }>(
-      `SELECT mapblklot AS id, existing_units AS u, base_stories AS s, year_built AS b
+      `SELECT mapblklot AS id, existing_units AS u, base_stories AS s, year_built AS b,
+         imputed AS m
        FROM scenario_panel WHERE roll_year = ${y}`
     );
     for (const r of rows) {
@@ -248,10 +252,12 @@ export async function writeProjectRecords(o: {
       u[i] = r.u ?? NaN;
       s[i] = r.s ?? NaN;
       b[i] = r.b ?? NaN;
+      m[i] = r.m ?? 0;
     }
     units.set(y, u);
     stories.set(y, s);
     built.set(y, b);
+    imputed.set(y, m);
   }
   const at = (cols: Map<number, Float64Array>, id: ParcelId, y: number): number | null => {
     const i = index.get(id);
@@ -267,6 +273,7 @@ export async function writeProjectRecords(o: {
     descendants,
     assessorUnits: (id: ParcelId, y: number) => at(units, id, y),
     yearBuilt: (id: ParcelId, y: number) => at(built, id, y),
+    panelImputed: (id: ParcelId, y: number) => at(imputed, id, y),
     lienDay: (y: number): Day | null => lien.get(y) ?? null,
     latestRollYear,
     baseStories: (id: ParcelId, y: number) => at(stories, id, y),

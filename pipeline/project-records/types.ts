@@ -184,6 +184,8 @@ export interface ProjectRecordsInput {
   yearBuilt(id: ParcelId, rollYear: number): number | null;
   /** T13 `scenario_panel.lien_day` of a roll year; null when the panel has no such year. */
   lienDay(rollYear: number): Day | null;
+  /** T13 `scenario_panel.imputed` mask for a parcel and roll year; null when there is no row. */
+  panelImputed(id: ParcelId, rollYear: number): number | null;
   latestRollYear: number;
   baseStories(id: ParcelId, rollYear: number): number | null;
   hiNet: Record<number, number>;

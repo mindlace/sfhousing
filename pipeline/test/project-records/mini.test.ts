@@ -69,7 +69,9 @@ const HISTORIES_ONLY = [
   'PRJ:2009-000023PRJ:BP:201102020023',
   'BP:200406010024',
   'BP:201409010025',
-  'BP:201112010026'
+  'BP:201112010026',
+  'BP:201410010027',
+  'BP:202503010028'
 ];
 
 /**
@@ -556,8 +558,12 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(covered).toEqual({ permitIssued: 1, construction: 1 });
     const exits = r.histories.filter((h) => h.end.kind === 'exit');
     const at = (s: Stage) => exits.filter((h) => h.end.kind === 'exit' && h.end.stage === s);
-    // M24 exits there too, by the statutory-expiry rule (a live permit, so not covered above).
-    expect(at('permitIssued').map((h) => h.id)).toEqual(['BP:200406010024', 'BP:201803010021']);
+    // M24 and M27 exit there too, by the statutory-expiry rule (live permits, not covered above).
+    expect(at('permitIssued').map((h) => h.id)).toEqual([
+      'BP:200406010024',
+      'BP:201410010027',
+      'BP:201803010021'
+    ]);
     expect(at('construction').map((h) => h.id)).toEqual(['BP:201702010022']);
   });
 
@@ -637,24 +643,48 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(h.quality).toEqual([]);
   });
 
-  it('stale-open rules: T14 rows, the verdict warning and the in-flight counts', () => {
+  it('stale-open rules: T14 rows, the verdict warning and the left-flight counts', () => {
     const q = (id: string) => [r.counts[`quality.${id}.fired`], r.counts[`quality.${id}.of`]];
-    // Open at construction, no terminal permit, not in flight: M25.
-    expect(q('pr.stages.complete-from-evidence')).toEqual([1, 1]);
-    // Then open at permitIssued or construction, not in flight: M24 and M26.
-    expect(q('pr.stages.statutory-expiry')).toEqual([1, 2]);
-    // Their bracketed permits: M24 (valued) and M26 (no valuation).
-    expect(q('pr.stages.expiry-no-valuation')).toEqual([1, 2]);
+    // Of the 7 histories that entered construction (M1, M6, PRJ:2010.0002, M22, M23 x2, M25).
+    expect(q('pr.stages.complete-from-evidence')).toEqual([1, 7]);
+    // Of the 13 that entered permitIssued: M24 and M27.
+    expect(q('pr.stages.statutory-expiry')).toEqual([2, 13]);
+    // The bracketed permits of the histories examined (M1, M8, M24, M26, M27, M28): M26's.
+    expect(q('pr.stages.expiry-no-valuation')).toEqual([1, 6]);
     // Three entries; M7's dead verdict applied.
     expect(q('pr.stages.verified-construction')).toEqual([1, 3]);
     expect(r.warnings).toContain(
       'construction-verified.json: BP:209901010099 names no open history; not applied'
     );
-    // M1 (24 units) and M8 (4) are in flight past their deadline (no valuation): counted only.
-    expect(r.counts['projects.inFlightPastStatutory']).toBe(2);
-    expect(r.counts['projects.inFlightPastStatutoryUnits']).toBe(28);
-    expect(r.counts['projects.inFlightSuspendedOnly']).toBe(0);
+    expect(r.counts['histories.statutoryExpiry.excludedCompletePermit']).toBe(0);
+    // M1 and M8 ($3M site permits) are within their time and stay in flight.
     expect(history('PRJ:2019-000001PRJ').end.kind).toBe('open');
+  });
+
+  it('M27: in the pipeline, past its deadline: expired at permitIssued, leaves flight (Ruling I4)', () => {
+    const h = history('BP:201410010027');
+    expect(h.end).toEqual({
+      kind: 'exit',
+      stage: 'permitIssued',
+      reason: 'expired',
+      day: day('2015-04-01') + 1080 + 720
+    });
+    expect(h.quality).toEqual(['pr.stages.statutory-expiry']);
+    expect(r.file.projects.map((p) => p.id)).not.toContain('BP:201410010027');
+    expect(r.counts['projects.excludedStatutory']).toBe(1);
+    expect(r.counts['projects.excludedStatutoryUnits']).toBe(2);
+    expect(r.warnings).toContain(
+      'BP:201410010027: past statutory completion deadline; expired, left flight'
+    );
+  });
+
+  it('M28: in the pipeline, every permit suspended: leaves flight, history open (Ruling I4)', () => {
+    expect(history('BP:202503010028').end.kind).toBe('open');
+    expect(r.file.projects.map((p) => p.id)).not.toContain('BP:202503010028');
+    expect(r.counts['projects.status.suspended']).toBe(1);
+    expect(r.counts['projects.excludedSuspended']).toBe(1);
+    expect(r.counts['projects.excludedSuspendedUnits']).toBe(2);
+    expect(r.warnings).toContain('BP:202503010028: every permit suspended; left flight');
   });
 
   it('xdht extras: rhnaCompletedNet is 4 units over 3 rows', () => {
@@ -678,7 +708,8 @@ describe('mini project records: V20-V24 with the fixture thresholds', () => {
     expect(checkV21(r.checks, 0.9)).toMatchObject({ id: 'V21', ok: true });
     // M16's row says 220, its record 200; M17's row is outside the population and not counted.
     // Ruling V1: M18's dropped no-date row (20 units) has no project and leaves V21 entirely.
-    expect(r.checks.coverage).toEqual({ matchedUnits: 699, rowUnits: 719, rows: 11 });
+    // Ruling I4: M27's row leaves with its ended history; M28's (2 units, open) is unmatched.
+    expect(r.checks.coverage).toEqual({ matchedUnits: 699, rowUnits: 721, rows: 12 });
     expect(checkV21(r.checks, 0.98).ok).toBe(false);
   });
 

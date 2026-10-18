@@ -72,7 +72,12 @@ describe('expiryTest (Ruling E2)', () => {
   it('passes when every unit-bearing permit is past its deadline; the day is the latest', () => {
     const later = permit('2', { issuedDay: d('2006-01-10'), valuation: 1_000_000 });
     const r = expiryTest(proj([permit('1'), later]), ASOF);
-    expect(r).toEqual({ day: d('2006-01-10') + 1080 + 180, permits: 2, noValuation: 0 });
+    expect(r).toEqual({
+      day: d('2006-01-10') + 1080 + 180,
+      permits: 2,
+      noValuation: 0,
+      excludedComplete: false
+    });
     expect(expiryTest(proj([permit('1')]), ASOF).day).toBe(deadline);
   });
 
@@ -97,14 +102,20 @@ describe('expiryTest (Ruling E2)', () => {
     expect(expiryTest(proj([permit('1'), permit('4', { issuedDay: null })]), ASOF).day).toBeNull();
   });
 
-  it('a complete permit is left out: it neither blocks nor dates the exit; one must remain', () => {
-    const done = permit('5', { status: 'complete', issuedDay: d('2004-01-01'), valuation: 3e6 });
-    expect(expiryTest(proj([permit('1'), done]), ASOF)).toEqual({
-      day: deadline,
-      permits: 1,
-      noValuation: 0
+  it('a unit-bearing permit with a completion day excludes the project (I3 rejected)', () => {
+    // completed_date on a complete permit; a j67f TCO with units on an issued one.
+    const done = permit('5', { status: 'complete', completedDateDay: d('2007-01-10') });
+    const r = expiryTest(proj([permit('1'), done]), ASOF);
+    expect(r).toMatchObject({ day: null, excludedComplete: true });
+    const tco = proj([permit('1'), permit('6')], {
+      completions: [{ permit: '6', day: d('2008-02-01'), kind: 'TCO', units: 3 }]
     });
-    expect(expiryTest(proj([done]), ASOF).day).toBeNull();
+    expect(expiryTest(tco, ASOF)).toMatchObject({ day: null, excludedComplete: true });
+    // A TCO with no units is no completion day.
+    const empty = proj([permit('1'), permit('6')], {
+      completions: [{ permit: '6', day: d('2008-02-01'), kind: 'TCO', units: 0 }]
+    });
+    expect(expiryTest(empty, ASOF)).toMatchObject({ day: deadline, excludedComplete: false });
   });
 
   it('a site permit valued $2.5M or more gets +50%', () => {
@@ -116,7 +127,12 @@ describe('expiryTest (Ruling E2)', () => {
 
   it('a permit with no valuation takes the middle bracket and is counted', () => {
     const r = expiryTest(proj([permit('1', { valuation: null })]), ASOF);
-    expect(r).toEqual({ day: d('2005-03-01') + 1080 + 180, permits: 1, noValuation: 1 });
+    expect(r).toEqual({
+      day: d('2005-03-01') + 1080 + 180,
+      permits: 1,
+      noValuation: 1,
+      excludedComplete: false
+    });
   });
 
   it('reads the unit-bearing set: a superseded permit is ignored', () => {
@@ -149,7 +165,8 @@ const NO_ASSESSOR: AssessorCtx = {
   assessorUnits: () => null,
   yearBuilt: () => null,
   lienDay: (y) => d(`${y}-01-01`),
-  latestRollYear: 2025
+  latestRollYear: 2025,
+  panelImputed: () => null
 };
 
 function housing(over: Partial<HousingRow>): HousingRow {
@@ -230,6 +247,35 @@ describe('construction evidence (Ruling C2)', () => {
       source: 'xdht',
       bpas: []
     });
+  });
+
+  it('(ii) ignores panel rows imputed for units (bit 3) or carried (bit 5)', () => {
+    const none = indexHousing([], resolve);
+    // Baseline 2015 is 0; 2017 shows 4 units on a row whose units were replaced (bit 3).
+    const units = (_: ParcelId, y: number) => (y >= 2017 ? 4 : 0);
+    const mask = (bits: number, from: number, to: number) => (_: ParcelId, y: number) =>
+      y >= from && y <= to ? bits : 0;
+    const a = { ...NO_ASSESSOR, assessorUnits: units, panelImputed: mask(1 << 3, 2017, 2019) };
+    expect(evidenceDay(p, entered, 4, { housing: none, assessor: a })?.day).toBe(d('2020-01-01'));
+    // A carried row (bit 5) is ignored too; other bits (e.g. 0, year built) are not.
+    const carried = { ...a, panelImputed: mask(1 << 5, 2017, 2018) };
+    expect(evidenceDay(p, entered, 4, { housing: none, assessor: carried })?.day).toBe(
+      d('2019-01-01')
+    );
+    const bit0 = { ...a, panelImputed: mask(1, 2017, 2025) };
+    expect(evidenceDay(p, entered, 4, { housing: none, assessor: bit0 })?.day).toBe(
+      d('2017-01-01')
+    );
+    // An imputed baseline is no baseline: no gain is read against it.
+    const badBase = { ...a, panelImputed: mask(1 << 3, 2015, 2015) };
+    expect(evidenceDay(p, entered, 4, { housing: none, assessor: badBase })).toBeNull();
+    // year_built from an imputed or carried row does not count.
+    const yb = {
+      ...NO_ASSESSOR,
+      yearBuilt: () => 2016,
+      panelImputed: mask(1 << 5, 2016, 2021)
+    };
+    expect(evidenceDay(p, entered, 4, { housing: none, assessor: yb })?.day).toBe(d('2022-01-01'));
   });
 
   it('(i) beats (ii)', () => {

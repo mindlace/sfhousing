@@ -3,8 +3,10 @@
  * construction evidence (`pr.stages.complete-from-evidence`, Ruling C2), the statutory permit
  * expiry exit (`pr.stages.statutory-expiry`, Ruling E2) and the curated imagery verdicts
  * (`pr.stages.verified-construction`, Ruling C3). They rewrite a T4d history's `end` (and, for a
- * completion, `entered.complete`) only: deriveProjects applies them after the in-flight decision
- * and never to a history whose project is in flight, so T3 is unchanged. Pure.
+ * completion, `entered.complete`). deriveProjects applies them after the in-flight decision and
+ * before DA netting: the evidence and verdict rules never touch an in-flight project's history,
+ * while the statutory exit also ends an in-flight project's history, which then leaves flight
+ * (Ruling I4). Pure.
  */
 import { STAGE_ORDER } from '../../src/lib/timelapse/types';
 import type { ProjectHistory, Stage } from '../../src/lib/timelapse/types';
@@ -13,7 +15,7 @@ import type { ConstructionVerdict } from '../enrichment/construction-schema';
 import { exitAt } from './ends';
 import { eraOf, permitDeadline } from './expiry';
 import { DEAD_STATUSES } from './link';
-import { unitBearingPermits } from './stages';
+import { permitCompletionDay, unitBearingPermits } from './stages';
 import type { HousingRow, LinkedProject, ProjectRecordsInput } from './types';
 import type { ParcelId } from '../../src/lib/data/parcel';
 
@@ -90,8 +92,11 @@ export function indexHousing(
 /** The callbacks evidence (ii) reads (T13 `scenario_panel`). */
 export type AssessorCtx = Pick<
   ProjectRecordsInput,
-  'assessorUnits' | 'yearBuilt' | 'lienDay' | 'latestRollYear'
+  'assessorUnits' | 'yearBuilt' | 'lienDay' | 'latestRollYear' | 'panelImputed'
 >;
+
+/** T11/T13 `imputed` bits evidence (ii) will not read: 3 (`existingUnits`) and 5 (row carried). */
+const IMPUTED_UNITS_OR_CARRIED = (1 << 3) | (1 << 5);
 
 /**
  * Ruling C2 applies: the history is open, its last entered stage is `construction`, and no
@@ -116,7 +121,13 @@ function yearOf(d: Day): number {
  *     units over the project's parcels exceed the baseline by at least min(units, ⌈units / 2⌉),
  *     or in which a parcel's `year_built` is at least the construction year. The baseline is the
  *     last roll year at or before the construction year, clamped to 2007..latest (no roll exists
- *     before 2007); a parcel with no roll row counts 0 units, as in `existingUnitsAt`.
+ *     before 2007); a parcel with no roll row counts 0 units, as in `existingUnitsAt`. A panel
+ *     row whose `imputed` mask has bit 3 (units replaced) or bit 5 (row carried from the previous
+ *     year) is not read (main's ruling 4): it is neither a baseline nor a gain, so a parcel adds
+ *     to the gain only when both its baseline and year-Y rows are clean, and its `year_built`
+ *     counts only from a clean row.
+ * A multi-building project is dated by its first building's completion (the earliest (i) row or
+ * the first qualifying roll year): accepted by main's ruling 4.
  * `bpas` are the sorted, unique `bpa` ids of the xdht rows that date an (i) completion (the
  * history lists them in `sources`); [] for (ii). Null when neither holds.
  */
@@ -140,18 +151,24 @@ export function evidenceDay(
   }
 
   const a = ctx.assessor;
+  const clean = (id: ParcelId, y: number) =>
+    ((a.panelImputed(id, y) ?? 0) & IMPUTED_UNITS_OR_CARRIED) === 0;
   const startYear = yearOf(start);
-  const sum = (y: number) => {
-    let s = 0;
-    for (const id of proj.parcelIds) s += a.assessorUnits(id, y) ?? 0;
-    return s;
-  };
   const baseYear = Math.min(Math.max(startYear, FIRST_ROLL_YEAR), a.latestRollYear);
-  const base = sum(baseYear);
+  const gain = (y: number) => {
+    let g = 0;
+    for (const id of proj.parcelIds) {
+      if (!clean(id, baseYear) || !clean(id, y)) continue;
+      g += (a.assessorUnits(id, y) ?? 0) - (a.assessorUnits(id, baseYear) ?? 0);
+    }
+    return g;
+  };
   const need = Math.min(units, Math.ceil(0.5 * units));
   for (let y = Math.max(startYear + 1, FIRST_ROLL_YEAR); y <= a.latestRollYear; y++) {
-    const built = proj.parcelIds.some((id) => (a.yearBuilt(id, y) ?? -Infinity) >= startYear);
-    if ((units >= 1 && sum(y) - base >= need) || built) {
+    const built = proj.parcelIds.some(
+      (id) => clean(id, y) && (a.yearBuilt(id, y) ?? -Infinity) >= startYear
+    );
+    if ((units >= 1 && gain(y) >= need) || built) {
       const lien = a.lienDay(y);
       if (lien !== null) return { day: lien, source: 'assessor', bpas: [] };
     }
@@ -178,27 +195,31 @@ export function expiryApplies(entered: Entered, end: End): boolean {
 }
 
 /**
- * Ruling E2's exit test over the unit-bearing permits that are not `complete` (finished work does
- * not expire; the partner's measurement read "all permits that carry an issue day and are not
- * complete"), at least one: each has a deadline (an issued day and an era with a completion
- * maximum); every deadline is before `asOf`; none has activity after its own deadline; none is
- * `reinstated` (a `suspend` status does not block). `day` is the latest deadline when the test
- * passes, else null. `permits` counts those permits whose deadline reads a Table B bracket (era
- * E0-E2) and `noValuation` those of them with no recorded valuation, which took the middle
- * bracket.
+ * Ruling E2's exit test over the unit-bearing permits, at least one: each has a deadline (an
+ * issued day and an era with a completion maximum); every deadline is before `asOf`; none has
+ * activity after its own deadline; none is `reinstated` (a `suspend` status does not block).
+ * `day` is the latest deadline when the test passes, else null. A project with a unit-bearing
+ * permit that has a completion day (`permitCompletionDay`) or status `complete` is excluded
+ * (`excludedComplete`, main's ruling 2: I3 rejected; a building of the project was finished, so
+ * the remaining permits do not expire it) and stays open. `permits` counts the unit-bearing
+ * permits whose deadline reads a Table B bracket (era E0-E2) and `noValuation` those of them with
+ * no recorded valuation, which took the middle bracket.
  */
 export function expiryTest(
   proj: LinkedProject,
   asOf: Day
-): { day: Day | null; permits: number; noValuation: number } {
-  const open = unitBearingPermits(proj).filter((q) => q.status !== 'complete');
+): { day: Day | null; permits: number; noValuation: number; excludedComplete: boolean } {
+  const open = unitBearingPermits(proj);
+  const excludedComplete = open.some(
+    (q) => q.status === 'complete' || permitCompletionDay(q, proj.completions) !== null
+  );
   const bracketed = open.filter((q) => {
     const era = eraOf(q);
     return era !== null && era !== 'E3';
   });
   const noValuation = bracketed.filter((q) => q.valuation === null).length;
   let day: Day | null = null;
-  let pass = open.length > 0;
+  let pass = open.length > 0 && !excludedComplete;
   for (const q of open) {
     const deadline = permitDeadline(q);
     if (deadline === null || deadline >= asOf) pass = false;
@@ -206,7 +227,7 @@ export function expiryTest(
     else if (q.status === 'reinstated') pass = false;
     else if (day === null || deadline > day) day = deadline;
   }
-  return { day: pass ? day : null, permits: bracketed.length, noValuation };
+  return { day: pass ? day : null, permits: bracketed.length, noValuation, excludedComplete };
 }
 
 /** The statutory-expiry exit: `expired` at the last entered stage, dated by the deadline (L1). */

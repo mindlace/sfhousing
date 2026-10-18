@@ -107,6 +107,9 @@ export const PR_RULES: readonly QualityRule[] = [
   },
   {
     // Ruling C2 (partner): T4d only; never on an in-flight project's history, so no T3 value.
+    // Evidence (i) reads new-construction xdht rows only (Ruling C4); evidence (ii) skips panel
+    // rows imputed for units or carried (mask bits 3 and 5). A multi-building project is dated by
+    // its first building's completion (main's ruling 4, accepted).
     id: PR.stagesCompleteFromEvidence,
     owner: OWNER,
     source: 'datasf-housing-production, scenario_panel',
@@ -118,13 +121,18 @@ export const PR_RULES: readonly QualityRule[] = [
     maskBit: null,
     label:
       'A building the records show as finished but never certified complete was treated as complete',
-    denominator: 'open histories at construction with no dead permit',
+    denominator: 'histories that entered construction',
     warnShare: 0.01,
     failShare: 0.1,
     unitsWeighted: false
   },
   {
-    // Ruling E2 (partner): SFBC 106A.4.4 Table B (pipeline/project-records/expiry.ts); T4d only.
+    // Ruling E2 (partner): SFBC 106A.4.4 Table B (pipeline/project-records/expiry.ts). Ruling I4:
+    // it also ends an in-flight project's history, which then leaves flight
+    // (projects.excludedStatutory). A history with a unit-bearing permit that has a completion
+    // day is excluded and stays open (I3 rejected), counted as
+    // histories.statutoryExpiry.excludedCompletePermit. A revised_cost under $1,000 is a
+    // placeholder; the estimate is used.
     id: PR.stagesStatutoryExpiry,
     owner: OWNER,
     source: 'datasf-permits-newcon',
@@ -136,7 +144,7 @@ export const PR_RULES: readonly QualityRule[] = [
     maskBit: null,
     label:
       'A permit past its legal completion deadline with no recorded extension was treated as expired',
-    denominator: 'open histories whose last stage is permit issued or construction',
+    denominator: 'histories that entered permit issued',
     warnShare: 0.01,
     failShare: 0.1,
     unitsWeighted: false

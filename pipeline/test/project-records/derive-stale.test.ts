@@ -153,51 +153,112 @@ describe('stale open histories (deriveProjects)', () => {
     expect(history(r, 'BP:201203010026').end.kind).toBe('open');
   });
 
-  it('T3 is unchanged and the in-flight project past its deadline is only counted', () => {
+  it('T3 is unchanged by the history-only rules', () => {
     const r = deriveProjects(staleInput());
     const raw = baseRaw();
     raw['datasf-permits-newcon'].push(EXPIRED, FINISHED, ACTIVE);
     const base = deriveProjects(baseInput(raw));
     expect(serializeProjects(r.file)).toBe(serializeProjects(base.file));
-    // A: in flight at construction, issued 2021-02-01 with no valuation: 1,080 + 720 days.
-    expect(history(r, 'PRJ:2019-000001PRJ').end.kind).toBe('open');
-    expect(r.counts['projects.inFlightPastStatutory']).toBe(1);
-    expect(r.counts['projects.inFlightPastStatutoryUnits']).toBe(24);
-    expect(r.counts['projects.inFlightSuspendedOnly']).toBe(0);
-    expect(r.counts['projects.inFlightSuspendedOnlyUnits']).toBe(0);
+    // A: in flight, $3M site permit issued 2021-02-01, due 2028: it stays in flight.
+    expect(r.file.projects.map((p) => p.id)).toContain('PRJ:2019-000001PRJ');
+    expect(r.counts['projects.excludedStatutory']).toBe(0);
+    expect(r.counts['projects.excludedSuspended']).toBe(0);
   });
 
-  it('counts in-flight projects whose unit-bearing permits are all suspended', () => {
+  /** The base raw with A's permit valued `estimated` (none when undefined) or given `status`. */
+  function withA(o: { estimated?: number; status?: string }): ProjectRecordsInput {
     const raw = baseRaw();
     for (const p of raw['datasf-permits-newcon']) {
-      if (p.permit_number === '201906010001') p.status = 'suspend';
+      if (p.permit_number !== '201906010001') continue;
+      if (o.estimated === undefined) delete p.estimated_cost;
+      else p.estimated_cost = String(o.estimated);
+      if (o.status) p.status = o.status;
     }
-    const r = deriveProjects(baseInput(raw));
-    expect(r.counts['projects.inFlightSuspendedOnly']).toBe(1);
-    expect(r.counts['projects.inFlightSuspendedOnlyUnits']).toBe(24);
-    // A suspended permit does not block the exit test.
-    expect(r.counts['projects.inFlightPastStatutory']).toBe(1);
+    return baseInput(raw);
+  }
+
+  it('an in-flight project past its deadline exits expired and leaves flight (Ruling I4)', () => {
+    // No valuation: the middle bracket, 1,080 + 720 days from 2021-02-01, past by 2026-01-06.
+    const r = deriveProjects(withA({}));
+    const h = history(r, 'PRJ:2019-000001PRJ');
+    expect(h.end).toEqual({
+      kind: 'exit',
+      stage: 'construction',
+      reason: 'expired',
+      day: day('2021-02-01') + 1080 + 720
+    });
+    expect(h.quality).toContain('pr.stages.statutory-expiry');
+    expect(r.file.projects.map((p) => p.id)).not.toContain('PRJ:2019-000001PRJ');
+    expect(r.counts['projects.excludedStatutory']).toBe(1);
+    expect(r.counts['projects.excludedStatutoryUnits']).toBe(24);
+    expect(r.counts['projects.status.ended']).toBe(
+      deriveProjects(baseInput()).counts['projects.status.ended'] + 1
+    );
+    expect(r.warnings).toContain(
+      'PRJ:2019-000001PRJ: past statutory completion deadline; expired, left flight'
+    );
+    // Its pipeline row leaves V21 with it (the records show it ended).
+    expect(r.checks.coverage.rows).toBe(deriveProjects(baseInput()).checks.coverage.rows - 1);
+  });
+
+  it('an in-flight project whose permits are all suspended leaves flight; its history stays open', () => {
+    // Valued $3M, so within its statutory time (a suspended permit past it would still expire).
+    const r = deriveProjects(withA({ estimated: 3_000_000, status: 'suspend' }));
+    expect(r.file.projects.map((p) => p.id)).not.toContain('PRJ:2019-000001PRJ');
+    expect(history(r, 'PRJ:2019-000001PRJ').end.kind).toBe('open');
+    expect(r.counts['projects.status.suspended']).toBe(1);
+    expect(r.counts['projects.excludedSuspended']).toBe(1);
+    expect(r.counts['projects.excludedSuspendedUnits']).toBe(24);
+    expect(r.counts['projects.excludedStatutory']).toBe(0);
+    expect(r.warnings).toContain('PRJ:2019-000001PRJ: every permit suspended; left flight');
+  });
+
+  it('a history with a completed unit-bearing permit is excluded from expiry (I3 rejected)', () => {
+    const raw = staleInput().raw;
+    // A second, completed building, joined to EXPIRED by one Planning record.
+    raw['datasf-permits-newcon'].push({
+      ...EXPIRED,
+      permit_number: '200407010024',
+      filed_date: ts('2004-07-01'),
+      status: 'complete',
+      completed_date: ts('2007-01-10')
+    });
+    raw['datasf-planning-projects'].push({
+      record_id: '2004-000024PRJ',
+      record_status: 'Closed',
+      block: '3512',
+      lot: '008',
+      open_date: ts('2004-04-01'),
+      building_permits: '200406010024,200407010024',
+      number_of_units_prop: '6',
+      new_construction: 'CHECKED'
+    });
+    const r = deriveProjects({ ...staleInput(), raw });
+    const id = r.histories.find((h) => h.sources.some((s) => s.id === '200406010024'))
+      ?.id as string;
+    expect(history(r, id).end.kind).toBe('open');
+    expect(r.counts['histories.statutoryExpiry.excludedCompletePermit']).toBe(1);
   });
 
   it('records each rule once: of, fired and the sample', () => {
     const r = deriveProjects(staleInput());
     const rows = reportRowsOf(r.counts);
-    // Open at construction with no terminal permit, not in flight: FINISHED only.
+    // Of the histories that entered construction (A, C and FINISHED): FINISHED.
     expect(rows.get('pr.stages.complete-from-evidence')).toMatchObject({
       fired: 1,
-      of: 1,
+      of: 3,
       sample: ['BP:201409010025']
     });
-    // Then open at permitIssued/construction, not in flight: EXPIRED and ACTIVE.
+    // Of the histories that entered permitIssued (A, C, EXPIRED, FINISHED, ACTIVE): EXPIRED.
     expect(rows.get('pr.stages.statutory-expiry')).toMatchObject({
       fired: 1,
-      of: 2,
+      of: 5,
       sample: ['BP:200406010024']
     });
-    // Their bracketed permits: EXPIRED (valued) and ACTIVE (no valuation).
+    // The bracketed permits of the histories examined (A in flight, EXPIRED, ACTIVE): ACTIVE.
     expect(rows.get('pr.stages.expiry-no-valuation')).toMatchObject({
       fired: 1,
-      of: 2,
+      of: 3,
       sample: ['BP:201203010026']
     });
     expect(rows.get('pr.stages.verified-construction')).toMatchObject({ fired: 0, of: 0 });

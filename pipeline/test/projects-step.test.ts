@@ -129,7 +129,8 @@ beforeAll(async () => {
     for (const year of [2023, 2024, 2025]) {
       const u = stub.assessorUnits(id, year);
       const b = stub.yearBuilt(id, year);
-      if (u !== null || b !== null) panel.push([id, year, stub.lienDay(year), u, null, b]);
+      const m = stub.panelImputed(id, year);
+      if (u !== null || b !== null) panel.push([id, year, stub.lienDay(year), u, null, b, m]);
     }
   }
   await createTableFromRows(
@@ -141,7 +142,8 @@ beforeAll(async () => {
       ['lien_day', 'INTEGER'],
       ['existing_units', 'INTEGER'],
       ['base_stories', 'INTEGER'],
-      ['year_built', 'INTEGER']
+      ['year_built', 'INTEGER'],
+      ['imputed', 'INTEGER']
     ],
     panel
   );

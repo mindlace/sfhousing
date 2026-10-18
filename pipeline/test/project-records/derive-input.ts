@@ -52,6 +52,7 @@ function permitRow(o: {
   site?: boolean;
   primary?: boolean;
   street?: [string, string, string];
+  estimated?: number;
 }): RawRow {
   const r: RawRow = {
     permit_number: o.number,
@@ -74,6 +75,7 @@ function permitRow(o: {
   if (o.completed) r.completed_date = ts(o.completed);
   if (o.units !== undefined) r.proposed_units = String(o.units);
   if (o.stories !== undefined) r.number_of_proposed_stories = String(o.stories);
+  if (o.estimated !== undefined) r.estimated_cost = String(o.estimated);
   return r;
 }
 
@@ -116,7 +118,9 @@ export function baseRaw(): Record<ProjectSourceId, RawRow[]> {
         units: 24,
         stories: 6,
         site: true,
-        street: ['100', 'FIXTURE', 'ST']
+        street: ['100', 'FIXTURE', 'ST'],
+        // $3M site permit: Table B 2,160 + 720 days, so A is within its statutory time.
+        estimated: 3_000_000
       }),
       permitRow({
         number: '201906010001',
@@ -129,7 +133,8 @@ export function baseRaw(): Record<ProjectSourceId, RawRow[]> {
         units: 24,
         stories: 6,
         site: true,
-        primary: false
+        primary: false,
+        estimated: 3_000_000
       }),
       permitRow({
         number: '202403150003',
@@ -320,6 +325,7 @@ export function baseInput(
     descendants: (b) => (PARCELS.has(b) ? [b] : []),
     assessorUnits: (id) => (id === '3512002' ? 1 : null),
     yearBuilt: () => null,
+    panelImputed: () => null,
     lienDay: (y) => day(`${y}-01-01`),
     latestRollYear: 2025,
     baseStories: () => 4,

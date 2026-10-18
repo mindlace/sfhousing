@@ -406,7 +406,14 @@ export function isPopulation(
 }
 
 export type InFlightStatus =
-  'inFlight' | 'staleOpen' | 'netDropped' | 'ended' | 'noUnits' | 'noParcels' | 'notPopulation';
+  | 'inFlight'
+  | 'staleOpen'
+  | 'netDropped'
+  | 'ended'
+  | 'noUnits'
+  | 'noParcels'
+  | 'notPopulation'
+  | 'suspended';
 
 /** Spec 4.7 in-flight decision; the first failing check names the status. `end` is null for pipeline-only. */
 export function inFlightStatus(
@@ -432,6 +439,12 @@ export function inFlightStatus(
   if (c.units === null || c.units < 1) return 'noUnits';
   if (proj.parcelIds.length === 0) return 'noParcels';
   if (!c.multiPhase && c.units - c.existingLatest < 1) return 'netDropped';
+  // Main's ruling 5 (Ruling I4): a project whose unit-bearing permits are all suspended leaves
+  // flight; its history stays open (no exit day is supportable).
+  if (proj.kind !== 'pipelineOnly') {
+    const bearing = unitBearingPermits(proj);
+    if (bearing.length > 0 && bearing.every((q) => q.status === 'suspend')) return 'suspended';
+  }
   return 'inFlight';
 }
 

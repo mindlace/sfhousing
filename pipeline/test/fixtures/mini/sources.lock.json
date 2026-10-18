@@ -21,10 +21,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/20d5b2113c6671051631fe8d2b8c7c8d8c957e76cfc31a8bc0a6d8d47ac0ef16.json",
-          "bytes": 2281,
+          "archiveKey": "sources/11fa697d06f27b4862f4b4aeb98c11c656c8279568766710ec2f42bce10432b7.json",
+          "bytes": 2575,
           "name": "datasf-dev-pipeline.page-000.json",
-          "sha256": "20d5b2113c6671051631fe8d2b8c7c8d8c957e76cfc31a8bc0a6d8d47ac0ef16",
+          "sha256": "11fa697d06f27b4862f4b4aeb98c11c656c8279568766710ec2f42bce10432b7",
           "url": "https://fixture.invalid/datasf-dev-pipeline.page-000.json"
         }
       ],
@@ -33,7 +33,7 @@
       "label": "DataSF SF Development Pipeline",
       "license": "CC0-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 15,
+      "rowCount": 17,
       "upstreamVersion": "fixture"
     },
     {
@@ -165,10 +165,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/108e681f16d2226e37a2ababe71b60883d515ed2edd9ed0c980530abe60aa78f.json",
-          "bytes": 5889,
+          "archiveKey": "sources/9ac44bcb5334fd7301247e69a859bf28b4b161a93fcee76ff368ef87994097b8.json",
+          "bytes": 6595,
           "name": "datasf-permits-newcon.page-000.json",
-          "sha256": "108e681f16d2226e37a2ababe71b60883d515ed2edd9ed0c980530abe60aa78f",
+          "sha256": "9ac44bcb5334fd7301247e69a859bf28b4b161a93fcee76ff368ef87994097b8",
           "url": "https://fixture.invalid/datasf-permits-newcon.page-000.json"
         }
       ],
@@ -177,7 +177,7 @@
       "label": "DataSF Building Permits (new construction)",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 18,
+      "rowCount": 20,
       "upstreamVersion": "fixture"
     },
     {

@@ -171,6 +171,16 @@ function compareAddress(a: AddressRow, b: AddressRow): number {
   );
 }
 
+/** Below this, `revised_cost` is a placeholder, not a valuation (main's ruling 4; tier 4). */
+export const PLACEHOLDER_REVISED_COST = 1000;
+
+/** Ruling E2 valuation: `revised_cost` unless missing or a placeholder, else `estimated_cost`. */
+function valuationOf(r: RawRow): number | null {
+  const revised = num(r.revised_cost);
+  if (revised !== null && revised >= PLACEHOLDER_REVISED_COST) return revised;
+  return num(r.estimated_cost);
+}
+
 function parsePermits(
   rows: RawRow[],
   dates: DateCtx,
@@ -207,8 +217,10 @@ function parsePermits(
       existingUnits: num(lead.existing_units),
       proposedUnits: num(lead.proposed_units),
       // Ruling E2: the valuation that sets the Table B bracket is the value after project review
-      // when present, else the estimate at filing.
-      valuation: num(lead.revised_cost) ?? num(lead.estimated_cost),
+      // when present, else the estimate at filing; a `revised_cost` under $1,000 is a
+      // placeholder (live, e.g. 1.0 against an estimate of 510,000) and falls back to the
+      // estimate (main's ruling 4).
+      valuation: valuationOf(lead),
       rows: group.map(addressRow).sort(compareAddress)
     };
     permits.set(number, d.done(permit, number));

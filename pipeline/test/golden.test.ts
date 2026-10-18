@@ -148,6 +148,7 @@ describe('pipeline fixture', () => {
       const stub = miniProjectInput();
       const panelUnits = new Map(rows.map((r) => [`${r.id}|${r.y}`, r.u]));
       const panelBuilt = new Map(rows.map((r) => [`${r.id}|${r.y}`, r.b]));
+      const panelMask = new Map(rows.map((r) => [`${r.id}|${r.y}`, r.m]));
       for (const id of MINI_PARCELS) {
         for (const y of [2023, 2024, 2025]) {
           expect(stub.assessorUnits(id, y), `${id} ${y}`).toBe(
@@ -155,6 +156,9 @@ describe('pipeline fixture', () => {
           );
           expect(stub.yearBuilt(id, y), `${id} ${y} year_built`).toBe(
             panelBuilt.get(`${id}|${y}`) ?? null
+          );
+          expect(stub.panelImputed(id, y), `${id} ${y} imputed`).toBe(
+            panelMask.get(`${id}|${y}`) ?? null
           );
         }
       }
@@ -495,7 +499,8 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
     expect(c['quality.pr.multiphase.score-only.fired']).toBe(1);
     // As computed: M23's two split rows list projects whose records show them complete.
     expect(c['quality.pr.pipeline.records-win.fired']).toBe(2);
-    expect(c['quality.pr.pipeline.records-win.of']).toBe(10);
+    // M27 and M28 (Ruling I4) match their pipeline rows too; records-win reads the §4.6 end.
+    expect(c['quality.pr.pipeline.records-win.of']).toBe(12);
     // M23's two split rows omit unitsAt.filed (Ruling S2).
     expect(c['quality.pr.units.split-filed.fired']).toBe(2);
     expect(c['projects.excludedNoUnits']).toBe(900);

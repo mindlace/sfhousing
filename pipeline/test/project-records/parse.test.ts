@@ -420,6 +420,19 @@ describe('parseAll', () => {
     });
   });
 
+  it('a revised_cost under $1,000 is a placeholder: the valuation falls back to estimated_cost', () => {
+    const v = (row: Record<string, string>) =>
+      parseAll(
+        raw({ 'datasf-permits-newcon': [{ permit_number: 'P1', ...row }] }),
+        ASOF
+      ).permits.get('P1')!.valuation;
+    expect(v({ revised_cost: '1.0', estimated_cost: '510000.0' })).toBe(510_000);
+    expect(v({ revised_cost: '999.99', estimated_cost: '200000.0' })).toBe(200_000);
+    expect(v({ revised_cost: '1000.0', estimated_cost: '200000.0' })).toBe(1000);
+    expect(v({ revised_cost: '0.0' })).toBeNull();
+    expect(v({ estimated_cost: '75000.0' })).toBe(75_000);
+  });
+
   it('takes permit-level fields from the primary row, in either input order', () => {
     const primary = {
       permit_number: 'P1',

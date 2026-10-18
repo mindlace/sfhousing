@@ -32,12 +32,15 @@
  * | M24 BP 200406010024    | lot 011; issued 2005, $200k, still issued: expired at issued 2006-05-25   |
  * | M25 BP 201409010025    | lot 011; started 2015, still issued; xdht completion 2018: complete       |
  * | M26 BP 201112010026    | lot 011; issued 2012, no valuation; activity 2016 after deadline: open    |
+ * | M27 BP 201410010027    | lot 011; in the pipeline, past its 2020 deadline: expired, leaves flight  |
+ * | M28 BP 202503010028    | lot 011; in the pipeline, every permit suspended: leaves flight, open     |
  * | xdht extras            | forms 2 (+3), 3 (+2) and 6 (-1): rhnaCompletedNet 4                       |
  *
  * `enrichment/construction-verified.json` (Ruling C3): M7 `dead` (exit withdrawn at permitFiled on
  * the check day), M26 `unknown` (no change), and an id that names no history (a build warning).
- * M1 and M8 are in flight past their statutory deadline (no valuation, middle bracket), so they
- * are only counted (`projects.inFlightPastStatutory` 2, 28 units).
+ * M1 and M8 are $3M site permits, so within their statutory time and still in flight (Ruling I4
+ * ends M27 instead).
+ * The panel's `imputed` masks (`PANEL_IMPUTED`) mark lot 3 and 4's RA1 rows (bits 3 and 5).
  *
  * Every pipeline row's `new_pipeline_units` equals its project's units, except M16's (220 against
  * the record's 200), so V21 coverage is below 1.0 (spec 4.9 V21).
@@ -163,6 +166,8 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       issued: '2021-02-01',
       fcd: '2021-05-03',
       completed: '1909-06-02',
+      // $3M site permit: Table B 2,160 + 720 days from 2021-02-01, within its statutory time.
+      estimatedCost: 3000000,
       units: 24,
       stories: 6,
       street: ['100', 'FIXTURE', 'ST']
@@ -177,6 +182,8 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       issued: '2021-02-01',
       fcd: '2021-05-03',
       completed: '1909-06-02',
+      // $3M site permit: Table B 2,160 + 720 days from 2021-02-01, within its statutory time.
+      estimatedCost: 3000000,
       units: 24,
       stories: 6,
       primary: false
@@ -223,6 +230,8 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       statusDate: '2021-03-01',
       filed: '2020-06-01',
       issued: '2021-03-01',
+      // $3M site permit: within its statutory time (Ruling I4 would otherwise end it).
+      estimatedCost: 3000000,
       units: 4
     }),
     // M10: permit A withdrawn, then the refiled permit B.
@@ -370,6 +379,31 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       filed: '2011-12-01',
       issued: '2012-03-01',
       lastActivity: '2016-01-04',
+      units: 2
+    }),
+    // M27 (Ruling I4): issued 2015 (E2, $500k: 1,080 + 720 days, due 2020-03-06), still
+    // `issued`, and listed by the pipeline, so in flight until the statutory exit ends it.
+    permit({
+      number: '201410010027',
+      type: '1',
+      lot: '011',
+      status: 'issued',
+      statusDate: '2015-04-01',
+      filed: '2014-10-01',
+      issued: '2015-04-01',
+      estimatedCost: 500000,
+      units: 2
+    }),
+    // M28 (Ruling I4): every permit suspended; in the pipeline; within its statutory time.
+    permit({
+      number: '202503010028',
+      type: '1',
+      lot: '011',
+      status: 'suspend',
+      statusDate: '2025-08-01',
+      filed: '2025-03-01',
+      issued: '2025-06-02',
+      estimatedCost: 400000,
       units: 2
     })
   ],
@@ -759,6 +793,21 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       bpaNo: '201102020023',
       units: 60
     }),
+    // M27 and M28 (Ruling I4): matched by their permits, so not stale.
+    pipeline({
+      blklot: '3512011',
+      status: 'BP Issued',
+      statusDate: '2026-04-01',
+      bpaNo: '201410010027',
+      units: 2
+    }),
+    pipeline({
+      blklot: '3512011',
+      status: 'BP Issued',
+      statusDate: '2026-05-01',
+      bpaNo: '202503010028',
+      units: 2
+    }),
     // M20 (DA netting, score-only): M11 (3 units, lot 006, no pipeline row) nets it to 7.
     pipeline({
       blklot: '3512006',
@@ -894,6 +943,22 @@ const PANEL_YEAR_BUILT: Record<string, number> = {
   '8711023C|2025': 1920
 };
 
+/**
+ * The panel's non-zero `imputed` masks per `<parcel>|<roll year>`; every other panel row (a key of
+ * PANEL_YEAR_BUILT) has 0. golden.test.ts checks this stub against the built panel.
+ */
+const PANEL_IMPUTED: Record<string, number> = {
+  '0026T001A|2024': 8,
+  '3512005|2024': 1,
+  '3512007|2024': 64,
+  '3512007|2025': 64,
+  '3512011|2024': 4,
+  '3512011|2025': 4,
+  '8711023C|2023': 8,
+  '8711023C|2024': 40,
+  '8711023C|2025': 8
+};
+
 /** The panel's `lien_day`: 1 January of the roll year (pipeline/sql/81_scenario_features.sql). */
 export const miniLienDay = (y: number): Day | null =>
   y >= 2023 && y <= 2025 ? Date.UTC(y, 0, 1) / 86_400_000 : null;
@@ -915,6 +980,10 @@ export function miniProjectInput(): ProjectRecordsInput {
     descendants: descendantsIndex(attrsRows(), { parcelIds: MINI_PARCELS, lineage }),
     assessorUnits: (id, year) => units.get(`${id}|${year}`) ?? null,
     yearBuilt: (id, year) => PANEL_YEAR_BUILT[`${id}|${year}`] ?? null,
+    panelImputed: (id, year) => {
+      const k = `${id}|${year}`;
+      return k in PANEL_YEAR_BUILT ? (PANEL_IMPUTED[k] ?? 0) : null;
+    },
     lienDay: miniLienDay,
     latestRollYear: 2025,
     baseStories: () => null,
