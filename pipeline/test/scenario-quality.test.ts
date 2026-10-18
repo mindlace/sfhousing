@@ -390,6 +390,19 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
       'hostable parcels',
       false
     ],
+    // F9: the "anything else → no cap" default, counted (kind missing → the 0.05 default).
+    [
+      'sd.zoning.unlisted',
+      'datasf-parcel-attrs',
+      'base_density_cap',
+      'missing',
+      'default',
+      4,
+      4,
+      null,
+      'hostable parcels',
+      false
+    ],
     [
       'sd.yield.nonmonotone',
       'parcels.bin',
@@ -944,7 +957,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
 
   it('every scenario-data rule reports once (recordQuality throws on a second report)', () => {
     const ids = QUALITY_RULES.filter((r) => r.owner === 'scenario-data').map((r) => r.id);
-    expect(ids).toHaveLength(39);
+    expect(ids).toHaveLength(40);
     const got = Object.keys(s.quality)
       .filter((k) => k.endsWith('.fired'))
       .map((k) => k.slice('quality.'.length, -'.fired'.length))
@@ -1189,6 +1202,34 @@ describe('the vacant-lot definition rules on a synthetic copy of mini', () => {
     expect(pick(await feature(s, '3512010', 2025))).toEqual(
       pick(await feature(s0, '3512010', 2025))
     );
+  });
+});
+
+describe('sd.zoning.unlisted on a synthetic copy of mini', () => {
+  let s: Synthetic;
+  beforeAll(async () => {
+    // An unlisted code (UMU) on lot 10 (hostable) and lot 7 (ineligible, so not hostable).
+    s = await synthetic('zu', [
+      `UPDATE src_parcel_attrs SET zoning_code = 'UMU' WHERE mapblklot IN ('3512010', '3512007')`
+    ]);
+  });
+
+  it('counts hostable parcels with an unlisted code (no density cap); the value stays null', async () => {
+    const hostable = s.scenarioCounts['scenario.hostable'];
+    expect(hostable).toBe(8);
+    // Mini's lot 13 is C-3-O (unlisted, hostable) already; lot 10 joins it.
+    expect(await reported(s, 'sd.zoning.unlisted')).toEqual({
+      fired: 2,
+      of: hostable,
+      sample: ['3512010', '3512013']
+    });
+    expect((await feature(s, '3512010', 2025)).base_density_cap).toBeNull();
+  });
+
+  it('counts the fires by code, and keeps the all-parcel rule count', () => {
+    expect(s.scenarioCounts['scenario.density_cap.unlisted.UMU']).toBe(1);
+    expect(s.scenarioCounts['scenario.density_cap.unlisted.C-3-O']).toBe(1);
+    expect(s.scenarioCounts['scenario.density_cap.rule.unlisted']).toBeGreaterThanOrEqual(2);
   });
 });
 

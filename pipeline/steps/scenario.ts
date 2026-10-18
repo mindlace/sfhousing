@@ -565,7 +565,12 @@ export async function writeScenario(a: {
   const noRow: string[] = [];
   /** sd.landuse.none-with-units: no land-use row, latest-roll units > 0, so eligible. */
   const noneWithUnits: string[] = [];
-  const zoning = { split: [] as string[], genericNc: [] as string[], missing: [] as string[] };
+  const zoning = {
+    split: [] as string[],
+    genericNc: [] as string[],
+    missing: [] as string[],
+    unlisted: [] as string[]
+  };
   /** Parcels per tier-4 cap rule, hostable or not, for the unverified-districts warning. */
   const capRuleAll = { split: 0, genericNc: 0 };
   const nonmonotone: string[] = [];
@@ -752,9 +757,16 @@ export async function writeScenario(a: {
     // The tier-4 cap rules (main ruling 4c): sd.zoning.split-code and sd.zoning.generic-nc fire
     // on hostable parcels (their denominator, RA1); unlisted districts keep their scenario count.
     // sd.zoning.missing (observation) counts hostable parcels with no zoning code (rule 'none').
+    // sd.zoning.unlisted (F9) counts hostable parcels whose code the cap table does not list.
     const rule = densityCapRule(d.zoning_code);
-    if (rule === 'unlisted') inc('density_cap.rule.unlisted');
-    else if (rule === 'none') {
+    if (rule === 'unlisted') {
+      inc('density_cap.rule.unlisted');
+      // sd.zoning.unlisted (F9): fires on hostable parcels, counted by code.
+      if (p.hostable[i]) {
+        zoning.unlisted.push(rec.id);
+        inc(`density_cap.unlisted.${d.zoning_code}`);
+      }
+    } else if (rule === 'none') {
       if (p.hostable[i]) zoning.missing.push(rec.id);
     } else if (rule === 'split' || rule === 'generic-nc') {
       const key = rule === 'split' ? 'split' : 'genericNc';
@@ -889,6 +901,11 @@ export async function writeScenario(a: {
     fired: zoning.genericNc.length,
     of: hostable,
     sample: zoning.genericNc
+  });
+  recordQuality(a.buildCounts, 'sd.zoning.unlisted', {
+    fired: zoning.unlisted.length,
+    of: hostable,
+    sample: zoning.unlisted
   });
   recordQuality(a.buildCounts, 'sd.zoning.missing', {
     fired: zoning.missing.length,

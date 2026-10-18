@@ -321,6 +321,29 @@ export const SD_RULES: readonly QualityRule[] = [
     ...MISSING_SHARES,
     unitsWeighted: false
   },
+  // F9 (comprehension gate): densityCapRule's 'unlisted' branch defaults every zoning code the
+  // density-cap table does not list to "no cap" (spec §4.4 "anything else → null"), and nothing
+  // counted it. A missing-value default at the kind default shares (warn 0.05, fail 0.10). The
+  // field is the panel/T11 `base_density_cap`, which stays null; source and field name where the
+  // value comes from and what the default fills. Fires are counted by code in
+  // `scenario.density_cap.unlisted.<code>`.
+  {
+    ...SD,
+    id: 'sd.zoning.unlisted',
+    source: 'datasf-parcel-attrs',
+    field: 'base_density_cap',
+    kind: 'missing',
+    action: 'default',
+    tier: 4,
+    valueTier: 4,
+    maskBit: null,
+    label:
+      'A zoning code the density-cap table does not list (RTO, UMU, C-3, PDR, P and others) ' +
+      'has no density cap',
+    denominator: 'hostable parcels',
+    ...MISSING_SHARES,
+    unitsWeighted: false
+  },
   // Spec-stated behaviour, counted (final fix wave, review Important 1; observe · none, the 0.01
   // default): spec §4.5 step 3.1 "Else 0, which reads as 'no building' and sets no bit". It fires
   // where the parcel-year's rows have no stories at all (a source NULL, or nulled by
