@@ -1,0 +1,697 @@
+{
+  "schema": 1,
+  "asOf": 20736,
+  "transitions": {
+    "discretionary": {
+      "preApplication": {
+        "months": 1,
+        "advance": [0.1],
+        "exit": {
+          "withdrawn": [0.02]
+        },
+        "tail": {
+          "advance": 0.1,
+          "exit": {
+            "withdrawn": 0.02
+          }
+        },
+        "provenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        },
+        "tailProvenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        }
+      },
+      "filed": {
+        "months": 1,
+        "advance": [0.1],
+        "exit": {
+          "withdrawn": [0.02]
+        },
+        "tail": {
+          "advance": 0.1,
+          "exit": {
+            "withdrawn": 0.02
+          }
+        },
+        "provenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        },
+        "tailProvenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        }
+      },
+      "entitled": {
+        "months": 1,
+        "advance": [0.1],
+        "exit": {
+          "withdrawn": [0.02]
+        },
+        "tail": {
+          "advance": 0.1,
+          "exit": {
+            "withdrawn": 0.02
+          }
+        },
+        "provenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        },
+        "tailProvenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        }
+      },
+      "permitFiled": {
+        "months": 12,
+        "advance": [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6],
+        "exit": {
+          "expired": [
+            0.008333, 0.016667, 0.025, 0.033333, 0.041667, 0.05, 0.058333, 0.066667, 0.075,
+            0.083333, 0.091667, 0.1
+          ]
+        },
+        "tail": {
+          "advance": 0.05,
+          "exit": {
+            "expired": 0.01
+          }
+        },
+        "provenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        },
+        "tailProvenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        }
+      },
+      "permitIssued": {
+        "months": 1,
+        "advance": [0.1],
+        "exit": {
+          "withdrawn": [0.02]
+        },
+        "tail": {
+          "advance": 0.1,
+          "exit": {
+            "withdrawn": 0.02
+          }
+        },
+        "provenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        },
+        "tailProvenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        }
+      },
+      "construction": {
+        "months": 1,
+        "advance": [0.1],
+        "exit": {
+          "withdrawn": [0.02]
+        },
+        "tail": {
+          "advance": 0.1,
+          "exit": {
+            "withdrawn": 0.02
+          }
+        },
+        "provenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        },
+        "tailProvenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        }
+      }
+    },
+    "streamlined": {
+      "preApplication": {
+        "months": 1,
+        "advance": [0.1],
+        "exit": {
+          "withdrawn": [0.02]
+        },
+        "tail": {
+          "advance": 0.1,
+          "exit": {
+            "withdrawn": 0.02
+          }
+        },
+        "provenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        },
+        "tailProvenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        }
+      },
+      "filed": {
+        "months": 1,
+        "advance": [0.1],
+        "exit": {
+          "withdrawn": [0.02]
+        },
+        "tail": {
+          "advance": 0.1,
+          "exit": {
+            "withdrawn": 0.02
+          }
+        },
+        "provenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        },
+        "tailProvenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        }
+      },
+      "entitled": {
+        "months": 1,
+        "advance": [0.1],
+        "exit": {
+          "withdrawn": [0.02]
+        },
+        "tail": {
+          "advance": 0.1,
+          "exit": {
+            "withdrawn": 0.02
+          }
+        },
+        "provenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        },
+        "tailProvenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        }
+      },
+      "permitFiled": {
+        "months": 1,
+        "advance": [0.1],
+        "exit": {
+          "withdrawn": [0.02]
+        },
+        "tail": {
+          "advance": 0.1,
+          "exit": {
+            "withdrawn": 0.02
+          }
+        },
+        "provenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        },
+        "tailProvenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        }
+      },
+      "permitIssued": {
+        "months": 1,
+        "advance": [0.1],
+        "exit": {
+          "withdrawn": [0.02]
+        },
+        "tail": {
+          "advance": 0.1,
+          "exit": {
+            "withdrawn": 0.02
+          }
+        },
+        "provenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        },
+        "tailProvenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        }
+      },
+      "construction": {
+        "months": 1,
+        "advance": [0.1],
+        "exit": {
+          "withdrawn": [0.02]
+        },
+        "tail": {
+          "advance": 0.1,
+          "exit": {
+            "withdrawn": 0.02
+          }
+        },
+        "provenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        },
+        "tailProvenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        }
+      }
+    },
+    "permitOnly": {
+      "preApplication": {
+        "months": 1,
+        "advance": [0.1],
+        "exit": {
+          "withdrawn": [0.02]
+        },
+        "tail": {
+          "advance": 0.1,
+          "exit": {
+            "withdrawn": 0.02
+          }
+        },
+        "provenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        },
+        "tailProvenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        }
+      },
+      "permitFiled": {
+        "months": 1,
+        "advance": [0.1],
+        "exit": {
+          "withdrawn": [0.02]
+        },
+        "tail": {
+          "advance": 0.1,
+          "exit": {
+            "withdrawn": 0.02
+          }
+        },
+        "provenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        },
+        "tailProvenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        }
+      },
+      "permitIssued": {
+        "months": 1,
+        "advance": [0.1],
+        "exit": {
+          "withdrawn": [0.02]
+        },
+        "tail": {
+          "advance": 0.1,
+          "exit": {
+            "withdrawn": 0.02
+          }
+        },
+        "provenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        },
+        "tailProvenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        }
+      },
+      "construction": {
+        "months": 1,
+        "advance": [0.1],
+        "exit": {
+          "withdrawn": [0.02]
+        },
+        "tail": {
+          "advance": 0.1,
+          "exit": {
+            "withdrawn": 0.02
+          }
+        },
+        "provenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        },
+        "tailProvenance": {
+          "tier": 4,
+          "label": "test fixture",
+          "sources": [
+            {
+              "label": "stage-calibration spec §4.12",
+              "url": "https://github.com/mindlace/sfhousing"
+            }
+          ],
+          "method": "hand-made test fixture"
+        }
+      }
+    }
+  },
+  "initiation": {
+    "kind": "logit-monthly",
+    "intercept": -6,
+    "terms": [
+      {
+        "feature": "potentialRatio",
+        "bins": [0, 2, 5],
+        "coef": [0, 0.5, 1]
+      }
+    ],
+    "provenance": {
+      "tier": 4,
+      "label": "test fixture",
+      "sources": [
+        {
+          "label": "stage-calibration spec §4.12",
+          "url": "https://github.com/mindlace/sfhousing"
+        }
+      ],
+      "method": "hand-made test fixture"
+    }
+  },
+  "pathwayForNew": {
+    "discretionary": 0.6,
+    "streamlined": 0.3,
+    "permitOnly": 0.1,
+    "provenance": {
+      "tier": 4,
+      "label": "test fixture",
+      "sources": [
+        {
+          "label": "stage-calibration spec §4.12",
+          "url": "https://github.com/mindlace/sfhousing"
+        }
+      ],
+      "method": "hand-made test fixture"
+    }
+  },
+  "ppaShare": {
+    "discretionary": 0,
+    "streamlined": 0,
+    "permitOnly": 0,
+    "provenance": {
+      "tier": 4,
+      "label": "test fixture",
+      "sources": [
+        {
+          "label": "stage-calibration spec §4.12",
+          "url": "https://github.com/mindlace/sfhousing"
+        }
+      ],
+      "method": "hand-made test fixture"
+    }
+  },
+  "size": {
+    "fillLevels": [0.25, 0.5, 0.75, 0.9, 1],
+    "byEnvelope": [
+      {
+        "maxStoriesUpTo": 999,
+        "probs": [0.1, 0.2, 0.3, 0.2, 0.2]
+      }
+    ],
+    "provenance": {
+      "tier": 4,
+      "label": "test fixture",
+      "sources": [
+        {
+          "label": "stage-calibration spec §4.12",
+          "url": "https://github.com/mindlace/sfhousing"
+        }
+      ],
+      "method": "hand-made test fixture"
+    }
+  },
+  "revision": {
+    "at": [
+      {
+        "stage": "permitFiled",
+        "probability": 0.2,
+        "ratio": {
+          "edges": [0.5, 1, 2],
+          "probs": [0.5, 0.5]
+        }
+      }
+    ],
+    "provenance": {
+      "tier": 4,
+      "label": "test fixture",
+      "sources": [
+        {
+          "label": "stage-calibration spec §4.12",
+          "url": "https://github.com/mindlace/sfhousing"
+        }
+      ],
+      "method": "hand-made test fixture"
+    }
+  },
+  "streamlinedForLocalProgram": {
+    "tier": 4,
+    "label": "test fixture",
+    "sources": [
+      {
+        "label": "stage-calibration spec §4.12",
+        "url": "https://github.com/mindlace/sfhousing"
+      }
+    ],
+    "method": "hand-made test fixture"
+  },
+  "phaseGap": {
+    "days": [365, 730],
+    "provenance": {
+      "tier": 4,
+      "label": "test fixture",
+      "sources": [
+        {
+          "label": "stage-calibration spec §4.12",
+          "url": "https://github.com/mindlace/sfhousing"
+        }
+      ],
+      "method": "hand-made test fixture"
+    }
+  }
+}

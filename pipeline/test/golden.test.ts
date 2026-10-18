@@ -6,6 +6,7 @@ import { parseManifest } from '../../src/lib/data/manifest';
 import { FILL_LEVELS, type ScenarioParcels } from '../../src/lib/data/scenario-codec';
 import { PATHWAYS, STAGE_ORDER } from '../../src/lib/timelapse/types';
 import { GOLDEN_DERIVED, fixture } from '../steps/fixture';
+import { CALIBRATION_JSON } from '../steps/calibration';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, dumpPermits } from '../steps/projects';
 import { PARCELS_BIN, SCENARIO_DUMP, formatScenarioDump, readParcelsBin } from '../steps/scenario';
 import { which } from '../lib/exec';
@@ -31,7 +32,8 @@ const COMPARED = (f: string) =>
   f === 'transit.json' ||
   f === 'manifest.json' ||
   f === 'report.json' ||
-  f === PROJECTS_JSON;
+  f === PROJECTS_JSON ||
+  f === CALIBRATION_JSON;
 const stripBuiltAt = (s: string) => s.replace(/"builtAt":"[^"]*"/, '"builtAt":""');
 const decodeBin = (dir: string) => readParcelsBin(join(dir, PARCELS_BIN));
 const dumpOf = (dir: string) => formatScenarioDump(decodeBin(dir));
@@ -69,6 +71,13 @@ describe('pipeline fixture', () => {
       readFileSync(join(golden, 'derived', GOLDEN_DERIVED.histories), 'utf8')
     );
     expect(histories(da)).toBe(histories(db));
+    // Stage-calibration spec §4.10: the calibration report byte for byte, and across two builds.
+    const report = (root: string) =>
+      readFileSync(join(root, 'fixture-0', GOLDEN_DERIVED.calibrationReport), 'utf8');
+    expect(report(da)).toBe(
+      readFileSync(join(golden, 'derived', GOLDEN_DERIVED.calibrationReport), 'utf8')
+    );
+    expect(report(da)).toBe(report(db));
     const permits = async (root: string) =>
       JSON.parse(await dumpPermits(join(root, 'fixture-0', PERMITS_PARQUET))) as Record<
         string,
@@ -521,9 +530,19 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
     );
   });
 
-  it('keeps scenarios out of the manifest until calibration.json exists', () => {
-    const m = JSON.parse(readFileSync(join(e2e, 'manifest.json'), 'utf8')) as object;
-    expect(existsSync(join(e2e, PROJECTS_JSON))).toBe(true);
-    expect('scenarios' in m).toBe(false);
+  it('names the three scenario files in the manifest', () => {
+    const m = JSON.parse(readFileSync(join(e2e, 'manifest.json'), 'utf8')) as {
+      scenarios?: unknown;
+    };
+    for (const f of ['parcels.bin', 'projects.json', 'calibration.json']) {
+      expect(existsSync(join(e2e, 'scenarios/fzp', f)), f).toBe(true);
+    }
+    expect(m.scenarios).toEqual({
+      fzp: {
+        parcels: '/data/fixture-0/scenarios/fzp/parcels.bin',
+        projects: '/data/fixture-0/scenarios/fzp/projects.json',
+        calibration: '/data/fixture-0/scenarios/fzp/calibration.json'
+      }
+    });
   });
 });

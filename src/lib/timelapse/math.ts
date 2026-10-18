@@ -1,4 +1,4 @@
-/**
+/*!
  * Deterministic `exp` and `log` for the FZP timelapse (stage-calibration spec 4.1a).
  *
  * Line-for-line TypeScript ports of Sun fdlibm 5.3 `__ieee754_exp` (e_exp.c) and

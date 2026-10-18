@@ -8,6 +8,46 @@
     "buildings.kept": 10,
     "buildings.outside_nb_dropped": 1,
     "buildings.underground_dropped": 1,
+    "calibration.bytes": 35448,
+    "calibration.histories": 20,
+    "calibration.method.permitOnlyPre2015": 1,
+    "calibration.method.ppaPooled": 2,
+    "calibration.method.sizeOverEnvelope": 0,
+    "calibration.noFcd.flaggedPooled": 0,
+    "calibration.panel.events": 2,
+    "calibration.panel.eventsCovered": 5,
+    "calibration.panel.eventsOffPanel": 9,
+    "calibration.panel.exposureMonths": 78,
+    "calibration.panel.noParcel": 0,
+    "calibration.panel.noPermit": 0,
+    "calibration.panel.noStart": 0,
+    "calibration.panel.outOfRange": 3,
+    "calibration.panel.parcelYears": 17,
+    "calibration.panel.parcelYearsExcluded": 20,
+    "calibration.pathwayNull": 2,
+    "calibration.purge.windows": 0,
+    "calibration.qualifying": 19,
+    "calibration.rung3": 5,
+    "calibration.spells.discretionary.construction": 3,
+    "calibration.spells.discretionary.entitled": 4,
+    "calibration.spells.discretionary.filed": 5,
+    "calibration.spells.discretionary.permitFiled": 4,
+    "calibration.spells.discretionary.permitIssued": 3,
+    "calibration.spells.permitOnly.construction": 1,
+    "calibration.spells.permitOnly.permitFiled": 6,
+    "calibration.spells.permitOnly.permitIssued": 3,
+    "calibration.spells.pooled.construction": 6,
+    "calibration.spells.pooled.entitled": 4,
+    "calibration.spells.pooled.filed": 8,
+    "calibration.spells.pooled.permitFiled": 13,
+    "calibration.spells.pooled.permitIssued": 8,
+    "calibration.spells.pooled.preApplication": 2,
+    "calibration.spells.streamlined.construction": 0,
+    "calibration.spells.streamlined.entitled": 0,
+    "calibration.spells.streamlined.filed": 1,
+    "calibration.spells.streamlined.permitFiled": 0,
+    "calibration.spells.streamlined.permitIssued": 0,
+    "calibration.window.preRoll": 0,
     "chunks.count": 1,
     "chunks.empty_polygon": 0,
     "chunks.label_outside_local": 0,
@@ -55,7 +95,7 @@
     "link.ppaOnly": 1,
     "link.satellites": 0,
     "link.splitComponents": 1,
-    "manifest.bytes": 4798,
+    "manifest.bytes": 4994,
     "multiphase.descendants.2007.0001PRX": 1,
     "multiphase.descendants.2010.0002PRX": 1,
     "multiphase.descendants.2012-000020PRX": 1,
@@ -178,6 +218,18 @@
     "quality.pr.units.capacity.unitsOf": 5564,
     "quality.pr.units.split-filed.fired": 2,
     "quality.pr.units.split-filed.of": 13,
+    "quality.sc.exit.last-stage.fired": 0,
+    "quality.sc.exit.last-stage.of": 4,
+    "quality.sc.exit.purge-censor.fired": 0,
+    "quality.sc.exit.purge-censor.of": 4,
+    "quality.sc.revision.ratio-clamp.fired": 0,
+    "quality.sc.revision.ratio-clamp.of": 0,
+    "quality.sc.stages.gap-impute.fired": 0,
+    "quality.sc.stages.gap-impute.of": 19,
+    "quality.sc.stages.no-fcd-duration.fired": 0,
+    "quality.sc.stages.no-fcd-duration.of": 19,
+    "quality.sc.stages.running-max.fired": 0,
+    "quality.sc.stages.running-max.of": 19,
     "quality.sd.attrs.active-unknown.fired": 0,
     "quality.sd.attrs.active-unknown.of": 19,
     "quality.sd.attrs.added-date-cast.fired": 0,
@@ -392,7 +444,7 @@
       "ok": true
     },
     {
-      "detail": "manifest 4798/64000 B; neighborhoods 478/150000 B",
+      "detail": "manifest 4994/64000 B; neighborhoods 478/150000 B",
       "id": "V11",
       "ok": true
     },
@@ -462,6 +514,31 @@
       "ok": true
     },
     {
+      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), 35448 B",
+      "id": "V25",
+      "ok": true
+    },
+    {
+      "detail": "every occupiable pathway x stage cell present (13 in flight)",
+      "id": "V26",
+      "ok": true
+    },
+    {
+      "detail": "sampling reproduces every table within 0.005 (100000 draws per cell)",
+      "id": "V27",
+      "ok": true
+    },
+    {
+      "detail": "fixture: back-cast gate is live-only",
+      "id": "V28",
+      "ok": true
+    },
+    {
+      "detail": "two in-run computations are byte-identical",
+      "id": "V29",
+      "ok": true
+    },
+    {
       "detail": "every registered rule reports; shares not checked on this profile",
       "id": "V30",
       "ok": true
@@ -491,6 +568,15 @@
     "2025-000017PRX: linked to 2025-000017PRJ; multiphase entry unused",
     "2026-000018PRJ: no status date and no open Planning record on its lot; dropped",
     "2012-000020PRX: no free DA parcel; score-only",
-    "rhna.xdhtLagDays 633 > 120: xdht-4php completions look stale"
+    "rhna.xdhtLagDays 633 > 120: xdht-4php completions look stale",
+    "rung 3 (literature synthetic): discretionary preApplication",
+    "rung 3 (literature synthetic): streamlined preApplication",
+    "rung 3 (literature synthetic): permitOnly preApplication",
+    "rung 3 (literature synthetic): discretionary entitled",
+    "rung 3 (literature synthetic): streamlined entitled",
+    "θ diagnostic: discretionary permitFiled max |scaled − own 2015+ AJ| = 0.2244 > 0.05",
+    "θ diagnostic: permitOnly permitFiled max |scaled − own 2015+ AJ| = 0.2132 > 0.05",
+    "θ diagnostic: discretionary permitIssued max |scaled − own 2015+ AJ| = 0.3915 > 0.05",
+    "initiation: FZP expected filings 0 per year vs historical mean 0.1053 (ratio 0) outside the [0.5, 20] band"
   ]
 }
