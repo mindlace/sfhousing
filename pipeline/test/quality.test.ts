@@ -326,13 +326,16 @@ describe('checkQuality', () => {
       warnings: []
     });
   });
-  it('the public checkQuality uses the real registry: every rule must report', () => {
+  it('the public checkQuality uses the real registry: every sd.* and pr.* rule must report', () => {
     const c = checkQuality({ other: 1 }, { shares: true });
     expect(c.ok).toBe(false);
-    expect(c.failures).toHaveLength(QUALITY_RULES.length);
+    expect(c.failures).toEqual(
+      QUALITY_RULES.map((x) => expect.stringMatching(`^${x.id}: not reported`))
+    );
     expect(c.failures).toContain(
       'sd.roll.units-capacity: not reported (no .fired, .of, .units, .unitsOf)'
     );
+    expect(c.failures.some((f) => f.startsWith('pr.'))).toBe(true);
   });
   it('fails on a missing count', () => {
     for (const k of ['fired', 'of', 'units', 'unitsOf']) {
@@ -460,12 +463,17 @@ describe('writeQualityReport', () => {
     expect(rows[1]).toMatch(/\| 0 \/ 12 \| — \| 0\.00% \|/);
     expect(rows[2]).toMatch(/\| 30 \/ 1000 \| 50 \/ 9000 \| 3\.00% rows, 0\.56% units \|/);
   });
-  it('the public writeQualityReport lists every registered rule', () => {
+  it('the public writeQualityReport lists every registered rule, unreported with no counts', () => {
     const file = join(dir, 'e', 'quality-report.md');
     writeQualityReport(file, 'fixture-0', {});
     const md = readFileSync(file, 'utf8');
-    for (const r of QUALITY_RULES) expect(md).toContain(`| \`${r.id}\` |`);
+    expect(md).not.toMatch(/No rules are registered/);
+    for (const r of QUALITY_RULES) {
+      expect(md, r.id).toContain(`| \`${r.id}\` |`);
+      expect(md, r.id).toContain(`### ${r.id}\n\nNot reported.`);
+    }
     expect(md).toMatch(/`sd\.roll\.units-capacity` \|.*\| not reported \|/);
+    expect(md).toMatch(/`pr\.units\.capacity` \|.*\| not reported \|/);
   });
 });
 

@@ -181,7 +181,8 @@ export async function build(
     const asOf = asOfFromLock(lock);
     const derivedDir = join(opts.derivedRoot ?? DERIVED_ROOT, datasetVersion);
     // The build's single report `counts` (T14): every owner records its `recordQuality` counts
-    // into this object, and `writeQualityReport` and V30 read it. The other counts join it below.
+    // into this object, and `writeQualityReport` and V30 read it. The project-records step writes
+    // all its counts into it; the other counts join it below.
     const counts: Record<string, number> = {};
     const scenario = await report.time('scenario', async () =>
       writeScenario({
@@ -208,7 +209,8 @@ export async function build(
         derivedDir,
         multiphasePath: fixtureMode ? MULTIPHASE.fixture : MULTIPHASE.live,
         profile: opts.profile,
-        asOf
+        asOf,
+        counts
       })
     );
     report.warnings.push(...projects.warnings);
@@ -259,7 +261,6 @@ export async function build(
       ...chunkCounts(chunks),
       ...transit.counts,
       ...scenario.counts,
-      ...projects.counts,
       ...Object.fromEntries(overtureContrib.map((o) => [`overture.contrib.${o.dataset}`, o.n])),
       'units.total': totals.units,
       'parcels.height_max_m': totals.hmax,

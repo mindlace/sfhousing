@@ -25,7 +25,8 @@ const T3_KEYS = [
   'storiesTier',
   'multiPhase',
   'phases',
-  'sources'
+  'sources',
+  'quality'
 ];
 
 const T4D_KEYS = [
@@ -38,7 +39,8 @@ const T4D_KEYS = [
   'existingUnits',
   'storiesProposed',
   'baseStoriesAtFiling',
-  'sources'
+  'sources',
+  'quality'
 ];
 
 function project(r: DeriveResult, id: string) {
@@ -264,7 +266,16 @@ describe('deriveProjects: output shape', () => {
     expect(Object.keys(reversed)[0]).toBe('projects');
     expect(serializeProjects(reversed)).toBe(s);
     const top = JSON.parse(s);
-    expect(Object.keys(top)).toEqual(['schema', 'asOf', 'rhnaCompletedNet', 'projects']);
+    expect(Object.keys(top)).toEqual([
+      'schema',
+      'asOf',
+      'rhnaCompletedNet',
+      'qualityRules',
+      'projects'
+    ]);
+    const rule = { valueTier: null, tier: 2, label: 'x', id: 'pr.a.b' } as const;
+    const withRule = JSON.parse(serializeProjects({ ...reversed, qualityRules: [rule] }));
+    expect(Object.keys(withRule.qualityRules[0])).toEqual(['id', 'label', 'tier', 'valueTier']);
     expect(Object.keys(top.rhnaCompletedNet)).toEqual(['units', 'since', 'provenance']);
     expect(Object.keys(top.rhnaCompletedNet.provenance)).toEqual([
       'tier',
@@ -394,9 +405,9 @@ describe('deriveProjects: values', () => {
       ...STAGE_ORDER.map((s) => `projects.byStage.${s}`),
       'projects.staleOpen',
       'projects.staleOpenUnits',
-      'projects.pipelineConflicts',
       'projects.pathwayDefaulted',
       'projects.excludedAlterationUnits',
+      'projects.excludedNoUnits',
       'projects.netDropped',
       'projects.stories.tier0',
       'projects.stories.tier3',
@@ -405,7 +416,6 @@ describe('deriveProjects: values', () => {
       'projects.parcels.unmapped',
       'histories.total',
       'histories.droppedNoDates',
-      ...STAGE_ORDER.map((s) => `histories.clamped.${s}`),
       'histories.ppaLagDays',
       'histories.ppaLagN',
       'rhna.units',
@@ -443,15 +453,14 @@ describe('deriveProjects: values', () => {
       'projects.byStage.complete': 0,
       'projects.staleOpen': 1,
       'projects.staleOpenUnits': 3,
-      'projects.pipelineConflicts': 0,
       'projects.pathwayDefaulted': 0,
       'projects.excludedAlterationUnits': 4,
+      'projects.excludedNoUnits': 0,
       'projects.netDropped': 0,
       'projects.stories.tier0': 1,
       'projects.stories.tier3': 0,
       'projects.stories.null': 3,
       'histories.total': 5,
-      'histories.clamped.permitFiled': 1,
       'histories.ppaLagDays': -1,
       'histories.ppaLagN': 0,
       'rhna.units': 4,
@@ -479,7 +488,10 @@ describe('deriveProjects: values', () => {
       problems: [],
       fileProblems: [],
       lastResort: [],
-      scales: {}
+      scales: {},
+      masters: {
+        'CASE:2010.0002PRX': { daParcels: ['3512001', '3512006'], trackingParcels: ['3512006'] }
+      }
     });
   });
 });
@@ -615,6 +627,39 @@ describe('deriveProjects: PRX rows', () => {
   });
 });
 
+describe('deriveProjects: shared parcels (pr.parcels.shared-existing)', () => {
+  const ID = 'pr.parcels.shared-existing';
+
+  it('is a zero tally when no in-flight project shares a parcel', () => {
+    const r = deriveProjects(baseInput());
+    expect(r.counts[`quality.${ID}.fired`]).toBe(0);
+    expect(r.counts[`quality.${ID}.of`]).toBe(r.file.projects.length);
+    expect(r.file.projects.every((p) => !p.quality.includes(ID))).toBe(true);
+  });
+
+  it("counts a lot's 1 assessor unit once: the earlier project holds it, both carry the id", () => {
+    const raw = baseRaw();
+    // E's pipeline row moves onto lot 002, which A (filed 2019) already holds with 1 unit.
+    const e = raw['datasf-dev-pipeline'].find((x) => x.case_no === '2099-000099PRJ')!;
+    e.blklot = '3512002';
+    const base = deriveProjects(baseInput());
+    const r = deriveProjects(baseInput(raw));
+    expect(project(r, 'PRJ:2019-000001PRJ')).toMatchObject({ existingUnits: 1 });
+    expect(project(r, 'PRJ:2019-000001PRJ').quality).toContain(ID);
+    expect(project(r, 'CASE:2099-000099PRJ')).toMatchObject({ units: 5, existingUnits: 0 });
+    expect(project(r, 'CASE:2099-000099PRJ').quality).toEqual([ID]);
+    expect(r.counts[`quality.${ID}.fired`]).toBe(2);
+    expect(r.counts[`quality.${ID}.of`]).toBe(r.file.projects.length);
+    // Σ existing across in-flight projects no longer double counts lot 002.
+    const sum = (x: DeriveResult) => x.file.projects.reduce((s, p) => s + p.existingUnits, 0);
+    expect(sum(r)).toBe(sum(base));
+    // Histories keep their at-filing value and never carry the id.
+    expect(history(r, 'PRJ:2019-000001PRJ').quality).not.toContain(ID);
+    expect(r.histories.every((h) => !h.quality.includes(ID))).toBe(true);
+    expect(checkV23(r.checks, true)).toMatchObject({ id: 'V23', ok: true });
+  });
+});
+
 describe('deriveProjects: exits before later stages', () => {
   it('moves a permit exit that precedes later entered stages to the last stage (V23)', () => {
     const raw = baseRaw();
@@ -659,12 +704,39 @@ describe('deriveProjects: exits before later stages', () => {
   });
 });
 
+/** DQ-2: two no-date rows contend for one open PRJ on lot 008 (the first in row order wins). */
+function withNoDateRows(): ProjectRecordsInput {
+  const raw = baseRaw();
+  raw['datasf-planning-projects'].push({
+    record_id: '2020-006887PRJ',
+    record_status: 'Under Review',
+    block: '3512',
+    lot: '008',
+    open_date: ts('2020-07-24'),
+    number_of_units_prop: '2387',
+    new_construction: 'CHECKED'
+  });
+  for (const [caseNo, units] of [
+    ['2023-007911PRJ', '2537'],
+    ['2024-000030PRJ', '12']
+  ]) {
+    raw['datasf-dev-pipeline'].push({
+      blklot: '3512008',
+      current_status: 'PL Filed',
+      case_no: caseNo,
+      new_pipeline_units: units
+    });
+  }
+  return baseInput(raw);
+}
+
 describe('deriveProjects: determinism', () => {
   for (const [name, make] of [
     ['base', () => baseInput()],
     ['base case', withBaseCase],
     ['earlier master', withEarlierMaster],
-    ['enriched', withEnrichedMaster]
+    ['enriched', withEnrichedMaster],
+    ['no-date rows', withNoDateRows]
   ] as const) {
     it(`permuting every raw array leaves the output byte-identical (${name})`, () => {
       const input = make();

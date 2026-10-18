@@ -19,9 +19,14 @@ export interface PhaseContext {
   entry: MultiphaseEntry | null;
   /** The master's `history.entitled`; only used to flag a planned date not after it. */
   masterEntitled: Day | null;
+  /** R after DA netting (spec 4.10.2); defaults to the row's `new_pipeline_units`. */
+  units?: number;
   /** Resolved DA parcels (spec 4.10.2), before exclusion. */
   daParcels: ParcelId[];
-  /** Parcels of every other in-flight project, every completed history and earlier masters. */
+  /**
+   * Parcels of every other in-flight project (non-masters, the tracking parcels of every other
+   * in-flight master, earlier masters' final parcels) and of every completed history.
+   */
   excluded: ReadonlySet<ParcelId>;
   /** Resolved tracking `blklot` of the master. */
   trackingParcels: ParcelId[];
@@ -37,7 +42,9 @@ export interface PhaseResult {
   phases: InFlightProject['phases'];
   parcelIds: ParcelId[];
   mode: 'enriched' | 'fallback' | 'lastResort';
-  /** Enriched: R / Σ remaining units before scaling. Otherwise null. */
+  /** DQ-3: a last resort with no free DA parcel, so `parcelIds` is []. */
+  scoreOnly: boolean;
+  /** Enriched: R before netting / Σ remaining units (the curation check). Otherwise null. */
   scale: number | null;
   /** Number of phase merges. */
   merged: number;
@@ -95,14 +102,11 @@ function minDay(a: Day | null, b: Day | null): Day | null {
   return Math.min(a, b);
 }
 
-function masterParcels(
-  daAvail: ParcelId[],
-  phases: Phase[] | null,
-  tracking: ParcelId[]
-): ParcelId[] {
+/** A phased master's parcels: the free DA parcels plus the phase parcels, else the free tracking. */
+function masterParcels(daAvail: ParcelId[], phases: Phase[], freeTracking: ParcelId[]): ParcelId[] {
   const all = new Set(daAvail);
-  for (const p of phases ?? []) for (const id of p.parcelIds) all.add(id);
-  return all.size > 0 ? [...all].sort() : [...tracking].sort();
+  for (const p of phases) for (const id of p.parcelIds) all.add(id);
+  return all.size > 0 ? [...all].sort() : [...freeTracking].sort();
 }
 
 interface Draft {
@@ -142,6 +146,7 @@ function enriched(
   schedule: NonNullable<MultiphaseEntry['schedule']>,
   remaining: MultiphasePhase[],
   R: number,
+  rBefore: number,
   caseNo: string,
   problems: string[],
   warnings: string[],
@@ -187,8 +192,9 @@ function enriched(
   });
 
   const sum = drafts.reduce((s, d) => s + d.units, 0);
-  // The scale factor is returned, not checked here: checkV24 reports one out of bounds once.
-  const scale = R / sum;
+  // The curation factor uses R before netting (netting is reported apart). It is returned, not
+  // checked here: checkV24 reports one out of bounds once.
+  const scale = rBefore / sum;
 
   if (drafts.every((d) => d.parcelIds.length === 0)) {
     const parcelIds = ctx.trackingParcels.filter((id) => !ctx.excluded.has(id)).sort();
@@ -232,22 +238,26 @@ function enriched(
 }
 
 /**
- * Builds the master's T3 `phases` (spec 4.10.2). Enriched when the entry has a schedule and at
- * least one `remaining` phase; else the fallback from the phase size u (project median, then
- * citywide); else (no u, or no DA parcel left) the last resort, `phases: null`. `problems` fail
- * V24; `warnings` are non-failing report notes.
+ * Builds the master's T3 `phases` (spec 4.10.2) for R = `ctx.units` (netted). Enriched when the
+ * entry has a schedule and at least one `remaining` phase; else the fallback from the phase size u
+ * (project median, then citywide); else (no u, no free DA parcel, or ruling L2) the last resort,
+ * `phases: null`, drawing on exactly the free DA parcels, or score-only with none (DQ-3).
+ * `problems` fail V24; `warnings` are non-failing report notes.
  */
 export function buildPhases(ctx: PhaseContext): PhaseResult {
   const caseNo = ctx.master.caseNo ?? `pipeline row ${ctx.master.idx}`;
-  const R = ctx.master.newUnits ?? 0;
+  const rBefore = ctx.master.newUnits ?? 0;
+  const R = ctx.units ?? rBefore;
   const problems: string[] = [];
   const warnings: string[] = [];
   const daAvail = [...new Set(ctx.daParcels)].filter((id) => !ctx.excluded.has(id)).sort();
+  const freeTracking = ctx.trackingParcels.filter((id) => !ctx.excluded.has(id));
 
   const lastResort = (): PhaseResult => ({
     phases: null,
-    parcelIds: masterParcels(daAvail, null, ctx.trackingParcels),
+    parcelIds: daAvail,
     mode: 'lastResort',
+    scoreOnly: daAvail.length === 0,
     scale: null,
     merged: 0,
     u: null,
@@ -264,7 +274,17 @@ export function buildPhases(ctx: PhaseContext): PhaseResult {
   const remaining = entry?.phases.filter((p) => p.status === 'remaining') ?? [];
   if (entry && entry.schedule && remaining.length > 0) {
     const moot: string[] = [];
-    const r = enriched(ctx, entry.schedule, remaining, R, caseNo, problems, warnings, moot);
+    const r = enriched(
+      ctx,
+      entry.schedule,
+      remaining,
+      R,
+      rBefore,
+      caseNo,
+      problems,
+      warnings,
+      moot
+    );
     if (r.phases === null) {
       // Ruling L2: plannedPermitFiled problems are moot without phases, and a last resort records
       // no scale for checkV24; the 4.10.3 curation problem (phase resolves only to excluded
@@ -276,8 +296,9 @@ export function buildPhases(ctx: PhaseContext): PhaseResult {
     }
     return {
       phases: r.phases,
-      parcelIds: masterParcels(daAvail, r.phases, ctx.trackingParcels),
+      parcelIds: masterParcels(daAvail, r.phases, freeTracking),
       mode: 'enriched',
+      scoreOnly: false,
       scale: r.scale,
       merged: r.merged,
       u: null,
@@ -311,14 +332,50 @@ export function buildPhases(ctx: PhaseContext): PhaseResult {
   }
   return {
     phases,
-    parcelIds: masterParcels(daAvail, phases, ctx.trackingParcels),
+    parcelIds: masterParcels(daAvail, phases, freeTracking),
     mode: 'fallback',
+    scoreOnly: false,
     scale: null,
     merged: 0,
     u: { u: used.u, n: used.n },
     problems,
     warnings
   };
+}
+
+/** One master's DA netting (spec 4.10.2): R before and after, and the projects that netted it. */
+export interface Netting {
+  id: string;
+  before: number;
+  after: number;
+  /** The netting projects' ids, in the given order. */
+  by: string[];
+}
+
+/**
+ * DA netting (spec 4.10.2, rule `pr.multiphase.da-netting`), before phasing, in the given (master
+ * id) order. A master's netting projects are the candidates with a parcel among its DA parcels
+ * that have not netted an earlier master; R = max(0, units - Σ their units). The caller passes as
+ * candidates the in-flight non-master projects that match no pipeline row (a DQ-2 linked row is a
+ * match). Pure.
+ */
+export function netMasters(
+  masters: readonly { id: string; units: number; daParcels: readonly ParcelId[] }[],
+  candidates: readonly { id: string; units: number; parcelIds: readonly ParcelId[] }[]
+): Netting[] {
+  const spent = new Set<string>();
+  return masters.map((m) => {
+    const da = new Set(m.daParcels);
+    const by: string[] = [];
+    let sum = 0;
+    for (const c of candidates) {
+      if (spent.has(c.id) || !c.parcelIds.some((id) => da.has(id))) continue;
+      spent.add(c.id);
+      by.push(c.id);
+      sum += c.units;
+    }
+    return { id: m.id, before: m.units, after: Math.max(0, m.units - sum), by };
+  });
 }
 
 /**

@@ -139,7 +139,7 @@ export interface ProjectHistory {
     | { kind: 'exit'; stage: Stage; reason: ExitReason; day: Day }
     | { kind: 'open'; lastObserved: Day };
   unitsAt: Partial<Record<Stage, number>>; // current proposed units from the record that represents each stage: PRJ → 'filed', site/full permit → 'permitFiled', TCO/CFC certified → 'complete'; cross-record, not snapshots (tier 2)
-  existingUnits: number;
+  existingUnits: number; // assessor units at filing: the roll year of the first entered day, clamped to 2007..latest
   storiesProposed: number | null;
   baseStoriesAtFiling: number | null; // current base height proxy, tier 3: no pre-FZP height map exists
   sources: {
@@ -147,6 +147,7 @@ export interface ProjectHistory {
     id: string;
     key?: string; // field to query, e.g. 'case_no'; absent = the dataset's record-id field
   }[];
+  quality: string[]; // sorted T14 rule ids that changed or estimated a value of this history; [] if none
 }
 
 /** `pipeline/.cache/derived/<datasetVersion>/project-histories.json`; never shipped. */

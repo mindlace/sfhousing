@@ -115,6 +115,7 @@ function proj(over: Partial<LinkedProject> = {}): LinkedProject {
     pipelineRows: [],
     blklots: [],
     parcelIds: [],
+    crossBlock: { applies: false, dropped: [] },
     ...over
   };
 }

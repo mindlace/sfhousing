@@ -1,7 +1,9 @@
 /**
- * The mini fixture's project records (spec 4.9 Fixture table, M1-M14 and the xdht extras) through
+ * The mini fixture's project records (spec 4.9 Fixture table, M1-M20 and the xdht extras) through
  * deriveProjects with stub callbacks that mirror scenario-data's fixture. V21-V24 use literal
- * fixture thresholds: coverage min 1.0, RHNA tolerance year 0.1 and total 0.05.
+ * fixture thresholds: coverage min 0.9, RHNA tolerance year 0.1 and total 0.05. M15-M20 values are
+ * qualitative in the spec; the exact values asserted here are the goldens computed at
+ * implementation (Task F2-7).
  */
 import { describe, expect, it } from 'vitest';
 import type { ProjectHistory } from '../../../src/lib/timelapse/types';
@@ -40,11 +42,15 @@ function history(id: string): ProjectHistory {
 
 const IN_FLIGHT = [
   'BP:202403150003',
+  'BP:202501150019',
   'CASE:2007.0001PRX',
   'CASE:2010.0002PRX',
+  'CASE:2012-000020PRX',
   'PRJ:2019-000001PRJ',
   'PRJ:2020-000008PRJ',
   'PRJ:2020-000010PRJ',
+  'PRJ:2024-000016PRJ',
+  'PRJ:2025-000015PRJ',
   'PRJ:2026-000002PRJ',
   'PRJ:2026-000011PRJ',
   'PRJ:2026-000012PRJ'
@@ -104,7 +110,7 @@ describe('mini project records: the stub roll mirrors the built panel’s existi
 });
 
 describe('mini project records: the in-flight set and histories', () => {
-  it('ships exactly M1, M2, M3, M8, M9, M10, M11, M12 and M14', () => {
+  it('ships exactly M1, M2, M3, M8, M9, M10, M11, M12, M14, M15, M16, M19 and M20', () => {
     expect(r.file.projects.map((p) => p.id)).toEqual(IN_FLIGHT);
     expect(r.file.asOf).toBe(MINI_ASOF);
   });
@@ -115,6 +121,38 @@ describe('mini project records: the in-flight set and histories', () => {
       expect(ids, id).toContain(id);
       expect(IN_FLIGHT, id).not.toContain(id);
     }
+  });
+
+  it('M17 and M18 are neither in flight nor histories', () => {
+    const ids = [...r.file.projects.map((p) => p.id), ...r.histories.map((h) => h.id)];
+    for (const id of [
+      'CASE:2025-000017PRX',
+      'PRJ:2025-000017PRJ',
+      'CASE:2026-000018PRJ',
+      'PRJ:2026-000018PRJ'
+    ]) {
+      expect(ids, id).not.toContain(id);
+    }
+    // No project names M17's or M18's row in its sources.
+    const rows = r.file.projects.flatMap((p) => p.sources.map((s) => s.id));
+    expect(rows).not.toContain('2025-000017PRX');
+    expect(rows).not.toContain('2026-000018PRJ');
+  });
+
+  it('lists exactly the carried quality ids in qualityRules (spec 4.9)', () => {
+    expect(r.file.qualityRules.map((q) => q.id)).toEqual([
+      'pr.date.valid-range',
+      'pr.multiphase.da-netting',
+      'pr.multiphase.score-only',
+      'pr.parcels.shared-existing',
+      'pr.pipeline.status-date-linked',
+      'pr.stages.forward-clamp',
+      'pr.units.capacity'
+    ]);
+  });
+
+  it('keeps pipelineCutoff at 2026-07-28 (M3)', () => {
+    expect(r.counts['pipeline.cutoffDay']).toBe(day('2026-07-28'));
   });
 
   it('covers every non-complete stage with an in-flight project', () => {
@@ -142,7 +180,8 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
       stories: 6,
       storiesTier: 0,
       multiPhase: false,
-      phases: null
+      phases: null,
+      quality: ['pr.date.valid-range', 'pr.stages.forward-clamp']
     });
     expect(p.history.permitFiled).toBe(day('2020-03-02'));
   });
@@ -230,11 +269,13 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(r.histories.map((h) => h.id)).not.toContain('CASE:2007.0001PRX');
   });
 
-  it('M10: permitFiled forced up to the approval; 6 units on 2 existing', () => {
+  it('M10: permitFiled forced up to the approval; 6 units on 2 existing, holding lot 1', () => {
     const p = project('PRJ:2020-000010PRJ');
     expect(p.history.permitFiled).toBe(day('2021-11-01'));
     expect(p.units).toBe(6);
+    // M10 entered lot 1 before M19, so it holds the lot's 2 units (pr.parcels.shared-existing).
     expect(p.existingUnits).toBe(2);
+    expect(p.quality).toEqual(['pr.parcels.shared-existing', 'pr.stages.forward-clamp']);
   });
 
   it('M11: unclassifiable history, defaulted to discretionary in flight', () => {
@@ -242,7 +283,10 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(project('PRJ:2026-000011PRJ')).toMatchObject({
       pathway: 'discretionary',
       stage: 'filed',
-      existingUnits: 2
+      units: 3,
+      existingUnits: 2,
+      parcelIds: ['3512006'],
+      quality: []
     });
     expect(r.counts['projects.pathwayDefaulted']).toBe(1);
   });
@@ -281,6 +325,166 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(permit).toMatchObject({ prj_record_id: '2010.0002', prx_case_no: '2010.0002PRX' });
   });
 
+  it('M15: the capacity rule nulls the permit units; units fall through to the PRJ', () => {
+    const p = project('PRJ:2025-000015PRJ');
+    expect(p).toMatchObject({
+      pathway: 'permitOnly',
+      stage: 'permitFiled',
+      parcelIds: ['8711023C'],
+      units: 10,
+      // Lot 3's 2025 roll units after scenario-data's sd.roll.units-capacity (5,000 -> 4): net 6.
+      existingUnits: 4,
+      stories: 3,
+      storiesTier: 0,
+      multiPhase: false,
+      phases: null,
+      quality: ['pr.units.capacity']
+    });
+    expect(p.history).toEqual({ permitFiled: day('2025-04-01') });
+    expect(p.sources).toEqual([
+      { dataset: '6jgi-cpb4', id: '202504010015', key: 'bpa_no' },
+      { dataset: 'i98e-djp9', id: '202504010015', key: 'permit_number' },
+      { dataset: 'qvu5-m3a2', id: '2025-000015PRJ' }
+    ]);
+    const h = history('PRJ:2025-000015PRJ');
+    expect(h).toMatchObject({ pathway: 'permitOnly', existingUnits: 4 });
+    expect(h.quality).toEqual(['pr.units.capacity']);
+    expect(h.unitsAt).toEqual({ filed: 10 });
+    expect(h.unitsAt.permitFiled).toBeUndefined();
+    expect(r.permits.find((q) => q.permit_number === '202504010015')).toMatchObject({
+      project_id: 'PRJ:2025-000015PRJ',
+      prj_record_id: '2025-000015PRJ',
+      proposed_units: null,
+      live: true
+    });
+  });
+
+  it('M16: the no-date PRX row links to its Planning record (DQ-2), which keeps its values', () => {
+    const p = project('PRJ:2024-000016PRJ');
+    expect(p).toMatchObject({
+      pathway: 'discretionary',
+      stage: 'filed',
+      parcelIds: ['0026T001A'],
+      units: 200,
+      existingUnits: 3,
+      multiPhase: false,
+      phases: null,
+      quality: ['pr.pipeline.status-date-linked']
+    });
+    expect(p.history).toEqual({ filed: day('2024-02-01') });
+    expect(p.sources).toEqual([
+      { dataset: '6jgi-cpb4', id: '2024-000016PRX', key: 'case_no' },
+      { dataset: 'd4jk-jw33', id: '2024-000016PRJ', key: 'b1_alt_id' },
+      { dataset: 'qvu5-m3a2', id: '2024-000016PRJ' },
+      { dataset: 'y673-d69b', id: '2024-000016ENV' }
+    ]);
+    // At filing (roll year 2024) lot 4's 900 is scenario-data's replacement 3.
+    const h = history('PRJ:2024-000016PRJ');
+    expect(h).toMatchObject({ pathway: 'discretionary', existingUnits: 3 });
+    expect(h.quality).toEqual(['pr.pipeline.status-date-linked']);
+    expect(r.file.projects.map((x) => x.id)).not.toContain('CASE:2024-000016PRX');
+    expect(r.warnings).toContain(
+      '2024-000016PRX: linked to 2024-000016PRJ; multiphase entry unused'
+    );
+  });
+
+  it('M17: linked to a Planning record with no units, so excluded and named', () => {
+    expect(r.counts['projects.excludedNoUnits']).toBe(900);
+    expect(r.counts['projects.excludedAlterationUnits']).toBe(0);
+    expect(r.warnings).toContain(
+      '2025-000017PRX: linked to 2025-000017PRJ with no units; excluded'
+    );
+    expect(r.counts['quality.pr.pipeline.status-date-linked.fired']).toBe(2);
+    expect(r.counts['quality.pr.pipeline.status-date-linked.units']).toBe(220 + 900);
+  });
+
+  it('M18: a no-date row with no record and no open PRJ on its lot is dropped', () => {
+    expect(r.counts['quality.pr.pipeline.no-status-date.fired']).toBe(1);
+    expect(r.counts['quality.pr.pipeline.no-status-date.units']).toBe(20);
+    expect(r.warnings).toContain(
+      '2026-000018PRJ: no status date and no open Planning record on its lot; dropped'
+    );
+    // It has no da, so it is none of M14's DA rows: M14 keeps its one phase of 100 on lot 9.
+    expect(project('CASE:2010.0002PRX').phases?.[0].parcelIds).toEqual(['3512009']);
+  });
+
+  it('M19: shares lot 1 with M10, which holds its units; the history keeps them', () => {
+    const p = project('BP:202501150019');
+    expect(p).toMatchObject({
+      pathway: 'permitOnly',
+      stage: 'permitFiled',
+      parcelIds: ['3512001'],
+      units: 3,
+      existingUnits: 0,
+      quality: ['pr.parcels.shared-existing']
+    });
+    expect(p.history).toEqual({ permitFiled: day('2025-01-15') });
+    const h = history('BP:202501150019');
+    expect(h.existingUnits).toBe(2);
+    expect(h.quality).toEqual([]);
+    expect(r.counts['quality.pr.parcels.shared-existing.fired']).toBe(2);
+  });
+
+  it('M20: netted by M11 to 7 and score-only (no u, no free DA parcel)', () => {
+    const p = project('CASE:2012-000020PRX');
+    expect(p).toMatchObject({
+      label: 'Fixture Yards',
+      pathway: 'discretionary',
+      stage: 'entitled',
+      parcelIds: [],
+      units: 7,
+      existingUnits: 0,
+      multiPhase: true,
+      phases: null,
+      sources: [{ dataset: '6jgi-cpb4', id: '2012-000020PRX', key: 'case_no' }],
+      quality: ['pr.multiphase.da-netting', 'pr.multiphase.score-only']
+    });
+    expect(p.history).toEqual({ entitled: day('2013-05-01') });
+    expect(r.counts['multiphase.netted.2012-000020PRX']).toBe(3);
+    expect(r.counts['multiphase.netted.2007.0001PRX']).toBe(0);
+    expect(r.counts['multiphase.netted.2010.0002PRX']).toBe(0);
+    expect(r.counts['multiphase.nettedOut']).toBe(0);
+    expect(r.counts['multiphase.lastResort']).toBe(1);
+    expect(r.counts['multiphase.scoreOnly']).toBe(1);
+    // No project u (no base case, no other row with its da) and no citywide u (no completed
+    // permit of 50 or more units since 2015 in the fixture).
+    expect(r.counts).not.toHaveProperty('multiphase.u.2012-000020PRX');
+    expect(
+      r.permits.filter(
+        (q) =>
+          q.complete_day !== null &&
+          q.complete_day >= day('2015-01-01') &&
+          (q.proposed_units ?? 0) >= 50
+      )
+    ).toEqual([]);
+    expect(r.checks.multiphase.masters['CASE:2012-000020PRX'].daParcels).toEqual(['3512006']);
+    expect(r.warnings).toContain('2012-000020PRX: no free DA parcel; score-only');
+    expect(r.histories.map((h) => h.id)).not.toContain('CASE:2012-000020PRX');
+    // Ruling D1 (revised): every mini tracking lot is active, so each descends only to itself.
+    expect(r.counts['multiphase.descendants.2012-000020PRX']).toBe(1);
+    expect(r.counts['multiphase.descendants.2007.0001PRX']).toBe(1);
+    expect(r.counts['multiphase.descendants.2010.0002PRX']).toBe(1);
+    // M11 holds the tracking lot without a DA row, but it nets M20, so it is not flagged (B2).
+    expect(r.warnings.filter((w) => w.includes('descendant parcel'))).toEqual([]);
+  });
+
+  it('a DQ-2-linked project nets no master (spec 4.10.2: it matches a pipeline row)', () => {
+    // Move M20's tracking lot to lot 4, where only M16 (linked to M16's no-date row) is in flight.
+    const input = miniProjectInput();
+    const raw = { ...input.raw };
+    raw['datasf-dev-pipeline'] = raw['datasf-dev-pipeline'].map((row) =>
+      row.case_no === '2012-000020PRX' ? { ...row, blklot: '0026T001A' } : row
+    );
+    const moved = deriveProjects({ ...input, raw });
+    const m16 = moved.file.projects.find((x) => x.id === 'PRJ:2024-000016PRJ');
+    expect(m16?.parcelIds).toEqual(['0026T001A']);
+    expect(m16?.quality).toContain('pr.pipeline.status-date-linked');
+    expect(moved.counts['multiphase.netted.2012-000020PRX']).toBe(0);
+    const m20 = moved.file.projects.find((x) => x.id === 'CASE:2012-000020PRX');
+    expect(m20?.units).toBe(10);
+    expect(m20?.quality).not.toContain('pr.multiphase.da-netting');
+  });
+
   it('xdht extras: rhnaCompletedNet is 4 units over 3 rows', () => {
     expect(r.file.rhnaCompletedNet.units).toBe(4);
     expect(r.file.rhnaCompletedNet.provenance.n).toBe(3);
@@ -298,9 +502,12 @@ describe('mini project records: V20-V24 with the fixture thresholds', () => {
     expect(v).toMatchObject({ id: 'V20', ok: true });
   });
 
-  it('passes V21 at coverage 1.0', () => {
-    expect(checkV21(r.checks, 1)).toMatchObject({ id: 'V21', ok: true });
-    expect(r.checks.coverage.matchedUnits).toBe(r.checks.coverage.rowUnits);
+  it('passes V21 at 0.9, below 1.0 because M16 covers less than its row', () => {
+    expect(checkV21(r.checks, 0.9)).toMatchObject({ id: 'V21', ok: true });
+    // M16's row says 220, its record 200; M17's row is outside the population and not counted.
+    // Ruling V1: M18's dropped no-date row (20 units) has no project and leaves V21 entirely.
+    expect(r.checks.coverage).toEqual({ matchedUnits: 699, rowUnits: 719, rows: 11 });
+    expect(checkV21(r.checks, 0.98).ok).toBe(false);
   });
 
   it('passes V22 against the fixture hiNet', () => {
@@ -319,8 +526,8 @@ describe('mini project records: V20-V24 with the fixture thresholds', () => {
     expect(checkV23(r.checks, identical)).toMatchObject({ id: 'V23', ok: true });
   });
 
-  it('passes V24 with M9 enriched and M14 fallback', () => {
+  it('passes V24 with M9 enriched, M14 fallback and M20 a score-only last resort', () => {
     expect(checkV24(r.checks)).toMatchObject({ id: 'V24', ok: true });
-    expect(r.checks.multiphase.lastResort).toEqual([]);
+    expect(r.checks.multiphase.lastResort).toEqual(['CASE:2012-000020PRX']);
   });
 });
