@@ -2,7 +2,9 @@
 // worker-safe: its one value import is the generator's constants-only module. The pipeline writes
 // it and the timelapse worker reads it. The declarations below the imports are step 0 and fixed,
 // except what spec §2 authorises (RA1, IA-8): `existingFloorAreaM2`, `scenarioRecordFrom`,
-// `scenarioRecordOf` and the mask comment.
+// `scenarioRecordOf` and the mask comment; and, by the T11 option 1 ruling (scenario eligibility,
+// T14 sd.landuse.none-with-units), the `eligible` flag (flags bit 5), which `scenarioRecordFrom`
+// and `scenarioRecordOf` now also replace, and the flags comment.
 import type { FeatureId, Provenance } from '../timelapse/types';
 import type { ParcelId, ParcelRecord } from './parcel';
 import type { Envelope } from '../plan/types';
@@ -48,6 +50,11 @@ export interface ScenarioParcels {
   baseStories: Uint8Array;
   localProgram: Uint8Array; // 0/1
   hostable: Uint8Array; // 0/1: may receive a simulated project
+  // 0/1: scenario eligibility (flags bit 5); can differ from the chunk's eligible
+  // (sd.landuse.none-with-units). It is the value the yields and the hostable flags used: the chunk
+  // record's `eligible`, or, for a parcel with no land-use record (`landUse` 'NONE'), assessor
+  // units > 0 on the latest roll.
+  eligible: Uint8Array;
   split: Uint8Array; // 0/1: largest district overlap < 90% of parcel area
   // T11/T13 mask (RA1 mask convention): a bit is set exactly when that field's value is not the
   // source's own value (imputed, replaced by a T14 rule, or carried). bit 0 yearBuilt,
@@ -112,15 +119,17 @@ const COLUMNS: { name: string; type: ColType; per: 1 | 'F' | 'id' }[] = [
   { name: 'baseYield', type: 'u16', per: 'F' },
   { name: 'yield', type: 'u16', per: 'F' }
 ];
-// flags bits, spec §4.8.
+// flags bits, spec §4.8: bit 0 localProgram, bit 1 rentControlLikely, bit 2 hostable, bit 3 split,
+// bit 4 hostableBase, bit 5 eligible (scenario eligibility); bits 6–7 are 0.
 const FLAG_BITS = [
   'localProgram',
   'rentControlLikely',
   'hostable',
   'split',
-  'hostableBase'
+  'hostableBase',
+  'eligible'
 ] as const;
-/** Reserved bits, spec §4.8: `flags` bits 5-7 and `imputed` bit 7 must be 0. */
+/** Reserved bits, spec §4.8: `flags` bits 6-7 and `imputed` bit 7 must be 0. */
 const FLAGS_RESERVED = 0xff & ~((1 << FLAG_BITS.length) - 1);
 const IMPUTED_RESERVED = 0x80;
 const PROVENANCE_KEYS = ['envelope', 'localProgram', 'features', 'existingUnits', 'yield'] as const;
@@ -500,6 +509,7 @@ export function decodeScenarioPayload(bytes: Uint8Array): ScenarioParcels {
     baseStories,
     localProgram: flag(0),
     hostable: flag(2),
+    eligible: flag(5),
     split: flag(3),
     imputed,
     baseCap: read(Uint16Array, 'baseCap'),
@@ -586,20 +596,32 @@ export function envelopeOf(p: ScenarioParcels, i: number): Envelope {
   return { maxStories: p.envelopeStories[i] };
 } // { maxStories: envelopeStories[i] }
 
-/** The scenario view of a chunk record (§4.5): units, floor area and height replaced. Pure. */
+/**
+ * The scenario view of a chunk record (§4.5): units, floor area, height and eligible replaced.
+ * Pure.
+ */
 export function scenarioRecordFrom(
   rec: ParcelRecord,
-  v: { existingUnits: number; existingFloorAreaM2: number; existingStories: number }
+  v: {
+    existingUnits: number;
+    existingFloorAreaM2: number;
+    existingStories: number;
+    eligible: boolean;
+  }
 ): ParcelRecord {
   return {
     ...rec,
     existingUnits: v.existingUnits,
     existingFloorAreaM2: v.existingFloorAreaM2,
-    existingHeightM: v.existingStories * FTF_M
+    existingHeightM: v.existingStories * FTF_M,
+    eligible: v.eligible
   };
-} // { ...rec, existingUnits, existingFloorAreaM2, existingHeightM: existingStories × FTF_M }
+} // { ...rec, existingUnits, existingFloorAreaM2, existingHeightM: existingStories × FTF_M,
+//   eligible }
 
-/** T11: scenarioRecordFrom(rec, row i of p). Worker-safe. Throws RangeError if p.id[i] !== rec.id. */
+/**
+ * T11: scenarioRecordFrom(rec, row i of p). Worker-safe. Throws RangeError if p.id[i] !== rec.id.
+ */
 export function scenarioRecordOf(p: ScenarioParcels, i: number, rec: ParcelRecord): ParcelRecord {
   if (p.id[i] !== rec.id) {
     throw new RangeError(`scenarioRecordOf: row ${i} is ${String(p.id[i])}, not ${rec.id}`);
@@ -607,7 +629,8 @@ export function scenarioRecordOf(p: ScenarioParcels, i: number, rec: ParcelRecor
   return scenarioRecordFrom(rec, {
     existingUnits: p.existingUnits[i],
     existingFloorAreaM2: p.existingFloorAreaM2[i],
-    existingStories: p.existingStories[i]
+    existingStories: p.existingStories[i],
+    eligible: p.eligible[i] === 1
   });
 }
 

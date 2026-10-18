@@ -390,6 +390,47 @@ describe('invariants', () => {
     expect(v17.ok).toBe(false);
     expect(v17.detail).toMatch(/1 hostable flag\(s\) disagree/);
   });
+  it('V17 reads eligibility from flags bit 5: a no-land-use parcel with homes may be hostable', async () => {
+    // Lot 9 has no land-use row (chunk `eligible` false). With roll homes it is eligible in the
+    // scenario (sd.landuse.none-with-units), so its hostable flags need no chunk eligibility.
+    const d = copy();
+    editScenario(d, (p) => {
+      const i = p.index.get('3512009')!;
+      expect(p.eligible[i]).toBe(0);
+      p.existingUnits[i] = 2;
+      p.eligible[i] = 1;
+      p.hostable[i] = 1;
+      p.hostableBase[i] = 1;
+    });
+    const v17 = await result(d, 'V17');
+    expect(v17).toMatchObject({
+      ok: true,
+      detail: expect.stringMatching(/^hostable 9\/13 eligible/)
+    });
+  });
+  it('V17 fails when the eligible flag disagrees with the chunk record and the T14 rule', async () => {
+    const d = copy();
+    editScenario(d, (p) => {
+      p.eligible[p.index.get('3512009')!] = 1; // lot 9: no land-use row and no homes
+      p.eligible[p.index.get('3512007')!] = 1; // lot 7: OPENSPACE stays excluded
+      const i = p.index.get('3512001')!; // lot 1: eligible chunk record
+      p.eligible[i] = 0;
+      p.hostable[i] = 0;
+      p.hostableBase[i] = 0;
+    });
+    const v17 = await result(d, 'V17');
+    expect(v17.ok).toBe(false);
+    expect(v17.detail).toMatch(/3 eligible flag\(s\) disagree with the chunk record/);
+  });
+  it('V17 fails when a parcel whose eligible flag is 0 is hostable', async () => {
+    const d = copy();
+    editScenario(d, (p) => {
+      p.eligible[p.index.get('3512001')!] = 0; // lot 1 stays hostable
+    });
+    const v17 = await result(d, 'V17');
+    expect(v17.ok).toBe(false);
+    expect(v17.detail).toMatch(/1 hostable flag\(s\) disagree/);
+  });
   it("V17 fails when the step's hostable flags disagree with its uncapped yields", async () => {
     for (const k of ['scenario.hostable_mismatch', 'scenario.hostable_base_mismatch']) {
       const v17 = await result(base, 'V17', { ...counts, [k]: 1 });
