@@ -626,6 +626,16 @@ describe('capacity (pr.units.capacity, spec 4.8)', () => {
     expect(applyCapacity(prjZero, area).capped).toBe(true);
   });
 
+  it('a fallback must yield at least 1 unit: a 0-unit pipeline row or permit sum is capped', () => {
+    const zeroRow = proj({ permits: [big()], pipelineRows: [row({ newUnits: 0 })] });
+    const a = applyCapacity(zeroRow, area);
+    expect(a.capped).toBe(true);
+    expect(a.proj.permits.map((q) => q.proposedUnits)).toEqual([90]);
+    expect(grossUnits(a.proj)).toBe(90);
+    const zeroPermit = proj({ permits: [big(), permit('2', { proposedUnits: 0 })] });
+    expect(applyCapacity(zeroPermit, area).capped).toBe(true);
+  });
+
   it('no stories, or no parcels: no check, the same project comes back', () => {
     const noStories = proj({ permits: [big({ stories: null })] });
     const a = applyCapacity(noStories, area);

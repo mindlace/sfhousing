@@ -114,7 +114,7 @@ function lotCapacity(
  * here, the phase-size medians and `permits.parquet` in assemble). Every failing permit is first
  * voided (null units in `permits`, `live` and `lead`); the project then keeps them voided
  * (`pr.units.capacity`, units fall through) when a fallback unit source remains, that is when
- * `grossUnits` still yields a number (another permit with units, the anchor PRJ's
+ * `grossUnits` still yields at least 1 unit (another permit with units, the anchor PRJ's
  * `number_of_units_prop` above 0, or a pipeline row not linked under DQ-2). With none, each failing
  * permit takes its lot capacity instead (`pr.units.capacity-cap`). Nothing else changes.
  */
@@ -143,7 +143,8 @@ export function applyCapacity(
     };
   };
   const voided = rebuild((q) => ({ ...q, proposedUnits: null }));
-  const capped = grossUnits(voided) === null;
+  const left = grossUnits(voided);
+  const capped = left === null || left < 1;
   return {
     proj: capped
       ? rebuild((q) => ({ ...q, proposedUnits: lotCapacity(q, proj.parcelIds, areaM2) }))
