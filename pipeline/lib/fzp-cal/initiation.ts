@@ -531,6 +531,9 @@ function fittedProvenance(
   ctx: InitiationContext
 ): Provenance {
   const x = r.extrapolation;
+  const prEdges = r.terms.find((t) => t.feature === 'potentialRatio')?.edges ?? [0];
+  const prBottom = prEdges.length > 1 ? `[${prEdges[0]}, ${prEdges[1]})` : `[${prEdges[0]}, ∞)`;
+  const ratio0 = `potentialRatio 0 (the density-capped base envelope yields no units) is a value, not missing: it takes the bottom potentialRatio bin ${prBottom} and that bin's fitted hazard; `;
   const pre2015 = `; permit-only histories before 2015 count as pathway unknown: n = ${ctx.permitOnlyPre2015.fired} of ${ctx.permitOnlyPre2015.of} (calibration.method.permitOnlyPre2015); the initiation event does not depend on the pathway`;
   return {
     tier: 2,
@@ -547,6 +550,7 @@ function fittedProvenance(
       `events ${r.events.record} by first Planning record (2015 on, tier 0 dates) and ${r.events.permit} by first permit filing (before 2015); ` +
       `pre-2015 events detected by first new-construction permit filing (tier 2 proxy); a measurement-definition term (permit-filing proxy vs first Planning record) is fitted and not shipped, so the published level is set by 2015+ first-record events; this is not a market adjustment; basis coefficient = ${fin(r.basis)}; ` +
       'the event is a tier 2 proxy for project initiation (it misses projects that died before filing and dates the rest later); the panel base heights are the tier-3 pre-FZP heights proxy; ' +
+      ratio0 +
       `FZP values above the top bin edge take the top bin (clamp): ${pct(x.parcelShare)} of hostable parcels and ${pct(x.filingsShare)} of FZP expected filings have potentialRatio or storiesGap above the panel's at-risk maximum (${fin(x.maxAtRisk.potentialRatio)}, ${fin(x.maxAtRisk.storiesGap)}), tier 2, applied beyond historical support (top-bin clamp)${pre2015}`,
     n,
     window: ['2007-01-01', '2025-12-31']
