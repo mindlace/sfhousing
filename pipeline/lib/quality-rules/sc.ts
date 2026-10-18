@@ -3,7 +3,7 @@ import type { QualityRule } from '../quality';
 /**
  * stage-calibration's T14 rules (design row T14; stage-calibration spec §4.4a). Each entry takes
  * its kind's default shares (`warnShare` 0.05 for `kind: 'missing'`, else 0.01; `failShare` 0.10)
- * except `sc.stages.gap-impute`, whose departure is stated at the entry. The calibration step
+ * except `sc.stages.gap-impute` and `sc.revision.ratio-clamp`, whose departures are stated at the entries. The calibration step
  * changes values only in its own memory.
  */
 export const SC_RULES: readonly QualityRule[] = [
@@ -110,8 +110,11 @@ export const SC_RULES: readonly QualityRule[] = [
     maskBit: null,
     label: 'A resize outside 0.25× to 3× is clamped to that range',
     denominator: 'revised pairs',
-    warnShare: 0.01,
-    failShare: 0.1,
+    // Departs from the `bound` defaults (partner ruling via conductor, 2026-10-18, DQ-4): permit and
+    // completion unit counts come from different records (phased completions, unit-mix changes);
+    // split-row artefacts removed at source (16/176 live).
+    warnShare: 0.1,
+    failShare: 0.2,
     unitsWeighted: false
   }
 ];

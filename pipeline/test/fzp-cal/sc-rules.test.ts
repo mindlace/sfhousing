@@ -93,7 +93,10 @@ const EXPECTED: Record<ScRuleId, QualityRule> = {
     tier: 4,
     valueTier: 4,
     label: 'A resize outside 0.25× to 3× is clamped to that range',
-    denominator: 'revised pairs'
+    denominator: 'revised pairs',
+    // partner ruling via conductor, 2026-10-18 (DQ-4)
+    warnShare: 0.1,
+    failShare: 0.2
   }
 };
 
@@ -117,12 +120,15 @@ describe('sc.* quality rules', () => {
     expect(ids).toEqual([...SC_RULE_IDS].sort());
   });
 
-  it('has six rules, one of kind missing, and departs from the kind defaults only at gap-impute', () => {
+  it('has six rules, one of kind missing, and departs from the kind defaults only at gap-impute and ratio-clamp', () => {
     expect(SC_RULES).toHaveLength(6);
     expect(SC_RULES.filter((r) => r.kind === 'missing').map((r) => r.id)).toEqual([
       'sc.stages.no-fcd-duration'
     ]);
-    expect(kindDefaultDepartures(SC_RULES)).toEqual(['sc.stages.gap-impute']);
+    expect(kindDefaultDepartures(SC_RULES)).toEqual([
+      'sc.stages.gap-impute',
+      'sc.revision.ratio-clamp'
+    ]);
   });
 });
 
