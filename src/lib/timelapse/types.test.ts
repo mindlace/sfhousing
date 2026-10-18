@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ParcelId } from '../data/parcel';
 import {
   chanceTable,
+  cumulativeIncidence,
   initiationHazard,
   parseCalibration,
   sampleTransition,
@@ -134,6 +135,10 @@ type RowSampleTransition = (
   u: number,
   monthsElapsed: number
 ) => { kind: 'advance' | RowExitReason; days: number };
+type RowCumulativeIncidence = (
+  t: RowTransition,
+  k: number
+) => { advance: number; exit: Partial<Record<RowExitReason, number>> };
 type RowInitiationHazard = (m: RowInitiationModel, f: Record<RowFeatureId, number>) => number;
 type RowChanceTable = (
   cal: RowCalibration
@@ -160,7 +165,12 @@ const rowsMatch: Assert<
                             ? Equals<typeof initiationHazard, RowInitiationHazard> extends true
                               ? Equals<typeof chanceTable, RowChanceTable> extends true
                                 ? Equals<typeof typicalMonths, RowTypicalMonths> extends true
-                                  ? Equals<typeof parseCalibration, RowParseCalibration>
+                                  ? Equals<
+                                      typeof parseCalibration,
+                                      RowParseCalibration
+                                    > extends true
+                                    ? Equals<typeof cumulativeIncidence, RowCumulativeIncidence>
+                                    : false
                                   : false
                                 : false
                               : false
@@ -233,9 +243,6 @@ describe('model stubs', () => {
   it('every T12 function throws not implemented until step 2', () => {
     const cal = {} as Calibration;
     expect(() => sampleTransition({} as Transition, 0.5, 0)).toThrow('not implemented');
-    expect(() => initiationHazard({} as InitiationModel, {} as Record<FeatureId, number>)).toThrow(
-      'not implemented'
-    );
     expect(() => chanceTable(cal)).toThrow('not implemented');
     expect(() => typicalMonths(cal)).toThrow('not implemented');
     expect(() => parseCalibration({})).toThrow('not implemented');
