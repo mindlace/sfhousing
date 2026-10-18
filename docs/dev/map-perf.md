@@ -59,6 +59,8 @@ display refresh rate, so on a 120 Hz display the p50 is about 8.3 ms. The bar is
 | Apple M5 Pro (same), closed packed rings (one more wall per part)         | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 9.3 ms  | Yes (representative; worst-case p95 8.6 ms)  |
 | Apple M5 Pro (Mac17,9), timeline "playback", 30,000 projects, zoom 15.5   | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 10.3 ms | Yes                                          |
 | Apple M5 Pro (Mac17,9), timeline "drag", 30,000 projects, zoom 15.5       | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 9.0 ms  | Yes                                          |
+| Apple M5 Pro (same), timeline "playback", closed rings (after #21)        | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 10.3 ms | Yes                                          |
+| Apple M5 Pro (same), timeline "drag", closed rings (after #21)            | 2026-10-17 | Playwright Chromium, Metal | 2   | 1200   | 8.3 ms | 10.3 ms | Yes                                          |
 
 Run the bench with both transit layers on (the default View prefs). fixture-0 has only 8 stops, so its transit row measures the layer overhead. The live-network row ran the same bench against a local copy of the production dataset (`npm run data:local -- <version>`, then `npm run data:transit -- <version>`) served with `PUBLIC_DATASET_VERSION` set to that version instead of `fixture-0` (the bench config pins `fixture-0`, so this needs a one-off config override). Re-check against live data when the stop layers change.
 
@@ -80,10 +82,14 @@ The synthetic parcel ids match no buildings-tile features. The pump's `setFeatur
 
 Pump max ops per frame, 2026-10-17 (full sweep; the earlier timeline-only run gave 48 and 155 ops at p95 10.0 ms and 8.5 ms):
 
-| Case     | p95     | Pump max ops/frame |
-| -------- | ------- | ------------------ |
-| playback | 10.3 ms | 48                 |
-| drag     | 9.0 ms  | 170                |
+| Case                               | p95     | Pump max ops/frame |
+| ---------------------------------- | ------- | ------------------ |
+| playback                           | 10.3 ms | 48                 |
+| drag                               | 9.0 ms  | 170                |
+| playback, closed rings (after #21) | 10.3 ms | 53                 |
+| drag, closed rings (after #21)     | 10.3 ms | 171                |
+
+The first two rows were measured on open packed rings; the "closed rings (after #21)" rows were re-run after the closing vertex landed (every timeline part has one more wall). Both pump maxima stay far under the 2,000 feature-state cap.
 
 ## CI
 
