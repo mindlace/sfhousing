@@ -577,9 +577,10 @@ export const SD_RULES: readonly QualityRule[] = [
   // when the assessor roll shows units > 0 (pipeline/lib/scenario-eligibility.ts), so the yields,
   // the hostable flags and T11 flags bit 5 read it. The panel applies it per roll year to that
   // year's post-rule units, T11 to the latest year's. No mask bit: eligibility is not a T4a
-  // feature. Value tier 2: the roll's units are tier 0 evidence that the parcel holds homes, but
-  // that such a parcel is a developable residential lot like one with an LUDB row is an inference.
-  // Kind `missing`, so the 0.05 default. Fired on T11 parcels only (live 2026-10-17: 386 parcels
+  // feature. Tier 4 / 4 (spec §4.12, operator ruling, fix round 1): the predicate (no LUDB row and
+  // roll units > 0 means eligible) and the value it writes are made up. The roll's units show that
+  // the parcel holds homes, but nothing measures whether such a parcel is a developable lot like
+  // one with an LUDB row. Kind `missing`, so the 0.05 default. Fired on T11 parcels only (live 2026-10-17: 386 parcels
   // with 8,626 roll units, of 155,020); the panel's parcel-years are counted in
   // scenario.panel.landuse_none_with_units.
   {
@@ -589,8 +590,8 @@ export const SD_RULES: readonly QualityRule[] = [
     field: 'eligible',
     kind: 'missing',
     action: 'default',
-    tier: 2,
-    valueTier: 2,
+    tier: 4,
+    valueTier: 4,
     maskBit: null,
     label:
       'A parcel with no city land-use record is treated as eligible when the assessor roll shows ' +

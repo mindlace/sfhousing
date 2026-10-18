@@ -360,8 +360,8 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
       'eligible',
       'missing',
       'default',
-      2,
-      2,
+      4,
+      4,
       null,
       'T11 parcels',
       false
@@ -1453,6 +1453,43 @@ describe('sd.landuse.none-with-units: no land-use record, assessor units (coordi
     expect(scenarioYield(view, p.envelopeStories[i], null)).toBeGreaterThan(0);
     expect(scenarioYield(rec, p.envelopeStories[i], null)).toBe(0);
     expect((await panel('3512010')).map((r) => r.hostable_base)).toEqual([true, true]);
+  });
+
+  it('rebuilds the shipped yields of a rule-eligible row exactly from scenarioRecordOf', async () => {
+    // The worker's rebuild (IA-8): the decoded row and the chunk record (eligible false) give back
+    // exactly yield and baseYield, through the eligibility the row carries in flags bit 5.
+    const capDay = Date.UTC(2026, 9, 10) / 86400000;
+    for (const id of ['3512010', '3512001']) {
+      const i = p.index.get(id)!;
+      const rec = s.records.get(id)!;
+      expect(rec.eligible, id).toBe(false);
+      const [z] = await db.all<{ r4: boolean; zoning_code: string | null }>(
+        `SELECT d.r4, z.zoning_code FROM el.sc_district d JOIN el.sc_zoning z USING (id)
+         WHERE id = '${id}'`
+      );
+      const baseCap = densityCap(z.zoning_code, p.lotAreaM2[i], z.r4, FZP_EFFECTIVE_DAY - 1);
+      const fzpCap = p.localProgram[i]
+        ? null
+        : densityCap(z.zoning_code, p.lotAreaM2[i], z.r4, capDay);
+      const view = scenarioRecordOf(p, i, rec);
+      const at = (stories: number, k: number, cap: number | null) =>
+        stories === 0 ? 0 : scenarioYield(view, fillStories(FILL_LEVELS[k], stories), cap);
+      const want = {
+        yield: FILL_LEVELS.map((_, k) => at(p.envelopeStories[i], k, fzpCap)),
+        baseYield: FILL_LEVELS.map((_, k) => at(p.baseStories[i], k, baseCap))
+      };
+      expect(
+        want.yield.some((v) => v > 0),
+        id
+      ).toBe(true);
+      expect(
+        {
+          yield: [...p.yield.subarray(i * F, i * F + F)],
+          baseYield: [...p.baseYield.subarray(i * F, i * F + F)]
+        },
+        id
+      ).toEqual(want);
+    }
   });
 
   it('a NONE parcel with 0 roll units stays ineligible, with no yields', async () => {

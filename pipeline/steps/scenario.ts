@@ -325,7 +325,7 @@ function provenance(capDay: Day, rollYear: number): ScenarioParcels['provenance'
         `Local Program parcels and the cap on ${capDate} elsewhere; base yields use the base ` +
         `height and the pre-FZP cap (${preFzp}). Ineligible parcels (open space, or no city ` +
         'land-use record and no homes on the roll) have 0: a parcel without a land-use record ' +
-        'is eligible when the roll shows homes on it (sd.landuse.none-with-units, 2 / 2), in ' +
+        'is eligible when the roll shows homes on it (sd.landuse.none-with-units, 4 / 4), in ' +
         `the panel on each roll year's homes. ${CAP_RULES}`
     )
   };
