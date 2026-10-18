@@ -67,7 +67,7 @@ export default defineConfig(
     // never the engine's Math functions or the `**` operator, which differ across JS engines.
     // Math members with an exact spec (sqrt, fround, floor, ceil, round, trunc, abs, min, max,
     // sign, imul, clz32) stay allowed.
-    files: ['src/lib/timelapse/**', 'pipeline/lib/fzp-cal/**'],
+    files: ['src/lib/timelapse/**', 'src/lib/sim/scenario/**', 'pipeline/lib/fzp-cal/**'],
     rules: {
       'no-restricted-properties': [
         'error',

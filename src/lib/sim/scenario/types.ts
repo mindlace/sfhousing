@@ -27,10 +27,15 @@ export interface Schedule {
     day: Day;
     units: number;
     stories: number | null; /* null = unknown until massed */
-  }[]; // [0] is the initial proposal; ascending days; none on or after entered.construction
+  }[]; // [0] is the initial proposal; strictly ascending days (revisions due on one day are merged, the last wins); none on or after entered.construction
   existingUnits: number;
   multiPhase: boolean;
-  phase: { masterId: string; index: number; of: number } | null; // a phase sub-project of a multi-phase master
+  phase: {
+    masterId: string;
+    index: number; // 1-based
+    of: number;
+    start: 'scheduled' | 'estimated'; // scheduled = its permitFiled is the published plan date; estimated = the phaseGap stagger
+  } | null; // a phase sub-project of a multi-phase master
 }
 export type SimInput = {
   parcels: ScenarioParcels; // decoded T11
@@ -85,9 +90,9 @@ export type ProjectCard = {
   label: string; // pipeline: T3 label, else 'Block B, Lot L'; simulated: always 'Block B, Lot L'
   pathway: Pathway;
   units: number;
-  existingUnits: number; // summed over the project's parcels
+  existingUnits: number; // pipeline: the project's T3 existingUnits; phase: the T11 sum of its own parcels; simulated: the T11 sum of its parcels not already demolished earlier in the run
   stories: number | null;
-  storiesTier: 0 | 3 | null; // pipeline only; 3 = parsed from description text
+  storiesTier: 0 | 3 | 4 | null; // pipeline cards: 0 = recorded field, 3 = parsed from description text (both only for revisions[0]), 4 = from the simulator's massing or a later revision's proportional scaling, null iff stories is null; simulated cards: always null (their stories are the simulated size draw)
   massing: 'matched' | 'approximate' | 'none';
   multiPhase: boolean;
   phase: Schedule['phase'];
@@ -100,6 +105,7 @@ export type ProjectCard = {
     id: string;
     key?: string; // field to query, e.g. 'case_no'; absent = the dataset's record-id field
   }[];
+  quality: { label: string; tier: 2 | 3 | 4; valueTier: 0 | 1 | 2 | 3 | 4 | null }[]; // pipeline: T3 quality mapped through qualityRules, in id order; simulated: []. A display shows valueTier when non-null, else tier
 };
 
 // T8
@@ -114,7 +120,7 @@ export interface TimelineScore {
     exitedUnits: number; // cumulative
   }[];
   planEffect: { entitledNew: number; completedNetNew: number }[]; // shown seed: FZP run minus its paired old-zoning run (T9 `baseZoning`), cumulative net units
-  planEffectBand: { p10: number; p50: number; p90: number }[]; // planEffect.completedNetNew over the N paired runs
+  planEffectBand: { p10: number; p50: number; p90: number }[]; // planEffect.completedNetNew over the N paired runs; planEffect and planEffectBand are [] until computed: always [] in revision 0, filled by later band-only updates
   band: { p10: number; p50: number; p90: number }[]; // completedNet over N runs, same basis as shown
   baseline: { completedNet: number; since: Day; provenance: Provenance };
   phasing: {
@@ -122,7 +128,7 @@ export interface TimelineScore {
     enrichedMasters: number;
     phasesScheduled: number; // plan date from a published schedule
     phasesEstimated: number; // fallback sizes or phaseGap stagger
-    unenriched: { projectId: string; label: string | null; units: number }[];
+    unenriched: { projectId: string; label: string | null; units: number; drawn: boolean }[]; // drawn false = score-only: no free DA parcel (DQ-3)
   };
   targets: TargetProgressAt[];
   references: {

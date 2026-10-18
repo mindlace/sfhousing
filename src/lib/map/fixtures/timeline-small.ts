@@ -282,7 +282,7 @@ function specs(rev1: boolean): SlotSpec[] {
       end: { kind: 'complete', day: D.i1.end },
       massings: [building(SLOT.i1.parcelId)],
       revDays: [D.i1.rev0],
-      phase: { masterId: 'fx-i', index: 0, of: 2 }
+      phase: { masterId: 'fx-i', index: 1, of: 2, start: 'estimated' }
     },
     {
       key: 'i2',
@@ -291,7 +291,7 @@ function specs(rev1: boolean): SlotSpec[] {
       end: { kind: 'exit', stage: 'permitIssued', reason: 'expired', day: D.i2.end },
       massings: [building(SLOT.i2.parcelId)],
       revDays: [D.i2.rev0],
-      phase: { masterId: 'fx-i', index: 1, of: 2 }
+      phase: { masterId: 'fx-i', index: 2, of: 2, start: 'estimated' }
     }
   ];
 }
