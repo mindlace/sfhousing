@@ -9,7 +9,12 @@ import path from 'node:path';
 import type { ParcelRecord } from '../../src/lib/data/parcel';
 import { LAND_USE_CLASSES } from '../../src/lib/data/scenario-codec';
 import { MAX_STORIES } from '../../src/lib/generator/constants';
-import { DENSITY_CAP_CHANGE_DAY, FZP_EFFECTIVE_DAY, densityCap } from '../lib/density-caps';
+import {
+  DENSITY_CAP_CHANGE_DAY,
+  FZP_EFFECTIVE_DAY,
+  ORD_292_24_DAY,
+  densityCap
+} from '../lib/density-caps';
 import { createTableFromRows, runSqlFile, type CellValue, type Duck } from '../lib/duck';
 import { MIN_GROSS_M2_PER_UNIT } from '../lib/quality';
 import {
@@ -138,6 +143,7 @@ async function writeParcelCaps(
       lotAreaM2,
       d.base_ft === null ? 0 : storiesFromFt(d.base_ft),
       cap(DENSITY_CAP_CHANGE_DAY - 1),
+      cap(ORD_292_24_DAY - 1),
       cap(FZP_EFFECTIVE_DAY - 1),
       rec.existingUnits,
       rec.existingFloorAreaM2
@@ -151,6 +157,7 @@ async function writeParcelCaps(
       ['lot_area_m2', 'INTEGER'],
       ['base_stories', 'INTEGER'],
       ['cap_pre2022', 'INTEGER'],
+      ['cap_pre2025', 'INTEGER'],
       ['cap_prefzp', 'INTEGER'],
       ['ludb_units', 'INTEGER'],
       ['rec_floor_area_m2', 'DOUBLE']
@@ -197,6 +204,7 @@ export async function runScenarioSql(
   await runSqlFile(db, path.join(SQL_DIR, '80_scenario.sql'));
   await writeParcelCaps(db, records);
   await db.run(`SET VARIABLE density_cap_change_day = ${DENSITY_CAP_CHANGE_DAY}::INTEGER`);
+  await db.run(`SET VARIABLE ord_292_24_day = ${ORD_292_24_DAY}::INTEGER`);
   // sd.roll.units-capacity: 10 m² of lot area × stories per home (tier 4, pipeline/lib/quality.ts).
   await db.run(`SET VARIABLE min_gross_m2_per_unit = ${MIN_GROSS_M2_PER_UNIT}::INTEGER`);
   await runSqlFile(db, path.join(SQL_DIR, '81_scenario_features.sql'));

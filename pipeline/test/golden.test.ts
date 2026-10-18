@@ -371,9 +371,14 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       'sd.roll.year-gap': [1, 26],
       'sd.yield.nonmonotone': [0, 14],
       'sd.yield.zero-hostable': [3, 11],
+      'sd.zoning.c2-floor-approx': [0, 8],
       'sd.zoning.generic-nc': [1, 8],
+      'sd.zoning.m1-floor-approx': [0, 8],
       'sd.zoning.missing': [0, 8],
-      'sd.zoning.split-code': [0, 8]
+      'sd.zoning.named-no-cap': [1, 8],
+      'sd.zoning.rc4-vanness-approx': [0, 8],
+      'sd.zoning.split-code': [0, 8],
+      'sd.zoning.unlisted': [0, 8]
     };
     const sd = QUALITY_RULES.filter((r) => r.owner === 'scenario-data');
     expect(sd.map((r) => r.id)).toEqual(Object.keys(want));
@@ -407,6 +412,8 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
     expect(counts['scenario.yield.clamped']).toBe(0);
     expect(counts['scenario.height.parse_fail']).toBe(0);
     expect(counts['scenario.panel.feature_mismatch']).toBe(0);
+    expect(counts['scenario.v18.cap_period_differs']).toBe(0);
+    expect(counts['scenario.v18.basecap_mismatch']).toBe(0);
     expect(p.fillLevels).toEqual([...FILL_LEVELS]);
   });
 });

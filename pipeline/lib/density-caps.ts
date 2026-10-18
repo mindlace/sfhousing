@@ -16,16 +16,43 @@
 // The consolidated Code on amlegal returned HTTP 403 (2026-10-16), so amendments after Ord. 245-25
 // were not checked there; the gocodebook mirror (text as of 2026-09-23, Ord. 37-26) agrees with
 // every current value: https://gocodebook.com/library/us/ca/san-francisco-planning (spec §4.4).
-// Not tier 1: the per-lot floor of 1 for RM/NC (spec reading), the split and generic-NC rules
-// (tier 4), and the date the RH per-area alternatives became as-of-right (taken as 2022-11-27, I).
+// Not tier 1: the per-lot floor of 1 for RM/NC/C-2/M-1 (spec reading), the split and generic-NC
+// rules (tier 4), and the date the RH per-area alternatives became as-of-right (taken as
+// 2022-11-27, I).
+//
+// Researched additions (partner rulings 2026-10-18; F9 research, f9-density-research.md, read from
+// the enacted ordinance PDFs with strike/underline markup, tier 1 unless a row says otherwise):
+// C-2 and M-1 (the 1 per 800 sf floor of their nearest-R-District rule, an approximation: rules
+// sd.zoning.c2-floor-approx and sd.zoning.m1-floor-approx, tier 4), SALI (0: residential not
+// permitted), and explicit no-limit (null) entries for CMUO, MUG, MUO, MUR, RED, RED-MX, WMUG and
+// RCD. A pre-2022-11-27 value of these rows is "official (P1 inferred)": the control is plain
+// (pre-existing) text in the ordinance that later amended the table, Ord. 210-22 did not touch
+// it, and no other amendment was found.
 import type { Day } from '../../src/lib/timelapse/time';
 
 /** Director Bulletin No. 11, Housing Choice-SF Program (first issued February 2026). */
 export const BULLETIN_11_URL =
   'https://sfplanning.org/resource/planning-director-bulletin-no-11-housing-choice-sf-program';
 
-/** Ordinance No. 245-25 (Planning Code - Family Zoning Plan), signed 2025-12-12. Official. */
-const ORD_245_25_URL = 'https://www.sfbos.org/sites/default/files/o0245-25.pdf';
+/**
+ * Ordinance No. 245-25 (Planning Code - Family Zoning Plan), signed 2025-12-12. Official. The
+ * sfbos.org URL now 301-redirects here (checked 2026-10-18); the page anchors are unchanged.
+ */
+const ORD_245_25_URL = 'https://sfbos.archive.sf.gov/sites/default/files/o0245-25.pdf';
+
+/**
+ * Ordinance No. 122-23 (File 230371, Commercial-to-Residential Adaptive Reuse), finally passed
+ * 2023-06-27; it added Table 210.1 Note 8 (C-2 no-limit area). Official.
+ */
+const ORD_122_23_URL = 'https://sfbos.archive.sf.gov/sites/default/files/o0122-23.pdf';
+
+/** Ordinance No. 292-24 (File 230596, minimum densities), effective 2025-01-19. Official. */
+const ORD_292_24_URL = 'https://sfbos.archive.sf.gov/sites/default/files/o0292-24.pdf';
+
+/** Planning code summary 2023-005238PCA for Ord. 292-24 ("The Way It Was"). Official. */
+const MIN_DENSITY_SUMMARY_URL =
+  'https://files.sfplanning.org/documents/legislation/' +
+  '2023-005238PCA_Minimum_Densities_for_Residential_Projects.pdf';
 
 /** Planning code summary 2021-010762PCA (Ord. 210-22, four-unit RH exception). Official. */
 const FOURPLEX_SUMMARY_URL =
@@ -37,6 +64,14 @@ const FOURPLEX_SUMMARY_URL =
  * 11). Tier 1: Planning code summary 2021-010762PCA, "Effective Date: November 27, 2022".
  */
 export const DENSITY_CAP_CHANGE_DAY: Day = Date.UTC(2022, 10, 27) / 86400000;
+
+/**
+ * Day of 2025-01-19, the effective date of Ord. 292-24 (File 230596, minimum densities in RM, RC
+ * and RTO): before it the RM/RC maximum was "3 units per lot or one unit per N sf, whichever is
+ * greater"; from it the maximum is the bare per-area value and "3 per lot" is part of a new
+ * minimum. Tier 1: Ord. 292-24 and Planning code summary 2023-005238PCA (F9 research).
+ */
+export const ORD_292_24_DAY: Day = Date.UTC(2025, 0, 19) / 86400000;
 
 /**
  * Day of 2026-01-12, the effective date of Ord. 245-25 (Family Zoning Plan), from which NC lots
@@ -69,10 +104,11 @@ export type DensityCapEntry = {
 };
 
 /**
- * `pre-fourplex`: day < DENSITY_CAP_CHANGE_DAY. `fourplex`: from it to FZP_EFFECTIVE_DAY - 1.
- * `fzp`: day ≥ FZP_EFFECTIVE_DAY.
+ * `pre-fourplex`: day < DENSITY_CAP_CHANGE_DAY. `fourplex`: from it to ORD_292_24_DAY - 1.
+ * `min-density`: from ORD_292_24_DAY to FZP_EFFECTIVE_DAY - 1. `fzp`: day ≥ FZP_EFFECTIVE_DAY.
+ * RH and NC read `fourplex` and `min-density` alike; only RM and RC split at ORD_292_24_DAY.
  */
-type Period = 'pre-fourplex' | 'fourplex' | 'fzp';
+type Period = 'pre-fourplex' | 'fourplex' | 'min-density' | 'fzp';
 
 /** `A` is lot area in whole square feet (≥ 1). */
 type CapFormula = (A: number, period: Period, inR4: boolean) => number | null;
@@ -81,8 +117,15 @@ type CapRow = DensityCapEntry & { cap: CapFormula };
 
 function periodOf(day: Day): Period {
   if (day < DENSITY_CAP_CHANGE_DAY) return 'pre-fourplex';
-  return day < FZP_EFFECTIVE_DAY ? 'fourplex' : 'fzp';
+  if (day < ORD_292_24_DAY) return 'fourplex';
+  return day < FZP_EFFECTIVE_DAY ? 'min-density' : 'fzp';
 }
+
+/**
+ * Units per lot before ORD_292_24_DAY in RM and RC: "3 units per lot or one unit per N sf,
+ * whichever is greater" (Ord. 292-24 pp. 5-7 plain text; 2023-005238PCA "The Way It Was"). Tier 1.
+ */
+const RM_RC_PER_LOT_PRE_292 = 3;
 
 /** "X per lot, or one unit per N sf of lot area" reads as whichever allows more (spec §4.4). */
 const perArea = (A: number, perLot: number, sfPerUnit: number): number =>
@@ -109,6 +152,47 @@ const nc =
     period === 'fzp' && inR4 ? null : perArea(A, 1, sfPerUnit);
 
 const ord = (page: number): string => `${ORD_245_25_URL}#page=${page}`;
+
+/**
+ * RM/RC cap: before ORD_292_24_DAY the greater of 3 per lot or one unit per N sf; from it the bare
+ * per-area value with the spec's per-lot floor of 1. `r4FormBased` (RC): inside R-4 from
+ * FZP_EFFECTIVE_DAY, "Form-Based Density applies within the R-4 Height and Bulk District"
+ * (Ord. 245-25 p. 82), so null.
+ */
+const rmrc =
+  (sfPerUnit: number, r4FormBased: boolean): CapFormula =>
+  (A, period, inR4) => {
+    if (r4FormBased && period === 'fzp' && inR4) return null;
+    const early = period === 'pre-fourplex' || period === 'fourplex';
+    return perArea(A, early ? RM_RC_PER_LOT_PRE_292 : 1, sfPerUnit);
+  };
+
+const o292 = (page: number): string => `${ORD_292_24_URL}#page=${page}`;
+const RM_RC_NOTE_PRE =
+  `Before 2025-01-19: Ord. 292-24 ${o292(5)} (plain text, pp. 5-7) and code summary ` +
+  `2023-005238PCA, ${MIN_DENSITY_SUMMARY_URL} ("The Way It Was"): 3 units per lot or one unit ` +
+  'per N sf, whichever is greater.';
+
+/**
+ * Explicit no-limit row (F9 research): "No density limit by lot area. Density restricted by
+ * physical envelope controls ...", replaced by "Form-Based Density." in Ord. 245-25, so null in
+ * every period. Tier 1.
+ */
+const envelopeRow = (code: string, section: string, page: number, quote: string): CapRow => ({
+  codes: [code],
+  section,
+  url: ord(page),
+  verified: 'official',
+  note:
+    `Ord. 245-25 p. ${page}: ${quote} (struck), replaced by "Form-Based Density."; no lot-area ` +
+    'density limit before or after Ord. 245-25, so null in every period (pre-2022-11-27: ' +
+    'official, P1 inferred).',
+  cap: () => null
+});
+
+const EASTERN =
+  '§207.6(a): "dwelling unit density is not controlled by lot area in ... Eastern ' +
+  'Neighborhoods Mixed Use Districts"; ';
 
 const RH_NOTE_PRE =
   `Before 2022-11-27: official code summary 2021-010762PCA, ${FOURPLEX_SUMMARY_URL} ` +
@@ -193,27 +277,32 @@ const ROWS: CapRow[] = [
     note:
       'Ord. 245-25 p. 73: "Total maximum permitted density is one unit per 800 square feet of ' +
       'lot area." (the minimum-density clause is struck). The per-lot floor of 1 is the spec ' +
-      'reading; the Table states no per-lot figure.',
-    // Tier 1: 1 per 800 sf (Table 209.2); floor of 1 per lot is the spec's reading.
-    cap: (A) => perArea(A, 1, 800)
+      `reading; the Table states no per-lot figure. ${RM_RC_NOTE_PRE}`,
+    // Tier 1: before 2025-01-19 max(3, 1 per 800 sf); from it 1 per 800 sf (Table 209.2), with
+    // the spec's per-lot floor of 1.
+    cap: rmrc(800, false)
   },
   {
     codes: ['RM-2'],
     section: '§209.2, Table 209.2 (Dwelling Units Density, General)',
     url: ord(73),
     verified: 'official',
-    note: 'Ord. 245-25 p. 73: "Total maximum permitted density is one unit per 600 square feet".',
-    // Tier 1: 1 per 600 sf (Table 209.2).
-    cap: (A) => perArea(A, 1, 600)
+    note:
+      'Ord. 245-25 p. 73: "Total maximum permitted density is one unit per 600 square feet". ' +
+      RM_RC_NOTE_PRE,
+    // Tier 1: before 2025-01-19 max(3, 1 per 600 sf); from it 1 per 600 sf (Table 209.2).
+    cap: rmrc(600, false)
   },
   {
     codes: ['RM-3'],
     section: '§209.2, Table 209.2 (Dwelling Units Density, General)',
     url: ord(73),
     verified: 'official',
-    note: 'Ord. 245-25 p. 73: "Total maximum permitted density is one unit per 400 square feet".',
-    // Tier 1: 1 per 400 sf (Table 209.2).
-    cap: (A) => perArea(A, 1, 400)
+    note:
+      'Ord. 245-25 p. 73: "Total maximum permitted density is one unit per 400 square feet". ' +
+      RM_RC_NOTE_PRE,
+    // Tier 1: before 2025-01-19 max(3, 1 per 400 sf); from it 1 per 400 sf (Table 209.2).
+    cap: rmrc(400, false)
   },
   {
     codes: ['RM-4'],
@@ -222,9 +311,39 @@ const ROWS: CapRow[] = [
     verified: 'official',
     note:
       'Ord. 245-25 p. 73: "Total maximum permitted density is one unit per 200 square feet". ' +
-      'Note 8 (a small unit counts as 3/4) is not modelled.',
-    // Tier 1: 1 per 200 sf (Table 209.2).
-    cap: (A) => perArea(A, 1, 200)
+      `Note 8 (a small unit counts as 3/4) is not modelled. ${RM_RC_NOTE_PRE}`,
+    // Tier 1: before 2025-01-19 max(3, 1 per 200 sf); from it 1 per 200 sf (Table 209.2).
+    cap: rmrc(200, false)
+  },
+  {
+    codes: ['RC-3'],
+    section: '§209.3, Table 209.3 (Residential Density, Dwelling Units Density)',
+    url: ord(82),
+    verified: 'official',
+    note:
+      'Ord. 245-25 p. 82: "Form-Based Density applies within the R-4 Height and Bulk District ' +
+      '(§ 263.19). Outside the R-4 ..." one unit per 400 sf of lot area (the minimum clause and ' +
+      `Note 13 struck). ${RM_RC_NOTE_PRE} From 2025-01-19 (Ord. 292-24 ${o292(7)}): 1 unit per ` +
+      '400 sf maximum (3 per lot moves into a minimum, not modelled).',
+    // Tier 1: before 2025-01-19 max(3, 1 per 400 sf); from it 1 per 400 sf; inside R-4 from
+    // FZP_EFFECTIVE_DAY null (Table 209.3).
+    cap: rmrc(400, true)
+  },
+  {
+    codes: ['RC-4'],
+    section: '§209.3, Table 209.3 (Residential Density, Dwelling Units Density); §243',
+    url: ord(82),
+    verified: 'official',
+    note:
+      'Ord. 245-25 p. 82: "Form-Based Density applies within the R-4 Height and Bulk District ' +
+      '(§ 263.19). Outside the R-4 ..." one unit per 200 sf of lot area. ' +
+      `${RM_RC_NOTE_PRE} From 2025-01-19 (Ord. 292-24 ${o292(7)}): 1 unit per 200 sf maximum. ` +
+      'In every period the Van Ness Special Use District (§243) has no density limit; the data ' +
+      'has no SUD field, so the numeric cap applies citywide (rule sd.zoning.rc4-vanness-approx, ' +
+      'tier 4: over-caps RC-4 parcels in the Van Ness SUD).',
+    // Tier 1 outside the Van Ness SUD: before 2025-01-19 max(3, 1 per 200 sf); from it 1 per 200
+    // sf; inside R-4 from FZP_EFFECTIVE_DAY null (Table 209.3). Tier 4 citywide (approximation).
+    cap: rmrc(200, true)
   },
   {
     codes: ['NC-1'],
@@ -286,7 +405,111 @@ const ROWS: CapRow[] = [
       'by physical envelope controls ..." and add "Form-Based Density.", so null in every period.',
     // Tier 1: no lot-area density limit before or after Ord. 245-25 (§207.6(a), Tables 750-752).
     cap: () => null
-  }
+  },
+  {
+    codes: ['C-2'],
+    section: '§210.1, Table 210.1 (Residential Density, Dwelling Units Density; Note 8)',
+    url: ord(195),
+    verified: 'official',
+    note:
+      'Ord. 245-25 p. 195: "P at a density ratio not exceeding the number of dwelling units ' +
+      'permitted in the nearest R District, ... provided, that the maximum density ratio shall ' +
+      'in no case be less than one unit for each 800 square feet of lot area. NP above." (plain ' +
+      `text before Ord. 122-23 too: ${ORD_122_23_URL}#page=31); p. 197: "Form-Based Density ` +
+      'applies within the R-4 Height and Bulk District" (added by Ord. 245-25). Modelled as the ' +
+      '1 per 800 sf floor in every period (rule sd.zoning.c2-floor-approx, tier 4): the ' +
+      'nearest-R-District term and Note 8 (from Ord. 122-23, about 2023-08: no limit east of or ' +
+      'fronting Franklin St and 13th St and north of Townsend St, outside three historic ' +
+      'districts; ' +
+      `${ORD_122_23_URL}#page=32) need geography the pipeline does not have, so it understates.`,
+    // Tier 1 floor (1 per 800 sf, Table 210.1), tier 4 as the whole cap (approximation rule); the
+    // per-lot floor of 1 is the spec reading. Inside R-4 from FZP_EFFECTIVE_DAY: null (p. 197).
+    cap: nc(800)
+  },
+  {
+    codes: ['M-1'],
+    section: '§210.4, Table 210.4 (Residential Density, Dwelling Units Density)',
+    url: ord(202),
+    verified: 'official',
+    note:
+      'Ord. 245-25 pp. 202-203: "C at a density ratio not exceeding the number of dwelling units ' +
+      'permitted in the nearest R District, ... in no case less than one unit for each 800 feet ' +
+      'of lot area ... NP above"; Ord. 245-25 does not change the row. Dwellings are a ' +
+      'conditional use only, not as of right. Modelled as the 1 per 800 sf floor in every period ' +
+      '(rule sd.zoning.m1-floor-approx, tier 4): the nearest-R-District term needs geography the ' +
+      'pipeline does not have.',
+    // Tier 1 floor (1 per 800 sf, Table 210.4), tier 4 as the whole cap (approximation rule); the
+    // per-lot floor of 1 is the spec reading. No R-4 change.
+    cap: (A) => perArea(A, 1, 800)
+  },
+  {
+    codes: ['SALI'],
+    section: '§836, Table 836 (formerly Table 846; Dwelling Units, Note 3)',
+    url: ord(454),
+    verified: 'official',
+    note:
+      'Ord. 245-25 p. 454: Dwelling Units "NP(3)", Note 3 "NP, Except Affordable Housing ' +
+      'Projects meeting the requirements of Section 803.8"; purpose statement p. 453. ' +
+      'Residential is not permitted, so the cap is 0 in every period (pre-2022-11-27: official, ' +
+      'P1 inferred). The exceptions, qualifying affordable housing projects (Note 3) and ADUs ' +
+      '(§207.1), are not modelled; the density row ("No density limit") applies only to them.',
+    // Tier 1: 0 units (Table 836, NP).
+    cap: () => 0
+  },
+  envelopeRow(
+    'CMUO',
+    '§207.6(a); §830, Table 830 (formerly Table 848)',
+    440,
+    `${EASTERN}Table 830 pp. 440-441, "No residential density limit by lot area. Density ` +
+      'restricted by physical envelope controls ..."'
+  ),
+  envelopeRow(
+    'MUG',
+    '§207.6(a); §831, Table 831 (formerly Table 840)',
+    443,
+    `${EASTERN}Table 831, "No density limit. Density is regulated by the permitted height and ` +
+      'bulk ..."'
+  ),
+  envelopeRow(
+    'MUO',
+    '§207.6(a); §832, Table 832 (formerly Table 842)',
+    445,
+    `${EASTERN}Table 832, "No density limit. Density is regulated by the permitted height and ` +
+      'bulk ..."'
+  ),
+  envelopeRow(
+    'MUR',
+    '§207.6(a); §833, Table 833 (formerly Table 841)',
+    447,
+    `${EASTERN}Table 833, "No density limit. Density is regulated by the permitted height and ` +
+      'bulk ..."'
+  ),
+  envelopeRow(
+    'RED',
+    '§834, Table 834 (formerly Table 847)',
+    450,
+    'Table 834, "No density limit. Density is regulated by the permitted height and bulk ..."'
+  ),
+  envelopeRow(
+    'RED-MX',
+    '§835, Table 835',
+    452,
+    'Table 835, "No density limit. Density is regulated by the permitted height and bulk ..."'
+  ),
+  envelopeRow(
+    'WMUG',
+    '§207.6(a); §839, Table 839 (formerly Table 844)',
+    461,
+    `${EASTERN}Table 839, "No density limit. Density is regulated by the permitted height and ` +
+      'bulk ..."'
+  ),
+  envelopeRow(
+    'RCD',
+    '§758, Table 758 (Regional Commercial District)',
+    400,
+    'Table 758, "No density limit by lot area. Density restricted by physical envelope controls ' +
+      '..."'
+  )
 ];
 
 /** The density-cap table with one cited section and URL per entry (AC 10). */
@@ -328,6 +551,20 @@ export function densityCapRule(zoning: string | null): DensityCapRule {
   if (z.includes('|')) return 'split';
   if (GENERIC_NC.has(z)) return 'generic-nc';
   return BY_CODE.has(z) ? 'table' : 'unlisted';
+}
+
+/**
+ * Zoning codes in the families spec §4.4's catch-all row names as having no density cap ("anything
+ * else (named NCDs and NCTs, RTO, UMU, C-3, PDR, P…) → null"): RTO-*, UMU, C-3-*, PDR-* and the
+ * bare `P`. The matcher is exact: `RTO` or `RTO-…`, `UMU`, `C-3` or `C-3-…`, `PDR` or `PDR-…`, and
+ * `P` alone (so `P70-MU`, `PM-R` and `PPS-MU` are not in the family). Only meaningful for a code
+ * `densityCapRule` calls 'unlisted'; the cap itself is unchanged (null).
+ */
+const NAMED_NO_CAP = /^(?:RTO(?:-.+)?|UMU|C-3(?:-.+)?|PDR(?:-.+)?|P)$/;
+
+/** True when `zoning` (trimmed) is in a family the spec §4.4 catch-all row names as no cap. */
+export function isSpecNamedNoCap(zoning: string | null): boolean {
+  return NAMED_NO_CAP.test(zoning?.trim() ?? '');
 }
 
 function capOne(code: string, A: number, period: Period, inR4: boolean): number | null {
