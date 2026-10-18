@@ -303,8 +303,11 @@ export function buildSpells(
   return { spells: spells.sort(byKey), unobserved: unobserved.sort(byKey) };
 }
 
-/** Distinct histories with a spell or an unobserved advance in the pooled windows. */
-function windowedIds(spells: Spell[], unobserved: UnobservedAdvance[]): Set<string> {
+/**
+ * Distinct histories with a spell or an unobserved advance in the pooled windows: the windowed
+ * denominator of `gapImputeTally`, `noFcdTally` and `purgeCensorTally` (rulings C1, C3).
+ */
+export function windowedIds(spells: Spell[], unobserved: UnobservedAdvance[]): Set<string> {
   const ids = new Set(spells.map((s) => s.projectId));
   for (const u of unobserved) ids.add(u.projectId);
   return ids;

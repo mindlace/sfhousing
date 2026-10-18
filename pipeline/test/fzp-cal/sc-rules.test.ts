@@ -81,7 +81,8 @@ const EXPECTED: Record<ScRuleId, QualityRule> = {
     valueTier: 2,
     label:
       'An exit inside an administrative purge window counts as still open, not as a project decision',
-    denominator: 'exits of qualifying histories (after step 3)'
+    // conductor ruling C3
+    denominator: 'exits of qualifying histories that contribute a spell in a pooled window'
   },
   'sc.revision.ratio-clamp': {
     ...common,

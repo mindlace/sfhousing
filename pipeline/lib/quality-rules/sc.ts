@@ -91,7 +91,9 @@ export const SC_RULES: readonly QualityRule[] = [
     maskBit: null,
     label:
       'An exit inside an administrative purge window counts as still open, not as a project decision',
-    denominator: 'exits of qualifying histories (after step 3)',
+    // Counted over windowed exits (conductor ruling C3, 2026-10-18); the unwindowed counts and
+    // every purge window stay in the report and provenance.
+    denominator: 'exits of qualifying histories that contribute a spell in a pooled window',
     warnShare: 0.01,
     failShare: 0.1,
     unitsWeighted: false

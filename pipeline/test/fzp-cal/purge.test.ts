@@ -1,7 +1,8 @@
 // Administrative-purge censoring, rule sc.exit.purge-censor (spec §4.4 step 6).
 import { describe, expect, it } from 'vitest';
 import { FIXTURE_CAL, LIVE_CAL } from '../../lib/fzp-cal/config';
-import { purgeCensor } from '../../lib/fzp-cal/purge';
+import { purgeCensor, purgeCensorTally } from '../../lib/fzp-cal/purge';
+import { buildSpells, windowedIds } from '../../lib/fzp-cal/spells';
 import { CalibrationError, type NormHistory } from '../../lib/fzp-cal/types';
 import { isoToDay } from '../../project-records/multiphase';
 import type { Day, ExitReason, ProjectHistory, Stage } from '../../../src/lib/timelapse/types';
@@ -198,5 +199,41 @@ describe('purgeCensor', () => {
     const noStage = exitHist('nostage', 'filed', d('2020-01-01'), d('2020-02-01'));
     noStage.eff = {};
     expect(() => purgeCensor([noStage], LIVE_CAL)).toThrow(/nostage/);
+  });
+});
+
+describe('purgeCensorTally (conductor ruling C3: windowed exits)', () => {
+  const AS_OF = d('2026-12-31');
+  const windowedOf = (norm: NormHistory[]) => {
+    const b = buildSpells(norm, AS_OF);
+    return windowedIds(b.spells, b.unobserved);
+  };
+
+  it('lists every exit once, sorted by id, with its stage and whether it was censored', () => {
+    const r = purgeCensor([...burst('a', d('2026-09-15'), 10, 2)], LIVE_CAL);
+    expect(r.exits.map((e) => e.id)).toEqual([...r.exits.map((e) => e.id)].sort());
+    expect(r.exits).toHaveLength(12);
+    expect(r.exits.filter((e) => e.censored).map((e) => `${e.id}:${e.stage}`)).toEqual(
+      r.tally.sample
+    );
+  });
+
+  it('a purge window before 2007 with no windowed spell: fired 0, the unwindowed tally kept', () => {
+    // entitled 2002 -> 2005: censored at 2005-05-31, the spell ends before the 2015 window
+    const norm = [...background(), ...burst('old', d('2005-06-01'), 30, 0)];
+    const r = purgeCensor(norm, LIVE_CAL);
+    expect(r.windows.map((w) => [w.first, w.censored])).toEqual([[d('2005-06-01'), 30]]);
+    expect(r.tally).toMatchObject({ fired: 30, of: norm.length });
+    const t = purgeCensorTally(windowedOf(r.norm), r);
+    const bg = background().length;
+    expect(t).toEqual({ fired: 0, of: bg, sample: [] });
+  });
+
+  it('a 2026 window inside the windowed set counts as before', () => {
+    const norm = [...background(), ...burst('a', d('2026-09-15'), 30, 10)];
+    const r = purgeCensor(norm, LIVE_CAL);
+    const t = purgeCensorTally(windowedOf(r.norm), r);
+    expect(t).toEqual(r.tally);
+    expect(t.fired).toBe(30);
   });
 });

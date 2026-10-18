@@ -2,7 +2,10 @@
  * Administrative-purge censoring, registered rule `sc.exit.purge-censor` (stage-calibration
  * spec §4.4 step 6). Exits from bulk administrative actions are not project decisions: a window
  * of purge days is found over all exits, and its long-duration exits become censored at the day
- * before the window. Values change only in memory; the input is not mutated.
+ * before the window. Values change only in memory; the input is not mutated. Detection and
+ * censoring run over all qualifying exits; the rule is counted over the exits of windowed
+ * histories (`purgeCensorTally`, conductor ruling C3), and the unwindowed counts and every window
+ * stay in the report and provenance.
  */
 import type { Day, ExitReason, Stage } from '../../../src/lib/timelapse/types';
 import { CalibrationError } from './types';
@@ -17,6 +20,15 @@ interface Exit {
   day: Day;
   /** days in the exit stage */
   x: number;
+}
+
+/** One qualifying exit, as `purgeCensor` saw it. */
+export interface PurgeExit {
+  id: string;
+  /** the exit's stage (after step 3) */
+  stage: Stage;
+  /** step 6 turned it into a censored observation */
+  censored: boolean;
 }
 
 function median(xs: number[]): number {
@@ -72,12 +84,14 @@ function mergeWindows(days: Day[], gap: number): { first: Day; last: Day }[] {
 
 /**
  * Censors the long-duration exits inside each purge window at `max(eff[stage], first - 1)`.
- * `tally.of` counts the exits of all histories, `fired` the censored ones.
+ * `tally` is the unwindowed count, for the report: `of` the exits of all qualifying histories,
+ * `fired` the censored ones. `exits` lists every exit, sorted by history id, for the windowed
+ * rule count (`purgeCensorTally`).
  */
 export function purgeCensor(
   norm: NormHistory[],
   cal: CalProfile
-): { norm: NormHistory[]; tally: RuleTally; windows: PurgeWindow[] } {
+): { norm: NormHistory[]; tally: RuleTally; windows: PurgeWindow[]; exits: PurgeExit[] } {
   const exits: Exit[] = [];
   for (const h of norm) {
     const e = exitOf(h);
@@ -115,5 +129,33 @@ export function purgeCensor(
     return { ...h, end: { kind: 'open' as const, lastObserved }, purgeCensored: true };
   });
   sample.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  return { norm: out, tally: { fired: sample.length, of: exits.length, sample }, windows };
+  const listed: PurgeExit[] = exits
+    .map((e) => ({ id: e.h.id, stage: e.stage, censored: censor.has(e.h) }))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return {
+    norm: out,
+    tally: { fired: sample.length, of: exits.length, sample },
+    windows,
+    exits: listed
+  };
+}
+
+/**
+ * `sc.exit.purge-censor` over windowed exits (conductor ruling C3, by the C1 precedent): `of` is
+ * the exits whose history is in `windowed` (`windowedIds` of `buildSpells`' spells and unobserved
+ * advances), `fired` the censored ones among them, `sample` their `<id>:<stage>`, sorted.
+ */
+export function purgeCensorTally(
+  windowed: ReadonlySet<string>,
+  p: { exits: readonly PurgeExit[] }
+): RuleTally {
+  let of = 0;
+  const sample: string[] = [];
+  for (const e of p.exits) {
+    if (!windowed.has(e.id)) continue;
+    of++;
+    if (e.censored) sample.push(`${e.id}:${e.stage}`);
+  }
+  sample.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return { fired: sample.length, of, sample };
 }
