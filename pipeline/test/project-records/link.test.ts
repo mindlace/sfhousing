@@ -130,7 +130,11 @@ function parsedOf(o: {
 }
 
 /** Condo sub-lots 3512101..103 map to 3512002; everything else maps to itself. */
-const CONDO: Record<string, string> = { '3512101': '3512002', '3512102': '3512002' };
+const CONDO: Record<string, string> = {
+  '3512101': '3512002',
+  '3512102': '3512002',
+  '8900001': '8926001'
+};
 const resolve = (b: string[]) => [...new Set(b.map((x) => CONDO[x] ?? x))].sort();
 
 /** Stand-in for Task 5's filedEvidenceDay: min of anchor opens and permit filed days. */
@@ -911,5 +915,65 @@ describe('DQ-2: a pipeline-only row with no status date (spec §4.2 step 10)', (
       'quality.pr.pipeline.no-status-date.unitsOf': unitsOf
     });
     expect(r.file.qualityRules.map((q) => q.id)).toContain(PR.pipelineStatusDateLinked);
+  });
+});
+
+describe('cross-block PRJ parcels (pr.parcels.cross-block, spec §4.2 Parcels)', () => {
+  const linkOne = (o: Parameters<typeof parsedOf>[0]) => link(parsedOf(o)).projects[0];
+
+  it('Schlage Lock: a PRJ lot on block 5066B is dropped when the permit lot is 5087003', () => {
+    const p = linkOne({
+      permits: [permit('P1', { rows: rows('5087003') })],
+      prjs: [prj('A', { permits: ['P1'], blklot: '5066B020' })]
+    });
+    expect(p.parcelIds).toEqual(['5087003']);
+    expect(p.crossBlock).toEqual({ applies: true, dropped: ['5066B020'] });
+  });
+
+  it('Treasure Island: a PRJ lot that maps to 8926001 is dropped for a permit on 8952001', () => {
+    const p = linkOne({
+      permits: [permit('P1', { rows: rows('8952001') })],
+      prjs: [prj('A', { permits: ['P1'], blklot: '8900001' })]
+    });
+    // The stub lineage maps 8900001 to 8926001, as the live lineage does for the PRJ lot.
+    expect(p.parcelIds).toEqual(['8952001']);
+    expect(p.crossBlock).toEqual({ applies: true, dropped: ['8926001'] });
+  });
+
+  it('a PRJ lot on the same block as a permit lot is kept', () => {
+    const p = linkOne({
+      permits: [permit('P1', { rows: rows('3512001') })],
+      prjs: [prj('A', { permits: ['P1'], blklot: '3512003' })]
+    });
+    expect(p.parcelIds).toEqual(['3512001', '3512003']);
+    expect(p.crossBlock).toEqual({ applies: true, dropped: [] });
+  });
+
+  it('with no resolvable permit lot, the PRJ parcels are kept', () => {
+    const p = linkOne({
+      permits: [permit('P1', { rows: rows(null) })],
+      prjs: [prj('A', { permits: ['P1'], blklot: '5066B020' })]
+    });
+    expect(p.parcelIds).toEqual(['5066B020']);
+    expect(p.crossBlock).toEqual({ applies: false, dropped: [] });
+  });
+
+  it('a pipeline-row parcel on another block is kept; so is every permit parcel', () => {
+    const p = linkOne({
+      permits: [permit('P1', { rows: rows('3512001', '3600001') })],
+      prjs: [prj('A', { permits: ['P1'], blklot: '5066B020' })],
+      pipeline: [{ caseNo: 'A', bpaNo: 'P1', blklot: '4000001' }]
+    });
+    expect(p.parcelIds).toEqual(['3512001', '3600001', '4000001']);
+    expect(p.crossBlock.dropped).toEqual(['5066B020']);
+  });
+
+  it('a lot named by both the PRJ and a permit is a permit parcel and stays', () => {
+    const p = linkOne({
+      permits: [permit('P1', { rows: rows('3512001') })],
+      prjs: [prj('A', { permits: ['P1'], blklot: '3512001' })]
+    });
+    expect(p.parcelIds).toEqual(['3512001']);
+    expect(p.crossBlock.dropped).toEqual([]);
   });
 });

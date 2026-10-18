@@ -236,6 +236,16 @@ describe('checkV23', () => {
     expect(checkV23(early, true).ok).toBe(false);
   });
 
+  it('fails an open history whose lastObserved precedes a later entered day', () => {
+    const i = inputs((x) => {
+      const h = hist(x, 'PRJ:2019-000001PRJ');
+      h.end = { kind: 'open', lastObserved: h.entered.filed as number };
+    });
+    const r = checkV23(i, true);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/lastObserved .* precedes the last entered day/);
+  });
+
   it('fails a T3 pathway with no history', () => {
     const i = inputs((x) => {
       x.histories = x.histories.filter((h) => h.pathway !== 'permitOnly');

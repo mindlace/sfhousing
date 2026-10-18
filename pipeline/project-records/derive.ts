@@ -119,6 +119,8 @@ interface Assessed {
   entered: Entered;
   /** Null for pipeline-only projects (they have no history). */
   end: ProjectHistory['end'] | null;
+  /** Spec 4.7: an open end's `lastObserved` was raised to the latest entered day. */
+  lastObservedRaised: boolean;
   clamped: Stage[];
   units: number | null;
   firstEntered: Day | null;
@@ -189,7 +191,18 @@ function assess(
   } else {
     ({ entered, clamped } = clampStages(rawStages(proj, pathway)));
   }
-  const end = pipelineOnly ? null : endOf(proj, entered, { asOf: input.asOf, ppaLag });
+  let end = pipelineOnly ? null : endOf(proj, entered, { asOf: input.asOf, ppaLag });
+  // Spec 4.7: a forward clamp or an undated source can enter a stage after the latest date
+  // `lastObserved` reads; an open history's `lastObserved` is raised to its latest entered day.
+  let lastObservedRaised = false;
+  if (end !== null && end.kind === 'open') {
+    const latest = Math.max(...Object.values(entered));
+    const raised = Math.min(input.asOf, Math.max(end.lastObserved, latest));
+    if (raised > end.lastObserved) {
+      end = { kind: 'open', lastObserved: raised };
+      lastObservedRaised = true;
+    }
+  }
   const units = grossUnits(proj);
   const firstEntered = firstDay(entered);
   const rollYear =
@@ -209,7 +222,9 @@ function assess(
   // `parsed.clipped` holds the records as parsed, so read them off the project as linked.
   if (heldRecords(cap.original).some((r) => parsed.clipped.has(r))) quality.add(PR.dateValidRange);
   if (clamped.length > 0) quality.add(PR.stagesForwardClamp);
+  if (lastObservedRaised) quality.add(PR.stagesLastObservedClamp);
   if (stories.discarded > 0) quality.add(PR.storiesParseRange);
+  if (proj.crossBlock.dropped.length > 0) quality.add(PR.parcelsCrossBlock);
   if (cap.failing.length > 0) quality.add(cap.capped ? PR.unitsCapacityCap : PR.unitsCapacity);
   return {
     proj,
@@ -222,6 +237,7 @@ function assess(
     pathway,
     entered,
     end,
+    lastObservedRaised,
     clamped,
     units,
     firstEntered,
@@ -329,6 +345,13 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
     const sample = withHistory.filter((a) => a.clamped.length > 0).map((a) => a.proj.id);
     return { fired: sample.length, of: withHistory.length, sample };
   },
+  // Spec 4.7: open histories; the ones whose `lastObserved` was raised (they and their T3
+  // project carry the id); their ids.
+  [PR.stagesLastObservedClamp]: ({ withHistory }) => {
+    const open = withHistory.filter((a) => a.end?.kind === 'open');
+    const sample = open.filter((a) => a.lastObservedRaised).map((a) => a.proj.id);
+    return { fired: sample.length, of: open.length, sample };
+  },
   // Spec 4.8 capacity: permits with recorded stories and units on a project with parcels; the
   // ones above their lot's physical limit on a project with a fallback unit source (voided); both
   // weighted by their proposed units. The sample is the affected project ids (a rule acting after
@@ -376,6 +399,17 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
     );
     const sample = matched.filter((a) => pipelineConflict(a.proj, a.end)).map((a) => a.proj.id);
     return { fired: sample.length, of: matched.length, sample };
+  },
+  // Spec 4.2 Parcels: of the linked projects that became a record (T3 or history) with at least
+  // one resolved permit address parcel; the ones that lost a PRJ-only parcel on another block
+  // (they carry the id); their ids.
+  [PR.parcelsCrossBlock]: ({ withHistory, inFlight }) => {
+    const recorded = new Set<Assessed>([...withHistory, ...inFlight.map((x) => x.a)]);
+    const applies = [...recorded].filter((a) => a.proj.crossBlock.applies);
+    const sample = applies
+      .filter((a) => a.proj.crossBlock.dropped.length > 0)
+      .map((a) => a.proj.id);
+    return { fired: sample.length, of: applies.length, sample };
   },
   // Spec 4.8 shared parcels: of in-flight projects; the ones on a parcel with units > 0 that
   // another in-flight project is also on (they carry the id); their ids.

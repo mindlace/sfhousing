@@ -6,12 +6,14 @@ export const PR = {
   dateValidRange: 'pr.date.valid-range',
   storiesParseRange: 'pr.stories.parse-range',
   stagesForwardClamp: 'pr.stages.forward-clamp',
+  stagesLastObservedClamp: 'pr.stages.last-observed-clamp',
   unitsCapacity: 'pr.units.capacity',
   unitsCapacityCap: 'pr.units.capacity-cap',
   unitsCapacityUnmapped: 'pr.units.capacity-unmapped',
   pipelineStatusDateLinked: 'pr.pipeline.status-date-linked',
   pipelineNoStatusDate: 'pr.pipeline.no-status-date',
   pipelineRecordsWin: 'pr.pipeline.records-win',
+  parcelsCrossBlock: 'pr.parcels.cross-block',
   parcelsSharedExisting: 'pr.parcels.shared-existing',
   /** The T3 validator's marker of a score-only master (src/lib/timelapse/projects.ts). */
   multiphaseScoreOnly: SCORE_ONLY_QUALITY_ID,
@@ -80,6 +82,22 @@ export const PR_RULES: readonly QualityRule[] = [
     // default fail share.
     warnShare: 0.25,
     failShare: 0.5,
+    unitsWeighted: false
+  },
+  {
+    id: PR.stagesLastObservedClamp,
+    owner: OWNER,
+    source: 'derived end',
+    field: 'end.lastObserved',
+    kind: 'shape',
+    action: 'replace',
+    tier: 2,
+    valueTier: 2,
+    maskBit: null,
+    label: 'The last day a project was seen was moved up to its latest stage date',
+    denominator: 'open histories',
+    warnShare: 0.01,
+    failShare: 0.1,
     unitsWeighted: false
   },
   {
@@ -181,6 +199,25 @@ export const PR_RULES: readonly QualityRule[] = [
     label:
       'The quarterly pipeline lists a project that the daily permit and Planning records show has finished or ended; the daily records are used',
     denominator: 'population projects matching at least one pipeline row',
+    // Override (partner-approved): quarterly pipeline lags the daily records on ended projects
+    // (16/413 live).
+    warnShare: 0.05,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
+    id: PR.parcelsCrossBlock,
+    owner: OWNER,
+    source: 'project parcels (derived from the permit and Planning lots)',
+    field: 'parcelIds',
+    kind: 'shape',
+    action: 'drop',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label:
+      "A parcel from the Planning record on a different block from the permits' lots was not used",
+    denominator: 'projects with a resolved permit address parcel',
     warnShare: 0.01,
     failShare: 0.1,
     unitsWeighted: false

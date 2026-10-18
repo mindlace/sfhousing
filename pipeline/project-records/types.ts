@@ -212,6 +212,12 @@ export interface LinkedProject {
   pipelineRows: PipelineRow[];
   /** Candidate block-lots (spec 4.2 Parcels), sorted unique. */
   blklots: string[];
-  /** `resolve(blklots)`. */
+  /** `resolve(blklots)` less the parcels `pr.parcels.cross-block` dropped. */
   parcelIds: ParcelId[];
+  /**
+   * Spec 4.2 Parcels, `pr.parcels.cross-block`: `applies` when at least one permit address lot
+   * resolves to a parcel; `dropped` the PRJ-only parcels left out because their block holds no
+   * permit parcel.
+   */
+  crossBlock: { applies: boolean; dropped: ParcelId[] };
 }

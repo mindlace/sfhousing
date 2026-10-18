@@ -58,6 +58,16 @@ const TABLE: Record<string, Spec> = {
     failShare: 0.1,
     label: 'A story count read from the project description was outside 1 to 80 and was not used'
   },
+  'pr.stages.last-observed-clamp': {
+    kind: 'shape',
+    action: 'replace',
+    tier: 2,
+    valueTier: 2,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label: 'The last day a project was seen was moved up to its latest stage date'
+  },
   'pr.stages.forward-clamp': {
     kind: 'shape',
     action: 'replace',
@@ -77,6 +87,17 @@ const TABLE: Record<string, Spec> = {
     warnShare: 0.01,
     failShare: 0.1,
     label: "A permit's unit count was more than its lot could physically hold and was not used"
+  },
+  'pr.parcels.cross-block': {
+    kind: 'shape',
+    action: 'drop',
+    tier: 4,
+    valueTier: null,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label:
+      "A parcel from the Planning record on a different block from the permits' lots was not used"
   },
   'pr.units.capacity-unmapped': {
     kind: 'observe',
@@ -126,7 +147,7 @@ const TABLE: Record<string, Spec> = {
     tier: 4,
     valueTier: null,
     unitsWeighted: false,
-    warnShare: 0.01,
+    warnShare: 0.05,
     failShare: 0.1,
     label:
       'The quarterly pipeline lists a project that the daily permit and Planning records show has finished or ended; the daily records are used'
@@ -391,6 +412,104 @@ describe('pr.pipeline.records-win (spec §4.7, observe)', () => {
       raw['datasf-dev-pipeline'][0].current_status = 'Something Else';
     });
     expect(tally(r, PR.pipelineRecordsWin)).toMatchObject({ fired: 0, of: 2 });
+  });
+});
+
+describe('pr.stages.last-observed-clamp (spec §4.7)', () => {
+  const ID = 'PRJ:2019-000001PRJ';
+  // A's approval review is dropped and its pipeline row approved on `iso`, so entitled is `iso`
+  // and the permit stages are clamped up to it; no record carries a date that late.
+  const approved = (iso: string) => (raw: Record<ProjectSourceId, RawRow[]>) => {
+    const review = raw['datasf-planning-review'].find((x) => x.b1_alt_id === '2019-000001PRJ');
+    Object.assign(review ?? {}, { end_event_type: 'other' });
+    const row = raw['datasf-dev-pipeline'].find((x) => x.case_no === '2019-000001PRJ');
+    Object.assign(row ?? {}, { approved_date_planning: `${iso}T00:00:00.000` });
+  };
+
+  it('a clean build raises nothing; of counts the open histories', () => {
+    const r = derive();
+    expect(tally(r, PR.stagesLastObservedClamp)).toMatchObject({ fired: 0 });
+    expect(tally(r, PR.stagesLastObservedClamp).of).toBeGreaterThan(0);
+    for (const h of r.histories) expect(h.quality).not.toContain(PR.stagesLastObservedClamp);
+  });
+
+  it('raises lastObserved to the latest entered day; the history and project carry the id', () => {
+    const r = derive(approved('2026-10-05'));
+    const h = history(r, ID);
+    const last = Math.max(...Object.values(h?.entered ?? {}));
+    expect(h?.end.kind).toBe('open');
+    expect(last).toBe(Date.parse('2026-10-05T00:00:00Z') / 864e5);
+    expect(h?.end).toMatchObject({ kind: 'open', lastObserved: last });
+    expect(h?.quality).toContain(PR.stagesLastObservedClamp);
+    expect(project(r, ID)?.quality).toContain(PR.stagesLastObservedClamp);
+    expect(tally(r, PR.stagesLastObservedClamp)).toMatchObject({ fired: 1 });
+    const call = callsFor(r.counts).find((c) => c.id === PR.stagesLastObservedClamp);
+    expect(call?.sample).toEqual([ID]);
+  });
+
+  it('leaves an open history already at or above its last stage untouched', () => {
+    const base = derive();
+    const r = derive(approved('2020-06-01'));
+    expect(history(r, ID)?.end).toEqual(history(base, ID)?.end);
+    expect(history(r, ID)?.quality).not.toContain(PR.stagesLastObservedClamp);
+    expect(tally(r, PR.stagesLastObservedClamp)).toMatchObject({ fired: 0 });
+  });
+
+  it('never raises lastObserved past asOf', () => {
+    const r = derive(approved('2026-12-01'));
+    for (const h of r.histories) {
+      if (h.end.kind === 'open') expect(h.end.lastObserved).toBeLessThanOrEqual(ASOF);
+    }
+  });
+});
+
+describe('pr.parcels.cross-block (spec §4.2 Parcels)', () => {
+  const OFF = '3600001';
+  const withOffBlock = (edit: (raw: Record<ProjectSourceId, RawRow[]>) => void = () => {}) => {
+    const raw = baseRaw();
+    edit(raw);
+    const input = baseInput(raw);
+    const parcelIds = new Set([...input.parcelIds, OFF]);
+    return deriveProjects(
+      { ...input, parcelIds, lineage: (b) => (parcelIds.has(b) ? b : null) },
+      { counts: {} }
+    );
+  };
+  const moveA = (raw: Record<ProjectSourceId, RawRow[]>) => {
+    const a = raw['datasf-planning-projects'].find((x) => x.record_id === '2019-000001PRJ');
+    Object.assign(a ?? {}, { block: '3600', lot: '001' });
+  };
+
+  it('a clean build drops nothing; of counts the projects with a permit address parcel', () => {
+    const r = derive();
+    expect(tally(r, PR.parcelsCrossBlock)).toMatchObject({ fired: 0 });
+    expect(tally(r, PR.parcelsCrossBlock).of).toBeGreaterThan(0);
+    for (const p of r.file.projects) expect(p.quality).not.toContain(PR.parcelsCrossBlock);
+  });
+
+  it('drops a PRJ-only parcel on another block; the project carries the id in T3 and T4d', () => {
+    const r = withOffBlock(moveA);
+    const id = 'PRJ:2019-000001PRJ';
+    expect(project(r, id)?.parcelIds).toEqual(['3512001', '3512002']);
+    expect(project(r, id)?.quality).toContain(PR.parcelsCrossBlock);
+    expect(history(r, id)?.parcelIds).toEqual(['3512001', '3512002']);
+    expect(history(r, id)?.quality).toContain(PR.parcelsCrossBlock);
+    expect(tally(r, PR.parcelsCrossBlock)).toMatchObject({ fired: 1 });
+    const call = callsFor(r.counts).find((c) => c.id === PR.parcelsCrossBlock);
+    expect(call?.sample).toEqual([id]);
+    expect(r.file.qualityRules.map((q) => q.id)).toContain(PR.parcelsCrossBlock);
+  });
+
+  it('keeps the same PRJ lot when no permit lot of the project resolves', () => {
+    const r = withOffBlock((raw) => {
+      moveA(raw);
+      for (const q of raw['datasf-permits-newcon']) {
+        if (q.permit_number === '201906010001') q.lot = '099';
+      }
+    });
+    const id = 'PRJ:2019-000001PRJ';
+    expect(project(r, id)?.parcelIds).toEqual(['3512001', OFF]);
+    expect(project(r, id)?.quality).not.toContain(PR.parcelsCrossBlock);
   });
 });
 

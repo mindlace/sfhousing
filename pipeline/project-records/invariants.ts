@@ -197,6 +197,11 @@ export function checkV23(i: V2xInputs, rerunIdentical: boolean): InvariantResult
           `${at}: lastObserved ${e.lastObserved} is outside [${span.first}, ${i.asOf}]`
         );
       }
+      if (e.lastObserved < span.last) {
+        problems.push(
+          `${at}: lastObserved ${e.lastObserved} precedes the last entered day ${span.last}`
+        );
+      }
       continue;
     }
     if (e.day < span.last) problems.push(`${at}: end day ${e.day} precedes the last entered day`);
