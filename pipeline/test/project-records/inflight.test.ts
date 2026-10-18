@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_STORIES,
   STALE_WINDOW_DAYS,
+  applyCapacity,
   baseStoriesAt,
+  capacityOk,
   existingUnitsAt,
   grossUnits,
   inFlightStatus,
@@ -514,5 +516,92 @@ describe('inFlightStatus', () => {
     expect(
       inFlightStatus(withPipe, { ...base, units: 3, existingLatest: 3, multiPhase: true })
     ).toBe('inFlight');
+  });
+});
+
+describe('capacity (pr.units.capacity, spec 4.8)', () => {
+  // Σ area x max(stories, 1) / MIN_GROSS_M2_PER_UNIT (10): 300 m² on 3 stories holds 90.
+  const area = (id: string) => (id === '0001001' ? 300 : 0);
+  const big = (over: Partial<Permit> = {}) =>
+    permit('8500988', { stories: 3, proposedUnits: 5540, ...over });
+
+  it('capacityOk: 5,540 units on 3 stories over 300 m² fail (limit 90); the limit itself passes', () => {
+    expect(capacityOk(big(), ['0001001'], area)).toBe(false);
+    expect(capacityOk(big({ proposedUnits: 91 }), ['0001001'], area)).toBe(false);
+    expect(capacityOk(big({ proposedUnits: 90 }), ['0001001'], area)).toBe(true);
+  });
+
+  it('capacityOk: stories below 1 count as 1, the area sums over parcels', () => {
+    expect(capacityOk(big({ stories: 0, proposedUnits: 31 }), ['0001001'], area)).toBe(false);
+    expect(capacityOk(big({ stories: 0, proposedUnits: 30 }), ['0001001'], area)).toBe(true);
+    const two = (id: string) => (id === 'a' || id === 'b' ? 150 : 0);
+    expect(capacityOk(big({ proposedUnits: 90 }), ['a', 'b'], two)).toBe(true);
+    expect(capacityOk(big({ proposedUnits: 91 }), ['a', 'b'], two)).toBe(false);
+  });
+
+  it('capacityOk: no check without recorded stories, without units or without parcels', () => {
+    expect(capacityOk(big({ stories: null }), ['0001001'], area)).toBe(true);
+    expect(capacityOk(big({ proposedUnits: null }), ['0001001'], area)).toBe(true);
+    expect(capacityOk(big(), [], area)).toBe(true);
+  });
+
+  it('a failing permit has missing units: grossUnits falls through to the PRJ', () => {
+    const p = proj({ permits: [big()], anchors: [prj('A', { unitsProp: 10 })] });
+    expect(grossUnits(p)).toBe(5540);
+    const capped = applyCapacity(p, area);
+    expect(grossUnits(capped.proj)).toBe(10);
+    expect(capped.failing.map((q) => q.number)).toEqual(['8500988']);
+    expect(capped.checked.map((q) => q.number)).toEqual(['8500988']);
+  });
+
+  it('only the failing permit loses its units; live and lead follow; the input is untouched', () => {
+    const bad = big();
+    const good = permit('2', { stories: 3, proposedUnits: 40 });
+    const p = proj({ permits: [bad, good] });
+    const capped = applyCapacity(p, area);
+    expect(grossUnits(capped.proj)).toBe(40);
+    expect(capped.proj.permits.map((q) => q.proposedUnits)).toEqual([null, 40]);
+    expect(capped.proj.live.map((q) => q.proposedUnits)).toEqual([null, 40]);
+    expect(capped.proj.lead?.proposedUnits).toBeNull();
+    expect(capped.proj.lead?.number).toBe('8500988');
+    expect(capped.original).toBe(p);
+    expect(bad.proposedUnits).toBe(5540);
+    expect(p.permits[0]).toBe(bad);
+    // The failing permit's other fields are kept.
+    expect(capped.proj.permits[0]).toMatchObject({ number: '8500988', stories: 3 });
+  });
+
+  it('no stories, or no parcels: no check, the same project comes back', () => {
+    const noStories = proj({ permits: [big({ stories: null })] });
+    const a = applyCapacity(noStories, area);
+    expect(a.proj).toBe(noStories);
+    expect(a.failing).toEqual([]);
+    expect(a.checked).toEqual([]);
+    expect(grossUnits(a.proj)).toBe(5540);
+    const noParcels = proj({ permits: [big()], parcelIds: [] });
+    const b = applyCapacity(noParcels, area);
+    expect(b.proj).toBe(noParcels);
+    expect(b.checked).toEqual([]);
+    expect(grossUnits(b.proj)).toBe(5540);
+  });
+
+  it('unitsAt.permitFiled follows: absent when no permit keeps units', () => {
+    const p = proj({ permits: [big()], anchors: [prj('A', { unitsProp: 10 })] });
+    expect(unitsAt(p)).toEqual({ filed: 10, permitFiled: 5540 });
+    expect(unitsAt(applyCapacity(p, area).proj)).toEqual({ filed: 10 });
+  });
+
+  it('checked holds permits with stories and units, whether or not they fail', () => {
+    const p = proj({
+      permits: [
+        big(),
+        permit('2', { stories: 3, proposedUnits: 40 }),
+        permit('3', { proposedUnits: 7 }),
+        permit('4', { stories: 2 })
+      ]
+    });
+    const capped = applyCapacity(p, area);
+    expect(capped.checked.map((q) => q.number)).toEqual(['8500988', '2']);
+    expect(capped.failing.map((q) => q.number)).toEqual(['8500988']);
   });
 });

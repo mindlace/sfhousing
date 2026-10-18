@@ -235,8 +235,6 @@ describe('deriveProjects records every pr.* rule through recordQuality', () => {
 
   it('the rules whose behaviour lands later record zero with their denominators', () => {
     const r = derive();
-    // A's permit (6 stories, 24 units) is the only one with stories and units on parcels.
-    expect(tally(r, PR.unitsCapacity)).toEqual({ fired: 0, of: 1, units: 0, unitsOf: 24 });
     // Five pipeline rows: 24 + 2 + 100 + 5 + 4 new units.
     expect(tally(r, PR.pipelineStatusDateLinked)).toEqual({
       fired: 0,
@@ -361,6 +359,84 @@ describe('pr.pipeline.records-win (spec §4.7, observe)', () => {
       raw['datasf-dev-pipeline'][0].current_status = 'Something Else';
     });
     expect(tally(r, PR.pipelineRecordsWin)).toMatchObject({ fired: 0, of: 2 });
+  });
+});
+
+describe('pr.units.capacity (spec §4.8)', () => {
+  // Parcel areas in baseInput are 100 + the last digit of the parcel id.
+  const overfill = (raw: Record<ProjectSourceId, RawRow[]>) => {
+    // B (lot 003, 103 m²): 5,000 units on 1 story hold at most 10.3.
+    const b = raw['datasf-permits-newcon'].find((x) => x.permit_number === '202403150003');
+    Object.assign(b ?? {}, { proposed_units: '5000', number_of_proposed_stories: '1' });
+  };
+
+  it('a clean build checks A only (6 stories, 24 units) and fires nothing', () => {
+    const r = derive();
+    expect(tally(r, PR.unitsCapacity)).toEqual({ fired: 0, of: 1, units: 0, unitsOf: 24 });
+    for (const p of r.file.projects) expect(p.quality).not.toContain(PR.unitsCapacity);
+  });
+
+  it('tally: fired counts permits, units and unitsOf are proposed units, sample is project ids', () => {
+    const r = derive((raw) => {
+      overfill(raw);
+      // F (lot 002, 102 m²) is stale-open and never becomes a record: 11 units on 1 story fail.
+      const f = raw['datasf-permits-newcon'].find((x) => x.permit_number === '201410070008');
+      Object.assign(f ?? {}, { proposed_units: '11', number_of_proposed_stories: '1' });
+    });
+    expect(tally(r, PR.unitsCapacity)).toEqual({
+      fired: 2,
+      of: 3,
+      units: 5011,
+      unitsOf: 24 + 5000 + 11
+    });
+    const call = callsFor(r.counts).find((c) => c.id === PR.unitsCapacity);
+    expect(call?.sample).toEqual(['BP:201410070008', 'BP:202403150003']);
+  });
+
+  it('the project and its history carry the id; units fall through; permitFiled and the row follow', () => {
+    const r = derive(overfill);
+    const id = 'BP:202403150003';
+    expect(project(r, id)?.quality).toEqual([PR.unitsCapacity]);
+    expect(history(r, id)?.quality).toEqual([PR.unitsCapacity]);
+    // The permit's units are missing, so units fall through to the pipeline row's 2.
+    expect(project(r, id)?.units).toBe(2);
+    expect(history(r, id)?.unitsAt).not.toHaveProperty('permitFiled');
+    expect(r.permits.find((q) => q.permit_number === '202403150003')?.proposed_units).toBeNull();
+    // The other projects keep their permit units.
+    expect(r.permits.find((q) => q.permit_number === '201906010001')?.proposed_units).toBe(24);
+    expect(project(r, 'PRJ:2019-000001PRJ')?.quality).not.toContain(PR.unitsCapacity);
+    expect(r.file.qualityRules.map((q) => q.id)).toContain(PR.unitsCapacity);
+  });
+
+  it('no recorded stories, or no parcels: no check', () => {
+    const noStories = derive((raw) => {
+      overfill(raw);
+      const b = raw['datasf-permits-newcon'].find((x) => x.permit_number === '202403150003');
+      delete b?.number_of_proposed_stories;
+    });
+    expect(tally(noStories, PR.unitsCapacity)).toMatchObject({ fired: 0, of: 1 });
+    expect(project(noStories, 'BP:202403150003')?.units).toBe(5000);
+  });
+
+  it('a permit voided by the rule leaves the phase-size medians', () => {
+    const base = derive();
+    expect(base.counts['multiphase.u.2010.0002PRX']).toBe(60);
+    // C's 60-unit completed permit (lot 004, 104 m²) on 1 story holds at most 10.4.
+    const r = derive((raw) => {
+      const c = raw['datasf-permits-newcon'].find((x) => x.permit_number === '201605010006');
+      Object.assign(c ?? {}, { number_of_proposed_stories: '1' });
+    });
+    expect(tally(r, PR.unitsCapacity)).toMatchObject({ fired: 1, units: 60 });
+    expect(r.counts['multiphase.u.2010.0002PRX']).toBeUndefined();
+  });
+
+  it('a clipped date on a voided permit still marks its project', () => {
+    const r = derive((raw) => {
+      overfill(raw);
+      const b = raw['datasf-permits-newcon'].find((x) => x.permit_number === '202403150003');
+      Object.assign(b ?? {}, { completed_date: '1909-06-02T00:00:00.000' });
+    });
+    expect(project(r, 'BP:202403150003')?.quality).toEqual([PR.dateValidRange, PR.unitsCapacity]);
   });
 });
 

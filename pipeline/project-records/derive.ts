@@ -36,6 +36,7 @@ import {
 import { REFERRAL_TOLERANCE_DAYS, pathwayOf } from './classify';
 import { endOf } from './ends';
 import {
+  applyCapacity,
   baseStoriesAt,
   existingUnitsAt,
   grossUnits,
@@ -47,6 +48,7 @@ import {
   sourcesOf,
   storiesDetail,
   unitsAt,
+  type Capacity,
   type InFlightStatus
 } from './inflight';
 import type { V2xInputs } from './invariants';
@@ -105,7 +107,10 @@ const XDHT_LAG_WARN_DAYS = 120;
 
 /** One linked project after stages, end, units and the population / in-flight decision. */
 interface Assessed {
+  /** The project after `pr.units.capacity`: a failing permit has null units. */
   proj: LinkedProject;
+  /** Spec 4.8 capacity: the permits checked and the ones that failed (original units). */
+  capacity: Pick<Capacity, 'checked' | 'failing'>;
   pathway: Pathway | null;
   entered: Entered;
   /** Null for pipeline-only projects (they have no history). */
@@ -151,12 +156,13 @@ function heldRecords(proj: LinkedProject): object[] {
 }
 
 function assess(
-  proj: LinkedProject,
+  cap: Capacity,
   input: ProjectRecordsInput,
   parsed: Parsed,
   ppaLag: number,
   pipelineCutoff: Day
 ): Assessed {
+  const { proj } = cap;
   const pathway = pathwayOf(proj);
   const pipelineOnly = proj.kind === 'pipelineOnly';
   let entered: Entered;
@@ -190,11 +196,14 @@ function assess(
         });
   const stories = storiesDetail(proj);
   const quality = new Set<string>();
-  if (heldRecords(proj).some((r) => parsed.clipped.has(r))) quality.add(PR.dateValidRange);
+  // `parsed.clipped` holds the records as parsed, so read them off the project as linked.
+  if (heldRecords(cap.original).some((r) => parsed.clipped.has(r))) quality.add(PR.dateValidRange);
   if (clamped.length > 0) quality.add(PR.stagesForwardClamp);
   if (stories.discarded > 0) quality.add(PR.storiesParseRange);
+  if (cap.failing.length > 0) quality.add(PR.unitsCapacity);
   return {
     proj,
+    capacity: { checked: cap.checked, failing: cap.failing },
     pathway,
     entered,
     end,
@@ -281,19 +290,19 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
     const sample = withHistory.filter((a) => a.clamped.length > 0).map((a) => a.proj.id);
     return { fired: sample.length, of: withHistory.length, sample };
   },
-  // Spec 4.8 capacity (behaviour lands with its task): permits with recorded stories and units on
-  // a project with parcels, weighted by their proposed units.
+  // Spec 4.8 capacity: permits with recorded stories and units on a project with parcels; the
+  // ones above their lot's physical limit; both weighted by their proposed units. The sample is
+  // the affected project ids (a rule acting after linking, spec 2), so it is never longer than
+  // `fired`.
   [PR.unitsCapacity]: ({ assessed }) => {
-    const checked = assessed
-      .filter((a) => a.proj.kind === 'graph' && a.proj.parcelIds.length > 0)
-      .flatMap((a) => a.proj.permits)
-      .filter((q) => q.stories !== null && q.proposedUnits !== null);
+    const checked = assessed.flatMap((a) => a.capacity.checked);
+    const failing = assessed.flatMap((a) => a.capacity.failing);
     return {
-      fired: 0,
+      fired: failing.length,
       of: checked.length,
-      units: 0,
+      units: positiveSum(failing.map((q) => q.proposedUnits)),
       unitsOf: positiveSum(checked.map((q) => q.proposedUnits)),
-      sample: []
+      sample: assessed.filter((a) => a.capacity.failing.length > 0).map((a) => a.proj.id)
     };
   },
   // Spec 4.2 step 10 (behaviour lands with its task): pipeline rows, weighted by new units.
@@ -438,9 +447,11 @@ export function deriveProjects(
   if (cutoff === null) warnings.push('pipeline has no valid current_status_date; cutoff = asOf');
   const pipelineCutoff = cutoff ?? asOf;
 
-  const assessed = link.projects.map((p) =>
-    assess(p, input, parsed, link.ppaLag.days, pipelineCutoff)
-  );
+  // Spec 4.8 capacity, once per permit before anything reads units: units rule 1, unitsAt, the
+  // phase-size medians and the permits rows all see `capped`, never `link.projects`.
+  const capped = link.projects.map((p) => applyCapacity(p, input.areaM2));
+  const linked = capped.map((c) => c.proj);
+  const assessed = capped.map((c) => assess(c, input, parsed, link.ppaLag.days, pipelineCutoff));
 
   // Histories: population projects that are not pipeline-only, with at least one entered stage.
   const histories: ProjectHistory[] = [];
@@ -484,7 +495,7 @@ export function deriveProjects(
       .filter((a) => a.multiPhase)
       .map((a) => ({ proj: a.proj, entitled: a.entered.entitled ?? null })),
     excluded,
-    projects: link.projects,
+    projects: linked,
     pipeline: parsed.pipeline,
     multiphase: input.multiphase,
     areaM2: input.areaM2,
@@ -581,7 +592,7 @@ export function deriveProjects(
     qualityRules: qualityRulesOf(projects),
     projects
   };
-  const permits = permitRows(link.projects, parsed.pipeline, parsed.completions, resolve);
+  const permits = permitRows(linked, parsed.pipeline, parsed.completions, resolve);
 
   return {
     histories,

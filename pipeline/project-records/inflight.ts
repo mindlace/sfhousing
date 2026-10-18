@@ -8,6 +8,7 @@ import type { InFlightProject } from '../../src/lib/timelapse/projects';
 import type { Day } from '../../src/lib/timelapse/time';
 import { STAGE_ORDER } from '../../src/lib/timelapse/types';
 import type { ProjectHistory, Stage } from '../../src/lib/timelapse/types';
+import { MIN_GROSS_M2_PER_UNIT } from '../lib/quality';
 import { isNewConstruction } from './classify';
 import { permitCompletionDay, pipelineStage } from './stages';
 import { DATASET } from './types';
@@ -55,6 +56,71 @@ export function labelOf(proj: LinkedProject, curated: string | null): string | n
     if (name !== null) return name;
   }
   return null;
+}
+
+/**
+ * Spec 4.8 capacity (`pr.units.capacity`): false when the permit's `proposed_units` exceeds
+ * `Σ areaM2(parcelIds) x max(stories, 1) / MIN_GROSS_M2_PER_UNIT`, i.e. cannot physically fit. The
+ * check needs the permit's own recorded stories and units and at least one parcel; without them it
+ * passes. `parcelIds` are the permit's project parcels.
+ */
+export function capacityOk(
+  permit: Permit,
+  parcelIds: readonly ParcelId[],
+  areaM2: ProjectRecordsInput['areaM2']
+): boolean {
+  if (permit.stories === null || permit.proposedUnits === null || parcelIds.length === 0) {
+    return true;
+  }
+  let area = 0;
+  for (const id of parcelIds) area += areaM2(id);
+  return permit.proposedUnits <= (area * Math.max(permit.stories, 1)) / MIN_GROSS_M2_PER_UNIT;
+}
+
+/** A project after the capacity rule, with what the `pr.units.capacity` tally needs. */
+export interface Capacity {
+  /** The project with every failing permit's `proposedUnits` set to null (same object if none). */
+  proj: LinkedProject;
+  /** The project as linked. */
+  original: LinkedProject;
+  /** Permits with recorded stories and units on a project with parcels (original units). */
+  checked: Permit[];
+  /** The `checked` permits that fail `capacityOk` (original units). */
+  failing: Permit[];
+}
+
+/**
+ * Applies `capacityOk` once per permit, before any consumer reads units (rule 1 and `unitsAt`
+ * here, the phase-size medians and `permits.parquet` in assemble). A failing permit is replaced
+ * by a copy with null units in `permits`, `live` and `lead`; nothing else changes.
+ */
+export function applyCapacity(
+  proj: LinkedProject,
+  areaM2: ProjectRecordsInput['areaM2']
+): Capacity {
+  const checked: Permit[] = [];
+  const failing: Permit[] = [];
+  if (proj.parcelIds.length > 0) {
+    for (const q of proj.permits) {
+      if (q.stories === null || q.proposedUnits === null) continue;
+      checked.push(q);
+      if (!capacityOk(q, proj.parcelIds, areaM2)) failing.push(q);
+    }
+  }
+  if (failing.length === 0) return { proj, original: proj, checked, failing };
+  const voided = new Map(failing.map((q) => [q, { ...q, proposedUnits: null }]));
+  const swap = (q: Permit): Permit => voided.get(q) ?? q;
+  return {
+    proj: {
+      ...proj,
+      permits: proj.permits.map(swap),
+      live: proj.live.map(swap),
+      lead: proj.lead === null ? null : swap(proj.lead)
+    },
+    original: proj,
+    checked,
+    failing
+  };
 }
 
 /** The live set, else (all permits dead) the non-superseded permits. */
