@@ -207,12 +207,16 @@ export function chanceProvenance(
   return { entries, research: entries.some((e) => e.tier >= 3) };
 }
 
-/** Phase cards: stage rows before the building permit belong to the master plan. */
-const MASTER_STAGES: readonly string[] = ['preApplication', 'filed', 'entitled'];
+/** Timeline label for a master-plan row; a stage the master table lacks still reads as master. */
+function masterRowLabel(stage: string): string {
+  const label = masterEnteredLabel(stage);
+  return label === stage ? `Master plan: ${enteredLabel(stage)}` : label;
+}
 
 /**
- * One row per `stages` entry in data order, then the end. On a phase card the master-plan rows
- * come first and the first row of the phase itself carries the "This phase" heading.
+ * One row per `stages` entry in data order, then the end. On a phase card the rows before the
+ * first `permitFiled` entry are the master plan's, and the `permitFiled` row carries the
+ * "This phase" heading (spec §4.8).
  */
 export function timelineRows(
   card: ProjectCard,
@@ -221,10 +225,11 @@ export function timelineRows(
 ): { heading: 'This phase' | null; text: string }[] {
   const recorded = marked ? 'Recorded*' : 'Recorded';
   const rows: { heading: 'This phase' | null; text: string }[] = [];
-  let headed = false;
-  for (const s of card.stages) {
-    const master = card.phase !== null && MASTER_STAGES.includes(s.stage);
-    const label = master ? masterEnteredLabel(s.stage) : enteredLabel(s.stage);
+  const phaseStart =
+    card.phase === null ? -1 : card.stages.findIndex((s) => s.stage === 'permitFiled');
+  card.stages.forEach((s, i) => {
+    const master = card.phase !== null && (phaseStart < 0 || i < phaseStart);
+    const label = master ? masterRowLabel(s.stage) : enteredLabel(s.stage);
     const date = s.actual ? formatDate(s.day) : formatShortMonthYear(s.day);
     let suffix = recorded;
     if (!s.actual) {
@@ -234,13 +239,9 @@ export function timelineRows(
           card.phase.start === 'scheduled' ? ' (published plan date)' : ' (start estimated)';
       }
     }
-    let heading: 'This phase' | null = null;
-    if (card.phase !== null && !master && !headed) {
-      heading = 'This phase';
-      headed = true;
-    }
+    const heading = i === phaseStart ? 'This phase' : null;
     rows.push({ heading, text: `${label} · ${date} · ${suffix}` });
-  }
+  });
   const end = card.end;
   if (end !== null && end.kind !== 'open') {
     const label =

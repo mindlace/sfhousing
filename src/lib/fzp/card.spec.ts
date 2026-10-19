@@ -387,6 +387,32 @@ describe('timelineRows', () => {
     );
   });
 
+  it('treats every row before permitFiled as master, including an unknown stage', () => {
+    const card = {
+      ...PHASE_ESTIMATED,
+      stages: [
+        PHASE_ESTIMATED.stages[0],
+        PHASE_ESTIMATED.stages[1],
+        { stage: 'designReview' as Stage, day: FIX_ASOF - 3000, actual: true },
+        PHASE_ESTIMATED.stages[2]
+      ]
+    };
+    const rows = timelineRows(card, FIX_ASOF, false);
+    expect(rows.map((r) => r.heading)).toEqual([null, null, null, 'This phase']);
+    expect(rows[2].text).toMatch(
+      /^Master plan: designReview · [A-Z][a-z]{2} \d{1,2}, \d{4} · Recorded$/
+    );
+    expect(rows[3].text).toMatch(/^Building permit filed · /);
+  });
+
+  it('has no master rows when permitFiled is the first row of a phase card', () => {
+    const card = { ...PHASE_ESTIMATED, stages: [PHASE_ESTIMATED.stages[2]] };
+    const rows = timelineRows(card, FIX_ASOF, false);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].heading).toBe('This phase');
+    expect(rows[0].text).toMatch(/^Building permit filed · /);
+  });
+
   it('says published plan date for a scheduled phase start', () => {
     const rows = timelineRows(PHASE_SCHEDULED, FIX_ASOF, false);
     expect(rows[2].text).toMatch(/ · Simulated \(published plan date\)$/);
