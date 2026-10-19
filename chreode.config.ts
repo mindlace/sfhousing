@@ -78,6 +78,9 @@ export default defineConfig({
       {
         name: 'server',
         match: ['src/**/*.{test,spec}.ts', 'scripts/**/*.spec.ts'],
+        // Load-sensitive timing budgets: parallel, no-retry reruns measure the machine, not the
+        // code. They still run in the serial test:unit gate.
+        ignore: ['src/**/*.bench.spec.ts', 'src/**/*.perf.spec.ts'],
         command: (files, n) =>
           Array.from(
             { length: n },
