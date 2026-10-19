@@ -518,8 +518,8 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
     // As computed: M23's two split rows list projects whose records show them complete.
     expect(c['quality.pr.pipeline.records-win.fired']).toBe(2);
     // M27 and M28 (Ruling I4) match their pipeline rows too; records-win reads the §4.6 end. So
-    // do M35 and M36 (Rulings IL1, SE1).
-    expect(c['quality.pr.pipeline.records-win.of']).toBe(14);
+    // do M35 and M36 (Rulings IL1, SE1), and M41 (Ruling C3c).
+    expect(c['quality.pr.pipeline.records-win.of']).toBe(15);
     // M23's two split rows omit unitsAt.filed (Ruling S2).
     expect(c['quality.pr.units.split-filed.fired']).toBe(2);
     expect(c['projects.excludedNoUnits']).toBe(900);

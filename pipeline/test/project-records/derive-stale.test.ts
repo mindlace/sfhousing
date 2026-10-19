@@ -344,23 +344,47 @@ describe('stale open histories (deriveProjects)', () => {
       reason: 'withdrawn',
       day: day('2026-09-01')
     });
-    // In flight: unchanged, and warned.
-    expect(history(r, 'PRJ:2019-000001PRJ').end.kind).toBe('open');
+    // Ruling C3c: dead in flight applies too; the project leaves T3 (status verifiedDead).
+    expect(history(r, 'PRJ:2019-000001PRJ').end).toEqual({
+      kind: 'exit',
+      stage: 'construction',
+      reason: 'withdrawn',
+      day: day('2026-09-01')
+    });
+    expect(r.file.projects.map((p) => p.id)).not.toContain('PRJ:2019-000001PRJ');
+    expect(r.counts['projects.excludedVerifiedDead']).toBe(1);
+    expect(r.counts['projects.excludedVerifiedDeadUnits']).toBeGreaterThan(0);
+    expect(r.counts['projects.status.verifiedDead']).toBe(1);
+    expect(r.warnings).toContain(
+      'PRJ:2019-000001PRJ: curated check found no building (construction-verified.json); withdrawn, left flight'
+    );
     expect(r.warnings).toContain(
       'construction-verified.json: BP:209901010099 names no open history; not applied'
     );
     expect(r.warnings).toContain(
-      'construction-verified.json: PRJ:2019-000001PRJ is in flight; not applied (T3 is unchanged)'
-    );
-    expect(r.warnings).toContain(
       'construction-verified.json: PRJ:2016-000006PRJ names no open history; not applied'
     );
-    // Ruling C3b: of the 3 histories that entered construction; both applied verdicts count.
+    // Ruling C3b: of the 3 histories that entered construction; every applied verdict counts.
     expect(reportRowsOf(r.counts).get('pr.stages.verified-construction')).toMatchObject({
-      fired: 2,
+      fired: 3,
       of: 3,
-      sample: ['BP:201203010026', 'BP:201410070008']
+      sample: ['BP:201203010026', 'BP:201410070008', 'PRJ:2019-000001PRJ']
     });
+  });
+
+  it('complete and unknown verdicts on an in-flight project are not applied (Ruling C3c)', () => {
+    for (const v of [
+      verdict({ id: 'PRJ:2019-000001PRJ', verdict: 'complete', completeDay: '2026-08-01' }),
+      verdict({ id: 'PRJ:2019-000001PRJ', verdict: 'unknown' })
+    ]) {
+      const r = deriveProjects(staleInput([v]));
+      expect(history(r, 'PRJ:2019-000001PRJ').end.kind, v.verdict).toBe('open');
+      expect(r.file.projects.map((p) => p.id)).toContain('PRJ:2019-000001PRJ');
+      expect(r.counts['projects.excludedVerifiedDead']).toBe(0);
+      expect(r.warnings).toContain(
+        'construction-verified.json: PRJ:2019-000001PRJ is in flight; not applied (T3 is unchanged)'
+      );
+    }
   });
 
   it('a verdict before the last entered stage is forward-clamped and marks the clamp', () => {

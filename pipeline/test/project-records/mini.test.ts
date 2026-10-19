@@ -611,8 +611,8 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(history('PRJ:2019-000001PRJ').unitsAt.filed).toBe(24);
     expect(r.counts['link.splitComponents']).toBe(1);
     expect(r.counts['quality.pr.units.split-filed.fired']).toBe(2);
-    // Of the 25 histories whose primary PRJ records number_of_units_prop (M29's 0, M30-M40).
-    expect(r.counts['quality.pr.units.split-filed.of']).toBe(25);
+    // Of the 26 histories whose primary PRJ records number_of_units_prop (M29's 0, M30-M41).
+    expect(r.counts['quality.pr.units.split-filed.of']).toBe(26);
     // Both ended complete while the pipeline lists them (observe rule; neither carries it).
     expect(r.counts['quality.pr.pipeline.records-win.fired']).toBe(2);
     // T3 is unchanged: no project carries the id and qualityRules does not list it.
@@ -676,8 +676,22 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     // The bracketed permits of the histories examined (M1, M8, M24, M26, M27, M28, M30): M26's.
     expect(q('pr.stages.expiry-no-valuation')).toEqual([1, 7]);
     // Ruling C3b: of the 7 histories that entered construction (as complete-from-evidence); M7's
-    // dead verdict applied (at permitFiled: fired counts every verdict applied).
-    expect(q('pr.stages.verified-construction')).toEqual([1, 7]);
+    // and M41's dead verdicts applied (at permitFiled and filed: fired counts every one applied).
+    expect(q('pr.stages.verified-construction')).toEqual([2, 7]);
+    // Ruling C3c: M41 was in flight, so it leaves flight.
+    expect(r.counts['projects.excludedVerifiedDead']).toBe(1);
+    expect(r.counts['projects.excludedVerifiedDeadUnits']).toBe(6);
+    expect(r.counts['projects.status.verifiedDead']).toBe(1);
+    expect(history('PRJ:2025-000041PRJ').end).toEqual({
+      kind: 'exit',
+      stage: 'filed',
+      reason: 'withdrawn',
+      day: day('2026-09-01')
+    });
+    expect(r.file.projects.map((p) => p.id)).not.toContain('PRJ:2025-000041PRJ');
+    expect(r.warnings).toContain(
+      'PRJ:2025-000041PRJ: curated check found no building (construction-verified.json); withdrawn, left flight'
+    );
     expect(r.warnings).toContain(
       'construction-verified.json: BP:209901010099 names no open history; not applied'
     );
@@ -722,7 +736,7 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(r.counts['histories.unitsFiledCarried']).toBe(3);
     expect(r.counts['histories.unitsFiledOmitted']).toBe(0);
     expect(r.counts['quality.pr.units.filed-zero.fired']).toBe(1);
-    expect(r.counts['quality.pr.units.filed-zero.of']).toBe(25);
+    expect(r.counts['quality.pr.units.filed-zero.of']).toBe(26);
   });
 
   it('M30: a PRJ-named type 3 alteration advances the entitled PRJ to permitIssued (Ruling L1)', () => {

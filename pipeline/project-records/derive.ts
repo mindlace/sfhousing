@@ -132,6 +132,7 @@ const STATUSES: readonly Status[] = [
   'notPopulation',
   'suspended',
   'superseded',
+  'verifiedDead',
   'noDates'
 ];
 
@@ -402,6 +403,36 @@ function applyStreamlined(a: Assessed, ctx: LapseInput): boolean {
   if (t.day > ctx.asOf) return false;
   a.stale.streamlinedExpired = true;
   replaceEnd(a, lapseExit(t.day), a.histEntered, PR.stagesStreamlinedExpiry);
+  return true;
+}
+
+/**
+ * Ruling C3c: a curated `dead` verdict on an in-flight project's open history applies as on any
+ * other (exit `withdrawn` at the last entered stage, dated `checked`); true when it did, and the
+ * caller takes the project out of flight. A `complete` or `unknown` verdict is left for the
+ * not-applied warning.
+ */
+function applyDeadVerdict(
+  a: Assessed,
+  verdicts: Map<string, ConstructionVerdict>,
+  asOf: Day,
+  warnings: string[]
+): boolean {
+  const v = verdicts.get(a.proj.id);
+  if (v === undefined || v.verdict !== 'dead' || a.histEnd?.kind !== 'open') return false;
+  verdicts.delete(a.proj.id);
+  const r = verdictEnd(a.histEntered, v, asOf);
+  if (r === null) return false;
+  if ('skip' in r) {
+    warnings.push(`construction-verified.json: ${v.id}: ${r.skip}; not applied`);
+    return false;
+  }
+  a.stale.verdict = true;
+  if (r.clamped) {
+    a.clamped = [...a.clamped, 'complete'];
+    a.quality.add(PR.stagesForwardClamp);
+  }
+  replaceEnd(a, r.end, r.entered, PR.stagesVerifiedConstruction);
   return true;
 }
 
@@ -767,6 +798,8 @@ function zeroCounts(): Record<string, number> {
     'projects.inFlightUnits': 0,
     'projects.excludedStatutory': 0,
     'projects.excludedStatutoryUnits': 0,
+    'projects.excludedVerifiedDead': 0,
+    'projects.excludedVerifiedDeadUnits': 0,
     'projects.excludedSuspended': 0,
     'projects.excludedSuspendedUnits': 0,
     'projects.excludedSuperseded': 0,
@@ -1030,6 +1063,14 @@ export function deriveProjects(
         counts['projects.excludedStreamlinedExpiryUnits'] += a.units ?? 0;
         leftFlight.push(
           `${a.proj.id}: past its streamlined approval term (3 years and one extension); expired, left flight`
+        );
+      } else if (applyDeadVerdict(a, verdicts, asOf, verdictWarnings)) {
+        // Ruling C3c: a curated imagery check found no building, so it leaves flight.
+        a.status = 'verifiedDead';
+        counts['projects.excludedVerifiedDead']++;
+        counts['projects.excludedVerifiedDeadUnits'] += a.units ?? 0;
+        leftFlight.push(
+          `${a.proj.id}: curated check found no building (construction-verified.json); withdrawn, left flight`
         );
       } else {
         inFlightHistories.add(a.proj.id);
