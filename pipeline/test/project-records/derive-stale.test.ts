@@ -349,7 +349,8 @@ describe('stale open histories (deriveProjects)', () => {
       kind: 'exit',
       stage: 'construction',
       reason: 'withdrawn',
-      day: day('2021-05-03') // Ruling C3d: its lastObserved (pipeline status), before the check
+      // Ruling C3e: its $3M site permit's deadline (2021-02-01 + 2,160 + 720) is after the check.
+      day: day('2026-09-01')
     });
     expect(r.file.projects.map((p) => p.id)).not.toContain('PRJ:2019-000001PRJ');
     expect(r.counts['projects.excludedVerifiedDead']).toBe(1);
@@ -369,6 +370,23 @@ describe('stale open histories (deriveProjects)', () => {
       fired: 3,
       of: 3,
       sample: ['BP:201203010026', 'BP:201410070008', 'PRJ:2019-000001PRJ']
+    });
+  });
+
+  it('both verdict paths date a dead exit by the same rule (Rulings C3c, C3d, C3e)', () => {
+    // Out of flight (its pipeline row removed, so stale-open), A's dead verdict takes the same date
+    // as in flight: its permit's deadline is after the check, so the check.
+    const raw = staleInput([verdict({ id: 'PRJ:2019-000001PRJ', verdict: 'dead' })]);
+    raw.raw['datasf-dev-pipeline'] = raw.raw['datasf-dev-pipeline'].filter(
+      (x) => x.case_no !== '2019-000001PRJ'
+    );
+    const r = deriveProjects(raw);
+    expect(r.counts['projects.excludedVerifiedDead']).toBe(0);
+    expect(history(r, 'PRJ:2019-000001PRJ').end).toEqual({
+      kind: 'exit',
+      stage: 'construction',
+      reason: 'withdrawn',
+      day: day('2026-09-01')
     });
   });
 
