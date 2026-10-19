@@ -5,9 +5,11 @@ import {
   DENSITY_CAP_CHANGE_DAY,
   DENSITY_CAP_TABLE,
   FZP_EFFECTIVE_DAY,
+  ORD_292_24_DAY,
   UNVERIFIED_DISTRICTS,
   densityCap,
-  densityCapRule
+  densityCapRule,
+  isSpecNamedNoCap
 } from '../lib/density-caps';
 
 /** Square feet to square metres (international foot). */
@@ -26,6 +28,56 @@ describe('DENSITY_CAP_CHANGE_DAY', () => {
 describe('FZP_EFFECTIVE_DAY', () => {
   it('is 2026-01-12 as a Day', () => {
     expect(FZP_EFFECTIVE_DAY).toBe(Date.UTC(2026, 0, 12) / 86400000);
+  });
+});
+
+describe('ORD_292_24_DAY', () => {
+  it('is 2025-01-19 as a Day, between the change day and the FZP', () => {
+    expect(ORD_292_24_DAY).toBe(Date.UTC(2025, 0, 19) / 86400000);
+    expect(ORD_292_24_DAY).toBeGreaterThan(DENSITY_CAP_CHANGE_DAY);
+    expect(ORD_292_24_DAY).toBeLessThan(FZP_EFFECTIVE_DAY);
+  });
+});
+
+describe('densityCap: RM and RC split at 2025-01-19 (Ord. 292-24)', () => {
+  const PRE: Day[] = [BEFORE, AFTER, ORD_292_24_DAY - 1];
+  const POST: Day[] = [ORD_292_24_DAY, FZP_EFFECTIVE_DAY - 1, TODAY];
+  it('RM-1..RM-4: the greater of 3 per lot or the per-area value before, the bare value after', () => {
+    for (const [z, sf, post] of [
+      ['RM-1', 1600, 2],
+      ['RM-2', 1200, 2],
+      ['RM-3', 800, 2],
+      ['RM-4', 400, 2],
+      ['RM-1', 500, 1]
+    ] as const) {
+      for (const d of PRE) expect(densityCap(z, m2(sf), false, d), `${z} ${d}`).toBe(3);
+      for (const d of POST) expect(densityCap(z, m2(sf), false, d), `${z} ${d}`).toBe(post);
+    }
+    // A large lot is the per-area value in every period.
+    for (const d of [...PRE, ...POST]) expect(densityCap('RM-1', m2(8000), false, d)).toBe(10);
+  });
+
+  it('RC-3, RC-4: the 3-per-lot floor before, bare after, null inside R-4 under the FZP', () => {
+    for (const d of PRE) {
+      expect(densityCap('RC-3', m2(1000), false, d)).toBe(3);
+      expect(densityCap('RC-4', m2(400), true, d)).toBe(3);
+    }
+    for (const d of POST) {
+      expect(densityCap('RC-3', m2(1000), false, d)).toBe(2);
+      expect(densityCap('RC-4', m2(400), false, d)).toBe(2);
+    }
+    expect(densityCap('RC-4', m2(8000), true, FZP_EFFECTIVE_DAY - 1)).toBe(40);
+    expect(densityCap('RC-4', m2(8000), true, FZP_EFFECTIVE_DAY)).toBeNull();
+    expect(densityCap('RC-3', m2(8000), true, TODAY)).toBeNull();
+    expect(densityCap('RC-4', m2(8000), false, TODAY)).toBe(40);
+    expect(densityCap('RC-3', m2(8000), false, TODAY)).toBe(20);
+  });
+
+  it('RH and NC are unchanged by the 2025-01-19 boundary', () => {
+    expect(densityCap('RH-2', m2(1000), false, ORD_292_24_DAY - 1)).toBe(4);
+    expect(densityCap('RH-2', m2(1000), false, ORD_292_24_DAY)).toBe(4);
+    expect(densityCap('NC-1', m2(500), false, ORD_292_24_DAY - 1)).toBe(1);
+    expect(densityCap('NC-1', m2(500), false, ORD_292_24_DAY)).toBe(1);
   });
 });
 
@@ -83,7 +135,7 @@ describe('densityCap: one case per district', () => {
     expect(densityCap('RM-4', m2(2000), false, TODAY)).toBe(10);
   });
 
-  it('RM caps are the same before and after the change day', () => {
+  it('RM caps on a large lot are the same before and after the change day', () => {
     expect(densityCap('RM-2', m2(6000), false, BEFORE)).toBe(10);
   });
 
@@ -143,6 +195,62 @@ describe('densityCap: uncapped and unknown codes', () => {
   });
 });
 
+describe('densityCap: researched additions (partner rulings 2026-10-18, F9 research)', () => {
+  const PERIODS: Day[] = [BEFORE, AFTER, day(2025, 6, 1), FZP_EFFECTIVE_DAY - 1, TODAY];
+
+  it('C-2: the 1 per 800 sf floor in every period outside R-4 (sd.zoning.c2-floor-approx)', () => {
+    for (const d of PERIODS) {
+      expect(densityCap('C-2', m2(8000), false, d)).toBe(10);
+      expect(densityCap('C-2', m2(500), false, d)).toBe(1);
+    }
+  });
+
+  it('C-2 inside R-4: the floor up to 2026-01-11, no limit from FZP_EFFECTIVE_DAY', () => {
+    expect(densityCap('C-2', m2(8000), true, BEFORE)).toBe(10);
+    expect(densityCap('C-2', m2(8000), true, FZP_EFFECTIVE_DAY - 1)).toBe(10);
+    expect(densityCap('C-2', m2(8000), true, FZP_EFFECTIVE_DAY)).toBeNull();
+    expect(densityCap('C-2', m2(8000), true, TODAY)).toBeNull();
+  });
+
+  it('M-1: the 1 per 800 sf floor in every period, R-4 or not (sd.zoning.m1-floor-approx)', () => {
+    for (const d of PERIODS) {
+      for (const r4 of [false, true]) expect(densityCap('M-1', m2(4000), r4, d)).toBe(5);
+    }
+  });
+
+  it('SALI: 0 in every period (residential not permitted)', () => {
+    for (const d of PERIODS) {
+      for (const r4 of [false, true]) expect(densityCap('SALI', m2(20000), r4, d)).toBe(0);
+    }
+  });
+
+  it('the eight no-limit codes are explicit null table entries in every period', () => {
+    for (const z of ['CMUO', 'MUG', 'MUO', 'MUR', 'RED', 'RED-MX', 'WMUG', 'RCD']) {
+      expect(densityCapRule(z), z).toBe('table');
+      for (const d of PERIODS) {
+        for (const r4 of [false, true]) expect(densityCap(z, m2(8000), r4, d), z).toBeNull();
+      }
+    }
+  });
+
+  it('split codes now see the new entries', () => {
+    // C-2 floor on 8,000 sf: 10; RH-3 after the change day: max(4, 3, 8) = 8.
+    expect(densityCap('C-2|RH-3', m2(8000), false, AFTER)).toBe(10);
+    // C-2 and M-1 differ only inside R-4 under the FZP: C-2 has no limit there, M-1 keeps 10.
+    expect(densityCap('M-1', m2(8000), true, TODAY)).toBe(10);
+    expect(densityCap('C-2|M-1', m2(8000), true, TODAY)).toBeNull();
+    expect(densityCap('C-2|M-1', m2(8000), true, FZP_EFFECTIVE_DAY - 1)).toBe(10);
+    // SALI's 0 loses to any positive component: RH-2 on 8,000 sf after the change day is 5.
+    expect(densityCap('SALI|RH-2', m2(8000), false, AFTER)).toBe(5);
+    expect(densityCap('SALI|RH-2', m2(8000), false, AFTER)).toBe(
+      densityCap('RH-2', m2(8000), false, AFTER)
+    );
+    // A no-limit component makes the split null.
+    expect(densityCap('MUR|RH-2', m2(8000), false, AFTER)).toBeNull();
+    expect(densityCap('C-2|P', m2(8000), false, AFTER)).toBeNull();
+  });
+});
+
 describe('densityCap: split codes (tier 4, most permissive)', () => {
   it('split RH-2|RM-1 takes the larger cap', () => {
     // RH-2 on 6,000 sf: max(4, 4) = 4; RM-1: floor(6000 / 800) = 7.
@@ -160,8 +268,8 @@ describe('densityCap: split codes (tier 4, most permissive)', () => {
     expect(densityCap('RH-2|', m2(6000), false, TODAY)).toBeNull();
   });
 
-  it('split NC-3|RC-4 is null (RC is uncapped in the table)', () => {
-    expect(densityCap('NC-3|RC-4', m2(6000), false, TODAY)).toBeNull();
+  it('split NC-3|RC-4 takes the larger cap (RC-4 1 per 200 sf)', () => {
+    expect(densityCap('NC-3|RC-4', m2(6000), false, TODAY)).toBe(30);
   });
 
   it('split components each see the R-4 flag', () => {
@@ -186,6 +294,16 @@ describe('densityCapRule', () => {
   });
 });
 
+describe('isSpecNamedNoCap', () => {
+  it('matches exactly the families spec 4.4 names as no cap', () => {
+    const named = ['RTO-C', 'RTO-1', 'RTO-M', 'UMU', 'C-3-G', 'C-3-O(SD)', 'C-3-O', 'PDR-2'];
+    for (const z of [...named, 'PDR-1-B', 'P', ' P ']) expect(isSpecNamedNoCap(z), z).toBe(true);
+    const other = ['RC-4', 'C-2', 'P70-MU', 'PM-R', 'PPS-MU', 'M-1', 'MUG', 'RH-2', 'NCD', ''];
+    for (const z of [...other, 'RH-2|RM-1']) expect(isSpecNamedNoCap(z), z).toBe(false);
+    expect(isSpecNamedNoCap(null)).toBe(false);
+  });
+});
+
 describe('DENSITY_CAP_TABLE provenance', () => {
   it('every entry has a section and an https url', () => {
     expect(DENSITY_CAP_TABLE.length).toBeGreaterThan(0);
@@ -197,7 +315,7 @@ describe('DENSITY_CAP_TABLE provenance', () => {
     }
   });
 
-  it('covers every RH, RM, NC and NCT district of spec §4.4 exactly once', () => {
+  it('covers every spec §4.4 district and the researched additions exactly once', () => {
     const codes = DENSITY_CAP_TABLE.flatMap((e) => e.codes).sort();
     expect(codes).toEqual(
       [
@@ -216,7 +334,21 @@ describe('DENSITY_CAP_TABLE provenance', () => {
         'NC-S',
         'NCT-1',
         'NCT-2',
-        'NCT-3'
+        'NCT-3',
+        'RC-3',
+        'RC-4',
+        // Partner rulings 2026-10-18 (F9 research): C-2, M-1, SALI and the explicit no-limit codes.
+        'C-2',
+        'M-1',
+        'SALI',
+        'CMUO',
+        'MUG',
+        'MUO',
+        'MUR',
+        'RED',
+        'RED-MX',
+        'WMUG',
+        'RCD'
       ].sort()
     );
     expect(new Set(codes).size).toBe(codes.length);
@@ -233,6 +365,14 @@ describe('DENSITY_CAP_TABLE provenance', () => {
   it('every table code resolves by rule table', () => {
     for (const c of DENSITY_CAP_TABLE.flatMap((e) => e.codes)) {
       expect(densityCapRule(c)).toBe('table');
+    }
+  });
+
+  it('every entry cites a page-anchored sfbos.archive.sf.gov ordinance PDF', () => {
+    for (const e of DENSITY_CAP_TABLE) {
+      expect(e.url, e.codes.join()).toMatch(
+        /^https:\/\/sfbos\.archive\.sf\.gov\/.+\.pdf#page=\d+$/
+      );
     }
   });
 
