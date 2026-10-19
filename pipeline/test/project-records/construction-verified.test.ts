@@ -41,11 +41,11 @@ describe('parseConstructionVerified', () => {
     expect(parseConstructionVerified(ok)).toEqual(ok);
   });
 
-  it('the committed live file is empty and the fixture copy parses', () => {
-    expect(parseConstructionVerified(JSON.parse(readFileSync(LIVE, 'utf8')))).toEqual({
-      schema: 1,
-      projects: []
-    });
+  it('the committed live file and the fixture copy parse (sorted, unique ids)', () => {
+    const live = parseConstructionVerified(JSON.parse(readFileSync(LIVE, 'utf8')));
+    expect(live.schema).toBe(1);
+    const ids = live.projects.map((p) => p.id);
+    expect(ids).toEqual([...new Set(ids)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)));
     expect(parseConstructionVerified(JSON.parse(readFileSync(MINI, 'utf8'))).schema).toBe(1);
   });
 

@@ -179,7 +179,8 @@ export const PR_RULES: readonly QualityRule[] = [
     unitsWeighted: false
   },
   {
-    // Ruling C3 (partner): pipeline/enrichment/construction-verified.json; T4d only.
+    // Ruling C3 (partner): pipeline/enrichment/construction-verified.json; T4d only. Ruling C3b:
+    // of = histories that entered construction (as complete-from-evidence), not file entries.
     id: PR.stagesVerifiedConstruction,
     owner: OWNER,
     source: 'pipeline/enrichment/construction-verified.json',
@@ -190,7 +191,7 @@ export const PR_RULES: readonly QualityRule[] = [
     valueTier: 3,
     maskBit: null,
     label: 'A stalled project was ended by a check of street or aerial imagery',
-    denominator: 'curated verdict entries',
+    denominator: 'histories that entered construction',
     warnShare: 0.01,
     failShare: 0.1,
     unitsWeighted: false

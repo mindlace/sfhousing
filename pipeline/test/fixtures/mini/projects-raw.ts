@@ -47,6 +47,7 @@
  * | M38 2022-000038PRJ     | no lot; SB 35, entitled 2023-06-01: expires 2027-06-01, still open        |
  * | M39 2018-000039PRJ     | lot 002 (a DA parcel); entitled 2019-04-01, no activity: stays open (IL1) |
  * | M40 2020-000040PRJ     | lot 013; entitled 2021-02-01; M2 and M4 active on the lot: stays open     |
+ * | M41 2025-000041PRJ     | lot 012; filed 2025, in the pipeline; a curated dead verdict: leaves (C3c) |
  * | xdht extras            | forms 2 (+3), 3 (+2) and 6 (-1): rhnaCompletedNet 4                       |
  *
  * `enrichment/construction-verified.json` (Ruling C3): M7 `dead` (exit withdrawn at permitFiled on
@@ -728,6 +729,17 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       number_of_units_prop: '5',
       new_construction: 'CHECKED'
     },
+    // M41 (Ruling C3c): in flight on its pipeline row; the mini construction-verified.json has a
+    // dead verdict for it, so its history exits withdrawn at filed and it leaves flight.
+    {
+      record_id: '2025-000041PRJ',
+      record_status: 'Open',
+      block: '3512',
+      lot: '012',
+      open_date: ts('2025-05-01'),
+      number_of_units_prop: '6',
+      new_construction: 'CHECKED'
+    },
     // M29 (Ruling F1a): a referral (opened after its permit was filed, no evidence) whose
     // number_of_units_prop is 0, so its history omits unitsAt.filed (pr.units.filed-zero).
     {
@@ -1054,6 +1066,14 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       statusDate: '2026-07-01',
       caseNo: '2020-000036PRJ',
       units: 8
+    }),
+    // M41 (Ruling C3c): matched, so in flight until its dead verdict.
+    pipeline({
+      blklot: '3512012',
+      status: 'PL Filed',
+      statusDate: '2026-06-01',
+      caseNo: '2025-000041PRJ',
+      units: 6
     }),
     // M20 (DA netting, score-only): M11 (3 units, lot 006, no pipeline row) nets it to 7.
     pipeline({

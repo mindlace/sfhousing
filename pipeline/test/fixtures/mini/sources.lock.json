@@ -21,10 +21,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/6d92f9670d82d74851ce0e1399456d731c97219ffa64ebe1498eec2cd4cc68fe.json",
-          "bytes": 2880,
+          "archiveKey": "sources/4e9cb920a1222cc45ab7977af25b199ee12f242286b2465a68fe58497966ada1.json",
+          "bytes": 3029,
           "name": "datasf-dev-pipeline.page-000.json",
-          "sha256": "6d92f9670d82d74851ce0e1399456d731c97219ffa64ebe1498eec2cd4cc68fe",
+          "sha256": "4e9cb920a1222cc45ab7977af25b199ee12f242286b2465a68fe58497966ada1",
           "url": "https://fixture.invalid/datasf-dev-pipeline.page-000.json"
         }
       ],
@@ -33,7 +33,7 @@
       "label": "DataSF SF Development Pipeline",
       "license": "CC0-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 19,
+      "rowCount": 20,
       "upstreamVersion": "fixture"
     },
     {
@@ -201,10 +201,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/85e58c6f0107efd99a2c82235934c3000422eea52d902513e1d36e169e6e7400.json",
-          "bytes": 5243,
+          "archiveKey": "sources/be5f6cb7251bb38d3f99f7ddd90b67604ee4b5cfde8c89080b8667452ce6c30f.json",
+          "bytes": 5418,
           "name": "datasf-planning-projects.page-000.json",
-          "sha256": "85e58c6f0107efd99a2c82235934c3000422eea52d902513e1d36e169e6e7400",
+          "sha256": "be5f6cb7251bb38d3f99f7ddd90b67604ee4b5cfde8c89080b8667452ce6c30f",
           "url": "https://fixture.invalid/datasf-planning-projects.page-000.json"
         }
       ],
@@ -213,7 +213,7 @@
       "label": "DataSF Planning Projects",
       "license": "public-domain",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 26,
+      "rowCount": 27,
       "upstreamVersion": "fixture"
     },
     {

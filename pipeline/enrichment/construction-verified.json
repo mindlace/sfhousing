@@ -1,4 +1,390 @@
 {
   "schema": 1,
-  "projects": []
+  "projects": [
+    {
+      "id": "BP:200009069760",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "BP:200601051583",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "BP:200608290811",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "BP:201006225046",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "BP:201209200264",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "BP:201302069581",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "BP:201405155805",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "BP:201602290780",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "BP:201605046477",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "BP:201605046478",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "BP:8820360",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "BP:8901055",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "BP:8914864",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "BP:9211651",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "BP:9211652",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:1988.314",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:1989.069",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:1990.762",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:1991.227",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2001.0206",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2002.0773",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2003.0374",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2006.0236",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2009.0085",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2009.0102",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2013.0196:BP:201412163800",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "partner imagery check 2026-10-18: separate buildings, earthmoving 2022\u201323 then abandoned; not built"
+    },
+    {
+      "id": "PRJ:2013.0196:BP:201602129567",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "partner imagery check 2026-10-18: separate buildings, earthmoving 2022\u201323 then abandoned; not built"
+    },
+    {
+      "id": "PRJ:2013.0196:BP:201602179815",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "partner imagery check 2026-10-18: separate buildings, earthmoving 2022\u201323 then abandoned; not built"
+    },
+    {
+      "id": "PRJ:2013.0196:BP:201602179818",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "partner imagery check 2026-10-18: separate buildings, earthmoving 2022\u201323 then abandoned; not built"
+    },
+    {
+      "id": "PRJ:2013.0196:BP:201602179819",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "partner imagery check 2026-10-18: separate buildings, earthmoving 2022\u201323 then abandoned; not built"
+    },
+    {
+      "id": "PRJ:2013.0196:BP:201603141951",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "partner imagery check 2026-10-18: separate buildings, earthmoving 2022\u201323 then abandoned; not built"
+    },
+    {
+      "id": "PRJ:2013.0196:BP:201603141960",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "partner imagery check 2026-10-18: separate buildings, earthmoving 2022\u201323 then abandoned; not built"
+    },
+    {
+      "id": "PRJ:2013.0196:BP:201604144797",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2013.0883",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2014.1380",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2015-000019PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2015-002664PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "partner imagery check 2026-10-18: not built"
+    },
+    {
+      "id": "PRJ:2015-004529PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2015-006860PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2015-009720PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2015-015199PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2016-000471PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2016-005252PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2016-006319PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2016-007396PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2016-011286PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2016-012030PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2016-012787PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2016-014870PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2017-003299PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2017-005279PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2017-015590PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2018-015554PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2019-000606PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    },
+    {
+      "id": "PRJ:2020-003916PRJ",
+      "verdict": "dead",
+      "checked": "2026-10-18",
+      "source": "partner ruling 2026-10-18",
+      "note": "provisional, partner 2026-10-18: assume not built pending review"
+    }
+  ]
 }
