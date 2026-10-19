@@ -491,6 +491,70 @@ describe('invariants', () => {
       'V18'
     );
   });
+  it('V18 reports the cap-period exclusions by code and stays ok', async () => {
+    const v18 = await result(base, 'V18', {
+      ...counts,
+      'scenario.v18.cap_period_differs': 3,
+      'scenario.v18.cap_period_differs.RM-1': 2,
+      'scenario.v18.cap_period_differs.RC-3': 1
+    });
+    expect(v18.ok).toBe(true);
+    expect(v18.detail).toMatch(
+      /base cap differs by period on 3 parcels \(base-cap features not compared; RC-3 1, RM-1 2\)/
+    );
+  });
+  it('V18 fails when a T11 baseCap differs from the parcel’s own pre-FZP cap', async () => {
+    const v18 = await result(base, 'V18', { ...counts, 'scenario.v18.basecap_mismatch': 2 });
+    expect(v18.ok).toBe(false);
+    expect(v18.detail).toMatch(
+      /scenario\.v18\.basecap_mismatch 2 ≠ 0 \(T11 baseCap differs from sc_parcel\.cap_prefzp\)/
+    );
+    const c = { ...counts };
+    delete c['scenario.v18.basecap_mismatch'];
+    expect(await failed(base, c)).toContain('V18');
+  });
+  it('V18 fails when a code outside RM and RC differs by cap period', async () => {
+    const v18 = await result(base, 'V18', {
+      ...counts,
+      'scenario.v18.cap_period_differs': 3,
+      'scenario.v18.cap_period_differs.RM-1': 1,
+      'scenario.v18.cap_period_differs.NC-1': 1,
+      'scenario.v18.cap_period_differs.none': 1
+    });
+    expect(v18.ok).toBe(false);
+    expect(v18.detail).toMatch(
+      /cap-period difference outside the RM and RC families \(Ord\. 292-24\): NC-1, none/
+    );
+    // A split code with an RM or RC component is inside the families.
+    const split = await result(base, 'V18', {
+      ...counts,
+      'scenario.v18.cap_period_differs': 1,
+      'scenario.v18.cap_period_differs.RH-2|RM-1': 1
+    });
+    expect(split.ok).toBe(true);
+  });
+  it('V18 still fails on a feature mismatch when caps differ by period', async () => {
+    const v18 = await result(base, 'V18', {
+      ...counts,
+      'scenario.v18.cap_period_differs': 1,
+      'scenario.v18.cap_period_differs.RM-1': 1,
+      'scenario.panel.feature_mismatch': 1
+    });
+    expect(v18.ok).toBe(false);
+    expect(v18.detail).toMatch(/scenario\.panel\.feature_mismatch 1 ≠ 0/);
+  });
+  it('V18 fails when the cap-period count is missing or disagrees with its breakdown', async () => {
+    const c = { ...counts };
+    delete c['scenario.v18.cap_period_differs'];
+    expect(await failed(base, c)).toContain('V18');
+    expect(
+      await failed(base, {
+        ...counts,
+        'scenario.v18.cap_period_differs': 2,
+        'scenario.v18.cap_period_differs.RM-1': 1
+      })
+    ).toContain('V18');
+  });
   it('V18 fails when too few eligible parcels have a latest-year roll row', async () => {
     const v18 = await result(base, 'V18', {
       ...counts,
@@ -609,7 +673,7 @@ describe('invariants', () => {
       m11.parcelIds = [];
     });
     expect(await failed(d)).toEqual(['V20']);
-    expect((await measuredV20(d)).detail).toMatch(/projects\[11\]\.parcelIds: must be non-empty/);
+    expect((await measuredV20(d)).detail).toMatch(/projects\[12\]\.parcelIds: must be non-empty/);
     // A score-only master must carry pr.multiphase.score-only (the rule entry dropped with it).
     const e = copy();
     editProjects(e, (j) => {

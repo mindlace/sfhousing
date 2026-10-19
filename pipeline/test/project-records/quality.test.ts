@@ -6,6 +6,7 @@ import { SCORE_ONLY_QUALITY_ID, parseProjectsFile } from '../../../src/lib/timel
 import { QUALITY_RULES, qualityRule, type QualityRule } from '../../lib/quality';
 import { PR, PR_RULES } from '../../lib/quality-rules/pr';
 import { T3_ONLY_QUALITY, historyQuality } from '../../project-records/assemble';
+import { carriedFiledUnits } from '../../project-records/inflight';
 import { deriveProjects, type DeriveResult } from '../../project-records/derive';
 import type { ProjectSourceId, RawRow } from '../../project-records/types';
 import { ASOF, baseInput, baseRaw } from './derive-input';
@@ -78,6 +79,102 @@ const TABLE: Record<string, Spec> = {
     failShare: 0.5,
     label: "A stage date earlier than the stage before it was moved up to that stage's date"
   },
+  'pr.stages.complete-from-evidence': {
+    kind: 'gap',
+    action: 'replace',
+    tier: 2,
+    valueTier: 2,
+    unitsWeighted: false,
+    warnShare: 0.05,
+    failShare: 0.1,
+    label:
+      'A building the records show as finished but never certified complete was treated as complete'
+  },
+  'pr.stages.statutory-expiry': {
+    kind: 'gap',
+    action: 'replace',
+    tier: 2,
+    valueTier: 2,
+    unitsWeighted: false,
+    warnShare: 0.05,
+    failShare: 0.1,
+    label:
+      'A permit past its legal completion deadline with no recorded extension was treated as expired'
+  },
+  'pr.stages.expiry-no-valuation': {
+    kind: 'observe',
+    action: 'none',
+    tier: 4,
+    valueTier: null,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label:
+      'A permit with no recorded valuation was given the middle valuation bracket for its legal completion deadline'
+  },
+  'pr.stages.verified-construction': {
+    kind: 'gap',
+    action: 'replace',
+    tier: 3,
+    valueTier: 3,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label: 'A stalled project was ended by a check of street or aerial imagery'
+  },
+  'pr.stages.inferred-lapse': {
+    kind: 'shape',
+    action: 'replace',
+    tier: 3,
+    valueTier: 3,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label:
+      'A discretionary approval with no permit or other activity a year past its performance period was treated as lapsed'
+  },
+  'pr.stages.streamlined-expiry': {
+    kind: 'shape',
+    action: 'replace',
+    tier: 2,
+    valueTier: 2,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label: 'A streamlined approval past its statutory term was treated as expired'
+  },
+  'pr.permits.placeholder-valuation': {
+    kind: 'bound',
+    action: 'replace',
+    tier: 4,
+    valueTier: 0,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label: "A placeholder permit valuation under $1,000 was replaced by the permit's own estimate"
+  },
+  'pr.units.filed-zero': {
+    kind: 'shape',
+    action: 'replace',
+    tier: 2,
+    valueTier: 2,
+    unitsWeighted: false,
+    // Partner ruling (Ruling U1): carried backwards; warn 0.40 / fail 0.50.
+    warnShare: 0.4,
+    failShare: 0.5,
+    label:
+      "A Planning record's home count of zero was replaced by the next recorded count (building permit, else completion)"
+  },
+  'pr.projects.superseded': {
+    kind: 'shape',
+    action: 'drop',
+    tier: 3,
+    valueTier: null,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label: 'A Planning case refiled for the same address replaces the earlier one'
+  },
   'pr.units.capacity': {
     kind: 'outlier',
     action: 'null',
@@ -123,15 +220,15 @@ const TABLE: Record<string, Spec> = {
   },
   'pr.units.split-filed': {
     kind: 'shape',
-    action: 'null',
+    action: 'replace',
     tier: 2,
-    valueTier: null,
+    valueTier: 2,
     unitsWeighted: false,
-    // Partner ruling: warn share 0.03 (live 48/2,569 = 1.87%).
-    warnShare: 0.03,
-    failShare: 0.1,
+    // Partner ruling (Ruling U1): carried backwards; warn 0.40 / fail 0.50.
+    warnShare: 0.4,
+    failShare: 0.5,
     label:
-      "A building's filing-stage home count was not taken from the whole Planning case it was split from"
+      'A building split from a multi-building Planning case takes its own next recorded home count at filing'
   },
   'pr.pipeline.status-date-linked': {
     kind: 'shape',
@@ -753,13 +850,12 @@ describe('pr.units.split-filed (spec §4.8 unitsAt, Ruling S2)', () => {
   it('split rows omit unitsAt.filed and carry the id on the history only', () => {
     const r = split();
     expect(r.histories.map((h) => h.id)).toEqual(expect.arrayContaining([A1, A2]));
-    for (const id of [A1, A2]) {
-      const h = history(r, id);
-      expect(h?.unitsAt, id).not.toHaveProperty('filed');
-      expect(h?.quality, id).toContain(PR.unitsSplitFiled);
-    }
-    expect(history(r, A1)?.unitsAt.permitFiled).toBe(24);
-    expect(history(r, A2)?.unitsAt.permitFiled).toBe(10);
+    for (const id of [A1, A2]) expect(history(r, id)?.quality, id).toContain(PR.unitsSplitFiled);
+    // Ruling U1: each part carries its own permits' count back to filing.
+    expect(history(r, A1)?.unitsAt).toMatchObject({ filed: 24, permitFiled: 24 });
+    expect(history(r, A2)?.unitsAt).toMatchObject({ filed: 10, permitFiled: 10 });
+    expect(r.counts['histories.unitsFiledCarried']).toBe(2);
+    expect(r.counts['histories.unitsFiledOmitted']).toBe(0);
     // C is not split and keeps the PRJ's units at filing.
     expect(history(r, 'PRJ:2016-000006PRJ')?.unitsAt.filed).toBe(60);
     // No T3 value changes, so no T3 project and no qualityRules entry carries it.
@@ -783,6 +879,93 @@ describe('pr.units.split-filed (spec §4.8 unitsAt, Ruling S2)', () => {
     });
     expect(history(r, A1)?.quality).not.toContain(PR.unitsSplitFiled);
     expect(tally(r, PR.unitsSplitFiled)).toMatchObject({ fired: 0, of: 1 });
+  });
+});
+
+describe('pr.units.filed-zero (spec §4.8 unitsAt, Ruling F1a)', () => {
+  const A = 'PRJ:2019-000001PRJ';
+  const C = 'PRJ:2016-000006PRJ';
+
+  it('a PRJ recording 0 units takes the next recorded count; the id is on the history only', () => {
+    const r = derive((raw) => {
+      for (const p of raw['datasf-planning-projects']) p.number_of_units_prop = '0';
+    });
+    for (const id of [A, C]) {
+      expect(history(r, id)?.quality, id).toContain(PR.unitsFiledZero);
+    }
+    // Ruling U1: carried back from the permits (A 24, C 60).
+    expect(history(r, A)?.unitsAt).toMatchObject({ filed: 24, permitFiled: 24 });
+    expect(history(r, C)?.unitsAt.filed).toBe(60);
+    expect(r.counts['histories.unitsFiledCarried']).toBe(2);
+    // A is in flight: T3 carries no T4d-only id, and qualityRules does not list it.
+    expect(project(r, A)?.quality).not.toContain(PR.unitsFiledZero);
+    expect(r.file.qualityRules.map((q) => q.id)).not.toContain(PR.unitsFiledZero);
+    expect(tally(r, PR.unitsFiledZero)).toMatchObject({ fired: 2, of: 2 });
+    expect(callsFor(r.counts).find((c) => c.id === PR.unitsFiledZero)?.sample).toEqual([C, A]);
+  });
+
+  it('a non-zero PRJ keeps unitsAt.filed; a missing one is outside the denominator', () => {
+    const r = derive((raw) => {
+      delete raw['datasf-planning-projects'][1].number_of_units_prop;
+    });
+    expect(history(r, A)?.unitsAt.filed).toBe(24);
+    expect(history(r, A)?.quality).not.toContain(PR.unitsFiledZero);
+    expect(tally(r, PR.unitsFiledZero)).toMatchObject({ fired: 0, of: 1 });
+  });
+
+  it('a split part whose PRJ records 0 counts under split-filed only (split-filed first)', () => {
+    const r = derive((raw) => {
+      raw['datasf-planning-projects'][0].building_permits = '201906010001,201906020002';
+      raw['datasf-planning-projects'][0].number_of_units_prop = '0';
+      raw['datasf-permits-newcon'].push({
+        ...raw['datasf-permits-newcon'][0],
+        permit_number: '201906020002',
+        filed_date: '2019-06-02T00:00:00.000',
+        proposed_units: '10'
+      });
+      raw['datasf-dev-pipeline'].push({
+        ...raw['datasf-dev-pipeline'][0],
+        bpa_no: '201906020002',
+        new_pipeline_units: '10'
+      });
+    });
+    const parts = ['PRJ:2019-000001PRJ:BP:201906010001', 'PRJ:2019-000001PRJ:BP:201906020002'];
+    for (const id of parts) {
+      expect(history(r, id)?.unitsAt.filed, id).toBe(history(r, id)?.unitsAt.permitFiled);
+      expect(history(r, id)?.quality, id).toContain(PR.unitsSplitFiled);
+      expect(history(r, id)?.quality, id).not.toContain(PR.unitsFiledZero);
+    }
+    expect(tally(r, PR.unitsFiledZero)).toMatchObject({ fired: 0 });
+    expect(tally(r, PR.unitsSplitFiled)).toMatchObject({ fired: 2 });
+  });
+});
+
+describe('carriedFiledUnits (Ruling U1)', () => {
+  const A = 'PRJ:2019-000001PRJ';
+  it('takes permitFiled, else complete, when present and > 0; else nothing', () => {
+    expect(carriedFiledUnits({ permitFiled: 12, complete: 10 })).toBe(12);
+    // permitFiled comes first in stage order even when complete is larger.
+    expect(carriedFiledUnits({ permitFiled: 5, complete: 10 })).toBe(5);
+    expect(carriedFiledUnits({ permitFiled: 0, complete: 10 })).toBe(10);
+    expect(carriedFiledUnits({ complete: 7 })).toBe(7);
+    expect(carriedFiledUnits({ permitFiled: 0 })).toBeNull();
+    expect(carriedFiledUnits({})).toBeNull();
+  });
+
+  it('a history with no later recorded count keeps unitsAt.filed omitted; the rule still fires', () => {
+    // A's PRJ records 0 and its permit no units: its size comes from its pipeline row (units
+    // rule 3), so it has neither a permitFiled nor a complete count to carry back.
+    const r = derive((raw) => {
+      raw['datasf-planning-projects'][0].number_of_units_prop = '0';
+      for (const p of raw['datasf-permits-newcon']) {
+        if (p.permit_number === '201906010001') delete p.proposed_units;
+      }
+    });
+    const h = history(r, A);
+    expect(h?.quality).toContain(PR.unitsFiledZero);
+    expect(h?.unitsAt).toEqual({});
+    expect(r.counts['histories.unitsFiledOmitted']).toBe(1);
+    expect(r.counts['histories.unitsFiledCarried']).toBe(0);
   });
 });
 

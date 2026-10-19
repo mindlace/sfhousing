@@ -13,6 +13,7 @@
  */
 import type { ParcelId } from '../../../src/lib/data/parcel';
 import type { Day } from '../../../src/lib/timelapse/time';
+import type { ConstructionVerifiedFile } from '../../enrichment/construction-schema';
 import type { MultiphaseFile } from '../../enrichment/schema';
 import type { ProjectRecordsInput, ProjectSourceId, RawRow } from '../../project-records/types';
 
@@ -51,6 +52,7 @@ function permitRow(o: {
   site?: boolean;
   primary?: boolean;
   street?: [string, string, string];
+  estimated?: number;
 }): RawRow {
   const r: RawRow = {
     permit_number: o.number,
@@ -73,6 +75,7 @@ function permitRow(o: {
   if (o.completed) r.completed_date = ts(o.completed);
   if (o.units !== undefined) r.proposed_units = String(o.units);
   if (o.stories !== undefined) r.number_of_proposed_stories = String(o.stories);
+  if (o.estimated !== undefined) r.estimated_cost = String(o.estimated);
   return r;
 }
 
@@ -115,7 +118,9 @@ export function baseRaw(): Record<ProjectSourceId, RawRow[]> {
         units: 24,
         stories: 6,
         site: true,
-        street: ['100', 'FIXTURE', 'ST']
+        street: ['100', 'FIXTURE', 'ST'],
+        // $3M site permit: Table B 2,160 + 720 days, so A is within its statutory time.
+        estimated: 3_000_000
       }),
       permitRow({
         number: '201906010001',
@@ -128,7 +133,8 @@ export function baseRaw(): Record<ProjectSourceId, RawRow[]> {
         units: 24,
         stories: 6,
         site: true,
-        primary: false
+        primary: false,
+        estimated: 3_000_000
       }),
       permitRow({
         number: '202403150003',
@@ -169,6 +175,7 @@ export function baseRaw(): Record<ProjectSourceId, RawRow[]> {
         units: 8
       })
     ],
+    'datasf-permits-named': [],
     'datasf-planning-projects': [
       {
         record_id: '2019-000001PRJ',
@@ -307,7 +314,8 @@ export function baseMultiphase(): MultiphaseFile {
 
 export function baseInput(
   raw: Record<ProjectSourceId, RawRow[]> = baseRaw(),
-  multiphase: MultiphaseFile = baseMultiphase()
+  multiphase: MultiphaseFile = baseMultiphase(),
+  constructionVerified: ConstructionVerifiedFile = { schema: 1, projects: [] }
 ): ProjectRecordsInput {
   return {
     asOf: ASOF,
@@ -317,10 +325,14 @@ export function baseInput(
     // Every base lot is active, so each descends only to itself (Ruling D1, revised).
     descendants: (b) => (PARCELS.has(b) ? [b] : []),
     assessorUnits: (id) => (id === '3512002' ? 1 : null),
+    yearBuilt: () => null,
+    panelImputed: () => null,
+    lienDay: (y) => day(`${y}-01-01`),
     latestRollYear: 2025,
     baseStories: () => 4,
     hiNet: { 2023: 3, 2024: 2, 2025: -1 },
     areaM2: (id) => 100 + Number(id.slice(-1)),
-    multiphase
+    multiphase,
+    constructionVerified
   };
 }

@@ -171,12 +171,36 @@ function compareAddress(a: AddressRow, b: AddressRow): number {
   );
 }
 
+/** Below this, `revised_cost` is a placeholder, not a valuation (main's ruling 4; tier 4). */
+export const PLACEHOLDER_REVISED_COST = 1000;
+
+/** Rule `pr.permits.placeholder-valuation`: permits with a `revised_cost`, and those replaced. */
+interface ValuationCtx {
+  of: number;
+  replaced: Set<string>;
+}
+
+/**
+ * Ruling E2 valuation: `revised_cost` unless missing or a placeholder, else `estimated_cost`. A
+ * placeholder is replaced by the permit's own estimate (rule `pr.permits.placeholder-valuation`).
+ */
+function valuationOf(r: RawRow, number: string, ctx: ValuationCtx): number | null {
+  const revised = num(r.revised_cost);
+  if (revised !== null) {
+    ctx.of++;
+    if (revised >= PLACEHOLDER_REVISED_COST) return revised;
+    ctx.replaced.add(number);
+  }
+  return num(r.estimated_cost);
+}
+
 function parsePermits(
   rows: RawRow[],
+  id: ProjectSourceId,
   dates: DateCtx,
-  counts: Record<string, number>
+  counts: Record<string, number>,
+  valuation: ValuationCtx
 ): Map<string, Permit> {
-  const id: ProjectSourceId = 'datasf-permits-newcon';
   const groups = new Map<string, RawRow[]>();
   for (const r of rows) {
     const number = str(r.permit_number);
@@ -195,6 +219,8 @@ function parsePermits(
     const d = dateReader(dates);
     const permit: Permit = {
       number,
+      type: str(lead.permit_type) ?? '',
+      named: id === 'datasf-permits-named',
       sitePermit: lead.site_permit === 'Y',
       status: (str(lead.status) ?? '').toLowerCase(),
       statusDay: d.day(lead.status_date),
@@ -206,6 +232,11 @@ function parsePermits(
       stories: num(lead.number_of_proposed_stories),
       existingUnits: num(lead.existing_units),
       proposedUnits: num(lead.proposed_units),
+      // Ruling E2: the valuation that sets the Table B bracket is the value after project review
+      // when present, else the estimate at filing; a `revised_cost` under $1,000 is a
+      // placeholder (live, e.g. 1.0 against an estimate of 510,000) and falls back to the
+      // estimate (main's ruling 4).
+      valuation: valuationOf(lead, number, valuation),
       rows: group.map(addressRow).sort(compareAddress)
     };
     permits.set(number, d.done(permit, number));
@@ -239,6 +270,7 @@ function parsePrjs(
       decisionDay: d.day(r.project_decision_date),
       unitsProp: num(r.number_of_units_prop),
       unitsExist: num(r.number_of_units_exist),
+      affordableProp: num(r.number_affordable_units_prop),
       newConstruction: r.new_construction === 'CHECKED',
       sb35: r.sb35 === 'CHECKED',
       hsd: r.housing_sustainability_dist === 'CHECKED',
@@ -258,7 +290,50 @@ function parsePrjs(
 }
 
 /**
- * Parses all seven row sets. `asOf` bounds every date: a non-empty date outside
+ * Ruling L1: the `datasf-permits-named` rows to parse: those of permits a PRJ's building_permits
+ * names and the new-construction source lacks (that row wins). Counts distinct permit numbers in
+ * `parse.named.kept`, `parse.named.unnamed` (dropped: no PRJ names them, e.g. ADUs) and
+ * `parse.named.inNewcon`; a row with no permit number is `parse.dropped.datasf-permits-named`.
+ */
+function namedPermitRows(
+  rows: RawRow[],
+  newcon: RawRow[],
+  prjs: ReadonlyMap<string, Prj>,
+  counts: Record<string, number>
+): RawRow[] {
+  const nameable = new Set<string>();
+  for (const prj of prjs.values()) for (const n of prj.permits) nameable.add(n);
+  const inNewcon = new Set<string>();
+  for (const r of newcon) {
+    const n = str(r.permit_number);
+    if (n !== null) inNewcon.add(n);
+  }
+  const kept = new Set<string>();
+  const unnamed = new Set<string>();
+  const both = new Set<string>();
+  const out: RawRow[] = [];
+  for (const r of rows) {
+    const n = str(r.permit_number);
+    if (n === null) {
+      bump(counts, 'parse.dropped.datasf-permits-named');
+    } else if (inNewcon.has(n)) {
+      both.add(n);
+    } else if (!nameable.has(n)) {
+      unnamed.add(n);
+    } else {
+      kept.add(n);
+      out.push(r);
+    }
+  }
+  // Written only when non-zero; deriveProjects zero-initialises them for the report.
+  if (kept.size > 0) counts['parse.named.kept'] = kept.size;
+  if (unnamed.size > 0) counts['parse.named.unnamed'] = unnamed.size;
+  if (both.size > 0) counts['parse.named.inNewcon'] = both.size;
+  return out;
+}
+
+/**
+ * Parses all eight row sets. `asOf` bounds every date: a non-empty date outside
  * `[1970-01-01, asOf]` or not a calendar date is missing (rule `pr.date.valid-range`), counted in
  * `dates` and its record put in `clipped`.
  */
@@ -268,8 +343,16 @@ export function parseAll(raw: Record<ProjectSourceId, RawRow[]>, asOf: Day): Par
   const sorted = {} as Record<ProjectSourceId, RawRow[]>;
   for (const id of PROJECT_SOURCE_IDS) sorted[id] = canonicalSort(raw[id] ?? []);
 
-  const permits = parsePermits(sorted['datasf-permits-newcon'], dates, counts);
+  const valuation: ValuationCtx = { of: 0, replaced: new Set() };
   const prjs = parsePrjs(sorted['datasf-planning-projects'], dates, counts);
+  const newcon = sorted['datasf-permits-newcon'];
+  const named = namedPermitRows(sorted['datasf-permits-named'], newcon, prjs, counts);
+  const permits = new Map(
+    [
+      ...parsePermits(newcon, 'datasf-permits-newcon', dates, counts, valuation),
+      ...parsePermits(named, 'datasf-permits-named', dates, counts, valuation)
+    ].sort((a, b) => cmp(a[0], b[0]))
+  );
 
   const children: Child[] = [];
   for (const r of sorted['datasf-planning-records']) {
@@ -330,6 +413,7 @@ export function parseAll(raw: Record<ProjectSourceId, RawRow[]>, asOf: Day): Par
     const d = dateReader(dates);
     const row: HousingRow = {
       bpa: str(r.bpa),
+      blklot: str(r.blocklot),
       form: str(r.form_no),
       netUnits: num(r.net_units_completed),
       firstCompletionDay: d.day(r.first_completion_date)
@@ -373,6 +457,12 @@ export function parseAll(raw: Record<ProjectSourceId, RawRow[]>, asOf: Day): Par
     pipeline,
     counts,
     dates: { of: dates.of, fired: dates.fired, sample: [...dates.ids].sort(cmp) },
-    clipped: dates.clipped
+    clipped: dates.clipped,
+    placeholderValuation: {
+      of: valuation.of,
+      fired: valuation.replaced.size,
+      sample: [...valuation.replaced].sort(cmp)
+    },
+    placeholderPermits: valuation.replaced
   };
 }

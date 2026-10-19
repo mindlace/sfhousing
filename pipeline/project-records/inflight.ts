@@ -8,7 +8,7 @@ import type { InFlightProject } from '../../src/lib/timelapse/projects';
 import type { Day } from '../../src/lib/timelapse/time';
 import type { ProjectHistory, Stage } from '../../src/lib/timelapse/types';
 import { MIN_GROSS_M2_PER_UNIT } from '../lib/quality';
-import { isNewConstruction } from './classify';
+import { isNewConstruction, isNewConstructionPermit } from './classify';
 import { permitCompletionDay, unitBearingPermits } from './stages';
 import { DATASET } from './types';
 import type { LinkedProject, Permit, ProjectRecordsInput } from './types';
@@ -137,6 +137,8 @@ export function applyCapacity(
     const inProject = new Set<string>(proj.parcelIds);
     for (const q of proj.permits) {
       if (q.stories === null || q.proposedUnits === null) continue;
+      // Rulings C1a, C1b: a permit that carries no units is not capacity-checked.
+      if (unitless(proj, q)) continue;
       checked.push(q);
       // The check needs the permit's own lot (any address row) among the project's parcels.
       const lots = [...new Set(q.rows.flatMap((r) => (r.blklot === null ? [] : [r.blklot])))];
@@ -172,6 +174,50 @@ export function applyCapacity(
   };
 }
 
+/**
+ * Ruling M1r: the project's unit-bearing permits include a type 1/2 permit (a dead one does not
+ * re-record the building, so it does not count).
+ */
+function holdsNewConstruction(proj: LinkedProject): boolean {
+  return unitBearingPermits(proj).some(isNewConstructionPermit);
+}
+
+/**
+ * Rulings C1a, C1b, M1r: a named type 3/8 alteration with no existing units (`existing_units` 0
+ * or null) carries no units when the project's unit-bearing permits include a type 1/2 permit: it
+ * re-records the new building that permit already counts. An alteration of an existing building
+ * (existing >= 1) keeps its gross units; the assessor's existing units net it.
+ */
+function unitless(proj: LinkedProject, q: Permit): boolean {
+  return (
+    !isNewConstructionPermit(q) &&
+    (q.existingUnits === null || q.existingUnits === 0) &&
+    holdsNewConstruction(proj)
+  );
+}
+
+/**
+ * Rulings C1a, C1b: the permits whose `proposed_units` size the project (`unitless` ones out).
+ * Stage evidence still reads `unitBearingPermits`.
+ */
+export function unitPermits(proj: LinkedProject): Permit[] {
+  return unitBearingPermits(proj).filter((q) => !unitless(proj, q));
+}
+
+/**
+ * Σ `proposed_units` over `unitPermits`; in an alteration-only project (no unit-bearing type 1/2
+ * permit) the max instead, since each alteration records the building's total (Rulings C1a, M1r).
+ * Null when none.
+ */
+export function permitUnits(proj: LinkedProject): number | null {
+  const ps = unitPermits(proj);
+  if (holdsNewConstruction(proj)) return sumProposed(ps);
+  let max: number | null = null;
+  for (const q of ps)
+    if (q.proposedUnits !== null && (max === null || q.proposedUnits > max)) max = q.proposedUnits;
+  return max;
+}
+
 function sumProposed(permits: Permit[]): number | null {
   let sum = 0;
   let any = false;
@@ -187,7 +233,7 @@ function sumProposed(permits: Permit[]): number | null {
 /** Spec 4.8 units (gross). Null when no rule yields a number. */
 export function grossUnits(proj: LinkedProject): number | null {
   if (proj.kind === 'pipelineOnly') return proj.pipelineRows[0]?.newUnits ?? null;
-  const permitSum = sumProposed(unitBearingPermits(proj));
+  const permitSum = permitUnits(proj);
   if (permitSum !== null) return permitSum;
   const prop = proj.primary?.unitsProp ?? null;
   if (prop !== null && prop > 0) return prop;
@@ -347,20 +393,42 @@ export function rollYearOf(day: Day, latest: number): number {
   return Math.min(Math.max(year, 2007), latest);
 }
 
+/**
+ * Ruling U1 (partner: "carry the next real unit value backwards"): the `unitsAt.filed` of a
+ * history whose Planning value is unusable (`pr.units.filed-zero`, `pr.units.split-filed`) is its
+ * next recorded count in stage order after `filed`: `permitFiled`, else `complete`, whichever is
+ * first present and > 0. Null when neither is, so `filed` stays omitted.
+ */
+export function carriedFiledUnits(at: Partial<Record<Stage, number>>): number | null {
+  for (const s of ['permitFiled', 'complete'] as const) {
+    const u = at[s];
+    if (u !== undefined && u > 0) return u;
+  }
+  return null;
+}
+
 /** Spec 4.8 `unitsAt` (tier 2: current values across records, not snapshots). */
 export function unitsAt(proj: LinkedProject): Partial<Record<Stage, number>> {
   const out: Partial<Record<Stage, number>> = {};
   const filed = proj.primary?.unitsProp ?? null;
   if (filed !== null) out.filed = filed;
-  const bearing = unitBearingPermits(proj);
-  const permitFiled = sumProposed(bearing);
+  // Ruling C1a: the unit-sizing permits (named alterations carry none beside a type 1/2 permit;
+  // alone, the max of theirs).
+  const permitFiled = permitUnits(proj);
   if (permitFiled !== null) out.permitFiled = permitFiled;
 
-  const withUnits = bearing.filter((q) => q.proposedUnits !== null && q.proposedUnits > 0);
+  const withUnits = unitPermits(proj).filter(
+    (q) => q.proposedUnits !== null && q.proposedUnits > 0
+  );
   if (
     withUnits.length > 0 &&
     withUnits.every((q) => permitCompletionDay(q, proj.completions) !== null)
   ) {
+    // Ruling CU1: j67f certifies the units an alteration added, so a named alteration's
+    // completion is its existing units (0 when null) plus the certified ones: gross, like
+    // `permitFiled`. With no certified units it adds none. An alteration-only project takes the
+    // max, as `permitFiled` does.
+    const sum = holdsNewConstruction(proj);
     let total = 0;
     for (const q of withUnits) {
       let tco = 0;
@@ -370,7 +438,12 @@ export function unitsAt(proj: LinkedProject): Partial<Record<Stage, number>> {
         if (c.kind === 'TCO') tco += c.units;
         else if (c.kind === 'CFC' && c.units > cfc) cfc = c.units;
       }
-      total += Math.max(tco, cfc);
+      const certified = Math.max(tco, cfc);
+      const units =
+        certified > 0 && !isNewConstructionPermit(q)
+          ? (q.existingUnits ?? 0) + certified
+          : certified;
+      total = sum ? total + units : Math.max(total, units);
     }
     if (total > 0) out.complete = total;
   }
@@ -406,7 +479,15 @@ export function isPopulation(
 }
 
 export type InFlightStatus =
-  'inFlight' | 'staleOpen' | 'netDropped' | 'ended' | 'noUnits' | 'noParcels' | 'notPopulation';
+  | 'inFlight'
+  | 'staleOpen'
+  | 'netDropped'
+  | 'ended'
+  | 'noUnits'
+  | 'noParcels'
+  | 'notPopulation'
+  | 'suspended'
+  | 'superseded';
 
 /** Spec 4.7 in-flight decision; the first failing check names the status. `end` is null for pipeline-only. */
 export function inFlightStatus(
@@ -432,6 +513,12 @@ export function inFlightStatus(
   if (c.units === null || c.units < 1) return 'noUnits';
   if (proj.parcelIds.length === 0) return 'noParcels';
   if (!c.multiPhase && c.units - c.existingLatest < 1) return 'netDropped';
+  // Main's ruling 5 (Ruling I4): a project whose unit-bearing permits are all suspended leaves
+  // flight; its history stays open (no exit day is supportable).
+  if (proj.kind !== 'pipelineOnly') {
+    const bearing = unitBearingPermits(proj);
+    if (bearing.length > 0 && bearing.every((q) => q.status === 'suspend')) return 'suspended';
+  }
   return 'inFlight';
 }
 

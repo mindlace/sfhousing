@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "projects": [
+    {
+      "id": "BP:201112010026",
+      "verdict": "unknown",
+      "checked": "2026-09-01",
+      "source": "fixture imagery check",
+      "note": "M26: inconclusive, so no change"
+    },
+    {
+      "id": "BP:201410070008",
+      "verdict": "dead",
+      "checked": "2026-09-01",
+      "source": "fixture imagery check",
+      "note": "M7: no building on lot 005; exit withdrawn at permitFiled, dated by the check"
+    },
+    {
+      "id": "BP:209901010099",
+      "verdict": "dead",
+      "checked": "2026-09-01",
+      "source": "fixture imagery check",
+      "note": "names no history, so a build warning"
+    }
+  ]
+}

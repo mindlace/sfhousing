@@ -123,8 +123,16 @@ describe('pipeline fixture', () => {
     const duck = await openDuck();
     try {
       const file = join(da, 'fixture-0', 'parcel-panel.parquet');
-      const rows = await duck.all<{ id: string; y: number; u: number; m: number }>(
-        `SELECT mapblklot AS id, roll_year AS y, existing_units AS u, imputed AS m
+      const rows = await duck.all<{
+        id: string;
+        y: number;
+        u: number;
+        m: number;
+        b: number | null;
+        l: number;
+      }>(
+        `SELECT mapblklot AS id, roll_year AS y, existing_units AS u, imputed AS m,
+           year_built AS b, lien_day AS l
          FROM read_parquet('${file}') ORDER BY 1, 2`
       );
       expect([...new Set(rows.map((r) => r.y))].sort()).toEqual([2023, 2024, 2025]);
@@ -148,13 +156,22 @@ describe('pipeline fixture', () => {
       // SD"): the same units on every parcel-year, and null where the panel has no row.
       const stub = miniProjectInput();
       const panelUnits = new Map(rows.map((r) => [`${r.id}|${r.y}`, r.u]));
+      const panelBuilt = new Map(rows.map((r) => [`${r.id}|${r.y}`, r.b]));
+      const panelMask = new Map(rows.map((r) => [`${r.id}|${r.y}`, r.m]));
       for (const id of MINI_PARCELS) {
         for (const y of [2023, 2024, 2025]) {
           expect(stub.assessorUnits(id, y), `${id} ${y}`).toBe(
             panelUnits.get(`${id}|${y}`) ?? null
           );
+          expect(stub.yearBuilt(id, y), `${id} ${y} year_built`).toBe(
+            panelBuilt.get(`${id}|${y}`) ?? null
+          );
+          expect(stub.panelImputed(id, y), `${id} ${y} imputed`).toBe(
+            panelMask.get(`${id}|${y}`) ?? null
+          );
         }
       }
+      for (const r of rows) expect(stub.lienDay(r.y), `lien_day ${r.y}`).toBe(r.l);
     } finally {
       duck.close();
     }
@@ -371,9 +388,14 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       'sd.roll.year-gap': [1, 26],
       'sd.yield.nonmonotone': [0, 14],
       'sd.yield.zero-hostable': [3, 11],
+      'sd.zoning.c2-floor-approx': [0, 8],
       'sd.zoning.generic-nc': [1, 8],
+      'sd.zoning.m1-floor-approx': [0, 8],
       'sd.zoning.missing': [0, 8],
-      'sd.zoning.split-code': [0, 8]
+      'sd.zoning.named-no-cap': [1, 8],
+      'sd.zoning.rc4-vanness-approx': [0, 8],
+      'sd.zoning.split-code': [0, 8],
+      'sd.zoning.unlisted': [0, 8]
     };
     const sd = QUALITY_RULES.filter((r) => r.owner === 'scenario-data');
     expect(sd.map((r) => r.id)).toEqual(Object.keys(want));
@@ -407,6 +429,8 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
     expect(counts['scenario.yield.clamped']).toBe(0);
     expect(counts['scenario.height.parse_fail']).toBe(0);
     expect(counts['scenario.panel.feature_mismatch']).toBe(0);
+    expect(counts['scenario.v18.cap_period_differs']).toBe(0);
+    expect(counts['scenario.v18.basecap_mismatch']).toBe(0);
     expect(p.fillLevels).toEqual([...FILL_LEVELS]);
   });
 });
@@ -486,14 +510,16 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
     expect(c['quality.pr.pipeline.status-date-linked.fired']).toBe(2);
     expect(c['quality.pr.pipeline.no-status-date.fired']).toBe(1);
     expect(c['quality.pr.pipeline.no-status-date.units']).toBe(20);
-    // M10 and M19 on lot 1.
-    expect(c['quality.pr.parcels.shared-existing.fired']).toBe(2);
+    // M10 and M19 on lot 1; M1 and M35 on lot 10.
+    expect(c['quality.pr.parcels.shared-existing.fired']).toBe(4);
     // M20, netted by M11 and score-only.
     expect(c['quality.pr.multiphase.da-netting.fired']).toBe(1);
     expect(c['quality.pr.multiphase.score-only.fired']).toBe(1);
     // As computed: M23's two split rows list projects whose records show them complete.
     expect(c['quality.pr.pipeline.records-win.fired']).toBe(2);
-    expect(c['quality.pr.pipeline.records-win.of']).toBe(10);
+    // M27 and M28 (Ruling I4) match their pipeline rows too; records-win reads the §4.6 end. So
+    // do M35 and M36 (Rulings IL1, SE1).
+    expect(c['quality.pr.pipeline.records-win.of']).toBe(14);
     // M23's two split rows omit unitsAt.filed (Ruling S2).
     expect(c['quality.pr.units.split-filed.fired']).toBe(2);
     expect(c['projects.excludedNoUnits']).toBe(900);
@@ -514,12 +540,16 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
     }
   });
 
-  it('M1 carries pr.date.valid-range and pr.stages.forward-clamp (spec §4.9 fixture table)', () => {
+  it('M1 carries pr.date.valid-range, pr.stages.forward-clamp and (M35) shared-existing', () => {
     const f = JSON.parse(readFileSync(join(e2e, PROJECTS_JSON), 'utf8')) as {
       projects: { id: string; quality: string[] }[];
     };
     const m1 = f.projects.find((p) => p.id === 'PRJ:2019-000001PRJ');
-    expect(m1?.quality).toEqual(['pr.date.valid-range', 'pr.stages.forward-clamp']);
+    expect(m1?.quality).toEqual([
+      'pr.date.valid-range',
+      'pr.parcels.shared-existing',
+      'pr.stages.forward-clamp'
+    ]);
     const m10 = f.projects.find((p) => p.id === 'PRJ:2020-000010PRJ');
     expect(m10?.quality).toEqual(['pr.parcels.shared-existing', 'pr.stages.forward-clamp']);
   });

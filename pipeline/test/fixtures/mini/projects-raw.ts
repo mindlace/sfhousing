@@ -29,7 +29,31 @@
  * | M21 BP 201803010021    | lot 011; type 1 permit issued 2019, no FCD, expired 2022: exit at issued  |
  * | M22 BP 201702010022    | lot 011; site permit issued and FCD 2018, cancelled 2021: exit at constr. |
  * | M23 2009-000023PRJ     | lot 011; 100 units, permits of 40 and 60 (complete 2014), 2 rows: split   |
+ * | M24 BP 200406010024    | lot 011; issued 2005, $200k, still issued: expired at issued 2006-05-25   |
+ * | M25 BP 201409010025    | lot 011; started 2015, still issued; xdht completion 2018: complete       |
+ * | M26 BP 201112010026    | lot 011; issued 2012, no valuation; activity 2016 after deadline: open    |
+ * | M27 BP 201410010027    | lot 011; in the pipeline, past its 2020 deadline: expired, leaves flight  |
+ * | M28 BP 202503010028    | lot 011; in the pipeline, every permit suspended: leaves flight, open     |
+ * | M29 2016-000029PRJ     | lot 011; referral PRJ recording 0 units, permit filed (2): no unitsAt.filed |
+ * | M30 2018-000030PRJ     | lot 012; entitled 2018; names type 3 permit 201901150030 (+5): permitIssued |
+ * | M31 2019-000031PRJ     | lot 010; entitled 2019; unnamed BP 202003020031 on its lot joins it (L2)   |
+ * | named extras           | type 3 ADU 202001010032 (+1) named by no PRJ: dropped (Ruling L1)          |
+ * | M32 2026-000032PRJ     | lot 012; 500 Fixture Ave, 10 units, opened 2026-06-01: superseded (SP1)    |
+ * | M33 2026-000033PRJ     | lot 012; the same address refiled, 12 units, opened 2026-08-01: in flight  |
+ * | M34 2018-000034PRJ     | no lot; entitled 2019-05-01, no permit or activity: inferred lapse (IL1)  |
+ * | M35 2022-000035PRJ     | lot 010; entitled 2023-03-01, in the pipeline, past its rule expiry: flagged |
+ * | M36 2020-000036PRJ     | lot 010; SB 35, entitled 2021-01-15, in the pipeline: streamlined expiry    |
+ * | M37 2018-000037PRJ     | no lot; SB 35, entitled 2019-03-01, 6 of 10 affordable: never expires     |
+ * | M38 2022-000038PRJ     | no lot; SB 35, entitled 2023-06-01: expires 2027-06-01, still open        |
+ * | M39 2018-000039PRJ     | lot 002 (a DA parcel); entitled 2019-04-01, no activity: stays open (IL1) |
+ * | M40 2020-000040PRJ     | lot 013; entitled 2021-02-01; M2 and M4 active on the lot: stays open     |
  * | xdht extras            | forms 2 (+3), 3 (+2) and 6 (-1): rhnaCompletedNet 4                       |
+ *
+ * `enrichment/construction-verified.json` (Ruling C3): M7 `dead` (exit withdrawn at permitFiled on
+ * the check day), M26 `unknown` (no change), and an id that names no history (a build warning).
+ * M1 and M8 are $3M site permits, so within their statutory time and still in flight (Ruling I4
+ * ends M27 instead).
+ * The panel's `imputed` masks (`PANEL_IMPUTED`) mark lot 3 and 4's RA1 rows (bits 3 and 5).
  *
  * Every pipeline row's `new_pipeline_units` equals its project's units, except M16's (220 against
  * the record's 200), so V21 coverage is below 1.0 (spec 4.9 V21).
@@ -41,6 +65,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { ParcelId } from '../../../../src/lib/data/parcel';
 import type { Day } from '../../../../src/lib/timelapse/time';
+import { parseConstructionVerified } from '../../../enrichment/construction-schema';
 import { parseMultiphase } from '../../../enrichment/schema';
 import { descendantsIndex, type ParcelAttrsRow } from '../../../project-records/descendants';
 import type { ProjectRecordsInput, ProjectSourceId, RawRow } from '../../../project-records/types';
@@ -70,9 +95,12 @@ const ts = (iso: string) => `${iso}T00:00:00.000`;
 
 interface PermitSpec {
   number: string;
+  /** `permit_type`; default '2' for the new-construction source. */
   /** Default '3512'; lots 3 (`8711023C`) and 4 (`0026T001A`) have their own blocks. */
   block?: string;
-  type: '1' | '2';
+  type: '1' | '2' | '3' | '8';
+  /** Existing units (named alterations, Ruling L1). */
+  existing?: number;
   lot: string;
   status: string;
   statusDate: string;
@@ -80,6 +108,10 @@ interface PermitSpec {
   issued?: string;
   fcd?: string;
   completed?: string;
+  lastActivity?: string;
+  /** `estimated_cost` and `revised_cost`, dollars (Ruling E2 valuation). */
+  estimatedCost?: number;
+  revisedCost?: number;
   units: number;
   stories?: number;
   primary?: boolean;
@@ -105,8 +137,12 @@ function permit(o: PermitSpec): RawRow {
   if (o.issued) r.issued_date = ts(o.issued);
   if (o.fcd) r.first_construction_document_date = ts(o.fcd);
   if (o.completed) r.completed_date = ts(o.completed);
+  if (o.lastActivity) r.last_permit_activity_date = ts(o.lastActivity);
   if (o.stories !== undefined) r.number_of_proposed_stories = String(o.stories);
   r.proposed_units = String(o.units);
+  if (o.existing !== undefined) r.existing_units = String(o.existing);
+  if (o.estimatedCost !== undefined) r.estimated_cost = `${o.estimatedCost}.0`;
+  if (o.revisedCost !== undefined) r.revised_cost = `${o.revisedCost}.0`;
   r.site_permit = 'Y';
   r.primary_address_flag = o.primary === false ? 'N' : 'Y';
   return r;
@@ -147,6 +183,8 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       issued: '2021-02-01',
       fcd: '2021-05-03',
       completed: '1909-06-02',
+      // $3M site permit: Table B 2,160 + 720 days from 2021-02-01, within its statutory time.
+      estimatedCost: 3000000,
       units: 24,
       stories: 6,
       street: ['100', 'FIXTURE', 'ST']
@@ -161,6 +199,8 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       issued: '2021-02-01',
       fcd: '2021-05-03',
       completed: '1909-06-02',
+      // $3M site permit: Table B 2,160 + 720 days from 2021-02-01, within its statutory time.
+      estimatedCost: 3000000,
       units: 24,
       stories: 6,
       primary: false
@@ -207,6 +247,8 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       statusDate: '2021-03-01',
       filed: '2020-06-01',
       issued: '2021-03-01',
+      // $3M site permit: within its statutory time (Ruling I4 would otherwise end it).
+      estimatedCost: 3000000,
       units: 4
     }),
     // M10: permit A withdrawn, then the refiled permit B.
@@ -313,6 +355,122 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       fcd: '2011-10-03',
       completed: '2014-06-02',
       units: 60
+    }),
+    // M24 (Ruling E2): a site permit issued 2005 (E0), never started, $200k, still `issued` with no
+    // activity: Table B 360 days + one 90-day extension, so it expired on 2006-05-25.
+    permit({
+      number: '200406010024',
+      type: '1',
+      lot: '011',
+      status: 'issued',
+      statusDate: '2005-03-01',
+      filed: '2004-06-01',
+      issued: '2005-03-01',
+      estimatedCost: 200000,
+      units: 3
+    }),
+    // M25 (Ruling C2): started 2015 (E2, $1.1M after review: 1,080 + 720 days, past by 2020) and
+    // never certified complete, but xdht-4php records its completion on 2018-03-01. Evidence runs
+    // first, so it is complete, not expired.
+    permit({
+      number: '201409010025',
+      type: '2',
+      lot: '011',
+      status: 'issued',
+      statusDate: '2015-03-02',
+      filed: '2014-09-01',
+      issued: '2015-03-02',
+      fcd: '2015-06-01',
+      estimatedCost: 900000,
+      revisedCost: 1100000,
+      units: 4
+    }),
+    // M26 (Ruling E2): issued 2012 (E1) with no valuation (middle bracket, 1,080 + 180 days, due
+    // 2015-08-13), but its last activity, 2016-01-04, is after that: it stays open.
+    permit({
+      number: '201112010026',
+      type: '1',
+      lot: '011',
+      status: 'issued',
+      statusDate: '2012-03-01',
+      filed: '2011-12-01',
+      issued: '2012-03-01',
+      lastActivity: '2016-01-04',
+      units: 2
+    }),
+    // M27 (Ruling I4): issued 2015 (E2, $500k: 1,080 + 720 days, due 2020-03-06), still
+    // `issued`, and listed by the pipeline, so in flight until the statutory exit ends it.
+    permit({
+      number: '201410010027',
+      type: '1',
+      lot: '011',
+      status: 'issued',
+      statusDate: '2015-04-01',
+      filed: '2014-10-01',
+      issued: '2015-04-01',
+      estimatedCost: 500000,
+      units: 2
+    }),
+    // M31 (Ruling L2): a type 2 permit on lot 010 that no PRJ names; it joins 2019-000031PRJ.
+    permit({
+      number: '202003020031',
+      type: '2',
+      lot: '010',
+      status: 'filed',
+      statusDate: '2020-03-02',
+      filed: '2020-03-02',
+      units: 6
+    }),
+    // M29 (Ruling F1a): the permit of a referral PRJ that records 0 units.
+    permit({
+      number: '201606010029',
+      type: '2',
+      lot: '011',
+      status: 'filed',
+      statusDate: '2016-06-01',
+      filed: '2016-06-01',
+      units: 2
+    }),
+    // M28 (Ruling I4): every permit suspended; in the pipeline; within its statutory time.
+    permit({
+      number: '202503010028',
+      type: '1',
+      lot: '011',
+      status: 'suspend',
+      statusDate: '2025-08-01',
+      filed: '2025-03-01',
+      issued: '2025-06-02',
+      estimatedCost: 400000,
+      units: 2
+    })
+  ],
+  // Ruling L1: unit-adding alterations (types 3/8); kept only where a PRJ names them.
+  'datasf-permits-named': [
+    // M30: the named alteration, adding 5 homes on lot 012 (existing 0); $3M, within its time.
+    permit({
+      number: '201901150030',
+      type: '3',
+      lot: '012',
+      status: 'issued',
+      statusDate: '2019-06-03',
+      filed: '2019-01-15',
+      issued: '2019-06-03',
+      estimatedCost: 3000000,
+      existing: 0,
+      units: 5
+    }),
+    // An ADU (+1) on lot 005 that no PRJ names: dropped.
+    permit({
+      number: '202001010032',
+      type: '3',
+      lot: '005',
+      status: 'complete',
+      statusDate: '2020-11-02',
+      filed: '2020-01-01',
+      issued: '2020-03-02',
+      completed: '2020-11-02',
+      existing: 1,
+      units: 2
     })
   ],
   'datasf-planning-projects': [
@@ -449,6 +607,136 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       open_date: ts('2025-09-12'),
       number_of_units_prop: '0'
     },
+    // M30 (Ruling L1): entitled 2018, its building is a named type 3 alteration (+5 homes).
+    {
+      record_id: '2018-000030PRJ',
+      record_status: 'Open',
+      block: '3512',
+      lot: '012',
+      open_date: ts('2018-03-01'),
+      building_permits: '201901150030',
+      number_of_units_prop: '5',
+      new_construction: 'CHECKED'
+    },
+    // M31 (Ruling L2): entitled 2019, no permit of its own named; the BP on its lot joins it.
+    {
+      record_id: '2019-000031PRJ',
+      record_status: 'Open',
+      block: '3512',
+      lot: '010',
+      open_date: ts('2019-02-01'),
+      number_of_units_prop: '6',
+      new_construction: 'CHECKED'
+    },
+    // M32 and M33 (Ruling SP1): one project filed twice under two Planning records (same address,
+    // lot 012, 10 and 12 units); both recent, so in flight until the later one supersedes M32.
+    {
+      record_id: '2026-000032PRJ',
+      record_status: 'Open',
+      project_address: '500 Fixture Ave',
+      block: '3512',
+      lot: '012',
+      open_date: ts('2026-06-01'),
+      number_of_units_prop: '10',
+      new_construction: 'CHECKED'
+    },
+    {
+      record_id: '2026-000033PRJ',
+      record_status: 'Open',
+      project_address: '500  FIXTURE AVE',
+      block: '3512',
+      lot: '012',
+      open_date: ts('2026-08-01'),
+      number_of_units_prop: '12',
+      new_construction: 'CHECKED'
+    },
+    // M34 (Ruling IL1): discretionary, entitled 2019-05-01; no lot (so no parcel activity), no
+    // permit, no child, not in flight: rule expiry 2023-05-01 (ZA COVID overlap), exits a year on.
+    {
+      record_id: '2018-000034PRJ',
+      record_status: 'Open',
+      open_date: ts('2018-11-01'),
+      number_of_units_prop: '4',
+      new_construction: 'CHECKED'
+    },
+    // M35 (Ruling IL1): in flight (pipeline row) with no permit, entitled 2023-03-01; its rule
+    // expiry 2026-03-01 has passed, so it is flagged and stays in flight (ruling 2d).
+    {
+      record_id: '2022-000035PRJ',
+      record_status: 'Open',
+      block: '3512',
+      lot: '010',
+      open_date: ts('2022-06-01'),
+      number_of_units_prop: '10',
+      new_construction: 'CHECKED'
+    },
+    // M36 (Ruling SE1): SB 35 on the same lot, entitled 2021-01-15 (before M35's window): due
+    // 2024-01-15, AB 2729 to 2025-07-15, the one-time year to 2026-07-15: in flight, so it leaves.
+    {
+      record_id: '2020-000036PRJ',
+      record_status: 'Open',
+      block: '3512',
+      lot: '010',
+      open_date: ts('2020-06-01'),
+      number_of_units_prop: '8',
+      number_affordable_units_prop: '1',
+      new_construction: 'CHECKED',
+      sb35: 'CHECKED'
+    },
+    // M37 (Ruling SE1): SB 35, 6 of 10 units affordable, entitled 2019-03-01: exempt, stays open.
+    {
+      record_id: '2018-000037PRJ',
+      record_status: 'Open',
+      open_date: ts('2018-09-01'),
+      number_of_units_prop: '10',
+      number_affordable_units_prop: '6',
+      new_construction: 'CHECKED',
+      sb35: 'CHECKED'
+    },
+    // M38 (Ruling SE1): SB 35, entitled 2023-06-01: expires 2027-06-01, after asOf.
+    {
+      record_id: '2022-000038PRJ',
+      record_status: 'Open',
+      open_date: ts('2022-12-01'),
+      number_of_units_prop: '6',
+      number_affordable_units_prop: '0',
+      new_construction: 'CHECKED',
+      sb35: 'CHECKED'
+    },
+    // M39 (Ruling IL1, review I2): as M34 but on lot 002, which the fixture's DA set holds (a
+    // master's descendants): excluded, so its history stays open.
+    {
+      record_id: '2018-000039PRJ',
+      record_status: 'Open',
+      block: '3512',
+      lot: '002',
+      open_date: ts('2018-10-01'),
+      number_of_units_prop: '4',
+      new_construction: 'CHECKED'
+    },
+    // M40 (Ruling IL1, review I2): entitled 2021-02-01 on lot 013, past expiry and grace, but M2
+    // (filed 2026) and M4 (PPA 2021) are active on the lot since entitled - 365: stays open.
+    {
+      record_id: '2020-000040PRJ',
+      record_status: 'Open',
+      block: '3512',
+      lot: '013',
+      open_date: ts('2020-05-01'),
+      number_of_units_prop: '5',
+      new_construction: 'CHECKED'
+    },
+    // M29 (Ruling F1a): a referral (opened after its permit was filed, no evidence) whose
+    // number_of_units_prop is 0, so its history omits unitsAt.filed (pr.units.filed-zero).
+    {
+      record_id: '2016-000029PRJ',
+      record_status: 'Open',
+      block: '3512',
+      lot: '011',
+      open_date: ts('2016-06-15'),
+      building_permits: '201606010029',
+      number_of_units_prop: '0',
+      new_construction: 'CHECKED'
+    },
     // M23: one Planning case for two buildings; its pipeline rows split it (spec 4.2 step 7).
     {
       record_id: '2009-000023PRJ',
@@ -555,6 +843,39 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       start_event_type: 'accepted',
       start_event_date: ts('2024-04-15')
     },
+    // M30's and M31's approvals.
+    {
+      b1_alt_id: '2018-000030PRJ',
+      start_event_type: 'accepted',
+      start_event_date: ts('2018-03-15'),
+      end_event_type: 'approval',
+      end_event_date: ts('2018-10-01')
+    },
+    {
+      b1_alt_id: '2019-000031PRJ',
+      start_event_type: 'accepted',
+      start_event_date: ts('2019-02-15'),
+      end_event_type: 'approval',
+      end_event_date: ts('2019-09-03')
+    },
+    // M34-M40's approvals (Rulings IL1, SE1).
+    ...(
+      [
+        ['2018-000034PRJ', '2018-11-15', '2019-05-01'],
+        ['2022-000035PRJ', '2022-06-15', '2023-03-01'],
+        ['2020-000036PRJ', '2020-06-15', '2021-01-15'],
+        ['2018-000037PRJ', '2018-09-15', '2019-03-01'],
+        ['2022-000038PRJ', '2022-12-15', '2023-06-01'],
+        ['2018-000039PRJ', '2018-10-15', '2019-04-01'],
+        ['2020-000040PRJ', '2020-05-15', '2021-02-01']
+      ] as const
+    ).map(([id, start, end]) => ({
+      b1_alt_id: id,
+      start_event_type: 'accepted',
+      start_event_date: ts(start),
+      end_event_type: 'approval',
+      end_event_date: ts(end)
+    })),
     // M23's approval (discretionary, entitled before either permit was filed: no clamp).
     {
       b1_alt_id: '2009-000023PRJ',
@@ -596,6 +917,15 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       form_no: '6',
       net_units_completed: '-1',
       first_completion_date: ts('2025-01-15')
+    },
+    // M25's completion (Ruling C2 evidence (i)); before the RHNA window, so rhnaCompletedNet and
+    // xdhtLagDays are unchanged.
+    {
+      bpa: '201409010025',
+      blocklot: '3512011',
+      form_no: '2',
+      net_units_completed: '4',
+      first_completion_date: ts('2018-03-01')
     }
   ],
   'datasf-dev-pipeline': [
@@ -692,6 +1022,36 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       bpaNo: '201102020023',
       units: 60
     }),
+    // M27 and M28 (Ruling I4): matched by their permits, so not stale.
+    pipeline({
+      blklot: '3512011',
+      status: 'BP Issued',
+      statusDate: '2026-04-01',
+      bpaNo: '201410010027',
+      units: 2
+    }),
+    pipeline({
+      blklot: '3512011',
+      status: 'BP Issued',
+      statusDate: '2026-05-01',
+      bpaNo: '202503010028',
+      units: 2
+    }),
+    // M35 and M36 (Rulings IL1, SE1): in the pipeline, before the cutoff.
+    pipeline({
+      blklot: '3512010',
+      status: 'PL Approved',
+      statusDate: '2026-07-01',
+      caseNo: '2022-000035PRJ',
+      units: 10
+    }),
+    pipeline({
+      blklot: '3512010',
+      status: 'PL Approved',
+      statusDate: '2026-07-01',
+      caseNo: '2020-000036PRJ',
+      units: 8
+    }),
     // M20 (DA netting, score-only): M11 (3 units, lot 006, no pipeline row) nets it to 7.
     pipeline({
       blklot: '3512006',
@@ -705,6 +1065,7 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
 };
 
 const MULTIPHASE = fileURLToPath(new URL('./enrichment/multiphase.json', import.meta.url));
+const VERIFIED = fileURLToPath(new URL('./enrichment/construction-verified.json', import.meta.url));
 
 /** Retired and condo block-lots (scenario-data's mini lineage). */
 const LINEAGE: Record<string, ParcelId> = {
@@ -793,10 +1154,65 @@ const RA1_PANEL_UNITS: Record<string, number> = {
 };
 
 /**
+ * The panel's `year_built` per `<parcel>|<roll year>` (scenario-data's fixture panel, after its
+ * year rules: lot 5's 2024 "0" is imputed 1940; lot 7 has 0). golden.test.ts checks this stub
+ * against the built panel for every parcel-year.
+ */
+const PANEL_YEAR_BUILT: Record<string, number> = {
+  '0026T001A|2023': 1925,
+  '0026T001A|2024': 1925,
+  '0026T001A|2025': 1925,
+  '3512001|2024': 1912,
+  '3512001|2025': 1912,
+  '3512002|2024': 1975,
+  '3512002|2025': 1975,
+  '3512005|2024': 1940,
+  '3512005|2025': 1950,
+  '3512006|2024': 1940,
+  '3512006|2025': 1940,
+  '3512007|2024': 0,
+  '3512007|2025': 0,
+  '3512008|2024': 1960,
+  '3512008|2025': 1960,
+  '3512010|2024': 1930,
+  '3512010|2025': 1930,
+  '3512011|2024': 1955,
+  '3512011|2025': 1955,
+  '3512012|2024': 1910,
+  '3512013|2024': 1970,
+  '3512014|2024': 2015,
+  '3512014|2025': 2015,
+  '8711023C|2023': 1920,
+  '8711023C|2024': 1920,
+  '8711023C|2025': 1920
+};
+
+/**
+ * The panel's non-zero `imputed` masks per `<parcel>|<roll year>`; every other panel row (a key of
+ * PANEL_YEAR_BUILT) has 0. golden.test.ts checks this stub against the built panel.
+ */
+const PANEL_IMPUTED: Record<string, number> = {
+  '0026T001A|2024': 8,
+  '3512005|2024': 1,
+  '3512007|2024': 64,
+  '3512007|2025': 64,
+  '3512011|2024': 4,
+  '3512011|2025': 4,
+  '8711023C|2023': 8,
+  '8711023C|2024': 40,
+  '8711023C|2025': 8
+};
+
+/** The panel's `lien_day`: 1 January of the roll year (pipeline/sql/81_scenario_features.sql). */
+export const miniLienDay = (y: number): Day | null =>
+  y >= 2023 && y <= 2025 ? Date.UTC(y, 0, 1) / 86_400_000 : null;
+
+/**
  * The deriveProjects input for the mini records, with stub callbacks mirroring scenario-data's
  * fixture: lineage above; descendants from the landed parcel attrs (attrsRows); assessor units
- * as the panel has them (2023 to 2025, see rollUnits);
- * no base stories; every parcel 300 m2; fixture `hiNet`; the mini `multiphase.json`.
+ * as the panel has them (2023 to 2025, see rollUnits), and its year built and lien days;
+ * no base stories; every parcel 300 m2; fixture `hiNet`; the mini `multiphase.json` and
+ * `construction-verified.json`.
  */
 export function miniProjectInput(): ProjectRecordsInput {
   const units = rollUnits();
@@ -807,10 +1223,17 @@ export function miniProjectInput(): ProjectRecordsInput {
     lineage,
     descendants: descendantsIndex(attrsRows(), { parcelIds: MINI_PARCELS, lineage }),
     assessorUnits: (id, year) => units.get(`${id}|${year}`) ?? null,
+    yearBuilt: (id, year) => PANEL_YEAR_BUILT[`${id}|${year}`] ?? null,
+    panelImputed: (id, year) => {
+      const k = `${id}|${year}`;
+      return k in PANEL_YEAR_BUILT ? (PANEL_IMPUTED[k] ?? 0) : null;
+    },
+    lienDay: miniLienDay,
     latestRollYear: 2025,
     baseStories: () => null,
     hiNet: { 2023: 3, 2024: 2, 2025: -1 },
     areaM2: () => 300,
-    multiphase: parseMultiphase(JSON.parse(readFileSync(MULTIPHASE, 'utf8')))
+    multiphase: parseMultiphase(JSON.parse(readFileSync(MULTIPHASE, 'utf8'))),
+    constructionVerified: parseConstructionVerified(JSON.parse(readFileSync(VERIFIED, 'utf8')))
   };
 }

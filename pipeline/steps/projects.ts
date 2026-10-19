@@ -1,5 +1,6 @@
 // Project-records build step (project-records spec §4.9): reads the seven DataSF project sources
-// from the lock, serves deriveProjects its callbacks from the build's DuckDB tables (parcel_out,
+// from the lock and the curated multiphase.json and construction-verified.json, serves
+// deriveProjects its callbacks from the build's DuckDB tables (parcel_out,
 // active src_parcels, scenario-data's parcel_lineage, scenario_panel and src_parcel_attrs), runs
 // it twice (V23 rerun identity) and writes `scenarios/fzp/projects.json` to the dataset, and
 // `project-histories.json` and `permits.parquet` to the derived cache. Pure TS, like writeTransit.
@@ -10,6 +11,10 @@ import type { ParcelId } from '../../src/lib/data/parcel';
 import type { Day } from '../../src/lib/timelapse/time';
 import type { ProjectHistory } from '../../src/lib/timelapse/types';
 import type { InvariantProfile } from '../config';
+import {
+  parseConstructionVerified,
+  type ConstructionVerifiedFile
+} from '../enrichment/construction-schema';
 import { parseMultiphase, type MultiphaseFile } from '../enrichment/schema';
 import { BuildError } from '../lib/build-error';
 import { openDuck, type Duck } from '../lib/duck';
@@ -82,6 +87,14 @@ function readMultiphase(path: string): MultiphaseFile {
   }
 }
 
+function readConstructionVerified(path: string): ConstructionVerifiedFile {
+  try {
+    return parseConstructionVerified(JSON.parse(readFileSync(path, 'utf8')));
+  } catch (e) {
+    throw new BuildError(`${path}: ${(e as Error).message}`);
+  }
+}
+
 /** First value per key over rows already sorted by (key, value). */
 function firstByKey(rows: { k: string; v: string }[]): Map<string, string> {
   const m = new Map<string, string>();
@@ -144,7 +157,8 @@ const bytesOf = (r: DeriveResult, asOf: Day) =>
  * report count, the `pr.*` T14 rows included, into `counts` (the build's single counts); the
  * determinism rerun records into a fresh object. Returns the warnings, the histories (for
  * stage-calibration) and V21-V24.
- * Throws BuildError for a missing lock entry, an unreadable page or an invalid multiphase.json.
+ * Throws BuildError for a missing lock entry, an unreadable page, or an invalid multiphase.json or
+ * construction-verified.json.
  */
 export async function writeProjectRecords(o: {
   db: Duck;
@@ -154,6 +168,7 @@ export async function writeProjectRecords(o: {
   outDir: string;
   derivedDir: string;
   multiphasePath: string;
+  constructionVerifiedPath: string;
   profile: InvariantProfile;
   asOf: Day;
   counts: Record<string, number>;
@@ -167,6 +182,7 @@ export async function writeProjectRecords(o: {
     PROJECT_SOURCE_IDS.map((id) => [id, readRows(o.lock, o.rawDir, o.byName, id)])
   ) as Record<ProjectSourceId, RawRow[]>;
   const multiphase = readMultiphase(o.multiphasePath);
+  const constructionVerified = readConstructionVerified(o.constructionVerifiedPath);
 
   const area = new Map(
     (await db.all<{ id: string; a: number }>('SELECT id, area_m2 AS a FROM parcel_out')).map(
@@ -200,18 +216,34 @@ export async function writeProjectRecords(o: {
   // The T13 panel, one roll year at a time into per-year columns over the parcel_out ids (NaN =
   // no panel row or a null value): the live panel has millions of (parcel, year) rows.
   const index = new Map([...area.keys()].map((id, i) => [id, i]));
-  const years = (
-    await db.all<{ y: number }>('SELECT DISTINCT roll_year AS y FROM scenario_panel ORDER BY y')
-  ).map((r) => r.y);
+  const lien = new Map(
+    (
+      await db.all<{ y: number; d: number | null }>(
+        'SELECT roll_year AS y, min(lien_day) AS d FROM scenario_panel GROUP BY 1 ORDER BY 1'
+      )
+    ).map((r) => [r.y, r.d])
+  );
+  const years = [...lien.keys()];
   if (years.length === 0) throw new BuildError('scenario_panel is empty');
   const latestRollYear = years[years.length - 1];
   const units = new Map<number, Float64Array>();
   const stories = new Map<number, Float64Array>();
+  const built = new Map<number, Float64Array>();
+  const imputed = new Map<number, Float64Array>();
   for (const y of years) {
     const u = new Float64Array(index.size).fill(NaN);
     const s = new Float64Array(index.size).fill(NaN);
-    const rows = await db.all<{ id: string; u: number | null; s: number | null }>(
-      `SELECT mapblklot AS id, existing_units AS u, base_stories AS s
+    const b = new Float64Array(index.size).fill(NaN);
+    const m = new Float64Array(index.size).fill(NaN);
+    const rows = await db.all<{
+      id: string;
+      u: number | null;
+      s: number | null;
+      b: number | null;
+      m: number | null;
+    }>(
+      `SELECT mapblklot AS id, existing_units AS u, base_stories AS s, year_built AS b,
+         imputed AS m
        FROM scenario_panel WHERE roll_year = ${y}`
     );
     for (const r of rows) {
@@ -219,9 +251,13 @@ export async function writeProjectRecords(o: {
       if (i === undefined) continue;
       u[i] = r.u ?? NaN;
       s[i] = r.s ?? NaN;
+      b[i] = r.b ?? NaN;
+      m[i] = r.m ?? 0;
     }
     units.set(y, u);
     stories.set(y, s);
+    built.set(y, b);
+    imputed.set(y, m);
   }
   const at = (cols: Map<number, Float64Array>, id: ParcelId, y: number): number | null => {
     const i = index.get(id);
@@ -236,11 +272,15 @@ export async function writeProjectRecords(o: {
     lineage,
     descendants,
     assessorUnits: (id: ParcelId, y: number) => at(units, id, y),
+    yearBuilt: (id: ParcelId, y: number) => at(built, id, y),
+    panelImputed: (id: ParcelId, y: number) => at(imputed, id, y),
+    lienDay: (y: number): Day | null => lien.get(y) ?? null,
     latestRollYear,
     baseStories: (id: ParcelId, y: number) => at(stories, id, y),
     hiNet: profile.hiNet,
     areaM2: (id: ParcelId) => area.get(id) ?? 0,
-    multiphase
+    multiphase,
+    constructionVerified
   });
   const r = deriveProjects(input(), { counts: o.counts });
   // V23 rerun identity. T14 rows are keyed per counts object, so the rerun gets its own.

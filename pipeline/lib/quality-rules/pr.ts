@@ -7,10 +7,19 @@ export const PR = {
   storiesParseRange: 'pr.stories.parse-range',
   stagesForwardClamp: 'pr.stages.forward-clamp',
   stagesLastObservedClamp: 'pr.stages.last-observed-clamp',
+  stagesCompleteFromEvidence: 'pr.stages.complete-from-evidence',
+  stagesStatutoryExpiry: 'pr.stages.statutory-expiry',
+  stagesExpiryNoValuation: 'pr.stages.expiry-no-valuation',
+  stagesVerifiedConstruction: 'pr.stages.verified-construction',
+  stagesInferredLapse: 'pr.stages.inferred-lapse',
+  stagesStreamlinedExpiry: 'pr.stages.streamlined-expiry',
+  permitsPlaceholderValuation: 'pr.permits.placeholder-valuation',
+  projectsSuperseded: 'pr.projects.superseded',
   unitsCapacity: 'pr.units.capacity',
   unitsCapacityCap: 'pr.units.capacity-cap',
   unitsCapacityUnmapped: 'pr.units.capacity-unmapped',
   unitsSplitFiled: 'pr.units.split-filed',
+  unitsFiledZero: 'pr.units.filed-zero',
   pipelineStatusDateLinked: 'pr.pipeline.status-date-linked',
   pipelineNoStatusDate: 'pr.pipeline.no-status-date',
   pipelineRecordsWin: 'pr.pipeline.records-win',
@@ -102,6 +111,169 @@ export const PR_RULES: readonly QualityRule[] = [
     unitsWeighted: false
   },
   {
+    // Ruling C2 (partner): T4d only; never on an in-flight project's history, so no T3 value.
+    // Evidence (i) reads new-construction xdht rows only (Ruling C4); evidence (ii) skips panel
+    // rows imputed for units or carried (mask bits 3 and 5). A multi-building project is dated by
+    // its first building's completion (main's ruling 4, accepted).
+    id: PR.stagesCompleteFromEvidence,
+    owner: OWNER,
+    source: 'datasf-housing-production, scenario_panel',
+    field: 'end',
+    kind: 'gap',
+    action: 'replace',
+    tier: 2,
+    valueTier: 2,
+    maskBit: null,
+    label:
+      'A building the records show as finished but never certified complete was treated as complete',
+    denominator: 'histories that entered construction',
+    // Override (partner-approved): DataSF never records permit expiry or completion for these;
+    // the rules supply them from the building code (§106A.4.4) and the assessor roll / xdht;
+    // live 2.99% / 3.76%.
+    warnShare: 0.05,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
+    // Ruling E2 (partner): SFBC 106A.4.4 Table B (pipeline/project-records/expiry.ts). Ruling I4:
+    // it also ends an in-flight project's history, which then leaves flight
+    // (projects.excludedStatutory). A history with a unit-bearing permit that has a completion
+    // day is excluded and stays open (I3 rejected), counted as
+    // histories.statutoryExpiry.excludedCompletePermit. A revised_cost under $1,000 is a
+    // placeholder; the estimate is used.
+    id: PR.stagesStatutoryExpiry,
+    owner: OWNER,
+    source: 'datasf-permits-newcon',
+    field: 'end',
+    kind: 'gap',
+    action: 'replace',
+    tier: 2,
+    valueTier: 2,
+    maskBit: null,
+    label:
+      'A permit past its legal completion deadline with no recorded extension was treated as expired',
+    denominator: 'histories that entered permit issued',
+    // Override (partner-approved): DataSF never records permit expiry or completion for these;
+    // the rules supply them from the building code (§106A.4.4) and the assessor roll / xdht;
+    // live 2.99% / 3.76%.
+    warnShare: 0.05,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
+    // Ruling E2's no-valuation case, counted apart (observe; no record carries it).
+    id: PR.stagesExpiryNoValuation,
+    owner: OWNER,
+    source: 'datasf-permits-newcon',
+    field: 'revised_cost, estimated_cost',
+    kind: 'observe',
+    action: 'none',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label:
+      'A permit with no recorded valuation was given the middle valuation bracket for its legal completion deadline',
+    denominator: 'unit-bearing permits whose deadline the statutory-expiry rule read from Table B',
+    warnShare: 0.01,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
+    // Ruling C3 (partner): pipeline/enrichment/construction-verified.json; T4d only.
+    id: PR.stagesVerifiedConstruction,
+    owner: OWNER,
+    source: 'pipeline/enrichment/construction-verified.json',
+    field: 'end',
+    kind: 'gap',
+    action: 'replace',
+    tier: 3,
+    valueTier: 3,
+    maskBit: null,
+    label: 'A stalled project was ended by a check of street or aerial imagery',
+    denominator: 'curated verdict entries',
+    warnShare: 0.01,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
+    // Ruling IL1 (partner ruling 2b): rule.json modelingRule.discretionaryExpiryDay
+    // (pipeline/project-records/entitlement.ts). The standard condition is not self-executing
+    // since 2014 and extensions leave no status, so an inference with a year of grace; an
+    // in-flight history that meets the test is only flagged (projects.lapseFlagged). T4d only.
+    id: PR.stagesInferredLapse,
+    owner: OWNER,
+    source: 'datasf-planning-projects, datasf-planning-records (conditions of approval)',
+    field: 'end',
+    kind: 'shape',
+    action: 'replace',
+    tier: 3,
+    valueTier: 3,
+    maskBit: null,
+    label:
+      'A discretionary approval with no permit or other activity a year past its performance period was treated as lapsed',
+    denominator: 'discretionary and Housing Choice-SF histories that entered entitled',
+    warnShare: 0.01,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
+    // Ruling SE1 (partner ruling 2c): Gov. Code 65913.4(g) (SB 35) and 65912.114(l) (AB 2011),
+    // 3 years plus the one-time 1-year extension, AB 1561 / AB 2729 applied
+    // (pipeline/project-records/entitlement.ts). Never for number_affordable_units_prop x 2 >=
+    // number_of_units_prop (histories.streamlinedExpiry.affordableExempt); litigation tolling is
+    // unrecorded. Self-executing, so an in-flight project leaves flight
+    // (projects.excludedStreamlinedExpiry). T4d only.
+    id: PR.stagesStreamlinedExpiry,
+    owner: OWNER,
+    source: 'datasf-planning-projects',
+    field: 'end',
+    kind: 'shape',
+    action: 'replace',
+    tier: 2,
+    valueTier: 2,
+    maskBit: null,
+    label: 'A streamlined approval past its statutory term was treated as expired',
+    denominator: 'SB 35, SB 423 and AB 2011 histories that entered entitled',
+    warnShare: 0.01,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
+    // Main's ruling 4: a revised_cost under $1,000 is a placeholder (live, e.g. 1.0 against an
+    // estimate of 510,000); the permit's own estimated_cost is used (valueTier 0: a source value).
+    id: PR.permitsPlaceholderValuation,
+    owner: OWNER,
+    source: 'datasf-permits-newcon',
+    field: 'revised_cost',
+    kind: 'bound',
+    action: 'replace',
+    tier: 4,
+    valueTier: 0,
+    maskBit: null,
+    label: "A placeholder permit valuation under $1,000 was replaced by the permit's own estimate",
+    denominator: 'permits with a revised cost',
+    warnShare: 0.01,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
+    // Partner ruling 3, Rulings SP1, SP2 and SP3: T3 only (the history is unchanged); no record.
+    id: PR.projectsSuperseded,
+    owner: OWNER,
+    source: 'derived in-flight projects (PRJ address, parcels, units, open day)',
+    field: 'projects',
+    kind: 'shape',
+    action: 'drop',
+    tier: 3,
+    valueTier: null,
+    maskBit: null,
+    label: 'A Planning case refiled for the same address replaces the earlier one',
+    denominator: 'in-flight projects anchored on a Planning record',
+    warnShare: 0.01,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
     id: PR.unitsCapacity,
     owner: OWNER,
     source: 'datasf-permits-newcon',
@@ -154,23 +326,50 @@ export const PR_RULES: readonly QualityRule[] = [
     unitsWeighted: false
   },
   {
-    // Ruling S2 (stage-calibration finding 2): T4d only; no T3 value changes.
+    // Ruling F1a (comprehension gate F1), Ruling U1: T4d only. A Planning record's
+    // number_of_units_prop of 0 is not a recorded size (units precedence, spec 4.8 rule 2, needs
+    // > 0); the history's unitsAt.filed is its next recorded count (permitFiled, else complete),
+    // or omitted when it has none. A split part is counted under pr.units.split-filed only.
+    id: PR.unitsFiledZero,
+    owner: OWNER,
+    source: 'datasf-planning-projects',
+    field: 'unitsAt.filed',
+    kind: 'shape',
+    action: 'replace',
+    tier: 2,
+    valueTier: 2,
+    maskBit: null,
+    label:
+      "A Planning record's home count of zero was replaced by the next recorded count (building permit, else completion)",
+    denominator: 'histories whose primary Planning record has a proposed unit count',
+    // Override (partner ruling): Planning records often carry no usable unit count at filing
+    // (zero, or the whole multi-building case); the model carries the next recorded count
+    // backwards. Live 859 / 2,569 = 33.4%.
+    warnShare: 0.4,
+    failShare: 0.5,
+    unitsWeighted: false
+  },
+  {
+    // Ruling S2 (stage-calibration finding 2), Ruling U1: T4d only; no T3 value changes. A split
+    // part's unitsAt.filed is its own next recorded count (permitFiled, else complete), or
+    // omitted when it has none.
     id: PR.unitsSplitFiled,
     owner: OWNER,
     source: 'datasf-planning-projects',
     field: 'unitsAt.filed',
     kind: 'shape',
-    action: 'null',
+    action: 'replace',
     tier: 2,
-    valueTier: null,
+    valueTier: 2,
     maskBit: null,
     label:
-      "A building's filing-stage home count was not taken from the whole Planning case it was split from",
+      'A building split from a multi-building Planning case takes its own next recorded home count at filing',
     denominator: 'histories whose primary Planning record has a proposed unit count',
-    // Override (partner ruling): multi-building Planning cases split into per-building projects;
-    // whole-case units at filing do not belong to one building; live 48/2,569 = 1.87%.
-    warnShare: 0.03,
-    failShare: 0.1,
+    // Override (partner ruling): Planning records often carry no usable unit count at filing
+    // (zero, or the whole multi-building case); the model carries the next recorded count
+    // backwards. Live 48 / 2,569 = 1.9%.
+    warnShare: 0.4,
+    failShare: 0.5,
     unitsWeighted: false
   },
   {

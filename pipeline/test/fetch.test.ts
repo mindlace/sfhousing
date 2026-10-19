@@ -209,15 +209,24 @@ describe('fetchDatasf json sources (spec §4.1)', () => {
     'datasf-permits-newcon': {
       dataset: 'i98e-djp9',
       select:
-        'permit_number,permit_type,block,lot,street_number,street_name,street_suffix,status,status_date,filed_date,permit_creation_date,issued_date,first_construction_document_date,completed_date,last_permit_activity_date,number_of_proposed_stories,existing_units,proposed_units,site_permit,primary_address_flag',
+        'permit_number,permit_type,block,lot,street_number,street_name,street_suffix,status,status_date,filed_date,permit_creation_date,issued_date,first_construction_document_date,completed_date,last_permit_activity_date,number_of_proposed_stories,existing_units,proposed_units,estimated_cost,revised_cost,site_permit,primary_address_flag',
       where: "permit_type in('1','2')",
       license: 'PDDL-1.0',
       label: 'DataSF Building Permits (new construction)'
     },
+    // Ruling L1: unit-adding alterations, kept only where a PRJ names them.
+    'datasf-permits-named': {
+      dataset: 'i98e-djp9',
+      select:
+        'permit_number,permit_type,block,lot,street_number,street_name,street_suffix,status,status_date,filed_date,permit_creation_date,issued_date,first_construction_document_date,completed_date,last_permit_activity_date,number_of_proposed_stories,existing_units,proposed_units,estimated_cost,revised_cost,site_permit,primary_address_flag',
+      where: "permit_type in('3','8') and proposed_units > existing_units",
+      license: 'PDDL-1.0',
+      label: 'DataSF Building Permits (unit-adding alterations)'
+    },
     'datasf-planning-projects': {
       dataset: 'qvu5-m3a2',
       select:
-        'record_id,record_status,project_address,block,lot,open_date,close_date,building_permits,project_decision,project_decision_date,number_of_units_prop,number_of_units_exist,new_construction,sb35,housing_sustainability_dist,ab2162,description',
+        'record_id,record_status,project_address,block,lot,open_date,close_date,building_permits,project_decision,project_decision_date,number_of_units_prop,number_of_units_exist,number_affordable_units_prop,new_construction,sb35,housing_sustainability_dist,ab2162,description',
       license: 'public-domain',
       label: 'DataSF Planning Projects'
     },
@@ -325,6 +334,7 @@ describe('fetchDatasf json sources (spec §4.1)', () => {
       ])
     );
     expect(ids.map((id) => DATASF[id].license)).toEqual([
+      'PDDL-1.0',
       'PDDL-1.0',
       'public-domain',
       'public-domain',

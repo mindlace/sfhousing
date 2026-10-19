@@ -130,15 +130,17 @@ describe('kind defaults', () => {
       'sd.test.fail-high'
     ]);
   });
-  it('every registered sd.* rule takes its kind default but the four approved overrides', () => {
-    // Partner DQ-4 share overrides, 2026-10-17 (design RA1 "Share overrides approved"); each
-    // states its reason at its entry in quality-rules/sd.ts.
+  it('every registered sd.* rule takes its kind default but the five approved overrides', () => {
+    // Partner DQ-4 share overrides, 2026-10-17 (design RA1 "Share overrides approved") and
+    // 2026-10-18 (sd.zoning.named-no-cap); each states its reason at its entry in
+    // quality-rules/sd.ts.
     expect(kindDefaultDepartures(QUALITY_RULES.filter((r) => r.owner === 'scenario-data'))).toEqual(
       [
         'sd.roll.floor-area-missing',
         'sd.roll.units-capacity',
         'sd.yield.zero-hostable',
-        'sd.zoning.generic-nc'
+        'sd.zoning.generic-nc',
+        'sd.zoning.named-no-cap'
       ]
     );
   });
