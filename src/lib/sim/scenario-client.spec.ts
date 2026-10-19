@@ -328,7 +328,14 @@ describe('ScenarioClient', () => {
       const c = new ScenarioClient(w, {});
       c.restart(w);
     };
+    // Negative control: a bare ScenarioWorkerLike parameter rejects it, so the union is needed.
+    const bare = (w: ScenarioWorkerLike) => w;
+    const rejects = (w: ReturnType<typeof spawnSimWorker>) => {
+      // @ts-expect-error WorkerLike.onmessage is typed for SimResponse
+      bare(w);
+    };
     expect(typeof accepts).toBe('function');
+    expect(typeof rejects).toBe('function');
   });
 });
 
@@ -403,15 +410,46 @@ describe('ScenarioClient worker crash', () => {
     expect(client.datasetVersion).toBe('fixture-1');
   });
 
-  it('restart clears the current seed: no resync until the new worker has produced a timeline', () => {
+  it('crash then restart: currentSeed survives, so Retry re-inits with it; resync waits for a timeline', () => {
     const { w, client } = setup({ onCrash: () => {} });
     client.initScenario(MANIFEST, HORIZON);
     w.emit(timeline(1, 10));
     w.onerror?.({} as ErrorEvent);
     const w2 = fakeWorker();
+    expect(client.currentSeed).toBe(10);
     client.restart(w2);
+    expect(client.currentSeed).toBe(10);
     client.resync();
-    expect(w2.posts).toEqual([]);
+    expect(w2.posts).toEqual([]); // no timeline from the new worker yet
+    client.initScenario(MANIFEST, HORIZON, client.currentSeed);
+    expect(w2.posts).toEqual([
+      {
+        type: 'initScenario',
+        rev: 2,
+        manifest: MANIFEST,
+        scenario: 'fzp',
+        seed: 10,
+        horizon: HORIZON
+      }
+    ]);
+    client.resync(); // still no timeline from the re-init
+    expect(w2.posts).toHaveLength(1);
+    w2.emit(timeline(2, 10));
+    client.resync();
+    expect(w2.posts[1]).toEqual({ type: 'reroll', rev: 3, seed: 10 });
+  });
+
+  it('currentSeed is null before any timeline and ignores stale ones', () => {
+    const { w, client } = setup();
+    expect(client.currentSeed).toBeNull();
+    client.initScenario(MANIFEST, HORIZON); // 1
+    client.reroll(5); // 2
+    w.emit(timeline(1, 99)); // stale
+    expect(client.currentSeed).toBeNull();
+    w.emit(timeline(2, 5));
+    expect(client.currentSeed).toBe(5);
+    client.initScenario(MANIFEST, HORIZON, 8);
+    expect(client.currentSeed).toBe(5); // kept until a new accepted timeline replaces it
   });
 
   it.each(['onerror', 'onmessageerror'] as const)(

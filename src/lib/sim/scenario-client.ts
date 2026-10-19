@@ -47,8 +47,10 @@ export class ScenarioClient {
   #rev = 0;
   #barrierRev = 0;
   #resyncRev: Rev | null = null;
-  /** Seed of the latest non-stale timeline; null until the scenario's first one arrives. */
+  /** Seed of the latest non-stale timeline. Survives `initScenario` and `restart` (crash Retry). */
   #currentSeed: number | null = null;
+  /** A non-stale timeline has arrived since the last `initScenario`/`restart`: resync may run. */
+  #hasTimeline = false;
   #reqId = 0;
   #pending = new Map<number, (s: ParcelSummary | null) => void>();
   #datasetVersion: string | null = null;
@@ -66,6 +68,15 @@ export class ScenarioClient {
     return this.#crashed;
   }
 
+  /**
+   * Seed of the latest accepted (non-stale) timeline, or null before any. Kept across `restart`
+   * and `initScenario`, so crash Retry is `restart(spawnSimWorker())` then
+   * `initScenario(manifest, horizon, client.currentSeed)`.
+   */
+  get currentSeed(): number | null {
+    return this.#currentSeed;
+  }
+
   /** From the latest `ready`. */
   get datasetVersion(): string | null {
     return this.#datasetVersion;
@@ -81,8 +92,9 @@ export class ScenarioClient {
 
   initScenario(manifest: Manifest, horizon: Day, seed: number | null = null): Rev {
     this.#resyncRev = null;
-    // A new scenario has produced no timeline yet; a resync before one would reroll nothing.
-    this.#currentSeed = null;
+    // A new scenario has produced no timeline yet; a resync before one would hit an
+    // uninitialised host (bad-request). `currentSeed` is kept for the caller's Retry.
+    this.#hasTimeline = false;
     return this.#sendBarrier({ type: 'initScenario', manifest, scenario: 'fzp', seed, horizon });
   }
 
@@ -120,7 +132,7 @@ export class ScenarioClient {
    */
   resync(): void {
     if (this.#disposed || this.#crashed || this.#resyncRev !== null) return;
-    if (this.#currentSeed === null) return;
+    if (!this.#hasTimeline || this.#currentSeed === null) return;
     this.#resyncRev = this.reroll(this.#currentSeed);
   }
 
@@ -138,7 +150,7 @@ export class ScenarioClient {
     this.#detach();
     this.#crashed = false;
     this.#resyncRev = null;
-    this.#currentSeed = null;
+    this.#hasTimeline = false;
     this.#datasetVersion = null;
     this.#worker = worker as ScenarioWorkerLike;
     this.#attach(this.#worker);
@@ -191,6 +203,7 @@ export class ScenarioClient {
       case 'timeline':
         if (!this.isStale(msg)) {
           this.#currentSeed = msg.seed;
+          this.#hasTimeline = true;
           if (this.#resyncRev !== null && msg.render.revision === 0 && msg.rev >= this.#resyncRev) {
             this.#resyncRev = null;
           }
