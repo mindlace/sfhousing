@@ -13,3 +13,10 @@ describe('isFullHeightRoute', () => {
     expect(isFullHeightRoute(id)).toBe(expected);
   });
 });
+
+describe('isFullHeightRoute for /fzp', () => {
+  it('is full height for /fzp only, not its children', () => {
+    expect(isFullHeightRoute('/fzp')).toBe(true);
+    expect(isFullHeightRoute('/fzp/x')).toBe(false);
+  });
+});
