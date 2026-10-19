@@ -13,12 +13,17 @@
  * pathway, the unclassifiable ones mixed in the cohort's own proportions.
  * Only cohorts with n ≥ 50 are checked. Pass bar at every month and outcome:
  * |Δ| ≤ max(0.03, 2.5·SE), SE combining a bootstrap of the observed cohort with the spread of
- * the 20 seeds. The tolerance is a test parameter, not a model number.
+ * the 20 seeds. The tolerance is a test parameter, not a model number. A cohort with no month at
+ * LIVE_CAL.nRiskMin observed at risk is too thin to compare: it is reported with its n and its
+ * largest observed at-risk, not failed. A block fails if no cohort is comparable, or if any
+ * comparable cohort is out of tolerance (`blockFailures`).
  *
  * Two blocks: `live` reads the newest non-fixture build's `project-histories.json` (derived
  * cache) and `calibration.json` (build output), and is skipped with the reason printed when
- * there is none; `synthetic` always runs, on histories sampled from `mini-calibration.json`'s own
- * tables, so the replay machinery itself is exercised in CI.
+ * there is none (`SFH_REPLAY_PIPELINE_DIR` and `SFH_REPLAY_VERSION` point it at another
+ * pipeline directory or version, read only); `synthetic` always runs, on histories sampled from
+ * `mini-calibration.json`'s own tables, so the replay machinery itself is exercised in CI. Each
+ * block prints its per-cohort table with console.info.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -42,8 +47,16 @@ import {
   type ProjectHistory,
   type Stage
 } from '../../src/lib/timelapse/types';
+import { MONTH_DAYS } from '../../src/lib/timelapse/time';
 import { isoToDay } from '../project-records/multiphase';
-import { OUTCOMES, ajSweep, ajTable, type Outcome } from '../lib/fzp-cal/aalen-johansen';
+import {
+  OUTCOMES,
+  ajSweep,
+  ajTable,
+  countAtRisk,
+  riskIndex,
+  type Outcome
+} from '../lib/fzp-cal/aalen-johansen';
 import { LIVE_CAL } from '../lib/fzp-cal/config';
 import { weightAdvances } from '../lib/fzp-cal/no-fcd';
 import { purgeCensor } from '../lib/fzp-cal/purge';
@@ -226,14 +239,29 @@ interface Verdict {
   key: string;
   n: number;
   months: number;
+  /** the most observed records at risk at any whole month up to LIVE_CAL.kMax (unweighted) */
+  maxAtRisk: number;
+  /** too thin to compare: no month with LIVE_CAL.nRiskMin observed at risk (reported, not failed) */
+  thin: boolean;
   maxAbs: number;
+  /** the pass bar where |Δ| is largest */
+  bar: number;
   worst: string;
   failures: string[];
 }
 
+/** The most observed records at risk at any whole month 1..kMax, unweighted (as `tableMonths`). */
+function maxAtRiskOf(spells: Spell[]): number {
+  const idx = riskIndex(spells);
+  let m = 0;
+  for (let k = 1; k <= LIVE_CAL.kMax; k++) m = Math.max(m, countAtRisk(idx, k * MONTH_DAYS));
+  return m;
+}
+
 /**
  * The observed AJ table (LIVE_CAL's kMax and risk floor set its months) against the simulated
- * one over all seeds, at every whole month and outcome.
+ * one over all seeds, at every whole month and outcome. A cohort with no month at the risk floor
+ * has no table to compare: it is marked thin, with no failure (spec §6 pass rule).
  */
 function compare(co: Cohort, sims: Spell[][], salt: number): Verdict {
   const o = ajTable(ajSweep(co.obs), undefined, LIVE_CAL.kMax, LIVE_CAL.nRiskMin, co.obs);
@@ -242,14 +270,14 @@ function compare(co: Cohort, sims: Spell[][], salt: number): Verdict {
     key: co.key,
     n: co.obs.length,
     months: K,
+    maxAtRisk: maxAtRiskOf(co.obs),
+    thin: K === 0,
     maxAbs: 0,
+    bar: 0,
     worst: '',
     failures: []
   };
-  if (K === 0) {
-    v.failures.push(`no month with ${LIVE_CAL.nRiskMin} observed at risk`);
-    return v;
-  }
+  if (v.thin) return v;
   // nRiskMin 0 reads every table to the observed table's K months
   const tab = (sp: Spell[]) => ajTable(ajSweep(sp), undefined, K, 0, sp);
   const sim = tab(sims.flat());
@@ -271,6 +299,7 @@ function compare(co: Cohort, sims: Spell[][], salt: number): Verdict {
       const at = `${j} by month ${k + 1}: simulated ${got.toFixed(4)} vs observed ${want.toFixed(4)}`;
       if (delta > v.maxAbs) {
         v.maxAbs = delta;
+        v.bar = bar;
         v.worst = `${at} (bar ${bar.toFixed(4)})`;
       }
       if (delta > bar) v.failures.push(`${at}: |Δ| ${delta.toFixed(4)} > ${bar.toFixed(4)}`);
@@ -279,21 +308,50 @@ function compare(co: Cohort, sims: Spell[][], salt: number): Verdict {
   return v;
 }
 
+/**
+ * The block's pass rule (spec §6): thin cohorts are reported, not failed; the block fails when no
+ * cohort is comparable, or with every failure of a comparable cohort.
+ */
+function blockFailures(verdicts: Verdict[]): string[] {
+  const comparable = verdicts.filter((v) => !v.thin);
+  if (comparable.length === 0) {
+    const thin = verdicts.map((v) => `${v.key}: n ${v.n}, max at-risk ${v.maxAtRisk}`);
+    return [
+      `no cohort comparable (none has a month with ${LIVE_CAL.nRiskMin} observed at risk)` +
+        (thin.length ? `: ${thin.join('; ')}` : ': no cohort with n ≥ 50')
+    ];
+  }
+  return comparable.flatMap((v) => v.failures.map((m) => `${v.key}: ${m}`));
+}
+
+/** One line per cohort: key, n, months compared or too thin, max |Δ|, its bar, and the verdict. */
+function formatVerdicts(verdicts: Verdict[]): string {
+  const w = Math.max(0, ...verdicts.map((v) => v.key.length));
+  return verdicts
+    .map((v) => {
+      const head = `${v.key.padEnd(w)}  n ${String(v.n).padStart(6)}  `;
+      if (v.thin) return `${head}too thin (max at-risk ${v.maxAtRisk}): reported, not compared`;
+      const verdict = v.failures.length ? `FAIL (${v.failures.length})` : 'ok';
+      return (
+        `${head}${String(v.months).padStart(3)} months  max |Δ| ${v.maxAbs.toFixed(4)}` +
+        `  bar ${v.bar.toFixed(4)}  ${verdict}${v.worst ? `  worst: ${v.worst}` : ''}`
+      );
+    })
+    .join('\n');
+}
+
 function runReplay(
   histories: ProjectHistory[],
   asOf: Day,
   cal: Calibration,
-  parcels: ScenarioParcels
+  parcels: ScenarioParcels,
+  label: string
 ): { cohorts: Cohort[]; verdicts: Verdict[] } {
   const cohorts = cohortsOf(histories, asOf);
   const sims = replay(cohorts, cal, asOf, parcels);
   const verdicts = cohorts.map((co, i) => compare(co, sims[i], i));
-  for (const v of verdicts) {
-    console.info(
-      `[simulate-replay] ${v.key}: n ${v.n}, ${v.months} months, max |Δ| ${v.maxAbs.toFixed(4)}` +
-        ` at ${v.worst}`
-    );
-  }
+  // console.info goes to stdout (chreode polices stderr only)
+  console.info(`[simulate-replay] ${label}\n${formatVerdicts(verdicts)}`);
   return { cohorts, verdicts };
 }
 
@@ -398,7 +456,8 @@ describe('simulate-replay: synthetic histories from the mini calibration', () =>
   const snapshot = MINI_CAL.asOf;
   const histories = syntheticHistories(snapshot);
   let result: ReturnType<typeof runReplay> | undefined;
-  const run = () => (result ??= runReplay(histories, snapshot, MINI_CAL, miniCity().parcels));
+  const run = () =>
+    (result ??= runReplay(histories, snapshot, MINI_CAL, miniCity().parcels, 'synthetic'));
 
   const KEYS = [
     'pooled preApplication',
@@ -461,8 +520,14 @@ describe('simulate-replay: synthetic histories from the mini calibration', () =>
 
   it.each(KEYS)('%s: simulated incidence matches the observed Aalen–Johansen', (key) => {
     const v = run().verdicts.find((x) => x.key === key)!;
+    // every synthetic cohort is large: comparable, none too thin
+    expect(v.thin).toBe(false);
     expect(v.months).toBeGreaterThan(0);
     expect(v.failures).toEqual([]);
+  });
+
+  it('passes the block: every cohort comparable and within tolerance', () => {
+    expect(blockFailures(run().verdicts)).toEqual([]);
   });
 
   it('fails a simulation whose table is off (the check has power)', () => {
@@ -481,18 +546,89 @@ describe('simulate-replay: synthetic histories from the mini calibration', () =>
   });
 });
 
+describe('simulate-replay: too-thin cohorts', () => {
+  /**
+   * 60 spells entered at age 0: 45 advance on day 10, 15 censored on day 400. Month 1 to 13 has
+   * 15 at risk and later months none, so no month reaches LIVE_CAL.nRiskMin (20).
+   */
+  const thinCohort: Cohort = (() => {
+    const obs: Spell[] = Array.from({ length: 60 }, (_, i) => ({
+      pathway: 'streamlined',
+      stage: 'entitled',
+      a: 0,
+      e: isoToDay('2020-01-01') + i,
+      x: i < 45 ? 10 : 400,
+      outcome: i < 45 ? 'advance' : 'censored',
+      projectId: `THIN:${String(i).padStart(2, '0')}`
+    }));
+    return {
+      key: 'streamlined entitled',
+      stage: 'entitled',
+      obs,
+      twinPathway: obs.map(() => 'streamlined')
+    };
+  })();
+
+  const verdict = (key: string, failures: string[]): Verdict => ({
+    key,
+    n: 100,
+    months: 12,
+    maxAtRisk: 100,
+    thin: false,
+    maxAbs: failures.length ? 0.2 : 0.01,
+    bar: 0.03,
+    worst: '',
+    failures
+  });
+
+  it('reports a cohort with no month at the at-risk minimum as too thin, with n and max at-risk', () => {
+    expect(LIVE_CAL.nRiskMin).toBe(20);
+    const v = compare(thinCohort, [], 0);
+    expect(v.thin).toBe(true);
+    expect(v.n).toBe(60);
+    expect(v.maxAtRisk).toBe(15);
+    expect(v.months).toBe(0);
+    expect(v.failures).toEqual([]);
+    expect(formatVerdicts([v])).toContain('too thin (max at-risk 15)');
+  });
+
+  it('does not fail the block for a thin cohort beside a comparable one', () => {
+    const thin = compare(thinCohort, [], 0);
+    expect(blockFailures([thin, verdict('pooled permitFiled', [])])).toEqual([]);
+    expect(
+      blockFailures([thin, verdict('pooled permitFiled', ['advance by month 3: off'])])
+    ).toEqual(['pooled permitFiled: advance by month 3: off']);
+  });
+
+  it('fails the block when every cohort is too thin, or there is none', () => {
+    const failures = blockFailures([compare(thinCohort, [], 0)]);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatch(/no cohort comparable/);
+    expect(failures[0]).toContain('streamlined entitled: n 60, max at-risk 15');
+    expect(blockFailures([])).toHaveLength(1);
+  });
+});
+
 // ---------------------------------------------------------------------------------------------
 // Live: the newest non-fixture build's histories and calibration.
 
-const ROOT = fileURLToPath(new URL('../..', import.meta.url));
-const OUT = join(ROOT, 'pipeline/out');
-const DERIVED = join(ROOT, 'pipeline/.cache/derived');
+/**
+ * Read-only overrides: `SFH_REPLAY_PIPELINE_DIR` names the pipeline directory whose
+ * `.cache/derived` and `out` are read (default this checkout's `pipeline/`), and
+ * `SFH_REPLAY_VERSION` picks one version instead of the newest non-fixture one.
+ */
+const PIPELINE_DIR =
+  process.env.SFH_REPLAY_PIPELINE_DIR ||
+  join(fileURLToPath(new URL('../..', import.meta.url)), 'pipeline');
+const PICK = process.env.SFH_REPLAY_VERSION || null;
+const OUT = join(PIPELINE_DIR, 'out');
+const DERIVED = join(PIPELINE_DIR, '.cache/derived');
 
-/** The newest non-fixture version with both files, or why there is none. */
+/** The newest non-fixture version (or SFH_REPLAY_VERSION) with both files, or why there is none. */
 function findLive(): { version: string; histories: string; calibration: string } | string {
   if (!existsSync(DERIVED)) return `no derived cache at ${DERIVED} (run the pipeline build)`;
   const found = readdirSync(DERIVED)
-    .filter((v) => !/^fixture-\d+$/.test(v))
+    .filter((v) => (PICK === null ? !/^fixture-\d+$/.test(v) : v === PICK))
     .map((version) => ({
       version,
       histories: join(DERIVED, version, HISTORIES_JSON),
@@ -502,7 +638,8 @@ function findLive(): { version: string; histories: string; calibration: string }
     .sort((a, b) => statSync(b.histories).mtimeMs - statSync(a.histories).mtimeMs);
   return (
     found[0] ??
-    `no non-fixture version with ${HISTORIES_JSON} under ${DERIVED} and ${CALIBRATION_JSON} under ${OUT}`
+    `no ${PICK === null ? 'non-fixture version' : `version ${PICK}`} with ${HISTORIES_JSON}` +
+      ` under ${DERIVED} and ${CALIBRATION_JSON} under ${OUT}`
   );
 }
 
@@ -512,14 +649,20 @@ if (typeof live === 'string') console.info(`[simulate-replay] live block skipped
 describe.skipIf(typeof live === 'string')(
   `simulate-replay: live build ${typeof live === 'string' ? `(skipped: ${live})` : live.version}`,
   () => {
-    it('every cohort with n ≥ 50 matches the observed Aalen–Johansen', () => {
+    it('every comparable cohort with n ≥ 50 matches the observed Aalen–Johansen', () => {
       const f = live as Exclude<typeof live, string>;
       const file = JSON.parse(readFileSync(f.histories, 'utf8')) as ProjectHistoriesFile;
       const cal = parseCalibration(JSON.parse(readFileSync(f.calibration, 'utf8')) as unknown);
       expect(file.asOf).toBe(cal.asOf);
-      const { verdicts } = runReplay(file.histories, file.asOf, cal, miniCity().parcels);
-      expect(verdicts.length).toBeGreaterThan(0);
-      expect(verdicts.flatMap((v) => v.failures.map((m) => `${v.key}: ${m}`))).toEqual([]);
+      const { verdicts } = runReplay(
+        file.histories,
+        file.asOf,
+        cal,
+        miniCity().parcels,
+        `live ${f.version} (${PIPELINE_DIR})`
+      );
+      // too-thin cohorts are reported above, not failed; none comparable fails
+      expect(blockFailures(verdicts)).toEqual([]);
     });
   }
 );
