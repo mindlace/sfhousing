@@ -73,7 +73,7 @@ export function chooseProject(onParcel: Schedule[], day: Day, projectId?: string
 }
 
 /** The index of the latest revision on or before `day` (0 if none is). */
-function revisionAt(s: Schedule, day: Day): number {
+export function revisionAt(s: Schedule, day: Day): number {
   let k = 0;
   for (let i = 0; i < s.revisions.length; i++) if (s.revisions[i].day <= day) k = i;
   return k;

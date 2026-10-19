@@ -1,15 +1,37 @@
-// Scenario host timeline delivery (spec §4.6, §4.7, §4.5 "Empty until computed", AC 7-8): the
+// Scenario host timeline delivery (spec §4.6, §4.7, §4.5 "Empty until computed", AC 7-9): the
 // band runs, revision 0, the shown twin's plan-effect update, progressive band pairs, reroll,
-// cancellation, and the ≤ 50 ms slices. Loading and its errors are in scenario-host.load.spec.ts.
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ParcelId } from '$lib/data/parcel';
+// cancellation, the ≤ 50 ms slices, viewport-driven geometry (chunks, packing, the memo) and
+// `parcelSummary`. Loading and its errors are in scenario-host.load.spec.ts.
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import type { Manifest } from '$lib/data/manifest';
+import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
+import { generate, generateForUnits } from '$lib/generator';
+import type { TimedPackedCell } from '$lib/map/types';
+import { cellsIntersecting } from '$lib/sim/chunks';
+import { createLru } from '$lib/sim/lru';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import { bandSeed, quantiles, representativeIndex } from './band';
-import { MINI_HORIZON, miniProjectsJson } from './fixtures/mini-projects';
+import { chooseProject, projectCard, revisionAt, type CardCtx } from './card';
+import { MINI_CELLS, MINI_CHUNK_URL, MINI_VERSION, miniCity } from './fixtures/mini-parcels';
+import {
+  MINI_AS_OF,
+  MINI_HORIZON,
+  MINI_PROJECTS,
+  miniProjectsJson
+} from './fixtures/mini-projects';
+import {
+  footprintParcel,
+  massingFor,
+  massingsFor,
+  pipeKey,
+  simKey,
+  type MassingCtx
+} from './massing';
 import { assembleScore, monthsOf, netOf, phasingOf, planEffectOf, shownSeries } from './score';
 import { simulateDetailed } from './simulate';
 import { makeScenarioHarness, type ScenarioHarness } from './test/host-harness';
+import type { ScenarioHostDeps } from './scenario-host';
 import type { Schedule, SimInput, TimelineResponse, TimelineScore } from './types';
 
 type Call = {
@@ -25,10 +47,25 @@ type Call = {
 const hooks = vi.hoisted(() => ({
   netMs: 15,
   detailedMs: 40,
+  packMs: 0, // fake compute charged per packTimedCell call
   tick: (ms: number): void => void ms,
   posts: (): number => 0,
-  calls: [] as Call[]
+  calls: [] as Call[],
+  packs: [] as { cellId: string; posts: number }[]
 }));
+
+// Pass-through spy on timelapse-render's packing: each call is logged and charged `packMs`.
+vi.mock('$lib/map/pack-timed', async (importOriginal) => {
+  const m = await importOriginal<typeof import('$lib/map/pack-timed')>();
+  return {
+    ...m,
+    packTimedCell: vi.fn((cellId: string, items: Parameters<typeof m.packTimedCell>[1]) => {
+      hooks.packs.push({ cellId, posts: hooks.posts() });
+      hooks.tick(hooks.packMs);
+      return m.packTimedCell(cellId, items);
+    })
+  };
+});
 
 vi.mock('./simulate', async (importOriginal) => {
   const m = await importOriginal<typeof import('./simulate')>();
@@ -51,22 +88,49 @@ vi.mock('./simulate', async (importOriginal) => {
 });
 
 const actual = await vi.importActual<typeof import('./simulate')>('./simulate');
+const actualPack =
+  await vi.importActual<typeof import('$lib/map/pack-timed')>('$lib/map/pack-timed');
 
 const H = MINI_HORIZON;
 const N = 17; // lowered band size (deps.bandRuns); one test runs the full 101
 const SEED = 1000; // a shown seed that is no band seed, so its twin is told apart from theirs
 
-function harness(bandRuns: number | null = N): ScenarioHarness {
-  const h = makeScenarioHarness({ deps: bandRuns === null ? {} : { bandRuns } });
+function harness(
+  bandRuns: number | null = N,
+  opts: { deps?: Partial<ScenarioHostDeps>; retryDelaysMs?: readonly number[] } = {}
+): ScenarioHarness {
+  const h = makeScenarioHarness({
+    deps: { ...(bandRuns === null ? {} : { bandRuns }), ...opts.deps },
+    ...(opts.retryDelaysMs ? { retryDelaysMs: opts.retryDelaysMs } : {})
+  });
   hooks.tick = h.tick;
   hooks.posts = () => h.posts.length;
   hooks.calls.length = 0;
+  hooks.packs.length = 0;
   return h;
 }
+
+// The engine logs one expected console.warn per input (projects it does not run); the chunk
+// loader one per failed attempt. Both are silenced, and nothing else may be logged.
+const SKIP_WARNING =
+  /^\[sim\] projects\.json: skipped \d+ project\(s\) the simulation does not run/;
+let warnSpy: MockInstance<typeof console.warn>;
+let allowedWarnings: RegExp[];
 
 beforeEach(() => {
   hooks.netMs = 15;
   hooks.detailedMs = 40;
+  hooks.packMs = 0;
+  allowedWarnings = [SKIP_WARNING];
+  warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+});
+
+afterEach(() => {
+  const unexpected = warnSpy.mock.calls.filter(
+    (args) => !allowedWarnings.some((re) => re.test(String(args[0])))
+  );
+  warnSpy.mockRestore();
+  expect(unexpected).toEqual([]);
 });
 
 const timelines = (h: ScenarioHarness, rev?: number): TimelineResponse[] =>
@@ -86,13 +150,17 @@ function inputs(): { fzp: SimInput; twin: SimInput } {
 const netCalls = (pred: (c: Call) => boolean = () => true) =>
   hooks.calls.filter((c) => c.fn === 'net' && pred(c));
 
-/** Every parcel of every Schedule with a construction start, earliest day, by parcel id. */
-function demolishOf(schedules: Schedule[]): { parcelId: ParcelId; day: Day }[] {
+/**
+ * Every T11 parcel of every Schedule with a construction start, earliest day, by parcel id (a
+ * parcel absent from T11 has no demolish entry).
+ */
+function demolishOf(schedules: Schedule[], fzp: SimInput): { parcelId: ParcelId; day: Day }[] {
   const first = new Map<ParcelId, Day>();
   for (const s of schedules) {
     const c = s.entered.construction;
     if (c === undefined) continue;
     for (const id of s.parcelIds) {
+      if (!fzp.parcels.index.has(id)) continue;
       const d = first.get(id);
       if (d === undefined || c < d) first.set(id, c);
     }
@@ -163,12 +231,14 @@ describe('scenario host: a seeded init', () => {
     const rev = h.init({ seed: SEED });
     await h.runAll();
     expect(h.errors()).toEqual([]);
+    // the engine's one expected warning per input, silenced (see afterEach)
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringMatching(SKIP_WARNING));
     expect(h.posts[0]).toMatchObject({ type: 'ready', rev });
     const t0 = h.posts[1] as TimelineResponse;
     expect(t0.type).toBe('timeline');
     const { fzp } = inputs();
     const { schedules } = shownRun(fzp, SEED);
-    const demolish = demolishOf(schedules);
+    const demolish = demolishOf(schedules, fzp);
     expect(demolish.length).toBeGreaterThan(0);
     expect(t0).toEqual({
       type: 'timeline',
@@ -279,7 +349,7 @@ describe('scenario host: a null seed (the full 101)', () => {
       })
     );
     expect(t0.render.demolish).toEqual(
-      demolishOf(shownRun(inp.fzp, full.representative).schedules)
+      demolishOf(shownRun(inp.fzp, full.representative).schedules, inp.fzp)
     );
     // AC 7: the shown run's final completedNet is the final p50
     expect(t0.score.shown.at(-1)!.completedNet).toBe(t0.score.band.at(-1)!.p50);
@@ -328,7 +398,7 @@ describe('scenario host: reroll', () => {
         revision: 0,
         cells: [],
         removedCells: [],
-        demolish: demolishOf(shownRun(inp.fzp, 5).schedules)
+        demolish: demolishOf(shownRun(inp.fzp, 5).schedules, inp.fzp)
       },
       score: scoreOf(inp.fzp, 5, { band: before.score.band, planEffect: [], planEffectBand: [] }),
       bandRuns: N,
@@ -562,5 +632,517 @@ describe('scenario host: slices', () => {
     await h.runAll();
     expect(h.slices.filter((s) => s > 50)).toEqual([120]);
     expect(h.slices.filter((s) => s !== 120).every((s) => s <= 50)).toBe(true);
+  });
+});
+
+// --- geometry (§4.2 "Geometry", §4.7, §4.8; T6, T7; AC 9) ---
+
+const P = MINI_PROJECTS;
+const WORLD: [number, number, number, number] = [-180, -90, 180, 90];
+type DetailedRun = ReturnType<typeof actual.simulateDetailed>;
+
+function prefetch(h: ScenarioHarness, bbox: [number, number, number, number]): void {
+  h.host.handle({ type: 'prefetch', bbox });
+}
+
+/** A tiny bbox at the centre of one cell that intersects no other cell. */
+function bboxOf(cellId: string): [number, number, number, number] {
+  const m = miniCity().manifest;
+  const c = m.chunks.find((x) => x.cellId === cellId)!;
+  const x = (c.bbox[0] + c.bbox[2]) / 2;
+  const y = (c.bbox[1] + c.bbox[3]) / 2;
+  const b: [number, number, number, number] = [x - 1e-6, y - 1e-6, x + 1e-6, y + 1e-6];
+  expect(cellsIntersecting(m, b)).toEqual([cellId]);
+  return b;
+}
+
+function cellOf(fzp: SimInput, id: ParcelId): string | undefined {
+  const i = fzp.parcels.index.get(id);
+  return i === undefined ? undefined : fzp.parcels.cells[fzp.parcels.cell[i]].cellId;
+}
+
+/** The T11 cell of a project's smallest T11 parcel, if it has one. */
+function anchorCell(fzp: SimInput, s: Schedule): string | undefined {
+  const present = s.parcelIds.filter((id) => fzp.parcels.index.has(id)).sort();
+  return present.length === 0 ? undefined : cellOf(fzp, present[0]);
+}
+
+const scheduleOf = (schedules: Schedule[], id: string) =>
+  schedules.find((s) => s.projectId === id)!;
+
+/** A massing context over the mini city's records in `ready` cells, with a fresh memo. */
+function massingCtx(fzp: SimInput, ready: Iterable<string>): MassingCtx {
+  const cells = new Set(ready);
+  const records = miniCity().records;
+  return {
+    input: fzp,
+    records: (id) => (cells.has(cellOf(fzp, id) ?? '') ? records.get(id) : undefined),
+    memo: createLru(1_000_000),
+    gen: generate,
+    genForUnits: generateForUnits,
+    logOnce: () => {}
+  };
+}
+
+/**
+ * The packed cells, by cell id, once the `ready` cells are loaded, computed directly: per ready
+ * anchor cell, every project anchored there whose T11 parcels' cells are all ready.
+ */
+function expectedCells(
+  fzp: SimInput,
+  schedules: Schedule[],
+  ready: Iterable<string>
+): TimedPackedCell[] {
+  const cells = new Set(ready);
+  const ctx = massingCtx(fzp, cells);
+  const byCell = new Map<string, Schedule[]>();
+  for (const s of schedules) {
+    const home = anchorCell(fzp, s);
+    const needs = s.parcelIds.flatMap((id) => cellOf(fzp, id) ?? []);
+    if (home === undefined || !needs.every((c) => cells.has(c))) continue;
+    byCell.set(home, [...(byCell.get(home) ?? []), s]);
+  }
+  return [...byCell.keys()].sort().map((cellId) =>
+    actualPack.packTimedCell(
+      cellId,
+      byCell.get(cellId)!.map((s) => ({
+        schedule: s,
+        massings: massingsFor(s, ctx),
+        pickParcelId: footprintParcel(
+          [...new Set(s.parcelIds)].flatMap((id) => ctx.records(id) ?? [])
+        ).id
+      }))
+    )
+  );
+}
+
+const cellIds = (t: TimelineResponse) => t.render.cells.map((c) => c.cellId);
+const chunkPosts = (h: ScenarioHarness) => h.posts.filter((m) => m.type === 'chunks');
+
+/** The transfer list of `t` is exactly the cells' typed-array buffers, in order. */
+function expectTransfers(h: ScenarioHarness, t: TimelineResponse): void {
+  const sent = h.transfers[h.posts.indexOf(t)];
+  const want = t.render.cells.flatMap((c) => actualPack.packTimedTransferables(c));
+  expect(sent).toHaveLength(want.length);
+  want.forEach((b, k) => expect(sent[k]).toBe(b));
+}
+
+describe('scenario host: geometry', () => {
+  it('packs only the anchors in ready cells, posts chunks as the editor does, and transfers every typed array', async () => {
+    const h = harness();
+    const rev = h.init({ seed: SEED });
+    prefetch(h, bboxOf('51_25'));
+    await h.runAll();
+    expect(h.errors()).toEqual([]);
+    const { fzp } = inputs();
+    const { schedules } = shownRun(fzp, SEED);
+    // no project anchored in 51_25 needs another cell, so only the viewport's chunk is fetched
+    expect(h.fetches.filter((f) => f.url.includes('/parcels/')).map((f) => f.url)).toEqual([
+      MINI_CHUNK_URL('51_25')
+    ]);
+    expect(chunkPosts(h)).toEqual([
+      { type: 'chunks', status: { '51_25': 'loading' }, pending: 1, failed: [] },
+      { type: 'chunks', status: { '51_25': 'ready' }, pending: 0, failed: [] }
+    ]);
+    const [t0, ...rest] = timelines(h, rev);
+    const expected = expectedCells(fzp, schedules, ['51_25']);
+    expect(expected.map((c) => c.cellId)).toEqual(['51_25']);
+    expect(t0.render).toEqual({
+      revision: 0,
+      cells: expected,
+      removedCells: [],
+      demolish: demolishOf(schedules, fzp)
+    });
+    expect(t0.complete).toBe(true);
+    // the slots are exactly the shown run's projects anchored in the cell (no twin, no master)
+    const anchoredThere = schedules.filter((s) => anchorCell(fzp, s) === '51_25');
+    expect(anchoredThere.some((s) => s.origin === 'pipeline')).toBe(true);
+    expect(anchoredThere.some((s) => s.origin === 'simulated')).toBe(true);
+    expect(t0.render.cells[0].slotProjectIds).toEqual(anchoredThere.map((s) => s.projectId).sort());
+    expectTransfers(h, t0);
+    expect(rest.every((t) => t.render.cells.length === 0)).toBe(true);
+  });
+
+  it('a multi-parcel project waits for all its cells, which the host wants, and its anchor cell is repacked in full', async () => {
+    const h = harness();
+    const far = MINI_CHUNK_URL('51_26');
+    h.hold(far);
+    const rev = h.init({ seed: SEED });
+    prefetch(h, bboxOf('50_26')); // before the run exists: its extra cells are wanted later
+    await h.runAll();
+    const { fzp } = inputs();
+    const { schedules } = shownRun(fzp, SEED);
+    const cross = scheduleOf(schedules, P.crossCell);
+    expect(anchorCell(fzp, cross)).toBe('50_26');
+    expect(cellOf(fzp, cross.parcelIds[1])).toBe('51_26');
+    expect(h.fetchesOf(far)).toHaveLength(1); // wanted, though outside the viewport
+
+    const before = timelines(h, rev);
+    const t0 = before[0];
+    expect(t0.render.cells).toEqual(expectedCells(fzp, schedules, ['50_26']));
+    expect(cellIds(t0)).toEqual(['50_26']);
+    expect(t0.render.cells[0].slotProjectIds).not.toContain(P.crossCell);
+    expect(t0.complete).toBe(true); // waiting on a chunk is not waiting to be packed
+    expect(before.slice(1).every((t) => t.render.cells.length === 0)).toBe(true);
+
+    h.release(far);
+    await h.runAll();
+    const later = timelines(h, rev).slice(before.length);
+    expect(later).toHaveLength(1);
+    const both = expectedCells(fzp, schedules, ['50_26', '51_26']);
+    expect(later[0].render).toEqual({
+      revision: before.length,
+      cells: both,
+      removedCells: [],
+      demolish: []
+    });
+    expect(later[0].render.cells[0].slotProjectIds).toEqual(
+      [...t0.render.cells[0].slotProjectIds, P.crossCell].sort()
+    );
+    expect(later[0].complete).toBe(true);
+    expectTransfers(h, later[0]);
+  });
+
+  it('a prefetch after the run exists also wants the extra cells of the projects anchored there', async () => {
+    const h = harness();
+    const rev = h.init({ seed: SEED });
+    await h.runAll();
+    const n0 = timelines(h, rev).length;
+    prefetch(h, bboxOf('50_26'));
+    await h.runAll();
+    const parcelsFetched = h.fetches.filter((f) => f.url.includes('/parcels/')).map((f) => f.url);
+    expect(parcelsFetched.sort()).toEqual([MINI_CHUNK_URL('50_26'), MINI_CHUNK_URL('51_26')]);
+    const { fzp } = inputs();
+    const later = timelines(h, rev).slice(n0);
+    const cells = later.flatMap((t) => t.render.cells);
+    const last = new Map(cells.map((c) => [c.cellId, c]));
+    expect([...last.values()].sort((a, b) => (a.cellId < b.cellId ? -1 : 1))).toEqual(
+      expectedCells(fzp, shownRun(fzp, SEED).schedules, ['50_26', '51_26'])
+    );
+    expect(later.every((t) => t.render.demolish.length === 0)).toBe(true);
+    expect(later.at(-1)!.complete).toBe(true);
+  });
+
+  it('revision 0 packs ready cells for at most 2.5 s; the rest follow later, and complete tracks packing only', async () => {
+    hooks.packMs = 1000; // one cell per slice
+    const h = harness();
+    const rev = h.init({ seed: SEED });
+    prefetch(h, WORLD);
+    await h.runAll();
+    expect(h.errors()).toEqual([]);
+    const { fzp } = inputs();
+    const all = expectedCells(fzp, shownRun(fzp, SEED).schedules, MINI_CELLS);
+    expect(all.map((c) => c.cellId)).toEqual([...MINI_CELLS]);
+    const tl = timelines(h, rev);
+    // 40 ms of shown run, then cells at 1,040, 2,040 and 3,040 ms: the third starts inside the cap
+    expect(tl[0].render.cells).toEqual(all.slice(0, 3));
+    expect(tl[0].complete).toBe(false);
+    expect(tl[0].render.demolish.length).toBeGreaterThan(0);
+    const withCells = tl.slice(1).filter((t) => t.render.cells.length > 0);
+    expect(withCells.map(cellIds)).toEqual([[all[3].cellId]]);
+    expect(withCells[0].render).toEqual({
+      revision: withCells[0].render.revision,
+      cells: [all[3]],
+      removedCells: [],
+      demolish: []
+    });
+    const k = tl.indexOf(withCells[0]);
+    expect(tl.slice(0, k).every((t) => !t.complete)).toBe(true);
+    expect(tl.slice(k).every((t) => t.complete)).toBe(true);
+    // the twin's band-only update went out between, with complete still false
+    expect(tl[1].render).toEqual(bandOnly(1));
+    expect(tl[1].complete).toBe(false);
+    expect(Math.max(...h.slices)).toBe(1000);
+  });
+
+  it('a revision-0 pack slice that starts after the 2.5 s cap settles at once and packs nothing', async () => {
+    hooks.packMs = 1000;
+    const h = harness();
+    const rev = h.init({ seed: SEED });
+    prefetch(h, WORLD);
+    await stepUntil(h, () => hooks.calls.some((c) => c.fn === 'detailed'));
+    expect(timelines(h, rev)).toEqual([]);
+    h.tick(3000); // the worker was busy elsewhere: the cap passes before the next slice
+    await h.step();
+    const [t0] = timelines(h, rev);
+    expect(t0.render.cells).toEqual([]);
+    expect(t0.complete).toBe(false);
+    expect(hooks.packs).toEqual([]);
+    await h.runAll();
+    const later = timelines(h, rev).flatMap(cellIds);
+    expect(later).toEqual([...MINI_CELLS]);
+    expect(timelines(h, rev).at(-1)!.complete).toBe(true);
+  });
+
+  it('posts a newly ready set of chunks one revision per 50 ms packing slice', async () => {
+    hooks.packMs = 20; // two cells fit a slice; a third would make 60 ms
+    const h = harness();
+    for (const c of MINI_CELLS) h.hold(MINI_CHUNK_URL(c));
+    const rev = h.init({ seed: SEED });
+    prefetch(h, WORLD);
+    await h.runAll();
+    const n0 = timelines(h, rev).length;
+    expect(timelines(h, rev).every((t) => t.render.cells.length === 0 && t.complete)).toBe(true);
+    const slices0 = h.slices.length;
+    for (const c of MINI_CELLS) h.release(MINI_CHUNK_URL(c));
+    await h.runAll();
+    const later = timelines(h, rev).slice(n0);
+    expect(later.map(cellIds)).toEqual([MINI_CELLS.slice(0, 2), MINI_CELLS.slice(2)]);
+    expect(later.map((t) => t.render.revision)).toEqual([n0, n0 + 1]);
+    expect(later.map((t) => t.complete)).toEqual([false, true]);
+    const { fzp } = inputs();
+    expect(later.flatMap((t) => t.render.cells)).toEqual(
+      expectedCells(fzp, shownRun(fzp, SEED).schedules, MINI_CELLS)
+    );
+    expect(later.every((t) => t.render.demolish.length === 0)).toBe(true);
+    expect(h.slices.slice(slices0)).toEqual([40, 40]);
+    for (const t of later) expectTransfers(h, t);
+  });
+
+  it('never packs a score-only project or one with no T11 parcel, gives them no demolish entry, still scores them, and logs each absent parcel once', async () => {
+    const h = harness();
+    h.init({ seed: SEED });
+    prefetch(h, WORLD);
+    await h.runAll();
+    h.host.handle({ type: 'reroll', rev: h.next(), seed: 5 });
+    await h.runAll();
+    expect(h.errors()).toEqual([]);
+    const { fzp } = inputs();
+    for (const seed of [SEED, 5]) {
+      const { schedules } = shownRun(fzp, seed);
+      // both are simulated, so the score counts them
+      expect(scheduleOf(schedules, P.scoreOnly).parcelIds).toEqual([]);
+      expect(scheduleOf(schedules, P.absentOnly).parcelIds).toEqual(['9900001']);
+    }
+    const tl = timelines(h);
+    const slots = tl.flatMap((t) => t.render.cells.flatMap((c) => c.slotProjectIds));
+    expect(slots).not.toContain(P.scoreOnly);
+    expect(slots).not.toContain(P.absentOnly);
+    expect(slots).toContain(P.absentMixed); // its T11 parcel still carries it
+    const demolished = tl.flatMap((t) => t.render.demolish.map((d) => d.parcelId));
+    expect(demolished.length).toBeGreaterThan(0);
+    expect(demolished.filter((id) => !fzp.parcels.index.has(id))).toEqual([]);
+    // once each, across both runs (and the score-only project logs nothing)
+    expect(h.warnings.filter((w) => w.includes('9900001'))).toEqual([
+      `parcel 9900001 of ${P.absentOnly} is not in parcels.bin: the project has no geometry`
+    ]);
+    expect(h.warnings.filter((w) => w.includes('9900002'))).toEqual([
+      `parcel 9900002 of ${P.absentMixed} is not in parcels.bin: its geometry omits the parcel`
+    ]);
+  });
+
+  it('drops the chunks of a superseded init', async () => {
+    const h = harness();
+    const url = MINI_CHUNK_URL('51_25');
+    h.hold(url);
+    h.init({ seed: SEED });
+    prefetch(h, bboxOf('51_25'));
+    await h.runAll();
+    const b = h.init({ seed: SEED });
+    await h.runAll();
+    const since = h.posts.length;
+    h.release(url);
+    await h.runAll();
+    expect(h.posts.slice(since)).toEqual([]);
+    expect(timelines(h, b).every((t) => t.render.cells.length === 0)).toBe(true);
+  });
+
+  it('retryChunks refetches a failed cell, which then packs', async () => {
+    allowedWarnings.push(/^\[sim\] chunk 51_25 attempt 1 failed/);
+    const h = harness(N, { retryDelaysMs: [] });
+    const url = MINI_CHUNK_URL('51_25');
+    h.fail(url, 1, { status: 503 });
+    const rev = h.init({ seed: SEED });
+    prefetch(h, bboxOf('51_25'));
+    await h.runAll();
+    expect(chunkPosts(h)).toEqual([
+      { type: 'chunks', status: { '51_25': 'loading' }, pending: 1, failed: [] },
+      { type: 'chunks', status: { '51_25': 'error' }, pending: 0, failed: ['51_25'] }
+    ]);
+    const n0 = timelines(h, rev).length;
+    expect(timelines(h, rev).every((t) => t.render.cells.length === 0 && t.complete)).toBe(true);
+    h.host.handle({ type: 'retryChunks' });
+    await h.runAll();
+    expect(chunkPosts(h).slice(2)).toEqual([
+      { type: 'chunks', status: { '51_25': 'loading' }, pending: 1, failed: [] },
+      { type: 'chunks', status: { '51_25': 'ready' }, pending: 0, failed: [] }
+    ]);
+    expect(timelines(h, rev).slice(n0).map(cellIds)).toEqual([['51_25']]);
+    expect(h.fetchesOf(url)).toHaveLength(2);
+  });
+});
+
+/** Generator spies that log each call's content key (§4.8) and pass through. */
+function generatorSpies() {
+  const keys: string[] = [];
+  const deps: Partial<ScenarioHostDeps> = {
+    generate: (rec, env, seed, mode) => {
+      keys.push(simKey(rec.id, env.maxStories));
+      return generate(rec, env, seed, mode);
+    },
+    generateForUnits: (recs, units, maxStories, seed, stories) => {
+      const ids = [recs].flat().map((r: ParcelRecord) => r.id);
+      keys.push(pipeKey(seed, units, stories ?? null, ids));
+      return generateForUnits(recs, units, maxStories, seed, stories);
+    }
+  };
+  return { keys, deps };
+}
+
+/** Serves every mini file again under dataset version `v`; returns its manifest. */
+function relabel(h: ScenarioHarness, v: string): Manifest {
+  const swap = <T>(x: T): T => JSON.parse(JSON.stringify(x).replaceAll(MINI_VERSION, v)) as T;
+  for (const [url, body] of [...h.bodies]) {
+    h.bodies.set(url.replaceAll(MINI_VERSION, v), url.includes('/parcels/') ? swap(body) : body);
+  }
+  return swap(h.manifest());
+}
+
+describe('scenario host: the content memo', () => {
+  it('hits on reroll: no content key is generated twice, and a reroll back generates nothing', async () => {
+    const { keys, deps } = generatorSpies();
+    const h = harness(N, { deps });
+    h.init({ seed: SEED });
+    prefetch(h, WORLD);
+    await h.runAll();
+    const first = keys.length;
+    expect(keys.some((k) => k.startsWith('p|'))).toBe(true);
+    expect(keys.some((k) => k.startsWith('s|'))).toBe(true);
+    h.host.handle({ type: 'reroll', rev: h.next(), seed: 5 });
+    await h.runAll();
+    const second = keys.length;
+    expect(second).toBeGreaterThan(first); // seed 5 has its own simulated sizes
+    h.host.handle({ type: 'reroll', rev: h.next(), seed: SEED });
+    await h.runAll();
+    expect(h.errors()).toEqual([]);
+    expect(keys).toHaveLength(second);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('is kept across inits of one datasetVersion and cleared by an init naming another', async () => {
+    const { keys, deps } = generatorSpies();
+    const h = harness(N, { deps });
+    h.init({ seed: SEED });
+    prefetch(h, WORLD);
+    await h.runAll();
+    const n1 = keys.length;
+    expect(n1).toBeGreaterThan(0);
+    h.init({ seed: SEED });
+    prefetch(h, WORLD);
+    await h.runAll();
+    expect(keys).toHaveLength(n1); // the same version: every key hits
+    const r = h.init({ seed: SEED, manifest: relabel(h, 'fixture-61') });
+    prefetch(h, WORLD);
+    await h.runAll();
+    expect(h.errors()).toEqual([]);
+    expect(timelines(h, r).flatMap(cellIds)).toEqual([...MINI_CELLS]);
+    expect(keys).toHaveLength(2 * n1); // cleared: the same keys again
+    expect(keys.slice(n1)).toEqual(keys.slice(0, n1));
+  });
+});
+
+describe('scenario host: parcelSummary', () => {
+  /** The §4.9 card context over the mini city, computed directly. */
+  function cardCtx(fzp: SimInput, run: DetailedRun): CardCtx {
+    const file = parseProjectsFile(miniProjectsJson(), { onInvalid: () => {} });
+    const ctx = massingCtx(fzp, MINI_CELLS);
+    return {
+      asOf: fzp.asOf,
+      input: fzp,
+      rows: new Map(fzp.projects.map((p) => [p.id, p])),
+      masters: new Map(run.masters.map((m) => [m.masterId, m])),
+      qualityRules: new Map(file.qualityRules.map((q) => [q.id, q])),
+      building: (s, k) => massingFor(s, k, ctx),
+      logOnce: () => {}
+    };
+  }
+
+  function summaryAt(h: ScenarioHarness, parcelId: ParcelId, day: Day, projectId?: string) {
+    const reqId = h.posts.length + 100;
+    h.host.handle({
+      type: 'parcelSummary',
+      reqId,
+      parcelId,
+      day,
+      ...(projectId === undefined ? {} : { projectId })
+    });
+    const msg = h.posts.at(-1)!;
+    expect(msg).toMatchObject({ type: 'parcelSummary', reqId });
+    return (msg as Extract<typeof msg, { type: 'parcelSummary' }>).summary;
+  }
+
+  it('is null for a parcel whose record is not loaded', async () => {
+    const h = harness();
+    h.init({ seed: SEED });
+    prefetch(h, bboxOf('50_25'));
+    await h.runAll();
+    expect(summaryAt(h, '3512012', MINI_AS_OF + 1)).toBeNull(); // 51_25 is not loaded
+    expect(summaryAt(h, '0026T003', MINI_AS_OF + 1)).not.toBeNull();
+  });
+
+  it('gives the record, the T11 values and the chosen project, with and without projectId', async () => {
+    const h = harness();
+    h.init({ seed: SEED });
+    prefetch(h, WORLD);
+    await h.runAll();
+    const { fzp } = inputs();
+    const run = actual.simulateDetailed(fzp, SEED, H);
+    const ctx = cardCtx(fzp, run);
+    const id = '3512012';
+    const day = MINI_AS_OF + 1;
+    const rec = miniCity().records.get(id)!;
+    const i = fzp.parcels.index.get(id)!;
+    const onParcel = run.schedules.filter((s) => s.parcelIds.includes(id));
+    expect(onParcel.map((s) => s.projectId).sort()).toEqual([P.sharedFirst, P.sharedExisting]);
+    const auto = chooseProject(onParcel, day)!;
+    const other = onParcel.find((s) => s !== auto)!;
+    expect(chooseProject(onParcel, day, other.projectId)).toBe(other);
+
+    const expected = (s: Schedule) => {
+      const m = ctx.building(s, revisionAt(s, day));
+      return {
+        parcelId: id,
+        neighborhood: rec.neighborhood,
+        landUse: rec.landUse,
+        eligible: rec.eligible,
+        existingUnits: fzp.parcels.existingUnits[i],
+        envelope: { maxStories: fzp.parcels.envelopeStories[i] },
+        generated:
+          'parts' in m ? { typology: m.typology, stories: m.stories, units: m.units } : null,
+        project: projectCard(s, day, ctx)
+      };
+    };
+    // T11 values, not the chunk's: the chunk says 1 existing unit, T11 says 2
+    expect([rec.existingUnits, fzp.parcels.existingUnits[i]]).toEqual([1, 2]);
+    expect(fzp.parcels.envelopeStories[i]).toBe(4);
+    const a = summaryAt(h, id, day);
+    expect(a).toEqual(expected(auto));
+    expect(a!.generated).not.toBeNull();
+    expect(summaryAt(h, id, day, other.projectId)).toEqual(expected(other));
+  });
+
+  it('has no project before any is visible, and a null envelope where T11 has none', async () => {
+    const h = harness();
+    h.init({ seed: SEED });
+    prefetch(h, WORLD);
+    await h.runAll();
+    const { fzp } = inputs();
+    const id = '0026T008'; // outside every height district
+    const rec = miniCity().records.get(id)!;
+    const i = fzp.parcels.index.get(id)!;
+    expect(fzp.parcels.envelopeStories[i]).toBe(0);
+    expect(summaryAt(h, id, MINI_AS_OF - 3650)).toEqual({
+      parcelId: id,
+      neighborhood: rec.neighborhood,
+      landUse: rec.landUse,
+      eligible: rec.eligible,
+      existingUnits: fzp.parcels.existingUnits[i],
+      envelope: null,
+      generated: null
+    });
+    // a pipeline parcel ten years before asOf: nothing has started yet
+    const s = summaryAt(h, '3512010', MINI_AS_OF - 3650)!;
+    expect(s.project).toBeUndefined();
+    expect(s.generated).toBeNull();
   });
 });

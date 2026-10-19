@@ -15,19 +15,30 @@
 // the time used so far (`deps.now()`) plus the last measured cost of the next job's kind fits
 // in 50 ms; the first job of a slice always runs. Other requests are handled between slices. Job
 // priority: (1) the current run's revision 0, after the FZP band runs it needs when its seed is
-// null; (2) its twin, posted as a band-only update with `planEffect`; (3) its later geometry
-// (Task 15); (4) the band: FZP run then twin per pair, a band-only update every 16 pairs and
-// after the last. Twins run through `simulateNet` only, so no twin Schedule ever exists.
+// null, and its geometry packing for up to 2.5 s; (2) its twin, posted as a band-only update with
+// `planEffect`; (3) its later geometry, one revision per packing slice; (4) the band: FZP run
+// then twin per pair, a band-only update every 16 pairs and after the last. Twins run through
+// `simulateNet` only, so no twin Schedule ever exists.
+//
+// Geometry (§4.2, §4.7, §4.8). Each session has its own chunk loader, driven only by `prefetch`
+// (the viewport) plus the extra cells of the multi-parcel projects anchored there; chunks report
+// as the editor's do. Each run's `Geometry` (geometry.ts) packs the ready anchored cells. The
+// generator memo lives across sessions and is cleared when an init names another datasetVersion.
 import type { Manifest } from '$lib/data/manifest';
-import type { ScenarioParcels } from '$lib/data/scenario-codec';
-import type { ParcelId } from '$lib/data/parcel';
-import type { generate, generateForUnits } from '$lib/generator';
+import { envelopeOf, type ScenarioParcels } from '$lib/data/scenario-codec';
+import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
+import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
+import { packTimedTransferables } from '$lib/map/pack-timed';
 import type { TimedPackedCell, TimelineUpdate } from '$lib/map/types';
 import type { Day } from '$lib/timelapse/time';
-import type { FetchLike } from '../chunks';
+import { cellsIntersecting, createChunkLoader, type ChunkLoader, type FetchLike } from '../chunks';
 import { DEFAULT_RETRY_DELAYS_MS } from '../host';
+import { createLru } from '../lru';
 import { checkManifestShape } from '../manifest-shape';
-import type { Rev } from '../protocol';
+import type { ParcelSummary, Rev } from '../protocol';
+import { chooseProject, projectCard, revisionAt, type CardCtx } from './card';
+import { createGeometry, type Geometry } from './geometry';
+import { massingFor, type MassingCtx } from './massing';
 import {
   loadScenario,
   scenarioUrls,
@@ -48,13 +59,7 @@ import {
   type NetSeries
 } from './score';
 import { simulateDetailed, simulateNet } from './simulate';
-import type {
-  Schedule,
-  ScenarioErrorCode,
-  ScenarioRequest,
-  ScenarioResponse,
-  TimelineScore
-} from './types';
+import type { ScenarioErrorCode, ScenarioRequest, ScenarioResponse, TimelineScore } from './types';
 
 export interface ScenarioHostDeps {
   fetch: FetchLike; // JSON files (chunks.ts:9)
@@ -90,7 +95,10 @@ export interface Token {
   child(): Token;
 }
 
-function createToken(deps: Pick<ScenarioHostDeps, 'setTimeout' | 'clearTimeout'>): Token {
+function createToken(
+  deps: Pick<ScenarioHostDeps, 'setTimeout' | 'clearTimeout'>,
+  onCancel?: (t: Token) => void
+): Token {
   const timers = new Set<unknown>();
   const children = new Set<Token>();
   let cancelled = false;
@@ -112,11 +120,13 @@ function createToken(deps: Pick<ScenarioHostDeps, 'setTimeout' | 'clearTimeout'>
       cancelled = true;
       for (const h of timers) deps.clearTimeout(h);
       timers.clear();
-      for (const c of children) c.cancel();
+      const kids = [...children];
       children.clear();
+      for (const c of kids) c.cancel();
+      onCancel?.(token); // a cancelled child leaves its parent (no per-reroll leak)
     },
     child() {
-      const c = createToken(deps);
+      const c = createToken(deps, (t) => children.delete(t));
       if (cancelled) c.cancel();
       else children.add(c);
       return c;
@@ -129,86 +139,43 @@ function createToken(deps: Pick<ScenarioHostDeps, 'setTimeout' | 'clearTimeout'>
 export const SLICE_MS = 50;
 /** A band-only update every this many completed pairs, and after the last (§4.7; tier 4). */
 export const BAND_POST_EVERY = 16;
-
-/** One demolition: a parcel's existing building goes at its first construction start. */
-export type Demolition = { parcelId: ParcelId; day: Day };
-
+/** Revision 0 packs ready anchored cells for at most this long after the request (§4.7; tier 4). */
+export const REVISION0_CAP_MS = 2500;
 /**
- * Revision 0's complete `demolish` list (T7; it needs no geometry): every parcel of every
- * Schedule with `entered.construction`, at the earliest such day per parcel, sorted by parcel id.
- * A score-only Schedule (no parcels) adds nothing.
+ * Generator-memo cap in entries (§4.8; tier 4, engineering): about 60 MB at the ≈0.8–1.0 KB per
+ * entry measured in host.ts. Keys are content-based, so pipeline massings hit across seeds.
  */
-export function demolishOf(schedules: readonly Schedule[]): Demolition[] {
-  const first = new Map<ParcelId, Day>();
-  for (const sc of schedules) {
-    const c = sc.entered.construction;
-    if (c === undefined) continue;
-    for (const id of sc.parcelIds) {
-      const d = first.get(id);
-      if (d === undefined || c < d) first.set(id, c);
-    }
-  }
-  const ids = [...first.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  return ids.map((parcelId) => ({ parcelId, day: first.get(parcelId)! }));
-}
-
-/**
- * The geometry of one shown run: the seam Task 15 fills (chunks, massing, packing). The host
- * owns the scheduling and the posting; the geometry only answers what is pending and packs one
- * slice at a time, so each of its steps is a scheduler job (kind 'pack') like any other.
- */
-export interface RunGeometry {
-  /**
-   * True while revision 0 should wait for more packing: a ready anchored cell is still unpacked
-   * and the revision-0 cap (2.5 s; `elapsedMs` since the request) has not passed.
-   */
-  revision0Pending(elapsedMs: number): boolean;
-  /** Packs one slice of revision 0's cells (called only while `revision0Pending`). */
-  packRevision0(): void;
-  /** Revision 0's cells and their transferables; called once, as revision 0 is posted. */
-  revision0Cells(): { cells: TimedPackedCell[]; transfer: ArrayBuffer[] };
-  /** True when a later packing slice (a newly ready chunk) is waiting. */
-  laterPending(): boolean;
-  /** Packs one later slice; the host posts its cells as the next revision. */
-  packLater(): { cells: TimedPackedCell[]; transfer: ArrayBuffer[] };
-  /** The complete demolish list (revision 0 only). */
-  demolish(): Demolition[];
-  /** T6 `complete`: no ready anchored cell is waiting to be packed. */
-  complete(): boolean;
-}
+export const MEMO_CAP = 60_000;
 
 /** The run's Schedules and Masters, as `simulateDetailed` made them (the FZP run only). */
 export type RunDetail = ReturnType<typeof simulateDetailed>;
-
-/**
- * Until geometry streams (Task 15): no chunk is loaded, so no anchored cell is ready, nothing
- * is pending and every message is `complete`. The demolish list needs no geometry.
- */
-function placeholderGeometry(detail: RunDetail): RunGeometry {
-  return {
-    revision0Pending: () => false,
-    packRevision0: () => {},
-    revision0Cells: () => ({ cells: [], transfer: [] }),
-    laterPending: () => false,
-    packLater: () => ({ cells: [], transfer: [] }),
-    demolish: () => demolishOf(detail.schedules),
-    complete: () => true
-  };
-}
 
 /** One shown run: one `(rev, seed)`, whose revisions count up from 0. */
 interface Run {
   rev: Rev;
   requested: number | null; // as requested (null = representative)
   seed: number | null; // resolved: null until the representative is known
-  /** The run's own work scope (geometry timers, Task 15); cancelled when a reroll replaces it. */
+  /** The run's own work scope; cancelled when a reroll replaces it. */
   token: Token;
   requestedAt: number; // deps.now() at the request
   revision: number; // the last posted; -1 before revision 0
   shown: TimelineScore['shown'] | null;
   net: NetSeries | null; // the shown run's, for planEffect
-  geometry: RunGeometry | null;
+  detail: RunDetail | null; // with the shown run
+  geometry: Geometry | null; // with the shown run
+  /** Revision 0's cells packed so far, by cell id (a repack replaces its entry). */
+  r0: Map<string, TimedPackedCell>;
+  card: CardCtx | null; // built on the first parcelSummary
   planEffect: TimelineScore['planEffect'] | null; // null until the twin is done
+}
+
+/** A session's chunks: its loader and every ready record. */
+interface Chunks {
+  loader: ChunkLoader;
+  byCell: Map<string, ParcelRecord[]>;
+  records: Map<ParcelId, ParcelRecord>;
+  /** Every cell `prefetch` has asked for (the viewport's, at any time). */
+  wanted: Set<string>;
 }
 
 /** A loaded session's timeline work. */
@@ -221,11 +188,17 @@ interface Work {
   /** FZP band run i's `completedNetNew`, kept until pair i is done. */
   fzpNew: (Int32Array | undefined)[];
   run: Run;
+  chunks: Chunks;
+  massing: Omit<MassingCtx, 'records'>;
   pending: boolean; // a slice is scheduled
-  cost: Partial<Record<JobKind, number>>; // last measured ms per job kind
+  sliceStart: number; // deps.now() at the current slice's start
+  /** Last measured ms per job kind; for 'pack', per packed cell. */
+  cost: Partial<Record<JobKind, number>>;
+  /** A due band post could not go out yet; the next timeline (which carries the band) is it. */
+  bandPostDue: boolean;
 }
 
-type JobKind = 'net' | 'shown' | 'pack';
+type JobKind = 'net' | 'shown' | 'pack' | 'post';
 type Job = { kind: JobKind; run(): void };
 
 /** The per-init state. */
@@ -237,6 +210,7 @@ interface Session {
   horizon: Day;
   seed: number | null; // as requested (null = representative)
   token: Token;
+  chunks: Chunks;
   /** Set once loading has succeeded; until then a reroll is 'not initialised'. */
   loaded: Loaded | null;
   /** The timeline work, created with `loaded`. */
@@ -249,6 +223,19 @@ type RerollRequest = Extract<ScenarioRequest, { type: 'reroll' }>;
 export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
   const retryDelaysMs = deps.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
   const warn = deps.warn ?? ((msg: string) => console.warn(`[sim] ${msg}`));
+  const gen = deps.generate ?? generate;
+  const genForUnits = deps.generateForUnits ?? generateForUnits;
+
+  // Valid within one datasetVersion (content keys hold no version): kept across sessions of the
+  // same version, cleared for another. The once-only log keys go with it.
+  const memo = createLru<string, GeneratedBuilding | null>(deps.memoCap ?? MEMO_CAP);
+  const logged = new Set<string>();
+  let memoVersion: string | null = null;
+  const logOnce = (key: string, msg: string) => {
+    if (logged.has(key)) return;
+    logged.add(key);
+    warn(msg);
+  };
 
   let s: Session | null = null;
   let latestRev = 0;
@@ -262,6 +249,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
 
   function end(): void {
     s?.token.cancel();
+    s?.chunks.loader.dispose();
     s = null;
   }
 
@@ -282,7 +270,13 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     if (urls === null) {
       return error(req.rev, 'scenario-missing', `dataset ${version} has no fzp scenario`);
     }
-    const st: Session = {
+    if (version !== memoVersion) {
+      memo.clear();
+      logged.clear();
+      memoVersion = version;
+    }
+    // `st` is assigned before any loader callback can run: they only come asynchronously.
+    const st = {
       rev: req.rev,
       manifest,
       version,
@@ -292,6 +286,22 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       token: createToken(deps),
       loaded: null,
       work: null
+    } as Omit<Session, 'chunks'> as Session;
+    st.chunks = {
+      loader: createChunkLoader(manifest, {
+        fetch: deps.fetch,
+        setTimeout: deps.setTimeout,
+        clearTimeout: deps.clearTimeout,
+        retryDelaysMs,
+        maxConcurrent: deps.maxConcurrent ?? 4,
+        onLoaded: (cellId, recs) => onChunk(st, cellId, recs),
+        onReport: (r) => {
+          if (live(st)) post({ type: 'chunks', ...r });
+        }
+      }),
+      byCell: new Map(),
+      records: new Map(),
+      wanted: new Set()
     };
     s = st;
     post({
@@ -301,6 +311,27 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       chunkCount: manifest.chunks.length
     });
     load(st);
+  }
+
+  // --- chunks ---
+
+  /** A chunk is ready: its records, then the current run's geometry, then a slice. */
+  function onChunk(st: Session, cellId: string, recs: ParcelRecord[]): void {
+    if (!live(st)) return; // a superseded session's loader
+    st.chunks.byCell.set(cellId, recs);
+    for (const r of recs) st.chunks.records.set(r.id, r);
+    st.work?.run.geometry?.onRecords(cellId, recs);
+    kick(st);
+  }
+
+  /** The viewport's cells, plus the extra cells of the multi-parcel projects anchored there. */
+  function prefetch(st: Session, bbox: readonly number[]): void {
+    const cells = cellsIntersecting(st.manifest, bbox);
+    for (const c of cells) st.chunks.wanted.add(c);
+    const all = new Set(cells);
+    const g = st.work?.run.geometry;
+    if (g) for (const c of g.cellsFor(cells)) all.add(c);
+    st.chunks.loader.want(all);
   }
 
   function load(st: Session): void {
@@ -348,8 +379,18 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       band: createBandState(deps.bandRuns ?? BAND_RUNS),
       fzpNew: [],
       run: newRun(st, st.rev, st.seed),
+      chunks: st.chunks,
+      massing: {
+        input: loaded.fzp,
+        memo,
+        gen,
+        genForUnits,
+        logOnce: (projectId, msg) => logOnce(`massing:${projectId}`, msg)
+      },
       pending: false,
-      cost: {}
+      sliceStart: 0,
+      cost: {},
+      bandPostDue: false
     };
     kick(st);
   }
@@ -364,7 +405,10 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       revision: -1,
       shown: null,
       net: null,
+      detail: null,
       geometry: null,
+      r0: new Map(),
+      card: null,
       planEffect: null
     };
   }
@@ -407,17 +451,18 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
    */
   function slice(st: Session, w: Work): void {
     const start = deps.now();
+    w.sliceStart = start;
     for (let first = true; ; first = false) {
       if (!live(st)) return;
       const job = nextJob(w);
-      if (job === null) return; // idle until a reroll kicks again
+      if (job === null) return; // idle until a reroll or a chunk kicks again
       if (!first) {
         const est = w.cost[job.kind];
         if (est === undefined || deps.now() - start + est > SLICE_MS) return kick(st);
       }
       const t0 = deps.now();
       job.run();
-      w.cost[job.kind] = deps.now() - t0;
+      if (job.kind !== 'pack') w.cost[job.kind] = deps.now() - t0; // packCells measures per cell
     }
   }
 
@@ -436,17 +481,22 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       return {
         kind: 'pack',
         run: () => {
-          run.geometry!.packRevision0();
+          // the cap may have passed since the last settle: then revision 0 goes as it is
+          if (revision0Pending(run)) packCells(w, run, run.r0, true);
           settleRevision0(w, run);
         }
       };
     }
     if (run.planEffect === null) return { kind: 'net', run: () => shownTwin(w, run) };
-    if (run.geometry!.laterPending()) {
+    if (w.bandPostDue) return { kind: 'post', run: () => postBandOnly(w, run) };
+    if (run.geometry!.packable().length > 0) {
       return {
         kind: 'pack',
         run: () => {
-          const { cells, transfer } = run.geometry!.packLater();
+          const packed = new Map<string, TimedPackedCell>();
+          packCells(w, run, packed, false);
+          const cells = [...packed.values()];
+          const transfer = cells.flatMap(packTimedTransferables);
           postTimeline(w, run, { cells, removedCells: [], demolish: [] }, transfer);
         }
       };
@@ -475,9 +525,11 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     w.fzpNew[i] = undefined;
     w.band.setPair(i, effect);
     const pairs = w.band.pairs;
-    const due = pairs % BAND_POST_EVERY === 0 || pairs === w.band.total;
-    // band work never runs ahead of the run's twin update, which carries the band itself
-    if (due && w.run.planEffect !== null) postBandOnly(w, w.run);
+    if (pairs % BAND_POST_EVERY !== 0 && pairs !== w.band.total) return;
+    // The run's twin update carries the band itself, and band work never runs ahead of it; were
+    // it ever to, the due post is deferred to the next timeline, never dropped.
+    if (w.run.revision >= 0 && w.run.planEffect !== null) postBandOnly(w, w.run);
+    else w.bandPostDue = true;
   }
 
   function shownRun(w: Work, run: Run): void {
@@ -485,16 +537,52 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     const detail = simulateDetailed(w.loaded.fzp, run.seed!, w.horizon);
     run.shown = shownSeries(detail, w.loaded.fzp.asOf, w.horizon, w.months);
     run.net = netOf(run.shown);
-    run.geometry = placeholderGeometry(detail); // Task 15: the run's real geometry
+    run.detail = detail;
+    run.geometry = createGeometry({
+      input: w.loaded.fzp,
+      schedules: detail.schedules,
+      records: w.chunks.byCell,
+      massingCtx: w.massing,
+      warnOnce: logOnce
+    });
+    // the viewport was asked for before this run's multi-parcel projects were known
+    w.chunks.loader.want(run.geometry.cellsFor(w.chunks.wanted));
     settleRevision0(w, run);
+  }
+
+  /** Revision 0 waits for packing while a ready anchored cell is unpacked, for up to the cap. */
+  function revision0Pending(run: Run): boolean {
+    if (run.geometry!.packable().length === 0) return false;
+    return deps.now() - run.requestedAt < REVISION0_CAP_MS;
+  }
+
+  /**
+   * Packs ready cells into `into` while they fit the slice, judged by the last measured cost of
+   * one cell; the first cell always packs (the scheduler judged it fits, or the slice is fresh).
+   * Revision 0 (`capped`) also stops at the cap.
+   */
+  function packCells(w: Work, run: Run, into: Map<string, TimedPackedCell>, capped: boolean): void {
+    const g = run.geometry!;
+    for (let first = true; ; first = false) {
+      const cellId = g.packable()[0];
+      if (cellId === undefined) return;
+      if (!first) {
+        if (deps.now() - w.sliceStart + (w.cost.pack ?? Infinity) > SLICE_MS) return;
+        if (capped && !revision0Pending(run)) return;
+      }
+      const t0 = deps.now();
+      into.set(cellId, g.pack(cellId));
+      w.cost.pack = deps.now() - t0;
+    }
   }
 
   /** Posts revision 0 once no packing is pending for it (or its cap has passed). */
   function settleRevision0(w: Work, run: Run): void {
-    const g = run.geometry!;
-    if (g.revision0Pending(deps.now() - run.requestedAt)) return;
-    const { cells, transfer } = g.revision0Cells();
-    postTimeline(w, run, { cells, removedCells: [], demolish: g.demolish() }, transfer);
+    if (revision0Pending(run)) return;
+    const cells = [...run.r0.values()];
+    run.r0 = new Map();
+    const transfer = cells.flatMap(packTimedTransferables);
+    postTimeline(w, run, { cells, removedCells: [], demolish: run.geometry!.demolish() }, transfer);
   }
 
   /** The shown seed's twin: `planEffect`, then its Schedules-free series are dropped. */
@@ -521,6 +609,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     transfer: ArrayBuffer[]
   ): void {
     run.revision++;
+    w.bandPostDue = false; // every timeline carries the band so far
     const effect = run.revision > 0 ? run.planEffect : null;
     const score = assembleScore({
       months: w.months,
@@ -546,18 +635,84 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     );
   }
 
+  // --- parcelSummary (§4.9) ---
+
+  /** The card context of a run with a shown run, built once per run. */
+  function cardCtxOf(w: Work, run: Run): CardCtx {
+    if (run.card) return run.card;
+    const ctx: MassingCtx = { ...w.massing, records: (id) => w.chunks.records.get(id) };
+    run.card = {
+      asOf: w.loaded.fzp.asOf,
+      input: w.loaded.fzp,
+      rows: new Map(w.loaded.fzp.projects.map((p) => [p.id, p])),
+      masters: new Map(run.detail!.masters.map((m) => [m.masterId, m])),
+      qualityRules: new Map(w.loaded.projects.qualityRules.map((q) => [q.id, q])),
+      building: (sc, k) => massingFor(sc, k, ctx),
+      logOnce: (key, msg) => logOnce(`card:${key}`, msg)
+    };
+    return run.card;
+  }
+
+  /**
+   * Null when the parcel's record is not loaded (never fetches). The record gives the
+   * neighbourhood, land use and eligibility; T11 the assessor units and the FZP envelope; the
+   * shown run the project at `day` (§4.9's choice) and its building at that day's revision.
+   */
+  function parcelSummary(
+    req: Extract<ScenarioRequest, { type: 'parcelSummary' }>
+  ): ParcelSummary | null {
+    const st = s;
+    const rec = st?.chunks.records.get(req.parcelId);
+    if (!st || !rec) return null;
+    const parcels = st.loaded?.fzp.parcels;
+    const i = parcels?.index.get(req.parcelId);
+    const envelope = i === undefined ? null : envelopeOf(parcels!, i);
+    const out: ParcelSummary = {
+      parcelId: req.parcelId,
+      neighborhood: rec.neighborhood,
+      landUse: rec.landUse,
+      eligible: rec.eligible,
+      existingUnits: i === undefined ? rec.existingUnits : parcels!.existingUnits[i],
+      envelope: envelope && envelope.maxStories > 0 ? envelope : null,
+      generated: null
+    };
+    const w = st.work;
+    const run = w?.run;
+    if (!w || !run?.geometry) return out; // no shown run yet
+    const chosen = chooseProject(run.geometry.schedulesOn(req.parcelId), req.day, req.projectId);
+    if (chosen === null) return out;
+    const ctx = cardCtxOf(w, run);
+    out.project = projectCard(chosen, req.day, ctx);
+    if (!(chosen.multiPhase && chosen.phase === null)) {
+      const m = ctx.building(chosen, revisionAt(chosen, req.day));
+      if (!('footprint' in m))
+        out.generated = { typology: m.typology, stories: m.stories, units: m.units };
+    }
+    return out;
+  }
+
   function dispatch(req: ScenarioRequest): void {
     switch (req.type) {
       case 'initScenario':
         return initScenario(req);
       case 'reroll':
         return reroll(req);
-      case 'parcelSummary':
-        // No records are loaded until geometry streams (Task 15): the summary is null.
-        return post({ type: 'parcelSummary', reqId: req.reqId, summary: null });
+      case 'parcelSummary': {
+        let summary: ParcelSummary | null;
+        try {
+          summary = parcelSummary(req);
+        } catch (e) {
+          warn(`parcelSummary ${req.parcelId}: ${e instanceof Error ? e.message : String(e)}`);
+          summary = null; // the client's promise must still resolve
+        }
+        return post({ type: 'parcelSummary', reqId: req.reqId, summary });
+      }
       case 'prefetch':
+        if (s) prefetch(s, req.bbox);
+        return;
       case 'retryChunks':
-        return; // the chunk loader arrives with geometry (Task 15)
+        s?.chunks.loader.retryFailed();
+        return;
       default: {
         const never: never = req;
         throw new Error(`unknown request ${String((never as { type?: unknown }).type)}`);

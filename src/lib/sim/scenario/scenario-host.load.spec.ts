@@ -1,6 +1,6 @@
 // Scenario host init path (spec §4.2, the loading rows of §4.10, AC 12): request validation,
 // manifest URLs, concurrent fetches with retries, decode and validation, and recovery.
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { deflateRawSync } from 'node:zlib';
 import { checkManifestShape } from '$lib/sim/manifest-shape';
 import { parseCalibration } from '$lib/timelapse/model';
@@ -59,8 +59,25 @@ async function expectRecovers(h: ScenarioHarness): Promise<void> {
   expect(h.posts.slice(before).filter((m) => m.type === 'error')).toEqual([]);
 }
 
+/** The load's warnings: the shown run's T11-absence lines (§4.2, scenario-host.spec.ts) left out. */
+const T11_ABSENT = /^parcel \S+ of \S+ is not in parcels\.bin: /;
+const loadWarnings = (h: ScenarioHarness) => h.warnings.filter((w) => !T11_ABSENT.test(w));
+
+// The engine logs one expected console.warn per input (projects it does not run): silenced, and
+// nothing else may reach the console.
+const SKIP_WARNING =
+  /^\[sim\] projects\.json: skipped \d+ project\(s\) the simulation does not run/;
+let warnSpy: MockInstance<typeof console.warn>;
+
 beforeEach(() => {
   vi.mocked(precomputeOf).mockClear();
+  warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+});
+
+afterEach(() => {
+  const unexpected = warnSpy.mock.calls.filter((args) => !SKIP_WARNING.test(String(args[0])));
+  warnSpy.mockRestore();
+  expect(unexpected).toEqual([]);
 });
 
 describe('validateInitRequest', () => {
@@ -182,7 +199,7 @@ describe('scenario host: ready and fetching', () => {
     ]);
     await expectLoaded(h);
     expect(h.posts.filter((m) => m.type === 'error')).toEqual([]);
-    expect(h.warnings).toEqual([INVALID_WARNING]);
+    expect(loadWarnings(h)).toEqual([INVALID_WARNING]);
   });
 
   it('fetches the JSON files while parcels.bin is still pending', async () => {
@@ -378,7 +395,7 @@ describe('scenario host: invalid projects and asOf', () => {
     h.bodies.set(URLS.projects, json);
     h.init();
     await expectLoaded(h);
-    expect(h.warnings).toEqual([
+    expect(loadWarnings(h)).toEqual([
       'projects.json: skipped 2 invalid project(s); first: projects[2].units: must be >= 1'
     ]);
     const fzp = vi.mocked(precomputeOf).mock.calls[0][0];
@@ -395,7 +412,7 @@ describe('scenario host: invalid projects and asOf', () => {
     h.init();
     await expectLoaded(h);
     const n = (json.projects as unknown[]).length;
-    expect(h.warnings).toEqual([
+    expect(loadWarnings(h)).toEqual([
       `projects.json: skipped ${n} invalid project(s); first: projects[0].units: must be >= 1`
     ]);
     expect(vi.mocked(precomputeOf).mock.calls[0][0].projects).toEqual([]);
@@ -449,7 +466,7 @@ describe('scenario host: invalid projects and asOf', () => {
     warnFzp('probe');
     warnTwin('probe');
     warnTwin('twin only');
-    expect(h.warnings).toEqual([INVALID_WARNING, 'probe', 'twin only']);
+    expect(loadWarnings(h)).toEqual([INVALID_WARNING, 'probe', 'twin only']);
   });
 });
 
