@@ -97,7 +97,7 @@ export const DATASF: Record<
     dataset: 'qvu5-m3a2',
     format: 'json',
     select:
-      'record_id,record_status,project_address,block,lot,open_date,close_date,building_permits,project_decision,project_decision_date,number_of_units_prop,number_of_units_exist,new_construction,sb35,housing_sustainability_dist,ab2162,description',
+      'record_id,record_status,project_address,block,lot,open_date,close_date,building_permits,project_decision,project_decision_date,number_of_units_prop,number_of_units_exist,number_affordable_units_prop,new_construction,sb35,housing_sustainability_dist,ab2162,description',
     license: 'public-domain',
     homepage: 'https://data.sf.gov/d/qvu5-m3a2',
     label: 'DataSF Planning Projects'

@@ -61,7 +61,15 @@ import { checkMultiphaseFile, netMasters, type Netting } from './multiphase';
 import { linkNoDateRows, rowKey } from './nodate';
 import { resolveParcels } from './parcels';
 import { supersessions } from './supersede';
-import { parseAll } from './parse';
+import {
+  activityIndex,
+  inferredLapse,
+  lapseExit,
+  parcelFamily,
+  streamlinedLapse,
+  type Activity
+} from './lapse';
+import { isoOf, parseAll } from './parse';
 import { rhnaCompletedNet } from './rhna';
 import {
   completeAt,
@@ -179,6 +187,11 @@ interface StaleState {
   expiryNoValuation: number;
   expired: boolean;
   verdict: boolean;
+  /** Ruling IL1: the history exited as an inferred lapse. */
+  lapsed: boolean;
+  /** Ruling SE1: the history exited at its streamlined expiry; or it was affordable-exempt. */
+  streamlinedExpired: boolean;
+  streamlinedExempt: boolean;
 }
 
 const NO_STALE: StaleState = {
@@ -190,7 +203,10 @@ const NO_STALE: StaleState = {
   expiryPermits: 0,
   expiryNoValuation: 0,
   expired: false,
-  verdict: false
+  verdict: false,
+  lapsed: false,
+  streamlinedExpired: false,
+  streamlinedExempt: false
 };
 
 function firstDay(entered: Entered): Day | null {
@@ -355,6 +371,34 @@ function applyExpiry(a: Assessed, asOf: Day): boolean {
   if (end === null) return false;
   st.expired = true;
   replaceEnd(a, end, a.histEntered, PR.stagesStatutoryExpiry);
+  return true;
+}
+
+/** What Rulings IL1 and SE1 read about the other projects (spec 4.6). */
+interface LapseInput {
+  asOf: Day;
+  family: (proj: LinkedProject) => ReadonlySet<ParcelId>;
+  index: ReadonlyMap<ParcelId, readonly Activity[]>;
+  daParcels: ReadonlySet<ParcelId>;
+}
+
+/**
+ * Ruling SE1 on an open history, in flight or not: true when it exited at its streamlined expiry.
+ * An affordable-exempt history is marked (`stale.streamlinedExempt`) and stays open.
+ */
+function applyStreamlined(a: Assessed, ctx: LapseInput): boolean {
+  const t = streamlinedLapse(a.proj, a.pathway, a.histEntered, a.histEnd, {
+    family: ctx.family(a.proj),
+    daParcels: ctx.daParcels
+  });
+  if (t === null) return false;
+  if (t.exempt) {
+    a.stale.streamlinedExempt = true;
+    return false;
+  }
+  if (t.day > ctx.asOf) return false;
+  a.stale.streamlinedExpired = true;
+  replaceEnd(a, lapseExit(t.day), a.histEntered, PR.stagesStreamlinedExpiry);
   return true;
 }
 
@@ -571,6 +615,24 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
       sample: of.filter((a) => a.stale.expiryNoValuation > 0).map((a) => a.proj.id)
     };
   },
+  // Spec 4.6 Ruling IL1: of the discretionary histories that entered entitled; the ones exited as
+  // an inferred lapse (they carry the id); their ids.
+  [PR.stagesInferredLapse]: ({ withHistory }) => {
+    const of = withHistory.filter(
+      (a) => a.pathway === 'discretionary' && a.entered.entitled !== undefined
+    );
+    const sample = of.filter((a) => a.stale.lapsed).map((a) => a.proj.id);
+    return { fired: sample.length, of: of.length, sample };
+  },
+  // Spec 4.6 Ruling SE1: of the streamlined histories that entered entitled; the ones exited at
+  // their statutory term, in flight or not (they carry the id); their ids.
+  [PR.stagesStreamlinedExpiry]: ({ withHistory }) => {
+    const of = withHistory.filter(
+      (a) => a.pathway === 'streamlined' && a.entered.entitled !== undefined
+    );
+    const sample = of.filter((a) => a.stale.streamlinedExpired).map((a) => a.proj.id);
+    return { fired: sample.length, of: of.length, sample };
+  },
   // Spec 4.6 Ruling C3: the entries of construction-verified.json; the verdicts applied to an
   // open history (they carry the id); their ids.
   [PR.stagesVerifiedConstruction]: ({ withHistory, verdictEntries }) => {
@@ -706,6 +768,11 @@ function zeroCounts(): Record<string, number> {
     'projects.excludedSuspendedUnits': 0,
     'projects.excludedSuperseded': 0,
     'projects.excludedSupersededUnits': 0,
+    'projects.excludedStreamlinedExpiry': 0,
+    'projects.excludedStreamlinedExpiryUnits': 0,
+    'projects.lapseFlagged': 0,
+    'projects.lapseFlaggedUnits': 0,
+    'histories.streamlinedExpiry.affordableExempt': 0,
     'histories.statutoryExpiry.excludedCompletePermit': 0,
     'histories.unitsFiledCarried': 0,
     'histories.unitsFiledOmitted': 0,
@@ -872,6 +939,52 @@ export function deriveProjects(
   const verdictWarnings: string[] = [];
   const inFlightHistories = new Set<string>();
   const leftFlight: string[] = [];
+  // Rulings IL1 and SE1 read every linked project's activity on a history's parcels and the DA
+  // parcels: the parcels (with descendants) of each multi-phase master's DA set as assemble.ts
+  // computes it (masterDa, here before netting, which only reads it), and of every project with a
+  // pipeline row naming a development agreement.
+  const daCtx = {
+    projects: assessed.map((a) => a.proj),
+    pipeline: parsed.pipeline,
+    multiphase: input.multiphase,
+    resolve,
+    descendants: input.descendants
+  };
+  const families = new Map<string, ReadonlySet<ParcelId>>();
+  const family = (proj: LinkedProject): ReadonlySet<ParcelId> => {
+    let f = families.get(proj.id);
+    if (f === undefined) {
+      f = parcelFamily(proj, input.descendants);
+      families.set(proj.id, f);
+    }
+    return f;
+  };
+  const daParcels = new Set<ParcelId>();
+  for (const a of assessed) {
+    if (a.multiPhase) {
+      const da = masterDa(a.proj, daCtx);
+      for (const id of [...da.daParcels, ...da.trackingParcels, ...da.descendants]) {
+        daParcels.add(id);
+      }
+    }
+    if (a.multiPhase || a.proj.pipelineRows.some((r) => r.da !== null)) {
+      for (const id of family(a.proj)) daParcels.add(id);
+    }
+  }
+  const lapseInput: LapseInput = {
+    asOf,
+    family,
+    daParcels,
+    index: activityIndex(
+      assessed.map((a) => ({
+        proj: a.proj,
+        days: [
+          ...Object.values(a.entered),
+          ...a.proj.permits.flatMap((q) => (q.filedDay === null ? [] : [q.filedDay]))
+        ]
+      }))
+    )
+  };
   for (const a of assessed) {
     if (a.status === 'suspended') {
       // Main's ruling 5 (Ruling I4): every unit-bearing permit suspended, so it leaves flight. Its
@@ -895,25 +1008,24 @@ export function deriveProjects(
         counts['projects.excludedStatutory']++;
         counts['projects.excludedStatutoryUnits'] += a.units ?? 0;
         leftFlight.push(`${a.proj.id}: past statutory completion deadline; expired, left flight`);
+      } else if (applyStreamlined(a, lapseInput)) {
+        // Ruling SE1: a self-executing statute, so in flight too (the I4 precedent).
+        a.status = 'ended';
+        counts['projects.excludedStreamlinedExpiry']++;
+        counts['projects.excludedStreamlinedExpiryUnits'] += a.units ?? 0;
+        leftFlight.push(
+          `${a.proj.id}: past its streamlined approval term (3 years and one extension); expired, left flight`
+        );
       } else {
         inFlightHistories.add(a.proj.id);
       }
     } else {
       applyStale(a, staleCtx, verdicts, verdictWarnings);
+      applyStreamlined(a, lapseInput);
     }
+    if (a.stale.streamlinedExempt) counts['histories.streamlinedExpiry.affordableExempt']++;
     if (a.stale.expiryExcludedComplete) {
       counts['histories.statutoryExpiry.excludedCompletePermit']++;
-    }
-    const h = history(a, input);
-    histories.push(h);
-    // Ruling U1: of the histories the two filing rules fire on, those that carried a later count
-    // back to filing and those left with no `unitsAt.filed`.
-    if (a.quality.has(PR.unitsSplitFiled) || a.quality.has(PR.unitsFiledZero)) {
-      counts[
-        h.unitsAt.filed === undefined
-          ? 'histories.unitsFiledOmitted'
-          : 'histories.unitsFiledCarried'
-      ]++;
     }
   }
   // Partner ruling 3, Ruling SP1: after every other in-flight decision and before DA netting, an
@@ -947,6 +1059,45 @@ export function deriveProjects(
       `${a.proj.id}: superseded by ${keeper} (same address, block and units); left flight`
     );
   }
+  // Ruling IL1, after supersession (a superseded project's history is not in flight): an open
+  // discretionary history at entitled with no permit, later child record, DA tie or other activity
+  // on its parcels exits as a lapse a year after max(rule expiry, last observed) when the project
+  // is not in flight, and is only flagged when it is (ruling 2d).
+  const flagged: string[] = [];
+  for (const a of withHistory) {
+    const t = inferredLapse(a.proj, a.pathway, a.histEntered, a.histEnd, {
+      asOf,
+      family: family(a.proj),
+      index: lapseInput.index,
+      daParcels
+    });
+    if (t === null) continue;
+    if (a.status === 'inFlight') {
+      if (t.due > asOf) continue;
+      counts['projects.lapseFlagged']++;
+      counts['projects.lapseFlaggedUnits'] += a.units ?? 0;
+      flagged.push(
+        `in-flight project ${a.proj.id} (${a.units ?? 0} u) looks lapsed: entitled ${isoOf(a.histEntered.entitled as Day)}, rule expiry ${isoOf(t.expiry)}`
+      );
+    } else if (t.exitDay <= asOf) {
+      a.stale.lapsed = true;
+      replaceEnd(a, lapseExit(t.exitDay), a.histEntered, PR.stagesInferredLapse);
+    }
+  }
+  warnings.push(...flagged.sort(cmp));
+  for (const a of withHistory) {
+    const h = history(a, input);
+    histories.push(h);
+    // Ruling U1: of the histories the two filing rules fire on, those that carried a later count
+    // back to filing and those left with no `unitsAt.filed`.
+    if (a.quality.has(PR.unitsSplitFiled) || a.quality.has(PR.unitsFiledZero)) {
+      counts[
+        h.unitsAt.filed === undefined
+          ? 'histories.unitsFiledOmitted'
+          : 'histories.unitsFiledCarried'
+      ]++;
+    }
+  }
   warnings.push(...leftFlight.sort(cmp));
   // Ruling C3: an entry that met no open history (an unknown verdict there is simply unused).
   for (const v of verdicts.values()) {
@@ -962,14 +1113,6 @@ export function deriveProjects(
   // netting projects are in-flight non-masters matching no pipeline row once DQ-2 has run (a
   // linked row is a match). A master netted to 0 fails the has-units test (4.7): it leaves flight
   // with status noUnits, and its parcels exclude nothing.
-  const postDq2 = assessed.map((a) => a.proj);
-  const daCtx = {
-    projects: postDq2,
-    pipeline: parsed.pipeline,
-    multiphase: input.multiphase,
-    resolve,
-    descendants: input.descendants
-  };
   const masters = assessed
     .filter((a) => a.status === 'inFlight' && a.multiPhase)
     .map((a) => ({ a, da: masterDa(a.proj, daCtx) }));
@@ -1047,7 +1190,7 @@ export function deriveProjects(
       da
     })),
     excluded,
-    projects: postDq2,
+    projects: daCtx.projects,
     multiphase: input.multiphase,
     areaM2: input.areaM2,
     resolve,

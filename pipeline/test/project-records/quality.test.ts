@@ -122,6 +122,27 @@ const TABLE: Record<string, Spec> = {
     failShare: 0.1,
     label: 'A stalled project was ended by a check of street or aerial imagery'
   },
+  'pr.stages.inferred-lapse': {
+    kind: 'shape',
+    action: 'replace',
+    tier: 3,
+    valueTier: 3,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label:
+      'A discretionary approval with no permit or other activity a year past its performance period was treated as lapsed'
+  },
+  'pr.stages.streamlined-expiry': {
+    kind: 'shape',
+    action: 'replace',
+    tier: 2,
+    valueTier: 2,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label: 'A streamlined approval past its statutory term with no permit was treated as expired'
+  },
   'pr.permits.placeholder-valuation': {
     kind: 'bound',
     action: 'replace',

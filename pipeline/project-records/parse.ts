@@ -270,6 +270,7 @@ function parsePrjs(
       decisionDay: d.day(r.project_decision_date),
       unitsProp: num(r.number_of_units_prop),
       unitsExist: num(r.number_of_units_exist),
+      affordableProp: num(r.number_affordable_units_prop),
       newConstruction: r.new_construction === 'CHECKED',
       sb35: r.sb35 === 'CHECKED',
       hsd: r.housing_sustainability_dist === 'CHECKED',

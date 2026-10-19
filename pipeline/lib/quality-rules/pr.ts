@@ -11,6 +11,8 @@ export const PR = {
   stagesStatutoryExpiry: 'pr.stages.statutory-expiry',
   stagesExpiryNoValuation: 'pr.stages.expiry-no-valuation',
   stagesVerifiedConstruction: 'pr.stages.verified-construction',
+  stagesInferredLapse: 'pr.stages.inferred-lapse',
+  stagesStreamlinedExpiry: 'pr.stages.streamlined-expiry',
   permitsPlaceholderValuation: 'pr.permits.placeholder-valuation',
   projectsSuperseded: 'pr.projects.superseded',
   unitsCapacity: 'pr.units.capacity',
@@ -189,6 +191,49 @@ export const PR_RULES: readonly QualityRule[] = [
     maskBit: null,
     label: 'A stalled project was ended by a check of street or aerial imagery',
     denominator: 'curated verdict entries',
+    warnShare: 0.01,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
+    // Ruling IL1 (partner ruling 2b): rule.json modelingRule.discretionaryExpiryDay
+    // (pipeline/project-records/entitlement.ts). The standard condition is not self-executing
+    // since 2014 and extensions leave no status, so an inference with a year of grace; an
+    // in-flight history that meets the test is only flagged (projects.lapseFlagged). T4d only.
+    id: PR.stagesInferredLapse,
+    owner: OWNER,
+    source: 'datasf-planning-projects, datasf-planning-records (conditions of approval)',
+    field: 'end',
+    kind: 'shape',
+    action: 'replace',
+    tier: 3,
+    valueTier: 3,
+    maskBit: null,
+    label:
+      'A discretionary approval with no permit or other activity a year past its performance period was treated as lapsed',
+    denominator: 'discretionary histories that entered entitled',
+    warnShare: 0.01,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
+    // Ruling SE1 (partner ruling 2c): Gov. Code 65913.4(g) (SB 35) and 65912.114(l) (AB 2011),
+    // 3 years plus the one-time 1-year extension, AB 1561 / AB 2729 applied
+    // (pipeline/project-records/entitlement.ts). Never for number_affordable_units_prop x 2 >=
+    // number_of_units_prop (histories.streamlinedExpiry.affordableExempt); litigation tolling is
+    // unrecorded. Self-executing, so an in-flight project leaves flight
+    // (projects.excludedStreamlinedExpiry). T4d only.
+    id: PR.stagesStreamlinedExpiry,
+    owner: OWNER,
+    source: 'datasf-planning-projects',
+    field: 'end',
+    kind: 'shape',
+    action: 'replace',
+    tier: 2,
+    valueTier: 2,
+    maskBit: null,
+    label: 'A streamlined approval past its statutory term with no permit was treated as expired',
+    denominator: 'streamlined histories that entered entitled',
     warnShare: 0.01,
     failShare: 0.1,
     unitsWeighted: false

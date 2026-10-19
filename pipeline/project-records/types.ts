@@ -92,6 +92,8 @@ export interface Prj {
   decisionDay: Day | null;
   unitsProp: number | null;
   unitsExist: number | null;
+  /** `number_affordable_units_prop`; null when blank (Ruling SE1). */
+  affordableProp: number | null;
   newConstruction: boolean;
   sb35: boolean;
   hsd: boolean;

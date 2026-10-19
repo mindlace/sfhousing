@@ -845,27 +845,27 @@
     {
       "files": [
         {
-          "archiveKey": "sources/de31e8795a9732cb808184d38aeabcb74c87828b5036b942df74eed7abe23b25.json",
-          "bytes": 23566736,
+          "archiveKey": "sources/d3708986f1a8d9aba7714db1141363c46a7e72be8fbf83d19bc70809f80ee9df.json",
+          "bytes": 25318169,
           "name": "datasf-planning-projects.page-000.json",
-          "sha256": "de31e8795a9732cb808184d38aeabcb74c87828b5036b942df74eed7abe23b25",
-          "url": "https://data.sf.gov/resource/qvu5-m3a2.json?%24select=record_id%2Crecord_status%2Cproject_address%2Cblock%2Clot%2Copen_date%2Cclose_date%2Cbuilding_permits%2Cproject_decision%2Cproject_decision_date%2Cnumber_of_units_prop%2Cnumber_of_units_exist%2Cnew_construction%2Csb35%2Chousing_sustainability_dist%2Cab2162%2Cdescription&%24order=%3Aid&%24limit=50000&%24offset=0"
+          "sha256": "d3708986f1a8d9aba7714db1141363c46a7e72be8fbf83d19bc70809f80ee9df",
+          "url": "https://data.sf.gov/resource/qvu5-m3a2.json?%24select=record_id%2Crecord_status%2Cproject_address%2Cblock%2Clot%2Copen_date%2Cclose_date%2Cbuilding_permits%2Cproject_decision%2Cproject_decision_date%2Cnumber_of_units_prop%2Cnumber_of_units_exist%2Cnumber_affordable_units_prop%2Cnew_construction%2Csb35%2Chousing_sustainability_dist%2Cab2162%2Cdescription&%24order=%3Aid&%24limit=50000&%24offset=0"
         },
         {
-          "archiveKey": "sources/8d4d78bb87751d26f949f94aa0f614c6b5434d2aa7474fd81895f8c624fc26a6.json",
-          "bytes": 1747857,
+          "archiveKey": "sources/05c4ea10438a5ba834ac41b258b717c6f2f8f425a658533a97df871c624224cf.json",
+          "bytes": 1911408,
           "name": "datasf-planning-projects.page-001.json",
-          "sha256": "8d4d78bb87751d26f949f94aa0f614c6b5434d2aa7474fd81895f8c624fc26a6",
-          "url": "https://data.sf.gov/resource/qvu5-m3a2.json?%24select=record_id%2Crecord_status%2Cproject_address%2Cblock%2Clot%2Copen_date%2Cclose_date%2Cbuilding_permits%2Cproject_decision%2Cproject_decision_date%2Cnumber_of_units_prop%2Cnumber_of_units_exist%2Cnew_construction%2Csb35%2Chousing_sustainability_dist%2Cab2162%2Cdescription&%24order=%3Aid&%24limit=50000&%24offset=50000"
+          "sha256": "05c4ea10438a5ba834ac41b258b717c6f2f8f425a658533a97df871c624224cf",
+          "url": "https://data.sf.gov/resource/qvu5-m3a2.json?%24select=record_id%2Crecord_status%2Cproject_address%2Cblock%2Clot%2Copen_date%2Cclose_date%2Cbuilding_permits%2Cproject_decision%2Cproject_decision_date%2Cnumber_of_units_prop%2Cnumber_of_units_exist%2Cnumber_affordable_units_prop%2Cnew_construction%2Csb35%2Chousing_sustainability_dist%2Cab2162%2Cdescription&%24order=%3Aid&%24limit=50000&%24offset=50000"
         }
       ],
       "homepage": "https://data.sf.gov/d/qvu5-m3a2",
       "id": "datasf-planning-projects",
       "label": "DataSF Planning Projects",
       "license": "public-domain",
-      "retrievedAt": "2026-10-17T18:32:41.960Z",
-      "rowCount": 54647,
-      "upstreamVersion": "Sat, 17 Oct 2026 06:09:50 GMT"
+      "retrievedAt": "2026-10-19T01:34:20.056Z",
+      "rowCount": 54649,
+      "upstreamVersion": "Sun, 18 Oct 2026 06:09:15 GMT"
     },
     {
       "files": [

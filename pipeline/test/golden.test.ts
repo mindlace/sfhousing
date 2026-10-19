@@ -503,15 +503,16 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
     expect(c['quality.pr.pipeline.status-date-linked.fired']).toBe(2);
     expect(c['quality.pr.pipeline.no-status-date.fired']).toBe(1);
     expect(c['quality.pr.pipeline.no-status-date.units']).toBe(20);
-    // M10 and M19 on lot 1.
-    expect(c['quality.pr.parcels.shared-existing.fired']).toBe(2);
+    // M10 and M19 on lot 1; M1 and M35 on lot 10.
+    expect(c['quality.pr.parcels.shared-existing.fired']).toBe(4);
     // M20, netted by M11 and score-only.
     expect(c['quality.pr.multiphase.da-netting.fired']).toBe(1);
     expect(c['quality.pr.multiphase.score-only.fired']).toBe(1);
     // As computed: M23's two split rows list projects whose records show them complete.
     expect(c['quality.pr.pipeline.records-win.fired']).toBe(2);
-    // M27 and M28 (Ruling I4) match their pipeline rows too; records-win reads the §4.6 end.
-    expect(c['quality.pr.pipeline.records-win.of']).toBe(12);
+    // M27 and M28 (Ruling I4) match their pipeline rows too; records-win reads the §4.6 end. So
+    // do M35 and M36 (Rulings IL1, SE1).
+    expect(c['quality.pr.pipeline.records-win.of']).toBe(14);
     // M23's two split rows omit unitsAt.filed (Ruling S2).
     expect(c['quality.pr.units.split-filed.fired']).toBe(2);
     expect(c['projects.excludedNoUnits']).toBe(900);
@@ -532,12 +533,16 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
     }
   });
 
-  it('M1 carries pr.date.valid-range and pr.stages.forward-clamp (spec §4.9 fixture table)', () => {
+  it('M1 carries pr.date.valid-range, pr.stages.forward-clamp and (M35) shared-existing', () => {
     const f = JSON.parse(readFileSync(join(e2e, PROJECTS_JSON), 'utf8')) as {
       projects: { id: string; quality: string[] }[];
     };
     const m1 = f.projects.find((p) => p.id === 'PRJ:2019-000001PRJ');
-    expect(m1?.quality).toEqual(['pr.date.valid-range', 'pr.stages.forward-clamp']);
+    expect(m1?.quality).toEqual([
+      'pr.date.valid-range',
+      'pr.parcels.shared-existing',
+      'pr.stages.forward-clamp'
+    ]);
     const m10 = f.projects.find((p) => p.id === 'PRJ:2020-000010PRJ');
     expect(m10?.quality).toEqual(['pr.parcels.shared-existing', 'pr.stages.forward-clamp']);
   });
