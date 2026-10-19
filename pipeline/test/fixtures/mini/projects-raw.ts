@@ -14,7 +14,7 @@
  * | M7 BP 201410070008     | lot 005; permit filed 2014-10-07, no PRJ, no pipeline row (stale-open)    |
  * | M8 2020-000008PRJ      | referral PRJ; permit 202006010008 on retired lot 099; pipeline BP Issued  |
  * | M9 2007.0001PRX        | pipeline-only, lot 014, 300 units, da 'Fixture Shipyard' (enriched)       |
- * | M10 2020-000010PRJ     | lot 001; permit A withdrawn, permit B filed; d4jk approval; pipeline      |
+ * | M10 2020-000010PRJ     | lot 001; permit A withdrawn ($1 placeholder, filled from B), B filed; d4jk |
  * | M11 2026-000011PRJ     | lot 006; opened 2026-09-20, 3 units, no evidence, no pipeline row         |
  * | M12 2026-000012PRJ     | lot 008; umbrella PRJ and PPA opened 2026-08-03, 24 units (12 existing)   |
  * | M13 2015-000013PRJ     | lot 012; Closed, no decision, closed 2016-05-02                           |
@@ -251,7 +251,8 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       estimatedCost: 3000000,
       units: 4
     }),
-    // M10: permit A withdrawn, then the refiled permit B.
+    // M10: permit A withdrawn, then the refiled permit B. A's revised_cost is a $1 placeholder
+    // with no estimate, so it takes B's real estimate (Ruling PV1 (c), the project's permit).
     permit({
       number: '202001100010',
       type: '2',
@@ -259,6 +260,7 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       status: 'withdrawn',
       statusDate: '2021-01-01',
       filed: '2020-01-10',
+      revisedCost: 1,
       units: 6
     }),
     permit({
@@ -268,6 +270,7 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       status: 'filed',
       statusDate: '2022-03-01',
       filed: '2022-03-01',
+      estimatedCost: 2400000,
       units: 6
     }),
     // M14's base case: the completed 40-unit building on lot 007.

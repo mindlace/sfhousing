@@ -18,6 +18,10 @@ import {
   type RawRow,
   type Review
 } from './types';
+import { PLACEHOLDER_REVISED_COST, realValue } from './valuation';
+
+/** Below this, `revised_cost` is a placeholder (re-exported from valuation.ts). */
+export { PLACEHOLDER_REVISED_COST };
 
 const DAY_MS = 86_400_000;
 const DATE_RE = /^\s*(\d{4})-(\d{2})-(\d{2})/;
@@ -171,9 +175,6 @@ function compareAddress(a: AddressRow, b: AddressRow): number {
   );
 }
 
-/** Below this, `revised_cost` is a placeholder, not a valuation (main's ruling 4; tier 4). */
-export const PLACEHOLDER_REVISED_COST = 1000;
-
 /** Rule `pr.permits.placeholder-valuation`: permits with a `revised_cost`, and those replaced. */
 interface ValuationCtx {
   of: number;
@@ -182,16 +183,30 @@ interface ValuationCtx {
 
 /**
  * Ruling E2 valuation: `revised_cost` unless missing or a placeholder, else `estimated_cost`. A
- * placeholder is replaced by the permit's own estimate (rule `pr.permits.placeholder-valuation`).
+ * placeholder takes the permit's own estimate here (rule `pr.permits.placeholder-valuation`);
+ * Ruling PV1's fill (valuation.ts) runs after linking, from the candidates kept on the permit.
  */
-function valuationOf(r: RawRow, number: string, ctx: ValuationCtx): number | null {
-  const revised = num(r.revised_cost);
+function valuationOf(
+  group: RawRow[],
+  lead: RawRow,
+  number: string,
+  ctx: ValuationCtx
+): Pick<Permit, 'valuation' | 'placeholder'> {
+  const revised = num(lead.revised_cost);
   if (revised !== null) {
     ctx.of++;
-    if (revised >= PLACEHOLDER_REVISED_COST) return revised;
+    if (revised >= PLACEHOLDER_REVISED_COST) return { valuation: revised };
     ctx.replaced.add(number);
+    let otherRows: number | null = null;
+    for (const r of group) {
+      if (r === lead) continue;
+      otherRows = realValue(num(r.revised_cost)) ?? realValue(num(r.estimated_cost));
+      if (otherRows !== null) break;
+    }
+    const estimate = num(lead.estimated_cost);
+    return { valuation: estimate, placeholder: { estimate, otherRows } };
   }
-  return num(r.estimated_cost);
+  return { valuation: num(lead.estimated_cost) };
 }
 
 function parsePermits(
@@ -236,7 +251,7 @@ function parsePermits(
       // when present, else the estimate at filing; a `revised_cost` under $1,000 is a
       // placeholder (live, e.g. 1.0 against an estimate of 510,000) and falls back to the
       // estimate (main's ruling 4).
-      valuation: valuationOf(lead, number, valuation),
+      ...valuationOf(group, lead, number, valuation),
       rows: group.map(addressRow).sort(compareAddress)
     };
     permits.set(number, d.done(permit, number));

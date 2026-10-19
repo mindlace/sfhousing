@@ -243,6 +243,35 @@ describe('stale open histories (deriveProjects)', () => {
     expect(history(r, 'BP:201409010025').quality).not.toContain('pr.permits.placeholder-valuation');
   });
 
+  it('Ruling PV1: the expiry reads a placeholder filled from another row of the permit', () => {
+    // Copies: staleInput's rows are shared between tests.
+    const withRows = (extra: RawRow[]) => {
+      const raw = staleInput().raw;
+      const rows = raw['datasf-permits-newcon'];
+      const k = rows.findIndex((p) => p.permit_number === '200406010024');
+      const lead: RawRow = { ...rows[k], revised_cost: '1.0' };
+      delete lead.estimated_cost;
+      rows[k] = lead;
+      rows.push(...extra.map((x) => ({ ...lead, ...x })));
+      return deriveProjects({ ...staleInput(), raw });
+    };
+    // A second address row of the same permit records a $3M estimate: the site-permit bracket.
+    const second: RawRow = { primary_address_flag: 'N', estimated_cost: '3000000' };
+    const r = withRows([second]);
+    expect(history(r, 'BP:200406010024').end).toMatchObject({
+      kind: 'exit',
+      day: day('2005-03-01') + 2160 + 360
+    });
+    expect(r.counts['permits.placeholderFilled.ownRows']).toBe(1);
+    expect(r.counts['permits.placeholderUnfilled']).toBe(0);
+    // Unfilled (no other row, no project permit): no valuation, the E0 middle bracket.
+    const u = withRows([]);
+    expect(history(u, 'BP:200406010024').end).toMatchObject({
+      day: day('2005-03-01') + 1080 + 180
+    });
+    expect(u.counts['permits.placeholderUnfilled']).toBe(1);
+  });
+
   it('a history with a completed unit-bearing permit is excluded from expiry (I3 rejected)', () => {
     const raw = staleInput().raw;
     // A second, completed building, joined to EXPIRED by one Planning record.

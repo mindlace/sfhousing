@@ -61,6 +61,7 @@ import { checkMultiphaseFile, netMasters, type Netting } from './multiphase';
 import { linkNoDateRows, rowKey } from './nodate';
 import { resolveParcels } from './parcels';
 import { supersessions } from './supersede';
+import { fillPlaceholderValuations } from './valuation';
 import {
   activityIndex,
   inferredLapse,
@@ -776,6 +777,10 @@ function zeroCounts(): Record<string, number> {
     'projects.lapseFlaggedUnits': 0,
     'histories.streamlinedExpiry.affordableExempt': 0,
     'projects.lapseNoRule': 0,
+    'permits.placeholderFilled.ownEstimate': 0,
+    'permits.placeholderFilled.ownRows': 0,
+    'permits.placeholderFilled.projectPermit': 0,
+    'permits.placeholderUnfilled': 0,
     'histories.statutoryExpiry.excludedCompletePermit': 0,
     'histories.unitsFiledCarried': 0,
     'histories.unitsFiledOmitted': 0,
@@ -847,6 +852,11 @@ export function deriveProjects(
     }
   });
   const counts = Object.assign(opts.counts ?? {}, zeroCounts());
+  // Ruling PV1: fill placeholder valuations from the permit's own estimate, its other rows, else
+  // the nearest permit of its project, before anything reads `valuation` (only the expiry rule).
+  const fill = fillPlaceholderValuations(link.projects);
+  for (const src of fill.filled.values()) counts[`permits.placeholderFilled.${src}`]++;
+  counts['permits.placeholderUnfilled'] = fill.unfilled.size;
 
   // A curated entry for a PRX row that joined its permit's project is valid but unused.
   const curatedCases = new Set(input.multiphase.projects.map((e) => e.caseNo));

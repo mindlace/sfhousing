@@ -239,18 +239,23 @@ export const PR_RULES: readonly QualityRule[] = [
     unitsWeighted: false
   },
   {
-    // Main's ruling 4: a revised_cost under $1,000 is a placeholder (live, e.g. 1.0 against an
-    // estimate of 510,000); the permit's own estimated_cost is used (valueTier 0: a source value).
+    // Main's ruling 4, partner Ruling PV1: a revised_cost under $1,000 is a placeholder (live, e.g.
+    // 1.0 against an estimate of 510,000). It takes the first real valuation (>= $1,000) of the
+    // permit's own estimated_cost, its other rows, else the nearest permit of its project by filed
+    // day (pipeline/project-records/valuation.ts); with none, its own estimate as recorded. Tier 2
+    // and valueTier 2: the weakest value it writes, a sibling permit's (counters
+    // permits.placeholderFilled.* and permits.placeholderUnfilled).
     id: PR.permitsPlaceholderValuation,
     owner: OWNER,
     source: 'datasf-permits-newcon',
     field: 'revised_cost',
     kind: 'bound',
     action: 'replace',
-    tier: 4,
-    valueTier: 0,
+    tier: 2,
+    valueTier: 2,
     maskBit: null,
-    label: "A placeholder permit valuation under $1,000 was replaced by the permit's own estimate",
+    label:
+      'A placeholder permit valuation under $1,000 was replaced by the nearest real valuation of the permit or its project',
     denominator: 'permits with a revised cost',
     warnShare: 0.01,
     failShare: 0.1,
