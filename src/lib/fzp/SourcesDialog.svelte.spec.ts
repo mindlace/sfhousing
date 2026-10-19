@@ -218,6 +218,22 @@ describe('targets and multi-phase', () => {
   });
 });
 
+describe('target sizes (spec §4.3)', () => {
+  it('links and Close are at least 24 px tall and carry the 44 px coarse-pointer variant', async () => {
+    await setup();
+    await openIt();
+    const controls = [...dialog().querySelectorAll<HTMLElement>('a[href], button')];
+    expect(controls.length).toBeGreaterThan(5);
+    for (const el of controls) {
+      expect(el.getBoundingClientRect().height, el.outerHTML).toBeGreaterThanOrEqual(24);
+      expect(
+        el.className.includes('pointer-coarse:min-h-11') || el.className.includes('min-h-11'),
+        el.outerHTML
+      ).toBe(true);
+    }
+  });
+});
+
 describe('how the records were checked', () => {
   it('does not fetch before the first open', async () => {
     const { fetchFn } = await setup();

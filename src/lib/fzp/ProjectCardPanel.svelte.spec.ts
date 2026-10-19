@@ -332,6 +332,12 @@ describe('closing', () => {
     expect(onclose).toHaveBeenCalledTimes(1);
   });
 
+  it('ignores Escape while idle', async () => {
+    const { onclose } = await setup({ kind: 'idle' });
+    await userEvent.keyboard('{Escape}');
+    expect(onclose).not.toHaveBeenCalled();
+  });
+
   it('leaves Escape to an open modal dialog', async () => {
     const { onclose } = await setup(project(REAL_ACTUAL));
     const dialog = document.createElement('dialog');
@@ -340,6 +346,28 @@ describe('closing', () => {
     await userEvent.keyboard('{Escape}');
     dialog.remove();
     expect(onclose).not.toHaveBeenCalled();
+  });
+});
+
+describe('target sizes (spec §4.3)', () => {
+  it('every control is at least 24x24 and carries the 44 px coarse-pointer variant', async () => {
+    await page.viewport(1280, 800);
+    await setup(project(REAL_ACTUAL), { day: stageDay(REAL_ACTUAL, 'construction') + 122 });
+    await page.getByText('How is this estimated?').click();
+    const controls = [
+      ...document.querySelectorAll<HTMLElement>('section button, section summary, section a')
+    ];
+    // Close, the summary, the entry buttons and both source links.
+    expect(controls.length).toBeGreaterThanOrEqual(6);
+    for (const el of controls) {
+      const r = el.getBoundingClientRect();
+      expect(r.height, el.outerHTML).toBeGreaterThanOrEqual(24);
+      expect(r.width, el.outerHTML).toBeGreaterThanOrEqual(24);
+      expect(
+        el.className.includes('pointer-coarse:min-h-11') || el.className.includes('min-h-11'),
+        el.outerHTML
+      ).toBe(true);
+    }
   });
 });
 

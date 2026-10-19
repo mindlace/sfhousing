@@ -65,7 +65,7 @@
   const links = $derived(card ? sourceLinks(card.sources) : []);
 
   function onkeydown(e: KeyboardEvent) {
-    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    if (e.key !== 'Escape' || e.defaultPrevented || state.kind === 'idle') return;
     // Escape belongs to the sources dialog while it is open.
     if (document.querySelector('dialog:modal')) return;
     onclose();
@@ -124,13 +124,15 @@
           {/if}
           <p class="text-gray-800">{CHANCE_EXPLANATION}</p>
           <details class="mt-1">
-            <summary class="min-h-6 cursor-pointer">How is this estimated?</summary>
+            <summary class="min-h-6 cursor-pointer pointer-coarse:min-h-11"
+              >How is this estimated?</summary
+            >
             <ul class="mt-1 space-y-1">
               {#each estimate.entries as e, i (i)}
                 <li>
                   <button
                     type="button"
-                    class="text-left underline"
+                    class="inline-flex min-h-6 items-center text-left underline pointer-coarse:min-h-11"
                     onclick={() => onsource(e.sectionId)}
                   >
                     {TIER_LABEL[e.tier as 0 | 1 | 2 | 3 | 4]}: {e.label}
@@ -170,9 +172,13 @@
       {#if links.length > 0}
         <h3 class="mt-3 font-semibold">Sources</h3>
         <ul class="mt-1 space-y-1">
-          {#each links as link (link.href)}
+          {#each links as link, i (i)}
             <li>
-              <a href={link.href} target="_blank" rel="noopener noreferrer" class="underline"
+              <a
+                href={link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex min-h-6 items-center underline pointer-coarse:min-h-11"
                 >{link.text}<span class="sr-only"> (opens in a new tab)</span></a
               >
             </li>

@@ -181,7 +181,7 @@
             {/if}
             {#if e.shares.length > 0}
               <ul class="mt-1 list-disc pl-5">
-                {#each e.shares as share (share)}
+                {#each e.shares as share, i (i)}
                   <li>{share}</li>
                 {/each}
               </ul>
@@ -197,13 +197,13 @@
             {/if}
             {#if e.prov.sources.length > 0}
               <ul class="mt-2 space-y-1">
-                {#each e.prov.sources as src (src.url)}
+                {#each e.prov.sources as src, i (i)}
                   <li>
                     <a
                       href={safeHref(src.url)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      class="underline"
+                      class="inline-flex min-h-6 items-center underline pointer-coarse:min-h-11"
                       >{src.label}<span class="sr-only"> (opens in a new tab)</span></a
                     >
                   </li>

@@ -34,11 +34,11 @@ interface Deps {
 export class SummaryRequester {
   #deps: Deps;
   #state: SummaryState['kind'] = 'idle';
+  /** The query whose card is on show, while the state is `project`. */
+  #shown: SummaryQuery | null = null;
   #last: SummaryQuery | null = null;
   #queued: SummaryQuery | null = null;
   #inFlight = false;
-  /** Bumped by `reset`, so an answer to a query asked before it is dropped. */
-  #epoch = 0;
 
   constructor(deps: Deps) {
     this.#deps = deps;
@@ -49,6 +49,11 @@ export class SummaryRequester {
     return this.#last;
   }
 
+  /**
+   * Ask for a summary; the latest request wins. While a card is shown, a request for the same
+   * parcel and project keeps it on show until the answer replaces it (no flash of `loading` on
+   * every month); any other request shows `loading`.
+   */
   request(q: SummaryQuery): void {
     this.#last = q;
     if (this.#deps.unavailable()) {
@@ -56,7 +61,11 @@ export class SummaryRequester {
       this.#emit({ kind: 'unavailable' });
       return;
     }
-    this.#emit({ kind: 'loading' });
+    const keep =
+      this.#shown !== null &&
+      this.#shown.parcelId === q.parcelId &&
+      this.#shown.projectId === q.projectId;
+    if (!keep) this.#emit({ kind: 'loading' });
     if (this.#inFlight) {
       this.#queued = q;
       return;
@@ -71,20 +80,19 @@ export class SummaryRequester {
   }
 
   reset(): void {
-    this.#epoch++;
     this.#last = null;
     this.#queued = null;
     this.#emit({ kind: 'idle' });
   }
 
-  #emit(s: SummaryState): void {
+  #emit(s: SummaryState, q: SummaryQuery | null = null): void {
     this.#state = s.kind;
+    this.#shown = s.kind === 'project' ? q : null;
     this.#deps.onstate(s);
   }
 
   #send(q: SummaryQuery): void {
     this.#inFlight = true;
-    const epoch = this.#epoch;
     const settle = (summary: ParcelSummary | null) => {
       this.#inFlight = false;
       const next = this.#queued;
@@ -93,15 +101,22 @@ export class SummaryRequester {
         this.#send(next);
         return;
       }
-      if (epoch !== this.#epoch) return;
+      // Latest wins, unconditionally: an answer to a query that is no longer the latest is stale.
+      if (q !== this.#last) return;
       if (summary === null) {
         this.#emit({ kind: this.#deps.unavailable() ? 'unavailable' : 'not-loaded' });
       } else if (summary.project) {
-        this.#emit({ kind: 'project', card: summary.project });
+        this.#emit({ kind: 'project', card: summary.project }, q);
       } else {
         this.#emit({ kind: 'none' });
       }
     };
-    this.#deps.send(q).then(settle, () => settle(null));
+    let answer: Promise<ParcelSummary | null>;
+    try {
+      answer = this.#deps.send(q);
+    } catch {
+      answer = Promise.resolve(null);
+    }
+    answer.then(settle, () => settle(null));
   }
 }
