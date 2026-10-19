@@ -38,6 +38,8 @@
  * | M30 2018-000030PRJ     | lot 012; entitled 2018; names type 3 permit 201901150030 (+5): permitIssued |
  * | M31 2019-000031PRJ     | lot 010; entitled 2019; unnamed BP 202003020031 on its lot joins it (L2)   |
  * | named extras           | type 3 ADU 202001010032 (+1) named by no PRJ: dropped (Ruling L1)          |
+ * | M32 2026-000032PRJ     | lot 012; 500 Fixture Ave, 10 units, opened 2026-06-01: superseded (SP1)    |
+ * | M33 2026-000033PRJ     | lot 012; the same address refiled, 12 units, opened 2026-08-01: in flight  |
  * | xdht extras            | forms 2 (+3), 3 (+2) and 6 (-1): rhnaCompletedNet 4                       |
  *
  * `enrichment/construction-verified.json` (Ruling C3): M7 `dead` (exit withdrawn at permitFiled on
@@ -617,6 +619,28 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       lot: '010',
       open_date: ts('2019-02-01'),
       number_of_units_prop: '6',
+      new_construction: 'CHECKED'
+    },
+    // M32 and M33 (Ruling SP1): one project filed twice under two Planning records (same address,
+    // lot 012, 10 and 12 units); both recent, so in flight until the later one supersedes M32.
+    {
+      record_id: '2026-000032PRJ',
+      record_status: 'Open',
+      project_address: '500 Fixture Ave',
+      block: '3512',
+      lot: '012',
+      open_date: ts('2026-06-01'),
+      number_of_units_prop: '10',
+      new_construction: 'CHECKED'
+    },
+    {
+      record_id: '2026-000033PRJ',
+      record_status: 'Open',
+      project_address: '500  FIXTURE AVE',
+      block: '3512',
+      lot: '012',
+      open_date: ts('2026-08-01'),
+      number_of_units_prop: '12',
       new_construction: 'CHECKED'
     },
     // M29 (Ruling F1a): a referral (opened after its permit was filed, no evidence) whose

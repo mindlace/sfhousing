@@ -427,7 +427,8 @@ export type InFlightStatus =
   | 'noUnits'
   | 'noParcels'
   | 'notPopulation'
-  | 'suspended';
+  | 'suspended'
+  | 'superseded';
 
 /** Spec 4.7 in-flight decision; the first failing check names the status. `end` is null for pipeline-only. */
 export function inFlightStatus(

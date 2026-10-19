@@ -60,6 +60,7 @@ import { isSplitPart, linkProjects } from './link';
 import { checkMultiphaseFile, netMasters, type Netting } from './multiphase';
 import { linkNoDateRows, rowKey } from './nodate';
 import { resolveParcels } from './parcels';
+import { supersessions } from './supersede';
 import { parseAll } from './parse';
 import { rhnaCompletedNet } from './rhna';
 import {
@@ -119,6 +120,7 @@ const STATUSES: readonly Status[] = [
   'noParcels',
   'notPopulation',
   'suspended',
+  'superseded',
   'noDates'
 ];
 
@@ -480,6 +482,8 @@ interface TallyInput {
   netting: readonly Netting[];
   /** Entries in construction-verified.json (spec 4.6, Ruling C3). */
   verdictEntries: number;
+  /** Ruling SP1: the in-flight PRJ-anchored projects tested and the superseded ids. */
+  supersede: { tested: number; superseded: readonly string[] };
 }
 
 /** Σ of the positive values; null and negative count as 0. */
@@ -573,6 +577,13 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
     const sample = withHistory.filter((a) => a.stale.verdict).map((a) => a.proj.id);
     return { fired: sample.length, of: verdictEntries, sample };
   },
+  // Spec 4.7 Ruling SP1 (no record carries it): of the in-flight PRJ-anchored projects tested; the
+  // ones superseded by a later refiling; their ids.
+  [PR.projectsSuperseded]: ({ supersede }) => ({
+    fired: supersede.superseded.length,
+    of: supersede.tested,
+    sample: [...supersede.superseded]
+  }),
   // Spec 4.8 capacity: permits with recorded stories and units on a project with parcels; the
   // ones above their lot's physical limit on a project with a fallback unit source (voided); both
   // weighted by their proposed units. The sample is the affected project ids (a rule acting after
@@ -693,6 +704,8 @@ function zeroCounts(): Record<string, number> {
     'projects.excludedStatutoryUnits': 0,
     'projects.excludedSuspended': 0,
     'projects.excludedSuspendedUnits': 0,
+    'projects.excludedSuperseded': 0,
+    'projects.excludedSupersededUnits': 0,
     'histories.statutoryExpiry.excludedCompletePermit': 0,
     'histories.unitsFiledCarried': 0,
     'histories.unitsFiledOmitted': 0,
@@ -896,6 +909,32 @@ export function deriveProjects(
       ]++;
     }
   }
+  // Partner ruling 3, Ruling SP1: after every other in-flight decision and before DA netting, an
+  // in-flight PRJ-anchored project refiled under a later Planning record (same address, a shared
+  // block, units within 25%) leaves flight; the later one stays. T3 only: histories unchanged.
+  const supersedeTested = assessed.filter(
+    (a) => a.status === 'inFlight' && a.proj.kind === 'graph' && a.proj.primary !== null
+  );
+  const supersede = supersessions(
+    supersedeTested.map((a) => ({
+      id: a.proj.id,
+      recordId: (a.proj.primary as NonNullable<typeof a.proj.primary>).recordId,
+      label: labelOf(a.proj, null),
+      parcelIds: a.proj.parcelIds,
+      units: a.units ?? 0,
+      openDay: a.proj.primary?.openDay ?? null
+    }))
+  );
+  for (const a of supersedeTested) {
+    const keeper = supersede.superseded.get(a.proj.id);
+    if (keeper === undefined) continue;
+    a.status = 'superseded';
+    counts['projects.excludedSuperseded']++;
+    counts['projects.excludedSupersededUnits'] += a.units ?? 0;
+    leftFlight.push(
+      `${a.proj.id}: superseded by ${keeper} (same address, block and units); left flight`
+    );
+  }
   warnings.push(...leftFlight.sort(cmp));
   // Ruling C3: an entry that met no open history (an unknown verdict there is simply unused).
   for (const v of verdicts.values()) {
@@ -1065,9 +1104,11 @@ export function deriveProjects(
   for (const a of assessed) {
     if (!a.inPopulation || a.proj.pipelineRows.length === 0) continue;
     if (droppedIds.has(a.proj.id)) continue;
-    // Rows of projects whose history ended are excluded, a stale-open end included (Ruling I4).
+    // Rows of projects whose history ended are excluded, a stale-open end included (Ruling I4),
+    // and so are a superseded project's rows: its keeper covers the same project (Ruling SP1).
     const ended = a.histEnd ?? a.end;
     if (ended !== null && ended.kind !== 'open') continue;
+    if (a.status === 'superseded') continue;
     for (const r of a.proj.pipelineRows) {
       coverage.rows++;
       coverage.rowUnits += r.newUnits ?? 0;
@@ -1109,7 +1150,8 @@ export function deriveProjects(
     inFlight: t3,
     noDate,
     netting,
-    verdictEntries: input.constructionVerified.projects.length
+    verdictEntries: input.constructionVerified.projects.length,
+    supersede: { tested: supersede.tested, superseded: [...supersede.superseded.keys()] }
   };
   for (const r of PR_RULES) recordQuality(counts, r.id, PR_TALLIES[r.id as PrRuleId](tallyInput));
 

@@ -144,6 +144,16 @@ const TABLE: Record<string, Spec> = {
     label:
       "A Planning record's home count of zero was replaced by the next recorded count (building permit, else completion)"
   },
+  'pr.projects.superseded': {
+    kind: 'shape',
+    action: 'drop',
+    tier: 3,
+    valueTier: null,
+    unitsWeighted: false,
+    warnShare: 0.01,
+    failShare: 0.1,
+    label: 'A Planning case refiled for the same address replaces the earlier one'
+  },
   'pr.units.capacity': {
     kind: 'outlier',
     action: 'null',

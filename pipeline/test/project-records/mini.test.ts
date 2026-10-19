@@ -53,7 +53,8 @@ const IN_FLIGHT = [
   'PRJ:2025-000015PRJ',
   'PRJ:2026-000002PRJ',
   'PRJ:2026-000011PRJ',
-  'PRJ:2026-000012PRJ'
+  'PRJ:2026-000012PRJ',
+  'PRJ:2026-000033PRJ'
 ];
 
 const HISTORIES_ONLY = [
@@ -158,7 +159,7 @@ describe('mini project records: the stub roll mirrors the built panel’s existi
 });
 
 describe('mini project records: the in-flight set and histories', () => {
-  it('ships exactly M1, M2, M3, M8, M9, M10, M11, M12, M14, M15, M16, M19 and M20', () => {
+  it('ships exactly M1, M2, M3, M8, M9, M10, M11, M12, M14, M15, M16, M19, M20 and M33', () => {
     expect(r.file.projects.map((p) => p.id)).toEqual(IN_FLIGHT);
     expect(r.file.asOf).toBe(MINI_ASOF);
   });
@@ -344,7 +345,8 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
       parcelIds: ['3512006'],
       quality: []
     });
-    expect(r.counts['projects.pathwayDefaulted']).toBe(1);
+    // M11 and M33 (neither has pathway evidence).
+    expect(r.counts['projects.pathwayDefaulted']).toBe(2);
   });
 
   it('M12: the umbrella PRJ sits at preApplication with its units', () => {
@@ -591,8 +593,8 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(history('PRJ:2019-000001PRJ').unitsAt.filed).toBe(24);
     expect(r.counts['link.splitComponents']).toBe(1);
     expect(r.counts['quality.pr.units.split-filed.fired']).toBe(2);
-    // Of the 16 histories whose primary PRJ records number_of_units_prop (M29's 0, M30, M31).
-    expect(r.counts['quality.pr.units.split-filed.of']).toBe(16);
+    // Of the 18 histories whose primary PRJ records number_of_units_prop (M29's 0, M30-M33).
+    expect(r.counts['quality.pr.units.split-filed.of']).toBe(18);
     // Both ended complete while the pipeline lists them (observe rule; neither carries it).
     expect(r.counts['quality.pr.pipeline.records-win.fired']).toBe(2);
     // T3 is unchanged: no project carries the id and qualityRules does not list it.
@@ -701,7 +703,7 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(r.counts['histories.unitsFiledCarried']).toBe(3);
     expect(r.counts['histories.unitsFiledOmitted']).toBe(0);
     expect(r.counts['quality.pr.units.filed-zero.fired']).toBe(1);
-    expect(r.counts['quality.pr.units.filed-zero.of']).toBe(16);
+    expect(r.counts['quality.pr.units.filed-zero.of']).toBe(18);
   });
 
   it('M30: a PRJ-named type 3 alteration advances the entitled PRJ to permitIssued (Ruling L1)', () => {
@@ -740,6 +742,23 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
       'PRJ:2019-000031PRJ'
     );
     expect(r.counts['link.bpMerged']).toBe(1);
+  });
+
+  it('M32/M33: the same address refiled; the later record stays in flight (Ruling SP1)', () => {
+    expect(project('PRJ:2026-000033PRJ')).toMatchObject({ units: 12, stage: 'filed' });
+    expect(r.file.projects.map((p) => p.id)).not.toContain('PRJ:2026-000032PRJ');
+    // T3 only: both histories stay, unchanged.
+    expect(history('PRJ:2026-000032PRJ').end.kind).toBe('open');
+    expect(history('PRJ:2026-000032PRJ').quality).toEqual([]);
+    expect(r.counts['projects.status.superseded']).toBe(1);
+    expect(r.counts['projects.excludedSuperseded']).toBe(1);
+    expect(r.counts['projects.excludedSupersededUnits']).toBe(10);
+    expect(r.counts['quality.pr.projects.superseded.fired']).toBe(1);
+    expect(r.warnings).toContain(
+      'PRJ:2026-000032PRJ: superseded by PRJ:2026-000033PRJ (same address, block and units); left flight'
+    );
+    // Carried by no record, so not in qualityRules.
+    expect(r.file.qualityRules.map((q) => q.id)).not.toContain('pr.projects.superseded');
   });
 
   it('xdht extras: rhnaCompletedNet is 4 units over 3 rows', () => {

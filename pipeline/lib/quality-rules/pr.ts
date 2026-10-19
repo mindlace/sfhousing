@@ -12,6 +12,7 @@ export const PR = {
   stagesExpiryNoValuation: 'pr.stages.expiry-no-valuation',
   stagesVerifiedConstruction: 'pr.stages.verified-construction',
   permitsPlaceholderValuation: 'pr.permits.placeholder-valuation',
+  projectsSuperseded: 'pr.projects.superseded',
   unitsCapacity: 'pr.units.capacity',
   unitsCapacityCap: 'pr.units.capacity-cap',
   unitsCapacityUnmapped: 'pr.units.capacity-unmapped',
@@ -206,6 +207,23 @@ export const PR_RULES: readonly QualityRule[] = [
     maskBit: null,
     label: "A placeholder permit valuation under $1,000 was replaced by the permit's own estimate",
     denominator: 'permits with a revised cost',
+    warnShare: 0.01,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
+  {
+    // Partner ruling 3, Ruling SP1: T3 only (the history is unchanged); carried by no record.
+    id: PR.projectsSuperseded,
+    owner: OWNER,
+    source: 'derived in-flight projects (label, parcels, units)',
+    field: 'projects',
+    kind: 'shape',
+    action: 'drop',
+    tier: 3,
+    valueTier: null,
+    maskBit: null,
+    label: 'A Planning case refiled for the same address replaces the earlier one',
+    denominator: 'in-flight projects anchored on a Planning record',
     warnShare: 0.01,
     failShare: 0.1,
     unitsWeighted: false
