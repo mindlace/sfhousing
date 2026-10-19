@@ -6,7 +6,7 @@ import type { Pathway, Stage } from '$lib/timelapse/types';
 import { transitionSectionId } from './card';
 import { fixtureCalibration, tier3Calibration } from './fixtures/calibration';
 import { PROJECTS_JSON, PROJECTS_JSON_NO_RULES } from './fixtures/projects';
-import { FIX_ASOF, TIMELINE_SCORE, TIMELINE_SCORE_NO_PHASING } from './fixtures/timeline-score';
+import { TIMELINE_SCORE, TIMELINE_SCORE_NO_PHASING } from './fixtures/timeline-score';
 import { EXIT_LABEL, TIER_LABEL, inStageLabel } from './labels';
 import {
   NOT_SF_NOTE,
@@ -23,7 +23,7 @@ import {
 } from './provenance';
 
 const cal = fixtureCalibration();
-const sections = provenanceSections(cal, TIMELINE_SCORE, FIX_ASOF);
+const sections = provenanceSections(cal, TIMELINE_SCORE);
 
 const section = (id: string, list: ProvSection[] = sections) => {
   const found = list.find((s) => s.id === id);
@@ -292,7 +292,7 @@ describe('provenanceSections', () => {
     expect(text).toContain(
       "Under the old zoning a real project's resize is capped by the old height limit, so its size can differ between the two runs. That difference is a real effect of the plan, but it appears only in 'from today's pipeline', not in 'what the plan added', so that the published estimates compare like with like."
     );
-    expect(text).toContain('Simulated counts start on Oct 16, 2026.');
+    expect(text).toContain('Simulated counts start on Oct 10, 2026.');
     expect(text).toContain('same luck');
   });
 
@@ -340,11 +340,6 @@ describe('provenanceSections', () => {
       'src-revision',
       'src-pathway'
     ]);
-  });
-
-  it('defaults the simulated start to the calibration snapshot day', () => {
-    const text = textOf(section('src-targets', provenanceSections(cal, TIMELINE_SCORE))).join('\n');
-    expect(text).toContain('Simulated counts start on Oct 10, 2026.');
   });
 
   it('opens with the tier table', () => {

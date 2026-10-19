@@ -363,13 +363,9 @@ function multiphaseSection(cal: Calibration, phasing: TimelineScore['phasing']):
 /**
  * Sections 1-9 of the dialog, in spec order. Section 9 only when the score has multi-phase
  * projects; sections 2 and 8 only once a score exists. Section 10 is rendered separately
- * (`qualityRows`). `asOf` is the day simulated counts start; it defaults to the calibration's.
+ * (`qualityRows`). Simulated counts start on the calibration's `asOf`.
  */
-export function provenanceSections(
-  cal: Calibration,
-  score: TimelineScore | null,
-  asOf: Day = cal.asOf
-): ProvSection[] {
+export function provenanceSections(cal: Calibration, score: TimelineScore | null): ProvSection[] {
   const out: ProvSection[] = [
     {
       id: 'src-how-to-read',
@@ -409,7 +405,7 @@ export function provenanceSections(
     pathwaySection(cal)
   );
   if (score) {
-    out.push(targetsSection(score, asOf));
+    out.push(targetsSection(score, cal.asOf));
     if (score.phasing.masters > 0) out.push(multiphaseSection(cal, score.phasing));
   }
   return out;
