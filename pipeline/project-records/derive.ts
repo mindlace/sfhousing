@@ -1028,9 +1028,10 @@ export function deriveProjects(
       counts['histories.statutoryExpiry.excludedCompletePermit']++;
     }
   }
-  // Partner ruling 3, Ruling SP1: after every other in-flight decision and before DA netting, an
-  // in-flight PRJ-anchored project refiled under a later Planning record (same address, a shared
-  // block, units within 25%) leaves flight; the later one stays. T3 only: histories unchanged.
+  // Partner ruling 3, Rulings SP1-SP3: after every other in-flight decision and before DA netting,
+  // an in-flight PRJ-anchored project refiled under a strictly later Planning record (same PRJ
+  // address, a shared block, units within 25%, a different earliest permit filing day) leaves
+  // flight; the later one stays. T3 only: histories unchanged.
   const supersedeTested = assessed.filter(
     (a) => a.status === 'inFlight' && a.proj.kind === 'graph' && a.proj.primary !== null
   );

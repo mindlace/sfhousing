@@ -42,6 +42,16 @@ describe('normalisedAddress', () => {
     expect(normalisedAddress('0 UNKNOWN 94107')).toBeNull();
   });
 
+  it("also strips ZIP+4 and a trailing ', SAN FRANCISCO[, CA]' (Ruling M6)", () => {
+    expect(normalisedAddress('209 Forest Rd, San Francisco, CA 94134')).toBe('209 FOREST RD');
+    expect(normalisedAddress('2175 BAYSHORE BLVD 94134-1234')).toBe('2175 BAYSHORE BLVD');
+    expect(normalisedAddress('2175 Bayshore Blvd, San Francisco')).toBe('2175 BAYSHORE BLVD');
+    expect(normalisedAddress('2175 Bayshore Blvd SAN FRANCISCO CA 94134')).toBe(
+      '2175 BAYSHORE BLVD'
+    );
+    expect(normalisedAddress('94134-1234')).toBeNull();
+  });
+
   it("keys on the primary PRJ's address, falling back to the label (Ruling SP2)", () => {
     expect(supersedeKey({ address: '2513 Irving St 94122', label: '2513 Irving St' })).toBe(
       '2513 IRVING ST'
@@ -173,9 +183,10 @@ describe('supersessions (Rulings SP1, SP2)', () => {
   });
 
   it('split parts of one Planning record never supersede each other', () => {
+    // Different open days (as two primaries never are), so only the record-id guard holds them.
     const r = supersessions([
-      c({ id: 'PRJ:2013.0196:BP:201412163800', recordId: '2013.0196' }),
-      c({ id: 'PRJ:2013.0196:BP:201602129567', recordId: '2013.0196' })
+      c({ id: 'PRJ:2013.0196:BP:201412163800', recordId: '2013.0196', openDay: d('2014-01-01') }),
+      c({ id: 'PRJ:2013.0196:BP:201602129567', recordId: '2013.0196', openDay: d('2016-01-01') })
     ]);
     expect(r.superseded.size).toBe(0);
   });

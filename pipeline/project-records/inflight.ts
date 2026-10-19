@@ -175,16 +175,24 @@ export function applyCapacity(
 }
 
 /**
- * Rulings C1a, C1b: a named type 3/8 alteration with no existing units (`existing_units` 0 or
- * null) carries no units when its project holds any type 1/2 permit: it re-records the new
- * building that permit already counts. An alteration of an existing building (existing >= 1)
- * keeps its gross units; the assessor's existing units net it.
+ * Ruling M1r: the project's unit-bearing permits include a type 1/2 permit (a dead one does not
+ * re-record the building, so it does not count).
+ */
+function holdsNewConstruction(proj: LinkedProject): boolean {
+  return unitBearingPermits(proj).some(isNewConstructionPermit);
+}
+
+/**
+ * Rulings C1a, C1b, M1r: a named type 3/8 alteration with no existing units (`existing_units` 0
+ * or null) carries no units when the project's unit-bearing permits include a type 1/2 permit: it
+ * re-records the new building that permit already counts. An alteration of an existing building
+ * (existing >= 1) keeps its gross units; the assessor's existing units net it.
  */
 function unitless(proj: LinkedProject, q: Permit): boolean {
   return (
     !isNewConstructionPermit(q) &&
     (q.existingUnits === null || q.existingUnits === 0) &&
-    proj.permits.some(isNewConstructionPermit)
+    holdsNewConstruction(proj)
   );
 }
 
@@ -197,12 +205,13 @@ export function unitPermits(proj: LinkedProject): Permit[] {
 }
 
 /**
- * Σ `proposed_units` over `unitPermits`; in an alteration-only project (no type 1/2 permit) the
- * max instead, since each alteration records the building's total (Ruling C1a). Null when none.
+ * Σ `proposed_units` over `unitPermits`; in an alteration-only project (no unit-bearing type 1/2
+ * permit) the max instead, since each alteration records the building's total (Rulings C1a, M1r).
+ * Null when none.
  */
 export function permitUnits(proj: LinkedProject): number | null {
   const ps = unitPermits(proj);
-  if (proj.permits.some(isNewConstructionPermit)) return sumProposed(ps);
+  if (holdsNewConstruction(proj)) return sumProposed(ps);
   let max: number | null = null;
   for (const q of ps)
     if (q.proposedUnits !== null && (max === null || q.proposedUnits > max)) max = q.proposedUnits;
@@ -415,6 +424,11 @@ export function unitsAt(proj: LinkedProject): Partial<Record<Stage, number>> {
     withUnits.length > 0 &&
     withUnits.every((q) => permitCompletionDay(q, proj.completions) !== null)
   ) {
+    // Ruling CU1: j67f certifies the units an alteration added, so a named alteration's
+    // completion is its existing units (0 when null) plus the certified ones: gross, like
+    // `permitFiled`. With no certified units it adds none. An alteration-only project takes the
+    // max, as `permitFiled` does.
+    const sum = holdsNewConstruction(proj);
     let total = 0;
     for (const q of withUnits) {
       let tco = 0;
@@ -424,7 +438,12 @@ export function unitsAt(proj: LinkedProject): Partial<Record<Stage, number>> {
         if (c.kind === 'TCO') tco += c.units;
         else if (c.kind === 'CFC' && c.units > cfc) cfc = c.units;
       }
-      total += Math.max(tco, cfc);
+      const certified = Math.max(tco, cfc);
+      const units =
+        certified > 0 && !isNewConstructionPermit(q)
+          ? (q.existingUnits ?? 0) + certified
+          : certified;
+      total = sum ? total + units : Math.max(total, units);
     }
     if (total > 0) out.complete = total;
   }

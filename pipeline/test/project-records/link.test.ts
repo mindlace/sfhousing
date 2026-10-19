@@ -1150,6 +1150,8 @@ describe('BP-only projects join the PRJ on their lot (Rulings L2, L2a, L2b)', ()
     expect(run([5, 5]).counts).toMatchObject({ 'link.bpMerged': 2, 'link.bpMergeRejected': 0 });
     // 5 + 10 = 15 of 10: the edge, merges.
     expect(run([5, 10]).counts['link.bpMerged']).toBe(2);
+    // 5 of 10: the lower edge, merges (the window is inclusive).
+    expect(run([5]).counts).toMatchObject({ 'link.bpMerged': 1, 'link.bpMergeRejected': 0 });
     // 4 of 10: below half, none merges.
     const low = run([4]);
     expect(low.counts).toMatchObject({ 'link.bpMerged': 0, 'link.bpMergeRejected': 1 });
@@ -1172,6 +1174,25 @@ describe('BP-only projects join the PRJ on their lot (Rulings L2, L2a, L2b)', ()
     expect(ids(r)).toEqual(['BP:201906010009', 'PRJ:2020-000001PRJ']);
     expect(r.counts).toMatchObject({ 'link.bpMerged': 0, 'link.bpMergeSplitSkipped': 1 });
     expect(r.counts['link.splitComponents']).toBe(0);
+  });
+
+  it('a target with no row takes the first BP with a row and skips the second (Ruling L2b)', () => {
+    const r = linkL2(
+      parsedOf({
+        prjs: [prjOn('2020-000001PRJ', '3512001', day(2020, 1, 1), { unitsProp: 10 })],
+        permits: [
+          bp('201906010008', '3512001', day(2019, 6, 1)),
+          bp('201906010009', '3512001', day(2019, 6, 1))
+        ],
+        pipeline: [
+          { bpaNo: '201906010008', statusDay: day(2026, 1, 1) },
+          { bpaNo: '201906010009', statusDay: day(2026, 1, 1) }
+        ]
+      })
+    );
+    expect(ids(r)).toEqual(['BP:201906010009', 'PRJ:2020-000001PRJ']);
+    expect(nums(byId(r, 'PRJ:2020-000001PRJ').permits)).toEqual(['201906010008']);
+    expect(r.counts).toMatchObject({ 'link.bpMerged': 1, 'link.bpMergeSplitSkipped': 1 });
   });
 
   it('skips a target whose history exited before the BP was filed (Ruling L2b)', () => {

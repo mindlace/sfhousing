@@ -283,3 +283,81 @@ describe('newcon-source rows are new construction by source (review M4)', () => 
     expect(r.permits.map((p) => p.permit_number)).toContain('202403150003');
   });
 });
+
+describe('named alteration completions and the type 1/2 test (Rulings CU1, M1r)', () => {
+  const ID = 'PRJ:2018-000030PRJ';
+  const run = (permits: string, named: RawRow[], nc: RawRow[], completions: RawRow[]) => {
+    const raw = baseRaw();
+    raw['datasf-planning-projects'].push(
+      ...entitledPrj('2018-000030PRJ', permits, { number_of_units_prop: '135' })
+    );
+    raw['datasf-planning-review'].push(review('2018-000030PRJ'));
+    raw['datasf-permits-named'].push(...named);
+    raw['datasf-permits-newcon'].push(...nc);
+    raw['datasf-unit-completions'].push(...completions);
+    return history(deriveProjects(baseInput(raw)), ID);
+  };
+  const cfc = (permit: string, units: string): RawRow => ({
+    building_permit_application: permit,
+    date_issued: ts('2021-06-01'),
+    document_type: 'CFC',
+    number_of_units_certified: units
+  });
+  const done = {
+    status: 'complete',
+    status_date: ts('2021-06-01'),
+    completed_date: ts('2021-06-01')
+  };
+
+  it('a named alteration completes at existing + certified units, gross like permitFiled', () => {
+    // The PRJ:2012.1325 shape: 132 -> 135, j67f certifies the 3 added units.
+    const h = run(
+      '201901150030',
+      [alteration('201901150030', { existing_units: '132', proposed_units: '135', ...done })],
+      [],
+      [cfc('201901150030', '3')]
+    );
+    expect(h.unitsAt).toMatchObject({ permitFiled: 135, complete: 135 });
+  });
+
+  it('two alterations of one building take the max completion, as permitFiled does', () => {
+    const h = run(
+      '201901150030,201902010031',
+      [
+        alteration('201901150030', { existing_units: '1', proposed_units: '3', ...done }),
+        alteration('201902010031', {
+          existing_units: '1',
+          proposed_units: '4',
+          filed_date: ts('2019-02-01'),
+          ...done
+        })
+      ],
+      [],
+      [cfc('201901150030', '2'), cfc('201902010031', '3')]
+    );
+    expect(h.unitsAt).toMatchObject({ permitFiled: 4, complete: 4 });
+  });
+
+  it('a dead type 1/2 permit does not make a 0-existing alteration unitless (Ruling M1r)', () => {
+    const h = run(
+      '201901150030,201812010031',
+      [alteration('201901150030', { existing_units: '0', proposed_units: '7' })],
+      [
+        {
+          permit_number: '201812010031',
+          permit_type: '1',
+          block: '3512',
+          lot: '008',
+          status: 'withdrawn',
+          status_date: ts('2019-01-01'),
+          filed_date: ts('2018-12-01'),
+          proposed_units: '7',
+          site_permit: 'Y',
+          primary_address_flag: 'Y'
+        }
+      ],
+      []
+    );
+    expect(h.unitsAt.permitFiled).toBe(7);
+  });
+});

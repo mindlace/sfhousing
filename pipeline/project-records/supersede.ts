@@ -36,17 +36,20 @@ function blockOf(id: ParcelId): string {
 }
 
 /**
- * Upper-cased, whitespace collapsed, a trailing 5-digit ZIP stripped (Ruling SP2); null for a
- * blank address or one starting '0 UNKNOWN'.
+ * Upper-cased, whitespace collapsed, a trailing ZIP (Ruling SP2) or ZIP+4 and a trailing ', SAN
+ * FRANCISCO[, CA]' (Ruling M6) stripped; null for a blank address or one starting '0 UNKNOWN'.
  */
 export function normalisedAddress(address: string | null): string | null {
   if (address === null) return null;
+  // Ruling M6: a trailing ZIP or ZIP+4, then a trailing ', SAN FRANCISCO' or ', SAN FRANCISCO, CA'.
   const s = address
     .trim()
     .replace(/\s+/g, ' ')
     .toUpperCase()
-    .replace(/ \d{5}$/, '');
-  if (s === '' || /^\d{5}$/.test(s) || s.startsWith('0 UNKNOWN')) return null;
+    .replace(/ \d{5}(-\d{4})?$/, '')
+    .replace(/,? SAN FRANCISCO(,? CA)?$/, '')
+    .replace(/,$/, '');
+  if (s === '' || /^\d{5}(-\d{4})?$/.test(s) || s.startsWith('0 UNKNOWN')) return null;
   return s;
 }
 

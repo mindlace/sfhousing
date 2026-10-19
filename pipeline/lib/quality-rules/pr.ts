@@ -257,7 +257,7 @@ export const PR_RULES: readonly QualityRule[] = [
     unitsWeighted: false
   },
   {
-    // Partner ruling 3, Rulings SP1 and SP2: T3 only (the history is unchanged); no record.
+    // Partner ruling 3, Rulings SP1, SP2 and SP3: T3 only (the history is unchanged); no record.
     id: PR.projectsSuperseded,
     owner: OWNER,
     source: 'derived in-flight projects (PRJ address, parcels, units, open day)',
