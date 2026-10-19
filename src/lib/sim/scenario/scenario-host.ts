@@ -10,7 +10,8 @@
 //
 // Timelines (§4.6, §4.7). Once loaded, a session holds its `Work`: the band state (it depends only
 // on the dataset, so every reroll reuses it) and the current shown `Run` (one per `(rev, seed)`;
-// a reroll replaces it and cancels its child token). All computation runs in one scheduler: a
+// a reroll replaces it, and since every job is taken from the current `w.run` at the start of a
+// slice, the old run's work simply stops). All computation runs in one scheduler: a
 // slice is a `setTimeout(0)` macrotask that takes the next job by priority and keeps going while
 // the time used so far (`deps.now()`) plus the estimated cost of the next job's kind (the
 // largest of its last few measured costs) fits in 45 ms, 5 ms short of the 50 ms slice so that
@@ -100,18 +101,12 @@ export interface Token {
   /** `fn` after `ms`, unless the token is cancelled first. Returns the timer handle. */
   later(fn: () => void, ms: number): unknown;
   cancel(): void;
-  /** A token cancelled with this one (or on its own). */
-  child(): Token;
 }
 
-function createToken(
-  deps: Pick<ScenarioHostDeps, 'setTimeout' | 'clearTimeout'>,
-  onCancel?: (t: Token) => void
-): Token {
+function createToken(deps: Pick<ScenarioHostDeps, 'setTimeout' | 'clearTimeout'>): Token {
   const timers = new Set<unknown>();
-  const children = new Set<Token>();
   let cancelled = false;
-  const token: Token = {
+  return {
     get cancelled() {
       return cancelled;
     },
@@ -129,19 +124,8 @@ function createToken(
       cancelled = true;
       for (const h of timers) deps.clearTimeout(h);
       timers.clear();
-      const kids = [...children];
-      children.clear();
-      for (const c of kids) c.cancel();
-      onCancel?.(token); // a cancelled child leaves its parent (no per-reroll leak)
-    },
-    child() {
-      const c = createToken(deps, (t) => children.delete(t));
-      if (cancelled) c.cancel();
-      else children.add(c);
-      return c;
     }
   };
-  return token;
 }
 
 /** Longest slice of band, twin or geometry work (§4.7, §4.11; tier 4, engineering). */
@@ -175,8 +159,6 @@ interface Run {
   rev: Rev;
   requested: number | null; // as requested (null = representative)
   seed: number | null; // resolved: null until the representative is known
-  /** The run's own work scope; cancelled when a reroll replaces it. */
-  token: Token;
   requestedAt: number; // deps.now() at the request
   revision: number; // the last posted; -1 before revision 0
   shown: TimelineScore['shown'] | null;
@@ -400,7 +382,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       phasing: phasingOf(loaded.fzp.projects, asOf),
       band: createBandState(deps.bandRuns ?? BAND_RUNS),
       fzpNew: [],
-      run: newRun(st, st.rev, st.seed),
+      run: newRun(st.rev, st.seed),
       chunks: st.chunks,
       massing: {
         input: loaded.fzp,
@@ -418,12 +400,11 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     kick(st);
   }
 
-  function newRun(st: Session, rev: Rev, seed: number | null): Run {
+  function newRun(rev: Rev, seed: number | null): Run {
     return {
       rev,
       requested: seed,
       seed,
-      token: st.token.child(),
       requestedAt: deps.now(),
       revision: -1,
       shown: null,
@@ -441,9 +422,9 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     if (!st || !st.loaded || !st.work) return error(req.rev, 'bad-request', 'not initialised');
     const bad = seedProblem(req.seed);
     if (bad !== null) return error(req.rev, 'bad-request', bad);
-    // The old seed's geometry and twin work goes with its run; the band work is the session's.
-    st.work.run.token.cancel();
-    st.work.run = newRun(st, req.rev, req.seed);
+    // Replacing the run drops the old seed's geometry and twin work: `nextJob` reads only
+    // `w.run`, and a reroll is handled between slices. The band work is the session's.
+    st.work.run = newRun(req.rev, req.seed);
     kick(st);
   }
 
