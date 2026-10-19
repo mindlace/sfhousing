@@ -409,7 +409,8 @@ export const PR_RULES: readonly QualityRule[] = [
     tier: 4,
     valueTier: null,
     maskBit: null,
-    label: 'A pipeline row with no status date and no Planning record on its lot was left out',
+    label:
+      'A pipeline row with no status date and no usable Planning record on its lot was left out',
     denominator: 'pipeline rows',
     warnShare: 0.01,
     failShare: 0.1,
