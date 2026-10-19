@@ -35,7 +35,12 @@ interface RowSchedule {
   revisions: { day: Day; units: number; stories: number | null }[];
   existingUnits: number;
   multiPhase: boolean;
-  phase: { masterId: string; index: number; of: number } | null;
+  phase: {
+    masterId: string;
+    index: number;
+    of: number;
+    start: 'scheduled' | 'estimated';
+  } | null;
 }
 type RowSimInput = {
   parcels: ScenarioParcels;
@@ -54,7 +59,7 @@ type RowProjectCard = {
   units: number;
   existingUnits: number;
   stories: number | null;
-  storiesTier: 0 | 3 | null;
+  storiesTier: 0 | 3 | 4 | null;
   massing: 'matched' | 'approximate' | 'none';
   multiPhase: boolean;
   phase: RowSchedule['phase'];
@@ -63,6 +68,7 @@ type RowProjectCard = {
   revisions: RowSchedule['revisions'];
   end: RowSchedule['end'] | null;
   sources: { dataset: string; id: string; key?: string }[];
+  quality: { label: string; tier: 2 | 3 | 4; valueTier: 0 | 1 | 2 | 3 | 4 | null }[];
 };
 type RowScenarioRequest =
   | Extract<SimRequest, { type: 'prefetch' | 'retryChunks' }>
@@ -117,7 +123,7 @@ interface RowTimelineScore {
     enrichedMasters: number;
     phasesScheduled: number;
     phasesEstimated: number;
-    unenriched: { projectId: string; label: string | null; units: number }[];
+    unenriched: { projectId: string; label: string | null; units: number; drawn: boolean }[];
   };
   targets: RowTargetProgressAt[];
   references: {
@@ -197,6 +203,33 @@ const editorUnchanged: Assert<
 const cardOptional: Assert<Equals<ParcelSummary['project'], Scenario.ProjectCard | undefined>> =
   true;
 
+// Reappraisal 1 members, asserted on their own so a failure names the member.
+const phaseShape: Assert<
+  Equals<
+    Scenario.Schedule['phase'],
+    {
+      masterId: string;
+      index: number;
+      of: number;
+      start: 'scheduled' | 'estimated';
+    } | null
+  >
+> = true;
+const startShape: Assert<
+  Equals<NonNullable<Scenario.Schedule['phase']>['start'], 'scheduled' | 'estimated'>
+> = true;
+const storiesTierShape: Assert<Equals<Scenario.ProjectCard['storiesTier'], 0 | 3 | 4 | null>> =
+  true;
+const qualityShape: Assert<
+  Equals<
+    Scenario.ProjectCard['quality'][number],
+    { label: string; tier: 2 | 3 | 4; valueTier: 0 | 1 | 2 | 3 | 4 | null }
+  >
+> = true;
+const drawnShape: Assert<
+  Equals<Scenario.TimelineScore['phasing']['unenriched'][number]['drawn'], boolean>
+> = true;
+
 describe('compile-time row checks', () => {
   it('scenario types equal the T5, T6 and T8 rows and protocol re-exports them', () => {
     expect([rowsMatch, reExported, editorUnchanged, cardOptional]).toEqual([
@@ -205,5 +238,17 @@ describe('compile-time row checks', () => {
       true,
       true
     ]);
+  });
+});
+
+describe('reappraisal 1 members', () => {
+  it('Schedule.phase carries start', () => {
+    expect([phaseShape, startShape]).toEqual([true, true]);
+  });
+  it('ProjectCard carries storiesTier 4 and quality', () => {
+    expect([storiesTierShape, qualityShape]).toEqual([true, true]);
+  });
+  it('unenriched entries carry drawn', () => {
+    expect(drawnShape).toBe(true);
   });
 });
