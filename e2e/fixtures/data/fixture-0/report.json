@@ -145,6 +145,10 @@
     "parse.named.inNewcon": 0,
     "parse.named.kept": 1,
     "parse.named.unnamed": 1,
+    "permits.placeholderFilled.ownEstimate": 0,
+    "permits.placeholderFilled.ownRows": 0,
+    "permits.placeholderFilled.projectPermit": 1,
+    "permits.placeholderUnfilled": 0,
     "permits.rows": 21,
     "pieces.area_total_m2": 1227.925,
     "pieces.area_with_parcel_m2": 1039.953,
@@ -164,7 +168,7 @@
     "projects.byStage.permitFiled": 4,
     "projects.byStage.permitIssued": 1,
     "projects.byStage.preApplication": 1,
-    "projects.bytes": 8730,
+    "projects.bytes": 8956,
     "projects.excludedAlterationUnits": 0,
     "projects.excludedNoUnits": 900,
     "projects.excludedStatutory": 1,
@@ -213,8 +217,8 @@
     "quality.pr.parcels.cross-block.of": 21,
     "quality.pr.parcels.shared-existing.fired": 4,
     "quality.pr.parcels.shared-existing.of": 15,
-    "quality.pr.permits.placeholder-valuation.fired": 0,
-    "quality.pr.permits.placeholder-valuation.of": 1,
+    "quality.pr.permits.placeholder-valuation.fired": 1,
+    "quality.pr.permits.placeholder-valuation.of": 2,
     "quality.pr.pipeline.no-status-date.fired": 1,
     "quality.pr.pipeline.no-status-date.of": 19,
     "quality.pr.pipeline.no-status-date.units": 20,
@@ -543,7 +547,7 @@
       "ok": true
     },
     {
-      "detail": "15 projects, 8730 bytes",
+      "detail": "15 projects, 8956 bytes",
       "id": "V20",
       "ok": true
     },
@@ -607,7 +611,7 @@
     "derivedData": "ODbL-1.0",
     "notice": "Derived data files under /data/ that incorporate OpenStreetMap or Overture data are made available under the ODbL 1.0."
   },
-  "lockSha256": "7145bb16259ed7f3ca035a697567dfa61fe192dce5483dc17d6eff4bad611050",
+  "lockSha256": "1380ca20cb98efed76a40350831d6de4ca6002aa1138512a9bcb2eb0d9ba37ee",
   "tilesSkipped": false,
   "toolVersions": {
     "duckdb": "1.5.6",

@@ -183,10 +183,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/2026410f40d9e29a20123105dd36eaf9c15b61d99d6ac74e50c5c504dfb1e998.json",
-          "bytes": 7075,
+          "archiveKey": "sources/3335ebe87870a43f242ef82d0029b0cb5b6954b5730f78dc2362626f6ac63e71.json",
+          "bytes": 7125,
           "name": "datasf-permits-newcon.page-000.json",
-          "sha256": "2026410f40d9e29a20123105dd36eaf9c15b61d99d6ac74e50c5c504dfb1e998",
+          "sha256": "3335ebe87870a43f242ef82d0029b0cb5b6954b5730f78dc2362626f6ac63e71",
           "url": "https://fixture.invalid/datasf-permits-newcon.page-000.json"
         }
       ],

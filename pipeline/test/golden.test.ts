@@ -540,7 +540,7 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
     }
   });
 
-  it('M1 carries pr.date.valid-range, pr.stages.forward-clamp and (M35) shared-existing', () => {
+  it('M1 and M10 carry the fixture table quality ids (M35 shared lot; M10 placeholder)', () => {
     const f = JSON.parse(readFileSync(join(e2e, PROJECTS_JSON), 'utf8')) as {
       projects: { id: string; quality: string[] }[];
     };
@@ -551,7 +551,12 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
       'pr.stages.forward-clamp'
     ]);
     const m10 = f.projects.find((p) => p.id === 'PRJ:2020-000010PRJ');
-    expect(m10?.quality).toEqual(['pr.parcels.shared-existing', 'pr.stages.forward-clamp']);
+    // Ruling PV1: M10's permit A held a placeholder valuation, filled from permit B.
+    expect(m10?.quality).toEqual([
+      'pr.parcels.shared-existing',
+      'pr.permits.placeholder-valuation',
+      'pr.stages.forward-clamp'
+    ]);
   });
 
   it('warns that the fixture xdht-4php completions are stale (633 days)', () => {

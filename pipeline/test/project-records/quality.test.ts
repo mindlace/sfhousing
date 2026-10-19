@@ -146,12 +146,13 @@ const TABLE: Record<string, Spec> = {
   'pr.permits.placeholder-valuation': {
     kind: 'bound',
     action: 'replace',
-    tier: 4,
-    valueTier: 0,
+    tier: 2,
+    valueTier: 2,
     unitsWeighted: false,
     warnShare: 0.01,
     failShare: 0.1,
-    label: "A placeholder permit valuation under $1,000 was replaced by the permit's own estimate"
+    label:
+      'A placeholder permit valuation under $1,000 was replaced by the nearest real valuation of the permit or its project'
   },
   'pr.units.filed-zero': {
     kind: 'shape',

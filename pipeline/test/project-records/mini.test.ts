@@ -195,6 +195,7 @@ describe('mini project records: the in-flight set and histories', () => {
       'pr.multiphase.da-netting',
       'pr.multiphase.score-only',
       'pr.parcels.shared-existing',
+      'pr.permits.placeholder-valuation',
       'pr.pipeline.status-date-linked',
       'pr.stages.forward-clamp',
       'pr.units.capacity'
@@ -334,7 +335,21 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(p.units).toBe(6);
     // M10 entered lot 1 before M19, so it holds the lot's 2 units (pr.parcels.shared-existing).
     expect(p.existingUnits).toBe(2);
-    expect(p.quality).toEqual(['pr.parcels.shared-existing', 'pr.stages.forward-clamp']);
+    // Ruling PV1: permit A's $1 placeholder takes permit B's $2.4M estimate (the project's permit).
+    expect(p.quality).toEqual([
+      'pr.parcels.shared-existing',
+      'pr.permits.placeholder-valuation',
+      'pr.stages.forward-clamp'
+    ]);
+    expect(r.counts['permits.placeholderFilled.projectPermit']).toBe(1);
+    expect(r.counts['quality.pr.permits.placeholder-valuation.fired']).toBe(1);
+    // Every placeholder is filled or counted unfilled (review m5).
+    expect(
+      r.counts['permits.placeholderFilled.ownEstimate'] +
+        r.counts['permits.placeholderFilled.ownRows'] +
+        r.counts['permits.placeholderFilled.projectPermit'] +
+        r.counts['permits.placeholderUnfilled']
+    ).toBe(r.counts['quality.pr.permits.placeholder-valuation.fired']);
   });
 
   it('M11: unclassifiable history, defaulted to discretionary in flight', () => {

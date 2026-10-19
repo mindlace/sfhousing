@@ -75,8 +75,17 @@ export interface Permit {
   stories: number | null;
   existingUnits: number | null;
   proposedUnits: number | null;
-  /** `revised_cost`, else `estimated_cost` (dollars); null when neither is a number (Ruling E2). */
+  /**
+   * `revised_cost`, else `estimated_cost` (dollars); null when neither is a number (Ruling E2). A
+   * placeholder `revised_cost` (under $1,000) is filled after linking (Ruling PV1, valuation.ts).
+   */
   valuation: number | null;
+  /**
+   * Set when the lead row's `revised_cost` is a placeholder (Ruling PV1): the permit's own
+   * `estimated_cost` (as recorded) and the first real valuation (>= $1,000) of its other rows
+   * (`revised_cost`, else `estimated_cost`), or null.
+   */
+  placeholder?: { estimate: number | null; otherRows: number | null };
   rows: AddressRow[];
 }
 
