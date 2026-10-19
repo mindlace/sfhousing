@@ -7,10 +7,13 @@ import {
   makeTimelineScore
 } from './fixtures/timeline-score';
 import {
+  CALCULATING,
+  RHNA_ID,
   announcement,
   bandLine,
   barText,
   deadlineIndex,
+  formatRange,
   inProgressRows,
   phasingFootnote,
   planBandLine,
@@ -20,6 +23,14 @@ import {
 import { YEAR_2045, dayFromUtc } from './time';
 
 const DEADLINE = dayFromUtc(2031, 1, 31);
+
+describe('shared copy', () => {
+  it('is defined once: calculating, the en-dash range and the RHNA id', () => {
+    expect(CALCULATING).toBe('calculating…');
+    expect(formatRange(12300, 15800)).toBe('12,300–15,800');
+    expect(RHNA_ID).toBe('rhna');
+  });
+});
 
 describe('deadlineIndex', () => {
   it('is the month index of the deadline', () => {

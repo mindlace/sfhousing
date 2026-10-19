@@ -6,6 +6,7 @@
   import type { TimelineScore } from '$lib/sim/protocol';
   import type { Day } from '$lib/timelapse/time';
   import { CHART_H, COLORS, SERIES_NAME, chartLabel, chartModel, tableRows } from './chart';
+  import { CALCULATING } from './score-view';
 
   interface Props {
     score: TimelineScore;
@@ -17,7 +18,6 @@
 
   /** Used until the container reports its width. */
   const FALLBACK_W = 288;
-  const CALCULATING = 'calculating…';
   const GRAY = '#6b7280';
 
   let measured = $state(0);

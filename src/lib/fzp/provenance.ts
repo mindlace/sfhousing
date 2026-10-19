@@ -18,7 +18,7 @@ import type {
   Transition
 } from '$lib/timelapse/types';
 import { transitionSectionId, LOCAL_PROGRAM_SECTION_ID } from './card';
-import { SERIES_NAME } from './chart';
+import { MEASURE_SERIES, SERIES_NAME } from './chart';
 import { formatDate } from './format';
 import { EXIT_LABEL, PATHWAY_LABEL, TIER_LABEL, inStageLabel } from './labels';
 
@@ -294,12 +294,6 @@ function pathwaySection(cal: Calibration): ProvSection {
     ]
   };
 }
-
-const MEASURE_SERIES = {
-  'planEffect.entitledNew': 'planEntitled',
-  'planEffect.completedNetNew': 'planCompleted',
-  completedNet: 'total'
-} as const;
 
 function targetsSection(score: TimelineScore, asOf: Day): ProvSection {
   const targets = score.targets.map(({ target, deadline }) =>

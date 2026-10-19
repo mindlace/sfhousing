@@ -6,7 +6,7 @@ import { M1_TARGETS, formatCompactCount, formatCount } from '$lib/scoreboard';
 import type { TimelineScore } from '$lib/sim/protocol';
 import type { Day } from '$lib/timelapse/time';
 import { formatDate, formatMonthYear } from './format';
-import { deadlineIndex, scrubMarkers } from './score-view';
+import { CALCULATING, RHNA_ID, deadlineIndex, formatRange, scrubMarkers } from './score-view';
 import { dayFromUtc, monthIndex, utcParts } from './time';
 
 export const CHART_H = 140;
@@ -66,9 +66,7 @@ export interface TableRow {
 
 /** Least vertical distance (px) between the zero gridline and a floor gridline. */
 const MIN_FLOOR_GAP = 12;
-const CALCULATING = 'calculating…';
-const EN_DASH = '–';
-const RHNA_UNITS = M1_TARGETS.find((t) => t.id === 'rhna')!.units;
+const RHNA_UNITS = M1_TARGETS.find((t) => t.id === RHNA_ID)!.units;
 
 /** Round up to 1, 2 or 5 × 10ⁿ (at least 1). */
 export function niceCeil(v: number): number {
@@ -95,11 +93,15 @@ function seriesRange(values: number[]): { min: number; max: number } | null {
   return { min, max };
 }
 
-const MEASURE_SERIES = {
+/** The drawn series a published reference is compared with (the chart and the sources dialog). */
+export const MEASURE_SERIES = {
   'planEffect.entitledNew': 'planEntitled',
   'planEffect.completedNetNew': 'planCompleted',
   completedNet: 'total'
-} as const;
+} as const satisfies Record<
+  TimelineScore['references'][number]['measure'],
+  keyof typeof SERIES_NAME
+>;
 
 export function chartModel(
   score: TimelineScore,
@@ -218,12 +220,8 @@ export function tableRows(score: TimelineScore, asOf: Day): TableRow[] {
       fresh: formatCount(s.completedNetNew),
       planCompleted: plan ? formatCount(plan.completedNetNew) : CALCULATING,
       planEntitled: plan ? formatCount(plan.entitledNew) : CALCULATING,
-      band: band
-        ? `${formatCount(base + band.p10)}${EN_DASH}${formatCount(base + band.p90)}`
-        : CALCULATING,
-      planBand: planBand
-        ? `${formatCount(planBand.p10)}${EN_DASH}${formatCount(planBand.p90)}`
-        : CALCULATING
+      band: band ? formatRange(base + band.p10, base + band.p90) : CALCULATING,
+      planBand: planBand ? formatRange(planBand.p10, planBand.p90) : CALCULATING
     };
   };
 
@@ -233,7 +231,7 @@ export function tableRows(score: TimelineScore, asOf: Day): TableRow[] {
     const i = monthIndex(dayFromUtc(year, 1, 1), score.months[0], n);
     byIndex.set(i, row(i, formatMonthYear(score.months[i])));
   }
-  const rhna = score.targets.find((t) => t.target.id === 'rhna');
+  const rhna = score.targets.find((t) => t.target.id === RHNA_ID);
   if (rhna) {
     const i = deadlineIndex(score, rhna.deadline);
     byIndex.set(i, row(i, formatDate(rhna.deadline)));
@@ -249,7 +247,7 @@ export function chartLabel(score: TimelineScore): string {
     formatCount(score.baseline.completedNet + score.shown[i].completedNet);
   const markers = scrubMarkers(score);
   const parts: string[] = [];
-  const rhna = score.targets.find((t) => t.target.id === 'rhna');
+  const rhna = score.targets.find((t) => t.target.id === RHNA_ID);
   if (rhna) parts.push(`${totalAt(deadlineIndex(score, rhna.deadline))} by the RHNA deadline`);
   const y2045 = markers[markers.length - 1];
   parts.push(`${totalAt(monthIndex(y2045.day, score.months[0], n))} by 2045`);

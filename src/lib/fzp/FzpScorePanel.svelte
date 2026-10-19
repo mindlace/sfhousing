@@ -10,7 +10,13 @@
   import { formatDate, formatMonthYear } from './format';
   import MapKey from './MapKey.svelte';
   import ScoreChart from './ScoreChart.svelte';
-  import { bandLine, inProgressRows, phasingFootnote, planBandLine } from './score-view';
+  import {
+    CALCULATING,
+    bandLine,
+    inProgressRows,
+    phasingFootnote,
+    planBandLine
+  } from './score-view';
   import type { ScoreAt } from './types';
 
   interface Props {
@@ -49,7 +55,6 @@
   }: Props = $props();
 
   const WIDE = '(min-width: 768px)';
-  const CALCULATING = 'calculating…';
 
   const provisional = $derived(bandRuns < bandRunsTotal);
   const band = $derived(score && at ? bandLine(score, at.monthIndex, provisional) : null);

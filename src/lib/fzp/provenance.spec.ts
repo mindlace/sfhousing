@@ -4,6 +4,7 @@ import { parseProjectsFile } from '$lib/timelapse/projects';
 import { PATHWAYS, STAGE_ORDER } from '$lib/timelapse/types';
 import type { Pathway, Stage } from '$lib/timelapse/types';
 import { transitionSectionId } from './card';
+import { MEASURE_SERIES, SERIES_NAME } from './chart';
 import { fixtureCalibration, tier3Calibration } from './fixtures/calibration';
 import { PROJECTS_JSON, PROJECTS_JSON_NO_RULES } from './fixtures/projects';
 import { TIMELINE_SCORE, TIMELINE_SCORE_NO_PHASING } from './fixtures/timeline-score';
@@ -285,6 +286,19 @@ describe('provenanceSections', () => {
     expect(entryOf('src-reference-controller-2045').lines).toContain(
       'Compared with: Plan effect, completed'
     );
+  });
+
+  it("compares each reference with the chart's own series (one MEASURE_SERIES)", () => {
+    for (const r of TIMELINE_SCORE.references) {
+      expect(entryOf(`src-reference-${r.id}`).lines).toContain(
+        `Compared with: ${SERIES_NAME[MEASURE_SERIES[r.measure]]}`
+      );
+    }
+    expect(Object.keys(MEASURE_SERIES).sort()).toEqual([
+      'completedNet',
+      'planEffect.completedNetNew',
+      'planEffect.entitledNew'
+    ]);
   });
 
   it('states the twin, the N3 difference and when simulated counts start', () => {
