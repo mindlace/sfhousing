@@ -17,6 +17,7 @@ import miniCalibrationJson from './fixtures/mini-calibration.json';
 import { miniCity } from './fixtures/mini-parcels';
 import { MINI_AS_OF, MINI_HORIZON, miniProjectsJson } from './fixtures/mini-projects';
 import { buildSimInput } from './input';
+import { applyPolicies, baseZoning } from './policy';
 import { monthsOf, netOf, shownSeries, type NetSeries } from './score';
 import { simulateDetailed, simulateNet } from './simulate';
 import type { Schedule, SimInput } from './types';
@@ -42,25 +43,7 @@ const withProjects = (inp: SimInput, projects: InFlightProject[]): SimInput => (
   projects
 });
 
-/**
- * The `baseZoning` twin (§4.4.8), built inline until `policy.ts` lands (Task 9 replaces this with
- * `baseZoning`): base envelope, base yields, base hostability, no Local Program, base features.
- */
-function baseTwin(input: SimInput): SimInput {
-  const parcels = input.parcels;
-  return {
-    ...input,
-    parcels: {
-      ...parcels,
-      envelopeStories: parcels.baseStories,
-      yield: parcels.baseYield,
-      hostable: parcels.hostableBase,
-      localProgram: new Uint8Array(parcels.count),
-      potentialRatio: { fzp: parcels.potentialRatio.base, base: parcels.potentialRatio.base },
-      storiesGap: { fzp: parcels.storiesGap.base, base: parcels.storiesGap.base }
-    }
-  };
-}
+const baseTwin = (input: SimInput): SimInput => applyPolicies([baseZoning], input);
 
 const PROVENANCE = miniCalibration().transitions.discretionary.filed!.provenance;
 /** A transition whose whole mass is in month 1 (days 0..30), always an advance. */
@@ -263,7 +246,7 @@ describe('simulateNet equals the score of simulateDetailed (§4.4.7)', () => {
     expect(again.completedNet).not.toBe(first.completedNet);
   });
 
-  it('the baseZoning stand-in differs from the FZP view, so both variants count', () => {
+  it('the baseZoning twin differs from the FZP view, so both variants count', () => {
     const inp = miniInput();
     const twin = baseTwin(inp);
     const differs = (a: ArrayLike<number>, b: ArrayLike<number>) =>

@@ -23,6 +23,7 @@ import {
   miniProjectsJson
 } from './fixtures/mini-projects';
 import { buildSimInput } from './input';
+import { applyPolicies, baseZoning } from './policy';
 import { P, draw, jobEntity } from './rng';
 import { monthIndexer, monthsOf, shownSeries } from './score';
 import { simulate, simulateDetailed, type Master } from './simulate';
@@ -140,20 +141,6 @@ function rigged(ratios: Partial<Record<Stage, number>>): Calibration {
 function withHazard(cal: Calibration, z: number): Calibration {
   cal.initiation = { ...cal.initiation, intercept: z, terms: [] };
   return cal;
-}
-
-/**
- * A stand-in for the T9 `baseZoning` view (the policy module lands later): base envelope, base
- * yields, no Local Program, base hostability, over the same columns.
- */
-function baseView(p: ScenarioParcels): ScenarioParcels {
-  return {
-    ...p,
-    envelopeStories: p.baseStories,
-    yield: p.baseYield,
-    localProgram: new Uint8Array(p.count),
-    hostable: p.hostableBase
-  };
 }
 
 /** Simulated schedules by parcel id. */
@@ -421,7 +408,7 @@ describe('multi-phase masters (§4.4.3a)', () => {
 
   it('twins share E, every F_i, phase stage timing, ends and start (common random numbers)', () => {
     const fzp = miniInput();
-    const twin: SimInput = { ...fzp, parcels: baseView(fzp.parcels) };
+    const twin = applyPolicies([baseZoning], fzp);
     for (const seed of SEEDS.slice(0, 20)) {
       const a = simulateDetailed(fzp, seed, H);
       const b = simulateDetailed(twin, seed, H);
