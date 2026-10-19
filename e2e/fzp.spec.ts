@@ -278,7 +278,38 @@ test('Another future writes ?seed=N, keeps the day, and the URL seed reproduces 
   expect(await scoreJson(page, 'shown')).toBe(shown);
 });
 
-test('after Another future, the header Timelapse link shows the representative future again', async ({
+/** The address bar's seed: a number, or null for the bare /fzp. */
+const addressSeed = (page: Page): number | null => {
+  const raw = new URL(page.url()).searchParams.get('seed');
+  return raw === null ? null : Number(raw);
+};
+
+/**
+ * Waits until the page shows the future the address bar names: that seed and not representative,
+ * or (for the bare /fzp) the representative future, `representative` when given.
+ */
+async function expectAddressFuture(page: Page, representative?: number | null): Promise<void> {
+  const want = addressSeed(page);
+  if (want === null) {
+    await expect.poll(() => fzp(page, 'representative'), { timeout: 20_000 }).toBe(true);
+    if (representative !== undefined) expect(await fzp(page, 'seed')).toBe(representative);
+  } else {
+    await expect.poll(() => fzp(page, 'seed'), { timeout: 20_000 }).toBe(want);
+    expect(await fzp(page, 'representative')).toBe(false);
+  }
+  expect(await fzp(page, 'phase')).toBe('ready');
+}
+
+/** Another future: waits for the ?seed=N answer and returns N. */
+async function reroll(page: Page): Promise<number> {
+  await anotherFuture(page).click();
+  await expect(page).toHaveURL(/\/fzp\?seed=\d+$/);
+  const seed = addressSeed(page)!;
+  await expect.poll(() => fzp(page, 'seed')).toBe(seed);
+  return seed;
+}
+
+test('after Another future, the header Timelapse link, Back and Forward each show the URL future', async ({
   isMobile,
   page
 }) => {
@@ -286,19 +317,55 @@ test('after Another future, the header Timelapse link shows the representative f
   await gotoFzp(page);
   const representative = await fzp(page, 'seed');
   expect(await fzp(page, 'representative')).toBe(true);
-
-  await anotherFuture(page).click();
-  await expect(page).toHaveURL(/\/fzp\?seed=\d+$/);
-  const seed = Number(new URL(page.url()).searchParams.get('seed'));
-  await expect.poll(() => fzp(page, 'seed')).toBe(seed);
+  const seed = await reroll(page);
 
   // The URL becomes /fzp, the URL of the last load, so SvelteKit does not rerun the load.
   await headerLink(page, 'Timelapse').click();
   await expect(page).toHaveURL(/\/fzp$/);
-  await expect.poll(() => fzp(page, 'representative'), { timeout: 20_000 }).toBe(true);
+  await expectAddressFuture(page, representative);
   await waitReady(page);
-  expect(await fzp(page, 'seed')).toBe(representative);
-  expect(new URL(page.url()).searchParams.has('seed')).toBe(false);
+
+  // Back to the rerolled entry: SvelteKit navigates to the URL it stored before replaceState
+  // (/fzp), but the address bar reads ?seed=N, and the page must show #N.
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`/fzp\\?seed=${seed}$`));
+  await expectAddressFuture(page);
+  await page.goForward();
+  await expect(page).toHaveURL(/\/fzp$/);
+  await expectAddressFuture(page, representative);
+});
+
+test('Back from another route onto a rerolled /fzp shows the rerolled future', async ({ page }) => {
+  await gotoFzp(page);
+  const seed = await reroll(page);
+  await headerLink(page, 'Paint').click();
+  await expect(page).toHaveURL(/\/$/);
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`/fzp\\?seed=${seed}$`));
+  await expectAddressFuture(page);
+});
+
+test('Back onto /fzp after the way back from ?seed=N shows the representative future', async ({
+  isMobile,
+  page
+}) => {
+  await gotoFzp(page, '?seed=5');
+  await expectAddressFuture(page);
+  if (isMobile) await scoreRegion(page).locator('button[aria-controls]').tap();
+  await scoreRegion(page)
+    .getByRole('button', { name: 'Back to the representative future' })
+    .filter({ visible: true })
+    .click();
+  await expect(page).toHaveURL(/\/fzp$/);
+  await expect.poll(() => fzp(page, 'representative')).toBe(true);
+  const representative = await fzp(page, 'seed');
+
+  // Leave by a client navigation, so Back is SvelteKit's popstate (it stored ?seed=5).
+  await headerLink(page, 'Paint').click();
+  await expect(page).toHaveURL(/\/$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/fzp$/);
+  await expectAddressFuture(page, representative);
 });
 
 test('/fzp twice shows the same representative future', async ({ page }) => {

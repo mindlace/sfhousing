@@ -15,10 +15,16 @@ import Page from './+page.svelte';
 
 const nav = vi.hoisted(() => ({
   after: [] as ((n: AfterNavigate) => void)[],
-  replaced: [] as string[]
+  replaced: [] as string[],
+  /** The address bar's query string, which `addressSeed` reads instead of `location`. */
+  address: ''
 }));
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
+vi.mock('$lib/fzp/seed', async (importOriginal) => {
+  const real = await importOriginal<typeof import('$lib/fzp/seed')>();
+  return { ...real, addressSeed: () => real.parseSeed(new URLSearchParams(nav.address)) };
+});
 // The shared client-test stub of $app/navigation has no afterNavigate; this page needs one.
 vi.mock('$app/navigation', () => ({
   afterNavigate: (cb: (n: AfterNavigate) => void) => nav.after.push(cb),
@@ -33,9 +39,13 @@ class StubWorker extends FakeScenarioWorker {
   }
 }
 
-/** Runs the page's afterNavigate callbacks for a navigation to `search` on /fzp. */
-function navigated(type: AfterNavigate['type'], search: string) {
-  const to = { url: new URL(`http://localhost/fzp${search}`) } as AfterNavigate['to'];
+/**
+ * Runs the page's afterNavigate callbacks for a navigation whose address bar reads `address`.
+ * `to.url` is SvelteKit's stored URL, which after a replaceState is not the address bar.
+ */
+function navigated(type: AfterNavigate['type'], address: string, stored = '') {
+  nav.address = address;
+  const to = { url: new URL(`http://localhost/fzp${stored}`) } as AfterNavigate['to'];
   for (const cb of nav.after) cb({ type, to, from: null, willUnload: false } as AfterNavigate);
 }
 
@@ -62,6 +72,7 @@ describe('/fzp page', () => {
     StubWorker.all = [];
     nav.after.length = 0;
     nav.replaced.length = 0;
+    nav.address = '';
     vi.stubGlobal('Worker', StubWorker);
   });
 
@@ -115,5 +126,21 @@ describe('/fzp page', () => {
     navigated('link', '?seed=5');
     await new Promise((res) => setTimeout(res, 50));
     expect(StubWorker.all).toHaveLength(2);
+  });
+
+  it('Back onto a rerolled entry: the load ran for the stored /fzp, the bar wins', async () => {
+    // SvelteKit navigated to (and loaded) the pre-replaceState URL /fzp; the bar reads ?seed=7.
+    await render(Page, { props: { data: data(null), params: {} } });
+    navigated('popstate', '?seed=7', '');
+    await expect.poll(() => StubWorker.all.length).toBe(2);
+    expect(StubWorker.all[0].terminated).toBe(true);
+    expect(initSeeds(StubWorker.all[1])).toEqual([7]);
+  });
+
+  it('Back onto the bare /fzp after the way back: the load ran for ?seed=5, the bar wins', async () => {
+    await render(Page, { props: { data: data(5), params: {} } });
+    navigated('popstate', '', '?seed=5');
+    await expect.poll(() => StubWorker.all.length).toBe(2);
+    expect(initSeeds(StubWorker.all[1])).toEqual([null]);
   });
 });

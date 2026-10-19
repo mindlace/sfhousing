@@ -12,6 +12,15 @@ export function parseSeed(params: URLSearchParams): { seed: number | null; inval
   return { seed: null, invalid: true };
 }
 
+/**
+ * The address bar's seed. After `replaceState`, SvelteKit's own URLs (`page.url`, a navigation's
+ * `to.url`, the URL a popstate navigates to) still name the last load's seed; only `location`
+ * holds the one on screen.
+ */
+export function addressSeed(): { seed: number | null; invalid: boolean } {
+  return parseSeed(new URLSearchParams(location.search));
+}
+
 /** Sets or removes `seed`, keeping other parameters and their order. */
 export function searchWithSeed(search: string, seed: number | null): string {
   const params = new URLSearchParams(search);
