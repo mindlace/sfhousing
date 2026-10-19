@@ -250,7 +250,7 @@ function parsePermits(
       // Ruling E2: the valuation that sets the Table B bracket is the value after project review
       // when present, else the estimate at filing; a `revised_cost` under $1,000 is a
       // placeholder (live, e.g. 1.0 against an estimate of 510,000) and falls back to the
-      // estimate (main's ruling 4).
+      // estimate here (main's ruling 4); Ruling PV1's fill follows after linking (valuation.ts).
       ...valuationOf(group, lead, number, valuation),
       rows: group.map(addressRow).sort(compareAddress)
     };

@@ -12,7 +12,7 @@
 import type { Day } from '../../src/lib/timelapse/time';
 import type { LinkedProject, Permit } from './types';
 
-/** Below this, a value is a placeholder, not a valuation (main's ruling 4; tier 4). */
+/** Below this, a value is a placeholder, not a valuation (main's ruling 4; Ruling PV1). */
 export const PLACEHOLDER_REVISED_COST = 1000;
 
 /** At least $1,000 (Ruling PV1), else null. */

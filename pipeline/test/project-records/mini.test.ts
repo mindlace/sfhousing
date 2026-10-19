@@ -343,6 +343,13 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     ]);
     expect(r.counts['permits.placeholderFilled.projectPermit']).toBe(1);
     expect(r.counts['quality.pr.permits.placeholder-valuation.fired']).toBe(1);
+    // Every placeholder is filled or counted unfilled (review m5).
+    expect(
+      r.counts['permits.placeholderFilled.ownEstimate'] +
+        r.counts['permits.placeholderFilled.ownRows'] +
+        r.counts['permits.placeholderFilled.projectPermit'] +
+        r.counts['permits.placeholderUnfilled']
+    ).toBe(r.counts['quality.pr.permits.placeholder-valuation.fired']);
   });
 
   it('M11: unclassifiable history, defaulted to discretionary in flight', () => {
