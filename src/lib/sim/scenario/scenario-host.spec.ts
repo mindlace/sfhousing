@@ -55,9 +55,21 @@ const hooks = vi.hoisted(() => ({
   posts: (): number => 0,
   slice: (): number => 0,
   calls: [] as Call[],
-  packs: [] as { cellId: string; posts: number; slice: number }[]
+  packs: [] as { cellId: string; posts: number; slice: number }[],
+  geometries: [] as number[] // the harness timer callback of each createGeometry
 }));
 
+// Pass-through spy on the shown run's geometry set-up: the callback each createGeometry ran in.
+vi.mock('./geometry', async (importOriginal) => {
+  const m = await importOriginal<typeof import('./geometry')>();
+  return {
+    ...m,
+    createGeometry: vi.fn((o: Parameters<typeof m.createGeometry>[0]) => {
+      hooks.geometries.push(hooks.slice());
+      return m.createGeometry(o);
+    })
+  };
+});
 // Pass-through spy on timelapse-render's packing: each call is logged and charged `packMs`.
 vi.mock('$lib/map/pack-timed', async (importOriginal) => {
   const m = await importOriginal<typeof import('$lib/map/pack-timed')>();
@@ -115,6 +127,7 @@ function harness(
   hooks.slice = () => h.slices.length; // the callback running now is pushed when it ends
   hooks.calls.length = 0;
   hooks.packs.length = 0;
+  hooks.geometries.length = 0;
   return h;
 }
 
@@ -656,6 +669,30 @@ describe('scenario host: slices', () => {
     expect(
       new Set(hooks.calls.filter((c) => c.fn === 'net').map((c) => c.slice)).size
     ).toBeLessThan(hooks.calls.filter((c) => c.fn === 'net').length);
+  });
+
+  it("the shown run's slice holds simulate and score only: its geometry opens the next slice", async () => {
+    hooks.packMs = 100;
+    const h = harness();
+    const rev = h.init({ seed: SEED });
+    prefetch(h, WORLD);
+    await h.runAll();
+    expect(h.errors()).toEqual([]);
+    const [shown] = hooks.calls.filter((c) => c.fn === 'detailed');
+    expect(hooks.geometries).toHaveLength(1);
+    const [geometry] = hooks.geometries;
+    expect(geometry).toBeGreaterThan(shown.slice);
+    expect(hooks.packs.filter((p) => p.slice === shown.slice)).toEqual([]);
+    // revision 0 is still the complete snapshot: every ready cell (4 × 100 ms, inside the 2.5 s
+    // cap) and the full demolish list
+    const { fzp } = inputs();
+    const { schedules } = shownRun(fzp, SEED);
+    const [t0] = timelines(h, rev);
+    expect(t0.render.revision).toBe(0);
+    expect(t0.render.cells).toEqual(expectedCells(fzp, schedules, MINI_CELLS));
+    expect(t0.render.demolish).toEqual(demolishOf(schedules, fzp));
+    expect(t0.complete).toBe(true);
+    expect(h.posts.slice(0, h.posts.indexOf(t0)).some((m) => m.type === 'timeline')).toBe(false);
   });
 
   it('a slow shown run gets a slice of its own', async () => {
