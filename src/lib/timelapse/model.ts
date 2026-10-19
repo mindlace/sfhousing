@@ -1,7 +1,8 @@
 /**
  * Calibration model (design doc T12): pure, free of any schema library and worker-safe. Only
  * `./types`, `./time` and `./math` are imported, and `exp`/`log` come from `./math` so results
- * are bit-reproducible.
+ * are bit-reproducible. Per-transition constants are memoised by object identity (`Constants`),
+ * so a Transition must not be mutated after its first use here.
  */
 import { exp, log } from './math';
 import { MONTH_DAYS } from './time';
@@ -20,6 +21,7 @@ import {
 } from './types';
 
 type Incidence = { advance: number; exit: Partial<Record<ExitReason, number>> };
+type Kind = 'advance' | ExitReason;
 
 /** (number of edges <= x) - 1, clamped to [0, edges.length - 1]. */
 export function binIndex(edges: number[], x: number): number {
@@ -54,58 +56,174 @@ function tableSum(t: Transition, k: number): number {
   return c;
 }
 
+/**
+ * Per-transition constants (T12 perf), memoised per Transition object so `sampleTransition` does
+ * not recompute them on every call. Each is computed once, on first use, with exactly the
+ * expression and evaluation order the per-call code used, so every output is bit-identical to
+ * computing it afresh. The parts fill lazily and independently, so a code path reads only the
+ * Transition fields it read before.
+ *
+ * The cache is a WeakMap keyed by object identity: a Transition is treated as IMMUTABLE after its
+ * first use by any function in this module. Mutating one in place afterwards (its months, table
+ * or tail) leaves its constants stale and the results wrong; build a new Transition (for example
+ * with `structuredClone`) instead. `parseCalibration` returns the caller's object unfrozen, so
+ * this is a documented contract rather than an enforced one.
+ */
+type Constants = {
+  /**
+   * sums[k] = `tableSum(t, k)` = C(k) for k = 0..K. Index 0 is read only as C(K) when K = 0, where
+   * the uncached code read `tableSum(t, 0)` too; C(0) itself is 0 (`total`).
+   */
+  sums?: number[];
+  tail?: TailConstants;
+  /** `tableSlice` boundary j of table month k at bounds[(k - 1) * (kinds.length - 1) + j]. */
+  bounds?: number[];
+};
+
+type TailConstants = {
+  /** rho = `tailRate(t)`. */
+  rho: number;
+  /** log(1 - rho). */
+  logSurvive: number;
+  /** `reasonsOf(t)`. */
+  reasons: ExitReason[];
+  /** 'advance', then `reasons`. */
+  kinds: Kind[];
+  /** The tail proportions p_j / rho, aligned with `kinds`. */
+  shares: number[];
+  /** The last index of `kinds` with a positive share (0 when none is). */
+  last: number;
+  /** acc[j] = shares[0] + ... + shares[j], summed in that order, for j < `last`. */
+  acc: number[];
+};
+
+const CONSTANTS = new WeakMap<Transition, Constants>();
+
+function constantsOf(t: Transition): Constants {
+  let c = CONSTANTS.get(t);
+  if (c === undefined) {
+    c = {};
+    CONSTANTS.set(t, c);
+  }
+  return c;
+}
+
+function sumsOf(t: Transition, c: Constants): number[] {
+  if (c.sums === undefined) {
+    const sums = [tableSum(t, 0)];
+    for (let k = 1; k <= t.months; k++) sums.push(tableSum(t, k));
+    c.sums = sums;
+  }
+  return c.sums;
+}
+
+function tailOf(t: Transition, c: Constants): TailConstants {
+  if (c.tail === undefined) {
+    const rho = tailRate(t);
+    const reasons = reasonsOf(t);
+    const kinds: Kind[] = ['advance', ...reasons];
+    const shares = kinds.map((kind) =>
+      kind === 'advance' ? t.tail.advance / rho : (t.tail.exit[kind] ?? 0) / rho
+    );
+    let last = kinds.length - 1;
+    while (last > 0 && !(shares[last] > 0)) last--;
+    const acc: number[] = [];
+    let sum = 0;
+    for (let j = 0; j < last; j++) {
+      sum += shares[j];
+      acc.push(sum);
+    }
+    c.tail = { rho, logSurvive: log(1 - rho), reasons, kinds, shares, last, acc };
+  }
+  return c.tail;
+}
+
+/**
+ * `tableSlice`'s boundaries: for table month k and j < kinds.length - 1, the sum of F_i(k) for
+ * i <= j and F_i(k - 1) for i > j, over `kinds` in order, starting from 0.
+ */
+function boundsOf(t: Transition, c: Constants): number[] {
+  if (c.bounds === undefined) {
+    const { kinds } = tailOf(t, c);
+    const at = (kind: Kind, month: number) =>
+      month === 0
+        ? 0
+        : kind === 'advance'
+          ? t.advance[month - 1]
+          : (t.exit[kind]?.[month - 1] ?? 0);
+    const bounds: number[] = [];
+    for (let k = 1; k <= t.months; k++) {
+      for (let j = 0; j < kinds.length - 1; j++) {
+        let hi = 0;
+        for (let i = 0; i < kinds.length; i++) hi += at(kinds[i], i <= j ? k : k - 1);
+        bounds.push(hi);
+      }
+    }
+    c.bounds = bounds;
+  }
+  return c.bounds;
+}
+
+/** C(k), `cumulativeTotal` on a transition's constants: k must be a non-negative integer. */
+function total(t: Transition, c: Constants, k: number): number {
+  checkMonths(k);
+  if (k === 0) return 0;
+  const sums = sumsOf(t, c);
+  if (k <= t.months) return sums[k];
+  return 1 - (1 - sums[t.months]) * exp((k - t.months) * tailOf(t, c).logSurvive);
+}
+
 /** C(k): advance plus all exits by month k; closed-form beyond the table. */
 export function cumulativeTotal(t: Transition, k: number): number {
   checkMonths(k);
-  if (k === 0) return 0;
-  if (k <= t.months) return tableSum(t, k);
-  const rho = tailRate(t);
-  return 1 - (1 - tableSum(t, t.months)) * exp((k - t.months) * log(1 - rho));
+  return total(t, constantsOf(t), k);
 }
 
 /** The tail proportions p_j / rho, advance then the transition's reasons in `EXIT_ORDER`. */
-function tailShares(t: Transition): Incidence {
-  const rho = tailRate(t);
+function tailShares(tc: TailConstants): Incidence {
   const exit: Partial<Record<ExitReason, number>> = {};
-  for (const r of reasonsOf(t)) exit[r] = (t.tail.exit[r] ?? 0) / rho;
-  return { advance: t.tail.advance / rho, exit };
+  for (let i = 0; i < tc.reasons.length; i++) exit[tc.reasons[i]] = tc.shares[i + 1];
+  return { advance: tc.shares[0], exit };
 }
 
 /**
  * F_j beyond the table: F_j(K) + (1 - C(K)) * (p_j / rho) * decay, where decay is
  * 1 - (1 - rho)^(k - K). With decay = 1 it is F_j(infinity).
  */
-function beyondTable(t: Transition, decay: number): Incidence {
+function beyondTable(t: Transition, c: Constants, decay: number): Incidence {
   const K = t.months;
-  const share = tailShares(t);
-  const survive = 1 - tableSum(t, K);
+  const { reasons, shares } = tailOf(t, c);
+  const survive = 1 - sumsOf(t, c)[K];
   const exit: Partial<Record<ExitReason, number>> = {};
-  for (const r of reasonsOf(t)) {
-    exit[r] = (t.exit[r]?.[K - 1] ?? 0) + survive * share.exit[r]! * decay;
+  for (let i = 0; i < reasons.length; i++) {
+    const r = reasons[i];
+    exit[r] = (t.exit[r]?.[K - 1] ?? 0) + survive * shares[i + 1] * decay;
   }
-  return { advance: t.advance[K - 1] + survive * share.advance * decay, exit };
+  return { advance: t.advance[K - 1] + survive * shares[0] * decay, exit };
 }
 
 /** F_j(k) for advance and each exit reason: cumulative probability of leaving by month k. */
 export function cumulativeIncidence(t: Transition, k: number): Incidence {
   checkMonths(k);
+  const c = constantsOf(t);
   if (k <= t.months) {
     const exit: Partial<Record<ExitReason, number>> = {};
-    for (const r of reasonsOf(t)) exit[r] = k === 0 ? 0 : (t.exit[r]?.[k - 1] ?? 0);
+    for (const r of tailOf(t, c).reasons) exit[r] = k === 0 ? 0 : (t.exit[r]?.[k - 1] ?? 0);
     return { advance: k === 0 ? 0 : t.advance[k - 1], exit };
   }
-  return beyondTable(t, 1 - exp((k - t.months) * log(1 - tailRate(t))));
+  return beyondTable(t, c, 1 - exp((k - t.months) * tailOf(t, c).logSurvive));
 }
 
 /** P(eventually j) given survival to `monthsElapsed` months; memoryless from K onward. */
 export function eventualProbabilities(t: Transition, monthsElapsed: number): Incidence {
   checkMonths(monthsElapsed);
-  if (monthsElapsed >= t.months) return tailShares(t);
-  const inf = beyondTable(t, 1);
+  const c = constantsOf(t);
+  if (monthsElapsed >= t.months) return tailShares(tailOf(t, c));
+  const inf = beyondTable(t, c, 1);
   const at = cumulativeIncidence(t, monthsElapsed);
-  const denom = 1 - cumulativeTotal(t, monthsElapsed);
+  const denom = 1 - total(t, c, monthsElapsed);
   const exit: Partial<Record<ExitReason, number>> = {};
-  for (const r of reasonsOf(t)) exit[r] = (inf.exit[r]! - (at.exit[r] ?? 0)) / denom;
+  for (const r of tailOf(t, c).reasons) exit[r] = (inf.exit[r]! - (at.exit[r] ?? 0)) / denom;
   return { advance: (inf.advance - at.advance) / denom, exit };
 }
 
@@ -121,17 +239,16 @@ const MAX_EVENT_MONTH = Math.floor(16777216 / MONTH_DAYS);
 /** `chanceTable` arrays cover months in stage 0..240 (K <= 240). */
 const CHANCE_MONTHS = 241;
 
-type Kind = 'advance' | ExitReason;
 type Slice = { kind: Kind; lo: number; hi: number };
 type Draw = { k: number; slice: Slice; x: number };
 
 /** The least k in (m, K] with C(k) > c, given C(m) <= c < C(K): binary search. */
-function tableMonth(t: Transition, c: number, m: number): number {
+function tableMonth(t: Transition, sums: number[], c: number, m: number): number {
   let below = m; // invariant: C(below) <= c < C(above)
   let above = t.months;
   while (above - below > 1) {
     const mid = (below + above) >>> 1;
-    if (tableSum(t, mid) > c) above = mid;
+    if (sums[mid] > c) above = mid;
     else below = mid;
   }
   return above;
@@ -144,13 +261,13 @@ function tableMonth(t: Transition, c: number, m: number): number {
  * `cumulativeTotal` evaluates it (spec §4.2 step 2). Null when no month satisfies that in
  * double precision. `sampleTransition` (m < K) and `typicalMonths` share it.
  */
-function tailMonth(t: Transition, c: number, inclusive: boolean): number | null {
+function tailMonth(t: Transition, cs: Constants, c: number, inclusive: boolean): number | null {
   const K = t.months;
   const reached = (k: number) => {
-    const ck = cumulativeTotal(t, k);
+    const ck = total(t, cs, k);
     return inclusive ? ck >= c : ck > c;
   };
-  const q = log((1 - c) / (1 - tableSum(t, K))) / log(1 - tailRate(t));
+  const q = log((1 - c) / (1 - sumsOf(t, cs)[K])) / tailOf(t, cs).logSurvive;
   let k = Number.isFinite(q) ? K + Math.ceil(q) : MAX_EVENT_MONTH;
   k = Math.min(Math.max(k, K + 1), MAX_EVENT_MONTH);
   while (k - 1 > K && reached(k - 1)) k--;
@@ -168,53 +285,49 @@ function tailMonth(t: Transition, c: number, inclusive: boolean): number | null 
  * 0, or a tail too slow for the cap), k is the cap and v is split over the mass the search
  * never reached, [G(top), 1).
  */
-function relativeTail(t: Transition, from: number, v: number): Draw {
-  const L = log(1 - tailRate(t));
+function relativeTail(t: Transition, c: Constants, from: number, v: number): Draw {
+  const tc = tailOf(t, c);
+  const L = tc.logSurvive;
   const G = (n: number) => (n === 0 ? 0 : 1 - exp(n * L));
   const top = Math.max(MAX_EVENT_MONTH - from, 1);
   const q = Math.ceil(log(1 - v) / L);
   let n = Number.isFinite(q) ? Math.min(Math.max(q, 1), top) : top;
   while (n > 1 && G(n - 1) > v) n--;
   while (n < top && G(n) <= v) n++;
-  if (G(n) > v) return { k: from + n, slice: tailSlice(t, G(n - 1), G(n), v), x: v };
-  return { k: from + top, slice: tailSlice(t, G(top), 1, v), x: v };
+  if (G(n) > v) return { k: from + n, slice: tailSlice(tc, G(n - 1), G(n), v), x: v };
+  return { k: from + top, slice: tailSlice(tc, G(top), 1, v), x: v };
 }
 
 /**
  * The sub-interval of table month k's mass [C(k - 1), C(k)) holding c, split by the increments
  * of F_j in the order advance, then `EXIT_ORDER`. Boundary j sums F_i(k) for i <= j and
- * F_i(k - 1) for i > j in that fixed order, so the last boundary is exactly C(k).
+ * F_i(k - 1) for i > j in that fixed order (`boundsOf`), so the last boundary is exactly C(k).
  */
-function tableSlice(t: Transition, k: number, c: number): Slice {
-  const kinds: Kind[] = ['advance', ...reasonsOf(t)];
-  const at = (kind: Kind, month: number) =>
-    month === 0 ? 0 : kind === 'advance' ? t.advance[month - 1] : (t.exit[kind]?.[month - 1] ?? 0);
-  let lo = k === 1 ? 0 : tableSum(t, k - 1);
+function tableSlice(t: Transition, cs: Constants, k: number, c: number): Slice {
+  const { kinds } = tailOf(t, cs);
+  const sums = sumsOf(t, cs);
+  const bounds = boundsOf(t, cs);
+  const width = kinds.length - 1;
+  const row = (k - 1) * width;
+  let lo = k === 1 ? 0 : sums[k - 1];
   let j = 0;
-  for (; j < kinds.length - 1; j++) {
-    let hi = 0;
-    for (let i = 0; i < kinds.length; i++) hi += at(kinds[i], i <= j ? k : k - 1);
+  for (; j < width; j++) {
+    const hi = bounds[row + j];
     if (c < hi) return { kind: kinds[j], lo, hi };
     lo = hi;
   }
-  return { kind: kinds[j], lo, hi: tableSum(t, k) };
+  return { kind: kinds[j], lo, hi: sums[k] };
 }
 
 /**
  * The sub-interval of [lo, hi) holding x, split by the tail proportions p_j / rho in the order
  * advance, then `EXIT_ORDER`. The last kind with a positive share ends exactly at hi.
  */
-function tailSlice(t: Transition, lo: number, hi: number, x: number): Slice {
-  const share = tailShares(t);
-  const kinds: Kind[] = ['advance', ...reasonsOf(t)];
-  const p = (kind: Kind) => (kind === 'advance' ? share.advance : share.exit[kind]!);
-  let last = kinds.length - 1;
-  while (last > 0 && !(p(kinds[last]) > 0)) last--;
-  let acc = 0;
+function tailSlice(tc: TailConstants, lo: number, hi: number, x: number): Slice {
+  const { kinds, last, acc } = tc;
   let from = lo;
   for (let j = 0; j < last; j++) {
-    acc += p(kinds[j]);
-    const to = lo + (hi - lo) * acc;
+    const to = lo + (hi - lo) * acc[j];
     if (x < to) return { kind: kinds[j], lo: from, hi: to };
     from = to;
   }
@@ -222,22 +335,24 @@ function tailSlice(t: Transition, lo: number, hi: number, x: number): Slice {
 }
 
 /** The draw for m < K: spec §4.2 steps 1 to 3 literally (1 - C(m) >= 1 - C(K) >= 1e-6). */
-function literalDraw(t: Transition, u: number, m: number): Draw {
-  const cm = cumulativeTotal(t, m);
+function literalDraw(t: Transition, cs: Constants, u: number, m: number): Draw {
+  const sums = sumsOf(t, cs);
+  const cm = total(t, cs, m);
   const c = cm + (1 - cm) * u;
-  if (c < tableSum(t, t.months)) {
-    const k = tableMonth(t, c, m);
-    return { k, slice: tableSlice(t, k, c), x: c };
+  if (c < sums[t.months]) {
+    const k = tableMonth(t, sums, c, m);
+    return { k, slice: tableSlice(t, cs, k, c), x: c };
   }
-  const k = tailMonth(t, c, false);
+  const k = tailMonth(t, cs, c, false);
   if (k !== null) {
-    return { k, slice: tailSlice(t, cumulativeTotal(t, k - 1), cumulativeTotal(t, k), c), x: c };
+    const slice = tailSlice(tailOf(t, cs), total(t, cs, k - 1), total(t, cs, k), c);
+    return { k, slice, x: c };
   }
   // Past the cap (a flat or very slow tail), or c rounded to 1, which needs 1 - u < ~1.1e-10
   // (below mulberry32's 2^-32 step): draw relative to K at v = (c - C(K)) / (1 - C(K)), the
   // position within the tail. Only a c that rounded to 1 has lost it, and u stands in.
-  const ck = tableSum(t, t.months);
-  return relativeTail(t, t.months, c < 1 ? (c - ck) / (1 - ck) : u);
+  const ck = sums[t.months];
+  return relativeTail(t, cs, t.months, c < 1 ? (c - ck) / (1 - ck) : u);
 }
 
 /**
@@ -247,6 +362,10 @@ function literalDraw(t: Transition, u: number, m: number): Draw {
  * the day within month k is uniform by c's position in that slice. For m >= K the same mapping
  * is evaluated relative to m by memorylessness (`relativeTail`, ruling R8). monthsIn(0, days) =
  * k - 1 and days >= ceil(m * MONTH_DAYS).
+ *
+ * The transition's constants (C(1..K), rho, log(1 - rho), the tail shares, the table slice
+ * boundaries) are memoised per object on first use (`Constants`): `t` is treated as immutable
+ * from then on. Mutating it in place afterwards gives stale results; pass a new object instead.
  */
 export function sampleTransition(
   t: Transition,
@@ -255,8 +374,11 @@ export function sampleTransition(
 ): { kind: Kind; days: number } {
   checkMonths(monthsElapsed);
   if (!(u >= 0 && u < 1)) throw new RangeError(`u must be in [0, 1), got ${u}`);
+  const cs = constantsOf(t);
   const { k, slice, x } =
-    monthsElapsed < t.months ? literalDraw(t, u, monthsElapsed) : relativeTail(t, monthsElapsed, u);
+    monthsElapsed < t.months
+      ? literalDraw(t, cs, u, monthsElapsed)
+      : relativeTail(t, cs, monthsElapsed, u);
   const phi = (x - slice.lo) / (slice.hi - slice.lo);
   const first = Math.ceil((k - 1) * MONTH_DAYS);
   const end = Math.ceil(k * MONTH_DAYS);
@@ -331,9 +453,11 @@ export function typicalMonths(cal: Calibration): Record<Pathway, Partial<Record<
       if (stage === 'complete') continue;
       const tr = cal.transitions[p][stage];
       if (tr === undefined) continue;
+      const cs = constantsOf(tr);
+      const sums = sumsOf(tr, cs);
       let k = 1;
-      while (k <= tr.months && tableSum(tr, k) < 0.5) k++;
-      row[stage] = k <= tr.months ? k : (tailMonth(tr, 0.5, true) ?? MAX_EVENT_MONTH);
+      while (k <= tr.months && sums[k] < 0.5) k++;
+      row[stage] = k <= tr.months ? k : (tailMonth(tr, cs, 0.5, true) ?? MAX_EVENT_MONTH);
     }
     out[p] = row;
   }

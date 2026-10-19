@@ -392,6 +392,50 @@ describe('sampleTransition', () => {
     expect(() => sampleTransition(t, 0.5, -1)).toThrow(RangeError);
     expect(() => sampleTransition(t, 0.5, 2.5)).toThrow(RangeError);
   });
+
+  describe('per-transition constants are memoised (T12 perf), outputs unchanged', () => {
+    // Several table reasons, a tail-only reason and a zero trailing tail share (tailSlice's last).
+    const multi: Transition = {
+      ...t,
+      exit: { withdrawn: t.exit.expired!.map((x) => x / 2), expired: t.exit.expired },
+      tail: { advance: 0.05, exit: { withdrawn: 0.01, cancelled: 0.005, expired: 0 } }
+    };
+    const cells: Transition[] = [t, multi];
+    for (const p of PATHWAYS) {
+      for (const s of pathwayStages(p)) {
+        const tr = (cal.transitions[p] as Record<string, Transition | undefined>)[s];
+        if (tr) cells.push(tr);
+      }
+    }
+    const N = 12000;
+    // A fixed mulberry32 stream of (u, m) pairs; m runs to K + 40, so many draws have m >= K.
+    function draws(of: Transition[]) {
+      const rng = mulberry32(0x5eed);
+      const out: { kind: string; days: number }[] = [];
+      let tail = 0;
+      for (let i = 0; i < N; i++) {
+        const tr = of[i % of.length];
+        const u = rng();
+        const m = Math.floor(rng() * (tr.months + 41));
+        if (m >= tr.months) tail++;
+        out.push(sampleTransition(tr, u, m));
+      }
+      return { out, tail };
+    }
+
+    it('a used transition and a fresh structurally-equal deep copy give identical draws', () => {
+      for (const tr of cells) sampleTransition(tr, 0.5, 0); // first use fills the constants
+      const cached = draws(cells);
+      const fresh = draws(cells.map((tr) => structuredClone(tr)));
+      expect(cached.tail).toBeGreaterThan(N / 4);
+      expect(cached.tail).toBeLessThan(N);
+      expect(fresh.out).toEqual(cached.out);
+    });
+
+    it('calling twice with no mutation gives identical results', () => {
+      expect(draws(cells).out).toEqual(draws(cells).out);
+    });
+  });
 });
 
 describe('chanceTable', () => {
