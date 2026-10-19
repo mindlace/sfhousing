@@ -201,10 +201,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/578ce7f83b49847637111cb5be25cf6a2cc653e841b747003db14e1cf04632c3.json",
-          "bytes": 4893,
+          "archiveKey": "sources/85e58c6f0107efd99a2c82235934c3000422eea52d902513e1d36e169e6e7400.json",
+          "bytes": 5243,
           "name": "datasf-planning-projects.page-000.json",
-          "sha256": "578ce7f83b49847637111cb5be25cf6a2cc653e841b747003db14e1cf04632c3",
+          "sha256": "85e58c6f0107efd99a2c82235934c3000422eea52d902513e1d36e169e6e7400",
           "url": "https://fixture.invalid/datasf-planning-projects.page-000.json"
         }
       ],
@@ -213,7 +213,7 @@
       "label": "DataSF Planning Projects",
       "license": "public-domain",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 24,
+      "rowCount": 26,
       "upstreamVersion": "fixture"
     },
     {
@@ -237,10 +237,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/e93d3213b6894c3559e8fdcc78c049a521b277958417982db98997a792b765b4.json",
-          "bytes": 2227,
+          "archiveKey": "sources/c128e1d4368c2c8aa2957d3fd0a99dad98b480cb5d72e628467e20d8c9a85006.json",
+          "bytes": 2581,
           "name": "datasf-planning-review.page-000.json",
-          "sha256": "e93d3213b6894c3559e8fdcc78c049a521b277958417982db98997a792b765b4",
+          "sha256": "c128e1d4368c2c8aa2957d3fd0a99dad98b480cb5d72e628467e20d8c9a85006",
           "url": "https://fixture.invalid/datasf-planning-review.page-000.json"
         }
       ],
@@ -249,7 +249,7 @@
       "label": "DataSF Planning Review Time Metrics",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 13,
+      "rowCount": 15,
       "upstreamVersion": "fixture"
     },
     {

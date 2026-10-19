@@ -128,3 +128,65 @@ describe('supersession in deriveProjects (Rulings SP1-SP3, review M5)', () => {
     expect(xOnly.checks.coverage.rows).toBe(yOnly.checks.coverage.rows + 1);
   });
 });
+
+describe('the inferred lapse runs after supersession (Ruling IL1, review I2)', () => {
+  // X: entitled 2021-03-01 on lot 008, no permit, in flight on its 2025 pipeline row. Y: the same
+  // address refiled on lot 009 (same block) in 2024. Superseded, X is no longer in flight, so it
+  // exits instead of being flagged.
+  const run = (withY: boolean) => {
+    const raw = baseRaw();
+    raw['datasf-planning-projects'].push({
+      ...prj('2020-000093PRJ', '008', '2020-06-01', '700 Test Ave', ''),
+      building_permits: undefined as unknown as string
+    });
+    raw['datasf-planning-review'].push({
+      b1_alt_id: '2020-000093PRJ',
+      start_event_type: 'accepted',
+      start_event_date: ts('2020-06-15'),
+      end_event_type: 'approval',
+      end_event_date: ts('2021-03-01')
+    });
+    raw['datasf-dev-pipeline'].push({
+      blklot: '3512008',
+      current_status: 'PL Approved',
+      current_status_date: ts('2025-06-01'),
+      case_no: '2020-000093PRJ',
+      new_pipeline_units: '10'
+    });
+    if (withY) {
+      raw['datasf-planning-projects'].push({
+        ...prj('2024-000094PRJ', '009', '2024-06-01', '700 TEST AVE 94110', ''),
+        building_permits: undefined as unknown as string
+      });
+      raw['datasf-dev-pipeline'].push({
+        blklot: '3512009',
+        current_status: 'PL Filed',
+        current_status_date: ts('2026-06-01'),
+        case_no: '2024-000094PRJ',
+        new_pipeline_units: '10'
+      });
+    }
+    return deriveProjects(baseInput(raw));
+  };
+
+  it('in flight alone it is flagged and stays open', () => {
+    const r = run(false);
+    expect(ids(r)).toContain('PRJ:2020-000093PRJ');
+    expect(r.histories.find((h) => h.id === 'PRJ:2020-000093PRJ')?.end.kind).toBe('open');
+    expect(r.counts['projects.lapseFlagged']).toBe(1);
+  });
+
+  it('superseded, it exits as a lapse a year after its rule expiry', () => {
+    const r = run(true);
+    expect(ids(r)).not.toContain('PRJ:2020-000093PRJ');
+    expect(r.counts['projects.excludedSuperseded']).toBe(1);
+    // 2021-03-01 + 3 y + 16 ZA days = 2024-03-17, AB 2729 to 2025-09-17; lastObserved 2025-06-01.
+    expect(r.histories.find((h) => h.id === 'PRJ:2020-000093PRJ')?.end).toEqual({
+      kind: 'exit',
+      stage: 'entitled',
+      reason: 'expired',
+      day: Date.parse('2025-09-17T00:00:00Z') / 86_400_000 + 365
+    });
+    expect(r.counts['projects.lapseFlagged']).toBe(0);
+  });
+});

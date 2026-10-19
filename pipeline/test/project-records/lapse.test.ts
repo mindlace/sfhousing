@@ -4,6 +4,9 @@ import {
   activityIndex,
   daExcluded,
   inferredLapse,
+  isPermitToken,
+  lapseNoRule,
+  lapseRule,
   otherActivity,
   parcelFamily,
   streamlinedLapse,
@@ -208,5 +211,68 @@ describe('streamlinedLapse (Ruling SE1)', () => {
     // No activity test: another project on the lot does not stop it.
     const busy = ctx(q, [{ proj: proj('BP:1', { anchors: [] }), days: [ENT + 100] }]);
     expect(streamlinedLapse(q, 'streamlined', entered, open(), busy)).not.toBeNull();
+  });
+});
+
+describe('named permits and instruments (Rulings IL2, IL2a, SE2)', () => {
+  const named = (permits: string[]) => {
+    const a = prj('A', { permits });
+    return proj('PRJ:A', { anchors: [a], primary: a });
+  };
+
+  it('a building_permits token that looks like a permit number blocks the lapse (IL2, IL2a)', () => {
+    const p = named(['201901010001']);
+    expect(inferredLapse(p, 'discretionary', entered, open(), ctx(p))).toBeNull();
+    const bldg = named(['BLDG-2019-0001']);
+    expect(inferredLapse(bldg, 'discretionary', entered, open(), ctx(bldg))).toBeNull();
+    const na = named(['N/A', 'TBD', '12345']);
+    expect(inferredLapse(na, 'discretionary', entered, open(), ctx(na))).not.toBeNull();
+    expect(['201901010001', '2019010100A', 'bldg-1', '123456'].map(isPermitToken)).toEqual([
+      true,
+      true,
+      true,
+      true
+    ]);
+    expect(['N/A', '12345', 'PERMIT 1', ''].map(isPermitToken)).toEqual([
+      false,
+      false,
+      false,
+      false
+    ]);
+  });
+
+  const streamlined = (over: Partial<Prj>) => {
+    const a = prj('A', over);
+    return proj('PRJ:A', { anchors: [a], primary: a });
+  };
+
+  it('SB 35 / SB 423 / AB 2011 take the streamlined expiry (SE2)', () => {
+    for (const over of [
+      { sb35: true },
+      { description: 'New building under SB 423 streamlining' },
+      { description: 'AB 2011 project' }
+    ]) {
+      const p = streamlined(over);
+      expect(lapseRule(p, 'streamlined'), JSON.stringify(over)).toBe('streamlined');
+      expect(streamlinedLapse(p, 'streamlined', entered, open(), ctx(p))).not.toBeNull();
+      expect(inferredLapse(p, 'streamlined', entered, open(), ctx(p))).toBeNull();
+    }
+  });
+
+  it('Housing Choice-SF takes the inferred lapse; HSD and AB 2162 take none (SE2)', () => {
+    const hcsf = streamlined({ description: 'Housing Choice-SF program, Section 206.10' });
+    expect(lapseRule(hcsf, 'streamlined')).toBe('inferred');
+    expect(streamlinedLapse(hcsf, 'streamlined', entered, open(), ctx(hcsf))).toBeNull();
+    expect(inferredLapse(hcsf, 'streamlined', entered, open(), ctx(hcsf))).not.toBeNull();
+    for (const over of [{ hsd: true }, { ab2162: true }]) {
+      const p = streamlined(over);
+      expect(lapseRule(p, 'streamlined')).toBe('none');
+      expect(streamlinedLapse(p, 'streamlined', entered, open(), ctx(p))).toBeNull();
+      expect(inferredLapse(p, 'streamlined', entered, open(), ctx(p))).toBeNull();
+      expect(lapseNoRule(p, 'streamlined', entered, open())).toBe(true);
+    }
+    // Not at entitled: no count.
+    const p = streamlined({ hsd: true });
+    expect(lapseNoRule(p, 'streamlined', { ...entered, permitFiled: ENT + 1 }, open())).toBe(false);
   });
 });

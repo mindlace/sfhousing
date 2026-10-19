@@ -7,13 +7,14 @@
 import type { ParcelId } from '../../src/lib/data/parcel';
 import type { Day } from '../../src/lib/timelapse/time';
 import type { ProjectHistory, Stage } from '../../src/lib/timelapse/types';
-import { STAGE_ORDER } from '../../src/lib/timelapse/types';
 import {
   LAPSE_GRACE_DAYS,
   affordableExempt,
   discretionaryExpiry,
   streamlinedExpiry
 } from './entitlement';
+import { lapseInstrument } from './classify';
+import { lastEnteredStage } from './stale';
 import type { LinkedProject } from './types';
 
 type End = ProjectHistory['end'];
@@ -89,15 +90,9 @@ export function daExcluded(
   return false;
 }
 
-function lastStage(entered: Entered): string | null {
-  let last: string | null = null;
-  for (const s of STAGE_ORDER) if (entered[s] !== undefined) last = s;
-  return last;
-}
-
 /** An open history whose last entered stage is `entitled`: its entitled day and last observed. */
 function openAtEntitled(entered: Entered, end: End | null): { entitled: Day; seen: Day } | null {
-  if (end === null || end.kind !== 'open' || lastStage(entered) !== 'entitled') return null;
+  if (end === null || end.kind !== 'open' || lastEnteredStage(entered) !== 'entitled') return null;
   return { entitled: entered.entitled as Day, seen: end.lastObserved };
 }
 
@@ -108,10 +103,46 @@ export interface LapseCtx {
   daParcels: ReadonlySet<ParcelId>;
 }
 
+/** Ruling IL2a: a `building_permits` token that looks like a permit number. */
+export function isPermitToken(token: string): boolean {
+  return /^\d{6,}[A-Z]?$/.test(token) || /^BLDG-/i.test(token);
+}
+
 /**
- * Ruling IL1's test, in or out of flight: an open discretionary history at `entitled` whose
- * project holds no permit (after linkage), no child record opened after the entitled day, no DA
- * tie, and no other project active on its parcels since entitled - 365. Null when it fails; else
+ * Which lapse rule a history takes (Rulings IL1, SE1, SE2): `inferred` for a discretionary one or
+ * a Housing Choice-SF one, `streamlined` for SB 35 / SB 423 / AB 2011, `none` for HSD and AB 2162
+ * (and for a history on no pathway, or permit-only).
+ */
+export function lapseRule(
+  proj: LinkedProject,
+  pathway: string | null
+): 'inferred' | 'streamlined' | 'none' {
+  if (pathway === 'discretionary') return 'inferred';
+  if (pathway !== 'streamlined') return 'none';
+  const i = lapseInstrument(proj);
+  return i === 'statutory' ? 'streamlined' : i === 'hcsf' ? 'inferred' : 'none';
+}
+
+/** Ruling SE2: an open streamlined history at `entitled` with no lapse rule (HSD, AB 2162). */
+export function lapseNoRule(
+  proj: LinkedProject,
+  pathway: string | null,
+  entered: Entered,
+  end: End | null
+): boolean {
+  return (
+    pathway === 'streamlined' &&
+    lapseRule(proj, pathway) === 'none' &&
+    openAtEntitled(entered, end) !== null
+  );
+}
+
+/**
+ * Ruling IL1's test, in or out of flight: an open discretionary (or Housing Choice-SF, Ruling SE2)
+ * history at `entitled` whose project holds no permit (after linkage) and whose Planning records
+ * name none in `building_permits` (Rulings IL2, IL2a), no child record opened after the entitled
+ * day, no DA tie, and no other project active on its parcels since entitled - 365. Null when it
+ * fails; else
  * the rule expiry and `due` = max(rule expiry, last observed). The caller exits a project not in
  * flight at `due + LAPSE_GRACE_DAYS` when that is on or before asOf, and flags an in-flight one
  * when `due` is.
@@ -123,10 +154,12 @@ export function inferredLapse(
   end: End | null,
   ctx: LapseCtx
 ): { expiry: Day; due: Day; exitDay: Day } | null {
-  if (pathway !== 'discretionary') return null;
+  if (lapseRule(proj, pathway) !== 'inferred') return null;
   const o = openAtEntitled(entered, end);
   if (o === null) return null;
   if (proj.permits.length > 0) return null;
+  // Ruling IL2: a named permit means one was filed, fetched or not (a satellite implies a permit).
+  if (proj.anchors.some((a) => a.permits.some(isPermitToken))) return null;
   if (proj.children.some((c) => c.openDay !== null && c.openDay > o.entitled)) return null;
   if (daExcluded(proj, ctx.family, ctx.daParcels)) return null;
   if (otherActivity(proj, ctx.family, ctx.index, o.entitled - 365)) return null;
@@ -136,7 +169,8 @@ export function inferredLapse(
 }
 
 /**
- * Ruling SE1's test: an open streamlined history at `entitled`, with no DA tie. Null when it
+ * Ruling SE1's test (SE2: SB 35 / SB 423 / AB 2011 evidence only): an open streamlined history at
+ * `entitled`, with no DA tie. Null when it
  * fails; `exempt` when the primary Planning record proposes half or more affordable units (it
  * never expires); else its expiry day (the caller exits it when that is on or before asOf).
  */
@@ -147,7 +181,7 @@ export function streamlinedLapse(
   end: End | null,
   ctx: Pick<LapseCtx, 'family' | 'daParcels'>
 ): { exempt: true } | { exempt: false; day: Day } | null {
-  if (pathway !== 'streamlined') return null;
+  if (lapseRule(proj, pathway) !== 'streamlined') return null;
   const o = openAtEntitled(entered, end);
   if (o === null) return null;
   if (daExcluded(proj, ctx.family, ctx.daParcels)) return null;

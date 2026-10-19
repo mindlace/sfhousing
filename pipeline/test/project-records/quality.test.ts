@@ -141,7 +141,7 @@ const TABLE: Record<string, Spec> = {
     unitsWeighted: false,
     warnShare: 0.01,
     failShare: 0.1,
-    label: 'A streamlined approval past its statutory term with no permit was treated as expired'
+    label: 'A streamlined approval past its statutory term was treated as expired'
   },
   'pr.permits.placeholder-valuation': {
     kind: 'bound',

@@ -45,6 +45,8 @@
  * | M36 2020-000036PRJ     | lot 010; SB 35, entitled 2021-01-15, in the pipeline: streamlined expiry    |
  * | M37 2018-000037PRJ     | no lot; SB 35, entitled 2019-03-01, 6 of 10 affordable: never expires     |
  * | M38 2022-000038PRJ     | no lot; SB 35, entitled 2023-06-01: expires 2027-06-01, still open        |
+ * | M39 2018-000039PRJ     | lot 002 (a DA parcel); entitled 2019-04-01, no activity: stays open (IL1) |
+ * | M40 2020-000040PRJ     | lot 013; entitled 2021-02-01; M2 and M4 active on the lot: stays open     |
  * | xdht extras            | forms 2 (+3), 3 (+2) and 6 (-1): rhnaCompletedNet 4                       |
  *
  * `enrichment/construction-verified.json` (Ruling C3): M7 `dead` (exit withdrawn at permitFiled on
@@ -701,6 +703,28 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       new_construction: 'CHECKED',
       sb35: 'CHECKED'
     },
+    // M39 (Ruling IL1, review I2): as M34 but on lot 002, which the fixture's DA set holds (a
+    // master's descendants): excluded, so its history stays open.
+    {
+      record_id: '2018-000039PRJ',
+      record_status: 'Open',
+      block: '3512',
+      lot: '002',
+      open_date: ts('2018-10-01'),
+      number_of_units_prop: '4',
+      new_construction: 'CHECKED'
+    },
+    // M40 (Ruling IL1, review I2): entitled 2021-02-01 on lot 013, past expiry and grace, but M2
+    // (filed 2026) and M4 (PPA 2021) are active on the lot since entitled - 365: stays open.
+    {
+      record_id: '2020-000040PRJ',
+      record_status: 'Open',
+      block: '3512',
+      lot: '013',
+      open_date: ts('2020-05-01'),
+      number_of_units_prop: '5',
+      new_construction: 'CHECKED'
+    },
     // M29 (Ruling F1a): a referral (opened after its permit was filed, no evidence) whose
     // number_of_units_prop is 0, so its history omits unitsAt.filed (pr.units.filed-zero).
     {
@@ -834,14 +858,16 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       end_event_type: 'approval',
       end_event_date: ts('2019-09-03')
     },
-    // M34-M38's approvals (Rulings IL1, SE1).
+    // M34-M40's approvals (Rulings IL1, SE1).
     ...(
       [
         ['2018-000034PRJ', '2018-11-15', '2019-05-01'],
         ['2022-000035PRJ', '2022-06-15', '2023-03-01'],
         ['2020-000036PRJ', '2020-06-15', '2021-01-15'],
         ['2018-000037PRJ', '2018-09-15', '2019-03-01'],
-        ['2022-000038PRJ', '2022-12-15', '2023-06-01']
+        ['2022-000038PRJ', '2022-12-15', '2023-06-01'],
+        ['2018-000039PRJ', '2018-10-15', '2019-04-01'],
+        ['2020-000040PRJ', '2020-05-15', '2021-02-01']
       ] as const
     ).map(([id, start, end]) => ({
       b1_alt_id: id,

@@ -65,6 +65,8 @@ import {
   activityIndex,
   inferredLapse,
   lapseExit,
+  lapseNoRule,
+  lapseRule,
   parcelFamily,
   streamlinedLapse,
   type Activity
@@ -619,7 +621,7 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
   // an inferred lapse (they carry the id); their ids.
   [PR.stagesInferredLapse]: ({ withHistory }) => {
     const of = withHistory.filter(
-      (a) => a.pathway === 'discretionary' && a.entered.entitled !== undefined
+      (a) => lapseRule(a.proj, a.pathway) === 'inferred' && a.entered.entitled !== undefined
     );
     const sample = of.filter((a) => a.stale.lapsed).map((a) => a.proj.id);
     return { fired: sample.length, of: of.length, sample };
@@ -628,7 +630,7 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
   // their statutory term, in flight or not (they carry the id); their ids.
   [PR.stagesStreamlinedExpiry]: ({ withHistory }) => {
     const of = withHistory.filter(
-      (a) => a.pathway === 'streamlined' && a.entered.entitled !== undefined
+      (a) => lapseRule(a.proj, a.pathway) === 'streamlined' && a.entered.entitled !== undefined
     );
     const sample = of.filter((a) => a.stale.streamlinedExpired).map((a) => a.proj.id);
     return { fired: sample.length, of: of.length, sample };
@@ -773,6 +775,7 @@ function zeroCounts(): Record<string, number> {
     'projects.lapseFlagged': 0,
     'projects.lapseFlaggedUnits': 0,
     'histories.streamlinedExpiry.affordableExempt': 0,
+    'projects.lapseNoRule': 0,
     'histories.statutoryExpiry.excludedCompletePermit': 0,
     'histories.unitsFiledCarried': 0,
     'histories.unitsFiledOmitted': 0,
@@ -966,6 +969,8 @@ export function deriveProjects(
       for (const id of [...da.daParcels, ...da.trackingParcels, ...da.descendants]) {
         daParcels.add(id);
       }
+      // Review M8: a scheduled master's DA parcels do not carry their descendants; add them.
+      for (const id of da.daParcels) for (const x of input.descendants(id)) daParcels.add(x);
     }
     if (a.multiPhase || a.proj.pipelineRows.some((r) => r.da !== null)) {
       for (const id of family(a.proj)) daParcels.add(id);
@@ -1024,6 +1029,7 @@ export function deriveProjects(
       applyStreamlined(a, lapseInput);
     }
     if (a.stale.streamlinedExempt) counts['histories.streamlinedExpiry.affordableExempt']++;
+    if (lapseNoRule(a.proj, a.pathway, a.histEntered, a.histEnd)) counts['projects.lapseNoRule']++;
     if (a.stale.expiryExcludedComplete) {
       counts['histories.statutoryExpiry.excludedCompletePermit']++;
     }

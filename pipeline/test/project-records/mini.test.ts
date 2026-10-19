@@ -289,10 +289,10 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
       day: day('2026-09-01')
     });
     expect(h.quality).toEqual(['pr.stages.verified-construction']);
-    // The in-flight decision reads the spec 4.6 end: M7, M24, M25, M26, M29, M30, M31, M34, M37
-    // and M38 are stale-open.
-    expect(r.counts['projects.staleOpen']).toBe(10);
-    expect(r.counts['projects.staleOpenUnits']).toBe(45);
+    // The in-flight decision reads the spec 4.6 end: M7, M24, M25, M26, M29, M30, M31, M34, M37,
+    // M38, M39 and M40 are stale-open.
+    expect(r.counts['projects.staleOpen']).toBe(12);
+    expect(r.counts['projects.staleOpenUnits']).toBe(54);
   });
 
   it('M8: a referral PRJ is permitOnly, on the retired lot mapped to lot 12', () => {
@@ -596,8 +596,8 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(history('PRJ:2019-000001PRJ').unitsAt.filed).toBe(24);
     expect(r.counts['link.splitComponents']).toBe(1);
     expect(r.counts['quality.pr.units.split-filed.fired']).toBe(2);
-    // Of the 23 histories whose primary PRJ records number_of_units_prop (M29's 0, M30-M38).
-    expect(r.counts['quality.pr.units.split-filed.of']).toBe(23);
+    // Of the 25 histories whose primary PRJ records number_of_units_prop (M29's 0, M30-M40).
+    expect(r.counts['quality.pr.units.split-filed.of']).toBe(25);
     // Both ended complete while the pipeline lists them (observe rule; neither carries it).
     expect(r.counts['quality.pr.pipeline.records-win.fired']).toBe(2);
     // T3 is unchanged: no project carries the id and qualityRules does not list it.
@@ -706,7 +706,7 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(r.counts['histories.unitsFiledCarried']).toBe(3);
     expect(r.counts['histories.unitsFiledOmitted']).toBe(0);
     expect(r.counts['quality.pr.units.filed-zero.fired']).toBe(1);
-    expect(r.counts['quality.pr.units.filed-zero.of']).toBe(23);
+    expect(r.counts['quality.pr.units.filed-zero.of']).toBe(25);
   });
 
   it('M30: a PRJ-named type 3 alteration advances the entitled PRJ to permitIssued (Ruling L1)', () => {
@@ -806,6 +806,12 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(r.counts['histories.streamlinedExpiry.affordableExempt']).toBe(1);
     expect(r.counts['quality.pr.stages.streamlined-expiry.fired']).toBe(1);
     expect(r.counts['quality.pr.stages.streamlined-expiry.of']).toBe(3);
+  });
+
+  it('M39 (DA lot) and M40 (activity on its lot) stay open (Ruling IL1, review I2)', () => {
+    expect(history('PRJ:2018-000039PRJ').end.kind).toBe('open');
+    expect(history('PRJ:2020-000040PRJ').end.kind).toBe('open');
+    expect(history('PRJ:2020-000040PRJ').quality).not.toContain('pr.stages.inferred-lapse');
   });
 
   it('IL1 grace boundary: the exit day equal to asOf exits, the day before asOf does not', () => {

@@ -92,10 +92,12 @@ describe('calibration invariants on fixture-0', () => {
       // Then M34-M38 (Rulings IL1, SE1): five Planning-record histories filed 2018-2022 (4, 10, 8,
       // 10 and 6 units), so +5 again (34 and 33); M34 (inferred lapse) and M36 (streamlined
       // expiry) exit at entitled, so last-stage 9 and purge-censor 8; none is permit-only.
-      'sc.stages.gap-impute': [0, 33],
-      'sc.stages.no-fcd-duration': [0, 33],
+      // Then M39 and M40 (review I2): two open discretionary histories (4 and 5 units), so +2 (36
+      // and 35); open, so last-stage and purge-censor unchanged.
+      'sc.stages.gap-impute': [0, 35],
+      'sc.stages.no-fcd-duration': [0, 35],
       // Spec §4.4a "Fixture cases": these two must not fire on fixture-0 (of > 0).
-      'sc.stages.running-max': [0, 34],
+      'sc.stages.running-max': [0, 36],
       'sc.exit.last-stage': [0, 9],
       'sc.exit.purge-censor': [0, 8],
       // Ruling R26: of = 0 because the mini histories have no revised pair to clamp.

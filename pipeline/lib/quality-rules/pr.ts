@@ -211,7 +211,7 @@ export const PR_RULES: readonly QualityRule[] = [
     maskBit: null,
     label:
       'A discretionary approval with no permit or other activity a year past its performance period was treated as lapsed',
-    denominator: 'discretionary histories that entered entitled',
+    denominator: 'discretionary and Housing Choice-SF histories that entered entitled',
     warnShare: 0.01,
     failShare: 0.1,
     unitsWeighted: false
@@ -232,8 +232,8 @@ export const PR_RULES: readonly QualityRule[] = [
     tier: 2,
     valueTier: 2,
     maskBit: null,
-    label: 'A streamlined approval past its statutory term with no permit was treated as expired',
-    denominator: 'streamlined histories that entered entitled',
+    label: 'A streamlined approval past its statutory term was treated as expired',
+    denominator: 'SB 35, SB 423 and AB 2011 histories that entered entitled',
     warnShare: 0.01,
     failShare: 0.1,
     unitsWeighted: false

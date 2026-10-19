@@ -43,6 +43,24 @@ export function streamlinedByText(desc: string | null): boolean {
   return desc !== null && STREAMLINED_RE.test(desc) && !STREAMLINED_NEGATION_RE.test(desc);
 }
 
+/** Ruling SE2: the statutes with a self-executing expiry (Gov. Code 65913.4(g), 65912.114(l)). */
+const STATUTORY_RE = /\bSB[\s-]?35\b|\bSB[\s-]?423\b|\bAB[\s-]?2011\b/i;
+/** Housing Choice-SF (Planning Code 206.10): standard conditions of approval (rule.json). */
+const HCSF_RE = /Housing[\s-]+Choice\s*[-–—]?\s*(SF|San Francisco)|\bHCSF\b|Section\s+206\.10/i;
+
+/**
+ * Ruling SE2: which lapse rule a streamlined project's approval takes. `statutory` (the `sb35` flag,
+ * or SB 35 / SB 423 / AB 2011 text) takes the streamlined expiry; `hcsf` (Housing Choice-SF text)
+ * takes the inferred lapse of a discretionary approval; `none` (HSD, AB 2162) takes no lapse rule.
+ * Statutory wins over HC-SF, which wins over none, across the anchors.
+ */
+export function lapseInstrument(proj: LinkedProject): 'statutory' | 'hcsf' | 'none' {
+  const text = (a: Prj) => (streamlinedByText(a.description) ? (a.description as string) : null);
+  if (proj.anchors.some((a) => a.sb35 || STATUTORY_RE.test(text(a) ?? ''))) return 'statutory';
+  if (proj.anchors.some((a) => HCSF_RE.test(text(a) ?? ''))) return 'hcsf';
+  return 'none';
+}
+
 function streamlinedEvidence(a: Prj): boolean {
   return a.sb35 || a.hsd || a.ab2162 || streamlinedByText(a.description);
 }
