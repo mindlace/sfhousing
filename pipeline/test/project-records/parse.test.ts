@@ -27,9 +27,10 @@ function raw(over: Partial<Record<ProjectSourceId, RawRow[]>> = {}) {
 }
 
 describe('source ids', () => {
-  it('lists the seven ids in order and maps them to the locked DataSF datasets', () => {
+  it('lists the eight ids in order and maps them to the locked DataSF datasets', () => {
     expect([...PROJECT_SOURCE_IDS]).toEqual([
       'datasf-permits-newcon',
+      'datasf-permits-named',
       'datasf-planning-projects',
       'datasf-planning-records',
       'datasf-planning-review',
@@ -38,6 +39,59 @@ describe('source ids', () => {
       'datasf-dev-pipeline'
     ]);
     for (const id of PROJECT_SOURCE_IDS) expect(DATASET[id]).toBe(DATASF[id].dataset);
+  });
+});
+
+describe('named unit-adding permits (Ruling L1)', () => {
+  const named = (n: string, extra: RawRow = {}): RawRow => ({
+    permit_number: n,
+    permit_type: '3',
+    block: '3512',
+    lot: '001',
+    status: 'issued',
+    proposed_units: '4.0',
+    existing_units: '1.0',
+    ...extra
+  });
+
+  it('keeps a type 3/8 permit only when a PRJ names it; the newcon row wins on overlap', () => {
+    const p = parseAll(
+      raw({
+        'datasf-permits-newcon': [
+          { permit_number: 'N1', permit_type: '2', status: 'filed', proposed_units: '20.0' }
+        ],
+        'datasf-permits-named': [
+          named('A1'),
+          named('A2', { permit_type: '8' }),
+          named('ADU'),
+          named('N1', { proposed_units: '99.0' })
+        ],
+        'datasf-planning-projects': [
+          { record_id: '2019-000001PRJ', building_permits: 'A1, N1' },
+          { record_id: '2020-000002PRJ', building_permits: 'A2' }
+        ]
+      }),
+      ASOF
+    );
+    expect([...p.permits.keys()]).toEqual(['A1', 'A2', 'N1']);
+    expect(p.permits.get('A1')).toMatchObject({ type: '3', proposedUnits: 4, existingUnits: 1 });
+    expect(p.permits.get('A2')?.type).toBe('8');
+    // N1 is in both sources: the new-construction row is used.
+    expect(p.permits.get('N1')).toMatchObject({ type: '2', proposedUnits: 20 });
+    expect(p.counts['parse.named.kept']).toBe(2);
+    expect(p.counts['parse.named.unnamed']).toBe(1);
+    expect(p.counts['parse.named.inNewcon']).toBe(1);
+  });
+
+  it('reads no date of a dropped named permit (pr.date.valid-range counts only kept ones)', () => {
+    const p = parseAll(
+      raw({
+        'datasf-permits-named': [named('ADU', { filed_date: '1909-06-02T00:00:00.000' })]
+      }),
+      ASOF
+    );
+    expect(p.permits.size).toBe(0);
+    expect(p.dates).toEqual({ of: 0, fired: 0, sample: [] });
   });
 });
 
@@ -136,6 +190,8 @@ describe('parseAll', () => {
     expect(p.asOf).toBe(ASOF);
     expect(p.permits.get('P1')).toEqual({
       number: 'P1',
+      type: '',
+      named: false,
       sitePermit: false,
       status: '',
       statusDay: null,
@@ -147,6 +203,7 @@ describe('parseAll', () => {
       stories: null,
       existingUnits: null,
       proposedUnits: null,
+      valuation: null,
       rows: [
         { blklot: null, streetNumber: null, streetName: null, streetSuffix: null, primary: false }
       ]
@@ -163,6 +220,7 @@ describe('parseAll', () => {
       decisionDay: null,
       unitsProp: null,
       unitsExist: null,
+      affordableProp: null,
       newConstruction: false,
       sb35: false,
       hsd: false,
@@ -185,7 +243,7 @@ describe('parseAll', () => {
     ]);
     expect(p.completions).toEqual([{ permit: 'P1', day: null, kind: null, units: null }]);
     expect(p.housing).toEqual([
-      { bpa: null, form: null, netUnits: null, firstCompletionDay: null }
+      { bpa: null, blklot: null, form: null, netUnits: null, firstCompletionDay: null }
     ]);
     expect(p.pipeline).toEqual([
       {
@@ -233,10 +291,16 @@ describe('parseAll', () => {
             number_of_proposed_stories: '5',
             existing_units: '0',
             proposed_units: '24',
+            estimated_cost: '900000.0',
+            revised_cost: '1100000.0',
             site_permit: 'Y',
             primary_address_flag: 'Y'
           },
-          { permit_number: '201906010002', permit_creation_date: '2019-05-30T00:00:00.000' }
+          {
+            permit_number: '201906010002',
+            permit_creation_date: '2019-05-30T00:00:00.000',
+            estimated_cost: '250000.0'
+          }
         ],
         'datasf-planning-projects': [
           {
@@ -252,6 +316,7 @@ describe('parseAll', () => {
             project_decision_date: '2019-04-01T00:00:00.000',
             number_of_units_prop: '24',
             number_of_units_exist: '0',
+            number_affordable_units_prop: '6',
             new_construction: 'CHECKED',
             sb35: 'CHECKED',
             housing_sustainability_dist: 'CHECKED',
@@ -331,7 +396,8 @@ describe('parseAll', () => {
       lastActivityDay: day(2021, 3, 4),
       stories: 5,
       existingUnits: 0,
-      proposedUnits: 24
+      proposedUnits: 24,
+      valuation: 1_100_000
     });
     expect(permit.rows).toEqual([
       {
@@ -343,6 +409,8 @@ describe('parseAll', () => {
       }
     ]);
     expect(p.permits.get('201906010002')!.filedDay).toBe(day(2019, 5, 30));
+    // Ruling E2: revised_cost ?? estimated_cost.
+    expect(p.permits.get('201906010002')!.valuation).toBe(250_000);
     expect(p.prjs.get('2019-000001PRJ')).toEqual({
       recordId: '2019-000001PRJ',
       status: 'Closed',
@@ -355,6 +423,7 @@ describe('parseAll', () => {
       decisionDay: day(2019, 4, 1),
       unitsProp: 24,
       unitsExist: 0,
+      affordableProp: 6,
       newConstruction: true,
       sb35: true,
       hsd: true,
@@ -385,6 +454,7 @@ describe('parseAll', () => {
     });
     expect(p.housing[0]).toEqual({
       bpa: '201906010001',
+      blklot: '3512008',
       form: 'F1',
       netUnits: 24,
       firstCompletionDay: day(2021, 6, 1)
@@ -407,6 +477,33 @@ describe('parseAll', () => {
       da: 'Y',
       prx: true
     });
+  });
+
+  it('a revised_cost under $1,000 is a placeholder: the valuation falls back to estimated_cost', () => {
+    const v = (row: Record<string, string>) =>
+      parseAll(
+        raw({ 'datasf-permits-newcon': [{ permit_number: 'P1', ...row }] }),
+        ASOF
+      ).permits.get('P1')!.valuation;
+    expect(v({ revised_cost: '1.0', estimated_cost: '510000.0' })).toBe(510_000);
+    expect(v({ revised_cost: '999.99', estimated_cost: '200000.0' })).toBe(200_000);
+    expect(v({ revised_cost: '1000.0', estimated_cost: '200000.0' })).toBe(1000);
+    expect(v({ revised_cost: '0.0' })).toBeNull();
+    expect(v({ estimated_cost: '75000.0' })).toBe(75_000);
+    // The pr.permits.placeholder-valuation tally: of = permits with a revised_cost.
+    const p = parseAll(
+      raw({
+        'datasf-permits-newcon': [
+          { permit_number: 'P1', revised_cost: '1.0', estimated_cost: '510000.0' },
+          { permit_number: 'P2', revised_cost: '250000.0' },
+          { permit_number: 'P3', estimated_cost: '90000.0' },
+          { permit_number: 'P4', revised_cost: '0.0' }
+        ]
+      }),
+      ASOF
+    );
+    expect(p.placeholderValuation).toEqual({ of: 3, fired: 2, sample: ['P1', 'P4'] });
+    expect([...p.placeholderPermits].sort()).toEqual(['P1', 'P4']);
   });
 
   it('takes permit-level fields from the primary row, in either input order', () => {

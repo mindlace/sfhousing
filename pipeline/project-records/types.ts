@@ -4,10 +4,12 @@
  */
 import type { ParcelId } from '../../src/lib/data/parcel';
 import type { Day } from '../../src/lib/timelapse/time';
+import type { ConstructionVerifiedFile } from '../enrichment/construction-schema';
 import type { MultiphaseFile } from '../enrichment/schema';
 
 export type ProjectSourceId =
   | 'datasf-permits-newcon'
+  | 'datasf-permits-named'
   | 'datasf-planning-projects'
   | 'datasf-planning-records'
   | 'datasf-planning-review'
@@ -17,6 +19,7 @@ export type ProjectSourceId =
 
 export const PROJECT_SOURCE_IDS: readonly ProjectSourceId[] = [
   'datasf-permits-newcon',
+  'datasf-permits-named',
   'datasf-planning-projects',
   'datasf-planning-records',
   'datasf-planning-review',
@@ -28,6 +31,7 @@ export const PROJECT_SOURCE_IDS: readonly ProjectSourceId[] = [
 /** Lock id to DataSF dataset id. */
 export const DATASET: Record<ProjectSourceId, string> = {
   'datasf-permits-newcon': 'i98e-djp9',
+  'datasf-permits-named': 'i98e-djp9',
   'datasf-planning-projects': 'qvu5-m3a2',
   'datasf-planning-records': 'y673-d69b',
   'datasf-planning-review': 'd4jk-jw33',
@@ -49,6 +53,15 @@ export interface AddressRow {
 
 export interface Permit {
   number: string;
+  /** `permit_type`, trimmed; '' if absent. Types 1/2 are new construction; 3/8 (Ruling L1) are
+   *  unit-adding alterations a Planning record names. */
+  type: string;
+  /**
+   * From `datasf-permits-named` (a PRJ-named type 3/8 alteration, Ruling L1); false for a
+   * `datasf-permits-newcon` row, which is new construction by source membership even with a
+   * blank `permit_type` (Ruling L2b, M4).
+   */
+  named: boolean;
   sitePermit: boolean;
   /** Trimmed, lower-case; '' if absent. */
   status: string;
@@ -62,6 +75,17 @@ export interface Permit {
   stories: number | null;
   existingUnits: number | null;
   proposedUnits: number | null;
+  /**
+   * `revised_cost`, else `estimated_cost` (dollars); null when neither is a number (Ruling E2). A
+   * placeholder `revised_cost` (under $1,000) is filled after linking (Ruling PV1, valuation.ts).
+   */
+  valuation: number | null;
+  /**
+   * Set when the lead row's `revised_cost` is a placeholder (Ruling PV1): the permit's own
+   * `estimated_cost` (as recorded) and the first real valuation (>= $1,000) of its other rows
+   * (`revised_cost`, else `estimated_cost`), or null.
+   */
+  placeholder?: { estimate: number | null; otherRows: number | null };
   rows: AddressRow[];
 }
 
@@ -77,6 +101,8 @@ export interface Prj {
   decisionDay: Day | null;
   unitsProp: number | null;
   unitsExist: number | null;
+  /** `number_affordable_units_prop`; null when blank (Ruling SE1). */
+  affordableProp: number | null;
   newConstruction: boolean;
   sb35: boolean;
   hsd: boolean;
@@ -111,6 +137,8 @@ export interface Completion {
 
 export interface HousingRow {
   bpa: string | null;
+  /** `blocklot` (block + lot), trimmed; null when missing. */
+  blklot: string | null;
   form: string | null;
   netUnits: number | null;
   firstCompletionDay: Day | null;
@@ -162,6 +190,13 @@ export interface Parsed {
   dates: { of: number; fired: number; sample: string[] };
   /** The parsed records (any kind) that held a date `pr.date.valid-range` treated as missing. */
   clipped: ReadonlySet<object>;
+  /**
+   * Rule `pr.permits.placeholder-valuation`: permits with a `revised_cost` (`of`), those whose
+   * placeholder under $1,000 was replaced by `estimated_cost` (`fired`), their numbers (`sample`).
+   */
+  placeholderValuation: { of: number; fired: number; sample: string[] };
+  /** The permit numbers `pr.permits.placeholder-valuation` replaced. */
+  placeholderPermits: ReadonlySet<string>;
 }
 
 export interface ProjectRecordsInput {
@@ -175,12 +210,20 @@ export interface ProjectRecordsInput {
    */
   descendants(blklot: string): ParcelId[];
   assessorUnits(id: ParcelId, rollYear: number): number | null;
+  /** T13 `scenario_panel.year_built` for a parcel and roll year; null when absent. */
+  yearBuilt(id: ParcelId, rollYear: number): number | null;
+  /** T13 `scenario_panel.lien_day` of a roll year; null when the panel has no such year. */
+  lienDay(rollYear: number): Day | null;
+  /** T13 `scenario_panel.imputed` mask for a parcel and roll year; null when there is no row. */
+  panelImputed(id: ParcelId, rollYear: number): number | null;
   latestRollYear: number;
   baseStories(id: ParcelId, rollYear: number): number | null;
   hiNet: Record<number, number>;
   areaM2(id: ParcelId): number;
   /** Parsed `multiphase.json` (spec 4.10.1). */
   multiphase: MultiphaseFile;
+  /** Parsed `construction-verified.json` (spec 4.6, curated verdicts). */
+  constructionVerified: ConstructionVerifiedFile;
 }
 
 /** A project after linking (spec 4.2): one connected component, or one split of it. */

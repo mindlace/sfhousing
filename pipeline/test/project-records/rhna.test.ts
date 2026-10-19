@@ -11,7 +11,13 @@ function d(iso: string): number {
 const ASOF = d('2026-10-10');
 
 function row(form: string | null, netUnits: number | null, iso: string | null): HousingRow {
-  return { bpa: null, form, netUnits, firstCompletionDay: iso === null ? null : d(iso) };
+  return {
+    bpa: null,
+    blklot: null,
+    form,
+    netUnits,
+    firstCompletionDay: iso === null ? null : d(iso)
+  };
 }
 
 describe('rhnaCompletedNet', () => {

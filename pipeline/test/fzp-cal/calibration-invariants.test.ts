@@ -75,14 +75,37 @@ describe('calibration invariants on fixture-0', () => {
     const rules: Record<string, [number, number]> = {
       // [fired, of]: the mini histories have no gap, no missing first_construction_document_date,
       // no out-of-order stage, no exit past the last stage and no purge window, by design.
-      'sc.stages.gap-impute': [0, 19],
-      'sc.stages.no-fcd-duration': [0, 19],
+      // of: project-records added mini histories BP:200406010024, BP:201112010026, BP:201409010025,
+      // BP:201410010027, BP:202503010028 (M24-M28): +5 qualifying, running-max 24; BP:200406010024
+      // ends before the first roll (preRoll 1) so the windowed denominators gain 4 (23); of 3
+      // ended, 2 of them exits, so last-stage 7 and purge-censor 6.
+      // Then M29 (PRJ:2016-000029PRJ, Ruling F1a): open at permitFiled since 2016, qualifying on its
+      // permit's 2 units, so +1 to running-max (25) and the windowed denominators (24); it is
+      // open (last-stage, purge-censor unchanged) and filed after 2015 (permitOnlyPre2015 stays 5).
+      // Then M30 and M31 (PRJ:2018-000030PRJ, PRJ:2019-000031PRJ; Rulings L1, L2): two open
+      // discretionary histories filed 2018 and 2019, qualifying on 5 and 6 units over 0 existing,
+      // so +2 to running-max (27) and the windowed denominators (26); open (last-stage and
+      // purge-censor unchanged) and not permit-only (permitOnlyPre2015 stays 5).
+      // Then M32 and M33 (Ruling SP1; supersession is T3 only, both histories stay): open at filed
+      // in 2026, qualifying on 10 and 12 units, pathway null, so +2 again (29 and 28); open and
+      // not permit-only (last-stage, purge-censor and permitOnlyPre2015 unchanged).
+      // Then M34-M38 (Rulings IL1, SE1): five Planning-record histories filed 2018-2022 (4, 10, 8,
+      // 10 and 6 units), so +5 again (34 and 33); M34 (inferred lapse) and M36 (streamlined
+      // expiry) exit at entitled, so last-stage 9 and purge-censor 8; none is permit-only.
+      // Then M39 and M40 (review I2): two open discretionary histories (4 and 5 units), so +2 (36
+      // and 35); open, so last-stage and purge-censor unchanged.
+      'sc.stages.gap-impute': [0, 35],
+      'sc.stages.no-fcd-duration': [0, 35],
       // Spec §4.4a "Fixture cases": these two must not fire on fixture-0 (of > 0).
-      'sc.stages.running-max': [0, 19],
-      'sc.exit.last-stage': [0, 4],
-      'sc.exit.purge-censor': [0, 4],
+      'sc.stages.running-max': [0, 36],
+      'sc.exit.last-stage': [0, 9],
+      'sc.exit.purge-censor': [0, 8],
       // Ruling R26: of = 0 because the mini histories have no revised pair to clamp.
-      'sc.revision.ratio-clamp': [0, 0]
+      'sc.revision.ratio-clamp': [0, 0],
+      // Partner ruling (2026-10-18): 8 windowed permitFiled pairs, none carried. The mini
+      // split-filed parts (PRJ:2009-000023PRJ:BP:2011020*0023) entered permitFiled in 2011, before
+      // the 2015 window, and the filed-zero PRJ:2016-000029PRJ starts at permitFiled (first stage).
+      'sc.revision.carried-excluded': [0, 8]
     };
     expect(Object.keys(rules).sort()).toEqual(
       QUALITY_RULES.filter((r) => r.id.startsWith('sc.'))
@@ -101,7 +124,9 @@ describe('calibration invariants on fixture-0', () => {
       ppaPooled: counts['calibration.method.ppaPooled'],
       sizeOverEnvelope: counts['calibration.method.sizeOverEnvelope'],
       preRoll: counts['calibration.window.preRoll']
-    }).toEqual({ permitOnlyPre2015: 1, ppaPooled: 2, sizeOverEnvelope: 0, preRoll: 0 });
+      // The added permit-only histories filed before 2015 (0024, 0026, 0025, 0027) make 1 + 4 = 5;
+      // BP:200406010024 is the pre-roll one.
+    }).toEqual({ permitOnlyPre2015: 5, ppaPooled: 2, sizeOverEnvelope: 0, preRoll: 1 });
   });
 
   it('V25-V29 hold when the files are re-checked, in order and before V30', async () => {

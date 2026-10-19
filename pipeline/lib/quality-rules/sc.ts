@@ -3,8 +3,8 @@ import type { QualityRule } from '../quality';
 /**
  * stage-calibration's T14 rules (design row T14; stage-calibration spec §4.4a). Each entry takes
  * its kind's default shares (`warnShare` 0.05 for `kind: 'missing'`, else 0.01; `failShare` 0.10)
- * except `sc.stages.gap-impute` and `sc.revision.ratio-clamp`, whose departures are stated at the
- * entries. The calibration step changes values only in its own memory.
+ * except `sc.stages.gap-impute`, `sc.revision.ratio-clamp` and `sc.revision.carried-excluded`, whose
+ * departures are stated at the entries. The calibration step changes values only in its own memory.
  */
 export const SC_RULES: readonly QualityRule[] = [
   {
@@ -115,6 +115,29 @@ export const SC_RULES: readonly QualityRule[] = [
     // split-row artefacts removed at source (16/176 live).
     warnShare: 0.1,
     failShare: 0.2,
+    unitsWeighted: false
+  },
+  {
+    // Partner ruling via conductor, 2026-10-18 ("Exclude from resize estimate"): project-records'
+    // Ruling U1 carries a later count back to `unitsAt.filed` (pr.units.filed-zero,
+    // pr.units.split-filed); a copied size is not an observed one, so a revision pair that reads
+    // it is left out of the revision probability and ratio fits (every other estimate keeps it).
+    id: 'sc.revision.carried-excluded',
+    owner: 'stage-calibration',
+    source: 'project-histories',
+    field: 'unitsAt',
+    kind: 'observe',
+    action: 'none',
+    tier: 2,
+    valueTier: null,
+    maskBit: null,
+    label:
+      'A revision pair whose earlier home count was carried back from a later record is left out of the resize estimate',
+    denominator: 'revision pairs in the window, before the exclusion',
+    // Departs from the `observe` defaults (partner ruling via conductor, 2026-10-19): partner-ruled
+    // exclusion of carried-back filing sizes; count reflects project-records' carry, not a defect.
+    warnShare: 0.15,
+    failShare: 0.25,
     unitsWeighted: false
   }
 ];

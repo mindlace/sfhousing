@@ -97,11 +97,27 @@ const EXPECTED: Record<ScRuleId, QualityRule> = {
     // partner ruling via conductor, 2026-10-18 (DQ-4)
     warnShare: 0.1,
     failShare: 0.2
+  },
+  // partner ruling via conductor, 2026-10-18 ("Exclude from resize estimate"); share override
+  // partner ruling via conductor, 2026-10-19
+  'sc.revision.carried-excluded': {
+    ...common,
+    id: 'sc.revision.carried-excluded',
+    field: 'unitsAt',
+    kind: 'observe',
+    action: 'none',
+    tier: 2,
+    valueTier: null,
+    label:
+      'A revision pair whose earlier home count was carried back from a later record is left out of the resize estimate',
+    denominator: 'revision pairs in the window, before the exclusion',
+    warnShare: 0.15,
+    failShare: 0.25
   }
 };
 
 describe('sc.* quality rules', () => {
-  it('SC_RULE_IDS lists the six ids', () => {
+  it('SC_RULE_IDS lists the seven ids', () => {
     expect([...SC_RULE_IDS].sort()).toEqual(Object.keys(EXPECTED).sort());
   });
 
@@ -113,21 +129,22 @@ describe('sc.* quality rules', () => {
     });
   }
 
-  it('stage-calibration owns exactly the six rules', () => {
+  it('stage-calibration owns exactly the seven rules', () => {
     const ids = QUALITY_RULES.filter((r) => r.owner === 'stage-calibration')
       .map((r) => r.id)
       .sort();
     expect(ids).toEqual([...SC_RULE_IDS].sort());
   });
 
-  it('has six rules, one of kind missing, and departs from the kind defaults only at gap-impute and ratio-clamp', () => {
-    expect(SC_RULES).toHaveLength(6);
+  it('has seven rules, one of kind missing, and departs from the kind defaults only at gap-impute, ratio-clamp and carried-excluded', () => {
+    expect(SC_RULES).toHaveLength(7);
     expect(SC_RULES.filter((r) => r.kind === 'missing').map((r) => r.id)).toEqual([
       'sc.stages.no-fcd-duration'
     ]);
     expect(kindDefaultDepartures(SC_RULES)).toEqual([
       'sc.stages.gap-impute',
-      'sc.revision.ratio-clamp'
+      'sc.revision.ratio-clamp',
+      'sc.revision.carried-excluded'
     ]);
   });
 });

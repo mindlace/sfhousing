@@ -20,6 +20,7 @@ import type {
 import type { MultiphaseFile } from '../enrichment/schema';
 import { qualityRule } from '../lib/quality';
 import { PR } from '../lib/quality-rules/pr';
+import { isNewConstructionPermit } from './classify';
 import { buildPhases, isoToDay, median } from './multiphase';
 import { permitCompletionDay, permitDays } from './stages';
 import type { Completion, LinkedProject, PipelineRow, ProjectRecordsInput } from './types';
@@ -72,10 +73,19 @@ export const T3_ONLY_QUALITY: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The rules that act only on T4d values (spec §4.8 `unitsAt`; Ruling S2): a T3 project never
- * carries them, so they never reach `qualityRules`.
+ * The rules that act only on T4d values (spec §4.8 `unitsAt`, Ruling S2; spec §4.6 stale open
+ * histories, Rulings C2, E2, C3, IL1 and SE1): a T3 project never carries them, so they never reach
+ * `qualityRules`.
  */
-export const T4D_ONLY_QUALITY: ReadonlySet<string> = new Set([PR.unitsSplitFiled]);
+export const T4D_ONLY_QUALITY: ReadonlySet<string> = new Set([
+  PR.unitsSplitFiled,
+  PR.unitsFiledZero,
+  PR.stagesCompleteFromEvidence,
+  PR.stagesStatutoryExpiry,
+  PR.stagesVerifiedConstruction,
+  PR.stagesInferredLapse,
+  PR.stagesStreamlinedExpiry
+]);
 
 function sortedIds(ids: Iterable<string>): string[] {
   return [...new Set(ids)].sort(cmp);
@@ -304,6 +314,8 @@ export function permitRows(
         .sort(cmp)[0] ?? null;
     const live = new Set(proj.live.map((q) => q.number));
     for (const q of proj.permits) {
+      // T4d: one row per linked type 1/2 permit; a named alteration (Ruling L1) is not one.
+      if (!isNewConstructionPermit(q)) continue;
       const da = daOf.get(q.number) ?? null;
       const prx =
         (prj !== null ? prxByBase.get(prj) : undefined) ??
@@ -354,14 +366,15 @@ function medianOf(units: number[]): { u: number; n: number } | null {
 }
 
 /** Proposed units of the completed permits (completion day from the project's own j67f rows). */
-function completedUnits(
+export function completedUnits(
   projects: Iterable<LinkedProject>,
   keep: (units: number, day: Day) => boolean = () => true
 ): number[] {
   const out: number[] = [];
   for (const proj of projects) {
     for (const q of proj.permits) {
-      if (q.proposedUnits === null) continue;
+      // Phase sizes are new buildings: a named alteration (Ruling L1) is not one.
+      if (q.proposedUnits === null || !isNewConstructionPermit(q)) continue;
       const d = permitCompletionDay(q, proj.completions);
       if (d !== null && keep(q.proposedUnits, d)) out.push(q.proposedUnits);
     }

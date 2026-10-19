@@ -1,10 +1,12 @@
 /**
  * `RevisionModel` (T4c; stage-calibration spec §4.9): how often a project resizes before
  * construction, and by how much. A pure function over the qualifying, normalised histories; the
- * ratio clamp is the registered rule `sc.revision.ratio-clamp` (§4.4a).
+ * ratio clamp is the registered rule `sc.revision.ratio-clamp` (§4.4a), and a pair whose count was
+ * carried back from a later record is left out (`sc.revision.carried-excluded`, partner ruling).
  */
 import { isoOf } from '../../project-records/parse';
 import { isoToDay } from '../../project-records/multiphase';
+import { PR } from '../quality-rules/pr';
 import { binIndex } from '../../../src/lib/timelapse/model';
 import {
   STAGE_ORDER,
@@ -24,6 +26,18 @@ const RATIO_MAX = REVISION_EDGES[REVISION_EDGES.length - 1];
 const BINS = REVISION_EDGES.length - 1;
 
 type AtStage = 'permitFiled' | 'permitIssued';
+
+/**
+ * project-records' Ruling U1 (pipeline/project-records/derive.ts `history`): a history carrying
+ * either rule has its `unitsAt.filed` copied from its next recorded count, not observed. Partner
+ * ruling ("Exclude from resize estimate"): a pair that reads that count is left out.
+ */
+const CARRY_RULES: readonly string[] = [PR.unitsFiledZero, PR.unitsSplitFiled];
+const CARRIED_STAGE: Stage = 'filed';
+
+const carriedPair = (h: NormHistory, t: { previous: Stage; next: Stage }): boolean =>
+  (t.previous === CARRIED_STAGE || t.next === CARRIED_STAGE) &&
+  h.src.quality.some((q) => CARRY_RULES.includes(q));
 
 /** The two revision entries, in output order (T4d records units for three stages only). */
 const PAIR_TYPES: {
@@ -66,19 +80,23 @@ function ratioProbs(pairs: Pair[]): number[] {
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
- * The revision model (spec §4.9) and the `sc.revision.ratio-clamp` tally (`fired` clamped pairs,
- * `of` revised pairs, `sample` `<id>:<stage>`).
+ * The revision model (spec §4.9), the `sc.revision.ratio-clamp` tally (`fired` clamped pairs, `of`
+ * revised pairs) and the `sc.revision.carried-excluded` tally (`fired` pairs left out because
+ * their earlier count was carried back, `of` the windowed pairs before that exclusion); both
+ * `sample` `<id>:<stage>`.
  */
 export function revisionModel(
   norm: NormHistory[],
   asOf: Day,
   cal: CalProfile
-): { revision: RevisionModel; clamp: RuleTally } {
+): { revision: RevisionModel; clamp: RuleTally; carried: RuleTally } {
   const from = isoToDay(PLANNING_START);
   const window: [string, string] = [PLANNING_START, isoOf(asOf)];
   const pairs: Pair[] = [];
   const clamped: string[] = [];
+  const excluded: string[] = [];
   let revisedPairs = 0;
+  let windowedPairs = 0;
 
   for (const h of [...norm].sort((a, b) => compare(a.id, b.id))) {
     for (const t of PAIR_TYPES) {
@@ -93,6 +111,11 @@ export function revisionModel(
       if (day === undefined || day < from || day > asOf) continue;
       // a project's first stage is never revised (its proposal is revisions[0])
       if (firstStage(h) === t.at) continue;
+      windowedPairs++;
+      if (carriedPair(h, t)) {
+        excluded.push(`${h.id}:${t.at}`);
+        continue;
+      }
       if (previous === next) {
         pairs.push({ at: t.at, revised: false, ratio: 1 });
         continue;
@@ -106,6 +129,8 @@ export function revisionModel(
   }
   clamped.sort(compare);
   const clamp: RuleTally = { fired: clamped.length, of: revisedPairs, sample: clamped };
+  excluded.sort(compare);
+  const carried: RuleTally = { fired: excluded.length, of: windowedPairs, sample: excluded };
 
   const pooledOk = pairs.length >= cal.revMinN;
   const rungs: string[] = [];
@@ -142,7 +167,8 @@ export function revisionModel(
 
   const sources = [datasf('planningProjects'), datasf('permits'), datasf('unitCompletions')];
   const clampText = `${clamp.fired} of ${clamp.of} revised pairs clamped to ${RATIO_MIN}x to ${RATIO_MAX}x (sc.revision.ratio-clamp, tier 4)`;
-  const common = `pairs: ${rungs.join('; ')}; permitFiled compares the PRJ units with the permit's units; permitIssued compares the permit's units with the completed units, completed projects only, and T4c allows no revision on or after construction, so that permit-to-completion change is placed on entering permitIssued (tier 2 attribution); a pair counts when both counts are at least 1 and the later stage was entered in ${window[0]} to ${window[1]}; a project's first stage is never revised; revised means the counts differ; ratio bins ${REVISION_EDGES.join(', ')} (tier 4), a ratio of exactly ${RATIO_MAX} in the last bin; ${clampText}; probs rounded to 6 decimals, the residual to the largest; units are cross-record (T4d)`;
+  const carriedText = `${carried.fired} pairs with a carried-back earlier home count excluded (partner ruling; rule sc.revision.carried-excluded)`;
+  const common = `pairs: ${rungs.join('; ')}; permitFiled compares the PRJ units with the permit's units; permitIssued compares the permit's units with the completed units, completed projects only, and T4c allows no revision on or after construction, so that permit-to-completion change is placed on entering permitIssued (tier 2 attribution); a pair counts when both counts are at least 1 and the later stage was entered in ${window[0]} to ${window[1]}; a project's first stage is never revised; ${carriedText}; revised means the counts differ; ratio bins ${REVISION_EDGES.join(', ')} (tier 4), a ratio of exactly ${RATIO_MAX} in the last bin; ${clampText}; probs rounded to 6 decimals, the residual to the largest; units are cross-record (T4d)`;
   return {
     revision: {
       at,
@@ -164,6 +190,7 @@ export function revisionModel(
             window
           }
     },
-    clamp
+    clamp,
+    carried
   };
 }
