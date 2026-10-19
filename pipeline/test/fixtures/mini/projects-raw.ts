@@ -51,7 +51,7 @@
  * | xdht extras            | forms 2 (+3), 3 (+2) and 6 (-1): rhnaCompletedNet 4                       |
  *
  * `enrichment/construction-verified.json` (Ruling C3): M7 `dead` (exit withdrawn at permitFiled on
- * the check day), M26 `unknown` (no change), and an id that names no history (a build warning).
+ * its last observed day, Ruling C3d), M26 `unknown` (no change), and an id that names no history (a build warning).
  * M1 and M8 are $3M site permits, so within their statutory time and still in flight (Ruling I4
  * ends M27 instead).
  * The panel's `imputed` masks (`PANEL_IMPUTED`) mark lot 3 and 4's RA1 rows (bits 3 and 5).

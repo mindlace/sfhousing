@@ -408,7 +408,8 @@ function applyStreamlined(a: Assessed, ctx: LapseInput): boolean {
 
 /**
  * Ruling C3c: a curated `dead` verdict on an in-flight project's open history applies as on any
- * other (exit `withdrawn` at the last entered stage, dated `checked`); true when it did, and the
+ * other (exit `withdrawn` at the last entered stage, dated min(`checked`, `lastObserved`), Ruling
+ * C3d); true when it did, and the
  * caller takes the project out of flight. A `complete` or `unknown` verdict is left for the
  * not-applied warning.
  */
