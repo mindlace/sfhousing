@@ -24,6 +24,7 @@ import {
 } from './fixtures/mini-projects';
 import { buildSimInput } from './input';
 import { P, draw, jobEntity } from './rng';
+import { monthIndexer, monthsOf, shownSeries } from './score';
 import { simulate, simulateDetailed, type Master } from './simulate';
 import type { Schedule, SimInput } from './types';
 
@@ -447,6 +448,15 @@ describe('multi-phase masters (§4.4.3a)', () => {
       expect(m.phaseUnits).toEqual([150, 250]);
       expect(phasesOf(schedules, U2)).toEqual([]);
       const exit = m.end.kind === 'exit' ? m.end.day : NaN;
+      // the score: Σ phaseUnits (400) go to exitedUnits on the exit day (§4.5 master bucket)
+      const months = monthsOf(AS_OF, H);
+      const withM = shownSeries({ schedules, masters }, AS_OF, H, months);
+      const others = masters.filter((x) => x !== m);
+      const without = shownSeries({ schedules, masters: others }, AS_OF, H, months);
+      const at = monthIndexer(months, H)(exit);
+      expect(withM.map((r, i) => r.exitedUnits - without[i].exitedUnits)).toEqual(
+        months.map((_, i) => (i >= at ? 400 : 0))
+      );
       const sims = simsOn(schedules);
       for (const id of parcels) {
         const list = sims.get(id) ?? [];
@@ -454,7 +464,6 @@ describe('multi-phase masters (§4.4.3a)', () => {
         if (list.length > 0) expect(firstDay(list[0])).toBeGreaterThanOrEqual(exit + 1);
       }
     }
-    // Task 7 adds the score check: the phases' units go to exitedUnits on the exit day.
     expect(after).toBeGreaterThan(0);
   });
 
