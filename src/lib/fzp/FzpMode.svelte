@@ -618,6 +618,7 @@
       {bandRunsTotal}
       {seed}
       {representative}
+      {canReroll}
       {datasetVersion}
       builtAt={manifest?.builtAt ?? ''}
       onrepresentative={() => requestReroll(null)}

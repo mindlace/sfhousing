@@ -4,6 +4,24 @@
   `provenanceSections`; section 10 (the data checks) is this component's own state, loaded the
   first time the dialog opens and held for the page's lifetime.
 -->
+<script module lang="ts">
+  /** Every element kind that can take keyboard focus (the Tab wrap filters out tabindex=-1). */
+  const FOCUSABLE = [
+    'a[href]',
+    'area[href]',
+    'button:not([disabled])',
+    'input:not([disabled]):not([type="hidden"])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    'summary',
+    'iframe',
+    'audio[controls]',
+    'video[controls]',
+    '[contenteditable]:not([contenteditable="false"])',
+    '[tabindex]'
+  ].join(', ');
+</script>
+
 <script lang="ts">
   import type { TimelineScore } from '$lib/sim/protocol';
   import type { ProjectsFile } from '$lib/timelapse/projects';
@@ -87,7 +105,10 @@
    */
   function onkeydown(e: KeyboardEvent) {
     if (e.key !== 'Tab' || dialog === null) return;
-    const items = [...dialog.querySelectorAll<HTMLElement>('a[href], button:not([disabled])')];
+    // In the tab order and rendered (not tabindex=-1, not inside a closed <details>).
+    const items = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+      (el) => el.tabIndex >= 0 && el.getClientRects().length > 0
+    );
     if (items.length === 0) return;
     const first = items[0];
     const last = items[items.length - 1];

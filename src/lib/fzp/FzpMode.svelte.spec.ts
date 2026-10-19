@@ -491,6 +491,31 @@ describe('FzpMode rerolls and the representative flag', () => {
     expect(s.onurlseed.mock.calls).toEqual([[null]]);
   });
 
+  it("'Back to the representative future' is disabled while a reroll is busy or the worker stopped", async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = setup({ urlSeed: 5 });
+    await toReady(s, 5);
+    const back = () =>
+      page
+        .getByRole('region', { name: 'Simulation scoreboard' })
+        .getByRole('button', { name: 'Back to the representative future' })
+        .first();
+    await expect.element(back()).not.toHaveAttribute('aria-disabled');
+
+    await another().click();
+    const reroll = s.w().lastOf('reroll')!;
+    await expect.element(back()).toHaveAttribute('aria-disabled', 'true');
+    (back().element() as HTMLElement).click();
+    expect(s.w().allOf('reroll')).toHaveLength(1);
+    s.w().emit(timelineMsg(reroll.rev, 6));
+    await expect.element(back()).not.toHaveAttribute('aria-disabled');
+
+    s.w().crash();
+    await expect.element(back()).toHaveAttribute('aria-disabled', 'true');
+    (back().element() as HTMLElement).click();
+    expect(s.w().allOf('reroll')).toHaveLength(1);
+  });
+
   it('onResyncNeeded calls client.resync: one reroll per episode, flag kept', async () => {
     const s = setup();
     await toReady(s, 7);

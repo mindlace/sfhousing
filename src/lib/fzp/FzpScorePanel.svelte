@@ -24,6 +24,8 @@
     bandRunsTotal: number;
     seed: number | null;
     representative: boolean;
+    /** False while a reroll is in flight or the worker has stopped ('Another future' too). */
+    canReroll: boolean;
     datasetVersion: string;
     builtAt: string;
     onrepresentative: () => void;
@@ -39,6 +41,7 @@
     bandRunsTotal,
     seed,
     representative,
+    canReroll,
     datasetVersion,
     builtAt,
     onrepresentative,
@@ -166,10 +169,14 @@
       </p>
     {/if}
     {#if !representative}
+      <!-- aria-disabled, not disabled, so a press does not drop keyboard focus to <body>. -->
       <button
         type="button"
-        class="min-h-11 rounded-md px-1 text-left text-sm font-semibold underline"
-        onclick={() => onrepresentative()}>Back to the representative future</button
+        aria-disabled={canReroll ? undefined : 'true'}
+        class="min-h-11 rounded-md px-1 text-left text-sm font-semibold underline aria-disabled:cursor-not-allowed aria-disabled:text-gray-700"
+        onclick={() => {
+          if (canReroll) onrepresentative();
+        }}>Back to the representative future</button
       >
     {/if}
 

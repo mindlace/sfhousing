@@ -86,6 +86,31 @@ describe('opening', () => {
     expect(document.activeElement).toBe(opener().element());
   });
 
+  it('wraps Tab over every focusable kind, a <summary> and a [tabindex] among them', async () => {
+    await setup();
+    await openIt();
+    // Content a later section may add: a disclosure, and a focusable scroll region before it.
+    const extra = document.createElement('div');
+    extra.innerHTML =
+      '<div tabindex="0" data-testid="scroller">Scroll</div><details><summary>More</summary></details>';
+    dialog().append(extra);
+    const close = dialog().querySelector('button')!;
+    const summary = extra.querySelector('summary')!;
+    const scroller = extra.querySelector('[tabindex]') as HTMLElement;
+    try {
+      close.focus();
+      await userEvent.tab({ shift: true });
+      expect(document.activeElement).toBe(summary);
+      await userEvent.tab({ shift: true });
+      expect(document.activeElement).toBe(scroller);
+      summary.focus();
+      await userEvent.tab();
+      expect(document.activeElement).toBe(close);
+    } finally {
+      extra.remove();
+    }
+  });
+
   it('closes from its Close button', async () => {
     await setup();
     await openIt();

@@ -1,7 +1,7 @@
 /// <reference types="@vitest/browser-playwright" />
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { cdp, page } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { TIMELINE_LEGEND, timelineTokenCss } from '$lib/map/palette';
 import { announcement } from './score-view';
@@ -28,6 +28,7 @@ type Overrides = Partial<{
   bandRunsTotal: number;
   seed: number | null;
   representative: boolean;
+  canReroll: boolean;
   onrepresentative: () => void;
   onsources: () => void;
   onsheetchange: (open: boolean, heightPx: number) => void;
@@ -43,6 +44,7 @@ const props = (over: Overrides = {}) => ({
   bandRunsTotal: 101,
   seed: 7,
   representative: true,
+  canReroll: true,
   datasetVersion: 'fixture-0',
   builtAt: '2026-10-10T12:00:00Z',
   onrepresentative: vi.fn(),
@@ -227,6 +229,18 @@ describe('future line', () => {
     expect(onrepresentative).toHaveBeenCalledOnce();
   });
 
+  it('the way back is disabled, and inert, while a future cannot be asked for', async () => {
+    await page.viewport(1280, 800);
+    const onrepresentative = vi.fn();
+    await render(FzpScoreboard, {
+      props: props({ seed: 7, representative: false, canReroll: false, onrepresentative })
+    });
+    const back = page.getByRole('button', { name: 'Back to the representative future' });
+    await expect.element(back).toHaveAttribute('aria-disabled', 'true');
+    (back.element() as HTMLElement).click();
+    expect(onrepresentative).not.toHaveBeenCalled();
+  });
+
   it('opens the sources dialog through its callback', async () => {
     await page.viewport(1024, 768);
     const onsources = vi.fn();
@@ -392,6 +406,38 @@ describe('375 px', () => {
       .element(page.getByRole('group', { name: 'Simulation scoreboard details' }))
       .not.toBeInTheDocument();
     await expect.poll(() => onsheetchange.mock.calls.at(-1)).toEqual([false, 0]);
+  });
+
+  it('Escape in a modal dialog opened from the sheet leaves the sheet open and focus in it', async () => {
+    await page.viewport(375, 812);
+    // A native modal standing in for SourcesDialog: it returns focus to its opener on close.
+    const dlg = document.createElement('dialog');
+    dlg.innerHTML = '<button type="button">Inside</button>';
+    document.body.append(dlg);
+    let opener: HTMLElement | null = null;
+    dlg.addEventListener('close', () => opener?.isConnected && opener.focus());
+    const onsources = vi.fn(() => {
+      opener = document.activeElement as HTMLElement;
+      dlg.showModal();
+    });
+    try {
+      await render(FzpScoreboard, { props: props({ onsources }) });
+      await page.getByRole('button', { name: /net new homes/ }).click();
+      const sheet = page.getByRole('group', { name: 'Simulation scoreboard details' });
+      const sources = sheet.getByRole('button', { name: 'Where these numbers come from' });
+      await sources.click();
+      expect(dlg.open).toBe(true);
+      await userEvent.keyboard('{Escape}');
+      expect(dlg.open).toBe(false);
+      await expect.element(sheet).toBeInTheDocument();
+      await expect.element(sources).toHaveFocus();
+
+      // With no modal open, Escape still closes the sheet.
+      await userEvent.keyboard('{Escape}');
+      await expect.element(sheet).not.toBeInTheDocument();
+    } finally {
+      dlg.remove();
+    }
   });
 
   it('the sheet map key starts closed', async () => {

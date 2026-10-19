@@ -28,6 +28,8 @@
     bandRunsTotal: number;
     seed: number | null;
     representative: boolean;
+    /** False while a reroll is in flight or the worker has stopped. */
+    canReroll: boolean;
     datasetVersion: string;
     builtAt: string;
     onrepresentative: () => void;
@@ -45,6 +47,7 @@
     bandRunsTotal,
     seed,
     representative,
+    canReroll,
     datasetVersion,
     builtAt,
     onrepresentative,
@@ -123,7 +126,10 @@
 
 <svelte:window
   onkeydown={(e) => {
-    if (open && e.key === 'Escape' && !e.defaultPrevented) void closeSheet();
+    if (!open || e.key !== 'Escape' || e.defaultPrevented) return;
+    // Escape belongs to the sources dialog while it is open (as ProjectCardPanel).
+    if (document.querySelector('dialog:modal')) return;
+    void closeSheet();
   }}
 />
 
@@ -138,6 +144,7 @@
     {bandRunsTotal}
     {seed}
     {representative}
+    {canReroll}
     {datasetVersion}
     {builtAt}
     {onrepresentative}
