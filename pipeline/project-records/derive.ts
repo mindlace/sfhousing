@@ -527,8 +527,6 @@ interface TallyInput {
   };
   /** Spec 4.10.2 DA netting of every master in flight before netting, in id order. */
   netting: readonly Netting[];
-  /** Entries in construction-verified.json (spec 4.6, Ruling C3). */
-  verdictEntries: number;
   /** Ruling SP1: the in-flight PRJ-anchored projects tested and the superseded ids. */
   supersede: { tested: number; superseded: readonly string[] };
 }
@@ -636,11 +634,13 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
     const sample = of.filter((a) => a.stale.streamlinedExpired).map((a) => a.proj.id);
     return { fired: sample.length, of: of.length, sample };
   },
-  // Spec 4.6 Ruling C3: the entries of construction-verified.json; the verdicts applied to an
-  // open history (they carry the id); their ids.
-  [PR.stagesVerifiedConstruction]: ({ withHistory, verdictEntries }) => {
+  // Spec 4.6 Rulings C3, C3b: of the histories that entered construction (complete-from-
+  // evidence's denominator); fired = every verdict applied to an open history, at whatever stage
+  // (they carry the id); their ids.
+  [PR.stagesVerifiedConstruction]: ({ withHistory }) => {
+    const of = withHistory.filter((a) => a.entered.construction !== undefined);
     const sample = withHistory.filter((a) => a.stale.verdict).map((a) => a.proj.id);
-    return { fired: sample.length, of: verdictEntries, sample };
+    return { fired: sample.length, of: of.length, sample };
   },
   // Spec 4.7 Ruling SP1 (no record carries it): of the in-flight PRJ-anchored projects tested; the
   // ones superseded by a later refiling; their ids.
@@ -1322,7 +1322,6 @@ export function deriveProjects(
     inFlight: t3,
     noDate,
     netting,
-    verdictEntries: input.constructionVerified.projects.length,
     supersede: { tested: supersede.tested, superseded: [...supersede.superseded.keys()] }
   };
   for (const r of PR_RULES) recordQuality(counts, r.id, PR_TALLIES[r.id as PrRuleId](tallyInput));

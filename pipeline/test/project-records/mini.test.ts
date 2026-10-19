@@ -675,8 +675,9 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     expect(q('pr.stages.statutory-expiry')).toEqual([2, 14]);
     // The bracketed permits of the histories examined (M1, M8, M24, M26, M27, M28, M30): M26's.
     expect(q('pr.stages.expiry-no-valuation')).toEqual([1, 7]);
-    // Three entries; M7's dead verdict applied.
-    expect(q('pr.stages.verified-construction')).toEqual([1, 3]);
+    // Ruling C3b: of the 7 histories that entered construction (as complete-from-evidence); M7's
+    // dead verdict applied (at permitFiled: fired counts every verdict applied).
+    expect(q('pr.stages.verified-construction')).toEqual([1, 7]);
     expect(r.warnings).toContain(
       'construction-verified.json: BP:209901010099 names no open history; not applied'
     );

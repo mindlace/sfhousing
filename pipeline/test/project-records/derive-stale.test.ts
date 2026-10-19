@@ -320,7 +320,8 @@ describe('stale open histories (deriveProjects)', () => {
       of: 3,
       sample: ['BP:201203010026']
     });
-    expect(rows.get('pr.stages.verified-construction')).toMatchObject({ fired: 0, of: 0 });
+    // Ruling C3b: of the histories that entered construction (A, C and FINISHED); none applied.
+    expect(rows.get('pr.stages.verified-construction')).toMatchObject({ fired: 0, of: 3 });
   });
 
   it('curated verdicts: complete, dead and unknown on open histories; others warn', () => {
@@ -354,9 +355,10 @@ describe('stale open histories (deriveProjects)', () => {
     expect(r.warnings).toContain(
       'construction-verified.json: PRJ:2016-000006PRJ names no open history; not applied'
     );
+    // Ruling C3b: of the 3 histories that entered construction; both applied verdicts count.
     expect(reportRowsOf(r.counts).get('pr.stages.verified-construction')).toMatchObject({
       fired: 2,
-      of: 5,
+      of: 3,
       sample: ['BP:201203010026', 'BP:201410070008']
     });
   });

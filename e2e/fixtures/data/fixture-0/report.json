@@ -246,7 +246,7 @@
     "quality.pr.stages.streamlined-expiry.fired": 1,
     "quality.pr.stages.streamlined-expiry.of": 3,
     "quality.pr.stages.verified-construction.fired": 1,
-    "quality.pr.stages.verified-construction.of": 3,
+    "quality.pr.stages.verified-construction.of": 7,
     "quality.pr.stories.parse-range.fired": 0,
     "quality.pr.stories.parse-range.of": 1,
     "quality.pr.units.capacity-cap.fired": 0,
