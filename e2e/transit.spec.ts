@@ -63,7 +63,7 @@ test('the View button is hidden when the manifest has no transit', async ({ page
   await expect(async () => {
     await page.goto('/attribution');
     await page.evaluate(() => ((window as Window & { __spa?: boolean }).__spa = true));
-    await page.locator('header a[href="/"]').click();
+    await page.getByRole('banner').getByRole('link', { name: 'SF Housing Simulator' }).click();
     await waitForMap(page);
     expect(await page.evaluate(() => (window as Window & { __spa?: boolean }).__spa)).toBe(true);
   }).toPass({ timeout: 25_000 });

@@ -101,7 +101,8 @@ export type Manifest = z.infer<typeof ManifestSchema>;
 export const ManifestSourcesSchema = ManifestBaseSchema.pick({
   datasetVersion: true,
   builtAt: true,
-  sources: true
+  sources: true,
+  scenarios: true
 });
 export type ManifestSources = z.infer<typeof ManifestSourcesSchema>;
 

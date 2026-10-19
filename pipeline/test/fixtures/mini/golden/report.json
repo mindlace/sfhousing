@@ -8,16 +8,16 @@
     "buildings.kept": 10,
     "buildings.outside_nb_dropped": 1,
     "buildings.underground_dropped": 1,
-    "calibration.bytes": 37930,
+    "calibration.bytes": 37750,
     "calibration.histories": 38,
     "calibration.method.permitOnlyPre2015": 5,
     "calibration.method.ppaPooled": 2,
     "calibration.method.sizeOverEnvelope": 0,
     "calibration.noFcd.flaggedPooled": 0,
-    "calibration.panel.events": 2,
-    "calibration.panel.eventsCovered": 15,
+    "calibration.panel.events": 3,
+    "calibration.panel.eventsCovered": 14,
     "calibration.panel.eventsOffPanel": 11,
-    "calibration.panel.exposureMonths": 42,
+    "calibration.panel.exposureMonths": 45,
     "calibration.panel.noParcel": 3,
     "calibration.panel.noPermit": 0,
     "calibration.panel.noStart": 0,
@@ -577,7 +577,7 @@
       "ok": true
     },
     {
-      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), 37930 B",
+      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), 37750 B",
       "id": "V25",
       "ok": true
     },
@@ -642,10 +642,10 @@
     "rung 3 (literature synthetic): discretionary preApplication",
     "rung 3 (literature synthetic): streamlined preApplication",
     "rung 3 (literature synthetic): permitOnly preApplication",
-    "θ diagnostic: discretionary permitFiled max |scaled − own 2015+ AJ| = 0.1795 > 0.05",
-    "θ diagnostic: permitOnly permitFiled max |scaled − own 2015+ AJ| = 0.3224 > 0.05",
+    "θ diagnostic: discretionary permitFiled max |scaled − own 2015+ AJ| = 0.2335 > 0.05",
+    "θ diagnostic: permitOnly permitFiled max |scaled − own 2015+ AJ| = 0.2152 > 0.05",
     "θ diagnostic: discretionary permitIssued max |scaled − own 2015+ AJ| = 0.08443 > 0.05",
     "θ diagnostic: permitOnly permitIssued max |scaled − own 2015+ AJ| = 0.2288 > 0.05",
-    "initiation: FZP expected filings 0 per year vs historical mean 0.1053 (ratio 0) outside the [0.5, 20] band"
+    "initiation: FZP expected filings 0 per year vs historical mean 0.1579 (ratio 0) outside the [0.5, 20] band"
   ]
 }

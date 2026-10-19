@@ -194,7 +194,7 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     expect(a.getAttribute('href')).toBe('/attribution');
     expect(a.textContent).toBe(ATTRIBUTION);
     expect(a.getAttribute('title')).toBe(
-      'Data & licences: OpenStreetMap and Overture data under ODbL; DataSF under PDDL / public domain; Protomaps basemap'
+      'Data & licences: OpenStreetMap and Overture data under ODbL; DataSF under PDDL / public domain / CC0; Protomaps basemap'
     );
     expect(
       target.querySelector('.maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib')

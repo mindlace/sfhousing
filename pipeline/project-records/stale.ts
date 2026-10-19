@@ -240,13 +240,15 @@ export function expiryExit(entered: Entered, day: Day): End | null {
 
 /**
  * A curated verdict applied to an open history (Ruling C3): `complete` at `completeDay`
- * (forward-clamped), `dead` an exit `withdrawn` at the last entered stage dated by `checked`
- * (L1), `unknown` no change (null). A day after `asOf` is not applied (null, with a reason).
+ * (forward-clamped), `dead` an exit `withdrawn` at the last entered stage dated at the open
+ * history's `lastObserved` capped at `checked` (Ruling C3d; never before the last entered day,
+ * L1), `unknown` no change (null). A day after `asOf` is not applied (null, with a reason).
  */
 export function verdictEnd(
   entered: Entered,
   v: ConstructionVerdict,
-  asOf: Day
+  asOf: Day,
+  lastObserved: Day
 ): { end: End; entered: Entered; clamped: boolean } | { skip: string } | null {
   const dayOf = (iso: string) => Date.parse(`${iso}T00:00:00Z`) / DAY_MS;
   if (v.verdict === 'unknown') return null;
@@ -258,6 +260,9 @@ export function verdictEnd(
   }
   const d = dayOf(v.checked);
   if (d > asOf) return { skip: `checked ${v.checked} is after the snapshot` };
-  const end = exitAt(entered, 'withdrawn', d);
+  // Ruling C3d: time in construction stops when the evidence stops, so the exit is dated at the
+  // open history's lastObserved, capped at `checked` (exitAt keeps it at or after the last
+  // entered day, Ruling L1).
+  const end = exitAt(entered, 'withdrawn', Math.min(d, lastObserved));
   return end === null ? null : { end, entered, clamped: false };
 }

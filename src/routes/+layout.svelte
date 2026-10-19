@@ -17,7 +17,7 @@
   >Skip to content</a
 >
 <div class={full ? 'flex h-dvh flex-col overflow-hidden' : 'flex min-h-dvh flex-col'}>
-  <SiteHeader actions={headerActions.current ?? undefined} />
+  <SiteHeader actions={headerActions.current ?? undefined} routeId={page.route.id} />
   <main
     id="main"
     tabindex="-1"

@@ -282,12 +282,13 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
 
   it('M7: stale-open; the curated dead verdict ends its history (Ruling C3)', () => {
     const h = history('BP:201410070008');
-    // An imagery check found no building: withdrawn at the last stage, dated by the check.
+    // An imagery check found no building: withdrawn at the last stage, dated at its lastObserved (the 2014-10-07
+    // filing) capped at the check (Ruling C3d).
     expect(h.end).toEqual({
       kind: 'exit',
       stage: 'permitFiled',
       reason: 'withdrawn',
-      day: day('2026-09-01')
+      day: day('2014-10-07')
     });
     expect(h.quality).toEqual(['pr.stages.verified-construction']);
     // The in-flight decision reads the spec 4.6 end: M7, M24, M25, M26, M29, M30, M31, M34, M37,
@@ -686,7 +687,7 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
       kind: 'exit',
       stage: 'filed',
       reason: 'withdrawn',
-      day: day('2026-09-01')
+      day: day('2026-06-01') // Ruling C3d: its pipeline status date
     });
     expect(r.file.projects.map((p) => p.id)).not.toContain('PRJ:2025-000041PRJ');
     expect(r.warnings).toContain(

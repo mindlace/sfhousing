@@ -327,8 +327,10 @@ describe('construction evidence (Ruling C2)', () => {
   });
 });
 
-describe('curated verdicts (Ruling C3)', () => {
+describe('curated verdicts (Rulings C3, C3d)', () => {
   const entered = { permitFiled: d('2014-01-01'), construction: d('2015-06-01') };
+  /** The open history's lastObserved (here after the check). */
+  const SEEN = d('2026-10-01');
   const v = (o: Partial<ConstructionVerdict>): ConstructionVerdict => ({
     id: 'BP:1',
     verdict: 'unknown',
@@ -339,7 +341,7 @@ describe('curated verdicts (Ruling C3)', () => {
 
   it('complete: complete at completeDay', () => {
     expect(
-      verdictEnd(entered, v({ verdict: 'complete', completeDay: '2018-05-01' }), ASOF)
+      verdictEnd(entered, v({ verdict: 'complete', completeDay: '2018-05-01' }), ASOF, SEEN)
     ).toEqual({
       end: { kind: 'complete', day: d('2018-05-01') },
       entered: { ...entered, complete: d('2018-05-01') },
@@ -347,17 +349,27 @@ describe('curated verdicts (Ruling C3)', () => {
     });
   });
 
-  it('dead: exit withdrawn at the last entered stage, dated by the check', () => {
-    expect(verdictEnd(entered, v({ verdict: 'dead' }), ASOF)).toEqual({
+  it('dead: exit withdrawn at the last entered stage, at lastObserved capped at the check', () => {
+    const dead = (seen: number) => verdictEnd(entered, v({ verdict: 'dead' }), ASOF, seen);
+    // lastObserved after the check: dated by the check.
+    expect(dead(SEEN)).toEqual({
       end: { kind: 'exit', stage: 'construction', reason: 'withdrawn', day: d('2026-09-01') },
       entered,
       clamped: false
     });
+    // The last activity before the check: dated by it (Ruling C3d).
+    expect(dead(d('2019-03-04'))).toMatchObject({
+      end: { kind: 'exit', stage: 'construction', reason: 'withdrawn', day: d('2019-03-04') }
+    });
+    // Never before the last entered day (L1).
+    expect(dead(d('2015-01-01'))).toMatchObject({
+      end: { kind: 'exit', stage: 'construction', reason: 'withdrawn', day: d('2015-06-01') }
+    });
   });
 
   it('unknown: no change; a day after the snapshot is skipped', () => {
-    expect(verdictEnd(entered, v({}), ASOF)).toBeNull();
-    expect(verdictEnd(entered, v({ verdict: 'dead', checked: '2026-12-01' }), ASOF)).toEqual({
+    expect(verdictEnd(entered, v({}), ASOF, SEEN)).toBeNull();
+    expect(verdictEnd(entered, v({ verdict: 'dead', checked: '2026-12-01' }), ASOF, SEEN)).toEqual({
       skip: 'checked 2026-12-01 is after the snapshot'
     });
   });
