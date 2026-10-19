@@ -673,7 +673,7 @@ describe('invariants', () => {
       m11.parcelIds = [];
     });
     expect(await failed(d)).toEqual(['V20']);
-    expect((await measuredV20(d)).detail).toMatch(/projects\[11\]\.parcelIds: must be non-empty/);
+    expect((await measuredV20(d)).detail).toMatch(/projects\[12\]\.parcelIds: must be non-empty/);
     // A score-only master must carry pr.multiphase.score-only (the rule entry dropped with it).
     const e = copy();
     editProjects(e, (j) => {

@@ -5,6 +5,7 @@
  */
 import type { ParcelId } from '../../src/lib/data/parcel';
 import type { Day } from '../../src/lib/timelapse/time';
+import { isNewConstructionPermit } from './classify';
 import type { Child, LinkedProject, Parsed, Permit, PipelineRow, Prj, Review } from './types';
 import { UnionFind } from './union-find';
 
@@ -24,6 +25,13 @@ export interface LinkOptions {
   resolve(blklots: string[]): ParcelId[];
   /** Task 5's `filedEvidenceDay`, injected so linking does not depend on stages. */
   filedDay(proj: LinkedProject): Day | null;
+  /**
+   * Ruling L2's anchor day of a PRJ-anchored project: its entitled day, else its filed day
+   * (deriveProjects injects the §4.5 rules). Without it, BP-only projects are not merged.
+   */
+  anchorDay?(proj: LinkedProject): Day | null;
+  /** Ruling L2b: the day the project's spec 4.6 history exits, or null (not exited). */
+  exitDay?(proj: LinkedProject): Day | null;
 }
 
 export interface LinkResult {
@@ -43,8 +51,14 @@ const COUNT_KEYS = [
   'link.pipelineOnly',
   'link.excludedRows',
   'link.orphanChildren',
-  'link.pipelineNoIds'
+  'link.pipelineNoIds',
+  'link.bpMerged',
+  'link.bpMergeRejected',
+  'link.bpMergeSplitSkipped'
 ];
+
+/** Ruling L2: a BP may be filed up to this long before the PRJ project's anchor day. */
+export const BP_MERGE_LEAD_DAYS = 365;
 
 interface Parts {
   anchors: Prj[];
@@ -258,6 +272,146 @@ function splitParts(c: Parts, resolve: LinkOptions['resolve']): Parts[] {
   return out;
 }
 
+/** A graph project with the parts it was built from; `whole` = its component was not split. */
+interface Built {
+  parts: Parts;
+  proj: LinkedProject;
+  whole: boolean;
+}
+
+/**
+ * Ruling L2 (as amended by L2a and L2b): a BP-only graph project (no PRJ anchor or satellite)
+ * holding at least one proposed unit joins a PRJ-anchored project whose component was not split,
+ * that holds a new-construction anchor (`new_construction` and `number_of_units_prop` >= 1) and no
+ * type 1/2 permit, and whose spec 4.6 history did not exit before the BP's first filed day, when
+ * their `parcelIds` overlap (they already resolve through lineage; no descendants) and the BP's
+ * earliest permit filed day is at least the PRJ project's anchor day − 365 (the anchor day is the
+ * pre-clamp evidence day). With several candidates the latest anchor day on or before the BP's
+ * filed day wins (ties: lowest id); with none on or before it, the earliest anchor day after it.
+ * BPs are taken in id order and condition (a) is read before any merge, so one target may take
+ * several BPs. Then, per target: a BP whose pipeline rows would give the target a second row is
+ * skipped (`link.bpMergeSplitSkipped`; a re-split would restore the same double count); and the
+ * remaining set merges only when its units total is within [0.5, 1.5] × the PRJ's
+ * `number_of_units_prop`, else none of it merges (`link.bpMergeRejected`). The merged component
+ * is built again and keeps the PRJ id (single-anchor targets; a multi-anchor target keeps the id of
+ * its earliest-opened anchor). Counts the merged BP projects in `link.bpMerged`.
+ */
+function mergeBpOnly(
+  built: Built[],
+  anchorDay: (proj: LinkedProject) => Day | null,
+  exitDay: ((proj: LinkedProject) => Day | null) | undefined,
+  build: (c: Parts) => Built[],
+  counts: Record<string, number>
+): Built[] {
+  const ncAnchor = (a: Prj) => a.newConstruction && a.unitsProp !== null && a.unitsProp >= 1;
+  const targets = built
+    .filter(
+      (b) =>
+        b.whole &&
+        // Ruling L2a: a new-construction Planning record (an alteration or ADU record is not).
+        b.proj.anchors.some(ncAnchor) &&
+        !b.proj.permits.some(isNewConstructionPermit)
+    )
+    .map((b) => {
+      const prop = b.proj.primary?.unitsProp ?? null;
+      const units =
+        prop !== null && prop >= 1
+          ? prop
+          : Math.max(...b.proj.anchors.filter(ncAnchor).map((a) => a.unitsProp as number));
+      return {
+        b,
+        day: anchorDay(b.proj),
+        exit: exitDay ? exitDay(b.proj) : null,
+        parcels: new Set<ParcelId>(b.proj.parcelIds),
+        units
+      };
+    })
+    .filter(
+      (t): t is { b: Built; day: Day; exit: Day | null; parcels: Set<ParcelId>; units: number } =>
+        t.day !== null
+    )
+    .sort((x, y) => cmp(x.b.proj.id, y.b.proj.id));
+  if (targets.length === 0) return built;
+  type Target = (typeof targets)[number];
+  const bps = built
+    .filter((b) => b.proj.anchors.length === 0 && b.proj.satellites.length === 0)
+    .sort((x, y) => cmp(x.proj.id, y.proj.id));
+  /** The BP's units: Σ positive proposed units over its live permits, else its non-superseded. */
+  const unitsOf = (p: LinkedProject) => {
+    const set = p.live.length > 0 ? p.live : p.permits.filter((q) => !p.superseded.has(q.number));
+    let n = 0;
+    for (const q of set) if (q.proposedUnits !== null && q.proposedUnits > 0) n += q.proposedUnits;
+    return n;
+  };
+  const into = new Map<Target, Built[]>();
+  for (const bp of bps) {
+    if (unitsOf(bp.proj) < 1) continue;
+    let filed: Day | null = null;
+    for (const q of bp.proj.permits) {
+      if (q.filedDay !== null && (filed === null || q.filedDay < filed)) filed = q.filedDay;
+    }
+    if (filed === null) continue;
+    const f = filed;
+    const fits = targets.filter(
+      (t) =>
+        f >= t.day - BP_MERGE_LEAD_DAYS &&
+        (t.exit === null || t.exit >= f) &&
+        bp.proj.parcelIds.some((id) => t.parcels.has(id))
+    );
+    if (fits.length === 0) continue;
+    const before = fits.filter((t) => t.day <= f);
+    // targets are in id order, so a strict comparison keeps the lowest id on a tie.
+    const pick = (ts: typeof fits, better: (a: Day, b: Day) => boolean) =>
+      ts.reduce((best, t) => (better(t.day, best.day) ? t : best));
+    const t = before.length > 0 ? pick(before, (a, b) => a > b) : pick(fits, (a, b) => a < b);
+    const list = into.get(t);
+    if (list) list.push(bp);
+    else into.set(t, [bp]);
+  }
+  const accepted = new Map<Target, Built[]>();
+  for (const [t, joined] of into) {
+    let rows = t.b.parts.rows.length;
+    const kept: Built[] = [];
+    for (const bp of joined) {
+      const add = bp.parts.rows.length;
+      if (add > 0 && rows + add > 1) {
+        counts['link.bpMergeSplitSkipped']++;
+        continue;
+      }
+      rows += add;
+      kept.push(bp);
+    }
+    if (kept.length === 0) continue;
+    const total = kept.reduce((n, bp) => n + unitsOf(bp.proj), 0);
+    if (total < 0.5 * t.units || total > 1.5 * t.units) {
+      counts['link.bpMergeRejected'] += kept.length;
+      continue;
+    }
+    accepted.set(t, kept);
+    counts['link.bpMerged'] += kept.length;
+  }
+  if (accepted.size === 0) return built;
+  const merged = new Set<Built>([
+    ...[...accepted.keys()].map((t) => t.b),
+    ...[...accepted.values()].flat()
+  ]);
+  const out = built.filter((b) => !merged.has(b));
+  for (const [t, joined] of accepted) {
+    const target = t.b;
+    const parts: Parts = {
+      ...target.parts,
+      permits: [...target.parts.permits, ...joined.flatMap((b) => b.parts.permits)].sort((a, b) =>
+        cmp(a.number, b.number)
+      ),
+      rows: [...target.parts.rows, ...joined.flatMap((b) => b.parts.rows)].sort(
+        (a, b) => a.idx - b.idx
+      )
+    };
+    out.push(...build(parts));
+  }
+  return out;
+}
+
 /** Nearest-rank 90th percentile; `Infinity` when empty. */
 function p90(values: number[]): number {
   if (values.length === 0) return Infinity;
@@ -363,18 +517,22 @@ export function linkProjects(p: Parsed, opts: LinkOptions): LinkResult {
     }
   }
 
-  // 4. Graph projects (split where needed) and their ids.
-  const graph: LinkedProject[] = [];
-  for (const c of comps.values()) {
+  // 4. Graph projects (split where needed) and their ids, then Ruling L2's BP merge.
+  let built: Built[] = [];
+  const build = (c: Parts) => {
     const parts = splitParts(c, resolve);
     if (parts.length > 1) counts['link.splitComponents']++;
-    for (const part of parts) {
+    return parts.map((part): Built => {
       const proj = makeProject('graph', part, assignedTo, resolve);
       proj.id = graphId(proj, parts.length > 1);
-      graph.push(proj);
-    }
+      return { parts: part, proj, whole: parts.length === 1 };
+    });
+  };
+  for (const c of comps.values()) built.push(...build(c));
+  if (opts.anchorDay !== undefined) {
+    built = mergeBpOnly(built, opts.anchorDay, opts.exitDay, build, counts);
   }
-  graph.sort((a, b) => cmp(a.id, b.id));
+  const graph = built.map((b) => b.proj).sort((a, b) => cmp(a.id, b.id));
 
   // 5. ppaLag over parented PPAs (each counted once), then attach unparented PPAs.
   const filed = new Map<LinkedProject, Day | null>();

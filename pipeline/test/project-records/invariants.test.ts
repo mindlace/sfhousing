@@ -135,6 +135,22 @@ describe('checkV20', () => {
     expect(r.detail).toMatch(/pr\.units\.split-filed: acts only on histories/);
   });
 
+  it('fails a qualityRules entry for pr.units.filed-zero, which acts only on histories', () => {
+    const f = clone(good.file);
+    const rule = {
+      id: 'pr.units.filed-zero',
+      label:
+        "A Planning record's home count of zero was replaced by the next recorded count (building permit, else completion)",
+      tier: 2 as const,
+      valueTier: 2 as const
+    };
+    proj(f, 'PRJ:2019-000001PRJ').quality = ['pr.stages.forward-clamp', rule.id];
+    f.qualityRules = [...f.qualityRules, rule];
+    const r = v20(f);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/pr\.units\.filed-zero: acts only on histories/);
+  });
+
   it('fails unparseable bytes', () => {
     const r = checkV20(Buffer.from('{'), {
       asOf: ASOF,

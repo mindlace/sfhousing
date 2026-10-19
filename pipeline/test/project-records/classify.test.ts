@@ -11,6 +11,8 @@ import type { Child, LinkedProject, Permit, Prj, Review } from '../../project-re
 function permit(number: string, filedDay: number | null): Permit {
   return {
     number,
+    type: '2',
+    named: false,
     sitePermit: false,
     status: 'issued',
     statusDay: null,
@@ -22,6 +24,7 @@ function permit(number: string, filedDay: number | null): Permit {
     stories: null,
     existingUnits: null,
     proposedUnits: null,
+    valuation: null,
     rows: []
   };
 }
@@ -39,6 +42,7 @@ function prj(recordId: string, over: Partial<Prj> = {}): Prj {
     decisionDay: null,
     unitsProp: null,
     unitsExist: null,
+    affordableProp: null,
     newConstruction: false,
     sb35: false,
     hsd: false,
@@ -227,7 +231,17 @@ describe('isNewConstruction', () => {
     expect(isNewConstruction(proj({ anchors: [z] }))).toBe(false);
   });
 
-  it('is true when the project has any permit', () => {
+  it('is true when the project has a type 1/2 permit', () => {
     expect(isNewConstruction(proj({ permits: [permit('1', null)] }))).toBe(true);
+    expect(isNewConstruction(proj({ permits: [{ ...permit('1', null), type: '1' }] }))).toBe(true);
+  });
+
+  it('ignores a named type 3/8 alteration permit (Ruling L1)', () => {
+    const alt = { ...permit('3', null), type: '3', named: true };
+    const alt8 = { ...permit('8', null), type: '8', named: true };
+    expect(isNewConstruction(proj({ permits: [alt, alt8] }))).toBe(false);
+    // With a new-construction PRJ it is in by the PRJ condition.
+    const a = prj('A', { newConstruction: true, unitsProp: 4 });
+    expect(isNewConstruction(proj({ anchors: [a], permits: [alt] }))).toBe(true);
   });
 });

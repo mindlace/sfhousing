@@ -23,6 +23,8 @@ const CTX = { asOf: ASOF, ppaLag: 100 };
 function permit(number: string, over: Partial<Permit> = {}): Permit {
   return {
     number,
+    type: '2',
+    named: false,
     sitePermit: false,
     status: 'issued',
     statusDay: null,
@@ -34,6 +36,7 @@ function permit(number: string, over: Partial<Permit> = {}): Permit {
     stories: null,
     existingUnits: null,
     proposedUnits: null,
+    valuation: null,
     rows: [],
     ...over
   };
@@ -52,6 +55,7 @@ function prj(recordId: string, over: Partial<Prj> = {}): Prj {
     decisionDay: null,
     unitsProp: null,
     unitsExist: null,
+    affordableProp: null,
     newConstruction: false,
     sb35: false,
     hsd: false,

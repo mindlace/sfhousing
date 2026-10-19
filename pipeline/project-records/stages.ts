@@ -106,7 +106,8 @@ export function filedEvidenceDay(proj: LinkedProject): Day | null {
   return minOf(candidates);
 }
 
-function entitledDay(proj: LinkedProject): Day | null {
+/** Spec 4.5 `entitled` evidence day (any pathway), or null; Ruling L2's anchor day reads it. */
+export function entitledDay(proj: LinkedProject): Day | null {
   const approvals = minOf(
     proj.reviews.filter((r) => r.endType === 'approval').map((r) => r.endDay)
   );

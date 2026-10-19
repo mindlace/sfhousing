@@ -21,10 +21,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/20d5b2113c6671051631fe8d2b8c7c8d8c957e76cfc31a8bc0a6d8d47ac0ef16.json",
-          "bytes": 2281,
+          "archiveKey": "sources/6d92f9670d82d74851ce0e1399456d731c97219ffa64ebe1498eec2cd4cc68fe.json",
+          "bytes": 2880,
           "name": "datasf-dev-pipeline.page-000.json",
-          "sha256": "20d5b2113c6671051631fe8d2b8c7c8d8c957e76cfc31a8bc0a6d8d47ac0ef16",
+          "sha256": "6d92f9670d82d74851ce0e1399456d731c97219ffa64ebe1498eec2cd4cc68fe",
           "url": "https://fixture.invalid/datasf-dev-pipeline.page-000.json"
         }
       ],
@@ -33,7 +33,7 @@
       "label": "DataSF SF Development Pipeline",
       "license": "CC0-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 15,
+      "rowCount": 19,
       "upstreamVersion": "fixture"
     },
     {
@@ -75,10 +75,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/74e376f7ae85e49cbe3d727080177ad8c49538a7a337594f8fadfba4ccebfd60.json",
-          "bytes": 342,
+          "archiveKey": "sources/c6f020ea5f95e7e0f0689a088e35c04efb5495db4bd0c50da147db55bea35cf7.json",
+          "bytes": 476,
           "name": "datasf-housing-production.page-000.json",
-          "sha256": "74e376f7ae85e49cbe3d727080177ad8c49538a7a337594f8fadfba4ccebfd60",
+          "sha256": "c6f020ea5f95e7e0f0689a088e35c04efb5495db4bd0c50da147db55bea35cf7",
           "url": "https://fixture.invalid/datasf-housing-production.page-000.json"
         }
       ],
@@ -87,7 +87,7 @@
       "label": "DataSF Housing Production",
       "license": "public-domain",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 3,
+      "rowCount": 4,
       "upstreamVersion": "fixture"
     },
     {
@@ -165,10 +165,28 @@
     {
       "files": [
         {
-          "archiveKey": "sources/5ed103560e31092c117b3ae407fcc7b39c92b61dd310e4211befa9fa16d06653.json",
-          "bytes": 4848,
+          "archiveKey": "sources/940df40510a01a5a8515956e2aac1d9d410f1c96ad82bf995619449a93c72e15.json",
+          "bytes": 680,
+          "name": "datasf-permits-named.page-000.json",
+          "sha256": "940df40510a01a5a8515956e2aac1d9d410f1c96ad82bf995619449a93c72e15",
+          "url": "https://fixture.invalid/datasf-permits-named.page-000.json"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/i98e-djp9",
+      "id": "datasf-permits-named",
+      "label": "DataSF Building Permits (unit-adding alterations)",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 2,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/2026410f40d9e29a20123105dd36eaf9c15b61d99d6ac74e50c5c504dfb1e998.json",
+          "bytes": 7075,
           "name": "datasf-permits-newcon.page-000.json",
-          "sha256": "5ed103560e31092c117b3ae407fcc7b39c92b61dd310e4211befa9fa16d06653",
+          "sha256": "2026410f40d9e29a20123105dd36eaf9c15b61d99d6ac74e50c5c504dfb1e998",
           "url": "https://fixture.invalid/datasf-permits-newcon.page-000.json"
         }
       ],
@@ -177,16 +195,16 @@
       "label": "DataSF Building Permits (new construction)",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 15,
+      "rowCount": 22,
       "upstreamVersion": "fixture"
     },
     {
       "files": [
         {
-          "archiveKey": "sources/a4cbd29a4dd9c767a90392f7c1b07671ce790afbdfed438c32ae14b8b53e0033.json",
-          "bytes": 2923,
+          "archiveKey": "sources/85e58c6f0107efd99a2c82235934c3000422eea52d902513e1d36e169e6e7400.json",
+          "bytes": 5243,
           "name": "datasf-planning-projects.page-000.json",
-          "sha256": "a4cbd29a4dd9c767a90392f7c1b07671ce790afbdfed438c32ae14b8b53e0033",
+          "sha256": "85e58c6f0107efd99a2c82235934c3000422eea52d902513e1d36e169e6e7400",
           "url": "https://fixture.invalid/datasf-planning-projects.page-000.json"
         }
       ],
@@ -195,7 +213,7 @@
       "label": "DataSF Planning Projects",
       "license": "public-domain",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 14,
+      "rowCount": 26,
       "upstreamVersion": "fixture"
     },
     {
@@ -219,10 +237,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/ed4077788b73bef0f5cceb7bdd59347752244f268f039b7b25a158ee07e2ea2c.json",
-          "bytes": 988,
+          "archiveKey": "sources/c128e1d4368c2c8aa2957d3fd0a99dad98b480cb5d72e628467e20d8c9a85006.json",
+          "bytes": 2581,
           "name": "datasf-planning-review.page-000.json",
-          "sha256": "ed4077788b73bef0f5cceb7bdd59347752244f268f039b7b25a158ee07e2ea2c",
+          "sha256": "c128e1d4368c2c8aa2957d3fd0a99dad98b480cb5d72e628467e20d8c9a85006",
           "url": "https://fixture.invalid/datasf-planning-review.page-000.json"
         }
       ],
@@ -231,7 +249,7 @@
       "label": "DataSF Planning Review Time Metrics",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 6,
+      "rowCount": 15,
       "upstreamVersion": "fixture"
     },
     {
