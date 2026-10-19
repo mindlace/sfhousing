@@ -402,3 +402,52 @@ describe('375 px', () => {
     expect((sheet.querySelector('details.sfh-fzp-legend') as HTMLDetailsElement).open).toBe(false);
   });
 });
+
+describe('target size on a fine pointer (SC 2.5.8)', () => {
+  const MIN = 24;
+  const expectTarget = (el: Element, name: string) => {
+    const r = el.getBoundingClientRect();
+    expect(r.width, `${name} width`).toBeGreaterThanOrEqual(MIN);
+    expect(r.height, `${name} height`).toBeGreaterThanOrEqual(MIN);
+  };
+
+  it('every control in the desktop panel is at least 24x24', async () => {
+    await page.viewport(1024, 768);
+    await render(FzpScoreboard, { props: props({ representative: false }) });
+    expectTarget(document.querySelector('.sfh-fzp-legend > summary')!, 'Map key summary');
+    expectTarget(
+      document.querySelector('[data-testid="fzp-chart"] details > summary')!,
+      'Show as table summary'
+    );
+    expectTarget(
+      page.getByRole('button', { name: 'Back to the representative future' }).element(),
+      'Back to the representative future'
+    );
+    expectTarget(
+      page.getByRole('button', { name: 'Where these numbers come from' }).element(),
+      'Where these numbers come from'
+    );
+    expectTarget(page.getByRole('link', { name: 'Sources' }).element(), 'Sources link');
+  });
+
+  it('summaries and the Sources link carry the 44 px coarse-pointer variant', async () => {
+    await page.viewport(1024, 768);
+    await render(FzpScoreboard, { props: props() });
+    for (const el of [
+      document.querySelector('.sfh-fzp-legend > summary')!,
+      document.querySelector('[data-testid="fzp-chart"] details > summary')!,
+      page.getByRole('link', { name: 'Sources' }).element()
+    ]) {
+      expect(el.classList.contains('pointer-coarse:min-h-11'), el.outerHTML).toBe(true);
+    }
+  });
+
+  it('the mobile bar button and Close are at least 24x24', async () => {
+    await page.viewport(375, 812);
+    await render(FzpScoreboard, { props: props() });
+    const bar = page.getByRole('button', { name: /net new homes/ });
+    expectTarget(bar.element(), 'bar button');
+    await bar.click();
+    expectTarget(page.getByRole('button', { name: 'Close' }).element(), 'Close');
+  });
+});

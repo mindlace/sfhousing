@@ -28,7 +28,9 @@
 </script>
 
 <details class="sfh-fzp-legend mt-3" bind:open={isOpen}>
-  <summary class="min-h-6 cursor-pointer text-sm font-semibold">Map key</summary>
+  <summary class="min-h-6 cursor-pointer text-sm font-semibold pointer-coarse:min-h-11"
+    >Map key</summary
+  >
   <ul class="mt-2 space-y-1.5 text-sm">
     {#each TIMELINE_LEGEND as entry (entry.id)}
       <li class="flex items-center gap-2" data-legend={entry.id}>

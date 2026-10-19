@@ -183,7 +183,10 @@
 
     <p class="mt-3 text-xs text-gray-700">
       Data {datasetVersion} · built {formatBuiltDate(builtAt)} · as of {formatDate(asOf)} ·
-      <a class="underline" href="/attribution">Sources</a>
+      <a
+        class="inline-flex min-h-6 items-center underline pointer-coarse:min-h-11"
+        href="/attribution">Sources</a
+      >
     </p>
     {#if phasing}
       <p class="mt-1 text-xs text-gray-700">{phasing}</p>

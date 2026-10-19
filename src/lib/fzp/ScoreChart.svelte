@@ -243,7 +243,9 @@
   </div>
 
   <details class="mt-2">
-    <summary class="min-h-6 cursor-pointer text-sm font-semibold">Show as table</summary>
+    <summary class="min-h-6 cursor-pointer text-sm font-semibold pointer-coarse:min-h-11"
+      >Show as table</summary
+    >
     <!-- A scrollable region must be keyboard reachable (axe: scrollable-region-focusable). -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <div class="mt-2 overflow-x-auto" role="region" aria-label="Chart data as a table" tabindex="0">
