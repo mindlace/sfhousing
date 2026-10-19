@@ -2,14 +2,21 @@
 // src/lib/sim/test/harness.ts. Test-only, Node-only (mini-bin.ts uses node:zlib).
 //
 // - A fake clock: `now()`, the host's `setTimeout`/`clearTimeout`, `advance(ms)` and `runAll()`.
-//   Only the host's timers are fake; the harness itself waits on real macrotasks in `flush()`,
-//   because `readScenarioParcels` inflates through a real DecompressionStream.
+//   Only the host's timers are fake. The one host step the harness does not drive is the
+//   parcels.bin inflate (a real DecompressionStream on Node's thread pool), so the harness
+//   injects `decodeParcels` as a tracked pass-through to `readScenarioParcels`: `flush()` waits
+//   until no decode is in flight and the microtask queue is drained, so "settled" is observed,
+//   never guessed. Decodes can also be held and released.
 // - In-memory `fetch` (JSON) and `fetchBytes` (parcels.bin) serving the mini city's scenario
 //   files and chunks, with per-URL failure injection and holds.
 // - Every post (with its transfer list) and every warning, in order.
 import { deflateRawSync } from 'node:zlib';
 import type { Manifest } from '$lib/data/manifest';
-import { encodeScenarioPayload, type ScenarioParcels } from '$lib/data/scenario-codec';
+import {
+  encodeScenarioPayload,
+  readScenarioParcels,
+  type ScenarioParcels
+} from '$lib/data/scenario-codec';
 import type { Day } from '$lib/timelapse/time';
 import type { Rev } from '../../protocol';
 import { miniBin } from '../fixtures/mini-bin';
@@ -59,7 +66,15 @@ export interface ScenarioHarness {
   // fake clock
   now(): number;
   pendingTimers(): number;
-  /** Lets every pending promise, stream and microtask settle (real macrotasks). */
+  /** Decodes of parcels.bin started and settled so far. */
+  decodes(): { started: number; settled: number };
+  /** Decodes started from now on wait until `releaseDecodes()`. */
+  holdDecodes(): void;
+  releaseDecodes(): void;
+  /**
+   * Settles everything not waiting on the fake clock, a held fetch or a held decode: drains
+   * microtasks and waits for every running decode, until neither has work.
+   */
   flush(): Promise<void>;
   /** Moves the clock forward by `ms`, firing due timers in order and flushing after each. */
   advance(ms: number): Promise<void>;
@@ -99,6 +114,30 @@ export function makeScenarioHarness(opts?: {
   const failures = new Map<string, Failure[]>();
   const held = new Map<string, (() => void)[]>();
   const holding = new Set<string>();
+
+  // tracked decodes
+  const decodeCount = { started: 0, settled: 0 };
+  const running = new Set<Promise<void>>();
+  const heldDecodes: (() => void)[] = [];
+  let holdingDecodes = false;
+  function decodeParcels(bytes: Uint8Array): Promise<ScenarioParcels> {
+    decodeCount.started++;
+    const go = () => {
+      const p = readScenarioParcels(bytes);
+      const done: Promise<void> = p.then(
+        () => undefined,
+        () => undefined
+      );
+      running.add(done);
+      void done.then(() => {
+        decodeCount.settled++;
+        running.delete(done);
+      });
+      return p;
+    };
+    if (!holdingDecodes) return go();
+    return new Promise((resolve, reject) => heldDecodes.push(() => go().then(resolve, reject)));
+  }
 
   // fake clock
   let clock = 0;
@@ -165,14 +204,25 @@ export function makeScenarioHarness(opts?: {
     },
     now: () => clock,
     warn: (msg) => warnings.push(msg),
+    decodeParcels,
     ...(opts?.retryDelaysMs ? { retryDelaysMs: opts.retryDelaysMs } : {}),
     ...opts?.deps
   };
   const host = createScenarioHost(deps);
 
+  const turn = () => new Promise<void>((r) => setImmediate(r));
+
   async function flush(): Promise<void> {
-    // Real macrotasks: the inflate in readScenarioParcels completes on Node's thread pool.
-    for (let i = 0; i < 25; i++) await new Promise<void>((r) => setImmediate(r));
+    // Node drains the whole microtask queue after every macrotask, so after two turns every
+    // promise chain has run to its next real wait. The only real wait the harness does not own
+    // is a running decode: wait for those and go again until there is none.
+    for (let round = 0; round < 10_000; round++) {
+      await turn();
+      await turn();
+      if (running.size === 0) return;
+      await Promise.all(running);
+    }
+    throw new Error('flush: decodes never settled');
   }
 
   /** The next due timer at or before `limit`, earliest first, ties in scheduling order. */
@@ -227,6 +277,15 @@ export function makeScenarioHarness(opts?: {
       defaults();
       failures.clear();
       holding.clear();
+      holdingDecodes = false;
+    },
+    decodes: () => ({ ...decodeCount }),
+    holdDecodes() {
+      holdingDecodes = true;
+    },
+    releaseDecodes() {
+      holdingDecodes = false;
+      for (const go of heldDecodes.splice(0)) go();
     },
     hold(url) {
       holding.add(url);

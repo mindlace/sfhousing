@@ -35,6 +35,9 @@ const projects = (): Json => miniProjectsJson() as Json;
 /** The load has finished successfully: no error, and a reroll is accepted. */
 async function expectLoaded(h: ScenarioHarness): Promise<void> {
   await h.runAll();
+  const { started, settled } = h.decodes();
+  expect(started).toBeGreaterThan(0);
+  expect(settled).toBe(started); // settled, not guessed
   const errors = h.errors().length;
   h.host.handle({ type: 'reroll', rev: h.next(), seed: 2 });
   await h.runAll();
@@ -504,6 +507,30 @@ describe('scenario host: reroll before loading, supersession and dispose', () =>
     expect(h.posts.filter((p) => p.type === 'ready').map((p) => p.rev)).toEqual([first, second]);
   });
 
+  it('ignores a superseded init whose decode completes after the new init', async () => {
+    const h = makeScenarioHarness();
+    const badUrl = `/data/${MINI_VERSION}/scenarios/fzp/bad-projects.json`;
+    h.bodies.set(badUrl, { ...projects(), schema: 2 }); // would be scenario-invalid
+    h.holdDecodes();
+    const m = h.manifest();
+    const first = h.init({
+      manifest: { ...m, scenarios: { fzp: { ...m.scenarios!.fzp, projects: badUrl } } }
+    });
+    await h.runAll();
+    expect(h.decodes()).toEqual({ started: 1, settled: 0 }); // the first load is mid-decode
+    const second = h.init();
+    await h.runAll();
+    expect(h.decodes()).toEqual({ started: 2, settled: 0 });
+    h.releaseDecodes();
+    await expectLoaded(h);
+    expect(h.decodes()).toEqual({ started: 2, settled: 2 }); // both completions ran
+    expect(h.posts.filter((p) => 'rev' in p && p.rev === first)).toEqual([
+      { type: 'ready', rev: first, datasetVersion: MINI_VERSION, chunkCount: 4 }
+    ]);
+    expect(h.errors()).toEqual([]);
+    expect(h.posts.filter((p) => p.type === 'ready').map((p) => p.rev)).toEqual([first, second]);
+  });
+
   it('a rejected init also cancels the previous one', async () => {
     const h = makeScenarioHarness({ retryDelaysMs: [100] });
     h.fail(URLS.parcels, 2, 'body');
@@ -537,6 +564,43 @@ describe('scenario host: reroll before loading, supersession and dispose', () =>
     await h.runAll();
     expect(h.posts.map((p) => p.type)).toEqual(['ready']);
     expect(h.fetchesOf(URLS.parcels)).toHaveLength(1);
+  });
+
+  it('dispose during the decode: the completion runs, does no more work, posts nothing', async () => {
+    const h = makeScenarioHarness(); // valid files: without the cancel it would load
+    h.holdDecodes();
+    h.init();
+    await h.runAll();
+    expect(h.decodes()).toEqual({ started: 1, settled: 0 });
+    h.host.dispose();
+    h.releaseDecodes();
+    await h.runAll();
+    expect(h.decodes()).toEqual({ started: 1, settled: 1 });
+    expect(h.posts.map((p) => p.type)).toEqual(['ready']);
+    expect(vi.mocked(precomputeOf)).not.toHaveBeenCalled();
+  });
+
+  it('a load that throws unexpectedly gives internal, then recovers', async () => {
+    const h = makeScenarioHarness();
+    vi.mocked(precomputeOf).mockImplementationOnce(() => {
+      throw new Error('boom');
+    });
+    const rev = h.init();
+    await h.runAll();
+    expect(h.errors()).toEqual([{ type: 'error', rev, code: 'internal', message: 'Error: boom' }]);
+    const r = h.next();
+    h.host.handle({ type: 'reroll', rev: r, seed: 1 });
+    expect(h.errors().at(-1)?.message).toBe('not initialised');
+    await expectRecovers(h);
+  });
+
+  it('a request that throws synchronously gives internal under its rev, then recovers', async () => {
+    const h = makeScenarioHarness();
+    h.host.handle({ type: 'bogus', rev: 41 } as never);
+    expect(h.posts).toEqual([
+      { type: 'error', rev: 41, code: 'internal', message: 'Error: unknown request bogus' }
+    ]);
+    await expectRecovers(h);
   });
 
   it('answers parcelSummary for an unloaded record with null; chunk requests never throw', async () => {

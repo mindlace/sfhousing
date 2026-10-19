@@ -10,6 +10,7 @@
 // timelines and bands, Task 15 chunks and geometry) hangs off `Session` and schedules through
 // `token.later`; a reroll's own work can take a `token.child()`, cancelled with the session.
 import type { Manifest } from '$lib/data/manifest';
+import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import type { generate, generateForUnits } from '$lib/generator';
 import type { Day } from '$lib/timelapse/time';
 import type { FetchLike } from '../chunks';
@@ -41,6 +42,9 @@ export interface ScenarioHostDeps {
   memoCap?: number;
   bandRuns?: number;
   warn?(msg: string): void; // default console.warn
+  /** Test seam: the parcels.bin decoder (default `readScenarioParcels`), so a harness can tell
+   *  when the one host-external async step (the inflate) has settled. */
+  decodeParcels?(bytes: Uint8Array): Promise<ScenarioParcels>;
 }
 
 export interface ScenarioHost {
@@ -172,7 +176,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         fetchBytes: deps.fetchBytes,
         setTimeout: (fn, ms) => st.token.later(fn, ms),
         retryDelaysMs,
-        warn
+        warn,
+        decodeParcels: deps.decodeParcels
       },
       st.urls,
       () => !live(st)

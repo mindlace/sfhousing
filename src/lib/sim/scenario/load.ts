@@ -35,6 +35,8 @@ export interface LoadDeps {
   setTimeout(fn: () => void, ms: number): unknown;
   retryDelaysMs: readonly number[];
   warn(msg: string): void;
+  /** The T11 decoder; default `readScenarioParcels`. A seam for tests to observe the decode. */
+  decodeParcels?(bytes: Uint8Array): Promise<ScenarioParcels>;
 }
 
 const SEED_END = 4294967296; // 2³², as a literal (ruling A3)
@@ -205,7 +207,7 @@ export async function loadScenario(
   // Step 5: decoding starts only now, so a failure is a bad file, never a network error.
   let parcels: ScenarioParcels;
   try {
-    parcels = await readScenarioParcels(new Uint8Array(bin));
+    parcels = await (deps.decodeParcels ?? readScenarioParcels)(new Uint8Array(bin));
   } catch (e) {
     return invalid('parcels.bin', messageOf(e));
   }
@@ -250,7 +252,8 @@ export async function loadScenario(
   const twin = applyPolicies([baseZoning], fzp);
 
   // Step 7: precompute both now, with the warn (the engine's later calls pass none and hit the
-  // identity memo). The twin shares columns, so an identical warning is not repeated.
+  // identity memo). The twin shares columns, so an identical warning is not repeated. This
+  // dedupe is a choice of this module (one line per fact in the log), not a spec rule.
   const said = new Set<string>();
   const warnOnce = (msg: string) => {
     if (said.has(msg)) return;
