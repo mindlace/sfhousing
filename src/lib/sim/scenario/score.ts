@@ -55,15 +55,22 @@ export type NetSeries = {
   entitledNew: Int32Array;
 };
 
-/** Per-month deltas of one run's series; `stage[s * n + i]` is `inProgress[LIVE[s]]`. */
-interface Acc {
-  n: number;
-  m0: Day;
-  horizon: Day;
+/**
+ * Per-month deltas of the three net series (completions by origin, and `entitledNew`): what
+ * `shownSeries` and the `simulateNet` fast path both accumulate, through `addNet`.
+ */
+export interface NetAcc {
   idx: (d: Day) => number;
   pipeline: Int32Array;
   fresh: Int32Array;
   entitled: Int32Array;
+}
+
+/** Per-month deltas of one run's series; `stage[s * n + i]` is `inProgress[LIVE[s]]`. */
+interface Acc extends NetAcc {
+  n: number;
+  m0: Day;
+  horizon: Day;
   exited: Int32Array;
   stage: Int32Array;
 }
@@ -110,14 +117,22 @@ function addSchedule(acc: Acc, sc: Schedule, asOf: Day): void {
     prevDay = day;
   }
   if (prev >= 0) addStage(acc, prev, prevDay, stop, revs);
-  // net completions: −existing at a construction start after asOf, +final units at completion
+  addNet(acc, sc, asOf);
+  if (end.kind === 'exit' && end.day > asOf) acc.exited[acc.idx(end.day)] += unitsOn(revs, end.day);
+}
+
+/**
+ * One Schedule's net deltas (§4.5): −existing at a construction start after `asOf` and +final
+ * units at completion, by origin (phases are pipeline); `entitledNew` for simulated projects
+ * only, the net units of the revision current on the entitled day. Masters add nothing here.
+ */
+export function addNet(acc: NetAcc, sc: Schedule, asOf: Day): void {
+  const revs = sc.revisions;
+  const e = sc.entered;
   const net = sc.origin === 'pipeline' ? acc.pipeline : acc.fresh;
   const c = e.construction;
   if (c !== undefined && c > asOf) net[acc.idx(c)] -= sc.existingUnits;
-  if (end.kind === 'complete') net[acc.idx(end.day)] += revs[revs.length - 1].units;
-  else if (end.kind === 'exit' && end.day > asOf)
-    acc.exited[acc.idx(end.day)] += unitsOn(revs, end.day);
-  // entitledNew: simulated only, net units of the revision current on the entitled day
+  if (sc.end.kind === 'complete') net[acc.idx(sc.end.day)] += revs[revs.length - 1].units;
   const ent = e.entitled;
   if (sc.origin === 'simulated' && ent !== undefined && ent > asOf) {
     acc.entitled[acc.idx(ent)] += unitsOn(revs, ent) - sc.existingUnits;
