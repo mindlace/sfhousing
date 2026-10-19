@@ -14,8 +14,10 @@ import {
   expiryTest,
   indexHousing,
   verdictEnd,
+  verdictExpiry,
   type AssessorCtx
 } from '../../project-records/stale';
+import { permitDeadline } from '../../project-records/expiry';
 import type { HousingRow, LinkedProject, Permit } from '../../project-records/types';
 
 const d = (iso: string) => Date.parse(`${iso}T00:00:00Z`) / 86_400_000;
@@ -327,10 +329,12 @@ describe('construction evidence (Ruling C2)', () => {
   });
 });
 
-describe('curated verdicts (Rulings C3, C3d)', () => {
+describe('curated verdicts (Rulings C3, C3d, C3e)', () => {
   const entered = { permitFiled: d('2014-01-01'), construction: d('2015-06-01') };
   /** The open history's lastObserved (here after the check). */
   const SEEN = d('2026-10-01');
+  /** No unit-bearing permit: no expiry term, so C3d's date. */
+  const NONE = proj([]);
   const v = (o: Partial<ConstructionVerdict>): ConstructionVerdict => ({
     id: 'BP:1',
     verdict: 'unknown',
@@ -338,10 +342,14 @@ describe('curated verdicts (Rulings C3, C3d)', () => {
     source: 'partner imagery check',
     ...o
   });
+  const dead = (p: LinkedProject, e: typeof entered | Record<string, number>, seen: number) =>
+    verdictEnd(p, e, v({ verdict: 'dead' }), ASOF, seen);
+  const exitDay = (r: ReturnType<typeof verdictEnd>) =>
+    r !== null && 'end' in r && r.end.kind === 'exit' ? r.end.day : undefined;
 
   it('complete: complete at completeDay', () => {
     expect(
-      verdictEnd(entered, v({ verdict: 'complete', completeDay: '2018-05-01' }), ASOF, SEEN)
+      verdictEnd(NONE, entered, v({ verdict: 'complete', completeDay: '2018-05-01' }), ASOF, SEEN)
     ).toEqual({
       end: { kind: 'complete', day: d('2018-05-01') },
       entered: { ...entered, complete: d('2018-05-01') },
@@ -349,27 +357,71 @@ describe('curated verdicts (Rulings C3, C3d)', () => {
     });
   });
 
-  it('dead: exit withdrawn at the last entered stage, at lastObserved capped at the check', () => {
-    const dead = (seen: number) => verdictEnd(entered, v({ verdict: 'dead' }), ASOF, seen);
-    // lastObserved after the check: dated by the check.
-    expect(dead(SEEN)).toEqual({
+  it('dead with no expiry term: at lastObserved capped at the check (Ruling C3d)', () => {
+    expect(dead(NONE, entered, SEEN)).toEqual({
       end: { kind: 'exit', stage: 'construction', reason: 'withdrawn', day: d('2026-09-01') },
       entered,
       clamped: false
     });
-    // The last activity before the check: dated by it (Ruling C3d).
-    expect(dead(d('2019-03-04'))).toMatchObject({
-      end: { kind: 'exit', stage: 'construction', reason: 'withdrawn', day: d('2019-03-04') }
-    });
+    expect(exitDay(dead(NONE, entered, d('2019-03-04')))).toBe(d('2019-03-04'));
     // Never before the last entered day (L1).
-    expect(dead(d('2015-01-01'))).toMatchObject({
-      end: { kind: 'exit', stage: 'construction', reason: 'withdrawn', day: d('2015-06-01') }
+    expect(exitDay(dead(NONE, entered, d('2015-01-01')))).toBe(d('2015-06-01'));
+  });
+
+  it('dead at construction: not before the statutory expiry of its permit (Ruling C3e)', () => {
+    // E2, $200k, not a site permit: 1,080 + 720 days from 2015-01-01.
+    const issued = permit('1', {
+      issuedDay: d('2015-01-01'),
+      filedDay: d('2014-06-01'),
+      sitePermit: false
     });
+    const expiry = permitDeadline(issued) as number;
+    expect(expiry).toBe(d('2015-01-01') + 1080 + 720);
+    // Expiry after lastObserved: the expiry.
+    expect(exitDay(dead(proj([issued]), entered, d('2017-01-01')))).toBe(expiry);
+    // lastObserved after the expiry: lastObserved.
+    expect(exitDay(dead(proj([issued]), entered, d('2021-02-01')))).toBe(d('2021-02-01'));
+    // The latest deadline over the unit-bearing permits; an unissued one has none.
+    const later = permit('2', {
+      issuedDay: d('2016-01-01'),
+      filedDay: d('2015-06-01'),
+      sitePermit: false
+    });
+    const unissued = permit('3', { issuedDay: null });
+    expect(exitDay(dead(proj([issued, later, unissued]), entered, d('2016-01-01')))).toBe(
+      permitDeadline(later)
+    );
+    // Expiry after the check: the check.
+    const recent = permit('1', { issuedDay: d('2025-01-01'), filedDay: d('2024-06-01') });
+    expect(exitDay(dead(proj([recent]), entered, d('2017-01-01')))).toBe(d('2026-09-01'));
+    // The floor: both before the last entered day.
+    const late = { permitFiled: d('2014-01-01'), construction: d('2020-06-01') };
+    expect(exitDay(dead(proj([issued]), late, d('2016-01-01')))).toBe(d('2020-06-01'));
+  });
+
+  it("dead at a stage with no expiry rule (permitFiled, Planning stages): C3d's date", () => {
+    const issued = permit('1', {
+      issuedDay: d('2015-01-01'),
+      filedDay: d('2014-06-01'),
+      sitePermit: false
+    });
+    expect(verdictExpiry(proj([issued]), { permitFiled: d('2014-06-01') })).toBeNull();
+    expect(
+      verdictExpiry(proj([issued]), { filed: d('2013-01-01'), entitled: d('2013-06-01') })
+    ).toBeNull();
+    expect(verdictExpiry(proj([issued]), { permitIssued: d('2015-01-01') })).toBe(
+      permitDeadline(issued)
+    );
+    expect(exitDay(dead(proj([issued]), { permitFiled: d('2014-06-01') }, d('2016-01-01')))).toBe(
+      d('2016-01-01')
+    );
   });
 
   it('unknown: no change; a day after the snapshot is skipped', () => {
-    expect(verdictEnd(entered, v({}), ASOF, SEEN)).toBeNull();
-    expect(verdictEnd(entered, v({ verdict: 'dead', checked: '2026-12-01' }), ASOF, SEEN)).toEqual({
+    expect(verdictEnd(NONE, entered, v({}), ASOF, SEEN)).toBeNull();
+    expect(
+      verdictEnd(NONE, entered, v({ verdict: 'dead', checked: '2026-12-01' }), ASOF, SEEN)
+    ).toEqual({
       skip: 'checked 2026-12-01 is after the snapshot'
     });
   });

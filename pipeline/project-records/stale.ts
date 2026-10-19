@@ -239,12 +239,32 @@ export function expiryExit(entered: Entered, day: Day): End | null {
 }
 
 /**
- * A curated verdict applied to an open history (Ruling C3): `complete` at `completeDay`
- * (forward-clamped), `dead` an exit `withdrawn` at the last entered stage dated at the open
- * history's `lastObserved` capped at `checked` (Ruling C3d; never before the last entered day,
- * L1), `unknown` no change (null). A day after `asOf` is not applied (null, with a reason).
+ * Ruling C3e: the statutory expiry of what was last filed at the history's last entered stage. At
+ * `permitIssued` or `construction` it is the latest non-null `permitDeadline` (SFBC 106A.4.4
+ * Table B with one extension, expiry.ts) over the unit-bearing permits: the same function and max
+ * the statutory exit takes, without its pass conditions; E3 or unissued permits have no deadline
+ * and are ignored. Null at any other stage (no application-expiry rule is implemented).
+ */
+export function verdictExpiry(proj: LinkedProject, entered: Entered): Day | null {
+  const stage = lastEnteredStage(entered);
+  if (stage !== 'permitIssued' && stage !== 'construction') return null;
+  let max: Day | null = null;
+  for (const q of unitBearingPermits(proj)) {
+    const d = permitDeadline(q);
+    if (d !== null && (max === null || d > max)) max = d;
+  }
+  return max;
+}
+
+/**
+ * A curated verdict applied to an open history (Ruling C3), in flight or not (Ruling C3c):
+ * `complete` at `completeDay` (forward-clamped), `dead` an exit `withdrawn` at the last entered
+ * stage dated min(`checked`, max(the open history's `lastObserved`, `verdictExpiry`)) (Rulings C3d,
+ * C3e; never before the last entered day, L1), `unknown` no change (null). A day after `asOf` is
+ * not applied (null, with a reason).
  */
 export function verdictEnd(
+  proj: LinkedProject,
   entered: Entered,
   v: ConstructionVerdict,
   asOf: Day,
@@ -261,8 +281,14 @@ export function verdictEnd(
   const d = dayOf(v.checked);
   if (d > asOf) return { skip: `checked ${v.checked} is after the snapshot` };
   // Ruling C3d: time in construction stops when the evidence stops, so the exit is dated at the
-  // open history's lastObserved, capped at `checked` (exitAt keeps it at or after the last
-  // entered day, Ruling L1).
-  const end = exitAt(entered, 'withdrawn', Math.min(d, lastObserved));
+  // open history's lastObserved; Ruling C3e: not before the statutory expiry of what was last
+  // filed at that stage; capped at `checked` (exitAt keeps it at or after the last entered day,
+  // Ruling L1).
+  const expiry = verdictExpiry(proj, entered);
+  const end = exitAt(
+    entered,
+    'withdrawn',
+    Math.min(d, expiry === null ? lastObserved : Math.max(lastObserved, expiry))
+  );
   return end === null ? null : { end, entered, clamped: false };
 }
