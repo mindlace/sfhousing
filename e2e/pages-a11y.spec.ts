@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { expectNoA11yViolations } from './helpers/a11y';
 
-for (const path of ['/', '/about', '/attribution', '/no-such-page']) {
+for (const path of ['/', '/about', '/attribution', '/fzp', '/no-such-page']) {
   test(`${path} has no a11y violations, no horizontal overflow and visible footer link`, async ({
     page
   }) => {
