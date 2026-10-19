@@ -2,7 +2,7 @@
 // distribution P(T = t) = (1 − h)^(t−1) h within 4·SE, through the whole engine. One hostable
 // mini parcel is replicated across 20,000 synthetic parcel ids (a bench-style ScenarioParcels
 // built here), with a constant hazard h and no pipeline projects.
-import { afterAll, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import { exp, log } from '$lib/timelapse/math';
 import { parseCalibration } from '$lib/timelapse/model';
@@ -46,12 +46,6 @@ function replicate(src: ScenarioParcels, i: number, n: number): ScenarioParcels 
     storiesGap: { fzp: rows(src.storiesGap.fzp), base: rows(src.storiesGap.base) }
   };
 }
-
-let warn: MockInstance<typeof console.warn>;
-beforeAll(() => {
-  warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-});
-afterAll(() => warn.mockRestore());
 
 describe('simulated initiation (§4.4.4)', () => {
   it('first-initiation months of 20,000 parcels are geometric at the parcel hazard', () => {

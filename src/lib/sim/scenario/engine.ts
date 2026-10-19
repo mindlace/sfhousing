@@ -14,8 +14,9 @@
 // computed once per input (`staticOf` here, `precomputeOf` in input.ts): project entities, T11
 // rows and revision caps, the candidate rows and their entities. A run hoists its seed's mix
 // (`seedHash`) and each project its stream (`streamOf`), so a draw is one mix. Stage steps call
-// T12's `sampleTransition` itself (nothing here re-implements it). The simulated pass rejects most parcels on their first initiation draw against a precomputed bound
-// (`skipAbove`) instead of evaluating the geometric month. None of this changes a value.
+// T12's `sampleTransition` itself (nothing here re-implements it). The simulated pass rejects
+// most parcels on their first initiation draw against a precomputed bound (`skipAbove`) instead
+// of evaluating the geometric month. None of this changes a value.
 import type { ParcelId } from '$lib/data/parcel';
 import { FILL_LEVELS, fillStories, type ScenarioParcels } from '$lib/data/scenario-codec';
 import { log } from '$lib/timelapse/math';
@@ -494,8 +495,11 @@ export function addHold(
   holdRows(holds, rowsOf(parcels, parcelIds), entered, end);
 }
 
-/** Rows the engine does not run (§4.4.3): already complete, or permitOnly at a Planning stage. */
-function isSkipped(p: InFlightProject): boolean {
+/**
+ * Rows the engine does not run (§4.4.3): already complete, or permitOnly at a Planning stage.
+ * `loadScenario` counts them once per load for its log line; the engine itself writes nothing.
+ */
+export function isSkipped(p: InFlightProject): boolean {
   return (
     p.stage === 'complete' ||
     (p.pathway === 'permitOnly' && (p.stage === 'filed' || p.stage === 'entitled'))
@@ -505,21 +509,6 @@ function isSkipped(p: InFlightProject): boolean {
 /** A multi-phase row with phases: a master plus phase sub-projects (§4.4.3a), not a Schedule. */
 function isPhased(p: InFlightProject): boolean {
   return p.multiPhase && p.phases !== null;
-}
-
-const loggedSkips = new WeakSet<SimInput>();
-
-function logSkips(input: SimInput): void {
-  if (loggedSkips.has(input)) return;
-  loggedSkips.add(input);
-  let n = 0;
-  for (const p of input.projects) if (isSkipped(p)) n++;
-  if (n > 0) {
-    console.warn(
-      `[sim] projects.json: skipped ${n} project(s) the simulation does not run ` +
-        '(complete, or permitOnly at filed or entitled)'
-    );
-  }
 }
 
 /**
@@ -884,10 +873,9 @@ function simulatedPass(run: Run, holds: Holds, sink: Sink): void {
 
 /**
  * Runs the engine for one seed and horizon, handing every Schedule and Master to `sink` in no
- * particular order. Pure apart from the once-per-input skipped-rows log.
+ * particular order. Pure: the skipped-rows count is logged by `loadScenario`, not here.
  */
 export function runEngine(input: SimInput, seed: number, horizon: Day, sink: Sink): void {
-  logSkips(input);
   const run = runOf(input, seed, horizon, sink.ids ?? true);
   const holds: Holds = new Map();
   pipelinePass(run, holds, sink);

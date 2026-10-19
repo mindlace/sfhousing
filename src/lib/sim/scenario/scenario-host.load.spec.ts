@@ -27,6 +27,11 @@ const URLS = MINI_SCENARIO_URLS;
 const INVALID_WARNING =
   `projects.json: skipped 1 invalid project(s); first: ` +
   `projects[${MINI_INVALID_INDEX}].units: must be >= 1`;
+/** The load's one note on the rows the engine does not run (mini: the complete row). */
+const SKIP_NOTE =
+  'projects.json: skipped 1 project(s) the simulation does not run ' +
+  '(complete, or permitOnly at filed or entitled)';
+const SKIP_NOTE_RE = /^projects\.json: skipped \d+ project\(s\) the simulation does not run /;
 
 type Json = Record<string, unknown>;
 const calibration = (): Json => structuredClone(miniCalibrationJson) as Json;
@@ -63,10 +68,7 @@ async function expectRecovers(h: ScenarioHarness): Promise<void> {
 const T11_ABSENT = /^parcel \S+ of \S+ is not in parcels\.bin: /;
 const loadWarnings = (h: ScenarioHarness) => h.warnings.filter((w) => !T11_ABSENT.test(w));
 
-// The engine logs one expected console.warn per input (projects it does not run): silenced, and
-// nothing else may reach the console.
-const SKIP_WARNING =
-  /^\[sim\] projects\.json: skipped \d+ project\(s\) the simulation does not run/;
+// Every warning goes through the harness's deps.warn: nothing may reach the console.
 let warnSpy: MockInstance<typeof console.warn>;
 
 beforeEach(() => {
@@ -75,9 +77,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  const unexpected = warnSpy.mock.calls.filter((args) => !SKIP_WARNING.test(String(args[0])));
+  const calls = warnSpy.mock.calls;
   warnSpy.mockRestore();
-  expect(unexpected).toEqual([]);
+  expect(calls).toEqual([]);
 });
 
 describe('validateInitRequest', () => {
@@ -199,7 +201,7 @@ describe('scenario host: ready and fetching', () => {
     ]);
     await expectLoaded(h);
     expect(h.posts.filter((m) => m.type === 'error')).toEqual([]);
-    expect(loadWarnings(h)).toEqual([INVALID_WARNING]);
+    expect(loadWarnings(h)).toEqual([INVALID_WARNING, SKIP_NOTE]);
   });
 
   it('fetches the JSON files while parcels.bin is still pending', async () => {
@@ -396,12 +398,24 @@ describe('scenario host: invalid projects and asOf', () => {
     h.init();
     await expectLoaded(h);
     expect(loadWarnings(h)).toEqual([
-      'projects.json: skipped 2 invalid project(s); first: projects[2].units: must be >= 1'
+      'projects.json: skipped 2 invalid project(s); first: projects[2].units: must be >= 1',
+      SKIP_NOTE
     ]);
     const fzp = vi.mocked(precomputeOf).mock.calls[0][0];
     const ids = fzp.projects.map((p) => p.id);
     const all = (json.projects as { id: string }[]).map((p) => p.id);
     expect(ids).toEqual(all.filter((_, i) => i !== 2 && i !== MINI_INVALID_INDEX));
+  });
+
+  it('notes the rows the engine does not run exactly once per load, not per input or run', async () => {
+    const h = makeScenarioHarness();
+    h.init();
+    await expectLoaded(h); // both inputs simulated, and a reroll on top
+    const notes = () => h.warnings.filter((w) => SKIP_NOTE_RE.test(w));
+    expect(notes()).toEqual([SKIP_NOTE]);
+    h.init(); // a second load: one more note, for that load
+    await expectLoaded(h);
+    expect(notes()).toEqual([SKIP_NOTE, SKIP_NOTE]);
   });
 
   it('a file whose every project is invalid is an empty, valid pipeline', async () => {
@@ -466,7 +480,7 @@ describe('scenario host: invalid projects and asOf', () => {
     warnFzp('probe');
     warnTwin('probe');
     warnTwin('twin only');
-    expect(loadWarnings(h)).toEqual([INVALID_WARNING, 'probe', 'twin only']);
+    expect(loadWarnings(h)).toEqual([INVALID_WARNING, SKIP_NOTE, 'probe', 'twin only']);
   });
 });
 

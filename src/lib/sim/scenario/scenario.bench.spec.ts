@@ -95,16 +95,10 @@ function inputOf(city: SynthCity): SimInput {
 }
 
 let city: SynthCity;
-const realWarn = console.warn;
 
 beforeAll(() => {
-  console.warn = () => {}; // the engine's once-per-input skipped-rows note
   city = synthCity();
 }, TIMEOUT);
-
-afterAll(() => {
-  console.warn = realWarn;
-});
 
 describe('scenario engine budgets (spec §4.11)', () => {
   let input: SimInput;

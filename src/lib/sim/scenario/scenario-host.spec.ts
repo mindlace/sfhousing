@@ -131,10 +131,9 @@ function harness(
   return h;
 }
 
-// The engine logs one expected console.warn per input (projects it does not run); the chunk
-// loader one per failed attempt. Both are silenced, and nothing else may be logged.
-const SKIP_WARNING =
-  /^\[sim\] projects\.json: skipped \d+ project\(s\) the simulation does not run/;
+// The load's skipped-rows note goes through deps.warn (harness `warnings`), never the console;
+// the chunk loader's console.warn per failed attempt is allowed where a test expects it.
+const SKIP_NOTE = /^projects\.json: skipped \d+ project\(s\) the simulation does not run/;
 let warnSpy: MockInstance<typeof console.warn>;
 let allowedWarnings: RegExp[];
 
@@ -143,7 +142,7 @@ beforeEach(() => {
   hooks.detailedMs = 40;
   hooks.packMs = 0;
   hooks.throwFor = null;
-  allowedWarnings = [SKIP_WARNING];
+  allowedWarnings = [];
   warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
@@ -253,8 +252,8 @@ describe('scenario host: a seeded init', () => {
     const rev = h.init({ seed: SEED });
     await h.runAll();
     expect(h.errors()).toEqual([]);
-    // the engine's one expected warning per input, silenced (see afterEach)
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringMatching(SKIP_WARNING));
+    // the load's one skipped-rows note, through deps.warn (the console stays clean: afterEach)
+    expect(h.warnings.filter((w) => SKIP_NOTE.test(w))).toHaveLength(1);
     expect(h.posts[0]).toMatchObject({ type: 'ready', rev });
     const t0 = h.posts[1] as TimelineResponse;
     expect(t0.type).toBe('timeline');

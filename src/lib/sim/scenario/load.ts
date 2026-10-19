@@ -7,6 +7,7 @@ import { parseCalibration } from '$lib/timelapse/model';
 import { ProjectsFormatError, parseProjectsFile, type ProjectsFile } from '$lib/timelapse/projects';
 import type { Calibration } from '$lib/timelapse/types';
 import type { FetchLike } from '../chunks';
+import { isSkipped } from './engine';
 import { ScenarioInputError, buildSimInput, precomputeOf } from './input';
 import { applyPolicies, baseZoning } from './policy';
 import type { ScenarioErrorCode, ScenarioRequest, SimInput } from './types';
@@ -238,6 +239,16 @@ export async function loadScenario(
     deps.warn(
       `projects.json: skipped ${skipped.length} invalid project(s); ` +
         `first: ${path}: ${invalidProblem(path, message)}`
+    );
+  }
+  // Once per load, for the FZP input and its twin alike (they share the projects): the rows the
+  // engine does not run (§4.4.3). The engine stays pure and logs nothing.
+  let notRun = 0;
+  for (const p of projects.projects) if (isSkipped(p)) notRun++;
+  if (notRun > 0) {
+    deps.warn(
+      `projects.json: skipped ${notRun} project(s) the simulation does not run ` +
+        '(complete, or permitOnly at filed or entitled)'
     );
   }
 

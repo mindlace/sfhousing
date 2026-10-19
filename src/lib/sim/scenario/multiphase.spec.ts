@@ -2,7 +2,7 @@
 // AC 18), on the mini fixture's phased rows: the entitled 3-phase master (plan dates after asOf,
 // overdue and null; a fourth DA parcel in no phase), the unentitled 2-phase master (phase 1
 // planned asOf + 45) and the entitled single-phase master (P = 1).
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { FILL_LEVELS, type ScenarioParcels } from '$lib/data/scenario-codec';
 import { parseCalibration, sampleTransition } from '$lib/timelapse/model';
 import { parseProjectsFile, type InFlightProject } from '$lib/timelapse/projects';
@@ -153,13 +153,6 @@ function simsOn(ss: Schedule[]): Map<string, Schedule[]> {
   return out;
 }
 const firstDay = (s: Schedule) => s.revisions[0].day;
-
-beforeEach(() => {
-  vi.spyOn(console, 'warn').mockImplementation(() => {});
-});
-afterEach(() => {
-  vi.restoreAllMocks();
-});
 
 describe('multi-phase masters (§4.4.3a)', () => {
   it('a master is never a Schedule; phased rows give one Master each, sorted', () => {

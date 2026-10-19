@@ -3,7 +3,7 @@
  * and `simulate.golden.svelte.spec.ts` (the client project's browser engine; `SFH_BROWSER` picks
  * it). Regenerate the golden with `fixtures/build-golden.ts`.
  */
-import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import golden from './fixtures/golden-seed1.json';
 import { GOLDEN_HORIZON, GOLDEN_SEED, goldenRun, type GoldenRun } from './simulate.golden.cases';
 
@@ -11,14 +11,6 @@ const want = golden as unknown as GoldenRun;
 
 export function describeSimulateGolden(where: string): void {
   describe(`simulate cross-engine golden, seed 1 (${where})`, () => {
-    let warn: MockInstance<typeof console.warn>;
-    beforeEach(() => {
-      warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    });
-    afterEach(() => {
-      warn.mockRestore();
-    });
-
     it('is the golden run, and not degenerate: an engine difference has something to show', () => {
       expect(want.seed).toBe(GOLDEN_SEED);
       expect(want.horizon).toBe(GOLDEN_HORIZON);

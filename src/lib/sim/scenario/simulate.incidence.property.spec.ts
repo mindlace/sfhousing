@@ -1,7 +1,7 @@
 // Acceptance "reproduces observed per-stage death rates", through the whole engine (spec §6):
 // synthetic pipeline cohorts in every stage of the mini calibration, compared with T12
 // `cumulativeIncidence` only (no second incidence implementation).
-import { afterAll, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { cumulativeIncidence, parseCalibration } from '$lib/timelapse/model';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import { MONTH_DAYS, monthsIn } from '$lib/timelapse/time';
@@ -85,12 +85,6 @@ const within = (got: number, expected: number) => {
   // 4·SE, plus one project's worth for incidences so small that SE rounds to nothing.
   return Math.abs(got - expected) <= 4 * se + 1 / N;
 };
-
-let warn: MockInstance<typeof console.warn>;
-beforeAll(() => {
-  warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-});
-afterAll(() => warn.mockRestore());
 
 describe('stage incidence through simulate', () => {
   it('covers all 16 mini transitions', () => {

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   FILL_LEVELS,
   fillStories,
@@ -20,7 +20,14 @@ import {
   type Transition
 } from '$lib/timelapse/types';
 import { dayOf } from './dates';
-import { addHold, nextStage, pushRevision, revisionRatio, type Holds } from './engine';
+import {
+  addHold,
+  isSkipped as engineSkips,
+  nextStage,
+  pushRevision,
+  revisionRatio,
+  type Holds
+} from './engine';
 import { miniBin } from './fixtures/mini-bin';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
 import {
@@ -135,14 +142,6 @@ function rigged(ratios: Partial<Record<Stage, number>>): Calibration {
   }));
   return cal;
 }
-
-let warn: MockInstance<typeof console.warn>;
-beforeEach(() => {
-  warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-});
-afterEach(() => {
-  warn.mockRestore();
-});
 
 describe('nextStage', () => {
   it('follows STAGE_ORDER, with permitOnly going from preApplication to permitFiled', () => {
@@ -325,19 +324,24 @@ describe('simulate: pipeline projects', () => {
     expect(find(out, MINI_PROJECTS.unphased).multiPhase).toBe(true);
   });
 
-  it('logs the skipped count once per input', () => {
+  it('runs no skipped row and writes nothing to the console (the load logs the count)', () => {
     const inp = withProjects(miniInput(), (ps) => {
       const p = ps.find((q) => q.id === MINI_PROJECTS.permitFiled)!;
       return [...ps, { ...p, id: 'BP:999', stage: 'filed', history: { filed: AS_OF - 10 } }];
     });
-    simulate(inp, 1, H);
-    simulate(inp, 2, H);
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(String(warn.mock.calls[0][0])).toContain('skipped 2 ');
-    simulate(miniInput(), 1, H);
-    expect(warn).toHaveBeenCalledTimes(2);
-    expect(String(warn.mock.calls[1][0])).toContain('skipped 1 ');
-    expect(simulate(inp, 1, H).some((s) => s.projectId === 'BP:999')).toBe(false);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const out = simulate(inp, 1, H);
+      simulate(inp, 2, H);
+      expect(out.some((s) => s.projectId === 'BP:999')).toBe(false);
+      // the predicate load.ts counts with is the engine's own, and matches §4.4.3
+      const skipped = inp.projects.filter(engineSkips).map((p) => p.id);
+      expect(skipped).toEqual([MINI_PROJECTS.complete, 'BP:999']);
+      expect(skipped).toEqual(inp.projects.filter(isSkipped).map((p) => p.id));
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('keeps history days, puts every future day and end in (asOf, horizon]', () => {

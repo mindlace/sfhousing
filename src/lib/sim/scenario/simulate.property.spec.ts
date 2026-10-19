@@ -1,7 +1,7 @@
 // Determinism and invariance properties of the engine (spec §6 `simulate.property.spec.ts`,
 // AC 1), and the fast path: `simulateNet` must equal the score of `simulateDetailed` exactly
 // (§4.4.7) on every month of all three net series.
-import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { FILL_LEVELS, type ScenarioParcels } from '$lib/data/scenario-codec';
 import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile, type InFlightProject } from '$lib/timelapse/projects';
@@ -110,14 +110,6 @@ const hasTie = (s: Schedule) => {
   const days = STAGE_ORDER.map((st) => s.entered[st]).filter((d) => d !== undefined);
   return new Set(days).size < days.length;
 };
-
-let warn: MockInstance<typeof console.warn>;
-beforeEach(() => {
-  warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-});
-afterEach(() => {
-  warn.mockRestore();
-});
 
 describe('simulateNet equals the score of simulateDetailed (§4.4.7)', () => {
   const months = monthsOf(MINI_AS_OF, H);

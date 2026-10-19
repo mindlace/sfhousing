@@ -1,6 +1,6 @@
 // The T9 policy seam (spec §6 `policy.spec.ts`, AC 17): the `baseZoning` view, common random
 // numbers between an FZP run and its twin, and that calibration edits alone change outcomes.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
@@ -25,13 +25,6 @@ const miniFiles = () => ({
   calibration: miniCalibration()
 });
 const miniInput = (): SimInput => buildSimInput(miniFiles());
-
-beforeEach(() => {
-  vi.spyOn(console, 'warn').mockImplementation(() => {});
-});
-afterEach(() => {
-  vi.restoreAllMocks();
-});
 
 describe('baseZoning view (§4.4.8)', () => {
   it('swaps envelope, yield, hostable and the feature variants onto the base columns', () => {
