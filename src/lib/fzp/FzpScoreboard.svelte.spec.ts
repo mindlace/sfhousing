@@ -413,7 +413,7 @@ describe('375 px', () => {
     // A native modal standing in for SourcesDialog: it returns focus to its opener on close.
     const dlg = document.createElement('dialog');
     dlg.innerHTML = '<button type="button">Inside</button>';
-    document.body.append(dlg);
+    document.body.appendChild(dlg);
     let opener: HTMLElement | null = null;
     dlg.addEventListener('close', () => opener?.isConnected && opener.focus());
     const onsources = vi.fn(() => {

@@ -93,7 +93,7 @@ describe('opening', () => {
     const extra = document.createElement('div');
     extra.innerHTML =
       '<div tabindex="0" data-testid="scroller">Scroll</div><details><summary>More</summary></details>';
-    dialog().append(extra);
+    dialog().appendChild(extra);
     const close = dialog().querySelector('button')!;
     const summary = extra.querySelector('summary')!;
     const scroller = extra.querySelector('[tabindex]') as HTMLElement;

@@ -386,7 +386,8 @@ describe('timelineRows', () => {
     expect(rows.at(-1)).toMatch(/^Building permit issued · /);
     expect(rows.some((t) => t.startsWith('Completed'))).toBe(false);
 
-    const end = REAL_ACTUAL.end!.day;
+    if (REAL_ACTUAL.end?.kind !== 'complete') throw new Error('REAL_ACTUAL must complete');
+    const end = REAL_ACTUAL.end.day;
     expect(timelineRows(REAL_ACTUAL, end - 1, FIX_ASOF, false)).toHaveLength(5);
     expect(timelineRows(REAL_ACTUAL, end, FIX_ASOF, false).at(-1)?.text).toBe(
       'Completed · Nov 2027 · Simulated'
