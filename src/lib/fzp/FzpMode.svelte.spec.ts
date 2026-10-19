@@ -750,6 +750,80 @@ describe('FzpMode map, layout and lifecycle', () => {
     expect(root.style.getPropertyValue('--fzp-scrubber-h')).toBe(`${h}px`);
   });
 
+  it.each([375, 768, 900, 1000, 1280])(
+    'at %i px the notices never cover the card or the score panel',
+    async (width) => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      await page.viewport(width, 800);
+      // SimMap's contract (docs/dev/map-interfaces.md): the controls' top includes the inset.
+      const syncControls = () => {
+        const inset = callsOf('setBottomInset').at(-1)?.[0] ?? 0;
+        document.documentElement.style.setProperty('--map-controls-br-block-size', `${inset}px`);
+      };
+      try {
+        const s = setup();
+        await toReady(s);
+        pick({ projectId: 'pr-1', parcelId: 'p1', x: 10, y: 10, kind: 'tap' });
+        await answerLastSummary(s.w(), summary(REAL_ACTUAL));
+        await expect.element(page.getByTestId('card-badge')).toBeVisible();
+
+        const rect = (el: Element) => el.getBoundingClientRect();
+        const overlaps = (a: DOMRect, b: DOMRect) =>
+          a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+        /** The card and whichever score panel shows at this width (the desktop panel or the bar). */
+        const covered = () =>
+          [card().element(), ...document.querySelectorAll('.sfh-fzp-scoreboard > div')]
+            .filter((el) => (el as HTMLElement).offsetParent !== null)
+            .map(rect);
+        const check = async (notice: () => Element) => {
+          await expect.poll(() => rect(notice()).height).toBeGreaterThan(0);
+          await expect
+            .poll(() => {
+              syncControls();
+              return covered().filter((r) => overlaps(rect(notice()), r)).length;
+            })
+            .toBe(0);
+          expect(covered().length).toBeGreaterThanOrEqual(2);
+        };
+
+        await another().click();
+        await check(() => page.getByText('Making another future…').element());
+        s.w().emit({
+          type: 'error',
+          rev: s.w().lastOf('reroll')!.rev,
+          code: 'internal',
+          message: 'x'
+        });
+        await check(() => page.getByRole('alert').element());
+        s.w().crash();
+        await check(
+          () => page.getByText('Part of the simulation stopped.').element().parentElement!
+        );
+      } finally {
+        document.documentElement.style.removeProperty('--map-controls-br-block-size');
+      }
+    }
+  );
+
+  it.each([375, 768, 1000])('at %i px the loading notice clears the score panel', async (width) => {
+    await page.viewport(width, 800);
+    setup();
+    const notice = page.getByText('Loading the simulation…', { exact: true }).first();
+    await expect.element(notice).toBeVisible();
+    const n = (
+      document.querySelector('[data-testid="fzp-status"]') as HTMLElement
+    ).getBoundingClientRect();
+    const panels = [...document.querySelectorAll('.sfh-fzp-scoreboard > div')]
+      .filter((el) => (el as HTMLElement).offsetParent !== null)
+      .map((el) => el.getBoundingClientRect());
+    expect(panels.length).toBeGreaterThanOrEqual(1);
+    for (const p of panels) {
+      expect(n.left < p.right && p.left < n.right && n.top < p.bottom && p.top < n.bottom).toBe(
+        false
+      );
+    }
+  });
+
   it('below 768 px the inset is scrubber + 56, and the sheet height while it is open', async () => {
     await page.viewport(375, 800);
     const s = setup();
