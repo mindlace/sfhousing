@@ -496,6 +496,21 @@ test('a dataset without scenarios shows the message and starts no worker', async
   await expect(status.getByRole('link', { name: 'Go to the editor' })).toBeVisible();
   await page.waitForTimeout(1_000);
   expect(workers).toEqual([]);
+  await expectNoA11yViolations(page);
+});
+
+test('a calibration that fails to load shows the failure with Retry, and passes axe', async ({
+  page
+}) => {
+  // As above: a client navigation, so the browser fetches the calibration and the route can fail it.
+  await page.route('**/scenarios/fzp/calibration.json', (route) => route.fulfill({ status: 500 }));
+  await page.goto('/about');
+  await headerLink(page, 'Timelapse').click();
+  await expect(page).toHaveURL(/\/fzp$/);
+  await expect(page.getByTestId('fzp-status')).toHaveText("The simulation couldn't load.");
+  await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
+  expect(await fzp(page, 'phase')).toBe('failed');
+  await expectNoA11yViolations(page);
 });
 
 // ---- header and attribution ---------------------------------------------------------------------
@@ -527,6 +542,67 @@ test('axe: the sources dialog open', async ({ isMobile, page }) => {
   const dialog = await openSources(page, isMobile);
   await expect(dialog.locator('[id="src-quality"] tbody tr').first()).toBeVisible();
   await expectNoA11yViolations(page, { include: 'dialog[open]', structure: true });
+});
+
+test('axe: the crash chip', async ({ page }) => {
+  await gotoFzp(page);
+  // A real crash: an uncaught error in the simulation worker reaches its `onerror`. (No request
+  // can do this: after ready the worker fetches only chunks, whose failures are chunk statuses.)
+  const sim = page.workers().find((w) => /\/_app\/.*worker/.test(w.url()));
+  expect(sim, `no simulation worker among ${page.workers().map((w) => w.url())}`).toBeTruthy();
+  await sim!.evaluate(() => {
+    setTimeout(() => {
+      throw new Error('e2e: simulated worker crash');
+    });
+  });
+  const chip = page.getByTestId('fzp-status');
+  await expect(chip).toContainText('Part of the simulation stopped.');
+  await expect(chip.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
+  await expectNoA11yViolations(page);
+});
+
+test('axe: a failed reroll, whose notice clears the card and the score panel', async ({
+  isMobile,
+  page
+}) => {
+  // A reroll makes no request, so no route can fail it. Instead the page's own reroll request is
+  // given a seed the worker rejects (bad-request), and the real error path runs.
+  await page.addInitScript(() => {
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (this: Worker, msg: unknown, ...rest: never[]) {
+      const m = msg as { type?: string };
+      return post.call(this, m?.type === 'reroll' ? { ...m, seed: -1 } : msg, ...rest);
+    } as typeof Worker.prototype.postMessage;
+  });
+  await gotoFzp(page);
+  const c = await openRealCard(page, isMobile);
+  await anotherFuture(page).click();
+  const alert = page.getByRole('alert');
+  await expect(alert).toHaveText(/Couldn't make another future\. Try again\./);
+  expect(await fzp(page, 'representative')).toBe(true);
+  await expectNoA11yViolations(page);
+
+  const overlap = async (): Promise<string[]> => {
+    const a = (await alert.boundingBox())!;
+    const panels = [c, scoreRegion(page).locator(':scope > div').filter({ visible: true }).first()];
+    const hits: string[] = [];
+    for (const p of panels) {
+      const b = (await p.boundingBox())!;
+      if (
+        a.x < b.x + b.width &&
+        b.x < a.x + a.width &&
+        a.y < b.y + b.height &&
+        b.y < a.y + a.height
+      )
+        hits.push(JSON.stringify({ alert: a, panel: b }));
+    }
+    return hits;
+  };
+  const widths = isMobile ? [375] : [1280, 1000, 768];
+  for (const width of widths) {
+    await page.setViewportSize({ width, height: isMobile ? 812 : 720 });
+    await expect.poll(overlap, { message: `at ${width} px` }).toEqual([]);
+  }
 });
 
 test('axe: the scoreboard sheet open (phone)', async ({ isMobile, page }) => {
