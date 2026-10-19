@@ -75,13 +75,20 @@ const MALFORMED = new RegExp(`timeline cell ${cell.cellId}: slotPathway has leng
 
 describe('SimMap timeline handle validation (ruling R18)', { timeout: 60_000 }, () => {
   it('setTimelineLookups throws the RangeError before the map is ready, and keeps nothing', async () => {
+    // A rejected call keeps nothing (R18), so the timeline below installs before any lookups
+    // arrived: §4.4.3's dev warning is expected, once. Asserted here and kept off stderr.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { handle, whenReady } = await mount();
     expect(() => handle.setTimelineLookups(longLookups)).toThrow(RangeError);
     const h = await whenReady();
     h.applyTimeline(timelineSmall);
     await converged();
-    // The rejected lookups were not kept: no bars.
+    // The rejected lookups were not kept: no bars, and the no-lookups warning fired once.
     expect(dbg().timelineSnapshot()).toMatchObject({ revision: 0, cells: 2, bars: 0 });
+    const noLookups = warn.mock.calls.filter((c) =>
+      String(c[0]).includes('timeline installed before setTimelineLookups')
+    );
+    expect(noLookups).toHaveLength(1);
     // The controller throws the same error.
     expect(() => h.setTimelineLookups(longLookups)).toThrow(RangeError);
   });
