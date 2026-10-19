@@ -26,13 +26,15 @@ Tests that need a stable day call `page.emulateMedia({ reducedMotion: 'reduce' }
 
 ## Layout variables
 
-| Variable                       | Set by                                                       | Used by                                                                                                               |
-| ------------------------------ | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| `--fzp-scrubber-h`             | `FzpMode` (`.sfh-fzp`), the scrubber's measured height in px | the card's and the scoreboard panel's `max-height` on a wide viewport, so neither runs under the scrubber             |
-| `--scorebar-h`                 | `FzpScoreboard` (`:root`, below 768 px only), 56px           | the scrubber's wrapper (`max-md:bottom-[var(--scorebar-h,56px)]`), so the scrubber sits above the collapsed score bar |
-| `--map-controls-br-block-size` | `SimMap`, see [map-interfaces.md](map-interfaces.md)         | the card on a phone: `bottom-[calc(var(--map-controls-br-block-size,60px)+8px)]`, so it clears the attribution        |
+| Variable                       | Set by                                                                                                       | Used by                                                                                                               |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `--fzp-scrubber-h`             | `FzpMode` (`.sfh-fzp`), the scrubber's measured height plus the notice row's (0 when no notice shows), in px | the card's and the scoreboard panel's `max-height` on a wide viewport, so neither runs under the scrubber or a notice |
+| `--scorebar-h`                 | `FzpScoreboard` (`:root`, below 768 px only), 56px                                                           | the scrubber's wrapper (`max-md:bottom-[var(--scorebar-h,56px)]`), so the scrubber sits above the collapsed score bar |
+| `--map-controls-br-block-size` | `SimMap`, see [map-interfaces.md](map-interfaces.md)                                                         | the card on a phone: `bottom-[calc(var(--map-controls-br-block-size,60px)+8px)]`, so it clears the attribution        |
 
-`FzpMode` also passes the bottom inset to the map (`handle.setBottomInset`): the open scoreboard sheet's height on a phone, otherwise the scrubber's height plus the score bar's 56 px below 768 px. `--map-controls-br-block-size` includes that inset.
+`FzpMode` also passes the bottom inset to the map (`handle.setBottomInset`): the open scoreboard sheet's height on a phone, otherwise the scrubber's height plus the notice row's, plus the score bar's 56 px below 768 px. `--map-controls-br-block-size` includes that inset, so the phone card clears the notices too.
+
+The ready-phase notices (the stopped chip with Retry, "Making another future…", the dismissible reroll alert) sit in one row just above the scrubber, never at the top of the map, so they never cover the card or the score panel. While the phone sheet is open the row sits just above the sheet and over it in z, so a notice raised from the sheet (its "Back to the representative future") stays visible. The loading notice is top centre on a phone and top left from 768 px (no card exists yet; the score panel holds the top right).
 
 ## The debug hook
 
