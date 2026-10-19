@@ -53,7 +53,7 @@ async function setup(props: Partial<HarnessProps> = {}) {
   await page.viewport(1280, 800);
   const q = manualRaf();
   const onday = vi.fn();
-  await render(TimeScrubberHarness, {
+  const view = await render(TimeScrubberHarness, {
     props: {
       asOf: ASOF,
       horizon: HORIZON,
@@ -65,7 +65,7 @@ async function setup(props: Partial<HarnessProps> = {}) {
       ...props
     }
   });
-  return { q, onday };
+  return { q, onday, unmount: view.unmount };
 }
 
 describe('slider', () => {
@@ -262,6 +262,45 @@ describe('autoplay', () => {
     await expect.element(page.getByRole('button', { name: 'Play' })).toBeVisible();
     expect(q.pending()).toBe(0);
   });
+
+  // FzpMode's real path: mounted with autoplay false, flipped to true when the phase is ready.
+  const flip = () => page.getByTestId('autoplay-flip').click();
+
+  it('flipping autoplay from false to true starts playback', async () => {
+    const { q } = await setup({ autoplay: false });
+    await expect.element(page.getByRole('button', { name: 'Play' })).toBeVisible();
+    expect(q.pending()).toBe(0);
+    await flip();
+    await expect.element(page.getByRole('button', { name: 'Pause' })).toBeVisible();
+    expect(q.pending()).toBe(1);
+  });
+
+  it('flipping autoplay under reduced motion does not start playback', async () => {
+    const { q } = await setup({ autoplay: false, reducedMotion: () => true });
+    await flip();
+    await expect.element(page.getByRole('button', { name: 'Play' })).toBeVisible();
+    expect(q.pending()).toBe(0);
+    expect(stateText()).toBe(`${ASOF}|false|year`);
+  });
+
+  it('after the user pauses, autoplay toggling false then true again stays paused', async () => {
+    const { q } = await setup({ autoplay: false });
+    await flip();
+    await page.getByRole('button', { name: 'Pause' }).click();
+    await expect.element(page.getByRole('button', { name: 'Play' })).toBeVisible();
+    await flip(); // true -> false
+    await flip(); // false -> true: the latch must hold
+    await expect.element(page.getByRole('button', { name: 'Play' })).toBeVisible();
+    expect(q.pending()).toBe(0);
+    expect(stateText()).toBe(`${ASOF}|false|year`);
+  });
+
+  it('unmounting while playing cancels the pending frame', async () => {
+    const { q, unmount } = await setup({ startPlaying: true });
+    expect(q.pending()).toBe(1);
+    unmount();
+    expect(q.pending()).toBe(0);
+  });
 });
 
 describe('per frame work', () => {
@@ -365,5 +404,27 @@ describe('reflow and targets', () => {
     await page.viewport(500, 800);
     const label = page.getByText('Speed', { exact: true }).element().getBoundingClientRect();
     expect(label.width).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('control contrast (WCAG 1.4.11)', () => {
+  const luminance = (rgb: number[]) => {
+    const [r, g, b] = rgb.map((v) => {
+      const c = v / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+
+  it('the Speed select and the Play button borders are at least 3:1 against white', async () => {
+    await setup();
+    const white = luminance([255, 255, 255]);
+    for (const el of [
+      page.getByRole('combobox', { name: 'Speed' }).element(),
+      page.getByRole('button', { name: 'Play' }).element()
+    ]) {
+      const rgb = getComputedStyle(el).borderTopColor.match(/\d+/g)!.slice(0, 3).map(Number);
+      expect((white + 0.05) / (luminance(rgb) + 0.05)).toBeGreaterThanOrEqual(3);
+    }
   });
 });

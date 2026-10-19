@@ -225,7 +225,7 @@
   .ctl {
     min-width: 32px;
     min-height: 32px;
-    border: 1px solid #94a3b8;
+    border: 1px solid #64748b;
     background: #fff;
     color: inherit;
   }
