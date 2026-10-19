@@ -12,16 +12,23 @@ import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { TOOL_VERSIONS, type InvariantProfile } from '../config';
+import { BuildError } from '../lib/build-error';
 import { run } from '../lib/exec';
 import { openDuck, type Duck } from '../lib/duck';
 import { lockSha256, rawPath, readLock, sortKeys, verifyRaw, type Lock } from '../lib/lock';
+import { QUALITY_REPORT_MD, createQualityTables, writeQualityReport } from '../lib/quality';
 import { Report } from '../lib/report';
 import { runSql } from '../lib/sql';
 import { codeTreeHash, computeDatasetVersion } from '../lib/version';
+import { asOfFromLock } from '../project-records/parse';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
+import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
+import { writeCalibration } from './calibration';
 import { checkDataset, type InvariantResult } from './check';
-import { writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
+import { readParcelRecords, writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
 import { buildManifest, writeManifest } from './manifest';
+import { writeProjectRecords } from './projects';
+import { writeScenario } from './scenario';
 import { copyBasemap, installFonts, writeBuildingsTiles } from './tiles';
 import { writeTransit } from './transit';
 
@@ -35,14 +42,32 @@ export interface BuildOpts {
   builtAt?: string;
   profile: InvariantProfile;
   skipTiles?: boolean;
+  /**
+   * Pipeline-internal derived cache root (T13 parcel panel and lineage go to
+   * `<derivedRoot>/<datasetVersion>/`). Default `<repo>/pipeline/.cache/derived`.
+   */
+  derivedRoot?: string;
 }
 
-export class BuildError extends Error {}
+export { BuildError };
 
 const REPO_ROOT = resolve(import.meta.dirname, '../..');
 /** SF housing stock (2023 Housing Inventory, Table 1); spec §4.9 V1. */
 const HOUSING_STOCK = { end2022: 413208, end2023: 415803 };
 const FIXTURE_RE = /^fixture-\d+$/;
+const DERIVED_ROOT = join(REPO_ROOT, 'pipeline/.cache/derived');
+/** Curated DA phasing (project-records spec §4.10.1): live, and the mini fixture's. */
+const MULTIPHASE = {
+  live: join(REPO_ROOT, 'pipeline/enrichment/multiphase.json'),
+  fixture: join(REPO_ROOT, 'pipeline/test/fixtures/mini/enrichment/multiphase.json')
+};
+/** Curated imagery verdicts (project-records spec §4.6, Ruling C3): live, and the mini fixture's. */
+const CONSTRUCTION_VERIFIED = {
+  live: join(REPO_ROOT, 'pipeline/enrichment/construction-verified.json'),
+  fixture: join(REPO_ROOT, 'pipeline/test/fixtures/mini/enrichment/construction-verified.json')
+};
+/** The three T11/T4 files whose presence puts `scenarios` in the manifest (spec §4.9). */
+const SCENARIO_FILES = ['parcels.bin', 'projects.json', 'calibration.json'];
 /** Spec §4.12: derivative databases of ODbL data are offered under ODbL-1.0 (share-alike). */
 const DERIVED_LICENSE = {
   derivedData: 'ODbL-1.0',
@@ -109,8 +134,12 @@ function chunkCounts(chunks: ChunkOut[]): Record<string, number> {
 }
 
 /**
- * Spec §4.2 `build`: verify the lock, normalise, SQL, chunks (+ in-run re-encode), neighborhoods,
- * tiles, basemap, fonts, manifest, invariants and report.json into `<outRoot>/<datasetVersion>/`.
+ * Spec §4.2 `build`: verify the lock, normalise, SQL, chunks (+ in-run re-encode), the scenario
+ * step (scenarios/fzp/parcels.bin; the T13 panel and lineage into the derived cache), the project
+ * records (scenarios/fzp/projects.json; histories and permits.parquet into the derived cache),
+ * the calibration (scenarios/fzp/calibration.json; calibration-report.md into the derived cache),
+ * the T14 quality report (quality-report.md into the derived cache), neighborhoods, tiles,
+ * basemap, fonts, manifest, invariants and report.json into `<outRoot>/<datasetVersion>/`.
  * Throws BuildError when a raw file does not match the lock.
  */
 export async function build(
@@ -143,6 +172,8 @@ export async function build(
       await normaliseAll(db, lock, opts.rawDir, join(work, 'norm'), { byName });
       await loadNormalised(db, join(work, 'norm'));
     });
+    // T14 (scenario-data spec §4.12): SQL rules insert into these, so they precede the first file.
+    await createQualityTables(db);
     await report.time('sql', () => runSql(db));
     const chunks = await report.time('chunks', () =>
       writeChunks(db, outDir, datasetVersion, report)
@@ -151,9 +182,68 @@ export async function build(
       await writeChunks(db, join(work, 'reencode'), datasetVersion, new Report());
       return sameFiles(join(outDir, 'parcels'), join(work, 'reencode', 'parcels'));
     });
-    const neighborhoodsBytes = await writeNeighborhoods(db, outDir);
-    // Transit spec §4.2 step 1: the service date is picked from the newest fetch date.
+    // Transit spec §4.2 step 1: the service date is picked from the newest fetch date. Its UTC
+    // day is the build's snapshot day: the scenario step's "today" for the FZP density cap and
+    // the project records' `asOf` (project-records spec §4.9 Determinism).
     const newest = lock.sources.reduce((d, s) => (s.retrievedAt > d ? s.retrievedAt : d), '');
+    const asOf = asOfFromLock(lock);
+    const derivedDir = join(opts.derivedRoot ?? DERIVED_ROOT, datasetVersion);
+    // The build's single report `counts` (T14): every owner records its `recordQuality` counts
+    // into this object, and `writeQualityReport` and V30 read it. The project-records step writes
+    // all its counts into it; the other counts join it below.
+    const counts: Record<string, number> = {};
+    const scenario = await report.time('scenario', async () =>
+      writeScenario({
+        db,
+        outDir,
+        derivedDir,
+        datasetVersion,
+        records: await readParcelRecords(db),
+        capDay: asOf,
+        report,
+        buildCounts: counts
+      })
+    );
+    report.warnings.push(...scenario.warnings);
+    // Project-records spec §4.9: after the scenario step (it reads parcel_lineage and
+    // scenario_panel), before the manifest and the invariants.
+    const projects = await report.time('projects', () =>
+      writeProjectRecords({
+        db,
+        lock,
+        rawDir: opts.rawDir,
+        byName,
+        outDir,
+        derivedDir,
+        multiphasePath: fixtureMode ? MULTIPHASE.fixture : MULTIPHASE.live,
+        constructionVerifiedPath: fixtureMode
+          ? CONSTRUCTION_VERIFIED.fixture
+          : CONSTRUCTION_VERIFIED.live,
+        profile: opts.profile,
+        asOf,
+        counts
+      })
+    );
+    report.warnings.push(...projects.warnings);
+    // Stage-calibration spec §4.3: after the scenario and projects steps (it reads parcels.bin,
+    // projects.json, permits.parquet and scenario_panel), before the manifest. Its sc.* tallies
+    // and calibration.* counts go into the same counts. A CalibrationError aborts the build.
+    const calibration = await report.time('calibration', () =>
+      writeCalibration({
+        db,
+        outDir,
+        derivedDir,
+        datasetVersion,
+        asOf,
+        histories: { schema: 1, asOf, histories: projects.histories },
+        cal: fixtureMode ? FIXTURE_CAL : LIVE_CAL,
+        counts
+      })
+    );
+    report.warnings.push(...calibration.warnings);
+    // After the last step that records T14 counts (spec §4.10), so the report covers every owner.
+    writeQualityReport(join(derivedDir, QUALITY_REPORT_MD), datasetVersion, counts);
+    const neighborhoodsBytes = await writeNeighborhoods(db, outDir);
     const transit = await report.time('transit', async () =>
       writeTransit({
         lock,
@@ -185,29 +275,34 @@ export async function build(
       chunks,
       overtureContrib,
       transit: true,
+      scenarios: SCENARIO_FILES.every((f) => existsSync(join(outDir, 'scenarios/fzp', f))),
       warn: (w) => report.warnings.push(w)
     });
     const manifestBytes = writeManifest(outDir, manifest);
     const [totals] = await db.all<{ units: number; hmax: number }>(
       'SELECT coalesce(sum(units), 0)::BIGINT AS units, coalesce(max(height_m), 0) AS hmax FROM parcel_out'
     );
-    const counts: Record<string, number> = {
+    Object.assign(counts, {
       ...(await sqlCounts(db)),
       ...report.counts,
       ...chunkCounts(chunks),
       ...transit.counts,
+      ...scenario.counts,
       ...Object.fromEntries(overtureContrib.map((o) => [`overture.contrib.${o.dataset}`, o.n])),
       'units.total': totals.units,
       'parcels.height_max_m': totals.hmax,
       'manifest.bytes': manifestBytes,
       'neighborhoods.bytes': neighborhoodsBytes
-    };
+    });
     const results = await report.time('check', () =>
       checkDataset(outDir, opts.profile, {
         counts,
         reencodeIdentical,
         skipTiles: opts.skipTiles ?? false,
-        stableDetail: fixtureMode
+        stableDetail: fixtureMode,
+        asOf,
+        projectChecks: projects.checks,
+        calibrationChecks: calibration.checks
       })
     );
     const body: Record<string, unknown> = {

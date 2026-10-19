@@ -92,4 +92,27 @@ describe('/attribution page', () => {
     await expect.element(page.getByText('Map data ©')).toBeInTheDocument();
     expect(document.body.textContent).not.toContain(CREDIT);
   });
+
+  const SCENARIO_NOTICE =
+    "Housing project records (building permits, Planning applications, approvals and completions, the development pipeline), the assessor's secured roll and the Family Zoning Plan height districts from DataSF, under PDDL, CC0 or public domain. The simulation's comparison estimates are cited from SF Planning and the SF Controller's Office.";
+  const scenarios = {
+    fzp: {
+      parcels: '/data/fixture-0/scenarios/fzp/parcels.bin',
+      projects: '/data/fixture-0/scenarios/fzp/projects.json',
+      calibration: '/data/fixture-0/scenarios/fzp/calibration.json'
+    }
+  };
+
+  it('lists the housing-records notice when the manifest carries scenarios.fzp', async () => {
+    render(Page, {
+      data: { datasetVersion: 'fixture-0', appRelease: 'dev', manifest: { ...manifest, scenarios } }
+    });
+    await expect.element(page.getByText(SCENARIO_NOTICE)).toBeInTheDocument();
+  });
+
+  it('omits the housing-records notice without scenarios.fzp', async () => {
+    render(Page, { data: { datasetVersion: 'fixture-0', appRelease: 'dev', manifest } });
+    await expect.element(page.getByText('Map data ©')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('Housing project records');
+  });
 });

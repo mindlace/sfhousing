@@ -20,9 +20,19 @@ export type TokenName =
   | 'transit-bus'
   | 'transit-rail'
   | 'transit-regional'
-  | 'transit-stroke';
+  | 'transit-stroke'
+  | 'tl-ghost-planning'
+  | 'tl-ghost-permit'
+  | 'tl-ghost-ready'
+  | 'tl-ghost-dying'
+  | 'tl-bar-track'
+  | 'tl-bar-edge'
+  | 'tl-bar-likely'
+  | 'tl-bar-uncertain'
+  | 'tl-bar-unlikely'
+  | 'tl-bar-dead';
 
-/** Spec §4.3 verbatim; `transit-*` from transit spec §6.1. Hex, or rgba() for highlight. */
+/** Spec §4.3 verbatim; `transit-*` from transit spec §6.1; `tl-*` from timelapse-render spec §4.6. Hex, or rgba() for highlight. */
 export const TOKENS: Record<Theme, Record<TokenName, string>> = {
   light: {
     land: '#F3EFE6',
@@ -50,7 +60,17 @@ export const TOKENS: Record<Theme, Record<TokenName, string>> = {
     'transit-bus': '#5F6B66',
     'transit-rail': '#7B3FA0',
     'transit-regional': '#1F5FBF',
-    'transit-stroke': '#FFFFFF'
+    'transit-stroke': '#FFFFFF',
+    'tl-ghost-planning': '#9DB0FF',
+    'tl-ghost-permit': '#6F86F0',
+    'tl-ghost-ready': '#4257D6',
+    'tl-ghost-dying': '#D84A4A',
+    'tl-bar-track': '#FFFFFF',
+    'tl-bar-edge': '#5E5A52',
+    'tl-bar-likely': '#2E7D32',
+    'tl-bar-uncertain': '#B26A00',
+    'tl-bar-unlikely': '#C62828',
+    'tl-bar-dead': '#8A8478'
   },
   dark: {
     land: '#1C1D1F',
@@ -78,7 +98,17 @@ export const TOKENS: Record<Theme, Record<TokenName, string>> = {
     'transit-bus': '#A3ADA6',
     'transit-rail': '#C59BE0',
     'transit-regional': '#7FB2FF',
-    'transit-stroke': '#111214'
+    'transit-stroke': '#111214',
+    'tl-ghost-planning': '#5466B8',
+    'tl-ghost-permit': '#7D90F0',
+    'tl-ghost-ready': '#AEBBFF',
+    'tl-ghost-dying': '#FF6E6E',
+    'tl-bar-track': '#2C2E31',
+    'tl-bar-edge': '#A9A59C',
+    'tl-bar-likely': '#81C784',
+    'tl-bar-uncertain': '#FFB74D',
+    'tl-bar-unlikely': '#FF8A80',
+    'tl-bar-dead': '#8F8A80'
   }
 };
 
@@ -105,6 +135,92 @@ export function colorFor(
   typology: TypologyId,
   theme: Theme
 ): RGBA {
-  if (source !== 'user') throw new Error(`colorFor: unsupported source ${String(source)}`);
+  if (source !== 'user' && source !== 'pipeline' && source !== 'scenario')
+    throw new Error(`colorFor: unsupported source ${String(source)}`);
   return GEN_RGBA[theme][TYPOLOGY_ORDER.indexOf(typology)];
+}
+
+export interface TimelineLegendEntry {
+  id: string;
+  kind: 'ghost' | 'solid' | 'bar';
+  tokens: TokenName[];
+  label: string;
+}
+
+/** Spec §4.6 legend, in render order; fzp-mode draws it with the `--map-tl-*` / `--map-gen-*` vars. */
+export const TIMELINE_LEGEND: readonly TimelineLegendEntry[] = [
+  {
+    id: 'planning',
+    kind: 'ghost',
+    tokens: ['tl-ghost-planning'],
+    label: 'Proposed: in Planning review'
+  },
+  { id: 'permit', kind: 'ghost', tokens: ['tl-ghost-permit'], label: 'Approved: in permit review' },
+  { id: 'ready', kind: 'ghost', tokens: ['tl-ghost-ready'], label: 'Permit issued' },
+  {
+    id: 'building',
+    kind: 'solid',
+    tokens: ['tl-ghost-ready', 'gen-walkup'],
+    label: 'Under construction (solid floors are built)'
+  },
+  {
+    id: 'complete',
+    kind: 'solid',
+    tokens: TYPOLOGY_ORDER.map((t) => `gen-${t}` as const),
+    label: 'Completed (colour shows building type)'
+  },
+  {
+    id: 'stopped',
+    kind: 'ghost',
+    tokens: ['tl-ghost-dying'],
+    label: 'Stopped: withdrawn, disapproved, cancelled or expired'
+  },
+  {
+    id: 'chance',
+    kind: 'bar',
+    tokens: ['tl-bar-unlikely', 'tl-bar-uncertain', 'tl-bar-likely'],
+    label: 'Bar colour: chance of finishing, low to high'
+  },
+  { id: 'bar-stopped', kind: 'bar', tokens: ['tl-bar-dead'], label: 'Bar: project stopped' }
+];
+
+const customProp = (name: TokenName) =>
+  `--map-${name.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())}`;
+
+/**
+ * The `--map-*` custom-property CSS for `names`: the light values scoped to `selector`, then the
+ * dark values under `prefers-color-scheme: dark` (spec §4.6.1). Declarations keep `TOKENS` key
+ * order whatever the order of `names`. Pure and DOM-free (runs in SSR). Not part of the public
+ * surface: exported only so SimMap can build its default stylesheet on it. The selector is spliced
+ * into CSS unescaped, so callers pass a trusted selector; `timelineTokenCss` validates its own.
+ */
+export function tokenCss(selector: string, names: readonly TokenName[]): string {
+  const wanted = new Set(names);
+  const vars = (theme: Theme) =>
+    (Object.keys(TOKENS[theme]) as TokenName[])
+      .filter((n) => wanted.has(n))
+      .map((n) => `${customProp(n)}: ${TOKENS[theme][n]}`)
+      .join('; ');
+  return (
+    `${selector} { ${vars('light')} } ` +
+    `@media (prefers-color-scheme: dark) { ${selector} { ${vars('dark')} } }`
+  );
+}
+
+/**
+ * T7 (spec §4.6.1): the `--map-*` properties a legend outside SimMap needs, scoped to `selector`:
+ * every `tl-*` token plus every token `TIMELINE_LEGEND` names, light then dark under
+ * `prefers-color-scheme`. CSS text without a `<style>` wrapper. Follows the system theme only;
+ * a page that passes SimMap an explicit `theme` sets its legend variables itself.
+ * Throws `TypeError` for a selector that is blank or contains `{`, `}`, `<` or `;`.
+ */
+export function timelineTokenCss(selector: string): string {
+  if (typeof selector !== 'string' || selector.trim() === '' || /[{}<;]/.test(selector)) {
+    throw new TypeError(
+      `timelineTokenCss: selector must be non-blank and contain none of { } < ; (got ${JSON.stringify(selector)})`
+    );
+  }
+  const names = new Set<TokenName>(TIMELINE_LEGEND.flatMap((e) => e.tokens));
+  for (const n of Object.keys(TOKENS.light) as TokenName[]) if (n.startsWith('tl-')) names.add(n);
+  return tokenCss(selector, [...names]);
 }

@@ -1,0 +1,63 @@
+# Ledger — fzp-timelapse
+
+## 2026-10-16 — composition started (supercomposer, fresh)
+- Partner request: a read-only "Family Zoning Plan mode". Load the adopted FZP as the envelope, then time-travel from today (2026-10) to 2031 and watch a realistic share of parcels redevelop. Each project appears as a "ghost" from the permit phase onward, with a "health bar" for permitting and construction. Projects can die. Stage sequencing, durations and per-stage attrition must match data (partner: "if 10% of projects die in permit step z, that should be true of our model"). Calibrate from literature for now; later tie to real development records. Later still: policy levers that change the outcome. No painting in this mode.
+- Source model: `docs/superpowers/design/2026-10-10-1749-sf-housing-sim.md` seam rows scenario-loader (M3), time-permitting (M4), buildout-likelihood (M2), pipeline-overlay (M5).
+- Composition worktree `.claude/worktrees/fzp-timelapse` on `worktree-fzp-timelapse`, base aad4a6b.
+- C1 inventory: src/lib/{attribution,brush,data,generator,map,plan,scoreboard,server,sharing,shell,sim,transit,view}; routes /, /p/[id], /about, /attribution, /api/plans, /api/e2e/plans, /data/[version]/[...path]; one web worker (sim/client.ts); D1 one migration (plans); R2 dataset; pipeline sources datasf×4, overture, protomaps, gtfs×3.
+- Surveys: codebase map (Explore, done); literature/rates research (general-purpose, in flight, extended to per-stage attrition and datasets).
+- Primary reads: sim/protocol.ts, sim/host.ts, sim/display.ts, generator/types.ts, plan/types.ts, data/parcel.ts, map/types.ts, map/generated-controller.ts (head), scoreboard/types.ts, pipeline/sources/datasf.ts, docs/dev/pipeline.md.
+- Partner ruling: precomputed per-project schedules are fine, but a project may change size before construction (downsizing/upsizing). Design carries per-project revisions, each with its own time window; research asked for revision frequency/magnitude.
+- Partner ruling (global constraint): evidence hierarchy for every parameter — 0 per-record time-series data, 1 first-party published aggregates, 2 researched inferences, 3 research models/literature, 4 invented. Calibration computes from tier 0 where it exists; each parameter carries its tier + source.
+- Research report back (rates/timelines/attrition/resizing). Verified at primary source: DataSF h9wh-cg3m already holds adopted FZP heights as "base//localProgram-R-4" (e.g. 40//65-R-4); 5,292 polygons. No FoglineSF scrape found — supersedes design-doc row scenario-loader source.
+- Key tension: estimates of FZP buildout span ~10x (Controller ~730 units/yr to 2045; Planning 39k in 5 yrs). By 2031 reality is dominated by the existing pipeline (~58k entitled, ~3.3k under construction, 2026-Q2).
+- Data probe back: tier-0 sources confirmed. i98e-djp9 (permit filed/approved/issued/first-construction-doc/completed, current status incl. withdrawn/cancelled/expired) + 87xy-gk8d addenda routing (per-station dated review events) + d4jk-jw33 (Planning approval dates 2013+) + qvu5-m3a2/y673-d69b (PRJ + child records, links to permits) + j67f-aayr (TCO/CFC). Pipeline 6jgi-cpb4 is current-snapshot only. Rough cohort (5+ unit new construction filed 2014–20, n=441): median filed→issued 542d, issued→first construction doc 200d, FCD→completed 920d; 15% dead, 45% still open → calibration must be survival analysis with censoring, not ratios. Report kept at scratchpad; promote to docs/superpowers/research/ on commit.
+- Partner ruling: ideally yes — timelapse starts from real in-flight pipeline projects (tier 0) at their real stage, plus simulated FZP-enabled projects. Pulls M5 pipeline-overlay (units→massing) into scope.
+- Design doc drafted: docs/superpowers/design/2026-10-16-1903-fzp-timelapse.md (7 subsystems, T1–T11, OD-T1..T5). Research reports promoted to docs/superpowers/research/. Next: visual companion mockups for OD-T2; partner review.
+- Partner rulings 2026-10-16: OD-T1 ghost appears as soon as we have data (earliest dated record, incl. PPA); OD-T2 style A (translucent ghost + floating bar); OD-T3 longest window available across the majority of stages, no recent-subset weighting; OD-T5 all projects treated the same once in the future (pipeline can die; R8 narrowed for this mode); OD-T4 horizon 2050 (Controller 2045 vs Planning/RHNA 2031 disagreement).
+- Design amended pre-derivation: T4a–d (initiation/size/revision models, ProjectHistory), T12 chanceTable, ProjectCard, slotPathway; spec brief written. Dispatching 7 spec agents.
+- Spec fzp-mode written (uncommitted). Concerns C1–C13 queued for reconciliation (singular project card/time; reroll null seed + resync; initScenario response/errors; T8 baseline inclusion; references comparand; T12 months-in-stage rule; SimMap select/tooltip override; legend tokens; prefetch contradiction; manifest schema; fixture contents; simulated address; main-thread calibration parser).
+- Spec timelapse-sim written. Concerns S-C1..C11 (parcelSummary day; stories null; no address in T3; pipeline parcels outside parcels.bin; shared month/bin/event rules with calibration; rhnaCompletedNet semantics; reference figures nature (39k = approvals; Controller via KQED); ADU in yield; scenario error codes/SimClient resync; packTimedCell ownership; calibration coverage of all pathway×stage).
+- Spec pipeline-massing written. Concerns M-IC1..9 (seed in subsystem para; I9 doc lags code; scenario source stamping; ProjectCard massing field; revisions stories nullable; no keep-existing kind; >80-story envelopes vs MAX_STORIES & floor-height overshoot; packCell duplicate parcelId → slots keyed by project; MAX_STORIES name).
+- Spec stage-calibration written (W=2015-01-01; AJ estimator; ridge IRLS; V23 reproduces tables). Concerns K1..14; K6 substantive: base potential must include pre-FZP density limits (RH-1/2/3, RM per-sf) or initiation model cannot see density decontrol (77% of FZP parcels). Orchestrator ruling pending: scenario-data ingests zoning districts 3i4a-hu95 and computes base yield = min(height yield, density cap).
+- Spec scenario-data written. Concerns D1..12 (all parcels in parcels.bin w/ hostable flag; ScenarioParcels type; missing-value imputation+mask; existingUnits from assessor vs LUDB divergence; yield applies base-zoning unit cap (agrees with K6); adds acdm-wktn zoning codes; generator in dataset hash; deflate in-file; invariants V15–19; derived cache per version; CI fixture doc drift; FILL_LEVELS ownership). CONFLICT: fill levels 5 (scenario-data) vs F=8 (stage-calibration). No pre-FZP height map exists; base height of base//local used as historic proxy.
+- Spec timelapse-render written (custom deck LayerExtension; setTime O(1) via shared clock). Concerns R-IC1..9 (setTimelineLookups for T12; month length; demolish full vs delta; open window encoding; parcelMeta per slot vs revisions; existing-building hide via paint expression reloads source → feature-state catch-up ≤2k/frame (not O(1)); onTimelinePick hook; two layers per cell for translucency breaks budget; luma.gl direct dep + credit). CONFLICT: default playback speed (fzp-mode 1 yr/s vs render 1 yr/4 s) — fzp-mode owns playback.
+- Spec project-records written (RHNA since 2022-06-30 verified; records 6,940 net 2023–25 vs HI 6,816). Concerns P1..9. All 7 specs in. Next: orchestrator reconciliation section in design, then original spec agents update, then fidelity agent.
+- Reconciliation section + amended rows (T1,T3,T4a,T4d,T5,T6,T7,T8,T11,T12; new T13) written. Specs committed pre-update. Next: send rulings to the 7 spec agents for verbatim row sync + applying rulings; then fidelity agent.
+- pipeline-massing spec synced. Fixed design para to include seed. Finding (doc↔code): source-design I9 row lags code (composition/role/tone) — record only; code is truth, T10 unaffected.
+- scenario-data and stage-calibration specs synced. Confirmed 16 occupiable pathway×stage pairs (added to design reconciliation).
+- All 7 specs synced to reconciled design; mechanical row check: every T-row in every spec byte-identical to design. Late rulings recorded (rhnaCompletedNet HI-net, parcel-lineage.parquet, timelinePick kind, ScenarioClient owner sim, math.ts fdlibm, no exit labels/edges). Next: fresh-eyes fidelity agent (C4).
+- Fidelity review: 2 blockers, 24 should-fix, 17 nits (report at scratchpad/fidelity-report.md; to be committed). Round-2 reconciliation written; rows T3/T4d/T6/T8 amended (projectId, bandRuns, card fields, months semantics, sources.key); step-0 types. Partner questions pending: #18 references vs counterfactual, #19 multi-phase steps, #23 window.
+- Round-2 spec edits applied by all 7 agents. Partner rulings round 3: old-zoning twin (planEffect, T9 baseZoning, paired CRN runs); multi-phase simulated phase-by-phase (master + phase sub-projects; DA phasing enrichment file, tier 1; fallbacks tier 2); window: planning-side 2015+, permit-side ~1989+ pooled pre-2015, initiation from 2007 via permit filings. Rows T3,T4,T5,T6,T8,T9,T11 amended.
+- Round 3 applied by all specs; rows verified identical. Next: fidelity pass 2.
+
+## 2026-10-16 — composition complete; handoff to superconductor
+- Package (branch `worktree-fzp-timelapse`):
+  - design `docs/superpowers/design/2026-10-16-1903-fzp-timelapse.md` (interface rows T1–T13; rulings OD-T1..T5; reconciliation rounds 1–4 + partner rulings round 3);
+  - 7 specs `docs/superpowers/specs/2026-10-16-{scenario-data,project-records,stage-calibration,pipeline-massing,timelapse-sim,timelapse-render,fzp-mode}-design.md`;
+  - research `docs/superpowers/research/2026-10-16-{fzp-calibration-literature,sf-stage-datasets}.md`;
+  - fidelity reports 1–2 in this folder.
+- Verified: every T-row byte-identical across all specs (script); no placeholders; fidelity pass 2 found no blockers; round-4 fixes applied by all owners.
+- Settled:
+  - evidence hierarchy 0–4;
+  - stage model with exits and optional preApplication;
+  - ghost from first record, option A visuals;
+  - horizon 2050;
+  - all projects treated the same in future;
+  - old-zoning twin (planEffect);
+  - DA phase-by-phase simulation;
+  - history windows (planning-side 2015+, permitFiled 1989+, permitIssued/construction 2000+, initiation 2007+).
+- Dependency order:
+  - step 0: shared types/time;
+  - then scenario-data ∥ project-records (after SD panel) ∥ pipeline-massing ∥ timelapse-render;
+  - then stage-calibration;
+  - then timelapse-sim;
+  - then fzp-mode.
+  - Integration milestone: a dataset release with scenarios/fzp/*.
+- Implementation-time obligations named as ACs:
+  - density caps re-verified against the official Planning Code;
+  - multiphase.json curation of all 21 PRX rows;
+  - Controller primary report citation (else labelled via press).
+- Doc debt: source-design I9 row lags code (composition/role/tone).
+- Doc↔code finding: docs/dev/pipeline.md says CI regenerates fixture-0; ci.yml does not (scenario-data corrects).
+- Next: fresh session, `supersonic:superconductor` intake on this package. Do not dispatch from the composition session.

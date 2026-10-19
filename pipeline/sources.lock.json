@@ -3,6 +3,588 @@
     {
       "files": [
         {
+          "archiveKey": "sources/b75d184012d4b2634b13c9f7ec89575a917b080e291005466b9d4eb9a3144299.csv",
+          "bytes": 4133318,
+          "name": "datasf-assessor-roll.page-000.csv",
+          "sha256": "b75d184012d4b2634b13c9f7ec89575a917b080e291005466b9d4eb9a3144299",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=0"
+        },
+        {
+          "archiveKey": "sources/7810e436ac8fdc5ffa3752e63765e5a6846f0e650e0ee7e5ef03b27657aeba6b.csv",
+          "bytes": 4112585,
+          "name": "datasf-assessor-roll.page-001.csv",
+          "sha256": "7810e436ac8fdc5ffa3752e63765e5a6846f0e650e0ee7e5ef03b27657aeba6b",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=50000"
+        },
+        {
+          "archiveKey": "sources/d61bfee18e7c21d6c243e8b1a81a55a05c4f3ff98c2debf6b715de05328c09d8.csv",
+          "bytes": 4085622,
+          "name": "datasf-assessor-roll.page-002.csv",
+          "sha256": "d61bfee18e7c21d6c243e8b1a81a55a05c4f3ff98c2debf6b715de05328c09d8",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=100000"
+        },
+        {
+          "archiveKey": "sources/fff75982a6a9f9cace0474815322b0b504c1943e760b4c7597d2bda626cede16.csv",
+          "bytes": 4094124,
+          "name": "datasf-assessor-roll.page-003.csv",
+          "sha256": "fff75982a6a9f9cace0474815322b0b504c1943e760b4c7597d2bda626cede16",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=150000"
+        },
+        {
+          "archiveKey": "sources/9ffa3c84d51f146d237617557d3be26c9905460fb1df4e5c0e3c1731240cfc09.csv",
+          "bytes": 4112601,
+          "name": "datasf-assessor-roll.page-004.csv",
+          "sha256": "9ffa3c84d51f146d237617557d3be26c9905460fb1df4e5c0e3c1731240cfc09",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=200000"
+        },
+        {
+          "archiveKey": "sources/8ed8220436eb37a345442cdecd9ca315b4ab4ac7918a636439b1e5f1c7397b9a.csv",
+          "bytes": 4103233,
+          "name": "datasf-assessor-roll.page-005.csv",
+          "sha256": "8ed8220436eb37a345442cdecd9ca315b4ab4ac7918a636439b1e5f1c7397b9a",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=250000"
+        },
+        {
+          "archiveKey": "sources/34f4f533fe31d66678c9917ae000a328ed004fad4fca6bd338ee439c5b623c67.csv",
+          "bytes": 4090470,
+          "name": "datasf-assessor-roll.page-006.csv",
+          "sha256": "34f4f533fe31d66678c9917ae000a328ed004fad4fca6bd338ee439c5b623c67",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=300000"
+        },
+        {
+          "archiveKey": "sources/d4b86d98ec7f708959ea7b8952040230cb43515084d87ea198f6e0a124a53725.csv",
+          "bytes": 4115494,
+          "name": "datasf-assessor-roll.page-007.csv",
+          "sha256": "d4b86d98ec7f708959ea7b8952040230cb43515084d87ea198f6e0a124a53725",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=350000"
+        },
+        {
+          "archiveKey": "sources/ea8908d223c0a8d085088ce28ae802732a6b6581536fb4189d1236e4feafff0a.csv",
+          "bytes": 4097592,
+          "name": "datasf-assessor-roll.page-008.csv",
+          "sha256": "ea8908d223c0a8d085088ce28ae802732a6b6581536fb4189d1236e4feafff0a",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=400000"
+        },
+        {
+          "archiveKey": "sources/621eec5e06d52ce70bcddabf2f43f180dadb4b22409ec37482a8bfdae2f8609c.csv",
+          "bytes": 4111144,
+          "name": "datasf-assessor-roll.page-009.csv",
+          "sha256": "621eec5e06d52ce70bcddabf2f43f180dadb4b22409ec37482a8bfdae2f8609c",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=450000"
+        },
+        {
+          "archiveKey": "sources/f3ed1c81991ca6d48eaadaf28afbbfe1d1824f19fd0edbf52719f66d98675ba7.csv",
+          "bytes": 4097140,
+          "name": "datasf-assessor-roll.page-010.csv",
+          "sha256": "f3ed1c81991ca6d48eaadaf28afbbfe1d1824f19fd0edbf52719f66d98675ba7",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=500000"
+        },
+        {
+          "archiveKey": "sources/3faf87873a28a84fc6b14c66c81576a822135a9d74cfa27d649437b7a77d216b.csv",
+          "bytes": 4075979,
+          "name": "datasf-assessor-roll.page-011.csv",
+          "sha256": "3faf87873a28a84fc6b14c66c81576a822135a9d74cfa27d649437b7a77d216b",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=550000"
+        },
+        {
+          "archiveKey": "sources/e00fd018ce97ee594c34f764954e3585d453b52dd37f661e9e0bbd2b2983f8a5.csv",
+          "bytes": 4069245,
+          "name": "datasf-assessor-roll.page-012.csv",
+          "sha256": "e00fd018ce97ee594c34f764954e3585d453b52dd37f661e9e0bbd2b2983f8a5",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=600000"
+        },
+        {
+          "archiveKey": "sources/72e2f84453fdf6ea6054b6fea72bb9a7776e903c37780b8e439181160cbeca77.csv",
+          "bytes": 4084492,
+          "name": "datasf-assessor-roll.page-013.csv",
+          "sha256": "72e2f84453fdf6ea6054b6fea72bb9a7776e903c37780b8e439181160cbeca77",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=650000"
+        },
+        {
+          "archiveKey": "sources/6c1b73db9162b7f5cf403736c604f18395ccc78a3447b4d087b116a8858eeff1.csv",
+          "bytes": 4059580,
+          "name": "datasf-assessor-roll.page-014.csv",
+          "sha256": "6c1b73db9162b7f5cf403736c604f18395ccc78a3447b4d087b116a8858eeff1",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=700000"
+        },
+        {
+          "archiveKey": "sources/7b86e8051d85f6ecf4bad446e9422cae4ae770304664daccb7cca977356d49f7.csv",
+          "bytes": 4109556,
+          "name": "datasf-assessor-roll.page-015.csv",
+          "sha256": "7b86e8051d85f6ecf4bad446e9422cae4ae770304664daccb7cca977356d49f7",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=750000"
+        },
+        {
+          "archiveKey": "sources/c1cb3153c4ed92b45a55834db36f2d24b930bf906712b788e228f5eee9e1d467.csv",
+          "bytes": 4081932,
+          "name": "datasf-assessor-roll.page-016.csv",
+          "sha256": "c1cb3153c4ed92b45a55834db36f2d24b930bf906712b788e228f5eee9e1d467",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=800000"
+        },
+        {
+          "archiveKey": "sources/489d005a43db6815d677d09551c79c46ce47d08adbf4d9b78633dd6a8707f1d1.csv",
+          "bytes": 4093363,
+          "name": "datasf-assessor-roll.page-017.csv",
+          "sha256": "489d005a43db6815d677d09551c79c46ce47d08adbf4d9b78633dd6a8707f1d1",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=850000"
+        },
+        {
+          "archiveKey": "sources/5993b35c0b1d7efaf8455c2ffc1c0896555dcf329bc7305251bc857c54062b39.csv",
+          "bytes": 4078492,
+          "name": "datasf-assessor-roll.page-018.csv",
+          "sha256": "5993b35c0b1d7efaf8455c2ffc1c0896555dcf329bc7305251bc857c54062b39",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=900000"
+        },
+        {
+          "archiveKey": "sources/5f76cf0c5940aa5414cc0a6164250bbb598e3a81c79a7f70cf944aa0482b24e2.csv",
+          "bytes": 4112433,
+          "name": "datasf-assessor-roll.page-019.csv",
+          "sha256": "5f76cf0c5940aa5414cc0a6164250bbb598e3a81c79a7f70cf944aa0482b24e2",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=950000"
+        },
+        {
+          "archiveKey": "sources/44ec27f2e0a3a15a71f949aba3cb238461af362f3e31d031983ecbfbc68d032f.csv",
+          "bytes": 4064461,
+          "name": "datasf-assessor-roll.page-020.csv",
+          "sha256": "44ec27f2e0a3a15a71f949aba3cb238461af362f3e31d031983ecbfbc68d032f",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1000000"
+        },
+        {
+          "archiveKey": "sources/56ac1516f310253c54decac900889d716207c281c48224e021ba4ecf98acc497.csv",
+          "bytes": 4086676,
+          "name": "datasf-assessor-roll.page-021.csv",
+          "sha256": "56ac1516f310253c54decac900889d716207c281c48224e021ba4ecf98acc497",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1050000"
+        },
+        {
+          "archiveKey": "sources/e93d5bf40d33d7c485b6e27ab542a758736e594b08dca3e8c217d9cec97a9b42.csv",
+          "bytes": 4059332,
+          "name": "datasf-assessor-roll.page-022.csv",
+          "sha256": "e93d5bf40d33d7c485b6e27ab542a758736e594b08dca3e8c217d9cec97a9b42",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1100000"
+        },
+        {
+          "archiveKey": "sources/b32cb1730a3fd722151657b06ec75a88114bb062334c95098d8b486e36a062c2.csv",
+          "bytes": 4088254,
+          "name": "datasf-assessor-roll.page-023.csv",
+          "sha256": "b32cb1730a3fd722151657b06ec75a88114bb062334c95098d8b486e36a062c2",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1150000"
+        },
+        {
+          "archiveKey": "sources/4d08c58d48b88da00f7660e98b8b389436fd1943224508be084a4f0360ac84e8.csv",
+          "bytes": 4118672,
+          "name": "datasf-assessor-roll.page-024.csv",
+          "sha256": "4d08c58d48b88da00f7660e98b8b389436fd1943224508be084a4f0360ac84e8",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1200000"
+        },
+        {
+          "archiveKey": "sources/7d957d57776a0f533a0b6b12c50d2f4071eaa799087767171e99c6b33a7fcfd9.csv",
+          "bytes": 4103304,
+          "name": "datasf-assessor-roll.page-025.csv",
+          "sha256": "7d957d57776a0f533a0b6b12c50d2f4071eaa799087767171e99c6b33a7fcfd9",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1250000"
+        },
+        {
+          "archiveKey": "sources/7d4c9966dae18ee5fea704da337c2b77ada6f5d3fb78dbdacb56392868db4c1e.csv",
+          "bytes": 4104615,
+          "name": "datasf-assessor-roll.page-026.csv",
+          "sha256": "7d4c9966dae18ee5fea704da337c2b77ada6f5d3fb78dbdacb56392868db4c1e",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1300000"
+        },
+        {
+          "archiveKey": "sources/39b7a833ec9333a5837c828f3b9ac2ded3b1782f574278f89be2b8e82caea834.csv",
+          "bytes": 4128708,
+          "name": "datasf-assessor-roll.page-027.csv",
+          "sha256": "39b7a833ec9333a5837c828f3b9ac2ded3b1782f574278f89be2b8e82caea834",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1350000"
+        },
+        {
+          "archiveKey": "sources/83748a5c0585ba5e428aed15f6d81e8ee9e050177d0ca62de8b46705a277a2da.csv",
+          "bytes": 4107418,
+          "name": "datasf-assessor-roll.page-028.csv",
+          "sha256": "83748a5c0585ba5e428aed15f6d81e8ee9e050177d0ca62de8b46705a277a2da",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1400000"
+        },
+        {
+          "archiveKey": "sources/69f384f503857461f8679c0ec2c79a9540c6d8408dacf35916eabe81b3a95967.csv",
+          "bytes": 4127333,
+          "name": "datasf-assessor-roll.page-029.csv",
+          "sha256": "69f384f503857461f8679c0ec2c79a9540c6d8408dacf35916eabe81b3a95967",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1450000"
+        },
+        {
+          "archiveKey": "sources/8022c8d6317dc2f8168784b745cf1d8c7cf7853d65c55505caecac16fdeeb439.csv",
+          "bytes": 4099156,
+          "name": "datasf-assessor-roll.page-030.csv",
+          "sha256": "8022c8d6317dc2f8168784b745cf1d8c7cf7853d65c55505caecac16fdeeb439",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1500000"
+        },
+        {
+          "archiveKey": "sources/eaba8d636f1cc525435f3afb21910a8f2b5ee5942e0fbc6eefe173afd26f9778.csv",
+          "bytes": 4103628,
+          "name": "datasf-assessor-roll.page-031.csv",
+          "sha256": "eaba8d636f1cc525435f3afb21910a8f2b5ee5942e0fbc6eefe173afd26f9778",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1550000"
+        },
+        {
+          "archiveKey": "sources/8fab8d219325eb5a2db3ba9d4f2d57237f63aad5a2e677b9160ef06227271a35.csv",
+          "bytes": 4101189,
+          "name": "datasf-assessor-roll.page-032.csv",
+          "sha256": "8fab8d219325eb5a2db3ba9d4f2d57237f63aad5a2e677b9160ef06227271a35",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1600000"
+        },
+        {
+          "archiveKey": "sources/0c807320a550b700ce948bee604d01f209847db8f3dc823d5b58eaae327e769c.csv",
+          "bytes": 4121385,
+          "name": "datasf-assessor-roll.page-033.csv",
+          "sha256": "0c807320a550b700ce948bee604d01f209847db8f3dc823d5b58eaae327e769c",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1650000"
+        },
+        {
+          "archiveKey": "sources/8cc91a0a97c5597ce5c018df6128fa5c7cb189eb8c25b6564e75775301f5ac48.csv",
+          "bytes": 4115802,
+          "name": "datasf-assessor-roll.page-034.csv",
+          "sha256": "8cc91a0a97c5597ce5c018df6128fa5c7cb189eb8c25b6564e75775301f5ac48",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1700000"
+        },
+        {
+          "archiveKey": "sources/acd8333e0bf121de8355e52d9ac2ac6558d13931aacddfd1801541b69c311197.csv",
+          "bytes": 4120205,
+          "name": "datasf-assessor-roll.page-035.csv",
+          "sha256": "acd8333e0bf121de8355e52d9ac2ac6558d13931aacddfd1801541b69c311197",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1750000"
+        },
+        {
+          "archiveKey": "sources/418a9f81b4f0815610f163b5a38bed206dacd6f0b21346f5c459dc799c5b42c8.csv",
+          "bytes": 4108283,
+          "name": "datasf-assessor-roll.page-036.csv",
+          "sha256": "418a9f81b4f0815610f163b5a38bed206dacd6f0b21346f5c459dc799c5b42c8",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1800000"
+        },
+        {
+          "archiveKey": "sources/07df198653690fb0e9eb2c018d51939550dab0fae9383f7b3a3e73c0c411e435.csv",
+          "bytes": 4105256,
+          "name": "datasf-assessor-roll.page-037.csv",
+          "sha256": "07df198653690fb0e9eb2c018d51939550dab0fae9383f7b3a3e73c0c411e435",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1850000"
+        },
+        {
+          "archiveKey": "sources/5897e2ee22949ea4c86c7baa90f6dfa34f680d3297a1f11b2ffb41c48624a351.csv",
+          "bytes": 4082603,
+          "name": "datasf-assessor-roll.page-038.csv",
+          "sha256": "5897e2ee22949ea4c86c7baa90f6dfa34f680d3297a1f11b2ffb41c48624a351",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1900000"
+        },
+        {
+          "archiveKey": "sources/c04b1cce66b7aa4c255352aabae0c05d38a9e83de41d9e4b3b3f28e534ed2b40.csv",
+          "bytes": 4105923,
+          "name": "datasf-assessor-roll.page-039.csv",
+          "sha256": "c04b1cce66b7aa4c255352aabae0c05d38a9e83de41d9e4b3b3f28e534ed2b40",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=1950000"
+        },
+        {
+          "archiveKey": "sources/8c2c605186d13151377226978c9f23a56fa3c0fe319b945868a2d9d1d5e353b1.csv",
+          "bytes": 4088557,
+          "name": "datasf-assessor-roll.page-040.csv",
+          "sha256": "8c2c605186d13151377226978c9f23a56fa3c0fe319b945868a2d9d1d5e353b1",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2000000"
+        },
+        {
+          "archiveKey": "sources/a9fd8018619abf2c3d69b690fad077745c08a6b245f6c002a5e1b06fc5dc0133.csv",
+          "bytes": 4112398,
+          "name": "datasf-assessor-roll.page-041.csv",
+          "sha256": "a9fd8018619abf2c3d69b690fad077745c08a6b245f6c002a5e1b06fc5dc0133",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2050000"
+        },
+        {
+          "archiveKey": "sources/45089c451e0cb049ddaaaa219cb8d44447a7fcc1d8b044eb07c5f02ec3ef5f4a.csv",
+          "bytes": 4057229,
+          "name": "datasf-assessor-roll.page-042.csv",
+          "sha256": "45089c451e0cb049ddaaaa219cb8d44447a7fcc1d8b044eb07c5f02ec3ef5f4a",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2100000"
+        },
+        {
+          "archiveKey": "sources/74685367d6fe0f561d4fa48f1fd2135c35f71a1c8f5c4d681c3d23974308231a.csv",
+          "bytes": 4079651,
+          "name": "datasf-assessor-roll.page-043.csv",
+          "sha256": "74685367d6fe0f561d4fa48f1fd2135c35f71a1c8f5c4d681c3d23974308231a",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2150000"
+        },
+        {
+          "archiveKey": "sources/c77fd067bbfc4cae7fbb94f4851f7606921ea1e25f83e91134bd8f884b4fdb33.csv",
+          "bytes": 4077122,
+          "name": "datasf-assessor-roll.page-044.csv",
+          "sha256": "c77fd067bbfc4cae7fbb94f4851f7606921ea1e25f83e91134bd8f884b4fdb33",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2200000"
+        },
+        {
+          "archiveKey": "sources/7d5648baf184b82c9f19197a25d57891d9503d112df73e5d73715374802ab671.csv",
+          "bytes": 4077539,
+          "name": "datasf-assessor-roll.page-045.csv",
+          "sha256": "7d5648baf184b82c9f19197a25d57891d9503d112df73e5d73715374802ab671",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2250000"
+        },
+        {
+          "archiveKey": "sources/84024a81c32063ec6596216234fb0ddab02e95d36b17a33f71fccde0f9fdf8f1.csv",
+          "bytes": 4094435,
+          "name": "datasf-assessor-roll.page-046.csv",
+          "sha256": "84024a81c32063ec6596216234fb0ddab02e95d36b17a33f71fccde0f9fdf8f1",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2300000"
+        },
+        {
+          "archiveKey": "sources/78f1d5a0ebb73d8ce3b5a7e12e1dcee26bdd8babf1ec590ba939b11044e1f48c.csv",
+          "bytes": 4076113,
+          "name": "datasf-assessor-roll.page-047.csv",
+          "sha256": "78f1d5a0ebb73d8ce3b5a7e12e1dcee26bdd8babf1ec590ba939b11044e1f48c",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2350000"
+        },
+        {
+          "archiveKey": "sources/9e3e92757730de09f5856867b5fc22144e3f391689fd0de970f2b6d069b60c8d.csv",
+          "bytes": 4137690,
+          "name": "datasf-assessor-roll.page-048.csv",
+          "sha256": "9e3e92757730de09f5856867b5fc22144e3f391689fd0de970f2b6d069b60c8d",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2400000"
+        },
+        {
+          "archiveKey": "sources/f85aa6763a83c895483c5707f759c8ab7c47703e9ccff256bb3b8b8b3526fdfd.csv",
+          "bytes": 4108321,
+          "name": "datasf-assessor-roll.page-049.csv",
+          "sha256": "f85aa6763a83c895483c5707f759c8ab7c47703e9ccff256bb3b8b8b3526fdfd",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2450000"
+        },
+        {
+          "archiveKey": "sources/4721e6b26808cef8d56bd4ba6fd69aebc09fc6bd045c23b12fac544175f6be0d.csv",
+          "bytes": 4129949,
+          "name": "datasf-assessor-roll.page-050.csv",
+          "sha256": "4721e6b26808cef8d56bd4ba6fd69aebc09fc6bd045c23b12fac544175f6be0d",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2500000"
+        },
+        {
+          "archiveKey": "sources/2dc8852a81beb5e299d2083e27badfc295c1d45db16e805c4ce7f7e4f289884d.csv",
+          "bytes": 4113417,
+          "name": "datasf-assessor-roll.page-051.csv",
+          "sha256": "2dc8852a81beb5e299d2083e27badfc295c1d45db16e805c4ce7f7e4f289884d",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2550000"
+        },
+        {
+          "archiveKey": "sources/da99a65293d6d0abaf2e4b4ae8a2603342b02fd2c3e86aac7a33cea501bc553c.csv",
+          "bytes": 4125478,
+          "name": "datasf-assessor-roll.page-052.csv",
+          "sha256": "da99a65293d6d0abaf2e4b4ae8a2603342b02fd2c3e86aac7a33cea501bc553c",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2600000"
+        },
+        {
+          "archiveKey": "sources/1b1d380e5aba73f8388638af507074ee616dac68e3f8d9dda081468f0368c359.csv",
+          "bytes": 4124281,
+          "name": "datasf-assessor-roll.page-053.csv",
+          "sha256": "1b1d380e5aba73f8388638af507074ee616dac68e3f8d9dda081468f0368c359",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2650000"
+        },
+        {
+          "archiveKey": "sources/6c6c5ed73a3e51989f0ca4456dab9c1dfc9e32ea9d250b9605cfa90917d69307.csv",
+          "bytes": 4114600,
+          "name": "datasf-assessor-roll.page-054.csv",
+          "sha256": "6c6c5ed73a3e51989f0ca4456dab9c1dfc9e32ea9d250b9605cfa90917d69307",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2700000"
+        },
+        {
+          "archiveKey": "sources/ff59a93cfabd094672ed8c486fae953f86cb8a6e13c05d94c963c25ab5d2eae6.csv",
+          "bytes": 4134850,
+          "name": "datasf-assessor-roll.page-055.csv",
+          "sha256": "ff59a93cfabd094672ed8c486fae953f86cb8a6e13c05d94c963c25ab5d2eae6",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2750000"
+        },
+        {
+          "archiveKey": "sources/fa5b7f073cd2991ed4e537482195dca97c187a5b1d38e3b55d4cb7285ead50b9.csv",
+          "bytes": 4077777,
+          "name": "datasf-assessor-roll.page-056.csv",
+          "sha256": "fa5b7f073cd2991ed4e537482195dca97c187a5b1d38e3b55d4cb7285ead50b9",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2800000"
+        },
+        {
+          "archiveKey": "sources/08a95d6bf137b4a1f083ebb0ceabf65f65844d14e86ba7d13366327beea2b368.csv",
+          "bytes": 4075782,
+          "name": "datasf-assessor-roll.page-057.csv",
+          "sha256": "08a95d6bf137b4a1f083ebb0ceabf65f65844d14e86ba7d13366327beea2b368",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2850000"
+        },
+        {
+          "archiveKey": "sources/bda87926b380adc421523867924c9ffad2d31c7b5c6d2769198d2c0c4f9d77bd.csv",
+          "bytes": 4053144,
+          "name": "datasf-assessor-roll.page-058.csv",
+          "sha256": "bda87926b380adc421523867924c9ffad2d31c7b5c6d2769198d2c0c4f9d77bd",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2900000"
+        },
+        {
+          "archiveKey": "sources/b31c5950c37fef5fa02471a82945c668c19f76e4d4dd28ec195f00d12df50832.csv",
+          "bytes": 4094508,
+          "name": "datasf-assessor-roll.page-059.csv",
+          "sha256": "b31c5950c37fef5fa02471a82945c668c19f76e4d4dd28ec195f00d12df50832",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=2950000"
+        },
+        {
+          "archiveKey": "sources/c5716105322d1fc7ca21bbc789601e4417d02cf578be8679c3bfe4a913573a7e.csv",
+          "bytes": 4092099,
+          "name": "datasf-assessor-roll.page-060.csv",
+          "sha256": "c5716105322d1fc7ca21bbc789601e4417d02cf578be8679c3bfe4a913573a7e",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=3000000"
+        },
+        {
+          "archiveKey": "sources/38de5df002c10ae11c6444736157a42744b835c89695109112eb816f5619d343.csv",
+          "bytes": 4076590,
+          "name": "datasf-assessor-roll.page-061.csv",
+          "sha256": "38de5df002c10ae11c6444736157a42744b835c89695109112eb816f5619d343",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=3050000"
+        },
+        {
+          "archiveKey": "sources/e16cdcacbd255d1f8a8abc6a390f82638023e503dd8a0bbf39902837316efc42.csv",
+          "bytes": 4083668,
+          "name": "datasf-assessor-roll.page-062.csv",
+          "sha256": "e16cdcacbd255d1f8a8abc6a390f82638023e503dd8a0bbf39902837316efc42",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=3100000"
+        },
+        {
+          "archiveKey": "sources/ad6e7a9f0fde2aee4d1404afe4789b565f75512d0c73e7a87574db41359010e7.csv",
+          "bytes": 4050018,
+          "name": "datasf-assessor-roll.page-063.csv",
+          "sha256": "ad6e7a9f0fde2aee4d1404afe4789b565f75512d0c73e7a87574db41359010e7",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=3150000"
+        },
+        {
+          "archiveKey": "sources/bb19d2deadd78f490c2672836035d2770d64e0944d7031184765c0500694e710.csv",
+          "bytes": 4094233,
+          "name": "datasf-assessor-roll.page-064.csv",
+          "sha256": "bb19d2deadd78f490c2672836035d2770d64e0944d7031184765c0500694e710",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=3200000"
+        },
+        {
+          "archiveKey": "sources/7e7a1becddf9804f996e0a6f15b6a2e67003d341d26310ac69a654ebc8b94330.csv",
+          "bytes": 4097857,
+          "name": "datasf-assessor-roll.page-065.csv",
+          "sha256": "7e7a1becddf9804f996e0a6f15b6a2e67003d341d26310ac69a654ebc8b94330",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=3250000"
+        },
+        {
+          "archiveKey": "sources/47f07586c2e5527f43a1f8e918808bc05c8fa61b227911b26cfad964b8c54de1.csv",
+          "bytes": 4088543,
+          "name": "datasf-assessor-roll.page-066.csv",
+          "sha256": "47f07586c2e5527f43a1f8e918808bc05c8fa61b227911b26cfad964b8c54de1",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=3300000"
+        },
+        {
+          "archiveKey": "sources/24e8e188fae36a094738078a522a2d135625db2a7b6838ff84d82bd00d46288c.csv",
+          "bytes": 4093262,
+          "name": "datasf-assessor-roll.page-067.csv",
+          "sha256": "24e8e188fae36a094738078a522a2d135625db2a7b6838ff84d82bd00d46288c",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=3350000"
+        },
+        {
+          "archiveKey": "sources/61a77f3e6513eedebbcaadf302bba1afc9b2f515dc72d203f28372c54050c462.csv",
+          "bytes": 4097394,
+          "name": "datasf-assessor-roll.page-068.csv",
+          "sha256": "61a77f3e6513eedebbcaadf302bba1afc9b2f515dc72d203f28372c54050c462",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=3400000"
+        },
+        {
+          "archiveKey": "sources/329f7fdec67e1eee38a41848c846c6017efe4572bac74393f1126b859e0afa92.csv",
+          "bytes": 4090464,
+          "name": "datasf-assessor-roll.page-069.csv",
+          "sha256": "329f7fdec67e1eee38a41848c846c6017efe4572bac74393f1126b859e0afa92",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=3450000"
+        },
+        {
+          "archiveKey": "sources/648a0ce73c576457b6f3686ebb07e0dbfc3b566163a4a51cf19421f79c51e6e8.csv",
+          "bytes": 4076847,
+          "name": "datasf-assessor-roll.page-070.csv",
+          "sha256": "648a0ce73c576457b6f3686ebb07e0dbfc3b566163a4a51cf19421f79c51e6e8",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=3500000"
+        },
+        {
+          "archiveKey": "sources/b1282ee78f000766c45cd9bf2b6bc9a69fbe1e9331e1adb0b73cd0cbb496b18f.csv",
+          "bytes": 4055094,
+          "name": "datasf-assessor-roll.page-071.csv",
+          "sha256": "b1282ee78f000766c45cd9bf2b6bc9a69fbe1e9331e1adb0b73cd0cbb496b18f",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=3550000"
+        },
+        {
+          "archiveKey": "sources/60ecc101e34efca041b02bd5bab97b49caabcd9db7ed4156a499351be4e4edc8.csv",
+          "bytes": 4044331,
+          "name": "datasf-assessor-roll.page-072.csv",
+          "sha256": "60ecc101e34efca041b02bd5bab97b49caabcd9db7ed4156a499351be4e4edc8",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=3600000"
+        },
+        {
+          "archiveKey": "sources/0f6f87e7aadda2334939f26714bf1316f6ab33c9647d60f0e5733ce79b135744.csv",
+          "bytes": 4098414,
+          "name": "datasf-assessor-roll.page-073.csv",
+          "sha256": "0f6f87e7aadda2334939f26714bf1316f6ab33c9647d60f0e5733ce79b135744",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=3650000"
+        },
+        {
+          "archiveKey": "sources/68fe74e9c1cd499dcfcef4841a351347c9df7901595943457c63a59d9e80d40e.csv",
+          "bytes": 4058971,
+          "name": "datasf-assessor-roll.page-074.csv",
+          "sha256": "68fe74e9c1cd499dcfcef4841a351347c9df7901595943457c63a59d9e80d40e",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=3700000"
+        },
+        {
+          "archiveKey": "sources/7935f9841a0c30e0d4171769a724275cacec0105fbeb6170976982af721354d7.csv",
+          "bytes": 4086109,
+          "name": "datasf-assessor-roll.page-075.csv",
+          "sha256": "7935f9841a0c30e0d4171769a724275cacec0105fbeb6170976982af721354d7",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=3750000"
+        },
+        {
+          "archiveKey": "sources/42ce7571161393fe244ec857c0bef721b695a4fc2177a70a60626922d230011a.csv",
+          "bytes": 4067087,
+          "name": "datasf-assessor-roll.page-076.csv",
+          "sha256": "42ce7571161393fe244ec857c0bef721b695a4fc2177a70a60626922d230011a",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=3800000"
+        },
+        {
+          "archiveKey": "sources/d5ad6a2e0d76a5c4faefa91f740ac97e91c554ea2e3623abe29e58c182aa86d3.csv",
+          "bytes": 4082178,
+          "name": "datasf-assessor-roll.page-077.csv",
+          "sha256": "d5ad6a2e0d76a5c4faefa91f740ac97e91c554ea2e3623abe29e58c182aa86d3",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=3850000"
+        },
+        {
+          "archiveKey": "sources/2b9be6577523c7834e68369c86463b3a187bfc655f78ee2b793a979c8365257a.csv",
+          "bytes": 2807691,
+          "name": "datasf-assessor-roll.page-078.csv",
+          "sha256": "2b9be6577523c7834e68369c86463b3a187bfc655f78ee2b793a979c8365257a",
+          "url": "https://data.sf.gov/resource/wv5m-vpq2.csv?%24select=closed_roll_year%2Cparcel_number%2Cuse_code%2Cproperty_class_code%2Cyear_property_built%2Cnumber_of_stories%2Cnumber_of_units%2Cproperty_area%2Cassessed_land_value%2Cassessed_improvement_value%2Cstatus_code&%24where=closed_roll_year+%3E%3D+2007&%24order=%3Aid&%24limit=50000&%24offset=3900000"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/wv5m-vpq2",
+      "id": "datasf-assessor-roll",
+      "label": "DataSF Assessor Historical Secured Property Tax Rolls",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-17T07:03:12.736Z",
+      "rowCount": 3934467,
+      "upstreamVersion": "Fri, 26 Jun 2026 22:25:22 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/d8e4226ec572772ca3658c1536e4ebaed237be67eda67286e3ee5f35a442c951.json",
+          "bytes": 1293615,
+          "name": "datasf-dev-pipeline.page-000.json",
+          "sha256": "d8e4226ec572772ca3658c1536e4ebaed237be67eda67286e3ee5f35a442c951",
+          "url": "https://data.sf.gov/resource/6jgi-cpb4.json?%24select=blklot%2Cnameaddr%2Ccurrent_status%2Ccurrent_status_date%2Capproved_date_planning%2Ccase_no%2Cbpa_no%2Cnew_pipeline_units%2Cexisting_units%2Cproposed_units%2Ccompleted_new_units%2Cnet_pipeline_units%2Cdescription_planning%2Cda&%24order=%3Aid&%24limit=50000&%24offset=0"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/6jgi-cpb4",
+      "id": "datasf-dev-pipeline",
+      "label": "DataSF SF Development Pipeline",
+      "license": "CC0-1.0",
+      "retrievedAt": "2026-10-17T18:33:02.652Z",
+      "rowCount": 1917,
+      "upstreamVersion": "Fri, 28 Aug 2026 22:33:26 GMT"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/815431cd5587abd99dbfdaf812201bf8776ff1d46727f63bc62a8e689e152975.geojson",
           "bytes": 45589486,
           "name": "datasf-footprints.page-000.geojson",
@@ -38,6 +620,42 @@
       "retrievedAt": "2026-10-16T17:03:54.383Z",
       "rowCount": 177023,
       "upstreamVersion": "Thu, 15 Oct 2026 17:22:13 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/60cd22427c0b10892b1a570b7f7188110b696a4f653cb6b9a84ad5d77fc499b2.geojson",
+          "bytes": 30026628,
+          "name": "datasf-height-bulk.page-000.geojson",
+          "sha256": "60cd22427c0b10892b1a570b7f7188110b696a4f653cb6b9a84ad5d77fc499b2",
+          "url": "https://data.sf.gov/resource/h9wh-cg3m.geojson?%24select=height%2Cgen_hght%2Cthe_geom&%24order=%3Aid&%24limit=50000&%24offset=0"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/h9wh-cg3m",
+      "id": "datasf-height-bulk",
+      "label": "DataSF Zoning Map – Height and Bulk Districts",
+      "license": "public-domain",
+      "retrievedAt": "2026-10-17T06:59:32.528Z",
+      "rowCount": 5292,
+      "upstreamVersion": "Fri, 16 Oct 2026 11:05:53 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/74d3bb5ba2077bf67811617c752306b7f533fa90c8c9204a53c62863f2f529f3.json",
+          "bytes": 833737,
+          "name": "datasf-housing-production.page-000.json",
+          "sha256": "74d3bb5ba2077bf67811617c752306b7f533fa90c8c9204a53c62863f2f529f3",
+          "url": "https://data.sf.gov/resource/xdht-4php.json?%24select=bpa%2Cblocklot%2Cform_no%2Cnet_units_completed%2Cfirst_completion_date&%24order=%3Aid&%24limit=50000&%24offset=0"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/xdht-4php",
+      "id": "datasf-housing-production",
+      "label": "DataSF Housing Production",
+      "license": "public-domain",
+      "retrievedAt": "2026-10-17T18:33:02.187Z",
+      "rowCount": 6157,
+      "upstreamVersion": "Fri, 16 Oct 2026 05:11:48 GMT"
     },
     {
       "files": [
@@ -99,6 +717,52 @@
     {
       "files": [
         {
+          "archiveKey": "sources/99112966157ef3e830864b18e643aefd4368ee3ae70be4b5a1ecbecfa4546107.csv",
+          "bytes": 4410767,
+          "name": "datasf-parcel-attrs.page-000.csv",
+          "sha256": "99112966157ef3e830864b18e643aefd4368ee3ae70be4b5a1ecbecfa4546107",
+          "url": "https://data.sf.gov/resource/acdm-wktn.csv?%24select=mapblklot%2Cblklot%2Cactive%2Czoning_code%2Cdate_rec_add%2Cdate_rec_drop%2Ccentroid_latitude%2Ccentroid_longitude&%24order=%3Aid&%24limit=50000&%24offset=0"
+        },
+        {
+          "archiveKey": "sources/a9679771eca82183c2b2b6c6728e93a70fae6d96d901217acd13867657b0c637.csv",
+          "bytes": 4409836,
+          "name": "datasf-parcel-attrs.page-001.csv",
+          "sha256": "a9679771eca82183c2b2b6c6728e93a70fae6d96d901217acd13867657b0c637",
+          "url": "https://data.sf.gov/resource/acdm-wktn.csv?%24select=mapblklot%2Cblklot%2Cactive%2Czoning_code%2Cdate_rec_add%2Cdate_rec_drop%2Ccentroid_latitude%2Ccentroid_longitude&%24order=%3Aid&%24limit=50000&%24offset=50000"
+        },
+        {
+          "archiveKey": "sources/6c6b526de2d3b22ead93b927c10d47790e721dbcaad4be71274907eef83aae6b.csv",
+          "bytes": 4418048,
+          "name": "datasf-parcel-attrs.page-002.csv",
+          "sha256": "6c6b526de2d3b22ead93b927c10d47790e721dbcaad4be71274907eef83aae6b",
+          "url": "https://data.sf.gov/resource/acdm-wktn.csv?%24select=mapblklot%2Cblklot%2Cactive%2Czoning_code%2Cdate_rec_add%2Cdate_rec_drop%2Ccentroid_latitude%2Ccentroid_longitude&%24order=%3Aid&%24limit=50000&%24offset=100000"
+        },
+        {
+          "archiveKey": "sources/19c4c983b5f0b360772cab9d1a677d96ad2b1327f3fb4eb4808e66d939d9ad52.csv",
+          "bytes": 4403239,
+          "name": "datasf-parcel-attrs.page-003.csv",
+          "sha256": "19c4c983b5f0b360772cab9d1a677d96ad2b1327f3fb4eb4808e66d939d9ad52",
+          "url": "https://data.sf.gov/resource/acdm-wktn.csv?%24select=mapblklot%2Cblklot%2Cactive%2Czoning_code%2Cdate_rec_add%2Cdate_rec_drop%2Ccentroid_latitude%2Ccentroid_longitude&%24order=%3Aid&%24limit=50000&%24offset=150000"
+        },
+        {
+          "archiveKey": "sources/21ebc8be4e3e08ff2e1a14ee40824ad3f923ad944dd72f840d00cb684cd82292.csv",
+          "bytes": 3222766,
+          "name": "datasf-parcel-attrs.page-004.csv",
+          "sha256": "21ebc8be4e3e08ff2e1a14ee40824ad3f923ad944dd72f840d00cb684cd82292",
+          "url": "https://data.sf.gov/resource/acdm-wktn.csv?%24select=mapblklot%2Cblklot%2Cactive%2Czoning_code%2Cdate_rec_add%2Cdate_rec_drop%2Ccentroid_latitude%2Ccentroid_longitude&%24order=%3Aid&%24limit=50000&%24offset=200000"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/acdm-wktn",
+      "id": "datasf-parcel-attrs",
+      "label": "DataSF Parcels (attributes, active and retired)",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-17T06:59:41.652Z",
+      "rowCount": 236573,
+      "upstreamVersion": "Fri, 16 Oct 2026 17:33:05 GMT"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/2d3da24cf79447580b55d84b674623272a615a895b6cc1325cbd5d872f9bfa21.geojson",
           "bytes": 28953444,
           "name": "datasf-parcels.page-000.geojson",
@@ -141,6 +805,121 @@
       "retrievedAt": "2026-10-16T17:01:54.669Z",
       "rowCount": 227967,
       "upstreamVersion": "Thu, 15 Oct 2026 17:30:29 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/de887416a6cbd161541d6f79ed1336027a7c4a28c667cac4764d82b51e1f1e27.json",
+          "bytes": 9520613,
+          "name": "datasf-permits-named.page-000.json",
+          "sha256": "de887416a6cbd161541d6f79ed1336027a7c4a28c667cac4764d82b51e1f1e27",
+          "url": "https://data.sf.gov/resource/i98e-djp9.json?%24select=permit_number%2Cpermit_type%2Cblock%2Clot%2Cstreet_number%2Cstreet_name%2Cstreet_suffix%2Cstatus%2Cstatus_date%2Cfiled_date%2Cpermit_creation_date%2Cissued_date%2Cfirst_construction_document_date%2Ccompleted_date%2Clast_permit_activity_date%2Cnumber_of_proposed_stories%2Cexisting_units%2Cproposed_units%2Cestimated_cost%2Crevised_cost%2Csite_permit%2Cprimary_address_flag&%24where=permit_type+in%28%273%27%2C%278%27%29+and+proposed_units+%3E+existing_units&%24order=%3Aid&%24limit=50000&%24offset=0"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/i98e-djp9",
+      "id": "datasf-permits-named",
+      "label": "DataSF Building Permits (unit-adding alterations)",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-18T23:09:10.088Z",
+      "rowCount": 17214,
+      "upstreamVersion": "Sun, 18 Oct 2026 12:41:05 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/81d52437e401c46a2c2eb5056583261de34d295eb91fcc477f111295f3927580.json",
+          "bytes": 8471243,
+          "name": "datasf-permits-newcon.page-000.json",
+          "sha256": "81d52437e401c46a2c2eb5056583261de34d295eb91fcc477f111295f3927580",
+          "url": "https://data.sf.gov/resource/i98e-djp9.json?%24select=permit_number%2Cpermit_type%2Cblock%2Clot%2Cstreet_number%2Cstreet_name%2Cstreet_suffix%2Cstatus%2Cstatus_date%2Cfiled_date%2Cpermit_creation_date%2Cissued_date%2Cfirst_construction_document_date%2Ccompleted_date%2Clast_permit_activity_date%2Cnumber_of_proposed_stories%2Cexisting_units%2Cproposed_units%2Cestimated_cost%2Crevised_cost%2Csite_permit%2Cprimary_address_flag&%24where=permit_type+in%28%271%27%2C%272%27%29&%24order=%3Aid&%24limit=50000&%24offset=0"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/i98e-djp9",
+      "id": "datasf-permits-newcon",
+      "label": "DataSF Building Permits (new construction)",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-18T19:41:36.009Z",
+      "rowCount": 15654,
+      "upstreamVersion": "Sun, 18 Oct 2026 12:41:05 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/d3708986f1a8d9aba7714db1141363c46a7e72be8fbf83d19bc70809f80ee9df.json",
+          "bytes": 25318169,
+          "name": "datasf-planning-projects.page-000.json",
+          "sha256": "d3708986f1a8d9aba7714db1141363c46a7e72be8fbf83d19bc70809f80ee9df",
+          "url": "https://data.sf.gov/resource/qvu5-m3a2.json?%24select=record_id%2Crecord_status%2Cproject_address%2Cblock%2Clot%2Copen_date%2Cclose_date%2Cbuilding_permits%2Cproject_decision%2Cproject_decision_date%2Cnumber_of_units_prop%2Cnumber_of_units_exist%2Cnumber_affordable_units_prop%2Cnew_construction%2Csb35%2Chousing_sustainability_dist%2Cab2162%2Cdescription&%24order=%3Aid&%24limit=50000&%24offset=0"
+        },
+        {
+          "archiveKey": "sources/05c4ea10438a5ba834ac41b258b717c6f2f8f425a658533a97df871c624224cf.json",
+          "bytes": 1911408,
+          "name": "datasf-planning-projects.page-001.json",
+          "sha256": "05c4ea10438a5ba834ac41b258b717c6f2f8f425a658533a97df871c624224cf",
+          "url": "https://data.sf.gov/resource/qvu5-m3a2.json?%24select=record_id%2Crecord_status%2Cproject_address%2Cblock%2Clot%2Copen_date%2Cclose_date%2Cbuilding_permits%2Cproject_decision%2Cproject_decision_date%2Cnumber_of_units_prop%2Cnumber_of_units_exist%2Cnumber_affordable_units_prop%2Cnew_construction%2Csb35%2Chousing_sustainability_dist%2Cab2162%2Cdescription&%24order=%3Aid&%24limit=50000&%24offset=50000"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/qvu5-m3a2",
+      "id": "datasf-planning-projects",
+      "label": "DataSF Planning Projects",
+      "license": "public-domain",
+      "retrievedAt": "2026-10-19T01:34:20.056Z",
+      "rowCount": 54649,
+      "upstreamVersion": "Sun, 18 Oct 2026 06:09:15 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/7746e76a49e5a19f9fb967186a93c85f4b484512acd10f9f6c99513c7d683455.json",
+          "bytes": 10145812,
+          "name": "datasf-planning-records.page-000.json",
+          "sha256": "7746e76a49e5a19f9fb967186a93c85f4b484512acd10f9f6c99513c7d683455",
+          "url": "https://data.sf.gov/resource/y673-d69b.json?%24select=record_id%2Crecord_type%2Crecord_status%2Cblock%2Clot%2Cparent_id%2Copen_date%2Cclose_date&%24where=record_type+in%28%27PPA%27%2C%27ENV%27%2C%27CUA%27%2C%27VAR%27%2C%27DNX%27%2C%27ENX%27%2C%27OFA%27%2C%27AHB%27%2C%27PHA%27%2C%27DVA%27%2C%27COA%27%2C%27PTA%27%2C%27MAP%27%2C%27PCA%27%2C%27GPA%27%2C%27CTZ%27%2C%27DRP%27%2C%27DRM%27%29&%24order=%3Aid&%24limit=50000&%24offset=0"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/y673-d69b",
+      "id": "datasf-planning-records",
+      "label": "DataSF Planning Records",
+      "license": "public-domain",
+      "retrievedAt": "2026-10-17T18:32:59.596Z",
+      "rowCount": 49727,
+      "upstreamVersion": "Sat, 17 Oct 2026 06:12:05 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/7aaebdeb75e3ca8ffe57c05f1377a4cd7b2b7df6698d5a38673942d20da9c2cb.json",
+          "bytes": 2866564,
+          "name": "datasf-planning-review.page-000.json",
+          "sha256": "7aaebdeb75e3ca8ffe57c05f1377a4cd7b2b7df6698d5a38673942d20da9c2cb",
+          "url": "https://data.sf.gov/resource/d4jk-jw33.json?%24select=b1_alt_id%2Cstart_event_type%2Cstart_event_date%2Cend_event_type%2Cend_event_date&%24where=project_stage%3D%27accepted+to+approved%27&%24order=%3Aid&%24limit=50000&%24offset=0"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/d4jk-jw33",
+      "id": "datasf-planning-review",
+      "label": "DataSF Planning Review Time Metrics",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-17T18:33:00.378Z",
+      "rowCount": 16143,
+      "upstreamVersion": "Sat, 17 Oct 2026 14:21:51 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/e47d8189511602491133997fdb88e0119a796a843a0f726e4e774a0e76a92051.json",
+          "bytes": 366123,
+          "name": "datasf-unit-completions.page-000.json",
+          "sha256": "e47d8189511602491133997fdb88e0119a796a843a0f726e4e774a0e76a92051",
+          "url": "https://data.sf.gov/resource/j67f-aayr.json?%24select=building_permit_application%2Cdate_issued%2Cdocument_type%2Cnumber_of_units_certified&%24order=%3Aid&%24limit=50000&%24offset=0"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/j67f-aayr",
+      "id": "datasf-unit-completions",
+      "label": "DataSF Dwelling Unit Completions",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-17T18:33:00.639Z",
+      "rowCount": 2559,
+      "upstreamVersion": "Wed, 14 Oct 2026 16:34:21 GMT"
     },
     {
       "files": [

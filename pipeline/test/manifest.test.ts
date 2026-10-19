@@ -72,4 +72,33 @@ describe('buildManifest', () => {
     });
     expect(m.transit).toBe('/data/fixture-3/transit.json');
   });
+
+  it('buildManifest omits scenarios by default', () => {
+    const m = buildManifest({
+      datasetVersion: 'fixture-3',
+      builtAt: '2026-10-10T00:00:00.000Z',
+      lock: { sources: [] },
+      chunks: [],
+      overtureContrib: []
+    });
+    expect('scenarios' in m).toBe(false);
+  });
+
+  it('emits the three urls under /data/<v>/scenarios/fzp/ when scenarios is true', () => {
+    const m = buildManifest({
+      datasetVersion: 'fixture-3',
+      builtAt: '2026-10-10T00:00:00.000Z',
+      lock: { sources: [] },
+      chunks: [],
+      overtureContrib: [],
+      scenarios: true
+    });
+    expect(m.scenarios).toEqual({
+      fzp: {
+        parcels: '/data/fixture-3/scenarios/fzp/parcels.bin',
+        projects: '/data/fixture-3/scenarios/fzp/projects.json',
+        calibration: '/data/fixture-3/scenarios/fzp/calibration.json'
+      }
+    });
+  });
 });

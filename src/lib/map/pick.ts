@@ -25,7 +25,7 @@ export function featureParcelId(f: {
  */
 export function resolveExistingHit(
   features: readonly { properties?: Record<string, unknown> | null }[],
-  hidden: ReadonlySet<ParcelId>,
+  hidden: Pick<ReadonlySet<ParcelId>, 'has'>, // generated mirror or timeline demolished set
   chunkStatusFor: (parcelId: ParcelId) => ChunkStatus | 'unknown'
 ): ExistingHit | null {
   for (const f of features) {

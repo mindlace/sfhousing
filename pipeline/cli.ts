@@ -1,20 +1,27 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { FIXTURE_PROFILE, LIVE_PROFILE } from './config';
 import { build, printResults } from './steps/build';
-import { checkDataset } from './steps/check';
+import {
+  CALIBRATION_CHECK_IDS,
+  PROJECT_CHECK_IDS,
+  checkDataset,
+  type InvariantResult
+} from './steps/check';
 import { doctor } from './steps/doctor';
 import { fetchAll } from './steps/fetch';
 import { fixture } from './steps/fixture';
 import { upload } from './steps/upload';
 import { verify } from './steps/verify';
 import { readLock } from './lib/lock';
+import { replaceQualityDocSection } from './lib/quality';
 import { wranglerTarget } from './lib/r2';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const OUT = join(ROOT, 'pipeline/out');
 const LOCK = join(ROOT, 'pipeline/sources.lock.json');
 const RAW = join(ROOT, 'pipeline/.cache/raw');
+const PIPELINE_MD = join(ROOT, 'docs/dev/pipeline.md');
 
 export interface ParsedArgs {
   cmd: string | undefined;
@@ -96,13 +103,22 @@ const steps: Record<string, { help: string; run: Step }> = {
       }
       const report = JSON.parse(readFileSync(join(dir, 'report.json'), 'utf8')) as {
         counts: Record<string, number>;
-        invariants?: { id: string; ok: boolean }[];
+        invariants?: InvariantResult[];
       };
       const fixtureV = v.startsWith('fixture-');
       const results = await checkDataset(dir, fixtureV ? FIXTURE_PROFILE : LIVE_PROFILE, {
         counts: report.counts,
         reencodeIdentical: report.invariants?.find((r) => r.id === 'V12')?.ok,
-        skipTiles: fixtureV ? undefined : false
+        skipTiles: fixtureV ? undefined : false,
+        // V20 against the build's snapshot day; V21-V24 need the build's in-memory derivation.
+        asOf: report.counts['projects.asOf'],
+        projectChecks: report.invariants?.filter((r) =>
+          (PROJECT_CHECK_IDS as readonly string[]).includes(r.id)
+        ),
+        // V28 and V29 likewise come from the calibration step's in-memory computation.
+        calibrationChecks: report.invariants?.filter((r) =>
+          (CALIBRATION_CHECK_IDS as readonly string[]).includes(r.id)
+        )
       });
       return printResults(results);
     }
@@ -171,6 +187,16 @@ const steps: Record<string, { help: string; run: Step }> = {
         r.ok ? `OK   ${v} verified against ${origin}` : `${r.failures.length} failure(s)`
       );
       return r.ok ? 0 : 1;
+    }
+  },
+  'quality-doc': {
+    help: 'rewrite the generated Data quality section of docs/dev/pipeline.md from QUALITY_RULES',
+    run: async () => {
+      const doc = readFileSync(PIPELINE_MD, 'utf8');
+      const next = replaceQualityDocSection(doc);
+      if (next !== doc) writeFileSync(PIPELINE_MD, next);
+      console.log(`${next === doc ? 'unchanged' : 'wrote'} ${PIPELINE_MD}`);
+      return 0;
     }
   },
   all: {

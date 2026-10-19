@@ -36,6 +36,7 @@ Fetch the file when working in the relevant area:
 - **Plan sharing (API contract, rate limit, autosave, manual takedown)** — [docs/dev/plan-sharing.md](docs/dev/plan-sharing.md)
 - **Map-view interfaces for page and subsystem consumers (`--map-controls-br-*` CSS vars)** — [docs/dev/map-interfaces.md](docs/dev/map-interfaces.md)
 - **Map performance (`npm run bench:map`, pass bar, results, CI note)** — [docs/dev/map-perf.md](docs/dev/map-perf.md)
+- **FZP timelapse page `/fzp` (scrubber contract, layout variables, `window.__sfhFzp`, request flow, T9 lookups seam, known gaps)** — [docs/dev/fzp-mode.md](docs/dev/fzp-mode.md)
 - **Design, specs and plans** — `docs/superpowers/design/`, `docs/superpowers/specs/`, `docs/superpowers/plans/`
 
 Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link them from this list.
@@ -58,7 +59,7 @@ Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link t
 | `npm run db:generate`                               | Generate + classify + flatten a migration from the Drizzle schema                                                |
 | `npm run db:migrate`                                | Apply migrations to the local D1                                                                                 |
 | `npm run db:migrate:staging` / `db:migrate:prod`    | Apply migrations to remote staging / production D1 (normally done by CI)                                         |
-| `npm run pipeline -- <cmd>`                         | Data pipeline: `doctor`, `fetch`, `build`, `check`, `upload`, `verify`, `fixture`, `all`                         |
+| `npm run pipeline -- <cmd>`                         | Data pipeline: `doctor`, `fetch`, `build`, `check`, `upload`, `verify`, `fixture`, `quality-doc`, `all`          |
 | `npm run test:pipeline`                             | Vitest pipeline project (needs tippecanoe, pmtiles)                                                              |
 | `npm run data:fixture`                              | Load `e2e/fixtures/data/fixture-0` into local R2                                                                 |
 | `npm run data:local -- <version> [--from <origin>]` | Copy a published dataset version into local R2 (default origin production)                                       |

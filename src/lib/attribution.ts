@@ -1,6 +1,7 @@
 export const SOFTWARE: { name: string; license: string; url: string }[] = [
   { name: 'MapLibre GL JS', license: 'BSD-3-Clause', url: 'https://maplibre.org' },
   { name: 'deck.gl', license: 'MIT', url: 'https://deck.gl' },
+  { name: 'luma.gl', license: 'MIT', url: 'https://luma.gl' },
   { name: 'PMTiles', license: 'BSD-3-Clause', url: 'https://protomaps.com/docs/pmtiles' },
   {
     name: 'Protomaps Basemaps',
@@ -13,6 +14,11 @@ export const SOFTWARE: { name: string; license: string; url: string }[] = [
     name: 'Clipper2 (clipper2-ts)',
     license: 'BSL-1.0',
     url: 'https://github.com/countertype/clipper2-ts'
+  },
+  {
+    name: 'fdlibm (exp, log)',
+    license: 'Sun Microsystems permissive notice',
+    url: 'https://www.netlib.org/fdlibm/'
   }
 ];
 

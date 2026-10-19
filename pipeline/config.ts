@@ -1,3 +1,5 @@
+import { FTF_M } from '../src/lib/generator/constants';
+
 export const BBOX = { w: -122.53, s: 37.69, e: -122.34, n: 37.84 } as const;
 export const CELL_SIZE_M = 1000;
 export const TOOL_VERSIONS = {
@@ -9,7 +11,8 @@ export const TOOL_VERSIONS = {
 export const SQL_VARS = {
   min_piece_m2: 2.0,
   iou_min: 0.5,
-  floors_m: 3.1,
+  // Storey height: the generator's FTF_M, the one source the codec's existingHeightM also uses.
+  floors_m: FTF_M,
   default_height_m: 7.0,
   // 8 m per conductor ruling C2; spec §4.8 says 3 m but 3 m exceeds V11's 150 KB on live data
   nb_simplify_m: 8.0
@@ -64,11 +67,42 @@ export interface InvariantProfile {
   transitMinStops: number;
   /** V14: each name (case-insensitive substring) must be a stop with heavy-rail service > 0 tph. */
   transitHeavyRailStations: string[];
+  /** V16: minimum share of eligible parcels with a height district in parcels.bin. */
+  heightJoinMin: number;
+  /** V18: minimum share of eligible parcels with a latest-year assessor roll row. */
+  rollJoinMin: number;
+  /** V18: inclusive range of `scenario.units.total` (Σ latest-year roll units). */
+  scenarioUnitsRange: [number, number];
+  /** V19: maximum size of scenarios/fzp/parcels.bin on disk, bytes. */
+  scenarioMaxBytes: number;
+  /** V21: Σ in-flight units ≥ this × Σ `new_pipeline_units` of the matched population rows. */
+  pipelineCoverageMin: number;
+  /**
+   * V22: Housing Inventory net units per calendar year (2025 HI Table 2 "Net Change in Number of
+   * Units", p.17; project-records spec §4.9).
+   */
+  hiNet: Record<number, number>;
+  /** V22: relative tolerance per cross-check year. */
+  rhnaYearTol: number;
+  /** V22: relative tolerance on the cross-check total. */
+  rhnaTotalTol: number;
+  /** V20: projects.json size limit (engineering budget). */
+  projectsMaxBytes: number;
+  /** V20: above this projects.json passes with a warning. */
+  projectsWarnBytes: number;
+  /** V30: judge each T14 rule's share against its warnShare and failShare (live only). */
+  qualityShares: boolean;
 }
+
+/**
+ * SF housing stock at end-2022, 413,208 units: 2023 Housing Inventory, Table 1 (tier 1; the V1
+ * source, `HOUSING_STOCK.end2022` in pipeline/steps/build.ts). Also LIVE_PROFILE.unitsTarget.
+ */
+const HOUSING_STOCK_END_2022 = 413208;
 
 /** Spec §4.9 invariants for the full San Francisco build (expects 41 neighborhoods). */
 export const LIVE_PROFILE: InvariantProfile = {
-  unitsTarget: 413208,
+  unitsTarget: HOUSING_STOCK_END_2022,
   unitsTol: 0.02,
   parcelRange: [140000, 170000],
   landUseMatchMin: 0.99,
@@ -95,7 +129,24 @@ export const LIVE_PROFILE: InvariantProfile = {
     '24th',
     'Glen Park',
     'Balboa Park'
-  ]
+  ],
+  // Scenario-data spec §4.10 V16: a check bound (tier 4, made up), not simulation data.
+  heightJoinMin: 0.99,
+  // Spec §4.10 V18: a check bound (tier 4, made up).
+  rollJoinMin: 0.97,
+  // Spec §4.10 V18: [0.90, 1.02] (tier 4 band) × 413,208 (HOUSING_STOCK.end2022, 2023 Housing
+  // Inventory Table 1, tier 1); the live roll Σ is ≈ 389,527 ≈ 0.943 × 413,208 (verified against live wv5m-vpq2, spec §4.10).
+  scenarioUnitsRange: [0.9 * HOUSING_STOCK_END_2022, 1.02 * HOUSING_STOCK_END_2022],
+  // Spec §4.10 V19: size budget for parcels.bin (tier 4; the file is expected ≈ 2.3–2.8 MB).
+  scenarioMaxBytes: 3.5e6,
+  pipelineCoverageMin: 0.9,
+  hiNet: { 2023: 2544, 2024: 1603, 2025: 2669 },
+  rhnaYearTol: 0.1,
+  rhnaTotalTol: 0.05,
+  projectsMaxBytes: 2e6,
+  projectsWarnBytes: 1e6,
+  // Spec §4.10 V30: live shares are judged against each rule's warnShare and failShare.
+  qualityShares: true
 };
 
 /**
@@ -123,5 +174,24 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   manifestMax: LIVE_PROFILE.manifestMax,
   neighborhoodsMax: LIVE_PROFILE.neighborhoodsMax,
   transitMinStops: 8,
-  transitHeavyRailStations: ['Fixture Station']
+  transitHeavyRailStations: ['Fixture Station'],
+  // Spec §4.10 V16: every eligible mini parcel has a district (fixture known answer).
+  heightJoinMin: 1,
+  // Ruling: 10 of the 12 eligible mini parcels have a 2025 roll row (lots 12 and 13 do not).
+  rollJoinMin: 0.8,
+  // Spec §4.10 V18 "fixture exact": Σ 2025 roll units of the mini fixture after the units rules
+  // (known answer, spec §4.11): 66, plus lot 3's 5,000 replaced by its LUDB 4 (RA1).
+  scenarioUnitsRange: [70, 70],
+  scenarioMaxBytes: LIVE_PROFILE.scenarioMaxBytes,
+  // Project-records spec §4.9 V21 fixture "≥ 0.90": M16's linked row (220) and its record (200)
+  // disagree, and M18's dropped row matches nothing, so mini covers 699 of 739 (0.946).
+  pipelineCoverageMin: 0.9,
+  hiNet: { 2023: 3, 2024: 2, 2025: -1 },
+  rhnaYearTol: LIVE_PROFILE.rhnaYearTol,
+  rhnaTotalTol: LIVE_PROFILE.rhnaTotalTol,
+  projectsMaxBytes: LIVE_PROFILE.projectsMaxBytes,
+  projectsWarnBytes: LIVE_PROFILE.projectsWarnBytes,
+  // Spec §4.10 V30: the mini fixture fires rules on a handful of rows by design, so its shares
+  // mean nothing; V30 still requires every rule to report.
+  qualityShares: false
 };

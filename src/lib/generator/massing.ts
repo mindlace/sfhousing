@@ -123,17 +123,29 @@ function finish(typology: TypologyId, stories: number, parts: MassPart[]): Massi
   return { typology, stories, parts, floorAreaM2: fa };
 }
 
+/**
+ * Pipeline projects shrink the footprint (`coverageScale`, default 1) and keep a recorded story
+ * count when a tower plate does not fit (`fallbackStories`, default 12). Omitted opts leave
+ * every result identical.
+ */
+export interface MassOpts {
+  coverageScale?: number;
+  fallbackStories?: number;
+}
+
 /** §4.7 massing for replacement typologies. Selection (§4.5) is separate: `selectTypology`. */
 export function massTypology(
   site: Site,
   typology: ReplacementTypology,
   stories: number,
-  draws: VarietyDraws
+  draws: VarietyDraws,
+  opts?: MassOpts
 ): Massing | null {
-  const F = baseFootprint(site, rulesFor(typology).coverage * site.A);
+  const k = opts?.coverageScale ?? 1;
+  const F = baseFootprint(site, k * (rulesFor(typology).coverage * site.A));
   if (F.length === 0) return null;
   if (typology === 'midrise') return massMidrise(site, F, stories, draws);
-  if (typology === 'tower') return massTower(site, F, stories, draws);
+  if (typology === 'tower') return massTower(site, F, stories, draws, opts);
   const top = floorTop(typology, stories);
   return finish(
     typology,
@@ -159,9 +171,15 @@ function massMidrise(_site: Site, F: PathsD, stories: number, draws: VarietyDraw
  * §4.7 tower: podium floors 1–5 on F; tower plate (rectangle on u/v, area At) slid along u,
  * clipped to F inset 1 m. Retry centred; else largest piece ≥ 0.5·At; else midrise at 12.
  */
-function massTower(site: Site, F: PathsD, stories: number, draws: VarietyDraws): Massing | null {
+function massTower(
+  site: Site,
+  F: PathsD,
+  stories: number,
+  draws: VarietyDraws,
+  opts?: MassOpts
+): Massing | null {
   const { c, u, v } = site;
-  const At = Math.min(TOWER_PLATE_MAX_M2, TOWER_COVERAGE * site.A);
+  const At = (opts?.coverageScale ?? 1) * Math.min(TOWER_PLATE_MAX_M2, TOWER_COVERAGE * site.A);
   const depth = Math.sqrt(At * draws.towerAspect);
   const width = Math.sqrt(At / draws.towerAspect);
   const fu = project(F, c, u);
@@ -178,7 +196,7 @@ function massTower(site: Site, F: PathsD, stories: number, draws: VarietyDraws):
     if (totalArea(R) < 0.9 * At) {
       const big = largest(R);
       if (big && Math.abs(signedArea(big)) >= 0.5 * At) R = [big];
-      else return massTypology(site, 'midrise', 12, draws);
+      else return massTypology(site, 'midrise', opts?.fallbackStories ?? 12, draws, opts);
     }
   }
   const podium = TOWER_PODIUM_STORIES;

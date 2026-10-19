@@ -9,8 +9,11 @@ import { fileURLToPath } from 'node:url';
 import proj4 from 'proj4';
 import { BASEMAP_BUILD, FONTS_COMMIT, FONT_STACKS } from '../../../config';
 import { archiveKeyFor, type Lock, type LockEntry, sha256File, writeLock } from '../../../lib/lock';
+import { PROJECT_SOURCE_IDS } from '../../../project-records/types';
+import { DATASF } from '../../../sources/datasf';
 import { GTFS_FEEDS } from '../../../transit-config';
 import { every, tripTables, type TripSpec } from '../../gtfs-builder';
+import { PROJECT_RAW } from './projects-raw';
 
 proj4.defs(
   'EPSG:7131',
@@ -76,42 +79,256 @@ function parcelProps(mapblklot: string | null, blklot: string, active: boolean, 
   return p;
 }
 
+/** Area-weighted planar centroid in local metres (hole rings are CW, so they subtract). */
+function centroid(polys: Poly[]): [number, number] {
+  let a = 0;
+  let cx = 0;
+  let cy = 0;
+  for (const ring of polys.flat()) {
+    for (let k = 0; k + 1 < ring.length; k++) {
+      const [x0, y0] = ring[k];
+      const [x1, y1] = ring[k + 1];
+      const c = x0 * y1 - x1 * y0;
+      a += c;
+      cx += (x0 + x1) * c;
+      cy += (y0 + y1) * c;
+    }
+  }
+  return [cx / (3 * a), cy / (3 * a)];
+}
+
 // ---- parcels ----
-const parcels = [];
+// One row per acdm-wktn row; `polys` in local metres, `multi` writes a MultiPolygon.
+interface ParcelRow {
+  mapblklot: string | null;
+  blklot: string;
+  active: boolean;
+  nh?: string;
+  polys: Poly[];
+  multi?: boolean;
+}
+const parcelRows: ParcelRow[] = [];
 for (let i = 1; i <= 14; i++) {
   const id = LOT_IDS[i];
   if (i === 2) {
     const nh = nhoodOf(2);
-    parcels.push(feature(parcelProps(id, '3512101', true, nh), polygon(lotRect(2))));
-    parcels.push(feature(parcelProps(id, '3512102', true, nh), polygon(lotRect(2))));
+    parcelRows.push({ mapblklot: id, blklot: '3512101', active: true, nh, polys: [[lotRect(2)]] });
+    parcelRows.push({ mapblklot: id, blklot: '3512102', active: true, nh, polys: [[lotRect(2)]] });
     // slightly different polygon (warning): 0.2 m shorter
-    parcels.push(feature(parcelProps(id, '3512103', true, nh), polygon(rect(10, 0, 20, 29.8))));
+    parcelRows.push({
+      mapblklot: id,
+      blklot: '3512103',
+      active: true,
+      nh,
+      polys: [[rect(10, 0, 20, 29.8)]]
+    });
   } else if (i === 5) {
-    parcels.push(
-      feature(
-        parcelProps(id, id, true, nhoodOf(5)),
-        multi([rect(40, 0, 50, 18)], [rect(40, 22, 50, 30)])
-      )
-    );
+    parcelRows.push({
+      mapblklot: id,
+      blklot: id,
+      active: true,
+      nh: nhoodOf(5),
+      polys: [[rect(40, 0, 50, 18)], [rect(40, 22, 50, 30)]],
+      multi: true
+    });
   } else if (i === 6) {
-    parcels.push(
-      feature(parcelProps(id, id, true, nhoodOf(6)), polygon(lotRect(6), hole(53, 10, 57, 20)))
-    );
+    parcelRows.push({
+      mapblklot: id,
+      blklot: id,
+      active: true,
+      nh: nhoodOf(6),
+      polys: [[lotRect(6), hole(53, 10, 57, 20)]]
+    });
   } else {
     const nh = i === 9 ? undefined : nhoodOf(i);
-    parcels.push(feature(parcelProps(id, id, true, nh), polygon(lotRect(i))));
+    parcelRows.push({ mapblklot: id, blklot: id, active: true, nh, polys: [[lotRect(i)]] });
   }
 }
 // retired parcels
-parcels.push(
-  feature(parcelProps('3512099', '3512099', false, 'Noe Valley'), polygon(rect(111, 26, 119, 29)))
-);
-parcels.push(
-  feature(parcelProps('3512098', '3512098', false, 'Mission'), polygon(rect(1, 26, 9, 29)))
-);
+parcelRows.push({
+  mapblklot: '3512099',
+  blklot: '3512099',
+  active: false,
+  nh: 'Noe Valley',
+  polys: [[rect(111, 26, 119, 29)]]
+});
+parcelRows.push({
+  mapblklot: '3512098',
+  blklot: '3512098',
+  active: false,
+  nh: 'Mission',
+  polys: [[rect(1, 26, 9, 29)]]
+});
 // active parcel with null mapblklot
-parcels.push(
-  feature(parcelProps(null, '3512097', true, 'Noe Valley'), polygon(rect(150, 0, 160, 30)))
+parcelRows.push({
+  mapblklot: null,
+  blklot: '3512097',
+  active: true,
+  nh: 'Noe Valley',
+  polys: [[rect(150, 0, 160, 30)]]
+});
+const parcels = parcelRows.map((r) =>
+  feature(
+    parcelProps(r.mapblklot, r.blklot, r.active, r.nh),
+    r.multi ? multi(...r.polys) : polygon(...r.polys[0])
+  )
+);
+
+// ---- height and bulk districts (h9wh-cg3m; scenario-data spec §4.11) ----
+const heightBulk = (
+  [
+    [-60, 44, '40//65-R-4', '65'],
+    [44, 97, '65-X', '65'],
+    [97, 110, '85//120-R-4', '120'],
+    [110, 120, 'Special Height District', '4444'],
+    [120, 130, '120/400-R-2  //  140/520-R-2', '520'],
+    [130, 140, '120/400//120/650-R4', '650']
+  ] as const
+).map(([x0, x1, height, gen]) =>
+  feature({ height, gen_hght: gen }, polygon(rect(x0, -100, x1, 100)))
+);
+
+/** SODA CSV: every header and value quoted, null as an empty unquoted field, LF line ends. */
+function sodaCsv(header: string[], rows: (string | null)[][]): string {
+  const cell = (v: string | null) => (v === null ? '' : `"${v.replaceAll('"', '""')}"`);
+  return [header, ...rows].map((r) => r.map(cell).join(',')).join('\n') + '\n';
+}
+/** SODA number style for numeric columns: `2` -> `"2.0"`. */
+const n1 = (v: number) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
+
+// ---- parcel attributes (acdm-wktn CSV, active and retired) ----
+const ZONING: Record<number, string> = {
+  1: 'RH-2',
+  2: 'RH-2',
+  3: 'NCT',
+  4: 'NC-1',
+  5: 'RH-1',
+  6: 'RM-1',
+  7: 'P',
+  8: 'RH-2',
+  9: 'P',
+  10: 'RH-3',
+  11: 'RH-3',
+  12: 'P',
+  13: 'C-3-O',
+  14: 'C-3-G'
+};
+const lotOfId = Object.fromEntries(Object.entries(LOT_IDS).map(([i, id]) => [id, Number(i)]));
+const DROPPED: Record<string, string> = {
+  '3512099': '2024-06-30T00:00:00.000',
+  '3512098': '2019-03-01T00:00:00.000'
+};
+const ATTR_HEADER = [
+  'mapblklot',
+  'blklot',
+  'active',
+  'zoning_code',
+  'date_rec_add',
+  'date_rec_drop',
+  'centroid_latitude',
+  'centroid_longitude'
+];
+const parcelAttrs = parcelRows.map((r) => {
+  const zoning = r.mapblklot === null ? 'P' : r.active ? ZONING[lotOfId[r.mapblklot]] : 'RH-2';
+  const [lng, lat] = ll(centroid(r.polys));
+  // date_rec_add is mostly empty in live acdm-wktn; the fixture leaves it empty throughout.
+  return [
+    r.mapblklot,
+    r.blklot,
+    String(r.active),
+    zoning,
+    null,
+    r.active ? null : DROPPED[r.blklot],
+    String(lat),
+    String(lng)
+  ];
+});
+
+// ---- assessor secured roll (wv5m-vpq2 CSV, roll years 2025, 2024 and 2023) ----
+const ROLL_HEADER = [
+  'closed_roll_year',
+  'parcel_number',
+  'use_code',
+  'property_class_code',
+  'year_property_built',
+  'number_of_stories',
+  'number_of_units',
+  'property_area',
+  'assessed_land_value',
+  'assessed_improvement_value',
+  'status_code'
+];
+/**
+ * One roll row per year in `years`; `built` is SODA text (null = empty), `builtIn` overrides it,
+ * and `unitsIn` overrides `units` for one year.
+ */
+interface RollSpec {
+  p: string;
+  use: string;
+  cls: string;
+  built: string | null;
+  stories: number;
+  units: number;
+  area: number;
+  land: number;
+  impr: number;
+  years: number[];
+  status: string;
+  builtIn: Record<number, string>;
+  unitsIn: Record<number, number>;
+}
+/** Roll years in file order. 2023 has rows for lots 3 and 4 only (spec §4.11, RA1 cases). */
+const ROLL_YEARS = [2025, 2024, 2023];
+const BOTH = [2025, 2024];
+function rr(
+  p: string,
+  useCls: string,
+  built: string | null,
+  [stories, units, area]: [number, number, number],
+  [land, impr]: [number, number],
+  opts: Partial<Pick<RollSpec, 'years' | 'status' | 'builtIn' | 'unitsIn'>> = {}
+): RollSpec {
+  const [use, cls] = useCls.split('/');
+  const { years = BOTH, status = 'NA', builtIn = {}, unitsIn = {} } = opts;
+  return { p, use, cls, built, stories, units, area, land, impr, years, status, builtIn, unitsIn };
+}
+// Scenario-data plan Task 6 table (spec §4.11; lot 2 built 1975, ruled). Lots 3 and 4 carry the
+// RA1 units cases: lot 3 has 5,000 units in 2023 and 2025 (no 2024 row) on a 300 m², 3-story lot
+// (capacity 90), so no year is plausible; lot 4 has 3, 900, 3 in 2023-2025.
+const ROLL: RollSpec[] = [
+  rr('3512001', 'SRES/F', '1912', [2, 2, 2000], [400000, 300000]),
+  rr('3512101', 'SRES/Z', '1975', [3, 1, 800], [200000, 300000]),
+  rr('3512102', 'SRES/Z', '1975', [3, 1, 800], [200000, 300000]),
+  rr('3512103', 'SRES/Z', '1975', [3, 1, 800], [200000, 300000]),
+  rr('8711023C', 'COMH/H1', '1920', [3, 5000, 3000], [500000, 500000], { years: [2025, 2023] }),
+  rr('0026T001A', 'MRES/A', '1925', [3, 3, 3000], [300000, 600000], {
+    years: ROLL_YEARS,
+    unitsIn: { 2024: 900 }
+  }),
+  rr('3512005', 'SRES/D', '1950', [1, 1, 1000], [300000, 100000], { builtIn: { 2024: '0' } }),
+  rr('3512006', 'MRES/F', '1940', [2, 2, 2200], [350000, 250000]),
+  rr('3512007', 'MISC/V', null, [0, 0, 0], [100000, 0]),
+  rr('3512008', 'MRES/A', '1960', [4, 12, 10000], [800000, 1200000]),
+  rr('3512010', 'MRES/F', '1930', [2, 3, 3000], [400000, 400000]),
+  rr('3512011', 'GOVT/X', '1955', [3, 0, 6000], [0, 0], { status: 'N' }),
+  rr('3512013', 'MRES/A', '1970', [3, 5, 5000], [500000, 500000], { years: [2024] }),
+  rr('3512014', 'MRES/A', '2015', [6, 40, 30000], [3000000, 9000000]),
+  rr('3512099', 'MRES/A', '1910', [2, 7, 5600], [300000, 200000], { years: [2024] })
+];
+const roll = ROLL_YEARS.flatMap((year) =>
+  ROLL.filter((r) => r.years.includes(year)).map((r) => [
+    String(year),
+    r.p,
+    r.use,
+    r.cls,
+    r.builtIn[year] ?? r.built,
+    n1(r.stories),
+    n1(r.unitsIn[year] ?? r.units),
+    n1(r.area),
+    n1(r.land),
+    n1(r.impr),
+    r.status
+  ])
 );
 
 // ---- land use ----
@@ -335,15 +552,69 @@ const SOURCES = [
     license: 'ODbL-1.0',
     homepage: 'https://overturemaps.org',
     label: 'Overture Maps Buildings'
+  },
+  {
+    id: 'datasf-height-bulk',
+    features: heightBulk,
+    license: 'public-domain',
+    homepage: 'https://data.sf.gov/d/h9wh-cg3m',
+    label: 'DataSF Zoning Map – Height and Bulk Districts'
+  }
+];
+const CSV_SOURCES = [
+  {
+    id: 'datasf-parcel-attrs',
+    header: ATTR_HEADER,
+    rows: parcelAttrs,
+    license: 'PDDL-1.0',
+    homepage: 'https://data.sf.gov/d/acdm-wktn',
+    label: 'DataSF Parcels (attributes, active and retired)'
+  },
+  {
+    id: 'datasf-assessor-roll',
+    header: ROLL_HEADER,
+    rows: roll,
+    license: 'PDDL-1.0',
+    homepage: 'https://data.sf.gov/d/wv5m-vpq2',
+    label: 'DataSF Assessor Historical Secured Property Tax Rolls'
   }
 ];
 
+// Project-records spec §4.9 Fixture: the seven project sources as SODA JSON row arrays.
+const JSON_SOURCES = PROJECT_SOURCE_IDS.map((id) => ({
+  id,
+  rows: PROJECT_RAW[id],
+  license: DATASF[id].license,
+  homepage: DATASF[id].homepage,
+  label: DATASF[id].label
+}));
+
+const pages = [
+  ...SOURCES.map((src) => ({
+    ...src,
+    name: `${src.id}.page-000.geojson`,
+    body: JSON.stringify({ type: 'FeatureCollection', features: src.features }) + '\n',
+    rowCount: src.features.length
+  })),
+  ...CSV_SOURCES.map((src) => ({
+    ...src,
+    name: `${src.id}.page-000.csv`,
+    body: sodaCsv(src.header, src.rows),
+    rowCount: src.rows.length
+  })),
+  ...JSON_SOURCES.map((src) => ({
+    ...src,
+    name: `${src.id}.page-000.json`,
+    body: JSON.stringify(src.rows) + '\n',
+    rowCount: src.rows.length
+  }))
+];
+
 const entries: LockEntry[] = [];
-for (const src of SOURCES) {
-  const name = `${src.id}.page-000.geojson`;
+for (const src of pages) {
+  const name = src.name;
   const file = path.join(rawDir, name);
-  const body = JSON.stringify({ type: 'FeatureCollection', features: src.features }) + '\n';
-  fs.writeFileSync(file, body);
+  fs.writeFileSync(file, src.body);
   const sha256 = await sha256File(file);
   entries.push({
     id: src.id,
@@ -358,7 +629,7 @@ for (const src of SOURCES) {
     ],
     retrievedAt: '2026-10-10T00:00:00.000Z',
     upstreamVersion: 'fixture',
-    rowCount: src.features.length,
+    rowCount: src.rowCount,
     license: src.license,
     label: src.label,
     homepage: src.homepage

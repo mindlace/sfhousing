@@ -1,0 +1,127 @@
+{
+  "schema": 1,
+  "projects": [
+    {
+      "caseNo": "2007.0001PRX",
+      "label": "Fixture Shipyard",
+      "schedule": {
+        "label": "Fixture Shipyard DA phasing schedule",
+        "url": "https://example.invalid/fixture-da.pdf",
+        "retrieved": "2026-10-01"
+      },
+      "searched": [],
+      "phases": [
+        {
+          "name": "Phase A",
+          "units": 120,
+          "blklots": ["3512014"],
+          "plannedPermitFiled": null,
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://example.invalid/fixture-da.pdf",
+              "retrieved": "2026-10-01",
+              "locator": "Exhibit B"
+            },
+            "blklots": {
+              "url": "https://example.invalid/fixture-da.pdf",
+              "retrieved": "2026-10-01",
+              "locator": "Exhibit B"
+            }
+          }
+        },
+        {
+          "name": "Phase B",
+          "units": 180,
+          "blklots": ["3512002"],
+          "plannedPermitFiled": "2027-03-01",
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://example.invalid/fixture-da.pdf",
+              "retrieved": "2026-10-01",
+              "locator": "Exhibit B"
+            },
+            "blklots": {
+              "url": "https://example.invalid/fixture-da.pdf",
+              "retrieved": "2026-10-01",
+              "locator": "Exhibit B"
+            },
+            "plannedPermitFiled": {
+              "url": "https://example.invalid/fixture-da.pdf",
+              "retrieved": "2026-10-01",
+              "locator": "Exhibit B"
+            }
+          }
+        },
+        {
+          "name": "Phase C",
+          "units": 40,
+          "blklots": ["3512007"],
+          "plannedPermitFiled": null,
+          "status": "built",
+          "facts": {
+            "units": {
+              "url": "https://example.invalid/fixture-da.pdf",
+              "retrieved": "2026-10-01",
+              "locator": "Exhibit B"
+            },
+            "blklots": {
+              "url": "https://example.invalid/fixture-da.pdf",
+              "retrieved": "2026-10-01",
+              "locator": "Exhibit B"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "caseNo": "2010.0002PRX",
+      "label": "Fixture Village",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://example.invalid/fixture-village-search",
+          "retrieved": "2026-10-01"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2012-000020PRX",
+      "label": "Fixture Yards",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://example.invalid/fixture-yards-search",
+          "retrieved": "2026-10-01"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2024-000016PRX",
+      "label": "Fixture Terrace",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://example.invalid/fixture-terrace-search",
+          "retrieved": "2026-10-01"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2025-000017PRX",
+      "label": "Fixture Market",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://example.invalid/fixture-market-search",
+          "retrieved": "2026-10-01"
+        }
+      ],
+      "phases": []
+    }
+  ]
+}

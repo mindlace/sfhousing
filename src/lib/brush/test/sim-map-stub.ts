@@ -13,5 +13,8 @@ export const stubHandle: SimMapHandle = {
   setBottomInset: () => {},
   getMap: () => null,
   setOverlayLayers: () => {},
-  onResyncNeeded: () => {}
+  onResyncNeeded: () => {},
+  applyTimeline: () => {},
+  setTime: () => {},
+  setTimelineLookups: () => {}
 };

@@ -1,12 +1,30 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { gzipSync } from 'node:zlib';
+import { gzipSync, inflateRawSync } from 'node:zlib';
 import { parseManifest, type Manifest } from '../../src/lib/data/manifest';
 import type { ParcelRecord } from '../../src/lib/data/parcel';
 import { decodeParcelChunk } from '../../src/lib/data/parcel-chunk';
+import {
+  FILL_LEVELS,
+  SCENARIO_FORMAT,
+  decodeScenarioPayload,
+  encodeScenarioPayload,
+  type ScenarioParcels
+} from '../../src/lib/data/scenario-codec';
 import { decodeTransit } from '../../src/lib/data/transit-codec';
+import type { Day } from '../../src/lib/timelapse/time';
+import type { Calibration, Pathway, Stage } from '../../src/lib/timelapse/types';
 import { BBOX, type InvariantProfile } from '../config';
+import { checkQuality } from '../lib/quality';
 import { pointStrictlyInside } from '../lib/rings';
+import { parseProjectsFile } from '../../src/lib/timelapse/projects';
+import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
+import { checkV25, checkV26, checkV27, parseCalibrationText } from '../lib/fzp-cal/invariants';
+import { scenarioEligible } from '../lib/scenario-eligibility';
+import { checkV20 } from '../project-records/invariants';
+import { CALIBRATION_JSON } from './calibration';
+import { PROJECTS_JSON } from './projects';
+import { PARCELS_BIN } from '../lib/scenario-files';
 import { z12TileBytes } from './tiles';
 
 export interface InvariantResult {
@@ -24,7 +42,25 @@ export interface CheckExtras {
   skipTiles?: boolean;
   /** Leave machine-dependent numbers (tile and gzip bytes) out of `detail` (fixture report). */
   stableDetail?: boolean;
+  /** V20: the build's snapshot day; V20 fails when it is not given. */
+  asOf?: Day;
+  /**
+   * V21-V24 from the project-records step (they need the in-memory derivation). A standalone
+   * `check` carries them from report.json; when absent they fail as not measured.
+   */
+  projectChecks?: InvariantResult[];
+  /**
+   * V28 and V29 from the calibration step (they need the in-memory computation). A standalone
+   * `check` carries them from report.json; when absent they fail as not measured.
+   */
+  calibrationChecks?: InvariantResult[];
 }
+
+/** The project-records invariants measured in the build, not from the files. */
+export const PROJECT_CHECK_IDS = ['V21', 'V22', 'V23', 'V24'] as const;
+
+/** The stage-calibration invariants measured in the build, not from the files. */
+export const CALIBRATION_CHECK_IDS = ['V28', 'V29'] as const;
 
 interface Chunk {
   cellId: string;
@@ -37,6 +73,26 @@ interface Chunk {
 
 /** Transit spec §4.3 size target for transit.json; over it V14 warns but still passes. */
 const TRANSIT_TARGET_BYTES = 400e3;
+/**
+ * Planning's ~780,000 units of net added FZP capacity (tier 1, scenario-data literature §1 [A]):
+ * V17's cross-check of `scenario.yield.fzp_net_total`.
+ */
+const FZP_NET_CAPACITY = 780e3;
+/** V17 warns (still passes) outside [0.25×, 4×] FZP_NET_CAPACITY (spec §4.10, tier 4 band). */
+const FZP_NET_BAND = [0.25, 4] as const;
+/**
+ * V17: at least this share of (scenario-)eligible parcels is hostable (spec §4.10, tier 4 check
+ * bound).
+ */
+const HOSTABLE_MIN = 0.5;
+/**
+ * V18: `hostable_base` changes by at most this share between consecutive roll years, with no
+ * exemptions (partner ruling, option c: a density-cap change such as the 2022-11-27 fourplex
+ * ordinance must not flip the at-risk set; tier 4 check bound, made up).
+ */
+const HOSTABLE_BASE_STEP_MAX = 0.05;
+/** V19 warns (still passes) when parcels.bin is larger (spec §4.10, tier 4). */
+const SCENARIO_WARN_BYTES = 3.0e6;
 
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 const thr = (x: number) => `${Number((x * 100).toFixed(4))}%`;
@@ -70,6 +126,38 @@ function readChunks(outDir: string, m: Manifest): Chunk[] {
   });
 }
 
+interface Scenario {
+  p: ScenarioParcels | null;
+  /** The inflated payload, when it inflated. */
+  payload?: Uint8Array;
+  /** parcels.bin bytes on disk; NaN when unreadable. */
+  fileBytes: number;
+  error?: string;
+}
+
+/** Inflate and decode `scenarios/fzp/parcels.bin` (manifest-independent path). Never throws. */
+function readScenario(outDir: string): Scenario {
+  let body: Buffer;
+  try {
+    body = readFileSync(join(outDir, PARCELS_BIN));
+  } catch (e) {
+    return { p: null, fileBytes: NaN, error: `${PARCELS_BIN} unreadable: ${(e as Error).message}` };
+  }
+  try {
+    const payload = new Uint8Array(inflateRawSync(body));
+    return { p: decodeScenarioPayload(payload), payload, fileBytes: body.length };
+  } catch (e) {
+    const error = `${PARCELS_BIN} does not decode: ${(e as Error).message}`;
+    return { p: null, fileBytes: body.length, error };
+  }
+}
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 function neighborhoodNames(outDir: string, profile: InvariantProfile): string[] {
   if (profile.neighborhoodNames !== 'from-source') return profile.neighborhoodNames;
   const fc = JSON.parse(readFileSync(join(outDir, 'neighborhoods.geojson'), 'utf8')) as {
@@ -78,14 +166,176 @@ function neighborhoodNames(outDir: string, profile: InvariantProfile): string[] 
   return fc.features.map((f) => f.properties.name);
 }
 
+/**
+ * V30 (scenario-data spec §4.10, T14): every registered rule reports, no `quality.*` key names an
+ * unregistered rule, and with `profile.qualityShares` no share exceeds its rule's failShare (a
+ * share above warnShare warns). `check` is the registry's checker; tests pass a crafted one.
+ */
+export function checkV30(
+  counts: Record<string, number>,
+  profile: Pick<InvariantProfile, 'qualityShares'>,
+  check: typeof checkQuality = checkQuality
+): InvariantResult {
+  const shares = profile.qualityShares;
+  const q = check(counts, { shares });
+  const warn = q.warnings.length ? `warn: ${q.warnings.join('; ')}` : '';
+  const parts = q.ok
+    ? [
+        'every registered rule reports',
+        shares ? 'no share above failShare' : 'shares not checked on this profile'
+      ]
+    : q.failures;
+  return { id: 'V30', ok: q.ok, detail: [...parts, warn].filter(Boolean).join('; ') };
+}
+
+/** Invariant `id`'s result: its problems joined by '; ', or the `ok` text when there are none. */
+function verdict(id: InvariantResult['id'], problems: string[], ok: string): InvariantResult {
+  return {
+    id,
+    ok: problems.length === 0,
+    detail: problems.length === 0 ? ok : problems.join('; ')
+  };
+}
+
+/** Whether `outDir` holds a fixture dataset (`fixture-<n>`), by its manifest's datasetVersion. */
+function isFixtureDataset(outDir: string): boolean {
+  const { m } = readManifest(outDir);
+  return m !== null && /^fixture-\d+$/.test(m.datasetVersion);
+}
+
+/**
+ * V25–V27 over `scenarios/fzp/calibration.json` and `projects.json` (stage-calibration spec
+ * §4.10). A missing or unreadable file fails the invariants that need it. The V27 sample size and
+ * tolerance come from the calibration profile that matches the invariant profile.
+ */
+function checkCalibrationFiles(outDir: string): InvariantResult[] {
+  const calFile = join(outDir, CALIBRATION_JSON);
+  const projFile = join(outDir, PROJECTS_JSON);
+  if (!existsSync(calFile)) {
+    const d = `${CALIBRATION_JSON} missing`;
+    return (['V25', 'V26', 'V27'] as const).map((id) => ({ id, ok: false, detail: d }));
+  }
+  const text = readFileSync(calFile, 'utf8');
+  const bytes = statSync(calFile).size;
+
+  // T3's asOf and in-flight projects. A projects.json that is missing or invalid is V20's to
+  // report: here it only means the asOf or in-flight comparison is not made. (T4d's asOf is
+  // checked by the calibration step itself, which throws on a mismatch.)
+  let projectsAsOf: Day | undefined;
+  let inFlight: { pathway: Pathway; stage: Stage }[] | undefined;
+  if (existsSync(projFile)) {
+    let json: unknown;
+    try {
+      json = JSON.parse(readFileSync(projFile, 'utf8'));
+    } catch {
+      json = undefined;
+    }
+    const asOf = (json as { asOf?: unknown } | undefined)?.asOf;
+    if (Number.isInteger(asOf)) projectsAsOf = asOf as Day;
+    try {
+      inFlight = parseProjectsFile(json).projects;
+    } catch {
+      inFlight = undefined;
+    }
+  }
+
+  const v25 = checkV25(text, bytes, FILL_LEVELS, projectsAsOf);
+  const out: InvariantResult[] = [
+    verdict(
+      'V25',
+      v25,
+      `parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), ${bytes} B`
+    )
+  ];
+
+  // V26 reads the cells even when parseCalibration rejects the file (a deleted cell is itself a
+  // parse failure); V27 samples only a file that parses.
+  const parsed = parseCalibrationText(text);
+  let raw: Calibration | undefined;
+  if ('cal' in parsed) raw = parsed.cal;
+  else {
+    try {
+      raw = JSON.parse(text) as Calibration;
+    } catch {
+      raw = undefined;
+    }
+  }
+  if (raw === undefined || raw === null || typeof raw !== 'object') {
+    const d = `${CALIBRATION_JSON} is not a JSON object (V25)`;
+    out.push({ id: 'V26', ok: false, detail: d }, { id: 'V27', ok: false, detail: d });
+    return out;
+  }
+  const v26 = checkV26(raw, inFlight ?? []);
+  out.push(
+    verdict(
+      'V26',
+      v26,
+      inFlight
+        ? `every occupiable pathway x stage cell present (${inFlight.length} in flight)`
+        : 'every occupiable pathway x stage cell present (in-flight cells not checked)'
+    )
+  );
+  if ('error' in parsed) {
+    out.push({ id: 'V27', ok: false, detail: `${CALIBRATION_JSON} does not parse (V25)` });
+    return out;
+  }
+  // The method constants follow the dataset version (as build.ts's fixtureMode does), not the
+  // T14 share flag; a dataset with no readable manifest is judged by the live constants.
+  const cal = isFixtureDataset(outDir) ? FIXTURE_CAL : LIVE_CAL;
+  out.push(
+    verdict(
+      'V27',
+      checkV27(parsed.cal, cal.v27N, cal.v27Tol),
+      `sampling reproduces every table within ${cal.v27Tol} (${cal.v27N} draws per cell)`
+    )
+  );
+  return out;
+}
+
+/** The `scenario.panel.hostable_base.<roll year>` counts the scenario step writes (V18). */
+const HOSTABLE_BASE_KEY = /^scenario\.panel\.hostable_base\.(\d{4})$/;
+
+/**
+ * V18's hostable_base stability input: the panel roll years with a
+ * `scenario.panel.hostable_base.<year>` count, ascending, and for each later year y, paired with
+ * the previous panel year, the change over the parcels with a row in both,
+ * |both − both_prev| / both_prev (`.<y>.both`, `.<y>.both_prev`; 0 when both are 0, Infinity when
+ * only the earlier one is). `problem` is 'missing' when a pair count is absent and 'no-overlap'
+ * when no parcel has a row in both years (`.<y>.both_rows` = 0), so no pair passes unmeasured.
+ */
+export function hostableBaseSteps(counts: Record<string, number>): {
+  years: number[];
+  steps: { from: number; to: number; change: number; problem?: 'missing' | 'no-overlap' }[];
+} {
+  const years: number[] = [];
+  for (const k of Object.keys(counts)) {
+    const m = HOSTABLE_BASE_KEY.exec(k);
+    if (m) years.push(Number(m[1]));
+  }
+  years.sort((a, b) => a - b);
+  const steps = years.slice(1).map((to, k) => {
+    const from = years[k];
+    const rows = counts[`scenario.panel.hostable_base.${to}.both_rows`];
+    const a = counts[`scenario.panel.hostable_base.${to}.both_prev`];
+    const b = counts[`scenario.panel.hostable_base.${to}.both`];
+    if (rows === undefined || a === undefined || b === undefined)
+      return { from, to, change: NaN, problem: 'missing' as const };
+    if (rows === 0) return { from, to, change: NaN, problem: 'no-overlap' as const };
+    const change = a === 0 ? (b === 0 ? 0 : Infinity) : Math.abs(b - a) / a;
+    return { from, to, change };
+  });
+  return { years, steps };
+}
+
 /** Max without spreading (spread overflows the call stack at ~150k elements). */
 export function maxOf(xs: readonly number[]): number {
   return xs.reduce((a, b) => (b > a ? b : a), -Infinity);
 }
 
 /**
- * Spec §4.9 invariants V1–V13 and transit spec §4.3 V14 over a built dataset directory.
- * Never throws.
+ * Spec §4.9 invariants V1–V13, transit spec §4.3 V14, scenario-data spec §4.10 V15–V19 and
+ * project-records spec §4.9 V20 over a built dataset directory, then V21–V24 from
+ * `extras.projectChecks` and V30 (T14) from the counts. Never throws.
  */
 export async function checkDataset(
   outDir: string,
@@ -316,5 +566,265 @@ export async function checkDataset(
     }
     add('V14', problems.length === 0, problems.length ? problems.join('; ') : detail);
   }
+
+  // V15–V19 scenario file (scenario-data spec §4.10).
+  const sc = readScenario(outDir);
+  const p = sc.p;
+  // V16-V18 count eligibility as the scenario does: parcels.bin's flags bit 5 (the chunk record's
+  // `eligible`, or no land-use row with latest-roll units, sd.landuse.none-with-units), the value
+  // its yields and hostable flags used. V17 checks the flag against the chunk records.
+  const eligibleRows: number[] = [];
+  if (p) for (let i = 0; i < p.count; i++) if (p.eligible[i]) eligibleRows.push(i);
+  const eligibleN = eligibleRows.length;
+  const recById = new Map(recs.map((r) => [r.id, r]));
+  const fileProblem = sc.error ?? '';
+  const addProblems = (id: InvariantResult['id'], problems: string[], okDetail: string) => {
+    const ps = problems.filter(Boolean);
+    add(id, ps.length === 0, ps.length ? ps.join('; ') : okDetail);
+  };
+
+  // V15 decodes; header matches; count = V2; ids in exactly one chunk, in that chunk's cell;
+  // re-encoding the decoded payload is byte-identical.
+  {
+    const problems = [fileProblem];
+    if (p) {
+      if (p.format !== SCENARIO_FORMAT) problems.push(`format ${p.format} ≠ ${SCENARIO_FORMAT}`);
+      if (!m) problems.push('no manifest to compare datasetVersion');
+      else if (p.datasetVersion !== m.datasetVersion)
+        problems.push(`datasetVersion ${p.datasetVersion} ≠ ${m.datasetVersion}`);
+      if (p.scenario !== 'fzp') problems.push(`scenario ${p.scenario} ≠ fzp`);
+      if (p.count !== emitted) problems.push(`count ${p.count} ≠ parcels.emitted ${emitted}`);
+      if (recs.length !== p.count) problems.push(`${recs.length} chunk records ≠ count ${p.count}`);
+      const cellsOf = new Map<string, string[]>();
+      for (const k of chunks)
+        for (const r of k.recs ?? []) cellsOf.set(r.id, [...(cellsOf.get(r.id) ?? []), k.cellId]);
+      let missing = 0;
+      let multi = 0;
+      let wrongCell = 0;
+      p.id.forEach((id, i) => {
+        const cs = cellsOf.get(id);
+        if (!cs) missing++;
+        else if (cs.length > 1) multi++;
+        else if (p.cells[p.cell[i]]?.cellId !== cs[0]) wrongCell++;
+      });
+      if (missing) problems.push(`${missing} id(s) in no chunk`);
+      if (multi) problems.push(`${multi} id(s) in more than one chunk`);
+      if (wrongCell) problems.push(`${wrongCell} id(s) whose cell ≠ their chunk's cellId`);
+      if (decodeErrors.length) problems.push(`${decodeErrors.length} chunk(s) failed to decode`);
+      try {
+        if (!sameBytes(encodeScenarioPayload(p), sc.payload!))
+          problems.push('re-encoding the decoded payload differs');
+      } catch (e) {
+        problems.push(`re-encoding the decoded payload fails: ${(e as Error).message}`);
+      }
+    }
+    addProblems(
+      'V15',
+      problems,
+      `${p?.count} parcels decode, each in its chunk's cell; re-encode byte-identical`
+    );
+  }
+
+  // V16 height strings parse; eligible parcels have a district.
+  {
+    const parseFail = c['scenario.height.parse_fail'];
+    const withDistrict = p
+      ? eligibleRows.filter((i) => p.districts[p.district[i]] !== '').length
+      : 0;
+    const share = ratio(withDistrict, eligibleN);
+    addProblems(
+      'V16',
+      [
+        fileProblem,
+        parseFail === 0 ? '' : `scenario.height.parse_fail ${parseFail} ≠ 0`,
+        p && !(share >= profile.heightJoinMin)
+          ? `eligible with a district ${pct(share)} < ${thr(profile.heightJoinMin)}`
+          : ''
+      ],
+      `0 parse failures; eligible with a district ${withDistrict}/${eligibleN} ≥ ${thr(profile.heightJoinMin)}`
+    );
+  }
+
+  // V17 fill levels, no clamped u16, hostable masks, non-LP base = FZP, hostable share; warn on
+  // the FZP net capacity cross-check. The hostable flags read the uncapped full-fill yields
+  // (partner ruling, option c), which the payload does not carry: V17 checks the conditions the
+  // payload can show (hostable ⇒ eligible ∧ stories ≥ 1; eligible ∧ stories ≥ 1 ∧ capped
+  // yield[F−1] > 0 ⇒ hostable, since capped > 0 implies uncapped > 0) and the step's counts of
+  // flags that disagree with its own uncapped yields. Eligibility is flags bit 5, which must equal
+  // the chunk record's `eligible` or sd.landuse.none-with-units on the row's latest-roll units.
+  {
+    const clamped = c['scenario.yield.clamped'];
+    const nonlp = c['scenario.yield.nonlp_base_mismatch'];
+    const zero = (k: string) => (c[k] === 0 ? '' : `${k} ${c[k]} ≠ 0`);
+    const problems = [
+      fileProblem,
+      clamped === 0 ? '' : `scenario.yield.clamped ${clamped} ≠ 0`,
+      nonlp === 0 ? '' : `scenario.yield.nonlp_base_mismatch ${nonlp} ≠ 0`,
+      zero('scenario.hostable_mismatch'),
+      zero('scenario.hostable_base_mismatch')
+    ];
+    let hostable = 0;
+    if (p) {
+      const fl = p.fillLevels;
+      if (fl.length !== FILL_LEVELS.length || FILL_LEVELS.some((v, k) => fl[k] !== v))
+        problems.push(`fillLevels [${fl.join(', ')}] ≠ FILL_LEVELS`);
+      const F = fl.length;
+      let badH = 0;
+      let badB = 0;
+      let badE = 0;
+      for (let i = 0; i < p.count; i++) {
+        const rec = recById.get(p.id[i]);
+        if (
+          (p.eligible[i] === 1) !==
+          (rec !== undefined && scenarioEligible(rec, p.existingUnits[i]))
+        )
+          badE++;
+        const elig = p.eligible[i] === 1;
+        const canH = elig && p.envelopeStories[i] >= 1;
+        const canB = elig && p.baseStories[i] >= 1;
+        const mustH = canH && p.yield[i * F + F - 1] > 0;
+        const mustB = canB && p.baseYield[i * F + F - 1] > 0;
+        if (p.hostable[i] ? !canH : mustH) badH++;
+        if (p.hostableBase[i] ? !canB : mustB) badB++;
+        hostable += p.hostable[i];
+      }
+      if (badH) problems.push(`${badH} hostable flag(s) disagree with eligibility and yield`);
+      if (badB) problems.push(`${badB} hostableBase flag(s) disagree with eligibility and yield`);
+      if (badE)
+        problems.push(
+          `${badE} eligible flag(s) disagree with the chunk record and sd.landuse.none-with-units`
+        );
+      const share = ratio(hostable, eligibleN);
+      if (!(share >= HOSTABLE_MIN))
+        problems.push(`hostable ${pct(share)} of eligible < ${thr(HOSTABLE_MIN)}`);
+    }
+    const net = c['scenario.yield.fzp_net_total'];
+    const [lo, hi] = FZP_NET_BAND.map((x) => x * FZP_NET_CAPACITY);
+    const warn =
+      net >= lo && net <= hi
+        ? ''
+        : `; warn: FZP net capacity ${net} outside [${lo}, ${hi}] (Planning ~${FZP_NET_CAPACITY}, tier 1)`;
+    addProblems('V17', problems, `hostable ${hostable}/${eligibleN} eligible${warn}`);
+  }
+
+  // V18 panel covers every roll year; latest-year roll join; Σ units; panel = T11 features;
+  // hostable_base stable year on year.
+  {
+    const panelYears = c['scenario.panel.years'];
+    const rollYears = c['scenario.roll.years'];
+    const matched = c['scenario.roll.latest_eligible_matched'];
+    const unitsTotal = c['scenario.units.total'];
+    const mismatch = c['scenario.panel.feature_mismatch'];
+    // Coordinator ruling 2026-10-18: parcels whose panel and T11 base caps differ by period (each
+    // correct for its own date) are not compared on base-cap features; reported here by code.
+    const capDiffers = c['scenario.v18.cap_period_differs'];
+    const capPrefix = 'scenario.v18.cap_period_differs.';
+    const capByCode = Object.entries(c)
+      .filter(([k]) => k.startsWith(capPrefix))
+      .map(([k, n]): [string, number] => [k.slice(capPrefix.length), n])
+      .sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0));
+    const capSum = capByCode.reduce((s, [, n]) => s + n, 0);
+    // Ord. 292-24 changed only the RM and RC maxima, so a cap-period difference on any other code
+    // (a split code counts when one of its components is RM or RC) means the exclusion hides a
+    // real mismatch.
+    const inFamily = (code: string) =>
+      code.split('|').some((z) => /^(?:RM-[1-4]|RC-[34])$/.test(z.trim()));
+    const outside = capByCode.filter(([k, n]) => n > 0 && !inFamily(k)).map(([k]) => k);
+    const baseCapMismatch = c['scenario.v18.basecap_mismatch'];
+    const capDetail =
+      capDiffers > 0
+        ? `; base cap differs by period on ${capDiffers} parcels (base-cap features not ` +
+          `compared; ${capByCode.map(([k, n]) => `${k} ${n}`).join(', ')})`
+        : '; base cap differs by period on 0 parcels';
+    const share = ratio(matched, eligibleN);
+    const [ulo, uhi] = profile.scenarioUnitsRange;
+    const { years: hbYears, steps } = hostableBaseSteps(c);
+    const maxStep = steps.length ? maxOf(steps.map((s) => s.change)) : 0;
+    const stepProblem = (s: (typeof steps)[number]) =>
+      s.problem === 'missing'
+        ? `hostable_base ${s.from} → ${s.to} has no both-years counts`
+        : s.problem === 'no-overlap'
+          ? `hostable_base ${s.from} → ${s.to}: no parcel has a row in both years`
+          : `hostable_base ${s.from} → ${s.to} changes by ${pct(s.change)} > ${thr(HOSTABLE_BASE_STEP_MAX)}`;
+    addProblems(
+      'V18',
+      [
+        fileProblem,
+        rollYears > 0 && panelYears === rollYears
+          ? ''
+          : `panel years ${panelYears} ≠ roll years ${rollYears}`,
+        share >= profile.rollJoinMin
+          ? ''
+          : `eligible with a latest-year roll row ${pct(share)} < ${thr(profile.rollJoinMin)}`,
+        unitsTotal >= ulo && unitsTotal <= uhi
+          ? ''
+          : `scenario.units.total ${unitsTotal} outside [${ulo}, ${uhi}]`,
+        mismatch === 0 ? '' : `scenario.panel.feature_mismatch ${mismatch} ≠ 0`,
+        Number.isInteger(capDiffers) && capDiffers === capSum
+          ? ''
+          : `scenario.v18.cap_period_differs ${capDiffers} ≠ Σ by code ${capSum}`,
+        outside.length === 0
+          ? ''
+          : `cap-period difference outside the RM and RC families (Ord. 292-24): ${outside.join(', ')}`,
+        baseCapMismatch === 0
+          ? ''
+          : `scenario.v18.basecap_mismatch ${baseCapMismatch} ≠ 0 (T11 baseCap differs from ` +
+            'sc_parcel.cap_prefzp)',
+        hbYears.length === panelYears
+          ? ''
+          : `hostable_base counted for ${hbYears.length} roll years ≠ ${panelYears}`,
+        ...steps.filter((s) => !(s.change <= HOSTABLE_BASE_STEP_MAX)).map(stepProblem)
+      ],
+      `${panelYears} roll years; eligible with a latest-year roll row ${matched}/${eligibleN}; Σ units ${unitsTotal} in [${ulo}, ${uhi}]; hostable_base year-on-year change (parcels in both years) ≤ ${thr(maxStep)} ≤ ${thr(HOSTABLE_BASE_STEP_MAX)}${capDetail}`
+    );
+  }
+
+  // V19 file size budget; warn over SCENARIO_WARN_BYTES.
+  {
+    const b = sc.fileBytes;
+    const max = profile.scenarioMaxBytes;
+    const ok = b <= max;
+    const warn = b > SCENARIO_WARN_BYTES ? `; warn: over ${SCENARIO_WARN_BYTES / 1e6} MB` : '';
+    const detail = Number.isNaN(b)
+      ? fileProblem
+      : extras.stableDetail
+        ? `parcels.bin ${ok ? 'within' : 'over'} budget${warn}`
+        : `parcels.bin ${b}/${max} B${warn}`;
+    add('V19', ok, detail);
+  }
+
+  // V20 projects.json (project-records spec §4.9): the T3 validator against the chunk parcels.
+  {
+    const file = join(outDir, PROJECTS_JSON);
+    if (extras.asOf === undefined) add('V20', false, 'snapshot day (asOf) not given');
+    else if (!existsSync(file)) add('V20', false, `${PROJECTS_JSON} is missing`);
+    else {
+      out.push(
+        checkV20(readFileSync(file), {
+          asOf: extras.asOf,
+          parcelIds: new Set(recs.map((r) => r.id)),
+          maxBytes: profile.projectsMaxBytes,
+          warnBytes: profile.projectsWarnBytes
+        })
+      );
+    }
+  }
+
+  // V21–V24: measured by the project-records step.
+  for (const id of PROJECT_CHECK_IDS) {
+    const r = extras.projectChecks?.find((x) => x.id === id);
+    out.push(r ? { id, ok: r.ok, detail: r.detail } : { id, ok: false, detail: 'not measured' });
+  }
+
+  // V25–V27 calibration.json (stage-calibration spec §4.10), from the files; then V28, V29 from
+  // the calibration step.
+  out.push(...checkCalibrationFiles(outDir));
+  for (const id of CALIBRATION_CHECK_IDS) {
+    const r = extras.calibrationChecks?.find((x) => x.id === id);
+    out.push(r ? { id, ok: r.ok, detail: r.detail } : { id, ok: false, detail: 'not measured' });
+  }
+
+  // V30 data-quality registry (T14): every rule reports; live shares within failShare.
+  out.push(checkV30(c, profile));
   return out;
 }

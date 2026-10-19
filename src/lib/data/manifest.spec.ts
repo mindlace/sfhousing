@@ -82,6 +82,23 @@ describe('ManifestSourcesSchema', () => {
     });
     expect(parsed.success).toBe(true);
   });
+
+  it('keeps scenarios.fzp from the fixture-0 manifest', () => {
+    const raw = JSON.parse(readFileSync('e2e/fixtures/data/fixture-0/manifest.json', 'utf8'));
+    const parsed = ManifestSourcesSchema.parse(raw);
+    expect(parsed.scenarios?.fzp.calibration).toBe(
+      '/data/fixture-0/scenarios/fzp/calibration.json'
+    );
+  });
+
+  it('still parses a manifest without scenarios', () => {
+    const parsed = ManifestSourcesSchema.parse({
+      datasetVersion: 'fixture-0',
+      builtAt: '2026-10-10T00:00:00.000Z',
+      sources: validManifest.sources
+    });
+    expect(parsed.scenarios).toBeUndefined();
+  });
 });
 
 describe('manifestUrl', () => {

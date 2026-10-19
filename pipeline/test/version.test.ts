@@ -100,10 +100,15 @@ describe('codeTreeHash', () => {
     mkdirSync(join(dir, 'pipeline'), { recursive: true });
     mkdirSync(join(dir, 'src/lib/data'), { recursive: true });
     mkdirSync(join(dir, 'src/lib/plan'), { recursive: true });
+    mkdirSync(join(dir, 'src/lib/generator'), { recursive: true });
+    mkdirSync(join(dir, 'src/lib/timelapse'), { recursive: true });
     writeFileSync(join(dir, 'pipeline/a.ts'), 'export const a = 1;\n');
     writeFileSync(join(dir, 'src/lib/data/b.ts'), 'export const b = 2;\n');
     writeFileSync(join(dir, 'src/lib/plan/geometry.ts'), 'export const g = 3;\n');
     writeFileSync(join(dir, 'src/lib/plan/other.ts'), 'export const o = 4;\n');
+    writeFileSync(join(dir, 'src/lib/plan/types.ts'), 'export type T = 1;\n');
+    writeFileSync(join(dir, 'src/lib/generator/gen.ts'), 'export const gen = 5;\n');
+    writeFileSync(join(dir, 'src/lib/timelapse/time.ts'), 'export const tl = 6;\n');
     git('add', '.');
     git('commit', '-q', '-m', 'code');
     return { dir, git };
@@ -139,5 +144,20 @@ describe('codeTreeHash', () => {
     writeFileSync(join(dir, 'src/lib/plan/geometry.ts'), 'export const g = 6;\n');
     git('commit', '-q', '-am', 'geometry');
     expect(await codeTreeHash(dir)).not.toBe(clean);
+  });
+  it.each([
+    ['src/lib/generator', 'src/lib/generator/gen.ts'],
+    ['src/lib/timelapse', 'src/lib/timelapse/time.ts'],
+    ['src/lib/plan/types.ts', 'src/lib/plan/types.ts']
+  ])('codeTreeHash changes when a file under %s changes', async (_label, file) => {
+    const { dir, git } = tempRepo();
+    const clean = await codeTreeHash(dir);
+    writeFileSync(join(dir, file), 'export const changed = 1;\n');
+    const dirty = await codeTreeHash(dir);
+    expect(dirty).not.toBe(clean);
+    git('commit', '-q', '-am', 'change');
+    const committed = await codeTreeHash(dir);
+    expect(committed).not.toBe(clean);
+    expect(committed).not.toBe(dirty);
   });
 });

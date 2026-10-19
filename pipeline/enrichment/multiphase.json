@@ -1,0 +1,1358 @@
+{
+  "schema": 1,
+  "projects": [
+    {
+      "caseNo": "2006.1308PRX",
+      "label": "Visitacion Valley / Schlage Lock",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://default.sfplanning.org/Citywide/Visitacion_Valley/VisValley_phase01_application.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://default.sfplanning.org/Citywide/Visitacion_Valley/Schlage_Revised_Phase01_Conditions_FINAL-091718.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfmta.com/media/4242/download",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfmta.com/media/4243/download",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfgov.legistar.com/View.ashx?M=F&ID=3202544&GUID=08A5FE16-C9EF-47A8-947A-4DF7B005A5A8",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://SFPlanning.org/sites/default/files/documents/legis/code-summaries/140445.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://default.sfplanning.org/Citywide/Visitacion_Valley/vis_val_workshop_presentation-072818.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfplanning.org/sites/default/files/documents/citywide/VisValley/visvalley_presentation_baylands-10092024.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfplanning.org/sites/default/files/documents/citywide/VisValley/visvalley_presentation_baylands-103125.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=block_num in('5087','5099','5100','5087A')",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2007.0168PRX",
+      "label": "HOPE SF Hunters View",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://commissions.sfplanning.org/cpcpackets/2007.0168CUA-02%20-%20HUNTERS%20VIEW%20-%20CUA%20and%20D4D%20Mods%20-%20CPC%20Hearing%2002%2020%2020%20Final.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://files.sfplanning.org/documents/publications/Hunters-View-Design-for-Development-Feb2020.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfplanning.org/resource/design-development-hunters-view",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfmohcd.org/sites/default/files/Approved%20Hunters%20View%20Phase%20III_HOPE%20SF%20Preliminary%20Gap%20Memo%20-%20Loan%20Committee%201-29-2021.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfgov.org/ccsfgsa/sites/default/files/BVHP/HV_Overview_Phase_III_presentation-CAC_2021-03-03.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfbos.archive.sf.gov/sites/default/files/r0204-23.pdf",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2007.0903PRX",
+      "label": "Treasure Island / Yerba Buena Island",
+      "schedule": {
+        "label": "Amended and Restated Treasure Island DDA (executed 2024-08-29), Exhibit II Phasing Plan and Exhibit JJ Schedule of Performance; unit counts from Sub-Phase Application 3 (Rev. 1) and the Major Phase 1 Application",
+        "url": "https://api.sf.gov/documents/36173/AmendedRestated_TI_DDAgreementExecuted8-29-24small.pdf",
+        "retrieved": "2026-10-16"
+      },
+      "searched": [
+        {
+          "url": "https://sf.gov/sites/default/files/2024-07/TI%20Sub-Phase%20Application%203%20Book-Revision%201%20-%20reduced.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://api.sf.gov/documents/10319/Major_Phase_1_Application_reduced.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://api.sf.gov/documents/10316/TI_Subphase_1B_1C_1E_Application.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://api.sf.gov/documents/29601/YBI_Sub-Phase_Amendment_1_-_1YA__1YB_03-26-2019.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://www.sfbos.org/sites/default/files/m25-0133.pdf",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": [
+        {
+          "name": "Major Phase 1, Sub-Phase 1A (Blocks B2, B3, M1, IC3, IC4.4), excluding Lot IC4.3",
+          "units": 813,
+          "blklots": [
+            "8930003",
+            "8930004",
+            "8930005",
+            "8930006",
+            "8930007",
+            "8930008",
+            "8931001",
+            "8931002",
+            "8932001",
+            "8933001",
+            "8934008",
+            "8934037",
+            "8934039",
+            "8934040"
+          ],
+          "plannedPermitFiled": null,
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://sf.gov/sites/default/files/2024-07/TI%20Sub-Phase%20Application%203%20Book-Revision%201%20-%20reduced.pdf",
+              "retrieved": "2026-10-17",
+              "locator": "net units by subtraction: Sub-Area 1A Total 953 (Sub-Phase Application 3 Rev. 1, Table 2.3, p. 33) minus Lot IC4.3 140 (same table; Authority lot, separately tracked as 6jgi-cpb4 bpa 202506209120, 401 California Ave) = 813"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$select=blklot,active,mapblklot,project_id_add,project_id_drop&$where=blklot%20in('8930003','8930004','8930005','8930006','8930007','8930008','8931001','8931002','8932001','8933001','8934008','8934037','8934039','8934040')",
+              "retrieved": "2026-10-17",
+              "locator": "mapped by the curator: DA lot areas in Sub-Phase Application 3 Table 2.5 (p. 39) matched to the assessor lots created by the 2019 TI transfer map (acdm-wktn project_id_add 25273, now partly retired by Final Map 10347, project 27471), within about 3% by area and checked by position against Figure 2.6 (p. 39). M1A/M1B = 8930001/8930002 (57,234/81,545 sf vs 57,499/81,893); B3 = 8934001 (195,981 vs 201,603) with B3A = 8934002-8934005; B2/B2A = 8931001/8931002; IC3 = 8932001 (24,278 vs 24,360); IC4.4 = 8933001 (34,912 vs 35,062); IC4.3 = 8933003 (61,031 vs 61,180). Lots 8930*, 8934* and 8931003-004 were retired 2026-08-06 into condominium lots by Final Map 10347. Round 2 (active lots only): lots retired on 2026-08-06 by Final Map 10347 (project 27471) are replaced by their active base lots, i.e. the non-condominium lots whose centroids fall inside the retired lot: 8930001->8930003/004/005, 8930002->8930006/007/008, 8934001->8934037, 8934002 and 8934003->8934008, 8934004->8934039, 8934005->8934040, 8935001->8935003/004/005, 8935002->8935003, 8937002/003->8937004. The stacked condominium lots (e.g. 8930009-8930709) share those footprints and are not listed. Round 2: IC4.3 (8933003) removed; it has its own permit/pipeline row."
+            }
+          }
+        },
+        {
+          "name": "Major Phase 1, Sub-Phase 1A, Lot IC4.3 (Authority lot, 401 California Ave)",
+          "units": 140,
+          "blklots": ["8933003"],
+          "plannedPermitFiled": null,
+          "status": "separate",
+          "separateRef": {
+            "dataset": "6jgi-cpb4",
+            "id": "202506209120",
+            "key": "bpa_no"
+          },
+          "facts": {
+            "units": {
+              "url": "https://sf.gov/sites/default/files/2024-07/TI%20Sub-Phase%20Application%203%20Book-Revision%201%20-%20reduced.pdf",
+              "retrieved": "2026-10-17",
+              "locator": "Sub-Phase Application 3 (Rev. 1, 2024), Table 2.3, p. 33: IC4.3, 61,180 sf, Authority, 140 units (the 6jgi-cpb4 row shows 150 units)"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/6jgi-cpb4.json?bpa_no=202506209120",
+              "retrieved": "2026-10-17",
+              "locator": "6jgi-cpb4 row bpa_no 202506209120 (401 California Ave, 150 units, BP Issued, no da value) sits on 8933003, the lot matched to IC4.3 by area (61,031 vs 61,180 sf)"
+            }
+          }
+        },
+        {
+          "name": "Major Phase 1, Sub-Phase 1D (Blocks IC1.2, IC1.3, IC2)",
+          "units": 458,
+          "blklots": ["8935003", "8935004", "8935005", "8936002"],
+          "plannedPermitFiled": null,
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://sf.gov/sites/default/files/2024-07/TI%20Sub-Phase%20Application%203%20Book-Revision%201%20-%20reduced.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Sub-Phase Application 3 (Rev. 1, 2024), Table 2.3, p. 33: Sub-Area 1D Total 458 units"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$select=blklot,active,mapblklot,project_id_add,project_id_drop&$where=blklot%20in('8935003','8935004','8935005','8936002')",
+              "retrieved": "2026-10-17",
+              "locator": "mapped by the curator: DA lot areas in Sub-Phase Application 3 Table 2.5 (p. 39) matched to the assessor lots created by the 2019 TI transfer map (acdm-wktn project_id_add 25273, now partly retired by Final Map 10347, project 27471), within about 3% by area and checked by position against Figure 2.6 (p. 39). IC2 (IC2.1+IC2.2+IC2.3 = 72,889 sf) = 8935001+8935002 (72,097 sf); IC1.2+IC1.3 (53,212 sf) = 8936002 (52,900 sf). 8935001-002 retired 2026-08-06 into condominium lots (block 8935). Round 2 (active lots only): lots retired on 2026-08-06 by Final Map 10347 (project 27471) are replaced by their active base lots, i.e. the non-condominium lots whose centroids fall inside the retired lot: 8930001->8930003/004/005, 8930002->8930006/007/008, 8934001->8934037, 8934002 and 8934003->8934008, 8934004->8934039, 8934005->8934040, 8935001->8935003/004/005, 8935002->8935003, 8937002/003->8937004. The stacked condominium lots (e.g. 8930009-8930709) share those footprints and are not listed."
+            }
+          }
+        },
+        {
+          "name": "Major Phase 1, Sub-Phase 1F (Blocks E1, E2)",
+          "units": 621,
+          "blklots": ["1939150", "8937001", "8937004", "8938001", "8938002"],
+          "plannedPermitFiled": null,
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://sf.gov/sites/default/files/2024-07/TI%20Sub-Phase%20Application%203%20Book-Revision%201%20-%20reduced.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Sub-Phase Application 3 (Rev. 1, 2024), Table 2.3, p. 33: Sub-Area 1F Total 621 units"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$select=blklot,active,mapblklot,project_id_add,project_id_drop&$where=blklot%20in('1939150','8937001','8937004','8938001','8938002')",
+              "retrieved": "2026-10-17",
+              "locator": "mapped by the curator: DA lot areas in Sub-Phase Application 3 Table 2.5 (p. 39) matched to the assessor lots created by the 2019 TI transfer map (acdm-wktn project_id_add 25273, now partly retired by Final Map 10347, project 27471), within about 3% by area and checked by position against Figure 2.6 (p. 39). E1.1 = 8937001 (51,933 vs 52,272 sf); E1.2 = 8937002+8937003 (49,279 vs 50,018 sf), merged 2026 into 8937004; E2 (154,298 sf) = 8938001+8938002+1939150 (153,199 sf). Round 2 (active lots only): lots retired on 2026-08-06 by Final Map 10347 (project 27471) are replaced by their active base lots, i.e. the non-condominium lots whose centroids fall inside the retired lot: 8930001->8930003/004/005, 8930002->8930006/007/008, 8934001->8934037, 8934002 and 8934003->8934008, 8934004->8934039, 8934005->8934040, 8935001->8935003/004/005, 8935002->8935003, 8937002/003->8937004. The stacked condominium lots (e.g. 8930009-8930709) share those footprints and are not listed."
+            }
+          }
+        },
+        {
+          "name": "Major Phase 1, Sub-Phase 1G (Blocks IC1.1, IC4.1, IC4.5; formerly area 3C)",
+          "units": 100,
+          "blklots": ["8933002", "8933004", "8936001"],
+          "plannedPermitFiled": null,
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://sf.gov/sites/default/files/2024-07/TI%20Sub-Phase%20Application%203%20Book-Revision%201%20-%20reduced.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Sub-Phase Application 3 (Rev. 1, 2024), Table 2.3, p. 33: Sub-Area 1G Total 100 units (IC4.5)"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$select=blklot,active,mapblklot,project_id_add,project_id_drop&$where=blklot%20in('8933002','8933004','8936001')",
+              "retrieved": "2026-10-16",
+              "locator": "mapped by the curator: DA lot areas in Sub-Phase Application 3 Table 2.5 (p. 39) matched to the assessor lots created by the 2019 TI transfer map (acdm-wktn project_id_add 25273, now partly retired by Final Map 10347, project 27471), within about 3% by area and checked by position against Figure 2.6 (p. 39). IC1.1 = 8936001 (100,762 vs 101,440 sf); IC4.1 = 8933002 (35,288 vs 36,083 sf); IC4.5 = 8933004 (76,484 vs 75,096 sf, zoned Job Corps|TI-MU, adjoining the Job Corps site as in Figure 2.6)."
+            }
+          }
+        },
+        {
+          "name": "Major Phase 2 (Sub-Phases 2A E3-E4, 2B C4, 2C E5-E6)",
+          "units": 1243,
+          "blklots": ["1939099", "1939100", "8939001", "8940001", "8941001", "8941002", "8942001"],
+          "plannedPermitFiled": null,
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://api.sf.gov/documents/10319/Major_Phase_1_Application_reduced.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Major Phase 1 Application (2015), Table 2.1 Major Phase Aggregate Development in Relation to Total Allowable Building Program, p. 37: Major Phase 2 Total Residential Units 1,243"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$select=blklot,active,mapblklot,project_id_add,project_id_drop&$where=blklot%20in('1939099','1939100','8939001','8940001','8941001','8941002','8942001')",
+              "retrieved": "2026-10-16",
+              "locator": "mapped by the curator from DA Exhibit II (Phasing Plan) block positions to acdm-wktn geometry: Eastside rows E3-E4 and E5-E6 are the two rows of TI-R lots from the 2019 transfer map (project 25273) north of E1/E2 (8939001, 8940001; 8941001, 8941002, 8942001); Cityside block C4 is the TI-R/TI-OS strip 1939099/1939100 west of the C3 lots (blocks 8905/8906). Row order, not lot-by-lot identity, is the basis; the narrow TI-OS|TI-R strips between rows are excluded as open space."
+            }
+          }
+        },
+        {
+          "name": "Major Phase 3 (Sub-Phases 3A E7-E8, 3B C12-C13)",
+          "units": 1017,
+          "blklots": ["8926001", "8943001", "8944001"],
+          "plannedPermitFiled": null,
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://sf.gov/sites/default/files/2024-07/TI%20Sub-Phase%20Application%203%20Book-Revision%201%20-%20reduced.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Major Phase 1 Application (2015), Table 2.1, p. 37: Major Phase 3 Total Residential Units 1,017 (this figure still includes area 3C, which Sub-Phase Application 3 moved into Major Phase 1 as Sub-Phase 1G)"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$select=blklot,active,mapblklot,project_id_add,project_id_drop&$where=blklot%20in('8926001','8943001','8944001')",
+              "retrieved": "2026-10-16",
+              "locator": "mapped by the curator from DA Exhibit II block positions to acdm-wktn geometry: E7-E8 = the northernmost row of transfer-map TI-R lots (8943001, 8944001); C12-C13 (interior, north of Job Corps) lies in the large TI-R parcel 8926001, which also covers interior C10-C11 (Major Phase 4)."
+            }
+          }
+        },
+        {
+          "name": "Major Phase 4 (Sub-Phases 4A C5, 4B C10-C11, 4C C6, 4D C7-C9)",
+          "units": 2169,
+          "blklots": ["1939125", "1939126", "8926001"],
+          "plannedPermitFiled": null,
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://api.sf.gov/documents/10319/Major_Phase_1_Application_reduced.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Major Phase 1 Application (2015), Table 2.1, p. 37: Major Phase 4 Total Residential Units 2,169"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$select=blklot,active,mapblklot,project_id_add,project_id_drop&$where=blklot%20in('1939125','1939126','8926001')",
+              "retrieved": "2026-10-16",
+              "locator": "mapped by the curator from DA Exhibit II block positions to acdm-wktn geometry: the northern Cityside and interior residential blocks C5-C11 lie in the large undivided TI-R parcels 1939125, 1939126 (whole northwest of the island, also holding the 4E open space) and 8926001 (shared with Major Phase 3)."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "caseNo": "2007.0946PRX",
+      "label": "Candlestick Point / Hunters Point Shipyard Phase 2",
+      "schedule": {
+        "label": "CP-HPS2 DDA Fourth Amendment, Exhibit C-B Phasing Plan (Non-Stadium Alternative; map generated 2025-05-02), with phase unit counts from SF Public Works Commission staff presentation 2025-01-09",
+        "url": "https://sfocii.org/sites/default/files/2025-10/Phasing%20Plan%20%28Exhibit%20C%29.pdf",
+        "retrieved": "2026-10-16"
+      },
+      "searched": [
+        {
+          "url": "https://sfocii.org/projects/hunters-point-shipyard-candlestick-point-2/document-library",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfocii.org/sites/default/files/2025-10/Phasing%20Plan%20%28Exhibit%20C%29.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfocii.org/sites/default/files/2025-10/Schedule%20of%20Performance%20%28Exhibit%20D%29.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfocii.org/sites/default/files/2025-10/Development%20Plan%20%28Exhibit%20A%29.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfocii.org/sites/default/files/2025-10/4th%20Amendment%20to%20DDA%20%28Recorded%20Version%29.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfocii.org/sites/default/files/inline-files/4.%20Third%20Amendment%20to%20Disposition%20and%20Development%20Agreement%20-%202018.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfocii.org/sites/default/files/2024-09/Addendum%207%20to%20the%20CP-HPS2%202010%20FEIR.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfocii.org/sites/default/files/inline-files/%21CPHPS2_Addm6_2019-10-01.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfocii.org/sites/default/files/inline-files/FINAL%20CP-HPS2_Addm5_2018-04-09_WEB.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfpublicworks.org/sites/default/files/Item%206_PWC%20Grant%20to%20Developer%20of%20Candlestick%20-%20Presentation%20-%201-9-25%20v17.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://media.api.sf.gov/documents/m26-0051.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://gocodebook.com/library/us/ca/san-francisco-planning/article-2-use-districts/sec.-249.51.-hunters-point-shipyard-phase-2-special-use-district",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://ceqanet.lci.ca.gov/2007082168/10",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://ceqanet.lci.ca.gov/2007082168/14",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": [
+        {
+          "name": "CP Phase 1 / Alice Griffith 1 (completed)",
+          "units": 337,
+          "blklots": ["8803001", "8804001", "8811001", "8812001"],
+          "plannedPermitFiled": null,
+          "status": "built",
+          "facts": {
+            "units": {
+              "url": "https://sfpublicworks.org/sites/default/files/Item%206_PWC%20Grant%20to%20Developer%20of%20Candlestick%20-%20Presentation%20-%201-9-25%20v17.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Slide 5 (PDF p.5) phase map, label \"CP Phase 1 Alice Griffith 1 (337 Homes Complete/Infrastructure Not Accepted)\"; slide states unit counts subject to change"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=street_name%20like%20'ARELIOUS%25'",
+              "retrieved": "2026-10-16",
+              "locator": "Parcels at 2500, 2600, 2700, 2800 Arelious Walker Dr (8803001, 8804001, 8811001, 8812001); DBI permits 201501236565 (122u), 201401166470 (93u), 201401166475 (91u), 201608296272 (31u), all complete, sum 337 (i98e-djp9); these parcels fall in the \"Completed Phase 1: Alice Griffith 1\" area of Exhibit C-B"
+            }
+          }
+        },
+        {
+          "name": "CP Major Phase 2 (CP Center Outfield / Harney Way), excluding separately tracked buildings",
+          "units": 132,
+          "blklots": [
+            "5000003",
+            "5000017",
+            "5000018",
+            "5000019",
+            "5000037",
+            "5000038",
+            "5000039",
+            "5000040",
+            "5000043",
+            "5000044"
+          ],
+          "plannedPermitFiled": null,
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://sfpublicworks.org/sites/default/files/Item%206_PWC%20Grant%20to%20Developer%20of%20Candlestick%20-%20Presentation%20-%201-9-25%20v17.pdf",
+              "retrieved": "2026-10-17",
+              "locator": "net units by subtraction: Phase 2 gross 675 (Slide 5 (PDF p.5) phase map, label \"CP Phase 2 (675 Homes)\"; slide states unit counts subject to change) minus the separately tracked 6jgi-cpb4 rows 99 Harney Way 120 (bpa 201712277403), 95 Harney Way 123 (201712277404), 89 Harney Way 124 (201712297625) and 83 Harney Way 176 (201804136325), together 543 = 132"
+            },
+            "blklots": {
+              "url": "https://media.api.sf.gov/documents/m26-0051.pdf",
+              "retrieved": "2026-10-17",
+              "locator": "Motion M26-51 p.3 lines 9-18: Final Map 12681 \"Candlestick Point Major Phase 2\" merges Lots 2,3,4,16-19, part of 20, 23 of Final Transfer Map 8404 (assessor 5000001-024, rec. 2014-12-05), Lots 32-40 of FTM 7879-8583 (5000025-042, rec. 2016-08-15) and Lot 1, A, B of FTM 10008 (5000043-045, rec. 2019-07-31). Listed: those parent lots that Exhibit C-B / Add.7 Fig.6 colour Major Phase 2 (lots 4, 16, 20 lie in Phases 7/5/open space and are taken to be the map's remainder lots). Up to 441 units on this map Round 2: the four Harney Way lots 5000033-5000036 (own pipeline/permit rows) removed from this remaining part."
+            }
+          }
+        },
+        {
+          "name": "CP Major Phase 2 - 99 Harney Way (separately tracked building)",
+          "units": 120,
+          "blklots": ["5000033"],
+          "plannedPermitFiled": null,
+          "status": "separate",
+          "separateRef": {
+            "dataset": "6jgi-cpb4",
+            "id": "201712277403",
+            "key": "bpa_no"
+          },
+          "facts": {
+            "units": {
+              "url": "https://data.sf.gov/resource/6jgi-cpb4.json?bpa_no=201712277403",
+              "retrieved": "2026-10-16",
+              "locator": "6jgi-cpb4 row bpa_no 201712277403, proposed_units 120, da \"Candlestick / Hunters Point Shipyard II\""
+            },
+            "blklots": {
+              "url": "https://media.api.sf.gov/documents/m26-0051.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Motion M26-51 p.3 lines 15-16: Lots 32 through 40 of FTM 7879-8583 (assessor 5000032-040, incl. 5000033) are within Final Map 12681, Candlestick Point Major Phase 2"
+            }
+          }
+        },
+        {
+          "name": "CP Major Phase 2 - 95 Harney Way (separately tracked building)",
+          "units": 123,
+          "blklots": ["5000034"],
+          "plannedPermitFiled": null,
+          "status": "separate",
+          "separateRef": {
+            "dataset": "6jgi-cpb4",
+            "id": "201712277404",
+            "key": "bpa_no"
+          },
+          "facts": {
+            "units": {
+              "url": "https://data.sf.gov/resource/6jgi-cpb4.json?bpa_no=201712277404",
+              "retrieved": "2026-10-16",
+              "locator": "6jgi-cpb4 row bpa_no 201712277404, proposed_units 123, da \"Candlestick / Hunters Point Shipyard II\""
+            },
+            "blklots": {
+              "url": "https://media.api.sf.gov/documents/m26-0051.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Motion M26-51 p.3 lines 15-16: Lots 32 through 40 of FTM 7879-8583 (assessor 5000032-040, incl. 5000034) are within Final Map 12681, Candlestick Point Major Phase 2"
+            }
+          }
+        },
+        {
+          "name": "CP Major Phase 2 - 89 Harney Way (separately tracked building)",
+          "units": 124,
+          "blklots": ["5000035"],
+          "plannedPermitFiled": null,
+          "status": "separate",
+          "separateRef": {
+            "dataset": "6jgi-cpb4",
+            "id": "201712297625",
+            "key": "bpa_no"
+          },
+          "facts": {
+            "units": {
+              "url": "https://data.sf.gov/resource/6jgi-cpb4.json?bpa_no=201712297625",
+              "retrieved": "2026-10-16",
+              "locator": "6jgi-cpb4 row bpa_no 201712297625, proposed_units 124, da \"Candlestick / Hunters Point Shipyard II\""
+            },
+            "blklots": {
+              "url": "https://media.api.sf.gov/documents/m26-0051.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Motion M26-51 p.3 lines 15-16: Lots 32 through 40 of FTM 7879-8583 (assessor 5000032-040, incl. 5000035) are within Final Map 12681, Candlestick Point Major Phase 2"
+            }
+          }
+        },
+        {
+          "name": "CP Major Phase 2 - 83 Harney Way (separately tracked building)",
+          "units": 176,
+          "blklots": ["5000036"],
+          "plannedPermitFiled": null,
+          "status": "separate",
+          "separateRef": {
+            "dataset": "6jgi-cpb4",
+            "id": "201804136325",
+            "key": "bpa_no"
+          },
+          "facts": {
+            "units": {
+              "url": "https://data.sf.gov/resource/6jgi-cpb4.json?bpa_no=201804136325",
+              "retrieved": "2026-10-16",
+              "locator": "6jgi-cpb4 row bpa_no 201804136325, proposed_units 176, da \"Candlestick / Hunters Point Shipyard II\""
+            },
+            "blklots": {
+              "url": "https://media.api.sf.gov/documents/m26-0051.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Motion M26-51 p.3 lines 15-16: Lots 32 through 40 of FTM 7879-8583 (assessor 5000032-040, incl. 5000036) are within Final Map 12681, Candlestick Point Major Phase 2"
+            }
+          }
+        },
+        {
+          "name": "CP Major Phase 3 (CP Center Infield / Ingerson Ave), excluding separately tracked building",
+          "units": 692,
+          "blklots": ["5000003", "5000025", "5000026", "5000028", "5000043"],
+          "plannedPermitFiled": null,
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://sfpublicworks.org/sites/default/files/Item%206_PWC%20Grant%20to%20Developer%20of%20Candlestick%20-%20Presentation%20-%201-9-25%20v17.pdf",
+              "retrieved": "2026-10-17",
+              "locator": "net units by subtraction: Phase 3 gross 848 (Slide 5 (PDF p.5) phase map, label \"CP Phase 3 (848 Homes)\"; slide states unit counts subject to change) minus the separately tracked 6jgi-cpb4 row 625 Gilman Ave 156 (bpa 201804257356) = 692"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=blklot%20in('5000003','5000025','5000026','5000027','5000028','5000043')",
+              "retrieved": "2026-10-17",
+              "locator": "Mapping: assessor parcel polygons (acdm-wktn shape) overlaid on the DDA Fourth Amendment Exhibit C-B Phasing Plan (Exhibit 2, p.2, map generated 2025-05-02) and the same phase boundaries at larger scale in Addendum 7 Figure 6 (PDF p.35; north-up, 1in=750ft scale bar, registered on the four built Alice Griffith 1 parcels). Listed lots are those whose area is mostly, or at least ~25%, inside this phase colour; 5000003 and 5000043 are shared with Major Phase 2; 5000025-028 are the CP North-of-infield blocks of former Sub-Phase CP-03 (Addendum 7 PDF p.194, printed p.188: CP-03 = Blocks CPN 1a, 2a, 10a, 11a) Round 2: lot 5000027 (625 Gilman Ave, own pipeline/permit row) removed from this remaining part."
+            }
+          }
+        },
+        {
+          "name": "CP Major Phase 3 - 625 Gilman Ave (separately tracked building)",
+          "units": 156,
+          "blklots": ["5000027"],
+          "plannedPermitFiled": null,
+          "status": "separate",
+          "separateRef": {
+            "dataset": "6jgi-cpb4",
+            "id": "201804257356",
+            "key": "bpa_no"
+          },
+          "facts": {
+            "units": {
+              "url": "https://data.sf.gov/resource/6jgi-cpb4.json?bpa_no=201804257356",
+              "retrieved": "2026-10-16",
+              "locator": "6jgi-cpb4 row bpa_no 201804257356, proposed_units 156 (affordable), da \"Candlestick / Hunters Point Shipyard II\""
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=blklot%20in('5000027')",
+              "retrieved": "2026-10-16",
+              "locator": "Mapping: assessor parcel polygons (acdm-wktn shape) overlaid on the DDA Fourth Amendment Exhibit C-B Phasing Plan (Exhibit 2, p.2, map generated 2025-05-02) and the same phase boundaries at larger scale in Addendum 7 Figure 6 (PDF p.35; north-up, 1in=750ft scale bar, registered on the four built Alice Griffith 1 parcels). Listed lots are those whose area is mostly, or at least ~25%, inside this phase colour; 5000027 (625 Gilman Ave) lies in the Major Phase 3 colour"
+            }
+          }
+        },
+        {
+          "name": "CP Major Phase 4A (Alice Griffith 2)",
+          "units": 524,
+          "blklots": ["4884039", "4884039A"],
+          "plannedPermitFiled": null,
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://sfpublicworks.org/sites/default/files/Item%206_PWC%20Grant%20to%20Developer%20of%20Candlestick%20-%20Presentation%20-%201-9-25%20v17.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Slide 5 (PDF p.5) phase map, label \"CP Phase 4A Alice Griffith 2 (524 Homes)\"; slide states unit counts subject to change"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=blklot%20in('4884039','4884039A')",
+              "retrieved": "2026-10-16",
+              "locator": "Mapping: assessor parcel polygons (acdm-wktn shape) overlaid on the DDA Fourth Amendment Exhibit C-B Phasing Plan (Exhibit 2, p.2, map generated 2025-05-02) and the same phase boundaries at larger scale in Addendum 7 Figure 6 (PDF p.35; north-up, 1in=750ft scale bar, registered on the four built Alice Griffith 1 parcels). Listed lots are those whose area is mostly, or at least ~25%, inside this phase colour; the undivided former Alice Griffith master parcels 4884039 / 4884039A are split roughly 30% Phase 4A and 40% Phase 6; shared with Major Phase 6"
+            }
+          }
+        },
+        {
+          "name": "CP Major Phase 4B (CP East)",
+          "units": 530,
+          "blklots": ["4960027", "5000005", "5000009", "5000010"],
+          "plannedPermitFiled": null,
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://sfpublicworks.org/sites/default/files/Item%206_PWC%20Grant%20to%20Developer%20of%20Candlestick%20-%20Presentation%20-%201-9-25%20v17.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Slide 5 (PDF p.5) phase map, label \"CP Phase 4B (530 Homes)\"; slide states unit counts subject to change"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=blklot%20in('4960027','5000005','5000009','5000010')",
+              "retrieved": "2026-10-16",
+              "locator": "Mapping: assessor parcel polygons (acdm-wktn shape) overlaid on the DDA Fourth Amendment Exhibit C-B Phasing Plan (Exhibit 2, p.2, map generated 2025-05-02) and the same phase boundaries at larger scale in Addendum 7 Figure 6 (PDF p.35; north-up, 1in=750ft scale bar, registered on the four built Alice Griffith 1 parcels). Listed lots are those whose area is mostly, or at least ~25%, inside this phase colour; CP East lots east of the infield"
+            }
+          }
+        },
+        {
+          "name": "CP Major Phase 5 (CP South)",
+          "units": 1683,
+          "blklots": ["5000011", "5000015", "5000016", "5000041"],
+          "plannedPermitFiled": null,
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://sfpublicworks.org/sites/default/files/Item%206_PWC%20Grant%20to%20Developer%20of%20Candlestick%20-%20Presentation%20-%201-9-25%20v17.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Slide 5 (PDF p.5) phase map, label \"CP Phase 5 (1,683 Homes)\"; slide states unit counts subject to change"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=blklot%20in('5000011','5000015','5000016','5000041')",
+              "retrieved": "2026-10-16",
+              "locator": "Mapping: assessor parcel polygons (acdm-wktn shape) overlaid on the DDA Fourth Amendment Exhibit C-B Phasing Plan (Exhibit 2, p.2, map generated 2025-05-02) and the same phase boundaries at larger scale in Addendum 7 Figure 6 (PDF p.35; north-up, 1in=750ft scale bar, registered on the four built Alice Griffith 1 parcels). Listed lots are those whose area is mostly, or at least ~25%, inside this phase colour; 5000041 (15 ac) is ~70% Phase 5"
+            }
+          }
+        },
+        {
+          "name": "CP Major Phase 6 (Alice Griffith 3)",
+          "units": 908,
+          "blklots": ["4884039", "4884039A"],
+          "plannedPermitFiled": null,
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://sfpublicworks.org/sites/default/files/Item%206_PWC%20Grant%20to%20Developer%20of%20Candlestick%20-%20Presentation%20-%201-9-25%20v17.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Slide 5 (PDF p.5) phase map, label \"CP Phase 6 Alice Griffith 3 (908 Homes)\"; slide states unit counts subject to change"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=blklot%20in('4884039','4884039A')",
+              "retrieved": "2026-10-16",
+              "locator": "Mapping: assessor parcel polygons (acdm-wktn shape) overlaid on the DDA Fourth Amendment Exhibit C-B Phasing Plan (Exhibit 2, p.2, map generated 2025-05-02) and the same phase boundaries at larger scale in Addendum 7 Figure 6 (PDF p.35; north-up, 1in=750ft scale bar, registered on the four built Alice Griffith 1 parcels). Listed lots are those whose area is mostly, or at least ~25%, inside this phase colour; undivided former Alice Griffith master parcels, shared with Major Phase 4A"
+            }
+          }
+        },
+        {
+          "name": "CP Major Phase 7 (CP North)",
+          "units": 1713,
+          "blklots": [
+            "4884037",
+            "4886009",
+            "4917001",
+            "4917002",
+            "4917003",
+            "4918001",
+            "4918002",
+            "4918003",
+            "4918004",
+            "4918005",
+            "4918006",
+            "4918007",
+            "4918008",
+            "4918021",
+            "4918022",
+            "4918023",
+            "4918024",
+            "4918025",
+            "4934002",
+            "4934003",
+            "4935001",
+            "4935002",
+            "4935003",
+            "5000004",
+            "5000007",
+            "5000008",
+            "5000021",
+            "5000029",
+            "5000030",
+            "5000031",
+            "5000032",
+            "5000044"
+          ],
+          "plannedPermitFiled": null,
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://sfpublicworks.org/sites/default/files/Item%206_PWC%20Grant%20to%20Developer%20of%20Candlestick%20-%20Presentation%20-%201-9-25%20v17.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Slide 5 (PDF p.5) phase map, label \"CP Phase 7 (1,713 Homes)\"; slide states unit counts subject to change"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=blklot%20in('4884037','4886009','4917001','4917002','4917003','4918001','4918002','4918003','4918004','4918005','4918006','4918007','4918008','4918021','4918022','4918023','4918024','4918025','4934002','4934003','4935001','4935002','4935003','5000004','5000007','5000008','5000021','5000029','5000030','5000031','5000032','5000044')",
+              "retrieved": "2026-10-16",
+              "locator": "Mapping: assessor parcel polygons (acdm-wktn shape) overlaid on the DDA Fourth Amendment Exhibit C-B Phasing Plan (Exhibit 2, p.2, map generated 2025-05-02) and the same phase boundaries at larger scale in Addendum 7 Figure 6 (PDF p.35; north-up, 1in=750ft scale bar, registered on the four built Alice Griffith 1 parcels). Listed lots are those whose area is mostly, or at least ~25%, inside this phase colour; 4886009 is a 94-acre master parcel mostly CPSRA/open space with ~10% in Phase 7; blocks 4917/4918/4934/4935 (M-1, Gilman/Egbert/Donahue) are inside the Phase 7 boundary but may be privately owned; 5000044 is shared with Phase 2"
+            }
+          }
+        },
+        {
+          "name": "Shipyard Site (HP Major Phases 1-3)",
+          "units": 3454,
+          "blklots": ["4591A090", "4591C209", "4591C210", "4591C211", "4591C753"],
+          "plannedPermitFiled": null,
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://sfocii.org/sites/default/files/inline-files/4.%20Third%20Amendment%20to%20Disposition%20and%20Development%20Agreement%20-%202018.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Third Amendment to DDA (2018) p.4, replacement Section 1.2.2(b): \"up to 3,454 Units will be located on the Shipyard Site and up to 7,218 Units ... on the Candlestick Site\"; Exhibit C-B shows HP Major Phases 1-3 without unit splits"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$select=blklot,active,mapblklot,project_id_add,project_id_drop&$where=blklot%20in('4591A090','4591C209','4591C210','4591C211','4591C753')",
+              "retrieved": "2026-10-17",
+              "locator": "SF Planning Code Sec. 249.51(a): HPS Phase 2 SUD = Block 4591A Lot 79, Block 4591C Lots 010, 209, 210, and \"Block 5491, Lot 211\" (read as 4591C211, which exists). 4591A079 retired 2010; its current remainder is 4591A090 (646-acre master parcel, acdm-wktn lineage 079->081->082/086->090, projects 22184/23389/2021P4591A/24719) Round 2 (active lots only): retired 4591A079 dropped, its remainder 4591A090 is already listed (its other successors 4591A080/083/084/087-089 are of unknown HPS1/HPS2 status); retired 4591C010 (dropped 2025-02-20 by map project 27352) replaced by 4591C753, the project-27352 lot containing its centroid."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "caseNo": "2010.0305PRX",
+      "label": "HOPE SF Sunnydale",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://sfplanning.org/resource/sunnydale-hope-sf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfplanning.s3.amazonaws.com/default/files/devagreements/HOPE-SF/Sunnydale/HOPE-SF_Sunnydale_Development_Agreement.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfplanning.org/sites/default/files/documents/devagreements/Sunnydale_HopeSF_Phase4_Application_Approval.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfplanning.org/sites/default/files/documents/devagreements/Sunnydale_HopeSF_Phase4_Approval_Notification.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfplanning.s3.amazonaws.com/default/files/devagreements/HOPE-SF/Sunnydale/HOPE-SF_Sunnydale_Phase2_Approval.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfplanning.s3.amazonaws.com/default/files/devagreements/HOPE-SF/Sunnydale/HOPE-SF_Sunnydale_Phase_3_Approval-013020.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfplanning.s3.amazonaws.com/default/files/devagreements/HOPE-SF/Sunnydale/HOPE-SF_Sunnydale_Design_Controls_Guidelines.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=block_num in('6310','6311','6312','6313','6314','6315','6316')",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2010.0515PRX",
+      "label": "Hope SF Potrero (Rebuild Potrero)",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://sfplanning.org/potrero-hope-sf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://default.sfplanning.org/devagreements/HOPE-SF/Potrero/HOPE-SF_Potrero_Development_Agreement.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://default.sfplanning.org/devagreements/HOPE-SF/Potrero/HOPE-SF_Potrero_Phase2_Approval_20171013.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://citypln-m-extnl.sfgov.org/REST/sharedlinks/%7ba4a7dacd-b0dc-4322-bd29-f6f07103c6e0%7d/f005996c57935057def7b73a89fb77285be24ceb5dbd011366f402a425620e1b/content",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2013.0196PRX",
+      "label": "Hunters Point Shipyard Phase 1",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://sfmohcd.org/sites/default/files/Documents/MOH/Loan%20Committee/Approved%20Hunters%20Point%20Shipyard%20Blocks%2052%20and%2054%20Gap%20Financing%20Loan%20Eval%20-%20Loan%20Committee%207-16-2021.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://data.sf.gov/resource/6jgi-cpb4.json?$where=da='Hunters Point Shipyard I'",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2013.0208PRX",
+      "label": "Mission Rock",
+      "schedule": {
+        "label": "Mission Rock Phase 1 Submittal summary (Planning Commission informational item 2013.0208PHA, July 2019), read with the DDA Phasing Plan diagram in the Port's Mission Rock DA Fact Sheet",
+        "url": "https://commissions.sfplanning.org/cpcpackets/2013.0208PHA.pdf",
+        "retrieved": "2026-10-16"
+      },
+      "searched": [
+        {
+          "url": "https://www.sfport.com/projects-programs/mission-rock",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://commissions.sfplanning.org/cpcpackets/2013.0208PHA.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://www.sfport.com/media/7051/download?inline=",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://www.sfport.com/sites/default/files/Commission/Item%2011A%20Mission%20Rock%20Approvals%20Staff%20Report%201-26-18FINAL.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://www.sfport.com/files/2023-10/101023_8b_mission_rock_budget_port_capital_parcel_lease_amendment_final.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://www.sfport.com/sites/default/files/2024-03/031224_7a_multiple_land_rights_agreements_for_china_basin_park_and_mission_rock_phase_1_project_site_at_swl_337.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=block_num in('8719','8719A','8719B','8719C') and lot_num not like '1%'",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": [
+        {
+          "name": "Phase 1 (residential Parcels A and F)",
+          "units": 560,
+          "blklots": ["8719B002", "8719C001"],
+          "plannedPermitFiled": null,
+          "status": "built",
+          "facts": {
+            "units": {
+              "url": "https://commissions.sfplanning.org/cpcpackets/2013.0208PHA.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "PDF p.5, 'Phase 1 - Housing Data Table': Parcel A 294 + Parcel F 266 = Phase 1 Total 560 (April 2019 estimate; Port DA Fact Sheet p.2 and Port memo 10/10/2023 report 537 units completed)"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=block_num in('8719A','8719B','8719C')",
+              "retrieved": "2026-10-16",
+              "locator": "Parcel polygons created 2020-06-12 by the Phase 1 final map (split of retired SWL 337 lot 8719006) overlaid on the Phasing Plan diagram (Port Mission Rock DA Fact Sheet, https://www.sfport.com/media/7051/download, p.2): Parcel A (NW, 3rd St north of Toni Stone Crossing) = 8719B002 (1011 3rd St); Parcel F (south of Toni Stone between Maya Angelou Ln and Bridgeview Way) = 8719C001 (1070 Bridgeview). Orientation check: Parcel G (Visa HQ, 300 Toni Stone Crossing) = 8719A008; Parcel B = 8719C003 (1089 3rd St)."
+            }
+          }
+        },
+        {
+          "name": "Phases 2-4 (Parcels C, D [Phase 2]; E [Phase 3]; H, I, J, K [Phase 4])",
+          "units": 1350,
+          "blklots": ["8719A006"],
+          "plannedPermitFiled": null,
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://commissions.sfplanning.org/cpcpackets/2013.0208PHA.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "PDF p.4, Proposed Land Use: 'With the above land use program in Phase 1, entitlements allow for up to 1,350 units and 915,000 of commercial square feet for potential development in later phases.' No per-phase unit split is published; phase-to-parcel assignment from the Phasing Plan diagram, Port DA Fact Sheet p.2."
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?blklot=8719A006",
+              "retrieved": "2026-10-16",
+              "locator": "8719A006 (active, added 2020-06-12, ~37,100 sq m) is the undivided remainder of SWL 337 south of Toni Stone Crossing, spanning 3rd St to Terry Francois Blvd; overlaid on the Phasing Plan diagram (https://www.sfport.com/media/7051/download p.2) it contains Parcels C, D, E, H, I, J and Mission Rock Square. Parcel K (north of Toni Stone, east of the Bridgeview paseo) appears to fall within 8719A005 (China Basin Park lot) and is not listed separately."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "caseNo": "2014-001272PRX",
+      "label": "Pier 70 (28-Acre Site)",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://sfport.com/projects-programs/pier-70-28-acre-site",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://www.sfport.com/sites/default/files/2021-08/Item%2013A%20Pier%2070%20Phase%20I%20Submittal%20Staff%20Report%202.9.18_0.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfplanning.org/sites/default/files/documents/devagreements/Pier70/Pier70_DevelopmentAgreement.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfplanning.org/sites/default/files/documents/devagreements/Pier70/Pier70_Disposition_DevelopmentAgreement.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://commissions.sfplanning.org/cpcpackets/2014-001272DVA-02.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://citypln-m-extnl.sfgov.org/SharedLinks.aspx?accesskey=3f90dd17a0ce46790c2f73701e3dd67b86501d42632687b962ea6f971f848b3b&VaultGUID=A4A7DACD-B0DC-4322-BD29-F6F07103C6E0",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfport.com/files/2022-07/item_9b_port_pier_70_approval.pdf",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2014.1370PRX",
+      "label": "Parkmerced",
+      "schedule": {
+        "label": "Parkmerced Development Phase Application, Phase 1 (approved 2015-06-03), Fig. 1 Phase Application Table; DA Exhibit F Phasing Plan sets triggers only",
+        "url": "https://default.sfplanning.org/publications_reports/parkmerced/Parkmerced_Dev_Phase_App_01.pdf",
+        "retrieved": "2026-10-16"
+      },
+      "searched": [
+        {
+          "url": "https://sfplanning.s3.amazonaws.com/default/files/publications_reports/parkmerced/Parkmerced_Development_Agreement_As_Recorded.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfplanning.s3.amazonaws.com/default/files/publications_reports/parkmerced/Phase1_Overview.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "http://default.sfplanning.org/publications_reports/parkmerced/Parkmerced_Final_Design_Standards_and_Guidelines_Revised-09-16-14.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfplanning.org/project/parkmerced",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": [
+        {
+          "name": "Phase 1, Subphase A (Proposed Blocks 01, 06)",
+          "units": 390,
+          "blklots": ["7308011", "7335006"],
+          "plannedPermitFiled": null,
+          "status": "separate",
+          "separateRef": {
+            "dataset": "6jgi-cpb4",
+            "id": "201510230640",
+            "key": "bpa_no"
+          },
+          "facts": {
+            "units": {
+              "url": "https://default.sfplanning.org/publications_reports/parkmerced/Parkmerced_Dev_Phase_App_01.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Fig. 1 Phase Application Table, PDF p. 18, row 1/A: 390 new units constructed (Blocks affected (proposed) 01, 06); also narrative p. 6"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$select=blklot,active,mapblklot,project_id_add,project_id_drop&$where=blklot%20in('7308011','7335006')",
+              "retrieved": "2026-10-17",
+              "locator": "blklot of pipeline rows 201510230640 (455 Serrano Dr, 248 u, 7335001), 201510230639 (300 Arballo Dr, 89 u, 7308001) and 201511132572 (199 Vidal Dr, 64 u, 7308001). Round 2 (active lots only): retired 7308001 (300 Arballo Dr, 199 Vidal Dr) -> 7308011 and retired 7335001 (455 Serrano Dr) -> 7335006, the 2018 map lots (projects 24822, 24821) containing the retired lots' centroids."
+            }
+          }
+        },
+        {
+          "name": "Phase 1, Subphase B (Proposed Blocks 20, 22)",
+          "units": 567,
+          "blklots": ["7326010", "7330012"],
+          "plannedPermitFiled": null,
+          "status": "separate",
+          "separateRef": {
+            "dataset": "6jgi-cpb4",
+            "id": "201511092111",
+            "key": "bpa_no"
+          },
+          "facts": {
+            "units": {
+              "url": "https://default.sfplanning.org/publications_reports/parkmerced/Parkmerced_Dev_Phase_App_01.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Fig. 1 Phase Application Table, PDF p. 18, row 1/B: 567 new units constructed (Blocks affected (proposed) 20, 22)"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$select=blklot,active,mapblklot,project_id_add,project_id_drop&$where=blklot%20in('7326010','7330012')",
+              "retrieved": "2026-10-17",
+              "locator": "blklot of pipeline rows 201511092111 (55 Chumasero Dr, 313 u, 7330001) and 201510260810 (1208 Junipero Serra Blvd, 299 u, 7326001). Round 2 (active lots only): retired 7326001 -> 7326010 (addressed 1208 Junipero Serra Blvd) and retired 7330001 -> 7330012 (addressed 55 Chumasero Dr), 2018 map project 24820."
+            }
+          }
+        },
+        {
+          "name": "Phase 1, Subphase C (Proposed Blocks 03AW, 04)",
+          "units": 333,
+          "blklots": ["7334001", "7337001"],
+          "plannedPermitFiled": null,
+          "status": "separate",
+          "separateRef": {
+            "dataset": "6jgi-cpb4",
+            "id": "202212208799",
+            "key": "bpa_no"
+          },
+          "facts": {
+            "units": {
+              "url": "https://default.sfplanning.org/publications_reports/parkmerced/Parkmerced_Dev_Phase_App_01.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Fig. 1 Phase Application Table, PDF p. 18, row 1/C: 333 new units constructed (Blocks affected (proposed) 03AW, 04)"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/6jgi-cpb4.json?$where=da='Parkmerced'",
+              "retrieved": "2026-10-16",
+              "locator": "blklot of pipeline rows 202212208799 (345 Vidal Dr, 268 u, 7334001) and 202212198663 (600 Arballo Dr, 151 u, 7337001)"
+            }
+          }
+        },
+        {
+          "name": "Phase 1, Subphase D (Proposed Block 21AS)",
+          "units": 378,
+          "blklots": ["7331253"],
+          "plannedPermitFiled": null,
+          "status": "separate",
+          "separateRef": {
+            "dataset": "6jgi-cpb4",
+            "id": "202212138195",
+            "key": "bpa_no"
+          },
+          "facts": {
+            "units": {
+              "url": "https://default.sfplanning.org/publications_reports/parkmerced/Parkmerced_Dev_Phase_App_01.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Fig. 1 Phase Application Table, PDF p. 18, row 1/D: 378 new units constructed (Blocks affected (proposed) 21AS)"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$select=blklot,active,mapblklot,project_id_add,project_id_drop&$where=blklot%20in('7331253')",
+              "retrieved": "2026-10-17",
+              "locator": "blklot of pipeline row 202212138195 (101 Font Blvd, 471 u, 7331004). Round 2 (active lots only): retired 7331004 (101 Font Blvd) -> 7331253, the 2018 map lot (project 24820) at the retired lot's centroid."
+            }
+          }
+        },
+        {
+          "name": "Development Phases 2 and later (no Development Phase Application yet)",
+          "units": 5549,
+          "blklots": [
+            "7304001",
+            "7309001",
+            "7310001",
+            "7311001",
+            "7317001",
+            "7318001",
+            "7321001",
+            "7322001",
+            "7323001",
+            "7325001",
+            "7332004",
+            "7333009",
+            "7336001",
+            "7338001",
+            "7339001",
+            "7340001",
+            "7341001",
+            "7342001",
+            "7343001",
+            "7344001",
+            "7345001"
+          ],
+          "plannedPermitFiled": null,
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://sfplanning.s3.amazonaws.com/default/files/publications_reports/parkmerced/Phase1_Overview.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "MOHCD memo of 2015-05-19 approving the Phase 1 Application, Table 1 Park Merced Total Unit Count, PDF p. 14: Totals 7,217 newly constructed units, Phase 1 1,668, Phase 2 and Phase 3 TBD. 5,549 = 7,217 - 1,668 (the program not yet assigned to a phase); not a per-phase figure in the source"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$select=blklot,active,zoning_code,project_id_add&$where=blklot%20in('7304001','7309001','7310001','7311001','7317001','7318001','7321001','7322001','7323001','7325001','7332004','7333009','7336001','7338001','7339001','7340001','7341001','7342001','7343001','7344001','7345001')",
+              "retrieved": "2026-10-16",
+              "locator": "curator's selection: every active acdm-wktn parcel zoned PM-* (Parkmerced SUD) of 50,000 sq ft or more, excluding the assessor blocks that hold the Phase 1 buildings (7308, 7326, 7330, 7331, 7334, 7335, 7337). Smaller slivers are left out. The parcels with the 11 retained towers are not separated out, because the source does not identify them."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "caseNo": "2017-011878PRX",
+      "label": "Potrero Power Station",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://sfplanning.org/project/potrero-power-station",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://citypln-m-extnl.sfgov.org/SharedLinks.aspx?accesskey=040edc05fb0150259fd6d3f7733013bb74e04da162c8250fad7f5081910f8012&VaultGUID=A4A7DACD-B0DC-4322-BD29-F6F07103C6E0",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://citypln-m-extnl.sfgov.org/SharedLinks.aspx?accesskey=38d77a8645e96e29788fbbc24f8840f054291d8f9a55e210afea7492cc442e93&VaultGUID=A4A7DACD-B0DC-4322-BD29-F6F07103C6E0",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://www.sfbos.org/sites/default/files/o0067-24.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfplanning.org/sites/default/files/documents/citywide/potreropower_YMCA_Phasing_Amendment_Approval.pdf",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2018-007883PRX",
+      "label": "Balboa Reservoir",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://sfplanning.org/project/balboa-reservoir",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfgov.legistar.com/LegislationDetail.aspx?ID=4431185&GUID=D8DB88D0-9CCB-42DC-B411-2061DC96C35F",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfgov.legistar.com/View.ashx?M=F&ID=8690989&GUID=FC8BE27A-1F2B-442F-AB81-161F2D97B743",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://data.sf.gov/resource/6jgi-cpb4.json?$where=starts_with(blklot,'3180')",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://data.sf.gov/resource/i98e-djp9.json?$where=block='3180' AND lot>='194' AND filed_date>'2020-01-01'",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=block_num='3180'",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://data.sf.gov/resource/i98e-djp9.json?$where=block='3180' AND lot>='190' AND lot<='214'",
+          "retrieved": "2026-10-17"
+        },
+        {
+          "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=block_num='3180' AND date_map_add>'2022-01-01'",
+          "retrieved": "2026-10-17"
+        },
+        {
+          "url": "https://sfbos.org/sites/default/files/m25-0064.pdf",
+          "retrieved": "2026-10-17"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2018-011363PRX",
+      "label": "5M (Fifth and Mission)",
+      "schedule": {
+        "label": "5M Development Agreement (Dec. 2015), Exhibit B - Project Description (Buildings H-1, N-1, M-2, M-1)",
+        "url": "https://default.sfplanning.org/devagreements/5M_Development_Agreement-12-17-2015.pdf",
+        "retrieved": "2026-10-16"
+      },
+      "searched": [
+        {
+          "url": "https://sfplanning.org/project/5m",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://default.sfplanning.org/devagreements/5M_Development_Agreement-12-17-2015.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://citypln-m-extnl.sfgov.org/SharedLinks.aspx?accesskey=c44b183cf961306ac0aaa71820aeaaad36979a8c4e55422a6ba5064d1d1b32ef&VaultGUID=A4A7DACD-B0DC-4322-BD29-F6F07103C6E0",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://citypln-m-extnl.sfgov.org/SharedLinks.aspx?accesskey=c81f122f4162109f14f0904592378dfeba3f03eb678291b58982d148d245a29b&VaultGUID=A4A7DACD-B0DC-4322-BD29-F6F07103C6E0",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://citypln-m-extnl.sfgov.org/SharedLinks.aspx?accesskey=74bf67412120461fbb0bc85928cecbd4a7e991b5e74a0d4d3754b5af74386832&VaultGUID=A4A7DACD-B0DC-4322-BD29-F6F07103C6E0",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": [
+        {
+          "name": "Building M-2",
+          "units": 288,
+          "blklots": ["3725133", "3725134"],
+          "plannedPermitFiled": null,
+          "status": "built",
+          "facts": {
+            "units": {
+              "url": "https://default.sfplanning.org/devagreements/5M_Development_Agreement-12-17-2015.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Exhibit B (Project Description), item 3 'Building M-2', p.B-3: 'An up to 288-unit, 200-foot tall 20-story residential building'; completed as 302 units per 6jgi-cpb4 PRX completed_new_units; 2024 Annual Compliance Report says vertical construction completed by end of 2022"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$select=blklot,active,mapblklot,project_id_add,project_id_drop&$where=blklot%20in('3725133','3725134')",
+              "retrieved": "2026-10-17",
+              "locator": "Exhibit B item 3, p.B-3: 'Demolition of existing surface parking at 939-949 Mission Street (Assessor's Block/Lot No. 3725/089-091)'; lots retired 2019-12-23 per acdm-wktn (successors 3725132, then 3725133/3725134) Round 2 (active lots only): retired 3725089/3725090/3725091 replaced by 3725133 and 3725134 (map project 25765, 2021-01-13; same footprint, 3725133 contains the centroid of 3725090 per acdm-wktn geometry)."
+            }
+          }
+        },
+        {
+          "name": "Building N-1",
+          "units": 400,
+          "blklots": ["3725128", "3725130", "3725131"],
+          "plannedPermitFiled": null,
+          "status": "remaining",
+          "facts": {
+            "units": {
+              "url": "https://default.sfplanning.org/devagreements/5M_Development_Agreement-12-17-2015.pdf",
+              "retrieved": "2026-10-16",
+              "locator": "Exhibit B (Project Description), item 2 'Building N-1', p.B-2: 'An up to 400-unit, 470-foot tall 45-story residential building'; 2024 Annual Compliance Report ('Status of Future Development') confirms the N-1 Condo site is not yet developed"
+            },
+            "blklots": {
+              "url": "https://data.sf.gov/resource/acdm-wktn.json?$select=blklot,active,mapblklot,project_id_add,project_id_drop&$where=blklot%20in('3725128','3725130','3725131')",
+              "retrieved": "2026-10-17",
+              "locator": "Exhibit B item 2, p.B-2: 'Demolition of a portion of the existing building at 110 Fifth Street (Assessor's Block/Lot No. 3725/097)'; 3725097 retired 2019-06-11 per acdm-wktn (successor lots added that day include 3725128 and 3725130, which cover most of the old footprint) Round 2 (active lots only): retired 3725097 replaced by the active lots of map project 25223 (2019-06-19) whose centroids fall inside it: 3725128 and 3725130 (shared footprint) and 3725131; the 34 sq ft sliver 3725124 is left out. None carries a permit or pipeline row."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "caseNo": "2023-007809PRX",
+      "label": "Mission Bay North",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://www.bluegreenway.org/site/uploadedfiles/sfra/Projects/MBRedevelopmentPLan.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfbos.org/ftp/uploadedfiles/bdsupvrs/resolutions14/r0112-14.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://onesanfrancisco.org/node/1089",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://data.sf.gov/resource/6jgi-cpb4.json?$where=da='Mission Bay North'",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2023-007906PRX",
+      "label": "India Basin (700 Innes)",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://sfplanning.org/india-basin-mixed-use-project",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfplanning.s3.amazonaws.com/default/files/devagreements/indiabasin/IndiaBasin_Development_Agreement_Recorded.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfplanning.org/sites/default/files/documents/devagreements/India_Basin_Development_Agreement.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://commissions.sfplanning.org/cpcpackets/2014-002541DVA.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://data.sf.gov/resource/6jgi-cpb4.json?$where=da='India Basin'",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2023-007909PRX",
+      "label": "3333 California Street (Laurel Heights)",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://sfplanning.org/3333cal",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "http://sfmea.sfplanning.org/2015-014028ENVCUAPCAMAPDVA.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfbos.org/sites/default/files/o0271-24.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://data.sf.gov/resource/6jgi-cpb4.json?$where=da='3333 California ST'",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2023-007911PRX",
+      "label": "Freedom West",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://sfplanning.org/project/freedom-west",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://data.sf.gov/resource/6jgi-cpb4.json?$where=da='Freedom West'",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2023-007912PRX",
+      "label": "Stonestown",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://sfplanning.org/project/stonestown",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://citypln-m-extnl.sfgov.org/Commissions/CPC/5_2_2024/Commission%20Packet/2021-012028DVA.pdf",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=block_num='7295'",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://data.sf.gov/resource/6jgi-cpb4.json?$where=da='Stonestown'",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2023-010914PRX",
+      "label": "850 Turk St MOHCD Project",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://data.sf.gov/resource/6jgi-cpb4.json?$where=case_no='2023-010914PRX'",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2023-010956PRX",
+      "label": "750 Golden Gate Ave Phase 1",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://data.sf.gov/resource/6jgi-cpb4.json?$where=case_no='2023-010956PRX'",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": []
+    },
+    {
+      "caseNo": "2026-000246PRX",
+      "label": "Flower Mart",
+      "schedule": null,
+      "searched": [
+        {
+          "url": "https://www.sf.gov/flower-mart-development-agreement-amendment",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://sfplanning.org/project/flower-mart",
+          "retrieved": "2026-10-16"
+        },
+        {
+          "url": "https://data.sf.gov/resource/6jgi-cpb4.json?$where=da='Flower Mart'",
+          "retrieved": "2026-10-16"
+        }
+      ],
+      "phases": []
+    }
+  ]
+}

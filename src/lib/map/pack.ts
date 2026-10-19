@@ -30,7 +30,7 @@ export function emptyPack(cellId: string): PackedCell {
  * wall from each vertex to the next and none from a ring's last vertex, which only covers the
  * closing edge when that vertex repeats the first.
  */
-function normaliseRing(ring: readonly (readonly [number, number])[]): [number, number][] {
+export function normaliseRing(ring: readonly (readonly [number, number])[]): [number, number][] {
   let r = ring.map((v) => [v[0], v[1]] as [number, number]);
   const f = r[0],
     l = r[r.length - 1];
@@ -43,6 +43,37 @@ function normaliseRing(ring: readonly (readonly [number, number])[]): [number, n
   if (area > 0) r.reverse();
   if (r.length > 0) r.push([r[0][0], r[0][1]]);
   return r;
+}
+
+/**
+ * A building's render parts: runs of identical occupied parts merged, rings normalised (closed,
+ * CW), appearance encoded. Shared by `packCell` and `packTimedCell`.
+ */
+export function renderParts(
+  b: GeneratedBuilding
+): { ring: [number, number][]; topM: number; appearance: number }[] {
+  const merged: GeneratedBuilding['parts'] = [];
+  for (const part of b.parts) {
+    const previous = merged.at(-1);
+    if (
+      previous &&
+      previous.role === 'occupied' &&
+      part.role === 'occupied' &&
+      previous.tone === part.tone &&
+      previous.topM === part.baseM &&
+      previous.footprint.length === part.footprint.length &&
+      previous.footprint.every(
+        (p, i) => p[0] === part.footprint[i][0] && p[1] === part.footprint[i][1]
+      )
+    ) {
+      merged[merged.length - 1] = { ...previous, topM: part.topM };
+    } else merged.push(part);
+  }
+  return merged.map((part) => ({
+    ring: normaliseRing(part.footprint),
+    topM: part.topM,
+    appearance: encodeAppearance(part.role, part.tone)
+  }));
 }
 
 export function packCell(cellId: string, items: readonly PackInput[]): PackedCell {
@@ -67,29 +98,12 @@ export function packCell(cellId: string, items: readonly PackInput[]): PackedCel
     const ti = TYPOLOGY_ORDER.indexOf(b.typology);
     if (ti < 0) throw new Error(`packCell: unknown typology ${b.typology} on ${b.parcelId}`);
     parcelMeta.set([b.units, existingUnits, b.stories, ti], 4 * s);
-    const renderParts: GeneratedBuilding['parts'] = [];
-    for (const part of b.parts) {
-      const previous = renderParts.at(-1);
-      if (
-        previous &&
-        previous.role === 'occupied' &&
-        part.role === 'occupied' &&
-        previous.tone === part.tone &&
-        previous.topM === part.baseM &&
-        previous.footprint.length === part.footprint.length &&
-        previous.footprint.every(
-          (p, i) => p[0] === part.footprint[i][0] && p[1] === part.footprint[i][1]
-        )
-      ) {
-        renderParts[renderParts.length - 1] = { ...previous, topM: part.topM };
-      } else renderParts.push(part);
-    }
-    for (const part of renderParts) {
-      rings.push(normaliseRing(part.footprint));
+    for (const part of renderParts(b)) {
+      rings.push(part.ring);
       topM.push(part.topM);
       slots.push(s);
       typ.push(ti);
-      appearance.push(encodeAppearance(part.role, part.tone));
+      appearance.push(part.appearance);
     }
   });
 

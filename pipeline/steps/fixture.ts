@@ -11,24 +11,42 @@ import {
   writeFileSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { DATASET_VERSION_RE } from '../../src/lib/data/dataset-version';
 import { FIXTURE_PROFILE } from '../config';
 import { readLock } from '../lib/lock';
 import { build, printResults } from './build';
+import { CALIBRATION_JSON, CALIBRATION_REPORT_MD } from './calibration';
+import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, dumpPermits } from './projects';
+import { PARCELS_BIN, SCENARIO_DUMP, formatScenarioDump, readParcelsBin } from './scenario';
 
 const REPO_ROOT = resolve(import.meta.dirname, '../..');
 const MINI = join(REPO_ROOT, 'pipeline/test/fixtures/mini');
 const E2E = join(REPO_ROOT, 'e2e/fixtures/data/fixture-0');
 const GOLDEN = join(MINI, 'golden');
-/** Deterministic outputs pinned by golden.test.ts (tile bytes and fonts are not compared). */
+/**
+ * Deterministic outputs pinned by golden.test.ts (tile bytes and fonts are not compared). The T11
+ * file is pinned by its decoded dump, SCENARIO_DUMP, not by its deflate bytes (spec §4.8).
+ */
 const GOLDEN_FILES = [
   'parcels',
   'manifest.json',
   'neighborhoods.geojson',
   'report.json',
-  'transit.json'
+  'transit.json',
+  PROJECTS_JSON,
+  CALIBRATION_JSON
 ];
+/**
+ * Derived-cache outputs pinned by golden.test.ts (project-records spec §4.9), under
+ * `golden/derived/`: the histories byte for byte, permits.parquet by its row values, and the
+ * calibration report (stage-calibration spec §4.10) byte for byte.
+ */
+export const GOLDEN_DERIVED = {
+  histories: HISTORIES_JSON,
+  permits: 'permits.json',
+  calibrationReport: CALIBRATION_REPORT_MD
+} as const;
 
 const README = `# fixture-0
 
@@ -45,6 +63,11 @@ export interface FixtureOpts {
   skipTiles?: boolean;
   /** Also copy the deterministic outputs into pipeline/test/fixtures/mini/golden/. */
   updateGolden?: boolean;
+  /**
+   * Derived cache root to keep (outputs land in `<derivedRoot>/<version>/`); default a per-run
+   * temp dir that is removed afterwards.
+   */
+  derivedRoot?: string;
 }
 
 function replaceDir(dst: string, src: string, keep: string[] = []): void {
@@ -106,12 +129,15 @@ export async function fixture(opts: FixtureOpts = {}): Promise<number> {
   const lockPath = join(MINI, 'sources.lock.json');
   const newest = Math.max(...readLock(lockPath).sources.map((s) => Date.parse(s.retrievedAt)));
   const outRoot = mkdtempSync(join(tmpdir(), 'sfh-fixture-'));
+  const derivedRoot = opts.derivedRoot ?? join(outRoot, 'derived');
   try {
     const { outDir, results } = await build({
       lockPath,
       rawDir: join(MINI, 'raw'),
       rawByName: true,
       outRoot,
+      // A per-run derived cache, so parallel fixture builds never share pipeline/.cache/derived.
+      derivedRoot,
       datasetVersion: version,
       builtAt: new Date(newest).toISOString(),
       profile: FIXTURE_PROFILE,
@@ -128,7 +154,26 @@ export async function fixture(opts: FixtureOpts = {}): Promise<number> {
     if (opts.updateGolden) {
       rmSync(GOLDEN, { recursive: true, force: true });
       mkdirSync(GOLDEN, { recursive: true });
-      for (const f of GOLDEN_FILES) cpSync(join(outDir, f), join(GOLDEN, f), { recursive: true });
+      for (const f of GOLDEN_FILES) {
+        mkdirSync(dirname(join(GOLDEN, f)), { recursive: true });
+        cpSync(join(outDir, f), join(GOLDEN, f), { recursive: true });
+      }
+      mkdirSync(dirname(join(GOLDEN, SCENARIO_DUMP)), { recursive: true });
+      writeFileSync(
+        join(GOLDEN, SCENARIO_DUMP),
+        formatScenarioDump(readParcelsBin(join(outDir, PARCELS_BIN)))
+      );
+      const derived = join(derivedRoot, version);
+      mkdirSync(join(GOLDEN, 'derived'), { recursive: true });
+      cpSync(join(derived, HISTORIES_JSON), join(GOLDEN, 'derived', GOLDEN_DERIVED.histories));
+      writeFileSync(
+        join(GOLDEN, 'derived', GOLDEN_DERIVED.permits),
+        await dumpPermits(join(derived, PERMITS_PARQUET))
+      );
+      cpSync(
+        join(derived, CALIBRATION_REPORT_MD),
+        join(GOLDEN, 'derived', GOLDEN_DERIVED.calibrationReport)
+      );
     }
     return 0;
   } catch (e) {

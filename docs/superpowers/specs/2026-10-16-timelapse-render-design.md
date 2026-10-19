@@ -1,0 +1,730 @@
+# timelapse-render: spec
+
+Status: derived 2026-10-16 from [the FZP timelapse design](../design/2026-10-16-1903-fzp-timelapse.md) (approved with partner rulings; OD-T2 option A). Updated the same day to the design's "Interface reconciliation" section: rows were re-copied and every ruling was applied. Revised 2026-10-17 to the design's Reappraisal 1 (DQ-1..DQ-4, IA-1..IA-28). The spec is implemented (`fzp/timelapse-render`, merged into `superconductor/fzp-timelapse` @ dda6252); this revision is its fix round (§9) and folds in the operator's accepted rulings R3–R19 (SDD ledger `fzp-timelapse-render/.superpowers/sdd/2026-10-17-timelapse-render/progress.md`).
+
+- **Owns:** T7, including `packTimedCell`, the `tl-*` tokens, `TIMELINE_LEGEND` and `timelineTokenCss`.
+- **Consumes:** T1, T2, T5, T6, T10 and T12.
+- **Library versions:** citations are to the installed versions in `package-lock.json`: deck.gl 9.4.0, luma.gl 9.4.2, maplibre-gl 6.13.0. Library paths are relative to `node_modules/`.
+- **`@deck.gl/extensions`** is not a dependency. Its 9.4.0 source was read from the npm tarball (`npm pack @deck.gl/extensions@9.4.0`).
+- **Marks:** V = verified at the cited line; I = inferred.
+
+## 1. Scope
+
+From the design:
+
+- **`timelapse-render`** (map view). Renders timeline geometry so that the state at time `t` is decided on the GPU from per-part time windows and per-project stage times, with `t` passed as a uniform. That state covers hidden, ghost, constructing, complete and dying. It draws the per-project progress bar. It hides each existing building from its project's construction start. `setTime(day)` costs O(1) JavaScript regardless of project count.
+
+**In scope**
+
+- `packTimedCell` (T7): pure and worker-safe, in `src/lib/map/pack-timed.ts`. The worker imports it (§4.1.1).
+- `SimMapHandle.applyTimeline`, `setTime` and `setTimelineLookups`, plus `SimMapProps.timelinePick` (T7). These are implemented in `SimMap.svelte` over a new `TimelineController` (`src/lib/map/timeline-controller.ts`), which is deps-injected like `GeneratedController` (`generated-controller.ts:15-26`).
+- A deck `LayerExtension`, `TimelapseExtension`, that decides each part's state at time *t* on the GPU (§4.2).
+- A custom deck layer, `StageBarLayer`, for the progress bars (§4.4), and its declutter.
+- Time-driven hiding of existing buildings from T7 `demolish` (§4.5).
+- The `tl-*` tokens in `palette.ts` (both themes), the exported `TIMELINE_LEGEND` and `timelineTokenCss(selector)` (§4.6).
+- The debug hook, fixtures, tests and a `bench:map` timeline case.
+- **Step 0 (lands first; Dependency order).** The T7 types go into `src/lib/map/types.ts`: `TimedPackedCell`, `TimelineUpdate`, the three `SimMapHandle` methods and `SimMapProps.timelinePick`. They ship type-only, with no-op stubs on `SimMap`, so timelapse-sim and fzp-mode can compile against them.
+- `@luma.gl/engine` (`~9.4.0`) becomes a direct dependency, credited in `SOFTWARE` in `src/lib/attribution.ts` (round 2, "Dependencies").
+
+**Out of scope**
+
+- Building schedules and computing `demolish` days (timelapse-sim).
+- `chanceTable` and `typicalMonths` (T12, stage-calibration).
+- The card's text, the legend markup, the scrubber, playback speeds and autoplay (fzp-mode).
+- Any change to the editor (`/`, `/p/:id`): no new layer, paint property, request or animation there (§4.8).
+- On-map text labels and wireframe edges (OQ-1 and OQ-2, resolved), and screen-space collision on the GPU.
+- Building footprint rings for failed massings and for multi-phase rows not enriched with phases, and splitting multi-phase rows into phase slots (timelapse-sim and project-records; round 2 "Failed massing", round 3).
+
+## 2. Interfaces
+
+These rows are copied verbatim from the design's interface table (as reconciled).
+
+| # | interface | owner → consumers | mark |
+|---|---|---|---|
+| T1 | `type Day = number` is integer days since 1970-01-01 UTC. All schedule times use it. It is exact in Float32. `MONTH_DAYS = 30.436875` (365.2425 / 12). `monthsIn(enteredDay, day) = floor((day − enteredDay) / MONTH_DAYS)` is the single months-in-stage rule, used by every table index (T4, T12, the bar, the card). `OPEN_DAY = Math.fround(3.0e38)` encodes an open-ended window end (exact in Float32; consumers compare with the exported constant, never a literal: A1). `DYING_DAYS = 270` is the display window of a death (90 days red, then a 180-day fade; tier 4), read by timelapse-render's uniforms and by timelapse-sim's card visibility. These live in `src/lib/timelapse/time.ts` | stage-calibration → all | DC |
+| T2 | `type Stage = 'preApplication' \| 'filed' \| 'entitled' \| 'permitFiled' \| 'permitIssued' \| 'construction' \| 'complete'`; `type Pathway = 'discretionary' \| 'streamlined' \| 'permitOnly'`; `type ExitReason = 'withdrawn' \| 'disapproved' \| 'cancelled' \| 'expired'`. `STAGE_ORDER` lists the stages in this order. `preApplication` is optional on every pathway. `permitOnly` projects never enter `filed` or `entitled`. A ghost is visible from the project's first entered stage | stage-calibration → project-records, timelapse-sim, timelapse-render, fzp-mode | MC (stage sequence and exits follow real records), DC (names) |
+| T5 | `interface Schedule { projectId: string; origin: 'pipeline' \| 'simulated'; parcelIds: ParcelId[]; pathway: Pathway; entered: Partial<Record<Stage, Day>>; end: { kind: 'complete'; day: Day } \| { kind: 'exit'; stage: Stage; reason: ExitReason; day: Day } \| { kind: 'open' } /* still in progress at horizon */; revisions: { day: Day; units: number; stories: number \| null /* null = unknown until massed */ }[] /* [0] is the initial proposal; strictly ascending days (revisions due on one day are merged, the last wins); none after entered.construction; a revision due on the construction-entry day is the as-built proposal */; existingUnits: number; multiPhase: boolean; phase: { masterId: string; index: number /* 1-based */; of: number; start: 'scheduled' \| 'estimated' /* scheduled = its permitFiled is the published plan date; estimated = the phaseGap stagger */ } \| null /* a phase sub-project of a multi-phase master */ }`. `simulate(input: SimInput, seed: number, horizon: Day): Schedule[]` is pure and deterministic. `SimInput = { parcels: ScenarioParcels /* decoded T11 */; projects: InFlightProject[]; calibration: Calibration; asOf: Day }`. Buildings of simulated projects carry `source: 'scenario'`, and pipeline projects carry `'pipeline'` (the sim stamps them) | timelapse-sim → timelapse-render (via T7), fzp-mode | MC (deaths, resizing, real starting state), DC (shape) |
+| T6 | Worker protocol additions (I15 extended), served by a separate scenario host behind the same Worker and a separate `ScenarioClient` (the editor's host and `SimClient` are unchanged). Requests: `{ type: 'initScenario'; rev; manifest: Manifest; scenario: 'fzp'; seed: number \| null /* null = representative seed */; horizon: Day }`, `{ type: 'reroll'; rev; seed: number \| null }` (also the resync path: same seed → fresh revision-0 snapshot), and `{ type: 'parcelSummary'; reqId: number; parcelId: ParcelId; day: Day; projectId?: string /* the picked project; returned if visible at day */ }`. Responses: `ready` (existing shape), `{ type: 'timeline'; rev; seed: number; render: TimelineUpdate; score: TimelineScore; bandRuns: number /* band runs finished so far; the band is provisional until bandRuns = bandRunsTotal */; bandRunsTotal: number /* N */; complete: boolean /* all loaded cells packed */ }`. A band-only update is a `timeline` whose `render` is `{ revision: last + 1, cells: [], removedCells: [], demolish: [] }`, `chunks` (existing), and `error` with `code: 'manifest-invalid' \| 'scenario-missing' \| 'scenario-invalid' \| 'bad-request' \| 'internal'`. `parcelSummary` responds with `project?: ProjectCard`: the project named by `projectId` if it is visible at `day`; otherwise the project on that parcel whose first entered stage is ≤ `day`, latest first; none if no project is visible at `day`. `ProjectCard = { projectId: string; origin: 'pipeline' \| 'simulated'; label: string /* pipeline: T3 label, else 'Block B, Lot L'; simulated: always 'Block B, Lot L' */; pathway: Pathway; units: number; existingUnits: number /* pipeline: the project's T3 existingUnits; phase: the T11 sum of its own parcels; simulated: the T11 sum of its parcels not already demolished earlier in the run */; stories: number \| null; storiesTier: 0 \| 3 \| 4 \| null /* pipeline cards: 0 = recorded field, 3 = parsed from description text (both only for revisions[0]), 4 = from the simulator's massing or a later revision's proportional scaling, null iff stories is null; simulated cards: always null (their stories are the simulated size draw) */; massing: 'matched' \| 'approximate' \| 'none'; multiPhase: boolean; phase: Schedule['phase']; localProgram: boolean /* the project's parcel is a Local Program parcel and the project is simulated */; stages: { stage: Stage; day: Day; actual: boolean }[] /* only stages entered ≤ day */; revisions: Schedule['revisions'] /* only those ≤ day */; end: Schedule['end'] \| null /* null if the end is after day */; sources: { dataset: string; id: string; key?: string /* field to query, e.g. 'case_no'; absent = the dataset's record-id field */ }[]; quality: { label: string; tier: 2 \| 3 \| 4; valueTier: 0 \| 1 \| 2 \| 3 \| 4 \| null }[] /* pipeline: T3 quality mapped through qualityRules, in id order; simulated: []. A display shows valueTier when non-null, else tier */ }`. The card's chance to finish is computed on the main thread from T12 at the current time. `prefetch` is reused, viewport-driven at every zoom in this mode | timelapse-sim ↔ fzp-mode, timelapse-render | DC |
+| T7 | `interface TimedPackedCell extends PackedCell { slotProjectIds: string[] /* render slots are keyed by project; parcelIds may repeat across slots */; partWindow: Float32Array /* per part: [fromDay, toDay) the part's revision is current; toDay = OPEN_DAY if open */; slotStages: Float32Array /* per slot: STAGE_ORDER.length entry days, NaN = never */; slotEnd: Float32Array /* per slot: [endDay, endKind] (0 open, 1 complete, 2 exit) */; slotPathway: Uint8Array /* index into ['discretionary','streamlined','permitOnly'] */ }`. `parcelMeta` rows describe the slot's final revision. `packTimedCell` is pure and owned by timelapse-render (in `src/lib/map/`); the worker imports it. `interface TimelineUpdate { revision: number /* 0 = snapshot */; cells: TimedPackedCell[]; removedCells: string[]; demolish: { parcelId: ParcelId; day: Day }[] /* complete list in revision 0 (needs no geometry); empty afterwards */ }`. `SimMapHandle` gains `applyTimeline(u: TimelineUpdate): void`, `setTime(day: Day): void` and `setTimelineLookups(l: { chance: ReturnType<typeof chanceTable>; typicalMonths: ReturnType<typeof typicalMonths> }): void`. `SimMapProps` gains `timelinePick?: (p: { projectId: string; parcelId: ParcelId; x: number; y: number; kind: 'hover' \| 'tap' } \| { projectId: null; kind: 'hover' \| 'tap' }) => void`. `kind` is `'hover'` for a fine-pointer move and `'tap'` for a touch tap or a mouse/pen click. A miss is `{ projectId: null, kind }`: a hover miss is sent once when the pointer leaves the timeline parts after a hover hit; a tap miss is sent on every tap or click that hits no timeline part. `null` is never sent. When `timelinePick` is set, SimMap's built-in tooltip is suppressed over timeline parts. Timeline colour tokens (`tl-*` in `palette.ts`), an exported `TIMELINE_LEGEND` and `timelineTokenCss(selector: string): string` (CSS text, no `<style>` wrapper: the `--map-*` custom properties of every `tl-*` token and of every token `TIMELINE_LEGEND` names, light values then dark under `prefers-color-scheme: dark`, scoped to `selector`, so a legend outside SimMap follows the system theme) are owned here. `setTime` does O(1) JS work per call, except the existing-building catch-up, which applies at most 2,000 feature-state changes per frame until it converges | timelapse-render ↔ timelapse-sim, fzp-mode | DC |
+| T12 | In `src/lib/timelapse/model.ts` (pure, zod-free, worker-safe): `sampleTransition(t: Transition, u: number, monthsElapsed: number): { kind: 'advance' \| ExitReason; days: number }`, `initiationHazard(m: InitiationModel, f: Record<FeatureId, number>): number`, `chanceTable(cal: Calibration): Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, Float32Array>>>` (per month in a stage, the probability of eventually reaching `complete`; the table is 241 months long, and the tail is used beyond it), `typicalMonths(cal: Calibration): Record<Pathway, Partial<Record<Exclude<Stage, 'complete'>, number>>>` (median months to leave each stage, used for the bar's within-stage fill), and `parseCalibration(json: unknown): Calibration` (throws on schema mismatch), and `cumulativeIncidence(t: Transition, k: number): { advance: number; exit: Partial<Record<ExitReason, number>> }` (the cumulative incidence by month k ≥ 0, tail included). `sampleTransition`'s `days` counts from stage entry and is ≥ ⌈monthsElapsed · MONTH_DAYS⌉; placing a draw that falls before the snapshot is the caller's job. Every function here, and timelapse-sim's schedule code, computes `exp` and `log` with `src/lib/timelapse/math.ts` (fdlibm ports), never `Math.exp`/`Math.log`/`Math.pow`/`**`; an ESLint rule over `src/lib/timelapse/**`, `pipeline/lib/fzp-cal/**` and `src/lib/sim/scenario/**` enforces it. The pipeline's validation, the worker, the renderer (lookups uploaded once) and the card all use these, and nothing re-implements them. The bar colour and the card's "chance of finishing" both come from `chanceTable` | stage-calibration → timelapse-sim, timelapse-render, fzp-mode | MC (health = chance of finishing, OD-T2; one sampling semantics everywhere) |
+| T10 | `GeneratedBuilding.source: 'user' \| 'pipeline' \| 'scenario'` (amends I9). `generateForUnits(parcel: ParcelRecord \| ParcelRecord[], units: number, maxStories: number, seed: number, stories?: number): GeneratedBuilding \| null` | pipeline-massing → timelapse-sim, map-view | DC |
+
+### 2.1 Internal types (timelapse-render-owned; none alters a T-row)
+
+```ts
+// src/lib/map/pack-timed.ts (pure, worker-safe; imported by the worker)
+export interface TimedPackInput {
+  schedule: Schedule;                       // T5
+  /** One entry for every revision, index-aligned with schedule.revisions. Either a building, or a
+   *  footprint ring (lng/lat) for massing 'none': a null or throwing massing, or a multi-phase row left unsplit (round 3 last resort).
+   *  timelapse-sim builds the ring from the anchor parcel's outer ring (largest areaM2, converted
+   *  with geo.ts localFrame) (round 2, "Failed massing"). */
+  massings: (GeneratedBuilding | { footprint: [lng: number, lat: number][] })[];
+  /** The slot's pick parcel: the project's largest-area parcel (round 2, "Anchors"). */
+  pickParcelId: ParcelId;
+}
+export function packTimedCell(cellId: string, items: readonly TimedPackInput[]): TimedPackedCell;
+export const FOOTPRINT_M = 1;               // height of a footprint-only ghost (tier 4)
+
+// src/lib/map/timelapse/types.ts
+export type TimelineLookups = Parameters<SimMapHandle['setTimelineLookups']>[0]; // T7
+export type PartState = 'hidden' | 'planning' | 'permit' | 'ready' | 'constructing' | 'complete' | 'dying';
+export interface PartEval { state: PartState; alpha: number; zCutM: number } // solid below zCutM, ghost above
+/** CPU reference of the shader (§4.2). Golden tests compare the two. */
+export function evalPart(a: PartAttrs, t: Day): PartEval;
+export interface BarEval { visible: boolean; fill: number /* 0..1 */; segCount: number; chance: number | null; dead: boolean; alpha: number }
+export function evalBar(b: BarAttrs, l: TimelineLookups, t: Day, zoom: number): BarEval;
+export interface TimelineSnapshot {         // debug hook
+  revision: number; cells: number; parts: number; bars: number; day: number;
+  demolish: { total: number; applied: number }; pending: number; layerIds: string[];
+}
+
+// src/lib/map/palette.ts
+export interface TimelineLegendEntry { id: string; kind: 'ghost' | 'solid' | 'bar'; tokens: TokenName[]; label: string }
+export const TIMELINE_LEGEND: readonly TimelineLegendEntry[]; // §4.6
+/** T7: the legend's custom properties for light and dark, scoped to `selector` (§4.6.1). */
+export function timelineTokenCss(selector: string): string;
+
+// src/lib/map/types.ts (T7)
+export type TimelinePick =
+  | { projectId: string; parcelId: ParcelId; x: number; y: number; kind: 'hover' | 'tap' }
+  | { projectId: null; kind: 'hover' | 'tap' }; // a miss (§4.8.1)
+// SimMapProps.timelinePick?: (p: TimelinePick) => void
+```
+
+`PartAttrs` and `BarAttrs` are the CPU-side records of the GPU attributes in §4.2.1 and §4.4.2. Time constants (`MONTH_DAYS`, `monthsIn`, `OPEN_DAY`, `DYING_DAYS`) are imported from `src/lib/timelapse/time.ts` (T1), and nothing is redefined here.
+
+### 2.2 Interface concerns: all resolved by the reconciliation
+
+| # | concern (original) | resolution |
+|---|---|---|
+| IC-1 | no channel to upload T12 | resolved: T7 `setTimelineLookups({ chance, typicalMonths })`; T12 `typicalMonths(cal)` ("Rendering": "lookups come via `setTimelineLookups`"). This spec's own median helper is dropped |
+| IC-2 | T12 length and tail; month undefined | resolved: T1 `MONTH_DAYS` and `monthsIn`, and the T12 table is 241 months long. With constant tail hazards the chance is constant beyond the table, so the renderer clamps the index to 240 (I, from T4's tail semantics) |
+| IC-3 | `demolish` full or delta | resolved: T7 says it is complete in revision 0 and empty afterwards ("Rendering") |
+| IC-4 | open-ended window encoding | resolved: T1 `OPEN_DAY`; T7 `toDay = OPEN_DAY` |
+| IC-5 | `parcelMeta` and slots | resolved: T7 `slotProjectIds`; "`parcelMeta` rows describe the slot's final revision" |
+| IC-6 | O(1) `setTime` vs MapLibre reloads | resolved: T7 text ("except the existing-building catch-up … at most 2,000 feature-state changes per frame") and the global constraint "Map budgets in FZP mode". The evidence stands: `maplibre-gl/src/style/style_layer.ts:294-307`, `style/style.ts:1421-1425`, `:1561-1567`, `:410-414` |
+| IC-7 | no card channel | resolved: T7 `timelinePick` |
+| IC-8 | two layers per cell | resolved: global constraint "Map budgets in FZP mode" |
+| IC-9 | `@luma.gl/engine` dependency and credit | resolved: "Rendering": a direct dependency, credited in `SOFTWARE` in `src/lib/attribution.ts` |
+
+Reappraisal 1 resolved the two consumer findings against this spec (IA-1 miss payload, IA-3 `timelineTokenCss`) by amending T7. The concerns this revision raises are listed in "Interface concerns (reappraisal 1)" at the end.
+
+## 3. Global constraints (verbatim)
+
+The source design's constraints still apply (free and open, determinism, overshoot meaningful, honesty of numbers, performance, mobile, static versioned data, conventions). In addition:
+
+- **Evidence hierarchy** (above). No number reaches the simulation without a tier and a source. A tier-3 or tier-4 number is never presented as data.
+- **Data quality** (reappraisal 1). Live sources are not assumed clean. Every pipeline rule that nulls, replaces, defaults or drops a source value is a registered T14 rule with a tier, a label and counts in every build. A replaced parcel value sets its `imputed` bit, and a changed record carries the rule's id in `quality`. A value a rule wrote is never presented as a record.
+- **Determinism.** The same `datasetVersion` and seed always give the same future, on every machine. The representative seed is chosen deterministically: the run whose final `completedNet` is the median of the N band runs.
+- **Honesty of numbers.** The mode is labelled a *simulation*. The scoreboard shows the shown run and the p10–p90 band. Pipeline and new-FZP units are separate lines. Actual completions since the RHNA period start are counted and labelled as actual. Units lost to dead projects are shown.
+- **Time scrubbing performance.** At 60 fps on a 2022-era laptop with the whole city's timeline loaded, per-frame JS during scrub or playback is O(1) in project count. A reroll reaches a full new timeline (the shown run, to 2050) within 3 s off the main thread. The p10–p90 band may fill in progressively afterwards; the UI marks it as provisional until it is complete.
+- **First paint.** `/fzp` must not require loading every parcel chunk. The whole-city score comes from `parcels.bin`, `projects.json` and `calibration.json`. Geometry streams with the viewport, as on `/`.
+- **The editor is unchanged.** `/` and `/p/:id` behave exactly as before. FZP mode is additive. The one intended exception is the shared header, which gains the mode links ("Paint" / "Timelapse") and shortens the brand to "SF Housing" below 640 px so the links fit at 375 px.
+- **Map budgets in FZP mode.** Two deck layers per cell are allowed for timeline cells: translucency needs them. This is an exception to map-view's one-layer-per-cell rule, so a `bench:map` timeline scenario must pass the same p95 frame bar. The existing-building catch-up stays within 2,000 feature-state changes per frame.
+- **Accessibility.** WCAG 2.2 AA as in `docs/dev/accessibility.md`. The scrubber is a labelled slider: arrow keys step a month, Page Up/Down a year. Reduced motion stops autoplay, but scrubbing still works.
+
+### Evidence hierarchy (verbatim)
+
+
+Every number the simulation uses comes from the highest tier available. It carries that tier and its source, and the UI can show both.
+
+| tier | kind | example here |
+|---|---|---|
+| 0 | per-record time series | DBI permit dates, Planning approval dates, TCO/CFC dates |
+| 1 | published first-party aggregates | Housing Inventory production tables, quarterly pipeline report |
+| 2 | researched inferences from observations | a redevelopment hazard fitted to SF parcel history; resize ratios measured across linked records |
+| 3 | research models / literature | NAHB construction durations, statutory review clocks used as duration proxies |
+| 4 | made up | anything else, labelled as such |
+
+Consequence: calibration is **computed by the data pipeline from DataSF records**, and literature figures are used only where the records can't answer. The dataset probe found tier-0 coverage for almost every stage. There is no tier-0 figure for deaths before any filing, or for the new Local Program's own durations (it has been in force only since 2026-01-12).
+
+## 4. Behaviour
+
+### 4.0 Library facts this spec rests on
+
+| fact | evidence |
+|---|---|
+| A primitive layer merges each extension's `getShaders` into its own shaders, and calls each extension's `draw` before its own `draw` on every render, picking included | `@deck.gl/core/src/lib/layer.ts:468-477`, `:1168-1171` (V) |
+| An extension sets its shader-module uniforms per draw with `this.setShaderModuleProps({name: props})` | `layer.ts:348`; `@deck.gl/extensions` 9.4.0 `data-filter/data-filter-extension.ts:273-304` (V) |
+| A shader module can bind a texture by returning it from `getUniforms` (sampler declared in the module source) | extensions 9.4.0 `mask/shader-module.ts:31`, `:107-109`; `mask/mask-extension.ts:85` (V) |
+| Injection hooks `vs:#decl`, `vs:#main-start`, `vs:#main-end`, `fs:#decl`, `fs:#main-end`, `fs:DECKGL_FILTER_COLOR` are supported | `@luma.gl/shadertools/src/lib/shader-assembly/shader-injections.ts:117`, `:147`; DataFilter uses `vs:#main-end` and `fs:DECKGL_FILTER_COLOR` at `data-filter/shader-module.ts:307-345` (V) |
+| Picking's `fs:DECKGL_FILTER_COLOR` injection runs at `order: 99`, after default-order injections | `@deck.gl/core/src/shaderlib/picking/picking.ts:182-190` (V) |
+| `SolidPolygonLayer` draws a side model (instanced quads, `triangle-strip`) then a top model, sharing attributes. Side quad `positions.y` is 0 at the ground and 1 at the top, and the side shader `#define`s `IS_SIDE_VERTEX` | `@deck.gl/layers/src/solid-polygon-layer/solid-polygon-layer.ts:334-343`, `:452-462`; `solid-polygon-layer-vertex-side.glsl.ts:10`, `:12`, `:56` (V) |
+| The vertical offset is `pos.z += props.elevations * solidPolygon.elevationScale`, and lighting is applied to `fillColors` in the vertex shader via `lighting_getLightColor` | `solid-polygon-layer-vertex-main.glsl.ts:39`, `:52` (V) |
+| Per-object accessors on `stepMode: 'dynamic'` attributes are expanded per vertex using the tessellator's `vertexStarts` | `solid-polygon-layer.ts:251-257`, `:395-398` (V); extension attributes added the same way, `data-filter-extension.ts:166-173` (V) |
+| The side model binds 10 attribute locations (`positions`, `vertexPositions` + `64Low`, `nextVertexPositions` + `64Low`, `instanceVertexValid`, `elevations`, `fillColors`, `lineColors`, `rowIndexes`). WebGL2 guarantees 16 | `solid-polygon-layer.ts:200-284` (V); the WebGL2 minimum `MAX_VERTEX_ATTRIBS` = 16 (I, GLES 3.0 spec) |
+| In interleaved mode every MapLibre render calls `deck._drawLayers` for each layer group, unconditionally | `@deck.gl/maplibre/src/deck-utils.ts:187-221` (V) |
+| `project.scale` is `2 ** zoom`. `TILE_SIZE` is 512 | `@deck.gl/core/src/shaderlib/project/viewport-uniforms.ts:314`; `project.glsl.ts:37`, `:53` (V) |
+| luma `Parameters.depthWriteEnabled` exists | `@luma.gl/core/src/adapter/types/parameters.ts:100` (V) |
+| `DataFilterExtension` only scales alpha or size by a range test on per-object values (`filterSoftRange`) and discards out-of-range fragments. It cannot choose colours or split a prism by height | extensions 9.4.0 `data-filter/shader-module.ts:157-181`, `:328-345` (V) |
+| `CollisionFilterExtension` re-renders its collision map only when the viewport or layer props change | extensions 9.4.0 `collision-filter/collision-filter-effect.ts:80-82` (V) |
+| Data-driven paint changes (feature-state or `global-state`) reload the source | see IC-6 (V) |
+
+### 4.1 Applying a timeline
+
+- **Mode.** `SimMap` enters *timeline mode* on the first `applyTimeline` call. It lazily imports `src/lib/map/timelapse/deck.ts` (the extension and `StageBarLayer`), creates the `TimelineController`, and keeps it until unmount. In timeline mode `applyGenerated` is ignored with one `console.error`. The two controllers share the `replaced` feature-state key, and FZP mode has no plan. Before the map and deck are ready, updates queue as `pendingApplies` do (`SimMap.svelte:204-210`). A revision-0 update drops the queue.
+- **Ordering** follows `GeneratedUpdate` (`types.ts:43-60`, `generated-controller.ts:153-173`):
+  - `revision: 0` is a full snapshot that replaces every cell, the demolish list and the bars;
+  - otherwise the revision must equal `last + 1`, or the update is discarded and the shared `onResyncNeeded` callback fires;
+  - `cells` are full repacks of each touched cell, and `removedCells` drop cells;
+  - a **band-only update** (T6: `{ revision: last + 1, cells: [], removedCells: [], demolish: [] }`) is accepted like any in-order revision. It advances `last` without resync, emits no layers, and makes no feature-state calls.
+- **Slicing.** Updates install at most `MAX_CELLS_PER_SLICE = 4` cells per animation frame (`hide.ts:28`). Updates within one slice apply synchronously. There is **no rise-in**: timeline geometry appears in the state that the current `t` dictates.
+- **Validation** (a programming error throws a `TypeError` naming the cell). It runs eagerly in the `SimMapHandle` method, before the update is queued and before the revision-order check (ruling R18). A call before the map is ready therefore throws exactly as a later one does, and a malformed update that is also out of order throws rather than triggering a resync. The checks:
+  - `slotProjectIds.length === slots`;
+  - `partWindow.length === 2·partCount`;
+  - `slotStages.length === 7·slots`;
+  - `slotEnd.length === 2·slots`;
+  - `slotPathway.length === slots`;
+  - `slotPathway[i] ∈ {0,1,2}`;
+  - `slotEnd` kind ∈ {0,1,2}.
+
+  `setTimelineLookups` validates the same way: `packChanceTexture`'s `RangeError` (§4.4.3) is thrown by the handle method, before the map is ready as after (R18).
+- **Encoding to GPU values** (CPU, once per installed cell): a `NaN` stage day becomes `OPEN_DAY` (T1; 3.0e38 is below the Float32 maximum, and `OPEN_DAY + 270` still compares as open). The same "never" sentinel serves everywhere on the GPU.
+- **Late demolish entries.** `demolish` must be empty after revision 0 (T7). A non-empty list on a later revision is ignored, with one `console.error`.
+
+#### 4.1.1 `packTimedCell` (owned here; the worker calls it)
+
+- **Slots**: one slot per item, sorted by `schedule.projectId` (`slotProjectIds`). A slot's `parcelIds` entry is `pickParcelId`, the largest-area parcel. That is deliberate, and differs from cell placement, which uses the smallest `ParcelId` (timelapse-sim; round 2, "Anchors"). Parcel ids may repeat across slots (T7).
+- **`parcelMeta`** (final revision): `[units, existingUnits, stories, typologyIdx]`. For a footprint, stories = 0 and the typology index is 0. Stories = 0 marks a slot as footprint-only on the GPU (§4.2.3).
+- **Parts**: each revision *i* contributes its parts, built exactly as `packCell` builds them (`pack.ts:42-116`: merged occupied runs, normalised CW rings, `encodeAppearance`), with `partWindow = [revisions[i].day, revisions[i+1].day)`. The last revision's window ends at `OPEN_DAY`. A footprint contributes one part: its ring, `partTopM = FOOTPRINT_M`, appearance code 0.
+- **Slot arrays**: `slotStages` comes from `schedule.entered` in `STAGE_ORDER`, with `NaN` for stages never entered. `slotEnd` holds `[end.day or NaN, kind]`. `slotPathway` is the index of the pathway.
+- **Sources**: buildings of every source (`'pipeline'`, `'scenario'`, T5/T10) are accepted. Colour comes from typology, never from `colorFor`.
+- **Throws** on:
+  - `massings.length !== schedule.revisions.length`;
+  - revision days that are not strictly ascending: `revisions[i].day <= revisions[i − 1].day` throws, so two revisions on one day throw (ruling R17; T5 now says "strictly ascending days (revisions due on one day are merged, the last wins)", and the merge is timelapse-sim's, §4.10);
+  - a duplicate `projectId`;
+  - an unknown typology.
+- **Pathway**: a pathway outside T2 packs as 255 in `slotPathway`. The worker does not throw; the main thread's validation (§4.1, `slotPathway[i] ∈ {0,1,2}`) rejects the cell.
+- **Rings**: parts use the shared `normaliseRing`/`renderParts` path of `pack.ts` unchanged, with no ring logic of their own (ruling A15). PR #21 (merged to main) closes each ring once; the timeline code and its tests are agnostic to that: a ring's vertex count is read from `startIndices`, never assumed from the input ring.
+- **Determinism**: identical inputs give byte-identical buffers.
+- **Transfer**: `packTimedTransferables(p)` lists every typed array for `postMessage`.
+
+### 4.2 GPU state: `TimelapseExtension`
+
+**Mechanism (decision).** A custom `LayerExtension` attached to the cell layers. It adds three per-part `vec4` attributes and one shader module, `timelapse`, whose uniform `day` comes from a shared mutable **clock** object passed in the extension's options. One extension instance serves every timeline layer. `LayerExtension.equals` compares options shallowly by reference (`layer-extension.ts:28-35`), so mutating the clock never re-initialises a layer. The extension's `draw` reads `clock.day`, the theme tints and the pass into `setShaderModuleProps({timelapse})` on every draw. `setTime` writes `clock.day` and calls `map.triggerRepaint()`. No deck prop changes, and no layer is cloned.
+
+#### 4.2.1 Per-part attributes (all `float32`, `stepMode: 'dynamic'`, accessor functions indexed by part)
+
+| attribute | x | y | z | w |
+|---|---|---|---|---|
+| `tlA` | `partFrom` | `partTo` | `ghostFrom` = min over the slot's 7 `slotStages` | `endDay` (`OPEN_DAY` if open) |
+| `tlB` | `permitDay` = min(`entitled`, `permitFiled`) | `readyDay` = `permitIssued` | `constructionDay` | `completeDay` (= `endDay` if kind 1, else `OPEN_DAY`) |
+| `tlC` | `endKind` (0 open, 1 complete, 2 exit) | `constructionTypicalDays` = `typicalMonths[pathway].construction · MONTH_DAYS` (T12, T1); `OPEN_DAY` until lookups arrive | `stories` = `parcelMeta[4s+2]` (final revision, T7; 0 = footprint-only) | `groundFtfM`: 4.5 for podium/midrise/tower parts, else 3.1 (`generator/constants.ts:3-5`) |
+
+That makes 13 of the 16 guaranteed locations. `updateTriggers.getTlC` is a per-cell version number that the controller bumps when it re-encodes the cell with a lookups object of a different identity (`timeline-controller.ts:322`, `:414`). The same object sent again is not re-encoded (§4.10).
+
+#### 4.2.2 Uniforms (`timelapse` module)
+
+`day`, `pass` (0 solid, 1 ghost), `ghostAlpha`, `dyingHoldDays` (90) and `dyingFadeDays` = `DYING_DAYS − dyingHoldDays` = 180. `DYING_DAYS = 270` is read from `src/lib/timelapse/time.ts` (round 2; display, tier 4), so the whole death window (`hold + fade`) is `DYING_DAYS`. The other uniforms are `ftfM` (3.1, `generator/constants.ts:3`), and `tintPlanning`, `tintPermit`, `tintReady`, `tintDying` (RGB from §4.6 for the current theme).
+
+#### 4.2.3 State rules (normative; `evalPart` implements the same rules on the CPU)
+
+Let `t = day`. In the vertex shader at `vs:#main-end`:
+
+1. **Hidden** if `t < ghostFrom`, `t < partFrom` or `t ≥ partTo`, or if dying and `t ≥ endDay + hold + fade`. Then `gl_Position = vec4(0.)`, as DataFilter does (`data-filter/shader-module.ts:328-331`). Hidden parts produce no fragments, so they are neither drawn nor picked.
+2. **Dying**: `endKind == 2 && t ≥ endDay`. `age = t − endDay`, and `f = age < hold ? 1 : 1 − (age − hold)/fade`.
+3. **Complete**: `t ≥ completeDay`.
+4. **Constructing**: `t ≥ constructionDay`. Progress `p = min((t − constructionDay)/constructionTypicalDays, 0.9)`, floors `n = floor(p · stories)`, and `zCut = n == 0 ? 0 : groundFtfM + (n − 1)·ftfM`. A construction-stage death freezes `p` at `t = endDay`.
+5. Otherwise a **pre-construction ghost**, tinted `ready` if `t ≥ readyDay`, `permit` if `t ≥ permitDay`, else `planning`.
+
+The vertex shader outputs these varyings:
+- `tl_heightM` (side: `elevations · positions.y`; top: `elevations`);
+- flat `tl_zCut`, flat `tl_mode`;
+- `tl_ghost`: the lit ghost colour. That is `lighting_getLightColor(tint, project.cameraPosition, geometry.position.xyz, geometry.normal)`, the same call the layer makes for its fill (`vertex-main.glsl.ts:52`), with alpha from the table below.
+
+`vColor` keeps the layer's lit palette colour.
+
+In the fragment shader (`fs:DECKGL_FILTER_COLOR`, default order, so before picking):
+
+| state | solid pass (`pass` 0) | ghost pass (`pass` 1) |
+|---|---|---|
+| planning / permit / ready | discard | `tl_ghost`, alpha `ghostAlpha` |
+| constructing | `vColor` where `tl_heightM < tl_zCut`, else discard | `tl_ghost` (ready tint) where `tl_heightM ≥ tl_zCut`, else discard |
+| complete | `vColor` (palette, opaque) | discard |
+| dying, `tl_heightM ≥ zCut` | discard | `tintDying` lit, alpha `1.5 · ghostAlpha · f` |
+| dying, `tl_heightM < zCut` (construction death) | discard | `mix(vColor.rgb, tintDying, 0.6)`, alpha `f` |
+
+- **Construction, from the outside**, shows solid palette floors up to `zCut` and the ghost above. There is no cap at `zCut`: from above, the inner walls of the solid portion show through the ghost's roof (accepted).
+- **Completion** is a step at `completeDay`: floors stall at ≤ 90% and then snap to full. This is deliberate, so the map never reveals a future completion date (§4.4.2).
+- **A construction death** leaves the floors frozen and tinted red. They fade together with the ghost over `fade`, which leaves a vacant lot: the existing building does not come back (§4.5).
+- **Revisions** swap instantly at the revision day through `partWindow`.
+- **Footprint-only slots** (`stories == 0`: failed massings and multi-phase rows without phase data, "massing `none`") never enter the solid pass. They are ghost-tinted by stage, use the `ready` tint while constructing and after completion, and die like any ghost. The card explains (fzp-mode).
+
+#### 4.2.4 Why not `DataFilterExtension`
+
+It would cover only rule 1 and an alpha fade. It cannot tint by stage, split a prism at `zCut` or pass solid and ghost fragments separately (§4.0). It also adds `@deck.gl/extensions` to the bundle.
+
+### 4.3 Layers, passes and depth
+
+Each cell with timeline parts gets two `SolidPolygonLayer`s (the global constraint "Map budgets in FZP mode" allows this), built from the same cached binary `data`, `getElevation` and `getFillColor` accessors as `accessorsFor` (`generated-controller.ts:89-112`), with `extruded`, `_normalize:false`, `_windingOrder:'CW'` and `elevationScale: 1`:
+
+- `timeline-solid-<cellId>` (`pass` 0, deck's default depth state);
+- `timeline-ghost-<cellId>` (`pass` 1, `parameters: { depthWriteEnabled: false }`, depth test on).
+
+The emit order is:
+1. every solid layer, by `cellId`;
+2. every ghost layer, by `cellId`;
+3. `timeline-bars`;
+4. the overlay layers.
+
+Every one of these layers carries `beforeId` = the first label layer (`generated-controller.ts:387-402`). Solid layers are `pickable` with `autoHighlight`. Ghost layers are pickable too, so a ghost can be hovered.
+
+- `generatedCellFilter` culls `timeline-(solid|ghost)-` layers by the cell bounds registered over all revisions' parts. The regex at `cull.ts:28` is extended to cover them.
+- The reserved-id regexes (`generated-controller.ts:114`, `SimMap.svelte:116`) are extended to `timeline-`.
+- Existing MapLibre extrusions draw earlier in the frame, so an old house shows through its ghost, as in the mockup.
+
+### 4.4 Progress bar: `StageBarLayer`
+
+#### 4.4.1 Geometry and visibility
+
+- **One layer**, `timeline-bars`, holds every loaded project. It draws one instanced screen-space quad per *(project, revision)*, not pickable, with depth test on and depth writes off. It is rebuilt only when cells change or lookups change.
+- **Anchor**: the centre of the revision's parts' bounding box, at `max(partTopM of that revision) + 2 m`, using fp64 positions. The bar's bottom edge sits 10 px above the anchor's screen position.
+- **Size**: `W = clamp(32 + 8·(zoom − 15), 32, 48)` px and `H = clamp(6 + (zoom − 15), 6, 8)` px, with `zoom = log2(project.scale)`.
+- **Visibility**: zoom ≥ `max(15, minZoom)`. Alpha ramps from 0 at 0.5 zoom below that threshold to 1 at it, and the zoom test runs in the shader, so panning and zooming cost no JS.
+- **When a bar shows**: from `ghostFrom` within the revision window. It ends:
+  - for a death, with the ghost (`endDay + hold + fade`, same alpha factor `f`);
+  - for a completion, 90 days after `completeDay` at full fill, then fades over 90 days;
+  - for a project still open, never.
+
+#### 4.4.2 Segments and fill
+
+Segments are equal-width, in this order:
+
+| pathway | segments |
+|---|---|
+| `discretionary`, `streamlined` | [`preApplication`]? `filed`, `entitled`, `permitFiled`, `permitIssued`, `construction` |
+| `permitOnly` | [`preApplication`]? `permitFiled`, `permitIssued`, `construction` |
+
+`preApplication` is included only when the slot entered it (T2: optional). That gives 3 to 6 segments.
+
+- **Current segment** `k`: the last segment whose entry day ≤ `t`. A stage the records skipped (`NaN`) counts as passed once a later stage has started.
+- **Fill**: `(k + min(((t − entry_k)/MONTH_DAYS) / typicalMonths[pathway][stage_k], 0.9)) / segCount`. Elapsed months are continuous here, because a fill is not a table index; `monthsIn` is for indexes only. It is 1 when complete, and frozen at `endDay` after an exit. The 0.9 cap means a bar never reaches the end of a segment before the project actually leaves it, so the map never reveals the future.
+- **Drawing**: unfilled is `tl-bar-track`. The border and the 1 px separators are `tl-bar-edge`.
+
+#### 4.4.3 Colour and the lookups
+
+- **Colour**:
+  - exited: `tl-bar-dead`;
+  - complete: `tl-bar-likely`;
+  - otherwise the chance `c = chance[pathway][stage_k][min(monthsIn(entry_k, t), len − 1)]`, with `monthsIn` from T1 and `len` = 241 (T12). Clamping to the last entry is exact because the chance is constant under the constant tail hazards (T4).
+- **Ramp**: piecewise linear in **linear RGB** through `tl-bar-unlikely` at c ≤ 0.15, `tl-bar-uncertain` at 0.45 and `tl-bar-likely` at c ≥ 0.75. Interpolating in linear RGB keeps relative luminance between the stops' values, so every blend keeps the stops' ≥ 3:1 contrast against `tl-bar-track` (§4.6).
+- **Upload**: one `r8unorm` texture, 18 rows by `max(len)` columns, read with `texelFetch`.
+  - Row = `pathwayIndex·6 + STAGE_ORDER.indexOf(stage)`, with pathways in T7's `slotPathway` order.
+  - Short rows are padded with their last value. Absent rows (e.g. `permitOnly`/`filed`) are 0. A valid timeline never reads one; if bad data does, the CPU reference `evalBar` returns chance 0, matching the texture's zero row, rather than throwing (ruling R7).
+  - `len > 2048` throws a `RangeError` in `setTimelineLookups` (2048 is WebGL2's guaranteed `MAX_TEXTURE_SIZE`, I).
+  - The texture is uploaded once per `setTimelineLookups` call, and the previous texture is destroyed.
+- **Typical durations**: `typicalMonths` (T12) is used as given, converted once by `typicalDays(l, pathway, stage)` (`timelapse/encode.ts`), which both the bar fill and `constructionTypicalDays` (§4.2.1) read. A missing, non-finite or negative entry becomes `OPEN_DAY`, so that segment's fill (or construction progress) stays at 0. A finite non-negative entry gives `max(months · MONTH_DAYS, 1)` days: the 1-day floor means no shader or CPU reference ever divides 0/0, and a 0-month median fills to the 0.9 cap at once (ruling R8). Nothing here re-derives the medians (T12: "nothing re-implements them").
+- **Before lookups arrive**, bars are not drawn, construction shows no solid floors until completion, and dev builds warn once.
+
+#### 4.4.4 Declutter (CPU, on each bar rebuild; zero cost on `setTime`)
+
+1. Sort projects by final units, descending, then lead `parcelId`, ascending.
+2. Each project gets `minZoom` = the smallest value in {15, 15.5, …, 18} such that, for every higher-priority project whose active interval overlaps its own, the anchor distance is ≥ `W(z)·mpp(z)` at `z = max(minZoom_i, minZoom_j)`.
+   - `mpp(z) = 40,075,016.686 · cos(lat) / (512 · 2^z)`, with 512 = `TILE_SIZE` (§4.0).
+   - At z15 a bar is about 60 m wide; at z17, about 23 m.
+   - A project's active interval is the hull of its bars' visible intervals, `[min from, max to)` over its revisions (ruling R9). It is a subset of `[ghostFrom, barEnd)`, so it only un-blocks bars that are not drawn at the same time.
+   - The anchor is the final revision's.
+3. Anything still conflicting at z18 shows at z18 (the map's `maxZoom`, `camera.ts`).
+
+A uniform grid keyed by anchor makes this O(n log n). Projects that never coexist in time never block each other. Pitch and bearing are ignored (approximate by design).
+
+### 4.5 Hiding existing buildings by time
+
+**Rejected:** a `demolishDay` feature-state plus a paint literal updated on `setTime`. Each update would reload every loaded `buildings` tile (the evidence is in §2.2, IC-6). T7 and the global constraint fix the catch-up bound below.
+
+**Mechanism:** the T7 `demolish` list is held sorted by `(day, parcelId)`, with a cursor `applied` = the number of entries whose `replaced` state is currently set.
+
+- **`setTime`** only records the target. It schedules the **demolish pump** (one `requestAnimationFrame`) when `t` crosses `days[applied]` or `days[applied − 1]`, an O(1) check.
+- **The pump**, each frame:
+  - moves the cursor toward `t`, calling `setFeatureState({source:'buildings', sourceLayer:'buildings', id}, {replaced:true})` forward or `removeFeatureState(…, 'replaced')` backward;
+  - makes at most `SLICE_IDS = 2,000` calls per frame (`hide.ts:22`);
+  - stops when caught up.
+- **Paint**: the existing paint (`style.ts:203-219`) is reused unchanged, so a demolished parcel shows the flat `--map-replaced` footprint.
+- **On revision 0**: `removeFeatureState({source:'buildings'})`, then a pump from 0.
+- **Picking**: a parcel counts as hidden when it is in the pump's applied set (O(1)). This set feeds `resolveExistingHit` (`SimMap.svelte:819`).
+- **`retryBuildings`** re-applies the set (`SimMap.svelte:777-779`).
+- **Cost estimate**:
+  - At fzp-mode's default speed of 1 year/s, a 30k-project timeline has ≈ 3.4 demolitions per simulated day: 30,000 over 8,842 days, from 2026-10-16 (Day 20742) to 2050-12-31 (Day 29584). At 6.09 simulated days per 60 Hz frame, that is ≈ 21 feature-state calls per frame. At 3 years/s it is ≈ 62.
+  - A slider drag across the whole range in 2 s averages ≈ 250 per frame.
+  - A single jump across the range takes ⌈30,000/2,000⌉ = 15 frames to catch up. During those frames the deck layers are already exact and MapLibre lags.
+- **Pass bar**: a 2,000-id pump frame takes ≤ 8 ms main thread, the existing C5 slice budget (map-view §4.5).
+
+### 4.6 Tokens (`palette.ts` `TOKENS`, both themes) and legend
+
+New `TokenName`s. Like all tokens, `SimMap` exposes them as `--map-*` CSS custom properties on its root `.sim-map` element (`SimMap.svelte:10-16`, `:164-170`). Custom properties do not reach SimMap's siblings, so a legend outside SimMap gets them from `timelineTokenCss` (§4.6.1; IA-3), and then uses the same variables (e.g. `var(--map-tl-ghost-planning)`).
+
+| token | light | dark | use |
+|---|---|---|---|
+| `tl-ghost-planning` | `#9DB0FF` | `#5466B8` | ghost: `preApplication`, `filed` |
+| `tl-ghost-permit` | `#6F86F0` | `#7D90F0` | ghost: `entitled`, `permitFiled` |
+| `tl-ghost-ready` | `#4257D6` | `#AEBBFF` | ghost: `permitIssued`; unbuilt floors during construction |
+| `tl-ghost-dying` | `#D84A4A` | `#FF6E6E` | dying ghost and floors |
+| `tl-bar-track` | `#FFFFFF` | `#2C2E31` | unfilled bar |
+| `tl-bar-edge` | `#5E5A52` | `#A9A59C` | bar border and separators |
+| `tl-bar-likely` / `tl-bar-uncertain` / `tl-bar-unlikely` | `#2E7D32` / `#B26A00` / `#C62828` | `#81C784` / `#FFB74D` / `#FF8A80` | chance ramp |
+| `tl-bar-dead` | `#8A8478` | `#8F8A80` | exited project |
+
+- **Checked here** (a scratch script, recomputed by the tests in §6):
+  - fills against `tl-bar-track`: light 5.13 / 4.24 / 5.62 / 3.72, dark 6.77 / 7.87 / 5.96 / 3.97 (all ≥ 3:1, WCAG 1.4.11);
+  - `tl-bar-edge` against `tl-bar-track`: 6.86 (light), 5.54 (dark).
+- **Ghost hues** are 228–231°, chosen to differ from the transit-access ramp (199–200°). Ghost lightness steps monotonically by stage: darker in light mode, brighter in dark mode.
+- `ghostAlpha` is 0.28 (light, the mockup's opacity) and 0.35 (dark).
+- Completed buildings and solid floors use the existing typology palette through `appearanceColor` (`appearance.ts:21-24`). `colorFor` stays `'user'`-only (`palette.ts:103-110`; T10 sources need no palette lookup).
+- Colour is never the only carrier: fzp-mode's card names the stage and the chance.
+
+**`TIMELINE_LEGEND`** (exported from `palette.ts`; fzp-mode renders it, in this order):
+
+| `id` | `kind` | `tokens` | `label` |
+|---|---|---|---|
+| `planning` | ghost | `tl-ghost-planning` | Proposed: in Planning review |
+| `permit` | ghost | `tl-ghost-permit` | Approved: in permit review |
+| `ready` | ghost | `tl-ghost-ready` | Permit issued |
+| `building` | solid | `tl-ghost-ready`, `gen-walkup` | Under construction (solid floors are built) |
+| `complete` | solid | `gen-adu` … `gen-tower` | Completed (colour shows building type) |
+| `stopped` | ghost | `tl-ghost-dying` | Stopped: withdrawn, disapproved, cancelled or expired |
+| `chance` | bar | `tl-bar-unlikely`, `tl-bar-uncertain`, `tl-bar-likely` | Bar colour: chance of finishing, low to high |
+| `bar-stopped` | bar | `tl-bar-dead` | Bar: project stopped |
+
+**The `chance` label (IA-3 nit).** The `chance` entry's label stays as above; it is the legend's one statement of the bar colour. fzp-mode drops the duplicate sentence "Bar colour: chance of finishing, low to high." from the line it appends after the entries, and keeps its own "Bar length: progress through the stages."
+
+#### 4.6.1 `timelineTokenCss(selector)` (T7; IA-3)
+
+`timelineTokenCss(selector: string): string`, exported from `palette.ts`. It is pure and DOM-free, so it runs in SSR.
+
+- **Output.** A CSS text, without a `<style>` wrapper, in exactly SimMap's existing format (`SimMap.svelte:10-16`):
+  `<selector> { --map-<name>: <light>; … } @media (prefers-color-scheme: dark) { <selector> { --map-<name>: <dark>; … } }`.
+  Declarations are joined with `; `, in `TOKENS` key order. A name maps to `--map-` plus the name with camelCase turned to kebab-case, as SimMap does (`tl-*` and `gen-*` names are already kebab-case, so `tl-ghost-planning` gives `--map-tl-ghost-planning`).
+- **Tokens.** Every `tl-*` token, then every other token that a `TIMELINE_LEGEND` entry names (today the six `gen-*` typology tokens of the `building` and `complete` rows), each once, in `TOKENS` key order. Without the `gen-*` tokens the legend's `building` and `complete` swatches would not follow the theme outside SimMap. The T7 row names this superset ("the `--map-*` custom properties of every `tl-*` token and of every token `TIMELINE_LEGEND` names"; IC-R1-1 resolved).
+- **Selector.** It is spliced into CSS, so a selector that is empty after trimming, or that contains `{`, `}`, `<` or `;`, throws a `TypeError`. The selector is otherwise used as given.
+- **Theme.** It follows `prefers-color-scheme` only. SimMap's explicit `theme` prop sets SimMap's own inline variables and does not reach an outside legend; a page that passes SimMap an explicit `theme` sets its legend's variables itself (inline, from `TOKENS[theme]`).
+- **Determinism.** The same selector gives the same string.
+- **SimMap's own default.** `DEFAULT_TOKENS_CSS` is rebuilt on the same internal helper (`tokenCss(selector, names)` in `palette.ts`, of which `timelineTokenCss` is the filtered case) over every token and the `.sim-map` selector. Its output is byte-identical to today's string (an editor-regression assertion pins it), so the editor is unchanged.
+- **Use** (fzp-mode's): it wraps the string in a `<style>` element in `<svelte:head>`, with its legend container's selector. CSP already allows inline styles (`svelte.config.js` `style-src 'self' 'unsafe-inline'`), which SimMap relies on today.
+
+### 4.7 The `setTime` contract, performance and reduced motion
+
+- **`setTime(day)`** does exactly this:
+  - throws a `RangeError` on a non-finite `day`;
+  - writes `clock.day`;
+  - runs the O(1) pump check;
+  - calls `triggerRepaint()`.
+
+  It allocates nothing and touches no layer, attribute or feature-state. Calls before `applyTimeline` are stored and used. Many calls in one frame coalesce into one repaint, so throttling is unnecessary and the latest day wins.
+- **Pass bars**:
+  - `setTime` p95 ≤ 0.05 ms per call in the client test. The ratio between 30,000-project and 300-project timelines is ≤ 1.5.
+  - Per-frame map-view JS during playback with no demolitions crossing is ≤ 0.5 ms at p95 over frames, with a looser sanity bound on the single worst frame (ruling R16: the bar is a budget, not a worst case, and signoff runs `test:unit` without retries). "Timeline JS" is `setTime` plus every `TimelapseExtension.draw` and `StageBarLayer.draw` in the frame, measured at 300 and 30,000 projects with deck drawing on (ruling R14). deck's and luma's own per-layer draw cost on a real GPU is bounded by `bench:map`.
+  - The pump is bounded as in §4.5.
+  - GPU: `bench:map` timeline case p95 ≤ 16.7 ms (the existing bar, `map-perf.md`).
+- **Bar rebuild (known limitation, ruling R19).** `buildBars` and the declutter run once, on the last slice of each update, never on `setTime`. At 30,000 projects that is one long task of about 52–56 ms per streamed update (measured on the operator's M5 Pro). The spec bounds `setTime`, the pump and per-frame JS, not the rebuild, so this is accepted. Follow-up (not in this package): build bars per cell incrementally, or move `buildBars` and the declutter into the worker.
+- **Wall-clock timings at fzp-mode's speeds** (1 month/s; 1 year/s, the default; 3 years/s). The simulated-day values are normative.
+
+  | event | simulated days | 1 month/s | **1 year/s** | 3 years/s |
+  |---|---|---|---|---|
+  | death: red (`dyingHoldDays`) | 90 | 2.96 s | **0.25 s** | 0.08 s |
+  | death: fade (`dyingFadeDays`) | 180 | 5.91 s | **0.49 s** | 0.16 s |
+  | completed bar: full, then fade | 90 + 90 | 2.96 s + 2.96 s | **0.25 s + 0.25 s** | 0.08 s + 0.08 s |
+
+  At the default speed a death reads as a quick red flash, and scrubbing or pausing shows it as long as wanted.
+- **Reduced motion**: timeline rendering has no wall-clock animation. Every visible change is a pure function of `t`, so `prefers-reduced-motion` changes nothing here. The rise-in is not used. Autoplay is fzp-mode's (global constraint).
+
+### 4.8 Editor unchanged, picking, errors
+
+- **Editor unchanged**. Without `applyTimeline`, nothing timeline-related loads or runs: the lazy module is never imported and no `timeline-*` layer exists. The shared changes are limited to:
+  - the extended regexes;
+  - new `TOKENS` (unused CSS custom properties on the map root);
+  - `setLayers` concatenating an empty timeline list;
+  - the new handle methods.
+
+  Existing tests pass unmodified.
+- **Picking**. A timeline hit is a pick on a `timeline-(solid|ghost)-` layer, resolved to `{ projectId: slotProjectIds[s], parcelId: parcelIds[s] }`.
+  - With `timelinePick` set (T7), `SimMap` calls it with `x` and `y` in canvas px and a `kind` (round 2, "Picking"):
+    - `'hover'` for pointer-move picks with a fine pointer (`pointerType !== 'touch'`, the existing `onPointerMove` path, `SimMap.svelte:1143-1163`);
+    - `'tap'` for a click (mouse/pen pointer-up within `TAP_PX`/`TAP_MS` of its pointer-down) or a touch tap (the existing `onPointerUp` path, `SimMap.svelte:1195-1215`).
+
+    It follows the same pointer and tap rules as map-view spec §4.7 (one pick per frame; none while moving). It suppresses its built-in tooltip over timeline parts, and reports misses as in §4.8.1.
+  - Without the prop, it shows the generated tooltip from `parcelMeta`. Clicks pick nothing, as in the editor. A footprint-only part's tooltip then reads as the generator's tooltip does ("ADU · adds N units"); that copy is not shown in FZP mode, which always sets `timelinePick` (the copy question is carried to fzp-mode).
+
+#### 4.8.1 Pick misses (T7; IA-1)
+
+A miss is `{ projectId: null, kind }`. `timelinePick` is never called with `null`. The two kinds are independent:
+
+- **Hover miss.** SimMap keeps one flag, `hoverReported`, set by a hover hit on a timeline part. When the flag is set and the pointer leaves the timeline parts, SimMap clears it and sends `{ projectId: null, kind: 'hover' }`, once. "Leaves" is any of:
+  - a hover pick that hits no timeline part (empty map, an existing building, a transit stop, a generated part);
+  - `pointerleave` on the map;
+  - a suppressed pointer move (the target is not the canvas, a button is down, or the map is moving);
+  - `movestart`;
+  - teardown (unmount or a remount with a new manifest).
+
+  Further hover picks off the parts send nothing until the next hover hit. Picks are pointer-driven: a part that disappears under a resting pointer because `t` moved sends no miss until the pointer moves (`setTime` never picks, §4.7).
+- **Tap miss.** Every tap or click that hits no timeline part sends `{ projectId: null, kind: 'tap' }`. That includes a tap or click on an existing building, a transit stop or empty map. A touch tap on an existing building still presents SimMap's existing card after the miss is sent, as today; a mouse click presents nothing (the editor ignores clicks). A tap miss does not touch `hoverReported`.
+
+**Code changes** (`SimMap.svelte`, as built at dda6252; `types.ts`):
+
+- `types.ts`: `SimMapProps.timelinePick` takes `TimelinePick` (§2.1), replacing `{ … } | null`.
+- `deliver()` (`SimMap.svelte:1062-1081`): the miss branch `if (report && (kind !== 'hover' || hoverReported)) { hoverReported = false; report(null); }` becomes:
+  ```ts
+  if (report) {
+    if (kind !== 'hover') report({ projectId: null, kind: 'tap' });
+    else if (hoverReported) {
+      hoverReported = false;
+      report({ projectId: null, kind: 'hover' });
+    }
+  }
+  ```
+  The hit branch and the `present` call after the miss branch are unchanged. A `'click'` maps to `kind: 'tap'` as before.
+- `unreportHover()` (`SimMap.svelte:1084-1088`): `timelinePick?.(null)` becomes `timelinePick?.({ projectId: null, kind: 'hover' })`. Its call sites (`movestart` `:550`, teardown `:805`, suppressed move `:1153`, `pointerleave` `:1169`) are unchanged.
+- The doc comment on `deliver` is updated to the new semantics.
+
+#### 4.8.2 Errors
+
+- **Errors**:
+  - deck fails to load: the existing `error` state, and queued timelines are dropped;
+  - a shader compile or link error: `console.error('[map] timelapse shader', e)` and `data-state="error"` (existing alert). The failure then destroys the timeline controller and logs once, and a later `webglcontextrestored` does not flip `error` back to `ready`. The routes, as built (rulings R10, R12, R13):
+    - luma reports device errors through `deviceProps.onError` (luma 9.4.2 `device.ts:698-711`), not deck's `onError`. The overlay is always created with a handler; outside timeline mode it returns false, so luma logs exactly as in the editor today;
+    - deck's `onError` for a `timeline-` layer is set on entering timeline mode;
+    - a compile error that luma throws inside an un-awaited async link check (`webgl-shared-render-pipeline.ts:89`, `:101`) is caught by a `window` `unhandledrejection` listener matching `/during compilation of/`, installed only in timeline mode, which calls `preventDefault` and is removed on teardown. The editor installs no such listener;
+  - a removed cell that is unknown: ignored;
+  - a cell with zero parts: no layers.
+
+### 4.9 Parameters introduced
+
+All of these are presentation constants, not simulation inputs. None is ever shown as data.
+
+| parameter | value | tier and source |
+|---|---|---|
+| ghost alpha | 0.28 light / 0.35 dark | 4 (light: partner-approved mockup `tl-ghost-styles-v2.html`, `op: 0.28`; dark: this spec) |
+| bar zoom gate | 15, 0.5-zoom ramp | 4 (OD-T2 "street zoom"; value: this spec) |
+| bar size, offset | 32–48 × 6–8 px, 10 px | 4 (this spec) |
+| fill cap | 0.9 | 4 (this spec; prevents revealing the future) |
+| dying window / hold | `DYING_DAYS` = 270 (from `time.ts`) / 90 days red, then a 180-day fade | 4 (window: design round 2; hold split: this spec; OD-T2 "red, then it fades") |
+| completed bar hold / fade | 90 / 90 days | 4 (this spec) |
+| chance ramp stops | 0.15 / 0.45 / 0.75 | 4 (this spec; mockup colours at 41% amber, 78% green) |
+| declutter ladder | 15…18 step 0.5 | 4 (this spec; 18 = map `maxZoom`) |
+| floor heights | 3.1 m; ground 4.5 m | inherited generator constants (`generator/constants.ts:3-5`) |
+| footprint-only ghost height (`FOOTPRINT_M`) | 1 m | 4 (this spec) |
+| pump cap | 2,000 per frame | existing measured budget (`hide.ts:22`, C5); T7 |
+
+The chance and typical durations are not parameters of this spec. They come from T12 and carry calibration provenance. `MONTH_DAYS` and `OPEN_DAY` are T1's.
+
+### 4.10 Producer contract (binding on timelapse-sim and fzp-mode)
+
+These are behaviours of this spec's code that its consumers must respect. They were carry-forward notes (`wave1-assignments.md`, misfiled under stage-calibration); IA-22 refiles them into the timelapse-sim spec, and they stay stated here as the producer's side.
+
+| # | contract | binds | why |
+|---|---|---|---|
+| PC-1 | `schedule.revisions` days are strictly ascending. `packTimedCell` throws when `revisions[i].day <= revisions[i − 1].day`, so revisions due on one day must be merged before packing, the last winning (T5; ruling R17) | timelapse-sim | `partWindow` is `[day_i, day_{i+1})`; an empty window would draw nothing for that revision |
+| PC-2 | `massings` is index-aligned with `schedule.revisions`; each entry is a building or a footprint ring; `pickParcelId` is the project's largest-area parcel (§4.1.1) | timelapse-sim | the pack throws on a length mismatch |
+| PC-3 | `applyTimeline` and `setTimelineLookups` validate eagerly in the handle method (§4.1; ruling R18). A malformed update or lookups object throws a `TypeError` or `RangeError` before the map is ready as after, and a malformed out-of-order update throws instead of resyncing | fzp-mode | no lenient pre-ready path exists to rely on |
+| PC-4 | `setTimelineLookups` compares lookups by identity. Send the fresh objects that T12's `chanceTable` and `typicalMonths` return each time; never mutate a sent object in place and send it again. The same object sent again re-packs the chance texture but skips the `tlC` re-encode, so construction-floor timing stays stale until the next revision 0 | fzp-mode | parked final-review finding; the code stands |
+| PC-5 | A `typicalMonths` entry that is missing, non-finite or negative becomes `OPEN_DAY` (no fill, no construction progress). A finite non-negative entry becomes `max(months · MONTH_DAYS, 1)` days (§4.4.3; ruling R8) | stage-calibration (producer of the values), fzp-mode (passes them) | no 0/0 on the GPU |
+| PC-6 | `demolish` is complete in revision 0 and empty afterwards; a later non-empty list is ignored with one `console.error` (§4.1) | timelapse-sim | |
+| PC-7 | `DYING_DAYS` (T1) is the whole death window here (90 + 180 days). A card that shows a dead project must use the same constant, so the card and the map agree on visibility | timelapse-sim, fzp-mode | |
+| PC-8 | `timelinePick` misses are `{ projectId: null, kind }`, never `null` (§4.8.1) | fzp-mode | IA-1 |
+
+## 5. Seams
+
+- **Policy levers (T9).** Nothing. Levers change `Calibration` before `simulate`, and the renderer sees only a new `TimelineUpdate` (revision 0) and new lookups. The renderer never reads `Calibration`: its lookups arrive already computed by T12's `chanceTable` and `typicalMonths`.
+- **Addenda sub-stages.** The bar's segment list comes from one table, `BAR_SEGMENTS: Record<Pathway, Stage[]>`, in `timelapse/bars.ts`. Ghost tint groups come from one table, `TINT_GROUP: Record<Stage, 'planning' | 'permit' | 'ready'>`. Nothing else is added: no spare attribute slots and no sub-stage encoding.
+- **DA phasing (round 3: simulated phase by phase).**
+  - Each phase arrives as an ordinary slot with real massing and is rendered like any project.
+  - A master never arrives as a slot, so nothing is drawn for it. Its entitlement shows only on the card.
+  - A phase's ghost appears at its first entered stage (T2). timelapse-sim must therefore give a phase slot no stage days before its `permitFiled`; inherited master days would make it appear early.
+  - On the bar, a phase's discretionary `filed` and `entitled` segments count as passed (the skipped-stage rule, §4.4.2).
+  - Only rows without phase data keep the footprint-only path.
+  - No renderer change is needed.
+- **Renderings.** Nothing. Ghosts and buildings are generator massings. `partAppearance` is reused unchanged.
+
+## 6. Testing
+
+Every test calls `expect` (`expect.requireAssertions`).
+
+**Fixtures (hand-made, committed):**
+
+- `src/lib/map/fixtures/timeline-small.ts`: a `TimelineUpdate` (revision 0) over parcels from `fixtures/parcels-small.json`, packed with `packTimedCell`. It has ten slots:
+  - (a) discretionary with PPA, completes;
+  - (b) streamlined, exits `withdrawn` at `permitFiled`;
+  - (c) permitOnly, in construction, open at the horizon;
+  - (d) downsizes at `permitFiled`: two revisions, `partWindow` split;
+  - (e) construction-stage death;
+  - (f) simulated, first stage in 2040;
+  - (g) a pipeline record with a skipped stage (`entitled` = `NaN`);
+  - (h) a multi-phase row without phase data (footprint-only) that shares its parcel with (a), so a parcel id repeats across slots;
+  - (i) two phase slots of one DA master. Their stage days start at `permitFiled` (different dates), they have real massing on separate parcels, one phase dies, and there is no master slot.
+
+  Its demolish entries cover (a), (c) and (e). It also provides `timelineSmallRev1`, which repacks one cell, removes another and has an empty `demolish`.
+- `src/lib/map/fixtures/timeline-lookups.ts`: hand-made `{ chance, typicalMonths }`. The chance has 241-entry rows and one absent row, which no fixture slot ever occupies (§4.4.3: absent rows are never read; ruling R4). `typicalMonths` has one missing entry. Fixture slots carry their pick `parcelId`, so tests never hard-code ids (ruling R5).
+- `src/lib/map/test/synthetic-timeline.ts`: `makeSyntheticTimeline(seed, nProjects)`. It reuses `makeSyntheticCity` buildings with seeded stage days between Day 20742 and Day 29584, about 1.3 revisions per project, and a 15% exit share. The share is a test value only.
+- e2e: `e2e/fixtures/timeline/fixture0-timeline.json`, `{ note, timeline, lookups }`: a `TimelineUpdate` over fixture-0 parcels plus its lookups in one file, because Playwright's loader cannot resolve the `$lib` imports of `timeline-lookups.ts` (ruling R15). It is built by `src/lib/map/fixtures/build-fixtures.ts`.
+
+**Vitest server project (pure TS):**
+
+- `timelapse/state.spec.ts` (`evalPart`) runs a golden table on `timeline-small`:
+  - hidden before `ghostFrom`;
+  - tint changes at `permitDay` and `readyDay`;
+  - `zCut` at p = 0, 0.5 and the 0.9 cap, and the snap at `completeDay`;
+  - the revision swap exactly at the day (`[from, to)`);
+  - dying alpha at `end`, `end + 89`, `end + 90`, `end + 269`, and hidden at `end + 270`;
+  - construction death with `zCut` frozen;
+  - open-ended windows (`OPEN_DAY`);
+  - the footprint-only slot never takes the solid state.
+- `pack-timed.spec.ts` (`packTimedCell`):
+  - slots sorted by `projectId`, and repeated parcel ids allowed;
+  - `parcelMeta` from the final revision;
+  - `partWindow` boundaries, ending at `OPEN_DAY`;
+  - footprint parts at `FOOTPRINT_M` with stories 0;
+  - byte-identical repacks;
+  - every throw case;
+  - transferables cover all buffers.
+- `timelapse/encode.spec.ts`: TimedPackedCell → `tlA`/`tlB`/`tlC` (`NaN` → `OPEN_DAY` mapping, `ghostFrom` = min, `groundFtfM` by typology). Validation throws on each malformed length.
+- `timelapse/bars.spec.ts`:
+  - segment lists per pathway with and without PPA (3–6);
+  - fill per §4.4.2, including the skipped stage;
+  - the chance index (`min(monthsIn(entry, t), 240)`, T1), including the boundary days `entry + k·MONTH_DAYS`;
+  - property: every ramp blend is ≥ 3:1 against `tl-bar-track`, both themes.
+- `timelapse/declutter.spec.ts`:
+  - determinism;
+  - time-disjoint projects never conflict;
+  - priority order;
+  - property (fast-check): two time-overlapping bars shown together at zoom z < 18 are ≥ `W(z)·mpp(z)` apart;
+  - 30,000 bars in ≤ 50 ms (server; the client budget is below).
+- `timelapse/demolish.spec.ts`:
+  - the pump moves ≤ 2,000 per frame, forward and back;
+  - a revision-0 replace;
+  - a non-empty `demolish` list on revision > 0 is ignored;
+  - applied-set membership;
+  - `setTime` schedules a frame only on a crossing.
+- `timelapse/lookups.spec.ts`:
+  - texture packing (row order, padding, absent rows, `RangeError` above 2048);
+  - a missing `typicalMonths` entry becomes `OPEN_DAY`;
+  - `constructionTypicalDays = typicalMonths · MONTH_DAYS`.
+- `palette.spec.ts` additions:
+  - the new tokens in both themes;
+  - every `TIMELINE_LEGEND` token exists in `TOKENS`, and the ids are unique;
+  - fills ≥ 3:1 against `tl-bar-track`;
+  - ghost hues in [220°, 240°];
+  - monotonic ghost lightness;
+  - ΔE2000 ≥ 20 between ghost tints and `existing` (the existing U4 rule);
+  - `timelineTokenCss('.x')` (§4.6.1): it declares `--map-<name>` for every `tl-*` token and every token `TIMELINE_LEGEND` names, each exactly once, with the light values in the first block and the dark values inside `@media (prefers-color-scheme: dark)`, both scoped to `.x`; it declares no other token; it is identical across calls; it throws a `TypeError` for `''`, `'  '` and selectors containing `{`, `}`, `<` or `;`;
+  - the internal helper over every token and `.sim-map` reproduces today's `DEFAULT_TOKENS_CSS` body byte for byte (a literal pinned in the test from dda6252's output).
+- `timeline-controller.spec.ts` (fake deps, as `fake-deps.ts`):
+  - revision ordering and resync;
+  - a band-only update advances the revision with no resync, no layer emit and no feature-state call;
+  - `timelinePick.kind` is `'hover'` on a fine-pointer move, and `'tap'` on a click or a touch tap;
+  - ≤ 4 cells per slice;
+  - emit order (§4.3);
+  - `setTime` makes no layer or feature-state calls;
+  - `applyGenerated` is ignored in timeline mode.
+
+**Vitest client project (Playwright Chromium):**
+
+- `timelapse-extension.gpu.svelte.spec.ts`: a standalone deck `Deck` over a 64×64 canvas with `preserveDrawingBuffer`, top-down, with one part from each fixture state. After `setTime(d)` and a redraw, `readPixels` at the part centre matches the `evalPart` colour class (hidden / ghost tint / palette / red) within tolerance, for 12 days covering every rule. It fails on any shader compile error.
+- `SimMap.timeline.svelte.spec.ts` (real map, fixture manifest):
+  - `applyTimeline(timeline-small)` installs `timeline-solid-*`, `timeline-ghost-*` and `timeline-bars`;
+  - the `tlA` attribute expands per vertex (read through deck's attribute manager, as `readAttributes` does);
+  - `pickObject` returns nothing before `ghostFrom` and the slot after;
+  - `timelinePick` fires with `projectId`, `parcelId`, `x` and `y`, and the built-in tooltip stays hidden over timeline parts;
+  - **pick misses** (§4.8.1). This replaces the test that pinned the kind-less null (`SimMap.timeline.svelte.spec.ts:362-424`, "reports hover and click, suppresses the tooltip, and sends one null on leaving"), and its comment citing the 2026-10-17 conductor ruling is removed. The new test walks the same path and asserts:
+    - part → existing building (hover): exactly one `{ projectId: null, kind: 'hover' }`, and the building's tooltip still shows; further moves over the building and onto empty map add no call;
+    - part → empty map (hover): one hover miss; two further misses add nothing;
+    - `pointerleave` after a hover hit: one hover miss; a second `pointerleave` adds nothing;
+    - a suppressed move (button down) after a hover hit: one hover miss;
+    - a mouse click on empty map: `{ projectId: null, kind: 'tap' }`; a second click: a second tap miss (every tap miss is sent);
+    - a mouse click on an existing building: a tap miss, and no card;
+    - a touch tap on an existing building: a tap miss, and SimMap's existing card still shows;
+    - a touch tap on empty map while a mouse hover hit is reported sends a tap miss and does not consume the hover miss: the mouse leaving afterwards still sends one hover miss;
+    - over the whole test, no call's argument is `null` (`timelinePick.mock.calls.every(([p]) => p !== null)`), and every miss object has exactly the keys `projectId` and `kind`;
+    - no console errors.
+  - a theme switch updates the tints without re-creating the extension.
+- `timeline-perf.svelte.spec.ts`:
+  - the `setTime` budget (§4.7) at 300 and 30,000 projects;
+  - per-frame timeline JS during playback with no crossings, p95 ≤ 0.5 ms at 300 and 30,000 projects, ratio reported (§4.7; rulings R14, R16);
+  - a 2,000-id pump frame takes ≤ 8 ms, read from the `sfh-pump` `performance.measure` entry the pump emits (gated like the existing measures) after a jump across ≥ 2,000 entries on the real map (ruling R3);
+  - declutter of 30,000 bars takes ≤ 20 ms.
+- Editor regression: the existing `SimMap*.svelte.spec.ts` and `generated-controller.svelte.spec.ts` pass unmodified. A new assertion checks that with no `applyTimeline` the lazy timelapse module is never requested and no `timeline-` layer id exists. The editor installs no `unhandledrejection` listener, and a luma device error logs as before (§4.8.2).
+
+**Playwright e2e:**
+
+- `e2e/timelapse-render.spec.ts` on `/` with the debug hook (`__sfhMap.applyTimeline`, `setTime`, `setTimelineLookups`, `timelineSnapshot`), loading `fixture0-timeline.json`:
+  - before the construction day, `queryRenderedFeatures` on `existing-buildings` returns the parcel with `state.replaced` unset;
+  - after it, `replaced` is true;
+  - scrubbing back clears it;
+  - `timelineSnapshot().demolish.applied` tracks the cursor;
+  - no console errors.
+- The axe gate does not change: this subsystem adds no DOM. fzp-mode's page runs `expectNoA11yViolations`, including the legend that uses these tokens.
+
+**Bench (`npm run bench:map`, headed GPU):** `e2e/bench/map-timeline.bench.ts` adds the debug hook `loadSyntheticTimeline(seed, n)` (VITE_E2E only).
+
+- **Case "playback"**: 30,000 projects, downtown at zoom 15.5, pitch 55. It pans as the existing bench does while `setTime` advances at fzp-mode's fastest speed, 3 years/s (1,095.7 days/s; it covers the 1 year/s default too), from Day 20742. Pass at p95 ≤ 16.7 ms.
+- **Case "drag"**: the same pan while `setTime` sweeps the full range in 2 s, back and forth. Pass at p95 ≤ 16.7 ms.
+- Both cases print the pump's maximum per-frame operations. Results get a row in `docs/dev/map-perf.md`. 30,000 projects is a tier-4 stress size: about 1.5× the high end of the design's buildout expectations, at ~10–25 units per project.
+
+## 7. Acceptance criteria
+
+1. `applyTimeline`, `setTime` and `setTimelineLookups` exist on `SimMapHandle`, and `timelinePick` on `SimMapProps`, all with T7's signatures. `packTimedCell` is pure, deterministic and worker-importable. `setTime` makes no deck prop change, layer clone, attribute update or feature-state call (fake-deps test). It meets §4.7's per-call budget, with the 30k/300 ratio ≤ 1.5.
+2. For every fixture state, the GPU pixel class equals `evalPart` (client GPU test). Hidden parts are not pickable.
+3. Floors turn solid bottom-up in whole floors, stall at ≤ 90% until completion and snap to full at `completeDay`. A construction death freezes them, turns them red and fades them out over 90 + 180 days.
+4. A pre-construction death turns the ghost red for 90 days, then fades it over 180 days. The existing building stays.
+5. A revision swaps the massing exactly at its day.
+6. The existing building on each `demolish` parcel shows the `replaced` footprint from its day, and returns when scrubbed earlier. The pump catches up within ⌈k/2,000⌉ frames.
+7. Bars appear at zoom ≥ 15 (or the project's `minZoom`), in 3–6 equal segments. Fill and colour follow §4.4.2–4.4.3. Exited bars are `tl-bar-dead`, and no bar shows before lookups arrive.
+8. Every `tl-*` token exists in both themes and passes the §6 palette tests. `TIMELINE_LEGEND` is exported as in §4.6.
+8a. Footprint-only slots (failed massings, multi-phase rows without phase data) render as a 1 m ghost and are never solid. Phase slots render like any project, and nothing is drawn for a master.
+9. With no `applyTimeline` call, the editor makes no new request and renders no new layer, and all existing map tests pass unmodified.
+10. Both `bench:map` timeline cases pass at p95 ≤ 16.7 ms on the reference machine, with a row recorded in `docs/dev/map-perf.md`. As built: playback p95 10.3 ms and drag 9.0 ms on an M5 Pro (120 Hz), recorded; the reference-machine (M2) row is still owed, as it is for the existing map-pan case.
+11. `npm run check`, `npm run lint` and `npm run test:unit` pass.
+12. `@luma.gl/engine` is a direct dependency at `~9.4.0`, and `SOFTWARE` in `src/lib/attribution.ts` credits luma.gl (`/attribution` shows it).
+13. The T7 types are in `src/lib/map/types.ts` (step 0) and `packTimedCell` accepts footprint entries for every revision. Band-only updates apply without resync, and `timelinePick` reports `kind` as in §4.8.
+14. `timelinePick` misses follow §4.8.1: one `{ projectId: null, kind: 'hover' }` when the pointer leaves the parts after a hover hit (pick miss, `pointerleave`, suppression, `movestart`, teardown); `{ projectId: null, kind: 'tap' }` on every tap or click that hits no timeline part, existing buildings included; `null` is never sent. The kind-less pinning test is replaced (§6).
+15. `timelineTokenCss(selector)` is exported from `palette.ts` and behaves as §4.6.1, and `DEFAULT_TOKENS_CSS` is byte-identical to its dda6252 output.
+16. `packTimedCell` throws on equal revision days (§4.1.1, PC-1), and the handle methods validate eagerly (PC-3).
+
+## 8. Open questions
+
+None open.
+
+- **OQ-1. On-map exit-reason text. Resolved (round 2): no on-map labels.** The card shows the reason.
+- **OQ-2. Ghost edges. Resolved (round 2): off.** `wireframe` would add a third model per layer (`solid-polygon-layer.ts:328-332`), and face lighting separates the faces.
+
+## 9. Fix round (reappraisal 1)
+
+The spec is implemented. The fix round (wave F1, in parallel with scenario-data) changes only this:
+
+1. **Pick misses (IA-1, T7).** `types.ts` `TimelinePick`; `deliver()` and `unreportHover()` in `SimMap.svelte` as §4.8.1; the doc comment on `deliver`. Replace the pinning test (`SimMap.timeline.svelte.spec.ts:362-424`) with the §6 pick-miss test, and update any other assertion that expects `null` (as built, only that test does).
+2. **`timelineTokenCss` (IA-3, T7).** `tokenCss` and `timelineTokenCss` in `palette.ts`; `DEFAULT_TOKENS_CSS` rebuilt on `tokenCss`; the §6 palette tests.
+3. **Text only.** The `TIMELINE_LEGEND` `chance` label is unchanged (§4.6).
+
+Nothing else in the as-built code changes. Rulings R3–R19 were already implemented; this revision only states them (doc debt). The fix round runs `npm run check`, `npm run lint` and `npm run test:unit`; the e2e and the bench are unaffected (no DOM, layer or shader change), and signoff decides which steps run.
+
+## Interface concerns (reappraisal 1)
+
+All three are ruled (ledger, "TR spec revised", 2026-10-17).
+
+- **IC-R1-1. `timelineTokenCss` scope: `--map-tl-*` only, or every legend token.** **Resolved** (accepted): T7 amended to "the `--map-*` custom properties of every `tl-*` token and of every token `TIMELINE_LEGEND` names, light values then dark under `prefers-color-scheme: dark`", which is what §4.6.1 emits. The original concern: T7 said the function produces "the `--map-tl-*` custom properties". `TIMELINE_LEGEND`'s `building` and `complete` rows also name `gen-*` tokens, so a legend built from `--map-tl-*` alone cannot draw those swatches outside SimMap, which defeats IA-3's purpose. This spec emits the superset (every `tl-*` token plus every token the legend names, §4.6.1).
+- **IC-R1-2. Theme source for an outside legend.** **Resolved** (routed to fzp-mode): fzp-mode passes no explicit `theme` to SimMap, so the legend and SimMap both follow `prefers-color-scheme` (fzp-mode §4.5 item 11; T7 "follows `prefers-color-scheme` only"). The original concern: `timelineTokenCss` follows `prefers-color-scheme` only (§4.6.1). That matches SimMap whenever no explicit `theme` prop is passed. If fzp-mode passes an explicit theme to SimMap, it must also set the legend's variables itself; fzp-mode's spec should say which it does.
+- **IC-R1-3. Footprint tooltip copy without `timelinePick`** ("ADU · adds N units", §4.8). **Resolved** (closed, no change): it is unreachable in FZP mode, which always sets `timelinePick`, so it needs no copy ruling and no interface change.
+
+## Reappraisal 1 changes
+
+- **Rows (brief step 1).** T1, T2, T5, T6, T7, T12 and T10 re-copied verbatim from the design's current table (T1 `Math.fround` and `DYING_DAYS`, IA-16/IA-27; T5 strict ascending, 1-based `phase.index`, `phase.start`, IA-4/IA-21/IA-2; T6 `storiesTier` 4, `existingUnits` source, `quality`, IA-14 and "Quality on records"; T7 miss payload and `timelineTokenCss`, IA-1/IA-3; T12 `cumulativeIncidence`, the `days` contract, `math.ts`, IA-13/IA-15/IA-16/IA-7).
+- **Global constraints** re-copied verbatim (the new "Data quality" bullet; the header's brand shortening).
+- **IA-1 / "T7 pick misses".** §4.8.1 (miss semantics, code changes to `deliver()` and `unreportHover()`, the `types.ts` type); §2.1 `TimelinePick`; §6 pinning test replaced; AC14; §9 item 1; PC-8.
+- **IA-3.** §4.6.1 `timelineTokenCss` and `DEFAULT_TOKENS_CSS` on the shared helper; §4.6 intro (custom properties do not reach siblings); §6 palette tests; AC15; §9 item 2; IC-R1-1 and IC-R1-2. The `chance` label nit: this spec keeps its label, and fzp-mode drops its duplicate sentence.
+- **IA-22 (producer side).** New §4.10 producer contract PC-1..PC-8: R17 equal revision days throw, R18 eager validation, lookups identity, the `typicalDays` floor, plus the existing massing, demolish and `DYING_DAYS` contracts.
+- **IA-4 / R17.** §4.1.1 throw case restated as strictly ascending; AC16.
+- **Doc debt (rulings from the SDD ledger, "Doc debt" ruling).**
+  - R3: the pump frame is measured from the `sfh-pump` measure (§6).
+  - R4, R5: the fixture's absent chance row is one no slot occupies, and slots carry `parcelId` (§6).
+  - R7: an absent row read by bad data gives chance 0 (§4.4.3).
+  - R8: `typicalDays` floor and the negative-entry rule (§4.4.3, PC-5).
+  - R9: the declutter interval is `[min from, max to)` (§4.4.4).
+  - R10, R12, R13: shader-error routes (§4.8.2).
+  - R14, R16: the per-frame JS test and its p95 bar (§4.7, §6).
+  - R15: the e2e fixture holds `{ note, timeline, lookups }` (§6).
+  - R18: eager validation, before the revision check (§4.1, PC-3).
+  - R19: the 30k bar rebuild long task, accepted with a follow-up (§4.7).
+  - A15 / PR #21: ring-agnostic packing, vertex counts from `startIndices` (§4.1.1).
+  - The unknown-pathway pack value 255 (§4.1.1); the `tlC` update trigger is a version counter (§4.2.1); line cites in §4.8 updated to dda6252.
+  - AC10 records the as-built bench result and the missing M2 row (ledger, "timelapse-render COMPLETE").
+- **Status line** updated; §9 (fix round) added.
+- **Fidelity pass 3 (2026-10-17).** IC-R1-1..IC-R1-3 marked resolved with their rulings; §4.6.1's stale "the row names only the `--map-tl-*` properties" replaced by the amended T7 superset (F3-9).

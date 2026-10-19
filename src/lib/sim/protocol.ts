@@ -5,6 +5,7 @@ import type { BuildoutMode, TypologyId } from '$lib/generator';
 import type { ChunkStatus, GeneratedUpdate, ParcelSummaryLike } from '$lib/map/types';
 import type { BBox, Envelope, Plan, PlanOp } from '$lib/plan';
 import type { Score } from '$lib/scoreboard';
+import type { ProjectCard } from './scenario/types';
 
 export type Rev = number; // strictly increasing per client, starting at 1
 export type SimRequest =
@@ -60,8 +61,12 @@ export interface ParcelSummary {
   existingUnits: number;
   envelope: Envelope | null; // committed-plus-preview display state
   generated: { typology: TypologyId; stories: number; units: number } | null;
+  project?: ProjectCard; // T6; the editor never sets it
 }
 
 // I17 addendum: ParcelSummary must be assignable to map-view's ParcelSummaryLike.
 type Assert<T extends true> = T;
 export type ParcelSummaryIsLike = Assert<ParcelSummary extends ParcelSummaryLike ? true : false>;
+
+// Step 0: the scenario protocol types (T5, T6, T8). Type-only cycle with ./scenario/types.
+export type * from './scenario/types';

@@ -61,5 +61,58 @@ export default defineConfig(
         }
       ]
     }
+  },
+  {
+    // FZP timelapse: exp/log on determinism paths come from src/lib/timelapse/math.ts (fdlibm),
+    // never the engine's Math functions or the `**` operator, which differ across JS engines.
+    // Math members with an exact spec (sqrt, fround, floor, ceil, round, trunc, abs, min, max,
+    // sign, imul, clz32) stay allowed.
+    files: ['src/lib/timelapse/**', 'src/lib/sim/scenario/**', 'pipeline/lib/fzp-cal/**'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        ...[
+          'exp',
+          'log',
+          'pow',
+          'log1p',
+          'expm1',
+          'log2',
+          'log10',
+          'cbrt',
+          'sin',
+          'cos',
+          'tan',
+          'asin',
+          'acos',
+          'atan',
+          'atan2',
+          'sinh',
+          'cosh',
+          'tanh',
+          'asinh',
+          'acosh',
+          'atanh',
+          'hypot'
+        ].map((property) => ({
+          object: 'Math',
+          property,
+          message: 'Use src/lib/timelapse/math.ts (determinism, stage-calibration §4.1a).'
+        }))
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "BinaryExpression[operator='**']",
+          message:
+            'Use exp/log from src/lib/timelapse/math.ts (determinism, stage-calibration §4.1a).'
+        },
+        {
+          selector: "AssignmentExpression[operator='**=']",
+          message:
+            'Use exp/log from src/lib/timelapse/math.ts (determinism, stage-calibration §4.1a).'
+        }
+      ]
+    }
   }
 );

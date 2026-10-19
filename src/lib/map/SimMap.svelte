@@ -1,19 +1,16 @@
 <script module lang="ts">
   import type { Protocol as PmtilesProtocol } from 'pmtiles';
-  import { TOKENS as THEME_TOKENS } from './palette';
+  import { TOKENS as THEME_TOKENS, tokenCss, type TokenName } from './palette';
   import { attributionHtml } from './attribution';
 
   type MapLibreModule = typeof import('maplibre-gl');
 
   // CSS defaults for the --map-* tokens, so the SSR frame follows prefers-color-scheme before
   // JS resolves a theme (an explicit or JS-resolved theme overrides them inline).
-  const tokenVars = (t: 'light' | 'dark') =>
-    Object.entries(THEME_TOKENS[t])
-      .map(([k, v]) => `--map-${k.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())}: ${v}`)
-      .join('; ');
-  const DEFAULT_TOKENS_CSS =
-    `<style>.sim-map { ${tokenVars('light')} } ` +
-    `@media (prefers-color-scheme: dark) { .sim-map { ${tokenVars('dark')} } }</style>`;
+  const DEFAULT_TOKENS_CSS = `<style>${tokenCss(
+    '.sim-map',
+    Object.keys(THEME_TOKENS.light) as TokenName[]
+  )}</style>`;
 
   // One pmtiles protocol per page (spec §4.1). Removed only on a real unload, never when the
   // page enters the back/forward cache (a restored page keeps its live map).
@@ -50,14 +47,21 @@
   import type { ErrorEvent as MapErrorEvent, GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
   import type { ParcelId } from '$lib/data/parcel';
   import type { Manifest } from '$lib/data/manifest';
+  import type { Day } from '$lib/timelapse/time';
   import { DEFAULT_TRANSIT_PARAMS, SF_GRID_BBOX, buildAccessGrid } from '$lib/transit';
   import { DEFAULT_VIEW } from '$lib/view/prefs';
   import { CONSTRAINTS, NARROW_PX, defaultFrame, initialCamera, pixelRatio } from './camera';
   import { loadDeck } from './deck-loader';
+  import { loadTimelapse } from './timelapse-loader';
   import { generatedCellFilter } from './cull';
   import { controlsFootprint } from './footprint';
   import { installDebug } from './debug';
-  import { GeneratedController } from './generated-controller';
+  import { GeneratedController, type ControllerDeps } from './generated-controller';
+  import type { TimelineController, TimelinePartLookup } from './timeline-controller';
+  import type { TimelineLookups } from './timelapse/types';
+  // Pure (no deck or luma): the handle validates before it stores or queues (ruling R18).
+  import { validateTimedCell } from './timelapse/encode';
+  import { packChanceTexture } from './timelapse/lookups';
   import { TOKENS } from './palette';
   import { cellAt, chunkStatusCollection, resolveExistingHit, tooltipPosition } from './pick';
   import {
@@ -91,7 +95,8 @@
     ParcelSummaryLike,
     SimMapHandle,
     SimMapProps,
-    Theme
+    Theme,
+    TimelineUpdate
   } from './types';
   import { hasWebGL2 } from './webgl';
 
@@ -104,16 +109,24 @@
     onRetryChunks = undefined,
     onready = undefined,
     view = undefined,
-    fetchTransit = undefined
+    fetchTransit = undefined,
+    timelinePick = undefined
   }: SimMapProps = $props();
 
   type PaintProp = Parameters<MapLibreMap['setPaintProperty']>[1];
   type PaintValue = Parameters<MapLibreMap['setPaintProperty']>[2];
   type MapState = 'loading' | 'ready' | 'unsupported' | 'error' | 'context-lost';
   type Surface = 'tooltip' | 'card';
+  /** hover: fine-pointer move; tap: touch tap; click: mouse/pen tap (only with `timelinePick`). */
+  type PickKind = 'hover' | 'tap' | 'click';
+  type PickResult =
+    { hit: TooltipHit; cell: string | null } | { timeline: TimelinePartLookup } | null;
+  type SolidPolygonLayerClass = Awaited<ReturnType<typeof loadDeck>>[1]['SolidPolygonLayer'];
 
   const FS = { source: BUILDINGS_SOURCE, sourceLayer: 'buildings' } as const;
-  const RESERVED = /^(generated|rising)-/;
+  const RESERVED = /^(generated|rising|timeline)-/;
+  const GENERATED = /^(generated|rising)-/;
+  const TIMELINE = /^timeline-/;
   const TAP_PX = 6;
   const TAP_MS = 300;
   /** Half-size of the square hit box around the pointer for stop markers (transit spec §6.1). */
@@ -161,7 +174,13 @@
     loaded: boolean;
     map: MapLibreMap | null;
     overlay: MapLibreOverlay | null;
-    controller: GeneratedController | null;
+    controller: GeneratedController | null; // null in timeline mode
+    timeline: TimelineController | null; // timeline mode only, once its lazy module has loaded
+    timelinePart: RegExp | null; // TIMELINE_PART_LAYER, from that module
+    timelineLoading: boolean;
+    timelineFailed: boolean; // a timelapse shader error: the error state is final for this map
+    onRejection: ((e: PromiseRejectionEvent) => void) | null; // timeline mode's compile watch
+    SolidPolygonLayer: SolidPolygonLayerClass | null; // from loadDeck(), once the overlay exists
     appliedTheme: Theme;
     paintDiff: Record<Theme, PaintSet[]> | null;
     timers: Set<ReturnType<typeof setTimeout>>;
@@ -171,6 +190,7 @@
     pointer: { x: number; y: number } | null;
     touches: number; // active touch pointers (a tap needs exactly one)
     tap: { id: number; x: number; y: number; t: number } | null;
+    click: { id: number; x: number; y: number; t: number } | null; // mouse/pen, timelinePick only
     moving: boolean;
     buildingsTileLoaded: boolean;
     warned: Set<string>;
@@ -191,6 +211,16 @@
   let readyFired = false;
   let unsupportedFired = false;
 
+  // Timeline mode (timelapse-render §4.1 "Mode"): set by the first applyTimeline, kept until
+  // unmount. The day and lookups are kept so a new controller (remount) starts with them.
+  let timelineMode = false;
+  let pendingTimeline: TimelineUpdate[] = [];
+  let pendingDay: Day | null = null;
+  let pendingLookups: TimelineLookups | null = null;
+  let warnedGenerated = false;
+  /** The last hover report to `timelinePick` was a part: the next hover miss is sent once. */
+  let hoverReported = false;
+
   // Hovered/tapped existing parcel: summary requests are latest-wins.
   let hovered: {
     parcelId: ParcelId;
@@ -202,6 +232,11 @@
   // ---- SimMapHandle (I17) -----------------------------------------------------------------------
 
   export function applyGenerated(u: GeneratedUpdate): void {
+    if (timelineMode) {
+      if (!warnedGenerated) console.error('[map] applyGenerated ignored in timeline mode');
+      warnedGenerated = true;
+      return;
+    }
     const c = live?.controller;
     if (c) return c.apply(u);
     if (mapState === 'error' || mapState === 'unsupported') return; // nothing will drain them
@@ -295,10 +330,46 @@
       if (RESERVED.test(l.id)) throw new Error(`setOverlayLayers: reserved layer id ${l.id}`);
     overlayLayers = [...layers];
     live?.controller?.setOverlayLayers(overlayLayers);
+    live?.timeline?.setOverlayLayers(overlayLayers);
   }
 
   export function onResyncNeeded(cb: () => void): void {
     resyncCb = cb;
+  }
+
+  /**
+   * Enters timeline mode on the first call; queues (revision 0 drops the queue) until ready.
+   * Every cell is validated first (§4.1 "Validation"), so a malformed cell throws its TypeError
+   * whether or not the controller exists yet, and nothing is stored.
+   */
+  export function applyTimeline(u: TimelineUpdate): void {
+    for (const c of u.cells) validateTimedCell(c);
+    const t = live?.timeline;
+    if (t) return t.apply(u);
+    // Generated updates queued for a GeneratedController will never drain in timeline mode.
+    if (!timelineMode) pendingApplies = [];
+    timelineMode = true;
+    if (mapState === 'error' || mapState === 'unsupported') return; // nothing will drain them
+    if (u.revision === 0) pendingTimeline = [];
+    pendingTimeline.push(u);
+    if (live) void enterTimeline(live, false);
+  }
+
+  /** O(1) (§4.7). Kept for the controller when there is none yet, or for the next one. */
+  export function setTime(day: Day): void {
+    if (!Number.isFinite(day)) throw new RangeError(`setTime: day must be finite, got ${day}`);
+    pendingDay = day;
+    live?.timeline?.setTime(day);
+  }
+
+  /**
+   * Kept like the day. A chance row longer than 2048 throws a RangeError (§4.4.3) before
+   * anything is kept, with or without a controller.
+   */
+  export function setTimelineLookups(l: TimelineLookups): void {
+    packChanceTexture(l.chance);
+    live?.timeline?.setLookups(l);
+    pendingLookups = l;
   }
 
   const handle: SimMapHandle = {
@@ -308,7 +379,10 @@
     setBottomInset,
     getMap,
     setOverlayLayers,
-    onResyncNeeded
+    onResyncNeeded,
+    applyTimeline,
+    setTime,
+    setTimelineLookups
   };
 
   // ---- effects ----------------------------------------------------------------------------------
@@ -356,7 +430,15 @@
   });
 
   $effect(() =>
-    installDebug(() => ({ map: live?.map ?? null, controller: live?.controller ?? null }))
+    installDebug(
+      () => ({
+        map: live?.map ?? null,
+        controller: live?.controller ?? null,
+        timeline: live?.timeline ?? null,
+        pendingGenerated: pendingApplies.length
+      }),
+      { applyTimeline, setTime, setTimelineLookups }
+    )
   );
 
   // ---- lifecycle --------------------------------------------------------------------------------
@@ -368,6 +450,12 @@
       map: null,
       overlay: null,
       controller: null,
+      timeline: null,
+      timelinePart: null,
+      timelineLoading: false,
+      timelineFailed: false,
+      onRejection: null,
+      SolidPolygonLayer: null,
       appliedTheme: 'light',
       paintDiff: null,
       timers: new Set(),
@@ -377,6 +465,7 @@
       pointer: null,
       touches: 0,
       tap: null,
+      click: null,
       moving: false,
       buildingsTileLoaded: false,
       warned: new Set(),
@@ -455,13 +544,16 @@
     map.on('movestart', () => {
       l.moving = true;
       if (shown?.surface === 'tooltip') clearShown();
+      unreportHover();
     });
     map.on('moveend', () => (l.moving = false));
     map.on('webglcontextlost', () => {
       if (!l.dead) mapState = 'context-lost';
     });
     map.on('webglcontextrestored', () => {
-      if (!l.dead) mapState = l.loaded ? 'ready' : 'loading';
+      if (l.dead) return;
+      // A timelapse shader failure stays an error: the restored context would fail the same way.
+      mapState = l.timelineFailed ? 'error' : l.loaded ? 'ready' : 'loading';
     });
     map.once('load', () => void onLoad(l, map));
 
@@ -509,6 +601,8 @@
       interleaved: true,
       layers: [],
       layerFilter: generatedCellFilter,
+      // luma reports shader compile/link failures here, not to deck's onError (ruling R10).
+      deviceProps: { onError: (e: Error) => onDeviceError(l, e) },
       // deck seeds its view state from the camera at addControl, then creates its luma device
       // asynchronously and follows map `move` only from its onLoad. onready (below) runs in
       // between, so a camera change there (setBottomInset, a consumer's jumpTo, a drag) left
@@ -522,48 +616,171 @@
     });
     map.addControl(overlay);
     l.overlay = overlay;
-    const controller = new GeneratedController(
-      {
-        setLayers: (layers) => {
-          l.deckLayers = layers;
-          overlay.setProps({ layers });
-          // Deck adds a new layer group only while the style reports loaded; any loading tile or
-          // GeoJSON setData (transit, chunk status) makes it report not loaded. Retry on load.
-          l.deckGroupsPending = !map.isStyleLoaded();
+    l.SolidPolygonLayer = SolidPolygonLayer;
+    const remount = readyFired;
+    if (timelineMode) {
+      // Timeline mode outlives a remount: no GeneratedController; the timeline one replaces it.
+      void enterTimeline(l, remount);
+    } else {
+      const controller = new GeneratedController(
+        {
+          ...controllerDeps(l, map, overlay),
+          SolidPolygonLayer,
+          now: () => performance.now(),
+          reducedMotion: () => matchMedia('(prefers-reduced-motion: reduce)').matches
         },
-        setReplaced: (id) => {
-          if (map.getSource(BUILDINGS_SOURCE))
-            map.setFeatureState({ ...FS, id }, { replaced: true });
-        },
-        clearReplaced: (id) => {
-          if (map.getSource(BUILDINGS_SOURCE)) map.removeFeatureState({ ...FS, id }, 'replaced');
-        },
-        clearAllReplaced: () => {
-          if (map.getSource(BUILDINGS_SOURCE)) map.removeFeatureState(FS);
-        },
-        SolidPolygonLayer,
-        raf: (cb) => requestAnimationFrame(cb),
-        cancelRaf: (h) => cancelAnimationFrame(h),
-        now: () => performance.now(),
-        reducedMotion: () => matchMedia('(prefers-reduced-motion: reduce)').matches,
-        onResyncNeeded: () => resyncCb?.()
-      },
-      l.appliedTheme,
-      // Generated and overlay layers draw beneath the basemap labels (§4.4, ruling 2026-10-11).
-      firstSymbolLayerId(map.getStyle())
-    );
-    l.controller = controller;
-    const queued = pendingApplies;
-    pendingApplies = [];
-    if (overlayLayers.length > 0) controller.setOverlayLayers(overlayLayers);
-    for (const u of queued) controller.apply(u);
-    if (readyFired) {
+        l.appliedTheme,
+        // Generated and overlay layers draw beneath the basemap labels (§4.4, ruling 2026-10-11).
+        firstSymbolLayerId(map.getStyle())
+      );
+      l.controller = controller;
+      const queued = pendingApplies;
+      pendingApplies = [];
+      if (overlayLayers.length > 0) controller.setOverlayLayers(overlayLayers);
+      for (const u of queued) controller.apply(u);
       // Remount (new manifest): the old generated state went with the old map.
-      if (queued.length === 0) resyncCb?.();
-      return;
+      if (remount && queued.length === 0) resyncCb?.();
     }
+    if (remount) return;
     readyFired = true;
     onready?.(handle);
+  }
+
+  /** The deps both controllers share. Feature-state calls never throw (the pump counts first). */
+  function controllerDeps(
+    l: Live,
+    map: MapLibreMap,
+    overlay: MapLibreOverlay
+  ): Omit<ControllerDeps, 'SolidPolygonLayer' | 'now' | 'reducedMotion'> {
+    return {
+      setLayers: (layers) => {
+        l.deckLayers = layers;
+        overlay.setProps({ layers });
+        // Deck adds a new layer group only while the style reports loaded; any loading tile or
+        // GeoJSON setData (transit, chunk status) makes it report not loaded. Retry on load.
+        l.deckGroupsPending = !map.isStyleLoaded();
+      },
+      setReplaced: (id) => {
+        if (map.getSource(BUILDINGS_SOURCE)) map.setFeatureState({ ...FS, id }, { replaced: true });
+      },
+      clearReplaced: (id) => {
+        if (map.getSource(BUILDINGS_SOURCE)) map.removeFeatureState({ ...FS, id }, 'replaced');
+      },
+      clearAllReplaced: () => {
+        if (map.getSource(BUILDINGS_SOURCE)) map.removeFeatureState(FS);
+      },
+      raf: (cb) => requestAnimationFrame(cb),
+      cancelRaf: (h) => cancelAnimationFrame(h),
+      onResyncNeeded: () => resyncCb?.()
+    };
+  }
+
+  /**
+   * Timeline mode, once the overlay exists (§4.1 "Mode"): loads the timelapse module, replaces the
+   * GeneratedController with a TimelineController and hands it the stored day, lookups, overlay
+   * layers and queued updates. `remount`: a new map in timeline mode, which asks for a resync
+   * when nothing is queued, as the generated path does.
+   */
+  async function enterTimeline(l: Live, remount: boolean): Promise<void> {
+    const { map, overlay, SolidPolygonLayer } = l;
+    if (l.dead || l.timeline || l.timelineLoading || !map || !overlay || !SolidPolygonLayer) return;
+    l.timelineLoading = true;
+    let mods: Awaited<ReturnType<typeof loadTimelapse>>;
+    try {
+      mods = await loadTimelapse();
+    } catch (e) {
+      l.timelineLoading = false;
+      if (l.dead) return;
+      // fail() removes the map: stop a GeneratedController still running from editor use.
+      l.controller?.destroy();
+      l.controller = null;
+      fail(l, e); // drops the queued timelines
+      return;
+    }
+    l.timelineLoading = false;
+    if (l.dead || l.map !== map) return;
+    const [{ TimelapseExtension, StageBarLayer }, { TimelineController, TIMELINE_PART_LAYER }] =
+      mods;
+    const { log } = mods[2];
+    // Only one controller emits to the overlay.
+    l.controller?.destroy();
+    l.controller = null;
+    const timeline = new TimelineController(
+      {
+        ...controllerDeps(l, map, overlay),
+        SolidPolygonLayer,
+        TimelapseExtension,
+        StageBarLayer,
+        repaint: () => map.triggerRepaint()
+      },
+      l.appliedTheme,
+      firstSymbolLayerId(map.getStyle())
+    );
+    l.timeline = timeline;
+    l.timelinePart = TIMELINE_PART_LAYER;
+    watchCompileErrors(l);
+    overlay.setProps({
+      // Other layers keep deck's default (deck.ts defaultProps.onError).
+      onError: (e: Error, layer?: Layer) => {
+        if (layer && TIMELINE.test(layer.id)) timelapseFailed(l, e);
+        else log.error(e.message, e.cause)();
+      }
+    });
+    if (pendingDay !== null) timeline.setTime(pendingDay);
+    if (pendingLookups) {
+      try {
+        timeline.setLookups(pendingLookups);
+      } catch (e) {
+        console.error('[map] timeline lookups rejected', e);
+        pendingLookups = null;
+      }
+    }
+    timeline.setOverlayLayers(overlayLayers); // also replaces any generated layers
+    const queued = pendingTimeline;
+    pendingTimeline = [];
+    for (const u of queued) {
+      try {
+        timeline.apply(u);
+      } catch (e) {
+        console.error('[map] queued timeline update rejected', e);
+      }
+    }
+    if (remount && queued.length === 0) resyncCb?.();
+  }
+
+  /** luma device errors: logged as before, except in timeline mode (§4.8 "Errors"). */
+  function onDeviceError(l: Live, e: Error): boolean {
+    if (!timelineMode || l.dead) return false;
+    timelapseFailed(l, e);
+    return true;
+  }
+
+  /**
+   * luma 9.4.2 throws a shader compile error inside its un-awaited link-status check
+   * (webgl-shared-render-pipeline.ts:89, :101), so it surfaces only as an unhandled rejection
+   * (ruling R13). Installed in timeline mode only; removed in teardown.
+   */
+  function watchCompileErrors(l: Live): void {
+    if (l.onRejection) return;
+    l.onRejection = (e: PromiseRejectionEvent) => {
+      const r: unknown = e.reason;
+      if (!(r instanceof Error) || !/during compilation of/.test(r.message)) return;
+      e.preventDefault();
+      timelapseFailed(l, r);
+    };
+    addEventListener('unhandledrejection', l.onRejection);
+  }
+
+  /** The timelapse shader failed: log once, stop the timeline and keep the error state. */
+  function timelapseFailed(l: Live, e: unknown): void {
+    if (l.dead || l.timelineFailed) return;
+    l.timelineFailed = true;
+    console.error('[map] timelapse shader', e);
+    // The destroyed controller stays in place, so later handle calls are no-ops.
+    l.timeline?.destroy();
+    l.deckLayers = [];
+    l.overlay?.setProps({ layers: [] });
+    mapState = 'error';
   }
 
   function teardown(l: Live): void {
@@ -578,9 +795,13 @@
     l.transitIdle = null;
     l.transit = null;
     l.controller?.destroy();
+    l.timeline?.destroy();
+    if (l.onRejection) removeEventListener('unhandledrejection', l.onRejection);
+    l.onRejection = null;
     l.overlay?.finalize();
     l.map?.remove();
     l.controller = null;
+    l.timeline = null;
     l.overlay = null;
     l.map = null;
     if (live === l) live = null;
@@ -588,6 +809,7 @@
     hovered = null;
     reqSeq++;
     shown = null;
+    unreportHover();
     loadingBar = false;
     loadingSlow = false;
     buildingsFailed = false;
@@ -611,6 +833,7 @@
     l.map?.remove();
     l.map = null;
     pendingApplies = [];
+    pendingTimeline = [];
     unobserveFootprint();
     publishFootprint(0, 0);
     mapState = 'error';
@@ -653,6 +876,7 @@
       l.appliedTheme = t;
     }
     l.controller?.setTheme(t);
+    l.timeline?.setTheme(t);
   }
 
   /** Coalesced: at most one chunk-status setData per animation frame. */
@@ -787,6 +1011,7 @@
     for (const id of l.controller?.hidden ?? []) {
       map.setFeatureState({ ...FS, id }, { replaced: true });
     }
+    l.timeline?.reapplyDemolished();
   }
 
   function resetView(): void {
@@ -796,7 +1021,7 @@
 
   // ---- picking (spec §4.7) ----------------------------------------------------------------------
 
-  function pickAt(l: Live, x: number, y: number): { hit: TooltipHit; cell: string | null } | null {
+  function pickAt(l: Live, x: number, y: number): PickResult {
     const map = l.map;
     if (!map || !l.loaded) return null;
     // Stops draw on top of everything, so they win. queryRenderedFeatures skips hidden layers.
@@ -816,9 +1041,13 @@
         return { hit: { kind: 'stop', lines: stopTooltipLines(l.transit, i) }, cell: null };
     }
     const info = l.overlay?.pickObject({ x, y, radius: 2 });
-    if (info?.layer && RESERVED.test(info.layer.id) && l.controller) {
+    if (info?.layer && GENERATED.test(info.layer.id) && l.controller) {
       const part = l.controller.lookup(info.layer.id, info.index);
       if (part) return { hit: { kind: 'generated', ...part }, cell: null };
+    }
+    if (info?.layer && l.timeline && l.timelinePart?.test(info.layer.id)) {
+      const part = l.timeline.lookup(info.layer.id, info.index);
+      if (part) return { timeline: part };
     }
     if (!map.getLayer(BUILDINGS_LAYER)) return null;
     const features = map.queryRenderedFeatures([x, y], { layers: [BUILDINGS_LAYER] });
@@ -826,11 +1055,57 @@
     const ll = map.unproject([x, y]);
     const cell = cellAt(manifest.chunks, [ll.lng, ll.lat]);
     const status = cell === null ? 'unknown' : (chunkStatuses.get(cell) ?? 'unknown');
-    const hit = resolveExistingHit(features, l.controller?.hidden ?? new Set(), () => status);
+    // In timeline mode the pump's applied set hides existing buildings (§4.5 "Picking").
+    const hidden = l.timeline?.demolished ?? l.controller?.hidden ?? new Set<ParcelId>();
+    const hit = resolveExistingHit(features, hidden, () => status);
     return hit ? { hit, cell } : null;
   }
 
-  function present(surface: Surface, x: number, y: number, r: ReturnType<typeof pickAt>): void {
+  /**
+   * Routes a pick (§4.8): with `timelinePick` set, timeline parts go to it and suppress SimMap's
+   * own surface. A miss reports `{ projectId: null, kind }` (§4.8.1): every tap or click miss
+   * sends a tap miss and leaves `hoverReported` alone; a hover miss is sent once, only after a
+   * hover hit. Without it, a part shows the generated tooltip or card. Everything else presents as
+   * in the editor.
+   */
+  function deliver(kind: PickKind, x: number, y: number, r: PickResult): void {
+    const surface: Surface = kind === 'hover' ? 'tooltip' : 'card';
+    const report = timelinePick;
+    if (r && 'timeline' in r) {
+      const { projectId, parcelId, typology, stories, units, existingUnits } = r.timeline;
+      if (report) {
+        if (shown?.surface === surface) clearShown();
+        if (kind === 'hover') hoverReported = true;
+        report({ projectId, parcelId, x, y, kind: kind === 'hover' ? 'hover' : 'tap' });
+        return;
+      }
+      const hit = { kind: 'generated', parcelId, typology, stories, units, existingUnits } as const;
+      return present(surface, x, y, { hit, cell: null });
+    }
+    if (report) {
+      if (kind !== 'hover') report({ projectId: null, kind: 'tap' });
+      else if (hoverReported) {
+        hoverReported = false;
+        report({ projectId: null, kind: 'hover' });
+      }
+    }
+    if (kind !== 'click') present(surface, x, y, r);
+  }
+
+  /** A pointer left the parts with nothing new under it (leave, suppression, movestart, teardown):
+   *  one hover miss. */
+  function unreportHover(): void {
+    if (!hoverReported) return;
+    hoverReported = false;
+    timelinePick?.({ projectId: null, kind: 'hover' });
+  }
+
+  function present(
+    surface: Surface,
+    x: number,
+    y: number,
+    r: { hit: TooltipHit; cell: string | null } | null
+  ): void {
     if (!r) {
       hovered = null;
       reqSeq++;
@@ -888,6 +1163,7 @@
     if (suppressed) {
       l.pointer = null;
       if (shown?.surface === 'tooltip') clearShown();
+      unreportHover();
       return;
     }
     l.pointer = canvasPoint(map, e);
@@ -896,19 +1172,31 @@
       l.pickRaf = null;
       const p = l.pointer;
       if (l.dead || !p) return;
-      present('tooltip', p.x, p.y, pickAt(l, p.x, p.y));
+      deliver('hover', p.x, p.y, pickAt(l, p.x, p.y));
     });
   }
 
   function onPointerLeave(): void {
     if (live) live.pointer = null;
     if (shown?.surface === 'tooltip') clearShown();
+    unreportHover();
+  }
+
+  /** A tap: under TAP_PX of movement and TAP_MS of time since its pointerdown (§4.7). */
+  function isTap(from: { x: number; y: number; t: number }, p: { x: number; y: number }): boolean {
+    return Math.hypot(p.x - from.x, p.y - from.y) < TAP_PX && performance.now() - from.t < TAP_MS;
   }
 
   function onPointerDown(e: PointerEvent): void {
     const l = live;
     const map = l?.map;
-    if (!l || !map || e.pointerType !== 'touch') return;
+    if (!l || !map) return;
+    if (e.pointerType !== 'touch') {
+      // Mouse/pen clicks pick only for timelinePick (§4.8); the editor ignores them.
+      if (!timelinePick || e.button !== 0 || e.target !== map.getCanvas()) l.click = null;
+      else l.click = { id: e.pointerId, ...canvasPoint(map, e), t: performance.now() };
+      return;
+    }
     l.touches++;
     const p = canvasPoint(map, e);
     l.tap =
@@ -920,20 +1208,28 @@
   function onPointerUp(e: PointerEvent): void {
     const l = live;
     const map = l?.map;
-    if (!l || !map || e.pointerType !== 'touch') return;
+    if (!l || !map) return;
+    if (e.pointerType !== 'touch') {
+      const click = l.click;
+      l.click = null;
+      if (!click || click.id !== e.pointerId || !timelinePick || !panEnabled) return;
+      const p = canvasPoint(map, e);
+      if (isTap(click, p)) deliver('click', p.x, p.y, pickAt(l, p.x, p.y));
+      return;
+    }
     l.touches = Math.max(0, l.touches - 1);
     const tap = l.tap;
     if (!tap || tap.id !== e.pointerId) return;
     l.tap = null;
     if (!panEnabled) return;
     const p = canvasPoint(map, e);
-    if (Math.hypot(p.x - tap.x, p.y - tap.y) >= TAP_PX) return;
-    if (performance.now() - tap.t >= TAP_MS) return;
-    present('card', p.x, p.y, pickAt(l, p.x, p.y));
+    if (!isTap(tap, p)) return;
+    deliver('tap', p.x, p.y, pickAt(l, p.x, p.y));
   }
 
   function onPointerCancel(e: PointerEvent): void {
     const l = live;
+    if (l && e.pointerType !== 'touch') l.click = null;
     if (!l || e.pointerType !== 'touch') return;
     l.touches = Math.max(0, l.touches - 1);
     l.tap = null;

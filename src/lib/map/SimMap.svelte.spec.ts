@@ -194,7 +194,7 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     expect(a.getAttribute('href')).toBe('/attribution');
     expect(a.textContent).toBe(ATTRIBUTION);
     expect(a.getAttribute('title')).toBe(
-      'Data & licences: OpenStreetMap and Overture data under ODbL; DataSF under PDDL / public domain; Protomaps basemap'
+      'Data & licences: OpenStreetMap and Overture data under ODbL; DataSF under PDDL / public domain / CC0; Protomaps basemap'
     );
     expect(
       target.querySelector('.maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib')
@@ -452,5 +452,42 @@ describe('SimMap feature-state across tile reloads (acceptance #5)', { timeout: 
     console.info(`[F9] buildings tile loads: zoom trip ${before}, refresh ${tileLoads - before}`);
     expect(tileLoads).toBeGreaterThan(before);
     expect(replacedAt(map)).toEqual([true]);
+  });
+});
+
+describe('SimMap editor without a timeline (timelapse-render §4.8)', { timeout: 30_000 }, () => {
+  it('never requests the lazy timelapse module and emits no timeline- layer', async () => {
+    performance.setResourceTimingBufferSize(100_000); // room for any later module fetch
+    const { root, ready } = await mount();
+    await expect.poll(() => root.dataset.state, { timeout: 20_000 }).toBe('ready');
+    const h = await ready;
+    const map = h.getMap()!;
+    const pack = packCell(
+      '50_25',
+      (genJson as unknown as GeneratedBuilding[])
+        .slice(0, 3)
+        .map((b) => ({ building: b, existingUnits: 0 }))
+    );
+    h.applyGenerated({
+      revision: 0,
+      cells: [{ settled: pack, rising: null }],
+      removedCells: [],
+      hide: { add: [], remove: [] }
+    });
+    await idle(h);
+    const { MapLibreOverlay } = await import('@deck.gl/maplibre');
+    const controls = (map as unknown as { _controls: unknown[] })._controls;
+    const overlay = controls.find((c) => c instanceof MapLibreOverlay) as unknown as {
+      _deck: { props: { layers: { id: string }[] } };
+    };
+    const ids = overlay._deck.props.layers.map((l) => l.id);
+    expect({
+      lazyModule: performance
+        .getEntriesByType('resource')
+        .filter((e) => e.name.includes('timelapse/deck'))
+        .map((e) => e.name),
+      timelineLayers: ids.filter((id) => id.startsWith('timeline-')),
+      generatedLayers: ids.some((id) => id.startsWith('generated-'))
+    }).toEqual({ lazyModule: [], timelineLayers: [], generatedLayers: true });
   });
 });

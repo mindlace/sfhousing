@@ -2,8 +2,17 @@
 // constant-false branch that Vite dead-code-eliminates.
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { ControllerSnapshot, GeneratedController } from './generated-controller';
-import type { GeneratedUpdate } from './types';
+import type { TimelineController } from './timeline-controller';
+import type { TimelineLookups, TimelineSnapshot } from './timelapse/types';
+import type { GeneratedUpdate, SimMapHandle, TimelineUpdate } from './types';
+import type { Day } from '$lib/timelapse/time';
 import { packCell } from './pack';
+
+/** SimMap's timeline handle functions: the hook calls them, so the lazy path runs as in FZP. */
+export type TimelineHandleFns = Pick<
+  SimMapHandle,
+  'applyTimeline' | 'setTime' | 'setTimelineLookups'
+>;
 
 export interface SfhMapDebug {
   readonly map: MapLibreMap | null;
@@ -28,6 +37,24 @@ export interface SfhMapDebug {
     n?: number,
     complexity?: 'representative' | 'worst'
   ): Promise<{ parcels: number; cells: number }>;
+  /**
+   * bench:map and timeline-perf only (docs/dev/map-perf.md): sets `SYNTHETIC_LOOKUPS`, then
+   * applies `makeSyntheticTimeline(seed, n)` (revision 0) through SimMap's `applyTimeline`.
+   * Resolves to the project and cell counts.
+   */
+  loadSyntheticTimeline(seed: number, n: number): Promise<{ projects: number; cells: number }>;
+  /** SimMap's `applyTimeline` (enters timeline mode; queues until the map is ready). */
+  applyTimeline(u: TimelineUpdate): void;
+  /** SimMap's `setTime`. */
+  setTime(day: Day): void;
+  /** SimMap's `setTimelineLookups`. */
+  setTimelineLookups(l: TimelineLookups): void;
+  /** The TimelineController's snapshot; null outside timeline mode or while its module loads. */
+  timelineSnapshot(): TimelineSnapshot | null;
+  /** The demolish pump's largest feature-state call count in one frame; 0 without a timeline. */
+  readonly demolishMaxFrameOps: number;
+  /** Generated updates SimMap holds for a GeneratedController that does not exist yet. */
+  readonly pendingGenerated: number;
 }
 
 declare global {
@@ -37,12 +64,28 @@ declare global {
 }
 
 export function installDebug(
-  get: () => { map: MapLibreMap | null; controller: GeneratedController | null }
+  get: () => {
+    map: MapLibreMap | null;
+    controller: GeneratedController | null;
+    timeline: TimelineController | null;
+    pendingGenerated: number;
+  },
+  timeline: TimelineHandleFns
 ): () => void {
   if (import.meta.env.VITE_E2E !== '1') return () => {};
   const hook: SfhMapDebug = {
     get map() {
       return get().map;
+    },
+    applyTimeline: (u) => timeline.applyTimeline(u),
+    setTime: (day) => timeline.setTime(day),
+    setTimelineLookups: (l) => timeline.setTimelineLookups(l),
+    timelineSnapshot: () => get().timeline?.debugSnapshot() ?? null,
+    get demolishMaxFrameOps() {
+      return get().timeline?.demolishMaxFrameOps ?? 0;
+    },
+    get pendingGenerated() {
+      return get().pendingGenerated;
     },
     snapshot: () => get().controller?.debugSnapshot() ?? null,
     get hiddenSize() {
@@ -115,6 +158,15 @@ export function installDebug(
       const add = updates.flatMap((u) => u.hide.add);
       get().controller?.apply({ revision: 0, cells, removedCells: [], hide: { add, remove: [] } });
       return { parcels: add.length, cells: cells.length };
+    },
+    loadSyntheticTimeline: async (seed, n) => {
+      const { makeSyntheticTimeline, SYNTHETIC_LOOKUPS } =
+        await import('./test/synthetic-timeline');
+      const u = makeSyntheticTimeline(seed, n);
+      timeline.setTimelineLookups(SYNTHETIC_LOOKUPS);
+      timeline.applyTimeline(u);
+      const projects = u.cells.reduce((a, c) => a + c.slotProjectIds.length, 0);
+      return { projects, cells: u.cells.length };
     }
   };
   window.__sfhMap = hook;
