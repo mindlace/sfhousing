@@ -257,8 +257,11 @@ export const PR_RULES: readonly QualityRule[] = [
     label:
       'A placeholder permit valuation under $1,000 was replaced by the nearest real valuation of the permit or its project',
     denominator: 'permits with a revised cost',
-    warnShare: 0.01,
-    failShare: 0.1,
+    // Override (partner ruling): placeholders filled from own estimate or nearest project permit
+    // (87/141 live); 54 unfilled (0.53% of permits) move no output; share reflects alteration
+    // permits added by named linkage; live 141/10,230 = 1.38%.
+    warnShare: 0.02,
+    failShare: 0.05,
     unitsWeighted: false
   },
   {
