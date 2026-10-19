@@ -252,8 +252,10 @@ describe('calibration invariants on fixture-0', () => {
   it('checkV27 reports a cell made non-monotone (no parse)', () => {
     const cal = JSON.parse(json) as Calibration;
     expect(checkV27(cal, FIXTURE_CAL.v27N, FIXTURE_CAL.v27Tol)).toEqual([]);
-    cal.transitions.discretionary.permitFiled!.advance[8] = 0.1;
-    const problems = checkV27(cal, FIXTURE_CAL.v27N, FIXTURE_CAL.v27Tol);
+    // model.ts memoises per-transition constants: a used Transition is immutable, so alter a copy.
+    const bad = structuredClone(cal);
+    bad.transitions.discretionary.permitFiled!.advance[8] = 0.1;
+    const problems = checkV27(bad, FIXTURE_CAL.v27N, FIXTURE_CAL.v27Tol);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toMatch(/^discretionary\.permitFiled: /);
   });
