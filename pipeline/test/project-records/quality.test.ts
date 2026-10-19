@@ -249,7 +249,8 @@ const TABLE: Record<string, Spec> = {
     unitsWeighted: true,
     warnShare: 0.01,
     failShare: 0.1,
-    label: 'A pipeline row with no status date and no Planning record on its lot was left out'
+    label:
+      'A pipeline row with no status date and no usable Planning record on its lot was left out'
   },
   'pr.pipeline.records-win': {
     kind: 'observe',
