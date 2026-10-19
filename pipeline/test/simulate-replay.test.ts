@@ -6,9 +6,11 @@
  * observed one. The observed side is stage-calibration's own code path (`qualifies`,
  * `normalise`, `purgeCensor`, `buildSpells`, `weightAdvances`, `ajSweep`/`ajTable`).
  *
- * Cohorts follow each stage's fitting window: Planning-side stages per (pathway, stage), spells
- * entered on or after 2015-01-01; permit-side stages pooled across pathways from 2007-01-01,
- * left-truncated there (DQ-1), the simulated pathways mixed in the cohort's own proportions.
+ * Cohorts follow each stage's fit: `filed` and `entitled` per (pathway, stage), spells entered on
+ * or after 2015-01-01; `preApplication` pooled across pathways over the same window, as
+ * stage-calibration fits it (see `cohortsOf`); permit-side stages pooled across pathways from
+ * 2007-01-01, left-truncated there (DQ-1). In a pooled cohort each twin runs its history's own
+ * pathway, the unclassifiable ones mixed in the cohort's own proportions.
  * Only cohorts with n ≥ 50 are checked. Pass bar at every month and outcome:
  * |Δ| ≤ max(0.03, 2.5·SE), SE combining a bootstrap of the observed cohort with the spread of
  * the 20 seeds. The tolerance is a test parameter, not a model number.
@@ -103,7 +105,24 @@ function cohortsOf(histories: ProjectHistory[], asOf: Day): Cohort[] {
   // pools the observation); a null pathway takes the cohort mix.
   const declared = new Map(norm.map((h) => [h.id, h.src.pathway]));
   const out: Cohort[] = [];
+  const pooled = (stage: CalStage, obs: Spell[]) => {
+    if (obs.length < N_MIN) return;
+    const mix = mixPathways(obs.map((s) => declared.get(s.projectId) ?? null));
+    out.push({ key: `pooled ${stage}`, stage, obs, twinPathway: mix });
+  };
+  // preApplication is one cohort pooled across pathways, not one per pathway (conductor ruling,
+  // final review Important 1; the spec §6 amendment is pending with the conductor): stage-
+  // calibration fits it pooled for every pathway (`fitTransitions`, pipeline/lib/fzp-cal/
+  // transitions.ts), so a per-pathway cut would compare a pathway's spells with a pooled table.
+  // The twins keep their own pathways in the cohort's own mix, as on the permit side.
+  pooled(
+    'preApplication',
+    spells.filter(
+      (s) => s.stage === 'preApplication' && s.e >= windowStart('preApplication', 'pooled')
+    )
+  );
   for (const stage of PLANNING) {
+    if (stage === 'preApplication') continue;
     const from = windowStart(stage, 'pathway');
     for (const p of PATHWAYS) {
       const obs = spells.filter((s) => s.stage === stage && s.pathway === p && s.e >= from);
@@ -118,9 +137,7 @@ function cohortsOf(histories: ProjectHistory[], asOf: Day): Cohort[] {
       const from = windowStart(stage, 'pooled');
       obs = weightAdvances(obs, unobserved, stage, from, asOf, LIVE_CAL).spells;
     }
-    if (obs.length < N_MIN) continue;
-    const mix = mixPathways(obs.map((s) => declared.get(s.projectId) ?? null));
-    out.push({ key: `pooled ${stage}`, stage, obs, twinPathway: mix });
+    pooled(stage, obs);
   }
   return out;
 }
@@ -343,11 +360,12 @@ function walk(
 
 /**
  * Per pathway, two groups of N_SYNTH: from `preApplication`, entered 2015-01-01 onwards (each
- * preApplication cohort is exactly N_SYNTH); and from the pathway's first core stage (`filed`, or
- * `permitFiled` for permitOnly), entered 2001-01-01 onwards, so Planning-side spells before the
- * 2015 window are left out, permit-side spells straddle the 2007-01-01 window start and enter by
- * left truncation, and 5% of the group is recorded with a null pathway. Starting at the pathway's
- * first stages leaves no gap for normalisation to impute.
+ * pathway's group is exactly N_SYNTH of the pooled preApplication cohort); and from the
+ * pathway's first core stage (`filed`, or `permitFiled` for permitOnly), entered 2001-01-01
+ * onwards, so Planning-side spells before the 2015 window are left out, permit-side spells
+ * straddle the 2007-01-01 window start and enter by left truncation, and 5% of the group is
+ * recorded with a null pathway. Starting at the pathway's first stages leaves no gap for
+ * normalisation to impute.
  */
 function syntheticHistories(snapshot: Day): ProjectHistory[] {
   const rand = mulberry32(SYNTH_SEED);
@@ -383,9 +401,7 @@ describe('simulate-replay: synthetic histories from the mini calibration', () =>
   const run = () => (result ??= runReplay(histories, snapshot, MINI_CAL, miniCity().parcels));
 
   const KEYS = [
-    'discretionary preApplication',
-    'streamlined preApplication',
-    'permitOnly preApplication',
+    'pooled preApplication',
     'discretionary filed',
     'streamlined filed',
     'discretionary entitled',
@@ -395,16 +411,27 @@ describe('simulate-replay: synthetic histories from the mini calibration', () =>
     'pooled construction'
   ];
 
-  it('builds every Planning-side and pooled permit-side cohort, as the spec cuts them', () => {
+  it('builds every cohort as the calibration fits it: preApplication pooled, filed and entitled per pathway', () => {
     const { cohorts } = run();
     expect(cohorts.map((c) => c.key)).toEqual(KEYS);
     const planning = cohorts.filter((c) => PLANNING.includes(c.stage));
     const permit = cohorts.filter((c) => !PLANNING.includes(c.stage));
     expect(permit.map((c) => c.stage)).toEqual([...PERMIT]);
-    // Planning: entered inside the 2015 window, one pathway each
+    // Planning: entered inside the 2015 window
     for (const c of planning) {
       expect(c.obs.every((s) => s.a === 0 && s.e >= isoToDay('2015-01-01'))).toBe(true);
     }
+    // filed and entitled: one pathway each, the twins on it
+    for (const c of planning.filter((x) => x.stage !== 'preApplication')) {
+      const p = c.key.split(' ')[0];
+      expect(c.obs.every((s) => s.pathway === p)).toBe(true);
+      expect(c.twinPathway.every((x) => x === p)).toBe(true);
+    }
+    // preApplication: every pathway's spells in one cohort, each twin on its own pathway
+    const ppa = cohorts.find((c) => c.stage === 'preApplication')!;
+    expect(ppa.obs).toHaveLength(PATHWAYS.length * N_SYNTH);
+    expect(ppa.twinPathway).toEqual(ppa.obs.map((s) => s.projectId.split(':')[1]));
+    expect(new Set(ppa.twinPathway)).toEqual(new Set(PATHWAYS));
     // permit side: some spells enter by left truncation at 2007-01-01, and pooled cohorts mix
     // every pathway, unclassifiable histories included
     for (const c of permit) {
