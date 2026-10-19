@@ -132,6 +132,7 @@ const STATUSES: readonly Status[] = [
   'notPopulation',
   'suspended',
   'superseded',
+  'verifiedDead',
   'noDates'
 ];
 
@@ -406,6 +407,36 @@ function applyStreamlined(a: Assessed, ctx: LapseInput): boolean {
 }
 
 /**
+ * Ruling C3c: a curated `dead` verdict on an in-flight project's open history applies as on any
+ * other (exit `withdrawn` at the last entered stage, dated `checked`); true when it did, and the
+ * caller takes the project out of flight. A `complete` or `unknown` verdict is left for the
+ * not-applied warning.
+ */
+function applyDeadVerdict(
+  a: Assessed,
+  verdicts: Map<string, ConstructionVerdict>,
+  asOf: Day,
+  warnings: string[]
+): boolean {
+  const v = verdicts.get(a.proj.id);
+  if (v === undefined || v.verdict !== 'dead' || a.histEnd?.kind !== 'open') return false;
+  verdicts.delete(a.proj.id);
+  const r = verdictEnd(a.histEntered, v, asOf);
+  if (r === null) return false;
+  if ('skip' in r) {
+    warnings.push(`construction-verified.json: ${v.id}: ${r.skip}; not applied`);
+    return false;
+  }
+  a.stale.verdict = true;
+  if (r.clamped) {
+    a.clamped = [...a.clamped, 'complete'];
+    a.quality.add(PR.stagesForwardClamp);
+  }
+  replaceEnd(a, r.end, r.entered, PR.stagesVerifiedConstruction);
+  return true;
+}
+
+/**
  * Spec 4.6 stale open histories, in order, on a history whose project is not in flight: (1)
  * completion from construction evidence (Ruling C2), (2) the statutory permit expiry exit (Ruling
  * E2; a building shown finished is not expired), (3) the curated verdict for its id (Ruling C3),
@@ -527,8 +558,6 @@ interface TallyInput {
   };
   /** Spec 4.10.2 DA netting of every master in flight before netting, in id order. */
   netting: readonly Netting[];
-  /** Entries in construction-verified.json (spec 4.6, Ruling C3). */
-  verdictEntries: number;
   /** Ruling SP1: the in-flight PRJ-anchored projects tested and the superseded ids. */
   supersede: { tested: number; superseded: readonly string[] };
 }
@@ -636,11 +665,13 @@ const PR_TALLIES: Record<PrRuleId, (t: TallyInput) => Tally> = {
     const sample = of.filter((a) => a.stale.streamlinedExpired).map((a) => a.proj.id);
     return { fired: sample.length, of: of.length, sample };
   },
-  // Spec 4.6 Ruling C3: the entries of construction-verified.json; the verdicts applied to an
-  // open history (they carry the id); their ids.
-  [PR.stagesVerifiedConstruction]: ({ withHistory, verdictEntries }) => {
+  // Spec 4.6 Rulings C3, C3b: of the histories that entered construction (complete-from-
+  // evidence's denominator); fired = every verdict applied to an open history, at whatever stage
+  // (they carry the id); their ids.
+  [PR.stagesVerifiedConstruction]: ({ withHistory }) => {
+    const of = withHistory.filter((a) => a.entered.construction !== undefined);
     const sample = withHistory.filter((a) => a.stale.verdict).map((a) => a.proj.id);
-    return { fired: sample.length, of: verdictEntries, sample };
+    return { fired: sample.length, of: of.length, sample };
   },
   // Spec 4.7 Ruling SP1 (no record carries it): of the in-flight PRJ-anchored projects tested; the
   // ones superseded by a later refiling; their ids.
@@ -767,6 +798,8 @@ function zeroCounts(): Record<string, number> {
     'projects.inFlightUnits': 0,
     'projects.excludedStatutory': 0,
     'projects.excludedStatutoryUnits': 0,
+    'projects.excludedVerifiedDead': 0,
+    'projects.excludedVerifiedDeadUnits': 0,
     'projects.excludedSuspended': 0,
     'projects.excludedSuspendedUnits': 0,
     'projects.excludedSuperseded': 0,
@@ -1030,6 +1063,14 @@ export function deriveProjects(
         counts['projects.excludedStreamlinedExpiryUnits'] += a.units ?? 0;
         leftFlight.push(
           `${a.proj.id}: past its streamlined approval term (3 years and one extension); expired, left flight`
+        );
+      } else if (applyDeadVerdict(a, verdicts, asOf, verdictWarnings)) {
+        // Ruling C3c: a curated imagery check found no building, so it leaves flight.
+        a.status = 'verifiedDead';
+        counts['projects.excludedVerifiedDead']++;
+        counts['projects.excludedVerifiedDeadUnits'] += a.units ?? 0;
+        leftFlight.push(
+          `${a.proj.id}: curated check found no building (construction-verified.json); withdrawn, left flight`
         );
       } else {
         inFlightHistories.add(a.proj.id);
@@ -1322,7 +1363,6 @@ export function deriveProjects(
     inFlight: t3,
     noDate,
     netting,
-    verdictEntries: input.constructionVerified.projects.length,
     supersede: { tested: supersede.tested, superseded: [...supersede.superseded.keys()] }
   };
   for (const r of PR_RULES) recordQuality(counts, r.id, PR_TALLIES[r.id as PrRuleId](tallyInput));
