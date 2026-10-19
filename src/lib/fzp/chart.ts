@@ -64,6 +64,8 @@ export interface TableRow {
   planBand: string;
 }
 
+/** Least vertical distance (px) between the zero gridline and a floor gridline. */
+const MIN_FLOOR_GAP = 12;
 const CALCULATING = 'calculating…';
 const EN_DASH = '–';
 const RHNA_UNITS = M1_TARGETS.find((t) => t.id === 'rhna')!.units;
@@ -156,7 +158,10 @@ export function chartModel(
     return `M${upper.join('L')}L${lower.join('L')}Z`;
   };
 
-  const gridValues = yMin === 0 ? [0, yMax / 2, yMax] : [yMin, 0, yMax];
+  // Zero, the midpoint and the ceiling. A floor line joins them only when it is clear of the
+  // zero line, so the two labels never overprint.
+  const gridValues = [0, yMax / 2, yMax];
+  if (yMin < 0 && y(yMin) - y(0) >= MIN_FLOOR_GAP) gridValues.unshift(yMin);
   const lastYear = utcParts(horizon).y;
   const xTicks = [2030, 2040, 2050]
     .filter((year) => year <= lastYear)

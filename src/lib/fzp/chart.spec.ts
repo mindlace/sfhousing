@@ -20,9 +20,10 @@ function points(path: string): [number, number][] {
   return out;
 }
 
-function scaled(factor: number): TimelineScore {
+/** A score whose shown completedNet climbs linearly to `final` at the last month. */
+function climbingTo(final: number): TimelineScore {
   const s = makeTimelineScore();
-  s.shown = s.shown.map((r) => ({ ...r, completedNet: r.completedNet * factor }));
+  s.shown = s.shown.map((r, i) => ({ ...r, completedNet: (final * i) / 290 }));
   return s;
 }
 
@@ -62,14 +63,15 @@ describe('chartModel', () => {
 
   it('sets yMax to niceCeil of the largest drawn value, RHNA included', () => {
     expect(m.yMax).toBe(niceCeil(82069));
-    // total reaches 12000 + 290 * 100 * 10 = 302000; band high is lower
-    expect(chartModel(scaled(10), FIX_ASOF, HORIZON, W).yMax).toBe(niceCeil(12000 + 290000));
+    // The baseline (12,000) decides the step: 190,000 alone rounds to 200,000, 202,000 to 500,000.
+    expect(chartModel(climbingTo(190000), FIX_ASOF, HORIZON, W).yMax).toBe(500000);
   });
 
   it('includes the band high plus baseline and the references in yMax', () => {
     const band = makeTimelineScore();
-    band.band = band.band.map((b) => ({ ...b, p90: b.p90 * 10 }));
-    expect(chartModel(band, FIX_ASOF, HORIZON, W).yMax).toBe(niceCeil(12000 + 110 * 10 * 290));
+    band.band = band.band.map((b, i) => ({ ...b, p90: (195000 * i) / 290 }));
+    // 195,000 alone rounds to 200,000; with the baseline it is 207,000, so 500,000
+    expect(chartModel(band, FIX_ASOF, HORIZON, W).yMax).toBe(500000);
     const ref = makeTimelineScore();
     ref.references[0] = { ...ref.references[0], units: 150000 };
     expect(chartModel(ref, FIX_ASOF, HORIZON, W).yMax).toBe(200000);
@@ -83,9 +85,10 @@ describe('chartModel', () => {
     );
     expect(flat.gridlines[0].y).toBe(CHART_H);
     expect(flat.gridlines[2].y).toBe(0);
-    // a domain below zero grids its floor, zero and its ceiling
+    // a floor of -500 is under 1 px from zero, so it gets no gridline of its own
+    expect(m.yMin).toBe(-500);
     expect(m.gridlines.map((g) => g.label)).toEqual(
-      [m.yMin, 0, m.yMax].map((v) => formatCompactCount(v))
+      [0, m.yMax / 2, m.yMax].map((v) => formatCompactCount(v))
     );
   });
 
@@ -211,6 +214,25 @@ describe('chart domain extends below zero', () => {
     const lows = points(m.planBand!).map(([, y]) => y);
     expect(Math.max(...lows)).toBeLessThanOrEqual(CHART_H);
     expect(Math.max(...lows)).toBeGreaterThan(zero!.y);
+  });
+
+  it('adds a floor gridline only when it is at least 12 px below the zero line', () => {
+    const deep = makeTimelineScore();
+    deep.planEffectBand = deep.planEffectBand.map((p) => ({ ...p, p10: p.p10 - 9000 }));
+    const m = chartModel(deep, FIX_ASOF, HORIZON, W);
+    expect(m.yMin).toBe(-10000);
+    expect(m.gridlines.map((g) => g.label)).toEqual(['−10,000', '0', '50,000', '100K']);
+    const [floor, zero] = m.gridlines;
+    expect(floor.y).toBe(CHART_H);
+    expect(floor.y - zero.y).toBeGreaterThanOrEqual(12);
+  });
+
+  it('suppresses the floor gridline when it would crowd zero', () => {
+    const m = chartModel(TIMELINE_SCORE, FIX_ASOF, HORIZON, W);
+    const zero = m.gridlines.find((g) => g.label === '0')!;
+    expect(CHART_H - zero.y).toBeLessThan(12);
+    expect(m.gridlines).toHaveLength(3);
+    expect(m.gridlines.every((g) => g.label !== formatCompactCount(m.yMin))).toBe(true);
   });
 
   it('stays at 0 when no drawn series is negative', () => {
