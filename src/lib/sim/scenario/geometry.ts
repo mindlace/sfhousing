@@ -27,7 +27,10 @@ export interface Geometry {
   anchoredCells(): Set<string>;
   /** The extra cells (beyond `cellIds`) of the multi-parcel projects anchored in `cellIds`. */
   cellsFor(cellIds: Iterable<string>): Set<string>;
-  /** A chunk is ready: its cell may now pack, and so may the anchor cells waiting on it. */
+  /**
+   * A chunk is ready (its records already answer `recordOf`): its cell may now pack, and so may
+   * the anchor cells waiting on it.
+   */
   onRecords(cellId: string, recs: readonly ParcelRecord[]): void;
   /** Ready anchor cells with new or newly complete projects, by cell id. */
   packable(): string[];
@@ -49,9 +52,15 @@ export interface Geometry {
 export interface GeometryOptions {
   input: SimInput; // the FZP input the run came from
   schedules: readonly Schedule[]; // the shown run's (never a twin's)
-  /** The chunks already ready, by cell id. */
+  /** The chunks already ready, by cell id (their records already answer `recordOf`). */
   records: ReadonlyMap<string, readonly ParcelRecord[]>;
-  /** The massing context without its record lookup: the geometry reads its own ready records. */
+  /**
+   * The ready record of a parcel, from the caller's own index of every ready chunk (the host
+   * keeps one), so that a run does not rebuild one with a Map insert per loaded parcel. It must
+   * answer exactly for the records of `records` and of every later `onRecords`.
+   */
+  recordOf(id: ParcelId): ParcelRecord | undefined;
+  /** The massing context without its record lookup: the geometry supplies `recordOf`. */
   massingCtx: Omit<MassingCtx, 'records'>;
   /** Logs `msg` once per `key`, however often it is called (the caller's responsibility). */
   warnOnce(key: string, msg: string): void;
@@ -72,9 +81,8 @@ export function createGeometry(o: GeometryOptions): Geometry {
     return i === undefined ? undefined : P.cells[P.cell[i]].cellId;
   };
 
-  const byId = new Map<ParcelId, ParcelRecord>();
   const ready = new Set<string>();
-  const ctx: MassingCtx = { ...o.massingCtx, records: (id) => byId.get(id) };
+  const ctx: MassingCtx = { ...o.massingCtx, records: o.recordOf };
 
   const byAnchor = new Map<string, Anchored[]>();
   /** cell → the anchor cells with a project that needs it (an anchor needs itself). */
@@ -135,19 +143,14 @@ export function createGeometry(o: GeometryOptions): Geometry {
     if (readyProjects(anchor).length > (packed.get(anchor) ?? 0)) pending.add(anchor);
   };
 
-  const addRecords = (cellId: string, recs: readonly ParcelRecord[]) => {
-    for (const r of recs) byId.set(r.id, r);
-    ready.add(cellId);
-  };
-
-  for (const [cellId, recs] of o.records) addRecords(cellId, recs);
+  for (const cellId of o.records.keys()) ready.add(cellId);
   for (const anchor of byAnchor.keys()) recheck(anchor);
 
   /** The loaded records of a project's parcels (the set its massing uses). */
   const loadedOf = (s: Schedule): ParcelRecord[] => {
     const out: ParcelRecord[] = [];
     for (const id of new Set(s.parcelIds)) {
-      const r = byId.get(id);
+      const r = o.recordOf(id);
       if (r) out.push(r);
     }
     return out;
@@ -185,8 +188,8 @@ export function createGeometry(o: GeometryOptions): Geometry {
           for (const c of p.cells) if (!given.has(c)) out.add(c);
       return out;
     },
-    onRecords(cellId, recs) {
-      addRecords(cellId, recs);
+    onRecords(cellId) {
+      ready.add(cellId);
       for (const anchor of dependents.get(cellId) ?? []) recheck(anchor);
     },
     packable: () => [...pending].sort(cmp),

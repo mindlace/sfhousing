@@ -81,6 +81,7 @@ export function simulateNet(input: SimInput, seed: number, horizon: Day, months:
   };
   const asOf = input.asOf;
   runEngine(input, seed, horizon, {
+    ids: false, // addNet reads neither projectId nor parcelIds
     schedule(s) {
       addNet(acc, s, asOf);
     },

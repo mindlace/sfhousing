@@ -39,9 +39,25 @@ export function jobEntity(projectId: string): number {
   return fnv1a32('j:' + projectId);
 }
 
+/** The first mix of `draw`, which depends on the seed only (the engine computes it once a run). */
+export function seedHash(seed: number): number {
+  return fmix32(seed ^ 0x5bd1e995);
+}
+
+/** The next two mixes of `draw`: one `(entity, k)` stream under a seed's `seedHash`. */
+export function streamOf(seedH: number, entity: number, k: number): number {
+  return fmix32(fmix32(seedH ^ entity) ^ Math.imul(k + 1, 0x9e3779b1));
+}
+
+/** The last mix of `draw` on a `streamOf` stream: `draw(seed, entity, k, purpose, stageIdx)`. */
+export function drawOn(stream: number, purpose: number, stageIdx: number): number {
+  return (fmix32(stream ^ ((purpose << 8) | stageIdx)) + 0.5) / 4294967296;
+}
+
 /**
  * Counter-based uniform draw in (0, 1). Pure function of its arguments: no state, so the order of
- * draws never matters.
+ * draws never matters. The engine hoists the parts shared by a run (`seedHash`) and by one
+ * project (`streamOf`); the composition is this same sequence of mixes.
  */
 export function draw(
   seed: number,
@@ -50,9 +66,5 @@ export function draw(
   purpose: number,
   stageIdx: number
 ): number {
-  let H = fmix32(seed ^ 0x5bd1e995);
-  H = fmix32(H ^ entity);
-  H = fmix32(H ^ Math.imul(k + 1, 0x9e3779b1));
-  H = fmix32(H ^ ((purpose << 8) | stageIdx));
-  return (H + 0.5) / 4294967296;
+  return drawOn(streamOf(seedHash(seed), entity, k), purpose, stageIdx);
 }

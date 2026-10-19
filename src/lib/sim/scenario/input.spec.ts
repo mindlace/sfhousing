@@ -12,6 +12,7 @@ import { capScenarioYield, scenarioYield } from '$lib/data/scenario-yield';
 import { assembleSite } from '$lib/generator/assemble';
 import { checkManifestShape } from '$lib/sim/manifest-shape';
 import { exp, log } from '$lib/timelapse/math';
+import { MONTH_DAYS } from '$lib/timelapse/time';
 import { initiationHazard, parseCalibration } from '$lib/timelapse/model';
 import { ProjectsFormatError, parseProjectsFile, type ProjectsFile } from '$lib/timelapse/projects';
 import { PATHWAYS, type Calibration, type FeatureId } from '$lib/timelapse/types';
@@ -40,7 +41,8 @@ import {
   MINI_PROJECTS,
   miniProjectsJson
 } from './fixtures/mini-projects';
-import { ScenarioInputError, buildSimInput, precomputeOf } from './input';
+import { ScenarioInputError, buildSimInput, lastInitiationMonth, precomputeOf } from './input';
+import { P, draw, simEntity } from './rng';
 
 const F = FILL_LEVELS.length;
 const NO_CAP = 0xffff;
@@ -378,5 +380,77 @@ describe('precomputeOf', () => {
     // memoised: no second warning
     precomputeOf(input, (m) => warnings.push(m));
     expect(warnings).toHaveLength(1);
+  });
+});
+
+describe('the simulated pass shortcuts (precompute)', () => {
+  const MD = MONTH_DAYS;
+  const H = MINI_HORIZON;
+
+  it('lists the rows that can initiate, ascending, with their parcel entities', () => {
+    const input = buildSimInput(miniFiles());
+    const p = input.parcels;
+    const pre = precomputeOf(input);
+    const want: number[] = [];
+    for (let i = 0; i < p.count; i++)
+      if (p.hostable[i] === 1 && pre.hazard[i] > 0 && pre.log1mh[i] < 0) want.push(i);
+    expect(Array.from(pre.candidates)).toEqual(want);
+    expect(Array.from(pre.entity)).toEqual(want.map((i) => simEntity(p.id[i])));
+  });
+
+  it('lastInitiationMonth is the last month T whose earliest day is on or before the horizon', () => {
+    const earliest = (asOf: number, T: number) => asOf + 1 + Math.floor((T - 1) * MD);
+    for (const [asOf, horizon] of [
+      [MINI_AS_OF, H],
+      [MINI_AS_OF, MINI_AS_OF + 1],
+      [MINI_AS_OF, MINI_AS_OF + 31],
+      [MINI_AS_OF, MINI_AS_OF + 32],
+      [0, 10_000],
+      [100, 100 + 30],
+      [100, 100 + 31]
+    ]) {
+      const T = lastInitiationMonth(asOf, horizon);
+      expect(T).toBeGreaterThanOrEqual(1);
+      expect(earliest(asOf, T)).toBeLessThanOrEqual(horizon);
+      expect(earliest(asOf, T + 1)).toBeGreaterThan(horizon);
+    }
+    expect(lastInitiationMonth(MINI_AS_OF, MINI_AS_OF)).toBe(0);
+  });
+
+  it('skipAbove: every first draw above the bound initiates after the horizon', () => {
+    const input = buildSimInput(miniFiles());
+    const pre = precomputeOf(input);
+    const bound = pre.skipAbove(H);
+    expect(pre.skipAbove(H)).toBe(bound); // memoised per horizon
+    // the exact path (§4.4.4 steps 1-2), as the engine evaluates it, from r = asOf, k = 0
+    const day = (u: number, v: number, log1mh: number) =>
+      input.asOf + 1 + Math.floor((Math.max(1, Math.ceil(log(1 - u) / log1mh)) - 1 + v) * MD);
+    let bounded = 0;
+    let skipped = 0;
+    pre.candidates.forEach((i, c) => {
+      const b = bound[c];
+      const L = pre.log1mh[i];
+      if (!Number.isFinite(b)) return;
+      bounded++;
+      // just above the bound, whatever v: after the horizon
+      for (const u of [b, b * (1 + 1e-12), b + 1e-9, (b + 1) / 2, 1 - 0.5 / 4294967296]) {
+        if (!(u < 1)) continue;
+        for (const v of [0.5 / 4294967296, 0.5, 1 - 0.5 / 4294967296]) {
+          expect(day(u, v, L)).toBeGreaterThan(H);
+        }
+      }
+      // the bound is tight: a little below the unwidened u*, the earliest day is in time
+      const uStar = 1 - exp(lastInitiationMonth(input.asOf, H) * L);
+      expect(day(uStar * (1 - 1e-4), 0.5 / 4294967296, L)).toBeLessThanOrEqual(H);
+      // and the real first draws: those above the bound never initiate
+      for (let seed = 1; seed <= 200; seed++) {
+        const u = draw(seed, pre.entity[c], 0, P.INIT, 0);
+        if (!(u > b)) continue;
+        skipped++;
+        expect(day(u, draw(seed, pre.entity[c], 0, P.INIT_DAY, 0), L)).toBeGreaterThan(H);
+      }
+    });
+    expect(bounded).toBeGreaterThan(20);
+    expect(skipped).toBeGreaterThan(100);
   });
 });

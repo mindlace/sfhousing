@@ -12,13 +12,15 @@
 // on the dataset, so every reroll reuses it) and the current shown `Run` (one per `(rev, seed)`;
 // a reroll replaces it and cancels its child token). All computation runs in one scheduler: a
 // slice is a `setTimeout(0)` macrotask that takes the next job by priority and keeps going while
-// the time used so far (`deps.now()`) plus the last measured cost of the next job's kind fits
-// in 50 ms; the first job of a slice always runs. Other requests are handled between slices. Job
-// priority: (1) the current run's revision 0, after the FZP band runs it needs when its seed is
-// null, and its geometry packing for up to 2.5 s; (2) its twin, posted as a band-only update with
-// `planEffect`; (3) its later geometry, one revision per packing slice; (4) the band: FZP run
-// then twin per pair, a band-only update every 16 pairs and after the last. Twins run through
-// `simulateNet` only, so no twin Schedule ever exists.
+// the time used so far (`deps.now()`) plus the estimated cost of the next job's kind (the
+// largest of its last few measured costs) fits in 45 ms, 5 ms short of the 50 ms slice so that
+// a job over its estimate still ends within it; the first job of a slice always runs. Other
+// requests are handled between slices. Job priority: (1) the current run's revision 0, after
+// the FZP band runs it needs when its seed is null, and its geometry packing for up to 2.5 s;
+// (2) its twin, posted as a band-only update with `planEffect`; (3) its later geometry, one
+// revision per packing slice; (4) the band: FZP run then twin per pair, a band-only update every
+// 16 pairs and after the last. Twins run through `simulateNet` only, so no twin Schedule ever
+// exists.
 //
 // Geometry (§4.2, §4.7, §4.8). Each session has its own chunk loader, driven only by `prefetch`
 // (the viewport) plus the extra cells of the multi-parcel projects anchored there; chunks report
@@ -143,6 +145,14 @@ function createToken(
 
 /** Longest slice of band, twin or geometry work (§4.7, §4.11; tier 4, engineering). */
 export const SLICE_MS = 50;
+/**
+ * The length the scheduler plans a slice to: the 5 ms below `SLICE_MS` absorb a job that runs
+ * over its estimate (a collection, a cold generator), so the slice still ends within `SLICE_MS`
+ * (tier 4, engineering; measured in scenario.bench.spec.ts).
+ */
+export const SLICE_PLAN_MS = SLICE_MS - 5;
+/** A job kind's cost estimate is the largest of its last this many measured costs (tier 4). */
+const COST_WINDOW = 4;
 /** A band-only update every this many completed pairs, and after the last (§4.7; tier 4). */
 export const BAND_POST_EVERY = 16;
 /** Revision 0 packs ready anchored cells for at most this long after the request (§4.7; tier 4). */
@@ -201,8 +211,10 @@ interface Work {
   massing: Omit<MassingCtx, 'records'>;
   pending: boolean; // a slice is scheduled
   sliceStart: number; // deps.now() at the current slice's start
-  /** Last measured ms per job kind; for 'pack', per packed cell. */
+  /** Estimated ms per job kind (`measure`); for 'pack', per packed cell. */
   cost: Partial<Record<JobKind, number>>;
+  /** The last `COST_WINDOW` measured ms per job kind. */
+  costs: Partial<Record<JobKind, number[]>>;
   /** A due band post could not go out yet; the next timeline (which carries the band) is it. */
   bandPostDue: boolean;
 }
@@ -399,6 +411,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       pending: false,
       sliceStart: 0,
       cost: {},
+      costs: {},
       bandPostDue: false
     };
     kick(st);
@@ -453,10 +466,19 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     }, 0);
   }
 
+  /** Records one measured cost of `kind`; its estimate is the largest of the recent ones. */
+  function measure(w: Work, kind: JobKind, ms: number): void {
+    const recent = (w.costs[kind] ??= []);
+    recent.push(ms);
+    if (recent.length > COST_WINDOW) recent.shift();
+    w.cost[kind] = Math.max(...recent);
+  }
+
   /**
-   * One macrotask: jobs in priority order while they fit in `SLICE_MS`, judged by the time used
-   * so far plus the last measured cost of the next job's kind (a kind not yet measured waits for
-   * a fresh slice). The first job always runs, so a job longer than a slice gets one of its own.
+   * One macrotask: jobs in priority order while they fit in `SLICE_PLAN_MS`, judged by the time
+   * used so far plus the estimated cost of the next job's kind (a kind not yet measured waits
+   * for a fresh slice). The first job always runs, so a job longer than a slice gets one of its
+   * own.
    */
   function slice(st: Session, w: Work): void {
     const start = deps.now();
@@ -467,11 +489,11 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       if (job === null) return; // idle until a reroll or a chunk kicks again
       if (!first) {
         const est = w.cost[job.kind];
-        if (est === undefined || deps.now() - start + est > SLICE_MS) return kick(st);
+        if (est === undefined || deps.now() - start + est > SLICE_PLAN_MS) return kick(st);
       }
       const t0 = deps.now();
       job.run();
-      if (job.kind !== 'pack') w.cost[job.kind] = deps.now() - t0; // packCells measures per cell
+      if (job.kind !== 'pack') measure(w, job.kind, deps.now() - t0); // packCells: per cell
     }
   }
 
@@ -551,6 +573,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       input: w.loaded.fzp,
       schedules: detail.schedules,
       records: w.chunks.byCell,
+      recordOf: (id) => w.chunks.records.get(id),
       massingCtx: w.massing,
       warnOnce: logOnce
     });
@@ -566,7 +589,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
   }
 
   /**
-   * Packs ready cells into `into` while they fit the slice, judged by the last measured cost of
+   * Packs ready cells into `into` while they fit the slice plan, judged by the estimated cost of
    * one cell; the first cell always packs (the scheduler judged it fits, or the slice is fresh).
    * Revision 0 (`capped`) also stops at the cap.
    */
@@ -576,12 +599,12 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       const cellId = g.packable()[0];
       if (cellId === undefined) return;
       if (!first) {
-        if (deps.now() - w.sliceStart + (w.cost.pack ?? Infinity) > SLICE_MS) return;
+        if (deps.now() - w.sliceStart + (w.cost.pack ?? Infinity) > SLICE_PLAN_MS) return;
         if (capped && !revision0Pending(run)) return;
       }
       const t0 = deps.now();
       into.set(cellId, g.pack(cellId));
-      w.cost.pack = deps.now() - t0;
+      measure(w, 'pack', deps.now() - t0);
     }
   }
 

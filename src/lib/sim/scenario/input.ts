@@ -3,11 +3,13 @@
 // Worker-safe and pure apart from the identity-keyed memo.
 import type { ParcelId } from '$lib/data/parcel';
 import { FILL_LEVELS, featureValue, type ScenarioParcels } from '$lib/data/scenario-codec';
-import { log as ln } from '$lib/timelapse/math';
+import { exp, log as ln } from '$lib/timelapse/math';
 import { initiationHazard } from '$lib/timelapse/model';
 import type { ProjectsFile } from '$lib/timelapse/projects';
+import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
 import type { Calibration, FeatureId } from '$lib/timelapse/types';
 import { isoOf } from './dates';
+import { simEntity } from './rng';
 import type { SimInput } from './types';
 
 type ScenarioFile = 'parcels.bin' | 'projects.json' | 'calibration.json';
@@ -74,9 +76,67 @@ export interface Precompute {
    */
   sizeCum: Float32Array;
   parcelIndexOf(id: ParcelId): number; // -1 if absent
+  /** the rows that can initiate (hostable, hazard > 0, log1mh < 0), ascending */
+  candidates: Int32Array;
+  /** `simEntity` of each candidate's parcel id, index-aligned with `candidates` */
+  entity: Uint32Array;
+  /**
+   * Per candidate, a bound on the first initiation draw `u = draw(INIT, k = 0)` for a parcel at
+   * risk from `asOf`: when u exceeds it, that initiation is certainly after `horizon`
+   * (`initiationDay` would return null). Infinity where no safe bound exists. A cost shortcut
+   * only: every u at or below the bound goes through the exact computation.
+   */
+  skipAbove(horizon: Day): Float64Array;
 }
 
 const memo = new WeakMap<SimInput, Precompute>();
+
+/** `simEntity` per row, shared by every input over the same id column (the twin's view too). */
+const entities = new WeakMap<readonly ParcelId[], { hash: Uint32Array; done: Uint8Array }>();
+
+function entityOf(ids: readonly ParcelId[], i: number): number {
+  let e = entities.get(ids);
+  if (!e) {
+    e = { hash: new Uint32Array(ids.length), done: new Uint8Array(ids.length) };
+    entities.set(ids, e);
+  }
+  if (e.done[i] === 0) {
+    e.hash[i] = simEntity(ids[i]);
+    e.done[i] = 1;
+  }
+  return e.hash[i];
+}
+
+/**
+ * The last geometric month T whose earliest initiation day from `asOf` (v → 0 in §4.4.4 step 2,
+ * `asOf + 1 + floor((T − 1) × MONTH_DAYS)`, as the engine evaluates it) is on or before the
+ * horizon; 0 when even T = 1 is after it.
+ */
+export function lastInitiationMonth(asOf: Day, horizon: Day): number {
+  const earliest = (T: number) => asOf + 1 + Math.floor((T - 1) * MONTH_DAYS);
+  if (earliest(1) > horizon) return 0;
+  let T = Math.max(1, Math.floor((horizon - asOf - 1) / MONTH_DAYS));
+  while (T > 1 && earliest(T) > horizon) T--;
+  while (earliest(T + 1) <= horizon) T++;
+  return T;
+}
+
+/**
+ * The `skipAbove` bounds (see `Precompute`). With T = max(1, ceil(log(1 − u) / log1mh)), the
+ * initiation is after the horizon exactly when T > Tmax (`lastInitiationMonth`), that is when
+ * u > u* = 1 − (1 − h)^Tmax = 1 − exp(Tmax · log1mh). The bound is u* widened by a relative
+ * 1e-6, which is about 10⁴ times every rounding error of the exact path's `1 − u`, `log` and
+ * division for any u* above 1e-6; below that no bound is used.
+ */
+function skipBounds(log1mh: Float64Array, candidates: Int32Array, Tmax: number): Float64Array {
+  const out = new Float64Array(candidates.length).fill(Infinity);
+  if (Tmax < 1) return out;
+  for (let c = 0; c < candidates.length; c++) {
+    const uStar = 1 - exp(Tmax * log1mh[candidates[c]]);
+    if (uStar > 1e-6) out[c] = uStar * (1 + 1e-6) + 1e-12;
+  }
+  return out;
+}
 
 /** The size bucket: the first `byEnvelope` entry with stories ≤ `maxStoriesUpTo`, else last. */
 function bucketOf(cal: Calibration, stories: number): number[] {
@@ -173,11 +233,31 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
       `parcels.bin: hazard 0 for ${bad} parcel(s) with a non-finite feature; first: ${firstBad}`
     );
   }
+  let m = 0;
+  for (let i = 0; i < n; i++) if (p.hostable[i] === 1 && hazard[i] > 0 && log1mh[i] < 0) m++;
+  const candidates = new Int32Array(m);
+  const entity = new Uint32Array(m);
+  for (let i = 0, c = 0; i < n; i++) {
+    if (!(p.hostable[i] === 1 && hazard[i] > 0 && log1mh[i] < 0)) continue;
+    candidates[c] = i;
+    entity[c++] = entityOf(p.id, i);
+  }
+  const bounds = new Map<Day, Float64Array>();
   const pre: Precompute = {
     hazard,
     log1mh,
     sizeCum,
-    parcelIndexOf: (id) => p.index.get(id) ?? -1
+    parcelIndexOf: (id) => p.index.get(id) ?? -1,
+    candidates,
+    entity,
+    skipAbove(horizon) {
+      let b = bounds.get(horizon);
+      if (!b) {
+        b = skipBounds(log1mh, candidates, lastInitiationMonth(input.asOf, horizon));
+        bounds.set(horizon, b);
+      }
+      return b;
+    }
   };
   memo.set(input, pre);
   return pre;

@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { draw, fmix32, jobEntity, P, simEntity, stageRedraw } from './rng';
+import {
+  draw,
+  drawOn,
+  fmix32,
+  jobEntity,
+  P,
+  seedHash,
+  simEntity,
+  stageRedraw,
+  streamOf
+} from './rng';
 
 describe('counter-based draws', () => {
   it('derives entity ids from FNV-1a', () => {
@@ -79,5 +89,23 @@ describe('counter-based draws', () => {
       expect(Math.abs(pearson(init, (e) => draw(0, e, 0, purpose, 0)))).toBeLessThan(0.005);
     }
     expect(Math.abs(pearson(init, (e) => draw(0, e, 1, P.INIT, 0)))).toBeLessThan(0.005);
+  });
+
+  it('composes from its hoisted parts: drawOn(streamOf(seedHash(seed), entity, k), …) is draw', () => {
+    let x = 12345;
+    const next = () => (x = fmix32(x + 0x9e3779b9));
+    for (let n = 0; n < 2000; n++) {
+      const [seed, entity, k, purpose, stage] = [
+        next(),
+        next(),
+        next() % 40,
+        next() % 24,
+        next() % 7
+      ];
+      expect(drawOn(streamOf(seedHash(seed), entity, k), purpose, stage)).toBe(
+        draw(seed, entity, k, purpose, stage)
+      );
+    }
+    expect(drawOn(streamOf(seedHash(1), 3371792748, 0), 1, 0)).toBe(0.6643216036027297);
   });
 });
