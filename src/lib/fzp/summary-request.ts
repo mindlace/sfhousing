@@ -55,28 +55,37 @@ export class SummaryRequester {
    * every month); any other request shows `loading`.
    */
   request(q: SummaryQuery): void {
+    const keep =
+      this.#shown !== null &&
+      this.#shown.parcelId === q.parcelId &&
+      this.#shown.projectId === q.projectId;
+    this.#ask(q, keep);
+  }
+
+  /**
+   * Call on every `chunks` message: a surface waiting on a chunk record asks again. It keeps
+   * showing `not-loaded` until the answer arrives, so a live region does not speak on every
+   * message.
+   */
+  retryIfNotLoaded(day: Day): void {
+    if (this.#state !== 'not-loaded' || this.#last === null) return;
+    this.#ask({ ...this.#last, day }, true);
+  }
+
+  /** `keep`: leave the current state on show until the answer, instead of showing `loading`. */
+  #ask(q: SummaryQuery, keep: boolean): void {
     this.#last = q;
     if (this.#deps.unavailable()) {
       this.#queued = null;
       this.#emit({ kind: 'unavailable' });
       return;
     }
-    const keep =
-      this.#shown !== null &&
-      this.#shown.parcelId === q.parcelId &&
-      this.#shown.projectId === q.projectId;
     if (!keep) this.#emit({ kind: 'loading' });
     if (this.#inFlight) {
       this.#queued = q;
       return;
     }
     this.#send(q);
-  }
-
-  /** Call on every `chunks` message: a surface waiting on a chunk record asks again. */
-  retryIfNotLoaded(day: Day): void {
-    if (this.#state !== 'not-loaded' || this.#last === null) return;
-    this.request({ ...this.#last, day });
   }
 
   reset(): void {

@@ -114,6 +114,9 @@
     setDay(to);
   }
 
+  /** A marker's day inside the track: a target before `asOf` (or after the horizon) is its end. */
+  const clampDay = (d: Day): Day => Math.min(Math.max(d, asOf), horizon);
+
   function onkeydown(e: KeyboardEvent) {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     let to: Day;
@@ -205,9 +208,9 @@
         <button
           type="button"
           class="marker ctl absolute top-0 rounded-md px-1.5 whitespace-nowrap"
-          style:left="{((m.day - asOf) / span) * 100}%"
+          style:left="{((clampDay(m.day) - asOf) / span) * 100}%"
           aria-label={m.name}
-          onclick={() => jump(m.day)}
+          onclick={() => jump(clampDay(m.day))}
         >
           {m.label}
         </button>

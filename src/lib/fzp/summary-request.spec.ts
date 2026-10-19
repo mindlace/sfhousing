@@ -144,6 +144,27 @@ describe('SummaryRequester', () => {
     expect(t.send).toHaveBeenCalledTimes(2); // a card is showing
   });
 
+  it('a retry keeps showing not-loaded until its answer arrives (no re-announcement)', async () => {
+    const t = setup();
+    t.r.request(q(1, 'pr-1'));
+    t.calls[0].d.resolve(null);
+    await tick();
+    expect(t.last()).toEqual({ kind: 'not-loaded' });
+    t.states.length = 0;
+
+    // Several chunk messages while the chunk is still loading.
+    t.r.retryIfNotLoaded(2);
+    t.r.retryIfNotLoaded(3);
+    expect(t.states).toEqual([]);
+    t.calls[1].d.resolve(null);
+    await tick();
+    expect(t.calls).toHaveLength(3); // the queued retry, for day 3
+    expect(t.calls[2].q.day).toBe(3);
+    t.calls[2].d.resolve(summary(true));
+    await tick();
+    expect(t.states.map((s) => s.kind)).toEqual(['project']);
+  });
+
   it('reset goes idle, drops the queue and the in-flight result', async () => {
     const t = setup();
     t.r.request(q(1));

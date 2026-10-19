@@ -149,6 +149,24 @@ describe('markers and ends', () => {
     expect(onday).toHaveBeenLastCalledWith(MARKERS[1].day);
   });
 
+  it('clamps a marker outside [asOf, horizon] to the range', async () => {
+    const outside: Marker[] = [
+      { day: ASOF - 400, label: 'Early', name: 'Jump early' },
+      { day: HORIZON + 400, label: 'Late', name: 'Jump late' }
+    ];
+    const { onday } = await setup({ markers: outside, startDay: ASOF + 1000 });
+    await page.getByRole('button', { name: 'Jump early' }).click();
+    expect(onday).toHaveBeenLastCalledWith(ASOF);
+    expect(stateDay()).toBe(ASOF);
+    await page.getByRole('button', { name: 'Jump late' }).click();
+    expect(onday).toHaveBeenLastCalledWith(HORIZON);
+    expect(stateDay()).toBe(HORIZON);
+    const left = (name: string) =>
+      (page.getByRole('button', { name }).element() as HTMLElement).style.left;
+    expect(left('Jump early')).toBe('0%');
+    expect(left('Jump late')).toBe('100%');
+  });
+
   it('labels both ends of the track', async () => {
     await setup();
     await expect.element(page.getByText('Oct 2026', { exact: true })).toBeVisible();
