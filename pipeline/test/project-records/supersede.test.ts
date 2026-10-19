@@ -18,6 +18,7 @@ function c(o: Partial<SupersedeCandidate> & { id: string }): SupersedeCandidate 
     parcelIds: ['3750081'],
     units: 230,
     openDay: d('2020-01-01'),
+    firstPermitFiled: null,
     ...o
   };
 }
@@ -79,6 +80,20 @@ describe('supersessions (Rulings SP1, SP2)', () => {
       'PRJ:2021-009384PRJ': 'PRJ:2023-000001PRJ',
       'PRJ:2021-009385PRJ': 'PRJ:2023-000001PRJ'
     });
+  });
+
+  it('earliest permits filed the same day are siblings, never superseded (Ruling SP3)', () => {
+    // 40 Nevada: PRJs opened 2020-12-18 and 2022-09-23, permits on two lots filed 2020-08-27.
+    const pair = (a: number | null, b: number | null) =>
+      supersessions([
+        c({ id: 'PRJ:2020-011739PRJ', openDay: d('2020-12-18'), firstPermitFiled: a }),
+        c({ id: 'PRJ:2022-009282PRJ', openDay: d('2022-09-23'), firstPermitFiled: b })
+      ]).superseded.size;
+    expect(pair(d('2020-08-27'), d('2020-08-27'))).toBe(0);
+    expect(pair(d('2020-08-27'), d('2022-10-01'))).toBe(1);
+    // No permit on either side is no evidence of a sibling.
+    expect(pair(null, null)).toBe(1);
+    expect(pair(d('2020-08-27'), null)).toBe(1);
   });
 
   it('a null open day is never a keeper, and is superseded by a dated refile', () => {

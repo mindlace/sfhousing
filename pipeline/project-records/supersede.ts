@@ -4,7 +4,8 @@
  * project when their addresses are equal (the primary PRJ `project_address`, else the T3 label;
  * upper-cased, whitespace collapsed, a trailing 5-digit ZIP stripped), their parcels share a
  * block, their units are within 25%, and one primary PRJ opened strictly later (a same-day filing
- * is a sibling building, never a refile). The later one is kept. Pure.
+ * is a sibling building, never a refile; so are two whose earliest permits were filed the same
+ * day, Ruling SP3). The later one is kept. Pure.
  */
 import type { ParcelId } from '../../src/lib/data/parcel';
 import type { Day } from '../../src/lib/timelapse/time';
@@ -22,6 +23,8 @@ export interface SupersedeCandidate {
   units: number;
   /** The primary Planning record's open day. */
   openDay: Day | null;
+  /** The earliest `filed_date` over the project's permits (Ruling SP3); null with none. */
+  firstPermitFiled: Day | null;
 }
 
 /** Ruling SP1: units match when the smaller is at least this share of the larger. */
@@ -66,6 +69,8 @@ function refiles(c: SupersedeCandidate, keeper: SupersedeCandidate): boolean {
   if (c.recordId === keeper.recordId) return false; // split parts of one Planning record
   // Ruling SP2: a strictly later primary open day; same-day filings are sibling buildings.
   if (keeper.openDay === null || (c.openDay !== null && keeper.openDay <= c.openDay)) return false;
+  // Ruling SP3: permits first filed the same day are sibling buildings (40 Nevada).
+  if (c.firstPermitFiled !== null && c.firstPermitFiled === keeper.firstPermitFiled) return false;
   const blocks = new Set(c.parcelIds.map(blockOf));
   if (!keeper.parcelIds.some((id) => blocks.has(blockOf(id)))) return false;
   const lo = Math.min(c.units, keeper.units);

@@ -930,7 +930,11 @@ export function deriveProjects(
       label: labelOf(a.proj, null),
       parcelIds: a.proj.parcelIds,
       units: a.units ?? 0,
-      openDay: a.proj.primary?.openDay ?? null
+      openDay: a.proj.primary?.openDay ?? null,
+      firstPermitFiled: a.proj.permits.reduce<Day | null>(
+        (m, q) => (q.filedDay !== null && (m === null || q.filedDay < m) ? q.filedDay : m),
+        null
+      )
     }))
   );
   for (const a of supersedeTested) {

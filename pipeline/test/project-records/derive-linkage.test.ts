@@ -173,6 +173,38 @@ describe('named alteration units (Ruling C1a)', () => {
     expect(h.unitsAt.permitFiled).toBe(489);
   });
 
+  it('an alteration of an existing building keeps its units beside a type 1/2 (Ruling C1b)', () => {
+    // The PRJ:2021-000821PRJ shape: an existing 6-unit building altered to 7, plus a new 1-unit
+    // building; the lot gains 2 and the PRJ records 8.
+    const r = project(
+      '201912068933,201912068937',
+      [
+        alteration('201912068937', {
+          existing_units: '6',
+          proposed_units: '7',
+          filed_date: ts('2019-12-06')
+        })
+      ],
+      [newcon('201912068933', { proposed_units: '1' })]
+    );
+    expect(history(r, ID).unitsAt.permitFiled).toBe(8);
+    // existing_units 0 or null re-records the new building: no units (C1a).
+    for (const existing of ['0', undefined]) {
+      const z = project(
+        '201912068933,201912068937',
+        [
+          alteration('201912068937', {
+            existing_units: existing,
+            proposed_units: '7',
+            filed_date: ts('2019-12-06')
+          })
+        ],
+        [newcon('201912068933', { proposed_units: '1' })]
+      );
+      expect(history(z, ID).unitsAt.permitFiled, String(existing)).toBe(1);
+    }
+  });
+
   it('in an alteration-only project the units are the max of the alterations, not the sum', () => {
     const r = project('201901150030,201902010031', [
       alteration('201901150030', { proposed_units: '4' }),

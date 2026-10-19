@@ -135,11 +135,10 @@ export function applyCapacity(
   const skipped: Permit[] = [];
   if (proj.parcelIds.length > 0) {
     const inProject = new Set<string>(proj.parcelIds);
-    // Ruling C1a: a named alteration in a project with a type 1/2 permit carries no units.
-    const unitless = proj.permits.some(isNewConstructionPermit);
     for (const q of proj.permits) {
       if (q.stories === null || q.proposedUnits === null) continue;
-      if (unitless && !isNewConstructionPermit(q)) continue;
+      // Rulings C1a, C1b: a permit that carries no units is not capacity-checked.
+      if (unitless(proj, q)) continue;
       checked.push(q);
       // The check needs the permit's own lot (any address row) among the project's parcels.
       const lots = [...new Set(q.rows.flatMap((r) => (r.blklot === null ? [] : [r.blklot])))];
@@ -176,15 +175,25 @@ export function applyCapacity(
 }
 
 /**
- * Ruling C1a: the permits whose `proposed_units` size the project. A named type 3/8 alteration
- * carries no units when the project holds any type 1/2 permit (that permit is the building's
- * count; the alteration restates it). Stage evidence still reads `unitBearingPermits`.
+ * Rulings C1a, C1b: a named type 3/8 alteration with no existing units (`existing_units` 0 or
+ * null) carries no units when its project holds any type 1/2 permit: it re-records the new
+ * building that permit already counts. An alteration of an existing building (existing >= 1)
+ * keeps its gross units; the assessor's existing units net it.
+ */
+function unitless(proj: LinkedProject, q: Permit): boolean {
+  return (
+    !isNewConstructionPermit(q) &&
+    (q.existingUnits === null || q.existingUnits === 0) &&
+    proj.permits.some(isNewConstructionPermit)
+  );
+}
+
+/**
+ * Rulings C1a, C1b: the permits whose `proposed_units` size the project (`unitless` ones out).
+ * Stage evidence still reads `unitBearingPermits`.
  */
 export function unitPermits(proj: LinkedProject): Permit[] {
-  const bearing = unitBearingPermits(proj);
-  return proj.permits.some(isNewConstructionPermit)
-    ? bearing.filter(isNewConstructionPermit)
-    : bearing;
+  return unitBearingPermits(proj).filter((q) => !unitless(proj, q));
 }
 
 /**
