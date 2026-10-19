@@ -151,7 +151,8 @@
   /** The scrubbed month the open card was last requested for. */
   let cardMonth: Day | null = null;
   let narrow = false;
-  let sheet = { open: false, h: 0 };
+  /** The phone scoreboard sheet: open, and its height once measured. */
+  let sheet = $state.raw({ open: false, h: 0 });
 
   /**
    * The page's latest scenario request. `representative` is the flag its answer sets (null =
@@ -617,48 +618,54 @@
       onsource={(id) => dialog?.open(id)}
     />
     <ProjectTooltip state={tipState} {day} x={tipAt.x} y={tipAt.y} />
-    <div class="absolute inset-x-0 z-20 max-md:bottom-[var(--scorebar-h,56px)] md:bottom-0">
-      <!-- The ready-phase notices sit on the dock, above the scrubber. Their height joins the
-           scrubber's in the map inset and --fzp-scrubber-h, so the card and the score panel (at
-           any width) always end above them and are never covered. -->
-      <div
-        class="pointer-events-none flex flex-col items-center px-4"
-        data-testid="fzp-notices"
-        bind:offsetHeight={noticeH}
-      >
-        <div role="status" data-testid="fzp-status" class="max-w-full">
-          {#if stopped}
-            <span
-              class="pointer-events-auto mb-2 flex w-max max-w-full items-center gap-1 rounded-full bg-white py-1 pl-4 text-sm text-black shadow"
-            >
-              <span>Part of the simulation stopped.</span>
-              <button
-                type="button"
-                class="min-h-11 min-w-11 rounded-full px-3 font-semibold underline"
-                onclick={() => void retry()}>Retry</button
-              >
-            </span>
-          {:else if rerollBusy}
-            <span class="mb-2 block rounded-lg bg-white px-3 py-2 text-sm text-black shadow"
-              >Making another future…</span
-            >
-          {/if}
-        </div>
-        {#if rerollFailed && !stopped}
-          <div
-            role="alert"
-            class="pointer-events-auto mb-2 flex w-max max-w-full items-center gap-1 rounded-lg bg-white py-1 pl-3 text-sm text-black shadow"
+    <!-- The ready-phase notices sit just above the scrubber. Their height joins the scrubber's
+         in the map inset and --fzp-scrubber-h, so the card and the score panel (at any width)
+         always end above them and are never covered. While the phone sheet is open they sit
+         just above it, over it in z, so a notice raised from the sheet stays visible. -->
+    <div
+      class={[
+        'pointer-events-none absolute inset-x-0 flex flex-col items-center px-4',
+        sheet.open ? 'z-40' : 'z-20'
+      ]}
+      style:bottom={sheet.open ? `${sheet.h}px` : `calc(var(--scorebar-h, 0px) + ${scrubberH}px)`}
+      data-testid="fzp-notices"
+      bind:offsetHeight={noticeH}
+    >
+      <div role="status" data-testid="fzp-status" class="max-w-full">
+        {#if stopped}
+          <span
+            class="pointer-events-auto mb-2 flex w-max max-w-full items-center gap-1 rounded-full bg-white py-1 pl-4 text-sm text-black shadow"
           >
-            <span>Couldn't make another future. Try again.</span>
+            <span>Part of the simulation stopped.</span>
             <button
               type="button"
-              aria-label="Dismiss"
-              class="min-h-11 min-w-11 rounded-lg px-3 font-semibold"
-              onclick={() => (rerollFailed = false)}>×</button
+              class="min-h-11 min-w-11 rounded-full px-3 font-semibold underline"
+              onclick={() => void retry()}>Retry</button
             >
-          </div>
+          </span>
+        {:else if rerollBusy}
+          <span
+            class="pointer-events-auto mb-2 block rounded-lg bg-white px-3 py-2 text-sm text-black shadow"
+            >Making another future…</span
+          >
         {/if}
       </div>
+      {#if rerollFailed && !stopped}
+        <div
+          role="alert"
+          class="pointer-events-auto mb-2 flex w-max max-w-full items-center gap-1 rounded-lg bg-white py-1 pl-3 text-sm text-black shadow"
+        >
+          <span>Couldn't make another future. Try again.</span>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            class="min-h-11 min-w-11 rounded-lg px-3 font-semibold"
+            onclick={() => (rerollFailed = false)}>×</button
+          >
+        </div>
+      {/if}
+    </div>
+    <div class="absolute inset-x-0 z-20 max-md:bottom-[var(--scorebar-h,56px)] md:bottom-0">
       <TimeScrubber
         {asOf}
         horizon={HORIZON}

@@ -805,6 +805,37 @@ describe('FzpMode map, layout and lifecycle', () => {
     }
   );
 
+  it('at 375 px with the scoreboard sheet open, every notice shows above the sheet', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await page.viewport(375, 800);
+    const s = setup();
+    await toReady(s);
+    await page.getByRole('button', { name: /net new homes/ }).click();
+    const sheet = page.getByRole('group', { name: 'Simulation scoreboard details' });
+    await expect.element(sheet).toBeVisible();
+
+    /** The element is on top at its centre (not under the sheet) and clear of the sheet. */
+    const onTop = (el: Element) => {
+      const r = el.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      const sh = (sheet.element() as HTMLElement).getBoundingClientRect();
+      return r.height > 0 && !!top && el.contains(top) && r.bottom <= sh.top;
+    };
+
+    await another().click();
+    const busy = () => page.getByText('Making another future…').element();
+    await expect.poll(() => onTop(busy())).toBe(true);
+    s.w().emit({ type: 'error', rev: s.w().lastOf('reroll')!.rev, code: 'internal', message: 'x' });
+    await expect
+      .poll(() => onTop(page.getByRole('button', { name: 'Dismiss' }).element()))
+      .toBe(true);
+    expect(onTop(page.getByRole('alert').element())).toBe(true);
+    s.w().crash();
+    const retry = () => page.getByRole('button', { name: 'Retry', exact: true }).element();
+    await expect.poll(() => onTop(retry())).toBe(true);
+    await expect.element(sheet).toBeVisible();
+  });
+
   it.each([375, 768, 1000])('at %i px the loading notice clears the score panel', async (width) => {
     await page.viewport(width, 800);
     setup();
