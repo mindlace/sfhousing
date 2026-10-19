@@ -5,6 +5,7 @@
 
   let { data }: { data: PageData } = $props();
   const manifest = $derived(data.manifest);
+  const hasScenario = $derived(!!manifest?.scenarios?.fzp);
   const hasTransit = $derived(manifest?.sources.some((s) => s.id.startsWith('gtfs-')) ?? false);
 </script>
 
@@ -65,6 +66,14 @@
     Parcels, land use, building footprints and neighborhoods from DataSF (datasf.org), Public Domain
     Dedication and License (PDDL) / public domain.
   </li>
+  {#if hasScenario}
+    <li>
+      Housing project records (building permits, Planning applications, approvals and completions,
+      the development pipeline), the assessor's secured roll and the Family Zoning Plan height
+      districts from DataSF, under PDDL, CC0 or public domain. The simulation's comparison estimates
+      are cited from SF Planning and the SF Controller's Office.
+    </li>
+  {/if}
   {#if hasTransit}
     <li>
       Transit stops and schedules from SFMTA Muni, BART and Caltrain GTFS feeds. These are facts,
