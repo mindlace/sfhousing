@@ -176,6 +176,8 @@ Below, M = `MONTH_DAYS`. Write C(k) = advance[k−1] + Σ exit[k−1] for 1 ≤ 
 
 `days` counts from stage entry and is ≥ ⌈m·M⌉. An in-flight project's month *m*+1 is partly in the past, so placing a past result at the snapshot day is timelapse-sim's job.
 
+**Per-transition constants are memoised** (conductor ruling A on timelapse-sim's `simulateNet` budget, 2026-10-18; T12's signatures and outputs unchanged). The constants that `sampleTransition` and the other functions of this module derive from a Transition (C(k), the tail terms, the month boundaries) are computed once, on first use, with exactly the expression and evaluation order of the per-call code, and cached in a `WeakMap` keyed by the Transition object. Every output is bit-identical to computing afresh: the goldens are unchanged on Node, Chromium and WebKit, and a 62,401-case differential against the unmemoised code gives 0 mismatches. **No-mutate contract:** a Transition is treated as immutable after its first use by any function in `model.ts`; mutating one in place afterwards leaves its constants stale, so a caller that needs a changed Transition builds a new object (for example with `structuredClone`). `parseCalibration` returns the caller's object unfrozen, so the contract is documented in `model.ts`, not enforced.
+
 **`cumulativeIncidence(t, k)`** (T12, IA-13) gives the cumulative incidence of each outcome by the end of month *k* since stage entry, unconditional (from m = 0), tail included. Write F_j(k) for outcome *j* (advance, or an exit reason) and p_j for its tail value (`tail.advance` or `tail.exit[j]`, 0 if absent):
 - *k* must be a non-negative integer; anything else throws `RangeError`. Callers derive *k* from `monthsIn`, which is always an integer.
 - k = 0: every F_j = 0.
@@ -360,7 +362,7 @@ A rung passes when the cell has spells ≥ `N_SPELLS_MIN` and events ≥ `N_EVEN
 
 **Planning-side stages** (filed, entitled):
 1. **Pathway-specific AJ** over [2015-01-01, asOf]. Tier 0. Method: "Aalen–Johansen cumulative incidence, right-censored at last observation, left-truncated at window start". The tail is covered by `tailProvenance`.
-2. **Pooled AJ.** All pathways plus null-pathway spells, copied into the cell. Tier 2, "pooled across pathways". preApplication always uses this rung, over 2015+.
+2. **Pooled AJ.** All pathways plus null-pathway spells, copied into the cell. Tier 2, "pooled across pathways". preApplication always uses this rung, over 2015+. A sparse pathway cell that fails rung 1 takes the pooled level, exits included: on live data the streamlined `entitled` exit rose from 0.47% to 2.20% after project-records' combined pass for this reason, which is intended (explanation accepted by the partner, 2026-10-18).
 
 **Permit-side stages** (permitFiled, permitIssued, construction): **pooled shape, pathway level** (round 3). The rule is a stratified proportional-hazards scaling of the pooled Aalen–Johansen table.
 - **Pooled component.** AJ over every qualifying spell, of any pathway including null, in [Wₛ, asOf]. At each pooled event duration *d* it gives the cause-specific hazard increments ĥ_j(d) = e_j(d)/n(d) and the pooled tail rates λ_j.
@@ -696,7 +698,7 @@ Probe URLs (verified 2026-10-16), base `https://data.sf.gov/resource/`:
 - `math.golden.test.ts` (**cross-engine golden**). The fixture is `src/lib/timelapse/fixtures/math-golden.json`. It holds about 200 fixed inputs per function, each paired with the expected IEEE-754 bit pattern as a 16-hex-digit string. The expected patterns are generated once by the C fdlibm reference and committed.
   - **Inputs:** ±0, subnormals, 1, ln2 multiples, the overflow and underflow thresholds, values near 1 for `log`, the logit range [−30, 5], (1 − ρ) for ρ in [1e-6, 0.5], and NaN and ±Infinity.
   - **Check:** the test compares bits through a `DataView` and requires exact equality for every input.
-  - **Where it runs:** in the server project (Node/V8) and, as `math.golden.svelte.spec.ts`, in the client project's Playwright Chromium. The client test must also pass under WebKit and Firefox when run with `--browser`. **Before AC-11 is signed off**, the operator runs it under both (`npx playwright install webkit firefox` first) and records the result in the completion report (step-0 carry-forward). Regenerating the golden needs `SDKROOT` set for `scripts/math-golden/generate.sh` on macOS.
+  - **Where it runs:** in the server project (Node/V8) and, as `math.golden.svelte.spec.ts`, in the client project's Playwright Chromium. The client test must also pass under WebKit and Firefox when run with `--browser`. **Before AC-11 is signed off**, the operator runs it under both (`npx playwright install webkit firefox` first) and records the result in the completion report (step-0 carry-forward). **Firefox is deferred** (partner ruling, 2026-10-18): Playwright's `firefox-1555` cannot launch on macOS 27 ("Could not find profile folder", also from a plain `firefox.launch`, in the operator sandbox and in the partner's own terminal), so AC-11 was signed off on Node, Chromium and WebKit. The Firefox run stays an open check: run `SFH_BROWSER=firefox npm run test:unit -- src/lib/timelapse/math.golden.svelte.spec.ts src/lib/timelapse/model.golden.svelte.spec.ts` once Playwright Firefox launches on macOS 27. Regenerating the golden needs `SDKROOT` set for `scripts/math-golden/generate.sh` on macOS.
   - It also asserts that `math.ts` source contains no `Math.exp|Math.log|Math.pow` and no `**`.
 - `attribution.test.ts` (or the existing attribution test, extended; ruling A5): `math.ts` source begins its licence block with `/*!`, and `SOFTWARE` has an entry named `fdlibm (exp, log)`.
 - `model.test.ts`:
@@ -785,7 +787,7 @@ There are no DOM, e2e or axe tests, because this subsystem has no page and the r
   - `math.ts` `exp` and `log` return the committed fdlibm bit patterns for every golden input, on Node and in the browser test engines.
   - No `Math.exp`, `Math.log`, `Math.pow`, `Math.log1p` or `Math.expm1` appears under `src/lib/timelapse/` or `pipeline/lib/fzp-cal/`; the ESLint rule enforces this.
   - Fixed inputs to `sampleTransition`, `initiationHazard`, `chanceTable`, `typicalMonths` and `cumulativeIncidence` give bit-identical outputs across those engines.
-  - Sign-off requires the client golden to have passed under WebKit and Firefox, recorded in the completion report (step-0 carry-forward).
+  - Sign-off requires the client golden to have passed under WebKit and Firefox, recorded in the completion report (step-0 carry-forward). **Signed off on Node, Chromium and WebKit** (partner ruling, 2026-10-18): Firefox is deferred because Playwright `firefox-1555` cannot launch on macOS 27; the Firefox golden run is an open check (§6, §8).
 - **AC-13 (data quality; orchestrator ruling "stage-calibration: residue after declarations").** The seven `sc.*` rules of §4.4a (`sc.stages.gap-impute`, `sc.stages.no-fcd-duration`, `sc.stages.running-max`, `sc.exit.last-stage`, `sc.exit.purge-censor`, `sc.revision.ratio-clamp`, `sc.revision.carried-excluded`) are registered in `QUALITY_RULES` with the stated fields and shares (the T14 kind defaults, except `sc.stages.gap-impute` at `warnShare` 0.1 / `failShare` 0.2 under conductor ruling C1 / partner DQ-4, `sc.revision.ratio-clamp` at 0.1 / 0.2 under partner ruling via conductor, 2026-10-18 (DQ-4), and `sc.revision.carried-excluded` at 0.15 / 0.25 under partner ruling via conductor, 2026-10-19; `sc.stages.gap-impute` counted over windowed histories via `gapImputeTally`; `sc.stages.no-fcd-duration`, partner ruling P1, at the `missing` defaults 0.05 / 0.10, counted over the same windowed histories via `noFcdTally`), and reported through `recordQuality`. Every build reports `quality.<id>.fired` and `.of` for each of them, and no `calibration.adjust.*` key exists. Each rule has a fixture case that fires it, or a stated reason it fires 0 on valid input. No code in `pipeline/steps/calibration.ts` or `pipeline/lib/fzp-cal/` rewrites a history value outside a registered rule. The three model choices (pathway rule, preApplication pooling, size r > 1) are `calibration.method.*` counts stated in provenance. The completion report records every `sc.*` share measured on the first live dry run, and any share above the defaults carries an override ruling.
 - **AC-14 (masks).** The report prints the at-risk exposure share and the event share for each `imputed` bit 0–6, including bit 3 (`existingUnits`), bit 5 (carried roll year) and bit 6 (`existingFloorAreaM2`); a set bit 7 is a `CalibrationError`. The mask is still not a model input.
 - **AC-15 (ruling A5).** The shipped bundle keeps fdlibm's Sun notice (`/*! … */` in `math.ts`), and `/attribution` lists fdlibm.
@@ -796,6 +798,8 @@ None remain from the original spec: the reconciliation answered all three (the w
 
 The 16-pair reading of "every pathway × stage pair" is **confirmed** by the orchestrator's clarification in the reconciliation section.
 
+**Open check (not a question):** the AC-11 client goldens under Firefox. The partner deferred them on 2026-10-18 because Playwright `firefox-1555` cannot launch on macOS 27; AC-11 is signed off on Node, Chromium and WebKit. Rerun under Firefox when Playwright Firefox launches on macOS 27 (§6).
+
 ## 9. Carry-forwards absorbed
 
 From `.superpowers/superconductor/fzp-timelapse/wave1-assignments.md`, "Carry-forward for stage-calibration":
@@ -803,7 +807,7 @@ From `.superpowers/superconductor/fzp-timelapse/wave1-assignments.md`, "Carry-fo
 - **A5** (fdlibm `/*! */` notice and `SOFTWARE` credit): §1, §4.1a, AC-15, tests.
 - **A6** (`derivedRoot`/`derivedDir`; DuckDB tables `scenario_panel`, `parcel_lineage`): §4.3, `initiation-panel.test.ts`. `parcel_lineage` is not read (§1).
 - **`permits.parquet` columns (round 4 N1)**: now in the T4d row; §4.6 (P) and §4.7a read only columns that row lists.
-- **WebKit/Firefox math golden before AC-11 sign-off**: §6 `math.golden.test.ts`, AC-11.
+- **WebKit/Firefox math golden before AC-11 sign-off**: §6 `math.golden.test.ts`, AC-11. WebKit passed; Firefox deferred by the partner (open check, AC-11).
 
 The same file's "TR consumer notes" under that heading (R17 same-day revisions, R18 eager handle validation, `setTimelineLookups` identity, R8 `typicalDays` flooring) bind **timelapse-sim**, which builds schedules and sends the lookups, not this subsystem. IA-22 folds them into the timelapse-sim spec. Nothing here depends on them: T12's `chanceTable` and `typicalMonths` return fresh objects on every call, which is all the identity note needs from this side.
 
