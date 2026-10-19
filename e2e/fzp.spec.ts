@@ -6,6 +6,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { SOURCE_DATASETS } from '../src/lib/fzp/card';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
+import { monthStart } from '../src/lib/fzp/time';
 import { formatCount } from '../src/lib/scoreboard/format';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { FRAME, jumpAndIdle, projectToPage, type LngLat, type Win } from './helpers/sharing';
@@ -320,25 +321,57 @@ test('a phase of a multi-phase project reads "Phase n of m" once the scrubber re
 
   const phase = new RegExp(`^Phase (\\d+) of (\\d+), ${label}$`);
   const horizon = await fzp(page, 'horizon');
-  let found: Locator | null = null;
+  const shipyard = card(page, label);
+  const phaseLine = shipyard.getByText(phase);
+  // `isVisible` does not wait; this does, and says whether the line appeared.
+  const appears = (loc: Locator): Promise<boolean> =>
+    expect(loc)
+      .toBeVisible({ timeout: 1_000 })
+      .then(
+        () => true,
+        () => false
+      );
+  let found = false;
   // PageUp is one year; the horizon bounds the loop.
   for (let step = 0; step <= 26 && !found; step++) {
     for (const at of points) {
       await pick(page, isMobile, await projectToPage(page, at));
-      const line = page.getByText(phase);
-      if (await line.isVisible({ timeout: 700 }).catch(() => false)) {
-        found = line;
-        break;
-      }
+      found = await appears(phaseLine);
+      if (found) break;
     }
     if (found || (await fzp(page, 'day')) >= horizon) break;
     await slider(page).press('PageUp');
   }
-  expect(found, `no phase of ${label} was pickable before the horizon`).not.toBeNull();
-  const [, n, m] = phase.exec((await found!.textContent())!.trim())!;
+  expect(found, `no phase of ${label} was pickable before the horizon`).toBe(true);
+
+  // "Phase n of m" with 1 <= n <= m, and that phase has filed its building permit by the scrubbed
+  // day: the "This phase" timeline carries a "Building permit filed" row dated on or before it.
+  const [, n, m] = phase.exec((await phaseLine.textContent())!.trim())!;
   expect(Number(n)).toBeGreaterThanOrEqual(1);
   expect(Number(n)).toBeLessThanOrEqual(Number(m));
-  await expect(card(page, label)).toBeVisible();
+  const filedRow = shipyard
+    .locator('h4:has-text("This phase") + ol li')
+    .filter({ hasText: 'Building permit filed' });
+  await expect(filedRow).toHaveCount(1);
+  // "Building permit filed · Mar 2027 · Simulated" or, for a recorded date, "Mar 4, 2027".
+  const date = /· ([A-Z][a-z]{2}) (?:\d{1,2}, )?(\d{4}) ·/.exec((await filedRow.textContent())!);
+  expect(date, 'the filed row has a date').not.toBeNull();
+  const month = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'
+  ];
+  const filedMonth = Date.UTC(Number(date![2]), month.indexOf(date![1]), 1) / 86_400_000;
+  expect(filedMonth).toBeLessThanOrEqual(monthStart(await fzp(page, 'day')));
 });
 
 test('a record the data checks changed lists them under "About this record\'s data"', async ({
