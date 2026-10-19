@@ -98,7 +98,8 @@ const EXPECTED: Record<ScRuleId, QualityRule> = {
     warnShare: 0.1,
     failShare: 0.2
   },
-  // partner ruling via conductor, 2026-10-18 ("Exclude from resize estimate"); default shares
+  // partner ruling via conductor, 2026-10-18 ("Exclude from resize estimate"); share override
+  // partner ruling via conductor, 2026-10-19
   'sc.revision.carried-excluded': {
     ...common,
     id: 'sc.revision.carried-excluded',
@@ -109,7 +110,9 @@ const EXPECTED: Record<ScRuleId, QualityRule> = {
     valueTier: null,
     label:
       'A revision pair whose earlier home count was carried back from a later record is left out of the resize estimate',
-    denominator: 'revision pairs in the window, before the exclusion'
+    denominator: 'revision pairs in the window, before the exclusion',
+    warnShare: 0.15,
+    failShare: 0.25
   }
 };
 
@@ -133,14 +136,15 @@ describe('sc.* quality rules', () => {
     expect(ids).toEqual([...SC_RULE_IDS].sort());
   });
 
-  it('has seven rules, one of kind missing, and departs from the kind defaults only at gap-impute and ratio-clamp', () => {
+  it('has seven rules, one of kind missing, and departs from the kind defaults only at gap-impute, ratio-clamp and carried-excluded', () => {
     expect(SC_RULES).toHaveLength(7);
     expect(SC_RULES.filter((r) => r.kind === 'missing').map((r) => r.id)).toEqual([
       'sc.stages.no-fcd-duration'
     ]);
     expect(kindDefaultDepartures(SC_RULES)).toEqual([
       'sc.stages.gap-impute',
-      'sc.revision.ratio-clamp'
+      'sc.revision.ratio-clamp',
+      'sc.revision.carried-excluded'
     ]);
   });
 });

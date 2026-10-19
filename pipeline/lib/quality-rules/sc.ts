@@ -3,8 +3,8 @@ import type { QualityRule } from '../quality';
 /**
  * stage-calibration's T14 rules (design row T14; stage-calibration spec §4.4a). Each entry takes
  * its kind's default shares (`warnShare` 0.05 for `kind: 'missing'`, else 0.01; `failShare` 0.10)
- * except `sc.stages.gap-impute` and `sc.revision.ratio-clamp`, whose departures are stated at the
- * entries. The calibration step changes values only in its own memory.
+ * except `sc.stages.gap-impute`, `sc.revision.ratio-clamp` and `sc.revision.carried-excluded`, whose
+ * departures are stated at the entries. The calibration step changes values only in its own memory.
  */
 export const SC_RULES: readonly QualityRule[] = [
   {
@@ -134,8 +134,10 @@ export const SC_RULES: readonly QualityRule[] = [
     label:
       'A revision pair whose earlier home count was carried back from a later record is left out of the resize estimate',
     denominator: 'revision pairs in the window, before the exclusion',
-    warnShare: 0.01,
-    failShare: 0.1,
+    // Departs from the `observe` defaults (partner ruling via conductor, 2026-10-19): partner-ruled
+    // exclusion of carried-back filing sizes; count reflects project-records' carry, not a defect.
+    warnShare: 0.15,
+    failShare: 0.25,
     unitsWeighted: false
   }
 ];
