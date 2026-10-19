@@ -72,11 +72,16 @@ export type BandState = {
   /** `planEffect.completedNetNew` quantiles over the pairs done so far; `[]` before any. */
   planEffectBand(): Quantile[];
   /**
-   * Final-month `completedNet` of the FZP runs set so far, in ascending run index. Only FZP
-   * runs contribute. Once all `total` runs are set, position equals run index i, so
-   * `representativeIndex(finals())` is the representative's i and `bandSeed(i)` its seed.
+   * Final-month `completedNet` of every FZP run, index-aligned (`finals()[i]` is run i). Only FZP
+   * runs contribute. Throws RangeError unless all `total` runs are set, so a position can never
+   * be mistaken for a run index.
    */
   finals(): number[];
+  /**
+   * Seed of the representative run: `bandSeed(representativeIndex(finals()))`. Throws
+   * RangeError unless all `total` FZP runs are set.
+   */
+  representativeSeed(): number;
 };
 
 /** Mutable accumulator the scenario host drives; quantiles are cached until the next set. */
@@ -85,11 +90,19 @@ export function createBandState(total: number = BAND_RUNS): BandState {
   const pair: (Int32Array | undefined)[] = new Array(total);
   let fzpCount = 0;
   let pairs = 0;
+  let fzpLen = -1;
+  let pairLen = -1;
   let bandCache: Quantile[] | null = null;
   let effectCache: Quantile[] | null = null;
 
   const check = (i: number): void => {
     if (!Number.isInteger(i) || i < 0 || i >= total) throw new RangeError(`run index ${i}`);
+  };
+  const checkLen = (series: Int32Array, expected: number): void => {
+    if (series.length === 0) throw new RangeError('empty series');
+    if (expected >= 0 && series.length !== expected) {
+      throw new RangeError(`series length ${series.length}, expected ${expected}`);
+    }
   };
   const present = (a: (Int32Array | undefined)[]): Int32Array[] =>
     a.filter((r): r is Int32Array => r !== undefined);
@@ -104,12 +117,16 @@ export function createBandState(total: number = BAND_RUNS): BandState {
     },
     setFzp(i, completedNet) {
       check(i);
+      checkLen(completedNet, fzpLen);
+      fzpLen = completedNet.length;
       if (fzp[i] === undefined) fzpCount++;
       fzp[i] = completedNet;
       bandCache = null;
     },
     setPair(i, planEffectCompletedNetNew) {
       check(i);
+      checkLen(planEffectCompletedNetNew, pairLen);
+      pairLen = planEffectCompletedNetNew.length;
       if (pair[i] === undefined) pairs++;
       pair[i] = planEffectCompletedNetNew;
       effectCache = null;
@@ -121,7 +138,12 @@ export function createBandState(total: number = BAND_RUNS): BandState {
       return (effectCache ??= quantiles(present(pair)));
     },
     finals() {
-      return present(fzp).map((r) => (r.length > 0 ? r[r.length - 1] : 0));
+      if (fzpCount < total)
+        throw new RangeError(`finals need all ${total} FZP runs, have ${fzpCount}`);
+      return present(fzp).map((r) => r[r.length - 1]);
+    },
+    representativeSeed() {
+      return bandSeed(representativeIndex(this.finals()));
     }
   };
 }

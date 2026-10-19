@@ -116,6 +116,10 @@ describe('representativeIndex', () => {
     expect(representativeIndex([7])).toBe(0);
   });
 
+  it('picks index 50 when all finals are equal at n = 101', () => {
+    expect(representativeIndex(new Array<number>(101).fill(7))).toBe(50);
+  });
+
   it('throws on no runs', () => {
     expect(() => representativeIndex([])).toThrow(RangeError);
   });
@@ -129,7 +133,8 @@ describe('createBandState', () => {
     expect(s.pairs).toBe(0);
     expect(s.band()).toEqual([]);
     expect(s.planEffectBand()).toEqual([]);
-    expect(s.finals()).toEqual([]);
+    expect(() => s.finals()).toThrow(RangeError);
+    expect(() => s.representativeSeed()).toThrow(RangeError);
   });
 
   it('computes band over the FZP runs set so far', () => {
@@ -181,9 +186,45 @@ describe('createBandState', () => {
     expect(finals[3]).toBe(runs[3][2]);
     const rep = representativeIndex(finals);
     expect(finals[rep]).toBe(50 * 5 + 2000);
+    expect(s.representativeSeed()).toBe(bandSeed(rep));
+    expect(runs[rep][2]).toBe(finals[rep]);
     // final p50 equals the representative's final value
     const band = s.band();
     expect(band[band.length - 1].p50).toBe(finals[rep]);
+  });
+
+  it('refuses finals and representativeSeed until all runs are set', () => {
+    const s = createBandState(4);
+    for (let i = 0; i < 3; i++) s.setFzp(i, Int32Array.of(i));
+    expect(() => s.finals()).toThrow(RangeError);
+    expect(() => s.representativeSeed()).toThrow(RangeError);
+    s.setFzp(3, Int32Array.of(-5));
+    expect(s.finals()).toEqual([0, 1, 2, -5]);
+    // sorted: -5 (i=3), 0, 1, 2 -> rank ceil(2)-1 = 1 -> i = 0 -> seed 1
+    expect(s.representativeSeed()).toBe(1);
+  });
+
+  it('puts a non-zero representative at its run index, not its position', () => {
+    const s = createBandState(3);
+    s.setFzp(2, Int32Array.of(5));
+    s.setFzp(1, Int32Array.of(9));
+    s.setFzp(0, Int32Array.of(1));
+    // finals [1, 9, 5] -> sorted 1, 5, 9 -> median is run 2 -> seed 3
+    expect(s.representativeSeed()).toBe(bandSeed(2));
+  });
+
+  it('validates series length at set time', () => {
+    const s = createBandState(4);
+    expect(() => s.setFzp(0, new Int32Array(0))).toThrow(RangeError);
+    expect(() => s.setPair(0, new Int32Array(0))).toThrow(RangeError);
+    s.setFzp(0, Int32Array.of(1, 2));
+    expect(() => s.setFzp(1, Int32Array.of(1))).toThrow(RangeError);
+    expect(s.fzpCount).toBe(1);
+    expect(s.band()).toHaveLength(2);
+    s.setPair(0, Int32Array.of(1, 2, 3));
+    expect(() => s.setPair(1, Int32Array.of(1, 2))).toThrow(RangeError);
+    expect(s.pairs).toBe(1);
+    expect(s.planEffectBand()).toHaveLength(3);
   });
 
   it('rejects out-of-range indices', () => {
