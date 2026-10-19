@@ -14,13 +14,13 @@
 // slice is a `setTimeout(0)` macrotask that takes the next job by priority and keeps going while
 // the time used so far (`deps.now()`) plus the estimated cost of the next job's kind (the
 // largest of its last few measured costs) fits in 45 ms, 5 ms short of the 50 ms slice so that
-// a job over its estimate still ends within it; the first job of a slice always runs. Other
-// requests are handled between slices. Job priority: (1) the current run's revision 0, after
-// the FZP band runs it needs when its seed is null, and its geometry packing for up to 2.5 s;
-// (2) its twin, posted as a band-only update with `planEffect`; (3) its later geometry, one
-// revision per packing slice; (4) the band: FZP run then twin per pair, a band-only update every
-// 16 pairs and after the last. Twins run through `simulateNet` only, so no twin Schedule ever
-// exists.
+// a job over its estimate still ends within it; the first job of a slice always runs, and the
+// shown run's job runs in a slice of its own. Other requests are handled between slices. Job
+// priority: (1) the current run's revision 0, after the FZP band runs it needs when its seed is
+// null, and its geometry packing for up to 2.5 s; (2) its twin, posted as a band-only update
+// with `planEffect`; (3) its later geometry, one revision per packing slice; (4) the band: FZP
+// run then twin per pair, a band-only update every 16 pairs and after the last. Twins run
+// through `simulateNet` only, so no twin Schedule ever exists.
 //
 // Geometry (§4.2, §4.7, §4.8). Each session has its own chunk loader, driven only by `prefetch`
 // (the viewport) plus the extra cells of the multi-parcel projects anchored there; chunks report
@@ -478,7 +478,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
    * One macrotask: jobs in priority order while they fit in `SLICE_PLAN_MS`, judged by the time
    * used so far plus the estimated cost of the next job's kind (a kind not yet measured waits
    * for a fresh slice). The first job always runs, so a job longer than a slice gets one of its
-   * own.
+   * own. The shown run (simulate, score and geometry set-up) always has a slice to itself: it
+   * starts a fresh slice and ends it, so no geometry or band job adds to its macrotask.
    */
   function slice(st: Session, w: Work): void {
     const start = deps.now();
@@ -488,12 +489,14 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       const job = nextJob(w);
       if (job === null) return; // idle until a reroll or a chunk kicks again
       if (!first) {
+        if (job.kind === 'shown') return kick(st); // the shown run has a slice of its own
         const est = w.cost[job.kind];
         if (est === undefined || deps.now() - start + est > SLICE_PLAN_MS) return kick(st);
       }
       const t0 = deps.now();
       job.run();
       if (job.kind !== 'pack') measure(w, job.kind, deps.now() - t0); // packCells: per cell
+      if (job.kind === 'shown') return kick(st);
     }
   }
 

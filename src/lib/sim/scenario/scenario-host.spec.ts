@@ -41,6 +41,7 @@ type Call = {
   seed: number;
   input: SimInput;
   posts: number; // posts made before the call
+  slice: number; // the harness timer callback it ran in (index into h.slices)
 };
 
 // Pass-through spies on the two engines: each call is logged with the post count at that moment
@@ -52,8 +53,9 @@ const hooks = vi.hoisted(() => ({
   throwFor: null as string | null, // packTimedCell throws for items holding this project
   tick: (ms: number): void => void ms,
   posts: (): number => 0,
+  slice: (): number => 0,
   calls: [] as Call[],
-  packs: [] as { cellId: string; posts: number }[]
+  packs: [] as { cellId: string; posts: number; slice: number }[]
 }));
 
 // Pass-through spy on timelapse-render's packing: each call is logged and charged `packMs`.
@@ -62,7 +64,7 @@ vi.mock('$lib/map/pack-timed', async (importOriginal) => {
   return {
     ...m,
     packTimedCell: vi.fn((cellId: string, items: Parameters<typeof m.packTimedCell>[1]) => {
-      hooks.packs.push({ cellId, posts: hooks.posts() });
+      hooks.packs.push({ cellId, posts: hooks.posts(), slice: hooks.slice() });
       hooks.tick(hooks.packMs);
       const bad = hooks.throwFor;
       if (bad !== null && items.some((i) => i.schedule.projectId === bad))
@@ -76,7 +78,7 @@ vi.mock('./simulate', async (importOriginal) => {
   const m = await importOriginal<typeof import('./simulate')>();
   const record = (fn: Call['fn'], input: SimInput, seed: number, ms: number) => {
     const twin = input.parcels.envelopeStories === input.parcels.baseStories;
-    hooks.calls.push({ fn, twin, seed, input, posts: hooks.posts() });
+    hooks.calls.push({ fn, twin, seed, input, posts: hooks.posts(), slice: hooks.slice() });
     hooks.tick(ms);
   };
   return {
@@ -110,6 +112,7 @@ function harness(
   });
   hooks.tick = h.tick;
   hooks.posts = () => h.posts.length;
+  hooks.slice = () => h.slices.length; // the callback running now is pushed when it ends
   hooks.calls.length = 0;
   hooks.packs.length = 0;
   return h;
@@ -629,6 +632,30 @@ describe('scenario host: slices', () => {
     );
     expect(h.now()).toBe(charged);
     expect(netCalls()).toHaveLength(2 * N + 3); // the band pairs, plus three shown twins
+  });
+
+  it('the shown run always has a slice to itself: no band, twin or packing job joins it', async () => {
+    // cheap jobs everywhere, so the 45 ms plan would otherwise pack them around the shown run
+    hooks.netMs = 1;
+    hooks.detailedMs = 5;
+    const h = harness();
+    h.init({ seed: null }); // band FZP runs before the shown run
+    prefetch(h, WORLD);
+    await h.runAll();
+    h.host.handle({ type: 'reroll', rev: h.next(), seed: 9 }); // ready cells to pack after it
+    await h.runAll();
+    expect(h.errors()).toEqual([]);
+    const shown = hooks.calls.filter((c) => c.fn === 'detailed');
+    expect(shown).toHaveLength(2);
+    expect(hooks.packs.length).toBeGreaterThan(0);
+    for (const s of shown) {
+      expect(hooks.calls.filter((c) => c.slice === s.slice)).toEqual([s]);
+      expect(hooks.packs.filter((p) => p.slice === s.slice)).toEqual([]);
+    }
+    // the slices on either side still pack several cheap jobs
+    expect(
+      new Set(hooks.calls.filter((c) => c.fn === 'net').map((c) => c.slice)).size
+    ).toBeLessThan(hooks.calls.filter((c) => c.fn === 'net').length);
   });
 
   it('a slow shown run gets a slice of its own', async () => {
