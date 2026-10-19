@@ -914,7 +914,9 @@ Every test calls `expect`.
 - **Check:** compare Aalen–Johansen cumulative incidence against the observed histories.
   - **Planning-side stages:** strict, per pathway, against the observed cohort; `preApplication` against its pooled cohort, with simulated pathways mixed in the cohort's own proportions.
   - **Permit-side stages:** against the pooled cohort, with simulated pathways mixed in the cohort's own proportions. No per-pathway check here, because the pooled tables are scaled per pathway.
-  - **Pass bar:** max |Δ| ≤ max(0.03, 2.5·SE).
+  - **Pass bar:** max |Δ| ≤ max(0.03, 2.5·SE), at every month of the observed table.
+  - **Too-thin cohorts:** a cohort with no month at stage-calibration's at-risk minimum (`nRiskMin`, 20 observed at risk) has no observed table to compare. It is reported as too thin, with its n and its largest observed at-risk. It is not a failure.
+  - **Pass rule:** a block fails if no cohort is comparable, or if any comparable cohort is outside the pass bar. Each block prints its per-cohort table.
 - **Overlap:** this complements stage-calibration's V-check of `sampleTransition` alone. The tolerance is a test parameter, not a model number.
 
 ### Playwright e2e
