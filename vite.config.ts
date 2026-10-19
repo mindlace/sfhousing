@@ -1,7 +1,26 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import VitestFlakeReporter from '@mindlace/chreode/reporters/vitest';
+import { fileURLToPath } from 'node:url';
+import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
+
+const SRC_LIB = fileURLToPath(new URL('./src/lib', import.meta.url));
+
+/**
+ * The pipeline project imports src by relative path and has no `$lib` alias. This resolves the
+ * `$lib` imports of src modules only (pipeline/test/simulate-replay.test.ts runs `simulate`), so
+ * pipeline code itself still cannot import `$lib`: the pipeline runs outside SvelteKit.
+ */
+const srcLibForSrc: Plugin = {
+  name: 'pipeline-src-lib',
+  enforce: 'pre',
+  resolveId(id, importer) {
+    if (!(id === '$lib' || id.startsWith('$lib/'))) return null;
+    if (importer === undefined || !importer.startsWith(`${SRC_LIB}/`)) return null;
+    return this.resolve(SRC_LIB + id.slice('$lib'.length), importer, { skipSelf: true });
+  }
+};
 
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],
@@ -29,6 +48,7 @@ export default defineConfig({
       },
       // Data pipeline: standalone (no SvelteKit config); imports src/lib/data by relative path.
       {
+        plugins: [srcLibForSrc],
         test: {
           name: 'pipeline',
           environment: 'node',
