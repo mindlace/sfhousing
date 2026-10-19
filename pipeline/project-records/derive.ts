@@ -926,6 +926,7 @@ export function deriveProjects(
     supersedeTested.map((a) => ({
       id: a.proj.id,
       recordId: (a.proj.primary as NonNullable<typeof a.proj.primary>).recordId,
+      address: a.proj.primary?.address ?? null,
       label: labelOf(a.proj, null),
       parcelIds: a.proj.parcelIds,
       units: a.units ?? 0,
