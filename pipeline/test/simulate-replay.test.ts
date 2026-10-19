@@ -11,7 +11,8 @@
  * stage-calibration fits it (see `cohortsOf`); permit-side stages pooled across pathways from
  * 2007-01-01, left-truncated there (DQ-1). In a pooled cohort each twin runs its history's own
  * pathway, the unclassifiable ones mixed in the cohort's own proportions.
- * Only cohorts with n ≥ 50 are checked. Pass bar at every month and outcome:
+ * Only cohorts with n ≥ 50 are checked. Pass bar at every month of the observed table, for every
+ * outcome:
  * |Δ| ≤ max(0.03, 2.5·SE), SE combining a bootstrap of the observed cohort with the spread of
  * the 20 seeds. The tolerance is a test parameter, not a model number. A cohort with no month at
  * LIVE_CAL.nRiskMin observed at risk is too thin to compare: it is reported with its n and its
@@ -21,7 +22,8 @@
  * Two blocks: `live` reads the newest non-fixture build's `project-histories.json` (derived
  * cache) and `calibration.json` (build output), and is skipped with the reason printed when
  * there is none (`SFH_REPLAY_PIPELINE_DIR` and `SFH_REPLAY_VERSION` point it at another
- * pipeline directory or version, read only); `synthetic` always runs, on histories sampled from
+ * pipeline directory or version, read only, and with either set a missing build fails the block
+ * instead of skipping it); `synthetic` always runs, on histories sampled from
  * `mini-calibration.json`'s own tables, so the replay machinery itself is exercised in CI. Each
  * block prints its per-cohort table with console.info.
  */
@@ -300,7 +302,7 @@ function compare(co: Cohort, sims: Spell[][], salt: number): Verdict {
       if (delta > v.maxAbs) {
         v.maxAbs = delta;
         v.bar = bar;
-        v.worst = `${at} (bar ${bar.toFixed(4)})`;
+        v.worst = at;
       }
       if (delta > bar) v.failures.push(`${at}: |Δ| ${delta.toFixed(4)} > ${bar.toFixed(4)}`);
     }
@@ -615,8 +617,10 @@ describe('simulate-replay: too-thin cohorts', () => {
 /**
  * Read-only overrides: `SFH_REPLAY_PIPELINE_DIR` names the pipeline directory whose
  * `.cache/derived` and `out` are read (default this checkout's `pipeline/`), and
- * `SFH_REPLAY_VERSION` picks one version instead of the newest non-fixture one.
+ * `SFH_REPLAY_VERSION` picks one version instead of the newest non-fixture one. With neither set,
+ * a missing build skips the block; with either set, it fails it (`liveMode`).
  */
+const OVERRIDDEN = !!(process.env.SFH_REPLAY_PIPELINE_DIR || process.env.SFH_REPLAY_VERSION);
 const PIPELINE_DIR =
   process.env.SFH_REPLAY_PIPELINE_DIR ||
   join(fileURLToPath(new URL('../..', import.meta.url)), 'pipeline');
@@ -624,8 +628,14 @@ const PICK = process.env.SFH_REPLAY_VERSION || null;
 const OUT = join(PIPELINE_DIR, 'out');
 const DERIVED = join(PIPELINE_DIR, '.cache/derived');
 
+interface LiveBuild {
+  version: string;
+  histories: string;
+  calibration: string;
+}
+
 /** The newest non-fixture version (or SFH_REPLAY_VERSION) with both files, or why there is none. */
-function findLive(): { version: string; histories: string; calibration: string } | string {
+function findLive(): LiveBuild | string {
   if (!existsSync(DERIVED)) return `no derived cache at ${DERIVED} (run the pipeline build)`;
   const found = readdirSync(DERIVED)
     .filter((v) => (PICK === null ? !/^fixture-\d+$/.test(v) : v === PICK))
@@ -643,14 +653,48 @@ function findLive(): { version: string; histories: string; calibration: string }
   );
 }
 
-const live = findLive();
-if (typeof live === 'string') console.info(`[simulate-replay] live block skipped: ${live}`);
+/**
+ * Run a found build. A missing one skips by default (no build in CI or a fresh checkout), but
+ * fails when an override asked for it: the override exists to verify that build.
+ */
+function liveMode(
+  found: LiveBuild | string,
+  overridden: boolean
+): { kind: 'run'; build: LiveBuild } | { kind: 'skip' | 'fail'; reason: string } {
+  if (typeof found !== 'string') return { kind: 'run', build: found };
+  return { kind: overridden ? 'fail' : 'skip', reason: found };
+}
 
-describe.skipIf(typeof live === 'string')(
-  `simulate-replay: live build ${typeof live === 'string' ? `(skipped: ${live})` : live.version}`,
+describe('simulate-replay: choosing the live block mode', () => {
+  const build = { version: 'v', histories: 'h', calibration: 'c' };
+
+  it('runs a found build, with or without an override', () => {
+    expect(liveMode(build, false)).toEqual({ kind: 'run', build });
+    expect(liveMode(build, true)).toEqual({ kind: 'run', build });
+  });
+
+  it('skips a missing build by default, and fails one requested by an override', () => {
+    expect(liveMode('none here', false)).toEqual({ kind: 'skip', reason: 'none here' });
+    expect(liveMode('none here', true)).toEqual({ kind: 'fail', reason: 'none here' });
+  });
+});
+
+const live = liveMode(findLive(), OVERRIDDEN);
+if (live.kind === 'skip') console.info(`[simulate-replay] live block skipped: ${live.reason}`);
+
+if (live.kind === 'fail') {
+  describe('simulate-replay: live build (requested by override, not found)', () => {
+    it('the requested live build exists', () => {
+      expect.fail(`SFH_REPLAY_PIPELINE_DIR / SFH_REPLAY_VERSION set, but ${live.reason}`);
+    });
+  });
+}
+
+describe.skipIf(live.kind !== 'run')(
+  `simulate-replay: live build ${live.kind === 'run' ? live.build.version : `(skipped: ${live.reason})`}`,
   () => {
     it('every comparable cohort with n ≥ 50 matches the observed Aalen–Johansen', () => {
-      const f = live as Exclude<typeof live, string>;
+      const f = (live as { build: LiveBuild }).build;
       const file = JSON.parse(readFileSync(f.histories, 'utf8')) as ProjectHistoriesFile;
       const cal = parseCalibration(JSON.parse(readFileSync(f.calibration, 'utf8')) as unknown);
       expect(file.asOf).toBe(cal.asOf);
