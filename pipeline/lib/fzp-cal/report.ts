@@ -306,24 +306,32 @@ function transitionsSection(x: ReportInput): string[] {
     if (detail.length > 0) out.push(...detail, '');
   }
   out.push(
-    'Per-stage `sc.*` rule counts (records changed at each stage; gap-impute, no-FCD, running-max and last-stage over all qualifying histories, purge-censor over all qualifying exits, ratio-clamp over revised pairs; the windowed rule totals are in section 10):',
+    'Per-stage `sc.*` rule counts (records changed at each stage; gap-impute, no-FCD, running-max and last-stage over all qualifying histories, purge-censor over all qualifying exits, ratio-clamp over revised pairs, carried-excluded over windowed revision pairs; the windowed rule totals are in section 10):',
     ''
   );
   const purgeByStage: Partial<Record<Stage, number>> = {};
   for (const e of x.purge.exits) {
     if (e.censored) purgeByStage[e.stage] = (purgeByStage[e.stage] ?? 0) + 1;
   }
-  const clampByStage: Partial<Record<Stage, number>> = {};
-  for (const s of x.tallies['sc.revision.ratio-clamp'].sample) {
-    const stage = s.slice(s.lastIndexOf(':') + 1) as Stage;
-    clampByStage[stage] = (clampByStage[stage] ?? 0) + 1;
-  }
+  // the two revision rules' samples are `<id>:<stage>` pairs
+  const pairsByStage = (id: ScRuleId): Partial<Record<Stage, number>> => {
+    const by: Partial<Record<Stage, number>> = {};
+    for (const s of x.tallies[id].sample) {
+      const stage = s.slice(s.lastIndexOf(':') + 1) as Stage;
+      by[stage] = (by[stage] ?? 0) + 1;
+    }
+    return by;
+  };
+  const clampByStage = pairsByStage('sc.revision.ratio-clamp');
+  const carriedByStage = pairsByStage('sc.revision.carried-excluded');
   const perStage = (id: ScRuleId, s: Stage): number =>
     id === 'sc.exit.purge-censor'
       ? (purgeByStage[s] ?? 0)
       : id === 'sc.revision.ratio-clamp'
         ? (clampByStage[s] ?? 0)
-        : (x.perStage[id][s] ?? 0);
+        : id === 'sc.revision.carried-excluded'
+          ? (carriedByStage[s] ?? 0)
+          : (x.perStage[id][s] ?? 0);
   out.push(
     ...table(
       ['stage', ...SC_RULE_IDS],
@@ -519,6 +527,7 @@ function sizeRevisionSection(x: ReportInput): string[] {
   const s = x.calibration.size;
   const v = x.calibration.revision;
   const clamp = x.tallies['sc.revision.ratio-clamp'];
+  const carried = x.tallies['sc.revision.carried-excluded'];
   return [
     REPORT_SECTIONS[5],
     '',
@@ -533,7 +542,7 @@ function sizeRevisionSection(x: ReportInput): string[] {
     '',
     `### Revision (tier ${v.provenance.tier}, n = ${num(v.provenance.n)})`,
     '',
-    `Ratio edges ${REVISION_EDGES.join(', ')}; sc.revision.ratio-clamp ${clamp.fired} of ${clamp.of} revised pairs.`,
+    `Ratio edges ${REVISION_EDGES.join(', ')}; sc.revision.ratio-clamp ${clamp.fired} of ${clamp.of} revised pairs; sc.revision.carried-excluded ${carried.fired} of ${carried.of} pairs left out (earlier count carried back; partner ruling).`,
     '',
     ...table(
       ['stage', 'probability', 'ratio probs'],

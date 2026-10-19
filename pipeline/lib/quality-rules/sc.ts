@@ -116,5 +116,26 @@ export const SC_RULES: readonly QualityRule[] = [
     warnShare: 0.1,
     failShare: 0.2,
     unitsWeighted: false
+  },
+  {
+    // Partner ruling via conductor, 2026-10-18 ("Exclude from resize estimate"): project-records'
+    // Ruling U1 carries a later count back to `unitsAt.filed` (pr.units.filed-zero,
+    // pr.units.split-filed); a copied size is not an observed one, so a revision pair that reads
+    // it is left out of the revision probability and ratio fits (every other estimate keeps it).
+    id: 'sc.revision.carried-excluded',
+    owner: 'stage-calibration',
+    source: 'project-histories',
+    field: 'unitsAt',
+    kind: 'observe',
+    action: 'none',
+    tier: 2,
+    valueTier: null,
+    maskBit: null,
+    label:
+      'A revision pair whose earlier home count was carried back from a later record is left out of the resize estimate',
+    denominator: 'revision pairs in the window, before the exclusion',
+    warnShare: 0.01,
+    failShare: 0.1,
+    unitsWeighted: false
   }
 ];

@@ -101,7 +101,11 @@ describe('calibration invariants on fixture-0', () => {
       'sc.exit.last-stage': [0, 9],
       'sc.exit.purge-censor': [0, 8],
       // Ruling R26: of = 0 because the mini histories have no revised pair to clamp.
-      'sc.revision.ratio-clamp': [0, 0]
+      'sc.revision.ratio-clamp': [0, 0],
+      // Partner ruling (2026-10-18): 8 windowed permitFiled pairs, none carried. The mini
+      // split-filed parts (PRJ:2009-000023PRJ:BP:2011020*0023) entered permitFiled in 2011, before
+      // the 2015 window, and the filed-zero PRJ:2016-000029PRJ starts at permitFiled (first stage).
+      'sc.revision.carried-excluded': [0, 8]
     };
     expect(Object.keys(rules).sort()).toEqual(
       QUALITY_RULES.filter((r) => r.id.startsWith('sc.'))

@@ -1,7 +1,7 @@
 /**
  * The pure core of the stage-calibration step (stage-calibration spec §4.3–§4.10): every
  * estimator in a fixed order, assembled into `calibration.json` in T4 key order, validated by
- * `parseCalibration`, with its report, the six `sc.*` tallies (recorded by the step through
+ * `parseCalibration`, with its report, the seven `sc.*` tallies (recorded by the step through
  * `recordQuality`) and the `calibration.*` counts. No I/O: the step reads the files and the panel.
  */
 import type { ScenarioParcels } from '../../../src/lib/data/scenario-codec';
@@ -60,7 +60,7 @@ export interface CalOutput {
   json: string;
   /** `calibration-report.md` */
   reportMd: string;
-  /** the six `sc.*` rules' counts, for `recordQuality` */
+  /** the seven `sc.*` rules' counts, for `recordQuality` */
   tallies: Tallies;
   /** `calibration.*` report counts only (the step adds `calibration.bytes`) */
   counts: Record<string, number>;
@@ -170,7 +170,8 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     'sc.stages.running-max': n.tallies['sc.stages.running-max'],
     'sc.exit.last-stage': n.tallies['sc.exit.last-stage'],
     'sc.exit.purge-censor': purgeWindowed,
-    'sc.revision.ratio-clamp': rev.clamp
+    'sc.revision.ratio-clamp': rev.clamp,
+    'sc.revision.carried-excluded': rev.carried
   };
 
   const counts: Record<string, number> = {

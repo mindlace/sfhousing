@@ -1,6 +1,6 @@
 // The stage-calibration build step (stage-calibration spec §4.3, §4.10): reads projects.json,
 // parcels.bin, the histories, permits.parquet and the scenario_panel table, runs the pure core
-// twice (V29), records the six sc.* T14 tallies and the calibration.* counts into the build's
+// twice (V29), records the seven sc.* T14 tallies and the calibration.* counts into the build's
 // single counts object, and writes scenarios/fzp/calibration.json and calibration-report.md (the
 // latter to the derived cache, not shipped). No network.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';

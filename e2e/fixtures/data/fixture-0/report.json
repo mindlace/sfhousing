@@ -8,7 +8,7 @@
     "buildings.kept": 10,
     "buildings.outside_nb_dropped": 1,
     "buildings.underground_dropped": 1,
-    "calibration.bytes": 37821,
+    "calibration.bytes": 37930,
     "calibration.histories": 37,
     "calibration.method.permitOnlyPre2015": 5,
     "calibration.method.ppaPooled": 2,
@@ -263,6 +263,8 @@
     "quality.sc.exit.last-stage.of": 9,
     "quality.sc.exit.purge-censor.fired": 0,
     "quality.sc.exit.purge-censor.of": 8,
+    "quality.sc.revision.carried-excluded.fired": 0,
+    "quality.sc.revision.carried-excluded.of": 8,
     "quality.sc.revision.ratio-clamp.fired": 0,
     "quality.sc.revision.ratio-clamp.of": 0,
     "quality.sc.stages.gap-impute.fired": 0,
@@ -568,7 +570,7 @@
       "ok": true
     },
     {
-      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), 37821 B",
+      "detail": "parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), 37930 B",
       "id": "V25",
       "ok": true
     },

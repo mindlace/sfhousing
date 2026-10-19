@@ -74,7 +74,8 @@ export function normalise(
     'sc.stages.running-max': {},
     'sc.exit.last-stage': {},
     'sc.exit.purge-censor': {},
-    'sc.revision.ratio-clamp': {}
+    'sc.revision.ratio-clamp': {},
+    'sc.revision.carried-excluded': {}
   };
   const imputed = new Set<string>();
   const method = {
