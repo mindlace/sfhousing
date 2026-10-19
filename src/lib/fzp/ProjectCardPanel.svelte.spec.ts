@@ -180,6 +180,40 @@ describe('card content', () => {
     await setup(project(revised), { day: stageDay(SIMULATED, 'entitled') + 1 });
     await expect.element(text(/^Resized: 24 → 30 homes, /)).toBeVisible();
   });
+
+  it('shows no stage, end or resize after the scrubbed day (a step back within the month)', async () => {
+    // The answer was for a later day; the scrubber has since stepped back before `entitled`.
+    const revised: ProjectCard = {
+      ...SIMULATED,
+      revisions: [
+        { day: stageDay(SIMULATED, 'filed'), units: 24, stories: 6 },
+        { day: stageDay(SIMULATED, 'entitled'), units: 30, stories: 8 }
+      ]
+    };
+    await setup(project(revised), { day: stageDay(SIMULATED, 'entitled') - 1 });
+    await expect.element(text(/^In Planning review, /)).toBeVisible();
+    const items = [...panel().querySelectorAll('ol li')].map((li) => li.textContent?.trim());
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatch(/^Planning application filed · /);
+    expect(panel().textContent).not.toContain('Completed');
+    expect(panel().textContent).not.toContain('Resized');
+  });
+
+  it('renders two identical resize lines (keyed by index)', async () => {
+    const day = stageDay(SIMULATED, 'filed');
+    const twice: ProjectCard = {
+      ...SIMULATED,
+      revisions: [
+        { day, units: 24, stories: 6 },
+        { day: day + 40, units: 30, stories: 8 },
+        { day: day + 40, units: 24, stories: 6 },
+        { day: day + 40, units: 30, stories: 8 }
+      ]
+    };
+    await setup(project(twice), { day: day + 70 });
+    await expect.element(text(/^Resized: 30 → 24 homes, /)).toBeVisible();
+    expect(page.getByText(/^Resized: 24 → 30 homes, /).elements()).toHaveLength(2);
+  });
 });
 
 describe('source links', () => {
@@ -302,7 +336,7 @@ describe('data notes', () => {
 
 describe('phase cards', () => {
   it('shows the phase line, master context and the This phase sub-heading', async () => {
-    await setup(project(PHASE_ESTIMATED), { day: FIX_ASOF });
+    await setup(project(PHASE_ESTIMATED), { day: stageDay(PHASE_ESTIMATED, 'permitFiled') });
     await expect.element(text('Phase 3 of 12, Candlestick Point')).toBeVisible();
     const items = [...document.querySelectorAll('li')].map((li) => li.textContent?.trim());
     expect(items.some((t) => /^Master plan approved · .* · Recorded$/.test(t ?? ''))).toBe(true);

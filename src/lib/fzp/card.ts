@@ -154,12 +154,16 @@ export function sizeLine(card: ProjectCard, day: Day, marked: boolean): string {
   return parts.join(' · ');
 }
 
-/** One line per later revision: "Resized: 24 → 30 homes, Mar 2028, simulated". */
-export function revisionLines(card: ProjectCard, asOf: Day): string[] {
+/**
+ * One line per later revision on or before `day` (the card never shows the future):
+ * "Resized: 24 → 30 homes, Mar 2028, simulated".
+ */
+export function revisionLines(card: ProjectCard, day: Day, asOf: Day): string[] {
   const lines: string[] = [];
   for (let i = 1; i < card.revisions.length; i++) {
     const prev = card.revisions[i - 1];
     const rev = card.revisions[i];
+    if (rev.day > day) continue;
     const after = rev.day > asOf ? ', simulated' : '';
     lines.push(
       `Resized: ${formatCount(prev.units)} → ${formatCount(rev.units)} ` +
@@ -214,12 +218,14 @@ function masterRowLabel(stage: string): string {
 }
 
 /**
- * One row per `stages` entry in data order, then the end. On a phase card the rows before the
- * first `permitFiled` entry are the master plan's, and the `permitFiled` row carries the
- * "This phase" heading (spec §4.8).
+ * One row per `stages` entry in data order, then the end, each only once `day` has reached it
+ * (the card never shows a future stage). On a phase card the rows before the first `permitFiled`
+ * entry are the master plan's, and the `permitFiled` row carries the "This phase" heading
+ * (spec §4.8).
  */
 export function timelineRows(
   card: ProjectCard,
+  day: Day,
   asOf: Day,
   marked: boolean
 ): { heading: 'This phase' | null; text: string }[] {
@@ -228,6 +234,7 @@ export function timelineRows(
   const phaseStart =
     card.phase === null ? -1 : card.stages.findIndex((s) => s.stage === 'permitFiled');
   card.stages.forEach((s, i) => {
+    if (s.day > day) return;
     const master = card.phase !== null && (phaseStart < 0 || i < phaseStart);
     const label = master ? masterRowLabel(s.stage) : enteredLabel(s.stage);
     const date = s.actual ? formatDate(s.day) : formatShortMonthYear(s.day);
@@ -243,7 +250,7 @@ export function timelineRows(
     rows.push({ heading, text: `${label} · ${date} · ${suffix}` });
   });
   const end = card.end;
-  if (end !== null && end.kind !== 'open') {
+  if (end !== null && end.kind !== 'open' && end.day <= day) {
     const label =
       end.kind === 'complete' ? enteredLabel('complete') : `Stopped (${EXIT_LABEL[end.reason]})`;
     rows.push({
@@ -297,11 +304,15 @@ export function sourceLinks(sources: ProjectCard['sources']): { text: string; hr
   return sources.map(({ dataset, id, key }) => {
     const known = Object.hasOwn(SOURCE_DATASETS, dataset) ? SOURCE_DATASETS[dataset] : undefined;
     if (known === undefined) {
-      return { text: `${dataset} ${id}`, href: `https://data.sf.gov/d/${dataset}` };
+      return {
+        text: `${dataset} ${id}`,
+        href: `https://data.sf.gov/d/${encodeURIComponent(dataset)}`
+      };
     }
+    const field = encodeURIComponent(key ?? known.key);
     return {
       text: `${known.name} ${id}: DataSF record (JSON)`,
-      href: `https://data.sf.gov/resource/${dataset}.json?${key ?? known.key}=${encodeURIComponent(id)}`
+      href: `https://data.sf.gov/resource/${encodeURIComponent(dataset)}.json?${field}=${encodeURIComponent(id)}`
     };
   });
 }

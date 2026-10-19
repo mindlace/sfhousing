@@ -53,7 +53,7 @@
       ? chanceProvenance(calibration, card, status.stage)
       : null
   );
-  const rows = $derived(card ? timelineRows(card, asOf, marked) : []);
+  const rows = $derived(card ? timelineRows(card, day, asOf, marked) : []);
   /** Rows split at the "This phase" heading (phase cards only). */
   const timeline = $derived.by(() => {
     const at = rows.findIndex((r) => r.heading !== null);
@@ -112,7 +112,7 @@
       <p class="mt-2">{PATHWAY_LABEL[card.pathway]}</p>
       <p class="mt-2 font-semibold">{statusText(status, card, asOf)}</p>
       <p class="mt-1">{sizeLine(card, day, marked)}</p>
-      {#each revisionLines(card, asOf) as line (line)}
+      {#each revisionLines(card, day, asOf) as line, i (i)}
         <p class="text-gray-800">{line}</p>
       {/each}
 

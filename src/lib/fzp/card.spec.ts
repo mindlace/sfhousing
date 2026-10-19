@@ -42,7 +42,10 @@ import {
   WITH_QUALITY
 } from './fixtures/cards';
 import { fixtureCalibration, tier3Calibration } from './fixtures/calibration';
-import { dayFromUtc } from './time';
+import { HORIZON, dayFromUtc } from './time';
+
+/** A scrubbed day past every fixture stage: the whole card shows. */
+const LATE = HORIZON;
 
 const cal = fixtureCalibration();
 const chance = chanceTable(cal);
@@ -227,19 +230,27 @@ describe('sizeLine', () => {
 
 describe('revisionLines', () => {
   it('lists a resize after asOf as simulated, with the month only', () => {
-    expect(revisionLines(REVISED, FIX_ASOF)).toEqual([
+    expect(revisionLines(REVISED, LATE, FIX_ASOF)).toEqual([
       'Resized: 24 → 30 homes, Mar 2028, simulated'
     ]);
   });
 
   it('lists a recorded resize with a full date and no suffix', () => {
-    expect(revisionLines(REVISED, dayFromUtc(2029, 1, 1))).toEqual([
+    expect(revisionLines(REVISED, LATE, dayFromUtc(2029, 1, 1))).toEqual([
       'Resized: 24 → 30 homes, Mar 10, 2028'
     ]);
   });
 
   it('has none for a card never resized', () => {
-    expect(revisionLines(SIMULATED, FIX_ASOF)).toEqual([]);
+    expect(revisionLines(SIMULATED, LATE, FIX_ASOF)).toEqual([]);
+  });
+
+  it('omits a resize after the scrubbed day (spec §4.8: no future stages)', () => {
+    const resize = REVISED.revisions[1].day;
+    expect(revisionLines(REVISED, resize - 1, FIX_ASOF)).toEqual([]);
+    expect(revisionLines(REVISED, resize, FIX_ASOF)).toEqual([
+      'Resized: 24 → 30 homes, Mar 2028, simulated'
+    ]);
   });
 });
 
@@ -345,36 +356,57 @@ describe('simulated disclaimer', () => {
 
 describe('timelineRows', () => {
   it('uses the entered label, the date rule and Recorded or Simulated', () => {
-    const rows = timelineRows(REAL_ACTUAL, FIX_ASOF, false).map((r) => r.text);
+    const rows = timelineRows(REAL_ACTUAL, LATE, FIX_ASOF, false).map((r) => r.text);
     expect(rows[0]).toBe('Planning application filed · Jul 4, 2023 · Recorded');
     expect(rows).toHaveLength(REAL_ACTUAL.stages.length + 1);
     expect(rows.at(-1)).toBe('Completed · Nov 2027 · Simulated');
   });
 
   it('shows a simulated stage as month and year', () => {
-    const rows = timelineRows(SIMULATED, FIX_ASOF, false);
+    const rows = timelineRows(SIMULATED, LATE, FIX_ASOF, false);
     expect(rows[0].text).toMatch(/^Planning application filed · [A-Z][a-z]{2} \d{4} · Simulated$/);
     expect(rows.every((r) => r.heading === null)).toBe(true);
   });
 
   it('stars Recorded when the card is marked', () => {
-    const rows = timelineRows(REAL_ACTUAL, FIX_ASOF, true).map((r) => r.text);
+    const rows = timelineRows(REAL_ACTUAL, LATE, FIX_ASOF, true).map((r) => r.text);
     expect(rows[0]).toMatch(/ · Recorded\*$/);
     expect(rows.at(-1)).toMatch(/ · Simulated$/);
   });
 
   it('reads an end that has passed as Recorded', () => {
-    const rows = timelineRows(REAL_ACTUAL, dayFromUtc(2030, 1, 1), false);
+    const rows = timelineRows(REAL_ACTUAL, LATE, dayFromUtc(2030, 1, 1), false);
     expect(rows.at(-1)?.text).toBe('Completed · Nov 20, 2027 · Recorded');
   });
 
+  it('omits stages and an end after the scrubbed day (spec §4.8: no future stages)', () => {
+    const issued = REAL_ACTUAL.stages[3].day;
+    const rows = timelineRows(REAL_ACTUAL, issued, FIX_ASOF, false).map((r) => r.text);
+    expect(rows).toHaveLength(4);
+    expect(rows.at(-1)).toMatch(/^Building permit issued · /);
+    expect(rows.some((t) => t.startsWith('Completed'))).toBe(false);
+
+    const end = REAL_ACTUAL.end!.day;
+    expect(timelineRows(REAL_ACTUAL, end - 1, FIX_ASOF, false)).toHaveLength(5);
+    expect(timelineRows(REAL_ACTUAL, end, FIX_ASOF, false).at(-1)?.text).toBe(
+      'Completed · Nov 2027 · Simulated'
+    );
+  });
+
+  it('keeps the "This phase" heading off until the phase permit row is reached', () => {
+    const permit = PHASE_ESTIMATED.stages[2].day;
+    expect(
+      timelineRows(PHASE_ESTIMATED, permit - 1, FIX_ASOF, false).map((r) => r.heading)
+    ).toEqual([null, null]);
+  });
+
   it('reads a stop with its reason', () => {
-    const rows = timelineRows(EXITED, FIX_ASOF, false);
+    const rows = timelineRows(EXITED, LATE, FIX_ASOF, false);
     expect(rows.at(-1)?.text).toBe('Stopped (withdrawn) · Mar 2031 · Simulated');
   });
 
   it('labels master rows on a phase card and starts "This phase" at the permit', () => {
-    const rows = timelineRows(PHASE_ESTIMATED, FIX_ASOF, false);
+    const rows = timelineRows(PHASE_ESTIMATED, LATE, FIX_ASOF, false);
     expect(rows.map((r) => r.heading)).toEqual([null, null, 'This phase']);
     expect(rows[0].text).toMatch(
       /^Master plan application filed · [A-Z][a-z]{2} \d{1,2}, \d{4} · Recorded$/
@@ -397,7 +429,7 @@ describe('timelineRows', () => {
         PHASE_ESTIMATED.stages[2]
       ]
     };
-    const rows = timelineRows(card, FIX_ASOF, false);
+    const rows = timelineRows(card, LATE, FIX_ASOF, false);
     expect(rows.map((r) => r.heading)).toEqual([null, null, null, 'This phase']);
     expect(rows[2].text).toMatch(
       /^Master plan: designReview · [A-Z][a-z]{2} \d{1,2}, \d{4} · Recorded$/
@@ -407,14 +439,14 @@ describe('timelineRows', () => {
 
   it('has no master rows when permitFiled is the first row of a phase card', () => {
     const card = { ...PHASE_ESTIMATED, stages: [PHASE_ESTIMATED.stages[2]] };
-    const rows = timelineRows(card, FIX_ASOF, false);
+    const rows = timelineRows(card, LATE, FIX_ASOF, false);
     expect(rows).toHaveLength(1);
     expect(rows[0].heading).toBe('This phase');
     expect(rows[0].text).toMatch(/^Building permit filed · /);
   });
 
   it('says published plan date for a scheduled phase start', () => {
-    const rows = timelineRows(PHASE_SCHEDULED, FIX_ASOF, false);
+    const rows = timelineRows(PHASE_SCHEDULED, LATE, FIX_ASOF, false);
     expect(rows[2].text).toMatch(/ · Simulated \(published plan date\)$/);
   });
 
@@ -423,7 +455,7 @@ describe('timelineRows', () => {
       ...PHASE_ESTIMATED,
       sources: [{ dataset: '6jgi-cpb4', id: 'PLAN-DATE', key: 'case_no' }]
     };
-    expect(timelineRows(card, FIX_ASOF, false)[2].text).toMatch(/\(start estimated\)$/);
+    expect(timelineRows(card, LATE, FIX_ASOF, false)[2].text).toMatch(/\(start estimated\)$/);
   });
 
   it('does not add a phase suffix to a recorded permit row', () => {
@@ -431,7 +463,7 @@ describe('timelineRows', () => {
       ...PHASE_ESTIMATED,
       stages: PHASE_ESTIMATED.stages.map((s) => ({ ...s, actual: true }))
     };
-    expect(timelineRows(card, FIX_ASOF, false)[2].text).toMatch(/ · Recorded$/);
+    expect(timelineRows(card, LATE, FIX_ASOF, false)[2].text).toMatch(/ · Recorded$/);
   });
 });
 
@@ -463,6 +495,15 @@ describe('sourceLinks', () => {
         href: 'https://data.sf.gov/resource/6jgi-cpb4.json?case_no=2007.0001PRX'
       }
     ]);
+  });
+
+  it('encodes the dataset and the key', () => {
+    expect(sourceLinks([{ dataset: 'a b/c?', id: '1' }])[0].href).toBe(
+      'https://data.sf.gov/d/a%20b%2Fc%3F'
+    );
+    expect(sourceLinks([{ dataset: '6jgi-cpb4', id: '1', key: 'a&b=c' }])[0].href).toBe(
+      'https://data.sf.gov/resource/6jgi-cpb4.json?a%26b%3Dc=1'
+    );
   });
 
   it.each([
