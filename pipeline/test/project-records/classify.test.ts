@@ -12,6 +12,7 @@ function permit(number: string, filedDay: number | null): Permit {
   return {
     number,
     type: '2',
+    named: false,
     sitePermit: false,
     status: 'issued',
     statusDay: null,
@@ -235,8 +236,8 @@ describe('isNewConstruction', () => {
   });
 
   it('ignores a named type 3/8 alteration permit (Ruling L1)', () => {
-    const alt = { ...permit('3', null), type: '3' };
-    const alt8 = { ...permit('8', null), type: '8' };
+    const alt = { ...permit('3', null), type: '3', named: true };
+    const alt8 = { ...permit('8', null), type: '8', named: true };
     expect(isNewConstruction(proj({ permits: [alt, alt8] }))).toBe(false);
     // With a new-construction PRJ it is in by the PRJ condition.
     const a = prj('A', { newConstruction: true, unitsProp: 4 });

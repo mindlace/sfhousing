@@ -26,6 +26,7 @@ function permit(number: string, over: Partial<Permit> = {}): Permit {
   return {
     number,
     type: '2',
+    named: false,
     sitePermit: false,
     status: 'issued',
     statusDay: null,

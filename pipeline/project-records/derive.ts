@@ -767,7 +767,14 @@ export function deriveProjects(
     resolve,
     filedDay: filedEvidenceDay,
     anchorDay: (p) => entitledDay(p) ?? filedEvidenceDay(p),
-    descendants: input.descendants
+    // Ruling L2b: a target whose history (spec 4.6 rules 1-6) exited before the BP was filed.
+    exitDay: (p) => {
+      const end = endOf(p, clampStages(rawStages(p, pathwayOf(p))).entered, {
+        asOf,
+        ppaLag: Infinity
+      });
+      return end.kind === 'exit' ? end.day : null;
+    }
   });
   const counts = Object.assign(opts.counts ?? {}, zeroCounts());
 

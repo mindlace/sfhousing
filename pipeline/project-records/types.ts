@@ -56,6 +56,12 @@ export interface Permit {
   /** `permit_type`, trimmed; '' if absent. Types 1/2 are new construction; 3/8 (Ruling L1) are
    *  unit-adding alterations a Planning record names. */
   type: string;
+  /**
+   * From `datasf-permits-named` (a PRJ-named type 3/8 alteration, Ruling L1); false for a
+   * `datasf-permits-newcon` row, which is new construction by source membership even with a
+   * blank `permit_type` (Ruling L2b, M4).
+   */
+  named: boolean;
   sitePermit: boolean;
   /** Trimmed, lower-case; '' if absent. */
   status: string;

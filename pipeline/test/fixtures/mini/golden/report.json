@@ -89,6 +89,8 @@
     "landuse.orphan_rows": 2,
     "landuse.rows": 15,
     "landuse.unknown_values": 0,
+    "link.bpMergeRejected": 0,
+    "link.bpMergeSplitSkipped": 0,
     "link.bpMerged": 1,
     "link.excludedRows": 0,
     "link.orphanChildren": 0,

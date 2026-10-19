@@ -20,7 +20,7 @@ import type {
 import type { MultiphaseFile } from '../enrichment/schema';
 import { qualityRule } from '../lib/quality';
 import { PR } from '../lib/quality-rules/pr';
-import { NEW_CONSTRUCTION_PERMIT_TYPES } from './classify';
+import { isNewConstructionPermit } from './classify';
 import { buildPhases, isoToDay, median } from './multiphase';
 import { permitCompletionDay, permitDays } from './stages';
 import type { Completion, LinkedProject, PipelineRow, ProjectRecordsInput } from './types';
@@ -313,7 +313,7 @@ export function permitRows(
     const live = new Set(proj.live.map((q) => q.number));
     for (const q of proj.permits) {
       // T4d: one row per linked type 1/2 permit; a named alteration (Ruling L1) is not one.
-      if (!NEW_CONSTRUCTION_PERMIT_TYPES.has(q.type)) continue;
+      if (!isNewConstructionPermit(q)) continue;
       const da = daOf.get(q.number) ?? null;
       const prx =
         (prj !== null ? prxByBase.get(prj) : undefined) ??
@@ -364,7 +364,7 @@ function medianOf(units: number[]): { u: number; n: number } | null {
 }
 
 /** Proposed units of the completed permits (completion day from the project's own j67f rows). */
-function completedUnits(
+export function completedUnits(
   projects: Iterable<LinkedProject>,
   keep: (units: number, day: Day) => boolean = () => true
 ): number[] {
@@ -372,7 +372,7 @@ function completedUnits(
   for (const proj of projects) {
     for (const q of proj.permits) {
       // Phase sizes are new buildings: a named alteration (Ruling L1) is not one.
-      if (q.proposedUnits === null || !NEW_CONSTRUCTION_PERMIT_TYPES.has(q.type)) continue;
+      if (q.proposedUnits === null || !isNewConstructionPermit(q)) continue;
       const d = permitCompletionDay(q, proj.completions);
       if (d !== null && keep(q.proposedUnits, d)) out.push(q.proposedUnits);
     }

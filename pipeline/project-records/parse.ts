@@ -220,6 +220,7 @@ function parsePermits(
     const permit: Permit = {
       number,
       type: str(lead.permit_type) ?? '',
+      named: id === 'datasf-permits-named',
       sitePermit: lead.site_permit === 'Y',
       status: (str(lead.status) ?? '').toLowerCase(),
       statusDay: d.day(lead.status_date),

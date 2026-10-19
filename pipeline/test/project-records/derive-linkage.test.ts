@@ -133,3 +133,121 @@ describe('BP-only projects join the PRJ on their lot (Ruling L2)', () => {
     expect(deriveProjects(baseInput()).counts['link.bpMerged']).toBe(0);
   });
 });
+
+describe('named alteration units (Ruling C1a)', () => {
+  const ID = 'PRJ:2018-000030PRJ';
+  const newcon = (n: string, over: RawRow = {}): RawRow => ({
+    permit_number: n,
+    permit_type: '1',
+    block: '3512',
+    lot: '008',
+    status: 'issued',
+    status_date: ts('2019-12-06'),
+    filed_date: ts('2019-12-06'),
+    issued_date: ts('2020-03-02'),
+    proposed_units: '489',
+    estimated_cost: '90000000',
+    site_permit: 'Y',
+    primary_address_flag: 'Y',
+    ...over
+  });
+  const project = (permits: string, named: RawRow[], nc: RawRow[] = []) => {
+    const raw = baseRaw();
+    raw['datasf-planning-projects'].push(
+      ...entitledPrj('2018-000030PRJ', permits, { number_of_units_prop: '489' })
+    );
+    raw['datasf-planning-review'].push(review('2018-000030PRJ'));
+    raw['datasf-permits-named'].push(...named);
+    raw['datasf-permits-newcon'].push(...nc);
+    return deriveProjects(baseInput(raw));
+  };
+
+  it('beside a type 1/2 permit, a named alteration carries no units (no double count)', () => {
+    // The PRJ:2012.1384 shape: a 489-unit type 1 and a same-day type 3 recording 0 -> 468.
+    const r = project(
+      '201912068933,201912068937',
+      [alteration('201912068937', { proposed_units: '468', filed_date: ts('2019-12-06') })],
+      [newcon('201912068933')]
+    );
+    const h = history(r, ID);
+    expect(h.unitsAt.permitFiled).toBe(489);
+  });
+
+  it('in an alteration-only project the units are the max of the alterations, not the sum', () => {
+    const r = project('201901150030,201902010031', [
+      alteration('201901150030', { proposed_units: '4' }),
+      alteration('201902010031', { proposed_units: '6', filed_date: ts('2019-02-01') })
+    ]);
+    expect(history(r, ID).unitsAt.permitFiled).toBe(6);
+  });
+
+  it('stage evidence is unchanged: the alteration still dates permitIssued', () => {
+    const r = project(
+      '201912068933,201912068937',
+      [
+        alteration('201912068937', {
+          proposed_units: '468',
+          filed_date: ts('2019-06-01'),
+          issued_date: ts('2019-09-03')
+        })
+      ],
+      [newcon('201912068933', { issued_date: ts('2020-03-02') })]
+    );
+    expect(history(r, ID).entered.permitIssued).toBe(day('2019-09-03'));
+  });
+
+  it('beside a type 1/2 permit, a named alteration is not capacity-checked', () => {
+    // 5,000 units on 3 stories of a ~108 m2 lot would fail capacity; it carries no units here.
+    const r = project(
+      '201912068933,201912068937',
+      [
+        alteration('201912068937', {
+          proposed_units: '5000',
+          number_of_proposed_stories: '3'
+        })
+      ],
+      [newcon('201912068933', { proposed_units: '6', number_of_proposed_stories: '3' })]
+    );
+    expect(r.counts['quality.pr.units.capacity.fired']).toBe(0);
+    expect(r.counts['quality.pr.units.capacity-cap.fired']).toBe(0);
+  });
+});
+
+describe('the L2 anchor day is the entitled day when there is one (review M3)', () => {
+  it('a BP filed within a year of filing but not of entitlement stays apart', () => {
+    const raw = baseRaw();
+    // Filed 2018-03-01, entitled 2020-01-15: a BP filed 2018-09-01 is a year and more before.
+    raw['datasf-planning-projects'].push(...entitledPrj('2018-000030PRJ', ''));
+    raw['datasf-planning-review'].push({
+      ...review('2018-000030PRJ'),
+      end_event_date: ts('2020-01-15')
+    });
+    raw['datasf-permits-newcon'].push({
+      permit_number: '201809010031',
+      permit_type: '2',
+      block: '3512',
+      lot: '008',
+      status: 'filed',
+      status_date: ts('2018-09-01'),
+      filed_date: ts('2018-09-01'),
+      proposed_units: '5',
+      site_permit: 'Y',
+      primary_address_flag: 'Y'
+    });
+    const r = deriveProjects(baseInput(raw));
+    expect(r.histories.map((h) => h.id)).toContain('BP:201809010031');
+    expect(r.counts['link.bpMerged']).toBe(0);
+  });
+});
+
+describe('newcon-source rows are new construction by source (review M4)', () => {
+  it('a newcon row with a blank permit_type still makes its project new construction', () => {
+    const raw = baseRaw();
+    for (const p of raw['datasf-permits-newcon']) {
+      if (p.permit_number === '202403150003') delete p.permit_type;
+    }
+    const r = deriveProjects(baseInput(raw));
+    expect(r.file.projects.map((p) => p.id)).toContain('BP:202403150003');
+    expect(r.permits.map((p) => p.permit_number)).toContain('202403150003');
+  });
+});

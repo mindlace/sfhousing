@@ -5,7 +5,7 @@
  */
 import type { Pathway } from '../../src/lib/timelapse/types';
 import type { Day } from '../../src/lib/timelapse/time';
-import type { LinkedProject, Prj } from './types';
+import type { LinkedProject, Permit, Prj } from './types';
 
 /** Spec 4.4 rule 1 text indicator, verbatim. */
 export const STREAMLINED_RE =
@@ -81,13 +81,18 @@ export function pathwayOf(proj: LinkedProject): Pathway | null {
   return null;
 }
 
-/** Spec 4.3 first condition: a permit, or an anchor PRJ flagged new construction with units. */
-/** New-construction permit types (spec 4.3): a named alteration (3/8, Ruling L1) is not one. */
-export const NEW_CONSTRUCTION_PERMIT_TYPES: ReadonlySet<string> = new Set(['1', '2']);
+/**
+ * A new-construction (type 1/2) permit (spec 4.3): every `datasf-permits-newcon` row, by source
+ * membership (Ruling L2b, M4); a named alteration (types 3/8, Ruling L1) is not one.
+ */
+export function isNewConstructionPermit(q: Permit): boolean {
+  return !q.named;
+}
 
+/** Spec 4.3 first condition: a permit, or an anchor PRJ flagged new construction with units. */
 export function isNewConstruction(proj: LinkedProject): boolean {
   return (
-    proj.permits.some((q) => NEW_CONSTRUCTION_PERMIT_TYPES.has(q.type)) ||
+    proj.permits.some(isNewConstructionPermit) ||
     proj.anchors.some((a) => a.newConstruction && a.unitsProp !== null && a.unitsProp >= 1)
   );
 }

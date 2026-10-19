@@ -191,6 +191,7 @@ describe('parseAll', () => {
     expect(p.permits.get('P1')).toEqual({
       number: 'P1',
       type: '',
+      named: false,
       sitePermit: false,
       status: '',
       statusDay: null,
