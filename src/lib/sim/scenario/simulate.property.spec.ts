@@ -5,8 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import { FILL_LEVELS, type ScenarioParcels } from '$lib/data/scenario-codec';
 import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile, type InFlightProject } from '$lib/timelapse/projects';
-import { PATHWAYS, STAGE_ORDER, type Calibration, type Stage } from '$lib/timelapse/types';
-import { type Transition } from '$lib/timelapse/types';
+import {
+  PATHWAYS,
+  STAGE_ORDER,
+  type Calibration,
+  type Stage,
+  type Transition
+} from '$lib/timelapse/types';
 import { dayOf } from './dates';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
 import { miniCity } from './fixtures/mini-parcels';
@@ -216,7 +221,7 @@ describe('simulateNet equals the score of simulateDetailed (§4.4.7)', () => {
     expect(again).toBeGreaterThan(10);
   });
 
-  it('reused scratch state never leaks between runs, seeds, months or horizons', () => {
+  it('the cached month table follows the months array and the horizon; outputs are fresh', () => {
     const inp = miniInput();
     const twin = baseTwin(inp);
     const short = dayOf(2035, 6, 30);
@@ -230,11 +235,47 @@ describe('simulateNet equals the score of simulateDetailed (§4.4.7)', () => {
     );
     const shortNet = simulateNet(inp, 9, short, shortMonths);
     for (const k of SERIES) expect(Array.from(shortNet[k])).toEqual(Array.from(shortRef[k]));
+    // one months array with an earlier horizon in its last month, then the later one: a table
+    // kept from the earlier horizon would end on its day and throw on any later net event
+    const end = dayOf(2028, 6, 30);
+    const jun1 = dayOf(2028, 6, 1);
+    const busy = withCalibration(miniInput(), withHazard(miniCalibration(), -2));
+    let late = 0; // runs with a net event after jun1, which a stale table would reject
+    for (const seed of SEEDS) {
+      const fresh = monthsOf(MINI_AS_OF, end); // not yet cached: its first table is for jun1
+      expect(monthsOf(MINI_AS_OF, jun1)).toEqual(fresh);
+      const early = simulateNet(busy, seed, jun1, fresh);
+      const earlyRef = netOf(
+        shownSeries(simulateDetailed(busy, seed, jun1), MINI_AS_OF, jun1, fresh)
+      );
+      for (const k of SERIES) expect(Array.from(early[k])).toEqual(Array.from(earlyRef[k]));
+      const full = simulateNet(busy, seed, end, fresh);
+      const fullRef = netOf(shownSeries(simulateDetailed(busy, seed, end), MINI_AS_OF, end, fresh));
+      for (const k of SERIES) expect(Array.from(full[k])).toEqual(Array.from(fullRef[k]));
+      const n = fresh.length - 1;
+      if (SERIES.some((k) => early[k][n] !== full[k][n])) late++;
+    }
+    expect(late).toBeGreaterThan(0);
     const again = simulateNet(inp, 7, H, months);
     expect(SERIES.map((k) => Array.from(again[k]))).toEqual(snapshot);
     // the arrays a caller holds are its own: a later run does not overwrite them
     expect(SERIES.map((k) => Array.from(first[k]))).toEqual(snapshot);
     expect(again.completedNet).not.toBe(first.completedNet);
+  });
+
+  it('the baseZoning stand-in differs from the FZP view, so both variants count', () => {
+    const inp = miniInput();
+    const twin = baseTwin(inp);
+    const differs = (a: ArrayLike<number>, b: ArrayLike<number>) =>
+      Array.from(a).some((v, i) => v !== b[i]);
+    expect(differs(inp.parcels.hostable, twin.parcels.hostable)).toBe(true);
+    expect(differs(inp.parcels.yield, twin.parcels.yield)).toBe(true);
+    const runsDiffer = SEEDS.some((seed) => {
+      const a = simulateNet(inp, seed, H, months);
+      const b = simulateNet(twin, seed, H, months);
+      return SERIES.some((k) => differs(a[k], b[k]));
+    });
+    expect(runsDiffer).toBe(true);
   });
 });
 
@@ -271,7 +312,7 @@ function selectRows(
     const start = cell.indexOf(c);
     return { cellId, start, count: cell.filter((x) => x === c).length };
   });
-  return {
+  const out: ScenarioParcels = {
     ...p,
     count: n,
     cells,
@@ -302,6 +343,22 @@ function selectRows(
     potentialRatio: { fzp: pick(p.potentialRatio.fzp, 1), base: pick(p.potentialRatio.base, 1) },
     storiesGap: { fzp: pick(p.storiesGap.fzp, 1), base: pick(p.storiesGap.base, 1) }
   };
+  // a column added to ScenarioParcels later and not listed above would keep the source's length
+  // through `...p` and misalign every row: make that loud
+  const columns = (o: object, at: string): [string, ArrayBufferView & { length: number }][] =>
+    Object.entries(o).flatMap(([k, v]) =>
+      ArrayBuffer.isView(v)
+        ? [[`${at}${k}`, v as ArrayBufferView & { length: number }]]
+        : v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Map)
+          ? columns(v, `${at}${k}.`)
+          : []
+    );
+  const src = new Map(columns(p, ''));
+  for (const [k, col] of columns(out, '')) {
+    const stride = src.get(k)!.length / p.count;
+    if (col.length !== n * stride) throw new Error(`selectRows: column ${k} was not selected`);
+  }
+  return out;
 }
 
 describe('unrelated input changes never alter another schedule (AC 1)', () => {
@@ -371,6 +428,40 @@ describe('unrelated input changes never alter another schedule (AC 1)', () => {
       expect(byId(rest)).toEqual(base);
     }
     expect(added).toBeGreaterThan(0);
+  });
+
+  it('removing an unrelated parcel removes only its own projects', () => {
+    // 3512008: open space, not hostable; 0026T011: hostable and busy. Neither is on any project.
+    let dropped = 0;
+    for (const [id, hostable] of [
+      ['3512008', 0],
+      ['0026T011', 1]
+    ] as const) {
+      for (const seed of FEW) {
+        const inp = busy();
+        const p = inp.parcels;
+        const gone = p.index.get(id)!;
+        expect(p.hostable[gone]).toBe(hostable);
+        expect(inp.projects.some((q) => q.parcelIds.includes(id))).toBe(false);
+        const rows = Array.from({ length: p.count }, (_, i) => i).filter((i) => i !== gone);
+        const parcels = selectRows(
+          p,
+          rows,
+          rows.map((r) => p.id[r]),
+          (j) => p.cells[p.cell[rows[j]]].cellId
+        );
+        expect(parcels.index.has(id)).toBe(false);
+        const base = simulateDetailed(inp, seed, H);
+        const now = simulateDetailed({ ...inp, parcels }, seed, H);
+        const own = (s: Schedule) => s.projectId.startsWith(`sim:${id}:`);
+        dropped += base.schedules.filter(own).length;
+        expect(now.schedules.some((s) => s.parcelIds.includes(id))).toBe(false);
+        expect(byId(now.schedules)).toEqual(byId(base.schedules.filter((s) => !own(s))));
+        expect(now.masters).toEqual(base.masters);
+      }
+    }
+    // not vacuous: the hostable parcel had projects to lose
+    expect(dropped).toBeGreaterThan(0);
   });
 
   it('adding an unrelated project adds only its own schedule', () => {

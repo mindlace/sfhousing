@@ -14,7 +14,11 @@ const out = fileURLToPath(new URL('./golden-seed1.json', import.meta.url));
 const options = (await resolveConfig(out)) ?? {};
 const warn = console.warn;
 console.warn = () => {}; // the once-per-input skipped-rows notice
-const run = goldenRun();
-console.warn = warn;
+let run;
+try {
+  run = goldenRun();
+} finally {
+  console.warn = warn;
+}
 writeFileSync(out, await format(JSON.stringify(run), { ...options, filepath: out }));
 console.log(`wrote ${out}: ${run.schedules.length} schedules`);
