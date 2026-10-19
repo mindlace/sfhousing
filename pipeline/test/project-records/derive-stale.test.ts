@@ -342,14 +342,14 @@ describe('stale open histories (deriveProjects)', () => {
       kind: 'exit',
       stage: 'permitFiled',
       reason: 'withdrawn',
-      day: day('2026-09-01')
+      day: day('2014-10-07') // Ruling C3d: its lastObserved, before the check
     });
     // Ruling C3c: dead in flight applies too; the project leaves T3 (status verifiedDead).
     expect(history(r, 'PRJ:2019-000001PRJ').end).toEqual({
       kind: 'exit',
       stage: 'construction',
       reason: 'withdrawn',
-      day: day('2026-09-01')
+      day: day('2021-05-03') // Ruling C3d: its lastObserved (pipeline status), before the check
     });
     expect(r.file.projects.map((p) => p.id)).not.toContain('PRJ:2019-000001PRJ');
     expect(r.counts['projects.excludedVerifiedDead']).toBe(1);
