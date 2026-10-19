@@ -9,9 +9,10 @@
 // to the end of the callback or of the last promise job after it (`promiseHooks`), whichever is
 // later, up to the start of the next wrapped task or its own `setImmediate`: its callback and
 // the microtasks it queued, but not the engine's own tasks (a garbage collector's finalisation)
-// that the event loop runs in between. The shown run's task (the one that calls
-// `simulateDetailed`) has its own budget, `simulate` + `score` ≤ 80 ms, so the 50 ms task budget
-// covers every other task from the first band run on (band, twin and geometry work).
+// that the event loop runs in between. Each task also records `loose`, the end at that start or
+// `setImmediate` (event-loop work included), which the logs show beside it. The 50 ms budget
+// covers every task from the first band run on (band, twin and geometry work), the shown run's
+// own task included: §4.11's 80 ms bounds the shown run's compute, not its macrotask.
 import { runInNewContext } from 'node:vm';
 import { promiseHooks, setFlagsFromString } from 'node:v8';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -153,6 +154,8 @@ interface Task {
   kind: 'handle' | 'timer' | 'fetch' | 'poll'; // poll: the bench's own waiting, never counted
   start: number;
   end: number;
+  /** the end at the next wrapped task's start or its own setImmediate (the looser measure) */
+  loose: number;
   detailed: boolean; // ran the shown run
   net: boolean; // ran a band or twin run
   cells: number; // cells posted in timelines
@@ -205,6 +208,7 @@ class Rig {
     const o = this.#open;
     if (!o) return;
     o.task.end = o.last;
+    o.task.loose = performance.now();
     o.task.detailed = probe.detailed > o.detailed;
     o.task.net = probe.net > o.net;
     for (const { msg } of this.posted.slice(o.posted))
@@ -216,7 +220,15 @@ class Rig {
   task(kind: Task['kind'], fn: () => void): void {
     this.#close();
     const start = performance.now();
-    const task: Task = { kind, start, end: NaN, detailed: false, net: false, cells: 0 };
+    const task: Task = {
+      kind,
+      start,
+      end: NaN,
+      loose: NaN,
+      detailed: false,
+      net: false,
+      cells: 0
+    };
     this.tasks.push(task);
     const open = {
       task,
@@ -276,17 +288,24 @@ class Rig {
     );
   }
 
-  /** The longest task started at or after `from`, the shown run's excluded. */
+  /** The host tasks started at or after `from` (the bench's polling left out). */
+  #since(from: number): Task[] {
+    return this.tasks.filter((t) => t.start >= from && t.kind !== 'poll' && Number.isFinite(t.end));
+  }
+
+  /** The longest host task started at or after `from`, the shown run's included. */
   longest(from: number): Task | null {
     let best: Task | null = null;
-    for (const t of this.tasks) {
-      if (t.start < from || t.detailed || t.kind === 'poll' || !Number.isFinite(t.end)) continue;
-      if (!best || t.end - t.start > best.end - best.start) best = t;
-    }
+    for (const t of this.#since(from)) if (!best || dur(t) > dur(best)) best = t;
     return best;
   }
 
-  /** The longest shown-run task started at or after `from` (reported, budgeted at 80 ms). */
+  /** The longest host task started at or after `from` by the looser measure (logged only). */
+  longestLoose(from: number): number {
+    return Math.max(0, ...this.#since(from).map((t) => t.loose - t.start));
+  }
+
+  /** The last shown-run task started at or after `from`. */
   shownTask(from: number): Task | undefined {
     return this.tasks.filter((t) => t.start >= from && t.detailed).at(-1);
   }
@@ -296,9 +315,10 @@ const dur = (t: Task | null | undefined) => (t ? t.end - t.start : 0);
 function taskLabel(t: Task | null): string {
   if (!t) return 'none';
   const notes: string[] = [t.kind];
+  if (t.detailed) notes.push('shown run');
   if (t.net) notes.push('band/twin run');
   if (t.cells) notes.push(`${t.cells} cells posted`);
-  return `${ms(dur(t))} (${notes.join(', ')})`;
+  return `${ms(dur(t))} (${notes.join(', ')}; loose ${ms(t.loose - t.start)})`;
 }
 
 describe('scenario host budgets (spec §4.11)', () => {
@@ -373,7 +393,10 @@ describe('scenario host budgets (spec §4.11)', () => {
     await rig.idle();
     const worst = rig.longest(firstBandTask);
     const runs = rig.tasks.filter((t) => t.start >= firstBandTask && t.net).length;
-    console.log(`[perf] longest band/twin macrotask: ${taskLabel(worst)}; ${runs} band/twin tasks`);
+    console.log(
+      `[perf] longest band/twin macrotask: ${taskLabel(worst)}; ${runs} band/twin tasks; ` +
+        `longest loose ${ms(rig.longestLoose(firstBandTask))}`
+    );
     expect(runs).toBeGreaterThan(40); // 101 FZP runs, the shown twin and 101 twins, ≈ 3 a slice
     expect(dur(worst)).toBeLessThanOrEqual(50);
   });
@@ -395,15 +418,15 @@ describe('scenario host budgets (spec §4.11)', () => {
       const revisions = rig.timelines(1).filter((p) => p.at >= from).length;
       console.log(
         `[perf] whole-city geometry: ${ms(performance.now() - from)}, ${revisions} revisions; ` +
-          `longest macrotask ${taskLabel(worst)}`
+          `longest macrotask ${taskLabel(worst)}; longest loose ${ms(rig.longestLoose(from))}`
       );
       expect(dur(worst)).toBeLessThanOrEqual(50);
     }
   );
 
   /**
-   * A reroll with every cell ready: its revision 0 time, and its whole run to idle (twin and
-   * the geometry revision 0 left for later). Every cell ends up packed, with a slot per project.
+   * A reroll with every cell ready: its revision 0 time, and its whole run to idle (its twin and
+   * any later geometry). Every cell ends up packed, with a slot per project.
    */
   async function reroll(rev: number, seed: number): Promise<{ rev0: number; worst: Task | null }> {
     const t0 = rig.handle({ type: 'reroll', rev, seed });
@@ -425,8 +448,9 @@ describe('scenario host budgets (spec §4.11)', () => {
       `[perf] reroll ${rev} (seed ${seed}) → revision 0: ${ms(first.at - t0)}, ` +
         `${first.msg.render.cells.length} cells (${cells.size} in all, ${slots} slots); ` +
         `twin ${ms(twin.at - first.at)} after it; shown-run task ${ms(dur(rig.shownTask(t0)))}; ` +
-        `longest other macrotask ${taskLabel(worst)}`
+        `longest macrotask ${taskLabel(worst)}; longest loose ${ms(rig.longestLoose(t0))}`
     );
+    expect(first.msg.render.cells.length).toBe(256); // every cell was ready: all in revision 0
     expect(cells.size).toBe(256);
     expect(slots).toBeGreaterThan(9000); // ≈ 2,000 pipeline and ≈ 8,000 simulated projects
     expect(twin.at - first.at).toBeLessThanOrEqual(200);

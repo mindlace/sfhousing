@@ -125,8 +125,9 @@ export function lastInitiationMonth(asOf: Day, horizon: Day): number {
  * The `skipAbove` bounds (see `Precompute`). With T = max(1, ceil(log(1 − u) / log1mh)), the
  * initiation is after the horizon exactly when T > Tmax (`lastInitiationMonth`), that is when
  * u > u* = 1 − (1 − h)^Tmax = 1 − exp(Tmax · log1mh). The bound is u* widened by a relative
- * 1e-6, which is about 10⁴ times every rounding error of the exact path's `1 − u`, `log` and
- * division for any u* above 1e-6; below that no bound is used.
+ * 1e-6 plus an absolute 1e-12 (u*·(1 + 1e-6) + 1e-12), far above every rounding error of the
+ * exact path's `1 − u`, `log` and division and of u* itself, for any u* above 1e-6; below
+ * that no bound is used.
  */
 function skipBounds(log1mh: Float64Array, candidates: Int32Array, Tmax: number): Float64Array {
   const out = new Float64Array(candidates.length).fill(Infinity);

@@ -13,13 +13,13 @@
 // Cost (spec §4.11: a band run is ≤ 15 ms on the bench city). What depends on the input only is
 // computed once per input (`staticOf` here, `precomputeOf` in input.ts): project entities, T11
 // rows and revision caps, the candidate rows and their entities. A run hoists its seed's mix
-// (`seedHash`) and each project its stream (`streamOf`), so a draw is one mix. Stage steps go
-// through `sample` (sampler.ts), T12's `sampleTransition` with cached table sums. The simulated
-// pass rejects most parcels on their first initiation draw against a precomputed bound
+// (`seedHash`) and each project its stream (`streamOf`), so a draw is one mix. Stage steps call
+// T12's `sampleTransition` itself (nothing here re-implements it). The simulated pass rejects most parcels on their first initiation draw against a precomputed bound
 // (`skipAbove`) instead of evaluating the geometric month. None of this changes a value.
 import type { ParcelId } from '$lib/data/parcel';
 import { FILL_LEVELS, fillStories, type ScenarioParcels } from '$lib/data/scenario-codec';
 import { log } from '$lib/timelapse/math';
+import { sampleTransition } from '$lib/timelapse/model';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import { MONTH_DAYS, monthsIn, type Day } from '$lib/timelapse/time';
 import {
@@ -33,7 +33,6 @@ import {
 } from '$lib/timelapse/types';
 import { precomputeOf, sizeCumAgainst, type Precompute } from './input';
 import { P, drawOn, jobEntity, seedHash, stageRedraw, streamOf } from './rng';
-import { drawn, sample } from './sampler';
 import type { Master } from './simulate';
 import type { Schedule, SimInput } from './types';
 
@@ -369,23 +368,23 @@ function stageStep(run: Run, job: Job, s: Stage, e: Day, inFlight: boolean): voi
   if (t === undefined) throw new Error(`calibration has no ${job.pathway} ${s} transition`);
   const idx = STAGE_INDEX[s];
   if (!inFlight) {
-    sample(t, drawOn(job.stream, P.STAGE, idx), 0);
-    step.kind = drawn.kind;
-    step.day = e + Math.floor(drawn.days);
+    const r = sampleTransition(t, drawOn(job.stream, P.STAGE, idx), 0);
+    step.kind = r.kind;
+    step.day = e + Math.floor(r.days);
     return;
   }
   const m = monthsIn(e, run.asOf);
   let kind: Kind = 'advance';
   for (let j = 0; j <= REDRAWS; j++) {
     const purpose = j === 0 ? P.STAGE : stageRedraw(j as 1 | 2 | 3 | 4 | 5 | 6 | 7);
-    sample(t, drawOn(job.stream, purpose, idx), m);
-    const day = e + Math.floor(drawn.days);
+    const r = sampleTransition(t, drawOn(job.stream, purpose, idx), m);
+    const day = e + Math.floor(r.days);
     if (day > run.asOf) {
-      step.kind = drawn.kind;
+      step.kind = r.kind;
       step.day = day;
       return;
     }
-    kind = drawn.kind;
+    kind = r.kind;
   }
   step.kind = kind;
   step.day = run.asOf + 1;
