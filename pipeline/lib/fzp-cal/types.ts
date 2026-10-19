@@ -14,14 +14,15 @@ import type {
 /** A stage a project can wait in: every stage but the terminal `complete`. */
 export type CalStage = Exclude<Stage, 'complete'>;
 
-/** The six registered `sc.*` T14 rules (spec §4.4a). */
+/** The seven registered `sc.*` T14 rules (spec §4.4a). */
 export type ScRuleId =
   | 'sc.stages.gap-impute'
   | 'sc.stages.no-fcd-duration'
   | 'sc.stages.running-max'
   | 'sc.exit.last-stage'
   | 'sc.exit.purge-censor'
-  | 'sc.revision.ratio-clamp';
+  | 'sc.revision.ratio-clamp'
+  | 'sc.revision.carried-excluded';
 
 export const SC_RULE_IDS: readonly ScRuleId[] = [
   'sc.stages.gap-impute',
@@ -29,7 +30,8 @@ export const SC_RULE_IDS: readonly ScRuleId[] = [
   'sc.stages.running-max',
   'sc.exit.last-stage',
   'sc.exit.purge-censor',
-  'sc.revision.ratio-clamp'
+  'sc.revision.ratio-clamp',
+  'sc.revision.carried-excluded'
 ];
 
 /** One rule's count for `recordQuality`: records changed, denominator, affected ids. */

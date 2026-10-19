@@ -261,6 +261,79 @@ describe('revisionModel: ratios and the clamp', () => {
   });
 });
 
+describe('revisionModel: carried-back earlier counts (partner ruling, sc.revision.carried-excluded)', () => {
+  /** `h` as project-records writes it when Ruling U1 carried a later count back to filing. */
+  const carriedQ = (h: NormHistory, rule = 'pr.units.split-filed'): NormHistory => ({
+    ...h,
+    src: { ...h.src, quality: [rule] }
+  });
+
+  it('leaves a carried history out of the permitFiled pair; the same history uncarried counts', () => {
+    const base = [pf('a', 10, 20), pf('b', 10, 10)];
+    const withCarried = revisionModel([...base, carriedQ(pf('c', 8, 8))], ASOF, FIXTURE_CAL);
+    // c is not counted as unrevised: 1 revised of 2 pairs
+    expect(at(withCarried.revision, 'permitFiled').probability).toBe(0.5);
+    expect(withCarried.revision.provenance.n).toBe(2);
+    const uncarried = revisionModel([...base, pf('c', 8, 8)], ASOF, FIXTURE_CAL);
+    expect(at(uncarried.revision, 'permitFiled').probability).toBe(0.333333);
+    expect(uncarried.revision.provenance.n).toBe(3);
+    expect(uncarried.carried).toEqual({ fired: 0, of: 3, sample: [] });
+  });
+
+  it('computes the ratio histogram and the clamp without the carried pair', () => {
+    const carried = carriedQ(pf('c', 1, 5), 'pr.units.filed-zero');
+    const { revision, clamp } = revisionModel(
+      [pf('a', 10, 5), pf('b', 10, 5), carried],
+      ASOF,
+      FIXTURE_CAL
+    );
+    const probs = at(revision, 'permitFiled').ratio.probs;
+    expect(probs[1]).toBe(1); // a's and b's 0.5 only
+    expect(probs[8]).toBe(0); // c's clamped 5x is not binned
+    expect(clamp).toEqual({ fired: 0, of: 2, sample: [] });
+  });
+
+  it("keeps a carried history's permitIssued pair, which uses no carried count", () => {
+    const h = hist(
+      'c',
+      {
+        filed: d('2018-01-01'),
+        permitFiled: d('2019-01-01'),
+        permitIssued: d('2020-01-01'),
+        construction: d('2021-01-01'),
+        complete: d('2023-01-01')
+      },
+      { filed: 8, permitFiled: 8, complete: 12 },
+      true
+    );
+    const norm = [carriedQ(h), done('d', 10, 10)];
+    const { revision, carried } = revisionModel(norm, ASOF, FIXTURE_CAL);
+    expect(at(revision, 'permitIssued').probability).toBe(0.5);
+    expect(carried).toEqual({ fired: 1, of: 3, sample: ['c:permitFiled'] });
+  });
+
+  it('tallies excluded pairs of the windowed pairs before the exclusion, sorted <id>:<stage>', () => {
+    const early = carriedQ(
+      hist(
+        'early',
+        { filed: d('2013-01-01'), permitFiled: d('2014-06-01') },
+        { filed: 4, permitFiled: 4 }
+      )
+    );
+    const norm = [
+      carriedQ(pf('z', 6, 6)),
+      pf('a', 10, 12),
+      carriedQ(pf('m', 3, 3), 'pr.units.filed-zero'),
+      early
+    ];
+    const { carried, revision } = revisionModel(norm, ASOF, FIXTURE_CAL);
+    expect(carried).toEqual({ fired: 2, of: 3, sample: ['m:permitFiled', 'z:permitFiled'] });
+    expect(revision.provenance.method).toContain(
+      '2 pairs with a carried-back earlier home count excluded (partner ruling; rule sc.revision.carried-excluded)'
+    );
+  });
+});
+
 describe('revisionModel: pooling and fallback', () => {
   const cal: CalProfile = { ...FIXTURE_CAL, revMinN: 3 };
 
@@ -296,9 +369,10 @@ describe('revisionModel: pooling and fallback', () => {
   });
 
   it('with no histories every probability is 0 and the clamp reports 0 of 0', () => {
-    const { revision, clamp } = revisionModel([], ASOF, LIVE_CAL);
+    const { revision, clamp, carried } = revisionModel([], ASOF, LIVE_CAL);
     expect(revision.at.map((a) => a.probability)).toEqual([0, 0]);
     expect(clamp).toEqual({ fired: 0, of: 0, sample: [] });
+    expect(carried).toEqual({ fired: 0, of: 0, sample: [] });
   });
 });
 
