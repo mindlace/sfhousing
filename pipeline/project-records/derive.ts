@@ -408,7 +408,8 @@ function applyStreamlined(a: Assessed, ctx: LapseInput): boolean {
 
 /**
  * Ruling C3c: a curated `dead` verdict on an in-flight project's open history applies as on any
- * other (exit `withdrawn` at the last entered stage, dated `checked`); true when it did, and the
+ * other (exit `withdrawn` at the last entered stage, dated min(`checked`, `lastObserved`), Ruling
+ * C3d); true when it did, and the
  * caller takes the project out of flight. A `complete` or `unknown` verdict is left for the
  * not-applied warning.
  */
@@ -421,7 +422,7 @@ function applyDeadVerdict(
   const v = verdicts.get(a.proj.id);
   if (v === undefined || v.verdict !== 'dead' || a.histEnd?.kind !== 'open') return false;
   verdicts.delete(a.proj.id);
-  const r = verdictEnd(a.histEntered, v, asOf);
+  const r = verdictEnd(a.histEntered, v, asOf, a.histEnd.lastObserved);
   if (r === null) return false;
   if ('skip' in r) {
     warnings.push(`construction-verified.json: ${v.id}: ${r.skip}; not applied`);
@@ -477,7 +478,7 @@ function applyStale(
   const v = verdicts.get(a.proj.id);
   if (v === undefined || a.histEnd.kind !== 'open') return;
   verdicts.delete(a.proj.id);
-  const r = verdictEnd(a.histEntered, v, ctx.asOf);
+  const r = verdictEnd(a.histEntered, v, ctx.asOf, a.histEnd.lastObserved);
   if (r === null) return;
   if ('skip' in r) {
     warnings.push(`construction-verified.json: ${v.id}: ${r.skip}; not applied`);
