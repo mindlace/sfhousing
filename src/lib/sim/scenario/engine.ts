@@ -111,7 +111,8 @@ interface Job {
   entered: Partial<Record<Stage, Day>>;
   /** never empty: [0] is the initial proposal */
   revisions: Revision[];
-  resize: Resize;
+  /** the revision rule; null for a master, which never revises (it is not a Schedule) */
+  resize: Resize | null;
 }
 
 /**
@@ -191,7 +192,7 @@ function pipelineResize(parcels: ScenarioParcels, parcelIds: readonly ParcelId[]
 /** A revision on entering stage `n` on `day` (§4.4.5 steps 1-5); none from construction on. */
 function revise(run: Run, job: Job, n: Stage, day: Day): void {
   const i = STAGE_INDEX[n];
-  if (i >= CONSTRUCTION) return;
+  if (i >= CONSTRUCTION || job.resize === null) return;
   const at = run.revisionAt[i];
   if (at === undefined) return;
   if (!(draw(run.seed, job.entity, job.k, P.REV, i) < at.probability)) return;
@@ -233,12 +234,37 @@ function stageStep(
   return { kind, day: run.asOf + 1 };
 }
 
+/** `runStages` stopped on entering a stage at or past its `stopAt`, on `day`. */
+interface Reached {
+  kind: 'reached';
+  day: Day;
+}
+
 /**
  * Steps `job` from stage `stage`, entered on day `e`, until it exits, completes or passes the
  * horizon (§4.4.2 step 3), filling `job.entered` and revising on each later entry. `inFlight`
- * conditions the first step only.
+ * conditions the first step only. With `stopAt`, it also stops on entering a stage at or past
+ * `stopAt` (an unentitled master stops on entering `entitled`, §4.4.3a); that entry is recorded
+ * in `job.entered` unless it is past `stopAt` (permitOnly, which never enters `entitled`).
  */
-function runStages(run: Run, job: Job, stage: Stage, e: Day, inFlight: boolean): End {
+function runStages(run: Run, job: Job, stage: Stage, e: Day, inFlight: boolean): End;
+function runStages(
+  run: Run,
+  job: Job,
+  stage: Stage,
+  e: Day,
+  inFlight: boolean,
+  stopAt: Stage
+): End | Reached;
+function runStages(
+  run: Run,
+  job: Job,
+  stage: Stage,
+  e: Day,
+  inFlight: boolean,
+  stopAt?: Stage
+): End | Reached {
+  const stop = stopAt === undefined ? Infinity : STAGE_INDEX[stopAt];
   let s = stage;
   let from = e;
   let conditioned = inFlight;
@@ -247,6 +273,10 @@ function runStages(run: Run, job: Job, stage: Stage, e: Day, inFlight: boolean):
     if (day > run.horizon) return { kind: 'open' };
     if (kind !== 'advance') return { kind: 'exit', stage: s, reason: kind, day };
     const n = nextStage(job.pathway, s);
+    if (STAGE_INDEX[n] >= stop) {
+      if (STAGE_INDEX[n] === stop) job.entered[n] = day;
+      return { kind: 'reached', day };
+    }
     job.entered[n] = day;
     if (n === 'complete') return { kind: 'complete', day };
     revise(run, job, n, day);
@@ -389,6 +419,172 @@ function pipelinePass(run: Run, projects: readonly InFlightProject[], holds: Hol
     addHold(holds, run.parcels, s.parcelIds, s.entered, s.end);
     sink.schedule(s);
   }
+}
+
+const ENTITLED = STAGE_INDEX.entitled;
+const PLANNING: readonly Stage[] = ['preApplication', 'filed', 'entitled'];
+
+/**
+ * A master's Planning-side entitlement (§4.4.3a). An entitled row (`history.entitled` set, or a
+ * stage at or past `entitled`) ends at E = `history.entitled`, else its earliest permit-side
+ * history day, else `asOf`. Any other row runs the §4.4.2 steps from its current stage (in-flight
+ * conditioned, entity `'j:' + masterId`, k = 0, no revisions) and stops on entering `entitled`.
+ * `entered` holds the Planning-side days, and `entitled = E` once entitled (not for permitOnly,
+ * which never enters `entitled`).
+ */
+function masterOf(run: Run, p: InFlightProject): Master {
+  const entered: Partial<Record<Stage, Day>> = {};
+  for (const s of PLANNING) {
+    const d = p.history[s];
+    if (d !== undefined) entered[s] = Math.min(d, run.asOf);
+  }
+  const phases = p.phases ?? [];
+  const master = (end: Master['end']): Master => ({
+    masterId: p.id,
+    pathway: p.pathway,
+    entered,
+    end,
+    phaseUnits: phases.map((ph) => ph.units),
+    phaseFiled: phases.map(() => null)
+  });
+  if (p.history.entitled !== undefined || STAGE_INDEX[p.stage] >= ENTITLED) {
+    let E = entered.entitled;
+    if (E === undefined) {
+      for (let i = ENTITLED + 1; i < STAGE_ORDER.length && E === undefined; i++) {
+        const d = p.history[STAGE_ORDER[i]];
+        if (d !== undefined) E = Math.min(d, run.asOf);
+      }
+      E ??= run.asOf;
+      if (p.pathway !== 'permitOnly') entered.entitled = E;
+    }
+    return master({ kind: 'entitled', day: E });
+  }
+  let e = entered[p.stage];
+  if (e === undefined) {
+    e = run.asOf;
+    entered[p.stage] = e;
+  }
+  const job: Job = {
+    entity: jobEntity(p.id),
+    k: 0,
+    pathway: p.pathway,
+    entered,
+    revisions: [{ day: e, units: p.units, stories: p.stories }],
+    resize: null
+  };
+  const end = runStages(run, job, p.stage, e, true, 'entitled');
+  if (end.kind === 'reached') return master({ kind: 'entitled', day: end.day });
+  if (end.kind === 'complete') throw new Error(`master ${p.id} completed before entitlement`);
+  return master(end);
+}
+
+/**
+ * Phase i's filing day F_i (§4.4.3a): its plan date if after `asOf` (not before E + 1), else one
+ * empirical gap after `base` (max(E, asOf) for phase 1, max(F_{i−1}, asOf) after).
+ */
+function phaseFiledDay(
+  run: Run,
+  masterEntity: number,
+  i: number,
+  plan: Day | null,
+  E: Day,
+  prev: Day
+): Day {
+  if (plan !== null && plan > run.asOf) return Math.max(plan, E + 1);
+  const days = run.cal.phaseGap.days;
+  const u = draw(run.seed, masterEntity, i, P.PHASE_GAP, 0);
+  const base = Math.max(i === 1 ? E : prev, run.asOf);
+  return base + 1 + days[Math.floor(u * days.length)];
+}
+
+/**
+ * The multi-phase pass (§4.4.3a): each phased row becomes a Master and, once entitled, one phase
+ * sub-project per entry of `phases` that files by the horizon. Holds: an exited master frees all
+ * its parcels (and its phases') from the exit day; an open master blocks them; after entitlement
+ * each phase holds its own parcels with its real end, an unfiled phase blocks them, and a master
+ * parcel in no phase stays blocked.
+ */
+function multiPhasePass(run: Run, projects: readonly InFlightProject[], holds: Holds, sink: Sink) {
+  for (const p of projects) {
+    if (isSkipped(p) || !isPhased(p)) continue;
+    const phases = p.phases ?? [];
+    const all = [...new Set([...p.parcelIds, ...phases.flatMap((ph) => ph.parcelIds)])];
+    const m = masterOf(run, p);
+    if (m.end.kind !== 'entitled') {
+      addHold(holds, run.parcels, all, {}, m.end.kind === 'exit' ? m.end : HELD);
+      sink.master(m);
+      continue;
+    }
+    const E = m.end.day;
+    const masterEntity = jobEntity(p.id);
+    const inPhase = new Set(phases.flatMap((ph) => ph.parcelIds));
+    addHold(
+      holds,
+      run.parcels,
+      p.parcelIds.filter((id) => !inPhase.has(id)),
+      {},
+      HELD
+    );
+    let prev = E;
+    for (const [j, ph] of phases.entries()) {
+      const i = j + 1;
+      const F_i = phaseFiledDay(run, masterEntity, i, ph.plannedPermitFiled, E, prev);
+      prev = F_i;
+      if (F_i > run.horizon) {
+        addHold(holds, run.parcels, ph.parcelIds, {}, HELD);
+        continue;
+      }
+      m.phaseFiled[j] = F_i;
+      const s = phaseSchedule(run, p, i, F_i);
+      addHold(holds, run.parcels, s.parcelIds, s.entered, s.end);
+      sink.schedule(s);
+    }
+    sink.master(m);
+  }
+}
+
+/**
+ * Phase i (1-based) of master `p`, filing on `F_i`: entered from `permitFiled` only, stepped fresh
+ * with entity `'j:' + projectId`, revised by the pipeline rule on its own parcels; `existingUnits`
+ * is the T11 sum of its parcels (§4.4.3a).
+ */
+function phaseSchedule(run: Run, p: InFlightProject, i: number, F_i: Day): Schedule {
+  const ph = (p.phases ?? [])[i - 1];
+  const projectId = `${p.id}:phase:${i}`;
+  const entered: Partial<Record<Stage, Day>> = { permitFiled: F_i };
+  const job: Job = {
+    entity: jobEntity(projectId),
+    k: 0,
+    pathway: p.pathway,
+    entered,
+    revisions: [{ day: F_i, units: ph.units, stories: null }],
+    resize: pipelineResize(run.parcels, ph.parcelIds)
+  };
+  const end = runStages(run, job, 'permitFiled', F_i, false);
+  let existingUnits = 0;
+  for (const id of ph.parcelIds) {
+    const r = run.parcels.index.get(id);
+    if (r !== undefined) existingUnits += run.parcels.existingUnits[r];
+  }
+  const plan = ph.plannedPermitFiled;
+  const scheduled = plan !== null && plan > run.asOf && F_i === plan;
+  return {
+    projectId,
+    origin: 'pipeline',
+    parcelIds: [...ph.parcelIds],
+    pathway: p.pathway,
+    entered,
+    end,
+    revisions: job.revisions,
+    existingUnits,
+    multiPhase: true,
+    phase: {
+      masterId: p.id,
+      index: i,
+      of: (p.phases ?? []).length,
+      start: scheduled ? 'scheduled' : 'estimated'
+    }
+  };
 }
 
 /**
@@ -537,6 +733,6 @@ export function runEngine(input: SimInput, seed: number, horizon: Day, sink: Sin
   const run = runOf(input, seed, horizon);
   const holds: Holds = new Map();
   pipelinePass(run, input.projects, holds, sink);
-  // Task 6: the multi-phase pass goes here, recording master and phase parcels with addHold.
+  multiPhasePass(run, input.projects, holds, sink);
   simulatedPass(run, holds, sink);
 }

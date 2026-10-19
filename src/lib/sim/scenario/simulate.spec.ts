@@ -74,6 +74,8 @@ const isSkipped = (p: InFlightProject) =>
   (p.pathway === 'permitOnly' && (p.stage === 'filed' || p.stage === 'entitled'));
 const isPhased = (p: InFlightProject) => p.multiPhase && p.phases !== null;
 const pipelineOf = (ss: Schedule[]) => ss.filter((s) => s.origin === 'pipeline');
+/** Pipeline Schedules of T3 rows themselves (not phase sub-projects of a master). */
+const rowsOf = (ss: Schedule[]) => pipelineOf(ss).filter((s) => s.phase === null);
 const simulatedOf = (ss: Schedule[]) => ss.filter((s) => s.origin === 'simulated');
 
 /** Σ yield[F − 1] and max envelope stories over the project's parcels present in T11. */
@@ -273,17 +275,33 @@ describe('simulate: pipeline projects', () => {
       const ids = block.map((s) => s.projectId);
       expect(ids).toEqual([...ids].sort((x, y) => (x < y ? -1 : x > y ? 1 : 0)));
     }
-    expect(d.masters).toEqual([]);
+    // the phased rows are Masters, never Schedules (multiphase.spec.ts covers them)
+    const phased = inp.projects.filter((p) => isPhased(p)).map((p) => p.id);
+    expect(d.masters.map((m) => m.masterId)).toEqual([...phased].sort());
+    expect(d.schedules.some((s) => phased.includes(s.projectId))).toBe(false);
   });
 
   it('covers every runnable unphased row, skips complete and invalid rows, copies T3 fields', () => {
     const inp = miniInput();
-    const out = pipelineOf(simulate(inp, 3, H));
+    const d = simulateDetailed(inp, 3, H);
+    const out = rowsOf(d.schedules);
     const expected = inp.projects
       .filter((p) => !isSkipped(p) && !isPhased(p))
       .map((p) => p.id)
       .sort();
     expect(out.map((s) => s.projectId)).toEqual(expected);
+    // the only other pipeline Schedules are the phases that filed by the horizon
+    const phases = d.masters
+      .flatMap((m) =>
+        m.phaseFiled.flatMap((f, j) => (f === null ? [] : [`${m.masterId}:phase:${j + 1}`]))
+      )
+      .sort();
+    expect(phases.length).toBeGreaterThan(0);
+    expect(
+      pipelineOf(d.schedules)
+        .filter((s) => s.phase !== null)
+        .map((s) => s.projectId)
+    ).toEqual(phases);
     expect(out.some((s) => s.projectId === MINI_PROJECTS.invalid)).toBe(false);
     expect(out.some((s) => s.projectId === MINI_PROJECTS.complete)).toBe(false);
     for (const s of out) {
@@ -328,7 +346,7 @@ describe('simulate: pipeline projects', () => {
     );
     const bad: string[] = [];
     for (const seed of SEEDS) {
-      for (const s of pipelineOf(simulate(inp, seed, H))) {
+      for (const s of rowsOf(simulate(inp, seed, H))) {
         const p = inp.projects.find((q) => q.id === s.projectId)!;
         let prev = -Infinity;
         for (const st of STAGE_ORDER) {
@@ -376,8 +394,10 @@ describe('simulate: pipeline projects', () => {
           if (!revStages.some((st) => s.entered[st] === r.day)) {
             bad.push(`${s.projectId} revision ${r.day} not on a revising stage entry`);
           }
+          // A revision is made on entering a stage before construction; a 0-day step can put
+          // construction on that same day (a tie, reported in the Task 6 report), never earlier.
           const c = s.entered.construction;
-          if (c !== undefined && r.day >= c) bad.push(`${s.projectId} revision on/after build`);
+          if (c !== undefined && r.day > c) bad.push(`${s.projectId} revision after build`);
           if (r.units === s.revisions[i - 1].units) bad.push(`${s.projectId} no-op revision`);
         }
       }
@@ -422,7 +442,7 @@ describe('simulate: pipeline projects', () => {
     const bad: string[] = [];
     let atCap = 0;
     for (const seed of SEEDS.slice(0, 20)) {
-      for (const s of pipelineOf(simulate(inp, seed, H))) {
+      for (const s of rowsOf(simulate(inp, seed, H))) {
         const p = inp.projects.find((q) => q.id === s.projectId)!;
         const { y, env } = capsOf(inp.parcels, p.parcelIds);
         for (let i = 1; i < s.revisions.length; i++) {
