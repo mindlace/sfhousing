@@ -278,6 +278,29 @@ test('Another future writes ?seed=N, keeps the day, and the URL seed reproduces 
   expect(await scoreJson(page, 'shown')).toBe(shown);
 });
 
+test('after Another future, the header Timelapse link shows the representative future again', async ({
+  isMobile,
+  page
+}) => {
+  test.skip(isMobile, 'below 640 px the header shows only the Paint link on /fzp');
+  await gotoFzp(page);
+  const representative = await fzp(page, 'seed');
+  expect(await fzp(page, 'representative')).toBe(true);
+
+  await anotherFuture(page).click();
+  await expect(page).toHaveURL(/\/fzp\?seed=\d+$/);
+  const seed = Number(new URL(page.url()).searchParams.get('seed'));
+  await expect.poll(() => fzp(page, 'seed')).toBe(seed);
+
+  // The URL becomes /fzp, the URL of the last load, so SvelteKit does not rerun the load.
+  await headerLink(page, 'Timelapse').click();
+  await expect(page).toHaveURL(/\/fzp$/);
+  await expect.poll(() => fzp(page, 'representative'), { timeout: 20_000 }).toBe(true);
+  await waitReady(page);
+  expect(await fzp(page, 'seed')).toBe(representative);
+  expect(new URL(page.url()).searchParams.has('seed')).toBe(false);
+});
+
 test('/fzp twice shows the same representative future', async ({ page }) => {
   await gotoFzp(page);
   const seed = await fzp(page, 'seed');
