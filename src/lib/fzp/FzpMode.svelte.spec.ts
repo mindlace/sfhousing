@@ -349,6 +349,53 @@ describe('FzpMode failures and Retry', () => {
     ]);
     await expect.poll(() => s.w().posts.length).toBe(1);
     expect(s.w().posts[0]).toMatchObject({ type: 'initScenario', seed: 99 });
+    expect(s.reload).not.toHaveBeenCalled();
+
+    // Retry's first timeline: the chip goes and the open card asks the new worker again.
+    s.w().emit(timelineMsg(lastRev(s.w()), 99));
+    await expect
+      .poll(() => s.w().lastSummary())
+      .toMatchObject({
+        parcelId: 'p1',
+        projectId: 'pr-1'
+      });
+    await expect.poll(() => statusText().filter(Boolean)).toEqual([]);
+    await answerLastSummary(s.w(), summary(REAL_ACTUAL));
+    await expect.element(page.getByTestId('card-badge')).toHaveTextContent('Real project');
+    expect(page.getByText('Details unavailable').elements()).toEqual([]);
+  });
+
+  it('an error answering a crash Retry in ready keeps the chip and its Retry', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = setup();
+    await toReady(s, 99);
+    s.w().crash();
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect.poll(() => s.workers.length).toBe(2);
+    await expect.poll(() => s.w().lastOf('initScenario')).toBeTruthy();
+    s.w().emit({ type: 'error', rev: lastRev(s.w()), code: 'internal', message: 'x' });
+    await expect
+      .element(page.getByRole('status').getByText('Part of the simulation stopped.'))
+      .toBeVisible();
+    await expect.element(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
+    expect(page.getByRole('alert').elements()).toEqual([]);
+    await expect.element(slider()).toBeInTheDocument();
+    expect(err).toHaveBeenCalled();
+  });
+
+  it('a manifest-invalid Retry sends the reloaded manifest, not the rejected one', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fresh = parseManifest(manifestJson);
+    const s = setup({ reload: async () => ({ manifest: fresh, calibration }) });
+    await expect.poll(() => s.w()?.lastOf('initScenario')).toBeTruthy();
+    s.w().emit({ type: 'error', rev: lastRev(s.w()), code: 'manifest-invalid', message: 'x' });
+    await expect.element(page.getByRole('alert')).toBeVisible();
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect.poll(() => s.w().allOf('initScenario').length).toBe(2);
+    expect(s.reload).toHaveBeenCalledTimes(1);
+    expect(fresh).not.toBe(manifest);
+    expect(s.w().lastOf('initScenario')!.manifest).toBe(fresh);
+    await expect.poll(() => stub.props.manifest).toBe(fresh);
   });
 
   it('pending request at crash shows Details unavailable', async () => {
@@ -366,6 +413,32 @@ describe('FzpMode failures and Retry', () => {
 });
 
 describe('FzpMode rerolls and the representative flag', () => {
+  it("'Another future' keeps the play state", async () => {
+    const s = setup();
+    await toReady(s, 7);
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await another().click();
+    s.w().emit(timelineMsg(s.w().lastOf('reroll')!.rev, 8));
+    await expect.element(futureLine()).toHaveTextContent(/^This future: #8$/);
+    await expect.element(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+  });
+
+  it('a failed-reroll notice does not come back after a crash Retry', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = setup();
+    await toReady(s, 7);
+    await another().click();
+    s.w().emit({ type: 'error', rev: s.w().lastOf('reroll')!.rev, code: 'internal', message: 'x' });
+    await expect.element(page.getByRole('alert')).toBeVisible();
+    s.w().crash();
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect.poll(() => s.workers.length).toBe(2);
+    await expect.poll(() => s.w().lastOf('initScenario')).toBeTruthy();
+    s.w().emit(timelineMsg(lastRev(s.w()), 7));
+    await expect.poll(() => statusText().filter(Boolean)).toEqual([]);
+    expect(page.getByRole('alert').elements()).toEqual([]);
+  });
+
   it("'Another future' rerolls, keeps the day, writes the URL, and ignores a stale timeline", async () => {
     vi.spyOn(crypto, 'getRandomValues').mockImplementation(((a: Uint32Array) => {
       a[0] = 4242;
@@ -503,8 +576,12 @@ describe('FzpMode picks and summaries', () => {
     await expect.poll(() => page.getByRole('tooltip').elements().length).toBe(0);
     await expect.element(page.getByTestId('card-badge')).toBeVisible();
 
+    pick({ projectId: 'pr-9', parcelId: 'p3', x: 40, y: 50, kind: 'hover' });
+    await answerLastSummary(s.w(), summary(REAL_ACTUAL));
+    await expect.element(page.getByRole('tooltip')).toBeVisible();
     pick({ projectId: null, kind: 'tap' });
     await expect.poll(() => card().elements().length).toBe(0);
+    await expect.poll(() => page.getByRole('tooltip').elements().length).toBe(0);
   });
 
   it('requestParcelSummary sends the scrubbed day without projectId and drops generated', async () => {
@@ -646,6 +723,25 @@ describe('FzpMode map, layout and lifecycle', () => {
     await expect.poll(() => callsOf('setBottomInset').at(-1)).toEqual([h]);
     const root = document.querySelector('.sfh-fzp') as HTMLElement;
     expect(root.style.getPropertyValue('--fzp-scrubber-h')).toBe(`${h}px`);
+  });
+
+  it('below 768 px the inset is scrubber + 56, and the sheet height while it is open', async () => {
+    await page.viewport(375, 800);
+    const s = setup();
+    await toReady(s);
+    const scrubber = page.getByTestId('fzp-scrubber').element() as HTMLElement;
+    await expect.poll(() => scrubber.offsetHeight).toBeGreaterThan(0);
+    await expect.poll(() => callsOf('setBottomInset').at(-1)).toEqual([scrubber.offsetHeight + 56]);
+
+    await page.getByRole('button', { name: /net new homes/ }).click();
+    const sheet = page.getByRole('group', { name: 'Simulation scoreboard details' });
+    await expect.element(sheet).toBeVisible();
+    const h = (sheet.element() as HTMLElement).offsetHeight;
+    expect(h).toBeGreaterThan(0);
+    await expect.poll(() => callsOf('setBottomInset').at(-1)).toEqual([h]);
+
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect.poll(() => callsOf('setBottomInset').at(-1)).toEqual([scrubber.offsetHeight + 56]);
   });
 
   it('unmount terminates the worker and leaves no frame loop pending', async () => {

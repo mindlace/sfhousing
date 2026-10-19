@@ -90,6 +90,8 @@
   let manifest = $state.raw<Manifest | null>(untrack(() => initialManifest));
   let calibration = $state.raw<Calibration | null>(untrack(() => initialCalibration));
   /** The main-thread data is missing or the worker rejected the manifest: Retry reloads it. */
+  /** The worker rejected the mounted manifest: Retry must send the reloaded object. */
+  let manifestRejected = false;
   let needReload = untrack(
     () => manifestError || calibrationError || !initialManifest || !initialCalibration
   );
@@ -328,7 +330,13 @@
         if (req.representative !== null) representative = req.representative;
         if (req.writesUrl) onurlseed?.(req.representative ? null : t.seed);
         rerollBusy = false;
+        rerollFailed = false;
         stopped = false;
+      } else if (req !== null && !req.answered && t.rev > req.rev) {
+        // The client's resync superseded the page's request (its answer will be stale): the
+        // shown future is the resync's, the seed it already showed, so the URL and the flag stay.
+        req.answered = true;
+        rerollBusy = false;
       }
       if (phase === 'loading') phase = 'ready';
       else if (answer) refreshCard();
@@ -345,7 +353,10 @@
     onError(e) {
       if (dead) return;
       const req = latest;
-      if (req !== null && e.rev < req.rev) return; // stale
+      if (req !== null && e.rev < req.rev) {
+        console.debug('[fzp] stale worker error dropped', e.code, e.rev);
+        return;
+      }
       if (req === null || req.answered || e.rev !== req.rev) {
         console.error('[fzp] worker error', e.code, e.message);
         return;
@@ -354,7 +365,7 @@
       console.error('[fzp] scenario request failed', e.code, e.message);
       if (phase === 'loading') {
         dataError = e.code === 'scenario-missing' || e.code === 'scenario-invalid';
-        if (e.code === 'manifest-invalid') needReload = true;
+        if (e.code === 'manifest-invalid') needReload = manifestRejected = true;
         phase = 'failed';
       } else if (phase === 'ready' && !stopped) {
         // A failed reroll: the shown future stays.
@@ -366,6 +377,7 @@
       if (dead) return;
       latest = null;
       rerollBusy = false;
+      rerollFailed = false;
       if (phase === 'ready') {
         stopped = true;
         hideTooltip();
@@ -393,10 +405,16 @@
       if (needReload || !manifest || !calibration) {
         const fresh = await reload();
         if (dead) return;
-        // A new manifest object remounts SimMap's map: keep the mounted one for the same dataset.
-        if (!manifest || fresh.manifest.datasetVersion !== manifest.datasetVersion) {
+        // A new manifest object remounts SimMap's map: keep the mounted one for the same dataset,
+        // unless the worker rejected it.
+        if (
+          manifestRejected ||
+          !manifest ||
+          fresh.manifest.datasetVersion !== manifest.datasetVersion
+        ) {
           manifest = fresh.manifest;
         }
+        manifestRejected = false;
         if (fresh.calibration !== calibration) {
           calibration = fresh.calibration;
           if (!wasReady) day = fresh.calibration.asOf;
@@ -453,6 +471,7 @@
 
     const mq = matchMedia(NARROW);
     narrow = mq.matches;
+    applyInset(); // SimMap's onready may have run first, before `narrow` was known
     const onMq = () => {
       narrow = mq.matches;
       applyInset();

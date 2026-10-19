@@ -27,15 +27,20 @@
 
 <h1 class="sr-only">Family Zoning Plan timelapse (simulation)</h1>
 <div id="map-region" class="relative h-full">
-  <FzpMode
-    manifest={data.manifest}
-    manifestError={data.manifestError}
-    calibration={data.calibration}
-    calibrationError={data.calibrationError}
-    noScenario={data.noScenario}
-    datasetVersion={data.datasetVersion}
-    urlSeed={data.seed}
-    reload={() => reloadScenario(data.datasetVersion)}
-    onurlseed={writeSeed}
-  />
+  <!-- A new load run (a navigation within /fzp, e.g. the header's Timelapse link from ?seed=N)
+       remounts FzpMode, so the future shown always matches the URL. replaceState (reroll, seed
+       clean-up) does not rerun the load, so it never remounts. -->
+  {#key data}
+    <FzpMode
+      manifest={data.manifest}
+      manifestError={data.manifestError}
+      calibration={data.calibration}
+      calibrationError={data.calibrationError}
+      noScenario={data.noScenario}
+      datasetVersion={data.datasetVersion}
+      urlSeed={data.seed}
+      reload={() => reloadScenario(data.datasetVersion)}
+      onurlseed={writeSeed}
+    />
+  {/key}
 </div>

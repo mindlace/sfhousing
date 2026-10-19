@@ -117,6 +117,16 @@ describe('/fzp load', () => {
       throw new TypeError('Failed to fetch');
     });
     await expect(load(event(down))).resolves.toMatchObject({ manifestError: true });
+    const calDown = files({
+      [CAL_URL]: () => {
+        throw new TypeError('Failed to fetch');
+      }
+    });
+    await expect(load(event(calDown))).resolves.toMatchObject({
+      manifestError: false,
+      calibration: null,
+      calibrationError: true
+    });
   });
 
   it('parses ?seed=12', async () => {

@@ -94,7 +94,7 @@ export const stub: Stub = {
   }
 };
 
-/** The calls to one handle method, in order (getMap excluded unless asked for). */
+/** The calls to one handle method, in order. */
 export function callsOf(method: keyof SimMapHandle): unknown[][] {
   return stub.calls.filter((c) => c.method === method).map((c) => c.args);
 }
