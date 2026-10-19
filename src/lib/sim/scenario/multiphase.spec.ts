@@ -347,9 +347,9 @@ describe('multi-phase masters (§4.4.3a)', () => {
           });
         }
       }
-      // T5: strictly ascending revision days, none on or after construction
+      // T5: strictly ascending revision days, none after construction; a revision due on the
+      // construction-entry day (a 0-day step from permitIssued) is the as-built proposal
       for (const s of schedules.filter((x) => x.phase !== null)) {
-        // a permitIssued revision may share its day with a 0-day step into construction
         const built = s.entered.construction ?? Infinity;
         for (let j = 1; j < s.revisions.length; j++) {
           expect(s.revisions[j].day).toBeGreaterThan(s.revisions[j - 1].day);

@@ -394,8 +394,8 @@ describe('simulate: pipeline projects', () => {
           if (!revStages.some((st) => s.entered[st] === r.day)) {
             bad.push(`${s.projectId} revision ${r.day} not on a revising stage entry`);
           }
-          // A revision is made on entering a stage before construction; a 0-day step can put
-          // construction on that same day (a tie, reported in the Task 6 report), never earlier.
+          // T5: none after construction; a revision due on the construction-entry day (a 0-day
+          // step from the revising stage) is the as-built proposal.
           const c = s.entered.construction;
           if (c !== undefined && r.day > c) bad.push(`${s.projectId} revision after build`);
           if (r.units === s.revisions[i - 1].units) bad.push(`${s.projectId} no-op revision`);
