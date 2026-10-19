@@ -1,7 +1,9 @@
 // Test harness for the scenario host (spec §6 scenario-host.spec.ts), modelled on
 // src/lib/sim/test/harness.ts. Test-only, Node-only (mini-bin.ts uses node:zlib).
 //
-// - A fake clock: `now()`, the host's `setTimeout`/`clearTimeout`, `advance(ms)` and `runAll()`.
+// - A fake clock: `now()`, the host's `setTimeout`/`clearTimeout`, `advance(ms)`, `runAll()` and
+//   `step()`. `tick(ms)` charges compute time (a test's stand-in for a slow simulation), and
+//   `slices` records how much fake time each timer callback took.
 //   Only the host's timers are fake. The one host step the harness does not drive is the
 //   parcels.bin inflate (a real DecompressionStream on Node's thread pool), so the harness
 //   injects `decodeParcels` as a tracked pass-through to `readScenarioParcels`: `flush()` waits
@@ -66,6 +68,12 @@ export interface ScenarioHarness {
   // fake clock
   now(): number;
   pendingTimers(): number;
+  /** Charges `ms` of compute time: the clock moves forward without firing any timer. */
+  tick(ms: number): void;
+  /** Fake-clock time each fired timer callback took (its `tick` charges), in firing order. */
+  slices: number[];
+  /** Fires the earliest due timer (then flushes); false when none is pending. */
+  step(): Promise<boolean>;
   /** Decodes of parcels.bin started and settled so far. */
   decodes(): { started: number; settled: number };
   /** Decodes started from now on wait until `releaseDecodes()`. */
@@ -143,6 +151,7 @@ export function makeScenarioHarness(opts?: {
   let clock = 0;
   let seq = 0;
   const timers = new Map<number, { at: number; fn: () => void }>();
+  const slices: number[] = [];
 
   function respond<B>(
     url: string,
@@ -238,7 +247,9 @@ export function makeScenarioHarness(opts?: {
   async function fire(entry: [number, { at: number; fn: () => void }]): Promise<void> {
     timers.delete(entry[0]);
     clock = Math.max(clock, entry[1].at);
+    const from = clock;
     entry[1].fn();
+    slices.push(clock - from);
     await flush();
   }
 
@@ -301,12 +312,23 @@ export function makeScenarioHarness(opts?: {
     fetchesOf: (url) => fetches.filter((f) => f.url === url),
     now: () => clock,
     pendingTimers: () => timers.size,
+    tick(ms) {
+      clock += ms;
+    },
+    slices,
+    async step() {
+      await flush();
+      const e = due(Infinity);
+      if (!e) return false;
+      await fire(e);
+      return true;
+    },
     flush,
     async advance(ms) {
       const target = clock + ms;
       await flush();
       for (let e = due(target); e; e = due(target)) await fire(e);
-      clock = target;
+      clock = Math.max(clock, target); // a timer's tick charges may have passed the target
     },
     async runAll() {
       await flush();
