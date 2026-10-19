@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
+import { encodeParcelChunk } from '$lib/data/parcel-chunk';
 import { generate, generateForUnits } from '$lib/generator';
 import type { TimedPackedCell } from '$lib/map/types';
 import { cellsIntersecting } from '$lib/sim/chunks';
@@ -48,6 +49,7 @@ const hooks = vi.hoisted(() => ({
   netMs: 15,
   detailedMs: 40,
   packMs: 0, // fake compute charged per packTimedCell call
+  throwFor: null as string | null, // packTimedCell throws for items holding this project
   tick: (ms: number): void => void ms,
   posts: (): number => 0,
   calls: [] as Call[],
@@ -62,6 +64,9 @@ vi.mock('$lib/map/pack-timed', async (importOriginal) => {
     packTimedCell: vi.fn((cellId: string, items: Parameters<typeof m.packTimedCell>[1]) => {
       hooks.packs.push({ cellId, posts: hooks.posts() });
       hooks.tick(hooks.packMs);
+      const bad = hooks.throwFor;
+      if (bad !== null && items.some((i) => i.schedule.projectId === bad))
+        throw new Error(`packTimedCell ${cellId}: project ${bad} has a broken ring`);
       return m.packTimedCell(cellId, items);
     })
   };
@@ -121,6 +126,7 @@ beforeEach(() => {
   hooks.netMs = 15;
   hooks.detailedMs = 40;
   hooks.packMs = 0;
+  hooks.throwFor = null;
   allowedWarnings = [SKIP_WARNING];
   warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
@@ -931,6 +937,28 @@ describe('scenario host: geometry', () => {
     ]);
   });
 
+  it('leaves out one unpackable project, logged once, and packs the rest of its cell', async () => {
+    hooks.throwFor = P.entitledStreamlined; // on 3512010, in 51_25
+    const h = harness();
+    const rev = h.init({ seed: SEED });
+    prefetch(h, bboxOf('51_25'));
+    await h.runAll();
+    h.host.handle({ type: 'reroll', rev: h.next(), seed: SEED }); // a repack does not re-log
+    await h.runAll();
+    expect(h.errors()).toEqual([]);
+    const { fzp } = inputs();
+    const { schedules } = shownRun(fzp, SEED);
+    const rest = schedules.filter((s) => s.projectId !== P.entitledStreamlined);
+    const [t0] = timelines(h, rev);
+    expect(t0.render.cells).toEqual(expectedCells(fzp, rest, ['51_25']));
+    expect(t0.render.cells[0].slotProjectIds).not.toContain(P.entitledStreamlined);
+    expect(t0.render.cells[0].slotProjectIds.length).toBeGreaterThan(1);
+    expect(t0.complete).toBe(true);
+    expect(h.warnings.filter((w) => w.includes(P.entitledStreamlined))).toEqual([
+      `packTimedCell 51_25: project ${P.entitledStreamlined} has a broken ring; not drawn`
+    ]);
+  });
+
   it('drops the chunks of a superseded init', async () => {
     const h = harness();
     const url = MINI_CHUNK_URL('51_25');
@@ -1144,5 +1172,93 @@ describe('scenario host: parcelSummary', () => {
     const s = summaryAt(h, '3512010', MINI_AS_OF - 3650)!;
     expect(s.project).toBeUndefined();
     expect(s.generated).toBeNull();
+  });
+
+  it('describes no building for a project whose cells are not all ready, and memoises no partial lot', async () => {
+    const { keys, deps } = generatorSpies();
+    const h = harness(N, { deps });
+    const far = MINI_CHUNK_URL('51_26');
+    h.hold(far);
+    h.init({ seed: SEED });
+    prefetch(h, bboxOf('50_26'));
+    await h.runAll();
+    const { fzp } = inputs();
+    const run = actual.simulateDetailed(fzp, SEED, H);
+    const cross = scheduleOf(run.schedules, P.crossCell);
+    const [near] = cross.parcelIds; // 2999A019 in 50_26; 2999A020 waits in 51_26
+    const day = MINI_AS_OF + 1;
+    expect(
+      chooseProject(
+        run.schedules.filter((s) => s.parcelIds.includes(near)),
+        day
+      )
+    ).toBe(cross);
+    const ctx = cardCtx(fzp, run);
+    const partial = summaryAt(h, near, day)!;
+    expect(partial.generated).toBeNull();
+    expect(partial.project).toEqual(
+      projectCard(cross, day, { ...ctx, building: () => ({ footprint: [] }) })
+    );
+    expect(partial.project!.massing).toBe('none');
+    // nothing was generated for the near lot alone
+    expect(keys.filter((k) => k.endsWith(`|${near}`))).toEqual([]);
+
+    h.release(far);
+    await h.runAll();
+    const full = summaryAt(h, near, day)!;
+    const m = ctx.building(cross, revisionAt(cross, day));
+    expect('parts' in m).toBe(true);
+    expect(full.project).toEqual(projectCard(cross, day, ctx));
+    expect(full.project!.massing).not.toBe('none');
+    expect(full.generated).toEqual(
+      'parts' in m ? { typology: m.typology, stories: m.stories, units: m.units } : null
+    );
+  });
+
+  it('is null until the scenario files are loaded, even with the record loaded', async () => {
+    const h = harness();
+    h.holdDecodes();
+    h.init({ seed: SEED });
+    prefetch(h, WORLD);
+    await h.flush();
+    expect(chunkPosts(h).at(-1)).toMatchObject({ pending: 0, failed: [] }); // records are in
+    expect(summaryAt(h, '3512012', MINI_AS_OF + 1)).toBeNull();
+    h.releaseDecodes();
+    await h.runAll();
+    expect(summaryAt(h, '3512012', MINI_AS_OF + 1)).toMatchObject({ existingUnits: 2 });
+  });
+
+  it("uses the chunk record's units for a parcel absent from T11, with no envelope or building", async () => {
+    const city = miniCity();
+    const url = MINI_CHUNK_URL('51_25');
+    const inCell = [...city.records.values()].filter((r) => r.id.startsWith('3512'));
+    const absent: ParcelRecord = {
+      ...city.records.get('3512005')!,
+      id: '9900001',
+      existingUnits: 3
+    };
+    const h = harness();
+    h.bodies.set(url, JSON.parse(encodeParcelChunk(MINI_VERSION, '51_25', [...inCell, absent])));
+    h.init({ seed: SEED });
+    prefetch(h, bboxOf('51_25'));
+    await h.runAll();
+    expect(h.errors()).toEqual([]);
+    const { fzp } = inputs();
+    expect(fzp.parcels.index.has('9900001')).toBe(false);
+    const run = actual.simulateDetailed(fzp, SEED, H);
+    const day = MINI_AS_OF + 1;
+    const only = scheduleOf(run.schedules, P.absentOnly);
+    const s = summaryAt(h, '9900001', day)!;
+    expect(s).toEqual({
+      parcelId: '9900001',
+      neighborhood: absent.neighborhood,
+      landUse: absent.landUse,
+      eligible: absent.eligible,
+      existingUnits: 3,
+      envelope: null,
+      generated: null,
+      project: projectCard(only, day, { ...cardCtx(fzp, run), building: () => ({ footprint: [] }) })
+    });
+    expect(s.project!.massing).toBe('none');
   });
 });

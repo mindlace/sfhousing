@@ -39,6 +39,11 @@ export interface Geometry {
   demolish(): Demolition[];
   /** The run's Schedules on a parcel (the §4.9 choice reads these). */
   schedulesOn(parcelId: ParcelId): Schedule[];
+  /**
+   * True when the project has a T11 parcel and every T11 parcel's cell is ready: only then is
+   * its massing the one the map draws (or will draw), so only then may a card describe it.
+   */
+  allReady(schedule: Schedule): boolean;
 }
 
 export interface GeometryOptions {
@@ -212,6 +217,16 @@ export function createGeometry(o: GeometryOptions): Geometry {
         parcelId,
         day: demolitions.get(parcelId)!
       })),
-    schedulesOn: (parcelId) => onParcel.get(parcelId) ?? []
+    schedulesOn: (parcelId) => onParcel.get(parcelId) ?? [],
+    allReady(schedule) {
+      let any = false;
+      for (const id of schedule.parcelIds) {
+        const cell = cellOf(id);
+        if (cell === undefined) continue; // absent from T11: no cell to wait for
+        if (!ready.has(cell)) return false;
+        any = true;
+      }
+      return any;
+    }
   };
 }

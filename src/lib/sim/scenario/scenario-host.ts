@@ -59,7 +59,13 @@ import {
   type NetSeries
 } from './score';
 import { simulateDetailed, simulateNet } from './simulate';
-import type { ScenarioErrorCode, ScenarioRequest, ScenarioResponse, TimelineScore } from './types';
+import type {
+  Massing,
+  ScenarioErrorCode,
+  ScenarioRequest,
+  ScenarioResponse,
+  TimelineScore
+} from './types';
 
 export interface ScenarioHostDeps {
   fetch: FetchLike; // JSON files (chunks.ts:9)
@@ -146,6 +152,9 @@ export const REVISION0_CAP_MS = 2500;
  * entry measured in host.ts. Keys are content-based, so pipeline massings hit across seeds.
  */
 export const MEMO_CAP = 60_000;
+
+/** A card's massing for a project the map does not draw yet: a footprint entry, no building. */
+const NOT_DRAWN: Massing = { footprint: [] };
 
 /** The run's Schedules and Masters, as `simulateDetailed` made them (the FZP run only). */
 export type RunDetail = ReturnType<typeof simulateDetailed>;
@@ -637,9 +646,15 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
 
   // --- parcelSummary (§4.9) ---
 
-  /** The card context of a run with a shown run, built once per run. */
+  /**
+   * The card context of a run with a shown run, built once per run. Its `building` is the
+   * run's massing only for a project whose every T11 cell is ready; otherwise it is a footprint
+   * entry (card `massing: 'none'`, no `generated`), so a card never describes a partial-lot
+   * building the map does not draw, and no partial-lot key enters the memo.
+   */
   function cardCtxOf(w: Work, run: Run): CardCtx {
     if (run.card) return run.card;
+    const g = run.geometry!;
     const ctx: MassingCtx = { ...w.massing, records: (id) => w.chunks.records.get(id) };
     run.card = {
       asOf: w.loaded.fzp.asOf,
@@ -647,32 +662,35 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       rows: new Map(w.loaded.fzp.projects.map((p) => [p.id, p])),
       masters: new Map(run.detail!.masters.map((m) => [m.masterId, m])),
       qualityRules: new Map(w.loaded.projects.qualityRules.map((q) => [q.id, q])),
-      building: (sc, k) => massingFor(sc, k, ctx),
+      building: (sc, k) => (g.allReady(sc) ? massingFor(sc, k, ctx) : NOT_DRAWN),
       logOnce: (key, msg) => logOnce(`card:${key}`, msg)
     };
     return run.card;
   }
 
   /**
-   * Null when the parcel's record is not loaded (never fetches). The record gives the
-   * neighbourhood, land use and eligibility; T11 the assessor units and the FZP envelope; the
-   * shown run the project at `day` (§4.9's choice) and its building at that day's revision.
+   * Null when the parcel's record is not loaded (never fetches), and until the scenario files
+   * are (T11 holds the assessor units the card labels). The record gives the neighbourhood, land
+   * use and eligibility; T11 the assessor units and the FZP envelope; the shown run the project
+   * at `day` (§4.9's choice) and its building at that day's revision.
    */
   function parcelSummary(
     req: Extract<ScenarioRequest, { type: 'parcelSummary' }>
   ): ParcelSummary | null {
     const st = s;
     const rec = st?.chunks.records.get(req.parcelId);
-    if (!st || !rec) return null;
-    const parcels = st.loaded?.fzp.parcels;
-    const i = parcels?.index.get(req.parcelId);
-    const envelope = i === undefined ? null : envelopeOf(parcels!, i);
+    if (!st || !rec || !st.loaded) return null;
+    const parcels = st.loaded.fzp.parcels;
+    const i = parcels.index.get(req.parcelId);
+    const envelope = i === undefined ? null : envelopeOf(parcels, i);
     const out: ParcelSummary = {
       parcelId: req.parcelId,
       neighborhood: rec.neighborhood,
       landUse: rec.landUse,
       eligible: rec.eligible,
-      existingUnits: i === undefined ? rec.existingUnits : parcels!.existingUnits[i],
+      // T11 has no row for a parcel absent from parcels.bin: the chunk record's units are the
+      // only value there is (logged as absent when a project names it)
+      existingUnits: i === undefined ? rec.existingUnits : parcels.existingUnits[i],
       envelope: envelope && envelope.maxStories > 0 ? envelope : null,
       generated: null
     };
