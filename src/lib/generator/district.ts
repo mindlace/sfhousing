@@ -1,10 +1,19 @@
 import type { ParcelRecord } from '../data/parcel';
 import type { Envelope } from '../plan/types';
-import { MAX_STORIES } from './constants';
+import type { AssembledSite } from './assemble';
+import { drawComposition } from './composition-variety';
+import {
+  DISTRICT_FALLBACK_LIMIT,
+  DISTRICT_MIN_STORIES,
+  MAX_STORIES,
+  OPEN_SPACE_SHARE
+} from './constants';
 import { layoutDistrict, type DistrictLot } from './district-layout';
 import { generate } from './generate';
-import { fnv1a32 } from './seed';
+import { fnv1a32, mulberry32 } from './seed';
 import type { GeneratedBuilding, TypologyId } from './types';
+import { generateForUnitsWith } from './units';
+import { drawVariety } from './variety';
 
 const round1 = (x: number) => Math.round(x * 10) / 10;
 
@@ -111,4 +120,110 @@ export function generateDistrict(
   if (!(district.floorAreaM2 > parcel.existingFloorAreaM2 && units > parcel.existingUnits))
     return null;
   return district;
+}
+
+/** District inputs to `generateForUnits` (spec §4.3 "Pipeline and phases", "Story limit L"). */
+export interface DistrictOpts {
+  /** L before clamping; absent → DISTRICT_FALLBACK_LIMIT. */
+  storyLimit?: number;
+  /** Tier-1 DA height; every lot uses it. */
+  curatedStories?: number;
+  /** Curated open-space share; absent → OPEN_SPACE_SHARE. */
+  openSpaceShare?: number;
+}
+
+/** A finite story count whose floor is in 1..MAX_STORIES, floored; else null. */
+const validStories = (x: number | null | undefined): number | null => {
+  if (typeof x !== 'number' || !Number.isFinite(x)) return null;
+  const S = Math.floor(x);
+  return S >= 1 && S <= MAX_STORIES ? S : null;
+};
+
+/**
+ * Pipeline and phases (spec §4.3): masses lots in fill order at `S_ℓ` until `U` units are used,
+ * the last lot scaled to the remainder with `generateForUnitsWith`. If the lots run out first,
+ * they are raised to `L` in fill order (never when `stated` is valid); if even that is short, the
+ * result is approximate. `units` is always `U`. 'not-district' when the layout has no lot.
+ * `U` and `stated` arrive validated by `generateForUnits` (`stated` null when absent or invalid).
+ */
+export function generateDistrictForUnits(
+  assembled: AssembledSite,
+  U: number,
+  seed: number,
+  stated: number | null,
+  opts: DistrictOpts
+): GeneratedBuilding | 'not-district' | null {
+  const s = seed >>> 0;
+  const { anchor, polygon } = assembled;
+  const limit = Math.floor(opts.storyLimit ?? DISTRICT_FALLBACK_LIMIT);
+  // NaN (a non-number limit) falls back; ±Infinity clamps like any other value
+  const L = Number.isNaN(limit)
+    ? DISTRICT_FALLBACK_LIMIT
+    : Math.min(Math.max(limit, DISTRICT_MIN_STORIES), MAX_STORIES);
+  const curated = validStories(opts.curatedStories);
+  const share = opts.openSpaceShare ?? OPEN_SPACE_SHARE;
+
+  const layout = layoutDistrict(polygon, s, share);
+  if (!layout.lots.length) return 'not-district';
+
+  type Built = { record: ParcelRecord; ls: number; S: number; b: GeneratedBuilding };
+  const built: Built[] = [];
+  // the lot that reaches the remainder: its own units-targeted massing at S (spec §4.3 step 2)
+  const remainder = (lot: Built, remaining: number): GeneratedBuilding =>
+    generateForUnitsWith(
+      lot.record,
+      remaining,
+      L,
+      drawVariety(lot.ls),
+      drawComposition(lot.ls),
+      lot.S
+    ) ?? lot.b;
+  const result = () =>
+    combineLots(
+      anchor,
+      built.map((l) => l.b),
+      'pipeline',
+      U
+    );
+
+  // step 1–2: S_ℓ per lot, fill in order
+  let remaining = U;
+  for (const lot of layout.lots) {
+    const ls = lotSeed(s, lot.key);
+    const S =
+      stated ??
+      curated ??
+      DISTRICT_MIN_STORIES + Math.floor(mulberry32(ls)() * (L - DISTRICT_MIN_STORIES + 1));
+    const record = lotRecord(anchor, lot);
+    // lots are under DISTRICT_MIN_M2, so this never recurses into the district path
+    const b = generate(record, { maxStories: S }, ls, 'max');
+    if (!b) continue;
+    const entry = { record, ls, S, b };
+    built.push(entry);
+    if (b.units >= remaining) {
+      entry.b = remainder(entry, remaining);
+      return result();
+    }
+    remaining -= b.units;
+  }
+
+  // step 3: the lots ran out first; raise them to L in fill order. A stated count never changes,
+  // and a lot already at or above L (a curated height over L) is left as it is.
+  if (stated === null) {
+    for (const entry of built) {
+      if (entry.S >= L) continue;
+      const b = generate(entry.record, { maxStories: L }, entry.ls, 'max');
+      if (!b) continue;
+      const before = entry.b.units;
+      entry.S = L;
+      entry.b = b;
+      if (b.units - before >= remaining) {
+        entry.b = remainder(entry, before + remaining);
+        return result();
+      }
+      remaining -= b.units - before;
+    }
+  }
+  // still short: everything stays at L and the result is approximate
+  return result();
 }
