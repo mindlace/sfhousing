@@ -1071,10 +1071,10 @@ function generatorSpies() {
       keys.push(simKey(rec.id, env.maxStories));
       return generate(rec, env, seed, mode);
     },
-    generateForUnits: (recs, units, maxStories, seed, stories) => {
+    generateForUnits: (recs, units, maxStories, seed, stories, opts = {}) => {
       const ids = [recs].flat().map((r: ParcelRecord) => r.id);
-      keys.push(pipeKey(seed, units, stories ?? null, ids));
-      return generateForUnits(recs, units, maxStories, seed, stories);
+      keys.push(pipeKey(seed, units, stories ?? null, ids, opts));
+      return generateForUnits(recs, units, maxStories, seed, stories, opts);
     }
   };
   return { keys, deps };
@@ -1264,7 +1264,7 @@ describe('scenario host: parcelSummary', () => {
     );
     expect(partial.project!.massing).toBe('none');
     // nothing was generated for the near lot alone
-    expect(keys.filter((k) => k.endsWith(`|${near}`))).toEqual([]);
+    expect(keys.filter((k) => k.split('|')[4] === near)).toEqual([]);
 
     h.release(far);
     await h.runAll();

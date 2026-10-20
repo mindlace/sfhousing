@@ -206,7 +206,13 @@ function replay(cohorts: Cohort[], cal: Calibration, asOf: Day, parcels: Scenari
   });
   const index = new Map(projects.map((p, k) => [p.id, k]));
   const horizon = asOf + twins.reduce((m, t) => Math.max(m, t.c - t.a), 0) + 1;
-  const input: SimInput = { parcels: noHosts(parcels), projects, calibration: cal, asOf };
+  const input: SimInput = {
+    parcels: noHosts(parcels),
+    projects,
+    calibration: cal,
+    asOf,
+    districtMaxStories: null
+  };
   const out: Spell[][][] = cohorts.map(() => SEEDS.map(() => []));
   SEEDS.forEach((seed, si) => {
     for (const sch of simulate(input, seed, horizon)) {

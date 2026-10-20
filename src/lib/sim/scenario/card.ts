@@ -6,6 +6,7 @@ import type { GeneratedBuilding } from '$lib/generator';
 import type { InFlightProject, QualityRuleRef } from '$lib/timelapse/projects';
 import { DYING_DAYS, type Day } from '$lib/timelapse/time';
 import { STAGE_ORDER, type Stage } from '$lib/timelapse/types';
+import { districtOptsFor } from './massing';
 import type { Master } from './simulate';
 import type { Massing, ProjectCard, Schedule, SimInput } from './types';
 
@@ -25,8 +26,6 @@ export interface CardCtx {
 }
 
 const PLANNING_SIDE: readonly Stage[] = ['preApplication', 'filed', 'entitled'];
-/** The massing of an unphased multi-phase row: a footprint entry, never a building. */
-const FOOTPRINT_ONLY: Massing = { footprint: [] };
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /** `Block <B>, Lot <L>`: B is the first 4 characters plus a following letter, L is the rest. */
@@ -127,8 +126,8 @@ export function projectCard(s: Schedule, day: Day, ctx: CardCtx): ProjectCard {
   const k = revisionAt(s, day);
   const rev = s.revisions[k];
 
-  // An unphased multi-phase row has a footprint entry only (§4.9): no building to ask for.
-  const raw = s.multiPhase && s.phase === null ? FOOTPRINT_ONLY : ctx.building(s, k);
+  // A master without phases is massed like any pipeline project (large-site massing §4.7).
+  const raw: Massing = ctx.building(s, k);
   const b = 'footprint' in raw ? null : raw;
 
   const anchor = smallestParcel(s.parcelIds);
@@ -143,6 +142,15 @@ export function projectCard(s: Schedule, day: Day, ctx: CardCtx): ProjectCard {
   } else {
     stories = b?.stories ?? null;
     storiesTier = pipeline && stories !== null ? 4 : null;
+    // Tier 1 (large-site massing §4.5, R1): a district whose tallest lot is at the curated DA
+    // height. Smaller lots can come out lower through the lot-area cap chain; a run-out raise
+    // puts the tallest above it (tier 4).
+    if (storiesTier === 4 && b?.lots && b.lots.length > 0) {
+      const curated = districtOptsFor(s, ctx).curatedStories;
+      let tallest = 0;
+      for (const l of b.lots) if (l.stories > tallest) tallest = l.stories;
+      if (curated !== undefined && tallest === curated) storiesTier = 1;
+    }
   }
 
   let stages: ProjectCard['stages'];

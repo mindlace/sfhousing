@@ -53,7 +53,13 @@ describe('simulated initiation (§4.4.4)', () => {
     const parcels = replicate(src, src.index.get(TEMPLATE)!, N);
     const cal = parseCalibration(structuredClone(miniCalibrationJson) as unknown);
     cal.initiation = { ...cal.initiation, intercept: log(H_TARGET / (1 - H_TARGET)), terms: [] };
-    const input: SimInput = { parcels, projects: [], calibration: cal, asOf: AS_OF };
+    const input: SimInput = {
+      parcels,
+      projects: [],
+      calibration: cal,
+      asOf: AS_OF,
+      districtMaxStories: null
+    };
     const pre = precomputeOf(input);
     const h = pre.hazard[0];
     expect(h).toBeCloseTo(H_TARGET, 12);

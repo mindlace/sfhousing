@@ -4,6 +4,7 @@ import { FILL_LEVELS, fillStories } from '$lib/data/scenario-codec';
 import { fnv1a32, generate, generateForUnits } from '$lib/generator';
 import { MAX_STORIES } from '$lib/generator/constants';
 import { localFrame } from '$lib/generator/geo';
+import { rect } from '$lib/generator/fixtures/district';
 import { normaliseRing } from '$lib/map/pack';
 import { packTimedCell } from '$lib/map/pack-timed';
 import { parseCalibration } from '$lib/timelapse/model';
@@ -20,6 +21,7 @@ import {
   footprintParcel,
   massingFor,
   massingsFor,
+  districtOptsFor,
   pipeKey,
   simKey,
   type MassingCtx
@@ -119,14 +121,16 @@ describe('cellAnchorParcel and footprintParcel', () => {
 describe('keys', () => {
   it('simKey and pipeKey have the contract shape', () => {
     expect(simKey('0026T003', 7)).toBe('s|0026T003|7');
-    expect(pipeKey(5, 40, 6, ['b', 'a'])).toBe('p|5|40|6|a,b');
-    expect(pipeKey(5, 40, null, ['a'])).toBe('p|5|40|-|a');
+    expect(pipeKey(5, 40, 6, ['b', 'a'], {})).toBe('p|5|40|6|a,b|-|-|-');
+    expect(pipeKey(5, 40, null, ['a'], { storyLimit: 9, curatedStories: 6 })).toBe(
+      'p|5|40|-|a|9|6|-'
+    );
   });
 
   it('the pipeline key sorts and de-duplicates the parcel ids', () => {
-    expect(pipeKey(1, 2, 3, ['c', 'a', 'b', 'a'])).toBe(pipeKey(1, 2, 3, ['a', 'b', 'c']));
-    expect(pipeKey(1, 2, 3, ['a', 'b'])).not.toBe(pipeKey(1, 2, 3, ['a', 'c']));
-    expect(pipeKey(1, 2, 3, ['a'])).not.toBe(pipeKey(1, 2, null, ['a']));
+    expect(pipeKey(1, 2, 3, ['c', 'a', 'b', 'a'], {})).toBe(pipeKey(1, 2, 3, ['a', 'b', 'c'], {}));
+    expect(pipeKey(1, 2, 3, ['a', 'b'], {})).not.toBe(pipeKey(1, 2, 3, ['a', 'c'], {}));
+    expect(pipeKey(1, 2, 3, ['a'], {})).not.toBe(pipeKey(1, 2, null, ['a'], {}));
   });
 });
 
@@ -162,7 +166,8 @@ describe('massingFor: generator results', () => {
     massingFor(s, 0, ctx);
     massingFor(s, 0, ctx);
     expect(genForUnits).toHaveBeenCalledTimes(1);
-    expect(ctx.memo.get(pipeKey(fnv1a32('BP:one'), 1, null, ['0026T013']))).toBeNull();
+    const opts = districtOptsFor(s, ctx);
+    expect(ctx.memo.get(pipeKey(fnv1a32('BP:one'), 1, null, ['0026T013'], opts))).toBeNull();
   });
 
   it('a throwing generator gives the footprint of the largest-area parcel', () => {
@@ -189,7 +194,8 @@ describe('massingFor: generator results', () => {
       44,
       6,
       fnv1a32('PRJ:pair'),
-      6
+      6,
+      districtOptsFor(s, ctx)
     );
     expect('parts' in m && m.source).toBe('pipeline');
   });
@@ -202,7 +208,8 @@ describe('massingFor: generator results', () => {
       40,
       MAX_STORIES,
       fnv1a32('PRJ:pair'),
-      undefined
+      undefined,
+      districtOptsFor(pairSchedule(), ctx)
     );
   });
 
@@ -284,14 +291,52 @@ describe('massingFor: multi-phase rows', () => {
       phase: null
     });
 
-  it('an unphased multi-phase row gets a footprint for every revision and no generator call', () => {
-    const { ctx, gen, genForUnits } = makeCtx();
+  /** A 40 ha (800 × 500 m) parcel: a district site (spec §4.1). */
+  const BIG: ParcelRecord = {
+    ...rec('3600001'),
+    id: '3600099',
+    polygon: rect(800, 500),
+    areaM2: 400_000
+  };
+  const bigRecords = new Map(city.records).set(BIG.id, BIG);
+  const master = () =>
+    schedule({
+      projectId: 'CASE:unphased',
+      parcelIds: [BIG.id],
+      multiPhase: true,
+      phase: null,
+      revisions: [{ day: DAY, units: 1500, stories: null }]
+    });
+
+  it('a master without phases with free parcels is massed', () => {
+    const { ctx, genForUnits } = makeCtx({ records: (id) => bigRecords.get(id) });
+    const s = master();
+    const m = massingFor(s, 0, ctx);
+    expect(genForUnits).toHaveBeenCalledWith(
+      [BIG],
+      1500,
+      MAX_STORIES,
+      fnv1a32('CASE:unphased'),
+      undefined,
+      districtOptsFor(s, ctx)
+    );
+    expect('parts' in m).toBe(true);
+    if (!('parts' in m)) return;
+    expect(m.source).toBe('pipeline');
+    expect(m.lots?.length).toBeGreaterThan(1);
+  });
+
+  it('an unphased row on the mini parcels calls the generator for every revision', () => {
+    const { ctx, genForUnits } = makeCtx();
     const s = unphased();
-    const fp = footprintOf(footprintParcel([rec('3600001'), rec('3600002')]));
-    const out = massingsFor(s, ctx);
-    expect(out).toEqual(s.revisions.map(() => fp));
-    expect(gen).not.toHaveBeenCalled();
-    expect(genForUnits).not.toHaveBeenCalled();
+    massingsFor(s, ctx);
+    expect(genForUnits).toHaveBeenCalledTimes(s.revisions.length);
+  });
+
+  it('a null generator still gives the footprint', () => {
+    const { ctx } = makeCtx({ records: (id) => bigRecords.get(id), genForUnits: () => null });
+    const s = master();
+    expect(massingsFor(s, ctx)).toEqual(s.revisions.map(() => footprintOf(BIG)));
   });
 
   it('phases are massed with generateForUnits on their own parcels and project id', () => {

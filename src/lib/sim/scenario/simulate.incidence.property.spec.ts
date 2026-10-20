@@ -65,7 +65,13 @@ function cohort(p: Pathway, stage: Stage, entered: number): { kind: Kind; day: n
     sources: [],
     quality: []
   }));
-  const input: SimInput = { parcels, projects, calibration: cal, asOf: AS_OF };
+  const input: SimInput = {
+    parcels,
+    projects,
+    calibration: cal,
+    asOf: AS_OF,
+    districtMaxStories: null
+  };
   const pipeline = simulate(input, 20261018, HORIZON).filter((s) => s.origin === 'pipeline');
   return pipeline.map((s) => {
     const ev = leave(s, stage);
