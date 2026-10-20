@@ -30,7 +30,7 @@ import {
   densityCapRule,
   isSpecNamedNoCap
 } from '../lib/density-caps';
-import { clipYieldLoss, type ClipYieldRow } from '../lib/land-report';
+import { clipYieldLoss, clipYieldRow, type ClipYieldRow } from '../lib/land-report';
 import { createTableFromRows, type CellValue, type Duck } from '../lib/duck';
 import type { HeightDistrict } from '../lib/heights';
 import { localProgramEnvelope } from '../lib/local-program';
@@ -997,16 +997,20 @@ export async function writeScenario(a: {
     if (i === undefined) continue;
     const view = scenarioRecordOf(p, i, rows[i].rec);
     const full = FILL_LEVELS[F - 1];
-    clipRows.push({
-      id,
-      keptShare: o.keptShare,
-      clippedTop: grossTop[i],
-      originalTop: scenarioYield(
-        { ...view, polygon: o.polygon, areaM2: ringsAreaM2(o.polygon) },
-        fillStories(full, p.envelopeStories[i]),
-        null
-      )
-    });
+    clipRows.push(
+      clipYieldRow({
+        id,
+        keptShare: o.keptShare,
+        clippedTop: grossTop[i],
+        envelopeStories: p.envelopeStories[i],
+        originalTopAt: () =>
+          scenarioYield(
+            { ...view, polygon: o.polygon, areaM2: ringsAreaM2(o.polygon) },
+            fillStories(full, p.envelopeStories[i]),
+            null
+          )
+      })
+    );
   }
   recordQuality(a.buildCounts, 'sd.parcels.clip-yield-loss', clipYieldLoss(clipRows));
   await recordSqlQuality(db, 'scenario-data', a.buildCounts);

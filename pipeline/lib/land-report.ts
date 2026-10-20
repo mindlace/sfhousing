@@ -12,6 +12,26 @@ export interface ClipYieldRow {
   originalTop: number;
 }
 
+/**
+ * The row for one clipped lot. A lot with no envelope has no top-fill yield on either outline
+ * (the clipped side is 0 by the same rule), so `originalTopAt`, which would fill one story, is
+ * not asked.
+ */
+export function clipYieldRow(r: {
+  id: ParcelId;
+  keptShare: number;
+  clippedTop: number;
+  envelopeStories: number;
+  originalTopAt: () => number;
+}): ClipYieldRow {
+  return {
+    id: r.id,
+    keptShare: r.keptShare,
+    clippedTop: r.clippedTop,
+    originalTop: r.envelopeStories === 0 ? 0 : r.originalTopAt()
+  };
+}
+
 /** Share of its area above which a clipped lot should keep its yield. */
 const KEPT_SHARE = 0.95;
 

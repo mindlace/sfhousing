@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { clipYieldLoss, landClipSection } from '../lib/land-report';
+import { clipYieldLoss, clipYieldRow, landClipSection } from '../lib/land-report';
 import { landDb, type Rect } from './land-helpers';
 
 const T: Rect = [0, 0, 100, 100];
@@ -21,6 +21,25 @@ describe('clipYieldLoss', () => {
       of: 1,
       sample: []
     });
+  });
+});
+
+describe('clipYieldRow', () => {
+  const row = (envelopeStories: number) =>
+    clipYieldRow({
+      id: 'a',
+      keptShare: 0.99,
+      clippedTop: 0,
+      envelopeStories,
+      originalTopAt: () => 1
+    });
+  it('gives a lot with no envelope no original yield, so it does not fire', () => {
+    expect(row(0).originalTop).toBe(0);
+    expect(clipYieldLoss([row(0)])).toEqual({ fired: 0, of: 1, sample: [] });
+  });
+  it('asks for the original yield when the lot has an envelope', () => {
+    expect(row(3).originalTop).toBe(1);
+    expect(clipYieldLoss([row(3)])).toEqual({ fired: 1, of: 1, sample: ['a'] });
   });
 });
 
