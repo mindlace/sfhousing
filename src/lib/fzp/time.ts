@@ -17,8 +17,8 @@ export function utcParts(day: Day): { y: number; m: number; d: number } {
   return { y: date.getUTCFullYear(), m: date.getUTCMonth() + 1, d: date.getUTCDate() };
 }
 
-/** The end of the scrubber: 2050-12-31 (OD-T4), Day 29,584. */
-export const HORIZON: Day = dayFromUtc(2050, 12, 31);
+/** The end of the scrubber: 2066-12-31, Day 35,428; was 2050 under OD-T4. */
+export const HORIZON: Day = dayFromUtc(2066, 12, 31);
 
 /** The default 2045 marker day when the data has no reference falling in 2045. */
 export const YEAR_2045: Day = dayFromUtc(2045, 1, 1);

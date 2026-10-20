@@ -5,10 +5,18 @@
   import SiteFooter from '$lib/shell/SiteFooter.svelte';
   import { provideHeaderActions } from '$lib/shell/header-actions.svelte';
   import { isFullHeightRoute } from '$lib/shell/layout';
+  import { onMount } from 'svelte';
 
   let { children } = $props();
   const headerActions = provideHeaderActions();
   const full = $derived(isFullHeightRoute(page.route.id));
+
+  // VITE_E2E build only: marks hydration for e2e (helpers/sharing.ts gotoHydrated). SvelteKit
+  // starts its router in the same microtask chain as this onMount, so once a test sees the mark,
+  // a link click is a client navigation, never a full page load.
+  onMount(() => {
+    if (import.meta.env.VITE_E2E === '1') document.documentElement.dataset.hydrated = '';
+  });
 </script>
 
 <a

@@ -7,13 +7,14 @@ import { TIMELINE_LEGEND, timelineTokenCss } from '$lib/map/palette';
 import { announcement } from './score-view';
 import {
   FIX_ASOF,
+  FIX_HORIZON,
   TIMELINE_SCORE,
   TIMELINE_SCORE_NO_PHASING,
   TIMELINE_SCORE_R0
 } from './fixtures/timeline-score';
 import FzpScoreboard from './FzpScoreboard.svelte';
 import { scoreAt } from './score-view';
-import { HORIZON, dayFromUtc, monthIndex } from './time';
+import { dayFromUtc, monthIndex } from './time';
 
 /** Index 53 of the fixture: 2031-03-15. */
 const DAY = dayFromUtc(2031, 3, 15);
@@ -38,7 +39,7 @@ const props = (over: Overrides = {}) => ({
   score: TIMELINE_SCORE,
   day: DAY,
   asOf: FIX_ASOF,
-  horizon: HORIZON,
+  horizon: FIX_HORIZON,
   playing: false,
   bandRuns: 101,
   bandRunsTotal: 101,

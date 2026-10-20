@@ -20,7 +20,7 @@ const PLANNING: readonly Live[] = ['preApplication', 'filed', 'entitled'];
 
 /**
  * `months[i]` is the 1st of the i-th month, from `asOf`'s month to the horizon's month (§4.3):
- * 291 entries for 2026-10-16 to 2050-12-31.
+ * 483 entries for 2026-10-16 to 2066-12-31.
  */
 export function monthsOf(asOf: Day, horizon: Day): Day[] {
   const last = firstOfMonth(horizon);

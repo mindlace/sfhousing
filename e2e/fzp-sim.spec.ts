@@ -1,10 +1,10 @@
 // timelapse-sim spec §6, deferred to the page: what the worker fetches, how fast the first timeline
 // arrives, and that a reroll changes the future but not the band. Runs against the VITE_E2E build
-// (window.__sfhFzp, src/lib/fzp/debug.ts). Autoplay is stopped with reduced motion.
+// (window.__sfhFzp, src/lib/fzp/debug.ts).
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
-import { jumpAndIdle, type Win } from './helpers/sharing';
+import { gotoHydrated, jumpAndIdle, type Win } from './helpers/sharing';
 
 type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 
@@ -76,9 +76,13 @@ test('fetches only the viewport chunks and the three scenario files', async ({ p
 
   // SvelteKit replays the server's manifest on a first load, so reach /fzp by a client
   // navigation from a page that loads none (as in e2e/fzp.spec.ts's no-scenario test).
-  await page.goto('/about');
+  await gotoHydrated(page, '/about');
   await page.getByRole('banner').getByRole('link', { name: 'Timelapse', exact: true }).click();
   await waitReady(page);
+  // `ready` is the worker's first timeline; the map can still be loading.
+  await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
+    timeout: 20_000
+  });
 
   const bounds = await page.evaluate(() => {
     const b = (window as Win).__sfhMap!.map!.getBounds();
