@@ -374,6 +374,8 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       'sd.parcels.clip-yield-loss': [0, 0],
       // Lot 15 crosses the shoreline, lot 16 lies in the water (45_land.sql).
       'sd.parcels.land-clip': [1, 17],
+      // Lots 15 to 17 reach beyond the two tile columns of the mini basemap, by design.
+      'sd.parcels.outside-tiles': [3, 17],
       'sd.parcels.underwater': [1, 17],
       'sd.roll.floor-area-cast': [0, 35],
       'sd.roll.floor-area-missing': [9, 35],

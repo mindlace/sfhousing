@@ -403,6 +403,18 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
       false
     ],
     [
+      'sd.parcels.outside-tiles',
+      'datasf-parcels',
+      'geom',
+      'observe',
+      'none',
+      4,
+      null,
+      null,
+      'parcels',
+      false
+    ],
+    [
       'sd.parcels.underwater',
       'datasf-parcels',
       'geom',
@@ -698,7 +710,8 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
     'sd.zoning.named-no-cap': { warnShare: 0.12, failShare: 0.2 },
     'sd.yield.zero-hostable': { warnShare: 0.09, failShare: 0.15 },
     // The spike's 9900019H case must never pass silently.
-    'sd.parcels.clip-yield-loss': { warnShare: 0, failShare: 0.1 }
+    'sd.parcels.clip-yield-loss': { warnShare: 0, failShare: 0.1 },
+    'sd.parcels.outside-tiles': { warnShare: 0, failShare: 0 }
   };
   it('lists every registered scenario-data rule', () => {
     expect(TABLE.map(([id]) => id).sort()).toEqual(
@@ -1075,7 +1088,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
 
   it('every scenario-data rule reports once (recordQuality throws on a second report)', () => {
     const ids = QUALITY_RULES.filter((r) => r.owner === 'scenario-data').map((r) => r.id);
-    expect(ids).toHaveLength(47);
+    expect(ids).toHaveLength(48);
     const got = Object.keys(s.quality)
       .filter((k) => k.endsWith('.fired'))
       .map((k) => k.slice('quality.'.length, -'.fired'.length))

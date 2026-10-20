@@ -194,6 +194,26 @@ export const SD_RULES: readonly QualityRule[] = [
     ...SHARES,
     unitsWeighted: false
   },
+  // Counts lots not wholly inside the basemap tiles read (45_land.sql, the same lots as
+  // land.outside_tiles). Departure from the observe default: warnShare and failShare 0, because a
+  // lot outside the tiles read is clipped against missing land, so any firing fails a live build.
+  {
+    ...SD,
+    id: 'sd.parcels.outside-tiles',
+    source: 'datasf-parcels',
+    field: 'geom',
+    kind: 'observe',
+    action: 'none',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label:
+      'Counts lots that reach beyond the basemap tiles read; their land there is missing, so any must fail a live build',
+    denominator: 'parcels',
+    warnShare: 0,
+    failShare: 0,
+    unitsWeighted: false
+  },
   // Counts clipped lots whose yield the clip erased although they kept almost all their area; it
   // is computed by the scenario step (TS side), on the lot's original and clipped outlines.
   // Departure from the outlier default: warnShare 0, because the spike's 9900019H case must never

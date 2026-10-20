@@ -1,6 +1,6 @@
 -- 45_land: clip every lot to dry land (docs/dev/pipeline.md "Land mask"). Reads src_land, src_land_tiles, parcels,
 -- buildings. Writes land_mask, parcel_land, parcels (rebuilt, plus geom_orig and underwater),
--- land.* counts and the sd.parcels.land-clip / sd.parcels.underwater quality tallies.
+-- land.* counts and the sd.parcels.land-clip / underwater / outside-tiles quality tallies.
 -- Land = OSM earth ∪ OSM pier polygons (src_land, z15) ∪ existing buildings. A lot that loses less
 -- than land_min_removed_m2 keeps its geometry exactly; one with no dry piece of min_piece_m2 or more
 -- keeps its outline and is flagged underwater; any other lot becomes its dry part (every piece).
@@ -196,14 +196,19 @@ FROM parcel_land WHERE status = 'underwater';
 INSERT INTO report_counts
 SELECT 'land.building_kept_m2', round(coalesce(list_sum(list(building_m2 ORDER BY id)), 0), 3)
 FROM l_status WHERE cand;
-INSERT INTO report_counts
-SELECT 'land.outside_tiles', count(*)
+CREATE OR REPLACE TEMP TABLE l_outside AS
+SELECT p.id
 FROM parcels p, l_tiles t
 WHERE t.geom IS NULL OR NOT ST_CoveredBy(p.geom_orig, t.geom);
+INSERT INTO report_counts SELECT 'land.outside_tiles', count(*) FROM l_outside;
 
 -- T14 (sd.ts). Idempotent on one database: drop this file's tallies from an earlier run.
-DELETE FROM quality_tally WHERE rule_id IN ('sd.parcels.land-clip', 'sd.parcels.underwater');
-DELETE FROM quality_sample WHERE rule_id IN ('sd.parcels.land-clip', 'sd.parcels.underwater');
+DELETE FROM quality_tally WHERE rule_id IN (
+  'sd.parcels.land-clip', 'sd.parcels.underwater', 'sd.parcels.outside-tiles'
+);
+DELETE FROM quality_sample WHERE rule_id IN (
+  'sd.parcels.land-clip', 'sd.parcels.underwater', 'sd.parcels.outside-tiles'
+);
 INSERT INTO quality_tally
 SELECT 'sd.parcels.land-clip', count(*) FILTER (WHERE status = 'clipped'), count(*), NULL, NULL
 FROM parcel_land;
@@ -213,3 +218,8 @@ SELECT 'sd.parcels.underwater', count(*) FILTER (WHERE status = 'underwater'), c
 FROM parcel_land;
 INSERT INTO quality_sample
 SELECT 'sd.parcels.underwater', id FROM parcel_land WHERE status = 'underwater';
+-- Same lots as land.outside_tiles; the rule's failShare is 0, so any firing fails a live build.
+INSERT INTO quality_tally
+SELECT 'sd.parcels.outside-tiles', (SELECT count(*) FROM l_outside), count(*), NULL, NULL
+FROM parcels;
+INSERT INTO quality_sample SELECT 'sd.parcels.outside-tiles', id FROM l_outside;

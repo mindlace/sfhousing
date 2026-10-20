@@ -225,11 +225,43 @@ describe('45_land', () => {
     });
     expect(await db.all('SELECT * FROM quality_tally ORDER BY rule_id')).toEqual([
       { rule_id: 'sd.parcels.land-clip', fired: 1, of: 4, units: null, units_of: null },
+      { rule_id: 'sd.parcels.outside-tiles', fired: 3, of: 4, units: null, units_of: null },
       { rule_id: 'sd.parcels.underwater', fired: 1, of: 4, units: null, units_of: null }
     ]);
     expect(await db.all('SELECT * FROM quality_sample ORDER BY rule_id, record_id')).toEqual([
       { rule_id: 'sd.parcels.land-clip', record_id: 'B' },
+      { rule_id: 'sd.parcels.outside-tiles', record_id: 'B' },
+      { rule_id: 'sd.parcels.outside-tiles', record_id: 'C' },
+      { rule_id: 'sd.parcels.outside-tiles', record_id: 'D' },
       { rule_id: 'sd.parcels.underwater', record_id: 'C' }
     ]);
+  });
+
+  it('fires sd.parcels.outside-tiles for each lot the tiles read do not cover', async () => {
+    const db = await landDb({
+      lots: [
+        { id: 'A', rect: [10, 10, 40, 40] },
+        { id: 'P', rect: [80, 10, 120, 40] },
+        { id: 'Q', rect: [300, 0, 320, 20] }
+      ],
+      land: EARTH
+    });
+    expect(
+      await db.all("SELECT * FROM quality_tally WHERE rule_id = 'sd.parcels.outside-tiles'")
+    ).toEqual([
+      { rule_id: 'sd.parcels.outside-tiles', fired: 2, of: 3, units: null, units_of: null }
+    ]);
+    expect(
+      await db.all(
+        "SELECT record_id FROM quality_sample WHERE rule_id = 'sd.parcels.outside-tiles' ORDER BY record_id"
+      )
+    ).toEqual([{ record_id: 'P' }, { record_id: 'Q' }]);
+  });
+
+  it('does not fire sd.parcels.outside-tiles when every lot is inside the tiles', async () => {
+    const db = await landDb({ lots: [{ id: 'A', rect: [10, 10, 40, 40] }], land: EARTH });
+    expect(
+      await db.all("SELECT fired, of FROM quality_tally WHERE rule_id = 'sd.parcels.outside-tiles'")
+    ).toEqual([{ fired: 0, of: 1 }]);
   });
 });

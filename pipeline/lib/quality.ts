@@ -108,7 +108,8 @@ export function validateRules(rules: readonly QualityRule[]): void {
       if (!Number.isInteger(r.maskBit) || r.maskBit < MASK_BITS[0] || r.maskBit > MASK_BITS[1])
         throw new Error(`quality rule ${r.id}: maskBit ${r.maskBit} outside 0–6`);
     }
-    if (!(r.warnShare < r.failShare))
+    // Both 0 is allowed: any firing fails, so the warn band is empty.
+    if (!(r.warnShare < r.failShare) && !(r.warnShare === 0 && r.failShare === 0))
       throw new Error(`quality rule ${r.id}: warnShare ${r.warnShare} ≥ failShare ${r.failShare}`);
   }
 }
