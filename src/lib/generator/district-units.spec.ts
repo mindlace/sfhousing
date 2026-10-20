@@ -47,14 +47,16 @@ function generateLot(i: number, S: number): GeneratedBuilding | null {
 
 /**
  * Every lot at `S`, in fill order, skipping a lot that masses null at `S` (lot 85 of this site
- * fails as a midrise). The full lots are at the cap chain's stories (R1); the remainder lot is
- * massed by generateForUnitsWith with stated `S`, which keeps `S` uncapped.
+ * fails as a midrise). Every lot is at the cap chain's stories (R1, I1), except that a stated
+ * tier-0 `S` masses the remainder lot exactly, uncapped.
  */
-function expectLotStories(b: GeneratedBuilding, S: number) {
+function expectLotStories(b: GeneratedBuilding, S: number, stated = false) {
   const fill = layout.lots.map((_, i) => i).filter((i) => generateLot(i, S));
   const lots = b.lots!;
   const last = lots.length - 1;
-  lots.forEach((l, i) => expect(l.stories).toBe(i === last ? S : capped(S, layout.lots[fill[i]])));
+  lots.forEach((l, i) =>
+    expect(l.stories).toBe(stated && i === last ? S : capped(S, layout.lots[fill[i]]))
+  );
 }
 
 describe('district massing in generateForUnits (spec §4.3 pipeline, §4.4)', () => {
@@ -98,7 +100,7 @@ describe('district massing in generateForUnits (spec §4.3 pipeline, §4.4)', ()
   it('stated stories win', () => {
     const b = generateForUnits(big, 3454, 40, SEED, 5, { curatedStories: 8, storyLimit: 12 })!;
     expect(b.units).toBe(3454);
-    expectLotStories(b, 5);
+    expectLotStories(b, 5, true);
     // a stated tier-0 count is never raised by the run-out
     const short = generateForUnits(big, 200_000, 40, SEED, 5, { storyLimit: 12 })!;
     expect(short.units).toBe(200_000);
@@ -212,6 +214,53 @@ describe('district massing in generateForUnits (spec §4.3 pipeline, §4.4)', ()
     );
     const sides = new Set(b.parts.map((p) => p.footprint.every(([lng]) => lng < LNG)));
     expect(sides).toStrictEqual(new Set([true, false]));
+  });
+
+  it('every lot, the remainder lot included, obeys the lot-area cap chain (R1, I1)', () => {
+    /**
+     * Each built lot's requested S_ℓ (drawn or curated; raised to L once the lots run out) and
+     * its normalised-site area, rebuilt from the layout in fill order.
+     */
+    function plan(p: ParcelRecord, seed: number, U: number, L: number, curated?: number) {
+      const lots = layoutDistrict(p.polygon, seed).lots.map((lot) => {
+        const ls = lotSeed(seed, lot.key);
+        const S = curated ?? 3 + Math.floor(mulberry32(ls)() * (L - 3 + 1));
+        const A = normaliseSite(lot.polygon, drawVariety(ls).edgeInsetM)!.A;
+        const b = generate(lotRecord(p, lot), { maxStories: S }, ls, 'max');
+        return { S, A, units: b?.units ?? 0, built: b !== null };
+      });
+      const ranOut = lots.reduce((s, l) => s + l.units, 0) < U;
+      return lots
+        .filter((l) => l.built)
+        .map((l) => ({ A: l.A, S: ranOut ? Math.max(l.S, L) : l.S }));
+    }
+    // the reviewer's probes: curated 6s on 2.1 ha that run out and are raised to L = 42 (lot 2,
+    // 1,125 m², reached the remainder as a 42-story "midrise"), and drawn heights on 40 ha
+    // (lot 14, 966 m², drew 38). Each over a few more seeds.
+    const small = parcel(rect(210, 100));
+    const cases = [
+      { p: small, U: 500, seed: 1, opts: { curatedStories: 6, storyLimit: 42 }, curated: 6 },
+      { p: big, U: 1000, seed: 11, opts: { storyLimit: 42 }, curated: undefined },
+      ...[2, 3, 7].flatMap((seed) => [
+        { p: small, U: 1000, seed, opts: { curatedStories: 6, storyLimit: 42 }, curated: 6 },
+        { p: big, U: 500, seed, opts: { storyLimit: 42 }, curated: undefined }
+      ])
+    ];
+    for (const { p, U, seed, opts, curated } of cases) {
+      const b = generateForUnits(p, U, 40, seed, undefined, opts)!;
+      expect(b.units).toBe(U);
+      const lots = plan(p, seed, U, 42, curated);
+      expect(b.lots!.length).toBeLessThanOrEqual(lots.length);
+      b.lots!.forEach((l, i) => {
+        const { A, S } = lots[i];
+        expect(l.stories, `lot ${i}`).toBeLessThanOrEqual(selectTypology(S, A, 0).stories);
+        // the typology matches the built stories: no "midrise" taller than 12, no tower below 13
+        if (l.stories >= 13) expect(l.typology, `lot ${i}`).toBe('tower');
+        if (l.typology === 'midrise') expect(l.stories, `lot ${i}`).toBeLessThanOrEqual(12);
+        if (l.typology === 'tower') expect(A, `lot ${i}`).toBeGreaterThanOrEqual(1500);
+      });
+      expect(b.stories).toBe(Math.max(...b.lots!.map((l) => l.stories)));
+    }
   });
 
   it('generateDistrictForUnits is not-district when the layout has no lots', () => {

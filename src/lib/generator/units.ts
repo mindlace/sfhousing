@@ -1,5 +1,5 @@
 import type { ParcelRecord } from '../data/parcel';
-import { assembleSite } from './assemble';
+import { assembleSite, type AssembledSite } from './assemble';
 import { occupiedArea, retainsCapacityAcrossHeights, unitsFor } from './bands';
 import { compositionOptions, referenceComposition } from './compositions';
 import type { CompositionDraws, OccupiedComposition } from './composition-types';
@@ -219,6 +219,17 @@ export function generateForUnitsWith(
   // §4.2 steps 4-7: parcels, anchor, site polygon, site
   const assembled = assembleSite(Array.isArray(parcels) ? parcels : [parcels]);
   if (!assembled) return null;
+  return massAssembled(assembled, U, bound, draws, compositionDraws);
+}
+
+/** `generateForUnitsWith` after §4.2 steps 1-5: `U` and `bound` validated, the site assembled. */
+function massAssembled(
+  assembled: AssembledSite,
+  U: number,
+  bound: { stories: number } | { maxStories: number },
+  draws: VarietyDraws,
+  compositionDraws: CompositionDraws
+): GeneratedBuilding | null {
   const { anchor, polygon } = assembled;
   const site = normaliseSite(polygon, draws.edgeInsetM);
   if (!site) return null;
@@ -326,8 +337,6 @@ export function generateForUnits(
   opts: DistrictOpts = {}
 ): GeneratedBuilding | null {
   const s = seed >>> 0;
-  const single = () =>
-    generateForUnitsWith(parcel, units, maxStories, drawVariety(s), drawComposition(s), stories);
 
   // §4.2 steps 1-2, as in generateForUnitsWith: a failure there is its null
   if (!Number.isFinite(units)) return null;
@@ -337,15 +346,17 @@ export function generateForUnits(
   const stated = S >= 1 && S <= MAX_STORIES ? S : null;
   if (stated === null && !(Number.isFinite(maxStories) && Math.floor(maxStories) >= 1)) return null;
 
+  // assembled once: the district test and the single-building massing share it
   const assembled = assembleSite(Array.isArray(parcel) ? parcel : [parcel]);
+  if (!assembled) return null;
   // R3: the cheap bound first, so an ordinary site never pays for a Clipper union
-  if (
-    assembled &&
-    mayBeDistrict(assembled.polygon) &&
-    districtArea(assembled.polygon) >= DISTRICT_MIN_M2
-  ) {
+  if (mayBeDistrict(assembled.polygon) && districtArea(assembled.polygon) >= DISTRICT_MIN_M2) {
     const district = generateDistrictForUnits(assembled, U, s, stated, opts);
     if (district !== 'not-district') return district;
   }
-  return single();
+  const bound =
+    stated !== null
+      ? { stories: stated }
+      : { maxStories: Math.min(Math.floor(maxStories), MAX_STORIES) };
+  return massAssembled(assembled, U, bound, drawVariety(s), drawComposition(s));
 }

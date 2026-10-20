@@ -168,7 +168,9 @@ export function generateDistrictForUnits(
 
   type Built = { record: ParcelRecord; ls: number; S: number; b: GeneratedBuilding };
   const built: Built[] = [];
-  // the lot that reaches the remainder: its own units-targeted massing at S (spec §4.3 step 2)
+  // the lot that reaches the remainder: its own units-targeted massing (spec §4.3 step 2). A
+  // stated tier-0 count is massed exactly; otherwise the lot keeps the stories its own `generate`
+  // massing reached, so the lot-area cap chain holds for it as for every other lot (R1).
   const remainder = (lot: Built, remaining: number): GeneratedBuilding =>
     generateForUnitsWith(
       lot.record,
@@ -176,7 +178,7 @@ export function generateDistrictForUnits(
       L,
       drawVariety(lot.ls),
       drawComposition(lot.ls),
-      lot.S
+      stated ?? lot.b.stories
     ) ?? lot.b;
   const result = () =>
     combineLots(
