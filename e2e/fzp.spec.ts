@@ -223,7 +223,7 @@ test('loads ready and the keyboard drives the scrubber to both ends', async ({ p
   );
 
   await page.keyboard.press('End');
-  await expect(readout(page)).toContainText('December 2050');
+  await expect(readout(page)).toContainText('December 2066');
   expect(await fzp(page, 'day')).toBe(await fzp(page, 'horizon'));
   await expect(headline(page)).toHaveText(
     formatCount(baseline.completedNet + shown[months.length - 1].completedNet)
@@ -420,7 +420,7 @@ test('a phase of a multi-phase project reads "Phase n of m" once the scrubber re
       );
   let found = false;
   // PageUp is one year; the horizon bounds the loop.
-  for (let step = 0; step <= 26 && !found; step++) {
+  for (let step = 0; step <= 42 && !found; step++) {
     for (const at of points) {
       await pick(page, isMobile, await projectToPage(page, at));
       found = await appears(phaseLine);

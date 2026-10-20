@@ -165,9 +165,13 @@ export function chartModel(
   const gridValues = [0, yMax / 2, yMax];
   if (yMin < 0 && y(yMin) - y(0) >= MIN_FLOOR_GAP) gridValues.unshift(yMin);
   const lastYear = utcParts(horizon).y;
-  const xTicks = [2030, 2040, 2050]
-    .filter((year) => year <= lastYear)
-    .map((year) => ({ x: x(dayFromUtc(year, 1, 1)), label: String(year) }));
+  // Every 10 years, every 20 once the span passes 50, strictly after the first year.
+  const firstYear = utcParts(score.months[0]).y;
+  const step = lastYear - firstYear > 50 ? 20 : 10;
+  const xTicks: { x: number; label: string }[] = [];
+  for (let year = firstYear + 1; year <= lastYear; year++) {
+    if (year % step === 0) xTicks.push({ x: x(dayFromUtc(year, 1, 1)), label: String(year) });
+  }
 
   return {
     width,
@@ -251,6 +255,7 @@ export function chartLabel(score: TimelineScore): string {
   if (rhna) parts.push(`${totalAt(deadlineIndex(score, rhna.deadline))} by the RHNA deadline`);
   const y2045 = markers[markers.length - 1];
   parts.push(`${totalAt(monthIndex(y2045.day, score.months[0], n))} by 2045`);
-  parts.push(`${totalAt(n - 1)} by the end of 2050`);
+  const lastYear = utcParts(score.months[n - 1]).y;
+  parts.push(`${totalAt(n - 1)} by the end of ${lastYear}`);
   return `Net new homes in this simulation: ${parts.join(', ')}.`;
 }

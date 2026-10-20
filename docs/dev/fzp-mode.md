@@ -4,7 +4,7 @@ Developer notes for `src/routes/fzp/` and `src/lib/fzp/`. The design is `docs/su
 
 ## The scrubber contract
 
-`TimeScrubber.svelte` is a native `<input type="range">` over `[asOf, horizon]` in days (`step=1`), where `asOf` is `calibration.asOf` and `horizon` is `HORIZON` (2050-12-31, `src/lib/fzp/time.ts`). Its accessible name is "Date in the simulation" and `aria-valuetext` is the readout ("October 2026").
+`TimeScrubber.svelte` is a native `<input type="range">` over `[asOf, horizon]` in days (`step=1`), where `asOf` is `calibration.asOf` and `horizon` is `HORIZON` (2066-12-31, `src/lib/fzp/time.ts`). Its accessible name is "Date in the simulation" and `aria-valuetext` is the readout ("October 2026").
 
 | Key                 | Effect                                                                    |
 | ------------------- | ------------------------------------------------------------------------- |
