@@ -36,6 +36,8 @@
           "blklots": ["3512002"],
           "plannedPermitFiled": "2027-03-01",
           "status": "remaining",
+          "stories": 6,
+          "maxStories": 10,
           "facts": {
             "units": {
               "url": "https://example.invalid/fixture-da.pdf",
@@ -51,6 +53,16 @@
               "url": "https://example.invalid/fixture-da.pdf",
               "retrieved": "2026-10-01",
               "locator": "Exhibit B"
+            },
+            "stories": {
+              "url": "https://example.invalid/fixture-da.pdf",
+              "retrieved": "2026-10-01",
+              "locator": "Exhibit C"
+            },
+            "maxStories": {
+              "url": "https://example.invalid/fixture-da.pdf",
+              "retrieved": "2026-10-01",
+              "locator": "Exhibit C"
             }
           }
         },
@@ -73,7 +85,29 @@
             }
           }
         }
-      ]
+      ],
+      "heights": {
+        "stories": 8,
+        "maxStories": 12,
+        "openSpaceShare": 0.2,
+        "facts": {
+          "stories": {
+            "url": "https://example.invalid/fixture-da.pdf",
+            "retrieved": "2026-10-01",
+            "locator": "Exhibit C"
+          },
+          "maxStories": {
+            "url": "https://example.invalid/fixture-da.pdf",
+            "retrieved": "2026-10-01",
+            "locator": "Exhibit C"
+          },
+          "openSpaceShare": {
+            "url": "https://example.invalid/fixture-da.pdf",
+            "retrieved": "2026-10-01",
+            "locator": "Exhibit C"
+          }
+        }
+      }
     },
     {
       "caseNo": "2010.0002PRX",

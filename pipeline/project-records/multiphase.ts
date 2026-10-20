@@ -114,11 +114,30 @@ interface Draft {
   parcelIds: ParcelId[];
   planned: Day | null;
   source: Phase['source'];
+  /** The phase's curated stories (tier 1), else null. */
+  stories: number | null;
+  /** The phase's curated tallest permitted stories (tier 1), else null. */
+  maxStories: number | null;
+}
+
+/** The value of `k` every draft agrees on, else null (an unknown height disagrees). */
+function agreed(drafts: readonly Draft[], k: 'stories' | 'maxStories'): number | null {
+  const s = drafts[0]?.[k] ?? null;
+  return drafts.every((d) => d[k] === s) ? s : null;
+}
+
+/** A phase's `stories`, `storiesTier` and `maxStories` from its curated heights. */
+function heightsOf(
+  stories: number | null,
+  maxStories: number | null
+): Pick<Phase, 'stories' | 'storiesTier' | 'maxStories'> {
+  return { stories, storiesTier: stories === null ? null : 1, maxStories };
 }
 
 /**
  * Folds every draft for which `drop` holds into the nearest earlier kept draft, else the next kept
- * one: units, parcels and the earliest planned date go with it. Needs at least one kept draft.
+ * one: units, parcels and the earliest planned date go with it, and the target keeps its stories
+ * and its maxStories, each only when the two agree. Needs at least one kept draft.
  */
 function mergeInto(
   drafts: Draft[],
@@ -136,6 +155,8 @@ function mergeInto(
     t.units += d.units;
     t.parcelIds = [...t.parcelIds, ...d.parcelIds].sort();
     t.planned = minDay(t.planned, d.planned);
+    if (t.stories !== d.stories) t.stories = null;
+    if (t.maxStories !== d.maxStories) t.maxStories = null;
     merged++;
   });
   return { kept: out.filter((d): d is Draft => d !== null), merged };
@@ -187,7 +208,9 @@ function enriched(
         label: schedule.label,
         url: ph.facts.units.url,
         retrieved: ph.facts.units.retrieved
-      }
+      },
+      stories: ph.stories ?? null,
+      maxStories: ph.maxStories ?? null
     };
   });
 
@@ -212,7 +235,8 @@ function enriched(
           units: R,
           parcelIds,
           plannedPermitFiled: planned,
-          source: drafts[0].source
+          source: drafts[0].source,
+          ...heightsOf(agreed(drafts, 'stories'), agreed(drafts, 'maxStories'))
         }
       ],
       scale,
@@ -232,7 +256,8 @@ function enriched(
     units: d.units,
     parcelIds: d.parcelIds,
     plannedPermitFiled: d.planned,
-    source: d.source
+    source: d.source,
+    ...heightsOf(d.stories, d.maxStories)
   }));
   return { phases, scale, merged: first.merged + second.merged };
 }
@@ -327,7 +352,8 @@ export function buildPhases(ctx: PhaseContext): PhaseResult {
       units: base + (i < extra ? 1 : 0),
       parcelIds: [byArea[i]],
       plannedPermitFiled: null,
-      source: null
+      source: null,
+      ...heightsOf(null, null)
     });
   }
   return {
@@ -380,8 +406,8 @@ export function netMasters(
 
 /**
  * V24 file checks (spec 4.10.1): every entry names a PRX row in the pipeline, every PRX row with
- * `newUnits >= 1` has an entry, and every retrieval date (schedule, searched, facts) is <= asOf.
- * `prxRows` are the pipeline rows with `prx` true.
+ * `newUnits >= 1` has an entry, and every retrieval date (schedule, searched, phase and heights
+ * facts) is <= asOf. `prxRows` are the pipeline rows with `prx` true.
  */
 export function checkMultiphaseFile(
   f: MultiphaseFile,
@@ -410,6 +436,9 @@ export function checkMultiphaseFile(
         if (fact) late(`${at}.phases[${j}].facts.${k}`, fact.retrieved);
       }
     });
+    for (const [k, fact] of Object.entries(p.heights?.facts ?? {})) {
+      if (fact) late(`${at}.heights.facts.${k}`, fact.retrieved);
+    }
   });
 
   for (const r of prxRows) {

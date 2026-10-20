@@ -9,6 +9,7 @@
  * tally once through `recordQuality` into the caller's counts.
  */
 import type { ParcelId } from '../../src/lib/data/parcel';
+import { DISTRICT_DEFAULT_MIN_UNITS } from '../../src/lib/generator/constants';
 import { recordQuality } from '../lib/quality';
 import { PR, PR_RULES, type PrRuleId } from '../lib/quality-rules/pr';
 import type { InFlightProject, ProjectsFile } from '../../src/lib/timelapse/projects';
@@ -138,6 +139,51 @@ const STATUSES: readonly Status[] = [
 
 /** Above this, `rhna.xdhtLagDays` warns (spec 4.9). */
 const XDHT_LAG_WARN_DAYS = 120;
+
+/** The nearest-rank percentile of `districtMaxStories` (large-site massing spec 4.3). */
+const DISTRICT_MAX_STORIES_PERCENTILE = 0.9;
+
+/**
+ * `districtMaxStories` (large-site massing spec 4.3 step 3, 4.6): the nearest-rank 90th
+ * percentile of tier-0 `stories` over the given records with `units >= DISTRICT_DEFAULT_MIN_UNITS`,
+ * with its `n` and a tier-2 provenance. Undefined when no record qualifies. The caller passes the
+ * in-flight and completed records, each once. Pure.
+ */
+export function districtMaxStories(
+  records: readonly { units: number | null; stories: number | null; storiesTier: 0 | 3 | null }[]
+): ProjectsFile['districtMaxStories'] {
+  const xs = records
+    .filter(
+      (r) =>
+        r.storiesTier === 0 &&
+        r.stories !== null &&
+        r.units !== null &&
+        r.units >= DISTRICT_DEFAULT_MIN_UNITS
+    )
+    .map((r) => r.stories as number)
+    .sort((a, b) => a - b);
+  const n = xs.length;
+  if (n === 0) return undefined;
+  const stories = xs[Math.ceil(DISTRICT_MAX_STORIES_PERCENTILE * n) - 1];
+  return {
+    stories,
+    n,
+    provenance: {
+      tier: 2,
+      label: 'Default story limit for a large site without a height limit',
+      sources: [
+        {
+          label: 'DataSF Building Permits (i98e-djp9), number_of_proposed_stories',
+          url: 'https://data.sf.gov/d/i98e-djp9'
+        }
+      ],
+      method:
+        'Nearest-rank 90th percentile of the recorded proposed stories (tier 0) of in-flight and ' +
+        `completed projects with at least ${DISTRICT_DEFAULT_MIN_UNITS} units.`,
+      n
+    }
+  };
+}
 
 /** One linked project after stages, end, units and the population / in-flight decision. */
 interface Assessed {
@@ -1285,6 +1331,7 @@ export function deriveProjects(
       storiesTier: tier,
       multiPhase: a.multiPhase,
       phases: m ? m.phases : null,
+      ...(m ? { daHeights: m.daHeights } : {}),
       sources: sourcesOf(a.proj),
       quality: projectQuality(a.quality)
     });
@@ -1330,6 +1377,22 @@ export function deriveProjects(
     if (a.status === 'inFlight' || nettedOut.has(a.proj.id)) coverage.matchedUnits += a.units ?? 0;
   }
 
+  // Large-site massing spec 4.6: the district default height over in-flight and completed records.
+  const tall = new Map<Assessed, { units: number | null }>();
+  for (const { a, p } of t3) tall.set(a, { units: p.units });
+  for (const a of withHistory) {
+    if (a.histEnd?.kind === 'complete' && !tall.has(a)) tall.set(a, { units: a.units });
+  }
+  const dms = districtMaxStories(
+    [...tall].map(([a, { units }]) => ({
+      units,
+      stories: a.stories.stories,
+      storiesTier: a.stories.tier
+    }))
+  );
+  counts['projects.districtMaxStories'] = dms?.stories ?? -1;
+  counts['projects.districtMaxStories.n'] = dms?.n ?? 0;
+
   // RHNA completed net.
   const rhna = rhnaCompletedNet(parsed.housing, asOf);
   counts['rhna.units'] = rhna.value.units;
@@ -1372,6 +1435,7 @@ export function deriveProjects(
     schema: 1,
     asOf,
     rhnaCompletedNet: rhna.value,
+    ...(dms === undefined ? {} : { districtMaxStories: dms }),
     qualityRules: qualityRulesOf(projects),
     projects
   };

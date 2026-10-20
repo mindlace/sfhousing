@@ -722,11 +722,11 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     if (chosen === null) return out;
     const ctx = cardCtxOf(w, run);
     out.project = projectCard(chosen, req.day, ctx);
-    if (!(chosen.multiPhase && chosen.phase === null)) {
-      const m = ctx.building(chosen, revisionAt(chosen, req.day));
-      if (!('footprint' in m))
-        out.generated = { typology: m.typology, stories: m.stories, units: m.units };
-    }
+    // A master without phases is massed like any project (large-site massing §4.7); only a
+    // footprint fallback (a null or throwing generator) has no building to describe.
+    const m = ctx.building(chosen, revisionAt(chosen, req.day));
+    if (!('footprint' in m))
+      out.generated = { typology: m.typology, stories: m.stories, units: m.units };
     return out;
   }
 

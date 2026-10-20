@@ -2,7 +2,7 @@
 import { encodeAppearance } from './appearance';
 import { TYPOLOGY_ORDER } from './types';
 import type { PackedCell } from './types';
-import type { GeneratedBuilding } from '$lib/generator';
+import type { GeneratedBuilding, TypologyId } from '$lib/generator';
 
 export interface PackInput {
   building: GeneratedBuilding;
@@ -51,7 +51,7 @@ export function normaliseRing(ring: readonly (readonly [number, number])[]): [nu
  */
 export function renderParts(
   b: GeneratedBuilding
-): { ring: [number, number][]; topM: number; appearance: number }[] {
+): { ring: [number, number][]; topM: number; appearance: number; typology: TypologyId }[] {
   const merged: GeneratedBuilding['parts'] = [];
   for (const part of b.parts) {
     const previous = merged.at(-1);
@@ -60,6 +60,7 @@ export function renderParts(
       previous.role === 'occupied' &&
       part.role === 'occupied' &&
       previous.tone === part.tone &&
+      previous.lot === part.lot &&
       previous.topM === part.baseM &&
       previous.footprint.length === part.footprint.length &&
       previous.footprint.every(
@@ -72,7 +73,8 @@ export function renderParts(
   return merged.map((part) => ({
     ring: normaliseRing(part.footprint),
     topM: part.topM,
-    appearance: encodeAppearance(part.role, part.tone)
+    appearance: encodeAppearance(part.role, part.tone),
+    typology: b.lots?.[part.lot!]?.typology ?? b.typology
   }));
 }
 
@@ -102,7 +104,7 @@ export function packCell(cellId: string, items: readonly PackInput[]): PackedCel
       rings.push(part.ring);
       topM.push(part.topM);
       slots.push(s);
-      typ.push(ti);
+      typ.push(TYPOLOGY_ORDER.indexOf(part.typology));
       appearance.push(part.appearance);
     }
   });

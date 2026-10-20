@@ -19,7 +19,7 @@ From the design (verbatim):
 
 **Out of scope**
 
-- Choosing which projects get massed, when, how often, and memoising the results. That is `timelapse-sim`. Unphased multi-phase rows are not massed. Phase sub-projects are massed like any pipeline project (timelapse-sim §4.8).
+- Choosing which projects get massed, when, how often, and memoising the results. That is `timelapse-sim`. ~~Unphased multi-phase rows are not massed.~~ Superseded 2026-10-19: masters without phases are massed on their free DA parcels, usually as districts ([large-site massing](2026-10-19-large-site-massing-design.md) §4.7). Phase sub-projects are massed like any pipeline project (timelapse-sim §4.8).
 - Stamping `source: 'scenario'` on simulated projects' buildings. T5 assigns this to the sim.
 - Ghost, stage and colour rendering, and per-slot packing. That is `timelapse-render`.
 - The yield table in `parcels.bin` (T11). That is `scenario-data`, using the existing `generate`.
@@ -34,7 +34,7 @@ From the design (verbatim):
 
 | # | interface | owner → consumers | mark |
 |---|---|---|---|
-| T10 | `GeneratedBuilding.source: 'user' \| 'pipeline' \| 'scenario'` (amends I9). `generateForUnits(parcel: ParcelRecord \| ParcelRecord[], units: number, maxStories: number, seed: number, stories?: number): GeneratedBuilding \| null` | pipeline-massing → timelapse-sim, map-view | DC |
+| T10 | `GeneratedBuilding.source: 'user' \| 'pipeline' \| 'scenario'` (amends I9). `generateForUnits(parcel: ParcelRecord \| ParcelRecord[], units: number, maxStories: number, seed: number, stories?: number, opts?: DistrictOpts): GeneratedBuilding \| null`, where `DistrictOpts = { storyLimit?: number; curatedStories?: number; openSpaceShare?: number }` (amended 2026-10-19 by [large-site massing](2026-10-19-large-site-massing-design.md) §4.5; ignored on sites under `DISTRICT_MIN_M2`) | pipeline-massing → timelapse-sim, map-view | DC |
 
 ### Consumed (verbatim, from the source design)
 
@@ -132,6 +132,7 @@ Steps run in order. The first failure returns `null`.
    - **Why closing is needed.** The pipeline quantises every ring to centimetres relative to its own origin (`pipeline/lib/rings.ts:7`). Neighbouring parcels' shared edges can therefore disagree by about 1 cm per axis, plus the frame-offset error (below). 0.10 m is the existing `SIMPLIFY_EPS_M` (tier 4, typology-generator §4.1), reused rather than introducing a new number.
 7. **Site.** `normaliseSite(polygon, draws.edgeInsetM)` (`site.ts:66`).
    - If the union has several components (non-adjacent parcels, e.g. across a street), only the largest is massed, as for multipart parcels (`site.ts:86-90`). The reconciliation ("Massing") confirms this. The others get no geometry, and the units are not split.
+   - **District exception (2026-10-19).** When the union's area summed over all its components is at least `DISTRICT_MIN_M2` (2 ha), the site is a district: every component of at least `LOT_MIN_M2` is laid out in streets and lots and massed lot by lot, not just the largest ([large-site massing](2026-10-19-large-site-massing-design.md) §4.1, §4.3). Below the threshold this step is unchanged and byte-identical.
    - A non-project parcel enclosed by the assembly becomes an exclusion (a hole). The existing `fitSimpleRegions` handles it.
    - The edge inset applies to the union's outline only, so the massing spans the internal lot lines.
    - `null` site → `null`.
@@ -239,7 +240,7 @@ Calls run in the simulation worker, with no DOM.
 
 **As built.** `units.perf.spec.ts` measured mean 0.068 ms, p99 0.43 ms and total 136 ms alone, and mean 0.087 ms, p99 0.56 ms and total 173 ms inside the full generator run (arm64, 2026-10-17; PM `task-7-report.md`), with 100% non-null. The margin is about 5× on the mean and 6× on the total.
 
-**What this means for `timelapse-sim`.** 1,000 massings cost ≤ 0.4 s. Massing only the projects in loaded chunks, once per revision, fits the 3 s reroll budget. Multi-phase projects add about one call per phase revision in loaded cells. Unphased multi-phase rows add none.
+**What this means for `timelapse-sim`.** 1,000 massings cost ≤ 0.4 s. Massing only the projects in loaded chunks, once per revision, fits the 3 s reroll budget. Multi-phase projects add about one call per phase revision in loaded cells. ~~Unphased multi-phase rows add none.~~ Since 2026-10-19 a master without phases adds one call per revision, usually a district costing ≤ 250 ms for the largest real site, memoised by `pipeKey` ([large-site massing](2026-10-19-large-site-massing-design.md) §4.7, §6).
 
 **Internal.** Candidate capacities within one typology may be extrapolated linearly in stories: reference area is affine in stories for every typology (`bands.ts:100-113`). The chosen candidate is always rebuilt directly before output.
 
@@ -272,7 +273,7 @@ These are part of T10's contract as this subsystem owns it. timelapse-sim's spec
 
 - **T9 policy levers.** Nothing. Levers transform `Calibration`/`ScenarioParcels`, not massing. `generateForUnits` reads the existing `rulesFor` table, so a future lever on coverage or unit size flows through without change.
 - **Addenda sub-stages.** Nothing. Massing is stage-independent.
-- **DA phasing (in scope, owned by timelapse-sim §4.8).** Each phase sub-project is massed like any pipeline project, with one call on its own parcels (each phase is its own lot, N8) and its own units. This needs no new API. Unphased multi-phase rows are not massed.
+- **DA phasing (in scope, owned by timelapse-sim §4.8).** Each phase sub-project is massed like any pipeline project, with one call on its own parcels (each phase is its own lot, N8) and its own units. This needs no new API. ~~Unphased multi-phase rows are not massed.~~ Superseded: see §1 and [large-site massing](2026-10-19-large-site-massing-design.md) §4.7.
 - **Renderings / R10 enrichment.** `stories` already carries stated facts. A future stated footprint or height is a new function. No hook is added now.
 
 ## 6. Testing

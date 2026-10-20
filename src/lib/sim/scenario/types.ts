@@ -42,6 +42,7 @@ export type SimInput = {
   projects: InFlightProject[];
   calibration: Calibration;
   asOf: Day;
+  districtMaxStories: number | null; // projects.json `districtMaxStories.stories` (large-site massing §4.3, tier 2); null when absent
 };
 export type Simulate = (input: SimInput, seed: number, horizon: Day) => Schedule[];
 
@@ -92,7 +93,7 @@ export type ProjectCard = {
   units: number;
   existingUnits: number; // pipeline: the project's T3 existingUnits; phase: the T11 sum of its own parcels; simulated: the T11 sum of its parcels not already demolished earlier in the run
   stories: number | null;
-  storiesTier: 0 | 3 | 4 | null; // pipeline cards: 0 = recorded field, 3 = parsed from description text (both only for revisions[0]), 4 = from the simulator's massing or a later revision's proportional scaling, null iff stories is null; simulated cards: always null (their stories are the simulated size draw)
+  storiesTier: 0 | 1 | 3 | 4 | null; // pipeline cards: 0 = recorded field, 3 = parsed from description text (both only for revisions[0]), 1 = a district massed at the curated DA height (its tallest lot is at that height; large-site massing §4.5), 4 = from the simulator's massing (drawn or raised district heights included) or a later revision's proportional scaling, null iff stories is null; simulated cards: always null (their stories are the simulated size draw)
   massing: 'matched' | 'approximate' | 'none';
   multiPhase: boolean;
   phase: Schedule['phase'];

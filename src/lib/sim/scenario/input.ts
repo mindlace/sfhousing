@@ -61,7 +61,13 @@ export function buildSimInput(
         `${isoOf(projects.asOf)}; the run uses ${isoOf(projects.asOf)}`
     );
   }
-  return { parcels, projects: projects.projects, calibration, asOf: projects.asOf };
+  return {
+    parcels,
+    projects: projects.projects,
+    calibration,
+    asOf: projects.asOf,
+    districtMaxStories: projects.districtMaxStories?.stories ?? null
+  };
 }
 
 export interface Precompute {

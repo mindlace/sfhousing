@@ -189,6 +189,8 @@ Coverage is the binding yard rule, and there is no separate rear-yard minimum. T
 
 If `F` comes out in several pieces (concave sites), every piece ≥ 10 m² becomes its own part.
 
+**Districts (amended 2026-10-19).** A site whose domain, summed over all its pieces, is at least `DISTRICT_MIN_M2` (2 ha) is not given one base footprint. It is first laid out in synthetic streets, blocks, open space and lots, and the rules of this section (coverage, the slab and the yard split) apply to each lot as its own site, never to the whole site, so a large parcel no longer becomes one coverage slab ([large-site massing](2026-10-19-large-site-massing-design.md) §4.1–4.3). Sites under the threshold are unchanged and byte-identical.
+
 ### 4.7 Massing per typology
 
 Ground-floor height `g` is `GROUND_FTF_M` for `podium`, `midrise` and `tower`, and `FTF_M` otherwise. The top of floor `k` is `g + (k−1)·FTF_M`.

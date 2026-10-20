@@ -428,6 +428,68 @@ describe('projectCard: storiesTier', () => {
   });
 });
 
+describe('projectCard: storiesTier 1 (large-site massing §4.5, R1)', () => {
+  const phase: Schedule['phase'] = { masterId: P.entitled3, index: 1, of: 3, start: 'estimated' };
+  /** `input` with Mini Shipyard's phase 1 curated at `phaseStories` and the master at 6. */
+  function curatedInput(phaseStories: number | null): SimInput {
+    const projects = structuredClone(input.projects).map((r) =>
+      r.id !== P.entitled3
+        ? r
+        : {
+            ...r,
+            daHeights: { stories: 6, maxStories: null, openSpaceShare: null },
+            phases: r.phases!.map((ph, i) =>
+              i === 0 && phaseStories !== null
+                ? { ...ph, stories: phaseStories, storiesTier: 1 as const }
+                : ph
+            )
+          }
+    );
+    return { ...input, projects };
+  }
+  const district = (stories: number[]) =>
+    matched({
+      stories: Math.max(...stories),
+      lots: stories.map((n) => ({ typology: 'midrise' as const, stories: n, floorAreaM2: 1000 }))
+    });
+  const card = (b: Massing, inp: SimInput, stories: number | null = null) => {
+    const s = sched({
+      projectId: `${P.entitled3}:phase:1`,
+      parcelIds: ['3600003'],
+      phase,
+      multiPhase: true,
+      entered: { permitFiled: AS_OF + 100 },
+      revisions: [{ day: AS_OF + 100, units: 300, stories }]
+    });
+    const masters = new Map([[P.entitled3, master(P.entitled3, {})]]);
+    const c = projectCard(s, AS_OF + 200, mkCtx({ input: inp, masters, building: () => b }).ctx);
+    return [c.stories, c.storiesTier];
+  };
+
+  it('a district built at the curated height reports tier 1', () => {
+    expect(card(district([8, 8, 8]), curatedInput(8))).toEqual([8, 1]);
+    // R1: small lots capped below the curated height still count; the tallest is at it
+    expect(card(district([8, 5, 3]), curatedInput(8))).toEqual([8, 1]);
+    // a phase without its own height takes the master's
+    expect(card(district([6, 4]), curatedInput(null))).toEqual([6, 1]);
+  });
+
+  it('a drawn-height district reports tier 4', () => {
+    // no curated height at all
+    expect(card(district([5, 9, 3]), input)).toEqual([9, 4]);
+  });
+
+  it('a district raised above the curated height, or not reaching it, reports tier 4', () => {
+    expect(card(district([12, 8]), curatedInput(8))).toEqual([12, 4]);
+    expect(card(district([7, 5]), curatedInput(8))).toEqual([7, 4]);
+  });
+
+  it('a non-district building or a stated revision is not tier 1', () => {
+    expect(card(matched({ stories: 8 }), curatedInput(8))).toEqual([8, 4]);
+    expect(card(district([8, 8]), curatedInput(8), 8)).toEqual([8, 4]);
+  });
+});
+
 describe('projectCard: massing', () => {
   const pipe = (b: Massing, over: Partial<Schedule> = {}) => {
     const { ctx } = mkCtx({ building: () => b });
@@ -457,9 +519,11 @@ describe('projectCard: massing', () => {
     expect(pipe(FOOT)).toBe('none');
   });
 
-  it('an unphased multi-phase row is none, even if the callback returns a building', () => {
-    const b = matched();
-    expect(pipe(b, { multiPhase: true, phase: null })).toBe('none');
+  it('a master without phases reports massing matched or approximate, not none', () => {
+    const unphased = { multiPhase: true, phase: null };
+    expect(pipe(matched(), unphased)).toBe('matched');
+    expect(pipe(bld({ units: 9999 }), unphased)).toBe('approximate');
+    expect(pipe(FOOT, unphased)).toBe('none');
   });
 
   it('a phase uses the pipeline rule', () => {

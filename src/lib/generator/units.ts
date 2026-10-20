@@ -1,10 +1,12 @@
 import type { ParcelRecord } from '../data/parcel';
-import { assembleSite } from './assemble';
+import { assembleSite, type AssembledSite } from './assemble';
 import { occupiedArea, retainsCapacityAcrossHeights, unitsFor } from './bands';
 import { compositionOptions, referenceComposition } from './compositions';
 import type { CompositionDraws, OccupiedComposition } from './composition-types';
 import { drawComposition } from './composition-variety';
-import { MAX_STORIES, PLEX_MAX_UNITS } from './constants';
+import { DISTRICT_MIN_M2, MAX_STORIES, PLEX_MAX_UNITS } from './constants';
+import { generateDistrictForUnits, type DistrictOpts } from './district';
+import { districtArea, mayBeDistrict } from './district-layout';
 import type { MassOpts } from './massing';
 import { roofAccents } from './roof';
 import { selectTypology } from './select';
@@ -22,8 +24,9 @@ export function unitsTolerance(units: number): number {
   return Math.max(1, Math.round(0.1 * units));
 }
 
-/** The unit count the building's own massing supports. */
+/** The unit count the building's own massing supports; a district sums over its lots. */
 export function massedUnits(b: GeneratedBuilding): number {
+  if (b.lots) return b.lots.reduce((s, l) => s + unitsFor(l.typology, l.floorAreaM2), 0);
   return unitsFor(b.typology, b.floorAreaM2);
 }
 
@@ -216,6 +219,17 @@ export function generateForUnitsWith(
   // §4.2 steps 4-7: parcels, anchor, site polygon, site
   const assembled = assembleSite(Array.isArray(parcels) ? parcels : [parcels]);
   if (!assembled) return null;
+  return massAssembled(assembled, U, bound, draws, compositionDraws);
+}
+
+/** `generateForUnitsWith` after §4.2 steps 1-5: `U` and `bound` validated, the site assembled. */
+function massAssembled(
+  assembled: AssembledSite,
+  U: number,
+  bound: { stories: number } | { maxStories: number },
+  draws: VarietyDraws,
+  compositionDraws: CompositionDraws
+): GeneratedBuilding | null {
   const { anchor, polygon } = assembled;
   const site = normaliseSite(polygon, draws.edgeInsetM);
   if (!site) return null;
@@ -309,21 +323,40 @@ export function generateForUnitsWith(
  * overshoot is accepted: it is a visual effect of the tier-3 rule `stories = floor(ft / 10)`.
  *
  * Callers pass `seed = fnv1a32(projectId)`; it is normalised with `>>> 0`.
+ *
+ * A site of `DISTRICT_MIN_M2` or more is massed as a district, lot by lot until the units are
+ * used (large-site massing §4.3), with `opts` giving the story limit, the curated height and the
+ * open-space share. Below the threshold, or when the layout yields no lot, `opts` is ignored.
  */
 export function generateForUnits(
   parcel: ParcelRecord | ParcelRecord[],
   units: number,
   maxStories: number,
   seed: number,
-  stories?: number
+  stories?: number,
+  opts: DistrictOpts = {}
 ): GeneratedBuilding | null {
   const s = seed >>> 0;
-  return generateForUnitsWith(
-    parcel,
-    units,
-    maxStories,
-    drawVariety(s),
-    drawComposition(s),
-    stories
-  );
+
+  // §4.2 steps 1-2, as in generateForUnitsWith: a failure there is its null
+  if (!Number.isFinite(units)) return null;
+  const U = Math.floor(units);
+  if (U < 1) return null;
+  const S = Number.isFinite(stories) ? Math.floor(stories!) : NaN;
+  const stated = S >= 1 && S <= MAX_STORIES ? S : null;
+  if (stated === null && !(Number.isFinite(maxStories) && Math.floor(maxStories) >= 1)) return null;
+
+  // assembled once: the district test and the single-building massing share it
+  const assembled = assembleSite(Array.isArray(parcel) ? parcel : [parcel]);
+  if (!assembled) return null;
+  // R3: the cheap bound first, so an ordinary site never pays for a Clipper union
+  if (mayBeDistrict(assembled.polygon) && districtArea(assembled.polygon) >= DISTRICT_MIN_M2) {
+    const district = generateDistrictForUnits(assembled, U, s, stated, opts);
+    if (district !== 'not-district') return district;
+  }
+  const bound =
+    stated !== null
+      ? { stories: stated }
+      : { maxStories: Math.min(Math.floor(maxStories), MAX_STORIES) };
+  return massAssembled(assembled, U, bound, drawVariety(s), drawComposition(s));
 }

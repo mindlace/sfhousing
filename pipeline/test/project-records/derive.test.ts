@@ -4,13 +4,14 @@ import { STAGE_ORDER } from '../../../src/lib/timelapse/types';
 import type { MultiphaseEntry } from '../../enrichment/schema';
 import {
   deriveProjects,
+  districtMaxStories,
   serializeHistories,
   serializeProjects,
   type DeriveResult
 } from '../../project-records/derive';
 import { checkV23, checkV24 } from '../../project-records/invariants';
 import type { ProjectRecordsInput, ProjectSourceId, RawRow } from '../../project-records/types';
-import { ASOF, PARCELS, baseInput, baseMultiphase, baseRaw, day } from './derive-input';
+import { ASOF, PARCELS, baseInput, baseMultiphase, baseRaw, day, permitRow } from './derive-input';
 
 const T3_KEYS = [
   'id',
@@ -238,7 +239,19 @@ describe('deriveProjects: output shape', () => {
     ]);
     expect(Object.keys(r.file.projects[0])).toEqual(T3_KEYS);
     const parsed = JSON.parse(serializeProjects(r.file));
-    for (const p of parsed.projects) expect(Object.keys(p)).toEqual(T3_KEYS);
+    // A master also carries daHeights, after phases; other projects omit it.
+    const masterKeys = [...T3_KEYS];
+    masterKeys.splice(T3_KEYS.indexOf('phases') + 1, 0, 'daHeights');
+    for (const p of parsed.projects) {
+      expect(Object.keys(p)).toEqual(p.multiPhase ? masterKeys : T3_KEYS);
+    }
+    expect(Object.keys(parsed)).toEqual([
+      'schema',
+      'asOf',
+      'rhnaCompletedNet',
+      'qualityRules',
+      'projects'
+    ]);
     const hids = r.histories.map((h) => h.id);
     expect(hids).toEqual([...hids].sort());
     const hist = JSON.parse(serializeHistories({ schema: 1, asOf: ASOF, histories: r.histories }));
@@ -332,8 +345,17 @@ describe('deriveProjects: values', () => {
     expect(d.stage).toBe('entitled');
     expect(d.parcelIds).toEqual(['3512006']);
     expect(d.phases).toEqual([
-      { units: 100, parcelIds: ['3512006'], plannedPermitFiled: null, source: null }
+      {
+        units: 100,
+        parcelIds: ['3512006'],
+        plannedPermitFiled: null,
+        source: null,
+        stories: null,
+        storiesTier: null,
+        maxStories: null
+      }
     ]);
+    expect(d.daHeights).toBeNull();
     expect(r.counts['multiphase.u.2010.0002PRX']).toBe(60);
     expect(r.counts['multiphase.u.2010.0002PRX.n']).toBe(1);
     expect(r.counts['multiphase.fallback']).toBe(1);
@@ -504,7 +526,15 @@ describe('deriveProjects: masters', () => {
     const d = project(r, 'CASE:2010.0002PRX');
     expect(d.parcelIds).toEqual(['3512006']);
     expect(d.phases).toEqual([
-      { units: 100, parcelIds: ['3512006'], plannedPermitFiled: null, source: null }
+      {
+        units: 100,
+        parcelIds: ['3512006'],
+        plannedPermitFiled: null,
+        source: null,
+        stories: null,
+        storiesTier: null,
+        maxStories: null
+      }
     ]);
     expect(history(r, 'PRJ:2010.0002').end).toEqual({ kind: 'complete', day: day('2017-03-01') });
     const row = r.permits.find((p) => p.permit_number === '201501150014')!;
@@ -515,12 +545,36 @@ describe('deriveProjects: masters', () => {
     const r = deriveProjects(withEarlierMaster());
     // H (first in id order) may not take D's tracking lot 006; it splits lots 009 and 008.
     expect(project(r, 'CASE:2007.0001PRX').phases).toEqual([
-      { units: 150, parcelIds: ['3512009'], plannedPermitFiled: null, source: null },
-      { units: 150, parcelIds: ['3512008'], plannedPermitFiled: null, source: null }
+      {
+        units: 150,
+        parcelIds: ['3512009'],
+        plannedPermitFiled: null,
+        source: null,
+        stories: null,
+        storiesTier: null,
+        maxStories: null
+      },
+      {
+        units: 150,
+        parcelIds: ['3512008'],
+        plannedPermitFiled: null,
+        source: null,
+        stories: null,
+        storiesTier: null,
+        maxStories: null
+      }
     ]);
     // D may not take H's final lot 009, so P = 1 and D keeps one fallback phase on its own lot.
     expect(project(r, 'CASE:2010.0002PRX').phases).toEqual([
-      { units: 100, parcelIds: ['3512006'], plannedPermitFiled: null, source: null }
+      {
+        units: 100,
+        parcelIds: ['3512006'],
+        plannedPermitFiled: null,
+        source: null,
+        stories: null,
+        storiesTier: null,
+        maxStories: null
+      }
     ]);
     expect(project(r, 'CASE:2010.0002PRX').parcelIds).toEqual(['3512006']);
     expect(r.checks.multiphase.lastResort).toEqual([]);
@@ -537,13 +591,28 @@ describe('deriveProjects: masters', () => {
       url: 'https://example.invalid/fixture-da.pdf',
       retrieved: '2026-10-01'
     };
+    const none = { stories: null, storiesTier: null, maxStories: null };
     expect(h.phases).toEqual([
-      { units: 113, parcelIds: ['3512008'], plannedPermitFiled: null, source },
-      { units: 187, parcelIds: ['3512009'], plannedPermitFiled: day('2027-03-01'), source }
+      { units: 113, parcelIds: ['3512008'], plannedPermitFiled: null, source, ...none },
+      {
+        units: 187,
+        parcelIds: ['3512009'],
+        plannedPermitFiled: day('2027-03-01'),
+        source,
+        ...none
+      }
     ]);
     const parsed = JSON.parse(serializeProjects(r.file));
     const ph = parsed.projects.find((p: { id: string }) => p.id === 'CASE:2007.0001PRX').phases[0];
-    expect(Object.keys(ph)).toEqual(['units', 'parcelIds', 'plannedPermitFiled', 'source']);
+    expect(Object.keys(ph)).toEqual([
+      'units',
+      'parcelIds',
+      'plannedPermitFiled',
+      'source',
+      'stories',
+      'storiesTier',
+      'maxStories'
+    ]);
     expect(Object.keys(ph.source)).toEqual(['label', 'url', 'retrieved']);
     expect(r.counts['multiphase.scale.2007.0001PRX']).toBe(300 / 320);
     expect(r.checks.multiphase.scales).toEqual({ '2007.0001PRX': 300 / 320 });
@@ -552,6 +621,33 @@ describe('deriveProjects: masters', () => {
     // u is reported only where buildPhases used one (D's fallback), not for the enriched H.
     expect(r.counts).not.toHaveProperty(['multiphase.u.2007.0001PRX']);
     expect(r.counts['multiphase.u.2010.0002PRX']).toBe(60);
+  });
+
+  it('master rows carry daHeights from the entry; entries without heights give null', () => {
+    const input = withEnrichedMaster();
+    const fact = input.multiphase.projects[0].phases[0].facts.units;
+    input.multiphase.projects[0].heights = {
+      stories: 8,
+      openSpaceShare: 0.3,
+      facts: { stories: fact, openSpaceShare: fact }
+    };
+    input.multiphase.projects[0].phases[1].stories = 12;
+    input.multiphase.projects[0].phases[1].facts.stories = fact;
+    input.multiphase.projects[0].phases[1].maxStories = 37;
+    input.multiphase.projects[0].phases[1].facts.maxStories = fact;
+    const r = deriveProjects(input);
+    const h = project(r, 'CASE:2007.0001PRX');
+    expect(h.daHeights).toEqual({ stories: 8, maxStories: null, openSpaceShare: 0.3 });
+    expect(Object.keys(h.daHeights!)).toEqual(['stories', 'maxStories', 'openSpaceShare']);
+    expect(h.phases!.map((p) => [p.stories, p.storiesTier, p.maxStories])).toEqual([
+      [null, null, null],
+      [12, 1, 37]
+    ]);
+    expect(project(r, 'CASE:2010.0002PRX').daHeights).toBeNull();
+    expect(project(r, 'PRJ:2019-000001PRJ')).not.toHaveProperty('daHeights');
+    expect(() =>
+      parseProjectsFile(JSON.parse(serializeProjects(r.file)), { asOf: ASOF, parcelIds: PARCELS })
+    ).not.toThrow();
   });
 
   it('reports an out-of-bounds scale factor once in V24', () => {
@@ -758,4 +854,84 @@ describe('deriveProjects: determinism', () => {
       }
     });
   }
+});
+
+describe('districtMaxStories', () => {
+  const rec = (stories: number | null, units = 100, storiesTier: 0 | 3 | null = 0) => ({
+    units,
+    stories,
+    storiesTier: stories === null ? null : storiesTier
+  });
+
+  it('is the nearest-rank p90 of tier-0 stories over records with >= 100 units', () => {
+    const xs = [4, 5, 6, 7, 8, 9, 10, 12, 20, 40];
+    const out = districtMaxStories([...xs].reverse().map((x) => rec(x)));
+    expect(out?.stories).toBe(20);
+    expect(out?.n).toBe(10);
+    expect(out?.provenance.tier).toBe(2);
+    expect(out?.provenance.n).toBe(10);
+    expect(Object.keys(out!)).toEqual(['stories', 'n', 'provenance']);
+    // Under 100 units, tier-3 and null stories are excluded.
+    const noisy = districtMaxStories([
+      ...xs.map((x) => rec(x)),
+      rec(80, 99),
+      rec(70, 500, 3),
+      rec(null, 500),
+      rec(60, null as unknown as number)
+    ]);
+    expect(noisy?.stories).toBe(20);
+    expect(noisy?.n).toBe(10);
+    expect(districtMaxStories([rec(7)])?.stories).toBe(7);
+  });
+
+  it('is omitted when no record qualifies', () => {
+    expect(districtMaxStories([])).toBeUndefined();
+    expect(districtMaxStories([rec(10, 50), rec(10, 200, 3)])).toBeUndefined();
+  });
+
+  it('deriveProjects omits it without qualifying records and adds it with them', () => {
+    const r = deriveProjects(baseInput());
+    expect(r.file).not.toHaveProperty('districtMaxStories');
+    expect(r.counts['projects.districtMaxStories.n']).toBe(0);
+    const raw = baseRaw();
+    raw['datasf-permits-newcon'].push(
+      permitRow({
+        number: '202501019876',
+        lot: '009',
+        status: 'complete',
+        statusDate: '2025-09-01',
+        fcd: '2025-07-01',
+        completed: '2025-09-01',
+        filed: '2025-01-01',
+        issued: '2025-06-01',
+        units: 150,
+        stories: 14,
+        site: true,
+        estimated: 30_000_000
+      })
+    );
+    // A completed 150-unit building with 14 recorded stories: the one qualifying record.
+    const big = deriveProjects(baseInput(raw));
+    const dm = big.file.districtMaxStories;
+    expect(dm?.stories).toBe(14);
+    expect(dm?.n).toBe(1);
+    expect(big.counts['projects.districtMaxStories']).toBe(14);
+    const parsed = JSON.parse(serializeProjects(big.file));
+    expect(Object.keys(parsed)).toEqual([
+      'schema',
+      'asOf',
+      'rhnaCompletedNet',
+      'districtMaxStories',
+      'qualityRules',
+      'projects'
+    ]);
+    expect(Object.keys(parsed.districtMaxStories.provenance)).toEqual([
+      'tier',
+      'label',
+      'sources',
+      'method',
+      'n'
+    ]);
+    expect(() => parseProjectsFile(parsed, { asOf: ASOF, parcelIds: PARCELS })).not.toThrow();
+  });
 });

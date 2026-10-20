@@ -302,3 +302,44 @@ describe('packTimedTransferables', () => {
     for (const arr of arrays(p)) expect(t).toContain(arr.buffer);
   });
 });
+
+describe('packTimedCell district lots', () => {
+  const sq = (x: number): [number, number][] => [
+    [x, 37.77],
+    [x, 37.771],
+    [x + 0.001, 37.771],
+    [x + 0.001, 37.77]
+  ];
+  const part = (footprint: [number, number][], baseM: number, topM: number, lot: number) => ({
+    footprint,
+    role: 'occupied' as const,
+    tone: 0 as const,
+    baseM,
+    topM,
+    lot
+  });
+  const district = (parts: GeneratedBuilding['parts']): GeneratedBuilding => ({
+    ...B[0],
+    typology: 'podium',
+    parts,
+    lots: [
+      { typology: 'podium', stories: 5, floorAreaM2: 500 },
+      { typology: 'tower', stories: 10, floorAreaM2: 500 }
+    ]
+  });
+
+  it('a district colours each lot by its own typology', () => {
+    const b = district([part(sq(-122.42), 0, 15, 0), part(sq(-122.418), 0, 30, 1)]);
+    const p = packTimedCell('c', [item('p', [b])]);
+    expect(Array.from(p.partTypology)).toEqual([
+      TYPOLOGY_ORDER.indexOf('podium'),
+      TYPOLOGY_ORDER.indexOf('tower')
+    ]);
+    expect(p.parcelMeta[3]).toBe(TYPOLOGY_ORDER.indexOf('podium'));
+  });
+
+  it('identical stacked parts of different lots are not merged', () => {
+    const b = district([part(sq(-122.42), 0, 15, 0), part(sq(-122.42), 15, 30, 1)]);
+    expect(packTimedCell('c', [item('p', [b])]).partCount).toBe(2);
+  });
+});

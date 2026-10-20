@@ -134,6 +134,7 @@ export function storiesText(card: ProjectCard, stories: number | null): string |
   const count = `${n} ${plural(n, 'story', 'stories')}`;
   if (card.origin === 'simulated' || card.storiesTier === 0) return count;
   if (card.storiesTier === 3) return `about ${count}, from the project description`;
+  if (card.storiesTier === 1) return `${count}, from the development plan`;
   // Tier 4, or a count of unknown origin (T6 says it cannot happen): never shown as a record.
   return `about ${count} (simulated)`;
 }

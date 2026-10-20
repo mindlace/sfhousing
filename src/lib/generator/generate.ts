@@ -1,6 +1,6 @@
 import type { ParcelRecord } from '../data/parcel';
 import type { Envelope } from '../plan/types';
-import { ADU_MIN_OPEN_M2, ADU_GROSS_M2, FTF_M, MAX_STORIES } from './constants';
+import { ADU_MIN_OPEN_M2, ADU_GROSS_M2, DISTRICT_MIN_M2, FTF_M, MAX_STORIES } from './constants';
 import { compositionOptions, referenceComposition } from './compositions';
 import { drawComposition } from './composition-variety';
 import type { CompositionDraws, OccupiedComposition } from './composition-types';
@@ -11,6 +11,8 @@ import {
   occupiedArea,
   unitsFor
 } from './bands';
+import { generateDistrict } from './district';
+import { districtArea, mayBeDistrict } from './district-layout';
 import { fnv1a32 } from './seed';
 import { roofAccents } from './roof';
 import { serializeComposition } from './serialize';
@@ -181,7 +183,11 @@ export function generateWith(
   return generateDetailed(parcel, env, draws, mode, compositionDraws)?.building ?? null;
 }
 
-/** I8. Callers pass `seed = fnv1a32(parcel.id)` (I14). */
+/**
+ * I8. Callers pass `seed = fnv1a32(parcel.id)` (I14). A site of `DISTRICT_MIN_M2` or more is
+ * massed as a district (large-site massing §4.1, §4.3); one whose layout yields no lot falls
+ * through to the single-building path.
+ */
 export function generate(
   parcel: ParcelRecord,
   env: Envelope,
@@ -189,5 +195,15 @@ export function generate(
   mode: BuildoutMode
 ): GeneratedBuilding | null {
   if (mode !== 'max') throw new Error('unsupported BuildoutMode');
+  const polygon = parcel?.polygon;
+  // R3: the cheap bound first, so an ordinary lot never pays for a Clipper union
+  if (
+    Array.isArray(polygon) &&
+    mayBeDistrict(polygon) &&
+    districtArea(polygon) >= DISTRICT_MIN_M2
+  ) {
+    const district = generateDistrict(parcel, env, seed);
+    if (district !== 'not-district') return district;
+  }
   return generateWith(parcel, env, drawVariety(seed), mode, drawComposition(seed));
 }
