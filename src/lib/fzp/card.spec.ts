@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { ProjectCard } from '$lib/sim/protocol';
 import { chanceTable } from '$lib/timelapse/model';
 import { monthsIn } from '$lib/timelapse/time';
 import type { Stage } from '$lib/timelapse/types';
@@ -189,6 +190,11 @@ describe('storiesText', () => {
     ['no tier treated as 4', TIER_NULL, 5, 'about 5 stories (simulated)']
   ])('%s', (_name, card, stories, text) => {
     expect(storiesText(card, stories)).toBe(text);
+  });
+
+  it('storiesText tier 1 reads "8 stories, from the development plan"', () => {
+    const tier1: ProjectCard = { ...TIER4_MASSING, storiesTier: 1 };
+    expect(storiesText(tier1, 8)).toBe('8 stories, from the development plan');
   });
 
   it('says story for one and rounds a scaled count', () => {

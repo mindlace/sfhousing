@@ -4,7 +4,9 @@ import { generate, generateDetailed, generateWith, type Detailed } from './gener
 import { drawVariety, varietyFromUniforms } from './variety';
 import { drawComposition } from './composition-variety';
 import { signedArea } from './poly';
-import { pointNearPolygon } from './fixtures/geom';
+import { pointNearPolygon, rectRing } from './fixtures/geom';
+import { DISTRICT_MIN_M2 } from './constants';
+import { districtArea } from './district-layout';
 import std from './fixtures/std-25x100.json';
 import shallow from './fixtures/shallow-adu-fail.json';
 import lot1000 from './fixtures/lot-1000.json';
@@ -302,5 +304,25 @@ describe('final-review fixes', () => {
   it('F3: NaN existing values fail safe (N6/N7)', () => {
     expect(run({ ...std, existingUnits: NaN }, 3)).toBeNull();
     expect(run({ ...std, existingFloorAreaM2: NaN }, 3)).toBeNull();
+  });
+});
+
+describe('district threshold (large-site massing §4.1)', () => {
+  it('every golden and named fixture is below DISTRICT_MIN_M2', () => {
+    const modules = import.meta.glob('./fixtures/*.json', { eager: true, import: 'default' });
+    const polygons: [number, number][][][] = [];
+    const walk = (v: unknown): void => {
+      if (Array.isArray(v)) v.forEach(walk);
+      else if (v && typeof v === 'object') {
+        const o = v as Record<string, unknown>;
+        if (Array.isArray(o.polygon)) polygons.push(o.polygon as [number, number][][]);
+        Object.values(o).forEach(walk);
+      }
+    };
+    walk(Object.values(modules));
+    expect(polygons.length).toBeGreaterThan(20);
+    // the property arbitraries' largest site: a 90 × 90 m rectangle
+    polygons.push([rectRing(90, 90)]);
+    for (const polygon of polygons) expect(districtArea(polygon)).toBeLessThan(DISTRICT_MIN_M2);
   });
 });

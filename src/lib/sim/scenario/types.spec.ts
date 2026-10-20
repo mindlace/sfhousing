@@ -47,6 +47,7 @@ type RowSimInput = {
   projects: InFlightProject[];
   calibration: Calibration;
   asOf: Day;
+  districtMaxStories: number | null;
 };
 type RowSimulate = (input: RowSimInput, seed: number, horizon: Day) => RowSchedule[];
 
@@ -59,7 +60,7 @@ type RowProjectCard = {
   units: number;
   existingUnits: number;
   stories: number | null;
-  storiesTier: 0 | 3 | 4 | null;
+  storiesTier: 0 | 1 | 3 | 4 | null;
   massing: 'matched' | 'approximate' | 'none';
   multiPhase: boolean;
   phase: RowSchedule['phase'];
@@ -218,7 +219,7 @@ const phaseShape: Assert<
 const startShape: Assert<
   Equals<NonNullable<Scenario.Schedule['phase']>['start'], 'scheduled' | 'estimated'>
 > = true;
-const storiesTierShape: Assert<Equals<Scenario.ProjectCard['storiesTier'], 0 | 3 | 4 | null>> =
+const storiesTierShape: Assert<Equals<Scenario.ProjectCard['storiesTier'], 0 | 1 | 3 | 4 | null>> =
   true;
 const qualityShape: Assert<
   Equals<
@@ -245,7 +246,7 @@ describe('reappraisal 1 members', () => {
   it('Schedule.phase carries start', () => {
     expect([phaseShape, startShape]).toEqual([true, true]);
   });
-  it('ProjectCard carries storiesTier 4 and quality', () => {
+  it('ProjectCard carries storiesTier 1 and 4, and quality', () => {
     expect([storiesTierShape, qualityShape]).toEqual([true, true]);
   });
   it('unenriched entries carry drawn', () => {

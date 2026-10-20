@@ -1,7 +1,8 @@
 // Per-revision massing for the timelapse (spec §4.8): the one rendering seam (§5). Simulated
 // buildings come from the editor generator on the T11 scenario record, pipeline and phase
-// buildings from `generateForUnits`; a null or throwing generator, and an unphased multi-phase
-// row, give a footprint entry, so every revision has a renderable and pickable entry.
+// buildings from `generateForUnits` with district options (large-site massing §4.3, §4.5); a
+// null or throwing generator gives a footprint entry, so every revision has a renderable and
+// pickable entry. A master without phases is massed like any pipeline project (§4.7).
 //
 // Worker-safe and under the determinism lint rule: the ring conversion calls `localFrame`, which
 // lives in generator/geo.ts (the one place transcendental Math is allowed, display-only), so no
@@ -10,7 +11,14 @@ import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
 import { scenarioRecordOf, type ScenarioParcels } from '$lib/data/scenario-codec';
 import { MAX_STORIES } from '$lib/generator/constants';
 import { localFrame } from '$lib/generator/geo';
-import { fnv1a32, generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
+import {
+  fnv1a32,
+  generate,
+  generateForUnits,
+  type DistrictOpts,
+  type GeneratedBuilding
+} from '$lib/generator';
+import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Lru } from '../lru';
 import type { Massing, Schedule, SimInput } from './types';
 
@@ -56,8 +64,57 @@ export function footprintOf(rec: ParcelRecord): { footprint: [number, number][] 
 
 export const simKey = (parcelId: ParcelId, stories: number) => `s|${parcelId}|${stories}`;
 
-export const pipeKey = (seed: number, units: number, stories: number | null, ids: ParcelId[]) =>
-  `p|${seed}|${units}|${stories ?? '-'}|${[...new Set(ids)].sort(cmp).join(',')}`;
+export const pipeKey = (
+  seed: number,
+  units: number,
+  stories: number | null,
+  ids: ParcelId[],
+  opts: DistrictOpts
+) =>
+  `p|${seed}|${units}|${stories ?? '-'}|${[...new Set(ids)].sort(cmp).join(',')}` +
+  `|${opts.storyLimit ?? '-'}|${opts.curatedStories ?? '-'}|${opts.openSpaceShare ?? '-'}`;
+
+/** The T3 rows by id, built once per `SimInput`. */
+const rowsByInput = new WeakMap<SimInput, Map<string, InFlightProject>>();
+function rowsOf(input: SimInput): Map<string, InFlightProject> {
+  let rows = rowsByInput.get(input);
+  if (rows === undefined) {
+    rows = new Map(input.projects.map((p) => [p.id, p]));
+    rowsByInput.set(input, rows);
+  }
+  return rows;
+}
+
+/**
+ * The district options of a pipeline schedule (large-site massing §4.3 "Story limit L", §4.5):
+ * `storyLimit` is the largest T11 envelope among its parcels, else the phase's curated
+ * `maxStories`, else the master's, else `districtMaxStories`; `curatedStories` is the phase's, else the master's;
+ * `openSpaceShare` is the master's. Only defined fields are set. Simulated schedules get none.
+ * The generator ignores all of it on a site that is not a district.
+ */
+export function districtOptsFor(schedule: Schedule, ctx: Pick<MassingCtx, 'input'>): DistrictOpts {
+  if (schedule.origin === 'simulated') return {};
+  const { input } = ctx;
+  const row = rowsOf(input).get(schedule.phase?.masterId ?? schedule.projectId);
+  const da = row?.daHeights ?? null;
+  let zoned = 0;
+  for (const id of schedule.parcelIds) {
+    const i = input.parcels.index.get(id);
+    if (i !== undefined && input.parcels.envelopeStories[i] > zoned)
+      zoned = input.parcels.envelopeStories[i];
+  }
+  const ph = schedule.phase === null ? null : row?.phases?.[schedule.phase.index - 1];
+  const storyLimit =
+    zoned > 0 ? zoned : (ph?.maxStories ?? da?.maxStories ?? input.districtMaxStories ?? null);
+  const phaseStories = ph?.stories ?? null;
+  const curatedStories = phaseStories ?? da?.stories ?? null;
+  const openSpaceShare = da?.openSpaceShare ?? null;
+  const opts: DistrictOpts = {};
+  if (storyLimit !== null) opts.storyLimit = storyLimit;
+  if (curatedStories !== null) opts.curatedStories = curatedStories;
+  if (openSpaceShare !== null) opts.openSpaceShare = openSpaceShare;
+  return opts;
+}
 
 function memoised(
   ctx: MassingCtx,
@@ -104,21 +161,24 @@ function building(
   }
   if (recs.length === 0) throw new RangeError(`no parcel records for ${schedule.projectId}`);
   const seed = fnv1a32(schedule.projectId);
+  const opts = districtOptsFor(schedule, ctx);
   return memoised(
     ctx,
     pipeKey(
       seed,
       units,
       stories,
-      recs.map((r) => r.id)
+      recs.map((r) => r.id),
+      opts
     ),
-    () => ctx.genForUnits(recs, units, stories ?? MAX_STORIES, seed, stories ?? undefined)
+    () => ctx.genForUnits(recs, units, stories ?? MAX_STORIES, seed, stories ?? undefined, opts)
   );
 }
 
 /**
  * The massing of revision `k` (§4.8), the one rendering seam. A building is stamped with its
- * `source`; a null or throwing generator, and an unphased multi-phase row, give a footprint entry.
+ * `source`; a null or throwing generator gives a footprint entry. A master without phases is
+ * massed on its own parcels like any pipeline project (large-site massing §4.7).
  * A throw is logged once per project and is not memoised. Throws when the schedule has no loaded
  * parcel record at all (nothing to take a footprint from): callers pack only ready cells.
  */
@@ -129,7 +189,6 @@ export function massingFor(schedule: Schedule, k: number, ctx: MassingCtx): Mass
       throw new RangeError(`massingFor ${schedule.projectId}: no loaded parcel records`);
     return footprintOf(footprintParcel(recs));
   };
-  if (schedule.multiPhase && schedule.phase === null) return fallback();
   let b: GeneratedBuilding | null;
   try {
     b = building(schedule, k, recs, ctx);

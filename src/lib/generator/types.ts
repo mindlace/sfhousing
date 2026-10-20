@@ -19,9 +19,13 @@ export interface GeneratedBuilding {
     tone: 0 | 1 | 2;
     baseM: number;
     topM: number;
+    /** District results only: index into `lots` of the lot this part belongs to. */
+    lot?: number;
   }[] /* supported floor bands; siblings may have separate footprints; rendered ground-to-topM */;
   stories: number;
   units: number;
   floorAreaM2: number;
   replacesExisting: boolean;
+  /** District results only (large-site massing §4.4): the built lots, in fill order. */
+  lots?: { typology: TypologyId; stories: number; floorAreaM2: number }[];
 }
