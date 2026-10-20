@@ -98,7 +98,7 @@ export function packTimedCell(cellId: string, items: readonly TimedPackInput[]):
           rings.push(ring(part.ring, i));
           topM.push(part.topM);
           slots.push(s);
-          typ.push(ti);
+          typ.push(TYPOLOGY_ORDER.indexOf(part.typology));
           appearance.push(part.appearance);
           windows.push(from, to);
         }
