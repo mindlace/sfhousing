@@ -87,8 +87,8 @@ function rowsOf(input: SimInput): Map<string, InFlightProject> {
 
 /**
  * The district options of a pipeline schedule (large-site massing §4.3 "Story limit L", §4.5):
- * `storyLimit` is the largest T11 envelope among its parcels, else the master's curated
- * `maxStories`, else `districtMaxStories`; `curatedStories` is the phase's, else the master's;
+ * `storyLimit` is the largest T11 envelope among its parcels, else the phase's curated
+ * `maxStories`, else the master's, else `districtMaxStories`; `curatedStories` is the phase's, else the master's;
  * `openSpaceShare` is the master's. Only defined fields are set. Simulated schedules get none.
  * The generator ignores all of it on a site that is not a district.
  */
@@ -103,9 +103,10 @@ export function districtOptsFor(schedule: Schedule, ctx: Pick<MassingCtx, 'input
     if (i !== undefined && input.parcels.envelopeStories[i] > zoned)
       zoned = input.parcels.envelopeStories[i];
   }
-  const storyLimit = zoned > 0 ? zoned : (da?.maxStories ?? input.districtMaxStories ?? null);
-  const phaseStories =
-    schedule.phase === null ? null : (row?.phases?.[schedule.phase.index - 1]?.stories ?? null);
+  const ph = schedule.phase === null ? null : row?.phases?.[schedule.phase.index - 1];
+  const storyLimit =
+    zoned > 0 ? zoned : (ph?.maxStories ?? da?.maxStories ?? input.districtMaxStories ?? null);
+  const phaseStories = ph?.stories ?? null;
   const curatedStories = phaseStories ?? da?.stories ?? null;
   const openSpaceShare = da?.openSpaceShare ?? null;
   const opts: DistrictOpts = {};

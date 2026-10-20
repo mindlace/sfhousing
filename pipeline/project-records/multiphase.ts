@@ -116,23 +116,28 @@ interface Draft {
   source: Phase['source'];
   /** The phase's curated stories (tier 1), else null. */
   stories: number | null;
+  /** The phase's curated tallest permitted stories (tier 1), else null. */
+  maxStories: number | null;
 }
 
-/** The stories every draft agrees on, else null (an unknown height disagrees). */
-function agreedStories(drafts: readonly Draft[]): number | null {
-  const s = drafts[0]?.stories ?? null;
-  return drafts.every((d) => d.stories === s) ? s : null;
+/** The value of `k` every draft agrees on, else null (an unknown height disagrees). */
+function agreed(drafts: readonly Draft[], k: 'stories' | 'maxStories'): number | null {
+  const s = drafts[0]?.[k] ?? null;
+  return drafts.every((d) => d[k] === s) ? s : null;
 }
 
-/** A phase's `stories` and `storiesTier` from its curated stories. */
-function storiesOf(stories: number | null): Pick<Phase, 'stories' | 'storiesTier'> {
-  return { stories, storiesTier: stories === null ? null : 1 };
+/** A phase's `stories`, `storiesTier` and `maxStories` from its curated heights. */
+function heightsOf(
+  stories: number | null,
+  maxStories: number | null
+): Pick<Phase, 'stories' | 'storiesTier' | 'maxStories'> {
+  return { stories, storiesTier: stories === null ? null : 1, maxStories };
 }
 
 /**
  * Folds every draft for which `drop` holds into the nearest earlier kept draft, else the next kept
  * one: units, parcels and the earliest planned date go with it, and the target keeps its stories
- * only when the two agree. Needs at least one kept draft.
+ * and its maxStories, each only when the two agree. Needs at least one kept draft.
  */
 function mergeInto(
   drafts: Draft[],
@@ -151,6 +156,7 @@ function mergeInto(
     t.parcelIds = [...t.parcelIds, ...d.parcelIds].sort();
     t.planned = minDay(t.planned, d.planned);
     if (t.stories !== d.stories) t.stories = null;
+    if (t.maxStories !== d.maxStories) t.maxStories = null;
     merged++;
   });
   return { kept: out.filter((d): d is Draft => d !== null), merged };
@@ -203,7 +209,8 @@ function enriched(
         url: ph.facts.units.url,
         retrieved: ph.facts.units.retrieved
       },
-      stories: ph.stories ?? null
+      stories: ph.stories ?? null,
+      maxStories: ph.maxStories ?? null
     };
   });
 
@@ -229,7 +236,7 @@ function enriched(
           parcelIds,
           plannedPermitFiled: planned,
           source: drafts[0].source,
-          ...storiesOf(agreedStories(drafts))
+          ...heightsOf(agreed(drafts, 'stories'), agreed(drafts, 'maxStories'))
         }
       ],
       scale,
@@ -250,7 +257,7 @@ function enriched(
     parcelIds: d.parcelIds,
     plannedPermitFiled: d.planned,
     source: d.source,
-    ...storiesOf(d.stories)
+    ...heightsOf(d.stories, d.maxStories)
   }));
   return { phases, scale, merged: first.merged + second.merged };
 }
@@ -346,7 +353,7 @@ export function buildPhases(ctx: PhaseContext): PhaseResult {
       parcelIds: [byArea[i]],
       plannedPermitFiled: null,
       source: null,
-      ...storiesOf(null)
+      ...heightsOf(null, null)
     });
   }
   return {

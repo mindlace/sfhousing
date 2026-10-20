@@ -180,7 +180,8 @@ function orderPhase(p: Phase): Phase {
         ? null
         : { label: p.source.label, url: p.source.url, retrieved: p.source.retrieved },
     stories: p.stories ?? null,
-    storiesTier: p.storiesTier ?? null
+    storiesTier: p.storiesTier ?? null,
+    maxStories: p.maxStories ?? null
   };
 }
 

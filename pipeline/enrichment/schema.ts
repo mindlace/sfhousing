@@ -29,7 +29,15 @@ export interface MultiphasePhase {
   separateRef?: { dataset: string; id: string; key?: string };
   /** the phase's planned prevailing stories from the DA document, if it gives one (tier 1) */
   stories?: number;
-  facts: { units: Fact; blklots: Fact; plannedPermitFiled?: Fact; stories?: Fact };
+  /** the phase's tallest permitted stories from the DA document, if it gives one (tier 1) */
+  maxStories?: number;
+  facts: {
+    units: Fact;
+    blklots: Fact;
+    plannedPermitFiled?: Fact;
+    stories?: Fact;
+    maxStories?: Fact;
+  };
 }
 
 /**
@@ -121,15 +129,17 @@ const phase = z
     status: z.enum(['remaining', 'built', 'separate']),
     separateRef: z.strictObject({ dataset: text, id: text, key: text.optional() }).optional(),
     stories: stories.optional(),
+    maxStories: stories.optional(),
     facts: z.strictObject({
       units: fact,
       blklots: fact,
       plannedPermitFiled: fact.optional(),
-      stories: fact.optional()
+      stories: fact.optional(),
+      maxStories: fact.optional()
     })
   })
   .superRefine((p, ctx) => {
-    factsFor(p, p.facts, ['stories'], ctx);
+    factsFor(p, p.facts, ['stories', 'maxStories'], ctx);
     if (p.status === 'separate' && p.separateRef === undefined) {
       ctx.addIssue({
         code: 'custom',

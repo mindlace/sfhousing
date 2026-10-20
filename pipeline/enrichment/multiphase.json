@@ -755,6 +755,7 @@
           "blklots": ["4591A090", "4591C209", "4591C210", "4591C211", "4591C753"],
           "plannedPermitFiled": null,
           "status": "remaining",
+          "maxStories": 37,
           "facts": {
             "units": {
               "url": "https://sfocii.org/sites/default/files/inline-files/4.%20Third%20Amendment%20to%20Disposition%20and%20Development%20Agreement%20-%202018.pdf",
@@ -765,6 +766,11 @@
               "url": "https://data.sf.gov/resource/acdm-wktn.json?$select=blklot,active,mapblklot,project_id_add,project_id_drop&$where=blklot%20in('4591A090','4591C209','4591C210','4591C211','4591C753')",
               "retrieved": "2026-10-17",
               "locator": "SF Planning Code Sec. 249.51(a): HPS Phase 2 SUD = Block 4591A Lot 79, Block 4591C Lots 010, 209, 210, and \"Block 5491, Lot 211\" (read as 4591C211, which exists). 4591A079 retired 2010; its current remainder is 4591A090 (646-acre master parcel, acdm-wktn lineage 079->081->082/086->090, projects 22184/23389/2021P4591A/24719) Round 2 (active lots only): retired 4591A079 dropped, its remainder 4591A090 is already listed (its other successors 4591A080/083/084/087-089 are of unknown HPS1/HPS2 status); retired 4591C010 (dropped 2025-02-20 by map project 27352) replaced by 4591C753, the project-27352 lot containing its centroid."
+            },
+            "maxStories": {
+              "url": "https://sfocii.org/sites/default/files/inline-files/1.%20HUNTERS%20POINT%20SHIPYARD%20PHASE%202%20DESIGN%20FOR%20DEVELOPMENT.pdf",
+              "retrieved": "2026-10-19",
+              "locator": "HPS Phase 2 Design for Development (10.15.2018) Figs. 4.0a Anticipated Development Map (doc p.45, PDF p.51) and 4.4c Maximum Building Height (doc p.61, PDF p.67): tallest residential height Tower A 370 ft on Residential Density IV block 15 (Tower B 270 ft, block 23; other residential blocks 40-85 ft); floor(370/10) = 37"
             }
           }
         }

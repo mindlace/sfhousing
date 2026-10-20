@@ -329,7 +329,8 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
         plannedPermitFiled: null,
         source,
         stories: null,
-        storiesTier: null
+        storiesTier: null,
+        maxStories: null
       },
       {
         units: 180,
@@ -337,7 +338,8 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
         plannedPermitFiled: day('2027-03-01'),
         source,
         stories: 6,
-        storiesTier: 1
+        storiesTier: 1,
+        maxStories: 10
       }
     ]);
     expect(p.daHeights).toEqual({ stories: 8, maxStories: 12, openSpaceShare: 0.2 });
@@ -412,7 +414,8 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
         plannedPermitFiled: null,
         source: null,
         stories: null,
-        storiesTier: null
+        storiesTier: null,
+        maxStories: null
       }
     ]);
     expect(r.counts['multiphase.u.2010.0002PRX']).toBe(40);

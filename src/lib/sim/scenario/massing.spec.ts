@@ -119,6 +119,26 @@ describe('districtOptsFor', () => {
     expect(districtOptsFor(sched(), ctxOf(input)).storyLimit).toBe(20);
   });
 
+  it("a phase's own max comes before the master's curated max", () => {
+    const edit = (r: InFlightProject): InFlightProject => ({
+      ...r,
+      daHeights: heights({ maxStories: 20 }),
+      phases: r.phases!.map((ph, i) => (i === 0 ? { ...ph, maxStories: 8 } : ph))
+    });
+    const input = inputWith({ '3600003': 0, '3600004': 0 }, edit, 14);
+    expect(districtOptsFor(phase1(), ctxOf(input)).storyLimit).toBe(8);
+    // the master itself, and a phase without its own max, take the master's
+    expect(districtOptsFor(sched(), ctxOf(input)).storyLimit).toBe(20);
+    const second: Schedule = {
+      ...phase1(),
+      phase: { masterId: P.entitled3, index: 2, of: 3, start: 'estimated' }
+    };
+    expect(districtOptsFor(second, ctxOf(input)).storyLimit).toBe(20);
+    // the zoned limit still wins over the phase max
+    const zoned = inputWith({ '3600003': 9 }, edit, 14);
+    expect(districtOptsFor(phase1(), ctxOf(zoned)).storyLimit).toBe(9);
+  });
+
   it('then districtMaxStories', () => {
     const input = inputWith({ '3600003': 0, '3600004': 0 }, (r) => r, 14);
     expect(districtOptsFor(sched(), ctxOf(input)).storyLimit).toBe(14);

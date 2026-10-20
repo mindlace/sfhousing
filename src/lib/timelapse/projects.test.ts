@@ -37,6 +37,7 @@ interface RowInFlightProject {
         source: { label: string; url: string; retrieved: string } | null;
         stories?: number | null;
         storiesTier?: 1 | null;
+        maxStories?: number | null;
       }[]
     | null;
   daHeights?: {
@@ -261,7 +262,8 @@ describe('parseProjectsFile accepts', () => {
         plannedPermitFiled: null,
         source: null,
         stories: 8,
-        storiesTier: 1
+        storiesTier: 1,
+        maxStories: 37
       },
       {
         units: 50,
@@ -269,7 +271,8 @@ describe('parseProjectsFile accepts', () => {
         plannedPermitFiled: null,
         source: null,
         stories: null,
-        storiesTier: null
+        storiesTier: null,
+        maxStories: null
       }
     ];
     f.projects[1].daHeights = null;
@@ -647,6 +650,48 @@ const cases: Case[] = [
         }
       ]),
     'projects[2].phases[0].storiesTier'
+  ],
+  [
+    'phase maxStories 0',
+    (f) =>
+      (f.projects[2].phases = [
+        {
+          units: 1,
+          parcelIds: [],
+          plannedPermitFiled: null,
+          source: null,
+          maxStories: 0
+        }
+      ]),
+    'projects[2].phases[0].maxStories'
+  ],
+  [
+    'phase maxStories 81',
+    (f) =>
+      (f.projects[2].phases = [
+        {
+          units: 1,
+          parcelIds: [],
+          plannedPermitFiled: null,
+          source: null,
+          maxStories: 81
+        }
+      ]),
+    'projects[2].phases[0].maxStories'
+  ],
+  [
+    'phase maxStories fractional',
+    (f) =>
+      (f.projects[2].phases = [
+        {
+          units: 1,
+          parcelIds: [],
+          plannedPermitFiled: null,
+          source: null,
+          maxStories: 5.5
+        }
+      ]),
+    'projects[2].phases[0].maxStories'
   ],
   ['daHeights not an object', (f) => (f.projects[2].daHeights = 5), 'projects[2].daHeights'],
   [

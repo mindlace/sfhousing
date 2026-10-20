@@ -40,6 +40,8 @@ export interface InFlightProject {
         stories?: number | null;
         /** 1 when `stories` is set, else null; absent means null */
         storiesTier?: 1 | null;
+        /** the phase's curated DA tallest permitted stories (tier 1); absent means null */
+        maxStories?: number | null;
       }[]
     | null;
   /**
@@ -249,6 +251,7 @@ function checkPhase(v: unknown, path: string): void {
   } else if (ph.storiesTier !== undefined && ph.storiesTier !== null) {
     fail(`${path}.storiesTier`, 'must be null when stories is null');
   }
+  checkOptStories(ph.maxStories, `${path}.maxStories`);
 }
 
 /** `prev` and `cur` are consecutive entries of a list that must be sorted and unique. */

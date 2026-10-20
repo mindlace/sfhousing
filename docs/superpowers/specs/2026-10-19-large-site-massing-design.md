@@ -126,7 +126,7 @@ Each lot is massed by today's per-lot code, so all typologies, compositions, tow
 **Story limit `L`.** Partner ruling: "3 to the zoned story limit". The caller passes `opts.storyLimit`, and the generator itself never reads zoning. timelapse-sim sets it in this order:
 
 1. The largest T11 `envelope.maxStories` among the schedule's parcels that have an envelope. This is the zoned limit.
-2. If no parcel has one (the `HP`, `CP`, `MB-RA` and similar height codes read as "none", `heights.ts:42-55`), the master's curated `heights.maxStories` (§4.6, tier 1).
+2. If no parcel has one (the `HP`, `CP`, `MB-RA` and similar height codes read as "none", `heights.ts:42-55`), the phase's curated `maxStories`, else the master's curated `heights.maxStories` (§4.6, tier 1). A phase max (amended 2026-10-19) covers a master whose phases have different D4Ds, e.g. the CP/HPS2 Shipyard phase.
 3. Otherwise `districtMaxStories` from `projects.json` (tier 2): the 90th percentile of tier-0 stated stories over in-flight and completed records with at least `DISTRICT_DEFAULT_MIN_UNITS` units, computed by project-records with its `n` and provenance.
 4. If `opts.storyLimit` is absent (another caller), `DISTRICT_FALLBACK_LIMIT` (tier 4).
 

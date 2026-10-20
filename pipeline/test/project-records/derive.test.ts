@@ -351,7 +351,8 @@ describe('deriveProjects: values', () => {
         plannedPermitFiled: null,
         source: null,
         stories: null,
-        storiesTier: null
+        storiesTier: null,
+        maxStories: null
       }
     ]);
     expect(d.daHeights).toBeNull();
@@ -531,7 +532,8 @@ describe('deriveProjects: masters', () => {
         plannedPermitFiled: null,
         source: null,
         stories: null,
-        storiesTier: null
+        storiesTier: null,
+        maxStories: null
       }
     ]);
     expect(history(r, 'PRJ:2010.0002').end).toEqual({ kind: 'complete', day: day('2017-03-01') });
@@ -549,7 +551,8 @@ describe('deriveProjects: masters', () => {
         plannedPermitFiled: null,
         source: null,
         stories: null,
-        storiesTier: null
+        storiesTier: null,
+        maxStories: null
       },
       {
         units: 150,
@@ -557,7 +560,8 @@ describe('deriveProjects: masters', () => {
         plannedPermitFiled: null,
         source: null,
         stories: null,
-        storiesTier: null
+        storiesTier: null,
+        maxStories: null
       }
     ]);
     // D may not take H's final lot 009, so P = 1 and D keeps one fallback phase on its own lot.
@@ -568,7 +572,8 @@ describe('deriveProjects: masters', () => {
         plannedPermitFiled: null,
         source: null,
         stories: null,
-        storiesTier: null
+        storiesTier: null,
+        maxStories: null
       }
     ]);
     expect(project(r, 'CASE:2010.0002PRX').parcelIds).toEqual(['3512006']);
@@ -586,7 +591,7 @@ describe('deriveProjects: masters', () => {
       url: 'https://example.invalid/fixture-da.pdf',
       retrieved: '2026-10-01'
     };
-    const none = { stories: null, storiesTier: null };
+    const none = { stories: null, storiesTier: null, maxStories: null };
     expect(h.phases).toEqual([
       { units: 113, parcelIds: ['3512008'], plannedPermitFiled: null, source, ...none },
       {
@@ -605,7 +610,8 @@ describe('deriveProjects: masters', () => {
       'plannedPermitFiled',
       'source',
       'stories',
-      'storiesTier'
+      'storiesTier',
+      'maxStories'
     ]);
     expect(Object.keys(ph.source)).toEqual(['label', 'url', 'retrieved']);
     expect(r.counts['multiphase.scale.2007.0001PRX']).toBe(300 / 320);
@@ -627,13 +633,15 @@ describe('deriveProjects: masters', () => {
     };
     input.multiphase.projects[0].phases[1].stories = 12;
     input.multiphase.projects[0].phases[1].facts.stories = fact;
+    input.multiphase.projects[0].phases[1].maxStories = 37;
+    input.multiphase.projects[0].phases[1].facts.maxStories = fact;
     const r = deriveProjects(input);
     const h = project(r, 'CASE:2007.0001PRX');
     expect(h.daHeights).toEqual({ stories: 8, maxStories: null, openSpaceShare: 0.3 });
     expect(Object.keys(h.daHeights!)).toEqual(['stories', 'maxStories', 'openSpaceShare']);
-    expect(h.phases!.map((p) => [p.stories, p.storiesTier])).toEqual([
-      [null, null],
-      [12, 1]
+    expect(h.phases!.map((p) => [p.stories, p.storiesTier, p.maxStories])).toEqual([
+      [null, null, null],
+      [12, 1, 37]
     ]);
     expect(project(r, 'CASE:2010.0002PRX').daHeights).toBeNull();
     expect(project(r, 'PRJ:2019-000001PRJ')).not.toHaveProperty('daHeights');
