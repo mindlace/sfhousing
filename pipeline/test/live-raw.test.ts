@@ -29,6 +29,11 @@ describe('live raw layout (<rawDir>/<sha256>, no extension)', () => {
         if (s.id === 'overture-buildings') {
           const f = storeBytes(raw, 'overture-buildings.parquet', 'u', readFileSync(pq));
           lock.sources.push({ ...s, files: [f] });
+        } else if (s.id === 'protomaps-basemap') {
+          const files = s.files.map((f) =>
+            storeBytes(raw, f.name, f.url, readFileSync(join(MINI, 'raw', f.name)))
+          );
+          lock.sources.push({ ...s, files });
         } else if (s.id.startsWith('datasf-')) {
           const files = s.files.map((f) =>
             storeBytes(raw, f.name, f.url, readFileSync(join(MINI, 'raw', f.name)))
@@ -46,7 +51,8 @@ describe('live raw layout (<rawDir>/<sha256>, no extension)', () => {
         'datasf-height-bulk': 6,
         'datasf-parcel-attrs': 19,
         'datasf-assessor-roll': 29,
-        'overture-buildings': 12
+        'overture-buildings': 12,
+        'protomaps-basemap': 2
       });
       await loadNormalised(db, norm);
       const [r] = await db.all<{ n: number }>('SELECT count(*) n FROM src_overture');

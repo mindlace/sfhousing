@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { Duck } from '../lib/duck';
 import { rawPath, type Lock } from '../lib/lock';
 import { DATASF, type DatasfId } from './datasf';
+import { normaliseLand } from './land';
 
 export type SourceId =
   | 'datasf-parcels'
@@ -12,7 +13,8 @@ export type SourceId =
   | 'datasf-height-bulk'
   | 'datasf-parcel-attrs'
   | 'datasf-assessor-roll'
-  | 'overture-buildings';
+  | 'overture-buildings'
+  | 'protomaps-basemap';
 
 export const SOURCE_IDS: SourceId[] = [
   'datasf-parcels',
@@ -22,7 +24,8 @@ export const SOURCE_IDS: SourceId[] = [
   'datasf-height-bulk',
   'datasf-parcel-attrs',
   'datasf-assessor-roll',
-  'overture-buildings'
+  'overture-buildings',
+  'protomaps-basemap'
 ];
 
 /** Normalised parquet basename -> src_ table. */
@@ -34,7 +37,8 @@ const TABLES: Record<SourceId, string> = {
   'datasf-height-bulk': 'src_height_bulk',
   'datasf-parcel-attrs': 'src_parcel_attrs',
   'datasf-assessor-roll': 'src_roll',
-  'overture-buildings': 'src_overture'
+  'overture-buildings': 'src_overture',
+  'protomaps-basemap': 'src_land'
 };
 
 const q = (s: string) => `'${s.replaceAll("'", "''")}'`;
@@ -150,6 +154,7 @@ async function buildSelect(
       datasets::VARCHAR[] AS datasets, geom::GEOMETRY AS geom
       FROM read_parquet([${list}]) ORDER BY id`;
   }
+  if (id === 'protomaps-basemap') throw new Error('protomaps-basemap is decoded by normaliseLand');
   const pages = isCsv(id) ? readCsvPages(rawFiles) : readPages(rawFiles);
   const cols = await columnsOf(db, pages);
   const p = `(${pages})`;
@@ -245,6 +250,7 @@ export async function normalise(
   outParquet: string,
   parquet: boolean = rawFiles.every((f) => f.endsWith('.parquet'))
 ): Promise<number> {
+  if (id === 'protomaps-basemap') return normaliseLand(db, rawFiles[0], outParquet);
   const select = await buildSelect(db, id, rawFiles, parquet);
   fs.mkdirSync(path.dirname(outParquet), { recursive: true });
   await db.run(`COPY (${select}) TO ${q(outParquet)} (FORMAT parquet)`);
