@@ -1,7 +1,6 @@
 // /fzp e2e (fzp-mode spec §6). Runs against the VITE_E2E build, which exposes window.__sfhFzp
 // (src/lib/fzp/debug.ts) and window.__sfhMap. Fixture-0 files are read from disk; counts, ids and
-// labels are derived from them, never hard-coded. Autoplay is on by default, so every test that
-// needs a stable day emulates reduced motion first.
+// labels are derived from them, never hard-coded. Playback starts paused.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { SOURCE_DATASETS } from '../src/lib/fzp/card';
@@ -9,7 +8,14 @@ import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { monthStart } from '../src/lib/fzp/time';
 import { formatCount } from '../src/lib/scoreboard/format';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { FRAME, jumpAndIdle, projectToPage, type LngLat, type Win } from './helpers/sharing';
+import {
+  FRAME,
+  gotoHydrated,
+  jumpAndIdle,
+  projectToPage,
+  type LngLat,
+  type Win
+} from './helpers/sharing';
 
 type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 
@@ -105,7 +111,7 @@ async function waitForMapOnly(page: Page): Promise<void> {
   await page.waitForFunction(() => !!(window as Win).__sfhMap?.map);
 }
 
-/** `/fzp` at a stable day (reduced motion stops autoplay), ready. */
+/** `/fzp` at a stable day (the page opens paused), ready. */
 async function gotoFzp(page: Page, search = ''): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(`/fzp${search}`);
@@ -224,27 +230,25 @@ test('loads ready and the keyboard drives the scrubber to both ends', async ({ p
   );
 
   await page.keyboard.press('End');
-  await expect(readout(page)).toContainText('December 2050');
+  await expect(readout(page)).toContainText('December 2066');
   expect(await fzp(page, 'day')).toBe(await fzp(page, 'horizon'));
   await expect(headline(page)).toHaveText(
     formatCount(baseline.completedNet + shown[months.length - 1].completedNet)
   );
 });
 
-// ---- reduced motion -----------------------------------------------------------------------------
+// ---- playback start -----------------------------------------------------------------------------
 
-test('reduced motion keeps the day at asOf; without it the day advances', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/fzp');
-  await waitReady(page);
-  await page.waitForTimeout(2_000);
-  expect(await fzp(page, 'day')).toBe(await fzp(page, 'asOf'));
-  expect(await fzp(page, 'playing')).toBe(false);
-
+test('the day stays at asOf until Play is pressed', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.goto('/fzp');
   await waitReady(page);
+  await page.waitForTimeout(2_000);
   const asOf = await fzp(page, 'asOf');
+  expect(await fzp(page, 'day')).toBe(asOf);
+  expect(await fzp(page, 'playing')).toBe(false);
+
+  await page.getByRole('button', { name: 'Play' }).click();
   await expect.poll(() => fzp(page, 'day'), { timeout: 5_000 }).toBeGreaterThan(asOf);
 });
 
@@ -423,7 +427,7 @@ test('a phase of a multi-phase project reads "Phase n of m" once the scrubber re
       );
   let found = false;
   // PageUp is one year; the horizon bounds the loop.
-  for (let step = 0; step <= 26 && !found; step++) {
+  for (let step = 0; step <= 42 && !found; step++) {
     for (const at of points) {
       await pick(page, isMobile, await projectToPage(page, at));
       found = await appears(phaseLine);
@@ -554,7 +558,7 @@ test('a dataset without scenarios shows the message and starts no worker', async
     delete manifest.scenarios;
     await route.fulfill({ response, json: manifest });
   });
-  await page.goto('/about');
+  await gotoHydrated(page, '/about');
   await headerLink(page, 'Timelapse').click();
   await expect(page).toHaveURL(/\/fzp$/);
 
@@ -571,7 +575,7 @@ test('a calibration that fails to load shows the failure with Retry, and passes 
 }) => {
   // As above: a client navigation, so the browser fetches the calibration and the route can fail it.
   await page.route('**/scenarios/fzp/calibration.json', (route) => route.fulfill({ status: 500 }));
-  await page.goto('/about');
+  await gotoHydrated(page, '/about');
   await headerLink(page, 'Timelapse').click();
   await expect(page).toHaveURL(/\/fzp$/);
   await expect(page.getByTestId('fzp-status')).toHaveText("The simulation couldn't load.");

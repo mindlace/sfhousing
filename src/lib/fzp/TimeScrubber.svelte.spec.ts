@@ -61,7 +61,6 @@ async function setup(props: Partial<HarnessProps> = {}) {
       onday,
       raf: q.raf,
       cancelRaf: q.cancelRaf,
-      reducedMotion: () => false,
       ...props
     }
   });
@@ -252,65 +251,25 @@ describe('speed', () => {
   });
 });
 
-describe('autoplay', () => {
-  it('starts playback when autoplay is true', async () => {
-    const { q } = await setup({ autoplay: true });
-    await expect.element(page.getByRole('button', { name: 'Pause' })).toBeVisible();
-    expect(q.pending()).toBe(1);
-  });
-
-  it('stays paused under reduced motion, and Play still works', async () => {
-    const { q, onday } = await setup({ autoplay: true, reducedMotion: () => true });
+describe('playback start', () => {
+  it('does not play on mount, even without reduced motion', async () => {
+    const { q, onday } = await setup();
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     await expect.element(page.getByRole('button', { name: 'Play' })).toBeVisible();
     expect(q.pending()).toBe(0);
     q.frame(0);
     q.frame(100);
     expect(stateText()).toBe(`${ASOF}|false|year`);
     expect(onday).not.toHaveBeenCalled();
+  });
+
+  it('plays when Play is pressed', async () => {
+    const { q } = await setup();
     await page.getByRole('button', { name: 'Play' }).click();
     expect(q.pending()).toBe(1);
     q.frame(0);
     q.frame(100);
     expect(stateDay()).toBeGreaterThan(ASOF);
-  });
-
-  it('fires once per mount: pausing does not restart it', async () => {
-    const { q } = await setup({ autoplay: true });
-    await page.getByRole('button', { name: 'Pause' }).click();
-    await expect.element(page.getByRole('button', { name: 'Play' })).toBeVisible();
-    expect(q.pending()).toBe(0);
-  });
-
-  // FzpMode's real path: mounted with autoplay false, flipped to true when the phase is ready.
-  const flip = () => page.getByTestId('autoplay-flip').click();
-
-  it('flipping autoplay from false to true starts playback', async () => {
-    const { q } = await setup({ autoplay: false });
-    await expect.element(page.getByRole('button', { name: 'Play' })).toBeVisible();
-    expect(q.pending()).toBe(0);
-    await flip();
-    await expect.element(page.getByRole('button', { name: 'Pause' })).toBeVisible();
-    expect(q.pending()).toBe(1);
-  });
-
-  it('flipping autoplay under reduced motion does not start playback', async () => {
-    const { q } = await setup({ autoplay: false, reducedMotion: () => true });
-    await flip();
-    await expect.element(page.getByRole('button', { name: 'Play' })).toBeVisible();
-    expect(q.pending()).toBe(0);
-    expect(stateText()).toBe(`${ASOF}|false|year`);
-  });
-
-  it('after the user pauses, autoplay toggling false then true again stays paused', async () => {
-    const { q } = await setup({ autoplay: false });
-    await flip();
-    await page.getByRole('button', { name: 'Pause' }).click();
-    await expect.element(page.getByRole('button', { name: 'Play' })).toBeVisible();
-    await flip(); // true -> false
-    await flip(); // false -> true: the latch must hold
-    await expect.element(page.getByRole('button', { name: 'Play' })).toBeVisible();
-    expect(q.pending()).toBe(0);
-    expect(stateText()).toBe(`${ASOF}|false|year`);
   });
 
   it('unmounting while playing cancels the pending frame', async () => {

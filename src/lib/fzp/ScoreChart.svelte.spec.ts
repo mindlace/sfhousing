@@ -5,12 +5,13 @@ import '../../routes/layout.css';
 import { chartLabel, chartModel, tableRows } from './chart';
 import {
   FIX_ASOF,
+  FIX_HORIZON,
   TIMELINE_SCORE,
   TIMELINE_SCORE_R0,
   makeTimelineScore
 } from './fixtures/timeline-score';
 import ScoreChart from './ScoreChart.svelte';
-import { HORIZON, dayFromUtc } from './time';
+import { dayFromUtc } from './time';
 
 const DAY1 = dayFromUtc(2031, 3, 15);
 const DAY2 = dayFromUtc(2040, 7, 1);
@@ -18,7 +19,7 @@ const DAY2 = dayFromUtc(2040, 7, 1);
 const props = (over: Record<string, unknown> = {}) => ({
   score: TIMELINE_SCORE,
   asOf: FIX_ASOF,
-  horizon: HORIZON,
+  horizon: FIX_HORIZON,
   day: DAY1,
   ...over
 });
@@ -65,7 +66,7 @@ describe('ScoreChart', () => {
   it('moves the cursor line with the day prop', async () => {
     await page.viewport(1024, 768);
     const screen = await render(ScoreChart, { props: props() });
-    const model = () => chartModel(TIMELINE_SCORE, FIX_ASOF, HORIZON, svgWidth());
+    const model = () => chartModel(TIMELINE_SCORE, FIX_ASOF, FIX_HORIZON, svgWidth());
     expect(cursorX()).toBeCloseTo(model().x(DAY1), 1);
     await screen.rerender(props({ day: DAY2 }));
     await expect.poll(cursorX).toBeCloseTo(model().x(DAY2), 1);
@@ -151,7 +152,7 @@ describe('ScoreChart', () => {
     await page.viewport(1024, 768);
     const score = makeTimelineScore();
     await render(ScoreChart, { props: props({ score }) });
-    const model = chartModel(score, FIX_ASOF, HORIZON, svgWidth());
+    const model = chartModel(score, FIX_ASOF, FIX_HORIZON, svgWidth());
     expect(model.yMin).toBeLessThan(0);
     const d = document.querySelector('[data-series="planCompleted"]')!.getAttribute('d')!;
     const ys = [...d.matchAll(/ (-?[\d.]+)/g)].map((m) => Number(m[1]));

@@ -15,6 +15,9 @@ import { dayFromUtc } from '../time';
 
 export const FIX_ASOF = dayFromUtc(2026, 10, 16);
 
+/** The fixture runs to this horizon: 291 months, 2026-10 to 2050-12. Pair it with TIMELINE_SCORE, never with the product HORIZON. */
+export const FIX_HORIZON = dayFromUtc(2050, 12, 31);
+
 const MONTHS = 291;
 const BASELINE = 12000;
 const DEADLINE = dayFromUtc(2031, 1, 31);

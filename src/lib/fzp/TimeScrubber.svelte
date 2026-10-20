@@ -17,8 +17,6 @@
     day: Day;
     playing?: boolean;
     speed?: Speed;
-    /** The first false-to-true transition starts playback, unless reduced motion is set. */
-    autoplay?: boolean;
     markers?: Marker[];
     /** Called exactly once per day change. */
     onday?: (day: Day) => void;
@@ -26,7 +24,6 @@
     /** Test seams. */
     raf?: (cb: FrameRequestCallback) => number;
     cancelRaf?: (h: number) => void;
-    reducedMotion?: () => boolean;
   }
 
   let {
@@ -35,19 +32,11 @@
     day = $bindable(),
     playing = $bindable(false),
     speed = $bindable(DEFAULT_SPEED),
-    autoplay = false,
     markers = [],
     onday,
     onheight,
     raf = (cb) => requestAnimationFrame(cb),
-    cancelRaf = (h) => cancelAnimationFrame(h),
-    reducedMotion = () => {
-      try {
-        return matchMedia('(prefers-reduced-motion: reduce)').matches;
-      } catch {
-        return false;
-      }
-    }
+    cancelRaf = (h) => cancelAnimationFrame(h)
   }: Props = $props();
 
   const uid = $props.id();
@@ -68,14 +57,6 @@
     day = next;
     onday?.(next);
   }
-
-  // The autoplay latch is deliberately not reactive: it fires once per mount.
-  let autoplayed = false;
-  $effect(() => {
-    if (!autoplay || autoplayed) return;
-    autoplayed = true;
-    if (!reducedMotion()) playing = true;
-  });
 
   $effect(() => {
     if (!playing) return;

@@ -13,12 +13,12 @@ import {
 
 const asOf = dayFromUtc(2026, 10, 16);
 const month0 = dayFromUtc(2026, 10, 1);
-const length = 291;
+const length = 483;
 
 describe('dayFromUtc / utcParts', () => {
-  it('pins the horizon at Day 29584', () => {
-    expect(dayFromUtc(2050, 12, 31)).toBe(29584);
-    expect(HORIZON).toBe(29584);
+  it('pins the horizon at Day 35428', () => {
+    expect(dayFromUtc(2066, 12, 31)).toBe(35428);
+    expect(HORIZON).toBe(35428);
     expect(YEAR_2045).toBe(dayFromUtc(2045, 1, 1));
   });
 
@@ -54,7 +54,7 @@ describe('nextMonth', () => {
   });
 
   it('clamps to the horizon', () => {
-    expect(nextMonth(dayFromUtc(2050, 12, 1), HORIZON)).toBe(HORIZON);
+    expect(nextMonth(dayFromUtc(2066, 12, 1), HORIZON)).toBe(HORIZON);
     expect(nextMonth(HORIZON, HORIZON)).toBe(HORIZON);
   });
 });
@@ -75,7 +75,7 @@ describe('shiftYear', () => {
   it('moves twelve months from the current month start, clamped', () => {
     expect(shiftYear(dayFromUtc(2027, 3, 17), 1, asOf, HORIZON)).toBe(dayFromUtc(2028, 3, 1));
     expect(shiftYear(dayFromUtc(2027, 3, 17), -1, asOf, HORIZON)).toBe(asOf);
-    expect(shiftYear(dayFromUtc(2050, 2, 10), 1, asOf, HORIZON)).toBe(HORIZON);
+    expect(shiftYear(dayFromUtc(2066, 2, 10), 1, asOf, HORIZON)).toBe(HORIZON);
   });
 
   it('goes back a full year when that stays after asOf', () => {
@@ -88,8 +88,8 @@ describe('monthIndex', () => {
     expect(monthIndex(asOf, month0, length)).toBe(0);
     expect(monthIndex(dayFromUtc(2026, 10, 31), month0, length)).toBe(0);
     expect(monthIndex(dayFromUtc(2026, 11, 1), month0, length)).toBe(1);
-    expect(monthIndex(HORIZON, month0, length)).toBe(290);
+    expect(monthIndex(HORIZON, month0, length)).toBe(482);
     expect(monthIndex(month0 - 40, month0, length)).toBe(0);
-    expect(monthIndex(HORIZON + 400, month0, length)).toBe(290);
+    expect(monthIndex(HORIZON + 400, month0, length)).toBe(482);
   });
 });

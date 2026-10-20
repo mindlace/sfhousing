@@ -41,6 +41,16 @@ export async function waitForMap(page: Page): Promise<void> {
   });
 }
 
+/**
+ * `page.goto(path)`, then waits for hydration (the root layout's `data-hydrated` mark, VITE_E2E
+ * build only). A link clicked before hydration is a full page load, whose SSR reads data the
+ * test's `page.route` never sees; after it, the click is a client navigation.
+ */
+export async function gotoHydrated(page: Page, path: string): Promise<void> {
+  await page.goto(path);
+  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
+}
+
 export const publishOpen = (page: Page): Locator => page.getByTestId('publish-open');
 
 /** `/` with the map ready and the header actions hydrated (the Publish button exists). */

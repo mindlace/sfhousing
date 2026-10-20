@@ -4,7 +4,7 @@ Developer notes for `src/routes/fzp/` and `src/lib/fzp/`. The design is `docs/su
 
 ## The scrubber contract
 
-`TimeScrubber.svelte` is a native `<input type="range">` over `[asOf, horizon]` in days (`step=1`), where `asOf` is `calibration.asOf` and `horizon` is `HORIZON` (2050-12-31, `src/lib/fzp/time.ts`). Its accessible name is "Date in the simulation" and `aria-valuetext` is the readout ("October 2026").
+`TimeScrubber.svelte` is a native `<input type="range">` over `[asOf, horizon]` in days (`step=1`), where `asOf` is `calibration.asOf` and `horizon` is `HORIZON` (2066-12-31, `src/lib/fzp/time.ts`). Its accessible name is "Date in the simulation" and `aria-valuetext` is the readout ("October 2026").
 
 | Key                 | Effect                                                                    |
 | ------------------- | ------------------------------------------------------------------------- |
@@ -17,12 +17,12 @@ Keys with Alt, Ctrl or Meta are left to the browser. Every handled key, a drag o
 
 - **Speeds** (`playback.ts`, a tier 4 UI choice): "1 month/s", "1 year/s" (default), "3 years/s", as days of simulated time per second of wall time (`MONTH_DAYS`, `12 x MONTH_DAYS`, `36 x MONTH_DAYS`).
 - **Frame step:** only while `playing`, through `requestAnimationFrame`: `t += min(dt, 100 ms) x daysPerSecond`, `day = min(floor(t), horizon)`. The 100 ms clamp stops a background tab from making the clock jump. If something else moves the day mid-play, the clock continues from there.
-- **Autoplay:** the first time `autoplay` is true (FzpMode passes `phase === 'ready'`) playback starts, unless `prefers-reduced-motion: reduce` matches. The latch is not reactive, so it fires once per mount. Under reduced motion the page waits on Play; scrubbing and a pressed Play still work.
+- **No autoplay:** playback never starts on its own; the page opens paused at `asOf` and waits on Play.
 - **`onday`:** called exactly once per day change (`setDay` compares with the current day first). FzpMode's `onDay` does O(1) work: `handle.setTime(day)`, and a card refresh only when the month changed.
 - **Opening the sources dialog pauses** (`onopen` sets `playing = false`). Opening a card does not.
 - The readout is not a live region (it changes every frame). The scoreboard's own live region speaks only when playback is paused, 1000 ms after the day settles.
 
-Tests that need a stable day call `page.emulateMedia({ reducedMotion: 'reduce' })` before navigating. Without it the day advances at 1 year per second from the moment the page is ready.
+The page always opens paused, so tests get a stable day without any media emulation. `gotoFzp` emulates `reducedMotion: 'reduce'` only to keep the map's generated-building animation off (`SimMap` reads `prefers-reduced-motion`).
 
 ## Layout variables
 
