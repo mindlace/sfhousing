@@ -323,9 +323,25 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
       existingUnits: 43
     });
     expect(p.phases).toEqual([
-      { units: 120, parcelIds: ['3512014'], plannedPermitFiled: null, source },
-      { units: 180, parcelIds: ['3512002'], plannedPermitFiled: day('2027-03-01'), source }
+      {
+        units: 120,
+        parcelIds: ['3512014'],
+        plannedPermitFiled: null,
+        source,
+        stories: null,
+        storiesTier: null
+      },
+      {
+        units: 180,
+        parcelIds: ['3512002'],
+        plannedPermitFiled: day('2027-03-01'),
+        source,
+        stories: 6,
+        storiesTier: 1
+      }
     ]);
+    expect(p.daHeights).toEqual({ stories: 8, maxStories: 12, openSpaceShare: 0.2 });
+    expect(project('CASE:2010.0002PRX').daHeights).toBeNull();
     expect(r.counts['multiphase.scale.2007.0001PRX']).toBe(1);
     expect(r.histories.map((h) => h.id)).not.toContain('CASE:2007.0001PRX');
   });
@@ -390,7 +406,14 @@ describe('mini project records: per-project values (spec 4.9 table)', () => {
     const p = project('CASE:2010.0002PRX');
     expect(p.multiPhase).toBe(true);
     expect(p.phases).toEqual([
-      { units: 100, parcelIds: ['3512009'], plannedPermitFiled: null, source: null }
+      {
+        units: 100,
+        parcelIds: ['3512009'],
+        plannedPermitFiled: null,
+        source: null,
+        stories: null,
+        storiesTier: null
+      }
     ]);
     expect(r.counts['multiphase.u.2010.0002PRX']).toBe(40);
     expect(r.counts['multiphase.u.2010.0002PRX.n']).toBe(1);

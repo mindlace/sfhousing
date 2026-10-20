@@ -36,8 +36,23 @@ export interface InFlightProject {
         /** from the DA phasing schedule, if enriched */
         plannedPermitFiled: Day | null;
         source: { label: string; url: string; retrieved: string } | null;
+        /** the phase's curated DA stories (tier 1); absent means null */
+        stories?: number | null;
+        /** 1 when `stories` is set, else null; absent means null */
+        storiesTier?: 1 | null;
       }[]
     | null;
+  /**
+   * multi-phase only: the master's curated DA heights (tier 1, `multiphase.json` `heights`), null
+   * when its entry has none; absent (as on every other project) means null. Each value is null
+   * when the DA gives none.
+   */
+  daHeights?: {
+    stories: number | null;
+    maxStories: number | null;
+    /** share of the site's land in parks and open space, 0..0.9 */
+    openSpaceShare: number | null;
+  } | null;
   sources: {
     dataset: string;
     id: string;
@@ -70,6 +85,13 @@ export type ProjectsFile = {
     since: Day;
     provenance: Provenance;
   };
+  /**
+   * Default story limit for a district without a parcel height or curated `maxStories` (large-site
+   * massing spec 4.3): the nearest-rank 90th percentile of tier-0 stories over in-flight and
+   * completed records with at least `DISTRICT_DEFAULT_MIN_UNITS` units. Tier 2. Absent when no
+   * record qualifies.
+   */
+  districtMaxStories?: { stories: number; n: number; provenance: Provenance };
   /** every id used in any project's quality, sorted by id */
   qualityRules: QualityRuleRef[];
   projects: InFlightProject[];
@@ -188,6 +210,29 @@ function checkHistory(h: unknown, path: string, asOf: number, pathway: Pathway):
   return last as Stage;
 }
 
+/** Stories bounds: an integer 1..80. */
+function checkStories(v: unknown, path: string): void {
+  const n = int(v, path);
+  if (n < 1 || n > 80) fail(path, 'must be an integer 1..80');
+}
+
+/** Absent or null, else a stories value. */
+function checkOptStories(v: unknown, path: string): void {
+  if (v !== undefined && v !== null) checkStories(v, path);
+}
+
+function checkDaHeights(v: unknown, path: string): void {
+  const h = obj(v, path);
+  checkOptStories(h.stories, `${path}.stories`);
+  checkOptStories(h.maxStories, `${path}.maxStories`);
+  const share = h.openSpaceShare;
+  if (share !== undefined && share !== null) {
+    if (typeof share !== 'number' || !(share >= 0 && share <= 0.9)) {
+      fail(`${path}.openSpaceShare`, 'must be a number in [0, 0.9]');
+    }
+  }
+}
+
 function checkPhase(v: unknown, path: string): void {
   const ph = obj(v, path);
   int(ph.units, `${path}.units`, 1);
@@ -197,6 +242,12 @@ function checkPhase(v: unknown, path: string): void {
     const sp = `${path}.source`;
     const src = obj(ph.source, sp);
     for (const k of ['label', 'url', 'retrieved'] as const) str(src[k], `${sp}.${k}`);
+  }
+  if (ph.stories !== undefined && ph.stories !== null) {
+    checkStories(ph.stories, `${path}.stories`);
+    if (ph.storiesTier !== 1) fail(`${path}.storiesTier`, 'must be 1 when stories is set');
+  } else if (ph.storiesTier !== undefined && ph.storiesTier !== null) {
+    fail(`${path}.storiesTier`, 'must be null when stories is null');
   }
 }
 
@@ -302,6 +353,10 @@ function checkProject(
   } else if (p.phases !== null) {
     arr(p.phases, `${path}.phases`).forEach((ph, i) => checkPhase(ph, `${path}.phases[${i}]`));
   }
+  if (p.daHeights !== undefined && p.daHeights !== null) {
+    if (!p.multiPhase) fail(`${path}.daHeights`, 'must be null unless multiPhase');
+    checkDaHeights(p.daHeights, `${path}.daHeights`);
+  }
 
   const sources = arr(p.sources, `${path}.sources`);
   if (sources.length === 0) fail(`${path}.sources`, 'must be non-empty');
@@ -320,10 +375,10 @@ function checkProject(
  * Validates a parsed `projects.json`. With `opts.asOf` the file's `asOf` must match it; with
  * `opts.parcelIds` every parcel id must be in the set.
  *
- * File-level checks (`schema`, `asOf`, `rhnaCompletedNet`, `projects` being an array, and every
- * `qualityRules` check, whose "used by a project" check reads the input array) always throw
- * `ProjectsFormatError`, before any project is checked. Project-level checks cover one element
- * of `projects`; of two elements with the same id, the later is invalid.
+ * File-level checks (`schema`, `asOf`, `rhnaCompletedNet`, `districtMaxStories`, `projects` being
+ * an array, and every `qualityRules` check, whose "used by a project" check reads the input
+ * array) always throw `ProjectsFormatError`, before any project is checked. Project-level checks
+ * cover one element of `projects`; of two elements with the same id, the later is invalid.
  *
  * Without `opts.onInvalid` the first violation throws and the input is returned, typed (V20).
  * With it, each invalid project is reported once, with its first violation's path and message,
@@ -349,6 +404,13 @@ export function parseProjectsFile(
   int(rhna.units, 'rhnaCompletedNet.units');
   int(rhna.since, 'rhnaCompletedNet.since');
   checkProvenance(rhna.provenance, 'rhnaCompletedNet.provenance');
+
+  if (root.districtMaxStories !== undefined) {
+    const dm = obj(root.districtMaxStories, 'districtMaxStories');
+    checkStories(dm.stories, 'districtMaxStories.stories');
+    int(dm.n, 'districtMaxStories.n', 1);
+    checkProvenance(dm.provenance, 'districtMaxStories.provenance');
+  }
 
   const projects = arr(root.projects, 'projects');
   const ruleIds = checkQualityRules(root.qualityRules, projects);

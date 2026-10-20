@@ -168,7 +168,9 @@
     "projects.byStage.permitFiled": 4,
     "projects.byStage.permitIssued": 1,
     "projects.byStage.preApplication": 1,
-    "projects.bytes": 8956,
+    "projects.bytes": 9149,
+    "projects.districtMaxStories": -1,
+    "projects.districtMaxStories.n": 0,
     "projects.excludedAlterationUnits": 0,
     "projects.excludedNoUnits": 900,
     "projects.excludedStatutory": 1,
@@ -552,7 +554,7 @@
       "ok": true
     },
     {
-      "detail": "15 projects, 8956 bytes",
+      "detail": "15 projects, 9149 bytes",
       "id": "V20",
       "ok": true
     },

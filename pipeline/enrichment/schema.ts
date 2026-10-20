@@ -27,7 +27,23 @@ export interface MultiphasePhase {
   status: 'remaining' | 'built' | 'separate';
   /** required when status = 'separate' */
   separateRef?: { dataset: string; id: string; key?: string };
-  facts: { units: Fact; blklots: Fact; plannedPermitFiled?: Fact };
+  /** the phase's planned prevailing stories from the DA document, if it gives one (tier 1) */
+  stories?: number;
+  facts: { units: Fact; blklots: Fact; plannedPermitFiled?: Fact; stories?: Fact };
+}
+
+/**
+ * DA design-for-development heights (large-site massing spec 4.6), each value tier 1 with its
+ * `Fact`. A height given in feet is converted with `storiesFromFt` (tier 3), noted in the locator.
+ */
+export interface MultiphaseHeights {
+  /** prevailing residential stories */
+  stories?: number;
+  /** tallest permitted stories */
+  maxStories?: number;
+  /** share of the site's land in parks and open space, 0..0.9 */
+  openSpaceShare?: number;
+  facts: { stories?: Fact; maxStories?: Fact; openSpaceShare?: Fact };
 }
 
 export interface MultiphaseEntry {
@@ -41,6 +57,8 @@ export interface MultiphaseEntry {
   searched: { url: string; retrieved: IsoDate }[];
   /** empty when schedule is null */
   phases: MultiphasePhase[];
+  /** allowed whether or not schedule is null */
+  heights?: MultiphaseHeights;
 }
 
 export interface MultiphaseFile {
@@ -64,6 +82,35 @@ const url = z.url({ protocol: /^https?$/ });
 const text = z.string().min(1);
 
 const fact = z.strictObject({ url, retrieved: isoDate, locator: text });
+/** Stories bounds, as T3's `stories`. */
+const stories = z.number().int().min(1).max(80);
+
+/** Adds an issue for each value in `keys` given without its fact. */
+function factsFor(
+  v: Record<string, unknown>,
+  facts: Record<string, unknown>,
+  keys: readonly string[],
+  ctx: z.RefinementCtx
+): void {
+  for (const k of keys) {
+    if (v[k] !== undefined && facts[k] === undefined) {
+      ctx.addIssue({ code: 'custom', path: ['facts', k], message: `a fact is required for ${k}` });
+    }
+  }
+}
+
+const heights = z
+  .strictObject({
+    stories: stories.optional(),
+    maxStories: stories.optional(),
+    openSpaceShare: z.number().min(0).max(0.9).optional(),
+    facts: z.strictObject({
+      stories: fact.optional(),
+      maxStories: fact.optional(),
+      openSpaceShare: fact.optional()
+    })
+  })
+  .superRefine((h, ctx) => factsFor(h, h.facts, ['stories', 'maxStories', 'openSpaceShare'], ctx));
 
 const phase = z
   .strictObject({
@@ -73,13 +120,16 @@ const phase = z
     plannedPermitFiled: isoDate.nullable(),
     status: z.enum(['remaining', 'built', 'separate']),
     separateRef: z.strictObject({ dataset: text, id: text, key: text.optional() }).optional(),
+    stories: stories.optional(),
     facts: z.strictObject({
       units: fact,
       blklots: fact,
-      plannedPermitFiled: fact.optional()
+      plannedPermitFiled: fact.optional(),
+      stories: fact.optional()
     })
   })
   .superRefine((p, ctx) => {
+    factsFor(p, p.facts, ['stories'], ctx);
     if (p.status === 'separate' && p.separateRef === undefined) {
       ctx.addIssue({
         code: 'custom',
@@ -102,7 +152,8 @@ const entry = z
     label: text,
     schedule: z.strictObject({ label: text, url, retrieved: isoDate }).nullable(),
     searched: z.array(z.strictObject({ url, retrieved: isoDate })),
-    phases: z.array(phase)
+    phases: z.array(phase),
+    heights: heights.optional()
   })
   .superRefine((e, ctx) => {
     if (e.schedule === null && e.searched.length === 0) {

@@ -149,6 +149,13 @@ describe('MultiphaseFileSchema', () => {
     ]);
     expect(f.projects[1].schedule).toBeNull();
     expect(f.projects[1].searched).toHaveLength(1);
+    // Fixture Shipyard carries DA heights and Phase B a curated height.
+    expect(f.projects[0].heights).toMatchObject({
+      stories: 8,
+      maxStories: 12,
+      openSpaceShare: 0.2
+    });
+    expect(f.projects[0].phases.map((p) => p.stories)).toEqual([undefined, 6, undefined]);
   });
 
   it('accepts the committed live file', () => {
@@ -210,6 +217,68 @@ describe('MultiphaseFileSchema', () => {
   });
 });
 
+describe('MultiphaseFileSchema: heights', () => {
+  type Json = Record<string, unknown>;
+  const heights = (over: Json = {}): Json => ({
+    stories: 8,
+    maxStories: 24,
+    openSpaceShare: 0.3,
+    facts: { stories: FACT, maxStories: FACT, openSpaceShare: FACT },
+    ...over
+  });
+
+  it('accepts heights with facts, on a scheduled entry and on one with schedule null', () => {
+    const j = miniJson();
+    j.projects[0].heights = heights();
+    j.projects[1].heights = { stories: 5, facts: { stories: FACT } };
+    const phases = j.projects[0].phases as Json[];
+    phases[0].stories = 6;
+    (phases[0].facts as Json).stories = FACT;
+    const f = parseMultiphase(j);
+    expect(f.projects[0].heights).toEqual(heights());
+    expect(f.projects[1].heights).toEqual({ stories: 5, facts: { stories: FACT } });
+    expect(f.projects[0].phases[0].stories).toBe(6);
+    expect(f.projects[0].phases[0].facts.stories).toEqual(FACT);
+    j.projects[0].heights = heights({ openSpaceShare: 0, stories: 1, maxStories: 80 });
+    expect(() => parseMultiphase(j)).not.toThrow();
+    j.projects[0].heights = heights({ openSpaceShare: 0.9 });
+    expect(() => parseMultiphase(j)).not.toThrow();
+  });
+
+  it('rejects heights without a fact, stories 0 or 81, and openSpaceShare 0.95', () => {
+    const bad = (h: Json): void => {
+      const j = miniJson();
+      j.projects[0].heights = h;
+      expect(() => parseMultiphase(j), JSON.stringify(h)).toThrow(MultiphaseFormatError);
+    };
+    bad(heights({ facts: { maxStories: FACT, openSpaceShare: FACT } }));
+    bad(heights({ facts: { stories: FACT, maxStories: FACT } }));
+    bad({ maxStories: 24, facts: {} });
+    bad({ stories: 8 });
+    bad(heights({ stories: 0 }));
+    bad(heights({ stories: 81 }));
+    bad(heights({ maxStories: 81 }));
+    bad(heights({ stories: 5.5 }));
+    bad(heights({ openSpaceShare: 0.95 }));
+    bad(heights({ openSpaceShare: -0.1 }));
+    bad(heights({ extra: 1 }));
+  });
+
+  it('rejects phase stories without a fact, or out of 1..80', () => {
+    for (const [stories, withFact] of [
+      [6, false],
+      [0, true],
+      [81, true]
+    ] as const) {
+      const j = miniJson();
+      const ph = (j.projects[0].phases as Json[])[0];
+      ph.stories = stories;
+      if (withFact) (ph.facts as Json).stories = FACT;
+      expect(() => parseMultiphase(j), `${stories}`).toThrow(MultiphaseFormatError);
+    }
+  });
+});
+
 describe('checkMultiphaseFile', () => {
   const asOf = d('2026-10-16');
   const prx = [
@@ -243,6 +312,12 @@ describe('checkMultiphaseFile', () => {
     const g = mini();
     g.projects[0].phases[0].facts.blklots.retrieved = '2026-11-01';
     expect(checkMultiphaseFile(g, prx, asOf)).toHaveLength(1);
+    const h = mini();
+    h.projects[0].heights!.facts.maxStories = { ...FACT, retrieved: '2026-11-01' };
+    expect(checkMultiphaseFile(h, prx, asOf)).toEqual([
+      'multiphase.json projects[0] (2007.0001PRX).heights.facts.maxStories: retrieved ' +
+        '2026-11-01 is after asOf'
+    ]);
   });
 });
 
@@ -274,19 +349,30 @@ describe('buildPhases: enriched', () => {
     );
     expect(out.mode).toBe('enriched');
     expect(out.phases).toEqual([
-      { units: 120, parcelIds: ['3512014'], plannedPermitFiled: null, source: M9_SOURCE },
+      {
+        units: 120,
+        parcelIds: ['3512014'],
+        plannedPermitFiled: null,
+        source: M9_SOURCE,
+        stories: null,
+        storiesTier: null
+      },
       {
         units: 180,
         parcelIds: ['3512002'],
         plannedPermitFiled: d('2027-03-01'),
-        source: M9_SOURCE
+        source: M9_SOURCE,
+        stories: 6,
+        storiesTier: 1
       }
     ]);
     expect(Object.keys(out.phases![0])).toEqual([
       'units',
       'parcelIds',
       'plannedPermitFiled',
-      'source'
+      'source',
+      'stories',
+      'storiesTier'
     ]);
     expect(out.scale).toBe(1);
     expect(out.merged).toBe(0);
@@ -495,6 +581,96 @@ describe('buildPhases: enriched', () => {
   });
 });
 
+describe('buildPhases: phase stories', () => {
+  const st = (stories: number | undefined, units: number, blklots: string[]): MultiphasePhase =>
+    phase({
+      units,
+      blklots,
+      ...(stories === undefined
+        ? {}
+        : { stories, facts: { units: FACT, blklots: FACT, stories: FACT } })
+    });
+
+  it('enriched phases carry curated stories with tier 1, and null without', () => {
+    const out = buildPhases(
+      ctx({
+        master: row({ caseNo: 'X', prx: true, newUnits: 300 }),
+        entry: entry([st(8, 100, ['a']), st(undefined, 200, ['b'])])
+      })
+    );
+    expect(out.mode).toBe('enriched');
+    expect(out.phases!.map((p) => [p.units, p.stories, p.storiesTier])).toEqual([
+      [100, 8, 1],
+      [200, null, null]
+    ]);
+  });
+
+  it('merged phases with differing stories carry null; agreeing ones keep them', () => {
+    const differ = buildPhases(
+      ctx({
+        master: row({ caseNo: 'X', prx: true, newUnits: 300 }),
+        entry: entry([st(8, 100, ['a']), st(12, 150, ['b']), st(6, 50, ['x'])]),
+        excluded: new Set(['x'])
+      })
+    );
+    expect(differ.merged).toBe(1);
+    expect(differ.phases!.map((p) => [p.units, p.stories, p.storiesTier])).toEqual([
+      [100, 8, 1],
+      [200, null, null]
+    ]);
+    const agree = buildPhases(
+      ctx({
+        master: row({ caseNo: 'X', prx: true, newUnits: 300 }),
+        entry: entry([st(8, 100, ['a']), st(12, 150, ['b']), st(12, 50, ['x'])]),
+        excluded: new Set(['x'])
+      })
+    );
+    expect(agree.phases!.map((p) => [p.units, p.stories, p.storiesTier])).toEqual([
+      [100, 8, 1],
+      [200, 12, 1]
+    ]);
+    const unknown = buildPhases(
+      ctx({
+        master: row({ caseNo: 'X', prx: true, newUnits: 300 }),
+        entry: entry([st(8, 100, ['a']), st(12, 150, ['b']), st(undefined, 50, ['x'])]),
+        excluded: new Set(['x'])
+      })
+    );
+    expect(unknown.phases![1].stories).toBeNull();
+  });
+
+  it('the single tracking-parcel phase keeps stories only when every phase agrees', () => {
+    const one = (a: number | undefined, b: number | undefined) =>
+      buildPhases(
+        ctx({
+          master: row({ caseNo: 'X', prx: true, newUnits: 300, blklot: 't' }),
+          entry: entry([st(a, 100, ['x']), st(b, 200, ['y'])]),
+          excluded: new Set(['x', 'y']),
+          trackingParcels: ['t']
+        })
+      ).phases!;
+    expect(one(9, 9).map((p) => [p.stories, p.storiesTier])).toEqual([[9, 1]]);
+    expect(one(9, 10).map((p) => [p.stories, p.storiesTier])).toEqual([[null, null]]);
+  });
+
+  it('fallback phases carry null', () => {
+    const out = buildPhases(
+      ctx({
+        master: row({ caseNo: 'X', prx: true, newUnits: 100 }),
+        entry: null,
+        daParcels: ['a', 'b'],
+        projectU: { u: 50, n: 1 }
+      })
+    );
+    expect(out.mode).toBe('fallback');
+    expect(out.phases!.length).toBeGreaterThan(0);
+    for (const p of out.phases!) {
+      expect(p.stories).toBeNull();
+      expect(p.storiesTier).toBeNull();
+    }
+  });
+});
+
 describe('buildPhases: fallback and last resort', () => {
   it('M14: project median u 40, P 1 gives one phase of 100 on the lone parcel', () => {
     const f = mini();
@@ -511,7 +687,14 @@ describe('buildPhases: fallback and last resort', () => {
     );
     expect(out.mode).toBe('fallback');
     expect(out.phases).toEqual([
-      { units: 100, parcelIds: ['3512009'], plannedPermitFiled: null, source: null }
+      {
+        units: 100,
+        parcelIds: ['3512009'],
+        plannedPermitFiled: null,
+        source: null,
+        stories: null,
+        storiesTier: null
+      }
     ]);
     expect(out.scale).toBeNull();
     expect(out.merged).toBe(0);
@@ -868,8 +1051,22 @@ describe('deriveProjects: DA netting (pr.multiphase.da-netting) and DQ-3 score-o
     expect(t3(r, H)).toBeUndefined();
     // With H in flight, D keeps only lot 006 (H takes lot 009); with H out, D splits 009 and 006.
     expect(t3(r, D)!.phases).toEqual([
-      { units: 50, parcelIds: ['3512009'], plannedPermitFiled: null, source: null },
-      { units: 50, parcelIds: ['3512006'], plannedPermitFiled: null, source: null }
+      {
+        units: 50,
+        parcelIds: ['3512009'],
+        plannedPermitFiled: null,
+        source: null,
+        stories: null,
+        storiesTier: null
+      },
+      {
+        units: 50,
+        parcelIds: ['3512006'],
+        plannedPermitFiled: null,
+        source: null,
+        stories: null,
+        storiesTier: null
+      }
     ]);
     expect(t3(r, D)!.parcelIds).toEqual(['3512006', '3512009']);
     expect(checkV24(r.checks)).toMatchObject({ id: 'V24', ok: true });

@@ -37,7 +37,7 @@ export const PARCELS: ReadonlySet<ParcelId> = new Set([
   '3512009'
 ]);
 
-function permitRow(o: {
+export function permitRow(o: {
   number: string;
   type?: string;
   lot: string;

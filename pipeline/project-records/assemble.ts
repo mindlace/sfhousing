@@ -17,7 +17,7 @@ import type {
   Provenance,
   Stage
 } from '../../src/lib/timelapse/types';
-import type { MultiphaseFile } from '../enrichment/schema';
+import type { MultiphaseEntry, MultiphaseFile } from '../enrichment/schema';
 import { qualityRule } from '../lib/quality';
 import { PR } from '../lib/quality-rules/pr';
 import { isNewConstructionPermit } from './classify';
@@ -178,11 +178,33 @@ function orderPhase(p: Phase): Phase {
     source:
       p.source === null
         ? null
-        : { label: p.source.label, url: p.source.url, retrieved: p.source.retrieved }
+        : { label: p.source.label, url: p.source.url, retrieved: p.source.retrieved },
+    stories: p.stories ?? null,
+    storiesTier: p.storiesTier ?? null
   };
 }
 
-/** T3 declaration order. */
+type DaHeights = NonNullable<InFlightProject['daHeights']>;
+
+function orderDaHeights(h: DaHeights): DaHeights {
+  return { stories: h.stories, maxStories: h.maxStories, openSpaceShare: h.openSpaceShare };
+}
+
+/**
+ * A master's T3 `daHeights` from its `multiphase.json` entry (large-site massing spec 4.6): each
+ * curated value, else null; null when the entry has no `heights`.
+ */
+export function daHeightsOf(entry: MultiphaseEntry | null): DaHeights | null {
+  const h = entry?.heights;
+  if (h === undefined) return null;
+  return {
+    stories: h.stories ?? null,
+    maxStories: h.maxStories ?? null,
+    openSpaceShare: h.openSpaceShare ?? null
+  };
+}
+
+/** T3 declaration order; `daHeights` only when present (masters). */
 export function orderProject(p: InFlightProject): InFlightProject {
   return {
     id: p.id,
@@ -197,6 +219,9 @@ export function orderProject(p: InFlightProject): InFlightProject {
     storiesTier: p.storiesTier,
     multiPhase: p.multiPhase,
     phases: p.phases === null ? null : p.phases.map(orderPhase),
+    ...(p.daHeights === undefined
+      ? {}
+      : { daHeights: p.daHeights === null ? null : orderDaHeights(p.daHeights) }),
     sources: p.sources.map(orderSource),
     quality: [...p.quality]
   };
@@ -218,7 +243,9 @@ function orderProvenance(p: Provenance): Provenance {
   return out;
 }
 
+/** T3 file order; `districtMaxStories` only when present. */
 export function orderProjectsFile(f: ProjectsFile): ProjectsFile {
+  const dm = f.districtMaxStories;
   return {
     schema: f.schema,
     asOf: f.asOf,
@@ -227,6 +254,15 @@ export function orderProjectsFile(f: ProjectsFile): ProjectsFile {
       since: f.rhnaCompletedNet.since,
       provenance: orderProvenance(f.rhnaCompletedNet.provenance)
     },
+    ...(dm === undefined
+      ? {}
+      : {
+          districtMaxStories: {
+            stories: dm.stories,
+            n: dm.n,
+            provenance: orderProvenance(dm.provenance)
+          }
+        }),
     qualityRules: f.qualityRules.map(orderQualityRule),
     projects: f.projects.map(orderProject)
   };
@@ -388,6 +424,8 @@ export interface MasterOut {
   parcelIds: ParcelId[];
   /** DQ-3: a last resort with no free DA parcel. */
   scoreOnly: boolean;
+  /** The entry's curated heights (`daHeightsOf`). */
+  daHeights: NonNullable<InFlightProject['daHeights']> | null;
 }
 
 /** A master's DA parcels and tracking parcels (spec 4.10.2), and its project phase size. */
@@ -524,9 +562,10 @@ export function phaseMasters(o: {
       if (other.proj !== proj) for (const id of other.da.trackingParcels) mine.add(id);
     }
 
+    const entry = entries.get(caseNo) ?? null;
     const r = buildPhases({
       master,
-      entry: entries.get(caseNo) ?? null,
+      entry,
       masterEntitled: entitled,
       units,
       daParcels: da.daParcels,
@@ -555,7 +594,12 @@ export function phaseMasters(o: {
       counts[`multiphase.scale.${caseNo}`] = r.scale;
       scales[caseNo] = r.scale;
     }
-    byId.set(proj.id, { phases: r.phases, parcelIds: r.parcelIds, scoreOnly: r.scoreOnly });
+    byId.set(proj.id, {
+      phases: r.phases,
+      parcelIds: r.parcelIds,
+      scoreOnly: r.scoreOnly,
+      daHeights: daHeightsOf(entry)
+    });
     for (const id of r.parcelIds) excluded.add(id);
   }
   return { byId, problems, lastResort, scales };

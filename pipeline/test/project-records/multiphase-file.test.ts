@@ -78,6 +78,8 @@ describe('pipeline/enrichment/multiphase.json (curated)', () => {
       for (const ph of e.phases) {
         for (const fact of Object.values(ph.facts)) if (fact) dates.push(fact.retrieved);
       }
+      for (const fact of Object.values(e.heights?.facts ?? {}))
+        if (fact) dates.push(fact.retrieved);
     }
     expect(dates.length).toBeGreaterThan(0);
     expect(dates.filter((d) => d > CURATED_BY)).toEqual([]);

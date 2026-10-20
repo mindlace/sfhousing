@@ -35,8 +35,15 @@ interface RowInFlightProject {
         parcelIds: ParcelId[];
         plannedPermitFiled: Day | null;
         source: { label: string; url: string; retrieved: string } | null;
+        stories?: number | null;
+        storiesTier?: 1 | null;
       }[]
     | null;
+  daHeights?: {
+    stories: number | null;
+    maxStories: number | null;
+    openSpaceShare: number | null;
+  } | null;
   sources: { dataset: string; id: string; key?: string }[];
   quality: string[];
 }
@@ -50,6 +57,7 @@ type RowProjectsFile = {
   schema: 1;
   asOf: Day;
   rhnaCompletedNet: { units: number; since: Day; provenance: Provenance };
+  districtMaxStories?: { stories: number; n: number; provenance: Provenance };
   qualityRules: RowQualityRuleRef[];
   projects: RowInFlightProject[];
 };
@@ -228,6 +236,47 @@ describe('parseProjectsFile accepts', () => {
         source: { label: 'DA', url: 'https://example.org/da', retrieved: '2026-01-01' }
       }
     ];
+    expect(parseProjectsFile(f)).toBe(f);
+  });
+
+  it('files without the new height fields, and with them', () => {
+    const f = validFile();
+    expect(parseProjectsFile(f)).toBe(f);
+    f.districtMaxStories = {
+      stories: 20,
+      n: 10,
+      provenance: {
+        tier: 2,
+        label: 'District default height',
+        sources: [{ label: 'Pipeline', url: 'https://example.org/p' }],
+        method: 'nearest-rank p90',
+        n: 10
+      }
+    };
+    f.projects[2].daHeights = { stories: 8, maxStories: 24, openSpaceShare: 0.9 };
+    f.projects[2].phases = [
+      {
+        units: 100,
+        parcelIds: ['0003001'],
+        plannedPermitFiled: null,
+        source: null,
+        stories: 8,
+        storiesTier: 1
+      },
+      {
+        units: 50,
+        parcelIds: [],
+        plannedPermitFiled: null,
+        source: null,
+        stories: null,
+        storiesTier: null
+      }
+    ];
+    f.projects[1].daHeights = null;
+    expect(parseProjectsFile(f)).toBe(f);
+    f.projects[2].daHeights = { stories: null, maxStories: null, openSpaceShare: 0 };
+    expect(parseProjectsFile(f)).toBe(f);
+    f.projects[2].daHeights = null;
     expect(parseProjectsFile(f)).toBe(f);
   });
 
@@ -523,6 +572,132 @@ const cases: Case[] = [
         }
       ]),
     'projects[2].phases[0].source.retrieved'
+  ],
+  [
+    'phase stories 0',
+    (f) =>
+      (f.projects[2].phases = [
+        {
+          units: 1,
+          parcelIds: [],
+          plannedPermitFiled: null,
+          source: null,
+          stories: 0,
+          storiesTier: 1
+        }
+      ]),
+    'projects[2].phases[0].stories'
+  ],
+  [
+    'phase stories 81',
+    (f) =>
+      (f.projects[2].phases = [
+        {
+          units: 1,
+          parcelIds: [],
+          plannedPermitFiled: null,
+          source: null,
+          stories: 81,
+          storiesTier: 1
+        }
+      ]),
+    'projects[2].phases[0].stories'
+  ],
+  [
+    'phase stories fractional',
+    (f) =>
+      (f.projects[2].phases = [
+        {
+          units: 1,
+          parcelIds: [],
+          plannedPermitFiled: null,
+          source: null,
+          stories: 5.5,
+          storiesTier: 1
+        }
+      ]),
+    'projects[2].phases[0].stories'
+  ],
+  [
+    'phase stories with tier 0',
+    (f) =>
+      (f.projects[2].phases = [
+        {
+          units: 1,
+          parcelIds: [],
+          plannedPermitFiled: null,
+          source: null,
+          stories: 5,
+          storiesTier: 0
+        }
+      ]),
+    'projects[2].phases[0].storiesTier'
+  ],
+  [
+    'phase storiesTier without stories',
+    (f) =>
+      (f.projects[2].phases = [
+        {
+          units: 1,
+          parcelIds: [],
+          plannedPermitFiled: null,
+          source: null,
+          stories: null,
+          storiesTier: 1
+        }
+      ]),
+    'projects[2].phases[0].storiesTier'
+  ],
+  ['daHeights not an object', (f) => (f.projects[2].daHeights = 5), 'projects[2].daHeights'],
+  [
+    'daHeights stories 0',
+    (f) => (f.projects[2].daHeights = { stories: 0, maxStories: null, openSpaceShare: null }),
+    'projects[2].daHeights.stories'
+  ],
+  [
+    'daHeights maxStories 81',
+    (f) => (f.projects[2].daHeights = { stories: null, maxStories: 81, openSpaceShare: null }),
+    'projects[2].daHeights.maxStories'
+  ],
+  [
+    'daHeights openSpaceShare 0.95',
+    (f) => (f.projects[2].daHeights = { stories: null, maxStories: null, openSpaceShare: 0.95 }),
+    'projects[2].daHeights.openSpaceShare'
+  ],
+  [
+    'daHeights openSpaceShare negative',
+    (f) => (f.projects[2].daHeights = { stories: null, maxStories: null, openSpaceShare: -0.1 }),
+    'projects[2].daHeights.openSpaceShare'
+  ],
+  [
+    'daHeights on non-multiPhase',
+    (f) => (f.projects[0].daHeights = { stories: 5, maxStories: null, openSpaceShare: null }),
+    `${P}.daHeights`
+  ],
+  [
+    'districtMaxStories stories 0',
+    (f) =>
+      (f.districtMaxStories = {
+        stories: 0,
+        n: 1,
+        provenance: f.rhnaCompletedNet.provenance
+      }),
+    'districtMaxStories.stories'
+  ],
+  [
+    'districtMaxStories n 0',
+    (f) =>
+      (f.districtMaxStories = {
+        stories: 5,
+        n: 0,
+        provenance: f.rhnaCompletedNet.provenance
+      }),
+    'districtMaxStories.n'
+  ],
+  [
+    'districtMaxStories provenance missing',
+    (f) => (f.districtMaxStories = { stories: 5, n: 1 }),
+    'districtMaxStories.provenance'
   ],
   ['sources empty', (f) => (f.projects[0].sources = []), `${P}.sources`],
   ['sources not array', (f) => (f.projects[0].sources = null), `${P}.sources`],
