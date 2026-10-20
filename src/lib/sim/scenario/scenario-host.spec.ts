@@ -1212,6 +1212,44 @@ describe('scenario host: parcelSummary', () => {
     expect(summaryAt(h, id, day, other.projectId)).toEqual(expected(other));
   });
 
+  describe('a master without phases (large-site massing §4.7)', () => {
+    /** The summary of the unphased master on its first parcel, a year after it is visible. */
+    async function unphasedSummary(deps?: Partial<ScenarioHostDeps>) {
+      const h = harness(N, { deps });
+      h.init({ seed: SEED });
+      prefetch(h, WORLD);
+      await h.runAll();
+      const { fzp } = inputs();
+      const run = actual.simulateDetailed(fzp, SEED, H);
+      const s = run.schedules.find((x) => x.projectId === P.unphased)!;
+      expect(s.multiPhase && s.phase === null).toBe(true);
+      const first = Math.min(...Object.values(s.entered));
+      const day = Math.max(first, MINI_AS_OF) + 1;
+      const summary = summaryAt(h, s.parcelIds[0], day, P.unphased)!;
+      expect(summary.project?.projectId).toBe(P.unphased);
+      return { summary, s, day, ctx: cardCtx(fzp, run) };
+    }
+
+    it('a massed master without phases gets generated', async () => {
+      const { summary, s, day, ctx } = await unphasedSummary();
+      const m = ctx.building(s, revisionAt(s, day));
+      expect('parts' in m).toBe(true);
+      if (!('parts' in m)) return;
+      expect(summary.generated).toEqual({
+        typology: m.typology,
+        stories: m.stories,
+        units: m.units
+      });
+      expect(summary.project!.massing).not.toBe('none');
+    });
+
+    it('a footprint fallback from a null generator gets no generated', async () => {
+      const { summary } = await unphasedSummary({ generateForUnits: () => null });
+      expect(summary.generated).toBeNull();
+      expect(summary.project!.massing).toBe('none');
+    });
+  });
+
   it('has no project before any is visible, and a null envelope where T11 has none', async () => {
     const h = harness();
     h.init({ seed: SEED });
