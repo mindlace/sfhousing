@@ -1,4 +1,5 @@
 export { generate } from './generate';
+export { generateDistrict } from './district';
 export { fnv1a32 } from './seed';
 export { selectTypology } from './select';
 export { massTypology } from './massing';

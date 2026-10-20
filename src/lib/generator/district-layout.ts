@@ -120,11 +120,14 @@ function pieces(polygon: [number, number][][]): Poly[] {
 export function mayBeDistrict(polygon: [number, number][][]): boolean {
   let bound = 0;
   for (const ring of polygon) {
-    if (!Array.isArray(ring) || ring.length < 3) continue;
-    const [ox, oy] = ring[0];
-    for (let a = 1; a + 1 < ring.length; a++) {
-      const p = ring[a];
-      const q = ring[a + 1];
+    if (!Array.isArray(ring)) continue;
+    // the vertices `toPaths` keeps, so malformed input is bounded rather than thrown on
+    const r = ring.filter((pt) => Array.isArray(pt) && Number.isFinite(pt[0] + pt[1]));
+    if (r.length < 3) continue;
+    const [ox, oy] = r[0];
+    for (let a = 1; a + 1 < r.length; a++) {
+      const p = r[a];
+      const q = r[a + 1];
       bound += Math.abs((p[0] - ox) * (q[1] - oy) - (q[0] - ox) * (p[1] - oy)) / 2;
     }
   }

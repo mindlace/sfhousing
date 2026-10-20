@@ -22,8 +22,9 @@ export function unitsTolerance(units: number): number {
   return Math.max(1, Math.round(0.1 * units));
 }
 
-/** The unit count the building's own massing supports. */
+/** The unit count the building's own massing supports; a district sums over its lots. */
 export function massedUnits(b: GeneratedBuilding): number {
+  if (b.lots) return b.lots.reduce((s, l) => s + unitsFor(l.typology, l.floorAreaM2), 0);
   return unitsFor(b.typology, b.floorAreaM2);
 }
 
