@@ -47,7 +47,7 @@ The global constraints of the FZP timelapse design apply verbatim (pipeline-mass
 
 - **Determinism.** District output is a pure function of its inputs, transcendental-free (AC4), and independent of input order.
 - **Dataset hash.** `src/lib/generator` is already in the dataset-version hash (T11). Districting a large parcel changes its T11 `yield` and `baseYield`, and with them the T4a `potentialRatio` feature. This change therefore produces a new `datasetVersion`, and stage-calibration refits on the new features. That is expected, not a regression.
-- **Paint numbers change for large parcels.** Streets and open space take land, so a painted large parcel holds fewer units than today's single slab. This is intended (§8 Q1).
+- **Paint numbers change for large parcels.** Streets and open space take land, so a painted large parcel holds fewer units than today's single slab. Partner ruling, 2026-10-19: intended. Land used for things other than buildings is subtracted.
 
 ## 4. Behaviour
 
@@ -111,23 +111,26 @@ Each lot is massed by today's per-lot code, so all typologies, compositions, tow
 - Lot-level massing ignores `existingUnits` and `existingFloorAreaM2`, which are passed as 0, because a large parcel's existing building cannot be attributed to individual lots.
 - The ADU path never applies to a district.
 
-**Pipeline and phases (`generateForUnits`).** For target `U`, story bound and seed:
+**Pipeline and phases (`generateForUnits`).** Partner ruling, 2026-10-19: building after building, until the units are used up.
 
-1. **Choose the story count `S_d`.**
-   - **Stated `stories`:** `S_d = stories` (tier 0 wins).
-   - **Otherwise:** `S_d = defaultStories` (§4.5). If the full district at `S_d` holds fewer than `U` units, raise `S_d` one story at a time until it holds `U` or reaches `Smax`. It is never lowered below `defaultStories`.
-2. **Fill.**
-   - Walk lots in fill order. Mass each with `generate`'s reference massing at `S_d`, as in the paint case, and accumulate capacity.
-   - Stop at the first lot `ℓ*` where the running capacity reaches `U`.
-   - Re-mass `ℓ*` with `generateForUnits(lot, U − capacityBefore, Smax, mix(seed, ℓ*), S_d)`, so the total lands on `U`.
-   - Lots after `ℓ*` are left unbuilt.
-3. **Undershoot.** If even `Smax` cannot hold `U`, every lot is massed at `Smax`, and the result is approximate as in today's case 3.
+1. **Story count for each lot, `S_ℓ`.** The first rule that applies wins:
+   - **Stated `stories` (tier 0):** every lot gets `S_ℓ = stories`.
+   - **Curated DA height (tier 1, §4.6):** every lot gets `S_ℓ = ` the phase's curated stories, or else the master's.
+   - **Otherwise (no evidence):** `S_ℓ` is a seeded uniform integer in `[DISTRICT_MIN_STORIES, L]`, drawn from `mix(seed, ℓ)`. `DISTRICT_MIN_STORIES = 3` (partner ruling). `L` is the story limit (below).
+2. **Fill.** Walk the lots in fill order, massing each at `S_ℓ` with the reference massing `generate` uses (as in the paint case), and keep a running unit count.
+   - Stop at the first lot `ℓ*` whose capacity reaches the remaining units.
+   - Mass `ℓ*` with `generateForUnits(lot, remaining, L, mix(seed, ℓ*), S_ℓ*)`. Its footprint scales down, so the total lands on `U`.
+   - Lots after `ℓ*` stay unbuilt, even if that leaves most of the site empty (partner ruling).
+3. **Lots run out before the units do (my call).** Walk the lots again in fill order, raising each one to `L` (or to the stated stories, which are never changed), until `U` is reached. If every lot at `L` still cannot hold `U`, the result is approximate, as in today's case 3. `units` is still `U`.
 
-**Capacity during the story search (my call).** Step 1 does not mass every lot at every candidate `S`.
+**Story limit `L`.** Partner ruling: "3 to the zoned story limit". The caller passes `opts.storyLimit`, and the generator itself never reads zoning. timelapse-sim sets it in this order:
 
-- Capacity at `S` is estimated per lot from the lot's area and `rulesFor(selectTypology(S, A_lot, 0))`: coverage × area × floors × `EFFICIENCY` ÷ unit size, with the tower plate cap.
-- Only lots that are actually drawn are massed exactly. The step-2 fill uses exact per-lot capacity, so the counted result still lands on `U`.
-- The estimate decides only which story count is tried first. It never decides the final unit count.
+1. The largest T11 `envelope.maxStories` among the schedule's parcels that have an envelope. This is the zoned limit.
+2. If no parcel has one (the `HP`, `CP`, `MB-RA` and similar height codes read as "none", `heights.ts:42-55`), the master's curated `heights.maxStories` (§4.6, tier 1).
+3. Otherwise `districtMaxStories` from `projects.json` (tier 2): the 90th percentile of tier-0 stated stories over in-flight and completed records with at least `DISTRICT_DEFAULT_MIN_UNITS` units, computed by project-records with its `n` and provenance.
+4. If `opts.storyLimit` is absent (another caller), `DISTRICT_FALLBACK_LIMIT` (tier 4).
+
+`L` is at least `DISTRICT_MIN_STORIES` and at most `MAX_STORIES`.
 
 The lots left unbuilt are deliberate. In a phase whose units do not fill its land, the empty lots stand in for the parks, R&D, retail and schools that DA sites contain and this model does not mass (non-goal). This replaces today's behaviour of thinning one huge building down until it fits.
 
@@ -139,44 +142,41 @@ A district returns **one** `GeneratedBuilding` per site, so every consumer keeps
 - `typology`: the typology holding the most floor area across lots, ties to the later typology in I10 order. It is the district's headline typology (card, `parcelMeta`).
 - **Per-part colour.** Each part gains an optional `lot?: number`, an index into `lots`. `pack-timed.ts` already writes one typology byte per part (`partTypology`), so it writes `lots[part.lot].typology` when `lot` is present, and each lot is coloured by its own typology. The paint map's packer (`pack.ts`) does the same if it has a per-part typology. If it does not, it uses the headline typology, and the builder records which applies.
 - `composition`: the dominant lot's composition.
-- `stories`: `S_d` for `generateForUnits`. For `generate`, the maximum across lots.
+- `stories`: the tallest built lot's stories.
 - `units`: `U` for `generateForUnits`. For `generate`, the sum across lots.
 - `floorAreaM2`: the sum across lots.
-- **New optional field** `lots?: { typology: TypologyId; floorAreaM2: number }[]`, present only on district results.
+- **New optional field** `lots?: { typology: TypologyId; stories: number; floorAreaM2: number }[]`, present only on district results and listing built lots only.
   - `massedUnits(b)` sums `unitsFor` over `lots` when the field is present, so `massingApproximate` stays correct when a district mixes typologies (65 m² against 70 m² unit sizes).
   - This is an additive I9 change. Consumers that ignore it are unaffected.
 
-### 4.5 Default stories when stories are unknown
+### 4.5 Stories on ordinary sites, options and card tier
 
-- **Non-district sites:** unchanged. The fewest stories that fit (pipeline-massing §4.4). My call: on ordinary lots this rule rarely looks wrong, and changing it would move every golden and P1. §8 Q3 asks the partner to confirm.
-- **District sites:** `generateForUnits` gains an optional last argument, `opts?: { defaultStories?: number; openSpaceShare?: number }`. T10 is amended to match. `defaultStories` is chosen in this order:
-  1. the phase's curated stories (§4.6, tier 1);
-  2. the master's curated stories (§4.6, tier 1);
-  3. `districtDefaultStories` from `projects.json` (tier 2): the median stated stories of in-flight and completed records with at least `DISTRICT_DEFAULT_MIN_UNITS` units and a tier-0 stories value. It is computed by project-records and carried with its `n` and provenance.
-  4. If `opts` is absent (another caller), `generateForUnits` falls back to `DISTRICT_FALLBACK_STORIES` (tier 4, labelled).
-- **Who gets which default (my call).** Every pipeline schedule massed on a district site receives `defaultStories`, not only phases and masters. timelapse-sim reads `districtDefaultStories` from `projects.json` into `SimInput`, passes it through `MassingCtx`, and adds `defaultStories` and `openSpaceShare` to `pipeKey`. Phases and masters substitute their curated values when they have them.
-- **Curated heights on non-district sites are ignored.** This follows from §4.5's first bullet. Curation therefore prioritises entries whose drawn sites are 2 ha or more. If Q3 changes the rule for ordinary lots, this point is revisited.
+- **Non-district sites:** unchanged, the fewest stories that fit (pipeline-massing §4.4; partner confirmed 2026-10-19). Curated heights are not applied on ordinary sites, so curation prioritises entries whose drawn sites are 2 ha or more.
+- **`generateForUnits` options (amends T10).** A new optional last argument, `opts?: { storyLimit?: number; curatedStories?: number; openSpaceShare?: number }`. All of it is ignored on non-district sites.
+  - timelapse-sim passes `opts` for every pipeline schedule massed on a district site, not only phases and masters.
+  - It reads `districtMaxStories` from `projects.json` into `SimInput`, carries the T11 envelope through `MassingCtx`, and adds every `opts` field to `pipeKey`.
 - **Card tier (amends T6).** `storiesTier` gains `1`.
-  - A district whose `S_d` equals the curated DA height reports `1`.
-  - If the units forced `S_d` above the curated height, or the default came from `districtDefaultStories` or the fallback, it reports `4`, the existing "from the simulator's massing" tier.
+  - A district built entirely at the curated DA height reports `1`.
+  - A district with drawn heights (the no-evidence rule), or whose lots were raised under step 3, reports `4`, the existing "from the simulator's massing" tier.
+  - The card's `stories` is the district's `stories`, its tallest lot.
 
 ### 4.6 Heights and open space in `multiphase.json`
 
 The schema (`pipeline/enrichment/schema.ts`) gains:
 
-- **On `MultiphaseEntry`:** optional `heights: { stories: number; openSpaceShare?: number; facts: { stories: Fact; openSpaceShare?: Fact } }`. This is the prevailing residential height and the share of land in parks and open space from the DA's design-for-development document. It is allowed whether or not `schedule` is null, so masters without phases can carry it.
+- **On `MultiphaseEntry`:** optional `heights: { stories?: number; maxStories?: number; openSpaceShare?: number; facts: { stories?: Fact; maxStories?: Fact; openSpaceShare?: Fact } }`. These are the prevailing residential height, the tallest permitted height, and the share of land in parks and open space from the DA's design-for-development document. It is allowed whether or not `schedule` is null, so masters without phases can carry it.
 - **On `MultiphasePhase`:** optional `stories?: number` with `facts.stories`, when the DA document gives a height for that phase.
 - `stories` is an integer in 1..80. Where a document gives a height in feet, it is converted with `storiesFromFt` (tier 3, the existing rule) and the conversion is recorded in the fact's `locator`.
 - project-records carries both values through to T3:
   - `phases[].stories: number | null` and `phases[].storiesTier: 1 | null`;
-  - on the master, `daHeights: { stories: number; openSpaceShare: number | null } | null`.
-- The engine passes the phase's stories (else the master's) as `defaultStories`, not as `stories`. It is a planned prevailing height, not a stated count for that building, so a phase whose units need more height still rises (§4.3 step 1).
+  - on the master, `daHeights: { stories: number | null; maxStories: number | null; openSpaceShare: number | null } | null`.
+- The engine passes the phase's stories (else the master's) as `opts.curatedStories`, not as `stories`. It is a planned prevailing height, not a stated count for that building, so a phase whose units need more height still rises (§4.3 step 3).
 
-**Data to curate (builder task):** the entries with the largest drawn area first: CP/HPS Phase 2, HPS Phase 1, Treasure Island, Mission Rock, Parkmerced, Pier 70, Potrero Power Station, India Basin, Balboa Reservoir, Stonestown, Schlage Lock, then the rest. Each value needs a `Fact` (URL, retrieved date, locator). An entry the builder cannot source keeps no `heights` and falls through to the tier-2 default.
+**Data to curate (builder task):** the entries with the largest drawn area first: CP/HPS Phase 2, HPS Phase 1, Treasure Island, Mission Rock, Parkmerced, Pier 70, Potrero Power Station, India Basin, Balboa Reservoir, Stonestown, Schlage Lock, then the rest. Each value needs a `Fact` (URL, retrieved date, locator). An entry the builder cannot source keeps no `heights` and falls through to the drawn-height rule (§4.3).
 
 ### 4.7 Masters without phases
 
-- `massingFor`'s early return for `multiPhase && phase === null` (`src/lib/sim/scenario/massing.ts:132`) is removed. A master without phases is massed like a pipeline project: one `generateForUnits` call on its free DA parcels (`parcelIds`) with its remaining units `R`, plus `defaultStories` and `openSpaceShare` from its `daHeights` when present.
+- `massingFor`'s early return for `multiPhase && phase === null` (`src/lib/sim/scenario/massing.ts:132`) is removed. A master without phases is massed like a pipeline project: one `generateForUnits` call on its free DA parcels (`parcelIds`) with its remaining units `R`, plus `opts` (§4.5): `curatedStories`, `openSpaceShare` and the `storyLimit` fallback from its `daHeights` when present.
 - On most of these sites the result is a district (§4.1).
 - A score-only master (no free parcel, DQ-3) still has no geometry.
 - The 1 m footprint entry remains, but only as the fallback for a `null` or throwing generator.
@@ -194,8 +194,9 @@ The schema (`pipeline/enrichment/schema.ts`) gains:
 | `LOT_MIN_M2` | 400 | 4 | the smallest lot `selectTypology` gives a podium (`select.ts`) |
 | `BLOCK_MIN_M2` | 1,000 | 4 | made up |
 | `OPEN_SPACE_SHARE` | 0.15 | 4 | default when there is no curated DA figure |
-| `DISTRICT_DEFAULT_MIN_UNITS` | 100 | 4 | made up |
-| `DISTRICT_FALLBACK_STORIES` | 6 | 4 | used only when no tier-1 or tier-2 default reaches the call |
+| `DISTRICT_DEFAULT_MIN_UNITS` | 100 | 4 | made up; the record filter for `districtMaxStories` |
+| `DISTRICT_MIN_STORIES` | 3 | partner ruling | lower bound of the drawn heights |
+| `DISTRICT_FALLBACK_LIMIT` | 8 | 4 | used only when a caller passes no `storyLimit` |
 
 Source for the tier-2 rows: dataset `2026-10-19-547e741b`, with parcels grouped by assessor block. The 2,847 near-rectangular blocks (more than 85% of their minimum rotated rectangle filled) have a median length of 167 m (p25 125, p75 182) and a median width of 73 m (p25 61, p75 80), net of streets. The script is in the session scratchpad; the builder re-derives the figures in a pipeline-test note.
 
@@ -216,7 +217,9 @@ Source for the tier-2 rows: dataset `2026-10-19-547e741b`, with parcels grouped 
   - determinism and input-order independence;
   - transcendental-free (`determinism.spec.ts` covers the new file).
 - **District goldens:**
-  - a 40 ha synthetic site with `U` 3,454 and no stories: `stories ≥ defaultStories`, `units === U`, not approximate, more than one block built;
+  - a 40 ha synthetic site with `U` 3,454 and no stories: every built lot's stories in `[3, L]`, `units === U`, not approximate, more than one block built, and the same output for the same seed;
+  - the same site with `curatedStories` 8: every built lot is at 8 stories;
+  - the same site with `U` larger than `L` can hold: lots raised to `L`, approximate, `units === U`;
   - the same site with `U` 300 leaves lots unbuilt;
   - the same site under paint at S 8: every non-open-space lot is built.
 - **Property:** for districts, `massedUnits` (lot-summed) is within tolerance of `U` whenever the full district at `Smax` holds `U`; every part lies inside the site; parts of different lots never overlap.
@@ -224,7 +227,7 @@ Source for the tier-2 rows: dataset `2026-10-19-547e741b`, with parcels grouped 
   - One district call on a 50 ha site costs ≤ 50 ms p99 in Node.
   - The worst real case, the Shipyard phase (265 ha, about 1,000 lots), costs ≤ 250 ms.
   - Massings are memoised across seeds (`pipeKey`), so a reroll pays this at most once per revision. The 3 s reroll budget holds. The paint brush over the largest real parcel stays inside the map perf bar (`bench:map`).
-- **Pipeline:** the schema accepts and rejects the new fields; `districtDefaultStories` is computed on the mini fixture; T3 validation of `phases[].stories` and `daHeights`.
+- **Pipeline:** the schema accepts and rejects the new fields; `districtMaxStories` is computed on the mini fixture; T3 validation of `phases[].stories` and `daHeights`.
 - **Sim:** a master without phases with free parcels yields a building, not a footprint; a score-only master still yields none.
 
 ## 7. Acceptance criteria
@@ -236,10 +239,12 @@ Source for the tier-2 rows: dataset `2026-10-19-547e741b`, with parcels grouped 
 5. Every curated height carries a `Fact`. Every new constant carries a tier label in its doc comment.
 6. The perf budgets in §6 hold. `bench:map` passes its p95 bar.
 
-## 8. Open questions for the partner
+## 8. Partner rulings (2026-10-19)
 
-- Q1. Paint and T11 yields for large parcels drop, because streets and open space take land. Accept this?
-- Q2. In `/fzp`, lots a phase's units don't need are left unbuilt (§4.3). The alternative is spreading the units thinly over every lot, which gives lower buildings but no empty land. Which reads better?
-  - Measured densities: the Shipyard phase is 3,454 units on 265 ha (13 units/ha), CP North is 33 units/ha, and TI Major Phase 4 is 35 units/ha.
-  - At about 6 stories, these phases would build only a few blocks and leave most of their land empty. Real plans do leave a lot of that land to parks and R&D.
-- Q3. Keep the fewest-stories rule for ordinary lots (§4.5)?
+- **Heights without evidence.** Use the §4.2 layout heuristic. In `/fzp`, draw building after building, each at a height chosen between 3 and the zoned story limit, until the units are used up, then stop, even if lots stay empty (§4.3). In paint, add units at the story limit the user set (§4.3).
+- **Land used for things other than buildings** (streets, open space) is subtracted from paint and yield capacity (§3).
+- **Ordinary lots** keep the fewest-stories rule (§4.5).
+- **My calls**, within those rulings:
+  - the story limit `L` when zoning gives none (§4.3);
+  - raising lots to `L` when the lots run out (§4.3 step 3);
+  - curated DA heights count as evidence, so all lots use them (§4.3 step 1).
