@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.4.0](https://github.com/mindlace/sfhousing/compare/v0.3.0...v0.4.0) (2026-10-20)
+
+
+### Features
+
+* **data:** clip lots to land so underwater area is not buildable ([#32](https://github.com/mindlace/sfhousing/issues/32)) ([62701d5](https://github.com/mindlace/sfhousing/commit/62701d52fca0e01e1cb1775e2c72c2d24f84b12f))
+* **fzp:** FZP timelapse — simulated pipeline under the Family Zoning Plan ([#25](https://github.com/mindlace/sfhousing/issues/25)) ([436da5b](https://github.com/mindlace/sfhousing/commit/436da5b327c4b77b6217dcd495b6a1458cc9f19a))
+* **fzp:** run the timelapse to 2066 and open it paused ([#28](https://github.com/mindlace/sfhousing/issues/28)) ([fb04815](https://github.com/mindlace/sfhousing/commit/fb04815400a34ba9db1bdf3069ad3b80c7dc03c6))
+* **map:** draw transit stops flat beneath the roads ([#18](https://github.com/mindlace/sfhousing/issues/18)) ([1aadc2e](https://github.com/mindlace/sfhousing/commit/1aadc2e9934375f91f4488dae1cc4ff2bee6b773))
+* render large sites as districts (streets, blocks, open space, lots) ([#29](https://github.com/mindlace/sfhousing/issues/29)) ([ca80161](https://github.com/mindlace/sfhousing/commit/ca80161246435ae7f442eb6158c0272ac14cc762))
+
+
+### Bug Fixes
+
+* **map:** close packed rings so every generated building has all its walls ([#21](https://github.com/mindlace/sfhousing/issues/21)) ([d0a9eb4](https://github.com/mindlace/sfhousing/commit/d0a9eb425927885ee948c1033f1d76f658565a91))
+* **map:** resync deck's viewport once its async attach completes ([#23](https://github.com/mindlace/sfhousing/issues/23)) ([0fbef45](https://github.com/mindlace/sfhousing/commit/0fbef45f1ce3799510f468f36b5fdfeb7d360e4d))
+
 ## [0.3.0](https://github.com/mindlace/sfhousing/compare/v0.2.0...v0.3.0) (2026-10-17)
 
 
