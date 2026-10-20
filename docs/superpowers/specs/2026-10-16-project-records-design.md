@@ -533,7 +533,7 @@ Remaining fixture settings:
 
 ### 4.10 Multi-phase phasing enrichment (round 3)
 
-Each PRX master is entitled once. Its phases are separate permitting sub-projects, each simulated from `permitFiled` onwards by timelapse-sim. This spec supplies T3 `phases`; the master itself never draws as a building.
+Each PRX master is entitled once. Its phases are separate permitting sub-projects, each simulated from `permitFiled` onwards by timelapse-sim. This spec supplies T3 `phases`; the master itself never draws as a building when it has phases (a master without phases is massed since 2026-10-19: §4.10.4).
 
 #### 4.10.1 `pipeline/enrichment/multiphase.json`
 
@@ -626,6 +626,16 @@ A phase that is already built, or in flight as its own record, must not be count
 - **Curated phases.** Phases whose block-lots or ids match a completed history, an in-flight project, or another pipeline row with the same `da` must carry status `built` or `separate`. The build checks this: any `remaining` phase whose resolved parcels all belong to another in-flight or completed project fails V24.
 - **Rendering.** Phase parcels, and a last-resort master's parcels, are disjoint from other in-flight projects (V24), so no parcel draws twice.
 - **Mismatched DAs.** Treasure Island (745 vs 495), Balboa Reservoir (438 vs 279) and HPS I (628 vs 599) do not reconcile in Planning's own numbers. R is still the control total, and the gap shows only as the scale factor.
+
+#### 4.10.4 DA heights and `districtMaxStories` (amended 2026-10-19)
+
+Added by [large-site massing](2026-10-19-large-site-massing-design.md) §4.3 and §4.6. These fields feed district massing only: timelapse-sim passes them to `generateForUnits` as `opts` (T10), and the generator ignores them on sites under 2 ha.
+
+- **`multiphase.json`.** An entry may carry `heights: { stories?, maxStories?, openSpaceShare?, facts: { stories?, maxStories?, openSpaceShare? } }`, with or without a schedule, so a master without phases can carry it. A phase may carry `stories` with `facts.stories`. Stories are integers 1..80; a height given in feet is converted with `storiesFromFt` (tier 3) and the locator says so. `openSpaceShare` is in [0, 0.9]. Every value needs its `Fact` (zod `superRefine` in `pipeline/enrichment/schema.ts`). All are tier 1, cited from the project's own design-for-development document; curation rules are in `docs/dev/pipeline.md` (Multi-phase enrichment).
+- **T3 master.** `daHeights: { stories: number | null; maxStories: number | null; openSpaceShare: number | null } | null`, null (or absent) when the entry has no `heights`, and only on `multiPhase` records.
+- **T3 phases.** `phases[].stories: number | null` and `phases[].storiesTier: 1 | null` (1 exactly when `stories` is set). A fallback phase (§4.10.2 step 2) has null. A merged phase keeps a height only when every phase merged into it gives the same one.
+- **`districtMaxStories`** (file level, `ProjectsFile.districtMaxStories?: { stories, n, provenance }`, tier 2): the nearest-rank 90th percentile of tier-0 `stories` over in-flight and completed records with at least `DISTRICT_DEFAULT_MIN_UNITS` (100) units, each record counted once. It is omitted when no record qualifies. The report carries `projects.districtMaxStories` (-1 when omitted) and `projects.districtMaxStories.n`. timelapse-sim uses it as the third rung of the story limit `L` (large-site massing §4.3).
+- The master still never draws as a building when it has phases. A master without phases is now massed on its free DA parcels (large-site massing §4.7), so the opening of §4.10 ("the master itself never draws as a building") applies only to masters with phases.
 
 ### 4.11 Data quality (T14)
 
