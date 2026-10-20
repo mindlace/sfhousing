@@ -672,7 +672,6 @@
         bind:day
         bind:playing
         bind:speed
-        autoplay={phase === 'ready'}
         {markers}
         onday={onDay}
         onheight={(px) => {

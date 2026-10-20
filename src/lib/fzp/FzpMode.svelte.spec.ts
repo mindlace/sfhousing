@@ -124,7 +124,7 @@ let realMatchMedia: typeof matchMedia;
 beforeEach(async () => {
   stub.reset();
   await page.viewport(1024, 768);
-  // Reduced motion: no autoplay, so the day only moves when a test moves it.
+  // Reduced motion.
   realMatchMedia = window.matchMedia;
   vi.stubGlobal('matchMedia', (q: string) =>
     q.includes('prefers-reduced-motion')

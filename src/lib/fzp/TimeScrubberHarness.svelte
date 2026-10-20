@@ -9,34 +9,21 @@
     asOf: Day;
     horizon: Day;
     markers?: Marker[];
-    autoplay?: boolean;
     startDay?: Day;
     startPlaying?: boolean;
     onday?: (day: Day) => void;
     raf?: (cb: FrameRequestCallback) => number;
     cancelRaf?: (h: number) => void;
-    reducedMotion?: () => boolean;
     onheight?: (px: number) => void;
   }
-  let {
-    asOf,
-    horizon,
-    markers = [],
-    autoplay: autoplayStart = false,
-    startDay,
-    startPlaying = false,
-    ...rest
-  }: Props = $props();
+  let { asOf, horizon, markers = [], startDay, startPlaying = false, ...rest }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   let day = $state<Day>(startDay ?? asOf);
   // svelte-ignore state_referenced_locally
   let playing = $state(startPlaying);
   let speed = $state<Speed>(DEFAULT_SPEED);
-  // svelte-ignore state_referenced_locally
-  let autoplay = $state(autoplayStart);
 </script>
 
-<TimeScrubber {asOf} {horizon} {markers} bind:day bind:playing bind:speed {autoplay} {...rest} />
-<button type="button" data-testid="autoplay-flip" onclick={() => (autoplay = !autoplay)}>AP</button>
+<TimeScrubber {asOf} {horizon} {markers} bind:day bind:playing bind:speed {...rest} />
 <output data-testid="state">{day}|{playing}|{speed}</output>

@@ -1,7 +1,6 @@
 // /fzp e2e (fzp-mode spec §6). Runs against the VITE_E2E build, which exposes window.__sfhFzp
 // (src/lib/fzp/debug.ts) and window.__sfhMap. Fixture-0 files are read from disk; counts, ids and
-// labels are derived from them, never hard-coded. Autoplay is on by default, so every test that
-// needs a stable day emulates reduced motion first.
+// labels are derived from them, never hard-coded. Playback starts paused.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { SOURCE_DATASETS } from '../src/lib/fzp/card';
@@ -105,7 +104,7 @@ async function waitForMapOnly(page: Page): Promise<void> {
   await page.waitForFunction(() => !!(window as Win).__sfhMap?.map);
 }
 
-/** `/fzp` at a stable day (reduced motion stops autoplay), ready. */
+/** `/fzp` at a stable day (the page opens paused), ready. */
 async function gotoFzp(page: Page, search = ''): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(`/fzp${search}`);
@@ -231,20 +230,18 @@ test('loads ready and the keyboard drives the scrubber to both ends', async ({ p
   );
 });
 
-// ---- reduced motion -----------------------------------------------------------------------------
+// ---- playback start -----------------------------------------------------------------------------
 
-test('reduced motion keeps the day at asOf; without it the day advances', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/fzp');
-  await waitReady(page);
-  await page.waitForTimeout(2_000);
-  expect(await fzp(page, 'day')).toBe(await fzp(page, 'asOf'));
-  expect(await fzp(page, 'playing')).toBe(false);
-
+test('the day stays at asOf until Play is pressed', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.goto('/fzp');
   await waitReady(page);
+  await page.waitForTimeout(2_000);
   const asOf = await fzp(page, 'asOf');
+  expect(await fzp(page, 'day')).toBe(asOf);
+  expect(await fzp(page, 'playing')).toBe(false);
+
+  await page.getByRole('button', { name: 'Play' }).click();
   await expect.poll(() => fzp(page, 'day'), { timeout: 5_000 }).toBeGreaterThan(asOf);
 });
 

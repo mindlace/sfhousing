@@ -1,6 +1,6 @@
 // timelapse-sim spec §6, deferred to the page: what the worker fetches, how fast the first timeline
 // arrives, and that a reroll changes the future but not the band. Runs against the VITE_E2E build
-// (window.__sfhFzp, src/lib/fzp/debug.ts). Autoplay is stopped with reduced motion.
+// (window.__sfhFzp, src/lib/fzp/debug.ts).
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';

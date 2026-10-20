@@ -17,12 +17,12 @@ Keys with Alt, Ctrl or Meta are left to the browser. Every handled key, a drag o
 
 - **Speeds** (`playback.ts`, a tier 4 UI choice): "1 month/s", "1 year/s" (default), "3 years/s", as days of simulated time per second of wall time (`MONTH_DAYS`, `12 x MONTH_DAYS`, `36 x MONTH_DAYS`).
 - **Frame step:** only while `playing`, through `requestAnimationFrame`: `t += min(dt, 100 ms) x daysPerSecond`, `day = min(floor(t), horizon)`. The 100 ms clamp stops a background tab from making the clock jump. If something else moves the day mid-play, the clock continues from there.
-- **Autoplay:** the first time `autoplay` is true (FzpMode passes `phase === 'ready'`) playback starts, unless `prefers-reduced-motion: reduce` matches. The latch is not reactive, so it fires once per mount. Under reduced motion the page waits on Play; scrubbing and a pressed Play still work.
+- **No autoplay:** Playback never starts on its own: the page opens paused at `asOf` and waits on Play.
 - **`onday`:** called exactly once per day change (`setDay` compares with the current day first). FzpMode's `onDay` does O(1) work: `handle.setTime(day)`, and a card refresh only when the month changed.
 - **Opening the sources dialog pauses** (`onopen` sets `playing = false`). Opening a card does not.
 - The readout is not a live region (it changes every frame). The scoreboard's own live region speaks only when playback is paused, 1000 ms after the day settles.
 
-Tests that need a stable day call `page.emulateMedia({ reducedMotion: 'reduce' })` before navigating. Without it the day advances at 1 year per second from the moment the page is ready.
+Tests that need a stable day call `page.emulateMedia({ reducedMotion: 'reduce' })` before navigating.
 
 ## Layout variables
 
