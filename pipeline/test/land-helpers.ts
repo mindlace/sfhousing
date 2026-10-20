@@ -11,13 +11,15 @@ export interface LandInput {
   /** One feature per entry: `rect` is its polygon, `tile` the z15 tile it was read from. */
   land: { layer: LandLayer; tile: Rect; rect: Rect }[];
   buildings?: Rect[];
+  /** Tiles that were read and hold no land feature (all water), besides those of `land`. */
+  waterTiles?: Rect[];
 }
 
 const SQL_DIR = path.resolve(import.meta.dirname, '../sql');
 
 /**
  * A database holding just what 45_land.sql reads (parcels as 10_parcels.sql writes them, with labels
- * from sfh_label; buildings; src_land; report_counts; the quality tables), after 05_macros.sql and
+ * from sfh_label; buildings; src_land and src_land_tiles; report_counts; the quality tables), after 05_macros.sql and
  * 45_land.sql have run. O is snapped to the 1 cm grid of the land features (ST_ReducePrecision), so
  * a rect edge and a land edge at the same local coordinate coincide.
  */
@@ -69,20 +71,30 @@ export async function landDb(o: LandInput): Promise<Duck> {
     `CREATE TABLE src_land(layer VARCHAR, z INTEGER, x INTEGER, y INTEGER, fid INTEGER,
        w DOUBLE, s DOUBLE, e DOUBLE, n DOUBLE, geojson VARCHAR)`
   );
+  await db.run(
+    `CREATE TABLE src_land_tiles(z INTEGER, x INTEGER, y INTEGER, w DOUBLE, s DOUBLE, e DOUBLE,
+       n DOUBLE)`
+  );
   // Tile bounds: the lon of the midpoints of the tile's west and east edges, the lat of the
   // midpoints of its south and north edges. A real tile's edges are a meridian and a parallel, a
   // little skewed against the 7131 grid; through the midpoints the skew is half that of the
   // rect's 4326 bounding box (which overshoots a 100 m tile edge by about 2 cm).
   const mid = (x: number, y: number) =>
     `ST_Transform(ST_Point(${ox + x}, ${oy + y}), 'EPSG:7131', 'EPSG:4326', always_xy := true)`;
-  for (const [i, f] of o.land.entries()) {
-    const [x0, y0, x1, y1] = f.tile;
+  const bounds = ([x0, y0, x1, y1]: Rect) => {
     const [cx, cy] = [(x0 + x1) / 2, (y0 + y1) / 2];
+    return `ST_X(${mid(x0, cy)}), ST_Y(${mid(cx, y0)}), ST_X(${mid(x1, cy)}), ST_Y(${mid(cx, y1)})`;
+  };
+  for (const [i, f] of o.land.entries()) {
     await db.run(
       `INSERT INTO src_land
-       SELECT '${f.layer}', 15, ${i}, ${i}, 0, ST_X(${mid(x0, cy)}), ST_Y(${mid(cx, y0)}),
-              ST_X(${mid(x1, cy)}), ST_Y(${mid(cx, y1)}), ST_AsGeoJSON(${to4326(f.rect)})`
+       SELECT '${f.layer}', 15, ${i}, ${i}, 0, ${bounds(f.tile)}, ST_AsGeoJSON(${to4326(f.rect)})`
     );
+    await db.run(`INSERT INTO src_land_tiles SELECT 15, ${i}, ${i}, ${bounds(f.tile)}`);
+  }
+  // Water-only tiles take x = y = 1000 + index, clear of the land features' tile indices.
+  for (const [i, t] of (o.waterTiles ?? []).entries()) {
+    await db.run(`INSERT INTO src_land_tiles SELECT 15, ${1000 + i}, ${1000 + i}, ${bounds(t)}`);
   }
 
   await runSqlFile(db, path.join(SQL_DIR, '45_land.sql'));

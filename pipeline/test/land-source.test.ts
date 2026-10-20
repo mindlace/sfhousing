@@ -67,5 +67,9 @@ describe('land source', () => {
     );
     expect(rows.map((r) => r.x)).toEqual([5240, 5241]);
     expect((await db.all('SELECT * FROM src_land WHERE z <> 15')).length).toBe(0);
+    const tiles = await db.all<{ x: number }>(
+      'SELECT DISTINCT x FROM src_land_tiles WHERE z = 15 ORDER BY x'
+    );
+    expect(tiles.map((r) => r.x)).toEqual([5240, 5241]);
   });
 });

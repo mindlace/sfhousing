@@ -86,13 +86,28 @@ const COLUMNS: [string, string][] = [
   ['geojson', 'VARCHAR']
 ];
 
+/** One row per z15 tile read, with or without land features: the extent the mask speaks for. */
+const TILE_COLUMNS: [string, string][] = [
+  ['z', 'INTEGER'],
+  ['x', 'INTEGER'],
+  ['y', 'INTEGER'],
+  ['w', 'DOUBLE'],
+  ['s', 'DOUBLE'],
+  ['e', 'DOUBLE'],
+  ['n', 'DOUBLE']
+];
+
+/** The parquet of `src_land_tiles` written beside the `src_land` parquet. */
+export const tilesParquet = (landParquet: string) =>
+  landParquet.replace(/\.parquet$/, '-tiles.parquet');
+
 const tileX = (lonDeg: number) => Math.floor(((lonDeg + 180) / 360) * 2 ** LAND_Z);
 const tileY = (latDeg: number) => {
   const r = (latDeg * Math.PI) / 180;
   return Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * 2 ** LAND_Z);
 };
 
-/** Decode the basemap's land features at z15 over its header bounds into `src_land` + parquet. */
+/** Decode the basemap's land features at z15 over its header bounds into `src_land` and `src_land_tiles` + parquets. */
 export async function normaliseLand(
   db: Duck,
   pmtilesPath: string,
@@ -105,10 +120,12 @@ export async function normaliseLand(
   const y0 = tileY(h.maxLat);
   const y1 = tileY(h.minLat);
   const rows: CellValue[][] = [];
+  const tiles: CellValue[][] = [];
   for (let x = x0; x <= x1; x++) {
     for (let y = y0; y <= y1; y++) {
       const t = await pm.getZxy(LAND_Z, x, y);
       if (!t) continue;
+      tiles.push([LAND_Z, x, y, ...tileBounds(LAND_Z, x, y)]);
       const tile = new VectorTile(new Pbf(new Uint8Array(t.data)));
       for (const f of landFeaturesFromTile(tile, LAND_Z, x, y)) {
         rows.push([f.layer, f.z, f.x, f.y, f.fid, f.w, f.s, f.e, f.n, f.geojson]);
@@ -116,10 +133,14 @@ export async function normaliseLand(
     }
   }
   await createTableFromRows(db, 'src_land', COLUMNS, rows);
+  await createTableFromRows(db, 'src_land_tiles', TILE_COLUMNS, tiles);
   fs.mkdirSync(path.dirname(outParquet), { recursive: true });
   const out = outParquet.replaceAll("'", "''");
   await db.run(
     `COPY (SELECT * FROM src_land ORDER BY layer, z, x, y, fid) TO '${out}' (FORMAT parquet)`
+  );
+  await db.run(
+    `COPY (SELECT * FROM src_land_tiles ORDER BY z, x, y) TO '${tilesParquet(outParquet).replaceAll("'", "''")}' (FORMAT parquet)`
   );
   return rows.length;
 }

@@ -1,4 +1,4 @@
--- 45_land: clip every lot to dry land (docs/dev/pipeline.md "Land mask"). Reads src_land, parcels,
+-- 45_land: clip every lot to dry land (docs/dev/pipeline.md "Land mask"). Reads src_land, src_land_tiles, parcels,
 -- buildings. Writes land_mask, parcel_land, parcels (rebuilt, plus geom_orig and underwater),
 -- land.* counts and the sd.parcels.land-clip / sd.parcels.underwater quality tallies.
 -- Land = OSM earth ∪ OSM pier polygons (src_land, z15) ∪ existing buildings. A lot that loses less
@@ -169,13 +169,14 @@ ORDER BY p.rowid;
 CREATE OR REPLACE TABLE parcels AS SELECT * FROM l_parcels;
 ALTER TABLE parcels ADD PRIMARY KEY (id);
 
--- Lots not wholly inside the union of the present z15 tiles (the mask cannot speak for them).
+-- Lots not wholly inside the union of the z15 tiles read, with or without land features (the mask
+-- cannot speak for the rest).
 CREATE OR REPLACE TEMP TABLE l_tiles AS
 SELECT ST_Union_Agg(
          ST_Transform(ST_MakeEnvelope(w, s, e, n), 'EPSG:4326', 'EPSG:7131', always_xy := true)
          ORDER BY x, y
        ) AS geom
-FROM (SELECT DISTINCT x, y, w, s, e, n FROM src_land WHERE z = 15);
+FROM (SELECT DISTINCT x, y, w, s, e, n FROM src_land_tiles WHERE z = 15);
 
 INSERT INTO report_counts
 SELECT 'land.tiles', count(*) FROM (SELECT DISTINCT x, y FROM src_land WHERE z = 15);

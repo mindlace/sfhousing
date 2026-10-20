@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { Duck } from '../lib/duck';
 import { rawPath, type Lock } from '../lib/lock';
 import { DATASF, type DatasfId } from './datasf';
-import { normaliseLand } from './land';
+import { normaliseLand, tilesParquet } from './land';
 
 export type SourceId =
   | 'datasf-parcels'
@@ -263,6 +263,11 @@ export async function loadNormalised(db: Duck, normDir: string): Promise<void> {
   for (const id of SOURCE_IDS) {
     const file = path.join(normDir, `${id}.parquet`);
     await db.run(`CREATE OR REPLACE TABLE ${TABLES[id]} AS SELECT * FROM read_parquet(${q(file)})`);
+    if (id === 'protomaps-basemap') {
+      await db.run(
+        `CREATE OR REPLACE TABLE src_land_tiles AS SELECT * FROM read_parquet(${q(tilesParquet(file))})`
+      );
+    }
   }
 }
 

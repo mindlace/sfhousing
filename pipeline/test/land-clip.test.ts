@@ -170,6 +170,14 @@ describe('45_land', () => {
     expect(c['land.outside_tiles']).toBe(1);
   });
 
+  it('does not count a lot inside an all-water tile that was read as outside', async () => {
+    const db = await one([300, 0, 320, 20], { waterTiles: [[200, -50, 400, 100]] });
+    const c = await landCounts(db);
+    expect(c['land.outside_tiles']).toBe(0);
+    expect(c['land.tiles']).toBe(1);
+    expect((await lot(db)).status).toBe('underwater');
+  });
+
   it('reports every land count', async () => {
     const db = await landDb({
       lots: [
