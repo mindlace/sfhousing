@@ -8,7 +8,14 @@ import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { monthStart } from '../src/lib/fzp/time';
 import { formatCount } from '../src/lib/scoreboard/format';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { FRAME, jumpAndIdle, projectToPage, type LngLat, type Win } from './helpers/sharing';
+import {
+  FRAME,
+  gotoHydrated,
+  jumpAndIdle,
+  projectToPage,
+  type LngLat,
+  type Win
+} from './helpers/sharing';
 
 type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 
@@ -551,7 +558,7 @@ test('a dataset without scenarios shows the message and starts no worker', async
     delete manifest.scenarios;
     await route.fulfill({ response, json: manifest });
   });
-  await page.goto('/about');
+  await gotoHydrated(page, '/about');
   await headerLink(page, 'Timelapse').click();
   await expect(page).toHaveURL(/\/fzp$/);
 
@@ -568,7 +575,7 @@ test('a calibration that fails to load shows the failure with Retry, and passes 
 }) => {
   // As above: a client navigation, so the browser fetches the calibration and the route can fail it.
   await page.route('**/scenarios/fzp/calibration.json', (route) => route.fulfill({ status: 500 }));
-  await page.goto('/about');
+  await gotoHydrated(page, '/about');
   await headerLink(page, 'Timelapse').click();
   await expect(page).toHaveURL(/\/fzp$/);
   await expect(page.getByTestId('fzp-status')).toHaveText("The simulation couldn't load.");
