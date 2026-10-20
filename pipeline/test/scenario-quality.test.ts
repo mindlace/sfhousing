@@ -23,6 +23,7 @@ import {
   qualityRule,
   writeQualityReport
 } from '../lib/quality';
+import { scenarioEligible } from '../lib/scenario-eligibility';
 import { Report } from '../lib/report';
 import { runSql } from '../lib/sql';
 import { readParcelRecords } from '../steps/chunks';
@@ -1717,6 +1718,13 @@ describe('the hostable_base year pairs across a missing roll year', () => {
       prev: s.scenarioCounts['scenario.panel.hostable_base.2025.both_prev'],
       cur: s.scenarioCounts['scenario.panel.hostable_base.2025.both']
     }).toEqual(pair);
+  });
+});
+
+describe('scenarioEligible', () => {
+  it('never admits an underwater lot, even a NONE one with roll units', () => {
+    expect(scenarioEligible({ eligible: false, landUse: 'NONE', underwater: true }, 5)).toBe(false);
+    expect(scenarioEligible({ eligible: false, landUse: 'NONE' }, 5)).toBe(true);
   });
 });
 

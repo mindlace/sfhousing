@@ -27,6 +27,7 @@ interface Row {
   height_m: number;
   land_use: string;
   eligible: boolean;
+  underwater: boolean;
   neighborhood: string;
   xmin: number;
   ymin: number;
@@ -52,7 +53,7 @@ interface ParcelRow {
 async function readParcelRows(db: Duck): Promise<ParcelRow[]> {
   const rows = await db.all<Row>(
     `SELECT id, label_lng, label_lat, x0, y0, units, floor_area_m2, height_m, land_use,
-            eligible, neighborhood, xmin, ymin, xmax, ymax, geojson7131
+            eligible, underwater, neighborhood, xmin, ymin, xmax, ymax, geojson7131
      FROM parcel_out ORDER BY id`
   );
   return rows.map((r) => {
@@ -67,7 +68,8 @@ async function readParcelRows(db: Duck): Promise<ParcelRow[]> {
       existingHeightM: r.height_m,
       landUse: r.land_use,
       eligible: r.eligible,
-      neighborhood: r.neighborhood
+      neighborhood: r.neighborhood,
+      ...(r.underwater ? { underwater: true as const } : {})
     };
     return { rec, cellId: cellIdFor(r.x0, r.y0), bbox: [r.xmin, r.ymin, r.xmax, r.ymax] };
   });

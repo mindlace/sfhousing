@@ -156,6 +156,69 @@ describe('parcel chunk codec', () => {
     expect(decodeParcelChunk(c)).toHaveLength(2);
   });
 
+  describe('underwater column', () => {
+    const [a, b] = grid20x20().slice(0, 2);
+    const uwRecs = () => [a, { ...b, eligible: false, underwater: true as const }];
+
+    it('round-trips an underwater record', () => {
+      const out = decodeParcelChunk(encodeParcelChunk('fixture-0', '0_0', uwRecs()));
+      expect(out[1].underwater).toBe(true);
+      expect('underwater' in out[0]).toBe(false);
+      expect(out).toEqual(uwRecs());
+    });
+
+    it('omits uw when no record is underwater', () => {
+      const json = encodeParcelChunk('fixture-0', '0_0', [a, b]);
+      const c = JSON.parse(json);
+      expect(c.uw).toBeUndefined();
+      expect('uw' in c).toBe(false);
+      expect(Object.keys(c)).toEqual([
+        'format',
+        'datasetVersion',
+        'cellId',
+        'count',
+        'dict',
+        'id',
+        'label',
+        'units',
+        'floorArea',
+        'height',
+        'lu',
+        'nh',
+        'elig',
+        'rings',
+        'xy'
+      ]);
+    });
+
+    it('decodes a chunk without uw', () => {
+      const out = decodeParcelChunk(encodeParcelChunk('fixture-0', '0_0', [a, b]));
+      expect(out.some((r) => r.underwater)).toBe(false);
+    });
+
+    const bad = (uw: unknown) => {
+      const c = JSON.parse(encodeParcelChunk('fixture-0', '0_0', uwRecs()));
+      c.uw = uw;
+      if (uw === 'eligible') {
+        c.uw = [1];
+        c.elig = [0, 1];
+      }
+      return c;
+    };
+    for (const [name, uw] of [
+      ['non-increasing', [1, 1]],
+      ['negative', [-1]],
+      ['out of range', [2]],
+      ['non-integer', [0.5]],
+      ['not an array', 1],
+      ['underwater row with elig 1', 'eligible']
+    ] as [string, unknown][]) {
+      it(`rejects a bad uw column: ${name}`, () => {
+        expect(() => decodeParcelChunk(bad(uw))).toThrow(ChunkFormatError);
+      });
+    }
+  });
+
   describe('malformed input throws ChunkFormatError', () => {
     const good = () => JSON.parse(encodeParcelChunk('fixture-0', '0_0', grid20x20().slice(0, 2)));
     const cases: [string, (c: Record<string, unknown>) => unknown][] = [

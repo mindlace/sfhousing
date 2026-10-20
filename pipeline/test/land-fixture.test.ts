@@ -1,10 +1,15 @@
 // The mini fixture's shoreline lots (mini README "Lots" 15–17) through the whole SQL chain:
 // 45_land.sql clips them, 60_attributes.sql and 80_scenario.sql read the result.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { decodeParcelChunk } from '../../src/lib/data/parcel-chunk';
+import { FILL_LEVELS } from '../../src/lib/data/scenario-codec';
 import type { Duck } from '../lib/duck';
 import { createQualityTables } from '../lib/quality';
 import { runSql } from '../lib/sql';
 import { readParcelRecords } from '../steps/chunks';
+import { PARCELS_BIN, readParcelsBin } from '../steps/scenario';
 import { runScenarioSql } from '../steps/scenario-sql';
 import { miniDuck } from './helpers';
 
@@ -107,5 +112,38 @@ describe('shoreline lots in the mini fixture', () => {
       'land.jitter_kept': 1,
       'land.outside_tiles': 3
     });
+  });
+});
+
+describe('shoreline lots in the shipped fixture dataset', () => {
+  const dir = join(__dirname, '../../e2e/fixtures/data/fixture-0');
+  const F = FILL_LEVELS.length;
+
+  it('ships the underwater flag in the chunk', () => {
+    const recs = ['parcels/50_25.json', 'parcels/51_25.json'].flatMap((f) =>
+      decodeParcelChunk(readFileSync(join(dir, f), 'utf8'))
+    );
+    const wet = recs.find((r) => r.id === '3512016')!;
+    const clipped = recs.find((r) => r.id === '3512015')!;
+    expect(wet.underwater).toBe(true);
+    expect(wet.eligible).toBe(false);
+    expect(Math.abs(wet.areaM2 - 600)).toBeLessThanOrEqual(0.5);
+    expect('underwater' in clipped).toBe(false);
+    expect(Math.abs(clipped.areaM2 - 960)).toBeLessThanOrEqual(2);
+    expect(recs.filter((r) => r.underwater).map((r) => r.id)).toEqual(['3512016']);
+  });
+
+  it('gives the underwater lot no yield and keeps its homes', () => {
+    const p = readParcelsBin(join(dir, PARCELS_BIN));
+    const wet = p.index.get('3512016')!;
+    const dry = p.index.get('3512015')!;
+    expect(p.eligible[wet]).toBe(0);
+    expect(p.existingUnits[wet]).toBe(2);
+    for (let k = 0; k < F; k++) {
+      expect(p.yield[wet * F + k]).toBe(0);
+      expect(p.baseYield[wet * F + k]).toBe(0);
+    }
+    expect(p.eligible[dry]).toBe(1);
+    expect(p.yield[dry * F + F - 1]).toBeGreaterThan(0);
   });
 });

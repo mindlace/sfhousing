@@ -1,4 +1,4 @@
-// Shared seam (I1, I6). Owned by data-pipeline. Shapes are fixed by the design's interface table; do not change them.
+// Shared seam (I1, I6). Owned by data-pipeline. Shapes are fixed by the design's interface table; do not change them (extended by the 2026-10-19 underwater-lots spec).
 
 /** SF `mapblklot` (block+lot, e.g. "3512008"), the single join key across all data. */
 export type ParcelId = string;
@@ -16,5 +16,7 @@ export interface ParcelRecord {
   existingHeightM: number;
   landUse: string;
   eligible: boolean;
+  /** Set only when true: the lot lies wholly in the water (kept for its roll homes, never scenario-eligible). */
+  underwater?: true;
   neighborhood: string;
 }
