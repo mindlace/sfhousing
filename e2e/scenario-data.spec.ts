@@ -49,7 +49,7 @@ test('decodes scenario parcels in the browser through the shared codec', async (
     };
   }, PARCELS);
 
-  expect(decoded.count).toBe(14);
+  expect(decoded.count).toBe(17);
   expect(decoded.row).toBeGreaterThanOrEqual(0);
   expect(decoded.envelope).toBe(65);
 });

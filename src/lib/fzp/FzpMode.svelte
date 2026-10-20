@@ -465,6 +465,7 @@
         s && {
           parcelId: s.parcelId,
           eligible: s.eligible,
+          ...(s.underwater ? { underwater: true } : {}),
           existingUnits: s.existingUnits,
           generated: null
         }

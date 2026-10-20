@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
-import type { ParcelRecord } from '../../src/lib/data/parcel';
+import type { ParcelId, ParcelRecord } from '../../src/lib/data/parcel';
 import { encodeParcelChunk, ringsAreaM2 } from '../../src/lib/data/parcel-chunk';
 import type { Duck } from '../lib/duck';
 import type { Report } from '../lib/report';
@@ -27,6 +27,7 @@ interface Row {
   height_m: number;
   land_use: string;
   eligible: boolean;
+  underwater: boolean;
   neighborhood: string;
   xmin: number;
   ymin: number;
@@ -52,7 +53,7 @@ interface ParcelRow {
 async function readParcelRows(db: Duck): Promise<ParcelRow[]> {
   const rows = await db.all<Row>(
     `SELECT id, label_lng, label_lat, x0, y0, units, floor_area_m2, height_m, land_use,
-            eligible, neighborhood, xmin, ymin, xmax, ymax, geojson7131
+            eligible, underwater, neighborhood, xmin, ymin, xmax, ymax, geojson7131
      FROM parcel_out ORDER BY id`
   );
   return rows.map((r) => {
@@ -67,7 +68,8 @@ async function readParcelRows(db: Duck): Promise<ParcelRow[]> {
       existingHeightM: r.height_m,
       landUse: r.land_use,
       eligible: r.eligible,
-      neighborhood: r.neighborhood
+      neighborhood: r.neighborhood,
+      ...(r.underwater ? { underwater: true as const } : {})
     };
     return { rec, cellId: cellIdFor(r.x0, r.y0), bbox: [r.xmin, r.ymin, r.xmax, r.ymax] };
   });
@@ -81,6 +83,32 @@ export async function readParcelRecords(
   db: Duck
 ): Promise<{ rec: ParcelRecord; cellId: string }[]> {
   return (await readParcelRows(db)).map(({ rec, cellId }) => ({ rec, cellId }));
+}
+
+/**
+ * The original outline of every clipped lot (status 'clipped'), in the same local frame as its
+ * chunk record (`x0, y0`), with the share of its area the clip kept (`dry_m2 / orig_m2`).
+ */
+export async function readClippedOriginals(
+  db: Duck
+): Promise<Map<ParcelId, { polygon: [number, number][][]; keptShare: number }>> {
+  const rows = await db.all<{
+    id: string;
+    x0: number;
+    y0: number;
+    geojson7131_orig: string;
+    kept: number;
+  }>(
+    `SELECT o.id, o.x0, o.y0, o.geojson7131_orig, l.dry_m2 / l.orig_m2 AS kept
+     FROM parcel_out o JOIN parcel_land l USING (id)
+     WHERE l.status = 'clipped' AND o.geojson7131_orig IS NOT NULL ORDER BY o.id`
+  );
+  return new Map(
+    rows.map((r) => [
+      String(r.id),
+      { polygon: toLocalRings(JSON.parse(r.geojson7131_orig), r.x0, r.y0), keptShare: r.kept }
+    ])
+  );
 }
 
 export async function writeChunks(

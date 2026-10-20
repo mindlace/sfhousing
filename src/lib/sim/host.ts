@@ -345,6 +345,7 @@ export function createSimHost(deps: SimHostDeps): SimHost {
       ...(op.kind === 'paint' ? { stories: op.stories } : {}),
       covered: coverage.eligible.length,
       ineligible: coverage.ineligible.length,
+      underwater: coverage.underwater.length,
       built,
       notBigger,
       removed,
@@ -405,6 +406,7 @@ export function createSimHost(deps: SimHostDeps): SimHost {
       neighborhood: rec.neighborhood,
       landUse: rec.landUse,
       eligible: rec.eligible,
+      ...(rec.underwater ? { underwater: true as const } : {}),
       existingUnits: rec.existingUnits,
       envelope: envFor(st, parcelId),
       generated: b ? { typology: b.typology, stories: b.stories, units: b.units } : null

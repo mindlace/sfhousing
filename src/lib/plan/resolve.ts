@@ -23,6 +23,8 @@ export interface EnvelopeChange {
 export interface OpCoverage {
   eligible: ParcelId[];
   ineligible: ParcelId[];
+  /** Lots wholly in the Bay: never eligible, counted apart from ineligible land. */
+  underwater: ParcelId[];
 }
 
 function envelope(maxStories: number): Envelope {
@@ -52,11 +54,13 @@ export function applyOp(
 ): { changes: EnvelopeChange[]; coverage: OpCoverage } {
   const eligible: ParcelId[] = [];
   const ineligible: ParcelId[] = [];
+  const underwater: ParcelId[] = [];
   const changes: EnvelopeChange[] = [];
   const value = written(op);
   for (const id of index.covered(op)) {
-    if (!index.get(id)!.eligible) {
-      ineligible.push(id);
+    const rec = index.get(id)!;
+    if (!rec.eligible) {
+      (rec.underwater ? underwater : ineligible).push(id);
       continue;
     }
     eligible.push(id);
@@ -66,7 +70,7 @@ export function applyOp(
     else state.delete(id);
     changes.push({ id, before, after: value ? state.get(id)! : null });
   }
-  return { changes, coverage: { eligible, ineligible } };
+  return { changes, coverage: { eligible, ineligible, underwater } };
 }
 
 export function resolveEnvelopes(plan: Plan, index: ParcelIndex): EnvelopeMap {

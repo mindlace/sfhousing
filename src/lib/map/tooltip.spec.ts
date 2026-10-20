@@ -6,7 +6,7 @@ const P = '3512008';
 const gen = (typology: TypologyId, stories: number, units: number, existingUnits: number) =>
   ({ kind: 'generated', parcelId: P, typology, stories, units, existingUnits }) as TooltipHit;
 const ex = (
-  summary: { eligible: boolean; n: number } | null,
+  summary: { eligible: boolean; n: number; underwater?: boolean } | null,
   chunk: 'ready' | 'loading' | 'error' | 'unknown'
 ) =>
   ({
@@ -16,6 +16,7 @@ const ex = (
     summary: summary && {
       parcelId: P,
       eligible: summary.eligible,
+      ...(summary.underwater ? { underwater: true } : {}),
       existingUnits: summary.n,
       generated: null
     }
@@ -77,6 +78,11 @@ const cases: [string, TooltipHit, [string, string]][] = [
     'existing ineligible',
     ex({ eligible: false, n: 4 }, 'ready'),
     [`Parcel ${P}`, 'Existing building · 4 units · not eligible for change']
+  ],
+  [
+    'existing in the Bay',
+    ex({ eligible: false, underwater: true, n: 0 }, 'ready'),
+    [`Parcel ${P}`, 'Existing building · 0 units · in the Bay']
   ],
   ['loading', ex(null, 'loading'), [`Parcel ${P}`, 'Existing building · units loading…']],
   ['unknown', ex(null, 'unknown'), [`Parcel ${P}`, 'Existing building · units loading…']],

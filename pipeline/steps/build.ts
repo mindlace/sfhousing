@@ -16,6 +16,7 @@ import { BuildError } from '../lib/build-error';
 import { run } from '../lib/exec';
 import { openDuck, type Duck } from '../lib/duck';
 import { lockSha256, rawPath, readLock, sortKeys, verifyRaw, type Lock } from '../lib/lock';
+import { landClipSection } from '../lib/land-report';
 import { QUALITY_REPORT_MD, createQualityTables, writeQualityReport } from '../lib/quality';
 import { Report } from '../lib/report';
 import { runSql } from '../lib/sql';
@@ -242,7 +243,9 @@ export async function build(
     );
     report.warnings.push(...calibration.warnings);
     // After the last step that records T14 counts (spec §4.10), so the report covers every owner.
-    writeQualityReport(join(derivedDir, QUALITY_REPORT_MD), datasetVersion, counts);
+    writeQualityReport(join(derivedDir, QUALITY_REPORT_MD), datasetVersion, counts, [
+      await landClipSection(db)
+    ]);
     const neighborhoodsBytes = await writeNeighborhoods(db, outDir);
     const transit = await report.time('transit', async () =>
       writeTransit({

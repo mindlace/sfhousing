@@ -173,10 +173,11 @@ SELECT a.blklot, min(a.mapblklot) AS current_id
 FROM s_attr a JOIN parcels p ON p.id = a.mapblklot
 GROUP BY a.blklot;
 
--- (b) Otherwise, the smallest current parcel containing a retired row's centroid.
+-- (b) Otherwise, the smallest current parcel containing a retired row's centroid, on its original
+-- outline (a retired lot can lie in the part of a clipped lot that 45_land cut away).
 CREATE OR REPLACE TEMP TABLE s_map_b AS
 SELECT a.blklot, min(p.id) AS current_id
-FROM s_attr a JOIN parcels p ON ST_Contains(p.geom, a.c)
+FROM s_attr a JOIN parcels p ON ST_Contains(p.geom_orig, a.c)
 WHERE NOT a.active AND a.c IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM s_map_a m WHERE m.blklot = a.blklot)
 GROUP BY a.blklot;

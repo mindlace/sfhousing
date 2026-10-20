@@ -25,6 +25,7 @@ export interface OpStats {
   stories?: number /* paint only */;
   covered: number;
   ineligible: number;
+  underwater: number;
   built: number;
   notBigger: number;
   removed: number;
@@ -58,6 +59,7 @@ export interface ParcelSummary {
   neighborhood: string;
   landUse: string;
   eligible: boolean;
+  underwater?: true; // set only when the lot is wholly in the Bay
   existingUnits: number;
   envelope: Envelope | null; // committed-plus-preview display state
   generated: { typology: TypologyId; stories: number; units: number } | null;

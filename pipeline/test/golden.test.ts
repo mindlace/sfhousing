@@ -219,9 +219,9 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
     n === 3 ? '8711023C' : n === 4 ? '0026T001A' : `35120${String(n).padStart(2, '0')}`;
   const L = (n: number) => row(lotId(n));
 
-  it('holds every parcel, 14 rows', () => {
-    expect(p.count).toBe(14);
-    expect(counts['scenario.parcels']).toBe(14);
+  it('holds every parcel, 17 rows', () => {
+    expect(p.count).toBe(17);
+    expect(counts['scenario.parcels']).toBe(17);
   });
 
   it('lot 1: Local Program, base 4, envelope 6, rent control likely, capped base yield', () => {
@@ -338,64 +338,74 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       floor_area: counts['scenario.imputed.floor_area']
     }).toEqual({
       year_built: 3,
-      existing_stories: 3,
+      // + lot 15, whose only building (bbay, h=6, in its water part) gives 2 stories (bit 1).
+      existing_stories: 4,
       improvement_share: 4,
       existing_units: 4,
       no_roll: 3,
       carried: 0,
-      floor_area: 4
+      // + vacant lots 15 and 17 (no roll floor area).
+      floor_area: 6
     });
   });
 
   it('report.json carries fired/of for every registered sd.* rule, with the golden values', () => {
     // [fired, of] and, for a unit-weighted rule, [units, unitsOf] (spec §6, AC 3 and 14).
     const want: Record<string, [number, number] | [number, number, number, number]> = {
-      // 19 parcel rows (mini dates only its 2 retired rows and leaves date_rec_add empty).
-      'sd.attrs.active-unknown': [0, 19],
+      // 23 parcel rows (mini dates only its 3 retired rows and leaves date_rec_add empty).
+      'sd.attrs.active-unknown': [0, 23],
       'sd.attrs.added-date-cast': [0, 0],
-      'sd.attrs.dropped-date-cast': [0, 2],
-      'sd.attrs.latitude-cast': [0, 19],
-      'sd.attrs.longitude-cast': [0, 19],
-      'sd.attrs.no-blklot': [0, 19],
+      'sd.attrs.dropped-date-cast': [0, 3],
+      'sd.attrs.latitude-cast': [0, 23],
+      'sd.attrs.longitude-cast': [0, 23],
+      'sd.attrs.no-blklot': [0, 23],
       'sd.features.median-fallback': [2, 3],
-      'sd.features.no-building': [0, 25],
-      'sd.features.share-median': [2, 24],
-      'sd.features.stories-height': [0, 25],
-      'sd.features.vacant-share': [0, 26],
-      'sd.features.vacant-year-built': [0, 26],
-      'sd.features.year-built-median': [0, 24],
-      'sd.height.blank': [0, 6],
+      'sd.features.no-building': [0, 31],
+      'sd.features.share-median': [2, 26],
+      // Lot 15 (0 stories on the roll) takes 2 stories from bbay in both roll years.
+      'sd.features.stories-height': [2, 31],
+      'sd.features.vacant-share': [0, 32],
+      'sd.features.vacant-year-built': [0, 32],
+      'sd.features.year-built-median': [0, 26],
+      'sd.height.blank': [0, 7],
       // Lot 9, mini's one parcel with no land-use row, has no roll row, so it stays ineligible.
-      'sd.landuse.none-with-units': [0, 14],
-      'sd.roll.floor-area-cast': [0, 29],
-      'sd.roll.floor-area-missing': [5, 29],
-      'sd.roll.improvement-value-cast': [0, 29],
-      'sd.roll.land-value-cast': [0, 29],
-      'sd.roll.no-row': [3, 14],
-      'sd.roll.no-year': [0, 29],
-      'sd.roll.roll-year-cast': [0, 29],
-      'sd.roll.stories-cast': [0, 29],
-      'sd.roll.stories-max': [0, 29],
-      'sd.roll.units-capacity': [3, 25, 5000 + 5000 + 900, 11_044],
-      'sd.roll.units-cast': [0, 29],
-      'sd.roll.units-large': [0, 26],
-      'sd.roll.units-latest-jump': [0, 11],
-      'sd.roll.units-missing': [0, 25],
-      'sd.roll.units-spike': [0, 25, 0, 155],
-      'sd.roll.unmatched': [0, 29, 0, 11_044],
-      'sd.roll.year-built-cast': [0, 27],
-      'sd.roll.year-built-range': [1, 27],
-      'sd.roll.year-gap': [1, 26],
-      'sd.yield.nonmonotone': [0, 14],
-      'sd.yield.zero-hostable': [3, 11],
-      'sd.zoning.c2-floor-approx': [0, 8],
-      'sd.zoning.generic-nc': [1, 8],
-      'sd.zoning.m1-floor-approx': [0, 8],
-      'sd.zoning.missing': [0, 8],
-      'sd.zoning.named-no-cap': [1, 8],
-      'sd.zoning.rc4-vanness-approx': [0, 8],
-      'sd.zoning.split-code': [0, 8],
-      'sd.zoning.unlisted': [0, 8]
+      'sd.landuse.none-with-units': [0, 17],
+      // No clipped lot keeps over 95% of its area (lot 15 keeps 80%).
+      'sd.parcels.clip-yield-loss': [0, 0],
+      // Lot 15 crosses the shoreline, lot 16 lies in the water (45_land.sql).
+      'sd.parcels.land-clip': [1, 17],
+      // Lots 15 to 17 reach beyond the two tile columns of the mini basemap, by design.
+      'sd.parcels.outside-tiles': [3, 17],
+      'sd.parcels.underwater': [1, 17],
+      'sd.roll.floor-area-cast': [0, 35],
+      'sd.roll.floor-area-missing': [9, 35],
+      'sd.roll.improvement-value-cast': [0, 35],
+      'sd.roll.land-value-cast': [0, 35],
+      'sd.roll.no-row': [3, 17],
+      'sd.roll.no-year': [0, 35],
+      'sd.roll.roll-year-cast': [0, 35],
+      'sd.roll.stories-cast': [0, 35],
+      'sd.roll.stories-max': [0, 35],
+      'sd.roll.units-capacity': [3, 31, 5000 + 5000 + 900, 11_048],
+      'sd.roll.units-cast': [0, 35],
+      'sd.roll.units-large': [0, 32],
+      'sd.roll.units-latest-jump': [0, 14],
+      'sd.roll.units-missing': [0, 31],
+      'sd.roll.units-spike': [0, 31, 0, 159],
+      'sd.roll.unmatched': [0, 35, 0, 11_048],
+      'sd.roll.year-built-cast': [0, 29],
+      'sd.roll.year-built-range': [1, 29],
+      'sd.roll.year-gap': [1, 32],
+      'sd.yield.nonmonotone': [0, 17],
+      'sd.yield.zero-hostable': [3, 13],
+      'sd.zoning.c2-floor-approx': [0, 10],
+      'sd.zoning.generic-nc': [1, 10],
+      'sd.zoning.m1-floor-approx': [0, 10],
+      'sd.zoning.missing': [0, 10],
+      'sd.zoning.named-no-cap': [1, 10],
+      'sd.zoning.rc4-vanness-approx': [0, 10],
+      'sd.zoning.split-code': [0, 10],
+      'sd.zoning.unlisted': [0, 10]
     };
     const sd = QUALITY_RULES.filter((r) => r.owner === 'scenario-data');
     expect(sd.map((r) => r.id)).toEqual(Object.keys(want));
@@ -422,8 +432,9 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
   });
 
   it('report totals', () => {
-    // 66 as built plus lot 3's 4 (RA1): FIXTURE_PROFILE.scenarioUnitsRange [70, 70].
-    expect(counts['scenario.units.total']).toBe(70);
+    // 66 as built plus lot 3's 4 (RA1) and underwater lot 16's 2: FIXTURE_PROFILE
+    // .scenarioUnitsRange [72, 72].
+    expect(counts['scenario.units.total']).toBe(72);
     expect(counts['scenario.roll.years']).toBe(3);
     expect(counts['scenario.panel.years']).toBe(3);
     expect(counts['scenario.yield.clamped']).toBe(0);

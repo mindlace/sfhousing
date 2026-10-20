@@ -222,6 +222,7 @@ describe('createDisplay', () => {
       stories: 5,
       covered: 5,
       ineligible: 0,
+      underwater: 0,
       built: 5,
       notBigger: 0,
       removed: 0,

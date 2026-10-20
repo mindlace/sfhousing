@@ -18,6 +18,8 @@ export interface ParcelChunkV1 {
   lu: number[];
   nh: number[];
   elig: (0 | 1)[];
+  /** Strictly increasing row indices of underwater records; absent when there are none. */
+  uw?: number[];
   rings: number[][];
   xy: number[];
 }
@@ -55,6 +57,10 @@ export function encodeParcelChunk(
   const neighborhood = [...new Set(sorted.map((r) => r.neighborhood))].sort(cmp);
   const luIx = new Map(landUse.map((v, i) => [v, i]));
   const nhIx = new Map(neighborhood.map((v, i) => [v, i]));
+  const uw: number[] = [];
+  sorted.forEach((r, i) => {
+    if (r.underwater) uw.push(i);
+  });
   const chunk: ParcelChunkV1 = {
     format: PARCEL_CHUNK_FORMAT,
     datasetVersion,
@@ -77,7 +83,8 @@ export function encodeParcelChunk(
       r.polygon.flatMap((ring) =>
         ring.flatMap(([x, y]) => [Math.round(x * 100), Math.round(y * 100)])
       )
-    )
+    ),
+    ...(uw.length > 0 ? { uw } : {})
   };
   return JSON.stringify(chunk);
 }
@@ -126,6 +133,18 @@ export function decodeParcelChunk(json: unknown): ParcelRecord[] {
     for (const k of r) verts += k;
   }
   const xy = arr(o, 'xy', 2 * verts) as number[];
+  const underwater = new Set<number>();
+  if (o.uw !== undefined) {
+    if (!Array.isArray(o.uw)) throw new ChunkFormatError('column uw is not an array');
+    let prev = -1;
+    for (const v of o.uw as unknown[]) {
+      if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v >= n || v <= prev) {
+        throw new ChunkFormatError(`bad uw entry ${String(v)}`);
+      }
+      underwater.add(v);
+      prev = v;
+    }
+  }
   const landUse = dict.landUse as string[];
   const neighborhood = dict.neighborhood as string[];
   const out: ParcelRecord[] = [];
@@ -135,6 +154,9 @@ export function decodeParcelChunk(json: unknown): ParcelRecord[] {
       throw new ChunkFormatError(`dictionary index out of range at row ${i}`);
     }
     if (elig[i] !== 0 && elig[i] !== 1) throw new ChunkFormatError(`elig not 0/1 at row ${i}`);
+    if (underwater.has(i) && elig[i] === 1) {
+      throw new ChunkFormatError(`underwater row ${i} is eligible`);
+    }
     const polygon: [number, number][][] = rings[i].map((count) => {
       const ring: [number, number][] = [];
       for (let v = 0; v < count; v++, k += 2) ring.push([xy[k] / 100, xy[k + 1] / 100]);
@@ -150,7 +172,8 @@ export function decodeParcelChunk(json: unknown): ParcelRecord[] {
       existingHeightM: height[i],
       landUse: landUse[lu[i]],
       eligible: elig[i] === 1,
-      neighborhood: neighborhood[nh[i]]
+      neighborhood: neighborhood[nh[i]],
+      ...(underwater.has(i) ? { underwater: true as const } : {})
     });
   }
   return out;

@@ -160,7 +160,7 @@ describe('runScenarioSql on the mini fixture', () => {
   it('readParcelRecords returns every parcel sorted by id with its cell', async () => {
     const recs = await readParcelRecords(db);
     const ids = recs.map((r) => r.rec.id);
-    expect(ids).toHaveLength(14);
+    expect(ids).toHaveLength(17);
     expect(ids).toEqual([...ids].sort());
     expect(recs.every((r) => /^-?\d+_-?\d+$/.test(r.cellId))).toBe(true);
   });
@@ -227,14 +227,14 @@ describe('runScenarioSql on the mini fixture', () => {
     const z = await db.all<{ id: string; zoning_code: string }>(
       'SELECT id, zoning_code FROM sc_zoning ORDER BY id'
     );
-    expect(z).toHaveLength(14);
+    expect(z).toHaveLength(17);
     const by = Object.fromEntries(z.map((r) => [r.id, r.zoning_code]));
     expect(by['3512002']).toBe('RH-2');
     expect(by['8711023C']).toBe('NCT');
     expect(by['3512013']).toBe('C-3-O');
   });
 
-  it('lineage maps retired 3512099 to 3512012 (date 2024-06-30) and 3512098 to 3512001', async () => {
+  it('lineage maps retired 3512099 to 3512012, 3512098 to 3512001 and 3512096 to 3512015', async () => {
     const rows = await db.all<{
       blklot: string;
       retired_mapblklot: string;
@@ -245,6 +245,12 @@ describe('runScenarioSql on the mini fixture', () => {
        FROM parcel_lineage ORDER BY blklot`
     );
     expect(rows).toEqual([
+      {
+        blklot: '3512096',
+        retired_mapblklot: '3512096',
+        current_mapblklot: '3512015',
+        d: '2024-06-30'
+      },
       {
         blklot: '3512098',
         retired_mapblklot: '3512098',
@@ -327,7 +333,7 @@ describe('runScenarioSql on the mini fixture', () => {
     expect(c['scenario.roll.years']).toBe(3);
     expect(c['scenario.roll.unmatched.2023']).toBe(0);
     expect(c['scenario.roll.latest']).toBe(2025);
-    expect(c['scenario.roll.matched_parcels']).toBe(13);
+    expect(c['scenario.roll.matched_parcels']).toBe(16);
     expect(c['scenario.roll.unmatched.2024']).toBe(0);
     expect(c['scenario.roll.unmatched.2025']).toBe(0);
     expect(c['scenario.roll.unmatched_units.2024']).toBe(0);
@@ -445,7 +451,7 @@ describe('runScenarioSql on the mini fixture', () => {
       'SELECT count(*)::INTEGER n, count(DISTINCT rule_id)::INTEGER d FROM quality_tally'
     );
     expect(t.n).toBe(t.d);
-    expect(quality['quality.sd.roll.units-capacity.of']).toBe(25);
+    expect(quality['quality.sd.roll.units-capacity.of']).toBe(31);
   });
 });
 

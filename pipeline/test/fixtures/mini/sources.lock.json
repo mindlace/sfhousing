@@ -3,10 +3,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/afa7c86f32846d1f7861b3b2e5b7f51af49c04e32ee55d58a808f5dd064120ca.csv",
-          "bytes": 2589,
+          "archiveKey": "sources/5b3540da8a1399e0ca7ab1bec2675740252f123de90223911f24bf825efdae12.csv",
+          "bytes": 3031,
           "name": "datasf-assessor-roll.page-000.csv",
-          "sha256": "afa7c86f32846d1f7861b3b2e5b7f51af49c04e32ee55d58a808f5dd064120ca",
+          "sha256": "5b3540da8a1399e0ca7ab1bec2675740252f123de90223911f24bf825efdae12",
           "url": "https://fixture.invalid/datasf-assessor-roll.page-000.csv"
         }
       ],
@@ -15,7 +15,7 @@
       "label": "DataSF Assessor Historical Secured Property Tax Rolls",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 29,
+      "rowCount": 35,
       "upstreamVersion": "fixture"
     },
     {
@@ -57,10 +57,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/adbde864495fb31172afe1b8926e8032195df09f36749387fd33b39abe4c4c23.geojson",
-          "bytes": 1579,
+          "archiveKey": "sources/61dd327547f2e3a1bf14435721c395b9f1240dabaddd106f691c2efc58eb102d.geojson",
+          "bytes": 1822,
           "name": "datasf-height-bulk.page-000.geojson",
-          "sha256": "adbde864495fb31172afe1b8926e8032195df09f36749387fd33b39abe4c4c23",
+          "sha256": "61dd327547f2e3a1bf14435721c395b9f1240dabaddd106f691c2efc58eb102d",
           "url": "https://fixture.invalid/datasf-height-bulk.page-000.geojson"
         }
       ],
@@ -69,7 +69,7 @@
       "label": "DataSF Zoning Map – Height and Bulk Districts",
       "license": "public-domain",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 6,
+      "rowCount": 7,
       "upstreamVersion": "fixture"
     },
     {
@@ -93,10 +93,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/d3cf2c2bce18e70ea74af8fa50910e5c7f93329f557071f99c4013a82d8815f6.geojson",
-          "bytes": 4695,
+          "archiveKey": "sources/50e5a9ff557c16f3a0e0358164510c5f1438835dc17ac52c46b6f574ab2a337f.geojson",
+          "bytes": 5573,
           "name": "datasf-landuse-2023.page-000.geojson",
-          "sha256": "d3cf2c2bce18e70ea74af8fa50910e5c7f93329f557071f99c4013a82d8815f6",
+          "sha256": "50e5a9ff557c16f3a0e0358164510c5f1438835dc17ac52c46b6f574ab2a337f",
           "url": "https://fixture.invalid/datasf-landuse-2023.page-000.geojson"
         }
       ],
@@ -105,16 +105,16 @@
       "label": "DataSF Land Use 2023",
       "license": "public-domain",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 15,
+      "rowCount": 18,
       "upstreamVersion": "fixture"
     },
     {
       "files": [
         {
-          "archiveKey": "sources/7ad1d6102ca900886294ada8e80b321fd381d3b3ea9d4e5ec6964bed4b6689d3.geojson",
-          "bytes": 504,
+          "archiveKey": "sources/0a737bfc329a9e4326946b67acc6bc051612bd8c7266af87ec29c54760447748.geojson",
+          "bytes": 747,
           "name": "datasf-neighborhoods.page-000.geojson",
-          "sha256": "7ad1d6102ca900886294ada8e80b321fd381d3b3ea9d4e5ec6964bed4b6689d3",
+          "sha256": "0a737bfc329a9e4326946b67acc6bc051612bd8c7266af87ec29c54760447748",
           "url": "https://fixture.invalid/datasf-neighborhoods.page-000.geojson"
         }
       ],
@@ -123,16 +123,16 @@
       "label": "DataSF Analysis Neighborhoods",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 2,
+      "rowCount": 3,
       "upstreamVersion": "fixture"
     },
     {
       "files": [
         {
-          "archiveKey": "sources/14f8e55c720ceec030e8592ba2f422526293b1b696b09177de3e27a83b7525ed.csv",
-          "bytes": 1367,
+          "archiveKey": "sources/50ae576abfeb269ca04e0518721a0374acaa34b39b057cea3021b1da0166baf8.csv",
+          "bytes": 1649,
           "name": "datasf-parcel-attrs.page-000.csv",
-          "sha256": "14f8e55c720ceec030e8592ba2f422526293b1b696b09177de3e27a83b7525ed",
+          "sha256": "50ae576abfeb269ca04e0518721a0374acaa34b39b057cea3021b1da0166baf8",
           "url": "https://fixture.invalid/datasf-parcel-attrs.page-000.csv"
         }
       ],
@@ -141,16 +141,16 @@
       "label": "DataSF Parcels (attributes, active and retired)",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 19,
+      "rowCount": 23,
       "upstreamVersion": "fixture"
     },
     {
       "files": [
         {
-          "archiveKey": "sources/30f9a77ee6417df66c670d7535ab05c260d5018cc184d89c264d2d3c24c0826c.geojson",
-          "bytes": 6554,
+          "archiveKey": "sources/d30931c563d1d4bb3990c8b3c7172f8ac45466f760589b5934efbd3e4ad4bb67.geojson",
+          "bytes": 7951,
           "name": "datasf-parcels.page-000.geojson",
-          "sha256": "30f9a77ee6417df66c670d7535ab05c260d5018cc184d89c264d2d3c24c0826c",
+          "sha256": "d30931c563d1d4bb3990c8b3c7172f8ac45466f760589b5934efbd3e4ad4bb67",
           "url": "https://fixture.invalid/datasf-parcels.page-000.geojson"
         }
       ],
@@ -159,7 +159,7 @@
       "label": "DataSF Parcels (Active and Retired)",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 19,
+      "rowCount": 23,
       "upstreamVersion": "fixture"
     },
     {
@@ -432,10 +432,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/951b26d7001e989cb193f2e0ae9a3cbe49f0dc62bdd994aeda8418e5b008c5c6.geojson",
-          "bytes": 4043,
+          "archiveKey": "sources/692896ad3065d5ddf2dc834b261114f90483b59691ea71f3c54b5dacbedb9091.geojson",
+          "bytes": 4366,
           "name": "overture-buildings.page-000.geojson",
-          "sha256": "951b26d7001e989cb193f2e0ae9a3cbe49f0dc62bdd994aeda8418e5b008c5c6",
+          "sha256": "692896ad3065d5ddf2dc834b261114f90483b59691ea71f3c54b5dacbedb9091",
           "url": "https://fixture.invalid/overture-buildings.page-000.geojson"
         }
       ],
@@ -444,7 +444,7 @@
       "label": "Overture Maps Buildings",
       "license": "ODbL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 12,
+      "rowCount": 13,
       "upstreamVersion": "fixture"
     },
     {

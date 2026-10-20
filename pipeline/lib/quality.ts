@@ -108,7 +108,8 @@ export function validateRules(rules: readonly QualityRule[]): void {
       if (!Number.isInteger(r.maskBit) || r.maskBit < MASK_BITS[0] || r.maskBit > MASK_BITS[1])
         throw new Error(`quality rule ${r.id}: maskBit ${r.maskBit} outside 0–6`);
     }
-    if (!(r.warnShare < r.failShare))
+    // Both 0 is allowed: any firing fails, so the warn band is empty.
+    if (!(r.warnShare < r.failShare) && !(r.warnShare === 0 && r.failShare === 0))
       throw new Error(`quality rule ${r.id}: warnShare ${r.warnShare} ≥ failShare ${r.failShare}`);
   }
 }
@@ -153,7 +154,7 @@ const cell = (s: string) => s.replaceAll('|', '\\|');
 const tiers = (r: QualityRule) => `${r.tier} / ${r.valueTier ?? '—'}`;
 
 /** A GitHub table in the form prettier prints it (columns padded, delimiter at least 3). */
-function mdTable(head: string[], rows: string[][]): string {
+export function mdTable(head: string[], rows: string[][]): string {
   const width = (s: string) => [...s].length;
   const w = head.map((h, j) => Math.max(3, width(h), ...rows.map((r) => width(r[j]))));
   const line = (cs: string[]) =>
@@ -260,7 +261,12 @@ export function makeQuality(input: readonly QualityRule[]) {
     return rows.get(counts) ?? new Map();
   }
 
-  function writeQualityReport(file: string, datasetVersion: string, counts: Counts): void {
+  function writeQualityReport(
+    file: string,
+    datasetVersion: string,
+    counts: Counts,
+    sections: string[] = []
+  ): void {
     const got = reportRows(counts);
     const lines = [
       `# Data quality report: ${datasetVersion}`,
@@ -305,6 +311,7 @@ export function makeQuality(input: readonly QualityRule[]) {
         }
       }
     }
+    for (const section of sections) lines.push(section.trimEnd(), '');
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, lines.join('\n'));
   }
@@ -424,12 +431,13 @@ export function qualityRule(id: string): QualityRule {
 }
 
 /** Creates the DuckDB tables quality_tally(rule_id, fired, of, units, units_of) and
- *  quality_sample(rule_id, record_id). A SQL rule inserts one tally row and its sample rows. */
+ *  quality_sample(rule_id, record_id), unless they exist (runSql calls it too, so a database it
+ *  ran on keeps its tallies). A SQL rule inserts one tally row and its sample rows. */
 export async function createQualityTables(db: Duck): Promise<void> {
   await db.run(
-    `CREATE TABLE quality_tally (rule_id VARCHAR NOT NULL, fired BIGINT NOT NULL,
+    `CREATE TABLE IF NOT EXISTS quality_tally (rule_id VARCHAR NOT NULL, fired BIGINT NOT NULL,
        "of" BIGINT NOT NULL, units BIGINT, units_of BIGINT);
-     CREATE TABLE quality_sample (rule_id VARCHAR NOT NULL, record_id VARCHAR NOT NULL);`
+     CREATE TABLE IF NOT EXISTS quality_sample (rule_id VARCHAR NOT NULL, record_id VARCHAR NOT NULL);`
   );
 }
 
@@ -444,13 +452,15 @@ export function recordSqlQuality(
 
 /** Writes quality-report.md from the rows recordQuality recorded against `counts`, one per
  *  registered rule in id order; it writes no row of its own (a rule with none is listed as
- *  "not reported", and V30 fails on it). Deterministic. */
+ *  "not reported", and V30 fails on it). Each of `sections` (markdown) follows the Samples.
+ *  Deterministic. */
 export function writeQualityReport(
   file: string,
   datasetVersion: string,
-  counts: Record<string, number>
+  counts: Record<string, number>,
+  sections: string[] = []
 ): void {
-  REGISTRY.writeQualityReport(file, datasetVersion, counts);
+  REGISTRY.writeQualityReport(file, datasetVersion, counts, sections);
 }
 
 /** V30 over report.json counts. */

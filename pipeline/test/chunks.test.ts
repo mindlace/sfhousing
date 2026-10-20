@@ -100,6 +100,7 @@ describe('writeChunks / writeNeighborhoods on the mini fixture', () => {
     const fc = JSON.parse(raw);
     expect(fc.type).toBe('FeatureCollection');
     expect(fc.features.map((f: { properties: { name: string } }) => f.properties.name)).toEqual([
+      'Bayview Hunters Point',
       'Mission',
       'Noe Valley'
     ]);

@@ -15,7 +15,18 @@ export const SQL_VARS = {
   floors_m: FTF_M,
   default_height_m: 7.0,
   // 8 m per conductor ruling C2; spec §4.8 says 3 m but 3 m exceeds V11's 150 KB on live data
-  nb_simplify_m: 8.0
+  nb_simplify_m: 8.0,
+  // 45_land.sql (docs/dev/pipeline.md "Land mask"). A lot that loses less land than this keeps its
+  // geometry exactly. Tier 4, from the 2026-10-19 spike.
+  land_min_removed_m2: 5.0,
+  // Simplification of the land mask, so a clipped edge does not follow every coastline vertex.
+  // Tier 4, from the 2026-10-19 spike.
+  land_simplify_m: 0.5,
+  // Buffer out and back by this, to close the seams between tiles. Tier 4, from the 2026-10-19 spike.
+  land_seam_m: 0.05,
+  // Grid cell the mask is cut into, so a lot is intersected with a few small pieces of it, not the
+  // whole city. Tier 4, from the 2026-10-19 spike.
+  land_cell_m: 250
 } as const;
 export const KNOWN_LANDUSE = [
   'RESIDENT',
@@ -151,19 +162,19 @@ export const LIVE_PROFILE: InvariantProfile = {
 
 /**
  * The mini fixture's known answers (pipeline/test/fixtures/mini/README.md): Σ units
- * 2+6+4+3+1+2+0+12+0+3+3+7+5+40 = 88 exactly, 14 parcels, 12/14 matched land use, 9/10 kept
- * buildings with hs ≠ 3, max parcel height 60 m (lot 14), 2 neighborhoods,
- * 8 transit stops, one BART station.
+ * 2+6+4+3+1+2+0+12+0+3+3+7+5+40 (+0 on shoreline lots 15-17) = 88 exactly, 17 parcels, 15/17
+ * matched land use, 10/11 kept buildings with hs ≠ 3, max parcel height 60 m (lot 14),
+ * 3 neighborhoods, 8 transit stops, one BART station.
  */
 export const FIXTURE_PROFILE: InvariantProfile = {
   unitsTarget: 88,
   unitsTol: 0,
-  parcelRange: [14, 14],
+  parcelRange: [17, 17],
   landUseMatchMin: 0.8,
   heightCoverageMin: 0.5,
   pieceAreaParcelMin: 0.5,
   neighborhoodNames: 'from-source',
-  neighborhoodCount: 2,
+  neighborhoodCount: 3,
   labelInsideMin: 1,
   maxChunkParcels: LIVE_PROFILE.maxChunkParcels,
   maxChunkRaw: LIVE_PROFILE.maxChunkRaw,
@@ -177,11 +188,13 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   transitHeavyRailStations: ['Fixture Station'],
   // Spec §4.10 V16: every eligible mini parcel has a district (fixture known answer).
   heightJoinMin: 1,
-  // Ruling: 10 of the 12 eligible mini parcels have a 2025 roll row (lots 12 and 13 do not).
+  // Ruling: 12 of the 14 eligible mini parcels have a 2025 roll row (lots 12 and 13 do not; lot 16
+  // is underwater, so not eligible).
   rollJoinMin: 0.8,
   // Spec §4.10 V18 "fixture exact": Σ 2025 roll units of the mini fixture after the units rules
-  // (known answer, spec §4.11): 66, plus lot 3's 5,000 replaced by its LUDB 4 (RA1).
-  scenarioUnitsRange: [70, 70],
+  // (known answer, spec §4.11): 66, plus lot 3's 5,000 replaced by its LUDB 4 (RA1), plus the 2
+  // homes on underwater lot 16 (kept: the land mask makes a lot unbuildable, not empty).
+  scenarioUnitsRange: [72, 72],
   scenarioMaxBytes: LIVE_PROFILE.scenarioMaxBytes,
   // Project-records spec §4.9 V21 fixture "≥ 0.90": M16's linked row (220) and its record (200)
   // disagree, and M18's dropped row matches nothing, so mini covers 699 of 739 (0.946).

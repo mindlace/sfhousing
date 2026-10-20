@@ -708,6 +708,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       neighborhood: rec.neighborhood,
       landUse: rec.landUse,
       eligible: rec.eligible,
+      ...(rec.underwater ? { underwater: true as const } : {}),
       // T11 has no row for a parcel absent from parcels.bin: the chunk record's units are the
       // only value there is (logged as absent when a project names it)
       existingUnits: i === undefined ? rec.existingUnits : parcels.existingUnits[i],

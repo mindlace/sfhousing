@@ -100,7 +100,7 @@ describe('applyOp', () => {
     const state: EnvelopeMap = new Map();
     const op = paint('a', 4, 5, [gridLngLat(7, 0)]); // (7,0) is ineligible
     const r1 = applyOp(state, op, idx);
-    expect(r1.coverage).toEqual({ eligible: [], ineligible: [gridId(7, 0)] });
+    expect(r1.coverage).toEqual({ eligible: [], ineligible: [gridId(7, 0)], underwater: [] });
     expect(r1.changes).toEqual([]);
 
     const p = paint('b', 4, 12, [gridLngLat(4, 3)]);
@@ -119,7 +119,7 @@ describe('applyOp', () => {
 
   it('a stroke only over ineligible parcels yields { eligible: [], ineligible: [...] }', () => {
     const r = applyOp(new Map(), erase('e', 5, [gridLngLat(0, 0)]), gridIndex()); // n = 0
-    expect(r.coverage).toEqual({ eligible: [], ineligible: [gridId(0, 0)] });
+    expect(r.coverage).toEqual({ eligible: [], ineligible: [gridId(0, 0)], underwater: [] });
   });
 
   it('P1 append: applyOp(resolve(ops[..k]), op) ≡ resolve(ops[..k+1])', () => {

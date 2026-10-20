@@ -24,17 +24,21 @@ const plural = (v: number, one: string, many: string) => (v === 1 ? one : many);
 export function strokeMessage(s: OpStats): string {
   const ineligible =
     s.ineligible > 0 ? ` · ${n(s.ineligible)} not eligible (open space or unmapped lots)` : '';
+  const bay = s.underwater > 0 ? ` · ${n(s.underwater)} in the Bay` : '';
   const partial = s.partial ? ' · some areas still loading' : '';
   if (s.covered === 0) {
     const head =
-      s.ineligible > 0 ? 'No eligible parcels under that stroke' : 'No parcels under that stroke';
-    return head + ineligible + partial;
+      s.ineligible + s.underwater > 0
+        ? 'No eligible parcels under that stroke'
+        : 'No parcels under that stroke';
+    return head + ineligible + bay + partial;
   }
   const parcels = `${n(s.covered)} ${plural(s.covered, 'parcel', 'parcels')}`;
   if (s.kind === 'erase') {
     return (
       `Erased ${parcels} · ${n(s.removed)} generated ${plural(s.removed, 'building', 'buildings')} removed` +
       ineligible +
+      bay +
       partial
     );
   }
@@ -44,6 +48,7 @@ export function strokeMessage(s: OpStats): string {
     ` · ${n(s.built)} new ${plural(s.built, 'building', 'buildings')}` +
     ` · ${n(s.notBigger)} already as big or bigger` +
     ineligible +
+    bay +
     partial
   );
 }

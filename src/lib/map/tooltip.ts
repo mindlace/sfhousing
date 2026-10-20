@@ -64,6 +64,7 @@ export function tooltipLines(hit: TooltipHit): [string, string] {
   const head = `Parcel ${hit.parcelId}`;
   if (s) {
     const base = `Existing building · ${plural(s.existingUnits, 'unit', 'units')}`;
+    if (s.underwater) return [head, `${base} · in the Bay`];
     return [head, s.eligible ? base : `${base} · not eligible for change`];
   }
   return [
