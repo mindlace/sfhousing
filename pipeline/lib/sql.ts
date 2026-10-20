@@ -3,6 +3,7 @@ import { config } from '../config';
 import { runSqlFile, type Duck } from './duck';
 
 export const SQL_FILES = [
+  '05_macros.sql',
   '10_parcels.sql',
   '20_landuse.sql',
   '30_buildings.sql',
