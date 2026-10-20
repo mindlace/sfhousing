@@ -6,6 +6,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { deflateRawSync, inflateRawSync } from 'node:zlib';
 import type { ParcelRecord } from '../../src/lib/data/parcel';
+import { ringsAreaM2 } from '../../src/lib/data/parcel-chunk';
 import {
   FILL_LEVELS,
   LAND_USE_CLASSES,
@@ -29,6 +30,7 @@ import {
   densityCapRule,
   isSpecNamedNoCap
 } from '../lib/density-caps';
+import { clipYieldLoss, type ClipYieldRow } from '../lib/land-report';
 import { createTableFromRows, type CellValue, type Duck } from '../lib/duck';
 import type { HeightDistrict } from '../lib/heights';
 import { localProgramEnvelope } from '../lib/local-program';
@@ -36,6 +38,7 @@ import { recordQuality, recordSqlQuality } from '../lib/quality';
 import type { Report } from '../lib/report';
 import { scenarioEligible } from '../lib/scenario-eligibility';
 import { PARCELS_BIN } from '../lib/scenario-files';
+import { readClippedOriginals } from './chunks';
 import { runScenarioSql } from './scenario-sql';
 
 export { PARCELS_BIN };
@@ -985,6 +988,27 @@ export async function writeScenario(a: {
         .join(', ')}`
     );
   }
+  // sd.parcels.clip-yield-loss: a clipped lot that keeps nearly all its area should keep its
+  // yield. Its top-fill yield on the original outline is generated on the same record, with the
+  // original rings and their area.
+  const clipRows: ClipYieldRow[] = [];
+  for (const [id, o] of await readClippedOriginals(db)) {
+    const i = p.index.get(id);
+    if (i === undefined) continue;
+    const view = scenarioRecordOf(p, i, rows[i].rec);
+    const full = FILL_LEVELS[F - 1];
+    clipRows.push({
+      id,
+      keptShare: o.keptShare,
+      clippedTop: grossTop[i],
+      originalTop: scenarioYield(
+        { ...view, polygon: o.polygon, areaM2: ringsAreaM2(o.polygon) },
+        fillStories(full, p.envelopeStories[i]),
+        null
+      )
+    });
+  }
+  recordQuality(a.buildCounts, 'sd.parcels.clip-yield-loss', clipYieldLoss(clipRows));
   await recordSqlQuality(db, 'scenario-data', a.buildCounts);
   recordQuality(a.buildCounts, 'sd.roll.no-row', { fired: noRow.length, of: n, sample: noRow });
   recordQuality(a.buildCounts, 'sd.landuse.none-with-units', {

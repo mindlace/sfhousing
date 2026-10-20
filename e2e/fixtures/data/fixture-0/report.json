@@ -319,6 +319,8 @@
     "quality.sd.height.blank.of": 7,
     "quality.sd.landuse.none-with-units.fired": 0,
     "quality.sd.landuse.none-with-units.of": 17,
+    "quality.sd.parcels.clip-yield-loss.fired": 0,
+    "quality.sd.parcels.clip-yield-loss.of": 0,
     "quality.sd.parcels.land-clip.fired": 1,
     "quality.sd.parcels.land-clip.of": 17,
     "quality.sd.parcels.underwater.fired": 1,

@@ -194,6 +194,27 @@ export const SD_RULES: readonly QualityRule[] = [
     ...SHARES,
     unitsWeighted: false
   },
+  // Counts clipped lots whose yield the clip erased although they kept almost all their area; it
+  // is computed by the scenario step (TS side), on the lot's original and clipped outlines.
+  // Departure from the outlier default: warnShare 0, because the spike's 9900019H case must never
+  // pass silently.
+  {
+    ...SD,
+    id: 'sd.parcels.clip-yield-loss',
+    source: 'datasf-parcels',
+    field: 'geom',
+    kind: 'outlier',
+    action: 'none',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label:
+      'Counts lots the land clip barely shrank but left with no buildable yield; changes nothing',
+    denominator: 'clipped lots that keep more than 95% of their area',
+    warnShare: 0,
+    failShare: 0.1,
+    unitsWeighted: false
+  },
   // ---- Parcel attributes and height polygons (80_scenario.sql) ----
   // DQ-4 registered rules (final fix wave, review Important 1): the as-built drops and default of
   // 80_scenario.sql's parcel and height inputs. 0 live firings each on 2026-10-17 (236,573 parcel

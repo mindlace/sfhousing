@@ -153,7 +153,7 @@ const cell = (s: string) => s.replaceAll('|', '\\|');
 const tiers = (r: QualityRule) => `${r.tier} / ${r.valueTier ?? '—'}`;
 
 /** A GitHub table in the form prettier prints it (columns padded, delimiter at least 3). */
-function mdTable(head: string[], rows: string[][]): string {
+export function mdTable(head: string[], rows: string[][]): string {
   const width = (s: string) => [...s].length;
   const w = head.map((h, j) => Math.max(3, width(h), ...rows.map((r) => width(r[j]))));
   const line = (cs: string[]) =>
@@ -260,7 +260,12 @@ export function makeQuality(input: readonly QualityRule[]) {
     return rows.get(counts) ?? new Map();
   }
 
-  function writeQualityReport(file: string, datasetVersion: string, counts: Counts): void {
+  function writeQualityReport(
+    file: string,
+    datasetVersion: string,
+    counts: Counts,
+    sections: string[] = []
+  ): void {
     const got = reportRows(counts);
     const lines = [
       `# Data quality report: ${datasetVersion}`,
@@ -305,6 +310,7 @@ export function makeQuality(input: readonly QualityRule[]) {
         }
       }
     }
+    for (const section of sections) lines.push(section.trimEnd(), '');
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, lines.join('\n'));
   }
@@ -445,13 +451,15 @@ export function recordSqlQuality(
 
 /** Writes quality-report.md from the rows recordQuality recorded against `counts`, one per
  *  registered rule in id order; it writes no row of its own (a rule with none is listed as
- *  "not reported", and V30 fails on it). Deterministic. */
+ *  "not reported", and V30 fails on it). Each of `sections` (markdown) follows the Samples.
+ *  Deterministic. */
 export function writeQualityReport(
   file: string,
   datasetVersion: string,
-  counts: Record<string, number>
+  counts: Record<string, number>,
+  sections: string[] = []
 ): void {
-  REGISTRY.writeQualityReport(file, datasetVersion, counts);
+  REGISTRY.writeQualityReport(file, datasetVersion, counts, sections);
 }
 
 /** V30 over report.json counts. */

@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
-import type { ParcelRecord } from '../../src/lib/data/parcel';
+import type { ParcelId, ParcelRecord } from '../../src/lib/data/parcel';
 import { encodeParcelChunk, ringsAreaM2 } from '../../src/lib/data/parcel-chunk';
 import type { Duck } from '../lib/duck';
 import type { Report } from '../lib/report';
@@ -83,6 +83,32 @@ export async function readParcelRecords(
   db: Duck
 ): Promise<{ rec: ParcelRecord; cellId: string }[]> {
   return (await readParcelRows(db)).map(({ rec, cellId }) => ({ rec, cellId }));
+}
+
+/**
+ * The original outline of every clipped lot (status 'clipped'), in the same local frame as its
+ * chunk record (`x0, y0`), with the share of its area the clip kept (`dry_m2 / orig_m2`).
+ */
+export async function readClippedOriginals(
+  db: Duck
+): Promise<Map<ParcelId, { polygon: [number, number][][]; keptShare: number }>> {
+  const rows = await db.all<{
+    id: string;
+    x0: number;
+    y0: number;
+    geojson7131_orig: string;
+    kept: number;
+  }>(
+    `SELECT o.id, o.x0, o.y0, o.geojson7131_orig, l.dry_m2 / l.orig_m2 AS kept
+     FROM parcel_out o JOIN parcel_land l USING (id)
+     WHERE l.status = 'clipped' AND o.geojson7131_orig IS NOT NULL ORDER BY o.id`
+  );
+  return new Map(
+    rows.map((r) => [
+      String(r.id),
+      { polygon: toLocalRings(JSON.parse(r.geojson7131_orig), r.x0, r.y0), keptShare: r.kept }
+    ])
+  );
 }
 
 export async function writeChunks(

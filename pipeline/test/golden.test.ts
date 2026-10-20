@@ -370,6 +370,8 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       'sd.height.blank': [0, 7],
       // Lot 9, mini's one parcel with no land-use row, has no roll row, so it stays ineligible.
       'sd.landuse.none-with-units': [0, 17],
+      // No clipped lot keeps over 95% of its area (lot 15 keeps 80%).
+      'sd.parcels.clip-yield-loss': [0, 0],
       // Lot 15 crosses the shoreline, lot 16 lies in the water (45_land.sql).
       'sd.parcels.land-clip': [1, 17],
       'sd.parcels.underwater': [1, 17],

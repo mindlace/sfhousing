@@ -130,12 +130,13 @@ describe('kind defaults', () => {
       'sd.test.fail-high'
     ]);
   });
-  it('every registered sd.* rule takes its kind default but the five approved overrides', () => {
+  it('every registered sd.* rule takes its kind default but the six approved overrides', () => {
     // Partner DQ-4 share overrides, 2026-10-17 (design RA1 "Share overrides approved") and
     // 2026-10-18 (sd.zoning.named-no-cap); each states its reason at its entry in
     // quality-rules/sd.ts.
     expect(kindDefaultDepartures(QUALITY_RULES.filter((r) => r.owner === 'scenario-data'))).toEqual(
       [
+        'sd.parcels.clip-yield-loss',
         'sd.roll.floor-area-missing',
         'sd.roll.units-capacity',
         'sd.yield.zero-hostable',

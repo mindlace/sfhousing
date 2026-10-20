@@ -78,7 +78,14 @@ async function synthetic(
   datasetVersion = 'fixture-0'
 ): Promise<Synthetic> {
   await db.run(`ATTACH ':memory:' AS ${schema}`);
-  for (const t of ['parcels', 'parcel_out', 'src_height_bulk', 'src_parcel_attrs', 'src_roll']) {
+  for (const t of [
+    'parcels',
+    'parcel_land',
+    'parcel_out',
+    'src_height_bulk',
+    'src_parcel_attrs',
+    'src_roll'
+  ]) {
     await db.run(`CREATE TABLE ${schema}.${t} AS SELECT * FROM memory.${t}`);
   }
   await db.run(`CREATE TABLE ${schema}.report_counts AS SELECT * FROM memory.report_counts`);
@@ -370,7 +377,19 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
       'T11 parcels',
       false
     ],
-    // 45_land.sql (docs/dev/pipeline.md "Land mask").
+    // 45_land.sql (docs/dev/pipeline.md "Land mask"); clip-yield-loss is counted by the scenario step.
+    [
+      'sd.parcels.clip-yield-loss',
+      'datasf-parcels',
+      'geom',
+      'outlier',
+      'none',
+      4,
+      null,
+      null,
+      'clipped lots that keep more than 95% of their area',
+      false
+    ],
     [
       'sd.parcels.land-clip',
       'datasf-parcels',
@@ -677,7 +696,9 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
     'sd.roll.floor-area-missing': { warnShare: 0.07, failShare: 0.15 },
     'sd.zoning.generic-nc': { warnShare: 0.05, failShare: 0.1 },
     'sd.zoning.named-no-cap': { warnShare: 0.12, failShare: 0.2 },
-    'sd.yield.zero-hostable': { warnShare: 0.09, failShare: 0.15 }
+    'sd.yield.zero-hostable': { warnShare: 0.09, failShare: 0.15 },
+    // The spike's 9900019H case must never pass silently.
+    'sd.parcels.clip-yield-loss': { warnShare: 0, failShare: 0.1 }
   };
   it('lists every registered scenario-data rule', () => {
     expect(TABLE.map(([id]) => id).sort()).toEqual(
@@ -1054,7 +1075,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
 
   it('every scenario-data rule reports once (recordQuality throws on a second report)', () => {
     const ids = QUALITY_RULES.filter((r) => r.owner === 'scenario-data').map((r) => r.id);
-    expect(ids).toHaveLength(46);
+    expect(ids).toHaveLength(47);
     const got = Object.keys(s.quality)
       .filter((k) => k.endsWith('.fired'))
       .map((k) => k.slice('quality.'.length, -'.fired'.length))
