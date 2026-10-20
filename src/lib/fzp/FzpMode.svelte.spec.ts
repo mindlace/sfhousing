@@ -119,23 +119,9 @@ async function press(key: string) {
   await userEvent.keyboard(key);
 }
 
-let realMatchMedia: typeof matchMedia;
-
 beforeEach(async () => {
   stub.reset();
   await page.viewport(1024, 768);
-  // Reduced motion.
-  realMatchMedia = window.matchMedia;
-  vi.stubGlobal('matchMedia', (q: string) =>
-    q.includes('prefers-reduced-motion')
-      ? ({
-          matches: true,
-          media: q,
-          addEventListener() {},
-          removeEventListener() {}
-        } as unknown as MediaQueryList)
-      : realMatchMedia.call(window, q)
-  );
 });
 
 afterEach(() => {

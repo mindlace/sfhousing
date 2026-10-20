@@ -62,6 +62,7 @@ describe('chartModel', () => {
     );
   });
 
+  // The 291-month fixture is paired with longer horizons on purpose: only the labels are checked.
   it('labels 2030, 2040, 2050 and 2060 for a 2066 horizon', () => {
     const long = chartModel(TIMELINE_SCORE, FIX_ASOF, dayFromUtc(2066, 12, 31), W);
     expect(long.xTicks.map((t) => t.label)).toEqual(['2030', '2040', '2050', '2060']);
@@ -343,6 +344,7 @@ describe('tableRows', () => {
 });
 
 describe('chartLabel', () => {
+  // Synthetic months: only the first, deadline, 2045 and last entries are read.
   it('summarises the total at the deadline, 2045 and the end', () => {
     const at2045 = monthIndex(dayFromUtc(2045, 6, 30), TIMELINE_SCORE.months[0], 291);
     expect(chartLabel(TIMELINE_SCORE)).toBe(
