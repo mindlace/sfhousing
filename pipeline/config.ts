@@ -15,7 +15,18 @@ export const SQL_VARS = {
   floors_m: FTF_M,
   default_height_m: 7.0,
   // 8 m per conductor ruling C2; spec §4.8 says 3 m but 3 m exceeds V11's 150 KB on live data
-  nb_simplify_m: 8.0
+  nb_simplify_m: 8.0,
+  // 45_land.sql (docs/dev/pipeline.md "Land mask"). A lot that loses less land than this keeps its
+  // geometry exactly. Tier 4, from the 2026-10-19 spike.
+  land_min_removed_m2: 5.0,
+  // Simplification of the land mask, so a clipped edge does not follow every coastline vertex.
+  // Tier 4, from the 2026-10-19 spike.
+  land_simplify_m: 0.5,
+  // Buffer out and back by this, to close the seams between tiles. Tier 4, from the 2026-10-19 spike.
+  land_seam_m: 0.05,
+  // Grid cell the mask is cut into, so a lot is intersected with a few small pieces of it, not the
+  // whole city. Tier 4, from the 2026-10-19 spike.
+  land_cell_m: 250
 } as const;
 export const KNOWN_LANDUSE = [
   'RESIDENT',

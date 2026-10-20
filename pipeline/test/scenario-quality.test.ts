@@ -84,6 +84,9 @@ async function synthetic(
   await db.run(`USE ${schema}`);
   try {
     await createQualityTables(db);
+    // runSql's own tallies (45_land.sql), as the copied tables carry its results.
+    await db.run('INSERT INTO quality_tally SELECT * FROM memory.quality_tally');
+    await db.run('INSERT INTO quality_sample SELECT * FROM memory.quality_sample');
     for (const sql of edit) await db.run(sql);
     const records = (await readParcelRecords(db)).map(({ rec, cellId }) => ({
       rec: { ...rec, ...recs[rec.id] },
@@ -364,6 +367,31 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
       4,
       null,
       'T11 parcels',
+      false
+    ],
+    // 45_land.sql (docs/dev/pipeline.md "Land mask").
+    [
+      'sd.parcels.land-clip',
+      'datasf-parcels',
+      'geom',
+      'shape',
+      'replace',
+      4,
+      0,
+      null,
+      'parcels',
+      false
+    ],
+    [
+      'sd.parcels.underwater',
+      'datasf-parcels',
+      'geom',
+      'observe',
+      'none',
+      4,
+      null,
+      null,
+      'parcels',
       false
     ],
     [
@@ -1011,7 +1039,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
 
   it('every scenario-data rule reports once (recordQuality throws on a second report)', () => {
     const ids = QUALITY_RULES.filter((r) => r.owner === 'scenario-data').map((r) => r.id);
-    expect(ids).toHaveLength(44);
+    expect(ids).toHaveLength(46);
     const got = Object.keys(s.quality)
       .filter((k) => k.endsWith('.fired'))
       .map((k) => k.slice('quality.'.length, -'.fired'.length))

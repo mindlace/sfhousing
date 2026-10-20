@@ -50,7 +50,8 @@ export async function openDuck(opts: { httpfs?: boolean; path?: string } = {}): 
       await db.run('LOAD httpfs');
     }
     for (const [name, value] of Object.entries(SQL_VARS)) {
-      await db.run(`SET VARIABLE ${name} = ${value.toFixed(1)}::DOUBLE`);
+      // A string cast parses the shortest round-trip form exactly (0.05 stays 0.05).
+      await db.run(`SET VARIABLE ${name} = CAST('${value}' AS DOUBLE)`);
     }
   } catch (e) {
     db.close();

@@ -424,12 +424,13 @@ export function qualityRule(id: string): QualityRule {
 }
 
 /** Creates the DuckDB tables quality_tally(rule_id, fired, of, units, units_of) and
- *  quality_sample(rule_id, record_id). A SQL rule inserts one tally row and its sample rows. */
+ *  quality_sample(rule_id, record_id), unless they exist (runSql calls it too, so a database it
+ *  ran on keeps its tallies). A SQL rule inserts one tally row and its sample rows. */
 export async function createQualityTables(db: Duck): Promise<void> {
   await db.run(
-    `CREATE TABLE quality_tally (rule_id VARCHAR NOT NULL, fired BIGINT NOT NULL,
+    `CREATE TABLE IF NOT EXISTS quality_tally (rule_id VARCHAR NOT NULL, fired BIGINT NOT NULL,
        "of" BIGINT NOT NULL, units BIGINT, units_of BIGINT);
-     CREATE TABLE quality_sample (rule_id VARCHAR NOT NULL, record_id VARCHAR NOT NULL);`
+     CREATE TABLE IF NOT EXISTS quality_sample (rule_id VARCHAR NOT NULL, record_id VARCHAR NOT NULL);`
   );
 }
 

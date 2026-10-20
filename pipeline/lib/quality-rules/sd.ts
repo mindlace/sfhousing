@@ -6,8 +6,8 @@ import type { QualityRule } from '../quality';
  * at the entry states why it departs. The values are literal here: this module is loaded by
  * quality.ts, so it cannot call quality.ts's `defaultShares` at load time.
  *
- * The SQL-side rules below are applied and tallied in pipeline/sql/80_scenario.sql (row level) and
- * 81_scenario_features.sql (parcel-years); the TS-side rules (no-row defaults, zoning, yield) are
+ * The SQL-side rules below are applied and tallied in pipeline/sql/45_land.sql (the land mask),
+ * 80_scenario.sql (row level) and 81_scenario_features.sql (parcel-years); the TS-side rules (no-row defaults, zoning, yield) are
  * applied and counted in pipeline/steps/scenario.ts. writeScenario reports them all once, after the
  * T11 rows: the SQL tallies through recordSqlQuality, the TS rules through recordQuality. Their
  * thresholds carry their tier and source where the code applies them.
@@ -159,6 +159,41 @@ export const SD_RULES: readonly QualityRule[] = [
     'A parcel record dropped date that is not a date is treated as missing; a time of day is ' +
       'dropped'
   ),
+  // ---- Land mask (45_land.sql; docs/dev/pipeline.md "Land mask") ----
+  // The written geometry is the source polygon ∩ OpenStreetMap land, both per record (value tier
+  // 0); the thresholds (land_min_removed_m2 and the rest, config.ts SQL_VARS) are tier 4, from the
+  // 2026-10-19 spike. Of = every parcel. Default shares.
+  {
+    ...SD,
+    id: 'sd.parcels.land-clip',
+    source: 'datasf-parcels',
+    field: 'geom',
+    kind: 'shape',
+    action: 'replace',
+    tier: 4,
+    valueTier: 0,
+    maskBit: null,
+    label:
+      'Cuts a lot back to its dry land (OpenStreetMap shoreline, piers and existing buildings)',
+    denominator: 'parcels',
+    ...SHARES,
+    unitsWeighted: false
+  },
+  {
+    ...SD,
+    id: 'sd.parcels.underwater',
+    source: 'datasf-parcels',
+    field: 'geom',
+    kind: 'observe',
+    action: 'none',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label: 'Counts lots with no dry land; they stay on the map but cannot be built on',
+    denominator: 'parcels',
+    ...SHARES,
+    unitsWeighted: false
+  },
   // ---- Parcel attributes and height polygons (80_scenario.sql) ----
   // DQ-4 registered rules (final fix wave, review Important 1): the as-built drops and default of
   // 80_scenario.sql's parcel and height inputs. 0 live firings each on 2026-10-17 (236,573 parcel
