@@ -769,11 +769,12 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     expect((await feature(s, '3512010', 2025)).imputed & BIT.year).toBe(0);
     expect(await feature(s, '3512008', 2025)).toMatchObject({ year_built: 2025 });
     expect((await feature(s, '3512008', 2025)).imputed & BIT.year).toBe(0);
-    // Mini's own year "0" on lot 5's 2024 row (normalise keeps it now) fires too. Of: the 28 mini
-    // rows, minus lot 7's two without a year, plus the four copies, minus lot 13's NULL.
+    // Mini's own year "0" on lot 5's 2024 row (normalise keeps it now) fires too. Of: the 34 mini
+    // rows, minus the six without a year (lots 7, 15 and 17), plus the four copies, minus lot 13's
+    // NULL.
     expect(await tally(s, 'sd.roll.year-built-range')).toEqual({
       fired: 3,
-      of: 29,
+      of: 31,
       sample: ['3512001:2025', '3512005:2024', '3512006:2025']
     });
   });
@@ -782,10 +783,11 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     const f = await feature(s, '3512013', 2024);
     expect(f.year_built).toBe(await median(s, 2024, RESIDENTIAL));
     expect(f.imputed & BIT.year).toBe(BIT.year);
-    // Of: the 27 observed parcel-years and lot 3's carried 2024 row, less lot 7's two vacant ones.
+    // Of: the 33 observed parcel-years and lot 3's carried 2024 row, less the six vacant ones
+    // (lots 7, 15 and 17).
     expect(await tally(s, 'sd.features.year-built-median')).toEqual({
       fired: 1,
-      of: 26,
+      of: 28,
       sample: ['3512013:2024']
     });
   });
@@ -801,13 +803,14 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     expect((await feature(s, '3512002', 2024)).imputed & BIT.stories).toBe(0);
     expect(await tally(s, 'sd.roll.stories-max')).toEqual({
       fired: 2,
-      of: 32,
+      of: 38,
       sample: ['3512006:2025', '3512101:2025']
     });
+    // Lot 15 (0 stories on the roll) takes round(6 / 3.1) = 2 from bbay in both years.
     expect(await tally(s, 'sd.features.stories-height')).toEqual({
-      fired: 1,
-      of: 27,
-      sample: ['3512006:2025']
+      fired: 3,
+      of: 33,
+      sample: ['3512006:2025', '3512015:2024', '3512015:2025']
     });
   });
 
@@ -817,7 +820,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     );
     expect(await tally(s, 'sd.roll.unmatched')).toEqual({
       fired: 1,
-      of: 32,
+      of: 38,
       units: 7,
       unitsOf: units,
       sample: ['9999999:2025']
@@ -875,7 +878,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     );
     expect(await tally(s, 'sd.roll.units-capacity')).toEqual({
       fired: 6,
-      of: 27,
+      of: 33,
       units: 900 + 5000 + 5000 + 5000 + 1000 + 1000,
       unitsOf: units,
       sample: [
@@ -913,7 +916,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     // unitsOf is the post-capacity series' total: the spike's 1,500 in place of its 50.
     expect(await tally(s, 'sd.roll.units-spike')).toEqual({
       fired: 1,
-      of: 27,
+      of: 33,
       units: 1500,
       unitsOf: units - 50 + 1500,
       sample: ['3512014:2024']
@@ -931,13 +934,24 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     const i = p.index.get('3512011')!;
     expect(p.existingFloorAreaM2[i]).toBe(601);
     expect(p.imputed[i] & BIT.floor).toBe(BIT.floor);
-    // Lot 7 (vacant) has no roll floor area in either year. The no-row parcels (lots 9, 12 and
-    // 13, which have no 2025 row) also fire it (spec §4.5 step 5): fired and of each gain 3. Of:
-    // the 28 panel parcel-years (lot 3's carried 2024 row included) plus those 3.
+    // Lots 7, 15 and 17 (vacant) have no roll floor area in either year. The no-row parcels (lots
+    // 9, 12 and 13, which have no 2025 row) also fire it (spec §4.5 step 5): fired and of each
+    // gain 3. Of: the 34 panel parcel-years (lot 3's carried 2024 row included) plus those 3.
     expect(await tally(s, 'sd.roll.floor-area-missing')).toEqual({
-      fired: 6,
-      of: 31,
-      sample: ['3512007:2024', '3512007:2025', '3512009', '3512011:2025', '3512012', '3512013']
+      fired: 10,
+      of: 37,
+      sample: [
+        '3512007:2024',
+        '3512007:2025',
+        '3512009',
+        '3512011:2025',
+        '3512012',
+        '3512013',
+        '3512015:2024',
+        '3512015:2025',
+        '3512017:2024',
+        '3512017:2025'
+      ]
     });
   });
 
@@ -968,11 +982,11 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     expect(p.existingStories[p.index.get('3512009')!]).toBe(0);
     expect(await reported(s, 'sd.roll.no-row')).toEqual({
       fired: 3,
-      of: 14,
+      of: 17,
       sample: ['3512009', '3512012', '3512013']
     });
     expect(s.scenarioCounts['scenario.imputed.no_roll']).toBe(3);
-    expect(s.scenarioCounts['scenario.imputed.floor_area']).toBe(5);
+    expect(s.scenarioCounts['scenario.imputed.floor_area']).toBe(7);
   });
 
   it('sd.roll.units-missing: a parcel-year whose rows all lack units has 0 and bit 3', async () => {
@@ -981,7 +995,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     expect((await feature(s, '3512006', 2025)).imputed & BIT.units).toBe(0);
     expect(await tally(s, 'sd.roll.units-missing')).toEqual({
       fired: 1,
-      of: 27,
+      of: 33,
       sample: ['3512006:2024']
     });
   });
@@ -991,7 +1005,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
       `SELECT count(*)::INTEGER n FROM q.src_roll WHERE closed_roll_year IS NULL`
     );
     expect(n).toBe(1);
-    expect(await tally(s, 'sd.roll.no-year')).toEqual({ fired: 1, of: 33, sample: ['3512007'] });
+    expect(await tally(s, 'sd.roll.no-year')).toEqual({ fired: 1, of: 39, sample: ['3512007'] });
     // The dropped row reaches no parcel-year: lot 7 keeps one row per roll year.
     expect((await features(s, '3512007')).map((f) => f.roll_year)).toEqual([2024, 2025]);
   });
@@ -1000,7 +1014,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     // Lot 11 (GOVT, other) has land + impr = 0; no other row of class other has a share.
     expect(await tally(s, 'sd.features.share-median')).toEqual({
       fired: 2,
-      of: 26,
+      of: 28,
       sample: ['3512011:2024', '3512011:2025']
     });
     // Of: every median-imputed value (four years, two shares); fired: the two shares.
@@ -1015,15 +1029,15 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     const f = await feature(s, '3512001', 2025);
     expect(f.existing_units).toBe(600);
     expect(f.imputed & BIT.units).toBe(0);
-    // Of: the 11 parcels with rows in 2024 and 2025.
+    // Of: the 14 parcels with rows in 2024 and 2025.
     expect(await tally(s, 'sd.roll.units-latest-jump')).toEqual({
       fired: 1,
-      of: 11,
+      of: 14,
       sample: ['3512001']
     });
     expect(await tally(s, 'sd.roll.units-large')).toEqual({
       fired: 1,
-      of: 28,
+      of: 34,
       sample: ['3512001:2025']
     });
   });
@@ -1031,7 +1045,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
   it('sd.roll.year-gap carries only mini lot 3’s 2024, and the latest-year V18 equality holds', async () => {
     expect(await tally(s, 'sd.roll.year-gap')).toEqual({
       fired: 1,
-      of: 28,
+      of: 34,
       sample: ['8711023C:2024']
     });
     expect(s.scenarioCounts['scenario.panel.feature_mismatch']).toBe(0);
@@ -1069,7 +1083,7 @@ describe('the TS-side zoning and yield rules on a synthetic copy of mini', () =>
 
   it('sd.zoning.split-code counts hostable parcels with a split code', async () => {
     const hostable = s.scenarioCounts['scenario.hostable'];
-    expect(hostable).toBe(8);
+    expect(hostable).toBe(10);
     expect(await reported(s, 'sd.zoning.split-code')).toEqual({
       fired: 1,
       of: hostable,
@@ -1080,19 +1094,19 @@ describe('the TS-side zoning and yield rules on a synthetic copy of mini', () =>
   it('sd.zoning.generic-nc counts hostable parcels with a generic NC code', async () => {
     expect(await reported(s, 'sd.zoning.generic-nc')).toEqual({
       fired: 1,
-      of: 8,
+      of: 10,
       sample: ['8711023C']
     });
   });
 
   it('sd.yield.zero-hostable and sd.yield.nonmonotone count and change nothing', async () => {
-    // Eligible with an envelope: the 8 hostable parcels and lots 6, 8 and 14, whose yields are 0.
+    // Eligible with an envelope: the 10 hostable parcels and lots 6, 8 and 14, whose yields are 0.
     expect(await reported(s, 'sd.yield.zero-hostable')).toEqual({
       fired: 3,
-      of: 11,
+      of: 13,
       sample: ['3512006', '3512008', '3512014']
     });
-    expect(await reported(s, 'sd.yield.nonmonotone')).toEqual({ fired: 0, of: 14, sample: [] });
+    expect(await reported(s, 'sd.yield.nonmonotone')).toEqual({ fired: 0, of: 17, sample: [] });
   });
 
   it('keeps the unverified-districts warning and drops the ad hoc 10% warning', () => {
@@ -1150,15 +1164,15 @@ describe('the cast, attrs, height and no-building rules on a synthetic copy of m
   };
 
   // [id, lot, roll year, bit, of, baseline of]: `of` is the roll rows with a value in the field
-  // (mini: 27 with a year; lot 5's two rows lose their stories below).
+  // (mini: 35 rows, 29 with a year; lot 5's two rows lose their stories below).
   it.each([
-    ['sd.roll.roll-year-cast', '3512001', 2025, 0, 29, 29],
-    ['sd.roll.year-built-cast', '3512008', 2025, BIT.year, 27, 27],
-    ['sd.roll.stories-cast', '3512010', 2025, BIT.stories, 27, 29],
-    ['sd.roll.units-cast', '3512011', 2025, BIT.units, 29, 29],
-    ['sd.roll.floor-area-cast', '3512014', 2025, BIT.floor, 29, 29],
-    ['sd.roll.land-value-cast', '3512006', 2025, BIT.share, 29, 29],
-    ['sd.roll.improvement-value-cast', '3512006', 2024, BIT.share, 29, 29]
+    ['sd.roll.roll-year-cast', '3512001', 2025, 0, 35, 35],
+    ['sd.roll.year-built-cast', '3512008', 2025, BIT.year, 29, 29],
+    ['sd.roll.stories-cast', '3512010', 2025, BIT.stories, 33, 35],
+    ['sd.roll.units-cast', '3512011', 2025, BIT.units, 35, 35],
+    ['sd.roll.floor-area-cast', '3512014', 2025, BIT.floor, 35, 35],
+    ['sd.roll.land-value-cast', '3512006', 2025, BIT.share, 35, 35],
+    ['sd.roll.improvement-value-cast', '3512006', 2024, BIT.share, 35, 35]
   ])(
     '%s counts the flagged row and sets its bit; no value changes',
     async (id, lot, y, bit, of, of0) => {
@@ -1170,13 +1184,13 @@ describe('the cast, attrs, height and no-building rules on a synthetic copy of m
     }
   );
 
-  // [id, blklot, of]: every parcel row has a centroid (19, plus the no-blklot copy); mini leaves
-  // date_rec_add empty (only the flagged row counts) and dates its two retired rows.
+  // [id, blklot, of]: every parcel row has a centroid (23, plus the no-blklot copy); mini leaves
+  // date_rec_add empty (only the flagged row counts) and dates its three retired rows.
   it.each([
-    ['sd.attrs.latitude-cast', '3512001', 20],
-    ['sd.attrs.longitude-cast', '3512010', 20],
+    ['sd.attrs.latitude-cast', '3512001', 24],
+    ['sd.attrs.longitude-cast', '3512010', 24],
     ['sd.attrs.added-date-cast', '3512011', 1],
-    ['sd.attrs.dropped-date-cast', '3512098', 2]
+    ['sd.attrs.dropped-date-cast', '3512098', 3]
   ])('%s counts the flagged parcel row', async (id, blklot, of) => {
     expect(await tally(s, id)).toEqual({ fired: 1, of, sample: [blklot] });
   });
@@ -1184,25 +1198,25 @@ describe('the cast, attrs, height and no-building rules on a synthetic copy of m
   it('sd.attrs.active-unknown reads NULL as retired, counted; zoning and lineage unchanged', async () => {
     expect(await tally(s, 'sd.attrs.active-unknown')).toEqual({
       fired: 1,
-      of: 20,
+      of: 24,
       sample: ['3512102']
     });
-    expect(await tally(s0, 'sd.attrs.active-unknown')).toEqual({ fired: 0, of: 19, sample: [] });
+    expect(await tally(s0, 'sd.attrs.active-unknown')).toEqual({ fired: 0, of: 23, sample: [] });
     expect(await values(s, '3512002', 2025)).toEqual(await values(s0, '3512002', 2025));
   });
 
   it('sd.attrs.no-blklot drops a parcel row without a blklot, counted', async () => {
     expect(await tally(s, 'sd.attrs.no-blklot')).toEqual({
       fired: 1,
-      of: 20,
+      of: 24,
       sample: ['3512001']
     });
     expect(await values(s, '3512001', 2025)).toEqual(await values(s0, '3512001', 2025));
   });
 
   it('sd.height.blank drops a height polygon with a blank string, counted', async () => {
-    expect(await tally(s, 'sd.height.blank')).toEqual({ fired: 1, of: 7, sample: ['1'] });
-    expect(await tally(s0, 'sd.height.blank')).toEqual({ fired: 0, of: 6, sample: [] });
+    expect(await tally(s, 'sd.height.blank')).toEqual({ fired: 1, of: 8, sample: ['1'] });
+    expect(await tally(s0, 'sd.height.blank')).toEqual({ fired: 0, of: 7, sample: [] });
     const district = (x: Synthetic) => db.all(`SELECT * FROM ${x.schema}.sc_district ORDER BY id`);
     expect(await district(s)).toEqual(await district(s0));
   });
@@ -1210,10 +1224,10 @@ describe('the cast, attrs, height and no-building rules on a synthetic copy of m
   it('sd.features.no-building counts missing stories without a height (0, no bit), not a 0', async () => {
     expect(await tally(s, 'sd.features.no-building')).toEqual({
       fired: 2,
-      of: 25,
+      of: 31,
       sample: ['3512005:2024', '3512005:2025']
     });
-    expect(await tally(s0, 'sd.features.no-building')).toEqual({ fired: 0, of: 25, sample: [] });
+    expect(await tally(s0, 'sd.features.no-building')).toEqual({ fired: 0, of: 31, sample: [] });
     for (const y of [2024, 2025]) {
       const f = await feature(s, '3512005', y);
       expect(f.existing_stories).toBe(0);
@@ -1251,16 +1265,16 @@ describe('the vacant-lot definition rules on a synthetic copy of mini', () => {
     expect(src.impr).toBeGreaterThan(0);
     expect(await tally(s, 'sd.features.vacant-year-built')).toEqual({
       fired: 1,
-      of: 26,
+      of: 32,
       sample: ['3512010:2025']
     });
     expect(await tally(s, 'sd.features.vacant-share')).toEqual({
       fired: 1,
-      of: 26,
+      of: 32,
       sample: ['3512010:2025']
     });
     for (const id of ['sd.features.vacant-year-built', 'sd.features.vacant-share'])
-      expect(await tally(s0, id)).toEqual({ fired: 0, of: 26, sample: [] });
+      expect(await tally(s0, id)).toEqual({ fired: 0, of: 32, sample: [] });
   });
 
   it('changes no value: vacant is 0 and 0, with no bit, as before the rules', async () => {
@@ -1300,7 +1314,7 @@ describe('sd.zoning.unlisted and sd.zoning.named-no-cap on a synthetic copy of m
 
   it('an unlisted code fires only sd.zoning.unlisted; the cap stays null', async () => {
     const hostable = s.scenarioCounts['scenario.hostable'];
-    expect(hostable).toBe(8);
+    expect(hostable).toBe(10);
     expect(await reported(s, 'sd.zoning.unlisted')).toEqual({
       fired: 1,
       of: hostable,
@@ -1500,7 +1514,7 @@ describe('sd.zoning.missing on a synthetic copy of mini', () => {
 
   it('counts hostable parcels with no zoning code (no density cap); changes nothing else', async () => {
     const hostable = s.scenarioCounts['scenario.hostable'];
-    expect(hostable).toBe(8);
+    expect(hostable).toBe(10);
     expect(await reported(s, 'sd.zoning.missing')).toEqual({
       fired: 1,
       of: hostable,
@@ -1577,11 +1591,11 @@ describe('sd.roll.year-gap on a synthetic copy of mini', () => {
   });
 
   it('reports the carried parcel-years against all panel parcel-years', async () => {
-    // Panel: mini's 25 observed parcel-years less lot 13's 2024 row, the 7 new rows, 6 carried
+    // Panel: mini's 31 observed parcel-years less lot 13's 2024 row, the 7 new rows, 6 carried
     // (the 5 above and mini's own lot 3 2024, spec §4.11).
     expect(await tally(s, 'sd.roll.year-gap')).toEqual({
       fired: 6,
-      of: 37,
+      of: 43,
       sample: [
         '3512009:2008',
         '3512009:2010',
@@ -1823,11 +1837,11 @@ describe('sd.landuse.none-with-units: no land-use record, assessor units (coordi
   it('fires on the T11 parcels it makes eligible, of every T11 parcel, recorded once', async () => {
     expect(await reported(s, 'sd.landuse.none-with-units')).toEqual({
       fired: 2,
-      of: 14,
+      of: 17,
       sample: ['3512001', '3512010']
     });
-    // Mini has 12 eligible chunk records; three lose their land-use row and two regain eligibility.
-    expect(s.scenarioCounts['scenario.eligible']).toBe(11);
+    // Mini has 14 eligible chunk records; three lose their land-use row and two regain eligibility.
+    expect(s.scenarioCounts['scenario.eligible']).toBe(13);
   });
 
   it('every flag reads the scenario eligibility, and the step agrees with itself', () => {

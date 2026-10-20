@@ -60,11 +60,31 @@ const lotRect = (i: number) => rect(10 * (i - 1), 0, 10 * i, 30);
 const lotId = (i: number) => `35120${String(i).padStart(2, '0')}`;
 // Lots 3 and 4 use the odd-shaped (alphanumeric) ids; the rest are 35120NN.
 const LOT_IDS: Record<number, string> = {
-  ...Object.fromEntries(Array.from({ length: 14 }, (_, k) => [k + 1, lotId(k + 1)])),
+  ...Object.fromEntries(Array.from({ length: 17 }, (_, k) => [k + 1, lotId(k + 1)])),
   3: '8711023C',
   4: '0026T001A'
 };
 const nhoodOf = (i: number) => (i <= 8 ? 'Mission' : 'Noe Valley');
+
+// ---- shoreline (lots 15-17) ----
+// The basemap extract has z15 earth in tile columns 5240 and 5241 only, so the east edge of 5241
+// is the fixture's shoreline. E is that meridian's local x at y = 15 m, through the projection.
+const TILE_EAST_LNG = (5242 / 2 ** 15) * 360 - 180;
+const E = (() => {
+  let x = 0;
+  for (let k = 0; k < 8; k++) {
+    const [, lat] = proj4('EPSG:7131', 'EPSG:4326', [OX + x, OY + 15]);
+    x = proj4('EPSG:4326', 'EPSG:7131', [TILE_EAST_LNG, lat])[0] - OX;
+  }
+  return x;
+})();
+const BAYVIEW = 'Bayview Hunters Point';
+/** Lots 15-17: across the shoreline, wholly in the water, and grazing it by 0.1 m. */
+const SHORE_LOTS: Record<number, Ring> = {
+  15: rect(E - 30, 0, E + 10, 30),
+  16: rect(E + 20, 0, E + 40, 30),
+  17: rect(E - 30, 40, E + 0.1, 70)
+};
 
 function parcelProps(mapblklot: string | null, blklot: string, active: boolean, nh?: string) {
   const p: Props = {};
@@ -144,6 +164,16 @@ for (let i = 1; i <= 14; i++) {
     parcelRows.push({ mapblklot: id, blklot: id, active: true, nh, polys: [[lotRect(i)]] });
   }
 }
+for (let i = 15; i <= 17; i++) {
+  const id = LOT_IDS[i];
+  parcelRows.push({
+    mapblklot: id,
+    blklot: id,
+    active: true,
+    nh: BAYVIEW,
+    polys: [[SHORE_LOTS[i]]]
+  });
+}
 // retired parcels
 parcelRows.push({
   mapblklot: '3512099',
@@ -158,6 +188,14 @@ parcelRows.push({
   active: false,
   nh: 'Mission',
   polys: [[rect(1, 26, 9, 29)]]
+});
+// retired, centroid in lot 15's water part (lineage must match on the original polygon)
+parcelRows.push({
+  mapblklot: '3512096',
+  blklot: '3512096',
+  active: false,
+  nh: BAYVIEW,
+  polys: [[rect(E + 3, 22, E + 7, 28)]]
 });
 // active parcel with null mapblklot
 parcelRows.push({
@@ -182,7 +220,8 @@ const heightBulk = (
     [97, 110, '85//120-R-4', '120'],
     [110, 120, 'Special Height District', '4444'],
     [120, 130, '120/400-R-2  //  140/520-R-2', '520'],
-    [130, 140, '120/400//120/650-R4', '650']
+    [130, 140, '120/400//120/650-R4', '650'],
+    [E - 50, E + 50, '65-X', '65']
   ] as const
 ).map(([x0, x1, height, gen]) =>
   feature({ height, gen_hght: gen }, polygon(rect(x0, -100, x1, 100)))
@@ -211,12 +250,16 @@ const ZONING: Record<number, string> = {
   11: 'RH-3',
   12: 'P',
   13: 'C-3-O',
-  14: 'C-3-G'
+  14: 'C-3-G',
+  15: 'RH-2',
+  16: 'RH-2',
+  17: 'RH-2'
 };
 const lotOfId = Object.fromEntries(Object.entries(LOT_IDS).map(([i, id]) => [id, Number(i)]));
 const DROPPED: Record<string, string> = {
   '3512099': '2024-06-30T00:00:00.000',
-  '3512098': '2019-03-01T00:00:00.000'
+  '3512098': '2019-03-01T00:00:00.000',
+  '3512096': '2024-06-30T00:00:00.000'
 };
 const ATTR_HEADER = [
   'mapblklot',
@@ -313,6 +356,9 @@ const ROLL: RollSpec[] = [
   rr('3512011', 'GOVT/X', '1955', [3, 0, 6000], [0, 0], { status: 'N' }),
   rr('3512013', 'MRES/A', '1970', [3, 5, 5000], [500000, 500000], { years: [2024] }),
   rr('3512014', 'MRES/A', '2015', [6, 40, 30000], [3000000, 9000000]),
+  rr('3512015', 'MISC/V', null, [0, 0, 0], [100000, 0]),
+  rr('3512016', 'SRES/D', '1950', [1, 2, 1200], [300000, 100000]),
+  rr('3512017', 'MISC/V', null, [0, 0, 0], [100000, 0]),
   rr('3512099', 'MRES/A', '1910', [2, 7, 5600], [300000, 200000], { years: [2024] })
 ];
 const roll = ROLL_YEARS.flatMap((year) =>
@@ -362,6 +408,7 @@ const landuse = [
   lu(LOT_IDS[11], 'RESIDENT', 3, 0, 0, lot(11)),
   lu(LOT_IDS[13], 'RESIDENT', 5, 0, 0, lot(13)),
   lu(LOT_IDS[14], 'MIXRES', 40, 30000, 5000, lot(14)),
+  ...[15, 16, 17].map((i) => lu(LOT_IDS[i], 'VACANT', 0, 0, 0, polygon(SHORE_LOTS[i]))),
   lu('3512099', 'RESIDENT', 7, 0, 0, polygon(rect(111, 26, 119, 29))),
   lu('3512098', 'RESIDENT', 9, 0, 0, polygon(rect(1, 26, 9, 29)))
 ];
@@ -386,7 +433,8 @@ const footprints = [
 // ---- neighborhoods ----
 const neighborhoods = [
   feature({ nhood: 'Mission' }, polygon(rect(-60, -100, 75, 100))),
-  feature({ nhood: 'Noe Valley' }, polygon(rect(75, -100, 220, 100)))
+  feature({ nhood: 'Noe Valley' }, polygon(rect(75, -100, 220, 100))),
+  feature({ nhood: BAYVIEW }, polygon(rect(E - 50, -100, E + 50, 100)))
 ];
 
 // ---- Overture ----
@@ -422,7 +470,8 @@ const overture = [
   ov('bpier', 6, null, ['Microsoft ML Buildings'], polygon(rect(20, -40, 40, -32))),
   ov('bunder', 5, null, ['OpenStreetMap'], polygon(rect(3, 6, 5, 8)), true),
   ov('bmarin', 8, null, ['OpenStreetMap'], polygon(rect(0, 400, 10, 410))),
-  ov('besri', 4, null, ['Esri Community Maps'], polygon(rect(57.5, 26, 58.7, 27.2)))
+  ov('besri', 4, null, ['Esri Community Maps'], polygon(rect(57.5, 26, 58.7, 27.2))),
+  ov('bbay', 6, null, ['OpenStreetMap'], polygon(rect(E + 2, 10, E + 8, 20)))
 ];
 
 // ---- GTFS (transit spec §4.4) ----

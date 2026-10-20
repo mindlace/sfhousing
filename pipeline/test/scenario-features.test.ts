@@ -106,8 +106,8 @@ const panel = () =>
 describe('scenario T13 panel and T11 features (mini fixture)', () => {
   it("every parcel's 2025 panel row equals its T11 features and mask", async () => {
     const rows = (await panel()).filter((r) => r.roll_year === 2025);
-    // Lots 9, 12 and 13 have no 2025 roll row (mini README), so 11 of the 14 parcels.
-    expect(rows).toHaveLength(11);
+    // Lots 9, 12 and 13 have no 2025 roll row (mini README), so 14 of the 17 parcels.
+    expect(rows).toHaveLength(14);
     expect(p.rollYear).toBe(2025);
     for (const r of rows) {
       const i = p.index.get(r.mapblklot);
@@ -149,21 +149,23 @@ describe('scenario T13 panel and T11 features (mini fixture)', () => {
       });
     }
     expect(counts['scenario.panel.feature_mismatch']).toBe(0);
-    expect(counts['scenario.roll.latest_eligible_matched']).toBe(10);
+    // Underwater lot 16 has a 2025 row but is not eligible.
+    expect(counts['scenario.roll.latest_eligible_matched']).toBe(12);
   });
 
   it('hostable_base changes by at most 5% between consecutive roll years (no exemptions)', async () => {
     // Partner ruling (option c): the density cap no longer gates the at-risk set, so a cap change
     // such as the 2022-11-27 fourplex ordinance cannot flip it. Trivially true on mini (all its
     // roll years follow the ordinance), still asserted; V18 asserts it on every build. Compared
-    // over the parcels with a row in both years: mini's panel grows from 2 rows (2023) to 13
-    // (2024) and 11 (2025), which is coverage, not flips.
+    // over the parcels with a row in both years: mini's panel grows from 2 rows (2023) to 16
+    // (2024) and 14 (2025), which is coverage, not flips. Vacant lots 15 and 17 are hostable in
+    // 2024 and 2025; underwater lot 16 never is.
     const rows = await panel();
     const years = [...new Set(rows.map((r) => r.roll_year))].sort();
     expect(years.map((y) => counts[`scenario.panel.hostable_base.${y}`])).toEqual(
       years.map((y) => rows.filter((r) => r.roll_year === y && r.hostable_base).length)
     );
-    expect(years.map((y) => counts[`scenario.panel.hostable_base.${y}`])).toEqual([2, 8, 7]);
+    expect(years.map((y) => counts[`scenario.panel.hostable_base.${y}`])).toEqual([2, 10, 9]);
     const at = new Map(rows.map((r) => [`${r.mapblklot}:${r.roll_year}`, r.hostable_base]));
     for (const y of years.slice(1)) {
       const both = rows.filter((r) => r.roll_year === y && at.has(`${r.mapblklot}:${y - 1}`));
@@ -226,7 +228,7 @@ describe('scenario T13 panel and T11 features (mini fixture)', () => {
       `SELECT mapblklot, existing_floor_area_m2, imputed FROM sc_features
        WHERE roll_year = (SELECT max(roll_year) FROM sc_features) ORDER BY mapblklot`
     );
-    expect(rows).toHaveLength(11);
+    expect(rows).toHaveLength(14);
     for (const r of rows) {
       const i = t11.index.get(r.mapblklot);
       expect(i, r.mapblklot).toBeDefined();
@@ -274,6 +276,12 @@ describe('scenario T13 panel and T11 features (mini fixture)', () => {
        FROM read_parquet('${join(derived, 'parcel-lineage.parquet')}') ORDER BY blklot`
     );
     expect(rows).toEqual([
+      {
+        blklot: '3512096',
+        retired_mapblklot: '3512096',
+        current_mapblklot: '3512015',
+        d: '2024-06-30'
+      },
       {
         blklot: '3512098',
         retired_mapblklot: '3512098',

@@ -44,26 +44,27 @@ describe('live raw layout (<rawDir>/<sha256>, no extension)', () => {
       expect(existsSync(join(raw, lock.sources[0].files[0].sha256))).toBe(true);
       const counts = await normaliseAll(db, lock, raw, norm);
       expect(counts).toEqual({
-        'datasf-parcels': 19,
-        'datasf-landuse-2023': 15,
+        'datasf-parcels': 23,
+        'datasf-landuse-2023': 18,
         'datasf-footprints': 3,
-        'datasf-neighborhoods': 2,
-        'datasf-height-bulk': 6,
-        'datasf-parcel-attrs': 19,
-        'datasf-assessor-roll': 29,
-        'overture-buildings': 12,
+        'datasf-neighborhoods': 3,
+        'datasf-height-bulk': 7,
+        'datasf-parcel-attrs': 23,
+        'datasf-assessor-roll': 35,
+        'overture-buildings': 13,
         'protomaps-basemap': 2
       });
       await loadNormalised(db, norm);
       const [r] = await db.all<{ n: number }>('SELECT count(*) n FROM src_overture');
-      expect(r.n).toBe(12);
+      expect(r.n).toBe(13);
       // Extensionless CSV pages still parse with the header and SODA quoting.
       const [roll] = await db.all<{ n: number; u: number }>(
         `SELECT count(DISTINCT parcel_number) n, sum(number_of_units) u FROM src_roll
          WHERE closed_roll_year = 2025`
       );
-      // The raw 2025 units: 66 plus lot 3's 5,000 (spec §4.11 RA1 case, before the units rules).
-      expect(roll).toEqual({ n: 13, u: 5066 });
+      // The raw 2025 units: 66 plus lot 3's 5,000 (spec §4.11 RA1 case, before the units rules)
+      // plus lot 16's 2.
+      expect(roll).toEqual({ n: 16, u: 5068 });
     } finally {
       db.close();
     }

@@ -1,5 +1,8 @@
--- 60_attributes: per-parcel existing attributes (spec §4.5). Reads parcels, parcel_landuse, pieces.
--- Writes parcel_out and floor_area.rule1..4 counts. Ordered by id.
+-- 60_attributes: per-parcel existing attributes (spec §4.5). Reads parcels, parcel_landuse, pieces,
+-- parcel_land. Writes parcel_out and floor_area.rule1..4 counts. Ordered by id.
+-- Land mask (45_land): geom is the dry part of a clipped lot, so area_m2 is its dry area; an
+-- underwater lot keeps its outline and area but is never eligible. geojson7131_orig carries the
+-- original outline of clipped lots only (NULL otherwise).
 -- floor_area rules: 1 sqft * 0.09290304; 2 sum(piece area * max(1, round(height / floors_m)));
 -- 3 units * 80; else 4 = 0. Both floor area and height are rounded to 0.1.
 -- Rule 2 sums in bid order (list_sum over an ordered list): a parallel sum() may add the
@@ -15,7 +18,8 @@ GROUP BY parcel_id;
 
 CREATE OR REPLACE TEMP TABLE a_rule AS
 SELECT p.id, p.geom, p.label_lng, p.label_lat, p.x0, p.y0, p.neighborhood,
-       l.units, l.land_use, l.eligible,
+       l.units, l.land_use, l.eligible AND NOT p.underwater AS eligible, p.underwater,
+       CASE WHEN k.status = 'clipped' THEN ST_AsGeoJSON(p.geom_orig) END AS geojson7131_orig,
        CASE WHEN l.sqft > 0 THEN l.sqft * 0.09290304
             WHEN coalesce(a.fa2, 0) > 0 THEN a.fa2
             WHEN l.units > 0 THEN l.units * 80.0
@@ -29,6 +33,7 @@ SELECT p.id, p.geom, p.label_lng, p.label_lat, p.x0, p.y0, p.neighborhood,
        ST_XMax(p.geom4326) AS xmax, ST_YMax(p.geom4326) AS ymax
 FROM parcels p
 JOIN parcel_landuse l USING (id)
+JOIN parcel_land k USING (id)
 LEFT JOIN a_pieces a USING (id);
 
 CREATE OR REPLACE TABLE parcel_out AS
@@ -36,10 +41,11 @@ SELECT id, geom, label_lng, label_lat, x0, y0,
        units::INTEGER AS units,
        round(fa, 1)::DOUBLE AS floor_area_m2,
        round(hmax, 1)::DOUBLE AS height_m,
-       land_use, eligible, neighborhood,
+       land_use, eligible, underwater, neighborhood,
        fa_rule::INTEGER AS fa_rule,
        xmin, ymin, xmax, ymax,
        ST_AsGeoJSON(geom) AS geojson7131,
+       geojson7131_orig,
        ST_Area(geom) AS area_m2
 FROM a_rule
 ORDER BY id;

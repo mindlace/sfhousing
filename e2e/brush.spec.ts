@@ -11,7 +11,7 @@ import { expectNoA11yViolations } from './helpers/a11y';
 type Win = Window & { __sfhMap?: SfhMapDebug; __sfhBrush?: SfhBrushDebug };
 type LngLat = [number, number];
 
-// fixture-0 holds one chunk (50_25) of 14 parcels around [-122.4186, 37.7601].
+// fixture-0's chunk 50_25 holds 14 parcels around [-122.4186, 37.7601] (51_25: lots 15-17).
 const FRAME = { center: [-122.4187, 37.76014] as LngLat, zoom: 18.5, pitch: 0, bearing: 0 };
 const CHUNK = '**/data/fixture-0/parcels/50_25.json';
 

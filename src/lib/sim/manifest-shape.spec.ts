@@ -63,7 +63,7 @@ describe('checkManifestShape', () => {
     const m = fixture();
     const chunks = m.chunks as Chunk[];
     chunks.push({ ...chunks[0], url: chunks[0].url.replace(/[^/]+$/, 'dup.json') });
-    expect(checkManifestShape(m)).toBe('chunks.1.cellId is a duplicate');
+    expect(checkManifestShape(m)).toBe(`chunks.${chunks.length - 1}.cellId is a duplicate`);
   });
 
   it('CELL_ID_RE_COPY equals the zod module CELL_ID_RE', () => {

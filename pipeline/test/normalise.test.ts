@@ -23,10 +23,10 @@ describe('normalise mini fixture', () => {
         )
       ).map((r) => [r.t, r.n])
     );
-    // parcels: 14 lots, lot 2 has 3 rows → 16, + 2 retired + 1 null-id = 19 (attrs likewise);
-    // height: 6 districts; roll: 13 rows in 2025 + 14 in 2024 (lot 13 and 3512099 only in 2024,
+    // parcels: 17 lots, lot 2 has 3 rows → 19, + 3 retired + 1 null-id = 23 (attrs likewise);
+    // height: 7 districts; roll: 16 rows in 2025 + 17 in 2024 (lot 13 and 3512099 only in 2024,
     // lot 3 not in 2024) + 2 in 2023 (lots 3 and 4)
-    expect(counts).toEqual({ p: 19, l: 15, f: 3, n: 2, o: 12, h: 6, a: 19, r: 29 });
+    expect(counts).toEqual({ p: 23, l: 18, f: 3, n: 3, o: 13, h: 7, a: 23, r: 35 });
     const [ids] = await db.all<{ ok: boolean }>(
       `SELECT bool_and(mapblklot IS NULL OR typeof(mapblklot) = 'VARCHAR') ok FROM src_parcels`
     );
@@ -81,6 +81,7 @@ describe('normalise mini fixture', () => {
        FROM src_parcel_attrs WHERE NOT active ORDER BY 1`
     );
     expect(retired).toEqual([
+      { mapblklot: '3512096', active: false, drop: '2024-06-30' },
       { mapblklot: '3512098', active: false, drop: '2019-03-01' },
       { mapblklot: '3512099', active: false, drop: '2024-06-30' }
     ]);
