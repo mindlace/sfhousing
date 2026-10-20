@@ -30,8 +30,8 @@ const PRX_WITH_UNITS = [
   '2026-000246PRX'
 ];
 
-/** Latest day a fact may claim to be retrieved: the last day of curation (round 2). */
-const CURATED_BY = '2026-10-17';
+/** Latest day a fact may claim to be retrieved: the last day of curation (round 3, DA heights). */
+const CURATED_BY = '2026-10-19';
 
 function live(): MultiphaseFile {
   return parseMultiphase(JSON.parse(readFileSync(LIVE, 'utf8')));

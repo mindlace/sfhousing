@@ -47,7 +47,29 @@
           "retrieved": "2026-10-16"
         }
       ],
-      "phases": []
+      "phases": [],
+      "heights": {
+        "stories": 6,
+        "maxStories": 8,
+        "openSpaceShare": 0.09,
+        "facts": {
+          "stories": {
+            "url": "https://default.sfplanning.org/Citywide/Visitacion_Valley/Visitacion_Valley_Schlage-Design_for_Development_20140616_BoS.pdf",
+            "retrieved": "2026-10-19",
+            "locator": "Visitacion Valley/Schlage Lock Design for Development (2014-06-16, BoS) Figure 2-3 Height Map (doc p.39, PDF p.43): \"6 Stories | 68FT\" on Blocks 2, 3, 4, 7, 10 (5 of 12 blocks; 8 stories on 4, 5 stories on 2, 7 stories on 1); stories as stated (floor(68/10) = 6 agrees)"
+          },
+          "maxStories": {
+            "url": "https://default.sfplanning.org/Citywide/Visitacion_Valley/Visitacion_Valley_Schlage-Design_for_Development_20140616_BoS.pdf",
+            "retrieved": "2026-10-19",
+            "locator": "Visitacion Valley/Schlage Lock Design for Development (2014-06-16, BoS) Figure 2-3 Height Map (doc p.39, PDF p.43): \"8 Stories | 86FT\" on Blocks 8, 9, 11, 12, the tallest; stories as stated (floor(86/10) = 8 agrees)"
+          },
+          "openSpaceShare": {
+            "url": "https://default.sfplanning.org/Citywide/Visitacion_Valley/Visitacion_Valley_Schlage-Design_for_Development_20140616_BoS.pdf",
+            "retrieved": "2026-10-19",
+            "locator": "Visitacion Valley/Schlage Lock Design for Development (2014-06-16, BoS): required open spaces Leland Greenway 0.73 acres and Visitacion Park \"approximately 1 acre\" (Open Space development controls, doc p.65, PDF p.69); \"a 20 acre-brownfield\" (PDF p.13); 1.73 / 20 = 0.087"
+          }
+        }
+      }
     },
     {
       "caseNo": "2007.0168PRX",
@@ -284,7 +306,23 @@
             }
           }
         }
-      ]
+      ],
+      "heights": {
+        "stories": 6,
+        "maxStories": 45,
+        "facts": {
+          "stories": {
+            "url": "https://api.sf.gov/documents/36177/240404-D4D_UPDATE.pdf",
+            "retrieved": "2026-10-19",
+            "locator": "TI/YBI Design for Development (04.04.24) Figure T4.q Maximum Height Plan (doc p.169, PDF p.187): the 65 ft zone covers most residential development blocks on Treasure Island (E and C blocks; 240/315/450 ft flex zones and 45-125 ft zones elsewhere); floor(65/10) = 6"
+          },
+          "maxStories": {
+            "url": "https://api.sf.gov/documents/36177/240404-D4D_UPDATE.pdf",
+            "retrieved": "2026-10-19",
+            "locator": "TI/YBI Design for Development (04.04.24) Figure T4.q Maximum Height Plan (doc p.169, PDF p.187): 450 ft Flex Zone, the tallest; floor(450/10) = 45"
+          }
+        }
+      }
     },
     {
       "caseNo": "2007.0946PRX",
@@ -399,8 +437,14 @@
               "url": "https://media.api.sf.gov/documents/m26-0051.pdf",
               "retrieved": "2026-10-17",
               "locator": "Motion M26-51 p.3 lines 9-18: Final Map 12681 \"Candlestick Point Major Phase 2\" merges Lots 2,3,4,16-19, part of 20, 23 of Final Transfer Map 8404 (assessor 5000001-024, rec. 2014-12-05), Lots 32-40 of FTM 7879-8583 (5000025-042, rec. 2016-08-15) and Lot 1, A, B of FTM 10008 (5000043-045, rec. 2019-07-31). Listed: those parent lots that Exhibit C-B / Add.7 Fig.6 colour Major Phase 2 (lots 4, 16, 20 lie in Phases 7/5/open space and are taken to be the map's remainder lots). Up to 441 units on this map Round 2: the four Harney Way lots 5000033-5000036 (own pipeline/permit rows) removed from this remaining part."
+            },
+            "stories": {
+              "url": "https://sfocii.org/sites/default/files/2025-10/Candlestick%20Point%20Design%20for%20Development%202024%20Amendment.pdf",
+              "retrieved": "2026-10-19",
+              "locator": "Candlestick Point D4D (2024 amendment) Figure 4.3 Building Heights (doc p.85, PDF p.147): the 65 ft low/mid-rise zone covers most CP development blocks (40, 80, 85 and 120 ft zones and towers elsewhere); the D4D gives no heights by phase, so the CP-wide prevailing height is applied to each CP phase; floor(65/10) = 6"
             }
-          }
+          },
+          "stories": 6
         },
         {
           "name": "CP Major Phase 2 - 99 Harney Way (separately tracked building)",
@@ -514,8 +558,14 @@
               "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=blklot%20in('5000003','5000025','5000026','5000027','5000028','5000043')",
               "retrieved": "2026-10-17",
               "locator": "Mapping: assessor parcel polygons (acdm-wktn shape) overlaid on the DDA Fourth Amendment Exhibit C-B Phasing Plan (Exhibit 2, p.2, map generated 2025-05-02) and the same phase boundaries at larger scale in Addendum 7 Figure 6 (PDF p.35; north-up, 1in=750ft scale bar, registered on the four built Alice Griffith 1 parcels). Listed lots are those whose area is mostly, or at least ~25%, inside this phase colour; 5000003 and 5000043 are shared with Major Phase 2; 5000025-028 are the CP North-of-infield blocks of former Sub-Phase CP-03 (Addendum 7 PDF p.194, printed p.188: CP-03 = Blocks CPN 1a, 2a, 10a, 11a) Round 2: lot 5000027 (625 Gilman Ave, own pipeline/permit row) removed from this remaining part."
+            },
+            "stories": {
+              "url": "https://sfocii.org/sites/default/files/2025-10/Candlestick%20Point%20Design%20for%20Development%202024%20Amendment.pdf",
+              "retrieved": "2026-10-19",
+              "locator": "Candlestick Point D4D (2024 amendment) Figure 4.3 Building Heights (doc p.85, PDF p.147): the 65 ft low/mid-rise zone covers most CP development blocks (40, 80, 85 and 120 ft zones and towers elsewhere); the D4D gives no heights by phase, so the CP-wide prevailing height is applied to each CP phase; floor(65/10) = 6"
             }
-          }
+          },
+          "stories": 6
         },
         {
           "name": "CP Major Phase 3 - 625 Gilman Ave (separately tracked building)",
@@ -557,8 +607,14 @@
               "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=blklot%20in('4884039','4884039A')",
               "retrieved": "2026-10-16",
               "locator": "Mapping: assessor parcel polygons (acdm-wktn shape) overlaid on the DDA Fourth Amendment Exhibit C-B Phasing Plan (Exhibit 2, p.2, map generated 2025-05-02) and the same phase boundaries at larger scale in Addendum 7 Figure 6 (PDF p.35; north-up, 1in=750ft scale bar, registered on the four built Alice Griffith 1 parcels). Listed lots are those whose area is mostly, or at least ~25%, inside this phase colour; the undivided former Alice Griffith master parcels 4884039 / 4884039A are split roughly 30% Phase 4A and 40% Phase 6; shared with Major Phase 6"
+            },
+            "stories": {
+              "url": "https://sfocii.org/sites/default/files/2025-10/Candlestick%20Point%20Design%20for%20Development%202024%20Amendment.pdf",
+              "retrieved": "2026-10-19",
+              "locator": "Candlestick Point D4D (2024 amendment) Figure 4.3 Building Heights (doc p.85, PDF p.147): the 65 ft low/mid-rise zone covers most CP development blocks (40, 80, 85 and 120 ft zones and towers elsewhere); the D4D gives no heights by phase, so the CP-wide prevailing height is applied to each CP phase; floor(65/10) = 6"
             }
-          }
+          },
+          "stories": 6
         },
         {
           "name": "CP Major Phase 4B (CP East)",
@@ -576,8 +632,14 @@
               "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=blklot%20in('4960027','5000005','5000009','5000010')",
               "retrieved": "2026-10-16",
               "locator": "Mapping: assessor parcel polygons (acdm-wktn shape) overlaid on the DDA Fourth Amendment Exhibit C-B Phasing Plan (Exhibit 2, p.2, map generated 2025-05-02) and the same phase boundaries at larger scale in Addendum 7 Figure 6 (PDF p.35; north-up, 1in=750ft scale bar, registered on the four built Alice Griffith 1 parcels). Listed lots are those whose area is mostly, or at least ~25%, inside this phase colour; CP East lots east of the infield"
+            },
+            "stories": {
+              "url": "https://sfocii.org/sites/default/files/2025-10/Candlestick%20Point%20Design%20for%20Development%202024%20Amendment.pdf",
+              "retrieved": "2026-10-19",
+              "locator": "Candlestick Point D4D (2024 amendment) Figure 4.3 Building Heights (doc p.85, PDF p.147): the 65 ft low/mid-rise zone covers most CP development blocks (40, 80, 85 and 120 ft zones and towers elsewhere); the D4D gives no heights by phase, so the CP-wide prevailing height is applied to each CP phase; floor(65/10) = 6"
             }
-          }
+          },
+          "stories": 6
         },
         {
           "name": "CP Major Phase 5 (CP South)",
@@ -595,8 +657,14 @@
               "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=blklot%20in('5000011','5000015','5000016','5000041')",
               "retrieved": "2026-10-16",
               "locator": "Mapping: assessor parcel polygons (acdm-wktn shape) overlaid on the DDA Fourth Amendment Exhibit C-B Phasing Plan (Exhibit 2, p.2, map generated 2025-05-02) and the same phase boundaries at larger scale in Addendum 7 Figure 6 (PDF p.35; north-up, 1in=750ft scale bar, registered on the four built Alice Griffith 1 parcels). Listed lots are those whose area is mostly, or at least ~25%, inside this phase colour; 5000041 (15 ac) is ~70% Phase 5"
+            },
+            "stories": {
+              "url": "https://sfocii.org/sites/default/files/2025-10/Candlestick%20Point%20Design%20for%20Development%202024%20Amendment.pdf",
+              "retrieved": "2026-10-19",
+              "locator": "Candlestick Point D4D (2024 amendment) Figure 4.3 Building Heights (doc p.85, PDF p.147): the 65 ft low/mid-rise zone covers most CP development blocks (40, 80, 85 and 120 ft zones and towers elsewhere); the D4D gives no heights by phase, so the CP-wide prevailing height is applied to each CP phase; floor(65/10) = 6"
             }
-          }
+          },
+          "stories": 6
         },
         {
           "name": "CP Major Phase 6 (Alice Griffith 3)",
@@ -614,8 +682,14 @@
               "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=blklot%20in('4884039','4884039A')",
               "retrieved": "2026-10-16",
               "locator": "Mapping: assessor parcel polygons (acdm-wktn shape) overlaid on the DDA Fourth Amendment Exhibit C-B Phasing Plan (Exhibit 2, p.2, map generated 2025-05-02) and the same phase boundaries at larger scale in Addendum 7 Figure 6 (PDF p.35; north-up, 1in=750ft scale bar, registered on the four built Alice Griffith 1 parcels). Listed lots are those whose area is mostly, or at least ~25%, inside this phase colour; undivided former Alice Griffith master parcels, shared with Major Phase 4A"
+            },
+            "stories": {
+              "url": "https://sfocii.org/sites/default/files/2025-10/Candlestick%20Point%20Design%20for%20Development%202024%20Amendment.pdf",
+              "retrieved": "2026-10-19",
+              "locator": "Candlestick Point D4D (2024 amendment) Figure 4.3 Building Heights (doc p.85, PDF p.147): the 65 ft low/mid-rise zone covers most CP development blocks (40, 80, 85 and 120 ft zones and towers elsewhere); the D4D gives no heights by phase, so the CP-wide prevailing height is applied to each CP phase; floor(65/10) = 6"
             }
-          }
+          },
+          "stories": 6
         },
         {
           "name": "CP Major Phase 7 (CP North)",
@@ -666,8 +740,14 @@
               "url": "https://data.sf.gov/resource/acdm-wktn.json?$where=blklot%20in('4884037','4886009','4917001','4917002','4917003','4918001','4918002','4918003','4918004','4918005','4918006','4918007','4918008','4918021','4918022','4918023','4918024','4918025','4934002','4934003','4935001','4935002','4935003','5000004','5000007','5000008','5000021','5000029','5000030','5000031','5000032','5000044')",
               "retrieved": "2026-10-16",
               "locator": "Mapping: assessor parcel polygons (acdm-wktn shape) overlaid on the DDA Fourth Amendment Exhibit C-B Phasing Plan (Exhibit 2, p.2, map generated 2025-05-02) and the same phase boundaries at larger scale in Addendum 7 Figure 6 (PDF p.35; north-up, 1in=750ft scale bar, registered on the four built Alice Griffith 1 parcels). Listed lots are those whose area is mostly, or at least ~25%, inside this phase colour; 4886009 is a 94-acre master parcel mostly CPSRA/open space with ~10% in Phase 7; blocks 4917/4918/4934/4935 (M-1, Gilman/Egbert/Donahue) are inside the Phase 7 boundary but may be privately owned; 5000044 is shared with Phase 2"
+            },
+            "stories": {
+              "url": "https://sfocii.org/sites/default/files/2025-10/Candlestick%20Point%20Design%20for%20Development%202024%20Amendment.pdf",
+              "retrieved": "2026-10-19",
+              "locator": "Candlestick Point D4D (2024 amendment) Figure 4.3 Building Heights (doc p.85, PDF p.147): the 65 ft low/mid-rise zone covers most CP development blocks (40, 80, 85 and 120 ft zones and towers elsewhere); the D4D gives no heights by phase, so the CP-wide prevailing height is applied to each CP phase; floor(65/10) = 6"
             }
-          }
+          },
+          "stories": 6
         },
         {
           "name": "Shipyard Site (HP Major Phases 1-3)",
@@ -688,7 +768,23 @@
             }
           }
         }
-      ]
+      ],
+      "heights": {
+        "maxStories": 42,
+        "openSpaceShare": 0.48,
+        "facts": {
+          "maxStories": {
+            "url": "https://sfocii.org/sites/default/files/2025-10/Candlestick%20Point%20Design%20for%20Development%202024%20Amendment.pdf",
+            "retrieved": "2026-10-19",
+            "locator": "Candlestick Point D4D (2024 amendment) Table 4.2 Maximum High-rise Podium Heights and Building Heights (PDF p.146, doc p.84): Tower I 420 ft, the tallest in CP and above the HPS2 D4D maximum (370 ft, Tower A); floor(420/10) = 42"
+          },
+          "openSpaceShare": {
+            "url": "https://sfocii.org/sites/default/files/inline-files/8.Parks%20and%20Open%20Space%20Plan%20%28Exhibit%20J%29.pdf",
+            "retrieved": "2026-10-19",
+            "locator": "Parks, Open Space and Habitat Concept Plan (DDA Exhibit J): Proposed Parks and Open Space table (PDF p.11) TOTAL PARKS AND OPEN SPACE 337.7 acres; Project Summary (PDF p.13) \"a 702-acre master-planned urban infill project\"; 337.7 / 702 = 0.481"
+          }
+        }
+      }
     },
     {
       "caseNo": "2010.0305PRX",
@@ -768,7 +864,17 @@
           "retrieved": "2026-10-16"
         }
       ],
-      "phases": []
+      "phases": [],
+      "heights": {
+        "maxStories": 5,
+        "facts": {
+          "maxStories": {
+            "url": "https://sfocii.org/sites/default/files/inline-files/1.%20HPS%20Design%20For%20Development%20Phase%20One%202013.pdf",
+            "retrieved": "2026-10-19",
+            "locator": "HPS Phase One Design for Development (2013) Figure 4 Height & Bulk Limitation Map (doc p.17, PDF p.17): zones 55 ft, 45 ft, 32 ft, open space; floor(55/10) = 5"
+          }
+        }
+      }
     },
     {
       "caseNo": "2013.0208PRX",
@@ -847,7 +953,23 @@
             }
           }
         }
-      ]
+      ],
+      "heights": {
+        "stories": 12,
+        "maxStories": 24,
+        "facts": {
+          "stories": {
+            "url": "https://www.sfport.com/sites/default/files/2025-07/Mission%20Rock%20Design%20Controls%204.24.18_FINAL_Reduced%20File.pdf",
+            "retrieved": "2026-10-19",
+            "locator": "Mission Rock Design Controls (final, 4.24.18) Figure 6.2 Maximum Height Plan (doc p.151) with Table 6.4 land uses (doc p.160): residential blocks A, D, F at 240 ft and K, H, I, J (flex, \"120 feet if Residential\") at 120 ft; 120 ft covers 4 of 7; floor(120/10) = 12"
+          },
+          "maxStories": {
+            "url": "https://www.sfport.com/sites/default/files/2025-07/Mission%20Rock%20Design%20Controls%204.24.18_FINAL_Reduced%20File.pdf",
+            "retrieved": "2026-10-19",
+            "locator": "Mission Rock Design Controls (final, 4.24.18) Figure 6.2 Maximum Height Plan (doc p.151): 240 ft maximum building height on Blocks A, D1 and F; floor(240/10) = 24"
+          }
+        }
+      }
     },
     {
       "caseNo": "2014-001272PRX",
@@ -883,7 +1005,23 @@
           "retrieved": "2026-10-16"
         }
       ],
-      "phases": []
+      "phases": [],
+      "heights": {
+        "maxStories": 9,
+        "openSpaceShare": 0.26,
+        "facts": {
+          "maxStories": {
+            "url": "https://www.sfport.com/media/8123/download?inline=",
+            "retrieved": "2026-10-19",
+            "locator": "Pier 70 SUD Design for Development, Figure 6.4.2 Building Height Maximum (doc p.155, PDF p.171): 90 ft max, the tallest zone (also \"a maximum height of 90'\", Chapter 01, doc p.35, PDF p.51); floor(90/10) = 9"
+          },
+          "openSpaceShare": {
+            "url": "https://www.sfport.com/media/8123/download?inline=",
+            "retrieved": "2026-10-19",
+            "locator": "Pier 70 SUD Design for Development: \"The site is approximately 35 acres\" (Chapter 01 Project Overview, doc p.7, PDF p.23) and \"The proposed Project will provide total nine acres of public open space\" (PDF p.68); 9 / 35 = 0.257"
+          }
+        }
+      }
     },
     {
       "caseNo": "2014.1370PRX",
@@ -1049,7 +1187,23 @@
             }
           }
         }
-      ]
+      ],
+      "heights": {
+        "stories": 6,
+        "maxStories": 14,
+        "facts": {
+          "stories": {
+            "url": "https://default.sfplanning.org/publications_reports/parkmerced/Parkmerced_Final_Design_Standards_and_Guidelines_Revised-09-16-14.pdf",
+            "retrieved": "2026-10-19",
+            "locator": "Parkmerced Design Standards + Guidelines (rev. 09-16-14) Appendix A regulating plan block matrix, Parkmerced totals (doc p.143, PDF p.147): developable footprint by height zone LR65 419,500 sf, LR45 414,800 sf, MR85 234,900 sf of 1,600,100 sf; 65 ft is the largest (narrowly); floor(65/10) = 6"
+          },
+          "maxStories": {
+            "url": "https://default.sfplanning.org/publications_reports/parkmerced/Parkmerced_Final_Design_Standards_and_Guidelines_Revised-09-16-14.pdf",
+            "retrieved": "2026-10-19",
+            "locator": "Parkmerced Design Standards + Guidelines (rev. 09-16-14) Figure 03.03.C Maximum Height Plan (doc p.103) and Appendix A (T145 zone): 145 ft maximum; floor(145/10) = 14"
+          }
+        }
+      }
     },
     {
       "caseNo": "2017-011878PRX",
@@ -1077,7 +1231,23 @@
           "retrieved": "2026-10-16"
         }
       ],
-      "phases": []
+      "phases": [],
+      "heights": {
+        "maxStories": 30,
+        "openSpaceShare": 0.24,
+        "facts": {
+          "maxStories": {
+            "url": "https://sfplanning.org/sites/default/files/documents/citywide/potreropower_D4D_final.pdf",
+            "retrieved": "2026-10-19",
+            "locator": "Potrero Power Station Design for Development (Feb 26, 2020) Figure 6.2.3 Building Height Plan (doc p.245, PDF p.247): Block 13 \"300' MAX\", the tallest; floor(300/10) = 30"
+          },
+          "openSpaceShare": {
+            "url": "https://sfplanning.org/sites/default/files/documents/citywide/potreropower_D4D_final.pdf",
+            "retrieved": "2026-10-19",
+            "locator": "Potrero Power Station Design for Development (Feb 26, 2020) open space overview (PDF p.58): \"open space comprises approximately 24 percent of the total project area - 6.9 out of 29 acres\"; 6.9 / 29 = 0.238"
+          }
+        }
+      }
     },
     {
       "caseNo": "2018-007883PRX",
@@ -1121,7 +1291,29 @@
           "retrieved": "2026-10-17"
         }
       ],
-      "phases": []
+      "phases": [],
+      "heights": {
+        "stories": 6,
+        "maxStories": 7,
+        "openSpaceShare": 0.24,
+        "facts": {
+          "stories": {
+            "url": "https://sfplanning.org/sites/default/files/documents/citywide/balboareservoir_dsg.pdf",
+            "retrieved": "2026-10-19",
+            "locator": "Balboa Reservoir Design Standards and Guidelines (May 28, 2020, rev. Sept 15, 2020) Figure 7.2-1 Building Height Diagram (doc p.182, PDF p.194): 68 ft on multifamily Blocks B, D, F, G, 78 ft on A, C, E, townhouses 35 ft; 68 ft covers 4 of 7 multifamily blocks; floor(68/10) = 6 (text: \"6 and 7 stories\")"
+          },
+          "maxStories": {
+            "url": "https://sfplanning.org/sites/default/files/documents/citywide/balboareservoir_dsg.pdf",
+            "retrieved": "2026-10-19",
+            "locator": "Balboa Reservoir Design Standards and Guidelines Figure 7.2-1 Building Height Diagram (doc p.182, PDF p.194): 78 ft on Blocks A, C, E, the tallest; floor(78/10) = 7"
+          },
+          "openSpaceShare": {
+            "url": "https://sfplanning.org/sites/default/files/documents/citywide/balboareservoir_dsg.pdf",
+            "retrieved": "2026-10-19",
+            "locator": "Balboa Reservoir Design Standards and Guidelines Section 6.11 (PDF p.167): Reservoir Park ~2 acres, SFPUC Retained Fee Open Space ~1 acre, small public open spaces \"a total of one acre\"; site \"17-acre\" (Section 1, PDF p.8); 4 / 17 = 0.235"
+          }
+        }
+      }
     },
     {
       "caseNo": "2018-011363PRX",
@@ -1244,7 +1436,17 @@
           "retrieved": "2026-10-16"
         }
       ],
-      "phases": []
+      "phases": [],
+      "heights": {
+        "maxStories": 16,
+        "facts": {
+          "maxStories": {
+            "url": "https://sfplanning.s3.amazonaws.com/default/files/devagreements/indiabasin/IndiaBasin_Design_Standards_and_Guidelines.pdf",
+            "retrieved": "2026-10-19",
+            "locator": "India Basin Design Standards and Guidelines, Figure 5-3 Maximum Height (doc p.263, PDF p.277) and S5.2.1: towers \"85' Min to 160' Max\"; floor(160/10) = 16"
+          }
+        }
+      }
     },
     {
       "caseNo": "2023-007909PRX",
@@ -1308,7 +1510,23 @@
           "retrieved": "2026-10-16"
         }
       ],
-      "phases": []
+      "phases": [],
+      "heights": {
+        "stories": 9,
+        "maxStories": 19,
+        "facts": {
+          "stories": {
+            "url": "https://citypln-m-extnl.sfgov.org/SharedLinks.aspx?accesskey=ad1e00d6088f207fc57af21017ef4288f33d767889f220aee642919f2961c494&VaultGUID=A4A7DACD-B0DC-4322-BD29-F6F07103C6E0",
+            "retrieved": "2026-10-19",
+            "locator": "Stonestown Design Standards and Guidelines (April 2024) Figure 5.9 Maximum building heights (doc p.187, PDF p.208): 90 ft covers most new-construction parcels (NW1, NW2, W1, W2, W3/4, E1, E3, E4, S2, S3 in part); Section 5.3 \"a predominantly mid-rise neighborhood\"; floor(90/10) = 9"
+          },
+          "maxStories": {
+            "url": "https://citypln-m-extnl.sfgov.org/SharedLinks.aspx?accesskey=ad1e00d6088f207fc57af21017ef4288f33d767889f220aee642919f2961c494&VaultGUID=A4A7DACD-B0DC-4322-BD29-F6F07103C6E0",
+            "retrieved": "2026-10-19",
+            "locator": "Stonestown Design Standards and Guidelines (April 2024) Figure 5.9 Maximum building heights (doc p.187, PDF p.208): 190 ft maximum height zone (S1, S3, W3/4), the tallest; floor(190/10) = 19"
+          }
+        }
+      }
     },
     {
       "caseNo": "2023-010914PRX",
