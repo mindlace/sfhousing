@@ -400,6 +400,7 @@ describe('BrushController drag, previews and commit', () => {
       stories: 6,
       covered: 3,
       ineligible: 0,
+      underwater: 0,
       built: 2,
       notBigger: 1,
       removed: 0,

@@ -16,6 +16,7 @@ const base: OpStats = {
   stories: 6,
   covered: 143,
   ineligible: 0,
+  underwater: 0,
   built: 97,
   notBigger: 46,
   removed: 0,
@@ -89,6 +90,26 @@ describe('constants', () => {
     );
     expect(ANNOUNCE_MS).toBe(4000);
     expect(TOO_LARGE_MS).toBe(6000);
+  });
+  it('counts lots in the Bay apart from ineligible ones', () => {
+    expect(
+      strokeMessage({
+        ...base,
+        covered: 2,
+        built: 1,
+        notBigger: 1,
+        ineligible: 1,
+        underwater: 3,
+        stories: 4
+      })
+    ).toBe(
+      'Painted 4 stories on 2 parcels · 1 new building · 1 already as big or bigger · 1 not eligible (open space or unmapped lots) · 3 in the Bay'
+    );
+  });
+  it('says no eligible parcels when the stroke is all water', () => {
+    expect(strokeMessage({ ...base, covered: 0, built: 0, notBigger: 0, underwater: 2 })).toBe(
+      'No eligible parcels under that stroke · 2 in the Bay'
+    );
   });
   it('formats radius value text', () => {
     expect(radiusValueText(30)).toBe('Brush radius 30 metres');

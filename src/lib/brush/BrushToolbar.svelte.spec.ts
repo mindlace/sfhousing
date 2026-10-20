@@ -39,6 +39,7 @@ const stats = (s: Partial<OpStats>): OpStats => ({
   stories: 6,
   covered: 143,
   ineligible: 0,
+  underwater: 0,
   built: 97,
   notBigger: 46,
   removed: 0,

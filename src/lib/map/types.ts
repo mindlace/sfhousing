@@ -101,6 +101,7 @@ export interface SimMapHandle {
 export interface ParcelSummaryLike {
   parcelId: ParcelId;
   eligible: boolean;
+  underwater?: boolean;
   existingUnits: number;
   generated: { typology: TypologyId; stories: number; units: number } | null;
 }
