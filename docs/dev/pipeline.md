@@ -260,5 +260,5 @@ These need credentials the pipeline never holds and are not done by CI:
 1. Create the R2 bucket `sfhousing` (shared by staging and production).
 2. `wrangler login`, or provide CI credentials (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) with R2 write access.
 3. Run the first real `npm run pipeline -- upload <v>` (remote), then `verify <v> --origin <staging>`.
-4. Bump `PUBLIC_DATASET_VERSION` in `wrangler.jsonc`: staging first, then production via a release.
+4. Bump `PUBLIC_DATASET_VERSION` in `wrangler.jsonc`: staging first (`chore(data):`), then production via a release (`data:`; see [deploy.md](deploy.md#promoting-a-datasetversion)).
 5. After the pinned Overture release expires upstream, prove the archive works: on a clean checkout run `npm run pipeline -- fetch --restore`, then `build` (AC-7).
