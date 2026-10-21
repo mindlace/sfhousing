@@ -31,8 +31,8 @@ Only a maintainer can sign off a contributor's PR. The maintainer runs `gh pr ch
 ## Promoting a datasetVersion
 
 1. Upload the version to R2 once (the data-pipeline upload command; `manifest.json` goes last).
-2. Bump `PUBLIC_DATASET_VERSION` under `env.staging.vars` in `wrangler.jsonc`, merge, let staging deploy, and verify `/attribution` and the map. A malformed value fails `npm run test:unit` (`scripts/wrangler-config.spec.ts`) and, at runtime, every page returns a 500.
-3. Bump the top-level `PUBLIC_DATASET_VERSION` (production) in a later PR and release.
+2. Bump `PUBLIC_DATASET_VERSION` under `env.staging.vars` in `wrangler.jsonc`, merge, let staging deploy, and verify `/attribution` and the map. A malformed value fails `npm run test:unit` (`scripts/wrangler-config.spec.ts`) and, at runtime, every page returns a 500. Title the PR `chore(data): point staging at dataset <v>`: staging deploys on every push to `main`, so this PR must not open a release.
+3. Bump the top-level `PUBLIC_DATASET_VERSION` (production) in a later PR titled `data: point production at dataset <v>`, then merge the release PR. `data` is a releasable commit type in `release-please-config.json` (a patch bump, listed under "Data" in the changelog), so this PR opens or updates the release PR on its own. Do not title it `chore`: release-please hides `chore` commits, and a release with only hidden commits is never cut.
 
 Versions are immutable and retained indefinitely.
 
