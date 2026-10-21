@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/mindlace/sfhousing/compare/v0.4.0...v0.4.1) (2026-10-21)
+
+
+### Data
+
+* point staging and production at dataset 2026-10-19-bf89390d ([#33](https://github.com/mindlace/sfhousing/issues/33)) ([6c5d2df](https://github.com/mindlace/sfhousing/commit/6c5d2df412f0ecc82e0edbd340b85453f5dba8b1))
+
 ## [0.4.0](https://github.com/mindlace/sfhousing/compare/v0.3.0...v0.4.0) (2026-10-20)
 
 
