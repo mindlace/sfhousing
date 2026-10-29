@@ -321,17 +321,17 @@ Ruling 1: current law is the FZP envelope plus Planning Code §207.11 (Ordinance
 
 ### Policy layers, first live build (2026-10-29)
 
-Dataset `2026-10-29-6d6c1396`, built with tiles, V1 to V34 OK; not uploaded. Lock adds `datasf-streets` (16,378 rows), `datasf-historic-status` (163,288 rows) and `sfbos-sb79-exemptions` (the two Board File PDFs; transcription 1,660 permanent rows, 21,838 temporary rows / 20,825 parcels).
+Dataset `2026-10-29-0fd62c4d` (rebuilt after the final fix wave; it replaces `2026-10-29-6d6c1396`, whose `asOf` and transit target date had moved with the new lock entries), built with tiles, V1 to V34 OK; not uploaded. `asOf` 2026-10-19 (day 20745) and transit target date 2026-10-16 (BART and Caltrain service Tuesday 2026-10-20; Muni's calendar ended 2026-08-28, so it uses 2026-08-25 with a warning), both as at base. Lock adds `datasf-streets` (16,378 rows), `datasf-historic-status` (163,288 rows) and `sfbos-sb79-exemptions` (the two Board File PDFs; transcription 1,660 permanent rows, 21,838 temporary rows / 20,825 parcels).
 
-- **Sizes.** `scenario.bytes.file` 2,109,268 B (unchanged; production 2,109,264 B); `policy.bytes.file` 438,338 B (payload 5,592,136 B); `frontage.bytes.file` 316,095 B (payload 1,223,201 B). Both under the 0.75 MB warning.
+- **Sizes.** `scenario.bytes.file` 2,109,267 B (format unchanged; production 2,109,264 B); `policy.bytes.file` 438,343 B (payload 5,592,136 B); `frontage.bytes.file` 316,089 B (payload 1,223,201 B). Both under the 0.75 MB warning.
 - **Historic** (`policy.historic.*`): A 20,113; A\* 2,263; B 114,168; C 18,473; none 3; protected 22,376. V31 join 155,017 / 155,020 (99.998%, bound 95%).
 - **Exemptions** (`policy.exempt.*`): permanent 1,657 parcels, temporary 20,822 parcels. V31 rows matched 23,492 / 23,498 (99.97%, bound 95%); the 6 unmatched are 4167011, 4224045, 4224090, 4591A011 (the asterisked row), 5278020A, 6311013.
 - **SB 79 as written** (`policy.sb79.*`): applies 87,165; min-units 12,926; rent-control 18,286; zone 2,381; outside 33,416; not-eligible 846. Stops tier 1 25, tier 2 436 (436 of the 438 `MUNI_TIER2_STOP_IDS` are in the live `transit.json`; muni:3153 and muni:3318 are not). `tod_share` 7,844 (78.4%; Planning: "more than 75%"). `cap_binds` 84,672 of 87,165 applies rows (97.1%). `net_capacity` 695,702 homes.
 - **§207.11** (`policy.s207.*`): applies 961; exempt 18,910; historic 996; meets-minimum 17,196; no-limit 75,381; not-eligible 846; not-residential 594; outside 33,416; r4 6,720; `base_ft_mismatch` 0.
 - **Current law** (`policy.current.*`): `from_s207` 789; `net_capacity` 1,602,632 homes; `yield_mismatch` 0. `policy.use_district_mismatch` 0.
 - **Frontage** (`frontage.*`): segments 14,995; entries depth 0 191,224, depth 1 119,409 (102,160 of 153,143 eligible lots, 66.7%, have a depth-1 entry; decoded from the file); corner 24,930; `no_frontage` 3,731 of 153,143 eligible (2.4%; V34 fronting 97.6%, bound 90%); `depth1_orphan` 0.
-- **New T14 counts** (`quality.sd.*`): `historic.no-row` 3 / 155,020; `exempt.unmatched` 6 / 23,498; `sb79.zone-unlisted` 10 / 121,604; `streets.no-frontage` 3,731 / 153,143.
-- **Timings.** policy 23 s; frontage 4,122 s (69 min, most of the build).
+- **New T14 counts** (`quality.sd.*`): `historic.no-row` 3 / 155,020; `exempt.unmatched` 6 / 23,498; `sb79.zone-unlisted` 10 / 121,604; `streets.no-frontage` 3,731 / 153,143; `sb79.tier2-unmatched` 2 / 438 (V32 matched 436 / 438 = 99.5%, bound 95%).
+- **Timings.** policy 24 s; frontage 4,034 s (67 min, most of the build).
 
 ## Transit
 
