@@ -1057,6 +1057,17 @@ describe('V32 SB 79 as written', () => {
     const host = await v32(editRow(APPLIES, (p, i) => (p.hostableSb79[i] = 0)));
     expect(host.detail).toBe('hostableSb79 ≠ applies: 1 rows (3512018)');
   });
+  it('fails when rent-control and the 2-home rule disagree', async () => {
+    const RC = SB79_STATUSES.indexOf('rent-control');
+    // Lot 18 has 2 homes: not over the statute's two.
+    const r = await v32(editRow(APPLIES, (p, i) => (p.sb79Status[i] = RC)));
+    expect(r.detail).toMatch(/rent-control row not over 2 pre-1979 homes: 1 rows \(3512018\)/);
+    // Lot 8 (12 pre-1979 homes) is rent-control; marking it applies fails.
+    const a = await v32(
+      editRow('3512008', (p, i) => (p.sb79Status[i] = SB79_STATUSES.indexOf('applies')))
+    );
+    expect(a.detail).toMatch(/applies row over 2 pre-1979 homes: 1 rows \(3512008\)/);
+  });
   it('fails when the band and the outside status disagree', async () => {
     const r = await v32(
       editRow(NOT_ELIGIBLE, (p, i) => {

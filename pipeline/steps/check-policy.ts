@@ -18,7 +18,7 @@ import { FILL_LEVELS, type ScenarioParcels } from '../../src/lib/data/scenario-c
 import type { InvariantProfile } from '../config';
 import { storiesFromFt } from '../lib/heights';
 import { reportedQuality } from '../lib/quality';
-import { stopTiers, unitsFor } from '../lib/sb79';
+import { rentControlExcluded, stopTiers, unitsFor } from '../lib/sb79';
 import { POLICY_BIN } from '../lib/scenario-files';
 import { MIN_UNITS, STANDARDS, type Sb79Tier, type TodBand } from '../sb79-config';
 import type { InvariantResult } from './check';
@@ -153,7 +153,8 @@ const NAMED = 5;
  * V32, SB 79 as written: every `applies` row has the stories and statute cap of its tier and band
  * (`storiesFromFt`, `unitsFor` on parcels.bin's lot area) and yields of 0 or MIN_UNITS..cap; every
  * other row has 0 stories, no cap and zero yields; `hostableSb79` is `applies`; `todBand` (and
- * `todTier`) is 0 exactly on `outside` rows; `policy.sb79.stops.tier1` / `.tier2` reach the
+ * `todTier`) is 0 exactly on `outside` rows; `rent-control` rows, and no `applies` row, satisfy
+ * `rentControlExcluded` (more than 2 pre-1979 homes); `policy.sb79.stops.tier1` / `.tier2` reach the
  * profile minimums; each `transitHeavyRailStations` name has a tier-1 stop in `transit.json`.
  * Warns (still passes) when `policy.sb79.tod_share` is outside `todShareWarn`. Never throws.
  */
@@ -189,6 +190,11 @@ function checkV32(
       if ((band === 0) !== (status === 'outside')) flag('todBand 0 iff outside', i);
       if ((tier === 0) !== (band === 0)) flag('todTier 0 iff todBand 0', i);
       if (pol.hostableSb79[i] !== (status === 'applies' ? 1 : 0)) flag('hostableSb79 ≠ applies', i);
+      // §65912.157(h) proxy: rent-control exactly where rentControlExcluded, unless an earlier
+      // status (outside, not-eligible, zone) took precedence.
+      const rc = rentControlExcluded(p!.rentControlLikely[i] === 1, p!.existingUnits[i]);
+      if (status === 'rent-control' && !rc) flag('rent-control row not over 2 pre-1979 homes', i);
+      if (status === 'applies' && rc) flag('applies row over 2 pre-1979 homes', i);
       if (status !== 'applies') {
         if (pol.sb79Stories[i] !== 0 || pol.sb79Cap[i] !== NULL_CAP || ys.some((y) => y !== 0))
           flag(`${status} row with an envelope`, i);

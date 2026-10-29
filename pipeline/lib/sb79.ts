@@ -11,6 +11,7 @@ import {
   LIGHT_RAIL_MODES,
   MIN_UNITS,
   MUNI_TIER2_STOP_IDS,
+  RENT_CONTROL_MAX_UNITS,
   STANDARDS,
   UNITS_ROUNDING,
   VHF_TPD,
@@ -135,9 +136,18 @@ export function unitsFor(
 }
 
 /**
+ * §65912.157(h) proxy: likely rent-controlled (parcels.bin `rentControlLikely`, pre-1979 homes)
+ * with more than RENT_CONTROL_MAX_UNITS existing homes. Occupancy in the past seven years and
+ * demolitions are not modelled (UNSOURCED).
+ */
+export function rentControlExcluded(rentControlLikely: boolean, existingUnits: number): boolean {
+  return rentControlLikely && existingUnits > RENT_CONTROL_MAX_UNITS;
+}
+
+/**
  * One lot under SB 79 as written. Statuses in precedence order: `outside` (no stop within ½
  * mile), `not-eligible` (not scenario-eligible), `zone` (excluded or unlisted zoning),
- * `rent-control`, then the statute envelope: `storiesFromFt(heightFt)` stories and a cap of
+ * `rent-control` (rentControlExcluded), then the statute envelope: `storiesFromFt(heightFt)` stories and a cap of
  * `unitsFor(duPerAcre, lotAreaM2)`, each fill level's yield capped (capScenarioYield) and zeroed
  * below MIN_UNITS; a zero top yield is `min-units`, else `applies`. Every status but `applies`
  * has 0 stories, a null cap and zero yields. `uncappedTop` is the full-fill gross before the cap.
@@ -167,7 +177,7 @@ export function sb79Row(a: {
   if (a.best === null) return none('outside');
   if (!a.eligible) return none('not-eligible');
   if (a.zone === 'excluded' || a.zone === 'unlisted') return none('zone');
-  if (a.rentControlLikely) return none('rent-control');
+  if (rentControlExcluded(a.rentControlLikely, a.existingUnits)) return none('rent-control');
   const std = STANDARDS[a.best.tier][a.best.band];
   const stories = storiesFromFt(std.heightFt);
   const cap = unitsFor(std.duPerAcre, a.lotAreaM2);

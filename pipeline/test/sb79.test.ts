@@ -152,10 +152,17 @@ describe('sb79Row', () => {
       uncappedTop: 140
     });
     expect(sb79Row({ ...base, lotAreaM2: 100, grossAt: (s) => s }).status).toBe('min-units'); // cap ≤ 3
-    expect(
-      sb79Row({ ...base, rentControlLikely: true, lotAreaM2: 4046.8564224, grossAt: (s) => s })
-        .status
-    ).toBe('rent-control');
+    // §65912.157(h): more than two rent-controlled units. A 2-unit pre-1979 lot is not excluded,
+    // a 3-unit one is.
+    const old = {
+      ...base,
+      rentControlLikely: true,
+      lotAreaM2: 4046.8564224,
+      grossAt: (s: number) => 20 * s
+    };
+    expect(sb79Row({ ...old, existingUnits: 2 }).status).toBe('applies');
+    expect(sb79Row({ ...old, existingUnits: 3 }).status).toBe('rent-control');
+    expect(sb79Row({ ...old, rentControlLikely: false, existingUnits: 3 }).status).toBe('applies');
     expect(
       sb79Row({
         ...base,

@@ -94,7 +94,7 @@
           "url": "https://data.sf.gov/d/acdm-wktn"
         }
       ],
-      "method": "Gov. Code §65912.157 as written, ignoring the City’s exemptions and Density Bonus Law. TOD stops come from the GTFS feeds (tier source gtfs): heavy rail is tier 1, commuter rail tier 1 at 72 or more trains a day at the station and tier 2 at 48, light rail, streetcar and the Muni stops MTC designates current tier 2 (planned stops left out) tier 2. The band is the straight-line distance from the DataSF parcel outline to the nearest stop point of each tier (200 ft, ¼ mile, ½ mile); the tallest standard wins. Stories are 10 ft each of its height and the cap is its du/ac × lot acres, rounded up. The lot must be scenario-eligible, zoned residential, mixed or commercial, not likely rent-controlled, and yield at least 5 homes at full fill; fill levels below 5 are 0."
+      "method": "Gov. Code §65912.157 as written, ignoring the City’s exemptions and Density Bonus Law. TOD stops come from the GTFS feeds (tier source gtfs): heavy rail is tier 1, commuter rail tier 1 at 72 or more trains a day at the station and tier 2 at 48, light rail, streetcar and the Muni stops MTC designates current tier 2 (planned stops left out) tier 2. The band is the straight-line distance from the DataSF parcel outline to the nearest stop point of each tier (200 ft, ¼ mile, ½ mile); the tallest standard wins. Stories are 10 ft each of its height and the cap is its du/ac × lot acres, rounded up. The lot must be scenario-eligible, zoned residential, mixed or commercial, not hold more than 2 homes likely rent-controlled (built before 1979; occupancy not modelled), and yield at least 5 homes at full fill; fill levels below 5 are 0."
     },
     "currentLaw": {
       "tier": 3,
@@ -218,10 +218,10 @@
   ],
   "sb79Status": [
     4,
-    4,
-    4,
     1,
     4,
+    1,
+    5,
     2,
     4,
     2,
@@ -238,7 +238,7 @@
   ],
   "sb79Stories": [
     0,
-    0,
+    7,
     0,
     7,
     0,
@@ -258,7 +258,7 @@
   ],
   "sb79Cap": [
     65535,
-    65535,
+    9,
     65535,
     8,
     65535,
@@ -283,10 +283,10 @@
     0,
     0,
     0,
-    0,
-    0,
-    0,
-    0,
+    9,
+    9,
+    9,
+    9,
     0,
     0,
     0,
@@ -522,7 +522,7 @@
   ],
   "hostableSb79": [
     0,
-    0,
+    1,
     0,
     1,
     0,

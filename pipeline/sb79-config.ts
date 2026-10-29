@@ -88,6 +88,8 @@ export const VHF_TPD = 72;
 export const HF_TPD = 48;
 /** §65912.157(a)(1). */
 export const MIN_UNITS = 5;
+/** §65912.157(h): a site with more than this many rent- or price-controlled units is excluded. */
+export const RENT_CONTROL_MAX_UNITS = 2;
 
 /**
  * Tier 2 rail modes. §65912.156(h): light rail includes streetcar, trolley and tramway. Cable cars
@@ -374,7 +376,7 @@ export const UNSOURCED: readonly string[] = [
   'ZONE_CLASS_RULES principallyResidential, accepted at tier 2–3: the Planning Code use tables could not be read online (amlegal 403). Values come from district names, DataSF gen and Planning memos. Tier 3 rules: RTO-C, CMUO, the MR/P70/PPS/BR/S-MU SUDs, MB-RA, MB-O, HP-RA. SALI and P are tier 1 (Planning memo).',
   "TIER_SOURCE = gtfs: the MTC SB 79 stops licence is a disclaimer with no redistribution grant, so MUNI_TIER2_STOP_IDS is our own id list cited to MTC (as of 2026-07) and the dataset is not shipped. MTC's 9 planned BRT stops (Hunters Point, Candlestick) are left out, though §65912.156(p) counts planned stops.",
   'TOD distance is measured to stop points; MTC publishes pedestrian access points (mtc_sb79_tod_access_points) under the same disclaimer.',
-  "SB 79 as written, §65912.157(h) rent-control exclusion (tier 2 proxy): read from parcels.bin's rentControlLikely (2 or more homes on the latest roll, built before 1979). The statute excludes a site with more than two rent- or price-controlled units occupied by tenants in the past seven years, or demolished within seven years; tenancy and demolition history are not modelled, and lots with exactly 2 such homes are excluded too.",
+  "SB 79 as written, §65912.157(h) rent-control exclusion (tier 2 proxy): a lot is excluded when parcels.bin's rentControlLikely is set (homes on the latest roll, built before 1979) and it has more than RENT_CONTROL_MAX_UNITS (2) existing homes. The statute counts units occupied by tenants in the past seven years, or demolished within seven years; occupancy and demolition history are not modelled, so every pre-1979 home on the latest roll counts as rent-controlled.",
   `Exemption tables licence: none stated; using "${EXEMPTION_LICENSE}".`,
   'Temporary exemption table: row "4591A 011*" carries an unexplained asterisk; 1,013 rows repeat a blklot.'
 ];

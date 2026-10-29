@@ -146,11 +146,12 @@ describe('writePolicy on the mini fixture', () => {
     const i18 = row(LOT[18]);
     expect(pol.sb79Cap[i18]).toBe(unitsFor(160, s.lotAreaM2[i18]));
     expect(pol.hostableSb79[i18]).toBe(1);
-    // Lot 1: ≈ 89 m to the Caltrain platforms (80 trains a day at the station, tier 1), but its 2
-    // homes built 1912 make it likely rent-controlled, so no envelope (7 stories otherwise).
-    expect(sb79(LOT[1])).toEqual({ tier: 1, band: 2, status: 'rent-control', stories: 0 });
-    // Lot 11, also in the quarter band and not rent-controlled, gets the 75 ft envelope.
+    // Lot 1: ≈ 89 m to the Caltrain platforms (80 trains a day at the station, tier 1). Its 2
+    // homes of 1912 are not more than two (§65912.157(h)), so it gets the 75 ft envelope.
+    expect(sb79(LOT[1])).toEqual({ tier: 1, band: 2, status: 'applies', stories: 7 });
     expect(sb79(LOT[11])).toEqual({ tier: 1, band: 2, status: 'applies', stories: 7 });
+    // Lot 2's 3 condo homes of 1975 are more than two: excluded.
+    expect(sb79(LOT[2]).status).toBe('rent-control');
     // Lots 15 and 17: ≈ 721 m and ≈ 718 m to FX-1. Lot 15 is temporarily exempt, which SB 79 as
     // written ignores (ruling 3).
     expect(pol.exemptTemporary[row(LOT[15])]).toBe(1);

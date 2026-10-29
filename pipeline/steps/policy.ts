@@ -121,8 +121,8 @@ function provenance(capDay: Day): PolicyParcels['provenance'] {
         'tier 2. The band is the straight-line distance from the DataSF parcel outline to the ' +
         'nearest stop point of each tier (200 ft, ¼ mile, ½ mile); the tallest standard wins. ' +
         'Stories are 10 ft each of its height and the cap is its du/ac × lot acres, rounded up. ' +
-        'The lot must be scenario-eligible, zoned residential, mixed or commercial, not likely ' +
-        'rent-controlled, and yield at least 5 homes at full fill; fill levels below 5 are 0.'
+        'The lot must be scenario-eligible, zoned residential, mixed or commercial, not hold more ' +
+        'than 2 homes likely rent-controlled (built before 1979; occupancy not modelled), and yield at least 5 homes at full fill; fill levels below 5 are 0.'
     ),
     currentLaw: prov(
       3,
