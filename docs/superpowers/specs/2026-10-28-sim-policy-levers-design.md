@@ -75,6 +75,8 @@ Planning found SF Ordinance 082-26 (File 260132, approved 2026-05-08): an SB 79 
 5. **"Commercial corridor"** is composed from street class plus neighborhood-commercial (NC/NCT) zoning on the fronting lots.
 6. **TOD stop tiers:** if MTC publishes its official SB 79 stop/tier map as open data, use it, with our GTFS-based tiering kept as a cross-check.
 
+7. **Current law changes over time (plan 2).** By default, current law switches on **2032-01-31** to SB 79 as written minus the City's permanent exemptions. That date is one year after the 7th-cycle Housing Element due date, and it is labelled as an assumption. A user toggle, "assume the City keeps an alternative plan", keeps FZP + §207.11 throughout.
+
 ## Calls made after the builder check (my calls; partner to confirm)
 
 - **Where yields come from.** The pipeline precomputes yields and `hostable` for every stock layer: FZP, base, **SB 79**, and the **current-law** combination (FZP + the SF alternative plan (§207.11), most permissive). The worker runs `scenarioYield` only for lots the user layer touches, loading their chunks on demand. A citywide rule brush (for example every arterial) can touch many thousands of lots. That recompute runs in the background. The page shows the simulation is out of date until it finishes, and the run uses the new envelopes only once they are complete. If that is too slow, a compact per-lot yield-by-stories table is the fallback, within the V19 budget.
