@@ -1,6 +1,6 @@
 // The policy step (writePolicy, 82_policy.sql) on the mini database: use district, historic status,
 // exemptions and the FZP yield cap, in parcels.bin row order (the helpers.ts pattern).
-import { mkdtempSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -20,16 +20,22 @@ import { POLICY_BIN } from '../lib/scenario-files';
 import { runSql } from '../lib/sql';
 import { asOfFromLock } from '../project-records/parse';
 import { readParcelRecords } from '../steps/chunks';
+import { unitsFor } from '../lib/sb79';
 import { readPolicyBin, writePolicy } from '../steps/policy';
 import { PARCELS_BIN, readParcelsBin, writeScenario } from '../steps/scenario';
 import { MINI, miniDuck } from './helpers';
 
 const LOT = {
+  1: '3512001',
   2: '3512002',
   3: '8711023C',
+  7: '3512007',
+  11: '3512011',
   12: '3512012',
   13: '3512013',
   15: '3512015',
+  16: '3512016',
+  17: '3512017',
   18: '3512018'
 } as const;
 
@@ -58,6 +64,9 @@ beforeAll(async () => {
     report: new Report(),
     buildCounts
   });
+  // The transit step's output, as build writes it before the policy step.
+  mkdirSync(outDir, { recursive: true });
+  copyFileSync(join(MINI, 'golden', 'transit.json'), join(outDir, 'transit.json'));
   ({ counts } = await writePolicy({
     db,
     outDir,
@@ -112,18 +121,72 @@ describe('writePolicy on the mini fixture', () => {
     expect(counts['policy.use_district_mismatch']).toBe(0);
   });
 
-  it('copies FZP into the current-law columns and leaves SB 79 outside', () => {
+  it('copies FZP into the current-law columns', () => {
     expect(Array.from(pol.currentYield)).toEqual(Array.from(s.yield));
     expect(Array.from(pol.currentStories)).toEqual(Array.from(s.envelopeStories));
     expect(Array.from(pol.hostableCurrent)).toEqual(Array.from(s.hostable));
     expect(Array.from(pol.currentCap)).toEqual(Array.from(pol.fzpYieldCap));
     expect(pol.currentFromS207.every((v) => v === 0)).toBe(true);
-    expect(pol.sb79Status.every((v) => SB79_STATUSES[v] === 'outside')).toBe(true);
     expect(pol.s207Status.every((v) => S207_STATUSES[v] === 'outside')).toBe(true);
-    expect(pol.sb79Cap.every((v) => v === NULL_CAP)).toBe(true);
-    expect(pol.sb79Yield.every((v) => v === 0)).toBe(true);
-    expect(pol.sb79Stories.every((v) => v === 0)).toBe(true);
-    expect(pol.hostableSb79.every((v) => v === 0)).toBe(true);
+  });
+
+  const sb79 = (id: string) => {
+    const i = row(id);
+    return {
+      tier: pol.todTier[i],
+      band: pol.todBand[i],
+      status: SB79_STATUSES[pol.sb79Status[i]],
+      stories: pol.sb79Stories[i]
+    };
+  };
+
+  it('applies SB 79 as written at the README stop positions', () => {
+    // Lot 18: within 200 ft of FX-1 (BART, tier 1): 95 ft → 9 stories, 160 du/ac.
+    expect(sb79(LOT[18])).toEqual({ tier: 1, band: 1, status: 'applies', stories: 9 });
+    const i18 = row(LOT[18]);
+    expect(pol.sb79Cap[i18]).toBe(unitsFor(160, s.lotAreaM2[i18]));
+    expect(pol.hostableSb79[i18]).toBe(1);
+    // Lot 1: ≈ 89 m to the Caltrain platforms (80 trains a day at the station, tier 1), but its 2
+    // homes built 1912 make it likely rent-controlled, so no envelope (7 stories otherwise).
+    expect(sb79(LOT[1])).toEqual({ tier: 1, band: 2, status: 'rent-control', stories: 0 });
+    // Lot 11, also in the quarter band and not rent-controlled, gets the 75 ft envelope.
+    expect(sb79(LOT[11])).toEqual({ tier: 1, band: 2, status: 'applies', stories: 7 });
+    // Lots 15 and 17: ≈ 721 m and ≈ 718 m to FX-1. Lot 15 is temporarily exempt, which SB 79 as
+    // written ignores (ruling 3).
+    expect(pol.exemptTemporary[row(LOT[15])]).toBe(1);
+    expect(sb79(LOT[15])).toEqual({ tier: 1, band: 3, status: 'applies', stories: 6 });
+    expect(sb79(LOT[17])).toEqual({ tier: 1, band: 3, status: 'applies', stories: 6 });
+  });
+
+  it('gives no SB 79 envelope where the lot is ineligible or the zoning excluded', () => {
+    expect(sb79(LOT[16]).status).toBe('not-eligible');
+    expect(sb79(LOT[7]).status).toBe('not-eligible');
+    expect(sb79(LOT[12]).status).toBe('zone'); // P, also permanently exempt
+    for (let i = 0; i < pol.count; i++) {
+      const applies = SB79_STATUSES[pol.sb79Status[i]] === 'applies';
+      expect(pol.hostableSb79[i], s.id[i]).toBe(applies ? 1 : 0);
+      if (applies) continue;
+      expect(pol.sb79Stories[i], s.id[i]).toBe(0);
+      expect(pol.sb79Cap[i], s.id[i]).toBe(NULL_CAP);
+      for (let k = 0; k < s.fillLevels.length; k++)
+        expect(pol.sb79Yield[i * s.fillLevels.length + k]).toBe(0);
+    }
+  });
+
+  it('counts the SB 79 stops and statuses', () => {
+    expect(counts['policy.sb79.stops.tier1']).toBe(3); // FX-1, 70011, 70012
+    expect(counts['policy.sb79.stops.tier2']).toBe(2); // m4, m5
+    expect(counts['policy.sb79.not-eligible']).toBeGreaterThanOrEqual(2);
+    expect(counts['policy.sb79.zone']).toBeGreaterThanOrEqual(1);
+    const statuses = SB79_STATUSES.reduce((n, st) => n + counts[`policy.sb79.${st}`], 0);
+    expect(statuses).toBe(pol.count);
+    expect(counts['policy.sb79.tod_share']).toBe(
+      Math.round((1e4 * pol.todBand.filter((b) => b > 0).length) / pol.count)
+    );
+    expect(buildCounts['quality.sd.sb79.zone-unlisted.fired']).toBe(0);
+    expect(buildCounts['quality.sd.sb79.zone-unlisted.of']).toBe(
+      pol.todBand.filter((b) => b > 0).length
+    );
   });
 
   it('has no FZP yield cap on Local Program rows', () => {

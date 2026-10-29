@@ -172,3 +172,13 @@ Expected in `golden/transit.json`:
   tenths) and `tpd` `[13, 13]`: peak `tph` counts departures only, so a trip's last stop (m2) adds
   none, while `tpd` counts every train serving the stop.
 - V14 passes with the fixture profile: 8 stops, one heavy-rail stop (FX-1, "Fixture Station").
+
+SB 79 as written (`policy.bin`, V32): tier 1 is FX-1 (heavy rail) and 70011 / 70012 (80 Caltrain trains a
+day at `fixture_ct`, ≥ 72); tier 2 is m4 and m5 (N light rail); m1–m3 are plain bus stops (not in
+`MUNI_TIER2_STOP_IDS`). Every lot lies within ½ mile of a tier-1 stop (`policy.sb79.tod_share` 10000):
+lot 18 in the 200 ft band of FX-1 (9 stories, cap `unitsFor(160, 300)` = 12), lots 15 and 17 in its half band
+(≈ 721 m, ≈ 718 m: 6 stories; lot 15 applies though temporarily exempt, ruling 3), the rest in the quarter band
+of the Caltrain platforms (7 stories). Statuses: `applies` 5, 11, 13, 15, 17, 18; `not-eligible` 7, 9, 16;
+`zone` 12 (P); `rent-control` 1, 2, 3, 4, 6, 8, 10 (`rentControlLikely`: 2 or more homes built before 1979);
+`min-units` 14 (its 40 homes exceed the statute cap of 9, so every fill level is 0). Lot 1 is `rent-control`,
+not the 7-story `applies` the plan's known answer expected: its 2 homes of 1912 set `rentControlLikely`.

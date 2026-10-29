@@ -1,24 +1,31 @@
-// Invariants over the sim data-layer files (plan 1): V31 for `scenarios/fzp/policy.bin`. Kept out
-// of check.ts so the policy and frontage checks sit together; checkDataset calls checkPolicy
-// after V30.
+// Invariants over the sim data-layer files (plan 1): V31 and V32 for `scenarios/fzp/policy.bin`.
+// Kept out of check.ts so the policy and frontage checks sit together; checkDataset calls
+// checkPolicy after V30.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import type { Manifest } from '../../src/lib/data/manifest';
 import {
   HISTORIC_CODES,
+  NULL_CAP,
+  SB79_STATUSES,
   decodePolicyPayload,
-  encodePolicyPayload
+  encodePolicyPayload,
+  type PolicyParcels
 } from '../../src/lib/data/policy-codec';
+import { decodeTransit } from '../../src/lib/data/transit-codec';
 import { FILL_LEVELS, type ScenarioParcels } from '../../src/lib/data/scenario-codec';
 import type { InvariantProfile } from '../config';
+import { storiesFromFt } from '../lib/heights';
 import { reportedQuality } from '../lib/quality';
+import { stopTiers, unitsFor } from '../lib/sb79';
 import { POLICY_BIN } from '../lib/scenario-files';
+import { MIN_UNITS, STANDARDS, type Sb79Tier, type TodBand } from '../sb79-config';
 import type { InvariantResult } from './check';
 
 /** V31 warns (still passes) above this size (plan Budget decision, tier 4). */
 export const POLICY_WARN_BYTES = 0.75e6;
-/** V32 warns (still passes) above this size (plan Budget decision, tier 4). */
+/** V34 warns (still passes) above this size (plan Budget decision, tier 4). */
 export const FRONTAGE_WARN_BYTES = 0.75e6;
 
 const thr = (x: number) => `${Number((x * 100).toFixed(4))}%`;
@@ -127,8 +134,115 @@ function checkV31(
   return done(detail);
 }
 
+/** policy.bin decoded against `p`, or the reason it cannot be. */
+function decodedPolicy(outDir: string, p: ScenarioParcels | null): PolicyParcels | string {
+  const file = join(outDir, POLICY_BIN);
+  if (!existsSync(file)) return `${POLICY_BIN} is missing`;
+  if (!p) return `${POLICY_BIN} cannot be checked: parcels.bin does not decode`;
+  try {
+    return decodePolicyPayload(new Uint8Array(inflateRawSync(readFileSync(file))), p);
+  } catch (e) {
+    return `${POLICY_BIN} does not decode: ${(e as Error).message}`;
+  }
+}
+
+/** At most this many row ids are named per V32 problem. */
+const NAMED = 5;
+
 /**
- * The policy-file invariants (V31), in id order. `opts.policyWarnBytes` overrides
+ * V32, SB 79 as written: every `applies` row has the stories and statute cap of its tier and band
+ * (`storiesFromFt`, `unitsFor` on parcels.bin's lot area) and yields of 0 or MIN_UNITS..cap; every
+ * other row has 0 stories, no cap and zero yields; `hostableSb79` is `applies`; `todBand` (and
+ * `todTier`) is 0 exactly on `outside` rows; `policy.sb79.stops.tier1` / `.tier2` reach the
+ * profile minimums; each `transitHeavyRailStations` name has a tier-1 stop in `transit.json`.
+ * Warns (still passes) when `policy.sb79.tod_share` is outside `todShareWarn`. Never throws.
+ */
+function checkV32(
+  outDir: string,
+  profile: InvariantProfile,
+  counts: Record<string, number>,
+  p: ScenarioParcels | null,
+  m: Manifest | null
+): InvariantResult {
+  const problems: string[] = [];
+  const done = (ok: string): InvariantResult => ({
+    id: 'V32',
+    ok: problems.length === 0,
+    detail: problems.length === 0 ? ok : problems.join('; ')
+  });
+  const pol = decodedPolicy(outDir, p);
+  let applies = 0;
+  if (typeof pol === 'string') problems.push(pol);
+  else {
+    const F = pol.fillLevels.length;
+    const bad = new Map<string, string[]>();
+    const flag = (what: string, i: number) => {
+      const ids = bad.get(what) ?? [];
+      ids.push(p!.id[i]); // decodePolicyPayload bound the rows to p's ids
+      bad.set(what, ids);
+    };
+    for (let i = 0; i < pol.count; i++) {
+      const status = SB79_STATUSES[pol.sb79Status[i]];
+      const tier = pol.todTier[i];
+      const band = pol.todBand[i];
+      const ys = Array.from(pol.sb79Yield.subarray(i * F, (i + 1) * F));
+      if ((band === 0) !== (status === 'outside')) flag('todBand 0 iff outside', i);
+      if ((tier === 0) !== (band === 0)) flag('todTier 0 iff todBand 0', i);
+      if (pol.hostableSb79[i] !== (status === 'applies' ? 1 : 0)) flag('hostableSb79 ≠ applies', i);
+      if (status !== 'applies') {
+        if (pol.sb79Stories[i] !== 0 || pol.sb79Cap[i] !== NULL_CAP || ys.some((y) => y !== 0))
+          flag(`${status} row with an envelope`, i);
+        continue;
+      }
+      applies++;
+      const std = STANDARDS[tier as Sb79Tier]?.[band as TodBand];
+      if (!std) {
+        flag('applies with no tier and band', i);
+        continue;
+      }
+      if (pol.sb79Stories[i] !== storiesFromFt(std.heightFt)) flag('sb79Stories ≠ statute', i);
+      const cap = unitsFor(std.duPerAcre, p!.lotAreaM2[i]);
+      if (pol.sb79Cap[i] !== cap) flag('sb79Cap ≠ statute density', i);
+      if (ys.some((y) => y > pol.sb79Cap[i])) flag('sb79Yield above sb79Cap', i);
+      if (ys.some((y) => y > 0 && y < MIN_UNITS)) flag(`sb79Yield in 1..${MIN_UNITS - 1}`, i);
+    }
+    for (const [what, ids] of bad)
+      problems.push(
+        `${what}: ${ids.length} rows (${ids.slice(0, NAMED).join(', ')}${ids.length > NAMED ? ', …' : ''})`
+      );
+  }
+  const t1 = counts['policy.sb79.stops.tier1'] ?? 0;
+  const t2 = counts['policy.sb79.stops.tier2'] ?? 0;
+  if (!(t1 >= profile.sb79MinT1Stops))
+    problems.push(`${t1} tier-1 stops < ${profile.sb79MinT1Stops}`);
+  if (!(t2 >= profile.sb79MinT2Stops))
+    problems.push(`${t2} tier-2 stops < ${profile.sb79MinT2Stops}`);
+  try {
+    if (!m?.transit) throw new Error('manifest has no transit');
+    const rel = m.transit.slice(`/data/${m.datasetVersion}/`.length);
+    const net = decodeTransit(readFileSync(join(outDir, rel), 'utf8'));
+    const tier1 = [...stopTiers(net)].filter(([, t]) => t === 1).map(([i]) => net.stops[i].name);
+    const missing = profile.transitHeavyRailStations.filter(
+      (name) => !tier1.some((n) => n.toLowerCase().includes(name.toLowerCase()))
+    );
+    if (missing.length) problems.push(`no tier-1 stop at ${missing.join(', ')}`);
+  } catch (e) {
+    problems.push(`transit.json cannot be read: ${(e as Error).message}`);
+  }
+  const share = (counts['policy.sb79.tod_share'] ?? NaN) / 1e4;
+  const w = profile.todShareWarn;
+  const warn =
+    w && !(share >= w[0] && share <= w[1])
+      ? `; warn: tod share ${pct(share)} outside [${pct(w[0])}, ${pct(w[1])}]`
+      : '';
+  return done(
+    `${applies} applies rows match the statute envelope; stops tier 1 ${t1} ≥ ${profile.sb79MinT1Stops}, ` +
+      `tier 2 ${t2} ≥ ${profile.sb79MinT2Stops}; tod share ${pct(share)}${warn}`
+  );
+}
+
+/**
+ * The policy-file invariants (V31, V32), in id order. `opts.policyWarnBytes` overrides
  * POLICY_WARN_BYTES (tests). Never throws.
  */
 export function checkPolicy(
@@ -141,5 +255,8 @@ export function checkPolicy(
   opts: { policyWarnBytes?: number } = {}
 ): InvariantResult[] {
   const warnBytes = opts.policyWarnBytes ?? POLICY_WARN_BYTES;
-  return [checkV31(outDir, profile, counts, p, m, stableDetail, warnBytes)];
+  return [
+    checkV31(outDir, profile, counts, p, m, stableDetail, warnBytes),
+    checkV32(outDir, profile, counts, p, m)
+  ];
 }

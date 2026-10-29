@@ -1,8 +1,8 @@
 // Policy build step (sim data layers, plan 1): runs the policy SQL and writes
 // `scenarios/fzp/policy.bin` (codec `sfh-policy/1`), one row per parcel in parcels.bin order: the
 // zoning use district, the historic resource status, the SB 79 exemptions, the FZP yield cap, and
-// the SB 79 and current-law columns. In this step SB 79 is not yet computed (every parcel
-// `outside`) and current law is a copy of FZP.
+// the SB 79 and current-law columns. SB 79 as written is the statute envelope at the parcel's best
+// TOD stop standard, capped at the statute density; current law is still a copy of FZP.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { deflateRawSync, inflateRawSync } from 'node:zlib';
@@ -19,19 +19,36 @@ import {
   type PolicyParcels
 } from '../../src/lib/data/policy-codec';
 import { idsHash } from '../../src/lib/data/column-file';
-import { FILL_LEVELS, type ScenarioParcels } from '../../src/lib/data/scenario-codec';
+import {
+  FILL_LEVELS,
+  scenarioRecordOf,
+  type ScenarioParcels
+} from '../../src/lib/data/scenario-codec';
+import { scenarioYield } from '../../src/lib/data/scenario-yield';
+import { decodeTransit } from '../../src/lib/data/transit-codec';
 import type { Day } from '../../src/lib/timelapse/time';
 import type { Provenance } from '../../src/lib/timelapse/types';
 import { fzpYieldCapOf } from '../lib/density-caps';
 import type { Duck } from '../lib/duck';
 import { recordQuality } from '../lib/quality';
+import { bestStandard, sb79Row, stopTiers, zoneClassOf } from '../lib/sb79';
 import { PARCELS_BIN, POLICY_BIN } from '../lib/scenario-files';
-import { CURRENT_LAW_RULE, EXEMPTION_HOMEPAGE, TIER_SOURCE } from '../sb79-config';
+import {
+  CURRENT_LAW_RULE,
+  EXEMPTION_HOMEPAGE,
+  MUNI_TIER2_CITE,
+  STANDARDS_CITE,
+  TIER_SOURCE,
+  type Sb79Tier
+} from '../sb79-config';
+import { GTFS_FEEDS } from '../transit-config';
 import { SFBOS_EXEMPTIONS_LABEL } from '../sources/sfbos';
 import { POLICY_SQL_RULES, runPolicySql } from './policy-sql';
 import { readParcelsBin } from './scenario';
 
 export { POLICY_BIN };
+/** The T14 rules writePolicy counts in TS (82_policy.sql tallies POLICY_SQL_RULES). */
+export const POLICY_TS_RULES = ['sd.sb79.zone-unlisted'] as const;
 /** The golden's canonical dump of the decoded policy payload. */
 export const POLICY_DUMP = 'scenarios/fzp/policy.decoded.json';
 
@@ -46,7 +63,10 @@ const SRC = {
   roll: {
     label: 'DataSF Assessor Historical Secured Property Tax Rolls',
     url: homepage('wv5m-vpq2')
-  }
+  },
+  statute: { label: STANDARDS_CITE.source, url: STANDARDS_CITE.url! },
+  muniTier2: { label: MUNI_TIER2_CITE.source, url: MUNI_TIER2_CITE.url! },
+  gtfs: Object.values(GTFS_FEEDS).map((f) => ({ label: f.label, url: f.homepage }))
 };
 
 /** A Provenance with a fixed key order (tier, label, sources, method), so payloads are stable. */
@@ -91,10 +111,18 @@ function provenance(capDay: Day): PolicyParcels['provenance'] {
         'blklots is listed; a row that matches no active parcel is dropped (sd.exempt.unmatched).'
     ),
     sb79: prov(
-      4,
+      3,
       'SB 79 as written',
-      [],
-      'Not computed in this dataset: every parcel is outside, with no stories, cap or yield.'
+      [SRC.statute, ...SRC.gtfs, SRC.muniTier2, SRC.attrs],
+      'Gov. Code §65912.157 as written, ignoring the City’s exemptions and Density Bonus Law. ' +
+        'TOD stops come from the GTFS feeds (tier source gtfs): heavy rail is tier 1, commuter ' +
+        'rail tier 1 at 72 or more trains a day at the station and tier 2 at 48, light rail, ' +
+        'streetcar and the Muni stops MTC designates current tier 2 (planned stops left out) ' +
+        'tier 2. The band is the straight-line distance from the DataSF parcel outline to the ' +
+        'nearest stop point of each tier (200 ft, ¼ mile, ½ mile); the tallest standard wins. ' +
+        'Stories are 10 ft each of its height and the cap is its du/ac × lot acres, rounded up. ' +
+        'The lot must be scenario-eligible, zoned residential, mixed or commercial, not likely ' +
+        'rent-controlled, and yield at least 5 homes at full fill; fill levels below 5 are 0.'
     ),
     currentLaw: prov(
       3,
@@ -175,7 +203,8 @@ interface PolicyRow {
  * The policy build step. Needs the scenario step's tables (sc_zoning, sc_district) and its
  * `scenarios/fzp/parcels.bin`, and `records` as writeScenario took them. Runs runPolicySql, writes
  * `<outDir>/scenarios/fzp/policy.bin` and reports sd.historic.no-row and sd.exempt.unmatched into
- * `buildCounts` (T14). Returns the policy.* counts and warnings. Throws when the written file does
+ * `buildCounts` (T14), and sd.sb79.zone-unlisted. Reads `<outDir>/transit.json` (the transit step's)
+ * for the SB 79 TOD stops. Returns the policy.* counts and warnings. Throws when the written file does
  * not decode.
  */
 export async function writePolicy(a: {
@@ -191,7 +220,28 @@ export async function writePolicy(a: {
   const s = readParcelsBin(join(a.outDir, PARCELS_BIN));
   if (a.records.length !== s.count)
     throw new Error(`policy: ${a.records.length} records but parcels.bin has ${s.count}`);
-  await runPolicySql(db, []);
+  const recOf = new Map(a.records.map((r) => [r.rec.id, r.rec]));
+
+  // SB 79 TOD stops from the transit step's network (TIER_SOURCE 'gtfs').
+  const net = decodeTransit(readFileSync(join(a.outDir, 'transit.json'), 'utf8'));
+  const stops = [...stopTiers(net)]
+    .map(([i, tier]) => ({
+      id: net.stops[i].id,
+      tier,
+      lng: net.stops[i].lngLat[0],
+      lat: net.stops[i].lngLat[1]
+    }))
+    .sort((x, y) => cmp(x.id, y.id));
+  await runPolicySql(db, stops);
+  const tod = await db.all<{ id: string; tier: number; dist_m: number }>(
+    'SELECT id, tier, dist_m FROM pol_tod ORDER BY id, tier'
+  );
+  const reach = new Map<string, Partial<Record<Sb79Tier, number>>>();
+  for (const t of tod) {
+    const m = reach.get(t.id) ?? {};
+    m[t.tier as Sb79Tier] = t.dist_m;
+    reach.set(t.id, m);
+  }
 
   const rows = await db.all<PolicyRow>(
     `SELECT z.id, z.zoning_code, d.r4, h.code AS historic, e.permanent, e.temporary
@@ -249,9 +299,17 @@ export async function writePolicy(a: {
     ...HISTORIC_CODES.map((h) => `historic.${h || 'none'}`),
     'historic.protected',
     'exempt.permanent',
-    'exempt.temporary'
+    'exempt.temporary',
+    ...SB79_STATUSES.map((st) => `sb79.${st}`),
+    'sb79.cap_binds',
+    'sb79.net_capacity'
   ])
     c[`policy.${k}`] = 0;
+  c['policy.sb79.stops.tier1'] = stops.filter((x) => x.tier === 1).length;
+  c['policy.sb79.stops.tier2'] = stops.filter((x) => x.tier === 2).length;
+  const statusIdx = new Map<string, number>(SB79_STATUSES.map((st, k) => [st, k]));
+  let inReach = 0;
+  const zoneUnlisted: string[] = [];
 
   for (let i = 0; i < n; i++) {
     const r = rowOf(s.id[i]);
@@ -283,8 +341,52 @@ export async function writePolicy(a: {
     if (cap !== null && !(Number.isInteger(cap) && cap >= 0 && cap < NULL_CAP))
       throw new Error(`policy: parcel ${s.id[i]} fzpYieldCap ${cap} does not fit u16`);
     p.fzpYieldCap[i] = cap === null ? NULL_CAP : cap;
+
+    // SB 79 as written (ruling 3: the exemption flags are not read here).
+    const best = bestStandard(reach.get(s.id[i]) ?? {});
+    const zone = zoneClassOf(r.zoning_code).zoneClass;
+    if (best) {
+      inReach++;
+      p.todTier[i] = best.tier;
+      p.todBand[i] = best.band;
+      if (zone === 'unlisted') zoneUnlisted.push(s.id[i]);
+    }
+    const rec = recOf.get(s.id[i]);
+    if (!rec) throw new Error(`policy: parcel ${s.id[i]} has no record`);
+    const view = scenarioRecordOf(s, i, rec);
+    const gross = new Map<number, number>();
+    const sb = sb79Row({
+      best,
+      eligible: s.eligible[i] === 1,
+      zone,
+      rentControlLikely: s.rentControlLikely[i] === 1,
+      lotAreaM2: s.lotAreaM2[i],
+      existingUnits: s.existingUnits[i],
+      grossAt: (stories) => {
+        let g = gross.get(stories);
+        if (g === undefined) gross.set(stories, (g = scenarioYield(view, stories, null)));
+        return g;
+      }
+    });
+    p.sb79Status[i] = statusIdx.get(sb.status)!;
+    inc(`sb79.${sb.status}`);
+    p.sb79Stories[i] = sb.stories;
+    if (sb.cap !== null && !(sb.cap >= 0 && sb.cap < NULL_CAP))
+      throw new Error(`policy: parcel ${s.id[i]} sb79Cap ${sb.cap} does not fit u16`);
+    p.sb79Cap[i] = sb.cap === null ? NULL_CAP : sb.cap;
+    for (let k = 0; k < F; k++) {
+      if (sb.yield[k] > 0xffff)
+        throw new Error(`policy: parcel ${s.id[i]} sb79Yield ${sb.yield[k]} does not fit u16`);
+      p.sb79Yield[i * F + k] = sb.yield[k];
+    }
+    if (sb.status === 'applies') {
+      p.hostableSb79[i] = 1;
+      if (sb.uncappedTop > sb.yield[F - 1]) inc('sb79.cap_binds');
+      c['policy.sb79.net_capacity'] += Math.max(0, sb.yield[F - 1] - s.existingUnits[i]);
+    }
   }
   p.currentCap.set(p.fzpYieldCap);
+  c['policy.sb79.tod_share'] = n === 0 ? 0 : Math.round((1e4 * inReach) / n);
 
   // ---- File: encode, deflate, write, then decode what was written ----
   const payload = encodePolicyPayload(p);
@@ -319,6 +421,12 @@ export async function writePolicy(a: {
       sample: samples.filter((x) => x.rule_id === id).map((x) => x.record_id)
     });
   }
+  // ---- T14: the TS-side rule (sd.sb79.zone-unlisted, over parcels within ½ mile) ----
+  recordQuality(a.buildCounts, POLICY_TS_RULES[0], {
+    fired: zoneUnlisted.length,
+    of: inReach,
+    sample: zoneUnlisted
+  });
 
   const counts = Object.fromEntries(Object.entries(c).sort(([x], [y]) => cmp(x, y)));
   return { counts, warnings };

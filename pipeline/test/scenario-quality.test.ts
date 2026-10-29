@@ -28,6 +28,7 @@ import { Report } from '../lib/report';
 import { runSql } from '../lib/sql';
 import { readParcelRecords } from '../steps/chunks';
 import { POLICY_SQL_RULES } from '../steps/policy-sql';
+import { POLICY_TS_RULES } from '../steps/policy';
 import { PARCELS_BIN, readParcelsBin, writeScenario } from '../steps/scenario';
 import { SUPERSEDED_SCENARIO_COUNTS, miniDuck } from './helpers';
 
@@ -723,6 +724,19 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
       null,
       'exemption table rows',
       false
+    ],
+    // The policy step (writePolicy, TS): shape · none.
+    [
+      'sd.sb79.zone-unlisted',
+      'datasf-parcel-attrs',
+      'zoning_code',
+      'shape',
+      'none',
+      4,
+      null,
+      null,
+      'parcels within ½ mile of a TOD stop',
+      false
     ]
   ];
   /**
@@ -1114,7 +1128,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
 
   it('every scenario-data rule reports once (recordQuality throws on a second report)', () => {
     // The policy step (writePolicy, policy-step.test.ts) reports its rules, not writeScenario.
-    const policyRules: readonly string[] = POLICY_SQL_RULES;
+    const policyRules: readonly string[] = [...POLICY_SQL_RULES, ...POLICY_TS_RULES];
     const ids = QUALITY_RULES.filter((r) => r.owner === 'scenario-data')
       .map((r) => r.id)
       .filter((id) => !policyRules.includes(id));

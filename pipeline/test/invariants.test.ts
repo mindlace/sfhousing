@@ -11,6 +11,7 @@ import {
 } from '../../src/lib/data/scenario-codec';
 import { encodeTransit } from '../../src/lib/data/transit-codec';
 import {
+  SB79_STATUSES,
   decodePolicyPayload,
   encodePolicyPayload,
   type PolicyParcels
@@ -1003,6 +1004,92 @@ describe('V31 policy file', () => {
     expect(stable.ok).toBe(true);
     expect(stable.detail).not.toMatch(/\d+\/\d+ B/);
     expect((await v31(base)).detail).toMatch(/policy\.bin \d+\/\d+ B/);
+  });
+});
+
+describe('V32 SB 79 as written', () => {
+  const readScenario = (dir: string) =>
+    decodeScenarioPayload(new Uint8Array(inflateRawSync(readFileSync(join(dir, PARCELS_BIN)))));
+  /** A copy whose policy.bin row of parcel `id` is edited by `f` (re-encoded, still decodes). */
+  const editRow = (id: string, f: (pol: PolicyParcels, i: number, F: number) => void) => {
+    const d = copy();
+    const s = readScenario(d);
+    const file = join(d, POLICY_BIN);
+    const pol = decodePolicyPayload(new Uint8Array(inflateRawSync(readFileSync(file))), s);
+    f(pol, s.index.get(id)!, pol.fillLevels.length);
+    writeFileSync(file, deflateRawSync(encodePolicyPayload(pol)));
+    return d;
+  };
+  const v32 = async (dir: string, c = counts, profile = FIXTURE_PROFILE) =>
+    (await checkDataset(dir, profile, { counts: c, reencodeIdentical: true })).find(
+      (r) => r.id === 'V32'
+    )!;
+  const APPLIES = '3512018'; // lot 18: tier 1 adjacent, 9 stories
+  const NOT_ELIGIBLE = '3512007'; // lot 7: open space
+  const OUTSIDE_STATUS = SB79_STATUSES.indexOf('outside');
+
+  it('is OK on the fixture', async () => {
+    const r = await v32(base);
+    expect(r.ok, r.detail).toBe(true);
+    expect(r.detail).toMatch(/stops tier 1 3 ≥ 3, tier 2 2 ≥ 2; tod share 100\.0%$/);
+  });
+  it('fails when an applies row has other stories or another cap', async () => {
+    const stories = await v32(editRow(APPLIES, (p, i) => (p.sb79Stories[i] = 8)));
+    expect(stories.ok).toBe(false);
+    expect(stories.detail).toBe('sb79Stories ≠ statute: 1 rows (3512018)');
+    const cap = await v32(editRow(APPLIES, (p, i) => (p.sb79Cap[i] += 1)));
+    expect(cap.detail).toMatch(/^sb79Cap ≠ statute density: 1 rows/);
+  });
+  it('fails on an applies yield above the cap or in 1..4', async () => {
+    const above = await v32(
+      editRow(APPLIES, (p, i, F) => (p.sb79Yield[i * F + F - 1] = p.sb79Cap[i] + 1))
+    );
+    expect(above.detail).toMatch(/sb79Yield above sb79Cap: 1 rows/);
+    const small = await v32(editRow(APPLIES, (p, i, F) => (p.sb79Yield[i * F] = 3)));
+    expect(small.ok).toBe(false);
+    expect(small.detail).toMatch(/sb79Yield in 1\.\.4: 1 rows/);
+  });
+  it('fails on a non-applies row with an envelope, or a hostable flag that is not applies', async () => {
+    const env = await v32(editRow(NOT_ELIGIBLE, (p, i) => (p.sb79Stories[i] = 3)));
+    expect(env.detail).toBe('not-eligible row with an envelope: 1 rows (3512007)');
+    const cap = await v32(editRow(NOT_ELIGIBLE, (p, i) => (p.sb79Cap[i] = 0)));
+    expect(cap.ok).toBe(false);
+    const host = await v32(editRow(APPLIES, (p, i) => (p.hostableSb79[i] = 0)));
+    expect(host.detail).toBe('hostableSb79 ≠ applies: 1 rows (3512018)');
+  });
+  it('fails when the band and the outside status disagree', async () => {
+    const r = await v32(
+      editRow(NOT_ELIGIBLE, (p, i) => {
+        p.sb79Status[i] = OUTSIDE_STATUS;
+      })
+    );
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/todBand 0 iff outside: 1 rows \(3512007\)/);
+    const banded = await v32(
+      editRow(NOT_ELIGIBLE, (p, i) => {
+        p.todBand[i] = 0;
+        p.todTier[i] = 0;
+      })
+    );
+    expect(banded.detail).toMatch(/todBand 0 iff outside/);
+  });
+  it('fails below the stop minimums or without a tier-1 stop at a heavy-rail station', async () => {
+    const few = await v32(base, { ...counts, 'policy.sb79.stops.tier1': 2 });
+    expect(few.ok).toBe(false);
+    expect(few.detail).toMatch(/2 tier-1 stops < 3/);
+    const t2 = await v32(base, counts, { ...FIXTURE_PROFILE, sb79MinT2Stops: 3 });
+    expect(t2.detail).toMatch(/2 tier-2 stops < 3/);
+    const station = await v32(base, counts, {
+      ...FIXTURE_PROFILE,
+      transitHeavyRailStations: ['Fixture Station', 'Nowhere']
+    });
+    expect(station.ok).toBe(false);
+    expect(station.detail).toMatch(/no tier-1 stop at Nowhere/);
+  });
+  it('warns when the TOD share is outside todShareWarn and still passes', async () => {
+    const r = await v32(base, counts, { ...FIXTURE_PROFILE, todShareWarn: [0.6, 0.95] });
+    expect(r.ok).toBe(true);
+    expect(r.detail).toMatch(/; warn: tod share 100\.0% outside \[60\.0%, 95\.0%\]$/);
   });
 });
 

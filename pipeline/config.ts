@@ -1,4 +1,5 @@
 import { FTF_M } from '../src/lib/generator/constants';
+import { BAND_MAX_M } from './sb79-config';
 
 export const BBOX = { w: -122.53, s: 37.69, e: -122.34, n: 37.84 } as const;
 export const CELL_SIZE_M = 1000;
@@ -26,7 +27,10 @@ export const SQL_VARS = {
   land_seam_m: 0.05,
   // Grid cell the mask is cut into, so a lot is intersected with a few small pieces of it, not the
   // whole city. Tier 4, from the 2026-10-19 spike.
-  land_cell_m: 250
+  land_cell_m: 250,
+  // 82_policy.sql pol_tod: ½ mile, 804.672 m, SB 79's outer band (Gov. Code §65912.157(a),
+  // tier 1; pipeline/sb79-config.ts).
+  tod_half_m: BAND_MAX_M[3]
 } as const;
 export const KNOWN_LANDUSE = [
   'RESIDENT',
@@ -109,7 +113,13 @@ export interface InvariantProfile {
   exemptJoinMin: number;
   /** V31: maximum size of scenarios/fzp/policy.bin on disk, bytes. */
   policyMaxBytes: number;
-  /** V32: maximum size of scenarios/fzp/frontage.bin on disk, bytes. */
+  /** V32: minimum SB 79 tier-1 TOD stops (`policy.sb79.stops.tier1`). */
+  sb79MinT1Stops: number;
+  /** V32: minimum SB 79 tier-2 TOD stops (`policy.sb79.stops.tier2`). */
+  sb79MinT2Stops: number;
+  /** V32 warns (still passes) when the share of parcels within ½ mile of a stop is outside it. */
+  todShareWarn: [number, number] | null;
+  /** V34: maximum size of scenarios/fzp/frontage.bin on disk, bytes. */
   frontageMaxBytes: number;
 }
 
@@ -171,6 +181,13 @@ export const LIVE_PROFILE: InvariantProfile = {
   exemptJoinMin: 0.95,
   // Plan Budget decision: 1.0 MB each (tier 4); they warn at 0.75 MB (check-policy.ts).
   policyMaxBytes: 1.0e6,
+  // V32 check bounds (tier 4, made up): at least one tier-1 stop per SF BART station
+  // (transitHeavyRailStations), and far fewer tier-2 stops than MUNI_TIER2_STOP_IDS's 438.
+  sb79MinT1Stops: 8,
+  sb79MinT2Stops: 50,
+  // Warn band (tier 4) around Planning's "more than 75%" of parcels within ½ mile of a TOD stop
+  // (Ord. 082-26 §2(e), tier 1).
+  todShareWarn: [0.6, 0.95],
   frontageMaxBytes: 1.0e6
 };
 
@@ -227,5 +244,10 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   historicJoinMin: 17 / 18,
   exemptJoinMin: 2 / 3,
   policyMaxBytes: LIVE_PROFILE.policyMaxBytes,
+  // Fixture known answers (mini README "Transit"): tier 1 FX-1 (BART) and 70011, 70012 (80
+  // Caltrain trains a day at the station); tier 2 m4, m5 (Muni N light rail).
+  sb79MinT1Stops: 3,
+  sb79MinT2Stops: 2,
+  todShareWarn: null,
   frontageMaxBytes: LIVE_PROFILE.frontageMaxBytes
 };

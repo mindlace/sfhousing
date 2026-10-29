@@ -417,6 +417,8 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       'sd.roll.year-built-cast': [0, 31],
       'sd.roll.year-built-range': [1, 31],
       'sd.roll.year-gap': [1, 34],
+      // Every mini lot is within ½ mile of a TOD stop, and every zoning code has a zone class.
+      'sd.sb79.zone-unlisted': [0, 18],
       'sd.yield.nonmonotone': [0, 18],
       'sd.yield.zero-hostable': [3, 14],
       'sd.zoning.c2-floor-approx': [0, 11],

@@ -166,7 +166,7 @@
     "pieces.remainder_sliver_dropped": 0,
     "pieces.sliver_dropped": 1,
     "pipeline.cutoffDay": 20662,
-    "policy.bytes.payload": 4580,
+    "policy.bytes.payload": 6124,
     "policy.exempt.permanent": 1,
     "policy.exempt.temporary": 1,
     "policy.historic.A": 2,
@@ -175,6 +175,17 @@
     "policy.historic.C": 13,
     "policy.historic.none": 1,
     "policy.historic.protected": 3,
+    "policy.sb79.applies": 6,
+    "policy.sb79.cap_binds": 4,
+    "policy.sb79.min-units": 1,
+    "policy.sb79.net_capacity": 80,
+    "policy.sb79.not-eligible": 3,
+    "policy.sb79.outside": 0,
+    "policy.sb79.rent-control": 7,
+    "policy.sb79.stops.tier1": 3,
+    "policy.sb79.stops.tier2": 2,
+    "policy.sb79.tod_share": 10000,
+    "policy.sb79.zone": 1,
     "policy.use_district_mismatch": 0,
     "projects.asOf": 20736,
     "projects.byPathway.discretionary": 10,
@@ -387,6 +398,8 @@
     "quality.sd.roll.year-built-range.of": 31,
     "quality.sd.roll.year-gap.fired": 1,
     "quality.sd.roll.year-gap.of": 34,
+    "quality.sd.sb79.zone-unlisted.fired": 0,
+    "quality.sd.sb79.zone-unlisted.of": 18,
     "quality.sd.yield.nonmonotone.fired": 0,
     "quality.sd.yield.nonmonotone.of": 18,
     "quality.sd.yield.zero-hostable.fired": 3,
@@ -642,6 +655,11 @@
     {
       "detail": "18 parcels decode; re-encode byte-identical; historic 17/18 ≥ 94.4444%; exemption rows matched 2/3 ≥ 66.6667%; policy.bin within budget",
       "id": "V31",
+      "ok": true
+    },
+    {
+      "detail": "6 applies rows match the statute envelope; stops tier 1 3 ≥ 3, tier 2 2 ≥ 2; tod share 100.0%",
+      "id": "V32",
       "ok": true
     }
   ],

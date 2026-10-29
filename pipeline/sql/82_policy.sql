@@ -42,9 +42,20 @@ LEFT JOIN src_sb79_exempt e ON e.apn = b.blklot
 GROUP BY p.id
 ORDER BY p.id;
 
--- TOD stop reach: the stop tier and distance per parcel within reach of pol_stops. Empty until the
--- SB 79 step fills it (plan 1 Task 8).
-CREATE OR REPLACE TABLE pol_tod (id VARCHAR, tier INTEGER, dist_m DOUBLE);
+-- TOD stop reach (SB 79 as written): per parcel and stop tier, the distance in metres from the
+-- DataSF outline (geom_orig, not the land-clipped geom) to the nearest pol_stops point of that tier
+-- within ½ mile (tod_half_m). Stop points stand in for "pedestrian access points" (§65912.157(b)).
+CREATE OR REPLACE TABLE pol_stop_pts AS
+SELECT id, tier,
+       ST_Transform(ST_Point(lng, lat), 'EPSG:4326', 'EPSG:7131', always_xy := true) AS geom
+FROM pol_stops;
+
+CREATE OR REPLACE TABLE pol_tod AS
+SELECT p.id, s.tier, min(ST_Distance(p.geom_orig, s.geom)) AS dist_m
+FROM parcels p
+JOIN pol_stop_pts s ON ST_DWithin(p.geom_orig, s.geom, getvariable('tod_half_m'))
+GROUP BY ALL
+ORDER BY ALL;
 
 -- ---- T14 tallies ----
 INSERT INTO quality_tally

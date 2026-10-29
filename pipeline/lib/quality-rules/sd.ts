@@ -934,5 +934,24 @@ export const SD_RULES: readonly QualityRule[] = [
     denominator: 'exemption table rows',
     ...MISSING_SHARES,
     unitsWeighted: false
+  },
+  // SB 79 as written (pipeline/steps/policy.ts): a parcel within ½ mile of a TOD stop whose
+  // zoning_code matches no ZONE_CLASS_RULES entry ('' or a code the config does not list) gets
+  // status `zone`, no SB 79 envelope. Counted, changes nothing else. Kind `shape`, the 0.01 default.
+  {
+    ...SD,
+    id: 'sd.sb79.zone-unlisted',
+    source: 'datasf-parcel-attrs',
+    field: 'zoning_code',
+    kind: 'shape',
+    action: 'none',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label:
+      'A parcel near a TOD stop whose zoning code has no SB 79 zone class gets no SB 79 envelope',
+    denominator: 'parcels within ½ mile of a TOD stop',
+    ...SHARES,
+    unitsWeighted: false
   }
 ];

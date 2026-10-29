@@ -374,6 +374,7 @@ export const UNSOURCED: readonly string[] = [
   'ZONE_CLASS_RULES principallyResidential, accepted at tier 2–3: the Planning Code use tables could not be read online (amlegal 403). Values come from district names, DataSF gen and Planning memos. Tier 3 rules: RTO-C, CMUO, the MR/P70/PPS/BR/S-MU SUDs, MB-RA, MB-O, HP-RA. SALI and P are tier 1 (Planning memo).',
   "TIER_SOURCE = gtfs: the MTC SB 79 stops licence is a disclaimer with no redistribution grant, so MUNI_TIER2_STOP_IDS is our own id list cited to MTC (as of 2026-07) and the dataset is not shipped. MTC's 9 planned BRT stops (Hunters Point, Candlestick) are left out, though §65912.156(p) counts planned stops.",
   'TOD distance is measured to stop points; MTC publishes pedestrian access points (mtc_sb79_tod_access_points) under the same disclaimer.',
+  "SB 79 as written, §65912.157(h) rent-control exclusion (tier 2 proxy): read from parcels.bin's rentControlLikely (2 or more homes on the latest roll, built before 1979). The statute excludes a site with more than two rent- or price-controlled units occupied by tenants in the past seven years, or demolished within seven years; tenancy and demolition history are not modelled, and lots with exactly 2 such homes are excluded too.",
   `Exemption tables licence: none stated; using "${EXEMPTION_LICENSE}".`,
   'Temporary exemption table: row "4591A 011*" carries an unexplained asterisk; 1,013 rows repeat a blklot.'
 ];
