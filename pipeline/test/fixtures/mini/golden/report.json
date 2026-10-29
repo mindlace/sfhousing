@@ -166,7 +166,10 @@
     "pieces.remainder_sliver_dropped": 0,
     "pieces.sliver_dropped": 1,
     "pipeline.cutoffDay": 20662,
-    "policy.bytes.payload": 6196,
+    "policy.bytes.payload": 8412,
+    "policy.current.from_s207": 2,
+    "policy.current.net_capacity": 75,
+    "policy.current.yield_mismatch": 0,
     "policy.exempt.permanent": 1,
     "policy.exempt.temporary": 1,
     "policy.historic.A": 2,
@@ -175,6 +178,16 @@
     "policy.historic.C": 13,
     "policy.historic.none": 1,
     "policy.historic.protected": 3,
+    "policy.s207.applies": 3,
+    "policy.s207.base_ft_mismatch": 0,
+    "policy.s207.exempt": 2,
+    "policy.s207.historic": 0,
+    "policy.s207.meets-minimum": 3,
+    "policy.s207.no-limit": 7,
+    "policy.s207.not-eligible": 3,
+    "policy.s207.not-residential": 0,
+    "policy.s207.outside": 0,
+    "policy.s207.r4": 0,
     "policy.sb79.applies": 7,
     "policy.sb79.cap_binds": 5,
     "policy.sb79.min-units": 2,
@@ -660,6 +673,11 @@
     {
       "detail": "7 applies rows match the statute envelope; stops tier 1 3 ≥ 3, tier 2 2 ≥ 2; tod share 100.0%",
       "id": "V32",
+      "ok": true
+    },
+    {
+      "detail": "18 rows match §207.11 over FZP; 3 applies, 2 from §207.11",
+      "id": "V33",
       "ok": true
     }
   ],

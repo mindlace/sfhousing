@@ -253,6 +253,9 @@ export const ZONE_CLASS_RULES: readonly {
   zone(/^HP-RA$/, 'mixed', false, 'none: Hunters Point Shipyard Redevelopment Plan governs uses', 3)
 ];
 
+/** §207.11(c)(1): density up to 50% of the §65912.157 density for the parcel. */
+const S207_DENSITY_SHARE = 0.5;
+
 /** §207.11, Ord. 082-26 §5 (File 260132, passed 2026-05-05, signed 2026-05-08, effective 2026-06-08). */
 export const S207: {
   heightFloorFt: 40;
@@ -267,7 +270,7 @@ export const S207: {
   /** §207.11(c)(2): a height limit under 40 ft becomes 40 ft. */
   heightFloorFt: 40,
   /** §207.11(c)(1): density up to 50% of the §65912.157 density for the parcel. */
-  densityShare: 0.5,
+  densityShare: S207_DENSITY_SHARE,
   /**
    * §207.11(b)(8) threshold, Planning's reading: a lot qualifies when its permitted density is
    * below densityShare × the SB 79 density for its tier and band (Ord. 082-26 §2(f); Alternative
@@ -275,7 +278,7 @@ export const S207: {
    * least 50% of the density permitted under SB79"). The literal reading, 30 du/ac from
    * §65912.157(a)(1)(A), is in UNSOURCED.
    */
-  minDensityDuPerAcre: (tier, band) => 0.5 * STANDARDS[tier][band].duPerAcre,
+  minDensityDuPerAcre: (tier, band) => S207_DENSITY_SHARE * STANDARDS[tier][band].duPerAcre,
   minDensityCite: {
     source:
       'SF Planning, "Memo - SB79 Alternative Plan_June2026", footnote 4 (Board File 260132); Ord. 082-26 §2(f)',

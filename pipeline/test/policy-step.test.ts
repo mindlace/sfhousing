@@ -121,13 +121,77 @@ describe('writePolicy on the mini fixture', () => {
     expect(counts['policy.use_district_mismatch']).toBe(0);
   });
 
-  it('copies FZP into the current-law columns', () => {
-    expect(Array.from(pol.currentYield)).toEqual(Array.from(s.yield));
-    expect(Array.from(pol.currentStories)).toEqual(Array.from(s.envelopeStories));
-    expect(Array.from(pol.hostableCurrent)).toEqual(Array.from(s.hostable));
-    expect(Array.from(pol.currentCap)).toEqual(Array.from(pol.fzpYieldCap));
-    expect(pol.currentFromS207.every((v) => v === 0)).toBe(true);
-    expect(pol.s207Status.every((v) => S207_STATUSES[v] === 'outside')).toBe(true);
+  const s207 = (id: string) => S207_STATUSES[pol.s207Status[row(id)]];
+  const F = () => s.fillLevels.length;
+  const current = (id: string) => {
+    const i = row(id);
+    return {
+      stories: pol.currentStories[i],
+      cap: pol.currentCap[i],
+      yield: Array.from(pol.currentYield.subarray(i * F(), (i + 1) * F())),
+      hostable: pol.hostableCurrent[i],
+      fromS207: pol.currentFromS207[i]
+    };
+  };
+  const fzp = (id: string) => {
+    const i = row(id);
+    return {
+      stories: s.envelopeStories[i],
+      cap: pol.fzpYieldCap[i],
+      yield: Array.from(s.yield.subarray(i * F(), (i + 1) * F())),
+      hostable: s.hostable[i],
+      fromS207: 0
+    };
+  };
+
+  it('raises lot 17 (RH-2, 30 ft, tier 1 half band) to 40 ft under §207.11', () => {
+    expect(s207(LOT[17])).toBe('applies');
+    const i = row(LOT[17]);
+    expect(s.envelopeStories[i]).toBe(3);
+    expect(current(LOT[17]).stories).toBe(4);
+    expect(current(LOT[17]).fromS207).toBe(1);
+    expect(current(LOT[17]).cap).toBe(unitsFor(100, s.lotAreaM2[i], 0.5, 'round'));
+    expect(current(LOT[17]).hostable).toBe(1);
+  });
+
+  it('applies §207.11 on lot 18: its RM-1 cap is below half the adjacent tier 1 density', () => {
+    // Planning's (b)(8): 0.5 × 160 du/ac on 300 m² is 6 homes; RM-1 permits 4.
+    const i = row(LOT[18]);
+    expect(pol.fzpYieldCap[i]).toBeLessThan(unitsFor(80, s.lotAreaM2[i], 1, 'round'));
+    expect(s207(LOT[18])).toBe('applies');
+    expect(current(LOT[18]).cap).toBe(unitsFor(160, s.lotAreaM2[i], 0.5, 'round'));
+    expect(current(LOT[18]).fromS207).toBe(1);
+  });
+
+  it('keeps FZP on exempt, uncapped and minimum-meeting lots', () => {
+    expect(s207(LOT[15])).toBe('exempt');
+    expect(current(LOT[15])).toEqual(fzp(LOT[15]));
+    expect(s207(LOT[12])).toBe('exempt');
+    // Lots 1–4 are in 40//65-R-4, but none has a numeric FZP cap (Local Program on 1 and 2,
+    // form-based NCT and NC-1 on 3 and 4) and 40 ft is not under 40: (b)(3) comes first.
+    for (const id of [LOT[1], LOT[2], LOT[3], '0026T001A']) expect(s207(id), id).toBe('no-limit');
+    expect(s207(LOT[13])).toBe('no-limit'); // C-3-O at 120 ft, before its A* historic status
+    for (const id of ['3512005', '3512008', '3512010']) expect(s207(id), id).toBe('meets-minimum');
+    for (let k = 0; k < pol.count; k++)
+      if (!pol.currentFromS207[k]) expect(current(s.id[k]), s.id[k]).toEqual(fzp(s.id[k]));
+  });
+
+  it('counts the §207.11 statuses and the current-law layer', () => {
+    const statuses = S207_STATUSES.reduce((n, st) => n + counts[`policy.s207.${st}`], 0);
+    expect(statuses).toBe(pol.count);
+    expect(counts['policy.s207.applies']).toBe(3);
+    expect(counts['policy.s207.exempt']).toBe(2);
+    expect(counts['policy.s207.no-limit']).toBe(7);
+    expect(counts['policy.s207.meets-minimum']).toBe(3);
+    expect(counts['policy.s207.not-eligible']).toBe(3);
+    expect(counts['policy.s207.base_ft_mismatch']).toBe(0);
+    expect(counts['policy.current.from_s207']).toBe(2);
+    expect(counts['policy.current.yield_mismatch']).toBe(0);
+    let net = 0;
+    for (let k = 0; k < pol.count; k++)
+      if (pol.hostableCurrent[k])
+        net += Math.max(0, pol.currentYield[(k + 1) * F() - 1] - s.existingUnits[k]);
+    expect(counts['policy.current.net_capacity']).toBe(net);
   });
 
   const sb79 = (id: string) => {

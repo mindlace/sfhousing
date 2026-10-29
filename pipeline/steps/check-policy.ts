@@ -1,4 +1,4 @@
-// Invariants over the sim data-layer files (plan 1): V31 and V32 for `scenarios/fzp/policy.bin`.
+// Invariants over the sim data-layer files (plan 1): V31 to V33 for `scenarios/fzp/policy.bin`.
 // Kept out of check.ts so the policy and frontage checks sit together; checkDataset calls
 // checkPolicy after V30.
 import { existsSync, readFileSync } from 'node:fs';
@@ -8,6 +8,7 @@ import type { Manifest } from '../../src/lib/data/manifest';
 import {
   HISTORIC_CODES,
   NULL_CAP,
+  S207_STATUSES,
   SB79_STATUSES,
   decodePolicyPayload,
   encodePolicyPayload,
@@ -16,9 +17,11 @@ import {
 import { decodeTransit } from '../../src/lib/data/transit-codec';
 import { FILL_LEVELS, type ScenarioParcels } from '../../src/lib/data/scenario-codec';
 import type { InvariantProfile } from '../config';
-import { storiesFromFt } from '../lib/heights';
+import { mostPermissive } from '../../src/lib/data/stock-layers';
+import { s207Envelope, s207Status } from '../lib/current-law';
+import { parseHeightDistrict, storiesFromFt } from '../lib/heights';
 import { reportedQuality } from '../lib/quality';
-import { rentControlExcluded, stopTiers, unitsFor } from '../lib/sb79';
+import { rentControlExcluded, stopTiers, unitsFor, zoneClassOf } from '../lib/sb79';
 import { POLICY_BIN } from '../lib/scenario-files';
 import { MIN_UNITS, STANDARDS, type Sb79Tier, type TodBand } from '../sb79-config';
 import type { InvariantResult } from './check';
@@ -248,7 +251,109 @@ function checkV32(
 }
 
 /**
- * The policy-file invariants (V31, V32), in id order. `opts.policyWarnBytes` overrides
+ * V33, current law (FZP + §207.11): for every row, recomputes `s207Status` (s207Status) from
+ * parcels.bin (eligibility, lot area, FZP stories, and the base height and R-4 flag of its height
+ * district string), the policy columns (TOD tier and band, historic code, exemption flags,
+ * `fzpYieldCap`) and `zoneClassOf(useDistrict)`. A `currentFromS207` row must be `applies`, have
+ * the s207Envelope stories and cap, and be the more permissive layer (`mostPermissive` over the
+ * full-fill yield and hostable flag); every other row's current columns must equal the FZP row
+ * (`envelopeStories`, `fzpYieldCap`, `yield`, `hostable`). `policy.s207.base_ft_mismatch` (the
+ * step's base height or R-4 flag ≠ the district string's) and `policy.current.yield_mismatch` (the
+ * step's FZP recompute ≠ parcels.bin) must be 0: yields are not regenerated here. Never throws.
+ */
+function checkV33(
+  outDir: string,
+  counts: Record<string, number>,
+  p: ScenarioParcels | null
+): InvariantResult {
+  const problems: string[] = [];
+  const done = (ok: string): InvariantResult => ({
+    id: 'V33',
+    ok: problems.length === 0,
+    detail: problems.length === 0 ? ok : problems.join('; ')
+  });
+  const pol = decodedPolicy(outDir, p);
+  let applies = 0;
+  let from = 0;
+  if (typeof pol === 'string') problems.push(pol);
+  else {
+    const F = pol.fillLevels.length;
+    const bad = new Map<string, string[]>();
+    const flag = (what: string, i: number) => {
+      const ids = bad.get(what) ?? [];
+      ids.push(p!.id[i]);
+      bad.set(what, ids);
+    };
+    for (let i = 0; i < pol.count; i++) {
+      const hd = parseHeightDistrict(p!.districts[p!.district[i]]);
+      const tier = pol.todTier[i] as Sb79Tier;
+      const band = pol.todBand[i] as TodBand;
+      const best = STANDARDS[tier]?.[band] ? { tier, band } : null; // todBand 0: outside
+      const fzpCap = pol.fzpYieldCap[i] === NULL_CAP ? null : pol.fzpYieldCap[i];
+      const fzpBaseFt = hd.kind === 'height' ? hd.baseFt : null;
+      const want = s207Status({
+        best,
+        eligible: p!.eligible[i] === 1,
+        principallyResidential: zoneClassOf(pol.useDistricts[pol.useDistrict[i]])
+          .principallyResidential,
+        r4: hd.kind === 'height' && hd.r4,
+        historic: HISTORIC_CODES[pol.historic[i]],
+        exempt: pol.exemptPermanent[i] === 1 || pol.exemptTemporary[i] === 1,
+        fzpBaseFt,
+        fzpCap,
+        lotAreaM2: p!.lotAreaM2[i]
+      });
+      const got = S207_STATUSES[pol.s207Status[i]];
+      if (got !== want) flag(`s207Status ${want} expected, ${got} found`, i);
+      if (want === 'applies') applies++;
+      const top = (ys: ArrayLike<number>, k: number) => ys[k * F + F - 1];
+      if (pol.currentFromS207[i] === 1) {
+        from++;
+        if (got !== 'applies' || best === null) {
+          flag(`currentFromS207 on a ${got} row`, i);
+          continue;
+        }
+        const env = s207Envelope({
+          tier,
+          band,
+          fzpStories: p!.envelopeStories[i],
+          fzpBaseFt,
+          fzpCap,
+          lotAreaM2: p!.lotAreaM2[i]
+        });
+        if (pol.currentStories[i] !== env.stories) flag('§207.11 stories ≠ currentStories', i);
+        if (pol.currentCap[i] !== env.cap) flag('§207.11 cap ≠ currentCap', i);
+        const fzpTop = { yieldTop: top(p!.yield, i), hostable: p!.hostable[i] === 1 };
+        const curTop = {
+          yieldTop: top(pol.currentYield, i),
+          hostable: pol.hostableCurrent[i] === 1
+        };
+        if (mostPermissive(fzpTop, curTop) !== 'b')
+          flag('currentFromS207 not more permissive than FZP', i);
+        continue;
+      }
+      let same =
+        pol.currentStories[i] === p!.envelopeStories[i] &&
+        pol.currentCap[i] === pol.fzpYieldCap[i] &&
+        pol.hostableCurrent[i] === p!.hostable[i];
+      for (let k = i * F; same && k < (i + 1) * F; k++) same = pol.currentYield[k] === p!.yield[k];
+      if (!same) flag('current ≠ FZP without §207.11', i);
+    }
+    for (const [what, ids] of bad)
+      problems.push(
+        `${what}: ${ids.length} rows (${ids.slice(0, NAMED).join(', ')}${ids.length > NAMED ? ', …' : ''})`
+      );
+    for (const k of ['policy.s207.base_ft_mismatch', 'policy.current.yield_mismatch'])
+      if (counts[k] !== 0) problems.push(`${k} ${counts[k]} ≠ 0`);
+    return done(
+      `${pol.count} rows match §207.11 over FZP; ${applies} applies, ${from} from §207.11`
+    );
+  }
+  return done('');
+}
+
+/**
+ * The policy-file invariants (V31 to V33), in id order. `opts.policyWarnBytes` overrides
  * POLICY_WARN_BYTES (tests). Never throws.
  */
 export function checkPolicy(
@@ -263,6 +368,7 @@ export function checkPolicy(
   const warnBytes = opts.policyWarnBytes ?? POLICY_WARN_BYTES;
   return [
     checkV31(outDir, profile, counts, p, m, stableDetail, warnBytes),
-    checkV32(outDir, profile, counts, p, m)
+    checkV32(outDir, profile, counts, p, m),
+    checkV33(outDir, counts, p)
   ];
 }

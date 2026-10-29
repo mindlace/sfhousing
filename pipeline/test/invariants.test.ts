@@ -12,6 +12,7 @@ import {
 import { encodeTransit } from '../../src/lib/data/transit-codec';
 import {
   SB79_STATUSES,
+  S207_STATUSES,
   decodePolicyPayload,
   encodePolicyPayload,
   type PolicyParcels
@@ -121,6 +122,18 @@ const editScenario = (dir: string, f: (p: ScenarioParcels) => void) => {
   const p = decodeScenarioPayload(new Uint8Array(inflateRawSync(readFileSync(file))));
   f(p);
   writeFileSync(file, deflateRawSync(encodeScenarioPayload(p)));
+};
+/** A copy whose policy.bin row of parcel `id` is edited by `f` (re-encoded, still decodes). */
+const editPolicyRow = (id: string, f: (pol: PolicyParcels, i: number, F: number) => void) => {
+  const d = copy();
+  const file = join(d, POLICY_BIN);
+  const s = decodeScenarioPayload(
+    new Uint8Array(inflateRawSync(readFileSync(join(d, PARCELS_BIN))))
+  );
+  const pol = decodePolicyPayload(new Uint8Array(inflateRawSync(readFileSync(file))), s);
+  f(pol, s.index.get(id)!, pol.fillLevels.length);
+  writeFileSync(file, deflateRawSync(encodePolicyPayload(pol)));
+  return d;
 };
 
 describe('invariants', () => {
@@ -1008,18 +1021,7 @@ describe('V31 policy file', () => {
 });
 
 describe('V32 SB 79 as written', () => {
-  const readScenario = (dir: string) =>
-    decodeScenarioPayload(new Uint8Array(inflateRawSync(readFileSync(join(dir, PARCELS_BIN)))));
-  /** A copy whose policy.bin row of parcel `id` is edited by `f` (re-encoded, still decodes). */
-  const editRow = (id: string, f: (pol: PolicyParcels, i: number, F: number) => void) => {
-    const d = copy();
-    const s = readScenario(d);
-    const file = join(d, POLICY_BIN);
-    const pol = decodePolicyPayload(new Uint8Array(inflateRawSync(readFileSync(file))), s);
-    f(pol, s.index.get(id)!, pol.fillLevels.length);
-    writeFileSync(file, deflateRawSync(encodePolicyPayload(pol)));
-    return d;
-  };
+  const editRow = editPolicyRow;
   const v32 = async (dir: string, c = counts, profile = FIXTURE_PROFILE) =>
     (await checkDataset(dir, profile, { counts: c, reencodeIdentical: true })).find(
       (r) => r.id === 'V32'
@@ -1101,6 +1103,52 @@ describe('V32 SB 79 as written', () => {
     const r = await v32(base, counts, { ...FIXTURE_PROFILE, todShareWarn: [0.6, 0.95] });
     expect(r.ok).toBe(true);
     expect(r.detail).toMatch(/; warn: tod share 100\.0% outside \[60\.0%, 95\.0%\]$/);
+  });
+});
+
+describe('V33 current law (FZP + §207.11)', () => {
+  const v33 = async (dir: string, c = counts) =>
+    (await checkDataset(dir, FIXTURE_PROFILE, { counts: c, reencodeIdentical: true })).find(
+      (r) => r.id === 'V33'
+    )!;
+  const FROM_S207 = '3512018'; // lot 18: §207.11 applies and wins (cap 6 over RM-1's 4)
+  const EXEMPT = '3512015'; // lot 15: temporarily exempt, the FZP row
+  const status = (st: (typeof S207_STATUSES)[number]) => S207_STATUSES.indexOf(st);
+
+  it('is OK on the fixture', async () => {
+    const r = await v33(base);
+    expect(r.ok, r.detail).toBe(true);
+    expect(r.detail).toBe('18 rows match §207.11 over FZP; 3 applies, 2 from §207.11');
+  });
+  it('fails when one row’s currentCap is altered', async () => {
+    const s207 = await v33(editPolicyRow(FROM_S207, (p, i) => (p.currentCap[i] += 1)));
+    expect(s207.ok).toBe(false);
+    expect(s207.detail).toBe('§207.11 cap ≠ currentCap: 1 rows (3512018)');
+    const fzp = await v33(editPolicyRow(EXEMPT, (p, i) => (p.currentCap[i] += 1)));
+    expect(fzp.detail).toBe('current ≠ FZP without §207.11: 1 rows (3512015)');
+  });
+  it('fails on another status or stories', async () => {
+    const st = await v33(editPolicyRow(EXEMPT, (p, i) => (p.s207Status[i] = status('r4'))));
+    expect(st.detail).toBe('s207Status exempt expected, r4 found: 1 rows (3512015)');
+    const stories = await v33(editPolicyRow(FROM_S207, (p, i) => (p.currentStories[i] += 1)));
+    expect(stories.detail).toMatch(/^§207\.11 stories ≠ currentStories: 1 rows/);
+  });
+  it('fails on currentFromS207 off applies, or without a larger hostable top', async () => {
+    const off = await v33(editPolicyRow(EXEMPT, (p, i) => (p.currentFromS207[i] = 1)));
+    expect(off.detail).toMatch(/currentFromS207 on a exempt row: 1 rows \(3512015\)/);
+    const host = await v33(editPolicyRow(FROM_S207, (p, i) => (p.hostableCurrent[i] = 0)));
+    expect(host.detail).toBe('currentFromS207 not more permissive than FZP: 1 rows (3512018)');
+    const low = await v33(
+      editPolicyRow(FROM_S207, (p, i, F) => (p.currentYield[i * F + F - 1] = 4))
+    );
+    expect(low.detail).toBe('currentFromS207 not more permissive than FZP: 1 rows (3512018)');
+  });
+  it('fails on a base height or yield mismatch count', async () => {
+    const ft = await v33(base, { ...counts, 'policy.s207.base_ft_mismatch': 1 });
+    expect(ft.ok).toBe(false);
+    expect(ft.detail).toBe('policy.s207.base_ft_mismatch 1 ≠ 0');
+    const y = await v33(base, { ...counts, 'policy.current.yield_mismatch': 2 });
+    expect(y.detail).toBe('policy.current.yield_mismatch 2 ≠ 0');
   });
 });
 

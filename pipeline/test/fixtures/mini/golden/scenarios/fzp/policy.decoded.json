@@ -101,6 +101,38 @@
       "label": "Current law (FZP + §207.11)",
       "sources": [
         {
+          "label": "SF Planning Code §207.11(b)–(c), added by Ordinance 082-26 §5 (Board File 260132), as amended in Board 2026-04-28",
+          "url": "https://media.api.sf.gov/documents/o0082-26.pdf"
+        },
+        {
+          "label": "SF Board File 260132 – SB 79 exemption tables (Ord. 082-26)",
+          "url": "https://sfgov.legistar.com/LegislationDetail.aspx?ID=7880164&GUID=E0FE8932-C884-412C-A977-7C3E9B5778D2"
+        },
+        {
+          "label": "SF Planning, \"Memo - SB79 Alternative Plan_June2026\", footnote 4 (Board File 260132); Ord. 082-26 §2(f)",
+          "url": "https://sfgov.legistar.com/View.ashx?M=F&ID=15796913&GUID=4489B919-9281-4344-B757-BC92D33EAB0A"
+        },
+        {
+          "label": "Gov. Code §65912.157(a)(3)–(6), (e); §65912.156(a) (SB 79, Stats. 2025 ch. 512, chaptered text)",
+          "url": "https://leginfo.legislature.ca.gov/faces/billNavClient.xhtml?bill_id=202520260SB79"
+        },
+        {
+          "label": "SFMTA Muni GTFS",
+          "url": "https://www.sfmta.com/reports/gtfs-transit-data"
+        },
+        {
+          "label": "BART GTFS",
+          "url": "https://www.bart.gov/schedules/developers/gtfs"
+        },
+        {
+          "label": "Caltrain GTFS",
+          "url": "https://www.caltrain.com/developer-resources"
+        },
+        {
+          "label": "MTC \"Senate Bill 79 - Transit-Oriented Development Transit Stops\", agency SFMTA, tod_tier \"Tier 2\", excluding planned (mtc:*) stops; stop_code matched to SFMTA Muni GTFS stops.txt stop_id",
+          "url": "https://services3.arcgis.com/i2dkYWmb4wHvYPda/arcgis/rest/services/mtc_sb79_tod_stops/FeatureServer/1"
+        },
+        {
           "label": "DataSF Zoning Map – Height and Bulk Districts",
           "url": "https://data.sf.gov/d/h9wh-cg3m"
         },
@@ -111,9 +143,13 @@
         {
           "label": "DataSF Parcels (attributes, active and retired)",
           "url": "https://data.sf.gov/d/acdm-wktn"
+        },
+        {
+          "label": "DataSF Historic Resource Status by Parcel",
+          "url": "https://data.sf.gov/d/3tsw-4idn"
         }
       ],
-      "method": "The FZP envelope, cap and yields of parcels.bin. The FZP yield cap is none on Local Program parcels and the base-zoning cap on 2026-10-10 elsewhere. §207.11 is not applied in this dataset."
+      "method": "The FZP envelope, cap and yields of parcels.bin (the FZP yield cap is none on Local Program parcels and the base-zoning cap on 2026-10-10 elsewhere), raised by Planning Code §207.11 (Ord. 082-26 §5) where it applies. §207.11 applies within ½ mile of an SB 79 TOD stop (the SB 79 tiers and bands), on a scenario-eligible lot that is in neither Board File 260132 exemption table, zoned for principally permitted residential use, with a numeric density cap or a base height under 40 ft, outside R-4, not an Article 10 or 11 resource (historic status A*), and whose cap is below half the SB 79 density of its tier and band (Planning’s reading of (b)(8)); the density-bonus condition (b)(5) is not modelled. There a base height under 40 ft becomes 40 ft (4 stories) and the cap is the larger of the FZP cap and half the SB 79 density × lot acres, rounded half up. A lot takes §207.11 when its full-fill yield is larger and it can host a project; a tie keeps FZP."
     }
   },
   "useDistrict": [
@@ -369,24 +405,24 @@
     23
   ],
   "s207Status": [
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0
+    4,
+    4,
+    4,
+    7,
+    1,
+    8,
+    7,
+    8,
+    7,
+    4,
+    2,
+    4,
+    4,
+    1,
+    4,
+    2,
+    8,
+    1
   ],
   "currentStories": [
     4,
@@ -406,7 +442,7 @@
     4,
     6,
     6,
-    3
+    4
   ],
   "currentCap": [
     65535,
@@ -422,11 +458,11 @@
     65535,
     65535,
     65535,
-    4,
+    6,
     65535,
     6,
     4,
-    6
+    11
   ],
   "currentYield": [
     0,
@@ -494,11 +530,11 @@
     0,
     0,
     0,
-    4,
-    4,
-    4,
-    4,
-    4,
+    6,
+    6,
+    6,
+    6,
+    6,
     0,
     0,
     0,
@@ -517,8 +553,8 @@
     4,
     4,
     4,
-    4,
-    4
+    11,
+    11
   ],
   "hostableSb79": [
     0,
@@ -574,11 +610,11 @@
     0,
     0,
     0,
+    1,
     0,
     0,
     0,
-    0,
-    0
+    1
   ],
   "exemptPermanent": [
     0,

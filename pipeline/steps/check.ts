@@ -336,7 +336,7 @@ export function maxOf(xs: readonly number[]): number {
 /**
  * Spec §4.9 invariants V1–V13, transit spec §4.3 V14, scenario-data spec §4.10 V15–V19 and
  * project-records spec §4.9 V20 over a built dataset directory, then V21–V24 from
- * `extras.projectChecks`, V30 (T14) from the counts and V31–V32 (policy.bin). Never throws.
+ * `extras.projectChecks`, V30 (T14) from the counts and V31–V33 (policy.bin). Never throws.
  */
 export async function checkDataset(
   outDir: string,
@@ -828,7 +828,7 @@ export async function checkDataset(
   // V30 data-quality registry (T14): every rule reports; live shares within failShare.
   out.push(checkV30(c, profile));
 
-  // V31–V32 policy.bin (sim data layers), against the decoded parcels.bin.
+  // V31–V33 policy.bin (sim data layers), against the decoded parcels.bin.
   out.push(...checkPolicy(outDir, profile, c, p, m, extras.stableDetail ?? false));
   return out;
 }

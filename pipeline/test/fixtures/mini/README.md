@@ -183,3 +183,13 @@ of the Caltrain platforms (7 stories). Statuses: `applies` 1, 5, 11, 13, 15, 17,
 §65912.157(h)); `min-units` 6 and 14. Lots 1 and 6 have 2 pre-1979 homes, not more than two, so they are not
 excluded; lot 6 (260 m²) then yields under 5 homes at full fill. Lot 14's 40 homes exceed its statute cap of
 9, so every fill level is 0.
+
+Current law (`policy.bin`, V33), §207.11 under Planning's (b)(8) reading (half the SB 79 density of the
+lot's tier and band): `applies` 6, 17, 18; `exempt` 12 (permanent) and 15 (temporary); `no-limit` 1–4, 11,
+13, 14 (no numeric FZP cap, base height 40 ft or more: Local Program on 1, 2, 11 and 14, form-based NCT,
+NC-1 and C-3-O on 3, 4 and 13; (b)(3) comes before the R-4 and historic tests, so no lot is `r4` and lot
+13's A\* is not reached); `meets-minimum` 5, 8, 10 (RH caps at or above half of 120 du/ac); `not-eligible`
+7, 9, 16. Lot 17 (RH-2, `30-X`, half band of FX-1) goes to 40 ft (4 stories) with cap
+`unitsFor(100, 903, 0.5, 'round')` = 11 and takes §207.11. Lot 18's RM-1 cap of 4 is below 6
+(`unitsFor(80, 300)`, half the adjacent 160 du/ac), so it `applies` (not `meets-minimum`, as it would under the
+literal 30 du/ac reading) with cap 6 and takes §207.11. Lot 6 applies but yields 0 either way, so it keeps FZP.
