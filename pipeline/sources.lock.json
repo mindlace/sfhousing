@@ -642,6 +642,45 @@
     {
       "files": [
         {
+          "archiveKey": "sources/b170883081c6ab53218175736641309e381453a0824022adc1fa6f99778ba1ee.csv",
+          "bytes": 910654,
+          "name": "datasf-historic-status.page-000.csv",
+          "sha256": "b170883081c6ab53218175736641309e381453a0824022adc1fa6f99778ba1ee",
+          "url": "https://data.sf.gov/resource/3tsw-4idn.csv?%24select=apn%2Cceqacode%2Cceqacodea10a11&%24order=%3Aid&%24limit=50000&%24offset=0"
+        },
+        {
+          "archiveKey": "sources/a702aff7637741800775152fcfecf1b02bfaa121c5c8f107db1275a7d9d8d148.csv",
+          "bytes": 910402,
+          "name": "datasf-historic-status.page-001.csv",
+          "sha256": "a702aff7637741800775152fcfecf1b02bfaa121c5c8f107db1275a7d9d8d148",
+          "url": "https://data.sf.gov/resource/3tsw-4idn.csv?%24select=apn%2Cceqacode%2Cceqacodea10a11&%24order=%3Aid&%24limit=50000&%24offset=50000"
+        },
+        {
+          "archiveKey": "sources/f220f59ef186d63458a25abf1fe7c4209281e590489b7265ccfcc6bc477ff0b7.csv",
+          "bytes": 910384,
+          "name": "datasf-historic-status.page-002.csv",
+          "sha256": "f220f59ef186d63458a25abf1fe7c4209281e590489b7265ccfcc6bc477ff0b7",
+          "url": "https://data.sf.gov/resource/3tsw-4idn.csv?%24select=apn%2Cceqacode%2Cceqacodea10a11&%24order=%3Aid&%24limit=50000&%24offset=100000"
+        },
+        {
+          "archiveKey": "sources/85e0f283bee63e60cde073a97924f983996b178ff4cf6567f5fc3a8fd8ec4ddd.csv",
+          "bytes": 240698,
+          "name": "datasf-historic-status.page-003.csv",
+          "sha256": "85e0f283bee63e60cde073a97924f983996b178ff4cf6567f5fc3a8fd8ec4ddd",
+          "url": "https://data.sf.gov/resource/3tsw-4idn.csv?%24select=apn%2Cceqacode%2Cceqacodea10a11&%24order=%3Aid&%24limit=50000&%24offset=150000"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/3tsw-4idn",
+      "id": "datasf-historic-status",
+      "label": "DataSF Historic Resource Status by Parcel",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-29T09:09:29.984Z",
+      "rowCount": 163288,
+      "upstreamVersion": "Wed, 28 Oct 2026 09:09:49 GMT"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/74d3bb5ba2077bf67811617c752306b7f533fa90c8c9204a53c62863f2f529f3.json",
           "bytes": 833737,
           "name": "datasf-housing-production.page-000.json",
@@ -906,6 +945,24 @@
     {
       "files": [
         {
+          "archiveKey": "sources/671b96650a627a8ddc0abd110f8f36366f299c4077bc31c2b0a329d42f4757bf.geojson",
+          "bytes": 4536010,
+          "name": "datasf-streets.page-000.geojson",
+          "sha256": "671b96650a627a8ddc0abd110f8f36366f299c4077bc31c2b0a329d42f4757bf",
+          "url": "https://data.sf.gov/resource/3psu-pn9h.geojson?%24select=cnn%2Cstreetname%2Cclasscode%2Clayer%2Cactive%2Cline&%24where=active%3Dtrue&%24order=%3Aid&%24limit=50000&%24offset=0"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/3psu-pn9h",
+      "id": "datasf-streets",
+      "label": "DataSF Streets – Active and Retired (centerlines)",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-29T09:09:24.450Z",
+      "rowCount": 16378,
+      "upstreamVersion": "Wed, 28 Oct 2026 17:32:58 GMT"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/e47d8189511602491133997fdb88e0119a796a843a0f726e4e774a0e76a92051.json",
           "bytes": 366123,
           "name": "datasf-unit-completions.page-000.json",
@@ -1028,6 +1085,31 @@
       "retrievedAt": "2026-10-16T17:04:17.238Z",
       "rowCount": 1,
       "upstreamVersion": "028c18f713baecad011301ff7a69acc39bcc2ae7"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/f0bdb49aebb5e0221d29db1e2f01de915334d923666f2912ccdd2c068bb242d8.pdf",
+          "bytes": 270186,
+          "name": "sfbos-sb79-exemptions.permanent.pdf",
+          "sha256": "f0bdb49aebb5e0221d29db1e2f01de915334d923666f2912ccdd2c068bb242d8",
+          "url": "https://sfgov.legistar.com/View.ashx?M=F&ID=15190247&GUID=2AD44D65-34E2-4022-B6A3-DF406906A836"
+        },
+        {
+          "archiveKey": "sources/28befd3c9e50830de07e41db1ecac191925da9b62b15481210ca536c4b0a4c5e.pdf",
+          "bytes": 1214107,
+          "name": "sfbos-sb79-exemptions.temporary.pdf",
+          "sha256": "28befd3c9e50830de07e41db1ecac191925da9b62b15481210ca536c4b0a4c5e",
+          "url": "https://sfgov.legistar.com/View.ashx?M=F&ID=15389028&GUID=5F3894E8-8FC7-47E7-815D-33D66A8E8B22"
+        }
+      ],
+      "homepage": "https://sfgov.legistar.com/LegislationDetail.aspx?ID=7880164&GUID=E0FE8932-C884-412C-A977-7C3E9B5778D2",
+      "id": "sfbos-sb79-exemptions",
+      "label": "SF Board File 260132 – SB 79 exemption tables (Ord. 082-26)",
+      "license": "SF public record (Board File 260132)",
+      "retrievedAt": "2026-10-29T09:09:29.985Z",
+      "rowCount": 2,
+      "upstreamVersion": "f0bdb49aebb5,28befd3c9e50"
     }
   ]
 }
