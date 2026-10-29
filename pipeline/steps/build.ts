@@ -192,9 +192,10 @@ export async function build(
       await writeChunks(db, join(work, 'reencode'), datasetVersion, new Report());
       return sameFiles(join(outDir, 'parcels'), join(work, 'reencode', 'parcels'));
     });
-    // Transit spec §4.2 step 1: the service date is picked from the newest fetch date. Its UTC
-    // day is the build's snapshot day: the scenario step's "today" for the FZP density cap and
-    // the project records' `asOf` (project-records spec §4.9 Determinism).
+    // Transit spec §4.2 step 1: the service date is picked from the newest fetch date. `asOf` is
+    // the newest fetch day of the as-of sources only (`AS_OF_SOURCE_IDS`): the scenario step's
+    // "today" for the FZP density cap and the project records' `asOf` (project-records spec §4.9
+    // Determinism). A policy- or frontage-only source cannot move it.
     const newest = lock.sources.reduce((d, s) => (s.retrievedAt > d ? s.retrievedAt : d), '');
     const asOf = asOfFromLock(lock);
     const derivedDir = join(opts.derivedRoot ?? DERIVED_ROOT, datasetVersion);
