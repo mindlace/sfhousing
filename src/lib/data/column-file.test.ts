@@ -51,7 +51,7 @@ describe('column file', () => {
   it('inflateRawBody inflates raw deflate bytes', async () => {
     const cs = new CompressionStream('deflate-raw');
     const w = cs.writable.getWriter();
-    void w.write(bytes);
+    void w.write(new Uint8Array(bytes));
     void w.close();
     const packed = new Uint8Array(await new Response(cs.readable).arrayBuffer());
     expect(Array.from(await inflateRawBody(packed))).toEqual(Array.from(bytes));
