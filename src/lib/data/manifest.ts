@@ -58,7 +58,11 @@ const ManifestBaseSchema = z.object({
       fzp: z.object({
         parcels: RootRelativeUrl,
         projects: RootRelativeUrl,
-        calibration: RootRelativeUrl
+        calibration: RootRelativeUrl,
+        /** Per-lot policy inputs (sfh-policy/1). Optional: datasets built before it lack it. */
+        policy: RootRelativeUrl.optional(),
+        /** Lot-to-street frontage (sfh-frontage/1). Optional like `policy`. */
+        frontage: RootRelativeUrl.optional()
       })
     })
     .optional()
@@ -76,6 +80,8 @@ export const ManifestSchema = ManifestBaseSchema.superRefine((m, ctx) => {
     ['scenarios.fzp.parcels', m.scenarios?.fzp.parcels],
     ['scenarios.fzp.projects', m.scenarios?.fzp.projects],
     ['scenarios.fzp.calibration', m.scenarios?.fzp.calibration],
+    ['scenarios.fzp.policy', m.scenarios?.fzp.policy],
+    ['scenarios.fzp.frontage', m.scenarios?.fzp.frontage],
     ...m.chunks.map((c, i): [string, string] => [`chunks.${i}.url`, c.url])
   ];
   for (const [path, u] of urls) {

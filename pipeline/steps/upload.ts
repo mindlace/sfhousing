@@ -109,6 +109,11 @@ export function datasetProblems(outDir: string, v: string, raw: unknown, lock: L
     m.basemapTiles,
     m.neighborhoods,
     ...(m.transit ? [m.transit] : []),
+    ...(m.scenarios
+      ? [m.scenarios.fzp.parcels, m.scenarios.fzp.projects, m.scenarios.fzp.calibration]
+      : []),
+    ...(m.scenarios?.fzp.policy ? [m.scenarios.fzp.policy] : []),
+    ...(m.scenarios?.fzp.frontage ? [m.scenarios.fzp.frontage] : []),
     ...(m.sprite ? [m.sprite] : []),
     ...Object.values(FONT_STACKS).map((s) =>
       m.glyphs.replace('{fontstack}', s).replace('{range}', '0-255')

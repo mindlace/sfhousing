@@ -10,6 +10,16 @@ import {
   type ScenarioParcels
 } from '../../src/lib/data/scenario-codec';
 import { encodeTransit } from '../../src/lib/data/transit-codec';
+import {
+  SB79_STATUSES,
+  S207_STATUSES,
+  decodePolicyPayload,
+  encodePolicyPayload,
+  type PolicyParcels
+} from '../../src/lib/data/policy-codec';
+import { decodeFrontagePayload, encodeFrontagePayload } from '../../src/lib/data/frontage-codec';
+import { parseManifest } from '../../src/lib/data/manifest';
+import { checkPolicy } from '../steps/check-policy';
 import { tinyNetwork } from '../../src/lib/data/fixtures/transit-tiny';
 import { FIXTURE_PROFILE, LIVE_PROFILE } from '../config';
 import { QUALITY_REPORT_MD, QUALITY_RULES, makeQuality } from '../lib/quality';
@@ -31,7 +41,7 @@ import {
 import { fixture } from '../steps/fixture';
 import { PROJECTS_JSON } from '../steps/projects';
 import { miniProjectInput } from './fixtures/mini/projects-raw';
-import { PARCELS_BIN } from '../lib/scenario-files';
+import { FRONTAGE_BIN, PARCELS_BIN, POLICY_BIN } from '../lib/scenario-files';
 
 let base: string;
 /** The fixture build's derived cache root (kept, so the T14 report can be read). */
@@ -114,6 +124,18 @@ const editScenario = (dir: string, f: (p: ScenarioParcels) => void) => {
   f(p);
   writeFileSync(file, deflateRawSync(encodeScenarioPayload(p)));
 };
+/** A copy whose policy.bin row of parcel `id` is edited by `f` (re-encoded, still decodes). */
+const editPolicyRow = (id: string, f: (pol: PolicyParcels, i: number, F: number) => void) => {
+  const d = copy();
+  const file = join(d, POLICY_BIN);
+  const s = decodeScenarioPayload(
+    new Uint8Array(inflateRawSync(readFileSync(join(d, PARCELS_BIN))))
+  );
+  const pol = decodePolicyPayload(new Uint8Array(inflateRawSync(readFileSync(file))), s);
+  f(pol, s.index.get(id)!, pol.fillLevels.length);
+  writeFileSync(file, deflateRawSync(encodePolicyPayload(pol)));
+  return d;
+};
 
 describe('invariants', () => {
   it('all pass on the unmutated fixture', async () => {
@@ -184,7 +206,7 @@ describe('invariants', () => {
     const v8 = r.find((x) => x.id === 'V8')!;
     expect(v8.ok).toBe(false);
     expect(v8.detail).toMatch(/more than one chunk/);
-    expect(v8.detail).toMatch(/16 distinct ids ≠ V2 17/);
+    expect(v8.detail).toMatch(/17 distinct ids ≠ V2 18/);
     expect(v8.detail).not.toMatch(/Σ parcelCount/);
   });
   it('V7 fails on an empty polygon', async () => {
@@ -312,7 +334,7 @@ describe('invariants', () => {
     });
     const v15 = await result(d, 'V15');
     expect(v15.ok).toBe(false);
-    expect(v15.detail).toMatch(/14 id\(s\) whose cell ≠ their chunk's cellId/);
+    expect(v15.detail).toMatch(/15 id\(s\) whose cell ≠ their chunk's cellId/);
   });
   it('V15 fails when an id is in no chunk', async () => {
     const d = copy();
@@ -338,7 +360,7 @@ describe('invariants', () => {
     writeFileSync(join(d, 'manifest.json'), JSON.stringify(m));
     const v15 = await result(d, 'V15');
     expect(v15.ok).toBe(false);
-    expect(v15.detail).toMatch(/31 chunk records ≠ count 17/);
+    expect(v15.detail).toMatch(/33 chunk records ≠ count 18/);
   });
   it('V16 fails when too few eligible parcels have a district', async () => {
     const d = copy();
@@ -348,7 +370,7 @@ describe('invariants', () => {
     });
     const v16 = await result(d, 'V16');
     expect(v16.ok).toBe(false);
-    expect(v16.detail).toMatch(/eligible with a district 92\.9% < 100%/);
+    expect(v16.detail).toMatch(/eligible with a district 93\.3% < 100%/);
   });
   it('V16 fails on a parse failure', async () => {
     expect(await failed(base, { ...counts, 'scenario.height.parse_fail': 1 })).toContain('V16');
@@ -405,7 +427,7 @@ describe('invariants', () => {
     const v17 = await result(d, 'V17');
     expect(v17).toMatchObject({
       ok: true,
-      detail: expect.stringMatching(/^hostable 11\/15 eligible/)
+      detail: expect.stringMatching(/^hostable 12\/16 eligible/)
     });
   });
   it('V17 fails when the eligible flag disagrees with the chunk record and the T14 rule', async () => {
@@ -472,7 +494,7 @@ describe('invariants', () => {
   });
   it('V17 does not warn when the FZP net total is in band', async () => {
     const v17 = await result(base, 'V17', { ...counts, 'scenario.yield.fzp_net_total': 780000 });
-    expect(v17).toMatchObject({ ok: true, detail: 'hostable 10/14 eligible' });
+    expect(v17).toMatchObject({ ok: true, detail: 'hostable 11/15 eligible' });
   });
   it('V17 passes with a warning when the FZP net total is far from the cross-check', async () => {
     const v17 = (
@@ -561,7 +583,7 @@ describe('invariants', () => {
       'scenario.roll.latest_eligible_matched': 11
     });
     expect(v18.ok).toBe(false);
-    expect(v18.detail).toMatch(/eligible with a latest-year roll row 78\.6% < 80%/);
+    expect(v18.detail).toMatch(/eligible with a latest-year roll row 73\.3% < 80%/);
   });
   it('V18 counts hostable_base for every panel roll year, each within 5% of the year before', async () => {
     const keys = Object.keys(counts)
@@ -821,7 +843,7 @@ describe('V30 data-quality registry', () => {
       expect(md, r.id).toMatch(new RegExp(`^\\| \`${r.id.replaceAll('.', '\\.')}\` \\|`, 'm'));
     }
     // The scenario-data SQL rules recorded into the build's counts.
-    expect(md).toMatch(/\| `sd\.roll\.units-capacity` \|.*\| 3 \/ 31 \|/);
+    expect(md).toMatch(/\| `sd\.roll\.units-capacity` \|.*\| 3 \/ 33 \|/);
     expect(md).not.toContain('| not reported |');
     expect(md).not.toContain('Not reported.');
   });
@@ -853,6 +875,404 @@ describe('V30 data-quality registry', () => {
       detail:
         'every registered rule reports; no share above failShare; warn: sd.test.bound: share 2.00% > warnShare 1.00%'
     });
+  });
+});
+
+describe('V31 policy file', () => {
+  const readScenario = (dir: string) =>
+    decodeScenarioPayload(new Uint8Array(inflateRawSync(readFileSync(join(dir, PARCELS_BIN)))));
+  /** Decode the copy's policy.bin against its parcels.bin and write `bytes(payload)` back. */
+  const rewritePolicy = (
+    dir: string,
+    bytes: (p: PolicyParcels, payload: Uint8Array) => Uint8Array,
+    parcels: ScenarioParcels = readScenario(dir)
+  ) => {
+    const file = join(dir, POLICY_BIN);
+    const payload = new Uint8Array(inflateRawSync(readFileSync(file)));
+    writeFileSync(file, deflateRawSync(bytes(decodePolicyPayload(payload, parcels), payload)));
+  };
+  /** Edit parcels.bin and policy.bin together, so policy.bin still decodes against it. */
+  const editBoth = (
+    dir: string,
+    f: (p: { datasetVersion: string; fillLevels: number[] }) => void
+  ) => {
+    const before = readScenario(dir);
+    editScenario(dir, f);
+    rewritePolicy(
+      dir,
+      (pol) => {
+        f(pol);
+        return encodePolicyPayload(pol);
+      },
+      before
+    );
+  };
+  const editManifest = (
+    dir: string,
+    f: (m: { scenarios: { fzp: Record<string, string> } }) => void
+  ) => {
+    const mf = join(dir, 'manifest.json');
+    const m = JSON.parse(readFileSync(mf, 'utf8'));
+    f(m);
+    writeFileSync(mf, JSON.stringify(m));
+  };
+  const v31 = async (dir: string, c = counts, profile = FIXTURE_PROFILE, stableDetail = false) =>
+    (await checkDataset(dir, profile, { counts: c, reencodeIdentical: true, stableDetail })).find(
+      (r) => r.id === 'V31'
+    )!;
+  it('is OK on the fixture', async () => {
+    const r = await v31(base);
+    expect(r.ok, r.detail).toBe(true);
+    expect(r.detail).toMatch(/historic 17\/18/);
+  });
+  it('fails with "does not decode" against a parcels.bin with one id changed', async () => {
+    const d = copy();
+    editScenario(d, (p) => {
+      p.id[0] = p.id[0] + 'X';
+    });
+    const r = await v31(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/does not decode/);
+  });
+  it('fails when policy.bin is missing, or present but not in the manifest', async () => {
+    const d = copy();
+    rmSync(join(d, POLICY_BIN));
+    const missing = await v31(d);
+    expect(missing.ok).toBe(false);
+    expect(missing.detail).toMatch(/policy\.bin/);
+    const e = copy();
+    const mf = join(e, 'manifest.json');
+    const m = JSON.parse(readFileSync(mf, 'utf8'));
+    delete m.scenarios.fzp.policy;
+    writeFileSync(mf, JSON.stringify(m));
+    const unnamed = await v31(e);
+    expect(unnamed.ok).toBe(false);
+    expect(unnamed.detail).toMatch(/not named in the manifest/);
+  });
+  it('fails when its datasetVersion is not the manifest’s', async () => {
+    const d = copy();
+    editBoth(d, (p) => {
+      p.datasetVersion = 'fixture-9';
+    });
+    const r = await v31(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/datasetVersion fixture-9 ≠ fixture-0/);
+  });
+  it('fails when re-encoding the decoded payload is not byte-identical', async () => {
+    const d = copy();
+    // A trailing byte past the last column decodes the same but is not what the encoder writes.
+    rewritePolicy(d, (_, payload) => Uint8Array.from([...payload, 0]));
+    const r = await v31(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toBe('re-encoding the decoded payload differs');
+  });
+  it('fails when fillLevels differ from FILL_LEVELS', async () => {
+    const d = copy();
+    editBoth(d, (p) => {
+      p.fillLevels = [0.2, 0.5, 0.75, 0.9, 1];
+    });
+    const r = await v31(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/fillLevels \[0\.2, 0\.5, 0\.75, 0\.9, 1\] ≠ FILL_LEVELS/);
+  });
+  it('fails when the manifest names another url', async () => {
+    const d = copy();
+    editManifest(d, (m) => {
+      m.scenarios.fzp.policy = '/data/fixture-0/scenarios/fzp/other.bin';
+    });
+    const r = await v31(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toBe(
+      'manifest names /data/fixture-0/scenarios/fzp/other.bin, not scenarios/fzp/policy.bin'
+    );
+  });
+  it('warns above the warn size and still passes', () => {
+    const m = parseManifest(JSON.parse(readFileSync(join(base, 'manifest.json'), 'utf8')));
+    const p = readScenario(base);
+    const args = [base, FIXTURE_PROFILE, counts, p, m, false] as const;
+    const [quiet] = checkPolicy(...args);
+    expect(quiet.ok).toBe(true);
+    expect(quiet.detail).not.toMatch(/warn/);
+    const [loud] = checkPolicy(...args, { policyWarnBytes: 10 });
+    expect(loud.ok).toBe(true);
+    expect(loud.detail).toMatch(/; warn: over 0\.00001 MB$/);
+  });
+  it('fails on a use-district mismatch, a low historic join or no exemption rows', async () => {
+    expect((await v31(base, { ...counts, 'policy.use_district_mismatch': 1 })).ok).toBe(false);
+    const strict = { ...FIXTURE_PROFILE, historicJoinMin: 1 };
+    expect((await v31(base, counts, strict)).detail).toMatch(/historic .* < 100%/);
+    const none = await v31(base, {
+      ...counts,
+      'quality.sd.exempt.unmatched.fired': 0,
+      'quality.sd.exempt.unmatched.of': 0
+    });
+    expect(none.ok).toBe(false);
+    expect(none.detail).toMatch(/0 exemption table rows/);
+    const unmatched = await v31(base, { ...counts, 'quality.sd.exempt.unmatched.fired': 2 });
+    expect(unmatched.ok).toBe(false);
+  });
+  it('fails over policyMaxBytes and leaves bytes out of the stable detail', async () => {
+    const small = await v31(base, counts, { ...FIXTURE_PROFILE, policyMaxBytes: 10 });
+    expect(small.ok).toBe(false);
+    const stable = await v31(base, counts, FIXTURE_PROFILE, true);
+    expect(stable.ok).toBe(true);
+    expect(stable.detail).not.toMatch(/\d+\/\d+ B/);
+    expect((await v31(base)).detail).toMatch(/policy\.bin \d+\/\d+ B/);
+  });
+});
+
+describe('V34 frontage file', () => {
+  const v34 = async (dir: string, c = counts, profile = FIXTURE_PROFILE, stableDetail = false) =>
+    (await checkDataset(dir, profile, { counts: c, reencodeIdentical: true, stableDetail })).find(
+      (r) => r.id === 'V34'
+    )!;
+  it('is OK on the fixture: 12 of 15 eligible lots front a street', async () => {
+    const r = await v34(base);
+    expect(r.ok, r.detail).toBe(true);
+    expect(r.detail).toMatch(
+      /^18 parcels decode; re-encode byte-identical; 3 segments; fronting 12\/15 eligible ≥ 80%; frontage\.bin \d+\/1000000 B$/
+    );
+  });
+  it('fails when frontage.bin is missing, or present but not in the manifest', async () => {
+    const d = copy();
+    rmSync(join(d, FRONTAGE_BIN));
+    const missing = await v34(d);
+    expect(missing.ok).toBe(false);
+    expect(missing.detail).toBe('scenarios/fzp/frontage.bin is missing but named in the manifest');
+    const e = copy();
+    const mf = join(e, 'manifest.json');
+    const m = JSON.parse(readFileSync(mf, 'utf8'));
+    delete m.scenarios.fzp.frontage;
+    writeFileSync(mf, JSON.stringify(m));
+    const unnamed = await v34(e);
+    expect(unnamed.ok).toBe(false);
+    expect(unnamed.detail).toBe('scenarios/fzp/frontage.bin is not named in the manifest');
+  });
+  it('fails when the manifest names another url', async () => {
+    const d = copy();
+    const mf = join(d, 'manifest.json');
+    const m = JSON.parse(readFileSync(mf, 'utf8'));
+    m.scenarios.fzp.frontage = '/data/fixture-0/scenarios/fzp/other.bin';
+    writeFileSync(mf, JSON.stringify(m));
+    expect((await v34(d)).detail).toBe(
+      'manifest names /data/fixture-0/scenarios/fzp/other.bin, not scenarios/fzp/frontage.bin'
+    );
+  });
+  it('fails with "does not decode" against a parcels.bin with one id changed', async () => {
+    const d = copy();
+    editScenario(d, (p) => {
+      p.id[0] = p.id[0] + 'X';
+    });
+    const r = await v34(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/frontage\.bin does not decode: idsHash differs/);
+  });
+  it('fails when re-encoding the decoded payload is not byte-identical', async () => {
+    const d = copy();
+    const file = join(d, FRONTAGE_BIN);
+    const payload = new Uint8Array(inflateRawSync(readFileSync(file)));
+    writeFileSync(file, deflateRawSync(Uint8Array.from([...payload, 0])));
+    const r = await v34(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toBe('re-encoding the decoded payload differs');
+  });
+  it('fails when the fronting share is below frontageMin', async () => {
+    const d = copy();
+    const file = join(d, FRONTAGE_BIN);
+    const p = decodeScenarioPayload(
+      new Uint8Array(inflateRawSync(readFileSync(join(d, PARCELS_BIN))))
+    );
+    const f = decodeFrontagePayload(new Uint8Array(inflateRawSync(readFileSync(file))), p);
+    // Every entry one lot deep: no row fronts at depth 0 (each segment still once per row).
+    f.frontDepth.fill(1);
+    writeFileSync(file, deflateRawSync(encodeFrontagePayload(f)));
+    const r = await v34(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/^fronting 0\/15 = 0\.0% < 80%/);
+    const strict = await v34(base, counts, { ...FIXTURE_PROFILE, frontageMin: 0.9 });
+    expect(strict.detail).toMatch(/^fronting 12\/15 = 80\.0% < 90%/);
+  });
+  it('fails on a depth-1 orphan count', async () => {
+    const r = await v34(base, { ...counts, 'frontage.depth1_orphan': 1 });
+    expect(r.ok).toBe(false);
+    expect(r.detail).toBe('frontage.depth1_orphan 1 ≠ 0');
+  });
+  it('fails over frontageMaxBytes and leaves bytes out of the stable detail', async () => {
+    const small = await v34(base, counts, { ...FIXTURE_PROFILE, frontageMaxBytes: 10 });
+    expect(small.ok).toBe(false);
+    expect(small.detail).toMatch(/^scenarios\/fzp\/frontage\.bin \d+\/10 B$/);
+    const stable = await v34(base, counts, FIXTURE_PROFILE, true);
+    expect(stable.ok).toBe(true);
+    expect(stable.detail).toMatch(/; frontage\.bin within budget$/);
+  });
+  it('warns above the warn size and still passes', () => {
+    const m = parseManifest(JSON.parse(readFileSync(join(base, 'manifest.json'), 'utf8')));
+    const p = decodeScenarioPayload(
+      new Uint8Array(inflateRawSync(readFileSync(join(base, PARCELS_BIN))))
+    );
+    const args = [base, FIXTURE_PROFILE, counts, p, m, false] as const;
+    const quiet = checkPolicy(...args).find((r) => r.id === 'V34')!;
+    expect(quiet.ok).toBe(true);
+    expect(quiet.detail).not.toMatch(/warn/);
+    const loud = checkPolicy(...args, { frontageWarnBytes: 10 }).find((r) => r.id === 'V34')!;
+    expect(loud.ok).toBe(true);
+    expect(loud.detail).toMatch(/; warn: over 0\.00001 MB$/);
+  });
+});
+
+describe('V32 SB 79 as written', () => {
+  const editRow = editPolicyRow;
+  const v32 = async (dir: string, c = counts, profile = FIXTURE_PROFILE) =>
+    (await checkDataset(dir, profile, { counts: c, reencodeIdentical: true })).find(
+      (r) => r.id === 'V32'
+    )!;
+  const APPLIES = '3512018'; // lot 18: tier 1 adjacent, 9 stories
+  const NOT_ELIGIBLE = '3512007'; // lot 7: open space
+  const OUTSIDE_STATUS = SB79_STATUSES.indexOf('outside');
+
+  it('is OK on the fixture', async () => {
+    const r = await v32(base);
+    expect(r.ok, r.detail).toBe(true);
+    expect(r.detail).toMatch(
+      /stops tier 1 3 ≥ 3, tier 2 2 ≥ 2; Muni tier-2 list ids matched 0\/438 ≥ 0%; tod share 100\.0%$/
+    );
+  });
+  it('fails when an applies row has other stories or another cap', async () => {
+    const stories = await v32(editRow(APPLIES, (p, i) => (p.sb79Stories[i] = 8)));
+    expect(stories.ok).toBe(false);
+    expect(stories.detail).toBe('sb79Stories ≠ statute: 1 rows (3512018)');
+    const cap = await v32(editRow(APPLIES, (p, i) => (p.sb79Cap[i] += 1)));
+    expect(cap.detail).toMatch(/^sb79Cap ≠ statute density: 1 rows/);
+  });
+  it('fails on an applies yield above the cap or in 1..4', async () => {
+    const above = await v32(
+      editRow(APPLIES, (p, i, F) => (p.sb79Yield[i * F + F - 1] = p.sb79Cap[i] + 1))
+    );
+    expect(above.detail).toMatch(/sb79Yield above sb79Cap: 1 rows/);
+    const small = await v32(editRow(APPLIES, (p, i, F) => (p.sb79Yield[i * F] = 3)));
+    expect(small.ok).toBe(false);
+    expect(small.detail).toMatch(/sb79Yield in 1\.\.4: 1 rows/);
+  });
+  it('fails on a non-applies row with an envelope, or a hostable flag that is not applies', async () => {
+    const env = await v32(editRow(NOT_ELIGIBLE, (p, i) => (p.sb79Stories[i] = 3)));
+    expect(env.detail).toBe('not-eligible row with an envelope: 1 rows (3512007)');
+    const cap = await v32(editRow(NOT_ELIGIBLE, (p, i) => (p.sb79Cap[i] = 0)));
+    expect(cap.ok).toBe(false);
+    const host = await v32(editRow(APPLIES, (p, i) => (p.hostableSb79[i] = 0)));
+    expect(host.detail).toBe('hostableSb79 ≠ applies: 1 rows (3512018)');
+  });
+  it('fails when rent-control and the 2-home rule disagree', async () => {
+    const RC = SB79_STATUSES.indexOf('rent-control');
+    // Lot 18 has 2 homes: not over the statute's two.
+    const r = await v32(editRow(APPLIES, (p, i) => (p.sb79Status[i] = RC)));
+    expect(r.detail).toMatch(/rent-control row not over 2 pre-1979 homes: 1 rows \(3512018\)/);
+    // Lot 8 (12 pre-1979 homes) is rent-control; marking it applies fails.
+    const a = await v32(
+      editRow('3512008', (p, i) => (p.sb79Status[i] = SB79_STATUSES.indexOf('applies')))
+    );
+    expect(a.detail).toMatch(/applies row over 2 pre-1979 homes: 1 rows \(3512008\)/);
+  });
+  it('fails when the band and the outside status disagree', async () => {
+    const r = await v32(
+      editRow(NOT_ELIGIBLE, (p, i) => {
+        p.sb79Status[i] = OUTSIDE_STATUS;
+      })
+    );
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/todBand 0 iff outside: 1 rows \(3512007\)/);
+    const banded = await v32(
+      editRow(NOT_ELIGIBLE, (p, i) => {
+        p.todBand[i] = 0;
+        p.todTier[i] = 0;
+      })
+    );
+    expect(banded.detail).toMatch(/todBand 0 iff outside/);
+  });
+  it('fails below the stop minimums or without a tier-1 stop at a heavy-rail station', async () => {
+    const few = await v32(base, { ...counts, 'policy.sb79.stops.tier1': 2 });
+    expect(few.ok).toBe(false);
+    expect(few.detail).toMatch(/2 tier-1 stops < 3/);
+    const t2 = await v32(base, counts, { ...FIXTURE_PROFILE, sb79MinT2Stops: 3 });
+    expect(t2.detail).toMatch(/2 tier-2 stops < 3/);
+    const station = await v32(base, counts, {
+      ...FIXTURE_PROFILE,
+      transitHeavyRailStations: ['Fixture Station', 'Nowhere']
+    });
+    expect(station.ok).toBe(false);
+    expect(station.detail).toMatch(/no tier-1 stop at Nowhere/);
+  });
+  it('bounds the share of MUNI_TIER2_STOP_IDS that match a transit stop', async () => {
+    // The fixture's exact answer: no list id is a mini stop, so 0/438 passes its bound of 0.
+    const fx = await v32(base);
+    expect(fx.detail).toMatch(/Muni tier-2 list ids matched 0\/438 ≥ 0%/);
+    const live = { ...FIXTURE_PROFILE, muniTier2MatchMin: 0.95 };
+    const none = await v32(base, counts, live);
+    expect(none.ok).toBe(false);
+    expect(none.detail).toMatch(/Muni tier-2 list ids matched 0\/438 = 0\.0% < 95%/);
+    const k = 'quality.sd.sb79.tier2-unmatched.fired';
+    const mostly = await v32(base, { ...counts, [k]: 2 }, live);
+    expect(mostly.ok, mostly.detail).toBe(true);
+    expect(mostly.detail).toMatch(/Muni tier-2 list ids matched 436\/438 ≥ 95%/);
+    const dropped = await v32(base, { ...counts, [k]: 145 }, live);
+    expect(dropped.ok).toBe(false);
+    expect(dropped.detail).toMatch(/matched 293\/438 = 66\.9% < 95%/);
+    const rest = Object.fromEntries(
+      Object.entries(counts).filter(([key]) => !key.startsWith('quality.sd.sb79.tier2-unmatched.'))
+    );
+    const unreported = await v32(base, rest, live);
+    expect(unreported.ok).toBe(false);
+    expect(unreported.detail).toMatch(/0 Muni tier-2 list ids/);
+  });
+  it('warns when the TOD share is outside todShareWarn and still passes', async () => {
+    const r = await v32(base, counts, { ...FIXTURE_PROFILE, todShareWarn: [0.6, 0.95] });
+    expect(r.ok).toBe(true);
+    expect(r.detail).toMatch(/; warn: tod share 100\.0% outside \[60\.0%, 95\.0%\]$/);
+  });
+});
+
+describe('V33 current law (FZP + §207.11)', () => {
+  const v33 = async (dir: string, c = counts) =>
+    (await checkDataset(dir, FIXTURE_PROFILE, { counts: c, reencodeIdentical: true })).find(
+      (r) => r.id === 'V33'
+    )!;
+  const FROM_S207 = '3512018'; // lot 18: §207.11 applies and wins (cap 6 over RM-1's 4)
+  const EXEMPT = '3512015'; // lot 15: temporarily exempt, the FZP row
+  const status = (st: (typeof S207_STATUSES)[number]) => S207_STATUSES.indexOf(st);
+
+  it('is OK on the fixture', async () => {
+    const r = await v33(base);
+    expect(r.ok, r.detail).toBe(true);
+    expect(r.detail).toBe('18 rows match §207.11 over FZP; 3 applies, 2 from §207.11');
+  });
+  it('fails when one row’s currentCap is altered', async () => {
+    const s207 = await v33(editPolicyRow(FROM_S207, (p, i) => (p.currentCap[i] += 1)));
+    expect(s207.ok).toBe(false);
+    expect(s207.detail).toBe('§207.11 cap ≠ currentCap: 1 rows (3512018)');
+    const fzp = await v33(editPolicyRow(EXEMPT, (p, i) => (p.currentCap[i] += 1)));
+    expect(fzp.detail).toBe('current ≠ FZP without §207.11: 1 rows (3512015)');
+  });
+  it('fails on another status or stories', async () => {
+    const st = await v33(editPolicyRow(EXEMPT, (p, i) => (p.s207Status[i] = status('r4'))));
+    expect(st.detail).toBe('s207Status exempt expected, r4 found: 1 rows (3512015)');
+    const stories = await v33(editPolicyRow(FROM_S207, (p, i) => (p.currentStories[i] += 1)));
+    expect(stories.detail).toMatch(/^§207\.11 stories ≠ currentStories: 1 rows/);
+  });
+  it('fails on currentFromS207 off applies, or without a larger hostable top', async () => {
+    const off = await v33(editPolicyRow(EXEMPT, (p, i) => (p.currentFromS207[i] = 1)));
+    expect(off.detail).toMatch(/currentFromS207 on a exempt row: 1 rows \(3512015\)/);
+    const host = await v33(editPolicyRow(FROM_S207, (p, i) => (p.hostableCurrent[i] = 0)));
+    expect(host.detail).toBe('currentFromS207 not more permissive than FZP: 1 rows (3512018)');
+    const low = await v33(
+      editPolicyRow(FROM_S207, (p, i, F) => (p.currentYield[i * F + F - 1] = 4))
+    );
+    expect(low.detail).toBe('currentFromS207 not more permissive than FZP: 1 rows (3512018)');
+  });
+  it('fails on a base height or yield mismatch count', async () => {
+    const ft = await v33(base, { ...counts, 'policy.s207.base_ft_mismatch': 1 });
+    expect(ft.ok).toBe(false);
+    expect(ft.detail).toBe('policy.s207.base_ft_mismatch 1 ≠ 0');
+    const y = await v33(base, { ...counts, 'policy.current.yield_mismatch': 2 });
+    expect(y.detail).toBe('policy.current.yield_mismatch 2 ≠ 0');
   });
 });
 

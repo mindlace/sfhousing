@@ -18,6 +18,7 @@ import {
   ASSIGNMENTS,
   CLIP_BUFFER_M,
   GTFS_FEEDS,
+  GTFS_IDS,
   PEAK,
   PLACE_RADIUS_M,
   VEHICLES,
@@ -26,10 +27,32 @@ import {
   routeLine,
   routeMode,
   routeName,
-  type GtfsFeedSpec
+  type GtfsFeedSpec,
+  type GtfsLockId
 } from '../transit-config';
 
 export class TransitBuildError extends Error {}
+
+/**
+ * The lock entries whose `retrievedAt` sets the transit target date (transit spec §4.2 step 1):
+ * the GTFS feeds only. A refresh of a DataSF, policy or frontage source cannot move the picked
+ * service day. Membership is by allowlist (docs/dev/pipeline.md).
+ */
+export const TRANSIT_DATE_SOURCE_IDS: readonly GtfsLockId[] = GTFS_IDS;
+
+/** UTC date (YYYY-MM-DD) of the newest `retrievedAt` among the lock's TRANSIT_DATE_SOURCE_IDS. */
+export function transitTargetDate(lock: Lock): string {
+  const members = new Set<string>(TRANSIT_DATE_SOURCE_IDS);
+  let newest = -Infinity;
+  for (const e of lock.sources) {
+    if (!members.has(e.id)) continue;
+    const t = Date.parse(e.retrievedAt);
+    if (Number.isFinite(t) && t > newest) newest = t;
+  }
+  if (newest === -Infinity)
+    throw new TransitBuildError('lock has no valid retrievedAt for a GTFS feed');
+  return new Date(newest).toISOString().slice(0, 10);
+}
 
 export interface FeedInput {
   spec: GtfsFeedSpec;

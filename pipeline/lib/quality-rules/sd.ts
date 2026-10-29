@@ -897,5 +897,100 @@ export const SD_RULES: readonly QualityRule[] = [
     warnShare: 0.09,
     failShare: 0.15,
     unitsWeighted: false
+  },
+  // ---- Policy step (pipeline/sql/82_policy.sql, reported by pipeline/steps/policy.ts) ----
+  // A parcel with no 3tsw-4idn row (or only rows without a code) ships historic '' and is not
+  // historic-protected (ruling 4). Kind `missing`, so the 0.05 default.
+  {
+    ...SD,
+    id: 'sd.historic.no-row',
+    source: 'datasf-historic-status',
+    field: 'historic',
+    kind: 'missing',
+    action: 'default',
+    tier: 4,
+    valueTier: 4,
+    maskBit: null,
+    label:
+      'A parcel with no historic resource status row has no status, so it is not historic-protected',
+    denominator: 'parcels',
+    ...MISSING_SHARES,
+    unitsWeighted: false
+  },
+  // An exemption table row (Board File 260132) whose apn matches no active parcel is dropped:
+  // pseudo-lots (VACST, ROWA, PARK) and retired lots (Task 1 report). Kind `missing`, so the 0.05
+  // default; V31 also requires a matched share of at least `exemptJoinMin`.
+  {
+    ...SD,
+    id: 'sd.exempt.unmatched',
+    source: 'sfbos-sb79-exemptions',
+    field: 'apn',
+    kind: 'missing',
+    action: 'drop',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label: 'An SB 79 exemption table row whose block and lot match no active parcel is dropped',
+    denominator: 'exemption table rows',
+    ...MISSING_SHARES,
+    unitsWeighted: false
+  },
+  // SB 79 as written (pipeline/steps/policy.ts): a MUNI_TIER2_STOP_IDS id with no stop in
+  // transit.json (a gtfs-muni refresh renumbered or dropped it) tiers nothing, so its corridor
+  // loses tier 2. Kind `missing`, so the 0.05 default; V32 also requires a matched share of at least
+  // `muniTier2MatchMin`. Live 2 of 438 (muni:3153, muni:3318).
+  {
+    ...SD,
+    id: 'sd.sb79.tier2-unmatched',
+    source: 'gtfs-muni',
+    field: 'stop_id',
+    kind: 'missing',
+    action: 'drop',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label: 'A Muni tier-2 list stop id that matches no stop in the transit network tiers nothing',
+    denominator: 'MUNI_TIER2_STOP_IDS ids',
+    ...MISSING_SHARES,
+    unitsWeighted: false
+  },
+  // SB 79 as written (pipeline/steps/policy.ts): a parcel within ½ mile of a TOD stop whose
+  // zoning_code matches no ZONE_CLASS_RULES entry ('' or a code the config does not list) gets
+  // status `zone`, no SB 79 envelope. Counted, changes nothing else. Kind `shape`, the 0.01 default.
+  {
+    ...SD,
+    id: 'sd.sb79.zone-unlisted',
+    source: 'datasf-parcel-attrs',
+    field: 'zoning_code',
+    kind: 'shape',
+    action: 'none',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label:
+      'A parcel near a TOD stop whose zoning code has no SB 79 zone class gets no SB 79 envelope',
+    denominator: 'parcels within ½ mile of a TOD stop',
+    ...SHARES,
+    unitsWeighted: false
+  },
+  // ---- Frontage step (pipeline/sql/83_frontage.sql, reported by pipeline/steps/frontage.ts) ----
+  // An eligible parcel with no depth-0 frontage entry: interior, rear or isolated by a right of
+  // way wider than front_max_m. The street brush cannot paint it directly (a depth-1 entry still
+  // can). Counted, changes nothing. Kind `missing`, so the 0.05 default; V34 also requires a
+  // fronting share of at least `frontageMin`.
+  {
+    ...SD,
+    id: 'sd.streets.no-frontage',
+    source: 'datasf-streets',
+    field: 'frontage',
+    kind: 'missing',
+    action: 'none',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label: 'An eligible parcel that fronts no city street segment at depth 0',
+    denominator: 'eligible parcels',
+    ...MISSING_SHARES,
+    unitsWeighted: false
   }
 ];

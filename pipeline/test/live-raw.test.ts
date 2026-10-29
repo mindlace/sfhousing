@@ -7,6 +7,7 @@ import { openDuck } from '../lib/duck';
 import { readLock, type Lock } from '../lib/lock';
 import { storeBytes } from '../lib/raw';
 import { loadNormalised, normalise, normaliseAll } from '../sources/normalise';
+import { SB79_EXEMPTIONS_CSV } from '../sources/sfbos';
 import { materialiseFonts } from '../steps/build';
 import { MINI } from './helpers';
 
@@ -34,7 +35,7 @@ describe('live raw layout (<rawDir>/<sha256>, no extension)', () => {
             storeBytes(raw, f.name, f.url, readFileSync(join(MINI, 'raw', f.name)))
           );
           lock.sources.push({ ...s, files });
-        } else if (s.id.startsWith('datasf-')) {
+        } else if (s.id.startsWith('datasf-') || s.id === 'sfbos-sb79-exemptions') {
           const files = s.files.map((f) =>
             storeBytes(raw, f.name, f.url, readFileSync(join(MINI, 'raw', f.name)))
           );
@@ -42,15 +43,20 @@ describe('live raw layout (<rawDir>/<sha256>, no extension)', () => {
         }
       }
       expect(existsSync(join(raw, lock.sources[0].files[0].sha256))).toBe(true);
-      const counts = await normaliseAll(db, lock, raw, norm);
+      const counts = await normaliseAll(db, lock, raw, norm, {
+        exemptionsCsv: SB79_EXEMPTIONS_CSV.fixture
+      });
       expect(counts).toEqual({
-        'datasf-parcels': 23,
-        'datasf-landuse-2023': 18,
+        'datasf-parcels': 24,
+        'datasf-landuse-2023': 19,
         'datasf-footprints': 3,
         'datasf-neighborhoods': 3,
-        'datasf-height-bulk': 7,
-        'datasf-parcel-attrs': 23,
-        'datasf-assessor-roll': 35,
+        'datasf-height-bulk': 8,
+        'datasf-parcel-attrs': 24,
+        'datasf-assessor-roll': 37,
+        'datasf-streets': 5,
+        'datasf-historic-status': 20,
+        'sfbos-sb79-exemptions': 3,
         'overture-buildings': 13,
         'protomaps-basemap': 2
       });
@@ -63,8 +69,8 @@ describe('live raw layout (<rawDir>/<sha256>, no extension)', () => {
          WHERE closed_roll_year = 2025`
       );
       // The raw 2025 units: 66 plus lot 3's 5,000 (spec §4.11 RA1 case, before the units rules)
-      // plus lot 16's 2.
-      expect(roll).toEqual({ n: 16, u: 5068 });
+      // plus lot 16's 2 and lot 18's 2.
+      expect(roll).toEqual({ n: 17, u: 5070 });
     } finally {
       db.close();
     }

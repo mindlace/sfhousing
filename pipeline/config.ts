@@ -1,4 +1,5 @@
 import { FTF_M } from '../src/lib/generator/constants';
+import { BAND_MAX_M } from './sb79-config';
 
 export const BBOX = { w: -122.53, s: 37.69, e: -122.34, n: 37.84 } as const;
 export const CELL_SIZE_M = 1000;
@@ -26,7 +27,24 @@ export const SQL_VARS = {
   land_seam_m: 0.05,
   // Grid cell the mask is cut into, so a lot is intersected with a few small pieces of it, not the
   // whole city. Tier 4, from the 2026-10-19 spike.
-  land_cell_m: 250
+  land_cell_m: 250,
+  // 82_policy.sql pol_tod: ½ mile, 804.672 m, SB 79's outer band (Gov. Code §65912.157(a),
+  // tier 1; pipeline/sb79-config.ts).
+  tod_half_m: BAND_MAX_M[3],
+  // 83_frontage.sql lot-to-street frontage (docs/dev/pipeline.md "Street frontage"); all tier 4,
+  // chosen for SF rights of way and lot widths and pinned by pipeline/test/frontage-sql.test.ts.
+  // Farthest a lot may lie from a centerline and front it: the widest common SF right of way is
+  // 125 ft (≈ 38 m), so half is about 19 m; the rest covers setbacks and plazas. Tier 4.
+  front_max_m: 40,
+  // A lot's facing edge is its boundary within (its distance to the segment + this). Tier 4.
+  front_tol_m: 2,
+  // Least facing edge that fronts: a 25 ft lot plus up to 2 × 2 m of side edges passes; a corner
+  // touch (≤ 4 m) does not. Tier 4.
+  front_min_m: 5,
+  // A probe line crossing another parcel by more than this is blocked by it. Tier 4.
+  occlude_min_m: 0.5,
+  // Least shared boundary for two lots to be neighbours (one lot deep). Tier 4.
+  adjacent_min_m: 3
 } as const;
 export const KNOWN_LANDUSE = [
   'RESIDENT',
@@ -103,6 +121,27 @@ export interface InvariantProfile {
   projectsWarnBytes: number;
   /** V30: judge each T14 rule's share against its warnShare and failShare (live only). */
   qualityShares: boolean;
+  /** V31: minimum share of parcels with a historic status code in policy.bin. */
+  historicJoinMin: number;
+  /** V31: minimum share of exemption table rows whose apn matches an active parcel. */
+  exemptJoinMin: number;
+  /** V31: maximum size of scenarios/fzp/policy.bin on disk, bytes. */
+  policyMaxBytes: number;
+  /** V32: minimum SB 79 tier-1 TOD stops (`policy.sb79.stops.tier1`). */
+  sb79MinT1Stops: number;
+  /** V32: minimum SB 79 tier-2 TOD stops (`policy.sb79.stops.tier2`). */
+  sb79MinT2Stops: number;
+  /**
+   * V32: minimum share of MUNI_TIER2_STOP_IDS that match a stop in transit.json (from
+   * `sd.sb79.tier2-unmatched`). Guards the 145 bus-only tier-2 stops against a GTFS renumbering.
+   */
+  muniTier2MatchMin: number;
+  /** V32 warns (still passes) when the share of parcels within ½ mile of a stop is outside it. */
+  todShareWarn: [number, number] | null;
+  /** V34: maximum size of scenarios/fzp/frontage.bin on disk, bytes. */
+  frontageMaxBytes: number;
+  /** V34: minimum share of eligible parcels with a depth-0 frontage entry. */
+  frontageMin: number;
 }
 
 /**
@@ -157,19 +196,39 @@ export const LIVE_PROFILE: InvariantProfile = {
   projectsMaxBytes: 2e6,
   projectsWarnBytes: 1e6,
   // Spec §4.10 V30: live shares are judged against each rule's warnShare and failShare.
-  qualityShares: true
+  qualityShares: true,
+  // V31 check bounds (tier 4, made up). 3tsw-4idn lists 163,288 apns for about 155k parcels.
+  historicJoinMin: 0.95,
+  exemptJoinMin: 0.95,
+  // Plan Budget decision: 1.0 MB each (tier 4); they warn at 0.75 MB (check-policy.ts).
+  policyMaxBytes: 1.0e6,
+  // V32 check bounds (tier 4, made up): at least one tier-1 stop per SF BART station
+  // (transitHeavyRailStations), and far fewer tier-2 stops than MUNI_TIER2_STOP_IDS's 438.
+  sb79MinT1Stops: 8,
+  sb79MinT2Stops: 50,
+  // V32 check bound (tier 4, made up): the list was mapped to GTFS stop_ids on 2026-10-28 and
+  // 436 of 438 match live (99.5%); a gtfs-muni refresh that renumbers stops drops far below 95%,
+  // and losing the 145 bus-only ids alone is 66.9%.
+  muniTier2MatchMin: 0.95,
+  // Warn band (tier 4) around Planning's "more than 75%" of parcels within ½ mile of a TOD stop
+  // (Ord. 082-26 §2(e), tier 1).
+  todShareWarn: [0.6, 0.95],
+  frontageMaxBytes: 1.0e6,
+  // V34 check bound (tier 4, made up): nearly every eligible SF lot fronts a city street; the rest
+  // are interior, rear or right-of-way-isolated lots.
+  frontageMin: 0.9
 };
 
 /**
  * The mini fixture's known answers (pipeline/test/fixtures/mini/README.md): Σ units
- * 2+6+4+3+1+2+0+12+0+3+3+7+5+40 (+0 on shoreline lots 15-17) = 88 exactly, 17 parcels, 15/17
- * matched land use, 10/11 kept buildings with hs ≠ 3, max parcel height 60 m (lot 14),
+ * 2+6+4+3+1+2+0+12+0+3+3+7+5+40 (+0 on shoreline lots 15-17) +2 (lot 18) = 90 exactly,
+ * 18 parcels, 16/18 matched land use, 10/11 kept buildings with hs ≠ 3, max parcel height 60 m (lot 14),
  * 3 neighborhoods, 8 transit stops, one BART station.
  */
 export const FIXTURE_PROFILE: InvariantProfile = {
-  unitsTarget: 88,
+  unitsTarget: 90,
   unitsTol: 0,
-  parcelRange: [17, 17],
+  parcelRange: [18, 18],
   landUseMatchMin: 0.8,
   heightCoverageMin: 0.5,
   pieceAreaParcelMin: 0.5,
@@ -188,13 +247,14 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   transitHeavyRailStations: ['Fixture Station'],
   // Spec §4.10 V16: every eligible mini parcel has a district (fixture known answer).
   heightJoinMin: 1,
-  // Ruling: 12 of the 14 eligible mini parcels have a 2025 roll row (lots 12 and 13 do not; lot 16
+  // Ruling: 13 of the 15 eligible mini parcels have a 2025 roll row (lots 12 and 13 do not; lot 16
   // is underwater, so not eligible).
   rollJoinMin: 0.8,
   // Spec §4.10 V18 "fixture exact": Σ 2025 roll units of the mini fixture after the units rules
   // (known answer, spec §4.11): 66, plus lot 3's 5,000 replaced by its LUDB 4 (RA1), plus the 2
-  // homes on underwater lot 16 (kept: the land mask makes a lot unbuildable, not empty).
-  scenarioUnitsRange: [72, 72],
+  // homes on underwater lot 16 (kept: the land mask makes a lot unbuildable, not empty), plus lot
+  // 18's 2.
+  scenarioUnitsRange: [74, 74],
   scenarioMaxBytes: LIVE_PROFILE.scenarioMaxBytes,
   // Project-records spec §4.9 V21 fixture "≥ 0.90": M16's linked row (220) and its record (200)
   // disagree, and M18's dropped row matches nothing, so mini covers 699 of 739 (0.946).
@@ -206,5 +266,21 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   projectsWarnBytes: LIVE_PROFILE.projectsWarnBytes,
   // Spec §4.10 V30: the mini fixture fires rules on a handful of rows by design, so its shares
   // mean nothing; V30 still requires every rule to report.
-  qualityShares: false
+  qualityShares: false,
+  // Fixture known answers: every lot but 18 has a historic row (17/18); 2 of the 3 exemption rows
+  // match an active parcel (lots 12 and 15; `3512999` is the unmatched stand-in pseudo-lot).
+  historicJoinMin: 17 / 18,
+  exemptJoinMin: 2 / 3,
+  policyMaxBytes: LIVE_PROFILE.policyMaxBytes,
+  // Fixture known answers (mini README "Transit"): tier 1 FX-1 (BART) and 70011, 70012 (80
+  // Caltrain trains a day at the station); tier 2 m4, m5 (Muni N light rail).
+  sb79MinT1Stops: 3,
+  sb79MinT2Stops: 2,
+  // Fixture known answer (mini README "Transit"): no MUNI_TIER2_STOP_IDS id is a mini stop, 0/438.
+  muniTier2MatchMin: 0,
+  todShareWarn: null,
+  frontageMaxBytes: LIVE_PROFILE.frontageMaxBytes,
+  // Fixture known answer (mini README "Streets"): 12 of the 15 eligible lots front a street at
+  // depth 0; shoreline lots 15 and 17 have none near, and lot 18 is only one lot deep.
+  frontageMin: 0.8
 };

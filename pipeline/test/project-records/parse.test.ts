@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DATASF } from '../../sources/datasf';
 import type { Lock } from '../../lib/lock';
 import {
+  AS_OF_SOURCE_IDS,
   asOfFromLock,
   dayOf,
   docKind,
@@ -153,23 +154,46 @@ describe('scalars', () => {
 });
 
 describe('asOfFromLock', () => {
-  it('is the UTC day of the newest retrievedAt', () => {
-    const e = (id: string, retrievedAt: string) => ({
-      id,
-      files: [],
-      retrievedAt,
-      upstreamVersion: 'v',
-      rowCount: 0,
-      license: 'L',
-      homepage: 'h'
-    });
+  const e = (id: string, retrievedAt: string) => ({
+    id,
+    files: [],
+    retrievedAt,
+    upstreamVersion: 'v',
+    rowCount: 0,
+    license: 'L',
+    homepage: 'h'
+  });
+  it('is the UTC day of the newest retrievedAt among the as-of sources', () => {
     const lock: Lock = {
-      sources: [e('a', '2026-10-09T23:00:00.000Z'), e('b', '2026-10-10T00:00:00.000Z')]
+      sources: [
+        e('datasf-permits-newcon', '2026-10-09T23:00:00.000Z'),
+        e('datasf-planning-projects', '2026-10-10T00:00:00.000Z')
+      ]
     };
     expect(asOfFromLock(lock)).toBe(day(2026, 10, 10));
   });
+  it('the as-of sources are exactly the project-record event sources', () => {
+    expect([...AS_OF_SOURCE_IDS]).toEqual([...PROJECT_SOURCE_IDS]);
+  });
+  it('ignores a newer policy-only or frontage-only entry', () => {
+    const lock: Lock = {
+      sources: [
+        e('datasf-planning-projects', '2026-10-19T01:34:20.056Z'),
+        e('datasf-streets', '2026-10-29T09:09:24.450Z'),
+        e('datasf-historic-status', '2026-10-29T09:09:29.984Z'),
+        e('sfbos-sb79-exemptions', '2026-10-29T09:09:29.985Z'),
+        e('some-future-policy-source', '2027-01-01T00:00:00.000Z')
+      ]
+    };
+    expect(asOfFromLock(lock)).toBe(day(2026, 10, 19));
+  });
   it('throws on an empty lock', () => {
     expect(() => asOfFromLock({ sources: [] })).toThrow();
+  });
+  it('throws when the lock has no as-of source', () => {
+    expect(() =>
+      asOfFromLock({ sources: [e('datasf-streets', '2026-10-29T00:00:00.000Z')] })
+    ).toThrow();
   });
 });
 

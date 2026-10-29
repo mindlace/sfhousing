@@ -1,0 +1,3 @@
+Mini fixture stand-in for the Board File 260132 Table of Temporary Exemptions (not a PDF)
+Block  Lot
+3512   015

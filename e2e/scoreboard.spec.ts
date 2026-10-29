@@ -9,7 +9,7 @@ import { oldVersionText, seedPlanRow, smallText, waitForMap } from './helpers/sh
 type Win = Window & { __sfhMap?: SfhMapDebug; __sfhBrush?: SfhBrushDebug };
 type LngLat = [number, number];
 
-// fixture-0's chunk 50_25 holds 14 parcels around [-122.4186, 37.7601] (51_25: lots 15-17).
+// fixture-0's chunk 50_25 holds 15 parcels around [-122.4186, 37.7601] (51_25: lots 15-17).
 const FRAME = { center: [-122.4187, 37.76014] as LngLat, zoom: 18.5, pitch: 0, bearing: 0 };
 const CHUNK = '**/data/fixture-0/parcels/50_25.json';
 const FROM: LngLat = [-122.4193, 37.76014];

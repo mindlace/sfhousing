@@ -20,18 +20,22 @@ import { landClipSection } from '../lib/land-report';
 import { QUALITY_REPORT_MD, createQualityTables, writeQualityReport } from '../lib/quality';
 import { Report } from '../lib/report';
 import { runSql } from '../lib/sql';
+import { FRONTAGE_BIN, POLICY_BIN } from '../lib/scenario-files';
 import { codeTreeHash, computeDatasetVersion } from '../lib/version';
 import { asOfFromLock } from '../project-records/parse';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
+import { SB79_EXEMPTIONS_CSV } from '../sources/sfbos';
 import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
 import { writeCalibration } from './calibration';
 import { checkDataset, type InvariantResult } from './check';
 import { readParcelRecords, writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
 import { buildManifest, writeManifest } from './manifest';
+import { writeFrontage } from './frontage';
+import { writePolicy } from './policy';
 import { writeProjectRecords } from './projects';
 import { writeScenario } from './scenario';
 import { copyBasemap, installFonts, writeBuildingsTiles } from './tiles';
-import { writeTransit } from './transit';
+import { transitTargetDate, writeTransit } from './transit';
 
 export interface BuildOpts {
   lockPath: string;
@@ -139,7 +143,9 @@ function chunkCounts(chunks: ChunkOut[]): Record<string, number> {
  * step (scenarios/fzp/parcels.bin; the T13 panel and lineage into the derived cache), the project
  * records (scenarios/fzp/projects.json; histories and permits.parquet into the derived cache),
  * the calibration (scenarios/fzp/calibration.json; calibration-report.md into the derived cache),
- * the T14 quality report (quality-report.md into the derived cache), neighborhoods, tiles,
+ * neighborhoods, transit, the policy step (scenarios/fzp/policy.bin), the frontage step
+ * (scenarios/fzp/frontage.bin), the T14 quality report
+ * (quality-report.md into the derived cache), tiles,
  * basemap, fonts, manifest, invariants and report.json into `<outRoot>/<datasetVersion>/`.
  * Throws BuildError when a raw file does not match the lock.
  */
@@ -170,7 +176,10 @@ export async function build(
   const db = await openDuck();
   try {
     await report.time('normalise', async () => {
-      await normaliseAll(db, lock, opts.rawDir, join(work, 'norm'), { byName });
+      await normaliseAll(db, lock, opts.rawDir, join(work, 'norm'), {
+        byName,
+        exemptionsCsv: SB79_EXEMPTIONS_CSV[fixtureMode ? 'fixture' : 'live']
+      });
       await loadNormalised(db, join(work, 'norm'));
     });
     // T14 (scenario-data spec §4.12): SQL rules insert into these, so they precede the first file.
@@ -183,23 +192,28 @@ export async function build(
       await writeChunks(db, join(work, 'reencode'), datasetVersion, new Report());
       return sameFiles(join(outDir, 'parcels'), join(work, 'reencode', 'parcels'));
     });
-    // Transit spec §4.2 step 1: the service date is picked from the newest fetch date. Its UTC
-    // day is the build's snapshot day: the scenario step's "today" for the FZP density cap and
-    // the project records' `asOf` (project-records spec §4.9 Determinism).
-    const newest = lock.sources.reduce((d, s) => (s.retrievedAt > d ? s.retrievedAt : d), '');
+    // Two dates, each from its own named sources (docs/dev/pipeline.md, Lock and datasetVersion);
+    // the datasetVersion date alone is whole-lock. `asOf` is the newest fetch day of the as-of
+    // sources (`AS_OF_SOURCE_IDS`, the project-record event sources): the scenario step's "today"
+    // for the FZP density cap and the project records' `asOf` (project-records spec §4.9
+    // Determinism). The transit target date (transit spec §4.2 step 1) is the newest fetch day of
+    // the GTFS feeds (`TRANSIT_DATE_SOURCE_IDS`). A policy- or frontage-only source moves neither.
+    const transitDate = transitTargetDate(lock);
     const asOf = asOfFromLock(lock);
     const derivedDir = join(opts.derivedRoot ?? DERIVED_ROOT, datasetVersion);
     // The build's single report `counts` (T14): every owner records its `recordQuality` counts
     // into this object, and `writeQualityReport` and V30 read it. The project-records step writes
     // all its counts into it; the other counts join it below.
     const counts: Record<string, number> = {};
+    // The scenario and policy steps share the chunk records (same rows, same order).
+    const records = await readParcelRecords(db);
     const scenario = await report.time('scenario', async () =>
       writeScenario({
         db,
         outDir,
         derivedDir,
         datasetVersion,
-        records: await readParcelRecords(db),
+        records,
         capDay: asOf,
         report,
         buildCounts: counts
@@ -242,10 +256,6 @@ export async function build(
       })
     );
     report.warnings.push(...calibration.warnings);
-    // After the last step that records T14 counts (spec §4.10), so the report covers every owner.
-    writeQualityReport(join(derivedDir, QUALITY_REPORT_MD), datasetVersion, counts, [
-      await landClipSection(db)
-    ]);
     const neighborhoodsBytes = await writeNeighborhoods(db, outDir);
     const transit = await report.time('transit', async () =>
       writeTransit({
@@ -253,12 +263,28 @@ export async function build(
         rawDir: opts.rawDir,
         byName,
         outDir,
-        targetDate: newest.slice(0, 10),
+        targetDate: transitDate,
         // The mini fixture's feeds carry only a few lines; assignment checks are live-only.
         strict: !fixtureMode
       })
     );
     report.warnings.push(...transit.warnings);
+    // Sim data layers: after the scenario step (it reads parcels.bin, sc_zoning and sc_district)
+    // and transit, before the quality report. Its T14 rules go into the same counts.
+    const policy = await report.time('policy', () =>
+      writePolicy({ db, outDir, datasetVersion, records, capDay: asOf, buildCounts: counts })
+    );
+    report.warnings.push(...policy.warnings);
+    // After the policy step (it reads parcels.bin and parcels.geom_orig), before the quality report.
+    // Its T14 rule goes into the same counts.
+    const frontage = await report.time('frontage', () =>
+      writeFrontage({ db, outDir, datasetVersion, buildCounts: counts })
+    );
+    report.warnings.push(...frontage.warnings);
+    // After the last step that records T14 counts (spec §4.10), so the report covers every owner.
+    writeQualityReport(join(derivedDir, QUALITY_REPORT_MD), datasetVersion, counts, [
+      await landClipSection(db)
+    ]);
     if (!opts.skipTiles) {
       await report.time('tiles', () => writeBuildingsTiles(db, outDir, work));
     }
@@ -279,6 +305,8 @@ export async function build(
       overtureContrib,
       transit: true,
       scenarios: SCENARIO_FILES.every((f) => existsSync(join(outDir, 'scenarios/fzp', f))),
+      policy: existsSync(join(outDir, POLICY_BIN)),
+      frontage: existsSync(join(outDir, FRONTAGE_BIN)),
       warn: (w) => report.warnings.push(w)
     });
     const manifestBytes = writeManifest(outDir, manifest);
@@ -291,6 +319,8 @@ export async function build(
       ...chunkCounts(chunks),
       ...transit.counts,
       ...scenario.counts,
+      ...policy.counts,
+      ...frontage.counts,
       ...Object.fromEntries(overtureContrib.map((o) => [`overture.contrib.${o.dataset}`, o.n])),
       'units.total': totals.units,
       'parcels.height_max_m': totals.hmax,

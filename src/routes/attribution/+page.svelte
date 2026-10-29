@@ -6,6 +6,7 @@
   let { data }: { data: PageData } = $props();
   const manifest = $derived(data.manifest);
   const hasScenario = $derived(!!manifest?.scenarios?.fzp);
+  const hasPolicy = $derived(!!manifest?.scenarios?.fzp?.policy);
   const hasTransit = $derived(manifest?.sources.some((s) => s.id.startsWith('gtfs-')) ?? false);
 </script>
 
@@ -78,6 +79,14 @@
     <li>
       Transit stops and schedules from SFMTA Muni, BART and Caltrain GTFS feeds. These are facts,
       credited as a courtesy; vehicle capacities are agency planning figures.
+    </li>
+  {/if}
+  {#if hasPolicy}
+    <li>
+      Street centerlines and historic resource status from DataSF, under PDDL. SB 79 exemption
+      parcel tables from San Francisco Board of Supervisors File No. 260132 (Ordinance No. 082-26),
+      SF public record (Board File 260132). Zoning rules follow California Government Code
+      §§65912.155–65912.162 (SB 79, 2025) and San Francisco Planning Code §207.11.
     </li>
   {/if}
   <li>

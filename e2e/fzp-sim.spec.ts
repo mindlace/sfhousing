@@ -11,9 +11,15 @@ type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 const MANIFEST_URL = new URL('./fixtures/data/fixture-0/manifest.json', import.meta.url);
 const manifest = JSON.parse(readFileSync(MANIFEST_URL, 'utf8')) as {
   chunks: { cellId: string; bbox: [number, number, number, number] }[];
-  scenarios: { fzp: Record<'parcels' | 'projects' | 'calibration', string> };
+  scenarios: {
+    fzp: Record<'parcels' | 'projects' | 'calibration', string> &
+      Partial<Record<'policy' | 'frontage', string>>;
+  };
 };
-const SCENARIO_FILES = Object.values(manifest.scenarios.fzp);
+const { fzp } = manifest.scenarios;
+// /fzp reads these three; the lever files (policy, frontage) are for the sim and never fetched.
+const SCENARIO_FILES = [fzp.parcels, fzp.projects, fzp.calibration];
+const LEVER_FILES = [fzp.policy, fzp.frontage];
 
 const scoreJson = (page: Page, field?: 'shown' | 'band'): Promise<string> =>
   page.evaluate((f) => {
@@ -98,11 +104,13 @@ test('fetches only the viewport chunks and the three scenario files', async ({ p
   await expect.poll(() => [...new Set(chunkRequests())].sort()).toEqual(inView.sort());
   const scenarios = new Set(urls.filter((u) => u.includes('/scenarios/')));
   expect([...scenarios].sort()).toEqual([...SCENARIO_FILES].sort());
+  expect(LEVER_FILES.every(Boolean), 'fixture-0 names the policy and frontage files').toBe(true);
 
   // Panning to the far chunk fetches it, and only then.
   expect(chunkRequests()).not.toContain(chunkUrl(FAR_CELL));
   await jumpAndIdle(page, { center: [-122.55, 37.705], zoom: 16, pitch: 0, bearing: 0 });
   await expect.poll(() => chunkRequests()).toContain(chunkUrl(FAR_CELL));
+  for (const u of LEVER_FILES) expect(urls, `${u} is not fetched by /fzp`).not.toContain(u);
 });
 
 test('the first timeline arrives within 3 s of navigation', async ({ page }) => {

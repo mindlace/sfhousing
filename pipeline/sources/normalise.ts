@@ -4,6 +4,12 @@ import type { Duck } from '../lib/duck';
 import { rawPath, type Lock } from '../lib/lock';
 import { DATASF, type DatasfId } from './datasf';
 import { normaliseLand, tilesParquet } from './land';
+import { normaliseSfbosExemptions } from './sfbos';
+
+export interface NormaliseOpts {
+  /** SB 79 exemption transcription (path 2); default `SB79_EXEMPTIONS_CSV.live`. */
+  exemptionsCsv?: string;
+}
 
 export type SourceId =
   | 'datasf-parcels'
@@ -13,6 +19,9 @@ export type SourceId =
   | 'datasf-height-bulk'
   | 'datasf-parcel-attrs'
   | 'datasf-assessor-roll'
+  | 'datasf-streets'
+  | 'datasf-historic-status'
+  | 'sfbos-sb79-exemptions'
   | 'overture-buildings'
   | 'protomaps-basemap';
 
@@ -24,6 +33,9 @@ export const SOURCE_IDS: SourceId[] = [
   'datasf-height-bulk',
   'datasf-parcel-attrs',
   'datasf-assessor-roll',
+  'datasf-streets',
+  'datasf-historic-status',
+  'sfbos-sb79-exemptions',
   'overture-buildings',
   'protomaps-basemap'
 ];
@@ -37,6 +49,9 @@ const TABLES: Record<SourceId, string> = {
   'datasf-height-bulk': 'src_height_bulk',
   'datasf-parcel-attrs': 'src_parcel_attrs',
   'datasf-assessor-roll': 'src_roll',
+  'datasf-streets': 'src_streets',
+  'datasf-historic-status': 'src_historic',
+  'sfbos-sb79-exemptions': 'src_sb79_exempt',
   'overture-buildings': 'src_overture',
   'protomaps-basemap': 'src_land'
 };
@@ -155,6 +170,9 @@ async function buildSelect(
       FROM read_parquet([${list}]) ORDER BY id`;
   }
   if (id === 'protomaps-basemap') throw new Error('protomaps-basemap is decoded by normaliseLand');
+  if (id === 'sfbos-sb79-exemptions') {
+    throw new Error('sfbos-sb79-exemptions is read by normaliseSfbosExemptions');
+  }
   const pages = isCsv(id) ? readCsvPages(rawFiles) : readPages(rawFiles);
   const cols = await columnsOf(db, pages);
   const p = `(${pages})`;
@@ -227,6 +245,16 @@ async function buildSelect(
         FROM ${p} ORDER BY mblr, sf16_bldgid`;
     case 'datasf-neighborhoods':
       return `SELECT ${sel(cols, 'nhood', 'VARCHAR')}, geom FROM ${p} ORDER BY nhood`;
+    case 'datasf-streets':
+      // `active` is filtered by the fetch's `$where`; cnn is unique, the geometry breaks ties.
+      return `SELECT ${sel(cols, 'cnn', 'BIGINT')}, ${sel(cols, 'streetname', 'VARCHAR')},
+        ${sel(cols, 'classcode', 'INTEGER')}, ${sel(cols, 'layer', 'VARCHAR')}, geom
+        FROM ${p} ORDER BY cnn, ST_AsHEXWKB(geom)`;
+    case 'datasf-historic-status':
+      // Codes stay verbatim (`A*` included); the policy step ranks them.
+      return `SELECT ${txt(cols, 'apn', true)}, ${txt(cols, 'ceqacode')},
+        ${txt(cols, 'ceqacodea10a11')}
+        FROM ${p} ORDER BY ALL`;
     case 'overture-buildings':
       return `SELECT ${sel(cols, 'id', 'VARCHAR')}, ${sel(cols, 'height', 'DOUBLE')},
         ${cols.has('num_floors') ? 'CAST(TRY_CAST(num_floors AS DOUBLE) AS INTEGER)' : 'NULL::INTEGER'} AS num_floors,
@@ -241,16 +269,21 @@ async function buildSelect(
  * Normalise one source's raw files into `<outParquet>`; returns the row count. `parquet` says
  * the inputs are already in the src_overture schema (the live fetch output); callers derive it
  * from the lock file names, because live raw files on disk are named by sha256 (no extension).
- * Default: every path ends in `.parquet`.
+ * Default: every path ends in `.parquet`. `exemptionsCsv` is the SB 79 exemption transcription
+ * (default the vendored live one).
  */
 export async function normalise(
   db: Duck,
   id: SourceId,
   rawFiles: string[],
   outParquet: string,
-  parquet: boolean = rawFiles.every((f) => f.endsWith('.parquet'))
+  parquet: boolean = rawFiles.every((f) => f.endsWith('.parquet')),
+  opts: NormaliseOpts = {}
 ): Promise<number> {
   if (id === 'protomaps-basemap') return normaliseLand(db, rawFiles[0], outParquet);
+  if (id === 'sfbos-sb79-exemptions') {
+    return normaliseSfbosExemptions(db, rawFiles, outParquet, opts.exemptionsCsv);
+  }
   const select = await buildSelect(db, id, rawFiles, parquet);
   fs.mkdirSync(path.dirname(outParquet), { recursive: true });
   await db.run(`COPY (${select}) TO ${q(outParquet)} (FORMAT parquet)`);
@@ -277,7 +310,7 @@ export async function normaliseAll(
   lock: Lock,
   rawDir: string,
   normDir: string,
-  opts: { byName?: boolean } = {}
+  opts: { byName?: boolean } & NormaliseOpts = {}
 ): Promise<Record<SourceId, number>> {
   const rows = {} as Record<SourceId, number>;
   for (const id of SOURCE_IDS) {
@@ -285,7 +318,8 @@ export async function normaliseAll(
     if (!entry) throw new Error(`lock has no entry for ${id}`);
     const files = entry.files.map((f) => path.resolve(rawPath(rawDir, f, opts.byName)));
     const parquet = entry.files.every((f) => f.name.endsWith('.parquet'));
-    rows[id] = await normalise(db, id, files, path.join(normDir, `${id}.parquet`), parquet);
+    const out = path.join(normDir, `${id}.parquet`);
+    rows[id] = await normalise(db, id, files, out, parquet, opts);
   }
   return rows;
 }

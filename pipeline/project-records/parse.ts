@@ -73,14 +73,26 @@ export function docKind(v: unknown): 'TCO' | 'CFC' | null {
   return null;
 }
 
-/** UTC day of the newest `retrievedAt` in the lock. */
+/**
+ * The lock entries whose `retrievedAt` sets the build's `asOf`: the project-record event sources.
+ * `asOf` is the day the project histories are censored at (and so calibration's at-risk end) and
+ * the scenario step's "today"; only a refresh of these sources moves it. A source that feeds only
+ * policy, frontage, transit, tiles or parcel attributes (`datasf-streets`, `datasf-historic-status`,
+ * `sfbos-sb79-exemptions`, ...) is not a member, so fetching it cannot move `asOf`. Membership is
+ * by allowlist: a new source counts only when it is added here (docs/dev/pipeline.md).
+ */
+export const AS_OF_SOURCE_IDS: readonly ProjectSourceId[] = PROJECT_SOURCE_IDS;
+
+/** UTC day of the newest `retrievedAt` among the lock's `AS_OF_SOURCE_IDS` entries. */
 export function asOfFromLock(lock: Lock): Day {
+  const members = new Set<string>(AS_OF_SOURCE_IDS);
   let newest = -Infinity;
   for (const e of lock.sources) {
+    if (!members.has(e.id)) continue;
     const t = Date.parse(e.retrievedAt);
     if (Number.isFinite(t) && t > newest) newest = t;
   }
-  if (newest === -Infinity) throw new Error('lock has no valid retrievedAt');
+  if (newest === -Infinity) throw new Error('lock has no valid retrievedAt for an as-of source');
   return Math.floor(newest / DAY_MS);
 }
 

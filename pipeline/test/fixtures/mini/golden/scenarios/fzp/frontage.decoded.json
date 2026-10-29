@@ -1,0 +1,147 @@
+{
+  "format": "sfh-frontage/1",
+  "datasetVersion": "fixture-0",
+  "count": 18,
+  "idsHash": 1063371383,
+  "provenance": {
+    "tier": 3,
+    "label": "Street frontage",
+    "sources": [
+      {
+        "label": "DataSF Streets – Active and Retired (centerlines)",
+        "url": "https://data.sf.gov/d/3psu-pn9h"
+      },
+      {
+        "label": "DataSF Parcels (Active and Retired)",
+        "url": "https://data.sf.gov/d/acdm-wktn"
+      }
+    ],
+    "method": "DataSF street centerlines of classcode 2 to 5 (major, arterial, collector, residential) off the paper, private and pseudo layers, matched to the DataSF parcel outline. A lot fronts a segment (depth 0) within 40 m when the part of its boundary within its distance plus 2 m of the segment is at least 5 m long and the line from that edge’s midpoint to the segment crosses no other parcel by more than 0.5 m. A lot is one lot deep (depth 1) when it shares at least 3 m of boundary with a lot fronting the segment and its own line to the segment crosses that lot, and no other, by more than 0.5 m. Thresholds are tier 4."
+  },
+  "names": [
+    "FIXTURE AVE",
+    "MISSION ST"
+  ],
+  "segCnn": [
+    1000,
+    1001,
+    2000
+  ],
+  "segName": [
+    1,
+    1,
+    0
+  ],
+  "segClass": [
+    3,
+    3,
+    5
+  ],
+  "rows": [
+    [
+      [
+        0,
+        0
+      ]
+    ],
+    [
+      [
+        0,
+        0
+      ]
+    ],
+    [
+      [
+        0,
+        0
+      ]
+    ],
+    [
+      [
+        0,
+        0
+      ]
+    ],
+    [
+      [
+        0,
+        0
+      ]
+    ],
+    [
+      [
+        0,
+        0
+      ]
+    ],
+    [
+      [
+        0,
+        0
+      ]
+    ],
+    [
+      [
+        0,
+        0
+      ]
+    ],
+    [
+      [
+        0,
+        0
+      ],
+      [
+        1,
+        0
+      ]
+    ],
+    [
+      [
+        1,
+        0
+      ]
+    ],
+    [
+      [
+        1,
+        0
+      ]
+    ],
+    [
+      [
+        1,
+        0
+      ],
+      [
+        2,
+        1
+      ]
+    ],
+    [
+      [
+        1,
+        0
+      ],
+      [
+        2,
+        0
+      ]
+    ],
+    [
+      [
+        1,
+        1
+      ]
+    ],
+    [
+      [
+        0,
+        0
+      ]
+    ],
+    [],
+    [],
+    []
+  ]
+}

@@ -8,6 +8,13 @@ import { PATHWAYS, STAGE_ORDER } from '../../src/lib/timelapse/types';
 import { GOLDEN_DERIVED, fixture } from '../steps/fixture';
 import { CALIBRATION_JSON } from '../steps/calibration';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, dumpPermits } from '../steps/projects';
+import {
+  FRONTAGE_BIN,
+  FRONTAGE_DUMP,
+  formatFrontageDump,
+  readFrontageBin
+} from '../steps/frontage';
+import { POLICY_BIN, POLICY_DUMP, formatPolicyDump, readPolicyBin } from '../steps/policy';
 import { PARCELS_BIN, SCENARIO_DUMP, formatScenarioDump, readParcelsBin } from '../steps/scenario';
 import { which } from '../lib/exec';
 import { QUALITY_RULES } from '../lib/quality';
@@ -37,6 +44,10 @@ const COMPARED = (f: string) =>
 const stripBuiltAt = (s: string) => s.replace(/"builtAt":"[^"]*"/, '"builtAt":""');
 const decodeBin = (dir: string) => readParcelsBin(join(dir, PARCELS_BIN));
 const dumpOf = (dir: string) => formatScenarioDump(decodeBin(dir));
+const policyDumpOf = (dir: string) =>
+  formatPolicyDump(readPolicyBin(join(dir, POLICY_BIN), decodeBin(dir)));
+const frontageDumpOf = (dir: string) =>
+  formatFrontageDump(readFrontageBin(join(dir, FRONTAGE_BIN), decodeBin(dir)));
 
 describe('pipeline fixture', () => {
   const a = mkdtempSync(join(tmpdir(), 'sfh-fx-a-'));
@@ -64,6 +75,14 @@ describe('pipeline fixture', () => {
     const dump = dumpOf(a);
     expect(dump).toBe(readFileSync(join(golden, SCENARIO_DUMP), 'utf8'));
     expect(dump).toBe(dumpOf(b));
+    // policy.bin: the decoded payload too.
+    const policy = policyDumpOf(a);
+    expect(policy).toBe(readFileSync(join(golden, POLICY_DUMP), 'utf8'));
+    expect(policy).toBe(policyDumpOf(b));
+    // frontage.bin: the decoded payload too.
+    const frontage = frontageDumpOf(a);
+    expect(frontage).toBe(readFileSync(join(golden, FRONTAGE_DUMP), 'utf8'));
+    expect(frontage).toBe(frontageDumpOf(b));
     // Project-records spec §4.9: the histories byte for byte, permits.parquet by row values.
     const histories = (root: string) =>
       readFileSync(join(root, 'fixture-0', HISTORIES_JSON), 'utf8');
@@ -219,9 +238,18 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
     n === 3 ? '8711023C' : n === 4 ? '0026T001A' : `35120${String(n).padStart(2, '0')}`;
   const L = (n: number) => row(lotId(n));
 
-  it('holds every parcel, 17 rows', () => {
-    expect(p.count).toBe(17);
-    expect(counts['scenario.parcels']).toBe(17);
+  it('holds every parcel, 18 rows', () => {
+    expect(p.count).toBe(18);
+    expect(counts['scenario.parcels']).toBe(18);
+  });
+
+  it('lot 17 lies in the 30-X district (envelope 3); lot 18 behind lot 13 has its 2 homes', () => {
+    expect(L(17)).toMatchObject({ district: '30-X', envelopeStories: 3, baseStories: 3 });
+    expect(L(18)).toMatchObject({
+      district: '120/400-R-2 // 140/520-R-2',
+      existingUnits: 2,
+      hostable: 1
+    });
   });
 
   it('lot 1: Local Program, base 4, envelope 6, rent control likely, capped base yield', () => {
@@ -319,7 +347,8 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
   it('lot 13: not Local Program (non-R-4 //), base 40, envelope 40, no roll row', () => {
     const r = L(13);
     expect(r).toMatchObject({ localProgram: 0, baseStories: 40, envelopeStories: 40 });
-    expect(counts['scenario.height.dbl_non_r4']).toBe(1);
+    // Lots 13 and 18 share the non-R-4 double district.
+    expect(counts['scenario.height.dbl_non_r4']).toBe(2);
   });
 
   it('the RA1 mask: no-row lots 9, 12 and 13 are 95, lot 7 (no roll floor area) is 64', () => {
@@ -352,60 +381,70 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
   it('report.json carries fired/of for every registered sd.* rule, with the golden values', () => {
     // [fired, of] and, for a unit-weighted rule, [units, unitsOf] (spec §6, AC 3 and 14).
     const want: Record<string, [number, number] | [number, number, number, number]> = {
-      // 23 parcel rows (mini dates only its 3 retired rows and leaves date_rec_add empty).
-      'sd.attrs.active-unknown': [0, 23],
+      // 24 parcel rows (mini dates only its 3 retired rows and leaves date_rec_add empty).
+      'sd.attrs.active-unknown': [0, 24],
       'sd.attrs.added-date-cast': [0, 0],
       'sd.attrs.dropped-date-cast': [0, 3],
-      'sd.attrs.latitude-cast': [0, 23],
-      'sd.attrs.longitude-cast': [0, 23],
-      'sd.attrs.no-blklot': [0, 23],
+      'sd.attrs.latitude-cast': [0, 24],
+      'sd.attrs.longitude-cast': [0, 24],
+      'sd.attrs.no-blklot': [0, 24],
+      // Lots 12 and 15 match; the stand-in pseudo-lot 3512999 does not.
+      'sd.exempt.unmatched': [1, 3],
       'sd.features.median-fallback': [2, 3],
-      'sd.features.no-building': [0, 31],
-      'sd.features.share-median': [2, 26],
+      'sd.features.no-building': [0, 33],
+      'sd.features.share-median': [2, 28],
       // Lot 15 (0 stories on the roll) takes 2 stories from bbay in both roll years.
-      'sd.features.stories-height': [2, 31],
-      'sd.features.vacant-share': [0, 32],
-      'sd.features.vacant-year-built': [0, 32],
-      'sd.features.year-built-median': [0, 26],
-      'sd.height.blank': [0, 7],
+      'sd.features.stories-height': [2, 33],
+      'sd.features.vacant-share': [0, 34],
+      'sd.features.vacant-year-built': [0, 34],
+      'sd.features.year-built-median': [0, 28],
+      'sd.height.blank': [0, 8],
+      // Lot 18 has no historic status row.
+      'sd.historic.no-row': [1, 18],
       // Lot 9, mini's one parcel with no land-use row, has no roll row, so it stays ineligible.
-      'sd.landuse.none-with-units': [0, 17],
+      'sd.landuse.none-with-units': [0, 18],
       // No clipped lot keeps over 95% of its area (lot 15 keeps 80%).
       'sd.parcels.clip-yield-loss': [0, 0],
       // Lot 15 crosses the shoreline, lot 16 lies in the water (45_land.sql).
-      'sd.parcels.land-clip': [1, 17],
+      'sd.parcels.land-clip': [1, 18],
       // Lots 15 to 17 reach beyond the two tile columns of the mini basemap, by design.
-      'sd.parcels.outside-tiles': [3, 17],
-      'sd.parcels.underwater': [1, 17],
-      'sd.roll.floor-area-cast': [0, 35],
-      'sd.roll.floor-area-missing': [9, 35],
-      'sd.roll.improvement-value-cast': [0, 35],
-      'sd.roll.land-value-cast': [0, 35],
-      'sd.roll.no-row': [3, 17],
-      'sd.roll.no-year': [0, 35],
-      'sd.roll.roll-year-cast': [0, 35],
-      'sd.roll.stories-cast': [0, 35],
-      'sd.roll.stories-max': [0, 35],
-      'sd.roll.units-capacity': [3, 31, 5000 + 5000 + 900, 11_048],
-      'sd.roll.units-cast': [0, 35],
-      'sd.roll.units-large': [0, 32],
-      'sd.roll.units-latest-jump': [0, 14],
-      'sd.roll.units-missing': [0, 31],
-      'sd.roll.units-spike': [0, 31, 0, 159],
-      'sd.roll.unmatched': [0, 35, 0, 11_048],
-      'sd.roll.year-built-cast': [0, 29],
-      'sd.roll.year-built-range': [1, 29],
-      'sd.roll.year-gap': [1, 32],
-      'sd.yield.nonmonotone': [0, 17],
-      'sd.yield.zero-hostable': [3, 13],
-      'sd.zoning.c2-floor-approx': [0, 10],
-      'sd.zoning.generic-nc': [1, 10],
-      'sd.zoning.m1-floor-approx': [0, 10],
-      'sd.zoning.missing': [0, 10],
-      'sd.zoning.named-no-cap': [1, 10],
-      'sd.zoning.rc4-vanness-approx': [0, 10],
-      'sd.zoning.split-code': [0, 10],
-      'sd.zoning.unlisted': [0, 10]
+      'sd.parcels.outside-tiles': [3, 18],
+      'sd.parcels.underwater': [1, 18],
+      'sd.roll.floor-area-cast': [0, 37],
+      'sd.roll.floor-area-missing': [9, 37],
+      'sd.roll.improvement-value-cast': [0, 37],
+      'sd.roll.land-value-cast': [0, 37],
+      'sd.roll.no-row': [3, 18],
+      'sd.roll.no-year': [0, 37],
+      'sd.roll.roll-year-cast': [0, 37],
+      'sd.roll.stories-cast': [0, 37],
+      'sd.roll.stories-max': [0, 37],
+      'sd.roll.units-capacity': [3, 33, 5000 + 5000 + 900, 11_052],
+      'sd.roll.units-cast': [0, 37],
+      'sd.roll.units-large': [0, 34],
+      'sd.roll.units-latest-jump': [0, 15],
+      'sd.roll.units-missing': [0, 33],
+      'sd.roll.units-spike': [0, 33, 0, 163],
+      'sd.roll.unmatched': [0, 37, 0, 11_052],
+      'sd.roll.year-built-cast': [0, 31],
+      'sd.roll.year-built-range': [1, 31],
+      'sd.roll.year-gap': [1, 34],
+      // Every mini lot is within ½ mile of a TOD stop, and every zoning code has a zone class.
+      // No MUNI_TIER2_STOP_IDS id is a mini stop: all 438 list ids go unmatched.
+      'sd.sb79.tier2-unmatched': [438, 438],
+      'sd.sb79.zone-unlisted': [0, 18],
+      // 12 of the 15 eligible lots front a street; shoreline lots 15 and 17 and rear lot 18 do not.
+      'sd.streets.no-frontage': [3, 15],
+      'sd.yield.nonmonotone': [0, 18],
+      'sd.yield.zero-hostable': [3, 14],
+      'sd.zoning.c2-floor-approx': [0, 11],
+      'sd.zoning.generic-nc': [1, 11],
+      'sd.zoning.m1-floor-approx': [0, 11],
+      'sd.zoning.missing': [0, 11],
+      'sd.zoning.named-no-cap': [1, 11],
+      'sd.zoning.rc4-vanness-approx': [0, 11],
+      'sd.zoning.split-code': [0, 11],
+      'sd.zoning.unlisted': [0, 11]
     };
     const sd = QUALITY_RULES.filter((r) => r.owner === 'scenario-data');
     expect(sd.map((r) => r.id)).toEqual(Object.keys(want));
@@ -432,9 +471,9 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
   });
 
   it('report totals', () => {
-    // 66 as built plus lot 3's 4 (RA1) and underwater lot 16's 2: FIXTURE_PROFILE
-    // .scenarioUnitsRange [72, 72].
-    expect(counts['scenario.units.total']).toBe(72);
+    // 66 as built plus lot 3's 4 (RA1), underwater lot 16's 2 and lot 18's 2: FIXTURE_PROFILE
+    // .scenarioUnitsRange [74, 74].
+    expect(counts['scenario.units.total']).toBe(74);
     expect(counts['scenario.roll.years']).toBe(3);
     expect(counts['scenario.panel.years']).toBe(3);
     expect(counts['scenario.yield.clamped']).toBe(0);
@@ -576,18 +615,26 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
     );
   });
 
-  it('names the three scenario files in the manifest', () => {
+  it('names the three scenario files, policy.bin and frontage.bin in the manifest', () => {
     const m = JSON.parse(readFileSync(join(e2e, 'manifest.json'), 'utf8')) as {
       scenarios?: unknown;
     };
-    for (const f of ['parcels.bin', 'projects.json', 'calibration.json']) {
+    for (const f of [
+      'parcels.bin',
+      'projects.json',
+      'calibration.json',
+      'policy.bin',
+      'frontage.bin'
+    ]) {
       expect(existsSync(join(e2e, 'scenarios/fzp', f)), f).toBe(true);
     }
     expect(m.scenarios).toEqual({
       fzp: {
         parcels: '/data/fixture-0/scenarios/fzp/parcels.bin',
         projects: '/data/fixture-0/scenarios/fzp/projects.json',
-        calibration: '/data/fixture-0/scenarios/fzp/calibration.json'
+        calibration: '/data/fixture-0/scenarios/fzp/calibration.json',
+        policy: '/data/fixture-0/scenarios/fzp/policy.bin',
+        frontage: '/data/fixture-0/scenarios/fzp/frontage.bin'
       }
     });
   });

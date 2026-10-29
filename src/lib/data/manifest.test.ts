@@ -136,6 +136,30 @@ describe('parseManifest', () => {
       );
     });
 
+    it('the golden manifest, which has no policy/frontage keys, parses without them', () => {
+      const m = parseManifest(g());
+      expect(m.scenarios?.fzp.policy).toBeUndefined();
+      expect(m.scenarios?.fzp.frontage).toBeUndefined();
+    });
+
+    it('policy and frontage parse when present', () => {
+      const full = {
+        ...fzp(),
+        policy: `/data/${v}/scenarios/fzp/policy.bin`,
+        frontage: `/data/${v}/scenarios/fzp/frontage.bin`
+      };
+      const m = parseManifest({ ...g(), scenarios: { fzp: full } });
+      expect(m.scenarios?.fzp.policy).toBe(full.policy);
+      expect(m.scenarios?.fzp.frontage).toBe(full.frontage);
+    });
+
+    it('a policy url under another version is rejected', () => {
+      const bad = { ...fzp(), policy: '/data/2026-01-01-00000000/scenarios/fzp/policy.bin' };
+      expect(() => parseManifest({ ...g(), scenarios: { fzp: bad } })).toThrow(
+        /scenarios\.fzp\.policy: url must start with/
+      );
+    });
+
     it('the golden manifest still validates', () => {
       expect(parseManifest(g()).datasetVersion).toBe(v);
     });

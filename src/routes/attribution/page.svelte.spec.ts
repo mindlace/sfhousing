@@ -115,4 +115,35 @@ describe('/attribution page', () => {
     await expect.element(page.getByText('Map data ©')).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('Housing project records');
   });
+
+  const POLICY_NOTICE = 'Street centerlines and historic resource status from DataSF';
+
+  it('credits the policy inputs when scenarios.fzp.policy is set', async () => {
+    render(Page, {
+      data: {
+        datasetVersion: 'fixture-0',
+        appRelease: 'dev',
+        manifest: {
+          ...manifest,
+          scenarios: {
+            fzp: { ...scenarios.fzp, policy: '/data/fixture-0/scenarios/fzp/policy.bin' }
+          }
+        }
+      }
+    });
+    await expect.element(page.getByText(POLICY_NOTICE, { exact: false })).toBeInTheDocument();
+    const text = (document.body.textContent ?? '').replace(/\s+/g, ' ');
+    expect(text).toContain(
+      'File No. 260132 (Ordinance No. 082-26), SF public record (Board File 260132).'
+    );
+    expect(text).not.toContain('MTC');
+  });
+
+  it('omits the policy credit without scenarios.fzp.policy', async () => {
+    render(Page, {
+      data: { datasetVersion: 'fixture-0', appRelease: 'dev', manifest: { ...manifest, scenarios } }
+    });
+    await expect.element(page.getByText('Map data ©')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(POLICY_NOTICE);
+  });
 });

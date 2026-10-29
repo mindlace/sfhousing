@@ -23,6 +23,7 @@ import { checkV25, checkV26, checkV27, parseCalibrationText } from '../lib/fzp-c
 import { scenarioEligible } from '../lib/scenario-eligibility';
 import { checkV20 } from '../project-records/invariants';
 import { CALIBRATION_JSON } from './calibration';
+import { checkPolicy } from './check-policy';
 import { PROJECTS_JSON } from './projects';
 import { PARCELS_BIN } from '../lib/scenario-files';
 import { z12TileBytes } from './tiles';
@@ -335,7 +336,7 @@ export function maxOf(xs: readonly number[]): number {
 /**
  * Spec §4.9 invariants V1–V13, transit spec §4.3 V14, scenario-data spec §4.10 V15–V19 and
  * project-records spec §4.9 V20 over a built dataset directory, then V21–V24 from
- * `extras.projectChecks` and V30 (T14) from the counts. Never throws.
+ * `extras.projectChecks`, V30 (T14) from the counts and V31–V34 (policy.bin, frontage.bin). Never throws.
  */
 export async function checkDataset(
   outDir: string,
@@ -826,5 +827,8 @@ export async function checkDataset(
 
   // V30 data-quality registry (T14): every rule reports; live shares within failShare.
   out.push(checkV30(c, profile));
+
+  // V31–V34 policy.bin and frontage.bin (sim data layers), against the decoded parcels.bin.
+  out.push(...checkPolicy(outDir, profile, c, p, m, extras.stableDetail ?? false));
   return out;
 }

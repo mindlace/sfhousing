@@ -604,3 +604,17 @@ export function densityCap(
   }
   return best;
 }
+
+/**
+ * The cap parcels.bin's FZP `yield` uses (spec §4.4): none on a Local Program parcel (Bulletin 11,
+ * §206.10(d)(1)(A)), else `densityCap` on `capDay`. policy.bin ships it as `fzpYieldCap`.
+ */
+export function fzpYieldCapOf(
+  zoning: string | null,
+  lotAreaM2: number,
+  r4: boolean,
+  localProgram: boolean,
+  capDay: Day
+): number | null {
+  return localProgram ? null : densityCap(zoning, lotAreaM2, r4, capDay);
+}

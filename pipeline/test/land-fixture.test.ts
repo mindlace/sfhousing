@@ -86,7 +86,7 @@ describe('shoreline lots in the mini fixture', () => {
        WHERE l.id NOT IN (${SHORE.map((id) => `'${id}'`).join(', ')})
        ORDER BY l.id`
     );
-    expect(rows).toHaveLength(14);
+    expect(rows).toHaveLength(15);
     for (const r of rows)
       expect(r, r.id).toMatchObject({ status: 'unchanged', same: true, orig: null });
   });

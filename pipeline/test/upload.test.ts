@@ -35,6 +35,10 @@ function outDir(v = 'fixture-7', report: Record<string, unknown> = {}) {
   writeFileSync(join(d, 'parcels', '50_25.json'), '{}');
   writeFileSync(join(d, 'neighborhoods.geojson'), '{}');
   writeFileSync(join(d, 'transit.json'), '{}');
+  mkdirSync(join(d, 'scenarios', 'fzp'), { recursive: true });
+  for (const f of ['parcels.bin', 'projects.json', 'calibration.json', 'policy.bin']) {
+    writeFileSync(join(d, 'scenarios', 'fzp', f), 'x');
+  }
   writeFileSync(join(d, 'buildings.pmtiles'), 'b');
   writeFileSync(join(d, 'basemap.pmtiles'), 'm');
   for (const s of STACKS) {
@@ -64,7 +68,15 @@ function outDir(v = 'fixture-7', report: Record<string, unknown> = {}) {
       basemapTiles: `${base}/basemap.pmtiles`,
       glyphs: `${base}/fonts/{fontstack}/{range}.pbf`,
       neighborhoods: `${base}/neighborhoods.geojson`,
-      transit: `${base}/transit.json`
+      transit: `${base}/transit.json`,
+      scenarios: {
+        fzp: {
+          parcels: `${base}/scenarios/fzp/parcels.bin`,
+          projects: `${base}/scenarios/fzp/projects.json`,
+          calibration: `${base}/scenarios/fzp/calibration.json`,
+          policy: `${base}/scenarios/fzp/policy.bin`
+        }
+      }
     })
   );
   return d;
@@ -201,6 +213,10 @@ describe('upload', () => {
       'basemap.pmtiles',
       'neighborhoods.geojson',
       'transit.json',
+      'scenarios/fzp/parcels.bin',
+      'scenarios/fzp/projects.json',
+      'scenarios/fzp/calibration.json',
+      'scenarios/fzp/policy.bin',
       'parcels/50_25.json',
       'fonts/NotoSans-Italic/0-255.pbf'
     ])('a missing referenced file %s', async (rel) => {

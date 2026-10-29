@@ -17,7 +17,7 @@ Spec: `docs/superpowers/specs/2026-10-10-map-view-design.md` §4.12.
    (a later one would reset the controller). Then loads a synthetic whole-city plan: `window.__sfhMap.loadSyntheticCity(1)` applies
    `makeSyntheticCity(1, 150_000)` (`src/lib/map/test/synthetic-city.ts`) as one settled
    revision-0 snapshot. That is 150,000 buildings in 100 cells across the SF bbox. The representative population translates cached real generated buildings covering every composition family; the separate stress population exercises eight occupied solids, two roof accents and 128 input vertices per building. The plan goes straight to the
-   `GeneratedController`, bypassing the generator worker, because fixture-0 has only 14 parcels.
+   `GeneratedController`, bypassing the generator worker, because fixture-0 has only 18 parcels.
    Painting a whole-city plan through `__sfhBrush.load` would need production data.
 4. Waits for every cell to install, then jumps to downtown (`[-122.4010, 37.7890]`, zoom 15,
    pitch 55) and waits for `idle`.
