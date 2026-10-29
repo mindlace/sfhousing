@@ -111,7 +111,7 @@
     "link.ppaOnly": 1,
     "link.satellites": 0,
     "link.splitComponents": 1,
-    "manifest.bytes": 5995,
+    "manifest.bytes": 6047,
     "multiphase.descendants.2007.0001PRX": 1,
     "multiphase.descendants.2010.0002PRX": 1,
     "multiphase.descendants.2012-000020PRX": 1,
@@ -166,6 +166,16 @@
     "pieces.remainder_sliver_dropped": 0,
     "pieces.sliver_dropped": 1,
     "pipeline.cutoffDay": 20662,
+    "policy.bytes.payload": 4580,
+    "policy.exempt.permanent": 1,
+    "policy.exempt.temporary": 1,
+    "policy.historic.A": 2,
+    "policy.historic.A*": 1,
+    "policy.historic.B": 1,
+    "policy.historic.C": 13,
+    "policy.historic.none": 1,
+    "policy.historic.protected": 3,
+    "policy.use_district_mismatch": 0,
     "projects.asOf": 20736,
     "projects.byPathway.discretionary": 10,
     "projects.byPathway.permitOnly": 4,
@@ -303,6 +313,8 @@
     "quality.sd.attrs.longitude-cast.of": 24,
     "quality.sd.attrs.no-blklot.fired": 0,
     "quality.sd.attrs.no-blklot.of": 24,
+    "quality.sd.exempt.unmatched.fired": 0,
+    "quality.sd.exempt.unmatched.of": 2,
     "quality.sd.features.median-fallback.fired": 2,
     "quality.sd.features.median-fallback.of": 3,
     "quality.sd.features.no-building.fired": 0,
@@ -319,6 +331,8 @@
     "quality.sd.features.year-built-median.of": 28,
     "quality.sd.height.blank.fired": 0,
     "quality.sd.height.blank.of": 8,
+    "quality.sd.historic.no-row.fired": 1,
+    "quality.sd.historic.no-row.of": 18,
     "quality.sd.landuse.none-with-units.fired": 0,
     "quality.sd.landuse.none-with-units.of": 18,
     "quality.sd.parcels.clip-yield-loss.fired": 0,
@@ -526,7 +540,7 @@
       "ok": true
     },
     {
-      "detail": "manifest 5995/64000 B; neighborhoods 709/150000 B",
+      "detail": "manifest 6047/64000 B; neighborhoods 709/150000 B",
       "id": "V11",
       "ok": true
     },
@@ -623,6 +637,11 @@
     {
       "detail": "every registered rule reports; shares not checked on this profile",
       "id": "V30",
+      "ok": true
+    },
+    {
+      "detail": "18 parcels decode; re-encode byte-identical; historic 17/18 ≥ 94.4444%; exemption rows matched 2/2 ≥ 100%; policy.bin within budget",
+      "id": "V31",
       "ok": true
     }
   ],

@@ -61,7 +61,10 @@ describe('verify', () => {
     expect(seen).toContain(`HEAD /data/${V}/scenarios/fzp/frontage.bin`);
   });
   it('does not request policy or frontage when the manifest lacks them', async () => {
-    const { f, seen } = fakeFetch();
+    const without = JSON.parse(golden) as { scenarios: { fzp: Record<string, string> } };
+    delete without.scenarios.fzp.policy;
+    delete without.scenarios.fzp.frontage;
+    const { f, seen } = fakeFetch(undefined, JSON.stringify(without));
     await verify({ datasetVersion: V, origin: 'http://o', fetch: f });
     expect(seen.some((s) => s.includes('policy.bin') || s.includes('frontage.bin'))).toBe(false);
   });

@@ -28,6 +28,7 @@ import {
   UNVERIFIED_DISTRICTS,
   densityCap,
   densityCapRule,
+  fzpYieldCapOf,
   isSpecNamedNoCap
 } from '../lib/density-caps';
 import { clipYieldLoss, clipYieldRow, type ClipYieldRow } from '../lib/land-report';
@@ -765,7 +766,7 @@ export async function writeScenario(a: {
       }
       return g;
     };
-    const fzpYieldCap = env.localProgram ? null : fzpCap;
+    const fzpYieldCap = fzpYieldCapOf(d.zoning_code, lotAreaM2, d.r4, env.localProgram, a.capDay);
     for (let k = 0; k < F; k++) {
       const fill = FILL_LEVELS[k];
       p.yield[i * F + k] =

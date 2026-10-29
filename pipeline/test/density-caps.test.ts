@@ -9,6 +9,7 @@ import {
   UNVERIFIED_DISTRICTS,
   densityCap,
   densityCapRule,
+  fzpYieldCapOf,
   isSpecNamedNoCap
 } from '../lib/density-caps';
 
@@ -275,6 +276,17 @@ describe('densityCap: split codes (tier 4, most permissive)', () => {
   it('split components each see the R-4 flag', () => {
     expect(densityCap('NC-3|RM-1', m2(6000), true, TODAY)).toBeNull();
     expect(densityCap('NC-3|RM-1', m2(6000), false, TODAY)).toBe(10);
+  });
+});
+
+describe('fzpYieldCapOf', () => {
+  it('is null on a Local Program parcel and densityCap elsewhere', () => {
+    expect(fzpYieldCapOf('RH-1', 300, false, true, TODAY)).toBeNull();
+    expect(fzpYieldCapOf('RH-1', 300, false, false, TODAY)).toBe(
+      densityCap('RH-1', 300, false, TODAY)
+    );
+    expect(fzpYieldCapOf('RH-1', 300, false, false, TODAY)).not.toBeNull();
+    expect(fzpYieldCapOf(null, 300, false, false, TODAY)).toBeNull();
   });
 });
 

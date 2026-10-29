@@ -425,6 +425,16 @@ export function recordQuality(
   REGISTRY.recordQuality(counts, id, c);
 }
 
+/** A rule's `fired` and `of` as recorded in `counts` (report.json), or undefined when unreported. */
+export function reportedQuality(
+  counts: Record<string, number>,
+  id: string
+): { fired: number; of: number } | undefined {
+  const fired = counts[reportKey(id, 'fired')];
+  const of = counts[reportKey(id, 'of')];
+  return isCount(fired) && isCount(of) ? { fired, of } : undefined;
+}
+
 /** The registered rule; throws on an unknown id. */
 export function qualityRule(id: string): QualityRule {
   return REGISTRY.qualityRule(id);

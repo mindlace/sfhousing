@@ -20,6 +20,7 @@ import { landClipSection } from '../lib/land-report';
 import { QUALITY_REPORT_MD, createQualityTables, writeQualityReport } from '../lib/quality';
 import { Report } from '../lib/report';
 import { runSql } from '../lib/sql';
+import { POLICY_BIN } from '../lib/scenario-files';
 import { codeTreeHash, computeDatasetVersion } from '../lib/version';
 import { asOfFromLock } from '../project-records/parse';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
@@ -29,6 +30,7 @@ import { writeCalibration } from './calibration';
 import { checkDataset, type InvariantResult } from './check';
 import { readParcelRecords, writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
 import { buildManifest, writeManifest } from './manifest';
+import { writePolicy } from './policy';
 import { writeProjectRecords } from './projects';
 import { writeScenario } from './scenario';
 import { copyBasemap, installFonts, writeBuildingsTiles } from './tiles';
@@ -140,7 +142,8 @@ function chunkCounts(chunks: ChunkOut[]): Record<string, number> {
  * step (scenarios/fzp/parcels.bin; the T13 panel and lineage into the derived cache), the project
  * records (scenarios/fzp/projects.json; histories and permits.parquet into the derived cache),
  * the calibration (scenarios/fzp/calibration.json; calibration-report.md into the derived cache),
- * the T14 quality report (quality-report.md into the derived cache), neighborhoods, tiles,
+ * neighborhoods, transit, the policy step (scenarios/fzp/policy.bin), the T14 quality report
+ * (quality-report.md into the derived cache), tiles,
  * basemap, fonts, manifest, invariants and report.json into `<outRoot>/<datasetVersion>/`.
  * Throws BuildError when a raw file does not match the lock.
  */
@@ -197,13 +200,15 @@ export async function build(
     // into this object, and `writeQualityReport` and V30 read it. The project-records step writes
     // all its counts into it; the other counts join it below.
     const counts: Record<string, number> = {};
+    // The scenario and policy steps share the chunk records (same rows, same order).
+    const records = await readParcelRecords(db);
     const scenario = await report.time('scenario', async () =>
       writeScenario({
         db,
         outDir,
         derivedDir,
         datasetVersion,
-        records: await readParcelRecords(db),
+        records,
         capDay: asOf,
         report,
         buildCounts: counts
@@ -246,10 +251,6 @@ export async function build(
       })
     );
     report.warnings.push(...calibration.warnings);
-    // After the last step that records T14 counts (spec §4.10), so the report covers every owner.
-    writeQualityReport(join(derivedDir, QUALITY_REPORT_MD), datasetVersion, counts, [
-      await landClipSection(db)
-    ]);
     const neighborhoodsBytes = await writeNeighborhoods(db, outDir);
     const transit = await report.time('transit', async () =>
       writeTransit({
@@ -263,6 +264,16 @@ export async function build(
       })
     );
     report.warnings.push(...transit.warnings);
+    // Sim data layers: after the scenario step (it reads parcels.bin, sc_zoning and sc_district)
+    // and transit, before the quality report. Its T14 rules go into the same counts.
+    const policy = await report.time('policy', () =>
+      writePolicy({ db, outDir, datasetVersion, records, capDay: asOf, buildCounts: counts })
+    );
+    report.warnings.push(...policy.warnings);
+    // After the last step that records T14 counts (spec §4.10), so the report covers every owner.
+    writeQualityReport(join(derivedDir, QUALITY_REPORT_MD), datasetVersion, counts, [
+      await landClipSection(db)
+    ]);
     if (!opts.skipTiles) {
       await report.time('tiles', () => writeBuildingsTiles(db, outDir, work));
     }
@@ -283,6 +294,7 @@ export async function build(
       overtureContrib,
       transit: true,
       scenarios: SCENARIO_FILES.every((f) => existsSync(join(outDir, 'scenarios/fzp', f))),
+      policy: existsSync(join(outDir, POLICY_BIN)),
       warn: (w) => report.warnings.push(w)
     });
     const manifestBytes = writeManifest(outDir, manifest);
@@ -295,6 +307,7 @@ export async function build(
       ...chunkCounts(chunks),
       ...transit.counts,
       ...scenario.counts,
+      ...policy.counts,
       ...Object.fromEntries(overtureContrib.map((o) => [`overture.contrib.${o.dataset}`, o.n])),
       'units.total': totals.units,
       'parcels.height_max_m': totals.hmax,

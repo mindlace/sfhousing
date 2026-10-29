@@ -18,6 +18,7 @@ import { readLock } from '../lib/lock';
 import { build, printResults } from './build';
 import { CALIBRATION_JSON, CALIBRATION_REPORT_MD } from './calibration';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, dumpPermits } from './projects';
+import { POLICY_BIN, POLICY_DUMP, formatPolicyDump, readPolicyBin } from './policy';
 import { PARCELS_BIN, SCENARIO_DUMP, formatScenarioDump, readParcelsBin } from './scenario';
 
 const REPO_ROOT = resolve(import.meta.dirname, '../..');
@@ -26,7 +27,8 @@ const E2E = join(REPO_ROOT, 'e2e/fixtures/data/fixture-0');
 const GOLDEN = join(MINI, 'golden');
 /**
  * Deterministic outputs pinned by golden.test.ts (tile bytes and fonts are not compared). The T11
- * file is pinned by its decoded dump, SCENARIO_DUMP, not by its deflate bytes (spec §4.8).
+ * file and policy.bin are pinned by their decoded dumps, SCENARIO_DUMP and POLICY_DUMP, not by
+ * their deflate bytes (spec §4.8).
  */
 const GOLDEN_FILES = [
   'parcels',
@@ -159,9 +161,11 @@ export async function fixture(opts: FixtureOpts = {}): Promise<number> {
         cpSync(join(outDir, f), join(GOLDEN, f), { recursive: true });
       }
       mkdirSync(dirname(join(GOLDEN, SCENARIO_DUMP)), { recursive: true });
+      const parcels = readParcelsBin(join(outDir, PARCELS_BIN));
+      writeFileSync(join(GOLDEN, SCENARIO_DUMP), formatScenarioDump(parcels));
       writeFileSync(
-        join(GOLDEN, SCENARIO_DUMP),
-        formatScenarioDump(readParcelsBin(join(outDir, PARCELS_BIN)))
+        join(GOLDEN, POLICY_DUMP),
+        formatPolicyDump(readPolicyBin(join(outDir, POLICY_BIN), parcels))
       );
       const derived = join(derivedRoot, version);
       mkdirSync(join(GOLDEN, 'derived'), { recursive: true });

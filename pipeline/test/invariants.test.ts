@@ -31,7 +31,7 @@ import {
 import { fixture } from '../steps/fixture';
 import { PROJECTS_JSON } from '../steps/projects';
 import { miniProjectInput } from './fixtures/mini/projects-raw';
-import { PARCELS_BIN } from '../lib/scenario-files';
+import { PARCELS_BIN, POLICY_BIN } from '../lib/scenario-files';
 
 let base: string;
 /** The fixture build's derived cache root (kept, so the T14 report can be read). */
@@ -853,6 +853,64 @@ describe('V30 data-quality registry', () => {
       detail:
         'every registered rule reports; no share above failShare; warn: sd.test.bound: share 2.00% > warnShare 1.00%'
     });
+  });
+});
+
+describe('V31 policy file', () => {
+  const v31 = async (dir: string, c = counts, profile = FIXTURE_PROFILE, stableDetail = false) =>
+    (await checkDataset(dir, profile, { counts: c, reencodeIdentical: true, stableDetail })).find(
+      (r) => r.id === 'V31'
+    )!;
+  it('is OK on the fixture', async () => {
+    const r = await v31(base);
+    expect(r.ok, r.detail).toBe(true);
+    expect(r.detail).toMatch(/historic 17\/18/);
+  });
+  it('fails with "does not decode" against a parcels.bin with one id changed', async () => {
+    const d = copy();
+    editScenario(d, (p) => {
+      p.id[0] = p.id[0] + 'X';
+    });
+    const r = await v31(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/does not decode/);
+  });
+  it('fails when policy.bin is missing, or present but not in the manifest', async () => {
+    const d = copy();
+    rmSync(join(d, POLICY_BIN));
+    const missing = await v31(d);
+    expect(missing.ok).toBe(false);
+    expect(missing.detail).toMatch(/policy\.bin/);
+    const e = copy();
+    const mf = join(e, 'manifest.json');
+    const m = JSON.parse(readFileSync(mf, 'utf8'));
+    delete m.scenarios.fzp.policy;
+    writeFileSync(mf, JSON.stringify(m));
+    const unnamed = await v31(e);
+    expect(unnamed.ok).toBe(false);
+    expect(unnamed.detail).toMatch(/not named in the manifest/);
+  });
+  it('fails on a use-district mismatch, a low historic join or no exemption rows', async () => {
+    expect((await v31(base, { ...counts, 'policy.use_district_mismatch': 1 })).ok).toBe(false);
+    const strict = { ...FIXTURE_PROFILE, historicJoinMin: 1 };
+    expect((await v31(base, counts, strict)).detail).toMatch(/historic .* < 100%/);
+    const none = await v31(base, {
+      ...counts,
+      'quality.sd.exempt.unmatched.fired': 0,
+      'quality.sd.exempt.unmatched.of': 0
+    });
+    expect(none.ok).toBe(false);
+    expect(none.detail).toMatch(/0 exemption table rows/);
+    const unmatched = await v31(base, { ...counts, 'quality.sd.exempt.unmatched.fired': 1 });
+    expect(unmatched.ok).toBe(false);
+  });
+  it('fails over policyMaxBytes and leaves bytes out of the stable detail', async () => {
+    const small = await v31(base, counts, { ...FIXTURE_PROFILE, policyMaxBytes: 10 });
+    expect(small.ok).toBe(false);
+    const stable = await v31(base, counts, FIXTURE_PROFILE, true);
+    expect(stable.ok).toBe(true);
+    expect(stable.detail).not.toMatch(/\d+\/\d+ B/);
+    expect((await v31(base)).detail).toMatch(/policy\.bin \d+\/\d+ B/);
   });
 });
 

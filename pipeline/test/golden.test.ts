@@ -8,6 +8,7 @@ import { PATHWAYS, STAGE_ORDER } from '../../src/lib/timelapse/types';
 import { GOLDEN_DERIVED, fixture } from '../steps/fixture';
 import { CALIBRATION_JSON } from '../steps/calibration';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, dumpPermits } from '../steps/projects';
+import { POLICY_BIN, POLICY_DUMP, formatPolicyDump, readPolicyBin } from '../steps/policy';
 import { PARCELS_BIN, SCENARIO_DUMP, formatScenarioDump, readParcelsBin } from '../steps/scenario';
 import { which } from '../lib/exec';
 import { QUALITY_RULES } from '../lib/quality';
@@ -37,6 +38,8 @@ const COMPARED = (f: string) =>
 const stripBuiltAt = (s: string) => s.replace(/"builtAt":"[^"]*"/, '"builtAt":""');
 const decodeBin = (dir: string) => readParcelsBin(join(dir, PARCELS_BIN));
 const dumpOf = (dir: string) => formatScenarioDump(decodeBin(dir));
+const policyDumpOf = (dir: string) =>
+  formatPolicyDump(readPolicyBin(join(dir, POLICY_BIN), decodeBin(dir)));
 
 describe('pipeline fixture', () => {
   const a = mkdtempSync(join(tmpdir(), 'sfh-fx-a-'));
@@ -64,6 +67,10 @@ describe('pipeline fixture', () => {
     const dump = dumpOf(a);
     expect(dump).toBe(readFileSync(join(golden, SCENARIO_DUMP), 'utf8'));
     expect(dump).toBe(dumpOf(b));
+    // policy.bin: the decoded payload too.
+    const policy = policyDumpOf(a);
+    expect(policy).toBe(readFileSync(join(golden, POLICY_DUMP), 'utf8'));
+    expect(policy).toBe(policyDumpOf(b));
     // Project-records spec §4.9: the histories byte for byte, permits.parquet by row values.
     const histories = (root: string) =>
       readFileSync(join(root, 'fixture-0', HISTORIES_JSON), 'utf8');
@@ -369,6 +376,8 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       'sd.attrs.latitude-cast': [0, 24],
       'sd.attrs.longitude-cast': [0, 24],
       'sd.attrs.no-blklot': [0, 24],
+      // Both mini exemption rows (lots 12 and 15) match an active parcel.
+      'sd.exempt.unmatched': [0, 2],
       'sd.features.median-fallback': [2, 3],
       'sd.features.no-building': [0, 33],
       'sd.features.share-median': [2, 28],
@@ -378,6 +387,8 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       'sd.features.vacant-year-built': [0, 34],
       'sd.features.year-built-median': [0, 28],
       'sd.height.blank': [0, 8],
+      // Lot 18 has no historic status row.
+      'sd.historic.no-row': [1, 18],
       // Lot 9, mini's one parcel with no land-use row, has no roll row, so it stays ineligible.
       'sd.landuse.none-with-units': [0, 18],
       // No clipped lot keeps over 95% of its area (lot 15 keeps 80%).
@@ -586,18 +597,19 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
     );
   });
 
-  it('names the three scenario files in the manifest', () => {
+  it('names the three scenario files and policy.bin in the manifest', () => {
     const m = JSON.parse(readFileSync(join(e2e, 'manifest.json'), 'utf8')) as {
       scenarios?: unknown;
     };
-    for (const f of ['parcels.bin', 'projects.json', 'calibration.json']) {
+    for (const f of ['parcels.bin', 'projects.json', 'calibration.json', 'policy.bin']) {
       expect(existsSync(join(e2e, 'scenarios/fzp', f)), f).toBe(true);
     }
     expect(m.scenarios).toEqual({
       fzp: {
         parcels: '/data/fixture-0/scenarios/fzp/parcels.bin',
         projects: '/data/fixture-0/scenarios/fzp/projects.json',
-        calibration: '/data/fixture-0/scenarios/fzp/calibration.json'
+        calibration: '/data/fixture-0/scenarios/fzp/calibration.json',
+        policy: '/data/fixture-0/scenarios/fzp/policy.bin'
       }
     });
   });

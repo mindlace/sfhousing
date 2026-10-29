@@ -897,5 +897,42 @@ export const SD_RULES: readonly QualityRule[] = [
     warnShare: 0.09,
     failShare: 0.15,
     unitsWeighted: false
+  },
+  // ---- Policy step (pipeline/sql/82_policy.sql, reported by pipeline/steps/policy.ts) ----
+  // A parcel with no 3tsw-4idn row (or only rows without a code) ships historic '' and is not
+  // historic-protected (ruling 4). Kind `missing`, so the 0.05 default.
+  {
+    ...SD,
+    id: 'sd.historic.no-row',
+    source: 'datasf-historic-status',
+    field: 'historic',
+    kind: 'missing',
+    action: 'default',
+    tier: 4,
+    valueTier: 4,
+    maskBit: null,
+    label:
+      'A parcel with no historic resource status row has no status, so it is not historic-protected',
+    denominator: 'parcels',
+    ...MISSING_SHARES,
+    unitsWeighted: false
+  },
+  // An exemption table row (Board File 260132) whose apn matches no active parcel is dropped:
+  // pseudo-lots (VACST, ROWA, PARK) and retired lots (Task 1 report). Kind `missing`, so the 0.05
+  // default; V31 also requires a matched share of at least `exemptJoinMin`.
+  {
+    ...SD,
+    id: 'sd.exempt.unmatched',
+    source: 'sfbos-sb79-exemptions',
+    field: 'apn',
+    kind: 'missing',
+    action: 'drop',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label: 'An SB 79 exemption table row whose block and lot match no active parcel is dropped',
+    denominator: 'exemption table rows',
+    ...MISSING_SHARES,
+    unitsWeighted: false
   }
 ];

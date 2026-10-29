@@ -103,6 +103,14 @@ export interface InvariantProfile {
   projectsWarnBytes: number;
   /** V30: judge each T14 rule's share against its warnShare and failShare (live only). */
   qualityShares: boolean;
+  /** V31: minimum share of parcels with a historic status code in policy.bin. */
+  historicJoinMin: number;
+  /** V31: minimum share of exemption table rows whose apn matches an active parcel. */
+  exemptJoinMin: number;
+  /** V31: maximum size of scenarios/fzp/policy.bin on disk, bytes. */
+  policyMaxBytes: number;
+  /** V32: maximum size of scenarios/fzp/frontage.bin on disk, bytes. */
+  frontageMaxBytes: number;
 }
 
 /**
@@ -157,7 +165,13 @@ export const LIVE_PROFILE: InvariantProfile = {
   projectsMaxBytes: 2e6,
   projectsWarnBytes: 1e6,
   // Spec §4.10 V30: live shares are judged against each rule's warnShare and failShare.
-  qualityShares: true
+  qualityShares: true,
+  // V31 check bounds (tier 4, made up). 3tsw-4idn lists 163,288 apns for about 155k parcels.
+  historicJoinMin: 0.95,
+  exemptJoinMin: 0.95,
+  // Plan Budget decision: 1.0 MB each (tier 4); they warn at 0.75 MB (check-policy.ts).
+  policyMaxBytes: 1.0e6,
+  frontageMaxBytes: 1.0e6
 };
 
 /**
@@ -207,5 +221,11 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   projectsWarnBytes: LIVE_PROFILE.projectsWarnBytes,
   // Spec §4.10 V30: the mini fixture fires rules on a handful of rows by design, so its shares
   // mean nothing; V30 still requires every rule to report.
-  qualityShares: false
+  qualityShares: false,
+  // Fixture known answers: every lot but 18 has a historic row (17/18), and both exemption rows
+  // (lots 12 and 15) match an active parcel.
+  historicJoinMin: 17 / 18,
+  exemptJoinMin: 1,
+  policyMaxBytes: LIVE_PROFILE.policyMaxBytes,
+  frontageMaxBytes: LIVE_PROFILE.frontageMaxBytes
 };

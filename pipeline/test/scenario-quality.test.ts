@@ -27,6 +27,7 @@ import { scenarioEligible } from '../lib/scenario-eligibility';
 import { Report } from '../lib/report';
 import { runSql } from '../lib/sql';
 import { readParcelRecords } from '../steps/chunks';
+import { POLICY_SQL_RULES } from '../steps/policy-sql';
 import { PARCELS_BIN, readParcelsBin, writeScenario } from '../steps/scenario';
 import { SUPERSEDED_SCENARIO_COUNTS, miniDuck } from './helpers';
 
@@ -697,6 +698,31 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
       null,
       'panel parcel-years',
       false
+    ],
+    // The policy step (82_policy.sql): missing · default and missing · drop.
+    [
+      'sd.historic.no-row',
+      'datasf-historic-status',
+      'historic',
+      'missing',
+      'default',
+      4,
+      4,
+      null,
+      'parcels',
+      false
+    ],
+    [
+      'sd.exempt.unmatched',
+      'sfbos-sb79-exemptions',
+      'apn',
+      'missing',
+      'drop',
+      4,
+      null,
+      null,
+      'exemption table rows',
+      false
     ]
   ];
   /**
@@ -1087,7 +1113,11 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
   });
 
   it('every scenario-data rule reports once (recordQuality throws on a second report)', () => {
-    const ids = QUALITY_RULES.filter((r) => r.owner === 'scenario-data').map((r) => r.id);
+    // The policy step (writePolicy, policy-step.test.ts) reports its rules, not writeScenario.
+    const policyRules: readonly string[] = POLICY_SQL_RULES;
+    const ids = QUALITY_RULES.filter((r) => r.owner === 'scenario-data')
+      .map((r) => r.id)
+      .filter((id) => !policyRules.includes(id));
     expect(ids).toHaveLength(48);
     const got = Object.keys(s.quality)
       .filter((k) => k.endsWith('.fired'))
