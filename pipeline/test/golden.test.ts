@@ -8,6 +8,12 @@ import { PATHWAYS, STAGE_ORDER } from '../../src/lib/timelapse/types';
 import { GOLDEN_DERIVED, fixture } from '../steps/fixture';
 import { CALIBRATION_JSON } from '../steps/calibration';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, dumpPermits } from '../steps/projects';
+import {
+  FRONTAGE_BIN,
+  FRONTAGE_DUMP,
+  formatFrontageDump,
+  readFrontageBin
+} from '../steps/frontage';
 import { POLICY_BIN, POLICY_DUMP, formatPolicyDump, readPolicyBin } from '../steps/policy';
 import { PARCELS_BIN, SCENARIO_DUMP, formatScenarioDump, readParcelsBin } from '../steps/scenario';
 import { which } from '../lib/exec';
@@ -40,6 +46,8 @@ const decodeBin = (dir: string) => readParcelsBin(join(dir, PARCELS_BIN));
 const dumpOf = (dir: string) => formatScenarioDump(decodeBin(dir));
 const policyDumpOf = (dir: string) =>
   formatPolicyDump(readPolicyBin(join(dir, POLICY_BIN), decodeBin(dir)));
+const frontageDumpOf = (dir: string) =>
+  formatFrontageDump(readFrontageBin(join(dir, FRONTAGE_BIN), decodeBin(dir)));
 
 describe('pipeline fixture', () => {
   const a = mkdtempSync(join(tmpdir(), 'sfh-fx-a-'));
@@ -71,6 +79,10 @@ describe('pipeline fixture', () => {
     const policy = policyDumpOf(a);
     expect(policy).toBe(readFileSync(join(golden, POLICY_DUMP), 'utf8'));
     expect(policy).toBe(policyDumpOf(b));
+    // frontage.bin: the decoded payload too.
+    const frontage = frontageDumpOf(a);
+    expect(frontage).toBe(readFileSync(join(golden, FRONTAGE_DUMP), 'utf8'));
+    expect(frontage).toBe(frontageDumpOf(b));
     // Project-records spec §4.9: the histories byte for byte, permits.parquet by row values.
     const histories = (root: string) =>
       readFileSync(join(root, 'fixture-0', HISTORIES_JSON), 'utf8');
@@ -419,6 +431,8 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       'sd.roll.year-gap': [1, 34],
       // Every mini lot is within ½ mile of a TOD stop, and every zoning code has a zone class.
       'sd.sb79.zone-unlisted': [0, 18],
+      // 12 of the 15 eligible lots front a street; shoreline lots 15 and 17 and rear lot 18 do not.
+      'sd.streets.no-frontage': [3, 15],
       'sd.yield.nonmonotone': [0, 18],
       'sd.yield.zero-hostable': [3, 14],
       'sd.zoning.c2-floor-approx': [0, 11],
@@ -599,11 +613,17 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
     );
   });
 
-  it('names the three scenario files and policy.bin in the manifest', () => {
+  it('names the three scenario files, policy.bin and frontage.bin in the manifest', () => {
     const m = JSON.parse(readFileSync(join(e2e, 'manifest.json'), 'utf8')) as {
       scenarios?: unknown;
     };
-    for (const f of ['parcels.bin', 'projects.json', 'calibration.json', 'policy.bin']) {
+    for (const f of [
+      'parcels.bin',
+      'projects.json',
+      'calibration.json',
+      'policy.bin',
+      'frontage.bin'
+    ]) {
       expect(existsSync(join(e2e, 'scenarios/fzp', f)), f).toBe(true);
     }
     expect(m.scenarios).toEqual({
@@ -611,7 +631,8 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
         parcels: '/data/fixture-0/scenarios/fzp/parcels.bin',
         projects: '/data/fixture-0/scenarios/fzp/projects.json',
         calibration: '/data/fixture-0/scenarios/fzp/calibration.json',
-        policy: '/data/fixture-0/scenarios/fzp/policy.bin'
+        policy: '/data/fixture-0/scenarios/fzp/policy.bin',
+        frontage: '/data/fixture-0/scenarios/fzp/frontage.bin'
       }
     });
   });

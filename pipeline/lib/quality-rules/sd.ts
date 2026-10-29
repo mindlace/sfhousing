@@ -953,5 +953,25 @@ export const SD_RULES: readonly QualityRule[] = [
     denominator: 'parcels within ½ mile of a TOD stop',
     ...SHARES,
     unitsWeighted: false
+  },
+  // ---- Frontage step (pipeline/sql/83_frontage.sql, reported by pipeline/steps/frontage.ts) ----
+  // An eligible parcel with no depth-0 frontage entry: interior, rear or isolated by a right of
+  // way wider than front_max_m. The street brush cannot paint it directly (a depth-1 entry still
+  // can). Counted, changes nothing. Kind `missing`, so the 0.05 default; V34 also requires a
+  // fronting share of at least `frontageMin`.
+  {
+    ...SD,
+    id: 'sd.streets.no-frontage',
+    source: 'datasf-streets',
+    field: 'frontage',
+    kind: 'missing',
+    action: 'none',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label: 'An eligible parcel that fronts no city street segment at depth 0',
+    denominator: 'eligible parcels',
+    ...MISSING_SHARES,
+    unitsWeighted: false
   }
 ];

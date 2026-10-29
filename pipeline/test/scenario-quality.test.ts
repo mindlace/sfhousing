@@ -29,6 +29,7 @@ import { runSql } from '../lib/sql';
 import { readParcelRecords } from '../steps/chunks';
 import { POLICY_SQL_RULES } from '../steps/policy-sql';
 import { POLICY_TS_RULES } from '../steps/policy';
+import { FRONTAGE_TS_RULES } from '../steps/frontage';
 import { PARCELS_BIN, readParcelsBin, writeScenario } from '../steps/scenario';
 import { SUPERSEDED_SCENARIO_COUNTS, miniDuck } from './helpers';
 
@@ -737,6 +738,19 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
       null,
       'parcels within ½ mile of a TOD stop',
       false
+    ],
+    // The frontage step (writeFrontage, TS): missing · none.
+    [
+      'sd.streets.no-frontage',
+      'datasf-streets',
+      'frontage',
+      'missing',
+      'none',
+      4,
+      null,
+      null,
+      'eligible parcels',
+      false
     ]
   ];
   /**
@@ -1127,8 +1141,13 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
   });
 
   it('every scenario-data rule reports once (recordQuality throws on a second report)', () => {
-    // The policy step (writePolicy, policy-step.test.ts) reports its rules, not writeScenario.
-    const policyRules: readonly string[] = [...POLICY_SQL_RULES, ...POLICY_TS_RULES];
+    // The policy and frontage steps (policy-step.test.ts, frontage-step.test.ts) report their
+    // rules, not writeScenario.
+    const policyRules: readonly string[] = [
+      ...POLICY_SQL_RULES,
+      ...POLICY_TS_RULES,
+      ...FRONTAGE_TS_RULES
+    ];
     const ids = QUALITY_RULES.filter((r) => r.owner === 'scenario-data')
       .map((r) => r.id)
       .filter((id) => !policyRules.includes(id));

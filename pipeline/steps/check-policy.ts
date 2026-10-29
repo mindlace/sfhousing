@@ -1,9 +1,11 @@
-// Invariants over the sim data-layer files (plan 1): V31 to V33 for `scenarios/fzp/policy.bin`.
+// Invariants over the sim data-layer files (plan 1): V31 to V33 for `scenarios/fzp/policy.bin`,
+// V34 for `scenarios/fzp/frontage.bin`.
 // Kept out of check.ts so the policy and frontage checks sit together; checkDataset calls
 // checkPolicy after V30.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
+import { decodeFrontagePayload, encodeFrontagePayload } from '../../src/lib/data/frontage-codec';
 import type { Manifest } from '../../src/lib/data/manifest';
 import {
   HISTORIC_CODES,
@@ -22,7 +24,7 @@ import { s207Envelope, s207Status } from '../lib/current-law';
 import { parseHeightDistrict, storiesFromFt } from '../lib/heights';
 import { reportedQuality } from '../lib/quality';
 import { rentControlExcluded, stopTiers, unitsFor, zoneClassOf } from '../lib/sb79';
-import { POLICY_BIN } from '../lib/scenario-files';
+import { FRONTAGE_BIN, POLICY_BIN } from '../lib/scenario-files';
 import { MIN_UNITS, STANDARDS, type Sb79Tier, type TodBand } from '../sb79-config';
 import type { InvariantResult } from './check';
 
@@ -353,8 +355,92 @@ function checkV33(
 }
 
 /**
- * The policy-file invariants (V31 to V33), in id order. `opts.policyWarnBytes` overrides
- * POLICY_WARN_BYTES (tests). Never throws.
+ * V34 over `frontage.bin`: present and named in the manifest; inflates and decodes against the
+ * decoded parcels.bin `p`; datasetVersion is the manifest's; re-encoding is byte-identical;
+ * `frontage.depth1_orphan` is 0; at least `frontageMin` of eligible parcels have a depth-0 entry;
+ * at most `frontageMaxBytes` on disk, warning above `warnBytes`. `stableDetail` leaves byte counts
+ * out. Never throws.
+ */
+function checkV34(
+  outDir: string,
+  profile: InvariantProfile,
+  counts: Record<string, number>,
+  p: ScenarioParcels | null,
+  m: Manifest | null,
+  stableDetail: boolean,
+  warnBytes: number
+): InvariantResult {
+  const problems: string[] = [];
+  const done = (ok: string): InvariantResult => ({
+    id: 'V34',
+    ok: problems.length === 0,
+    detail: problems.length === 0 ? ok : problems.join('; ')
+  });
+  const file = join(outDir, FRONTAGE_BIN);
+  const present = existsSync(file);
+  const url = m?.scenarios?.fzp.frontage;
+  if (!m) problems.push('no manifest to compare');
+  else if (present && url === undefined)
+    problems.push(`${FRONTAGE_BIN} is not named in the manifest`);
+  else if (url !== undefined && url !== `/data/${m.datasetVersion}/${FRONTAGE_BIN}`)
+    problems.push(`manifest names ${url}, not ${FRONTAGE_BIN}`);
+  if (!present) {
+    problems.push(
+      `${FRONTAGE_BIN} is missing${url !== undefined ? ' but named in the manifest' : ''}`
+    );
+    return done('');
+  }
+  if (!p) {
+    problems.push(`${FRONTAGE_BIN} cannot be checked: parcels.bin does not decode`);
+    return done('');
+  }
+  const body = readFileSync(file);
+  let detail = '';
+  try {
+    const payload = new Uint8Array(inflateRawSync(body));
+    const f = decodeFrontagePayload(payload, p);
+    if (m && f.datasetVersion !== m.datasetVersion)
+      problems.push(`datasetVersion ${f.datasetVersion} ≠ ${m.datasetVersion}`);
+    try {
+      if (!sameBytes(encodeFrontagePayload(f), payload))
+        problems.push('re-encoding the decoded payload differs');
+    } catch (e) {
+      problems.push(`re-encoding the decoded payload fails: ${(e as Error).message}`);
+    }
+    let eligible = 0;
+    let fronting = 0;
+    for (let i = 0; i < f.count; i++) {
+      if (p.eligible[i] !== 1) continue;
+      eligible++;
+      // Entries are sorted by (depth, seg): a depth-0 entry, if any, comes first.
+      if (f.rowStart[i + 1] > f.rowStart[i] && f.frontDepth[f.rowStart[i]] === 0) fronting++;
+    }
+    const share = eligible === 0 ? NaN : fronting / eligible;
+    if (!(share >= profile.frontageMin))
+      problems.push(
+        `fronting ${fronting}/${eligible} = ${pct(share)} < ${thr(profile.frontageMin)}`
+      );
+    detail = `${f.count} parcels decode; re-encode byte-identical; ${f.segCnn.length} segments; fronting ${fronting}/${eligible} eligible ≥ ${thr(profile.frontageMin)}`;
+  } catch (e) {
+    problems.push(`${FRONTAGE_BIN} does not decode: ${(e as Error).message}`);
+  }
+  const orphan = counts['frontage.depth1_orphan'];
+  if (orphan !== 0) problems.push(`frontage.depth1_orphan ${orphan} ≠ 0`);
+  const max = profile.frontageMaxBytes;
+  if (body.length > max)
+    problems.push(
+      stableDetail ? `${FRONTAGE_BIN} over budget` : `${FRONTAGE_BIN} ${body.length}/${max} B`
+    );
+  const warn = body.length > warnBytes ? `; warn: over ${warnBytes / 1e6} MB` : '';
+  detail += stableDetail
+    ? `; frontage.bin within budget${warn}`
+    : `; frontage.bin ${body.length}/${max} B${warn}`;
+  return done(detail);
+}
+
+/**
+ * The sim data-layer invariants (V31 to V34), in id order. `opts.policyWarnBytes` and
+ * `opts.frontageWarnBytes` override POLICY_WARN_BYTES and FRONTAGE_WARN_BYTES (tests). Never throws.
  */
 export function checkPolicy(
   outDir: string,
@@ -363,12 +449,14 @@ export function checkPolicy(
   p: ScenarioParcels | null,
   m: Manifest | null,
   stableDetail: boolean,
-  opts: { policyWarnBytes?: number } = {}
+  opts: { policyWarnBytes?: number; frontageWarnBytes?: number } = {}
 ): InvariantResult[] {
   const warnBytes = opts.policyWarnBytes ?? POLICY_WARN_BYTES;
+  const frontageWarn = opts.frontageWarnBytes ?? FRONTAGE_WARN_BYTES;
   return [
     checkV31(outDir, profile, counts, p, m, stableDetail, warnBytes),
     checkV32(outDir, profile, counts, p, m),
-    checkV33(outDir, counts, p)
+    checkV33(outDir, counts, p),
+    checkV34(outDir, profile, counts, p, m, stableDetail, frontageWarn)
   ];
 }

@@ -17,6 +17,7 @@ import {
   encodePolicyPayload,
   type PolicyParcels
 } from '../../src/lib/data/policy-codec';
+import { decodeFrontagePayload, encodeFrontagePayload } from '../../src/lib/data/frontage-codec';
 import { parseManifest } from '../../src/lib/data/manifest';
 import { checkPolicy } from '../steps/check-policy';
 import { tinyNetwork } from '../../src/lib/data/fixtures/transit-tiny';
@@ -40,7 +41,7 @@ import {
 import { fixture } from '../steps/fixture';
 import { PROJECTS_JSON } from '../steps/projects';
 import { miniProjectInput } from './fixtures/mini/projects-raw';
-import { PARCELS_BIN, POLICY_BIN } from '../lib/scenario-files';
+import { FRONTAGE_BIN, PARCELS_BIN, POLICY_BIN } from '../lib/scenario-files';
 
 let base: string;
 /** The fixture build's derived cache root (kept, so the T14 report can be read). */
@@ -1017,6 +1018,105 @@ describe('V31 policy file', () => {
     expect(stable.ok).toBe(true);
     expect(stable.detail).not.toMatch(/\d+\/\d+ B/);
     expect((await v31(base)).detail).toMatch(/policy\.bin \d+\/\d+ B/);
+  });
+});
+
+describe('V34 frontage file', () => {
+  const v34 = async (dir: string, c = counts, profile = FIXTURE_PROFILE, stableDetail = false) =>
+    (await checkDataset(dir, profile, { counts: c, reencodeIdentical: true, stableDetail })).find(
+      (r) => r.id === 'V34'
+    )!;
+  it('is OK on the fixture: 12 of 15 eligible lots front a street', async () => {
+    const r = await v34(base);
+    expect(r.ok, r.detail).toBe(true);
+    expect(r.detail).toMatch(
+      /^18 parcels decode; re-encode byte-identical; 3 segments; fronting 12\/15 eligible ≥ 80%; frontage\.bin \d+\/1000000 B$/
+    );
+  });
+  it('fails when frontage.bin is missing, or present but not in the manifest', async () => {
+    const d = copy();
+    rmSync(join(d, FRONTAGE_BIN));
+    const missing = await v34(d);
+    expect(missing.ok).toBe(false);
+    expect(missing.detail).toBe('scenarios/fzp/frontage.bin is missing but named in the manifest');
+    const e = copy();
+    const mf = join(e, 'manifest.json');
+    const m = JSON.parse(readFileSync(mf, 'utf8'));
+    delete m.scenarios.fzp.frontage;
+    writeFileSync(mf, JSON.stringify(m));
+    const unnamed = await v34(e);
+    expect(unnamed.ok).toBe(false);
+    expect(unnamed.detail).toBe('scenarios/fzp/frontage.bin is not named in the manifest');
+  });
+  it('fails when the manifest names another url', async () => {
+    const d = copy();
+    const mf = join(d, 'manifest.json');
+    const m = JSON.parse(readFileSync(mf, 'utf8'));
+    m.scenarios.fzp.frontage = '/data/fixture-0/scenarios/fzp/other.bin';
+    writeFileSync(mf, JSON.stringify(m));
+    expect((await v34(d)).detail).toBe(
+      'manifest names /data/fixture-0/scenarios/fzp/other.bin, not scenarios/fzp/frontage.bin'
+    );
+  });
+  it('fails with "does not decode" against a parcels.bin with one id changed', async () => {
+    const d = copy();
+    editScenario(d, (p) => {
+      p.id[0] = p.id[0] + 'X';
+    });
+    const r = await v34(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/frontage\.bin does not decode: idsHash differs/);
+  });
+  it('fails when re-encoding the decoded payload is not byte-identical', async () => {
+    const d = copy();
+    const file = join(d, FRONTAGE_BIN);
+    const payload = new Uint8Array(inflateRawSync(readFileSync(file)));
+    writeFileSync(file, deflateRawSync(Uint8Array.from([...payload, 0])));
+    const r = await v34(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toBe('re-encoding the decoded payload differs');
+  });
+  it('fails when the fronting share is below frontageMin', async () => {
+    const d = copy();
+    const file = join(d, FRONTAGE_BIN);
+    const p = decodeScenarioPayload(
+      new Uint8Array(inflateRawSync(readFileSync(join(d, PARCELS_BIN))))
+    );
+    const f = decodeFrontagePayload(new Uint8Array(inflateRawSync(readFileSync(file))), p);
+    // Every entry one lot deep: no row fronts at depth 0 (each segment still once per row).
+    f.frontDepth.fill(1);
+    writeFileSync(file, deflateRawSync(encodeFrontagePayload(f)));
+    const r = await v34(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/^fronting 0\/15 = 0\.0% < 80%/);
+    const strict = await v34(base, counts, { ...FIXTURE_PROFILE, frontageMin: 0.9 });
+    expect(strict.detail).toMatch(/^fronting 12\/15 = 80\.0% < 90%/);
+  });
+  it('fails on a depth-1 orphan count', async () => {
+    const r = await v34(base, { ...counts, 'frontage.depth1_orphan': 1 });
+    expect(r.ok).toBe(false);
+    expect(r.detail).toBe('frontage.depth1_orphan 1 ≠ 0');
+  });
+  it('fails over frontageMaxBytes and leaves bytes out of the stable detail', async () => {
+    const small = await v34(base, counts, { ...FIXTURE_PROFILE, frontageMaxBytes: 10 });
+    expect(small.ok).toBe(false);
+    expect(small.detail).toMatch(/^scenarios\/fzp\/frontage\.bin \d+\/10 B$/);
+    const stable = await v34(base, counts, FIXTURE_PROFILE, true);
+    expect(stable.ok).toBe(true);
+    expect(stable.detail).toMatch(/; frontage\.bin within budget$/);
+  });
+  it('warns above the warn size and still passes', () => {
+    const m = parseManifest(JSON.parse(readFileSync(join(base, 'manifest.json'), 'utf8')));
+    const p = decodeScenarioPayload(
+      new Uint8Array(inflateRawSync(readFileSync(join(base, PARCELS_BIN))))
+    );
+    const args = [base, FIXTURE_PROFILE, counts, p, m, false] as const;
+    const quiet = checkPolicy(...args).find((r) => r.id === 'V34')!;
+    expect(quiet.ok).toBe(true);
+    expect(quiet.detail).not.toMatch(/warn/);
+    const loud = checkPolicy(...args, { frontageWarnBytes: 10 }).find((r) => r.id === 'V34')!;
+    expect(loud.ok).toBe(true);
+    expect(loud.detail).toMatch(/; warn: over 0\.00001 MB$/);
   });
 });
 

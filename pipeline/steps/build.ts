@@ -20,7 +20,7 @@ import { landClipSection } from '../lib/land-report';
 import { QUALITY_REPORT_MD, createQualityTables, writeQualityReport } from '../lib/quality';
 import { Report } from '../lib/report';
 import { runSql } from '../lib/sql';
-import { POLICY_BIN } from '../lib/scenario-files';
+import { FRONTAGE_BIN, POLICY_BIN } from '../lib/scenario-files';
 import { codeTreeHash, computeDatasetVersion } from '../lib/version';
 import { asOfFromLock } from '../project-records/parse';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
@@ -30,6 +30,7 @@ import { writeCalibration } from './calibration';
 import { checkDataset, type InvariantResult } from './check';
 import { readParcelRecords, writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
 import { buildManifest, writeManifest } from './manifest';
+import { writeFrontage } from './frontage';
 import { writePolicy } from './policy';
 import { writeProjectRecords } from './projects';
 import { writeScenario } from './scenario';
@@ -142,7 +143,8 @@ function chunkCounts(chunks: ChunkOut[]): Record<string, number> {
  * step (scenarios/fzp/parcels.bin; the T13 panel and lineage into the derived cache), the project
  * records (scenarios/fzp/projects.json; histories and permits.parquet into the derived cache),
  * the calibration (scenarios/fzp/calibration.json; calibration-report.md into the derived cache),
- * neighborhoods, transit, the policy step (scenarios/fzp/policy.bin), the T14 quality report
+ * neighborhoods, transit, the policy step (scenarios/fzp/policy.bin), the frontage step
+ * (scenarios/fzp/frontage.bin), the T14 quality report
  * (quality-report.md into the derived cache), tiles,
  * basemap, fonts, manifest, invariants and report.json into `<outRoot>/<datasetVersion>/`.
  * Throws BuildError when a raw file does not match the lock.
@@ -270,6 +272,12 @@ export async function build(
       writePolicy({ db, outDir, datasetVersion, records, capDay: asOf, buildCounts: counts })
     );
     report.warnings.push(...policy.warnings);
+    // After the policy step (it reads parcels.bin and parcels.geom_orig), before the quality report.
+    // Its T14 rule goes into the same counts.
+    const frontage = await report.time('frontage', () =>
+      writeFrontage({ db, outDir, datasetVersion, buildCounts: counts })
+    );
+    report.warnings.push(...frontage.warnings);
     // After the last step that records T14 counts (spec §4.10), so the report covers every owner.
     writeQualityReport(join(derivedDir, QUALITY_REPORT_MD), datasetVersion, counts, [
       await landClipSection(db)
@@ -295,6 +303,7 @@ export async function build(
       transit: true,
       scenarios: SCENARIO_FILES.every((f) => existsSync(join(outDir, 'scenarios/fzp', f))),
       policy: existsSync(join(outDir, POLICY_BIN)),
+      frontage: existsSync(join(outDir, FRONTAGE_BIN)),
       warn: (w) => report.warnings.push(w)
     });
     const manifestBytes = writeManifest(outDir, manifest);
@@ -308,6 +317,7 @@ export async function build(
       ...transit.counts,
       ...scenario.counts,
       ...policy.counts,
+      ...frontage.counts,
       ...Object.fromEntries(overtureContrib.map((o) => [`overture.contrib.${o.dataset}`, o.n])),
       'units.total': totals.units,
       'parcels.height_max_m': totals.hmax,

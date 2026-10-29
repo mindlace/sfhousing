@@ -58,6 +58,13 @@
     "floor_area.rule2": 7,
     "floor_area.rule3": 3,
     "floor_area.rule4": 4,
+    "frontage.bytes.payload": 1626,
+    "frontage.corner": 1,
+    "frontage.depth1_orphan": 0,
+    "frontage.entries.depth0": 16,
+    "frontage.entries.depth1": 2,
+    "frontage.no_frontage": 3,
+    "frontage.segments": 3,
     "height.max_m": 60,
     "histories.droppedNoDates": 0,
     "histories.ppaLagDays": 75,
@@ -111,7 +118,7 @@
     "link.ppaOnly": 1,
     "link.satellites": 0,
     "link.splitComponents": 1,
-    "manifest.bytes": 6047,
+    "manifest.bytes": 6103,
     "multiphase.descendants.2007.0001PRX": 1,
     "multiphase.descendants.2010.0002PRX": 1,
     "multiphase.descendants.2012-000020PRX": 1,
@@ -413,6 +420,8 @@
     "quality.sd.roll.year-gap.of": 34,
     "quality.sd.sb79.zone-unlisted.fired": 0,
     "quality.sd.sb79.zone-unlisted.of": 18,
+    "quality.sd.streets.no-frontage.fired": 3,
+    "quality.sd.streets.no-frontage.of": 15,
     "quality.sd.yield.nonmonotone.fired": 0,
     "quality.sd.yield.nonmonotone.of": 18,
     "quality.sd.yield.zero-hostable.fired": 3,
@@ -566,7 +575,7 @@
       "ok": true
     },
     {
-      "detail": "manifest 6047/64000 B; neighborhoods 709/150000 B",
+      "detail": "manifest 6103/64000 B; neighborhoods 709/150000 B",
       "id": "V11",
       "ok": true
     },
@@ -678,6 +687,11 @@
     {
       "detail": "18 rows match §207.11 over FZP; 3 applies, 2 from §207.11",
       "id": "V33",
+      "ok": true
+    },
+    {
+      "detail": "18 parcels decode; re-encode byte-identical; 3 segments; fronting 12/15 eligible ≥ 80%; frontage.bin within budget",
+      "id": "V34",
       "ok": true
     }
   ],
