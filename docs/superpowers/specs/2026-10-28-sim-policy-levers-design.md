@@ -44,7 +44,7 @@ The partner also wants the simple editor (`/`, brush painting with instant feedb
    - **The chances of advancing are shown, not editable.** The partner's view is that they mostly move with financing, so they wait for the funding phase. One narrow exception (my call): a preset that legally removes the city's ability to deny a compliant project (ministerial or by-right approval) may set the **disapproved** exit to zero for the projects it covers. Withdrawals, cancellations and expiries stay as fitted. The builder first measures the disapproved share. If it is negligible, drop the exception.
    - My call on how a duration edit is applied: it rescales the stage's fitted cumulative-incidence curve in time, so the spread of real outcomes is kept and the exit shares are unchanged. That means the curve's advance and exit columns are stretched together. The builder decides the exact construction, and `parseCalibration` must accept the result.
 4. **Scoring for this phase: total net units against RHNA**, as the timelapse already does (82,069 by 2031-01-31, plus the 15%-buffer reference and the existing references).
-   - The comparison twin changes from pre-FZP zoning to **current law**: the FZP map, SB 79 and "SF as observed" permitting. `planEffect` then shows what the user's policy adds beyond what is already law.
+   - The comparison twin changes from pre-FZP zoning to **current law**: the FZP map, the SF SB 79 alternative plan (§207.11) and "SF as observed" permitting. `planEffect` then shows what the user's policy adds beyond what is already law.
    - The current pre-FZP twin can stay available as a stock comparison (left to the builder).
 5. **Everything goes through the existing seam.** User zoning and timers become `PolicyOp`s passed to `applyPolicies` (`src/lib/sim/scenario/policy.ts`). Under levers the worker posts the transformed lookups (`chanceTable`, `typicalMonths`; see `docs/dev/fzp-mode.md`, lookups seam), and `initScenario` and `startScenario` gain the lever parameter.
 
@@ -56,7 +56,7 @@ The partner also wants the simple editor (`/`, brush painting with instant feedb
   - Custom edits apply to every project.
   - The disapproval exception follows its preset's reach.
   - This means a `PolicyOp` may need per-project scope (in-flight versus new), not only a rewritten calibration.
-- **Protection means "not upzoned" (for now).** A protected lot keeps its **current-law** envelope: FZP + SB 79, fixed, whatever the stock-layer toggles say. Neither the stock layers nor the user layer can raise it, and it stays hostable under that envelope. Resolution order:
+- **Protection means "not upzoned" (for now).** A protected lot keeps its **current-law** envelope: FZP + the SF alternative plan (§207.11), fixed, whatever the stock-layer toggles say. Neither the stock layers nor the user layer can raise it, and it stays hostable under that envelope. Resolution order:
   1. Stock layers (most permissive among those on).
   2. The user layer overrides.
   3. Protected lots are reset to the current-law envelope.
@@ -64,15 +64,26 @@ The partner also wants the simple editor (`/`, brush painting with instant feedb
   The score shows how much capacity the protections removed relative to the same plan without them. "Not redevelopable", which would protect tenants from demolition, is a later option tied to displacement work.
 - **`/sim` policies are publishable.** A policy (stock-layer toggles, user layer, protections, route timelines and shares, comparison twin) is saved locally and can be published as an immutable link, like editor plans (`docs/dev/plan-sharing.md`). That needs a `Plan` schema version (or a sibling document type) carrying these ops, server validation with size limits reviewed (`MAX_PLAN_BYTES`, `OPS_MAX`), and a read-only shared view of `/sim` with a Remix action. Timeline **Save** is a named local snapshot inside the current policy. Publishing captures the current policy as a whole.
 
+## Partner rulings, round 2 (2026-10-28, after plan 1 research)
+
+Planning found SF Ordinance 082-26 (File 260132, approved 2026-05-08): an SB 79 Alternative Plan that keeps the state SB 79 standards from taking effect in SF until the next Housing Element cycle and adds Planning Code §207.11 instead. Rulings:
+
+1. **Current law = FZP + §207.11** (the City's alternative plan, with its permanent and temporary exemptions) + "SF as observed" permitting. **SB 79 as written** is a separate stock layer users can toggle, to see what the state version would have done. The default comparison reads "versus the City's actual rules".
+2. **SB 79 density is capped at the statute's du/ac** by tier (Table 1). The State Density Bonus Law on top of it is a later lever. This supersedes the earlier form-based call.
+3. **Exemptions:** the SB 79-as-written layer ignores the City's exemptions. The current-law (§207.11) layer applies them, so the exemption parcel tables in Board File 260132 are sourced as a new, non-DataSF source.
+4. **Historic protection** covers status codes **A and A\*** of DataSF `3tsw-4idn`. B (mostly "45 years or older") does not count.
+5. **"Commercial corridor"** is composed from street class plus neighborhood-commercial (NC/NCT) zoning on the fronting lots.
+6. **TOD stop tiers:** if MTC publishes its official SB 79 stop/tier map as open data, use it, with our GTFS-based tiering kept as a cross-check.
+
 ## Calls made after the builder check (my calls; partner to confirm)
 
-- **Where yields come from.** The pipeline precomputes yields and `hostable` for every stock layer: FZP, base, **SB 79**, and the **current-law** combination (FZP + SB 79, most permissive). The worker runs `scenarioYield` only for lots the user layer touches, loading their chunks on demand. A citywide rule brush (for example every arterial) can touch many thousands of lots. That recompute runs in the background. The page shows the simulation is out of date until it finishes, and the run uses the new envelopes only once they are complete. If that is too slow, a compact per-lot yield-by-stories table is the fallback, within the V19 budget.
+- **Where yields come from.** The pipeline precomputes yields and `hostable` for every stock layer: FZP, base, **SB 79**, and the **current-law** combination (FZP + the SF alternative plan (§207.11), most permissive). The worker runs `scenarioYield` only for lots the user layer touches, loading their chunks on demand. A citywide rule brush (for example every arterial) can touch many thousands of lots. That recompute runs in the background. The page shows the simulation is out of date until it finishes, and the run uses the new envelopes only once they are complete. If that is too slow, a compact per-lot yield-by-stories table is the fallback, within the V19 budget.
 - **Density.**
   - A brush with density limits **on** keeps each lot's current-law cap.
   - Brushes that **raise** height default to limits **off**. Otherwise raising an RH-1 lot's height often adds nothing, which would read as a bug.
-  - SB 79 lots are form-based (no cap), since SB 79 sets density minimums, not maximums.
+  - SB 79 lots are capped at the statute densities (superseded call; see round 2 rulings).
   - **Density and approval route are decoupled.** Turning limits off does not force a lot onto the streamlined route. The forced-streamlined rule stays tied to FZP Local Program lots while the FZP stock layer is on. Route shares in the timeline govern every other lot.
-- **Defaults.** `/sim` opens with current law on: FZP + SB 79 + "SF as observed" timers. `planEffect` starts at zero and reads "your policy versus current law". A **compare against** control offers pre-FZP zoning as the alternative twin, so the FZP-effect story `/fzp` tells today stays one click away. `/fzp` → `/sim` links open with that comparison selected and the user layer empty, so they show what `/fzp` shows now.
+- **Defaults.** `/sim` opens with current law on: FZP + the SF alternative plan (§207.11) + "SF as observed" timers. `planEffect` starts at zero and reads "your policy versus current law". A **compare against** control offers pre-FZP zoning as the alternative twin, so the FZP-effect story `/fzp` tells today stays one click away. `/fzp` → `/sim` links open with that comparison selected and the user layer empty, so they show what `/fzp` shows now.
 - **Area brush by zoning district.** "Every RH-1 lot" needs the use district per lot. The scenario file holds only height districts today. Added to the data work (source: DataSF zoning, `acdm-wktn`, already in the lock).
 
 ## Non-goals (this phase)
