@@ -45,6 +45,13 @@ describe('sfh-frontage/1 codec', () => {
     expect(frontingRows(d, () => false, 1)).toEqual([]);
   });
 
+  it('frontingRows names a row once when several of its entries match', () => {
+    const d = decodeFrontagePayload(bytes, tiny);
+    // The corner row's two depth-0 entries (seg 0 and seg 2) both match.
+    expect(frontingRows(d, () => true, 0)).toEqual([CORNER_ROW]);
+    expect(frontingRows(d, () => true, 1)).toEqual([CORNER_ROW, DEEP_ROW]);
+  });
+
   it('refuses a parcels.bin it was not built for', () => {
     // Order mirrors the policy codec: datasetVersion, count, idsHash.
     expect(() => decodeFrontagePayload(bytes, { ...tiny, datasetVersion: 'fixture-9' })).toThrow(
@@ -86,6 +93,14 @@ describe('sfh-frontage/1 codec', () => {
         })
       )
     ).toThrow(/segment 0 at both depths/);
+    // Decode side: the corner row's (seg 2, depth 0) rewritten as (seg 0, depth 1) stays sorted.
+    const both = bytes.slice();
+    const e = good.rowStart[CORNER_ROW] + 1;
+    both[columnAt('frontSeg') + 2 * e] = 0;
+    both[columnAt('frontDepth') + e] = 1;
+    expect(() => decodeFrontagePayload(both, tiny)).toThrow(
+      `row ${CORNER_ROW} has segment 0 at both depths`
+    );
     // A frontCount raised by one makes the sum exceed the entry columns.
     const more = bytes.slice();
     more[columnAt('frontCount') + 0] = 1;
