@@ -139,7 +139,8 @@ describe('normalise mini fixture', () => {
     const db = await miniDuck();
     expect(await db.all(`SELECT apn, tbl FROM src_sb79_exempt`)).toEqual([
       { apn: '3512012', tbl: 'permanent' },
-      { apn: '3512015', tbl: 'temporary' }
+      { apn: '3512015', tbl: 'temporary' },
+      { apn: '3512999', tbl: 'permanent' }
     ]);
   });
 

@@ -543,10 +543,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/8b7fef95df00bf62501f7daf7ff0e9bec287a42d91c18c58f4888456329050d6.txt",
-          "bytes": 180,
+          "archiveKey": "sources/ecc3ff5e91d8151c8b0c874631b9f355d83a0781a63cfe9597ddf25d860fb1df.txt",
+          "bytes": 218,
           "name": "sfbos-sb79-exemptions.permanent.txt",
-          "sha256": "8b7fef95df00bf62501f7daf7ff0e9bec287a42d91c18c58f4888456329050d6",
+          "sha256": "ecc3ff5e91d8151c8b0c874631b9f355d83a0781a63cfe9597ddf25d860fb1df",
           "url": "https://fixture.invalid/sfbos-sb79-exemptions.permanent.txt"
         },
         {

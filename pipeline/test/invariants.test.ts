@@ -10,6 +10,13 @@ import {
   type ScenarioParcels
 } from '../../src/lib/data/scenario-codec';
 import { encodeTransit } from '../../src/lib/data/transit-codec';
+import {
+  decodePolicyPayload,
+  encodePolicyPayload,
+  type PolicyParcels
+} from '../../src/lib/data/policy-codec';
+import { parseManifest } from '../../src/lib/data/manifest';
+import { checkPolicy } from '../steps/check-policy';
 import { tinyNetwork } from '../../src/lib/data/fixtures/transit-tiny';
 import { FIXTURE_PROFILE, LIVE_PROFILE } from '../config';
 import { QUALITY_REPORT_MD, QUALITY_RULES, makeQuality } from '../lib/quality';
@@ -857,6 +864,43 @@ describe('V30 data-quality registry', () => {
 });
 
 describe('V31 policy file', () => {
+  const readScenario = (dir: string) =>
+    decodeScenarioPayload(new Uint8Array(inflateRawSync(readFileSync(join(dir, PARCELS_BIN)))));
+  /** Decode the copy's policy.bin against its parcels.bin and write `bytes(payload)` back. */
+  const rewritePolicy = (
+    dir: string,
+    bytes: (p: PolicyParcels, payload: Uint8Array) => Uint8Array,
+    parcels: ScenarioParcels = readScenario(dir)
+  ) => {
+    const file = join(dir, POLICY_BIN);
+    const payload = new Uint8Array(inflateRawSync(readFileSync(file)));
+    writeFileSync(file, deflateRawSync(bytes(decodePolicyPayload(payload, parcels), payload)));
+  };
+  /** Edit parcels.bin and policy.bin together, so policy.bin still decodes against it. */
+  const editBoth = (
+    dir: string,
+    f: (p: { datasetVersion: string; fillLevels: number[] }) => void
+  ) => {
+    const before = readScenario(dir);
+    editScenario(dir, f);
+    rewritePolicy(
+      dir,
+      (pol) => {
+        f(pol);
+        return encodePolicyPayload(pol);
+      },
+      before
+    );
+  };
+  const editManifest = (
+    dir: string,
+    f: (m: { scenarios: { fzp: Record<string, string> } }) => void
+  ) => {
+    const mf = join(dir, 'manifest.json');
+    const m = JSON.parse(readFileSync(mf, 'utf8'));
+    f(m);
+    writeFileSync(mf, JSON.stringify(m));
+  };
   const v31 = async (dir: string, c = counts, profile = FIXTURE_PROFILE, stableDetail = false) =>
     (await checkDataset(dir, profile, { counts: c, reencodeIdentical: true, stableDetail })).find(
       (r) => r.id === 'V31'
@@ -890,6 +934,54 @@ describe('V31 policy file', () => {
     expect(unnamed.ok).toBe(false);
     expect(unnamed.detail).toMatch(/not named in the manifest/);
   });
+  it('fails when its datasetVersion is not the manifest’s', async () => {
+    const d = copy();
+    editBoth(d, (p) => {
+      p.datasetVersion = 'fixture-9';
+    });
+    const r = await v31(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/datasetVersion fixture-9 ≠ fixture-0/);
+  });
+  it('fails when re-encoding the decoded payload is not byte-identical', async () => {
+    const d = copy();
+    // A trailing byte past the last column decodes the same but is not what the encoder writes.
+    rewritePolicy(d, (_, payload) => Uint8Array.from([...payload, 0]));
+    const r = await v31(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toBe('re-encoding the decoded payload differs');
+  });
+  it('fails when fillLevels differ from FILL_LEVELS', async () => {
+    const d = copy();
+    editBoth(d, (p) => {
+      p.fillLevels = [0.2, 0.5, 0.75, 0.9, 1];
+    });
+    const r = await v31(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/fillLevels \[0\.2, 0\.5, 0\.75, 0\.9, 1\] ≠ FILL_LEVELS/);
+  });
+  it('fails when the manifest names another url', async () => {
+    const d = copy();
+    editManifest(d, (m) => {
+      m.scenarios.fzp.policy = '/data/fixture-0/scenarios/fzp/other.bin';
+    });
+    const r = await v31(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toBe(
+      'manifest names /data/fixture-0/scenarios/fzp/other.bin, not scenarios/fzp/policy.bin'
+    );
+  });
+  it('warns above the warn size and still passes', () => {
+    const m = parseManifest(JSON.parse(readFileSync(join(base, 'manifest.json'), 'utf8')));
+    const p = readScenario(base);
+    const args = [base, FIXTURE_PROFILE, counts, p, m, false] as const;
+    const [quiet] = checkPolicy(...args);
+    expect(quiet.ok).toBe(true);
+    expect(quiet.detail).not.toMatch(/warn/);
+    const [loud] = checkPolicy(...args, { policyWarnBytes: 10 });
+    expect(loud.ok).toBe(true);
+    expect(loud.detail).toMatch(/; warn: over 0\.00001 MB$/);
+  });
   it('fails on a use-district mismatch, a low historic join or no exemption rows', async () => {
     expect((await v31(base, { ...counts, 'policy.use_district_mismatch': 1 })).ok).toBe(false);
     const strict = { ...FIXTURE_PROFILE, historicJoinMin: 1 };
@@ -901,7 +993,7 @@ describe('V31 policy file', () => {
     });
     expect(none.ok).toBe(false);
     expect(none.detail).toMatch(/0 exemption table rows/);
-    const unmatched = await v31(base, { ...counts, 'quality.sd.exempt.unmatched.fired': 1 });
+    const unmatched = await v31(base, { ...counts, 'quality.sd.exempt.unmatched.fired': 2 });
     expect(unmatched.ok).toBe(false);
   });
   it('fails over policyMaxBytes and leaves bytes out of the stable detail', async () => {

@@ -313,8 +313,8 @@
     "quality.sd.attrs.longitude-cast.of": 24,
     "quality.sd.attrs.no-blklot.fired": 0,
     "quality.sd.attrs.no-blklot.of": 24,
-    "quality.sd.exempt.unmatched.fired": 0,
-    "quality.sd.exempt.unmatched.of": 2,
+    "quality.sd.exempt.unmatched.fired": 1,
+    "quality.sd.exempt.unmatched.of": 3,
     "quality.sd.features.median-fallback.fired": 2,
     "quality.sd.features.median-fallback.of": 3,
     "quality.sd.features.no-building.fired": 0,
@@ -640,7 +640,7 @@
       "ok": true
     },
     {
-      "detail": "18 parcels decode; re-encode byte-identical; historic 17/18 ≥ 94.4444%; exemption rows matched 2/2 ≥ 100%; policy.bin within budget",
+      "detail": "18 parcels decode; re-encode byte-identical; historic 17/18 ≥ 94.4444%; exemption rows matched 2/3 ≥ 66.6667%; policy.bin within budget",
       "id": "V31",
       "ok": true
     }
@@ -654,7 +654,7 @@
     "derivedData": "ODbL-1.0",
     "notice": "Derived data files under /data/ that incorporate OpenStreetMap or Overture data are made available under the ODbL 1.0."
   },
-  "lockSha256": "e1f5305851fa8e3098f0c68b0feb679c95b3ea12dee1a34b265d52e6264414e6",
+  "lockSha256": "30c76a3e59a0a5941c595357f6556af35b9b4ec3decb11318c677d4b8fbbc717",
   "tilesSkipped": false,
   "toolVersions": {
     "duckdb": "1.5.6",

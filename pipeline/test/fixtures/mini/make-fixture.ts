@@ -545,7 +545,8 @@ const EXEMPT_STANDINS: Record<'permanent' | 'temporary', string> = {
   permanent:
     'Mini fixture stand-in for the Board File 260132 Table of Permanent Exclusions (not a PDF)\n' +
     'Block  Lot  Use District  Industrial Employment Hub\n' +
-    '3512   012  P             Fixture Hub\n',
+    '3512   012  P             Fixture Hub\n' +
+    '3512   999  P             Fixture Hub\n',
   temporary:
     'Mini fixture stand-in for the Board File 260132 Table of Temporary Exemptions (not a PDF)\n' +
     'Block  Lot\n' +
@@ -553,6 +554,8 @@ const EXEMPT_STANDINS: Record<'permanent' | 'temporary', string> = {
 };
 const EXEMPT_ROWS: [string, 'permanent' | 'temporary'][] = [
   [LOT_IDS[12], 'permanent'],
+  // No parcel: an unmatched row (a pseudo-lot, as VACST and ROWA are live), sd.exempt.unmatched.
+  ['3512999', 'permanent'],
   [LOT_IDS[15], 'temporary']
 ];
 

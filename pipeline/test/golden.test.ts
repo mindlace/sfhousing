@@ -376,8 +376,8 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       'sd.attrs.latitude-cast': [0, 24],
       'sd.attrs.longitude-cast': [0, 24],
       'sd.attrs.no-blklot': [0, 24],
-      // Both mini exemption rows (lots 12 and 15) match an active parcel.
-      'sd.exempt.unmatched': [0, 2],
+      // Lots 12 and 15 match; the stand-in pseudo-lot 3512999 does not.
+      'sd.exempt.unmatched': [1, 3],
       'sd.features.median-fallback': [2, 3],
       'sd.features.no-building': [0, 33],
       'sd.features.share-median': [2, 28],

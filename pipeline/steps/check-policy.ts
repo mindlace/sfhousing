@@ -44,7 +44,8 @@ function checkV31(
   counts: Record<string, number>,
   p: ScenarioParcels | null,
   m: Manifest | null,
-  stableDetail: boolean
+  stableDetail: boolean,
+  warnBytes: number
 ): InvariantResult {
   const problems: string[] = [];
   const done = (ok: string): InvariantResult => ({
@@ -119,21 +120,26 @@ function checkV31(
     problems.push(
       stableDetail ? `${POLICY_BIN} over budget` : `${POLICY_BIN} ${body.length}/${max} B`
     );
-  const warn = body.length > POLICY_WARN_BYTES ? `; warn: over ${POLICY_WARN_BYTES / 1e6} MB` : '';
+  const warn = body.length > warnBytes ? `; warn: over ${warnBytes / 1e6} MB` : '';
   detail += stableDetail
     ? `; policy.bin within budget${warn}`
     : `; policy.bin ${body.length}/${max} B${warn}`;
   return done(detail);
 }
 
-/** The policy-file invariants (V31), in id order. Never throws. */
+/**
+ * The policy-file invariants (V31), in id order. `opts.policyWarnBytes` overrides
+ * POLICY_WARN_BYTES (tests). Never throws.
+ */
 export function checkPolicy(
   outDir: string,
   profile: InvariantProfile,
   counts: Record<string, number>,
   p: ScenarioParcels | null,
   m: Manifest | null,
-  stableDetail: boolean
+  stableDetail: boolean,
+  opts: { policyWarnBytes?: number } = {}
 ): InvariantResult[] {
-  return [checkV31(outDir, profile, counts, p, m, stableDetail)];
+  const warnBytes = opts.policyWarnBytes ?? POLICY_WARN_BYTES;
+  return [checkV31(outDir, profile, counts, p, m, stableDetail, warnBytes)];
 }

@@ -103,7 +103,7 @@ Point` x[E−50, E+50] y[-100,100].
 | `src_roll`          | 37   | 2025: 17 (lots 1, 2 x3, 3–8, 10, 11, 14–18); 2024: those less 3, + 13 + `3512099` = 18; 2023: lots 3, 4 = 2 |
 | `src_streets`       | 5    | the five centerlines below                                                                                  |
 | `src_historic`      | 20   | lots 1, 2 (3 condo rows), 3–17 = 19, + retired `3512099`                                                    |
-| `src_sb79_exempt`   | 2    | `3512012` permanent, `3512015` temporary                                                                    |
+| `src_sb79_exempt`   | 3    | `3512012` permanent, unmatched `3512999` permanent, `3512015` temporary                                     |
 
 ## Streets
 
@@ -142,10 +142,11 @@ stand-in originals, `raw/sfbos-sb79-exemptions.{permanent,temporary}.txt` (short
 their sha256, as `pipeline/enrichment/sb79-exemptions.csv` names the Board File PDFs'. Normalise checks the
 lock's raw files against that header (`exemption transcription is stale` otherwise) and reads the rows:
 
-| apn       | table     | lot                |
-| --------- | --------- | ------------------ |
-| `3512012` | permanent | lot 12 (zoned P)   |
-| `3512015` | temporary | lot 15 (shoreline) |
+| apn       | table     | lot                                          |
+| --------- | --------- | -------------------------------------------- |
+| `3512012` | permanent | lot 12 (zoned P)                             |
+| `3512999` | permanent | no parcel: unmatched (`sd.exempt.unmatched`) |
+| `3512015` | temporary | lot 15 (shoreline)                           |
 
 ## Transit
 

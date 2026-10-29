@@ -222,10 +222,10 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   // Spec §4.10 V30: the mini fixture fires rules on a handful of rows by design, so its shares
   // mean nothing; V30 still requires every rule to report.
   qualityShares: false,
-  // Fixture known answers: every lot but 18 has a historic row (17/18), and both exemption rows
-  // (lots 12 and 15) match an active parcel.
+  // Fixture known answers: every lot but 18 has a historic row (17/18); 2 of the 3 exemption rows
+  // match an active parcel (lots 12 and 15; `3512999` is the unmatched stand-in pseudo-lot).
   historicJoinMin: 17 / 18,
-  exemptJoinMin: 1,
+  exemptJoinMin: 2 / 3,
   policyMaxBytes: LIVE_PROFILE.policyMaxBytes,
   frontageMaxBytes: LIVE_PROFILE.frontageMaxBytes
 };
