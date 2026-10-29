@@ -10,7 +10,9 @@ import proj4 from 'proj4';
 import { BASEMAP_BUILD, FONTS_COMMIT, FONT_STACKS } from '../../../config';
 import { archiveKeyFor, type Lock, type LockEntry, sha256File, writeLock } from '../../../lib/lock';
 import { PROJECT_SOURCE_IDS } from '../../../project-records/types';
+import { EXEMPTION_HOMEPAGE, EXEMPTION_LICENSE } from '../../../sb79-config';
 import { DATASF } from '../../../sources/datasf';
+import { SFBOS_EXEMPTIONS_ID, SFBOS_EXEMPTIONS_LABEL } from '../../../sources/sfbos';
 import { GTFS_FEEDS } from '../../../transit-config';
 import { every, tripTables, type TripSpec } from '../../gtfs-builder';
 import { PROJECT_RAW } from './projects-raw';
@@ -50,7 +52,12 @@ const multi = (...polys: Poly[]) => ({
   type: 'MultiPolygon' as const,
   coordinates: polys.map((p) => p.map(ringLL))
 });
-type Geom = ReturnType<typeof polygon> | ReturnType<typeof multi>;
+/** MultiLineString from local-metre polylines. */
+const multiLine = (...lines: [number, number][][]) => ({
+  type: 'MultiLineString' as const,
+  coordinates: lines.map((l) => l.map(ll))
+});
+type Geom = ReturnType<typeof polygon> | ReturnType<typeof multi> | ReturnType<typeof multiLine>;
 const feature = (properties: Props, geometry: Geom) => ({ type: 'Feature', properties, geometry });
 /** SODA serialises numbers as strings. */
 const s = (v: number) => String(v);
@@ -60,11 +67,13 @@ const lotRect = (i: number) => rect(10 * (i - 1), 0, 10 * i, 30);
 const lotId = (i: number) => `35120${String(i).padStart(2, '0')}`;
 // Lots 3 and 4 use the odd-shaped (alphanumeric) ids; the rest are 35120NN.
 const LOT_IDS: Record<number, string> = {
-  ...Object.fromEntries(Array.from({ length: 17 }, (_, k) => [k + 1, lotId(k + 1)])),
+  ...Object.fromEntries(Array.from({ length: 18 }, (_, k) => [k + 1, lotId(k + 1)])),
   3: '8711023C',
   4: '0026T001A'
 };
 const nhoodOf = (i: number) => (i <= 8 ? 'Mission' : 'Noe Valley');
+/** Lot 18: directly behind lot 13 (x[120, 130], y[30, 60]), in Noe Valley. */
+const LOT18 = rect(120, 30, 130, 60);
 
 // ---- shoreline (lots 15-17) ----
 // The basemap extract has z15 earth in tile columns 5240 and 5241 only, so the east edge of 5241
@@ -174,6 +183,13 @@ for (let i = 15; i <= 17; i++) {
     polys: [[SHORE_LOTS[i]]]
   });
 }
+parcelRows.push({
+  mapblklot: LOT_IDS[18],
+  blklot: LOT_IDS[18],
+  active: true,
+  nh: nhoodOf(18),
+  polys: [[LOT18]]
+});
 // retired parcels
 parcelRows.push({
   mapblklot: '3512099',
@@ -213,18 +229,21 @@ const parcels = parcelRows.map((r) =>
 );
 
 // ---- height and bulk districts (h9wh-cg3m; scenario-data spec §4.11) ----
+// The shoreline 65-X stops at y = 35; above it lot 17 lies in a 30-X district (a height limit
+// under 40 ft, for §207.11(c)(2)).
 const heightBulk = (
   [
-    [-60, 44, '40//65-R-4', '65'],
-    [44, 97, '65-X', '65'],
-    [97, 110, '85//120-R-4', '120'],
-    [110, 120, 'Special Height District', '4444'],
-    [120, 130, '120/400-R-2  //  140/520-R-2', '520'],
-    [130, 140, '120/400//120/650-R4', '650'],
-    [E - 50, E + 50, '65-X', '65']
+    [-60, 44, -100, 100, '40//65-R-4', '65'],
+    [44, 97, -100, 100, '65-X', '65'],
+    [97, 110, -100, 100, '85//120-R-4', '120'],
+    [110, 120, -100, 100, 'Special Height District', '4444'],
+    [120, 130, -100, 100, '120/400-R-2  //  140/520-R-2', '520'],
+    [130, 140, -100, 100, '120/400//120/650-R4', '650'],
+    [E - 50, E + 50, -100, 35, '65-X', '65'],
+    [E - 50, E + 50, 35, 100, '30-X', '30']
   ] as const
-).map(([x0, x1, height, gen]) =>
-  feature({ height, gen_hght: gen }, polygon(rect(x0, -100, x1, 100)))
+).map(([x0, x1, y0, y1, height, gen]) =>
+  feature({ height, gen_hght: gen }, polygon(rect(x0, y0, x1, y1)))
 );
 
 /** SODA CSV: every header and value quoted, null as an empty unquoted field, LF line ends. */
@@ -253,7 +272,8 @@ const ZONING: Record<number, string> = {
   14: 'C-3-G',
   15: 'RH-2',
   16: 'RH-2',
-  17: 'RH-2'
+  17: 'RH-2',
+  18: 'RM-1'
 };
 const lotOfId = Object.fromEntries(Object.entries(LOT_IDS).map(([i, id]) => [id, Number(i)]));
 const DROPPED: Record<string, string> = {
@@ -359,6 +379,7 @@ const ROLL: RollSpec[] = [
   rr('3512015', 'MISC/V', null, [0, 0, 0], [100000, 0]),
   rr('3512016', 'SRES/D', '1950', [1, 2, 1200], [300000, 100000]),
   rr('3512017', 'MISC/V', null, [0, 0, 0], [100000, 0]),
+  rr('3512018', 'MRES/A', '2001', [2, 2, 1600], [300000, 400000]),
   rr('3512099', 'MRES/A', '1910', [2, 7, 5600], [300000, 200000], { years: [2024] })
 ];
 const roll = ROLL_YEARS.flatMap((year) =>
@@ -409,6 +430,7 @@ const landuse = [
   lu(LOT_IDS[13], 'RESIDENT', 5, 0, 0, lot(13)),
   lu(LOT_IDS[14], 'MIXRES', 40, 30000, 5000, lot(14)),
   ...[15, 16, 17].map((i) => lu(LOT_IDS[i], 'VACANT', 0, 0, 0, polygon(SHORE_LOTS[i]))),
+  lu(LOT_IDS[18], 'RESIDENT', 2, 1600, 0, polygon(LOT18)),
   lu('3512099', 'RESIDENT', 7, 0, 0, polygon(rect(111, 26, 119, 29))),
   lu('3512098', 'RESIDENT', 9, 0, 0, polygon(rect(1, 26, 9, 29)))
 ];
@@ -472,6 +494,66 @@ const overture = [
   ov('bmarin', 8, null, ['OpenStreetMap'], polygon(rect(0, 400, 10, 410))),
   ov('besri', 4, null, ['Esri Community Maps'], polygon(rect(57.5, 26, 58.7, 27.2))),
   ov('bbay', 6, null, ['OpenStreetMap'], polygon(rect(E + 2, 10, E + 8, 20)))
+];
+
+// ---- street centerlines (3psu-pn9h; sim data layers) ----
+// Mission St runs along y = -8 in two segments, Fixture Ave up x = 148 and stops below lot 18,
+// a paper street lies off the shoreline lots and I-80 crosses above the lots at y = 75.
+const streets = (
+  [
+    [1000, 'MISSION ST', 3, 'STREETS', [-60, -8], [95, -8]],
+    [1001, 'MISSION ST', 3, 'STREETS', [95, -8], [148, -8]],
+    [2000, 'FIXTURE AVE', 5, 'STREETS', [148, -60], [148, 28]],
+    [3000, 'PAPER ST', 0, 'PAPER_WATER', [E - 60, -8], [E + 60, -8]],
+    [4000, 'I-80', 1, 'FREEWAYS', [0, 75], [140, 75]]
+  ] as const
+).map(([cnn, streetname, classcode, layer, a, b]) =>
+  feature(
+    { cnn: s(cnn), streetname, classcode: s(classcode), layer, active: true },
+    multiLine([[...a], [...b]])
+  )
+);
+
+// ---- historic resource status (3tsw-4idn CSV; sim data layers) ----
+// Every lot but 18 has a row: lot 2 by its condo blklots (one A among two C), lot 13 A*, and the
+// retired 3512099 too.
+const HISTORIC_HEADER = ['apn', 'ceqacode', 'ceqacodea10a11'];
+const HISTORIC_CODE: Record<string, [string, string]> = {
+  '3512001': ['A', 'A'],
+  '3512101': ['C', 'C'],
+  '3512102': ['A', 'A'],
+  '3512103': ['C', 'C'],
+  '8711023C': ['B', 'B'],
+  '0026T001A': ['C', 'C'],
+  '3512013': ['A', 'A*'],
+  '3512099': ['A', 'A']
+};
+const historicApns = [
+  LOT_IDS[1],
+  '3512101',
+  '3512102',
+  '3512103',
+  ...Array.from({ length: 15 }, (_, k) => LOT_IDS[k + 3]),
+  '3512099'
+];
+const historic = historicApns.map((apn) => [apn, ...(HISTORIC_CODE[apn] ?? ['C', 'C'])]);
+
+// ---- SB 79 exemption tables (Board File 260132; path 2, vendored transcription) ----
+// Stand-ins for the two Excel-printed PDFs (text, not PDFs): the fixture's transcription
+// (`enrichment/sb79-exemptions.csv`) names their sha256, as the live one names the originals'.
+const EXEMPT_STANDINS: Record<'permanent' | 'temporary', string> = {
+  permanent:
+    'Mini fixture stand-in for the Board File 260132 Table of Permanent Exclusions (not a PDF)\n' +
+    'Block  Lot  Use District  Industrial Employment Hub\n' +
+    '3512   012  P             Fixture Hub\n',
+  temporary:
+    'Mini fixture stand-in for the Board File 260132 Table of Temporary Exemptions (not a PDF)\n' +
+    'Block  Lot\n' +
+    '3512   015\n'
+};
+const EXEMPT_ROWS: [string, 'permanent' | 'temporary'][] = [
+  [LOT_IDS[12], 'permanent'],
+  [LOT_IDS[15], 'temporary']
 ];
 
 // ---- GTFS (transit spec §4.4) ----
@@ -608,6 +690,13 @@ const SOURCES = [
     license: 'public-domain',
     homepage: 'https://data.sf.gov/d/h9wh-cg3m',
     label: 'DataSF Zoning Map – Height and Bulk Districts'
+  },
+  {
+    id: 'datasf-streets',
+    features: streets,
+    license: DATASF['datasf-streets'].license,
+    homepage: DATASF['datasf-streets'].homepage,
+    label: DATASF['datasf-streets'].label
   }
 ];
 const CSV_SOURCES = [
@@ -626,6 +715,14 @@ const CSV_SOURCES = [
     license: 'PDDL-1.0',
     homepage: 'https://data.sf.gov/d/wv5m-vpq2',
     label: 'DataSF Assessor Historical Secured Property Tax Rolls'
+  },
+  {
+    id: 'datasf-historic-status',
+    header: HISTORIC_HEADER,
+    rows: historic,
+    license: DATASF['datasf-historic-status'].license,
+    homepage: DATASF['datasf-historic-status'].homepage,
+    label: DATASF['datasf-historic-status'].label
   }
 ];
 
@@ -754,6 +851,37 @@ for (const spec of Object.values(GTFS_FEEDS)) {
     )
   );
 }
+// SB 79 exemption tables: the stand-in originals are the lock's files; the transcription names
+// their sha256 in its header (pipeline/enrichment/sb79-exemptions.csv layout).
+const exemptNames = (['permanent', 'temporary'] as const).map((t) => {
+  const name = `${SFBOS_EXEMPTIONS_ID}.${t}.txt`;
+  fs.writeFileSync(path.join(rawDir, name), EXEMPT_STANDINS[t]);
+  return name;
+});
+const exemptEntry = await binaryEntry(
+  SFBOS_EXEMPTIONS_ID,
+  exemptNames,
+  {
+    upstreamVersion: 'fixture',
+    license: EXEMPTION_LICENSE,
+    homepage: EXEMPTION_HOMEPAGE,
+    label: SFBOS_EXEMPTIONS_LABEL
+  },
+  (name) => `https://fixture.invalid/${name}`
+);
+entries.push(exemptEntry);
+fs.writeFileSync(
+  path.join(here, 'enrichment', 'sb79-exemptions.csv'),
+  [
+    '# Mini fixture transcription of the SB 79 exemption tables (generated by make-fixture.ts).',
+    '# Same layout as pipeline/enrichment/sb79-exemptions.csv; the originals are text stand-ins.',
+    ...exemptEntry.files.map(
+      (f, k) => `# original ${['permanent', 'temporary'][k]} sha256=${f.sha256} ${f.url}`
+    ),
+    'apn,table',
+    ...EXEMPT_ROWS.map(([apn, t]) => `${apn},${t}`)
+  ].join('\n') + '\n'
+);
 const lock: Lock = { sources: entries };
 writeLock(path.join(here, 'sources.lock.json'), lock);
 console.log(entries.map((e) => `${e.id}: ${e.rowCount}`).join('\n'));

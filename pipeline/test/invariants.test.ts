@@ -184,7 +184,7 @@ describe('invariants', () => {
     const v8 = r.find((x) => x.id === 'V8')!;
     expect(v8.ok).toBe(false);
     expect(v8.detail).toMatch(/more than one chunk/);
-    expect(v8.detail).toMatch(/16 distinct ids ≠ V2 17/);
+    expect(v8.detail).toMatch(/17 distinct ids ≠ V2 18/);
     expect(v8.detail).not.toMatch(/Σ parcelCount/);
   });
   it('V7 fails on an empty polygon', async () => {
@@ -312,7 +312,7 @@ describe('invariants', () => {
     });
     const v15 = await result(d, 'V15');
     expect(v15.ok).toBe(false);
-    expect(v15.detail).toMatch(/14 id\(s\) whose cell ≠ their chunk's cellId/);
+    expect(v15.detail).toMatch(/15 id\(s\) whose cell ≠ their chunk's cellId/);
   });
   it('V15 fails when an id is in no chunk', async () => {
     const d = copy();
@@ -338,7 +338,7 @@ describe('invariants', () => {
     writeFileSync(join(d, 'manifest.json'), JSON.stringify(m));
     const v15 = await result(d, 'V15');
     expect(v15.ok).toBe(false);
-    expect(v15.detail).toMatch(/31 chunk records ≠ count 17/);
+    expect(v15.detail).toMatch(/33 chunk records ≠ count 18/);
   });
   it('V16 fails when too few eligible parcels have a district', async () => {
     const d = copy();
@@ -348,7 +348,7 @@ describe('invariants', () => {
     });
     const v16 = await result(d, 'V16');
     expect(v16.ok).toBe(false);
-    expect(v16.detail).toMatch(/eligible with a district 92\.9% < 100%/);
+    expect(v16.detail).toMatch(/eligible with a district 93\.3% < 100%/);
   });
   it('V16 fails on a parse failure', async () => {
     expect(await failed(base, { ...counts, 'scenario.height.parse_fail': 1 })).toContain('V16');
@@ -405,7 +405,7 @@ describe('invariants', () => {
     const v17 = await result(d, 'V17');
     expect(v17).toMatchObject({
       ok: true,
-      detail: expect.stringMatching(/^hostable 11\/15 eligible/)
+      detail: expect.stringMatching(/^hostable 12\/16 eligible/)
     });
   });
   it('V17 fails when the eligible flag disagrees with the chunk record and the T14 rule', async () => {
@@ -472,7 +472,7 @@ describe('invariants', () => {
   });
   it('V17 does not warn when the FZP net total is in band', async () => {
     const v17 = await result(base, 'V17', { ...counts, 'scenario.yield.fzp_net_total': 780000 });
-    expect(v17).toMatchObject({ ok: true, detail: 'hostable 10/14 eligible' });
+    expect(v17).toMatchObject({ ok: true, detail: 'hostable 11/15 eligible' });
   });
   it('V17 passes with a warning when the FZP net total is far from the cross-check', async () => {
     const v17 = (
@@ -561,7 +561,7 @@ describe('invariants', () => {
       'scenario.roll.latest_eligible_matched': 11
     });
     expect(v18.ok).toBe(false);
-    expect(v18.detail).toMatch(/eligible with a latest-year roll row 78\.6% < 80%/);
+    expect(v18.detail).toMatch(/eligible with a latest-year roll row 73\.3% < 80%/);
   });
   it('V18 counts hostable_base for every panel roll year, each within 5% of the year before', async () => {
     const keys = Object.keys(counts)
@@ -821,7 +821,7 @@ describe('V30 data-quality registry', () => {
       expect(md, r.id).toMatch(new RegExp(`^\\| \`${r.id.replaceAll('.', '\\.')}\` \\|`, 'm'));
     }
     // The scenario-data SQL rules recorded into the build's counts.
-    expect(md).toMatch(/\| `sd\.roll\.units-capacity` \|.*\| 3 \/ 31 \|/);
+    expect(md).toMatch(/\| `sd\.roll\.units-capacity` \|.*\| 3 \/ 33 \|/);
     expect(md).not.toContain('| not reported |');
     expect(md).not.toContain('Not reported.');
   });

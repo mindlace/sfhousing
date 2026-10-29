@@ -3,10 +3,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/5b3540da8a1399e0ca7ab1bec2675740252f123de90223911f24bf825efdae12.csv",
-          "bytes": 3031,
+          "archiveKey": "sources/eeb327e59b5cc9f1428b729443ce8f4e449872fa56a55aea53ac8bbbfdc55b0e.csv",
+          "bytes": 3197,
           "name": "datasf-assessor-roll.page-000.csv",
-          "sha256": "5b3540da8a1399e0ca7ab1bec2675740252f123de90223911f24bf825efdae12",
+          "sha256": "eeb327e59b5cc9f1428b729443ce8f4e449872fa56a55aea53ac8bbbfdc55b0e",
           "url": "https://fixture.invalid/datasf-assessor-roll.page-000.csv"
         }
       ],
@@ -15,7 +15,7 @@
       "label": "DataSF Assessor Historical Secured Property Tax Rolls",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 35,
+      "rowCount": 37,
       "upstreamVersion": "fixture"
     },
     {
@@ -57,10 +57,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/61dd327547f2e3a1bf14435721c395b9f1240dabaddd106f691c2efc58eb102d.geojson",
-          "bytes": 1822,
+          "archiveKey": "sources/b8c170cdb53e70d28dedee0c51f775781eea820b66af510edb90a9ff913e4352.geojson",
+          "bytes": 2066,
           "name": "datasf-height-bulk.page-000.geojson",
-          "sha256": "61dd327547f2e3a1bf14435721c395b9f1240dabaddd106f691c2efc58eb102d",
+          "sha256": "b8c170cdb53e70d28dedee0c51f775781eea820b66af510edb90a9ff913e4352",
           "url": "https://fixture.invalid/datasf-height-bulk.page-000.geojson"
         }
       ],
@@ -69,7 +69,25 @@
       "label": "DataSF Zoning Map – Height and Bulk Districts",
       "license": "public-domain",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 7,
+      "rowCount": 8,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/98776f1587338438c10b0966f4fc46bba8ca05836ea99083f0389b65c087cf90.csv",
+          "bytes": 398,
+          "name": "datasf-historic-status.page-000.csv",
+          "sha256": "98776f1587338438c10b0966f4fc46bba8ca05836ea99083f0389b65c087cf90",
+          "url": "https://fixture.invalid/datasf-historic-status.page-000.csv"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/3tsw-4idn",
+      "id": "datasf-historic-status",
+      "label": "DataSF Historic Resource Status by Parcel",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 20,
       "upstreamVersion": "fixture"
     },
     {
@@ -93,10 +111,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/50e5a9ff557c16f3a0e0358164510c5f1438835dc17ac52c46b6f574ab2a337f.geojson",
-          "bytes": 5573,
+          "archiveKey": "sources/f213addee4322492e76a8aeb0a2d02f9671ec0ac1722a9d5ef1fc535828c3e97.geojson",
+          "bytes": 5871,
           "name": "datasf-landuse-2023.page-000.geojson",
-          "sha256": "50e5a9ff557c16f3a0e0358164510c5f1438835dc17ac52c46b6f574ab2a337f",
+          "sha256": "f213addee4322492e76a8aeb0a2d02f9671ec0ac1722a9d5ef1fc535828c3e97",
           "url": "https://fixture.invalid/datasf-landuse-2023.page-000.geojson"
         }
       ],
@@ -105,7 +123,7 @@
       "label": "DataSF Land Use 2023",
       "license": "public-domain",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 18,
+      "rowCount": 19,
       "upstreamVersion": "fixture"
     },
     {
@@ -129,10 +147,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/50ae576abfeb269ca04e0518721a0374acaa34b39b057cea3021b1da0166baf8.csv",
-          "bytes": 1649,
+          "archiveKey": "sources/91eef43264e8f9890a5b5b4d05f151a01c97718074713ff9fb26423344d2201b.csv",
+          "bytes": 1713,
           "name": "datasf-parcel-attrs.page-000.csv",
-          "sha256": "50ae576abfeb269ca04e0518721a0374acaa34b39b057cea3021b1da0166baf8",
+          "sha256": "91eef43264e8f9890a5b5b4d05f151a01c97718074713ff9fb26423344d2201b",
           "url": "https://fixture.invalid/datasf-parcel-attrs.page-000.csv"
         }
       ],
@@ -141,16 +159,16 @@
       "label": "DataSF Parcels (attributes, active and retired)",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 23,
+      "rowCount": 24,
       "upstreamVersion": "fixture"
     },
     {
       "files": [
         {
-          "archiveKey": "sources/d30931c563d1d4bb3990c8b3c7172f8ac45466f760589b5934efbd3e4ad4bb67.geojson",
-          "bytes": 7951,
+          "archiveKey": "sources/0700e77f426c75f26843288993a7594f3d88fcc5aba6a0ccd598fe1a4b92f189.geojson",
+          "bytes": 8289,
           "name": "datasf-parcels.page-000.geojson",
-          "sha256": "d30931c563d1d4bb3990c8b3c7172f8ac45466f760589b5934efbd3e4ad4bb67",
+          "sha256": "0700e77f426c75f26843288993a7594f3d88fcc5aba6a0ccd598fe1a4b92f189",
           "url": "https://fixture.invalid/datasf-parcels.page-000.geojson"
         }
       ],
@@ -159,7 +177,7 @@
       "label": "DataSF Parcels (Active and Retired)",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 23,
+      "rowCount": 24,
       "upstreamVersion": "fixture"
     },
     {
@@ -250,6 +268,24 @@
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
       "rowCount": 15,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/5858a8f713d5481b78268ec9fd0cd94d5dcd8d90450d1bf9563540cec16f8bca.geojson",
+          "bytes": 1183,
+          "name": "datasf-streets.page-000.geojson",
+          "sha256": "5858a8f713d5481b78268ec9fd0cd94d5dcd8d90450d1bf9563540cec16f8bca",
+          "url": "https://fixture.invalid/datasf-streets.page-000.geojson"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/3psu-pn9h",
+      "id": "datasf-streets",
+      "label": "DataSF Streets – Active and Retired (centerlines)",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 5,
       "upstreamVersion": "fixture"
     },
     {
@@ -503,6 +539,31 @@
       "retrievedAt": "2026-10-10T00:00:00.000Z",
       "rowCount": 4,
       "upstreamVersion": "028c18f713baecad011301ff7a69acc39bcc2ae7"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/8b7fef95df00bf62501f7daf7ff0e9bec287a42d91c18c58f4888456329050d6.txt",
+          "bytes": 180,
+          "name": "sfbos-sb79-exemptions.permanent.txt",
+          "sha256": "8b7fef95df00bf62501f7daf7ff0e9bec287a42d91c18c58f4888456329050d6",
+          "url": "https://fixture.invalid/sfbos-sb79-exemptions.permanent.txt"
+        },
+        {
+          "archiveKey": "sources/41e2b665b103a913e2f3afe5d8448a2fdab1fc2c0056c4f5c1fc1a030a57522c.txt",
+          "bytes": 112,
+          "name": "sfbos-sb79-exemptions.temporary.txt",
+          "sha256": "41e2b665b103a913e2f3afe5d8448a2fdab1fc2c0056c4f5c1fc1a030a57522c",
+          "url": "https://fixture.invalid/sfbos-sb79-exemptions.temporary.txt"
+        }
+      ],
+      "homepage": "https://sfgov.legistar.com/LegislationDetail.aspx?ID=7880164&GUID=E0FE8932-C884-412C-A977-7C3E9B5778D2",
+      "id": "sfbos-sb79-exemptions",
+      "label": "SF Board File 260132 – SB 79 exemption tables (Ord. 082-26)",
+      "license": "SF public record (Board File 260132)",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 2,
+      "upstreamVersion": "fixture"
     }
   ]
 }

@@ -1,0 +1,3 @@
+Mini fixture stand-in for the Board File 260132 Table of Permanent Exclusions (not a PDF)
+Block  Lot  Use District  Industrial Employment Hub
+3512   012  P             Fixture Hub

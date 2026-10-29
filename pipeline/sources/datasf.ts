@@ -19,7 +19,9 @@ export type DatasfId =
   | 'datasf-dev-pipeline'
   | 'datasf-height-bulk'
   | 'datasf-parcel-attrs'
-  | 'datasf-assessor-roll';
+  | 'datasf-assessor-roll'
+  | 'datasf-streets'
+  | 'datasf-historic-status';
 
 export const DATASF: Record<
   DatasfId,
@@ -176,6 +178,24 @@ export const DATASF: Record<
     license: 'PDDL-1.0',
     homepage: 'https://data.sf.gov/d/wv5m-vpq2',
     label: 'DataSF Assessor Historical Secured Property Tax Rolls'
+  },
+  // Sim data layers: street frontage (Task 10) and the historic proxy (Task 7).
+  'datasf-streets': {
+    dataset: '3psu-pn9h',
+    format: 'geojson',
+    select: 'cnn,streetname,classcode,layer,active,line',
+    where: 'active=true',
+    license: 'PDDL-1.0',
+    homepage: 'https://data.sf.gov/d/3psu-pn9h',
+    label: 'DataSF Streets – Active and Retired (centerlines)'
+  },
+  'datasf-historic-status': {
+    dataset: '3tsw-4idn',
+    format: 'csv',
+    select: 'apn,ceqacode,ceqacodea10a11',
+    license: 'PDDL-1.0',
+    homepage: 'https://data.sf.gov/d/3tsw-4idn',
+    label: 'DataSF Historic Resource Status by Parcel'
   }
 };
 

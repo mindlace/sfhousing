@@ -4,6 +4,7 @@ import path from 'node:path';
 import { openDuck, type Duck } from '../lib/duck';
 import { readLock, verifyRaw } from '../lib/lock';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
+import { SB79_EXEMPTIONS_CSV } from '../sources/sfbos';
 
 export const MINI = 'pipeline/test/fixtures/mini';
 
@@ -36,7 +37,10 @@ export function miniDuck(): Promise<Duck> {
     }
     const normDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfh-mini-norm-'));
     const db = await openDuck();
-    await normaliseAll(db, lock, rawDir, normDir, { byName: true });
+    await normaliseAll(db, lock, rawDir, normDir, {
+      byName: true,
+      exemptionsCsv: SB79_EXEMPTIONS_CSV.fixture
+    });
     await loadNormalised(db, normDir);
     return db;
   })();

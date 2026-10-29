@@ -1,0 +1,15 @@
+# SB 79 exemption tables of SF Board File 260132 (Ordinance No. 082-26, Planning Code §207.11), transcribed.
+# Board File: https://sfgov.legistar.com/LegislationDetail.aspx?ID=7880164&GUID=E0FE8932-C884-412C-A977-7C3E9B5778D2
+# Licence: SF public record (Board File 260132). Read by the sfbos-sb79-exemptions normalise (pipeline/sources/sfbos.ts).
+# The originals are Excel-printed PDFs (see EXEMPTION_TABLES in pipeline/sb79-config.ts). Normalise
+# checks that the lock's raw files have exactly these sha256 values and otherwise throws
+# "exemption transcription is stale"; re-transcribe when an original changes.
+# original permanent sha256=f0bdb49aebb5e0221d29db1e2f01de915334d923666f2912ccdd2c068bb242d8 https://sfgov.legistar.com/View.ashx?M=F&ID=15190247&GUID=2AD44D65-34E2-4022-B6A3-DF406906A836
+# original temporary sha256=28befd3c9e50830de07e41db1ecac191925da9b62b15481210ca536c4b0a4c5e https://sfgov.legistar.com/View.ashx?M=F&ID=15389028&GUID=5F3894E8-8FC7-47E7-815D-33D66A8E8B22
+# Method: `pdftotext -layout` on each PDF; each data row's Block and Lot are joined into the
+# 7-9 character blklot (apn), as written, upper-case; table = permanent | temporary by source PDF.
+# Page headers and printed totals are dropped; repeated rows and pseudo-lots (VACST, ROWA, PARK)
+# are kept as printed.
+# PARTIAL: this file holds no rows yet. Task 11 of the sim data-layers plan completes the full
+# transcription (1,660 permanent and 21,838 temporary rows) before the live fetch and build.
+apn,table

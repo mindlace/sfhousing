@@ -23,6 +23,7 @@ import { runSql } from '../lib/sql';
 import { codeTreeHash, computeDatasetVersion } from '../lib/version';
 import { asOfFromLock } from '../project-records/parse';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
+import { SB79_EXEMPTIONS_CSV } from '../sources/sfbos';
 import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
 import { writeCalibration } from './calibration';
 import { checkDataset, type InvariantResult } from './check';
@@ -170,7 +171,10 @@ export async function build(
   const db = await openDuck();
   try {
     await report.time('normalise', async () => {
-      await normaliseAll(db, lock, opts.rawDir, join(work, 'norm'), { byName });
+      await normaliseAll(db, lock, opts.rawDir, join(work, 'norm'), {
+        byName,
+        exemptionsCsv: SB79_EXEMPTIONS_CSV[fixtureMode ? 'fixture' : 'live']
+      });
       await loadNormalised(db, join(work, 'norm'));
     });
     // T14 (scenario-data spec §4.12): SQL rules insert into these, so they precede the first file.

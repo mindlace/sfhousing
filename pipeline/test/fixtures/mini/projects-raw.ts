@@ -1178,7 +1178,8 @@ const RA1_PANEL_UNITS: Record<string, number> = {
 
 /**
  * The panel's `year_built` per `<parcel>|<roll year>` (scenario-data's fixture panel, after its
- * year rules: lot 5's 2024 "0" is imputed 1940; lot 7 has 0). golden.test.ts checks this stub
+ * year rules: lot 5's 2024 "0" is imputed 1950, the 2024 RESIDENT median with lot 18's 2001;
+ * lot 7 has 0). golden.test.ts checks this stub
  * against the built panel for every parcel-year.
  */
 const PANEL_YEAR_BUILT: Record<string, number> = {
@@ -1189,7 +1190,7 @@ const PANEL_YEAR_BUILT: Record<string, number> = {
   '3512001|2025': 1912,
   '3512002|2024': 1975,
   '3512002|2025': 1975,
-  '3512005|2024': 1940,
+  '3512005|2024': 1950,
   '3512005|2025': 1950,
   '3512006|2024': 1940,
   '3512006|2025': 1940,

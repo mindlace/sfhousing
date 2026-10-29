@@ -8,6 +8,7 @@ import { DATASF, fetchDatasf, type DatasfId } from '../sources/datasf';
 import { fetchOverture } from '../sources/overture';
 import { fetchGtfs } from '../sources/gtfs';
 import { fetchBasemap, fetchFonts } from '../sources/protomaps';
+import { SFBOS_EXEMPTIONS_ID, fetchSfbosExemptions } from '../sources/sfbos';
 import { GTFS_IDS, type GtfsLockId } from '../transit-config';
 
 const ROOT = resolve(import.meta.dirname, '../..');
@@ -19,7 +20,8 @@ export const FETCH_IDS = [
   'overture-buildings',
   'protomaps-basemap',
   'protomaps-fonts',
-  ...GTFS_IDS
+  ...GTFS_IDS,
+  SFBOS_EXEMPTIONS_ID
 ] as const;
 
 export interface FetchOpts {
@@ -112,6 +114,8 @@ export async function fetchAll(opts: FetchOpts = {}): Promise<number> {
       entry = await fetchBasemap(opts.basemapDate, rawDir, new Date());
     } else if ((GTFS_IDS as readonly string[]).includes(id)) {
       entry = await fetchGtfs(id as GtfsLockId, rawDir, http);
+    } else if (id === SFBOS_EXEMPTIONS_ID) {
+      entry = await fetchSfbosExemptions(rawDir, http);
     } else entry = await fetchFonts(rawDir, http);
     console.log(
       `  ${id}: ${entry.files.length} file(s), ${entry.rowCount} rows, ${entry.upstreamVersion} (${((Date.now() - t0) / 1000).toFixed(1)}s)`

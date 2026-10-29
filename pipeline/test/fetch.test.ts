@@ -11,7 +11,9 @@ import { DATASF, fetchDatasf, type DatasfId } from '../sources/datasf';
 import { fetchGtfs } from '../sources/gtfs';
 import { latestOvertureRelease } from '../sources/overture';
 import { fetchBasemap } from '../sources/protomaps';
-import { restoreRaw } from '../steps/fetch';
+import { EXEMPTION_HOMEPAGE, EXEMPTION_TABLES } from '../sb79-config';
+import { fetchSfbosExemptions } from '../sources/sfbos';
+import { FETCH_IDS, restoreRaw } from '../steps/fetch';
 
 function fakeHttp(pageSizes: number[]) {
   const urls: string[] = [];
@@ -527,5 +529,74 @@ describe('fetchGtfs', () => {
       })
     };
     await expect(fetchGtfs('gtfs-muni', tmpdir(), http)).rejects.toThrow(/not a GTFS zip/);
+  });
+});
+
+describe('policy-layer sources (streets, historic status, SB 79 exemption tables)', () => {
+  it('datasf-streets and datasf-historic-status: dataset, select, where and licence', async () => {
+    expect(DATASF['datasf-streets']).toEqual({
+      dataset: '3psu-pn9h',
+      format: 'geojson',
+      select: 'cnn,streetname,classcode,layer,active,line',
+      where: 'active=true',
+      license: 'PDDL-1.0',
+      homepage: 'https://data.sf.gov/d/3psu-pn9h',
+      label: 'DataSF Streets – Active and Retired (centerlines)'
+    });
+    expect(DATASF['datasf-historic-status']).toEqual({
+      dataset: '3tsw-4idn',
+      format: 'csv',
+      select: 'apn,ceqacode,ceqacodea10a11',
+      license: 'PDDL-1.0',
+      homepage: 'https://data.sf.gov/d/3tsw-4idn',
+      label: 'DataSF Historic Resource Status by Parcel'
+    });
+    const http = fakeHttp([2]);
+    await fetchDatasf('datasf-streets', tmp(), http);
+    const u = new URL(http.urls[0]);
+    expect(u.pathname).toBe('/resource/3psu-pn9h.geojson');
+    expect(u.searchParams.get('$where')).toBe('active=true');
+    expect(FETCH_IDS).toEqual(
+      expect.arrayContaining(['datasf-streets', 'datasf-historic-status', 'sfbos-sb79-exemptions'])
+    );
+  });
+
+  it('fetchSfbosExemptions locks one file per Board File attachment', async () => {
+    const urls: string[] = [];
+    const http = {
+      get: async (url: string) => {
+        urls.push(url);
+        return {
+          status: 200,
+          headers: new Headers(),
+          body: new TextEncoder().encode(`%PDF stand-in ${urls.length}`)
+        };
+      }
+    };
+    const raw = tmp();
+    const e = await fetchSfbosExemptions(raw, http);
+    expect(urls).toEqual(EXEMPTION_TABLES.map((t) => t.url));
+    expect(e).toMatchObject({
+      id: 'sfbos-sb79-exemptions',
+      license: 'SF public record (Board File 260132)',
+      homepage: EXEMPTION_HOMEPAGE,
+      label: 'SF Board File 260132 – SB 79 exemption tables (Ord. 082-26)',
+      rowCount: 2
+    });
+    expect(e.files.map((f) => [f.name, f.url])).toEqual([
+      ['sfbos-sb79-exemptions.permanent.pdf', EXEMPTION_TABLES[0].url],
+      ['sfbos-sb79-exemptions.temporary.pdf', EXEMPTION_TABLES[1].url]
+    ]);
+    for (const f of e.files) {
+      const body = readFileSync(join(raw, f.sha256));
+      expect(createHash('sha256').update(body).digest('hex')).toBe(f.sha256);
+    }
+  });
+
+  it('fetchSfbosExemptions fails on a non-200 status', async () => {
+    const http = {
+      get: async () => ({ status: 404, headers: new Headers(), body: new Uint8Array() })
+    };
+    await expect(fetchSfbosExemptions(tmp(), http)).rejects.toThrow(/HTTP 404/);
   });
 });

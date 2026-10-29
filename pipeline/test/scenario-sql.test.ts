@@ -160,7 +160,7 @@ describe('runScenarioSql on the mini fixture', () => {
   it('readParcelRecords returns every parcel sorted by id with its cell', async () => {
     const recs = await readParcelRecords(db);
     const ids = recs.map((r) => r.rec.id);
-    expect(ids).toHaveLength(17);
+    expect(ids).toHaveLength(18);
     expect(ids).toEqual([...ids].sort());
     expect(recs.every((r) => /^-?\d+_-?\d+$/.test(r.cellId))).toBe(true);
   });
@@ -215,7 +215,8 @@ describe('runScenarioSql on the mini fixture', () => {
     expect(c['scenario.height.none']).toBe(1);
     expect(c['scenario.height.no_district']).toBe(0);
     expect(c['scenario.height.split']).toBe(2);
-    expect(c['scenario.height.dbl_non_r4']).toBe(1);
+    // Lots 13 and 18 lie in the non-R-4 double district 120/400-R-2 // 140/520-R-2.
+    expect(c['scenario.height.dbl_non_r4']).toBe(2);
     expect(c['scenario.height.overlap_gt1']).toBe(0);
     const units = await db.all<{ u: number }>(
       `SELECT sum(units)::INTEGER u FROM parcel_out WHERE id IN ('3512005', '3512010')`
@@ -227,7 +228,7 @@ describe('runScenarioSql on the mini fixture', () => {
     const z = await db.all<{ id: string; zoning_code: string }>(
       'SELECT id, zoning_code FROM sc_zoning ORDER BY id'
     );
-    expect(z).toHaveLength(17);
+    expect(z).toHaveLength(18);
     const by = Object.fromEntries(z.map((r) => [r.id, r.zoning_code]));
     expect(by['3512002']).toBe('RH-2');
     expect(by['8711023C']).toBe('NCT');
@@ -333,7 +334,7 @@ describe('runScenarioSql on the mini fixture', () => {
     expect(c['scenario.roll.years']).toBe(3);
     expect(c['scenario.roll.unmatched.2023']).toBe(0);
     expect(c['scenario.roll.latest']).toBe(2025);
-    expect(c['scenario.roll.matched_parcels']).toBe(16);
+    expect(c['scenario.roll.matched_parcels']).toBe(17);
     expect(c['scenario.roll.unmatched.2024']).toBe(0);
     expect(c['scenario.roll.unmatched.2025']).toBe(0);
     expect(c['scenario.roll.unmatched_units.2024']).toBe(0);
@@ -393,8 +394,9 @@ describe('runScenarioSql on the mini fixture', () => {
 
   it('lot 5 2024 year_built is imputed with bit 0', async () => {
     const f = await feature(db, '3512005', 2024);
-    // Median of the 2024 residential years: 1910 1912 1925 1930 1940 1960 1970 1975 2015.
-    expect(f.year_built).toBe(1940);
+    // Median of the 2024 residential years: 1910 1912 1925 1930 1940 1960 1970 1975 2001 2015
+    // (lot 18 adds 2001, so the median is the mean of 1940 and 1960).
+    expect(f.year_built).toBe(1950);
     expect(f.imputed & 1).toBe(1);
     expect((await feature(db, '3512005', 2025)).imputed & 1).toBe(0);
   });
@@ -435,7 +437,7 @@ describe('runScenarioSql on the mini fixture', () => {
     );
     expect(rows).toHaveLength(18);
     const r2024 = rows.find((r) => r.roll_year === 2024 && r.land_use_class === 0)!;
-    expect(r2024.year_built).toBe(1940);
+    expect(r2024.year_built).toBe(1950);
   });
 
   it('does not duplicate scenario counts or quality tallies when re-run on the same DB', async () => {
@@ -451,7 +453,7 @@ describe('runScenarioSql on the mini fixture', () => {
       'SELECT count(*)::INTEGER n, count(DISTINCT rule_id)::INTEGER d FROM quality_tally'
     );
     expect(t.n).toBe(t.d);
-    expect(quality['quality.sd.roll.units-capacity.of']).toBe(31);
+    expect(quality['quality.sd.roll.units-capacity.of']).toBe(33);
   });
 });
 

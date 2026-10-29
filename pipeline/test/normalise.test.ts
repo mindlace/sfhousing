@@ -1,9 +1,12 @@
+import { createHash } from 'node:crypto';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { openDuck } from '../lib/duck';
+import { EXEMPTION_TABLES } from '../sb79-config';
 import { ATTRS_CAST_BITS, ROLL_CAST_BITS, normalise } from '../sources/normalise';
+import { SB79_EXEMPTIONS_CSV, readExemptionHeader } from '../sources/sfbos';
 import { miniDuck } from './helpers';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'sfh-norm-'));
@@ -23,10 +26,10 @@ describe('normalise mini fixture', () => {
         )
       ).map((r) => [r.t, r.n])
     );
-    // parcels: 17 lots, lot 2 has 3 rows → 19, + 3 retired + 1 null-id = 23 (attrs likewise);
-    // height: 7 districts; roll: 16 rows in 2025 + 17 in 2024 (lot 13 and 3512099 only in 2024,
+    // parcels: 18 lots, lot 2 has 3 rows → 20, + 3 retired + 1 null-id = 24 (attrs likewise);
+    // height: 8 districts; roll: 17 rows in 2025 + 18 in 2024 (lot 13 and 3512099 only in 2024,
     // lot 3 not in 2024) + 2 in 2023 (lots 3 and 4)
-    expect(counts).toEqual({ p: 23, l: 18, f: 3, n: 3, o: 13, h: 7, a: 23, r: 35 });
+    expect(counts).toEqual({ p: 24, l: 19, f: 3, n: 3, o: 13, h: 8, a: 24, r: 37 });
     const [ids] = await db.all<{ ok: boolean }>(
       `SELECT bool_and(mapblklot IS NULL OR typeof(mapblklot) = 'VARCHAR') ok FROM src_parcels`
     );
@@ -89,6 +92,55 @@ describe('normalise mini fixture', () => {
       `SELECT count(*) n, min(zoning_code) z FROM src_parcel_attrs WHERE mapblklot = '3512002'`
     );
     expect(condo).toEqual({ n: 3, z: 'RH-2' });
+  });
+
+  it('streets: five centerlines ordered by cnn, typed', async () => {
+    const db = await miniDuck();
+    const rows = await db.all<Record<string, unknown>>(
+      `SELECT cnn, streetname, classcode, layer FROM src_streets`
+    );
+    expect(rows).toHaveLength(5);
+    // cnn is BIGINT; the Duck wrapper returns a safe bigint as a number.
+    expect(rows[0]).toEqual({
+      cnn: 1000,
+      streetname: 'MISSION ST',
+      classcode: 3,
+      layer: 'STREETS'
+    });
+    expect(rows.map((r) => r.cnn)).toEqual([1000, 1001, 2000, 3000, 4000]);
+    const types = await db.all<{ column_name: string; column_type: string }>(
+      `DESCRIBE src_streets`
+    );
+    expect(types.slice(0, 4).map((c) => `${c.column_name} ${c.column_type}`)).toEqual([
+      'cnn BIGINT',
+      'streetname VARCHAR',
+      'classcode INTEGER',
+      'layer VARCHAR'
+    ]);
+    const [g] = await db.all<{ t: string }>(
+      `SELECT ST_GeometryType(geom)::VARCHAR t FROM src_streets WHERE cnn = 2000`
+    );
+    expect(g.t).toBe('MULTILINESTRING');
+  });
+
+  it('historic status: one row per listed apn, 0026T001A verbatim, lot 18 absent', async () => {
+    // Every mini lot but 18 has a row (lot 2 by its three condo blklots), plus retired 3512099.
+    const db = await miniDuck();
+    const rows = await db.all<{ apn: string; ceqacode: string; ceqacodea10a11: string }>(
+      `SELECT apn, ceqacode, ceqacodea10a11 FROM src_historic`
+    );
+    expect(rows).toHaveLength(20);
+    expect(rows).toContainEqual({ apn: '0026T001A', ceqacode: 'C', ceqacodea10a11: 'C' });
+    expect(rows).toContainEqual({ apn: '3512013', ceqacode: 'A', ceqacodea10a11: 'A*' });
+    expect(rows.some((r) => r.apn === '3512018')).toBe(false);
+  });
+
+  it('SB 79 exemptions: the transcribed rows of both tables', async () => {
+    const db = await miniDuck();
+    expect(await db.all(`SELECT apn, tbl FROM src_sb79_exempt`)).toEqual([
+      { apn: '3512012', tbl: 'permanent' },
+      { apn: '3512015', tbl: 'temporary' }
+    ]);
   });
 
   it('"3.0" units cast to 3', async () => {
@@ -261,5 +313,84 @@ describe('normalise flags every TRY_CAST rewrite (cast_flags; the sd.roll / sd.a
     } finally {
       own.close();
     }
+  });
+});
+
+describe('SB 79 exemption transcription (path 2: vendored CSV, checked against the originals)', () => {
+  const sha = (s: string) => createHash('sha256').update(s).digest('hex');
+  const csv = (dir: string, originals: [string, string][], rows: string) => {
+    const file = join(dir, 'sb79-exemptions.csv');
+    const head = originals.map(
+      ([t, h]) => `# original ${t} sha256=${h} https://example.invalid/${t}`
+    );
+    writeFileSync(file, ['# test transcription', ...head, 'apn,table', rows].join('\n'));
+    return file;
+  };
+
+  it('reads the CSV when every raw original matches its header', async () => {
+    const dir = tmp();
+    writeFileSync(join(dir, 'p'), 'permanent original');
+    writeFileSync(join(dir, 't'), 'temporary original');
+    const file = csv(
+      dir,
+      [
+        ['permanent', sha('permanent original')],
+        ['temporary', sha('temporary original')]
+      ],
+      ' 3512012 ,permanent\nvacst art1,temporary\n'
+    );
+    const db = await openDuck();
+    try {
+      const out = join(dir, 'x.parquet');
+      const raw = [join(dir, 't'), join(dir, 'p')];
+      const n = await normalise(db, 'sfbos-sb79-exemptions', raw, out, false, {
+        exemptionsCsv: file
+      });
+      expect(n).toBe(2);
+      expect(await db.all(`SELECT apn, tbl FROM read_parquet('${out}')`)).toEqual([
+        { apn: '3512012', tbl: 'permanent' },
+        { apn: 'VACST ART1', tbl: 'temporary' }
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('throws when a raw original differs from the sha256 the CSV header names', async () => {
+    const dir = tmp();
+    writeFileSync(join(dir, 'p'), 'a newer permanent table');
+    const file = csv(dir, [['permanent', sha('permanent original')]], '3512012,permanent\n');
+    const db = await openDuck();
+    try {
+      await expect(
+        normalise(db, 'sfbos-sb79-exemptions', [join(dir, 'p')], join(dir, 'x.parquet'), false, {
+          exemptionsCsv: file
+        })
+      ).rejects.toThrow(/exemption transcription is stale/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rejects a table name other than permanent or temporary', async () => {
+    const dir = tmp();
+    writeFileSync(join(dir, 'p'), 'permanent original');
+    const file = csv(dir, [['permanent', sha('permanent original')]], '3512012,forever\n');
+    const db = await openDuck();
+    try {
+      await expect(
+        normalise(db, 'sfbos-sb79-exemptions', [join(dir, 'p')], join(dir, 'x.parquet'), false, {
+          exemptionsCsv: file
+        })
+      ).rejects.toThrow(/table 'forever'/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('the vendored CSV names the originals of EXEMPTION_TABLES', () => {
+    expect(readExemptionHeader(SB79_EXEMPTIONS_CSV.live)).toEqual(
+      EXEMPTION_TABLES.map((t) => ({ table: t.table, sha256: t.sha256, url: t.url }))
+    );
   });
 });

@@ -135,7 +135,7 @@ Over 4 completed histories with a construction start and permit rows with a `com
 
 ## 5. Initiation
 
-Mode: fixture. Events 3 (record basis 3, permit basis 0); exposure 93 parcel-months over 21 hostable parcel-years; parcel-years excluded 23; events off the panel 11; events on covered parcel-months 14.
+Mode: fixture. Events 3 (record basis 3, permit basis 0); exposure 117 parcel-months over 23 hostable parcel-years; parcel-years excluded 23; events off the panel 11; events on covered parcel-months 14.
 Histories with no initiation event: no start 0, no permit filing before 2015 0, no parcel 3; event month outside the panel 6.
 
 Parcel-years excluded by roll year:
@@ -155,7 +155,7 @@ Initial edges 0, 1, 1.5, 2, 3, 5, 10, 20; merged edges 0, 2, 3.
 | bin ≥ | exposure | events | predicted | coefficient |
 |---|---|---|---|---|
 | 0 | 14 | 1 | 0.699999 | none |
-| 2 | 28 | 1 | 1.4 | none |
+| 2 | 52 | 1 | 2.6 | none |
 | 3 | 51 | 1 | 2.55 | none |
 
 ### existingUnits
@@ -164,7 +164,7 @@ Initial edges 0, 1, 2, 3, 5, 10, 20, 50; merged edges 0, 3.
 
 | bin ≥ | exposure | events | predicted | coefficient |
 |---|---|---|---|---|
-| 0 | 51 | 1 | 2.55 | none |
+| 0 | 75 | 1 | 3.75 | none |
 | 3 | 42 | 2 | 2.1 | none |
 
 ### lotAreaM2
@@ -173,16 +173,16 @@ Initial edges 0, 150, 250, 400, 800, 2000, 5000; merged edges 0.
 
 | bin ≥ | exposure | events | predicted | coefficient |
 |---|---|---|---|---|
-| 0 | 93 | 3 | 4.65 | none |
+| 0 | 117 | 3 | 5.84999 | none |
 
 ### yearBuilt
 
-Initial edges 0, 1800, 1906, 1930, 1950, 1979, 2000; merged edges 0, 1930.
+Initial edges 0, 1800, 1906, 1930, 1950, 1979, 2000; merged edges 0, 1950.
 
 | bin ≥ | exposure | events | predicted | coefficient |
 |---|---|---|---|---|
 | 0 | 90 | 2 | 4.5 | none |
-| 1930 | 3 | 1 | 0.15 | none |
+| 1950 | 27 | 1 | 1.35 | none |
 
 ### storiesGap
 
@@ -190,7 +190,7 @@ Initial edges -100, 0, 1, 2, 3, 5, 10; merged edges -100, 5.
 
 | bin ≥ | exposure | events | predicted | coefficient |
 |---|---|---|---|---|
-| -100 | 66 | 2 | 3.3 | none |
+| -100 | 90 | 2 | 4.5 | none |
 | 5 | 27 | 1 | 1.35 | none |
 
 ### improvementShare
@@ -201,7 +201,7 @@ Initial edges 0, 0.1, 0.25, 0.4, 0.55, 0.7, 0.85; merged edges 0, 0.4, 0.55.
 |---|---|---|---|---|
 | 0 | 51 | 1 | 2.55 | none |
 | 0.4 | 28 | 1 | 1.4 | none |
-| 0.55 | 14 | 1 | 0.699999 | none |
+| 0.55 | 38 | 1 | 1.9 | none |
 
 ### rentControlLikely (categorical)
 
@@ -209,7 +209,7 @@ Initial edges 0, 1; merged edges 0, 1.
 
 | bin ≥ | exposure | events | predicted | coefficient |
 |---|---|---|---|---|
-| 0 | 51 | 1 | 2.55 | none |
+| 0 | 75 | 1 | 3.75 | none |
 | 1 | 42 | 2 | 2.1 | none |
 
 ### landUseClass (categorical)
@@ -218,7 +218,7 @@ Initial edges 0, 1, 2, 3, 4, 5; merged edges 0, 1, 2, 3, 4, 5.
 
 | bin ≥ | exposure | events | predicted | coefficient |
 |---|---|---|---|---|
-| 0 | 17 | 2 | 0.849999 | none |
+| 0 | 41 | 2 | 2.05 | none |
 | 1 | 0 | 0 | 0 | none |
 | 2 | 28 | 1 | 1.4 | none |
 | 3 | 0 | 0 | 0 | none |
@@ -229,16 +229,16 @@ Initial edges 0, 1, 2, 3, 4, 5; merged edges 0, 1, 2, 3, 4, 5.
 
 | basis | observed | predicted |
 |---|---|---|
-| record | 3 | 4.65 |
+| record | 3 | 5.84999 |
 | permit | 0 | 0 |
 
-V28 (live only; not gating in this build): outside 2%: record: predicted 4.65 vs observed 3 (outside 2%); permit: predicted 0.00 vs observed 0 (ok)
+V28 (live only; not gating in this build): outside 2%: record: predicted 5.85 vs observed 3 (outside 2%); permit: predicted 0.00 vs observed 0 (ok)
 
 | year | basis | exposure | observed | predicted |
 |---|---|---|---|---|
 | 2023 | record | 24 | 0 | 1.2 |
-| 2024 | record | 41 | 2 | 2.05 |
-| 2025 | record | 28 | 1 | 1.4 |
+| 2024 | record | 53 | 2 | 2.65 |
+| 2025 | record | 40 | 1 | 2 |
 
 Hold-out: none (fixture model).
 
@@ -263,27 +263,27 @@ Hold-out: none (fixture model).
 | 2021 | 0 | 0 |
 | 2022 | 0 | 0 |
 | 2023 | 1.2 | 0 |
-| 2024 | 2.05 | 2 |
-| 2025 | 1.4 | 1 |
+| 2024 | 2.65 | 2 |
+| 2025 | 2 | 1 |
 
-- impliedSteadyState 1.4 per year; fzpPerYear 1.2 over 2 hostable unoccupied parcels; fzpRatio 0.857143
-- historical mean 0.157895 events per year; FZP ÷ historical 7.59999 (band 0.5 to 20, tier 4)
-- extrapolation: 0 parcels (0% of hostable, 0% of FZP expected filings) beyond the at-risk maximum potentialRatio 6, storiesGap 6
+- impliedSteadyState 2 per year; fzpPerYear 1.8 over 3 hostable unoccupied parcels; fzpRatio 0.9
+- historical mean 0.157895 events per year; FZP ÷ historical 11.4 (band 0.5 to 20, tier 4)
+- extrapolation: 0 parcels (0% of hostable, 0% of FZP expected filings) beyond the at-risk maximum potentialRatio 6, storiesGap 38
 - topEffects (coefficient range): none (no fitted terms)
-- exactly aliased bin indicators (same design rows): existingUnits bin 1 (≥ 3) ≡ rentControlLikely bin 1 (≥ 1); potentialRatio bin 0 (≥ 0) ≡ improvementShare bin 2 (≥ 0.55); potentialRatio bin 1 (≥ 2) ≡ improvementShare bin 1 (≥ 0.4) ≡ landUseClass bin 2 (≥ 2); potentialRatio bin 2 (≥ 3) ≡ existingUnits bin 0 (≥ 0) ≡ improvementShare bin 0 (≥ 0) ≡ rentControlLikely bin 0 (≥ 0)
+- exactly aliased bin indicators (same design rows): existingUnits bin 0 (≥ 0) ≡ rentControlLikely bin 0 (≥ 0); existingUnits bin 1 (≥ 3) ≡ rentControlLikely bin 1 (≥ 1); improvementShare bin 1 (≥ 0.4) ≡ landUseClass bin 2 (≥ 2); potentialRatio bin 2 (≥ 3) ≡ improvementShare bin 0 (≥ 0); yearBuilt bin 0 (≥ 0) ≡ storiesGap bin 0 (≥ -100); yearBuilt bin 1 (≥ 1950) ≡ storiesGap bin 1 (≥ 5)
 
 Exposure and event shares per `imputed` mask bit (T11/T13: 0 yearBuilt, 1 existingStories, 2 improvementShare, 3 existingUnits, 4 no roll row, 5 carried, 6 floor area):
 
 | bit | exposure share | event share |
 |---|---|---|
-| 0 | 0.0322581 | 0.333333 |
-| 1 | 0.258065 | 0 |
+| 0 | 0.025641 | 0.333333 |
+| 1 | 0.205128 | 0 |
 | 2 | 0 | 0 |
-| 3 | 0.322581 | 0.666667 |
+| 3 | 0.25641 | 0.666667 |
 | 4 | 0 | 0 |
-| 5 | 0.129032 | 0 |
-| 6 | 0.516129 | 0 |
-| any | 0.870968 | 1 |
+| 5 | 0.102564 | 0 |
+| 6 | 0.410256 | 0 |
+| any | 0.692308 | 1 |
 
 ## 6. Size and revision
 
