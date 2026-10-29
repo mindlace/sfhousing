@@ -381,5 +381,6 @@ export const UNSOURCED: readonly string[] = [
   'TOD distance is measured to stop points; MTC publishes pedestrian access points (mtc_sb79_tod_access_points) under the same disclaimer.',
   "SB 79 as written, §65912.157(h) rent-control exclusion (tier 2 proxy): a lot is excluded when parcels.bin's rentControlLikely is set (homes on the latest roll, built before 1979) and it has more than RENT_CONTROL_MAX_UNITS (2) existing homes. The statute counts units occupied by tenants in the past seven years, or demolished within seven years; occupancy and demolition history are not modelled, so every pre-1979 home on the latest roll counts as rent-controlled.",
   `Exemption tables licence: none stated; using "${EXEMPTION_LICENSE}".`,
-  'Temporary exemption table: row "4591A 011*" carries an unexplained asterisk; 1,013 rows repeat a blklot.'
+  'Temporary exemption table: row "4591A 011*" carries an unexplained asterisk; 1,013 rows repeat a blklot.',
+  '§207.11(b)(3) and (c)(2), a lot with no height district (fzpBaseFt null) counts as not under 40 ft (tier 4, invented): with no base height the code gives no evidence either way, so such a lot neither qualifies by height nor gets the 40 ft floor.'
 ];

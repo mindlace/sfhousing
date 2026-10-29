@@ -53,6 +53,7 @@ export function s207Status(a: {
   if (!a.eligible) return 'not-eligible';
   if (a.exempt) return 'exempt'; // (b)(6)
   if (!a.principallyResidential) return 'not-residential'; // (b)(2)
+  // No height district (fzpBaseFt null) counts as not under 40 ft: tier 4, invented (UNSOURCED).
   const under40 = a.fzpBaseFt !== null && a.fzpBaseFt < S207.heightFloorFt;
   if (a.fzpCap === null && !under40) return 'no-limit'; // (b)(3)
   if (a.r4) return 'r4'; // (b)(4)
@@ -73,7 +74,8 @@ export function s207Envelope(a: {
   fzpCap: number | null;
   lotAreaM2: number;
 }): { stories: number; cap: number } {
-  const floor = a.fzpBaseFt !== null && a.fzpBaseFt < S207.heightFloorFt; // (c)(2)
+  // (c)(2); no height district counts as not under 40 ft (tier 4, invented; UNSOURCED).
+  const floor = a.fzpBaseFt !== null && a.fzpBaseFt < S207.heightFloorFt;
   const density = STANDARDS[a.tier][a.band].duPerAcre;
   return {
     stories: floor ? Math.max(a.fzpStories, storiesFromFt(S207.heightFloorFt)) : a.fzpStories,

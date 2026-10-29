@@ -74,4 +74,10 @@ describe('sb79-config', () => {
   it('notes the accepted tier 2–3 principallyResidential values', () => {
     expect(UNSOURCED.some((u) => u.includes('principallyResidential'))).toBe(true);
   });
+
+  it('lists the no-height-district default as invented (tier 4)', () => {
+    expect(UNSOURCED.some((u) => u.includes('no height district') && u.includes('tier 4'))).toBe(
+      true
+    );
+  });
 });
