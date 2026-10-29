@@ -49,6 +49,9 @@ export async function verify(a: VerifyArgs): Promise<{ ok: boolean; failures: st
     ...m.chunks.map((c) => c.url),
     m.neighborhoods,
     ...(m.transit ? [m.transit] : []),
+    ...(m.scenarios
+      ? [m.scenarios.fzp.parcels, m.scenarios.fzp.projects, m.scenarios.fzp.calibration]
+      : []),
     ...(m.scenarios?.fzp.policy ? [m.scenarios.fzp.policy] : []),
     ...(m.scenarios?.fzp.frontage ? [m.scenarios.fzp.frontage] : []),
     m.buildingsTiles,

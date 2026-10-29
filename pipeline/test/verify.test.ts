@@ -40,6 +40,14 @@ describe('verify', () => {
     expect(seen).toContain(`GET /data/${V}/buildings.pmtiles`);
     expect(seen).toContain(`HEAD /data/${V}/transit.json`);
   });
+  it('HEAD-checks the existing scenarios.fzp urls on the golden manifest', async () => {
+    const { f, seen } = fakeFetch();
+    const r = await verify({ datasetVersion: V, origin: 'http://o', fetch: f });
+    expect(r.ok).toBe(true);
+    for (const n of ['parcels.bin', 'projects.json', 'calibration.json']) {
+      expect(seen).toContain(`HEAD /data/${V}/scenarios/fzp/${n}`);
+    }
+  });
   it('HEAD-checks the policy and frontage urls when the manifest names them', async () => {
     const withKeys = JSON.parse(golden) as {
       scenarios: { fzp: Record<string, string> };

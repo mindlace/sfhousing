@@ -213,6 +213,9 @@ describe('upload', () => {
       'basemap.pmtiles',
       'neighborhoods.geojson',
       'transit.json',
+      'scenarios/fzp/parcels.bin',
+      'scenarios/fzp/projects.json',
+      'scenarios/fzp/calibration.json',
       'scenarios/fzp/policy.bin',
       'parcels/50_25.json',
       'fonts/NotoSans-Italic/0-255.pbf'
