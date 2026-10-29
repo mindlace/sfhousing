@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { encodeTransit } from '../../src/lib/data/transit-codec';
 import type { GtfsFiles } from '../lib/gtfs';
-import { TransitBuildError, assignPlaces, clipFilter, reduceTransit } from '../steps/transit';
-import { ASSIGNMENTS, GTFS_FEEDS, VEHICLES, placeTokens } from '../transit-config';
+import type { Lock } from '../lib/lock';
+import {
+  TRANSIT_DATE_SOURCE_IDS,
+  TransitBuildError,
+  assignPlaces,
+  clipFilter,
+  reduceTransit,
+  transitTargetDate
+} from '../steps/transit';
+import { ASSIGNMENTS, GTFS_FEEDS, GTFS_IDS, VEHICLES, placeTokens } from '../transit-config';
 import { every, tripTables, type TripSpec } from './gtfs-builder';
 
 const CAL =
@@ -288,5 +296,37 @@ describe('transit config', () => {
       expect(row.url === null || /^https:\/\//.test(row.url)).toBe(true);
       expect(row.asOf === null || /^\d{4}(-\d{2})?$/.test(row.asOf)).toBe(true);
     }
+  });
+});
+
+describe('transitTargetDate', () => {
+  const e = (id: string, retrievedAt: string) => ({
+    id,
+    files: [],
+    retrievedAt,
+    upstreamVersion: 'v',
+    rowCount: 0,
+    license: 'L',
+    homepage: 'h'
+  });
+  it('the date sources are exactly the GTFS feeds', () => {
+    expect([...TRANSIT_DATE_SOURCE_IDS]).toEqual([...GTFS_IDS]);
+  });
+  it('is the UTC date of the newest GTFS retrievedAt; a newer non-GTFS entry leaves it unchanged', () => {
+    const lock: Lock = {
+      sources: [
+        e('gtfs-muni', '2026-10-16T17:04:17.239Z'),
+        e('gtfs-bart', '2026-10-16T17:04:18.530Z'),
+        e('datasf-planning-projects', '2026-10-19T01:34:20.056Z'),
+        e('datasf-streets', '2026-10-29T09:09:24.450Z'),
+        e('sfbos-sb79-exemptions', '2026-10-29T09:09:29.985Z')
+      ]
+    };
+    expect(transitTargetDate(lock)).toBe('2026-10-16');
+  });
+  it('throws when the lock has no GTFS entry', () => {
+    expect(() =>
+      transitTargetDate({ sources: [e('datasf-streets', '2026-10-29T00:00:00Z')] })
+    ).toThrow(TransitBuildError);
   });
 });

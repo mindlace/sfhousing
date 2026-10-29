@@ -35,7 +35,7 @@ import { writePolicy } from './policy';
 import { writeProjectRecords } from './projects';
 import { writeScenario } from './scenario';
 import { copyBasemap, installFonts, writeBuildingsTiles } from './tiles';
-import { writeTransit } from './transit';
+import { transitTargetDate, writeTransit } from './transit';
 
 export interface BuildOpts {
   lockPath: string;
@@ -192,11 +192,13 @@ export async function build(
       await writeChunks(db, join(work, 'reencode'), datasetVersion, new Report());
       return sameFiles(join(outDir, 'parcels'), join(work, 'reencode', 'parcels'));
     });
-    // Transit spec §4.2 step 1: the service date is picked from the newest fetch date. `asOf` is
-    // the newest fetch day of the as-of sources only (`AS_OF_SOURCE_IDS`): the scenario step's
-    // "today" for the FZP density cap and the project records' `asOf` (project-records spec §4.9
-    // Determinism). A policy- or frontage-only source cannot move it.
-    const newest = lock.sources.reduce((d, s) => (s.retrievedAt > d ? s.retrievedAt : d), '');
+    // Two dates, each from its own named sources (docs/dev/pipeline.md, Lock and datasetVersion);
+    // the datasetVersion date alone is whole-lock. `asOf` is the newest fetch day of the as-of
+    // sources (`AS_OF_SOURCE_IDS`, the project-record event sources): the scenario step's "today"
+    // for the FZP density cap and the project records' `asOf` (project-records spec §4.9
+    // Determinism). The transit target date (transit spec §4.2 step 1) is the newest fetch day of
+    // the GTFS feeds (`TRANSIT_DATE_SOURCE_IDS`). A policy- or frontage-only source moves neither.
+    const transitDate = transitTargetDate(lock);
     const asOf = asOfFromLock(lock);
     const derivedDir = join(opts.derivedRoot ?? DERIVED_ROOT, datasetVersion);
     // The build's single report `counts` (T14): every owner records its `recordQuality` counts
@@ -261,7 +263,7 @@ export async function build(
         rawDir: opts.rawDir,
         byName,
         outDir,
-        targetDate: newest.slice(0, 10),
+        targetDate: transitDate,
         // The mini fixture's feeds carry only a few lines; assignment checks are live-only.
         strict: !fixtureMode
       })
