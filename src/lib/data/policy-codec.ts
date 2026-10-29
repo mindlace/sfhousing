@@ -207,7 +207,7 @@ export function encodePolicyPayload(p: PolicyParcels): Uint8Array {
     s207Statuses: S207_STATUSES,
     provenance: Object.fromEntries(PROVENANCE_KEYS.map((k) => [k, p.provenance[k]]))
   };
-  const values: Record<string, ArrayLike<number>> = { ...p, flags };
+  const values = { ...p, flags } as unknown as Record<string, ArrayLike<number>>;
   return encodeColumnFile(
     MAGIC,
     MAJOR,
@@ -277,7 +277,7 @@ export function decodePolicyPayload(bytes: Uint8Array, parcels: Bound): PolicyPa
     idsHash: hd.idsHash as number,
     fillLevels: [...parcels.fillLevels],
     currentLawRule: 'fzp+s207.11',
-    tierSource: hd.tierSource,
+    tierSource: hd.tierSource as 'mtc' | 'gtfs',
     useDistricts: useDistricts as string[],
     provenance,
     useDistrict: u16('useDistrict'),
