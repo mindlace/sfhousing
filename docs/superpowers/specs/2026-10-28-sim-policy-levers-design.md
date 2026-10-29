@@ -126,3 +126,18 @@ Planning found SF Ordinance 082-26 (File 260132, approved 2026-05-08): an SB 79 
 - Stage minimum durations, and how locked or unlocked stages are marked.
 - Whether and how the current pre-FZP twin stays available.
 - How the work splits into specs and plans.
+
+## Carried from plan 1 (data layers, 2026-10-29)
+
+Plan 1's final review left these for the later plans:
+
+- **Plan 2 (policy engine).** §207.11 treats an FZP lot with no density cap as a cap of 0 (`s207Envelope`, `fzpCap ?? 0`), and the under-40 ft test reads the base height on Local Program lots. No shipped row is affected (live has 0 `applies` rows with a null FZP cap), but the comment at `pipeline/sb79-config.ts:318` ("uncapped never qualifies") contradicts the code. Settle the semantics here. The law switch (round-2 ruling 7) is also plan 2's.
+- **Plan 3 (brushes).**
+  - The commercial-corridor brush counts NC and NCT districts. CRNC (241 parcels) is not counted; the partner decides whether it is.
+  - "Follow a street" needs street segment geometry. `frontage.bin` holds lot-to-street matches only.
+  - The transit brush may need stop types and bands beyond the SB 79 tiers.
+- **Before promoting the new dataset.**
+  - Decode-compare its `parcels.bin`, `projects.json` and `calibration.json` against production's. `parcels.bin` is 4 B larger, from the fixture-only changes to lots 17 and 18.
+  - The frontage step takes about 69 minutes of the 72-minute live build. Optimise it before rebuilds become routine.
+  - One parcel already has 157 of the 255 allowed frontage entries, and going over fails the build.
+- **Small.** The comments at `e2e/helpers/sharing.ts:17` and `e2e/fzp-sim.spec.ts:54` are stale. The scenario bench (50 ms bar) is flaky.
