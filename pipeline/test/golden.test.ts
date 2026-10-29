@@ -430,6 +430,8 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       'sd.roll.year-built-range': [1, 31],
       'sd.roll.year-gap': [1, 34],
       // Every mini lot is within ½ mile of a TOD stop, and every zoning code has a zone class.
+      // No MUNI_TIER2_STOP_IDS id is a mini stop: all 438 list ids go unmatched.
+      'sd.sb79.tier2-unmatched': [438, 438],
       'sd.sb79.zone-unlisted': [0, 18],
       // 12 of the 15 eligible lots front a street; shoreline lots 15 and 17 and rear lot 18 do not.
       'sd.streets.no-frontage': [3, 15],

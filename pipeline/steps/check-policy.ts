@@ -160,7 +160,8 @@ const NAMED = 5;
  * other row has 0 stories, no cap and zero yields; `hostableSb79` is `applies`; `todBand` (and
  * `todTier`) is 0 exactly on `outside` rows; `rent-control` rows, and no `applies` row, satisfy
  * `rentControlExcluded` (more than 2 pre-1979 homes); `policy.sb79.stops.tier1` / `.tier2` reach the
- * profile minimums; each `transitHeavyRailStations` name has a tier-1 stop in `transit.json`.
+ * profile minimums; at least `muniTier2MatchMin` of MUNI_TIER2_STOP_IDS match a stop
+ * (`sd.sb79.tier2-unmatched`); each `transitHeavyRailStations` name has a tier-1 stop in `transit.json`.
  * Warns (still passes) when `policy.sb79.tod_share` is outside `todShareWarn`. Never throws.
  */
 function checkV32(
@@ -228,6 +229,18 @@ function checkV32(
     problems.push(`${t1} tier-1 stops < ${profile.sb79MinT1Stops}`);
   if (!(t2 >= profile.sb79MinT2Stops))
     problems.push(`${t2} tier-2 stops < ${profile.sb79MinT2Stops}`);
+  const list = reportedQuality(counts, 'sd.sb79.tier2-unmatched');
+  const listed = list?.of ?? 0;
+  const listMatched = listed - (list?.fired ?? 0);
+  const listShare = listMatched / listed;
+  let listDetail = '';
+  if (!(listed > 0)) problems.push(`${listed} Muni tier-2 list ids`);
+  else if (!(listShare >= profile.muniTier2MatchMin))
+    problems.push(
+      `Muni tier-2 list ids matched ${listMatched}/${listed} = ${pct(listShare)} < ${thr(profile.muniTier2MatchMin)}`
+    );
+  else
+    listDetail = `; Muni tier-2 list ids matched ${listMatched}/${listed} ≥ ${thr(profile.muniTier2MatchMin)}`;
   try {
     if (!m?.transit) throw new Error('manifest has no transit');
     const rel = m.transit.slice(`/data/${m.datasetVersion}/`.length);
@@ -248,7 +261,7 @@ function checkV32(
       : '';
   return done(
     `${applies} applies rows match the statute envelope; stops tier 1 ${t1} ≥ ${profile.sb79MinT1Stops}, ` +
-      `tier 2 ${t2} ≥ ${profile.sb79MinT2Stops}; tod share ${pct(share)}${warn}`
+      `tier 2 ${t2} ≥ ${profile.sb79MinT2Stops}${listDetail}; tod share ${pct(share)}${warn}`
   );
 }
 

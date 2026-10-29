@@ -418,6 +418,8 @@
     "quality.sd.roll.year-built-range.of": 31,
     "quality.sd.roll.year-gap.fired": 1,
     "quality.sd.roll.year-gap.of": 34,
+    "quality.sd.sb79.tier2-unmatched.fired": 438,
+    "quality.sd.sb79.tier2-unmatched.of": 438,
     "quality.sd.sb79.zone-unlisted.fired": 0,
     "quality.sd.sb79.zone-unlisted.of": 18,
     "quality.sd.streets.no-frontage.fired": 3,
@@ -680,7 +682,7 @@
       "ok": true
     },
     {
-      "detail": "7 applies rows match the statute envelope; stops tier 1 3 ≥ 3, tier 2 2 ≥ 2; tod share 100.0%",
+      "detail": "7 applies rows match the statute envelope; stops tier 1 3 ≥ 3, tier 2 2 ≥ 2; Muni tier-2 list ids matched 0/438 ≥ 0%; tod share 100.0%",
       "id": "V32",
       "ok": true
     },

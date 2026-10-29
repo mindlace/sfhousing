@@ -21,6 +21,7 @@ import { runSql } from '../lib/sql';
 import { asOfFromLock } from '../project-records/parse';
 import { readParcelRecords } from '../steps/chunks';
 import { unitsFor } from '../lib/sb79';
+import { MUNI_TIER2_STOP_IDS } from '../sb79-config';
 import { readPolicyBin, writePolicy } from '../steps/policy';
 import { PARCELS_BIN, readParcelsBin, writeScenario } from '../steps/scenario';
 import { MINI, miniDuck } from './helpers';
@@ -248,6 +249,9 @@ describe('writePolicy on the mini fixture', () => {
     expect(counts['policy.sb79.tod_share']).toBe(
       Math.round((1e4 * pol.todBand.filter((b) => b > 0).length) / pol.count)
     );
+    // No MUNI_TIER2_STOP_IDS id is in the mini network (m1-m3 are plain bus stops, mini README).
+    expect(buildCounts['quality.sd.sb79.tier2-unmatched.fired']).toBe(MUNI_TIER2_STOP_IDS.size);
+    expect(buildCounts['quality.sd.sb79.tier2-unmatched.of']).toBe(MUNI_TIER2_STOP_IDS.size);
     expect(buildCounts['quality.sd.sb79.zone-unlisted.fired']).toBe(0);
     expect(buildCounts['quality.sd.sb79.zone-unlisted.of']).toBe(
       pol.todBand.filter((b) => b > 0).length

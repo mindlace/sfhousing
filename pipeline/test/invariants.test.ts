@@ -1133,7 +1133,9 @@ describe('V32 SB 79 as written', () => {
   it('is OK on the fixture', async () => {
     const r = await v32(base);
     expect(r.ok, r.detail).toBe(true);
-    expect(r.detail).toMatch(/stops tier 1 3 ≥ 3, tier 2 2 ≥ 2; tod share 100\.0%$/);
+    expect(r.detail).toMatch(
+      /stops tier 1 3 ≥ 3, tier 2 2 ≥ 2; Muni tier-2 list ids matched 0\/438 ≥ 0%; tod share 100\.0%$/
+    );
   });
   it('fails when an applies row has other stories or another cap', async () => {
     const stories = await v32(editRow(APPLIES, (p, i) => (p.sb79Stories[i] = 8)));
@@ -1198,6 +1200,28 @@ describe('V32 SB 79 as written', () => {
     });
     expect(station.ok).toBe(false);
     expect(station.detail).toMatch(/no tier-1 stop at Nowhere/);
+  });
+  it('bounds the share of MUNI_TIER2_STOP_IDS that match a transit stop', async () => {
+    // The fixture's exact answer: no list id is a mini stop, so 0/438 passes its bound of 0.
+    const fx = await v32(base);
+    expect(fx.detail).toMatch(/Muni tier-2 list ids matched 0\/438 ≥ 0%/);
+    const live = { ...FIXTURE_PROFILE, muniTier2MatchMin: 0.95 };
+    const none = await v32(base, counts, live);
+    expect(none.ok).toBe(false);
+    expect(none.detail).toMatch(/Muni tier-2 list ids matched 0\/438 = 0\.0% < 95%/);
+    const k = 'quality.sd.sb79.tier2-unmatched.fired';
+    const mostly = await v32(base, { ...counts, [k]: 2 }, live);
+    expect(mostly.ok, mostly.detail).toBe(true);
+    expect(mostly.detail).toMatch(/Muni tier-2 list ids matched 436\/438 ≥ 95%/);
+    const dropped = await v32(base, { ...counts, [k]: 145 }, live);
+    expect(dropped.ok).toBe(false);
+    expect(dropped.detail).toMatch(/matched 293\/438 = 66\.9% < 95%/);
+    const rest = Object.fromEntries(
+      Object.entries(counts).filter(([key]) => !key.startsWith('quality.sd.sb79.tier2-unmatched.'))
+    );
+    const unreported = await v32(base, rest, live);
+    expect(unreported.ok).toBe(false);
+    expect(unreported.detail).toMatch(/0 Muni tier-2 list ids/);
   });
   it('warns when the TOD share is outside todShareWarn and still passes', async () => {
     const r = await v32(base, counts, { ...FIXTURE_PROFILE, todShareWarn: [0.6, 0.95] });

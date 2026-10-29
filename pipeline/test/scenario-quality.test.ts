@@ -726,7 +726,19 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
       'exemption table rows',
       false
     ],
-    // The policy step (writePolicy, TS): shape · none.
+    // The policy step (writePolicy, TS): missing · drop and shape · none.
+    [
+      'sd.sb79.tier2-unmatched',
+      'gtfs-muni',
+      'stop_id',
+      'missing',
+      'drop',
+      4,
+      null,
+      null,
+      'MUNI_TIER2_STOP_IDS ids',
+      false
+    ],
     [
       'sd.sb79.zone-unlisted',
       'datasf-parcel-attrs',

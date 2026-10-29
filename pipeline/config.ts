@@ -131,6 +131,11 @@ export interface InvariantProfile {
   sb79MinT1Stops: number;
   /** V32: minimum SB 79 tier-2 TOD stops (`policy.sb79.stops.tier2`). */
   sb79MinT2Stops: number;
+  /**
+   * V32: minimum share of MUNI_TIER2_STOP_IDS that match a stop in transit.json (from
+   * `sd.sb79.tier2-unmatched`). Guards the 145 bus-only tier-2 stops against a GTFS renumbering.
+   */
+  muniTier2MatchMin: number;
   /** V32 warns (still passes) when the share of parcels within ½ mile of a stop is outside it. */
   todShareWarn: [number, number] | null;
   /** V34: maximum size of scenarios/fzp/frontage.bin on disk, bytes. */
@@ -201,6 +206,10 @@ export const LIVE_PROFILE: InvariantProfile = {
   // (transitHeavyRailStations), and far fewer tier-2 stops than MUNI_TIER2_STOP_IDS's 438.
   sb79MinT1Stops: 8,
   sb79MinT2Stops: 50,
+  // V32 check bound (tier 4, made up): the list was mapped to GTFS stop_ids on 2026-10-28 and
+  // 436 of 438 match live (99.5%); a gtfs-muni refresh that renumbers stops drops far below 95%,
+  // and losing the 145 bus-only ids alone is 66.9%.
+  muniTier2MatchMin: 0.95,
   // Warn band (tier 4) around Planning's "more than 75%" of parcels within ½ mile of a TOD stop
   // (Ord. 082-26 §2(e), tier 1).
   todShareWarn: [0.6, 0.95],
@@ -267,6 +276,8 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   // Caltrain trains a day at the station); tier 2 m4, m5 (Muni N light rail).
   sb79MinT1Stops: 3,
   sb79MinT2Stops: 2,
+  // Fixture known answer (mini README "Transit"): no MUNI_TIER2_STOP_IDS id is a mini stop, 0/438.
+  muniTier2MatchMin: 0,
   todShareWarn: null,
   frontageMaxBytes: LIVE_PROFILE.frontageMaxBytes,
   // Fixture known answer (mini README "Streets"): 12 of the 15 eligible lots front a street at

@@ -40,6 +40,7 @@ import {
   CURRENT_LAW_RULE,
   EXEMPTION_HOMEPAGE,
   MUNI_TIER2_CITE,
+  MUNI_TIER2_STOP_IDS,
   S207,
   STANDARDS_CITE,
   TIER_SOURCE,
@@ -52,7 +53,7 @@ import { readParcelsBin } from './scenario';
 
 export { POLICY_BIN };
 /** The T14 rules writePolicy counts in TS (82_policy.sql tallies POLICY_SQL_RULES). */
-export const POLICY_TS_RULES = ['sd.sb79.zone-unlisted'] as const;
+export const POLICY_TS_RULES = ['sd.sb79.zone-unlisted', 'sd.sb79.tier2-unmatched'] as const;
 /** The golden's canonical dump of the decoded policy payload. */
 export const POLICY_DUMP = 'scenarios/fzp/policy.decoded.json';
 
@@ -230,7 +231,7 @@ interface PolicyRow {
  * The policy build step. Needs the scenario step's tables (sc_zoning, sc_district) and its
  * `scenarios/fzp/parcels.bin`, and `records` as writeScenario took them. Runs runPolicySql, writes
  * `<outDir>/scenarios/fzp/policy.bin` and reports sd.historic.no-row and sd.exempt.unmatched into
- * `buildCounts` (T14), and sd.sb79.zone-unlisted. Reads `<outDir>/transit.json` (the transit step's)
+ * `buildCounts` (T14), and sd.sb79.zone-unlisted and sd.sb79.tier2-unmatched. Reads `<outDir>/transit.json` (the transit step's)
  * for the SB 79 TOD stops. Returns the policy.* counts and warnings. Throws when the written file does
  * not decode.
  */
@@ -509,11 +510,21 @@ export async function writePolicy(a: {
       sample: samples.filter((x) => x.rule_id === id).map((x) => x.record_id)
     });
   }
-  // ---- T14: the TS-side rule (sd.sb79.zone-unlisted, over parcels within ½ mile) ----
+  // ---- T14: the TS-side rules ----
+  // sd.sb79.zone-unlisted, over parcels within ½ mile.
   recordQuality(a.buildCounts, POLICY_TS_RULES[0], {
     fired: zoneUnlisted.length,
     of: inReach,
     sample: zoneUnlisted
+  });
+  // sd.sb79.tier2-unmatched, over MUNI_TIER2_STOP_IDS: a list id with no stop in transit.json
+  // tiers nothing (V32 bounds the matched share by muniTier2MatchMin).
+  const netIds = new Set(net.stops.map((x) => x.id));
+  const tier2Unmatched = [...MUNI_TIER2_STOP_IDS].filter((id) => !netIds.has(id)).sort(cmp);
+  recordQuality(a.buildCounts, POLICY_TS_RULES[1], {
+    fired: tier2Unmatched.length,
+    of: MUNI_TIER2_STOP_IDS.size,
+    sample: tier2Unmatched
   });
 
   const counts = Object.fromEntries(Object.entries(c).sort(([x], [y]) => cmp(x, y)));

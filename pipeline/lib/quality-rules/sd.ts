@@ -935,6 +935,25 @@ export const SD_RULES: readonly QualityRule[] = [
     ...MISSING_SHARES,
     unitsWeighted: false
   },
+  // SB 79 as written (pipeline/steps/policy.ts): a MUNI_TIER2_STOP_IDS id with no stop in
+  // transit.json (a gtfs-muni refresh renumbered or dropped it) tiers nothing, so its corridor
+  // loses tier 2. Kind `missing`, so the 0.05 default; V32 also requires a matched share of at least
+  // `muniTier2MatchMin`. Live 2 of 438 (muni:3153, muni:3318).
+  {
+    ...SD,
+    id: 'sd.sb79.tier2-unmatched',
+    source: 'gtfs-muni',
+    field: 'stop_id',
+    kind: 'missing',
+    action: 'drop',
+    tier: 4,
+    valueTier: null,
+    maskBit: null,
+    label: 'A Muni tier-2 list stop id that matches no stop in the transit network tiers nothing',
+    denominator: 'MUNI_TIER2_STOP_IDS ids',
+    ...MISSING_SHARES,
+    unitsWeighted: false
+  },
   // SB 79 as written (pipeline/steps/policy.ts): a parcel within ½ mile of a TOD stop whose
   // zoning_code matches no ZONE_CLASS_RULES entry ('' or a code the config does not list) gets
   // status `zone`, no SB 79 envelope. Counted, changes nothing else. Kind `shape`, the 0.01 default.
