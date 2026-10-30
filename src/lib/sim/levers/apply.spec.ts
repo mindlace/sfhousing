@@ -1,10 +1,11 @@
 // Plan 2 Task 10: compiling a filled lever resolution into the plan's and the twin's SimInputs.
 import { describe, expect, it } from 'vitest';
+import type { EnvelopeRow } from '$lib/data/envelope-row';
 import { chanceTable, parseCalibration, typicalMonths } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import miniCalibrationJson from '../scenario/fixtures/mini-calibration.json';
 import { miniCity } from '../scenario/fixtures/mini-parcels';
-import { miniPolicy } from '../scenario/fixtures/mini-policy';
+import { MINI_SB79_ID, miniPolicy } from '../scenario/fixtures/mini-policy';
 import { MINI_HORIZON, miniProjectsJson } from '../scenario/fixtures/mini-projects';
 import { buildSimInput } from '../scenario/input';
 import { applyPolicies, baseZoning } from '../scenario/policy';
@@ -13,7 +14,7 @@ import { simulateDetailed, simulateNet } from '../scenario/simulate';
 import type { SimInput } from '../scenario/types';
 import { applyLevers, lookupsOf, twinInput } from './apply';
 import type { LayerCtx } from './layers';
-import { fillNeeds, resolveEnvelopes } from './resolve';
+import { allNeeds, fillNeeds, needKey, resolveEnvelopes } from './resolve';
 import { CURRENT_LAW_SWITCH, DEFAULT_LEVERS, FZP_COMPAT_LEVERS, type SimLevers } from './types';
 
 const H = MINI_HORIZON;
@@ -179,6 +180,38 @@ describe('lookupsOf', () => {
     expect(lookups.inFlight.chance).toEqual(chanceTable(base.calibration));
     expect(lookups.fresh.chance).toEqual(chanceTable(plan.newProjects!.calibration));
     expect(plan.inFlightScale).toBeUndefined(); // a 'new' timer leaves in-flight rows alone
+  });
+});
+
+describe('applyLevers: a capped edit under FZP stock', () => {
+  it("lawSwitch.parcels carries the after view's envelope for the edited lot", () => {
+    const { base, ctx } = setup();
+    const i = ctx.parcels.index.get(MINI_SB79_ID)!;
+    ctx.policy.sb79Cap[i] = 30; // current-law cap: none before the switch, 30 after
+    const levers = clone(FZP_COMPAT_LEVERS, {
+      user: [{ lots: [MINI_SB79_ID], mode: 'set', stories: 7, densityLimits: true }]
+    });
+    const window = { asOf: base.asOf, horizon: H, switchDay: CURRENT_LAW_SWITCH.day };
+    const r = resolveEnvelopes(ctx, levers, window);
+    const yields = new Map([
+      [needKey({ row: i, stories: 7, cap: null }), [0, 1, 2, 3, 4]],
+      [needKey({ row: i, stories: 7, cap: 30 }), [0, 1, 1, 2, 2]]
+    ]);
+    const rows = new Map<string, EnvelopeRow>(
+      allNeeds(r).map((n) => [
+        needKey(n),
+        { stories: n.stories, cap: n.cap, yield: yields.get(needKey(n))!, hostable: true }
+      ])
+    );
+    const out = applyLevers(base, ctx, levers, fillNeeds(r, rows), H);
+    const F = base.parcels.fillLevels.length;
+    const yieldOf = (p: SimInput['parcels']) => Array.from(p.yield.subarray(i * F, i * F + F));
+    expect(out.plan.lawSwitch?.day).toBe(CURRENT_LAW_SWITCH.day);
+    const after = out.plan.lawSwitch!.parcels;
+    expect(after.envelopeStories[i]).toBe(7);
+    expect(yieldOf(after)).toEqual([0, 1, 1, 2, 2]);
+    expect(after.hostable[i]).toBe(1);
+    expect(yieldOf(out.plan.parcels)).toEqual([0, 1, 2, 3, 4]);
   });
 });
 

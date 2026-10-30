@@ -237,6 +237,57 @@ describe('protected lots without current law in the stock', () => {
   });
 });
 
+describe('capped user edits follow the switch whatever the other levers', () => {
+  const CAP_AFTER = 30;
+  /** The mini city with an SB 79 cap on the SB 79 lot, so its current-law cap changes at the switch. */
+  function capCtx(): LayerCtx {
+    const c = ctx();
+    c.policy.sb79Cap[at(c, MINI_SB79_ID)] = CAP_AFTER;
+    return c;
+  }
+  const capped = (patch: Partial<SimLevers> = {}) =>
+    levers({ stock: ['fzp'], user: [edit([MINI_SB79_ID], 'set', 7, true)], ...patch });
+
+  it('FZP stock, one capped edit: after exists and the edit takes the after-switch cap', () => {
+    const c = capCtx();
+    const i = at(c, MINI_SB79_ID);
+    expect(currentLawTable(c, 'before', false).cap[i]).toBe(NULL_CAP);
+    expect(currentLawAfterTable(c).cap[i]).toBe(CAP_AFTER);
+    const r = resolveEnvelopes(c, capped(), WINDOW);
+    expect(r.before.table.cap[i]).toBe(NULL_CAP);
+    expect(r.after).not.toBeNull();
+    expect(r.after!.day).toBe(SWITCH);
+    expect(r.after!.period.table.stories[i]).toBe(7);
+    expect(r.after!.period.table.cap[i]).toBe(CAP_AFTER);
+    expect(r.after!.period.needs).toContainEqual({ row: i, stories: 7, cap: CAP_AFTER });
+    expect(r.unprotected.after).toBe(r.after!.period);
+  });
+
+  it('protecting an unrelated lot leaves the edited lot rows unchanged', () => {
+    const c = capCtx();
+    const i = at(c, MINI_SB79_ID);
+    const alone = resolveEnvelopes(c, capped(), WINDOW);
+    const withProt = resolveEnvelopes(c, capped({ protect: protectLots([FZP_LOT]) }), WINDOW);
+    expect(withProt.after).not.toBeNull();
+    expect(row(withProt.after!.period.table, i)).toEqual(row(alone.after!.period.table, i));
+    expect(row(withProt.before.table, i)).toEqual(row(alone.before.table, i));
+  });
+
+  it('FZP stock with no edits and no protections: after is null', () => {
+    const c = capCtx();
+    const r = resolveEnvelopes(c, levers({ stock: ['fzp'] }), WINDOW);
+    expect(r.after).toBeNull();
+    expect(r.unprotected.after).toBeNull();
+    expect(leverCapacity(r, c.parcels).afterSwitch).toBeNull();
+  });
+
+  it('an uncapped edit on FZP stock gives no after period', () => {
+    const c = capCtx();
+    const r = resolveEnvelopes(c, levers({ user: [edit([MINI_SB79_ID], 'set', 7)] }), WINDOW);
+    expect(r.after).toBeNull();
+  });
+});
+
 describe('needs', () => {
   it('allNeeds dedupes and sorts; fillNeeds writes rows and throws on a missing one', () => {
     const c = ctx();

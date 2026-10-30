@@ -144,6 +144,23 @@ function resolvePeriod(
   return { table, needs };
 }
 
+const sameArray = (a: ArrayLike<number>, b: ArrayLike<number>) => {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+};
+
+/** Row for row: stories, cap, yields and hostable. An unfilled Need row reads as 0 in both. */
+function sameTable(a: EnvelopeTable, b: EnvelopeTable): boolean {
+  return (
+    a.count === b.count &&
+    sameArray(a.stories, b.stories) &&
+    sameArray(a.cap, b.cap) &&
+    sameArray(a.hostable, b.hostable) &&
+    sameArray(a.yield, b.yield)
+  );
+}
+
 export function resolveEnvelopes(
   ctx: LayerCtx,
   levers: SimLevers,
@@ -153,21 +170,29 @@ export function resolveEnvelopes(
   const assume = levers.assumeAlternativePlanKept;
   const switched = !assume && window.switchDay <= window.asOf;
   const beforePeriod: Period = switched ? 'after' : 'before';
-  const hasAfter =
-    (levers.stock.includes('currentLaw') || rows.length > 0) && // protected lots follow the switch
-    !assume &&
-    window.asOf < window.switchDay &&
-    window.switchDay <= window.horizon;
+  // The switch is resolved whenever it falls inside the window, and dropped when it changes no
+  // row: whether a run switches depends only on whether the envelopes differ, not on which levers
+  // read current law (the currentLaw stock, protected lots, capped user edits).
+  const inWindow = !assume && window.asOf < window.switchDay && window.switchDay <= window.horizon;
 
   const before = resolvePeriod(ctx, levers, beforePeriod, rows);
-  const after = hasAfter ? resolvePeriod(ctx, levers, 'after', rows) : null;
   const unprotectedBefore =
     rows.length === 0 ? before : resolvePeriod(ctx, levers, beforePeriod, null);
-  const unprotectedAfter = !after
+  let after = inWindow ? resolvePeriod(ctx, levers, 'after', rows) : null;
+  let unprotectedAfter = !after
     ? null
     : rows.length === 0
       ? after
       : resolvePeriod(ctx, levers, 'after', null);
+  if (
+    after &&
+    unprotectedAfter &&
+    sameTable(after.table, before.table) &&
+    sameTable(unprotectedAfter.table, unprotectedBefore.table)
+  ) {
+    after = null;
+    unprotectedAfter = null;
+  }
   return {
     before,
     after: after ? { day: window.switchDay, period: after } : null,
