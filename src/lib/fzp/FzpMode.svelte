@@ -202,6 +202,11 @@
   const scoreBusy = $derived(
     leverState.sentRev !== null && timelineRev < leverState.sentRev && leverStatus.kind !== 'failed'
   );
+  /**
+   * The latest revision failed (/sim): the score stands from the policy before it, the score
+   * details say so, and the notice row offers Retry, which restarts with the latest levers.
+   */
+  const leverFailed = $derived(leverStatus.kind === 'failed' && !stopped);
   const markers = $derived(score ? scrubMarkers(score) : []);
   /** The score at the scrubbed month, for the details panel. */
   const at = $derived(
@@ -705,6 +710,7 @@
     onsources={() => dialog?.open()}
     {copy}
     {capacity}
+    stale={leverFailed}
   />
 {/snippet}
 
@@ -840,6 +846,22 @@
               >
             </span>
           {/if}
+        {/if}
+      </div>
+      <!-- A failed lever revision (/sim). The alert region is always rendered (empty when not
+           failed), so it stays in the accessibility tree and its message is announced. -->
+      <div role="alert" data-testid="fzp-lever-failed" class="max-w-full">
+        {#if leverFailed}
+          <span
+            class="pointer-events-auto mb-2 flex w-max max-w-full items-center gap-1 rounded-lg bg-white py-1 pl-3 text-sm text-black shadow"
+          >
+            <span>Couldn't update the simulation for your policy.</span>
+            <button
+              type="button"
+              class="min-h-11 min-w-11 rounded-lg px-3 font-semibold underline"
+              onclick={() => void retry()}>Retry</button
+            >
+          </span>
         {/if}
       </div>
       {#if rerollFailed && !stopped}

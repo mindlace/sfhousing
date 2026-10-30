@@ -46,6 +46,8 @@
     copy?: ScoreCopy;
     /** The current levers' capacity (/sim): the protection line (plan 3, Task 10) reads it. */
     capacity?: LeverCapacity | null;
+    /** The latest levers failed to apply (/sim): the numbers are from the policy before them. */
+    stale?: boolean;
   }
   let {
     score,
@@ -63,7 +65,8 @@
     onrepresentative,
     onsources,
     copy = scoreCopy(null),
-    capacity = null
+    capacity = null,
+    stale = false
   }: Props = $props();
 
   /**
@@ -117,6 +120,11 @@
     the pipeline today and adds new ones at the rates the city's own records show. It is a
     simulation, not a forecast.
   </p>
+  {#if stale}
+    <p class="mt-2 text-sm font-semibold" data-testid="fzp-score-stale">
+      These numbers are from before your latest policy change.
+    </p>
+  {/if}
 
   {#if !score || !at || !band || !planBand}
     <p class="mt-3 text-sm text-gray-800">Loading the simulation…</p>

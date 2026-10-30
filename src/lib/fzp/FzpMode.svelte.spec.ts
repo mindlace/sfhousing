@@ -1068,6 +1068,61 @@ describe('FzpMode levers (/sim)', () => {
     await expect.element(board).toHaveAttribute('aria-busy', 'false');
   });
 
+  it('a failed revision shows an alert whose Retry restarts with the latest levers', async () => {
+    const onlevers = vi.fn<(st: LeverStatus) => void>();
+    const s = setup({ levers: DEFAULT_LEVERS, onlevers });
+    await toReady(s);
+    // The alert region is in the accessibility tree before it has anything to say.
+    const region = page.getByTestId('fzp-lever-failed');
+    await expect.element(region).toBeInTheDocument();
+    expect(region.element().getAttribute('role')).toBe('alert');
+    expect(region.element().textContent?.trim()).toBe('');
+    expect(getComputedStyle(region.element()).display).not.toBe('none');
+
+    const next: SimLevers = { ...FZP_COMPAT_LEVERS };
+    await (await s.r).rerender({ levers: next });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+    const rev = leverRev(s.w());
+    s.w().emit({ type: 'levers', rev, phase: 'resolving', done: 1, total: 4, failedCells: [] });
+    await expect.element(page.getByText(/Updating the simulation/)).toBeVisible();
+    // A recompute slice threw: the worker ends the session and posts `internal` at the rev.
+    s.w().emit({ type: 'error', rev, code: 'internal', message: 'x' });
+
+    const message = "Couldn't update the simulation for your policy.";
+    const alert = page.getByRole('alert').filter({ hasText: message });
+    await expect.element(alert).toBeVisible();
+    expect(region.element().contains(alert.element())).toBe(true);
+    expect(onlevers.mock.calls.at(-1)![0]).toMatchObject({ kind: 'failed', rev });
+    await expect.element(page.getByText(/Updating the simulation/)).not.toBeInTheDocument();
+    // The score says its numbers predate the change.
+    const board = await details();
+    const stale = board.getByText('These numbers are from before your latest policy change.');
+    await expect.element(stale).toBeVisible();
+
+    const inits = s.w().allOf('initScenario').length;
+    await alert.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect.poll(() => s.w().allOf('initScenario').length).toBe(inits + 1);
+    const init = s.w().lastOf('initScenario')!;
+    expect(init.levers).toBe(next);
+    expect(init.seed).toBe(7);
+    // Sent again: resolving, so the alert clears; current keeps it clear.
+    await expect.element(alert).not.toBeInTheDocument();
+    s.w().emit({ type: 'ready', rev: init.rev, datasetVersion: 'fixture-0', chunkCount: 4 });
+    s.w().emit({
+      type: 'levers',
+      rev: init.rev,
+      phase: 'current',
+      lookups: postedLookups(),
+      capacity: CAPACITY,
+      unknownLots: 0
+    });
+    s.w().emit(timelineMsg(init.rev, 7));
+    await expect.poll(() => onlevers.mock.calls.at(-1)![0].kind).toBe('current');
+    await expect.element(page.getByText(message)).not.toBeInTheDocument();
+    expect(region.element().textContent?.trim()).toBe('');
+    await expect.element(stale).not.toBeInTheDocument();
+  });
+
   it('failed cells offer Retry, which retries the chunks', async () => {
     const s = setup({ levers: DEFAULT_LEVERS });
     await toReady(s);
