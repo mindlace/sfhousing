@@ -10,6 +10,10 @@ import type { Target } from '$lib/scoreboard';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import type { Calibration, ExitReason, Pathway, Provenance, Stage } from '$lib/timelapse/types';
+import type { LeverLookups } from '../levers/apply';
+import type { LeverCapacity } from '../levers/resolve';
+import type { StageScale } from '../levers/timers';
+import type { SimLevers } from '../levers/types';
 import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev, SimRequest } from '../protocol';
 
 // T5
@@ -43,6 +47,18 @@ export type SimInput = {
   calibration: Calibration;
   asOf: Day;
   districtMaxStories: number | null; // projects.json `districtMaxStories.stories` (large-site massing §4.3, tier 2); null when absent
+  // Policy levers (plan 2 ruling 3, "Policy start date = calibration.asOf"). Simulated projects and
+  // pipeline rows at preApplication run on `newProjects`; every other row, master and phase on
+  // `calibration`, its current stage's remaining time rescaled by `inFlightScale`. Initiation,
+  // size, revision and phaseGap always read `calibration`.
+  newProjects?: { calibration: Calibration; scale: StageScale }; // absent = calibration, scale 1
+  inFlightScale?: StageScale; // absent = 1
+  // The time-switched envelope (plan 2 ruling 1): a simulated project whose initiation month starts
+  // on or after `day` runs on `parcels` (size row, yields, envelope, Local Program) and its
+  // initiation hazard switches there too; in-flight rows keep `parcels` above. `parcels` has the
+  // same rows, ids and existing columns as the base. Requires asOf < day (`runEngine` throws a
+  // RangeError otherwise). Absent = no switch.
+  lawSwitch?: { day: Day; parcels: ScenarioParcels };
 };
 export type Simulate = (input: SimInput, seed: number, horizon: Day) => Schedule[];
 
@@ -56,8 +72,11 @@ export type ScenarioRequest =
       scenario: 'fzp';
       seed: number | null; // null = representative seed
       horizon: Day;
+      levers?: SimLevers; // /sim (plan 2); absent = /fzp, which never fetches policy.bin
     }
   | { type: 'reroll'; rev: Rev; seed: number | null }
+  // A barrier rev like reroll; needs a session initialised with levers. The latest one wins.
+  | { type: 'setLevers'; rev: Rev; levers: SimLevers }
   | {
       type: 'parcelSummary';
       reqId: number;
@@ -83,7 +102,31 @@ export type ScenarioResponse =
   | ChunksResponse
   | TimelineResponse
   | { type: 'error'; rev: Rev; code: ScenarioErrorCode; message: string }
-  | { type: 'parcelSummary'; reqId: number; summary: ParcelSummary | null };
+  | { type: 'parcelSummary'; reqId: number; summary: ParcelSummary | null }
+  | LeversResponse;
+/**
+ * A lever revision's status (plan 2): `rev` is the `initScenario` or `setLevers` that named the
+ * levers. `resolving` while touched-lot yields are recomputed (`failedCells`: needed chunks that
+ * failed to load; `retryChunks` re-wants them); `current` once the levers are in force, before
+ * any timeline computed on them. A superseded revision never gets `current`.
+ */
+export type LeversResponse =
+  | {
+      type: 'levers';
+      rev: Rev;
+      phase: 'resolving';
+      done: number;
+      total: number;
+      failedCells: string[];
+    }
+  | {
+      type: 'levers';
+      rev: Rev;
+      phase: 'current';
+      lookups: LeverLookups;
+      capacity: LeverCapacity;
+      unknownLots: number;
+    };
 export type WorkerRequest = SimRequest | ScenarioRequest;
 export type ProjectCard = {
   projectId: string;

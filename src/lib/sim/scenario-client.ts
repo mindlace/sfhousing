@@ -6,6 +6,7 @@ import type { ParcelId } from '$lib/data/parcel';
 import type { BBox } from '$lib/plan';
 import type { Day } from '$lib/timelapse/time';
 import type { WorkerLike } from './client';
+import type { SimLevers } from './levers/types';
 import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev } from './protocol';
 import type { ScenarioResponse, TimelineResponse, WorkerRequest } from './scenario/types';
 
@@ -32,6 +33,8 @@ export interface ScenarioClientEvents {
   /** Every timeline, stale ones included; the caller drops a stale one with `isStale`. */
   onTimeline?(t: TimelineResponse): void;
   onChunks?(c: ChunksResponse): void;
+  /** Every lever status, a superseded revision's `resolving` included. */
+  onLevers?(l: Extract<ScenarioResponse, { type: 'levers' }>): void;
   /** Never answered by a resync. */
   onError?(e: ScenarioErrorResponse): void;
   /**
@@ -47,6 +50,8 @@ export class ScenarioClient {
   #rev = 0;
   #barrierRev = 0;
   #resyncRev: Rev | null = null;
+  /** The latest lever revision's rev until its `current`; null when none is pending. */
+  #leversRev: Rev | null = null;
   /** Seed of the latest non-stale timeline. Survives `initScenario` and `restart` (crash Retry). */
   #currentSeed: number | null = null;
   /** A non-stale timeline has arrived since the last `initScenario`/`restart`: resync may run. */
@@ -82,20 +87,52 @@ export class ScenarioClient {
     return this.#datasetVersion;
   }
 
+  /**
+   * True from an `initScenario` with levers, or a `setLevers`, until that revision's `levers`
+   * `current` (or an error at or after its rev).
+   */
+  get leversPending(): boolean {
+    return this.#leversRev !== null;
+  }
+
   /** Every rev request here is a barrier: it supersedes all earlier timelines. */
-  #sendBarrier(req: { type: 'initScenario' | 'reroll' } & Record<string, unknown>): Rev {
+  #sendBarrier(
+    req: { type: 'initScenario' | 'reroll' | 'setLevers' } & Record<string, unknown>
+  ): Rev {
     const rev = ++this.#rev;
     this.#barrierRev = rev;
     this.#worker.postMessage({ ...req, rev } as WorkerRequest);
     return rev;
   }
 
-  initScenario(manifest: Manifest, horizon: Day, seed: number | null = null): Rev {
+  /** `levers` absent = /fzp (no policy.bin, no `levers` responses). */
+  initScenario(
+    manifest: Manifest,
+    horizon: Day,
+    seed: number | null = null,
+    levers?: SimLevers
+  ): Rev {
     this.#resyncRev = null;
     // A new scenario has produced no timeline yet; a resync before one would hit an
     // uninitialised host (bad-request). `currentSeed` is kept for the caller's Retry.
     this.#hasTimeline = false;
-    return this.#sendBarrier({ type: 'initScenario', manifest, scenario: 'fzp', seed, horizon });
+    const rev = this.#sendBarrier({
+      type: 'initScenario',
+      manifest,
+      scenario: 'fzp',
+      seed,
+      horizon,
+      ...(levers !== undefined && { levers })
+    });
+    this.#leversRev = levers === undefined ? null : rev;
+    return rev;
+  }
+
+  /** A barrier like `reroll`: timelines older than it are stale. Needs an init with levers. */
+  setLevers(levers: SimLevers): Rev {
+    const rev = this.#sendBarrier({ type: 'setLevers', levers });
+    this.#leversRev = rev;
+    return rev;
   }
 
   reroll(seed: number | null): Rev {
@@ -150,6 +187,7 @@ export class ScenarioClient {
     this.#detach();
     this.#crashed = false;
     this.#resyncRev = null;
+    this.#leversRev = null; // the fresh worker knows no levers until the next initScenario
     this.#hasTimeline = false;
     this.#datasetVersion = null;
     this.#worker = worker as ScenarioWorkerLike;
@@ -224,7 +262,14 @@ export class ScenarioClient {
         // Never a resync here (unlike SimClient): resending cannot fix a bad file or request. An
         // error at or after the resync rev only closes the episode.
         if (this.#resyncRev !== null && msg.rev >= this.#resyncRev) this.#resyncRev = null;
+        if (this.#leversRev !== null && msg.rev >= this.#leversRev) this.#leversRev = null;
         this.#events.onError?.(msg);
+        return;
+      case 'levers':
+        if (msg.phase === 'current' && this.#leversRev !== null && msg.rev >= this.#leversRev) {
+          this.#leversRev = null;
+        }
+        this.#events.onLevers?.(msg);
         return;
       default: {
         const never: never = msg;

@@ -9,6 +9,7 @@ import {
   type ScenarioWorkerLike
 } from './scenario-client';
 import type { ScenarioResponse, TimelineResponse, WorkerRequest } from './scenario/types';
+import { DEFAULT_LEVERS, FZP_COMPAT_LEVERS } from './levers/types';
 import { FIXTURE_1 } from './test/harness';
 
 interface FakeWorker extends ScenarioWorkerLike {
@@ -290,6 +291,79 @@ describe('ScenarioClient', () => {
       expect(w.onmessage).toBeNull();
       await expect(p).resolves.toBeNull();
       await expect(client.parcelSummary('2', 1 as Day)).resolves.toBeNull();
+    });
+  });
+
+  describe('levers', () => {
+    type Levers = Extract<ScenarioResponse, { type: 'levers' }>;
+    const current = (rev: number): Levers =>
+      ({
+        type: 'levers',
+        rev,
+        phase: 'current',
+        lookups: {},
+        capacity: {},
+        unknownLots: 0
+      }) as unknown as Levers;
+    const resolving = (rev: number): Levers => ({
+      type: 'levers',
+      rev,
+      phase: 'resolving',
+      done: 0,
+      total: 2,
+      failedCells: []
+    });
+
+    it('initScenario sends levers only when given; without them leversPending stays false', () => {
+      const { w, client } = setup();
+      client.initScenario(MANIFEST, HORIZON);
+      expect('levers' in w.posts[0]).toBe(false);
+      expect(client.leversPending).toBe(false);
+      const levers = structuredClone(FZP_COMPAT_LEVERS);
+      const rev = client.initScenario(MANIFEST, HORIZON, 4, levers);
+      expect(w.posts[1]).toEqual({
+        type: 'initScenario',
+        rev,
+        manifest: MANIFEST,
+        scenario: 'fzp',
+        seed: 4,
+        horizon: HORIZON,
+        levers
+      });
+      expect(client.leversPending).toBe(true);
+      w.emit(current(rev));
+      expect(client.leversPending).toBe(false);
+    });
+
+    it('setLevers is a barrier; leversPending holds until its current', () => {
+      const onLevers = vi.fn();
+      const { w, client } = setup({ onLevers });
+      const i = client.initScenario(MANIFEST, HORIZON, null, structuredClone(DEFAULT_LEVERS));
+      w.emit(current(i));
+      w.emit(timeline(i, 3));
+      const levers = structuredClone(DEFAULT_LEVERS);
+      const r = client.setLevers(levers);
+      expect(r).toBe(i + 1);
+      expect(w.posts.at(-1)).toEqual({ type: 'setLevers', rev: r, levers });
+      expect(client.leversPending).toBe(true);
+      expect(client.isStale(timeline(i, 3))).toBe(true);
+      expect(client.isStale(timeline(r, 3))).toBe(false);
+      w.emit(resolving(r));
+      expect(client.leversPending).toBe(true);
+      w.emit(current(i)); // an older revision's current does not clear it
+      expect(client.leversPending).toBe(true);
+      w.emit(current(r));
+      expect(client.leversPending).toBe(false);
+      expect(onLevers).toHaveBeenCalledTimes(4);
+      expect(onLevers).toHaveBeenLastCalledWith(current(r));
+    });
+
+    it('an error at or after the setLevers rev ends leversPending', () => {
+      const { w, client } = setup();
+      client.initScenario(MANIFEST, HORIZON, null, structuredClone(DEFAULT_LEVERS));
+      const r = client.setLevers(structuredClone(DEFAULT_LEVERS));
+      w.emit({ type: 'error', rev: r, code: 'bad-request', message: 'x' });
+      expect(client.leversPending).toBe(false);
     });
   });
 

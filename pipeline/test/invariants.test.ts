@@ -13,6 +13,7 @@ import { encodeTransit } from '../../src/lib/data/transit-codec';
 import {
   SB79_STATUSES,
   S207_STATUSES,
+  NULL_CAP,
   decodePolicyPayload,
   encodePolicyPayload,
   type PolicyParcels
@@ -1266,6 +1267,15 @@ describe('V33 current law (FZP + §207.11)', () => {
       editPolicyRow(FROM_S207, (p, i, F) => (p.currentYield[i * F + F - 1] = 4))
     );
     expect(low.detail).toBe('currentFromS207 not more permissive than FZP: 1 rows (3512018)');
+  });
+  it('fails when an applies row has no FZP cap', async () => {
+    const r = await v33(
+      editPolicyRow(FROM_S207, (p, i) => {
+        p.fzpYieldCap[i] = NULL_CAP;
+      })
+    );
+    expect(r.ok).toBe(false);
+    expect(r.detail).toContain('applies with no FZP cap');
   });
   it('fails on a base height or yield mismatch count', async () => {
     const ft = await v33(base, { ...counts, 'policy.s207.base_ft_mismatch': 1 });

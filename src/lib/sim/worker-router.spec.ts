@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_LEVERS } from './levers/types';
 import { createWorkerRouter } from './router';
 import type { SimRequest } from './protocol';
 import type { ScenarioRequest, WorkerRequest } from './scenario/types';
@@ -90,6 +91,13 @@ describe('worker router', () => {
     expect(t.log).toEqual(['scenario:create', 'scenario:reroll']);
     t.send({ type: 'reroll', rev: 2, seed: 4 });
     expect(t.created()).toBe(1);
+  });
+
+  it('routes setLevers to the scenario host, creating it lazily if absent', () => {
+    const t = setup();
+    const levers = structuredClone(DEFAULT_LEVERS);
+    t.send({ type: 'setLevers', rev: 1, levers });
+    expect(t.log).toEqual(['scenario:create', 'scenario:setLevers']);
   });
 
   it('a reroll does not change which host the shared requests go to', () => {

@@ -1,7 +1,7 @@
 // The scenario host (spec §4.1): a separate host behind the same Worker, beside the editor host
-// (host.ts, unchanged). It handles `initScenario` and `reroll`, plus the shared `prefetch`,
-// `retryChunks` and `parcelSummary` when the router sends them here. Worker-bundle module:
-// zod-free, DOM-free, $app-free.
+// (host.ts, unchanged). It handles `initScenario`, `reroll` and `setLevers`, plus the shared
+// `prefetch`, `retryChunks` and `parcelSummary` when the router sends them here. Worker-bundle
+// module: zod-free, DOM-free, $app-free.
 //
 // Structure. Each accepted `initScenario` gets one `Session`, the per-init state, with its own
 // cancellation `Token`. Every timer and every async completion of a session goes through its
@@ -28,7 +28,17 @@
 // (the viewport) plus the extra cells of the multi-parcel projects anchored there; chunks report
 // as the editor's do. Each run's `Geometry` (geometry.ts) packs the ready anchored cells. The
 // generator memo lives across sessions and is cleared when an init names another datasetVersion.
+//
+// Levers (plan 2 Task 12). An `initScenario` with `levers` (/sim) also loads policy.bin; one
+// without (/fzp) takes the path above unchanged. A lever revision (that init, or a `setLevers`)
+// is pending until it is `current`: while one is, the scheduler runs only its 'recompute' job,
+// ahead of every other job (resolve the envelopes, then compute the touched lots' yields from
+// their chunk records as they arrive), so no timeline of the old levers, or of half-resolved new
+// ones, is posted. A later `setLevers` replaces the pending revision (latest wins); a reroll
+// gives the pending run its rev and seed. At `current` the work takes the plan and twin inputs, a
+// fresh band state and a fresh run. The `LayerCtx` and the yield `GrossCache` are the session's.
 import type { Manifest } from '$lib/data/manifest';
+import type { PolicyParcels } from '$lib/data/policy-codec';
 import { envelopeOf, type ScenarioParcels } from '$lib/data/scenario-codec';
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
 import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
@@ -40,10 +50,16 @@ import { DEFAULT_RETRY_DELAYS_MS } from '../host';
 import { createLru } from '../lru';
 import { checkManifestShape } from '../manifest-shape';
 import type { ParcelSummary, Rev } from '../protocol';
+import { applyLevers } from '../levers/apply';
+import type { LayerCtx } from '../levers/layers';
+import { createYieldRecompute, type GrossCache, type YieldRecompute } from '../levers/recompute';
+import { allNeeds, fillNeeds, resolveEnvelopes, type Resolution } from '../levers/resolve';
+import { CURRENT_LAW_SWITCH, parseSimLevers, type SimLevers } from '../levers/types';
 import { chooseProject, projectCard, revisionAt, type CardCtx } from './card';
 import { createGeometry, type Geometry } from './geometry';
 import { massingFor, type MassingCtx } from './massing';
 import {
+  leversProblem,
   loadScenario,
   scenarioUrls,
   seedProblem,
@@ -88,6 +104,8 @@ export interface ScenarioHostDeps {
   /** Test seam: the parcels.bin decoder (default `readScenarioParcels`), so a harness can tell
    *  when the one host-external async step (the inflate) has settled. */
   decodeParcels?(bytes: Uint8Array): Promise<ScenarioParcels>;
+  /** Test seam: the policy.bin decoder (default `readPolicyParcels`), its inflate likewise. */
+  decodePolicy?(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels>;
 }
 
 export interface ScenarioHost {
@@ -178,6 +196,32 @@ interface Chunks {
   records: Map<ParcelId, ParcelRecord>;
   /** Every cell `prefetch` has asked for (the viewport's, at any time). */
   wanted: Set<string>;
+  /** The failed cells of the loader's latest report. */
+  failed: string[];
+}
+
+/** A lever revision not yet in force. */
+interface PendingLevers {
+  rev: Rev; // the initScenario or setLevers that named the levers
+  levers: SimLevers;
+  runRev: Rev; // the run it starts: `rev`, or a later reroll's
+  seed: number | null; // that run's requested seed
+  /** Set by the first 'recompute' job. */
+  state: {
+    resolution: Resolution;
+    recompute: YieldRecompute;
+    cells: Set<string>; // cells of the needs whose record was missing at the start
+  } | null;
+  failed: string[]; // the needed cells that failed to load, as last posted
+  stalled: boolean; // every remaining need waits on a chunk: idle until one arrives
+}
+
+/** A lever session's state, beside its `Work`. */
+interface LeverWork {
+  base: Loaded; // as loaded: `base.fzp` is the input every lever revision compiles against
+  ctx: LayerCtx; // one per session: the after-switch table and the twin memo key on it
+  gross: GrossCache; // one per session: kept across lever revisions
+  pending: PendingLevers | null;
 }
 
 /** A loaded session's timeline work. */
@@ -200,9 +244,13 @@ interface Work {
   costs: Partial<Record<JobKind, number[]>>;
   /** A due band post could not go out yet; the next timeline (which carries the band) is it. */
   bandPostDue: boolean;
+  /** The current levers' references; undefined = `REFERENCES` (/fzp). */
+  references: TimelineScore['references'] | undefined;
+  /** Null for /fzp. */
+  levers: LeverWork | null;
 }
 
-type JobKind = 'net' | 'shown' | 'geometry' | 'pack' | 'post';
+type JobKind = 'recompute' | 'net' | 'shown' | 'geometry' | 'pack' | 'post';
 type Job = { kind: JobKind; run(): void };
 
 /** The per-init state. */
@@ -219,10 +267,15 @@ interface Session {
   loaded: Loaded | null;
   /** The timeline work, created with `loaded`. */
   work: Work | null;
+  /** The latest lever document and the rev that named it; null for /fzp (no levers). */
+  levers: { rev: Rev; levers: SimLevers } | null;
 }
 
 type InitRequest = Extract<ScenarioRequest, { type: 'initScenario' }>;
 type RerollRequest = Extract<ScenarioRequest, { type: 'reroll' }>;
+type SetLeversRequest = Extract<ScenarioRequest, { type: 'setLevers' }>;
+
+const NO_LEVERS_SESSION = 'setLevers needs a session initialised with levers';
 
 export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
   const retryDelaysMs = deps.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
@@ -289,7 +342,9 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       seed: req.seed,
       token: createToken(deps),
       loaded: null,
-      work: null
+      work: null,
+      // validateInitRequest has accepted it; parsing gives a fresh copy the host owns
+      levers: req.levers === undefined ? null : { rev: req.rev, levers: parseSimLevers(req.levers) }
     } as Omit<Session, 'chunks'> as Session;
     st.chunks = {
       loader: createChunkLoader(manifest, {
@@ -300,12 +355,15 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         maxConcurrent: deps.maxConcurrent ?? 4,
         onLoaded: (cellId, recs) => onChunk(st, cellId, recs),
         onReport: (r) => {
-          if (live(st)) post({ type: 'chunks', ...r });
+          if (!live(st)) return;
+          post({ type: 'chunks', ...r });
+          onFailed(st, r.failed);
         }
       }),
       byCell: new Map(),
       records: new Map(),
-      wanted: new Set()
+      wanted: new Set(),
+      failed: []
     };
     s = st;
     post({
@@ -325,7 +383,21 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     st.chunks.byCell.set(cellId, recs);
     for (const r of recs) st.chunks.records.set(r.id, r);
     st.work?.run.geometry?.onRecords(cellId, recs);
+    const p = st.work?.levers?.pending;
+    if (p?.state?.cells.has(cellId)) p.stalled = false;
     kick(st);
+  }
+
+  /** The loader's failed cells: a pending lever revision re-posts `resolving` when they change. */
+  function onFailed(st: Session, failed: string[]): void {
+    st.chunks.failed = failed;
+    const p = st.work?.levers?.pending;
+    if (!p?.state || p.state.recompute.total === 0) return;
+    const cells = p.state.cells;
+    const mine = failed.filter((c) => cells.has(c));
+    if (mine.length === p.failed.length && mine.every((c, k) => c === p.failed[k])) return;
+    p.failed = mine;
+    postResolving(p);
   }
 
   /** The viewport's cells, plus the extra cells of the multi-parcel projects anchored there. */
@@ -346,10 +418,12 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         setTimeout: (fn, ms) => st.token.later(fn, ms),
         retryDelaysMs,
         warn,
-        decodeParcels: deps.decodeParcels
+        decodeParcels: deps.decodeParcels,
+        decodePolicy: deps.decodePolicy
       },
       st.urls,
-      () => !live(st)
+      () => !live(st),
+      st.levers ? { policy: true } : undefined
     ).then(
       (r) => {
         if (!live(st)) return;
@@ -395,9 +469,24 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       sliceStart: 0,
       cost: {},
       costs: {},
-      bandPostDue: false
+      bandPostDue: false,
+      references: undefined,
+      levers: null
     };
+    if (st.levers) {
+      // The run above never runs: the lever revision's own run replaces it at `current`.
+      st.work.levers = {
+        base: loaded,
+        ctx: { parcels: loaded.fzp.parcels, policy: loaded.policy! },
+        gross: new Map(),
+        pending: pendingOf(st.levers.rev, st.levers.levers, st.seed)
+      };
+    }
     kick(st);
+  }
+
+  function pendingOf(rev: Rev, levers: SimLevers, seed: number | null): PendingLevers {
+    return { rev, levers, runRev: rev, seed, state: null, failed: [], stalled: false };
   }
 
   function newRun(rev: Rev, seed: number | null): Run {
@@ -422,9 +511,34 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     if (!st || !st.loaded || !st.work) return error(req.rev, 'bad-request', 'not initialised');
     const bad = seedProblem(req.seed);
     if (bad !== null) return error(req.rev, 'bad-request', bad);
+    const p = st.work.levers?.pending;
+    if (p) {
+      // the run that starts once the pending levers are current is this reroll's
+      p.runRev = req.rev;
+      p.seed = req.seed;
+      return;
+    }
     // Replacing the run drops the old seed's geometry and twin work: `nextJob` reads only
     // `w.run`, and a reroll is handled between slices. The band work is the session's.
     st.work.run = newRun(req.rev, req.seed);
+    kick(st);
+  }
+
+  /**
+   * A new lever revision replaces any pending one (latest wins), and the current run's jobs stop
+   * until it is current. Before loading has finished, the latest levers are the ones it starts.
+   */
+  function setLevers(req: SetLeversRequest): void {
+    const st = s;
+    if (!st || !st.levers) return error(req.rev, 'bad-request', NO_LEVERS_SESSION);
+    const bad = leversProblem(req.levers);
+    if (bad !== null) return error(req.rev, 'bad-request', bad);
+    const levers = parseSimLevers(req.levers); // a fresh copy the host owns
+    st.levers = { rev: req.rev, levers };
+    const w = st.work;
+    if (!w) return;
+    const lw = w.levers!;
+    lw.pending = pendingOf(req.rev, levers, lw.pending ? lw.pending.seed : w.run.requested);
     kick(st);
   }
 
@@ -441,7 +555,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         slice(st, w);
       } catch (e) {
         if (!live(st)) return;
-        const rev = w.run.rev;
+        const rev = w.levers?.pending?.runRev ?? w.run.rev;
         end();
         error(rev, 'internal', String(e));
       }
@@ -484,6 +598,9 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
   }
 
   function nextJob(w: Work): Job | null {
+    // a pending lever revision comes before every other job, and holds them all
+    const p = w.levers?.pending;
+    if (p) return p.stalled ? null : { kind: 'recompute', run: () => leverStep(w, w.levers!, p) };
     const run = w.run;
     const band = w.band;
     if (run.revision < 0) {
@@ -529,6 +646,71 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
   }
 
   // --- the jobs ---
+
+  /**
+   * One step of the pending lever revision: first resolve its envelopes (posting `resolving` and
+   * wanting the needed chunks when it has Needs), then compute ready Needs in what is left of the
+   * slice, then, once all are done, put the levers in force and post `current`.
+   */
+  function leverStep(w: Work, lw: LeverWork, p: PendingLevers): void {
+    if (p.state === null) {
+      const base = lw.base.fzp;
+      // the current-law twin's window (twinInput), so plan and twin agree on the switch
+      const window = { asOf: base.asOf, horizon: w.horizon, switchDay: CURRENT_LAW_SWITCH.day };
+      const resolution = resolveEnvelopes(lw.ctx, p.levers, window);
+      const recompute = createYieldRecompute(
+        base.parcels,
+        allNeeds(resolution),
+        { record: (id) => w.chunks.records.get(id), now: () => deps.now() },
+        lw.gross
+      );
+      const cells = new Set(recompute.cellsNeeded()); // once per revision: it scans every need
+      p.state = { resolution, recompute, cells };
+      if (recompute.total === 0) return;
+      p.failed = w.chunks.failed.filter((c) => cells.has(c));
+      postResolving(p);
+      w.chunks.loader.want(cells);
+      return;
+    }
+    const r = p.state.recompute;
+    const before = r.done;
+    if (!r.step(Math.max(0, SLICE_PLAN_MS - (deps.now() - w.sliceStart)))) {
+      // a step computes at least one ready need, so no progress means all wait on chunks
+      if (r.done === before) p.stalled = true;
+      else postResolving(p);
+      return;
+    }
+    const filled = fillNeeds(p.state.resolution, r.result());
+    const li = applyLevers(lw.base.fzp, lw.ctx, p.levers, filled, w.horizon);
+    lw.pending = null;
+    post({
+      type: 'levers',
+      rev: p.rev,
+      phase: 'current',
+      lookups: li.lookups,
+      capacity: li.capacity,
+      unknownLots: li.unknownLots
+    });
+    w.loaded = { ...lw.base, fzp: li.plan, twin: li.twin };
+    w.references = li.references;
+    w.band = createBandState(deps.bandRuns ?? BAND_RUNS);
+    w.fzpNew = [];
+    w.bandPostDue = false;
+    w.massing = { ...w.massing, input: li.plan };
+    w.run = newRun(p.runRev, p.seed);
+  }
+
+  function postResolving(p: PendingLevers): void {
+    const r = p.state!.recompute;
+    post({
+      type: 'levers',
+      rev: p.rev,
+      phase: 'resolving',
+      done: r.done,
+      total: r.total,
+      failedCells: [...p.failed]
+    });
+  }
 
   function bandFzp(w: Work, i: number): void {
     const r = simulateNet(w.loaded.fzp, bandSeed(i), w.horizon, w.months);
@@ -647,7 +829,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       planEffectBand: effect ? w.band.planEffectBand() : [],
       band: w.band.band(),
       baseline: w.loaded.projects.rhnaCompletedNet,
-      phasing: w.phasing
+      phasing: w.phasing,
+      ...(w.references ? { references: w.references } : {})
     });
     post(
       {
@@ -700,7 +883,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     const st = s;
     const rec = st?.chunks.records.get(req.parcelId);
     if (!st || !rec || !st.loaded) return null;
-    const parcels = st.loaded.fzp.parcels;
+    // the shown levers' envelopes under /sim; for /fzp `work.loaded` is `st.loaded`
+    const parcels = (st.work?.loaded ?? st.loaded).fzp.parcels;
     const i = parcels.index.get(req.parcelId);
     const envelope = i === undefined ? null : envelopeOf(parcels, i);
     const out: ParcelSummary = {
@@ -736,6 +920,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         return initScenario(req);
       case 'reroll':
         return reroll(req);
+      case 'setLevers':
+        return setLevers(req);
       case 'parcelSummary': {
         let summary: ParcelSummary | null;
         try {

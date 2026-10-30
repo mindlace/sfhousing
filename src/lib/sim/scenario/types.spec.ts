@@ -8,6 +8,10 @@ import type { Target } from '$lib/scoreboard';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import type { Calibration, ExitReason, Pathway, Provenance, Stage } from '$lib/timelapse/types';
+import type { LeverLookups } from '../levers/apply';
+import type { LeverCapacity } from '../levers/resolve';
+import type { StageScale } from '../levers/timers';
+import type { SimLevers } from '../levers/types';
 import type * as Protocol from '../protocol';
 import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev, SimRequest } from '../protocol';
 import type * as Scenario from './types';
@@ -48,6 +52,9 @@ type RowSimInput = {
   calibration: Calibration;
   asOf: Day;
   districtMaxStories: number | null;
+  newProjects?: { calibration: Calibration; scale: StageScale }; // plan 2 Task 8
+  inFlightScale?: StageScale;
+  lawSwitch?: { day: Day; parcels: ScenarioParcels }; // plan 2 Task 9
 };
 type RowSimulate = (input: RowSimInput, seed: number, horizon: Day) => RowSchedule[];
 
@@ -80,8 +87,10 @@ type RowScenarioRequest =
       scenario: 'fzp';
       seed: number | null;
       horizon: Day;
+      levers?: SimLevers; // plan 2 Task 12
     }
   | { type: 'reroll'; rev: Rev; seed: number | null }
+  | { type: 'setLevers'; rev: Rev; levers: SimLevers }
   | { type: 'parcelSummary'; reqId: number; parcelId: ParcelId; day: Day; projectId?: string };
 type RowTimelineResponse = {
   type: 'timeline';
@@ -101,7 +110,23 @@ type RowScenarioResponse =
   | ChunksResponse
   | RowTimelineResponse
   | { type: 'error'; rev: Rev; code: RowScenarioErrorCode; message: string }
-  | { type: 'parcelSummary'; reqId: number; summary: ParcelSummary | null };
+  | { type: 'parcelSummary'; reqId: number; summary: ParcelSummary | null }
+  | {
+      type: 'levers';
+      rev: Rev;
+      phase: 'resolving';
+      done: number;
+      total: number;
+      failedCells: string[];
+    } // plan 2 Task 12
+  | {
+      type: 'levers';
+      rev: Rev;
+      phase: 'current';
+      lookups: LeverLookups;
+      capacity: LeverCapacity;
+      unknownLots: number;
+    };
 type RowWorkerRequest = SimRequest | RowScenarioRequest;
 
 // T8

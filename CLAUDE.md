@@ -37,6 +37,7 @@ Fetch the file when working in the relevant area:
 - **Map-view interfaces for page and subsystem consumers (`--map-controls-br-*` CSS vars)** — [docs/dev/map-interfaces.md](docs/dev/map-interfaces.md)
 - **Map performance (`npm run bench:map`, pass bar, results, CI note)** — [docs/dev/map-perf.md](docs/dev/map-perf.md)
 - **FZP timelapse page `/fzp` (scrubber contract, layout variables, `window.__sfhFzp`, request flow, T9 lookups seam, known gaps)** — [docs/dev/fzp-mode.md](docs/dev/fzp-mode.md)
+- **Policy levers engine (`SimLevers`, resolution order, law switch, timer reach, `setLevers` protocol)** — [docs/dev/sim-levers.md](docs/dev/sim-levers.md)
 - **Design, specs and plans** — `docs/superpowers/design/`, `docs/superpowers/specs/`, `docs/superpowers/plans/`
 
 Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link them from this list.

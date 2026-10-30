@@ -312,11 +312,14 @@ export const S207: {
 /**
  * §207.11(b) conditions and how the plan evaluates each:
  * (1) within ½ mile of a TOD stop → todBand > 0; (2) principallyResidential; (3) numeric density
- * (fzpYieldCap !== null) or FZP base height < 40 ft; (4) not sc_district.r4; (5) not seeking a §206.6
- * density bonus: not modelled (HCD's 2026-07-01 approval is conditioned on SF not enforcing it);
- * (6) not in either exemption table; (7) historic code not in S207.historicCodes; (8) fzpYieldCap /
- * acres < S207.minDensityDuPerAcre(tier, band), uncapped never qualifies. (c)(1) cap =
- * S207.rounding(densityShare × STANDARDS[tier][band].duPerAcre × acres), combined as max(fzpCap, s207Cap); (c)(2) 40 ft →
+ * (fzpYieldCap !== null) or a height limit < 40 ft (the applicable height: lpFt on a Local Program
+ * lot, else baseFt); (4) not sc_district.r4; (5) not seeking a §206.6 density bonus: not modelled
+ * (HCD's 2026-07-01 approval is conditioned on SF not enforcing it); (6) not in either exemption
+ * table; (7) historic code not in S207.historicCodes; (8) "The permitted density prior to applying
+ * the density and height exception in subsection (c) does not meet the minimum density":
+ * fzpYieldCap / acres < S207.minDensityDuPerAcre(tier, band); an uncapped lot permits unlimited
+ * density, so it meets the minimum and never qualifies. (c)(1) cap = S207.rounding(densityShare ×
+ * STANDARDS[tier][band].duPerAcre × acres), combined as max(fzpCap, s207Cap); (c)(2) 40 ft →
  * storiesFromFt(40) = 4 where the FZP height is under 40 ft.
  */
 export const CURRENT_LAW_RULE = 'fzp+s207.11';
@@ -382,5 +385,6 @@ export const UNSOURCED: readonly string[] = [
   "SB 79 as written, §65912.157(h) rent-control exclusion (tier 2 proxy): a lot is excluded when parcels.bin's rentControlLikely is set (homes on the latest roll, built before 1979) and it has more than RENT_CONTROL_MAX_UNITS (2) existing homes. The statute counts units occupied by tenants in the past seven years, or demolished within seven years; occupancy and demolition history are not modelled, so every pre-1979 home on the latest roll counts as rent-controlled.",
   `Exemption tables licence: none stated; using "${EXEMPTION_LICENSE}".`,
   'Temporary exemption table: row "4591A 011*" carries an unexplained asterisk; 1,013 rows repeat a blklot.',
-  '§207.11(b)(3) and (c)(2), a lot with no height district (fzpBaseFt null) counts as not under 40 ft (tier 4, invented): with no base height the code gives no evidence either way, so such a lot neither qualifies by height nor gets the 40 ft floor.'
+  '§207.11(b)(3) and (c)(2), a lot with no height district (fzpHeightFt null) counts as not under 40 ft (tier 4, invented): with no height the code gives no evidence either way, so such a lot neither qualifies by height nor gets the 40 ft floor.',
+  '§207.11(b)(3) and (c)(2) read the height limit of the project (tier 2): §207.11 applies per project, and every project on a Local Program lot uses the Local Program (no density cap, streamlined, Local Program height), so fzpHeightFt is lpFt (lp_ft, else base_ft) on a Local Program lot and baseFt elsewhere.'
 ];

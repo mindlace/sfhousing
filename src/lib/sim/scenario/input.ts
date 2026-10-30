@@ -82,7 +82,10 @@ export interface Precompute {
    */
   sizeCum: Float32Array;
   parcelIndexOf(id: ParcelId): number; // -1 if absent
-  /** the rows that can initiate (hostable, hazard > 0, log1mh < 0), ascending */
+  /**
+   * the rows that can initiate (hostable, hazard > 0, log1mh < 0), ascending; with a switch, the
+   * rows that can initiate in either view
+   */
   candidates: Int32Array;
   /** `simEntity` of each candidate's parcel id, index-aligned with `candidates` */
   entity: Uint32Array;
@@ -93,9 +96,28 @@ export interface Precompute {
    * only: every u at or below the bound goes through the exact computation.
    */
   skipAbove(horizon: Day): Float64Array;
+  /**
+   * With `lawSwitch`, the after-view's own precompute (its `after` is null), memoised by input;
+   * `candidates` above are then the union, in row order, of the before and after candidates.
+   * Null without a switch.
+   */
+  after: Precompute | null;
 }
 
 const memo = new WeakMap<SimInput, Precompute>();
+const afterInputs = new WeakMap<SimInput, SimInput>();
+
+/** The input with `lawSwitch.parcels` as its parcels and no switch, memoised; null without one. */
+export function afterInputOf(input: SimInput): SimInput | null {
+  if (!input.lawSwitch) return null;
+  let a = afterInputs.get(input);
+  if (!a) {
+    const { lawSwitch, ...rest } = input;
+    a = { ...rest, parcels: lawSwitch.parcels };
+    afterInputs.set(input, a);
+  }
+  return a;
+}
 
 /** `simEntity` per row, shared by every input over the same id column (the twin's view too). */
 const entities = new WeakMap<readonly ParcelId[], { hash: Uint32Array; done: Uint8Array }>();
@@ -128,18 +150,40 @@ export function lastInitiationMonth(asOf: Day, horizon: Day): number {
 }
 
 /**
+ * The number of initiation months from `r` that start before `day` (plan 2 ruling 1): month T
+ * starts on `r + 1 + floor((T − 1)·MONTH_DAYS)`. Months 1..T0 run on the before view and later
+ * months on the after view.
+ */
+export function switchMonth(r: Day, day: Day): number {
+  return lastInitiationMonth(r, day - 1);
+}
+
+/**
  * The `skipAbove` bounds (see `Precompute`). With T = max(1, ceil(log(1 − u) / log1mh)), the
  * initiation is after the horizon exactly when T > Tmax (`lastInitiationMonth`), that is when
  * u > u* = 1 − (1 − h)^Tmax = 1 − exp(Tmax · log1mh). The bound is u* widened by a relative
  * 1e-6 plus an absolute 1e-12 (u*·(1 + 1e-6) + 1e-12), far above every rounding error of the
  * exact path's `1 − u`, `log` and division and of u* itself, for any u* above 1e-6; below
- * that no bound is used.
+ * that no bound is used. With a switch at month T0 (`switchMonth(asOf, day)`) and the after
+ * view's `l2`, the piecewise hazard gives u* = 1 − exp(min(Tmax, T0)·l1 + max(0, Tmax − T0)·l2),
+ * with the same widening.
  */
-function skipBounds(log1mh: Float64Array, candidates: Int32Array, Tmax: number): Float64Array {
+function skipBounds(
+  log1mh: Float64Array,
+  candidates: Int32Array,
+  Tmax: number,
+  after: { log1mh: Float64Array; T0: number } | null
+): Float64Array {
   const out = new Float64Array(candidates.length).fill(Infinity);
   if (Tmax < 1) return out;
+  const n1 = after ? Math.min(Tmax, after.T0) : Tmax;
+  const n2 = after ? Math.max(0, Tmax - after.T0) : 0;
   for (let c = 0; c < candidates.length; c++) {
-    const uStar = 1 - exp(Tmax * log1mh[candidates[c]]);
+    const i = candidates[c];
+    // a zero month count adds nothing (and keeps 0 · −Infinity out of the sum)
+    let s = n1 > 0 ? n1 * log1mh[i] : 0;
+    if (n2 > 0) s += n2 * after!.log1mh[i];
+    const uStar = 1 - exp(s);
     if (uStar > 1e-6) out[c] = uStar * (1 + 1e-6) + 1e-12;
   }
   return out;
@@ -201,7 +245,9 @@ export function sizeCumAgainst(input: SimInput, i: number, existing: number): Fl
  * The per-input precompute (spec §4.2 step 7, §4.4.4), memoised by `SimInput` identity. Only
  * hostable parcels with a gaining size level get a hazard; a hostable parcel with a non-finite
  * term feature gets 0 (`initiationHazard` would silently use bin 0), reported in one warning.
- * Features read the `fzp` variant: a `baseZoning` view supplies its base columns there.
+ * Features read the `fzp` variant: a `baseZoning` view supplies its base columns there. With a
+ * `lawSwitch`, `hazard`, `log1mh` and `sizeCum` stay the before view's and `after` holds the
+ * after view's.
  */
 export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Precompute {
   const hit = memo.get(input);
@@ -240,15 +286,25 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
       `parcels.bin: hazard 0 for ${bad} parcel(s) with a non-finite feature; first: ${firstBad}`
     );
   }
+  const afterInput = afterInputOf(input);
+  const after = afterInput ? precomputeOf(afterInput, warn) : null;
+  const inAfter = new Uint8Array(after ? n : 0);
+  if (after) for (const i of after.candidates) inAfter[i] = 1;
+  const isCandidate = (i: number) =>
+    (p.hostable[i] === 1 && hazard[i] > 0 && log1mh[i] < 0) || (after !== null && inAfter[i] === 1);
   let m = 0;
-  for (let i = 0; i < n; i++) if (p.hostable[i] === 1 && hazard[i] > 0 && log1mh[i] < 0) m++;
+  for (let i = 0; i < n; i++) if (isCandidate(i)) m++;
   const candidates = new Int32Array(m);
   const entity = new Uint32Array(m);
   for (let i = 0, c = 0; i < n; i++) {
-    if (!(p.hostable[i] === 1 && hazard[i] > 0 && log1mh[i] < 0)) continue;
+    if (!isCandidate(i)) continue;
     candidates[c] = i;
     entity[c++] = entityOf(p.id, i);
   }
+  const switched =
+    after && input.lawSwitch
+      ? { log1mh: after.log1mh, T0: switchMonth(input.asOf, input.lawSwitch.day) }
+      : null;
   const bounds = new Map<Day, Float64Array>();
   const pre: Precompute = {
     hazard,
@@ -260,11 +316,12 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
     skipAbove(horizon) {
       let b = bounds.get(horizon);
       if (!b) {
-        b = skipBounds(log1mh, candidates, lastInitiationMonth(input.asOf, horizon));
+        b = skipBounds(log1mh, candidates, lastInitiationMonth(input.asOf, horizon), switched);
         bounds.set(horizon, b);
       }
       return b;
-    }
+    },
+    after
   };
   memo.set(input, pre);
   return pre;

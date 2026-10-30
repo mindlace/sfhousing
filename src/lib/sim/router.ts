@@ -5,7 +5,10 @@ import type { ScenarioRequest, WorkerRequest } from './scenario/types';
 
 export interface RouterDeps {
   editor: { handle(r: SimRequest): void; dispose(): void };
-  /** Called at most once: on the first `initScenario`, or a `reroll` that arrives before one. */
+  /**
+   * Called at most once: on the first `initScenario`, or a `reroll` or `setLevers` that arrives
+   * before one.
+   */
   createScenario: () => { handle(r: ScenarioRequest): void; dispose(): void };
 }
 
@@ -38,7 +41,8 @@ export function createWorkerRouter(deps: RouterDeps): { handle(req: WorkerReques
           scenarioHost().handle(req);
           return;
         case 'reroll':
-          // With no scenario host yet, a lazily created one answers `bad-request 'not initialised'`.
+        case 'setLevers':
+          // With no scenario host yet, a lazily created one answers `bad-request`.
           scenarioHost().handle(req);
           return;
         case 'prefetch':

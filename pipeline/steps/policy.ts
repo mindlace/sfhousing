@@ -222,6 +222,7 @@ interface PolicyRow {
   zoning_code: string | null;
   r4: boolean;
   base_ft: number | null;
+  lp_ft: number | null;
   historic: string;
   permanent: boolean;
   temporary: boolean;
@@ -272,7 +273,7 @@ export async function writePolicy(a: {
   }
 
   const rows = await db.all<PolicyRow>(
-    `SELECT z.id, z.zoning_code, d.r4, d.base_ft, h.code AS historic, e.permanent, e.temporary
+    `SELECT z.id, z.zoning_code, d.r4, d.base_ft, d.lp_ft, h.code AS historic, e.permanent, e.temporary
      FROM sc_zoning z JOIN sc_district d USING (id) JOIN pol_historic h USING (id)
      JOIN pol_exempt e USING (id) ORDER BY z.id`
   );
@@ -437,11 +438,14 @@ export async function writePolicy(a: {
     });
     if (again.hostable !== fzp.hostable || again.yield.some((y, k) => y !== fzp.yield[k]))
       inc('current.yield_mismatch');
-    // V33 reads the base height and R-4 flag from parcels.bin's district string.
+    // V33 reads the applicable height and R-4 flag from parcels.bin's district string: the Local
+    // Program height on a Local Program lot, else the base height.
     const hd = parseHeightDistrict(s.districts[s.district[i]]);
-    const binBaseFt = hd.kind === 'height' ? hd.baseFt : null;
+    const lp = s.localProgram[i] === 1;
+    const binHeightFt = hd.kind === 'height' ? (lp ? (hd.lpFt ?? hd.baseFt) : hd.baseFt) : null;
     const binR4 = hd.kind === 'height' && hd.r4;
-    if (binBaseFt !== r.base_ft || binR4 !== r.r4) inc('s207.base_ft_mismatch');
+    const heightFt = lp ? (r.lp_ft ?? r.base_ft) : r.base_ft;
+    if (binHeightFt !== heightFt || binR4 !== r.r4) inc('s207.base_ft_mismatch');
     const s207 = s207Row({
       best,
       eligible: s.eligible[i] === 1,
@@ -450,7 +454,7 @@ export async function writePolicy(a: {
       historic: r.historic,
       exempt: r.permanent || r.temporary,
       fzpStories: fzp.stories,
-      fzpBaseFt: r.base_ft,
+      fzpHeightFt: heightFt,
       fzpCap: cap,
       lotAreaM2: s.lotAreaM2[i],
       existingUnits: s.existingUnits[i],
