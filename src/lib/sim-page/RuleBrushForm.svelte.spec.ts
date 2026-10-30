@@ -180,6 +180,19 @@ describe('RuleBrushForm', () => {
     await expect.element(mode.getByRole('radio', { name: 'Raise' })).toBeChecked();
   });
 
+  it('the live regions stay in the accessibility tree while empty', async () => {
+    setup('street');
+    for (const role of ['status', 'alert'] as const) {
+      // getByRole skips nodes outside the accessibility tree (display:none, hidden).
+      const region = page.getByRole(role);
+      await expect.element(region).toBeInTheDocument();
+      const el = region.element() as HTMLElement;
+      expect(el.textContent).toBe('');
+      expect(getComputedStyle(el).display).not.toBe('none');
+      expect(el.hidden).toBe(false);
+    }
+  });
+
   it('Cancel calls oncancel', async () => {
     const { oncancel, onsave } = setup('area');
     await page.getByRole('button', { name: 'Cancel' }).click();

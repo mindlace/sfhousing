@@ -320,8 +320,11 @@
           <option value={s}></option>
         {/each}
       </datalist>
-      <!-- Always present, so the error is spoken when it appears (WCAG 4.1.3). -->
-      <p id="{uid}-name-error" role="alert" class="text-red-800 empty:hidden">{nameError ?? ''}</p>
+      <!-- Always present and in the accessibility tree (sr-only while empty, never display:none),
+           so the error is spoken when it appears (WCAG 4.1.3). -->
+      <p id="{uid}-name-error" role="alert" class="text-red-800 {nameError ? '' : 'sr-only'}">
+        {nameError ?? ''}
+      </p>
       {#if names.length > 0}
         <ul aria-label="Chosen streets" class="flex flex-col gap-1">
           {#each names as s (s)}
@@ -474,6 +477,9 @@
       onclick={() => oncancel()}>Cancel</button
     >
   </div>
-  <!-- Always present, so a reason appearing or changing is spoken (WCAG 4.1.3). -->
-  <p id="{uid}-problem" role="status" class="text-red-800 empty:hidden">{shown ?? ''}</p>
+  <!-- Always present and in the accessibility tree (sr-only while empty, never display:none),
+       so a reason appearing or changing is spoken (WCAG 4.1.3). -->
+  <p id="{uid}-problem" role="status" class="text-red-800 {shown ? '' : 'sr-only'}">
+    {shown ?? ''}
+  </p>
 </form>
