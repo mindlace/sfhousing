@@ -63,7 +63,7 @@ export class BrushDataMissing extends Error {
 }
 
 export interface BrushCatalog {
-  streetNames: string[]; // frontage names that front an eligible lot
+  streetNames: string[]; // frontage names an eligible lot fronts directly (depth 0)
   districts: { family: string; codes: { code: string; lots: number }[] }[];
   neighborhoods: string[];
   stops: Record<StopType, number>;
@@ -128,11 +128,16 @@ export function createLotIndex(parcels: ScenarioParcels): LotIndex {
   return { nearPath, nearPoints };
 }
 
+const stopsMemo = new WeakMap<TransitNetwork, Record<StopType, Set<number>>>();
+
 /**
  * Stop indices per type. Rail types read the pattern mode; `rapidBus` is a Muni bus route matching
- * RAPID_ROUTE; `frequentBus` sums peak tph over every bus pattern at the stop.
+ * RAPID_ROUTE; `frequentBus` sums peak tph over every bus pattern at the stop. Memoised per network
+ * object: a decoded network is never mutated, so edit a copy rather than the one already queried.
  */
 function stopsByType(net: TransitNetwork): Record<StopType, Set<number>> {
+  const hit = stopsMemo.get(net);
+  if (hit) return hit;
   const out: Record<StopType, Set<number>> = {
     regionalRail: new Set(),
     metro: new Set(),
@@ -155,6 +160,7 @@ function stopsByType(net: TransitNetwork): Record<StopType, Set<number>> {
   // Round the sum to the wire's 0.1 tph precision so 5.9 + 0.1 counts as 6.
   for (const [stop, tph] of busTph)
     if (Math.round(tph * 10) >= FREQUENT_BUS_TPH * 10) out.frequentBus.add(stop);
+  stopsMemo.set(net, out);
   return out;
 }
 
@@ -211,6 +217,45 @@ function inShape(rings: [number, number][][][], x: number, y: number): boolean {
   return inside;
 }
 
+type Shape = NeighborhoodShapes[number];
+/** Rows (ascending, eligible or not) whose label point is in the shape, per parcels per shape. */
+const shapeMemo = new WeakMap<ScenarioParcels, WeakMap<Shape, Uint32Array>>();
+
+/**
+ * The rows inside one neighborhood, computed once per (parcels, shape) object pair: a bounding-box
+ * prefilter, then even-odd only for the lots inside the box. Per shape rather than one row ->
+ * shape column, so overlapping shapes stay exact.
+ */
+function shapeRows(parcels: ScenarioParcels, shape: Shape): Uint32Array {
+  let memo = shapeMemo.get(parcels);
+  if (!memo) shapeMemo.set(parcels, (memo = new WeakMap()));
+  const hit = memo.get(shape);
+  if (hit) return hit;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const poly of shape.rings)
+    for (const ring of poly)
+      for (const [x, y] of ring) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+  const lp = parcels.labelPoint;
+  const rows: number[] = [];
+  for (let i = 0; i < parcels.count; i++) {
+    const x = lp[2 * i];
+    const y = lp[2 * i + 1];
+    if (x < minX || x > maxX || y < minY || y > maxY) continue;
+    if (inShape(shape.rings, x, y)) rows.push(i);
+  }
+  const out = Uint32Array.from(rows);
+  memo.set(shape, out);
+  return out;
+}
+
 function streetRows(d: BrushData, q: Extract<BrushQuery, { kind: 'street' }>): number[] {
   const f = d.frontage;
   if (!f) throw new BrushDataMissing('frontage');
@@ -242,10 +287,8 @@ function areaRows(d: BrushData, q: Extract<BrushQuery, { kind: 'area' }>): numbe
     // straddling a boundary falls in the neighborhood holding its label point.
     if (!d.neighborhoods) throw new BrushDataMissing('neighborhoods');
     const chosen = new Set(q.neighborhoods);
-    const shapes = d.neighborhoods.filter((s) => chosen.has(s.name));
-    const lp = d.parcels.labelPoint;
-    for (let i = 0; i < d.parcels.count; i++)
-      if (!out.has(i) && shapes.some((s) => inShape(s.rings, lp[2 * i], lp[2 * i + 1]))) out.add(i);
+    for (const shape of d.neighborhoods)
+      if (chosen.has(shape.name)) for (const i of shapeRows(d.parcels, shape)) out.add(i);
   }
   return ascending(out);
 }
@@ -289,7 +332,8 @@ export function brushCatalog(d: BrushData): BrushCatalog {
     const seen = new Set<number>();
     for (let i = 0; i < f.count; i++) {
       if (el[i] !== 1) continue;
-      for (let e = f.rowStart[i]; e < f.rowStart[i + 1]; e++) seen.add(f.segName[f.frontSeg[e]]);
+      for (let e = f.rowStart[i]; e < f.rowStart[i + 1]; e++)
+        if (f.frontDepth[e] === 0) seen.add(f.segName[f.frontSeg[e]]);
     }
     for (const k of ascending(seen)) streetNames.push(f.names[k]); // names is sorted
   }

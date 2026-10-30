@@ -248,6 +248,41 @@ describe('resolveBrushRows', () => {
     expect(() => parseNeighborhoods({ type: 'Feature' })).toThrow();
   });
 
+  it('neighborhood membership is exact for overlapping shapes and stable across queries', () => {
+    const box = (name: string, x0: number, y0: number, x1: number, y1: number) => ({
+      name,
+      rings: [
+        [
+          [
+            [x0, y0],
+            [x1, y0],
+            [x1, y1],
+            [x0, y1],
+            [x0, y0]
+          ] as [number, number][]
+        ]
+      ]
+    });
+    // East holds rows 1-4; Overlap (inside East) holds rows 2 and 3. Row 3 is ineligible.
+    const d = data({
+      neighborhoods: [
+        box('East', -122.4104, 37.7616, -122.4096, 37.7622),
+        box('Overlap', -122.41025, 37.76175, -122.40985, 37.76205)
+      ]
+    });
+    const index = createLotIndex(d.parcels);
+    const q = (neighborhoods: string[]): BrushQuery => ({
+      kind: 'area',
+      districts: [],
+      neighborhoods
+    });
+    expect(resolveBrushRows(d, index, q(['East']))).toEqual([1, 2, 4]);
+    expect(resolveBrushRows(d, index, q(['Overlap']))).toEqual([2]);
+    expect(resolveBrushRows(d, index, q(['East', 'Overlap']))).toEqual([1, 2, 4]);
+    expect(resolveBrushRows(d, index, q(['Overlap']))).toEqual([2]);
+    expect(resolveBrushRows(d, index, q(['East']))).toEqual([1, 2, 4]);
+  });
+
   it('transit distance', () => {
     const d = data();
     const i = 5; // 8711023C, kilometres from every other fixture lot
@@ -381,6 +416,12 @@ describe('brushCatalog', () => {
     expect(c.neighborhoods).toEqual(['Bayview', 'Mission']);
     expect(c.stops).toEqual({ regionalRail: 1, metro: 0, rapidBus: 1, frequentBus: 1 });
     expect(c.has).toEqual({ frontage: true, transit: true, neighborhoods: true });
+
+    // A name an eligible lot reaches only one lot deep is not listed.
+    const deep = data();
+    deep.parcels.eligible[CORNER_ROW] = 0;
+    deep.parcels.eligible[DEEP_ROW] = 1;
+    expect(brushCatalog(deep).streetNames).toEqual([]);
 
     const empty = brushCatalog(data({ frontage: null }));
     expect(empty.streetNames).toEqual([]);
