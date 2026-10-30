@@ -1,6 +1,8 @@
-// /fzp e2e (fzp-mode spec §6). Runs against the VITE_E2E build, which exposes window.__sfhFzp
-// (src/lib/fzp/debug.ts) and window.__sfhMap. Fixture-0 files are read from disk; counts, ids and
-// labels are derived from them, never hard-coded. Playback starts paused.
+// /fzp e2e (fzp-mode spec §6). /fzp now redirects to /sim?start=fzp (plan 3, Call 14), so these
+// tests open the timelapse there; e2e/sim.spec.ts covers the redirect itself. Runs against the
+// VITE_E2E build, which exposes window.__sfhFzp (src/lib/fzp/debug.ts) and window.__sfhMap.
+// Fixture-0 files are read from disk; counts, ids and labels are derived from them, never
+// hard-coded. Playback starts paused.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { SOURCE_DATASETS } from '../src/lib/fzp/card';
@@ -123,10 +125,17 @@ async function waitForMapOnly(page: Page): Promise<void> {
   await page.waitForFunction(() => !!(window as Win).__sfhMap?.map);
 }
 
-/** `/fzp` at a stable day (the page opens paused), ready. */
+/** Where /fzp's redirect lands: the timelapse on /sim, with the FZP comparison. */
+const FZP_PATH = '/sim?start=fzp';
+/** The address bar on the timelapse's representative future. */
+const FZP_URL = /\/sim\?start=fzp$/;
+/** The address bar on the timelapse after a reroll to `seed` (any seed when omitted). */
+const seedUrl = (seed?: number): RegExp => new RegExp(`/sim\\?start=fzp&seed=${seed ?? '\\d+'}$`);
+
+/** The timelapse (`/sim?start=fzp`, plus `search`'s parameters) at a stable day, ready. */
 async function gotoFzp(page: Page, search = ''): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto(`/fzp${search}`);
+  await page.goto(search ? `${FZP_PATH}&${search.replace(/^\?/, '')}` : FZP_PATH);
   await waitReady(page);
 }
 
@@ -258,7 +267,7 @@ test('loads ready and the keyboard drives the scrubber to both ends', async ({ p
 
 test('the day stays at asOf until Play is pressed', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await page.goto('/fzp');
+  await page.goto(FZP_PATH);
   await waitReady(page);
   await page.waitForTimeout(2_000);
   const asOf = await fzp(page, 'asOf');
@@ -285,7 +294,7 @@ test('Another future writes ?seed=N, keeps the day, and the URL seed reproduces 
   expect(day).toBeGreaterThan(await fzp(page, 'asOf'));
 
   await (await anotherFuture(page)).click();
-  await expect(page).toHaveURL(/\/fzp\?seed=\d+$/);
+  await expect(page).toHaveURL(seedUrl());
   const seed = Number(new URL(page.url()).searchParams.get('seed'));
   await expect.poll(() => fzp(page, 'seed')).toBe(seed);
   expect(seed).not.toBe(first);
@@ -299,7 +308,7 @@ test('Another future writes ?seed=N, keeps the day, and the URL seed reproduces 
   expect(await scoreJson(page, 'shown')).toBe(shown);
 });
 
-/** The address bar's seed: a number, or null for the bare /fzp. */
+/** The address bar's seed: a number, or null for the representative future. */
 const addressSeed = (page: Page): number | null => {
   const raw = new URL(page.url()).searchParams.get('seed');
   return raw === null ? null : Number(raw);
@@ -307,7 +316,7 @@ const addressSeed = (page: Page): number | null => {
 
 /**
  * Waits until the page shows the future the address bar names: that seed and not representative,
- * or (for the bare /fzp) the representative future, `representative` when given.
+ * or (with no seed) the representative future, `representative` when given.
  */
 async function expectAddressFuture(page: Page, representative?: number | null): Promise<void> {
   const want = addressSeed(page);
@@ -324,49 +333,48 @@ async function expectAddressFuture(page: Page, representative?: number | null): 
 /** Another future: waits for the ?seed=N answer and returns N. */
 async function reroll(page: Page): Promise<number> {
   await (await anotherFuture(page)).click();
-  await expect(page).toHaveURL(/\/fzp\?seed=\d+$/);
+  await expect(page).toHaveURL(seedUrl());
   const seed = addressSeed(page)!;
   await expect.poll(() => fzp(page, 'seed')).toBe(seed);
   return seed;
 }
 
-test('after Another future, the header Timelapse link, Back and Forward each show the URL future', async ({
-  isMobile,
+test('after Another future, the header Simulate link, Back and Forward each show the URL future', async ({
   page
 }) => {
-  test.skip(isMobile, 'below 640 px the header shows only the Paint link on /fzp');
   await gotoFzp(page);
-  const representative = await fzp(page, 'seed');
   expect(await fzp(page, 'representative')).toBe(true);
   const seed = await reroll(page);
 
-  // The URL becomes /fzp, the URL of the last load, so SvelteKit does not rerun the load.
-  await (await headerLink(page, 'Timelapse')).click();
-  await expect(page).toHaveURL(/\/fzp$/);
-  await expectAddressFuture(page, representative);
+  // The Simulate link is /sim (current law, a new load): its representative future.
+  await (await headerLink(page, 'Simulate')).click();
+  await expect(page).toHaveURL(/\/sim$/);
+  await expectAddressFuture(page);
   await waitReady(page);
 
   // Back to the rerolled entry: SvelteKit navigates to the URL it stored before replaceState
-  // (/fzp), but the address bar reads ?seed=N, and the page must show #N.
+  // (/sim?start=fzp), but the address bar reads &seed=N, and the page must show #N.
   await page.goBack();
-  await expect(page).toHaveURL(new RegExp(`/fzp\\?seed=${seed}$`));
+  await expect(page).toHaveURL(seedUrl(seed));
   await expectAddressFuture(page);
   await page.goForward();
-  await expect(page).toHaveURL(/\/fzp$/);
-  await expectAddressFuture(page, representative);
+  await expect(page).toHaveURL(/\/sim$/);
+  await expectAddressFuture(page);
 });
 
-test('Back from another route onto a rerolled /fzp shows the rerolled future', async ({ page }) => {
+test('Back from another route onto a rerolled timelapse shows the rerolled future', async ({
+  page
+}) => {
   await gotoFzp(page);
   const seed = await reroll(page);
   await (await headerLink(page, 'Paint')).click();
   await expect(page).toHaveURL(/\/$/);
   await page.goBack();
-  await expect(page).toHaveURL(new RegExp(`/fzp\\?seed=${seed}$`));
+  await expect(page).toHaveURL(seedUrl(seed));
   await expectAddressFuture(page);
 });
 
-test('Back onto /fzp after the way back from ?seed=N shows the representative future', async ({
+test('Back onto the timelapse after the way back from ?seed=N shows the representative future', async ({
   page
 }) => {
   await gotoFzp(page, '?seed=5');
@@ -376,7 +384,7 @@ test('Back onto /fzp after the way back from ?seed=N shows the representative fu
   )
     .getByRole('button', { name: 'Back to the representative future' })
     .click();
-  await expect(page).toHaveURL(/\/fzp$/);
+  await expect(page).toHaveURL(FZP_URL);
   await expect.poll(() => fzp(page, 'representative')).toBe(true);
   const representative = await fzp(page, 'seed');
 
@@ -384,15 +392,15 @@ test('Back onto /fzp after the way back from ?seed=N shows the representative fu
   await (await headerLink(page, 'Paint')).click();
   await expect(page).toHaveURL(/\/$/);
   await page.goBack();
-  await expect(page).toHaveURL(/\/fzp$/);
+  await expect(page).toHaveURL(FZP_URL);
   await expectAddressFuture(page, representative);
 });
 
-test('/fzp twice shows the same representative future', async ({ page }) => {
+test('the timelapse twice shows the same representative future', async ({ page }) => {
   await gotoFzp(page);
   const seed = await fzp(page, 'seed');
   expect(seed).not.toBeNull();
-  await page.goto('/fzp');
+  await page.goto(FZP_PATH);
   await waitReady(page);
   expect(await fzp(page, 'seed')).toBe(seed);
   expect(await fzp(page, 'representative')).toBe(true);
@@ -563,7 +571,7 @@ test('a dataset without scenarios shows the message and starts no worker', async
     if (!/maplibre/i.test(w.url())) workers.push(w.url());
   });
   // The manifest is stripped on the way in. SSR and hydration read the server's copy, and the
-  // editor's load keeps the response SvelteKit replays, so reach /fzp by a client navigation from
+  // editor's load keeps the response SvelteKit replays, so reach /sim by a client navigation from
   // a page that loads no manifest: its load then fetches the manifest from the browser.
   await page.route('**/manifest.json', async (route) => {
     const response = await route.fetch();
@@ -572,8 +580,8 @@ test('a dataset without scenarios shows the message and starts no worker', async
     await route.fulfill({ response, json: manifest });
   });
   await gotoHydrated(page, '/about');
-  await (await headerLink(page, 'Timelapse')).click();
-  await expect(page).toHaveURL(/\/fzp$/);
+  await (await headerLink(page, 'Simulate')).click();
+  await expect(page).toHaveURL(/\/sim$/);
 
   const status = page.getByTestId('fzp-status');
   await expect(status).toContainText("isn't available for dataset fixture-0");
@@ -589,8 +597,8 @@ test('a calibration that fails to load shows the failure with Retry, and passes 
   // As above: a client navigation, so the browser fetches the calibration and the route can fail it.
   await page.route('**/scenarios/fzp/calibration.json', (route) => route.fulfill({ status: 500 }));
   await gotoHydrated(page, '/about');
-  await (await headerLink(page, 'Timelapse')).click();
-  await expect(page).toHaveURL(/\/fzp$/);
+  await (await headerLink(page, 'Simulate')).click();
+  await expect(page).toHaveURL(/\/sim$/);
   await expect(page.getByTestId('fzp-status')).toHaveText("The simulation couldn't load.");
   await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
   expect(await fzp(page, 'phase')).toBe('failed');
@@ -599,11 +607,12 @@ test('a calibration that fails to load shows the failure with Retry, and passes 
 
 // ---- header and attribution ---------------------------------------------------------------------
 
-test('the header links move between the editor and the timelapse', async ({ page }) => {
+test('the header links move between the editor and the simulation', async ({ page }) => {
   await page.goto('/');
-  await (await headerLink(page, 'Timelapse')).click();
-  await expect(page).toHaveURL(/\/fzp$/);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Family Zoning Plan timelapse/);
+  await (await headerLink(page, 'Simulate')).click();
+  await expect(page).toHaveURL(/\/sim$/);
+  await expect(page).toHaveTitle('Policy simulation · SF Housing Simulator');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Housing policy simulation');
   await (await headerLink(page, 'Paint')).click();
   await expect(page).toHaveURL(/\/$/);
 });

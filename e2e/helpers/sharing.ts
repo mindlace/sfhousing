@@ -14,7 +14,8 @@ import type { SfhMapDebug } from '../../src/lib/map/debug';
 export type Win = Window & { __sfhMap?: SfhMapDebug; __sfhBrush?: SfhBrushDebug };
 export type LngLat = [number, number];
 
-// fixture-0's chunk 50_25 holds 14 parcels around [-122.4186, 37.7601] (51_25: lots 15-17).
+// fixture-0's chunk 50_25 holds 15 parcels (lots 0 to 14) around [-122.4186, 37.7601]; chunk 51_25,
+// about 700 m east, holds lots 15 to 17 (counts in the manifest's `parcelCount`).
 export const FRAME = { center: [-122.4187, 37.76014] as LngLat, zoom: 18.5, pitch: 0, bearing: 0 };
 export const FROM: LngLat = [-122.4193, 37.76014];
 export const TO: LngLat = [-122.418, 37.76014];

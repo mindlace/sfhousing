@@ -4,7 +4,13 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
-import { gotoHydrated, headerAction, jumpAndIdle, type Win } from './helpers/sharing';
+import {
+  gotoHydrated,
+  headerAction,
+  jumpAndIdle,
+  openHeaderMenu,
+  type Win
+} from './helpers/sharing';
 
 type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 
@@ -17,9 +23,10 @@ const manifest = JSON.parse(readFileSync(MANIFEST_URL, 'utf8')) as {
   };
 };
 const { fzp } = manifest.scenarios;
-// /fzp reads these three; the lever files (policy, frontage) are for the sim and never fetched.
-const SCENARIO_FILES = [fzp.parcels, fzp.projects, fzp.calibration];
-const LEVER_FILES = [fzp.policy, fzp.frontage];
+// /sim (where /fzp now redirects) reads these four: the timelapse's three and the lever engine's
+// policy.bin. frontage.bin is fetched only for the brush catalog, which the policy panel asks for
+// when it first opens (open by default from 768 px, closed below).
+const SIM_FILES = [fzp.parcels, fzp.projects, fzp.calibration, fzp.policy];
 
 const scoreJson = (page: Page, field?: 'shown' | 'band'): Promise<string> =>
   page.evaluate((f) => {
@@ -53,15 +60,15 @@ test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
 });
 
-// fixture-0 has one parcel chunk, so on its own a test cannot tell "the viewport's chunks" from
-// "every chunk". This test adds a second chunk, in the far south-west corner of the map's
-// bounds (src/lib/map/camera.ts maxBounds), to the manifest the page
-// loads: a worker that fetched every chunk would request it at once.
+// fixture-0's two parcel chunks are neighbouring cells, so on their own a test cannot tell "the
+// viewport's chunks" from "every chunk". This test adds a third chunk, in the far south-west corner
+// of the map's bounds (src/lib/map/camera.ts maxBounds), to the manifest the page loads: a worker
+// that fetched every chunk would request it at once.
 const FAR_CELL = '10_10';
 const FAR_BBOX: [number, number, number, number] = [-122.555, 37.7, -122.545, 37.71];
 const chunkUrl = (cellId: string): string => `/data/fixture-0/parcels/${cellId}.json`;
 
-test('fetches only the viewport chunks and the three scenario files', async ({ page }) => {
+test('fetches only the viewport chunks, the scenario files and policy.bin', async ({ page }) => {
   await page.route('**/manifest.json', async (route) => {
     const response = await route.fetch();
     const m = (await response.json()) as { chunks: unknown[] };
@@ -82,10 +89,11 @@ test('fetches only the viewport chunks and the three scenario files', async ({ p
   });
   const chunkRequests = () => urls.filter((u) => u.includes('/parcels/'));
 
-  // SvelteKit replays the server's manifest on a first load, so reach /fzp by a client
+  // SvelteKit replays the server's manifest on a first load, so reach /sim by a client
   // navigation from a page that loads none (as in e2e/fzp.spec.ts's no-scenario test).
   await gotoHydrated(page, '/about');
-  await page.getByRole('banner').getByRole('link', { name: 'Timelapse', exact: true }).click();
+  await openHeaderMenu(page);
+  await page.getByRole('banner').getByRole('link', { name: 'Simulate', exact: true }).click();
   await waitReady(page);
   // `ready` is the worker's first timeline; the map can still be loading.
   await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
@@ -104,20 +112,25 @@ test('fetches only the viewport chunks and the three scenario files', async ({ p
 
   // The viewport's chunk is prefetched after the first timeline.
   await expect.poll(() => [...new Set(chunkRequests())].sort()).toEqual(inView.sort());
-  const scenarios = new Set(urls.filter((u) => u.includes('/scenarios/')));
-  expect([...scenarios].sort()).toEqual([...SCENARIO_FILES].sort());
-  expect(LEVER_FILES.every(Boolean), 'fixture-0 names the policy and frontage files').toBe(true);
+  expect([fzp.policy, fzp.frontage].every(Boolean), 'fixture-0 names policy and frontage').toBe(
+    true
+  );
+  // frontage.bin only once the open panel has asked for the brush catalog.
+  const panelOpen = await page.getByTestId('policy-panel').isVisible();
+  const want = (panelOpen ? [...SIM_FILES, fzp.frontage!] : SIM_FILES).sort();
+  await expect
+    .poll(() => [...new Set(urls.filter((u) => u.includes('/scenarios/')))].sort())
+    .toEqual(want);
 
   // Panning to the far chunk fetches it, and only then.
   expect(chunkRequests()).not.toContain(chunkUrl(FAR_CELL));
   await jumpAndIdle(page, { center: [-122.55, 37.705], zoom: 16, pitch: 0, bearing: 0 });
   await expect.poll(() => chunkRequests()).toContain(chunkUrl(FAR_CELL));
-  for (const u of LEVER_FILES) expect(urls, `${u} is not fetched by /fzp`).not.toContain(u);
 });
 
 test('the first timeline arrives within 3 s of navigation', async ({ page }) => {
   const start = Date.now();
-  await page.goto('/fzp', { waitUntil: 'commit' });
+  await page.goto('/sim?start=fzp', { waitUntil: 'commit' });
   await expect
     .poll(() => page.evaluate(() => (window as FzpWin).__sfhFzp?.score != null), {
       timeout: 3_000,
@@ -128,7 +141,7 @@ test('the first timeline arrives within 3 s of navigation', async ({ page }) => 
 });
 
 test('a reroll changes the future, not the band', async ({ page }) => {
-  await page.goto('/fzp');
+  await page.goto('/sim?start=fzp');
   await waitReady(page);
   await settled(page);
   const seed = await seedOf(page);
@@ -146,7 +159,7 @@ test('a reroll changes the future, not the band', async ({ page }) => {
 });
 
 test('the same URL seed after a reload gives an identical timeline score', async ({ page }) => {
-  await page.goto('/fzp?seed=12345');
+  await page.goto('/sim?start=fzp&seed=12345');
   await waitReady(page);
   await settled(page);
   const first = await scoreJson(page);
