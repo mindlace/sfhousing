@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/mindlace/sfhousing/compare/v0.4.1...v0.5.0) (2026-10-30)
+
+
+### Features
+
+* **pipeline:** sim data layers: policy and frontage files, SB 79 and current-law stock layers ([#36](https://github.com/mindlace/sfhousing/issues/36)) ([34c077a](https://github.com/mindlace/sfhousing/commit/34c077a296dbbcb59a27da49234d8d638b1571de))
+* **sim:** policy engine: levers, current-law switch, budgeted recompute (plan 2 of 5) ([#39](https://github.com/mindlace/sfhousing/issues/39)) ([53e8d5f](https://github.com/mindlace/sfhousing/commit/53e8d5feb8092fabbbaecaa68dde0dd9c88166f3))
+
+
+### Data
+
+* point production at dataset 2026-10-29-0fd62c4d ([#40](https://github.com/mindlace/sfhousing/issues/40)) ([1a2b331](https://github.com/mindlace/sfhousing/commit/1a2b33112e5c07c17d4f8b68dc5990b123d45dce))
+
 ## [0.4.1](https://github.com/mindlace/sfhousing/compare/v0.4.0...v0.4.1) (2026-10-21)
 
 
