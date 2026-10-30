@@ -38,11 +38,18 @@
   let lastYears = $state(DEFAULT_YEARS);
   /** The input's text: the policy's years while set, else the last valid count. */
   let yearsText = $derived(String(protect.newerThanYears ?? lastYears));
-  let yearsError = $state<string | null>(null);
+  /**
+   * The text last refused. The error stands only while the field still shows it, so an undo or
+   * redo that rewrites the field (or new typing) clears the error and `aria-invalid` with it.
+   */
+  let rejected = $state<string | null>(null);
+  const yearsError = $derived(rejected !== null && rejected === yearsText ? YEARS_ERROR : null);
 
   const status = $derived(protectLotStatus(store.policy, (k) => sync.result(k)));
   const ready = $derived(tools.brush.phase === 'ready');
   let protectBtn = $state<HTMLButtonElement>();
+  let firstBox = $state<HTMLInputElement>();
+  const hasStrokes = $derived(protect.strokes.length > 0);
 
   function change(edit: (pr: SimPolicy['protect']) => SimPolicy['protect'], label: string): void {
     store.apply((p) => ({ ...p, protect: edit(p.protect) }), label);
@@ -66,7 +73,7 @@
   const newerLabel = (y: number) => `Protected buildings newer than ${y} years`;
 
   function setNewer(on: boolean): void {
-    yearsError = null;
+    rejected = null;
     if (on) change((pr) => ({ ...pr, newerThanYears: lastYears }), newerLabel(lastYears));
     else change((pr) => ({ ...pr, newerThanYears: null }), 'Unprotected newer buildings');
   }
@@ -74,10 +81,10 @@
   function commitYears(text: string): void {
     const y = Number(text);
     if (text.trim() === '' || !Number.isInteger(y) || y < YEARS_MIN || y > YEARS_MAX) {
-      yearsError = YEARS_ERROR;
+      rejected = text;
       return;
     }
-    yearsError = null;
+    rejected = null;
     lastYears = y;
     if (protect.newerThanYears !== y) change((pr) => ({ ...pr, newerThanYears: y }), newerLabel(y));
   }
@@ -85,8 +92,9 @@
   function clearStrokes(): void {
     const label = 'Cleared brush protections';
     change((pr) => ({ ...pr, strokes: [] }), label);
-    // The row (and its Clear button) is gone: keep focus in the section.
-    void tick().then(() => protectBtn?.focus());
+    // The row (and its Clear button) is gone: keep focus in the section, on the first checkbox
+    // when the Protect button is disabled (the map is not ready), never on <body>.
+    void tick().then(() => (protectBtn && !protectBtn.disabled ? protectBtn : firstBox)?.focus());
   }
 
   const btn =
@@ -98,6 +106,7 @@
     <legend class="font-semibold">Protect by category</legend>
     <label class="flex min-h-6 items-center gap-1.5">
       <input
+        bind:this={firstBox}
         type="checkbox"
         class="size-6"
         checked={protect.rentControl}
@@ -162,13 +171,15 @@
       class="min-h-11 self-start rounded-md border border-gray-300 px-3 font-medium disabled:opacity-40"
       onclick={() => ontool('protect')}>Protect lots with the brush</button
     >
-    {#if protect.strokes.length > 0}
-      <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <!-- The count is its own polite region, kept across states, so a count arriving is
-             spoken (WCAG 4.1.3). -->
-        <p id="{uid}-brushed">
-          Protected with the brush · <span role="status">{lotsText(status)}</span>
-        </p>
+    <!-- The row's line is a polite region rendered from the start, empty (and sr-only, never
+         display:none) while there are no brushed protections, so its first text ("Finding
+         lots…") and every later count are spoken (WCAG 4.1.3). `contents` keeps the empty row
+         out of the column's gap. -->
+    <div class={hasStrokes ? 'flex flex-wrap items-center gap-x-2 gap-y-1' : 'contents'}>
+      <p id="{uid}-brushed" role="status" class={hasStrokes ? '' : 'sr-only'}>
+        {hasStrokes ? `Protected with the brush · ${lotsText(status)}` : ''}
+      </p>
+      {#if hasStrokes}
         {#if status.kind === 'failed'}
           {@const keys = status.keys}
           <button
@@ -184,7 +195,7 @@
           class={btn}
           onclick={clearStrokes}>Clear</button
         >
-      </div>
-    {/if}
+      {/if}
+    </div>
   </div>
 </div>

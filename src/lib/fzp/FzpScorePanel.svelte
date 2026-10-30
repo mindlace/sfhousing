@@ -4,13 +4,16 @@
 -->
 <script lang="ts">
   import { timelineTokenCss } from '$lib/map/palette';
+  import { count } from '$lib/sim-page/brush-summary';
   import { scoreCopy, type ScoreCopy } from '$lib/sim-page/policy';
+  import { CURRENT_LAW_SWITCH } from '$lib/sim/levers/types';
   import type { LeverCapacity } from '$lib/sim/levers/resolve';
   import { formatBuiltDate, formatCount, formatPercent, trackMax } from '$lib/scoreboard';
   import TargetRow from '$lib/scoreboard/TargetRow.svelte';
   import type { TimelineScore } from '$lib/sim/protocol';
   import type { Day } from '$lib/timelapse/time';
   import { formatDate, formatMonthYear } from './format';
+  import { utcParts } from './time';
   import MapKey from './MapKey.svelte';
   import ScoreChart from './ScoreChart.svelte';
   import {
@@ -67,15 +70,15 @@
    * What the protections cost in zoned capacity (/sim), or null with no protected lots. The
    * resolver guarantees `withoutProtections >= plan`.
    */
+  /** The year current law's switch takes effect (the levers' `afterSwitch` window starts then). */
+  const SWITCH_YEAR = utcParts(CURRENT_LAW_SWITCH.day).y;
   const protectionLine = $derived.by(() => {
     if (!capacity || capacity.protectedLots <= 0) return null;
     const a = capacity.afterSwitch;
-    const after = a ? `, ${formatCount(a.withoutProtections - a.plan)} from 2032` : '';
-    return (
-      `${formatCount(capacity.protectedLots)} lots protected: ` +
-      `${formatCount(capacity.withoutProtections - capacity.plan)} fewer homes of zoned capacity` +
-      after
-    );
+    const after = a ? `, ${formatCount(a.withoutProtections - a.plan)} from ${SWITCH_YEAR}` : '';
+    const lots = count(capacity.protectedLots, 'lot', 'lots');
+    const fewer = count(capacity.withoutProtections - capacity.plan, 'fewer home', 'fewer homes');
+    return `${lots} protected: ${fewer} of zoned capacity${after}`;
   });
 
   /** "the plan" in the Family Zoning Plan copy (its text unchanged), else the copy's own name. */

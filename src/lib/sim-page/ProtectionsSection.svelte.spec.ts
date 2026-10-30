@@ -183,6 +183,53 @@ describe('ProtectionsSection', () => {
     await expect.element(page.getByText('Protected with the brush · 3 lots')).toBeVisible();
   });
 
+  it('after Clear with the Protect button disabled, focus goes to the first checkbox', async () => {
+    setup({ strokes: twoStrokes, result: lots(3), phase: 'loading' });
+    await page.getByRole('button', { name: 'Clear brush protections' }).click();
+    await expect
+      .element(page.getByRole('checkbox', { name: 'Rent-controlled buildings (likely)' }))
+      .toHaveFocus();
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it('the count region is in the tree before the first stroke, so its first text is spoken', async () => {
+    const { store } = setup();
+    const region = document.querySelector('[role="status"]');
+    expect(region).not.toBeNull();
+    expect(region!.textContent!.trim()).toBe('');
+    store.apply(
+      (p) => ({ ...p, protect: { ...p.protect, strokes: twoStrokes } }),
+      'Protected lots'
+    );
+    await expect
+      .poll(() => region!.textContent!.trim())
+      .toBe('Protected with the brush · Finding lots…');
+    expect(region!.isConnected).toBe(true);
+  });
+
+  it('undo and redo to a valid count clear a years error', async () => {
+    const { store } = setup();
+    await page.getByRole('checkbox', { name: 'Buildings newer than' }).click();
+    const years = page.getByRole('spinbutton', { name: /years/i });
+    await years.fill('40');
+    await userEvent.tab();
+    expect(store.policy.protect.newerThanYears).toBe(40);
+    await years.fill('0');
+    await userEvent.tab();
+    await expect.element(years).toHaveAttribute('aria-invalid', 'true');
+    store.undo();
+    await expect.element(years).toHaveValue(30);
+    await expect.element(years).not.toHaveAttribute('aria-invalid');
+    await expect.element(page.getByRole('alert')).toHaveTextContent('');
+    await years.fill('0');
+    await userEvent.tab();
+    await expect.element(years).toHaveAttribute('aria-invalid', 'true');
+    store.redo();
+    await expect.element(years).toHaveValue(40);
+    await expect.element(years).not.toHaveAttribute('aria-invalid');
+    await expect.element(page.getByRole('alert')).toHaveTextContent('');
+  });
+
   it('reads "Finding lots…" while the strokes resolve', async () => {
     setup({ strokes: twoStrokes });
     await expect.element(page.getByText('Protected with the brush · Finding lots…')).toBeVisible();

@@ -247,6 +247,23 @@ describe('protections cost (/sim)', () => {
       .toHaveTextContent('1,200 lots protected: 12,345 fewer homes of zoned capacity');
   });
 
+  it('reads in the singular for one lot and one home', async () => {
+    await page.viewport(1024, 768);
+    await render(FzpScorePanel, {
+      props: props({
+        capacity: {
+          plan: 900,
+          withoutProtections: 901,
+          protectedLots: 1,
+          afterSwitch: { plan: 10, withoutProtections: 11 }
+        }
+      })
+    });
+    await expect
+      .element(page.getByText(/lot protected:/))
+      .toHaveTextContent('1 lot protected: 1 fewer home of zoned capacity, 1 from 2032');
+  });
+
   it('shows no line with no protected lots or no capacity', async () => {
     await page.viewport(1024, 768);
     const r = await render(FzpScorePanel, {
