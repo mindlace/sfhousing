@@ -2,40 +2,13 @@
 // §5) where it applies, with the City's exemption tables. Pure; every parameter is in
 // pipeline/sb79-config.ts (S207) with its cite. The step is writePolicy, the invariant V33.
 import type { S207Status } from '../../src/lib/data/policy-codec';
-import { FILL_LEVELS, fillStories } from '../../src/lib/data/scenario-codec';
-import { capScenarioYield } from '../../src/lib/data/scenario-yield';
+import { envelopeRow, type EnvelopeRow } from '../../src/lib/data/envelope-row';
 import { mostPermissive } from '../../src/lib/data/stock-layers';
 import { S207, STANDARDS, type Sb79Tier, type TodBand } from '../sb79-config';
 import { storiesFromFt } from './heights';
 import { unitsFor } from './sb79';
 
-export interface EnvelopeRow {
-  stories: number;
-  cap: number | null;
-  yield: number[];
-  hostable: boolean;
-}
-
-/**
- * One envelope as parcels.bin computes FZP's: each fill level's yield is `capScenarioYield` of
- * the gross at `fillStories(fill, stories)` (0 with no envelope); `hostable` is eligible, at
- * least one story and an uncapped full-fill gross above 0.
- */
-export function envelopeRow(a: {
-  stories: number;
-  cap: number | null;
-  eligible: boolean;
-  existingUnits: number;
-  grossAt: (stories: number) => number;
-}): EnvelopeRow {
-  const at = (f: number) => (a.stories === 0 ? 0 : a.grossAt(fillStories(f, a.stories)));
-  return {
-    stories: a.stories,
-    cap: a.cap,
-    yield: FILL_LEVELS.map((f) => capScenarioYield(at(f), a.cap, a.existingUnits)),
-    hostable: a.eligible && a.stories >= 1 && at(FILL_LEVELS[FILL_LEVELS.length - 1]) > 0
-  };
-}
+export { envelopeRow, type EnvelopeRow };
 
 /** The §207.11 status of a lot, in precedence order (§207.11(b); docs/dev/pipeline.md). */
 export function s207Status(a: {
