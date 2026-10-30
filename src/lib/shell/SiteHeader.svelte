@@ -6,6 +6,7 @@
 -->
 <script lang="ts">
   import { onMount, tick, type Snippet } from 'svelte';
+  import { headerOverlay } from './header-actions.svelte';
 
   let {
     actions,
@@ -24,6 +25,13 @@
   let header = $state<HTMLElement>();
   let menuButton = $state<HTMLButtonElement>();
   let panel = $state<HTMLDivElement>();
+
+  const openOnly = headerOverlay(panelId, () => (open = false));
+
+  function toggle(): void {
+    open = !open;
+    if (open) openOnly();
+  }
 
   async function close(refocus: boolean): Promise<void> {
     open = false;
@@ -105,7 +113,7 @@
     class:ml-auto={!pinned}
     aria-expanded={open}
     aria-controls={panelId}
-    onclick={() => (open = !open)}>Menu</button
+    onclick={toggle}>Menu</button
   >
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div

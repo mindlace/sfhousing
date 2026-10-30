@@ -9,6 +9,7 @@
   import { tick, untrack, type Snippet } from 'svelte';
   import { homesAdded, homesAddedBy, scoreAt } from '$lib/fzp/score-view';
   import { monthIndex } from '$lib/fzp/time';
+  import { headerOverlay } from '$lib/shell/header-actions.svelte';
   import type { TimelineScore } from '$lib/sim/protocol';
   import type { Day } from '$lib/timelapse/time';
 
@@ -34,6 +35,13 @@
   let open = $state(false);
   let button = $state<HTMLButtonElement>();
   let details = $state<HTMLDivElement>();
+
+  const openOnly = headerOverlay(detailsId, () => (open = false));
+
+  function toggle(): void {
+    open = !open;
+    if (open) openOnly();
+  }
 
   async function close(): Promise<void> {
     // Restore focus only if it was in the details (or lost to <body>); never steal it.
@@ -87,7 +95,7 @@
   aria-controls={detailsId}
   aria-busy={busy}
   data-testid="score-bar"
-  onclick={() => (open = !open)}>{at ? homesAdded(at) : 'Simulating…'}</button
+  onclick={toggle}>{at ? homesAdded(at) : 'Simulating…'}</button
 >
 
 {#if open}

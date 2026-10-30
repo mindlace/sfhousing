@@ -31,3 +31,22 @@ export function useHeaderActions(snippet: Snippet, opts?: { pinned?: Snippet }):
     }
   });
 }
+
+const OVERLAY_OPEN = 'sfh-header-overlay-open';
+
+/**
+ * The header's overlays (the phone Menu, the pinned /sim score details) open in the same place
+ * under the header, so at most one is open. Each one calls `openOnly(id)` when it opens, by any
+ * input; every other overlay's `close` runs. Returns `openOnly` and installs the listener for the
+ * component's lifetime (call during component init).
+ */
+export function headerOverlay(id: string, close: () => void): () => void {
+  $effect(() => {
+    const on = (e: Event) => {
+      if ((e as CustomEvent<string>).detail !== id) close();
+    };
+    window.addEventListener(OVERLAY_OPEN, on);
+    return () => window.removeEventListener(OVERLAY_OPEN, on);
+  });
+  return () => window.dispatchEvent(new CustomEvent(OVERLAY_OPEN, { detail: id }));
+}

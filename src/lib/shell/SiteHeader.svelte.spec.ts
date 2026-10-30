@@ -216,6 +216,31 @@ describe('SiteHeader', () => {
       await expect.element(page.getByRole('button', { name: 'Another future' })).toBeVisible();
     });
 
+    it('at 375px the keyboard keeps the Menu and the score details exclusive too', async () => {
+      await page.viewport(375, 812);
+      render(ScoreBarHeader);
+      const scoreBar = page.getByRole('button', { name: '1,234 homes added' });
+      const details = page.getByText('Score details here');
+
+      // Details open, then Enter on Menu: the details close.
+      (scoreBar.element() as HTMLElement).focus();
+      await userEvent.keyboard('{Enter}');
+      await expect.element(details).toBeVisible();
+      (menu().element() as HTMLElement).focus();
+      await userEvent.keyboard('{Enter}');
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
+      await expect.element(scoreBar).toHaveAttribute('aria-expanded', 'false');
+      await expect.element(details).not.toBeInTheDocument();
+
+      // Menu open, then Enter on the score bar: the Menu closes.
+      (scoreBar.element() as HTMLElement).focus();
+      await userEvent.keyboard('{Enter}');
+      await expect.element(scoreBar).toHaveAttribute('aria-expanded', 'true');
+      await expect.element(details).toBeVisible();
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
+      await expect.element(page.getByText('Another future')).not.toBeVisible();
+    });
+
     it('the score details close on a press outside them', async () => {
       await page.viewport(375, 812);
       render(ScoreBarHeader);
