@@ -209,11 +209,16 @@ describe('stage editing', () => {
   });
 
   it('an in-flight clamp is reported', () => {
+    // Under the replace ruling a valid set cannot stack scales: one preset timer per stage (the
+    // parser rejects duplicates) and an edit replaces it. The clamp report is defensive, so it is
+    // exercised with two preset timers on one stage, a set only a hand-built object can hold.
     const cal = load();
     const s: TimingSet = {
       ...observed(),
-      presetTimers: [{ pathway: 'discretionary', stage: 'filed', scale: 0.2, reach: 'all' }],
-      edits: [{ pathway: 'discretionary', stage: 'filed', scale: 0.2, reach: 'all' }]
+      presetTimers: [
+        { pathway: 'discretionary', stage: 'filed', scale: 0.2, reach: 'all' },
+        { pathway: 'discretionary', stage: 'filed', scale: 0.2, reach: 'all' }
+      ]
     };
     const v = routeView(cal, s, 'discretionary').find((x) => x.stage === 'filed')!;
     expect(v.inFlightClamped).toBe(true);
@@ -228,13 +233,53 @@ describe('stage editing', () => {
     const cal = load();
     const s: TimingSet = {
       ...observed(),
-      presetTimers: [{ pathway: 'streamlined', stage: 'filed', scale: 0.5, reach: 'new' }],
-      edits: [{ pathway: 'streamlined', stage: 'filed', scale: 0.8, reach: 'all' }]
+      presetTimers: [
+        { pathway: 'streamlined', stage: 'filed', scale: 0.5, reach: 'new' },
+        { pathway: 'streamlined', stage: 'filed', scale: 0.8, reach: 'all' }
+      ]
     };
     const v = routeView(cal, s, 'streamlined').find((x) => x.stage === 'filed')!;
     expect(v.reach).toBe('mixed');
     expect(v.fresh).toBeCloseTo(0.4, 10);
     expect(v.inFlight).toBeCloseTo(0.8, 10);
+  });
+
+  it('a custom edit replaces the preset on its stage for every project', () => {
+    const cal = load();
+    const t0 = typicalMonths(cal).streamlined.filed!;
+    const s0 = resolvePreset('sb423Clock', cal);
+    expect(s0.presetTimers).toHaveLength(1);
+    const before = routeView(cal, s0, 'streamlined').find((x) => x.stage === 'filed')!;
+    expect(before.reach).toBe('new');
+    expect(before.inFlight).toBe(1);
+    const s = setStageMonths(cal, s0, 'streamlined', 'filed', 2).set;
+    expect(s.edits).toEqual([
+      { pathway: 'streamlined', stage: 'filed', scale: 2 / t0, reach: 'all' }
+    ]);
+    expect(compileTiming(s).timers).toEqual(s.edits);
+    const v = routeView(cal, s, 'streamlined').find((x) => x.stage === 'filed')!;
+    expect(v.fresh).toBeCloseTo(2 / t0, 12);
+    expect(v.inFlight).toBeCloseTo(2 / t0, 12);
+    expect(v.months).toBe(2);
+    expect(v.reach).toBe('all');
+    expect(v.presetLimitedByFloor).toBe(false);
+    // Bounds no longer depend on the preset.
+    expect(stageBounds(cal, s0, 'streamlined', 'filed')).toEqual(
+      stageBounds(cal, observed(), 'streamlined', 'filed')
+    );
+  });
+
+  it('an edit on one stage leaves the preset on the others', () => {
+    const cal = load();
+    const s0 = resolvePreset('benchmarkPermits', cal);
+    const s = setStageMonths(cal, s0, 'discretionary', 'permitFiled', 5).set;
+    const timers = compileTiming(s).timers;
+    expect(timers.filter((t) => t.stage === 'permitFiled')).toHaveLength(3);
+    expect(timers.find((t) => t.pathway === 'discretionary')!.scale).toBe(
+      5 / typicalMonths(cal).discretionary.permitFiled!
+    );
+    const v = routeView(cal, s, 'streamlined').find((x) => x.stage === 'permitFiled')!;
+    expect(v.fresh).toBeCloseTo(134 / 280, 12);
   });
 
   it('permitOnly has no filed or entitled stage', () => {

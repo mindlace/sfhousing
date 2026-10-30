@@ -19,6 +19,7 @@ import {
   parseSimLevers,
   type SimLevers,
   type StockLayerId,
+  type TimerEdit,
   type UserEdit
 } from '$lib/sim/levers/types';
 import { STORIES_MAX, STORIES_MIN } from '$lib/plan/constants';
@@ -31,6 +32,7 @@ import {
   type SimTiming,
   type TimingSet
 } from './timing';
+import { BENCHMARK_PERMIT_DAYS } from './timing-sources';
 
 export type BrushMode = 'raise' | 'lower' | 'set';
 export interface Effect {
@@ -118,6 +120,8 @@ export function policyFromLevers(l: SimLevers): SimPolicy {
   if (l.protect.lots.length > 0) throw new PolicyFormatError('protect.lots', 'expected no lots');
   if (l.timers.length > 0 || l.routeShares !== null)
     throw new PolicyFormatError('timers', 'expected no timers and observed route shares');
+  if (!l.localProgramStreamlined)
+    throw new PolicyFormatError('localProgramStreamlined', 'expected true: every preset keeps it');
   return {
     schema: 1,
     stock: [...l.stock],
@@ -131,10 +135,7 @@ export function policyFromLevers(l: SimLevers): SimPolicy {
       strokes: []
     },
     timing: {
-      current: {
-        ...structuredClone(OBSERVED_TIMING.current),
-        localProgramStreamlined: l.localProgramStreamlined
-      },
+      current: structuredClone(OBSERVED_TIMING.current),
       saved: null
     }
   };
@@ -322,16 +323,12 @@ function parseTimingSet(v: unknown, path: string): TimingSet {
     'localProgramStreamlined'
   ]);
   const edits = viaLevers('timers', r.edits, j(path, 'edits'));
-  const seen = new Set<string>();
+  editableOnce(edits, j(path, 'edits'));
   edits.forEach((e, i) => {
-    const ep = `${j(path, 'edits')}[${i}]`;
-    if (e.reach !== 'all') fail(j(ep, 'reach'), 'expected all: custom edits reach every project');
-    if (!EDITABLE_STAGES.includes(e.stage)) fail(j(ep, 'stage'), 'expected an editable stage');
-    const k = `${e.pathway}/${e.stage}`;
-    if (seen.has(k)) fail(ep, `duplicate edit for ${k}`);
-    seen.add(k);
+    if (e.reach !== 'all')
+      fail(`${j(path, 'edits')}[${i}].reach`, 'expected all: custom edits reach every project');
   });
-  return {
+  const set: TimingSet = {
     preset: oneOf(r.preset, j(path, 'preset'), AVAILABLE_PRESETS),
     presetTimers: viaLevers('timers', r.presetTimers, j(path, 'presetTimers')),
     presetRouteShares: percents(r.presetRouteShares, j(path, 'presetRouteShares')),
@@ -339,6 +336,82 @@ function parseTimingSet(v: unknown, path: string): TimingSet {
     routeShares: percents(r.routeShares, j(path, 'routeShares')),
     localProgramStreamlined: bool(r.localProgramStreamlined, j(path, 'localProgramStreamlined'))
   };
+  checkPresetLayer(set, path);
+  return set;
+}
+
+/** Timers on editable stages only, at most one per (pathway, stage). */
+function editableOnce(timers: readonly TimerEdit[], path: string): void {
+  const seen = new Set<string>();
+  timers.forEach((t, i) => {
+    const tp = `${path}[${i}]`;
+    if (!EDITABLE_STAGES.includes(t.stage)) fail(j(tp, 'stage'), 'expected an editable stage');
+    const k = `${t.pathway}/${t.stage}`;
+    if (seen.has(k)) fail(tp, `duplicate timer for ${k}`);
+    seen.add(k);
+  });
+}
+
+const BENCHMARK_RATIO = BENCHMARK_PERMIT_DAYS.sanDiego.value / BENCHMARK_PERMIT_DAYS.sf.value;
+
+/**
+ * The preset layer must be one the preset could have resolved to (review I1), checked without
+ * a calibration: which stages and reach its timers may have, the range of their scales, and the
+ * shape of its route shares. Every preset keeps the Local Program streamlined.
+ */
+function checkPresetLayer(s: TimingSet, path: string): void {
+  const tp = j(path, 'presetTimers');
+  const sp = j(path, 'presetRouteShares');
+  editableOnce(s.presetTimers, tp);
+  if (!s.localProgramStreamlined)
+    fail(j(path, 'localProgramStreamlined'), 'expected true: every preset keeps it');
+  const timers = (allowed: (t: TimerEdit) => string | null) =>
+    s.presetTimers.forEach((t, i) => {
+      const why = allowed(t);
+      if (why !== null) fail(`${tp}[${i}]`, why);
+    });
+  const noTimers = () => timers(() => `expected no timers under ${s.preset}`);
+  const noShares = () => {
+    if (s.presetRouteShares !== null) fail(sp, `expected null under ${s.preset}`);
+  };
+  switch (s.preset) {
+    case 'observed':
+      noTimers();
+      noShares();
+      break;
+    case 'noDiscretionary':
+      noTimers();
+      if (s.presetRouteShares === null) fail(sp, 'expected route shares under noDiscretionary');
+      if (s.presetRouteShares.discretionary !== 0) fail(`${sp}.discretionary`, 'expected 0');
+      break;
+    case 'sb423Clock':
+      noShares();
+      timers((t) =>
+        t.pathway !== 'streamlined' || t.stage !== 'filed'
+          ? 'expected only streamlined filed'
+          : t.reach !== 'new'
+            ? 'expected reach new'
+            : t.scale > 1
+              ? 'expected a scale of at most 1'
+              : null
+      );
+      break;
+    case 'benchmarkPermits':
+      noShares();
+      // The ratio, or raised toward 1 by a stage floor (resolvePreset's `withFloor`).
+      timers((t) =>
+        t.stage !== 'permitFiled'
+          ? 'expected only permitFiled'
+          : t.reach !== 'all'
+            ? 'expected reach all'
+            : t.scale < BENCHMARK_RATIO - 1e-12 || t.scale > 1
+              ? `expected a scale from ${BENCHMARK_RATIO} to 1`
+              : null
+      );
+      break;
+    case 'ceqaInfill': // rejected above as unavailable
+      break;
+  }
 }
 
 function parseTiming(v: unknown): SimTiming {

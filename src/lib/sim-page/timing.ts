@@ -3,7 +3,9 @@
  * current timing set with its custom edits and route shares, stage bounds and floors, and the
  * compile to `SimLevers` fields. Pure TS: no Svelte, no DOM.
  *
- * A set compiles to `timers = [...presetTimers, ...edits]`. Shown months are
+ * A set compiles to the preset's timers, minus those on a stage with a custom edit, then the
+ * edits: a custom edit replaces the preset on its stage for every project (controller ruling,
+ * replacing Call 2's stacking). An edit's scale is `months / typical0`. Shown months are
  * `typical0 × freshScale`, rounded to 0.5 month (Calls 1 and 2), where `typical0` is the base
  * calibration's `typicalMonths` and the fresh scale is `scaleTable(timers, 'new')`.
  */
@@ -372,12 +374,17 @@ export function revertTarget(
   return JSON.stringify(target.set) === JSON.stringify(t.current) ? null : target;
 }
 
+const hasEdit = (s: TimingSet, p: Pathway, st: TimedStage) =>
+  s.edits.some((e) => e.pathway === p && e.stage === st);
+
 export function compileTiming(
   s: TimingSet
 ): Pick<SimLevers, 'timers' | 'routeShares' | 'localProgramStreamlined'> {
   const shares = s.routeShares ?? s.presetRouteShares;
   return {
-    timers: [...s.presetTimers, ...s.edits].map((t) => ({ ...t })),
+    timers: [...s.presetTimers.filter((t) => !hasEdit(s, t.pathway, t.stage)), ...s.edits].map(
+      (t) => ({ ...t })
+    ),
     routeShares: shares ? { ...shares } : null,
     localProgramStreamlined: s.localProgramStreamlined
   };
@@ -453,31 +460,30 @@ function typicalOf(cal: Calibration, p: Pathway, st: Tabled): number {
 }
 
 /**
- * The months a custom edit may set (Call 7): min = max(floor, MIN_SCALE × typical0,
- * typical0 × presetFresh × MIN_SCALE), max = min(MAX_SCALE × typical0,
- * typical0 × presetFresh × MAX_SCALE), each rounded inward to 0.5 month.
+ * The months a custom edit may set (Call 7). The edit replaces the preset on its stage, so the
+ * bounds do not depend on the set: min = max(floor, MIN_SCALE × typical0),
+ * max = MAX_SCALE × typical0, each rounded inward to 0.5 month.
  */
 export function stageBounds(
   cal: Calibration,
-  s: TimingSet,
+  _s: TimingSet,
   p: Pathway,
   st: TimedStage
 ): StageBounds {
   const t0 = typicalOf(cal, p, st);
-  const pf = product(s.presetTimers, p, st);
   const floor = floorOf(p, st)?.value ?? null;
-  const byScale = Math.max(MIN_SCALE * t0, t0 * pf * MIN_SCALE);
-  const max = floorHalf(Math.min(MAX_SCALE * t0, t0 * pf * MAX_SCALE));
+  const byScale = MIN_SCALE * t0;
+  const max = floorHalf(MAX_SCALE * t0);
   const floorWins = floor !== null && floor >= byScale;
-  // Inside a preset that already uses most of the range, the scale bound wins over the floor.
+  // A floor above the numerical maximum (not reachable with sourced floors) gives way to it.
   const min = Math.min(ceilHalf(floorWins ? floor : byScale), max);
   return { min, max, minBy: floorWins ? 'floor' : 'scale', maxBy: 'scale' };
 }
 
 /**
- * Set a stage's typical months for every project (Call 2): clamped to `stageBounds`, rounded
- * to 0.5 month, stored as a reach-'all' scale on top of the preset. Back at the preset's
- * months, the edit is removed.
+ * Set a stage's typical months for every project (Call 2, as ruled): clamped to `stageBounds`,
+ * rounded to 0.5 month, stored as a reach-'all' scale `months / typical0` that replaces the
+ * preset's timer on the stage. Back at the preset's shown months, the edit is removed.
  */
 export function setStageMonths(
   cal: Calibration,
@@ -491,10 +497,11 @@ export function setStageMonths(
   const want = Number.isFinite(months) ? months : b.max;
   const clamped = want < b.min ? 'min' : want > b.max ? 'max' : null;
   const m = Math.min(b.max, Math.max(b.min, roundHalf(want)));
-  const base = typicalOf(cal, p, st) * product(s.presetTimers, p, st);
+  const t0 = typicalOf(cal, p, st);
+  const presetMonths = roundHalf(t0 * clampScale(product(s.presetTimers, p, st)));
   const edits = s.edits.filter((e) => !(e.pathway === p && e.stage === st));
-  if (Math.abs(m - roundHalf(base)) > EPS) {
-    edits.push({ pathway: p, stage: st, scale: clampScale(m / base), reach: 'all' });
+  if (Math.abs(m - presetMonths) > EPS) {
+    edits.push({ pathway: p, stage: st, scale: clampScale(m / t0), reach: 'all' });
   }
   return { set: { ...s, edits }, clamped };
 }
@@ -521,7 +528,8 @@ export function routeView(cal: Calibration, s: TimingSet, p: Pathway): StageView
     const months = roundHalf(t0 * f);
     const bounds = editable ? stageBounds(cal, s, p, st) : null;
     const fs = timed ? floorScale(cal, p, st) : null;
-    const presetTouched = timed && s.presetTimers.some((x) => x.pathway === p && x.stage === st);
+    const presetTouched =
+      timed && !hasEdit(s, p, st) && s.presetTimers.some((x) => x.pathway === p && x.stage === st);
     const e = eventualProbabilities(t, 0);
     out.push({
       stage,

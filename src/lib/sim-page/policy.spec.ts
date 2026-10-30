@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_LEVERS, FZP_COMPAT_LEVERS, parseSimLevers } from '$lib/sim/levers/types';
+import {
+  DEFAULT_LEVERS,
+  FZP_COMPAT_LEVERS,
+  parseSimLevers,
+  type TimerEdit
+} from '$lib/sim/levers/types';
 import { OBSERVED_TIMING, type TimingSet } from './timing';
 import {
   DEFAULT_BANDS,
@@ -42,16 +47,33 @@ const freehand = (
 const s = (r: number): Stroke => ({ path: [[-122, 37]], radiusM: r });
 const supply = (m: Map<string, string[]>) => (k: string) => m.get(k);
 
-/** A custom set on a preset: benchmark-like preset timers, one edit and custom route shares. */
+/** A custom set on benchmarkPermits: its preset timers, one edit and custom route shares. */
 const CUSTOM: TimingSet = {
   preset: 'benchmarkPermits',
   presetTimers: [
     { pathway: 'discretionary', stage: 'permitFiled', scale: 0.4786, reach: 'all' },
-    { pathway: 'streamlined', stage: 'filed', scale: 0.5, reach: 'new' }
+    { pathway: 'streamlined', stage: 'permitFiled', scale: 0.4786, reach: 'all' },
+    { pathway: 'permitOnly', stage: 'permitFiled', scale: 0.4786, reach: 'all' }
   ],
-  presetRouteShares: { discretionary: 0, streamlined: 67, permitOnly: 33 },
+  presetRouteShares: null,
   edits: [{ pathway: 'discretionary', stage: 'filed', scale: 0.8, reach: 'all' }],
   routeShares: { discretionary: 10, streamlined: 60, permitOnly: 30 },
+  localProgramStreamlined: true
+};
+const NO_DISC: TimingSet = {
+  preset: 'noDiscretionary',
+  presetTimers: [],
+  presetRouteShares: { discretionary: 0, streamlined: 67, permitOnly: 33 },
+  edits: [],
+  routeShares: null,
+  localProgramStreamlined: true
+};
+const SB423: TimingSet = {
+  preset: 'sb423Clock',
+  presetTimers: [{ pathway: 'streamlined', stage: 'filed', scale: 0.17, reach: 'new' }],
+  presetRouteShares: null,
+  edits: [],
+  routeShares: null,
   localProgramStreamlined: true
 };
 
@@ -160,39 +182,53 @@ describe('compileLevers', () => {
 });
 
 describe('timing in the policy', () => {
+  const compile = (t: TimingSet) =>
+    compileLevers(base({ timing: { current: t, saved: null } }), () => undefined)!;
+
   it('compiles preset timers then edits, and custom shares over the preset', () => {
-    const l = compileLevers(base({ timing: { current: CUSTOM, saved: null } }), () => undefined)!;
+    const l = compile(CUSTOM);
     expect(l.timers).toEqual([...CUSTOM.presetTimers, ...CUSTOM.edits]);
     expect(l.routeShares).toEqual(CUSTOM.routeShares);
-    const noCustom = { ...CUSTOM, routeShares: null };
-    expect(
-      compileLevers(base({ timing: { current: noCustom, saved: null } }), () => undefined)!
-        .routeShares
-    ).toEqual(CUSTOM.presetRouteShares);
+    expect(compile(NO_DISC).routeShares).toEqual(NO_DISC.presetRouteShares);
   });
 
-  it('policyFromLevers maps no timers to the observed set and refuses timers', () => {
-    const p = policyFromLevers({ ...DEFAULT_LEVERS, localProgramStreamlined: false });
-    expect(p.timing).toEqual({
-      current: { ...OBSERVED_TIMING.current, localProgramStreamlined: false },
+  it('a custom edit replaces the preset timer on its stage', () => {
+    const edit = {
+      pathway: 'streamlined',
+      stage: 'permitFiled',
+      scale: 0.9,
+      reach: 'all'
+    } as const;
+    const l = compile({ ...CUSTOM, edits: [...CUSTOM.edits, edit] });
+    expect(l.timers).toEqual([
+      CUSTOM.presetTimers[0],
+      CUSTOM.presetTimers[2],
+      ...CUSTOM.edits,
+      edit
+    ]);
+  });
+
+  it('policyFromLevers maps no timers to the observed set and refuses anything else', () => {
+    expect(policyFromLevers(DEFAULT_LEVERS).timing).toEqual({
+      current: OBSERVED_TIMING.current,
       saved: null
     });
-    expect(() =>
-      policyFromLevers({
+    for (const l of [
+      {
         ...DEFAULT_LEVERS,
-        timers: [{ pathway: 'discretionary', stage: 'filed', scale: 0.5, reach: 'all' }]
-      })
-    ).toThrow(PolicyFormatError);
-    expect(() =>
-      policyFromLevers({
-        ...DEFAULT_LEVERS,
-        routeShares: { discretionary: 1, streamlined: 1, permitOnly: 1 }
-      })
-    ).toThrow(PolicyFormatError);
+        timers: [{ pathway: 'discretionary', stage: 'filed', scale: 0.5, reach: 'all' } as const]
+      },
+      { ...DEFAULT_LEVERS, routeShares: { discretionary: 1, streamlined: 1, permitOnly: 1 } },
+      { ...DEFAULT_LEVERS, localProgramStreamlined: false }
+    ])
+      expect(() => policyFromLevers(l)).toThrow(PolicyFormatError);
   });
 
-  const rejectTiming = (mut: (t: { current: TimingSet; saved: unknown }) => void) => {
-    const p = JSON.parse(JSON.stringify(base({ timing: { current: CUSTOM, saved: null } })));
+  const rejectTiming = (
+    mut: (t: { current: TimingSet; saved: unknown }) => void,
+    start: TimingSet = CUSTOM
+  ) => {
+    const p = JSON.parse(JSON.stringify(base({ timing: { current: start, saved: null } })));
     mut(p.timing);
     try {
       parseSimPolicy(p);
@@ -203,9 +239,13 @@ describe('timing in the policy', () => {
     }
   };
 
-  it('parseSimPolicy round-trips a custom set with a save', () => {
+  it('parseSimPolicy round-trips a custom set with a save, and every preset shape', () => {
     const p = base({ timing: { current: CUSTOM, saved: { label: 'Mine', set: CUSTOM } } });
     expect(parseSimPolicy(JSON.parse(JSON.stringify(p)))).toEqual(p);
+    for (const t of [NO_DISC, SB423, OBSERVED_TIMING.current]) {
+      const q = base({ timing: { current: t, saved: null } });
+      expect(parseSimPolicy(JSON.parse(JSON.stringify(q)))).toEqual(q);
+    }
   });
 
   it('rejects new-reach edits, unknown presets and shares off 100', () => {
@@ -221,7 +261,7 @@ describe('timing in the policy', () => {
     expect(rejectTiming((t) => (t.current.routeShares!.permitOnly = 31))).toBe(
       'timing.current.routeShares'
     );
-    expect(rejectTiming((t) => (t.current.presetRouteShares!.permitOnly = 32))).toBe(
+    expect(rejectTiming((t) => (t.current.presetRouteShares!.permitOnly = 32), NO_DISC)).toBe(
       'timing.current.presetRouteShares'
     );
     expect(rejectTiming((t) => (t.current.routeShares!.permitOnly = 29.5))).toBe(
@@ -240,6 +280,90 @@ describe('timing in the policy', () => {
     expect(
       rejectTiming((t) => (t.saved = { label: 'x', set: { ...CUSTOM, preset: 'nope' } }))
     ).toBe('timing.saved.set.preset');
+  });
+
+  describe('rejects a preset layer that contradicts its preset', () => {
+    const timer = (over: Partial<TimerEdit>): TimerEdit => ({
+      pathway: 'discretionary',
+      stage: 'permitFiled',
+      scale: 0.5,
+      reach: 'all',
+      ...over
+    });
+    it('observed: no timers, no shares', () => {
+      const obs = OBSERVED_TIMING.current;
+      expect(rejectTiming((t) => t.current.presetTimers.push(timer({})), obs)).toBe(
+        'timing.current.presetTimers[0]'
+      );
+      expect(
+        rejectTiming(
+          (t) =>
+            (t.current.presetRouteShares = { discretionary: 50, streamlined: 25, permitOnly: 25 }),
+          obs
+        )
+      ).toBe('timing.current.presetRouteShares');
+    });
+    it('noDiscretionary: no timers, shares with discretionary 0', () => {
+      expect(rejectTiming((t) => t.current.presetTimers.push(timer({})), NO_DISC)).toBe(
+        'timing.current.presetTimers[0]'
+      );
+      expect(rejectTiming((t) => (t.current.presetRouteShares = null), NO_DISC)).toBe(
+        'timing.current.presetRouteShares'
+      );
+      expect(
+        rejectTiming(
+          (t) =>
+            (t.current.presetRouteShares = { discretionary: 1, streamlined: 66, permitOnly: 33 }),
+          NO_DISC
+        )
+      ).toBe('timing.current.presetRouteShares.discretionary');
+    });
+    it('sb423Clock: only streamlined filed, reach new, scale at most 1, no shares', () => {
+      const at = 'timing.current.presetTimers[0]';
+      expect(
+        rejectTiming((t) => (t.current.presetTimers[0].pathway = 'discretionary'), SB423)
+      ).toBe(at);
+      expect(rejectTiming((t) => (t.current.presetTimers[0].reach = 'all'), SB423)).toBe(at);
+      expect(rejectTiming((t) => (t.current.presetTimers[0].scale = 1.5), SB423)).toBe(at);
+      expect(
+        rejectTiming(
+          (t) =>
+            (t.current.presetRouteShares = { discretionary: 0, streamlined: 67, permitOnly: 33 }),
+          SB423
+        )
+      ).toBe('timing.current.presetRouteShares');
+    });
+    it('benchmarkPermits: only permitFiled, reach all, at the ratio or up to 1, no shares', () => {
+      expect(rejectTiming((t) => (t.current.presetTimers[0].stage = 'filed'))).toBe(
+        'timing.current.presetTimers[0]'
+      );
+      expect(rejectTiming((t) => (t.current.presetTimers[1].reach = 'new'))).toBe(
+        'timing.current.presetTimers[1]'
+      );
+      expect(rejectTiming((t) => (t.current.presetTimers[2].scale = 0.2))).toBe(
+        'timing.current.presetTimers[2]'
+      );
+      expect(rejectTiming((t) => (t.current.presetTimers[2].scale = 1.2))).toBe(
+        'timing.current.presetTimers[2]'
+      );
+      expect(
+        rejectTiming(
+          (t) =>
+            (t.current.presetRouteShares = { discretionary: 0, streamlined: 67, permitOnly: 33 })
+        )
+      ).toBe('timing.current.presetRouteShares');
+    });
+    it('every preset: no duplicate or locked-stage timers, Local Program kept', () => {
+      expect(
+        rejectTiming((t) => t.current.presetTimers.push({ ...t.current.presetTimers[0] }))
+      ).toBe('timing.current.presetTimers[3]');
+      expect(rejectTiming((t) => (t.current.presetTimers[0].stage = 'entitled'))).toBe(
+        'timing.current.presetTimers[0].stage'
+      );
+      expect(rejectTiming((t) => (t.current.localProgramStreamlined = false))).toBe(
+        'timing.current.localProgramStreamlined'
+      );
+    });
   });
 });
 
