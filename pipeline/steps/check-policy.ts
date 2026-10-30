@@ -267,15 +267,16 @@ function checkV32(
 
 /**
  * V33, current law (FZP + §207.11): for every row, recomputes `s207Status` (s207Status) from
- * parcels.bin (eligibility, lot area, FZP stories, and the applicable height (`lpFt` on a Local Program
- * lot, else `baseFt`) and R-4 flag of its height district string), the policy columns (TOD tier and band, historic code, exemption flags,
- * `fzpYieldCap`) and `zoneClassOf(useDistrict)`. A `currentFromS207` row must be `applies`, have
- * the s207Envelope stories and cap, and be the more permissive layer (`mostPermissive` over the
- * full-fill yield and hostable flag); every other row's current columns must equal the FZP row
- * (`envelopeStories`, `fzpYieldCap`, `yield`, `hostable`). No `applies` row may have `fzpYieldCap` none (`applies with no FZP cap`).
- * `policy.s207.base_ft_mismatch` (the
- * step's applicable height or R-4 flag ≠ the district string's) and `policy.current.yield_mismatch` (the
- * step's FZP recompute ≠ parcels.bin) must be 0: yields are not regenerated here. Never throws.
+ * parcels.bin (eligibility, lot area, FZP stories, and the applicable height (`lpFt` on a Local
+ * Program lot, else `baseFt`) and R-4 flag of its height district string), the policy columns (TOD
+ * tier and band, historic code, exemption flags, `fzpYieldCap`) and `zoneClassOf(useDistrict)`. A
+ * `currentFromS207` row must be `applies`, have the s207Envelope stories and cap, and be the more
+ * permissive layer (`mostPermissive` over the full-fill yield and hostable flag); every other row's
+ * current columns must equal the FZP row (`envelopeStories`, `fzpYieldCap`, `yield`, `hostable`).
+ * No `applies` row may have `fzpYieldCap` none (`applies with no FZP cap`).
+ * `policy.s207.base_ft_mismatch` (the step's applicable height or R-4 flag ≠ the district string's)
+ * and `policy.current.yield_mismatch` (the step's FZP recompute ≠ parcels.bin) must be 0: yields
+ * are not regenerated here. Never throws.
  */
 function checkV33(
   outDir: string,

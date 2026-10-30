@@ -312,13 +312,14 @@ export const S207: {
 /**
  * §207.11(b) conditions and how the plan evaluates each:
  * (1) within ½ mile of a TOD stop → todBand > 0; (2) principallyResidential; (3) numeric density
- * (fzpYieldCap !== null) or a height limit < 40 ft (the applicable height: lpFt on a Local Program lot, else baseFt); (4) not sc_district.r4; (5) not seeking a §206.6
- * density bonus: not modelled (HCD's 2026-07-01 approval is conditioned on SF not enforcing it);
- * (6) not in either exemption table; (7) historic code not in S207.historicCodes; (8) "The permitted density
- * prior to applying the density and height exception in subsection (c) does not meet the minimum
- * density": fzpYieldCap / acres < S207.minDensityDuPerAcre(tier, band); an uncapped lot permits
- * unlimited density, so it meets the minimum and never qualifies. (c)(1) cap =
- * S207.rounding(densityShare × STANDARDS[tier][band].duPerAcre × acres), combined as max(fzpCap, s207Cap); (c)(2) 40 ft →
+ * (fzpYieldCap !== null) or a height limit < 40 ft (the applicable height: lpFt on a Local Program
+ * lot, else baseFt); (4) not sc_district.r4; (5) not seeking a §206.6 density bonus: not modelled
+ * (HCD's 2026-07-01 approval is conditioned on SF not enforcing it); (6) not in either exemption
+ * table; (7) historic code not in S207.historicCodes; (8) "The permitted density prior to applying
+ * the density and height exception in subsection (c) does not meet the minimum density":
+ * fzpYieldCap / acres < S207.minDensityDuPerAcre(tier, band); an uncapped lot permits unlimited
+ * density, so it meets the minimum and never qualifies. (c)(1) cap = S207.rounding(densityShare ×
+ * STANDARDS[tier][band].duPerAcre × acres), combined as max(fzpCap, s207Cap); (c)(2) 40 ft →
  * storiesFromFt(40) = 4 where the FZP height is under 40 ft.
  */
 export const CURRENT_LAW_RULE = 'fzp+s207.11';
