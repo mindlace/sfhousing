@@ -74,7 +74,7 @@ export function protectedRows(
   return { rows: Int32Array.from(rows), unknown: unknownIds.size };
 }
 
-interface Window {
+interface ResolveWindow {
   asOf: Day;
   horizon: Day;
   switchDay: Day;
@@ -144,13 +144,17 @@ function resolvePeriod(
   return { table, needs };
 }
 
-export function resolveEnvelopes(ctx: LayerCtx, levers: SimLevers, window: Window): Resolution {
+export function resolveEnvelopes(
+  ctx: LayerCtx,
+  levers: SimLevers,
+  window: ResolveWindow
+): Resolution {
   const { rows, unknown } = protectedRows(ctx, levers.protect, window.asOf);
   const assume = levers.assumeAlternativePlanKept;
   const switched = !assume && window.switchDay <= window.asOf;
   const beforePeriod: Period = switched ? 'after' : 'before';
   const hasAfter =
-    levers.stock.includes('currentLaw') &&
+    (levers.stock.includes('currentLaw') || rows.length > 0) && // protected lots follow the switch
     !assume &&
     window.asOf < window.switchDay &&
     window.switchDay <= window.horizon;

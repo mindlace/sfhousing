@@ -4,7 +4,13 @@ import type { EnvelopeRow } from '$lib/data/envelope-row';
 import { miniCity } from '../scenario/fixtures/mini-parcels';
 import { MINI_HISTORIC_ID, MINI_SB79_ID, miniPolicy } from '../scenario/fixtures/mini-policy';
 import { dayOf } from '../scenario/dates';
-import { currentLawTable, stockTable, type EnvelopeTable, type LayerCtx } from './layers';
+import {
+  currentLawAfterTable,
+  currentLawTable,
+  stockTable,
+  type EnvelopeTable,
+  type LayerCtx
+} from './layers';
 import {
   allNeeds,
   fillNeeds,
@@ -197,6 +203,37 @@ describe('periods', () => {
     const late = resolveEnvelopes(c, stock(), { ...WINDOW, asOf: SWITCH + 5 });
     expect(late.before.table.stories[at(c, MINI_SB79_ID)]).toBe(8); // already the after-switch law
     expect(leverCapacity(late, c.parcels).afterSwitch).toBeNull();
+  });
+});
+
+describe('protected lots without current law in the stock', () => {
+  const S = () => levers({ stock: ['fzp'], protect: protectLots([MINI_SB79_ID]) });
+  it('after exists; protected row is the after-switch law, the rest is the FZP blend', () => {
+    const c = ctx();
+    const i = at(c, MINI_SB79_ID);
+    const r = resolveEnvelopes(c, S(), WINDOW);
+    expect(r.after).not.toBeNull();
+    expect(row(r.before.table, i)).toEqual(row(stockTable(c, 'currentLaw'), i));
+    expect(r.after!.period.table.stories[i]).toBe(8);
+    expect(row(r.after!.period.table, i)).toEqual(row(currentLawAfterTable(c), i));
+    expect(row(r.unprotected.after!.table, i)).toEqual(row(stockTable(c, 'fzp'), i));
+    expect(row(r.unprotected.before.table, i)).toEqual(row(stockTable(c, 'fzp'), i));
+    expect(leverCapacity(r, c.parcels).afterSwitch).not.toBeNull();
+  });
+  it('with asOf at or past the switch, before takes the after-switch row', () => {
+    const c = ctx();
+    const i = at(c, MINI_SB79_ID);
+    const r = resolveEnvelopes(c, S(), { ...WINDOW, asOf: SWITCH });
+    expect(r.after).toBeNull();
+    expect(row(r.before.table, i)).toEqual(row(currentLawAfterTable(c), i));
+    expect(row(r.unprotected.before.table, i)).toEqual(row(stockTable(c, 'fzp'), i));
+  });
+  it('stays null when the alternative plan is kept or the horizon is before the switch', () => {
+    const c = ctx();
+    expect(
+      resolveEnvelopes(c, { ...S(), assumeAlternativePlanKept: true }, WINDOW).after
+    ).toBeNull();
+    expect(resolveEnvelopes(c, S(), { ...WINDOW, horizon: SWITCH - 1 }).after).toBeNull();
   });
 });
 
