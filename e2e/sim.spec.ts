@@ -525,6 +525,7 @@ test('below md on a fine pointer the phone tool bar leaves the zoom control unco
   await chooseTool(page, true, () =>
     panel(page).getByRole('radio', { name: 'Paint', exact: true }).click()
   );
+  await expect(page.getByTestId('phone-tool-bar')).toBeVisible();
   await expectNavControlClear(page, page.getByTestId('phone-tool-bar'));
 });
 
