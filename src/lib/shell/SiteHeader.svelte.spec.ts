@@ -34,22 +34,22 @@ describe('SiteHeader', () => {
       render(SiteHeader, { routeId: '/' });
       const nav = page.getByRole('navigation', { name: 'Modes' });
       const paint = nav.getByRole('link', { name: 'Paint' });
-      const timelapse = nav.getByRole('link', { name: 'Timelapse' });
+      const simulate = nav.getByRole('link', { name: 'Simulate' });
       await expect.element(paint).toHaveAttribute('href', '/');
       await expect.element(paint).toHaveAttribute('aria-current', 'page');
-      await expect.element(timelapse).toHaveAttribute('href', '/fzp');
-      await expect.element(timelapse).not.toHaveAttribute('aria-current');
+      await expect.element(simulate).toHaveAttribute('href', '/sim');
+      await expect.element(simulate).not.toHaveAttribute('aria-current');
     });
 
-    it('flips the current link on /fzp', async () => {
+    it('flips the current link on /sim', async () => {
       await page.viewport(1024, 768);
-      render(SiteHeader, { routeId: '/fzp' });
+      render(SiteHeader, { routeId: '/sim' });
       const nav = page.getByRole('navigation', { name: 'Modes' });
       await expect
         .element(nav.getByRole('link', { name: 'Paint' }))
         .not.toHaveAttribute('aria-current');
       await expect
-        .element(nav.getByRole('link', { name: 'Timelapse' }))
+        .element(nav.getByRole('link', { name: 'Simulate' }))
         .toHaveAttribute('aria-current', 'page');
     });
 
@@ -58,28 +58,28 @@ describe('SiteHeader', () => {
       render(SiteHeader, { routeId: '/p/[id]' });
       const nav = page.getByRole('navigation', { name: 'Modes' });
       await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
-      await expect.element(nav.getByRole('link', { name: 'Timelapse' })).toBeVisible();
+      await expect.element(nav.getByRole('link', { name: 'Simulate' })).toBeVisible();
       await expect
         .element(nav.getByRole('link', { name: 'Paint' }))
         .not.toHaveAttribute('aria-current');
       await expect
-        .element(nav.getByRole('link', { name: 'Timelapse' }))
+        .element(nav.getByRole('link', { name: 'Simulate' }))
         .not.toHaveAttribute('aria-current');
     });
 
-    it('shows only Paint at 375px on /fzp', async () => {
+    it('shows only Paint at 375px on /sim', async () => {
       await page.viewport(375, 812);
-      render(SiteHeader, { routeId: '/fzp' });
+      render(SiteHeader, { routeId: '/sim' });
       const nav = page.getByRole('navigation', { name: 'Modes' });
       await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
-      await expect.element(nav.getByText('Timelapse')).not.toBeVisible();
+      await expect.element(nav.getByText('Simulate')).not.toBeVisible();
     });
 
-    it.each(['/', '/p/[id]'])('shows only Timelapse at 375px on %s', async (routeId) => {
+    it.each(['/', '/p/[id]'])('shows only Simulate at 375px on %s', async (routeId) => {
       await page.viewport(375, 812);
       render(SiteHeader, { routeId });
       const nav = page.getByRole('navigation', { name: 'Modes' });
-      await expect.element(nav.getByRole('link', { name: 'Timelapse' })).toBeVisible();
+      await expect.element(nav.getByRole('link', { name: 'Simulate' })).toBeVisible();
       await expect.element(nav.getByText('Paint')).not.toBeVisible();
     });
   });

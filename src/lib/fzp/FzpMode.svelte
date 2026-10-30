@@ -1,12 +1,16 @@
 <!--
-  The /fzp page composition (spec §4.1, §4.2, §4.3, §4.7, §4.8): SimMap, the time scrubber, the
+  The timelapse composition (spec §4.1, §4.2, §4.3, §4.7, §4.8): SimMap, the time scrubber, the
   time-aware scoreboard, the project card and tooltip and the sources dialog, over timelapse-sim's
   ScenarioClient. Queueing before the map handle, chunk statuses and crash Retry mirror
-  BrushEditor.svelte (copied, not imported).
+  BrushEditor.svelte (copied, not imported). /sim passes `levers` (plan 3): the session runs the
+  lever engine, and the worker's posted lookups replace the calibration's once current.
 -->
 <script module lang="ts">
   import { chanceTable, typicalMonths } from '$lib/timelapse/model';
   import type { Calibration } from '$lib/timelapse/types';
+  import type { SimMapHandle } from '$lib/map/types';
+  import type { BrushCatalog, BrushQuery } from '$lib/sim/levers/brushes';
+  import type { BrushLotsResult } from '$lib/sim/scenario/types';
   import type { ChanceTable } from './card';
 
   const NARROW = '(width < 768px)';
@@ -14,6 +18,14 @@
   const SCOREBAR_H = 56;
 
   type Lookups = { chance: ChanceTable; typicalMonths: ReturnType<typeof typicalMonths> };
+  type MapLike = NonNullable<ReturnType<SimMapHandle['getMap']>>;
+
+  /** What /sim's page needs from the scenario client (brush pickers and their Retry). */
+  export interface SimClientApi {
+    resolveBrush(q: BrushQuery): Promise<BrushLotsResult>;
+    brushCatalog(): Promise<BrushCatalog | null>;
+    retryChunks(): void;
+  }
 
   /**
    * One lookups object per calibration object: SimMap compares lookups by identity, and nothing
@@ -31,12 +43,23 @@
 </script>
 
 <script lang="ts">
-  import { onMount, untrack } from 'svelte';
+  import { onMount, untrack, type Snippet } from 'svelte';
   import type { Manifest } from '$lib/data/manifest';
   import SimMap from '$lib/map/SimMap.svelte';
-  import type { ChunkStatus, SimMapHandle, TimelinePick, TimelineUpdate } from '$lib/map/types';
+  import type { ChunkStatus, TimelinePick, TimelineUpdate } from '$lib/map/types';
+  import { formatCount } from '$lib/scoreboard/format';
   import { useHeaderActions } from '$lib/shell/header-actions.svelte';
+  import {
+    leversError,
+    leversMessage,
+    leversSent,
+    leversSession,
+    type LeverStatus,
+    type LeverStatusState
+  } from '$lib/sim-page/lever-status';
   import { spawnSimWorker } from '$lib/sim/client';
+  import type { LeverLookups } from '$lib/sim/levers/apply';
+  import type { SimLevers } from '$lib/sim/levers/types';
   import type { TimelineScore } from '$lib/sim/protocol';
   import {
     ScenarioClient,
@@ -71,6 +94,19 @@
     onurlseed?: (seed: number | null) => void;
     /** Tests inject a fake worker. */
     createWorker?: () => ScenarioWorkerInput;
+    /**
+     * /sim only (absent = /fzp, unchanged): sent with every `initScenario`; a new object once the
+     * scenario is live sends `setLevers`.
+     */
+    levers?: SimLevers;
+    /** Every lever status change (/sim). */
+    onlevers?: (s: LeverStatus) => void;
+    /** The client's brush requests once it exists, null on unmount. */
+    onclient?: (api: SimClientApi | null) => void;
+    /** SimMap's handle and map, once ready. */
+    onmapready?: (h: SimMapHandle, map: MapLike) => void;
+    /** Rendered inside `.sfh-fzp` (the /sim policy panel). */
+    panel?: Snippet;
   }
 
   let {
@@ -83,7 +119,12 @@
     urlSeed,
     reload,
     onurlseed = undefined,
-    createWorker = spawnSimWorker
+    createWorker = spawnSimWorker,
+    levers = undefined,
+    onlevers = undefined,
+    onclient = undefined,
+    onmapready = undefined,
+    panel = undefined
   }: Props = $props();
 
   // The props seed the page once; Retry replaces the manifest and calibration in place.
@@ -117,6 +158,17 @@
   /** The notices above the scrubber (0 when none shows). */
   let noticeH = $state(0);
 
+  /** The lever revision's status (`off` on /fzp). */
+  let leverState = $state.raw<LeverStatusState>({
+    sentRev: null,
+    sessionRev: null,
+    status: { kind: 'off' }
+  });
+  /** The latest current revision's posted lookups; null before the first (and on /fzp). */
+  let leverLookups = $state.raw<LeverLookups | null>(null);
+  /** The rev of the latest non-stale timeline (0 before any). */
+  let timelineRev = $state(0);
+
   let cardState = $state.raw<SummaryState>({ kind: 'idle' });
   let tipState = $state.raw<SummaryState>({ kind: 'idle' });
   let tipAt = $state({ x: 0, y: 0 });
@@ -124,6 +176,20 @@
 
   const asOf = $derived(calibration?.asOf ?? 0);
   const lookups = $derived(calibration ? lookupsFor(calibration) : null);
+  /** The card's chance tables: the posted ones once current, else the calibration's. */
+  const cardChance = $derived(
+    leverLookups
+      ? { inFlight: leverLookups.inFlight.chance, fresh: leverLookups.fresh.chance }
+      : lookups && { inFlight: lookups.chance, fresh: lookups.chance }
+  );
+  const leverStatus = $derived(leverState.status);
+  /**
+   * The score on show is from before the latest levers until a timeline at or after their rev
+   * arrives (a later reroll's runs on them too); a failed revision leaves the old score standing.
+   */
+  const scoreBusy = $derived(
+    leverState.sentRev !== null && timelineRev < leverState.sentRev && leverStatus.kind !== 'failed'
+  );
   const markers = $derived(score ? scrubMarkers(score) : []);
   const hasScoreboard = $derived(
     calibration !== null && (phase === 'loading' || phase === 'ready')
@@ -132,7 +198,6 @@
 
   let client: ScenarioClient | null = null;
   let handle: SimMapHandle | null = null;
-  type MapLike = NonNullable<ReturnType<SimMapHandle['getMap']>>;
   let map: MapLike | null = null;
   let dead = false;
   let retrying = false;
@@ -143,6 +208,8 @@
   const statusCells = new Set<string>(); // eslint-disable-line svelte/prefer-svelte-reactivity
   /** The lookups SimMap holds. */
   let pushedLookups: Lookups | null = null;
+  /** The levers object the worker last received (identity), with initScenario or setLevers. */
+  let sentLevers: SimLevers | null = null;
   /** A non-stale timeline has arrived since the last initScenario. */
   let scenarioLive = false;
   /** Prefetch the viewport on the first timeline after each initScenario. */
@@ -166,14 +233,26 @@
     answered: boolean;
   } | null = null;
 
+  function setLeverState(next: LeverStatusState): void {
+    if (next === leverState) return;
+    const changed = next.status !== leverState.status;
+    leverState = next;
+    if (changed) onlevers?.(next.status);
+  }
+
   /**
-   * The T9 seam (spec §5): every `initScenario` goes through here, so a future `levers` field is
-   * one parameter. A request for the future already shown (crash Retry) keeps the representative
-   * flag; a null seed is the representative future.
+   * The T9 seam (spec §5): every `initScenario` goes through here, with the current `levers` on
+   * /sim. A request for the future already shown (crash Retry) keeps the representative flag; a
+   * null seed is the representative future.
    */
   function startScenario({ seed: next }: { seed: number | null }): void {
     if (!client || !manifest) return;
-    const rev = client.initScenario(manifest, HORIZON, next);
+    const l = untrack(() => levers);
+    const rev = client.initScenario(manifest, HORIZON, next, l);
+    if (l !== undefined) {
+      sentLevers = l;
+      setLeverState(leversSession(leverState, rev));
+    }
     const keep = next !== null && next === seed;
     latest = {
       rev,
@@ -184,6 +263,23 @@
     scenarioLive = false;
     prefetchDue = true;
   }
+
+  /**
+   * Sends a new `levers` object once the scenario is live. It waits while a reroll is in flight,
+   * so the reroll's answer (and its URL write) is not superseded; the answer calls this again.
+   */
+  function syncLevers(): void {
+    const l = untrack(() => levers);
+    if (l === undefined || l === sentLevers || dead || !client || client.crashed) return;
+    if (!scenarioLive || rerollBusy) return;
+    sentLevers = l;
+    setLeverState(leversSent(leverState, client.setLevers(l)));
+  }
+
+  $effect(() => {
+    void levers;
+    untrack(syncLevers);
+  });
 
   function requestReroll(next: number | null): void {
     if (!client || !canReroll) return;
@@ -199,13 +295,13 @@
 
   function pushLookups(): void {
     if (!handle || !calibration) return;
-    const l = lookupsFor(calibration);
+    // T9 lookups seam (spec §5): the page builds chanceTable and typicalMonths from the base
+    // calibration.json until a lever revision is current; then the worker's posted lookups
+    // replace them (/sim). The map takes one set, the new projects' (Call 13); the card picks
+    // its cohort's from `cardChance`.
+    const l = leverLookups?.fresh ?? lookupsFor(calibration);
     if (l === pushedLookups) return;
     pushedLookups = l;
-    // T9 lookups seam (spec §5): today the page builds chanceTable and typicalMonths from the base
-    // calibration.json. Under future policy levers the worker transforms the calibration and will
-    // post the lookups; this single call site is where the page switches to the posted ones, for
-    // both the map and the card.
     handle.setTimelineLookups(l);
   }
 
@@ -327,6 +423,7 @@
   const events: ScenarioClientEvents = {
     onTimeline(t) {
       if (dead || !client || client.isStale(t)) return;
+      timelineRev = t.rev;
       applyRender(t.render);
       score = t.score;
       seed = t.seed;
@@ -353,6 +450,17 @@
       scenarioLive = true;
       if (handle) attachMap(handle.getMap());
       flushPrefetch();
+      syncLevers();
+    },
+    onLevers(m) {
+      if (dead) return;
+      const next = leversMessage(leverState, m);
+      if (next === leverState) return; // below the latest levers sent
+      setLeverState(next);
+      if (m.phase === 'current') {
+        leverLookups = m.lookups;
+        pushLookups();
+      }
     },
     onChunks(c) {
       if (dead) return;
@@ -362,6 +470,7 @@
     },
     onError(e) {
       if (dead) return;
+      setLeverState(leversError(leverState, e.rev, e.code));
       const req = latest;
       if (req !== null && e.rev < req.rev) {
         console.debug('[fzp] stale worker error dropped', e.code, e.rev);
@@ -381,6 +490,7 @@
         // A failed reroll: the shown future stays.
         rerollBusy = false;
         rerollFailed = true;
+        syncLevers();
       } // a failed crash-Retry keeps the chip and its Retry
     },
     onCrash() {
@@ -456,6 +566,8 @@
     h.onResyncNeeded(() => client?.resync());
     attachMap(h.getMap());
     flushPrefetch();
+    const m = h.getMap();
+    if (m) onmapready?.(h, m);
   }
 
   function requestParcelSummary(parcelId: string) {
@@ -476,8 +588,14 @@
 
   onMount(() => {
     if (phase !== 'no-scenario') {
-      client = new ScenarioClient(createWorker(), events);
+      const c = new ScenarioClient(createWorker(), events);
+      client = c;
       if (phase === 'loading') startScenario({ seed: urlSeed });
+      onclient?.({
+        resolveBrush: (q) => c.resolveBrush(q),
+        brushCatalog: () => c.brushCatalog(),
+        retryChunks: () => c.retryChunks()
+      });
     }
 
     const mq = matchMedia(NARROW);
@@ -497,11 +615,18 @@
       asOf,
       horizon: HORIZON,
       playing,
-      score
+      score,
+      levers: {
+        status: leverStatus.kind,
+        done: leverStatus.kind === 'resolving' ? leverStatus.done : 0,
+        total: leverStatus.kind === 'resolving' ? leverStatus.total : 0,
+        sentRev: leverState.sentRev
+      }
     }));
 
     return () => {
       dead = true;
+      if (client) onclient?.(null);
       uninstall();
       mq.removeEventListener('change', onMq);
       playing = false;
@@ -598,6 +723,7 @@
       {representative}
       {canReroll}
       {datasetVersion}
+      busy={scoreBusy}
       builtAt={manifest?.builtAt ?? ''}
       onrepresentative={() => requestReroll(null)}
       onsources={() => dialog?.open()}
@@ -608,13 +734,15 @@
     />
   {/if}
 
-  {#if phase === 'ready' && calibration && lookups}
+  {#if phase === 'ready' && calibration && cardChance}
+    <!-- The posted lookups carry no calibration: lever timers rescale durations, not the
+         provenance the card cites, so both cohorts cite the base calibration. -->
     <ProjectCardPanel
       state={cardState}
       {day}
       {asOf}
       calibration={{ inFlight: calibration, fresh: calibration }}
-      chance={{ inFlight: lookups.chance, fresh: lookups.chance }}
+      chance={cardChance}
       onclose={closeCard}
       onsource={(id) => dialog?.open(id)}
     />
@@ -651,6 +779,29 @@
           >
         {/if}
       </div>
+      <!-- Lever notices (/sim): their own polite region, beside the reroll and crash ones. -->
+      <div role="status" data-testid="fzp-lever-status" class="max-w-full">
+        {#if leverStatus.kind === 'resolving' && !stopped}
+          <span
+            class="pointer-events-auto mb-2 block rounded-lg bg-white px-3 py-2 text-sm text-black shadow"
+            >Updating the simulation for your policy…{leverStatus.total > 0
+              ? ` ${formatCount(leverStatus.done)} of ${formatCount(leverStatus.total)} lots`
+              : ''}</span
+          >
+          {#if leverStatus.failedCells.length > 0}
+            <span
+              class="pointer-events-auto mb-2 flex w-max max-w-full items-center gap-1 rounded-lg bg-white py-1 pl-3 text-sm text-black shadow"
+            >
+              <span>Some map data didn't load.</span>
+              <button
+                type="button"
+                class="min-h-11 min-w-11 rounded-lg px-3 font-semibold underline"
+                onclick={() => client?.retryChunks()}>Retry</button
+              >
+            </span>
+          {/if}
+        {/if}
+      </div>
       {#if rerollFailed && !stopped}
         <div
           role="alert"
@@ -682,6 +833,8 @@
       />
     </div>
   {/if}
+
+  {@render panel?.()}
 
   {#if calibration && phase !== 'no-scenario'}
     <SourcesDialog

@@ -6,7 +6,10 @@ import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { parseManifest, type Manifest } from '$lib/data/manifest';
 import type { TimelinePick } from '$lib/map/types';
+import type { LeverLookups } from '$lib/sim/levers/apply';
+import { DEFAULT_LEVERS, FZP_COMPAT_LEVERS, type SimLevers } from '$lib/sim/levers/types';
 import type { ParcelSummary, ProjectCard } from '$lib/sim/protocol';
+import type { LeverStatus } from '$lib/sim-page/lever-status';
 import { chanceTable, typicalMonths } from '$lib/timelapse/model';
 import type { Calibration } from '$lib/timelapse/types';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
@@ -32,6 +35,8 @@ type Over = Partial<{
   noScenario: boolean;
   urlSeed: number | null;
   reload: () => Promise<{ manifest: Manifest; calibration: Calibration }>;
+  levers: SimLevers;
+  onlevers: (s: LeverStatus) => void;
 }>;
 
 function setup(over: Over = {}) {
@@ -872,5 +877,179 @@ describe('FzpMode map, layout and lifecycle', () => {
     const n = callsOf('setTime').length;
     await new Promise((r) => setTimeout(r, 50));
     expect(callsOf('setTime').length).toBe(n);
+  });
+});
+
+describe('FzpMode levers (/sim)', () => {
+  /** A distinct lookups pair, so identity checks can tell it from the calibration's. */
+  function postedLookups(): LeverLookups {
+    const one = () => ({
+      chance: chanceTable(calibration),
+      typicalMonths: typicalMonths(calibration)
+    });
+    return { inFlight: one(), fresh: one() };
+  }
+  const CAPACITY = { plan: 10, withoutProtections: 10, protectedLots: 0, afterSwitch: null };
+
+  /** The rev the levers last went out on (the init or the latest setLevers). */
+  function leverRev(w: FakeScenarioWorker): number {
+    const reqs = w.posts.filter((p) => p.type === 'initScenario' || p.type === 'setLevers');
+    return (reqs[reqs.length - 1] as { rev: number }).rev;
+  }
+
+  it('the first request carries the levers; a new levers object sends one setLevers', async () => {
+    const s = setup({ levers: DEFAULT_LEVERS });
+    await expect.poll(() => s.w()?.lastOf('initScenario')).toBeTruthy();
+    expect(s.w().lastOf('initScenario')!.levers).toBe(DEFAULT_LEVERS);
+    expect(s.w().allOf('setLevers')).toEqual([]);
+    await toReady(s);
+    const next: SimLevers = { ...FZP_COMPAT_LEVERS };
+    await (await s.r).rerender({ levers: next });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+    expect(s.w().lastOf('setLevers')!.levers).toBe(next);
+    // The same object again sends nothing.
+    await (await s.r).rerender({ levers: next });
+    await new Promise((res) => setTimeout(res, 50));
+    expect(s.w().allOf('setLevers')).toHaveLength(1);
+  });
+
+  it('a levers change before the first timeline waits for it', async () => {
+    const s = setup({ levers: DEFAULT_LEVERS });
+    await expect.poll(() => s.w()?.lastOf('initScenario')).toBeTruthy();
+    const next: SimLevers = { ...FZP_COMPAT_LEVERS };
+    await (await s.r).rerender({ levers: next });
+    await new Promise((res) => setTimeout(res, 50));
+    expect(s.w().allOf('setLevers')).toEqual([]);
+    await toReady(s);
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+    expect(s.w().lastOf('setLevers')!.levers).toBe(next);
+  });
+
+  it('/fzp sends no levers', async () => {
+    const s = setup();
+    await expect.poll(() => s.w()?.lastOf('initScenario')).toBeTruthy();
+    expect('levers' in s.w().lastOf('initScenario')!).toBe(false);
+  });
+
+  it("posted lookups replace the calibration's", async () => {
+    const s = setup({ levers: DEFAULT_LEVERS });
+    await expect.poll(() => s.w()?.lastOf('initScenario')).toBeTruthy();
+    await expect.poll(() => callsOf('setTimelineLookups').length).toBe(1);
+    const base = (callsOf('setTimelineLookups')[0] as [{ chance: unknown }])[0];
+    expect(base.chance).toEqual(chanceTable(calibration));
+    const lookups = postedLookups();
+    const rev = leverRev(s.w());
+    s.w().emit({
+      type: 'levers',
+      rev,
+      phase: 'current',
+      lookups,
+      capacity: CAPACITY,
+      unknownLots: 0
+    });
+    await expect.poll(() => callsOf('setTimelineLookups').length).toBe(2);
+    expect(callsOf('setTimelineLookups')[1][0]).toBe(lookups.fresh);
+  });
+
+  it('a stale current keeps the lookups', async () => {
+    const s = setup({ levers: DEFAULT_LEVERS });
+    await toReady(s);
+    const initRev = leverRev(s.w());
+    await (await s.r).rerender({ levers: { ...FZP_COMPAT_LEVERS } });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+    const before = callsOf('setTimelineLookups').length;
+    s.w().emit({
+      type: 'levers',
+      rev: initRev,
+      phase: 'current',
+      lookups: postedLookups(),
+      capacity: CAPACITY,
+      unknownLots: 0
+    });
+    await new Promise((res) => setTimeout(res, 50));
+    expect(callsOf('setTimelineLookups')).toHaveLength(before);
+  });
+
+  it('resolving shows the updating notice with done/total; current removes it', async () => {
+    const onlevers = vi.fn<(st: LeverStatus) => void>();
+    const s = setup({ levers: DEFAULT_LEVERS, onlevers });
+    await toReady(s);
+    await expect
+      .element(page.getByRole('region', { name: 'Simulation scoreboard' }))
+      .toHaveAttribute('aria-busy', 'false');
+    await (await s.r).rerender({ levers: { ...FZP_COMPAT_LEVERS } });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+    const rev = leverRev(s.w());
+    s.w().emit({ type: 'levers', rev, phase: 'resolving', done: 2, total: 5, failedCells: [] });
+    const notice = page
+      .getByRole('status')
+      .getByText('Updating the simulation for your policy… 2 of 5 lots');
+    await expect.element(notice).toBeVisible();
+    expect(onlevers.mock.calls.at(-1)![0]).toMatchObject({ kind: 'resolving', done: 2, total: 5 });
+    await expect
+      .element(page.getByRole('region', { name: 'Simulation scoreboard' }))
+      .toHaveAttribute('aria-busy', 'true');
+    s.w().emit({
+      type: 'levers',
+      rev,
+      phase: 'current',
+      lookups: postedLookups(),
+      capacity: CAPACITY,
+      unknownLots: 0
+    });
+    await expect
+      .element(page.getByText(/Updating the simulation for your policy/))
+      .not.toBeInTheDocument();
+    expect(onlevers.mock.calls.at(-1)![0]).toMatchObject({ kind: 'current', rev });
+    // The score stays the last run's, busy, until the new run's timeline arrives.
+    const board = page.getByRole('region', { name: 'Simulation scoreboard' });
+    await expect.element(board).toHaveAttribute('aria-busy', 'true');
+    s.w().emit(timelineMsg(rev, 7));
+    await expect.element(board).toHaveAttribute('aria-busy', 'false');
+  });
+
+  it('failed cells offer Retry, which retries the chunks', async () => {
+    const s = setup({ levers: DEFAULT_LEVERS });
+    await toReady(s);
+    const rev = leverRev(s.w());
+    s.w().emit({
+      type: 'levers',
+      rev,
+      phase: 'resolving',
+      done: 1,
+      total: 3,
+      failedCells: ['50_25']
+    });
+    await expect.element(page.getByText("Some map data didn't load.")).toBeVisible();
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    expect(s.w().allOf('retryChunks')).toHaveLength(1);
+  });
+
+  it('the debug hook reports the lever status', async () => {
+    vi.stubEnv('VITE_E2E', '1');
+    const s = setup({ levers: DEFAULT_LEVERS });
+    await toReady(s);
+    const rev = leverRev(s.w());
+    s.w().emit({ type: 'levers', rev, phase: 'resolving', done: 1, total: 4, failedCells: [] });
+    await expect
+      .poll(() => window.__sfhFzp?.levers)
+      .toEqual({ status: 'resolving', done: 1, total: 4, sentRev: rev });
+    vi.unstubAllEnvs();
+  });
+
+  it('hands the page a client api and the map', async () => {
+    const onclient = vi.fn();
+    const onmapready = vi.fn();
+    const s = setup({ levers: DEFAULT_LEVERS, onclient, onmapready } as Over);
+    await expect.poll(() => onclient.mock.calls.length).toBe(1);
+    await expect.poll(() => onmapready.mock.calls.length).toBe(1);
+    expect(onmapready.mock.calls[0]).toEqual([stub.handle, stub.map]);
+    const api = onclient.mock.calls[0][0];
+    void api.resolveBrush({ kind: 'area', districts: ['RH-1'], neighborhoods: [] });
+    expect(s.w().lastOf('resolveBrush')).toMatchObject({ query: { kind: 'area' } });
+    api.retryChunks();
+    expect(s.w().allOf('retryChunks')).toHaveLength(1);
+    await unmount(s);
+    expect(onclient.mock.calls.at(-1)).toEqual([null]);
   });
 });

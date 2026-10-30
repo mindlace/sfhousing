@@ -1,5 +1,6 @@
 // e2e debug hook for /fzp (spec §4.4): `window.__sfhFzp`, read-only. Compiled in only when
 // VITE_E2E === '1' (like src/lib/map/debug.ts); otherwise a constant-false branch Vite drops.
+import type { LeverStatus } from '$lib/sim-page/lever-status';
 import type { TimelineScore } from '$lib/sim/protocol';
 import type { Day } from '$lib/timelapse/time';
 import type { FzpPhase } from './types';
@@ -13,6 +14,13 @@ export interface SfhFzpDebug {
   readonly horizon: Day;
   readonly playing: boolean;
   readonly score: TimelineScore | null;
+  /** /sim's lever revision (`off` on a session without levers); done/total while resolving. */
+  readonly levers: {
+    status: LeverStatus['kind'];
+    done: number;
+    total: number;
+    sentRev: number | null;
+  };
 }
 
 declare global {
@@ -47,6 +55,9 @@ export function installFzpDebug(get: () => SfhFzpDebug): () => void {
     },
     get score() {
       return get().score;
+    },
+    get levers() {
+      return get().levers;
     }
   };
   window.__sfhFzp = hook;

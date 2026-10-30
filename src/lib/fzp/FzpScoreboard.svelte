@@ -36,6 +36,8 @@
     onsources: () => void;
     /** Mobile sheet opened/closed or resized: the shell adjusts the map's bottom inset. */
     onsheetchange?: (open: boolean, heightPx: number) => void;
+    /** The score is from before the latest levers until their run arrives (/sim). */
+    busy?: boolean;
   }
   let {
     score,
@@ -52,7 +54,8 @@
     builtAt,
     onrepresentative,
     onsources,
-    onsheetchange
+    onsheetchange,
+    busy = false
   }: Props = $props();
 
   const uid = $props.id();
@@ -152,7 +155,7 @@
   />
 {/snippet}
 
-<div class="sfh-fzp-scoreboard" role="region" aria-label="Simulation scoreboard">
+<div class="sfh-fzp-scoreboard" role="region" aria-label="Simulation scoreboard" aria-busy={busy}>
   <div
     class="absolute top-4 right-4 z-20 hidden w-80 overflow-y-auto rounded-lg bg-white p-4 shadow-lg md:block"
     style:max-height="calc(100% - 2rem - var(--fzp-scrubber-h, 0px))"

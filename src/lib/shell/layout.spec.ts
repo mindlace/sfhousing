@@ -14,9 +14,13 @@ describe('isFullHeightRoute', () => {
   });
 });
 
-describe('isFullHeightRoute for /fzp', () => {
-  it('is full height for /fzp only, not its children', () => {
-    expect(isFullHeightRoute('/fzp')).toBe(true);
-    expect(isFullHeightRoute('/fzp/x')).toBe(false);
+describe('isFullHeightRoute for /sim', () => {
+  it('is full height for /sim only, not its children', () => {
+    expect(isFullHeightRoute('/sim')).toBe(true);
+    expect(isFullHeightRoute('/sim/x')).toBe(false);
+  });
+
+  it('/fzp is no longer a page (it redirects to /sim)', () => {
+    expect(isFullHeightRoute('/fzp')).toBe(false);
   });
 });
