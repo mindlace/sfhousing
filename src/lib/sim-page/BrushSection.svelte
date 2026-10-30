@@ -10,7 +10,14 @@
   import RadiusPopover from '$lib/brush/RadiusPopover.svelte';
   import StoriesPopover from '$lib/brush/StoriesPopover.svelte';
   import type { BrushLotsResult } from '$lib/sim/scenario/types';
-  import { SIM_TOOLS, isProtectTool, type SimBrushTools, type SimTool } from './brush-tools.svelte';
+  import {
+    ERASE_HINT,
+    SIM_TOOLS,
+    isProtectTool,
+    type SimBrushTools,
+    type SimTool
+  } from './brush-tools.svelte';
+  import { LOT_COLORS, LOT_EDGE } from './lot-overlay';
   import { brushQueries, queryKey, type BrushMode, type ZoningBrush } from './policy';
   import type { LeverSync, PolicyStore } from './policy-store.svelte';
 
@@ -33,6 +40,13 @@
     { id: 'lower', label: 'Lower' },
     { id: 'set', label: 'Set to' }
   ];
+  const KEY = [
+    { role: 'raise', label: 'Raised' },
+    { role: 'lower', label: 'Lowered' },
+    { role: 'set', label: 'Set' },
+    { role: 'protected', label: 'Protected (ring)' }
+  ] as const;
+  const rgb = ([r, g, b]: [number, number, number]) => `rgb(${r} ${g} ${b})`;
   const radios: Partial<Record<SimTool, HTMLButtonElement>> = $state({});
 
   const enabled = (t: SimTool) => t === 'move' || brush.phase === 'ready';
@@ -134,7 +148,9 @@
     {/each}
   </div>
 
-  {#if !isProtectTool(tools.tool)}
+  <!-- Protect and Unprotect hide the effect (ruling 8); Erase has no mode or density, and its
+       stories stepper is disabled with the /sim hint. -->
+  {#if !isProtectTool(tools.tool) && tools.tool !== 'erase'}
     <div role="radiogroup" aria-label="Mode" class="flex flex-wrap gap-x-3 gap-y-1">
       {#each MODES as m (m.id)}
         <label class="flex min-h-6 items-center gap-1.5">
@@ -149,7 +165,11 @@
         </label>
       {/each}
     </div>
-    <StoriesPopover state={brush} inline disabled={tools.tool === 'erase'} />
+  {/if}
+  {#if !isProtectTool(tools.tool)}
+    <StoriesPopover state={brush} inline disabled={tools.tool === 'erase'} hint={ERASE_HINT} />
+  {/if}
+  {#if !isProtectTool(tools.tool) && tools.tool !== 'erase'}
     <label class="flex min-h-6 items-center gap-1.5">
       <input
         type="checkbox"
@@ -163,6 +183,46 @@
 
   <RadiusPopover state={brush} inline />
 
+  <div>
+    <h4 id="{uid}-key" class="font-semibold">Map key</h4>
+    <ul aria-labelledby="{uid}-key" class="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+      {#each KEY as k (k.role)}
+        <li class="flex items-center gap-1.5">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16">
+            <circle
+              cx="8"
+              cy="8"
+              r="6.5"
+              fill="none"
+              stroke={rgb(LOT_EDGE.light.halo)}
+              stroke-width="3"
+            />
+            {#if k.role === 'protected'}
+              <circle
+                cx="8"
+                cy="8"
+                r="5"
+                fill="none"
+                stroke={rgb(LOT_EDGE.light.outline)}
+                stroke-width="2.5"
+              />
+            {:else}
+              <circle
+                cx="8"
+                cy="8"
+                r="5"
+                fill={rgb(LOT_COLORS.light[k.role])}
+                stroke={rgb(LOT_EDGE.light.outline)}
+                stroke-width="1.5"
+              />
+            {/if}
+          </svg>
+          {k.label}
+        </li>
+      {/each}
+    </ul>
+  </div>
+
   {#if store.policy.brushes.length > 0}
     <ul aria-label="Your brushes" class="flex flex-col gap-2">
       {#each store.policy.brushes as b (b.id)}
@@ -170,12 +230,16 @@
         {@const labelId = `${uid}-brush-${b.id}`}
         <li class="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span id={labelId} class="font-medium">{brushLabel(b)}</span>
-          {#if s.kind === 'found'}
-            <span>{n(s.lots, 'lot', 'lots')}</span>
-          {:else if s.kind === 'finding'}
-            <span>Finding lots…</span>
-          {:else}
-            <span>Couldn't find lots</span>
+          <!-- One polite region per brush, kept across states, so a count arriving is spoken
+               (WCAG 4.1.3). -->
+          <span role="status"
+            >{s.kind === 'found'
+              ? n(s.lots, 'lot', 'lots')
+              : s.kind === 'finding'
+                ? 'Finding lots…'
+                : "Couldn't find lots"}</span
+          >
+          {#if s.kind === 'failed'}
             <button
               type="button"
               aria-describedby={labelId}

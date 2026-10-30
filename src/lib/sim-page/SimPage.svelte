@@ -22,7 +22,7 @@
   import type { BrushLotsResult } from '$lib/sim/scenario/types';
   import type { Calibration } from '$lib/timelapse/types';
   import BrushSection from './BrushSection.svelte';
-  import { SimBrushTools, brushToolOf, type SimTool } from './brush-tools.svelte';
+  import { SimBrushTools, brushToolOf, isProtectTool, type SimTool } from './brush-tools.svelte';
   import { lotOverlayLayers } from './lot-overlay';
   import { createOverlayMux } from './overlay-mux';
   import PhoneToolBar from './PhoneToolBar.svelte';
@@ -191,11 +191,18 @@
     }
   }
 
-  // The controller's own tool keys set brush.tool: keep the /sim tool in step.
+  // The controller's own tool keys set brush.tool: keep the /sim tool in step. While Protect or
+  // Unprotect is active, B and E stay on the protections (B: Protect, E: Unprotect), so a key
+  // never silently turns a protect stroke into zoning paint.
   $effect(() => {
     const bt = brush.tool;
     untrack(() => {
-      if (brushToolOf(tools.tool) !== bt) tools.tool = bt;
+      if (brushToolOf(tools.tool) === bt) return;
+      if (isProtectTool(tools.tool) && bt !== 'move') {
+        tools.tool = bt === 'paint' ? 'protect' : 'unprotect';
+      } else {
+        tools.tool = bt;
+      }
     });
   });
 

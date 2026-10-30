@@ -23,6 +23,9 @@ export function brushToolOf(t: SimTool): BrushTool {
   return t === 'protect' ? 'paint' : t === 'unprotect' ? 'erase' : t;
 }
 
+/** The stories hint while Erase is active on /sim: erasing removes brushed zoning, not height. */
+export const ERASE_HINT = 'Erase removes your brushed zoning; it has no height';
+
 /** Protect and Unprotect hide Mode, Stories and Density (layout ruling 8). */
 export const isProtectTool = (t: SimTool) => t === 'protect' || t === 'unprotect';
 

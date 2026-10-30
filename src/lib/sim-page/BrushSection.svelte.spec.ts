@@ -9,7 +9,7 @@ import { BrushState } from '$lib/brush/state.svelte';
 import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import type { BrushLotsResult } from '$lib/sim/scenario/types';
 import BrushSection from './BrushSection.svelte';
-import { SimBrushTools, type SimTool } from './brush-tools.svelte';
+import { ERASE_HINT, SimBrushTools, type SimTool } from './brush-tools.svelte';
 import { policyFromLevers, queryKey, type Stroke, type ZoningBrush } from './policy';
 import { PolicyStore } from './policy-store.svelte';
 import { createStrokeAdapter } from './stroke-adapter';
@@ -115,6 +115,29 @@ describe('BrushSection', () => {
     await expect.element(page.getByRole('radiogroup', { name: 'Mode' })).not.toBeInTheDocument();
   });
 
+  it('Erase hides Mode and Density and disables Stories with the /sim hint', async () => {
+    setup({ tool: 'erase' });
+    await expect.element(page.getByRole('spinbutton', { name: 'Stories' })).toBeDisabled();
+    await expect
+      .element(page.getByRole('spinbutton', { name: 'Stories' }))
+      .toHaveAccessibleDescription(ERASE_HINT);
+    await expect.element(page.getByRole('radiogroup', { name: 'Mode' })).not.toBeInTheDocument();
+    await expect
+      .element(page.getByRole('checkbox', { name: 'Density limits' }))
+      .not.toBeInTheDocument();
+  });
+
+  it('has a map key naming each lot colour and the protected ring', async () => {
+    setup();
+    const key = page.getByRole('list', { name: 'Map key' });
+    await expect.element(key).toBeVisible();
+    const items = key
+      .getByRole('listitem')
+      .elements()
+      .map((e) => e.textContent?.trim());
+    expect(items).toEqual(['Raised', 'Lowered', 'Set', 'Protected (ring)']);
+  });
+
   it('Density limits follows the mode default when the mode changes', async () => {
     const { tools } = setup({ tool: 'paint' });
     const density = page.getByRole('checkbox', { name: 'Density limits' });
@@ -131,6 +154,10 @@ describe('BrushSection', () => {
   it('shows a brush lot count once found', async () => {
     setup({ brushes: [freehand], result: lots(3) });
     await expect.element(page.getByText('3 lots')).toBeVisible();
+    // The count is in a polite live region (WCAG 4.1.3).
+    await expect
+      .element(page.getByRole('status').filter({ hasText: '3 lots' }))
+      .toBeInTheDocument();
   });
 
   it('shows "Finding lots…" while unanswered and for a parked no-session answer', async () => {

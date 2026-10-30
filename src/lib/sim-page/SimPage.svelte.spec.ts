@@ -188,4 +188,22 @@ describe('SimPage strokes (Task 8)', () => {
     await expect.element(page.getByRole('radio', { name: 'Move' })).toBeChecked();
     await expect.element(bar).not.toBeInTheDocument();
   });
+
+  it('while protecting, B and E stay on the protections', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    await yourZoning().click();
+    await page.getByRole('radio', { name: 'Protect', exact: true }).click();
+    await userEvent.keyboard('e');
+    await expect.element(page.getByRole('radio', { name: 'Unprotect' })).toBeChecked();
+    await userEvent.keyboard('b');
+    await expect.element(page.getByRole('radio', { name: 'Protect', exact: true })).toBeChecked();
+    // From Move, B is zoning Paint.
+    await userEvent.keyboard('v');
+    await expect.element(page.getByRole('radio', { name: 'Move' })).toBeChecked();
+    await userEvent.keyboard('b');
+    await expect.element(page.getByRole('radio', { name: 'Paint' })).toBeChecked();
+  });
 });

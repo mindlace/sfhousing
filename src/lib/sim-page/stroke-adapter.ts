@@ -3,7 +3,7 @@
  * (a freehand, erase or protection stroke in the recipe) instead of a plan op sent to a worker.
  * The client has no `preview`, so the controller sends no previews and gates nothing. Undo and redo
  * go to the store and return null, so the controller announces nothing; the adapter announces
- * the store's label instead.
+ * the store's label instead, as it does for each committed stroke.
  */
 import type { BrushControllerDeps } from '$lib/brush/BrushController.svelte';
 import { newOpId } from '$lib/brush/ids';
@@ -54,22 +54,24 @@ export function createStrokeAdapter(deps: {
       readOnly: false,
       commit(op) {
         const stroke: Stroke = { path: op.path.map((q) => [q[0], q[1]]), radiusM: op.radiusM };
+        let label: string;
         if (deps.target() === 'protect') {
           const kind = op.kind === 'paint' ? 'protect' : 'unprotect';
+          label = kind === 'protect' ? 'Protected lots' : 'Unprotected lots';
           store.apply(
             (p) => ({
               ...p,
               protect: { ...p.protect, strokes: [...p.protect.strokes, { ...stroke, kind }] }
             }),
-            kind === 'protect' ? 'Protected lots' : 'Unprotected lots'
+            label
           );
         } else {
           const effect = { ...deps.effect() };
-          store.apply(
-            (p) => appendZoning(p, stroke, op, effect),
-            op.kind === 'paint' ? strokeLabel(effect) : 'Erased brushed zoning'
-          );
+          label = op.kind === 'paint' ? strokeLabel(effect) : 'Erased brushed zoning';
+          store.apply((p) => appendZoning(p, stroke, op, effect), label);
         }
+        // The stroke's result in words (WCAG 4.1.3); the lot count follows in "Your zoning".
+        announce(label);
         return { ok: true };
       },
       undo() {

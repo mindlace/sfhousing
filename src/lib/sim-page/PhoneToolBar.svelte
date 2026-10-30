@@ -7,7 +7,13 @@
 <script lang="ts">
   import RadiusPopover from '$lib/brush/RadiusPopover.svelte';
   import StoriesPopover from '$lib/brush/StoriesPopover.svelte';
-  import { SIM_TOOLS, isProtectTool, type SimBrushTools, type SimTool } from './brush-tools.svelte';
+  import {
+    ERASE_HINT,
+    SIM_TOOLS,
+    isProtectTool,
+    type SimBrushTools,
+    type SimTool
+  } from './brush-tools.svelte';
 
   interface Props {
     tools: SimBrushTools;
@@ -49,6 +55,7 @@
     <StoriesPopover
       state={tools.brush}
       disabled={tools.tool === 'erase'}
+      hint={ERASE_HINT}
       open={open === 'stories'}
       ontoggle={() => toggle('stories')}
       onclose={() => (open = null)}

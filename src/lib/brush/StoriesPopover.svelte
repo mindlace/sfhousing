@@ -15,6 +15,8 @@
     inline?: boolean;
     /** Erase: the stepper is disabled, with the erase hint. */
     disabled?: boolean;
+    /** The hint shown while disabled (default `/`'s erase hint). */
+    hint?: string;
     open?: boolean;
     ontoggle?(): void;
     onclose?(): void;
@@ -26,6 +28,7 @@
     state: brush,
     inline = false,
     disabled = false,
+    hint = MSG.eraseHint,
     open = false,
     ontoggle = undefined,
     onclose = undefined,
@@ -108,7 +111,7 @@
     </div>
   </fieldset>
   {#if disabled}
-    <p id={hintId} class="mt-1 text-sm">{MSG.eraseHint}</p>
+    <p id={hintId} class="mt-1 text-sm">{hint}</p>
   {/if}
 {/snippet}
 

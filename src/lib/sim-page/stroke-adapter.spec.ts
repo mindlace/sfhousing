@@ -43,9 +43,10 @@ function setup() {
 
 describe('createStrokeAdapter', () => {
   it('appends paint strokes with one effect to one freehand brush', () => {
-    const { store, a } = setup();
+    const { store, a, announce } = setup();
     expect(a.editor.readOnly).toBe(false);
     expect(a.editor.commit(paint(0))).toEqual({ ok: true });
+    expect(announce).toHaveBeenLastCalledWith('Raised lots to 8 stories');
     expect(a.editor.commit(paint(0.001, 40))).toEqual({ ok: true });
     const bs = store.policy.brushes;
     expect(bs).toHaveLength(1);
@@ -88,10 +89,12 @@ describe('createStrokeAdapter', () => {
   });
 
   it('writes protect and unprotect strokes for the protect target', () => {
-    const { store, a, setTarget } = setup();
+    const { store, a, setTarget, announce } = setup();
     setTarget('protect');
     a.editor.commit(paint(0));
+    expect(announce).toHaveBeenLastCalledWith('Protected lots');
     a.editor.commit(erase(0));
+    expect(announce).toHaveBeenLastCalledWith('Unprotected lots');
     expect(store.policy.brushes).toHaveLength(0);
     expect(store.policy.protect.strokes).toEqual([
       { path: paint(0).path, radiusM: 30, kind: 'protect' },
