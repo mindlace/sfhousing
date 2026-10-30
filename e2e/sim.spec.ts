@@ -477,6 +477,57 @@ test('axe: the Area brush form open', async ({ page }) => {
   await expectNoA11yViolations(page);
 });
 
+/**
+ * WCAG 2.2 2.4.11 (Focus Not Obscured): each button of the map's bottom-left navigation control
+ * (zoom in, zoom out, compass) stays clear of `cover`, and, focused, is the topmost element at its
+ * centre.
+ */
+async function expectNavControlClear(page: Page, cover: Locator): Promise<void> {
+  const buttons = page.locator('.maplibregl-ctrl-bottom-left button');
+  await expect(buttons).toHaveCount(3);
+  const c = (await cover.boundingBox())!;
+  for (const button of await buttons.all()) {
+    await button.focus();
+    const b = (await button.boundingBox())!;
+    const name = await button.getAttribute('aria-label');
+    const overlaps =
+      b.x < c.x + c.width && c.x < b.x + b.width && b.y < c.y + c.height && c.y < b.y + b.height;
+    expect(overlaps, `${name} at ${JSON.stringify(b)} overlaps ${JSON.stringify(c)}`).toBe(false);
+    const topmost = await button.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return !!top && el.contains(top);
+    });
+    expect(topmost, `${name} is covered`).toBe(true);
+  }
+}
+
+test('from md the docked panel leaves the zoom and compass control uncovered', async ({
+  isMobile,
+  page
+}) => {
+  test.skip(isMobile, 'the docked panel is md+, and a coarse pointer gets no navigation control');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await gotoSim(page);
+  await expect(panel(page)).toBeVisible();
+  await expectNavControlClear(page, panel(page));
+});
+
+test('below md on a fine pointer the phone tool bar leaves the zoom control uncovered', async ({
+  isMobile,
+  page
+}) => {
+  test.skip(isMobile, 'a coarse pointer gets no navigation control');
+  await page.setViewportSize({ width: 700, height: 800 });
+  await gotoSim(page);
+  await openPolicy(page);
+  await expandSection(page, 'Your zoning');
+  await chooseTool(page, true, () =>
+    panel(page).getByRole('radio', { name: 'Paint', exact: true }).click()
+  );
+  await expectNavControlClear(page, page.getByTestId('phone-tool-bar'));
+});
+
 test('at 375 px: no horizontal scroll, and the footer links stay unobscured', async ({
   isMobile,
   page

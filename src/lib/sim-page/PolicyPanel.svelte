@@ -1,7 +1,8 @@
 <!--
   The /sim policy panel (layout rulings 3, 4 and 9). From md it docks on the left of the map as a
   `<section>` 320 px wide, ending above the scrubber, and publishes `--sim-panel-w` on `.sfh-fzp`
-  so the project card sits to its right. Below md it is a modal sheet (`<dialog>`) that joins the
+  so the project card sits to its right, and moves the map's bottom-left navigation control (zoom
+  and compass) to its right edge so the panel never covers it (WCAG 2.2 2.4.11). Below md it is a modal sheet (`<dialog>`) that joins the
   header overlays, so it never shows with the phone Menu or the score details. Its sections are
   disclosures; only "Zoning layers" starts open. Below md a sub-view (Task 9's "Add a brush")
   replaces the sections, with a Back button.
@@ -178,10 +179,14 @@
 {/if}
 
 <style>
-  /* The card offset (layout ruling 3): the project card's md left edge reads this variable. */
+  /* The card offset (layout ruling 3): the project card's md left edge reads this variable.
+     The map's bottom-left navigation control moves right of the panel too (WCAG 2.2 2.4.11). */
   @media (min-width: 768px) {
     :global(.sfh-fzp:has(.sim-policy-docked)) {
       --sim-panel-w: 320px;
+    }
+    :global(.sfh-fzp:has(.sim-policy-docked) .maplibregl-ctrl-bottom-left) {
+      left: var(--sim-panel-w);
     }
   }
 </style>
