@@ -128,6 +128,9 @@ Dataset `2026-10-29-0fd62c4d` (`scenarios/fzp/calibration.json`, live on staging
 
 Every value is below 0.01.
 
+Dataset `2026-10-29-0fd62c4d` (production and staging), 2026-10-30: re-measured for plan 4: still
+negligible; no exception (0.0082 / 0.0034 / 0.0012; fixture-0 0 / 0 / 0).
+
 **Decision:** the disapproval exception is dropped (spec: "If it is negligible, drop the
 exception"). No lever or op is added; no exit column is editable. Re-measure if a future
 calibration changes the disapproved columns.
