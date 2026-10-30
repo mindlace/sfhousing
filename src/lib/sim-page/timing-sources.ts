@@ -49,6 +49,21 @@ const PLANNING_333 = {
 };
 
 /**
+ * The caveats shared by both benchmark figures. The ratio's direction depends on which SF figure
+ * is used, so the comparison's limits travel with each value.
+ */
+const BENCHMARK_CAVEATS =
+  'BLA (PDF p. 8): this "is not an exact comparison as each city presents its data slightly ' +
+  'differently". San Diego\'s 134 days comes from "publicly available datasets and dashboards" ' +
+  '(Exhibit 1 note 3, PDF p. 9), of unknown composition. Sensitivity of San Diego / SF: SF 280 ' +
+  'days gives 0.4786; PermitSF 177 days (all in-house permits issued 2024-12-01 to 2025-11-30, ' +
+  'Exhibit 2) gives 0.76; SF 114 days (housing permits filed and issued 2024-01-01 to ' +
+  '2025-08-12, Exhibit 2) gives 1.18, that is San Diego slower. 280 is used because both 280 and ' +
+  "134 measure permits issued in a window, whatever their filing date, and the model's " +
+  'permitFiled stage (typical 10 to 13 months, pooled 2007-01-01 to 2026-10-19) has the same ' +
+  'pre-2024 composition, when SF permits were often filed concurrently with entitlements.';
+
+/**
  * Median days from building-permit filing to issuance, housing (BLA Exhibit 1, PDF p. 9). The
  * `benchmarkPermits` preset scales `permitFiled` by `sanDiego / sf` (Call 9).
  */
@@ -63,7 +78,7 @@ export const BENCHMARK_PERMIT_DAYS: { sf: Sourced<number>; sanDiego: Sourced<num
         `Exhibit 1 (PDF p. 9) and p. 7: DBI in-house building permits for housing, filed before ` +
         `2025-08-12 and issued 2024-01-01 to 2025-08-12, median 280 days from filing to ` +
         `issuance. The report notes this includes pre-entitlement time for permits filed before ` +
-        `2024 (Exhibit 2: 114 days for permits filed and issued in 2024 to 2025-08-12). ${ACCESSED}.`,
+        `2024 (PDF p. 9). ${BENCHMARK_CAVEATS} ${ACCESSED}.`,
       window: ['2024-01-01', '2025-08-12']
     }
   },
@@ -75,8 +90,8 @@ export const BENCHMARK_PERMIT_DAYS: { sf: Sourced<number>; sanDiego: Sourced<num
       sources: [BLA],
       method:
         `Exhibit 1 (PDF p. 9) and notes 2 and 3: housing permits issued January 2025 through ` +
-        `approximately mid-December 2025, median 134 days, from San Diego's public data as ` +
-        `compiled by the BLA. ${ACCESSED}.`
+        `approximately mid-December 2025, median 134 days, as compiled by the BLA. ` +
+        `${BENCHMARK_CAVEATS} ${ACCESSED}.`
     }
   }
 };
@@ -160,7 +175,7 @@ export const CEQA_FILED_RATIO: Evidence<number> = {
 export const NO_DISCRETIONARY_BASIS: Sourced<null> = {
   value: null,
   provenance: {
-    tier: 3,
+    tier: 2,
     label: 'No discretionary review: HCD required action "Eliminate Discretion"',
     sources: [HCD_REVIEW],
     method:
@@ -179,14 +194,14 @@ const days = (d: number) => Math.round((d / MONTH_DAYS) * 1000) / 1000;
 const PERMIT_FLOOR: Sourced<number> = {
   value: days(13 + 15),
   provenance: {
-    tier: 3,
+    tier: 2,
     label: 'Minimum permit review: one completeness check and one first plan review',
     sources: [BLA],
     method:
       'Median 13 calendar days for the completeness check (PermitSF dashboard, PDF p. 11) plus ' +
       'median 15 calendar days to complete first application review (Exhibit 1, PDF p. 9; all ' +
       'in-house permits, p. 8), 28 days / 30.436875 = 0.92 month. The inputs are tier 1; ' +
-      'reading two medians as a minimum is an inference (tier 3). The state limit for the ' +
+      'reading two medians as a minimum is an inference (tier 2). The state limit for the ' +
       `completeness check is 15 business days (AB 2234, p. 12). ${ACCESSED}.`
   }
 };
@@ -212,14 +227,14 @@ export const STAGE_FLOORS: Record<Pathway, Partial<Record<TimedStage, Evidence<n
     filed: {
       value: days(20),
       provenance: {
-        tier: 3,
+        tier: 2,
         label: 'Minimum hearing notice before a discretionary approval',
         sources: [PLANNING_333],
         method:
           'Planning Code § 333 as stated in the Department handout: the notice "shall be affixed ' +
           'to the subject property ... at least 20 days before the hearing", 20 / 30.436875 = ' +
           '0.657 month. Notice cannot precede filing, so a hearing-based approval takes at least ' +
-          'this long. Applying it to every discretionary project is an inference (tier 3): not ' +
+          'this long. Applying it to every discretionary project is an inference (tier 2): not ' +
           'every discretionary approval needs a hearing. The code text on amlegal returned 403 ' +
           `to the fetch. ${ACCESSED}.`
       }

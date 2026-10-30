@@ -90,7 +90,13 @@ describe('timing sources', () => {
     }
   });
 
-  it('San Diego permits faster than San Francisco', () => {
+  it('with the issued-in-window SF median (280 days), San Diego permits faster: ratio in (0, 1)', () => {
+    // The direction depends on the SF figure: 280 days gives 0.48, PermitSF's 177 gives 0.76, and
+    // the filed-and-issued-since-2024 114 gives 1.18. 280 is used because it, like San Diego's
+    // 134, counts permits issued in a window whatever their filing date, which matches the
+    // model's pooled permitFiled stage. The caveats travel in both values' provenance.
+    expect(BENCHMARK_PERMIT_DAYS.sf.provenance.method).toContain('not an exact comparison');
+    expect(BENCHMARK_PERMIT_DAYS.sanDiego.provenance.method).toContain('1.18');
     const ratio = BENCHMARK_PERMIT_DAYS.sanDiego.value / BENCHMARK_PERMIT_DAYS.sf.value;
     expect(ratio).toBeGreaterThan(0);
     expect(ratio).toBeLessThan(1);
