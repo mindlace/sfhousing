@@ -1,5 +1,6 @@
 // FzpMode composition (spec §4.1, §4.2, §4.7, §4.8, §6): the real ScenarioClient over a fake
 // worker, a recording SimMap stub, and the header slot from a test host.
+import { createRawSnippet, type Snippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
@@ -37,6 +38,7 @@ type Over = Partial<{
   reload: () => Promise<{ manifest: Manifest; calibration: Calibration }>;
   levers: SimLevers;
   onlevers: (s: LeverStatus) => void;
+  actions: Snippet;
 }>;
 
 function setup(over: Over = {}) {
@@ -427,6 +429,29 @@ describe('FzpMode header score bar', () => {
     await expect
       .element(page.getByTestId('header-actions').getByRole('button', { name: 'Another future' }))
       .toBeVisible();
+  });
+});
+
+describe('FzpMode on /sim: header actions and score copy', () => {
+  it('renders the page actions first in the header, and names your policy in the details', async () => {
+    const actions = createRawSnippet(() => ({
+      render: () => '<button type="button">Policy</button>'
+    }));
+    const s = setup({ levers: DEFAULT_LEVERS, actions });
+    await toReady(s);
+    const names = [...page.getByTestId('header-actions').element().querySelectorAll('button')].map(
+      (b) => b.textContent?.trim()
+    );
+    expect(names).toEqual(['Policy', 'Another future']);
+    const board = await details();
+    await expect.element(board.getByText('What your policy added')).toBeVisible();
+  });
+
+  it('keeps the Family Zoning Plan copy without levers (/fzp)', async () => {
+    const s = setup();
+    await toReady(s);
+    const board = await details();
+    await expect.element(board.getByText('What the plan added')).toBeVisible();
   });
 });
 

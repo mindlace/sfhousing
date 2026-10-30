@@ -5,7 +5,7 @@
   redirect) opens the Family Zoning Plan comparison, otherwise current law (Calls 14 and 16).
 -->
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import type { Manifest } from '$lib/data/manifest';
   import FzpMode, { type SimClientApi } from '$lib/fzp/FzpMode.svelte';
   import { DEFAULT_LEVERS, FZP_COMPAT_LEVERS } from '$lib/sim/levers/types';
@@ -13,6 +13,7 @@
   import type { Calibration } from '$lib/timelapse/types';
   import { policyFromLevers } from './policy';
   import { LeverSync, PolicyStore } from './policy-store.svelte';
+  import PolicyPanel from './PolicyPanel.svelte';
 
   interface Props {
     manifest: Manifest | null;
@@ -64,6 +65,26 @@
     clearTimeout
   });
 
+  const uid = $props.id();
+  const panelId = `${uid}-policy`;
+  let policyOpen = $state(false);
+  let policyButton = $state<HTMLButtonElement>();
+
+  /**
+   * Closing the panel returns focus to the Policy button, or, when it sits in the closed phone
+   * Menu, to the Menu button. Focus elsewhere on the page (a press on the map) stays put.
+   */
+  async function closePolicy(): Promise<void> {
+    const a = document.activeElement;
+    const panel = document.getElementById(panelId);
+    const restore = !a || a === document.body || !!panel?.contains(a);
+    policyOpen = false;
+    await tick();
+    if (!restore) return;
+    if (policyButton?.checkVisibility()) policyButton.focus();
+    else document.querySelector<HTMLElement>('header button[aria-controls$="-menu"]')?.focus();
+  }
+
   // Every policy change after the first goes to LeverSync. The initial policy is `initial`, which
   // FzpMode sends with initScenario; an undo back to it is a change like any other.
   let first = true;
@@ -77,6 +98,21 @@
   });
 </script>
 
+{#snippet actions()}
+  <button
+    bind:this={policyButton}
+    type="button"
+    aria-expanded={policyOpen}
+    aria-controls={panelId}
+    class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+    onclick={() => (policyOpen ? void closePolicy() : (policyOpen = true))}>Policy</button
+  >
+{/snippet}
+
+{#snippet panel()}
+  <PolicyPanel {store} id={panelId} open={policyOpen} onclose={() => void closePolicy()} />
+{/snippet}
+
 <FzpMode
   {manifest}
   {manifestError}
@@ -88,6 +124,8 @@
   {reload}
   {onurlseed}
   {levers}
+  {actions}
+  {panel}
   onclient={(a) => {
     api = a;
     // A new session: brush queries answered `no-session` can be asked again.

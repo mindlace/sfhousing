@@ -11,6 +11,8 @@ import {
   TIMELINE_SCORE_NO_PHASING,
   TIMELINE_SCORE_R0
 } from './fixtures/timeline-score';
+import { scoreCopy } from '$lib/sim-page/policy';
+import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import FzpScorePanel from './FzpScorePanel.svelte';
 import { scoreAt } from './score-view';
 import { dayFromUtc, monthIndex } from './time';
@@ -30,6 +32,7 @@ type Overrides = Partial<{
   canReroll: boolean;
   onrepresentative: () => void;
   onsources: () => void;
+  copy: ReturnType<typeof scoreCopy>;
 }>;
 
 const props = (over: Overrides = {}) => {
@@ -162,6 +165,36 @@ describe('what the plan added', () => {
     expect(section.textContent).toContain('each future is run twice');
     // the total band is unaffected
     await expect.element(page.getByText(/^In 8 of 10 simulated futures:/)).toBeVisible();
+  });
+});
+
+describe('score copy (/sim)', () => {
+  it("names your policy and the City's current rules for the default levers", async () => {
+    await page.viewport(1024, 768);
+    await render(FzpScorePanel, { props: props({ copy: scoreCopy(DEFAULT_LEVERS) }) });
+    await expect.element(page.getByText('What your policy added')).toBeVisible();
+    await expect.element(page.getByText('What the plan added')).not.toBeInTheDocument();
+    await expect
+      .element(page.getByText(/^One possible future for San Francisco under your policy\./))
+      .toBeInTheDocument();
+    const row = (label: string) =>
+      page.getByText(label, { exact: true }).element().parentElement!.textContent!;
+    expect(row('Homes completed because of your policy')).toContain('1,290');
+    expect(row('Homes approved because of your policy')).toContain('2,185');
+    await expect
+      .element(
+        page.getByText(
+          "To see what your policy itself does, each future is run twice: once with your policy, and once as the same city simulated under the City's current rules, with the same luck. The difference between the two is your policy's effect. Some homes would have been built anyway; they are not counted here."
+        )
+      )
+      .toBeInTheDocument();
+  });
+
+  it('keeps the Family Zoning Plan text for the FZP copy', async () => {
+    await page.viewport(1024, 768);
+    await render(FzpScorePanel, { props: props({ copy: scoreCopy(null) }) });
+    await expect.element(page.getByText('What the plan added')).toBeVisible();
+    await expect.element(page.getByText(INTRO)).toBeInTheDocument();
   });
 });
 

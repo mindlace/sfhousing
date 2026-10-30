@@ -57,6 +57,7 @@
   import { spawnSimWorker } from '$lib/sim/client';
   import type { LeverLookups } from '$lib/sim/levers/apply';
   import type { SimLevers } from '$lib/sim/levers/types';
+  import { scoreCopy } from '$lib/sim-page/policy';
   import type { TimelineScore } from '$lib/sim/protocol';
   import {
     ScenarioClient,
@@ -109,6 +110,8 @@
     onmapready?: (h: SimMapHandle, map: MapLike) => void;
     /** Rendered inside `.sfh-fzp` (the /sim policy panel). */
     panel?: Snippet;
+    /** The page's own header actions, before 'Another future' (/sim: "Policy"). */
+    actions?: Snippet;
   }
 
   let {
@@ -126,7 +129,8 @@
     onlevers = undefined,
     onclient = undefined,
     onmapready = undefined,
-    panel = undefined
+    panel = undefined,
+    actions = undefined
   }: Props = $props();
 
   // The props seed the page once; Retry replaces the manifest and calibration in place.
@@ -185,6 +189,9 @@
       : lookups && { inFlight: lookups.chance, fresh: lookups.chance }
   );
   const leverStatus = $derived(leverState.status);
+  /** Who the plan effect is for: the Family Zoning Plan on /fzp and under its levers. */
+  const copy = $derived(scoreCopy(levers ?? null));
+  const capacity = $derived(leverStatus.kind === 'current' ? leverStatus.capacity : null);
   /**
    * The score on show is from before the latest levers until a timeline at or after their rev
    * arrives (a later reroll's runs on them too); a failed revision leaves the old score standing.
@@ -658,6 +665,7 @@
 
 {#snippet headerActions()}
   {#if phase !== 'no-scenario'}
+    {@render actions?.()}
     <button
       type="button"
       title="Show another possible future"
@@ -687,6 +695,8 @@
     builtAt={manifest?.builtAt ?? ''}
     onrepresentative={() => requestReroll(null)}
     onsources={() => dialog?.open()}
+    {copy}
+    {capacity}
   />
 {/snippet}
 
@@ -718,7 +728,9 @@
        details open at the top right on md+, so the notice takes the top left (no card can be
        open yet). -->
   {#if phase === 'loading'}
-    <div class="absolute top-4 left-1/2 z-30 -translate-x-1/2 md:left-4 md:translate-x-0">
+    <div
+      class="absolute top-4 left-1/2 z-30 -translate-x-1/2 md:left-[calc(var(--sim-panel-w,0px)+1rem)] md:translate-x-0"
+    >
       <p
         role="status"
         data-testid="fzp-status"

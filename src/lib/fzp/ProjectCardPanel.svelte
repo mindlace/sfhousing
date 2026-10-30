@@ -78,7 +78,7 @@
 {#if state.kind !== 'idle'}
   <section
     aria-labelledby={headingId}
-    class="absolute inset-x-4 bottom-[calc(var(--map-controls-br-block-size,60px)+8px)] z-20 max-h-1/2 overflow-y-auto rounded-lg bg-white p-4 text-sm text-black shadow-lg md:inset-x-auto md:top-4 md:bottom-auto md:left-4 md:max-h-[calc(100%-2rem-var(--fzp-scrubber-h,0px))] md:w-80"
+    class="absolute inset-x-4 bottom-[calc(var(--map-controls-br-block-size,60px)+8px)] z-20 max-h-1/2 overflow-y-auto rounded-lg bg-white p-4 text-sm text-black shadow-lg md:inset-x-auto md:top-4 md:bottom-auto md:left-[calc(var(--sim-panel-w,0px)+1rem)] md:max-h-[calc(100%-2rem-var(--fzp-scrubber-h,0px))] md:w-80"
   >
     <div class="flex items-start justify-between gap-2">
       <h2 id={headingId} class="text-base font-semibold">{heading}</h2>
