@@ -50,6 +50,12 @@ export type SimInput = {
   // size, revision and phaseGap always read `calibration`.
   newProjects?: { calibration: Calibration; scale: StageScale }; // absent = calibration, scale 1
   inFlightScale?: StageScale; // absent = 1
+  // The time-switched envelope (plan 2 ruling 1): a simulated project whose initiation month starts
+  // on or after `day` runs on `parcels` (size row, yields, envelope, Local Program) and its
+  // initiation hazard switches there too; in-flight rows keep `parcels` above. `parcels` has the
+  // same rows, ids and existing columns as the base. Requires asOf < day (`runEngine` throws a
+  // RangeError otherwise). Absent = no switch.
+  lawSwitch?: { day: Day; parcels: ScenarioParcels };
 };
 export type Simulate = (input: SimInput, seed: number, horizon: Day) => Schedule[];
 

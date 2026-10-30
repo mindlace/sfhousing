@@ -102,7 +102,6 @@ describe('engine levers: newProjects', () => {
     const now = spans(input);
     expect(was.length).toBeGreaterThan(20);
     expect(now.length).toBeGreaterThan(20);
-    console.log('RATIO', median(now) / median(was));
     expect(median(now)).toBeLessThanOrEqual(0.6 * median(was));
   });
 
