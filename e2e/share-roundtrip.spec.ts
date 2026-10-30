@@ -7,6 +7,7 @@ import {
   ops,
   paintOnce,
   publishDialog,
+  openPublish,
   publishOpen,
   settledNet,
   waitForMap
@@ -22,8 +23,9 @@ test('share roundtrip: publish, open in a fresh browser, same score, Remix', asy
   await expect(page.getByTestId('score-net')).not.toHaveText('0');
   const authorNet = await settledNet(page);
 
-  await expect(publishOpen(page)).toBeEnabled();
-  await publishOpen(page).click();
+  const opener = await openPublish(page);
+  await expect(opener).toBeEnabled();
+  await opener.click();
   const dialog = publishDialog(page);
   await expect(dialog.getByRole('heading', { name: 'Publish this plan' })).toBeVisible();
   await dialog.getByLabel('Title').fill('Roundtrip');

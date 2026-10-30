@@ -1,8 +1,9 @@
 <!--
-  The scoreboard's contents at one month (spec §4.5, items 1-13). Rendered twice by FzpScoreboard
-  (desktop panel and mobile sheet), so every id is per instance.
+  The scoreboard's contents at one month (spec §4.5, items 1-13): the details the /sim header score
+  bar opens (ScoreBar). Every id is per instance.
 -->
 <script lang="ts">
+  import { timelineTokenCss } from '$lib/map/palette';
   import { formatBuiltDate, formatCount, formatPercent, trackMax } from '$lib/scoreboard';
   import TargetRow from '$lib/scoreboard/TargetRow.svelte';
   import type { TimelineScore } from '$lib/sim/protocol';
@@ -68,6 +69,12 @@
   /** The map key opens by default on a wide viewport (the sheet on a phone starts closed). */
   const keyOpen = typeof matchMedia === 'function' && matchMedia(WIDE).matches;
 </script>
+
+<svelte:head>
+  <!-- The legend sits outside SimMap, so it cannot inherit SimMap's --map-* variables. -->
+  <!-- eslint-disable-next-line svelte/no-at-html-tags -- constant CSS built from palette TOKENS -->
+  {@html '<style>' + timelineTokenCss('.sfh-fzp-legend') + '</style>'}
+</svelte:head>
 
 <div class="text-black">
   <p

@@ -9,7 +9,7 @@ import {
   ops,
   paintOnce,
   publishDialog,
-  publishOpen,
+  openPublish,
   seedPlanRow,
   smallText,
   waitForMap
@@ -27,7 +27,8 @@ async function waitSaved(page: Page): Promise<void> {
       }, PLAN_KEY)
     )
     .toBe(1);
-  await expect(page.getByRole('banner').getByText('Saved', { exact: true })).toBeVisible();
+  // Attached, not visible: below 768 px the save indicator waits in the closed header Menu.
+  await expect(page.getByRole('banner').getByText('Saved', { exact: true })).toBeAttached();
 }
 
 test('an unknown id is a 404 "Plan not found" page, noindex', async ({ page }) => {
@@ -51,8 +52,9 @@ test('a rate-limited publish shows the alert and a countdown, then re-enables Pu
   );
   await gotoEditor(page);
   await paintOnce(page, isMobile);
-  await expect(publishOpen(page)).toBeEnabled();
-  await publishOpen(page).click();
+  const opener = await openPublish(page);
+  await expect(opener).toBeEnabled();
+  await opener.click();
   const dialog = publishDialog(page);
   const publish = dialog.getByRole('button', { name: 'Publish' });
   await publish.click();

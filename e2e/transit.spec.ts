@@ -2,7 +2,7 @@
 // are one station), View menu, persistence, a11y.
 import { expect, test, type Page } from '@playwright/test';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { gotoEditor, waitForMap, type Win } from './helpers/sharing';
+import { gotoEditor, headerAction, waitForMap, type Win } from './helpers/sharing';
 
 const visibility = (page: Page, id: string) =>
   page.evaluate(
@@ -11,6 +11,8 @@ const visibility = (page: Page, id: string) =>
   );
 
 const viewButton = (page: Page) => page.getByRole('button', { name: 'View', exact: true });
+/** Opens the View menu (below 768 px its button waits in the header Menu). */
+const openView = async (page: Page) => (await headerAction(page, 'View')).click();
 
 test('fixture stops load; capacity is on and stops are off by default', async ({ page }) => {
   await gotoEditor(page);
@@ -30,7 +32,7 @@ test('fixture stops load; capacity is on and stops are off by default', async ({
 
 test('the View menu toggles a layer and the choice survives a reload', async ({ page }) => {
   await gotoEditor(page);
-  await viewButton(page).click();
+  await openView(page);
   await page.getByRole('checkbox', { name: 'Transit capacity within a 10-minute walk' }).uncheck();
   await expect.poll(() => visibility(page, 'transit-access')).toBe('none');
   await page.keyboard.press('Escape');
@@ -44,7 +46,7 @@ for (const scheme of ['light', 'dark'] as const) {
   test(`the open View menu has no axe violations (${scheme})`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: scheme });
     await gotoEditor(page);
-    await viewButton(page).click();
+    await openView(page);
     await expect(page.getByRole('group', { name: 'Map layers' })).toBeVisible();
     await expectNoA11yViolations(page, { include: ['header'] });
   });
@@ -67,6 +69,6 @@ test('the View button is hidden when the manifest has no transit', async ({ page
     await waitForMap(page);
     expect(await page.evaluate(() => (window as Window & { __spa?: boolean }).__spa)).toBe(true);
   }).toPass({ timeout: 25_000 });
-  await expect(page.getByTestId('publish-open')).toBeVisible();
+  await expect(page.getByTestId('publish-open')).toBeAttached();
   await expect(viewButton(page)).toHaveCount(0);
 });

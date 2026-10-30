@@ -1,10 +1,9 @@
 /// <reference types="@vitest/browser-playwright" />
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { cdp, page, userEvent } from 'vitest/browser';
+import { cdp, page } from 'vitest/browser';
 import '../../routes/layout.css';
 import { TIMELINE_LEGEND, timelineTokenCss } from '$lib/map/palette';
-import { announcement } from './score-view';
 import {
   FIX_ASOF,
   FIX_HORIZON,
@@ -12,7 +11,7 @@ import {
   TIMELINE_SCORE_NO_PHASING,
   TIMELINE_SCORE_R0
 } from './fixtures/timeline-score';
-import FzpScoreboard from './FzpScoreboard.svelte';
+import FzpScorePanel from './FzpScorePanel.svelte';
 import { scoreAt } from './score-view';
 import { dayFromUtc, monthIndex } from './time';
 
@@ -24,7 +23,6 @@ const INTRO =
 type Overrides = Partial<{
   score: typeof TIMELINE_SCORE | null;
   day: number;
-  playing: boolean;
   bandRuns: number;
   bandRunsTotal: number;
   seed: number | null;
@@ -32,30 +30,29 @@ type Overrides = Partial<{
   canReroll: boolean;
   onrepresentative: () => void;
   onsources: () => void;
-  onsheetchange: (open: boolean, heightPx: number) => void;
 }>;
 
-const props = (over: Overrides = {}) => ({
-  score: TIMELINE_SCORE,
-  day: DAY,
-  asOf: FIX_ASOF,
-  horizon: FIX_HORIZON,
-  playing: false,
-  bandRuns: 101,
-  bandRunsTotal: 101,
-  seed: 7,
-  representative: true,
-  canReroll: true,
-  datasetVersion: 'fixture-0',
-  builtAt: '2026-10-10T12:00:00Z',
-  onrepresentative: vi.fn(),
-  onsources: vi.fn(),
-  ...over
-});
-
-const scorebarH = () =>
-  getComputedStyle(document.documentElement).getPropertyValue('--scorebar-h').trim();
-const live = () => page.getByTestId('fzp-score-live').element().textContent;
+const props = (over: Overrides = {}) => {
+  const p = {
+    score: TIMELINE_SCORE as typeof TIMELINE_SCORE | null,
+    day: DAY,
+    asOf: FIX_ASOF,
+    horizon: FIX_HORIZON,
+    bandRuns: 101,
+    bandRunsTotal: 101,
+    seed: 7,
+    representative: true,
+    canReroll: true,
+    datasetVersion: 'fixture-0',
+    builtAt: '2026-10-10T12:00:00Z',
+    onrepresentative: vi.fn(),
+    onsources: vi.fn(),
+    ...over
+  };
+  const sc = p.score;
+  const at = sc ? scoreAt(sc, monthIndex(p.day, sc.months[0], sc.months.length)) : null;
+  return { ...p, at };
+};
 
 async function scheme(value: 'light' | 'dark') {
   await cdp().send('Emulation.setEmulatedMedia', {
@@ -68,20 +65,17 @@ afterEach(async () => {
   await scheme('light');
 });
 
-describe('region and intro', () => {
-  it('is the Simulation scoreboard with the badge and intro', async () => {
+describe('badge and intro', () => {
+  it('shows the badge and intro', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScoreboard, { props: props() });
-    await expect
-      .element(page.getByRole('region', { name: 'Simulation scoreboard' }))
-      .toBeInTheDocument();
+    await render(FzpScorePanel, { props: props() });
     await expect.element(page.getByTestId('fzp-badge')).toHaveTextContent('Simulation');
     await expect.element(page.getByText(INTRO)).toBeInTheDocument();
   });
 
   it('before the first timeline: only the badge, intro and a loading line', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScoreboard, { props: props({ score: null }) });
+    await render(FzpScorePanel, { props: props({ score: null }) });
     await expect.element(page.getByText('Loading the simulation…').first()).toBeVisible();
     await expect.element(page.getByText(INTRO)).toBeInTheDocument();
     expect(document.querySelector('[data-testid="fzp-net"]')).toBeNull();
@@ -94,7 +88,7 @@ describe('region and intro', () => {
 describe('headline and split', () => {
   it('shows the total and the three-way split at the scrubbed month', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScoreboard, { props: props() });
+    await render(FzpScorePanel, { props: props() });
     const i = monthIndex(DAY, TIMELINE_SCORE.months[0], TIMELINE_SCORE.months.length);
     expect(i).toBe(53);
     await expect.element(page.getByTestId('fzp-net')).toHaveTextContent('17,300');
@@ -110,7 +104,7 @@ describe('headline and split', () => {
 describe('bands', () => {
   it('marks both band lines provisional while runs are outstanding, then clears', async () => {
     await page.viewport(1024, 768);
-    const screen = await render(FzpScoreboard, {
+    const screen = await render(FzpScorePanel, {
       props: props({ bandRuns: 40, bandRunsTotal: 101 })
     });
     const total = page.getByText(/^In 8 of 10 simulated futures:/);
@@ -136,7 +130,7 @@ describe('bands', () => {
 describe('what the plan added', () => {
   it('shows the plan-effect rows, the band without baseline and the twin paragraph', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScoreboard, { props: props() });
+    await render(FzpScorePanel, { props: props() });
     await expect.element(page.getByText('What the plan added')).toBeVisible();
     const row = (label: string) =>
       page.getByText(label, { exact: true }).element().parentElement!.textContent!;
@@ -157,7 +151,7 @@ describe('what the plan added', () => {
 
   it('plan effect not yet computed: calculating rows, busy sub-section, twin paragraph kept', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScoreboard, { props: props({ score: TIMELINE_SCORE_R0 }) });
+    await render(FzpScorePanel, { props: props({ score: TIMELINE_SCORE_R0 }) });
     const row = (label: string) =>
       page.getByText(label, { exact: true }).element().parentElement!.textContent!;
     expect(row('Homes completed because of the plan')).toContain('calculating…');
@@ -174,7 +168,7 @@ describe('what the plan added', () => {
 describe('targets and progress', () => {
   it('renders RHNA then RHNA + buffer, each with its deadline fraction', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScoreboard, { props: props() });
+    await render(FzpScorePanel, { props: props() });
     const meters = page.getByRole('meter').elements();
     expect(meters.map((m) => m.getAttribute('aria-label'))).toEqual([
       TIMELINE_SCORE.targets[0].target.label,
@@ -189,7 +183,7 @@ describe('targets and progress', () => {
 
   it('lists the in-progress total and one row per stage, then the stopped line', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScoreboard, { props: props() });
+    await render(FzpScorePanel, { props: props() });
     await expect
       .element(page.getByText('Homes in projects still in progress: 210'))
       .toBeInTheDocument();
@@ -213,7 +207,7 @@ describe('targets and progress', () => {
 describe('future line', () => {
   it('representative: marks it and offers no way back', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScoreboard, { props: props({ seed: 7, representative: true }) });
+    await render(FzpScorePanel, { props: props({ seed: 7, representative: true }) });
     await expect.element(page.getByText('This future: #7 (representative)')).toBeVisible();
     expect(document.body.textContent).not.toContain('Back to the representative future');
   });
@@ -221,7 +215,7 @@ describe('future line', () => {
   it('another future: no suffix, and a button back', async () => {
     await page.viewport(1024, 768);
     const onrepresentative = vi.fn();
-    await render(FzpScoreboard, {
+    await render(FzpScorePanel, {
       props: props({ seed: 7, representative: false, onrepresentative })
     });
     await expect.element(page.getByText('This future: #7')).toBeVisible();
@@ -233,7 +227,7 @@ describe('future line', () => {
   it('the way back is disabled, and inert, while a future cannot be asked for', async () => {
     await page.viewport(1280, 800);
     const onrepresentative = vi.fn();
-    await render(FzpScoreboard, {
+    await render(FzpScorePanel, {
       props: props({ seed: 7, representative: false, canReroll: false, onrepresentative })
     });
     const back = page.getByRole('button', { name: 'Back to the representative future' });
@@ -245,7 +239,7 @@ describe('future line', () => {
   it('opens the sources dialog through its callback', async () => {
     await page.viewport(1024, 768);
     const onsources = vi.fn();
-    await render(FzpScoreboard, { props: props({ onsources }) });
+    await render(FzpScorePanel, { props: props({ onsources }) });
     await page.getByRole('button', { name: 'Where these numbers come from' }).click();
     expect(onsources).toHaveBeenCalledOnce();
   });
@@ -254,7 +248,7 @@ describe('future line', () => {
 describe('map key', () => {
   it('has one row per legend entry, verbatim, and the fzp-mode bar-length line', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScoreboard, { props: props() });
+    await render(FzpScorePanel, { props: props() });
     const key = document.querySelector('details.sfh-fzp-legend') as HTMLDetailsElement;
     expect(key.open).toBe(true);
     const rows = [...key.querySelectorAll('[data-legend]')];
@@ -271,7 +265,7 @@ describe('map key', () => {
 
   it('injects the token CSS into <head> once', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScoreboard, { props: props() });
+    await render(FzpScorePanel, { props: props() });
     const css = timelineTokenCss('.sfh-fzp-legend');
     const styles = [...document.head.querySelectorAll('style')].filter(
       (s) => s.textContent === css
@@ -281,7 +275,7 @@ describe('map key', () => {
 
   it('resolves every legend token under light and dark', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScoreboard, { props: props() });
+    await render(FzpScorePanel, { props: props() });
     const read = (id: string, token: string) =>
       getComputedStyle(document.querySelector(`[data-swatch="${id}"]`)!)
         .getPropertyValue(`--map-${token}`)
@@ -306,7 +300,7 @@ describe('map key', () => {
 describe('footnote', () => {
   it('names the data, the build, the as-of date and links Sources, then the phasing sentence', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScoreboard, { props: props() });
+    await render(FzpScorePanel, { props: props() });
     await expect
       .element(page.getByText('Data fixture-0 · built 2026-10-10 · as of Oct 16, 2026 · Sources'))
       .toBeVisible();
@@ -324,129 +318,18 @@ describe('footnote', () => {
 
   it('omits the phasing sentence when there are no master plans', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScoreboard, { props: props({ score: TIMELINE_SCORE_NO_PHASING }) });
+    await render(FzpScorePanel, { props: props({ score: TIMELINE_SCORE_NO_PHASING }) });
     await expect.element(page.getByText(/^Data fixture-0/)).toBeVisible();
     expect(document.body.textContent).not.toContain('Multi-phase projects');
   });
 });
 
-describe('live region', () => {
-  it('is silent while playing, then speaks 1 s after playback pauses', async () => {
-    vi.useFakeTimers();
-    await page.viewport(1024, 768);
-    const screen = await render(FzpScoreboard, { props: props({ playing: true }) });
-    const day2 = dayFromUtc(2031, 4, 2);
-    await screen.rerender(props({ playing: true, day: day2 }));
-    vi.advanceTimersByTime(3000);
-    expect(live()).toBe('');
-
-    await screen.rerender(props({ playing: false, day: day2 }));
-    vi.advanceTimersByTime(900);
-    expect(live()).toBe('');
-    vi.advanceTimersByTime(200);
-    const expected = announcement(day2, scoreAt(TIMELINE_SCORE, 54));
-    await expect.poll(live).toBe(expected);
-    expect(expected).toBe('April 2031: 17,400 net new homes in this simulation, 21% of RHNA.');
-  });
-
-  it('does not announce the state it loaded in', async () => {
-    vi.useFakeTimers();
-    await page.viewport(1024, 768);
-    await render(FzpScoreboard, { props: props() });
-    vi.advanceTimersByTime(3000);
-    expect(live()).toBe('');
-  });
-});
-
 describe('375 px', () => {
-  it('shows the collapsed bar and sets --scorebar-h below 768 px only', async () => {
+  it('the map key starts closed on a phone', async () => {
     await page.viewport(375, 812);
-    const screen = await render(FzpScoreboard, { props: props() });
-    const bar = page.getByRole('button', { name: /net new homes/ });
-    await expect
-      .element(page.getByTestId('fzp-scorebar-text'))
-      .toHaveTextContent('17,300 net new homes · 21% of RHNA');
-    await expect.element(bar).toHaveTextContent('Simulation');
-    expect(bar.element().getBoundingClientRect().height).toBe(56);
-    expect(scorebarH()).toBe('56px');
-    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
-    await screen.unmount();
-
-    await page.viewport(1024, 768);
-    await render(FzpScoreboard, { props: props() });
-    expect(scorebarH()).toBe('');
-  });
-
-  it('opens the sheet with focus on Close and returns focus to the bar button', async () => {
-    await page.viewport(375, 812);
-    await render(FzpScoreboard, { props: props() });
-    const bar = page.getByRole('button', { name: /net new homes/ });
-    await expect.element(bar).toHaveAttribute('aria-expanded', 'false');
-    await bar.click();
-    await expect.element(bar).toHaveAttribute('aria-expanded', 'true');
-    const close = page.getByRole('button', { name: 'Close' });
-    await expect.element(close).toHaveFocus();
-    await close.click();
-    await expect.element(bar).toHaveFocus();
-    await expect.element(bar).toHaveAttribute('aria-expanded', 'false');
-  });
-
-  it('sheet closes when the viewport widens', async () => {
-    await page.viewport(375, 812);
-    const onsheetchange = vi.fn();
-    await render(FzpScoreboard, { props: props({ onsheetchange }) });
-    await page.getByRole('button', { name: /net new homes/ }).click();
-    await expect
-      .element(page.getByRole('group', { name: 'Simulation scoreboard details' }))
-      .toBeVisible();
-    await expect.poll(() => onsheetchange.mock.calls.at(-1)?.[0]).toBe(true);
-    expect(onsheetchange.mock.calls.at(-1)![1]).toBeGreaterThan(56);
-
-    await page.viewport(1024, 768);
-    await expect
-      .element(page.getByRole('group', { name: 'Simulation scoreboard details' }))
-      .not.toBeInTheDocument();
-    await expect.poll(() => onsheetchange.mock.calls.at(-1)).toEqual([false, 0]);
-  });
-
-  it('Escape in a modal dialog opened from the sheet leaves the sheet open and focus in it', async () => {
-    await page.viewport(375, 812);
-    // A native modal standing in for SourcesDialog: it returns focus to its opener on close.
-    const dlg = document.createElement('dialog');
-    dlg.innerHTML = '<button type="button">Inside</button>';
-    document.body.appendChild(dlg);
-    let opener: HTMLElement | null = null;
-    dlg.addEventListener('close', () => opener?.isConnected && opener.focus());
-    const onsources = vi.fn(() => {
-      opener = document.activeElement as HTMLElement;
-      dlg.showModal();
-    });
-    try {
-      await render(FzpScoreboard, { props: props({ onsources }) });
-      await page.getByRole('button', { name: /net new homes/ }).click();
-      const sheet = page.getByRole('group', { name: 'Simulation scoreboard details' });
-      const sources = sheet.getByRole('button', { name: 'Where these numbers come from' });
-      await sources.click();
-      expect(dlg.open).toBe(true);
-      await userEvent.keyboard('{Escape}');
-      expect(dlg.open).toBe(false);
-      await expect.element(sheet).toBeInTheDocument();
-      await expect.element(sources).toHaveFocus();
-
-      // With no modal open, Escape still closes the sheet.
-      await userEvent.keyboard('{Escape}');
-      await expect.element(sheet).not.toBeInTheDocument();
-    } finally {
-      dlg.remove();
-    }
-  });
-
-  it('the sheet map key starts closed', async () => {
-    await page.viewport(375, 812);
-    await render(FzpScoreboard, { props: props() });
-    await page.getByRole('button', { name: /net new homes/ }).click();
-    const sheet = document.querySelector('[role="group"]')!;
-    expect((sheet.querySelector('details.sfh-fzp-legend') as HTMLDetailsElement).open).toBe(false);
+    await render(FzpScorePanel, { props: props() });
+    const key = document.querySelector('details.sfh-fzp-legend') as HTMLDetailsElement;
+    expect(key.open).toBe(false);
   });
 });
 
@@ -460,7 +343,7 @@ describe('target size on a fine pointer (SC 2.5.8)', () => {
 
   it('every control in the desktop panel is at least 24x24', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScoreboard, { props: props({ representative: false }) });
+    await render(FzpScorePanel, { props: props({ representative: false }) });
     expectTarget(document.querySelector('.sfh-fzp-legend > summary')!, 'Map key summary');
     expectTarget(
       document.querySelector('[data-testid="fzp-chart"] details > summary')!,
@@ -479,7 +362,7 @@ describe('target size on a fine pointer (SC 2.5.8)', () => {
 
   it('summaries and the Sources link carry the 44 px coarse-pointer variant', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScoreboard, { props: props() });
+    await render(FzpScorePanel, { props: props() });
     for (const el of [
       document.querySelector('.sfh-fzp-legend > summary')!,
       document.querySelector('[data-testid="fzp-chart"] details > summary')!,
@@ -487,14 +370,5 @@ describe('target size on a fine pointer (SC 2.5.8)', () => {
     ]) {
       expect(el.classList.contains('pointer-coarse:min-h-11'), el.outerHTML).toBe(true);
     }
-  });
-
-  it('the mobile bar button and Close are at least 24x24', async () => {
-    await page.viewport(375, 812);
-    await render(FzpScoreboard, { props: props() });
-    const bar = page.getByRole('button', { name: /net new homes/ });
-    expectTarget(bar.element(), 'bar button');
-    await bar.click();
-    expectTarget(page.getByRole('button', { name: 'Close' }).element(), 'Close');
   });
 });

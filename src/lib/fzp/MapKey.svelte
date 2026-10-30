@@ -1,7 +1,7 @@
 <!--
   The timelapse map key (spec §4.5 item 11): one row per `TIMELINE_LEGEND` entry, the entry's label
   verbatim, drawn from its tokens through the `--map-*` custom properties. Those are set on
-  `.sim-map` only, so FzpScoreboard injects `timelineTokenCss('.sfh-fzp-legend')` into <head>
+  `.sim-map` only, so FzpScorePanel injects `timelineTokenCss('.sfh-fzp-legend')` into <head>
   once; this component only reads them.
 -->
 <script lang="ts">

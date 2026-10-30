@@ -11,7 +11,9 @@ import { expectNoA11yViolations } from './helpers/a11y';
 import {
   FRAME,
   gotoHydrated,
+  headerAction,
   jumpAndIdle,
+  openHeaderMenu,
   projectToPage,
   type LngLat,
   type Win
@@ -76,14 +78,24 @@ const SHIPYARD = projectById('CASE:2007.0001PRX');
 const slider = (page: Page): Locator =>
   page.getByRole('slider', { name: 'Date in the simulation' });
 const readout = (page: Page): Locator => page.getByTestId('fzp-readout');
-const headline = (page: Page): Locator => page.getByTestId('fzp-net').first();
-const anotherFuture = (page: Page): Locator => page.getByRole('button', { name: 'Another future' });
-const scoreRegion = (page: Page): Locator =>
-  page.getByRole('region', { name: 'Simulation scoreboard' });
+/** The header score bar: "{n} homes added" at the scrubbed day. */
+const scoreBar = (page: Page): Locator => page.getByTestId('score-bar');
+/** "Another future", made visible first (below 768 px it waits in the header Menu). */
+const anotherFuture = (page: Page): Promise<Locator> => headerAction(page, 'Another future');
+const scoreDetails = (page: Page): Locator => page.getByRole('region', { name: 'Score details' });
+/** Opens the header score bar's details (once) and returns them. */
+async function openScore(page: Page): Promise<Locator> {
+  if ((await scoreBar(page).getAttribute('aria-expanded')) !== 'true') await scoreBar(page).click();
+  await expect(scoreDetails(page)).toBeVisible();
+  return scoreDetails(page);
+}
 const sourcesDialog = (page: Page): Locator =>
   page.getByRole('dialog', { name: 'Where these numbers come from' });
-const headerLink = (page: Page, name: string): Locator =>
-  page.getByRole('banner').getByRole('link', { name, exact: true });
+/** A header mode link, made visible first (below 768 px the links wait in the header Menu). */
+async function headerLink(page: Page, name: string): Promise<Locator> {
+  await openHeaderMenu(page);
+  return page.getByRole('banner').getByRole('link', { name, exact: true });
+}
 const card = (page: Page, name: string): Locator => page.getByRole('region', { name, exact: true });
 
 function fzp<K extends keyof SfhFzpDebug>(page: Page, key: K): Promise<SfhFzpDebug[K]> {
@@ -161,8 +173,10 @@ async function bareMapPoint(page: Page): Promise<[number, number]> {
   const point = await page.evaluate(() => {
     const canvas = (window as Win).__sfhMap!.map!.getCanvas();
     const r = canvas.getBoundingClientRect();
-    for (let fy = 0.1; fy < 1; fy += 0.1) {
-      for (let fx = 0.1; fx < 1; fx += 0.1) {
+    // A 5 % grid: on a phone the open card leaves only a band of canvas above it (the scrubber
+    // sits at the bottom edge, so the card ends low and its top sits ~70 px under the header).
+    for (let fy = 0.05; fy < 1; fy += 0.05) {
+      for (let fx = 0.05; fx < 1; fx += 0.05) {
         const x = r.left + r.width * fx;
         const y = r.top + r.height * fy;
         if (document.elementFromPoint(x, y) === canvas) return [x, y] as [number, number];
@@ -174,10 +188,13 @@ async function bareMapPoint(page: Page): Promise<[number, number]> {
   return point!;
 }
 
-/** Opens the sources dialog (on the phone, through the scoreboard sheet). */
-async function openSources(page: Page, isMobile: boolean): Promise<Locator> {
-  if (isMobile) await scoreRegion(page).locator('button[aria-controls]').tap();
-  await page.getByRole('button', { name: 'Where these numbers come from' }).click();
+/** Opens the sources dialog, through the header score bar's details. */
+async function openSources(page: Page): Promise<Locator> {
+  await (
+    await openScore(page)
+  )
+    .getByRole('button', { name: 'Where these numbers come from' })
+    .click();
   const dialog = sourcesDialog(page);
   await expect(dialog).toBeVisible();
   return dialog;
@@ -225,15 +242,15 @@ test('loads ready and the keyboard drives the scrubber to both ends', async ({ p
   await page.keyboard.press('PageUp'); // away from the start, so Home has something to do
   await page.keyboard.press('Home');
   await expect(readout(page)).toContainText('October 2026');
-  await expect(headline(page)).toHaveText(
-    formatCount(baseline.completedNet + shown[0].completedNet)
+  await expect(scoreBar(page)).toHaveText(
+    `${formatCount(baseline.completedNet + shown[0].completedNet)} homes added`
   );
 
   await page.keyboard.press('End');
   await expect(readout(page)).toContainText('December 2066');
   expect(await fzp(page, 'day')).toBe(await fzp(page, 'horizon'));
-  await expect(headline(page)).toHaveText(
-    formatCount(baseline.completedNet + shown[months.length - 1].completedNet)
+  await expect(scoreBar(page)).toHaveText(
+    `${formatCount(baseline.completedNet + shown[months.length - 1].completedNet)} homes added`
   );
 });
 
@@ -267,7 +284,7 @@ test('Another future writes ?seed=N, keeps the day, and the URL seed reproduces 
   const day = await fzp(page, 'day');
   expect(day).toBeGreaterThan(await fzp(page, 'asOf'));
 
-  await anotherFuture(page).click();
+  await (await anotherFuture(page)).click();
   await expect(page).toHaveURL(/\/fzp\?seed=\d+$/);
   const seed = Number(new URL(page.url()).searchParams.get('seed'));
   await expect.poll(() => fzp(page, 'seed')).toBe(seed);
@@ -306,7 +323,7 @@ async function expectAddressFuture(page: Page, representative?: number | null): 
 
 /** Another future: waits for the ?seed=N answer and returns N. */
 async function reroll(page: Page): Promise<number> {
-  await anotherFuture(page).click();
+  await (await anotherFuture(page)).click();
   await expect(page).toHaveURL(/\/fzp\?seed=\d+$/);
   const seed = addressSeed(page)!;
   await expect.poll(() => fzp(page, 'seed')).toBe(seed);
@@ -324,7 +341,7 @@ test('after Another future, the header Timelapse link, Back and Forward each sho
   const seed = await reroll(page);
 
   // The URL becomes /fzp, the URL of the last load, so SvelteKit does not rerun the load.
-  await headerLink(page, 'Timelapse').click();
+  await (await headerLink(page, 'Timelapse')).click();
   await expect(page).toHaveURL(/\/fzp$/);
   await expectAddressFuture(page, representative);
   await waitReady(page);
@@ -342,7 +359,7 @@ test('after Another future, the header Timelapse link, Back and Forward each sho
 test('Back from another route onto a rerolled /fzp shows the rerolled future', async ({ page }) => {
   await gotoFzp(page);
   const seed = await reroll(page);
-  await headerLink(page, 'Paint').click();
+  await (await headerLink(page, 'Paint')).click();
   await expect(page).toHaveURL(/\/$/);
   await page.goBack();
   await expect(page).toHaveURL(new RegExp(`/fzp\\?seed=${seed}$`));
@@ -350,22 +367,21 @@ test('Back from another route onto a rerolled /fzp shows the rerolled future', a
 });
 
 test('Back onto /fzp after the way back from ?seed=N shows the representative future', async ({
-  isMobile,
   page
 }) => {
   await gotoFzp(page, '?seed=5');
   await expectAddressFuture(page);
-  if (isMobile) await scoreRegion(page).locator('button[aria-controls]').tap();
-  await scoreRegion(page)
+  await (
+    await openScore(page)
+  )
     .getByRole('button', { name: 'Back to the representative future' })
-    .filter({ visible: true })
     .click();
   await expect(page).toHaveURL(/\/fzp$/);
   await expect.poll(() => fzp(page, 'representative')).toBe(true);
   const representative = await fzp(page, 'seed');
 
   // Leave by a client navigation, so Back is SvelteKit's popstate (it stored ?seed=5).
-  await headerLink(page, 'Paint').click();
+  await (await headerLink(page, 'Paint')).click();
   await expect(page).toHaveURL(/\/$/);
   await page.goBack();
   await expect(page).toHaveURL(/\/fzp$/);
@@ -506,12 +522,9 @@ test('clicking empty map closes the card; moving the pointer off the part does n
 
 // ---- the sources dialog -------------------------------------------------------------------------
 
-test('the sources dialog lists every parameter and every data check', async ({
-  isMobile,
-  page
-}) => {
+test('the sources dialog lists every parameter and every data check', async ({ page }) => {
   await gotoFzp(page);
-  const dialog = await openSources(page, isMobile);
+  const dialog = await openSources(page);
 
   // One entry per calibration parameter: each present transition, the Local Program proxy, and the
   // six single-parameter models. The baseline, target and reference entries are not parameters.
@@ -559,7 +572,7 @@ test('a dataset without scenarios shows the message and starts no worker', async
     await route.fulfill({ response, json: manifest });
   });
   await gotoHydrated(page, '/about');
-  await headerLink(page, 'Timelapse').click();
+  await (await headerLink(page, 'Timelapse')).click();
   await expect(page).toHaveURL(/\/fzp$/);
 
   const status = page.getByTestId('fzp-status');
@@ -576,7 +589,7 @@ test('a calibration that fails to load shows the failure with Retry, and passes 
   // As above: a client navigation, so the browser fetches the calibration and the route can fail it.
   await page.route('**/scenarios/fzp/calibration.json', (route) => route.fulfill({ status: 500 }));
   await gotoHydrated(page, '/about');
-  await headerLink(page, 'Timelapse').click();
+  await (await headerLink(page, 'Timelapse')).click();
   await expect(page).toHaveURL(/\/fzp$/);
   await expect(page.getByTestId('fzp-status')).toHaveText("The simulation couldn't load.");
   await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
@@ -588,10 +601,10 @@ test('a calibration that fails to load shows the failure with Retry, and passes 
 
 test('the header links move between the editor and the timelapse', async ({ page }) => {
   await page.goto('/');
-  await headerLink(page, 'Timelapse').click();
+  await (await headerLink(page, 'Timelapse')).click();
   await expect(page).toHaveURL(/\/fzp$/);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Family Zoning Plan timelapse/);
-  await headerLink(page, 'Paint').click();
+  await (await headerLink(page, 'Paint')).click();
   await expect(page).toHaveURL(/\/$/);
 });
 
@@ -608,9 +621,9 @@ test('axe: the card open', async ({ isMobile, page }) => {
   await expectNoA11yViolations(page);
 });
 
-test('axe: the sources dialog open', async ({ isMobile, page }) => {
+test('axe: the sources dialog open', async ({ page }) => {
   await gotoFzp(page);
-  const dialog = await openSources(page, isMobile);
+  const dialog = await openSources(page);
   await expect(dialog.locator('[id="src-quality"] tbody tr').first()).toBeVisible();
   await expectNoA11yViolations(page, { include: 'dialog[open]', structure: true });
 });
@@ -647,15 +660,16 @@ test('axe: a failed reroll, whose notice clears the card and the score panel', a
   });
   await gotoFzp(page);
   const c = await openRealCard(page, isMobile);
-  await anotherFuture(page).click();
+  await (await anotherFuture(page)).click();
   const alert = page.getByRole('alert');
   await expect(alert).toHaveText(/Couldn't make another future\. Try again\./);
   expect(await fzp(page, 'representative')).toBe(true);
   await expectNoA11yViolations(page);
+  const details = await openScore(page);
 
   const overlap = async (): Promise<string[]> => {
     const a = (await alert.boundingBox())!;
-    const panels = [c, scoreRegion(page).locator(':scope > div').filter({ visible: true }).first()];
+    const panels = [c, details];
     const hits: string[] = [];
     for (const p of panels) {
       const b = (await p.boundingBox())!;
@@ -676,15 +690,16 @@ test('axe: a failed reroll, whose notice clears the card and the score panel', a
   }
 });
 
-test('axe: the scoreboard sheet open (phone)', async ({ isMobile, page }) => {
-  test.skip(!isMobile, 'the sheet exists below 768 px');
+test('axe: the score details open', async ({ page }) => {
   await gotoFzp(page);
-  await scoreRegion(page).locator('button[aria-controls]').tap();
-  await expect(page.getByRole('group', { name: 'Simulation scoreboard details' })).toBeVisible();
+  await openScore(page);
   await expectNoA11yViolations(page);
 });
 
-test('footer links stay unobscured at 375 px: bars, card and sheet', async ({ isMobile, page }) => {
+test('footer links stay unobscured at 375 px: scrubber, card and score details', async ({
+  isMobile,
+  page
+}) => {
   test.skip(!isMobile, 'W6b is the phone layout');
   await gotoFzp(page);
   await expectFooterReachable(page);
@@ -692,8 +707,6 @@ test('footer links stay unobscured at 375 px: bars, card and sheet', async ({ is
   await openRealCard(page, isMobile);
   await expectFooterReachable(page);
 
-  await scoreRegion(page).locator('button[aria-controls]').tap();
-  const sheet = page.getByRole('group', { name: 'Simulation scoreboard details' });
-  await expect(sheet).toBeVisible();
+  await openScore(page);
   await expectFooterReachable(page);
 });

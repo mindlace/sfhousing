@@ -13,6 +13,7 @@ import { stub } from '$lib/fzp/test/sim-map-stub';
 import { DEFAULT_LEVERS, FZP_COMPAT_LEVERS } from '$lib/sim/levers/types';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import Page from './+page.svelte';
+import SimPageHost from './test/SimPageHost.svelte';
 
 const nav = vi.hoisted(() => ({
   after: [] as ((n: AfterNavigate) => void)[],
@@ -105,7 +106,7 @@ describe('/sim page', () => {
   });
 
   it('remounts for a same-route navigation the load skips, when its URL names another future', async () => {
-    await render(Page, { props: { data: data(5), params: {} } });
+    await render(SimPageHost, { props: { data: data(5) } });
     navigated('enter', '?seed=5');
     await expect.poll(() => StubWorker.all.length).toBe(1);
     const w = StubWorker.all[0];
@@ -114,7 +115,9 @@ describe('/sim page', () => {
     w.emit({ type: 'ready', rev: init.rev, datasetVersion: 'fixture-0', chunkCount: 4 });
     w.emit(timelineMsg(init.rev, 5));
 
-    // 'Back to the representative future': the answer writes the bare URL with replaceState.
+    // 'Back to the representative future' (in the header score bar's details): the answer writes
+    // the bare URL with replaceState.
+    await page.getByTestId('score-bar').click();
     await page.getByRole('button', { name: 'Back to the representative future' }).first().click();
     const reroll = w.lastOf('reroll')!;
     expect(reroll.seed).toBeNull();

@@ -53,11 +53,40 @@ export async function gotoHydrated(page: Page, path: string): Promise<void> {
 
 export const publishOpen = (page: Page): Locator => page.getByTestId('publish-open');
 
+/** Below 768 px, opens the header's Menu (where the actions live); from 768 px, does nothing. */
+export async function openHeaderMenu(page: Page): Promise<void> {
+  const menu = page.getByRole('banner').getByRole('button', { name: 'Menu', exact: true });
+  if (!(await menu.isVisible())) return;
+  if ((await menu.getAttribute('aria-expanded')) !== 'true') await menu.click();
+  await expect(menu).toHaveAttribute('aria-expanded', 'true');
+}
+
+/**
+ * A header action button by name, ready to click. Below 768 px the header's actions live in the
+ * Menu panel, so this opens Menu first when the Menu button shows.
+ */
+export async function headerAction(page: Page, name: string | RegExp): Promise<Locator> {
+  await openHeaderMenu(page);
+  const item = page
+    .getByRole('banner')
+    .getByRole('button', { name, exact: typeof name === 'string' });
+  await expect(item).toBeVisible();
+  return item;
+}
+
+/** The Publish / Share link button, made visible first (the phone Menu opened). */
+export async function openPublish(page: Page): Promise<Locator> {
+  await openHeaderMenu(page);
+  await expect(publishOpen(page)).toBeVisible();
+  return publishOpen(page);
+}
+
 /** `/` with the map ready and the header actions hydrated (the Publish button exists). */
 export async function gotoEditor(page: Page): Promise<void> {
   await page.goto('/');
   await waitForMap(page);
-  await expect(publishOpen(page)).toBeVisible();
+  // Attached, not visible: below 768 px it waits in the closed header Menu.
+  await expect(publishOpen(page)).toBeAttached();
 }
 
 export async function jumpAndIdle(page: Page, frame: typeof FRAME = FRAME): Promise<void> {

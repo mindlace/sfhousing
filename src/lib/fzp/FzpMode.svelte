@@ -1,9 +1,10 @@
 <!--
   The timelapse composition (spec §4.1, §4.2, §4.3, §4.7, §4.8): SimMap, the time scrubber, the
-  time-aware scoreboard, the project card and tooltip and the sources dialog, over timelapse-sim's
-  ScenarioClient. Queueing before the map handle, chunk statuses and crash Retry mirror
-  BrushEditor.svelte (copied, not imported). /sim passes `levers` (plan 3): the session runs the
-  lever engine, and the worker's posted lookups replace the calibration's once current.
+  header score bar (ScoreBar, pinned in the header, opening FzpScorePanel), the project card and
+  tooltip and the sources dialog, over timelapse-sim's ScenarioClient. Queueing before the map
+  handle, chunk statuses and crash Retry mirror BrushEditor.svelte (copied, not imported). /sim
+  passes `levers` (plan 3): the session runs the lever engine, and the worker's posted lookups
+  replace the calibration's once current.
 -->
 <script module lang="ts">
   import { chanceTable, typicalMonths } from '$lib/timelapse/model';
@@ -12,10 +13,6 @@
   import type { BrushCatalog, BrushQuery } from '$lib/sim/levers/brushes';
   import type { BrushLotsResult } from '$lib/sim/scenario/types';
   import type { ChanceTable } from './card';
-
-  const NARROW = '(width < 768px)';
-  /** The collapsed mobile scorebar (`h-14`, FzpScoreboard's `--scorebar-h`). */
-  const SCOREBAR_H = 56;
 
   type Lookups = { chance: ChanceTable; typicalMonths: ReturnType<typeof typicalMonths> };
   type MapLike = NonNullable<ReturnType<SimMapHandle['getMap']>>;
@@ -68,14 +65,15 @@
   } from '$lib/sim/scenario-client';
   import type { Day } from '$lib/timelapse/time';
   import { installFzpDebug } from './debug';
-  import FzpScoreboard from './FzpScoreboard.svelte';
+  import ScoreBar from '$lib/sim-page/ScoreBar.svelte';
+  import FzpScorePanel from './FzpScorePanel.svelte';
   import { DEFAULT_SPEED } from './playback';
   import ProjectCardPanel from './ProjectCardPanel.svelte';
   import ProjectTooltip from './ProjectTooltip.svelte';
-  import { scrubMarkers } from './score-view';
+  import { scoreAt, scrubMarkers } from './score-view';
   import SourcesDialog from './SourcesDialog.svelte';
   import { SummaryRequester, type SummaryState } from './summary-request';
-  import { HORIZON, monthStart } from './time';
+  import { HORIZON, monthIndex, monthStart } from './time';
   import TimeScrubber from './TimeScrubber.svelte';
   import type { FzpPhase, Speed } from './types';
 
@@ -195,6 +193,10 @@
     leverState.sentRev !== null && timelineRev < leverState.sentRev && leverStatus.kind !== 'failed'
   );
   const markers = $derived(score ? scrubMarkers(score) : []);
+  /** The score at the scrubbed month, for the details panel. */
+  const at = $derived(
+    score ? scoreAt(score, monthIndex(day, score.months[0], score.months.length)) : null
+  );
   const hasScoreboard = $derived(
     calibration !== null && (phase === 'loading' || phase === 'ready')
   );
@@ -223,9 +225,8 @@
   let asOfChecked = false;
   /** The scrubbed month the open card was last requested for. */
   let cardMonth: Day | null = null;
-  let narrow = false;
-  /** The phone scoreboard sheet: open, and its height once measured. */
-  let sheet = $state.raw({ open: false, h: 0 });
+  /** FzpMode's root, for the dock's top edge (`--fzp-dock-top`). */
+  let rootEl = $state<HTMLDivElement>();
 
   /**
    * The page's latest scenario request. `representative` is the flag its answer sets (null =
@@ -416,10 +417,24 @@
   }
 
   function applyInset(): void {
-    const dock = scrubberH + noticeH;
-    const px = sheet.open ? sheet.h : dock + (narrow && hasScoreboard ? SCOREBAR_H : 0);
-    handle?.setBottomInset(px);
+    handle?.setBottomInset(scrubberH + noticeH);
   }
+
+  /**
+   * The viewport y of the dock's top edge (the notices and the scrubber), on :root as
+   * `--fzp-dock-top`: the header's score details end above it. Set while FzpMode is mounted.
+   */
+  function publishDockTop(): void {
+    if (!rootEl) return;
+    const top = rootEl.getBoundingClientRect().bottom - (scrubberH + noticeH);
+    document.documentElement.style.setProperty('--fzp-dock-top', `${Math.floor(top)}px`);
+  }
+  $effect(() => {
+    void scrubberH;
+    void noticeH;
+    void rootEl;
+    untrack(publishDockTop);
+  });
 
   // A notice appearing or going changes the dock's height.
   $effect(() => {
@@ -592,7 +607,7 @@
     );
   }
 
-  useHeaderActions(headerActions);
+  useHeaderActions(headerActions, { pinned: scoreBar });
 
   onMount(() => {
     if (phase !== 'no-scenario') {
@@ -606,14 +621,8 @@
       if (phase === 'loading') startScenario({ seed: urlSeed });
     }
 
-    const mq = matchMedia(NARROW);
-    narrow = mq.matches;
-    applyInset(); // SimMap's onready may have run first, before `narrow` was known
-    const onMq = () => {
-      narrow = mq.matches;
-      applyInset();
-    };
-    mq.addEventListener('change', onMq);
+    applyInset();
+    addEventListener('resize', publishDockTop);
 
     const uninstall = installFzpDebug(() => ({
       phase,
@@ -636,7 +645,8 @@
       dead = true;
       if (client) onclient?.(null);
       uninstall();
-      mq.removeEventListener('change', onMq);
+      removeEventListener('resize', publishDockTop);
+      document.documentElement.style.removeProperty('--fzp-dock-top');
       playing = false;
       attachMap(null);
       client?.dispose();
@@ -661,7 +671,36 @@
   {/if}
 {/snippet}
 
-<div class="sfh-fzp relative h-full" style:--fzp-scrubber-h="{scrubberH + noticeH}px">
+{#snippet scorePanel()}
+  <FzpScorePanel
+    {score}
+    {at}
+    {day}
+    {asOf}
+    horizon={HORIZON}
+    {bandRuns}
+    {bandRunsTotal}
+    {seed}
+    {representative}
+    {canReroll}
+    {datasetVersion}
+    builtAt={manifest?.builtAt ?? ''}
+    onrepresentative={() => requestReroll(null)}
+    onsources={() => dialog?.open()}
+  />
+{/snippet}
+
+{#snippet scoreBar()}
+  {#if hasScoreboard && calibration}
+    <ScoreBar {score} {day} {asOf} {playing} busy={scoreBusy} panel={scorePanel} />
+  {/if}
+{/snippet}
+
+<div
+  bind:this={rootEl}
+  class="sfh-fzp relative h-full"
+  style:--fzp-scrubber-h="{scrubberH + noticeH}px"
+>
   {#if manifest}
     <SimMap
       {manifest}
@@ -675,8 +714,9 @@
     <div class="h-full" data-testid="fzp-frame"></div>
   {/if}
 
-  <!-- Top-centre notices only where nothing else sits there. While loading, the score panel holds
-       the top right on md+, so the notice takes the top left (no card can be open yet). -->
+  <!-- Top-centre notices only where nothing else sits there. While loading, the header's score
+       details open at the top right on md+, so the notice takes the top left (no card can be
+       open yet). -->
   {#if phase === 'loading'}
     <div class="absolute top-4 left-1/2 z-30 -translate-x-1/2 md:left-4 md:translate-x-0">
       <p
@@ -718,30 +758,6 @@
     </div>
   {/if}
 
-  {#if hasScoreboard && calibration}
-    <FzpScoreboard
-      {score}
-      {day}
-      {asOf}
-      horizon={HORIZON}
-      {playing}
-      {bandRuns}
-      {bandRunsTotal}
-      {seed}
-      {representative}
-      {canReroll}
-      {datasetVersion}
-      busy={scoreBusy}
-      builtAt={manifest?.builtAt ?? ''}
-      onrepresentative={() => requestReroll(null)}
-      onsources={() => dialog?.open()}
-      onsheetchange={(open, h) => {
-        sheet = { open, h };
-        applyInset();
-      }}
-    />
-  {/if}
-
   {#if phase === 'ready' && calibration && cardChance}
     <!-- The posted lookups carry no calibration: lever timers rescale durations, not the
          provenance the card cites, so both cohorts cite the base calibration. -->
@@ -756,15 +772,11 @@
     />
     <ProjectTooltip state={tipState} {day} x={tipAt.x} y={tipAt.y} />
     <!-- The ready-phase notices sit just above the scrubber. Their height joins the scrubber's
-         in the map inset and --fzp-scrubber-h, so the card and the score panel (at any width)
-         always end above them and are never covered. While the phone sheet is open they sit
-         just above it, over it in z, so a notice raised from the sheet stays visible. -->
+         in the map inset, --fzp-scrubber-h and --fzp-dock-top, so the card and the header's
+         score details (at any width) always end above them and are never covered. -->
     <div
-      class={[
-        'pointer-events-none absolute inset-x-0 flex flex-col items-center px-4',
-        sheet.open ? 'z-40' : 'z-20'
-      ]}
-      style:bottom={sheet.open ? `${sheet.h}px` : `calc(var(--scorebar-h, 0px) + ${scrubberH}px)`}
+      class="pointer-events-none absolute inset-x-0 z-20 flex flex-col items-center px-4"
+      style:bottom="{scrubberH}px"
       data-testid="fzp-notices"
       bind:offsetHeight={noticeH}
     >
@@ -825,7 +837,7 @@
         </div>
       {/if}
     </div>
-    <div class="absolute inset-x-0 z-20 max-md:bottom-[var(--scorebar-h,56px)] md:bottom-0">
+    <div class="absolute inset-x-0 bottom-0 z-20">
       <TimeScrubber
         {asOf}
         horizon={HORIZON}

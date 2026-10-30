@@ -4,7 +4,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
-import { gotoHydrated, jumpAndIdle, type Win } from './helpers/sharing';
+import { gotoHydrated, headerAction, jumpAndIdle, type Win } from './helpers/sharing';
 
 type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 
@@ -38,11 +38,13 @@ async function waitReady(page: Page): Promise<void> {
 
 /**
  * The band and the plan effect are complete. A provisional score still has them, with the
- * scoreboard saying "calculating" or "(still calculating)" and marking the lines `aria-busy`
+ * score details saying "calculating" or "(still calculating)" and marking the lines `aria-busy`
  * (score-view.ts bandLine/planBandLine), so completeness is read from those two signs.
  */
 async function settled(page: Page): Promise<void> {
-  const board = page.locator('.sfh-fzp-scoreboard');
+  const bar = page.getByTestId('score-bar');
+  if ((await bar.getAttribute('aria-expanded')) !== 'true') await bar.click();
+  const board = page.getByRole('region', { name: 'Score details' });
   await expect(board.locator('[aria-busy="true"]')).toHaveCount(0, { timeout: 20_000 });
   await expect(board).not.toContainText(/calculating/);
 }
@@ -135,7 +137,7 @@ test('a reroll changes the future, not the band', async ({ page }) => {
   // `settled` waited for a complete band; an empty one would make the comparison below trivial.
   expect(JSON.parse(band).length).toBeGreaterThan(0);
 
-  await page.getByRole('button', { name: 'Another future' }).click();
+  await (await headerAction(page, 'Another future')).click();
   await expect.poll(() => seedOf(page)).not.toBe(seed);
   await settled(page);
 
