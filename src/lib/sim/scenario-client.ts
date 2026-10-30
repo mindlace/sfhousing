@@ -52,6 +52,8 @@ export class ScenarioClient {
   #resyncRev: Rev | null = null;
   /** The latest lever revision's rev until its `current`; null when none is pending. */
   #leversRev: Rev | null = null;
+  /** The latest `initScenario` rev: a load error is posted at it, below a later `setLevers`. */
+  #sessionRev = 0;
   /** Seed of the latest non-stale timeline. Survives `initScenario` and `restart` (crash Retry). */
   #currentSeed: number | null = null;
   /** A non-stale timeline has arrived since the last `initScenario`/`restart`: resync may run. */
@@ -124,6 +126,7 @@ export class ScenarioClient {
       horizon,
       ...(levers !== undefined && { levers })
     });
+    this.#sessionRev = rev;
     this.#leversRev = levers === undefined ? null : rev;
     return rev;
   }
@@ -262,7 +265,17 @@ export class ScenarioClient {
         // Never a resync here (unlike SimClient): resending cannot fix a bad file or request. An
         // error at or after the resync rev only closes the episode.
         if (this.#resyncRev !== null && msg.rev >= this.#resyncRev) this.#resyncRev = null;
-        if (this.#leversRev !== null && msg.rev >= this.#leversRev) this.#leversRev = null;
+        // An error ends the lever revision when it is that revision's own, or when it ended the
+        // session (at or after the init rev, and not a bad-request for some later request). A
+        // load failure is posted at the init rev, below a setLevers sent before the load.
+        if (
+          this.#leversRev !== null &&
+          (msg.rev === this.#leversRev ||
+            msg.rev === this.#sessionRev ||
+            (msg.rev >= this.#sessionRev && msg.code !== 'bad-request'))
+        ) {
+          this.#leversRev = null;
+        }
         this.#events.onError?.(msg);
         return;
       case 'levers':

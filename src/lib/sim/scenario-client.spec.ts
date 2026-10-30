@@ -365,6 +365,25 @@ describe('ScenarioClient', () => {
       w.emit({ type: 'error', rev: r, code: 'bad-request', message: 'x' });
       expect(client.leversPending).toBe(false);
     });
+
+    it('load failure clears pending', () => {
+      const { w, client } = setup();
+      client.initScenario(MANIFEST, HORIZON, null, structuredClone(DEFAULT_LEVERS));
+      client.setLevers(structuredClone(DEFAULT_LEVERS));
+      w.emit({ type: 'error', rev: 1, code: 'scenario-invalid', message: 'x' });
+      expect(client.leversPending).toBe(false);
+    });
+
+    it('a bad-request for a later reroll leaves pending until the setLevers current', () => {
+      const { w, client } = setup();
+      client.initScenario(MANIFEST, HORIZON, null, structuredClone(DEFAULT_LEVERS));
+      client.setLevers(structuredClone(DEFAULT_LEVERS));
+      client.reroll(5); // rev 3
+      w.emit({ type: 'error', rev: 3, code: 'bad-request', message: 'x' });
+      expect(client.leversPending).toBe(true);
+      w.emit(current(2));
+      expect(client.leversPending).toBe(false);
+    });
   });
 
   it('takes datasetVersion from ready and forwards events', () => {
