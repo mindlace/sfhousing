@@ -12,8 +12,10 @@ import { testCatalog } from './test/catalog';
 function setup(kind: RuleKind, initial?: ZoningBrush) {
   const onsave = vi.fn();
   const oncancel = vi.fn();
-  render(RuleBrushForm, { props: { kind, catalog: testCatalog(), initial, onsave, oncancel } });
-  return { onsave, oncancel };
+  const view = render(RuleBrushForm, {
+    props: { kind, catalog: testCatalog(), initial, onsave, oncancel }
+  });
+  return { onsave, oncancel, unmount: async () => (await view).unmount() };
 }
 
 const save = () => page.getByRole('button', { name: 'Save brush' });
@@ -105,6 +107,31 @@ describe('RuleBrushForm', () => {
       districts: ['RH-1', 'RH-1(D)', 'RH-1(S)'],
       neighborhoods: []
     });
+  });
+
+  it('names the form with "a" or "an" as the kind needs', async () => {
+    const titles: [RuleKind, string][] = [
+      ['transit', 'Add a transit brush'],
+      ['street', 'Add a street brush'],
+      ['corridor', 'Add a commercial corridor brush'],
+      ['area', 'Add an area brush']
+    ];
+    for (const [kind, name] of titles) {
+      const view = setup(kind);
+      await expect.element(page.getByRole('form', { name, exact: true })).toBeVisible();
+      await view.unmount();
+    }
+    const initial: ZoningBrush = {
+      id: 'areaBrush123',
+      kind: 'area',
+      districts: ['RH-1'],
+      neighborhoods: [],
+      effect: { mode: 'raise', stories: 6, densityLimits: false }
+    };
+    setup('area', initial);
+    await expect
+      .element(page.getByRole('form', { name: 'Edit an area brush', exact: true }))
+      .toBeVisible();
   });
 
   it('editing a saved street brush keeps its id', async () => {

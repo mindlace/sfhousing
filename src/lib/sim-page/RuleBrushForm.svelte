@@ -52,7 +52,10 @@
   // The form is seeded once: later prop changes do not reset what the user has entered.
   const init = untrack(() => initial);
   const k = untrack(() => kind);
-  const title = `${init ? 'Edit' : 'Add'} a ${RULE_KINDS.find((r) => r.id === k)!.label.toLowerCase()} brush`;
+  const kindName = RULE_KINDS.find((r) => r.id === k)!.label.toLowerCase();
+  // "an" before a vowel sound: every kind label starts with its sound's letter.
+  const article = /^[aeiou]/.test(kindName) ? 'an' : 'a';
+  const title = `${init ? 'Edit' : 'Add'} ${article} ${kindName} brush`;
 
   const initEffect =
     init && init.kind !== 'transit' && init.kind !== 'erase' ? init.effect : undefined;

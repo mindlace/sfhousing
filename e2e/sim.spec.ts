@@ -114,17 +114,18 @@ async function expandSection(page: Page, title: string): Promise<void> {
   await expect(button).toHaveAttribute('aria-expanded', 'true');
 }
 
-/** "Add a brush", then the kind's button once the brush catalog allows it. */
-async function openBrushForm(page: Page, kind: string): Promise<Locator> {
+/**
+ * "Add a brush", then the kind's button once the brush catalog allows it; the form opens named
+ * `title` exactly.
+ */
+async function openBrushForm(page: Page, kind: string, title: string): Promise<Locator> {
   await openPolicy(page);
   await expandSection(page, 'Your zoning');
   await panel(page).getByRole('button', { name: 'Add a brush' }).click();
   const choice = panel(page).getByRole('button', { name: kind, exact: true });
   await expect(choice).toBeEnabled({ timeout: 20_000 });
   await choice.click();
-  const form = panel(page).getByRole('form', {
-    name: new RegExp(`^Add an? ${kind.toLowerCase()} brush$`)
-  });
+  const form = panel(page).getByRole('form', { name: title, exact: true });
   await expect(form).toBeVisible();
   return form;
 }
@@ -336,7 +337,7 @@ test('a Street brush on the first frontage name selects its fronting lots', asyn
   await gotoSim(page);
   const before = await leverStatus(page);
 
-  const form = await openBrushForm(page, 'Street');
+  const form = await openBrushForm(page, 'Street', 'Add a street brush');
   await form.getByRole('combobox', { name: 'Street name' }).fill(street.name);
   await form.getByRole('button', { name: 'Add street' }).click();
   await expect(form.getByRole('list', { name: 'Chosen streets' })).toContainText(street.name);
@@ -471,7 +472,7 @@ test('axe: the policy panel open', async ({ page }) => {
 
 test('axe: the Area brush form open', async ({ page }) => {
   await gotoSim(page);
-  const form = await openBrushForm(page, 'Area');
+  const form = await openBrushForm(page, 'Area', 'Add an area brush');
   await expect(form.getByRole('group', { name: 'Zoning districts' })).toBeVisible();
   await expectNoA11yViolations(page);
 });
