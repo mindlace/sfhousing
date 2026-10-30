@@ -24,7 +24,7 @@
   "vars": {
     "ENVIRONMENT": "production",
     // bumped by the data-pipeline upload PR (spec §4.3)
-    "PUBLIC_DATASET_VERSION": "2026-10-19-bf89390d",
+    "PUBLIC_DATASET_VERSION": "2026-10-29-0fd62c4d",
     "PUBLIC_APP_RELEASE": "dev"
   },
   "env": {
