@@ -13,6 +13,7 @@ import {
 } from './fixtures/timeline-score';
 import { scoreCopy } from '$lib/sim-page/policy';
 import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
+import type { LeverCapacity } from '$lib/sim/levers/resolve';
 import FzpScorePanel from './FzpScorePanel.svelte';
 import { scoreAt } from './score-view';
 import { dayFromUtc, monthIndex } from './time';
@@ -33,6 +34,7 @@ type Overrides = Partial<{
   onrepresentative: () => void;
   onsources: () => void;
   copy: ReturnType<typeof scoreCopy>;
+  capacity: LeverCapacity | null;
 }>;
 
 const props = (over: Overrides = {}) => {
@@ -195,6 +197,67 @@ describe('score copy (/sim)', () => {
     await render(FzpScorePanel, { props: props({ copy: scoreCopy(null) }) });
     await expect.element(page.getByText('What the plan added')).toBeVisible();
     await expect.element(page.getByText(INTRO)).toBeInTheDocument();
+  });
+});
+
+describe('protections cost (/sim)', () => {
+  const PROT = /lots protected:/;
+
+  it('names the protected lots and the zoned capacity they cost', async () => {
+    await page.viewport(1024, 768);
+    await render(FzpScorePanel, {
+      props: props({
+        capacity: { plan: 900, withoutProtections: 1000, protectedLots: 12, afterSwitch: null }
+      })
+    });
+    const line = page.getByText(PROT);
+    await expect
+      .element(line)
+      .toHaveTextContent('12 lots protected: 100 fewer homes of zoned capacity');
+    // Not live-announced: no live region on or around the line.
+    expect(line.element().closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+  });
+
+  it('adds the cost from 2032 when the levers switch', async () => {
+    await page.viewport(1024, 768);
+    await render(FzpScorePanel, {
+      props: props({
+        capacity: {
+          plan: 900,
+          withoutProtections: 1000,
+          protectedLots: 12,
+          afterSwitch: { plan: 1200, withoutProtections: 1350 }
+        }
+      })
+    });
+    await expect
+      .element(page.getByText(PROT))
+      .toHaveTextContent('12 lots protected: 100 fewer homes of zoned capacity, 150 from 2032');
+  });
+
+  it('formats large numbers with formatCount', async () => {
+    await page.viewport(1024, 768);
+    await render(FzpScorePanel, {
+      props: props({
+        capacity: { plan: 0, withoutProtections: 12345, protectedLots: 1200, afterSwitch: null }
+      })
+    });
+    await expect
+      .element(page.getByText(PROT))
+      .toHaveTextContent('1,200 lots protected: 12,345 fewer homes of zoned capacity');
+  });
+
+  it('shows no line with no protected lots or no capacity', async () => {
+    await page.viewport(1024, 768);
+    const r = await render(FzpScorePanel, {
+      props: props({
+        capacity: { plan: 900, withoutProtections: 900, protectedLots: 0, afterSwitch: null }
+      })
+    });
+    await expect.element(page.getByTestId('fzp-net')).toBeVisible();
+    expect(document.body.textContent).not.toMatch(PROT);
+    await r.rerender({ capacity: null });
+    expect(document.body.textContent).not.toMatch(PROT);
   });
 });
 

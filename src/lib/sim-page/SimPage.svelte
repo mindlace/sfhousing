@@ -7,7 +7,8 @@
   adapter; the lot dots and the brush ring share SimMap's overlay through the overlay mux.
   Rule brushes (Task 9) read the brush catalog, asked for once when the panel first opens and
   again after a session restart if it came back null; below md their form replaces the sheet's
-  contents (layout ruling 9).
+  contents (layout ruling 9). "Protections" (Task 10) edits the category protections and picks the
+  Protect tool through the same `setTool`, so on a phone it too closes the sheet for the tool bar.
 -->
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
@@ -37,6 +38,7 @@
   import { focusHeaderMenu } from '$lib/shell/header-actions.svelte';
   import { LeverSync, PolicyStore } from './policy-store.svelte';
   import PolicyPanel from './PolicyPanel.svelte';
+  import ProtectionsSection from './ProtectionsSection.svelte';
 
   interface Props {
     manifest: Manifest | null;
@@ -351,6 +353,15 @@
         {catalog}
         {forms}
         inlineForm={wide.current}
+        announce={(m) => brush.announce(m, ANNOUNCE_MS)}
+      />
+    {/snippet}
+    {#snippet protections()}
+      <ProtectionsSection
+        {store}
+        {sync}
+        {tools}
+        ontool={setTool}
         announce={(m) => brush.announce(m, ANNOUNCE_MS)}
       />
     {/snippet}

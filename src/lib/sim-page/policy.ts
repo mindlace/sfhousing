@@ -443,8 +443,15 @@ function emit(p: SimPolicy, lots: Lots): UserEdit[] | null {
   return out;
 }
 
-/** protect lots = protect runs minus unprotect runs, in order; null while unknown. */
-function protectedLots(p: SimPolicy, lots: Lots): ParcelId[] | null {
+/** The keys of the protect strokes' queries (one per run of same-kind strokes). */
+export function protectQueryKeys(p: SimPolicy): string[] {
+  return [...new Set(protectRuns(p).map((r) => queryKey(r.query)))];
+}
+
+/**
+ * The compiled `protect.lots`: protect runs minus unprotect runs, in order; null while unknown.
+ */
+export function protectedLots(p: SimPolicy, lots: Lots): ParcelId[] | null {
   const set = new Set<ParcelId>();
   for (const r of protectRuns(p)) {
     const got = lots(queryKey(r.query));

@@ -209,6 +209,40 @@ describe('SimPage strokes (Task 8)', () => {
   });
 });
 
+describe('SimPage protections (Task 10)', () => {
+  it('at 375 px, "Protect lots with the brush" closes the sheet for the tool bar on Protect', async () => {
+    stub.reset();
+    await page.viewport(375, 700);
+    await setup();
+    await toReady();
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await policyButton().click();
+    const dialog = page.getByRole('dialog', { name: 'Policy' });
+    await expect.element(dialog).toBeVisible();
+    await page.getByRole('button', { name: 'Protections' }).click();
+    const protect = page.getByRole('button', { name: 'Protect lots with the brush' });
+    await expect.element(protect).toBeEnabled();
+    await protect.click();
+    await expect.element(dialog).not.toBeInTheDocument();
+    const bar = page.getByRole('group', { name: 'Brush' });
+    await expect.element(bar).toBeVisible();
+    await expect.element(bar.getByRole('button').first()).toHaveFocus();
+  });
+
+  it('a category checkbox is a change that Undo names', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    await page.getByRole('button', { name: 'Protections' }).click();
+    await page.getByRole('checkbox', { name: 'Historic buildings (status A or A*)' }).click();
+    await yourZoning().click();
+    await expect
+      .element(page.getByRole('button', { name: 'Undo: Protected historic buildings' }))
+      .toBeEnabled();
+  });
+});
+
 describe('SimPage rule brushes (Task 9)', () => {
   it('fetches the catalog once, when the panel first opens', async () => {
     await page.viewport(375, 700);

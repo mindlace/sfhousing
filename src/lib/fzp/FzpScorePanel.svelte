@@ -44,7 +44,6 @@
     /** The current levers' capacity (/sim): the protection line (plan 3, Task 10) reads it. */
     capacity?: LeverCapacity | null;
   }
-  // eslint-disable-next-line svelte/no-unused-props -- `capacity` waits for the protection line
   let {
     score,
     at,
@@ -60,8 +59,24 @@
     builtAt,
     onrepresentative,
     onsources,
-    copy = scoreCopy(null)
+    copy = scoreCopy(null),
+    capacity = null
   }: Props = $props();
+
+  /**
+   * What the protections cost in zoned capacity (/sim), or null with no protected lots. The
+   * resolver guarantees `withoutProtections >= plan`.
+   */
+  const protectionLine = $derived.by(() => {
+    if (!capacity || capacity.protectedLots <= 0) return null;
+    const a = capacity.afterSwitch;
+    const after = a ? `, ${formatCount(a.withoutProtections - a.plan)} from 2032` : '';
+    return (
+      `${formatCount(capacity.protectedLots)} lots protected: ` +
+      `${formatCount(capacity.withoutProtections - capacity.plan)} fewer homes of zoned capacity` +
+      after
+    );
+  });
 
   /** "the plan" in the Family Zoning Plan copy (its text unchanged), else the copy's own name. */
   const short = $derived(copy.plan === 'the Family Zoning Plan' ? 'the plan' : copy.plan);
@@ -155,6 +170,10 @@
         as the same city simulated under {copy.twin}, with the same luck. The difference between the
         two is {short}'s effect. Some homes would have been built anyway; they are not counted here.
       </p>
+      {#if protectionLine}
+        <!-- Not live: the numbers change with every lever change (spec: no aria-live). -->
+        <p class="mt-2 text-sm text-gray-800 tabular-nums">{protectionLine}</p>
+      {/if}
     </section>
 
     {#each at.targets as t, k (t.tp.target.id)}

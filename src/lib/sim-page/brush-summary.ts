@@ -5,7 +5,15 @@
  */
 import type { BrushCatalog, StopType, StreetClass } from '$lib/sim/levers/brushes';
 import type { BrushLotsResult } from '$lib/sim/scenario/types';
-import { brushQueries, queryKey, type BrushMode, type ZoningBrush } from './policy';
+import {
+  brushQueries,
+  protectQueryKeys,
+  protectedLots,
+  queryKey,
+  type BrushMode,
+  type SimPolicy,
+  type ZoningBrush
+} from './policy';
 import { strokeLabel } from './stroke-adapter';
 
 /** "Add a brush" kinds: a commercial corridor is a preset Street brush. */
@@ -172,7 +180,31 @@ export function lotStatus(
   b: ZoningBrush,
   result: (key: string) => BrushLotsResult | undefined
 ): LotStatus {
-  const keys = brushQueries(b).map(queryKey);
+  return statusOf(brushQueries(b).map(queryKey), result, (lots) => new Set(lots.flat()).size);
+}
+
+/**
+ * The brushed protections' lots: the size of the compiled `protect.lots` (protect runs minus
+ * unprotect runs) once every run is found; finding or failed as `lotStatus`.
+ */
+export function protectLotStatus(
+  p: SimPolicy,
+  result: (key: string) => BrushLotsResult | undefined
+): LotStatus {
+  return statusOf(protectQueryKeys(p), result, () => {
+    const lots = protectedLots(p, (k) => {
+      const r = result(k);
+      return r?.ok ? r.lots : undefined;
+    });
+    return lots?.length ?? 0;
+  });
+}
+
+function statusOf(
+  keys: string[],
+  result: (key: string) => BrushLotsResult | undefined,
+  count: (lots: readonly (readonly string[])[]) => number
+): LotStatus {
   const results = keys.map((k) => result(k));
   const failed = keys.filter((_, i) => {
     const r = results[i];
@@ -180,7 +212,7 @@ export function lotStatus(
   });
   if (failed.length > 0) return { kind: 'failed', keys: failed };
   if (results.every((r): r is Extract<BrushLotsResult, { ok: true }> => r?.ok === true)) {
-    return { kind: 'found', lots: new Set(results.flatMap((r) => r.lots)).size };
+    return { kind: 'found', lots: count(results.map((r) => r.lots)) };
   }
   return { kind: 'finding' };
 }
