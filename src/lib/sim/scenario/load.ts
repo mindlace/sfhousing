@@ -8,6 +8,7 @@ import { parseCalibration } from '$lib/timelapse/model';
 import { ProjectsFormatError, parseProjectsFile, type ProjectsFile } from '$lib/timelapse/projects';
 import type { Calibration } from '$lib/timelapse/types';
 import type { FetchLike } from '../chunks';
+import { parseSimLevers } from '../levers/types';
 import { isSkipped } from './engine';
 import { ScenarioInputError, buildSimInput, precomputeOf } from './input';
 import { applyPolicies, baseZoning } from './policy';
@@ -46,6 +47,8 @@ export interface LoadDeps {
   warn(msg: string): void;
   /** The T11 decoder; default `readScenarioParcels`. A seam for tests to observe the decode. */
   decodeParcels?(bytes: Uint8Array): Promise<ScenarioParcels>;
+  /** The policy.bin decoder; default `readPolicyParcels`. The same kind of seam. */
+  decodePolicy?(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels>;
 }
 
 const SEED_END = 4294967296; // 2³², as a literal (ruling A3)
@@ -59,12 +62,26 @@ export function seedProblem(seed: unknown): string | null {
   return 'seed must be null or an integer in [0, 4294967296)';
 }
 
-/** §4.2 step 1: null when the request is acceptable, else its first problem (`bad-request`). */
+/** null for a lever document `parseSimLevers` accepts, else its problem (`bad-request`). */
+export function leversProblem(levers: unknown): string | null {
+  try {
+    parseSimLevers(levers);
+    return null;
+  } catch (e) {
+    return `levers ${e instanceof Error ? e.message : String(e)}`;
+  }
+}
+
+/**
+ * §4.2 step 1: null when the request is acceptable, else its first problem (`bad-request`).
+ * `levers` (plan 2) is checked only when present.
+ */
 export function validateInitRequest(req: InitRequest): string | null {
   if (req.scenario !== 'fzp') return "scenario must be 'fzp'";
   const seed = seedProblem(req.seed);
   if (seed !== null) return seed;
   if (!Number.isInteger(req.horizon)) return 'horizon must be an integer';
+  if (req.levers !== undefined) return leversProblem(req.levers);
   return null;
 }
 
@@ -242,7 +259,7 @@ export async function loadScenario(
   let policy: PolicyParcels | null = null;
   if (policyBin !== null) {
     try {
-      policy = await readPolicyParcels(new Uint8Array(policyBin), parcels);
+      policy = await (deps.decodePolicy ?? readPolicyParcels)(new Uint8Array(policyBin), parcels);
     } catch (e) {
       return invalid('policy.bin', messageOf(e));
     }

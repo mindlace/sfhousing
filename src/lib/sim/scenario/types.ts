@@ -10,7 +10,10 @@ import type { Target } from '$lib/scoreboard';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import type { Calibration, ExitReason, Pathway, Provenance, Stage } from '$lib/timelapse/types';
+import type { LeverLookups } from '../levers/apply';
+import type { LeverCapacity } from '../levers/resolve';
 import type { StageScale } from '../levers/timers';
+import type { SimLevers } from '../levers/types';
 import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev, SimRequest } from '../protocol';
 
 // T5
@@ -69,8 +72,11 @@ export type ScenarioRequest =
       scenario: 'fzp';
       seed: number | null; // null = representative seed
       horizon: Day;
+      levers?: SimLevers; // /sim (plan 2); absent = /fzp, which never fetches policy.bin
     }
   | { type: 'reroll'; rev: Rev; seed: number | null }
+  // A barrier rev like reroll; needs a session initialised with levers. The latest one wins.
+  | { type: 'setLevers'; rev: Rev; levers: SimLevers }
   | {
       type: 'parcelSummary';
       reqId: number;
@@ -96,7 +102,31 @@ export type ScenarioResponse =
   | ChunksResponse
   | TimelineResponse
   | { type: 'error'; rev: Rev; code: ScenarioErrorCode; message: string }
-  | { type: 'parcelSummary'; reqId: number; summary: ParcelSummary | null };
+  | { type: 'parcelSummary'; reqId: number; summary: ParcelSummary | null }
+  | LeversResponse;
+/**
+ * A lever revision's status (plan 2): `rev` is the `initScenario` or `setLevers` that named the
+ * levers. `resolving` while touched-lot yields are recomputed (`failedCells`: needed chunks that
+ * failed to load; `retryChunks` re-wants them); `current` once the levers are in force, before
+ * any timeline computed on them. A superseded revision never gets `current`.
+ */
+export type LeversResponse =
+  | {
+      type: 'levers';
+      rev: Rev;
+      phase: 'resolving';
+      done: number;
+      total: number;
+      failedCells: string[];
+    }
+  | {
+      type: 'levers';
+      rev: Rev;
+      phase: 'current';
+      lookups: LeverLookups;
+      capacity: LeverCapacity;
+      unknownLots: number;
+    };
 export type WorkerRequest = SimRequest | ScenarioRequest;
 export type ProjectCard = {
   projectId: string;

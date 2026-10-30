@@ -14,6 +14,7 @@
 // - Every post (with its transfer list) and every warning, in order.
 import { deflateRawSync } from 'node:zlib';
 import type { Manifest } from '$lib/data/manifest';
+import { encodePolicyPayload, readPolicyParcels, type PolicyParcels } from '$lib/data/policy-codec';
 import {
   encodeScenarioPayload,
   readScenarioParcels,
@@ -22,11 +23,15 @@ import {
 import type { Day } from '$lib/timelapse/time';
 import type { Rev } from '../../protocol';
 import { miniBin } from '../fixtures/mini-bin';
-import { MINI_SCENARIO_URLS, miniCity } from '../fixtures/mini-parcels';
+import { MINI_SCENARIO_URLS, MINI_VERSION, miniCity } from '../fixtures/mini-parcels';
+import { miniPolicy } from '../fixtures/mini-policy';
 import { MINI_HORIZON, miniProjectsJson } from '../fixtures/mini-projects';
 import miniCalibration from '../fixtures/mini-calibration.json';
 import { createScenarioHost, type ScenarioHost, type ScenarioHostDeps } from '../scenario-host';
 import type { ScenarioResponse } from '../types';
+
+/** Where the harness serves `miniPolicy` as policy.bin (in the manifest with `opts.policy`). */
+export const MINI_POLICY_URL = `/data/${MINI_VERSION}/scenarios/fzp/policy.bin`;
 
 type ErrorPost = Extract<ScenarioResponse, { type: 'error' }>;
 
@@ -51,7 +56,7 @@ export interface ScenarioHarness {
   fetches: FetchRecord[];
   /** Served bodies by URL: `unknown` JSON for `fetch`, `Uint8Array` for `fetchBytes`. */
   bodies: Map<string, unknown>;
-  manifest(): Manifest; // a fresh copy of the mini manifest
+  manifest(): Manifest; // a fresh copy of the mini manifest (with policy.bin under `opts.policy`)
   /** Sends `initScenario` with the mini manifest (or `over` fields) and returns its rev. */
   init(over?: Partial<Record<string, unknown>>): Rev;
   next(): Rev; // next rev, starting at 1
@@ -102,6 +107,8 @@ export function makeScenarioHarness(opts?: {
   bodies?: Record<string, unknown>;
   horizon?: Day;
   deps?: Partial<ScenarioHostDeps>;
+  /** The manifest names `MINI_POLICY_URL` (served either way). Default false: /fzp's manifest. */
+  policy?: boolean;
 }): ScenarioHarness {
   const city = miniCity();
   const posts: ScenarioResponse[] = [];
@@ -109,12 +116,14 @@ export function makeScenarioHarness(opts?: {
   const warnings: string[] = [];
   const fetches: FetchRecord[] = [];
   const bodies = new Map<string, unknown>();
+  const policyBin = new Uint8Array(deflateRawSync(encodePolicyPayload(miniPolicy(city))));
   const defaults = () => {
     bodies.clear();
     for (const [url, body] of Object.entries(city.chunks)) bodies.set(url, body);
     bodies.set(MINI_SCENARIO_URLS.parcels, miniBin());
     bodies.set(MINI_SCENARIO_URLS.projects, miniProjectsJson());
     bodies.set(MINI_SCENARIO_URLS.calibration, miniCalibration);
+    bodies.set(MINI_POLICY_URL, policyBin);
   };
   defaults();
   for (const [url, body] of Object.entries(opts?.bodies ?? {})) bodies.set(url, body);
@@ -145,6 +154,17 @@ export function makeScenarioHarness(opts?: {
     };
     if (!holdingDecodes) return go();
     return new Promise((resolve, reject) => heldDecodes.push(() => go().then(resolve, reject)));
+  }
+  /** policy.bin's decode: tracked by `flush` like parcels.bin's, but neither counted nor held. */
+  function decodePolicy(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels> {
+    const p = readPolicyParcels(bytes, parcels);
+    const done: Promise<void> = p.then(
+      () => undefined,
+      () => undefined
+    );
+    running.add(done);
+    void done.then(() => running.delete(done));
+    return p;
   }
 
   // fake clock
@@ -214,6 +234,7 @@ export function makeScenarioHarness(opts?: {
     now: () => clock,
     warn: (msg) => warnings.push(msg),
     decodeParcels,
+    decodePolicy,
     ...(opts?.retryDelaysMs ? { retryDelaysMs: opts.retryDelaysMs } : {}),
     ...opts?.deps
   };
@@ -255,7 +276,12 @@ export function makeScenarioHarness(opts?: {
 
   let rev = 0;
   const next = () => ++rev;
-  const manifest = () => miniCity().manifest;
+  const manifest = (): Manifest => {
+    const m = miniCity().manifest;
+    if (!opts?.policy) return m;
+    const fzp = { ...m.scenarios!.fzp, policy: MINI_POLICY_URL };
+    return { ...m, scenarios: { ...m.scenarios, fzp } };
+  };
 
   return {
     host,
