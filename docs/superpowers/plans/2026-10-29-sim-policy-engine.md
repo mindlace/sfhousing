@@ -651,6 +651,6 @@ ScenarioClientEvents.onLevers?(l: Extract<ScenarioResponse, { type: 'levers' }>)
 
 ## Open questions for the partner
 
-1. **Do protected lots follow the 2032 switch to SB 79?** Recommendation: yes. Protection means "not upzoned by your policy", and the switch is current law, not the user's policy. The alternative freezes them on FZP + §207.11 even after the state law takes effect.
+1. **Do protected lots follow the 2032 switch to SB 79?** **Partner ruling (2026-10-29): yes, protected lots keep current law, including the switch.** Recommendation was: yes. Protection means "not upzoned by your policy", and the switch is current law, not the user's policy. The alternative freezes them on FZP + §207.11 even after the state law takes effect.
 2. **When does a pipeline project at pre-application count as new?** Recommendation: it counts as new for SB 423-style timers, since it has not filed. Otherwise the policy start is the simulation's `asOf`, until a preset needs a later start date.
 3. **Disapproval exception.** The preliminary measurement is 0.82% of new discretionary projects. Recommendation: drop it, as the spec allows, unless Task 7's measurement on the promoted dataset reaches 1%.
