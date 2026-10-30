@@ -73,6 +73,11 @@ type Setup = ReturnType<typeof setup>;
 
 const slider = () => page.getByRole('slider', { name: 'Date in the simulation' });
 const another = () => page.getByRole('button', { name: 'Another future' });
+/**
+ * Activates 'Another future' with no pointer press (as the keyboard does), so open score details
+ * stay open: a press outside them closes them.
+ */
+const anotherKeyed = () => (another().element() as HTMLElement).click();
 const statusText = () =>
   [...document.querySelectorAll('[data-testid="fzp-status"]')].map((e) => e.textContent?.trim());
 /** The header's score bar (the pinned slot). */
@@ -514,7 +519,7 @@ describe('FzpMode rerolls and the representative flag', () => {
       board.getByRole('button', { name: 'Back to the representative future' }).first();
     await expect.element(back()).not.toHaveAttribute('aria-disabled');
 
-    await another().click();
+    anotherKeyed();
     const reroll = s.w().lastOf('reroll')!;
     await expect.element(back()).toHaveAttribute('aria-disabled', 'true');
     (back().element() as HTMLElement).click();
@@ -798,7 +803,7 @@ describe('FzpMode map, layout and lifecycle', () => {
           expect(covered().length).toBeGreaterThanOrEqual(2);
         };
 
-        await another().click();
+        anotherKeyed();
         await check(() => page.getByText('Making another future…').element());
         s.w().emit({
           type: 'error',
@@ -833,7 +838,7 @@ describe('FzpMode map, layout and lifecycle', () => {
       return r.height > 0 && !!top && el.contains(top) && r.top >= d.bottom;
     };
 
-    await another().click();
+    anotherKeyed();
     const busy = () => page.getByText('Making another future…').element();
     await expect.poll(() => onTop(busy())).toBe(true);
     s.w().emit({ type: 'error', rev: s.w().lastOf('reroll')!.rev, code: 'internal', message: 'x' });

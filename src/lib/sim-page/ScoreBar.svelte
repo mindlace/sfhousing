@@ -16,11 +16,6 @@
     /** `null` before the first timeline. */
     score: TimelineScore | null;
     day: Day;
-    /**
-     * The calibration's as-of day (the page's "today"). Part of the interface the brief fixes;
-     * nothing reads it yet.
-     */
-    asOf: Day;
     /** The live region speaks only when this is false. */
     playing: boolean;
     /** The details' contents (FzpMode passes FzpScorePanel). */
@@ -28,7 +23,6 @@
     /** The score is from before the latest levers until their run arrives. */
     busy?: boolean;
   }
-  // eslint-disable-next-line svelte/no-unused-props -- `asOf` is reserved by the interface
   let { score, day, playing, panel, busy = false }: Props = $props();
 
   const uid = $props.id();
@@ -48,6 +42,15 @@
     open = false;
     await tick();
     if (restore) button?.focus();
+  }
+
+  // A press anywhere but the button and the details closes them (the header Menu button too, so
+  // the Menu and the details never show together). A modal dialog opened from them keeps them.
+  function onpointerdown(e: PointerEvent): void {
+    const t = e.target as Node | null;
+    if (!open || !t || button?.contains(t) || details?.contains(t)) return;
+    if (document.querySelector('dialog:modal')) return;
+    open = false;
   }
 
   function onkeydown(e: KeyboardEvent): void {
@@ -74,7 +77,7 @@
   });
 </script>
 
-<svelte:window {onkeydown} />
+<svelte:window {onkeydown} {onpointerdown} />
 
 <button
   bind:this={button}

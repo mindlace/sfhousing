@@ -41,11 +41,13 @@
     void close(!a || a === document.body || !!header?.contains(a));
   }
 
+  // A press anywhere but the Menu button and its panel closes the menu, including on the pinned
+  // item: the pinned score bar's details open in the same place, so the two never show together.
   function onpointerdown(e: PointerEvent): void {
     const t = e.target as Node | null;
-    if (open && t && !header?.contains(t) && !document.querySelector('dialog:modal')) {
-      void close(false);
-    }
+    if (!open || !t || menuButton?.contains(t) || panel?.contains(t)) return;
+    if (document.querySelector('dialog:modal')) return;
+    void close(false);
   }
 
   /** Choosing an item closes the menu: a link, or a button that opens nothing of its own. */
@@ -120,6 +122,6 @@
     <nav aria-label="Modes" class="flex flex-wrap items-center gap-4 text-sm md:hidden">
       {@render modeLinks()}
     </nav>
-    <div class="flex flex-wrap items-center gap-2">{@render actions?.()}</div>
+    <div class="flex items-center gap-2 max-md:flex-wrap">{@render actions?.()}</div>
   </div>
 </header>

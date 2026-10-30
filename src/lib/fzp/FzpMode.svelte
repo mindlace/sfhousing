@@ -692,7 +692,7 @@
 
 {#snippet scoreBar()}
   {#if hasScoreboard && calibration}
-    <ScoreBar {score} {day} {asOf} {playing} busy={scoreBusy} panel={scorePanel} />
+    <ScoreBar {score} {day} {playing} busy={scoreBusy} panel={scorePanel} />
   {/if}
 {/snippet}
 

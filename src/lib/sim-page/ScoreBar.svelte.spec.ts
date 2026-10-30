@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
-import { FIX_ASOF, makeTimelineScore } from '$lib/fzp/fixtures/timeline-score';
+import { makeTimelineScore } from '$lib/fzp/fixtures/timeline-score';
 import { dayFromUtc } from '$lib/fzp/time';
 import type { TimelineScore } from '$lib/sim/protocol';
 import ScoreBar from './ScoreBar.svelte';
@@ -23,7 +23,6 @@ type Over = Partial<{ score: TimelineScore | null; day: number; playing: boolean
 const props = (over: Over = {}) => ({
   score: score1234(),
   day: OCT,
-  asOf: FIX_ASOF,
   playing: false,
   panel,
   ...over

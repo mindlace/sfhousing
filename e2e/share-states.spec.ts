@@ -5,6 +5,7 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   PLAN_KEY,
   gotoEditor,
+  openHeaderMenu,
   oldVersionText,
   ops,
   paintOnce,
@@ -27,8 +28,9 @@ async function waitSaved(page: Page): Promise<void> {
       }, PLAN_KEY)
     )
     .toBe(1);
-  // Attached, not visible: below 768 px the save indicator waits in the closed header Menu.
-  await expect(page.getByRole('banner').getByText('Saved', { exact: true })).toBeAttached();
+  // Below 768 px the save indicator waits in the header Menu.
+  await openHeaderMenu(page);
+  await expect(page.getByRole('banner').getByText('Saved', { exact: true })).toBeVisible();
 }
 
 test('an unknown id is a 404 "Plan not found" page, noindex', async ({ page }) => {

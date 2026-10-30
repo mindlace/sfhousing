@@ -4,6 +4,7 @@ import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import SiteHeader from './SiteHeader.svelte';
+import ScoreBarHeader from './test/ScoreBarHeader.svelte';
 
 describe('SiteHeader', () => {
   it('renders a banner with a home link', async () => {
@@ -192,6 +193,38 @@ describe('SiteHeader', () => {
       await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
       await expect.element(page.getByRole('button', { name: 'Send' })).toBeVisible();
       dlg.close();
+    });
+
+    it('at 375px the Menu and the score details are never open together', async () => {
+      await page.viewport(375, 812);
+      render(ScoreBarHeader);
+      const scoreBar = page.getByRole('button', { name: '1,234 homes added' });
+      const details = page.getByText('Score details here');
+
+      await menu().click();
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
+      await scoreBar.click();
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
+      await expect.element(scoreBar).toHaveAttribute('aria-expanded', 'true');
+      await expect.element(details).toBeVisible();
+      await expect.element(page.getByText('Another future')).not.toBeVisible();
+
+      await menu().click();
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
+      await expect.element(scoreBar).toHaveAttribute('aria-expanded', 'false');
+      await expect.element(details).not.toBeInTheDocument();
+      await expect.element(page.getByRole('button', { name: 'Another future' })).toBeVisible();
+    });
+
+    it('the score details close on a press outside them', async () => {
+      await page.viewport(375, 812);
+      render(ScoreBarHeader);
+      const scoreBar = page.getByRole('button', { name: '1,234 homes added' });
+      await scoreBar.click();
+      await expect.element(page.getByText('Score details here')).toBeVisible();
+      await page.getByTestId('outside').click();
+      await expect.element(scoreBar).toHaveAttribute('aria-expanded', 'false');
+      await expect.element(page.getByText('Score details here')).not.toBeInTheDocument();
     });
 
     it('the Menu button is at least 24x24', async () => {
