@@ -1081,16 +1081,32 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
   }
 
   /**
-   * One brush file per session: fetched (with the scenario retries) and decoded on first use.
-   * Null when the manifest names no usable URL, or the fetch or decode fails (logged).
+   * One brush file per session, fetched and decoded on first use. Null when the manifest names
+   * no usable URL, the server answers 4xx, the fetch fails or the file is bad (each logged). Only
+   * a transient failure (network, 5xx or body read, after the retries) is not cached, so the next
+   * request needing the file fetches it again. A session that ends during a retry delay never
+   * settles its promise; its waiters were answered by `end()`, and its cache goes with it.
    */
   function brushFile<K extends BrushFile>(st: Session, file: K): Promise<BrushFiles[K] | null> {
-    const b = st.brush!;
-    const memo = b.files as Record<BrushFile, Promise<unknown> | undefined>;
-    return (memo[file] ??= fetchBrushFile(st, file)) as Promise<BrushFiles[K] | null>;
+    const memo = st.brush!.files as Record<BrushFile, Promise<unknown> | undefined>;
+    const hit = memo[file];
+    if (hit) return hit as Promise<BrushFiles[K] | null>;
+    const p: Promise<unknown> = fetchBrushFile(st, file).then((r) => {
+      if (r.transient && memo[file] === p) delete memo[file];
+      return r.value;
+    });
+    memo[file] = p;
+    return p as Promise<BrushFiles[K] | null>;
   }
 
-  async function fetchBrushFile(st: Session, file: BrushFile): Promise<unknown> {
+  /** A 4xx on an optional brush file is permanent (absent from this version); 5xx retries. */
+  const brushPermanent = (status: number) => status >= 400 && status < 500;
+
+  async function fetchBrushFile(
+    st: Session,
+    file: BrushFile
+  ): Promise<{ value: unknown; transient: boolean }> {
+    const done = (value: unknown, transient = false) => ({ value, transient });
     const m = st.manifest;
     const url =
       file === 'frontage'
@@ -1098,7 +1114,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         : datasetUrl(m, file === 'transit' ? m.transit : m.neighborhoods);
     if (url === null) {
       warn(`brushes: dataset ${st.version} has no ${file} file`);
-      return null;
+      return done(null);
     }
     const loadDeps = {
       setTimeout: (fn: () => void, ms: number) => st.token.later(fn, ms),
@@ -1114,30 +1130,32 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
                 .fetchBytes(url)
                 .then((x) => ({ ok: x.ok, status: x.status, read: () => x.arrayBuffer() })),
             loadDeps,
-            stop
+            stop,
+            brushPermanent
           )
         : await fetchWithRetry(
             url,
             () =>
               deps.fetch(url).then((x) => ({ ok: x.ok, status: x.status, read: () => x.json() })),
             loadDeps,
-            stop
+            stop,
+            brushPermanent
           );
-    if (r.kind === 'stopped') return null;
+    if (r.kind === 'stopped') return done(null);
     if (r.kind === 'failed') {
       warn(`brushes: ${r.message}`);
-      return null;
+      return done(null, !r.permanent);
     }
     try {
       if (file === 'frontage') {
         const decode = deps.decodeFrontage ?? readFrontage;
-        return await decode(new Uint8Array(r.value as ArrayBuffer), st.loaded!.fzp.parcels);
+        return done(await decode(new Uint8Array(r.value as ArrayBuffer), st.loaded!.fzp.parcels));
       }
-      if (file === 'transit') return decodeTransit(r.value);
-      return parseNeighborhoods(r.value);
+      if (file === 'transit') return done(decodeTransit(r.value));
+      return done(parseNeighborhoods(r.value));
     } catch (e) {
       warn(`brushes: ${file} is invalid: ${e instanceof Error ? e.message : String(e)}`);
-      return null;
+      return done(null); // a bad file is permanent for this dataset version
     }
   }
 

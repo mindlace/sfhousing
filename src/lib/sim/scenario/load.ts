@@ -168,21 +168,26 @@ export interface Opened<T> {
   status: number;
   read(): Promise<T>;
 }
+/** `permanent`: the failure was a status `permanent` accepted, so it was not retried. */
 export type FetchResult<T> =
-  { kind: 'ok'; value: T } | { kind: 'failed'; message: string } | { kind: 'stopped' };
+  | { kind: 'ok'; value: T }
+  | { kind: 'failed'; message: string; permanent: boolean }
+  | { kind: 'stopped' };
 
 /**
  * §4.2 step 4: one file with retries. An attempt fails when the request rejects, when `ok` is
  * false, or when the body read rejects (a body read is part of the fetch, so it is retried).
  * Attempt k + 1 waits `retryDelaysMs[k]`; after the last, the message names the last attempt's
  * status, or `(network)` when it had no usable response. `stop()` is checked after every await:
- * a stopped fetch makes no further request and schedules nothing.
+ * a stopped fetch makes no further request and schedules nothing. A status for which
+ * `permanent(status)` is true fails at once, unretried (default: none, every status retries).
  */
 export async function fetchWithRetry<T>(
   url: string,
   open: () => Promise<Opened<T>>,
   deps: Pick<LoadDeps, 'setTimeout' | 'retryDelaysMs'>,
-  stop: () => boolean
+  stop: () => boolean,
+  permanent: (status: number) => boolean = () => false
 ): Promise<FetchResult<T>> {
   for (let k = 0; ; k++) {
     let status: number | null;
@@ -194,13 +199,20 @@ export async function fetchWithRetry<T>(
         return stop() ? { kind: 'stopped' } : { kind: 'ok', value };
       }
       status = res.status;
+      if (permanent(status)) {
+        return {
+          kind: 'failed',
+          message: `fetch failed: ${url} (HTTP ${status})`,
+          permanent: true
+        };
+      }
     } catch {
       status = null; // no response, or the body read failed
     }
     if (stop()) return { kind: 'stopped' };
     if (k >= deps.retryDelaysMs.length) {
       const why = status === null ? '(network)' : `(HTTP ${status})`;
-      return { kind: 'failed', message: `scenario fetch failed: ${url} ${why}` };
+      return { kind: 'failed', message: `scenario fetch failed: ${url} ${why}`, permanent: false };
     }
     await new Promise<void>((resolve) => deps.setTimeout(resolve, deps.retryDelaysMs[k]));
     if (stop()) return { kind: 'stopped' };

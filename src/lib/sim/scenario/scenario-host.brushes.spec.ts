@@ -138,7 +138,7 @@ describe('resolveBrush', () => {
   });
 
   it('a street query without frontage is data-missing; one frontage request for two queries', async () => {
-    const h = harness({ bodies: { [MINI_FRONTAGE_URL]: undefined }, retryDelaysMs: [] });
+    const h = harness({ bodies: { [MINI_FRONTAGE_URL]: undefined } }); // a 404, default delays
     initLevers(h);
     const q = { kind: 'street', classes: ['arterial'], names: [], depth: 0, ncOnly: false };
     const a = resolve(h, q);
@@ -154,6 +154,74 @@ describe('resolveBrush', () => {
     const c = resolve(h, FREEHAND);
     await h.flush();
     expect(only(h, c).ok).toBe(true);
+  });
+
+  it.each([400, 404, 410])(
+    'a %i is permanent: data-missing after one request, with the default retry delays',
+    async (status) => {
+      const h = harness();
+      initLevers(h);
+      await h.flush();
+      h.fail(MINI_FRONTAGE_URL, 1, { status });
+      const q = { kind: 'street', classes: ['arterial'], names: [], depth: 0, ncOnly: false };
+      const a = resolve(h, q);
+      await h.flush(); // no retry timer: answered without advancing the clock
+      expect(only(h, a)).toMatchObject({ ok: false, reason: 'data-missing' });
+      const b = resolve(h, q);
+      await h.flush();
+      expect(only(h, b)).toMatchObject({ ok: false, reason: 'data-missing' });
+      expect(h.fetchesOf(MINI_FRONTAGE_URL)).toHaveLength(1);
+    }
+  );
+
+  it.each([
+    ['a network error', 'reject' as const],
+    ['a 503', { status: 503 }],
+    ['a failed body read', 'body' as const]
+  ])('%s is transient: the next identical query fetches again', async (_, how) => {
+    const h = harness({ retryDelaysMs: [] });
+    initLevers(h);
+    await h.flush();
+    h.fail(MINI_FRONTAGE_URL, 1, how);
+    const q = { kind: 'street', classes: ['arterial'], names: [], depth: 0, ncOnly: false };
+    const a = resolve(h, q);
+    await h.flush();
+    expect(only(h, a)).toMatchObject({ ok: false, reason: 'data-missing' });
+    const b = resolve(h, q);
+    await h.flush();
+    expect(lotsOf(only(h, b))).toEqual(MINI_ST_LOTS);
+    expect(h.fetchesOf(MINI_FRONTAGE_URL)).toHaveLength(2);
+    // once loaded it stays cached
+    const c = resolve(h, q);
+    await h.flush();
+    expect(only(h, c).ok).toBe(true);
+    expect(h.fetchesOf(MINI_FRONTAGE_URL)).toHaveLength(2);
+  });
+
+  it('a 5xx is retried with the session delays before data-missing', async () => {
+    const h = harness();
+    initLevers(h);
+    await h.flush();
+    h.fail(MINI_FRONTAGE_URL, 4, { status: 500 });
+    const q = { kind: 'street', classes: ['arterial'], names: [], depth: 0, ncOnly: false };
+    const a = resolve(h, q);
+    await h.flush();
+    expect(lotsPosts(h, a)).toEqual([]);
+    await h.advance(21_000);
+    expect(only(h, a)).toMatchObject({ ok: false, reason: 'data-missing' });
+    expect(h.fetchesOf(MINI_FRONTAGE_URL)).toHaveLength(4);
+  });
+
+  it('a bad file is cached: data-missing without another request', async () => {
+    const h = harness({ bodies: { [MINI_TRANSIT_URL]: { format: 'nope' } } });
+    initLevers(h);
+    const q = { kind: 'transit', stopTypes: ['metro'], maxM: 100 };
+    const a = resolve(h, q);
+    await h.flush();
+    const b = resolve(h, q);
+    await h.flush();
+    for (const id of [a, b]) expect(only(h, id)).toMatchObject({ reason: 'data-missing' });
+    expect(h.fetchesOf(MINI_TRANSIT_URL)).toHaveLength(1);
   });
 
   it('a manifest without the file is data-missing, with no request', async () => {
@@ -291,7 +359,7 @@ describe('brushCatalog', () => {
   });
 
   it('a missing file is has false', async () => {
-    const h = harness({ bodies: { [MINI_NEIGHBORHOODS_URL]: undefined }, retryDelaysMs: [] });
+    const h = harness({ bodies: { [MINI_NEIGHBORHOODS_URL]: undefined } }); // a 404
     initLevers(h);
     const id = catalog(h);
     await h.flush();
