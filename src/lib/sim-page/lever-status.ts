@@ -1,7 +1,8 @@
 // Lever status rules for /sim (pure). A lever message is kept when its rev is at or after the
 // latest setLevers/initScenario rev sent. The timeline barrier is never consulted, so a reroll
 // does not make lever messages stale.
-import type { LeverCapacity, LeverLookups } from '$lib/sim/levers/types';
+import type { LeverLookups } from '$lib/sim/levers/apply';
+import type { LeverCapacity } from '$lib/sim/levers/resolve';
 import type { LeversResponse } from '$lib/sim/scenario/types';
 
 export type LeverStatus =
