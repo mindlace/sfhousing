@@ -3,7 +3,6 @@
   never requests anything itself; FzpMode owns the requests. All text comes from card.ts.
 -->
 <script lang="ts">
-  import type { Calibration } from '$lib/timelapse/types';
   import type { Day } from '$lib/timelapse/time';
   import {
     CHANCE_EXPLANATION,
@@ -20,6 +19,7 @@
     sourceLinks,
     statusText,
     timelineRows,
+    type CardCalibration,
     type CardChance
   } from './card';
   import { PATHWAY_LABEL, TIER_LABEL } from './labels';
@@ -29,7 +29,8 @@
     state: SummaryState;
     day: Day;
     asOf: Day;
-    calibration: Calibration;
+    /** The provenance behind the chance, by `card.lookups`; on /fzp both are the base. */
+    calibration: CardCalibration;
     chance: CardChance;
     onclose: () => void;
     /** A dialog section id from `chanceProvenance` (the "How is this estimated?" list). */
@@ -50,7 +51,7 @@
   });
   const estimate = $derived(
     card && status && status.kind === 'inStage' && status.chance !== null
-      ? chanceProvenance(calibration, card, status.stage)
+      ? chanceProvenance(calibration[card.lookups], card, status.stage)
       : null
   );
   const rows = $derived(card ? timelineRows(card, day, asOf, marked) : []);

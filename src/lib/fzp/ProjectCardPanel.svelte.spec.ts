@@ -44,7 +44,7 @@ async function setup(state: SummaryState, over: Partial<Props> = {}) {
     state,
     day: FIX_ASOF,
     asOf: FIX_ASOF,
-    calibration: cal,
+    calibration: { inFlight: cal, fresh: cal },
     chance: { inFlight: chance, fresh: chance },
     onclose,
     onsource,
@@ -288,10 +288,28 @@ describe('chance of finishing', () => {
     const plain = await setup(project(REAL_ACTUAL), { day: entitledDay });
     expect(document.body.textContent).not.toContain('research estimates');
     await plain.view.unmount();
-    await setup(project(REAL_ACTUAL), { day: entitledDay, calibration: tier3Calibration() });
+    await setup(project(REAL_ACTUAL), {
+      day: entitledDay,
+      calibration: { inFlight: tier3Calibration(), fresh: cal }
+    });
     await expect
       .element(text('This is partly based on research estimates, not San Francisco records.'))
       .toBeVisible();
+  });
+
+  it('a fresh card lists the new-project calibration provenance, an in-flight one the base', async () => {
+    const day = stageDay(SIMULATED, 'entitled') + 10;
+    const fresh = await setup(project(SIMULATED), {
+      day,
+      calibration: { inFlight: cal, fresh: tier3Calibration() }
+    });
+    await expect.element(text(/partly based on research estimates/)).toBeVisible();
+    await fresh.view.unmount();
+    await setup(project(SIMULATED), {
+      day,
+      calibration: { inFlight: tier3Calibration(), fresh: cal }
+    });
+    expect(document.body.textContent).not.toContain('research estimates');
   });
 
   it('is research-based for a pre-application card under the fixture calibration', async () => {

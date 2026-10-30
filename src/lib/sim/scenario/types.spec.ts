@@ -45,6 +45,7 @@ interface RowSchedule {
     of: number;
     start: 'scheduled' | 'estimated';
   } | null;
+  afterSwitch?: boolean;
 }
 type RowSimInput = {
   parcels: ScenarioParcels;

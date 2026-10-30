@@ -18,6 +18,9 @@ export type ChanceTable = ReturnType<typeof chanceTable>;
 /** The chance tables a card reads, by `ProjectCard.lookups`. On /fzp both are the base table. */
 export type CardChance = { inFlight: ChanceTable; fresh: ChanceTable };
 
+/** The calibrations behind a card's chance, by `ProjectCard.lookups` (its provenance). */
+export type CardCalibration = { inFlight: Calibration; fresh: Calibration };
+
 export const SIMULATED_DISCLAIMER =
   "Not a real proposal. In this simulated future a project starts on this parcel. The parcel was picked by chance, weighted by how often parcels like it have been redeveloped. It says nothing about the owner's plans.";
 

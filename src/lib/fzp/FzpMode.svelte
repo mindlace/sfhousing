@@ -613,7 +613,7 @@
       state={cardState}
       {day}
       {asOf}
-      {calibration}
+      calibration={{ inFlight: calibration, fresh: calibration }}
       chance={{ inFlight: lookups.chance, fresh: lookups.chance }}
       onclose={closeCard}
       onsource={(id) => dialog?.open(id)}

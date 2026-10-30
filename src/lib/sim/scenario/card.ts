@@ -208,11 +208,14 @@ export function projectCard(s: Schedule, day: Day, ctx: CardCtx): ProjectCard {
     quality.push({ label: rule.label, tier: rule.tier, valueTier: rule.valueTier });
   }
 
+  // the Local Program column of the view the engine ran it on (`afterSwitch`, ruling 1)
+  const view =
+    s.afterSwitch && ctx.input.lawSwitch ? ctx.input.lawSwitch.parcels : ctx.input.parcels;
   let localProgram = false;
   if (!pipeline)
     for (const id of s.parcelIds) {
-      const i = ctx.input.parcels.index.get(id);
-      if (i !== undefined && ctx.input.parcels.localProgram[i] === 1) localProgram = true;
+      const i = view.index.get(id);
+      if (i !== undefined && view.localProgram[i] === 1) localProgram = true;
     }
 
   // the engine's calibration for it: newProjects for a simulated project and a row not yet

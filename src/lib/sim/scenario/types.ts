@@ -40,6 +40,10 @@ export interface Schedule {
     of: number;
     start: 'scheduled' | 'estimated'; // scheduled = its permitFiled is the published plan date; estimated = the phaseGap stagger
   } | null; // a phase sub-project of a multi-phase master
+  // A simulated project on a run with `lawSwitch`: true when its initiation month started on or
+  // after the switch, so it ran on the after view (size row, yields, envelope, Local Program).
+  // Absent on every other Schedule, including all of a run without a switch.
+  afterSwitch?: boolean;
 }
 export type SimInput = {
   parcels: ScenarioParcels; // decoded T11
