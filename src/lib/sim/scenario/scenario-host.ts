@@ -238,7 +238,7 @@ interface PendingLevers {
   state: {
     resolution: Resolution;
     recompute: YieldRecompute;
-    cells: Set<string>; // cells of the needs whose record was missing at the start
+    cells: Set<string>; // cells of the needs not loaded at the start
   } | null;
   failed: string[]; // the needed cells that failed to load, as last posted
   stalled: boolean; // every remaining need waits on a chunk: idle until one arrives
@@ -725,10 +725,14 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       const recompute = createYieldRecompute(
         base.parcels,
         allNeeds(resolution),
-        { record: (id) => w.chunks.records.get(id), now: () => deps.now() },
+        {
+          record: (id) => w.chunks.records.get(id),
+          cellLoaded: (cellId) => w.chunks.byCell.has(cellId),
+          now: () => deps.now()
+        },
         lw.gross
       );
-      const cells = new Set(recompute.cellsNeeded()); // once per revision: it scans every need
+      const cells = new Set(recompute.cellsNeeded()); // once per revision
       p.state = { resolution, recompute, cells };
       if (recompute.total === 0) return;
       p.failed = w.chunks.failed.filter((c) => cells.has(c));
@@ -744,6 +748,11 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       else postResolving(p);
       return;
     }
+    for (const id of r.missing)
+      logOnce(
+        `lever-missing:${id}`,
+        `lever recompute: no record for lot ${id} in its loaded cell; its yield is 0`
+      );
     const filled = fillNeeds(p.state.resolution, r.result());
     const li = applyLevers(lw.base.fzp, lw.ctx, p.levers, filled, w.horizon);
     lw.pending = null;

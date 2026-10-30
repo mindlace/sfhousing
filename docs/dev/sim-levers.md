@@ -131,6 +131,29 @@ Every value is below 0.01.
 exception"). No lever or op is added; no exit column is editable. Re-measure if a future
 calibration changes the disapproved columns.
 
+## Performance
+
+The touched-lot recompute (`src/lib/sim/levers/recompute.ts`) buckets its needs by cell. `step`
+skips a whole bucket while its cell is not loaded (`cellLoaded`), so each need's record is read
+once, not once per need per slice. A need whose cell is loaded but whose record is absent gets a
+zero row (yield 0 at every fill level, not hostable) and is listed in `missing`; the host warns
+once per lot (Call 19) and the revision still reaches `current`.
+
+Measured with `npx tsx scripts/bench-levers.ts <datasetDir>` on dataset `2026-10-29-0fd62c4d`
+(2026-10-30, Apple M5 Pro, 15 cores, 24 GB, Node v24.2.0). One cold `step(Infinity)` per brush
+with a fresh gross cache; "scenarioYield" replays every gross the recompute cached, and
+"bookkeeping" is the rest of the recompute. "Resolve" is `createLotIndex` + `resolveBrushRows`.
+
+| Brush                                                    | Lots   | Resolve ms | resolveEnvelopes ms | Needs (unique) | Cells | Chunk bytes | Recompute ms | scenarioYield ms | Bookkeeping ms | Gross computed | Missing | fillNeeds + applyLevers ms |
+| -------------------------------------------------------- | ------ | ---------- | ------------------- | -------------- | ----- | ----------- | ------------ | ---------------- | -------------- | -------------- | ------- | -------------------------- |
+| (a) every `RH-1` family lot, raise to 4, limits off      | 72,992 | 24         | 40                  | 49,196         | 80    | 15.7 MB     | 3,463        | 3,268            | 196            | 161,791        | 0       | 31                         |
+| (b) arterial frontage depth 1, set to 8 (limits on)      | 13,472 | 16         | 18                  | 14,104         | 90    | 15.8 MB     | 2,256        | 2,196            | 60             | 61,815         | 0       | 7                          |
+| (c) `regionalRail` within 805 m, raise to 8 (limits off) | 23,639 | 18         | 25                  | 21,190         | 44    | 7.3 MB      | 3,245        | 3,209            | 36             | 105,890        | 0       | 8                          |
+
+The gate (Call 20) was 20,000 ms for brush (a): it passes at 3,463 ms, so no per-lot yield-table
+fallback is needed. `scenarioYield` is about 95% of the cost; the page sees it spread over
+scheduler slices, plus the chunk fetches (up to 90 cells, about 16 MB).
+
 ## The builder's calls
 
 Rulings 1 to 3 of the plan, each with its reason.
@@ -147,5 +170,5 @@ Rulings 1 to 3 of the plan, each with its reason.
 - **Plan 3, project cards.** Cards read `localProgram` from the before-switch view (`card.ts:195`). Where the before and after views differ, a post-switch project card can show a stale Local Program flag.
 - **Plan 3, in-flight card chances under `'all'` timers.** `lookups.inFlight.chance` is the rescaled table, but the engine conditions an in-flight row in a rescaled stage on `inFlightMonths(m, s)` = `round(m * s)` months (see "In-flight remaining-time rule"). A card for an in-flight project must look up the chance at `inFlightMonths(m, s)` months, not `m`, or it shows the chance for a project `m / s` months old.
 - **Plan 4, timeline UI.** Stacked timer edits are clamped to [0.05, 10] (`scaleTable`). The UI must show a clamped stacked edit as clamped, not silently limit it.
-- **Performance.** The recompute rescans all pending needs per slice, which is O(n^2/k) for a citywide brush (n needs, k per slice). Weigh it against the spec's "fallback table if too slow" before shipping brushes.
+- **Performance.** Measured on real records in plan 3: see "Performance".
 - **Carried from plan 1** (spec, "Carried from plan 1"): the commercial-corridor brush counts NC and NCT districts but not CRNC (241 parcels), and the partner decides whether CRNC counts. "Follow a street" needs street segment geometry (`frontage.bin` holds lot-to-street matches only).
