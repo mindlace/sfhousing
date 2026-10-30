@@ -19,6 +19,8 @@ export class PolicyStore {
   #past = $state.raw<Entry[]>([]);
   /** Each entry is the policy after an undone change, with that change's label. */
   #future = $state.raw<Entry[]>([]);
+  /** The coalesce key of the latest history entry; cleared by undo and redo. */
+  #coalesceKey: string | undefined = undefined;
 
   constructor(initial: SimPolicy) {
     this.#policy = $state.raw(initial);
@@ -47,11 +49,21 @@ export class PolicyStore {
     return this.#future.at(-1)?.label ?? null;
   }
 
-  /** Records a change named `label` (for "Undo: …"); clears redo. No-op if nothing changed. */
-  apply(change: (p: SimPolicy) => SimPolicy, label: string): void {
+  /**
+   * Records a change named `label` (for "Undo: …"); clears redo. No-op if nothing changed. A
+   * change with the same `coalesce` key as the latest one, with no undo or redo between, merges
+   * into that entry: one undo reverses both, and the entry takes the newer label.
+   */
+  apply(change: (p: SimPolicy) => SimPolicy, label: string, coalesce?: string): void {
     const next = change(this.#policy);
     if (next === this.#policy) return;
-    this.#past = [...this.#past, { policy: this.#policy, label }];
+    if (coalesce !== undefined && coalesce === this.#coalesceKey && this.#past.length > 0) {
+      const last = this.#past.at(-1)!;
+      this.#past = [...this.#past.slice(0, -1), { policy: last.policy, label }];
+    } else {
+      this.#past = [...this.#past, { policy: this.#policy, label }];
+    }
+    this.#coalesceKey = coalesce;
     this.#future = [];
     this.#policy = next;
   }
@@ -60,6 +72,7 @@ export class PolicyStore {
   undo(): string | null {
     const last = this.#past.at(-1);
     if (!last) return null;
+    this.#coalesceKey = undefined;
     this.#past = this.#past.slice(0, -1);
     this.#future = [...this.#future, { policy: this.#policy, label: last.label }];
     this.#policy = last.policy;
@@ -70,6 +83,7 @@ export class PolicyStore {
   redo(): string | null {
     const next = this.#future.at(-1);
     if (!next) return null;
+    this.#coalesceKey = undefined;
     this.#future = this.#future.slice(0, -1);
     this.#past = [...this.#past, { policy: this.#policy, label: next.label }];
     this.#policy = next.policy;

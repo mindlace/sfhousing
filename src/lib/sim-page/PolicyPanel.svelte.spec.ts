@@ -83,6 +83,14 @@ describe('PolicyPanel', () => {
       .not.toBeInTheDocument();
   });
 
+  it('"Permitting timelines" starts collapsed and its button shows the summary', async () => {
+    await page.viewport(1024, 700);
+    await setup();
+    const button = page.getByRole('button', { name: /Permitting timelines/ });
+    await expect.element(button).toHaveAttribute('aria-expanded', 'false');
+    await expect.element(button).toHaveTextContent('SF as observed');
+  });
+
   it('docked: opening focuses the panel, and Escape there closes it', async () => {
     await page.viewport(1024, 700);
     const { onclose } = await setup();

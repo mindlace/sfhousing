@@ -24,5 +24,9 @@
     onclose={() => {}}
     onsource={() => {}}
   />
-  <PolicyPanel {store} {open} {onclose} />
+  <PolicyPanel {store} {open} {onclose} timingSummary="SF as observed">
+    {#snippet timing()}
+      <p>Timing body</p>
+    {/snippet}
+  </PolicyPanel>
 </div>
