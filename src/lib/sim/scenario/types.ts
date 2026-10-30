@@ -141,6 +141,9 @@ export type ProjectCard = {
   multiPhase: boolean;
   phase: Schedule['phase'];
   localProgram: boolean; // the project's parcel is a Local Program parcel and the project is simulated
+  lookups: 'inFlight' | 'fresh'; // the chance table of the calibration it runs on: fresh for a simulated project and a pipeline row at preApplication at asOf (newProjects), else inFlight
+  /** Months to add to the real months in `stage` before reading `chance` (in-flight rescale). */
+  chanceShift: { stage: Stage; months: number } | null; // non-null only for the stage the engine conditions in flight with a scale x ≠ 1: inFlightMonths(m, x) - m, m = months in it at asOf
   stages: { stage: Stage; day: Day; actual: boolean }[]; // only stages entered <= day
   revisions: Schedule['revisions']; // only those <= day
   end: Schedule['end'] | null; // null if the end is after day

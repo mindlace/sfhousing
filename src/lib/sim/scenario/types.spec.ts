@@ -72,6 +72,8 @@ type RowProjectCard = {
   multiPhase: boolean;
   phase: RowSchedule['phase'];
   localProgram: boolean;
+  lookups: 'inFlight' | 'fresh';
+  chanceShift: { stage: Stage; months: number } | null;
   stages: { stage: Stage; day: Day; actual: boolean }[];
   revisions: RowSchedule['revisions'];
   end: RowSchedule['end'] | null;

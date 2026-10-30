@@ -4,8 +4,9 @@ import type { ParcelId } from '$lib/data/parcel';
 import { massedUnits, massingApproximate, unitsTolerance } from '$lib/generator';
 import type { GeneratedBuilding } from '$lib/generator';
 import type { InFlightProject, QualityRuleRef } from '$lib/timelapse/projects';
-import { DYING_DAYS, type Day } from '$lib/timelapse/time';
+import { DYING_DAYS, monthsIn, type Day } from '$lib/timelapse/time';
 import { STAGE_ORDER, type Stage } from '$lib/timelapse/types';
+import { inFlightMonths } from './engine';
 import { districtOptsFor } from './massing';
 import type { Master } from './simulate';
 import type { Massing, ProjectCard, Schedule, SimInput } from './types';
@@ -26,6 +27,7 @@ export interface CardCtx {
 }
 
 const PLANNING_SIDE: readonly Stage[] = ['preApplication', 'filed', 'entitled'];
+const UNENTITLED: readonly Stage[] = ['preApplication', 'filed'];
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /** `Block <B>, Lot <L>`: B is the first 4 characters plus a following letter, L is the rest. */
@@ -113,6 +115,24 @@ function stagesOf(
 }
 
 /**
+ * The chance lookup the engine's in-flight conditioning implies (in-flight rescale): `row`'s
+ * current stage at asOf, stepped in flight with scale x ≠ 1, is conditioned on
+ * `inFlightMonths(m, x)` months, so the card reads the chance that many months in. A master
+ * (`master`) is conditioned only before entitlement, always on the in-flight scale.
+ */
+function shiftOf(row: InFlightProject, ctx: CardCtx, master: boolean): ProjectCard['chanceShift'] {
+  const stage = row.stage;
+  if (master && (row.history.entitled !== undefined || !UNENTITLED.includes(stage))) return null;
+  const isNew = !master && stage === 'preApplication';
+  const scale = isNew ? ctx.input.newProjects?.scale : ctx.input.inFlightScale;
+  const x = (scale?.[row.pathway] as Partial<Record<Stage, number>> | undefined)?.[stage] ?? 1;
+  if (x === 1) return null;
+  const e = Math.min(row.history[stage] ?? ctx.asOf, ctx.asOf);
+  const m = monthsIn(e, ctx.asOf);
+  return { stage, months: inFlightMonths(m, x) - m };
+}
+
+/**
  * The card of `s` at `day` (§4.9). Call only for a schedule `chooseProject` returned. A phase
  * takes its master row's label, sources and quality, and its stages start with the master's
  * Planning-side stages. `end` is null while the end is after `day` (an open end never is).
@@ -195,6 +215,12 @@ export function projectCard(s: Schedule, day: Day, ctx: CardCtx): ProjectCard {
       if (i !== undefined && ctx.input.parcels.localProgram[i] === 1) localProgram = true;
     }
 
+  // the engine's calibration for it: newProjects for a simulated project and a row not yet
+  // filed at asOf (pipelineRow's isNew); a master and its phases always run on `calibration`
+  const lookups: ProjectCard['lookups'] =
+    !pipeline || (s.phase === null && row?.stage === 'preApplication') ? 'fresh' : 'inFlight';
+  const chanceShift = pipeline && row !== null ? shiftOf(row, ctx, s.phase !== null) : null;
+
   return {
     projectId: s.projectId,
     origin: s.origin,
@@ -208,6 +234,8 @@ export function projectCard(s: Schedule, day: Day, ctx: CardCtx): ProjectCard {
     multiPhase: s.multiPhase,
     phase: s.phase,
     localProgram,
+    lookups,
+    chanceShift,
     stages,
     revisions: s.revisions.filter((r) => r.day <= day).map((r) => ({ ...r })),
     end: s.end.kind !== 'open' && s.end.day <= day ? { ...s.end } : null,

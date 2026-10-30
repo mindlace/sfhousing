@@ -45,7 +45,7 @@ async function setup(state: SummaryState, over: Partial<Props> = {}) {
     day: FIX_ASOF,
     asOf: FIX_ASOF,
     calibration: cal,
-    chance,
+    chance: { inFlight: chance, fresh: chance },
     onclose,
     onsource,
     ...over
@@ -250,7 +250,7 @@ describe('chance of finishing', () => {
     expect(p).toBeGreaterThan(0);
     await expect.element(text(`Chance of finishing from here: ${formatChance(p)}`)).toBeVisible();
     await expect.element(text(CHANCE_EXPLANATION)).toBeVisible();
-    expect(cardStatus(REAL_ACTUAL, day, chance)?.chance).toBe(p);
+    expect(cardStatus(REAL_ACTUAL, day, { inFlight: chance, fresh: chance })?.chance).toBe(p);
   });
 
   it('shows no chance once complete or stopped', async () => {

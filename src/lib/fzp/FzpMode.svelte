@@ -614,7 +614,7 @@
       {day}
       {asOf}
       {calibration}
-      chance={lookups.chance}
+      chance={{ inFlight: lookups.chance, fresh: lookups.chance }}
       onclose={closeCard}
       onsource={(id) => dialog?.open(id)}
     />

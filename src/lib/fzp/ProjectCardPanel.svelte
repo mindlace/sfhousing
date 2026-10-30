@@ -20,7 +20,7 @@
     sourceLinks,
     statusText,
     timelineRows,
-    type ChanceTable
+    type CardChance
   } from './card';
   import { PATHWAY_LABEL, TIER_LABEL } from './labels';
   import { SUMMARY_COPY, type SummaryState } from './summary-request';
@@ -30,7 +30,7 @@
     day: Day;
     asOf: Day;
     calibration: Calibration;
-    chance: ChanceTable;
+    chance: CardChance;
     onclose: () => void;
     /** A dialog section id from `chanceProvenance` (the "How is this estimated?" list). */
     onsource: (sectionId: string) => void;

@@ -20,6 +20,7 @@ import {
   storiesText,
   timelineRows,
   transitionSectionId,
+  type CardChance,
   type ChanceTable
 } from './card';
 import {
@@ -50,6 +51,15 @@ const LATE = HORIZON;
 
 const cal = fixtureCalibration();
 const chance = chanceTable(cal);
+const both: CardChance = { inFlight: chance, fresh: chance };
+/** `t` with every entry halved: a second table to tell the two lookups apart. */
+const halved = (t: ChanceTable): ChanceTable =>
+  Object.fromEntries(
+    Object.entries(t).map(([p, stages]) => [
+      p,
+      Object.fromEntries(Object.entries(stages).map(([s, xs]) => [s, xs?.map((x) => x / 2)]))
+    ])
+  ) as ChanceTable;
 
 const stageDay = (card: { stages: { stage: Stage; day: number }[] }, stage: Stage) => {
   const found = card.stages.find((s) => s.stage === stage);
@@ -64,7 +74,7 @@ describe('cardStatus', () => {
     it('reports the entered stage on its entry day and the next stage from its start', () => {
       for (let i = 0; i < card.stages.length; i++) {
         const cur = card.stages[i];
-        const here = cardStatus(card, cur.day, chance);
+        const here = cardStatus(card, cur.day, both);
         expect(here).toMatchObject({
           kind: 'inStage',
           stage: cur.stage,
@@ -74,10 +84,10 @@ describe('cardStatus', () => {
         const next = card.stages[i + 1];
         if (!next) continue;
         const mid = cur.day + Math.floor((next.day - cur.day) / 2);
-        const midStatus = cardStatus(card, mid, chance);
+        const midStatus = cardStatus(card, mid, both);
         expect(midStatus?.stage).toBe(cur.stage);
         expect(midStatus?.monthsInStage).toBe(monthsIn(cur.day, mid));
-        const after = cardStatus(card, next.day + 1, chance);
+        const after = cardStatus(card, next.day + 1, both);
         expect(after).toMatchObject({ kind: 'inStage', stage: next.stage });
         expect(after?.monthsInStage).toBe(monthsIn(next.day, next.day + 1));
       }
@@ -85,31 +95,31 @@ describe('cardStatus', () => {
   });
 
   it('is null before the first stage', () => {
-    expect(cardStatus(SIMULATED, SIMULATED.stages[0].day - 1, chance)).toBeNull();
-    expect(cardStatus(REAL_ACTUAL, REAL_ACTUAL.stages[0].day - 400, chance)).toBeNull();
-    expect(cardStatus({ ...SIMULATED, stages: [] }, FIX_ASOF, chance)).toBeNull();
+    expect(cardStatus(SIMULATED, SIMULATED.stages[0].day - 1, both)).toBeNull();
+    expect(cardStatus(REAL_ACTUAL, REAL_ACTUAL.stages[0].day - 400, both)).toBeNull();
+    expect(cardStatus({ ...SIMULATED, stages: [] }, FIX_ASOF, both)).toBeNull();
   });
 
   it('turns exited after end.day and not before', () => {
     const end = EXITED.end;
     if (end?.kind !== 'exit') throw new Error('EXITED must end in an exit');
-    expect(cardStatus(EXITED, end.day - 1, chance)).toMatchObject({
+    expect(cardStatus(EXITED, end.day - 1, both)).toMatchObject({
       kind: 'inStage',
       stage: 'filed'
     });
-    const exited = cardStatus(EXITED, end.day, chance);
+    const exited = cardStatus(EXITED, end.day, both);
     expect(exited).toMatchObject({ kind: 'exited', stage: 'filed', chance: null });
-    expect(cardStatus(EXITED, end.day + 900, chance)?.kind).toBe('exited');
+    expect(cardStatus(EXITED, end.day + 900, both)?.kind).toBe('exited');
   });
 
   it('turns complete at end.day', () => {
     const end = REAL_ACTUAL.end;
     if (end?.kind !== 'complete') throw new Error('REAL_ACTUAL must complete');
-    expect(cardStatus(REAL_ACTUAL, end.day - 1, chance)).toMatchObject({
+    expect(cardStatus(REAL_ACTUAL, end.day - 1, both)).toMatchObject({
       kind: 'inStage',
       stage: 'construction'
     });
-    expect(cardStatus(REAL_ACTUAL, end.day, chance)).toMatchObject({
+    expect(cardStatus(REAL_ACTUAL, end.day, both)).toMatchObject({
       kind: 'complete',
       stage: 'complete',
       chance: null
@@ -118,14 +128,14 @@ describe('cardStatus', () => {
 
   it('takes units and stories from the last revision on or before the day', () => {
     const resize = REVISED.revisions[1].day;
-    expect(cardStatus(REVISED, resize - 1, chance)).toMatchObject({ units: 24, stories: 6 });
-    expect(cardStatus(REVISED, resize, chance)).toMatchObject({ units: 30, stories: 8 });
-    expect(cardStatus(REVISED, resize + 400, chance)).toMatchObject({ units: 30, stories: 8 });
+    expect(cardStatus(REVISED, resize - 1, both)).toMatchObject({ units: 24, stories: 6 });
+    expect(cardStatus(REVISED, resize, both)).toMatchObject({ units: 30, stories: 8 });
+    expect(cardStatus(REVISED, resize + 400, both)).toMatchObject({ units: 30, stories: 8 });
   });
 
   it('reads the chance table at the months in stage', () => {
     const day = stageDay(SIMULATED, 'entitled') + 150;
-    const status = cardStatus(SIMULATED, day, chance);
+    const status = cardStatus(SIMULATED, day, both);
     const m = monthsIn(stageDay(SIMULATED, 'entitled'), day);
     expect(m).toBeGreaterThan(0);
     expect(status?.chance).toBe(chance.discretionary.entitled?.[m]);
@@ -137,21 +147,61 @@ describe('cardStatus', () => {
       stages: [{ stage: 'filed' as const, day: FIX_ASOF - 9300, actual: true }],
       end: null
     };
-    const status = cardStatus(old, FIX_ASOF, chance);
+    const status = cardStatus(old, FIX_ASOF, both);
     expect(status?.monthsInStage).toBeGreaterThan(240);
     expect(status?.chance).toBe(chance.discretionary.filed?.[240]);
   });
 
   it('has a null chance when the table lacks the stage', () => {
     const empty: ChanceTable = { discretionary: {}, streamlined: {}, permitOnly: {} };
-    const status = cardStatus(SIMULATED, stageDay(SIMULATED, 'filed') + 5, empty);
+    const status = cardStatus(SIMULATED, stageDay(SIMULATED, 'filed') + 5, {
+      inFlight: empty,
+      fresh: empty
+    });
     expect(status).toMatchObject({ kind: 'inStage', stage: 'filed', chance: null });
+  });
+
+  it('reads the table its lookups name', () => {
+    const fresh = halved(chance);
+    const day = stageDay(SIMULATED, 'entitled') + 150;
+    const m = monthsIn(stageDay(SIMULATED, 'entitled'), day);
+    expect(fresh.discretionary.entitled?.[m]).not.toBe(chance.discretionary.entitled?.[m]);
+    const status = cardStatus(SIMULATED, day, { inFlight: chance, fresh });
+    expect(status?.chance).toBe(fresh.discretionary.entitled?.[m]);
+  });
+
+  it('shifts the months in the rescaled in-flight stage (in-flight rescale)', () => {
+    // in `entitled` for 7 months at asOf with scale 0.5: the engine conditions on 4 months
+    const E = FIX_ASOF - 219;
+    expect(monthsIn(E, FIX_ASOF)).toBe(7);
+    const card = {
+      ...REAL_ACTUAL,
+      stages: [
+        { stage: 'filed' as const, day: E - 400, actual: true },
+        { stage: 'entitled' as const, day: E, actual: true }
+      ],
+      end: null,
+      lookups: 'inFlight' as const,
+      chanceShift: { stage: 'entitled' as const, months: -3 }
+    };
+    const fresh = halved(chance);
+    for (const M of [7, 8, 12, 30]) {
+      const day = E + Math.ceil(M * 30.436875) + 1;
+      expect(monthsIn(E, day)).toBe(M);
+      const status = cardStatus(card, day, { inFlight: chance, fresh });
+      expect(status?.monthsInStage).toBe(M);
+      expect(status?.chance).toBe(chance.discretionary.entitled?.[4 + (M - 7)]);
+    }
+    // another stage is not shifted
+    const filed = cardStatus(card, E - 1, { inFlight: chance, fresh });
+    const mf = monthsIn(E - 400, E - 1);
+    expect(filed?.chance).toBe(chance.discretionary.filed?.[mf]);
   });
 });
 
 describe('statusText', () => {
   const at = (card: typeof REAL_ACTUAL, day: number) => {
-    const status = cardStatus(card, day, chance);
+    const status = cardStatus(card, day, both);
     if (!status) throw new Error('no status');
     return statusText(status, card, FIX_ASOF);
   };
@@ -166,7 +216,7 @@ describe('statusText', () => {
   it('dates completion with the card date rule', () => {
     const end = REAL_ACTUAL.end;
     if (end?.kind !== 'complete') throw new Error('REAL_ACTUAL must complete');
-    const status = cardStatus(REAL_ACTUAL, end.day, chance);
+    const status = cardStatus(REAL_ACTUAL, end.day, both);
     if (!status) throw new Error('no status');
     expect(statusText(status, REAL_ACTUAL, FIX_ASOF)).toBe('Completed Nov 2027');
     expect(statusText(status, REAL_ACTUAL, end.day)).toBe('Completed Nov 20, 2027');
