@@ -267,13 +267,14 @@ function checkV32(
 
 /**
  * V33, current law (FZP + §207.11): for every row, recomputes `s207Status` (s207Status) from
- * parcels.bin (eligibility, lot area, FZP stories, and the base height and R-4 flag of its height
- * district string), the policy columns (TOD tier and band, historic code, exemption flags,
+ * parcels.bin (eligibility, lot area, FZP stories, and the applicable height (`lpFt` on a Local Program
+ * lot, else `baseFt`) and R-4 flag of its height district string), the policy columns (TOD tier and band, historic code, exemption flags,
  * `fzpYieldCap`) and `zoneClassOf(useDistrict)`. A `currentFromS207` row must be `applies`, have
  * the s207Envelope stories and cap, and be the more permissive layer (`mostPermissive` over the
  * full-fill yield and hostable flag); every other row's current columns must equal the FZP row
- * (`envelopeStories`, `fzpYieldCap`, `yield`, `hostable`). `policy.s207.base_ft_mismatch` (the
- * step's base height or R-4 flag ≠ the district string's) and `policy.current.yield_mismatch` (the
+ * (`envelopeStories`, `fzpYieldCap`, `yield`, `hostable`). No `applies` row may have `fzpYieldCap` none (`applies with no FZP cap`).
+ * `policy.s207.base_ft_mismatch` (the
+ * step's applicable height or R-4 flag ≠ the district string's) and `policy.current.yield_mismatch` (the
  * step's FZP recompute ≠ parcels.bin) must be 0: yields are not regenerated here. Never throws.
  */
 function checkV33(
@@ -305,7 +306,9 @@ function checkV33(
       const band = pol.todBand[i] as TodBand;
       const best = STANDARDS[tier]?.[band] ? { tier, band } : null; // todBand 0: outside
       const fzpCap = pol.fzpYieldCap[i] === NULL_CAP ? null : pol.fzpYieldCap[i];
-      const fzpBaseFt = hd.kind === 'height' ? hd.baseFt : null;
+      // The height of the envelope the project uses: lpFt on a Local Program lot, else baseFt.
+      const fzpHeightFt =
+        hd.kind !== 'height' ? null : p!.localProgram[i] === 1 ? (hd.lpFt ?? hd.baseFt) : hd.baseFt;
       const want = s207Status({
         best,
         eligible: p!.eligible[i] === 1,
@@ -314,13 +317,14 @@ function checkV33(
         r4: hd.kind === 'height' && hd.r4,
         historic: HISTORIC_CODES[pol.historic[i]],
         exempt: pol.exemptPermanent[i] === 1 || pol.exemptTemporary[i] === 1,
-        fzpBaseFt,
+        fzpHeightFt,
         fzpCap,
         lotAreaM2: p!.lotAreaM2[i]
       });
       const got = S207_STATUSES[pol.s207Status[i]];
       if (got !== want) flag(`s207Status ${want} expected, ${got} found`, i);
       if (want === 'applies') applies++;
+      if (got === 'applies' && fzpCap === null) flag('applies with no FZP cap', i);
       const top = (ys: ArrayLike<number>, k: number) => ys[k * F + F - 1];
       if (pol.currentFromS207[i] === 1) {
         from++;
@@ -328,11 +332,15 @@ function checkV33(
           flag(`currentFromS207 on a ${got} row`, i);
           continue;
         }
+        if (fzpCap === null) {
+          flag('applies with no FZP cap', i);
+          continue;
+        }
         const env = s207Envelope({
           tier,
           band,
           fzpStories: p!.envelopeStories[i],
-          fzpBaseFt,
+          fzpHeightFt,
           fzpCap,
           lotAreaM2: p!.lotAreaM2[i]
         });

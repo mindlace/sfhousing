@@ -16,7 +16,7 @@ const BASE: Input = {
   historic: 'C',
   exempt: false,
   fzpStories: 3,
-  fzpBaseFt: 30,
+  fzpHeightFt: 30,
   fzpCap: 2,
   lotAreaM2: ACRE,
   existingUnits: 0,
@@ -43,14 +43,19 @@ describe('s207Row', () => {
   });
 
   it('keeps FZP stories at or above 40 ft and a larger FZP cap', () => {
-    const tall = s207Row({ ...BASE, fzpStories: 6, fzpBaseFt: 65, fzpCap: 10 });
+    const tall = s207Row({ ...BASE, fzpStories: 6, fzpHeightFt: 65, fzpCap: 10 });
     expect(tall.status).toBe('applies');
     expect(tall.stories).toBe(6);
     expect(tall.cap).toBe(50);
-    // An uncapped lot under 40 ft passes (b)(3) by its height and never meets (b)(8).
-    const uncapped = s207Row({ ...BASE, fzpCap: null });
-    expect(uncapped.status).toBe('applies');
-    expect(uncapped.cap).toBe(50);
+  });
+
+  it('a null cap never qualifies (b)(8)', () => {
+    expect(s207Row({ ...BASE, fzpCap: null, fzpHeightFt: 30 }).status).toBe('meets-minimum');
+    expect(s207Row({ ...BASE, fzpCap: null, fzpHeightFt: 40 }).status).toBe('no-limit');
+  });
+  it('reads the Local Program height on a Local Program lot', () => {
+    // base 30 ft, LP 65 ft, uncapped: (b)(3) fails on the LP height
+    expect(s207Row({ ...BASE, fzpCap: null, fzpHeightFt: 65 }).status).toBe('no-limit');
   });
 
   const cases: [string, Partial<Input>][] = [
@@ -58,7 +63,7 @@ describe('s207Row', () => {
     ['not-eligible', { eligible: false }],
     ['exempt', { exempt: true }],
     ['not-residential', { principallyResidential: false }],
-    ['no-limit', { fzpCap: null, fzpBaseFt: 40, fzpStories: 4 }],
+    ['no-limit', { fzpCap: null, fzpHeightFt: 40, fzpStories: 4 }],
     ['r4', { r4: true }],
     ['historic', { historic: 'A*' }],
     ['meets-minimum', { fzpCap: 50 }]

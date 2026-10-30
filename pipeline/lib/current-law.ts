@@ -45,7 +45,7 @@ export function s207Status(a: {
   r4: boolean;
   historic: string;
   exempt: boolean;
-  fzpBaseFt: number | null;
+  fzpHeightFt: number | null;
   fzpCap: number | null;
   lotAreaM2: number;
 }): S207Status {
@@ -53,15 +53,19 @@ export function s207Status(a: {
   if (!a.eligible) return 'not-eligible';
   if (a.exempt) return 'exempt'; // (b)(6)
   if (!a.principallyResidential) return 'not-residential'; // (b)(2)
-  // No height district (fzpBaseFt null) counts as not under 40 ft: tier 4, invented (UNSOURCED).
-  const under40 = a.fzpBaseFt !== null && a.fzpBaseFt < S207.heightFloorFt;
+  // fzpHeightFt is the height limit of the envelope the project uses: lpFt on a Local Program
+  // lot, else baseFt ((c)(2) "the applicable height limit", UNSOURCED). No height district (null)
+  // counts as not under 40 ft: tier 4, invented (UNSOURCED).
+  const under40 = a.fzpHeightFt !== null && a.fzpHeightFt < S207.heightFloorFt;
   if (a.fzpCap === null && !under40) return 'no-limit'; // (b)(3)
   if (a.r4) return 'r4'; // (b)(4)
   if (S207.historicCodes.includes(a.historic)) return 'historic'; // (b)(7)
-  // (b)(8), Planning's reading: an uncapped lot never permits the minimum.
+  // (b)(8): "The permitted density ... does not meet the minimum density". An uncapped lot
+  // permits unlimited density, so it meets any minimum and never qualifies.
+  if (a.fzpCap === null) return 'meets-minimum';
   const { tier, band } = a.best;
   const min = unitsFor(S207.minDensityDuPerAcre(tier, band), a.lotAreaM2, 1, S207.rounding);
-  if (a.fzpCap !== null && a.fzpCap >= min) return 'meets-minimum';
+  if (a.fzpCap >= min) return 'meets-minimum';
   return 'applies';
 }
 
@@ -70,17 +74,17 @@ export function s207Envelope(a: {
   tier: Sb79Tier;
   band: TodBand;
   fzpStories: number;
-  fzpBaseFt: number | null;
-  fzpCap: number | null;
+  fzpHeightFt: number | null;
+  fzpCap: number;
   lotAreaM2: number;
 }): { stories: number; cap: number } {
   // (c)(2); no height district counts as not under 40 ft (tier 4, invented; UNSOURCED).
-  const floor = a.fzpBaseFt !== null && a.fzpBaseFt < S207.heightFloorFt;
+  const floor = a.fzpHeightFt !== null && a.fzpHeightFt < S207.heightFloorFt;
   const density = STANDARDS[a.tier][a.band].duPerAcre;
   return {
     stories: floor ? Math.max(a.fzpStories, storiesFromFt(S207.heightFloorFt)) : a.fzpStories,
     // (c)(1), combined with a larger existing cap (UNSOURCED).
-    cap: Math.max(a.fzpCap ?? 0, unitsFor(density, a.lotAreaM2, S207.densityShare, S207.rounding))
+    cap: Math.max(a.fzpCap, unitsFor(density, a.lotAreaM2, S207.densityShare, S207.rounding))
   };
 }
 
@@ -97,16 +101,18 @@ export function s207Row(a: {
   historic: string;
   exempt: boolean;
   fzpStories: number;
-  fzpBaseFt: number | null;
+  fzpHeightFt: number | null;
   fzpCap: number | null;
   lotAreaM2: number;
   existingUnits: number;
   grossAt: (stories: number) => number;
 }): EnvelopeRow & { status: S207Status } {
   const status = s207Status(a);
+  if (status === 'applies' && a.fzpCap === null)
+    throw new Error('s207Row: applies with a null cap');
   const env =
-    status === 'applies' && a.best !== null
-      ? s207Envelope({ ...a, tier: a.best.tier, band: a.best.band })
+    status === 'applies' && a.best !== null && a.fzpCap !== null
+      ? s207Envelope({ ...a, fzpCap: a.fzpCap, tier: a.best.tier, band: a.best.band })
       : { stories: a.fzpStories, cap: a.fzpCap };
   const { eligible, existingUnits, grossAt } = a;
   return { status, ...envelopeRow({ ...env, eligible, existingUnits, grossAt }) };
