@@ -22,6 +22,15 @@ import {
   type UserEdit
 } from '$lib/sim/levers/types';
 import { STORIES_MAX, STORIES_MIN } from '$lib/plan/constants';
+import { PATHWAYS, type Pathway } from '$lib/timelapse/types';
+import {
+  EDITABLE_STAGES,
+  OBSERVED_TIMING,
+  PRESETS,
+  compileTiming,
+  type SimTiming,
+  type TimingSet
+} from './timing';
 
 export type BrushMode = 'raise' | 'lower' | 'set';
 export interface Effect {
@@ -73,8 +82,8 @@ export interface SimPolicy {
     newerThanYears: number | null;
     strokes: ProtectStroke[];
   };
-  /** Plan 4's seam: carried into SimLevers untouched by this plan's UI. */
-  timing: Pick<SimLevers, 'timers' | 'routeShares' | 'localProgramStreamlined'>;
+  /** The permitting timing set and its saved snapshot (`timing.ts`). */
+  timing: SimTiming;
 }
 
 /**
@@ -107,6 +116,8 @@ function fail(path: string, message: string): never {
 export function policyFromLevers(l: SimLevers): SimPolicy {
   if (l.user.length > 0) throw new PolicyFormatError('user', 'expected no user edits');
   if (l.protect.lots.length > 0) throw new PolicyFormatError('protect.lots', 'expected no lots');
+  if (l.timers.length > 0 || l.routeShares !== null)
+    throw new PolicyFormatError('timers', 'expected no timers and observed route shares');
   return {
     schema: 1,
     stock: [...l.stock],
@@ -120,9 +131,11 @@ export function policyFromLevers(l: SimLevers): SimPolicy {
       strokes: []
     },
     timing: {
-      timers: l.timers.map((t) => ({ ...t })),
-      routeShares: l.routeShares ? { ...l.routeShares } : null,
-      localProgramStreamlined: l.localProgramStreamlined
+      current: {
+        ...structuredClone(OBSERVED_TIMING.current),
+        localProgramStreamlined: l.localProgramStreamlined
+      },
+      saved: null
     }
   };
 }
@@ -273,24 +286,72 @@ function parseBrush(v: unknown, path: string): ZoningBrush {
   }
 }
 
-/** Timing fields get the lever parser's full check; errors are re-pathed under `timing.`. */
-function parseTiming(tr: Record<string, unknown>): SimPolicy['timing'] {
+/** One lever field through the lever parser's full check, re-pathed under `path`. */
+function viaLevers<K extends 'timers' | 'routeShares'>(
+  field: K,
+  v: unknown,
+  path: string
+): SimLevers[K] {
   try {
-    const l = parseSimLevers({
-      ...DEFAULT_LEVERS,
-      timers: tr.timers,
-      routeShares: tr.routeShares,
-      localProgramStreamlined: tr.localProgramStreamlined
-    });
-    return {
-      timers: l.timers,
-      routeShares: l.routeShares,
-      localProgramStreamlined: l.localProgramStreamlined
-    };
+    return parseSimLevers({ ...DEFAULT_LEVERS, [field]: v })[field];
   } catch (e) {
-    if (e instanceof LeverFormatError) fail(`timing.${e.path}`, e.message);
+    if (e instanceof LeverFormatError) fail(path + e.path.slice(field.length), e.message);
     throw e;
   }
+}
+
+/** Route shares in a timing set: null, or whole percents that sum to 100. */
+function percents(v: unknown, path: string): Record<Pathway, number> | null {
+  const r = viaLevers('routeShares', v, path);
+  if (r === null) return null;
+  for (const p of PATHWAYS)
+    if (!Number.isInteger(r[p])) fail(`${path}.${p}`, 'expected a whole percent');
+  if (PATHWAYS.reduce((a, p) => a + r[p], 0) !== 100) fail(path, 'expected shares summing to 100');
+  return r;
+}
+
+const AVAILABLE_PRESETS = PRESETS.filter((p) => p.available).map((p) => p.id);
+
+function parseTimingSet(v: unknown, path: string): TimingSet {
+  const r = rec(v, path, [
+    'preset',
+    'presetTimers',
+    'presetRouteShares',
+    'edits',
+    'routeShares',
+    'localProgramStreamlined'
+  ]);
+  const edits = viaLevers('timers', r.edits, j(path, 'edits'));
+  const seen = new Set<string>();
+  edits.forEach((e, i) => {
+    const ep = `${j(path, 'edits')}[${i}]`;
+    if (e.reach !== 'all') fail(j(ep, 'reach'), 'expected all: custom edits reach every project');
+    if (!EDITABLE_STAGES.includes(e.stage)) fail(j(ep, 'stage'), 'expected an editable stage');
+    const k = `${e.pathway}/${e.stage}`;
+    if (seen.has(k)) fail(ep, `duplicate edit for ${k}`);
+    seen.add(k);
+  });
+  return {
+    preset: oneOf(r.preset, j(path, 'preset'), AVAILABLE_PRESETS),
+    presetTimers: viaLevers('timers', r.presetTimers, j(path, 'presetTimers')),
+    presetRouteShares: percents(r.presetRouteShares, j(path, 'presetRouteShares')),
+    edits,
+    routeShares: percents(r.routeShares, j(path, 'routeShares')),
+    localProgramStreamlined: bool(r.localProgramStreamlined, j(path, 'localProgramStreamlined'))
+  };
+}
+
+function parseTiming(v: unknown): SimTiming {
+  const r = rec(v, 'timing', ['current', 'saved']);
+  let saved: SimTiming['saved'] = null;
+  if (r.saved !== null) {
+    const sr = rec(r.saved, 'timing.saved', ['label', 'set']);
+    saved = {
+      label: str(sr.label, 'timing.saved.label'),
+      set: parseTimingSet(sr.set, 'timing.saved.set')
+    };
+  }
+  return { current: parseTimingSet(r.current, 'timing.current'), saved };
 }
 
 /** Validate a policy document. Throws `PolicyFormatError` naming the first bad field. */
@@ -311,8 +372,7 @@ export function parseSimPolicy(json: unknown): SimPolicy {
   const n = pr.newerThanYears;
   if (n !== null && (typeof n !== 'number' || !Number.isFinite(n) || n <= 0))
     fail('protect.newerThanYears', 'expected null or a positive number');
-  const tr = rec(r.timing, 'timing', ['timers', 'routeShares', 'localProgramStreamlined']);
-  const timing = parseTiming(tr);
+  const timing = parseTiming(r.timing);
   const brushes = arr(r.brushes, 'brushes').map((b, i) => parseBrush(b, `brushes[${i}]`));
   const ids = new Set<string>();
   brushes.forEach((b, i) => {
@@ -479,9 +539,7 @@ export function compileLevers(p: SimPolicy, lots: Lots): SimLevers | null {
       newerThanYears: p.protect.newerThanYears,
       lots: prot
     },
-    timers: p.timing.timers.map((t) => ({ ...t })),
-    routeShares: p.timing.routeShares ? { ...p.timing.routeShares } : null,
-    localProgramStreamlined: p.timing.localProgramStreamlined,
+    ...compileTiming(p.timing.current),
     compare: p.compare
   };
 }

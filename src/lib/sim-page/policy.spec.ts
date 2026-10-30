@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_LEVERS, FZP_COMPAT_LEVERS, parseSimLevers } from '$lib/sim/levers/types';
+import { OBSERVED_TIMING, type TimingSet } from './timing';
 import {
   DEFAULT_BANDS,
+  PolicyFormatError,
   compileLevers,
   defaultEffect,
   lotRoles,
@@ -39,6 +41,19 @@ const freehand = (
 });
 const s = (r: number): Stroke => ({ path: [[-122, 37]], radiusM: r });
 const supply = (m: Map<string, string[]>) => (k: string) => m.get(k);
+
+/** A custom set on a preset: benchmark-like preset timers, one edit and custom route shares. */
+const CUSTOM: TimingSet = {
+  preset: 'benchmarkPermits',
+  presetTimers: [
+    { pathway: 'discretionary', stage: 'permitFiled', scale: 0.4786, reach: 'all' },
+    { pathway: 'streamlined', stage: 'filed', scale: 0.5, reach: 'new' }
+  ],
+  presetRouteShares: { discretionary: 0, streamlined: 67, permitOnly: 33 },
+  edits: [{ pathway: 'discretionary', stage: 'filed', scale: 0.8, reach: 'all' }],
+  routeShares: { discretionary: 10, streamlined: 60, permitOnly: 30 },
+  localProgramStreamlined: true
+};
 
 describe('compileLevers', () => {
   it('round-trips the default and FZP levers', () => {
@@ -144,6 +159,90 @@ describe('compileLevers', () => {
   });
 });
 
+describe('timing in the policy', () => {
+  it('compiles preset timers then edits, and custom shares over the preset', () => {
+    const l = compileLevers(base({ timing: { current: CUSTOM, saved: null } }), () => undefined)!;
+    expect(l.timers).toEqual([...CUSTOM.presetTimers, ...CUSTOM.edits]);
+    expect(l.routeShares).toEqual(CUSTOM.routeShares);
+    const noCustom = { ...CUSTOM, routeShares: null };
+    expect(
+      compileLevers(base({ timing: { current: noCustom, saved: null } }), () => undefined)!
+        .routeShares
+    ).toEqual(CUSTOM.presetRouteShares);
+  });
+
+  it('policyFromLevers maps no timers to the observed set and refuses timers', () => {
+    const p = policyFromLevers({ ...DEFAULT_LEVERS, localProgramStreamlined: false });
+    expect(p.timing).toEqual({
+      current: { ...OBSERVED_TIMING.current, localProgramStreamlined: false },
+      saved: null
+    });
+    expect(() =>
+      policyFromLevers({
+        ...DEFAULT_LEVERS,
+        timers: [{ pathway: 'discretionary', stage: 'filed', scale: 0.5, reach: 'all' }]
+      })
+    ).toThrow(PolicyFormatError);
+    expect(() =>
+      policyFromLevers({
+        ...DEFAULT_LEVERS,
+        routeShares: { discretionary: 1, streamlined: 1, permitOnly: 1 }
+      })
+    ).toThrow(PolicyFormatError);
+  });
+
+  const rejectTiming = (mut: (t: { current: TimingSet; saved: unknown }) => void) => {
+    const p = JSON.parse(JSON.stringify(base({ timing: { current: CUSTOM, saved: null } })));
+    mut(p.timing);
+    try {
+      parseSimPolicy(p);
+      expect.unreachable('should throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(PolicyFormatError);
+      return (e as PolicyFormatError).path;
+    }
+  };
+
+  it('parseSimPolicy round-trips a custom set with a save', () => {
+    const p = base({ timing: { current: CUSTOM, saved: { label: 'Mine', set: CUSTOM } } });
+    expect(parseSimPolicy(JSON.parse(JSON.stringify(p)))).toEqual(p);
+  });
+
+  it('rejects new-reach edits, unknown presets and shares off 100', () => {
+    expect(rejectTiming((t) => (t.current.edits[0].reach = 'new'))).toBe(
+      'timing.current.edits[0].reach'
+    );
+    expect(rejectTiming((t) => ((t.current as { preset: string }).preset = 'nope'))).toBe(
+      'timing.current.preset'
+    );
+    expect(rejectTiming((t) => ((t.current as { preset: string }).preset = 'ceqaInfill'))).toBe(
+      'timing.current.preset'
+    );
+    expect(rejectTiming((t) => (t.current.routeShares!.permitOnly = 31))).toBe(
+      'timing.current.routeShares'
+    );
+    expect(rejectTiming((t) => (t.current.presetRouteShares!.permitOnly = 32))).toBe(
+      'timing.current.presetRouteShares'
+    );
+    expect(rejectTiming((t) => (t.current.routeShares!.permitOnly = 29.5))).toBe(
+      'timing.current.routeShares.permitOnly'
+    );
+    expect(rejectTiming((t) => (t.current.presetTimers[0].scale = 0.01))).toBe(
+      'timing.current.presetTimers[0].scale'
+    );
+    expect(rejectTiming((t) => t.current.edits.push({ ...t.current.edits[0], scale: 0.9 }))).toBe(
+      'timing.current.edits[1]'
+    );
+    expect(rejectTiming((t) => (t.current.edits[0].stage = 'entitled'))).toBe(
+      'timing.current.edits[0].stage'
+    );
+    expect(rejectTiming((t) => (t.saved = { label: 3, set: CUSTOM }))).toBe('timing.saved.label');
+    expect(
+      rejectTiming((t) => (t.saved = { label: 'x', set: { ...CUSTOM, preset: 'nope' } }))
+    ).toBe('timing.saved.set.preset');
+  });
+});
+
 describe('defaultEffect', () => {
   it('sets density limits by mode', () => {
     expect(defaultEffect('raise', 6).densityLimits).toBe(false);
@@ -183,7 +282,8 @@ describe('parseSimPolicy', () => {
           effect: eff('set', 4)
         }
       ],
-      protect: { ...base().protect, strokes: [{ ...stroke, kind: 'protect' }] }
+      protect: { ...base().protect, strokes: [{ ...stroke, kind: 'protect' }] },
+      timing: { current: CUSTOM, saved: { label: 'Mine', set: CUSTOM } }
     });
 
   it('round-trips one brush of each kind', () => {
@@ -231,7 +331,9 @@ describe('parseSimPolicy', () => {
         return (e as { path?: string }).path;
       }
     };
-    expect(bad((p) => ((p.timing as { timers: unknown }).timers = ['x']))).toMatch(/^timing\./);
+    expect(
+      bad((p) => ((p.timing as { current: { edits: unknown } }).current.edits = ['x']))
+    ).toMatch(/^timing\.current\.edits/);
     expect(bad((p) => ((p.brushes as { id: string }[])[1].id = 'a'))).toBe('brushes[1].id');
     expect(bad((p) => ((p.brushes as { bands: unknown[] }[])[2].bands = []))).toBe(
       'brushes[2].bands'
