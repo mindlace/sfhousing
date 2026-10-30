@@ -1221,7 +1221,9 @@ describe('FzpMode levers (/sim)', () => {
     expect(s.w().allOf('setLevers')).toEqual([]);
 
     s.w().emit({ type: 'error', rev: reroll.rev, code: 'internal', message: 'x' });
-    await expect.element(page.getByRole('alert')).toBeVisible();
+    await expect
+      .element(page.getByRole('alert').filter({ hasText: "Couldn't make another future" }))
+      .toBeVisible();
     await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
     expect(s.w().lastOf('setLevers')!.levers).toBe(latest);
     expect(s.onurlseed).not.toHaveBeenCalled();

@@ -848,22 +848,24 @@
           {/if}
         {/if}
       </div>
-      <!-- A failed lever revision (/sim). The alert region is always rendered (empty when not
-           failed), so it stays in the accessibility tree and its message is announced. -->
-      <div role="alert" data-testid="fzp-lever-failed" class="max-w-full">
-        {#if leverFailed}
-          <span
-            class="pointer-events-auto mb-2 flex w-max max-w-full items-center gap-1 rounded-lg bg-white py-1 pl-3 text-sm text-black shadow"
-          >
-            <span>Couldn't update the simulation for your policy.</span>
-            <button
-              type="button"
-              class="min-h-11 min-w-11 rounded-lg px-3 font-semibold underline"
-              onclick={() => void retry()}>Retry</button
+      <!-- A failed lever revision (/sim only). The alert region is always rendered on /sim (empty
+           when not failed), so it stays in the accessibility tree and its message is announced. -->
+      {#if levers !== undefined}
+        <div role="alert" data-testid="fzp-lever-failed" class="max-w-full">
+          {#if leverFailed}
+            <span
+              class="pointer-events-auto mb-2 flex w-max max-w-full items-center gap-1 rounded-lg bg-white py-1 pl-3 text-sm text-black shadow"
             >
-          </span>
-        {/if}
-      </div>
+              <span>Couldn't update the simulation for your policy.</span>
+              <button
+                type="button"
+                class="min-h-11 min-w-11 rounded-lg px-3 font-semibold underline"
+                onclick={() => void retry()}>Retry</button
+              >
+            </span>
+          {/if}
+        </div>
+      {/if}
       {#if rerollFailed && !stopped}
         <div
           role="alert"
