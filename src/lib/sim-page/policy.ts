@@ -12,8 +12,11 @@ import {
 } from '$lib/sim/levers/brushes';
 import { STREET_CLASSES } from '$lib/data/frontage-codec';
 import {
+  DEFAULT_LEVERS,
   FZP_COMPAT_LEVERS,
+  LeverFormatError,
   STOCK_LAYERS,
+  parseSimLevers,
   type SimLevers,
   type StockLayerId,
   type UserEdit
@@ -227,11 +230,13 @@ function parseBrush(v: unknown, path: string): ZoningBrush {
     }
     case 'transit': {
       const r = rec(v, path, ['id', 'kind', 'stopTypes', 'bands', 'mode', 'densityLimits']);
+      const bandList = arr(r.bands, j(path, 'bands'));
+      if (bandList.length === 0) fail(j(path, 'bands'), 'expected at least one band');
       return {
         id: str(r.id, j(path, 'id')),
         kind,
         stopTypes: oneOfList(r.stopTypes, j(path, 'stopTypes'), STOP_TYPES),
-        bands: arr(r.bands, j(path, 'bands')).map((b, i) => {
+        bands: bandList.map((b, i) => {
           const bp = `${j(path, 'bands')}[${i}]`;
           const br = rec(b, bp, ['maxM', 'stories']);
           const maxM = finite(br.maxM, j(bp, 'maxM'));
@@ -268,6 +273,26 @@ function parseBrush(v: unknown, path: string): ZoningBrush {
   }
 }
 
+/** Timing fields get the lever parser's full check; errors are re-pathed under `timing.`. */
+function parseTiming(tr: Record<string, unknown>): SimPolicy['timing'] {
+  try {
+    const l = parseSimLevers({
+      ...DEFAULT_LEVERS,
+      timers: tr.timers,
+      routeShares: tr.routeShares,
+      localProgramStreamlined: tr.localProgramStreamlined
+    });
+    return {
+      timers: l.timers,
+      routeShares: l.routeShares,
+      localProgramStreamlined: l.localProgramStreamlined
+    };
+  } catch (e) {
+    if (e instanceof LeverFormatError) fail(`timing.${e.path}`, e.message);
+    throw e;
+  }
+}
+
 /** Validate a policy document. Throws `PolicyFormatError` naming the first bad field. */
 export function parseSimPolicy(json: unknown): SimPolicy {
   const r = rec(json, '', [
@@ -287,20 +312,19 @@ export function parseSimPolicy(json: unknown): SimPolicy {
   if (n !== null && (typeof n !== 'number' || !Number.isFinite(n) || n <= 0))
     fail('protect.newerThanYears', 'expected null or a positive number');
   const tr = rec(r.timing, 'timing', ['timers', 'routeShares', 'localProgramStreamlined']);
-  // Timers and route shares get their full check from parseSimLevers at the seam; here they
-  // only need the right outer shape.
-  const timers = arr(tr.timers, 'timing.timers') as SimPolicy['timing']['timers'];
-  if (
-    tr.routeShares !== null &&
-    (typeof tr.routeShares !== 'object' || Array.isArray(tr.routeShares))
-  )
-    fail('timing.routeShares', 'expected null or an object');
+  const timing = parseTiming(tr);
+  const brushes = arr(r.brushes, 'brushes').map((b, i) => parseBrush(b, `brushes[${i}]`));
+  const ids = new Set<string>();
+  brushes.forEach((b, i) => {
+    if (ids.has(b.id)) fail(`brushes[${i}].id`, 'duplicate brush id');
+    ids.add(b.id);
+  });
   return {
     schema: 1,
     stock: STOCK_LAYERS.filter((l) => stock.includes(l)),
     assumeAlternativePlanKept: bool(r.assumeAlternativePlanKept, 'assumeAlternativePlanKept'),
     compare: oneOf(r.compare, 'compare', ['currentLaw', 'preFzp'] as const),
-    brushes: arr(r.brushes, 'brushes').map((b, i) => parseBrush(b, `brushes[${i}]`)),
+    brushes,
     protect: {
       rentControl: bool(pr.rentControl, 'protect.rentControl'),
       historic: bool(pr.historic, 'protect.historic'),
@@ -314,11 +338,7 @@ export function parseSimPolicy(json: unknown): SimPolicy {
         };
       })
     },
-    timing: {
-      timers,
-      routeShares: tr.routeShares as SimPolicy['timing']['routeShares'],
-      localProgramStreamlined: bool(tr.localProgramStreamlined, 'timing.localProgramStreamlined')
-    }
+    timing
   };
 }
 

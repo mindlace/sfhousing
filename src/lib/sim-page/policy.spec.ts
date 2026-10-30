@@ -219,6 +219,24 @@ describe('parseSimPolicy', () => {
     reject((p) => (p.brushes[3].classes = ['highway']), 'brushes[3].classes[0]');
     reject((p) => (p.brushes[3].depth = 2), 'brushes[3].depth');
   });
+
+  it('rejects bad timing, duplicate ids and empty bands', () => {
+    const bad = (mut: (p: Record<string, unknown>) => void) => {
+      const p = JSON.parse(JSON.stringify(full()));
+      mut(p);
+      try {
+        parseSimPolicy(p);
+        expect.unreachable('should throw');
+      } catch (e) {
+        return (e as { path?: string }).path;
+      }
+    };
+    expect(bad((p) => ((p.timing as { timers: unknown }).timers = ['x']))).toMatch(/^timing\./);
+    expect(bad((p) => ((p.brushes as { id: string }[])[1].id = 'a'))).toBe('brushes[1].id');
+    expect(bad((p) => ((p.brushes as { bands: unknown[] }[])[2].bands = []))).toBe(
+      'brushes[2].bands'
+    );
+  });
 });
 
 describe('scoreCopy', () => {
