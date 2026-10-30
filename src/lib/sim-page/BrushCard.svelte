@@ -24,7 +24,8 @@
     index: number;
     /** Opens the brush's form; absent (or the catalog not loaded) leaves Edit disabled. */
     onedit?: (b: ZoningBrush) => void;
-    editDisabled?: boolean;
+    /** Why Edit is unavailable (the catalog is loading or lacks the brush's data), or null. */
+    editUnavailable?: string | null;
     announce?: (msg: string) => void;
     /** After Remove: the list moves focus (this card is gone). */
     onremoved?: (index: number) => void;
@@ -35,7 +36,7 @@
     brush,
     index,
     onedit = undefined,
-    editDisabled = false,
+    editUnavailable = null,
     announce = undefined,
     onremoved = undefined
   }: Props = $props();
@@ -103,7 +104,8 @@
         type="button"
         data-brush-edit={brush.id}
         aria-label="Edit: {summary}"
-        disabled={!onedit || editDisabled}
+        disabled={!onedit || editUnavailable !== null}
+        aria-describedby={editUnavailable ? `${uid}-edit-why` : undefined}
         class={btn}
         onclick={() => onedit?.(brush)}>Edit</button
       >
@@ -127,4 +129,7 @@
     <button type="button" aria-label="Remove: {summary}" class={btn} onclick={remove}>Remove</button
     >
   </div>
+  {#if editable && editUnavailable}
+    <span id="{uid}-edit-why" class="text-gray-700">{editUnavailable}</span>
+  {/if}
 </li>

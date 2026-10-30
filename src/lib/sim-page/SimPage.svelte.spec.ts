@@ -245,13 +245,60 @@ describe('SimPage rule brushes (Task 9)', () => {
     await page.getByRole('button', { name: 'Street', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Policy' });
     await expect.element(dialog.getByRole('checkbox', { name: 'Arterials' })).toBeVisible();
-    // No second dialog: the form is inside the Policy sheet (FzpMode's closed sources dialog
-    // stays in the DOM, so count open ones).
-    expect(document.querySelectorAll('dialog[open]')).toHaveLength(1);
+    // No second dialog: the only open dialog is the Policy sheet (FzpMode's closed sources
+    // dialog stays in the DOM).
+    expect([...document.querySelectorAll('dialog[open]')]).toEqual([dialog.element()]);
     await expect.element(yourZoning()).not.toBeInTheDocument();
     await page.getByRole('button', { name: 'Back', exact: true }).click();
     await expect.element(yourZoning()).toBeVisible();
     await expect.element(page.getByRole('checkbox', { name: 'Arterials' })).not.toBeInTheDocument();
     await expect.element(page.getByRole('button', { name: 'Add a brush' })).toHaveFocus();
+  });
+
+  /** At 375 px: open the sheet, answer the catalog, open the Street form. */
+  async function openStreetForm() {
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await policyButton().click();
+    const w = workers.at(-1)!;
+    await expect.poll(() => w.lastOf('brushCatalog')).toBeTruthy();
+    w.emit({
+      type: 'brushCatalog',
+      reqId: w.lastOf('brushCatalog')!.reqId,
+      catalog: testCatalog()
+    });
+    await yourZoning().click();
+    await page.getByRole('button', { name: 'Add a brush' }).click();
+    await page.getByRole('button', { name: 'Street', exact: true }).click();
+    await expect.element(page.getByRole('checkbox', { name: 'Arterials' })).toBeVisible();
+  }
+
+  it('closing the sheet discards the open form; reopening shows the brush list', async () => {
+    stub.reset();
+    await page.viewport(375, 700);
+    await setup();
+    await toReady();
+    await openStreetForm();
+    await userEvent.keyboard('{Escape}');
+    await expect.element(page.getByRole('dialog', { name: 'Policy' })).not.toBeInTheDocument();
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await policyButton().click();
+    await expect.element(page.getByRole('dialog', { name: 'Policy' })).toBeVisible();
+    await expect.element(yourZoning()).toBeVisible();
+    await expect
+      .element(page.getByRole('button', { name: 'Back', exact: true }))
+      .not.toBeInTheDocument();
+    await expect.element(page.getByRole('checkbox', { name: 'Arterials' })).not.toBeInTheDocument();
+  });
+
+  it('crossing md discards the open form', async () => {
+    stub.reset();
+    await page.viewport(375, 700);
+    await setup();
+    await toReady();
+    await openStreetForm();
+    await page.viewport(1024, 768);
+    await expect.element(page.getByRole('region', { name: 'Policy' })).toBeVisible();
+    await expect.element(page.getByRole('checkbox', { name: 'Arterials' })).not.toBeInTheDocument();
+    await expect.element(page.getByRole('button', { name: 'Add a brush' })).toBeVisible();
   });
 });

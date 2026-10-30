@@ -236,4 +236,23 @@ describe('BrushSection', () => {
     await expect.element(page.getByRole('button', { name: 'Save brush' })).not.toBeInTheDocument();
     await expect.element(page.getByRole('button', { name: 'Add a brush' })).toHaveFocus();
   });
+
+  it('Edit waits for the catalog and says why', async () => {
+    const street: ZoningBrush = {
+      id: 's1',
+      kind: 'street',
+      classes: ['arterial'],
+      names: [],
+      depth: 0,
+      ncOnly: false,
+      effect: { mode: 'raise', stories: 8, densityLimits: false }
+    };
+    setup({ brushes: [street], catalog: undefined });
+    const edit = page.getByRole('button', { name: /^Edit:/ });
+    await expect.element(edit).toBeDisabled();
+    await expect.element(edit).toHaveAccessibleDescription('Loading brush data…');
+    await expect
+      .element(page.getByRole('list', { name: 'Your brushes' }).getByText('Loading brush data…'))
+      .toBeVisible();
+  });
 });

@@ -25,7 +25,7 @@ describe('RuleBrushForm', () => {
 
   it('Transit: one stop type ticked saves the default bands, raise, no density limits', async () => {
     const { onsave } = setup('transit');
-    await expect.element(save()).toBeDisabled();
+    await expect.element(save()).toBeEnabled();
     await page.getByRole('checkbox', { name: /^Regional rail/ }).click();
     await save().click();
     expect(onsave).toHaveBeenCalledOnce();
@@ -126,6 +126,58 @@ describe('RuleBrushForm', () => {
       classes: ['major', 'collector'],
       names: ['Geary Blvd']
     });
+  });
+
+  it('Save with nothing chosen announces why and saves nothing (WCAG 4.1.3)', async () => {
+    const { onsave } = setup('street');
+    const reason = 'Choose a street class or add a street.';
+    const status = page.getByRole('status').filter({ hasText: reason });
+    await expect.element(status).not.toBeInTheDocument();
+    await save().click();
+    expect(onsave).not.toHaveBeenCalled();
+    await expect.element(status).toBeVisible();
+    await expect.element(save()).toHaveAccessibleDescription(reason);
+    // The reason follows the fields, and clears once the brush is complete.
+    await page.getByRole('checkbox', { name: 'Arterials' }).click();
+    await expect.element(status).not.toBeInTheDocument();
+    await save().click();
+    expect(onsave).toHaveBeenCalledOnce();
+  });
+
+  it('an unknown street name is an alert', async () => {
+    setup('street');
+    await page.getByRole('combobox', { name: 'Street name' }).fill('Nowhere Ln');
+    await page.getByRole('button', { name: 'Add street' }).click();
+    await expect
+      .element(page.getByRole('alert'))
+      .toHaveTextContent('No street named “Nowhere Ln” in this dataset.');
+    await expect
+      .element(page.getByRole('combobox', { name: 'Street name' }))
+      .toHaveAccessibleDescription('No street named “Nowhere Ln” in this dataset.');
+  });
+
+  it('two bands at one distance are announced at once and block Save', async () => {
+    const { onsave } = setup('transit');
+    await page.getByRole('checkbox', { name: /^Regional rail/ }).click();
+    await page.getByRole('spinbutton', { name: 'Band 2 distance (m)' }).fill('402');
+    const status = page
+      .getByRole('status')
+      .filter({ hasText: 'Each band needs a different distance.' });
+    await expect.element(status).toBeVisible();
+    await save().click();
+    expect(onsave).not.toHaveBeenCalled();
+    await page.getByRole('spinbutton', { name: 'Band 2 distance (m)' }).fill('805');
+    await expect.element(status).not.toBeInTheDocument();
+    await save().click();
+    expect(onsave).toHaveBeenCalledOnce();
+  });
+
+  it('Mode is a group named by its legend', async () => {
+    setup('area');
+    const mode = page.getByRole('group', { name: 'Mode' });
+    await expect.element(mode).toBeVisible();
+    expect(mode.element().tagName).toBe('FIELDSET');
+    await expect.element(mode.getByRole('radio', { name: 'Raise' })).toBeChecked();
   });
 
   it('Cancel calls oncancel', async () => {

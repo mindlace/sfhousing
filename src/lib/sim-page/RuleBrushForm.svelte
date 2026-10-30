@@ -112,10 +112,18 @@
     nameInput = '';
   }
 
+  /** Two bands at one distance: the later one would select nothing (shown at once). */
+  const DUPLICATE_BANDS = 'Each band needs a different distance.';
+  const duplicateBands = $derived.by(() => {
+    const ds = bands.map((b) => b.maxM).filter(okMetres);
+    return new Set(ds).size < ds.length;
+  });
+
   const problem = $derived.by((): string | null => {
     const storiesMsg = `Stories must be a whole number from ${STORIES_MIN} to ${STORIES_MAX}.`;
     switch (k) {
       case 'transit':
+        if (duplicateBands) return DUPLICATE_BANDS;
         if (stopTypes.length === 0) return 'Choose at least one stop type.';
         if (bands.some((b) => !okMetres(b.maxM))) return 'Each band needs a distance above 0 m.';
         if (bands.some((b) => !okStories(b.stories))) return storiesMsg;
@@ -182,9 +190,22 @@
     }
   }
 
+  /**
+   * Save stays enabled (a disabled button hides its reason from keyboard users). Pressing it with a
+   * problem shows the reason in the form's live region (WCAG 4.1.3); from then on the reason
+   * follows the fields. A duplicate band distance is shown as soon as it is entered.
+   */
+  let attempted = $state(false);
+  const shown = $derived(
+    problem !== null && (attempted || problem === DUPLICATE_BANDS) ? problem : null
+  );
+
   function onsubmit(e: SubmitEvent): void {
     e.preventDefault();
-    if (problem !== null) return;
+    if (problem !== null) {
+      attempted = true;
+      return;
+    }
     onsave(build());
   }
 
@@ -299,9 +320,8 @@
           <option value={s}></option>
         {/each}
       </datalist>
-      {#if nameError}
-        <p id="{uid}-name-error" class="text-red-800">{nameError}</p>
-      {/if}
+      <!-- Always present, so the error is spoken when it appears (WCAG 4.1.3). -->
+      <p id="{uid}-name-error" role="alert" class="text-red-800 empty:hidden">{nameError ?? ''}</p>
       {#if names.length > 0}
         <ul aria-label="Chosen streets" class="flex flex-col gap-1">
           {#each names as s (s)}
@@ -407,7 +427,8 @@
     </fieldset>
   {/if}
 
-  <div role="radiogroup" aria-label="Mode" class="flex flex-wrap gap-x-3 gap-y-1">
+  <fieldset class="flex flex-wrap gap-x-3 gap-y-1">
+    <legend class="w-full font-semibold">Mode</legend>
     {#each MODES as m (m.id)}
       <label class={check}>
         <input
@@ -420,7 +441,7 @@
         {m.label}
       </label>
     {/each}
-  </div>
+  </fieldset>
 
   {#if k !== 'transit'}
     <label class="flex flex-col">
@@ -444,9 +465,8 @@
   <div class="flex flex-wrap items-center gap-2">
     <button
       type="submit"
-      class="min-h-11 rounded-md bg-black px-3 font-semibold text-white disabled:opacity-40"
-      disabled={problem !== null}
-      aria-describedby={problem ? `${uid}-problem` : undefined}>Save brush</button
+      class="min-h-11 rounded-md bg-black px-3 font-semibold text-white"
+      aria-describedby={shown ? `${uid}-problem` : undefined}>Save brush</button
     >
     <button
       type="button"
@@ -454,7 +474,6 @@
       onclick={() => oncancel()}>Cancel</button
     >
   </div>
-  {#if problem}
-    <p id="{uid}-problem" class="text-gray-700">{problem}</p>
-  {/if}
+  <!-- Always present, so a reason appearing or changing is spoken (WCAG 4.1.3). -->
+  <p id="{uid}-problem" role="status" class="text-red-800 empty:hidden">{shown ?? ''}</p>
 </form>

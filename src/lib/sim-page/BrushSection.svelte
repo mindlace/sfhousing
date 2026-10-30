@@ -257,7 +257,7 @@
             brush={b}
             index={i}
             onedit={edit}
-            editDisabled={!catalog}
+            editUnavailable={kindUnavailable(ruleKindOf(b) ?? 'area', catalog)}
             {announce}
             onremoved={afterRemove}
           />

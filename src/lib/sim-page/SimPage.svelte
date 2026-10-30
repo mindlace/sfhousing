@@ -224,6 +224,18 @@
   // ---- rule brushes (Task 9) ----
 
   const forms = new BrushForms();
+
+  // Closing the panel, or crossing md (inline form <-> sheet sub-view), discards an open brush
+  // form, so the panel reopens on the brush list (the coordinator's ruling).
+  let formLayout: boolean | null = null;
+  $effect(() => {
+    const isOpen = policyOpen;
+    const w = wide.current;
+    untrack(() => {
+      if (!isOpen || (formLayout !== null && formLayout !== w)) forms.dismiss();
+      formLayout = w;
+    });
+  });
   /** undefined: not asked yet or in flight; null: the session had none to give. */
   let catalog = $state.raw<BrushCatalog | null | undefined>(undefined);
   let catalogWanted = false;

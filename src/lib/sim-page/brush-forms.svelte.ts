@@ -32,6 +32,12 @@ export class BrushForms {
     if (sel) void tick().then(() => document.querySelector<HTMLElement>(sel)?.focus());
   }
 
+  /** Discards the open form without moving focus (the panel closed or changed layout). */
+  dismiss(): void {
+    this.current = null;
+    this.#returnTo = null;
+  }
+
   /** Adds `b`, or replaces the brush with its id; returns the change's label. */
   save(store: PolicyStore, b: ZoningBrush): string {
     const editing = store.policy.brushes.some((x) => x.id === b.id);
