@@ -11,6 +11,7 @@ import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import { stub, callsOf } from '$lib/fzp/test/sim-map-stub';
 import { timelineMsg } from '$lib/fzp/test/fake-worker';
 import SimPageHost from './test/SimPageHost.svelte';
+import { testCatalog } from './test/catalog';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 const workers = vi.hoisted(() => [] as import('$lib/fzp/test/fake-worker').FakeScenarioWorker[]);
@@ -205,5 +206,52 @@ describe('SimPage strokes (Task 8)', () => {
     await expect.element(page.getByRole('radio', { name: 'Move' })).toBeChecked();
     await userEvent.keyboard('b');
     await expect.element(page.getByRole('radio', { name: 'Paint' })).toBeChecked();
+  });
+});
+
+describe('SimPage rule brushes (Task 9)', () => {
+  it('fetches the catalog once, when the panel first opens', async () => {
+    await page.viewport(375, 700);
+    await setup();
+    await toReady();
+    const w = workers.at(-1)!;
+    expect(w.allOf('brushCatalog')).toHaveLength(0);
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await policyButton().click();
+    await expect.poll(() => w.allOf('brushCatalog').length).toBe(1);
+    await page.getByRole('button', { name: 'Close policy' }).click();
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await policyButton().click();
+    await expect.element(page.getByRole('dialog', { name: 'Policy' })).toBeVisible();
+    expect(w.allOf('brushCatalog')).toHaveLength(1);
+  });
+
+  it('at 375 px, "Add a brush" → Street replaces the sheet body; Back returns', async () => {
+    stub.reset();
+    await page.viewport(375, 700);
+    await setup();
+    await toReady();
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await policyButton().click();
+    const w = workers.at(-1)!;
+    await expect.poll(() => w.lastOf('brushCatalog')).toBeTruthy();
+    w.emit({
+      type: 'brushCatalog',
+      reqId: w.lastOf('brushCatalog')!.reqId,
+      catalog: testCatalog()
+    });
+    await yourZoning().click();
+    await page.getByRole('button', { name: 'Add a brush' }).click();
+    await page.getByRole('button', { name: 'Street', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Policy' });
+    await expect.element(dialog.getByRole('checkbox', { name: 'Arterials' })).toBeVisible();
+    // No second dialog: the form is inside the Policy sheet (FzpMode's closed sources dialog
+    // stays in the DOM, so count open ones).
+    expect(document.querySelectorAll('dialog[open]')).toHaveLength(1);
+    await expect.element(yourZoning()).not.toBeInTheDocument();
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await expect.element(yourZoning()).toBeVisible();
+    await expect.element(page.getByRole('checkbox', { name: 'Arterials' })).not.toBeInTheDocument();
+    await expect.element(page.getByRole('button', { name: 'Add a brush' })).toHaveFocus();
   });
 });

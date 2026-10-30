@@ -5,6 +5,9 @@
   redirect) opens the Family Zoning Plan comparison, otherwise current law (Calls 14 and 16).
   Freehand, erase and protect strokes (Task 8) reuse `/`'s BrushController through the stroke
   adapter; the lot dots and the brush ring share SimMap's overlay through the overlay mux.
+  Rule brushes (Task 9) read the brush catalog, asked for once when the panel first opens and
+  again after a session restart if it came back null; below md their form replaces the sheet's
+  contents (layout ruling 9).
 -->
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
@@ -19,7 +22,10 @@
   import FzpMode, { type SimClientApi } from '$lib/fzp/FzpMode.svelte';
   import type { SimMapHandle } from '$lib/map/types';
   import { DEFAULT_LEVERS, FZP_COMPAT_LEVERS } from '$lib/sim/levers/types';
+  import type { BrushCatalog } from '$lib/sim/levers/brushes';
   import type { BrushLotsResult } from '$lib/sim/scenario/types';
+  import { BrushForms } from './brush-forms.svelte';
+  import RuleBrushForm from './RuleBrushForm.svelte';
   import type { Calibration } from '$lib/timelapse/types';
   import BrushSection from './BrushSection.svelte';
   import { SimBrushTools, brushToolOf, isProtectTool, type SimTool } from './brush-tools.svelte';
@@ -215,6 +221,50 @@
     else adapter.editor.redo();
   }
 
+  // ---- rule brushes (Task 9) ----
+
+  const forms = new BrushForms();
+  /** undefined: not asked yet or in flight; null: the session had none to give. */
+  let catalog = $state.raw<BrushCatalog | null | undefined>(undefined);
+  let catalogWanted = false;
+  let catalogToken = 0;
+  let catalogInFlight = false;
+
+  function fetchCatalog(): void {
+    if (!api || catalog || catalogInFlight) return;
+    const token = ++catalogToken;
+    catalogInFlight = true;
+    void api.brushCatalog().then((c) => {
+      if (token !== catalogToken || dead) return;
+      catalogInFlight = false;
+      catalog = c;
+    });
+  }
+
+  // Asked for once, when the panel first opens.
+  $effect(() => {
+    if (!policyOpen) return;
+    untrack(() => {
+      if (catalogWanted) return;
+      catalogWanted = true;
+      fetchCatalog();
+    });
+  });
+
+  /** A new session: ask again if the catalog came back null or is still owed. */
+  function catalogSession(): void {
+    if (!catalogWanted || catalog) return;
+    catalogToken++; // an answer from the old session is dropped
+    catalogInFlight = false;
+    catalog = undefined;
+    fetchCatalog();
+  }
+
+  function saveRuleBrush(b: Parameters<BrushForms['save']>[1]): void {
+    brush.announce(forms.save(store, b), ANNOUNCE_MS);
+    forms.close();
+  }
+
   const prefersDark = new MediaQuery('(prefers-color-scheme: dark)');
 
   // The lot dots: every lot the user layer or the brushed protections touch, at its label point.
@@ -275,9 +325,35 @@
     open={policyOpen}
     focusOnOpen={policyFocus}
     onclose={() => void closePolicy()}
+    view={forms.current && catalog && !wide.current ? 'add-brush' : 'sections'}
+    onback={() => forms.close()}
   >
     {#snippet zoning()}
-      <BrushSection {store} {sync} {tools} ontool={setTool} onundo={undo} onredo={redo} />
+      <BrushSection
+        {store}
+        {sync}
+        {tools}
+        ontool={setTool}
+        onundo={undo}
+        onredo={redo}
+        {catalog}
+        {forms}
+        inlineForm={wide.current}
+        announce={(m) => brush.announce(m, ANNOUNCE_MS)}
+      />
+    {/snippet}
+    {#snippet subview()}
+      {#if forms.current && catalog}
+        {#key forms.current}
+          <RuleBrushForm
+            kind={forms.current.kind}
+            {catalog}
+            initial={forms.current.initial}
+            onsave={saveRuleBrush}
+            oncancel={() => forms.close()}
+          />
+        {/key}
+      {/if}
     {/snippet}
   </PolicyPanel>
   {#if !wide.current && !policyOpen && tools.tool !== 'move'}
@@ -304,6 +380,9 @@
   onclient={(a) => {
     api = a;
     // A new session: brush queries answered `no-session` can be asked again.
-    if (a) sync.resume();
+    if (a) {
+      sync.resume();
+      catalogSession();
+    }
   }}
 />

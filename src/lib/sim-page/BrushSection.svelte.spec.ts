@@ -13,6 +13,8 @@ import { ERASE_HINT, SimBrushTools, type SimTool } from './brush-tools.svelte';
 import { policyFromLevers, queryKey, type Stroke, type ZoningBrush } from './policy';
 import { PolicyStore } from './policy-store.svelte';
 import { createStrokeAdapter } from './stroke-adapter';
+import type { BrushCatalog } from '$lib/sim/levers/brushes';
+import { testCatalog } from './test/catalog';
 
 const strokes: Stroke[] = [{ path: [[-122.42, 37.76]], radiusM: 30 }];
 const freehand: ZoningBrush = {
@@ -23,7 +25,14 @@ const freehand: ZoningBrush = {
 };
 const key = queryKey({ kind: 'freehand', strokes });
 
-function setup(opts: { result?: BrushLotsResult; brushes?: ZoningBrush[]; tool?: SimTool } = {}) {
+function setup(
+  opts: {
+    result?: BrushLotsResult;
+    brushes?: ZoningBrush[];
+    tool?: SimTool;
+    catalog?: BrushCatalog | null;
+  } = {}
+) {
   const store = new PolicyStore(policyFromLevers(DEFAULT_LEVERS));
   if (opts.brushes) {
     const brushes = opts.brushes;
@@ -52,7 +61,9 @@ function setup(opts: { result?: BrushLotsResult; brushes?: ZoningBrush[]; tool?:
       tools,
       ontool,
       onundo: () => adapter.editor.undo(),
-      onredo: () => adapter.editor.redo()
+      onredo: () => adapter.editor.redo(),
+      catalog: opts.catalog,
+      announce
     }
   });
   return { store, tools, sync, ontool, announce };
@@ -177,5 +188,52 @@ describe('BrushSection', () => {
     await expect.element(page.getByText("Couldn't find lots")).toBeVisible();
     await page.getByRole('button', { name: 'Retry' }).click();
     expect(sync.retry).toHaveBeenCalledWith(key);
+  });
+
+  it('the brushes are an ordered list of cards', async () => {
+    setup({ brushes: [freehand], result: lots(3) });
+    const list = page.getByRole('list', { name: 'Your brushes' });
+    expect(list.element().tagName).toBe('OL');
+    await expect
+      .element(list.getByRole('button', { name: 'Remove: Raise to 8 stories · 1 stroke · 3 lots' }))
+      .toBeVisible();
+  });
+
+  it('"Add a brush" offers the four rule brushes; a kind without its data says why', async () => {
+    setup({ catalog: testCatalog({ frontage: false }) });
+    await page.getByRole('button', { name: 'Add a brush' }).click();
+    await expect.element(page.getByRole('button', { name: 'Transit' })).toBeEnabled();
+    await expect.element(page.getByRole('button', { name: 'Area' })).toBeEnabled();
+    const streetBtn = page.getByRole('button', { name: 'Street', exact: true });
+    await expect.element(streetBtn).toBeDisabled();
+    await expect
+      .element(streetBtn)
+      .toHaveAccessibleDescription('This dataset has no street frontage data.');
+    await expect.element(page.getByRole('button', { name: 'Commercial corridor' })).toBeDisabled();
+    await expect
+      .element(page.getByText('This dataset has no street frontage data.').first())
+      .toBeVisible();
+  });
+
+  it('kinds wait for the catalog', async () => {
+    setup({ catalog: undefined });
+    await page.getByRole('button', { name: 'Add a brush' }).click();
+    await expect.element(page.getByRole('button', { name: 'Transit' })).toBeDisabled();
+    await expect
+      .element(page.getByRole('button', { name: 'Transit' }))
+      .toHaveAccessibleDescription('Loading brush data…');
+  });
+
+  it('on md+ a rule brush form opens inline and its save is a labelled change', async () => {
+    const { store, announce } = setup({ catalog: testCatalog() });
+    await page.getByRole('button', { name: 'Add a brush' }).click();
+    await page.getByRole('button', { name: 'Transit' }).click();
+    await page.getByRole('checkbox', { name: /^Regional rail/ }).click();
+    await page.getByRole('button', { name: 'Save brush' }).click();
+    expect(store.policy.brushes).toHaveLength(1);
+    expect(store.undoLabel).toBe('Raised lots near regional rail');
+    expect(announce).toHaveBeenCalledWith('Raised lots near regional rail');
+    await expect.element(page.getByRole('button', { name: 'Save brush' })).not.toBeInTheDocument();
+    await expect.element(page.getByRole('button', { name: 'Add a brush' })).toHaveFocus();
   });
 });

@@ -2,14 +2,22 @@
   "Your zoning", tools part (layout rulings 7 and 8). Undo and Redo first, named by the change they
   would undo or redo and disabled when there is none: the non-drag way back. Then the brush tools
   (Move, Paint, Erase, Protect, Unprotect), the freehand effect (mode, stories, density limits;
-  hidden while Protect or Unprotect is chosen), the radius, and each brush with its lot count,
-  "Finding lots…", or "Couldn't find lots" with Retry. A `no-session` answer is parked by
-  LeverSync until the next session, so it reads as "Finding lots…", not a failure.
+  hidden while Protect or Unprotect is chosen), the radius, the map key, and the brushes in order
+  (BrushCard: summary, lot count, Edit, Move up, Move down, Remove). A `no-session` answer is
+  parked by LeverSync until the next session, so it reads as "Finding lots…", not a failure.
+  "Add a brush" offers the rule brushes (Transit, Street, Commercial corridor, Area), each
+  disabled with its reason while the catalog lacks its data. With `inlineForm` (md+) the form
+  opens here; otherwise SimPage shows it in place of the sheet's contents (layout ruling 9).
 -->
 <script lang="ts">
+  import { tick } from 'svelte';
   import RadiusPopover from '$lib/brush/RadiusPopover.svelte';
   import StoriesPopover from '$lib/brush/StoriesPopover.svelte';
-  import type { BrushLotsResult } from '$lib/sim/scenario/types';
+  import type { BrushCatalog } from '$lib/sim/levers/brushes';
+  import BrushCard from './BrushCard.svelte';
+  import { BrushForms } from './brush-forms.svelte';
+  import { RULE_KINDS, kindUnavailable, ruleKindOf, type RuleKind } from './brush-summary';
+  import RuleBrushForm from './RuleBrushForm.svelte';
   import {
     ERASE_HINT,
     SIM_TOOLS,
@@ -18,7 +26,7 @@
     type SimTool
   } from './brush-tools.svelte';
   import { LOT_COLORS, LOT_EDGE } from './lot-overlay';
-  import { brushQueries, queryKey, type BrushMode, type ZoningBrush } from './policy';
+  import type { BrushMode, ZoningBrush } from './policy';
   import type { LeverSync, PolicyStore } from './policy-store.svelte';
 
   interface Props {
@@ -29,9 +37,28 @@
     ontool(t: SimTool): void;
     onundo(): void;
     onredo(): void;
+    /** The brush pickers' data: undefined while loading, null when unavailable. */
+    catalog?: BrushCatalog | null;
+    /** The open rule brush form, shared with SimPage. */
+    forms?: BrushForms;
+    /** Show the open form here (md+); below md SimPage shows it in place of the sections. */
+    inlineForm?: boolean;
+    /** Speaks a change's label (WCAG 4.1.3). */
+    announce?: (msg: string) => void;
   }
 
-  let { store, sync, tools, ontool, onundo, onredo }: Props = $props();
+  let {
+    store,
+    sync,
+    tools,
+    ontool,
+    onundo,
+    onredo,
+    catalog = undefined,
+    forms = new BrushForms(),
+    inlineForm = true,
+    announce = undefined
+  }: Props = $props();
 
   const uid = $props.id();
   const brush = $derived(tools.brush);
@@ -76,39 +103,34 @@
     radios[ids[i]]?.focus();
   }
 
-  const VERB: Record<BrushMode, string> = { raise: 'Raise', lower: 'Lower', set: 'Set' };
-  const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
+  let adding = $state(false);
+  let list = $state<HTMLOListElement>();
+  let addBtn = $state<HTMLButtonElement>();
+  const ADD_SELECTOR = '[data-brush-add]';
 
-  function brushLabel(b: ZoningBrush): string {
-    switch (b.kind) {
-      case 'freehand':
-        return `${VERB[b.effect.mode]} to ${n(b.effect.stories, 'story', 'stories')} · ${n(b.strokes.length, 'stroke', 'strokes')}`;
-      case 'erase':
-        return `Erase · ${n(b.strokes.length, 'stroke', 'strokes')}`;
-      case 'transit':
-        return `${VERB[b.mode]} near transit`;
-      case 'street':
-        return `${VERB[b.effect.mode]} along streets to ${n(b.effect.stories, 'story', 'stories')}`;
-      case 'area':
-        return `${VERB[b.effect.mode]} areas to ${n(b.effect.stories, 'story', 'stories')}`;
-    }
+  function openKind(kind: RuleKind): void {
+    adding = false;
+    forms.open({ kind }, ADD_SELECTOR);
   }
 
-  type Status =
-    { kind: 'found'; lots: number } | { kind: 'finding' } | { kind: 'failed'; keys: string[] };
+  function edit(b: ZoningBrush): void {
+    const kind = ruleKindOf(b);
+    if (kind) forms.open({ kind, initial: b }, `[data-brush-edit="${b.id}"]`);
+  }
 
-  function status(b: ZoningBrush): Status {
-    const keys = brushQueries(b).map(queryKey);
-    const results = keys.map((k) => sync.result(k));
-    const failed = keys.filter((_, i) => {
-      const r = results[i];
-      return r !== undefined && !r.ok && r.reason !== 'no-session';
+  function save(b: ZoningBrush): void {
+    announce?.(forms.save(store, b));
+    forms.close();
+  }
+
+  /** After a card's Remove, focus the card now at its place, the one before it, or "Add a brush". */
+  function afterRemove(i: number): void {
+    void tick().then(() => {
+      const cards = list?.querySelectorAll('li') ?? [];
+      const card = cards[Math.min(i, cards.length - 1)];
+      const target = card?.querySelector<HTMLButtonElement>('button:not(:disabled)');
+      (target ?? addBtn)?.focus();
     });
-    if (failed.length > 0) return { kind: 'failed', keys: failed };
-    if (results.every((r): r is Extract<BrushLotsResult, { ok: true }> => r?.ok === true)) {
-      return { kind: 'found', lots: new Set(results.flatMap((r) => r.lots)).size };
-    }
-    return { kind: 'finding' };
   }
 </script>
 
@@ -224,32 +246,67 @@
   </div>
 
   {#if store.policy.brushes.length > 0}
-    <ul aria-label="Your brushes" class="flex flex-col gap-2">
-      {#each store.policy.brushes as b (b.id)}
-        {@const s = status(b)}
-        {@const labelId = `${uid}-brush-${b.id}`}
-        <li class="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span id={labelId} class="font-medium">{brushLabel(b)}</span>
-          <!-- One polite region per brush, kept across states, so a count arriving is spoken
-               (WCAG 4.1.3). -->
-          <span role="status"
-            >{s.kind === 'found'
-              ? n(s.lots, 'lot', 'lots')
-              : s.kind === 'finding'
-                ? 'Finding lots…'
-                : "Couldn't find lots"}</span
-          >
-          {#if s.kind === 'failed'}
-            <button
-              type="button"
-              aria-describedby={labelId}
-              class="min-h-6 min-w-6 rounded-md px-1 font-semibold underline pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-              onclick={() => s.keys.forEach((k) => sync.retry(k))}>Retry</button
-            >
-          {/if}
-        </li>
-      {/each}
-    </ul>
+    <div>
+      <h4 id="{uid}-brushes" class="font-semibold">Your brushes</h4>
+      <p class="text-gray-700">Later brushes win where they overlap.</p>
+      <ol bind:this={list} aria-labelledby="{uid}-brushes" class="mt-1 flex flex-col gap-2">
+        {#each store.policy.brushes as b, i (b.id)}
+          <BrushCard
+            {store}
+            {sync}
+            brush={b}
+            index={i}
+            onedit={edit}
+            editDisabled={!catalog}
+            {announce}
+            onremoved={afterRemove}
+          />
+        {/each}
+      </ol>
+    </div>
+  {/if}
+
+  {#if inlineForm && forms.current && catalog}
+    {#key forms.current}
+      <RuleBrushForm
+        kind={forms.current.kind}
+        {catalog}
+        initial={forms.current.initial}
+        onsave={save}
+        oncancel={() => forms.close()}
+      />
+    {/key}
+  {:else}
+    <div>
+      <button
+        bind:this={addBtn}
+        type="button"
+        data-brush-add
+        aria-expanded={adding}
+        aria-controls="{uid}-kinds"
+        class="min-h-11 rounded-md border border-gray-300 px-3 font-medium"
+        onclick={() => (adding = !adding)}>Add a brush</button
+      >
+      {#if adding}
+        <ul id="{uid}-kinds" class="mt-2 flex flex-col gap-2">
+          {#each RULE_KINDS as kd (kd.id)}
+            {@const why = kindUnavailable(kd.id, catalog)}
+            <li class="flex flex-col">
+              <button
+                type="button"
+                disabled={why !== null}
+                aria-describedby={why ? `${uid}-why-${kd.id}` : undefined}
+                class="min-h-11 self-start rounded-md border border-gray-300 px-3 font-medium disabled:opacity-40"
+                onclick={() => openKind(kd.id)}>{kd.label}</button
+              >
+              {#if why}
+                <span id="{uid}-why-{kd.id}" class="text-gray-700">{why}</span>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
   {/if}
 </div>
 
