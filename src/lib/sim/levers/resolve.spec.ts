@@ -131,7 +131,7 @@ describe('protections', () => {
       WINDOW
     );
     const cap = leverCapacity(lowered, c.parcels);
-    expect(cap.withoutProtections - cap.plan).toBeGreaterThanOrEqual(0);
+    expect(cap.withoutProtections - cap.plan).toBe(0); // lowered to 0: nothing either way
   });
 
   it('categories: historic, rent control, newer-than', () => {

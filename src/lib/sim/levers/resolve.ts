@@ -20,6 +20,7 @@ import {
   type Period
 } from './layers';
 import { STOCK_LAYERS, type Protections, type SimLevers } from './types';
+import { localProgramColumn } from './view';
 
 /** A lot whose final (stories, cap) is on none of its stock rows: its yield is computed outside. */
 export interface Need {
@@ -179,7 +180,8 @@ export function resolveEnvelopes(
   // The switch is resolved whenever it falls inside the window, and dropped when it changes no
   // row: whether a run switches depends only on whether the envelopes differ, not on which levers
   // read current law (the currentLaw stock, capped user edits). A protected row is its blend row
-  // in both periods, so protections alone never switch.
+  // in both periods, so protections alone never switch. A change in the Local Program column
+  // alone (Call 22) also keeps the switch.
   const inWindow = !assume && window.asOf < window.switchDay && window.switchDay <= window.horizon;
 
   const before = resolvePeriod(ctx, levers, beforePeriod, rows);
@@ -195,7 +197,11 @@ export function resolveEnvelopes(
     after &&
     unprotectedAfter &&
     sameTable(after.table, before.table) &&
-    sameTable(unprotectedAfter.table, unprotectedBefore.table)
+    sameTable(unprotectedAfter.table, unprotectedBefore.table) &&
+    sameArray(
+      localProgramColumn(ctx, levers, beforePeriod),
+      localProgramColumn(ctx, levers, 'after')
+    )
   ) {
     after = null;
     unprotectedAfter = null;

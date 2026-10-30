@@ -1,7 +1,9 @@
 /**
  * Presents a resolved envelope table to the existing simulation: a `ScenarioParcels` view and a
- * `PolicyOp` (plan 2 Task 5). Follows `baseZoning`: no source column is copied or mutated. The
- * engine reads features only through the `fzp` slots, so the table lands there. Worker-safe.
+ * `PolicyOp` (plan 2 Task 5). Follows `baseZoning`: no source column is mutated, and the view
+ * reuses the source columns except the derived ones and an after-switch Local Program column that
+ * is masked into a fresh array. The engine reads features only through the `fzp` slots, so the
+ * table lands there. Worker-safe.
  */
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import type { PolicyOp } from '../scenario/policy';
