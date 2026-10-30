@@ -741,7 +741,7 @@
     </div>
   {:else if phase === 'failed'}
     <div
-      class="absolute top-4 left-1/2 z-30 flex w-max max-w-[calc(100%-32px)] -translate-x-1/2 items-center gap-2 rounded-lg bg-white py-1 pl-3 text-sm text-black shadow"
+      class="absolute top-4 left-[calc(50%+var(--sim-panel-w,0px)/2)] z-30 flex w-max max-w-[calc(100%-32px-var(--sim-panel-w,0px))] -translate-x-1/2 items-center gap-2 rounded-lg bg-white py-1 pl-3 text-sm text-black shadow"
     >
       <p role="alert" data-testid="fzp-status">
         {dataError
@@ -866,7 +866,9 @@
     </div>
   {/if}
 
-  {@render panel?.()}
+  {#if phase !== 'no-scenario'}
+    {@render panel?.()}
+  {/if}
 
   {#if calibration && phase !== 'no-scenario'}
     <SourcesDialog

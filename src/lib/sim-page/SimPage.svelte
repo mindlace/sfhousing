@@ -5,13 +5,14 @@
   redirect) opens the Family Zoning Plan comparison, otherwise current law (Calls 14 and 16).
 -->
 <script lang="ts">
-  import { tick, untrack } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import type { Manifest } from '$lib/data/manifest';
   import FzpMode, { type SimClientApi } from '$lib/fzp/FzpMode.svelte';
   import { DEFAULT_LEVERS, FZP_COMPAT_LEVERS } from '$lib/sim/levers/types';
   import type { BrushLotsResult } from '$lib/sim/scenario/types';
   import type { Calibration } from '$lib/timelapse/types';
   import { policyFromLevers } from './policy';
+  import { focusHeaderMenu } from '$lib/shell/header-actions.svelte';
   import { LeverSync, PolicyStore } from './policy-store.svelte';
   import PolicyPanel from './PolicyPanel.svelte';
 
@@ -68,7 +69,22 @@
   const uid = $props.id();
   const panelId = `${uid}-policy`;
   let policyOpen = $state(false);
+  /** Opening moves focus into the panel only when the user opened it (WCAG 2.4.3). */
+  let policyFocus = $state(true);
   let policyButton = $state<HTMLButtonElement>();
+
+  // The panel starts open, docked, from md and closed below (the controller's ruling); read once,
+  // on the client. With no scenario there is no panel.
+  onMount(() => {
+    if (noScenario || !matchMedia('(min-width: 768px)').matches) return;
+    policyFocus = false;
+    policyOpen = true;
+  });
+
+  function openPolicy(): void {
+    policyFocus = true;
+    policyOpen = true;
+  }
 
   /**
    * Closing the panel returns focus to the Policy button, or, when it sits in the closed phone
@@ -82,7 +98,7 @@
     await tick();
     if (!restore) return;
     if (policyButton?.checkVisibility()) policyButton.focus();
-    else document.querySelector<HTMLElement>('header button[aria-controls$="-menu"]')?.focus();
+    else focusHeaderMenu();
   }
 
   // Every policy change after the first goes to LeverSync. The initial policy is `initial`, which
@@ -105,12 +121,18 @@
     aria-expanded={policyOpen}
     aria-controls={panelId}
     class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-    onclick={() => (policyOpen ? void closePolicy() : (policyOpen = true))}>Policy</button
+    onclick={() => (policyOpen ? void closePolicy() : openPolicy())}>Policy</button
   >
 {/snippet}
 
 {#snippet panel()}
-  <PolicyPanel {store} id={panelId} open={policyOpen} onclose={() => void closePolicy()} />
+  <PolicyPanel
+    {store}
+    id={panelId}
+    open={policyOpen}
+    focusOnOpen={policyFocus}
+    onclose={() => void closePolicy()}
+  />
 {/snippet}
 
 <FzpMode

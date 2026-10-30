@@ -17,6 +17,8 @@
     store: PolicyStore;
     open: boolean;
     onclose(): void;
+    /** Opening the docked panel moves focus into it (false for the default open on md+). */
+    focusOnOpen?: boolean;
     /** The panel's id, for the Policy button's `aria-controls`. */
     id?: string;
     /** 'add-brush' replaces the sections with `subview` and a Back button (Task 9). */
@@ -31,6 +33,7 @@
     store,
     open,
     onclose,
+    focusOnOpen = true,
     id = undefined,
     view = 'sections',
     subview = undefined,
@@ -73,9 +76,10 @@
     if (dialog && !dialog.open) dialog.showModal();
   });
 
-  // Opening the docked panel moves focus into it (its heading's section), as the sheet does.
+  // Opening the docked panel moves focus into it, as the sheet does, unless the page opened it
+  // by default (focus is moved only on the user's request, WCAG 2.4.3).
   $effect(() => {
-    if (docked) void tick().then(() => docked?.focus());
+    if (docked && untrack(() => focusOnOpen)) void tick().then(() => docked?.focus());
   });
 
   function oncancel(e: Event): void {

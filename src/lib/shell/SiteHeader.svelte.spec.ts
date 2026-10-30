@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
+import { focusHeaderMenu } from './header-actions.svelte';
 import SiteHeader from './SiteHeader.svelte';
 import ScoreBarHeader from './test/ScoreBarHeader.svelte';
 
@@ -121,6 +122,14 @@ describe('SiteHeader', () => {
     await expect.element(banner).toBeVisible();
     const el = banner.element() as HTMLElement;
     expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth);
+  });
+
+  it('focusHeaderMenu focuses the phone Menu button, and is false without one', async () => {
+    expect(focusHeaderMenu()).toBe(false);
+    await page.viewport(375, 700);
+    render(SiteHeader);
+    expect(focusHeaderMenu()).toBe(true);
+    await expect.element(page.getByRole('button', { name: 'Menu' })).toHaveFocus();
   });
 
   describe('phone menu', () => {

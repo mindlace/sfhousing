@@ -32,6 +32,17 @@ export function useHeaderActions(snippet: Snippet, opts?: { pinned?: Snippet }):
   });
 }
 
+/**
+ * Focuses the header's phone Menu button (SiteHeader marks it `data-header-menu`). For a page
+ * whose overlay was opened from the Menu and must hand focus back once the Menu has closed.
+ * Returns false when there is no Menu button.
+ */
+export function focusHeaderMenu(): boolean {
+  const b = document.querySelector<HTMLElement>('[data-header-menu]');
+  b?.focus();
+  return b !== null;
+}
+
 const OVERLAY_OPEN = 'sfh-header-overlay-open';
 
 /**
