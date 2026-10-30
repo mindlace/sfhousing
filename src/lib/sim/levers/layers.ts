@@ -85,12 +85,37 @@ function copyRow(to: EnvelopeTable, i: number, from: EnvelopeTable, F: number): 
   to.yield.set(from.yield.subarray(i * F, i * F + F), i * F);
 }
 
+const winsMemo = new WeakMap<LayerCtx, Uint8Array>();
 const afterMemo = new WeakMap<LayerCtx, EnvelopeTable>();
 
 /**
- * Current law from the switch day (ruling 1): the SB 79 row where it applies, the lot is not
- * permanently exempt and SB 79 is more permissive than FZP; otherwise the FZP row. §207.11 has
- * lapsed with the Alternative Plan, and the temporary exemptions end on the same date.
+ * 1 where the after-switch current law takes the SB 79 row (ruling 1): SB 79 applies, the lot is
+ * not permanently exempt and SB 79 is more permissive than FZP. Memoised per ctx.
+ */
+export function sb79WinsAfter(ctx: LayerCtx): Uint8Array {
+  const hit = winsMemo.get(ctx);
+  if (hit) return hit;
+  const F = ctx.parcels.fillLevels.length;
+  const fzp = stockTable(ctx, 'fzp');
+  const sb79 = stockTable(ctx, 'sb79');
+  const { sb79Status, exemptPermanent } = ctx.policy;
+  const applies = SB79_STATUSES.indexOf('applies');
+  const out = new Uint8Array(ctx.parcels.count);
+  for (let i = 0; i < out.length; i++)
+    if (
+      sb79Status[i] === applies &&
+      exemptPermanent[i] === 0 &&
+      mostPermissive(topOf(fzp, i, F), topOf(sb79, i, F)) === 'b'
+    )
+      out[i] = 1;
+  winsMemo.set(ctx, out);
+  return out;
+}
+
+/**
+ * Current law from the switch day (ruling 1): the SB 79 row where `sb79WinsAfter`, otherwise the
+ * FZP row. §207.11 has lapsed with the Alternative Plan, and the temporary exemptions end on the
+ * same date.
  */
 export function currentLawAfterTable(ctx: LayerCtx): EnvelopeTable {
   const hit = afterMemo.get(ctx);
@@ -98,16 +123,9 @@ export function currentLawAfterTable(ctx: LayerCtx): EnvelopeTable {
   const F = ctx.parcels.fillLevels.length;
   const fzp = stockTable(ctx, 'fzp');
   const sb79 = stockTable(ctx, 'sb79');
-  const { sb79Status, exemptPermanent } = ctx.policy;
-  const applies = SB79_STATUSES.indexOf('applies');
+  const wins = sb79WinsAfter(ctx);
   const out = emptyTable(ctx.parcels.count, F);
-  for (let i = 0; i < out.count; i++) {
-    const useSb79 =
-      sb79Status[i] === applies &&
-      exemptPermanent[i] === 0 &&
-      mostPermissive(topOf(fzp, i, F), topOf(sb79, i, F)) === 'b';
-    copyRow(out, i, useSb79 ? sb79 : fzp, F);
-  }
+  for (let i = 0; i < out.count; i++) copyRow(out, i, wins[i] ? sb79 : fzp, F);
   afterMemo.set(ctx, out);
   return out;
 }

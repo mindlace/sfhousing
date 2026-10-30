@@ -5,19 +5,27 @@
  */
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import type { PolicyOp } from '../scenario/policy';
-import type { EnvelopeTable } from './layers';
+import { sb79WinsAfter, type EnvelopeTable, type LayerCtx, type Period } from './layers';
 import type { SimLevers } from './types';
 
 /**
- * The Local Program column (ruling 3). Local Program lots are forced onto streamlined when
- * `localProgramStreamlined` is set and `fzp` or `currentLaw` is on, since current law contains
- * the FZP map. Otherwise all zero, as in `baseZoning`.
+ * The Local Program column for a period (ruling 3, partner Call 22). Local Program lots are
+ * forced onto streamlined when `localProgramStreamlined` is set and the `fzp` layer is on, or
+ * `currentLaw` is on (it contains the FZP map), except after the switch where current law takes
+ * the SB 79 row (`sb79WinsAfter`) and the Alternative Plan is not kept: there the lot follows the
+ * route shares. With `fzp` on, forcing applies in both periods. Otherwise all zero, as in
+ * `baseZoning`.
  */
-export function localProgramColumn(parcels: ScenarioParcels, levers: SimLevers): Uint8Array {
-  const on =
-    levers.localProgramStreamlined &&
-    (levers.stock.includes('fzp') || levers.stock.includes('currentLaw'));
-  return on ? parcels.localProgram : new Uint8Array(parcels.count);
+export function localProgramColumn(ctx: LayerCtx, levers: SimLevers, period: Period): Uint8Array {
+  const { parcels } = ctx;
+  const out = new Uint8Array(parcels.count);
+  if (!levers.localProgramStreamlined) return out;
+  if (levers.stock.includes('fzp')) return parcels.localProgram;
+  if (!levers.stock.includes('currentLaw')) return out;
+  if (period === 'before' || levers.assumeAlternativePlanKept) return parcels.localProgram;
+  const wins = sb79WinsAfter(ctx);
+  for (let i = 0; i < out.length; i++) out[i] = wins[i] ? 0 : parcels.localProgram[i];
+  return out;
 }
 
 /** `parcels` with the table's envelope, yields and hostability in the `fzp` slots. */

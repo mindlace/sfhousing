@@ -215,6 +215,17 @@ describe('applyLevers: a capped edit under FZP stock', () => {
   });
 });
 
+describe('applyLevers: Local Program after the switch', () => {
+  it('a Local Program lot where SB 79 wins after the switch is forced only before it', () => {
+    const { base, ctx } = setup();
+    const i = ctx.parcels.index.get(MINI_SB79_ID)!;
+    const out = compile(base, ctx, clone(DEFAULT_LEVERS));
+    expect(out.plan.parcels.localProgram[i]).toBe(1);
+    expect(out.plan.lawSwitch!.parcels.localProgram[i]).toBe(0);
+    expect(out.twin.lawSwitch!.parcels.localProgram[i]).toBe(0);
+  });
+});
+
 describe('applyLevers: capacity and unknown lots', () => {
   it('passes the capacity and the unknown named lots through', () => {
     const { base, ctx } = setup();

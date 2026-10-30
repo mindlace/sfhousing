@@ -48,9 +48,12 @@ function bare(input: SimInput): SimInput {
   return rest;
 }
 
-/** The plan input for `levers` under the filled resolution (its Needs already written in). */
-function planOf(base: SimInput, levers: SimLevers, filled: Resolution): SimInput {
-  const lp = localProgramColumn(base.parcels, levers);
+/**
+ * The plan input for `levers` under the filled resolution (its Needs already written in). Each
+ * view gets its period's Local Program column (Call 22).
+ */
+function planOf(base: SimInput, ctx: LayerCtx, levers: SimLevers, filled: Resolution): SimInput {
+  const lp = localProgramColumn(ctx, levers, filled.beforePeriod);
   const inFlight = scaleTable(levers.timers, 'inFlight');
   const fresh = scaleTable(levers.timers, 'new');
   const plan = bare(applyPolicies([envelopeOp(filled.before.table, lp), timersOp(inFlight)], base));
@@ -69,7 +72,11 @@ function planOf(base: SimInput, levers: SimLevers, filled: Resolution): SimInput
       ? {
           lawSwitch: {
             day: filled.after.day,
-            parcels: parcelsView(base.parcels, filled.after.period.table, lp)
+            parcels: parcelsView(
+              base.parcels,
+              filled.after.period.table,
+              localProgramColumn(ctx, levers, 'after')
+            )
           }
         }
       : {})
@@ -111,7 +118,7 @@ export function twinInput(
     const r = resolveEnvelopes(ctx, law, window);
     const needs = allNeeds(r).length;
     if (needs > 0) throw new Error(`twinInput: the current-law twin has ${needs} needs`);
-    twin = planOf(base, law, r);
+    twin = planOf(base, ctx, law, r);
   }
   byKey.set(key, twin);
   return twin;
@@ -142,7 +149,7 @@ export function applyLevers(
   filled: Resolution,
   horizon: Day
 ): LeverInputs {
-  const plan = planOf(base, levers, filled);
+  const plan = planOf(base, ctx, levers, filled);
   return {
     plan,
     twin: twinInput(base, ctx, levers, horizon),
