@@ -3,7 +3,8 @@
  * with undo and redo, and `LeverSync` turns each recipe into the `SimLevers` the worker runs.
  * `LeverSync` resolves every brush query the recipe needs (cached by `queryKey`), compiles once
  * all are known, and sends the result 250 ms after the last change (Call 18), so only the latest
- * recipe reaches the worker.
+ * recipe reaches the worker. A `no-session` answer (no client, a crash, a session that ended) is
+ * not a failure: the query waits for `resume`, the page's sign that a new session is live.
  */
 import type { BrushQuery } from '$lib/sim/levers/brushes';
 import type { SimLevers } from '$lib/sim/levers/types';
@@ -83,8 +84,15 @@ export class LeverSync {
   /** Answered queries, failures included (a failure stands until `retry`). Never mutated. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   #results = $state.raw<ReadonlyMap<string, BrushLotsResult>>(new Map());
-  /** Queries in flight, each with a token so a retried query's older answer is ignored. */
-  #inFlight = new Map<string, number>(); // eslint-disable-line svelte/prefer-svelte-reactivity
+  /**
+   * Queries in flight: a token, so a retried query's older answer is ignored, and the `resume`
+   * generation it was asked in.
+   */
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  #inFlight = new Map<string, { token: number; gen: number }>();
+  /** Queries answered `no-session`, waiting for `resume`. */
+  #parked = new Set<string>(); // eslint-disable-line svelte/prefer-svelte-reactivity
+  #generation = 0;
   /** Every query asked, by key, so `retry` can ask it again. */
   #queries = new Map<string, BrushQuery>(); // eslint-disable-line svelte/prefer-svelte-reactivity
   #token = 0;
@@ -114,9 +122,26 @@ export class LeverSync {
   update(p: SimPolicy): void {
     this.#policy = p;
     for (const { key, query } of queriesOf(p)) {
-      if (!this.#results.has(key) && !this.#inFlight.has(key)) this.#ask(key, query);
+      if (this.#results.has(key) || this.#inFlight.has(key) || this.#parked.has(key)) continue;
+      this.#ask(key, query);
     }
     this.#schedule();
+  }
+
+  /**
+   * A new session is live: asks again every query answered `no-session`. One still in flight
+   * from before is asked again as soon as it answers `no-session`.
+   */
+  resume(): void {
+    this.#generation++;
+    const parked = [...this.#parked];
+    this.#parked.clear();
+    const needed = (this.#policy ? queriesOf(this.#policy) : []).map((q) => q.key);
+    for (const key of parked) {
+      const query = this.#queries.get(key);
+      // A query the recipe no longer needs is asked again if it comes back (nothing is cached).
+      if (query && needed.includes(key)) this.#ask(key, query);
+    }
   }
 
   /** Asks a failed query again (a no-op unless its last answer failed). */
@@ -134,7 +159,7 @@ export class LeverSync {
   #ask(key: string, query: BrushQuery): void {
     const token = ++this.#token;
     this.#queries.set(key, query);
-    this.#inFlight.set(key, token);
+    this.#inFlight.set(key, { token, gen: this.#generation });
     this.#resolving = this.#inFlight.size;
     void this.#deps.resolve(query).then(
       (r) => this.#answer(key, token, r),
@@ -144,9 +169,17 @@ export class LeverSync {
   }
 
   #answer(key: string, token: number, r: BrushLotsResult): void {
-    if (this.#inFlight.get(key) !== token) return;
+    const asked = this.#inFlight.get(key);
+    if (asked?.token !== token) return;
     this.#inFlight.delete(key);
     this.#resolving = this.#inFlight.size;
+    if (!r.ok && r.reason === 'no-session') {
+      // Not an answer about the lots: ask again in the next session, or now if one has started.
+      const query = this.#queries.get(key);
+      if (asked.gen < this.#generation && query) this.#ask(key, query);
+      else this.#parked.add(key);
+      return;
+    }
     // eslint-disable-next-line svelte/prefer-svelte-reactivity
     this.#results = new Map(this.#results).set(key, r);
     // Only a query the latest recipe needs can unblock its send.

@@ -101,7 +101,11 @@
     levers?: SimLevers;
     /** Every lever status change (/sim). */
     onlevers?: (s: LeverStatus) => void;
-    /** The client's brush requests once it exists, null on unmount. */
+    /**
+     * The client's brush requests on each new session (`initScenario`: mount, Retry), null on a
+     * crash and on unmount. A call with the api means requests answered `no-session` before it
+     * can be asked again.
+     */
     onclient?: (api: SimClientApi | null) => void;
     /** SimMap's handle and map, once ready. */
     onmapready?: (h: SimMapHandle, map: MapLike) => void;
@@ -197,6 +201,8 @@
   const canReroll = $derived(phase === 'ready' && !stopped && !rerollBusy);
 
   let client: ScenarioClient | null = null;
+  /** `client`'s brush requests for `onclient`, one object per client. */
+  let clientApi: SimClientApi | null = null;
   let handle: SimMapHandle | null = null;
   let map: MapLike | null = null;
   let dead = false;
@@ -253,6 +259,7 @@
       sentLevers = l;
       setLeverState(leversSession(leverState, rev));
     }
+    if (clientApi) onclient?.(clientApi);
     const keep = next !== null && next === seed;
     latest = {
       rev,
@@ -495,6 +502,7 @@
     },
     onCrash() {
       if (dead) return;
+      onclient?.(null);
       latest = null;
       rerollBusy = false;
       rerollFailed = false;
@@ -590,12 +598,12 @@
     if (phase !== 'no-scenario') {
       const c = new ScenarioClient(createWorker(), events);
       client = c;
-      if (phase === 'loading') startScenario({ seed: urlSeed });
-      onclient?.({
+      clientApi = {
         resolveBrush: (q) => c.resolveBrush(q),
         brushCatalog: () => c.brushCatalog(),
         retryChunks: () => c.retryChunks()
-      });
+      };
+      if (phase === 'loading') startScenario({ seed: urlSeed });
     }
 
     const mq = matchMedia(NARROW);

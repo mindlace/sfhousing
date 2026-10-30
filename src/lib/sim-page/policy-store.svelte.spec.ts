@@ -29,7 +29,8 @@ const ok = (lots: string[]): BrushLotsResult => ({
   lots,
   points: new Float64Array(lots.length * 2)
 });
-const failed: BrushLotsResult = { ok: false, reason: 'no-session', message: 'gone' };
+const failed: BrushLotsResult = { ok: false, reason: 'data-missing', message: 'no frontage' };
+const noSession: BrushLotsResult = { ok: false, reason: 'no-session', message: 'gone' };
 
 type Resolver = (r: BrushLotsResult) => void;
 
@@ -190,5 +191,51 @@ describe('LeverSync', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(h.sent).toHaveLength(1);
     expect(h.sync.result(queryKey(areaQuery('RH-1')))).toMatchObject({ ok: true });
+  });
+
+  it('a bad-request answer also stands until retry', async () => {
+    const h = harness();
+    const key = queryKey(areaQuery('RH-1'));
+    h.sync.update(withBrushes(area('RH-1')));
+    h.pending[0].resolve({ ok: false, reason: 'bad-request', message: 'x' });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h.sync.result(key)).toMatchObject({ reason: 'bad-request' });
+    h.sync.resume();
+    expect(h.resolve).toHaveBeenCalledTimes(1);
+    expect(h.sent).toEqual([]);
+  });
+
+  it('no-session is not a failure: the query waits for resume, then sends', async () => {
+    const h = harness();
+    const key = queryKey(areaQuery('RH-1'));
+    h.sync.update(withBrushes(area('RH-1')));
+    h.pending[0].resolve(noSession);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h.sync.result(key)).toBeUndefined();
+    expect(h.sync.resolving).toBe(0);
+    expect(h.sent).toEqual([]);
+    // Not asked again before the session is back, however often the recipe changes.
+    h.sync.update(withBrushes(area('RH-1', 6)));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h.resolve).toHaveBeenCalledTimes(1);
+
+    h.sync.resume();
+    expect(h.resolve).toHaveBeenCalledTimes(2);
+    h.pending[1].resolve(ok(['a']));
+    await vi.advanceTimersByTimeAsync(250);
+    expect(h.sent).toHaveLength(1);
+    expect(h.sent[0].user[0]).toMatchObject({ lots: ['a'], stories: 6 });
+  });
+
+  it('a no-session answer to a query asked before resume is asked again at once', async () => {
+    const h = harness();
+    h.sync.update(withBrushes(area('RH-1')));
+    h.sync.resume(); // a new session started while the old one still held the query
+    h.pending[0].resolve(noSession);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.resolve).toHaveBeenCalledTimes(2);
+    h.pending[1].resolve(ok(['b']));
+    await vi.advanceTimersByTimeAsync(250);
+    expect(h.sent).toHaveLength(1);
   });
 });

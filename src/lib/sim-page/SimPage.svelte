@@ -1,7 +1,7 @@
 <!--
   The /sim page (plan 3): FzpMode running the lever engine on the policy in memory. The recipe
   lives in a PolicyStore (undo, redo); LeverSync resolves its brushes in the worker, compiles it
-  and hands FzpMode each new SimLevers, which FzpMode sends with setLevers. `start=fzp` (the /fzp
+  and sends each new SimLevers to FzpMode's `levers`, which FzpMode passes on with setLevers. `start=fzp` (the /fzp
   redirect) opens the Family Zoning Plan comparison, otherwise current law (Calls 14 and 16).
 -->
 <script lang="ts">
@@ -47,8 +47,10 @@
   const initialPolicy = policyFromLevers(initial);
   const store = new PolicyStore(initialPolicy);
 
-  /** The scenario client's brush requests; null before mount and after unmount. */
+  /** The scenario client's brush requests; null before mount, after a crash and after unmount. */
   let api: SimClientApi | null = null;
+  /** What FzpMode runs: `initial`, then each document LeverSync sends. */
+  let levers = $state.raw(initial);
 
   const noSession = (): BrushLotsResult => ({
     ok: false,
@@ -57,8 +59,7 @@
   });
   const sync = new LeverSync({
     resolve: (q) => (api ? api.resolveBrush(q) : Promise.resolve(noSession())),
-    // FzpMode reads `sync.levers` (reactive) and sends each new object with setLevers.
-    send: () => {},
+    send: (l) => (levers = l),
     setTimeout,
     clearTimeout
   });
@@ -86,6 +87,10 @@
   {urlSeed}
   {reload}
   {onurlseed}
-  levers={sync.levers ?? initial}
-  onclient={(a) => (api = a)}
+  {levers}
+  onclient={(a) => {
+    api = a;
+    // A new session: brush queries answered `no-session` can be asked again.
+    if (a) sync.resume();
+  }}
 />

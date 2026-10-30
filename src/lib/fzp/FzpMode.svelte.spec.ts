@@ -1052,4 +1052,90 @@ describe('FzpMode levers (/sim)', () => {
     await unmount(s);
     expect(onclient.mock.calls.at(-1)).toEqual([null]);
   });
+
+  it('onclient: null on a crash, the api again when Retry starts a new session', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const onclient = vi.fn();
+    const s = setup({ levers: DEFAULT_LEVERS, onclient } as Over);
+    await toReady(s);
+    const api = onclient.mock.calls[0][0];
+    expect(api).not.toBeNull();
+    s.w().crash();
+    await expect.poll(() => onclient.mock.calls.at(-1)).toEqual([null]);
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect.poll(() => s.workers.length).toBe(2);
+    await expect.poll(() => onclient.mock.calls.at(-1)?.[0]).toBe(api);
+    expect(s.w().lastOf('initScenario')!.levers).toBe(DEFAULT_LEVERS);
+  });
+
+  it('a levers change during a reroll waits for its answer, then sends the latest once', async () => {
+    const s = setup({ levers: DEFAULT_LEVERS });
+    await toReady(s, 7);
+    vi.spyOn(crypto, 'getRandomValues').mockImplementation(((a: Uint32Array) => {
+      a[0] = 4242;
+      return a;
+    }) as typeof crypto.getRandomValues);
+    await another().click();
+    const reroll = s.w().lastOf('reroll')!;
+    const r = await s.r;
+    await r.rerender({ levers: { ...FZP_COMPAT_LEVERS } });
+    const latest: SimLevers = { ...FZP_COMPAT_LEVERS, compare: 'currentLaw' };
+    await r.rerender({ levers: latest });
+    await new Promise((res) => setTimeout(res, 50));
+    expect(s.w().allOf('setLevers')).toEqual([]);
+
+    s.w().emit(timelineMsg(reroll.rev, 4242));
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+    const sent = s.w().lastOf('setLevers')!;
+    expect(sent.levers).toBe(latest);
+    expect(sent.rev).toBeGreaterThan(reroll.rev);
+    // The reroll's answer was not superseded: its future is on show and in the URL.
+    expect(s.onurlseed.mock.calls).toEqual([[4242]]);
+    await expect.element(futureLine()).toHaveTextContent(/^This future: #4242$/);
+  });
+
+  it('a levers change during a reroll is sent after the reroll fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = setup({ levers: DEFAULT_LEVERS });
+    await toReady(s, 7);
+    await another().click();
+    const reroll = s.w().lastOf('reroll')!;
+    const latest: SimLevers = { ...FZP_COMPAT_LEVERS };
+    await (await s.r).rerender({ levers: latest });
+    await new Promise((res) => setTimeout(res, 50));
+    expect(s.w().allOf('setLevers')).toEqual([]);
+
+    s.w().emit({ type: 'error', rev: reroll.rev, code: 'internal', message: 'x' });
+    await expect.element(page.getByRole('alert')).toBeVisible();
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+    expect(s.w().lastOf('setLevers')!.levers).toBe(latest);
+    expect(s.onurlseed).not.toHaveBeenCalled();
+  });
+
+  it('a current at the setLevers rev that arrives after a reroll still pushes its lookups', async () => {
+    const s = setup({ levers: DEFAULT_LEVERS });
+    await toReady(s, 7);
+    await (await s.r).rerender({ levers: { ...FZP_COMPAT_LEVERS } });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+    const leversAt = s.w().lastOf('setLevers')!.rev;
+    // The levers' run arrives, then a reroll goes out while their status is still pending.
+    s.w().emit(timelineMsg(leversAt, 7));
+    await expect.element(another()).toBeEnabled();
+    await another().click();
+    const reroll = s.w().lastOf('reroll')!;
+    expect(reroll.rev).toBeGreaterThan(leversAt);
+
+    const before = callsOf('setTimelineLookups').length;
+    const lookups = postedLookups();
+    s.w().emit({
+      type: 'levers',
+      rev: leversAt,
+      phase: 'current',
+      lookups,
+      capacity: CAPACITY,
+      unknownLots: 0
+    });
+    await expect.poll(() => callsOf('setTimelineLookups').length).toBe(before + 1);
+    expect(callsOf('setTimelineLookups').at(-1)![0]).toBe(lookups.fresh);
+  });
 });
