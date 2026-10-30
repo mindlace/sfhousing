@@ -2,6 +2,7 @@
 // manifest URLs, the three concurrent fetches with retries, decode and validation, and the two
 // SimInputs with their precompute. Worker-bundle module: zod-free, DOM-free, $app-free.
 import type { Manifest } from '$lib/data/manifest';
+import { readPolicyParcels, type PolicyParcels } from '$lib/data/policy-codec';
 import { readScenarioParcels, type ScenarioParcels } from '$lib/data/scenario-codec';
 import { parseCalibration } from '$lib/timelapse/model';
 import { ProjectsFormatError, parseProjectsFile, type ProjectsFile } from '$lib/timelapse/projects';
@@ -18,12 +19,19 @@ export type FetchBytesLike = (
 ) => Promise<{ ok: boolean; status: number; arrayBuffer(): Promise<ArrayBuffer> }>;
 
 export type InitRequest = Extract<ScenarioRequest, { type: 'initScenario' }>;
-export type ScenarioUrls = { parcels: string; projects: string; calibration: string };
+/** `policy` is null when the manifest has no usable `scenarios.fzp.policy` (only /sim needs it). */
+export type ScenarioUrls = {
+  parcels: string;
+  projects: string;
+  calibration: string;
+  policy: string | null;
+};
 
 export interface Loaded {
   fzp: SimInput;
   twin: SimInput; // applyPolicies([baseZoning], fzp)
   projects: ProjectsFile; // as validated: invalid projects already left out
+  policy: PolicyParcels | null; // bound to the decoded parcels; null without `opts.policy`
 }
 export interface LoadFailure {
   code: ScenarioErrorCode;
@@ -63,7 +71,9 @@ export function validateInitRequest(req: InitRequest): string | null {
 /**
  * §4.2 step 2: the three FZP file URLs, or null when `scenarios.fzp` is absent or any URL is
  * missing or not under `/data/<datasetVersion>/` (the host answers `scenario-missing`). The
- * manifest has passed `checkManifestShape`, which does not look at `scenarios`.
+ * manifest has passed `checkManifestShape`, which does not look at `scenarios`. The optional
+ * `policy` URL (plan 2) is null when absent or outside the prefix: /fzp never needs it, so it
+ * never makes the result null.
  */
 export function scenarioUrls(m: Manifest): ScenarioUrls | null {
   const fzp: unknown = (m.scenarios as { fzp?: unknown } | undefined)?.fzp;
@@ -74,7 +84,8 @@ export function scenarioUrls(m: Manifest): ScenarioUrls | null {
   for (const u of Object.values(urls)) {
     if (typeof u !== 'string' || !u.startsWith(prefix)) return null;
   }
-  return urls as ScenarioUrls;
+  const policy = typeof f.policy === 'string' && f.policy.startsWith(prefix) ? f.policy : null;
+  return { ...(urls as Omit<ScenarioUrls, 'policy'>), policy };
 }
 
 /** One opened response: `read()` is the body read (`json()` or `arrayBuffer()`). */
@@ -145,6 +156,10 @@ class Stopped {}
  * decodes and validates them (never retried), builds the FZP input and its `baseZoning` twin,
  * and precomputes both with `deps.warn`. `projects.asOf ≥ horizon` is the caller's check.
  *
+ * With `opts.policy` (/sim, plan 2) `policy.bin` is a fourth concurrent fetch, decoded after
+ * parcels.bin and bound to it: no `urls.policy` gives `scenario-missing` before any fetch, and a
+ * decode error gives `scenario-invalid`. Without it the policy URL is never requested.
+ *
  * Once `cancelled()` is true the result is meaningless (a `LoadFailure` the caller ignores), and
  * a load cancelled while waiting on a retry timer the caller cleared never settles. An
  * unexpected throw (not a decode or validation failure) rejects.
@@ -152,8 +167,16 @@ class Stopped {}
 export async function loadScenario(
   deps: LoadDeps,
   urls: ScenarioUrls,
-  cancelled: () => boolean
+  cancelled: () => boolean,
+  opts?: { policy: boolean }
 ): Promise<Loaded | LoadFailure> {
+  const wantPolicy = opts?.policy === true;
+  if (wantPolicy && urls.policy === null) {
+    return {
+      code: 'scenario-missing',
+      message: 'dataset has no policy.bin (scenarios.fzp.policy)'
+    };
+  }
   let failed = false;
   const stop = () => failed || cancelled();
   const must = async <T>(p: Promise<FetchResult<T>>): Promise<T> => {
@@ -188,11 +211,13 @@ export async function loadScenario(
   let bin: ArrayBuffer;
   let projectsJson: unknown;
   let calibrationJson: unknown;
+  let policyBin: ArrayBuffer | null;
   try {
-    [bin, projectsJson, calibrationJson] = await Promise.all([
+    [bin, projectsJson, calibrationJson, policyBin] = await Promise.all([
       bytes(urls.parcels),
       json(urls.projects),
-      json(urls.calibration)
+      json(urls.calibration),
+      wantPolicy ? bytes(urls.policy!) : null
     ]);
   } catch (e) {
     failed = true; // the other files stop at their next step
@@ -213,6 +238,16 @@ export async function loadScenario(
     return invalid('parcels.bin', messageOf(e));
   }
   if (cancelled()) return CANCELLED;
+
+  let policy: PolicyParcels | null = null;
+  if (policyBin !== null) {
+    try {
+      policy = await readPolicyParcels(new Uint8Array(policyBin), parcels);
+    } catch (e) {
+      return invalid('policy.bin', messageOf(e));
+    }
+    if (cancelled()) return CANCELLED;
+  }
 
   let calibration: Calibration;
   try {
@@ -273,5 +308,5 @@ export async function loadScenario(
   };
   precomputeOf(fzp, warnOnce);
   precomputeOf(twin, warnOnce);
-  return { fzp, twin, projects };
+  return { fzp, twin, projects, policy };
 }

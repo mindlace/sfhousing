@@ -376,7 +376,10 @@ export const REFERENCES: TimelineScore['references'] = [
   }
 ];
 
-/** A `TimelineScore` from its parts; the baseline is T3 `rhnaCompletedNet`, passed through. */
+/**
+ * A `TimelineScore` from its parts; the baseline is T3 `rhnaCompletedNet`, passed through.
+ * `references` defaults to `REFERENCES` (/fzp); /sim passes its compare's subset (plan 2 ruling 3).
+ */
 export function assembleScore(p: {
   months: Day[];
   shown: Shown;
@@ -386,6 +389,7 @@ export function assembleScore(p: {
   baseline: ProjectsFile['rhnaCompletedNet'];
   phasing: TimelineScore['phasing'];
   targets?: readonly Target[];
+  references?: TimelineScore['references'];
 }): TimelineScore {
   const { units, since, provenance } = p.baseline;
   return {
@@ -397,6 +401,6 @@ export function assembleScore(p: {
     baseline: { completedNet: units, since, provenance },
     phasing: p.phasing,
     targets: targetsOf(units, p.shown, p.targets),
-    references: REFERENCES
+    references: p.references ?? REFERENCES
   };
 }

@@ -5,7 +5,10 @@ import { deflateRawSync } from 'node:zlib';
 import { checkManifestShape } from '$lib/sim/manifest-shape';
 import { parseCalibration } from '$lib/timelapse/model';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
-import { MINI_SCENARIO_URLS, MINI_VERSION } from './fixtures/mini-parcels';
+import { encodePolicyPayload } from '$lib/data/policy-codec';
+import { miniBin } from './fixtures/mini-bin';
+import { MINI_SCENARIO_URLS, MINI_VERSION, miniCity } from './fixtures/mini-parcels';
+import { miniPolicy } from './fixtures/mini-policy';
 import {
   MINI_AS_OF,
   MINI_HORIZON,
@@ -13,7 +16,13 @@ import {
   miniProjectsJson
 } from './fixtures/mini-projects';
 import { precomputeOf } from './input';
-import { scenarioUrls, validateInitRequest } from './load';
+import {
+  loadScenario,
+  scenarioUrls,
+  validateInitRequest,
+  type LoadDeps,
+  type ScenarioUrls
+} from './load';
 import type { SimInput } from './types';
 import { makeScenarioHarness, type ScenarioHarness } from './test/host-harness';
 
@@ -115,7 +124,7 @@ describe('validateInitRequest', () => {
 describe('scenarioUrls', () => {
   it('returns the three URLs when each is under /data/<v>/', () => {
     const m = makeScenarioHarness().manifest();
-    expect(scenarioUrls(m)).toEqual(URLS);
+    expect(scenarioUrls(m)).toEqual({ ...URLS, policy: null });
   });
 
   it('is null without scenarios.fzp, or with a missing or outside URL', () => {
@@ -644,5 +653,90 @@ describe('scenario host: reroll before loading, supersession and dispose', () =>
       { type: 'parcelSummary', reqId: 9, summary: null }
     ]);
     expect(h.errors()).toEqual([]);
+  });
+});
+
+describe('loadScenario: policy.bin (plan 2 Task 10)', () => {
+  const POLICY_URL = `/data/${MINI_VERSION}/scenarios/fzp/policy.bin`;
+  const WITH_POLICY: ScenarioUrls = { ...URLS, policy: POLICY_URL };
+  const policyBin = () =>
+    new Uint8Array(deflateRawSync(encodePolicyPayload(miniPolicy(miniCity()))));
+
+  /** Direct deps over in-memory bodies; every request is recorded. */
+  function direct(bodies: Record<string, unknown>) {
+    const requested: string[] = [];
+    const warned: string[] = [];
+    const serve = (url: string) => {
+      requested.push(url);
+      const body = bodies[url];
+      const ok = body !== undefined;
+      return Promise.resolve({ ok, status: ok ? 200 : 404, body });
+    };
+    const deps: LoadDeps = {
+      fetch: (url) => serve(url).then((r) => ({ ...r, json: async () => structuredClone(r.body) })),
+      fetchBytes: (url) =>
+        serve(url).then((r) => ({
+          ...r,
+          arrayBuffer: async () => (r.body as Uint8Array).slice().buffer
+        })),
+      setTimeout: (fn) => fn(),
+      retryDelaysMs: [],
+      warn: (m) => warned.push(m)
+    };
+    return { deps, requested, warned };
+  }
+  const files = (): Record<string, unknown> => ({
+    [URLS.parcels]: miniBin(),
+    [URLS.projects]: projects(),
+    [URLS.calibration]: calibration(),
+    [POLICY_URL]: policyBin()
+  });
+
+  it('scenarioUrls names the policy URL when the manifest has one, else null', () => {
+    const m = makeScenarioHarness().manifest();
+    expect(scenarioUrls(m)).toEqual({ ...URLS, policy: null });
+    const fzp = { ...m.scenarios!.fzp, policy: POLICY_URL };
+    expect(scenarioUrls({ ...m, scenarios: { fzp } })).toEqual(WITH_POLICY);
+    // /fzp never needs policy.bin, so a bad one leaves the other three usable.
+    for (const policy of ['/data/fixture-1/scenarios/fzp/policy.bin', 7]) {
+      const bad = { ...fzp, policy: policy as string };
+      expect(scenarioUrls({ ...m, scenarios: { fzp: bad } })).toEqual({ ...URLS, policy: null });
+    }
+  });
+
+  it('with opts.policy, fetches policy.bin once and returns it bound to the parcels', async () => {
+    const d = direct(files());
+    const r = await loadScenario(d.deps, WITH_POLICY, () => false, { policy: true });
+    if ('code' in r) throw new Error(r.message);
+    expect(d.requested.filter((u) => u === POLICY_URL)).toHaveLength(1);
+    expect(r.policy).not.toBeNull();
+    expect(r.policy!.count).toBe(r.fzp.parcels.count);
+    expect(r.policy!.sb79Status).toEqual(miniPolicy(miniCity()).sb79Status);
+  });
+
+  it('without opts.policy, never requests the policy URL and returns no policy', async () => {
+    const d = direct(files());
+    const r = await loadScenario(d.deps, WITH_POLICY, () => false);
+    if ('code' in r) throw new Error(r.message);
+    expect(d.requested).not.toContain(POLICY_URL);
+    expect(d.requested).toHaveLength(3);
+    expect(r.policy).toBeNull();
+  });
+
+  it('gives scenario-missing for opts.policy without scenarios.fzp.policy', async () => {
+    const d = direct(files());
+    const r = await loadScenario(d.deps, { ...URLS, policy: null }, () => false, { policy: true });
+    expect(r).toEqual({
+      code: 'scenario-missing',
+      message: 'dataset has no policy.bin (scenarios.fzp.policy)'
+    });
+    expect(d.requested).toEqual([]);
+  });
+
+  it('gives scenario-invalid for a policy.bin that does not decode', async () => {
+    const d = direct({ ...files(), [POLICY_URL]: new Uint8Array([1, 2, 3]) });
+    const r = await loadScenario(d.deps, WITH_POLICY, () => false, { policy: true });
+    expect(r).toMatchObject({ code: 'scenario-invalid' });
+    expect((r as { message: string }).message).toMatch(/^scenario policy\.bin: /);
   });
 });
