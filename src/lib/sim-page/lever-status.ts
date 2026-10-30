@@ -3,7 +3,7 @@
 // does not make lever messages stale.
 import type { LeverLookups } from '$lib/sim/levers/apply';
 import type { LeverCapacity } from '$lib/sim/levers/resolve';
-import type { LeversResponse } from '$lib/sim/scenario/types';
+import type { LeversResponse, ScenarioErrorCode } from '$lib/sim/scenario/types';
 
 export type LeverStatus =
   | { kind: 'off' }
@@ -13,6 +13,8 @@ export type LeverStatus =
 
 export interface LeverStatusState {
   sentRev: number | null;
+  /** The latest initScenario rev: a load failure is posted at it, below a later setLevers. */
+  sessionRev: number | null;
   status: LeverStatus;
 }
 
@@ -44,7 +46,20 @@ export function leversMessage(s: LeverStatusState, m: LeversResponse): LeverStat
   };
 }
 
-export function leversError(s: LeverStatusState, rev: number): LeverStatusState {
-  if (s.sentRev === null || rev < s.sentRev) return s;
+/** The page sent `initScenario` (with levers) at `rev`. */
+export function leversSession(s: LeverStatusState, rev: number): LeverStatusState {
+  return { ...leversSent(s, rev), sessionRev: rev };
+}
+
+export function leversError(
+  s: LeverStatusState,
+  rev: number,
+  code: ScenarioErrorCode
+): LeverStatusState {
+  if (s.sentRev === null) return s;
+  const endedSession =
+    s.sessionRev !== null &&
+    (rev === s.sessionRev || (rev >= s.sessionRev && code !== 'bad-request'));
+  if (rev < s.sentRev && !endedSession) return s;
   return { ...s, status: { kind: 'failed', rev } };
 }

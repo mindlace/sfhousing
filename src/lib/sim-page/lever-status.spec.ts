@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { LeversResponse } from '$lib/sim/scenario/types';
-import { leversError, leversMessage, leversSent, type LeverStatusState } from './lever-status';
+import {
+  leversError,
+  leversMessage,
+  leversSent,
+  leversSession,
+  type LeverStatusState
+} from './lever-status';
 
-const OFF: LeverStatusState = { sentRev: null, status: { kind: 'off' } };
+const OFF: LeverStatusState = { sentRev: null, sessionRev: null, status: { kind: 'off' } };
 const resolving = (rev: number): LeversResponse => ({
   type: 'levers',
   rev,
@@ -41,7 +47,21 @@ describe('lever status', () => {
     const s = leversSent(OFF, 2);
     expect(leversMessage(s, current(1))).toEqual(s);
     expect(leversMessage(s, resolving(1))).toEqual(s);
-    expect(leversError(s, 1)).toEqual(s);
-    expect(leversError(s, 2).status).toEqual({ kind: 'failed', rev: 2 });
+    expect(leversError(s, 1, 'scenario-invalid')).toEqual(s);
+    expect(leversError(s, 2, 'scenario-invalid').status).toEqual({ kind: 'failed', rev: 2 });
+  });
+
+  it('load failure fails the status', () => {
+    const s = leversSent(leversSession(OFF, 1), 2);
+    expect(leversError(s, 1, 'scenario-invalid').status).toEqual({ kind: 'failed', rev: 1 });
+    expect(leversError(s, 1, 'bad-request').status.kind).toBe('failed'); // rev === sessionRev
+    expect(leversError(leversSent(leversSession(OFF, 1), 2), 3, 'bad-request').status.kind).toBe(
+      'failed'
+    ); // rev >= sentRev
+  });
+
+  it('keeps a current at a rev above the sent rev', () => {
+    const s = leversMessage(leversSent(OFF, 2), current(3));
+    expect(s.status.kind).toBe('current');
   });
 });
