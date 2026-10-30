@@ -64,7 +64,7 @@ The ready-phase notices (the stopped chip with Retry, "Making another future…"
 
 The card's chance lookup (`chanceTable`) and the map's stage-duration lookup (`typicalMonths`) are built on the main thread from the base `calibration.json` (`lookupsFor` in `FzpMode.svelte`, one object per calibration object, because SimMap compares lookups by identity). `pushLookups` is the single call site that hands them to the map, and the card receives the same object.
 
-When policy levers arrive (timelapse T9), the worker will transform the calibration per future and post the lookups. Then `pushLookups` switches to the posted ones for both the map and the card, and `startScenario({ seed })` gains the lever parameter. Nothing else in the page should read the calibration for these tables.
+The seam now exists in the worker (plan 2, `docs/dev/sim-levers.md`): for a session initialised with levers, the worker posts `lookups` in its `levers` message with `phase: 'current'`, as `{ inFlight, fresh }`. `inFlight` is for pipeline cards and `fresh` for simulated ones. `/fzp` sends no levers and keeps its main-thread lookups. Plan 3 switches `pushLookups` to the posted ones on `/sim`, for both the map and the card, and `startScenario({ seed })` gains the lever parameter there. Nothing else in the page should read the calibration for these tables.
 
 ## Known gap: no keyboard access to cards
 
