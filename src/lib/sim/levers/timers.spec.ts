@@ -18,6 +18,8 @@ import {
 import miniCalibrationJson from '../scenario/fixtures/mini-calibration.json';
 import fixture0CalibrationJson from '../../../../e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json';
 import {
+  DISAPPROVAL_NEGLIGIBLE,
+  disapprovedShare,
   isIdentity,
   rescaleTransition,
   routeSharesOp,
@@ -212,5 +214,42 @@ describe('routeSharesOp', () => {
     const out = routeSharesOp(null)(cal, PARCELS);
     expect(out.cal).toBe(cal);
     expect(out.parcels).toBe(PARCELS);
+  });
+});
+
+describe('disapprovedShare', () => {
+  const cal = CALIBRATIONS[0][1]();
+
+  it('equals a hand fold of eventualProbabilities over pathwayStages', () => {
+    const got = disapprovedShare(cal);
+    for (const p of PATHWAYS) {
+      let reach = 1;
+      let sum = 0;
+      for (const stage of pathwayStages(p).filter((s) => s !== 'preApplication')) {
+        const t = cal.transitions[p][stage as Tabled];
+        if (!t) continue;
+        const e = eventualProbabilities(t, 0);
+        sum += reach * (e.exit.disapproved ?? 0);
+        reach *= e.advance;
+      }
+      expect(Math.abs(got[p] - sum)).toBeLessThan(1e-12);
+    }
+    expect(PATHWAYS.some((p) => got[p] > 0)).toBe(true);
+  });
+
+  it('is 0 for every pathway when no stage can be disapproved', () => {
+    const zeroed = structuredClone(cal);
+    for (const p of PATHWAYS) {
+      for (const t of Object.values(zeroed.transitions[p])) {
+        delete t.exit.disapproved;
+        delete t.tail.exit.disapproved;
+      }
+    }
+    const got = disapprovedShare(zeroed);
+    for (const p of PATHWAYS) expect(got[p]).toBe(0);
+  });
+
+  it('exports the 1% threshold of ruling 3', () => {
+    expect(DISAPPROVAL_NEGLIGIBLE).toBe(0.01);
   });
 });

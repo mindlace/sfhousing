@@ -9,9 +9,12 @@ import { cumulativeTotal, eventualProbabilities, tailRate } from '$lib/timelapse
 import {
   EXIT_ORDER,
   PATHWAYS,
+  pathwayStages,
+  type Calibration,
   type ExitReason,
   type Pathway,
   type Provenance,
+  type Stage,
   type Transition
 } from '$lib/timelapse/types';
 import type { PolicyOp } from '../scenario/policy';
@@ -170,4 +173,32 @@ export function routeSharesOp(shares: Record<Pathway, number> | null): PolicyOp 
     for (const p of PATHWAYS) pathwayForNew[p] = shares[p] / sum;
     return { cal: { ...cal, pathwayForNew }, parcels };
   };
+}
+
+/**
+ * Ruling 3, "Disapproval-zero threshold": the spec's disapproval exception is negligible when
+ * every pathway's eventual disapproved share of new projects is below this (1%, below the
+ * run-to-run spread of the band). Tier 4: a judgement call, not a sourced value.
+ */
+export const DISAPPROVAL_NEGLIGIBLE = 0.01;
+
+/**
+ * Per pathway, the share of new projects that eventually end disapproved. Reach starts at 1 at
+ * the first stage after `preApplication`; each stage adds reach x P(disapproved from month 0),
+ * then reach is multiplied by P(advance). The terminal stage has no table and is skipped.
+ */
+export function disapprovedShare(cal: Calibration): Record<Pathway, number> {
+  const out = { discretionary: 0, streamlined: 0, permitOnly: 0 };
+  for (const p of PATHWAYS) {
+    let reach = 1;
+    for (const stage of pathwayStages(p)) {
+      if (stage === 'preApplication') continue;
+      const t = cal.transitions[p][stage as Exclude<Stage, 'complete'>];
+      if (!t) continue;
+      const e = eventualProbabilities(t, 0);
+      out[p] += reach * (e.exit.disapproved ?? 0);
+      reach *= e.advance;
+    }
+  }
+  return out;
 }
