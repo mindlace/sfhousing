@@ -1086,6 +1086,7 @@ describe('FzpMode levers (/sim)', () => {
     s.w().emit({ type: 'levers', rev, phase: 'resolving', done: 1, total: 4, failedCells: [] });
     await expect.element(page.getByText(/Updating the simulation/)).toBeVisible();
     // A recompute slice threw: the worker ends the session and posts `internal` at the rev.
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     s.w().emit({ type: 'error', rev, code: 'internal', message: 'x' });
 
     const message = "Couldn't update the simulation for your policy.";
@@ -1093,6 +1094,7 @@ describe('FzpMode levers (/sim)', () => {
     await expect.element(alert).toBeVisible();
     expect(region.element().contains(alert.element())).toBe(true);
     expect(onlevers.mock.calls.at(-1)![0]).toMatchObject({ kind: 'failed', rev });
+    expect(err).toHaveBeenCalledWith('[fzp] worker error', 'internal', 'x');
     await expect.element(page.getByText(/Updating the simulation/)).not.toBeInTheDocument();
     // The score says its numbers predate the change.
     const board = await details();
