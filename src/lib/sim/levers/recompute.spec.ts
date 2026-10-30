@@ -163,6 +163,40 @@ describe('createYieldRecompute', () => {
     expect(calls).toBeLessThanOrEqual(r.total + CELLS * steps);
   });
 
+  it('a budget break inside a cell resumes there: every need computed exactly once', () => {
+    const CELLS = 3;
+    const PER = 10;
+    const big = syntheticParcels(CELLS, PER);
+    const needs: Need[] = Array.from({ length: CELLS * PER }, (_, row) => ({
+      row,
+      stories: 0,
+      cap: null
+    }));
+    const template = city.records.get(P.id[0] as ParcelId)!;
+    const reads = new Map<ParcelId, number>();
+    const r = createYieldRecompute(
+      big,
+      needs,
+      {
+        record: (id) => {
+          reads.set(id, (reads.get(id) ?? 0) + 1);
+          return { ...template, id };
+        },
+        cellLoaded: () => true,
+        now: clock() // each call moves 1 ms, so a 4 ms budget breaks part-way through a cell
+      },
+      new Map()
+    );
+    const doneAfter: number[] = [];
+    while (!r.step(4)) doneAfter.push(r.done);
+    expect(doneAfter.some((d) => d % PER !== 0)).toBe(true); // at least one break mid-cell
+    expect(r.done).toBe(r.total);
+    expect(r.result().size).toBe(CELLS * PER);
+    for (const n of needs) expect(r.result().has(needKey(n))).toBe(true);
+    expect(reads.size).toBe(CELLS * PER);
+    expect([...reads.values()].every((c) => c === 1)).toBe(true);
+  });
+
   it('missing record: a loaded cell without a need record fills it with zeros', () => {
     const needs = fzpNeeds();
     const gone = idOf(needs[0]);

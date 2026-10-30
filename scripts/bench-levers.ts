@@ -91,19 +91,19 @@ async function main(): Promise<number> {
   if (!rh1) throw new Error('no RH-1 family in the catalog');
   const brushes: Brush[] = [
     {
-      name: '(a) RH-1 family, raise to 4, limits off',
+      name: '(a) every `RH-1` family lot, raise to 4, limits off',
       query: { kind: 'area', districts: rh1.codes.map((c) => c.code), neighborhoods: [] },
       mode: 'raise',
       stories: 4
     },
     {
-      name: '(b) arterial frontage depth 1, set to 8',
+      name: '(b) arterial frontage depth 1, set to 8 (limits on)',
       query: { kind: 'street', classes: ['arterial'], names: [], depth: 1, ncOnly: false },
       mode: 'set',
       stories: 8
     },
     {
-      name: '(c) regionalRail within 805 m, raise to 8',
+      name: '(c) `regionalRail` within 805 m, raise to 8 (limits off)',
       query: { kind: 'transit', stopTypes: ['regionalRail'], maxM: 805 },
       mode: 'raise',
       stories: 8
@@ -116,9 +116,9 @@ async function main(): Promise<number> {
     horizon: HORIZON,
     switchDay: CURRENT_LAW_SWITCH.day
   };
-  const rows: string[][] = [];
-  for (const b of brushes) {
-    // the resolve, cold: a fresh lot index each time (the host builds one per session)
+  /** One brush, measured: a fresh lot index and gross cache each time (cold data, not cold JIT). */
+  const measure = (b: Brush): string[] => {
+    // a fresh lot index each time (the host builds one per session)
     const t0 = performance.now();
     const index = createLotIndex(parcels);
     const lotRows = resolveBrushRows(data, index, b.query);
@@ -156,7 +156,9 @@ async function main(): Promise<number> {
     if (!recompute.step(Infinity)) throw new Error('recompute did not finish');
     const recomputeMs = performance.now() - t2;
 
-    // the scenarioYield share: replay every gross the recompute computed (the cache holds them)
+    // The scenarioYield share, estimated: replay every gross the recompute computed (the cache
+    // holds them). The replay runs on warmer code and caches but without the recompute's
+    // interleaving, so "other" (recompute minus replay) can be off in either direction.
     const t3 = performance.now();
     for (const key of gross.keys()) {
       const [row, s] = key.split(':').map(Number);
@@ -170,7 +172,7 @@ async function main(): Promise<number> {
     applyLevers(loaded.fzp, ctx, levers, filled, HORIZON);
     const applyMs = performance.now() - t4;
 
-    rows.push([
+    return [
       b.name,
       lotRows.length.toLocaleString('en-US'),
       ms(resolveMs),
@@ -184,8 +186,11 @@ async function main(): Promise<number> {
       gross.size.toLocaleString('en-US'),
       recompute.missing.length.toLocaleString('en-US'),
       ms(applyMs)
-    ]);
-  }
+    ];
+  };
+  // A warm-up pass over every brush first, so each measured brush runs on a warmed-up JIT.
+  for (const b of brushes) measure(b);
+  const rows = brushes.map(measure);
 
   const head = [
     'Brush',
@@ -196,10 +201,10 @@ async function main(): Promise<number> {
     'Cells',
     'Chunk bytes',
     'Recompute ms',
-    'of which scenarioYield ms',
-    'bookkeeping ms',
+    'scenarioYield ms (est.)',
+    'Other ms (est.)',
     'Gross computed',
-    'Missing records',
+    'Missing',
     'fillNeeds + applyLevers ms'
   ];
   console.log(`\n| ${head.join(' | ')} |`);

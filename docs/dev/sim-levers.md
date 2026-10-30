@@ -140,19 +140,28 @@ zero row (yield 0 at every fill level, not hostable) and is listed in `missing`;
 once per lot (Call 19) and the revision still reaches `current`.
 
 Measured with `npx tsx scripts/bench-levers.ts <datasetDir>` on dataset `2026-10-29-0fd62c4d`
-(2026-10-30, Apple M5 Pro, 15 cores, 24 GB, Node v24.2.0). One cold `step(Infinity)` per brush
-with a fresh gross cache; "scenarioYield" replays every gross the recompute cached, and
-"bookkeeping" is the rest of the recompute. "Resolve" is `createLotIndex` + `resolveBrushRows`.
+(2026-10-30, Apple M5 Pro, 15 cores, 24 GB, Node v24.2.0). The script first runs every brush once
+as a JIT warm-up, then measures each brush with a fresh lot index and an empty gross cache.
 
-| Brush                                                    | Lots   | Resolve ms | resolveEnvelopes ms | Needs (unique) | Cells | Chunk bytes | Recompute ms | scenarioYield ms | Bookkeeping ms | Gross computed | Missing | fillNeeds + applyLevers ms |
-| -------------------------------------------------------- | ------ | ---------- | ------------------- | -------------- | ----- | ----------- | ------------ | ---------------- | -------------- | -------------- | ------- | -------------------------- |
-| (a) every `RH-1` family lot, raise to 4, limits off      | 72,992 | 24         | 40                  | 49,196         | 80    | 15.7 MB     | 3,463        | 3,268            | 196            | 161,791        | 0       | 31                         |
-| (b) arterial frontage depth 1, set to 8 (limits on)      | 13,472 | 16         | 18                  | 14,104         | 90    | 15.8 MB     | 2,256        | 2,196            | 60             | 61,815         | 0       | 7                          |
-| (c) `regionalRail` within 805 m, raise to 8 (limits off) | 23,639 | 18         | 25                  | 21,190         | 44    | 7.3 MB      | 3,245        | 3,209            | 36             | 105,890        | 0       | 8                          |
+What it measures: for each brush, every needed chunk is loaded first, then the recompute runs as
+one unsliced `step(Infinity)`. So "Recompute ms" is the compute cost of the touched-lot yields
+only. It does not show the speed-up from bucketing (that is in the slice-to-slice rescans, which
+one step never makes), nor the wall time to `current` on the page, which adds scheduler slices and
+the chunk fetches.
 
-The gate (Call 20) was 20,000 ms for brush (a): it passes at 3,463 ms, so no per-lot yield-table
-fallback is needed. `scenarioYield` is about 95% of the cost; the page sees it spread over
-scheduler slices, plus the chunk fetches (up to 90 cells, about 16 MB).
+"scenarioYield ms (est.)" replays every gross the recompute cached; "Other ms (est.)" is
+"Recompute ms" minus that. Both are estimates: the replay runs without the recompute's
+interleaving, so the split can be off in either direction. "Resolve ms" is `createLotIndex` +
+`resolveBrushRows`.
+
+| Brush                                                    | Lots   | Resolve ms | resolveEnvelopes ms | Needs (unique) | Cells | Chunk bytes | Recompute ms | scenarioYield ms (est.) | Other ms (est.) | Gross computed | Missing | fillNeeds + applyLevers ms |
+| -------------------------------------------------------- | ------ | ---------- | ------------------- | -------------- | ----- | ----------- | ------------ | ----------------------- | --------------- | -------------- | ------- | -------------------------- |
+| (a) every `RH-1` family lot, raise to 4, limits off      | 72,992 | 17         | 35                  | 49,196         | 80    | 15.7 MB     | 3,362        | 3,317                   | 45              | 161,791        | 0       | 20                         |
+| (b) arterial frontage depth 1, set to 8 (limits on)      | 13,472 | 16         | 39                  | 14,104         | 90    | 15.8 MB     | 2,319        | 2,314                   | 5               | 61,815         | 0       | 9                          |
+| (c) `regionalRail` within 805 m, raise to 8 (limits off) | 23,639 | 18         | 20                  | 21,190         | 44    | 7.3 MB      | 3,369        | 3,352                   | 17              | 105,890        | 0       | 10                         |
+
+The gate (Call 20) was 20,000 ms for brush (a): it passes at 3,362 ms, so no per-lot yield-table
+fallback is needed. By the estimate, `scenarioYield` is nearly all of the recompute's cost.
 
 ## The builder's calls
 
