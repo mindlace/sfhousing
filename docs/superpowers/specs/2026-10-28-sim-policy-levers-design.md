@@ -141,3 +141,20 @@ Plan 1's final review left these for the later plans:
   - The frontage step takes about 69 minutes of the 72-minute live build. Optimise it before rebuilds become routine.
   - One parcel already has 157 of the 255 allowed frontage entries, and going over fails the build.
 - **Small.** The comments at `e2e/helpers/sharing.ts:17` and `e2e/fzp-sim.spec.ts:54` are stale. The scenario bench (50 ms bar) is flaky.
+
+## Carried from plan 2 (policy engine, 2026-10-29)
+
+Plan 2's final review left these open. The plan-3 and plan-4 notes are in `docs/dev/sim-levers.md`.
+
+- **Partner questions.**
+  - After the 2032 switch, Local Program lots stay forced onto the streamlined route, even where SB 79 wins. Should they follow the route shares instead?
+  - A protected lot is raised to current law when base zoning is the only stock layer. The spec's "resets to current law" says so, but the partner may want "keep base" there.
+- **Next pipeline change.** §207.11 reads the Local Program height as `lp_ft ?? base_ft`, while the Local Program envelope uses `max(base, lp)`. No shipped row differs: every Local Program lot is uncapped, so (b)(8) stops it. Align it on `max`.
+- **First dataset with a phased master at pre-application.** That master runs on the in-flight calibration, not the new-project one. The live dataset has none. The fix is two lines.
+- **Small engine guards.**
+  - The law-switch hazard inversion gets `NaN` when the hazard is exactly 1 (unreachable).
+  - An equal-law shortcut would make an identical after-view exact by construction (0 mismatches in 5.1M draws today).
+  - The host should warn when a needed record never appears, instead of staying `resolving`.
+- **Performance, for plan 3 to measure on real records.**
+  - The recompute's bookkeeping is 3–10% of the yield work.
+  - `scenarioYield` cost is what would trigger the per-lot yield-table fallback.
