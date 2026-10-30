@@ -131,7 +131,8 @@ export function rescaleTransition(t: Transition, s: number): Transition {
   for (let j = 1; j < kinds.length; j++) {
     const r = kinds[j] as ExitReason;
     if (t.exit[r] !== undefined || (beyond && tailShare(r) > 0)) exit[r] = cols[j].slice(0, K2);
-    if (t.tail.exit[r] !== undefined) tailExit[r] = rho2 * pi(j);
+    // A table-only reason still needs a tail key when the shortened table leaves it share.
+    if (t.tail.exit[r] !== undefined || pi(j) > 0) tailExit[r] = rho2 * pi(j);
   }
   return {
     months: K2,

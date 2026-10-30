@@ -117,6 +117,81 @@ describe('rescaleTransition', () => {
   });
 });
 
+describe('rescaleTransition: synthetic tables', () => {
+  const base = CALIBRATIONS[0][1]();
+  const cell = base.transitions.discretionary.filed!;
+  /** A K-month table: each column rises linearly to its share at month K. */
+  function synthetic(
+    K: number,
+    shares: { advance: number; exit: Partial<Record<(typeof EXIT_ORDER)[number], number>> },
+    tail: Transition['tail']
+  ): Transition {
+    const ramp = (to: number) => Array.from({ length: K }, (_, k) => (to * (k + 1)) / K);
+    const exit: Transition['exit'] = {};
+    for (const [r, v] of Object.entries(shares.exit)) exit[r as keyof typeof exit] = ramp(v!);
+    return {
+      months: K,
+      advance: ramp(shares.advance),
+      exit,
+      tail,
+      provenance: cell.provenance,
+      tailProvenance: cell.tailProvenance
+    };
+  }
+  function expectSharesKept(t: Transition, r: Transition) {
+    const before = eventualProbabilities(t, 0);
+    const after = eventualProbabilities(r, 0);
+    expect(Math.abs(after.advance - before.advance)).toBeLessThan(1e-9);
+    for (const reason of EXIT_ORDER) {
+      const b = before.exit[reason] ?? 0;
+      const a = after.exit[reason] ?? 0;
+      expect(Math.abs(a - b), reason).toBeLessThan(1e-9);
+    }
+    const next = withTransition(base, 'discretionary', 'filed', r);
+    expect(() => parseCalibration(structuredClone(next))).not.toThrow();
+  }
+
+  it('keeps a table-only exit reason share when the rescale truncates the table', () => {
+    // withdrawn is in the table but not the tail; K' / s = 3 / 0.33 < K = 10, so withdrawn's
+    // growth after month 9.09 must move into a tail key.
+    const t = synthetic(
+      10,
+      { advance: 0.4, exit: { withdrawn: 0.2 } },
+      { advance: 0.05, exit: { disapproved: 0.01 } }
+    );
+    const r = rescaleTransition(t, 0.33);
+    expect(r.months).toBe(3);
+    expect(r.tail.exit.withdrawn).toBeGreaterThan(0);
+    expectSharesKept(t, r);
+  });
+
+  it('scale 10 on a 30-month table stops at the 240-month cap and keeps the shares', () => {
+    const t = synthetic(
+      30,
+      { advance: 0.5, exit: { withdrawn: 0.1, cancelled: 0.05 } },
+      { advance: 0.04, exit: { withdrawn: 0.01 } }
+    );
+    const r = rescaleTransition(t, 10);
+    expect(r.months).toBe(240); // round(30 × 10) = 300 > 240
+    expect(r.tail.exit.cancelled).toBeGreaterThan(0); // table-only, cut at month 24 of 30
+    expectSharesKept(t, r);
+  });
+
+  it("trims K' below round(K s) when the beyond-table mass passes 1 - 1e-6", () => {
+    // round(10 × 0.25) = 3 reaches x = 12 > K, where C = 1 - 1e-4 × 0.05^2 > 1 - 1e-6.
+    const t = synthetic(10, { advance: 0.9999, exit: {} }, { advance: 0.95, exit: {} });
+    const r = rescaleTransition(t, 0.25);
+    expect(r.months).toBe(2);
+    expectSharesKept(t, r);
+  });
+
+  it('throws a RangeError when even k = 1 passes the table mass limit', () => {
+    // K = 1 at s = 0.5: k = 1 reads x = 2, where C = 1 - 1e-5 × 0.05 > 1 - 1e-6.
+    const t = synthetic(1, { advance: 0.99999, exit: {} }, { advance: 0.95, exit: {} });
+    expect(() => rescaleTransition(t, 0.5)).toThrow(RangeError);
+  });
+});
+
 const filed = { pathway: 'discretionary', stage: 'filed' } as const;
 
 describe('scaleTable', () => {
