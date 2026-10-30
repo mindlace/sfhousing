@@ -95,6 +95,15 @@ Responses (`LeversResponse`, `type: 'levers'`), where `rev` is the `initScenario
 - `phase: 'resolving'` with `done`, `total`, `failedCells`: touched-lot yields are being recomputed in budgeted slices (`createYieldRecompute`). `failedCells` are needed chunks that failed to load; `retryChunks` re-wants them. Until complete the result is "out of date" (`leversPending`).
 - `phase: 'current'` with `lookups` (`{ inFlight, fresh }`, each `{ chance, typicalMonths }`; `fresh === inFlight` when there is no `'new'` timer), `capacity` and `unknownLots`: the levers are in force, before any timeline computed on them. A superseded revision never gets `current`.
 
+Brushes (plan 3): `resolveBrush { reqId, query }` answers `brushLots { reqId, result }` (`BrushLotsResult`: `{ ok: true, lots, points }` with `points` the lots' label points as lng/lat pairs, transferred; or `{ ok: false, reason }`), and `brushCatalog { reqId }` answers `brushCatalog { reqId, catalog }`.
+
+- Only a session initialised with levers answers; otherwise `no-session` (catalog `null`). The router answers both itself outside scenario mode.
+- A request that arrives before the load waits for it. When the session ends (a new `initScenario`, a failed load, `dispose`), every waiting request is answered `no-session`.
+- The host validates each query (`brushQueryProblem`, `load.ts`): radii and `maxM` positive and finite, coordinates finite, kinds, stop types and street classes known; otherwise `bad-request`.
+- `frontage.bin` (`scenarios.fzp.frontage`), `transit.json` (`transit`) and `neighborhoods.geojson` (`neighborhoods`) are fetched once per session, on the first request needing them (street, transit, area-with-neighborhoods; the catalog needs all three). A missing manifest key, a failed fetch or a bad file gives `data-missing` for the queries needing it and `has.<file> = false` in the catalog. `/fzp` never fetches them.
+- The `LotIndex` is built once per session, on the base (as-loaded) parcels.
+- The client resolves pending brush promises with `no-session` / `null` on crash, `restart` and `dispose`.
+
 ## Disapproval exception
 
 The spec (`docs/superpowers/specs/2026-10-28-sim-policy-levers-design.md`, Goals 3) allows one

@@ -37,6 +37,15 @@
 // ones, is posted. A later `setLevers` replaces the pending revision (latest wins); a reroll
 // gives the pending run its rev and seed. At `current` the work takes the plan and twin inputs, a
 // fresh band state and a fresh run. The `LayerCtx` and the yield `GrossCache` are the session's.
+//
+// Brushes (plan 3 Task 5). `resolveBrush` and `brushCatalog` are answered only in a session with
+// levers (else `no-session`, catalog null). A request that arrives before the load waits for it;
+// one that needs an optional brush file (frontage.bin, transit.json, neighborhoods.geojson) waits
+// for that file, fetched once per session on the first request needing it. Every waiting request
+// is answered `no-session` when its session ends (a new init, a failed load, dispose). The
+// `LotIndex` is built once per session on the base parcels; the resolver memoises on object
+// identity, so the session's own decoded objects are passed every time. /fzp never fetches them.
+import { readFrontage, type Frontage } from '$lib/data/frontage-codec';
 import type { Manifest } from '$lib/data/manifest';
 import type { PolicyParcels } from '$lib/data/policy-codec';
 import { envelopeOf, type ScenarioParcels } from '$lib/data/scenario-codec';
@@ -44,6 +53,8 @@ import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
 import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
 import { packTimedTransferables } from '$lib/map/pack-timed';
 import type { TimedPackedCell, TimelineUpdate } from '$lib/map/types';
+import { decodeTransit } from '$lib/data/transit-codec';
+import type { TransitNetwork } from '$lib/data/transit';
 import type { Day } from '$lib/timelapse/time';
 import { cellsIntersecting, createChunkLoader, type ChunkLoader, type FetchLike } from '../chunks';
 import { DEFAULT_RETRY_DELAYS_MS } from '../host';
@@ -51,6 +62,17 @@ import { createLru } from '../lru';
 import { checkManifestShape } from '../manifest-shape';
 import type { ParcelSummary, Rev } from '../protocol';
 import { applyLevers } from '../levers/apply';
+import {
+  BrushDataMissing,
+  brushCatalog,
+  createLotIndex,
+  parseNeighborhoods,
+  resolveBrushRows,
+  type BrushData,
+  type BrushQuery,
+  type LotIndex,
+  type NeighborhoodShapes
+} from '../levers/brushes';
 import type { LayerCtx } from '../levers/layers';
 import { createYieldRecompute, type GrossCache, type YieldRecompute } from '../levers/recompute';
 import { allNeeds, fillNeeds, resolveEnvelopes, type Resolution } from '../levers/resolve';
@@ -59,6 +81,9 @@ import { chooseProject, projectCard, revisionAt, type CardCtx } from './card';
 import { createGeometry, type Geometry } from './geometry';
 import { massingFor, type MassingCtx } from './massing';
 import {
+  brushQueryProblem,
+  datasetUrl,
+  fetchWithRetry,
   leversProblem,
   loadScenario,
   scenarioUrls,
@@ -80,6 +105,7 @@ import {
 } from './score';
 import { simulateDetailed, simulateNet } from './simulate';
 import type {
+  BrushLotsResult,
   Massing,
   ScenarioErrorCode,
   ScenarioRequest,
@@ -106,6 +132,8 @@ export interface ScenarioHostDeps {
   decodeParcels?(bytes: Uint8Array): Promise<ScenarioParcels>;
   /** Test seam: the policy.bin decoder (default `readPolicyParcels`), its inflate likewise. */
   decodePolicy?(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels>;
+  /** Test seam: the frontage.bin decoder (default `readFrontage`), its inflate likewise. */
+  decodeFrontage?(bytes: Uint8Array, parcels: ScenarioParcels): Promise<Frontage>;
 }
 
 export interface ScenarioHost {
@@ -250,6 +278,29 @@ interface Work {
   levers: LeverWork | null;
 }
 
+/** The optional brush files and what each decodes to. */
+interface BrushFiles {
+  frontage: Frontage;
+  transit: TransitNetwork;
+  neighborhoods: NeighborhoodShapes;
+}
+type BrushFile = keyof BrushFiles;
+const BRUSH_FILES: readonly BrushFile[] = ['frontage', 'transit', 'neighborhoods'];
+
+/** One brush request not yet answered: it waits on the load, or on a brush file. */
+interface BrushWaiter {
+  reqId: number;
+  query: BrushQuery | null; // null for `brushCatalog`
+}
+
+/** A lever session's brush state. */
+interface BrushSession {
+  waiting: Set<BrushWaiter>;
+  index: LotIndex | null; // built on the first request after load
+  /** Each file's fetch and decode, started on the first request needing it; null = unavailable. */
+  files: { [K in BrushFile]?: Promise<BrushFiles[K] | null> };
+}
+
 type JobKind = 'recompute' | 'net' | 'shown' | 'geometry' | 'pack' | 'post';
 type Job = { kind: JobKind; run(): void };
 
@@ -269,6 +320,8 @@ interface Session {
   work: Work | null;
   /** The latest lever document and the rev that named it; null for /fzp (no levers). */
   levers: { rev: Rev; levers: SimLevers } | null;
+  /** Null for /fzp: brush requests are answered `no-session`. */
+  brush: BrushSession | null;
 }
 
 type InitRequest = Extract<ScenarioRequest, { type: 'initScenario' }>;
@@ -305,9 +358,16 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
   const live = (st: Session) => s === st && !st.token.cancelled;
 
   function end(): void {
+    const st = s;
     s?.token.cancel();
     s?.chunks.loader.dispose();
     s = null;
+    // every request still waiting on this session is answered now: it will never be otherwise
+    if (st?.brush) {
+      const waiting = [...st.brush.waiting];
+      st.brush.waiting.clear();
+      for (const w of waiting) noSession(w.reqId, w.query === null);
+    }
   }
 
   function fail(st: Session, code: ScenarioErrorCode, message: string): void {
@@ -344,7 +404,9 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       loaded: null,
       work: null,
       // validateInitRequest has accepted it; parsing gives a fresh copy the host owns
-      levers: req.levers === undefined ? null : { rev: req.rev, levers: parseSimLevers(req.levers) }
+      levers:
+        req.levers === undefined ? null : { rev: req.rev, levers: parseSimLevers(req.levers) },
+      brush: req.levers === undefined ? null : { waiting: new Set(), index: null, files: {} }
     } as Omit<Session, 'chunks'> as Session;
     st.chunks = {
       loader: createChunkLoader(manifest, {
@@ -482,6 +544,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         pending: pendingOf(st.levers.rev, st.levers.levers, st.seed)
       };
     }
+    // the brush requests that waited for the load
+    if (st.brush) for (const w of [...st.brush.waiting]) startBrush(st, w);
     kick(st);
   }
 
@@ -914,6 +978,169 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     return out;
   }
 
+  // --- brushes (plan 3 Task 5) ---
+
+  function noSession(reqId: number, isCatalog: boolean): void {
+    if (isCatalog) return post({ type: 'brushCatalog', reqId, catalog: null });
+    const message = 'brushes need a loaded session initialised with levers';
+    post({ type: 'brushLots', reqId, result: { ok: false, reason: 'no-session', message } });
+  }
+
+  /** A brush request: answered at once without a lever session or for a bad query, else waits. */
+  function brushRequest(reqId: number, isCatalog: boolean, query?: unknown): void {
+    const st = s;
+    if (!st?.brush) return noSession(reqId, isCatalog);
+    if (!isCatalog) {
+      const bad = brushQueryProblem(query);
+      if (bad !== null) {
+        return post({
+          type: 'brushLots',
+          reqId,
+          result: { ok: false, reason: 'bad-request', message: bad }
+        });
+      }
+    }
+    const w: BrushWaiter = { reqId, query: isCatalog ? null : (query as BrushQuery) };
+    st.brush.waiting.add(w);
+    if (st.loaded) startBrush(st, w);
+  }
+
+  /** The files a request needs: every one for the catalog, else the query kind's. */
+  function filesFor(q: BrushQuery | null): readonly BrushFile[] {
+    if (q === null) return BRUSH_FILES;
+    switch (q.kind) {
+      case 'freehand':
+        return [];
+      case 'transit':
+        return ['transit'];
+      case 'street':
+        return ['frontage'];
+      case 'area':
+        return q.neighborhoods.length > 0 ? ['neighborhoods'] : [];
+      default:
+        throw new Error(`Unhandled brush: ${JSON.stringify(q satisfies never)}`);
+    }
+  }
+
+  /** Once the session has loaded: answers now, or once the files it needs have settled. */
+  function startBrush(st: Session, w: BrushWaiter): void {
+    const need = filesFor(w.query);
+    if (need.length === 0) return answerBrush(st, w, {});
+    void Promise.all(need.map((f) => brushFile(st, f))).then((got) => {
+      const files: Partial<BrushFiles> = {};
+      need.forEach((f, k) => {
+        if (got[k] !== null) (files as Record<string, unknown>)[f] = got[k];
+      });
+      answerBrush(st, w, files);
+    });
+  }
+
+  function answerBrush(st: Session, w: BrushWaiter, files: Partial<BrushFiles>): void {
+    const b = st.brush!;
+    if (!live(st) || !b.waiting.delete(w)) return; // answered no-session when the session ended
+    const loaded = st.loaded!;
+    const data: BrushData = {
+      parcels: loaded.fzp.parcels, // as loaded: `work.loaded` is replaced per lever revision
+      policy: loaded.policy!,
+      frontage: files.frontage ?? null,
+      transit: files.transit ?? null,
+      neighborhoods: files.neighborhoods ?? null
+    };
+    if (w.query === null) {
+      let catalog = null;
+      try {
+        catalog = brushCatalog(data);
+      } catch (e) {
+        warn(`brushCatalog: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      return post({ type: 'brushCatalog', reqId: w.reqId, catalog });
+    }
+    let result: BrushLotsResult;
+    try {
+      b.index ??= createLotIndex(data.parcels);
+      const rows = resolveBrushRows(data, b.index, w.query);
+      const lp = data.parcels.labelPoint;
+      const points = new Float64Array(2 * rows.length);
+      rows.forEach((r, k) => {
+        points[2 * k] = lp[2 * r];
+        points[2 * k + 1] = lp[2 * r + 1];
+      });
+      result = { ok: true, lots: rows.map((r) => data.parcels.id[r]), points };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (e instanceof BrushDataMissing) result = { ok: false, reason: 'data-missing', message };
+      else {
+        // the client's promise must still resolve
+        warn(`resolveBrush: ${message}`);
+        result = { ok: false, reason: 'bad-request', message };
+      }
+    }
+    // `points` is a fresh Float64Array, so its buffer is an ArrayBuffer
+    const transfer = result.ok ? [result.points.buffer as ArrayBuffer] : [];
+    post({ type: 'brushLots', reqId: w.reqId, result }, transfer);
+  }
+
+  /**
+   * One brush file per session: fetched (with the scenario retries) and decoded on first use.
+   * Null when the manifest names no usable URL, or the fetch or decode fails (logged).
+   */
+  function brushFile<K extends BrushFile>(st: Session, file: K): Promise<BrushFiles[K] | null> {
+    const b = st.brush!;
+    const memo = b.files as Record<BrushFile, Promise<unknown> | undefined>;
+    return (memo[file] ??= fetchBrushFile(st, file)) as Promise<BrushFiles[K] | null>;
+  }
+
+  async function fetchBrushFile(st: Session, file: BrushFile): Promise<unknown> {
+    const m = st.manifest;
+    const url =
+      file === 'frontage'
+        ? st.urls.frontage
+        : datasetUrl(m, file === 'transit' ? m.transit : m.neighborhoods);
+    if (url === null) {
+      warn(`brushes: dataset ${st.version} has no ${file} file`);
+      return null;
+    }
+    const loadDeps = {
+      setTimeout: (fn: () => void, ms: number) => st.token.later(fn, ms),
+      retryDelaysMs
+    };
+    const stop = () => !live(st);
+    const r =
+      file === 'frontage'
+        ? await fetchWithRetry(
+            url,
+            () =>
+              deps
+                .fetchBytes(url)
+                .then((x) => ({ ok: x.ok, status: x.status, read: () => x.arrayBuffer() })),
+            loadDeps,
+            stop
+          )
+        : await fetchWithRetry(
+            url,
+            () =>
+              deps.fetch(url).then((x) => ({ ok: x.ok, status: x.status, read: () => x.json() })),
+            loadDeps,
+            stop
+          );
+    if (r.kind === 'stopped') return null;
+    if (r.kind === 'failed') {
+      warn(`brushes: ${r.message}`);
+      return null;
+    }
+    try {
+      if (file === 'frontage') {
+        const decode = deps.decodeFrontage ?? readFrontage;
+        return await decode(new Uint8Array(r.value as ArrayBuffer), st.loaded!.fzp.parcels);
+      }
+      if (file === 'transit') return decodeTransit(r.value);
+      return parseNeighborhoods(r.value);
+    } catch (e) {
+      warn(`brushes: ${file} is invalid: ${e instanceof Error ? e.message : String(e)}`);
+      return null;
+    }
+  }
+
   function dispatch(req: ScenarioRequest): void {
     switch (req.type) {
       case 'initScenario':
@@ -932,6 +1159,10 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         }
         return post({ type: 'parcelSummary', reqId: req.reqId, summary });
       }
+      case 'resolveBrush':
+        return brushRequest(req.reqId, false, req.query);
+      case 'brushCatalog':
+        return brushRequest(req.reqId, true);
       case 'prefetch':
         if (s) prefetch(s, req.bbox);
         return;

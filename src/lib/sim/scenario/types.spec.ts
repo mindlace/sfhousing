@@ -9,6 +9,7 @@ import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import type { Calibration, ExitReason, Pathway, Provenance, Stage } from '$lib/timelapse/types';
 import type { LeverLookups } from '../levers/apply';
+import type { BrushCatalog, BrushQuery } from '../levers/brushes';
 import type { LeverCapacity } from '../levers/resolve';
 import type { StageScale } from '../levers/timers';
 import type { SimLevers } from '../levers/types';
@@ -94,7 +95,12 @@ type RowScenarioRequest =
     }
   | { type: 'reroll'; rev: Rev; seed: number | null }
   | { type: 'setLevers'; rev: Rev; levers: SimLevers }
-  | { type: 'parcelSummary'; reqId: number; parcelId: ParcelId; day: Day; projectId?: string };
+  | { type: 'parcelSummary'; reqId: number; parcelId: ParcelId; day: Day; projectId?: string }
+  | { type: 'resolveBrush'; reqId: number; query: BrushQuery } // plan 3 Task 5
+  | { type: 'brushCatalog'; reqId: number };
+type RowBrushLotsResult =
+  | { ok: true; lots: ParcelId[]; points: Float64Array }
+  | { ok: false; reason: 'no-session' | 'data-missing' | 'bad-request'; message: string };
 type RowTimelineResponse = {
   type: 'timeline';
   rev: Rev;
@@ -114,6 +120,8 @@ type RowScenarioResponse =
   | RowTimelineResponse
   | { type: 'error'; rev: Rev; code: RowScenarioErrorCode; message: string }
   | { type: 'parcelSummary'; reqId: number; summary: ParcelSummary | null }
+  | { type: 'brushLots'; reqId: number; result: RowBrushLotsResult } // plan 3 Task 5
+  | { type: 'brushCatalog'; reqId: number; catalog: BrushCatalog | null }
   | {
       type: 'levers';
       rev: Rev;

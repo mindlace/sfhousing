@@ -24,7 +24,7 @@ import {
   type ScenarioUrls
 } from './load';
 import type { SimInput } from './types';
-import { makeScenarioHarness, type ScenarioHarness } from './test/host-harness';
+import { MINI_FRONTAGE_URL, makeScenarioHarness, type ScenarioHarness } from './test/host-harness';
 
 // Pass-through spy: the host must precompute both inputs with its warn (§4.2 step 7).
 vi.mock('./input', async (importOriginal) => {
@@ -124,7 +124,19 @@ describe('validateInitRequest', () => {
 describe('scenarioUrls', () => {
   it('returns the three URLs when each is under /data/<v>/', () => {
     const m = makeScenarioHarness().manifest();
-    expect(scenarioUrls(m)).toEqual({ ...URLS, policy: null });
+    expect(scenarioUrls(m)).toEqual({ ...URLS, policy: null, frontage: MINI_FRONTAGE_URL });
+  });
+
+  it('names frontage only when it is under /data/<v>/; never null for it', () => {
+    const m = makeScenarioHarness().manifest();
+    for (const frontage of [undefined, '/data/fixture-1/scenarios/fzp/frontage.bin', 7]) {
+      const fzp = { ...m.scenarios!.fzp, frontage: frontage as string };
+      expect(scenarioUrls({ ...m, scenarios: { fzp } })).toEqual({
+        ...URLS,
+        policy: null,
+        frontage: null
+      });
+    }
   });
 
   it('is null without scenarios.fzp, or with a missing or outside URL', () => {
@@ -658,7 +670,7 @@ describe('scenario host: reroll before loading, supersession and dispose', () =>
 
 describe('loadScenario: policy.bin (plan 2 Task 10)', () => {
   const POLICY_URL = `/data/${MINI_VERSION}/scenarios/fzp/policy.bin`;
-  const WITH_POLICY: ScenarioUrls = { ...URLS, policy: POLICY_URL };
+  const WITH_POLICY: ScenarioUrls = { ...URLS, policy: POLICY_URL, frontage: MINI_FRONTAGE_URL };
   const policyBin = () =>
     new Uint8Array(deflateRawSync(encodePolicyPayload(miniPolicy(miniCity()))));
 
@@ -694,13 +706,17 @@ describe('loadScenario: policy.bin (plan 2 Task 10)', () => {
 
   it('scenarioUrls names the policy URL when the manifest has one, else null', () => {
     const m = makeScenarioHarness().manifest();
-    expect(scenarioUrls(m)).toEqual({ ...URLS, policy: null });
+    expect(scenarioUrls(m)).toEqual({ ...URLS, policy: null, frontage: MINI_FRONTAGE_URL });
     const fzp = { ...m.scenarios!.fzp, policy: POLICY_URL };
     expect(scenarioUrls({ ...m, scenarios: { fzp } })).toEqual(WITH_POLICY);
     // /fzp never needs policy.bin, so a bad one leaves the other three usable.
     for (const policy of ['/data/fixture-1/scenarios/fzp/policy.bin', 7]) {
       const bad = { ...fzp, policy: policy as string };
-      expect(scenarioUrls({ ...m, scenarios: { fzp: bad } })).toEqual({ ...URLS, policy: null });
+      expect(scenarioUrls({ ...m, scenarios: { fzp: bad } })).toEqual({
+        ...URLS,
+        policy: null,
+        frontage: MINI_FRONTAGE_URL
+      });
     }
   });
 
@@ -725,7 +741,9 @@ describe('loadScenario: policy.bin (plan 2 Task 10)', () => {
 
   it('gives scenario-missing for opts.policy without scenarios.fzp.policy', async () => {
     const d = direct(files());
-    const r = await loadScenario(d.deps, { ...URLS, policy: null }, () => false, { policy: true });
+    const r = await loadScenario(d.deps, { ...URLS, policy: null, frontage: null }, () => false, {
+      policy: true
+    });
     expect(r).toEqual({
       code: 'scenario-missing',
       message: 'dataset has no policy.bin (scenarios.fzp.policy)'

@@ -6,9 +6,15 @@ import type { ParcelId } from '$lib/data/parcel';
 import type { BBox } from '$lib/plan';
 import type { Day } from '$lib/timelapse/time';
 import type { WorkerLike } from './client';
+import type { BrushCatalog, BrushQuery } from './levers/brushes';
 import type { SimLevers } from './levers/types';
 import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev } from './protocol';
-import type { ScenarioResponse, TimelineResponse, WorkerRequest } from './scenario/types';
+import type {
+  BrushLotsResult,
+  ScenarioResponse,
+  TimelineResponse,
+  WorkerRequest
+} from './scenario/types';
 
 export interface ScenarioWorkerLike {
   postMessage(msg: WorkerRequest): void;
@@ -44,6 +50,12 @@ export interface ScenarioClientEvents {
   onCrash?(e: Event): void;
 }
 
+const noSession = (): BrushLotsResult => ({
+  ok: false,
+  reason: 'no-session',
+  message: 'the worker session ended before answering'
+});
+
 export class ScenarioClient {
   #worker: ScenarioWorkerLike;
   #events: ScenarioClientEvents;
@@ -60,6 +72,8 @@ export class ScenarioClient {
   #hasTimeline = false;
   #reqId = 0;
   #pending = new Map<number, (s: ParcelSummary | null) => void>();
+  #pendingBrush = new Map<number, (r: BrushLotsResult) => void>();
+  #pendingCatalog = new Map<number, (c: BrushCatalog | null) => void>();
   #datasetVersion: string | null = null;
   #disposed = false;
   #crashed = false;
@@ -166,6 +180,30 @@ export class ScenarioClient {
   }
 
   /**
+   * The lots a brush covers (eligible only), with their label points. Answered by a session
+   * initialised with levers once it has loaded; `no-session` otherwise, and on crash, `restart`
+   * and `dispose`.
+   */
+  resolveBrush(query: BrushQuery): Promise<BrushLotsResult> {
+    if (this.#disposed || this.#crashed) return Promise.resolve(noSession());
+    const reqId = ++this.#reqId;
+    return new Promise((resolve) => {
+      this.#pendingBrush.set(reqId, resolve);
+      this.#worker.postMessage({ type: 'resolveBrush', reqId, query });
+    });
+  }
+
+  /** The brush pickers' catalog; null without a lever session, and on crash, restart, dispose. */
+  brushCatalog(): Promise<BrushCatalog | null> {
+    if (this.#disposed || this.#crashed) return Promise.resolve(null);
+    const reqId = ++this.#reqId;
+    return new Promise((resolve) => {
+      this.#pendingCatalog.set(reqId, resolve);
+      this.#worker.postMessage({ type: 'brushCatalog', reqId });
+    });
+  }
+
+  /**
    * map-view's onResyncNeeded (a T7 revision gap) calls this: one `reroll(currentSeed)` per
    * episode, asking for a fresh revision-0 snapshot of the same run. No-op until a timeline has
    * arrived. The episode ends on the non-stale revision-0 timeline answering it, or an error.
@@ -221,6 +259,10 @@ export class ScenarioClient {
   #resolvePending(): void {
     for (const resolve of this.#pending.values()) resolve(null);
     this.#pending.clear();
+    for (const resolve of this.#pendingBrush.values()) resolve(noSession());
+    this.#pendingBrush.clear();
+    for (const resolve of this.#pendingCatalog.values()) resolve(null);
+    this.#pendingCatalog.clear();
   }
 
   #crash(worker: ScenarioWorkerLike, e: Event): void {
@@ -259,6 +301,20 @@ export class ScenarioClient {
         if (!resolve) return;
         this.#pending.delete(msg.reqId);
         resolve(msg.summary);
+        return;
+      }
+      case 'brushLots': {
+        const resolve = this.#pendingBrush.get(msg.reqId);
+        if (!resolve) return;
+        this.#pendingBrush.delete(msg.reqId);
+        resolve(msg.result);
+        return;
+      }
+      case 'brushCatalog': {
+        const resolve = this.#pendingCatalog.get(msg.reqId);
+        if (!resolve) return;
+        this.#pendingCatalog.delete(msg.reqId);
+        resolve(msg.catalog);
         return;
       }
       case 'error':

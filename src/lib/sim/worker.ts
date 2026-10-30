@@ -31,6 +31,7 @@ const router = createWorkerRouter({
       clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
       now: () => performance.now(),
       retryDelaysMs
-    })
+    }),
+  post: (msg) => scope.postMessage(msg, [])
 });
 scope.onmessage = (e) => router.handle(e.data);

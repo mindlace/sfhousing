@@ -294,6 +294,45 @@ describe('ScenarioClient', () => {
     });
   });
 
+  describe('brushes', () => {
+    const q = { kind: 'freehand' as const, strokes: [] };
+    it('posts resolveBrush and brushCatalog with request ids and resolves their answers', async () => {
+      const { w, client } = setup();
+      const a = client.resolveBrush(q);
+      const b = client.brushCatalog();
+      const c = client.parcelSummary('1', 1 as Day);
+      expect(w.posts).toEqual([
+        { type: 'resolveBrush', reqId: 1, query: q },
+        { type: 'brushCatalog', reqId: 2 },
+        { type: 'parcelSummary', reqId: 3, parcelId: '1', day: 1 }
+      ]);
+      const points = Float64Array.from([1, 2]);
+      w.emit({ type: 'brushLots', reqId: 1, result: { ok: true, lots: ['x'], points } });
+      w.emit({ type: 'brushCatalog', reqId: 2, catalog: null });
+      w.emit({ type: 'brushLots', reqId: 99, result: { ok: true, lots: [], points } }); // ignored
+      await expect(a).resolves.toEqual({ ok: true, lots: ['x'], points });
+      await expect(b).resolves.toBeNull();
+      w.emit({ type: 'parcelSummary', reqId: 3, summary: null });
+      await expect(c).resolves.toBeNull();
+    });
+
+    it('restart and dispose resolve pending brush requests with no-session', async () => {
+      const { client } = setup();
+      const a = client.resolveBrush(q);
+      const b = client.brushCatalog();
+      client.restart(fakeWorker());
+      await expect(a).resolves.toMatchObject({ ok: false, reason: 'no-session' });
+      await expect(b).resolves.toBeNull();
+      const c = client.resolveBrush(q);
+      const d = client.brushCatalog();
+      client.dispose();
+      await expect(c).resolves.toMatchObject({ ok: false, reason: 'no-session' });
+      await expect(d).resolves.toBeNull();
+      await expect(client.resolveBrush(q)).resolves.toMatchObject({ reason: 'no-session' });
+      await expect(client.brushCatalog()).resolves.toBeNull();
+    });
+  });
+
   describe('levers', () => {
     type Levers = Extract<ScenarioResponse, { type: 'levers' }>;
     const current = (rev: number): Levers =>
@@ -470,6 +509,23 @@ describe('ScenarioClient worker crash', () => {
       expect(rerolls()).toHaveLength(1);
     }
   );
+
+  it('crash resolves pending brush requests', async () => {
+    const { w, client } = setup({ onCrash: () => {} });
+    client.initScenario(MANIFEST, HORIZON, null, structuredClone(DEFAULT_LEVERS));
+    const lots = client.resolveBrush({ kind: 'freehand', strokes: [] });
+    const cat = client.brushCatalog();
+    w.onerror?.({} as ErrorEvent);
+    expectCrashLogged();
+    await expect(lots).resolves.toMatchObject({ ok: false, reason: 'no-session' });
+    await expect(cat).resolves.toBeNull();
+    // after the crash, until restart: answered at once
+    await expect(client.resolveBrush({ kind: 'freehand', strokes: [] })).resolves.toMatchObject({
+      ok: false,
+      reason: 'no-session'
+    });
+    await expect(client.brushCatalog()).resolves.toBeNull();
+  });
 
   it('restart swaps in a fresh worker, keeps the rev sequence, and initScenario alone follows', () => {
     const { w, client } = setup({ onCrash: () => {} });
