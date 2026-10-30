@@ -10,6 +10,7 @@ import type { Target } from '$lib/scoreboard';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import type { Calibration, ExitReason, Pathway, Provenance, Stage } from '$lib/timelapse/types';
+import type { StageScale } from '../levers/timers';
 import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev, SimRequest } from '../protocol';
 
 // T5
@@ -43,6 +44,12 @@ export type SimInput = {
   calibration: Calibration;
   asOf: Day;
   districtMaxStories: number | null; // projects.json `districtMaxStories.stories` (large-site massing §4.3, tier 2); null when absent
+  // Policy levers (plan 2 ruling 3, "Policy start date = calibration.asOf"). Simulated projects and
+  // pipeline rows at preApplication run on `newProjects`; every other row, master and phase on
+  // `calibration`, its current stage's remaining time rescaled by `inFlightScale`. Initiation,
+  // size, revision and phaseGap always read `calibration`.
+  newProjects?: { calibration: Calibration; scale: StageScale }; // absent = calibration, scale 1
+  inFlightScale?: StageScale; // absent = 1
 };
 export type Simulate = (input: SimInput, seed: number, horizon: Day) => Schedule[];
 

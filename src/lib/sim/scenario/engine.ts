@@ -32,6 +32,7 @@ import {
   type RevisionModel,
   type Stage
 } from '$lib/timelapse/types';
+import type { StageScale } from '../levers/timers';
 import { precomputeOf, sizeCumAgainst, type Precompute } from './input';
 import { P, drawOn, jobEntity, seedHash, stageRedraw, streamOf } from './rng';
 import type { Master } from './simulate';
@@ -194,7 +195,13 @@ interface Run {
   sh: number;
   horizon: Day;
   asOf: Day;
+  /** `input.calibration`: in-flight transitions, and initiation, size, revision and phaseGap */
   cal: Calibration;
+  /** `input.inFlightScale`; null = 1 */
+  inFlightScale: StageScale | null;
+  /** new projects' calibration (`input.newProjects`, else `cal`), and their scale; null = 1 */
+  newCal: Calibration;
+  newScale: StageScale | null;
   parcels: ScenarioParcels;
   input: SimInput;
   /** the per-input precompute (memoised by input identity): hazards, log(1 − h), size rows */
@@ -218,6 +225,9 @@ function runOf(input: SimInput, seed: number, horizon: Day, ids: boolean): Run {
     horizon,
     asOf: input.asOf,
     cal: input.calibration,
+    inFlightScale: input.inFlightScale ?? null,
+    newCal: input.newProjects?.calibration ?? input.calibration,
+    newScale: input.newProjects?.scale ?? null,
     parcels: input.parcels,
     input,
     pre: precomputeOf(input),
@@ -240,6 +250,10 @@ const SIMULATED = 2;
 interface Job {
   stream: number; // streamOf(sh, entity, k)
   pathway: Pathway;
+  /** the transitions and new-project shares it runs on (ruling 3, "Policy start date") */
+  cal: Calibration;
+  /** its in-flight stage's remaining-time scale; null = 1 */
+  scale: StageScale | null;
   entered: Partial<Record<Stage, Day>>;
   /** never empty: [0] is the initial proposal */
   revisions: Revision[];
@@ -254,9 +268,11 @@ interface Job {
   env: number;
 }
 
-const newJob = (): Job => ({
+const newJob = (run: Run): Job => ({
   stream: 0,
   pathway: 'discretionary',
+  cal: run.cal,
+  scale: null,
   entered: {},
   revisions: [],
   rule: NONE,
@@ -355,6 +371,14 @@ function revise(run: Run, job: Job, n: Stage, day: Day): void {
   if (next !== units) pushRevision(job.revisions, day, next, stories);
 }
 
+/**
+ * The months an in-flight project is conditioned on in a stage rescaled by `s`, after `m` real
+ * months in it (ruling 3, "Remaining-time rescale for in-flight stages").
+ */
+export function inFlightMonths(m: number, s: number): number {
+  return s === 1 ? m : Math.round(m * s);
+}
+
 /** The outcome of the last `stageStep` (scratch, so a step allocates nothing). */
 const step = { kind: 'advance' as Kind, day: 0 };
 
@@ -362,10 +386,12 @@ const step = { kind: 'advance' as Kind, day: 0 };
  * One stage step (§4.4.2 steps 1-2) into `step`: the outcome of leaving `s`, entered on day `e`,
  * and its day. `inFlight` marks an in-flight project's current stage: it is conditioned on the
  * months already survived, and redrawn (up to 8 attempts) until the day is after `asOf`; if
- * every attempt lands on or before `asOf`, the last outcome is kept at `asOf + 1`.
+ * every attempt lands on or before `asOf`, the last outcome is kept at `asOf + 1`. With the job's
+ * scale x ≠ 1 on `s`, the draw is conditioned on m' = `inFlightMonths(m, x)` months of the
+ * (rescaled) transition and mapped back onto the real m months: the remaining time is rescaled.
  */
 function stageStep(run: Run, job: Job, s: Stage, e: Day, inFlight: boolean): void {
-  const t = s === 'complete' ? undefined : run.cal.transitions[job.pathway][s];
+  const t = s === 'complete' ? undefined : job.cal.transitions[job.pathway][s];
   if (t === undefined) throw new Error(`calibration has no ${job.pathway} ${s} transition`);
   const idx = STAGE_INDEX[s];
   if (!inFlight) {
@@ -375,11 +401,16 @@ function stageStep(run: Run, job: Job, s: Stage, e: Day, inFlight: boolean): voi
     return;
   }
   const m = monthsIn(e, run.asOf);
+  // A stage the scale does not name, construction (never timed) included, is at 1.
+  const x = (job.scale?.[job.pathway] as Partial<Record<Stage, number>> | undefined)?.[s] ?? 1;
+  const m2 = inFlightMonths(m, x);
+  // e − ceil(m'·MONTH_DAYS) + ceil(m·MONTH_DAYS); exactly e with x = 1
+  const from = x === 1 ? e : e - Math.ceil(m2 * MONTH_DAYS) + Math.ceil(m * MONTH_DAYS);
   let kind: Kind = 'advance';
   for (let j = 0; j <= REDRAWS; j++) {
     const purpose = j === 0 ? P.STAGE : stageRedraw(j as 1 | 2 | 3 | 4 | 5 | 6 | 7);
-    const r = sampleTransition(t, drawOn(job.stream, purpose, idx), m);
-    const day = e + Math.floor(r.days);
+    const r = sampleTransition(t, drawOn(job.stream, purpose, idx), m2);
+    const day = from + Math.floor(r.days);
     if (day > run.asOf) {
       step.kind = r.kind;
       step.day = day;
@@ -533,6 +564,10 @@ function pipelineRow(run: Run, job: Job, p: InFlightProject, rs: RowStatic): Sch
   }
   job.stream = streamOf(run.sh, rs.entity, 0);
   job.pathway = p.pathway;
+  // not yet filed at asOf: a new project (ruling 3, "Policy start date")
+  const isNew = p.stage === 'preApplication';
+  job.cal = isNew ? run.newCal : run.cal;
+  job.scale = isNew ? run.newScale : run.inFlightScale;
   job.entered = entered;
   job.revisions = [{ day: first, units: p.units, stories: p.stories }];
   job.rule = PIPELINE;
@@ -563,7 +598,7 @@ const HELD: End = { kind: 'open' };
  */
 function pipelinePass(run: Run, holds: Holds, sink: Sink) {
   const projects = run.input.projects;
-  const job = newJob();
+  const job = newJob(run);
   for (let k = 0; k < projects.length; k++) {
     const p = projects[k];
     const rs = run.st.rows[k];
@@ -623,6 +658,8 @@ function masterOf(run: Run, job: Job, p: InFlightProject, rs: RowStatic): Master
   }
   job.stream = streamOf(run.sh, rs.entity, 0);
   job.pathway = p.pathway;
+  job.cal = run.cal;
+  job.scale = run.inFlightScale;
   job.entered = entered;
   job.revisions = [{ day: e, units: p.units, stories: p.stories }];
   job.rule = NONE;
@@ -660,7 +697,7 @@ function phaseFiledDay(
  */
 function multiPhasePass(run: Run, holds: Holds, sink: Sink) {
   const projects = run.input.projects;
-  const job = newJob();
+  const job = newJob(run);
   for (let k = 0; k < projects.length; k++) {
     const p = projects[k];
     if (isSkipped(p) || !isPhased(p)) continue;
@@ -711,6 +748,8 @@ function phaseSchedule(
   const entered: Partial<Record<Stage, Day>> = { permitFiled: F_i };
   job.stream = streamOf(run.sh, pst.entity, 0);
   job.pathway = p.pathway;
+  job.cal = run.cal;
+  job.scale = run.inFlightScale;
   job.entered = entered;
   job.revisions = [{ day: F_i, units: ph.units, stories: null }];
   job.rule = PIPELINE;
@@ -739,8 +778,8 @@ function phaseSchedule(
 }
 
 /** A new project's pathway from the normalised `pathwayForNew`, in `PATHWAYS` order (§4.4.4). */
-function newPathway(run: Run, stream: number): Pathway {
-  const w = run.cal.pathwayForNew;
+function newPathway(cal: Calibration, stream: number): Pathway {
+  const w = cal.pathwayForNew;
   let total = 0;
   for (const p of PATHWAYS) if (w[p] > 0) total += w[p];
   const x = drawOn(stream, P.PATHWAY, 0) * total;
@@ -786,9 +825,10 @@ function simulatedProject(
   existing: number
 ): Schedule | null {
   const p = run.parcels;
-  const pathway: Pathway = p.localProgram[i] === 1 ? 'streamlined' : newPathway(run, stream);
+  const cal = run.newCal;
+  const pathway: Pathway = p.localProgram[i] === 1 ? 'streamlined' : newPathway(cal, stream);
   const first: Stage =
-    drawOn(stream, P.PPA, 0) < run.cal.ppaShare[pathway]
+    drawOn(stream, P.PPA, 0) < cal.ppaShare[pathway]
       ? 'preApplication'
       : pathway === 'permitOnly'
         ? 'permitFiled'
@@ -807,6 +847,8 @@ function simulatedProject(
   for (let g = 0; g < F; g++) top = Math.max(top, p.yield[i * F + g]);
   job.stream = stream;
   job.pathway = pathway;
+  job.cal = cal;
+  job.scale = run.newScale; // never read: a simulated project is never in flight
   job.entered = entered;
   job.revisions = [
     { day, units: p.yield[i * F + f], stories: fillStories(FILL_LEVELS[f], p.envelopeStories[i]) }
@@ -844,7 +886,7 @@ function simulatedPass(run: Run, holds: Holds, sink: Sink): void {
   const { parcels, pre, st } = run;
   const { candidates, entity, log1mh } = pre;
   const skip = pre.skipAbove(run.horizon);
-  const job = newJob();
+  const job = newJob(run);
   for (let c = 0; c < candidates.length; c++) {
     const i = candidates[c];
     let r = run.asOf;

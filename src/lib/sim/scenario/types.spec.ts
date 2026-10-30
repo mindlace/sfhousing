@@ -8,6 +8,7 @@ import type { Target } from '$lib/scoreboard';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import type { Calibration, ExitReason, Pathway, Provenance, Stage } from '$lib/timelapse/types';
+import type { StageScale } from '../levers/timers';
 import type * as Protocol from '../protocol';
 import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev, SimRequest } from '../protocol';
 import type * as Scenario from './types';
@@ -48,6 +49,8 @@ type RowSimInput = {
   calibration: Calibration;
   asOf: Day;
   districtMaxStories: number | null;
+  newProjects?: { calibration: Calibration; scale: StageScale }; // plan 2 Task 8
+  inFlightScale?: StageScale;
 };
 type RowSimulate = (input: RowSimInput, seed: number, horizon: Day) => RowSchedule[];
 
