@@ -57,6 +57,9 @@ export function leversError(
   code: ScenarioErrorCode
 ): LeverStatusState {
   if (s.sentRev === null) return s;
+  // A bad-request above the latest levers sent refused a later request (a reroll), not the
+  // levers: the session lives on and the levers' status stands. Every lever refusal is at sentRev.
+  if (code === 'bad-request' && rev > s.sentRev) return s;
   const endedSession =
     s.sessionRev !== null &&
     (rev === s.sessionRev || (rev >= s.sessionRev && code !== 'bad-request'));

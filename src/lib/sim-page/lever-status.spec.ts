@@ -55,9 +55,18 @@ describe('lever status', () => {
     const s = leversSent(leversSession(OFF, 1), 2);
     expect(leversError(s, 1, 'scenario-invalid').status).toEqual({ kind: 'failed', rev: 1 });
     expect(leversError(s, 1, 'bad-request').status.kind).toBe('failed'); // rev === sessionRev
-    expect(leversError(leversSent(leversSession(OFF, 1), 2), 3, 'bad-request').status.kind).toBe(
+    expect(leversError(leversSent(leversSession(OFF, 1), 2), 2, 'bad-request').status.kind).toBe(
       'failed'
-    ); // rev >= sentRev
+    ); // rev === sentRev: the setLevers itself was refused
+  });
+
+  it('a bad-request above the sent rev (a refused reroll) leaves the status alone', () => {
+    const resolvingState = leversSent(leversSession(OFF, 1), 2);
+    expect(leversError(resolvingState, 3, 'bad-request')).toBe(resolvingState);
+    const currentState = leversMessage(resolvingState, current(2));
+    expect(leversError(currentState, 3, 'bad-request')).toBe(currentState);
+    // Any other code above the sent rev ended the session: failed.
+    expect(leversError(currentState, 3, 'internal').status).toEqual({ kind: 'failed', rev: 3 });
   });
 
   it('keeps a current at a rev above the sent rev', () => {

@@ -670,8 +670,10 @@ test('axe: a failed reroll, whose notice clears the card and the score panel', a
   await gotoFzp(page);
   const c = await openRealCard(page, isMobile);
   await (await anotherFuture(page)).click();
-  const alert = page.getByRole('alert');
+  const alert = page.getByRole('alert').filter({ hasText: "Couldn't make another future" });
   await expect(alert).toHaveText(/Couldn't make another future\. Try again\./);
+  // A refused reroll leaves the policy in force: no lever failure alert.
+  await expect(page.getByTestId('fzp-lever-failed')).toHaveText('');
   expect(await fzp(page, 'representative')).toBe(true);
   await expectNoA11yViolations(page);
   const details = await openScore(page);
