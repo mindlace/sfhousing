@@ -9,11 +9,11 @@ import {
 import {
   CALCULATING,
   RHNA_ID,
-  announcement,
   bandLine,
-  barText,
   deadlineIndex,
   formatRange,
+  homesAdded,
+  homesAddedBy,
   inProgressRows,
   phasingFootnote,
   planBandLine,
@@ -242,22 +242,18 @@ describe('scrubMarkers', () => {
   });
 });
 
-describe('announcement and barText', () => {
+describe('homesAdded and homesAddedBy', () => {
   const at = scoreAt(TIMELINE_SCORE, 50);
 
-  it('speaks the month, the total and the RHNA share', () => {
-    expect(announcement(dayFromUtc(2031, 3, 1), at)).toBe(
-      'March 2031: 17,000 net new homes in this simulation, 20% of RHNA.'
+  it('the score bar shows the total in full', () => {
+    expect(homesAdded(at)).toBe('17,000 homes added');
+    expect(homesAdded({ ...at, total: 123_456 })).toBe('123,456 homes added');
+  });
+
+  it('the announcement adds the month', () => {
+    expect(homesAddedBy(dayFromUtc(2031, 3, 1), at)).toBe('17,000 homes added by March 2031');
+    expect(homesAddedBy(FIX_ASOF, { ...at, total: 1234 })).toBe(
+      '1,234 homes added by October 2026'
     );
-  });
-
-  it('shows the collapsed mobile bar line', () => {
-    expect(barText(at)).toBe('17,000 net new homes · 20% of RHNA');
-  });
-
-  it('compacts large totals on the bar only', () => {
-    const big = { ...at, total: 123_456 };
-    expect(barText(big)).toBe('123.5K net new homes · 20% of RHNA');
-    expect(announcement(FIX_ASOF, big)).toContain('123,456 net new homes');
   });
 });

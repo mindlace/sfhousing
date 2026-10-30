@@ -36,8 +36,9 @@ Fetch the file when working in the relevant area:
 - **Plan sharing (API contract, rate limit, autosave, manual takedown)** — [docs/dev/plan-sharing.md](docs/dev/plan-sharing.md)
 - **Map-view interfaces for page and subsystem consumers (`--map-controls-br-*` CSS vars)** — [docs/dev/map-interfaces.md](docs/dev/map-interfaces.md)
 - **Map performance (`npm run bench:map`, pass bar, results, CI note)** — [docs/dev/map-perf.md](docs/dev/map-perf.md)
-- **FZP timelapse page `/fzp` (scrubber contract, layout variables, `window.__sfhFzp`, request flow, T9 lookups seam, known gaps)** — [docs/dev/fzp-mode.md](docs/dev/fzp-mode.md)
+- **FZP timelapse `FzpMode` (`/fzp` redirects to `/sim`; scrubber contract, layout variables, `window.__sfhFzp`, request flow, T9 lookups seam, known gaps)** — [docs/dev/fzp-mode.md](docs/dev/fzp-mode.md)
 - **Policy levers engine (`SimLevers`, resolution order, law switch, timer reach, `setLevers` protocol)** — [docs/dev/sim-levers.md](docs/dev/sim-levers.md)
+- **`/sim` page (policy recipe, brushes, lever status, dataset requirement)** — [docs/dev/sim-page.md](docs/dev/sim-page.md)
 - **Design, specs and plans** — `docs/superpowers/design/`, `docs/superpowers/specs/`, `docs/superpowers/plans/`
 
 Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link them from this list.

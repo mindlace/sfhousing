@@ -25,6 +25,8 @@ function pipeline(over: Partial<ProjectCard>): ProjectCard {
     multiPhase: false,
     phase: null,
     localProgram: false,
+    lookups: 'inFlight',
+    chanceShift: null,
     stages: [
       { stage: 'filed', day: at(-900), actual: true },
       { stage: 'entitled', day: at(-600), actual: true },
@@ -43,6 +45,7 @@ function simulated(over: Partial<ProjectCard>): ProjectCard {
   return pipeline({
     projectId: 'sim-1',
     origin: 'simulated',
+    lookups: 'fresh',
     label: 'Block 3512, Lot 004',
     storiesTier: null,
     stages: [

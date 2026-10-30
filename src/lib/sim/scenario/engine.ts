@@ -893,7 +893,7 @@ function simulatedProject(
   job.top = top;
   job.env = p.envelopeStories[i];
   const end = runStages(run, job, first, day, false);
-  return {
+  const s: Schedule = {
     projectId: run.ids ? `sim:${p.id[i]}:${k}` : '',
     origin: 'simulated',
     parcelIds: run.ids ? [p.id[i]] : NO_IDS,
@@ -905,6 +905,9 @@ function simulatedProject(
     multiPhase: false,
     phase: null
   };
+  // only on a switch run, so an unswitched Schedule (and every golden) is unchanged
+  if (run.sw !== null) s.afterSwitch = after;
+  return s;
 }
 
 /**

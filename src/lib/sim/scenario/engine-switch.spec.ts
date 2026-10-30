@@ -6,11 +6,13 @@ import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
 import { stockTable, type EnvelopeTable } from '../levers/layers';
-import { CURRENT_LAW_SWITCH } from '../levers/types';
+import { applyLevers } from '../levers/apply';
+import { fillNeeds, resolveEnvelopes } from '../levers/resolve';
+import { CURRENT_LAW_SWITCH, DEFAULT_LEVERS } from '../levers/types';
 import { parcelsView } from '../levers/view';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
 import { miniCity } from './fixtures/mini-parcels';
-import { miniPolicy } from './fixtures/mini-policy';
+import { MINI_SB79_ID, miniPolicy } from './fixtures/mini-policy';
 import { MINI_AS_OF, MINI_HORIZON, miniProjectsJson } from './fixtures/mini-projects';
 import { buildSimInput, precomputeOf, switchMonth } from './input';
 import { monthsOf, netOf, shownSeries } from './score';
@@ -98,7 +100,10 @@ describe('engine law switch', () => {
     let sims = 0;
     for (const seed of seeds(20)) {
       const was = simulateDetailed(base, seed, H);
-      expect(simulateDetailed(input, seed, H)).toEqual(was);
+      const now = simulateDetailed(input, seed, H);
+      // a switch run tags its simulated schedules; the timelines are the same
+      for (const s of now.schedules) delete s.afterSwitch;
+      expect(now).toEqual(was);
       sims += was.schedules.filter((s) => s.origin === 'simulated').length;
     }
     expect(sims).toBeGreaterThan(0);
@@ -205,6 +210,81 @@ describe('engine law switch', () => {
       }
     }
     expect(differs).toBe(true);
+  });
+
+  it('afterSwitch records the view each simulated project ran on, seeds 1-50', () => {
+    const { base, fzp } = setup();
+    const after = copyOf(fzp);
+    const F = base.parcels.fillLevels.length;
+    for (let i = 0; i < after.count; i++) {
+      for (let f = 0; f < F; f++) {
+        const y = after.yield[i * F + f];
+        after.yield[i * F + f] = y > 0 ? y + 1000 : 0;
+      }
+    }
+    const input: SimInput = {
+      ...base,
+      lawSwitch: {
+        day: DAY,
+        parcels: parcelsView(base.parcels, after, base.parcels.localProgram)
+      }
+    };
+    let pre = 0;
+    let post = 0;
+    for (const seed of seeds(50)) {
+      for (const s of simulateDetailed(input, seed, H).schedules) {
+        if (s.origin !== 'simulated') {
+          expect(s.afterSwitch).toBeUndefined();
+          continue;
+        }
+        // the after view's yields are all >= 1000, the before view's all below
+        expect(s.afterSwitch).toBe(s.revisions[0].units >= 1000);
+        if (s.afterSwitch) post++;
+        else pre++;
+      }
+    }
+    expect(pre).toBeGreaterThan(0);
+    expect(post).toBeGreaterThan(0);
+  });
+
+  it('afterSwitch picks the Local Program column of the view it ran on (MINI_SB79_ID)', () => {
+    const { base } = setup();
+    const city = miniCity();
+    const ctx = { parcels: city.parcels, policy: miniPolicy(city) };
+    const window = { asOf: base.asOf, horizon: H, switchDay: DAY };
+    const filled = fillNeeds(resolveEnvelopes(ctx, DEFAULT_LEVERS, window), new Map());
+    const { plan } = applyLevers(base, ctx, DEFAULT_LEVERS, filled, H);
+    const i = plan.parcels.index.get(MINI_SB79_ID)!;
+    expect(plan.parcels.localProgram[i]).toBe(1);
+    expect(plan.lawSwitch!.parcels.localProgram[i]).toBe(0);
+    let pre = 0;
+    let post = 0;
+    let routed = false;
+    for (const seed of seeds(200)) {
+      for (const s of simulateDetailed(plan, seed, H).schedules) {
+        if (s.origin !== 'simulated' || s.parcelIds[0] !== MINI_SB79_ID) continue;
+        expect(typeof s.afterSwitch).toBe('boolean');
+        if (s.afterSwitch) {
+          post++;
+          if (s.pathway !== 'streamlined') routed = true;
+        } else {
+          pre++;
+          // forced by the before view's Local Program column
+          expect(s.pathway).toBe('streamlined');
+        }
+      }
+    }
+    expect(pre).toBeGreaterThan(0);
+    expect(post).toBeGreaterThan(0);
+    // the after view does not force it: some are drawn off the streamlined route
+    expect(routed).toBe(true);
+  });
+
+  it('leaves afterSwitch absent on a run without a switch', () => {
+    const { base } = setup();
+    const ss = simulateDetailed(base, 1, H).schedules;
+    expect(ss.length).toBeGreaterThan(0);
+    expect(ss.some((s) => 'afterSwitch' in s)).toBe(false);
   });
 
   it('throws RangeError when the switch day is not after asOf', () => {

@@ -33,7 +33,7 @@ The partner also wants the simple editor (`/`, brush painting with instant feedb
      - **Freehand:** the existing radius brush.
      - **Density limits:** on or off within the brush's reach. With limits off the zoning is form-based: height alone sets the unit count, as it does on FZP Local Program lots.
      - Each brush can **raise**, **lower** or **set** a height, so the user layer can cap zoning as well as raise it.
-   - **Protections** are a single mechanism that wins over every layer, the user's own brushes included. A protected lot keeps its current-law zoning. The user can protect by category (rent-controlled buildings via `rentControlLikely`, historic buildings, buildings newer than N years) or brush protection onto specific lots. There is no separate "freeze" brush.
+   - **Protections** are a single mechanism that wins over every layer, the user's own brushes included. A protected lot is not redevelopable: no layer makes it hostable, so no new project starts on it (partner ruling 2026-10-29, below). The user can protect by category (rent-controlled buildings via `rentControlLikely`, historic buildings, buildings newer than N years) or brush protection onto specific lots. There is no separate "freeze" brush.
    - The combined height map, with its density settings, becomes the envelope the simulation runs on. Yields and `hostable` are recomputed with the shared `scenarioYield`, as the scenario-data spec §5 prescribes for envelope levers.
 3. **Permitting timers as an editable timeline.**
    - **One timeline per approval route** (discretionary, streamlined, permit-only). Each stage is a segment whose width is its average duration, and a line closes each segment, labelled with the chance of advancing. This is "what your simulation will use": one current set, not a before-and-after view.
@@ -56,12 +56,12 @@ The partner also wants the simple editor (`/`, brush painting with instant feedb
   - Custom edits apply to every project.
   - The disapproval exception follows its preset's reach.
   - This means a `PolicyOp` may need per-project scope (in-flight versus new), not only a rewritten calibration.
-- **Protection means "not upzoned" (for now).** A protected lot keeps its **current-law** envelope: FZP + the SF alternative plan (§207.11), fixed, whatever the stock-layer toggles say. Neither the stock layers nor the user layer can raise it, and it stays hostable under that envelope. Resolution order:
+- **Protection means "not redevelopable"** (partner ruling 2026-10-29, superseding this round's "not upzoned, keeps the current-law envelope"). A protected lot, by category or by brush, is not hostable under any layer, so its capacity drops out entirely. Resolution order:
   1. Stock layers (most permissive among those on).
   2. The user layer overrides.
-  3. Protected lots are reset to the current-law envelope.
+  3. Protected lots are made non-hostable. The user layer's edits do not apply to them.
 
-  The score shows how much capacity the protections removed relative to the same plan without them. "Not redevelopable", which would protect tenants from demolition, is a later option tied to displacement work.
+  The score shows how much capacity the protections removed relative to the same policy without them ("N lots protected: X fewer homes of zoned capacity").
 - **`/sim` policies are publishable.** A policy (stock-layer toggles, user layer, protections, route timelines and shares, comparison twin) is saved locally and can be published as an immutable link, like editor plans (`docs/dev/plan-sharing.md`). That needs a `Plan` schema version (or a sibling document type) carrying these ops, server validation with size limits reviewed (`MAX_PLAN_BYTES`, `OPS_MAX`), and a read-only shared view of `/sim` with a Remix action. Timeline **Save** is a named local snapshot inside the current policy. Publishing captures the current policy as a whole.
 
 ## Partner rulings, round 2 (2026-10-28, after plan 1 research)
@@ -146,9 +146,9 @@ Plan 1's final review left these for the later plans:
 
 Plan 2's final review left these open. The plan-3 and plan-4 notes are in `docs/dev/sim-levers.md`.
 
-- **Partner questions.**
-  - After the 2032 switch, Local Program lots stay forced onto the streamlined route, even where SB 79 wins. Should they follow the route shares instead?
-  - A protected lot is raised to current law when base zoning is the only stock layer. The spec's "resets to current law" says so, but the partner may want "keep base" there.
+- **Partner questions (resolved 2026-10-29).**
+  - After the 2032 switch, where SB 79 wins the after-switch current law, Local Program lots stop being forced onto the streamlined route and follow the route shares (plan 3).
+  - The question of a protected lot raised to current law under base-only zoning is moot: protection now means "not redevelopable", so there is no envelope to reset (plan 3).
 - **Next pipeline change.** §207.11 reads the Local Program height as `lp_ft ?? base_ft`, while the Local Program envelope uses `max(base, lp)`. No shipped row differs: every Local Program lot is uncapped, so (b)(8) stops it. Align it on `max`.
 - **First dataset with a phased master at pre-application.** That master runs on the in-flight calibration, not the new-project one. The live dataset has none. The fix is two lines.
 - **Small engine guards.**

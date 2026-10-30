@@ -6,9 +6,15 @@ import type { ParcelId } from '$lib/data/parcel';
 import type { BBox } from '$lib/plan';
 import type { Day } from '$lib/timelapse/time';
 import type { WorkerLike } from './client';
+import type { BrushCatalog, BrushQuery } from './levers/brushes';
 import type { SimLevers } from './levers/types';
 import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev } from './protocol';
-import type { ScenarioResponse, TimelineResponse, WorkerRequest } from './scenario/types';
+import type {
+  BrushLotsResult,
+  ScenarioResponse,
+  TimelineResponse,
+  WorkerRequest
+} from './scenario/types';
 
 export interface ScenarioWorkerLike {
   postMessage(msg: WorkerRequest): void;
@@ -44,6 +50,12 @@ export interface ScenarioClientEvents {
   onCrash?(e: Event): void;
 }
 
+const noSession = (): BrushLotsResult => ({
+  ok: false,
+  reason: 'no-session',
+  message: 'the worker session ended before answering'
+});
+
 export class ScenarioClient {
   #worker: ScenarioWorkerLike;
   #events: ScenarioClientEvents;
@@ -52,12 +64,16 @@ export class ScenarioClient {
   #resyncRev: Rev | null = null;
   /** The latest lever revision's rev until its `current`; null when none is pending. */
   #leversRev: Rev | null = null;
+  /** The latest `initScenario` rev: a load error is posted at it, below a later `setLevers`. */
+  #sessionRev = 0;
   /** Seed of the latest non-stale timeline. Survives `initScenario` and `restart` (crash Retry). */
   #currentSeed: number | null = null;
   /** A non-stale timeline has arrived since the last `initScenario`/`restart`: resync may run. */
   #hasTimeline = false;
   #reqId = 0;
   #pending = new Map<number, (s: ParcelSummary | null) => void>();
+  #pendingBrush = new Map<number, (r: BrushLotsResult) => void>();
+  #pendingCatalog = new Map<number, (c: BrushCatalog | null) => void>();
   #datasetVersion: string | null = null;
   #disposed = false;
   #crashed = false;
@@ -124,6 +140,7 @@ export class ScenarioClient {
       horizon,
       ...(levers !== undefined && { levers })
     });
+    this.#sessionRev = rev;
     this.#leversRev = levers === undefined ? null : rev;
     return rev;
   }
@@ -159,6 +176,30 @@ export class ScenarioClient {
         day,
         ...(projectId !== undefined && { projectId })
       });
+    });
+  }
+
+  /**
+   * The lots a brush covers (eligible only), with their label points. Answered by a session
+   * initialised with levers once it has loaded; `no-session` otherwise, and on crash, `restart`
+   * and `dispose`.
+   */
+  resolveBrush(query: BrushQuery): Promise<BrushLotsResult> {
+    if (this.#disposed || this.#crashed) return Promise.resolve(noSession());
+    const reqId = ++this.#reqId;
+    return new Promise((resolve) => {
+      this.#pendingBrush.set(reqId, resolve);
+      this.#worker.postMessage({ type: 'resolveBrush', reqId, query });
+    });
+  }
+
+  /** The brush pickers' catalog; null without a lever session, and on crash, restart, dispose. */
+  brushCatalog(): Promise<BrushCatalog | null> {
+    if (this.#disposed || this.#crashed) return Promise.resolve(null);
+    const reqId = ++this.#reqId;
+    return new Promise((resolve) => {
+      this.#pendingCatalog.set(reqId, resolve);
+      this.#worker.postMessage({ type: 'brushCatalog', reqId });
     });
   }
 
@@ -218,6 +259,10 @@ export class ScenarioClient {
   #resolvePending(): void {
     for (const resolve of this.#pending.values()) resolve(null);
     this.#pending.clear();
+    for (const resolve of this.#pendingBrush.values()) resolve(noSession());
+    this.#pendingBrush.clear();
+    for (const resolve of this.#pendingCatalog.values()) resolve(null);
+    this.#pendingCatalog.clear();
   }
 
   #crash(worker: ScenarioWorkerLike, e: Event): void {
@@ -258,11 +303,35 @@ export class ScenarioClient {
         resolve(msg.summary);
         return;
       }
+      case 'brushLots': {
+        const resolve = this.#pendingBrush.get(msg.reqId);
+        if (!resolve) return;
+        this.#pendingBrush.delete(msg.reqId);
+        resolve(msg.result);
+        return;
+      }
+      case 'brushCatalog': {
+        const resolve = this.#pendingCatalog.get(msg.reqId);
+        if (!resolve) return;
+        this.#pendingCatalog.delete(msg.reqId);
+        resolve(msg.catalog);
+        return;
+      }
       case 'error':
         // Never a resync here (unlike SimClient): resending cannot fix a bad file or request. An
         // error at or after the resync rev only closes the episode.
         if (this.#resyncRev !== null && msg.rev >= this.#resyncRev) this.#resyncRev = null;
-        if (this.#leversRev !== null && msg.rev >= this.#leversRev) this.#leversRev = null;
+        // An error ends the lever revision when it is that revision's own, or when it ended the
+        // session (at or after the init rev, and not a bad-request for some later request). A
+        // load failure is posted at the init rev, below a setLevers sent before the load.
+        if (
+          this.#leversRev !== null &&
+          (msg.rev === this.#leversRev ||
+            msg.rev === this.#sessionRev ||
+            (msg.rev >= this.#sessionRev && msg.code !== 'bad-request'))
+        ) {
+          this.#leversRev = null;
+        }
         this.#events.onError?.(msg);
         return;
       case 'levers':

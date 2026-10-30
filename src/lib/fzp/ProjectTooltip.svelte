@@ -7,7 +7,7 @@
   import { formatCount } from '$lib/scoreboard/format';
   import { tooltipPosition } from '$lib/map/pick';
   import type { Day } from '$lib/timelapse/time';
-  import { cardStatus, type ChanceTable } from './card';
+  import { cardStatus, type CardChance, type ChanceTable } from './card';
   import { inStageLabel } from './labels';
   import { SUMMARY_COPY, type SummaryState } from './summary-request';
 
@@ -20,7 +20,8 @@
   let { state: summary, day, x, y }: Props = $props();
 
   /** The tooltip never reads a chance; `cardStatus` only indexes the pathway. */
-  const NO_CHANCE = { discretionary: {}, streamlined: {}, permitOnly: {} } as ChanceTable;
+  const NONE = { discretionary: {}, streamlined: {}, permitOnly: {} } as ChanceTable;
+  const NO_CHANCE: CardChance = { inFlight: NONE, fresh: NONE };
 
   const lines = $derived.by((): [string, string] | null => {
     if (summary.kind === 'idle') return null;

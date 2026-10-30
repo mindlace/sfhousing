@@ -20,3 +20,26 @@ describe('header actions slot', () => {
     await expect.element(page.getByRole('button', { name: 'A' })).not.toBeInTheDocument();
   });
 });
+
+describe('header pinned slot', () => {
+  it('shows the pinned snippet while the child is mounted and clears it on unmount', async () => {
+    const { rerender } = await render(Host, { pinnedA: 'Score A' });
+    await expect
+      .element(page.getByTestId('pinned').getByRole('button', { name: 'Score A' }))
+      .toBeInTheDocument();
+    await expect
+      .element(page.getByTestId('slot').getByRole('button', { name: 'A' }))
+      .toBeInTheDocument();
+    await rerender({ showA: false });
+    await expect.element(page.getByTestId('pinned')).toBeEmptyDOMElement();
+  });
+
+  it('a page without a pinned snippet replaces the previous one', async () => {
+    const { rerender } = await render(Host, { pinnedA: 'Score A' });
+    await rerender({ showA: true, showB: true, pinnedA: 'Score A' });
+    await expect.element(page.getByTestId('pinned')).toBeEmptyDOMElement();
+    await rerender({ showA: false, showB: true, pinnedA: 'Score A' });
+    await expect.element(page.getByTestId('pinned')).toBeEmptyDOMElement();
+    await expect.element(page.getByRole('button', { name: 'B' })).toBeInTheDocument();
+  });
+});

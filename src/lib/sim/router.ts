@@ -1,7 +1,7 @@
 // The worker router (spec §4.1): the scenario host beside the unchanged editor host, behind the
 // same Worker. Worker-bundle module: DOM-free and $app-free.
 import type { SimRequest } from './protocol';
-import type { ScenarioRequest, WorkerRequest } from './scenario/types';
+import type { ScenarioRequest, ScenarioResponse, WorkerRequest } from './scenario/types';
 
 export interface RouterDeps {
   editor: { handle(r: SimRequest): void; dispose(): void };
@@ -10,6 +10,8 @@ export interface RouterDeps {
    * before one.
    */
   createScenario: () => { handle(r: ScenarioRequest): void; dispose(): void };
+  /** The router's own answers: brush requests outside scenario mode (`no-session`). */
+  post(msg: ScenarioResponse): void;
 }
 
 export function createWorkerRouter(deps: RouterDeps): { handle(req: WorkerRequest): void } {
@@ -56,6 +58,21 @@ export function createWorkerRouter(deps: RouterDeps): { handle(req: WorkerReques
           // The editor's request shape has no `day` or `projectId`.
           else
             deps.editor.handle({ type: 'parcelSummary', reqId: req.reqId, parcelId: req.parcelId });
+          return;
+        case 'resolveBrush':
+          if (mode === 'scenario') scenarioHost().handle(req);
+          else {
+            const message = 'brushes need a /sim scenario session';
+            deps.post({
+              type: 'brushLots',
+              reqId: req.reqId,
+              result: { ok: false, reason: 'no-session', message }
+            });
+          }
+          return;
+        case 'brushCatalog':
+          if (mode === 'scenario') scenarioHost().handle(req);
+          else deps.post({ type: 'brushCatalog', reqId: req.reqId, catalog: null });
           return;
         default: {
           const unreachable: never = req;

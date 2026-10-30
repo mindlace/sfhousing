@@ -2,14 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_LEVERS } from './levers/types';
 import { createWorkerRouter } from './router';
 import type { SimRequest } from './protocol';
-import type { ScenarioRequest, WorkerRequest } from './scenario/types';
+import type { ScenarioRequest, ScenarioResponse, WorkerRequest } from './scenario/types';
 
 function setup() {
   const log: string[] = [];
   const editorReqs: SimRequest[] = [];
   const scenarioReqs: ScenarioRequest[] = [];
+  const posted: ScenarioResponse[] = [];
   let created = 0;
   const router = createWorkerRouter({
+    post: (msg) => posted.push(msg),
     editor: {
       handle: (r) => {
         log.push(`editor:${r.type}`);
@@ -30,7 +32,7 @@ function setup() {
     }
   });
   const send = (...rs: unknown[]) => rs.forEach((r) => router.handle(r as WorkerRequest));
-  return { log, editorReqs, scenarioReqs, created: () => created, send };
+  return { log, editorReqs, scenarioReqs, posted, created: () => created, send };
 }
 
 const init = { type: 'init', rev: 1, manifest: {}, mode: 'max' };
@@ -139,6 +141,42 @@ describe('worker router', () => {
       reqId: 7,
       parcelId: 'p1'
     });
+  });
+
+  const brush = { type: 'resolveBrush', reqId: 4, query: { kind: 'freehand', strokes: [] } };
+  const catalog = { type: 'brushCatalog', reqId: 5 };
+
+  it('answers resolveBrush and brushCatalog itself in editor mode: no-session', () => {
+    const t = setup();
+    t.send(brush, catalog, init, brush);
+    expect(t.log).toEqual(['editor:init']);
+    expect(t.created()).toBe(0);
+    const noSession = {
+      type: 'brushLots',
+      reqId: 4,
+      result: { ok: false, reason: 'no-session', message: expect.any(String) }
+    };
+    expect(t.posted).toEqual([
+      noSession,
+      { type: 'brushCatalog', reqId: 5, catalog: null },
+      noSession
+    ]);
+  });
+
+  it('sends resolveBrush and brushCatalog to the scenario host after initScenario', () => {
+    const t = setup();
+    t.send(initScenario, brush, catalog, init, brush);
+    expect(t.log).toEqual([
+      'editor:dispose',
+      'scenario:create',
+      'scenario:initScenario',
+      'scenario:resolveBrush',
+      'scenario:brushCatalog',
+      'scenario:dispose',
+      'editor:init'
+    ]);
+    expect(t.scenarioReqs.slice(1)).toEqual([brush, catalog]);
+    expect(t.posted).toHaveLength(1); // the last, in editor mode
   });
 
   it('sends the shared requests to the scenario host after init then initScenario', () => {

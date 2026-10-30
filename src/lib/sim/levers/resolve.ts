@@ -1,8 +1,10 @@
 /**
  * Envelope resolution per period (plan 2 ruling 3): the stock blend, then the user layer's edits,
- * then protected lots reset to current law. Rows the user layer moves off every stock row need a
- * yield recompute (`Need`); the caller computes those with `envelopeRow` and hands them back to
- * `fillNeeds`. Worker-safe.
+ * then protected lots, which are not redevelopable (partner ruling 2026-10-29): each is reset to
+ * its stock-blend row with `hostable` 0, so no new project initiates there (Call 21: in-flight
+ * projects carry on). Rows the user layer moves off every stock row need a yield recompute
+ * (`Need`); the caller computes those with `envelopeRow` and hands them back to `fillNeeds`.
+ * Worker-safe.
  */
 import { NULL_CAP } from '$lib/data/policy-codec';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
@@ -18,6 +20,7 @@ import {
   type Period
 } from './layers';
 import { STOCK_LAYERS, type Protections, type SimLevers } from './types';
+import { localProgramColumn } from './view';
 
 /** A lot whose final (stories, cap) is on none of its stock rows: its yield is computed outside. */
 export interface Need {
@@ -38,6 +41,8 @@ export interface Resolution {
   after: { day: Day; period: PeriodResolution } | null;
   /** The same plan with protections off. */
   unprotected: { before: PeriodResolution; after: PeriodResolution | null };
+  /** The law `before` was resolved under: 'after' when the switch is on or before `asOf`. */
+  beforePeriod: Period;
   protectedRows: Int32Array;
   unknownLots: number;
 }
@@ -92,6 +97,7 @@ function resolvePeriod(
   const current = currentLawTable(ctx, period, assume);
   const blendStories = table.stories.slice();
   const blendCap = table.cap.slice();
+  const blendYield = protect && protect.length > 0 ? table.yield.slice() : null;
   const touched = new Uint8Array(table.count);
 
   for (const e of levers.user) {
@@ -109,12 +115,13 @@ function resolvePeriod(
       touched[i] = 1;
     }
   }
-  if (protect) {
+  if (protect && blendYield) {
+    // Not redevelopable: the blend's row, never hostable, and never a Need.
     for (const i of protect) {
-      table.stories[i] = current.stories[i];
-      table.cap[i] = current.cap[i];
-      table.hostable[i] = current.hostable[i];
-      table.yield.set(current.yield.subarray(i * F, i * F + F), i * F);
+      table.stories[i] = blendStories[i];
+      table.cap[i] = blendCap[i];
+      table.yield.set(blendYield.subarray(i * F, i * F + F), i * F);
+      table.hostable[i] = 0;
       touched[i] = 0;
     }
   }
@@ -172,7 +179,9 @@ export function resolveEnvelopes(
   const beforePeriod: Period = switched ? 'after' : 'before';
   // The switch is resolved whenever it falls inside the window, and dropped when it changes no
   // row: whether a run switches depends only on whether the envelopes differ, not on which levers
-  // read current law (the currentLaw stock, protected lots, capped user edits).
+  // read current law (the currentLaw stock, capped user edits). A protected row is its blend row
+  // in both periods, so protections alone never switch. A change in the Local Program column
+  // alone (Call 22) also keeps the switch.
   const inWindow = !assume && window.asOf < window.switchDay && window.switchDay <= window.horizon;
 
   const before = resolvePeriod(ctx, levers, beforePeriod, rows);
@@ -188,7 +197,11 @@ export function resolveEnvelopes(
     after &&
     unprotectedAfter &&
     sameTable(after.table, before.table) &&
-    sameTable(unprotectedAfter.table, unprotectedBefore.table)
+    sameTable(unprotectedAfter.table, unprotectedBefore.table) &&
+    sameArray(
+      localProgramColumn(ctx, levers, beforePeriod),
+      localProgramColumn(ctx, levers, 'after')
+    )
   ) {
     after = null;
     unprotectedAfter = null;
@@ -197,6 +210,7 @@ export function resolveEnvelopes(
     before,
     after: after ? { day: window.switchDay, period: after } : null,
     unprotected: { before: unprotectedBefore, after: unprotectedAfter },
+    beforePeriod,
     protectedRows: rows,
     unknownLots: unknown
   };
@@ -262,6 +276,10 @@ export function netCapacity(t: EnvelopeTable, parcels: ScenarioParcels): number 
   return sum;
 }
 
+/**
+ * Static net capacity with and without protections. Protected rows are not hostable, so
+ * `withoutProtections - plan` is the protected rows' unprotected capacity, never negative.
+ */
 export interface LeverCapacity {
   plan: number;
   withoutProtections: number;

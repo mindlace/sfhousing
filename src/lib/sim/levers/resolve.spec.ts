@@ -113,13 +113,17 @@ describe('user edits', () => {
 });
 
 describe('protections', () => {
-  it('a protected lot equals its current-law row after a raise and after a lower', () => {
+  it('a protected lot is not hostable after a raise', () => {
     const c = ctx();
     const i = at(c, FZP_LOT);
+    const fzp = stockTable(c, 'fzp');
     for (const e of [edit([FZP_LOT], 'raise', 8), edit([FZP_LOT], 'lower', 0)]) {
       const r = resolveEnvelopes(c, levers({ user: [e], protect: protectLots([FZP_LOT]) }), WINDOW);
-      expect(row(r.before.table, i)).toEqual(row(currentLawTable(c, 'before', false), i));
+      expect(row(r.before.table, i)).toEqual({ ...row(fzp, i), hostable: 0 });
       expect(Array.from(r.protectedRows)).toEqual([i]);
+      // The protected views make no Need; the unprotected view may (a raise to 8 does).
+      expect(r.before.needs).toEqual([]);
+      expect(allNeeds(r).map(needKey)).toEqual(r.unprotected.before.needs.map(needKey));
     }
     const lowered = resolveEnvelopes(
       c,
@@ -127,7 +131,7 @@ describe('protections', () => {
       WINDOW
     );
     const cap = leverCapacity(lowered, c.parcels);
-    expect(cap.withoutProtections - cap.plan).toBeLessThan(0);
+    expect(cap.withoutProtections - cap.plan).toBe(0); // lowered to 0: nothing either way
   });
 
   it('categories: historic, rent control, newer-than', () => {
@@ -174,7 +178,7 @@ describe('protections', () => {
       sum += one(r.unprotected.before.table) - one(r.before.table);
     }
     expect(cap.withoutProtections - cap.plan).toBe(sum);
-    expect(cap.withoutProtections - cap.plan).not.toBe(0);
+    expect(cap.withoutProtections - cap.plan).toBeGreaterThan(0);
     expect(cap.protectedLots).toBe(2);
     expect(cap.plan).toBe(netCapacity(r.before.table, c.parcels));
   });
@@ -206,34 +210,37 @@ describe('periods', () => {
   });
 });
 
-describe('protected lots without current law in the stock', () => {
-  const S = () => levers({ stock: ['fzp'], protect: protectLots([MINI_SB79_ID]) });
-  it('after exists; protected row is the after-switch law, the rest is the FZP blend', () => {
+describe('protected lots do not create a law switch', () => {
+  const S = (patch: Partial<SimLevers> = {}) =>
+    levers({ stock: ['fzp'], protect: protectLots([MINI_SB79_ID]), ...patch });
+  it('FZP stock: after is null; the protected row is the fzp row, not hostable', () => {
     const c = ctx();
     const i = at(c, MINI_SB79_ID);
     const r = resolveEnvelopes(c, S(), WINDOW);
-    expect(r.after).not.toBeNull();
-    expect(row(r.before.table, i)).toEqual(row(stockTable(c, 'currentLaw'), i));
-    expect(r.after!.period.table.stories[i]).toBe(8);
-    expect(row(r.after!.period.table, i)).toEqual(row(currentLawAfterTable(c), i));
-    expect(row(r.unprotected.after!.table, i)).toEqual(row(stockTable(c, 'fzp'), i));
+    expect(r.after).toBeNull();
+    expect(r.unprotected.after).toBeNull();
+    expect(row(r.before.table, i)).toEqual({ ...row(stockTable(c, 'fzp'), i), hostable: 0 });
     expect(row(r.unprotected.before.table, i)).toEqual(row(stockTable(c, 'fzp'), i));
-    expect(leverCapacity(r, c.parcels).afterSwitch).not.toBeNull();
+    expect(leverCapacity(r, c.parcels).afterSwitch).toBeNull();
+    const late = resolveEnvelopes(c, S(), { ...WINDOW, asOf: SWITCH });
+    expect(late.beforePeriod).toBe('after');
+    expect(row(late.before.table, i)).toEqual({ ...row(stockTable(c, 'fzp'), i), hostable: 0 });
   });
-  it('with asOf at or past the switch, before takes the after-switch row', () => {
+  it('current-law stock: the switch exists; the protected row is not hostable in either period', () => {
     const c = ctx();
     const i = at(c, MINI_SB79_ID);
-    const r = resolveEnvelopes(c, S(), { ...WINDOW, asOf: SWITCH });
-    expect(r.after).toBeNull();
-    expect(row(r.before.table, i)).toEqual(row(currentLawAfterTable(c), i));
-    expect(row(r.unprotected.before.table, i)).toEqual(row(stockTable(c, 'fzp'), i));
-  });
-  it('stays null when the alternative plan is kept or the horizon is before the switch', () => {
-    const c = ctx();
-    expect(
-      resolveEnvelopes(c, { ...S(), assumeAlternativePlanKept: true }, WINDOW).after
-    ).toBeNull();
-    expect(resolveEnvelopes(c, S(), { ...WINDOW, horizon: SWITCH - 1 }).after).toBeNull();
+    const r = resolveEnvelopes(c, S({ stock: ['currentLaw'] }), WINDOW);
+    expect(r.beforePeriod).toBe('before');
+    expect(r.after).not.toBeNull();
+    expect(row(r.before.table, i)).toEqual({
+      ...row(currentLawTable(c, 'before', false), i),
+      hostable: 0
+    });
+    expect(row(r.after!.period.table, i)).toEqual({
+      ...row(currentLawAfterTable(c), i),
+      hostable: 0
+    });
+    expect(r.unprotected.after!.table.hostable[i]).toBe(1);
   });
 });
 

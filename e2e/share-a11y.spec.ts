@@ -7,7 +7,7 @@ import {
   gotoEditor,
   paintOnce,
   publishDialog,
-  publishOpen,
+  openPublish,
   smallText,
   waitForMap
 } from './helpers/sharing';
@@ -46,8 +46,9 @@ test('axe: the plan-not-found page', async ({ page }) => {
 test('axe: the Publish dialog after a successful publish', async ({ page, isMobile }) => {
   await gotoEditor(page);
   await paintOnce(page, isMobile);
-  await expect(publishOpen(page)).toBeEnabled();
-  await publishOpen(page).click();
+  const opener = await openPublish(page);
+  await expect(opener).toBeEnabled();
+  await opener.click();
   const dialog = publishDialog(page);
   await dialog.getByLabel('Title').fill('A11y check');
   await dialog.getByRole('button', { name: 'Publish' }).click();
@@ -66,8 +67,9 @@ test('axe: the Publish dialog in an error state (rate limited)', async ({ page, 
   );
   await gotoEditor(page);
   await paintOnce(page, isMobile);
-  await expect(publishOpen(page)).toBeEnabled();
-  await publishOpen(page).click();
+  const opener = await openPublish(page);
+  await expect(opener).toBeEnabled();
+  await opener.click();
   const dialog = publishDialog(page);
   await dialog.getByRole('button', { name: 'Publish' }).click();
   await expect(dialog.getByRole('alert')).not.toBeEmpty();

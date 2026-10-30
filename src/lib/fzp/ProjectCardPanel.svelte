@@ -3,7 +3,6 @@
   never requests anything itself; FzpMode owns the requests. All text comes from card.ts.
 -->
 <script lang="ts">
-  import type { Calibration } from '$lib/timelapse/types';
   import type { Day } from '$lib/timelapse/time';
   import {
     CHANCE_EXPLANATION,
@@ -20,7 +19,8 @@
     sourceLinks,
     statusText,
     timelineRows,
-    type ChanceTable
+    type CardCalibration,
+    type CardChance
   } from './card';
   import { PATHWAY_LABEL, TIER_LABEL } from './labels';
   import { SUMMARY_COPY, type SummaryState } from './summary-request';
@@ -29,8 +29,9 @@
     state: SummaryState;
     day: Day;
     asOf: Day;
-    calibration: Calibration;
-    chance: ChanceTable;
+    /** The provenance behind the chance, by `card.lookups`; on /fzp both are the base. */
+    calibration: CardCalibration;
+    chance: CardChance;
     onclose: () => void;
     /** A dialog section id from `chanceProvenance` (the "How is this estimated?" list). */
     onsource: (sectionId: string) => void;
@@ -50,7 +51,7 @@
   });
   const estimate = $derived(
     card && status && status.kind === 'inStage' && status.chance !== null
-      ? chanceProvenance(calibration, card, status.stage)
+      ? chanceProvenance(calibration[card.lookups], card, status.stage)
       : null
   );
   const rows = $derived(card ? timelineRows(card, day, asOf, marked) : []);
@@ -77,7 +78,7 @@
 {#if state.kind !== 'idle'}
   <section
     aria-labelledby={headingId}
-    class="absolute inset-x-4 bottom-[calc(var(--map-controls-br-block-size,60px)+8px)] z-20 max-h-1/2 overflow-y-auto rounded-lg bg-white p-4 text-sm text-black shadow-lg md:inset-x-auto md:top-4 md:bottom-auto md:left-4 md:max-h-[calc(100%-2rem-var(--fzp-scrubber-h,0px))] md:w-80"
+    class="absolute inset-x-4 bottom-[calc(var(--map-controls-br-block-size,60px)+8px)] z-20 max-h-1/2 overflow-y-auto rounded-lg bg-white p-4 text-sm text-black shadow-lg md:inset-x-auto md:top-4 md:bottom-auto md:left-[calc(var(--sim-panel-w,0px)+1rem)] md:max-h-[calc(100%-2rem-var(--fzp-scrubber-h,0px))] md:w-80"
   >
     <div class="flex items-start justify-between gap-2">
       <h2 id={headingId} class="text-base font-semibold">{heading}</h2>

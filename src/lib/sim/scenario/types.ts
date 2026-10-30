@@ -11,6 +11,7 @@ import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import type { Calibration, ExitReason, Pathway, Provenance, Stage } from '$lib/timelapse/types';
 import type { LeverLookups } from '../levers/apply';
+import type { BrushCatalog, BrushQuery } from '../levers/brushes';
 import type { LeverCapacity } from '../levers/resolve';
 import type { StageScale } from '../levers/timers';
 import type { SimLevers } from '../levers/types';
@@ -40,6 +41,10 @@ export interface Schedule {
     of: number;
     start: 'scheduled' | 'estimated'; // scheduled = its permitFiled is the published plan date; estimated = the phaseGap stagger
   } | null; // a phase sub-project of a multi-phase master
+  // A simulated project on a run with `lawSwitch`: true when its initiation month started on or
+  // after the switch, so it ran on the after view (size row, yields, envelope, Local Program).
+  // Absent on every other Schedule, including all of a run without a switch.
+  afterSwitch?: boolean;
 }
 export type SimInput = {
   parcels: ScenarioParcels; // decoded T11
@@ -83,7 +88,18 @@ export type ScenarioRequest =
       parcelId: ParcelId;
       day: Day;
       projectId?: string;
-    };
+    }
+  // Brushes (plan 3): answered only in a session initialised with levers, once it has loaded.
+  | { type: 'resolveBrush'; reqId: number; query: BrushQuery }
+  | { type: 'brushCatalog'; reqId: number };
+/**
+ * A brush's lots: `points` holds each lot's label point (lng, lat), transferred. `no-session`: no
+ * session with levers (or it ended before answering); `data-missing`: a file the query needs is
+ * absent from the manifest or failed to load; `bad-request`: the query is malformed.
+ */
+export type BrushLotsResult =
+  | { ok: true; lots: ParcelId[]; points: Float64Array }
+  | { ok: false; reason: 'no-session' | 'data-missing' | 'bad-request'; message: string };
 export type TimelineResponse = {
   type: 'timeline';
   rev: Rev;
@@ -103,6 +119,8 @@ export type ScenarioResponse =
   | TimelineResponse
   | { type: 'error'; rev: Rev; code: ScenarioErrorCode; message: string }
   | { type: 'parcelSummary'; reqId: number; summary: ParcelSummary | null }
+  | { type: 'brushLots'; reqId: number; result: BrushLotsResult }
+  | { type: 'brushCatalog'; reqId: number; catalog: BrushCatalog | null }
   | LeversResponse;
 /**
  * A lever revision's status (plan 2): `rev` is the `initScenario` or `setLevers` that named the
@@ -141,6 +159,9 @@ export type ProjectCard = {
   multiPhase: boolean;
   phase: Schedule['phase'];
   localProgram: boolean; // the project's parcel is a Local Program parcel and the project is simulated
+  lookups: 'inFlight' | 'fresh'; // the chance table of the calibration it runs on: fresh for a simulated project and a pipeline row at preApplication at asOf (newProjects), else inFlight
+  /** Months to add to the real months in `stage` before reading `chance` (in-flight rescale). */
+  chanceShift: { stage: Stage; months: number } | null; // non-null only for the stage the engine conditions in flight with a scale x ≠ 1: inFlightMonths(m, x) - m, m = months in it at asOf
   stages: { stage: Stage; day: Day; actual: boolean }[]; // only stages entered <= day
   revisions: Schedule['revisions']; // only those <= day
   end: Schedule['end'] | null; // null if the end is after day

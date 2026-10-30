@@ -14,15 +14,18 @@
 // - Every post (with its transfer list) and every warning, in order.
 import { deflateRawSync } from 'node:zlib';
 import type { Manifest } from '$lib/data/manifest';
+import { encodeFrontagePayload, readFrontage, type Frontage } from '$lib/data/frontage-codec';
 import { encodePolicyPayload, readPolicyParcels, type PolicyParcels } from '$lib/data/policy-codec';
 import {
   encodeScenarioPayload,
   readScenarioParcels,
   type ScenarioParcels
 } from '$lib/data/scenario-codec';
+import { encodeTransit } from '$lib/data/transit-codec';
 import type { Day } from '$lib/timelapse/time';
 import type { Rev } from '../../protocol';
 import { miniBin } from '../fixtures/mini-bin';
+import { miniFrontage, miniNeighborhoods, miniTransit } from '../fixtures/mini-frontage';
 import { MINI_SCENARIO_URLS, MINI_VERSION, miniCity } from '../fixtures/mini-parcels';
 import { miniPolicy } from '../fixtures/mini-policy';
 import { MINI_HORIZON, miniProjectsJson } from '../fixtures/mini-projects';
@@ -32,6 +35,10 @@ import type { ScenarioResponse } from '../types';
 
 /** Where the harness serves `miniPolicy` as policy.bin (in the manifest with `opts.policy`). */
 export const MINI_POLICY_URL = `/data/${MINI_VERSION}/scenarios/fzp/policy.bin`;
+/** The brush files (plan 3): named in every harness manifest and served by default. */
+export const MINI_FRONTAGE_URL = `/data/${MINI_VERSION}/scenarios/fzp/frontage.bin`;
+export const MINI_TRANSIT_URL = `/data/${MINI_VERSION}/transit.json`;
+export const MINI_NEIGHBORHOODS_URL = `/data/${MINI_VERSION}/neighborhoods.geojson`;
 
 type ErrorPost = Extract<ScenarioResponse, { type: 'error' }>;
 
@@ -117,6 +124,9 @@ export function makeScenarioHarness(opts?: {
   const fetches: FetchRecord[] = [];
   const bodies = new Map<string, unknown>();
   const policyBin = new Uint8Array(deflateRawSync(encodePolicyPayload(miniPolicy(city))));
+  const frontageBin = new Uint8Array(deflateRawSync(encodeFrontagePayload(miniFrontage(city))));
+  const transitJson: unknown = JSON.parse(encodeTransit(miniTransit(city)));
+  const neighborhoodsJson = miniNeighborhoods(city);
   const defaults = () => {
     bodies.clear();
     for (const [url, body] of Object.entries(city.chunks)) bodies.set(url, body);
@@ -124,6 +134,9 @@ export function makeScenarioHarness(opts?: {
     bodies.set(MINI_SCENARIO_URLS.projects, miniProjectsJson());
     bodies.set(MINI_SCENARIO_URLS.calibration, miniCalibration);
     bodies.set(MINI_POLICY_URL, policyBin);
+    bodies.set(MINI_FRONTAGE_URL, frontageBin);
+    bodies.set(MINI_TRANSIT_URL, transitJson);
+    bodies.set(MINI_NEIGHBORHOODS_URL, neighborhoodsJson);
   };
   defaults();
   for (const [url, body] of Object.entries(opts?.bodies ?? {})) bodies.set(url, body);
@@ -158,6 +171,18 @@ export function makeScenarioHarness(opts?: {
   /** policy.bin's decode: tracked by `flush` like parcels.bin's, but neither counted nor held. */
   function decodePolicy(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels> {
     const p = readPolicyParcels(bytes, parcels);
+    const done: Promise<void> = p.then(
+      () => undefined,
+      () => undefined
+    );
+    running.add(done);
+    void done.then(() => running.delete(done));
+    return p;
+  }
+
+  /** frontage.bin's decode: tracked by `flush` like policy.bin's. */
+  function decodeFrontage(bytes: Uint8Array, parcels: ScenarioParcels): Promise<Frontage> {
+    const p = readFrontage(bytes, parcels);
     const done: Promise<void> = p.then(
       () => undefined,
       () => undefined
@@ -235,6 +260,7 @@ export function makeScenarioHarness(opts?: {
     warn: (msg) => warnings.push(msg),
     decodeParcels,
     decodePolicy,
+    decodeFrontage,
     ...(opts?.retryDelaysMs ? { retryDelaysMs: opts.retryDelaysMs } : {}),
     ...opts?.deps
   };
@@ -277,7 +303,12 @@ export function makeScenarioHarness(opts?: {
   let rev = 0;
   const next = () => ++rev;
   const manifest = (): Manifest => {
-    const m = miniCity().manifest;
+    const base = miniCity().manifest;
+    const m: Manifest = {
+      ...base,
+      transit: MINI_TRANSIT_URL,
+      scenarios: { ...base.scenarios, fzp: { ...base.scenarios!.fzp, frontage: MINI_FRONTAGE_URL } }
+    };
     if (!opts?.policy) return m;
     const fzp = { ...m.scenarios!.fzp, policy: MINI_POLICY_URL };
     return { ...m, scenarios: { ...m.scenarios, fzp } };

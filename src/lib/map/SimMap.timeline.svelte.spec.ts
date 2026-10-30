@@ -548,6 +548,26 @@ describe('SimMap timeline picking', { timeout: 60_000 }, () => {
     expect(document.body.textContent).not.toContain('Parcel 9100001');
   });
 
+  it('painting and card picking are exclusive: with pan off (a stroke tool), clicks pick nothing', async () => {
+    // /sim's BrushController turns pan off for Paint, Erase, Protect and Unprotect; a press on
+    // the map is then a stroke, never a card (Task 8 review).
+    const timelinePick = vi.fn();
+    const { at, fire, h } = await readyOverPart({ timelinePick });
+    h.setPanEnabled(false);
+    const taps = () => timelinePick.mock.calls.filter(([p]) => p.kind === 'tap').length;
+    for (const type of ['mouse', 'touch']) {
+      fire('pointerdown', type, at(FP));
+      fire('pointerup', type, at(FP));
+    }
+    await frames(3);
+    expect(taps()).toBe(0);
+    // Back to Move: a click picks again.
+    h.setPanEnabled(true);
+    fire('pointerdown', 'mouse', at(FP));
+    fire('pointerup', 'mouse', at(FP));
+    await expect.poll(taps).toBe(1);
+  });
+
   it('without timelinePick a part shows the generated tooltip; clicks pick nothing', async () => {
     // The part left of centre, so the long generated tooltip fits beside the pointer.
     const { at, fire } = await readyOverPart({}, [FP[0] + 0.0006, FP[1]]);

@@ -1,13 +1,19 @@
 <!--
-  The scoreboard's contents at one month (spec §4.5, items 1-13). Rendered twice by FzpScoreboard
-  (desktop panel and mobile sheet), so every id is per instance.
+  The scoreboard's contents at one month (spec §4.5, items 1-13): the details the /sim header score
+  bar opens (ScoreBar). Every id is per instance.
 -->
 <script lang="ts">
+  import { timelineTokenCss } from '$lib/map/palette';
+  import { count } from '$lib/sim-page/brush-summary';
+  import { scoreCopy, type ScoreCopy } from '$lib/sim-page/policy';
+  import { CURRENT_LAW_SWITCH } from '$lib/sim/levers/types';
+  import type { LeverCapacity } from '$lib/sim/levers/resolve';
   import { formatBuiltDate, formatCount, formatPercent, trackMax } from '$lib/scoreboard';
   import TargetRow from '$lib/scoreboard/TargetRow.svelte';
   import type { TimelineScore } from '$lib/sim/protocol';
   import type { Day } from '$lib/timelapse/time';
   import { formatDate, formatMonthYear } from './format';
+  import { utcParts } from './time';
   import MapKey from './MapKey.svelte';
   import ScoreChart from './ScoreChart.svelte';
   import {
@@ -36,6 +42,12 @@
     builtAt: string;
     onrepresentative: () => void;
     onsources: () => void;
+    /** Who the plan effect is for (/sim): the Family Zoning Plan copy by default. */
+    copy?: ScoreCopy;
+    /** The current levers' capacity (/sim): the protection line (plan 3, Task 10) reads it. */
+    capacity?: LeverCapacity | null;
+    /** The latest levers failed to apply (/sim): the numbers are from the policy before them. */
+    stale?: boolean;
   }
   let {
     score,
@@ -51,8 +63,29 @@
     datasetVersion,
     builtAt,
     onrepresentative,
-    onsources
+    onsources,
+    copy = scoreCopy(null),
+    capacity = null,
+    stale = false
   }: Props = $props();
+
+  /**
+   * What the protections cost in zoned capacity (/sim), or null with no protected lots. The
+   * resolver guarantees `withoutProtections >= plan`.
+   */
+  /** The year current law's switch takes effect (the levers' `afterSwitch` window starts then). */
+  const SWITCH_YEAR = utcParts(CURRENT_LAW_SWITCH.day).y;
+  const protectionLine = $derived.by(() => {
+    if (!capacity || capacity.protectedLots <= 0) return null;
+    const a = capacity.afterSwitch;
+    const after = a ? `, ${formatCount(a.withoutProtections - a.plan)} from ${SWITCH_YEAR}` : '';
+    const lots = count(capacity.protectedLots, 'lot', 'lots');
+    const fewer = count(capacity.withoutProtections - capacity.plan, 'fewer home', 'fewer homes');
+    return `${lots} protected: ${fewer} of zoned capacity${after}`;
+  });
+
+  /** "the plan" in the Family Zoning Plan copy (its text unchanged), else the copy's own name. */
+  const short = $derived(copy.plan === 'the Family Zoning Plan' ? 'the plan' : copy.plan);
 
   const WIDE = '(min-width: 768px)';
 
@@ -69,6 +102,12 @@
   const keyOpen = typeof matchMedia === 'function' && matchMedia(WIDE).matches;
 </script>
 
+<svelte:head>
+  <!-- The legend sits outside SimMap, so it cannot inherit SimMap's --map-* variables. -->
+  <!-- eslint-disable-next-line svelte/no-at-html-tags -- constant CSS built from palette TOKENS -->
+  {@html '<style>' + timelineTokenCss('.sfh-fzp-legend') + '</style>'}
+</svelte:head>
+
 <div class="text-black">
   <p
     data-testid="fzp-badge"
@@ -77,10 +116,15 @@
     Simulation
   </p>
   <p class="mt-2 text-sm text-gray-800">
-    One possible future for San Francisco under the Family Zoning Plan. It starts from every real
-    project in the pipeline today and adds new ones at the rates the city's own records show. It is
-    a simulation, not a forecast.
+    One possible future for San Francisco under {copy.plan}. It starts from every real project in
+    the pipeline today and adds new ones at the rates the city's own records show. It is a
+    simulation, not a forecast.
   </p>
+  {#if stale}
+    <p class="mt-2 text-sm font-semibold" data-testid="fzp-score-stale">
+      These numbers are from before your latest policy change.
+    </p>
+  {/if}
 
   {#if !score || !at || !band || !planBand}
     <p class="mt-3 text-sm text-gray-800">Loading the simulation…</p>
@@ -112,10 +156,10 @@
     </p>
 
     <section class="mt-4" aria-busy={planPending ? 'true' : undefined}>
-      <h2 class="text-sm font-semibold">What the plan added</h2>
+      <h2 class="text-sm font-semibold">What {short} added</h2>
       <dl class="mt-1 space-y-1 text-sm">
         <div class="flex justify-between gap-3">
-          <dt>Homes completed because of the plan</dt>
+          <dt>Homes completed because of {short}</dt>
           <dd class="tabular-nums">
             {at.planCompleted === null ? CALCULATING : formatCount(at.planCompleted)}
           </dd>
@@ -126,18 +170,21 @@
       </p>
       <dl class="mt-1 text-sm">
         <div class="flex justify-between gap-3">
-          <dt>Homes approved because of the plan</dt>
+          <dt>Homes approved because of {short}</dt>
           <dd class="tabular-nums">
             {at.planEntitled === null ? CALCULATING : formatCount(at.planEntitled)}
           </dd>
         </div>
       </dl>
       <p class="mt-2 text-sm text-gray-800">
-        To see what the plan itself does, each future is run twice: once with the Family Zoning
-        Plan, and once as the same city simulated under the old zoning, with the same luck. The
-        difference between the two is the plan's effect. Some homes would have been built anyway;
-        they are not counted here.
+        To see what {short} itself does, each future is run twice: once with {copy.plan}, and once
+        as the same city simulated under {copy.twin}, with the same luck. The difference between the
+        two is {short}'s effect. Some homes would have been built anyway; they are not counted here.
       </p>
+      {#if protectionLine}
+        <!-- Not live: the numbers change with every lever change (spec: no aria-live). -->
+        <p class="mt-2 text-sm text-gray-800 tabular-nums">{protectionLine}</p>
+      {/if}
     </section>
 
     {#each at.targets as t, k (t.tp.target.id)}

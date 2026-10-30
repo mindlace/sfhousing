@@ -50,7 +50,7 @@ interface Fixture {
 
 let fx: Fixture;
 
-function setup(opts: { plan?: Plan } = {}): Fixture {
+function setup(opts: { plan?: Plan; noPreview?: boolean } = {}): Fixture {
   const box = document.createElement('div');
   box.style.cssText = 'position:fixed;left:0;top:0;width:400px;height:300px';
   const canvas = document.createElement('canvas');
@@ -116,6 +116,10 @@ function setup(opts: { plan?: Plan } = {}): Fixture {
     },
     prefetch: (bbox) => void client.prefetches.push([...bbox])
   } as BrushControllerDeps['client'];
+  if (opts.noPreview) {
+    delete clientApi.preview;
+    delete clientApi.cancelPreview;
+  }
 
   const editor = createEditor(opts.plan ?? emptyPlan('fixture-0'));
   const state = new BrushState({ fine: true, storage: null });
@@ -843,5 +847,23 @@ describe('BrushController and Editor.load', () => {
     flushSync();
     expect(lastPan()).toBe(false);
     expect(fx.box.style.touchAction).toBe('none');
+  });
+});
+
+describe('BrushController without previews (/sim)', () => {
+  it('commits once on pointer-up and never previews when the client has no preview', () => {
+    fx.ctl.destroy();
+    fx.state.destroy();
+    fx.box.remove();
+    fx = setup({ noPreview: true });
+    down(0, 0);
+    for (let x = 10; x <= 60; x += 10) move(x, 0);
+    expect(fx.flushRaf()).toBe(0);
+    up(60, 0);
+    expect(fx.client.previews).toHaveLength(0);
+    expect(fx.client.cancels).toHaveLength(0);
+    expect(fx.client.commits).toHaveLength(1);
+    expect(fx.client.commits[0].op.path.length).toBeGreaterThan(1);
+    expect(fx.editor.plan.ops).toHaveLength(1);
   });
 });

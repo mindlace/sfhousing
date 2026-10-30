@@ -1,9 +1,11 @@
 import { createRawSnippet } from 'svelte';
 import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
+import { focusHeaderMenu } from './header-actions.svelte';
 import SiteHeader from './SiteHeader.svelte';
+import ScoreBarHeader from './test/ScoreBarHeader.svelte';
 
 describe('SiteHeader', () => {
   it('renders a banner with a home link', async () => {
@@ -15,6 +17,7 @@ describe('SiteHeader', () => {
   });
 
   it('renders the actions snippet inside the header', async () => {
+    await page.viewport(1024, 768);
     const actions = createRawSnippet(() => ({ render: () => '<button>Publish</button>' }));
     render(SiteHeader, { actions });
     await expect
@@ -34,22 +37,22 @@ describe('SiteHeader', () => {
       render(SiteHeader, { routeId: '/' });
       const nav = page.getByRole('navigation', { name: 'Modes' });
       const paint = nav.getByRole('link', { name: 'Paint' });
-      const timelapse = nav.getByRole('link', { name: 'Timelapse' });
+      const simulate = nav.getByRole('link', { name: 'Simulate' });
       await expect.element(paint).toHaveAttribute('href', '/');
       await expect.element(paint).toHaveAttribute('aria-current', 'page');
-      await expect.element(timelapse).toHaveAttribute('href', '/fzp');
-      await expect.element(timelapse).not.toHaveAttribute('aria-current');
+      await expect.element(simulate).toHaveAttribute('href', '/sim');
+      await expect.element(simulate).not.toHaveAttribute('aria-current');
     });
 
-    it('flips the current link on /fzp', async () => {
+    it('flips the current link on /sim', async () => {
       await page.viewport(1024, 768);
-      render(SiteHeader, { routeId: '/fzp' });
+      render(SiteHeader, { routeId: '/sim' });
       const nav = page.getByRole('navigation', { name: 'Modes' });
       await expect
         .element(nav.getByRole('link', { name: 'Paint' }))
         .not.toHaveAttribute('aria-current');
       await expect
-        .element(nav.getByRole('link', { name: 'Timelapse' }))
+        .element(nav.getByRole('link', { name: 'Simulate' }))
         .toHaveAttribute('aria-current', 'page');
     });
 
@@ -58,29 +61,25 @@ describe('SiteHeader', () => {
       render(SiteHeader, { routeId: '/p/[id]' });
       const nav = page.getByRole('navigation', { name: 'Modes' });
       await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
-      await expect.element(nav.getByRole('link', { name: 'Timelapse' })).toBeVisible();
+      await expect.element(nav.getByRole('link', { name: 'Simulate' })).toBeVisible();
       await expect
         .element(nav.getByRole('link', { name: 'Paint' }))
         .not.toHaveAttribute('aria-current');
       await expect
-        .element(nav.getByRole('link', { name: 'Timelapse' }))
+        .element(nav.getByRole('link', { name: 'Simulate' }))
         .not.toHaveAttribute('aria-current');
     });
 
-    it('shows only Paint at 375px on /fzp', async () => {
+    it('puts both links in the menu at 375px and marks the current mode', async () => {
       await page.viewport(375, 812);
-      render(SiteHeader, { routeId: '/fzp' });
+      render(SiteHeader, { routeId: '/sim' });
+      await expect.element(page.getByRole('link', { name: 'Paint' })).not.toBeInTheDocument();
+      await page.getByRole('button', { name: 'Menu' }).click();
       const nav = page.getByRole('navigation', { name: 'Modes' });
       await expect.element(nav.getByRole('link', { name: 'Paint' })).toBeVisible();
-      await expect.element(nav.getByText('Timelapse')).not.toBeVisible();
-    });
-
-    it.each(['/', '/p/[id]'])('shows only Timelapse at 375px on %s', async (routeId) => {
-      await page.viewport(375, 812);
-      render(SiteHeader, { routeId });
-      const nav = page.getByRole('navigation', { name: 'Modes' });
-      await expect.element(nav.getByRole('link', { name: 'Timelapse' })).toBeVisible();
-      await expect.element(nav.getByText('Paint')).not.toBeVisible();
+      await expect
+        .element(nav.getByRole('link', { name: 'Simulate' }))
+        .toHaveAttribute('aria-current', 'page');
     });
   });
 
@@ -123,5 +122,164 @@ describe('SiteHeader', () => {
     await expect.element(banner).toBeVisible();
     const el = banner.element() as HTMLElement;
     expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth);
+  });
+
+  it('focusHeaderMenu focuses the phone Menu button, and is false without one', async () => {
+    expect(focusHeaderMenu()).toBe(false);
+    await page.viewport(375, 700);
+    render(SiteHeader);
+    expect(focusHeaderMenu()).toBe(true);
+    await expect.element(page.getByRole('button', { name: 'Menu' })).toHaveFocus();
+  });
+
+  describe('phone menu', () => {
+    const actions = createRawSnippet(() => ({
+      render: () =>
+        '<span><button>Another future</button><button aria-expanded="false">View</button></span>'
+    }));
+    const pinned = createRawSnippet(() => ({ render: () => '<button>1,234 homes added</button>' }));
+    const menu = () => page.getByRole('button', { name: 'Menu' });
+
+    it('at 375px hides the links and actions until Menu is pressed; the pinned item shows', async () => {
+      await page.viewport(375, 812);
+      render(SiteHeader, { routeId: '/sim', actions, pinned });
+      const banner = page.getByRole('banner');
+      await expect.element(banner.getByRole('button', { name: '1,234 homes added' })).toBeVisible();
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
+      await expect.element(page.getByText('Another future')).not.toBeVisible();
+      // Two copies of the links (header row from md, menu below md): neither shows.
+      expect(page.getByRole('link', { name: 'Paint' }).elements()).toEqual([]);
+      expect(page.getByText('Paint').elements()).toHaveLength(2);
+
+      await menu().click();
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
+      const panel = document.getElementById(menu().element().getAttribute('aria-controls')!);
+      expect(panel).not.toBeNull();
+      await expect.element(page.getByRole('button', { name: 'Another future' })).toBeVisible();
+      await expect.element(page.getByRole('link', { name: 'Paint' })).toBeVisible();
+      await expect.element(page.getByRole('link', { name: 'Simulate' })).toBeVisible();
+      await expect.element(banner.getByRole('button', { name: '1,234 homes added' })).toBeVisible();
+      const el = banner.element() as HTMLElement;
+      expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
+      expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth);
+    });
+
+    it('Escape closes the menu and returns focus to Menu', async () => {
+      await page.viewport(375, 812);
+      render(SiteHeader, { routeId: '/sim', actions, pinned });
+      await menu().click();
+      (page.getByRole('link', { name: 'Paint' }).element() as HTMLElement).focus();
+      await userEvent.keyboard('{Escape}');
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
+      await expect.element(menu()).toHaveFocus();
+      await expect.element(page.getByText('Another future')).not.toBeVisible();
+    });
+
+    it('choosing a plain button closes the menu; a disclosure inside keeps it open', async () => {
+      await page.viewport(375, 812);
+      render(SiteHeader, { routeId: '/sim', actions, pinned });
+      await menu().click();
+      await page.getByRole('button', { name: 'View' }).click();
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
+      await page.getByRole('button', { name: 'Another future' }).click();
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
+      await expect.element(page.getByText('Another future')).not.toBeVisible();
+    });
+
+    it('a button inside a dialog opened from the menu keeps the menu (and the dialog) open', async () => {
+      await page.viewport(375, 812);
+      const withDialog = createRawSnippet(() => ({
+        render: () =>
+          '<span><button aria-haspopup="dialog">Publish</button>' +
+          '<dialog><button>Send</button></dialog></span>'
+      }));
+      render(SiteHeader, { routeId: '/', actions: withDialog });
+      await menu().click();
+      const dlg = document.querySelector('dialog') as HTMLDialogElement;
+      await page.getByRole('button', { name: 'Publish' }).click();
+      dlg.showModal();
+      await page.getByRole('button', { name: 'Send' }).click();
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
+      await expect.element(page.getByRole('button', { name: 'Send' })).toBeVisible();
+      dlg.close();
+    });
+
+    it('at 375px the Menu and the score details are never open together', async () => {
+      await page.viewport(375, 812);
+      render(ScoreBarHeader);
+      const scoreBar = page.getByRole('button', { name: '1,234 homes added' });
+      const details = page.getByText('Score details here');
+
+      await menu().click();
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
+      await scoreBar.click();
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
+      await expect.element(scoreBar).toHaveAttribute('aria-expanded', 'true');
+      await expect.element(details).toBeVisible();
+      await expect.element(page.getByText('Another future')).not.toBeVisible();
+
+      await menu().click();
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
+      await expect.element(scoreBar).toHaveAttribute('aria-expanded', 'false');
+      await expect.element(details).not.toBeInTheDocument();
+      await expect.element(page.getByRole('button', { name: 'Another future' })).toBeVisible();
+    });
+
+    it('at 375px the keyboard keeps the Menu and the score details exclusive too', async () => {
+      await page.viewport(375, 812);
+      render(ScoreBarHeader);
+      const scoreBar = page.getByRole('button', { name: '1,234 homes added' });
+      const details = page.getByText('Score details here');
+
+      // Details open, then Enter on Menu: the details close.
+      (scoreBar.element() as HTMLElement).focus();
+      await userEvent.keyboard('{Enter}');
+      await expect.element(details).toBeVisible();
+      (menu().element() as HTMLElement).focus();
+      await userEvent.keyboard('{Enter}');
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
+      await expect.element(scoreBar).toHaveAttribute('aria-expanded', 'false');
+      await expect.element(details).not.toBeInTheDocument();
+
+      // Menu open, then Enter on the score bar: the Menu closes.
+      (scoreBar.element() as HTMLElement).focus();
+      await userEvent.keyboard('{Enter}');
+      await expect.element(scoreBar).toHaveAttribute('aria-expanded', 'true');
+      await expect.element(details).toBeVisible();
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
+      await expect.element(page.getByText('Another future')).not.toBeVisible();
+    });
+
+    it('the score details close on a press outside them', async () => {
+      await page.viewport(375, 812);
+      render(ScoreBarHeader);
+      const scoreBar = page.getByRole('button', { name: '1,234 homes added' });
+      await scoreBar.click();
+      await expect.element(page.getByText('Score details here')).toBeVisible();
+      await page.getByTestId('outside').click();
+      await expect.element(scoreBar).toHaveAttribute('aria-expanded', 'false');
+      await expect.element(page.getByText('Score details here')).not.toBeInTheDocument();
+    });
+
+    it('the Menu button is at least 24x24', async () => {
+      await page.viewport(375, 812);
+      render(SiteHeader, { routeId: '/' });
+      const r = menu().element().getBoundingClientRect();
+      expect(r.width).toBeGreaterThanOrEqual(24);
+      expect(r.height).toBeGreaterThanOrEqual(24);
+    });
+
+    it('at 1024px there is no Menu; the pinned item sits before the actions', async () => {
+      await page.viewport(1024, 768);
+      render(SiteHeader, { routeId: '/sim', actions, pinned });
+      await expect.element(page.getByRole('button', { name: 'Another future' })).toBeVisible();
+      expect(page.getByRole('button', { name: 'Menu' }).elements()).toEqual([]);
+      const score = page.getByRole('button', { name: '1,234 homes added' }).element();
+      const other = page.getByRole('button', { name: 'Another future' }).element();
+      expect(score.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(score.getBoundingClientRect().right).toBeLessThanOrEqual(
+        other.getBoundingClientRect().left
+      );
+    });
   });
 });

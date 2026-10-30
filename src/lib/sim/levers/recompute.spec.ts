@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
-import { FILL_LEVELS } from '$lib/data/scenario-codec';
+import { FILL_LEVELS, type ScenarioParcels } from '$lib/data/scenario-codec';
 import { NULL_CAP } from '$lib/data/policy-codec';
 import { miniCity } from '../scenario/fixtures/mini-parcels';
 import { miniPolicy } from '../scenario/fixtures/mini-policy';
@@ -18,6 +18,7 @@ const fzpNeeds = (): Need[] =>
     cap: policy.fzpYieldCap[row] === NULL_CAP ? null : policy.fzpYieldCap[row]
   }));
 const all = (id: ParcelId) => city.records.get(id);
+const loaded = () => true;
 const clock = () => {
   let t = 0;
   return () => (t += 1);
@@ -27,7 +28,12 @@ const idOf = (n: Need) => P.id[n.row] as ParcelId;
 describe('createYieldRecompute', () => {
   it('reproduces parcels.bin yield and hostable at the FZP stories and cap', () => {
     const needs = fzpNeeds();
-    const r = createYieldRecompute(P, needs, { record: all, now: clock() }, new Map());
+    const r = createYieldRecompute(
+      P,
+      needs,
+      { record: all, cellLoaded: loaded, now: clock() },
+      new Map()
+    );
     expect(r.step(1e9)).toBe(true);
     expect(r.done).toBe(needs.length);
     for (const n of needs) {
@@ -37,36 +43,46 @@ describe('createYieldRecompute', () => {
     }
   });
 
-  it('gives the same result map whatever order records arrive in', () => {
-    const needs = fzpNeeds().slice(0, 12);
-    const ids = needs.map(idOf);
-    const orders = [ids, [...ids].reverse(), [...ids.slice(6), ...ids.slice(0, 6)]];
+  it('gives the same result map whatever order cells arrive in', () => {
+    const needs = fzpNeeds();
+    const cells = P.cells.map((c) => c.cellId);
+    const orders = [cells, [...cells].reverse(), [...cells.slice(2), ...cells.slice(0, 2)]];
     const outcomes = orders.map((seq) => {
-      const avail = new Set<ParcelId>();
+      const avail = new Set<string>();
+      const cellOfId = (id: ParcelId) => P.cells[P.cell[P.index.get(id)!]].cellId;
       const rc = createYieldRecompute(
         P,
         needs,
-        { record: (id) => (avail.has(id) ? city.records.get(id) : undefined), now: clock() },
+        {
+          record: (id) => (avail.has(cellOfId(id)) ? city.records.get(id) : undefined),
+          cellLoaded: (c) => avail.has(c),
+          now: clock()
+        },
         new Map()
       );
-      for (const id of seq) {
-        avail.add(id);
+      for (const c of seq) {
+        avail.add(c);
         rc.step(1e9);
       }
       expect(rc.step(1e9)).toBe(true);
+      expect(rc.missing).toEqual([]);
       return [...rc.result()].sort(([a], [b]) => (a < b ? -1 : 1));
     });
     expect(outcomes[1]).toEqual(outcomes[0]);
     expect(outcomes[2]).toEqual(outcomes[0]);
   });
 
-  it('lists only the cells of needs with no record yet', () => {
+  it('lists only the cells of needs not yet loaded', () => {
     const needs = fzpNeeds();
     const have = new Set(needs.filter((n) => P.cell[n.row] === 0).map(idOf));
     const r = createYieldRecompute(
       P,
       needs,
-      { record: (id) => (have.has(id) ? city.records.get(id) : undefined), now: clock() },
+      {
+        record: (id) => (have.has(id) ? city.records.get(id) : undefined),
+        cellLoaded: (c) => c === P.cells[0].cellId,
+        now: clock()
+      },
       new Map()
     );
     const want = P.cells.map((c) => c.cellId).filter((_, k) => k !== 0);
@@ -77,7 +93,12 @@ describe('createYieldRecompute', () => {
 
   it('computes at least one ready need per step on a zero budget', () => {
     const needs = fzpNeeds().slice(0, 5);
-    const r = createYieldRecompute(P, needs, { record: all, now: clock() }, new Map());
+    const r = createYieldRecompute(
+      P,
+      needs,
+      { record: all, cellLoaded: loaded, now: clock() },
+      new Map()
+    );
     expect(r.step(0)).toBe(false);
     expect(r.done).toBe(1);
   });
@@ -92,11 +113,128 @@ describe('createYieldRecompute', () => {
     }
     const cache: GrossCache = new Counting();
     const run = () =>
-      createYieldRecompute(P, fzpNeeds(), { record: all, now: clock() }, cache).step(1e9);
+      createYieldRecompute(
+        P,
+        fzpNeeds(),
+        { record: all, cellLoaded: loaded, now: clock() },
+        cache
+      ).step(1e9);
     run();
     const first = (cache as Counting).sets;
     expect(first).toBeGreaterThan(0);
     run();
     expect((cache as Counting).sets).toBe(first);
   });
+
+  it('bucketed step: reads each record about once, not once per need per step', () => {
+    const CELLS = 100;
+    const PER = 100;
+    const big = syntheticParcels(CELLS, PER);
+    const needs: Need[] = Array.from({ length: CELLS * PER }, (_, row) => ({
+      row,
+      stories: 0,
+      cap: null
+    }));
+    const template = city.records.get(P.id[0] as ParcelId)!;
+    const avail = new Set<string>();
+    let calls = 0;
+    const r = createYieldRecompute(
+      big,
+      needs,
+      {
+        record: (id) => {
+          calls++;
+          const row = big.index.get(id)!;
+          return avail.has(big.cells[big.cell[row]].cellId) ? { ...template, id } : undefined;
+        },
+        cellLoaded: (c) => avail.has(c),
+        now: clock()
+      },
+      new Map()
+    );
+    let steps = 0;
+    for (const c of big.cells) {
+      avail.add(c.cellId);
+      r.step(1e9);
+      steps++;
+    }
+    expect(r.done).toBe(r.total);
+    expect(r.total).toBe(CELLS * PER);
+    expect(calls).toBeLessThanOrEqual(r.total + CELLS * steps);
+  });
+
+  it('a budget break inside a cell resumes there: every need computed exactly once', () => {
+    const CELLS = 3;
+    const PER = 10;
+    const big = syntheticParcels(CELLS, PER);
+    const needs: Need[] = Array.from({ length: CELLS * PER }, (_, row) => ({
+      row,
+      stories: 0,
+      cap: null
+    }));
+    const template = city.records.get(P.id[0] as ParcelId)!;
+    const reads = new Map<ParcelId, number>();
+    const r = createYieldRecompute(
+      big,
+      needs,
+      {
+        record: (id) => {
+          reads.set(id, (reads.get(id) ?? 0) + 1);
+          return { ...template, id };
+        },
+        cellLoaded: () => true,
+        now: clock() // each call moves 1 ms, so a 4 ms budget breaks part-way through a cell
+      },
+      new Map()
+    );
+    const doneAfter: number[] = [];
+    while (!r.step(4)) doneAfter.push(r.done);
+    expect(doneAfter.some((d) => d % PER !== 0)).toBe(true); // at least one break mid-cell
+    expect(r.done).toBe(r.total);
+    expect(r.result().size).toBe(CELLS * PER);
+    for (const n of needs) expect(r.result().has(needKey(n))).toBe(true);
+    expect(reads.size).toBe(CELLS * PER);
+    expect([...reads.values()].every((c) => c === 1)).toBe(true);
+  });
+
+  it('missing record: a loaded cell without a need record fills it with zeros', () => {
+    const needs = fzpNeeds();
+    const gone = idOf(needs[0]);
+    const r = createYieldRecompute(
+      P,
+      needs,
+      { record: (id) => (id === gone ? undefined : all(id)), cellLoaded: loaded, now: clock() },
+      new Map()
+    );
+    expect(r.cellsNeeded()).toEqual([]);
+    expect(r.step(1e9)).toBe(true);
+    expect(r.missing).toEqual([gone]);
+    expect(r.result().get(needKey(needs[0]))).toEqual({
+      stories: needs[0].stories,
+      cap: needs[0].cap,
+      yield: Array.from({ length: F }, () => 0),
+      hostable: false
+    });
+  });
 });
+
+/** `cells` × `per` rows, each cell `per` consecutive rows; only the columns the recompute reads. */
+function syntheticParcels(cells: number, per: number): ScenarioParcels {
+  const n = cells * per;
+  const id = Array.from({ length: n }, (_, i) => `S${i}`);
+  return {
+    count: n,
+    cells: Array.from({ length: cells }, (_, c) => ({
+      cellId: `c${c}`,
+      start: c * per,
+      count: per
+    })),
+    id,
+    index: new Map(id.map((v, i) => [v as ParcelId, i])),
+    cell: Uint16Array.from({ length: n }, (_, i) => Math.floor(i / per)),
+    eligible: new Uint8Array(n).fill(1),
+    existingUnits: new Uint16Array(n),
+    existingFloorAreaM2: new Uint32Array(n),
+    existingStories: new Uint8Array(n)
+  } as unknown as ScenarioParcels;
+}

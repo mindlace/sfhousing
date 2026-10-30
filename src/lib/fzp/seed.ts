@@ -18,7 +18,12 @@ export function parseSeed(params: URLSearchParams): { seed: number | null; inval
  * holds the one on screen.
  */
 export function addressSeed(): { seed: number | null; invalid: boolean } {
-  return parseSeed(new URLSearchParams(location.search));
+  return parseSeed(new URLSearchParams(addressSearch()));
+}
+
+/** The address bar's query string (`location.search`), for the same reason as `addressSeed`. */
+export function addressSearch(): string {
+  return location.search;
 }
 
 /** Sets or removes `seed`, keeping other parameters and their order. */

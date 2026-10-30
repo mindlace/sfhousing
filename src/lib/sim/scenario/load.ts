@@ -1,6 +1,7 @@
 // Scenario loading (spec §4.2 steps 1, 2, 4-7; the loading rows of §4.10): request checks,
 // manifest URLs, the three concurrent fetches with retries, decode and validation, and the two
 // SimInputs with their precompute. Worker-bundle module: zod-free, DOM-free, $app-free.
+import { STREET_CLASSES } from '$lib/data/frontage-codec';
 import type { Manifest } from '$lib/data/manifest';
 import { readPolicyParcels, type PolicyParcels } from '$lib/data/policy-codec';
 import { readScenarioParcels, type ScenarioParcels } from '$lib/data/scenario-codec';
@@ -8,6 +9,7 @@ import { parseCalibration } from '$lib/timelapse/model';
 import { ProjectsFormatError, parseProjectsFile, type ProjectsFile } from '$lib/timelapse/projects';
 import type { Calibration } from '$lib/timelapse/types';
 import type { FetchLike } from '../chunks';
+import { STOP_TYPES } from '../levers/brushes';
 import { parseSimLevers } from '../levers/types';
 import { isSkipped } from './engine';
 import { ScenarioInputError, buildSimInput, precomputeOf } from './input';
@@ -20,12 +22,16 @@ export type FetchBytesLike = (
 ) => Promise<{ ok: boolean; status: number; arrayBuffer(): Promise<ArrayBuffer> }>;
 
 export type InitRequest = Extract<ScenarioRequest, { type: 'initScenario' }>;
-/** `policy` is null when the manifest has no usable `scenarios.fzp.policy` (only /sim needs it). */
+/**
+ * `policy` and `frontage` are null when the manifest has no usable `scenarios.fzp.policy` /
+ * `scenarios.fzp.frontage` (only /sim needs them; frontage only for street brushes).
+ */
 export type ScenarioUrls = {
   parcels: string;
   projects: string;
   calibration: string;
   policy: string | null;
+  frontage: string | null;
 };
 
 export interface Loaded {
@@ -85,24 +91,75 @@ export function validateInitRequest(req: InitRequest): string | null {
   return null;
 }
 
+/** `u` when it is a URL under `/data/<datasetVersion>/` of `m`, else null. */
+export function datasetUrl(m: Manifest, u: unknown): string | null {
+  return typeof u === 'string' && u.startsWith(`/data/${m.datasetVersion}/`) ? u : null;
+}
+
 /**
  * §4.2 step 2: the three FZP file URLs, or null when `scenarios.fzp` is absent or any URL is
  * missing or not under `/data/<datasetVersion>/` (the host answers `scenario-missing`). The
  * manifest has passed `checkManifestShape`, which does not look at `scenarios`. The optional
- * `policy` URL (plan 2) is null when absent or outside the prefix: /fzp never needs it, so it
- * never makes the result null.
+ * `policy` (plan 2) and `frontage` (plan 3) URLs are null when absent or outside the prefix:
+ * /fzp never needs them, so they never make the result null.
  */
 export function scenarioUrls(m: Manifest): ScenarioUrls | null {
   const fzp: unknown = (m.scenarios as { fzp?: unknown } | undefined)?.fzp;
   if (typeof fzp !== 'object' || fzp === null) return null;
-  const prefix = `/data/${m.datasetVersion}/`;
   const f = fzp as Record<string, unknown>;
   const urls = { parcels: f.parcels, projects: f.projects, calibration: f.calibration };
-  for (const u of Object.values(urls)) {
-    if (typeof u !== 'string' || !u.startsWith(prefix)) return null;
+  for (const u of Object.values(urls)) if (datasetUrl(m, u) === null) return null;
+  return {
+    ...(urls as Pick<ScenarioUrls, 'parcels' | 'projects' | 'calibration'>),
+    policy: datasetUrl(m, f.policy),
+    frontage: datasetUrl(m, f.frontage)
+  };
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+const positive = (v: unknown): boolean => typeof v === 'number' && Number.isFinite(v) && v > 0;
+const strings = (v: unknown): boolean => Array.isArray(v) && v.every((x) => typeof x === 'string');
+const among = (v: unknown, known: readonly string[]): boolean =>
+  Array.isArray(v) && v.every((x) => typeof x === 'string' && known.includes(x));
+const lngLat = (v: unknown): boolean =>
+  Array.isArray(v) && v.length === 2 && v.every((x) => typeof x === 'number' && Number.isFinite(x));
+
+/**
+ * null for a brush query the host may resolve, else its first problem (`bad-request`). The
+ * resolver itself answers `[]` for a bad radius, so the host checks: radii and `maxM` positive and
+ * finite, coordinates finite, kinds, stop types and street classes known.
+ */
+export function brushQueryProblem(q: unknown): string | null {
+  if (!isRecord(q)) return 'query is not an object';
+  switch (q.kind) {
+    case 'freehand': {
+      if (!Array.isArray(q.strokes)) return 'strokes is not an array';
+      for (const [k, s] of q.strokes.entries()) {
+        if (!isRecord(s)) return `strokes.${k} is not an object`;
+        if (!positive(s.radiusM)) return `strokes.${k}.radiusM must be positive and finite`;
+        if (!Array.isArray(s.path) || !s.path.every(lngLat))
+          return `strokes.${k}.path must be finite [lng, lat] pairs`;
+      }
+      return null;
+    }
+    case 'transit':
+      if (!among(q.stopTypes, STOP_TYPES)) return 'stopTypes must be known stop types';
+      if (!positive(q.maxM)) return 'maxM must be positive and finite';
+      return null;
+    case 'street':
+      if (!among(q.classes, STREET_CLASSES)) return 'classes must be known street classes';
+      if (!strings(q.names)) return 'names must be strings';
+      if (q.depth !== 0 && q.depth !== 1) return 'depth must be 0 or 1';
+      if (typeof q.ncOnly !== 'boolean') return 'ncOnly must be a boolean';
+      return null;
+    case 'area':
+      if (!strings(q.districts)) return 'districts must be strings';
+      if (!strings(q.neighborhoods)) return 'neighborhoods must be strings';
+      return null;
+    default:
+      return `unknown brush kind ${JSON.stringify(q.kind)}`;
   }
-  const policy = typeof f.policy === 'string' && f.policy.startsWith(prefix) ? f.policy : null;
-  return { ...(urls as Omit<ScenarioUrls, 'policy'>), policy };
 }
 
 /** One opened response: `read()` is the body read (`json()` or `arrayBuffer()`). */
@@ -111,21 +168,26 @@ export interface Opened<T> {
   status: number;
   read(): Promise<T>;
 }
+/** `permanent`: the failure was a status `permanent` accepted, so it was not retried. */
 export type FetchResult<T> =
-  { kind: 'ok'; value: T } | { kind: 'failed'; message: string } | { kind: 'stopped' };
+  | { kind: 'ok'; value: T }
+  | { kind: 'failed'; message: string; permanent: boolean }
+  | { kind: 'stopped' };
 
 /**
  * §4.2 step 4: one file with retries. An attempt fails when the request rejects, when `ok` is
  * false, or when the body read rejects (a body read is part of the fetch, so it is retried).
  * Attempt k + 1 waits `retryDelaysMs[k]`; after the last, the message names the last attempt's
  * status, or `(network)` when it had no usable response. `stop()` is checked after every await:
- * a stopped fetch makes no further request and schedules nothing.
+ * a stopped fetch makes no further request and schedules nothing. A status for which
+ * `permanent(status)` is true fails at once, unretried (default: none, every status retries).
  */
 export async function fetchWithRetry<T>(
   url: string,
   open: () => Promise<Opened<T>>,
   deps: Pick<LoadDeps, 'setTimeout' | 'retryDelaysMs'>,
-  stop: () => boolean
+  stop: () => boolean,
+  permanent: (status: number) => boolean = () => false
 ): Promise<FetchResult<T>> {
   for (let k = 0; ; k++) {
     let status: number | null;
@@ -137,13 +199,20 @@ export async function fetchWithRetry<T>(
         return stop() ? { kind: 'stopped' } : { kind: 'ok', value };
       }
       status = res.status;
+      if (permanent(status)) {
+        return {
+          kind: 'failed',
+          message: `fetch failed: ${url} (HTTP ${status})`,
+          permanent: true
+        };
+      }
     } catch {
       status = null; // no response, or the body read failed
     }
     if (stop()) return { kind: 'stopped' };
     if (k >= deps.retryDelaysMs.length) {
       const why = status === null ? '(network)' : `(HTTP ${status})`;
-      return { kind: 'failed', message: `scenario fetch failed: ${url} ${why}` };
+      return { kind: 'failed', message: `scenario fetch failed: ${url} ${why}`, permanent: false };
     }
     await new Promise<void>((resolve) => deps.setTimeout(resolve, deps.retryDelaysMs[k]));
     if (stop()) return { kind: 'stopped' };

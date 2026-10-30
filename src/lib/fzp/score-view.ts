@@ -3,7 +3,7 @@
  * (spec §4.5). No DOM, no state: the components read these on every frame, so each is O(1) in
  * project count.
  */
-import { formatCompactCount, formatCount, formatPercent } from '$lib/scoreboard';
+import { formatCount } from '$lib/scoreboard';
 import type { TimelineScore } from '$lib/sim/protocol';
 import { STAGE_ORDER, type Stage } from '$lib/timelapse/types';
 import type { Day } from '$lib/timelapse/time';
@@ -144,21 +144,12 @@ export function scrubMarkers(score: TimelineScore): Marker[] {
   return markers;
 }
 
-function rhnaFraction(at: ScoreAt): number | null {
-  const t = at.targets.find((x) => x.tp.target.id === RHNA_ID);
-  return t ? t.tp.fraction : null;
+/** The header score bar: the net new homes at the scrubbed month (`at.total`). */
+export function homesAdded(at: ScoreAt): string {
+  return `${formatCount(at.total)} homes added`;
 }
 
-/** The sr-only live-region text once the day settles. */
-export function announcement(day: Day, at: ScoreAt): string {
-  const f = rhnaFraction(at);
-  const tail = f === null ? '.' : `, ${formatPercent(f)} of RHNA.`;
-  return `${formatMonthYear(day)}: ${formatCount(at.total)} net new homes in this simulation${tail}`;
-}
-
-/** Line 1 of the collapsed mobile bar. */
-export function barText(at: ScoreAt): string {
-  const f = rhnaFraction(at);
-  const head = `${formatCompactCount(at.total)} net new homes`;
-  return f === null ? head : `${head} · ${formatPercent(f)} of RHNA`;
+/** The score bar's sr-only live-region text once the day settles. */
+export function homesAddedBy(day: Day, at: ScoreAt): string {
+  return `${homesAdded(at)} by ${formatMonthYear(day)}`;
 }

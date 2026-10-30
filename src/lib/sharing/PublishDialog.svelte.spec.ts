@@ -305,6 +305,8 @@ describe('PublishButton + PublishDialog', () => {
     });
     try {
       await expect.element(headerButton()).toHaveTextContent('Share link');
+      // Below 768 px the header's actions sit in its Menu panel.
+      await page.getByRole('button', { name: 'Menu' }).click();
       await expect.element(page.getByRole('button', { name: 'Autosave off' })).toBeVisible();
       const header = page.getByRole('banner').element() as HTMLElement;
       expect(header.getBoundingClientRect().height).toBe(48);

@@ -4,6 +4,7 @@
 import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
+import { decodeParcelChunk, encodeParcelChunk } from '$lib/data/parcel-chunk';
 import { allNeeds, resolveEnvelopes } from '../levers/resolve';
 import {
   CURRENT_LAW_SWITCH,
@@ -11,7 +12,7 @@ import {
   FZP_COMPAT_LEVERS,
   type SimLevers
 } from '../levers/types';
-import { MINI_CHUNK_URL, miniCity } from './fixtures/mini-parcels';
+import { MINI_CHUNK_URL, MINI_VERSION, miniCity } from './fixtures/mini-parcels';
 import { miniPolicy } from './fixtures/mini-policy';
 import { MINI_AS_OF, MINI_HORIZON } from './fixtures/mini-projects';
 import { MINI_POLICY_URL, makeScenarioHarness, type ScenarioHarness } from './test/host-harness';
@@ -279,5 +280,32 @@ describe('scenario host with levers', () => {
     const b = await run(LOT_B);
     expect(a.length).toBeGreaterThan(0);
     expect(b).toEqual(a);
+  });
+
+  it('a need whose record is missing from its loaded cell reaches current and warns once', async () => {
+    const cell = cellOf(LOT_A).cellId;
+    const url = MINI_CHUNK_URL(cell);
+    const without = decodeParcelChunk(city.chunks[url]).filter((r) => r.id !== LOT_A);
+    const h = makeScenarioHarness({
+      deps: { bandRuns: N },
+      policy: true,
+      bodies: { [url]: JSON.parse(encodeParcelChunk(MINI_VERSION, cell, without)) }
+    });
+    h.init({ levers: structuredClone(DEFAULT_LEVERS) });
+    await h.runAll();
+    const from = h.posts.length;
+    const rev = h.next();
+    h.host.handle({ type: 'setLevers', rev, levers: raised([LOT_A, LOT_B], 20) });
+    await h.runAll();
+    const r2 = h.next();
+    h.host.handle({ type: 'setLevers', rev: r2, levers: raised([LOT_A, LOT_B], 21) });
+    await h.runAll();
+
+    expect(h.errors()).toEqual([]);
+    expect(indexOf(h, isCurrent(rev))).toBeGreaterThan(from);
+    expect(indexOf(h, isCurrent(r2))).toBeGreaterThan(from);
+    const warned = h.warnings.filter((m) => m.includes(LOT_A));
+    expect(warned).toHaveLength(1);
+    expect(warned[0]).toMatch(/no record/);
   });
 });

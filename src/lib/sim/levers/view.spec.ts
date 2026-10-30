@@ -4,9 +4,9 @@ import type { SimInput } from '../scenario/types';
 import { miniCity } from '../scenario/fixtures/mini-parcels';
 import miniCalibrationJson from '../scenario/fixtures/mini-calibration.json';
 import { MINI_AS_OF } from '../scenario/fixtures/mini-projects';
-import { miniPolicy } from '../scenario/fixtures/mini-policy';
+import { MINI_EXEMPT_PERM_ID, MINI_SB79_ID, miniPolicy } from '../scenario/fixtures/mini-policy';
 import { precomputeOf } from '../scenario/input';
-import { blendStock, type LayerCtx } from './layers';
+import { blendStock, sb79WinsAfter, type LayerCtx } from './layers';
 import { DEFAULT_LEVERS, type SimLevers } from './types';
 import { envelopeOp, localProgramColumn, parcelsView } from './view';
 
@@ -80,19 +80,44 @@ describe('envelopeOp', () => {
 
 describe('localProgramColumn', () => {
   it('follows the decoded column under fzp or currentLaw', () => {
-    const { parcels } = setup();
+    const { ctx, parcels } = setup();
     expect(parcels.localProgram.some((x) => x === 1)).toBe(true);
     for (const s of [['fzp'], ['currentLaw']] as const) {
-      const col = localProgramColumn(parcels, levers({ stock: [...s] }));
+      const col = localProgramColumn(ctx, levers({ stock: [...s] }), 'before');
       expect(Array.from(col)).toEqual(Array.from(parcels.localProgram));
     }
   });
   it('is all zero for sb79 alone and when streamlining is off', () => {
-    const { parcels } = setup();
+    const { ctx, parcels } = setup();
     const zero = (c: Uint8Array) => c.length === parcels.count && c.every((x) => x === 0);
-    expect(zero(localProgramColumn(parcels, levers({ stock: ['sb79'] })))).toBe(true);
-    expect(
-      zero(localProgramColumn(parcels, levers({ stock: ['fzp'], localProgramStreamlined: false })))
-    ).toBe(true);
+    for (const period of ['before', 'after'] as const) {
+      expect(zero(localProgramColumn(ctx, levers({ stock: ['sb79'] }), period))).toBe(true);
+      expect(
+        zero(
+          localProgramColumn(
+            ctx,
+            levers({ stock: ['fzp'], localProgramStreamlined: false }),
+            period
+          )
+        )
+      ).toBe(true);
+    }
+  });
+  it('Local Program follows the route shares where SB 79 wins after the switch', () => {
+    const { ctx, parcels } = setup();
+    const i = parcels.index.get(MINI_SB79_ID)!;
+    const fzpWins = parcels.index.get(MINI_EXEMPT_PERM_ID)!;
+    expect(parcels.localProgram[i]).toBe(1);
+    expect(parcels.localProgram[fzpWins]).toBe(1);
+    expect(sb79WinsAfter(ctx)[i]).toBe(1);
+    expect(sb79WinsAfter(ctx)[fzpWins]).toBe(0);
+    const col = (over: Partial<SimLevers>, period: 'before' | 'after') =>
+      localProgramColumn(ctx, levers(over), period);
+    expect(col({}, 'before')[i]).toBe(1);
+    expect(col({}, 'after')[i]).toBe(0);
+    expect(col({ assumeAlternativePlanKept: true }, 'after')[i]).toBe(1);
+    expect(col({ stock: ['currentLaw', 'fzp'] }, 'after')[i]).toBe(1);
+    expect(col({}, 'before')[fzpWins]).toBe(1);
+    expect(col({}, 'after')[fzpWins]).toBe(1);
   });
 });

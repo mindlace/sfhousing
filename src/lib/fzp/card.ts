@@ -15,6 +15,12 @@ import type { CardStatus } from './types';
 
 export type ChanceTable = ReturnType<typeof chanceTable>;
 
+/** The chance tables a card reads, by `ProjectCard.lookups`. On /fzp both are the base table. */
+export type CardChance = { inFlight: ChanceTable; fresh: ChanceTable };
+
+/** The calibrations behind a card's chance, by `ProjectCard.lookups` (its provenance). */
+export type CardCalibration = { inFlight: Calibration; fresh: Calibration };
+
 export const SIMULATED_DISCLAIMER =
   "Not a real proposal. In this simulated future a project starts on this parcel. The parcel was picked by chance, weighted by how often parcels like it have been redeveloped. It says nothing about the owner's plans.";
 
@@ -60,9 +66,11 @@ function revisionAt(card: ProjectCard, day: Day): { units: number; stories: numb
 /**
  * The card's status at `day`, or null before its first stage. The current stage is the last
  * `stages` entry on or before `day`, unless `end` has been reached (spec §4.8). For an exit,
- * `monthsInStage` is the time spent in the stage it stopped in; for a completion it is 0.
+ * `monthsInStage` is the time spent in the stage it stopped in; for a completion it is 0. The
+ * chance is `chance[card.lookups]` at the months in stage, plus `chanceShift.months` in the
+ * shifted stage (the engine conditions a rescaled in-flight stage on those months).
  */
-export function cardStatus(card: ProjectCard, day: Day, chance: ChanceTable): CardStatus | null {
+export function cardStatus(card: ProjectCard, day: Day, chance: CardChance): CardStatus | null {
   const i = currentIndex(card.stages, day);
   if (i < 0) return null;
   const { units, stories } = revisionAt(card, day);
@@ -95,8 +103,9 @@ export function cardStatus(card: ProjectCard, day: Day, chance: ChanceTable): Ca
   if (stage === 'complete') {
     return { kind: 'complete', stage, monthsInStage: months, day, units, stories, chance: null };
   }
-  const table = chance[card.pathway][stage];
-  const p = table?.[Math.min(Math.max(months, 0), LAST_CHANCE_MONTH)];
+  const shift = card.chanceShift?.stage === stage ? card.chanceShift.months : 0;
+  const table = chance[card.lookups][card.pathway][stage];
+  const p = table?.[Math.min(Math.max(months + shift, 0), LAST_CHANCE_MONTH)];
   return {
     kind: 'inStage',
     stage,

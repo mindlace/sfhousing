@@ -5,11 +5,12 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   PLAN_KEY,
   gotoEditor,
+  openHeaderMenu,
   oldVersionText,
   ops,
   paintOnce,
   publishDialog,
-  publishOpen,
+  openPublish,
   seedPlanRow,
   smallText,
   waitForMap
@@ -27,6 +28,8 @@ async function waitSaved(page: Page): Promise<void> {
       }, PLAN_KEY)
     )
     .toBe(1);
+  // Below 768 px the save indicator waits in the header Menu.
+  await openHeaderMenu(page);
   await expect(page.getByRole('banner').getByText('Saved', { exact: true })).toBeVisible();
 }
 
@@ -51,8 +54,9 @@ test('a rate-limited publish shows the alert and a countdown, then re-enables Pu
   );
   await gotoEditor(page);
   await paintOnce(page, isMobile);
-  await expect(publishOpen(page)).toBeEnabled();
-  await publishOpen(page).click();
+  const opener = await openPublish(page);
+  await expect(opener).toBeEnabled();
+  await opener.click();
   const dialog = publishDialog(page);
   const publish = dialog.getByRole('button', { name: 'Publish' });
   await publish.click();

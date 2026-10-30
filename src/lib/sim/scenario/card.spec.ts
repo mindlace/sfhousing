@@ -5,13 +5,19 @@ import { generate, generateForUnits, massedUnits, massingApproximate } from '$li
 import type { GeneratedBuilding } from '$lib/generator';
 import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
-import { DYING_DAYS, type Day } from '$lib/timelapse/time';
+import { DYING_DAYS, monthsIn, type Day } from '$lib/timelapse/time';
 import type { Calibration } from '$lib/timelapse/types';
+import { applyLevers } from '../levers/apply';
+import { fillNeeds, resolveEnvelopes } from '../levers/resolve';
+import type { StageScale } from '../levers/timers';
+import { CURRENT_LAW_SWITCH, DEFAULT_LEVERS } from '../levers/types';
 import { createLru } from '../lru';
 import { blockLot, chooseProject, firstDay, isVisible, projectCard, type CardCtx } from './card';
 import { dayOf } from './dates';
+import { inFlightMonths } from './engine';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
 import { miniCity, MINI_LP_ID } from './fixtures/mini-parcels';
+import { MINI_SB79_ID, miniPolicy } from './fixtures/mini-policy';
 import {
   MINI_AS_OF,
   MINI_HORIZON,
@@ -795,6 +801,113 @@ describe('projectCard: localProgram', () => {
     expect(projectCard(mk('simulated', MINI_LP_ID), AS_OF + 5, ctx).localProgram).toBe(true);
     expect(projectCard(mk('simulated', plainId), AS_OF + 5, ctx).localProgram).toBe(false);
     expect(projectCard(mk('pipeline', MINI_LP_ID), AS_OF + 5, ctx).localProgram).toBe(false);
+  });
+});
+
+describe('projectCard: lookups and in-flight chance shift', () => {
+  const scale = (over: Partial<StageScale['discretionary']>): StageScale => ({
+    discretionary: over,
+    streamlined: {},
+    permitOnly: {}
+  });
+  /** `filedPair` moved to `entitled`, entered `E` = 7 months before asOf. */
+  const E = AS_OF - 219;
+  const rowsWith = (stage: 'entitled' | 'preApplication') => {
+    const rows = new Map(structuredClone(input.projects).map((p) => [p.id, p]));
+    const row = rows.get(P.filedPair)!;
+    row.pathway = 'discretionary';
+    row.stage = stage;
+    row.history = stage === 'entitled' ? { filed: E - 400, entitled: E } : { preApplication: E };
+    return rows;
+  };
+  const card = (s: Schedule, over: Partial<SimInput>, stage: 'entitled' | 'preApplication') =>
+    projectCard(s, AS_OF + 5, mkCtx({ input: { ...input, ...over }, rows: rowsWith(stage) }).ctx);
+  const entitledRow = sched({
+    projectId: P.filedPair,
+    entered: { filed: E - 400, entitled: E }
+  });
+
+  it('an in-flight row in a rescaled stage shifts by inFlightMonths(m, x) - m', () => {
+    expect(monthsIn(E, AS_OF)).toBe(7);
+    expect(inFlightMonths(7, 0.5)).toBe(4);
+    const c = card(entitledRow, { inFlightScale: scale({ entitled: 0.5 }) }, 'entitled');
+    expect(c.lookups).toBe('inFlight');
+    expect(c.chanceShift).toEqual({ stage: 'entitled', months: -3 });
+  });
+
+  it('has no shift at scale 1, without a scale, or with a scale on another stage', () => {
+    for (const over of [
+      {},
+      { inFlightScale: scale({ entitled: 1 }) },
+      { inFlightScale: scale({ filed: 0.5 }) },
+      { newProjects: { calibration: input.calibration, scale: scale({ entitled: 0.5 }) } }
+    ]) {
+      const c = card(entitledRow, over, 'entitled');
+      expect([c.lookups, c.chanceShift]).toEqual(['inFlight', null]);
+    }
+  });
+
+  it('a row not yet filed at asOf is fresh and shifts by the new-project scale', () => {
+    const s = sched({ projectId: P.filedPair, entered: { preApplication: E } });
+    const fresh = { calibration: input.calibration, scale: scale({ preApplication: 0.5 }) };
+    const c = card(
+      s,
+      { newProjects: fresh, inFlightScale: scale({ entitled: 2 }) },
+      'preApplication'
+    );
+    expect(c.lookups).toBe('fresh');
+    expect(c.chanceShift).toEqual({ stage: 'preApplication', months: -3 });
+    const plain = card(s, { inFlightScale: scale({ preApplication: 0.5 }) }, 'preApplication');
+    expect([plain.lookups, plain.chanceShift]).toEqual(['fresh', null]);
+  });
+
+  it('a simulated card is fresh and never shifted', () => {
+    const s = sched({
+      projectId: 'SIM:x',
+      origin: 'simulated',
+      entered: { filed: AS_OF + 1 }
+    });
+    const over = {
+      inFlightScale: scale({ filed: 0.5 }),
+      newProjects: { calibration: input.calibration, scale: scale({ filed: 0.5 }) }
+    };
+    const c = card(s, over, 'entitled');
+    expect([c.lookups, c.chanceShift]).toEqual(['fresh', null]);
+  });
+});
+
+describe('projectCard: Local Program under a law switch', () => {
+  it('Local Program flag follows the initiation regime', () => {
+    // DEFAULT_LEVERS: MINI_SB79_ID is a Local Program lot before the switch, not after (Call 22)
+    const ctxL = { parcels: city.parcels, policy: miniPolicy(city) };
+    const window = { asOf: AS_OF, horizon: MINI_HORIZON, switchDay: CURRENT_LAW_SWITCH.day };
+    const filled = fillNeeds(resolveEnvelopes(ctxL, DEFAULT_LEVERS, window), new Map());
+    const { plan } = applyLevers(input, ctxL, DEFAULT_LEVERS, filled, MINI_HORIZON);
+    const i = plan.parcels.index.get(MINI_SB79_ID)!;
+    expect([plan.parcels.localProgram[i], plan.lawSwitch!.parcels.localProgram[i]]).toEqual([1, 0]);
+    const { ctx } = mkCtx({ input: plan });
+    let before = 0;
+    let after = 0;
+    let routed = false;
+    for (let seed = 1; seed <= 200; seed++) {
+      for (const s of simulateDetailed(plan, seed, MINI_HORIZON).schedules) {
+        if (s.origin !== 'simulated' || s.parcelIds[0] !== MINI_SB79_ID) continue;
+        const c = projectCard(s, s.revisions[0].day, ctx);
+        if (s.afterSwitch) {
+          expect(c.localProgram).toBe(false);
+          if (c.pathway !== 'streamlined') routed = true;
+          after++;
+        } else {
+          expect(c.localProgram).toBe(true);
+          expect(c.pathway).toBe('streamlined');
+          before++;
+        }
+      }
+    }
+    expect(before).toBeGreaterThan(0);
+    expect(after).toBeGreaterThan(0);
+    // drawn from the route shares after the switch, not forced
+    expect(routed).toBe(true);
   });
 });
 

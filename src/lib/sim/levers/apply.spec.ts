@@ -5,7 +5,7 @@ import { chanceTable, parseCalibration, typicalMonths } from '$lib/timelapse/mod
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import miniCalibrationJson from '../scenario/fixtures/mini-calibration.json';
 import { miniCity } from '../scenario/fixtures/mini-parcels';
-import { MINI_SB79_ID, miniPolicy } from '../scenario/fixtures/mini-policy';
+import { MINI_S207_ID, MINI_SB79_ID, miniPolicy } from '../scenario/fixtures/mini-policy';
 import { MINI_HORIZON, miniProjectsJson } from '../scenario/fixtures/mini-projects';
 import { buildSimInput } from '../scenario/input';
 import { applyPolicies, baseZoning } from '../scenario/policy';
@@ -212,6 +212,35 @@ describe('applyLevers: a capped edit under FZP stock', () => {
     expect(yieldOf(after)).toEqual([0, 1, 1, 2, 2]);
     expect(after.hostable[i]).toBe(1);
     expect(yieldOf(out.plan.parcels)).toEqual([0, 1, 2, 3, 4]);
+  });
+});
+
+describe('applyLevers: Local Program after the switch', () => {
+  it('a Local Program lot where SB 79 wins after the switch is forced only before it', () => {
+    const { base, ctx } = setup();
+    const i = ctx.parcels.index.get(MINI_SB79_ID)!;
+    const out = compile(base, ctx, clone(DEFAULT_LEVERS));
+    expect(out.plan.parcels.localProgram[i]).toBe(1);
+    expect(out.plan.lawSwitch!.parcels.localProgram[i]).toBe(0);
+    expect(out.twin.lawSwitch!.parcels.localProgram[i]).toBe(0);
+  });
+
+  it('keeps the switch when only the Local Program column changes at it', () => {
+    const { base, ctx } = setup();
+    const i = ctx.parcels.index.get(MINI_SB79_ID)!;
+    // Pin the §207.11 lot to its before-switch row in both periods, so no envelope changes.
+    const levers = clone(DEFAULT_LEVERS, {
+      stock: ['currentLaw', 'sb79'],
+      user: [{ lots: [MINI_S207_ID], mode: 'set', stories: 12, densityLimits: false }]
+    });
+    const window = { asOf: base.asOf, horizon: H, switchDay: CURRENT_LAW_SWITCH.day };
+    const r = resolveEnvelopes(ctx, levers, window);
+    expect(r.after).not.toBeNull();
+    expect(r.after!.period.table).toEqual(r.before.table);
+    const out = compile(base, ctx, levers);
+    expect(out.plan.lawSwitch?.day).toBe(CURRENT_LAW_SWITCH.day);
+    expect(out.plan.parcels.localProgram[i]).toBe(1);
+    expect(out.plan.lawSwitch!.parcels.localProgram[i]).toBe(0);
   });
 });
 
