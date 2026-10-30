@@ -37,6 +37,16 @@ export class PolicyStore {
     return this.#future.length > 0;
   }
 
+  /** The label `undo` would undo ("Undo: …", layout ruling 7), or null. */
+  get undoLabel(): string | null {
+    return this.#past.at(-1)?.label ?? null;
+  }
+
+  /** The label `redo` would redo, or null. */
+  get redoLabel(): string | null {
+    return this.#future.at(-1)?.label ?? null;
+  }
+
   /** Records a change named `label` (for "Undo: …"); clears redo. No-op if nothing changed. */
   apply(change: (p: SimPolicy) => SimPolicy, label: string): void {
     const next = change(this.#policy);

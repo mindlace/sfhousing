@@ -108,6 +108,8 @@
     onclient?: (api: SimClientApi | null) => void;
     /** SimMap's handle and map, once ready. */
     onmapready?: (h: SimMapHandle, map: MapLike) => void;
+    /** Every phase change (/sim: the brush tools work once the scenario is ready). */
+    onphase?: (p: FzpPhase) => void;
     /** Rendered inside `.sfh-fzp` (the /sim policy panel). */
     panel?: Snippet;
     /** The page's own header actions, before 'Another future' (/sim: "Policy"). */
@@ -129,6 +131,7 @@
     onlevers = undefined,
     onclient = undefined,
     onmapready = undefined,
+    onphase = undefined,
     panel = undefined,
     actions = undefined
   }: Props = $props();
@@ -615,6 +618,11 @@
   }
 
   useHeaderActions(headerActions, { pinned: scoreBar });
+
+  $effect(() => {
+    const p = phase;
+    untrack(() => onphase?.(p));
+  });
 
   onMount(() => {
     if (phase !== 'no-scenario') {

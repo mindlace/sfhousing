@@ -362,7 +362,8 @@ export function queryKey(q: BrushQuery): string {
 
 const bandsOutermostFirst = (bands: TransitBand[]) => [...bands].sort((a, b) => b.maxM - a.maxM);
 
-function brushQueries(b: ZoningBrush): BrushQuery[] {
+/** The lot queries a brush needs (a transit brush: one per band, outermost first). */
+export function brushQueries(b: ZoningBrush): BrushQuery[] {
   switch (b.kind) {
     case 'freehand':
     case 'erase':

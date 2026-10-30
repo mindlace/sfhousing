@@ -50,11 +50,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import type { Editor } from './editor.svelte';
-  import { MSG, radiusValueText } from './messages';
-  import { STORY_PRESETS, heightHintM, posFromRadius, radiusFromPos } from './radius';
+  import { MSG } from './messages';
+  import RadiusPopover from './RadiusPopover.svelte';
   import type { BrushTool } from './sampler';
   import { SHORTCUTS } from './shortcuts';
   import type { BrushState } from './state.svelte';
+  import StoriesPopover from './StoriesPopover.svelte';
 
   interface Props {
     state: BrushState;
@@ -69,17 +70,16 @@
   let { state: brush, editor, onUndo, onRedo, onRetry, onToolChange }: Props = $props();
 
   const uid = $props.id();
-  const storiesPopId = `${uid}-stories`;
-  const radiusPopId = `${uid}-radius`;
   const keysId = `${uid}-keys`;
+  // The pop-overs' classes: below 768px they float above the bar (positioned by the styles below).
+  const OPENER = 'md:hidden';
+  const POP =
+    'brush-panel brush-pop absolute bottom-full left-2 z-10 mb-2 rounded-lg p-2 md:hidden';
 
   type Pop = 'stories' | 'radius';
   let open = $state<Pop | null>(null);
   let showKeys = $state(false);
   let coarse = $state(false);
-  let popEl = $state<HTMLElement>();
-  let storiesOpener = $state<HTMLButtonElement>();
-  let radiusOpener = $state<HTMLButtonElement>();
   const radios: Partial<Record<BrushTool, HTMLButtonElement>> = $state({});
 
   const enabled = (t: BrushTool) => t === 'move' || brush.phase === 'ready';
@@ -120,37 +120,10 @@
     radios[ids[i]]?.focus();
   }
 
-  function commitStories(el: HTMLInputElement) {
-    const v = parseFloat(el.value);
-    if (Number.isFinite(v)) brush.setStories(v);
-    // Re-sync even when the clamped value equals the old one (80 → "85" → 80).
-    el.value = String(brush.stories);
-  }
-
   function toggle(p: Pop) {
     open = open === p ? null : p;
   }
-
-  function opener(p: Pop) {
-    return p === 'stories' ? storiesOpener : radiusOpener;
-  }
-
-  function onWindowKey(e: KeyboardEvent) {
-    if (e.key !== 'Escape' || open === null) return;
-    const btn = opener(open);
-    open = null;
-    btn?.focus();
-  }
-
-  function onWindowPointer(e: PointerEvent) {
-    if (open === null) return;
-    const t = e.target as Node | null;
-    if (t && (popEl?.contains(t) || opener(open)?.contains(t))) return;
-    open = null;
-  }
 </script>
-
-<svelte:window onkeydown={onWindowKey} onpointerdown={onWindowPointer} />
 
 {#snippet icon(paths: readonly string[])}
   <svg
@@ -186,79 +159,6 @@
   </button>
 {/snippet}
 
-{#snippet stepper(where: string)}
-  <fieldset
-    disabled={erasing}
-    aria-describedby={erasing ? `${uid}-${where}-hint` : undefined}
-    class="flex flex-col gap-1"
-  >
-    <legend class="sr-only">Stories</legend>
-    <div class="flex items-center gap-1">
-      <button
-        type="button"
-        aria-label="Fewer stories"
-        class="ctl min-h-11 min-w-11 rounded-md text-lg disabled:opacity-40"
-        onclick={() => brush.setStories(brush.stories - 1)}>−</button
-      >
-      <input
-        type="number"
-        min="1"
-        max="80"
-        step="1"
-        aria-label="Stories"
-        aria-describedby={erasing ? `${uid}-${where}-hint` : undefined}
-        value={brush.stories}
-        class="field min-h-11 w-16 rounded-md text-center disabled:opacity-40"
-        onblur={(e) => commitStories(e.currentTarget)}
-        onkeydown={(e) => {
-          if (e.key === 'Enter') commitStories(e.currentTarget);
-        }}
-      />
-      <button
-        type="button"
-        aria-label="More stories"
-        class="ctl min-h-11 min-w-11 rounded-md text-lg disabled:opacity-40"
-        onclick={() => brush.setStories(brush.stories + 1)}>+</button
-      >
-      <span class="ml-1 text-sm whitespace-nowrap">stories</span>
-      <span class="ml-auto text-sm whitespace-nowrap">≈ {heightHintM(brush.stories)} m</span>
-    </div>
-    <div class="flex flex-wrap gap-1">
-      {#each STORY_PRESETS as n (n)}
-        <button
-          type="button"
-          aria-pressed={brush.stories === n}
-          aria-label="{n} stories"
-          class="chip min-h-11 min-w-11 rounded-md text-sm disabled:opacity-40"
-          onclick={() => brush.setStories(n)}>{n}</button
-        >
-      {/each}
-    </div>
-  </fieldset>
-  {#if erasing}
-    <p id="{uid}-{where}-hint" class="mt-1 text-sm">{MSG.eraseHint}</p>
-  {/if}
-{/snippet}
-
-{#snippet radius(where: string)}
-  <div class="flex w-full items-center gap-2">
-    <label for="{uid}-{where}-radius" class="text-sm whitespace-nowrap"
-      >Brush {brush.radiusM} m</label
-    >
-    <input
-      id="{uid}-{where}-radius"
-      type="range"
-      min="0"
-      max="99"
-      step="1"
-      aria-valuetext={radiusValueText(brush.radiusM)}
-      value={posFromRadius(brush.radiusM)}
-      class="range min-h-11 min-w-11 flex-1"
-      oninput={(e) => brush.setRadius(radiusFromPos(Number(e.currentTarget.value)))}
-    />
-  </div>
-{/snippet}
-
 <div
   class="brush-toolbar absolute inset-x-0 bottom-[var(--scorebar-h,0px)] z-21 [--brushbar-h:56px] md:top-4 md:right-auto md:bottom-auto md:left-4 md:flex md:w-[23rem] md:flex-col md:[--brushbar-h:0px]"
   style={THEME_VARS}
@@ -281,49 +181,26 @@
         {/each}
       </div>
 
-      <div class="hidden md:block">{@render stepper('inline')}</div>
-      <button
-        bind:this={storiesOpener}
-        type="button"
-        aria-label="{brush.stories} stories per stroke"
-        aria-expanded={open === 'stories'}
-        aria-controls={storiesPopId}
-        class="ctl min-h-11 min-w-11 rounded-md px-2 text-sm whitespace-nowrap md:hidden"
-        onclick={() => toggle('stories')}>{brush.stories} st</button
-      >
-      {#if open === 'stories'}
-        <div
-          bind:this={popEl}
-          id={storiesPopId}
-          role="group"
-          aria-label="Stories"
-          class="brush-panel brush-pop absolute bottom-full left-2 z-10 mb-2 rounded-lg p-2 md:hidden"
-        >
-          {@render stepper('pop')}
-        </div>
-      {/if}
+      <div class="hidden md:block"><StoriesPopover state={brush} inline disabled={erasing} /></div>
+      <StoriesPopover
+        state={brush}
+        disabled={erasing}
+        open={open === 'stories'}
+        ontoggle={() => toggle('stories')}
+        onclose={() => (open = null)}
+        openerClass={OPENER}
+        popClass={POP}
+      />
 
-      <div class="hidden md:flex">{@render radius('inline')}</div>
-      <button
-        bind:this={radiusOpener}
-        type="button"
-        aria-label="Brush {brush.radiusM} m"
-        aria-expanded={open === 'radius'}
-        aria-controls={radiusPopId}
-        class="ctl min-h-11 min-w-11 rounded-md px-2 text-sm whitespace-nowrap md:hidden"
-        onclick={() => toggle('radius')}>{brush.radiusM} m</button
-      >
-      {#if open === 'radius'}
-        <div
-          bind:this={popEl}
-          id={radiusPopId}
-          role="group"
-          aria-label="Brush radius"
-          class="brush-panel brush-pop absolute bottom-full left-2 z-10 mb-2 rounded-lg p-2 md:hidden"
-        >
-          {@render radius('pop')}
-        </div>
-      {/if}
+      <div class="hidden md:flex"><RadiusPopover state={brush} inline /></div>
+      <RadiusPopover
+        state={brush}
+        open={open === 'radius'}
+        ontoggle={() => toggle('radius')}
+        onclose={() => (open = null)}
+        openerClass={OPENER}
+        popClass={POP}
+      />
 
       <div class="flex items-center gap-1">
         <button
@@ -408,14 +285,15 @@
       --bt-line: var(--bt-line-d);
     }
   }
-  .brush-panel {
+  /* The pop-overs (.brush-panel.brush-pop) render inside StoriesPopover and RadiusPopover. */
+  .brush-toolbar :global(.brush-panel) {
     background: var(--bt-bg);
     color: var(--bt-fg);
     border-top: 1px solid var(--bt-line);
     box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
   }
   @media (min-width: 768px) {
-    .brush-panel {
+    .brush-toolbar :global(.brush-panel) {
       border: 1px solid var(--bt-line);
     }
   }
@@ -452,7 +330,7 @@
       max(0px, var(--bt-br-block) - var(--bt-bar-top))
     );
   }
-  .brush-pop,
+  .brush-toolbar :global(.brush-pop),
   .brush-status {
     right: var(--bt-float-right);
     bottom: calc(100% + var(--bt-float-lift));
@@ -489,23 +367,7 @@
     font-weight: 600;
   }
   .ctl:not(:disabled):hover,
-  .tool:not(:disabled):hover,
-  .chip:not(:disabled):hover {
+  .tool:not(:disabled):hover {
     background: color-mix(in srgb, var(--bt-fg) 10%, transparent);
-  }
-  .field {
-    background: transparent;
-    border: 1px solid var(--bt-fg);
-  }
-  .chip {
-    border: 1px solid var(--bt-line);
-  }
-  .chip[aria-pressed='true'] {
-    background: var(--bt-fg);
-    color: var(--bt-bg);
-    border-color: var(--bt-fg);
-  }
-  .range {
-    accent-color: var(--brush-paint);
   }
 </style>

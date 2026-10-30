@@ -37,6 +37,32 @@ export class FakeMap {
     return { getWest: () => w, getSouth: () => s, getEast: () => e, getNorth: () => n };
   }
 
+  // What /sim's BrushController needs: a canvas in a container, and screen ↔ map points.
+  #canvas = document.createElement('canvas');
+  #box = (() => {
+    const box = document.createElement('div');
+    box.appendChild(this.#canvas);
+    return box;
+  })();
+
+  getCanvas(): HTMLCanvasElement {
+    return this.#canvas;
+  }
+
+  getCanvasContainer(): HTMLElement {
+    return this.#box;
+  }
+
+  getCenter(): { lng: number; lat: number } {
+    const [w, s, e, n] = this.bounds;
+    return { lng: (w + e) / 2, lat: (s + n) / 2 };
+  }
+
+  unproject([x, y]: [number, number]): { lng: number; lat: number } {
+    const [w, , , n] = this.bounds;
+    return { lng: w + x * 1e-5, lat: n - y * 1e-5 };
+  }
+
   /** Calls every listener of this event type. */
   fire(ev: string): void {
     for (const cb of [...(this.#listeners.get(ev) ?? [])]) cb({ type: ev });

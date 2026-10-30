@@ -27,11 +27,10 @@ export interface ControllerMap {
 export interface BrushControllerDeps {
   handle: Pick<SimMapHandle, 'setPanEnabled' | 'setOverlayLayers'>;
   map: ControllerMap;
-  client: Pick<
-    SimClient,
-    'preview' | 'cancelPreview' | 'commit' | 'undo' | 'prefetch' | 'datasetVersion'
-  >;
-  editor: Editor;
+  /** No `preview` (/sim): no previews and no preview gating; strokes commit on pointer-up. */
+  client: Pick<SimClient, 'commit' | 'undo' | 'prefetch' | 'datasetVersion'> &
+    Partial<Pick<SimClient, 'preview' | 'cancelPreview'>>;
+  editor: Pick<Editor, 'commit' | 'undo' | 'redo' | 'readOnly'>;
   state: BrushState;
   layers: OverlayCtors; // from import('@deck.gl/layers')
   raf(cb: () => void): number;
@@ -223,7 +222,7 @@ export class BrushController {
   }
 
   #cancelPreview(): void {
-    this.#d.client.cancelPreview();
+    this.#d.client.cancelPreview?.();
     if (this.#inFlightRev !== null) this.#barrierAfterInFlight = true;
   }
 
@@ -428,11 +427,12 @@ export class BrushController {
       if (s.sentPreview) this.#cancelPreview();
     } else {
       const op = this.#buildOp(s, path);
+      const { preview } = this.#d.client;
       // AC 2 (ruling F-4): a pointer-up in the same frame as the last move, or while a preview is
       // in flight, would commit a tail no preview showed. Send that preview now, past the raf and
       // one-in-flight limits; the commit right behind it promotes it.
-      if (!samePath(path, s.lastSent)) {
-        this.#inFlightRev = this.#d.client.preview(op);
+      if (preview && !samePath(path, s.lastSent)) {
+        this.#inFlightRev = preview.call(this.#d.client, op);
         s.lastSent = path;
         s.sentPreview = true;
       }
@@ -470,7 +470,7 @@ export class BrushController {
   }
 
   #schedulePreview(): void {
-    if (this.#rafHandle !== null) return;
+    if (this.#rafHandle !== null || !this.#d.client.preview) return;
     this.#rafHandle = this.#d.raf(() => {
       this.#rafHandle = null;
       this.#sendPreview();
@@ -485,8 +485,9 @@ export class BrushController {
       return;
     }
     const path = s.sampler.path();
-    if (path.length === 0 || samePath(path, s.lastSent)) return;
-    this.#inFlightRev = this.#d.client.preview(this.#buildOp(s, path));
+    const { preview } = this.#d.client;
+    if (!preview || path.length === 0 || samePath(path, s.lastSent)) return;
+    this.#inFlightRev = preview.call(this.#d.client, this.#buildOp(s, path));
     s.lastSent = path;
     s.sentPreview = true;
   }

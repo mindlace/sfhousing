@@ -8,14 +8,21 @@ import '../../routes/layout.css';
 import { parseManifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
+import { stub, callsOf } from '$lib/fzp/test/sim-map-stub';
+import { timelineMsg } from '$lib/fzp/test/fake-worker';
 import SimPageHost from './test/SimPageHost.svelte';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
+const workers = vi.hoisted(() => [] as import('$lib/fzp/test/fake-worker').FakeScenarioWorker[]);
 vi.mock('$lib/sim/client', async (orig) => {
   const { FakeScenarioWorker } = await import('$lib/fzp/test/fake-worker');
   return {
     ...(await orig<typeof import('$lib/sim/client')>()),
-    spawnSimWorker: () => new FakeScenarioWorker()
+    spawnSimWorker: () => {
+      const w = new FakeScenarioWorker();
+      workers.push(w);
+      return w;
+    }
   };
 });
 
@@ -109,5 +116,76 @@ describe('SimPage policy panel', () => {
     const notice = alert.element().parentElement!.getBoundingClientRect();
     expect(notice.left - sfhFzp().getBoundingClientRect().left).toBeGreaterThanOrEqual(320);
     expect(notice.right).toBeLessThanOrEqual(sfhFzp().getBoundingClientRect().right);
+  });
+});
+
+/** The scenario answers `ready` and its first timeline: the brush tools come on. */
+async function toReady() {
+  await expect.poll(() => workers.at(-1)?.lastOf('initScenario')).toBeTruthy();
+  const w = workers.at(-1)!;
+  const rev = w.lastOf('initScenario')!.rev;
+  w.emit({ type: 'ready', rev, datasetVersion: 'fixture-0', chunkCount: 4 });
+  w.emit(timelineMsg(rev, 7));
+}
+
+const yourZoning = () => page.getByRole('button', { name: 'Your zoning' });
+
+describe('SimPage strokes (Task 8)', () => {
+  it('a Paint stroke on the map adds a freehand brush that Undo names and undoes', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    await yourZoning().click();
+    const paint = page.getByRole('radio', { name: 'Paint' });
+    await expect.element(paint).toBeEnabled();
+    await paint.click();
+    await expect.poll(() => callsOf('setPanEnabled').at(-1)?.[0]).toBe(false);
+    const canvas = stub.map.getCanvas();
+    const ev = (type: string, x: number) =>
+      canvas.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: x,
+          clientY: 10,
+          pointerId: 1,
+          pointerType: 'mouse',
+          button: type === 'pointermove' ? -1 : 0,
+          isPrimary: true
+        })
+      );
+    ev('pointerdown', 10);
+    for (let x = 20; x <= 80; x += 10) ev('pointermove', x);
+    ev('pointerup', 80);
+    const undo = page.getByRole('button', { name: 'Undo: Raised lots to 6 stories' });
+    await expect.element(undo).toBeEnabled();
+    await expect.element(page.getByText('Finding lots…')).toBeVisible();
+    await undo.click();
+    await expect
+      .element(page.getByRole('status').filter({ hasText: 'Undid: Raised lots to 6 stories' }))
+      .toBeInTheDocument();
+    await expect.element(page.getByText('Finding lots…')).not.toBeInTheDocument();
+  });
+
+  it('at 375 px, Paint closes the sheet for the tool bar; Done goes back to Move and the sheet', async () => {
+    stub.reset();
+    await page.viewport(375, 700);
+    await setup();
+    await toReady();
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await policyButton().click();
+    const dialog = page.getByRole('dialog', { name: 'Policy' });
+    await expect.element(dialog).toBeVisible();
+    await yourZoning().click();
+    await page.getByRole('radio', { name: 'Paint' }).click();
+    await expect.element(dialog).not.toBeInTheDocument();
+    const bar = page.getByRole('group', { name: 'Brush' });
+    await expect.element(bar).toBeVisible();
+    await expect.element(bar.getByRole('button').first()).toHaveFocus();
+    await bar.getByRole('button', { name: 'Done' }).click();
+    await expect.element(dialog).toBeVisible();
+    await expect.element(page.getByRole('radio', { name: 'Move' })).toBeChecked();
+    await expect.element(bar).not.toBeInTheDocument();
   });
 });

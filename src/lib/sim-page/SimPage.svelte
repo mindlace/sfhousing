@@ -3,15 +3,31 @@
   lives in a PolicyStore (undo, redo); LeverSync resolves its brushes in the worker, compiles it
   and sends each new SimLevers to FzpMode's `levers`, which FzpMode passes on with setLevers. `start=fzp` (the /fzp
   redirect) opens the Family Zoning Plan comparison, otherwise current law (Calls 14 and 16).
+  Freehand, erase and protect strokes (Task 8) reuse `/`'s BrushController through the stroke
+  adapter; the lot dots and the brush ring share SimMap's overlay through the overlay mux.
 -->
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
+  import { MediaQuery } from 'svelte/reactivity';
+  import type { Layer } from '@deck.gl/core';
+  import { BrushController, type ControllerMap } from '$lib/brush/BrushController.svelte';
+  import { ANNOUNCE_MS } from '$lib/brush/messages';
+  import type { OverlayCtors } from '$lib/brush/overlay';
+  import { BrushState } from '$lib/brush/state.svelte';
   import type { Manifest } from '$lib/data/manifest';
+  import type { ParcelId } from '$lib/data/parcel';
   import FzpMode, { type SimClientApi } from '$lib/fzp/FzpMode.svelte';
+  import type { SimMapHandle } from '$lib/map/types';
   import { DEFAULT_LEVERS, FZP_COMPAT_LEVERS } from '$lib/sim/levers/types';
   import type { BrushLotsResult } from '$lib/sim/scenario/types';
   import type { Calibration } from '$lib/timelapse/types';
-  import { policyFromLevers } from './policy';
+  import BrushSection from './BrushSection.svelte';
+  import { SimBrushTools, brushToolOf, type SimTool } from './brush-tools.svelte';
+  import { lotOverlayLayers } from './lot-overlay';
+  import { createOverlayMux } from './overlay-mux';
+  import PhoneToolBar from './PhoneToolBar.svelte';
+  import { lotRoles, policyFromLevers, queriesOf } from './policy';
+  import { createStrokeAdapter } from './stroke-adapter';
   import { focusHeaderMenu } from '$lib/shell/header-actions.svelte';
   import { LeverSync, PolicyStore } from './policy-store.svelte';
   import PolicyPanel from './PolicyPanel.svelte';
@@ -112,6 +128,126 @@
     }
     untrack(() => sync.update(p));
   });
+
+  // ---- strokes on the map (Task 8) ----
+
+  /** /sim keeps no brush settings: `/`'s saved stories and radius stay untouched. */
+  const brush = new BrushState({ storage: null, fine: false });
+  const tools = new SimBrushTools(brush);
+  const adapter = createStrokeAdapter({
+    store,
+    target: () => tools.target(),
+    effect: () => tools.effect(),
+    announce: (m) => brush.announce(m, ANNOUNCE_MS)
+  });
+  const wide = new MediaQuery('(min-width: 768px)');
+  let controller: BrushController | null = null;
+  let controllerMap: ControllerMap | null = null;
+  let mapHandle: SimMapHandle | null = null;
+  let deckLayers = $state.raw<OverlayCtors | null>(null);
+  let lotsSlot = $state.raw<((l: Layer[]) => void) | null>(null);
+  let dead = false;
+  let phoneBar = $state<PhoneToolBar>();
+
+  function attachController(): void {
+    if (dead || controller || !mapHandle || !deckLayers) return;
+    const map = mapHandle.getMap();
+    if (!map) return;
+    const h = mapHandle;
+    const mux = createOverlayMux((l) => h.setOverlayLayers(l));
+    controllerMap = map;
+    controller = new BrushController({
+      handle: { setPanEnabled: (b) => h.setPanEnabled(b), setOverlayLayers: mux.slot('ring') },
+      map,
+      client: adapter.client,
+      editor: adapter.editor,
+      state: brush,
+      layers: deckLayers,
+      raf: (cb) => requestAnimationFrame(cb),
+      cancelRaf: (id) => cancelAnimationFrame(id)
+    });
+    controller.attach();
+    lotsSlot = mux.slot('lots');
+  }
+
+  function onMapReady(h: SimMapHandle, map: ControllerMap): void {
+    if (controller && map !== controllerMap) {
+      controller.destroy();
+      controller = null;
+    }
+    mapHandle = h;
+    attachController();
+  }
+
+  function setTool(t: SimTool): void {
+    tools.tool = t;
+    const bt = brushToolOf(t);
+    if (controller) controller.setTool(bt);
+    else brush.tool = bt;
+    // On a phone, a stroke tool closes the sheet and shows the floating tool bar.
+    if (t !== 'move' && !wide.current && policyOpen) {
+      policyOpen = false;
+      void tick().then(() => phoneBar?.focus());
+    }
+  }
+
+  // The controller's own tool keys set brush.tool: keep the /sim tool in step.
+  $effect(() => {
+    const bt = brush.tool;
+    untrack(() => {
+      if (brushToolOf(tools.tool) !== bt) tools.tool = bt;
+    });
+  });
+
+  function undo(): void {
+    if (controller) controller.undo();
+    else adapter.editor.undo();
+  }
+  function redo(): void {
+    if (controller) controller.redo();
+    else adapter.editor.redo();
+  }
+
+  const prefersDark = new MediaQuery('(prefers-color-scheme: dark)');
+
+  // The lot dots: every lot the user layer or the brushed protections touch, at its label point.
+  $effect(() => {
+    const slot = lotsSlot;
+    const L = deckLayers;
+    if (!slot || !L) return;
+    const p = store.policy;
+    // A local scratch map, rebuilt on each run: not state.
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    const points = new Map<ParcelId, [number, number]>();
+    for (const { key } of queriesOf(p)) {
+      const r = sync.result(key);
+      if (!r?.ok) continue;
+      r.lots.forEach((id, i) => points.set(id, [r.points[2 * i], r.points[2 * i + 1]]));
+    }
+    const roles = lotRoles(p, (k) => {
+      const r = sync.result(k);
+      return r?.ok ? r.lots : undefined;
+    });
+    slot(lotOverlayLayers(L, roles, (id) => points.get(id), prefersDark.current));
+  });
+
+  onMount(() => {
+    import('@deck.gl/layers').then(
+      (mod) => {
+        if (dead) return;
+        deckLayers = mod;
+        attachController();
+      },
+      (e) => console.error('[sim] overlay layers failed to load', e)
+    );
+    return () => {
+      dead = true;
+      controller?.destroy();
+      controller = null;
+      mapHandle = null;
+      brush.destroy();
+    };
+  });
 </script>
 
 {#snippet actions()}
@@ -132,7 +268,15 @@
     open={policyOpen}
     focusOnOpen={policyFocus}
     onclose={() => void closePolicy()}
-  />
+  >
+    {#snippet zoning()}
+      <BrushSection {store} {sync} {tools} ontool={setTool} onundo={undo} onredo={redo} />
+    {/snippet}
+  </PolicyPanel>
+  {#if !wide.current && !policyOpen && tools.tool !== 'move'}
+    <PhoneToolBar bind:this={phoneBar} {tools} ontool={setTool} ondone={openPolicy} />
+  {/if}
+  <p role="status" aria-live="polite" class="sr-only">{brush.announcement}</p>
 {/snippet}
 
 <FzpMode
@@ -148,6 +292,8 @@
   {levers}
   {actions}
   {panel}
+  onmapready={onMapReady}
+  onphase={(p) => (brush.phase = p === 'ready' ? 'ready' : p === 'failed' ? 'failed' : 'loading')}
   onclient={(a) => {
     api = a;
     // A new session: brush queries answered `no-session` can be asked again.
