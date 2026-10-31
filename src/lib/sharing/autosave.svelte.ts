@@ -1,4 +1,5 @@
-import { emptyPlan, parsePlan, rebasePlan, serializePlan, type Plan } from '$lib/plan';
+import type { Plan } from '$lib/plan';
+import { PLAN_CODEC, type DocCodec } from './doc-codec';
 import {
   getStorage,
   preserveCorrupt,
@@ -11,8 +12,8 @@ import {
 export type SaveStatus = 'saved' | 'saving' | 'off';
 export type AutosaveNotice =
   { kind: 'corrupt' } | { kind: 'future' } | { kind: 'rebased'; from: string; to: string };
-export interface RestoreResult {
-  plan: Plan;
+export interface RestoreResult<D = Plan> {
+  plan: D;
   notice: AutosaveNotice | null;
 }
 type LastPublished = { id: string; hash: string };
@@ -21,11 +22,12 @@ type LastPublished = { id: string; hash: string };
  * Local autosave of the working plan (spec §4.5). Client-only behaviour, but safe to construct
  * during SSR: nothing touches `window`/`localStorage` until a method runs.
  */
-export class Autosave {
+export class Autosave<D = Plan> {
   status = $state<SaveStatus>('saved');
   lastPublished = $state.raw<LastPublished | undefined>(undefined);
 
   readonly #current: string;
+  readonly #codec: DocCodec<D>;
   readonly #storage: () => Storage | null;
   readonly #debounceMs: number;
   readonly #now: () => Date;
@@ -38,11 +40,13 @@ export class Autosave {
 
   constructor(opts: {
     currentVersion: string;
+    codec?: DocCodec<D>;
     storage?: () => Storage | null;
     debounceMs?: number;
     now?: () => Date;
   }) {
     this.#current = opts.currentVersion;
+    this.#codec = opts.codec ?? (PLAN_CODEC as unknown as DocCodec<D>);
     this.#storage = opts.storage ?? getStorage;
     this.#debounceMs = opts.debounceMs ?? 500;
     // A timestamp for savedAt, never reactive state.
@@ -55,14 +59,14 @@ export class Autosave {
    * rebases, writes back, and returns the plan to load. Never throws on storage problems;
    * an invalid `currentVersion` throws a TypeError (the page cannot work without it).
    */
-  restore(handoff?: string): RestoreResult {
+  restore(handoff?: string): RestoreResult<D> {
     this.#cancel();
     this.#unpreserved = null;
     const storage = this.#getStorage();
-    let read: ReadResult | null = null;
+    let read: ReadResult<D> | null = null;
     if (storage) {
       try {
-        read = readRecord(storage);
+        read = readRecord(storage, this.#codec);
       } catch {
         read = null;
       }
@@ -70,12 +74,12 @@ export class Autosave {
     if (read && (read.kind === 'corrupt' || read.kind === 'future')) this.#unpreserved = read.raw;
 
     if (handoff !== undefined) {
-      const h = parsePlan(handoff);
+      const h = this.#codec.load(handoff);
       if (h.ok) {
         const plan = this.#rebase(h.value);
         this.lastPublished = undefined;
         this.#lastWritten = null;
-        this.#write(serializePlan(plan));
+        this.#write(this.#codec.serialize(plan));
         return { plan, notice: null };
       }
     }
@@ -83,7 +87,7 @@ export class Autosave {
     if (read === null) {
       const plan = this.#empty();
       this.lastPublished = undefined;
-      this.#lastWritten = serializePlan(plan);
+      this.#lastWritten = this.#codec.serialize(plan);
       this.status = 'off';
       return { plan, notice: null };
     }
@@ -92,21 +96,21 @@ export class Autosave {
       case 'missing': {
         const plan = this.#empty();
         this.lastPublished = undefined;
-        this.#lastWritten = serializePlan(plan);
+        this.#lastWritten = this.#codec.serialize(plan);
         this.status = 'saved';
         return { plan, notice: null };
       }
       case 'ok': {
         this.lastPublished = read.record.lastPublished;
-        const from = read.plan.datasetVersion;
+        const from = this.#codec.datasetVersion(read.plan);
         if (from === this.#current) {
-          this.#lastWritten = serializePlan(read.plan);
+          this.#lastWritten = this.#codec.serialize(read.plan);
           this.status = 'saved';
           return { plan: read.plan, notice: null };
         }
         const plan = this.#rebase(read.plan);
         this.#lastWritten = null;
-        this.#write(serializePlan(plan));
+        this.#write(this.#codec.serialize(plan));
         return { plan, notice: { kind: 'rebased', from, to: this.#current } };
       }
       case 'corrupt':
@@ -114,15 +118,15 @@ export class Autosave {
         const plan = this.#empty();
         this.lastPublished = undefined;
         this.#lastWritten = null;
-        this.#write(serializePlan(plan));
+        this.#write(this.#codec.serialize(plan));
         return { plan, notice: { kind: read.kind } };
       }
     }
   }
 
   /** Debounced write. Skips a plan whose serialization equals the last written one. */
-  schedule(plan: Plan): void {
-    const text = serializePlan(plan);
+  schedule(plan: D): void {
+    const text = this.#codec.serialize(plan);
     if (text === this.#lastWritten) {
       if (this.#pending !== null) {
         this.#cancel();
@@ -145,10 +149,10 @@ export class Autosave {
   }
 
   /** Stores lastPublished and writes the record for `plan` immediately. */
-  setLastPublished(lp: LastPublished, plan: Plan): void {
+  setLastPublished(lp: LastPublished, plan: D): void {
     this.lastPublished = { id: lp.id, hash: lp.hash };
     this.#cancel();
-    this.#write(serializePlan(plan));
+    this.#write(this.#codec.serialize(plan));
   }
 
   /** Adds visibilitychange/pagehide flush listeners; the remover flushes and clears the timer. */
@@ -188,7 +192,7 @@ export class Autosave {
     }
     const now = this.#now();
     if (this.#unpreserved !== null) {
-      if (!preserveCorrupt(storage, this.#unpreserved, now)) {
+      if (!preserveCorrupt(storage, this.#unpreserved, now, this.#codec)) {
         this.status = 'off';
         return;
       }
@@ -196,7 +200,7 @@ export class Autosave {
     }
     const record: LocalPlanRecord = { v: 1, savedAt: now.toISOString(), plan: text };
     if (this.lastPublished) record.lastPublished = this.lastPublished;
-    if (writeRecord(storage, record)) {
+    if (writeRecord(storage, record, this.#codec)) {
       this.#lastWritten = text;
       this.status = 'saved';
     } else {
@@ -204,15 +208,15 @@ export class Autosave {
     }
   }
 
-  #empty(): Plan {
-    return this.#guard(() => emptyPlan(this.#current));
+  #empty(): D {
+    return this.#guard(() => this.#codec.empty(this.#current));
   }
 
-  #rebase(plan: Plan): Plan {
-    return this.#guard(() => rebasePlan(plan, this.#current));
+  #rebase(plan: D): D {
+    return this.#guard(() => this.#codec.rebase(plan, this.#current));
   }
 
-  #guard(fn: () => Plan): Plan {
+  #guard(fn: () => D): D {
     try {
       return fn();
     } catch (e) {

@@ -8,6 +8,7 @@ import { MAX_PLAN_BYTES, planByteSize, serializePlan, type Plan, type PlanOp } f
 import { COPY, cannotRead, sizeLine, tooLarge } from './copy';
 import { sha256Hex } from './hash';
 import SiteHeader from '$lib/shell/SiteHeader.svelte';
+import { PLAN_CODEC } from './doc-codec';
 import PublishButton from './PublishButton.svelte';
 import SaveIndicator from './SaveIndicator.svelte';
 
@@ -51,7 +52,8 @@ async function setup(p: Props = {}) {
   const onpublished = vi.fn();
   const plan = p.plan ?? smallPlan();
   await render(PublishButton, {
-    plan,
+    codec: PLAN_CODEC,
+    doc: plan,
     lastPublished: p.lastPublished,
     onpublished,
     fetchFn,
@@ -297,7 +299,8 @@ describe('PublishButton + PublishDialog', () => {
     const b = mount(PublishButton, {
       target: slot,
       props: {
-        plan,
+        codec: PLAN_CODEC,
+        doc: plan,
         lastPublished: { id: 'Stored12', hash },
         onpublished: () => {},
         origin: ORIGIN

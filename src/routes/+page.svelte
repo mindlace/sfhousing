@@ -11,6 +11,7 @@
   import { Autosave } from '$lib/sharing/autosave.svelte';
   import { COPY, n3, remixedToast } from '$lib/sharing/copy';
   import NoticeStack from '$lib/sharing/NoticeStack.svelte';
+  import { PLAN_CODEC } from '$lib/sharing/doc-codec';
   import PublishButton from '$lib/sharing/PublishButton.svelte';
   import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
   import { applyTitle } from '$lib/sharing/title';
@@ -119,7 +120,8 @@
   {#if editor}
     <!-- editor.plan passes straight through: PublishDialog's 413 lock keys on its identity. -->
     <PublishButton
-      plan={editor.plan}
+      codec={PLAN_CODEC}
+      doc={editor.plan}
       lastPublished={autosave.lastPublished}
       onpublished={onPublished}
     />

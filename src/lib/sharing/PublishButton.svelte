@@ -1,19 +1,21 @@
-<script lang="ts">
-  import { serializePlan, type Plan } from '$lib/plan';
-  import { COPY } from './copy';
+<script lang="ts" generics="D">
+  import { copyFor } from './copy';
+  import type { DocCodec } from './doc-codec';
   import { sha256Hex } from './hash';
   import PublishDialog from './PublishDialog.svelte';
 
-  type Published = { id: string; hash: string; plan: Plan };
+  type Published = { id: string; hash: string; plan: D };
 
   let {
-    plan,
+    codec,
+    doc,
     lastPublished,
     onpublished,
     fetchFn,
     origin
   }: {
-    plan: Plan;
+    codec: DocCodec<D>;
+    doc: D;
     lastPublished?: { id: string; hash: string };
     onpublished: (r: Published) => void;
     fetchFn?: typeof fetch;
@@ -23,23 +25,25 @@
   const uid = $props.id();
   const hintId = `${uid}-hint`;
 
-  let hashed = $state.raw<{ plan: Plan; hash: string } | undefined>();
+  let hashed = $state.raw<{ doc: D; hash: string } | undefined>();
+  const copy = $derived(copyFor(codec.kind));
   let open = $state(false);
   let mode = $state<'form' | 'success'>('form');
 
   $effect(() => {
-    const p = plan;
+    const d = doc;
+    const c = codec;
     let live = true;
-    void sha256Hex(serializePlan(p)).then((hash) => {
-      if (live) hashed = { plan: p, hash };
+    void sha256Hex(c.serialize(c.publishable(d))).then((hash) => {
+      if (live) hashed = { doc: d, hash };
     });
     return () => {
       live = false;
     };
   });
 
-  const empty = $derived(plan.ops.length === 0);
-  const hashReady = $derived(hashed !== undefined && hashed.plan === plan);
+  const empty = $derived(codec.isEmpty(doc));
+  const hashReady = $derived(hashed !== undefined && hashed.doc === doc);
   const alreadyPublished = $derived(
     !empty && hashReady && lastPublished !== undefined && hashed?.hash === lastPublished.hash
   );
@@ -66,12 +70,13 @@
   {alreadyPublished ? 'Share link' : 'Publish'}
 </button>
 {#if empty}
-  <span id={hintId} class="sr-only">{COPY.disabledHint}</span>
+  <span id={hintId} class="sr-only">{copy.disabledHint}</span>
 {/if}
 
 <PublishDialog
   bind:open
-  {plan}
+  {codec}
+  {doc}
   {mode}
   publishedId={lastPublished?.id}
   {onpublished}
