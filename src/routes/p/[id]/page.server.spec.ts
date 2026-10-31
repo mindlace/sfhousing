@@ -8,6 +8,7 @@ import { createTestD1, testPlatform, type TestD1 } from '$lib/server/test/d1';
 import { FakeR2Bucket } from '$lib/server/test/fake-r2';
 import { FakeRateLimiter } from '$lib/server/test/fake-rate-limiter';
 import { COPY } from '$lib/sharing/copy';
+import { PLAN_CODEC } from '$lib/sharing/doc-codec';
 import { load } from './+page.server';
 
 const small = readFileSync(
@@ -47,6 +48,7 @@ async function seed(datasetVersion = 'fixture-0') {
       }),
       platform: platformFor(t, publishBucket)
     },
+    PLAN_CODEC,
     { now: () => NOW }
   );
   expect(res.status).toBe(201);

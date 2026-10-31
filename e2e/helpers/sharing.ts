@@ -204,7 +204,7 @@ export const oldVersionText = readFileSync(
  */
 export async function seedPlanRow(
   request: APIRequestContext,
-  opts: { body: string; datasetVersion?: string }
+  opts: { body: string; datasetVersion?: string; kind?: 'plan' | 'sim' }
 ): Promise<string> {
   const res = await request.post('/api/e2e/plans', { data: opts });
   // 201 = a new row; 200 = this body was already seeded (local D1 persists across runs).

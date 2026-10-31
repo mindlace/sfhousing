@@ -1,5 +1,6 @@
 // GET /api/plans/:id (spec §4.4). The stored body is already canonical Plan JSON.
 import { getDb } from '$lib/server/db';
+import type { DocCodec } from '$lib/sharing/doc-codec';
 import { PLAN_ID_RE } from '$lib/sharing/ids';
 import { shareError } from './respond';
 import { findPlanById } from './store';
@@ -15,17 +16,22 @@ function etagMatches(ifNoneMatch: string, etag: string): boolean {
     .some((t) => t === '*' || t.replace(/^W\//, '') === etag);
 }
 
-export async function handleGetPlan(event: {
-  params: { id: string };
-  request: Request;
-  platform: App.Platform | undefined;
-}): Promise<Response> {
+export async function handleGetPlan(
+  event: {
+    params: { id: string };
+    request: Request;
+    platform: App.Platform | undefined;
+  },
+  codec: DocCodec<unknown>
+): Promise<Response> {
   const { params, request, platform } = event;
-  if (!PLAN_ID_RE.test(params.id)) return shareError(404, 'not_found');
+  const kind = codec.kind;
+  if (!PLAN_ID_RE.test(params.id)) return shareError(404, 'not_found', { kind });
 
   try {
     const row = await findPlanById(getDb(platform), params.id);
-    if (!row) return shareError(404, 'not_found');
+    // A row of the other kind is not found here: its page redirects, the API does not.
+    if (!row || row.kind !== kind) return shareError(404, 'not_found', { kind });
 
     const etag = `"${row.contentHash}"`;
     const headers = { etag, 'cache-control': CACHE };
@@ -39,6 +45,6 @@ export async function handleGetPlan(event: {
     });
   } catch (e) {
     console.error('[plans] get failed:', e instanceof Error ? e.message : 'unknown error');
-    return shareError(500, 'server_error');
+    return shareError(500, 'server_error', { kind });
   }
 }

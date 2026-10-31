@@ -44,7 +44,20 @@ export const remixConfirm = (n: number): string =>
 export const ogDescription = (n: number): string =>
   `A plan for San Francisco housing with ${n} brush strokes. Open it to see the buildings and net new units.`;
 
-export function serverMessage(code: ShareErrorCode, bytes?: number): string {
+/**
+ * The error-body text the server sends. A policy's is the plan wording with the plan words
+ * swapped (and its own size line), so a policy error never says "plan".
+ */
+export function serverMessage(
+  code: ShareErrorCode,
+  bytes?: number,
+  kind: DocKind = 'plan'
+): string {
+  if (kind === 'sim') {
+    return code === 'too_large' && bytes !== undefined
+      ? SIM_COPY.tooLarge(bytes)
+      : toPolicy(serverMessage(code, bytes));
+  }
   switch (code) {
     case 'too_large':
       return bytes === undefined

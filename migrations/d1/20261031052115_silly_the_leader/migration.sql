@@ -1,0 +1,1 @@
+ALTER TABLE `plan` ADD `kind` text DEFAULT 'plan' NOT NULL;

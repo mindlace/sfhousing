@@ -16,16 +16,17 @@ Code map:
 
 One row per published plan. No IP, user agent or other personal data is stored. Rows are never updated.
 
-| column            | type               | notes                                     |
-| ----------------- | ------------------ | ----------------------------------------- |
-| `id`              | text PK            | 8-char base58 id                          |
-| `schema`          | integer            | `Plan.schema`                             |
-| `dataset_version` | text               |                                           |
-| `body`            | text               | `serializePlan()` output (canonical JSON) |
-| `content_hash`    | text, unique       | SHA-256 hex of `body`; dedupe key         |
-| `op_count`        | integer            |                                           |
-| `byte_size`       | integer            | UTF-8 length of `body`                    |
-| `created_at`      | integer (ms epoch) | indexed (`plan_created_at_idx`)           |
+| column            | type               | notes                                                                                                                                        |
+| ----------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`              | text PK            | 8-char base58 id                                                                                                                             |
+| `kind`            | text, default plan | `'plan'` or `'sim'` (`DocKind`); `/api/policies` and `/s/<id>` serve `'sim'` rows, a kind mismatch is a 404 on the API and a 308 on the page |
+| `schema`          | integer            | `Plan.schema`                                                                                                                                |
+| `dataset_version` | text               |                                                                                                                                              |
+| `body`            | text               | `serializePlan()` output (canonical JSON)                                                                                                    |
+| `content_hash`    | text, unique       | SHA-256 hex of `body`; dedupe key                                                                                                            |
+| `op_count`        | integer            |                                                                                                                                              |
+| `byte_size`       | integer            | UTF-8 length of `body`                                                                                                                       |
+| `created_at`      | integer (ms epoch) | indexed (`plan_created_at_idx`)                                                                                                              |
 
 ### Ids
 

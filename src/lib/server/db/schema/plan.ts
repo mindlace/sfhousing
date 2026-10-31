@@ -4,6 +4,8 @@ export const plan = sqliteTable(
   'plan',
   {
     id: text('id').primaryKey(),
+    /** 'plan' | 'sim': which document codec reads `body` (DocKind). */
+    kind: text('kind').notNull().default('plan'),
     schema: integer('schema').notNull(),
     datasetVersion: text('dataset_version').notNull(),
     body: text('body').notNull(),
