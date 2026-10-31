@@ -18,7 +18,8 @@ with FZP alone?** It also makes the map show the answer in terms of height.
    goes away.
 3. **A meaningful comparison.** The headline score stays as it is. The "what your policy added"
    section compares FZP with no FZP when nothing is customised, and yours with FZP otherwise.
-4. **Absolute heights.** A brush means "allow N stories here", whatever the area allowed before.
+4. **Simple zoning changes.** Rules only ever add height, and the highest applicable one wins.
+   Custom painting means "allow N stories here", whatever the area allowed before.
 5. **Show the height limits.** A see-through height fog over the city, toggleable like transit.
 6. **Show what a height buys.** Painting briefly fills the painted lots with the buildings they could
    actually hold, then fades.
@@ -78,7 +79,7 @@ The page has two phases.
 - **The baseline is FZP as written for the whole window.** There is no SB 79 switch in 2032 and no
   "alternative plan kept" checkbox. In engine terms: stock `['fzp']`, no law switch.
 - **The comparison is chosen automatically:**
-  - Policy equal to the default (no zoning brushes, default timers, default protections): compare with
+  - Policy equal to the default (no rules, no painting, default timers, default protections): compare with
     pre-FZP.
   - Any customisation (zoning, permitting timelines or protections): compare with FZP unchanged.
 - **The headline score is unchanged** (your decision): the existing absolute count, `homesAdded(at)`.
@@ -87,35 +88,57 @@ The page has two phases.
   - default policy: "FZP added N homes vs no FZP"
   - otherwise: "Your policy added N homes vs FZP" (or "−N")
 - **Density caps under the FZP baseline:** the baseline keeps FZP's own per-lot caps
-  (`fzpYieldCap`) for the whole window. User edits are always uncapped (see §3), so no edit can bring
-  back §207.11 caps or the 2032 law switch. The baseline, the `fzp` twin and the user plan never take
-  the switch path.
+  (`fzpYieldCap`) for the whole window. Rules and painting are always uncapped (see §3). Nothing takes
+  the §207.11 or 2032 law-switch path.
 - **The engine needs a new `compare: 'fzp'` twin:** a plan of `{stock: ['fzp']}` with no switch and
   no user edits. `preFzp` stays. The `currentLaw` compare and twin are no longer reachable from the UI.
 - **The score is centred in the header on desktop** (md and up, *my call*): a three-column header
   layout on `/sim` (status left, score centre, actions right) instead of `justify-between`.
 
-### 3. Brushes
+### 3. Zoning: rules and custom painting
 
-- **One zoning brush: "Allow N stories".** It sets the limit on painted lots to N, raising or
-  lowering it as needed (the engine's existing `set` mode).
-  - **No density limits, and no option for them** (your decision). Painted lots hold as many homes
-    as fit in the envelope, subject only to the physical limits in §3a. The density-limits control
-    is removed from `/sim` and from paint mode on `/`. Changing density rules is a later project.
-  - The street, area and transit brush shapes keep their forms; transit bands also take absolute
-    stories.
-- **The eraser** removes your painting, returning lots to FZP.
-- **Raise and lower go from the UI.** *My call:* published and autosaved policies containing
-  `raise`/`lower` still load and run unchanged (schema 1 stays readable). Their summaries keep the
-  old wording, and new brushes are always `set`. No schema bump.
-- **Paint feedback:** when a stroke lands, the painted lots fill in with the buildings they could
-  actually hold under the new limit, drawn the way paint mode on `/` draws generated buildings. Those
-  buildings then fade out (roughly two seconds, *my call*). This shows that a tall limit on small
-  lots still yields small buildings.
-  - *My call:* freehand strokes show the feedback as soon as the stroke resolves.
-  - *My call:* the rule brushes (street, area, transit) show it after their recompute, limited to lots
-    in the current view.
-  - *My call:* the eraser shows no feedback; the fog dropping back is the cue.
+There are two kinds of zoning change (your decision). Neither has raise/lower/set modes or a
+density-limits option. Every height change is uncapped by density, subject only to the physical
+limits in §3a. The density-limits control is also removed from paint mode on `/`. Changing density
+rules is a later project.
+
+**New zoning rules** are rule-based additions, not brushes.
+
+- **The rules:**
+  - **Transit:** stop types, with stories per distance band.
+  - **Street:** street classes or named streets, and depth.
+  - **Commercial corridor:** a preset Street rule, arterial frontage zoned NC or NCT.
+- **Area is dropped for now.**
+- **Rules are always additive:** on each lot the highest applicable limit wins, out of FZP and every
+  rule that matches the lot. A rule never lowers a lot. In engine terms each rule is
+  `max(current, N)` with no cap, applied in any order.
+- Street data is already in the dataset: `frontage.bin`, built from DataSF street centerlines
+  (`3psu-pn9h`) by `pipeline/steps/frontage.ts`. The Street and Corridor rules read it, and the UI
+  disables them on a dataset that lacks it.
+
+**Custom zoning** is the freehand paint tool that sits at the top of "Your zoning" today.
+
+- **"Allow N stories":** it sets painted lots to exactly N, raising or lowering them. It is applied
+  after the rules, and a later stroke wins.
+- **The eraser** removes painting, so lots go back to FZP plus the rules.
+
+**Resolution order per lot:**
+
+1. FZP
+2. Rules, highest wins
+3. Custom painting, last stroke wins
+4. Protections, which make a lot non-redevelopable
+5. `min(…, physical max)`
+
+**Paint feedback:** when a stroke lands, the painted lots fill in with the buildings they could
+actually hold under the new limit, drawn the way paint mode on `/` draws generated buildings. Those
+buildings then fade out (roughly two seconds, *my call*). This shows that a tall limit on small lots
+still yields small buildings.
+
+- *My call:* custom painting shows the feedback as soon as the stroke resolves.
+- *My call:* adding or editing a rule shows it after the recompute, limited to lots in the current
+  view.
+- *My call:* the eraser shows no feedback; the fog dropping back is the cue.
 
 ### 3a. Physical limits
 
@@ -180,11 +203,9 @@ dataset version is built and promoted (`docs/dev/pipeline.md`, `docs/dev/deploy.
 ### 4. What the map shows
 
 - **The lot dots go.**
-- **Painted areas are set apart only while the eraser is selected.** Then each painted area is
-  outlined, so you can see what you'd be erasing. At other times the map shows only the limits in
+- **Painted areas are set apart only while the eraser is selected.** Then each custom-painted area
+  is outlined, so you can see what you'd be erasing. At other times the map shows only the limits in
   effect, through the fog.
-  - *My call:* brush-protected lots get the same treatment, an outline in a different style shown
-    while the eraser is on.
 - **Height fog** is a single see-through surface across the whole map, covering roads and open
   space too, not boxes per parcel. Its height at each point is the effective limit there: FZP as
   written plus your painting.
@@ -200,11 +221,14 @@ dataset version is built and promoted (`docs/dev/pipeline.md`, `docs/dev/deploy.
 ### 5. Policy pane
 
 - **Sections, in order:**
-  1. Your zoning
-  2. Permitting timelines
-  3. Protections
+  1. New zoning rules
+  2. Custom zoning
+  3. Permitting timelines
+  4. Protections
 - "Zoning layers" is removed.
-- *My call:* "Your zoning" opens expanded; the others start collapsed.
+- **Protections are category-only** (rent control, historic, newer than N years). The protect and
+  unprotect brush is dropped (your decision).
+- *My call:* both zoning sections open expanded; the others start collapsed.
 - **During a run** all sections are read-only, with **Change policy** at the top of the pane.
 
 ### 6. Timeline bar
@@ -247,7 +271,7 @@ Blue and violet are left only for water.
 | Chance bars | red/amber/green | unchanged | unchanged |
 | Height fog | n/a | white, ~0.3 | `#C8D2D6`, ~0.2 |
 | Brush ring paint / erase | `#1D4ED8` / `#BE185D` | `#BF5A3A` solid / `#2B2A28` dashed | `#DB8B42` / `#E8E4DC` |
-| Eraser on: painted / protected | lot dots | `#BF5A3A` dashed outline / `#2B2A28` solid outline + hatch | `#DB8B42` / `#E8E4DC` |
+| Eraser on: painted outline | lot dots | `#BF5A3A` dashed | `#DB8B42` |
 | App accent (tabs, Run, Publish, banner, target bars, timeline editing) | Tailwind blue | `#A3472C`, hover `#84371F` | `#E0955A` |
 | UI warnings | amber | unchanged | unchanged |
 | Dark ground: existing / replaced / road | `#3B3D41 #2A2B2E #2C2E31` | n/a | `#3B3D41 #232427 #34373B` |
@@ -263,13 +287,23 @@ Blue and violet are left only for water.
 
 ## Compatibility
 
-- **Saved policies:** `/s` and autosaved docs use `SimDoc` schema 1. `stock`,
-  `assumeAlternativePlanKept` and `compare` in old docs are ignored on load (normalised to the new
-  baseline and the automatic comparison). *My call:* few such docs exist and they were published
-  days ago.
-- `?start=fzp` becomes the default and can be dropped (keep the param accepted as a no-op).
+None needed (your decision). The policy layer hasn't shipped to production, so documents published
+or autosaved on staging may be discarded.
+
+- **`SimDoc` and `SimPolicy`** are redesigned freely for the new model:
+  - rules (transit, street, corridor)
+  - custom strokes and erase strokes
+  - timers, route shares and protection categories
+- **Removed from the document:** `raise`/`lower` modes, `densityLimits`, `area` rules, protect
+  strokes, `stock`, `assumeAlternativePlanKept` and `compare`.
+- **The schema version** is bumped. An older document fails to parse with the existing "can't open
+  this policy" path; nothing migrates it.
+- **Engine paths the UI no longer reaches** (the `currentLaw` stock and twin, the law switch, capped
+  edits, raise/lower) are removed if nothing else uses them. `/fzp` redirects to `/sim`, so the
+  builder confirms nothing else does first.
+- `?start=fzp` becomes the default and is dropped.
 - The default policy constant (`DEFAULT_POLICY`, `isDefaultPolicy`) is redefined against the FZP
-  baseline. The current-law twin no longer reads `DEFAULT_LEVERS`.
+  baseline.
 
 ## Left to the builder
 
