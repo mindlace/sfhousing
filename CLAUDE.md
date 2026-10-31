@@ -33,7 +33,7 @@ Fetch the file when working in the relevant area:
 - **Testing (Vitest projects, `FakeR2Bucket`, Playwright, fixture dataset)** — [docs/dev/testing.md](docs/dev/testing.md)
 - **Data pipeline (commands, release run order, lock and `datasetVersion`, fixture, invariants, ODbL, partner actions)** — [docs/dev/pipeline.md](docs/dev/pipeline.md)
 - **Accessibility (WCAG 2.2 AA, `expectNoA11yViolations`, per-page checklist)** — [docs/dev/accessibility.md](docs/dev/accessibility.md)
-- **Plan sharing (API contract, rate limit, autosave, manual takedown)** — [docs/dev/plan-sharing.md](docs/dev/plan-sharing.md)
+- **Plan and policy sharing (`/p` plans and `/s` `/sim` policies: API contract, rate limit, autosave, manual takedown)** — [docs/dev/plan-sharing.md](docs/dev/plan-sharing.md)
 - **Map-view interfaces for page and subsystem consumers (`--map-controls-br-*` CSS vars)** — [docs/dev/map-interfaces.md](docs/dev/map-interfaces.md)
 - **Map performance (`npm run bench:map`, pass bar, results, CI note)** — [docs/dev/map-perf.md](docs/dev/map-perf.md)
 - **FZP timelapse `FzpMode` (`/fzp` redirects to `/sim`; scrubber contract, layout variables, `window.__sfhFzp`, request flow, T9 lookups seam, known gaps)** — [docs/dev/fzp-mode.md](docs/dev/fzp-mode.md)
@@ -75,7 +75,7 @@ Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link t
 
 One Cloudflare Worker (SvelteKit via `@sveltejs/adapter-cloudflare`) with bindings `DB` (D1), `BUCKET` (R2, bucket `sfhousing`, shared by both environments) and `PUBLISH_RL` (rate limit), plus `ASSETS`. The worker does no geo computation at runtime. All geographic data is static and versioned on R2 at key `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` by `src/routes/data/[version]/[...path]/+server.ts`. The var `PUBLIC_DATASET_VERSION` (in `wrangler.jsonc`, per environment) names the current dataset; it is passed to the client as data from the root layout load, never read as a global. Published versions are immutable.
 
-Shell: the root layout renders the skip link, header, `<main>` and footer. Pages put actions in the header with `useHeaderActions(snippet)` from `src/lib/shell/header-actions.svelte.ts`; only the root layout calls `provideHeaderActions()`.
+Shell: the root layout renders the skip link, header, `<main>` and footer. Pages put actions in the header with `useHeaderActions(snippet, { pinned?, status? })` from `src/lib/shell/header-actions.svelte.ts`; only the root layout calls `provideHeaderActions()`. `status` is a non-interactive status slot on the left (after the mode links from md, after the site name on phones, never in the Menu), used for `/sim`'s save state.
 
 ## Conventions
 
