@@ -11,7 +11,7 @@ The partner approved the proposal with the changes below (partner direction, the
    - **Announcements:** the button text is not a live region (it changes every frame during play). One polite `sr-only` region keeps `FzpScoreboard`'s rule: it speaks "{n} homes added by {Month Year}" only while paused, 1000 ms after the day settles ([fzp-mode.md](fzp-mode.md), scrubber contract).
 2. **Phone menu.** Below md, the shell header shows the site name, the page's pinned item (the score bar on `/sim`) and one "Menu" button (`aria-expanded`). The menu holds the nav links and every other header action ("Policy", "Another future", and `/`'s actions). It opens as a panel under the header, Escape closes it, and choosing an item closes it. This lives in the shared shell, so `/` gets it too. From md, the header is unchanged except for the pinned slot.
 3. **Panel docking.** The left Policy panel (`w-80`) docks from md; below md it is a modal sheet. From md the project card sits right of the open panel (`md:left-[calc(var(--sim-panel-w,0px)+1rem)]`): 320 + 320 px fit in 768 px now that the top right is free. Lever notices join the notice row above the scrubber.
-4. **Sections:** "Zoning layers", "Your zoning", "Protections", each a disclosure. Only "Zoning layers" is open by default.
+4. **Sections:** "Zoning layers", "Your zoning", "Protections", "Permitting timelines", each a disclosure. Only "Zoning layers" is open by default. The timelines section's toggle is named "Permitting timelines, <the set's label>" (compact header, details on demand); inside it: a preset picker, the label with "Save timelines" and "Revert to saved" / "Revert to <preset name>", then for each route its share input and timeline, and the Local Program line. See [sim-timers.md](sim-timers.md).
 5. **Phone floating tool bar** (after picking a stroke tool closes the sheet): tool, stories (a pop-over button, as on `/`), radius (pop-over), Done. Mode and Density need the sheet reopened.
 6. **Protections** has a row "Protected with the brush · {n} lots" with Clear. Clear is one store change, so Undo restores it.
 7. **Undo and Redo** buttons sit at the top of "Your zoning". Their labels name the change ("Undo: Raised arterials to 8 stories"), and the announcement names what was undone. They are the non-drag way back.
@@ -28,16 +28,16 @@ What the build added to that layout:
 
 ## The recipe and its compile rules
 
-The page edits a `SimPolicy` (`src/lib/sim-page/policy.ts`), a recipe of brush parameters, not lot lists (Call 1). `compileLevers` turns it into plan 2's `SimLevers` once every brush query has resolved (`null` until then). The recipe is what plan 5 will save and publish (`parseSimPolicy`); `timing` is plan 4's seam, carried through untouched.
+The page edits a `SimPolicy` (`src/lib/sim-page/policy.ts`), a recipe of brush parameters, not lot lists (Call 1). `compileLevers` turns it into plan 2's `SimLevers` once every brush query has resolved (`null` until then). The recipe is what plan 5 will save and publish (`parseSimPolicy`); `timing` is plan 4's, edited in "Permitting timelines".
 
-| Field                       | Meaning                                                                        |
-| --------------------------- | ------------------------------------------------------------------------------ |
-| `stock`                     | The stock layers ("Zoning layers"); at least one stays on                      |
-| `assumeAlternativePlanKept` | "Assume the City keeps an alternative plan after 2031" (no 2032 switch)        |
-| `compare`                   | `'currentLaw'` or `'preFzp'`                                                   |
-| `brushes`                   | The ordered zoning brushes: `freehand`, `erase`, `transit`, `street`, `area`   |
-| `protect`                   | `rentControl`, `historic`, `newerThanYears`, and protect / unprotect `strokes` |
-| `timing`                    | `timers`, `routeShares`, `localProgramStreamlined` (plan 4's; not edited here) |
+| Field                       | Meaning                                                                                                                                   |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `stock`                     | The stock layers ("Zoning layers"); at least one stays on                                                                                 |
+| `assumeAlternativePlanKept` | "Assume the City keeps an alternative plan after 2031" (no 2032 switch)                                                                   |
+| `compare`                   | `'currentLaw'` or `'preFzp'`                                                                                                              |
+| `brushes`                   | The ordered zoning brushes: `freehand`, `erase`, `transit`, `street`, `area`                                                              |
+| `protect`                   | `rentControl`, `historic`, `newerThanYears`, and protect / unprotect `strokes`                                                            |
+| `timing`                    | `current` (preset, preset timers and shares, custom edits and shares, Local Program) and `saved` (plan 4; [sim-timers.md](sim-timers.md)) |
 
 Compile rules, with the plan's calls:
 
@@ -106,6 +106,6 @@ Citywide brushes (every RH-1 lot, arterial frontage, rail within 805 m) were mea
 ## Known gaps
 
 - **Follow a street** (Open question 2). The freehand brush cannot follow a street: no segment geometry ships (`frontage.bin` holds lot-to-street matches only). The named-street brush paints every lot along a street, one lot deep if asked. A street-geometry file at a dataset bump would allow it.
-- **In-flight map bars under `'all'` timers** (Call 13). The map takes one set of lookups, the new projects' (`lookups.fresh`), so under an `'all'`-reach timer the stage durations of in-flight projects' bars are approximate. Cards are exact (they pick their cohort's table). Plan 4 adds timers.
 - **Neighborhood edges** (Call 8). Neighborhood membership is the label point in the polygon, which can differ from DataSF's `analysis_neighborhood` at polygon edges. A `neighborhood` column in `policy.bin` is the exact fix at the next dataset bump.
+- **In-flight `chanceShift` on the map.** The map's bars read the cohort's lookups, but the in-flight `chanceShift` for the stage a project is in at `asOf` under `'all'` timers is not applied on the map; cards apply it (Call 15).
 - **No keyboard access to cards** (unchanged from `/fzp`): map picking is pointer-only ([fzp-mode.md](fzp-mode.md)). Freehand strokes have keyboard and non-drag alternatives (the rule brushes, and the keyboard stamp `BrushController.stampAtCenter`).

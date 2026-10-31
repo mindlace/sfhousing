@@ -1010,7 +1010,23 @@ describe('FzpMode levers (/sim)', () => {
       unknownLots: 0
     });
     await expect.poll(() => callsOf('setTimelineLookups').length).toBe(2);
-    expect(callsOf('setTimelineLookups')[1][0]).toBe(lookups.fresh);
+    expect(base).not.toHaveProperty('inFlight');
+    // the new projects' set at the top level, the in-flight one as `inFlight` (Call 15)
+    const sent = callsOf('setTimelineLookups')[1][0] as Record<string, unknown>;
+    expect(sent.chance).toBe(lookups.fresh.chance);
+    expect(sent.typicalMonths).toBe(lookups.fresh.typicalMonths);
+    expect(sent.inFlight).toBe(lookups.inFlight);
+    // the same posted lookups again: SimMap already holds them, so nothing is sent
+    s.w().emit({
+      type: 'levers',
+      rev,
+      phase: 'current',
+      lookups,
+      capacity: CAPACITY,
+      unknownLots: 0
+    });
+    await new Promise((res) => setTimeout(res, 50));
+    expect(callsOf('setTimelineLookups')).toHaveLength(2);
   });
 
   it('a stale current keeps the lookups', async () => {
@@ -1255,6 +1271,9 @@ describe('FzpMode levers (/sim)', () => {
       unknownLots: 0
     });
     await expect.poll(() => callsOf('setTimelineLookups').length).toBe(before + 1);
-    expect(callsOf('setTimelineLookups').at(-1)![0]).toBe(lookups.fresh);
+    expect(callsOf('setTimelineLookups').at(-1)![0]).toEqual({
+      ...lookups.fresh,
+      inFlight: lookups.inFlight
+    });
   });
 });

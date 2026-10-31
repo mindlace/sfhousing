@@ -29,6 +29,10 @@
     /** The "Your zoning" and "Protections" sections' contents (Tasks 8 to 10). */
     zoning?: Snippet;
     protections?: Snippet;
+    /** The "Permitting timelines" section's contents; the section shows only when given. */
+    timing?: Snippet;
+    /** A second line under that section's title (the set's label). */
+    timingSummary?: string;
   }
   let {
     store,
@@ -40,7 +44,9 @@
     subview = undefined,
     onback = undefined,
     zoning = undefined,
-    protections = undefined
+    protections = undefined,
+    timing = undefined,
+    timingSummary = undefined
   }: Props = $props();
 
   const uid = $props.id();
@@ -49,16 +55,19 @@
 
   const wide = new MediaQuery('(min-width: 768px)');
 
-  type SectionId = 'layers' | 'zoning' | 'protections';
-  const SECTIONS: { id: SectionId; title: string }[] = [
+  type SectionId = 'layers' | 'zoning' | 'protections' | 'timing';
+  const ALL_SECTIONS: { id: SectionId; title: string }[] = [
     { id: 'layers', title: 'Zoning layers' },
     { id: 'zoning', title: 'Your zoning' },
-    { id: 'protections', title: 'Protections' }
+    { id: 'protections', title: 'Protections' },
+    { id: 'timing', title: 'Permitting timelines' }
   ];
+  const SECTIONS = $derived(ALL_SECTIONS.filter((s) => s.id !== 'timing' || timing));
   let expanded = $state<Record<SectionId, boolean>>({
     layers: true,
     zoning: false,
-    protections: false
+    protections: false,
+    timing: false
   });
 
   let dialog = $state<HTMLDialogElement>();
@@ -129,9 +138,16 @@
             class="flex min-h-11 w-full items-center justify-between gap-2 px-4 text-left text-sm font-semibold"
             aria-expanded={expanded[s.id]}
             aria-controls={bodyId}
+            aria-label={s.id === 'timing' && timingSummary
+              ? `${s.title}, ${timingSummary}`
+              : undefined}
             onclick={() => (expanded[s.id] = !expanded[s.id])}
           >
-            <span>{s.title}</span>
+            <span class="flex flex-col"
+              >{s.title}{#if s.id === 'timing' && timingSummary}<span
+                  class="text-xs font-normal text-gray-700">{timingSummary}</span
+                >{/if}</span
+            >
             <span aria-hidden="true">{expanded[s.id] ? '−' : '+'}</span>
           </button>
         </h3>
@@ -141,8 +157,10 @@
               <LayersSection {store} />
             {:else if s.id === 'zoning'}
               {@render zoning?.()}
-            {:else}
+            {:else if s.id === 'protections'}
               {@render protections?.()}
+            {:else}
+              {@render timing?.()}
             {/if}
           </div>
         {/if}

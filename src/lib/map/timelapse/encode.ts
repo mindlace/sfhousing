@@ -40,8 +40,10 @@ export function validateTimedCell(c: TimedPackedCell): void {
   len('slotStages', c.slotStages.length, NS * slots);
   len('slotEnd', c.slotEnd.length, 2 * slots);
   len('slotPathway', c.slotPathway.length, slots);
+  len('slotCohort', c.slotCohort.length, slots);
   for (let s = 0; s < slots; s++) {
     if (c.slotPathway[s] > 2) fail(`slot ${s} has pathway index ${c.slotPathway[s]}`);
+    if (c.slotCohort[s] > 1) fail(`slot ${s} has cohort ${c.slotCohort[s]}`);
     const kind = c.slotEnd[2 * s + 1];
     if (kind !== 0 && kind !== 1 && kind !== 2) fail(`slot ${s} has end kind ${kind}`);
   }
@@ -51,13 +53,16 @@ export function validateTimedCell(c: TimedPackedCell): void {
  * Typical days in a stage: months · MONTH_DAYS, floored at 1 day so a fill or floor progress is
  * never 0/0 (ruling R8), or OPEN_DAY if missing, negative or non-finite (progress stays at 0).
  * The bar (`evalBar`) and the floors (`evalPart`, via `encodeParts`) read typical days only here.
+ * Cohort 1 (in flight) reads `l.inFlight`, or the fresh set when it is absent (Call 15).
  */
 export function typicalDays(
   l: TimelineLookups | null,
   pathway: Pathway,
-  stage: Exclude<Stage, 'complete'>
+  stage: Exclude<Stage, 'complete'>,
+  cohort: 0 | 1
 ): number {
-  const months = l?.typicalMonths[pathway]?.[stage];
+  const set = cohort === 1 ? (l?.inFlight ?? l) : l;
+  const months = set?.typicalMonths[pathway]?.[stage];
   if (months === undefined || !Number.isFinite(months) || months < 0) return OPEN_DAY;
   return Math.max(months * MONTH_DAYS, 1);
 }
@@ -94,7 +99,7 @@ export function encodeParts(c: TimedPackedCell, l: TimelineLookups | null): Enco
     slotC.set(
       [
         endKind,
-        typicalDays(l, PATHWAYS[c.slotPathway[s]], 'construction'),
+        typicalDays(l, PATHWAYS[c.slotPathway[s]], 'construction', c.slotCohort[s] as 0 | 1),
         c.parcelMeta[4 * s + 2]
       ],
       3 * s

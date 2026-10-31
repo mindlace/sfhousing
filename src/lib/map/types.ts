@@ -52,6 +52,7 @@ export interface TimedPackedCell extends PackedCell {
   slotStages: Float32Array; // per slot: STAGE_ORDER.length entry days, NaN = never
   slotEnd: Float32Array; // per slot: [endDay, endKind] (0 open, 1 complete, 2 exit)
   slotPathway: Uint8Array; // index into ['discretionary','streamlined','permitOnly']
+  slotCohort: Uint8Array; // per slot: 0 = fresh (new projects' lookups), 1 = in flight
 }
 
 /** T7: one timeline message (timelapse worker → SimMap). */
@@ -92,10 +93,15 @@ export interface SimMapHandle {
   onResyncNeeded(cb: () => void): void; // revision gap → worker host sends revision 0
   applyTimeline(u: TimelineUpdate): void; // T7: timelapse-render step 1 implements it
   setTime(day: Day): void; // T7
-  setTimelineLookups(l: {
-    chance: ReturnType<typeof chanceTable>;
-    typicalMonths: ReturnType<typeof typicalMonths>;
-  }): void; // T7
+  // T7. `inFlight` (Call 15): the lookups for slots with slotCohort 1; absent = they read the
+  // fresh set (the top level, new projects').
+  setTimelineLookups(l: TimelineLookupSet & { inFlight?: TimelineLookupSet }): void;
+}
+
+/** T7: one set of timeline lookups (T12 `chanceTable` and `typicalMonths` outputs). */
+export interface TimelineLookupSet {
+  chance: ReturnType<typeof chanceTable>;
+  typicalMonths: ReturnType<typeof typicalMonths>;
 }
 
 export interface ParcelSummaryLike {

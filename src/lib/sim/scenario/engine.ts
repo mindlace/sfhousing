@@ -587,7 +587,7 @@ function pipelineRow(run: Run, job: Job, p: InFlightProject, rs: RowStatic): Sch
   job.yieldCap = rs.yieldCap;
   job.envelope = rs.envelope;
   const end = runStages(run, job, p.stage, e, true);
-  return {
+  const s: Schedule = {
     projectId: p.id,
     origin: 'pipeline',
     parcelIds: run.ids ? [...p.parcelIds] : NO_IDS,
@@ -599,6 +599,9 @@ function pipelineRow(run: Run, job: Job, p: InFlightProject, rs: RowStatic): Sch
     multiPhase: p.multiPhase,
     phase: null
   };
+  // only on a run with `newProjects`, so every other Schedule (and every golden) is unchanged
+  if (!isNew && run.input.newProjects !== undefined) s.inFlight = true;
+  return s;
 }
 
 /** A holder end that never frees its parcels (see `Hold.blocked`). */
@@ -771,7 +774,7 @@ function phaseSchedule(
   const end = runStages(run, job, 'permitFiled', F_i, false);
   const plan = ph.plannedPermitFiled;
   const scheduled = plan !== null && plan > run.asOf && F_i === plan;
-  return {
+  const s: Schedule = {
     projectId: pst.projectId,
     origin: 'pipeline',
     parcelIds: run.ids ? [...ph.parcelIds] : NO_IDS,
@@ -788,6 +791,9 @@ function phaseSchedule(
       start: scheduled ? 'scheduled' : 'estimated'
     }
   };
+  // a phase always runs on `calibration` (see pipelineRow)
+  if (run.input.newProjects !== undefined) s.inFlight = true;
+  return s;
 }
 
 /** A new project's pathway from the normalised `pathwayForNew`, in `PATHWAYS` order (§4.4.4). */

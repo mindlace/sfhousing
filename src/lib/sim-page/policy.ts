@@ -19,9 +19,20 @@ import {
   parseSimLevers,
   type SimLevers,
   type StockLayerId,
+  type TimerEdit,
   type UserEdit
 } from '$lib/sim/levers/types';
 import { STORIES_MAX, STORIES_MIN } from '$lib/plan/constants';
+import { PATHWAYS, type Pathway } from '$lib/timelapse/types';
+import {
+  EDITABLE_STAGES,
+  OBSERVED_TIMING,
+  PRESETS,
+  compileTiming,
+  type SimTiming,
+  type TimingSet
+} from './timing';
+import { BENCHMARK_PERMIT_DAYS } from './timing-sources';
 
 export type BrushMode = 'raise' | 'lower' | 'set';
 export interface Effect {
@@ -73,8 +84,8 @@ export interface SimPolicy {
     newerThanYears: number | null;
     strokes: ProtectStroke[];
   };
-  /** Plan 4's seam: carried into SimLevers untouched by this plan's UI. */
-  timing: Pick<SimLevers, 'timers' | 'routeShares' | 'localProgramStreamlined'>;
+  /** The permitting timing set and its saved snapshot (`timing.ts`). */
+  timing: SimTiming;
 }
 
 /**
@@ -107,6 +118,10 @@ function fail(path: string, message: string): never {
 export function policyFromLevers(l: SimLevers): SimPolicy {
   if (l.user.length > 0) throw new PolicyFormatError('user', 'expected no user edits');
   if (l.protect.lots.length > 0) throw new PolicyFormatError('protect.lots', 'expected no lots');
+  if (l.timers.length > 0 || l.routeShares !== null)
+    throw new PolicyFormatError('timers', 'expected no timers and observed route shares');
+  if (!l.localProgramStreamlined)
+    throw new PolicyFormatError('localProgramStreamlined', 'expected true: every preset keeps it');
   return {
     schema: 1,
     stock: [...l.stock],
@@ -120,9 +135,8 @@ export function policyFromLevers(l: SimLevers): SimPolicy {
       strokes: []
     },
     timing: {
-      timers: l.timers.map((t) => ({ ...t })),
-      routeShares: l.routeShares ? { ...l.routeShares } : null,
-      localProgramStreamlined: l.localProgramStreamlined
+      current: structuredClone(OBSERVED_TIMING.current),
+      saved: null
     }
   };
 }
@@ -273,24 +287,144 @@ function parseBrush(v: unknown, path: string): ZoningBrush {
   }
 }
 
-/** Timing fields get the lever parser's full check; errors are re-pathed under `timing.`. */
-function parseTiming(tr: Record<string, unknown>): SimPolicy['timing'] {
+/** One lever field through the lever parser's full check, re-pathed under `path`. */
+function viaLevers<K extends 'timers' | 'routeShares'>(
+  field: K,
+  v: unknown,
+  path: string
+): SimLevers[K] {
   try {
-    const l = parseSimLevers({
-      ...DEFAULT_LEVERS,
-      timers: tr.timers,
-      routeShares: tr.routeShares,
-      localProgramStreamlined: tr.localProgramStreamlined
-    });
-    return {
-      timers: l.timers,
-      routeShares: l.routeShares,
-      localProgramStreamlined: l.localProgramStreamlined
-    };
+    return parseSimLevers({ ...DEFAULT_LEVERS, [field]: v })[field];
   } catch (e) {
-    if (e instanceof LeverFormatError) fail(`timing.${e.path}`, e.message);
+    if (e instanceof LeverFormatError) fail(path + e.path.slice(field.length), e.message);
     throw e;
   }
+}
+
+/** Route shares in a timing set: null, or whole percents that sum to 100. */
+function percents(v: unknown, path: string): Record<Pathway, number> | null {
+  const r = viaLevers('routeShares', v, path);
+  if (r === null) return null;
+  for (const p of PATHWAYS)
+    if (!Number.isInteger(r[p])) fail(`${path}.${p}`, 'expected a whole percent');
+  if (PATHWAYS.reduce((a, p) => a + r[p], 0) !== 100) fail(path, 'expected shares summing to 100');
+  return r;
+}
+
+const AVAILABLE_PRESETS = PRESETS.filter((p) => p.available).map((p) => p.id);
+
+function parseTimingSet(v: unknown, path: string): TimingSet {
+  const r = rec(v, path, [
+    'preset',
+    'presetTimers',
+    'presetRouteShares',
+    'edits',
+    'routeShares',
+    'localProgramStreamlined'
+  ]);
+  const edits = viaLevers('timers', r.edits, j(path, 'edits'));
+  editableOnce(edits, j(path, 'edits'));
+  edits.forEach((e, i) => {
+    if (e.reach !== 'all')
+      fail(`${j(path, 'edits')}[${i}].reach`, 'expected all: custom edits reach every project');
+  });
+  const set: TimingSet = {
+    preset: oneOf(r.preset, j(path, 'preset'), AVAILABLE_PRESETS),
+    presetTimers: viaLevers('timers', r.presetTimers, j(path, 'presetTimers')),
+    presetRouteShares: percents(r.presetRouteShares, j(path, 'presetRouteShares')),
+    edits,
+    routeShares: percents(r.routeShares, j(path, 'routeShares')),
+    localProgramStreamlined: bool(r.localProgramStreamlined, j(path, 'localProgramStreamlined'))
+  };
+  checkPresetLayer(set, path);
+  return set;
+}
+
+/** Timers on editable stages only, at most one per (pathway, stage). */
+function editableOnce(timers: readonly TimerEdit[], path: string): void {
+  const seen = new Set<string>();
+  timers.forEach((t, i) => {
+    const tp = `${path}[${i}]`;
+    if (!EDITABLE_STAGES.includes(t.stage)) fail(j(tp, 'stage'), 'expected an editable stage');
+    const k = `${t.pathway}/${t.stage}`;
+    if (seen.has(k)) fail(tp, `duplicate timer for ${k}`);
+    seen.add(k);
+  });
+}
+
+const BENCHMARK_RATIO = BENCHMARK_PERMIT_DAYS.sanDiego.value / BENCHMARK_PERMIT_DAYS.sf.value;
+
+/**
+ * The preset layer must be one the preset could have resolved to (review I1), checked without
+ * a calibration: which stages and reach its timers may have, the range of their scales, and the
+ * shape of its route shares. Every preset keeps the Local Program streamlined.
+ */
+function checkPresetLayer(s: TimingSet, path: string): void {
+  const tp = j(path, 'presetTimers');
+  const sp = j(path, 'presetRouteShares');
+  editableOnce(s.presetTimers, tp);
+  if (!s.localProgramStreamlined)
+    fail(j(path, 'localProgramStreamlined'), 'expected true: every preset keeps it');
+  const timers = (allowed: (t: TimerEdit) => string | null) =>
+    s.presetTimers.forEach((t, i) => {
+      const why = allowed(t);
+      if (why !== null) fail(`${tp}[${i}]`, why);
+    });
+  const noTimers = () => timers(() => `expected no timers under ${s.preset}`);
+  const noShares = () => {
+    if (s.presetRouteShares !== null) fail(sp, `expected null under ${s.preset}`);
+  };
+  switch (s.preset) {
+    case 'observed':
+      noTimers();
+      noShares();
+      break;
+    case 'noDiscretionary':
+      noTimers();
+      if (s.presetRouteShares === null) fail(sp, 'expected route shares under noDiscretionary');
+      if (s.presetRouteShares.discretionary !== 0) fail(`${sp}.discretionary`, 'expected 0');
+      break;
+    case 'sb423Clock':
+      noShares();
+      timers((t) =>
+        t.pathway !== 'streamlined' || t.stage !== 'filed'
+          ? 'expected only streamlined filed'
+          : t.reach !== 'new'
+            ? 'expected reach new'
+            : t.scale > 1
+              ? 'expected a scale of at most 1'
+              : null
+      );
+      break;
+    case 'benchmarkPermits':
+      noShares();
+      // The ratio, or raised toward 1 by a stage floor (resolvePreset's `withFloor`).
+      timers((t) =>
+        t.stage !== 'permitFiled'
+          ? 'expected only permitFiled'
+          : t.reach !== 'all'
+            ? 'expected reach all'
+            : t.scale < BENCHMARK_RATIO - 1e-12 || t.scale > 1
+              ? `expected a scale from ${BENCHMARK_RATIO} to 1`
+              : null
+      );
+      break;
+    case 'ceqaInfill': // rejected above as unavailable
+      break;
+  }
+}
+
+function parseTiming(v: unknown): SimTiming {
+  const r = rec(v, 'timing', ['current', 'saved']);
+  let saved: SimTiming['saved'] = null;
+  if (r.saved !== null) {
+    const sr = rec(r.saved, 'timing.saved', ['label', 'set']);
+    saved = {
+      label: str(sr.label, 'timing.saved.label'),
+      set: parseTimingSet(sr.set, 'timing.saved.set')
+    };
+  }
+  return { current: parseTimingSet(r.current, 'timing.current'), saved };
 }
 
 /** Validate a policy document. Throws `PolicyFormatError` naming the first bad field. */
@@ -311,8 +445,7 @@ export function parseSimPolicy(json: unknown): SimPolicy {
   const n = pr.newerThanYears;
   if (n !== null && (typeof n !== 'number' || !Number.isFinite(n) || n <= 0))
     fail('protect.newerThanYears', 'expected null or a positive number');
-  const tr = rec(r.timing, 'timing', ['timers', 'routeShares', 'localProgramStreamlined']);
-  const timing = parseTiming(tr);
+  const timing = parseTiming(r.timing);
   const brushes = arr(r.brushes, 'brushes').map((b, i) => parseBrush(b, `brushes[${i}]`));
   const ids = new Set<string>();
   brushes.forEach((b, i) => {
@@ -479,9 +612,7 @@ export function compileLevers(p: SimPolicy, lots: Lots): SimLevers | null {
       newerThanYears: p.protect.newerThanYears,
       lots: prot
     },
-    timers: p.timing.timers.map((t) => ({ ...t })),
-    routeShares: p.timing.routeShares ? { ...p.timing.routeShares } : null,
-    localProgramStreamlined: p.timing.localProgramStreamlined,
+    ...compileTiming(p.timing.current),
     compare: p.compare
   };
 }

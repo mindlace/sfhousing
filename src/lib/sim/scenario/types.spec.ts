@@ -47,6 +47,7 @@ interface RowSchedule {
     start: 'scheduled' | 'estimated';
   } | null;
   afterSwitch?: boolean;
+  inFlight?: true; // plan 4 Task 6 (Call 15)
 }
 type RowSimInput = {
   parcels: ScenarioParcels;

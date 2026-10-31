@@ -554,3 +554,116 @@ test('at 375 px: no horizontal scroll, and the footer links stay unobscured', as
   await expectNoHorizontalScroll(page);
   await expectFooterReachable(page);
 });
+
+// ---- permitting timelines (plan 4) ----------------------------------------------------------------
+
+/** The "Permitting timelines" disclosure: its name carries the set's label ("…, <summary>"). */
+const timingToggle = (page: Page): Locator =>
+  panel(page).getByRole('button', { name: /^Permitting timelines/ });
+
+async function openTiming(page: Page): Promise<void> {
+  await openPolicy(page);
+  const toggle = timingToggle(page);
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+}
+
+const timingLabel = (page: Page): Locator => panel(page).getByTestId('timing-label');
+const routeTimeline = (page: Page, route: string): Locator =>
+  panel(page).getByRole('group', { name: `${route} timeline` });
+
+/** Waits for a lever revision above `before` to be in force. */
+async function expectNewRevision(page: Page, before: number | null): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const l = await leverStatus(page);
+        return l.status === 'current' && (l.sentRev ?? -1) > (before ?? -1);
+      },
+      { timeout: 20_000 }
+    )
+    .toBe(true);
+}
+
+test('choosing a preset sends timers and the label changes', async ({ page }) => {
+  await gotoSim(page);
+  await openTiming(page);
+  const before = (await leverStatus(page)).sentRev;
+  await panel(page).getByLabel('Preset').selectOption({ label: "Permits at San Diego's pace" });
+  await expectNewRevision(page, before);
+  await expect(timingLabel(page)).toHaveText("Permits at San Diego's pace");
+  await expect(timingToggle(page)).toContainText("Permits at San Diego's pace");
+});
+
+test('a keyboard edit makes the set custom and Revert undoes it', async ({ page }) => {
+  await gotoSim(page);
+  await openTiming(page);
+  await expect(timingLabel(page)).toHaveText('SF as observed');
+  const timeline = routeTimeline(page, 'Discretionary');
+  await timeline.getByRole('button').first().focus();
+  for (let i = 0; i < 8; i++) {
+    const name = await page.evaluate(() => document.activeElement?.getAttribute('aria-label'));
+    if (name?.startsWith('Permit review,')) break;
+    await page.keyboard.press('ArrowRight');
+  }
+  await expect(page.locator(':focus')).toHaveAccessibleName(/^Permit review,/);
+  await page.keyboard.press('Enter');
+  const before = (await leverStatus(page)).sentRev;
+  const shorten = panel(page).getByRole('button', { name: 'Shorten by 0.5 month' });
+  for (let i = 0; i < 3; i++) await shorten.click();
+  await expect(timingLabel(page)).toHaveText('Custom (from SF as observed)');
+  await expectNewRevision(page, before);
+
+  const edited = (await leverStatus(page)).sentRev;
+  await panel(page).getByRole('button', { name: 'Revert to SF as observed' }).click();
+  await expect(timingLabel(page)).toHaveText('SF as observed');
+  await expectNewRevision(page, edited);
+});
+
+test('the minimum is visible', async ({ page }) => {
+  await gotoSim(page);
+  await openTiming(page);
+  const timeline = routeTimeline(page, 'Discretionary');
+  await timeline.getByRole('button', { name: /^Permit review,/ }).click();
+  const months = panel(page).getByLabel('Typical months');
+  await months.fill('0');
+  await months.press('Tab');
+  await expect(panel(page).getByText('At the minimum')).toBeVisible();
+  await expect(
+    timeline.getByRole('button', { name: /^Permit review,.*at the minimum/ })
+  ).toBeVisible();
+  const shown = Number(await months.inputValue());
+  expect(shown).toBeGreaterThan(0);
+});
+
+test('route shares sum to 100', async ({ page }) => {
+  await gotoSim(page);
+  await openTiming(page);
+  const share = (name: string) => panel(page).getByLabel(`${name} share, %`);
+  await share('Permit only').fill('100');
+  await share('Permit only').press('Tab');
+  await expect(share('Permit only')).toHaveValue('100');
+  await expect(share('Discretionary')).toHaveValue('0');
+  await expect(share('Streamlined')).toHaveValue('0');
+});
+
+test('axe: the timelines section open, details open (1280 px; the 375 px sheet on mobile)', async ({
+  page
+}) => {
+  await gotoSim(page);
+  await openTiming(page);
+  await routeTimeline(page, 'Discretionary').getByRole('button').nth(1).click();
+  await expect(panel(page).getByLabel('Typical months')).toBeVisible();
+  await expectNoA11yViolations(page);
+});
+
+test('at 375 px with the timelines open: no horizontal scroll', async ({ isMobile, page }) => {
+  test.skip(!isMobile, 'the phone layout');
+  await gotoSim(page);
+  await openTiming(page);
+  await routeTimeline(page, 'Discretionary').getByRole('button').nth(1).click();
+  await expect(panel(page).getByLabel('Typical months')).toBeVisible();
+  await expectNoHorizontalScroll(page);
+  const box = (await panel(page).boundingBox())!;
+  expect(box.x + box.width).toBeLessThanOrEqual(375);
+});

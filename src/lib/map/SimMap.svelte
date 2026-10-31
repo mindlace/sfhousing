@@ -367,7 +367,7 @@
    * anything is kept, with or without a controller.
    */
   export function setTimelineLookups(l: TimelineLookups): void {
-    packChanceTexture(l.chance);
+    packChanceTexture(l.chance, l.inFlight?.chance);
     live?.timeline?.setLookups(l);
     pendingLookups = l;
   }

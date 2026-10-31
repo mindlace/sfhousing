@@ -54,8 +54,13 @@ describe('engine levers: neither field set', () => {
       newProjects: { calibration: base.calibration, scale: identity },
       inFlightScale: identity
     };
+    // the in-flight cohort flag (Call 15) is the one difference newProjects makes
+    const unflag = (r: ReturnType<typeof simulateDetailed>) => ({
+      ...r,
+      schedules: r.schedules.map(({ inFlight: _, ...s }) => s)
+    });
     for (const seed of [1, 2, 3]) {
-      expect(simulateDetailed(input, seed, H)).toEqual(simulateDetailed(base, seed, H));
+      expect(unflag(simulateDetailed(input, seed, H))).toEqual(simulateDetailed(base, seed, H));
     }
   });
 });
@@ -79,7 +84,11 @@ describe('engine levers: newProjects', () => {
       const nowPipe = byId(now.schedules.filter((s) => s.origin === 'pipeline'));
       for (const s of wasPipe) {
         if (stageOf.get(s.projectId) === 'preApplication') continue;
-        expect(nowPipe.get(s.projectId), `${seed} ${s.projectId}`).toEqual(s);
+        // the same schedule, flagged in flight (Call 15)
+        expect(nowPipe.get(s.projectId), `${seed} ${s.projectId}`).toEqual({
+          ...s,
+          inFlight: true
+        });
         compared++;
       }
     }

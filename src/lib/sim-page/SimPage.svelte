@@ -35,8 +35,10 @@
   import PhoneToolBar from './PhoneToolBar.svelte';
   import { lotRoles, policyFromLevers, queriesOf } from './policy';
   import { createStrokeAdapter } from './stroke-adapter';
+  import { timingLabel } from './timing';
   import { focusHeaderMenu } from '$lib/shell/header-actions.svelte';
   import { LeverSync, PolicyStore } from './policy-store.svelte';
+  import PermittingSection from './PermittingSection.svelte';
   import PolicyPanel from './PolicyPanel.svelte';
   import ProtectionsSection from './ProtectionsSection.svelte';
 
@@ -332,6 +334,12 @@
   >
 {/snippet}
 
+{#snippet timingSection()}
+  {#if calibration}
+    <PermittingSection {store} {calibration} announce={(m) => brush.announce(m, ANNOUNCE_MS)} />
+  {/if}
+{/snippet}
+
 {#snippet panel()}
   <PolicyPanel
     {store}
@@ -341,6 +349,8 @@
     onclose={() => void closePolicy()}
     view={forms.current && catalog && !wide.current ? 'add-brush' : 'sections'}
     onback={() => forms.close()}
+    timingSummary={calibration ? timingLabel(store.policy.timing.current) : undefined}
+    timing={calibration ? timingSection : undefined}
   >
     {#snippet zoning()}
       <BrushSection

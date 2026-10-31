@@ -42,6 +42,7 @@ import {
   MINI_PROJECTS,
   miniProjectsJson
 } from './fixtures/mini-projects';
+import { scaleTable } from '../levers/timers';
 import { buildSimInput, precomputeOf } from './input';
 import { P, draw, jobEntity, simEntity, stageRedraw } from './rng';
 import { simulate, simulateDetailed } from './simulate';
@@ -1013,5 +1014,47 @@ describe('simulate: score-only master (DQ-3)', () => {
       expect(so.parcelIds).toEqual([]);
       expect(simulatedOf(out)).toEqual(simulatedOf(simulate(without, seed, H)));
     }
+  });
+});
+
+describe('simulate: in-flight cohort flag (Call 15)', () => {
+  it('no newProjects, no inFlight flag', () => {
+    for (const seed of [1, 2, 3]) {
+      const ss = simulate(miniInput(), seed, H);
+      expect(ss.length).toBeGreaterThan(0);
+      for (const s of ss) expect('inFlight' in s, s.projectId).toBe(false);
+    }
+  });
+
+  it('with newProjects, flags pipeline rows past preApplication and phases, nothing else', () => {
+    const base = miniInput();
+    const input: SimInput = {
+      ...base,
+      newProjects: { calibration: base.calibration, scale: scaleTable([], 'new') }
+    };
+    const stageOf = new Map(base.projects.map((p) => [p.id, p.stage]));
+    let flagged = 0;
+    let ppa = 0;
+    let phases = 0;
+    for (const seed of [1, 2, 3]) {
+      const ss = simulate(input, seed, H);
+      expect(simulatedOf(ss).length).toBeGreaterThan(0);
+      for (const s of simulatedOf(ss)) expect('inFlight' in s, s.projectId).toBe(false);
+      for (const s of pipelineOf(ss)) {
+        if (s.phase !== null) {
+          expect(s.inFlight, s.projectId).toBe(true);
+          phases++;
+        } else if (stageOf.get(s.projectId) === 'preApplication') {
+          expect('inFlight' in s, s.projectId).toBe(false);
+          ppa++;
+        } else {
+          expect(s.inFlight, s.projectId).toBe(true);
+          flagged++;
+        }
+      }
+    }
+    expect(flagged).toBeGreaterThan(0);
+    expect(ppa).toBeGreaterThan(0);
+    expect(phases).toBeGreaterThan(0);
   });
 });

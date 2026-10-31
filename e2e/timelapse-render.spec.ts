@@ -38,7 +38,8 @@ function reviveTimeline(json: Json): { timeline: TimelineUpdate; lookups: Lookup
     partWindow: f32(c.partWindow),
     slotStages: f32(c.slotStages),
     slotEnd: f32(c.slotEnd),
-    slotPathway: u8(c.slotPathway)
+    slotPathway: u8(c.slotPathway),
+    slotCohort: u8(c.slotCohort)
   }));
   const l = json.lookups as {
     chance: Record<string, Json>;

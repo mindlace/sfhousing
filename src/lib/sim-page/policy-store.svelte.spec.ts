@@ -84,6 +84,39 @@ describe('PolicyStore', () => {
     expect(store.redo()).toBeNull();
   });
 
+  it('changes with one coalesce key and nothing between make one undo entry', () => {
+    const store = new PolicyStore(BASE);
+    store.apply((p) => ({ ...p, brushes: [area('RH-1', 4)] }), 'first', 'k');
+    store.apply((p) => ({ ...p, brushes: [area('RH-1', 5)] }), 'second', 'k');
+    expect(store.undoLabel).toBe('second');
+    expect(store.undo()).toBe('second');
+    expect(store.policy).toBe(BASE);
+    expect(store.canUndo).toBe(false);
+  });
+
+  it('an undo between same-key changes keeps two entries', () => {
+    const store = new PolicyStore(BASE);
+    store.apply((p) => ({ ...p, brushes: [area('RH-1', 4)] }), 'first', 'k');
+    store.undo();
+    store.redo();
+    store.apply((p) => ({ ...p, brushes: [area('RH-1', 5)] }), 'second', 'k');
+    expect(store.undo()).toBe('second');
+    expect(store.undo()).toBe('first');
+    expect(store.policy).toBe(BASE);
+  });
+
+  it('a different key, or a change with none between, makes a new entry', () => {
+    const store = new PolicyStore(BASE);
+    store.apply((p) => ({ ...p, brushes: [area('RH-1', 4)] }), 'a', 'k');
+    store.apply((p) => ({ ...p, brushes: [area('RH-1', 5)] }), 'b', 'j');
+    store.apply((p) => ({ ...p, compare: 'preFzp' }), 'c');
+    store.apply((p) => ({ ...p, brushes: [area('RH-1', 6)] }), 'd', 'j');
+    expect(store.undo()).toBe('d');
+    expect(store.undo()).toBe('c');
+    expect(store.undo()).toBe('b');
+    expect(store.undo()).toBe('a');
+  });
+
   it('a change that returns the same policy is not recorded', () => {
     const store = new PolicyStore(BASE);
     store.apply((p) => p, 'nothing');
