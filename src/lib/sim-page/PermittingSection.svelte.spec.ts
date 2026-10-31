@@ -146,7 +146,7 @@ describe('PermittingSection', () => {
     input.element().dispatchEvent(new Event('change', { bubbles: true }));
     await expect.poll(() => value('Discretionary')).toBe('0');
     const block = page.getByRole('group', { name: 'Discretionary timeline' });
-    await expect.element(block.getByText(/Permit review/)).toBeVisible();
+    await expect.element(block.getByRole('button', { name: /^Permit review/ })).toBeVisible();
   });
 
   it('shows the Local Program line', async () => {

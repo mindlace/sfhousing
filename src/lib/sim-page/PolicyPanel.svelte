@@ -138,6 +138,9 @@
             class="flex min-h-11 w-full items-center justify-between gap-2 px-4 text-left text-sm font-semibold"
             aria-expanded={expanded[s.id]}
             aria-controls={bodyId}
+            aria-label={s.id === 'timing' && timingSummary
+              ? `${s.title}, ${timingSummary}`
+              : undefined}
             onclick={() => (expanded[s.id] = !expanded[s.id])}
           >
             <span class="flex flex-col"

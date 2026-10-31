@@ -89,6 +89,8 @@ describe('PolicyPanel', () => {
     const button = page.getByRole('button', { name: /Permitting timelines/ });
     await expect.element(button).toHaveAttribute('aria-expanded', 'false');
     await expect.element(button).toHaveTextContent('SF as observed');
+    // A separator keeps the title and the summary apart in the accessible name.
+    await expect.element(button).toHaveAccessibleName('Permitting timelines, SF as observed');
   });
 
   it('docked: opening focuses the panel, and Escape there closes it', async () => {

@@ -3,18 +3,18 @@
   Revert, a share input and a timeline for each approval route, and the Local Program line. Every
   change is one labelled store change (Undo names it); a custom edit stays with the set, so
   choosing a preset replaces the edits (Undo brings them back) but keeps the saved snapshot. Share
-  inputs commit on `change`, coalesced per route. The per-route timeline here is a plain list of
-  stages: Task 5's `RouteTimeline` replaces it.
+  inputs commit on `change`, coalesced per route. Each route's timeline is a `RouteTimeline`
+  (Task 5): segments, chances, drag handles and the stage details editor.
 -->
 <script lang="ts">
   import { PATHWAYS, type Calibration, type Pathway } from '$lib/timelapse/types';
   import type { PolicyStore } from './policy-store.svelte';
+  import RouteTimeline from './RouteTimeline.svelte';
   import {
     OBSERVED_TIMING,
     PRESETS,
     resolvePreset,
     revertTarget,
-    routeView,
     setRouteShare,
     shownRouteShares,
     timingLabel,
@@ -138,8 +138,7 @@
   </div>
 
   {#each PATHWAYS as p (p)}
-    {@const rows = routeView(calibration, current, p)}
-    <div role="group" aria-label="{PATHWAY_NAMES[p]} timeline" class="flex flex-col gap-1">
+    <div class="flex flex-col gap-1">
       <div class="flex items-center justify-between gap-2">
         <h4 class="font-semibold">{PATHWAY_NAMES[p]}</h4>
         <label class="flex items-center gap-1">
@@ -155,11 +154,7 @@
           />
         </label>
       </div>
-      <ul class="text-xs text-gray-700">
-        {#each rows as r (r.stage)}
-          <li>{r.label}: {r.months} months</li>
-        {/each}
-      </ul>
+      <RouteTimeline {store} {calibration} pathway={p} {announce} />
     </div>
   {/each}
 
