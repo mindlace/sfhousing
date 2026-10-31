@@ -13,7 +13,7 @@ import PermittingSection from './PermittingSection.svelte';
 import { policyFromLevers } from './policy';
 import { PolicyStore } from './policy-store.svelte';
 import RouteTimeline from './RouteTimeline.svelte';
-import { setStageMonths, stageBounds } from './timing';
+import { resolvePreset, setStageMonths, stageBounds } from './timing';
 
 const load = (): Calibration =>
   parseCalibration(structuredClone(fixture0CalibrationJson) as unknown);
@@ -37,9 +37,14 @@ function emulatePointer(fine: boolean): void {
   });
 }
 
-function setup(pathway: Pathway = 'discretionary', fine = true) {
+function setup(
+  pathway: Pathway = 'discretionary',
+  fine = true,
+  tweak: (c: Calibration) => void = () => {}
+) {
   emulatePointer(fine);
   const calibration = load();
+  tweak(calibration);
   const store = new PolicyStore(policyFromLevers(DEFAULT_LEVERS));
   const announce = vi.fn();
   void render(RouteTimeline, { props: { store, calibration, pathway, announce } });
@@ -268,6 +273,88 @@ describe.each([768, 375])('RouteTimeline at %i px', (width) => {
     await expect.element(page.getByText('No sourced minimum; numerical limit ×0.05')).toBeVisible();
     expect(store.policy.timing.current.edits).toHaveLength(1);
     expect(calibration.transitions.discretionary.permitFiled).toBeDefined();
+  });
+});
+
+describe('RouteTimeline sources and notes (final review I1, I2)', () => {
+  const link = (name: string) => page.getByRole('link', { name, exact: true });
+
+  it("an unedited stage cites the calibration's own table, with links", async () => {
+    const { calibration } = setup();
+    await segment(/^Permit review/).click();
+    const prov = calibration.transitions.discretionary.permitFiled!.provenance;
+    await expect.element(page.getByText(`${prov.label} (tier ${prov.tier})`)).toBeVisible();
+    await expect
+      .element(link('SF building permits (DataSF i98e-djp9)'))
+      .toHaveAttribute('href', 'https://data.sf.gov/d/i98e-djp9');
+    await expect
+      .element(page.getByText(/^SF as observed: the calibration/))
+      .not.toBeInTheDocument();
+    // A locked stage carries its source too.
+    await segment(/^Construction/).click();
+    await expect
+      .element(link('SF housing unit completions (DataSF j67f-aayr)'))
+      .toHaveAttribute('href', 'https://data.sf.gov/d/j67f-aayr');
+  });
+
+  it('an edited stage says the value is the user’s own and keeps the observed source', async () => {
+    const { calibration } = setup();
+    await segment(/^Permit review/).click();
+    await page.getByRole('button', { name: 'Shorten by 0.5 month' }).click();
+    await expect
+      .element(page.getByText('Your value: 6.5 months (custom, not sourced). Observed: 7 months.'))
+      .toBeVisible();
+    const prov = calibration.transitions.discretionary.permitFiled!.provenance;
+    await expect.element(page.getByText('Observed source:')).toBeVisible();
+    await expect.element(page.getByText(`${prov.label} (tier ${prov.tier})`)).toBeVisible();
+    await expect.element(page.getByText('Sources:', { exact: true })).not.toBeInTheDocument();
+  });
+
+  it("a stage a preset sets cites the preset's sources", async () => {
+    const { store, calibration } = setup();
+    store.apply(
+      (p) => ({
+        ...p,
+        timing: { ...p.timing, current: resolvePreset('benchmarkPermits', calibration) }
+      }),
+      'Preset'
+    );
+    await segment(/^Permit review/).click();
+    await expect
+      .element(page.getByText("Applying San Diego's permit pace to SF permit review (tier 2)"))
+      .toBeVisible();
+  });
+
+  it('pre-application says no new project starts there, dated from ppaShare', async () => {
+    setup();
+    await segment(/^Pre-application/).click();
+    await expect
+      .element(
+        page.getByText(
+          'In the records, no new project starts here since July 2023. ' +
+            'A change here reaches only projects already at this stage.'
+        )
+      )
+      .toBeVisible();
+  });
+
+  it('the pre-application note has no date without a window', async () => {
+    setup('discretionary', true, (c) => {
+      delete c.ppaShare.provenance.window;
+    });
+    await segment(/^Pre-application/).click();
+    await expect
+      .element(page.getByText(/^In the records, no new project starts here\. /))
+      .toBeVisible();
+  });
+
+  it('no pre-application note when new projects start there', async () => {
+    setup('discretionary', true, (c) => {
+      c.ppaShare.discretionary = 0.1;
+    });
+    await segment(/^Pre-application/).click();
+    await expect.element(page.getByText(/^Of projects in this stage/)).toBeVisible();
+    await expect.element(page.getByText(/^In the records, no new project/)).not.toBeInTheDocument();
   });
 });
 

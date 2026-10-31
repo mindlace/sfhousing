@@ -159,4 +159,56 @@ describe('PermittingSection', () => {
       )
       .toBeVisible();
   });
+
+  describe('Sources and tiers (final review I1)', () => {
+    const footer = () => page.getByText('Sources and tiers', { exact: true });
+    const link = (name: string) => page.getByRole('link', { name, exact: true });
+
+    it("cites the observed route shares from the calibration's own provenance", async () => {
+      const { calibration } = setup();
+      await footer().click();
+      const prov = calibration.pathwayForNew.provenance;
+      await expect.element(page.getByText('Route shares, as observed:')).toBeVisible();
+      await expect.element(page.getByText(`${prov.label} (tier ${prov.tier})`)).toBeVisible();
+      await expect
+        .element(link('SF Planning projects (DataSF qvu5-m3a2)'))
+        .toHaveAttribute('href', 'https://data.sf.gov/d/qvu5-m3a2');
+      await expect
+        .element(page.getByText(/^Each stage's own source is in its details/))
+        .toBeVisible();
+    });
+
+    it('shows the No discretionary review citation', async () => {
+      setup();
+      await preset().selectOptions('No discretionary review');
+      await footer().click();
+      await expect
+        .element(
+          page
+            .getByText(
+              'No discretionary review: HCD required action "Eliminate Discretion" (tier 2)'
+            )
+            .first()
+        )
+        .toBeVisible();
+      await expect
+        .element(link('HCD, San Francisco Housing Policy and Practice Review, 2023-10-25').first())
+        .toBeVisible();
+      await expect.element(page.getByText('Route shares, from the preset:')).toBeVisible();
+    });
+
+    it("custom shares are the user's own, with the observed source for comparison", async () => {
+      const { calibration } = setup();
+      const input = share('Permit only');
+      await input.fill('50');
+      input.element().dispatchEvent(new Event('change', { bubbles: true }));
+      await expect.poll(() => value('Permit only')).toBe('50');
+      await footer().click();
+      await expect
+        .element(page.getByText(/^Route shares: your values \(custom, not sourced\)\. Observed: /))
+        .toBeVisible();
+      const prov = calibration.pathwayForNew.provenance;
+      await expect.element(page.getByText(`${prov.label} (tier ${prov.tier})`)).toBeVisible();
+    });
+  });
 });

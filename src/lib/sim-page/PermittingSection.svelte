@@ -4,12 +4,14 @@
   change is one labelled store change (Undo names it); a custom edit stays with the set, so
   choosing a preset replaces the edits (Undo brings them back) but keeps the saved snapshot. Share
   inputs commit on `change`, coalesced per route. Each route's timeline is a `RouteTimeline`
-  (Task 5): segments, chances, drag handles and the stage details editor.
+  (Task 5): segments, chances, drag handles and the stage details editor. A "Sources and tiers"
+  disclosure ends the section: the preset's provenance and the route shares' source.
 -->
 <script lang="ts">
   import { PATHWAYS, type Calibration, type Pathway } from '$lib/timelapse/types';
   import type { PolicyStore } from './policy-store.svelte';
   import RouteTimeline from './RouteTimeline.svelte';
+  import SourceList from './SourceList.svelte';
   import {
     OBSERVED_TIMING,
     PRESETS,
@@ -70,10 +72,15 @@
     announce(msg);
   }
 
+  const sharesList = (r: Record<Pathway, number>) =>
+    PATHWAYS.map((p) => `${PATHWAY_NAMES[p].toLowerCase()} ${r[p]} %`).join(', ');
+
   function sharesText(r: Record<Pathway, number>): string {
-    const parts = PATHWAYS.map((p) => `${PATHWAY_NAMES[p].toLowerCase()} ${r[p]} %`);
-    return `Shares now: ${parts.join(', ')}`;
+    return `Shares now: ${sharesList(r)}`;
   }
+
+  /** The route shares in the records, for comparison with custom shares. */
+  const observedShares = $derived(shownRouteShares(OBSERVED_TIMING.current, calibration));
 
   /** Commits on `change`; an empty or non-numeric entry restores the shown value. */
   function commitShare(p: Pathway, input: HTMLInputElement): void {
@@ -162,4 +169,28 @@
     Family Zoning Plan Local Program lots {current.localProgramStreamlined ? 'use' : 'do not use'} the
     streamlined route.
   </p>
+
+  <details class="text-xs text-gray-700">
+    <summary
+      class="flex min-h-6 cursor-pointer items-center font-semibold text-gray-900 pointer-coarse:min-h-11"
+      >Sources and tiers</summary
+    >
+    <div class="mt-1 flex flex-col gap-1">
+      <p>{preset.name}:</p>
+      <SourceList items={preset.provenance} />
+      {#if current.routeShares !== null}
+        <p>
+          Route shares: your values (custom, not sourced). Observed: {sharesList(observedShares)}.
+        </p>
+        <SourceList items={[calibration.pathwayForNew.provenance]} />
+      {:else if current.presetRouteShares !== null}
+        <p>Route shares, from the preset:</p>
+        <SourceList items={[...preset.provenance, calibration.pathwayForNew.provenance]} />
+      {:else}
+        <p>Route shares, as observed:</p>
+        <SourceList items={[calibration.pathwayForNew.provenance]} />
+      {/if}
+      <p>Each stage's own source is in its details: select the stage in a timeline.</p>
+    </div>
+  </details>
 </div>

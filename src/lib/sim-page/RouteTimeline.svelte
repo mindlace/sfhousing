@@ -20,6 +20,7 @@
   import { MONTH_DAYS } from '$lib/timelapse/time';
   import type { Calibration, ExitReason, Pathway, Provenance } from '$lib/timelapse/types';
   import type { PolicyStore } from './policy-store.svelte';
+  import SourceList from './SourceList.svelte';
   import { PRESETS, routeView, setStageMonths, type StageView } from './timing';
 
   interface Props {
@@ -47,7 +48,6 @@
   const routeName = $derived(ROUTE_NAMES[pathway]);
   const current = $derived(store.policy.timing.current);
   const views = $derived(routeView(calibration, current, pathway));
-  const observedProvenance = PRESETS.find((p) => p.id === 'observed')!.provenance;
   const preset = $derived(PRESETS.find((p) => p.id === current.preset)!);
 
   interface Drag {
@@ -126,13 +126,52 @@
     return `Minimum: ${monthsText(b.min)} (numerical limit ×0.05)`;
   }
 
-  /** The preset's sources when it sets this stage, else the calibration's own (observed). */
-  function sourcesOf(v: StageView): Provenance[] {
-    const touched =
-      !hasEdit(v.stage) &&
-      current.presetTimers.some((t) => t.pathway === pathway && t.stage === v.stage);
-    return touched ? preset.provenance : observedProvenance;
+  /** The calibration's own provenance for this stage's table (tier 0 to 4, with sources). */
+  const tableProvenance = (v: StageView): Provenance[] => {
+    const t = calibration.transitions[pathway][v.stage];
+    return t ? [t.provenance] : [];
+  };
+
+  /**
+   * What the shown months rest on: the user's own value on an edited stage (the table's source
+   * is still listed, for comparison), the preset's sources on a stage its timer sets, else the
+   * calibration's own provenance for the stage's table.
+   */
+  function sourcesOf(v: StageView): { custom: boolean; items: Provenance[] } {
+    if (hasEdit(v.stage)) return { custom: true, items: tableProvenance(v) };
+    const touched = current.presetTimers.some((t) => t.pathway === pathway && t.stage === v.stage);
+    return { custom: false, items: touched ? preset.provenance : tableProvenance(v) };
   }
+
+  const MONTH_NAMES = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December'
+  ];
+
+  /**
+   * Call 6: when no new project on this route starts at pre-application (`ppaShare` is 0), the
+   * pre-application details say so, dated from the start of the `ppaShare` measurement window.
+   */
+  const ppaNote = $derived.by(() => {
+    if (calibration.ppaShare[pathway] !== 0) return null;
+    const from = calibration.ppaShare.provenance.window?.[0];
+    const m = from ? /^(\d{4})-(\d{2})/.exec(from) : null;
+    const since = m ? ` since ${MONTH_NAMES[Number(m[2]) - 1]} ${m[1]}` : '';
+    return (
+      `In the records, no new project starts here${since}. ` +
+      'A change here reaches only projects already at this stage.'
+    );
+  });
 
   const monthsNow = (stage: string) =>
     routeView(calibration, store.policy.timing.current, pathway).find((v) => v.stage === stage)!
@@ -340,6 +379,7 @@
   {#if openView}
     {@const v = openView}
     {@const reach = reachText(v)}
+    {@const src = sourcesOf(v)}
     <div
       id={detailsId(v.stage)}
       class="mt-1 flex flex-col gap-1 rounded-md border border-gray-300 bg-gray-50 p-2 text-xs"
@@ -387,31 +427,27 @@
         <p>Typical: {monthsText(v.months)}</p>
         {#if v.lockReason}<p class="text-gray-700">{v.lockReason}</p>{/if}
       {/if}
+      {#if v.stage === 'preApplication' && ppaNote}<p>{ppaNote}</p>{/if}
       <p>{chancesText(v)}</p>
       {#if v.editable}
         {#if reach}<p>{reach}</p>{/if}
-        {#if v.inFlightClamped}
-          <p class="text-amber-800">
-            Limited to ×0.05 (or ×10) for projects already in the pipeline
-          </p>
-        {/if}
         {#if v.presetLimitedByFloor}
           <p class="text-amber-800">The preset's value is below the minimum; the minimum is used</p>
         {/if}
-        <div class="text-gray-700">
-          <p>Sources:</p>
-          <ul class="ml-4 list-disc">
-            {#each sourcesOf(v) as pv, k (k)}
-              <li>
-                {pv.label} (tier {pv.tier}){#each pv.sources as s, j (j)}; <a
-                    class="underline"
-                    href={s.url}>{s.label}</a
-                  >{/each}
-              </li>
-            {/each}
-          </ul>
-        </div>
       {/if}
+      <div class="text-gray-700">
+        {#if src.custom}
+          <p>
+            Your value: {monthsText(v.months)} (custom, not sourced). Observed: {monthsText(
+              Math.round(v.observedMonths * 2) / 2
+            )}.
+          </p>
+          <p>Observed source:</p>
+        {:else}
+          <p>Sources:</p>
+        {/if}
+        <SourceList items={src.items} />
+      </div>
     </div>
   {/if}
 </div>

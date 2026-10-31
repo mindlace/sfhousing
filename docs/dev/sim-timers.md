@@ -26,8 +26,10 @@ the preset or floor that needs it is unavailable (plan Calls 7 and 8). The UI is
   store change (Undo restores it). Combinations are made by editing.
 - **Editable stages** (Call 5): `preApplication`, `filed`, `permitFiled`, `permitIssued`.
   `entitled` (the applicant's wait to file) and `construction` are shown and locked, each with its
-  reason. Pre-application is editable with a note that no new project starts there since July
-  2023 (`ppaShare` is 0); it still moves pipeline rows.
+  reason. Pre-application is editable. When `calibration.ppaShare[pathway]` is 0, its details
+  say "In the records, no new project starts here since <month year>. A change here reaches only
+  projects already at this stage." The date is the start of `ppaShare.provenance.window` (July
+  2023 in the current data); without a window the note has no date.
 - **Route shares** (Call 10) are whole percentages that always sum to 100. Editing one rescales
   the other two in proportion (an even split when both are 0), with largest-remainder rounding.
   A route with share 0 still shows its timeline, since in-flight projects use it.
@@ -57,9 +59,9 @@ engine's `MIN_SCALE` and `MAX_SCALE`, `stageBounds`). Floors are sourced only (C
 `permitFiled` floor (0.92 month) and the discretionary `filed` floor (0.657 month); the others have
 none, and the details say "No sourced minimum; numerical limit ×0.05". Reaching a bound is shown
 three ways: "min" or "max" badge above the bar, the segment's name ("at the minimum"), and the
-details line "At the minimum"; it is announced. A preset plus a custom edit can push the stacked
-in-flight product past the engine's clamp; the stage then says it is limited for projects already
-in the pipeline.
+details line "At the minimum"; it is announced. A custom edit replaces the preset's timer on its
+stage, and both are clamped to the engine's scale range before they are stored, so a stage never
+carries a product past the clamp.
 
 ## Save and Revert
 
@@ -78,6 +80,19 @@ input (step 0.5), "Shorten by 0.5 month" and "Lengthen by 0.5 month" buttons (sh
 sources. Keyboard edits coalesce in undo (Call 14). Dragging is a pointer enhancement (Call 13,
 WCAG 2.5.7 and 2.5.8): the handles are `aria-hidden`, sit in a row under the bar, and commit one
 store change on pointer-up; the min/max badge sits above the bar.
+
+## Sources in the UI
+
+Every shown number names what it rests on. A stage's details list "Sources:": the preset's
+provenance when a preset timer sets that stage, otherwise the calibration's own provenance for
+the stage's table (`Transition.provenance`, with its links), locked stages included. On a stage
+with a custom edit they say "Your value: N months (custom, not sourced). Observed: M months." and
+list the table's provenance as "Observed source:", so a typed number is never shown with a
+per-record citation. The section ends with a "Sources and tiers" disclosure: the selected
+preset's provenance (for "No discretionary review", the HCD citation), and the route shares'
+source: `pathwayForNew.provenance` when observed, the preset's provenance plus
+`pathwayForNew.provenance` when the preset sets them, or "your values (custom, not sourced)" with
+the observed shares and their source. Both render through `SourceList.svelte`.
 
 ## Reach
 
