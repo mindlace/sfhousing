@@ -43,3 +43,21 @@ describe('header pinned slot', () => {
     await expect.element(page.getByRole('button', { name: 'B' })).toBeInTheDocument();
   });
 });
+
+describe('header status slot', () => {
+  it('shows the status snippet while the child is mounted and clears it on unmount', async () => {
+    const { rerender } = await render(Host, { statusA: 'Saved' });
+    await expect.element(page.getByTestId('status').getByText('Saved')).toBeInTheDocument();
+    await expect.element(page.getByTestId('pinned')).toBeEmptyDOMElement();
+    await rerender({ showA: false, statusA: 'Saved' });
+    await expect.element(page.getByTestId('status')).toBeEmptyDOMElement();
+  });
+
+  it('a page without a status snippet replaces the previous one', async () => {
+    const { rerender } = await render(Host, { statusA: 'Saved' });
+    await rerender({ showA: true, showB: true, statusA: 'Saved' });
+    await expect.element(page.getByTestId('status')).toBeEmptyDOMElement();
+    await rerender({ showA: false, showB: true, statusA: 'Saved' });
+    await expect.element(page.getByTestId('status')).toBeEmptyDOMElement();
+  });
+});

@@ -7,6 +7,11 @@ export class HeaderActions {
   current = $state<Snippet | null>(null);
   /** The page's one always-visible item (the /sim score bar): in the header at every width. */
   pinned = $state<Snippet | null>(null);
+  /**
+   * The page's non-interactive status (the /sim save state): on the left at every width, after
+   * the mode links from md and after the site name below md. Never among the actions.
+   */
+  status = $state<Snippet | null>(null);
 }
 
 /** Root layout only. */
@@ -15,19 +20,26 @@ export function provideHeaderActions(): HeaderActions {
 }
 
 /**
- * Page components: put `snippet` in the header's actions slot, and `opts.pinned` (or nothing) in
- * its pinned slot, while mounted. A page that mounts later replaces both.
+ * Page components: put `snippet` in the header's actions slot, and `opts.pinned` and
+ * `opts.status` (or nothing) in its pinned and status slots, while mounted. A page that mounts
+ * later replaces all three.
  */
-export function useHeaderActions(snippet: Snippet, opts?: { pinned?: Snippet }): void {
+export function useHeaderActions(
+  snippet: Snippet,
+  opts?: { pinned?: Snippet; status?: Snippet }
+): void {
   const slot = getContext<HeaderActions | undefined>(KEY);
   if (!slot) return;
   const pinned = opts?.pinned ?? null;
+  const status = opts?.status ?? null;
   slot.current = snippet;
   slot.pinned = pinned;
+  slot.status = status;
   onDestroy(() => {
     if (slot.current === snippet) {
       slot.current = null;
       if (slot.pinned === pinned) slot.pinned = null;
+      if (slot.status === status) slot.status = null;
     }
   });
 }

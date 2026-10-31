@@ -1,8 +1,9 @@
 <!--
-  The site header. From md: the site name, the mode links, the page's pinned item, then its
-  actions. Below md: the site name, the pinned item and a Menu button whose panel (under the
-  header) holds the mode links and the actions. The actions render once at every width: from md
-  the panel is `display: contents`, so they sit in the header row.
+  The site header. From md: the site name, the mode links, the page's status, then (on the
+  right) the pinned item and the actions. Below md: the site name, the status, the pinned item
+  and a hamburger Menu button whose panel (under the header) holds the mode links and the
+  actions. The status and the actions render once at every width: from md the panel is
+  `display: contents`, so the actions sit in the header row.
 -->
 <script lang="ts">
   import { onMount, tick, type Snippet } from 'svelte';
@@ -11,8 +12,15 @@
   let {
     actions,
     pinned,
+    status,
     routeId = null
-  }: { actions?: Snippet; pinned?: Snippet; routeId?: string | null } = $props();
+  }: {
+    actions?: Snippet;
+    pinned?: Snippet;
+    /** Non-interactive page state (the /sim save state), left-aligned, never in the Menu. */
+    status?: Snippet;
+    routeId?: string | null;
+  } = $props();
 
   const WIDE = '(min-width: 768px)';
   const uid = $props.id();
@@ -100,22 +108,30 @@
   <a href="/" class="shrink-0 font-semibold whitespace-nowrap"
     >SF Housing <span class="sr-only sm:not-sr-only">Simulator</span></a
   >
-  <nav aria-label="Modes" class="flex min-w-0 flex-1 items-center gap-3 text-sm max-md:hidden">
+  <nav aria-label="Modes" class="flex shrink-0 items-center gap-3 text-sm max-md:hidden">
     {@render modeLinks()}
   </nav>
+  <!-- The status, then the space that pushes the pinned item and the actions right. -->
+  <div class="flex min-w-0 flex-1 items-center md:pl-2" data-header-status>
+    {@render status?.()}
+  </div>
   {#if pinned}
-    <div class="flex min-w-0 items-center max-md:ml-auto">{@render pinned()}</div>
+    <div class="flex min-w-0 items-center">{@render pinned()}</div>
   {/if}
   <button
     bind:this={menuButton}
     type="button"
-    class="min-h-6 min-w-6 shrink-0 rounded-md border border-gray-300 px-2 text-sm font-medium md:hidden pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-    class:ml-auto={!pinned}
+    class="inline-flex min-h-8 min-w-8 shrink-0 items-center justify-center rounded-md border border-gray-300 md:hidden pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+    aria-label="Menu"
     aria-expanded={open}
     aria-controls={panelId}
     data-header-menu
-    onclick={toggle}>Menu</button
+    onclick={toggle}
   >
+    <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="none">
+      <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="2" />
+    </svg>
+  </button>
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div
     bind:this={panel}

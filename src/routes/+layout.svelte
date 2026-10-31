@@ -28,6 +28,7 @@
   <SiteHeader
     actions={headerActions.current ?? undefined}
     pinned={headerActions.pinned ?? undefined}
+    status={headerActions.status ?? undefined}
     routeId={page.route.id}
   />
   <main
