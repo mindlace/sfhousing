@@ -39,3 +39,7 @@ Transit spec section 6. `SimMap` draws a transit access surface and the stops as
 - **Why MapLibre layers:** `setOverlayLayers` is single-owner (the generated-buildings deck layers), so transit does not use it.
 - **UI gating:** the header View menu (`src/lib/view/ViewMenu.svelte`; prefs persist in localStorage `sfhousing:view`) is mounted only when `manifest.transit` is set. Without it there are no transit sources, layers or View button.
 - **Known gap:** the stop tooltip is pointer-only. It has no keyboard parity yet.
+
+## Timeline lookups and cohorts
+
+`SimMapHandle.setTimelineLookups(l)` takes a lookup set (`{ chance, typicalMonths }`, from `chanceTable` and `typicalMonths`) and, optionally, a second set under `inFlight` (plan 4, Call 15). Absent `inFlight`, in-flight slots read the top-level (fresh) set, so `/fzp` is unchanged. The packed cell carries `slotCohort: Uint8Array` (0 fresh, 1 in flight; in the transferables and validated: wrong length or a value above 1 fails). The chance texture has 36 rows, `chanceRow(pathway, stage, cohort) = cohort · 18 + pathway · 6 + stage`; a bar's `segRow` and typical days read its slot's cohort. Lookups compare by identity, so send one object per posted `lookups`. The shader is unchanged (the row index is per-instance data). The map does not apply the in-flight `chanceShift` (a card does): see [sim-page.md](sim-page.md), Known gaps. Details: [fzp-mode.md](fzp-mode.md), "Cohort-aware bars".

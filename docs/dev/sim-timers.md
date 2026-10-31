@@ -3,7 +3,88 @@
 Plan: `docs/superpowers/plans/` (plan 4 of 5, permitting timers). The sourced constants live in
 `src/lib/sim-page/timing-sources.ts`; each carries a `Provenance` (tier, label, sources, method)
 that the stage details show. A value that could not be sourced is `{ value: null, reason }`, and
-the preset or floor that needs it is unavailable (plan Calls 7 and 8).
+the preset or floor that needs it is unavailable (plan Calls 7 and 8). The UI is
+`PermittingSection.svelte` and `RouteTimeline.svelte` in `src/lib/sim-page/`; the rules are in
+`timing.ts`. See also [sim-page.md](sim-page.md) and [sim-levers.md](sim-levers.md).
+
+## The timing model
+
+- **Width is the typical (median) duration** of leaving the stage by any outcome (`typicalMonths`),
+  not the mean the spec's wording suggests (Call 1). The UI says "typical".
+- **A duration edit is stored as a scale** (`TimerEdit`, Call 2), reach `'all'`: custom months `m`
+  on a stage are `scale = m / typical`, where `typical` is the typical months with the preset's
+  scale applied for new projects. A custom stage edit **replaces** the preset's value on that
+  stage for every project (ruling): stacking it on a preset scale made an edit that slowed
+  in-flight projects against what the user typed. The edit is `scale = months / typical` of the
+  observed table, reach `'all'`, so every project gets the typed months. The shown months are
+  rounded to 0.5.
+- **The policy carries resolved numbers** (Call 3): `TimingSet.presetTimers` and
+  `presetRouteShares` are resolved from the calibration when the preset is chosen, so
+  `compileLevers` needs no calibration and a published policy is deterministic.
+- **One preset at a time** (Call 4). Choosing one replaces the current set, edits included, in one
+  store change (Undo restores it). Combinations are made by editing.
+- **Editable stages** (Call 5): `preApplication`, `filed`, `permitFiled`, `permitIssued`.
+  `entitled` (the applicant's wait to file) and `construction` are shown and locked, each with its
+  reason. Pre-application is editable with a note that no new project starts there since July
+  2023 (`ppaShare` is 0); it still moves pipeline rows.
+- **Route shares** (Call 10) are whole percentages that always sum to 100. Editing one rescales
+  the other two in proportion (an even split when both are 0), with largest-remainder rounding.
+  A route with share 0 still shows its timeline, since in-flight projects use it.
+- **Local Program lots** stay on the streamlined route; the section says so with the preset's value
+  (Call 11).
+- **Chances** of moving on and of each exit are shown, never edited.
+
+## Presets and their rules
+
+| Preset                                            | Reach | Rule                                                                                                                                                                                                                                               | Tier    |
+| ------------------------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `observed`, "SF as observed"                      | none  | No timers, observed route shares.                                                                                                                                                                                                                  | 0       |
+| `sb423Clock`, "SB 423 approval clock"             | new   | Streamlined `filed` scaled by `s = min(1, D / q90)`, `D = (90p + 180(1-p)) / 30.4375` months, `p = SB423_SMALL_SHARE`, `q90` the month by which 90% of outcomes have happened. Keeps the observed route shares (`SB423_ROUTE_SHIFT` is unsourced). | 1, 0, 4 |
+| `noDiscretionary`, "No discretionary review"      | new   | The discretionary share moves to streamlined; permit-only is kept.                                                                                                                                                                                 | 2       |
+| `benchmarkPermits`, "Permits at San Diego's pace" | all   | `permitFiled` on every route scaled by 134 / 280 = 0.4786. The ratio's inputs are tier 1; applying it to our stage is an inference, tier 2.                                                                                                        | 1 to 2  |
+| `ceqaInfill`, "CEQA infill exemption"             | new   | **Unavailable, not offered**: no sourced time effect (`CEQA_FILED_RATIO` is null). Kept in `PRESETS` with `available: false`.                                                                                                                      | n/a     |
+
+Every preset keeps Local Program lots on streamlined. A preset scale below a stage's floor is
+raised to the floor and the stage says "Limited by the minimum". Inferences are tier 2
+(ruling: the evidence hierarchy puts inferences at tier 2). The preset picker lists only available
+presets. A preset the sources cannot support is not offered (needs a source: `ceqaInfill`).
+
+## Floors and bounds
+
+A stage's minimum months is `max(floor, 0.05 x typical)` and its maximum is `10 x typical` (the
+engine's `MIN_SCALE` and `MAX_SCALE`, `stageBounds`). Floors are sourced only (Call 7): the
+`permitFiled` floor (0.92 month) and the discretionary `filed` floor (0.657 month); the others have
+none, and the details say "No sourced minimum; numerical limit x0.05". Reaching a bound is shown
+three ways: "min" or "max" badge above the bar, the segment's name ("at the minimum"), and the
+details line "At the minimum"; it is announced. A preset plus a custom edit can push the stacked
+in-flight product past the engine's clamp; the stage then says it is limited for projects already
+in the pipeline.
+
+## Save and Revert
+
+Save ("Save timelines") stores the current set as `timing.saved` with the label shown at that
+moment, in memory (plan 5 persists it). Revert reads "Revert to saved" when there is a snapshot
+and "Revert to <preset name>" otherwise. Choosing a preset keeps the saved snapshot. Each is one
+labelled store change, so Undo covers it. Editing a preset's set makes the label
+"Custom (from <preset name>)".
+
+## The timeline UI
+
+Each route's bar is a roving-tabindex group of segment buttons (Left, Right, Home, End move;
+Enter or a click opens the stage details). Names read "<Stage>, <months> months, <advance>% move
+on[, locked][, at the minimum]" ("1 month" is singular). The details hold the "Typical months"
+input (step 0.5), a "-" and a "+" button, the minimum, the chances, the reach line and the
+sources. Keyboard edits coalesce in undo (Call 14). Dragging is a pointer enhancement (Call 13,
+WCAG 2.5.7 and 2.5.8): the handles are `aria-hidden`, sit in a row under the bar, and commit one
+store change on pointer-up; the min/max badge sits above the bar.
+
+## Reach
+
+Permit-office speedups and custom edits reach every project (`'all'`); approval-route and
+entitlement changes reach only projects filing after the policy starts (`'new'`). The details say
+which: "Applies to every project, including those already in this stage" or "Applies to projects
+filing after the policy starts". On the map, bars read the cohort's own lookups (Call 15); see
+[fzp-mode.md](fzp-mode.md).
 
 ## Evidence
 
@@ -62,3 +143,20 @@ caveats are carried in both values' provenance:
   `NO_DISCRETIONARY_BASIS` are tier 2, inferences (medians read as a minimum; a hearing notice
   applied to every discretionary project; a definitional route shift). Month conversions use the
   codebase's `MONTH_DAYS = 30.436875`, not 30.4375. The 90/180-day clock is at (d)(1).
+
+## Open questions
+
+Run under each recommendation until the partner decides:
+
+1. `entitled` is locked (the applicant's wait to file).
+2. "Meets the SB 423 clock" means 90% of the stage's outcomes by the deadline
+   (`SB423_DEADLINE_QUANTILE`, tier 4, labelled); "median at the deadline" is far weaker.
+3. Presets that cannot be sourced are left out of the picker (`ceqaInfill`: needs a source).
+4. Pre-application shows, editable, with the no-new-projects note.
+5. The benchmark is San Diego only. The SF figure stays 280 days on the same "issued in window"
+   basis as San Diego's 134, with the caveats above; SF's own recent 114 days would turn the
+   preset into a slowdown (1.18).
+6. Under "No discretionary review" all discretionary projects go to streamlined.
+7. Floors are sourced only; unsourced stages are bounded by the numerical limit and say so.
+8. SB 423 already applies in SF, yet the observed streamlined filed-to-entitled median is 7 months
+   against a 90-day clock. The preset models "the clock met" and says so.
