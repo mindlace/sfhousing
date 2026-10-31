@@ -12,6 +12,12 @@ export class HeaderActions {
    * the mode links from md and after the site name below md. Never among the actions.
    */
   status = $state<Snippet | null>(null);
+  /**
+   * The registration that filled the slots. Not the snippet: two instances of one component
+   * (FzpMode on /s/<id>, then on /sim) can register the same snippet object, and the new page
+   * mounts before the old one is destroyed.
+   */
+  owner: object | null = null;
 }
 
 /** Root layout only. */
@@ -32,15 +38,17 @@ export function useHeaderActions(
   if (!slot) return;
   const pinned = opts?.pinned ?? null;
   const status = opts?.status ?? null;
+  const owner = {};
+  slot.owner = owner;
   slot.current = snippet;
   slot.pinned = pinned;
   slot.status = status;
   onDestroy(() => {
-    if (slot.current === snippet) {
-      slot.current = null;
-      if (slot.pinned === pinned) slot.pinned = null;
-      if (slot.status === status) slot.status = null;
-    }
+    if (slot.owner !== owner) return;
+    slot.owner = null;
+    slot.current = null;
+    slot.pinned = null;
+    slot.status = null;
   });
 }
 
