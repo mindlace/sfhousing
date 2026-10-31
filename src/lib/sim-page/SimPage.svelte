@@ -11,7 +11,10 @@
   Protect tool through the same `setTool`, so on a phone it too closes the sheet for the tool bar.
   Plan 5 (Task 5): the policy autosaves (`sfhousing:sim:v1`) and is restored on mount, reconciled
   with the calibration (Calls 11 and 12); `start=fzp` defers both until the first change (Call
-  13). The header gets the save state (its status slot) and Publish.
+  13). The header gets the save state (its status slot) and Publish. In `mode: 'view'` (the
+  read-only /s/<id>, Task 6) the shared policy opens reconciled with the calibration (Call 7, with
+  the timing notice when anything moved); there is no stroke controller, no tools, no autosave and
+  no Publish, and the panel is the summary. The lot dots still draw.
 -->
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
@@ -59,6 +62,8 @@
   import { LeverSync, PolicyStore } from './policy-store.svelte';
   import PermittingSection from './PermittingSection.svelte';
   import PolicyPanel from './PolicyPanel.svelte';
+  import PolicySummary from './PolicySummary.svelte';
+  import { lotStatus, protectLotStatus } from './brush-summary';
   import ProtectionsSection from './ProtectionsSection.svelte';
 
   interface Props {
@@ -114,13 +119,30 @@
     fetchFn = undefined
   }: Props = $props();
 
+  /**
+   * A given policy (the shared document's) opens reconciled with the calibration it runs on
+   * (Call 7), with the timing notice when anything moved.
+   */
+  const opened = untrack(() =>
+    initialPolicy
+      ? restoreSimDoc(
+          {
+            plan: { schema: 1, kind: 'sim', datasetVersion, policy: initialPolicy },
+            notice: null
+          },
+          calibration
+        )
+      : null
+  );
   /** The document the session opens with; a remount (new load) starts over. */
   const firstPolicy = untrack(
-    () => initialPolicy ?? policyFromLevers(start === 'fzp' ? FZP_COMPAT_LEVERS : DEFAULT_LEVERS)
+    () =>
+      opened?.doc.policy ?? policyFromLevers(start === 'fzp' ? FZP_COMPAT_LEVERS : DEFAULT_LEVERS)
   );
+  /** Call 12: the policy without its lot lists, until LeverSync resolves the brushes. */
   const initial = untrack(() =>
-    initialPolicy
-      ? (compileLevers(initialPolicy, () => []) ?? DEFAULT_LEVERS)
+    opened
+      ? (compileLevers(firstPolicy, () => []) ?? DEFAULT_LEVERS)
       : start === 'fzp'
         ? FZP_COMPAT_LEVERS
         : DEFAULT_LEVERS
@@ -155,7 +177,7 @@
       ? { schema: 1, kind: 'sim', datasetVersion, policy: store.policy }
       : { schema: 1, kind: 'sim', datasetVersion, title, policy: store.policy }
   );
-  let notices = $state<SimNotice[]>([]);
+  let notices = $state<SimNotice[]>(untrack(() => opened?.notices ?? []));
   /** Autosave writes once this is set: after the restore, or on the first change if deferred. */
   let saving = $state(false);
 
@@ -180,6 +202,8 @@
   }
 
   onMount(() => {
+    // A given policy's brushes are resolved, then its full levers sent (Call 12).
+    if (opened) sync.update(store.policy);
     if (persistMode === 'off') return;
     if (persistMode === 'restore') {
       restore();
@@ -312,8 +336,19 @@
   let dead = false;
   let phoneBar = $state<PhoneToolBar>();
 
+  /** The view's map handle: it draws the lot dots only (no stroke controller, no ring). */
+  let viewHandle: SimMapHandle | null = null;
+
   function attachController(): void {
-    if (dead || controller || !mapHandle || !deckLayers) return;
+    if (dead || !mapHandle || !deckLayers) return;
+    if (mode === 'view') {
+      if (viewHandle === mapHandle) return;
+      const h = mapHandle;
+      viewHandle = h;
+      lotsSlot = createOverlayMux((l) => h.setOverlayLayers(l)).slot('lots');
+      return;
+    }
+    if (controller) return;
     const map = mapHandle.getMap();
     if (!map) return;
     const h = mapHandle;
@@ -410,9 +445,9 @@
     });
   }
 
-  // Asked for once, when the panel first opens.
+  // Asked for once, when the panel first opens (the view's summary needs no catalog).
   $effect(() => {
-    if (!policyOpen) return;
+    if (!policyOpen || mode === 'view') return;
     untrack(() => {
       if (catalogWanted) return;
       catalogWanted = true;
@@ -435,6 +470,16 @@
   }
 
   const prefersDark = new MediaQuery('(prefers-color-scheme: dark)');
+
+  /** The summary's lot counts: a brush by its id, or the brushed protections (`'protect'`). */
+  function lotsOf(key: string): number | null {
+    const p = store.policy;
+    const result = (k: string) => sync.result(k);
+    const b = key === 'protect' ? null : p.brushes.find((x) => x.id === key);
+    if (key !== 'protect' && !b) return null;
+    const s = b ? lotStatus(b, result) : protectLotStatus(p, result);
+    return s.kind === 'found' ? s.lots : null;
+  }
 
   // The lot dots: every lot the user layer or the brushed protections touch, at its label point.
   $effect(() => {
@@ -506,6 +551,10 @@
   <SimNotices {notices} ondismiss={dismissNotice} />
 {/snippet}
 
+{#snippet policySummary()}
+  <PolicySummary policy={store.policy} {calibration} {lotsOf} />
+{/snippet}
+
 {#snippet timingSection()}
   {#if calibration}
     <PermittingSection {store} {calibration} announce={(m) => brush.announce(m, ANNOUNCE_MS)} />
@@ -519,10 +568,15 @@
     open={policyOpen}
     focusOnOpen={policyFocus}
     onclose={() => void closePolicy()}
-    view={forms.current && catalog && !wide.current ? 'add-brush' : 'sections'}
+    view={mode === 'view'
+      ? 'summary'
+      : forms.current && catalog && !wide.current
+        ? 'add-brush'
+        : 'sections'}
     onback={() => forms.close()}
     timingSummary={calibration ? timingLabel(store.policy.timing.current) : undefined}
     timing={calibration ? timingSection : undefined}
+    summary={policySummary}
   >
     {#snippet zoning()}
       <BrushSection
@@ -561,7 +615,7 @@
       {/if}
     {/snippet}
   </PolicyPanel>
-  {#if !wide.current && !policyOpen && tools.tool !== 'move'}
+  {#if mode === 'edit' && !wide.current && !policyOpen && tools.tool !== 'move'}
     <PhoneToolBar bind:this={phoneBar} {tools} ontool={setTool} ondone={openPolicy} />
   {/if}
   <p role="status" aria-live="polite" class="sr-only">{brush.announcement}</p>
@@ -579,7 +633,7 @@
   {onurlseed}
   {levers}
   {actions}
-  status={saveState}
+  status={mode === 'edit' ? saveState : undefined}
   notices={sessionNotices}
   {panel}
   onmapready={onMapReady}

@@ -87,6 +87,11 @@ export type ShareCopy = { -readonly [K in keyof typeof COPY]: string } & {
   n6: (docV: string, current: string) => string;
   remixedToast: (label: string) => string;
   remixConfirm: (n: number) => string;
+  /** The shared banner's fallback title and its label ("Shared plan"). */
+  untitled: string;
+  shared: string;
+  /** Where the shared banner's "Start your own" goes: the kind's own editor. */
+  startHref: string;
 };
 
 const toPolicy = (s: string): string =>
@@ -105,7 +110,10 @@ const PLAN_COPY: ShareCopy = {
   n5,
   n6,
   remixedToast,
-  remixConfirm
+  remixConfirm,
+  untitled: 'Untitled plan',
+  shared: 'Shared plan',
+  startHref: '/'
 };
 
 const SIM_COPY: ShareCopy = {
@@ -120,7 +128,10 @@ const SIM_COPY: ShareCopy = {
   n6: (docV, current) => toPolicy(n6(docV, current)),
   remixedToast,
   remixConfirm: () =>
-    'Replace your current policy with a copy of this one? Your current policy will be lost unless you publish it first.'
+    'Replace your current policy with a copy of this one? Your current policy will be lost unless you publish it first.',
+  untitled: 'Untitled policy',
+  shared: 'Shared policy',
+  startHref: '/sim'
 };
 
 /** The share-flow strings for a document kind. `copyFor('plan')` is today's plan copy. */

@@ -121,6 +121,24 @@ describe('SharedBanner', () => {
     }
   });
 
+  it('the policy kind says policy, and Start your own goes to /sim', async () => {
+    render(SharedBanner, {
+      id: 'abc23456',
+      createdAt: '2026-10-30T12:00:00.000Z',
+      datasetNotice: 'none',
+      planVersion: '2026-01-01',
+      currentVersion: '2026-09-01',
+      kind: 'sim',
+      confirmText: () => null,
+      onremix: () => {}
+    });
+    const region = page.getByRole('region', { name: 'Shared policy' });
+    await expect.element(region.getByText('Untitled policy', { exact: true })).toBeVisible();
+    await expect.element(region).toHaveTextContent(/Untitled policy · Shared policy · published/);
+    const start = region.getByRole('link', { name: 'Start your own' });
+    await expect.element(start).toHaveAttribute('href', '/sim');
+  });
+
   it('renders a title containing markup as literal text', async () => {
     setup({ title: '<b>"x"</b>' });
     await expect.element(banner().getByText('<b>"x"</b>', { exact: true })).toBeVisible();

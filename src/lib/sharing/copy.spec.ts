@@ -3,6 +3,7 @@ import {
   COPY,
   LIMIT_KB,
   cannotRead,
+  copyFor,
   formatPublished,
   kb,
   n3,
@@ -66,5 +67,12 @@ describe('copy', () => {
     expect(serverMessage('rate_limited')).toBe(COPY.rateLimited);
     expect(serverMessage('not_found')).toBe('Plan not found.');
     expect(serverMessage('server_error')).toBe(COPY.network);
+  });
+});
+
+describe('copyFor: the banner words', () => {
+  it('names the kind in the shared banner, the plan wording unchanged', () => {
+    expect(copyFor('plan')).toMatchObject({ untitled: 'Untitled plan', shared: 'Shared plan' });
+    expect(copyFor('sim')).toMatchObject({ untitled: 'Untitled policy', shared: 'Shared policy' });
   });
 });

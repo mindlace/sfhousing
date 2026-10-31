@@ -36,7 +36,6 @@
   let cancelEl: HTMLButtonElement | undefined = $state();
   let pending = $state('');
   const copy = $derived(copyFor(kind));
-  const noun = $derived(kind === 'sim' ? 'policy' : 'plan');
 
   const notice = $derived(
     datasetNotice === 'remix'
@@ -71,19 +70,21 @@
   const secondary = `${btn} border border-gray-400 bg-white text-gray-800 hover:bg-gray-50`;
 </script>
 
-<!-- Sticky at the top of the /p/:id page column; every row wraps at 375 px. -->
+<!-- Sticky at the top of the /p/:id and /s/:id page column; every row wraps at 375 px. -->
 <section
-  aria-label="Shared {noun}"
+  aria-label={copy.shared}
   class="sticky top-0 z-30 border-b border-gray-300 bg-white px-4 py-2 text-sm text-gray-900"
 >
   <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
     <p class="min-w-0 flex-1 basis-64 break-words">
-      <strong>{title ?? `Untitled ${noun}`}</strong> · Shared {noun} · published
+      <strong>{title ?? copy.untitled}</strong> · {copy.shared} · published
       {formatPublished(createdAt)}
     </p>
     <div class="flex flex-wrap gap-2">
       <button type="button" class={primary} onclick={startRemix}>Remix</button>
-      <a href="/" class="{secondary} inline-flex items-center justify-center">Start your own</a>
+      <a href={copy.startHref} class="{secondary} inline-flex items-center justify-center"
+        >Start your own</a
+      >
     </div>
   </div>
   {#if notice}

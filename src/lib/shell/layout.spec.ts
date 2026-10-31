@@ -5,6 +5,7 @@ describe('isFullHeightRoute', () => {
   it.each([
     ['/', true],
     ['/p/[id]', true],
+    ['/s/[id]', true],
     ['/about', false],
     ['/attribution', false],
     [null, false],
