@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.0](https://github.com/mindlace/sfhousing/compare/v0.5.0...v0.6.0) (2026-10-31)
+
+
+### Features
+
+* **sim:** /sim page with zoning layers, brushes and protections ([#41](https://github.com/mindlace/sfhousing/issues/41)) ([20f28f8](https://github.com/mindlace/sfhousing/commit/20f28f83d870a814be76820fc207bd746d62041e))
+* **sim:** permitting timelines, presets and route shares on /sim ([#43](https://github.com/mindlace/sfhousing/issues/43)) ([c51d6d2](https://github.com/mindlace/sfhousing/commit/c51d6d2388bb485fcee635a6f1deedb967b3d595))
+* **sim:** publish, autosave and share /sim policies ([#44](https://github.com/mindlace/sfhousing/issues/44)) ([b0e9083](https://github.com/mindlace/sfhousing/commit/b0e9083a3ef6a559fac8bf483364679a466656f0))
+
 ## [0.5.0](https://github.com/mindlace/sfhousing/compare/v0.4.1...v0.5.0) (2026-10-30)
 
 
