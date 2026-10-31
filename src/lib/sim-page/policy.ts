@@ -340,6 +340,8 @@ function parseTimingSet(v: unknown, path: string, mode: PresetLayerMode): Timing
     routeShares: percents(r.routeShares, j(path, 'routeShares')),
     localProgramStreamlined: bool(r.localProgramStreamlined, j(path, 'localProgramStreamlined'))
   };
+  // Reconcile re-derives the rest of the layer, but timers compound, so these always hold.
+  editableOnce(set.presetTimers, j(path, 'presetTimers'));
   if (mode === 'strict') checkPresetLayer(set, path);
   return set;
 }

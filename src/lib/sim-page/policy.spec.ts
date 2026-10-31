@@ -506,6 +506,13 @@ describe('parseSimPolicy preset layer modes', () => {
     expect(pathOf(scaled)).toBe('timing.current.presetTimers[0]');
   });
 
+  it('reconcile still rejects duplicate preset timers and a non-editable stage', () => {
+    const dup = raw((t) => t.current.presetTimers.push({ ...t.current.presetTimers[0] }));
+    const locked = raw((t) => (t.current.presetTimers[0].stage = 'entitled'));
+    expect(() => parseSimPolicy(dup, lenient)).toThrow(PolicyFormatError);
+    expect(() => parseSimPolicy(locked, lenient)).toThrow(PolicyFormatError);
+  });
+
   it('both modes reject a new-reach edit and duplicate edits', () => {
     const reach = raw((t) => (t.current.edits[0].reach = 'new'));
     const dup = raw((t) => t.current.edits.push({ ...t.current.edits[0] }));
