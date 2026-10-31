@@ -106,7 +106,7 @@
   class="relative flex h-12 items-center justify-between gap-2 border-b px-4"
 >
   <a href="/" class="shrink-0 font-semibold whitespace-nowrap"
-    >SF Housing <span class="sr-only sm:not-sr-only">Simulator</span></a
+    >SF Housing <span class="sr-only lg:not-sr-only">Simulator</span></a
   >
   <nav aria-label="Modes" class="flex shrink-0 items-center gap-3 text-sm max-md:hidden">
     {@render modeLinks()}

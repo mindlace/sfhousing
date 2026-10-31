@@ -185,6 +185,8 @@
       restore();
       saving = true;
     } else {
+      // A corrupt or future record is kept under the corrupt key before the first write.
+      autosave.guard();
       const saved = localDoc(storage(), SIM_CODEC);
       if (saved && !isDefaultPolicy(saved.policy))
         notices = [
@@ -211,6 +213,8 @@
         saving = true;
         // The saved policy is about to be replaced: the notice that it is kept no longer holds.
         dismissNotice('fzp-kept');
+        // Read again: another tab may have written since mount.
+        autosave.guard();
       }
       autosave.schedule(d);
     });

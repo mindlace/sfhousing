@@ -319,6 +319,32 @@ describe('Autosave.setLastPublished', () => {
   });
 });
 
+describe('Autosave.guard (deferred start, no restore)', () => {
+  it('a corrupt record is preserved before the first write, and nothing is written by guard', () => {
+    const s = new MemoryStorage();
+    s.setItem(PLAN_KEY, '{nope');
+    const setItem = vi.spyOn(s, 'setItem');
+    const a = new Autosave({ currentVersion: 'fixture-1', storage: () => s, now: () => NOW });
+    a.guard();
+    expect(setItem).not.toHaveBeenCalled();
+    a.schedule(plan(1));
+    vi.advanceTimersByTime(500);
+    expect(corruptKeys(s).map((k) => s.getItem(k))).toEqual(['{nope']);
+    expect(stored(s).plan).toBe(serializePlan(plan(1)));
+    expect(a.status).toBe('saved');
+  });
+
+  it('a readable record is left alone and the first change still writes', () => {
+    const s = seed(plan(2));
+    const a = new Autosave({ currentVersion: 'fixture-1', storage: () => s, now: () => NOW });
+    a.guard();
+    a.schedule(plan(2)); // equal to what is stored, but nothing was restored: written
+    vi.advanceTimersByTime(500);
+    expect(corruptKeys(s)).toEqual([]);
+    expect(stored(s).plan).toBe(serializePlan(plan(2)));
+  });
+});
+
 describe('Autosave writable (ruling R4)', () => {
   // A SimDoc over OPS_MAX strokes fails simDocProblems; the lenient load would read it back as
   // corrupt, so writing it would lose the policy on reload.

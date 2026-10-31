@@ -2,9 +2,9 @@
   The /sim score bar in the header's pinned slot (layout ruling 1): one button, "{n} homes added"
   at the scrubbed day (`at.total`, never the plan effect), that opens the score details under the
   header: a popover at the top right from md, a full-width disclosure below md. Both end above the
-  scrubber dock (`--fzp-dock-top`, published on :root by FzpMode). Below md the word "added" is
+  scrubber dock (`--fzp-dock-top`, published on :root by FzpMode). Below lg the word "added" is
   visually hidden ("{n} homes"; the name keeps it), so the header row fits the save state at
-  375 px (plan 5 layout). The button text is not a live
+  375 px and, with the site name's "Simulator" also hidden below lg, at 768 px (plan 5 layout). The button text is not a live
   region; one polite sr-only region speaks only while paused, 1,000 ms after the day settles.
 -->
 <script lang="ts">
@@ -98,7 +98,7 @@
   aria-busy={busy}
   data-testid="score-bar"
   onclick={toggle}
-  >{#if at}{homesAdded(at).replace(/added$/, '')}<span class="max-md:sr-only">added</span
+  >{#if at}{homesAdded(at).replace(/added$/, '')}<span class="max-lg:sr-only">added</span
     >{:else}Simulating…{/if}</button
 >
 

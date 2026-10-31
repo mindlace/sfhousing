@@ -289,10 +289,10 @@ describe('SiteHeader', () => {
         render: () => '<div data-testid="status-slot"></div>'
       }));
       const wide = createRawSnippet(() => ({
-        // As ScoreBar renders it: "added" is visually hidden below md.
+        // As ScoreBar renders it: "added" is visually hidden below lg.
         render: () =>
           '<button class="rounded-md border px-2 text-sm font-semibold whitespace-nowrap">' +
-          '12,345 homes <span class="max-md:sr-only">added</span></button>'
+          '12,345 homes <span class="max-lg:sr-only">added</span></button>'
       }));
 
       it('from md it sits right after the Simulate link, left of the actions', async () => {
@@ -310,6 +310,51 @@ describe('SiteHeader', () => {
         expect(s.left - simulate.getBoundingClientRect().right).toBeLessThanOrEqual(24);
         expect(s.right).toBeLessThanOrEqual(score.getBoundingClientRect().left);
       });
+
+      // The /sim row as it renders from md: the real chip, the score bar and the widest actions.
+      const btn = 'min-h-6 min-w-6 rounded-md border px-2 text-sm font-medium whitespace-nowrap';
+      const simActions = createRawSnippet(() => ({
+        render: () =>
+          `<div class="contents"><button class="${btn}">Policy</button>` +
+          `<button class="${btn} bg-blue-700 text-white">Share link</button>` +
+          `<button class="${btn}">Another future</button></div>`
+      }));
+      for (const width of [768, 1024]) {
+        it(`at ${width}px "Autosave off", the nav and every action fit without overlap`, async () => {
+          await page.viewport(width, 768);
+          render(SiteHeader, { routeId: '/sim', actions: simActions, pinned: wide, status });
+          const host = page.getByTestId('status-slot').element() as HTMLElement;
+          const a = mount(SaveIndicator, {
+            target: host,
+            props: { status: 'off', align: 'start' }
+          });
+          try {
+            const chip = page.getByRole('button', { name: 'Autosave off' });
+            await expect.element(chip).toBeVisible();
+            const banner = page.getByRole('banner').element() as HTMLElement;
+            expect(banner.getBoundingClientRect().height).toBe(48);
+            expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);
+            expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+            const box = (el: Element) => el.getBoundingClientRect();
+            const row = [
+              page.getByRole('link', { name: /SF Housing/ }).element(),
+              page.getByRole('navigation', { name: 'Modes' }).element(),
+              chip.element(),
+              page.getByRole('button', { name: '12,345 homes added' }).element(),
+              page.getByRole('button', { name: 'Policy' }).element(),
+              page.getByRole('button', { name: 'Share link' }).element(),
+              page.getByRole('button', { name: 'Another future' }).element()
+            ];
+            for (let i = 1; i < row.length; i++)
+              expect(box(row[i]).left, `item ${i} after item ${i - 1}`).toBeGreaterThanOrEqual(
+                box(row[i - 1]).right
+              );
+            expect(box(row.at(-1)!).right).toBeLessThanOrEqual(width);
+          } finally {
+            await unmount(a);
+          }
+        });
+      }
 
       it('at 375px it sits right after the site title, outside the Menu', async () => {
         await page.viewport(375, 812);

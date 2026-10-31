@@ -453,6 +453,34 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
     expect(storedDoc(mem).policy.timing.current.preset).toBe('noDiscretionary');
   });
 
+  for (const [kind, raw] of [
+    ['a corrupt', '{nope'],
+    [
+      'a future-schema',
+      JSON.stringify({
+        v: 1,
+        savedAt: 'x',
+        plan: JSON.stringify({ schema: 2, kind: 'sim', datasetVersion: 'fixture-0', policy: {} })
+      })
+    ]
+  ] as const) {
+    it(`deferred start keeps ${kind} record under the corrupt key on the first change`, async () => {
+      await page.viewport(1024, 768);
+      const mem = new MemoryStorage();
+      mem.setItem(SIM_KEY, raw);
+      await setup({ storage: () => mem, start: 'fzp', persist: 'deferred' });
+      await timingToggle().click();
+      await presetPicker().selectOptions('No discretionary review');
+      await expect
+        .poll(() => mem.getItem(SIM_KEY) !== raw && storedDoc(mem).policy.timing.current.preset, {
+          timeout: 2000
+        })
+        .toBe('noDiscretionary');
+      const kept = mem.keys().filter((k) => k.startsWith('sfhousing:sim:corrupt:'));
+      expect(kept.map((k) => mem.getItem(k))).toEqual([raw]);
+    });
+  }
+
   it('deferred start keeps the saved policy', async () => {
     await page.viewport(1024, 768);
     const mem = seeded();
