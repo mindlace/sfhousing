@@ -34,7 +34,7 @@
 2. **Run pressed while the latest policy is still resolving or debouncing.** Expected: the run does not play the stale timeline; it starts playing once the score is current, and the existing pending notice shows meanwhile. Test in Task 7.
 3. **Undo back to the default policy.** Expected: the comparison returns to pre-FZP and the copy to "FZP added … vs no FZP". Test in Task 3 (`compileLevers`) and Task 5 (panel copy).
 4. **A schema-1 policy in autosave or behind a `/s/<id>` link.** Expected: autosave keeps it under the corrupt key with notice N1 and opens the default; `/s/<id>` shows the unparsable-policy page, not a 500. Test in Task 3.
-5. **A rule at or below a lot's FZP height on a density-capped lot, and transit bands whose outer band is taller than the inner.** Expected: the rule leaves the FZP row (stories, cap, yields, hostable) untouched; the taller band wins wherever both apply. Test in Task 1 (engine) and Task 3 (compile).
+5. **A rule at or below a lot's FZP height on a density-capped lot, and transit bands whose outer band is taller than the inner.** Expected: the rule leaves the FZP row (stories, cap, yields, hostable) untouched. Bands must not get taller with distance (partner ruling): ordered by `maxM`, each band's stories are ≤ the band inside it. The document parser rejects a non-monotone band list, and the form refuses to save one ("An outer band can't be taller than the band inside it"). With monotone bands, "highest wins" gives each lot its innermost band. Test in Task 1 (engine), Task 3 (compile, parse, form).
 
 ---
 
@@ -376,11 +376,11 @@ it('the default policy compiles to DEFAULT_LEVERS', () => {
   expect(compileLevers(DEFAULT_POLICY, () => [])).toEqual(DEFAULT_LEVERS);
 });
 
-it('transit bands compile to rules; the taller band wins where both apply', () => {
-  const p = { ...DEFAULT_POLICY, rules: [T([{ maxM: 402, stories: 4 }, { maxM: 805, stories: 6 }])] };
+it('transit bands compile to rules; the inner band wins where both apply', () => {
+  const p = { ...DEFAULT_POLICY, rules: [T([{ maxM: 402, stories: 8 }, { maxM: 805, stories: 5 }])] };
   const [outer, inner] = ruleQueries(p.rules[0]).map(queryKey);
   const l = compileLevers(p, lotsOf({ [outer]: ['a', 'b'], [inner]: ['a'] }))!;
-  expect(l.rules).toEqual([{ lots: ['a', 'b'], stories: 6 }, { lots: ['a'], stories: 4 }]);
+  expect(l.rules).toEqual([{ lots: ['a', 'b'], stories: 5 }, { lots: ['a'], stories: 8 }]);
   expect(l.compare).toBe('fzp');
 });
 
@@ -417,6 +417,11 @@ it('rejects protect.strokes and a street rule with mode or densityLimits', () =>
   expect(() => parseSimPolicy({ ...DEFAULT_POLICY, protect: { ...DEFAULT_POLICY.protect, strokes: [] } })).toThrow(/protect\.strokes: unknown key/);
   const street = { id: 's', kind: 'street', classes: ['arterial'], names: [], depth: 0, ncOnly: false, stories: 6, mode: 'raise' };
   expect(() => parseSimPolicy({ ...DEFAULT_POLICY, rules: [street] })).toThrow(/rules\[0\]\.mode: unknown key/);
+});
+it('rejects transit bands that get taller with distance (equal is allowed)', () => {
+  const tr = (bands: TransitBand[]) => ({ ...DEFAULT_POLICY, rules: [T(bands)] });
+  expect(() => parseSimPolicy(tr([{ maxM: 402, stories: 4 }, { maxM: 805, stories: 6 }]))).toThrow(/rules\[0\]\.bands/);
+  expect(parseSimPolicy(tr([{ maxM: 402, stories: 6 }, { maxM: 805, stories: 6 }])).rules).toHaveLength(1);
 });
 it("rejects an 'area' rule", () => {
   expect(() => parseSimPolicy({ ...DEFAULT_POLICY, rules: [{ id: 'a', kind: 'area' }] })).toThrow(/rules\[0\]\.kind/);
@@ -458,7 +463,7 @@ Expected: PASS.
 
 - `ProtectionsSection.svelte.spec.ts`: three category checkboxes and the years input; no button named "Protect lots with the brush" and no "Protected with the brush" text.
 - `BrushSection.svelte.spec.ts`: the tool radiogroup has exactly Move, Paint, Erase; no "Mode" radiogroup, no "Density limits" checkbox; the stories control's label reads "Allow N stories" (`expect(page.getByText(/Allow \d+ stor/)).toBeVisible()`); "Add a rule" offers Transit, Street and Commercial corridor and no Area.
-- `RuleBrushForm.svelte.spec.ts`: no Mode radios, no Density limits checkbox; saving a street form calls `onsave` with `{ kind: 'street', …, stories: 6 }` and no `effect`.
+- `RuleBrushForm.svelte.spec.ts`: a transit form whose outer band is taller than the inner shows "An outer band can't be taller than the band inside it" and does not call `onsave`; equal bands save. No Mode radios, no Density limits checkbox; saving a street form calls `onsave` with `{ kind: 'street', …, stories: 6 }` and no `effect`.
 - `stroke-adapter.spec.ts`: two Paint strokes at 8 stories make one `custom` paint brush with two strokes, labelled "Allowed 8 stories"; a Paint at 8 then at 5 makes two brushes; an Erase appends an `erase` brush labelled "Erased custom zoning".
 - `lot-overlay.spec.ts`: one layer of filled dots (`sim-lots`) plus the halo; no `sim-lots-protected` layer; `LOT_COLORS.light.changed` keeps today's raise blue `[29, 78, 216]` (plan 2 replaces the dots and plan 3 the palette).
 - `PolicySummary.svelte.spec.ts`: lists rules ("Up to 6 stories within 402 m…"), custom brushes, protections by category; no "layers" or "comparison" line.
@@ -846,7 +851,7 @@ git commit -m "refactor(sim): remove the scenario engine's unused law switch" -m
 
 1. **Painting a lot to its current FZP height.** Painting always sets `(N, uncapped)`, so painting a capped lot at its own FZP height lifts its density cap (more homes, same height). Rules never touch a lot they don't raise. Recommendation: keep it — the spec says painting sets "exactly N" and every painted change is uncapped; the alternative (paint at the FZP height is a no-op) hides an effect the user asked for. Partner to confirm.
 2. **No density-limits control exists on `/`.** The spec (§3) removes one "from paint mode on `/`", but `/`'s paint op carries only `stories` (`src/lib/plan/types.ts:9`) and `src/lib/brush/` has no density control or checkbox; the only density-limits controls are `/sim`'s, which Task 3 removes. Recommendation: nothing to do on `/`.
-3. **Transit band semantics changed.** Today the inner band wins; under "highest applicable wins" a taller outer band overrides a shorter inner one. Recommendation: accept (it follows the spec's rule); the form already rejects two bands at one distance.
+3. **Transit band semantics.** Resolved by the partner: bands may not get taller with distance (each band ≤ the one inside it), enforced by the parser and the form, so the innermost band always wins.
 
 ## Interfaces for plans 2 and 3
 

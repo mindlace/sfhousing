@@ -105,7 +105,8 @@ rules is a later project.
 **New zoning rules** are rule-based additions, not brushes.
 
 - **The rules:**
-  - **Transit:** stop types, with stories per distance band.
+  - **Transit:** stop types, with stories per distance band. Bands never get taller with distance
+    (your decision): each band is at most as tall as the band inside it, so the innermost band wins.
   - **Street:** street classes or named streets, and depth.
   - **Commercial corridor:** a preset Street rule, arterial frontage zoned NC or NCT.
 - **Area is dropped for now.**
