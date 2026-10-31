@@ -17,5 +17,5 @@ export const load: PageLoad = async ({ data, fetch, url }) => {
   const datasetVersion =
     scenario.manifest?.datasetVersion ??
     (data.datasetNotice === 'gone' ? data.currentDatasetVersion : data.doc.datasetVersion);
-  return { ...data, ...scenario, seed, seedInvalid, start: null, datasetVersion };
+  return { ...data, ...scenario, seed, seedInvalid, datasetVersion };
 };

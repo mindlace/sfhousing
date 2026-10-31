@@ -1,4 +1,4 @@
-// /fzp e2e (fzp-mode spec §6). /fzp now redirects to /sim?start=fzp (plan 3, Call 14), so these
+// /fzp e2e (fzp-mode spec §6). /fzp now redirects to /sim (plan 3, Call 14), so these
 // tests open the timelapse there; e2e/sim.spec.ts covers the redirect itself. Runs against the
 // VITE_E2E build, which exposes window.__sfhFzp (src/lib/fzp/debug.ts) and window.__sfhMap.
 // Fixture-0 files are read from disk; counts, ids and labels are derived from them, never
@@ -126,16 +126,16 @@ async function waitForMapOnly(page: Page): Promise<void> {
 }
 
 /** Where /fzp's redirect lands: the timelapse on /sim, with the FZP comparison. */
-const FZP_PATH = '/sim?start=fzp';
+const FZP_PATH = '/sim';
 /** The address bar on the timelapse's representative future. */
-const FZP_URL = /\/sim\?start=fzp$/;
+const FZP_URL = /\/sim$/;
 /** The address bar on the timelapse after a reroll to `seed` (any seed when omitted). */
-const seedUrl = (seed?: number): RegExp => new RegExp(`/sim\\?start=fzp&seed=${seed ?? '\\d+'}$`);
+const seedUrl = (seed?: number): RegExp => new RegExp(`/sim\\?seed=${seed ?? '\\d+'}$`);
 
-/** The timelapse (`/sim?start=fzp`, plus `search`'s parameters) at a stable day, ready. */
+/** The timelapse (`/sim`, plus `search`'s parameters) at a stable day, ready. */
 async function gotoFzp(page: Page, search = ''): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto(search ? `${FZP_PATH}&${search.replace(/^\?/, '')}` : FZP_PATH);
+  await page.goto(search ? `${FZP_PATH}?${search.replace(/^\?/, '')}` : FZP_PATH);
   await waitReady(page);
 }
 
@@ -346,14 +346,14 @@ test('after Another future, the header Simulate link, Back and Forward each show
   expect(await fzp(page, 'representative')).toBe(true);
   const seed = await reroll(page);
 
-  // The Simulate link is /sim (current law, a new load): its representative future.
+  // The Simulate link is /sim (a new load): its representative future.
   await (await headerLink(page, 'Simulate')).click();
   await expect(page).toHaveURL(/\/sim$/);
   await expectAddressFuture(page);
   await waitReady(page);
 
   // Back to the rerolled entry: SvelteKit navigates to the URL it stored before replaceState
-  // (/sim?start=fzp), but the address bar reads &seed=N, and the page must show #N.
+  // (/sim?seed=N before the reroll), but the address bar reads the rerolled seed, and the page must show #N.
   await page.goBack();
   await expect(page).toHaveURL(seedUrl(seed));
   await expectAddressFuture(page);

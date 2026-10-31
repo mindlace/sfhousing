@@ -55,7 +55,7 @@ function navigated(type: AfterNavigate['type'], address: string, stored = '') {
   for (const cb of nav.after) cb({ type, to, from: null, willUnload: false } as AfterNavigate);
 }
 
-function data(seed: number | null, o: { seedInvalid?: boolean; start?: 'fzp' | null } = {}) {
+function data(seed: number | null, o: { seedInvalid?: boolean } = {}) {
   return {
     datasetVersion: 'fixture-0',
     appRelease: 'dev',
@@ -65,8 +65,7 @@ function data(seed: number | null, o: { seedInvalid?: boolean; start?: 'fzp' | n
     calibrationError: false,
     noScenario: false,
     seed,
-    seedInvalid: o.seedInvalid ?? false,
-    start: o.start ?? null
+    seedInvalid: o.seedInvalid ?? false
   };
 }
 
@@ -156,24 +155,21 @@ describe('/sim page', () => {
   });
 
   it('an invalid seed is cleaned on /sim', async () => {
-    // /fzp?seed=abc&x=1&x=2 redirected here with start=fzp: the representative future, and the
+    // /fzp?seed=abc&x=1&x=2 redirected here: the representative future, and the
     // address loses only its seed.
     await render(Page, {
-      props: { data: data(null, { seedInvalid: true, start: 'fzp' }), params: {} }
+      props: { data: data(null, { seedInvalid: true }), params: {} }
     });
-    navigated('enter', '?seed=abc&x=1&x=2&start=fzp', '?seed=abc&x=1&x=2&start=fzp');
-    await expect.poll(() => nav.replaced).toEqual(['?x=1&x=2&start=fzp']);
+    navigated('enter', '?seed=abc&x=1&x=2', '?seed=abc&x=1&x=2');
+    await expect.poll(() => nav.replaced).toEqual(['?x=1&x=2']);
     await expect.poll(() => StubWorker.all.length).toBe(1);
     expect(initSeeds(StubWorker.all[0])).toEqual([null]);
   });
 
-  it('opens the FZP comparison with or without start=fzp', async () => {
-    const r = await render(Page, { props: { data: data(null, { start: 'fzp' }), params: {} } });
+  it('opens on the FZP comparison', async () => {
+    await render(Page, { props: { data: data(null), params: {} } });
     await expect.poll(() => StubWorker.all.length).toBe(1);
     expect(StubWorker.all[0].lastOf('initScenario')!.levers).toEqual(DEFAULT_LEVERS);
-    await r.rerender({ data: data(null), params: {} });
-    await expect.poll(() => StubWorker.all.length).toBe(2);
-    expect(StubWorker.all[1].lastOf('initScenario')!.levers).toEqual(DEFAULT_LEVERS);
   });
 
   it('is titled for the policy simulation', async () => {

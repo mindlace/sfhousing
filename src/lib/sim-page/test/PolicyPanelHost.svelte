@@ -5,10 +5,8 @@
   import ProjectCardPanel from '$lib/fzp/ProjectCardPanel.svelte';
   import { chanceTable } from '$lib/timelapse/model';
   import PolicyPanel from '../PolicyPanel.svelte';
-  import type { PolicyStore } from '../policy-store.svelte';
 
-  let { store, open, onclose }: { store: PolicyStore; open: boolean; onclose: () => void } =
-    $props();
+  let { open, onclose }: { open: boolean; onclose: () => void } = $props();
 
   const cal = fixtureCalibration();
   const chance = chanceTable(cal);
@@ -24,7 +22,7 @@
     onclose={() => {}}
     onsource={() => {}}
   />
-  <PolicyPanel {store} {open} {onclose} timingSummary="SF as observed">
+  <PolicyPanel {open} {onclose} timingSummary="SF as observed">
     {#snippet timing()}
       <p>Timing body</p>
     {/snippet}

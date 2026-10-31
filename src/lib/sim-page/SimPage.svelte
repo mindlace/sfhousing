@@ -2,8 +2,7 @@
   The /sim page (plan 3): FzpMode running the lever engine on the policy in memory. The recipe
   lives in a PolicyStore (undo, redo); LeverSync resolves its brushes in the worker, compiles it
   and sends each new SimLevers to FzpMode's `levers`, which FzpMode passes on with setLevers. Every
-  start opens on the Family Zoning Plan compared with the old zoning (`DEFAULT_LEVERS`); `start=fzp`
-  (the /fzp redirect) only defers autosave (Calls 14 and 16).
+  start opens on the Family Zoning Plan compared with the pre-FZP baseline (`DEFAULT_LEVERS`).
   Freehand, erase and protect strokes (Task 8) reuse `/`'s BrushController through the stroke
   adapter; the lot dots and the brush ring share SimMap's overlay through the overlay mux.
   Rule brushes (Task 9) read the brush catalog, asked for once when the panel first opens and
@@ -11,8 +10,7 @@
   contents (layout ruling 9). "Protections" (Task 10) edits the category protections and picks the
   Protect tool through the same `setTool`, so on a phone it too closes the sheet for the tool bar.
   Plan 5 (Task 5): the policy autosaves (`sfhousing:sim:v1`) and is restored on mount, reconciled
-  with the calibration (Calls 11 and 12); `start=fzp` defers both until the first change (Call
-  13). The header gets the save state (its status slot) and Publish. In `mode: 'view'` (the
+  with the calibration (Calls 11 and 12). The header gets the save state (its status slot) and Publish. In `mode: 'view'` (the
   read-only /s/<id>, Task 6) the shared policy opens reconciled with the calibration (Call 7, with
   the timing notice when anything moved); there is no stroke controller, no tools, no autosave and
   no Publish, and the panel is the summary. The lot dots still draw.
@@ -23,7 +21,6 @@
   import { replaceState } from '$app/navigation';
   import { Autosave } from '$lib/sharing/autosave.svelte';
   import PublishButton from '$lib/sharing/PublishButton.svelte';
-  import { localDoc } from '$lib/sharing/remix';
   import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
   import { getStorage } from '$lib/sharing/storage';
   import type { Layer } from '@deck.gl/core';
@@ -54,9 +51,9 @@
     queriesOf,
     type SimPolicy
   } from './policy';
-  import { SIM_CODEC, isDefaultPolicy, simDocProblems, type SimDoc } from './sim-doc';
+  import { SIM_CODEC, simDocProblems, type SimDoc } from './sim-doc';
   import SimNotices from './SimNotices.svelte';
-  import { FZP_KEPT_TEXT, restoreSimDoc, type SimNotice } from './sim-session';
+  import { restoreSimDoc, type SimNotice } from './sim-session';
   import { createStrokeAdapter } from './stroke-adapter';
   import { timingLabel } from './timing';
   import { focusHeaderMenu } from '$lib/shell/header-actions.svelte';
@@ -74,24 +71,21 @@
     calibrationError: boolean;
     noScenario: boolean;
     datasetVersion: string;
-    /** 'fzp' when the /fzp redirect opened the page. */
-    start: 'fzp' | null;
     /** `?seed=N`, or null for the representative future. */
     urlSeed: number | null;
     reload(): Promise<{ manifest: Manifest; calibration: Calibration }>;
     onurlseed?: (seed: number | null) => void;
     /** 'view': a published policy, read-only (no autosave, no Publish). Default 'edit'. */
     mode?: 'edit' | 'view';
-    /** The policy to open with instead of the `start` default (view: the shared document's). */
+    /** The policy to open with instead of the default (view: the shared document's). */
     initialPolicy?: SimPolicy;
     /** View: the shared document's title (shown in the banner, not edited). */
     title?: string;
     /**
-     * Edit: 'restore' (the autosaved policy, then every change saved) or 'deferred' (under
-     * `start=fzp`: nothing restored or written until the first change). View: 'off'. Defaults to
-     * 'off' in view, else 'deferred' under `start=fzp` and 'restore' otherwise.
+     * Edit: 'restore' (the autosaved policy, then every change saved). View: 'off'. Defaults to
+     * 'off' in view, else 'restore'.
      */
-    persist?: 'restore' | 'deferred' | 'off';
+    persist?: 'restore' | 'off';
     /** The Remix hand-off from /s/<id> (`history.state.sfhSimRemix`). */
     remix?: { from: string; doc?: string };
     /** Tests: the autosave's storage (default `localStorage`). */
@@ -107,7 +101,6 @@
     calibrationError,
     noScenario,
     datasetVersion,
-    start,
     urlSeed,
     reload,
     onurlseed,
@@ -151,9 +144,7 @@
   // ---- autosave, restore and publish (plan 5, Task 5) ----
 
   /** Fixed for the component's life, as the props it derives from. */
-  const persistMode = untrack(
-    () => persist ?? (mode === 'view' ? 'off' : start === 'fzp' ? 'deferred' : 'restore')
-  );
+  const persistMode = untrack(() => persist ?? (mode === 'view' ? 'off' : 'restore'));
   const autosave = untrack(
     () =>
       new Autosave<SimDoc>({
@@ -172,7 +163,7 @@
       : { schema: 1, kind: 'sim', datasetVersion, title, policy: store.policy }
   );
   let notices = $state<SimNotice[]>(untrack(() => opened?.notices ?? []));
-  /** Autosave writes once this is set: after the restore, or on the first change if deferred. */
+  /** Autosave writes once this is set: after the restore. */
   let saving = $state(false);
 
   function restore(): void {
@@ -202,56 +193,27 @@
     // A given policy's brushes are resolved, then its full levers sent (Call 12).
     if (opened) sync.update(store.policy);
     if (persistMode === 'off') return;
-    if (persistMode === 'restore') {
-      restore();
-      saving = true;
-    } else {
-      // A corrupt or future record is kept under the corrupt key before the first write.
-      autosave.guard();
-      const saved = localDoc(storage(), SIM_CODEC);
-      if (saved && !isDefaultPolicy(saved.policy))
-        notices = [
-          {
-            id: 'fzp-kept',
-            text: FZP_KEPT_TEXT,
-            tone: 'info',
-            link: { href: '/sim', label: 'Open your policy' }
-          }
-        ];
-    }
+    restore();
+    saving = true;
     return autosave.attach();
   });
 
-  // Every change is saved: the policy (undo and redo included) and the title. Under 'deferred'
-  // the first change after mount starts it. Only the document is tracked: schedule() reads and
-  // writes autosave.status, which must not re-run this.
+  // Every change is saved: the policy (undo and redo included) and the title. Only the document
+  // is tracked: schedule() reads and writes autosave.status, which must not re-run this.
   $effect(() => {
     const d = doc;
     if (persistMode === 'off') return;
     untrack(() => {
-      if (!saving) {
-        if (persistMode !== 'deferred' || d.policy === firstPolicy) return;
-        saving = true;
-        // The saved policy is about to be replaced: the notice that it is kept no longer holds.
-        dismissNotice('fzp-kept');
-        // Read again: another tab may have written since mount.
-        autosave.guard();
-      }
+      if (!saving) return;
       autosave.schedule(d);
     });
   });
 
   // `onpublished` may fire after the dialog closed and the user kept editing: take the title
   // only, and record lastPublished against the current document (a mismatched hash makes the
-  // button read "Publish" again). Under 'deferred', before the first change, the stored policy
-  // is kept (the fzp-kept notice): the link is remembered, not written, and the first write
-  // (which the title alone does not start) carries it.
+  // button read "Publish" again).
   function onPublished(r: { id: string; hash: string; plan: SimDoc }): void {
     title = r.plan.title;
-    if (persistMode === 'deferred' && !saving) {
-      autosave.rememberPublished({ id: r.id, hash: r.hash });
-      return;
-    }
     saving = true;
     autosave.setLastPublished({ id: r.id, hash: r.hash }, SIM_CODEC.withTitle(doc, r.plan.title));
   }
@@ -565,7 +527,6 @@
 
 {#snippet panel()}
   <PolicyPanel
-    {store}
     id={panelId}
     open={policyOpen}
     focusOnOpen={policyFocus}

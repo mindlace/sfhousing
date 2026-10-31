@@ -1,6 +1,6 @@
 // /sim publishing e2e (plan 5, Task 7): publish a policy and open its /s/<id> link, Remix, the
 // autosave across a reload, a tampered and a gone-dataset policy seeded through the e2e-only
-// route, the /p -> /s redirect, `start=fzp` keeping the saved policy, storage refused, and the
+// route, the /p -> /s redirect, storage refused, and the
 // accessibility and layout checks on the read-only view. Runs against the VITE_E2E build on
 // fixture-0. Seeded documents are captured from the app's own autosave, never hand-written, so
 // they follow the SimDoc shape.
@@ -22,8 +22,6 @@ type Doc = {
 
 const PRESET = "Permits at San Diego's pace";
 const TIMING_NOTICE = 'Some permitting timelines were re-fit to the data this simulation runs on.';
-const FZP_KEPT =
-  'Showing the Family Zoning Plan comparison. Your saved policy is kept until you change something here.';
 const ID = '[1-9A-HJ-NP-Za-km-z]{8}';
 
 // ---- helpers (as in e2e/sim.spec.ts, which keeps its own copies) ---------------------------------
@@ -318,28 +316,6 @@ test('kind redirects: /p/<policy id> lands on /s/<policy id>', async ({ page }) 
 });
 
 // ---- /fzp and storage ------------------------------------------------------------------------------
-
-test('/fzp keeps the saved policy', async ({ page }) => {
-  await capturePresetDoc(page);
-  const raw = await page.evaluate((k) => localStorage.getItem(k), SIM_KEY);
-  expect(raw).not.toBeNull();
-
-  await page.goto('/fzp');
-  await expect(page).toHaveURL(/\/sim\?start=fzp$/);
-  await waitReady(page);
-  const kept = notices(page).filter({ hasText: FZP_KEPT });
-  await expect(kept).toHaveCount(1);
-  await expect(kept.getByRole('link', { name: 'Open your policy' })).toHaveAttribute(
-    'href',
-    '/sim'
-  );
-  expect(await page.evaluate((k) => localStorage.getItem(k), SIM_KEY)).toBe(raw);
-  expect(
-    await page.evaluate(() =>
-      Object.keys(localStorage).filter((k) => k.startsWith('sfhousing:sim:corrupt:'))
-    )
-  ).toEqual([]);
-});
 
 test('storage off: the header shows "Autosave off" and editing works', async ({ page }) => {
   await page.addInitScript(() => {

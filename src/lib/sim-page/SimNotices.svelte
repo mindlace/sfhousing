@@ -1,6 +1,6 @@
 <!--
   The /sim session notices (plan 5, Task 5): the autosave restore (N1 to N3 in the policy
-  wording), the timelines refit, the Remix toast and the `start=fzp` deferral. Each is one line
+  wording), the timelines refit, and the Remix toast. Each is one line
   (compact UI): a "Details" disclosure holds a list, a link goes where the notice says. Rendered
   in FzpMode's notice row above the scrubber, whose height the dock and the map inset include, so
   a notice never covers the map's controls. One always-mounted polite status region: a notice

@@ -1,5 +1,5 @@
 // /fzp is no longer a page (plan 3, Call 14): its load redirects to /sim with a 307, every query
-// parameter kept and `start=fzp` added, so old links open the Family Zoning Plan comparison.
+// parameter kept except the retired `start`.
 import { isRedirect } from '@sveltejs/kit';
 import { describe, expect, it } from 'vitest';
 import { load } from './+page';
@@ -18,17 +18,22 @@ async function redirectOf(search: string): Promise<{ status: number; location: s
 }
 
 describe('/fzp load', () => {
-  it('throws a 307 to /sim with the query kept and start=fzp', async () => {
+  it('throws a 307 to /sim with the query kept', async () => {
     expect(await redirectOf('?seed=5&x=1')).toEqual({
       status: 307,
-      location: '/sim?seed=5&x=1&start=fzp'
+      location: '/sim?seed=5&x=1'
     });
   });
 
-  it('redirect keeps every parameter', async () => {
-    expect((await redirectOf('?seed=abc&x=1&x=2')).location).toBe(
-      '/sim?seed=abc&x=1&x=2&start=fzp'
-    );
-    expect(await redirectOf('')).toEqual({ status: 307, location: '/sim?start=fzp' });
+  it('redirects to /sim keeping every parameter but start', async () => {
+    expect(await redirectOf('?seed=5&start=fzp&a=1')).toEqual({
+      status: 307,
+      location: '/sim?seed=5&a=1'
+    });
+    expect((await redirectOf('?seed=abc&x=1&x=2')).location).toBe('/sim?seed=abc&x=1&x=2');
+  });
+
+  it('redirects a bare /fzp to /sim', async () => {
+    expect(await redirectOf('')).toEqual({ status: 307, location: '/sim' });
   });
 });

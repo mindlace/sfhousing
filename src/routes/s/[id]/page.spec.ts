@@ -62,7 +62,6 @@ describe('/s/[id] load', () => {
       noScenario: false,
       seed: 9,
       seedInvalid: false,
-      start: null,
       id: 'Abcdefg2'
     });
     expect(r.manifest?.datasetVersion).toBe('fixture-1');

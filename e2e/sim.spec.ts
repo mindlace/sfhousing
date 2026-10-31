@@ -210,11 +210,9 @@ async function expectNoHorizontalScroll(page: Page): Promise<void> {
 
 // ---- the redirect and the shell -----------------------------------------------------------------
 
-test('/fzp?seed=5 lands on /sim?seed=5&start=fzp and its levers come into force', async ({
-  page
-}) => {
+test('/fzp?seed=5 lands on /sim?seed=5 and its levers come into force', async ({ page }) => {
   await page.goto('/fzp?seed=5');
-  await expect(page).toHaveURL(/\/sim\?seed=5&start=fzp$/);
+  await expect(page).toHaveURL(/\/sim\?seed=5$/);
   await waitReady(page);
   expect((await leverStatus(page)).status).toBe('current');
   expect(await fzp(page, 'seed')).toBe(5);
@@ -420,13 +418,13 @@ async function expectAddressFuture(page: Page): Promise<void> {
 test('Back after a reroll', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/fzp?seed=5');
-  await expect(page).toHaveURL(/\/sim\?seed=5&start=fzp$/);
+  await expect(page).toHaveURL(/\/sim\?seed=5$/);
   await waitReady(page);
   await expectAddressFuture(page);
 
   await (await headerAction(page, 'Another future')).click();
-  await expect(page).toHaveURL((u) => /^\/sim$/.test(u.pathname) && !/\bseed=5&/.test(u.search));
-  await expect(page).toHaveURL(/\/sim\?seed=\d+&start=fzp$/);
+  await expect(page).toHaveURL((u) => /^\/sim$/.test(u.pathname) && !/\bseed=5$/.test(u.search));
+  await expect(page).toHaveURL(/\/sim\?seed=\d+$/);
   const seed = Number(new URL(page.url()).searchParams.get('seed'));
   await expectAddressFuture(page);
 
@@ -438,7 +436,7 @@ test('Back after a reroll', async ({ page }) => {
   await expectAddressFuture(page);
 
   await page.goBack();
-  await expect(page).toHaveURL(new RegExp(`/sim\\?seed=${seed}&start=fzp$`));
+  await expect(page).toHaveURL(new RegExp(`/sim\\?seed=${seed}$`));
   await expectAddressFuture(page);
   await page.goForward();
   await expect(page).toHaveURL(/\/sim$/);

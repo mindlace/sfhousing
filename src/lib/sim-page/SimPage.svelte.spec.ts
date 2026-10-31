@@ -20,7 +20,6 @@ import type SimPage from './SimPage.svelte';
 import { DEFAULT_POLICY, SIM_CODEC, SIM_KEY, type SimDoc } from './sim-doc';
 import { resolvePreset } from './timing';
 import { defaultEffect } from './policy';
-import { FZP_KEPT_TEXT } from './sim-session';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 const workers = vi.hoisted(() => [] as import('$lib/fzp/test/fake-worker').FakeScenarioWorker[]);
@@ -49,7 +48,6 @@ async function setup(over: Over = {}) {
       calibrationError: false,
       noScenario: false,
       datasetVersion: 'fixture-0',
-      start: null,
       urlSeed: null,
       reload: async () => ({ manifest, calibration }),
       ...over
@@ -455,67 +453,6 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
     expect(storedDoc(mem).policy.timing.current.preset).toBe('noDiscretionary');
   });
 
-  for (const [kind, raw] of [
-    ['a corrupt', '{nope'],
-    [
-      'a future-schema',
-      JSON.stringify({
-        v: 1,
-        savedAt: 'x',
-        plan: JSON.stringify({ schema: 2, kind: 'sim', datasetVersion: 'fixture-0', policy: {} })
-      })
-    ]
-  ] as const) {
-    it(`deferred start keeps ${kind} record under the corrupt key on the first change`, async () => {
-      await page.viewport(1024, 768);
-      const mem = new MemoryStorage();
-      mem.setItem(SIM_KEY, raw);
-      await setup({ storage: () => mem, start: 'fzp', persist: 'deferred' });
-      await timingToggle().click();
-      await presetPicker().selectOptions('No discretionary review');
-      await expect
-        .poll(() => mem.getItem(SIM_KEY) !== raw && storedDoc(mem).policy.timing.current.preset, {
-          timeout: 2000
-        })
-        .toBe('noDiscretionary');
-      const kept = mem.keys().filter((k) => k.startsWith('sfhousing:sim:corrupt:'));
-      expect(kept.map((k) => mem.getItem(k))).toEqual([raw]);
-    });
-  }
-
-  it('deferred start keeps the saved policy', async () => {
-    await page.viewport(1024, 768);
-    const mem = seeded();
-    const before = mem.getItem(SIM_KEY);
-    await setup({ storage: () => mem, start: 'fzp', persist: 'deferred' });
-    await toReady();
-    await expect
-      .element(
-        notices().getByText(
-          'Showing the Family Zoning Plan comparison. Your saved policy is kept until you change something here.'
-        )
-      )
-      .toBeVisible();
-    await expect
-      .element(notices().getByRole('link', { name: 'Open your policy' }))
-      .toHaveAttribute('href', '/sim');
-    // Nothing is restored or written on mount.
-    await expect
-      .element(timingToggle())
-      .toHaveAccessibleName('Permitting timelines, SF as observed');
-    await new Promise((r) => setTimeout(r, 700));
-    expect(mem.getItem(SIM_KEY)).toBe(before);
-    // The first change starts autosaving, over the saved policy.
-    await timingToggle().click();
-    await presetPicker().selectOptions('No discretionary review');
-    await expect
-      .poll(() => storedDoc(mem).policy.timing.current.preset, { timeout: 2000 })
-      .toBe('noDiscretionary');
-    await expect
-      .element(notices().getByRole('link', { name: 'Open your policy' }))
-      .not.toBeInTheDocument();
-  });
-
   it('Share link after publish, Publish again after an edit', async () => {
     await page.viewport(1024, 768);
     const fetchFn = vi.fn(
@@ -553,26 +490,6 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
 
     await presetPicker().selectOptions('No discretionary review');
     await expect.element(publish()).toHaveTextContent('Publish');
-  });
-
-  it('deferred start: the FZP start is the default policy, so nothing publishes or saves before a change (I1)', async () => {
-    await page.viewport(1024, 768);
-    const mem = seeded();
-    const before = mem.getItem(SIM_KEY);
-    await setup({ storage: () => mem, start: 'fzp', persist: 'deferred' });
-    await toReady();
-    // start=fzp opens FZP as written, the default policy: there is nothing to publish yet.
-    await expect.element(publish()).toBeDisabled();
-    await new Promise((r) => setTimeout(r, 700));
-    expect(mem.getItem(SIM_KEY)).toBe(before);
-    await expect.element(notices().getByText(FZP_KEPT_TEXT)).toBeVisible();
-    // The first change starts saving, and the changed policy can be published.
-    await timingToggle().click();
-    await presetPicker().selectOptions('No discretionary review');
-    await expect
-      .poll(() => storedDoc(mem).policy.timing.current.preset, { timeout: 2000 })
-      .toBe('noDiscretionary');
-    await expect.element(publish()).toBeEnabled();
   });
 
   it('Publish is disabled on the default policy', async () => {

@@ -3,15 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
-import { DEFAULT_POLICY } from './policy';
-import { PolicyStore } from './policy-store.svelte';
 import PolicyPanelHost from './test/PolicyPanelHost.svelte';
 
 async function setup(open = true) {
-  const store = new PolicyStore(DEFAULT_POLICY);
   const onclose = vi.fn();
-  const view = await render(PolicyPanelHost, { props: { store, open, onclose } });
-  return { store, onclose, view };
+  const view = await render(PolicyPanelHost, { props: { open, onclose } });
+  return { onclose, view };
 }
 
 const map = () => page.getByTestId('map').element() as HTMLElement;
@@ -67,19 +64,16 @@ describe('PolicyPanel', () => {
     expect(card.getBoundingClientRect().left - map().getBoundingClientRect().left).toBe(16);
   });
 
-  it('only "Zoning layers" is expanded on open', async () => {
+  it('has no "Zoning layers" section, and its sections start collapsed', async () => {
     await page.viewport(1024, 700);
     await setup();
     const toggle = (name: string) => page.getByRole('button', { name, exact: true });
-    await expect.element(toggle('Zoning layers')).toHaveAttribute('aria-expanded', 'true');
+    expect(page.getByRole('button', { name: 'Zoning layers' }).query()).toBeNull();
+    await expect.element(toggle('Your zoning')).toBeVisible();
     await expect.element(toggle('Your zoning')).toHaveAttribute('aria-expanded', 'false');
     await expect.element(toggle('Protections')).toHaveAttribute('aria-expanded', 'false');
-    await expect.element(page.getByRole('group', { name: 'Zoning layers' })).toBeVisible();
-    await toggle('Zoning layers').click();
-    await expect.element(toggle('Zoning layers')).toHaveAttribute('aria-expanded', 'false');
-    await expect
-      .element(page.getByRole('group', { name: 'Zoning layers' }))
-      .not.toBeInTheDocument();
+    await toggle('Your zoning').click();
+    await expect.element(toggle('Your zoning')).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('"Permitting timelines" starts collapsed and its button shows the summary', async () => {

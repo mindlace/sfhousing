@@ -53,8 +53,7 @@ describe('/sim load', () => {
       calibrationError: false,
       noScenario: false,
       seed: null,
-      seedInvalid: false,
-      start: null
+      seedInvalid: false
     });
     expect(fetchFn.mock.calls.map((c) => c[0])).toEqual([manifestUrl('fixture-0'), CAL_URL]);
   });
@@ -84,8 +83,7 @@ describe('/sim load', () => {
       calibrationError: false,
       noScenario: false,
       seed: null,
-      seedInvalid: false,
-      start: null
+      seedInvalid: false
     });
     expect(err).toHaveBeenCalledTimes(1);
   });
@@ -141,22 +139,9 @@ describe('/sim load', () => {
     expect(result).toMatchObject({ seed: null, seedInvalid: true });
   });
 
-  it('parses start: fzp, or null for anything else', async () => {
-    expect(await load(event(files(), '?start=fzp&seed=5'))).toMatchObject({
-      start: 'fzp',
-      seed: 5
-    });
-    expect(await load(event(files(), '?start=FZP'))).toMatchObject({ start: null });
-    expect(await load(event(files(), '?start=x'))).toMatchObject({ start: null });
-    expect(await load(event(files()))).toMatchObject({ start: null });
-  });
-
-  it('keeps start when the manifest fails', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    const fetchFn = files({ [manifestUrl('fixture-0')]: () => json({}, 404) });
-    expect(await load(event(fetchFn, '?start=fzp'))).toMatchObject({
-      manifestError: true,
-      start: 'fzp'
-    });
+  it('ignores the retired start parameter', async () => {
+    const data = await load(event(files(), '?start=fzp&seed=5'));
+    expect('start' in data).toBe(false);
+    expect(data).toMatchObject({ seed: 5 });
   });
 });

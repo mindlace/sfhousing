@@ -4,7 +4,7 @@
   so the project card sits to its right, and moves the map's bottom-left navigation control (zoom
   and compass) to its right edge so the panel never covers it (WCAG 2.2 2.4.11). Below md it is a modal sheet (`<dialog>`) that joins the
   header overlays, so it never shows with the phone Menu or the score details. Its sections are
-  disclosures; only "Zoning layers" starts open. Below md a sub-view (Task 9's "Add a brush")
+  disclosures; all start collapsed. Below md a sub-view (Task 9's "Add a brush")
   replaces the sections, with a Back button. The read-only view (plan 5) shows a summary instead,
   titled "Policy (read-only)".
 -->
@@ -12,11 +12,8 @@
   import { tick, untrack, type Snippet } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { headerOverlay } from '$lib/shell/header-actions.svelte';
-  import LayersSection from './LayersSection.svelte';
-  import type { PolicyStore } from './policy-store.svelte';
 
   interface Props {
-    store: PolicyStore;
     open: boolean;
     onclose(): void;
     /** Opening the docked panel moves focus into it (false for the default open on md+). */
@@ -40,7 +37,6 @@
     timingSummary?: string;
   }
   let {
-    store,
     open,
     onclose,
     focusOnOpen = true,
@@ -61,16 +57,14 @@
 
   const wide = new MediaQuery('(min-width: 768px)');
 
-  type SectionId = 'layers' | 'zoning' | 'protections' | 'timing';
+  type SectionId = 'zoning' | 'protections' | 'timing';
   const ALL_SECTIONS: { id: SectionId; title: string }[] = [
-    { id: 'layers', title: 'Zoning layers' },
     { id: 'zoning', title: 'Your zoning' },
     { id: 'protections', title: 'Protections' },
     { id: 'timing', title: 'Permitting timelines' }
   ];
   const SECTIONS = $derived(ALL_SECTIONS.filter((s) => s.id !== 'timing' || timing));
   let expanded = $state<Record<SectionId, boolean>>({
-    layers: true,
     zoning: false,
     protections: false,
     timing: false
@@ -163,9 +157,7 @@
         </h3>
         {#if expanded[s.id]}
           <div id={bodyId} class="px-4 pb-4">
-            {#if s.id === 'layers'}
-              <LayersSection {store} />
-            {:else if s.id === 'zoning'}
+            {#if s.id === 'zoning'}
               {@render zoning?.()}
             {:else if s.id === 'protections'}
               {@render protections?.()}

@@ -2,7 +2,7 @@
 
 Developer notes for `src/lib/fzp/`. The design is `docs/superpowers/specs/2026-10-16-fzp-mode-design.md`; this file records what the code does for people who change it or write tests against it. The page composition is `src/lib/fzp/FzpMode.svelte`.
 
-**Routing (plan 3).** `/fzp` is no longer a page: its load (`src/routes/fzp/+page.ts`) is a 307 redirect to `/sim` with every query parameter kept and `start=fzp` added, which opens the Family Zoning Plan comparison (`FZP_COMPAT_LEVERS`). The `/sim` route (`src/routes/sim/+page.ts`, `+page.svelte`) loads the manifest and calibration, owns the `?seed=` URL and renders `SimPage`, which wraps FzpMode with the policy panel. See [sim-page.md](sim-page.md). The header link is "Simulate" (`/sim`).
+**Routing (plan 3).** `/fzp` is no longer a page: its load (`src/routes/fzp/+page.ts`) is a 307 redirect to `/sim` with every query parameter kept except the retired `start`. `/sim` itself opens on the Family Zoning Plan comparison (`DEFAULT_LEVERS`: FZP as written against pre-FZP zoning). The `/sim` route (`src/routes/sim/+page.ts`, `+page.svelte`) loads the manifest and calibration, owns the `?seed=` URL and renders `SimPage`, which wraps FzpMode with the policy panel. See [sim-page.md](sim-page.md). The header link is "Simulate" (`/sim`).
 
 ## The scrubber contract
 
@@ -85,7 +85,7 @@ Map picking is pointer-only (mouse click, touch tap, hover), a gap shared with t
 ## e2e notes
 
 - Run on port 4206 with one worker: `SFH_E2E_PORT=4206 SFH_E2E_WORKERS=1 npx playwright test e2e/sim.spec.ts e2e/fzp.spec.ts e2e/fzp-sim.spec.ts`.
-- `e2e/fzp.spec.ts` opens the timelapse at `/sim?start=fzp` (`gotoFzp`; a reroll's URL is `/sim?start=fzp&seed=N`). `e2e/sim.spec.ts` covers the `/fzp` redirect itself (`/fzp?seed=5` lands on `/sim?seed=5&start=fzp`).
+- `e2e/fzp.spec.ts` opens the timelapse at `/sim` (`gotoFzp`; a reroll's URL is `/sim?seed=N`). `e2e/sim.spec.ts` covers the `/fzp` redirect itself (`/fzp?seed=5` lands on `/sim?seed=5`).
 - The fixture dataset (`fixture-0`) has two parcel chunks (cell 50_25, 15 parcels; cell 51_25, 3 parcels, lots 15 to 17) and five scenario files. `/sim` reads four at load (`parcels.bin`, `projects.json`, `calibration.json`, `policy.bin`) and `frontage.bin` for the brush catalog, which the policy panel asks for when it first opens (by default from 768 px). Tests read `projects.json`, `calibration.json`, `frontage.bin`, `parcels.bin` and the chunk from disk and derive counts, ids and labels; do not hard-code them.
 - fixture-0's two parcel chunks are neighbouring cells about 700 m apart, so they cannot show over-fetching by themselves. `e2e/fzp-sim.spec.ts` adds a third, far-away chunk to the manifest the page loads (route on `manifest.json`, reached by client navigation as below), asserts it is not requested while the viewport is elsewhere, then pans to it and asserts it is.
 - The score details are one region ("Score details") under the header; open them with the score bar (`data-testid="score-bar"`). Below 768 px the header's links and actions ("Policy", "Another future") wait in the Menu: use `headerAction` / `openHeaderMenu` (`e2e/helpers/sharing.ts`). The phone policy sheet is a modal `<dialog>`, so close it before pressing anything outside it.

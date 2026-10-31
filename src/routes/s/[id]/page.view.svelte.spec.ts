@@ -94,8 +94,7 @@ function data(policy: SimPolicy = painted(), title: string | null = 'SD permits'
     noScenario: false,
     fellBack: false,
     seed: null,
-    seedInvalid: false,
-    start: null
+    seedInvalid: false
   };
 }
 
