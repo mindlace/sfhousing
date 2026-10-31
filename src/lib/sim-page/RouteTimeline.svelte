@@ -10,7 +10,9 @@
   enhancement (WCAG 2.5.7): `aria-hidden`, 24 × 24 px, previewing in months (the route's px per
   month) clamped to `stageBounds`, and committing one store change on pointer-up. They sit in a
   row under the bar, centred on the boundaries, so they never cover a segment. A handle press
-  that does not move toggles that stage's details.
+  that does not move toggles that stage's details. Losing the capture (or a cancel) before
+  pointer-up drops the preview and commits nothing; after pointer-up it is a no-op, as the
+  pointer-up already committed and cleared the drag.
 -->
 <script lang="ts">
   import { MediaQuery } from 'svelte/reactivity';
@@ -237,6 +239,26 @@
 </script>
 
 <div class="flex flex-col gap-1">
+  <!-- The bound badges sit above the bar, centred over their segment and outside its clipped
+       box, so "min" or "max" stays readable at the 24 px floor (colour is never the only
+       signal). `aria-hidden`: the segment's name already says "at the minimum". -->
+  <div class="flex h-4 w-full gap-px border-x border-transparent" aria-hidden="true">
+    {#each shown as v (v.stage)}
+      <div
+        class="flex items-end justify-center"
+        style:flex="{v.months} 1 0px"
+        style:min-width="24px"
+      >
+        {#if v.atBound}
+          <span
+            data-testid="bound-{v.stage}"
+            class="rounded-sm bg-amber-800 px-0.5 text-[9px] leading-3 font-bold text-white"
+            >{v.atBound}</span
+          >
+        {/if}
+      </div>
+    {/each}
+  </div>
   <div
     role="group"
     aria-label="{routeName} timeline"
@@ -273,11 +295,6 @@
           </svg>
         {/if}
         <span>{v.months}</span>
-        {#if v.atBound}
-          <span class="rounded-sm bg-amber-800 px-0.5 text-[9px] font-bold text-white"
-            >{v.atBound}</span
-          >
-        {/if}
       </button>
     {/each}
   </div>
@@ -297,6 +314,7 @@
               onpointermove={(e) => onpointermove(e, v)}
               onpointerup={() => onpointerup(v)}
               onpointercancel={() => (drag = null)}
+              onlostpointercapture={() => (drag = null)}
             >
               <span class="mt-0.5 h-4 w-1.5 rounded-full bg-gray-600"></span>
             </div>

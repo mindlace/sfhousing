@@ -13,7 +13,7 @@ import PermittingSection from './PermittingSection.svelte';
 import { policyFromLevers } from './policy';
 import { PolicyStore } from './policy-store.svelte';
 import RouteTimeline from './RouteTimeline.svelte';
-import { stageBounds } from './timing';
+import { setStageMonths, stageBounds } from './timing';
 
 const load = (): Calibration =>
   parseCalibration(structuredClone(fixture0CalibrationJson) as unknown);
@@ -151,7 +151,7 @@ describe.each([768, 375])('RouteTimeline at %i px', (width) => {
     const y = r.top + r.height / 2;
     pointer(h!, 'pointerdown', x, y);
     pointer(h!, 'pointermove', x - 2000, y);
-    await expect.element(bar().getByText('min')).toBeVisible();
+    await expect.element(page.getByTestId('bound-permitFiled')).toHaveTextContent('min');
     expect(store.canUndo).toBe(false);
     pointer(h!, 'pointerup', x - 2000, y);
     const b = stageBounds(calibration, store.policy.timing.current, 'discretionary', 'permitFiled');
@@ -166,6 +166,29 @@ describe.each([768, 375])('RouteTimeline at %i px', (width) => {
       expect.stringMatching(/^Reached the minimum for Permit review: /)
     );
     expect(store.undoLabel).toBe(`Permit review, discretionary to ${b.min} month`);
+  });
+
+  it('losing the pointer capture mid-drag drops the preview and commits nothing', async () => {
+    await page.viewport(width, 900);
+    const { store, announce } = setup();
+    await expect.element(bar()).toBeVisible();
+    const h = handle('permitFiled')!;
+    const r = h.getBoundingClientRect();
+    const x = r.left + r.width / 2;
+    const y = r.top + r.height / 2;
+    pointer(h, 'pointerdown', x, y);
+    pointer(h, 'pointermove', x - 2000, y);
+    await expect.element(page.getByTestId('bound-permitFiled')).toBeInTheDocument();
+    pointer(h, 'lostpointercapture', x - 2000, y);
+    await expect.element(page.getByTestId('bound-permitFiled')).not.toBeInTheDocument();
+    await expect
+      .element(segment(/^Permit review/))
+      .toHaveAttribute('aria-label', 'Permit review, 7 months, 94% move on');
+    // A later pointer-up (the drag is over) commits nothing either.
+    pointer(h, 'pointerup', x - 2000, y);
+    expect(store.canUndo).toBe(false);
+    expect(store.policy.timing.current.edits).toEqual([]);
+    expect(announce).not.toHaveBeenCalled();
   });
 
   it('typing above the maximum commits the maximum and says so', async () => {
@@ -266,6 +289,48 @@ describe('RouteTimeline in the section', () => {
       expect(r.width).toBeGreaterThanOrEqual(24);
       expect(r.height).toBeGreaterThanOrEqual(24);
     }
+  });
+
+  it('a bound badge on a 24 px segment is drawn whole, not clipped', async () => {
+    await page.viewport(375, 900);
+    const { store, calibration } = setup();
+    store.apply(
+      (p) => ({
+        ...p,
+        timing: {
+          ...p.timing,
+          current: setStageMonths(calibration, p.timing.current, 'discretionary', 'permitFiled', 0)
+            .set
+        }
+      }),
+      'To the minimum'
+    );
+    await expect
+      .element(segment(/^Permit review/))
+      .toHaveAttribute('aria-label', expect.stringMatching(/at the minimum$/));
+    const seg = segment(/^Permit review/)
+      .element()
+      .getBoundingClientRect();
+    expect(seg.width).toBeCloseTo(24, 0);
+    const badge = page.getByTestId('bound-permitFiled').element() as HTMLElement;
+    expect(badge.textContent).toBe('min');
+    const b = badge.getBoundingClientRect();
+    expect(b.width).toBeGreaterThan(0);
+    expect(b.height).toBeGreaterThan(0);
+    // Its text is not cut by its own box, and no clipping ancestor cuts the box.
+    expect(badge.scrollWidth).toBeLessThanOrEqual(badge.clientWidth);
+    for (let el = badge.parentElement; el; el = el.parentElement) {
+      const cs = getComputedStyle(el);
+      if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
+      const a = el.getBoundingClientRect();
+      expect(b.left).toBeGreaterThanOrEqual(a.left);
+      expect(b.right).toBeLessThanOrEqual(a.right);
+      expect(b.top).toBeGreaterThanOrEqual(a.top);
+      expect(b.bottom).toBeLessThanOrEqual(a.bottom);
+    }
+    // It sits over its segment.
+    expect(b.left).toBeGreaterThanOrEqual(seg.left);
+    expect(b.right).toBeLessThanOrEqual(seg.right);
   });
 
   it('has no horizontal overflow at 375 px, details open', async () => {
