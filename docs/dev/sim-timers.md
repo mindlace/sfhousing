@@ -11,13 +11,14 @@ the preset or floor that needs it is unavailable (plan Calls 7 and 8). The UI is
 
 - **Width is the typical (median) duration** of leaving the stage by any outcome (`typicalMonths`),
   not the mean the spec's wording suggests (Call 1). The UI says "typical".
-- **A duration edit is stored as a scale** (`TimerEdit`, Call 2), reach `'all'`: custom months `m`
-  on a stage are `scale = m / typical`, where `typical` is the typical months with the preset's
-  scale applied for new projects. A custom stage edit **replaces** the preset's value on that
-  stage for every project (ruling): stacking it on a preset scale made an edit that slowed
-  in-flight projects against what the user typed. The edit is `scale = months / typical` of the
-  observed table, reach `'all'`, so every project gets the typed months. The shown months are
-  rounded to 0.5.
+- **A duration edit is stored as a scale** (`TimerEdit`, Call 2, as ruled): custom months `m` on a
+  stage become one edit with `scale = m / typical0` and reach `'all'`, where `typical0` is the
+  observed (base calibration) typical months of that stage. The edit **replaces** the preset's
+  timer on that (pathway, stage) (`compileTiming` drops the preset's timer there), so every
+  project, in the pipeline or new, gets the typed months. `m` is rounded to 0.5 month and clamped
+  to `stageBounds` (see "Floors and bounds"); an edit equal to the preset's shown months is
+  removed. Stacking on the preset's scale was rejected: it made a typed value slow in-flight
+  projects against what the user typed.
 - **The policy carries resolved numbers** (Call 3): `TimingSet.presetTimers` and
   `presetRouteShares` are resolved from the calibration when the preset is chosen, so
   `compileLevers` needs no calibration and a published policy is deterministic.
@@ -51,10 +52,10 @@ presets. A preset the sources cannot support is not offered (needs a source: `ce
 
 ## Floors and bounds
 
-A stage's minimum months is `max(floor, 0.05 x typical)` and its maximum is `10 x typical` (the
+A stage's minimum months is `max(floor, 0.05 x typical)` and its maximum is `10 × typical` (the
 engine's `MIN_SCALE` and `MAX_SCALE`, `stageBounds`). Floors are sourced only (Call 7): the
 `permitFiled` floor (0.92 month) and the discretionary `filed` floor (0.657 month); the others have
-none, and the details say "No sourced minimum; numerical limit x0.05". Reaching a bound is shown
+none, and the details say "No sourced minimum; numerical limit ×0.05". Reaching a bound is shown
 three ways: "min" or "max" badge above the bar, the segment's name ("at the minimum"), and the
 details line "At the minimum"; it is announced. A preset plus a custom edit can push the stacked
 in-flight product past the engine's clamp; the stage then says it is limited for projects already
@@ -73,7 +74,7 @@ labelled store change, so Undo covers it. Editing a preset's set makes the label
 Each route's bar is a roving-tabindex group of segment buttons (Left, Right, Home, End move;
 Enter or a click opens the stage details). Names read "<Stage>, <months> months, <advance>% move
 on[, locked][, at the minimum]" ("1 month" is singular). The details hold the "Typical months"
-input (step 0.5), a "-" and a "+" button, the minimum, the chances, the reach line and the
+input (step 0.5), "Shorten by 0.5 month" and "Lengthen by 0.5 month" buttons (shown "−" and "+"), the minimum, the chances, the reach line and the
 sources. Keyboard edits coalesce in undo (Call 14). Dragging is a pointer enhancement (Call 13,
 WCAG 2.5.7 and 2.5.8): the handles are `aria-hidden`, sit in a row under the bar, and commit one
 store change on pointer-up; the min/max badge sits above the bar.
