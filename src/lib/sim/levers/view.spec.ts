@@ -4,9 +4,9 @@ import type { SimInput } from '../scenario/types';
 import { miniCity } from '../scenario/fixtures/mini-parcels';
 import miniCalibrationJson from '../scenario/fixtures/mini-calibration.json';
 import { MINI_AS_OF } from '../scenario/fixtures/mini-projects';
-import { MINI_EXEMPT_PERM_ID, MINI_SB79_ID, miniPolicy } from '../scenario/fixtures/mini-policy';
+import { miniPolicy } from '../scenario/fixtures/mini-policy';
 import { precomputeOf } from '../scenario/input';
-import { blendStock, sb79WinsAfter, type LayerCtx } from './layers';
+import { stockTable, type LayerCtx } from './layers';
 import { DEFAULT_LEVERS, type SimLevers } from './types';
 import { envelopeOp, localProgramColumn, parcelsView } from './view';
 
@@ -24,7 +24,7 @@ const F = 5;
 describe('parcelsView', () => {
   it('derives potentialRatio.fzp and storiesGap.fzp exactly as the decoder does', () => {
     const { ctx, parcels } = setup();
-    const t = blendStock(ctx, ['fzp'], 'before', false);
+    const t = stockTable(ctx, 'fzp');
     const v = parcelsView(parcels, t, parcels.localProgram);
     expect(v.potentialRatio.fzp.length).toBe(parcels.count);
     for (let i = 0; i < parcels.count; i++) {
@@ -38,7 +38,7 @@ describe('parcelsView', () => {
   it('presents the table without mutating any source column', () => {
     const { ctx, parcels } = setup();
     const before = Array.from(parcels.yield);
-    const t = blendStock(ctx, ['sb79'], 'before', false);
+    const t = stockTable(ctx, 'base');
     const v = parcelsView(parcels, t, new Uint8Array(parcels.count));
     expect(v.envelopeStories).toBe(t.stories);
     expect(v.yield).toBe(t.yield);
@@ -57,7 +57,7 @@ describe('parcelsView', () => {
       asOf: MINI_AS_OF,
       districtMaxStories: null
     };
-    const t = blendStock(ctx, ['fzp'], 'before', false);
+    const t = stockTable(ctx, 'fzp');
     const view = parcelsView(parcels, t, parcels.localProgram);
     const a = precomputeOf(input).hazard;
     const b = precomputeOf({ ...input, parcels: view }).hazard;
@@ -68,7 +68,7 @@ describe('parcelsView', () => {
 describe('envelopeOp', () => {
   it('returns the calibration as the same object and the view as parcels', () => {
     const { ctx, parcels } = setup();
-    const t = blendStock(ctx, ['fzp'], 'before', false);
+    const t = stockTable(ctx, 'fzp');
     const lp = parcels.localProgram;
     const cal = parseCalibration(structuredClone(miniCalibrationJson) as unknown);
     const out = envelopeOp(t, lp)(cal, parcels);
@@ -79,45 +79,15 @@ describe('envelopeOp', () => {
 });
 
 describe('localProgramColumn', () => {
-  it('follows the decoded column under fzp or currentLaw', () => {
+  it('is the decoded column when Local Program lots are streamlined', () => {
     const { ctx, parcels } = setup();
     expect(parcels.localProgram.some((x) => x === 1)).toBe(true);
-    for (const s of [['fzp'], ['currentLaw']] as const) {
-      const col = localProgramColumn(ctx, levers({ stock: [...s] }), 'before');
-      expect(Array.from(col)).toEqual(Array.from(parcels.localProgram));
-    }
+    expect(localProgramColumn(ctx, DEFAULT_LEVERS)).toBe(parcels.localProgram);
   });
-  it('is all zero for sb79 alone and when streamlining is off', () => {
+  it('is all zero when streamlining is off', () => {
     const { ctx, parcels } = setup();
-    const zero = (c: Uint8Array) => c.length === parcels.count && c.every((x) => x === 0);
-    for (const period of ['before', 'after'] as const) {
-      expect(zero(localProgramColumn(ctx, levers({ stock: ['sb79'] }), period))).toBe(true);
-      expect(
-        zero(
-          localProgramColumn(
-            ctx,
-            levers({ stock: ['fzp'], localProgramStreamlined: false }),
-            period
-          )
-        )
-      ).toBe(true);
-    }
-  });
-  it('Local Program follows the route shares where SB 79 wins after the switch', () => {
-    const { ctx, parcels } = setup();
-    const i = parcels.index.get(MINI_SB79_ID)!;
-    const fzpWins = parcels.index.get(MINI_EXEMPT_PERM_ID)!;
-    expect(parcels.localProgram[i]).toBe(1);
-    expect(parcels.localProgram[fzpWins]).toBe(1);
-    expect(sb79WinsAfter(ctx)[i]).toBe(1);
-    expect(sb79WinsAfter(ctx)[fzpWins]).toBe(0);
-    const col = (over: Partial<SimLevers>, period: 'before' | 'after') =>
-      localProgramColumn(ctx, levers(over), period);
-    expect(col({}, 'before')[i]).toBe(1);
-    expect(col({}, 'after')[i]).toBe(0);
-    expect(col({ assumeAlternativePlanKept: true }, 'after')[i]).toBe(1);
-    expect(col({ stock: ['currentLaw', 'fzp'] }, 'after')[i]).toBe(1);
-    expect(col({}, 'before')[fzpWins]).toBe(1);
-    expect(col({}, 'after')[fzpWins]).toBe(1);
+    const col = localProgramColumn(ctx, levers({ localProgramStreamlined: false }));
+    expect(col.length).toBe(parcels.count);
+    expect(col.every((x) => x === 0)).toBe(true);
   });
 });

@@ -5,10 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
 import '../../routes/layout.css';
-import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import type { BrushLotsResult } from '$lib/sim/scenario/types';
 import BrushCard from './BrushCard.svelte';
-import { brushQueries, policyFromLevers, queryKey, type ZoningBrush } from './policy';
+import { brushQueries, DEFAULT_POLICY, queryKey, type ZoningBrush } from './policy';
 import { PolicyStore } from './policy-store.svelte';
 
 const street: ZoningBrush = {
@@ -35,7 +34,7 @@ const lots = (n: number): BrushLotsResult => ({
 });
 
 function setup(index: number) {
-  const store = new PolicyStore(policyFromLevers(DEFAULT_LEVERS));
+  const store = new PolicyStore(DEFAULT_POLICY);
   store.apply((p) => ({ ...p, brushes: [street, freehand] }), 'Seeded');
   const sync = {
     result: vi.fn((k: string) => (k === streetKey ? lots(1204) : undefined)),

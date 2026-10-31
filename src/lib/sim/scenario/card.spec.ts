@@ -7,10 +7,9 @@ import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import { DYING_DAYS, monthsIn, type Day } from '$lib/timelapse/time';
 import type { Calibration } from '$lib/timelapse/types';
-import { applyLevers } from '../levers/apply';
-import { fillNeeds, resolveEnvelopes } from '../levers/resolve';
+import { stockTable } from '../levers/layers';
 import type { StageScale } from '../levers/timers';
-import { CURRENT_LAW_SWITCH, DEFAULT_LEVERS } from '../levers/types';
+import { parcelsView } from '../levers/view';
 import { createLru } from '../lru';
 import { blockLot, chooseProject, firstDay, isVisible, projectCard, type CardCtx } from './card';
 import { dayOf } from './dates';
@@ -878,11 +877,15 @@ describe('projectCard: lookups and in-flight chance shift', () => {
 
 describe('projectCard: Local Program under a law switch', () => {
   it('Local Program flag follows the initiation regime', () => {
-    // DEFAULT_LEVERS: MINI_SB79_ID is a Local Program lot before the switch, not after (Call 22)
-    const ctxL = { parcels: city.parcels, policy: miniPolicy(city) };
-    const window = { asOf: AS_OF, horizon: MINI_HORIZON, switchDay: CURRENT_LAW_SWITCH.day };
-    const filled = fillNeeds(resolveEnvelopes(ctxL, DEFAULT_LEVERS, window), new Map());
-    const { plan } = applyLevers(input, ctxL, DEFAULT_LEVERS, filled, MINI_HORIZON);
+    // A hand-built switch (Task 8 deletes it): MINI_SB79_ID is a Local Program lot before the
+    // switch, not after (Call 22)
+    const fzp = stockTable({ parcels: city.parcels, policy: miniPolicy(city) }, 'fzp');
+    const lp = input.parcels.localProgram.slice();
+    lp[input.parcels.index.get(MINI_SB79_ID)!] = 0;
+    const plan: SimInput = {
+      ...input,
+      lawSwitch: { day: dayOf(2032, 1, 31), parcels: parcelsView(input.parcels, fzp, lp) }
+    };
     const i = plan.parcels.index.get(MINI_SB79_ID)!;
     expect([plan.parcels.localProgram[i], plan.lawSwitch!.parcels.localProgram[i]]).toEqual([1, 0]);
     const { ctx } = mkCtx({ input: plan });

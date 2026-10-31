@@ -2,12 +2,12 @@
 // debounce, send): the latest recipe alone reaches the worker (Review Focus 2).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrushQuery } from '$lib/sim/levers/brushes';
-import { DEFAULT_LEVERS, type SimLevers } from '$lib/sim/levers/types';
+import type { SimLevers } from '$lib/sim/levers/types';
 import type { BrushLotsResult } from '$lib/sim/scenario/types';
-import { policyFromLevers, queryKey, type SimPolicy, type ZoningBrush } from './policy';
+import { DEFAULT_POLICY, queryKey, type SimPolicy, type ZoningBrush } from './policy';
 import { LeverSync, PolicyStore } from './policy-store.svelte';
 
-const BASE = policyFromLevers(DEFAULT_LEVERS);
+const BASE = DEFAULT_POLICY;
 
 function area(district: string, stories = 4): ZoningBrush {
   return {
@@ -59,9 +59,9 @@ describe('PolicyStore', () => {
     expect(store.undo()).toBeNull();
     store.apply((p) => ({ ...p, brushes: [area('RH-1')] }), 'Raised RH-1 to 4 stories');
     const one = store.policy;
-    store.apply((p) => ({ ...p, compare: 'preFzp' }), 'Compared with the old zoning');
+    store.apply((p) => ({ ...p, compare: 'currentLaw' }), 'Compared with current law');
     expect(store.canUndo).toBe(true);
-    expect(store.undo()).toBe('Compared with the old zoning');
+    expect(store.undo()).toBe('Compared with current law');
     expect(store.policy).toBe(one);
     expect(store.canRedo).toBe(true);
     expect(store.undo()).toBe('Raised RH-1 to 4 stories');
@@ -69,8 +69,8 @@ describe('PolicyStore', () => {
     expect(store.canUndo).toBe(false);
     expect(store.redo()).toBe('Raised RH-1 to 4 stories');
     expect(store.policy).toBe(one);
-    expect(store.redo()).toBe('Compared with the old zoning');
-    expect(store.policy.compare).toBe('preFzp');
+    expect(store.redo()).toBe('Compared with current law');
+    expect(store.policy.compare).toBe('currentLaw');
     expect(store.redo()).toBeNull();
   });
 
@@ -109,7 +109,7 @@ describe('PolicyStore', () => {
     const store = new PolicyStore(BASE);
     store.apply((p) => ({ ...p, brushes: [area('RH-1', 4)] }), 'a', 'k');
     store.apply((p) => ({ ...p, brushes: [area('RH-1', 5)] }), 'b', 'j');
-    store.apply((p) => ({ ...p, compare: 'preFzp' }), 'c');
+    store.apply((p) => ({ ...p, compare: 'currentLaw' }), 'c');
     store.apply((p) => ({ ...p, brushes: [area('RH-1', 6)] }), 'd', 'j');
     expect(store.undo()).toBe('d');
     expect(store.undo()).toBe('c');
@@ -126,7 +126,7 @@ describe('PolicyStore', () => {
   it('reset replaces the policy and clears undo, redo and coalescing', () => {
     const store = new PolicyStore(BASE);
     store.apply((p) => ({ ...p, brushes: [area('RH-1', 4)] }), 'a', 'k');
-    store.apply((p) => ({ ...p, compare: 'preFzp' }), 'b');
+    store.apply((p) => ({ ...p, compare: 'currentLaw' }), 'b');
     store.undo();
     expect(store.canUndo).toBe(true);
     expect(store.canRedo).toBe(true);
@@ -163,9 +163,7 @@ describe('LeverSync', () => {
     expect(h.sent).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].user).toEqual([
-      { lots: ['lot-RM-2'], mode: 'raise', stories: 4, densityLimits: false }
-    ]);
+    expect(h.sent[0].rules).toEqual([{ lots: ['lot-RM-2'], stories: 4 }]);
     expect(h.sync.levers).toBe(h.sent[0]);
   });
 
@@ -181,7 +179,7 @@ describe('LeverSync', () => {
     expect(h.sync.result(queryKey(areaQuery('RH-1')))).toMatchObject({ ok: true });
     await vi.advanceTimersByTimeAsync(250);
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].user[0].lots).toEqual(['a', 'b']);
+    expect(h.sent[0].rules[0].lots).toEqual(['a', 'b']);
   });
 
   it('a query asked once is cached across updates', async () => {
@@ -193,7 +191,7 @@ describe('LeverSync', () => {
     await vi.advanceTimersByTimeAsync(250);
     expect(h.resolve).toHaveBeenCalledTimes(1);
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].user[0].stories).toBe(8);
+    expect(h.sent[0].rules[0].stories).toBe(8);
   });
 
   it('a failed query sends nothing until retry succeeds', async () => {
@@ -217,18 +215,17 @@ describe('LeverSync', () => {
     h.pending[1].resolve(ok(['x']));
     await vi.advanceTimersByTimeAsync(250);
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].user).toEqual([
-      { lots: ['x'], mode: 'raise', stories: 6, densityLimits: false }
-    ]);
+    expect(h.sent[0].rules).toEqual([{ lots: ['x'], stories: 6 }]);
   });
 
   it('a policy with no brushes compiles at once, after the debounce', async () => {
     const h = harness();
-    h.sync.update({ ...BASE, compare: 'preFzp' });
+    h.sync.update({ ...BASE, protect: { ...BASE.protect, historic: true } });
     expect(h.resolve).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(250);
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].compare).toBe('preFzp');
+    expect(h.sent[0].protect.historic).toBe(true);
+    expect(h.sent[0].compare).toBe('fzp'); // a customised policy compares with FZP as written
   });
 
   it('a superseded query answering late does not send the old recipe', async () => {
@@ -238,7 +235,7 @@ describe('LeverSync', () => {
     h.pending[1].resolve(ok(['two']));
     await vi.advanceTimersByTimeAsync(250);
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].user[0].lots).toEqual(['two']);
+    expect(h.sent[0].rules[0].lots).toEqual(['two']);
     h.pending[0].resolve(ok(['one']));
     await vi.advanceTimersByTimeAsync(1000);
     expect(h.sent).toHaveLength(1);
@@ -276,7 +273,7 @@ describe('LeverSync', () => {
     h.pending[1].resolve(ok(['a']));
     await vi.advanceTimersByTimeAsync(250);
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].user[0]).toMatchObject({ lots: ['a'], stories: 6 });
+    expect(h.sent[0].rules[0]).toMatchObject({ lots: ['a'], stories: 6 });
   });
 
   it('a no-session answer to a query asked before resume is asked again at once', async () => {

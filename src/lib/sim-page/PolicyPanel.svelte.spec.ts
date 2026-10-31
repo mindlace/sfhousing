@@ -3,13 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
-import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
-import { policyFromLevers } from './policy';
+import { DEFAULT_POLICY } from './policy';
 import { PolicyStore } from './policy-store.svelte';
 import PolicyPanelHost from './test/PolicyPanelHost.svelte';
 
 async function setup(open = true) {
-  const store = new PolicyStore(policyFromLevers(DEFAULT_LEVERS));
+  const store = new PolicyStore(DEFAULT_POLICY);
   const onclose = vi.fn();
   const view = await render(PolicyPanelHost, { props: { store, open, onclose } });
   return { store, onclose, view };

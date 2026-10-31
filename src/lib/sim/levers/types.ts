@@ -1,21 +1,10 @@
 /**
  * The /sim lever document: a sibling of the editor's `Plan`, not new `PlanOp`s. It is mostly
- * static configuration; user edits name lots by `ParcelId` so the document stays meaningful
+ * static configuration; rules and paint name lots by `ParcelId` so the document stays meaningful
  * across row reorderings. Worker-safe: hand-written guards, no zod, no DOM.
  */
 import type { ParcelId } from '$lib/data/parcel';
-import {
-  PATHWAYS,
-  type Day,
-  type Pathway,
-  type Provenance,
-  type Stage
-} from '$lib/timelapse/types';
-import { dayOf } from '../scenario/dates';
-
-/** Canonical blend order. Blending is order-insensitive; a tie keeps the earlier layer. */
-export const STOCK_LAYERS = ['currentLaw', 'fzp', 'sb79', 'base'] as const;
-export type StockLayerId = (typeof STOCK_LAYERS)[number];
+import { PATHWAYS, type Pathway, type Stage } from '$lib/timelapse/types';
 
 /** Construction and completion are locked: no lever edits them. */
 export type TimedStage = Exclude<Stage, 'complete' | 'construction'>;
@@ -27,18 +16,17 @@ const TIMED_STAGES = [
   'permitIssued'
 ] as const satisfies readonly TimedStage[];
 
-export interface UserEdit {
+/** An edit naming lots and a story count (integer 0..255). Rules raise; paint sets. */
+export interface StoryEdit {
   lots: ParcelId[];
-  mode: 'raise' | 'lower' | 'set';
   stories: number;
-  densityLimits: boolean;
 }
 
 export interface Protections {
   rentControl: boolean;
   historic: boolean;
   newerThanYears: number | null;
-  lots: ParcelId[];
+  lots: ParcelId[]; // removed in Task 3
 }
 
 export interface TimerEdit {
@@ -48,16 +36,24 @@ export interface TimerEdit {
   reach: 'all' | 'new';
 }
 
+/** The twin: pre-FZP zoning, or FZP as written. */
+export type Compare = 'preFzp' | 'fzp';
+export const COMPARES = ['preFzp', 'fzp'] as const satisfies readonly Compare[];
+
+/**
+ * Schema 2: FZP as written, plus additive rules and custom paint (spec 2026-10-31, section 3).
+ * `rules` give each lot `max(FZP, N)`, uncapped where they raise, whatever their order; `paint`
+ * then sets `N` uncapped, in document order (a later stroke wins).
+ */
 export interface SimLevers {
-  schema: 1;
-  stock: StockLayerId[];
-  assumeAlternativePlanKept: boolean;
-  user: UserEdit[];
+  schema: 2;
+  rules: StoryEdit[];
+  paint: StoryEdit[];
   protect: Protections;
   timers: TimerEdit[];
   routeShares: Record<Pathway, number> | null; // null = observed pathwayForNew
   localProgramStreamlined: boolean;
-  compare: 'currentLaw' | 'preFzp';
+  compare: Compare;
 }
 
 /** Numerical bounds only (plan 2 ruling 3): at 0.05 every table keeps C(K') <= 1 - 1e-6. Tier 4. */
@@ -67,37 +63,10 @@ export const MAX_SCALE = 10;
 /** Largest story count a lot can carry (one byte in the packed columns). */
 const MAX_STORIES = 255;
 
-/** Plan 2 ruling 1: the day current law switches from FZP to SB 79 where SB 79 is more permissive. */
-export const CURRENT_LAW_SWITCH: { day: Day; provenance: Provenance } = {
-  day: dayOf(2032, 1, 31),
-  provenance: {
-    tier: 4,
-    label:
-      'Assumption: SB 79 as written takes effect one year after the 7th-cycle Housing Element due date',
-    sources: [],
-    method:
-      'The temporary SB 79 exemptions and the Alternative Plan lapse together, one year after the 7th-cycle Housing Element due date (2031-01-31); the exemptions are therefore not applied after the switch.'
-  }
-};
-
 export const DEFAULT_LEVERS: SimLevers = {
-  schema: 1,
-  stock: ['currentLaw'],
-  assumeAlternativePlanKept: false,
-  user: [],
-  protect: { rentControl: false, historic: false, newerThanYears: null, lots: [] },
-  timers: [],
-  routeShares: null,
-  localProgramStreamlined: true,
-  compare: 'currentLaw'
-};
-
-/** The levers under which /sim reproduces /fzp. */
-export const FZP_COMPAT_LEVERS: SimLevers = {
-  schema: 1,
-  stock: ['fzp'],
-  assumeAlternativePlanKept: false,
-  user: [],
+  schema: 2,
+  rules: [],
+  paint: [],
   protect: { rentControl: false, historic: false, newerThanYears: null, lots: [] },
   timers: [],
   routeShares: null,
@@ -154,14 +123,8 @@ function lotIds(v: unknown, path: string): ParcelId[] {
   });
 }
 
-function parseStock(v: unknown): StockLayerId[] {
-  const xs = array(v, 'stock').map((x, i) => oneOf(x, `stock[${i}]`, STOCK_LAYERS));
-  if (xs.length === 0) fail('stock', 'expected at least one layer');
-  return STOCK_LAYERS.filter((l) => xs.includes(l));
-}
-
-function parseUserEdit(v: unknown, path: string): UserEdit {
-  const r = record(v, path, ['lots', 'mode', 'stories', 'densityLimits']);
+function parseStoryEdit(v: unknown, path: string): StoryEdit {
+  const r = record(v, path, ['lots', 'stories']);
   const stories = r.stories;
   if (
     typeof stories !== 'number' ||
@@ -170,12 +133,7 @@ function parseUserEdit(v: unknown, path: string): UserEdit {
     stories > MAX_STORIES
   )
     fail(`${path}.stories`, `expected an integer from 0 to ${MAX_STORIES}`);
-  return {
-    lots: lotIds(r.lots, `${path}.lots`),
-    mode: oneOf(r.mode, `${path}.mode`, ['raise', 'lower', 'set'] as const),
-    stories,
-    densityLimits: bool(r.densityLimits, `${path}.densityLimits`)
-  };
+  return { lots: lotIds(r.lots, `${path}.lots`), stories };
 }
 
 function parseProtections(v: unknown): Protections {
@@ -230,25 +188,23 @@ function parseRouteShares(v: unknown): Record<Pathway, number> | null {
 export function parseSimLevers(json: unknown): SimLevers {
   const r = record(json, '', [
     'schema',
-    'stock',
-    'assumeAlternativePlanKept',
-    'user',
+    'rules',
+    'paint',
     'protect',
     'timers',
     'routeShares',
     'localProgramStreamlined',
     'compare'
   ]);
-  if (r.schema !== 1) fail('schema', `expected 1, got ${String(r.schema)}`);
+  if (r.schema !== 2) fail('schema', `expected 2, got ${String(r.schema)}`);
   return {
-    schema: 1,
-    stock: parseStock(r.stock),
-    assumeAlternativePlanKept: bool(r.assumeAlternativePlanKept, 'assumeAlternativePlanKept'),
-    user: array(r.user, 'user').map((x, i) => parseUserEdit(x, `user[${i}]`)),
+    schema: 2,
+    rules: array(r.rules, 'rules').map((x, i) => parseStoryEdit(x, `rules[${i}]`)),
+    paint: array(r.paint, 'paint').map((x, i) => parseStoryEdit(x, `paint[${i}]`)),
     protect: parseProtections(r.protect),
     timers: array(r.timers, 'timers').map((x, i) => parseTimer(x, `timers[${i}]`)),
     routeShares: parseRouteShares(r.routeShares),
     localProgramStreamlined: bool(r.localProgramStreamlined, 'localProgramStreamlined'),
-    compare: oneOf(r.compare, 'compare', ['currentLaw', 'preFzp'] as const)
+    compare: oneOf(r.compare, 'compare', COMPARES)
   };
 }

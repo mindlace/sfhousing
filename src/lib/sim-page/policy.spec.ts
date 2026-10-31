@@ -1,19 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import {
-  DEFAULT_LEVERS,
-  FZP_COMPAT_LEVERS,
-  parseSimLevers,
-  type TimerEdit
-} from '$lib/sim/levers/types';
+import { DEFAULT_LEVERS, parseSimLevers, type TimerEdit } from '$lib/sim/levers/types';
 import { OBSERVED_TIMING, type TimingSet } from './timing';
 import {
   DEFAULT_BANDS,
+  DEFAULT_POLICY,
   PolicyFormatError,
   compileLevers,
   defaultEffect,
   lotRoles,
+  isDefaultPolicy,
   parseSimPolicy,
-  policyFromLevers,
   queriesOf,
   queryKey,
   scoreCopy,
@@ -30,7 +26,7 @@ const stroke: Stroke = {
   radiusM: 50
 };
 const base = (over: Partial<SimPolicy> = {}): SimPolicy => ({
-  ...policyFromLevers(DEFAULT_LEVERS),
+  ...DEFAULT_POLICY,
   ...over
 });
 const eff = (mode: 'raise' | 'lower' | 'set', stories = 6) => defaultEffect(mode, stories);
@@ -78,9 +74,35 @@ const SB423: TimingSet = {
 };
 
 describe('compileLevers', () => {
-  it('round-trips the default and FZP levers', () => {
-    for (const l of [DEFAULT_LEVERS, FZP_COMPAT_LEVERS])
-      expect(compileLevers(policyFromLevers(l), () => undefined)).toEqual(l);
+  it('compiles the default policy to the default levers', () => {
+    expect(isDefaultPolicy(DEFAULT_POLICY)).toBe(true);
+    expect(compileLevers(DEFAULT_POLICY, () => undefined)).toEqual(DEFAULT_LEVERS);
+  });
+
+  it('ignores stock, assumeAlternativePlanKept and the document compare', () => {
+    const p = base({ stock: ['currentLaw', 'sb79'], assumeAlternativePlanKept: true });
+    const out = compileLevers(p, () => undefined)!;
+    expect(out).toEqual({ ...DEFAULT_LEVERS, compare: 'fzp' });
+    expect(compileLevers(base({ compare: 'currentLaw' }), () => undefined)!.compare).toBe('fzp');
+  });
+
+  it('raises become rules; lower and set become paint in order, density limits dropped', () => {
+    const p = base({
+      brushes: [freehand('a', [s(1)], 'set'), freehand('b', [s(2)]), freehand('c', [s(3)], 'lower')]
+    });
+    const m = new Map<string, string[]>([
+      [queryKey({ kind: 'freehand', strokes: [s(1)] }), ['1']],
+      [queryKey({ kind: 'freehand', strokes: [s(2)] }), ['2']],
+      [queryKey({ kind: 'freehand', strokes: [s(3)] }), ['3']]
+    ]);
+    const out = compileLevers(p, supply(m))!;
+    expect(out.rules).toEqual([{ lots: ['2'], stories: 6 }]);
+    expect(out.paint).toEqual([
+      { lots: ['1'], stories: 6 },
+      { lots: ['3'], stories: 6 }
+    ]);
+    expect(out.compare).toBe('fzp');
+    expect(() => parseSimLevers(out)).not.toThrow();
   });
 
   it('an empty brush compiles to no edit', () => {
@@ -99,7 +121,8 @@ describe('compileLevers', () => {
     });
     const key = queriesOf(p)[0].key;
     const out = compileLevers(p, supply(new Map([[key, []]])));
-    expect(out?.user).toEqual([]);
+    expect(out?.rules).toEqual([]);
+    expect(out?.paint).toEqual([]);
   });
 
   it('erase removes from earlier brushes only', () => {
@@ -113,11 +136,8 @@ describe('compileLevers', () => {
       [queryKey({ kind: 'freehand', strokes: [s(3)] }), ['4', '2']]
     ]);
     const out = compileLevers(p, supply(m))!;
-    expect(out.user.map((u) => u.lots)).toEqual([
-      ['1', '3'],
-      ['2', '4']
-    ]);
-    expect(out.user[1].mode).toBe('set');
+    expect(out.rules.map((u) => u.lots)).toEqual([['1', '3']]);
+    expect(out.paint.map((u) => u.lots)).toEqual([['2', '4']]);
     expect(() => parseSimLevers(out)).not.toThrow();
   });
 
@@ -141,7 +161,7 @@ describe('compileLevers', () => {
       [queryKey({ kind: 'transit', stopTypes: ['metro'], maxM: 805 }), ['1', '2']]
     ]);
     const out = compileLevers(p, supply(m))!;
-    expect(out.user.map((u) => [u.stories, u.lots])).toEqual([
+    expect(out.rules.map((u) => [u.stories, u.lots])).toEqual([
       [4, ['1', '2']],
       [6, ['1']]
     ]);
@@ -173,11 +193,12 @@ describe('compileLevers', () => {
   });
 
   it('maps category protections and timing', () => {
-    const l = {
+    const p = base({ protect: { ...DEFAULT_POLICY.protect, historic: true, newerThanYears: 5 } });
+    expect(compileLevers(p, () => undefined)).toEqual({
       ...DEFAULT_LEVERS,
-      protect: { ...DEFAULT_LEVERS.protect, historic: true, newerThanYears: 5 }
-    };
-    expect(compileLevers(policyFromLevers(l), () => undefined)).toEqual(l);
+      protect: { ...DEFAULT_LEVERS.protect, historic: true, newerThanYears: 5 },
+      compare: 'fzp'
+    });
   });
 });
 
@@ -208,20 +229,8 @@ describe('timing in the policy', () => {
     ]);
   });
 
-  it('policyFromLevers maps no timers to the observed set and refuses anything else', () => {
-    expect(policyFromLevers(DEFAULT_LEVERS).timing).toEqual({
-      current: OBSERVED_TIMING.current,
-      saved: null
-    });
-    for (const l of [
-      {
-        ...DEFAULT_LEVERS,
-        timers: [{ pathway: 'discretionary', stage: 'filed', scale: 0.5, reach: 'all' } as const]
-      },
-      { ...DEFAULT_LEVERS, routeShares: { discretionary: 1, streamlined: 1, permitOnly: 1 } },
-      { ...DEFAULT_LEVERS, localProgramStreamlined: false }
-    ])
-      expect(() => policyFromLevers(l)).toThrow(PolicyFormatError);
+  it('the default policy runs on the observed timing set', () => {
+    expect(DEFAULT_POLICY.timing).toEqual({ current: OBSERVED_TIMING.current, saved: null });
   });
 
   const rejectTiming = (
@@ -467,16 +476,13 @@ describe('parseSimPolicy', () => {
 
 describe('scoreCopy', () => {
   it('words the comparison', () => {
-    const fzp = { plan: 'the Family Zoning Plan', twin: 'the old zoning' };
+    const fzp = { plan: 'the Family Zoning Plan', twin: 'the old zoning', compare: 'preFzp' };
     expect(scoreCopy(null)).toEqual(fzp);
-    expect(scoreCopy(FZP_COMPAT_LEVERS)).toEqual(fzp);
-    expect(scoreCopy(DEFAULT_LEVERS)).toEqual({
+    expect(scoreCopy(DEFAULT_LEVERS)).toEqual(fzp);
+    expect(scoreCopy({ ...DEFAULT_LEVERS, compare: 'fzp' })).toEqual({
       plan: 'your policy',
-      twin: "the City's current rules"
-    });
-    expect(scoreCopy({ ...DEFAULT_LEVERS, compare: 'preFzp' })).toEqual({
-      plan: 'your policy',
-      twin: 'the old zoning'
+      twin: 'the Family Zoning Plan as written',
+      compare: 'fzp'
     });
   });
 });

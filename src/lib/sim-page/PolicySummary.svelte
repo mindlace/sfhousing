@@ -7,9 +7,8 @@
 -->
 <script lang="ts">
   import { PATHWAYS, type Calibration, type Pathway } from '$lib/timelapse/types';
-  import type { StockLayerId } from '$lib/sim/levers/types';
   import { brushSummary, count, lotsText, type LotStatus } from './brush-summary';
-  import type { SimPolicy } from './policy';
+  import type { LegacyStockLayer, SimPolicy } from './policy';
   import { OBSERVED_TIMING, routeView, shownRouteShares, timingLabel } from './timing';
 
   interface Props {
@@ -25,7 +24,7 @@
   const detailsId = `${uid}-timing-details`;
   let open = $state(false);
 
-  const LAYER: Record<StockLayerId, string> = {
+  const LAYER: Record<LegacyStockLayer, string> = {
     currentLaw: 'Current law',
     fzp: 'Family Zoning Plan map',
     sb79: 'SB 79 as written',

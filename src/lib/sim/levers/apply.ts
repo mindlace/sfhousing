@@ -2,12 +2,11 @@
  * Compiles a filled lever `Resolution` into the plan's and the twin's `SimInput`s (plan 2 Task
  * 10), and the stage lookups each cohort reads. The plan runs on the resolved envelopes, its
  * in-flight rows on the `'all'` timers and its new projects on every timer plus the route shares
- * (ruling 3, "Policy start date"). The twin is pre-FZP zoning or current law, never the plan's
- * timers, and every lever field (`lawSwitch`, `newProjects`, `inFlightScale`) is set explicitly,
- * because `applyPolicies` copies the whole input. Worker-safe and pure.
+ * (ruling 3, "Policy start date"). The twin is pre-FZP zoning or FZP as written, never the
+ * plan's timers, and every lever field (`lawSwitch`, `newProjects`, `inFlightScale`) is set
+ * explicitly, because `applyPolicies` copies the whole input. Worker-safe and pure.
  */
 import { chanceTable, typicalMonths } from '$lib/timelapse/model';
-import type { Day } from '$lib/timelapse/types';
 import { applyPolicies, baseZoning } from '../scenario/policy';
 import { REFERENCES } from '../scenario/score';
 import type { SimInput, TimelineScore } from '../scenario/types';
@@ -20,8 +19,8 @@ import {
   type Resolution
 } from './resolve';
 import { isIdentity, routeSharesOp, scaleTable, timersOp } from './timers';
-import { CURRENT_LAW_SWITCH, DEFAULT_LEVERS, type SimLevers } from './types';
-import { envelopeOp, localProgramColumn, parcelsView } from './view';
+import { DEFAULT_LEVERS, type Compare, type SimLevers } from './types';
+import { envelopeOp, localProgramColumn } from './view';
 
 export interface Lookups {
   chance: ReturnType<typeof chanceTable>;
@@ -48,15 +47,12 @@ function bare(input: SimInput): SimInput {
   return rest;
 }
 
-/**
- * The plan input for `levers` under the filled resolution (its Needs already written in). Each
- * view gets its period's Local Program column (Call 22).
- */
+/** The plan input for `levers` under the filled resolution (its Needs already written in). */
 function planOf(base: SimInput, ctx: LayerCtx, levers: SimLevers, filled: Resolution): SimInput {
-  const lp = localProgramColumn(ctx, levers, filled.beforePeriod);
+  const lp = localProgramColumn(ctx, levers);
   const inFlight = scaleTable(levers.timers, 'inFlight');
   const fresh = scaleTable(levers.timers, 'new');
-  const plan = bare(applyPolicies([envelopeOp(filled.before.table, lp), timersOp(inFlight)], base));
+  const plan = bare(applyPolicies([envelopeOp(filled.plan.table, lp), timersOp(inFlight)], base));
   // Without a 'new' timer both cohorts have the same scales, so new projects reuse the plan's
   // rescaled transitions (and `lookupsOf` shares one set). Otherwise every edit applies to the
   // base calibration once: rescaling the in-flight calibration again would double the 'all' ones.
@@ -67,60 +63,36 @@ function planOf(base: SimInput, ctx: LayerCtx, levers: SimLevers, filled: Resolu
   return {
     ...plan,
     newProjects: { calibration: newCal, scale: fresh },
-    ...(isIdentity(inFlight) ? {} : { inFlightScale: inFlight }),
-    ...(filled.after
-      ? {
-          lawSwitch: {
-            day: filled.after.day,
-            parcels: parcelsView(
-              base.parcels,
-              filled.after.period.table,
-              localProgramColumn(ctx, levers, 'after')
-            )
-          }
-        }
-      : {})
+    ...(isIdentity(inFlight) ? {} : { inFlightScale: inFlight })
   };
 }
 
-const twinMemo = new WeakMap<SimInput, WeakMap<LayerCtx, Map<string, SimInput>>>();
+const twinMemo = new WeakMap<SimInput, WeakMap<LayerCtx, Map<Compare, SimInput>>>();
 
 /**
- * The twin the plan is compared with. `'preFzp'`: `baseZoning` on the base, no switch.
- * `'currentLaw'`: the plan of `{ ...DEFAULT_LEVERS, assumeAlternativePlanKept }` on the base
- * calibration, with its own switch. Memoised on (base, ctx, compare, assumeAlternativePlanKept,
- * horizon), so lever documents that differ elsewhere share one twin (and its precompute).
+ * The twin the plan is compared with. `'preFzp'`: `baseZoning` on the base. `'fzp'`: the plan of
+ * `DEFAULT_LEVERS` (FZP as written: no rules, paint, protections or timers) on the base
+ * calibration. Neither switches law. Memoised on (base, ctx, compare), so lever documents that
+ * differ elsewhere share one twin (and its precompute).
  */
-export function twinInput(
-  base: SimInput,
-  ctx: LayerCtx,
-  levers: SimLevers,
-  horizon: Day
-): SimInput {
-  const assume = levers.assumeAlternativePlanKept;
-  const key = levers.compare === 'preFzp' ? 'preFzp' : `currentLaw:${assume}:${horizon}`;
+export function twinInput(base: SimInput, ctx: LayerCtx, compare: Compare): SimInput {
   let byCtx = twinMemo.get(base);
   if (!byCtx) twinMemo.set(base, (byCtx = new WeakMap()));
   let byKey = byCtx.get(ctx);
   if (!byKey) byCtx.set(ctx, (byKey = new Map()));
-  const hit = byKey.get(key);
+  const hit = byKey.get(compare);
   if (hit) return hit;
 
   let twin: SimInput;
-  if (levers.compare === 'preFzp') {
+  if (compare === 'preFzp') {
     twin = bare(applyPolicies([baseZoning], base));
   } else {
-    const law: SimLevers = {
-      ...structuredClone(DEFAULT_LEVERS),
-      assumeAlternativePlanKept: assume
-    };
-    const window = { asOf: base.asOf, horizon, switchDay: CURRENT_LAW_SWITCH.day };
-    const r = resolveEnvelopes(ctx, law, window);
+    const r = resolveEnvelopes(ctx, DEFAULT_LEVERS, base.asOf);
     const needs = allNeeds(r).length;
-    if (needs > 0) throw new Error(`twinInput: the current-law twin has ${needs} needs`);
-    twin = planOf(base, ctx, law, r);
+    if (needs > 0) throw new Error(`twinInput: the FZP twin has ${needs} needs`);
+    twin = planOf(base, ctx, DEFAULT_LEVERS, r);
   }
-  byKey.set(key, twin);
+  byKey.set(compare, twin);
   return twin;
 }
 
@@ -138,21 +110,20 @@ export function lookupsOf(plan: SimInput): LeverLookups {
 
 /**
  * The plan and twin inputs for `levers` (ruling 3). `filled` is `fillNeeds`' output for these
- * levers; `horizon` is the run's, which the current-law twin resolves its switch against.
- * References (ruling 3): the existing ones are FZP-versus-pre-FZP estimates on `planEffect.*`,
- * so all are shown against pre-FZP zoning and only the `completedNet` ones against current law.
+ * levers. References (ruling 3): the existing ones are FZP-versus-pre-FZP estimates on
+ * `planEffect.*`, so all are shown against pre-FZP zoning and only the `completedNet` ones
+ * against FZP as written.
  */
 export function applyLevers(
   base: SimInput,
   ctx: LayerCtx,
   levers: SimLevers,
-  filled: Resolution,
-  horizon: Day
+  filled: Resolution
 ): LeverInputs {
   const plan = planOf(base, ctx, levers, filled);
   return {
     plan,
-    twin: twinInput(base, ctx, levers, horizon),
+    twin: twinInput(base, ctx, levers.compare),
     lookups: lookupsOf(plan),
     capacity: leverCapacity(filled, base.parcels),
     unknownLots: filled.unknownLots,

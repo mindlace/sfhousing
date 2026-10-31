@@ -6,10 +6,8 @@ import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
 import { stockTable, type EnvelopeTable } from '../levers/layers';
-import { applyLevers } from '../levers/apply';
-import { fillNeeds, resolveEnvelopes } from '../levers/resolve';
-import { CURRENT_LAW_SWITCH, DEFAULT_LEVERS } from '../levers/types';
 import { parcelsView } from '../levers/view';
+import { dayOf } from './dates';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
 import { miniCity } from './fixtures/mini-parcels';
 import { MINI_SB79_ID, miniPolicy } from './fixtures/mini-policy';
@@ -20,7 +18,7 @@ import { simulateDetailed, simulateNet } from './simulate';
 import type { Schedule, SimInput } from './types';
 
 const H = MINI_HORIZON;
-const DAY = CURRENT_LAW_SWITCH.day;
+const DAY = dayOf(2032, 1, 31); // the former current-law switch day
 const seeds = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
 
 function setup() {
@@ -248,13 +246,15 @@ describe('engine law switch', () => {
   });
 
   it('afterSwitch picks the Local Program column of the view it ran on (MINI_SB79_ID)', () => {
-    const { base } = setup();
-    const city = miniCity();
-    const ctx = { parcels: city.parcels, policy: miniPolicy(city) };
-    const window = { asOf: base.asOf, horizon: H, switchDay: DAY };
-    const filled = fillNeeds(resolveEnvelopes(ctx, DEFAULT_LEVERS, window), new Map());
-    const { plan } = applyLevers(base, ctx, DEFAULT_LEVERS, filled, H);
-    const i = plan.parcels.index.get(MINI_SB79_ID)!;
+    const { base, fzp } = setup();
+    // a hand-built switch: the after view stops forcing MINI_SB79_ID onto streamlined
+    const i = base.parcels.index.get(MINI_SB79_ID)!;
+    const lp = base.parcels.localProgram.slice();
+    lp[i] = 0;
+    const plan: SimInput = {
+      ...base,
+      lawSwitch: { day: DAY, parcels: parcelsView(base.parcels, fzp, lp) }
+    };
     expect(plan.parcels.localProgram[i]).toBe(1);
     expect(plan.lawSwitch!.parcels.localProgram[i]).toBe(0);
     let pre = 0;

@@ -10,7 +10,7 @@ import { parseManifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import { FakeScenarioWorker, timelineMsg } from '$lib/fzp/test/fake-worker';
 import { stub } from '$lib/fzp/test/sim-map-stub';
-import { DEFAULT_LEVERS, FZP_COMPAT_LEVERS } from '$lib/sim/levers/types';
+import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import Page from './+page.svelte';
 import SimPageHost from './test/SimPageHost.svelte';
@@ -167,10 +167,10 @@ describe('/sim page', () => {
     expect(initSeeds(StubWorker.all[0])).toEqual([null]);
   });
 
-  it('opens the FZP comparison for start=fzp and current law otherwise', async () => {
+  it('opens the FZP comparison with or without start=fzp', async () => {
     const r = await render(Page, { props: { data: data(null, { start: 'fzp' }), params: {} } });
     await expect.poll(() => StubWorker.all.length).toBe(1);
-    expect(StubWorker.all[0].lastOf('initScenario')!.levers).toEqual(FZP_COMPAT_LEVERS);
+    expect(StubWorker.all[0].lastOf('initScenario')!.levers).toEqual(DEFAULT_LEVERS);
     await r.rerender({ data: data(null), params: {} });
     await expect.poll(() => StubWorker.all.length).toBe(2);
     expect(StubWorker.all[1].lastOf('initScenario')!.levers).toEqual(DEFAULT_LEVERS);

@@ -2,11 +2,12 @@
   The stock zoning layers (the policy panel's "Zoning layers"): which layers blend, whether the
   City keeps an alternative plan after 2031, and what the plan effect is measured against. Each
   change is one labelled store change, so Undo names it. At least one layer stays checked.
+  A bridge (sim runs plan 1, Task 1; Task 2 deletes it): the lever engine is FZP-only now, so
+  these choices are kept in the document but no longer change the run.
 -->
 <script lang="ts">
-  import { STOCK_LAYERS, type StockLayerId } from '$lib/sim/levers/types';
   import type { PolicyStore } from './policy-store.svelte';
-  import type { SimPolicy } from './policy';
+  import { LEGACY_STOCK_LAYERS, type LegacyStockLayer, type SimPolicy } from './policy';
 
   let { store }: { store: PolicyStore } = $props();
 
@@ -14,7 +15,7 @@
   const lastId = `${uid}-last`;
   const assumeId = `${uid}-assume`;
 
-  const LAYER_LABEL: Record<StockLayerId, string> = {
+  const LAYER_LABEL: Record<LegacyStockLayer, string> = {
     currentLaw: 'Current law (Family Zoning Plan + SB 79 alternative plan)',
     fzp: 'Family Zoning Plan map',
     sb79: 'SB 79 as written',
@@ -28,11 +29,11 @@
   const stock = $derived(store.policy.stock);
   const onlyOne = $derived(stock.length === 1);
 
-  function setLayer(id: StockLayerId, on: boolean): void {
+  function setLayer(id: LegacyStockLayer, on: boolean): void {
     store.apply(
       (p) => {
         if (p.stock.includes(id) === on) return p;
-        const next = STOCK_LAYERS.filter((l) => (l === id ? on : p.stock.includes(l)));
+        const next = LEGACY_STOCK_LAYERS.filter((l) => (l === id ? on : p.stock.includes(l)));
         return next.length === 0 ? p : { ...p, stock: next };
       },
       `${on ? 'Turned on' : 'Turned off'} ${LAYER_LABEL[id]}`
@@ -64,7 +65,7 @@
 <div class="space-y-4 text-black">
   <fieldset>
     <legend class="sr-only">Zoning layers</legend>
-    {#each STOCK_LAYERS as id (id)}
+    {#each LEGACY_STOCK_LAYERS as id (id)}
       {@const checked = stock.includes(id)}
       {@const locked = checked && onlyOne}
       <label class={[row, locked && 'text-gray-700']}>

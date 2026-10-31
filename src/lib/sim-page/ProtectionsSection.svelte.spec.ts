@@ -6,11 +6,10 @@ import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { BrushState } from '$lib/brush/state.svelte';
-import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import type { BrushLotsResult } from '$lib/sim/scenario/types';
 import ProtectionsSection from './ProtectionsSection.svelte';
 import { SimBrushTools, type SimTool } from './brush-tools.svelte';
-import { policyFromLevers, queryKey, type ProtectStroke, type Stroke } from './policy';
+import { DEFAULT_POLICY, queryKey, type ProtectStroke, type Stroke } from './policy';
 import { PolicyStore } from './policy-store.svelte';
 
 const s1: Stroke = { path: [[-122.42, 37.76]], radiusM: 30 };
@@ -35,7 +34,7 @@ function setup(
     phase?: 'ready' | 'loading';
   } = {}
 ) {
-  const store = new PolicyStore(policyFromLevers(DEFAULT_LEVERS));
+  const store = new PolicyStore(DEFAULT_POLICY);
   if (opts.strokes) {
     const strokes = opts.strokes;
     store.apply((p) => ({ ...p, protect: { ...p.protect, strokes } }), 'Protected lots');

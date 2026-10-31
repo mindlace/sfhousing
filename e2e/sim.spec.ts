@@ -100,13 +100,6 @@ async function openPolicy(page: Page): Promise<Locator> {
   return panel(page);
 }
 
-/** Closes the phone sheet, which is modal: the rest of the page is inert while it shows. */
-async function closeSheet(page: Page, isMobile: boolean): Promise<void> {
-  if (!isMobile || !(await panel(page).isVisible())) return;
-  await panel(page).getByRole('button', { name: 'Close policy' }).click();
-  await expect(panel(page)).toBeHidden();
-}
-
 /** A panel section's disclosure, expanded. */
 async function expandSection(page: Page, title: string): Promise<void> {
   const button = panel(page).getByRole('button', { name: title, exact: true });
@@ -227,18 +220,10 @@ test('/fzp?seed=5 lands on /sim?seed=5&start=fzp and its levers come into force'
   expect(await fzp(page, 'seed')).toBe(5);
 });
 
-test('/sim starts on current law; the score bar opens the score details', async ({
-  isMobile,
+test('/sim starts on the Family Zoning Plan; the score bar opens the score details', async ({
   page
 }) => {
   await gotoSim(page);
-  await openPolicy(page);
-  await expect(
-    panel(page).getByRole('checkbox', { name: /^Current law/ }),
-    'current law is the only stock layer'
-  ).toBeChecked();
-  await expect(panel(page).getByRole('radio', { name: 'Current law', exact: true })).toBeChecked();
-  await closeSheet(page, isMobile);
 
   const { baseline, shown } = JSON.parse(
     await page.evaluate(() => JSON.stringify((window as FzpWin).__sfhFzp!.score))
@@ -248,7 +233,7 @@ test('/sim starts on current law; the score bar opens the score details', async 
   );
   await expect(scoreBar(page)).toHaveAttribute('aria-expanded', 'false');
   const details = await openScore(page);
-  await expect(details.getByText('What your policy added')).toBeVisible();
+  await expect(details.getByText('What the plan added')).toBeVisible();
 });
 
 test('at 375 px the links and Policy wait in Menu; the score bar stays pinned', async ({

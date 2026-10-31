@@ -5,12 +5,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
-import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration, Pathway } from '$lib/timelapse/types';
 import fixture0CalibrationJson from '../../../e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json';
 import PermittingSection from './PermittingSection.svelte';
-import { policyFromLevers } from './policy';
+import { DEFAULT_POLICY } from './policy';
 import { PolicyStore } from './policy-store.svelte';
 import RouteTimeline from './RouteTimeline.svelte';
 import { resolvePreset, setStageMonths, stageBounds } from './timing';
@@ -45,7 +44,7 @@ function setup(
   emulatePointer(fine);
   const calibration = load();
   tweak(calibration);
-  const store = new PolicyStore(policyFromLevers(DEFAULT_LEVERS));
+  const store = new PolicyStore(DEFAULT_POLICY);
   const announce = vi.fn();
   void render(RouteTimeline, { props: { store, calibration, pathway, announce } });
   return { store, calibration, announce };
@@ -362,7 +361,7 @@ describe('RouteTimeline in the section', () => {
   it('every handle and segment box is at least 24 × 24 px (2.5.8)', async () => {
     await page.viewport(375, 900);
     emulatePointer(true);
-    const store = new PolicyStore(policyFromLevers(DEFAULT_LEVERS));
+    const store = new PolicyStore(DEFAULT_POLICY);
     void render(PermittingSection, { props: { store, calibration: load(), announce: vi.fn() } });
     await expect.element(bar('Permit only')).toBeVisible();
     const boxes = [
@@ -423,7 +422,7 @@ describe('RouteTimeline in the section', () => {
   it('has no horizontal overflow at 375 px, details open', async () => {
     await page.viewport(375, 900);
     emulatePointer(true);
-    const store = new PolicyStore(policyFromLevers(DEFAULT_LEVERS));
+    const store = new PolicyStore(DEFAULT_POLICY);
     const view = await render(PermittingSection, {
       props: { store, calibration: load(), announce: vi.fn() }
     });

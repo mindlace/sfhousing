@@ -1,8 +1,7 @@
 // The stroke adapter: BrushController's editor and client, writing strokes into the policy recipe.
 import { describe, expect, it, vi } from 'vitest';
 import type { PlanOp } from '$lib/plan';
-import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
-import { policyFromLevers, type Effect } from './policy';
+import { DEFAULT_POLICY, type Effect } from './policy';
 import { PolicyStore } from './policy-store.svelte';
 import { createStrokeAdapter, type StrokeTarget } from './stroke-adapter';
 
@@ -27,7 +26,7 @@ const erase = (x: number): PlanOp => ({
 });
 
 function setup() {
-  const store = new PolicyStore(policyFromLevers(DEFAULT_LEVERS));
+  const store = new PolicyStore(DEFAULT_POLICY);
   let target: StrokeTarget = 'zoning';
   let effect: Effect = raise8;
   const announce = vi.fn();

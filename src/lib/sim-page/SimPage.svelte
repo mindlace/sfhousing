@@ -1,8 +1,9 @@
 <!--
   The /sim page (plan 3): FzpMode running the lever engine on the policy in memory. The recipe
   lives in a PolicyStore (undo, redo); LeverSync resolves its brushes in the worker, compiles it
-  and sends each new SimLevers to FzpMode's `levers`, which FzpMode passes on with setLevers. `start=fzp` (the /fzp
-  redirect) opens the Family Zoning Plan comparison, otherwise current law (Calls 14 and 16).
+  and sends each new SimLevers to FzpMode's `levers`, which FzpMode passes on with setLevers. Every
+  start opens on the Family Zoning Plan compared with the old zoning (`DEFAULT_LEVERS`); `start=fzp`
+  (the /fzp redirect) only defers autosave (Calls 14 and 16).
   Freehand, erase and protect strokes (Task 8) reuse `/`'s BrushController through the stroke
   adapter; the lot dots and the brush ring share SimMap's overlay through the overlay mux.
   Rule brushes (Task 9) read the brush catalog, asked for once when the panel first opens and
@@ -34,7 +35,7 @@
   import type { ParcelId } from '$lib/data/parcel';
   import FzpMode, { type SimClientApi } from '$lib/fzp/FzpMode.svelte';
   import type { SimMapHandle } from '$lib/map/types';
-  import { DEFAULT_LEVERS, FZP_COMPAT_LEVERS } from '$lib/sim/levers/types';
+  import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
   import type { BrushLotsResult } from '$lib/sim/scenario/types';
   import { BrushForms } from './brush-forms.svelte';
@@ -46,10 +47,10 @@
   import { createOverlayMux } from './overlay-mux';
   import PhoneToolBar from './PhoneToolBar.svelte';
   import {
+    DEFAULT_POLICY,
     canonicalJson,
     compileLevers,
     lotRoles,
-    policyFromLevers,
     queriesOf,
     type SimPolicy
   } from './policy';
@@ -135,17 +136,10 @@
       : null
   );
   /** The document the session opens with; a remount (new load) starts over. */
-  const firstPolicy = untrack(
-    () =>
-      opened?.doc.policy ?? policyFromLevers(start === 'fzp' ? FZP_COMPAT_LEVERS : DEFAULT_LEVERS)
-  );
+  const firstPolicy = untrack(() => opened?.doc.policy ?? DEFAULT_POLICY);
   /** Call 12: the policy without its lot lists, until LeverSync resolves the brushes. */
   const initial = untrack(() =>
-    opened
-      ? (compileLevers(firstPolicy, () => []) ?? DEFAULT_LEVERS)
-      : start === 'fzp'
-        ? FZP_COMPAT_LEVERS
-        : DEFAULT_LEVERS
+    opened ? (compileLevers(firstPolicy, () => []) ?? DEFAULT_LEVERS) : DEFAULT_LEVERS
   );
   const store = new PolicyStore(firstPolicy);
 

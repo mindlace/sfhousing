@@ -3,9 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
 import '../../routes/layout.css';
-import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import LayersSection from './LayersSection.svelte';
-import { policyFromLevers } from './policy';
+import { DEFAULT_POLICY } from './policy';
 import { PolicyStore } from './policy-store.svelte';
 
 const CURRENT = 'Current law (Family Zoning Plan + SB 79 alternative plan)';
@@ -17,8 +16,15 @@ const ASSUME = 'Assume the City keeps an alternative plan after 2031';
 const box = (name: string) => page.getByRole('checkbox', { name, exact: true });
 const radio = (name: string) => page.getByRole('radio', { name, exact: true });
 
+/** The old current-law start: this panel goes in Task 2, and its tests keep their fixture. */
+const CURRENT_LAW = {
+  ...DEFAULT_POLICY,
+  stock: ['currentLaw' as const],
+  compare: 'currentLaw' as const
+};
+
 async function setup() {
-  const store = new PolicyStore(policyFromLevers(DEFAULT_LEVERS));
+  const store = new PolicyStore(CURRENT_LAW);
   await render(LayersSection, { props: { store } });
   return store;
 }

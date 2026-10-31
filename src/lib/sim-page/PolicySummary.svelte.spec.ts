@@ -40,9 +40,9 @@ function customPolicy(): SimPolicy {
 }
 
 describe('PolicySummary', () => {
-  it('the default policy lists Current law and SF as observed', async () => {
+  it('the default policy lists the Family Zoning Plan map and SF as observed', async () => {
     render(PolicySummary, { policy: DEFAULT_POLICY, calibration, lotsOf: () => FINDING });
-    await expect.element(page.getByText('Current law', { exact: true })).toBeVisible();
+    await expect.element(page.getByText('Family Zoning Plan map', { exact: true })).toBeVisible();
     await expect.element(page.getByText('SF as observed', { exact: true })).toBeVisible();
     await expect.element(page.getByText('No brushes')).toBeVisible();
     // Nothing differs from observed: no disclosure to open.

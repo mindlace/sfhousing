@@ -4,7 +4,6 @@
  * Pure TS (the server validates published documents with it): no Svelte, no DOM.
  */
 import { DATASET_VERSION_RE } from '$lib/data/dataset-version';
-import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import {
   FUTURE_SCHEMA_MESSAGE,
   MAX_PLAN_BYTES,
@@ -22,13 +21,17 @@ import {
 import type { DocCodec } from '$lib/sharing/doc-codec';
 import { normalizeTitle } from '$lib/sharing/title';
 import {
+  DEFAULT_POLICY,
   PolicyFormatError,
   canonicalJson,
+  isDefaultPolicy,
   parseSimPolicy,
-  policyFromLevers,
+  withoutSnapshot,
   type SimPolicy,
   type Stroke
 } from './policy';
+
+export { DEFAULT_POLICY, isDefaultPolicy };
 
 export const SIM_DOC_SCHEMA = 1;
 /** The autosave key for the /sim policy. */
@@ -40,18 +43,6 @@ export interface SimDoc {
   datasetVersion: string;
   title?: string;
   policy: SimPolicy;
-}
-
-export const DEFAULT_POLICY: SimPolicy = policyFromLevers(DEFAULT_LEVERS);
-
-const withoutSnapshot = (p: SimPolicy): SimPolicy => ({
-  ...p,
-  timing: { ...p.timing, saved: null }
-});
-
-/** The policy equals the default one, ignoring the saved timing snapshot. */
-export function isDefaultPolicy(p: SimPolicy): boolean {
-  return canonicalJson(withoutSnapshot(p)) === canonicalJson(DEFAULT_POLICY);
 }
 
 // ---- limits ----

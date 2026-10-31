@@ -6,11 +6,10 @@ import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
 import '../../routes/layout.css';
 import { BrushState } from '$lib/brush/state.svelte';
-import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import type { BrushLotsResult } from '$lib/sim/scenario/types';
 import BrushSection from './BrushSection.svelte';
 import { ERASE_HINT, SimBrushTools, type SimTool } from './brush-tools.svelte';
-import { policyFromLevers, queryKey, type Stroke, type ZoningBrush } from './policy';
+import { DEFAULT_POLICY, queryKey, type Stroke, type ZoningBrush } from './policy';
 import { PolicyStore } from './policy-store.svelte';
 import { createStrokeAdapter } from './stroke-adapter';
 import type { BrushCatalog } from '$lib/sim/levers/brushes';
@@ -33,7 +32,7 @@ function setup(
     catalog?: BrushCatalog | null;
   } = {}
 ) {
-  const store = new PolicyStore(policyFromLevers(DEFAULT_LEVERS));
+  const store = new PolicyStore(DEFAULT_POLICY);
   if (opts.brushes) {
     const brushes = opts.brushes;
     store.apply((p) => ({ ...p, brushes }), 'Raised lots to 8 stories');

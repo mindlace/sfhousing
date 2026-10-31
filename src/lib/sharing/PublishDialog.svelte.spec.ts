@@ -172,7 +172,7 @@ describe('PublishButton + PublishDialog', () => {
       datasetVersion: 'fixture-0',
       policy: {
         ...DEFAULT_POLICY,
-        compare: 'preFzp',
+        protect: { ...DEFAULT_POLICY.protect, historic: true }, // not the default: publishable
         timing: { ...DEFAULT_POLICY.timing, saved }
       }
     };

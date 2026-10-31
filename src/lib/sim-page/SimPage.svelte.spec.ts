@@ -555,50 +555,24 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
     await expect.element(publish()).toHaveTextContent('Publish');
   });
 
-  it('deferred start: Publish before any change keeps the saved policy (I1)', async () => {
+  it('deferred start: the FZP start is the default policy, so nothing publishes or saves before a change (I1)', async () => {
     await page.viewport(1024, 768);
-    const fetchFn = vi.fn(
-      async () =>
-        new Response(JSON.stringify({ id: 'FzPcOmPa' }), {
-          status: 201,
-          headers: { 'content-type': 'application/json' }
-        })
-    );
     const mem = seeded();
     const before = mem.getItem(SIM_KEY);
-    await setup({
-      storage: () => mem,
-      start: 'fzp',
-      persist: 'deferred',
-      fetchFn: fetchFn as unknown as typeof fetch
-    });
+    await setup({ storage: () => mem, start: 'fzp', persist: 'deferred' });
     await toReady();
-    await expect.element(publish()).toBeEnabled();
-    await publish().click();
-    const dialog = page.getByRole('dialog');
-    await dialog.getByLabelText('Title').fill('FZP');
-    await dialog.getByRole('button', { name: 'Publish', exact: true }).click();
-    await expect
-      .element(dialog.getByLabelText('Link'))
-      .toHaveValue(`${location.origin}/s/FzPcOmPa`);
-    await dialog.getByRole('button', { name: 'Done' }).click();
-    await expect.element(publish()).toHaveTextContent('Share link');
+    // start=fzp opens FZP as written, the default policy: there is nothing to publish yet.
+    await expect.element(publish()).toBeDisabled();
     await new Promise((r) => setTimeout(r, 700));
     expect(mem.getItem(SIM_KEY)).toBe(before);
     await expect.element(notices().getByText(FZP_KEPT_TEXT)).toBeVisible();
-    // The first change starts saving: the record carries the publish, so undo is Share link again.
+    // The first change starts saving, and the changed policy can be published.
     await timingToggle().click();
     await presetPicker().selectOptions('No discretionary review');
     await expect
       .poll(() => storedDoc(mem).policy.timing.current.preset, { timeout: 2000 })
       .toBe('noDiscretionary');
-    const rec = JSON.parse(mem.getItem(SIM_KEY)!);
-    expect(rec.lastPublished.id).toBe('FzPcOmPa');
-    expect(storedDoc(mem).title).toBe('FZP');
-    await expect.element(publish()).toHaveTextContent('Publish');
-    await yourZoning().click();
-    await page.getByRole('button', { name: /^Undo/ }).click();
-    await expect.element(publish()).toHaveTextContent('Share link');
+    await expect.element(publish()).toBeEnabled();
   });
 
   it('Publish is disabled on the default policy', async () => {
@@ -681,9 +655,9 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
           result: { ok: true, lots: [`P${i}`, `Q${i}`], points: new Float64Array(4) }
         })
       );
-      await expect.poll(() => w.lastOf('setLevers')?.levers.user.length ?? 0).toBe(1);
+      await expect.poll(() => w.lastOf('setLevers')?.levers.rules.length ?? 0).toBe(1);
       const sent = w.lastOf('setLevers')!.levers;
-      expect(sent.user[0].lots.length).toBe(2);
+      expect(sent.rules[0].lots.length).toBe(2);
       expect(sent.protect.lots.length).toBe(2);
       await yourZoning().click();
       await expect.element(page.getByText(/· 2 lots ·/)).toBeVisible();
@@ -693,7 +667,7 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
       await timingToggle().click();
       await presetPicker().selectOptions(SD);
       await expect.poll(() => w.allOf('setLevers').length).toBe(before + 1);
-      expect(w.lastOf('setLevers')!.levers.user[0].lots.length).toBe(2);
+      expect(w.lastOf('setLevers')!.levers.rules[0].lots.length).toBe(2);
     });
   }
 

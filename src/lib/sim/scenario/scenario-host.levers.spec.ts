@@ -6,15 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import type { ParcelId } from '$lib/data/parcel';
 import { decodeParcelChunk, encodeParcelChunk } from '$lib/data/parcel-chunk';
 import { allNeeds, resolveEnvelopes } from '../levers/resolve';
-import {
-  CURRENT_LAW_SWITCH,
-  DEFAULT_LEVERS,
-  FZP_COMPAT_LEVERS,
-  type SimLevers
-} from '../levers/types';
+import { DEFAULT_LEVERS, type SimLevers } from '../levers/types';
 import { MINI_CHUNK_URL, MINI_VERSION, miniCity } from './fixtures/mini-parcels';
 import { miniPolicy } from './fixtures/mini-policy';
-import { MINI_AS_OF, MINI_HORIZON } from './fixtures/mini-projects';
+import { MINI_AS_OF } from './fixtures/mini-projects';
 import { MINI_POLICY_URL, makeScenarioHarness, type ScenarioHarness } from './test/host-harness';
 import type { ScenarioResponse, TimelineResponse } from './types';
 
@@ -28,10 +23,10 @@ const cellOf = (id: ParcelId) => city.parcels.cells[city.parcels.cell[city.parce
 const LOT_A: ParcelId = '0026T009';
 const LOT_B: ParcelId = '2999A001';
 
-/** A fresh copy of `base` with one user raise (no density limits): every named lot is a Need. */
+/** A fresh copy of `base` with one rule above FZP (uncapped): every named lot is a Need. */
 function raised(lots: ParcelId[], stories: number, base: SimLevers = DEFAULT_LEVERS): SimLevers {
   const l = structuredClone(base);
-  l.user.push({ lots, mode: 'raise', stories, densityLimits: false });
+  l.rules.push({ lots, stories });
   return l;
 }
 
@@ -125,19 +120,19 @@ describe('scenario host without levers (/fzp)', () => {
 describe('scenario host with levers', () => {
   it('rejects an invalid lever document as bad-request', async () => {
     const h = harness();
-    const rev = h.init({ levers: { ...structuredClone(DEFAULT_LEVERS), schema: 2 } });
+    const rev = h.init({ levers: { ...structuredClone(DEFAULT_LEVERS), schema: 1 } });
     await h.runAll();
     expect(h.errors()).toMatchObject([{ rev, code: 'bad-request', message: /schema/ }]);
     expect(h.fetches).toEqual([]);
   });
 
-  it('FZP-compatible levers: current before the first timeline, timelines as /fzp', async () => {
+  it('default levers: current before the first timeline, timelines as /fzp', async () => {
     const plain = harness();
     plain.init();
     await plain.runAll();
 
     const h = harness();
-    const rev = h.init({ levers: structuredClone(FZP_COMPAT_LEVERS) });
+    const rev = h.init({ levers: structuredClone(DEFAULT_LEVERS) });
     await h.runAll();
     expect(h.errors()).toEqual([]);
     expect(h.fetchesOf(MINI_POLICY_URL)).toHaveLength(1);
@@ -164,8 +159,7 @@ describe('scenario host with levers', () => {
     await h.runAll();
 
     const ctx = { parcels: city.parcels, policy: miniPolicy(city) };
-    const window = { asOf: MINI_AS_OF, horizon: MINI_HORIZON, switchDay: CURRENT_LAW_SWITCH.day };
-    const need = allNeeds(resolveEnvelopes(ctx, levers, window));
+    const need = allNeeds(resolveEnvelopes(ctx, levers, MINI_AS_OF));
     expect(need.length).toBeGreaterThanOrEqual(2);
     const lv = leversPosts(h, from);
     expect(lv[0]).toMatchObject({ rev, phase: 'resolving', done: 0, total: need.length });

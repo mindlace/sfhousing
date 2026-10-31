@@ -5,12 +5,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
 import '../../routes/layout.css';
-import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration } from '$lib/timelapse/types';
 import fixture0CalibrationJson from '../../../e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json';
 import PermittingSection from './PermittingSection.svelte';
-import { policyFromLevers } from './policy';
+import { DEFAULT_POLICY } from './policy';
 import { PolicyStore } from './policy-store.svelte';
 import { setStageMonths } from './timing';
 
@@ -19,7 +18,7 @@ const load = (): Calibration =>
 
 function setup() {
   const calibration = load();
-  const store = new PolicyStore(policyFromLevers(DEFAULT_LEVERS));
+  const store = new PolicyStore(DEFAULT_POLICY);
   const announce = vi.fn();
   void render(PermittingSection, { props: { store, calibration, announce } });
   return { store, calibration, announce };

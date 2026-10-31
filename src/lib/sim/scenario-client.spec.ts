@@ -9,7 +9,7 @@ import {
   type ScenarioWorkerLike
 } from './scenario-client';
 import type { ScenarioResponse, TimelineResponse, WorkerRequest } from './scenario/types';
-import { DEFAULT_LEVERS, FZP_COMPAT_LEVERS } from './levers/types';
+import { DEFAULT_LEVERS } from './levers/types';
 import { FIXTURE_1 } from './test/harness';
 
 interface FakeWorker extends ScenarioWorkerLike {
@@ -358,7 +358,7 @@ describe('ScenarioClient', () => {
       client.initScenario(MANIFEST, HORIZON);
       expect('levers' in w.posts[0]).toBe(false);
       expect(client.leversPending).toBe(false);
-      const levers = structuredClone(FZP_COMPAT_LEVERS);
+      const levers = structuredClone(DEFAULT_LEVERS);
       const rev = client.initScenario(MANIFEST, HORIZON, 4, levers);
       expect(w.posts[1]).toEqual({
         type: 'initScenario',

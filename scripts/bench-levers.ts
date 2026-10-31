@@ -1,5 +1,6 @@
 // `npx tsx scripts/bench-levers.ts <datasetDir>` (sim-page plan Task 11): resolve three citywide
-// brushes on a built dataset read from disk, then time the touched-lot yield recompute, the way
+// brushes on a built dataset read from disk, each as a zoning rule (max(FZP, N), uncapped where it
+// raises), then time the touched-lot yield recompute, the way
 // the scenario host runs it (resolveEnvelopes -> allNeeds -> createYieldRecompute -> fillNeeds ->
 // applyLevers). Not part of the bundle; prints a Markdown table.
 import { readFileSync, statSync } from 'node:fs';
@@ -13,8 +14,6 @@ import { decodeParcelChunk } from '../src/lib/data/parcel-chunk';
 import { scenarioRecordOf } from '../src/lib/data/scenario-codec';
 import { scenarioYield } from '../src/lib/data/scenario-yield';
 import { decodeTransit } from '../src/lib/data/transit-codec';
-import { HORIZON } from '../src/lib/fzp/time';
-import { defaultEffect } from '../src/lib/sim-page/policy';
 import { applyLevers } from '../src/lib/sim/levers/apply';
 import {
   brushCatalog,
@@ -26,10 +25,11 @@ import {
 } from '../src/lib/sim/levers/brushes';
 import { createYieldRecompute, type GrossCache } from '../src/lib/sim/levers/recompute';
 import { allNeeds, fillNeeds, resolveEnvelopes } from '../src/lib/sim/levers/resolve';
-import { CURRENT_LAW_SWITCH, DEFAULT_LEVERS, type SimLevers } from '../src/lib/sim/levers/types';
+import { DEFAULT_LEVERS, type SimLevers } from '../src/lib/sim/levers/types';
 import { loadScenario, scenarioUrls } from '../src/lib/sim/scenario/load';
 
-type Brush = { name: string; query: BrushQuery; mode: 'raise' | 'set'; stories: number };
+/** A brush compiled to one rule: every lot it resolves takes max(FZP, stories). */
+type Brush = { name: string; query: BrushQuery; stories: number };
 
 const ms = (t: number) => Math.round(t).toLocaleString('en-US');
 
@@ -91,31 +91,24 @@ async function main(): Promise<number> {
   if (!rh1) throw new Error('no RH-1 family in the catalog');
   const brushes: Brush[] = [
     {
-      name: '(a) every `RH-1` family lot, raise to 4, limits off',
+      name: '(a) every `RH-1` family lot, rule to 4',
       query: { kind: 'area', districts: rh1.codes.map((c) => c.code), neighborhoods: [] },
-      mode: 'raise',
       stories: 4
     },
     {
-      name: '(b) arterial frontage depth 1, set to 8 (limits on)',
+      name: '(b) arterial frontage depth 1, rule to 8',
       query: { kind: 'street', classes: ['arterial'], names: [], depth: 1, ncOnly: false },
-      mode: 'set',
       stories: 8
     },
     {
-      name: '(c) `regionalRail` within 805 m, raise to 8 (limits off)',
+      name: '(c) `regionalRail` within 805 m, rule to 8',
       query: { kind: 'transit', stopTypes: ['regionalRail'], maxM: 805 },
-      mode: 'raise',
       stories: 8
     }
   ];
 
   const ctx = { parcels, policy };
-  const window = {
-    asOf: loaded.fzp.asOf,
-    horizon: HORIZON,
-    switchDay: CURRENT_LAW_SWITCH.day
-  };
+  const asOf = loaded.fzp.asOf;
   /** One brush, measured: a fresh lot index and gross cache each time (cold data, not cold JIT). */
   const measure = (b: Brush): string[] => {
     // a fresh lot index each time (the host builds one per session)
@@ -124,12 +117,11 @@ async function main(): Promise<number> {
     const lotRows = resolveBrushRows(data, index, b.query);
     const resolveMs = performance.now() - t0;
 
-    const effect = defaultEffect(b.mode, b.stories);
     const levers: SimLevers = structuredClone(DEFAULT_LEVERS);
-    levers.user.push({ lots: lotRows.map((r) => parcels.id[r] as ParcelId), ...effect });
+    levers.rules.push({ lots: lotRows.map((r) => parcels.id[r] as ParcelId), stories: b.stories });
 
     const t1 = performance.now();
-    const resolution = resolveEnvelopes(ctx, levers, window);
+    const resolution = resolveEnvelopes(ctx, levers, asOf);
     const needs = allNeeds(resolution);
     const envMs = performance.now() - t1;
 
@@ -169,7 +161,7 @@ async function main(): Promise<number> {
 
     const t4 = performance.now();
     const filled = fillNeeds(resolution, recompute.result());
-    applyLevers(loaded.fzp, ctx, levers, filled, HORIZON);
+    applyLevers(loaded.fzp, ctx, levers, filled);
     const applyMs = performance.now() - t4;
 
     return [

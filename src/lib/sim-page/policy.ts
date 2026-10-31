@@ -1,7 +1,12 @@
 /**
  * The /sim policy recipe: what the page keeps and edits (stock toggles, ordered brushes,
- * protections), and its compiler to plan 2's `SimLevers`. Pure TS: no Svelte, no DOM, so the
+ * protections), and its compiler to the schema-2 `SimLevers`. Pure TS: no Svelte, no DOM, so the
  * server can reuse it.
+ *
+ * A bridge (sim runs plan 1, Task 1; Task 3 replaces it): the document is still schema 1, but it
+ * compiles to the FZP-only lever engine. Raise edits become rules, the rest paint in order; the
+ * stock toggles, `assumeAlternativePlanKept`, density limits and the document's `compare` are
+ * ignored.
  */
 import type { ParcelId } from '$lib/data/parcel';
 import {
@@ -13,14 +18,12 @@ import {
 import { STREET_CLASSES } from '$lib/data/frontage-codec';
 import {
   DEFAULT_LEVERS,
-  FZP_COMPAT_LEVERS,
   LeverFormatError,
-  STOCK_LAYERS,
   parseSimLevers,
+  type Compare,
   type SimLevers,
-  type StockLayerId,
-  type TimerEdit,
-  type UserEdit
+  type StoryEdit,
+  type TimerEdit
 } from '$lib/sim/levers/types';
 import { STORIES_MAX, STORIES_MIN } from '$lib/plan/constants';
 import { PATHWAYS, type Pathway } from '$lib/timelapse/types';
@@ -34,7 +37,18 @@ import {
 } from './timing';
 import { BENCHMARK_PERMIT_DAYS } from './timing-sources';
 
+/** The schema-1 stock layers, kept for the parser and the panel until Tasks 2 and 3. */
+export const LEGACY_STOCK_LAYERS = ['currentLaw', 'fzp', 'sb79', 'base'] as const;
+export type LegacyStockLayer = (typeof LEGACY_STOCK_LAYERS)[number];
+
 export type BrushMode = 'raise' | 'lower' | 'set';
+/** One brush's lots and effect, in brush order, before they are split into rules and paint. */
+interface BrushEdit {
+  lots: ParcelId[];
+  mode: BrushMode;
+  stories: number;
+  densityLimits: boolean;
+}
 export interface Effect {
   mode: BrushMode;
   stories: number;
@@ -74,7 +88,7 @@ export type ProtectStroke = Stroke & { kind: 'protect' | 'unprotect' };
 
 export interface SimPolicy {
   schema: 1;
-  stock: StockLayerId[];
+  stock: LegacyStockLayer[];
   assumeAlternativePlanKept: boolean;
   compare: 'currentLaw' | 'preFzp';
   brushes: ZoningBrush[];
@@ -115,30 +129,26 @@ function fail(path: string, message: string): never {
   throw new PolicyFormatError(path, message);
 }
 
-export function policyFromLevers(l: SimLevers): SimPolicy {
-  if (l.user.length > 0) throw new PolicyFormatError('user', 'expected no user edits');
-  if (l.protect.lots.length > 0) throw new PolicyFormatError('protect.lots', 'expected no lots');
-  if (l.timers.length > 0 || l.routeShares !== null)
-    throw new PolicyFormatError('timers', 'expected no timers and observed route shares');
-  if (!l.localProgramStreamlined)
-    throw new PolicyFormatError('localProgramStreamlined', 'expected true: every preset keeps it');
-  return {
-    schema: 1,
-    stock: [...l.stock],
-    assumeAlternativePlanKept: l.assumeAlternativePlanKept,
-    compare: l.compare,
-    brushes: [],
-    protect: {
-      rentControl: l.protect.rentControl,
-      historic: l.protect.historic,
-      newerThanYears: l.protect.newerThanYears,
-      strokes: []
-    },
-    timing: {
-      current: structuredClone(OBSERVED_TIMING.current),
-      saved: null
-    }
-  };
+/** The page's starting policy: FZP as written, no brushes, no protections, observed timing. */
+export const DEFAULT_POLICY: SimPolicy = {
+  schema: 1,
+  stock: ['fzp'],
+  assumeAlternativePlanKept: false,
+  compare: 'preFzp',
+  brushes: [],
+  protect: { rentControl: false, historic: false, newerThanYears: null, strokes: [] },
+  timing: { current: structuredClone(OBSERVED_TIMING.current), saved: null }
+};
+
+/** The policy without its saved timing snapshot. */
+export const withoutSnapshot = (p: SimPolicy): SimPolicy => ({
+  ...p,
+  timing: { ...p.timing, saved: null }
+});
+
+/** The policy equals the default one, ignoring the saved timing snapshot. */
+export function isDefaultPolicy(p: SimPolicy): boolean {
+  return canonicalJson(withoutSnapshot(p)) === canonicalJson(DEFAULT_POLICY);
 }
 
 // ---- parsing ----
@@ -454,7 +464,7 @@ export function parseSimPolicy(
     'timing'
   ]);
   if (r.schema !== 1) fail('schema', `expected 1, got ${String(r.schema)}`);
-  const stock = oneOfList(r.stock, 'stock', STOCK_LAYERS);
+  const stock = oneOfList(r.stock, 'stock', LEGACY_STOCK_LAYERS);
   if (stock.length === 0) fail('stock', 'expected at least one layer');
   const pr = rec(r.protect, 'protect', ['rentControl', 'historic', 'newerThanYears', 'strokes']);
   const n = pr.newerThanYears;
@@ -469,7 +479,7 @@ export function parseSimPolicy(
   });
   return {
     schema: 1,
-    stock: STOCK_LAYERS.filter((l) => stock.includes(l)),
+    stock: LEGACY_STOCK_LAYERS.filter((l) => stock.includes(l)),
     assumeAlternativePlanKept: bool(r.assumeAlternativePlanKept, 'assumeAlternativePlanKept'),
     compare: oneOf(r.compare, 'compare', ['currentLaw', 'preFzp'] as const),
     brushes,
@@ -562,8 +572,8 @@ const sortedUnique = (xs: Iterable<ParcelId>): ParcelId[] =>
   [...new Set(xs)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 
 /** Brushes in order to edits; null while any needed query is unknown. */
-function emit(p: SimPolicy, lots: Lots): UserEdit[] | null {
-  const out: UserEdit[] = [];
+function emit(p: SimPolicy, lots: Lots): BrushEdit[] | null {
+  const out: BrushEdit[] = [];
   const need = (q: BrushQuery) => lots(queryKey(q));
   const push = (ids: readonly ParcelId[], mode: BrushMode, stories: number, dl: boolean) => {
     const l = sortedUnique(ids);
@@ -613,15 +623,23 @@ export function protectedLots(p: SimPolicy, lots: Lots): ParcelId[] | null {
   return sortedUnique(set);
 }
 
+/**
+ * The levers for `p`; null while a needed query is unknown. Raise edits become rules, the rest
+ * paint in brush order. The twin is pre-FZP zoning for the default policy, FZP as written for
+ * any other.
+ */
 export function compileLevers(p: SimPolicy, lots: Lots): SimLevers | null {
-  const user = emit(p, lots);
+  const edits = emit(p, lots);
   const prot = protectedLots(p, lots);
-  if (user === null || prot === null) return null;
+  if (edits === null || prot === null) return null;
+  const rules: StoryEdit[] = [];
+  const paint: StoryEdit[] = [];
+  for (const e of edits)
+    (e.mode === 'raise' ? rules : paint).push({ lots: e.lots, stories: e.stories });
   return {
-    schema: 1,
-    stock: [...p.stock],
-    assumeAlternativePlanKept: p.assumeAlternativePlanKept,
-    user,
+    schema: 2,
+    rules,
+    paint,
     protect: {
       rentControl: p.protect.rentControl,
       historic: p.protect.historic,
@@ -629,7 +647,7 @@ export function compileLevers(p: SimPolicy, lots: Lots): SimLevers | null {
       lots: prot
     },
     ...compileTiming(p.timing.current),
-    compare: p.compare
+    compare: isDefaultPolicy(p) ? 'preFzp' : 'fzp'
   };
 }
 
@@ -646,15 +664,11 @@ export function lotRoles(p: SimPolicy, lots: Lots): Map<ParcelId, LotRole> {
 export interface ScoreCopy {
   plan: string;
   twin: string;
+  compare: Compare;
 }
 
-const isFzpCompat = (l: SimLevers) => canonicalJson(l) === canonicalJson(FZP_COMPAT_LEVERS);
-
 export function scoreCopy(l: SimLevers | null): ScoreCopy {
-  if (l === null || isFzpCompat(l))
-    return { plan: 'the Family Zoning Plan', twin: 'the old zoning' };
-  return {
-    plan: 'your policy',
-    twin: l.compare === 'currentLaw' ? "the City's current rules" : 'the old zoning'
-  };
+  if (l === null || l.compare === 'preFzp')
+    return { plan: 'the Family Zoning Plan', twin: 'the old zoning', compare: 'preFzp' };
+  return { plan: 'your policy', twin: 'the Family Zoning Plan as written', compare: 'fzp' };
 }

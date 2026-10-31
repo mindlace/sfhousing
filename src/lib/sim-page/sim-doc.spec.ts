@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { FZP_COMPAT_LEVERS } from '$lib/sim/levers/types';
 import { FUTURE_SCHEMA_MESSAGE } from '$lib/plan';
 import {
   DEFAULT_POLICY,
@@ -9,13 +8,7 @@ import {
   serializeSimDoc,
   type SimDoc
 } from './sim-doc';
-import {
-  defaultEffect,
-  policyFromLevers,
-  type SimPolicy,
-  type Stroke,
-  type ZoningBrush
-} from './policy';
+import { defaultEffect, type SimPolicy, type Stroke, type ZoningBrush } from './policy';
 import type { TimingSet } from './timing';
 
 const V = 'fixture-0';
@@ -72,6 +65,8 @@ const codesOf = (text: string) => {
   const r = parseSimDoc(text, 'strict');
   return r.ok ? [] : r.errors.map((e) => e.code);
 };
+/** The schema-1 default before sim runs plan 1: current law, compared with current law. */
+const CURRENT_LAW: SimPolicy = { ...DEFAULT_POLICY, stock: ['currentLaw'], compare: 'currentLaw' };
 const raw = (policy: SimPolicy, over: Record<string, unknown> = {}) =>
   JSON.stringify({ ...doc(policy), ...over });
 
@@ -79,7 +74,7 @@ describe('serializeSimDoc', () => {
   it('serialize round-trips', () => {
     const docs = [
       doc(),
-      doc(policyFromLevers(FZP_COMPAT_LEVERS)),
+      doc(CURRENT_LAW),
       doc(timingHeavy(), { title: 'Heavy' }),
       doc(brushHeavy())
     ];
@@ -120,15 +115,15 @@ describe('SIM_CODEC', () => {
     );
   });
 
-  it('the default policy is empty, FZP compat is not', () => {
+  it('the default policy is empty, the old current-law default is not', () => {
     expect(SIM_CODEC.isEmpty(doc())).toBe(true);
     const withSnapshot = {
       ...DEFAULT_POLICY,
       timing: { current: DEFAULT_POLICY.timing.current, saved: { label: 'x', set: CUSTOM } }
     };
     expect(SIM_CODEC.isEmpty(doc(withSnapshot))).toBe(true);
-    expect(isDefaultPolicy(policyFromLevers(FZP_COMPAT_LEVERS))).toBe(false);
-    expect(SIM_CODEC.isEmpty(doc(policyFromLevers(FZP_COMPAT_LEVERS)))).toBe(false);
+    expect(isDefaultPolicy(CURRENT_LAW)).toBe(false);
+    expect(SIM_CODEC.isEmpty(doc(CURRENT_LAW))).toBe(false);
   });
 
   it('counts brushes and protect strokes, rebases and makes an empty doc', () => {
