@@ -1,6 +1,6 @@
 # /sim refinements: runs, absolute heights, height fog
 
-Status: draft for discussion (2026-10-31)
+Status: draft for approval (2026-10-31)
 
 ## Why
 
@@ -31,7 +31,8 @@ with FZP alone?** It also makes the map show the answer in terms of height.
 - No pre-FZP height map. Pre-FZP is only the counterfactual inside the default score; it is never
   drawn.
 - No policy changes partway through a run, and no choice of zoning regime (current law, SB 79, base).
-- No new data in the pipeline. The fog uses the per-lot limits the worker already holds.
+- No new source data. The fog uses the per-lot limits the worker already holds; the physical cap
+  needs only lot geometry the pipeline and worker already have (it does need a dataset rebuild).
 
 ## Anti-goals (a failure even if it technically works)
 
@@ -118,10 +119,63 @@ The page has two phases.
 
 ### 3a. Physical limits
 
-Pending research. A lot has a physical ceiling whatever its zoning: you can't put a 40-story tower
-on a 25 × 100 ft Sunset lot. Each lot gets a "physical max stories" (and typology), from sourced
-rules where they exist and estimates where they don't. The effective envelope is
-`min(zoned, physical)`. This applies to painting on `/sim` and `/`, and to the paint feedback.
+A lot has a physical ceiling whatever its zoning: you can't put a 40-story tower on a 25 × 100 ft
+Sunset lot. Each lot gets a **physical max stories**, and the envelope the generator builds is
+`min(zoned or painted stories, physical max)`. This applies to the FZP baseline, painting on `/sim`
+and `/`, and the paint feedback.
+
+**Today** the generator does this implicitly and by area only (`select.ts`: 400/600/1500 m²
+thresholds, tier 4), with no width test and no slenderness limit. The tower plate can be 12 m wide at
+80 stories, about 20:1.
+
+**The rule is the hybrid** (your decision). Two calibrations were run; evidence, tables and scripts
+are in `docs/superpowers/design/2026-10-31-physical-limits/`. Let `w` be the lot's minimum width in ft
+(principal-axis cross extent, as `poly.ts` computes it) and `A` its area in ft².
+
+- **SF term**, from SF's own buildings: DataSF LiDAR footprints, parcels and the 2023 roll, 119,531
+  sites. Tier 0. It is exceeded by 0.11% of sites.
+  - `sf = min(0.3·w, capA(A))`
+  - with `k = A/1000`:
+    - `capA = 2.4k` when k ≤ 15
+    - `capA = 36 + 0.9(k−15)` when k ≤ 30
+    - `capA = 49.5 + 0.5(k−30)` above that
+
+  On narrow lots this is physics, not zoning: pre-1960 buildings top out where everything else does
+  below 60 ft wide, and NYC's pre-1961 25 ft lots agree at about 6 stories.
+- **Large-lot term**, a slenderness cap: `big = min(0.49·w, 0.5·√A)`.
+  - `0.49·w` is height ≤ 5 × width at 3.1 m per floor. SF towers top out around 5:1 (max 6.9:1),
+    likely from seismic design; tier 0.
+  - The `√A` term is NYC Manhattan post-2000 (PLUTO); tier 0 for NYC, applied to SF as tier 3.
+  - On large lots SF's own stock is held down by zoning (pre-1960 vs all eras differ only above
+    120 ft wide), so SF's data understates the physical limit there.
+- **Join** (tier 4, invented): `t = clamp((w − 60)/60, 0, 1)`, so the weight goes from 0 at 60 ft wide
+  to 1 at 120 ft. Then:
+  - `physicalMax = floor(clamp((1−t)·sf + t·max(sf, big), 5, 80))`
+  - The floor of 5 is SF data on sub-20 ft lots. The ceiling of 80 is the generator's `MAX_STORIES`.
+
+| Lot (ft) | Generator today | Hybrid |
+| --- | --- | --- |
+| 25×100 | 5 | 6 |
+| 25×120 | 5 | 7 |
+| 50×100 | 7 | 12 |
+| 75×100 | 12 | 22 |
+| 100×100 | 12 | 40 |
+| 137.5×137.5 | 80 | 67 |
+| 200×275 | 80 | 80 |
+
+**Where it lives:** a pure `physicalMaxStories(site)` beside `selectTypology` in
+`src/lib/generator/`. `generate` clamps S with it before choosing a typology, and the existing area
+thresholds in `selectTypology` stay as the typology cascade. Each threshold is recorded with its tier
+in the generator's provenance list.
+
+**The cost:** the generator is covered by the `datasetVersion` hash, so stock yields change and a new
+dataset version is built and promoted (`docs/dev/pipeline.md`, `docs/dev/deploy.md`).
+
+**What the map shows:**
+
+- The fog shows what zoning allows, not the physical cap.
+- The paint feedback and the lot tooltip show what can be built: "Allowed: 40 · Buildable here:
+  6". The gap between the two is the point.
 
 ### 4. What the map shows
 
@@ -169,7 +223,7 @@ rules where they exist and estimates where they don't. The effective envelope is
 
 ### 8. Palette
 
-Proposal, under discussion. Map tokens live in `src/lib/map/palette.ts` (`TOKENS`, light and dark).
+Accepted to try (your decision); tune in review once it's on the map. Map tokens live in `src/lib/map/palette.ts` (`TOKENS`, light and dark).
 The chrome's only accent today is Tailwind blue-600/700/800.
 
 **The rule is one hue family per meaning:**
