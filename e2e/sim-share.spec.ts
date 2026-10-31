@@ -265,6 +265,12 @@ test('autosave survives a reload', async ({ page }) => {
   await expandSection(page, 'Your zoning');
   await expect(brushList(page)).toHaveCount(1);
   await expect(brushList(page).first()).toContainText('Near');
+  // The restored brush resolves (C1): the card counts its lots, and the full levers are in force.
+  await expect(brushList(page).first()).toContainText(/ · [\d,]+ lots? · /, { timeout: 20_000 });
+  await expect(brushList(page).first()).not.toContainText('Finding lots…');
+  await expect
+    .poll(async () => (await leverStatus(page)).status, { timeout: 20_000 })
+    .toBe('current');
   await openTiming(page);
   await expect(panel(page).getByRole('button', { name: 'Revert to saved' })).toBeVisible();
   await expect(page.getByText(TIMING_NOTICE)).toHaveCount(0);

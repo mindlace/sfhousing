@@ -19,6 +19,7 @@ import { replaceStateCalls } from '../../test-stubs/app/navigation';
 import type SimPage from './SimPage.svelte';
 import { DEFAULT_POLICY, SIM_CODEC, SIM_KEY, type SimDoc } from './sim-doc';
 import { resolvePreset } from './timing';
+import { defaultEffect } from './policy';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 const workers = vi.hoisted(() => [] as import('$lib/fzp/test/fake-worker').FakeScenarioWorker[]);
@@ -585,6 +586,69 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
     expect(replaceStateCalls).toEqual([{ url: '', state: {} }]);
     expect(storedDoc(mem).title).toBe('SD permits');
   });
+
+  // C1: a restored policy goes through LeverSync, so its brushes and brushed protections resolve
+  // and the full levers (with their lots) are sent, without waiting for an edit.
+  const brushed = (): SimDoc => ({
+    schema: 1,
+    kind: 'sim',
+    datasetVersion: 'fixture-0',
+    policy: {
+      ...DEFAULT_POLICY,
+      brushes: [
+        {
+          id: 'a',
+          kind: 'freehand',
+          strokes: [{ path: [[-122.4, 37.7]], radiusM: 50 }],
+          effect: defaultEffect('raise', 6)
+        }
+      ],
+      protect: {
+        ...DEFAULT_POLICY.protect,
+        strokes: [{ kind: 'protect', path: [[-122.41, 37.71]], radiusM: 40 }]
+      }
+    }
+  });
+
+  for (const via of ['reload', 'remix'] as const) {
+    it(`a ${via} resolves the restored brushes and protections and sends their lots`, async () => {
+      stub.reset();
+      await page.viewport(1024, 768);
+      const d = brushed();
+      await setup(
+        via === 'reload'
+          ? { storage: () => seeded(d) }
+          : {
+              storage: () => new MemoryStorage(),
+              remix: { from: 'Brushed', doc: SIM_CODEC.serialize(d) }
+            }
+      );
+      await toReady();
+      const w = workers.at(-1)!;
+      await expect.poll(() => w.allOf('resolveBrush').length).toBe(2);
+      const asks = w.allOf('resolveBrush');
+      asks.forEach((a, i) =>
+        w.emit({
+          type: 'brushLots',
+          reqId: a.reqId,
+          result: { ok: true, lots: [`P${i}`, `Q${i}`], points: new Float64Array(4) }
+        })
+      );
+      await expect.poll(() => w.lastOf('setLevers')?.levers.user.length ?? 0).toBe(1);
+      const sent = w.lastOf('setLevers')!.levers;
+      expect(sent.user[0].lots.length).toBe(2);
+      expect(sent.protect.lots.length).toBe(2);
+      await yourZoning().click();
+      await expect.element(page.getByText(/· 2 lots ·/)).toBeVisible();
+      expect(page.getByText('Finding lots…').elements()).toHaveLength(0);
+      // The next real change still goes through LeverSync, once.
+      const before = w.allOf('setLevers').length;
+      await timingToggle().click();
+      await presetPicker().selectOptions(SD);
+      await expect.poll(() => w.allOf('setLevers').length).toBe(before + 1);
+      expect(w.lastOf('setLevers')!.levers.user[0].lots.length).toBe(2);
+    });
+  }
 
   it('the save state sits in the header status slot, apart from the actions', async () => {
     await page.viewport(375, 700);

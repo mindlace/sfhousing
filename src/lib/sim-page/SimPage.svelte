@@ -188,9 +188,12 @@
     title = d.title;
     if (canonicalJson(d.policy) !== canonicalJson(store.policy)) {
       // Call 12: a load, not a change; the policy without its lot lists runs until LeverSync
-      // (the policy effect below) resolves the brushes and sends the full levers.
+      // resolves the brushes and sends the full levers. The policy effect below skips the policy
+      // it first sees (this one: onMount runs before it), so the restore asks LeverSync itself,
+      // as the view does. A second update of the same policy only restarts the debounce.
       store.reset(d.policy);
       levers = compileLevers(d.policy, () => []) ?? levers;
+      sync.update(d.policy);
     }
     if (remix) {
       try {
