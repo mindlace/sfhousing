@@ -18,7 +18,10 @@ export interface DocCodec<D> {
   corruptKey(iso: string): string;
   /** Strict: what publish accepts. */
   parse(text: string): Result<D>;
-  /** Lenient: stored and autosaved documents. */
+  /**
+   * Lenient: stored and autosaved documents. A schema newer than this build must still fail
+   * with the 'future-schema' code (storage.ts detects a future document by it).
+   */
   load(text: string): Result<D>;
   /** Canonical text. */
   serialize(d: D): string;

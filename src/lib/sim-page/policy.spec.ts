@@ -480,3 +480,38 @@ describe('scoreCopy', () => {
     });
   });
 });
+
+describe('parseSimPolicy preset layer modes', () => {
+  const raw = (mut: (t: { current: TimingSet }) => void) => {
+    const p = JSON.parse(JSON.stringify(base({ timing: { current: CUSTOM, saved: null } })));
+    mut(p.timing);
+    return p;
+  };
+  const pathOf = (p: unknown) => {
+    try {
+      parseSimPolicy(p);
+      return null;
+    } catch (e) {
+      return (e as PolicyFormatError).path;
+    }
+  };
+  const lenient = { presetLayer: 'reconcile' } as const;
+
+  it('reconcile accepts a retired preset and an out-of-range benchmark scale', () => {
+    const retired = raw((t) => ((t.current as { preset: string }).preset = 'ceqaInfill'));
+    const scaled = raw((t) => (t.current.presetTimers[0].scale = 0.3));
+    expect(() => parseSimPolicy(retired, lenient)).not.toThrow();
+    expect(() => parseSimPolicy(scaled, lenient)).not.toThrow();
+    expect(pathOf(retired)).toBe('timing.current.preset');
+    expect(pathOf(scaled)).toBe('timing.current.presetTimers[0]');
+  });
+
+  it('both modes reject a new-reach edit and duplicate edits', () => {
+    const reach = raw((t) => (t.current.edits[0].reach = 'new'));
+    const dup = raw((t) => t.current.edits.push({ ...t.current.edits[0] }));
+    for (const p of [reach, dup]) {
+      expect(() => parseSimPolicy(p)).toThrow(PolicyFormatError);
+      expect(() => parseSimPolicy(p, lenient)).toThrow(PolicyFormatError);
+    }
+  });
+});

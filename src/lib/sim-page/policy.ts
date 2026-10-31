@@ -312,8 +312,12 @@ function percents(v: unknown, path: string): Record<Pathway, number> | null {
 }
 
 const AVAILABLE_PRESETS = PRESETS.filter((p) => p.available).map((p) => p.id);
+const ALL_PRESETS = PRESETS.map((p) => p.id);
 
-function parseTimingSet(v: unknown, path: string): TimingSet {
+/** How the preset layer is read: 'strict' re-checks it, 'reconcile' leaves it to the caller. */
+export type PresetLayerMode = 'strict' | 'reconcile';
+
+function parseTimingSet(v: unknown, path: string, mode: PresetLayerMode): TimingSet {
   const r = rec(v, path, [
     'preset',
     'presetTimers',
@@ -329,14 +333,14 @@ function parseTimingSet(v: unknown, path: string): TimingSet {
       fail(`${j(path, 'edits')}[${i}].reach`, 'expected all: custom edits reach every project');
   });
   const set: TimingSet = {
-    preset: oneOf(r.preset, j(path, 'preset'), AVAILABLE_PRESETS),
+    preset: oneOf(r.preset, j(path, 'preset'), mode === 'strict' ? AVAILABLE_PRESETS : ALL_PRESETS),
     presetTimers: viaLevers('timers', r.presetTimers, j(path, 'presetTimers')),
     presetRouteShares: percents(r.presetRouteShares, j(path, 'presetRouteShares')),
     edits,
     routeShares: percents(r.routeShares, j(path, 'routeShares')),
     localProgramStreamlined: bool(r.localProgramStreamlined, j(path, 'localProgramStreamlined'))
   };
-  checkPresetLayer(set, path);
+  if (mode === 'strict') checkPresetLayer(set, path);
   return set;
 }
 
@@ -414,21 +418,30 @@ function checkPresetLayer(s: TimingSet, path: string): void {
   }
 }
 
-function parseTiming(v: unknown): SimTiming {
+function parseTiming(v: unknown, mode: PresetLayerMode): SimTiming {
   const r = rec(v, 'timing', ['current', 'saved']);
   let saved: SimTiming['saved'] = null;
   if (r.saved !== null) {
     const sr = rec(r.saved, 'timing.saved', ['label', 'set']);
     saved = {
       label: str(sr.label, 'timing.saved.label'),
-      set: parseTimingSet(sr.set, 'timing.saved.set')
+      set: parseTimingSet(sr.set, 'timing.saved.set', mode)
     };
   }
-  return { current: parseTimingSet(r.current, 'timing.current'), saved };
+  return { current: parseTimingSet(r.current, 'timing.current', mode), saved };
 }
 
-/** Validate a policy document. Throws `PolicyFormatError` naming the first bad field. */
-export function parseSimPolicy(json: unknown): SimPolicy {
+/**
+ * Validate a policy document. Throws `PolicyFormatError` naming the first bad field. With
+ * `presetLayer: 'reconcile'` the preset layer (preset id availability, its timers and shares)
+ * is not checked against the preset: a stored document may name a retired preset or a scale
+ * the current sources no longer give, and reconcile re-derives that layer.
+ */
+export function parseSimPolicy(
+  json: unknown,
+  opts: { presetLayer?: PresetLayerMode } = {}
+): SimPolicy {
+  const mode = opts.presetLayer ?? 'strict';
   const r = rec(json, '', [
     'schema',
     'stock',
@@ -445,7 +458,7 @@ export function parseSimPolicy(json: unknown): SimPolicy {
   const n = pr.newerThanYears;
   if (n !== null && (typeof n !== 'number' || !Number.isFinite(n) || n <= 0))
     fail('protect.newerThanYears', 'expected null or a positive number');
-  const timing = parseTiming(r.timing);
+  const timing = parseTiming(r.timing, mode);
   const brushes = arr(r.brushes, 'brushes').map((b, i) => parseBrush(b, `brushes[${i}]`));
   const ids = new Set<string>();
   brushes.forEach((b, i) => {
@@ -477,20 +490,21 @@ export function parseSimPolicy(json: unknown): SimPolicy {
 
 // ---- queries ----
 
-function canonical(v: unknown): string {
-  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
+/** Stable JSON: object keys sorted, so equal values give equal text. */
+export function canonicalJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(',')}]`;
   if (typeof v === 'object' && v !== null) {
     const o = v as Record<string, unknown>;
     return `{${Object.keys(o)
       .sort()
-      .map((k) => `${JSON.stringify(k)}:${canonical(o[k])}`)
+      .map((k) => `${JSON.stringify(k)}:${canonicalJson(o[k])}`)
       .join(',')}}`;
   }
   return JSON.stringify(v);
 }
 
 export function queryKey(q: BrushQuery): string {
-  return canonical(q);
+  return canonicalJson(q);
 }
 
 const bandsOutermostFirst = (bands: TransitBand[]) => [...bands].sort((a, b) => b.maxM - a.maxM);
@@ -632,7 +646,7 @@ export interface ScoreCopy {
   twin: string;
 }
 
-const isFzpCompat = (l: SimLevers) => canonical(l) === canonical(FZP_COMPAT_LEVERS);
+const isFzpCompat = (l: SimLevers) => canonicalJson(l) === canonicalJson(FZP_COMPAT_LEVERS);
 
 export function scoreCopy(l: SimLevers | null): ScoreCopy {
   if (l === null || isFzpCompat(l))
