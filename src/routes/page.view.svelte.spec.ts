@@ -58,7 +58,7 @@ describe('/ View menu', () => {
   it('shows View in the header and passes the default view to the map', async () => {
     await render(PageHost, { props: { data: data() } });
     await expect.element(viewButton()).toBeInTheDocument();
-    // First in the header actions: left of Saved / Publish.
+    // First in the header actions: left of Publish.
     const slot = document.querySelector('[data-testid="header-actions"]')!;
     expect(slot.firstElementChild?.contains(viewButton().element())).toBe(true);
     expect(stubProps.view).toEqual({ transitStops: false, transitAccess: true });

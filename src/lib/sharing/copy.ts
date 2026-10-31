@@ -1,5 +1,6 @@
 import { MAX_PLAN_BYTES } from '$lib/plan';
 import type { ShareErrorCode } from './api';
+import type { DocKind } from './doc-codec';
 
 export const kb = (bytes: number): number => Math.ceil(bytes / 1024);
 export const LIMIT_KB: number = MAX_PLAN_BYTES / 1024;
@@ -43,7 +44,20 @@ export const remixConfirm = (n: number): string =>
 export const ogDescription = (n: number): string =>
   `A plan for San Francisco housing with ${n} brush strokes. Open it to see the buildings and net new units.`;
 
-export function serverMessage(code: ShareErrorCode, bytes?: number): string {
+/**
+ * The error-body text the server sends. A policy's is the plan wording with the plan words
+ * swapped (and its own size line), so a policy error never says "plan".
+ */
+export function serverMessage(
+  code: ShareErrorCode,
+  bytes?: number,
+  kind: DocKind = 'plan'
+): string {
+  if (kind === 'sim') {
+    return code === 'too_large' && bytes !== undefined
+      ? SIM_COPY.tooLarge(bytes)
+      : toPolicy(serverMessage(code, bytes));
+  }
   switch (code) {
     case 'too_large':
       return bytes === undefined
@@ -62,6 +76,67 @@ export function serverMessage(code: ShareErrorCode, bytes?: number): string {
     default:
       return cannotRead(code);
   }
+}
+
+export type ShareCopy = { -readonly [K in keyof typeof COPY]: string } & {
+  sizeLine: (bytes: number) => string;
+  tooLarge: (bytes: number) => string;
+  cannotRead: (code: string) => string;
+  n3: (oldV: string, newV: string) => string;
+  n5: (docV: string, current: string) => string;
+  n6: (docV: string, current: string) => string;
+  remixedToast: (label: string) => string;
+  remixConfirm: (n: number) => string;
+  /** The shared banner's fallback title and its label ("Shared plan"). */
+  untitled: string;
+  shared: string;
+  /** Where the shared banner's "Start your own" goes: the kind's own editor. */
+  startHref: string;
+};
+
+const toPolicy = (s: string): string =>
+  s
+    .replace(/\bplans\b/g, 'policies')
+    .replace(/\bPlans\b/g, 'Policies')
+    .replace(/\bplan\b/g, 'policy')
+    .replace(/\bPlan\b/g, 'Policy');
+
+const PLAN_COPY: ShareCopy = {
+  ...COPY,
+  sizeLine,
+  tooLarge,
+  cannotRead,
+  n3,
+  n5,
+  n6,
+  remixedToast,
+  remixConfirm,
+  untitled: 'Untitled plan',
+  shared: 'Shared plan',
+  startHref: '/'
+};
+
+const SIM_COPY: ShareCopy = {
+  ...(Object.fromEntries(Object.entries(COPY).map(([k, v]) => [k, toPolicy(v)])) as typeof COPY),
+  disabledHint: 'Change the policy first.',
+  sizeLine,
+  tooLarge: (bytes) =>
+    `This policy is too large to share (${kb(bytes)} KB of the ${LIMIT_KB} KB limit). Try fewer or shorter strokes, or fewer brushes.`,
+  cannotRead: (code) => toPolicy(cannotRead(code)),
+  n3: (oldV, newV) => toPolicy(n3(oldV, newV)),
+  n5: (docV, current) => toPolicy(n5(docV, current)),
+  n6: (docV, current) => toPolicy(n6(docV, current)),
+  remixedToast,
+  remixConfirm: () =>
+    'Replace your current policy with a copy of this one? Your current policy will be lost unless you publish it first.',
+  untitled: 'Untitled policy',
+  shared: 'Shared policy',
+  startHref: '/sim'
+};
+
+/** The share-flow strings for a document kind. `copyFor('plan')` is today's plan copy. */
+export function copyFor(kind: DocKind): ShareCopy {
+  return kind === 'sim' ? SIM_COPY : PLAN_COPY;
 }
 
 export function formatPublished(iso: string): string {

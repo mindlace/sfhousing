@@ -158,7 +158,7 @@ export const EDITABLE_STAGES: readonly TimedStage[] = [
   'permitIssued'
 ];
 
-const STAGE_LABELS: Record<Tabled, string> = {
+export const STAGE_LABELS: Record<Tabled, string> = {
   preApplication: 'Pre-application',
   filed: 'Filed to entitled',
   entitled: 'Entitled to permit filed',

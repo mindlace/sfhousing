@@ -24,6 +24,8 @@ export const TOUCH_FROM: LngLat = [-122.419, 37.76014];
 export const TOUCH_TO: LngLat = [-122.4183, 37.76014];
 
 export const PLAN_KEY = 'sfhousing:plan:v1';
+/** The /sim policy's autosave key (`SIM_KEY` in src/lib/sim-page/sim-doc.ts). */
+export const SIM_KEY = 'sfhousing:sim:v1';
 
 /** `src/lib/sharing/fixtures/plans/small.json` as raw text (3 ops on fixture-0). */
 export const smallText = readFileSync(
@@ -204,7 +206,7 @@ export const oldVersionText = readFileSync(
  */
 export async function seedPlanRow(
   request: APIRequestContext,
-  opts: { body: string; datasetVersion?: string }
+  opts: { body: string; datasetVersion?: string; kind?: 'plan' | 'sim' }
 ): Promise<string> {
   const res = await request.post('/api/e2e/plans', { data: opts });
   // 201 = a new row; 200 = this body was already seeded (local D1 persists across runs).

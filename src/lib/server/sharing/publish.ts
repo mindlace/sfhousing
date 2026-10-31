@@ -1,9 +1,10 @@
-// POST /api/plans (spec §4.3). Steps run in the table's order; the first failure returns.
-import { MAX_PLAN_BYTES, parsePlan, serializePlan, type PlanError } from '$lib/plan';
+// POST /api/plans and /api/policies (spec §4.3). Steps run in the table's order; the first
+// failure returns. The document kind (codec) decides parsing, emptiness and the page path.
+import { MAX_PLAN_BYTES, type PlanError } from '$lib/plan';
 import { getDb } from '$lib/server/db';
 import type { ShareErrorCode } from '$lib/sharing/api';
-import { planPath } from '$lib/sharing/api';
 import { serverMessage } from '$lib/sharing/copy';
+import type { DocCodec } from '$lib/sharing/doc-codec';
 import { sha256Hex } from '$lib/sharing/hash';
 import { newPlanId } from '$lib/sharing/ids';
 import { enforceRate } from './rate-limit';
@@ -42,15 +43,17 @@ export function errorForParse(errors: PlanError[]): {
 
 export async function handlePublish(
   event: { request: Request; platform: App.Platform | undefined },
+  codec: DocCodec<unknown>,
   deps: PublishDeps = {}
 ): Promise<Response> {
   const { request, platform } = event;
+  const kind = codec.kind;
   const newId = deps.newId ?? (() => newPlanId());
   const now = deps.now ?? (() => new Date());
 
   // 1. Media type (parameters such as charset are ignored).
   const mediaType = (request.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
-  if (mediaType !== 'application/json') return shareError(415, 'unsupported_media_type');
+  if (mediaType !== 'application/json') return shareError(415, 'unsupported_media_type', { kind });
 
   try {
     const env = (platform?.env ?? {}) as Partial<Env>;
@@ -58,38 +61,41 @@ export async function handlePublish(
     // 2. Rate limit before the body is touched, so a flood costs no read or parse work.
     const ip = request.headers.get('cf-connecting-ip') ?? 'unknown';
     if (!(await enforceRate(env.PUBLISH_RL, 'publish:' + ip, env))) {
-      return shareError(429, 'rate_limited', { headers: { 'Retry-After': '60' } });
+      return shareError(429, 'rate_limited', { headers: { 'Retry-After': '60' }, kind });
     }
 
     // 3. Declared size.
     const cl = request.headers.get('content-length');
     if (cl !== null && Number(cl) > MAX_PLAN_BYTES) {
-      return shareError(413, 'too_large', { message: serverMessage('too_large', Number(cl)) });
+      return shareError(413, 'too_large', {
+        message: serverMessage('too_large', Number(cl), kind)
+      });
     }
 
     // 4. Received size: the header is not trusted.
     const read = await readCapped(request, MAX_PLAN_BYTES);
-    if (!read.ok) return shareError(413, 'too_large');
+    if (!read.ok) return shareError(413, 'too_large', { kind });
 
-    // 5. Parse and validate.
-    const parsed = parsePlan(read.text);
+    // 5. Parse and validate (strict: what publish accepts).
+    const parsed = codec.parse(read.text);
     if (!parsed.ok) {
       const { status, code, details } = errorForParse(parsed.errors);
-      return shareError(status, code, details ? { details } : {});
+      return shareError(status, code, { ...(details ? { details } : {}), kind });
     }
-    const plan = parsed.value;
+    const doc = parsed.value;
 
-    // 6. Empty plans are not published.
-    if (plan.ops.length === 0) return shareError(422, 'empty_plan');
+    // 6. Empty documents are not published.
+    if (codec.isEmpty(doc)) return shareError(422, 'empty_plan', { kind });
 
     // 7. The dataset version must exist in R2.
     const bucket = env.BUCKET;
     if (!bucket) throw new Error('R2 binding BUCKET unavailable');
-    const manifest = await bucket.head('data/' + plan.datasetVersion + '/manifest.json');
-    if (manifest === null) return shareError(422, 'unknown_dataset_version');
+    const datasetVersion = codec.datasetVersion(doc);
+    const manifest = await bucket.head('data/' + datasetVersion + '/manifest.json');
+    if (manifest === null) return shareError(422, 'unknown_dataset_version', { kind });
 
     // 8. Dedupe on the canonical body's hash.
-    const body = serializePlan(plan);
+    const body = codec.serialize(doc);
     const hash = await sha256Hex(body);
     const db = getDb(platform);
     const existing = await findPlanByHash(db, hash);
@@ -97,26 +103,27 @@ export async function handlePublish(
 
     // 9. Insert, retrying on PK collision; a content_hash conflict is a racing identical publish.
     const row = {
-      schema: plan.schema,
-      datasetVersion: plan.datasetVersion,
+      kind,
+      schema: codec.schema(doc),
+      datasetVersion,
       body,
       contentHash: hash,
-      opCount: plan.ops.length,
+      opCount: codec.opCount(doc),
       byteSize: new TextEncoder().encode(body).byteLength,
       createdAt: now()
     };
     for (let attempt = 0; attempt < MAX_INSERT_ATTEMPTS; attempt++) {
       const id = newId();
       if (await insertPlan(db, { id, ...row })) {
-        return json(201, { id }, { Location: planPath(id) });
+        return json(201, { id }, { Location: codec.path(id) });
       }
       const raced = await findPlanByHash(db, hash);
       if (raced) return json(200, { id: raced.id });
     }
-    throw new Error(`plan id collided on all ${MAX_INSERT_ATTEMPTS} attempts`);
+    throw new Error(`id collided on all ${MAX_INSERT_ATTEMPTS} attempts`);
   } catch (e) {
     // Never log the rate-limit key or the client IP.
     console.error('[plans] publish failed:', e instanceof Error ? e.message : 'unknown error');
-    return shareError(500, 'server_error');
+    return shareError(500, 'server_error', { kind });
   }
 }

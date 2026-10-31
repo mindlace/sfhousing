@@ -28,7 +28,7 @@ What the build added to that layout:
 
 ## The recipe and its compile rules
 
-The page edits a `SimPolicy` (`src/lib/sim-page/policy.ts`), a recipe of brush parameters, not lot lists (Call 1). `compileLevers` turns it into plan 2's `SimLevers` once every brush query has resolved (`null` until then). The recipe is what plan 5 will save and publish (`parseSimPolicy`); `timing` is plan 4's, edited in "Permitting timelines".
+The page edits a `SimPolicy` (`src/lib/sim-page/policy.ts`), a recipe of brush parameters, not lot lists (Call 1). `compileLevers` turns it into plan 2's `SimLevers` once every brush query has resolved (`null` until then). The recipe is what plan 5 autosaves and publishes (inside a `SimDoc`, "Autosave, publish and the read-only view" below); `timing` is plan 4's, edited in "Permitting timelines".
 
 | Field                       | Meaning                                                                                                                                   |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
@@ -49,10 +49,21 @@ Compile rules, with the plan's calls:
 - **Protection** (Call 11) is the categories plus the protect strokes: `protect.lots` is the protect runs minus later unprotect runs, in order. A protected lot is **not redevelopable** (partner ruling 2026-10-29): protection beats every brush, and unprotecting a lot that a category still protects leaves it protected. Projects already in the pipeline on a protected lot carry on (Call 21).
 - **Map feedback** (Call 12): lots in the user layer and brush-protected lots are dots at their label points (`lot-overlay.ts`), coloured by mode, protected lots drawn as a ring, with a map key in "Your zoning". `lotRoles` marks only brush-protected lots as protected, so a lot protected only by a category shows its brush role (raise, lower, set) on the map, not the ring. The engine still treats it as protected.
 - **Map lookups** (Call 13): the map gets the worker's posted `lookups.fresh`; each card picks `inFlight` or `fresh` for its project.
-- **No local persistence** (Call 15): the policy lives in memory; reloading starts over.
+- **No local persistence** (Call 15): **superseded by plan 5.** The policy autosaves and publishes; see "Autosave, publish and the read-only view" below.
 - **Lever sends are debounced 250 ms** after the last change once every lot is resolved (Call 18); the worker lets the latest `setLevers` win.
 
 `PolicyStore` (`policy-store.svelte.ts`) keeps the recipe with undo and redo: every change is one labelled store change, so the Undo and Redo buttons name it and Ctrl+Z / Ctrl+Shift+Z (the `/` editor's keys, through `BrushController`) step through the same history.
+
+## Autosave, publish and the read-only view
+
+Plan 5 (`docs/superpowers/plans/2026-10-30-sim-publish.md`; "Call n" in this section is that plan's). The document is `SimDoc` with `SIM_CODEC` (`src/lib/sim-page/sim-doc.ts`); the server side, limits and redirects are in [plan-sharing.md](plan-sharing.md), "Policies (`/sim`)". `src/routes/sim/+page.svelte` and `src/routes/s/[id]/+page.svelte` both render `SimRoute` (`src/lib/sim-page/SimRoute.svelte`: the seed handling and `{#key}` remounts), which renders `SimPage` with a `mode` and a `persist` setting.
+
+- **Autosave** (`persist: 'restore'`, plain `/sim`). Every change (undo and redo included, and the title) is written under `sfhousing:sim:v1`, debounced 500 ms. On mount, `restore()` reads it: `store.reset(policy)` (not an undoable change), `levers = compileLevers(policy, () => [])` until the brushes resolve, then the full levers (Call 12). `restoreSimDoc` (`sim-session.ts`) reconciles the timings with the page's calibration and builds the notices: N1 to N3 in the policy wording, the timing refit, and the Remix toast. The header's status slot shows the save state ("Saving…", "Saved", "Autosave off").
+- **Over-limit policies are not autosaved** (ruling R4). A document that fails `simDocProblems` (over `OPS_MAX` strokes or `MAX_PLAN_BYTES`) is never written, because it would load back as corrupt. The last valid write stays, and the header shows "Autosave off" until a valid write succeeds. Its popover still gives the storage reason (N4), not the size (known gap).
+- **`start=fzp` defers** (`persist: 'deferred'`, Call 13). `/fzp` links open the FZP comparison with an empty user layer, so nothing is restored and nothing is written until the first change. If a non-default policy is saved, the `fzp-kept` notice says "Showing the Family Zoning Plan comparison. Your saved policy is kept until you change something here." with "Open your policy" (`/sim`). Before its first write, `Autosave.guard()` reads the stored record again (at mount and at the first change, since another tab may have written). A corrupt or future record is then kept under `sfhousing:sim:corrupt:<ISO>` before it is replaced, as after a restore.
+- **Publish** sits in the header beside Policy. It is disabled on the default policy ("Change the policy first.", Call 14) and posts `SIM_CODEC.publishable(doc)` (the Save snapshot stripped) to `/api/policies`. The link is `/s/<id>`.
+- **The read-only view** (`/s/<id>`, `mode: 'view'`, `persist: 'off'`). The shared banner sits above the map. The panel shows `PolicySummary` under "Policy (read-only)" (Call 15): the layers, comparison and alternative-plan toggle, the brushes, the protections, the timing label and the shares and changed stages behind a disclosure. There are no tools, no undo, no Publish and no autosave; the lot dots still draw. The shared policy is reconciled with the calibration it runs on, and the timing notice shows when anything moved. Viewing never writes the local policy: only Remix does, then goes to `/sim`.
+- **Notices** (`SimNotices.svelte`) render in FzpMode's notice row above the scrubber, one line each with Details where there is a list. Toasts dismiss after 8 s. The polite status region mounts empty with the ready-phase notice row and takes the notices present on load 100 ms later (`LIVE_DELAY_MS`), so a notice present on load (the timing refit on `/s/<id>`, a restore or Remix notice) is announced: a screen reader announces a change to a live region, not one that mounts already populated. `SimNotices.svelte.spec.ts` and `e2e/sim-share.spec.ts` check that the region is in the document empty before the notice is inserted.
 
 ## Stop types and bands
 
@@ -97,7 +108,7 @@ Transit stop types (Call 7, `src/lib/sim/levers/brushes.ts`), read from `transit
 | `total`   | lots to recompute while resolving (0 otherwise)                              |
 | `sentRev` | the revision of the latest levers sent, or null                              |
 
-A test waits for a policy change with `status === 'current'` and a `sentRev` above the one read before the change. The lever notices are in `data-testid="fzp-lever-status"`. The e2e spec is `e2e/sim.spec.ts`; it reads the street name and its lot count from fixture-0's `frontage.bin` and `parcels.bin` with the shared codecs.
+A test waits for a policy change with `status === 'current'` and a `sentRev` above the one read before the change. The lever notices are in `data-testid="fzp-lever-status"`, the session notices in `data-testid="sim-notices"`. The e2e specs are `e2e/sim.spec.ts` and, for autosave, publish and `/s/<id>`, `e2e/sim-share.spec.ts`; it reads the street name and its lot count from fixture-0's `frontage.bin` and `parcels.bin` with the shared codecs.
 
 ## Performance
 

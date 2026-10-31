@@ -122,6 +122,25 @@ describe('PolicyStore', () => {
     store.apply((p) => p, 'nothing');
     expect(store.canUndo).toBe(false);
   });
+
+  it('reset replaces the policy and clears undo, redo and coalescing', () => {
+    const store = new PolicyStore(BASE);
+    store.apply((p) => ({ ...p, brushes: [area('RH-1', 4)] }), 'a', 'k');
+    store.apply((p) => ({ ...p, compare: 'preFzp' }), 'b');
+    store.undo();
+    expect(store.canUndo).toBe(true);
+    expect(store.canRedo).toBe(true);
+    const p = withBrushes(area('RH-2'));
+    store.reset(p);
+    expect(store.policy).toBe(p);
+    expect(store.canUndo).toBe(false);
+    expect(store.canRedo).toBe(false);
+    expect(store.undoLabel).toBeNull();
+    // The next keyed change is a new entry, not merged into a cleared one.
+    store.apply((q) => ({ ...q, brushes: [area('RH-1', 5)] }), 'c', 'k');
+    expect(store.undo()).toBe('c');
+    expect(store.policy).toBe(p);
+  });
 });
 
 describe('LeverSync', () => {

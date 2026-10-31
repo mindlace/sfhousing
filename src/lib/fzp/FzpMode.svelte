@@ -126,6 +126,13 @@
     panel?: Snippet;
     /** The page's own header actions, before 'Another future' (/sim: "Policy"). */
     actions?: Snippet;
+    /** The header's status slot (/sim: the save state); read once, at mount. */
+    status?: Snippet;
+    /**
+     * The page's own notices (/sim: restore, refit, Remix), first in the ready-phase notice row
+     * above the scrubber, so their height joins the dock's and nothing they cover is lost.
+     */
+    notices?: Snippet;
   }
 
   let {
@@ -145,7 +152,9 @@
     onmapready = undefined,
     onphase = undefined,
     panel = undefined,
-    actions = undefined
+    actions = undefined,
+    status = undefined,
+    notices = undefined
   }: Props = $props();
 
   // The props seed the page once; Retry replaces the manifest and calibration in place.
@@ -635,7 +644,7 @@
     );
   }
 
-  useHeaderActions(headerActions, { pinned: scoreBar });
+  useHeaderActions(headerActions, { pinned: scoreBar, status: untrack(() => status) });
 
   $effect(() => {
     const p = phase;
@@ -819,6 +828,7 @@
       data-testid="fzp-notices"
       bind:offsetHeight={noticeH}
     >
+      {@render notices?.()}
       <div role="status" data-testid="fzp-status" class="max-w-full">
         {#if stopped}
           <span

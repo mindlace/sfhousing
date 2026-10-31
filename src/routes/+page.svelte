@@ -11,6 +11,7 @@
   import { Autosave } from '$lib/sharing/autosave.svelte';
   import { COPY, n3, remixedToast } from '$lib/sharing/copy';
   import NoticeStack from '$lib/sharing/NoticeStack.svelte';
+  import { PLAN_CODEC } from '$lib/sharing/doc-codec';
   import PublishButton from '$lib/sharing/PublishButton.svelte';
   import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
   import { applyTitle } from '$lib/sharing/title';
@@ -80,7 +81,7 @@
     autosave.setLastPublished({ id: r.id, hash: r.hash }, editor.plan);
   }
 
-  useHeaderActions(headerActions);
+  useHeaderActions(headerActions, { status: saveState });
 
   // Map layer toggles (transit spec §6.3), per viewer. View shows only when the manifest the map
   // renders (BrushEditor's own, which a Retry can replace) has a transit network.
@@ -115,15 +116,19 @@
   {#if mapManifest?.transit}
     <ViewMenu {view} onchange={onViewChange} />
   {/if}
-  <SaveIndicator status={autosave.status} />
   {#if editor}
     <!-- editor.plan passes straight through: PublishDialog's 413 lock keys on its identity. -->
     <PublishButton
-      plan={editor.plan}
+      codec={PLAN_CODEC}
+      doc={editor.plan}
       lastPublished={autosave.lastPublished}
       onpublished={onPublished}
     />
   {/if}
+{/snippet}
+
+{#snippet saveState()}
+  <SaveIndicator status={autosave.status} align="start" />
 {/snippet}
 
 <svelte:head><title>SF Housing Simulator</title></svelte:head>

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { serializePlan, type Plan, type PlanOp } from '$lib/plan';
+import { OPS_MAX, serializePlan, type Plan, type PlanOp } from '$lib/plan';
+import { defaultEffect } from '$lib/sim-page/policy';
+import { DEFAULT_POLICY, SIM_CODEC, simDocProblems, type SimDoc } from '$lib/sim-page/sim-doc';
 import { MemoryStorage } from './fixtures/memory-storage';
 import { Autosave } from './autosave.svelte';
 import { PLAN_KEY, writeRecord } from './storage';
@@ -314,5 +316,150 @@ describe('Autosave.setLastPublished', () => {
     a.schedule(plan(3));
     vi.advanceTimersByTime(500);
     expect(stored(s).lastPublished).toEqual(lp);
+  });
+});
+
+describe('Autosave.rememberPublished (deferred start)', () => {
+  it('keeps lastPublished in memory without writing; the first write carries it', () => {
+    const { s, a, setItem } = setup(seed(plan(2)));
+    a.guard();
+    const lp = { id: 'abcdEFGH', hash: 'e'.repeat(64) };
+    a.rememberPublished(lp);
+    expect(a.lastPublished).toEqual(lp);
+    vi.advanceTimersByTime(1000);
+    expect(setItem).not.toHaveBeenCalled();
+    a.schedule(plan(3));
+    vi.advanceTimersByTime(500);
+    expect(stored(s)).toMatchObject({ plan: serializePlan(plan(3)), lastPublished: lp });
+  });
+});
+
+describe('Autosave.guard (deferred start, no restore)', () => {
+  it('a corrupt record is preserved before the first write, and nothing is written by guard', () => {
+    const s = new MemoryStorage();
+    s.setItem(PLAN_KEY, '{nope');
+    const setItem = vi.spyOn(s, 'setItem');
+    const a = new Autosave({ currentVersion: 'fixture-1', storage: () => s, now: () => NOW });
+    a.guard();
+    expect(setItem).not.toHaveBeenCalled();
+    a.schedule(plan(1));
+    vi.advanceTimersByTime(500);
+    expect(corruptKeys(s).map((k) => s.getItem(k))).toEqual(['{nope']);
+    expect(stored(s).plan).toBe(serializePlan(plan(1)));
+    expect(a.status).toBe('saved');
+  });
+
+  it('a readable record is left alone and the first change still writes', () => {
+    const s = seed(plan(2));
+    const a = new Autosave({ currentVersion: 'fixture-1', storage: () => s, now: () => NOW });
+    a.guard();
+    a.schedule(plan(2)); // equal to what is stored, but nothing was restored: written
+    vi.advanceTimersByTime(500);
+    expect(corruptKeys(s)).toEqual([]);
+    expect(stored(s).plan).toBe(serializePlan(plan(2)));
+  });
+});
+
+describe('Autosave writable (ruling R4)', () => {
+  // A SimDoc over OPS_MAX strokes fails simDocProblems; the lenient load would read it back as
+  // corrupt, so writing it would lose the policy on reload.
+  const simDoc = (strokes: number): SimDoc => ({
+    schema: 1,
+    kind: 'sim',
+    datasetVersion: 'fixture-0',
+    policy: {
+      ...DEFAULT_POLICY,
+      brushes: [
+        {
+          id: 'f',
+          kind: 'freehand',
+          strokes: Array.from({ length: strokes }, () => ({
+            path: [[-122.4, 37.7] as [number, number]],
+            radiusM: 50
+          })),
+          effect: defaultEffect('raise', 6)
+        }
+      ]
+    }
+  });
+
+  function simSetup() {
+    const s = new MemoryStorage();
+    const setItem = vi.spyOn(s, 'setItem');
+    const a = new Autosave<SimDoc>({
+      currentVersion: 'fixture-0',
+      codec: SIM_CODEC,
+      storage: () => s,
+      now: () => NOW,
+      writable: (d) => simDocProblems(d).length === 0
+    });
+    const writes = () => setItem.mock.calls.filter(([k]) => k === SIM_CODEC.storageKey);
+    return { s, a, writes };
+  }
+
+  it('an over-limit document is never written: Autosave off until a valid write succeeds', () => {
+    const { s, a, writes } = simSetup();
+    a.restore();
+    a.schedule(simDoc(2));
+    vi.advanceTimersByTime(500);
+    expect(writes()).toHaveLength(1);
+    const kept = s.getItem(SIM_CODEC.storageKey);
+
+    a.schedule(simDoc(OPS_MAX + 1));
+    expect(a.status).toBe('off');
+    vi.advanceTimersByTime(1000);
+    a.flush();
+    expect(writes()).toHaveLength(1);
+    expect(s.getItem(SIM_CODEC.storageKey)).toBe(kept);
+    // The record still loads: the last valid policy survives a reload.
+    const reread = new Autosave<SimDoc>({
+      currentVersion: 'fixture-0',
+      codec: SIM_CODEC,
+      storage: () => s
+    }).restore();
+    expect(reread.notice).toBeNull();
+    expect(SIM_CODEC.serialize(reread.plan)).toBe(SIM_CODEC.serialize(simDoc(2)));
+
+    a.schedule(simDoc(3));
+    expect(a.status).toBe('off');
+    vi.advanceTimersByTime(500);
+    expect(a.status).toBe('saved');
+    expect(writes()).toHaveLength(2);
+    expect(JSON.parse(s.getItem(SIM_CODEC.storageKey)!).plan).toBe(SIM_CODEC.serialize(simDoc(3)));
+  });
+
+  it('undoing back to the stored document after a refused one reads Saved again', () => {
+    const { a, writes } = simSetup();
+    a.restore();
+    a.schedule(simDoc(2));
+    vi.advanceTimersByTime(500);
+    a.schedule(simDoc(OPS_MAX + 1));
+    expect(a.status).toBe('off');
+    a.schedule(simDoc(2));
+    expect(a.status).toBe('saved');
+    vi.advanceTimersByTime(1000);
+    expect(writes()).toHaveLength(1);
+  });
+
+  it('a pending valid write is written at once when an over-limit change follows it', () => {
+    const { s, a, writes } = simSetup();
+    a.restore();
+    a.schedule(simDoc(2));
+    a.schedule(simDoc(OPS_MAX + 1));
+    expect(writes()).toHaveLength(1);
+    expect(JSON.parse(s.getItem(SIM_CODEC.storageKey)!).plan).toBe(SIM_CODEC.serialize(simDoc(2)));
+    expect(a.status).toBe('off');
+    vi.advanceTimersByTime(1000);
+    expect(writes()).toHaveLength(1);
+  });
+
+  it('setLastPublished records the link but skips writing an over-limit document', () => {
+    const { a, writes } = simSetup();
+    a.restore();
+    const lp = { id: 'abcdEFGH', hash: 'e'.repeat(64) };
+    a.setLastPublished(lp, simDoc(OPS_MAX + 1));
+    expect(a.lastPublished).toEqual(lp);
+    expect(writes()).toHaveLength(0);
+    expect(a.status).toBe('off');
   });
 });

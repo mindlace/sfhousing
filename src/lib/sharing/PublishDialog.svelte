@@ -1,29 +1,26 @@
-<script lang="ts">
+<script lang="ts" generics="D">
   import { tick, untrack } from 'svelte';
   import { REPO_URL } from '$lib/config';
-  import {
-    MAX_PLAN_BYTES,
-    TITLE_MAX_CHARS,
-    planByteSize,
-    serializePlan,
-    type Plan
-  } from '$lib/plan';
-  import { planPath } from './api';
-  import { COPY, sizeLine, tooLarge } from './copy';
+  import { MAX_PLAN_BYTES, TITLE_MAX_CHARS } from '$lib/plan';
+  import { copyFor } from './copy';
+  import type { DocCodec } from './doc-codec';
   import { sha256Hex } from './hash';
   import {
     isReportable,
     publishErrorMessage,
-    publishPlan,
+    publishDoc,
     type PublishFailure
   } from './publish-client';
-  import { normalizeTitle, withTitle } from './title';
+  import { normalizeTitle } from './title';
 
-  type Published = { id: string; hash: string; plan: Plan };
+  type Published = { id: string; hash: string; plan: D };
+
+  const encoder = new TextEncoder();
 
   let {
     open = $bindable(false),
-    plan,
+    codec,
+    doc,
     mode,
     publishedId,
     onpublished,
@@ -32,7 +29,8 @@
     now = () => Date.now()
   }: {
     open: boolean;
-    plan: Plan;
+    codec: DocCodec<D>;
+    doc: D;
     mode: 'form' | 'success';
     publishedId?: string;
     onpublished: (r: Published) => void;
@@ -62,27 +60,28 @@
   let inFlight = false; // synchronous guard: a second click before the DOM updates is ignored
   let failure = $state.raw<{ outcome: PublishFailure; bytes: number } | undefined>();
   // A server 413 blocks Publish until the plan or the title changes.
-  let blockedFor = $state.raw<{ plan: Plan; title: string | undefined } | undefined>();
+  let blockedFor = $state.raw<{ doc: D; title: string | undefined } | undefined>();
   let retryLeft = $state(0);
   let retryTimer: ReturnType<typeof setInterval> | undefined;
   let copied = $state(false);
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
 
-  const candidate = $derived(withTitle(plan, normalizeTitle(title)));
-  const bytes = $derived(planByteSize(candidate));
+  const copy = $derived(copyFor(codec.kind));
+  const candidate = $derived(codec.withTitle(doc, normalizeTitle(title)));
+  // What Publish sends, and so what is measured and hashed.
+  const payload = $derived(codec.publishable(candidate));
+  const bytes = $derived(encoder.encode(codec.serialize(payload)).byteLength);
   const oversize = $derived(bytes > MAX_PLAN_BYTES);
   const blocked = $derived(
-    blockedFor !== undefined &&
-      blockedFor.plan === plan &&
-      blockedFor.title === normalizeTitle(title)
+    blockedFor !== undefined && blockedFor.doc === doc && blockedFor.title === normalizeTitle(title)
   );
   const canPublish = $derived(!busy && !oversize && !blocked && retryLeft === 0);
-  const url = $derived(id ? `${origin}${planPath(id)}` : '');
+  const url = $derived(id ? `${origin}${codec.path(id)}` : '');
   const shareable = typeof navigator !== 'undefined' && 'share' in navigator;
   const message = $derived.by(() => {
     if (!failure) return undefined;
     if (failure.outcome.code === 'too_large' && !blocked) return undefined;
-    return publishErrorMessage(failure.outcome, failure.bytes);
+    return publishErrorMessage(failure.outcome, failure.bytes, codec.kind);
   });
 
   function stopCountdown() {
@@ -107,8 +106,8 @@
   function reset() {
     view = mode;
     id = mode === 'success' ? publishedId : undefined;
-    sentTitle = plan.title;
-    title = plan.title ?? '';
+    sentTitle = codec.title(doc);
+    title = codec.title(doc) ?? '';
     failure = retryLeft > 0 ? failure : undefined;
     blockedFor = undefined;
     copied = false;
@@ -135,13 +134,14 @@
     busy = true;
     failure = undefined;
     const sent = candidate;
+    const sentPayload = payload;
     const sentBytes = bytes;
     try {
-      const outcome = await publishPlan(sent, { fetchFn });
+      const outcome = await publishDoc(codec, sentPayload, { fetchFn });
       if (outcome.ok) {
-        const hash = await sha256Hex(serializePlan(sent));
+        const hash = await sha256Hex(codec.serialize(sentPayload));
         id = outcome.id;
-        sentTitle = sent.title;
+        sentTitle = codec.title(sent);
         view = 'success';
         onpublished({ id: outcome.id, hash, plan: sent });
         await tick();
@@ -149,7 +149,7 @@
         return;
       }
       failure = { outcome, bytes: sentBytes };
-      if (outcome.code === 'too_large') blockedFor = { plan, title: sent.title };
+      if (outcome.code === 'too_large') blockedFor = { doc, title: codec.title(sent) };
       if (outcome.code === 'rate_limited') startCountdown(outcome.retryAfter ?? 60);
     } finally {
       busy = false;
@@ -196,7 +196,7 @@
   class="m-auto w-[calc(100vw-2rem)] max-w-md rounded-lg bg-white p-5 text-gray-800 shadow-xl backdrop:bg-black/40"
 >
   {#if view === 'success'}
-    <h2 id={ids.heading} class="text-lg font-semibold">{COPY.successHeading}</h2>
+    <h2 id={ids.heading} class="text-lg font-semibold">{copy.successHeading}</h2>
     <label for={ids.link} class="mt-4 block text-sm font-medium">Link</label>
     <input
       bind:this={linkEl}
@@ -225,7 +225,7 @@
     </div>
     <p class="sr-only" role="status">{copied ? 'Link copied' : ''}</p>
   {:else}
-    <h2 id={ids.heading} class="text-lg font-semibold">{COPY.dialogHeading}</h2>
+    <h2 id={ids.heading} class="text-lg font-semibold">{copy.dialogHeading}</h2>
     <form
       class="mt-4"
       onsubmit={(e) => {
@@ -244,10 +244,10 @@
         autocomplete="off"
         class="mt-1 w-full rounded-md border border-gray-400 px-2 py-1.5 text-sm disabled:opacity-50"
       />
-      <p class="mt-3 text-sm">{COPY.dialogBody}</p>
-      <p id={ids.size} class="mt-2 text-sm text-gray-700">{sizeLine(bytes)}</p>
+      <p class="mt-3 text-sm">{copy.dialogBody}</p>
+      <p id={ids.size} class="mt-2 text-sm text-gray-700">{copy.sizeLine(bytes)}</p>
       {#if oversize}
-        <p id={ids.preflight} class="mt-2 text-sm text-red-800">{tooLarge(bytes)}</p>
+        <p id={ids.preflight} class="mt-2 text-sm text-red-800">{copy.tooLarge(bytes)}</p>
       {/if}
       <div role="alert" class="text-sm text-red-800">
         {#if message && failure}

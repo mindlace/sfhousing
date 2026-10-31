@@ -8,6 +8,9 @@ import { MAX_PLAN_BYTES, planByteSize, serializePlan, type Plan, type PlanOp } f
 import { COPY, cannotRead, sizeLine, tooLarge } from './copy';
 import { sha256Hex } from './hash';
 import SiteHeader from '$lib/shell/SiteHeader.svelte';
+import { PLAN_CODEC } from './doc-codec';
+import { DEFAULT_POLICY, SIM_CODEC, type SimDoc } from '$lib/sim-page/sim-doc';
+import { OBSERVED_TIMING } from '$lib/sim-page/timing';
 import PublishButton from './PublishButton.svelte';
 import SaveIndicator from './SaveIndicator.svelte';
 
@@ -51,7 +54,8 @@ async function setup(p: Props = {}) {
   const onpublished = vi.fn();
   const plan = p.plan ?? smallPlan();
   await render(PublishButton, {
-    plan,
+    codec: PLAN_CODEC,
+    doc: plan,
     lastPublished: p.lastPublished,
     onpublished,
     fetchFn,
@@ -158,6 +162,41 @@ describe('PublishButton + PublishDialog', () => {
 
     await userEvent.click(dialog().getByRole('button', { name: 'Done' }));
     await expect.element(dialog()).not.toBeInTheDocument();
+  });
+
+  it('a sim policy posts the publishable form (snapshot stripped) to /api/policies', async () => {
+    const saved = { label: "Permits at San Diego's pace", set: OBSERVED_TIMING.current };
+    const doc: SimDoc = {
+      schema: 1,
+      kind: 'sim',
+      datasetVersion: 'fixture-0',
+      policy: {
+        ...DEFAULT_POLICY,
+        compare: 'preFzp',
+        timing: { ...DEFAULT_POLICY.timing, saved }
+      }
+    };
+    const fetchFn = vi.fn(async () => json(201, { id: 'AbCdEfGh' }));
+    const onpublished = vi.fn();
+    await render(PublishButton<SimDoc>, {
+      codec: SIM_CODEC,
+      doc,
+      onpublished,
+      fetchFn: fetchFn as unknown as typeof fetch,
+      origin: ORIGIN
+    });
+    await userEvent.click(headerButton());
+    await userEvent.fill(titleInput(), 'Pre-FZP');
+    await userEvent.click(dialogPublish());
+    await expect.element(dialog().getByLabelText('Link')).toHaveValue(`${ORIGIN}/s/AbCdEfGh`);
+
+    const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/policies');
+    const sent = SIM_CODEC.publishable(SIM_CODEC.withTitle(doc, 'Pre-FZP'));
+    expect(sent.policy.timing.saved).toBeNull();
+    expect(init.body).toBe(SIM_CODEC.serialize(sent));
+    const r = onpublished.mock.calls[0][0] as { hash: string; plan: SimDoc };
+    expect(r.hash).toBe(await sha256Hex(SIM_CODEC.serialize(sent)));
   });
 
   it('already published: button reads "Share link" and opens success without a request', async () => {
@@ -297,7 +336,8 @@ describe('PublishButton + PublishDialog', () => {
     const b = mount(PublishButton, {
       target: slot,
       props: {
-        plan,
+        codec: PLAN_CODEC,
+        doc: plan,
         lastPublished: { id: 'Stored12', hash },
         onpublished: () => {},
         origin: ORIGIN

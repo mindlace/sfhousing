@@ -1,5 +1,5 @@
 /**
- * The /sim policy in memory (Call 15: no persistence in plan 3): `PolicyStore` keeps the recipe
+ * The /sim policy in memory (SimPage autosaves it, plan 5): `PolicyStore` keeps the recipe
  * with undo and redo, and `LeverSync` turns each recipe into the `SimLevers` the worker runs.
  * `LeverSync` resolves every brush query the recipe needs (cached by `queryKey`), compiles once
  * all are known, and sends the result 250 ms after the last change (Call 18), so only the latest
@@ -66,6 +66,17 @@ export class PolicyStore {
     this.#coalesceKey = coalesce;
     this.#future = [];
     this.#policy = next;
+  }
+
+  /**
+   * Replaces the policy and clears undo and redo: a load (the autosave restore), not a change
+   * the user can undo (Call 12).
+   */
+  reset(p: SimPolicy): void {
+    this.#past = [];
+    this.#future = [];
+    this.#coalesceKey = undefined;
+    this.#policy = p;
   }
 
   /** Restores the policy before the latest change; returns its label, or null if none. */

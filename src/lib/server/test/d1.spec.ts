@@ -50,6 +50,7 @@ describe('createTestD1', () => {
         'dataset_version',
         'byte_size',
         'id',
+        'kind',
         'op_count',
         'schema'
       ].sort()

@@ -5,7 +5,7 @@
   import type { Manifest } from '$lib/data/manifest';
   import { frameLatest, type Score, type ScoreStatus } from '$lib/scoreboard';
   import Scoreboard from '$lib/scoreboard/Scoreboard.svelte';
-  import { ogDescription } from '$lib/sharing/copy';
+  import { ogDescription, remixConfirm } from '$lib/sharing/copy';
   import { localOpCount, remixToLocal } from '$lib/sharing/remix';
   import SharedBanner from '$lib/sharing/SharedBanner.svelte';
   import { getStorage } from '$lib/sharing/storage';
@@ -84,7 +84,11 @@
     datasetNotice={data.datasetNotice}
     planVersion={data.plan.datasetVersion}
     currentVersion={data.currentDatasetVersion}
-    localOpCount={() => localOpCount(getStorage())}
+    kind="plan"
+    confirmText={() => {
+      const n = localOpCount(getStorage());
+      return n >= 1 ? remixConfirm(n) : null;
+    }}
     onremix={remix}
   />
   <div id="map-region" class="relative min-h-0 flex-1">

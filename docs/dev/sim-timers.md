@@ -66,7 +66,12 @@ carries a product past the clamp.
 ## Save and Revert
 
 Save ("Save timelines") stores the current set as `timing.saved` with the label shown at that
-moment, in memory (plan 5 persists it). Revert reads "Revert to saved" when there is a snapshot
+moment. Plan 5 persists it: autosave keeps it, so "Revert to saved" survives a reload, but Publish
+strips it (`SIM_CODEC.publishable`), so a shared link carries no snapshot. Every load (autosave
+restore, `/s/<id>`, Remix) reconciles both the current set and the snapshot with the calibration
+the page runs on (`reconcileTiming`, `src/lib/sim-page/reconcile.ts`): presets are re-resolved by
+their rule and custom edits clamped, with a notice listing what moved ([plan-sharing.md](plan-sharing.md),
+"Policies"). Revert reads "Revert to saved" when there is a snapshot
 and "Revert to <preset name>" otherwise. Choosing a preset keeps the saved snapshot. Each is one
 labelled store change, so Undo covers it. Editing a preset's set makes the label
 "Custom (from <preset name>)".

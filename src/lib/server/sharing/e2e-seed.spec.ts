@@ -6,8 +6,10 @@ import { handleE2eSeed } from '$lib/server/sharing/e2e-seed';
 import { handleGetPlan } from '$lib/server/sharing/get-plan';
 import { handlePublish } from '$lib/server/sharing/publish';
 import { createTestD1, testPlatform, type TestD1 } from '$lib/server/test/d1';
+import { paintedText } from '$lib/server/test/sim-docs';
 import { FakeR2Bucket } from '$lib/server/test/fake-r2';
 import type { ShareError } from '$lib/sharing/api';
+import { PLAN_CODEC } from '$lib/sharing/doc-codec';
 import { sha256Hex } from '$lib/sharing/hash';
 import { PLAN_ID_RE } from '$lib/sharing/ids';
 import { POST } from '../../../routes/api/e2e/plans/+server';
@@ -39,6 +41,7 @@ const post = (payload: unknown) =>
 
 type DbRow = {
   id: string;
+  kind: string;
   schema: number;
   dataset_version: string;
   body: string;
@@ -65,6 +68,7 @@ describe('POST /api/e2e/plans', () => {
     expect(rows(t)).toEqual([
       {
         id,
+        kind: 'plan',
         schema: 1,
         dataset_version: 'fixture-0000',
         body,
@@ -87,6 +91,26 @@ describe('POST /api/e2e/plans', () => {
     expect(row.dataset_version).toBe('fixture-0');
     expect(row.op_count).toBe(3);
     expect(row.body).toBe(small);
+  });
+
+  it("kind: 'sim' seeds a policy row counted through the sim codec; a bad kind is 400", async () => {
+    const { t, platform } = setup();
+    const body = paintedText();
+    const res = await handleE2eSeed(
+      { request: post({ body, kind: 'sim', datasetVersion: 'fixture-0' }), platform },
+      { e2eEnabled: true }
+    );
+    expect(res.status).toBe(201);
+    const [row] = rows(t);
+    expect(row.kind).toBe('sim');
+    expect(row.op_count).toBe(1);
+    expect(row.body).toBe(body);
+
+    const bad = await handleE2eSeed(
+      { request: post({ body, kind: 'nope' }), platform },
+      { e2eEnabled: true }
+    );
+    expect(bad.status).toBe(400);
   });
 
   it('the same body again → 200 with the existing id and one row (idempotent re-seed)', async () => {
@@ -129,14 +153,17 @@ describe('POST /api/e2e/plans', () => {
     bucket.put('data/fixture-0/manifest.json', '{}');
     platform.env.BUCKET = bucket as never;
     const publish = () =>
-      handlePublish({
-        request: new Request('http://localhost:4173/api/plans', {
-          method: 'POST',
-          body: small,
-          headers: { 'content-type': 'application/json' }
-        }),
-        platform
-      });
+      handlePublish(
+        {
+          request: new Request('http://localhost:4173/api/plans', {
+            method: 'POST',
+            body: small,
+            headers: { 'content-type': 'application/json' }
+          }),
+          platform
+        },
+        PLAN_CODEC
+      );
     const pub = await publish();
     expect(pub.status).toBe(201);
     const publishedId = ((await pub.json()) as { id: string }).id;
@@ -153,11 +180,14 @@ describe('POST /api/e2e/plans', () => {
     expect(seededId).not.toBe(publishedId);
 
     const get = (id: string) =>
-      handleGetPlan({
-        params: { id },
-        request: new Request(`http://localhost:4173/api/plans/${id}`),
-        platform
-      });
+      handleGetPlan(
+        {
+          params: { id },
+          request: new Request(`http://localhost:4173/api/plans/${id}`),
+          platform
+        },
+        PLAN_CODEC
+      );
     const seededGet = await get(seededId);
     expect(seededGet.status).toBe(200);
     expect(await seededGet.text()).toBe(canonical);

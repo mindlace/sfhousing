@@ -7,6 +7,7 @@ import { createTestD1, testPlatform, type TestD1 } from '$lib/server/test/d1';
 import { FakeR2Bucket } from '$lib/server/test/fake-r2';
 import { FakeRateLimiter } from '$lib/server/test/fake-rate-limiter';
 import type { ShareError } from '$lib/sharing/api';
+import { PLAN_CODEC } from '$lib/sharing/doc-codec';
 import { sha256Hex } from '$lib/sharing/hash';
 import { PLAN_ID_RE } from '$lib/sharing/ids';
 import { normalizeTitle, withTitle } from '$lib/sharing/title';
@@ -71,7 +72,7 @@ async function publish(
   request: Request,
   deps: PublishDeps = {}
 ) {
-  return handlePublish({ request, platform }, { now: () => NOW, ...deps });
+  return handlePublish({ request, platform }, PLAN_CODEC, { now: () => NOW, ...deps });
 }
 
 function expectJsonHeaders(res: Response) {

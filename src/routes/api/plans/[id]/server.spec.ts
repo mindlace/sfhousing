@@ -8,6 +8,7 @@ import { createTestD1, testPlatform, type TestD1 } from '$lib/server/test/d1';
 import { FakeR2Bucket } from '$lib/server/test/fake-r2';
 import { FakeRateLimiter } from '$lib/server/test/fake-rate-limiter';
 import type { ShareError } from '$lib/sharing/api';
+import { PLAN_CODEC } from '$lib/sharing/doc-codec';
 import { sha256Hex } from '$lib/sharing/hash';
 import { GET } from './+server';
 
@@ -38,24 +39,30 @@ function setup() {
 }
 
 async function publishSmall(platform: App.Platform): Promise<string> {
-  const res = await handlePublish({
-    request: new Request('https://sfhousing.test/api/plans', {
-      method: 'POST',
-      body: small,
-      headers: { 'content-type': 'application/json' }
-    }),
-    platform
-  });
+  const res = await handlePublish(
+    {
+      request: new Request('https://sfhousing.test/api/plans', {
+        method: 'POST',
+        body: small,
+        headers: { 'content-type': 'application/json' }
+      }),
+      platform
+    },
+    PLAN_CODEC
+  );
   expect(res.status).toBe(201);
   return ((await res.json()) as { id: string }).id;
 }
 
 const get = (platform: App.Platform | undefined, id: string, headers: HeadersInit = {}) =>
-  handleGetPlan({
-    params: { id },
-    request: new Request(`https://sfhousing.test/api/plans/${id}`, { headers }),
-    platform
-  });
+  handleGetPlan(
+    {
+      params: { id },
+      request: new Request(`https://sfhousing.test/api/plans/${id}`, { headers }),
+      platform
+    },
+    PLAN_CODEC
+  );
 
 function canonicalSmall(): string {
   const parsed = parsePlan(small);

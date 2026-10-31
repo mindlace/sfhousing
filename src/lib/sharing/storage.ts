@@ -1,7 +1,8 @@
-import { parsePlan, type Plan } from '$lib/plan';
+import type { Plan } from '$lib/plan';
+import { PLAN_CODEC, type DocCodec } from './doc-codec';
 
-export const PLAN_KEY = 'sfhousing:plan:v1';
-export const corruptKey = (iso: string) => `sfhousing:plan:corrupt:${iso}`;
+export const PLAN_KEY = PLAN_CODEC.storageKey;
+export const corruptKey = (iso: string) => PLAN_CODEC.corruptKey(iso);
 
 export interface LocalPlanRecord {
   v: 1;
@@ -20,9 +21,9 @@ export function getStorage(): Storage | null {
   }
 }
 
-export type ReadResult =
+export type ReadResult<D = Plan> =
   | { kind: 'missing' }
-  | { kind: 'ok'; record: LocalPlanRecord; plan: Plan }
+  | { kind: 'ok'; record: LocalPlanRecord; plan: D }
   | { kind: 'corrupt'; raw: string }
   | { kind: 'future'; raw: string };
 
@@ -45,8 +46,11 @@ function isRecord(v: unknown): v is LocalPlanRecord {
  * unavailable). JSON error, `v !== 1`, missing fields or a `parsePlan` failure → corrupt;
  * a plan from a newer schema → future.
  */
-export function readRecord(storage: Storage): ReadResult {
-  const raw = storage.getItem(PLAN_KEY);
+export function readRecord<D = Plan>(
+  storage: Storage,
+  codec: DocCodec<D> = PLAN_CODEC as unknown as DocCodec<D>
+): ReadResult<D> {
+  const raw = storage.getItem(codec.storageKey);
   if (raw === null) return { kind: 'missing' };
   let parsed: unknown;
   try {
@@ -55,7 +59,7 @@ export function readRecord(storage: Storage): ReadResult {
     return { kind: 'corrupt', raw };
   }
   if (!isRecord(parsed)) return { kind: 'corrupt', raw };
-  const p = parsePlan(parsed.plan);
+  const p = codec.load(parsed.plan);
   if (!p.ok) return { kind: p.errors[0]?.code === 'future-schema' ? 'future' : 'corrupt', raw };
   const record: LocalPlanRecord = { v: 1, savedAt: parsed.savedAt, plan: parsed.plan };
   if (parsed.lastPublished)
@@ -64,9 +68,13 @@ export function readRecord(storage: Storage): ReadResult {
 }
 
 /** False on any throw (QuotaExceededError, SecurityError). */
-export function writeRecord(storage: Storage, record: LocalPlanRecord): boolean {
+export function writeRecord<D = Plan>(
+  storage: Storage,
+  record: LocalPlanRecord,
+  codec: DocCodec<D> = PLAN_CODEC as unknown as DocCodec<D>
+): boolean {
   try {
-    storage.setItem(PLAN_KEY, JSON.stringify(record));
+    storage.setItem(codec.storageKey, JSON.stringify(record));
     return true;
   } catch {
     return false;
@@ -74,9 +82,14 @@ export function writeRecord(storage: Storage, record: LocalPlanRecord): boolean 
 }
 
 /** Copies an unreadable record to `sfhousing:plan:corrupt:<ISO>`. False on any throw. */
-export function preserveCorrupt(storage: Storage, raw: string, now: Date): boolean {
+export function preserveCorrupt<D = Plan>(
+  storage: Storage,
+  raw: string,
+  now: Date,
+  codec: DocCodec<D> = PLAN_CODEC as unknown as DocCodec<D>
+): boolean {
   try {
-    storage.setItem(corruptKey(now.toISOString()), raw);
+    storage.setItem(codec.corruptKey(now.toISOString()), raw);
     return true;
   } catch {
     return false;

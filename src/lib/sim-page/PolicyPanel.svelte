@@ -5,7 +5,8 @@
   and compass) to its right edge so the panel never covers it (WCAG 2.2 2.4.11). Below md it is a modal sheet (`<dialog>`) that joins the
   header overlays, so it never shows with the phone Menu or the score details. Its sections are
   disclosures; only "Zoning layers" starts open. Below md a sub-view (Task 9's "Add a brush")
-  replaces the sections, with a Back button.
+  replaces the sections, with a Back button. The read-only view (plan 5) shows a summary instead,
+  titled "Policy (read-only)".
 -->
 <script lang="ts">
   import { tick, untrack, type Snippet } from 'svelte';
@@ -22,9 +23,13 @@
     focusOnOpen?: boolean;
     /** The panel's id, for the Policy button's `aria-controls`. */
     id?: string;
-    /** 'add-brush' replaces the sections with `subview` and a Back button (Task 9). */
-    view?: 'sections' | 'add-brush';
+    /**
+     * 'add-brush' replaces the sections with `subview` and a Back button (Task 9); 'summary'
+     * (the read-only /s/<id>, plan 5) shows `summary` under the title "Policy (read-only)".
+     */
+    view?: 'sections' | 'add-brush' | 'summary';
     subview?: Snippet;
+    summary?: Snippet;
     onback?: () => void;
     /** The "Your zoning" and "Protections" sections' contents (Tasks 8 to 10). */
     zoning?: Snippet;
@@ -42,6 +47,7 @@
     id = undefined,
     view = 'sections',
     subview = undefined,
+    summary = undefined,
     onback = undefined,
     zoning = undefined,
     protections = undefined,
@@ -111,7 +117,9 @@
 
 {#snippet body()}
   <div class="flex items-center justify-between gap-2 border-b border-gray-300 px-4 py-2">
-    <h2 id={headingId} class="text-base font-semibold">Policy</h2>
+    <h2 id={headingId} class="text-base font-semibold">
+      {view === 'summary' ? 'Policy (read-only)' : 'Policy'}
+    </h2>
     <button
       type="button"
       aria-label="Close policy"
@@ -119,7 +127,9 @@
       onclick={() => onclose()}>Close</button
     >
   </div>
-  {#if view === 'add-brush' && subview}
+  {#if view === 'summary'}
+    {@render summary?.()}
+  {:else if view === 'add-brush' && subview}
     <div class="p-4">
       <button
         type="button"

@@ -12,6 +12,15 @@ import { stub, callsOf } from '$lib/fzp/test/sim-map-stub';
 import { timelineMsg } from '$lib/fzp/test/fake-worker';
 import SimPageHost from './test/SimPageHost.svelte';
 import { testCatalog } from './test/catalog';
+import type { ComponentProps } from 'svelte';
+import { copyFor } from '$lib/sharing/copy';
+import { MemoryStorage } from '$lib/sharing/fixtures/memory-storage';
+import { replaceStateCalls } from '../../test-stubs/app/navigation';
+import type SimPage from './SimPage.svelte';
+import { DEFAULT_POLICY, SIM_CODEC, SIM_KEY, type SimDoc } from './sim-doc';
+import { resolvePreset } from './timing';
+import { defaultEffect } from './policy';
+import { FZP_KEPT_TEXT } from './sim-session';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 const workers = vi.hoisted(() => [] as import('$lib/fzp/test/fake-worker').FakeScenarioWorker[]);
@@ -30,7 +39,7 @@ vi.mock('$lib/sim/client', async (orig) => {
 const manifest = parseManifest(manifestJson);
 const calibration = fixtureCalibration();
 
-type Over = Partial<{ noScenario: boolean; manifestError: boolean }>;
+type Over = Partial<ComponentProps<typeof SimPage>>;
 async function setup(over: Over = {}) {
   return render(SimPageHost, {
     props: {
@@ -334,5 +343,369 @@ describe('SimPage rule brushes (Task 9)', () => {
     await expect.element(page.getByRole('region', { name: 'Policy' })).toBeVisible();
     await expect.element(page.getByRole('checkbox', { name: 'Arterials' })).not.toBeInTheDocument();
     await expect.element(page.getByRole('button', { name: 'Add a brush' })).toBeVisible();
+  });
+});
+
+describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
+  const SD = "Permits at San Diego's pace";
+  const sim = copyFor('sim');
+  const timingToggle = () => page.getByRole('button', { name: /^Permitting timelines/ });
+  const presetPicker = () => page.getByRole('combobox', { name: 'Preset' });
+  const timingLabel = () => page.getByTestId('timing-label');
+  const notices = () => page.getByTestId('fzp-notices');
+  const publish = () => page.getByTestId('publish-open');
+
+  const docWith = (current = resolvePreset('benchmarkPermits', calibration)): SimDoc => ({
+    schema: 1,
+    kind: 'sim',
+    datasetVersion: 'fixture-0',
+    policy: { ...DEFAULT_POLICY, timing: { current, saved: null } }
+  });
+  function seeded(d: SimDoc = docWith()): MemoryStorage {
+    const mem = new MemoryStorage();
+    mem.setItem(SIM_KEY, JSON.stringify({ v: 1, savedAt: 'x', plan: SIM_CODEC.serialize(d) }));
+    return mem;
+  }
+  const storedDoc = (mem: MemoryStorage) =>
+    JSON.parse(JSON.parse(mem.getItem(SIM_KEY)!).plan) as SimDoc;
+
+  it('a reload keeps the policy and its snapshot', async () => {
+    await page.viewport(1024, 768);
+    const mem = new MemoryStorage();
+    const first = await setup({ storage: () => mem });
+    await timingToggle().click();
+    await presetPicker().selectOptions(SD);
+    await page.getByRole('button', { name: 'Save timelines' }).click();
+    const share = page.getByRole('spinbutton', { name: 'Discretionary share, %' });
+    await userEvent.fill(share, '37');
+    await userEvent.keyboard('{Tab}');
+    await expect.element(timingLabel()).toHaveTextContent(`Custom (from ${SD})`);
+    await first.unmount(); // flushes the pending write
+
+    await setup({ storage: () => mem });
+    await expect
+      .element(timingToggle())
+      .toHaveAccessibleName(`Permitting timelines, Custom (from ${SD})`);
+    await timingToggle().click();
+    await expect.element(timingLabel()).toHaveTextContent(`Custom (from ${SD})`);
+    await expect.element(page.getByRole('button', { name: 'Revert to saved' })).toBeVisible();
+  });
+
+  it('a reload shows no timing notice', async () => {
+    await page.viewport(1024, 768);
+    await setup({ storage: () => seeded() });
+    await toReady();
+    await expect.element(notices()).toBeInTheDocument();
+    await expect.element(timingToggle()).toHaveAccessibleName(`Permitting timelines, ${SD}`);
+    expect(notices().element().textContent).not.toContain('re-fit');
+  });
+
+  it('a tampered stored preset opens refit, with the timing notice and its Details', async () => {
+    await page.viewport(1024, 768);
+    const sd = resolvePreset('benchmarkPermits', calibration);
+    const mem = seeded(
+      docWith({ ...sd, presetTimers: sd.presetTimers.map((t) => ({ ...t, scale: 0.3 })) })
+    );
+    await setup({ storage: () => mem });
+    await toReady();
+    const n = notices().getByText(
+      'Some permitting timelines were re-fit to the data this simulation runs on.'
+    );
+    await expect.element(n).toBeVisible();
+    const details = notices().getByRole('button', { name: 'Details' });
+    await expect.element(details).toHaveAttribute('aria-expanded', 'false');
+    await details.click();
+    await expect.element(details).toHaveAttribute('aria-expanded', 'true');
+    await expect.element(notices().getByText(`${SD} was re-computed for this data`)).toBeVisible();
+    // The refit policy is autosaved.
+    await expect
+      .poll(() => storedDoc(mem).policy.timing.current.presetTimers, { timeout: 2000 })
+      .toEqual(sd.presetTimers);
+  });
+
+  it('a corrupt record is kept and the page starts on the default', async () => {
+    await page.viewport(1024, 768);
+    const mem = new MemoryStorage();
+    mem.setItem(SIM_KEY, '{nope');
+    await setup({ storage: () => mem });
+    await toReady();
+    await expect.element(notices().getByText(sim.n1)).toBeVisible();
+    const kept = mem.keys().filter((k) => k.startsWith('sfhousing:sim:corrupt:'));
+    expect(kept).toHaveLength(1);
+    expect(mem.getItem(kept[0])).toBe('{nope');
+    await expect
+      .element(timingToggle())
+      .toHaveAccessibleName('Permitting timelines, SF as observed');
+    await expect.element(publish()).toBeDisabled();
+  });
+
+  it('quota errors show Autosave off and recover', async () => {
+    await page.viewport(1024, 768);
+    const mem = new MemoryStorage();
+    await setup({ storage: () => mem });
+    await expect.element(page.getByRole('banner').getByText('Saved')).toBeVisible();
+    mem.failWrites = true;
+    await timingToggle().click();
+    await presetPicker().selectOptions(SD);
+    const off = page.getByRole('banner').getByRole('button', { name: 'Autosave off' });
+    await expect.element(off).toBeVisible();
+    mem.failWrites = false;
+    await presetPicker().selectOptions('No discretionary review');
+    await expect.element(page.getByRole('banner').getByText('Saved')).toBeVisible();
+    expect(storedDoc(mem).policy.timing.current.preset).toBe('noDiscretionary');
+  });
+
+  for (const [kind, raw] of [
+    ['a corrupt', '{nope'],
+    [
+      'a future-schema',
+      JSON.stringify({
+        v: 1,
+        savedAt: 'x',
+        plan: JSON.stringify({ schema: 2, kind: 'sim', datasetVersion: 'fixture-0', policy: {} })
+      })
+    ]
+  ] as const) {
+    it(`deferred start keeps ${kind} record under the corrupt key on the first change`, async () => {
+      await page.viewport(1024, 768);
+      const mem = new MemoryStorage();
+      mem.setItem(SIM_KEY, raw);
+      await setup({ storage: () => mem, start: 'fzp', persist: 'deferred' });
+      await timingToggle().click();
+      await presetPicker().selectOptions('No discretionary review');
+      await expect
+        .poll(() => mem.getItem(SIM_KEY) !== raw && storedDoc(mem).policy.timing.current.preset, {
+          timeout: 2000
+        })
+        .toBe('noDiscretionary');
+      const kept = mem.keys().filter((k) => k.startsWith('sfhousing:sim:corrupt:'));
+      expect(kept.map((k) => mem.getItem(k))).toEqual([raw]);
+    });
+  }
+
+  it('deferred start keeps the saved policy', async () => {
+    await page.viewport(1024, 768);
+    const mem = seeded();
+    const before = mem.getItem(SIM_KEY);
+    await setup({ storage: () => mem, start: 'fzp', persist: 'deferred' });
+    await toReady();
+    await expect
+      .element(
+        notices().getByText(
+          'Showing the Family Zoning Plan comparison. Your saved policy is kept until you change something here.'
+        )
+      )
+      .toBeVisible();
+    await expect
+      .element(notices().getByRole('link', { name: 'Open your policy' }))
+      .toHaveAttribute('href', '/sim');
+    // Nothing is restored or written on mount.
+    await expect
+      .element(timingToggle())
+      .toHaveAccessibleName('Permitting timelines, SF as observed');
+    await new Promise((r) => setTimeout(r, 700));
+    expect(mem.getItem(SIM_KEY)).toBe(before);
+    // The first change starts autosaving, over the saved policy.
+    await timingToggle().click();
+    await presetPicker().selectOptions('No discretionary review');
+    await expect
+      .poll(() => storedDoc(mem).policy.timing.current.preset, { timeout: 2000 })
+      .toBe('noDiscretionary');
+    await expect
+      .element(notices().getByRole('link', { name: 'Open your policy' }))
+      .not.toBeInTheDocument();
+  });
+
+  it('Share link after publish, Publish again after an edit', async () => {
+    await page.viewport(1024, 768);
+    const fetchFn = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ id: 'AbCdEfGh' }), {
+          status: 201,
+          headers: { 'content-type': 'application/json' }
+        })
+    );
+    const mem = new MemoryStorage();
+    await setup({ storage: () => mem, fetchFn: fetchFn as unknown as typeof fetch });
+    await timingToggle().click();
+    await presetPicker().selectOptions(SD);
+    await expect.element(publish()).toBeEnabled();
+    await publish().click();
+    const dialog = page.getByRole('dialog');
+    await expect
+      .element(dialog.getByRole('heading', { name: 'Publish this policy' }))
+      .toBeVisible();
+    await dialog.getByLabelText('Title').fill('SD permits');
+    await dialog.getByRole('button', { name: 'Publish', exact: true }).click();
+    await expect
+      .element(dialog.getByLabelText('Link'))
+      .toHaveValue(`${location.origin}/s/AbCdEfGh`);
+    const body = JSON.parse(
+      (fetchFn.mock.calls[0] as unknown as [string, RequestInit])[1].body as string
+    );
+    expect(body.title).toBe('SD permits');
+    await dialog.getByRole('button', { name: 'Done' }).click();
+    await expect.element(publish()).toHaveTextContent('Share link');
+    // The title and the link are autosaved with the policy.
+    const rec = JSON.parse(mem.getItem(SIM_KEY)!);
+    expect(rec.lastPublished.id).toBe('AbCdEfGh');
+    expect(JSON.parse(rec.plan).title).toBe('SD permits');
+
+    await presetPicker().selectOptions('No discretionary review');
+    await expect.element(publish()).toHaveTextContent('Publish');
+  });
+
+  it('deferred start: Publish before any change keeps the saved policy (I1)', async () => {
+    await page.viewport(1024, 768);
+    const fetchFn = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ id: 'FzPcOmPa' }), {
+          status: 201,
+          headers: { 'content-type': 'application/json' }
+        })
+    );
+    const mem = seeded();
+    const before = mem.getItem(SIM_KEY);
+    await setup({
+      storage: () => mem,
+      start: 'fzp',
+      persist: 'deferred',
+      fetchFn: fetchFn as unknown as typeof fetch
+    });
+    await toReady();
+    await expect.element(publish()).toBeEnabled();
+    await publish().click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabelText('Title').fill('FZP');
+    await dialog.getByRole('button', { name: 'Publish', exact: true }).click();
+    await expect
+      .element(dialog.getByLabelText('Link'))
+      .toHaveValue(`${location.origin}/s/FzPcOmPa`);
+    await dialog.getByRole('button', { name: 'Done' }).click();
+    await expect.element(publish()).toHaveTextContent('Share link');
+    await new Promise((r) => setTimeout(r, 700));
+    expect(mem.getItem(SIM_KEY)).toBe(before);
+    await expect.element(notices().getByText(FZP_KEPT_TEXT)).toBeVisible();
+    // The first change starts saving: the record carries the publish, so undo is Share link again.
+    await timingToggle().click();
+    await presetPicker().selectOptions('No discretionary review');
+    await expect
+      .poll(() => storedDoc(mem).policy.timing.current.preset, { timeout: 2000 })
+      .toBe('noDiscretionary');
+    const rec = JSON.parse(mem.getItem(SIM_KEY)!);
+    expect(rec.lastPublished.id).toBe('FzPcOmPa');
+    expect(storedDoc(mem).title).toBe('FZP');
+    await expect.element(publish()).toHaveTextContent('Publish');
+    await yourZoning().click();
+    await page.getByRole('button', { name: /^Undo/ }).click();
+    await expect.element(publish()).toHaveTextContent('Share link');
+  });
+
+  it('Publish is disabled on the default policy', async () => {
+    await page.viewport(1024, 768);
+    await setup();
+    await expect.element(publish()).toBeDisabled();
+    await expect.element(publish()).toHaveAccessibleDescription('Change the policy first.');
+  });
+
+  it('the first restore does not add an undo entry', async () => {
+    await page.viewport(1024, 768);
+    await setup({ storage: () => seeded() });
+    await expect.element(timingToggle()).toHaveAccessibleName(`Permitting timelines, ${SD}`);
+    await yourZoning().click();
+    await expect.element(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+  });
+
+  it('a remix hand-off loads the document, toasts once and clears the history state', async () => {
+    await page.viewport(1024, 768);
+    replaceStateCalls.length = 0;
+    const mem = new MemoryStorage();
+    const doc = { ...docWith(), title: 'SD permits' };
+    await setup({
+      storage: () => mem,
+      remix: { from: 'SD permits', doc: SIM_CODEC.serialize(doc) }
+    });
+    await toReady();
+    await expect
+      .element(notices().getByText("Remixed from SD permits. You're editing your own copy."))
+      .toBeVisible();
+    await expect.element(timingToggle()).toHaveAccessibleName(`Permitting timelines, ${SD}`);
+    expect(replaceStateCalls).toEqual([{ url: '', state: {} }]);
+    expect(storedDoc(mem).title).toBe('SD permits');
+  });
+
+  // C1: a restored policy goes through LeverSync, so its brushes and brushed protections resolve
+  // and the full levers (with their lots) are sent, without waiting for an edit.
+  const brushed = (): SimDoc => ({
+    schema: 1,
+    kind: 'sim',
+    datasetVersion: 'fixture-0',
+    policy: {
+      ...DEFAULT_POLICY,
+      brushes: [
+        {
+          id: 'a',
+          kind: 'freehand',
+          strokes: [{ path: [[-122.4, 37.7]], radiusM: 50 }],
+          effect: defaultEffect('raise', 6)
+        }
+      ],
+      protect: {
+        ...DEFAULT_POLICY.protect,
+        strokes: [{ kind: 'protect', path: [[-122.41, 37.71]], radiusM: 40 }]
+      }
+    }
+  });
+
+  for (const via of ['reload', 'remix'] as const) {
+    it(`a ${via} resolves the restored brushes and protections and sends their lots`, async () => {
+      stub.reset();
+      await page.viewport(1024, 768);
+      const d = brushed();
+      await setup(
+        via === 'reload'
+          ? { storage: () => seeded(d) }
+          : {
+              storage: () => new MemoryStorage(),
+              remix: { from: 'Brushed', doc: SIM_CODEC.serialize(d) }
+            }
+      );
+      await toReady();
+      const w = workers.at(-1)!;
+      await expect.poll(() => w.allOf('resolveBrush').length).toBe(2);
+      const asks = w.allOf('resolveBrush');
+      asks.forEach((a, i) =>
+        w.emit({
+          type: 'brushLots',
+          reqId: a.reqId,
+          result: { ok: true, lots: [`P${i}`, `Q${i}`], points: new Float64Array(4) }
+        })
+      );
+      await expect.poll(() => w.lastOf('setLevers')?.levers.user.length ?? 0).toBe(1);
+      const sent = w.lastOf('setLevers')!.levers;
+      expect(sent.user[0].lots.length).toBe(2);
+      expect(sent.protect.lots.length).toBe(2);
+      await yourZoning().click();
+      await expect.element(page.getByText(/· 2 lots ·/)).toBeVisible();
+      expect(page.getByText('Finding lots…').elements()).toHaveLength(0);
+      // The next real change still goes through LeverSync, once.
+      const before = w.allOf('setLevers').length;
+      await timingToggle().click();
+      await presetPicker().selectOptions(SD);
+      await expect.poll(() => w.allOf('setLevers').length).toBe(before + 1);
+      expect(w.lastOf('setLevers')!.levers.user[0].lots.length).toBe(2);
+    });
+  }
+
+  it('the save state sits in the header status slot, apart from the actions', async () => {
+    await page.viewport(375, 700);
+    await setup();
+    const banner = page.getByRole('banner');
+    await expect.element(banner.getByText('Saved')).toBeVisible();
+    // Publish waits in the closed Menu with the other actions.
+    expect(publish().element().checkVisibility()).toBe(false);
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await expect.element(publish()).toBeVisible();
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
   });
 });

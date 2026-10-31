@@ -48,4 +48,6 @@ Never hand-edit files in `migrations/`. CI applies migrations to remote D1 befor
 
 ## Header actions
 
-The header has a right-aligned slot pages can fill. The root layout calls `provideHeaderActions()` once; a page calls `useHeaderActions(snippet)` (both from `$lib/shell/header-actions.svelte`) during component init. The snippet is shown while the page is mounted and cleared on destroy. The snippet is registered during page init, so it is not present in SSR HTML: header actions appear after hydration.
+The header has a right-aligned slot pages can fill. The root layout calls `provideHeaderActions()` once; a page calls `useHeaderActions(snippet)` (both from `$lib/shell/header-actions.svelte`) during component init. The snippet is shown while the page is mounted and cleared on destroy. The snippet is registered during page init, so it is not present in SSR HTML: header actions appear after hydration. Below md the actions move into the header's Menu.
+
+`useHeaderActions(snippet, { pinned, status })` also fills two other slots. `pinned` is one item always in the header (the `/sim` score bar). `status` is a non-interactive status on the left, after the mode links from md and after the site name on phones, never in the Menu (`/sim`'s save state). The latest page to register owns all three slots; its destroy clears them only if no later page has registered since.

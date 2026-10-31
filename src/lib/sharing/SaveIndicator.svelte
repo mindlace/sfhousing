@@ -2,7 +2,14 @@
   import type { SaveStatus } from './autosave.svelte';
   import { COPY } from './copy';
 
-  let { status }: { status: SaveStatus } = $props();
+  let {
+    status,
+    align = 'end'
+  }: {
+    status: SaveStatus;
+    /** The popover's edge: 'end' (right-aligned, for a right-hand slot) or 'start' (left). */
+    align?: 'start' | 'end';
+  } = $props();
 
   const uid = $props.id();
   const popId = `${uid}-n4`;
@@ -56,7 +63,10 @@
     <p
       id={popId}
       hidden={!popOpen}
-      class="absolute top-full right-0 z-20 mt-1 w-64 max-w-[calc(100vw-2rem)] rounded-md border border-gray-300 bg-white p-3 text-sm text-gray-800 shadow-lg"
+      class={[
+        'absolute top-full z-20 mt-1 w-64 max-w-[calc(100vw-2rem)] rounded-md border border-gray-300 bg-white p-3 text-sm text-gray-800 shadow-lg',
+        align === 'start' ? 'left-0' : 'right-0'
+      ]}
     >
       {COPY.n4}
     </p>

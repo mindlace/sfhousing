@@ -11,7 +11,7 @@ function setup(
   p: { title?: string; datasetNotice?: Notice; count?: number; createdAt?: string } = {}
 ) {
   const onremix = vi.fn();
-  const localOpCount = vi.fn(() => p.count ?? 0);
+  const confirmText = vi.fn(() => ((p.count ?? 0) >= 1 ? remixConfirm(p.count ?? 0) : null));
   render(SharedBanner, {
     title: p.title,
     id: 'abc23456',
@@ -19,10 +19,11 @@ function setup(
     datasetNotice: p.datasetNotice ?? 'none',
     planVersion: '2026-01-01',
     currentVersion: '2026-09-01',
-    localOpCount,
+    kind: 'plan',
+    confirmText,
     onremix
   });
-  return { onremix, localOpCount };
+  return { onremix, confirmText };
 }
 
 const banner = () => page.getByRole('region', { name: 'Shared plan' });
@@ -95,10 +96,10 @@ describe('SharedBanner', () => {
   });
 
   it('Open with current data runs the same confirm flow when the local plan is non-empty', async () => {
-    const { onremix, localOpCount } = setup({ datasetNotice: 'remix', count: 2 });
+    const { onremix, confirmText } = setup({ datasetNotice: 'remix', count: 2 });
     await userEvent.click(openCurrent());
     await expect.element(dialog().getByText(remixConfirm(2))).toBeVisible();
-    expect(localOpCount).toHaveBeenCalled();
+    expect(confirmText).toHaveBeenCalled();
     expect(onremix).not.toHaveBeenCalled();
   });
 
@@ -118,6 +119,24 @@ describe('SharedBanner', () => {
     } finally {
       document.removeEventListener('focusin', onFocus);
     }
+  });
+
+  it('the policy kind says policy, and Start your own goes to /sim', async () => {
+    render(SharedBanner, {
+      id: 'abc23456',
+      createdAt: '2026-10-30T12:00:00.000Z',
+      datasetNotice: 'none',
+      planVersion: '2026-01-01',
+      currentVersion: '2026-09-01',
+      kind: 'sim',
+      confirmText: () => null,
+      onremix: () => {}
+    });
+    const region = page.getByRole('region', { name: 'Shared policy' });
+    await expect.element(region.getByText('Untitled policy', { exact: true })).toBeVisible();
+    await expect.element(region).toHaveTextContent(/Untitled policy · Shared policy · published/);
+    const start = region.getByRole('link', { name: 'Start your own' });
+    await expect.element(start).toHaveAttribute('href', '/sim');
   });
 
   it('renders a title containing markup as literal text', async () => {

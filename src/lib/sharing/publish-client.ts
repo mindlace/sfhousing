@@ -1,6 +1,7 @@
-import { serializePlan, type Plan } from '$lib/plan';
+import type { Plan } from '$lib/plan';
 import { isShareError, type ShareErrorCode } from './api';
-import { COPY, cannotRead, tooLarge } from './copy';
+import { copyFor } from './copy';
+import { PLAN_CODEC, type DocCodec, type DocKind } from './doc-codec';
 
 export type PublishOutcome =
   { ok: true; id: string } | { ok: false; code: ShareErrorCode | 'network'; retryAfter?: number };
@@ -34,12 +35,21 @@ async function interpret(res: Response): Promise<PublishOutcome> {
   return res.status >= 500 ? NETWORK : { ok: false, code: 'server_error' };
 }
 
+/** Plan wrapper over {@link publishDoc}. */
+export function publishPlan(
+  plan: Plan,
+  opts: { fetchFn?: typeof fetch; timeoutMs?: number } = {}
+): Promise<PublishOutcome> {
+  return publishDoc(PLAN_CODEC, plan, opts);
+}
+
 /**
- * POSTs serializePlan(plan) to /api/plans. A 15 s timeout (AbortController), a rejected
+ * POSTs codec.serialize(doc) to codec.api. A 15 s timeout (AbortController), a rejected
  * fetch, or a 5xx without a ShareError body all come back as `network`.
  */
-export async function publishPlan(
-  plan: Plan,
+export async function publishDoc<D>(
+  codec: DocCodec<D>,
+  doc: D,
   opts: { fetchFn?: typeof fetch; timeoutMs?: number } = {}
 ): Promise<PublishOutcome> {
   const fetchFn = opts.fetchFn ?? fetch;
@@ -53,10 +63,10 @@ export async function publishPlan(
   });
   const request = (async (): Promise<PublishOutcome> => {
     try {
-      const res = await fetchFn('/api/plans', {
+      const res = await fetchFn(codec.api, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: serializePlan(plan),
+        body: codec.serialize(doc),
         signal: ctrl.signal
       });
       return await interpret(res);
@@ -71,27 +81,32 @@ export async function publishPlan(
   }
 }
 
-/** The error copy for a failed publish (spec §4.6). `bytes` is the size of the plan sent. */
-export function publishErrorMessage(o: PublishFailure, bytes: number): string {
+/** The error copy for a failed publish (spec §4.6). `bytes` is the size of the document sent. */
+export function publishErrorMessage(
+  o: PublishFailure,
+  bytes: number,
+  kind: DocKind = 'plan'
+): string {
+  const c = copyFor(kind);
   switch (o.code) {
     case 'too_large':
-      return tooLarge(bytes);
+      return c.tooLarge(bytes);
     case 'too_many_ops':
-      return COPY.tooManyOps;
+      return c.tooManyOps;
     case 'unknown_dataset_version':
-      return COPY.unknownDataset;
+      return c.unknownDataset;
     case 'invalid_plan':
     case 'unsupported_schema':
     case 'invalid_json':
     case 'unsupported_media_type':
     case 'empty_plan':
-      return cannotRead(o.code);
+      return c.cannotRead(o.code);
     case 'rate_limited':
-      return COPY.rateLimited;
+      return c.rateLimited;
     case 'network':
     case 'server_error':
     case 'not_found':
-      return COPY.network;
+      return c.network;
   }
 }
 
