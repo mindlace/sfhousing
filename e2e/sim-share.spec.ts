@@ -376,7 +376,7 @@ test('axe on /s/<id>: 1280 px with the summary open; 375 px with the sheet open'
   if (isMobile) await expectNoHorizontalScroll(page);
 });
 
-test('the timing notice on /s/<id> is in a polite live region', async ({ page }, testInfo) => {
+test('the timing notice on /s/<id> is announced by a polite live region', async ({ page }) => {
   const id = await seedPolicy(page, tampered(await capturePresetDoc(page)));
   // Whether the live region was ever in the document empty before the notice arrived: a screen
   // reader announces a change to a live region, not one that mounts already populated.
@@ -401,12 +401,9 @@ test('the timing notice on /s/<id> is in a polite live region', async ({ page },
   // In the accessibility tree: the status region names the notice.
   await expect(page.getByRole('status').filter({ hasText: TIMING_NOTICE })).toHaveCount(1);
 
+  // The region was in the document empty first, then the notice was inserted (T5-M2).
   const seen = await page.evaluate(() => (window as Window & { __region?: object }).__region);
-  testInfo.annotations.push({
-    type: 'timing-notice-announcement',
-    description: JSON.stringify(seen)
-  });
-  console.log('[sim-share] timing notice live region:', JSON.stringify(seen));
+  expect(seen).toEqual({ sawEmpty: true, filledAfterEmpty: true });
 });
 
 /**

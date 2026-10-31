@@ -4,17 +4,29 @@
   (compact UI): a "Details" disclosure holds a list, a link goes where the notice says. Rendered
   in FzpMode's notice row above the scrubber, whose height the dock and the map inset include, so
   a notice never covers the map's controls. One always-mounted polite status region: a notice
-  added later is announced, and the empty region stays in the accessibility tree.
+  added later is announced, and the empty region stays in the accessibility tree. The region
+  mounts empty and takes the notices present on load a moment later (LIVE_DELAY_MS), since a
+  screen reader announces a change to a live region, not one that mounts already populated.
 -->
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import type { SimNotice } from './sim-session';
 
   let { notices, ondismiss }: { notices: SimNotice[]; ondismiss: (id: SimNotice['id']) => void } =
     $props();
 
   const TOAST_MS = 8_000;
+  /** Long enough for assistive tech to register the empty region before it fills. */
+  const LIVE_DELAY_MS = 100;
   const uid = $props.id();
+
+  let live = $state(false);
+  onMount(() => {
+    const t = setTimeout(() => (live = true), LIVE_DELAY_MS);
+    return () => clearTimeout(t);
+  });
+  /** What the region shows: nothing until it has been in the document empty. */
+  const shown = $derived(live ? notices : []);
 
   let open = $state<Record<string, boolean>>({});
 
@@ -23,7 +35,7 @@
   const timers = new Map<SimNotice['id'], ReturnType<typeof setTimeout>>();
 
   $effect(() => {
-    const toasts = new Set(notices.filter((n) => n.tone === 'toast').map((n) => n.id));
+    const toasts = new Set(shown.filter((n) => n.tone === 'toast').map((n) => n.id));
     for (const [id, t] of timers) {
       if (!toasts.has(id)) {
         clearTimeout(t);
@@ -57,7 +69,7 @@
   data-testid="sim-notices"
   class="flex w-[min(34rem,100%)] flex-col"
 >
-  {#each notices as n (n.id)}
+  {#each shown as n (n.id)}
     <div
       data-testid="sim-notice"
       class="pointer-events-auto mb-2 rounded-lg bg-white py-1 pr-1 pl-3 text-sm text-black shadow"
