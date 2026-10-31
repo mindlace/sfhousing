@@ -16,8 +16,8 @@ with FZP alone?** It also makes the map show the answer in terms of height.
 1. **Runs.** You set up a policy, press Run, and watch it play. Policy can't be edited during a run.
 2. **One baseline.** FZP as written, held for the whole simulation window. The "zoning layers" concept
    goes away.
-3. **A score that is a comparison.** No customisation: FZP compared with no FZP. Any customisation:
-   yours compared with FZP.
+3. **A meaningful comparison.** The headline score stays as it is. The "what your policy added"
+   section compares FZP with no FZP when nothing is customised, and yours with FZP otherwise.
 4. **Absolute heights.** A brush means "allow N stories here", whatever the area allowed before.
 5. **Show the height limits.** A see-through height fog over the city, toggleable like transit.
 6. **Show what a height buys.** Painting briefly fills the painted lots with the buildings they could
@@ -38,7 +38,7 @@ with FZP alone?** It also makes the map show the answer in terms of height.
 
 - The timeline bar or header moving as the month changes.
 - Overlays you can't tell apart: transit, fog, construction and painted areas mixing into one colour.
-- A score that shows a number without saying what it's compared with.
+- A comparison figure that doesn't say what it's compared with.
 
 ## Design
 
@@ -59,7 +59,7 @@ The page has two phases.
   to Setup at the present day with the policy intact. Overlay toggles come back as you left them.
 - *My call:* scrubbing a finished run stays allowed; only editing is locked.
 - *My call:* the comparison run is computed together with yours, so the comparison shows as
-  soon as it is available. Until the band runs finish, the headline shows the same pending state it
+  soon as it is available. Until the band runs finish, the comparison shows the pending state it
   shows today.
 - Starting a new run after **Change policy** discards the old run.
 - *My call:* **Run lives in the timeline bar.** In Setup the Play button reads "Run" and the scrubber
@@ -79,13 +79,13 @@ The page has two phases.
   "alternative plan kept" checkbox. In engine terms: stock `['fzp']`, no law switch.
 - **The comparison is chosen automatically:**
   - Policy equal to the default (no zoning brushes, default timers, default protections): compare with
-    pre-FZP. The headline reads like "+N homes vs no FZP".
-  - Any customisation (zoning, permitting timelines or protections): compare with FZP unchanged. The
-    headline reads like "+N homes vs FZP" (or "−N").
-- **The headline is the difference.** The absolute totals move into the score details.
-  - During a run, the headline is the difference at the scrubbed date.
-  - In Setup, the headline is the projected difference at the end of the window: "+N homes vs FZP
-    by 2066" (pending while it computes). This is open (see below).
+    pre-FZP.
+  - Any customisation (zoning, permitting timelines or protections): compare with FZP unchanged.
+- **The headline score is unchanged** (your decision): the existing absolute count, `homesAdded(at)`.
+- **The comparison goes in the score details**, in the "what your policy added" section (today
+  `planEffect` in `FzpScorePanel.svelte`). It uses the automatic comparison above and names it:
+  - default policy: "FZP added N homes vs no FZP"
+  - otherwise: "Your policy added N homes vs FZP" (or "−N")
 - **Density caps under the FZP baseline:** the baseline keeps FZP's own per-lot caps
   (`fzpYieldCap`) for the whole window. User edits are always uncapped (see §3), so no edit can bring
   back §207.11 caps or the 2032 law switch. The baseline, the `fzp` twin and the user plan never take
