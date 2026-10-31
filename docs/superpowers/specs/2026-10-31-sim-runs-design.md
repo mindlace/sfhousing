@@ -85,12 +85,10 @@ The page has two phases.
   - During a run, the headline is the difference at the scrubbed date.
   - In Setup, the headline is the projected difference at the end of the window: "+N homes vs FZP
     by 2066" (pending while it computes). This is open (see below).
-- **Density caps under the FZP baseline** (*my call*): a capped brush ("density limits" on) takes
-  FZP's own cap (`fzpYieldCap`), not the current-law cap, for the whole window. So:
-  - painting a lot to its own FZP height reproduces FZP exactly;
-  - no user edit can bring back §207.11 caps or the 2032 law switch.
-
-  The baseline, the `fzp` twin and the user plan never take the switch path.
+- **Density caps under the FZP baseline:** the baseline keeps FZP's own per-lot caps
+  (`fzpYieldCap`) for the whole window. User edits are always uncapped (see §3), so no edit can bring
+  back §207.11 caps or the 2032 law switch. The baseline, the `fzp` twin and the user plan never take
+  the switch path.
 - **The engine needs a new `compare: 'fzp'` twin:** a plan of `{stock: ['fzp']}` with no switch and
   no user edits. `preFzp` stays. The `currentLaw` compare and twin are no longer reachable from the UI.
 - **The score is centred in the header on desktop** (md and up, *my call*): a three-column header
@@ -100,7 +98,9 @@ The page has two phases.
 
 - **One zoning brush: "Allow N stories".** It sets the limit on painted lots to N, raising or
   lowering it as needed (the engine's existing `set` mode).
-  - The density-limits option stays on the brush, with its current default for `set` (on).
+  - **No density limits, and no option for them** (your decision). Painted lots hold as many homes
+    as fit in the envelope, subject only to the physical limits in §3a. The density-limits control
+    is removed from `/sim` and from paint mode on `/`. Changing density rules is a later project.
   - The street, area and transit brush shapes keep their forms; transit bands also take absolute
     stories.
 - **The eraser** removes your painting, returning lots to FZP.
@@ -115,6 +115,13 @@ The page has two phases.
   - *My call:* the rule brushes (street, area, transit) show it after their recompute, limited to lots
     in the current view.
   - *My call:* the eraser shows no feedback; the fog dropping back is the cue.
+
+### 3a. Physical limits
+
+Pending research. A lot has a physical ceiling whatever its zoning: you can't put a 40-story tower
+on a 25 × 100 ft Sunset lot. Each lot gets a "physical max stories" (and typology), from sourced
+rules where they exist and estimates where they don't. The effective envelope is
+`min(zoned, physical)`. This applies to painting on `/sim` and `/`, and to the paint feedback.
 
 ### 4. What the map shows
 
