@@ -63,7 +63,7 @@
   import PermittingSection from './PermittingSection.svelte';
   import PolicyPanel from './PolicyPanel.svelte';
   import PolicySummary from './PolicySummary.svelte';
-  import { lotStatus, protectLotStatus } from './brush-summary';
+  import { lotStatus, protectLotStatus, type LotStatus } from './brush-summary';
   import ProtectionsSection from './ProtectionsSection.svelte';
 
   interface Props {
@@ -472,13 +472,12 @@
   const prefersDark = new MediaQuery('(prefers-color-scheme: dark)');
 
   /** The summary's lot counts: a brush by its id, or the brushed protections (`'protect'`). */
-  function lotsOf(key: string): number | null {
+  function lotsOf(key: string): LotStatus {
     const p = store.policy;
     const result = (k: string) => sync.result(k);
     const b = key === 'protect' ? null : p.brushes.find((x) => x.id === key);
-    if (key !== 'protect' && !b) return null;
-    const s = b ? lotStatus(b, result) : protectLotStatus(p, result);
-    return s.kind === 'found' ? s.lots : null;
+    if (key !== 'protect' && !b) return { kind: 'finding' };
+    return b ? lotStatus(b, result) : protectLotStatus(p, result);
   }
 
   // The lot dots: every lot the user layer or the brushed protections touch, at its label point.

@@ -8,7 +8,7 @@
 <script lang="ts">
   import { PATHWAYS, type Calibration, type Pathway } from '$lib/timelapse/types';
   import type { StockLayerId } from '$lib/sim/levers/types';
-  import { brushSummary, count, lotsText } from './brush-summary';
+  import { brushSummary, count, lotsText, type LotStatus } from './brush-summary';
   import type { SimPolicy } from './policy';
   import { OBSERVED_TIMING, routeView, shownRouteShares, timingLabel } from './timing';
 
@@ -16,8 +16,8 @@
     policy: SimPolicy;
     /** Null when the calibration failed to load: the timelines show their label only. */
     calibration: Calibration | null;
-    /** Lots a brush (by its id) or the brushed protections (`'protect'`) cover; null if unknown. */
-    lotsOf(key: string): number | null;
+    /** Lot lookup state of a brush (by its id) or the brushed protections (`'protect'`). */
+    lotsOf(key: string): LotStatus;
   }
   let { policy, calibration, lotsOf }: Props = $props();
 
@@ -43,10 +43,7 @@
 
   const roundHalf = (x: number) => Math.round(x * 2) / 2;
   const monthsText = (m: number) => (m === 1 ? '1 month' : `${m} months`);
-  const lots = (key: string) => {
-    const n = lotsOf(key);
-    return n === null ? lotsText({ kind: 'finding' }) : lotsText({ kind: 'found', lots: n });
-  };
+  const lots = (key: string) => lotsText(lotsOf(key));
 
   const protections = $derived.by(() => {
     const p = policy.protect;
