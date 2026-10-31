@@ -8,13 +8,12 @@
  */
 import { typicalMonths } from '$lib/timelapse/model';
 import type { Calibration, Pathway } from '$lib/timelapse/types';
-import type { TimedStage, TimerEdit } from '$lib/sim/levers/types';
+import { MAX_SCALE, MIN_SCALE, type TimedStage, type TimerEdit } from '$lib/sim/levers/types';
 import {
   EDITABLE_STAGES,
   PRESETS,
   STAGE_LABELS,
   resolvePreset,
-  setStageMonths,
   stageBounds,
   type PresetId,
   type SimTiming,
@@ -35,6 +34,8 @@ export type TimingChange =
     };
 
 const EPS = 1e-9;
+const roundHalf = (x: number) => Math.round(x * 2) / 2;
+const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
 
 // The same names the timeline UI shows (PermittingSection and RouteTimeline keep theirs local).
 const ROUTE_NAMES: Record<Pathway, string> = {
@@ -101,7 +102,7 @@ function reconcileSet(
         localProgramStreamlined: fresh.localProgramStreamlined
       };
 
-  // 3 and 4. Drop edits on stages with no table; pass the rest through setStageMonths.
+  // 3 and 4. Drop edits on stages with no table; clamp the out-of-bounds rest (in-bounds scales stay exact, Call 9).
   const t0 = typical0(cal);
   const edits: TimerEdit[] = [];
   for (const e of set.edits) {
@@ -110,22 +111,30 @@ function reconcileSet(
       changes.push({ set: which, kind: 'edit-dropped', pathway: e.pathway, stage: e.stage });
       continue;
     }
-    const alone: TimingSet = { ...base, edits: [] };
-    const { set: out, clamped } = setStageMonths(cal, alone, e.pathway, e.stage, e.scale * typical);
-    if (clamped !== null) {
-      const b = stageBounds(cal, alone, e.pathway, e.stage);
+    const bounds = stageBounds(cal, base, e.pathway, e.stage);
+    const months = e.scale * typical;
+    const bound = months < bounds.min - EPS ? 'min' : months > bounds.max + EPS ? 'max' : null;
+    let edit = e;
+    if (bound !== null) {
+      const m = bound === 'min' ? bounds.min : bounds.max;
       changes.push({
         set: which,
         kind: 'edit-clamped',
         pathway: e.pathway,
         stage: e.stage,
-        months: clamped === 'min' ? b.min : b.max,
-        bound: clamped
+        months: m,
+        bound
       });
+      edit = { pathway: e.pathway, stage: e.stage, scale: clampScale(m / typical), reach: 'all' };
     }
-    const next = out.edits[0]; // undefined: the edit now equals the preset's months
-    if (next === undefined) continue;
-    edits.push(Math.abs(next.scale - e.scale) <= EPS && next.reach === e.reach ? e : next);
+    // An edit equal to the preset's shown months is removed, as setStageMonths does.
+    let ps = 1;
+    for (const t of base.presetTimers) {
+      if (t.pathway === e.pathway && t.stage === e.stage) ps *= t.scale;
+    }
+    const presetMonths = roundHalf(typical * clampScale(ps));
+    if (Math.abs(edit.scale * typical - presetMonths) <= EPS) continue;
+    edits.push(edit);
   }
 
   // 5. Custom route shares are kept as they are.

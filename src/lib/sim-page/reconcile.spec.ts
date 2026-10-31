@@ -126,6 +126,59 @@ describe('reconcileTiming', () => {
     expect(Math.abs(r.timing.current.edits[0].scale - cur.edits[0].scale)).toBeLessThan(1e-9);
   });
 
+  const scaledCal = (factor: number): Calibration => ({
+    ...cal,
+    transitions: {
+      ...cal.transitions,
+      discretionary: {
+        ...cal.transitions.discretionary,
+        permitFiled: rescaleTransition(cal.transitions.discretionary.permitFiled!, factor)
+      }
+    }
+  });
+
+  it('on another calibration, an in-bounds edit keeps its exact scale', () => {
+    const other = scaledCal(1.37);
+    const t1 = typicalMonths(other).discretionary.permitFiled!;
+    const scale = 0.5714;
+    expect((scale * t1 * 2) % 1).toBeGreaterThan(0.05); // 0.5-month rounding would move it
+    const cur = withEdit(observed(), scale);
+    const r = reconcileTiming({ current: cur, saved: null }, other);
+    expect(r.changes).toEqual([]);
+    expect(Math.abs(r.timing.current.edits[0].scale - scale)).toBeLessThan(1e-12);
+    const again = reconcileTiming(r.timing, other);
+    expect(again.timing).toBe(r.timing);
+    expect(again.changes).toEqual([]);
+  });
+
+  it('an edit at the bound is not reported on reload', () => {
+    // An edit stored at the bound can recompute a rounding error below it (7.499999999999999).
+    const other = scaledCal(149 / typ);
+    const t1 = typicalMonths(other).discretionary.permitFiled!;
+    const min = stageBounds(other, observed(), 'discretionary', 'permitFiled').min;
+    const cur = withEdit(observed(), (min - 1e-12) / t1);
+    expect(cur.edits[0].scale * t1).toBeLessThan(min);
+    const timing: SimTiming = { current: cur, saved: null };
+    const r = reconcileTiming(timing, other);
+    expect(r.timing).toBe(timing);
+    expect(r.changes).toEqual([]);
+  });
+
+  it('reconciling cross-calibration and at-bound output again changes nothing', () => {
+    const other = scaledCal(1.37);
+    const t1 = typicalMonths(other).discretionary.permitFiled!;
+    const min = stageBounds(other, observed(), 'discretionary', 'permitFiled').min;
+    const timing: SimTiming = {
+      current: withEdit(withEdit(observed(), 0.5714), 0.0001, 'preApplication'),
+      saved: { label: 'x', set: withEdit(observed(), (min - 1) / t1) }
+    };
+    const once = reconcileTiming(timing, other);
+    expect(once.changes.length).toBeGreaterThan(0);
+    const twice = reconcileTiming(once.timing, other);
+    expect(twice.timing).toBe(once.timing);
+    expect(twice.changes).toEqual([]);
+  });
+
   it('the snapshot is reconciled too', () => {
     const timing: SimTiming = {
       current: observed(),
