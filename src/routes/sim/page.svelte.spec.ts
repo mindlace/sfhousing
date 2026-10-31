@@ -81,6 +81,8 @@ describe('/sim page', () => {
     nav.replaced.length = 0;
     nav.address = '';
     vi.stubGlobal('Worker', StubWorker);
+    // The page autosaves to localStorage (plan 5): start each test without a saved policy.
+    localStorage.removeItem('sfhousing:sim:v1');
   });
 
   afterEach(() => {

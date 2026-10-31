@@ -2,6 +2,7 @@
   // /sim (spec §4.1, §4.2, §4.7; plan 3): the policy simulation, and /fzp's timelapse under
   // `start=fzp`. The seed lives in the URL; unknown query parameters are kept (the T9 seam).
   import { afterNavigate, replaceState } from '$app/navigation';
+  import { page } from '$app/state';
   import { reloadScenario } from '$lib/fzp/load';
   import { addressSearch, addressSeed, searchWithSeed } from '$lib/fzp/seed';
   import SimPage from '$lib/sim-page/SimPage.svelte';
@@ -65,6 +66,8 @@
         noScenario={data.noScenario}
         datasetVersion={data.datasetVersion}
         start={data.start}
+        persist={data.start === 'fzp' ? 'deferred' : 'restore'}
+        remix={page.state.sfhSimRemix}
         {urlSeed}
         reload={() => reloadScenario(data.datasetVersion)}
         onurlseed={writeSeed}

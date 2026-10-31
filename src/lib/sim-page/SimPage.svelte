@@ -9,10 +9,19 @@
   again after a session restart if it came back null; below md their form replaces the sheet's
   contents (layout ruling 9). "Protections" (Task 10) edits the category protections and picks the
   Protect tool through the same `setTool`, so on a phone it too closes the sheet for the tool bar.
+  Plan 5 (Task 5): the policy autosaves (`sfhousing:sim:v1`) and is restored on mount, reconciled
+  with the calibration (Calls 11 and 12); `start=fzp` defers both until the first change (Call
+  13). The header gets the save state (its status slot) and Publish.
 -->
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
+  import { replaceState } from '$app/navigation';
+  import { Autosave } from '$lib/sharing/autosave.svelte';
+  import PublishButton from '$lib/sharing/PublishButton.svelte';
+  import { localDoc } from '$lib/sharing/remix';
+  import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
+  import { getStorage } from '$lib/sharing/storage';
   import type { Layer } from '@deck.gl/core';
   import { BrushController, type ControllerMap } from '$lib/brush/BrushController.svelte';
   import { ANNOUNCE_MS } from '$lib/brush/messages';
@@ -33,7 +42,17 @@
   import { lotOverlayLayers } from './lot-overlay';
   import { createOverlayMux } from './overlay-mux';
   import PhoneToolBar from './PhoneToolBar.svelte';
-  import { lotRoles, policyFromLevers, queriesOf } from './policy';
+  import {
+    canonicalJson,
+    compileLevers,
+    lotRoles,
+    policyFromLevers,
+    queriesOf,
+    type SimPolicy
+  } from './policy';
+  import { SIM_CODEC, isDefaultPolicy, simDocProblems, type SimDoc } from './sim-doc';
+  import SimNotices from './SimNotices.svelte';
+  import { FZP_KEPT_TEXT, restoreSimDoc, type SimNotice } from './sim-session';
   import { createStrokeAdapter } from './stroke-adapter';
   import { timingLabel } from './timing';
   import { focusHeaderMenu } from '$lib/shell/header-actions.svelte';
@@ -55,6 +74,24 @@
     urlSeed: number | null;
     reload(): Promise<{ manifest: Manifest; calibration: Calibration }>;
     onurlseed?: (seed: number | null) => void;
+    /** 'view': a published policy, read-only (no autosave, no Publish). Default 'edit'. */
+    mode?: 'edit' | 'view';
+    /** The policy to open with instead of the `start` default (view: the shared document's). */
+    initialPolicy?: SimPolicy;
+    /** View: the shared document's title (shown in the banner, not edited). */
+    title?: string;
+    /**
+     * Edit: 'restore' (the autosaved policy, then every change saved) or 'deferred' (under
+     * `start=fzp`: nothing restored or written until the first change). View: 'off'. Defaults to
+     * 'off' in view, else 'deferred' under `start=fzp` and 'restore' otherwise.
+     */
+    persist?: 'restore' | 'deferred' | 'off';
+    /** The Remix hand-off from /s/<id> (`history.state.sfhSimRemix`). */
+    remix?: { from: string; doc?: string };
+    /** Tests: the autosave's storage (default `localStorage`). */
+    storage?: () => Storage | null;
+    /** Tests: Publish's fetch. */
+    fetchFn?: typeof fetch;
   }
 
   let {
@@ -67,18 +104,130 @@
     start,
     urlSeed,
     reload,
-    onurlseed
+    onurlseed,
+    mode = 'edit',
+    initialPolicy = undefined,
+    title: viewTitle = undefined,
+    persist = undefined,
+    remix = undefined,
+    storage = getStorage,
+    fetchFn = undefined
   }: Props = $props();
 
   /** The document the session opens with; a remount (new load) starts over. */
-  const initial = untrack(() => (start === 'fzp' ? FZP_COMPAT_LEVERS : DEFAULT_LEVERS));
-  const initialPolicy = policyFromLevers(initial);
-  const store = new PolicyStore(initialPolicy);
+  const firstPolicy = untrack(
+    () => initialPolicy ?? policyFromLevers(start === 'fzp' ? FZP_COMPAT_LEVERS : DEFAULT_LEVERS)
+  );
+  const initial = untrack(() =>
+    initialPolicy
+      ? (compileLevers(initialPolicy, () => []) ?? DEFAULT_LEVERS)
+      : start === 'fzp'
+        ? FZP_COMPAT_LEVERS
+        : DEFAULT_LEVERS
+  );
+  const store = new PolicyStore(firstPolicy);
 
   /** The scenario client's brush requests; null before mount, after a crash and after unmount. */
   let api: SimClientApi | null = null;
   /** What FzpMode runs: `initial`, then each document LeverSync sends. */
   let levers = $state.raw(initial);
+
+  // ---- autosave, restore and publish (plan 5, Task 5) ----
+
+  /** Fixed for the component's life, as the props it derives from. */
+  const persistMode = untrack(
+    () => persist ?? (mode === 'view' ? 'off' : start === 'fzp' ? 'deferred' : 'restore')
+  );
+  const autosave = untrack(
+    () =>
+      new Autosave<SimDoc>({
+        currentVersion: datasetVersion,
+        codec: SIM_CODEC,
+        storage,
+        // Ruling R4: an over-limit document would load back as corrupt, so it is never written.
+        writable: (d) => simDocProblems(d).length === 0
+      })
+  );
+  /** The document's title: the restored one, then each published one. */
+  let title = $state<string | undefined>(untrack(() => viewTitle));
+  const doc = $derived<SimDoc>(
+    title === undefined
+      ? { schema: 1, kind: 'sim', datasetVersion, policy: store.policy }
+      : { schema: 1, kind: 'sim', datasetVersion, title, policy: store.policy }
+  );
+  let notices = $state<SimNotice[]>([]);
+  /** Autosave writes once this is set: after the restore, or on the first change if deferred. */
+  let saving = $state(false);
+
+  function restore(): void {
+    const r = autosave.restore(remix?.doc);
+    const { doc: d, notices: ns } = restoreSimDoc(r, calibration, remix?.from);
+    notices = ns;
+    title = d.title;
+    if (canonicalJson(d.policy) !== canonicalJson(store.policy)) {
+      // Call 12: a load, not a change; the policy without its lot lists runs until LeverSync
+      // (the policy effect below) resolves the brushes and sends the full levers.
+      store.reset(d.policy);
+      levers = compileLevers(d.policy, () => []) ?? levers;
+    }
+    if (remix) {
+      try {
+        replaceState('', {}); // no re-toast on reload, as on /
+      } catch (e) {
+        console.error('[sim] could not clear the remix hand-off', e);
+      }
+    }
+  }
+
+  onMount(() => {
+    if (persistMode === 'off') return;
+    if (persistMode === 'restore') {
+      restore();
+      saving = true;
+    } else {
+      const saved = localDoc(storage(), SIM_CODEC);
+      if (saved && !isDefaultPolicy(saved.policy))
+        notices = [
+          {
+            id: 'fzp-kept',
+            text: FZP_KEPT_TEXT,
+            tone: 'info',
+            link: { href: '/sim', label: 'Open your policy' }
+          }
+        ];
+    }
+    return autosave.attach();
+  });
+
+  // Every change is saved: the policy (undo and redo included) and the title. Under 'deferred'
+  // the first change after mount starts it. Only the document is tracked: schedule() reads and
+  // writes autosave.status, which must not re-run this.
+  $effect(() => {
+    const d = doc;
+    if (persistMode === 'off') return;
+    untrack(() => {
+      if (!saving) {
+        if (persistMode !== 'deferred' || d.policy === firstPolicy) return;
+        saving = true;
+        // The saved policy is about to be replaced: the notice that it is kept no longer holds.
+        dismissNotice('fzp-kept');
+      }
+      autosave.schedule(d);
+    });
+  });
+
+  // `onpublished` may fire after the dialog closed and the user kept editing: take the title
+  // only, and record lastPublished against the current document (a mismatched hash makes the
+  // button read "Publish" again).
+  function onPublished(r: { id: string; hash: string; plan: SimDoc }): void {
+    title = r.plan.title;
+    saving = true;
+    autosave.setLastPublished({ id: r.id, hash: r.hash }, SIM_CODEC.withTitle(doc, r.plan.title));
+  }
+
+  function dismissNotice(id: string): void {
+    notices = notices.filter((n) => n.id !== id);
+  }
 
   const noSession = (): BrushLotsResult => ({
     ok: false,
@@ -332,6 +481,25 @@
     class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap pointer-coarse:min-h-11 pointer-coarse:min-w-11"
     onclick={() => (policyOpen ? void closePolicy() : openPolicy())}>Policy</button
   >
+  {#if mode === 'edit'}
+    <PublishButton
+      codec={SIM_CODEC}
+      {doc}
+      lastPublished={autosave.lastPublished}
+      onpublished={onPublished}
+      {fetchFn}
+    />
+  {/if}
+{/snippet}
+
+{#snippet saveState()}
+  {#if mode === 'edit' && persistMode !== 'off'}
+    <SaveIndicator status={autosave.status} align="start" />
+  {/if}
+{/snippet}
+
+{#snippet sessionNotices()}
+  <SimNotices {notices} ondismiss={dismissNotice} />
 {/snippet}
 
 {#snippet timingSection()}
@@ -407,6 +575,8 @@
   {onurlseed}
   {levers}
   {actions}
+  status={saveState}
+  notices={sessionNotices}
   {panel}
   onmapready={onMapReady}
   onphase={(p) => (brush.phase = p === 'ready' ? 'ready' : p === 'failed' ? 'failed' : 'loading')}

@@ -31,9 +31,12 @@ export class Autosave<D = Plan> {
   readonly #storage: () => Storage | null;
   readonly #debounceMs: number;
   readonly #now: () => Date;
+  readonly #writable: (d: D) => boolean;
   /** Serialization last written to (or restored from) storage; schedule() skips it. */
   #lastWritten: string | null = null;
   #pending: string | null = null;
+  /** The latest document scheduled was not writable; cleared by the next write or match. */
+  #refused = false;
   #timer: ReturnType<typeof setTimeout> | null = null;
   /** A corrupt/future record not yet preserved; the plan key is never overwritten before it is. */
   #unpreserved: string | null = null;
@@ -44,8 +47,15 @@ export class Autosave<D = Plan> {
     storage?: () => Storage | null;
     debounceMs?: number;
     now?: () => Date;
+    /**
+     * False for a document that must not be stored (ruling R4: a SimDoc over the size limits
+     * would load back as corrupt). Such a change cancels any pending write and shows
+     * "Autosave off" until a writable document is written.
+     */
+    writable?: (d: D) => boolean;
   }) {
     this.#current = opts.currentVersion;
+    this.#writable = opts.writable ?? (() => true);
     this.#codec = opts.codec ?? (PLAN_CODEC as unknown as DocCodec<D>);
     this.#storage = opts.storage ?? getStorage;
     this.#debounceMs = opts.debounceMs ?? 500;
@@ -126,11 +136,23 @@ export class Autosave<D = Plan> {
 
   /** Debounced write. Skips a plan whose serialization equals the last written one. */
   schedule(plan: D): void {
+    if (!this.#writable(plan)) {
+      // Keep the last writable document a pending write holds, then refuse this one.
+      this.flush();
+      this.#refused = true;
+      this.status = 'off';
+      return;
+    }
     const text = this.#codec.serialize(plan);
     if (text === this.#lastWritten) {
       if (this.#pending !== null) {
         this.#cancel();
         if (this.status === 'saving') this.status = 'saved';
+      }
+      // Back to what storage holds after a refused document (an undo): it is saved.
+      if (this.#refused) {
+        this.#refused = false;
+        this.status = 'saved';
       }
       return;
     }
@@ -152,6 +174,10 @@ export class Autosave<D = Plan> {
   setLastPublished(lp: LastPublished, plan: D): void {
     this.lastPublished = { id: lp.id, hash: lp.hash };
     this.#cancel();
+    if (!this.#writable(plan)) {
+      this.status = 'off';
+      return;
+    }
     this.#write(this.#codec.serialize(plan));
   }
 
@@ -202,6 +228,7 @@ export class Autosave<D = Plan> {
     if (this.lastPublished) record.lastPublished = this.lastPublished;
     if (writeRecord(storage, record, this.#codec)) {
       this.#lastWritten = text;
+      this.#refused = false;
       this.status = 'saved';
     } else {
       this.status = 'off';
