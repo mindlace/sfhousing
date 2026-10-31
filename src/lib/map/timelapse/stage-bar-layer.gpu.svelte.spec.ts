@@ -107,8 +107,8 @@ function makeBar(
     completeDay,
     segCount: segs.length,
     segEntry: segs.map(([, d]) => d),
-    segTypicalDays: segs.map(([st]) => typicalDays(L, pathway, st)),
-    segRow: segs.map(([st]) => chanceRow(pi, st)),
+    segTypicalDays: segs.map(([st]) => typicalDays(L, pathway, st, 0)),
+    segRow: segs.map(([st]) => chanceRow(pi, st, 0)),
     minZoom
   };
 }
@@ -531,6 +531,31 @@ describe('StageBarLayer on the GPU', () => {
     // Removing the layer destroys its texture.
     await show([]);
     expect(tex1?.destroyed).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  it('an in-flight bar (cohort rows 18+) reads the in-flight half of the texture (Call 15)', async () => {
+    const day = E1 + 10;
+    const { w } = barSizePx(17);
+    const flightChance = withPermitFiled(() => 0.6);
+    const both: TimelineLookups = {
+      ...LQ,
+      inFlight: quantised({ chance: flightChance, typicalMonths: L.typicalMonths })
+    };
+    const tex = packChanceTexture(L.chance, flightChance);
+    expect(tex.height).toBe(36);
+    const PF: BarAttrs = { ...P, projectId: 'gpu-in-flight', segRow: P.segRow.map((r) => r + 18) };
+    await show([bars([P], tex)]);
+    render(day);
+    const fresh = barPixel(17, w / 8);
+    expect(check('fresh', fresh, fillRgb(evalBar(P, both, day, 17), 'light'))).toBe('fresh: ok');
+    await show([bars([PF], tex)]);
+    render(day);
+    const flight = barPixel(17, w / 8);
+    expect(check('in flight', flight, fillRgb(evalBar(PF, both, day, 17), 'light'))).toBe(
+      'in flight: ok'
+    );
+    expect(near(fresh, flight, 4 * TOL)).toBe(false);
     expect(errors).toEqual([]);
   });
 

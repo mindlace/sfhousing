@@ -106,6 +106,5 @@ Citywide brushes (every RH-1 lot, arterial frontage, rail within 805 m) were mea
 ## Known gaps
 
 - **Follow a street** (Open question 2). The freehand brush cannot follow a street: no segment geometry ships (`frontage.bin` holds lot-to-street matches only). The named-street brush paints every lot along a street, one lot deep if asked. A street-geometry file at a dataset bump would allow it.
-- **In-flight map bars under `'all'` timers** (Call 13). The map takes one set of lookups, the new projects' (`lookups.fresh`), so under an `'all'`-reach timer the stage durations of in-flight projects' bars are approximate. Cards are exact (they pick their cohort's table). Plan 4 adds timers.
 - **Neighborhood edges** (Call 8). Neighborhood membership is the label point in the polygon, which can differ from DataSF's `analysis_neighborhood` at polygon edges. A `neighborhood` column in `policy.bin` is the exact fix at the next dataset bump.
 - **No keyboard access to cards** (unchanged from `/fzp`): map picking is pointer-only ([fzp-mode.md](fzp-mode.md)). Freehand strokes have keyboard and non-drag alternatives (the rule brushes, and the keyboard stamp `BrushController.stampAtCenter`).

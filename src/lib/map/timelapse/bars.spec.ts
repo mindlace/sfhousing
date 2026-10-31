@@ -16,7 +16,7 @@ import {
   FLOOR_CAP
 } from './constants';
 import { chanceRow } from './lookups';
-import type { BarAttrs } from './types';
+import type { BarAttrs, TimelineLookups } from './types';
 import { DYING_DAYS, MONTH_DAYS, OPEN_DAY, monthsIn } from '$lib/timelapse/time';
 import { PATHWAYS, STAGE_ORDER } from '$lib/timelapse/types';
 
@@ -64,7 +64,7 @@ describe('BAR_SEGMENTS and segment lists', () => {
     const [b] = barsOf('c', buildBars([withPpa('c', ppa)], L));
     expect(b.segCount).toBe(4);
     expect(b.segEntry[0]).toBe(ppa);
-    expect(b.segRow[0]).toBe(chanceRow(po, 'preApplication'));
+    expect(b.segRow[0]).toBe(chanceRow(po, 'preApplication', 0));
     // from = max(ghostFrom, revision day): the injected PPA predates (c)'s first revision.
     expect(b.from).toBe(Math.max(ppa, DAYS.c.rev0));
   });
@@ -304,10 +304,66 @@ describe('evalBar chance (§4.4.3)', () => {
       segCount: 6,
       segEntry: [ppa, ...f.segEntry],
       segTypicalDays: [4 * MONTH_DAYS, ...f.segTypicalDays],
-      segRow: [chanceRow(PATHWAYS.indexOf('streamlined'), 'preApplication'), ...f.segRow]
+      segRow: [chanceRow(PATHWAYS.indexOf('streamlined'), 'preApplication', 0), ...f.segRow]
     };
     const e = evalBar(b, L, ppa + 50, Z);
     expect(e).toMatchObject({ visible: true, chance: 0, dead: false });
+  });
+});
+
+describe('cohorts', () => {
+  /** (key)'s cell with that slot in flight (slotCohort 1). */
+  function inFlightCell(key: SlotKey): TimedPackedCell {
+    const c = structuredClone(cellOf(key));
+    c.slotCohort[c.slotProjectIds.indexOf(SLOT[key].projectId)] = 1;
+    return c;
+  }
+  /** In-flight lookups: discretionary filed is 2 months typical, its chance a flat 0.9. */
+  const IN_FLIGHT: TimelineLookups = {
+    chance: {
+      ...L.chance,
+      discretionary: { ...L.chance.discretionary, filed: new Float32Array(241).fill(0.9) }
+    },
+    typicalMonths: {
+      ...L.typicalMonths,
+      discretionary: { ...L.typicalMonths.discretionary, filed: 2 }
+    }
+  };
+  const BOTH: TimelineLookups = { ...L, inFlight: IN_FLIGHT };
+
+  it('cohort rows follow slotCohort', () => {
+    const fresh = buildBars([cellOf('a')], BOTH).filter((b) => b.projectId === SLOT.a.projectId);
+    const flight = buildBars([inFlightCell('a')], BOTH).filter(
+      (b) => b.projectId === SLOT.a.projectId
+    );
+    expect(fresh.length).toBeGreaterThan(0);
+    expect(flight.length).toBe(fresh.length);
+    for (const b of fresh) for (const r of b.segRow) expect(r).toBeLessThan(18);
+    for (const b of flight) for (const r of b.segRow) expect(r).toBeGreaterThanOrEqual(18);
+    expect(flight[0].segRow).toEqual(fresh[0].segRow.map((r) => r + 18));
+    // the fill reads the in-flight typical days: `filed` is segment 1 (after preApplication)
+    expect(fresh[0].segTypicalDays[1]).toBe(L.typicalMonths.discretionary.filed! * MONTH_DAYS);
+    expect(flight[0].segTypicalDays[1]).toBe(2 * MONTH_DAYS);
+    const t = DAYS.a.filed + 30;
+    const within = (n: number) => 30 / MONTH_DAYS / n;
+    expect(evalBar(flight[0], BOTH, t, Z).fill).toBeCloseTo((1 + within(2)) / 6, 12);
+    expect(evalBar(fresh[0], BOTH, t, Z).fill).toBeCloseTo(
+      (1 + within(L.typicalMonths.discretionary.filed!)) / 6,
+      12
+    );
+    // and the chance reads the in-flight table
+    expect(evalBar(flight[0], BOTH, t, Z).chance).toBeCloseTo(0.9, 6);
+    expect(evalBar(fresh[0], BOTH, t, Z).chance).toBe(L.chance.discretionary.filed![0]);
+  });
+
+  it('without an inFlight set, an in-flight slot reads the fresh values', () => {
+    const fresh = buildBars([cellOf('a')], L).filter((b) => b.projectId === SLOT.a.projectId);
+    const flight = buildBars([inFlightCell('a')], L).filter(
+      (b) => b.projectId === SLOT.a.projectId
+    );
+    expect(flight[0].segTypicalDays).toEqual(fresh[0].segTypicalDays);
+    const t = DAYS.a.filed + 30;
+    expect(evalBar(flight[0], L, t, Z)).toEqual(evalBar(fresh[0], L, t, Z));
   });
 });
 

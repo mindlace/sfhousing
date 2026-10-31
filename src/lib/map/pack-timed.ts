@@ -61,6 +61,7 @@ export function packTimedCell(cellId: string, items: readonly TimedPackInput[]):
   const slotStages = new Float32Array(STAGE_ORDER.length * n);
   const slotEnd = new Float32Array(2 * n);
   const slotPathway = new Uint8Array(n);
+  const slotCohort = new Uint8Array(n);
   const rings: [number, number][][] = [];
   const topM: number[] = [];
   const slots: number[] = [];
@@ -127,6 +128,7 @@ export function packTimedCell(cellId: string, items: readonly TimedPackInput[]):
     slotEnd[2 * s] = end.kind === 'open' ? NaN : end.day;
     slotEnd[2 * s + 1] = END_KIND[end.kind];
     slotPathway[s] = PATHWAYS.indexOf(schedule.pathway);
+    slotCohort[s] = schedule.inFlight === true ? 1 : 0;
   });
 
   const startIndices = new Uint32Array(rings.length + 1);
@@ -158,7 +160,8 @@ export function packTimedCell(cellId: string, items: readonly TimedPackInput[]):
     partWindow: Float32Array.from(windows),
     slotStages,
     slotEnd,
-    slotPathway
+    slotPathway,
+    slotCohort
   };
 }
 
@@ -174,6 +177,7 @@ export function packTimedTransferables(p: TimedPackedCell): ArrayBuffer[] {
     p.partWindow.buffer,
     p.slotStages.buffer,
     p.slotEnd.buffer,
-    p.slotPathway.buffer
+    p.slotPathway.buffer,
+    p.slotCohort.buffer
   ] as ArrayBuffer[];
 }

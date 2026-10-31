@@ -63,7 +63,8 @@ const arrays = (p: TimedPackedCell) => [
   p.partWindow,
   p.slotStages,
   p.slotEnd,
-  p.slotPathway
+  p.slotPathway,
+  p.slotCohort
 ];
 const count = (xs: ArrayLike<number>, v: number) => Array.from(xs).filter((x) => x === v).length;
 
@@ -218,10 +219,20 @@ describe('packTimedCell (§4.1.1)', () => {
       ]);
     const x = arrays(make());
     const y = arrays(make());
-    expect(x.length).toBe(11);
+    expect(x.length).toBe(12);
     x.forEach((arr, i) => {
       expect(bytes(arr.buffer as ArrayBuffer)).toEqual(bytes(y[i].buffer as ArrayBuffer));
     });
+  });
+
+  it('slotCohort is 1 exactly for schedules flagged inFlight', () => {
+    const p = packTimedCell('c', [
+      item('a-fresh', [B[0]]),
+      item('b-flight', [B[1]], { origin: 'pipeline', inFlight: true }),
+      item('c-pipe', [B[2]], { origin: 'pipeline' })
+    ]);
+    expect(p.slotCohort).toBeInstanceOf(Uint8Array);
+    expect(Array.from(p.slotCohort)).toEqual([0, 1, 0]);
   });
 
   it('accepts a building source other than user', () => {
@@ -294,11 +305,12 @@ describe('packTimedCell (§4.1.1)', () => {
 });
 
 describe('packTimedTransferables', () => {
-  it('lists the 11 typed-array buffers, all distinct', () => {
+  it('lists the 12 typed-array buffers, all distinct, slotCohort among them', () => {
     const p = packTimedCell('c', [item('a', [B[4], B[5]]), item('b', [{ footprint: RING }])]);
     const t = packTimedTransferables(p);
-    expect(t.length).toBe(11);
-    expect(new Set(t).size).toBe(11);
+    expect(t.length).toBe(12);
+    expect(new Set(t).size).toBe(12);
+    expect(t).toContain(p.slotCohort.buffer);
     for (const arr of arrays(p)) expect(t).toContain(arr.buffer);
   });
 });

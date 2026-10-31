@@ -45,6 +45,10 @@ export interface Schedule {
   // after the switch, so it ran on the after view (size row, yields, envelope, Local Program).
   // Absent on every other Schedule, including all of a run without a switch.
   afterSwitch?: boolean;
+  // On a run whose input has `newProjects`: true when the schedule's job ran on `calibration`
+  // (a pipeline row past preApplication, or a phase), so its map bar reads the in-flight lookups
+  // (Call 15). Absent on every other Schedule, so a run without lever timers is unchanged.
+  inFlight?: true;
 }
 export type SimInput = {
   parcels: ScenarioParcels; // decoded T11

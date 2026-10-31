@@ -25,6 +25,7 @@ interface RowTimedPackedCell extends PackedCell {
   slotStages: Float32Array; // per slot: STAGE_ORDER.length entry days, NaN = never
   slotEnd: Float32Array; // per slot: [endDay, endKind] (0 open, 1 complete, 2 exit)
   slotPathway: Uint8Array; // index into ['discretionary','streamlined','permitOnly']
+  slotCohort: Uint8Array; // per slot: 0 = fresh (new projects' lookups), 1 = in flight (Call 15)
 }
 
 interface RowTimelineUpdate {
@@ -36,10 +37,12 @@ interface RowTimelineUpdate {
 
 type RowApplyTimeline = (u: TimelineUpdate) => void;
 type RowSetTime = (day: Day) => void;
-type RowSetTimelineLookups = (l: {
+type RowLookupSet = {
   chance: ReturnType<typeof chanceTable>;
   typicalMonths: ReturnType<typeof typicalMonths>;
-}) => void;
+};
+// Call 15: absent `inFlight` = in-flight slots read the fresh set
+type RowSetTimelineLookups = (l: RowLookupSet & { inFlight?: RowLookupSet }) => void;
 type RowTimelinePick = (
   p:
     | { projectId: string; parcelId: ParcelId; x: number; y: number; kind: 'hover' | 'tap' }

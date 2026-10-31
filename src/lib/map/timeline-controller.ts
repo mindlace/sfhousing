@@ -211,7 +211,7 @@ export class TimelineController {
    */
   setLookups(l: TimelineLookups): void {
     if (this.destroyed) return;
-    const chance = packChanceTexture(l.chance);
+    const chance = packChanceTexture(l.chance, l.inFlight?.chance);
     this.lookups = l;
     this.chance = chance;
     this.tlcVersion++;

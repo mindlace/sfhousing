@@ -50,8 +50,13 @@ describe('applyLevers: the FZP-compatible levers', () => {
   it('reproduce the base run and the baseZoning twin, seeds 1-20', () => {
     expect(plan.lawSwitch).toBeUndefined();
     expect(plan.inFlightScale).toBeUndefined();
+    // `newProjects` is set, so in-flight schedules carry the cohort flag (Call 15); nothing else
+    const unflag = (r: ReturnType<typeof simulateDetailed>) => ({
+      ...r,
+      schedules: r.schedules.map(({ inFlight: _, ...s }) => s)
+    });
     for (const seed of seeds(20)) {
-      expect(simulateDetailed(plan, seed, H)).toEqual(simulateDetailed(base, seed, H));
+      expect(unflag(simulateDetailed(plan, seed, H))).toEqual(simulateDetailed(base, seed, H));
       expect(simulateNet(twin, seed, H, months)).toEqual(simulateNet(preFzp, seed, H, months));
     }
   });

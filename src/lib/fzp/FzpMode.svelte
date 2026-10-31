@@ -12,6 +12,7 @@
   import type { SimMapHandle } from '$lib/map/types';
   import type { BrushCatalog, BrushQuery } from '$lib/sim/levers/brushes';
   import type { BrushLotsResult } from '$lib/sim/scenario/types';
+  import type { LeverLookups } from '$lib/sim/levers/apply';
   import type { ChanceTable } from './card';
 
   type Lookups = { chance: ChanceTable; typicalMonths: ReturnType<typeof typicalMonths> };
@@ -37,6 +38,18 @@
     }
     return l;
   }
+
+  type MapLookups = Lookups & { inFlight?: Lookups };
+  /** One map lookups object per posted LeverLookups, for the same identity reason (Call 15). */
+  const leverMapCache = new WeakMap<LeverLookups, MapLookups>();
+  function mapLookupsFor(ll: LeverLookups): MapLookups {
+    let l = leverMapCache.get(ll);
+    if (!l) {
+      l = { ...ll.fresh, inFlight: ll.inFlight };
+      leverMapCache.set(ll, l);
+    }
+    return l;
+  }
 </script>
 
 <script lang="ts">
@@ -55,7 +68,6 @@
     type LeverStatusState
   } from '$lib/sim-page/lever-status';
   import { spawnSimWorker } from '$lib/sim/client';
-  import type { LeverLookups } from '$lib/sim/levers/apply';
   import type { SimLevers } from '$lib/sim/levers/types';
   import { scoreCopy } from '$lib/sim-page/policy';
   import type { TimelineScore } from '$lib/sim/protocol';
@@ -230,7 +242,7 @@
   /** Every cell this worker has given map-view a status for, so a restart can clear them. */
   const statusCells = new Set<string>(); // eslint-disable-line svelte/prefer-svelte-reactivity
   /** The lookups SimMap holds. */
-  let pushedLookups: Lookups | null = null;
+  let pushedLookups: MapLookups | null = null;
   /** The levers object the worker last received (identity), with initScenario or setLevers. */
   let sentLevers: SimLevers | null = null;
   /** A non-stale timeline has arrived since the last initScenario. */
@@ -320,9 +332,10 @@
     if (!handle || !calibration) return;
     // T9 lookups seam (spec §5): the page builds chanceTable and typicalMonths from the base
     // calibration.json until a lever revision is current; then the worker's posted lookups
-    // replace them (/sim). The map takes one set, the new projects' (Call 13); the card picks
-    // its cohort's from `cardChance`.
-    const l = leverLookups?.fresh ?? lookupsFor(calibration);
+    // replace them (/sim). The map takes the new projects' set with the in-flight one as
+    // `inFlight` (Call 15), one object per posted lookups; the card picks its cohort's from
+    // `cardChance`.
+    const l = leverLookups ? mapLookupsFor(leverLookups) : lookupsFor(calibration);
     if (l === pushedLookups) return;
     pushedLookups = l;
     handle.setTimelineLookups(l);

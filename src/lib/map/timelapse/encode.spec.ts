@@ -47,29 +47,29 @@ describe('TINT_GROUP', () => {
 describe('typicalDays', () => {
   it('is months · MONTH_DAYS when the entry exists', () => {
     const m = timelineLookups.typicalMonths.discretionary.construction!;
-    expect(typicalDays(timelineLookups, 'discretionary', 'construction')).toBe(m * MONTH_DAYS);
+    expect(typicalDays(timelineLookups, 'discretionary', 'construction', 0)).toBe(m * MONTH_DAYS);
   });
   it('is OPEN_DAY for a missing entry, null lookups or a non-finite entry', () => {
-    expect(typicalDays(timelineLookups, 'streamlined', 'permitFiled')).toBe(OPEN_DAY);
-    expect(typicalDays(null, 'discretionary', 'construction')).toBe(OPEN_DAY);
+    expect(typicalDays(timelineLookups, 'streamlined', 'permitFiled', 0)).toBe(OPEN_DAY);
+    expect(typicalDays(null, 'discretionary', 'construction', 0)).toBe(OPEN_DAY);
     const bad = {
       ...timelineLookups,
       typicalMonths: { ...timelineLookups.typicalMonths, permitOnly: { construction: NaN } }
     };
-    expect(typicalDays(bad, 'permitOnly', 'construction')).toBe(OPEN_DAY);
+    expect(typicalDays(bad, 'permitOnly', 'construction', 0)).toBe(OPEN_DAY);
     bad.typicalMonths.permitOnly = { construction: Infinity };
-    expect(typicalDays(bad, 'permitOnly', 'construction')).toBe(OPEN_DAY);
+    expect(typicalDays(bad, 'permitOnly', 'construction', 0)).toBe(OPEN_DAY);
   });
   it('floors a finite non-negative entry at 1 day and maps a negative one to OPEN_DAY', () => {
     const odd = {
       ...timelineLookups,
       typicalMonths: { ...timelineLookups.typicalMonths, permitOnly: { construction: 0 } }
     };
-    expect(typicalDays(odd, 'permitOnly', 'construction')).toBe(1);
+    expect(typicalDays(odd, 'permitOnly', 'construction', 0)).toBe(1);
     odd.typicalMonths.permitOnly = { construction: 0.01 };
-    expect(typicalDays(odd, 'permitOnly', 'construction')).toBe(1);
+    expect(typicalDays(odd, 'permitOnly', 'construction', 0)).toBe(1);
     odd.typicalMonths.permitOnly = { construction: -1 };
-    expect(typicalDays(odd, 'permitOnly', 'construction')).toBe(OPEN_DAY);
+    expect(typicalDays(odd, 'permitOnly', 'construction', 0)).toBe(OPEN_DAY);
   });
 });
 
@@ -171,6 +171,34 @@ describe('encodeParts (§4.2.1)', () => {
     for (const p of attrsOf('c'))
       expect(p.constructionTypicalDays).toBe(Math.fround(mc * MONTH_DAYS));
   });
+
+  it('constructionTypicalDays follows the slot cohort', () => {
+    const { cell, parts } = partsOf('a');
+    const c = structuredClone(cell);
+    c.slotCohort[c.partSlot[parts[0]]] = 1;
+    const inFlight: TimelineLookups = {
+      ...timelineLookups,
+      typicalMonths: {
+        ...timelineLookups.typicalMonths,
+        discretionary: { ...timelineLookups.typicalMonths.discretionary, construction: 3 }
+      }
+    };
+    const both = { ...timelineLookups, inFlight };
+    const m = timelineLookups.typicalMonths.discretionary.construction!;
+    expect(m).not.toBe(3);
+    for (const k of parts) {
+      expect(partAttrs(encodeParts(cell, both), k).constructionTypicalDays).toBe(
+        Math.fround(m * MONTH_DAYS)
+      );
+      expect(partAttrs(encodeParts(c, both), k).constructionTypicalDays).toBe(
+        Math.fround(3 * MONTH_DAYS)
+      );
+      // no inFlight set: in flight reads fresh
+      expect(partAttrs(encodeParts(c, timelineLookups), k).constructionTypicalDays).toBe(
+        Math.fround(m * MONTH_DAYS)
+      );
+    }
+  });
 });
 
 describe('validateTimedCell (§4.1 Validation)', () => {
@@ -182,7 +210,9 @@ describe('validateTimedCell (§4.1 Validation)', () => {
     ['slotEnd length', (c) => (c.slotEnd = c.slotEnd.slice(1))],
     ['slotPathway length', (c) => (c.slotPathway = c.slotPathway.slice(1))],
     ['slotPathway value', (c) => (c.slotPathway[0] = 3)],
-    ['slotEnd kind', (c) => (c.slotEnd[1] = 3)]
+    ['slotEnd kind', (c) => (c.slotEnd[1] = 3)],
+    ['slotCohort length', (c) => (c.slotCohort = c.slotCohort.slice(1))],
+    ['slotCohort value', (c) => (c.slotCohort[0] = 2)]
   ];
 
   it('accepts every fixture cell', () => {

@@ -18,7 +18,7 @@ import {
   FLOOR_CAP,
   RAMP_STOPS
 } from './constants';
-import { ROWS_PER_PATHWAY, chanceRow } from './lookups';
+import { ROWS_PER_COHORT, ROWS_PER_PATHWAY, chanceRow } from './lookups';
 import type { BarAttrs, BarEval, TimelineLookups } from './types';
 import { DYING_DAYS, OPEN_DAY, monthsIn, type Day } from '$lib/timelapse/time';
 import { PATHWAYS, STAGE_ORDER, type Pathway, type Stage } from '$lib/timelapse/types';
@@ -44,6 +44,7 @@ function slotBar(c: TimedPackedCell, s: number, l: TimelineLookups): SlotBar {
   const stages = c.slotStages.subarray(NS * s, NS * s + NS);
   const pi = c.slotPathway[s];
   const pathway = PATHWAYS[pi];
+  const cohort = c.slotCohort[s] as 0 | 1;
   const segs: BarStage[] = Number.isNaN(stages[PRE])
     ? [...BAR_SEGMENTS[pathway]]
     : ['preApplication', ...BAR_SEGMENTS[pathway]];
@@ -79,8 +80,8 @@ function slotBar(c: TimedPackedCell, s: number, l: TimelineLookups): SlotBar {
     completeDay,
     segCount: segs.length,
     segEntry,
-    segTypicalDays: segs.map((st) => typicalDays(l, pathway, st)),
-    segRow: segs.map((st) => chanceRow(pi, st)),
+    segTypicalDays: segs.map((st) => typicalDays(l, pathway, st, cohort)),
+    segRow: segs.map((st) => chanceRow(pi, st, cohort)),
     minZoom: BAR_MIN_ZOOM
   };
 }
@@ -133,11 +134,16 @@ export function buildBars(cells: Iterable<TimedPackedCell>, l: TimelineLookups):
   return out;
 }
 
-/** `chance[pathway][stage][min(m, len − 1)]` for a texture row; 0 for an absent row (bad data). */
+/**
+ * `chance[pathway][stage][min(m, len − 1)]` for a texture row, from `l.inFlight` (else `l`) for
+ * rows of cohort 1; 0 for an absent row (bad data).
+ */
 function chanceAt(l: TimelineLookups, row: number, m: number): number {
-  const pathway = PATHWAYS[Math.floor(row / ROWS_PER_PATHWAY)];
-  const stage = STAGE_ORDER[row % ROWS_PER_PATHWAY] as BarStage;
-  const values = l.chance[pathway]?.[stage];
+  const set = row >= ROWS_PER_COHORT ? (l.inFlight ?? l) : l;
+  const r = row % ROWS_PER_COHORT;
+  const pathway = PATHWAYS[Math.floor(r / ROWS_PER_PATHWAY)];
+  const stage = STAGE_ORDER[r % ROWS_PER_PATHWAY] as BarStage;
+  const values = set.chance[pathway]?.[stage];
   if (!values || values.length === 0) return 0;
   return values[Math.min(Math.max(m, 0), values.length - 1)];
 }
