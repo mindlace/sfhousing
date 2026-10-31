@@ -249,9 +249,15 @@
 
   // `onpublished` may fire after the dialog closed and the user kept editing: take the title
   // only, and record lastPublished against the current document (a mismatched hash makes the
-  // button read "Publish" again).
+  // button read "Publish" again). Under 'deferred', before the first change, the stored policy
+  // is kept (the fzp-kept notice): the link is remembered, not written, and the first write
+  // (which the title alone does not start) carries it.
   function onPublished(r: { id: string; hash: string; plan: SimDoc }): void {
     title = r.plan.title;
+    if (persistMode === 'deferred' && !saving) {
+      autosave.rememberPublished({ id: r.id, hash: r.hash });
+      return;
+    }
     saving = true;
     autosave.setLastPublished({ id: r.id, hash: r.hash }, SIM_CODEC.withTitle(doc, r.plan.title));
   }

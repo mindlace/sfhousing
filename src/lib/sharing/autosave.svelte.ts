@@ -198,6 +198,15 @@ export class Autosave<D = Plan> {
     this.#write(this.#codec.serialize(plan));
   }
 
+  /**
+   * Records lastPublished without writing, for a page that has not started saving (/sim under
+   * `start=fzp`, where the stored policy is kept until the first change). The next write
+   * carries it.
+   */
+  rememberPublished(lp: LastPublished): void {
+    this.lastPublished = { id: lp.id, hash: lp.hash };
+  }
+
   /** Adds visibilitychange/pagehide flush listeners; the remover flushes and clears the timer. */
   attach(): () => void {
     const onVisibility = () => {

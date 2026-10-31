@@ -319,6 +319,21 @@ describe('Autosave.setLastPublished', () => {
   });
 });
 
+describe('Autosave.rememberPublished (deferred start)', () => {
+  it('keeps lastPublished in memory without writing; the first write carries it', () => {
+    const { s, a, setItem } = setup(seed(plan(2)));
+    a.guard();
+    const lp = { id: 'abcdEFGH', hash: 'e'.repeat(64) };
+    a.rememberPublished(lp);
+    expect(a.lastPublished).toEqual(lp);
+    vi.advanceTimersByTime(1000);
+    expect(setItem).not.toHaveBeenCalled();
+    a.schedule(plan(3));
+    vi.advanceTimersByTime(500);
+    expect(stored(s)).toMatchObject({ plan: serializePlan(plan(3)), lastPublished: lp });
+  });
+});
+
 describe('Autosave.guard (deferred start, no restore)', () => {
   it('a corrupt record is preserved before the first write, and nothing is written by guard', () => {
     const s = new MemoryStorage();

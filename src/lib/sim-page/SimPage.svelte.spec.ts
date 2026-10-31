@@ -20,6 +20,7 @@ import type SimPage from './SimPage.svelte';
 import { DEFAULT_POLICY, SIM_CODEC, SIM_KEY, type SimDoc } from './sim-doc';
 import { resolvePreset } from './timing';
 import { defaultEffect } from './policy';
+import { FZP_KEPT_TEXT } from './sim-session';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 const workers = vi.hoisted(() => [] as import('$lib/fzp/test/fake-worker').FakeScenarioWorker[]);
@@ -552,6 +553,52 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
 
     await presetPicker().selectOptions('No discretionary review');
     await expect.element(publish()).toHaveTextContent('Publish');
+  });
+
+  it('deferred start: Publish before any change keeps the saved policy (I1)', async () => {
+    await page.viewport(1024, 768);
+    const fetchFn = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ id: 'FzPcOmPa' }), {
+          status: 201,
+          headers: { 'content-type': 'application/json' }
+        })
+    );
+    const mem = seeded();
+    const before = mem.getItem(SIM_KEY);
+    await setup({
+      storage: () => mem,
+      start: 'fzp',
+      persist: 'deferred',
+      fetchFn: fetchFn as unknown as typeof fetch
+    });
+    await toReady();
+    await expect.element(publish()).toBeEnabled();
+    await publish().click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabelText('Title').fill('FZP');
+    await dialog.getByRole('button', { name: 'Publish', exact: true }).click();
+    await expect
+      .element(dialog.getByLabelText('Link'))
+      .toHaveValue(`${location.origin}/s/FzPcOmPa`);
+    await dialog.getByRole('button', { name: 'Done' }).click();
+    await expect.element(publish()).toHaveTextContent('Share link');
+    await new Promise((r) => setTimeout(r, 700));
+    expect(mem.getItem(SIM_KEY)).toBe(before);
+    await expect.element(notices().getByText(FZP_KEPT_TEXT)).toBeVisible();
+    // The first change starts saving: the record carries the publish, so undo is Share link again.
+    await timingToggle().click();
+    await presetPicker().selectOptions('No discretionary review');
+    await expect
+      .poll(() => storedDoc(mem).policy.timing.current.preset, { timeout: 2000 })
+      .toBe('noDiscretionary');
+    const rec = JSON.parse(mem.getItem(SIM_KEY)!);
+    expect(rec.lastPublished.id).toBe('FzPcOmPa');
+    expect(storedDoc(mem).title).toBe('FZP');
+    await expect.element(publish()).toHaveTextContent('Publish');
+    await yourZoning().click();
+    await page.getByRole('button', { name: /^Undo/ }).click();
+    await expect.element(publish()).toHaveTextContent('Share link');
   });
 
   it('Publish is disabled on the default policy', async () => {
