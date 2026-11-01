@@ -50,7 +50,7 @@
     type="button"
     aria-expanded={open}
     aria-controls="{id}-panel"
-    class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+    class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
     onclick={() => (open = !open)}>View</button
   >
   {#if open}

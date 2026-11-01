@@ -27,7 +27,17 @@
   const panelId = `${uid}-menu`;
 
   const onSim = $derived(routeId === '/sim');
-  const link = 'inline-flex min-h-6 items-center whitespace-nowrap pointer-coarse:min-h-11';
+  // The mode links are page navigation, so they stay links with aria-current rather than ARIA tabs.
+  // The current one is filled with the accent; the other carries a resting border so it reads as
+  // pressable. Both take a 1 px border so their sizes match.
+  const link =
+    'inline-flex min-h-6 items-center whitespace-nowrap rounded-md border px-2 no-underline md:max-lg:px-1 pointer-coarse:min-h-11 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent dark:focus-visible:outline-accent-dark';
+  const tab = (current: boolean) => [
+    link,
+    current
+      ? 'cursor-default border-transparent bg-accent text-on-accent dark:bg-accent-dark dark:text-on-accent-dark'
+      : 'border-gray-500 hover:bg-gray-100 dark:border-gray-400 dark:hover:bg-chrome-dark-raised'
+  ];
 
   let open = $state(false);
   let header = $state<HTMLElement>();
@@ -90,21 +100,16 @@
 <svelte:window {onkeydown} {onpointerdown} />
 
 {#snippet modeLinks()}
-  <a
-    href="/"
-    class={link}
-    class:underline={routeId === '/'}
-    aria-current={routeId === '/' ? 'page' : undefined}>Paint</a
+  <a href="/" class={tab(routeId === '/')} aria-current={routeId === '/' ? 'page' : undefined}
+    >Paint</a
   >
-  <a href="/sim" class={link} class:underline={onSim} aria-current={onSim ? 'page' : undefined}
-    >Simulate</a
-  >
+  <a href="/sim" class={tab(onSim)} aria-current={onSim ? 'page' : undefined}>Simulate</a>
 {/snippet}
 
 <header
   bind:this={header}
   class={[
-    'relative flex h-12 items-center justify-between gap-2 border-b px-4',
+    'relative flex h-12 items-center justify-between gap-2 border-b bg-white px-4 text-gray-900 dark:border-gray-700 dark:bg-chrome-dark dark:text-gray-100',
     pinned && 'md:grid md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]'
   ]}
 >
@@ -112,11 +117,14 @@
     <a href="/" class="shrink-0 font-semibold whitespace-nowrap"
       >SF Housing <span class="sr-only lg:not-sr-only">Simulator</span></a
     >
-    <nav aria-label="Modes" class="flex shrink-0 items-center gap-3 text-sm max-md:hidden">
+    <nav
+      aria-label="Modes"
+      class="flex shrink-0 items-center gap-3 text-sm max-md:hidden md:max-lg:gap-1.5"
+    >
       {@render modeLinks()}
     </nav>
     <!-- The status, then the space that pushes the pinned item and the actions right. -->
-    <div class="flex min-w-0 flex-1 items-center md:pl-2" data-header-status>
+    <div class="flex min-w-0 flex-1 items-center md:pl-2 md:max-lg:pl-0" data-header-status>
       {@render status?.()}
     </div>
   </div>
@@ -126,7 +134,7 @@
   <button
     bind:this={menuButton}
     type="button"
-    class="inline-flex min-h-8 min-w-8 shrink-0 items-center justify-center rounded-md border border-gray-300 md:hidden pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+    class="inline-flex min-h-8 min-w-8 shrink-0 items-center justify-center rounded-md border border-gray-300 md:hidden dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
     aria-label="Menu"
     aria-expanded={open}
     aria-controls={panelId}
@@ -144,7 +152,7 @@
     class={[
       'md:contents',
       open
-        ? 'max-md:absolute max-md:inset-x-0 max-md:top-full max-md:z-50 max-md:flex max-md:flex-col max-md:gap-3 max-md:border-b max-md:bg-white max-md:p-4 max-md:shadow-lg'
+        ? 'max-md:absolute max-md:inset-x-0 max-md:top-full max-md:z-50 max-md:flex max-md:flex-col max-md:gap-3 max-md:border-b max-md:bg-white max-md:p-4 max-md:shadow-lg dark:max-md:border-gray-700 dark:max-md:bg-chrome-dark'
         : 'max-md:hidden'
     ]}
     onclick={onpanelclick}

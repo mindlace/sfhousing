@@ -18,7 +18,11 @@ const CHROME_FILES = [
   'src/lib/sim-page/RouteTimeline.svelte',
   'src/lib/shell/SiteHeader.svelte'
 ];
-const SCANNED = [...CHROME_FILES, 'src/lib/brush/RadiusPopover.svelte'];
+const SCANNED = [
+  ...CHROME_FILES,
+  'src/lib/brush/RadiusPopover.svelte',
+  'src/lib/fzp/TimeScrubber.svelte'
+];
 const BLUE_HEX = /#(1d4ed8|2563eb|1e40af|3b82f6|1e3a8a)\b/i;
 const BLUE_RGB = /rgb\(\s*(29[ ,]+78[ ,]+216|37[ ,]+99[ ,]+235)\s*\)/i;
 

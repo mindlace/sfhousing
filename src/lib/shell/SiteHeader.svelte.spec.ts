@@ -84,6 +84,39 @@ describe('SiteHeader', () => {
     });
   });
 
+  describe('mode tabs', () => {
+    const tabs = async (width: number) => {
+      await page.viewport(width, 812);
+      render(SiteHeader, { routeId: '/' });
+      if (width < 768) await page.getByRole('button', { name: 'Menu' }).click();
+      const nav = page.getByRole('navigation', { name: 'Modes' });
+      const current = nav.getByRole('link', { name: 'Paint' });
+      const other = nav.getByRole('link', { name: 'Simulate' });
+      await expect.element(current).toBeVisible();
+      return {
+        current: getComputedStyle(current.element()),
+        other: getComputedStyle(other.element())
+      };
+    };
+
+    for (const width of [1024, 375]) {
+      it(`at ${width}px the current tab is filled, not underlined`, async () => {
+        const { current } = await tabs(width);
+        expect(current.backgroundColor).toBe('rgb(163, 71, 44)');
+        expect(current.textDecorationLine).toBe('none');
+      });
+
+      it(`at ${width}px the other tab is unfilled, not underlined and looks pressable`, async () => {
+        const { other } = await tabs(width);
+        expect(other.backgroundColor).toBe('rgba(0, 0, 0, 0)');
+        expect(other.textDecorationLine).toBe('none');
+        expect(other.borderTopWidth).toBe('1px');
+        expect(other.borderTopStyle).toBe('solid');
+        expect(other.borderTopColor).not.toBe('rgba(0, 0, 0, 0)');
+      });
+    }
+  });
+
   describe('brand', () => {
     const suffixOf = () => {
       const link = page.getByRole('banner').getByRole('link', { name: 'SF Housing Simulator' });
@@ -344,7 +377,7 @@ describe('SiteHeader', () => {
       const simActions = createRawSnippet(() => ({
         render: () =>
           `<div class="contents"><button class="${btn}">Policy</button>` +
-          `<button class="${btn} bg-blue-700 text-white">Share link</button>` +
+          `<button class="${btn} bg-accent text-on-accent">Share link</button>` +
           `<button class="${btn}">Another future</button></div>`
       }));
       for (const width of [768, 1024]) {

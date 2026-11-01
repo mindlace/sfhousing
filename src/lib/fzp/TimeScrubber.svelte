@@ -172,6 +172,7 @@
     <button
       type="button"
       class="ctl grid rounded-md px-3 text-sm font-medium"
+      class:run={setup}
       data-testid="fzp-play"
       aria-busy={busy}
       onclick={toggle}
@@ -263,7 +264,7 @@
   }
   .track {
     min-height: 32px;
-    accent-color: #1d4ed8;
+    accent-color: #a3472c;
   }
   .markers {
     min-height: 32px;
@@ -276,8 +277,52 @@
   }
   .ctl:focus-visible,
   .track:focus-visible {
-    outline: 2px solid #1d4ed8;
+    outline: 2px solid #a3472c;
     outline-offset: 2px;
+  }
+  /* Run (setup only) carries the app accent (spec §8); Play, Pause and Replay stay plain. */
+  .run {
+    border-color: #a3472c;
+    background: #a3472c;
+    color: #fff;
+  }
+  .run:hover:not(:disabled) {
+    border-color: #84371f;
+    background: #84371f;
+  }
+  @media (prefers-color-scheme: dark) {
+    .sfh-fzp-scrubber {
+      background: #1c1d1f;
+      border-top-color: #3b3d41;
+      color: #e8e4dc;
+    }
+    .ctl {
+      border-color: #8f8a80;
+      background: #232427;
+    }
+    .ctl:hover:not(:disabled) {
+      background: #2c2e31;
+    }
+    .marker {
+      border-color: transparent;
+      background: transparent;
+    }
+    .track {
+      accent-color: #e0955a;
+    }
+    .ctl:focus-visible,
+    .track:focus-visible {
+      outline-color: #e0955a;
+    }
+    .run {
+      border-color: #e0955a;
+      background: #e0955a;
+      color: #1c1d1f;
+    }
+    .run:hover:not(:disabled) {
+      border-color: #ebae7e;
+      background: #ebae7e;
+    }
   }
   /* The repo's coarse-pointer pattern (BrushToolbar): 44 px targets. */
   @media (pointer: coarse) {

@@ -232,6 +232,16 @@ describe('readout', () => {
       await expect.element(page.getByRole('button', { name: m.name })).toBeDisabled();
     }
   });
+
+  it('in setup Run takes the app accent; Play does not', async () => {
+    await setup({ setup: true });
+    const run = page.getByRole('button', { name: 'Run' }).element();
+    expect(getComputedStyle(run).backgroundColor).toBe('rgb(163, 71, 44)');
+    expect(getComputedStyle(run).color).toBe('rgb(255, 255, 255)');
+    await setup();
+    const play = page.getByRole('button', { name: 'Play' }).element();
+    expect(getComputedStyle(play).backgroundColor).toBe('rgb(255, 255, 255)');
+  });
 });
 
 describe('play, pause, replay', () => {
