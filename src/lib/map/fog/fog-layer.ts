@@ -86,7 +86,7 @@ void main(void) {
   float gx = ((h.y - h.x) + (h.w - h.z)) * 0.5 / HF_CELL_M;
   float gy = ((h.z - h.x) + (h.w - h.y)) * 0.5 / HF_CELL_M;
   vec3 n = normalize(vec3(-gx, -gy, 1.0));
-  vColor = vec4(heightFog.color.rgb * mix(0.82, 1.0, n.z), heightFog.color.a * layer.opacity);
+  vColor = vec4(heightFog.color.rgb * mix(0.7, 1.0, n.z), heightFog.color.a * layer.opacity);
 }
 `;
 
