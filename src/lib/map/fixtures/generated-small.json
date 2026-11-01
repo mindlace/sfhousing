@@ -829,7 +829,7 @@
           ]
         ],
         "baseM": 16.9,
-        "topM": 249.4,
+        "topM": 106.8,
         "role": "occupied",
         "tone": 2
       },
@@ -852,15 +852,15 @@
             37.8040633
           ]
         ],
-        "baseM": 249.4,
-        "topM": 250.42,
+        "baseM": 106.8,
+        "topM": 107.82,
         "role": "roof",
         "tone": 0
       }
     ],
-    "stories": 80,
-    "units": 628,
-    "floorAreaM2": 54978.7,
+    "stories": 34,
+    "units": 293,
+    "floorAreaM2": 25715.8,
     "replacesExisting": true
   },
   {
