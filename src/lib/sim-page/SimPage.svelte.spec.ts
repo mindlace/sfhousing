@@ -573,3 +573,81 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
   });
 });
+
+describe('SimPage Setup and Run (Task 7, spec §1)', () => {
+  const run = () => page.getByRole('button', { name: 'Run', exact: true });
+  const historic = () =>
+    page.getByRole('checkbox', { name: 'Historic buildings (status A or A*)' });
+  const rentControl = () => page.getByRole('checkbox', { name: /Rent-controlled/ });
+
+  it('Run locks the pane and resets the tool; Change policy unlocks it', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    await page.getByRole('button', { name: 'Protections', exact: true }).click(); // collapsed
+    await historic().click(); // one change to undo
+    await expect
+      .element(page.getByRole('button', { name: 'Undo: Protected historic buildings' }))
+      .toBeEnabled();
+    await page.getByRole('radio', { name: 'Paint' }).click();
+    await run().click();
+    const change = page.getByRole('button', { name: 'Change policy' });
+    await expect.element(change).toBeVisible();
+    await expect.element(rentControl()).toBeDisabled();
+    await expect.element(page.getByRole('radio', { name: 'Move' })).toBeChecked();
+    expect(page.getByRole('button', { name: /^Undo/ }).query()).toBeNull();
+    await userEvent.keyboard('{Control>}z{/Control}');
+    await new Promise((res) => setTimeout(res, 50));
+    await expect.element(historic()).toBeChecked(); // the controller's undo key changed nothing
+    // Its tool keys change nothing either.
+    await userEvent.keyboard('b');
+    await expect.element(page.getByRole('radio', { name: 'Move' })).toBeChecked();
+
+    await change.click();
+    await expect.element(rentControl()).toBeEnabled();
+    await expect.element(run()).toBeVisible();
+    expect(page.getByRole('button', { name: 'Change policy' }).query()).toBeNull();
+    await expect.element(historic()).toBeChecked(); // the policy is intact
+    await userEvent.keyboard('{Control>}z{/Control}');
+    await expect.element(historic()).not.toBeChecked(); // unlocked: the key undoes again
+  });
+
+  it('at 375 px the phone tool bar goes when Run starts', async () => {
+    stub.reset();
+    await page.viewport(375, 700);
+    await setup();
+    await toReady();
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await policyButton().click();
+    await page.getByRole('radio', { name: 'Paint' }).click();
+    const bar = page.getByRole('group', { name: 'Brush' });
+    await expect.element(bar).toBeVisible();
+    await run().click();
+    await expect.element(bar).not.toBeInTheDocument();
+  });
+
+  it('the view reads Back to start and opens in Setup', async () => {
+    await page.viewport(1024, 768);
+    await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY });
+    await toReady();
+    await run().click();
+    await expect.element(page.getByRole('button', { name: 'Back to start' })).toBeVisible();
+    expect(page.getByRole('button', { name: 'Change policy' }).query()).toBeNull();
+    await page.getByRole('button', { name: 'Back to start' }).click();
+    await expect.element(run()).toBeVisible();
+  });
+
+  it('a remount opens in Setup', async () => {
+    await page.viewport(1024, 768);
+    const first = await setup();
+    await toReady();
+    await run().click();
+    await expect.element(page.getByRole('button', { name: 'Change policy' })).toBeVisible();
+    await first.unmount();
+    await setup();
+    await toReady();
+    await expect.element(run()).toBeVisible();
+    expect(page.getByRole('button', { name: 'Change policy' }).query()).toBeNull();
+  });
+});

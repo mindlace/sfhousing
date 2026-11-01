@@ -210,6 +210,17 @@ describe('readout', () => {
     expect(width('fzp-play')).toBe(w0);
   });
 
+  it('the readout keeps its width across years (2026 and 2040)', async () => {
+    const width = () => page.getByTestId('fzp-readout').element().getBoundingClientRect().width;
+    const first = await setup({ startDay: dayFromUtc(2026, 11, 1) });
+    await expect.element(page.getByTestId('fzp-readout-label')).toHaveTextContent('November 2026');
+    const w2026 = width();
+    first.unmount();
+    await setup({ startDay: dayFromUtc(2040, 11, 1) });
+    await expect.element(page.getByTestId('fzp-readout-label')).toHaveTextContent('November 2040');
+    expect(width()).toBe(w2026);
+  });
+
   it('in setup the button runs and the track is disabled', async () => {
     const onrun = vi.fn();
     const { q } = await setup({ setup: true, onrun });

@@ -9,7 +9,19 @@
   import { PolicyStore } from '../policy-store.svelte';
   import PolicyPanel from '../PolicyPanel.svelte';
 
-  let { open, onclose }: { open: boolean; onclose: () => void } = $props();
+  let {
+    open,
+    onclose,
+    readonly = false,
+    onreset = undefined,
+    resetLabel = undefined
+  }: {
+    open: boolean;
+    onclose: () => void;
+    readonly?: boolean;
+    onreset?: () => void;
+    resetLabel?: 'Change policy' | 'Back to start';
+  } = $props();
 
   const cal = fixtureCalibration();
   const chance = chanceTable(cal);
@@ -26,12 +38,13 @@
     onclose={() => {}}
     onsource={() => {}}
   />
-  <PolicyPanel {open} {onclose} timingSummary="SF as observed">
+  <PolicyPanel {open} {onclose} {readonly} {onreset} {resetLabel} timingSummary="SF as observed">
     {#snippet history()}
       <HistoryRow {store} onundo={() => {}} onredo={() => {}} />
     {/snippet}
     {#snippet rules()}
       <p>Rules body</p>
+      <label><input type="checkbox" /> Rule control</label>
     {/snippet}
     {#snippet custom()}
       <p>Custom body</p>

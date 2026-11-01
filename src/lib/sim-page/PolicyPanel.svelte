@@ -7,7 +7,10 @@
   disclosures, in order: New zoning rules, Custom zoning, Permitting timelines, Protections; the
   two zoning sections start open, the others collapsed. The Undo and Redo row (`history`) sits once
   above them. Below md a sub-view ("Add a rule") replaces the sections, with a Back button. The read-only view (plan 5) shows a summary instead,
-  titled "Policy (read-only)".
+  titled "Policy (read-only)". During a run (`readonly`, spec §1) a reset button ("Change policy",
+  or "Back to start" on /s/<id>) sits at the top, the history row hides, and each section body
+  sits in a disabled fieldset: every control stays readable and is skipped by focus, while the
+  disclosure toggles still work.
 -->
 <script lang="ts">
   import { tick, untrack, type Snippet } from 'svelte';
@@ -39,6 +42,11 @@
     timing?: Snippet;
     /** A second line under that section's title (the set's label). */
     timingSummary?: string;
+    /** During a run: the reset button on top, no history row, every section body disabled. */
+    readonly?: boolean;
+    /** The reset button's press (ends the run). */
+    onreset?: () => void;
+    resetLabel?: 'Change policy' | 'Back to start';
   }
   let {
     open,
@@ -54,7 +62,10 @@
     custom = undefined,
     protections = undefined,
     timing = undefined,
-    timingSummary = undefined
+    timingSummary = undefined,
+    readonly = false,
+    onreset = undefined,
+    resetLabel = 'Change policy'
   }: Props = $props();
 
   const uid = $props.id();
@@ -129,6 +140,15 @@
       onclick={() => onclose()}>Close</button
     >
   </div>
+  {#if readonly}
+    <div class="border-b border-gray-300 px-4 py-2">
+      <button
+        type="button"
+        class="min-h-11 rounded-md border border-gray-500 px-3 text-sm font-semibold"
+        onclick={() => onreset?.()}>{resetLabel}</button
+      >
+    </div>
+  {/if}
   {#if view === 'summary'}
     {@render summary?.()}
   {:else if view === 'add-brush' && subview}
@@ -138,10 +158,14 @@
         class="mb-2 min-h-6 rounded-md px-1 text-sm font-semibold underline pointer-coarse:min-h-11"
         onclick={() => onback?.()}>Back</button
       >
-      {@render subview()}
+      <fieldset disabled={readonly} class="contents">
+        {@render subview()}
+      </fieldset>
     </div>
   {:else}
-    {@render history?.()}
+    {#if !readonly}
+      {@render history?.()}
+    {/if}
     {#each SECTIONS as s (s.id)}
       {@const bodyId = `${uid}-${s.id}`}
       <div class="border-b border-gray-200">
@@ -166,15 +190,17 @@
         </h3>
         {#if expanded[s.id]}
           <div id={bodyId} class="px-4 pb-4">
-            {#if s.id === 'rules'}
-              {@render rules?.()}
-            {:else if s.id === 'custom'}
-              {@render custom?.()}
-            {:else if s.id === 'protections'}
-              {@render protections?.()}
-            {:else}
-              {@render timing?.()}
-            {/if}
+            <fieldset disabled={readonly} class="contents">
+              {#if s.id === 'rules'}
+                {@render rules?.()}
+              {:else if s.id === 'custom'}
+                {@render custom?.()}
+              {:else if s.id === 'protections'}
+                {@render protections?.()}
+              {:else}
+                {@render timing?.()}
+              {/if}
+            </fieldset>
           </div>
         {/if}
       </div>

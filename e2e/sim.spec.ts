@@ -69,10 +69,35 @@ async function waitReady(page: Page): Promise<void> {
     .toBe('current');
 }
 
-async function gotoSim(page: Page, path = '/sim'): Promise<void> {
+const slider = (page: Page): Locator =>
+  page.getByRole('slider', { name: 'Date in the simulation' });
+
+/**
+ * Starts a run (spec §1: the page opens in Setup): Run, then Pause once it plays, then Home on
+ * the slider, so the run is paused at asOf.
+ */
+async function startRun(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Run', exact: true }).click();
+  await expect.poll(() => fzp(page, 'playing'), { timeout: 20_000 }).toBe(true);
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await slider(page).focus();
+  await page.keyboard.press('Home');
+  await page.waitForFunction(() => {
+    const f = (window as FzpWin).__sfhFzp!;
+    return f.day === f.asOf && !f.playing;
+  });
+}
+
+/** /sim (or `path`), ready, in Setup; with `run`, a run started and paused at asOf. */
+async function gotoSim(
+  page: Page,
+  path = '/sim',
+  { run = false }: { run?: boolean } = {}
+): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(path);
   await waitReady(page);
+  if (run) await startRun(page);
 }
 
 const scoreBar = (page: Page): Locator => page.getByTestId('score-bar');
@@ -454,6 +479,46 @@ test('axe: the policy panel open', async ({ page }) => {
   await openPolicy(page);
   await expandSection(page, 'New zoning rules');
   await expandSection(page, 'Custom zoning');
+  await expandSection(page, 'Protections');
+  await expectNoA11yViolations(page);
+});
+
+// ---- Setup and Run (spec §1) ----------------------------------------------------------------------
+
+test('Run locks the policy and Change policy returns to the present', async ({
+  isMobile,
+  page
+}) => {
+  await gotoSim(page);
+  expect(await fzp(page, 'runPhase')).toBe('setup');
+  // The phone sheet is modal: Run sits under it, so it starts closed there.
+  if (isMobile && (await panel(page).isVisible())) {
+    await panel(page).getByRole('button', { name: 'Close policy' }).click();
+  }
+  await page.getByRole('button', { name: 'Run', exact: true }).click();
+  await expect.poll(() => fzp(page, 'runPhase')).toBe('run');
+  await expect
+    .poll(() => fzp(page, 'day'), { timeout: 20_000 })
+    .toBeGreaterThan(await fzp(page, 'asOf'));
+  await openPolicy(page);
+  const change = panel(page).getByRole('button', { name: 'Change policy' });
+  await expect(change).toBeVisible();
+  await expandSection(page, 'Protections');
+  const rent = panel(page).getByRole('checkbox', { name: 'Rent-controlled buildings (likely)' });
+  await expect(rent).toBeDisabled();
+
+  await change.click();
+  await expect.poll(() => fzp(page, 'runPhase')).toBe('setup');
+  await expect.poll(() => fzp(page, 'day')).toBe(await fzp(page, 'asOf'));
+  expect(await fzp(page, 'playing')).toBe(false);
+  await expect(rent).toBeEnabled();
+  await expect(slider(page)).toBeDisabled();
+});
+
+test('axe: the policy panel open during a run', async ({ page }) => {
+  await gotoSim(page, '/sim', { run: true });
+  await openPolicy(page);
+  await expect(panel(page).getByRole('button', { name: 'Change policy' })).toBeVisible();
   await expandSection(page, 'Protections');
   await expectNoA11yViolations(page);
 });

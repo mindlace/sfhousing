@@ -21,6 +21,8 @@ Keys with Alt, Ctrl or Meta are left to the browser. Every handled key, a drag o
 
 **Setup mode.** With `setup` the button reads "Run" and calls `onrun` instead of toggling; the range and marker buttons are `disabled` and keys do nothing.
 
+**Run phase (`FzpMode`'s `runPhase`, `/sim` only).** `/sim` passes `runPhase` (`'setup' | 'run'`, `src/lib/sim-page/run-phase.svelte.ts`) and `onrun`; without `runPhase` (a bare FzpMode) nothing changes. While `'setup'`, FzpMode passes `setup` to the scrubber, stops playback and pins the day at `asOf`: any move away (a calibration reload included) is put back through `onDay`, the path a scrubber jump takes. TimeScrubber does not pin the day itself. The Run press sets FzpMode's `playWhenCurrent` flag and calls `onrun`; once the page has moved `runPhase` to `'run'`, playback starts as soon as the score is not busy (a timeline at or after the latest levers' rev), so Run never plays a timeline computed before the levers last sent. Playback starting by other means (Play), Pause and a return to `'setup'` clear the flag.
+
 - **Speeds** (`playback.ts`, a tier 4 UI choice): "1 month/s", "1 year/s" (default), "3 years/s", as days of simulated time per second of wall time (`MONTH_DAYS`, `12 x MONTH_DAYS`, `36 x MONTH_DAYS`).
 - **Frame step:** only while `playing`, through `requestAnimationFrame`: `t += min(dt, 100 ms) x daysPerSecond`, `day = min(floor(t), horizon)`. The 100 ms clamp stops a background tab from making the clock jump. If something else moves the day mid-play, the clock continues from there.
 - **No autoplay:** playback never starts on its own; the page opens paused at `asOf` and waits on Play.
@@ -58,6 +60,7 @@ The ready-phase notices (the stopped chip with Retry, "Making another future…"
 | `asOf`, `horizon` | the scrubber's range                                                                                                                                               |
 | `playing`         | whether the frame loop is running                                                                                                                                  |
 | `score`           | the latest `TimelineScore`, or `null`; `score.band` and `planEffect` may be incomplete until the band runs finish (the score details mark those lines `aria-busy`) |
+| `runPhase`        | `/sim`'s phase, `'setup'` or `'run'`; `null` without `runPhase`                                                                                                    |
 | `levers`          | `/sim`'s lever status: `{ status, done, total, sentRev }`, see [sim-page.md](sim-page.md)                                                                          |
 
 `window.__sfhMap` (`src/lib/map/debug.ts`) gives the MapLibre map. Test helpers: `e2e/helpers/sharing.ts` (`jumpAndIdle`, `projectToPage`, `FRAME`, `headerAction`, `openHeaderMenu`) and `e2e/helpers/a11y.ts`. The specs are `e2e/fzp.spec.ts`, `e2e/fzp-sim.spec.ts` and, for `/sim`'s own controls, `e2e/sim.spec.ts`.

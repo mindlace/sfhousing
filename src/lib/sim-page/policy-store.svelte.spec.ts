@@ -57,6 +57,19 @@ function harness(answer?: (q: BrushQuery) => BrushLotsResult) {
 }
 
 describe('PolicyStore', () => {
+  it('a locked store ignores changes, undo and redo', () => {
+    const s = new PolicyStore(DEFAULT_POLICY);
+    s.apply((p) => ({ ...p, protect: { ...p.protect, historic: true } }), 'a');
+    s.locked = true;
+    const before = s.policy;
+    s.apply((p) => ({ ...p, protect: { ...p.protect, rentControl: true } }), 'b');
+    expect(s.undo()).toBeNull();
+    expect(s.redo()).toBeNull();
+    expect(s.policy).toBe(before);
+    s.locked = false;
+    expect(s.undo()).toBe('a');
+  });
+
   it('undo and redo restore the policy and return labels', () => {
     const store = new PolicyStore(BASE);
     expect(store.canUndo).toBe(false);

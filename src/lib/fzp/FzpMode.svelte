@@ -4,7 +4,8 @@
   tooltip and the sources dialog, over timelapse-sim's ScenarioClient. Queueing before the map
   handle, chunk statuses and crash Retry mirror BrushEditor.svelte (copied, not imported). /sim
   passes `levers` (plan 3): the session runs the lever engine, and the worker's posted lookups
-  replace the calibration's once current.
+  replace the calibration's once current. /sim also passes `runPhase` (spec §1): in Setup the day
+  is pinned at asOf and the scrubber's button reads Run; Run plays once the score is current.
 -->
 <script module lang="ts">
   import { chanceTable, typicalMonths } from '$lib/timelapse/model';
@@ -69,6 +70,7 @@
   } from '$lib/sim-page/lever-status';
   import { spawnSimWorker } from '$lib/sim/client';
   import type { SimLevers } from '$lib/sim/levers/types';
+  import type { SimPhase } from '$lib/sim-page/run-phase.svelte';
   import { scoreCopy } from '$lib/sim-page/policy';
   import type { TimelineScore } from '$lib/sim/protocol';
   import {
@@ -133,6 +135,13 @@
      * above the scrubber, so their height joins the dock's and nothing they cover is lost.
      */
     notices?: Snippet;
+    /**
+     * /sim's phase (absent = /fzp, today's behaviour). In 'setup' playback stops and the day is
+     * pinned at asOf (through `onDay`, as a scrubber jump); the scrubber's button reads Run.
+     */
+    runPhase?: SimPhase;
+    /** The Run button's press; the page then moves `runPhase` to 'run'. */
+    onrun?: () => void;
   }
 
   let {
@@ -154,7 +163,9 @@
     panel = undefined,
     actions = undefined,
     status = undefined,
-    notices = undefined
+    notices = undefined,
+    runPhase = undefined,
+    onrun = undefined
   }: Props = $props();
 
   // The props seed the page once; Retry replaces the manifest and calibration in place.
@@ -198,6 +209,12 @@
   let leverLookups = $state.raw<LeverLookups | null>(null);
   /** The rev of the latest non-stale timeline (0 before any). */
   let timelineRev = $state(0);
+
+  /**
+   * Run was pressed: play as soon as the phase is 'run' and the score is current (never a
+   * timeline from before the latest levers sent). Playback starting, Pause and Setup clear it.
+   */
+  let playWhenCurrent = $state(false);
 
   let cardState = $state.raw<SummaryState>({ kind: 'idle' });
   let tipState = $state.raw<SummaryState>({ kind: 'idle' });
@@ -453,6 +470,44 @@
     if (cardMonth !== null && monthStart(d) !== cardMonth) refreshCard();
   }
 
+  function onRun(): void {
+    playWhenCurrent = true;
+    onrun?.();
+  }
+
+  // Setup (spec §1): no playback, and the day pinned at asOf, moved as a scrubber jump moves it.
+  $effect(() => {
+    if (runPhase !== 'setup') return;
+    const a = asOf;
+    const d = day;
+    void playing;
+    untrack(() => {
+      if (playing) playing = false;
+      if (d !== a) {
+        day = a;
+        onDay(a);
+      }
+    });
+  });
+
+  // Back to Setup drops a pending Run.
+  $effect(() => {
+    if (runPhase === 'setup') untrack(() => (playWhenCurrent = false));
+  });
+
+  // Run plays once the score is current. Playback that started otherwise (Play) clears the wait,
+  // so a Pause before the score is current keeps it paused.
+  $effect(() => {
+    if (!playWhenCurrent) return;
+    if (playing) {
+      playWhenCurrent = false;
+      return;
+    }
+    if (runPhase !== 'run' || phase !== 'ready' || scoreBusy) return;
+    playWhenCurrent = false;
+    playing = true;
+  });
+
   function applyInset(): void {
     handle?.setBottomInset(scrubberH + noticeH);
   }
@@ -675,6 +730,7 @@
       horizon: HORIZON,
       playing,
       score,
+      runPhase: runPhase ?? null,
       levers: {
         status: leverStatus.kind,
         done: leverStatus.kind === 'resolving' ? leverStatus.done : 0,
@@ -912,6 +968,8 @@
         bind:playing
         bind:speed
         {markers}
+        setup={runPhase === 'setup'}
+        onrun={onRun}
         onday={onDay}
         onheight={(px) => {
           scrubberH = px;

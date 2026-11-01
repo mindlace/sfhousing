@@ -13,6 +13,9 @@
   read-only /s/<id>, Task 6) the shared policy opens reconciled with the calibration (Call 7, with
   the timing notice when anything moved); there is no stroke controller, no tools, no autosave and
   no Publish, and the panel is the summary. The lot dots still draw.
+  Setup and Run (spec §1, sim-runs Task 7): the page opens in Setup (never persisted). Run (the
+  scrubber's button) sets the tool to Move, locks the store and plays; the panel is read-only
+  until "Change policy" ("Back to start" in the view) unlocks it and returns to the present.
 -->
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
@@ -58,6 +61,7 @@
   import { timingLabel } from './timing';
   import { focusHeaderMenu } from '$lib/shell/header-actions.svelte';
   import { LeverSync, PolicyStore } from './policy-store.svelte';
+  import { RunPhase } from './run-phase.svelte';
   import PermittingSection from './PermittingSection.svelte';
   import PolicyPanel from './PolicyPanel.svelte';
   import RulesSection from './RulesSection.svelte';
@@ -354,11 +358,29 @@
     }
   }
 
-  // The controller's own tool keys set brush.tool: keep the /sim tool in step.
+  // ---- Setup and Run (spec §1) ----
+
+  const run = new RunPhase();
+
+  function startRun(): void {
+    setTool('move');
+    store.locked = true;
+    run.run();
+  }
+
+  function resetRun(): void {
+    store.locked = false;
+    run.reset();
+  }
+
+  // The controller's own tool keys set brush.tool: keep the /sim tool in step. During a run the
+  // tool stays Move (the store is locked, so a stroke would change nothing).
   $effect(() => {
     const bt = brush.tool;
+    const running = run.phase === 'run';
     untrack(() => {
-      if (brushToolOf(tools.tool) !== bt) tools.tool = bt;
+      if (running && bt !== 'move') setTool('move');
+      else if (brushToolOf(tools.tool) !== bt) tools.tool = bt;
     });
   });
 
@@ -539,6 +561,9 @@
     timingSummary={calibration ? timingLabel(store.policy.timing.current) : undefined}
     timing={calibration ? timingSection : undefined}
     summary={policySummary}
+    readonly={run.phase === 'run'}
+    onreset={resetRun}
+    resetLabel={mode === 'view' ? 'Back to start' : 'Change policy'}
   >
     {#snippet history()}
       <HistoryRow {store} onundo={undo} onredo={redo} />
@@ -579,7 +604,7 @@
       {/if}
     {/snippet}
   </PolicyPanel>
-  {#if mode === 'edit' && !wide.current && !policyOpen && tools.tool !== 'move'}
+  {#if mode === 'edit' && run.phase === 'setup' && !wide.current && !policyOpen && tools.tool !== 'move'}
     <PhoneToolBar bind:this={phoneBar} {tools} ontool={setTool} ondone={openPolicy} />
   {/if}
   <p role="status" aria-live="polite" class="sr-only">{brush.announcement}</p>
@@ -596,6 +621,8 @@
   {reload}
   {onurlseed}
   {levers}
+  runPhase={run.phase}
+  onrun={startRun}
   {actions}
   status={mode === 'edit' ? saveState : undefined}
   notices={sessionNotices}

@@ -5,10 +5,14 @@ import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import PolicyPanelHost from './test/PolicyPanelHost.svelte';
 
-async function setup(open = true) {
+async function setup(
+  open = true,
+  extra: Partial<{ readonly: boolean; resetLabel: 'Change policy' | 'Back to start' }> = {}
+) {
   const onclose = vi.fn();
-  const view = await render(PolicyPanelHost, { props: { open, onclose } });
-  return { onclose, view };
+  const onreset = vi.fn();
+  const view = await render(PolicyPanelHost, { props: { open, onclose, onreset, ...extra } });
+  return { onclose, onreset, view };
 }
 
 const map = () => page.getByTestId('map').element() as HTMLElement;
@@ -128,5 +132,34 @@ describe('PolicyPanel', () => {
     const { onclose } = await setup();
     await page.getByRole('button', { name: 'Close policy' }).click();
     expect(onclose).toHaveBeenCalledOnce();
+  });
+
+  it('read-only: the reset button on top, no history, controls disabled, toggles working', async () => {
+    await page.viewport(1024, 700);
+    const { onreset } = await setup(true, { readonly: true, resetLabel: 'Change policy' });
+    const reset = page.getByRole('button', { name: 'Change policy' });
+    await expect.element(reset).toBeVisible();
+    const first = page.getByRole('button', { name: 'New zoning rules', exact: true }).element();
+    expect(
+      reset.element().compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(page.getByRole('button', { name: /^Undo/ }).query()).toBeNull();
+    await expect.element(page.getByRole('checkbox', { name: 'Rule control' })).toBeDisabled();
+    const protections = page.getByRole('button', { name: 'Protections', exact: true });
+    await protections.click();
+    await expect.element(protections).toHaveAttribute('aria-expanded', 'true');
+    await expect.element(page.getByText('Protections body')).toBeVisible();
+    await reset.click();
+    expect(onreset).toHaveBeenCalledOnce();
+  });
+
+  it('read-only takes the label it is given; editable shows no reset button', async () => {
+    await page.viewport(1024, 700);
+    const { view } = await setup(true, { readonly: true, resetLabel: 'Back to start' });
+    await expect.element(page.getByRole('button', { name: 'Back to start' })).toBeVisible();
+    await view.rerender({ readonly: false });
+    await expect.element(page.getByRole('checkbox', { name: 'Rule control' })).toBeEnabled();
+    expect(page.getByRole('button', { name: 'Back to start' }).query()).toBeNull();
+    await expect.element(page.getByRole('button', { name: /^Undo/ })).toBeInTheDocument();
   });
 });

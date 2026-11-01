@@ -54,6 +54,17 @@ Compile rules (sim runs spec, section 3; "Call n" is plan 3's):
 
 `PolicyStore` (`policy-store.svelte.ts`) keeps the recipe with undo and redo: every change is one labelled store change, so the Undo and Redo buttons name it and Ctrl+Z / Ctrl+Shift+Z (the `/` editor's keys, through `BrushController`) step through the same history.
 
+## Setup and Run
+
+Spec §1 (`docs/superpowers/specs/2026-10-31-sim-runs-design.md`). `SimPage` owns a `RunPhase` (`run-phase.svelte.ts`, `phase: 'setup' | 'run'`), which starts in `'setup'` and is never persisted: a reload, a restored autosave and `/s/<id>` all open in Setup.
+
+- **Setup.** The policy is editable. FzpMode pins the day at the present (`calibration.asOf`) and the scrubber's button reads "Run"; the range and the markers are disabled. The worker keeps computing as before: `LeverSync` and `setLevers` are unchanged.
+- **Run** (the scrubber's button, FzpMode's `onrun`): `startRun()` sets the tool to Move, sets `store.locked` (`PolicyStore.apply`, `undo` and `redo` become no-ops, so the controller's Ctrl+Z changes nothing) and moves to `'run'`. FzpMode plays once the score is current. The tool stays Move during a run (the controller's tool keys are put back) and the phone tool bar shows only in Setup.
+- **Read-only pane.** `PolicyPanel` takes `readonly`, `onreset` and `resetLabel`: a button at the top of the pane ("Change policy", or "Back to start" in the view), no history row, and each section body in a `<fieldset disabled class="contents">`, so every control stays readable and focus skips it. The disclosure toggles still work. Scrubbing a run stays allowed.
+- **Change policy / Back to start** (`resetRun()`): unlocks the store and returns to Setup; FzpMode pauses and returns the day to the present. The policy is intact. The next Run starts over from the present and waits for the latest policy's timeline.
+- **Known gap.** "Current" means the latest levers _sent_. A Run pressed inside `LeverSync`'s 250 ms debounce, or while a brush's lots are still being found, plays the timeline of the levers sent before that edit, because the newer ones have not gone out yet.
+- **e2e.** `gotoSim(page, path, { run: true })` and `gotoFzp(page, search, { run: true })` press Run, then Pause, then Home, and wait for `__sfhFzp.day === asOf` and `playing === false`. Tests that scrub, play or press a marker pass `run: true`.
+
 ## Autosave, publish and the read-only view
 
 Plan 5 (`docs/superpowers/plans/2026-10-30-sim-publish.md`; "Call n" in this section is that plan's). The document is `SimDoc` with `SIM_CODEC` (`src/lib/sim-page/sim-doc.ts`); the server side, limits and redirects are in [plan-sharing.md](plan-sharing.md), "Policies (`/sim`)". `src/routes/sim/+page.svelte` and `src/routes/s/[id]/+page.svelte` both render `SimRoute` (`src/lib/sim-page/SimRoute.svelte`: the seed handling and `{#key}` remounts), which renders `SimPage` with a `mode` and a `persist` setting.

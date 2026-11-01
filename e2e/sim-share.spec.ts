@@ -212,6 +212,14 @@ test('publish round trip', async ({ page, browser, isMobile }, testInfo) => {
     await expect(summary).toContainText(PRESET);
     expect(await storedDoc(visitor), 'viewing never writes the autosave').toBeNull();
     await closeSheet(visitor, isMobile);
+    // The view opens in Setup with Run available; during a run the pane offers "Back to start".
+    await visitor.getByRole('button', { name: 'Run', exact: true }).click();
+    await expect(
+      (await openPolicy(visitor)).getByRole('button', { name: 'Back to start' })
+    ).toBeVisible();
+    await panel(visitor).getByRole('button', { name: 'Back to start' }).click();
+    await expect(visitor.getByRole('button', { name: 'Run', exact: true })).toBeVisible();
+    await closeSheet(visitor, isMobile);
 
     // No confirm: the visitor's local policy is the default one.
     await sharedBanner(visitor).getByRole('button', { name: 'Remix' }).click();
@@ -259,6 +267,8 @@ test('autosave survives a reload', async ({ page }) => {
 
   await page.reload();
   await waitReady(page);
+  // The phase is not persisted: a reload opens in Setup.
+  await expect(page.getByTestId('fzp-play-label')).toHaveText('Run');
   await openPolicy(page);
   await expandSection(page, 'New zoning rules');
   await expect(ruleList(page)).toHaveCount(1);

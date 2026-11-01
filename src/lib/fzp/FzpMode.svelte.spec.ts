@@ -11,6 +11,7 @@ import type { LeverLookups } from '$lib/sim/levers/apply';
 import { DEFAULT_LEVERS, type SimLevers } from '$lib/sim/levers/types';
 import type { ParcelSummary, ProjectCard } from '$lib/sim/protocol';
 import type { LeverStatus } from '$lib/sim-page/lever-status';
+import type { SimPhase } from '$lib/sim-page/run-phase.svelte';
 import { chanceTable, typicalMonths } from '$lib/timelapse/model';
 import type { Calibration } from '$lib/timelapse/types';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
@@ -39,6 +40,8 @@ type Over = Partial<{
   levers: SimLevers;
   onlevers: (s: LeverStatus) => void;
   actions: Snippet;
+  runPhase: SimPhase;
+  onrun: () => void;
 }>;
 
 function setup(over: Over = {}) {
@@ -1284,5 +1287,114 @@ describe('FzpMode levers (/sim)', () => {
       ...lookups.fresh,
       inFlight: lookups.inFlight
     });
+  });
+});
+
+describe('FzpMode Setup and Run (/sim, spec §1)', () => {
+  const OTHER: SimLevers = { ...DEFAULT_LEVERS, compare: 'fzp' };
+  const debug = () => window.__sfhFzp!;
+  const playLabel = () => page.getByTestId('fzp-play-label');
+  const setPhase = async (s: Setup, runPhase: SimPhase) => (await s.r).rerender({ runPhase });
+  /** Sends a new levers object and returns the rev its setLevers went out on. */
+  async function sendLevers(s: Setup, levers: SimLevers): Promise<number> {
+    const n = s.w().allOf('setLevers').length;
+    await (await s.r).rerender({ levers });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(n + 1);
+    return s.w().lastOf('setLevers')!.rev;
+  }
+
+  beforeEach(() => {
+    vi.stubEnv('VITE_E2E', '1');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('setup pins the day at asOf; Run waits for the current score, then plays', async () => {
+    const onrun = vi.fn();
+    const s = setup({ runPhase: 'setup', levers: DEFAULT_LEVERS, onrun });
+    await toReady(s);
+    expect(debug().day).toBe(debug().asOf);
+    expect(debug().runPhase).toBe('setup');
+    await expect.element(slider()).toBeDisabled();
+    await expect.element(playLabel()).toHaveTextContent(/^Run$/);
+    const rev = await sendLevers(s, { ...OTHER }); // sent, not yet answered: the score is busy
+    await page.getByRole('button', { name: 'Run' }).click();
+    expect(onrun).toHaveBeenCalledOnce();
+    await setPhase(s, 'run');
+    expect(debug().runPhase).toBe('run');
+    await new Promise((res) => setTimeout(res, 50));
+    expect(debug().playing).toBe(false);
+    expect(debug().day).toBe(ASOF);
+    s.w().emit(timelineMsg(rev, 7)); // the sent rev's timeline
+    await expect.poll(() => debug().playing).toBe(true);
+    await expect.element(playLabel()).toHaveTextContent(/^Pause$/);
+  });
+
+  it("the day can't move in Setup", async () => {
+    const s = setup({ runPhase: 'setup', levers: DEFAULT_LEVERS });
+    await toReady(s);
+    // The track is disabled; an input that reaches it anyway is put back at asOf.
+    const input = slider().element() as HTMLInputElement;
+    input.value = String(ASOF + 400);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await expect.poll(() => debug().day).toBe(ASOF);
+    expect(callsOf('setTime').at(-1)).toEqual([ASOF]);
+    expect(debug().playing).toBe(false);
+    for (const b of page.getByRole('button', { name: /^Jump to/ }).elements()) {
+      expect((b as HTMLButtonElement).disabled).toBe(true);
+    }
+  });
+
+  it('back to setup pauses and returns to asOf', async () => {
+    const s = setup({ runPhase: 'run', levers: DEFAULT_LEVERS });
+    await toReady(s);
+    await press('{PageUp}');
+    expect(debug().day).toBeGreaterThan(ASOF);
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await expect.poll(() => debug().playing).toBe(true);
+    await setPhase(s, 'setup');
+    await expect.poll(() => debug().day).toBe(ASOF);
+    expect(debug().playing).toBe(false);
+    expect(callsOf('setTime').at(-1)).toEqual([ASOF]);
+    await expect.element(playLabel()).toHaveTextContent(/^Run$/);
+  });
+
+  it('a new run after Change policy discards the old run and waits for the new policy', async () => {
+    const s = setup({ runPhase: 'run', levers: DEFAULT_LEVERS });
+    await toReady(s);
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await expect.poll(() => debug().day).toBeGreaterThan(ASOF);
+    await setPhase(s, 'setup');
+    const rev = await sendLevers(s, { ...OTHER });
+    await page.getByRole('button', { name: 'Run' }).click();
+    await setPhase(s, 'run');
+    await new Promise((res) => setTimeout(res, 50));
+    // The old run is gone: the new one starts at the present and does not play the old timeline.
+    expect(debug().day).toBe(ASOF);
+    expect(debug().playing).toBe(false);
+    s.w().emit(timelineMsg(rev, 7));
+    await expect.poll(() => debug().playing).toBe(true);
+  });
+
+  it('Pause while Run waits clears the wait', async () => {
+    const s = setup({ runPhase: 'setup', levers: DEFAULT_LEVERS });
+    await toReady(s);
+    const rev = await sendLevers(s, { ...OTHER });
+    await page.getByRole('button', { name: 'Run' }).click();
+    await setPhase(s, 'run');
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    s.w().emit(timelineMsg(rev, 7));
+    await new Promise((res) => setTimeout(res, 50));
+    expect(debug().playing).toBe(false);
+  });
+
+  it('without runPhase (/fzp) the button plays and the hook reports no run phase', async () => {
+    const s = setup();
+    await toReady(s);
+    expect(debug().runPhase).toBeNull();
+    await expect.element(slider()).toBeEnabled();
+    await expect.element(playLabel()).toHaveTextContent(/^Play$/);
   });
 });
