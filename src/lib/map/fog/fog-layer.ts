@@ -55,6 +55,8 @@ in vec4 instanceCorners; // metres: SW, SE, NW, NE
 
 out vec4 vColor;
 
+// The slope shading takes every cell as FOG_CELL_M square (the worker's grid), not cellDeg: a grid
+// of another cell size would shade with the wrong slope (flat cells are unaffected).
 const float HF_CELL_M = ${glslFloat(FOG_CELL_M)};
 
 void main(void) {
@@ -64,7 +66,9 @@ void main(void) {
   // The corner offset goes on the anchor's low part, so a corner shared by two cells comes out
   // the same from both and neighbours meet without cracks. Below zoom 12 deck projects without
   // offsets and ignores the low part: there the offset joins the high part (a shared corner then
-  // rounds to the neighbour's anchor, within one float ulp).
+  // rounds to the neighbour's anchor, within one float ulp). The low-part path also needs every
+  // cell within 0.25° of latitude of the view centre, where deck's offset mode keeps the low part;
+  // the map's maxBounds (= FOG_BOUNDS, 0.15° tall) clamp the camera inside the grid, so it holds.
   vec2 offset = positions * heightFog.cellDeg;
   vec3 hi = vec3(instanceAnchor, z);
   vec3 lo = vec3(instanceAnchor64Low, 0.0);
@@ -129,19 +133,21 @@ export class HeightFogLayer extends Layer<HeightFogLayerProps> {
   }
 
   initializeState() {
+    // The updaters read the `props` deck passes them, never `this`: deck carries this state over
+    // to each new layer instance, so a closure over `this` would keep the first layer's data.
     this.getAttributeManager()!.addInstanced({
       instanceAnchor: {
         size: 2,
         type: 'float64',
         fp64: this.use64bitPositions(),
-        update: (attribute: Attribute) => {
-          attribute.value = this.props.data.anchors;
+        update: (attribute: Attribute, { props }: { props: HeightFogLayerProps }) => {
+          attribute.value = props.data.anchors;
         }
       },
       instanceCorners: {
         size: 4,
-        update: (attribute: Attribute) => {
-          attribute.value = this.props.data.corners;
+        update: (attribute: Attribute, { props }: { props: HeightFogLayerProps }) => {
+          attribute.value = props.data.corners;
         }
       }
     });

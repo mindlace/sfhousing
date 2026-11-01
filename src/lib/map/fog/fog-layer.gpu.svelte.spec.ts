@@ -50,8 +50,20 @@ const GRID: FogGrid = {
   heightM: new Float32Array(5 * 3)
 };
 
-/** GRID's cells as FogInstances with every corner `h` metres. */
-function flat(h: number): FogInstances {
+/** As GRID, but CENTRE 40 m north of the south edge: the row 0/1 boundary is 10 m south of it. */
+const GRID_NS: FogGrid = { ...GRID, south: CENTRE[1] - 1.25 * D_LAT };
+/** As GRID with 400 m cells, for zoom 11.5 (≈ 21 m/px): CENTRE mid-cell, the canvas centre inside. */
+const GRID_Z11: FogGrid = {
+  ...GRID,
+  west: CENTRE[0] - 15 * D_LNG,
+  south: CENTRE[1] - 5 * D_LAT,
+  dLng: 10 * D_LNG,
+  dLat: 10 * D_LAT
+};
+
+/** `g`'s cells as FogInstances with every corner `h` metres. */
+function flat(h: number, g: FogGrid = GRID): FogInstances {
+  const GRID = g;
   const count = GRID.cols * GRID.rows;
   const anchors = new Float64Array(2 * count);
   const corners = new Float32Array(4 * count).fill(h);
@@ -119,8 +131,8 @@ describe('HeightFogLayer on the GPU', () => {
   }
 
   /** Sets the layers, waits until deck has initialised and linked them all, then reads back. */
-  async function render(layers: Layer[]) {
-    deck.setProps({ layers });
+  async function render(layers: Layer[], viewState: MapViewState = VIEW_STATE) {
+    deck.setProps({ layers, viewState });
     const live = () =>
       (deck as unknown as { layerManager: { getLayers(): Layer[] } }).layerManager.getLayers();
     const ready = () =>
@@ -154,6 +166,10 @@ describe('HeightFogLayer on the GPU', () => {
   /** The pixel column on the boundary between columns 1 and 2 of `g`, at the flat fog's height. */
   const edgeX = (g: FogGrid) =>
     deck.getViewports()[0].project([g.west + 2 * g.dLng, CENTRE[1], FLAT_H])[0];
+
+  /** The pixel row on the boundary between rows 0 and 1 of `g`, at the flat fog's height. */
+  const edgeY = (g: FogGrid) =>
+    deck.getViewports()[0].project([CENTRE[0], g.south + g.dLat, FLAT_H])[1];
 
   const expectPixel = (got: Rgb, want: Rgb, tol: number) =>
     expect(
@@ -218,6 +234,44 @@ describe('HeightFogLayer on the GPU', () => {
     const px = await render([heightFogLayer(flat(30), GRID, 'light')]);
     const edge = px.at(edgeX(GRID), 32); // the column on the boundary between two cells
     expectPixel(edge, px.at(64, 32), 1);
+    expect(errors).toEqual([]);
+  });
+
+  it('no crack or double blend on a shared row edge', async () => {
+    const px = await render([heightFogLayer(flat(30, GRID_NS), GRID_NS, 'light')]);
+    const y = edgeY(GRID_NS);
+    expect(y).toBeGreaterThan(0);
+    expect(y).toBeLessThan(CH);
+    expectPixel(px.at(64, y), px.at(64, 32), 1);
+    expect(errors).toEqual([]);
+  });
+
+  // Below zoom 12 deck projects without offsets and drops the low part: the corner offset must
+  // reach the high part there, or every quad collapses to a point and nothing draws.
+  it('zoom 11.5: a flat fog is the token over the ground', async () => {
+    const px = await render([heightFogLayer(flat(30, GRID_Z11), GRID_Z11, 'light')], {
+      ...VIEW_STATE,
+      zoom: 11.5
+    } as MapViewState);
+    const [r, g, b, a] = hexToRgba(TOKENS.light['height-fog']);
+    expectPixel(px.at(64, 32), over([r, g, b], a / 255), TOL_BLEND);
+    expect(errors).toEqual([]);
+  });
+
+  it('a new layer with new data redraws from that data', async () => {
+    const all = flat(30);
+    /** GRID's cell in column `c` of row 0, alone. */
+    const cell = (c: number): FogInstances => ({
+      count: 1,
+      anchors: all.anchors.slice(2 * c, 2 * c + 2),
+      corners: all.corners.slice(4 * c, 4 * c + 4)
+    });
+    // Column 1 holds CENTRE; column 3 is 60–100 m east of it, off the canvas.
+    const [r, g, b, a] = hexToRgba(TOKENS.light['height-fog']);
+    const before = await render([heightFogLayer(cell(1), GRID, 'light')]);
+    expectPixel(before.at(64, 32), over([r, g, b], a / 255), TOL_BLEND);
+    const after = await render([heightFogLayer(cell(3), GRID, 'light')]);
+    expectPixel(after.at(64, 32), BG, 0);
     expect(errors).toEqual([]);
   });
 
