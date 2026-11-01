@@ -26,8 +26,9 @@ function setup(opts: { rules?: ZoningRule[]; catalog?: BrushCatalog | null } = {
   if (opts.rules) store.apply((p) => ({ ...p, rules: opts.rules! }), 'Allowed 8 stories');
   const announce = vi.fn();
   const sync = { result: vi.fn(() => undefined), retry: vi.fn() };
-  render(RulesSection, { props: { store, sync, catalog: opts.catalog, announce } });
-  return { store, sync, announce };
+  const onsaved = vi.fn();
+  render(RulesSection, { props: { store, sync, catalog: opts.catalog, announce, onsaved } });
+  return { store, sync, announce, onsaved };
 }
 
 describe('RulesSection', () => {
@@ -100,6 +101,19 @@ describe('RulesSection', () => {
     expect(announce).toHaveBeenCalledWith('Allowed up to 6 stories near regional rail');
     await expect.element(page.getByRole('button', { name: 'Save rule' })).not.toBeInTheDocument();
     await expect.element(page.getByRole('button', { name: 'Add a rule' })).toHaveFocus();
+  });
+
+  it('onsaved names the saved rule and whether the save changed the policy', async () => {
+    const { store, onsaved } = setup({ rules: [street], catalog: testCatalog() });
+    await page.getByRole('button', { name: /^Edit:/ }).click();
+    await page.getByRole('button', { name: 'Save rule' }).click();
+    expect(onsaved).toHaveBeenLastCalledWith(expect.objectContaining({ id: street.id }), false);
+    await page.getByRole('button', { name: 'Add a rule' }).click();
+    await page.getByRole('button', { name: 'Transit' }).click();
+    await page.getByRole('checkbox', { name: /^Regional rail/ }).click();
+    await page.getByRole('button', { name: 'Save rule' }).click();
+    const added = store.policy.rules.at(-1)!;
+    expect(onsaved).toHaveBeenLastCalledWith(added, true);
   });
 
   it('Edit waits for the catalog and says why', async () => {

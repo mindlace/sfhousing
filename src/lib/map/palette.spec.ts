@@ -230,7 +230,7 @@ const DEFAULT_TOKENS_BODY =
   '--map-transit-access-2: #B3E0D8; --map-transit-access-3: #7CC7BA; ' +
   '--map-transit-access-4: #3FA596; --map-transit-access-5: #167A6E; ' +
   '--map-transit-bus: #5E7A76; --map-transit-rail: #0F5A52; ' +
-  '--map-transit-regional: #0B3B36; --map-transit-stroke: #FFFFFF; --map-height-fog: rgba(255,255,255,0.30); ' +
+  '--map-transit-regional: #0B3B36; --map-transit-stroke: #FFFFFF; --map-height-fog: rgba(90,100,108,0.18); ' +
   '--map-brush-paint: #B4532F; --map-brush-erase: #2B2A28; --map-painted-outline: #B4532F; ' +
   '--map-tl-ghost-planning: #DDBBD2; --map-tl-ghost-permit: #C58FB1; ' +
   '--map-tl-ghost-ready: #93527F; --map-tl-ghost-dying: #C62828; ' +
@@ -250,7 +250,7 @@ const DEFAULT_TOKENS_BODY =
   '--map-transit-access-3: #22595A; --map-transit-access-4: #2E7B78; ' +
   '--map-transit-access-5: #4BA59E; --map-transit-bus: #9BB5B0; ' +
   '--map-transit-rail: #7FD6C9; --map-transit-regional: #C2F0E8; ' +
-  '--map-transit-stroke: #111214; --map-height-fog: rgba(200,210,214,0.20); --map-brush-paint: #DB8B42; --map-brush-erase: #E8E4DC; ' +
+  '--map-transit-stroke: #111214; --map-height-fog: rgba(210,216,220,0.22); --map-brush-paint: #DB8B42; --map-brush-erase: #E8E4DC; ' +
   '--map-painted-outline: #DB8B42; --map-tl-ghost-planning: #623257; ' +
   '--map-tl-ghost-permit: #8A5679; --map-tl-ghost-ready: #C08AAE; ' +
   '--map-tl-ghost-dying: #FF8A80; --map-tl-bar-track: #2C2E31; ' +

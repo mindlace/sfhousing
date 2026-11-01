@@ -3,7 +3,8 @@ import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId } from '$lib/data/parcel';
 import type { GeneratedBuilding } from '$lib/generator';
-import type { TimelineUpdate } from '$lib/map/types';
+import type { FogGrid } from '$lib/map/fog/grid';
+import type { PackedCell, TimelineUpdate } from '$lib/map/types';
 import type { Target } from '$lib/scoreboard';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
@@ -96,7 +97,22 @@ type RowScenarioRequest =
   | { type: 'setLevers'; rev: Rev; levers: SimLevers }
   | { type: 'parcelSummary'; reqId: number; parcelId: ParcelId; day: Day; projectId?: string }
   | { type: 'resolveBrush'; reqId: number; query: BrushQuery } // plan 3 Task 5
-  | { type: 'brushCatalog'; reqId: number };
+  | { type: 'brushCatalog'; reqId: number }
+  | { type: 'lotOutlines'; reqId: number; lots: ParcelId[] }
+  | { type: 'previewBuildings'; reqId: number; lots: ParcelId[]; stories?: number }; // Task 6
+type RowPreviewResult =
+  | { ok: true; pack: PackedCell | null; built: number; missing: number }
+  | { ok: false; reason: 'no-session'; message: string };
+type RowLotOutlinesResult =
+  | {
+      ok: true;
+      lots: ParcelId[];
+      ringLot: Uint32Array;
+      starts: Uint32Array;
+      positions: Float64Array;
+      missing: number;
+    }
+  | { ok: false; reason: 'no-session'; message: string };
 type RowBrushLotsResult =
   | { ok: true; lots: ParcelId[]; points: Float64Array }
   | { ok: false; reason: 'no-session' | 'data-missing' | 'bad-request'; message: string };
@@ -121,6 +137,8 @@ type RowScenarioResponse =
   | { type: 'parcelSummary'; reqId: number; summary: ParcelSummary | null }
   | { type: 'brushLots'; reqId: number; result: RowBrushLotsResult } // plan 3 Task 5
   | { type: 'brushCatalog'; reqId: number; catalog: BrushCatalog | null }
+  | { type: 'lotOutlines'; reqId: number; result: RowLotOutlinesResult }
+  | { type: 'previewBuildings'; reqId: number; result: RowPreviewResult }
   | {
       type: 'levers';
       rev: Rev;
@@ -128,6 +146,7 @@ type RowScenarioResponse =
       done: number;
       total: number;
       failedCells: string[];
+      fog?: FogGrid; // map overlays Task 2: the revision's first resolving only
     } // plan 2 Task 12
   | {
       type: 'levers';
@@ -136,6 +155,7 @@ type RowScenarioResponse =
       lookups: LeverLookups;
       capacity: LeverCapacity;
       unknownLots: number;
+      fog: FogGrid; // map overlays Task 2
     };
 type RowWorkerRequest = SimRequest | RowScenarioRequest;
 

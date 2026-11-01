@@ -426,9 +426,10 @@
         map: live?.map ?? null,
         controller: live?.controller ?? null,
         timeline: live?.timeline ?? null,
-        pendingGenerated: pendingApplies.length
+        pendingGenerated: pendingApplies.length,
+        theme
       }),
-      { applyTimeline, setTime, setTimelineLookups }
+      { applyTimeline, setTime, setTimelineLookups, setOverlayLayers }
     )
   );
 
@@ -1336,6 +1337,7 @@
     >
       <p class="font-semibold">{lines[0]}</p>
       <p>{lines[1]}</p>
+      {#if lines[2]}<p>{lines[2]}</p>{/if}
     </div>
   {/if}
 
@@ -1347,6 +1349,7 @@
       <div class="min-w-0 flex-1">
         <p class="font-semibold">{lines[0]}</p>
         <p>{lines[1]}</p>
+        {#if lines[2]}<p>{lines[2]}</p>{/if}
       </div>
       <button
         type="button"

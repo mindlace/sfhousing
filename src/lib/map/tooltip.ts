@@ -1,6 +1,6 @@
 import type { ParcelId } from '$lib/data/parcel';
 import type { TypologyId } from '$lib/generator';
-import type { ChunkStatus, ParcelSummaryLike } from './types';
+import type { ChunkStatus, LotLimits, ParcelSummaryLike } from './types';
 
 const nf = new Intl.NumberFormat('en-US');
 const n = (v: number) => nf.format(v);
@@ -55,7 +55,21 @@ function generatedLines(
   ];
 }
 
-export function tooltipLines(hit: TooltipHit): [string, string] {
+function limitsLine(l: LotLimits): string {
+  if (l.protected) return `Allowed: ${l.allowed} · Protected`;
+  return l.buildable === null
+    ? `Allowed: ${l.allowed}`
+    : `Allowed: ${l.allowed} · Buildable here: ${l.buildable}`;
+}
+
+export function tooltipLines(hit: TooltipHit): [string, string] | [string, string, string] {
+  const lines = baseLines(hit);
+  if (hit.kind === 'existing' && hit.summary?.limits)
+    return [lines[0], lines[1], limitsLine(hit.summary.limits)];
+  return lines;
+}
+
+function baseLines(hit: TooltipHit): [string, string] {
   if (hit.kind === 'stop') return hit.lines;
   if (hit.kind === 'generated') return generatedLines(hit.parcelId, hit, hit.existingUnits);
   if (hit.parcelId === null) return ['Existing building', 'Not matched to a parcel'];

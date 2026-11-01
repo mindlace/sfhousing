@@ -139,7 +139,7 @@ describe('/s/[id] read-only view', () => {
     expect(document.querySelector('[data-header-status]')?.children).toHaveLength(0);
     // Nothing is autosaved from the view.
     expect(localStorage.getItem(SIM_KEY)).toBeNull();
-    // The shared brushes are still resolved (the lot dots and the summary's counts).
+    // The shared brushes are still resolved (the summary's counts).
     await expect.poll(() => StubWorker.all.at(-1)!.allOf('resolveBrush').length).toBeGreaterThan(0);
   });
 

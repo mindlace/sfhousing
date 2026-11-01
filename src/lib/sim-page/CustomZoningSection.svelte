@@ -13,7 +13,6 @@
   import BrushCard from './BrushCard.svelte';
   import ReadonlyFieldset from './ReadonlyFieldset.svelte';
   import { ERASE_HINT, SIM_TOOLS, type SimBrushTools, type SimTool } from './brush-tools.svelte';
-  import { LOT_COLORS, LOT_EDGE } from './lot-overlay';
   import type { LeverSync, PolicyStore } from './policy-store.svelte';
 
   interface Props {
@@ -30,9 +29,7 @@
 
   const uid = $props.id();
   const brush = $derived(tools.brush);
-  const KEY = [{ role: 'changed', label: 'Your zoning changes' }] as const;
   const allowText = $derived(`Allow ${brush.stories} ${brush.stories === 1 ? 'story' : 'stories'}`);
-  const rgb = ([r, g, b]: [number, number, number]) => `rgb(${r} ${g} ${b})`;
   const radios: Partial<Record<SimTool, HTMLButtonElement>> = $state({});
   let customList = $state<HTMLOListElement>();
 
@@ -100,35 +97,6 @@
 
     <RadiusPopover state={brush} inline />
   </ReadonlyFieldset>
-
-  <div>
-    <h4 id="{uid}-key" class="font-semibold">Map key</h4>
-    <ul aria-labelledby="{uid}-key" class="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-      {#each KEY as k (k.role)}
-        <li class="flex items-center gap-1.5">
-          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16">
-            <circle
-              cx="8"
-              cy="8"
-              r="6.5"
-              fill="none"
-              stroke={rgb(LOT_EDGE.light.halo)}
-              stroke-width="3"
-            />
-            <circle
-              cx="8"
-              cy="8"
-              r="5"
-              fill={rgb(LOT_COLORS.light[k.role])}
-              stroke={rgb(LOT_EDGE.light.outline)}
-              stroke-width="1.5"
-            />
-          </svg>
-          {k.label}
-        </li>
-      {/each}
-    </ul>
-  </div>
 
   {#if store.policy.custom.length > 0}
     <div>

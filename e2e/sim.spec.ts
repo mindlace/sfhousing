@@ -702,3 +702,235 @@ test('at 375 px with the timelines open: no horizontal scroll', async ({ isMobil
   const box = (await panel(page).boundingBox())!;
   expect(box.x + box.width).toBeLessThanOrEqual(375);
 });
+
+// ---- map overlays (plan 2, Task 4) ----------------------------------------------------------------
+
+const FOG_LAYER = 'sim-height-fog';
+const mapVisibility = (page: Page, id: string) =>
+  page.evaluate(
+    (l) => (window as Win).__sfhMap!.map!.getLayoutProperty(l, 'visibility') ?? 'visible',
+    id
+  );
+const deckIds = (page: Page) =>
+  page.evaluate(() => (window as Win).__sfhMap!.timelineSnapshot()?.layerIds ?? []);
+/** Hidden ones included: below md the View button waits in the header Menu. */
+const viewButtons = (page: Page): Locator =>
+  page.getByRole('banner').getByRole('button', { name: 'View', exact: true, includeHidden: true });
+
+/** Run from Setup (the phone sheet, modal, closed first), until the run is on. */
+async function pressRun(page: Page, isMobile: boolean): Promise<void> {
+  if (isMobile && (await panel(page).isVisible())) {
+    await panel(page).getByRole('button', { name: 'Close policy' }).click();
+  }
+  await page.getByRole('button', { name: 'Run', exact: true }).click();
+  await expect.poll(() => fzp(page, 'runPhase')).toBe('run');
+}
+
+test('Setup shows the fog and transit; Run hides them; Change policy brings them back', async ({
+  isMobile,
+  page
+}) => {
+  await gotoSim(page);
+  await expect.poll(() => deckIds(page), { timeout: 20_000 }).toContain(FOG_LAYER);
+  await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('visible');
+  await expect(await headerAction(page, 'View')).toBeVisible();
+
+  await pressRun(page, isMobile);
+  await expect.poll(() => deckIds(page)).not.toContain(FOG_LAYER);
+  await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('none');
+  await openHeaderMenu(page);
+  await expect(viewButtons(page)).toHaveCount(0);
+
+  await openPolicy(page);
+  await panel(page).getByRole('button', { name: 'Change policy' }).click();
+  await expect.poll(() => fzp(page, 'runPhase')).toBe('setup');
+  await expect.poll(() => deckIds(page)).toContain(FOG_LAYER);
+  await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('visible');
+  await expect(viewButtons(page)).toHaveCount(1);
+});
+
+test('the Height limits toggle removes the fog and survives a reload', async ({ page }) => {
+  await gotoSim(page);
+  await expect.poll(() => deckIds(page), { timeout: 20_000 }).toContain(FOG_LAYER);
+  await (await headerAction(page, 'View')).click();
+  await page.getByRole('checkbox', { name: 'Height limits' }).uncheck();
+  await expect.poll(() => deckIds(page)).not.toContain(FOG_LAYER);
+  await gotoSim(page);
+  await (await headerAction(page, 'View')).click();
+  await expect(page.getByRole('checkbox', { name: 'Height limits' })).not.toBeChecked();
+  expect(await deckIds(page)).not.toContain(FOG_LAYER);
+});
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`the open View menu on /sim has no axe violations (${scheme})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: scheme });
+    await gotoSim(page);
+    await (await headerAction(page, 'View')).click();
+    const group = page.getByRole('group', { name: 'Map layers' });
+    await expect(group).toBeVisible();
+    await expect(group.getByRole('checkbox', { name: 'Height limits' })).toBeVisible();
+    await expectNoA11yViolations(page, { include: ['header'] });
+  });
+}
+
+test('without transit: no transit.json request, no transit layers, View has only the fog', async ({
+  page
+}) => {
+  const transitAsked: string[] = [];
+  page.on('request', (r) => {
+    if (r.url().includes('/transit.json')) transitAsked.push(r.url());
+  });
+  // SSR reads the manifest server-side, so strip it where the intercept applies: the /sim load
+  // re-runs in the browser on client navigation (as e2e/transit.spec.ts does for /).
+  await page.route('**/data/fixture-0/manifest.json', async (route) => {
+    const res = await route.fetch();
+    const manifest = (await res.json()) as Record<string, unknown>;
+    delete manifest.transit;
+    await route.fulfill({ response: res, json: manifest });
+  });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(async () => {
+    await page.goto('/attribution');
+    await page.evaluate(() => ((window as Window & { __spa?: boolean }).__spa = true));
+    await openHeaderMenu(page);
+    await page.getByRole('banner').getByRole('link', { name: 'Simulate', exact: true }).click();
+    await waitReady(page);
+    expect(await page.evaluate(() => (window as Window & { __spa?: boolean }).__spa)).toBe(true);
+  }).toPass({ timeout: 40_000 });
+  await expect.poll(() => deckIds(page), { timeout: 20_000 }).toContain(FOG_LAYER);
+  const transitLayers = await page.evaluate(() =>
+    (window as Win)
+      .__sfhMap!.map!.getStyle()
+      .layers.map((l) => l.id)
+      .filter((id) => id.startsWith('transit'))
+  );
+  expect(transitLayers).toEqual([]);
+  expect(transitAsked).toEqual([]);
+  await (await headerAction(page, 'View')).click();
+  const group = page.getByRole('group', { name: 'Map layers' });
+  await expect(group.getByRole('checkbox')).toHaveCount(1);
+  await expect(group.getByRole('checkbox', { name: 'Height limits' })).toBeChecked();
+});
+
+/** The visible header items, left to right, with their boxes. */
+async function headerRow(page: Page): Promise<{ name: string; left: number; right: number }[]> {
+  return page.evaluate(() => {
+    const banner = document.querySelector('header')!;
+    const items = [
+      ...banner.querySelectorAll<HTMLElement>('a, button, [data-header-status] > *')
+    ].filter((el) => el.checkVisibility() && el.getBoundingClientRect().width > 0);
+    // Only the outermost of nested items (the save state's wrapper, not its chip as well).
+    return items
+      .filter((el) => !items.some((o) => o !== el && o.contains(el)))
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        return { name: (el.textContent ?? '').trim(), left: r.left, right: r.right };
+      })
+      .sort((a, b) => a.left - b.left);
+  });
+}
+
+async function expectHeaderFits(page: Page): Promise<number> {
+  await expectNoHorizontalScroll(page);
+  const banner = page.getByRole('banner');
+  const fit = await banner.evaluate((b) => ({ scroll: b.scrollWidth, client: b.clientWidth }));
+  expect(fit.scroll, 'the header overflows').toBeLessThanOrEqual(fit.client);
+  const row = await headerRow(page);
+  for (let i = 1; i < row.length; i++)
+    expect(row[i].left, `"${row[i].name}" overlaps "${row[i - 1].name}"`).toBeGreaterThanOrEqual(
+      row[i - 1].right - 0.5
+    );
+  const score = (await scoreBar(page).boundingBox())!;
+  return score.x + score.width / 2;
+}
+
+test('at 768 px the header fits in Setup and in Run, and the score stays put', async ({
+  isMobile,
+  page
+}) => {
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await gotoSim(page);
+  await expect(page.getByRole('banner').getByRole('button', { name: 'View' })).toBeVisible();
+  const setupCentre = await expectHeaderFits(page);
+  await pressRun(page, isMobile);
+  await expect(viewButtons(page)).toHaveCount(0);
+  const runCentre = await expectHeaderFits(page);
+  expect(Math.abs(runCentre - setupCentre)).toBeLessThanOrEqual(1);
+});
+
+// ---- outlines of painted lots while erasing (plan 2, Task 5) ---------------------------------------
+
+test('the eraser outlines painted lots, only while chosen', async ({ isMobile, page }) => {
+  const OUTLINE_LAYER = 'sim-painted-outline';
+  await gotoSim(page);
+  await openPolicy(page);
+  await expandSection(page, 'Custom zoning');
+  const tool = (name: string) => panel(page).getByRole('radio', { name, exact: true });
+  await chooseTool(page, isMobile, () => tool('Paint').click());
+  await strokeOnce(page, isMobile);
+  if (isMobile) {
+    await page.getByTestId('phone-tool-bar').getByRole('button', { name: 'Done' }).click();
+    await expect(panel(page)).toBeVisible();
+  }
+  await expect(customList(page)).toHaveCount(1);
+  expect(await deckIds(page)).not.toContain(OUTLINE_LAYER);
+
+  await chooseTool(page, isMobile, () => tool('Erase').click());
+  await expect.poll(() => deckIds(page)).toContain(OUTLINE_LAYER);
+
+  if (isMobile) {
+    await page.getByTestId('phone-tool-bar').getByRole('button', { name: 'Done' }).click();
+    await expect(panel(page)).toBeVisible();
+  } else {
+    await tool('Move').click();
+  }
+  await expect.poll(() => deckIds(page)).not.toContain(OUTLINE_LAYER);
+});
+
+// ---- paint feedback (plan 2, Task 6) ---------------------------------------------------------------
+
+test('a Paint stroke shows its buildings, then they fade', async ({ isMobile, page }) => {
+  const isFeedback = (ids: string[]) => ids.some((id) => id.startsWith('sim-feedback-'));
+  await gotoSim(page);
+  await openPolicy(page);
+  await expandSection(page, 'Custom zoning');
+  const tool = (name: string) => panel(page).getByRole('radio', { name, exact: true });
+  await chooseTool(page, isMobile, () => tool('Paint').click());
+  await strokeOnce(page, isMobile);
+  await expect.poll(async () => isFeedback(await deckIds(page)), { timeout: 10_000 }).toBe(true);
+  await expect.poll(async () => isFeedback(await deckIds(page)), { timeout: 4_000 }).toBe(false);
+
+  if (isMobile) {
+    await page.getByTestId('phone-tool-bar').getByRole('button', { name: 'Done' }).click();
+    await expect(panel(page)).toBeVisible();
+  }
+  await expect(customList(page)).toHaveCount(1);
+  // An Erase stroke never adds one: sample the layers through the stroke and after it.
+  await chooseTool(page, isMobile, () => tool('Erase').click());
+  const seen: boolean[] = [];
+  const sampling = (async () => {
+    for (let k = 0; k < 20; k++) {
+      seen.push(isFeedback(await deckIds(page)));
+      await page.waitForTimeout(100);
+    }
+  })();
+  await strokeOnce(page, isMobile);
+  await sampling;
+  expect(seen).not.toContain(true);
+});
+
+test('hovering a building shows its allowed and buildable stories', async ({ isMobile, page }) => {
+  // Hover tooltips need a mouse; the phone's tap card carries the same text.
+  test.skip(isMobile, 'chromium project only');
+  await gotoSim(page);
+  // 3512014: fixture-0's 60 m, 40-unit building (map.spec E3 hovers it on the editor)
+  const lot: [number, number] = [-122.4179679, 37.7601348];
+  await jumpAndIdle(page, { center: lot, zoom: 16, pitch: 0, bearing: 0 });
+  const [x, y] = await projectToPage(page, lot);
+  await page.mouse.move(x, y, { steps: 5 });
+  const tip = page.getByTestId('map-root').getByRole('tooltip');
+  await expect(tip).toContainText('Parcel 3512014');
+  await expect(tip).toContainText(/Allowed: \d+( · (Buildable here: \d+|Protected))?/, {
+    timeout: 10_000
+  });
+});

@@ -11,8 +11,9 @@
   import { chanceTable, typicalMonths } from '$lib/timelapse/model';
   import type { Calibration } from '$lib/timelapse/types';
   import type { SimMapHandle } from '$lib/map/types';
+  import type { ParcelId } from '$lib/data/parcel';
   import type { BrushCatalog, BrushQuery } from '$lib/sim/levers/brushes';
-  import type { BrushLotsResult } from '$lib/sim/scenario/types';
+  import type { BrushLotsResult, LotOutlinesResult, PreviewResult } from '$lib/sim/scenario/types';
   import type { LeverLookups } from '$lib/sim/levers/apply';
   import type { ChanceTable } from './card';
 
@@ -23,6 +24,9 @@
   export interface SimClientApi {
     resolveBrush(q: BrushQuery): Promise<BrushLotsResult>;
     brushCatalog(): Promise<BrushCatalog | null>;
+    lotOutlines(lots: ParcelId[]): Promise<LotOutlinesResult>;
+    /** Paint feedback: the buildings `lots` could hold (at `stories`, else the levers in force). */
+    previewBuildings(lots: ParcelId[], stories?: number): Promise<PreviewResult>;
     retryChunks(): void;
   }
 
@@ -56,6 +60,7 @@
 <script lang="ts">
   import { onMount, untrack, type Snippet } from 'svelte';
   import type { Manifest } from '$lib/data/manifest';
+  import type { FogGrid } from '$lib/map/fog/grid';
   import SimMap from '$lib/map/SimMap.svelte';
   import type { ChunkStatus, TimelinePick, TimelineUpdate } from '$lib/map/types';
   import { formatCount } from '$lib/scoreboard/format';
@@ -91,6 +96,7 @@
   import { HORIZON, monthIndex, monthStart } from './time';
   import TimeScrubber from './TimeScrubber.svelte';
   import type { FzpPhase, Speed } from './types';
+  import { HIDDEN_VIEW, type ViewPrefs } from '$lib/view/prefs';
 
   interface Props {
     manifest: Manifest | null;
@@ -114,6 +120,13 @@
     levers?: SimLevers;
     /** Every lever status change (/sim). */
     onlevers?: (s: LeverStatus) => void;
+    /**
+     * /sim: a kept lever revision's height-limit grid, once per rev: from its first `resolving`
+     * (stories are final before any yield recompute), else from its `current`.
+     */
+    onfog?: (g: FogGrid) => void;
+    /** /sim: a chunk response arrived (lots may have loaded; the eraser outlines ask again). */
+    onchunks?: () => void;
     /**
      * The client's brush requests on each new session (`initScenario`: mount, Retry), null on a
      * crash and on unmount. A call with the api means requests answered `no-session` before it
@@ -147,6 +160,13 @@
      * waits for them, and the score bar shows the pending state.
      */
     leversPending?: boolean;
+    /** The map's layer toggles (/sim: the viewer's in Setup, all off in a run). Default all off. */
+    view?: ViewPrefs;
+    /**
+     * The manifest SimMap renders (null: none yet), once during setup and again whenever a Retry
+     * replaces it, so the page can gate manifest-dependent UI (the View rows) on it.
+     */
+    onmanifest?: (m: Manifest | null) => void;
   }
 
   let {
@@ -162,6 +182,7 @@
     createWorker = spawnSimWorker,
     levers = undefined,
     onlevers = undefined,
+    onfog = undefined,
     onclient = undefined,
     onmapready = undefined,
     onphase = undefined,
@@ -171,11 +192,15 @@
     notices = undefined,
     runPhase = undefined,
     onrun = undefined,
-    leversPending = false
+    leversPending = false,
+    view = HIDDEN_VIEW,
+    onmanifest = undefined,
+    onchunks = undefined
   }: Props = $props();
 
   // The props seed the page once; Retry replaces the manifest and calibration in place.
   let manifest = $state.raw<Manifest | null>(untrack(() => initialManifest));
+  untrack(() => onmanifest?.(manifest));
   let calibration = $state.raw<Calibration | null>(untrack(() => initialCalibration));
   /** The main-thread data is missing or the worker rejected the manifest: Retry reloads it. */
   /** The worker rejected the mounted manifest: Retry must send the reloaded object. */
@@ -308,6 +333,13 @@
     answered: boolean;
   } | null = null;
 
+  /**
+   * The rev whose fog `onfog` last had. The worker sends one grid per rev twice (its first
+   * `resolving` and its `current`, identical), so one call per rev; reset per session, as a new
+   * client may count revs again.
+   */
+  let fogRev: number | null = null;
+
   function setLeverState(next: LeverStatusState): void {
     if (next === leverState) return;
     const changed = next.status !== leverState.status;
@@ -329,6 +361,7 @@
       leversByRev.push({ rev, levers: l });
       setLeverState(leversSession(leverState, rev));
     }
+    fogRev = null;
     if (clientApi) onclient?.(clientApi);
     const keep = next !== null && next === seed;
     latest = {
@@ -603,12 +636,17 @@
         leverLookups = m.lookups;
         pushLookups();
       }
+      if (m.fog && m.rev !== fogRev) {
+        fogRev = m.rev;
+        onfog?.(m.fog);
+      }
     },
     onChunks(c) {
       if (dead) return;
       for (const [cellId, s] of Object.entries(c.status)) setChunkStatus(cellId, s);
       cardReq.retryIfNotLoaded(day);
       tipReq.retryIfNotLoaded(day);
+      onchunks?.();
     },
     onError(e) {
       if (dead) return;
@@ -676,6 +714,7 @@
           fresh.manifest.datasetVersion !== manifest.datasetVersion
         ) {
           manifest = fresh.manifest;
+          onmanifest?.(manifest);
         }
         manifestRejected = false;
         if (fresh.calibration !== calibration) {
@@ -722,7 +761,8 @@
           eligible: s.eligible,
           ...(s.underwater ? { underwater: true } : {}),
           existingUnits: s.existingUnits,
-          generated: null
+          generated: null,
+          ...(s.limits ? { limits: s.limits } : {})
         }
     );
   }
@@ -741,6 +781,8 @@
       clientApi = {
         resolveBrush: (q) => c.resolveBrush(q),
         brushCatalog: () => c.brushCatalog(),
+        lotOutlines: (lots) => c.lotOutlines(lots),
+        previewBuildings: (lots, stories) => c.previewBuildings(lots, stories),
         retryChunks: () => c.retryChunks()
       };
       if (phase === 'loading') startScenario({ seed: urlSeed });
@@ -791,7 +833,7 @@
       disabled={!canReroll}
       aria-busy={rerollBusy}
       onclick={anotherFuture}
-      class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:text-gray-700 dark:border-gray-600 dark:disabled:text-gray-400 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+      class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:text-gray-700 md:max-lg:px-1 dark:border-gray-600 dark:disabled:text-gray-400 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
     >
       Another future
     </button>
@@ -837,7 +879,7 @@
       {requestParcelSummary}
       onRetryChunks={() => client?.retryChunks()}
       onready={onMapReady}
-      view={{ transitStops: false, transitAccess: false }}
+      {view}
       timelinePick={onPick}
     />
   {:else}

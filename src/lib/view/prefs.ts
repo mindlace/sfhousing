@@ -1,12 +1,26 @@
-// Per-viewer map layer toggles (transit spec T6, §6.3). Best-effort persistence.
+// Per-viewer map layer toggles (transit spec T6, §6.3; the height fog, sim-runs plan 2 Task 4).
+// One record shared by / and /sim, so a viewer's transit choice follows them between modes; / never
+// shows or uses `heightFog` and writes back the value it read. Best-effort persistence.
 
 export interface ViewPrefs {
   transitStops: boolean;
   transitAccess: boolean;
+  /** /sim only: the height-limit fog in Setup. */
+  heightFog: boolean;
 }
 
 export const VIEW_KEY = 'sfhousing:view';
-export const DEFAULT_VIEW: ViewPrefs = { transitStops: false, transitAccess: true };
+export const DEFAULT_VIEW: ViewPrefs = {
+  transitStops: false,
+  transitAccess: true,
+  heightFog: true
+};
+/** Every layer off: FzpMode's default, and what /sim's map gets during a run. */
+export const HIDDEN_VIEW: ViewPrefs = {
+  transitStops: false,
+  transitAccess: false,
+  heightFog: false
+};
 
 function defaultStorage(): Storage | null {
   try {
@@ -26,7 +40,8 @@ export function readViewPrefs(
     const bool = (x: unknown, d: boolean) => (typeof x === 'boolean' ? x : d);
     return {
       transitStops: bool(v?.transitStops, DEFAULT_VIEW.transitStops),
-      transitAccess: bool(v?.transitAccess, DEFAULT_VIEW.transitAccess)
+      transitAccess: bool(v?.transitAccess, DEFAULT_VIEW.transitAccess),
+      heightFog: bool(v?.heightFog, DEFAULT_VIEW.heightFog)
     };
   } catch {
     return { ...DEFAULT_VIEW };
@@ -40,7 +55,11 @@ export function writeViewPrefs(
   try {
     storage?.setItem(
       VIEW_KEY,
-      JSON.stringify({ transitStops: v.transitStops, transitAccess: v.transitAccess })
+      JSON.stringify({
+        transitStops: v.transitStops,
+        transitAccess: v.transitAccess,
+        heightFog: v.heightFog
+      })
     );
   } catch {
     // storage unavailable or full: persistence is best-effort

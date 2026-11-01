@@ -5,7 +5,8 @@ import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId } from '$lib/data/parcel';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import type { GeneratedBuilding } from '$lib/generator';
-import type { TimelineUpdate } from '$lib/map/types';
+import type { FogGrid } from '$lib/map/fog/grid';
+import type { PackedCell, TimelineUpdate } from '$lib/map/types';
 import type { Target } from '$lib/scoreboard';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
@@ -85,7 +86,37 @@ export type ScenarioRequest =
     }
   // Brushes (plan 3): answered only in a session initialised with levers, once it has loaded.
   | { type: 'resolveBrush'; reqId: number; query: BrushQuery }
-  | { type: 'brushCatalog'; reqId: number };
+  | { type: 'brushCatalog'; reqId: number }
+  // Map overlays (plan 2 Task 5): the ring outlines of lots, answered like `resolveBrush`.
+  | { type: 'lotOutlines'; reqId: number; lots: ParcelId[] }
+  // Paint feedback (plan 2 Task 6): `stories` given = a custom stroke at that height; absent =
+  // the levers in force (a rule). The page sends the lots nearest first.
+  | { type: 'previewBuildings'; reqId: number; lots: ParcelId[]; stories?: number };
+/**
+ * The buildings a preview's lots could hold, packed as one cell (`'preview'`), or null when none
+ * builds. `built` counts the lots packed; `missing` the requested lots (within the cap) whose
+ * record is not loaded. `no-session`: no session with levers (or it ended before answering).
+ */
+export type PreviewResult =
+  | { ok: true; pack: PackedCell | null; built: number; missing: number }
+  | { ok: false; reason: 'no-session'; message: string };
+/**
+ * The outlines of requested lots, for the dashed overlay while the eraser is chosen. `positions`
+ * holds lng/lat pairs of every ring of every loaded lot (transferred); `starts` the vertex index
+ * where each ring starts (rings + 1 entries); `ringLot` each ring's index into `lots` (the lots
+ * answered, in request order). `missing` counts requested lots whose record is not loaded.
+ * `no-session`: no session with levers (or it ended before answering).
+ */
+export type LotOutlinesResult =
+  | {
+      ok: true;
+      lots: ParcelId[];
+      ringLot: Uint32Array;
+      starts: Uint32Array;
+      positions: Float64Array;
+      missing: number;
+    }
+  | { ok: false; reason: 'no-session'; message: string };
 /**
  * A brush's lots: `points` holds each lot's label point (lng, lat), transferred. `no-session`: no
  * session with levers (or it ended before answering); `data-missing`: a file the query needs is
@@ -115,12 +146,15 @@ export type ScenarioResponse =
   | { type: 'parcelSummary'; reqId: number; summary: ParcelSummary | null }
   | { type: 'brushLots'; reqId: number; result: BrushLotsResult }
   | { type: 'brushCatalog'; reqId: number; catalog: BrushCatalog | null }
+  | { type: 'lotOutlines'; reqId: number; result: LotOutlinesResult }
+  | { type: 'previewBuildings'; reqId: number; result: PreviewResult }
   | LeversResponse;
 /**
  * A lever revision's status (plan 2): `rev` is the `initScenario` or `setLevers` that named the
  * levers. `resolving` while touched-lot yields are recomputed (`failedCells`: needed chunks that
  * failed to load; `retryChunks` re-wants them); `current` once the levers are in force, before
- * any timeline computed on them. A superseded revision never gets `current`.
+ * any timeline computed on them. A superseded revision never gets `current`. `fog` (map overlays
+ * plan Task 2) is the revision's height-limit grid: on its first `resolving`, and on `current`.
  */
 export type LeversResponse =
   | {
@@ -130,6 +164,8 @@ export type LeversResponse =
       done: number;
       total: number;
       failedCells: string[];
+      /** On the revision's first `resolving` only: its stories are final before any recompute. */
+      fog?: FogGrid;
     }
   | {
       type: 'levers';
@@ -138,6 +174,7 @@ export type LeversResponse =
       lookups: LeverLookups;
       capacity: LeverCapacity;
       unknownLots: number;
+      fog: FogGrid; // the height-limit grid of the levers in force; `heightM.buffer` transferred
     };
 export type WorkerRequest = SimRequest | ScenarioRequest;
 export type ProjectCard = {

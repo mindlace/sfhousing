@@ -2,7 +2,7 @@
 // 10 s pan as map-pan.bench.ts over downtown with a 30,000-project synthetic whole-city timeline
 // loaded, while `setTime` moves every frame. Reports rAF frame-time p50/p95 and the demolish
 // pump's largest per-frame operation count; passes at p95 ≤ 16.7 ms.
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import type { SfhBrushDebug } from '../../src/lib/brush/debug';
 import type { SfhMapDebug } from '../../src/lib/map/debug';
 import { BAR_MS, pct, verdict } from './bench-util';
@@ -27,13 +27,26 @@ const PLAYBACK_DAYS_PER_S = 1095.7;
 /** The drag case sweeps the full range once in this long, then back. */
 const DRAG_SWEEP_MS = 2000;
 
-/** `daysPerS` is the sweep speed: the day is a triangle wave over [DAY_START, DAY_END]. */
+/**
+ * `daysPerS` is the sweep speed: the day is a triangle wave over [DAY_START, DAY_END]. `fog` adds
+ * the whole-city synthetic height fog (`loadSyntheticFog(1)`) once the timeline is in.
+ */
 const CASES = [
-  { name: 'playback', daysPerS: PLAYBACK_DAYS_PER_S },
-  { name: 'drag', daysPerS: (DAY_END - DAY_START) / (DRAG_SWEEP_MS / 1000) }
+  { name: 'playback', daysPerS: PLAYBACK_DAYS_PER_S, fog: false },
+  { name: 'drag', daysPerS: (DAY_END - DAY_START) / (DRAG_SWEEP_MS / 1000), fog: false },
+  { name: 'playback + fog', daysPerS: PLAYBACK_DAYS_PER_S, fog: true }
 ] as const;
 
-for (const { name, daysPerS } of CASES)
+/** A fog case's synthetic height fog (the overlay slot), installed; its cell count, else 0. */
+async function loadFog(page: Page, fog: boolean): Promise<number> {
+  if (!fog) return 0;
+  const { cells } = await page.evaluate(() => (window as Win).__sfhMap!.loadSyntheticFog(1));
+  if (!(cells > 10_000)) throw new Error(`synthetic fog has only ${cells} cells`);
+  return cells;
+}
+const fogField = (fog: boolean, cells: number) => (fog ? `fogCells=${cells} ` : '');
+
+for (const { name, daysPerS, fog } of CASES)
   test(`bench:map: timeline ${name}`, async ({ page }) => {
     await page.goto('/');
     await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
@@ -66,6 +79,7 @@ for (const { name, daysPerS } of CASES)
       cells,
       { timeout: 120_000 }
     );
+    const fogCells = await loadFog(page, fog);
     await page.evaluate((d) => (window as Win).__sfhMap!.setTime(d), DAY_START);
 
     await page.evaluate(
@@ -123,7 +137,8 @@ for (const { name, daysPerS } of CASES)
     const p95 = pct(sorted, 95);
     const line =
       `bench:map timeline=${name} frames=${deltas.length} projects=${projects} ` +
-      `p50=${p50.toFixed(1)}ms parts=${after.parts} p95=${p95.toFixed(1)}ms ` +
+      `p50=${p50.toFixed(1)}ms parts=${after.parts} ${fogField(fog, fogCells)}` +
+      `p95=${p95.toFixed(1)}ms ` +
       `pumpMaxOps=${after.pumpMaxOps} (catch-up ${catchUpOps}) bar=${BAR_MS}ms ${verdict(p95)} ` +
       `dpr=${dpr} renderer="${renderer}"`;
     console.log(line);

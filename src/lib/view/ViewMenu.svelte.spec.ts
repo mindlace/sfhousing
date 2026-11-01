@@ -28,7 +28,45 @@ describe('ViewMenu', () => {
     render(ViewMenu, { props: { view: DEFAULT_VIEW, theme: 'light', onchange } });
     await button().click();
     await page.getByRole('checkbox', { name: 'Transit capacity within a 10-minute walk' }).click();
-    expect(onchange).toHaveBeenCalledWith({ transitStops: false, transitAccess: false });
+    expect(onchange).toHaveBeenCalledWith({
+      transitStops: false,
+      transitAccess: false,
+      heightFog: true
+    });
+  });
+
+  it("rows: the default menu has no fog row; /sim's lists all three in order", async () => {
+    const a = await render(ViewMenu, { view: DEFAULT_VIEW, theme: 'light', onchange: vi.fn() });
+    await page.getByRole('button', { name: 'View' }).click();
+    expect(page.getByRole('checkbox', { name: 'Height limits' }).query()).toBeNull();
+    a.unmount();
+    render(ViewMenu, {
+      view: DEFAULT_VIEW,
+      theme: 'light',
+      onchange: vi.fn(),
+      rows: ['transitStops', 'transitAccess', 'heightFog']
+    });
+    await page.getByRole('button', { name: 'View' }).click();
+    const names = page
+      .getByRole('checkbox')
+      .elements()
+      .map((e) => e.closest('label')!.textContent!.trim());
+    expect(names).toEqual([
+      'Transit stops',
+      'Transit capacity within a 10-minute walk',
+      'Height limits'
+    ]);
+    await expect
+      .element(page.getByText('A haze at the height zoning allows. Room under it is room to grow.'))
+      .toBeVisible();
+  });
+
+  it('the fog row toggles heightFog only', async () => {
+    const onchange = vi.fn();
+    render(ViewMenu, { view: DEFAULT_VIEW, theme: 'light', onchange, rows: ['heightFog'] });
+    await page.getByRole('button', { name: 'View' }).click();
+    await page.getByRole('checkbox', { name: 'Height limits' }).click();
+    expect(onchange).toHaveBeenCalledWith({ ...DEFAULT_VIEW, heightFog: false });
   });
 
   it('shows both legends and the caption', async () => {

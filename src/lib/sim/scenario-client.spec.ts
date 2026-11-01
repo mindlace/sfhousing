@@ -316,6 +316,47 @@ describe('ScenarioClient', () => {
       await expect(c).resolves.toBeNull();
     });
 
+    it('posts lotOutlines with a request id and resolves its answer; no-session after dispose', async () => {
+      const { w, client } = setup();
+      const a = client.lotOutlines(['x']);
+      expect(w.posts).toEqual([{ type: 'lotOutlines', reqId: 1, lots: ['x'] }]);
+      const result = {
+        ok: true as const,
+        lots: ['x'],
+        ringLot: Uint32Array.from([0]),
+        starts: Uint32Array.from([0, 1]),
+        positions: Float64Array.from([1, 2]),
+        missing: 0
+      };
+      w.emit({ type: 'lotOutlines', reqId: 99, result }); // ignored
+      w.emit({ type: 'lotOutlines', reqId: 1, result });
+      await expect(a).resolves.toEqual(result);
+      const b = client.lotOutlines(['y']);
+      client.dispose();
+      await expect(b).resolves.toMatchObject({ ok: false, reason: 'no-session' });
+      await expect(client.lotOutlines(['y'])).resolves.toMatchObject({ reason: 'no-session' });
+    });
+
+    it('posts previewBuildings (stories only when given) and resolves its answer; no-session after a crash', async () => {
+      const { w, client } = setup();
+      const a = client.previewBuildings(['x'], 8);
+      const r = client.previewBuildings(['y']);
+      expect(w.posts).toEqual([
+        { type: 'previewBuildings', reqId: 1, lots: ['x'], stories: 8 },
+        { type: 'previewBuildings', reqId: 2, lots: ['y'] }
+      ]);
+      const result = { ok: true as const, pack: null, built: 0, missing: 1 };
+      w.emit({ type: 'previewBuildings', reqId: 99, result }); // ignored
+      w.emit({ type: 'previewBuildings', reqId: 1, result });
+      await expect(a).resolves.toEqual(result);
+      client.restart(fakeWorker());
+      await expect(r).resolves.toMatchObject({ ok: false, reason: 'no-session' });
+      client.dispose();
+      await expect(client.previewBuildings(['z'], 4)).resolves.toMatchObject({
+        reason: 'no-session'
+      });
+    });
+
     it('restart and dispose resolve pending brush requests with no-session', async () => {
       const { client } = setup();
       const a = client.resolveBrush(q);

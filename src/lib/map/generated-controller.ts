@@ -111,6 +111,44 @@ function accessorsFor(pack: PackedCell, theme: Theme) {
   return { data: c.data, getElevation: c.getElevation, getFillColor: fill };
 }
 
+/** Any deck layer class taking a props object: `@deck.gl/layers`' SolidPolygonLayer, a fake. */
+export type SolidPolygonLayerCtor = new (props: Record<string, unknown>) => Layer;
+
+/**
+ * One packed cell as an extruded deck layer, coloured per part by typology and appearance (the
+ * generated buildings' look). The controller's layers and /sim's paint feedback share it. Props
+ * not given are left to deck's defaults; `autoHighlight` uses the theme's highlight token.
+ */
+export function packedCellLayer(
+  SolidPolygonLayer: SolidPolygonLayerCtor,
+  id: string,
+  pack: PackedCell,
+  theme: Theme,
+  opts: {
+    opacity?: number;
+    pickable?: boolean;
+    autoHighlight?: boolean;
+    beforeId?: string;
+    elevationScale?: number;
+  } = {}
+): Layer {
+  return new SolidPolygonLayer({
+    id,
+    ...accessorsFor(pack, theme),
+    extruded: true,
+    _normalize: false,
+    _windingOrder: 'CW',
+    elevationScale: opts.elevationScale ?? 1,
+    updateTriggers: { getFillColor: theme },
+    pickable: opts.pickable ?? false,
+    ...(opts.autoHighlight
+      ? { autoHighlight: true, highlightColor: hexToRgba(TOKENS[theme].highlight) }
+      : {}),
+    ...(opts.opacity === undefined ? {} : { opacity: opts.opacity }),
+    ...(opts.beforeId ? { beforeId: opts.beforeId } : {})
+  });
+}
+
 const RESERVED = /^(generated|rising|timeline)-/;
 
 // sfh-slice measures feed the C5 budget tests (dev) and e2e builds; production builds skip
@@ -385,20 +423,12 @@ export class GeneratedController {
   }
 
   private makeLayer(id: string, pack: PackedCell, elevationScale: number): Layer {
-    const theme = this.theme;
-    return new this.deps.SolidPolygonLayer({
-      id,
-      ...accessorsFor(pack, theme),
-      extruded: true,
-      _normalize: false,
-      _windingOrder: 'CW',
+    return packedCellLayer(this.deps.SolidPolygonLayer, id, pack, this.theme, {
       elevationScale,
-      updateTriggers: { getFillColor: theme },
       pickable: true,
       autoHighlight: true,
-      highlightColor: hexToRgba(TOKENS[theme].highlight),
       ...(this.labelBeforeId ? { beforeId: this.labelBeforeId } : {})
-    } as ConstructorParameters<ControllerDeps['SolidPolygonLayer']>[0]) as unknown as Layer;
+    });
   }
 
   /** Settled by cellId, then rising by start order, then overlay layers. One setLayers call. */

@@ -19,6 +19,11 @@ import { replaceStateCalls } from '../../test-stubs/app/navigation';
 import type SimPage from './SimPage.svelte';
 import { DEFAULT_POLICY, SIM_CODEC, SIM_KEY, type SimDoc } from './sim-doc';
 import { resolvePreset } from './timing';
+import type { FogGrid } from '$lib/map/fog/grid';
+import { FOG_LAYER_ID } from '$lib/map/fog/fog-layer';
+import { DEFAULT_VIEW, HIDDEN_VIEW, VIEW_KEY } from '$lib/view/prefs';
+import type { PackedCell } from '$lib/map/types';
+import { chanceTable, typicalMonths } from '$lib/timelapse/model';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 const workers = vi.hoisted(() => [] as import('$lib/fzp/test/fake-worker').FakeScenarioWorker[]);
@@ -813,5 +818,315 @@ describe('SimPage score comparison (spec §5)', () => {
     await expect.element(await comparison()).toHaveTextContent(/^Your policy added .* vs FZP$/);
     w.emit(timelineMsg(w.lastOf('setLevers')!.rev, 7));
     await expect.element(await comparison()).toHaveTextContent(/^FZP added .* vs no FZP$/);
+  });
+});
+
+describe('SimPage map overlays (plan 2, Task 4)', () => {
+  const run = () => page.getByRole('button', { name: 'Run', exact: true });
+  const viewButton = () => page.getByRole('button', { name: 'View', exact: true });
+  /** A one-cell fog grid. */
+  const GRID: FogGrid = {
+    west: -122.5,
+    south: 37.7,
+    dLng: 0.001,
+    dLat: 0.001,
+    cols: 1,
+    rows: 1,
+    heightM: new Float32Array([10, 10, 10, 10])
+  };
+  /** The ids the map's overlay last got. */
+  const overlayIds = () =>
+    ((callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as { id: string }[]).map((l) => l.id);
+  /** The worker's first `resolving` for the session's levers, carrying the fog. */
+  function postFog(g: FogGrid = GRID): void {
+    const w = workers.at(-1)!;
+    const rev = w.lastOf('initScenario')!.rev;
+    w.emit({ type: 'levers', rev, phase: 'resolving', done: 0, total: 1, failedCells: [], fog: g });
+  }
+
+  it('the View menu and the fog show in Setup only', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    postFog();
+    await expect.element(viewButton()).toBeVisible();
+    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
+    expect(stub.props.view).toEqual(DEFAULT_VIEW);
+    await run().click();
+    expect(viewButton().query()).toBeNull();
+    await expect.poll(() => overlayIds()).not.toContain(FOG_LAYER_ID);
+    expect(stub.props.view).toEqual(HIDDEN_VIEW);
+  });
+
+  it('toggles survive a run', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    postFog();
+    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
+    await viewButton().click();
+    await page.getByRole('checkbox', { name: 'Height limits' }).click();
+    await page.getByRole('checkbox', { name: 'Transit stops' }).click();
+    await expect.poll(() => overlayIds()).not.toContain(FOG_LAYER_ID);
+    await run().click();
+    await page.getByRole('button', { name: 'Change policy' }).click();
+    await expect.element(viewButton()).toBeVisible();
+    expect(stub.props.view).toEqual({ ...DEFAULT_VIEW, heightFog: false, transitStops: true });
+    expect(overlayIds()).not.toContain(FOG_LAYER_ID);
+  });
+
+  it('without transit the menu has only the fog row', async () => {
+    await page.viewport(1024, 768);
+    await setup({ manifest: { ...manifest, transit: undefined } });
+    await toReady();
+    await viewButton().click();
+    expect(page.getByRole('checkbox').elements()).toHaveLength(1);
+    await expect.element(page.getByRole('checkbox', { name: 'Height limits' })).toBeChecked();
+  });
+
+  it('the rows follow the manifest the map renders: a Retry after a failed load brings transit', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await page.viewport(1024, 768);
+    await setup({ manifest: null, manifestError: true });
+    const retry = page.getByRole('button', { name: 'Retry', exact: true });
+    await expect.element(retry).toBeVisible();
+    await viewButton().click();
+    const rows = () =>
+      page.getByRole('group', { name: 'Map layers' }).getByRole('checkbox').elements();
+    expect(rows()).toHaveLength(1);
+    await viewButton().click(); // close
+    await retry.click();
+    await toReady();
+    await viewButton().click();
+    await expect.element(page.getByRole('checkbox', { name: 'Transit stops' })).toBeVisible();
+    expect(rows()).toHaveLength(3);
+  });
+
+  it('the prefs are read from and written to the page storage', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    const mem = new MemoryStorage();
+    mem.setItem(VIEW_KEY, JSON.stringify({ transitStops: true, transitAccess: true }));
+    await setup({ storage: () => mem });
+    await toReady();
+    await expect
+      .poll(() => stub.props.view)
+      .toEqual({ transitStops: true, transitAccess: true, heightFog: true });
+    await viewButton().click();
+    await page.getByRole('checkbox', { name: 'Height limits' }).click();
+    await expect
+      .poll(() => JSON.parse(mem.getItem(VIEW_KEY) ?? '{}'))
+      .toEqual({ transitStops: true, transitAccess: true, heightFog: false });
+  });
+
+  it('a stored heightFog: false draws no fog until it is turned on', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    const mem = new MemoryStorage();
+    mem.setItem(VIEW_KEY, JSON.stringify({ ...DEFAULT_VIEW, heightFog: false }));
+    await setup({ storage: () => mem });
+    await toReady();
+    postFog();
+    await viewButton().click();
+    const fog = page.getByRole('checkbox', { name: 'Height limits' });
+    await expect.element(fog).not.toBeChecked();
+    expect(overlayIds()).not.toContain(FOG_LAYER_ID);
+    await fog.click();
+    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
+  });
+
+  it('the view (/s/:id) shows the View menu and the fog in Setup', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY });
+    await toReady();
+    postFog();
+    await expect.element(viewButton()).toBeVisible();
+    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
+    await run().click();
+    expect(viewButton().query()).toBeNull();
+    await expect.poll(() => overlayIds()).not.toContain(FOG_LAYER_ID);
+    await page.getByRole('button', { name: 'Back to start' }).click();
+    await expect.element(viewButton()).toBeVisible();
+    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
+  });
+});
+
+describe('SimPage paint feedback (plan 2, Task 6)', () => {
+  const run = () => page.getByRole('button', { name: 'Run', exact: true });
+  const wait = (ms: number) => new Promise((res) => setTimeout(res, ms));
+  const feedbackIds = () =>
+    ((callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as { id: string }[])
+      .map((l) => l.id)
+      .filter((id) => id.startsWith('sim-feedback-'));
+  /** One stroke across the stub map's canvas with the current tool. */
+  function stroke(): void {
+    const canvas = stub.map.getCanvas();
+    const ev = (type: string, x: number) =>
+      canvas.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: x,
+          clientY: 10,
+          pointerId: 1,
+          pointerType: 'mouse',
+          button: type === 'pointermove' ? -1 : 0,
+          isPrimary: true
+        })
+      );
+    ev('pointerdown', 10);
+    for (let x = 20; x <= 80; x += 10) ev('pointermove', x);
+    ev('pointerup', 80);
+  }
+  /** A one-part pack: a small box at the map's centre. */
+  function pack(): PackedCell {
+    const c = stub.map.getCenter();
+    const d = 1e-4;
+    const ring = [c.lng, c.lat, c.lng, c.lat + d, c.lng + d, c.lat + d, c.lng + d, c.lat];
+    return {
+      cellId: 'preview',
+      parcelIds: ['P0'],
+      parcelMeta: Uint32Array.from([4, 1, 3, 0]),
+      partCount: 1,
+      startIndices: Uint32Array.from([0, 5]),
+      positions: Float64Array.from([...ring, c.lng, c.lat]),
+      partTopM: Float32Array.from([10]),
+      partSlot: Uint32Array.from([0]),
+      partAppearance: Uint8Array.from([0]),
+      partTypology: Uint8Array.from([0])
+    };
+  }
+  /** Paints one stroke and answers its lots: P0 at the centre, FAR out of view. */
+  async function paintAndAnswer() {
+    const w = workers.at(-1)!;
+    await page.getByRole('radio', { name: 'Paint' }).click();
+    stroke();
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(1);
+    const c = stub.map.getCenter();
+    w.emit({
+      type: 'brushLots',
+      reqId: w.lastOf('resolveBrush')!.reqId,
+      result: { ok: true, lots: ['P0', 'FAR'], points: Float64Array.from([c.lng, c.lat, 0, 0]) }
+    });
+    await expect.poll(() => w.allOf('previewBuildings').length).toBe(1);
+    return w;
+  }
+
+  it('a Paint stroke asks for its lots in view at its stories and shows the answer', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    const w = await paintAndAnswer();
+    // the stroke's own query is the new brush's: no second resolveBrush
+    expect(w.allOf('resolveBrush')).toHaveLength(1);
+    const req = w.lastOf('previewBuildings')!;
+    expect(req).toMatchObject({ lots: ['P0'], stories: expect.any(Number) });
+    w.emit({
+      type: 'previewBuildings',
+      reqId: req.reqId,
+      result: { ok: true, pack: pack(), built: 1, missing: 0 }
+    });
+    await expect.poll(() => feedbackIds()).toEqual(['sim-feedback-1']);
+    await expect.poll(() => feedbackIds(), { timeout: 4000 }).toEqual([]);
+  });
+
+  it('a run drops an answer still on its way', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    const w = await paintAndAnswer();
+    await run().click();
+    w.emit({
+      type: 'previewBuildings',
+      reqId: w.lastOf('previewBuildings')!.reqId,
+      result: { ok: true, pack: pack(), built: 1, missing: 0 }
+    });
+    await wait(100);
+    expect(feedbackIds()).toEqual([]);
+  });
+  /** The worker's `resolving` then `current` for `rev`. */
+  function leversCurrent(rev: number): void {
+    const w = workers.at(-1)!;
+    const one = () => ({
+      chance: chanceTable(calibration),
+      typicalMonths: typicalMonths(calibration)
+    });
+    w.emit({ type: 'levers', rev, phase: 'resolving', done: 0, total: 0, failedCells: [] });
+    w.emit({
+      type: 'levers',
+      rev,
+      phase: 'current',
+      lookups: { inFlight: one(), fresh: one() },
+      capacity: { plan: 10, withoutProtections: 10, protectedLots: 0 },
+      unknownLots: 0,
+      fog: { west: 0, south: 0, dLng: 1, dLat: 1, cols: 1, rows: 1, heightM: new Float32Array(4) }
+    });
+  }
+
+  /** Saves a new transit rule through its form and answers its lots: P0 in view, FAR not. */
+  async function saveRule() {
+    const w = workers.at(-1)!;
+    await expect.poll(() => w.lastOf('brushCatalog')).toBeTruthy();
+    w.emit({
+      type: 'brushCatalog',
+      reqId: w.lastOf('brushCatalog')!.reqId,
+      catalog: testCatalog()
+    });
+    await page.getByRole('button', { name: 'Add a rule' }).click();
+    await page.getByRole('button', { name: 'Transit' }).click();
+    await page.getByRole('checkbox', { name: /^Regional rail/ }).click();
+    await page.getByRole('button', { name: 'Save rule' }).click();
+    await expect.poll(() => w.allOf('resolveBrush').length).toBeGreaterThan(0);
+    const c = stub.map.getCenter();
+    for (const q of w.allOf('resolveBrush'))
+      w.emit({
+        type: 'brushLots',
+        reqId: q.reqId,
+        result: { ok: true, lots: ['P0', 'FAR'], points: Float64Array.from([c.lng, c.lat, 0, 0]) }
+      });
+    await expect.poll(() => w.allOf('setLevers').length, { timeout: 2000 }).toBe(1);
+    return w;
+  }
+
+  it('a saved rule shows its lots in view once its revision is current, at the levers', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    const w = await saveRule();
+    const rev = w.lastOf('setLevers')!.rev;
+    await wait(50);
+    expect(w.allOf('previewBuildings')).toHaveLength(0); // not before its current
+    leversCurrent(rev);
+    await expect.poll(() => w.allOf('previewBuildings').length).toBe(1);
+    const req = w.lastOf('previewBuildings')!;
+    expect(req.lots).toEqual(['P0']);
+    expect(req).not.toHaveProperty('stories');
+    leversCurrent(rev + 1); // fires once
+    await wait(50);
+    expect(w.allOf('previewBuildings')).toHaveLength(1);
+  });
+
+  it('an edit that changes nothing arms nothing', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    const w = await saveRule();
+    leversCurrent(w.lastOf('setLevers')!.rev);
+    await expect.poll(() => w.allOf('previewBuildings').length).toBe(1);
+    await page.getByRole('button', { name: /^Edit:/ }).click();
+    await page.getByRole('button', { name: 'Save rule' }).click();
+    await expect.element(page.getByRole('button', { name: 'Save rule' })).not.toBeInTheDocument();
+    await wait(400); // past the debounce: nothing changed, nothing is sent
+    expect(w.allOf('setLevers')).toHaveLength(1);
+    leversCurrent(w.lastOf('setLevers')!.rev + 1); // a later revision for another reason
+    await wait(50);
+    expect(w.allOf('previewBuildings')).toHaveLength(1);
   });
 });

@@ -104,6 +104,19 @@ describe('createStrokeAdapter', () => {
     expect(announce).toHaveBeenLastCalledWith(`Redid: ${label}`);
   });
 
+  it('a Paint stroke calls onpaint once, after the store change, with the stroke and stories', () => {
+    const store = new PolicyStore(DEFAULT_POLICY);
+    const seen: number[] = [];
+    const onpaint = vi.fn(() => seen.push(store.policy.custom.length));
+    const a = createStrokeAdapter({ store, stories: () => 8, announce: () => {}, onpaint });
+    a.editor.commit(paint(0));
+    expect(onpaint).toHaveBeenCalledTimes(1);
+    expect(onpaint).toHaveBeenCalledWith({ path: paint(0).path, radiusM: 30 }, 8);
+    expect(seen).toEqual([1]); // the store already holds the stroke
+    a.editor.commit(erase(0));
+    expect(onpaint).toHaveBeenCalledTimes(1); // never for Erase
+  });
+
   it('the client sends nothing to a worker and has no preview', () => {
     const { a } = setup();
     expect(a.client.preview).toBeUndefined();

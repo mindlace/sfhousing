@@ -48,15 +48,24 @@
 import { readFrontage, type Frontage } from '$lib/data/frontage-codec';
 import type { Manifest } from '$lib/data/manifest';
 import type { PolicyParcels } from '$lib/data/policy-codec';
-import { envelopeOf, type ScenarioParcels } from '$lib/data/scenario-codec';
+import { envelopeOf, scenarioRecordOf, type ScenarioParcels } from '$lib/data/scenario-codec';
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
-import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
+import {
+  fnv1a32,
+  generate,
+  generateForUnits,
+  lotBuildableStories,
+  type GeneratedBuilding
+} from '$lib/generator';
+import { packCell, packTransferables } from '$lib/map/pack';
+import { buildFogGrid, type FogGrid } from '$lib/map/fog/grid';
 import { packTimedTransferables } from '$lib/map/pack-timed';
 import type { TimedPackedCell, TimelineUpdate } from '$lib/map/types';
 import { decodeTransit } from '$lib/data/transit-codec';
 import type { TransitNetwork } from '$lib/data/transit';
 import type { Day } from '$lib/timelapse/time';
 import { cellsIntersecting, createChunkLoader, type ChunkLoader, type FetchLike } from '../chunks';
+import { toLngLat } from '$lib/generator/geo';
 import { DEFAULT_RETRY_DELAYS_MS } from '../host';
 import { createLru } from '../lru';
 import { checkManifestShape } from '../manifest-shape';
@@ -79,7 +88,7 @@ import { allNeeds, fillNeeds, resolveEnvelopes, type Resolution } from '../lever
 import { parseSimLevers, type SimLevers } from '../levers/types';
 import { chooseProject, projectCard, revisionAt, type CardCtx } from './card';
 import { createGeometry, type Geometry } from './geometry';
-import { massingFor, type MassingCtx } from './massing';
+import { massingFor, simKey, type MassingCtx } from './massing';
 import {
   brushQueryProblem,
   datasetUrl,
@@ -104,6 +113,7 @@ import {
   type NetSeries
 } from './score';
 import { simulateDetailed, simulateNet } from './simulate';
+import { PREVIEW_MAX_LOTS } from './preview';
 import type {
   BrushLotsResult,
   Massing,
@@ -126,6 +136,8 @@ export interface ScenarioHostDeps {
   maxConcurrent?: number;
   memoCap?: number;
   bandRuns?: number;
+  /** The most lots one `previewBuildings` builds (default `PREVIEW_MAX_LOTS`). */
+  previewMaxLots?: number;
   warn?(msg: string): void; // default console.warn
   /** Test seam: the parcels.bin decoder (default `readScenarioParcels`), so a harness can tell
    *  when the one host-external async step (the inflate) has settled. */
@@ -239,6 +251,8 @@ interface PendingLevers {
     resolution: Resolution;
     recompute: YieldRecompute;
     cells: Set<string>; // cells of the needs not loaded at the start
+    /** The revision's height-limit grid: its stories are final once resolved (spec §4). */
+    fog: FogGrid;
   } | null;
   failed: string[]; // the needed cells that failed to load, as last posted
   stalled: boolean; // every remaining need waits on a chunk: idle until one arrives
@@ -250,6 +264,8 @@ interface LeverWork {
   ctx: LayerCtx; // one per session: the after-switch table and the twin memo key on it
   gross: GrossCache; // one per session: kept across lever revisions
   pending: PendingLevers | null;
+  /** 1 on the rows protected under the levers in force (set at `current`); null before. */
+  protectedMask: Uint8Array | null;
 }
 
 /** A loaded session's timeline work. */
@@ -541,7 +557,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         base: loaded,
         ctx: { parcels: loaded.fzp.parcels, policy: loaded.policy! },
         gross: new Map(),
-        pending: pendingOf(st.levers.rev, st.levers.levers, st.seed)
+        pending: pendingOf(st.levers.rev, st.levers.levers, st.seed),
+        protectedMask: null
       };
     }
     // the brush requests that waited for the load
@@ -731,10 +748,14 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         lw.gross
       );
       const cells = new Set(recompute.cellsNeeded()); // once per revision
-      p.state = { resolution, recompute, cells };
+      // The fog goes out now, not at `current`: a revision waiting on chunks (or held by a failed
+      // one) still shows its heights as you paint. `resolving` sends a copy, as the grid is
+      // transferred again with `current`.
+      const fog = buildFogGrid(base.parcels.labelPoint, resolution.plan.table.stories);
+      p.state = { resolution, recompute, cells, fog };
       if (recompute.total === 0) return;
       p.failed = w.chunks.failed.filter((c) => cells.has(c));
-      postResolving(p);
+      postResolving(p, { ...fog, heightM: fog.heightM.slice() });
       w.chunks.loader.want(cells);
       return;
     }
@@ -754,14 +775,22 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     const filled = fillNeeds(p.state.resolution, r.result());
     const li = applyLevers(lw.base.fzp, lw.ctx, p.levers, filled);
     lw.pending = null;
-    post({
-      type: 'levers',
-      rev: p.rev,
-      phase: 'current',
-      lookups: li.lookups,
-      capacity: li.capacity,
-      unknownLots: li.unknownLots
-    });
+    const mask = new Uint8Array(lw.base.fzp.parcels.count);
+    for (const row of filled.protectedRows) mask[row] = 1;
+    lw.protectedMask = mask;
+    const fog = p.state.fog;
+    post(
+      {
+        type: 'levers',
+        rev: p.rev,
+        phase: 'current',
+        lookups: li.lookups,
+        capacity: li.capacity,
+        unknownLots: li.unknownLots,
+        fog
+      },
+      [fog.heightM.buffer as ArrayBuffer]
+    );
     w.loaded = { ...lw.base, fzp: li.plan, twin: li.twin };
     w.references = li.references;
     w.band = createBandState(deps.bandRuns ?? BAND_RUNS);
@@ -771,16 +800,21 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     w.run = newRun(p.runRev, p.seed);
   }
 
-  function postResolving(p: PendingLevers): void {
+  /** `fog` only on the revision's first `resolving` (its buffer is transferred). */
+  function postResolving(p: PendingLevers, fog?: FogGrid): void {
     const r = p.state!.recompute;
-    post({
-      type: 'levers',
-      rev: p.rev,
-      phase: 'resolving',
-      done: r.done,
-      total: r.total,
-      failedCells: [...p.failed]
-    });
+    post(
+      {
+        type: 'levers',
+        rev: p.rev,
+        phase: 'resolving',
+        done: r.done,
+        total: r.total,
+        failedCells: [...p.failed],
+        ...(fog ? { fog } : {})
+      },
+      fog ? [fog.heightM.buffer as ArrayBuffer] : []
+    );
   }
 
   function bandFzp(w: Work, i: number): void {
@@ -970,6 +1004,33 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       envelope: envelope && envelope.maxStories > 0 ? envelope : null,
       generated: null
     };
+    // The lot-limits line (map overlays plan 2 Task 7): `/sim` only (a lever session), for an
+    // eligible lot with plan stories. `allowed` is `envelope.maxStories`; the FZP stories for a
+    // protected lot (protection beats every rule and stroke).
+    const lw = st.work?.levers;
+    if (lw && i !== undefined && rec.eligible && out.envelope) {
+      const allowed = out.envelope.maxStories;
+      if (lw.protectedMask?.[i]) out.limits = { allowed, buildable: null, protected: true };
+      else {
+        const key = simKey(req.parcelId, allowed);
+        let b = memo.get(key);
+        if (b === undefined) {
+          const plan = (st.work?.loaded ?? st.loaded).fzp.parcels;
+          b = gen(
+            scenarioRecordOf(plan, i, rec),
+            { maxStories: allowed },
+            fnv1a32(req.parcelId),
+            'max'
+          );
+          memo.set(key, b);
+        }
+        out.limits = {
+          allowed,
+          buildable: b ? b.stories : lotBuildableStories(rec.polygon, allowed, out.existingUnits),
+          protected: false
+        };
+      }
+    }
     const w = st.work;
     const run = w?.run;
     if (!w || !run?.geometry) return out; // no shown run yet
@@ -1010,6 +1071,115 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     const w: BrushWaiter = { reqId, query: isCatalog ? null : (query as BrushQuery) };
     st.brush.waiting.add(w);
     if (st.loaded) startBrush(st, w);
+  }
+
+  /**
+   * The ring outlines of the requested lots whose records are loaded (map overlays plan Task 5).
+   * Answered at once: a lot not loaded yet counts as `missing`, and the page asks again on a chunk.
+   */
+  function lotOutlines(reqId: number, lots: readonly ParcelId[]): void {
+    const st = s;
+    if (!st?.brush) {
+      const message = 'outlines need a session initialised with levers';
+      return post({
+        type: 'lotOutlines',
+        reqId,
+        result: { ok: false, reason: 'no-session', message }
+      });
+    }
+    const answered: ParcelId[] = [];
+    const rings: [number, number][][] = [];
+    const ringLot: number[] = [];
+    let missing = 0;
+    for (const id of lots) {
+      const rec = st.chunks.records.get(id);
+      if (!rec) {
+        missing++;
+        continue;
+      }
+      for (const ring of rec.polygon) {
+        rings.push(toLngLat(ring, rec.labelPoint));
+        ringLot.push(answered.length);
+      }
+      answered.push(id);
+    }
+    const starts = new Uint32Array(rings.length + 1);
+    rings.forEach((r, k) => (starts[k + 1] = starts[k] + r.length));
+    const positions = new Float64Array(2 * starts[rings.length]);
+    rings.forEach((r, k) =>
+      r.forEach(([lng, lat], v) => {
+        positions[2 * (starts[k] + v)] = lng;
+        positions[2 * (starts[k] + v) + 1] = lat;
+      })
+    );
+    const out = new Uint32Array(ringLot);
+    post(
+      {
+        type: 'lotOutlines',
+        reqId,
+        result: { ok: true, lots: answered, ringLot: out, starts, positions, missing }
+      },
+      // fresh typed arrays, so their buffers are ArrayBuffers
+      [out.buffer as ArrayBuffer, starts.buffer as ArrayBuffer, positions.buffer as ArrayBuffer]
+    );
+  }
+
+  /**
+   * The buildings the first `previewMaxLots` requested lots could hold (paint feedback, map
+   * overlays plan Task 6), packed as one cell. Per lot, in order: a lot protected under the
+   * levers in force builds nothing; one whose record is not loaded is `missing`; with `stories`
+   * (a custom stroke) it builds at that height; without (a rule), only a lot whose plan stories
+   * differ from FZP's stock builds, at the plan stories. The generator memo is shared with the
+   * timeline's simulated buildings (`simKey`: the same generate call), so a lot the timeline
+   * later builds at that height costs nothing twice. Answered at once, in one handler: the cap
+   * keeps it within a slice (measured in the spec).
+   */
+  function previewBuildings(reqId: number, lots: readonly ParcelId[], stories?: number): void {
+    const st = s;
+    const w = st?.work;
+    const lw = w?.levers;
+    if (!st?.brush || !w || !lw) {
+      const message = 'previews need a loaded session initialised with levers';
+      return post({
+        type: 'previewBuildings',
+        reqId,
+        result: { ok: false, reason: 'no-session', message }
+      });
+    }
+    const plan = w.loaded.fzp.parcels;
+    const stock = lw.base.fzp.parcels.envelopeStories;
+    const mask = lw.protectedMask;
+    const items: { building: GeneratedBuilding; existingUnits: number }[] = [];
+    const seen = new Set<ParcelId>();
+    let missing = 0;
+    for (const id of lots.slice(0, deps.previewMaxLots ?? PREVIEW_MAX_LOTS)) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const i = plan.index.get(id);
+      if (i === undefined) continue; // not in the scenario: nothing can be built there
+      if (mask?.[i]) continue;
+      const rec = w.chunks.records.get(id);
+      if (!rec) {
+        missing++;
+        continue;
+      }
+      const planStories = plan.envelopeStories[i];
+      if (stories === undefined && planStories === stock[i]) continue;
+      const at = stories ?? planStories;
+      if (at <= 0) continue;
+      const key = simKey(id, at);
+      let b = memo.get(key);
+      if (b === undefined) {
+        b = gen(scenarioRecordOf(plan, i, rec), { maxStories: at }, fnv1a32(id), 'max');
+        memo.set(key, b);
+      }
+      if (b) items.push({ building: b, existingUnits: plan.existingUnits[i] });
+    }
+    const pack = items.length > 0 ? packCell('preview', items) : null;
+    post(
+      { type: 'previewBuildings', reqId, result: { ok: true, pack, built: items.length, missing } },
+      pack ? packTransferables(pack) : []
+    );
   }
 
   /** The files a request needs: every one for the catalog, else the query kind's. */
@@ -1188,6 +1358,10 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         return brushRequest(req.reqId, false, req.query);
       case 'brushCatalog':
         return brushRequest(req.reqId, true);
+      case 'lotOutlines':
+        return lotOutlines(req.reqId, req.lots);
+      case 'previewBuildings':
+        return previewBuildings(req.reqId, req.lots, req.stories);
       case 'prefetch':
         if (s) prefetch(s, req.bbox);
         return;

@@ -567,17 +567,6 @@ export function compileLevers(p: SimPolicy, lots: Lots): SimLevers | null {
   };
 }
 
-export type LotRole = 'changed';
-
-/** Per-lot role for the map: every lot a rule or the custom paint changes. Unknown queries count as empty. */
-export function lotRoles(p: SimPolicy, lots: Lots): Map<ParcelId, LotRole> {
-  const known: Lots = (k) => lots(k) ?? [];
-  const roles = new Map<ParcelId, LotRole>();
-  for (const e of ruleEdits(p, known) ?? []) for (const x of e.lots) roles.set(x, 'changed');
-  for (const x of paintedLots(p, known)?.keys() ?? []) roles.set(x, 'changed');
-  return roles;
-}
-
 export interface ScoreCopy {
   plan: string;
   twin: string;
