@@ -69,7 +69,7 @@ describe('POST /api/policies', () => {
     const [row] = rows(t);
     expect(row.kind).toBe('sim');
     expect(row.id).toBe(id);
-    expect(row.schema).toBe(1);
+    expect(row.schema).toBe(2);
     expect(row.op_count).toBe(1);
   });
 

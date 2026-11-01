@@ -33,18 +33,14 @@ export interface Resolution {
   /** The same plan with protections off; `=== plan` when no row is protected. */
   unprotected: ResolvedTable;
   protectedRows: Int32Array;
-  /** Distinct lot ids named in rules, paint and protect.lots that are not in the dataset. */
+  /** Distinct lot ids named in rules and paint that are not in the dataset. */
   unknownLots: number;
 }
 
 const yearOf = (day: Day) => new Date(day * 86400000).getUTCFullYear();
 
-/** Rows protected as of `asOf` (ascending, unique) and the count of named lots not in the dataset. */
-export function protectedRows(
-  ctx: LayerCtx,
-  p: Protections,
-  asOf: Day
-): { rows: Int32Array; unknown: number } {
+/** Rows protected as of `asOf` (ascending, unique): the categories, read from the dataset. */
+export function protectedRows(ctx: LayerCtx, p: Protections, asOf: Day): Int32Array {
   const { parcels, policy } = ctx;
   const mark = new Uint8Array(parcels.count);
   if (p.rentControl)
@@ -58,15 +54,9 @@ export function protectedRows(
       if (y > 0 && y >= from) mark[i] = 1;
     }
   }
-  const unknownIds = new Set<string>();
-  for (const id of p.lots) {
-    const i = parcels.index.get(id);
-    if (i === undefined) unknownIds.add(id);
-    else mark[i] = 1;
-  }
   const rows: number[] = [];
   for (let i = 0; i < mark.length; i++) if (mark[i]) rows.push(i);
-  return { rows: Int32Array.from(rows), unknown: unknownIds.size };
+  return Int32Array.from(rows);
 }
 
 /** A fresh copy of a table (`stockTable` returns views over the decoded columns). */
@@ -148,11 +138,11 @@ function resolvePlan(ctx: LayerCtx, levers: SimLevers, protect: Int32Array | nul
 }
 
 export function resolveEnvelopes(ctx: LayerCtx, levers: SimLevers, asOf: Day): Resolution {
-  const { rows } = protectedRows(ctx, levers.protect, asOf);
-  // One set across rules, paint and protections, so a lot named in several counts once.
+  const rows = protectedRows(ctx, levers.protect, asOf);
+  // One set across rules and paint, so a lot named in both counts once.
   const unknown = new Set<string>();
   const index = ctx.parcels.index;
-  for (const e of [...levers.rules, ...levers.paint, { lots: levers.protect.lots }])
+  for (const e of [...levers.rules, ...levers.paint])
     for (const id of e.lots) if (!index.has(id)) unknown.add(id);
   const plan = resolvePlan(ctx, levers, rows.length > 0 ? rows : null);
   return {

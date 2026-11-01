@@ -184,7 +184,7 @@ describe('applyLevers: capacity and unknown lots', () => {
     const { base, ctx } = setup();
     const levers = clone({
       rules: [{ lots: ['no-such-lot'], stories: 5 }],
-      protect: { ...DEFAULT_LEVERS.protect, lots: ['no-such-lot'] }
+      paint: [{ lots: ['no-such-lot'], stories: 3 }]
     });
     const out = compile(base, ctx, levers);
     expect(out.unknownLots).toBe(1);

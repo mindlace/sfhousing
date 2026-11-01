@@ -1,22 +1,22 @@
 <!--
   The read-only policy summary (plan 5, Call 15): what a shared policy turns on, in words, one
-  compact block per section. The zoning layers and comparison, one line per brush (with its
+  compact block per section. One line per new zoning rule and per custom brush (each with its
   lots), the protections (hard choices stay visible), and the timelines' label. The route shares
   and every stage that differs from observed sit behind one disclosure, closed by default
   (compact UI, details on demand). No controls change the policy.
 -->
 <script lang="ts">
   import { PATHWAYS, type Calibration, type Pathway } from '$lib/timelapse/types';
-  import { brushSummary, count, lotsText, type LotStatus } from './brush-summary';
-  import type { LegacyStockLayer, SimPolicy } from './policy';
+  import { count, customSummary, lotsText, ruleSummary, type LotStatus } from './brush-summary';
+  import type { SimPolicy } from './policy';
   import { OBSERVED_TIMING, routeView, shownRouteShares, timingLabel } from './timing';
 
   interface Props {
     policy: SimPolicy;
     /** Null when the calibration failed to load: the timelines show their label only. */
     calibration: Calibration | null;
-    /** Lot lookup state of a brush (by its id) or the brushed protections (`'protect'`). */
-    lotsOf(key: string): LotStatus;
+    /** Lot lookup state of a card: `rule:<id>` or `custom:<id>`. */
+    lotsOf(key: `rule:${string}` | `custom:${string}`): LotStatus;
   }
   let { policy, calibration, lotsOf }: Props = $props();
 
@@ -24,16 +24,6 @@
   const detailsId = `${uid}-timing-details`;
   let open = $state(false);
 
-  const LAYER: Record<LegacyStockLayer, string> = {
-    currentLaw: 'Current law',
-    fzp: 'Family Zoning Plan map',
-    sb79: 'SB 79 as written',
-    base: 'Zoning before the Family Zoning Plan'
-  };
-  const COMPARE: Record<SimPolicy['compare'], string> = {
-    currentLaw: 'current law',
-    preFzp: 'zoning before the Family Zoning Plan'
-  };
   const ROUTE: Record<Pathway, string> = {
     discretionary: 'discretionary',
     streamlined: 'streamlined',
@@ -42,7 +32,6 @@
 
   const roundHalf = (x: number) => Math.round(x * 2) / 2;
   const monthsText = (m: number) => (m === 1 ? '1 month' : `${m} months`);
-  const lots = (key: string) => lotsText(lotsOf(key));
 
   const protections = $derived.by(() => {
     const p = policy.protect;
@@ -51,7 +40,6 @@
     if (p.historic) items.push('historic buildings');
     if (p.newerThanYears !== null)
       items.push(`buildings newer than ${count(p.newerThanYears, 'year', 'years')}`);
-    if (p.strokes.length > 0) items.push(`${lots('protect')} by brush`);
     if (items.length === 0) return 'None';
     const text = items.join('; ');
     return text.charAt(0).toUpperCase() + text.slice(1);
@@ -82,27 +70,27 @@
 </script>
 
 <div class="divide-y divide-gray-200 text-sm text-black">
-  <section class="px-4 py-3" aria-labelledby="{uid}-layers">
-    <h3 id="{uid}-layers" class="font-semibold">Zoning layers</h3>
-    <ul class="mt-1">
-      {#each policy.stock as id (id)}
-        <li>{LAYER[id]}</li>
-      {/each}
-    </ul>
-    <p class="mt-1 text-gray-700">Compared with: {COMPARE[policy.compare]}</p>
-    {#if policy.assumeAlternativePlanKept}
-      <p class="mt-1 text-gray-700">Assumes the City keeps an alternative plan after 2031</p>
+  <section class="px-4 py-3" aria-labelledby="{uid}-rules">
+    <h3 id="{uid}-rules" class="font-semibold">New zoning rules</h3>
+    {#if policy.rules.length === 0}
+      <p class="mt-1 text-gray-700">No new zoning rules</p>
+    {:else}
+      <ul class="mt-1 list-disc space-y-1 pl-4">
+        {#each policy.rules as r (r.id)}
+          <li>{ruleSummary(r, lotsText(lotsOf(`rule:${r.id}`)))}</li>
+        {/each}
+      </ul>
     {/if}
   </section>
 
-  <section class="px-4 py-3" aria-labelledby="{uid}-brushes">
-    <h3 id="{uid}-brushes" class="font-semibold">Brushes</h3>
-    {#if policy.brushes.length === 0}
-      <p class="mt-1 text-gray-700">No brushes</p>
+  <section class="px-4 py-3" aria-labelledby="{uid}-custom">
+    <h3 id="{uid}-custom" class="font-semibold">Custom zoning</h3>
+    {#if policy.custom.length === 0}
+      <p class="mt-1 text-gray-700">No custom zoning</p>
     {:else}
       <ul class="mt-1 list-disc space-y-1 pl-4">
-        {#each policy.brushes as b (b.id)}
-          <li>{brushSummary(b, lots(b.id))}</li>
+        {#each policy.custom as b (b.id)}
+          <li>{customSummary(b, lotsText(lotsOf(`custom:${b.id}`)))}</li>
         {/each}
       </ul>
     {/if}

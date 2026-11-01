@@ -135,7 +135,7 @@ export class Autosave<D = Plan> {
   }
 
   /**
-   * For a page that defers the restore (/sim under `start=fzp`): reads the stored record without
+   * For a page that defers the restore: reads the stored record without
    * loading or writing it, so that the first write keeps a corrupt or future record under the
    * corrupt key first, as after `restore()`. Never throws.
    */
@@ -199,9 +199,8 @@ export class Autosave<D = Plan> {
   }
 
   /**
-   * Records lastPublished without writing, for a page that has not started saving (/sim under
-   * `start=fzp`, where the stored policy is kept until the first change). The next write
-   * carries it.
+   * Records lastPublished without writing, for a page that has not started saving (the stored
+   * document is kept until the first change). The next write carries it.
    */
   rememberPublished(lp: LastPublished): void {
     this.lastPublished = { id: lp.id, hash: lp.hash };

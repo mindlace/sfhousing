@@ -35,7 +35,7 @@ describe('parseSimLevers', () => {
       ...structuredClone(DEFAULT_LEVERS),
       rules: [edit],
       paint: [{ lots: ['b', 'c'], stories: 0 }, edit],
-      protect: { rentControl: true, historic: true, newerThanYears: 15, lots: ['x'] },
+      protect: { rentControl: true, historic: true, newerThanYears: 15 },
       timers: [timer as SimLevers['timers'][number]],
       routeShares: { discretionary: 1, streamlined: 2, permitOnly: 0 },
       compare: 'fzp'
@@ -103,9 +103,6 @@ describe('parseSimLevers', () => {
 
   it('rejects a non-string lot id', () => {
     expect(pathOf(with_({ rules: [{ ...edit, lots: [3] }] }))).toBe('rules[0].lots[0]');
-    expect(pathOf(with_({ protect: { ...DEFAULT_LEVERS.protect, lots: [null] } }))).toBe(
-      'protect.lots[0]'
-    );
   });
 
   it('rejects non-boolean flags and a bad compare', () => {

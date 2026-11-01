@@ -1,13 +1,14 @@
 <!--
-  "Your zoning", tools part (layout rulings 7 and 8). Undo and Redo first, named by the change they
-  would undo or redo and disabled when there is none: the non-drag way back. Then the brush tools
-  (Move, Paint, Erase, Protect, Unprotect), the freehand effect (mode, stories, density limits;
-  hidden while Protect or Unprotect is chosen), the radius, the map key, and the brushes in order
-  (BrushCard: summary, lot count, Edit, Move up, Move down, Remove). A `no-session` answer is
-  parked by LeverSync until the next session, so it reads as "Finding lots…", not a failure.
-  "Add a brush" offers the rule brushes (Transit, Street, Commercial corridor, Area), each
-  disabled with its reason while the catalog lacks its data. With `inlineForm` (md+) the form
-  opens here; otherwise SimPage shows it in place of the sheet's contents (layout ruling 9).
+  "Your zoning" (sim runs; Task 4 splits it into New zoning rules and Custom zoning). Undo and
+  Redo first, named by the change they would undo or redo and disabled when there is none: the
+  non-drag way back. Then the brush tools (Move, Paint, Erase), "Allow N stories" (the stories a
+  Paint stroke allows; disabled with the /sim hint while Erase is chosen), the radius, the map
+  key, the new zoning rules (BrushCard: summary, lot count, Edit, Remove) with "Add a rule"
+  (Transit, Street, Commercial corridor, each disabled with its reason while the catalog lacks
+  its data), then the custom brushes in order (BrushCard: Move up, Move down, Remove). A
+  `no-session` answer is parked by LeverSync until the next session, so it reads as "Finding
+  lots…", not a failure. With `inlineForm` (md+) a rule's form opens here; otherwise SimPage
+  shows it in place of the sheet's contents (layout ruling 9).
 -->
 <script lang="ts">
   import { tick } from 'svelte';
@@ -18,15 +19,9 @@
   import { BrushForms } from './brush-forms.svelte';
   import { RULE_KINDS, kindUnavailable, ruleKindOf, type RuleKind } from './brush-summary';
   import RuleBrushForm from './RuleBrushForm.svelte';
-  import {
-    ERASE_HINT,
-    SIM_TOOLS,
-    isProtectTool,
-    type SimBrushTools,
-    type SimTool
-  } from './brush-tools.svelte';
+  import { ERASE_HINT, SIM_TOOLS, type SimBrushTools, type SimTool } from './brush-tools.svelte';
   import { LOT_COLORS, LOT_EDGE } from './lot-overlay';
-  import type { BrushMode, ZoningBrush } from './policy';
+  import type { ZoningRule } from './policy';
   import type { LeverSync, PolicyStore } from './policy-store.svelte';
 
   interface Props {
@@ -62,17 +57,8 @@
 
   const uid = $props.id();
   const brush = $derived(tools.brush);
-  const MODES: { id: BrushMode; label: string }[] = [
-    { id: 'raise', label: 'Raise' },
-    { id: 'lower', label: 'Lower' },
-    { id: 'set', label: 'Set to' }
-  ];
-  const KEY = [
-    { role: 'raise', label: 'Raised' },
-    { role: 'lower', label: 'Lowered' },
-    { role: 'set', label: 'Set' },
-    { role: 'protected', label: 'Protected (ring)' }
-  ] as const;
+  const KEY = [{ role: 'changed', label: 'Your zoning changes' }] as const;
+  const allowText = $derived(`Allow ${brush.stories} ${brush.stories === 1 ? 'story' : 'stories'}`);
   const rgb = ([r, g, b]: [number, number, number]) => `rgb(${r} ${g} ${b})`;
   const radios: Partial<Record<SimTool, HTMLButtonElement>> = $state({});
 
@@ -104,7 +90,8 @@
   }
 
   let adding = $state(false);
-  let list = $state<HTMLOListElement>();
+  let rulesList = $state<HTMLUListElement>();
+  let customList = $state<HTMLOListElement>();
   let addBtn = $state<HTMLButtonElement>();
   const ADD_SELECTOR = '[data-brush-add]';
 
@@ -113,20 +100,22 @@
     forms.open({ kind }, ADD_SELECTOR);
   }
 
-  function edit(b: ZoningBrush): void {
-    const kind = ruleKindOf(b);
-    if (kind) forms.open({ kind, initial: b }, `[data-brush-edit="${b.id}"]`);
+  function edit(r: ZoningRule): void {
+    forms.open({ kind: ruleKindOf(r), initial: r }, `[data-brush-edit="${r.id}"]`);
   }
 
-  function save(b: ZoningBrush): void {
-    announce?.(forms.save(store, b));
+  function save(r: ZoningRule): void {
+    announce?.(forms.save(store, r));
     forms.close();
   }
 
-  /** After a card's Remove, focus the card now at its place, the one before it, or "Add a brush". */
-  function afterRemove(i: number): void {
+  /**
+   * After a card's Remove, focus the card now at its place in that list, the one before it, or
+   * "Add a rule".
+   */
+  function afterRemove(el: HTMLElement | undefined, i: number): void {
     void tick().then(() => {
-      const cards = list?.querySelectorAll('li') ?? [];
+      const cards = el?.querySelectorAll('li') ?? [];
       const card = cards[Math.min(i, cards.length - 1)];
       const target = card?.querySelector<HTMLButtonElement>('button:not(:disabled)');
       (target ?? addBtn)?.focus();
@@ -170,38 +159,11 @@
     {/each}
   </div>
 
-  <!-- Protect and Unprotect hide the effect (ruling 8); Erase has no mode or density, and its
-       stories stepper is disabled with the /sim hint. -->
-  {#if !isProtectTool(tools.tool) && tools.tool !== 'erase'}
-    <div role="radiogroup" aria-label="Mode" class="flex flex-wrap gap-x-3 gap-y-1">
-      {#each MODES as m (m.id)}
-        <label class="flex min-h-6 items-center gap-1.5">
-          <input
-            type="radio"
-            name="{uid}-mode"
-            class="size-6"
-            checked={tools.mode === m.id}
-            onchange={() => tools.setMode(m.id)}
-          />
-          {m.label}
-        </label>
-      {/each}
-    </div>
-  {/if}
-  {#if !isProtectTool(tools.tool)}
+  <!-- Erase has no height: the stepper is disabled with the /sim hint. -->
+  <div role="group" aria-labelledby="{uid}-allow" class="flex flex-col gap-1">
+    <p id="{uid}-allow" class="font-semibold">{allowText}</p>
     <StoriesPopover state={brush} inline disabled={tools.tool === 'erase'} hint={ERASE_HINT} />
-  {/if}
-  {#if !isProtectTool(tools.tool) && tools.tool !== 'erase'}
-    <label class="flex min-h-6 items-center gap-1.5">
-      <input
-        type="checkbox"
-        class="size-6"
-        checked={tools.densityLimits}
-        onchange={(e) => (tools.densityLimits = e.currentTarget.checked)}
-      />
-      Density limits
-    </label>
-  {/if}
+  </div>
 
   <RadiusPopover state={brush} inline />
 
@@ -219,25 +181,14 @@
               stroke={rgb(LOT_EDGE.light.halo)}
               stroke-width="3"
             />
-            {#if k.role === 'protected'}
-              <circle
-                cx="8"
-                cy="8"
-                r="5"
-                fill="none"
-                stroke={rgb(LOT_EDGE.light.outline)}
-                stroke-width="2.5"
-              />
-            {:else}
-              <circle
-                cx="8"
-                cy="8"
-                r="5"
-                fill={rgb(LOT_COLORS.light[k.role])}
-                stroke={rgb(LOT_EDGE.light.outline)}
-                stroke-width="1.5"
-              />
-            {/if}
+            <circle
+              cx="8"
+              cy="8"
+              r="5"
+              fill={rgb(LOT_COLORS.light[k.role])}
+              stroke={rgb(LOT_EDGE.light.outline)}
+              stroke-width="1.5"
+            />
           </svg>
           {k.label}
         </li>
@@ -245,67 +196,88 @@
     </ul>
   </div>
 
-  {#if store.policy.brushes.length > 0}
-    <div>
-      <h4 id="{uid}-brushes" class="font-semibold">Your brushes</h4>
-      <p class="text-gray-700">Later brushes win where they overlap.</p>
-      <ol bind:this={list} aria-labelledby="{uid}-brushes" class="mt-1 flex flex-col gap-2">
-        {#each store.policy.brushes as b, i (b.id)}
+  <div>
+    <h4 id="{uid}-rules" class="font-semibold">New zoning rules</h4>
+    <p class="text-gray-700">Each lot takes the tallest rule that covers it, never below FZP.</p>
+    {#if store.policy.rules.length > 0}
+      <ul bind:this={rulesList} aria-labelledby="{uid}-rules" class="mt-1 flex flex-col gap-2">
+        {#each store.policy.rules as r, i (r.id)}
           <BrushCard
             {store}
             {sync}
-            brush={b}
+            list="rules"
+            id={r.id}
             index={i}
             onedit={edit}
-            editUnavailable={kindUnavailable(ruleKindOf(b) ?? 'area', catalog)}
+            editUnavailable={kindUnavailable(ruleKindOf(r), catalog)}
             {announce}
-            onremoved={afterRemove}
+            onremoved={(at) => afterRemove(rulesList, at)}
+          />
+        {/each}
+      </ul>
+    {/if}
+
+    {#if inlineForm && forms.current && catalog}
+      {#key forms.current}
+        <RuleBrushForm
+          kind={forms.current.kind}
+          {catalog}
+          initial={forms.current.initial}
+          onsave={save}
+          oncancel={() => forms.close()}
+        />
+      {/key}
+    {:else}
+      <div class="mt-2">
+        <button
+          bind:this={addBtn}
+          type="button"
+          data-brush-add
+          aria-expanded={adding}
+          aria-controls="{uid}-kinds"
+          class="min-h-11 rounded-md border border-gray-300 px-3 font-medium"
+          onclick={() => (adding = !adding)}>Add a rule</button
+        >
+        {#if adding}
+          <ul id="{uid}-kinds" class="mt-2 flex flex-col gap-2">
+            {#each RULE_KINDS as kd (kd.id)}
+              {@const why = kindUnavailable(kd.id, catalog)}
+              <li class="flex flex-col">
+                <button
+                  type="button"
+                  disabled={why !== null}
+                  aria-describedby={why ? `${uid}-why-${kd.id}` : undefined}
+                  class="min-h-11 self-start rounded-md border border-gray-300 px-3 font-medium disabled:opacity-40"
+                  onclick={() => openKind(kd.id)}>{kd.label}</button
+                >
+                {#if why}
+                  <span id="{uid}-why-{kd.id}" class="text-gray-700">{why}</span>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </div>
+    {/if}
+  </div>
+
+  {#if store.policy.custom.length > 0}
+    <div>
+      <h4 id="{uid}-custom" class="font-semibold">Custom zoning</h4>
+      <p class="text-gray-700">Later strokes win where they overlap.</p>
+      <ol bind:this={customList} aria-labelledby="{uid}-custom" class="mt-1 flex flex-col gap-2">
+        {#each store.policy.custom as b, i (b.id)}
+          <BrushCard
+            {store}
+            {sync}
+            list="custom"
+            id={b.id}
+            index={i}
+            {announce}
+            onremoved={(at) => afterRemove(customList, at)}
           />
         {/each}
       </ol>
-    </div>
-  {/if}
-
-  {#if inlineForm && forms.current && catalog}
-    {#key forms.current}
-      <RuleBrushForm
-        kind={forms.current.kind}
-        {catalog}
-        initial={forms.current.initial}
-        onsave={save}
-        oncancel={() => forms.close()}
-      />
-    {/key}
-  {:else}
-    <div>
-      <button
-        bind:this={addBtn}
-        type="button"
-        data-brush-add
-        aria-expanded={adding}
-        aria-controls="{uid}-kinds"
-        class="min-h-11 rounded-md border border-gray-300 px-3 font-medium"
-        onclick={() => (adding = !adding)}>Add a brush</button
-      >
-      {#if adding}
-        <ul id="{uid}-kinds" class="mt-2 flex flex-col gap-2">
-          {#each RULE_KINDS as kd (kd.id)}
-            {@const why = kindUnavailable(kd.id, catalog)}
-            <li class="flex flex-col">
-              <button
-                type="button"
-                disabled={why !== null}
-                aria-describedby={why ? `${uid}-why-${kd.id}` : undefined}
-                class="min-h-11 self-start rounded-md border border-gray-300 px-3 font-medium disabled:opacity-40"
-                onclick={() => openKind(kd.id)}>{kd.label}</button
-              >
-              {#if why}
-                <span id="{uid}-why-{kd.id}" class="text-gray-700">{why}</span>
-              {/if}
-            </li>
-          {/each}
-        </ul>
-      {/if}
     </div>
   {/if}
 </div>

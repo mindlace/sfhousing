@@ -8,12 +8,12 @@ import {
   serializeSimDoc,
   type SimDoc
 } from './sim-doc';
-import { defaultEffect, type SimPolicy, type Stroke, type ZoningBrush } from './policy';
+import type { CustomBrush, SimPolicy, Stroke } from './policy';
 import type { TimingSet } from './timing';
 
 const V = 'fixture-0';
 const doc = (policy: SimPolicy = DEFAULT_POLICY, extra: Partial<SimDoc> = {}): SimDoc => ({
-  schema: 1,
+  schema: 2,
   kind: 'sim',
   datasetVersion: V,
   policy,
@@ -23,13 +23,13 @@ const stroke = (n = 2, radiusM = 50): Stroke => ({
   path: Array.from({ length: n }, (_, i) => [-122.4 + i * 1e-5, 37.7] as [number, number]),
   radiusM
 });
-const freehand = (id: string, strokes: Stroke[]): ZoningBrush => ({
+const freehand = (id: string, strokes: Stroke[]): CustomBrush => ({
   id,
-  kind: 'freehand',
+  kind: 'paint',
   strokes,
-  effect: defaultEffect('raise', 6)
+  stories: 6
 });
-const withBrushes = (brushes: ZoningBrush[]): SimPolicy => ({ ...DEFAULT_POLICY, brushes });
+const withBrushes = (custom: CustomBrush[]): SimPolicy => ({ ...DEFAULT_POLICY, custom });
 
 const CUSTOM: TimingSet = {
   preset: 'benchmarkPermits',
@@ -47,37 +47,39 @@ const timingHeavy = (): SimPolicy => ({
   ...DEFAULT_POLICY,
   timing: { current: CUSTOM, saved: { label: 'Mine', set: CUSTOM } }
 });
-const brushHeavy = (): SimPolicy =>
-  withBrushes([
+const brushHeavy = (): SimPolicy => ({
+  ...withBrushes([
     freehand('a', [stroke(40), stroke(10, 120)]),
-    { id: 'e', kind: 'erase', strokes: [stroke(5)] },
-    {
-      id: 't',
-      kind: 'transit',
-      stopTypes: ['metro'],
-      bands: [{ maxM: 402, stories: 6 }],
-      mode: 'raise',
-      densityLimits: false
-    }
-  ]);
+    { id: 'e', kind: 'erase', strokes: [stroke(5)] }
+  ]),
+  rules: [{ id: 't', kind: 'transit', stopTypes: ['metro'], bands: [{ maxM: 402, stories: 6 }] }]
+});
 
 const codesOf = (text: string) => {
   const r = parseSimDoc(text, 'strict');
   return r.ok ? [] : r.errors.map((e) => e.code);
 };
-/** The schema-1 default before sim runs plan 1: current law, compared with current law. */
-const CURRENT_LAW: SimPolicy = { ...DEFAULT_POLICY, stock: ['currentLaw'], compare: 'currentLaw' };
+/** A policy with one street rule and nothing else. */
+const RULE_ONLY: SimPolicy = {
+  ...DEFAULT_POLICY,
+  rules: [
+    {
+      id: 'r',
+      kind: 'street',
+      classes: ['arterial'],
+      names: [],
+      depth: 0,
+      ncOnly: true,
+      stories: 6
+    }
+  ]
+};
 const raw = (policy: SimPolicy, over: Record<string, unknown> = {}) =>
   JSON.stringify({ ...doc(policy), ...over });
 
 describe('serializeSimDoc', () => {
   it('serialize round-trips', () => {
-    const docs = [
-      doc(),
-      doc(CURRENT_LAW),
-      doc(timingHeavy(), { title: 'Heavy' }),
-      doc(brushHeavy())
-    ];
+    const docs = [doc(), doc(RULE_ONLY), doc(timingHeavy(), { title: 'Heavy' }), doc(brushHeavy())];
     for (const d of docs) {
       const text = serializeSimDoc(d);
       const r = parseSimDoc(text, 'strict');
@@ -115,28 +117,46 @@ describe('SIM_CODEC', () => {
     );
   });
 
-  it('the default policy is empty, the old current-law default is not', () => {
+  it('the default policy is empty, a policy with a rule is not', () => {
     expect(SIM_CODEC.isEmpty(doc())).toBe(true);
     const withSnapshot = {
       ...DEFAULT_POLICY,
       timing: { current: DEFAULT_POLICY.timing.current, saved: { label: 'x', set: CUSTOM } }
     };
     expect(SIM_CODEC.isEmpty(doc(withSnapshot))).toBe(true);
-    expect(isDefaultPolicy(CURRENT_LAW)).toBe(false);
-    expect(SIM_CODEC.isEmpty(doc(CURRENT_LAW))).toBe(false);
+    expect(isDefaultPolicy(RULE_ONLY)).toBe(false);
+    expect(SIM_CODEC.isEmpty(doc(RULE_ONLY))).toBe(false);
   });
 
-  it('counts brushes and protect strokes, rebases and makes an empty doc', () => {
-    const p: SimPolicy = {
-      ...brushHeavy(),
-      protect: { ...DEFAULT_POLICY.protect, strokes: [{ ...stroke(), kind: 'protect' }] }
-    };
-    expect(SIM_CODEC.opCount(doc(p))).toBe(4);
+  it('counts rules plus custom brushes, rebases and makes an empty doc', () => {
+    const p = brushHeavy();
+    expect(SIM_CODEC.opCount(doc(p))).toBe(3);
     expect(SIM_CODEC.rebase(doc(p), 'fixture-1').datasetVersion).toBe('fixture-1');
     expect(SIM_CODEC.empty('fixture-2')).toEqual(
       doc(DEFAULT_POLICY, { datasetVersion: 'fixture-2' })
     );
-    expect(SIM_CODEC.schema(doc())).toBe(1);
+    expect(SIM_CODEC.schema(doc())).toBe(2);
+  });
+
+  it('round-trips schema 2 and counts rules plus custom brushes as ops', () => {
+    const d: SimDoc = {
+      schema: 2,
+      kind: 'sim',
+      datasetVersion: 'fixture-0',
+      policy: {
+        ...DEFAULT_POLICY,
+        custom: [
+          {
+            id: '1',
+            kind: 'paint',
+            strokes: [{ path: [[-122.4, 37.77]], radiusM: 20 }],
+            stories: 8
+          }
+        ]
+      }
+    };
+    expect(SIM_CODEC.load(SIM_CODEC.serialize(d))).toEqual({ ok: true, value: d });
+    expect(SIM_CODEC.opCount(d)).toBe(1);
   });
 
   it('titles are normalized', () => {
@@ -170,12 +190,16 @@ describe('limits', () => {
     for (const r of [4, 501, 30.5])
       expect(codesOf(raw(withBrushes([freehand('a', [stroke(1, r)])])))).toEqual(['out-of-bounds']);
   });
-  it('protect strokes obey the same limits', () => {
-    const p: SimPolicy = {
-      ...DEFAULT_POLICY,
-      protect: { ...DEFAULT_POLICY.protect, strokes: [{ ...stroke(1, 4), kind: 'unprotect' }] }
-    };
+  it('erase strokes obey the same limits', () => {
+    const p = withBrushes([{ id: 'e', kind: 'erase', strokes: [stroke(1, 4)] }]);
     expect(codesOf(raw(p))).toEqual(['out-of-bounds']);
+  });
+  it('the stroke limit counts custom strokes only, across brushes', () => {
+    const half = () => Array.from({ length: 2500 }, () => stroke(1));
+    const p = withBrushes([freehand('a', half()), { id: 'e', kind: 'erase', strokes: half() }]);
+    expect(codesOf(raw(p))).toEqual([]);
+    const over = withBrushes([freehand('a', half()), freehand('b', [...half(), stroke(1)])]);
+    expect(codesOf(raw(over))).toEqual(['too-many-ops']);
   });
   it('a 121-character title: bad-field', () => {
     expect(codesOf(raw(DEFAULT_POLICY, { title: 'x'.repeat(121) }))).toEqual(['bad-field']);
@@ -188,16 +212,16 @@ describe('limits', () => {
     const big = Array.from({ length: 100 }, (_, i) => freehand(`b${i}`, [stroke(2000)]));
     expect(codesOf(raw(withBrushes(big)))).toEqual(['too-large']);
   });
-  it('schema 2: future-schema, in both modes', () => {
+  it('schema 3: future-schema, in both modes', () => {
     for (const mode of ['strict', 'reconcile'] as const) {
-      const r = parseSimDoc(raw(DEFAULT_POLICY, { schema: 2 }), mode);
+      const r = parseSimDoc(raw(DEFAULT_POLICY, { schema: 3 }), mode);
       expect(r.ok).toBe(false);
       if (!r.ok) {
         expect(r.errors[0].code).toBe('future-schema');
         expect(r.errors[0].message).toBe(FUTURE_SCHEMA_MESSAGE);
       }
     }
-    expect(SIM_CODEC.load(raw(DEFAULT_POLICY, { schema: 2 }))).toMatchObject({ ok: false });
+    expect(SIM_CODEC.load(raw(DEFAULT_POLICY, { schema: 3 }))).toMatchObject({ ok: false });
   });
   it("kind 'plan' or a missing schema: unknown-schema", () => {
     expect(codesOf(raw(DEFAULT_POLICY, { kind: 'plan' }))).toEqual(['unknown-schema']);

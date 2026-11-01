@@ -52,7 +52,7 @@ export async function handleE2eSeed(
   const inserted = await insertPlan(db, {
     id,
     kind,
-    schema: 1,
+    schema: parsed.ok ? codec.schema(parsed.value) : 1,
     datasetVersion: version,
     body,
     contentHash,

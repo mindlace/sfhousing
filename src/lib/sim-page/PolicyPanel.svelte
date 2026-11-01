@@ -4,7 +4,7 @@
   so the project card sits to its right, and moves the map's bottom-left navigation control (zoom
   and compass) to its right edge so the panel never covers it (WCAG 2.2 2.4.11). Below md it is a modal sheet (`<dialog>`) that joins the
   header overlays, so it never shows with the phone Menu or the score details. Its sections are
-  disclosures; all start collapsed. Below md a sub-view (Task 9's "Add a brush")
+  disclosures; all start collapsed. Below md a sub-view (Task 9's "Add a rule")
   replaces the sections, with a Back button. The read-only view (plan 5) shows a summary instead,
   titled "Policy (read-only)".
 -->

@@ -102,8 +102,8 @@ async function choosePreset(page: Page): Promise<void> {
   await expect(panel(page).getByTestId('timing-label')).toHaveText(PRESET);
 }
 
-const brushList = (page: Page): Locator =>
-  panel(page).getByRole('list', { name: 'Your brushes' }).getByRole('listitem');
+const ruleList = (page: Page): Locator =>
+  panel(page).getByRole('list', { name: 'New zoning rules' }).getByRole('listitem');
 
 /** The autosaved document, or null. */
 const storedDoc = (page: Page): Promise<Doc | null> =>
@@ -236,15 +236,15 @@ test('autosave survives a reload', async ({ page }) => {
   await gotoSim(page);
   await openPolicy(page);
   await expandSection(page, 'Your zoning');
-  await panel(page).getByRole('button', { name: 'Add a brush' }).click();
+  await panel(page).getByRole('button', { name: 'Add a rule' }).click();
   const transit = panel(page).getByRole('button', { name: 'Transit', exact: true });
   await expect(transit).toBeEnabled({ timeout: 20_000 });
   await transit.click();
-  const form = panel(page).getByRole('form', { name: 'Add a transit brush', exact: true });
+  const form = panel(page).getByRole('form', { name: 'Add a transit rule', exact: true });
   await form.getByRole('checkbox', { name: /^Muni Metro/ }).check();
-  await form.getByRole('button', { name: 'Save brush' }).click();
-  await expect(brushList(page)).toHaveCount(1);
-  await expect(brushList(page).first()).toContainText('Near');
+  await form.getByRole('button', { name: 'Save rule' }).click();
+  await expect(ruleList(page)).toHaveCount(1);
+  await expect(ruleList(page).first()).toContainText('Near');
 
   await choosePreset(page);
   await panel(page).getByRole('button', { name: 'Save timelines' }).click();
@@ -252,8 +252,8 @@ test('autosave survives a reload', async ({ page }) => {
   await expect
     .poll(async () => {
       const d = await storedDoc(page);
-      const p = d?.policy as { brushes?: unknown[]; timing?: { saved?: unknown } } | undefined;
-      return !!p && p.brushes?.length === 1 && !!p.timing?.saved;
+      const p = d?.policy as { rules?: unknown[]; timing?: { saved?: unknown } } | undefined;
+      return !!p && p.rules?.length === 1 && !!p.timing?.saved;
     })
     .toBe(true);
 
@@ -261,11 +261,11 @@ test('autosave survives a reload', async ({ page }) => {
   await waitReady(page);
   await openPolicy(page);
   await expandSection(page, 'Your zoning');
-  await expect(brushList(page)).toHaveCount(1);
-  await expect(brushList(page).first()).toContainText('Near');
-  // The restored brush resolves (C1): the card counts its lots, and the full levers are in force.
-  await expect(brushList(page).first()).toContainText(/ · [\d,]+ lots? · /, { timeout: 20_000 });
-  await expect(brushList(page).first()).not.toContainText('Finding lots…');
+  await expect(ruleList(page)).toHaveCount(1);
+  await expect(ruleList(page).first()).toContainText('Near');
+  // The restored rule resolves (C1): the card counts its lots, and the full levers are in force.
+  await expect(ruleList(page).first()).toContainText(/ · [\d,]+ lots? /, { timeout: 20_000 });
+  await expect(ruleList(page).first()).not.toContainText('Finding lots…');
   await expect
     .poll(async () => (await leverStatus(page)).status, { timeout: 20_000 })
     .toBe('current');

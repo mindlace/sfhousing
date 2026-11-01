@@ -3,12 +3,11 @@
   lives in a PolicyStore (undo, redo); LeverSync resolves its brushes in the worker, compiles it
   and sends each new SimLevers to FzpMode's `levers`, which FzpMode passes on with setLevers. Every
   start opens on the Family Zoning Plan compared with the pre-FZP baseline (`DEFAULT_LEVERS`).
-  Freehand, erase and protect strokes (Task 8) reuse `/`'s BrushController through the stroke
+  Custom paint and erase strokes (Task 8) reuse `/`'s BrushController through the stroke
   adapter; the lot dots and the brush ring share SimMap's overlay through the overlay mux.
-  Rule brushes (Task 9) read the brush catalog, asked for once when the panel first opens and
+  Zoning rules (Task 9) read the brush catalog, asked for once when the panel first opens and
   again after a session restart if it came back null; below md their form replaces the sheet's
-  contents (layout ruling 9). "Protections" (Task 10) edits the category protections and picks the
-  Protect tool through the same `setTool`, so on a phone it too closes the sheet for the tool bar.
+  contents (layout ruling 9). "Protections" (Task 10) edits the category protections.
   Plan 5 (Task 5): the policy autosaves (`sfhousing:sim:v1`) and is restored on mount, reconciled
   with the calibration (Calls 11 and 12). The header gets the save state (its status slot) and Publish. In `mode: 'view'` (the
   read-only /s/<id>, Task 6) the shared policy opens reconciled with the calibration (Call 7, with
@@ -39,7 +38,7 @@
   import RuleBrushForm from './RuleBrushForm.svelte';
   import type { Calibration } from '$lib/timelapse/types';
   import BrushSection from './BrushSection.svelte';
-  import { SimBrushTools, brushToolOf, isProtectTool, type SimTool } from './brush-tools.svelte';
+  import { SimBrushTools, brushToolOf, type SimTool } from './brush-tools.svelte';
   import { lotOverlayLayers } from './lot-overlay';
   import { createOverlayMux } from './overlay-mux';
   import PhoneToolBar from './PhoneToolBar.svelte';
@@ -61,7 +60,7 @@
   import PermittingSection from './PermittingSection.svelte';
   import PolicyPanel from './PolicyPanel.svelte';
   import PolicySummary from './PolicySummary.svelte';
-  import { lotStatus, protectLotStatus, type LotStatus } from './brush-summary';
+  import { customLotStatus, ruleLotStatus, type LotStatus } from './brush-summary';
   import ProtectionsSection from './ProtectionsSection.svelte';
 
   interface Props {
@@ -121,7 +120,7 @@
     initialPolicy
       ? restoreSimDoc(
           {
-            plan: { schema: 1, kind: 'sim', datasetVersion, policy: initialPolicy },
+            plan: { schema: 2, kind: 'sim', datasetVersion, policy: initialPolicy },
             notice: null
           },
           calibration
@@ -159,8 +158,8 @@
   let title = $state<string | undefined>(untrack(() => viewTitle));
   const doc = $derived<SimDoc>(
     title === undefined
-      ? { schema: 1, kind: 'sim', datasetVersion, policy: store.policy }
-      : { schema: 1, kind: 'sim', datasetVersion, title, policy: store.policy }
+      ? { schema: 2, kind: 'sim', datasetVersion, policy: store.policy }
+      : { schema: 2, kind: 'sim', datasetVersion, title, policy: store.policy }
   );
   let notices = $state<SimNotice[]>(untrack(() => opened?.notices ?? []));
   /** Autosave writes once this is set: after the restore. */
@@ -288,8 +287,7 @@
   const tools = new SimBrushTools(brush);
   const adapter = createStrokeAdapter({
     store,
-    target: () => tools.target(),
-    effect: () => tools.effect(),
+    stories: () => tools.stories(),
     announce: (m) => brush.announce(m, ANNOUNCE_MS)
   });
   const wide = new MediaQuery('(min-width: 768px)');
@@ -354,18 +352,11 @@
     }
   }
 
-  // The controller's own tool keys set brush.tool: keep the /sim tool in step. While Protect or
-  // Unprotect is active, B and E stay on the protections (B: Protect, E: Unprotect), so a key
-  // never silently turns a protect stroke into zoning paint.
+  // The controller's own tool keys set brush.tool: keep the /sim tool in step.
   $effect(() => {
     const bt = brush.tool;
     untrack(() => {
-      if (brushToolOf(tools.tool) === bt) return;
-      if (isProtectTool(tools.tool) && bt !== 'move') {
-        tools.tool = bt === 'paint' ? 'protect' : 'unprotect';
-      } else {
-        tools.tool = bt;
-      }
+      if (brushToolOf(tools.tool) !== bt) tools.tool = bt;
     });
   });
 
@@ -436,16 +427,22 @@
 
   const prefersDark = new MediaQuery('(prefers-color-scheme: dark)');
 
-  /** The summary's lot counts: a brush by its id, or the brushed protections (`'protect'`). */
-  function lotsOf(key: string): LotStatus {
+  /** The summary's per-card lot lookup: a rule (`rule:<id>`) or a custom brush (`custom:<id>`). */
+  function lotsOf(key: `rule:${string}` | `custom:${string}`): LotStatus {
     const p = store.policy;
     const result = (k: string) => sync.result(k);
-    const b = key === 'protect' ? null : p.brushes.find((x) => x.id === key);
-    if (key !== 'protect' && !b) return { kind: 'finding' };
-    return b ? lotStatus(b, result) : protectLotStatus(p, result);
+    const sep = key.indexOf(':');
+    const list = key.slice(0, sep);
+    const id = key.slice(sep + 1);
+    if (list === 'rule') {
+      const r = p.rules.find((x) => x.id === id);
+      return r ? ruleLotStatus(r, result) : { kind: 'finding' };
+    }
+    const b = p.custom.find((x) => x.id === id);
+    return b ? customLotStatus(b, result) : { kind: 'finding' };
   }
 
-  // The lot dots: every lot the user layer or the brushed protections touch, at its label point.
+  // The lot dots: every lot a rule or the custom painting changes, at its label point.
   $effect(() => {
     const slot = lotsSlot;
     const L = deckLayers;
@@ -556,13 +553,7 @@
       />
     {/snippet}
     {#snippet protections()}
-      <ProtectionsSection
-        {store}
-        {sync}
-        {tools}
-        ontool={setTool}
-        announce={(m) => brush.announce(m, ANNOUNCE_MS)}
-      />
+      <ProtectionsSection {store} announce={(m) => brush.announce(m, ANNOUNCE_MS)} />
     {/snippet}
     {#snippet subview()}
       {#if forms.current && catalog}

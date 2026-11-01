@@ -1,5 +1,5 @@
 // /sim e2e (plan 3, Task 12): the /fzp redirect, the header score bar and phone Menu, the policy
-// panel, a street brush, a freehand stroke and its undo, a brushed protection, Back and Forward
+// panel, a street rule, a Paint stroke and its undo, a category protection, Back and Forward
 // after a reroll, and the accessibility checks. Runs against the VITE_E2E build, which exposes
 // window.__sfhFzp (src/lib/fzp/debug.ts, with /sim's `levers` field) and window.__sfhMap.
 // Fixture-0 files are read from disk (frontage.bin through the shared codec); names, lots and
@@ -108,13 +108,13 @@ async function expandSection(page: Page, title: string): Promise<void> {
 }
 
 /**
- * "Add a brush", then the kind's button once the brush catalog allows it; the form opens named
+ * "Add a rule", then the kind's button once the brush catalog allows it; the form opens named
  * `title` exactly.
  */
 async function openBrushForm(page: Page, kind: string, title: string): Promise<Locator> {
   await openPolicy(page);
   await expandSection(page, 'Your zoning');
-  await panel(page).getByRole('button', { name: 'Add a brush' }).click();
+  await panel(page).getByRole('button', { name: 'Add a rule' }).click();
   const choice = panel(page).getByRole('button', { name: kind, exact: true });
   await expect(choice).toBeEnabled({ timeout: 20_000 });
   await choice.click();
@@ -123,8 +123,10 @@ async function openBrushForm(page: Page, kind: string, title: string): Promise<L
   return form;
 }
 
-const brushList = (page: Page): Locator =>
-  panel(page).getByRole('list', { name: 'Your brushes' }).getByRole('listitem');
+const ruleList = (page: Page): Locator =>
+  panel(page).getByRole('list', { name: 'New zoning rules' }).getByRole('listitem');
+const customList = (page: Page): Locator =>
+  panel(page).getByRole('list', { name: 'Custom zoning' }).getByRole('listitem');
 
 /** One stroke across fixture-0's parcel row: a mouse drag on desktop, a finger on the phone. */
 async function strokeOnce(page: Page, isMobile: boolean): Promise<void> {
@@ -314,21 +316,21 @@ test('below md Policy opens the modal sheet from the Menu and focus returns to M
 
 // ---- brushes ------------------------------------------------------------------------------------
 
-test('a Street brush on the first frontage name selects its fronting lots', async ({ page }) => {
+test('a Street rule on the first frontage name selects its fronting lots', async ({ page }) => {
   const street = await firstStreet();
   expect(street.lots, 'fixture-0 has an eligible lot on its first street').toBeGreaterThan(0);
   await gotoSim(page);
   const before = await leverStatus(page);
 
-  const form = await openBrushForm(page, 'Street', 'Add a street brush');
+  const form = await openBrushForm(page, 'Street', 'Add a street rule');
   await form.getByRole('combobox', { name: 'Street name' }).fill(street.name);
   await form.getByRole('button', { name: 'Add street' }).click();
   await expect(form.getByRole('list', { name: 'Chosen streets' })).toContainText(street.name);
   await watchLeverNotices(page);
-  await form.getByRole('button', { name: 'Save brush' }).click();
+  await form.getByRole('button', { name: 'Save rule' }).click();
 
-  await expect(brushList(page)).toHaveCount(1);
-  await expect(brushList(page).first()).toContainText(lotCount(street.lots));
+  await expect(ruleList(page)).toHaveCount(1);
+  await expect(ruleList(page).first()).toContainText(lotCount(street.lots));
 
   // The levers go resolving -> current; the updating notice shows, then clears.
   await expect
@@ -349,7 +351,7 @@ test('a Street brush on the first frontage name selects its fronting lots', asyn
   ).toBe(true);
 });
 
-test('a Paint stroke adds a freehand brush and Ctrl+Z removes it', async ({ isMobile, page }) => {
+test('a Paint stroke adds a custom brush and Ctrl+Z removes it', async ({ isMobile, page }) => {
   await gotoSim(page);
   await openPolicy(page);
   await expandSection(page, 'Your zoning');
@@ -363,8 +365,8 @@ test('a Paint stroke adds a freehand brush and Ctrl+Z removes it', async ({ isMo
     await page.getByTestId('phone-tool-bar').getByRole('button', { name: 'Done' }).click();
     await expect(panel(page)).toBeVisible();
   }
-  await expect(brushList(page)).toHaveCount(1);
-  await expect(brushList(page).first()).toContainText(/Raise/);
+  await expect(customList(page)).toHaveCount(1);
+  await expect(customList(page).first()).toContainText(/Allow \d+ stor/);
   if (isMobile) {
     await panel(page).getByRole('button', { name: 'Close policy' }).click();
     await expect(panel(page)).toBeHidden();
@@ -372,19 +374,19 @@ test('a Paint stroke adds a freehand brush and Ctrl+Z removes it', async ({ isMo
 
   await page.keyboard.press('Control+z');
   await openPolicy(page);
-  await expect(brushList(page)).toHaveCount(0);
+  await expect(customList(page)).toHaveCount(0);
   await expect(panel(page).getByRole('button', { name: /^Redo: / })).toBeEnabled();
 });
 
-test('a brushed protection shows the protections line in the score', async ({ isMobile, page }) => {
+test('a category protection shows the protections line in the score', async ({
+  isMobile,
+  page
+}) => {
   await gotoSim(page);
   const before = await leverStatus(page);
   await openPolicy(page);
   await expandSection(page, 'Protections');
-  const protect = panel(page).getByRole('button', { name: 'Protect lots with the brush' });
-  await expect(protect).toBeEnabled();
-  await chooseTool(page, isMobile, () => protect.click());
-  await strokeOnce(page, isMobile);
+  await panel(page).getByRole('checkbox', { name: 'Rent-controlled buildings (likely)' }).check();
 
   await expect
     .poll(async () => {
@@ -392,6 +394,8 @@ test('a brushed protection shows the protections line in the score', async ({ is
       return l.status === 'current' && (l.sentRev ?? -1) > (before.sentRev ?? -1);
     })
     .toBe(true);
+  // The phone sheet is modal: close it to reach the score bar.
+  if (isMobile) await panel(page).getByRole('button', { name: 'Close policy' }).click();
   const details = await openScore(page);
   await expect(details).toContainText(
     /\d[\d,]* lots? protected: [\d,]+ fewer homes? of zoned capacity/
@@ -453,10 +457,10 @@ test('axe: the policy panel open', async ({ page }) => {
   await expectNoA11yViolations(page);
 });
 
-test('axe: the Area brush form open', async ({ page }) => {
+test('axe: the Transit rule form open', async ({ page }) => {
   await gotoSim(page);
-  const form = await openBrushForm(page, 'Area', 'Add an area brush');
-  await expect(form.getByRole('group', { name: 'Zoning districts' })).toBeVisible();
+  const form = await openBrushForm(page, 'Transit', 'Add a transit rule');
+  await expect(form.getByRole('group', { name: 'Bands' })).toBeVisible();
   await expectNoA11yViolations(page);
 });
 

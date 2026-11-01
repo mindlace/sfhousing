@@ -1,55 +1,19 @@
 /// <reference types="@vitest/browser-playwright" />
-// "Protections" (plan 3, Task 10): the category checkboxes, the years input of "newer than", the
-// note, the Protect tool button and the brushed lots with Clear (one undoable change, ruling 6).
+// "Protections" (plan 3, Task 10; sim runs: category-only): the category checkboxes, the years
+// input of "newer than" and the note. The protect brush is gone.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
-import { BrushState } from '$lib/brush/state.svelte';
-import type { BrushLotsResult } from '$lib/sim/scenario/types';
 import ProtectionsSection from './ProtectionsSection.svelte';
-import { SimBrushTools, type SimTool } from './brush-tools.svelte';
-import { DEFAULT_POLICY, queryKey, type ProtectStroke, type Stroke } from './policy';
+import { DEFAULT_POLICY } from './policy';
 import { PolicyStore } from './policy-store.svelte';
 
-const s1: Stroke = { path: [[-122.42, 37.76]], radiusM: 30 };
-const s2: Stroke = { path: [[-122.41, 37.77]], radiusM: 30 };
-const twoStrokes: ProtectStroke[] = [
-  { ...s1, kind: 'protect' },
-  { ...s2, kind: 'protect' }
-];
-/** Consecutive protect strokes are one run: one freehand query over both. */
-const runKey = queryKey({ kind: 'freehand', strokes: [s1, s2] });
-
-const lots = (n: number): BrushLotsResult => ({
-  ok: true,
-  lots: Array.from({ length: n }, (_, i) => `L${i}`),
-  points: new Float64Array(n * 2)
-});
-
-function setup(
-  opts: {
-    strokes?: ProtectStroke[];
-    result?: BrushLotsResult;
-    phase?: 'ready' | 'loading';
-  } = {}
-) {
+function setup() {
   const store = new PolicyStore(DEFAULT_POLICY);
-  if (opts.strokes) {
-    const strokes = opts.strokes;
-    store.apply((p) => ({ ...p, protect: { ...p.protect, strokes } }), 'Protected lots');
-  }
-  const brush = new BrushState({ storage: null, fine: false });
-  brush.phase = opts.phase ?? 'ready';
-  const tools = new SimBrushTools(brush);
-  const sync = {
-    result: vi.fn((k: string) => (k === runKey ? opts.result : undefined)),
-    retry: vi.fn()
-  };
-  const ontool = vi.fn((t: SimTool) => (tools.tool = t));
   const announce = vi.fn();
-  render(ProtectionsSection, { props: { store, sync, tools, ontool, announce } });
-  return { store, tools, sync, ontool, announce };
+  render(ProtectionsSection, { props: { store, announce } });
+  return { store, announce };
 }
 
 describe('ProtectionsSection', () => {
@@ -148,64 +112,6 @@ describe('ProtectionsSection', () => {
     expect(store.policy.protect.newerThanYears).toBe(40);
   });
 
-  it('"Protect lots with the brush" selects the Protect tool', async () => {
-    const { ontool, tools } = setup();
-    await page.getByRole('button', { name: 'Protect lots with the brush' }).click();
-    expect(ontool).toHaveBeenCalledWith('protect');
-    expect(tools.tool).toBe('protect');
-  });
-
-  it('the Protect button waits for the map, as the tool radios do', async () => {
-    setup({ phase: 'loading' });
-    await expect
-      .element(page.getByRole('button', { name: 'Protect lots with the brush' }))
-      .toBeDisabled();
-  });
-
-  it('counts the compiled brushed lots; Clear is one change that undo reverses', async () => {
-    const { store, announce } = setup({ strokes: twoStrokes, result: lots(3) });
-    await expect.element(page.getByText('Protected with the brush · 3 lots')).toBeVisible();
-    await expect
-      .element(page.getByRole('status').filter({ hasText: '3 lots' }))
-      .toBeInTheDocument();
-    await page.getByRole('button', { name: 'Clear brush protections' }).click();
-    expect(store.policy.protect.strokes).toEqual([]);
-    expect(store.undoLabel).toBe('Cleared brush protections');
-    expect(announce).toHaveBeenCalledWith('Cleared brush protections');
-    await expect.element(page.getByText(/^Protected with the brush/)).not.toBeInTheDocument();
-    // Focus does not drop to <body> with the row gone.
-    await expect
-      .element(page.getByRole('button', { name: 'Protect lots with the brush' }))
-      .toHaveFocus();
-    store.undo();
-    expect(store.policy.protect.strokes).toEqual(twoStrokes);
-    await expect.element(page.getByText('Protected with the brush · 3 lots')).toBeVisible();
-  });
-
-  it('after Clear with the Protect button disabled, focus goes to the first checkbox', async () => {
-    setup({ strokes: twoStrokes, result: lots(3), phase: 'loading' });
-    await page.getByRole('button', { name: 'Clear brush protections' }).click();
-    await expect
-      .element(page.getByRole('checkbox', { name: 'Rent-controlled buildings (likely)' }))
-      .toHaveFocus();
-    expect(document.activeElement).not.toBe(document.body);
-  });
-
-  it('the count region is in the tree before the first stroke, so its first text is spoken', async () => {
-    const { store } = setup();
-    const region = document.querySelector('[role="status"]');
-    expect(region).not.toBeNull();
-    expect(region!.textContent!.trim()).toBe('');
-    store.apply(
-      (p) => ({ ...p, protect: { ...p.protect, strokes: twoStrokes } }),
-      'Protected lots'
-    );
-    await expect
-      .poll(() => region!.textContent!.trim())
-      .toBe('Protected with the brush · Finding lots…');
-    expect(region!.isConnected).toBe(true);
-  });
-
   it('undo and redo to a valid count clear a years error', async () => {
     const { store } = setup();
     await page.getByRole('checkbox', { name: 'Buildings newer than' }).click();
@@ -229,20 +135,13 @@ describe('ProtectionsSection', () => {
     await expect.element(page.getByRole('alert')).toHaveTextContent('');
   });
 
-  it('reads "Finding lots…" while the strokes resolve', async () => {
-    setup({ strokes: twoStrokes });
-    await expect.element(page.getByText('Protected with the brush · Finding lots…')).toBeVisible();
-  });
-
-  it('a failed resolution offers Retry', async () => {
-    const { sync } = setup({
-      strokes: twoStrokes,
-      result: { ok: false, reason: 'bad-request', message: 'x' }
-    });
-    await expect
-      .element(page.getByText("Protected with the brush · Couldn't find lots"))
-      .toBeVisible();
-    await page.getByRole('button', { name: 'Retry' }).click();
-    expect(sync.retry).toHaveBeenCalledWith(runKey);
+  it('offers three categories and the years input, and no protect brush', async () => {
+    setup();
+    expect(page.getByRole('checkbox').elements()).toHaveLength(3);
+    await expect.element(page.getByRole('spinbutton', { name: /years/i })).toBeInTheDocument();
+    expect(
+      page.getByRole('button', { name: 'Protect lots with the brush' }).elements()
+    ).toHaveLength(0);
+    expect(page.getByText(/Protected with the brush/).elements()).toHaveLength(0);
   });
 });

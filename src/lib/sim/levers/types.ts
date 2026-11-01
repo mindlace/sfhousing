@@ -26,7 +26,6 @@ export interface Protections {
   rentControl: boolean;
   historic: boolean;
   newerThanYears: number | null;
-  lots: ParcelId[]; // removed in Task 3
 }
 
 export interface TimerEdit {
@@ -67,7 +66,7 @@ export const DEFAULT_LEVERS: SimLevers = {
   schema: 2,
   rules: [],
   paint: [],
-  protect: { rentControl: false, historic: false, newerThanYears: null, lots: [] },
+  protect: { rentControl: false, historic: false, newerThanYears: null },
   timers: [],
   routeShares: null,
   localProgramStreamlined: true,
@@ -137,15 +136,14 @@ function parseStoryEdit(v: unknown, path: string): StoryEdit {
 }
 
 function parseProtections(v: unknown): Protections {
-  const r = record(v, 'protect', ['rentControl', 'historic', 'newerThanYears', 'lots']);
+  const r = record(v, 'protect', ['rentControl', 'historic', 'newerThanYears']);
   const n = r.newerThanYears;
   if (n !== null && (typeof n !== 'number' || !Number.isFinite(n) || n <= 0))
     fail('protect.newerThanYears', 'expected null or a positive number');
   return {
     rentControl: bool(r.rentControl, 'protect.rentControl'),
     historic: bool(r.historic, 'protect.historic'),
-    newerThanYears: n,
-    lots: lotIds(r.lots, 'protect.lots')
+    newerThanYears: n
   };
 }
 

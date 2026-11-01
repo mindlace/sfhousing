@@ -19,7 +19,6 @@ import { replaceStateCalls } from '../../test-stubs/app/navigation';
 import type SimPage from './SimPage.svelte';
 import { DEFAULT_POLICY, SIM_CODEC, SIM_KEY, type SimDoc } from './sim-doc';
 import { resolvePreset } from './timing';
-import { defaultEffect } from './policy';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 const workers = vi.hoisted(() => [] as import('$lib/fzp/test/fake-worker').FakeScenarioWorker[]);
@@ -139,7 +138,7 @@ async function toReady() {
 const yourZoning = () => page.getByRole('button', { name: 'Your zoning' });
 
 describe('SimPage strokes (Task 8)', () => {
-  it('a Paint stroke on the map adds a freehand brush that Undo names and undoes', async () => {
+  it('a Paint stroke on the map adds a custom brush that Undo names and undoes', async () => {
     stub.reset();
     await page.viewport(1024, 768);
     await setup();
@@ -166,12 +165,12 @@ describe('SimPage strokes (Task 8)', () => {
     ev('pointerdown', 10);
     for (let x = 20; x <= 80; x += 10) ev('pointermove', x);
     ev('pointerup', 80);
-    const undo = page.getByRole('button', { name: 'Undo: Raised lots to 6 stories' });
+    const undo = page.getByRole('button', { name: 'Undo: Allowed 6 stories' });
     await expect.element(undo).toBeEnabled();
     await expect.element(page.getByText('Finding lots…')).toBeVisible();
     await undo.click();
     await expect
-      .element(page.getByRole('status').filter({ hasText: 'Undid: Raised lots to 6 stories' }))
+      .element(page.getByRole('status').filter({ hasText: 'Undid: Allowed 6 stories' }))
       .toBeInTheDocument();
     await expect.element(page.getByText('Finding lots…')).not.toBeInTheDocument();
   });
@@ -197,45 +196,23 @@ describe('SimPage strokes (Task 8)', () => {
     await expect.element(bar).not.toBeInTheDocument();
   });
 
-  it('while protecting, B and E stay on the protections', async () => {
+  it('B and E pick Paint and Erase; V goes back to Move', async () => {
     stub.reset();
     await page.viewport(1024, 768);
     await setup();
     await toReady();
     await yourZoning().click();
-    await page.getByRole('radio', { name: 'Protect', exact: true }).click();
+    await page.getByRole('radio', { name: 'Paint' }).click();
     await userEvent.keyboard('e');
-    await expect.element(page.getByRole('radio', { name: 'Unprotect' })).toBeChecked();
-    await userEvent.keyboard('b');
-    await expect.element(page.getByRole('radio', { name: 'Protect', exact: true })).toBeChecked();
-    // From Move, B is zoning Paint.
-    await userEvent.keyboard('v');
-    await expect.element(page.getByRole('radio', { name: 'Move' })).toBeChecked();
+    await expect.element(page.getByRole('radio', { name: 'Erase' })).toBeChecked();
     await userEvent.keyboard('b');
     await expect.element(page.getByRole('radio', { name: 'Paint' })).toBeChecked();
+    await userEvent.keyboard('v');
+    await expect.element(page.getByRole('radio', { name: 'Move' })).toBeChecked();
   });
 });
 
 describe('SimPage protections (Task 10)', () => {
-  it('at 375 px, "Protect lots with the brush" closes the sheet for the tool bar on Protect', async () => {
-    stub.reset();
-    await page.viewport(375, 700);
-    await setup();
-    await toReady();
-    await page.getByRole('button', { name: 'Menu' }).click();
-    await policyButton().click();
-    const dialog = page.getByRole('dialog', { name: 'Policy' });
-    await expect.element(dialog).toBeVisible();
-    await page.getByRole('button', { name: 'Protections' }).click();
-    const protect = page.getByRole('button', { name: 'Protect lots with the brush' });
-    await expect.element(protect).toBeEnabled();
-    await protect.click();
-    await expect.element(dialog).not.toBeInTheDocument();
-    const bar = page.getByRole('group', { name: 'Brush' });
-    await expect.element(bar).toBeVisible();
-    await expect.element(bar.getByRole('button').first()).toHaveFocus();
-  });
-
   it('a category checkbox is a change that Undo names', async () => {
     stub.reset();
     await page.viewport(1024, 768);
@@ -267,7 +244,7 @@ describe('SimPage rule brushes (Task 9)', () => {
     expect(w.allOf('brushCatalog')).toHaveLength(1);
   });
 
-  it('at 375 px, "Add a brush" → Street replaces the sheet body; Back returns', async () => {
+  it('at 375 px, "Add a rule" → Street replaces the sheet body; Back returns', async () => {
     stub.reset();
     await page.viewport(375, 700);
     await setup();
@@ -282,7 +259,7 @@ describe('SimPage rule brushes (Task 9)', () => {
       catalog: testCatalog()
     });
     await yourZoning().click();
-    await page.getByRole('button', { name: 'Add a brush' }).click();
+    await page.getByRole('button', { name: 'Add a rule' }).click();
     await page.getByRole('button', { name: 'Street', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Policy' });
     await expect.element(dialog.getByRole('checkbox', { name: 'Arterials' })).toBeVisible();
@@ -293,7 +270,7 @@ describe('SimPage rule brushes (Task 9)', () => {
     await page.getByRole('button', { name: 'Back', exact: true }).click();
     await expect.element(yourZoning()).toBeVisible();
     await expect.element(page.getByRole('checkbox', { name: 'Arterials' })).not.toBeInTheDocument();
-    await expect.element(page.getByRole('button', { name: 'Add a brush' })).toHaveFocus();
+    await expect.element(page.getByRole('button', { name: 'Add a rule' })).toHaveFocus();
   });
 
   /** At 375 px: open the sheet, answer the catalog, open the Street form. */
@@ -308,7 +285,7 @@ describe('SimPage rule brushes (Task 9)', () => {
       catalog: testCatalog()
     });
     await yourZoning().click();
-    await page.getByRole('button', { name: 'Add a brush' }).click();
+    await page.getByRole('button', { name: 'Add a rule' }).click();
     await page.getByRole('button', { name: 'Street', exact: true }).click();
     await expect.element(page.getByRole('checkbox', { name: 'Arterials' })).toBeVisible();
   }
@@ -340,7 +317,7 @@ describe('SimPage rule brushes (Task 9)', () => {
     await page.viewport(1024, 768);
     await expect.element(page.getByRole('region', { name: 'Policy' })).toBeVisible();
     await expect.element(page.getByRole('checkbox', { name: 'Arterials' })).not.toBeInTheDocument();
-    await expect.element(page.getByRole('button', { name: 'Add a brush' })).toBeVisible();
+    await expect.element(page.getByRole('button', { name: 'Add a rule' })).toBeVisible();
   });
 });
 
@@ -354,7 +331,7 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
   const publish = () => page.getByTestId('publish-open');
 
   const docWith = (current = resolvePreset('benchmarkPermits', calibration)): SimDoc => ({
-    schema: 1,
+    schema: 2,
     kind: 'sim',
     datasetVersion: 'fixture-0',
     policy: { ...DEFAULT_POLICY, timing: { current, saved: null } }
@@ -525,31 +502,33 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
     expect(storedDoc(mem).title).toBe('SD permits');
   });
 
-  // C1: a restored policy goes through LeverSync, so its brushes and brushed protections resolve
-  // and the full levers (with their lots) are sent, without waiting for an edit.
+  // C1: a restored policy goes through LeverSync, so its rules and custom brushes resolve and the
+  // full levers (with their lots) are sent, without waiting for an edit.
   const brushed = (): SimDoc => ({
-    schema: 1,
+    schema: 2,
     kind: 'sim',
     datasetVersion: 'fixture-0',
     policy: {
       ...DEFAULT_POLICY,
-      brushes: [
+      rules: [
         {
-          id: 'a',
-          kind: 'freehand',
-          strokes: [{ path: [[-122.4, 37.7]], radiusM: 50 }],
-          effect: defaultEffect('raise', 6)
+          id: 'r',
+          kind: 'street',
+          classes: ['arterial'],
+          names: [],
+          depth: 0,
+          ncOnly: false,
+          stories: 8
         }
       ],
-      protect: {
-        ...DEFAULT_POLICY.protect,
-        strokes: [{ kind: 'protect', path: [[-122.41, 37.71]], radiusM: 40 }]
-      }
+      custom: [
+        { id: 'a', kind: 'paint', strokes: [{ path: [[-122.4, 37.7]], radiusM: 50 }], stories: 6 }
+      ]
     }
   });
 
   for (const via of ['reload', 'remix'] as const) {
-    it(`a ${via} resolves the restored brushes and protections and sends their lots`, async () => {
+    it(`a ${via} resolves the restored rules and custom brushes and sends their lots`, async () => {
       stub.reset();
       await page.viewport(1024, 768);
       const d = brushed();
@@ -575,9 +554,10 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
       await expect.poll(() => w.lastOf('setLevers')?.levers.rules.length ?? 0).toBe(1);
       const sent = w.lastOf('setLevers')!.levers;
       expect(sent.rules[0].lots.length).toBe(2);
-      expect(sent.protect.lots.length).toBe(2);
+      expect(sent.paint[0].lots.length).toBe(2);
       await yourZoning().click();
-      await expect.element(page.getByText(/· 2 lots ·/)).toBeVisible();
+      await expect.element(page.getByText(/· 2 lots$/).first()).toBeVisible();
+      expect(page.getByText(/· 2 lots$/).elements()).toHaveLength(2);
       expect(page.getByText('Finding lots…').elements()).toHaveLength(0);
       // The next real change still goes through LeverSync, once.
       const before = w.allOf('setLevers').length;

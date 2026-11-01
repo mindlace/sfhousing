@@ -13,7 +13,7 @@ import { FakeScenarioWorker, timelineMsg } from '$lib/fzp/test/fake-worker';
 import { stub } from '$lib/fzp/test/sim-map-stub';
 import { copyFor } from '$lib/sharing/copy';
 import { readRecord, writeRecord } from '$lib/sharing/storage';
-import { defaultEffect, type SimPolicy } from '$lib/sim-page/policy';
+import type { SimPolicy } from '$lib/sim-page/policy';
 import { DEFAULT_POLICY, SIM_CODEC, SIM_KEY, type SimDoc } from '$lib/sim-page/sim-doc';
 import { TIMING_NOTICE_TEXT } from '$lib/sim-page/sim-session';
 import manifestJson from '../../../../e2e/fixtures/data/fixture-0/manifest.json';
@@ -46,13 +46,8 @@ const SIM = copyFor('sim');
 
 const painted = (): SimPolicy => ({
   ...DEFAULT_POLICY,
-  brushes: [
-    {
-      id: 'a',
-      kind: 'freehand',
-      strokes: [{ path: [[-122.4, 37.7]], radiusM: 50 }],
-      effect: defaultEffect('raise', 6)
-    }
+  custom: [
+    { id: 'a', kind: 'paint', strokes: [{ path: [[-122.4, 37.7]], radiusM: 50 }], stories: 6 }
   ]
 });
 
@@ -77,7 +72,7 @@ const tampered = (): SimPolicy => ({
 });
 
 function data(policy: SimPolicy = painted(), title: string | null = 'SD permits') {
-  const doc: SimDoc = { schema: 1, kind: 'sim', datasetVersion: 'fixture-0', policy };
+  const doc: SimDoc = { schema: 2, kind: 'sim', datasetVersion: 'fixture-0', policy };
   if (title !== null) doc.title = title;
   return {
     id: 'Abcdefg2',
@@ -140,7 +135,7 @@ describe('/s/[id] read-only view', () => {
     await expect.element(page.getByRole('region', { name: 'Policy (read-only)' })).toBeVisible();
     expect(page.getByRole('button', { name: /Publish|Share link/ }).elements()).toHaveLength(0);
     expect(page.getByText('Saved').elements()).toHaveLength(0);
-    expect(page.getByRole('button', { name: 'Add a brush' }).elements()).toHaveLength(0);
+    expect(page.getByRole('button', { name: 'Add a rule' }).elements()).toHaveLength(0);
     expect(document.querySelector('[data-header-status]')?.children).toHaveLength(0);
     // Nothing is autosaved from the view.
     expect(localStorage.getItem(SIM_KEY)).toBeNull();
@@ -178,7 +173,7 @@ describe('/s/[id] read-only view', () => {
 
   it('Remix confirms over a non-default local policy', async () => {
     const local: SimDoc = {
-      schema: 1,
+      schema: 2,
       kind: 'sim',
       datasetVersion: 'fixture-0',
       policy: painted()

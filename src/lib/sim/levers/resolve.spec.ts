@@ -29,7 +29,6 @@ const L = (patch: Partial<SimLevers> = {}): SimLevers => ({
   ...patch
 });
 const e = (lots: string[], stories: number): StoryEdit => ({ lots, stories });
-const protectLots = (lots: string[]) => ({ ...DEFAULT_LEVERS.protect, lots });
 function row(t: EnvelopeTable, i: number) {
   return {
     stories: t.stories[i],
@@ -39,6 +38,12 @@ function row(t: EnvelopeTable, i: number) {
   };
 }
 const at = (c: LayerCtx, id: string) => c.parcels.index.get(id)!;
+/** Protections that cover exactly `ids` in `c`: the historic category, flagged on those lots only. */
+function protecting(c: LayerCtx, ids: string[]) {
+  c.policy.historicProtected.fill(0);
+  for (const id of ids) c.policy.historicProtected[at(c, id)] = 1;
+  return { ...DEFAULT_LEVERS.protect, historic: true };
+}
 
 /** The first mini-city row with an FZP yield cap that hosts. */
 const CAPPED = (() => {
@@ -131,19 +136,13 @@ describe('rules and paint', () => {
     expect(r.unprotected.table.stories[i]).toBe(30);
   });
 
-  it('unknown ids are counted once across rules, paint and protect.lots', () => {
+  it('unknown ids are counted once across rules and paint', () => {
     const r = resolveEnvelopes(
       ctx(),
       L({ rules: [e(['nope', 'gone'], 5)], paint: [e(['nope'], 5)] }),
       ASOF
     );
     expect(r.unknownLots).toBe(2);
-    const shared = resolveEnvelopes(
-      ctx(),
-      L({ rules: [e(['nope'], 5)], protect: protectLots(['nope', 'missing']) }),
-      ASOF
-    );
-    expect(shared.unknownLots).toBe(2);
   });
 
   it('unprotected is the plan itself when no row is protected', () => {
@@ -160,7 +159,7 @@ describe('rules and paint', () => {
       L({
         rules: [e([c.parcels.id[CAPPED]], 40)],
         paint: [e([FZP_LOT], 0)],
-        protect: protectLots([MINI_SB79_ID])
+        protect: protecting(c, [MINI_SB79_ID])
       }),
       ASOF
     );
@@ -175,7 +174,7 @@ describe('protections', () => {
     const i = at(c, FZP_LOT);
     const fzp = stockTable(c, 'fzp');
     for (const patch of [{ rules: [e([FZP_LOT], 8)] }, { paint: [e([FZP_LOT], 0)] }]) {
-      const r = resolveEnvelopes(c, L({ ...patch, protect: protectLots([FZP_LOT]) }), ASOF);
+      const r = resolveEnvelopes(c, L({ ...patch, protect: protecting(c, [FZP_LOT]) }), ASOF);
       expect(row(r.plan.table, i)).toEqual({ ...row(fzp, i), hostable: 0 });
       expect(Array.from(r.protectedRows)).toEqual([i]);
       // The protected view makes no Need; the unprotected view may (a raise to 8 does).
@@ -184,7 +183,7 @@ describe('protections', () => {
     }
     const lowered = resolveEnvelopes(
       c,
-      L({ paint: [e([FZP_LOT], 0)], protect: protectLots([FZP_LOT]) }),
+      L({ paint: [e([FZP_LOT], 0)], protect: protecting(c, [FZP_LOT]) }),
       ASOF
     );
     const cap = leverCapacity(lowered, c.parcels);
@@ -194,8 +193,7 @@ describe('protections', () => {
   it('categories: historic, rent control, newer-than', () => {
     const c = ctx();
     const none = DEFAULT_LEVERS.protect;
-    const rows = (p: Partial<typeof none>) =>
-      Array.from(protectedRows(c, { ...none, ...p }, ASOF).rows);
+    const rows = (p: Partial<typeof none>) => Array.from(protectedRows(c, { ...none, ...p }, ASOF));
     expect(rows({ historic: true })).toContain(at(c, MINI_HISTORIC_ID));
     expect(rows({ rentControl: true })).toEqual(
       [...c.parcels.rentControlLikely].flatMap((v, i) => (v ? [i] : []))
@@ -206,14 +204,12 @@ describe('protections', () => {
     expect(newer).not.toContain(at(c, '3600003')); // yearBuilt 0 = unknown
   });
 
-  it('unknown and duplicate lots', () => {
+  it('rows covered by several categories are listed once, ascending', () => {
     const c = ctx();
-    const lots = ['nope', FZP_LOT, FZP_LOT];
-    const p = protectedRows(c, protectLots(lots), ASOF);
-    expect(p.unknown).toBe(1);
-    expect(Array.from(p.rows)).toEqual([at(c, FZP_LOT)]);
-    const r = resolveEnvelopes(c, L({ protect: protectLots(lots) }), ASOF);
-    expect(r.unknownLots).toBe(1);
+    const all = protectedRows(c, { rentControl: true, historic: true, newerThanYears: 200 }, ASOF);
+    const xs = Array.from(all);
+    expect(xs).toEqual([...new Set(xs)].sort((a, b) => a - b));
+    expect(xs).toContain(at(c, MINI_HISTORIC_ID));
   });
 
   it('withoutProtections minus plan is the sum over protected rows', () => {
@@ -223,7 +219,7 @@ describe('protections', () => {
       L({
         rules: [e([MINI_SB79_ID], 8)],
         paint: [e([FZP_LOT], 0)],
-        protect: protectLots([FZP_LOT, MINI_SB79_ID])
+        protect: protecting(c, [FZP_LOT, MINI_SB79_ID])
       }),
       ASOF
     );

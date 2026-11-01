@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OPS_MAX, serializePlan, type Plan, type PlanOp } from '$lib/plan';
-import { defaultEffect } from '$lib/sim-page/policy';
 import { DEFAULT_POLICY, SIM_CODEC, simDocProblems, type SimDoc } from '$lib/sim-page/sim-doc';
 import { MemoryStorage } from './fixtures/memory-storage';
 import { Autosave } from './autosave.svelte';
@@ -364,20 +363,20 @@ describe('Autosave writable (ruling R4)', () => {
   // A SimDoc over OPS_MAX strokes fails simDocProblems; the lenient load would read it back as
   // corrupt, so writing it would lose the policy on reload.
   const simDoc = (strokes: number): SimDoc => ({
-    schema: 1,
+    schema: 2,
     kind: 'sim',
     datasetVersion: 'fixture-0',
     policy: {
       ...DEFAULT_POLICY,
-      brushes: [
+      custom: [
         {
           id: 'f',
-          kind: 'freehand',
+          kind: 'paint',
           strokes: Array.from({ length: strokes }, () => ({
             path: [[-122.4, 37.7] as [number, number]],
             radiusM: 50
           })),
-          effect: defaultEffect('raise', 6)
+          stories: 6
         }
       ]
     }

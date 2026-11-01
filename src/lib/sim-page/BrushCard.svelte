@@ -1,30 +1,36 @@
 <!--
-  One brush in "Your zoning"'s ordered list (later brushes win). A one-line summary with the lot
-  count in a polite live region (WCAG 4.1.3), then Edit (rule brushes only), Move up, Move down and
-  Remove, each named with the summary. Moving and removing are labelled store changes, so Undo
-  names and undoes them; a moved card keeps focus on the button pressed.
+  One card in "Your zoning": a zoning rule (`list="rules"`: Edit and Remove; rules are additive,
+  so their order does not matter) or a custom brush (`list="custom"`: Move up, Move down and
+  Remove; a later brush wins). A one-line summary with the lot count in a polite live region
+  (WCAG 4.1.3), then the buttons, each named with the summary. Every change is a labelled store
+  change, so Undo names and undoes it; a moved card keeps focus on the button pressed.
 -->
 <script lang="ts">
   import { tick } from 'svelte';
   import {
-    brushSummary,
-    changeLabel,
-    summaryParts,
-    lotStatus,
+    customChangeLabel,
+    customHead,
+    customLotStatus,
+    customSummary,
     lotsText,
-    ruleKindOf
+    ruleChangeLabel,
+    ruleHead,
+    ruleLotStatus,
+    ruleSummary
   } from './brush-summary';
-  import type { ZoningBrush } from './policy';
+  import type { ZoningRule } from './policy';
   import type { LeverSync, PolicyStore } from './policy-store.svelte';
 
   interface Props {
     store: PolicyStore;
     sync: Pick<LeverSync, 'result' | 'retry'>;
-    brush: ZoningBrush;
+    list: 'rules' | 'custom';
+    /** The rule's or custom brush's id in `store.policy[list]`. */
+    id: string;
     index: number;
-    /** Opens the brush's form; absent (or the catalog not loaded) leaves Edit disabled. */
-    onedit?: (b: ZoningBrush) => void;
-    /** Why Edit is unavailable (the catalog is loading or lacks the brush's data), or null. */
+    /** Opens a rule's form; absent (or the catalog not loaded) leaves Edit disabled. */
+    onedit?: (r: ZoningRule) => void;
+    /** Why Edit is unavailable (the catalog is loading or lacks the rule's data), or null. */
     editUnavailable?: string | null;
     announce?: (msg: string) => void;
     /** After Remove: the list moves focus (this card is gone). */
@@ -33,7 +39,8 @@
   let {
     store,
     sync,
-    brush,
+    list,
+    id,
     index,
     onedit = undefined,
     editUnavailable = null,
@@ -42,24 +49,35 @@
   }: Props = $props();
 
   const uid = $props.id();
-  const total = $derived(store.policy.brushes.length);
-  const status = $derived(lotStatus(brush, (k) => sync.result(k)));
-  const summary = $derived(brushSummary(brush, lotsText(status)));
-  const parts = $derived(summaryParts(brush));
-  const editable = $derived(ruleKindOf(brush) !== null);
+  const rule = $derived(list === 'rules' ? store.policy.rules.find((r) => r.id === id) : undefined);
+  const custom = $derived(
+    list === 'custom' ? store.policy.custom.find((b) => b.id === id) : undefined
+  );
+  const total = $derived(store.policy.custom.length);
+  const result = (k: string) => sync.result(k);
+  const status = $derived(
+    rule ? ruleLotStatus(rule, result) : custom ? customLotStatus(custom, result) : null
+  );
+  const lots = $derived(status ? lotsText(status) : '');
+  const head = $derived(rule ? ruleHead(rule) : custom ? customHead(custom) : '');
+  const summary = $derived(
+    rule ? ruleSummary(rule, lots) : custom ? customSummary(custom, lots) : ''
+  );
+  const changeLabel = () =>
+    rule ? ruleChangeLabel(rule) : custom ? customChangeLabel(custom) : '';
 
   let upBtn = $state<HTMLButtonElement>();
   let downBtn = $state<HTMLButtonElement>();
 
   function move(dir: -1 | 1): void {
-    const from = store.policy.brushes.findIndex((b) => b.id === brush.id);
+    const from = store.policy.custom.findIndex((b) => b.id === id);
     const to = from + dir;
-    if (from < 0 || to < 0 || to >= store.policy.brushes.length) return;
-    const label = `Moved ${dir < 0 ? 'up' : 'down'}: ${changeLabel(brush)}`;
+    if (from < 0 || to < 0 || to >= store.policy.custom.length) return;
+    const label = `Moved ${dir < 0 ? 'up' : 'down'}: ${changeLabel()}`;
     store.apply((p) => {
-      const brushes = [...p.brushes];
-      [brushes[from], brushes[to]] = [brushes[to], brushes[from]];
-      return { ...p, brushes };
+      const custom = [...p.custom];
+      [custom[from], custom[to]] = [custom[to], custom[from]];
+      return { ...p, custom };
     }, label);
     announce?.(label);
     // The keyed list moves this card's node, which drops focus: put it back, on the other move
@@ -71,8 +89,14 @@
   }
 
   function remove(): void {
-    const label = `Removed: ${changeLabel(brush)}`;
-    store.apply((p) => ({ ...p, brushes: p.brushes.filter((b) => b.id !== brush.id) }), label);
+    const label = `Removed: ${changeLabel()}`;
+    store.apply(
+      (p) =>
+        list === 'rules'
+          ? { ...p, rules: p.rules.filter((r) => r.id !== id) }
+          : { ...p, custom: p.custom.filter((b) => b.id !== id) },
+      label
+    );
     announce?.(label);
     onremoved?.(index);
   }
@@ -81,55 +105,56 @@
     'min-h-6 min-w-6 rounded-md px-1 font-semibold underline disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11';
 </script>
 
-<li class="flex flex-col gap-1 rounded-md border border-gray-300 p-2">
-  <!-- The lot count is its own polite region, kept across states, so a count arriving is
-       spoken (WCAG 4.1.3). -->
-  <p id="{uid}-summary">
-    {parts.head} · <span role="status">{lotsText(status)}</span>{parts.tail
-      ? ` · ${parts.tail}`
-      : ''}
-  </p>
-  <div class="flex flex-wrap gap-x-2 gap-y-1">
-    {#if status.kind === 'failed'}
-      {@const keys = status.keys}
-      <button
-        type="button"
-        aria-describedby="{uid}-summary"
-        class={btn}
-        onclick={() => keys.forEach((k) => sync.retry(k))}>Retry</button
+{#if status}
+  <li class="flex flex-col gap-1 rounded-md border border-gray-300 p-2">
+    <!-- The lot count is its own polite region, kept across states, so a count arriving is
+         spoken (WCAG 4.1.3). -->
+    <p id="{uid}-summary">{head} · <span role="status">{lots}</span></p>
+    <div class="flex flex-wrap gap-x-2 gap-y-1">
+      {#if status.kind === 'failed'}
+        {@const keys = status.keys}
+        <button
+          type="button"
+          aria-describedby="{uid}-summary"
+          class={btn}
+          onclick={() => keys.forEach((k) => sync.retry(k))}>Retry</button
+        >
+      {/if}
+      {#if rule}
+        {@const r = rule}
+        <button
+          type="button"
+          data-brush-edit={id}
+          aria-label="Edit: {summary}"
+          disabled={!onedit || editUnavailable !== null}
+          aria-describedby={editUnavailable ? `${uid}-edit-why` : undefined}
+          class={btn}
+          onclick={() => onedit?.(r)}>Edit</button
+        >
+      {:else}
+        <button
+          bind:this={upBtn}
+          type="button"
+          aria-label="Move up: {summary}"
+          disabled={index === 0}
+          class={btn}
+          onclick={() => move(-1)}>Move up</button
+        >
+        <button
+          bind:this={downBtn}
+          type="button"
+          aria-label="Move down: {summary}"
+          disabled={index >= total - 1}
+          class={btn}
+          onclick={() => move(1)}>Move down</button
+        >
+      {/if}
+      <button type="button" aria-label="Remove: {summary}" class={btn} onclick={remove}
+        >Remove</button
       >
+    </div>
+    {#if rule && editUnavailable}
+      <span id="{uid}-edit-why" class="text-gray-700">{editUnavailable}</span>
     {/if}
-    {#if editable}
-      <button
-        type="button"
-        data-brush-edit={brush.id}
-        aria-label="Edit: {summary}"
-        disabled={!onedit || editUnavailable !== null}
-        aria-describedby={editUnavailable ? `${uid}-edit-why` : undefined}
-        class={btn}
-        onclick={() => onedit?.(brush)}>Edit</button
-      >
-    {/if}
-    <button
-      bind:this={upBtn}
-      type="button"
-      aria-label="Move up: {summary}"
-      disabled={index === 0}
-      class={btn}
-      onclick={() => move(-1)}>Move up</button
-    >
-    <button
-      bind:this={downBtn}
-      type="button"
-      aria-label="Move down: {summary}"
-      disabled={index >= total - 1}
-      class={btn}
-      onclick={() => move(1)}>Move down</button
-    >
-    <button type="button" aria-label="Remove: {summary}" class={btn} onclick={remove}>Remove</button
-    >
-  </div>
-  {#if editable && editUnavailable}
-    <span id="{uid}-edit-why" class="text-gray-700">{editUnavailable}</span>
-  {/if}
-</li>
+  </li>
+{/if}

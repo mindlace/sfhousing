@@ -1,21 +1,14 @@
 <!--
   The phone floating tool bar (layout ruling 5): below md, while a stroke tool is active and the
   policy sheet is closed. It shows the tool, the stories and radius pop-overs (as on `/`) and
-  Done, which goes back to Move and the sheet. Mode and Density need the sheet; Protect and
-  Unprotect have no stories (ruling 8). It sits above the scrubber. On a fine pointer (a narrow
+  Done, which goes back to Move and the sheet. It sits above the scrubber. On a fine pointer (a narrow
   desktop window) the map's bottom-left navigation control would sit under it, so while the bar
   shows the control is lifted above it (WCAG 2.2 2.4.11).
 -->
 <script lang="ts">
   import RadiusPopover from '$lib/brush/RadiusPopover.svelte';
   import StoriesPopover from '$lib/brush/StoriesPopover.svelte';
-  import {
-    ERASE_HINT,
-    SIM_TOOLS,
-    isProtectTool,
-    type SimBrushTools,
-    type SimTool
-  } from './brush-tools.svelte';
+  import { ERASE_HINT, SIM_TOOLS, type SimBrushTools, type SimTool } from './brush-tools.svelte';
 
   interface Props {
     tools: SimBrushTools;
@@ -53,17 +46,15 @@
   style:bottom="calc(var(--fzp-scrubber-h, 0px) + 0.5rem)"
 >
   <span class="px-2 font-semibold">{label}</span>
-  {#if !isProtectTool(tools.tool)}
-    <StoriesPopover
-      state={tools.brush}
-      disabled={tools.tool === 'erase'}
-      hint={ERASE_HINT}
-      open={open === 'stories'}
-      ontoggle={() => toggle('stories')}
-      onclose={() => (open = null)}
-      popClass={POP}
-    />
-  {/if}
+  <StoriesPopover
+    state={tools.brush}
+    disabled={tools.tool === 'erase'}
+    hint={ERASE_HINT}
+    open={open === 'stories'}
+    ontoggle={() => toggle('stories')}
+    onclose={() => (open = null)}
+    popClass={POP}
+  />
   <RadiusPopover
     state={tools.brush}
     open={open === 'radius'}

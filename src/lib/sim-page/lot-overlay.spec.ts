@@ -1,4 +1,4 @@
-// The lot dots: user-layer lots filled by mode, protected lots as an outlined ring.
+// The lot dots: every lot your zoning changes, filled, over a halo.
 import { describe, expect, it } from 'vitest';
 import { parse, wcagContrast } from 'culori';
 import type { Layer } from '@deck.gl/core';
@@ -23,44 +23,33 @@ function fakeCtors(): OverlayCtors {
 }
 
 const roles = new Map<string, LotRole>([
-  ['a', 'raise'],
-  ['b', 'lower'],
-  ['c', 'set'],
-  ['d', 'protected'],
-  ['e', 'raise'],
-  ['nopoint', 'raise']
+  ['a', 'changed'],
+  ['b', 'changed'],
+  ['nopoint', 'changed']
 ]);
 const points = (id: string): [number, number] | undefined =>
   id === 'nopoint' ? undefined : [-122.42, 37.76];
 
 describe('lotOverlayLayers', () => {
-  it('gives a halo, a user-layer layer and a protected layer with the lots per role', () => {
+  it('gives one layer of filled dots plus the halo, and no protected layer', () => {
     const layers = lotOverlayLayers(fakeCtors(), roles, points, false) as Fake[];
-    expect(layers.map((l) => l.id)).toEqual(['sim-lots-halo', 'sim-lots', 'sim-lots-protected']);
-    const [halo, user, prot] = layers;
-    expect(halo.props.data).toHaveLength(5);
-    const userData = user.props.data as { role: LotRole }[];
-    const protData = prot.props.data as { role: LotRole }[];
-    expect(userData.map((d) => d.role).sort()).toEqual(['lower', 'raise', 'raise', 'set']);
-    expect(protData).toHaveLength(1);
-    expect(user.props.radiusMinPixels).toBe(2);
-    expect(prot.props.radiusMinPixels).toBe(2);
-    // user lots are filled by mode; protected lots are an outlined ring
-    expect(user.props.filled).toBe(true);
-    expect(user.props.stroked).toBe(true);
-    expect(user.props.getLineColor).toEqual([...LOT_EDGE.light.outline, 255]);
+    expect(layers.map((l) => l.id)).toEqual(['sim-lots-halo', 'sim-lots']);
+    const [halo, dots] = layers;
+    expect(halo.props.data).toHaveLength(2);
+    expect(dots.props.data).toHaveLength(2);
+    expect(dots.props.radiusMinPixels).toBe(2);
+    expect(dots.props.filled).toBe(true);
+    expect(dots.props.stroked).toBe(true);
+    expect(dots.props.getLineColor).toEqual([...LOT_EDGE.light.outline, 255]);
     expect(halo.props.getLineColor).toEqual([...LOT_EDGE.light.halo, 255]);
-    expect(halo.props.getLineWidth as number).toBeGreaterThan(user.props.getLineWidth as number);
-    const fill = user.props.getFillColor as (d: { role: LotRole }) => number[];
-    expect(fill({ role: 'lower' }).slice(0, 3)).toEqual(LOT_COLORS.light.lower);
-    expect(prot.props.stroked).toBe(true);
-    expect(prot.props.filled).toBe(false);
+    expect(halo.props.getLineWidth as number).toBeGreaterThan(dots.props.getLineWidth as number);
+    expect(dots.props.getFillColor).toEqual([...LOT_COLORS.light.changed, 255]);
   });
 
-  it('uses the dark palette in dark mode', () => {
-    const [, user] = lotOverlayLayers(fakeCtors(), roles, points, true) as Fake[];
-    const fill = user.props.getFillColor as (d: { role: LotRole }) => number[];
-    expect(fill({ role: 'raise' }).slice(0, 3)).toEqual(LOT_COLORS.dark.raise);
+  it("keeps today's raise blue for changed lots, lighter in dark mode", () => {
+    expect(LOT_COLORS.light.changed).toEqual([29, 78, 216]);
+    const [, dots] = lotOverlayLayers(fakeCtors(), roles, points, true) as Fake[];
+    expect(dots.props.getFillColor).toEqual([...LOT_COLORS.dark.changed, 255]);
   });
 });
 

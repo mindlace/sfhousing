@@ -13,7 +13,7 @@ const cal: Calibration = parseCalibration(structuredClone(fixture0CalibrationJso
 const sim = copyFor('sim');
 
 const doc = (over: Partial<SimDoc> = {}): SimDoc => ({
-  schema: 1,
+  schema: 2,
   kind: 'sim',
   datasetVersion: 'fixture-0',
   policy: DEFAULT_POLICY,
