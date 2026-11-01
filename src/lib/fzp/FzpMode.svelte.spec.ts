@@ -1081,22 +1081,11 @@ describe('FzpMode levers (/sim)', () => {
     const s = setup({ levers: DEFAULT_LEVERS, onfog });
     await toReady(s);
     const initRev = leverRev(s.w());
-    const fog = fogOf(12);
-    s.w().emit({
-      type: 'levers',
-      rev: initRev,
-      phase: 'current',
-      lookups: postedLookups(),
-      capacity: CAPACITY,
-      unknownLots: 0,
-      fog
-    });
-    await expect.poll(() => onfog.mock.calls.length).toBe(1);
-    expect(onfog.mock.calls[0][0]).toBe(fog);
-
     await (await s.r).rerender({ levers: { ...OTHER } });
     await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
-    // a current below the latest rev sent is dropped by leversMessage: no fog
+    const rev = leverRev(s.w());
+    expect(rev).toBeGreaterThan(initRev);
+    // initRev has delivered no fog yet, so only leversMessage's stale drop keeps this one out
     s.w().emit({
       type: 'levers',
       rev: initRev,
@@ -1107,7 +1096,20 @@ describe('FzpMode levers (/sim)', () => {
       fog: fogOf(30)
     });
     await new Promise((res) => setTimeout(res, 50));
-    expect(onfog).toHaveBeenCalledTimes(1);
+    expect(onfog).not.toHaveBeenCalled();
+
+    const fog = fogOf(12);
+    s.w().emit({
+      type: 'levers',
+      rev,
+      phase: 'current',
+      lookups: postedLookups(),
+      capacity: CAPACITY,
+      unknownLots: 0,
+      fog
+    });
+    await expect.poll(() => onfog.mock.calls.length).toBe(1);
+    expect(onfog.mock.calls[0][0]).toBe(fog);
   });
 
   it("onfog takes a revision's fog from its first resolving, not again from its current", async () => {

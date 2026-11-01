@@ -325,15 +325,23 @@ describe('scenario host with levers', () => {
     const h = await leverSession(DEFAULT_LEVERS);
     const [lng, lat] = h.labelPoint(MINI_HISTORIC_ID);
     const fzp = sampleFog(h.lastCurrent().fog, lng, lat);
+    expect(fzp).toBeGreaterThan(0); // the lot has an FZP limit, so equality below means something
+    const paint = { ...DEFAULT_LEVERS, paint: [{ lots: [MINI_HISTORIC_ID], stories: 40 }] };
+    // control: the same paint, unprotected, raises the fog there
+    h.setLevers({ ...paint, compare: 'fzp' });
+    await h.untilCurrent();
+    expect(h.h.errors()).toEqual([]);
+    const painted = h.lastCurrent();
+    expect(sampleFog(painted.fog, lng, lat)).toBeGreaterThan(fzp + 1);
+    // protected: back to FZP
     h.setLevers({
-      ...DEFAULT_LEVERS,
-      paint: [{ lots: [MINI_HISTORIC_ID], stories: 40 }],
+      ...paint,
       protect: { ...DEFAULT_LEVERS.protect, historic: true },
       compare: 'fzp'
     });
     await h.untilCurrent();
     expect(h.h.errors()).toEqual([]);
-    expect(h.lastCurrent().rev).toBeGreaterThan(1);
+    expect(h.lastCurrent().rev).toBeGreaterThan(painted.rev);
     expect(sampleFog(h.lastCurrent().fog, lng, lat)).toBeCloseTo(fzp, 4);
   });
 
