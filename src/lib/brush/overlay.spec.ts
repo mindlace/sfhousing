@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { parse, wcagContrast } from 'culori';
 import type { Layer } from '@deck.gl/core';
 import { project } from '$lib/plan';
-import { TOKENS } from '$lib/map/palette';
+import { TOKENS, hexToRgba } from '$lib/map/palette';
 import {
   BRUSH_COLORS,
   buildOverlayLayers,
@@ -146,16 +145,15 @@ describe('buildOverlayLayers', () => {
 });
 
 describe('BRUSH_COLORS', () => {
-  // WCAG 1.4.11: the ring must reach 3:1 against the base map's land and building fills.
-  const rgb = ([r, g, b]: [number, number, number]) => `rgb(${r}, ${g}, ${b})`;
-  for (const theme of ['light', 'dark'] as const) {
-    for (const tool of ['paint', 'erase'] as const) {
-      it(`${theme} ${tool} is ≥ 3:1 against land, existing and replaced`, () => {
-        for (const token of ['land', 'existing', 'replaced'] as const) {
-          const ratio = wcagContrast(rgb(BRUSH_COLORS[theme][tool]), parse(TOKENS[theme][token])!);
-          expect(ratio, `${token}`).toBeGreaterThanOrEqual(3);
-        }
-      });
+  it('derives from the brush-paint and brush-erase tokens', () => {
+    expect(BRUSH_COLORS.light.paint).toEqual([180, 83, 47]);
+    for (const theme of ['light', 'dark'] as const) {
+      expect(BRUSH_COLORS[theme].paint).toEqual(
+        hexToRgba(TOKENS[theme]['brush-paint']).slice(0, 3)
+      );
+      expect(BRUSH_COLORS[theme].erase).toEqual(
+        hexToRgba(TOKENS[theme]['brush-erase']).slice(0, 3)
+      );
     }
-  }
+  });
 });

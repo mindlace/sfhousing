@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { differenceCiede2000, hsl, lab, parse } from 'culori';
 import {
   TOKENS,
+  hexToRgba,
   TIMELINE_LEGEND,
   colorFor,
   GEN_RGBA,
@@ -45,13 +46,27 @@ describe('palette (U4)', () => {
       );
       for (let i = 1; i < cs.length; i++) expect(cs[i]).toBeGreaterThan(cs[i - 1]);
     });
-    it(`${theme}: stop classes are distinct (ΔE2000 ≥ 20)`, () => {
+    it(`${theme}: stop classes step up in contrast with land (bus < rail < regional), ΔE2000 ≥ 8`, () => {
       const ids = ['transit-bus', 'transit-rail', 'transit-regional'] as const;
+      const cs = ids.map((id) => contrast(TOKENS[theme][id], TOKENS[theme].land));
+      expect(cs[1]).toBeGreaterThan(cs[0]);
+      expect(cs[2]).toBeGreaterThan(cs[1]);
       for (let i = 0; i < ids.length; i++)
         for (let j = i + 1; j < ids.length; j++) {
           const d = de(parse(TOKENS[theme][ids[i]])!, parse(TOKENS[theme][ids[j]])!);
-          expect(d, `${ids[i]} vs ${ids[j]}`).toBeGreaterThanOrEqual(20);
+          expect(d, `${ids[i]} vs ${ids[j]}`).toBeGreaterThanOrEqual(8);
         }
+    });
+    it(`${theme}: brush-paint, brush-erase and painted-outline are ≥ 3:1 against land, existing and replaced`, () => {
+      for (const id of ['brush-paint', 'brush-erase', 'painted-outline'] as const)
+        for (const base of ['land', 'existing', 'replaced'] as const)
+          expect(
+            contrast(TOKENS[theme][id], TOKENS[theme][base]),
+            `${id}/${base}`
+          ).toBeGreaterThanOrEqual(3);
+    });
+    it(`${theme}: height-fog is translucent (alpha <= 0.35)`, () => {
+      expect(hexToRgba(TOKENS[theme]['height-fog'])[3]).toBeLessThanOrEqual(90);
     });
     it(`${theme}: stop markers keep 3:1 contrast with land`, () => {
       for (const id of ['transit-bus', 'transit-rail', 'transit-regional'] as const)
@@ -66,6 +81,10 @@ describe('palette (U4)', () => {
   it('spec hex values are verbatim', () => {
     expect(TOKENS.light.existing).toBe('#D6D0C4');
     expect(TOKENS.dark['gen-tower']).toBe('#F0A752');
+    expect(TOKENS.light['transit-access-5']).toBe('#167A6E');
+    expect(TOKENS.dark['tl-ghost-ready']).toBe('#C08AAE');
+    expect(TOKENS.light['tl-ghost-dying']).toBe('#C62828');
+    expect(TOKENS.dark.replaced).toBe('#232427');
   });
 });
 
@@ -80,11 +99,11 @@ describe('timeline tokens', () => {
   const L = (hex: string) => lab(parse(hex)!)!.l;
 
   it('spec §4.6 hex values are verbatim', () => {
-    expect(TOKENS.light['tl-ghost-planning']).toBe('#9DB0FF');
+    expect(TOKENS.light['tl-ghost-planning']).toBe('#DDBBD2');
     expect(TOKENS.dark['tl-bar-dead']).toBe('#8F8A80');
     expect(TOKENS.light['tl-bar-track']).toBe('#FFFFFF');
     expect(TOKENS.dark['tl-bar-edge']).toBe('#A9A59C');
-    expect(TOKENS.light['tl-ghost-dying']).toBe('#D84A4A');
+    expect(TOKENS.light['tl-ghost-dying']).toBe('#C62828');
     expect(TOKENS.dark['tl-bar-likely']).toBe('#81C784');
   });
   for (const theme of ['light', 'dark'] as const) {
@@ -104,11 +123,11 @@ describe('timeline tokens', () => {
         contrast(TOKENS[theme]['tl-bar-edge'], TOKENS[theme]['tl-bar-track'])
       ).toBeGreaterThanOrEqual(3);
     });
-    it(`${theme}: ghost hues are in [220, 240]`, () => {
+    it(`${theme}: ghost hues are plum`, () => {
       for (const id of GHOSTS.slice(0, 3)) {
         const h = hsl(parse(TOKENS[theme][id])!)!.h!;
-        expect(h, id).toBeGreaterThanOrEqual(220);
-        expect(h, id).toBeLessThanOrEqual(240);
+        expect(h, id).toBeGreaterThanOrEqual(300);
+        expect(h, id).toBeLessThanOrEqual(335);
       }
     });
     it(`${theme}: ghost tints are ΔE2000 ≥ 20 from existing`, () => {
@@ -200,34 +219,38 @@ const DEFAULT_TOKENS_BODY =
   '.sim-map { --map-land: #F3EFE6; --map-water: #C7D3D6; --map-park: #E2E4D3; ' +
   '--map-road: #FFFFFF; --map-road-minor: #EAE5DA; --map-label: #5E5A52; ' +
   '--map-existing: #D6D0C4; --map-replaced: #E3DACA; ' +
-  '--map-highlight: rgba(255,255,255,0.45); --map-chunk-loading: #8A8478; ' +
+  '--map-highlight: rgba(255,255,255,0.45); ' +
+  '--map-chunk-loading: #8A8478; ' +
   '--map-chunk-error: #B3261E; --map-gen-adu: #E9A487; --map-gen-plex: #E08A68; ' +
   '--map-gen-walkup: #D2704E; --map-gen-podium: #BF5A3A; --map-gen-midrise: #A3472C; ' +
-  '--map-gen-tower: #84371F; --map-transit-access-1: #E4EEF3; ' +
-  '--map-transit-access-2: #BED7E3; --map-transit-access-3: #8DB9CF; ' +
-  '--map-transit-access-4: #5596B5; --map-transit-access-5: #2C6E8F; ' +
-  '--map-transit-bus: #5F6B66; --map-transit-rail: #7B3FA0; ' +
-  '--map-transit-regional: #1F5FBF; --map-transit-stroke: #FFFFFF; ' +
-  '--map-tl-ghost-planning: #9DB0FF; --map-tl-ghost-permit: #6F86F0; ' +
-  '--map-tl-ghost-ready: #4257D6; --map-tl-ghost-dying: #D84A4A; ' +
+  '--map-gen-tower: #84371F; --map-transit-access-1: #E0F2EF; ' +
+  '--map-transit-access-2: #B3E0D8; --map-transit-access-3: #7CC7BA; ' +
+  '--map-transit-access-4: #3FA596; --map-transit-access-5: #167A6E; ' +
+  '--map-transit-bus: #5E7A76; --map-transit-rail: #0F5A52; ' +
+  '--map-transit-regional: #0B3B36; --map-transit-stroke: #FFFFFF; --map-height-fog: rgba(255,255,255,0.30); ' +
+  '--map-brush-paint: #B4532F; --map-brush-erase: #2B2A28; --map-painted-outline: #B4532F; ' +
+  '--map-tl-ghost-planning: #DDBBD2; --map-tl-ghost-permit: #C58FB1; ' +
+  '--map-tl-ghost-ready: #93527F; --map-tl-ghost-dying: #C62828; ' +
   '--map-tl-bar-track: #FFFFFF; --map-tl-bar-edge: #5E5A52; ' +
   '--map-tl-bar-likely: #2E7D32; --map-tl-bar-uncertain: #B26A00; ' +
   '--map-tl-bar-unlikely: #C62828; ' +
   '--map-tl-bar-dead: #8A8478 } ' +
   '@media (prefers-color-scheme: dark) { .sim-map { --map-land: #1C1D1F; ' +
-  '--map-water: #10181C; --map-park: #1F2420; --map-road: #2C2E31; ' +
+  '--map-water: #10181C; --map-park: #1F2420; --map-road: #34373B; ' +
   '--map-road-minor: #252729; --map-label: #A9A59C; --map-existing: #3B3D41; ' +
-  '--map-replaced: #2A2B2E; --map-highlight: rgba(255,255,255,0.30); ' +
+  '--map-replaced: #232427; --map-highlight: rgba(255,255,255,0.30); ' +
+  '' +
   '--map-chunk-loading: #8F8A80; --map-chunk-error: #F2B8B5; --map-gen-adu: #6E3B22; ' +
   '--map-gen-plex: #8A4A28; --map-gen-walkup: #A65C2E; --map-gen-podium: #C27236; ' +
   '--map-gen-midrise: #DB8B42; --map-gen-tower: #F0A752; ' +
-  '--map-transit-access-1: #1E2A31; --map-transit-access-2: #24414F; ' +
-  '--map-transit-access-3: #2D5D72; --map-transit-access-4: #3A7F9C; ' +
-  '--map-transit-access-5: #5BA6C6; --map-transit-bus: #A3ADA6; ' +
-  '--map-transit-rail: #C59BE0; --map-transit-regional: #7FB2FF; ' +
-  '--map-transit-stroke: #111214; --map-tl-ghost-planning: #5466B8; ' +
-  '--map-tl-ghost-permit: #7D90F0; --map-tl-ghost-ready: #AEBBFF; ' +
-  '--map-tl-ghost-dying: #FF6E6E; --map-tl-bar-track: #2C2E31; ' +
+  '--map-transit-access-1: #16282A; --map-transit-access-2: #1B3E3E; ' +
+  '--map-transit-access-3: #22595A; --map-transit-access-4: #2E7B78; ' +
+  '--map-transit-access-5: #4BA59E; --map-transit-bus: #9BB5B0; ' +
+  '--map-transit-rail: #7FD6C9; --map-transit-regional: #C2F0E8; ' +
+  '--map-transit-stroke: #111214; --map-height-fog: rgba(200,210,214,0.20); --map-brush-paint: #DB8B42; --map-brush-erase: #E8E4DC; ' +
+  '--map-painted-outline: #DB8B42; --map-tl-ghost-planning: #623257; ' +
+  '--map-tl-ghost-permit: #8A5679; --map-tl-ghost-ready: #C08AAE; ' +
+  '--map-tl-ghost-dying: #FF8A80; --map-tl-bar-track: #2C2E31; ' +
   '--map-tl-bar-edge: #A9A59C; --map-tl-bar-likely: #81C784; ' +
   '--map-tl-bar-uncertain: #FFB74D; --map-tl-bar-unlikely: #FF8A80; ' +
   '--map-tl-bar-dead: #8F8A80 } }';

@@ -1,16 +1,21 @@
 import type { Layer } from '@deck.gl/core';
 import { project } from '$lib/plan';
+import { TOKENS, hexToRgba } from '$lib/map/palette';
 
 type RGB = [number, number, number];
 
+const ring = (theme: 'light' | 'dark', token: 'brush-paint' | 'brush-erase'): RGB =>
+  hexToRgba(TOKENS[theme][token]).slice(0, 3) as RGB;
+
 /**
- * Ring colours (spec §4.3). Each is ≥ 3:1 against the map's land, existing-building and
- * replaced-building fills in its theme (WCAG 1.4.11); overlay.spec.ts checks it.
+ * Ring colours, derived from the `brush-paint` / `brush-erase` map tokens (spec 2026-10-31 §8).
+ * Each is >= 3:1 against the map's land, existing-building and replaced-building fills in its
+ * theme (WCAG 1.4.11); palette.spec.ts checks it.
  */
 export const BRUSH_COLORS: { light: { paint: RGB; erase: RGB }; dark: { paint: RGB; erase: RGB } } =
   {
-    light: { paint: [29, 78, 216], erase: [190, 24, 93] },
-    dark: { paint: [96, 165, 250], erase: [244, 114, 182] }
+    light: { paint: ring('light', 'brush-paint'), erase: ring('light', 'brush-erase') },
+    dark: { paint: ring('dark', 'brush-paint'), erase: ring('dark', 'brush-erase') }
   };
 
 const EARTH_CIRCUMFERENCE_M = 40075016.686;
