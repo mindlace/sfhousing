@@ -40,12 +40,11 @@
 //
 // Brushes (plan 3 Task 5). `resolveBrush` and `brushCatalog` are answered only in a session with
 // levers (else `no-session`, catalog null). A request that arrives before the load waits for it;
-// one that needs an optional brush file (frontage.bin, transit.json, neighborhoods.geojson) waits
+// one that needs an optional brush file (transit.json, neighborhoods.geojson) waits
 // for that file, fetched once per session on the first request needing it. Every waiting request
 // is answered `no-session` when its session ends (a new init, a failed load, dispose). The
 // `LotIndex` is built once per session on the base parcels; the resolver memoises on object
 // identity, so the session's own decoded objects are passed every time. /fzp never fetches them.
-import { readFrontage, type Frontage } from '$lib/data/frontage-codec';
 import type { Manifest } from '$lib/data/manifest';
 import type { PolicyParcels } from '$lib/data/policy-codec';
 import { envelopeOf, scenarioRecordOf, type ScenarioParcels } from '$lib/data/scenario-codec';
@@ -144,8 +143,6 @@ export interface ScenarioHostDeps {
   decodeParcels?(bytes: Uint8Array): Promise<ScenarioParcels>;
   /** Test seam: the policy.bin decoder (default `readPolicyParcels`), its inflate likewise. */
   decodePolicy?(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels>;
-  /** Test seam: the frontage.bin decoder (default `readFrontage`), its inflate likewise. */
-  decodeFrontage?(bytes: Uint8Array, parcels: ScenarioParcels): Promise<Frontage>;
 }
 
 export interface ScenarioHost {
@@ -296,12 +293,11 @@ interface Work {
 
 /** The optional brush files and what each decodes to. */
 interface BrushFiles {
-  frontage: Frontage;
   transit: TransitNetwork;
   neighborhoods: NeighborhoodShapes;
 }
 type BrushFile = keyof BrushFiles;
-const BRUSH_FILES: readonly BrushFile[] = ['frontage', 'transit', 'neighborhoods'];
+const BRUSH_FILES: readonly BrushFile[] = ['transit', 'neighborhoods'];
 
 /** One brush request not yet answered: it waits on the load, or on a brush file. */
 interface BrushWaiter {
@@ -1190,8 +1186,6 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         return [];
       case 'transit':
         return ['transit'];
-      case 'street':
-        return ['frontage'];
       case 'area':
         return q.neighborhoods.length > 0 ? ['neighborhoods'] : [];
       default:
@@ -1219,7 +1213,6 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     const data: BrushData = {
       parcels: loaded.fzp.parcels, // as loaded: `work.loaded` is replaced per lever revision
       policy: loaded.policy!,
-      frontage: files.frontage ?? null,
       transit: files.transit ?? null,
       neighborhoods: files.neighborhoods ?? null
     };
@@ -1285,10 +1278,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
   ): Promise<{ value: unknown; transient: boolean }> {
     const done = (value: unknown, transient = false) => ({ value, transient });
     const m = st.manifest;
-    const url =
-      file === 'frontage'
-        ? st.urls.frontage
-        : datasetUrl(m, file === 'transit' ? m.transit : m.neighborhoods);
+    const url = datasetUrl(m, file === 'transit' ? m.transit : m.neighborhoods);
     if (url === null) {
       warn(`brushes: dataset ${st.version} has no ${file} file`);
       return done(null);
@@ -1298,36 +1288,19 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       retryDelaysMs
     };
     const stop = () => !live(st);
-    const r =
-      file === 'frontage'
-        ? await fetchWithRetry(
-            url,
-            () =>
-              deps
-                .fetchBytes(url)
-                .then((x) => ({ ok: x.ok, status: x.status, read: () => x.arrayBuffer() })),
-            loadDeps,
-            stop,
-            brushPermanent
-          )
-        : await fetchWithRetry(
-            url,
-            () =>
-              deps.fetch(url).then((x) => ({ ok: x.ok, status: x.status, read: () => x.json() })),
-            loadDeps,
-            stop,
-            brushPermanent
-          );
+    const r = await fetchWithRetry(
+      url,
+      () => deps.fetch(url).then((x) => ({ ok: x.ok, status: x.status, read: () => x.json() })),
+      loadDeps,
+      stop,
+      brushPermanent
+    );
     if (r.kind === 'stopped') return done(null);
     if (r.kind === 'failed') {
       warn(`brushes: ${r.message}`);
       return done(null, !r.permanent);
     }
     try {
-      if (file === 'frontage') {
-        const decode = deps.decodeFrontage ?? readFrontage;
-        return done(await decode(new Uint8Array(r.value as ArrayBuffer), st.loaded!.fzp.parcels));
-      }
       if (file === 'transit') return done(decodeTransit(r.value));
       return done(parseNeighborhoods(r.value));
     } catch (e) {

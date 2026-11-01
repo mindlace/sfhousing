@@ -6,7 +6,7 @@ import { parseJsonc } from './lib/wrangler-config';
 /** A version from a real dataset upload: date plus content hash, never `fixture-*`. */
 const REAL_DATASET_VERSION_RE = /^\d{4}-\d{2}-\d{2}-[0-9a-f]{8}$/;
 
-/** The first dataset with policy.bin and frontage.bin (plan 1); /sim needs both. */
+/** The first dataset with policy.bin (plan 1); /sim needs it. Later datasets may lack frontage.bin, which nothing reads. */
 const MIN_SIM_DATASET = '2026-10-29-0fd62c4d';
 
 describe('REAL_DATASET_VERSION_RE', () => {

@@ -3,7 +3,6 @@ import type { BrushCatalog } from '$lib/sim/levers/brushes';
 
 export function testCatalog(over: Partial<BrushCatalog['has']> = {}): BrushCatalog {
   return {
-    streetNames: ['Geary Blvd', 'Market St', 'Mission St'],
     districts: [
       {
         family: 'NC-1',
@@ -24,6 +23,6 @@ export function testCatalog(over: Partial<BrushCatalog['has']> = {}): BrushCatal
     ],
     neighborhoods: ['Mission', 'Sunset/Parkside'],
     stops: { regionalRail: 12, metro: 40, rapidBus: 80, frequentBus: 300 },
-    has: { frontage: true, transit: true, neighborhoods: true, ...over }
+    has: { transit: true, neighborhoods: true, ...over }
   };
 }

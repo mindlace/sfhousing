@@ -115,7 +115,8 @@ function pointer(policyPath: string): string {
 
 /**
  * Parse a stored (`'reconcile'`, lenient: the preset layer is re-derived later) or published
- * (`'strict'`) document. A schema above 2 is `future-schema` in both modes.
+ * (`'strict'`) document. A schema above 2 is `future-schema` in both modes. A stored street
+ * rule (retired) is dropped silently in `'reconcile'` and is a `bad-field` in `'strict'`.
  */
 export function parseSimDoc(text: string, mode: 'strict' | 'reconcile'): Result<SimDoc> {
   let json: unknown;

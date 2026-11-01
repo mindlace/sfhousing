@@ -1,19 +1,18 @@
 /// <reference types="@vitest/browser-playwright" />
-// The zoning rule forms (Transit, Street, Commercial corridor): what each saves.
+// The transit rule form: what it saves.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
 import '../../routes/layout.css';
 import { DEFAULT_BANDS, type ZoningRule } from './policy';
 import RuleBrushForm from './RuleBrushForm.svelte';
-import type { RuleKind } from './brush-summary';
 import { testCatalog } from './test/catalog';
 
-function setup(kind: RuleKind, initial?: ZoningRule) {
+function setup(initial?: ZoningRule) {
   const onsave = vi.fn();
   const oncancel = vi.fn();
   const view = render(RuleBrushForm, {
-    props: { kind, catalog: testCatalog(), initial, onsave, oncancel }
+    props: { catalog: testCatalog(), initial, onsave, oncancel }
   });
   return { onsave, oncancel, unmount: async () => (await view).unmount() };
 }
@@ -26,7 +25,7 @@ describe('RuleBrushForm', () => {
   });
 
   it('Transit: one stop type ticked saves the default bands, and nothing else', async () => {
-    const { onsave } = setup('transit');
+    const { onsave } = setup();
     await expect.element(save()).toBeEnabled();
     await page.getByRole('checkbox', { name: /^Regional rail/ }).click();
     await save().click();
@@ -42,7 +41,7 @@ describe('RuleBrushForm', () => {
   });
 
   it('Transit: shows each stop count, and bands can be added up to three', async () => {
-    setup('transit');
+    setup();
     await expect
       .element(page.getByRole('checkbox', { name: /^Muni Metro · 40 stops$/ }))
       .toBeVisible();
@@ -58,118 +57,61 @@ describe('RuleBrushForm', () => {
       .not.toBeInTheDocument();
   });
 
-  it('Commercial corridor saves arterials, NC only, fronting lots', async () => {
-    const { onsave } = setup('corridor');
+  it('names the form for a new rule and an edit', async () => {
+    const view = setup();
     await expect
-      .element(page.getByText('Arterial frontage zoned neighborhood commercial (NC or NCT)'))
+      .element(page.getByRole('form', { name: 'Add a transit rule', exact: true }))
       .toBeVisible();
-    await save().click();
-    expect(onsave.mock.calls[0][0]).toMatchObject({
-      kind: 'street',
-      classes: ['arterial'],
-      names: [],
-      depth: 0,
-      ncOnly: true,
-      stories: 6
-    });
-  });
-
-  it('Street: classes, a named street and one lot deep', async () => {
-    const { onsave } = setup('street');
-    await page.getByRole('checkbox', { name: 'Arterials' }).click();
-    await page.getByRole('combobox', { name: 'Street name' }).fill('market st');
-    await page.getByRole('button', { name: 'Add street' }).click();
-    await expect.element(page.getByRole('button', { name: 'Remove Market St' })).toBeVisible();
-    await page.getByRole('checkbox', { name: 'Include the lots one lot deep' }).click();
-    await page.getByRole('spinbutton', { name: 'Stories' }).fill('8');
-    await save().click();
-    const b = onsave.mock.calls[0][0];
-    expect(b).toEqual({
-      id: b.id,
-      kind: 'street',
-      classes: ['arterial'],
-      names: ['Market St'],
-      depth: 1,
-      ncOnly: false,
-      stories: 8
-    });
-  });
-
-  it('names the form with "a" or "an" as the kind needs', async () => {
-    const titles: [RuleKind, string][] = [
-      ['transit', 'Add a transit rule'],
-      ['street', 'Add a street rule'],
-      ['corridor', 'Add a commercial corridor rule']
-    ];
-    for (const [kind, name] of titles) {
-      const view = setup(kind);
-      await expect.element(page.getByRole('form', { name, exact: true })).toBeVisible();
-      await view.unmount();
-    }
+    await view.unmount();
     const initial: ZoningRule = {
       id: 'transit12345',
       kind: 'transit',
       stopTypes: ['metro'],
       bands: DEFAULT_BANDS
     };
-    setup('transit', initial);
+    setup(initial);
     await expect
       .element(page.getByRole('form', { name: 'Edit a transit rule', exact: true }))
       .toBeVisible();
   });
 
-  it('editing a saved street rule keeps its id and stories', async () => {
+  it('editing a saved transit rule keeps its id and values', async () => {
     const initial: ZoningRule = {
       id: 'keepMe123456',
-      kind: 'street',
-      classes: ['major'],
-      names: ['Geary Blvd'],
-      depth: 0,
-      ncOnly: false,
-      stories: 9
+      kind: 'transit',
+      stopTypes: ['metro'],
+      bands: [{ maxM: 300, stories: 9 }]
     };
-    const { onsave } = setup('street', initial);
-    await expect.element(page.getByRole('checkbox', { name: 'Major streets' })).toBeChecked();
-    await page.getByRole('checkbox', { name: 'Collectors' }).click();
+    const { onsave } = setup(initial);
+    await expect.element(page.getByRole('checkbox', { name: /^Muni Metro/ })).toBeChecked();
+    await page.getByRole('checkbox', { name: /^Regional rail/ }).click();
     await save().click();
-    expect(onsave.mock.calls[0][0]).toMatchObject({
+    expect(onsave.mock.calls[0][0]).toEqual({
       id: 'keepMe123456',
-      classes: ['major', 'collector'],
-      names: ['Geary Blvd'],
-      stories: 9
+      kind: 'transit',
+      stopTypes: ['regionalRail', 'metro'],
+      bands: [{ maxM: 300, stories: 9 }]
     });
   });
 
   it('Save with nothing chosen announces why and saves nothing (WCAG 4.1.3)', async () => {
-    const { onsave } = setup('street');
-    const reason = 'Choose a street class or add a street.';
+    const { onsave } = setup();
+    const reason = 'Choose at least one stop type.';
     const status = page.getByRole('status').filter({ hasText: reason });
     await expect.element(status).not.toBeInTheDocument();
     await save().click();
     expect(onsave).not.toHaveBeenCalled();
     await expect.element(status).toBeVisible();
     await expect.element(save()).toHaveAccessibleDescription(reason);
-    // The reason follows the fields, and clears once the brush is complete.
-    await page.getByRole('checkbox', { name: 'Arterials' }).click();
+    // The reason follows the fields, and clears once the rule is complete.
+    await page.getByRole('checkbox', { name: /^Regional rail/ }).click();
     await expect.element(status).not.toBeInTheDocument();
     await save().click();
     expect(onsave).toHaveBeenCalledOnce();
   });
 
-  it('an unknown street name is an alert', async () => {
-    setup('street');
-    await page.getByRole('combobox', { name: 'Street name' }).fill('Nowhere Ln');
-    await page.getByRole('button', { name: 'Add street' }).click();
-    await expect
-      .element(page.getByRole('alert'))
-      .toHaveTextContent('No street named “Nowhere Ln” in this dataset.');
-    await expect
-      .element(page.getByRole('combobox', { name: 'Street name' }))
-      .toHaveAccessibleDescription('No street named “Nowhere Ln” in this dataset.');
-  });
-
   it('two bands at one distance are announced at once and block Save', async () => {
-    const { onsave } = setup('transit');
+    const { onsave } = setup();
     await page.getByRole('checkbox', { name: /^Regional rail/ }).click();
     await page.getByRole('spinbutton', { name: 'Band 2 distance (m)' }).fill('402');
     const status = page
@@ -185,7 +127,7 @@ describe('RuleBrushForm', () => {
   });
 
   it('an outer band taller than the band inside it is announced and blocks Save', async () => {
-    const { onsave } = setup('transit');
+    const { onsave } = setup();
     await page.getByRole('checkbox', { name: /^Regional rail/ }).click();
     // Entered out of order: band 1 is the outer band.
     await page.getByRole('spinbutton', { name: 'Band 1 distance (m)' }).fill('805');
@@ -210,7 +152,7 @@ describe('RuleBrushForm', () => {
   });
 
   it('equal bands save', async () => {
-    const { onsave } = setup('transit');
+    const { onsave } = setup();
     await page.getByRole('checkbox', { name: /^Muni Metro/ }).click();
     await page.getByRole('spinbutton', { name: 'Band 2 stories' }).fill('6');
     await save().click();
@@ -221,31 +163,26 @@ describe('RuleBrushForm', () => {
   });
 
   it('has no Mode radios and no Density limits checkbox', async () => {
-    for (const kind of ['transit', 'street', 'corridor'] as const) {
-      const view = setup(kind);
-      await expect.element(page.getByRole('form')).toBeVisible();
-      expect(page.getByRole('group', { name: 'Mode' }).elements()).toHaveLength(0);
-      expect(page.getByRole('radio').elements()).toHaveLength(0);
-      expect(page.getByRole('checkbox', { name: 'Density limits' }).elements()).toHaveLength(0);
-      await view.unmount();
-    }
+    setup();
+    await expect.element(page.getByRole('form')).toBeVisible();
+    expect(page.getByRole('group', { name: 'Mode' }).elements()).toHaveLength(0);
+    expect(page.getByRole('radio').elements()).toHaveLength(0);
+    expect(page.getByRole('checkbox', { name: 'Density limits' }).elements()).toHaveLength(0);
   });
 
-  it('the live regions stay in the accessibility tree while empty', async () => {
-    setup('street');
-    for (const role of ['status', 'alert'] as const) {
-      // getByRole skips nodes outside the accessibility tree (display:none, hidden).
-      const region = page.getByRole(role);
-      await expect.element(region).toBeInTheDocument();
-      const el = region.element() as HTMLElement;
-      expect(el.textContent).toBe('');
-      expect(getComputedStyle(el).display).not.toBe('none');
-      expect(el.hidden).toBe(false);
-    }
+  it('the live region stays in the accessibility tree while empty', async () => {
+    setup();
+    // getByRole skips nodes outside the accessibility tree (display:none, hidden).
+    const region = page.getByRole('status');
+    await expect.element(region).toBeInTheDocument();
+    const el = region.element() as HTMLElement;
+    expect(el.textContent).toBe('');
+    expect(getComputedStyle(el).display).not.toBe('none');
+    expect(el.hidden).toBe(false);
   });
 
   it('Cancel calls oncancel', async () => {
-    const { oncancel, onsave } = setup('corridor');
+    const { oncancel, onsave } = setup();
     await page.getByRole('button', { name: 'Cancel' }).click();
     expect(oncancel).toHaveBeenCalledOnce();
     expect(onsave).not.toHaveBeenCalled();

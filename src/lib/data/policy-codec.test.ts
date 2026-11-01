@@ -11,7 +11,6 @@ import {
   SB79_STATUSES,
   decodePolicyPayload,
   encodePolicyPayload,
-  isNeighborhoodCommercial,
   readPolicyParcels,
   type PolicyParcels
 } from './policy-codec';
@@ -179,29 +178,6 @@ describe('sfh-policy/1 codec', () => {
     expect(() =>
       encodePolicyPayload(with_({ useDistricts: ['', 'RM-1', 'RH-2', 'NC-2'] }))
     ).toThrow(/sorted/);
-  });
-
-  it('isNeighborhoodCommercial reads split codes', () => {
-    expect(['NC-1', 'NCT', 'NCT-3', 'RH-2|NC-2'].map(isNeighborhoodCommercial)).toEqual([
-      true,
-      true,
-      true,
-      true
-    ]);
-    expect(['RH-1', 'C-3-O', 'RC-4', ''].map(isNeighborhoodCommercial)).toEqual([
-      false,
-      false,
-      false,
-      false
-    ]);
-  });
-
-  it('isNeighborhoodCommercial matches every NC code in the zone-class rules and no neighbour', () => {
-    // pipeline/sb79-config.ts ZONE_CLASS_RULES: NC-1/2/3/S, NCT, NCT-1..3, NCD.
-    const nc = ['NC-1', 'NC-2', 'NC-3', 'NC-S', 'NCT', 'NCT-1', 'NCT-2', 'NCT-3', 'NCD'];
-    expect(nc.map(isNeighborhoodCommercial)).toEqual(nc.map(() => true));
-    const other = ['NC-4', 'NCT-4', 'RCD', 'CRNC', 'RTO-C', 'C-2', 'MUG', 'CMUO'];
-    expect(other.map(isNeighborhoodCommercial)).toEqual(other.map(() => false));
   });
 
   it('readPolicyParcels inflates a deflate-raw body', async () => {

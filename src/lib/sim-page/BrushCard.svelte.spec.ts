@@ -17,19 +17,16 @@ import {
 } from './policy';
 import { PolicyStore } from './policy-store.svelte';
 
-const street: ZoningRule = {
+const transit: ZoningRule = {
   id: 's1',
-  kind: 'street',
-  classes: ['arterial'],
-  names: [],
-  depth: 0,
-  ncOnly: false,
-  stories: 8
+  kind: 'transit',
+  stopTypes: ['metro'],
+  bands: [{ maxM: 402, stories: 8 }]
 };
 const stroke = { path: [[-122.42, 37.76]] as [number, number][], radiusM: 30 };
 const paint: CustomBrush = { id: 'p1', kind: 'paint', strokes: [stroke], stories: 3 };
 const erase: CustomBrush = { id: 'e1', kind: 'erase', strokes: [stroke, stroke] };
-const streetKey = queryKey(ruleQueries(street)[0]);
+const transitKey = queryKey(ruleQueries(transit)[0]);
 const paintKey = queryKey(customQuery(paint));
 
 const lots = (n: number): BrushLotsResult => ({
@@ -40,10 +37,10 @@ const lots = (n: number): BrushLotsResult => ({
 
 function setup(list: 'rules' | 'custom', id: string, index: number) {
   const store = new PolicyStore(DEFAULT_POLICY);
-  store.apply((p) => ({ ...p, rules: [street], custom: [paint, erase] }), 'Seeded');
+  store.apply((p) => ({ ...p, rules: [transit], custom: [paint, erase] }), 'Seeded');
   const sync = {
     result: vi.fn((k: string) =>
-      k === streetKey ? lots(1204) : k === paintKey ? lots(12) : undefined
+      k === transitKey ? lots(1204) : k === paintKey ? lots(12) : undefined
     ),
     retry: vi.fn()
   };
@@ -53,7 +50,7 @@ function setup(list: 'rules' | 'custom', id: string, index: number) {
   return { store, onedit, announce };
 }
 
-const RULE = 'Up to 8 stories · Arterials · 1,204 lots';
+const RULE = 'Up to 8 stories within 402 m · Near Muni Metro · 1,204 lots';
 const PAINT = 'Allow 3 stories · 1 stroke · 12 lots';
 
 describe('BrushCard', () => {
@@ -70,17 +67,17 @@ describe('BrushCard', () => {
         .toBeInTheDocument();
     expect(page.getByRole('button', { name: /^Move/ }).elements()).toHaveLength(0);
     await page.getByRole('button', { name: `Edit: ${RULE}` }).click();
-    expect(onedit).toHaveBeenCalledWith(street);
+    expect(onedit).toHaveBeenCalledWith(transit);
   });
 
   it('removing a rule is a labelled change that undo reverses', async () => {
     const { store, announce } = setup('rules', 's1', 0);
     await page.getByRole('button', { name: /^Remove/ }).click();
     expect(store.policy.rules).toEqual([]);
-    expect(store.undoLabel).toBe('Removed: Allowed up to 8 stories on arterials');
-    expect(announce).toHaveBeenCalledWith('Removed: Allowed up to 8 stories on arterials');
+    expect(store.undoLabel).toBe('Removed: Allowed up to 8 stories near Muni Metro');
+    expect(announce).toHaveBeenCalledWith('Removed: Allowed up to 8 stories near Muni Metro');
     store.undo();
-    expect(store.policy.rules).toEqual([street]);
+    expect(store.policy.rules).toEqual([transit]);
   });
 
   it('a custom card has Move up, Move down and Remove, and no Edit', async () => {

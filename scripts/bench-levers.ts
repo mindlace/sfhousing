@@ -7,7 +7,6 @@ import { readFileSync, statSync } from 'node:fs';
 import { cpus, totalmem } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { readFrontage } from '../src/lib/data/frontage-codec';
 import { parseManifest } from '../src/lib/data/manifest';
 import type { ParcelId, ParcelRecord } from '../src/lib/data/parcel';
 import { decodeParcelChunk } from '../src/lib/data/parcel-chunk';
@@ -47,8 +46,7 @@ async function main(): Promise<number> {
     return join(dir, url.slice(prefix.length));
   };
   const urls = scenarioUrls(manifest);
-  if (!urls?.policy || !urls.frontage)
-    throw new Error('manifest has no policy.bin or frontage.bin');
+  if (!urls?.policy) throw new Error('manifest has no policy.bin');
   const bytes = (url: string) => {
     const b = readFileSync(pathOf(url));
     return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
@@ -77,7 +75,6 @@ async function main(): Promise<number> {
   const data: BrushData = {
     parcels,
     policy,
-    frontage: await readFrontage(new Uint8Array(bytes(urls.frontage)), parcels),
     transit: decodeTransit(JSON.parse(readFileSync(pathOf(manifest.transit!), 'utf8'))),
     neighborhoods: parseNeighborhoods(
       JSON.parse(readFileSync(pathOf(manifest.neighborhoods), 'utf8'))
@@ -96,8 +93,8 @@ async function main(): Promise<number> {
       stories: 4
     },
     {
-      name: '(b) arterial frontage depth 1, rule to 8',
-      query: { kind: 'street', classes: ['arterial'], names: [], depth: 1, ncOnly: false },
+      name: '(b) `metro` and `rapidBus` within 1,609 m, rule to 8',
+      query: { kind: 'transit', stopTypes: ['metro', 'rapidBus'], maxM: 1609 },
       stories: 8
     },
     {

@@ -798,7 +798,6 @@
       {#if forms.current && catalog}
         {#key forms.current}
           <RuleBrushForm
-            kind={forms.current.kind}
             {catalog}
             initial={forms.current.initial}
             onsave={saveRuleBrush}

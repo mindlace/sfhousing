@@ -175,11 +175,10 @@ describe('asOfFromLock', () => {
   it('the as-of sources are exactly the project-record event sources', () => {
     expect([...AS_OF_SOURCE_IDS]).toEqual([...PROJECT_SOURCE_IDS]);
   });
-  it('ignores a newer policy-only or frontage-only entry', () => {
+  it('ignores a newer policy-only entry', () => {
     const lock: Lock = {
       sources: [
         e('datasf-planning-projects', '2026-10-19T01:34:20.056Z'),
-        e('datasf-streets', '2026-10-29T09:09:24.450Z'),
         e('datasf-historic-status', '2026-10-29T09:09:29.984Z'),
         e('sfbos-sb79-exemptions', '2026-10-29T09:09:29.985Z'),
         e('some-future-policy-source', '2027-01-01T00:00:00.000Z')
@@ -192,7 +191,7 @@ describe('asOfFromLock', () => {
   });
   it('throws when the lock has no as-of source', () => {
     expect(() =>
-      asOfFromLock({ sources: [e('datasf-streets', '2026-10-29T00:00:00.000Z')] })
+      asOfFromLock({ sources: [e('datasf-historic-status', '2026-10-29T00:00:00.000Z')] })
     ).toThrow();
   });
 });

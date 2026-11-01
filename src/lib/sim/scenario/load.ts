@@ -1,7 +1,6 @@
 // Scenario loading (spec §4.2 steps 1, 2, 4-7; the loading rows of §4.10): request checks,
 // manifest URLs, the three concurrent fetches with retries, decode and validation, and the two
 // SimInputs with their precompute. Worker-bundle module: zod-free, DOM-free, $app-free.
-import { STREET_CLASSES } from '$lib/data/frontage-codec';
 import type { Manifest } from '$lib/data/manifest';
 import { readPolicyParcels, type PolicyParcels } from '$lib/data/policy-codec';
 import { readScenarioParcels, type ScenarioParcels } from '$lib/data/scenario-codec';
@@ -23,15 +22,14 @@ export type FetchBytesLike = (
 
 export type InitRequest = Extract<ScenarioRequest, { type: 'initScenario' }>;
 /**
- * `policy` and `frontage` are null when the manifest has no usable `scenarios.fzp.policy` /
- * `scenarios.fzp.frontage` (only /sim needs them; frontage only for street brushes).
+ * `policy` is null when the manifest has no usable `scenarios.fzp.policy` (only /sim needs it).
+ * Older datasets also name `scenarios.fzp.frontage`; nothing reads it.
  */
 export type ScenarioUrls = {
   parcels: string;
   projects: string;
   calibration: string;
   policy: string | null;
-  frontage: string | null;
 };
 
 export interface Loaded {
@@ -100,8 +98,8 @@ export function datasetUrl(m: Manifest, u: unknown): string | null {
  * §4.2 step 2: the three FZP file URLs, or null when `scenarios.fzp` is absent or any URL is
  * missing or not under `/data/<datasetVersion>/` (the host answers `scenario-missing`). The
  * manifest has passed `checkManifestShape`, which does not look at `scenarios`. The optional
- * `policy` (plan 2) and `frontage` (plan 3) URLs are null when absent or outside the prefix:
- * /fzp never needs them, so they never make the result null.
+ * `policy` URL is null when absent or outside the prefix: /fzp never needs it, so it never makes
+ * the result null. `scenarios.fzp.frontage` (older datasets) is ignored.
  */
 export function scenarioUrls(m: Manifest): ScenarioUrls | null {
   const fzp: unknown = (m.scenarios as { fzp?: unknown } | undefined)?.fzp;
@@ -111,8 +109,7 @@ export function scenarioUrls(m: Manifest): ScenarioUrls | null {
   for (const u of Object.values(urls)) if (datasetUrl(m, u) === null) return null;
   return {
     ...(urls as Pick<ScenarioUrls, 'parcels' | 'projects' | 'calibration'>),
-    policy: datasetUrl(m, f.policy),
-    frontage: datasetUrl(m, f.frontage)
+    policy: datasetUrl(m, f.policy)
   };
 }
 
@@ -128,7 +125,7 @@ const lngLat = (v: unknown): boolean =>
 /**
  * null for a brush query the host may resolve, else its first problem (`bad-request`). The
  * resolver itself answers `[]` for a bad radius, so the host checks: radii and `maxM` positive and
- * finite, coordinates finite, kinds, stop types and street classes known.
+ * finite, coordinates finite, kinds and stop types known.
  */
 export function brushQueryProblem(q: unknown): string | null {
   if (!isRecord(q)) return 'query is not an object';
@@ -146,12 +143,6 @@ export function brushQueryProblem(q: unknown): string | null {
     case 'transit':
       if (!among(q.stopTypes, STOP_TYPES)) return 'stopTypes must be known stop types';
       if (!positive(q.maxM)) return 'maxM must be positive and finite';
-      return null;
-    case 'street':
-      if (!among(q.classes, STREET_CLASSES)) return 'classes must be known street classes';
-      if (!strings(q.names)) return 'names must be strings';
-      if (q.depth !== 0 && q.depth !== 1) return 'depth must be 0 or 1';
-      if (typeof q.ncOnly !== 'boolean') return 'ncOnly must be a boolean';
       return null;
     case 'area':
       if (!strings(q.districts)) return 'districts must be strings';

@@ -27,8 +27,6 @@ export function buildManifest(a: {
   scenarios?: boolean;
   /** The build wrote `scenarios/fzp/policy.bin`; only emitted with `scenarios`. */
   policy?: boolean;
-  /** The build wrote `scenarios/fzp/frontage.bin`; only emitted with `scenarios`. */
-  frontage?: boolean;
   warn?: (msg: string) => void;
 }): Manifest {
   const v = a.datasetVersion;
@@ -80,8 +78,7 @@ export function buildManifest(a: {
               parcels: `${base}/scenarios/fzp/parcels.bin`,
               projects: `${base}/scenarios/fzp/projects.json`,
               calibration: `${base}/scenarios/fzp/calibration.json`,
-              ...(a.policy ? { policy: `${base}/scenarios/fzp/policy.bin` } : {}),
-              ...(a.frontage ? { frontage: `${base}/scenarios/fzp/frontage.bin` } : {})
+              ...(a.policy ? { policy: `${base}/scenarios/fzp/policy.bin` } : {})
             }
           }
         }

@@ -101,22 +101,8 @@ Point` x[E−50, E+50] y[-100,100].
 | `src_height_bulk`   | 8    | the eight districts                                                                                         |
 | `src_parcel_attrs`  | 24   | as `src_parcels`                                                                                            |
 | `src_roll`          | 37   | 2025: 17 (lots 1, 2 x3, 3–8, 10, 11, 14–18); 2024: those less 3, + 13 + `3512099` = 18; 2023: lots 3, 4 = 2 |
-| `src_streets`       | 5    | the five centerlines below                                                                                  |
 | `src_historic`      | 20   | lots 1, 2 (3 condo rows), 3–17 = 19, + retired `3512099`                                                    |
 | `src_sb79_exempt`   | 3    | `3512012` permanent, unmatched `3512999` permanent, `3512015` temporary                                     |
-
-## Streets
-
-`datasf-streets` (3psu-pn9h, GeoJSON): `line` is a MultiLineString in local metres; `cnn` and `classcode` are
-strings and `active` is `true`, as SODA writes them.
-
-| cnn  | streetname  | classcode | layer       | line                                    |
-| ---- | ----------- | --------- | ----------- | --------------------------------------- |
-| 1000 | MISSION ST  | 3         | STREETS     | y = −8, x −60 → 95                      |
-| 1001 | MISSION ST  | 3         | STREETS     | y = −8, x 95 → 148                      |
-| 2000 | FIXTURE AVE | 5         | STREETS     | x = 148, y −60 → 28 (ends below lot 18) |
-| 3000 | PAPER ST    | 0         | PAPER_WATER | y = −8, x E−60 → E+60                   |
-| 4000 | I-80        | 1         | FREEWAYS    | y = 75, x 0 → 140                       |
 
 ## Historic status
 

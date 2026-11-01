@@ -84,7 +84,7 @@ describe('buildManifest', () => {
     expect('scenarios' in m).toBe(false);
   });
 
-  it('names policy and not frontage when only policy is set', () => {
+  it('never names frontage', () => {
     const m = buildManifest({
       datasetVersion: 'fixture-3',
       builtAt: '2026-10-10T00:00:00.000Z',
@@ -92,22 +92,20 @@ describe('buildManifest', () => {
       chunks: [],
       overtureContrib: [],
       scenarios: true,
-      policy: true,
-      frontage: false
+      policy: true
     });
     expect(m.scenarios?.fzp.policy).toBe('/data/fixture-3/scenarios/fzp/policy.bin');
-    expect(m.scenarios?.fzp.frontage).toBeUndefined();
+    expect('frontage' in m.scenarios!.fzp).toBe(false);
   });
 
-  it('ignores policy and frontage without scenarios', () => {
+  it('ignores policy without scenarios', () => {
     const m = buildManifest({
       datasetVersion: 'fixture-3',
       builtAt: '2026-10-10T00:00:00.000Z',
       lock: { sources: [] },
       chunks: [],
       overtureContrib: [],
-      policy: true,
-      frontage: true
+      policy: true
     });
     expect('scenarios' in m).toBe(false);
   });

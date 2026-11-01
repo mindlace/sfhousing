@@ -24,8 +24,8 @@ const manifest = JSON.parse(readFileSync(MANIFEST_URL, 'utf8')) as {
 };
 const { fzp } = manifest.scenarios;
 // /sim (where /fzp now redirects) reads these four: the timelapse's three and the lever engine's
-// policy.bin. frontage.bin is fetched only for the brush catalog, which the policy panel asks for
-// when it first opens (open by default from 768 px, closed below).
+// policy.bin. The brush catalog (asked for when the policy panel first opens) reads only
+// transit.json and neighborhoods.geojson, never frontage.bin.
 const SIM_FILES = [fzp.parcels, fzp.projects, fzp.calibration, fzp.policy];
 
 const scoreJson = (page: Page, field?: 'shown' | 'band'): Promise<string> =>
@@ -112,15 +112,15 @@ test('fetches only the viewport chunks, the scenario files and policy.bin', asyn
 
   // The viewport's chunk is prefetched after the first timeline.
   await expect.poll(() => [...new Set(chunkRequests())].sort()).toEqual(inView.sort());
-  expect([fzp.policy, fzp.frontage].every(Boolean), 'fixture-0 names policy and frontage').toBe(
-    true
-  );
-  // frontage.bin only once the open panel has asked for the brush catalog.
-  const panelOpen = await page.getByTestId('policy-panel').isVisible();
-  const want = (panelOpen ? [...SIM_FILES, fzp.frontage!] : SIM_FILES).sort();
+  expect(fzp.policy, 'fixture-0 names policy').toBeTruthy();
+  // The same four files whether or not the panel is open; the brush catalog adds none.
   await expect
     .poll(() => [...new Set(urls.filter((u) => u.includes('/scenarios/')))].sort())
-    .toEqual(want);
+    .toEqual(SIM_FILES.sort());
+  expect(
+    urls.some((u) => u.endsWith('/frontage.bin')),
+    'the panel never fetches frontage.bin'
+  ).toBe(false);
 
   // Panning to the far chunk fetches it, and only then.
   expect(chunkRequests()).not.toContain(chunkUrl(FAR_CELL));

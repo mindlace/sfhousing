@@ -35,7 +35,7 @@ export class TransitBuildError extends Error {}
 
 /**
  * The lock entries whose `retrievedAt` sets the transit target date (transit spec §4.2 step 1):
- * the GTFS feeds only. A refresh of a DataSF, policy or frontage source cannot move the picked
+ * the GTFS feeds only. A refresh of a DataSF or policy source cannot move the picked
  * service day. Membership is by allowlist (docs/dev/pipeline.md).
  */
 export const TRANSIT_DATE_SOURCE_IDS: readonly GtfsLockId[] = GTFS_IDS;
