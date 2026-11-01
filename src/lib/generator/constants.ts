@@ -94,3 +94,34 @@ export const DISTRICT_DEFAULT_MIN_UNITS = 100;
 export const DISTRICT_MIN_STORIES = 3;
 /** District story limit used only when a caller passes no `storyLimit`. Tier 4. */
 export const DISTRICT_FALLBACK_LIMIT = 8;
+
+/*
+ * Physical story limit (hybrid width/area rule). Evidence, tables and scripts:
+ * docs/superpowers/design/2026-10-31-physical-limits/ (SF LiDAR footprints + parcels + 2023 roll,
+ * NYC PLUTO). Tiers follow the project's evidence hierarchy (0 = per-record data ... 4 = invented).
+ */
+/** Feet per metre; exact by definition (1 ft = 0.3048 m). */
+export const FT_PER_M = 1 / 0.3048;
+/** Stories per foot of lot width, p99.9 bound. Tier 0: SF LiDAR/parcels/2023 roll, 119,531 sites. */
+export const PHYS_SF_FT_COEF = 0.3;
+/**
+ * `capA` knots as [k = area in 1,000 ft², stories at k], k ascending from the origin.
+ * Tier 0: SF LiDAR/parcels/2023 roll, 119,531 sites (p99.9 by area bin).
+ */
+export const PHYS_AREA_KNOTS: readonly (readonly [number, number])[] = [
+  [0, 0],
+  [15, 36],
+  [30, 49.5]
+];
+/** Stories per 1,000 ft² on each `PHYS_AREA_KNOTS` segment, last one extended. Tier 0: same. */
+export const PHYS_AREA_SLOPES: readonly number[] = [2.4, 0.9, 0.5];
+/** Stories per foot of width for towers (height ≤ 5 × width at 3.1 m/floor). Tier 0: SF towers ~5:1. */
+export const PHYS_SLENDER_FT_COEF = 0.49;
+/** Stories per √ft² of lot area. Tier 3: NYC Manhattan post-2000 PLUTO applied to SF. */
+export const PHYS_SQRT_AREA_COEF = 0.5;
+/** Lot width (ft) where the large-lot term starts to blend in. Tier 4: invented. */
+export const PHYS_JOIN_FROM_FT = 60;
+/** Lot width (ft) where the large-lot term has full weight. Tier 4: invented. */
+export const PHYS_JOIN_TO_FT = 120;
+/** Floor of the physical max. Tier 0: SF sub-20 ft lots (p99 is 5 stories). */
+export const PHYS_MIN_STORIES = 5;
