@@ -49,7 +49,7 @@
 
 <svelte:window onkeydown={onWindowKeydown} onpointerdown={onWindowPointerdown} />
 
-<div class="relative flex items-center text-xs text-gray-700" bind:this={root}>
+<div class="relative flex items-center text-xs text-gray-700 dark:text-gray-300" bind:this={root}>
   {#if status === 'off'}
     <button
       type="button"

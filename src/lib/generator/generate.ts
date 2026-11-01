@@ -19,6 +19,7 @@ import { serializeComposition } from './serialize';
 import { massAdu } from './massing';
 import { canonicalRing } from './poly';
 import { domainArea } from './domain';
+import { physicalMaxStories } from './physical';
 import { selectTypology } from './select';
 import { normaliseSite, type Site } from './site';
 import type { BuildoutMode, GeneratedBuilding } from './types';
@@ -48,12 +49,22 @@ export function aduOpenOk(parcel: ParcelRecord, A: number): boolean {
   return A - parcel.existingFloorAreaM2 / estStories >= ADU_MIN_OPEN_M2;
 }
 
+/**
+ * Internal options, deliberately not re-exported from `index.ts`. `skipPhysicalClamp` is for
+ * recorded-project massing (`generateDistrictForUnits`): real buildings are their own evidence
+ * (tier 0), so their stated stories are never reduced to the lot's physical max.
+ */
+export interface GenerateInternal {
+  skipPhysicalClamp?: boolean;
+}
+
 export function generateDetailed(
   parcel: ParcelRecord,
   env: Envelope,
   draws: VarietyDraws,
   mode: BuildoutMode,
-  compositionDraws: CompositionDraws = drawComposition(fnv1a32(parcel.id))
+  compositionDraws: CompositionDraws = drawComposition(fnv1a32(parcel.id)),
+  internal: GenerateInternal = {}
 ): Detailed | null {
   if (mode !== 'max') throw new Error('unsupported BuildoutMode');
   if (!parcel.eligible) return null;
@@ -67,6 +78,8 @@ export function generateDetailed(
 
   const site = normaliseSite(parcel.polygon, draws.edgeInsetM);
   if (!site) return null;
+  // Physical max (§3a): a painted height above what the lot can hold builds at the lot's limit.
+  if (!internal.skipPhysicalClamp) S = Math.min(S, physicalMaxStories(site));
 
   const sel = selectTypology(S, site.A, parcel.existingUnits);
   let reference: OccupiedComposition | null;
@@ -178,9 +191,10 @@ export function generateWith(
   env: Envelope,
   draws: VarietyDraws,
   mode: BuildoutMode,
-  compositionDraws: CompositionDraws = drawComposition(fnv1a32(parcel.id))
+  compositionDraws: CompositionDraws = drawComposition(fnv1a32(parcel.id)),
+  internal: GenerateInternal = {}
 ): GeneratedBuilding | null {
-  return generateDetailed(parcel, env, draws, mode, compositionDraws)?.building ?? null;
+  return generateDetailed(parcel, env, draws, mode, compositionDraws, internal)?.building ?? null;
 }
 
 /**
@@ -192,7 +206,8 @@ export function generate(
   parcel: ParcelRecord,
   env: Envelope,
   seed: number,
-  mode: BuildoutMode
+  mode: BuildoutMode,
+  internal: GenerateInternal = {}
 ): GeneratedBuilding | null {
   if (mode !== 'max') throw new Error('unsupported BuildoutMode');
   const polygon = parcel?.polygon;
@@ -205,5 +220,5 @@ export function generate(
     const district = generateDistrict(parcel, env, seed);
     if (district !== 'not-district') return district;
   }
-  return generateWith(parcel, env, drawVariety(seed), mode, drawComposition(seed));
+  return generateWith(parcel, env, drawVariety(seed), mode, drawComposition(seed), internal);
 }

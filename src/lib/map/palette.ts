@@ -21,6 +21,10 @@ export type TokenName =
   | 'transit-rail'
   | 'transit-regional'
   | 'transit-stroke'
+  | 'height-fog'
+  | 'brush-paint'
+  | 'brush-erase'
+  | 'painted-outline'
   | 'tl-ghost-planning'
   | 'tl-ghost-permit'
   | 'tl-ghost-ready'
@@ -32,7 +36,7 @@ export type TokenName =
   | 'tl-bar-unlikely'
   | 'tl-bar-dead';
 
-/** Spec §4.3 verbatim; `transit-*` from transit spec §6.1; `tl-*` from timelapse-render spec §4.6. Hex, or rgba() for highlight. */
+/** Spec §4.3 verbatim, with the one-hue-per-meaning transit, pipeline and brush tokens from spec 2026-10-31 §8; `transit-*` from transit spec §6.1; `tl-*` from timelapse-render spec §4.6. Hex, or rgba() for highlight. */
 export const TOKENS: Record<Theme, Record<TokenName, string>> = {
   light: {
     land: '#F3EFE6',
@@ -52,19 +56,23 @@ export const TOKENS: Record<Theme, Record<TokenName, string>> = {
     'gen-podium': '#BF5A3A',
     'gen-midrise': '#A3472C',
     'gen-tower': '#84371F',
-    'transit-access-1': '#E4EEF3',
-    'transit-access-2': '#BED7E3',
-    'transit-access-3': '#8DB9CF',
-    'transit-access-4': '#5596B5',
-    'transit-access-5': '#2C6E8F',
-    'transit-bus': '#5F6B66',
-    'transit-rail': '#7B3FA0',
-    'transit-regional': '#1F5FBF',
+    'transit-access-1': '#E0F2EF',
+    'transit-access-2': '#B3E0D8',
+    'transit-access-3': '#7CC7BA',
+    'transit-access-4': '#3FA596',
+    'transit-access-5': '#167A6E',
+    'transit-bus': '#5E7A76',
+    'transit-rail': '#0F5A52',
+    'transit-regional': '#0B3B36',
     'transit-stroke': '#FFFFFF',
-    'tl-ghost-planning': '#9DB0FF',
-    'tl-ghost-permit': '#6F86F0',
-    'tl-ghost-ready': '#4257D6',
-    'tl-ghost-dying': '#D84A4A',
+    'height-fog': 'rgba(255,255,255,0.30)',
+    'brush-paint': '#B4532F',
+    'brush-erase': '#2B2A28',
+    'painted-outline': '#B4532F',
+    'tl-ghost-planning': '#DDBBD2',
+    'tl-ghost-permit': '#C58FB1',
+    'tl-ghost-ready': '#93527F',
+    'tl-ghost-dying': '#C62828',
     'tl-bar-track': '#FFFFFF',
     'tl-bar-edge': '#5E5A52',
     'tl-bar-likely': '#2E7D32',
@@ -76,11 +84,11 @@ export const TOKENS: Record<Theme, Record<TokenName, string>> = {
     land: '#1C1D1F',
     water: '#10181C',
     park: '#1F2420',
-    road: '#2C2E31',
+    road: '#34373B',
     roadMinor: '#252729',
     label: '#A9A59C',
     existing: '#3B3D41',
-    replaced: '#2A2B2E',
+    replaced: '#232427',
     highlight: 'rgba(255,255,255,0.30)',
     chunkLoading: '#8F8A80',
     chunkError: '#F2B8B5',
@@ -90,19 +98,23 @@ export const TOKENS: Record<Theme, Record<TokenName, string>> = {
     'gen-podium': '#C27236',
     'gen-midrise': '#DB8B42',
     'gen-tower': '#F0A752',
-    'transit-access-1': '#1E2A31',
-    'transit-access-2': '#24414F',
-    'transit-access-3': '#2D5D72',
-    'transit-access-4': '#3A7F9C',
-    'transit-access-5': '#5BA6C6',
-    'transit-bus': '#A3ADA6',
-    'transit-rail': '#C59BE0',
-    'transit-regional': '#7FB2FF',
+    'transit-access-1': '#16282A',
+    'transit-access-2': '#1B3E3E',
+    'transit-access-3': '#22595A',
+    'transit-access-4': '#2E7B78',
+    'transit-access-5': '#4BA59E',
+    'transit-bus': '#9BB5B0',
+    'transit-rail': '#7FD6C9',
+    'transit-regional': '#C2F0E8',
     'transit-stroke': '#111214',
-    'tl-ghost-planning': '#5466B8',
-    'tl-ghost-permit': '#7D90F0',
-    'tl-ghost-ready': '#AEBBFF',
-    'tl-ghost-dying': '#FF6E6E',
+    'height-fog': 'rgba(200,210,214,0.20)',
+    'brush-paint': '#DB8B42',
+    'brush-erase': '#E8E4DC',
+    'painted-outline': '#DB8B42',
+    'tl-ghost-planning': '#623257',
+    'tl-ghost-permit': '#8A5679',
+    'tl-ghost-ready': '#C08AAE',
+    'tl-ghost-dying': '#FF8A80',
     'tl-bar-track': '#2C2E31',
     'tl-bar-edge': '#A9A59C',
     'tl-bar-likely': '#81C784',
@@ -123,6 +135,26 @@ export function hexToRgba(hex: string, alpha = 255): RGBA {
     parseInt(h.slice(4, 6), 16),
     alpha
   ];
+}
+
+/** Fill opacity of the transit-access layer; the legend swatches composite at the same alpha. */
+export const TRANSIT_ACCESS_OPACITY = 0.45;
+
+/** sRGB channel blend of fg over bg at `alpha`, '#RRGGBB' uppercase. A legend helper only. */
+export function compositeHex(fg: string, bg: string, alpha: number): string {
+  const [fr, fgc, fb] = hexToRgba(fg);
+  const [br, bgc, bb] = hexToRgba(bg);
+  const mix = (f: number, b: number) =>
+    Math.round(f * alpha + b * (1 - alpha))
+      .toString(16)
+      .padStart(2, '0');
+  return `#${mix(fr, br)}${mix(fgc, bgc)}${mix(fb, bb)}`.toUpperCase();
+}
+
+/** The colour a capacity bin k actually shows on the map over land. */
+export function accessSwatch(theme: Theme, k: 1 | 2 | 3 | 4 | 5): string {
+  const t = TOKENS[theme];
+  return compositeHex(t[`transit-access-${k}` as const], t.land, TRANSIT_ACCESS_OPACITY);
 }
 
 export const GEN_RGBA: Record<Theme, RGBA[]> = {

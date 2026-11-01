@@ -66,7 +66,7 @@
 
   const btn =
     'min-h-6 min-w-6 rounded-md px-3 py-1.5 text-sm pointer-coarse:min-h-11 pointer-coarse:min-w-11';
-  const primary = `${btn} bg-blue-700 font-medium text-white hover:bg-blue-800`;
+  const primary = `${btn} bg-accent font-medium text-on-accent hover:bg-accent-hover`;
   const secondary = `${btn} border border-gray-400 bg-white text-gray-800 hover:bg-gray-50`;
 </script>
 

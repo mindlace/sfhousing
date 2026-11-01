@@ -19,6 +19,7 @@
   import { loadManifest } from '$lib/sim/manifest';
   import { readViewPrefs, writeViewPrefs, type ViewPrefs } from '$lib/view/prefs';
   import ViewMenu from '$lib/view/ViewMenu.svelte';
+  import { useSystemTheme } from '$lib/map/system-theme.svelte';
   import type { PageProps } from './$types';
 
   let { data }: PageProps = $props();
@@ -110,11 +111,12 @@
     planDatasetVersion: data.plan.datasetVersion,
     mode: 'max'
   });
+  const systemTheme = useSystemTheme();
 </script>
 
 {#snippet headerActions()}
   {#if mapManifest?.transit}
-    <ViewMenu {view} onchange={onViewChange} />
+    <ViewMenu {view} theme={systemTheme.current} onchange={onViewChange} />
   {/if}
   {#if editor}
     <!-- editor.plan passes straight through: PublishDialog's 413 lock keys on its identity. -->

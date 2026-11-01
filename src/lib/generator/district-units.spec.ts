@@ -8,6 +8,7 @@ import { rect, type Polygon } from './fixtures/district';
 import { rectRing } from './fixtures/geom';
 import lot1000 from './fixtures/lot-1000.json';
 import { generate } from './generate';
+import { lotPhysicalMaxStories } from './physical';
 import { mulberry32 } from './seed';
 import { selectTypology } from './select';
 import { normaliseSite } from './site';
@@ -42,7 +43,10 @@ const capped = (S: number, lot: DistrictLot) => selectTypology(S, lotA(lot), 0).
 /** Lot `i` of the 40 ha site massed by `generate` at `S`; null when the lot cannot mass. */
 function generateLot(i: number, S: number): GeneratedBuilding | null {
   const lot = layout.lots[i];
-  return generate(lotRecord(big, lot), { maxStories: S }, lotSeed(SEED, lot.key), 'max');
+  // recorded-project massing is not clamped to the physical max
+  return generate(lotRecord(big, lot), { maxStories: S }, lotSeed(SEED, lot.key), 'max', {
+    skipPhysicalClamp: true
+  });
 }
 
 /**
@@ -85,6 +89,20 @@ describe('district massing in generateForUnits (spec §4.3 pipeline, §4.4)', ()
     expect(generateForUnits(big, 3454, 40, 12, undefined, { storyLimit: 12 })).not.toStrictEqual(
       noEvidence
     );
+  });
+
+  it('recorded projects are not clamped to the lot physical max', () => {
+    const b = generateForUnits(big, 3454, 40, SEED, undefined, {
+      curatedStories: 80,
+      storyLimit: 80
+    })!;
+    expectLotStories(b, 80);
+    const fill = layout.lots.map((_, i) => i).filter((i) => generateLot(i, 80));
+    // lots built above their own physical max: the recorded height is not clamped
+    const over = b.lots!.filter(
+      (l, i) => l.stories > lotPhysicalMaxStories(layout.lots[fill[i]].polygon as never)!
+    );
+    expect(over.length).toBeGreaterThan(0);
   });
 
   it('curated height: every lot at 8', () => {

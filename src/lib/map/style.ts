@@ -8,7 +8,7 @@ import type {
 } from 'maplibre-gl';
 import type { Manifest } from '$lib/data/manifest';
 import type { StopClass } from '$lib/transit';
-import { TOKENS } from './palette';
+import { TOKENS, TRANSIT_ACCESS_OPACITY } from './palette';
 import type { Theme } from './types';
 
 export const BUILDINGS_SOURCE = 'buildings';
@@ -270,7 +270,7 @@ export function transitAccessLayer(theme: Theme): LayerSpecification {
         t['transit-access-5'],
         'rgba(0,0,0,0)'
       ],
-      'fill-opacity': 0.45,
+      'fill-opacity': TRANSIT_ACCESS_OPACITY,
       'fill-antialias': false
     }
   } as LayerSpecification;

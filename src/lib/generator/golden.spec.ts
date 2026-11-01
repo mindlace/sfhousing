@@ -7,6 +7,8 @@ import { signedArea } from './poly';
 import { pointNearPolygon, rectRing } from './fixtures/geom';
 import { DISTRICT_MIN_M2 } from './constants';
 import { districtArea } from './district-layout';
+import { physicalMaxStories } from './physical';
+import { rect as districtRect } from './fixtures/district';
 import std from './fixtures/std-25x100.json';
 import shallow from './fixtures/shallow-adu-fail.json';
 import lot1000 from './fixtures/lot-1000.json';
@@ -324,5 +326,39 @@ describe('district threshold (large-site massing §4.1)', () => {
     // the property arbitraries' largest site: a 90 × 90 m rectangle
     polygons.push([rectRing(90, 90)]);
     for (const polygon of polygons) expect(districtArea(polygon)).toBeLessThan(DISTRICT_MIN_M2);
+  });
+});
+
+describe('physical max (§3a)', () => {
+  const FT = 0.3048;
+  const rect = (wFt: number, dFt: number) => ({
+    ...lot1000,
+    id: 'p',
+    polygon: [rectRing(wFt * FT, dFt * FT)]
+  });
+  const sq = (ft: number) => rect(ft, ft);
+  it('137.5 ft square at S=80 builds at most 67 stories', () => {
+    const b = run(sq(137.5), 80)!.building;
+    expect(b.stories).toBe(67);
+    expect(b.typology).toBe('tower');
+  });
+  it('never raises: 100×100 ft at S=3 stays 3', () => {
+    expect(run(rect(100, 100), 3)!.building.stories).toBe(3);
+  });
+  it('the clamp equals painting the physical max', () => {
+    const d = run(sq(137.5), 80)!;
+    expect(d.building).toEqual(run(sq(137.5), physicalMaxStories(d.site))!.building);
+  });
+  it('district lots: each lot is clamped on its own geometry', () => {
+    // districtRect(400, 300): 120,000 m², so generate() takes the district path; lots are at most
+    // LOT_FRONTAGE_M (45 m, about 148 ft) wide, so each lot's physical max is below 80.
+    const b = generate(
+      P({ ...lot1000, id: 'd', polygon: districtRect(400, 300) }),
+      { maxStories: 80 },
+      7,
+      'max'
+    )!;
+    expect(b.lots!.length).toBeGreaterThan(0);
+    for (const lot of b.lots!) expect(lot.stories).toBeLessThan(80);
   });
 });

@@ -92,7 +92,7 @@
 <button
   bind:this={button}
   type="button"
-  class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-semibold whitespace-nowrap tabular-nums pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+  class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-semibold whitespace-nowrap tabular-nums dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
   aria-expanded={open}
   aria-controls={detailsId}
   aria-busy={busy}
@@ -110,7 +110,7 @@
     aria-label="Score details"
     aria-busy={busy}
     data-testid="score-details"
-    class="absolute inset-x-0 top-full z-50 overflow-y-auto border-b border-gray-300 bg-white p-4 text-left font-normal shadow-lg md:right-4 md:left-auto md:mt-2 md:w-96 md:rounded-lg md:border"
+    class="absolute inset-x-0 top-full z-50 overflow-y-auto border-b border-gray-300 bg-white p-4 text-left font-normal text-gray-900 shadow-lg md:right-4 md:left-auto md:mt-2 md:w-96 md:rounded-lg md:border"
     style:max-height="calc(var(--fzp-dock-top, 100dvh) - 3rem - 1rem)"
   >
     {@render panel()}

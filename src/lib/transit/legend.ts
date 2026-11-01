@@ -8,6 +8,6 @@ export function accessBin(v: number): AccessBin {
   return b as AccessBin;
 }
 
-export const ACCESS_LEGEND = ['< 1k', '1k–3k', '3k–10k', '10k–30k', '30k+'] as const;
+export const ACCESS_LEGEND = ['200–1k', '1k–3k', '3k–10k', '10k–30k', '30k+'] as const;
 export const ACCESS_CAPTION =
   'Estimated weekday 7–9 am capacity, riders per hour. Existing service only.';

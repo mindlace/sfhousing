@@ -20,7 +20,7 @@
       </div>
       <div class="h-1.5 rounded-sm bg-gray-100" aria-hidden="true">
         <div
-          class="h-full rounded-sm bg-blue-600"
+          class="h-full rounded-sm bg-accent"
           style:width="{largest > 0 ? (Math.max(0, r.net) / largest) * 100 : 0}%"
         ></div>
       </div>

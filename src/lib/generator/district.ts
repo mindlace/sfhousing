@@ -132,6 +132,9 @@ export interface DistrictOpts {
   openSpaceShare?: number;
 }
 
+/** Recorded projects are tier-0 evidence: their lots are not clamped to the physical max. */
+const RECORDED = { skipPhysicalClamp: true } as const;
+
 /** A finite story count whose floor is in 1..MAX_STORIES, floored; else null. */
 const validStories = (x: number | null | undefined): number | null => {
   if (typeof x !== 'number' || !Number.isFinite(x)) return null;
@@ -198,7 +201,7 @@ export function generateDistrictForUnits(
       DISTRICT_MIN_STORIES + Math.floor(mulberry32(ls)() * (L - DISTRICT_MIN_STORIES + 1));
     const record = lotRecord(anchor, lot);
     // lots are under DISTRICT_MIN_M2, so this never recurses into the district path
-    const b = generate(record, { maxStories: S }, ls, 'max');
+    const b = generate(record, { maxStories: S }, ls, 'max', RECORDED);
     if (!b) continue;
     const entry = { record, ls, S, b };
     built.push(entry);
@@ -214,7 +217,7 @@ export function generateDistrictForUnits(
   if (stated === null) {
     for (const entry of built) {
       if (entry.S >= L) continue;
-      const b = generate(entry.record, { maxStories: L }, entry.ls, 'max');
+      const b = generate(entry.record, { maxStories: L }, entry.ls, 'max', RECORDED);
       if (!b) continue;
       const before = entry.b.units;
       entry.S = L;

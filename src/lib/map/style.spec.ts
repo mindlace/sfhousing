@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseManifest, type Manifest } from '$lib/data/manifest';
-import { TOKENS } from './palette';
+import { TOKENS, TRANSIT_ACCESS_OPACITY } from './palette';
 import {
   buildStyle,
   themePaintDiff,
@@ -186,6 +186,14 @@ describe('transit layers', () => {
       expect(Object.keys(s.sources)).not.toContain(TRANSIT_STOPS_SOURCE);
       expect(Object.keys(s.sources)).not.toContain(TRANSIT_ACCESS_SOURCE);
       expect(s.layers.some((l) => l.id.startsWith('transit-'))).toBe(false);
+    });
+
+    it(`${theme}: the access fill uses TRANSIT_ACCESS_OPACITY`, () => {
+      const s = buildStyle(withTransit, theme);
+      const l = s.layers.find((x) => x.id === TRANSIT_ACCESS_LAYER) as {
+        paint: Record<string, unknown>;
+      };
+      expect(l.paint['fill-opacity']).toBe(TRANSIT_ACCESS_OPACITY);
     });
 
     it(`${theme}: put the access fill and the stops flat under the roads, hidden`, () => {

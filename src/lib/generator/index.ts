@@ -14,3 +14,6 @@ export { createGeneratorCache } from './cache';
 export type { GeneratorCache } from './cache';
 
 export type { CompositionId, CompositionDraws } from './composition-types';
+
+export { physicalMaxStories, lotPhysicalMaxStories, lotBuildableStories } from './physical';
+export type { PhysicalSite } from './physical';

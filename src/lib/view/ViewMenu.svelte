@@ -1,44 +1,29 @@
 <script lang="ts">
   // Header View menu (transit spec §6.3): a disclosure with one checkbox + legend per layer. A
   // list, so later layers add rows.
-  import { TOKENS } from '$lib/map/palette';
+  import { TOKENS, accessSwatch } from '$lib/map/palette';
+  import type { Theme } from '$lib/map/types';
   import { ACCESS_CAPTION, ACCESS_LEGEND } from '$lib/transit/legend';
   import type { ViewPrefs } from './prefs';
 
   interface Props {
     view: ViewPrefs;
+    theme: Theme;
     onchange(v: ViewPrefs): void;
   }
-  let { view, onchange }: Props = $props();
+  let { view, theme, onchange }: Props = $props();
 
   const id = $props.id();
   let open = $state(false);
   let button = $state<HTMLButtonElement>();
   let panel = $state<HTMLDivElement>();
-  let dark = $state(false);
-  const t = $derived(TOKENS[dark ? 'dark' : 'light']);
-
-  $effect(() => {
-    const mq = matchMedia('(prefers-color-scheme: dark)');
-    dark = mq.matches;
-    const on = (e: MediaQueryListEvent) => (dark = e.matches);
-    mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
-  });
+  const t = $derived(TOKENS[theme]);
 
   const STOP_LEGEND = [
     ['transit-regional', 'BART / Caltrain'],
     ['transit-rail', 'Muni Metro / streetcar'],
     ['transit-bus', 'Bus / cable car']
   ] as const;
-  const ACCESS_TOKENS = [
-    'transit-access-1',
-    'transit-access-2',
-    'transit-access-3',
-    'transit-access-4',
-    'transit-access-5'
-  ] as const;
-
   function close(refocus: boolean): void {
     open = false;
     if (refocus) button?.focus();
@@ -65,7 +50,7 @@
     type="button"
     aria-expanded={open}
     aria-controls="{id}-panel"
-    class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+    class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
     onclick={() => (open = !open)}>View</button
   >
   {#if open}
@@ -105,12 +90,12 @@
         Transit capacity within a 10-minute walk
       </label>
       <ul class="mt-1 flex flex-wrap gap-x-3 gap-y-1 pl-6" aria-label="Transit capacity legend">
-        {#each ACCESS_LEGEND as label, k (label)}
+        {#each ACCESS_LEGEND as label, i (label)}
           <li class="flex items-center gap-1">
             <span
               aria-hidden="true"
               class="inline-block size-3"
-              style="background: {t[ACCESS_TOKENS[k]]}"
+              style="background: {accessSwatch(theme, (i + 1) as 1 | 2 | 3 | 4 | 5)}"
             ></span>
             {label}
           </li>

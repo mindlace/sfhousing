@@ -28,6 +28,8 @@ The page's `SimPolicy` (`src/lib/sim-page/policy.ts`, schema 2) compiles to thes
 2. **Paint.** Each paint edit, in document order, sets its lots to `N` stories, uncapped, raising or lowering. A later stroke wins.
 3. **Protections.** A protected lot is not redevelopable: it is reset to its FZP row with `hostable` 0 and makes no `Need` (see "Protections and the capacity metric").
 
+The table keeps the allowed `N`; the generator builds at most the lot's physical max stories (`physicalMaxStories`, `src/lib/generator/physical.ts`), so a recomputed row's built height is min(allowed `N`, physical max), then the typology cascade. Recorded projects are not capped.
+
 A touched row whose final `(stories, cap)` is its FZP row is left as it is; one at 0 stories hosts nothing. One that matches the lot's FZP or pre-FZP (`base`) row reuses that row's yields and `hostable`. Any other becomes a `Need` (`row:stories:cap`); `fillNeeds` writes the recomputed rows in. The SB 79 and current-law rows in `policy.bin` are not candidates: they follow other yield rules than `envelopeRow` (`sb79Yield` zeroes fill levels below `MIN_UNITS`, `hostableSb79` is `sb79Status = 'applies'`), so reusing them would give an uncapped edit yields a `Need` would not. `policy.bin`'s `currentStories` and `sb79*` columns stay in the data.
 
 `Resolution` is `{ plan, unprotected, protectedRows, unknownLots }`, each table a `ResolvedTable { table, needs }`; `unprotected === plan` when no row is protected. `unknownLots` counts distinct ids named in `rules` and `paint` that are not in the dataset, with one shared set, so an id named in both counts once.
