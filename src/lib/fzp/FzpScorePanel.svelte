@@ -5,7 +5,7 @@
 <script lang="ts">
   import { timelineTokenCss } from '$lib/map/palette';
   import { count } from '$lib/sim-page/brush-summary';
-  import { scoreCopy, type ScoreCopy } from '$lib/sim-page/policy';
+  import { comparisonLine, scoreCopy, type ScoreCopy } from '$lib/sim-page/policy';
   import type { LeverCapacity } from '$lib/sim/levers/resolve';
   import { formatBuiltDate, formatCount, formatPercent, trackMax } from '$lib/scoreboard';
   import TargetRow from '$lib/scoreboard/TargetRow.svelte';
@@ -151,6 +151,7 @@
 
     <section class="mt-4" aria-busy={planPending ? 'true' : undefined}>
       <h2 class="text-sm font-semibold">What {short} added</h2>
+      <p class="mt-1 text-sm text-gray-800">{comparisonLine(copy, at.planCompleted)}</p>
       <dl class="mt-1 space-y-1 text-sm">
         <div class="flex justify-between gap-3">
           <dt>Homes completed because of {short}</dt>

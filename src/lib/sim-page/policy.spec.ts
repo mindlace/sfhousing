@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_LEVERS, parseSimLevers, type TimerEdit } from '$lib/sim/levers/types';
+import { CALCULATING } from '$lib/fzp/score-view';
 import { PolicyStore } from './policy-store.svelte';
 import { OBSERVED_TIMING, type TimingSet } from './timing';
 import {
@@ -14,6 +15,7 @@ import {
   parseSimPolicy,
   queriesOf,
   queryKey,
+  comparisonLine,
   ruleQueries,
   scoreCopy,
   type CustomBrush,
@@ -509,6 +511,17 @@ describe('parseSimPolicy', () => {
       'custom[0].strokes[0].radiusM'
     );
     expect(pathOf((p) => (p.protect.newerThanYears = 0))).toBe('protect.newerThanYears');
+  });
+});
+
+describe('comparisonLine', () => {
+  it('names what the comparison is against', () => {
+    const fzp = scoreCopy(null);
+    const mine = scoreCopy({ ...DEFAULT_LEVERS, compare: 'fzp' });
+    expect(comparisonLine(fzp, 1234)).toBe('FZP added 1,234 homes vs no FZP');
+    expect(comparisonLine(mine, 56)).toBe('Your policy added 56 homes vs FZP');
+    expect(comparisonLine(mine, -56)).toBe('Your policy added \u221256 homes vs FZP');
+    expect(comparisonLine(mine, null)).toBe(`Your policy added ${CALCULATING} homes vs FZP`);
   });
 });
 

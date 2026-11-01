@@ -103,17 +103,22 @@
 
 <header
   bind:this={header}
-  class="relative flex h-12 items-center justify-between gap-2 border-b px-4"
+  class={[
+    'relative flex h-12 items-center justify-between gap-2 border-b px-4',
+    pinned && 'md:grid md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]'
+  ]}
 >
-  <a href="/" class="shrink-0 font-semibold whitespace-nowrap"
-    >SF Housing <span class="sr-only lg:not-sr-only">Simulator</span></a
-  >
-  <nav aria-label="Modes" class="flex shrink-0 items-center gap-3 text-sm max-md:hidden">
-    {@render modeLinks()}
-  </nav>
-  <!-- The status, then the space that pushes the pinned item and the actions right. -->
-  <div class="flex min-w-0 flex-1 items-center md:pl-2" data-header-status>
-    {@render status?.()}
+  <div class={pinned ? 'flex min-w-0 flex-1 items-center gap-2' : 'contents'}>
+    <a href="/" class="shrink-0 font-semibold whitespace-nowrap"
+      >SF Housing <span class="sr-only lg:not-sr-only">Simulator</span></a
+    >
+    <nav aria-label="Modes" class="flex shrink-0 items-center gap-3 text-sm max-md:hidden">
+      {@render modeLinks()}
+    </nav>
+    <!-- The status, then the space that pushes the pinned item and the actions right. -->
+    <div class="flex min-w-0 flex-1 items-center md:pl-2" data-header-status>
+      {@render status?.()}
+    </div>
   </div>
   {#if pinned}
     <div class="flex min-w-0 items-center">{@render pinned()}</div>
@@ -147,6 +152,8 @@
     <nav aria-label="Modes" class="flex flex-wrap items-center gap-4 text-sm md:hidden">
       {@render modeLinks()}
     </nav>
-    <div class="flex items-center gap-2 max-md:flex-wrap">{@render actions?.()}</div>
+    <div class="flex items-center gap-2 max-md:flex-wrap md:justify-self-end">
+      {@render actions?.()}
+    </div>
   </div>
 </header>

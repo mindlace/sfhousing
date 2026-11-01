@@ -406,5 +406,17 @@ describe('SiteHeader', () => {
         other.getBoundingClientRect().left
       );
     });
+
+    it('centres the pinned item in the header from md', async () => {
+      await page.viewport(1024, 768);
+      render(SiteHeader, { routeId: '/sim', actions, pinned });
+      await expect.element(page.getByRole('button', { name: '1,234 homes added' })).toBeVisible();
+      const score = page.getByRole('button', { name: '1,234 homes added' }).element();
+      const rect = score.getBoundingClientRect();
+      const header = page.getByRole('banner').element().getBoundingClientRect();
+      expect(
+        Math.abs((rect.left + rect.right) / 2 - (header.left + header.right) / 2)
+      ).toBeLessThan(1);
+    });
   });
 });

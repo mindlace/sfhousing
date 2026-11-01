@@ -13,6 +13,8 @@ import {
   type StopType,
   type StreetClass
 } from '$lib/sim/levers/brushes';
+import { CALCULATING } from '$lib/fzp/score-view';
+import { formatCount } from '$lib/scoreboard/format';
 import { STREET_CLASSES } from '$lib/data/frontage-codec';
 import {
   DEFAULT_LEVERS,
@@ -586,4 +588,12 @@ export function scoreCopy(l: SimLevers | null): ScoreCopy {
   if (l === null || l.compare === 'preFzp')
     return { plan: 'the Family Zoning Plan', twin: 'the old zoning', compare: 'preFzp' };
   return { plan: 'your policy', twin: 'the Family Zoning Plan as written', compare: 'fzp' };
+}
+
+/** The first line of the score details' "what … added" section: who is compared with what. */
+export function comparisonLine(copy: ScoreCopy, homes: number | null): string {
+  const n = homes === null ? CALCULATING : formatCount(homes);
+  return copy.compare === 'fzp'
+    ? `Your policy added ${n} homes vs FZP`
+    : `FZP added ${n} homes vs no FZP`;
 }

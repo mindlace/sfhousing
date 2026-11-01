@@ -193,6 +193,20 @@ describe('score copy (/sim)', () => {
       .toBeInTheDocument();
   });
 
+  it('names the comparison in the added section', async () => {
+    await page.viewport(1024, 768);
+    const screen = await render(FzpScorePanel, { props: props({ copy: scoreCopy(null) }) });
+    const first = () => page.getByText('What the plan added').element().closest('section')!;
+    expect(first().querySelector('p')!.textContent!.trim()).toBe('FZP added 1,290 homes vs no FZP');
+    await screen.rerender(props({ copy: scoreCopy({ ...DEFAULT_LEVERS, compare: 'fzp' }) }));
+    const mine = page.getByText('What your policy added').element().closest('section')!;
+    expect(mine.querySelector('p')!.textContent!.trim()).toBe(
+      'Your policy added 1,290 homes vs FZP'
+    );
+    await screen.rerender(props({ score: TIMELINE_SCORE_R0, copy: scoreCopy(null) }));
+    expect(first().getAttribute('aria-busy')).toBe('true');
+  });
+
   it('keeps the Family Zoning Plan text for the FZP copy', async () => {
     await page.viewport(1024, 768);
     await render(FzpScorePanel, { props: props({ copy: scoreCopy(null) }) });
