@@ -205,6 +205,7 @@ describe('score copy (/sim)', () => {
     );
     await screen.rerender(props({ score: TIMELINE_SCORE_R0, copy: scoreCopy(null) }));
     expect(first().getAttribute('aria-busy')).toBe('true');
+    expect(first().querySelector('p')!.textContent!.trim()).toBe('FZP vs no FZP: calculating…');
   });
 
   it('keeps the Family Zoning Plan text for the FZP copy', async () => {

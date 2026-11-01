@@ -14,8 +14,9 @@ import type { Marker, ScoreAt } from './types';
 
 /** The id of the RHNA target in `score.targets`. */
 export const RHNA_ID = 'rhna';
-/** A value not yet computed (revision 0, or the band still filling in). */
-export const CALCULATING = 'calculating…';
+import { CALCULATING } from './copy';
+
+export { CALCULATING };
 const EN_DASH = '–';
 const STILL_CALCULATING = ' (still calculating)';
 

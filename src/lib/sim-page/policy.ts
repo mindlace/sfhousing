@@ -13,7 +13,7 @@ import {
   type StopType,
   type StreetClass
 } from '$lib/sim/levers/brushes';
-import { CALCULATING } from '$lib/fzp/score-view';
+import { CALCULATING } from '$lib/fzp/copy';
 import { formatCount } from '$lib/scoreboard/format';
 import { STREET_CLASSES } from '$lib/data/frontage-codec';
 import {
@@ -592,8 +592,8 @@ export function scoreCopy(l: SimLevers | null): ScoreCopy {
 
 /** The first line of the score details' "what … added" section: who is compared with what. */
 export function comparisonLine(copy: ScoreCopy, homes: number | null): string {
-  const n = homes === null ? CALCULATING : formatCount(homes);
-  return copy.compare === 'fzp'
-    ? `Your policy added ${n} homes vs FZP`
-    : `FZP added ${n} homes vs no FZP`;
+  const mine = copy.compare === 'fzp';
+  if (homes === null) return `${mine ? 'Your policy vs FZP' : 'FZP vs no FZP'}: ${CALCULATING}`;
+  const n = formatCount(homes);
+  return mine ? `Your policy added ${n} homes vs FZP` : `FZP added ${n} homes vs no FZP`;
 }
