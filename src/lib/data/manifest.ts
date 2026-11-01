@@ -61,7 +61,7 @@ const ManifestBaseSchema = z.object({
         calibration: RootRelativeUrl,
         /** Per-lot policy inputs (sfh-policy/1). Optional: datasets built before it lack it. */
         policy: RootRelativeUrl.optional(),
-        /** Lot-to-street frontage (sfh-frontage/1). Optional like `policy`. */
+        /** Older datasets' lot-to-street frontage. Accepted so they still validate; nothing reads it. */
         frontage: RootRelativeUrl.optional()
       })
     })

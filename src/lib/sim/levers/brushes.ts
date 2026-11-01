@@ -1,19 +1,17 @@
 /**
- * Brush resolution for /sim policy levers: a brush query (freehand, transit, street, area) becomes
+ * Brush resolution for /sim policy levers: a brush query (freehand, transit, area) becomes
  * the scenario-eligible lot rows it covers, plus a catalog for the pickers. Pure and worker-safe
  * (no zod, DOM or $app). Rows are parcels.bin rows; every resolver returns them ascending and
  * keeps only `parcels.eligible` lots.
  */
 import KDBush from 'kdbush';
-import { STREET_CLASSES, frontingRows, type Frontage } from '$lib/data/frontage-codec';
-import { isNeighborhoodCommercial, type PolicyParcels } from '$lib/data/policy-codec';
+import type { PolicyParcels } from '$lib/data/policy-codec';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import type { TransitNetwork } from '$lib/data/transit';
 import { CANDIDATE_PAD_M, project, segDist2, segmentBoxes, type XY } from '$lib/plan/geometry';
 
 export const STOP_TYPES = ['regionalRail', 'metro', 'rapidBus', 'frequentBus'] as const;
 export type StopType = (typeof STOP_TYPES)[number];
-export type StreetClass = (typeof STREET_CLASSES)[number];
 
 /**
  * Summed peak trips per hour at a bus stop for it to count as frequent: a 10-minute combined
@@ -32,7 +30,6 @@ const RAPID_OPERATOR = 'muni';
 export type BrushQuery =
   | { kind: 'freehand'; strokes: { path: [number, number][]; radiusM: number }[] }
   | { kind: 'transit'; stopTypes: StopType[]; maxM: number }
-  | { kind: 'street'; classes: StreetClass[]; names: string[]; depth: 0 | 1; ncOnly: boolean }
   | { kind: 'area'; districts: string[]; neighborhoods: string[] };
 
 /** Multipolygon rings per neighborhood, lng/lat. */
@@ -41,7 +38,6 @@ export type NeighborhoodShapes = { name: string; rings: [number, number][][][] }
 export interface BrushData {
   parcels: ScenarioParcels;
   policy: PolicyParcels;
-  frontage: Frontage | null;
   transit: TransitNetwork | null;
   neighborhoods: NeighborhoodShapes | null;
 }
@@ -55,19 +51,18 @@ export interface LotIndex {
 
 export class BrushDataMissing extends Error {
   name = 'BrushDataMissing';
-  readonly file: 'frontage' | 'transit' | 'neighborhoods';
-  constructor(file: 'frontage' | 'transit' | 'neighborhoods') {
+  readonly file: 'transit' | 'neighborhoods';
+  constructor(file: 'transit' | 'neighborhoods') {
     super(`brush needs ${file}, which is not loaded`);
     this.file = file;
   }
 }
 
 export interface BrushCatalog {
-  streetNames: string[]; // frontage names an eligible lot fronts directly (depth 0)
   districts: { family: string; codes: { code: string; lots: number }[] }[];
   neighborhoods: string[];
   stops: Record<StopType, number>;
-  has: { frontage: boolean; transit: boolean; neighborhoods: boolean };
+  has: { transit: boolean; neighborhoods: boolean };
 }
 
 const ascending = (rows: Iterable<number>): number[] => [...rows].sort((a, b) => a - b);
@@ -256,24 +251,6 @@ function shapeRows(parcels: ScenarioParcels, shape: Shape): Uint32Array {
   return out;
 }
 
-function streetRows(d: BrushData, q: Extract<BrushQuery, { kind: 'street' }>): number[] {
-  const f = d.frontage;
-  if (!f) throw new BrushDataMissing('frontage');
-  const classes = new Set<number>(q.classes.map((c) => STREET_CLASSES.indexOf(c)));
-  const names = new Set<number>();
-  for (const name of q.names) {
-    const k = f.names.indexOf(name);
-    if (k >= 0) names.add(k);
-  }
-  if (classes.size === 0 && names.size === 0) return [];
-  let rows = frontingRows(f, (s) => classes.has(f.segClass[s]) || names.has(f.segName[s]), q.depth);
-  if (q.ncOnly) {
-    const p = d.policy;
-    rows = rows.filter((i) => isNeighborhoodCommercial(p.useDistricts[p.useDistrict[i]]));
-  }
-  return rows;
-}
-
 function areaRows(d: BrushData, q: Extract<BrushQuery, { kind: 'area' }>): number[] {
   const out = new Set<number>();
   if (q.districts.length > 0) {
@@ -310,9 +287,6 @@ export function resolveBrushRows(d: BrushData, index: LotIndex, q: BrushQuery): 
       rows = index.nearPoints(stopPoints(d.transit, q.stopTypes), q.maxM);
       break;
     }
-    case 'street':
-      rows = streetRows(d, q);
-      break;
     case 'area':
       rows = areaRows(d, q);
       break;
@@ -324,19 +298,8 @@ export function resolveBrushRows(d: BrushData, index: LotIndex, q: BrushQuery): 
 }
 
 export function brushCatalog(d: BrushData): BrushCatalog {
-  const { parcels: sp, policy: p, frontage: f, transit: net, neighborhoods: nb } = d;
+  const { parcels: sp, policy: p, transit: net, neighborhoods: nb } = d;
   const el = sp.eligible;
-
-  const streetNames: string[] = [];
-  if (f) {
-    const seen = new Set<number>();
-    for (let i = 0; i < f.count; i++) {
-      if (el[i] !== 1) continue;
-      for (let e = f.rowStart[i]; e < f.rowStart[i + 1]; e++)
-        if (f.frontDepth[e] === 0) seen.add(f.segName[f.frontSeg[e]]);
-    }
-    for (const k of ascending(seen)) streetNames.push(f.names[k]); // names is sorted
-  }
 
   const perCode = new Map<string, number>();
   const perDistrict = new Uint32Array(p.useDistricts.length);
@@ -367,10 +330,9 @@ export function brushCatalog(d: BrushData): BrushCatalog {
   }
 
   return {
-    streetNames,
     districts,
     neighborhoods: nb ? [...new Set(nb.map((s) => s.name))].sort(byStr) : [],
     stops,
-    has: { frontage: f !== null, transit: net !== null, neighborhoods: nb !== null }
+    has: { transit: net !== null, neighborhoods: nb !== null }
   };
 }

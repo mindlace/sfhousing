@@ -3,7 +3,6 @@ import type { ParcelRecord } from '$lib/data/parcel';
 import type { TransitNetwork, ModeId } from '$lib/data/transit';
 import { scenarioTiny } from '$lib/data/fixtures/scenario-tiny';
 import { policyTiny } from '$lib/data/fixtures/policy-tiny';
-import { CORNER_ROW, DEEP_ROW, frontageTiny } from '$lib/data/fixtures/frontage-tiny';
 import { createParcelIndex } from '$lib/plan/parcel-index';
 import { M_PER_DEG_LNG } from '$lib/plan/geometry';
 import {
@@ -23,7 +22,6 @@ function data(over: Partial<BrushData> = {}): BrushData {
   return {
     parcels,
     policy: policyTiny(parcels),
-    frontage: frontageTiny(parcels),
     transit: null,
     neighborhoods: null,
     ...over
@@ -113,58 +111,6 @@ describe('resolveBrushRows', () => {
     const rows = resolveBrushRows(d, index, { kind: 'freehand', strokes });
     expect(rows.map((r) => d.parcels.id[r])).toEqual(eligibleIds([...all].sort()));
     expect(rows).toEqual([...rows].sort((a, b) => a - b));
-  });
-
-  it('commercial corridor', () => {
-    const q: BrushQuery = {
-      kind: 'street',
-      classes: ['arterial'],
-      names: [],
-      depth: 1,
-      ncOnly: true
-    };
-    // In policy-tiny no MISSION ST lot is NC-2 (CORNER_ROW is RH-2, DEEP_ROW RM-1): nothing.
-    const d = data();
-    expect(resolveBrushRows(d, createLotIndex(d.parcels), q)).toEqual([]);
-    // Make the corner lot NC-2 (useDistricts[1]) and DEEP_ROW eligible: only the NC lot stays.
-    const d2 = data();
-    d2.policy.useDistrict[CORNER_ROW] = 1;
-    d2.parcels.eligible[DEEP_ROW] = 1;
-    expect(d2.policy.useDistricts[1]).toBe('NC-2');
-    expect(resolveBrushRows(d2, createLotIndex(d2.parcels), q)).toEqual([CORNER_ROW]);
-    // Without ncOnly the arterial reaches both.
-    expect(resolveBrushRows(d2, createLotIndex(d2.parcels), { ...q, ncOnly: false })).toEqual([
-      CORNER_ROW,
-      DEEP_ROW
-    ]);
-  });
-
-  it('named street, one lot deep', () => {
-    const q = (depth: 0 | 1): BrushQuery => ({
-      kind: 'street',
-      classes: [],
-      names: ['MISSION ST'],
-      depth,
-      ncOnly: false
-    });
-    const d = data();
-    d.parcels.eligible[DEEP_ROW] = 1; // scenario-tiny's DEEP_ROW (3512008) is ineligible
-    const index = createLotIndex(d.parcels);
-    expect(resolveBrushRows(d, index, q(0))).toEqual([CORNER_ROW]);
-    expect(resolveBrushRows(d, index, q(1))).toEqual([CORNER_ROW, DEEP_ROW]);
-    // With the fixture's own eligibility the deep lot is dropped.
-    const f = data();
-    expect(resolveBrushRows(f, createLotIndex(f.parcels), q(1))).toEqual([CORNER_ROW]);
-    // A class match reaches FIXTURE AVE's corner lot too.
-    expect(
-      resolveBrushRows(f, createLotIndex(f.parcels), {
-        kind: 'street',
-        classes: ['residential'],
-        names: [],
-        depth: 0,
-        ncOnly: false
-      })
-    ).toEqual([CORNER_ROW]);
   });
 
   it('district family', () => {
@@ -309,26 +255,16 @@ describe('resolveBrushRows', () => {
   });
 
   it('missing data', () => {
-    const d = data({ frontage: null });
+    const d = data();
     const index = createLotIndex(d.parcels);
-    const street: BrushQuery = {
-      kind: 'street',
-      classes: ['arterial'],
-      names: [],
-      depth: 0,
-      ncOnly: false
-    };
     let err: unknown;
     try {
-      resolveBrushRows(d, index, street);
+      resolveBrushRows(d, index, { kind: 'transit', stopTypes: ['metro'], maxM: 400 });
     } catch (e) {
       err = e;
     }
     expect(err).toBeInstanceOf(BrushDataMissing);
-    expect((err as BrushDataMissing).file).toBe('frontage');
-    expect(() =>
-      resolveBrushRows(d, index, { kind: 'transit', stopTypes: ['metro'], maxM: 400 })
-    ).toThrow(expect.objectContaining({ file: 'transit' }));
+    expect((err as BrushDataMissing).file).toBe('transit');
     expect(() =>
       resolveBrushRows(d, index, { kind: 'area', districts: [], neighborhoods: ['Mission'] })
     ).toThrow(expect.objectContaining({ file: 'neighborhoods' }));
@@ -399,7 +335,7 @@ describe('brushCatalog', () => {
     });
     d.policy.useDistricts = ['', 'NC-2', 'RH-1(D)|RH-2', 'RH-1|RM-1'];
     const c = brushCatalog(d);
-    expect(c.streetNames).toEqual(['FIXTURE AVE', 'MISSION ST']);
+    expect('streetNames' in c).toBe(false);
     // Eligible rows 0..5 minus 3: row 0 NC-2, rows 1-2 'RH-1(D)|RH-2', row 4 'RH-1|RM-1', row 5 ''.
     expect(c.districts).toEqual([
       { family: 'NC-2', codes: [{ code: 'NC-2', lots: 1 }] },
@@ -415,17 +351,10 @@ describe('brushCatalog', () => {
     ]);
     expect(c.neighborhoods).toEqual(['Bayview', 'Mission']);
     expect(c.stops).toEqual({ regionalRail: 1, metro: 0, rapidBus: 1, frequentBus: 1 });
-    expect(c.has).toEqual({ frontage: true, transit: true, neighborhoods: true });
+    expect(c.has).toEqual({ transit: true, neighborhoods: true });
 
-    // A name an eligible lot reaches only one lot deep is not listed.
-    const deep = data();
-    deep.parcels.eligible[CORNER_ROW] = 0;
-    deep.parcels.eligible[DEEP_ROW] = 1;
-    expect(brushCatalog(deep).streetNames).toEqual([]);
-
-    const empty = brushCatalog(data({ frontage: null }));
-    expect(empty.streetNames).toEqual([]);
+    const empty = brushCatalog(data());
     expect(empty.stops).toEqual({ regionalRail: 0, metro: 0, rapidBus: 0, frequentBus: 0 });
-    expect(empty.has).toEqual({ frontage: false, transit: false, neighborhoods: false });
+    expect(empty.has).toEqual({ transit: false, neighborhoods: false });
   });
 });
