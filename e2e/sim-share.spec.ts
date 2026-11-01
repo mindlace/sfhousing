@@ -235,7 +235,7 @@ test('publish round trip', async ({ page, browser, isMobile }, testInfo) => {
 test('autosave survives a reload', async ({ page }) => {
   await gotoSim(page);
   await openPolicy(page);
-  await expandSection(page, 'Your zoning');
+  await expandSection(page, 'New zoning rules');
   await panel(page).getByRole('button', { name: 'Add a rule' }).click();
   const transit = panel(page).getByRole('button', { name: 'Transit', exact: true });
   await expect(transit).toBeEnabled({ timeout: 20_000 });
@@ -260,7 +260,7 @@ test('autosave survives a reload', async ({ page }) => {
   await page.reload();
   await waitReady(page);
   await openPolicy(page);
-  await expandSection(page, 'Your zoning');
+  await expandSection(page, 'New zoning rules');
   await expect(ruleList(page)).toHaveCount(1);
   await expect(ruleList(page).first()).toContainText('Near');
   // The restored rule resolves (C1): the card counts its lots, and the full levers are in force.

@@ -1,5 +1,5 @@
 <!--
-  One card in "Your zoning": a zoning rule (`list="rules"`: Edit and Remove; rules are additive,
+  One card in "New zoning rules" or "Custom zoning": a zoning rule (`list="rules"`: Edit and Remove; rules are additive,
   so their order does not matter) or a custom brush (`list="custom"`: Move up, Move down and
   Remove; a later brush wins). A one-line summary with the lot count in a polite live region
   (WCAG 4.1.3), then the buttons, each named with the summary. Every change is a labelled store

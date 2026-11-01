@@ -37,7 +37,8 @@
   import { BrushForms } from './brush-forms.svelte';
   import RuleBrushForm from './RuleBrushForm.svelte';
   import type { Calibration } from '$lib/timelapse/types';
-  import BrushSection from './BrushSection.svelte';
+  import CustomZoningSection from './CustomZoningSection.svelte';
+  import HistoryRow from './HistoryRow.svelte';
   import { SimBrushTools, brushToolOf, type SimTool } from './brush-tools.svelte';
   import { lotOverlayLayers } from './lot-overlay';
   import { createOverlayMux } from './overlay-mux';
@@ -59,6 +60,7 @@
   import { LeverSync, PolicyStore } from './policy-store.svelte';
   import PermittingSection from './PermittingSection.svelte';
   import PolicyPanel from './PolicyPanel.svelte';
+  import RulesSection from './RulesSection.svelte';
   import PolicySummary from './PolicySummary.svelte';
   import { customLotStatus, ruleLotStatus, type LotStatus } from './brush-summary';
   import ProtectionsSection from './ProtectionsSection.svelte';
@@ -538,17 +540,25 @@
     timing={calibration ? timingSection : undefined}
     summary={policySummary}
   >
-    {#snippet zoning()}
-      <BrushSection
+    {#snippet history()}
+      <HistoryRow {store} onundo={undo} onredo={redo} />
+    {/snippet}
+    {#snippet rules()}
+      <RulesSection
+        {store}
+        {sync}
+        {catalog}
+        {forms}
+        inlineForm={wide.current}
+        announce={(m) => brush.announce(m, ANNOUNCE_MS)}
+      />
+    {/snippet}
+    {#snippet custom()}
+      <CustomZoningSection
         {store}
         {sync}
         {tools}
         ontool={setTool}
-        onundo={undo}
-        onredo={redo}
-        {catalog}
-        {forms}
-        inlineForm={wide.current}
         announce={(m) => brush.announce(m, ANNOUNCE_MS)}
       />
     {/snippet}

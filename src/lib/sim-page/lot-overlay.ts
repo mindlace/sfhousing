@@ -1,6 +1,6 @@
 /**
  * The /sim lot dots: every lot a rule or the custom painting changes. Two ScatterplotLayers: a
- * halo under every dot and the dots, filled with an outline (the "Your zoning" map key names the
+ * halo under every dot and the dots, filled with an outline (the "Custom zoning" map key names the
  * colour). The outline and the halo are a dark and a light tone, so on any map colour one of
  * them is at least 3:1 (WCAG 1.4.11; lot-overlay.spec.ts checks it). Layer ids `sim-lots-halo`
  * and `sim-lots` (never generated-, rising- or timeline-).

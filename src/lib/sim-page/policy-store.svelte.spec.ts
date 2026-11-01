@@ -114,7 +114,7 @@ describe('PolicyStore', () => {
     const store = new PolicyStore(BASE);
     store.apply((p) => ({ ...p, rules: [area('RH-1', 4)] }), 'a', 'k');
     store.apply((p) => ({ ...p, rules: [area('RH-1', 5)] }), 'b', 'j');
-    store.apply((p) => ({ ...p, compare: 'currentLaw' }), 'c');
+    store.apply((p) => ({ ...p, rules: [area('RH-1', 7)] }), 'c');
     store.apply((p) => ({ ...p, rules: [area('RH-1', 6)] }), 'd', 'j');
     expect(store.undo()).toBe('d');
     expect(store.undo()).toBe('c');
@@ -131,7 +131,7 @@ describe('PolicyStore', () => {
   it('reset replaces the policy and clears undo, redo and coalescing', () => {
     const store = new PolicyStore(BASE);
     store.apply((p) => ({ ...p, rules: [area('RH-1', 4)] }), 'a', 'k');
-    store.apply((p) => ({ ...p, compare: 'currentLaw' }), 'b');
+    store.apply((p) => ({ ...p, rules: [area('RH-1', 5)] }), 'b');
     store.undo();
     expect(store.canUndo).toBe(true);
     expect(store.canRedo).toBe(true);

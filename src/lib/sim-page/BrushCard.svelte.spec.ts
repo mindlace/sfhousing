@@ -1,5 +1,5 @@
 /// <reference types="@vitest/browser-playwright" />
-// One card in "Your zoning": a rule (Edit, Remove) or a custom brush (Move up, Move down, Remove),
+// One card in "New zoning rules" or "Custom zoning": a rule (Edit, Remove) or a custom brush (Move up, Move down, Remove),
 // its summary, and each change as a labelled store change.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';

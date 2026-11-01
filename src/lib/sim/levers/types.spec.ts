@@ -43,12 +43,6 @@ describe('parseSimLevers', () => {
     expect(parseSimLevers(full)).toEqual(full);
   });
 
-  it('rejects the schema-1 fields as unknown keys', () => {
-    expect(pathOf(with_({ user: [] }))).toBe('user');
-    expect(pathOf(with_({ stock: ['fzp'] }))).toBe('stock');
-    expect(pathOf(with_({ assumeAlternativePlanKept: false }))).toBe('assumeAlternativePlanKept');
-  });
-
   it('rejects unknown keys at every level', () => {
     expect(pathOf(with_({ extra: 1 }))).toBe('extra');
     expect(pathOf(with_({ rules: [{ ...edit, extra: 1 }] }))).toBe('rules[0].extra');

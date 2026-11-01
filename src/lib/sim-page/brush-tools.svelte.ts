@@ -1,6 +1,6 @@
 /**
  * The /sim brush tools over `/`'s BrushState: Paint writes custom zoning at the brush's story
- * count ("Allow N stories"), Erase removes custom zoning. Shared by BrushSection, PhoneToolBar
+ * count ("Allow N stories"), Erase removes custom zoning. Shared by CustomZoningSection, PhoneToolBar
  * and SimPage.
  */
 import type { BrushTool } from '$lib/brush/sampler';

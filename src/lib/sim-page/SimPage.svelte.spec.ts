@@ -135,7 +135,8 @@ async function toReady() {
   w.emit(timelineMsg(rev, 7));
 }
 
-const yourZoning = () => page.getByRole('button', { name: 'Your zoning' });
+// Both zoning sections start open, so a test reaches their controls without a click.
+const rulesSection = () => page.getByRole('button', { name: 'New zoning rules', exact: true });
 
 describe('SimPage strokes (Task 8)', () => {
   it('a Paint stroke on the map adds a custom brush that Undo names and undoes', async () => {
@@ -143,7 +144,6 @@ describe('SimPage strokes (Task 8)', () => {
     await page.viewport(1024, 768);
     await setup();
     await toReady();
-    await yourZoning().click();
     const paint = page.getByRole('radio', { name: 'Paint' });
     await expect.element(paint).toBeEnabled();
     await paint.click();
@@ -184,7 +184,6 @@ describe('SimPage strokes (Task 8)', () => {
     await policyButton().click();
     const dialog = page.getByRole('dialog', { name: 'Policy' });
     await expect.element(dialog).toBeVisible();
-    await yourZoning().click();
     await page.getByRole('radio', { name: 'Paint' }).click();
     await expect.element(dialog).not.toBeInTheDocument();
     const bar = page.getByRole('group', { name: 'Brush' });
@@ -201,7 +200,6 @@ describe('SimPage strokes (Task 8)', () => {
     await page.viewport(1024, 768);
     await setup();
     await toReady();
-    await yourZoning().click();
     await page.getByRole('radio', { name: 'Paint' }).click();
     await userEvent.keyboard('e');
     await expect.element(page.getByRole('radio', { name: 'Erase' })).toBeChecked();
@@ -220,7 +218,6 @@ describe('SimPage protections (Task 10)', () => {
     await toReady();
     await page.getByRole('button', { name: 'Protections' }).click();
     await page.getByRole('checkbox', { name: 'Historic buildings (status A or A*)' }).click();
-    await yourZoning().click();
     await expect
       .element(page.getByRole('button', { name: 'Undo: Protected historic buildings' }))
       .toBeEnabled();
@@ -258,7 +255,6 @@ describe('SimPage rule brushes (Task 9)', () => {
       reqId: w.lastOf('brushCatalog')!.reqId,
       catalog: testCatalog()
     });
-    await yourZoning().click();
     await page.getByRole('button', { name: 'Add a rule' }).click();
     await page.getByRole('button', { name: 'Street', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Policy' });
@@ -266,9 +262,9 @@ describe('SimPage rule brushes (Task 9)', () => {
     // No second dialog: the only open dialog is the Policy sheet (FzpMode's closed sources
     // dialog stays in the DOM).
     expect([...document.querySelectorAll('dialog[open]')]).toEqual([dialog.element()]);
-    await expect.element(yourZoning()).not.toBeInTheDocument();
+    await expect.element(rulesSection()).not.toBeInTheDocument();
     await page.getByRole('button', { name: 'Back', exact: true }).click();
-    await expect.element(yourZoning()).toBeVisible();
+    await expect.element(rulesSection()).toBeVisible();
     await expect.element(page.getByRole('checkbox', { name: 'Arterials' })).not.toBeInTheDocument();
     await expect.element(page.getByRole('button', { name: 'Add a rule' })).toHaveFocus();
   });
@@ -284,7 +280,6 @@ describe('SimPage rule brushes (Task 9)', () => {
       reqId: w.lastOf('brushCatalog')!.reqId,
       catalog: testCatalog()
     });
-    await yourZoning().click();
     await page.getByRole('button', { name: 'Add a rule' }).click();
     await page.getByRole('button', { name: 'Street', exact: true }).click();
     await expect.element(page.getByRole('checkbox', { name: 'Arterials' })).toBeVisible();
@@ -301,7 +296,7 @@ describe('SimPage rule brushes (Task 9)', () => {
     await page.getByRole('button', { name: 'Menu' }).click();
     await policyButton().click();
     await expect.element(page.getByRole('dialog', { name: 'Policy' })).toBeVisible();
-    await expect.element(yourZoning()).toBeVisible();
+    await expect.element(rulesSection()).toBeVisible();
     await expect
       .element(page.getByRole('button', { name: 'Back', exact: true }))
       .not.toBeInTheDocument();
@@ -480,7 +475,6 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
     await page.viewport(1024, 768);
     await setup({ storage: () => seeded() });
     await expect.element(timingToggle()).toHaveAccessibleName(`Permitting timelines, ${SD}`);
-    await yourZoning().click();
     await expect.element(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
   });
 
@@ -555,7 +549,6 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
       const sent = w.lastOf('setLevers')!.levers;
       expect(sent.rules[0].lots.length).toBe(2);
       expect(sent.paint[0].lots.length).toBe(2);
-      await yourZoning().click();
       await expect.element(page.getByText(/· 2 lots$/).first()).toBeVisible();
       expect(page.getByText(/· 2 lots$/).elements()).toHaveLength(2);
       expect(page.getByText('Finding lots…').elements()).toHaveLength(0);

@@ -4,8 +4,9 @@
   so the project card sits to its right, and moves the map's bottom-left navigation control (zoom
   and compass) to its right edge so the panel never covers it (WCAG 2.2 2.4.11). Below md it is a modal sheet (`<dialog>`) that joins the
   header overlays, so it never shows with the phone Menu or the score details. Its sections are
-  disclosures; all start collapsed. Below md a sub-view (Task 9's "Add a rule")
-  replaces the sections, with a Back button. The read-only view (plan 5) shows a summary instead,
+  disclosures, in order: New zoning rules, Custom zoning, Permitting timelines, Protections; the
+  two zoning sections start open, the others collapsed. The Undo and Redo row (`history`) sits once
+  above them. Below md a sub-view ("Add a rule") replaces the sections, with a Back button. The read-only view (plan 5) shows a summary instead,
   titled "Policy (read-only)".
 -->
 <script lang="ts">
@@ -28,8 +29,11 @@
     subview?: Snippet;
     summary?: Snippet;
     onback?: () => void;
-    /** The "Your zoning" and "Protections" sections' contents (Tasks 8 to 10). */
-    zoning?: Snippet;
+    /** The Undo and Redo row, once above the sections (it covers every section). */
+    history?: Snippet;
+    /** The "New zoning rules", "Custom zoning" and "Protections" sections' contents. */
+    rules?: Snippet;
+    custom?: Snippet;
     protections?: Snippet;
     /** The "Permitting timelines" section's contents; the section shows only when given. */
     timing?: Snippet;
@@ -45,7 +49,9 @@
     subview = undefined,
     summary = undefined,
     onback = undefined,
-    zoning = undefined,
+    history = undefined,
+    rules = undefined,
+    custom = undefined,
     protections = undefined,
     timing = undefined,
     timingSummary = undefined
@@ -57,17 +63,19 @@
 
   const wide = new MediaQuery('(min-width: 768px)');
 
-  type SectionId = 'zoning' | 'protections' | 'timing';
+  type SectionId = 'rules' | 'custom' | 'timing' | 'protections';
   const ALL_SECTIONS: { id: SectionId; title: string }[] = [
-    { id: 'zoning', title: 'Your zoning' },
-    { id: 'protections', title: 'Protections' },
-    { id: 'timing', title: 'Permitting timelines' }
+    { id: 'rules', title: 'New zoning rules' },
+    { id: 'custom', title: 'Custom zoning' },
+    { id: 'timing', title: 'Permitting timelines' },
+    { id: 'protections', title: 'Protections' }
   ];
   const SECTIONS = $derived(ALL_SECTIONS.filter((s) => s.id !== 'timing' || timing));
   let expanded = $state<Record<SectionId, boolean>>({
-    zoning: false,
-    protections: false,
-    timing: false
+    rules: true,
+    custom: true,
+    timing: false,
+    protections: false
   });
 
   let dialog = $state<HTMLDialogElement>();
@@ -133,6 +141,7 @@
       {@render subview()}
     </div>
   {:else}
+    {@render history?.()}
     {#each SECTIONS as s (s.id)}
       {@const bodyId = `${uid}-${s.id}`}
       <div class="border-b border-gray-200">
@@ -157,8 +166,10 @@
         </h3>
         {#if expanded[s.id]}
           <div id={bodyId} class="px-4 pb-4">
-            {#if s.id === 'zoning'}
-              {@render zoning?.()}
+            {#if s.id === 'rules'}
+              {@render rules?.()}
+            {:else if s.id === 'custom'}
+              {@render custom?.()}
             {:else if s.id === 'protections'}
               {@render protections?.()}
             {:else}

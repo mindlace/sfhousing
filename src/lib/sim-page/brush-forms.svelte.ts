@@ -1,5 +1,5 @@
 /**
- * The open zoning rule form, shared by BrushSection (inline from md) and SimPage (below md, the
+ * The open zoning rule form, shared by RulesSection (inline from md) and SimPage (below md, the
  * form replaces the sheet's contents, layout ruling 9). Saving is one labelled store change, so
  * Undo names it; closing returns focus to the control that opened the form.
  */

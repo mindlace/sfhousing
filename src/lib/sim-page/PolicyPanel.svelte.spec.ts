@@ -64,16 +64,44 @@ describe('PolicyPanel', () => {
     expect(card.getBoundingClientRect().left - map().getBoundingClientRect().left).toBe(16);
   });
 
-  it('has no "Zoning layers" section, and its sections start collapsed', async () => {
+  it('has no "Zoning layers" section; four sections in order, the two zoning ones open', async () => {
     await page.viewport(1024, 700);
     await setup();
-    const toggle = (name: string) => page.getByRole('button', { name, exact: true });
     expect(page.getByRole('button', { name: 'Zoning layers' }).query()).toBeNull();
-    await expect.element(toggle('Your zoning')).toBeVisible();
-    await expect.element(toggle('Your zoning')).toHaveAttribute('aria-expanded', 'false');
-    await expect.element(toggle('Protections')).toHaveAttribute('aria-expanded', 'false');
-    await toggle('Your zoning').click();
-    await expect.element(toggle('Your zoning')).toHaveAttribute('aria-expanded', 'true');
+    expect(page.getByRole('button', { name: 'Your zoning' }).query()).toBeNull();
+    const toggles = page.getByRole('heading', { level: 3 }).getByRole('button').elements();
+    const titles = ['New zoning rules', 'Custom zoning', 'Permitting timelines', 'Protections'];
+    expect(toggles).toHaveLength(4);
+    titles.forEach((t, i) => expect(toggles[i].textContent).toContain(t));
+    expect(toggles.map((b) => b.getAttribute('aria-expanded'))).toEqual([
+      'true',
+      'true',
+      'false',
+      'false'
+    ]);
+    await expect.element(page.getByText('Rules body')).toBeVisible();
+    await expect.element(page.getByText('Custom body')).toBeVisible();
+    expect(page.getByText('Protections body').query()).toBeNull();
+  });
+
+  it('a section toggles open and closed', async () => {
+    await page.viewport(1024, 700);
+    await setup();
+    const protections = page.getByRole('button', { name: 'Protections', exact: true });
+    await protections.click();
+    await expect.element(protections).toHaveAttribute('aria-expanded', 'true');
+    await expect.element(page.getByText('Protections body')).toBeVisible();
+    await page.getByRole('button', { name: 'New zoning rules', exact: true }).click();
+    expect(page.getByText('Rules body').query()).toBeNull();
+  });
+
+  it('renders the history row above the sections', async () => {
+    await page.viewport(1024, 700);
+    await setup();
+    const undo = page.getByRole('button', { name: /^Undo/ }).element();
+    const first = page.getByRole('button', { name: 'New zoning rules', exact: true }).element();
+    expect(undo.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(page.getByRole('button', { name: /^Undo/ }).elements()).toHaveLength(1);
   });
 
   it('"Permitting timelines" starts collapsed and its button shows the summary', async () => {

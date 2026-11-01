@@ -53,7 +53,7 @@ export function createStrokeAdapter(deps: {
         const stories = deps.stories();
         const label = op.kind === 'paint' ? strokeLabel(stories) : ERASE_LABEL;
         store.apply((p) => appendStroke(p, stroke, op, stories), label);
-        // The stroke's result in words (WCAG 4.1.3); the lot count follows in "Your zoning".
+        // The stroke's result in words (WCAG 4.1.3); the lot count follows in "Custom zoning".
         announce(label);
         return { ok: true };
       },

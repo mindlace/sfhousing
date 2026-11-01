@@ -10,7 +10,7 @@ The engine behind `/sim` (plan 2 of 5; FZP-only since the sim runs plan 1, Task 
 | ------------------------- | --------------------------------- | ------------------------------------------------------------------------- |
 | `rules`                   | `[]`                              | `{lots, stories}`: each lot takes `max(FZP, N)`, uncapped where it raises |
 | `paint`                   | `[]`                              | `{lots, stories}`: sets `N` uncapped, in document order (later wins)      |
-| `protect`                 | none                              | `{rentControl, historic, newerThanYears, lots}`                           |
+| `protect`                 | none                              | `{rentControl, historic, newerThanYears}`                                 |
 | `timers`                  | `[]`                              | `{pathway, stage, scale, reach: all/new}`; scale in [0.05, 10]            |
 | `routeShares`             | `null` (observed `pathwayForNew`) | Pathway shares for new projects, normalised                               |
 | `localProgramStreamlined` | `true`                            | Local Program lots forced onto streamlined                                |

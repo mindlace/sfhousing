@@ -113,7 +113,7 @@ async function expandSection(page: Page, title: string): Promise<void> {
  */
 async function openBrushForm(page: Page, kind: string, title: string): Promise<Locator> {
   await openPolicy(page);
-  await expandSection(page, 'Your zoning');
+  await expandSection(page, 'New zoning rules');
   await panel(page).getByRole('button', { name: 'Add a rule' }).click();
   const choice = panel(page).getByRole('button', { name: kind, exact: true });
   await expect(choice).toBeEnabled({ timeout: 20_000 });
@@ -354,7 +354,7 @@ test('a Street rule on the first frontage name selects its fronting lots', async
 test('a Paint stroke adds a custom brush and Ctrl+Z removes it', async ({ isMobile, page }) => {
   await gotoSim(page);
   await openPolicy(page);
-  await expandSection(page, 'Your zoning');
+  await expandSection(page, 'Custom zoning');
   const paint = panel(page).getByRole('radio', { name: 'Paint', exact: true });
   await expect(paint).toBeEnabled();
   await chooseTool(page, isMobile, () => paint.click());
@@ -452,7 +452,8 @@ test('Back after a reroll', async ({ page }) => {
 test('axe: the policy panel open', async ({ page }) => {
   await gotoSim(page);
   await openPolicy(page);
-  await expandSection(page, 'Your zoning');
+  await expandSection(page, 'New zoning rules');
+  await expandSection(page, 'Custom zoning');
   await expandSection(page, 'Protections');
   await expectNoA11yViolations(page);
 });
@@ -508,7 +509,7 @@ test('below md on a fine pointer the phone tool bar leaves the zoom control unco
   await page.setViewportSize({ width: 700, height: 800 });
   await gotoSim(page);
   await openPolicy(page);
-  await expandSection(page, 'Your zoning');
+  await expandSection(page, 'Custom zoning');
   await chooseTool(page, true, () =>
     panel(page).getByRole('radio', { name: 'Paint', exact: true }).click()
   );
@@ -534,7 +535,7 @@ test('at 375 px: no horizontal scroll, and the footer links stay unobscured', as
 
   // With the floating tool bar showing (a stroke tool chosen).
   await openPolicy(page);
-  await expandSection(page, 'Your zoning');
+  await expandSection(page, 'Custom zoning');
   await chooseTool(page, true, () =>
     panel(page).getByRole('radio', { name: 'Paint', exact: true }).click()
   );
