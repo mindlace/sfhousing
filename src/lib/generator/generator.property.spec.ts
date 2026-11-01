@@ -5,6 +5,7 @@ import { generateDetailed, type Detailed } from './generate';
 import { drawComposition } from './composition-variety';
 import { drawVariety, varietyFromUniforms } from './variety';
 import { selectTypology } from './select';
+import { physicalMaxStories } from './physical';
 import { insideDomain } from './domain';
 import { inset } from './poly';
 import { fromLngLat } from './geo';
@@ -303,7 +304,7 @@ describe('generator properties (§6)', () => {
         fc.property(arbCase, (c) => {
           const d = detailed(c);
           if (!d) return true;
-          const sel = selectTypology(c.S, d.site.A, c.units);
+          const sel = selectTypology(Math.min(c.S, physicalMaxStories(d.site)), d.site.A, c.units);
           // tower may legitimately fall back to midrise 12 (§4.7)
           if (sel.typology === 'tower' && d.building.typology === 'midrise')
             return d.building.stories === 12;

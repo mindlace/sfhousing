@@ -82,8 +82,14 @@ export const STREET_M = 19.5;
 export const LOT_FRONTAGE_M = 45;
 /** A block splits back to back only when at least twice this deep across `v`. Tier 4. */
 export const LOT_DEPTH_MIN_M = 20;
-/** Smallest district lot: `selectTypology`'s smallest podium lot (`select.ts`). Tier 4. */
+/** Smallest district lot: `selectTypology`'s smallest podium lot (`PODIUM_MIN_M2`). Tier 4. */
 export const LOT_MIN_M2 = 400;
+/** Smallest site area for a tower (13+ stories); below it the cascade falls to 12. Tier 4: the "today" area-only threshold, kept as the typology cascade. */
+export const TOWER_MIN_M2 = 1500;
+/** Smallest site area for a midrise (8+ stories); below it the cascade falls to 7. Tier 4: the "today" area-only threshold, kept as the typology cascade. */
+export const MIDRISE_MIN_M2 = 600;
+/** Smallest site area for a podium (5+ stories); below it a walkup of at most 5. Tier 4: the "today" area-only threshold, kept as the typology cascade. */
+export const PODIUM_MIN_M2 = 400;
 /** Smaller blocks are dropped and left as unbuilt ground (§4.2 step 2). Tier 4. */
 export const BLOCK_MIN_M2 = 1000;
 /** Default open-space share of block area when there is no curated DA figure. Tier 4. */

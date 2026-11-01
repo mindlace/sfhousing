@@ -1,3 +1,4 @@
+import { MIDRISE_MIN_M2, PODIUM_MIN_M2, TOWER_MIN_M2 } from './constants';
 import type { TypologyId } from './types';
 
 /**
@@ -10,13 +11,17 @@ export function selectTypology(
   existingUnits: number
 ): { typology: TypologyId; stories: number } {
   if (S >= 13) {
-    return A >= 1500 ? { typology: 'tower', stories: S } : selectTypology(12, A, existingUnits);
+    return A >= TOWER_MIN_M2
+      ? { typology: 'tower', stories: S }
+      : selectTypology(12, A, existingUnits);
   }
   if (S >= 8) {
-    return A >= 600 ? { typology: 'midrise', stories: S } : selectTypology(7, A, existingUnits);
+    return A >= MIDRISE_MIN_M2
+      ? { typology: 'midrise', stories: S }
+      : selectTypology(7, A, existingUnits);
   }
   if (S >= 5) {
-    return A >= 400
+    return A >= PODIUM_MIN_M2
       ? { typology: 'podium', stories: S }
       : { typology: 'walkup', stories: Math.min(S, 5) };
   }
