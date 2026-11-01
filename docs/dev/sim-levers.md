@@ -16,7 +16,7 @@ The engine behind `/sim` (plan 2 of 5; FZP-only since the sim runs plan 1, Task 
 | `localProgramStreamlined` | `true`                            | Local Program lots forced onto streamlined                                |
 | `compare`                 | `'preFzp'`                        | Twin: `'preFzp'` zoning, or `'fzp'` (FZP as written)                      |
 
-Stories are integers from 0 to 255 (one byte in the packed columns). `DEFAULT_LEVERS` is FZP as written compared with pre-FZP zoning: under it `/sim` reproduces `/fzp`. Construction and completion are locked: no timer edits them. There is no stock blend, no current law and no law switch: the plan always starts from FZP as written (`fzpYieldCap`) for the whole window. `SimInput.lawSwitch` stays in the scenario engine until plan 1 Task 8, but nothing sets it.
+Stories are integers from 0 to 255 (one byte in the packed columns). `DEFAULT_LEVERS` is FZP as written compared with pre-FZP zoning: under it `/sim` reproduces `/fzp`. Construction and completion are locked: no timer edits them. There is no stock blend, no current law and no law switch: the plan always starts from FZP as written (`fzpYieldCap`) for the whole window.
 
 The page's `SimPolicy` (`src/lib/sim-page/policy.ts`, schema 2) compiles to these levers in `compileLevers`: its zoning rules become `rules` (a transit rule one edit per band), its custom paint becomes `paint` in stroke order (an erase removing earlier paint), its category protections `protect`, and `compare` is `'preFzp'` for the default policy and `'fzp'` for any other ([sim-page.md](sim-page.md), "The recipe and its compile rules").
 
@@ -62,12 +62,12 @@ The speedup is **statistical, not per-row**. The redraw loop is unchanged, so a 
 
 ## Twins and the references rule
 
-`twinInput(base, ctx, compare)` builds the comparison run and never carries the plan's timers. Neither twin switches law.
+`twinInput(base, ctx, compare)` builds the comparison run and never carries the plan's timers.
 
 - `'preFzp'` (default): `baseZoning` on the base calibration.
 - `'fzp'`: the plan of `DEFAULT_LEVERS` (FZP as written: no rules, paint, protections or timers) on the base calibration. It has no `Need`s (`twinInput` throws if it had), and its envelopes and runs are the base FZP input's.
 
-Every lever field (`lawSwitch`, `newProjects`, `inFlightScale`) is set explicitly, because `applyPolicies` copies the whole input. Twins are memoised on (base, ctx, compare), so lever documents that differ elsewhere share one twin (and its precompute). `applyLevers(base, ctx, levers, filled)` takes no horizon: nothing in the engine depends on one.
+Every lever field (`newProjects`, `inFlightScale`) is set explicitly, because `applyPolicies` copies the whole input. Twins are memoised on (base, ctx, compare), so lever documents that differ elsewhere share one twin (and its precompute). `applyLevers(base, ctx, levers, filled)` takes no horizon: nothing in the engine depends on one.
 
 **References.** The existing `REFERENCES` (`score.ts`) are FZP-versus-pre-FZP estimates on `planEffect.*`, so they are all shown under `compare: 'preFzp'`. Under `compare: 'fzp'` only the `completedNet` ones are kept. RHNA targets come from `targetsOf`, unchanged.
 
@@ -158,7 +158,7 @@ fallback is needed. By the estimate, `scenarioYield` is nearly all of the recomp
 
 Rulings 1 to 3 of the plan, each with its reason.
 
-- **Law switch (ruling 1):** retired by the sim runs plan 1 (Task 1): the engine is FZP-only, with no current law and no switch. The engine's `lawSwitch` support (`Schedule.afterSwitch`, vesting by initiation month) stays until that plan's Task 8.
+- **Law switch (ruling 1):** retired by the sim runs plan 1: the engine is FZP-only, with no current law and no 2032 switch (Task 1 stopped producing one; Task 8 removed `SimInput.lawSwitch` and `Schedule.afterSwitch` from the engine).
 - **207.11 null cap and height (ruling 2):** a lot with no density cap has unlimited density, meets any minimum, and fails ordinance condition (b)(8), so it never qualifies (`s207Envelope` takes a non-null cap; `s207Row` throws on an `applies` row with a null cap). The under-40 ft test reads `lpFt` on a Local Program lot and `baseFt` elsewhere (input `fzpHeightFt`), because every project on a Local Program lot uses the Local Program. No shipped row changes (V33 stays OK).
 - **Sibling document, not `PlanOp`s (ruling 3):** see "The lever document".
 - **Edit semantics (rules and paint, sim runs plan 1), protection (amended by the 2026-10-29 rulings), Local Program forcing, policy start, rescale, scale bounds, references, capacity metric, disapproval threshold (ruling 3):** each is stated with its reason in the sections above.
@@ -167,7 +167,6 @@ Rulings 1 to 3 of the plan, each with its reason.
 
 - **Plan 3, reroll while resolving.** Done in plan 3, Task 1. `levers` messages keep the `setLevers` rev across a reroll-while-resolving. Do not treat a `levers` message below the reroll barrier as stale: the worker's `current` still names the `setLevers` rev, and the client clears `leversPending` when `current.rev >= leversRev`. The page's lever status (`src/lib/sim-page/lever-status.ts`, `leversMessage`) keeps any message at or above the rev it sent and never consults the timeline barrier.
 - **Plan 3, load failure.** Done in plan 3, Task 1. If the load fails after a `setLevers` sent before load, the error is posted at the `initScenario` rev, which is below `leversRev`. `ScenarioClient` now tracks the session's `initScenario` rev and clears `leversPending` on an error that ended the session; `leversError` likewise fails the page's lever status.
-- **Plan 3, project cards.** Done in plan 3, Task 2. Cards read `localProgram` from the view the engine ran the project on, through `Schedule.afterSwitch` (option A; the switch itself is retired, see "The builder's calls"), so a post-switch card no longer shows a stale Local Program flag.
 - **Plan 3, in-flight card chances under `'all'` timers.** Done in plan 3, Task 2. `ProjectCard` carries `lookups` (`'inFlight'` or `'fresh'`, the cohort's table) and `chanceShift`; for an in-flight project in a rescaled stage, `cardStatus` reads the chance at `inFlightMonths(m, s)` months, not `m` (see "In-flight remaining-time rule"). The map's bars read their cohort's lookups since plan 4 Call 15 (`Schedule.inFlight`, `slotCohort`, the 36-row chance texture; [fzp-mode.md](fzp-mode.md)), but are not shifted by `chanceShift`: an in-flight bar in a rescaled stage reads the in-flight table at `m` months.
 - **Plan 4, timeline UI.** Done in plan 4 (Tasks 3 to 5; see [sim-timers.md](sim-timers.md)). Stacked timer edits are clamped to [0.05, 10] (`scaleTable`). The UI must show a clamped stacked edit as clamped, not silently limit it.
 - **Performance.** Done in plan 3, Task 11: measured on real records, with the recompute bucketed by cell. See "Performance".

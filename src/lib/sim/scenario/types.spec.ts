@@ -46,7 +46,6 @@ interface RowSchedule {
     of: number;
     start: 'scheduled' | 'estimated';
   } | null;
-  afterSwitch?: boolean;
   inFlight?: true; // plan 4 Task 6 (Call 15)
 }
 type RowSimInput = {
@@ -57,7 +56,6 @@ type RowSimInput = {
   districtMaxStories: number | null;
   newProjects?: { calibration: Calibration; scale: StageScale }; // plan 2 Task 8
   inFlightScale?: StageScale;
-  lawSwitch?: { day: Day; parcels: ScenarioParcels }; // plan 2 Task 9
 };
 type RowSimulate = (input: RowSimInput, seed: number, horizon: Day) => RowSchedule[];
 

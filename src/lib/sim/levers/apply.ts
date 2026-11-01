@@ -3,8 +3,8 @@
  * 10), and the stage lookups each cohort reads. The plan runs on the resolved envelopes, its
  * in-flight rows on the `'all'` timers and its new projects on every timer plus the route shares
  * (ruling 3, "Policy start date"). The twin is pre-FZP zoning or FZP as written, never the
- * plan's timers, and every lever field (`lawSwitch`, `newProjects`, `inFlightScale`) is set
- * explicitly, because `applyPolicies` copies the whole input. Worker-safe and pure.
+ * plan's timers, and every lever field (`newProjects`, `inFlightScale`) is set explicitly,
+ * because `applyPolicies` copies the whole input. Worker-safe and pure.
  */
 import { chanceTable, typicalMonths } from '$lib/timelapse/model';
 import { applyPolicies, baseZoning } from '../scenario/policy';
@@ -43,7 +43,7 @@ export interface LeverInputs {
 /** `input` without the lever fields, so nothing is inherited from it. */
 function bare(input: SimInput): SimInput {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { lawSwitch, newProjects, inFlightScale, ...rest } = input;
+  const { newProjects, inFlightScale, ...rest } = input;
   return rest;
 }
 

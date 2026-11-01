@@ -7,16 +7,13 @@ import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import { DYING_DAYS, monthsIn, type Day } from '$lib/timelapse/time';
 import type { Calibration } from '$lib/timelapse/types';
-import { stockTable } from '../levers/layers';
 import type { StageScale } from '../levers/timers';
-import { parcelsView } from '../levers/view';
 import { createLru } from '../lru';
 import { blockLot, chooseProject, firstDay, isVisible, projectCard, type CardCtx } from './card';
 import { dayOf } from './dates';
 import { inFlightMonths } from './engine';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
 import { miniCity, MINI_LP_ID } from './fixtures/mini-parcels';
-import { MINI_SB79_ID, miniPolicy } from './fixtures/mini-policy';
 import {
   MINI_AS_OF,
   MINI_HORIZON,
@@ -872,45 +869,6 @@ describe('projectCard: lookups and in-flight chance shift', () => {
     };
     const c = card(s, over, 'entitled');
     expect([c.lookups, c.chanceShift]).toEqual(['fresh', null]);
-  });
-});
-
-describe('projectCard: Local Program under a law switch', () => {
-  it('Local Program flag follows the initiation regime', () => {
-    // A hand-built switch (Task 8 deletes it): MINI_SB79_ID is a Local Program lot before the
-    // switch, not after (Call 22)
-    const fzp = stockTable({ parcels: city.parcels, policy: miniPolicy(city) }, 'fzp');
-    const lp = input.parcels.localProgram.slice();
-    lp[input.parcels.index.get(MINI_SB79_ID)!] = 0;
-    const plan: SimInput = {
-      ...input,
-      lawSwitch: { day: dayOf(2032, 1, 31), parcels: parcelsView(input.parcels, fzp, lp) }
-    };
-    const i = plan.parcels.index.get(MINI_SB79_ID)!;
-    expect([plan.parcels.localProgram[i], plan.lawSwitch!.parcels.localProgram[i]]).toEqual([1, 0]);
-    const { ctx } = mkCtx({ input: plan });
-    let before = 0;
-    let after = 0;
-    let routed = false;
-    for (let seed = 1; seed <= 200; seed++) {
-      for (const s of simulateDetailed(plan, seed, MINI_HORIZON).schedules) {
-        if (s.origin !== 'simulated' || s.parcelIds[0] !== MINI_SB79_ID) continue;
-        const c = projectCard(s, s.revisions[0].day, ctx);
-        if (s.afterSwitch) {
-          expect(c.localProgram).toBe(false);
-          if (c.pathway !== 'streamlined') routed = true;
-          after++;
-        } else {
-          expect(c.localProgram).toBe(true);
-          expect(c.pathway).toBe('streamlined');
-          before++;
-        }
-      }
-    }
-    expect(before).toBeGreaterThan(0);
-    expect(after).toBeGreaterThan(0);
-    // drawn from the route shares after the switch, not forced
-    expect(routed).toBe(true);
   });
 });
 

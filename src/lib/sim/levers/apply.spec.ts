@@ -47,7 +47,6 @@ describe('applyLevers: the default levers', () => {
   const preFzp = applyPolicies([baseZoning], base);
 
   it('reproduce the base run and the baseZoning twin, seeds 1-20', () => {
-    expect(plan.lawSwitch).toBeUndefined();
     expect(plan.inFlightScale).toBeUndefined();
     // `newProjects` is set, so in-flight schedules carry the cohort flag (Call 15); nothing else
     const unflag = (r: ReturnType<typeof simulateDetailed>) => ({
@@ -81,7 +80,6 @@ describe('twins', () => {
       Array.from(base.parcels.envelopeStories)
     );
     expect(simulateNet(twin, 7, H, months)).toEqual(simulateNet(base, 7, H, months));
-    expect(twin.lawSwitch).toBeUndefined();
     expect(twin.inFlightScale).toBeUndefined();
     expect(twinInput(base, ctx, 'fzp')).toBe(twin); // memoised
   });
@@ -89,7 +87,6 @@ describe('twins', () => {
   it("the 'preFzp' twin is baseZoning with no lever fields", () => {
     const { base, ctx } = setup();
     const out = compile(base, ctx, clone());
-    expect(out.twin.lawSwitch).toBeUndefined();
     expect(out.twin.newProjects).toBeUndefined();
     expect(out.twin.inFlightScale).toBeUndefined();
     expect(out.twin.parcels.envelopeStories).toBe(base.parcels.baseStories);
@@ -189,6 +186,5 @@ describe('applyLevers: capacity and unknown lots', () => {
     const out = compile(base, ctx, levers);
     expect(out.unknownLots).toBe(1);
     expect(out.capacity.plan).toBeGreaterThan(0);
-    expect(out.capacity).not.toHaveProperty('afterSwitch');
   });
 });
