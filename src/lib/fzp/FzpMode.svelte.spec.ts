@@ -784,8 +784,7 @@ describe('FzpMode map, layout and lifecycle', () => {
         .element() as HTMLElement
     ).click();
     await expect.element(page.getByRole('dialog')).toBeVisible();
-    const toggle = page.getByTestId('fzp-scrubber').element().querySelector('button')!;
-    await expect.poll(() => toggle.textContent?.trim()).toBe('Play');
+    await expect.element(page.getByTestId('fzp-play-label')).toHaveTextContent(/^Play$/);
   });
 
   it('sets the map inset from the scrubber and --fzp-scrubber-h on its root', async () => {

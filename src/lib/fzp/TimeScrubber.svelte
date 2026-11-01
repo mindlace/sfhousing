@@ -1,12 +1,14 @@
 <!--
   The time scrubber (design doc §4.4, layout §4.3): a native range input over [asOf, horizon] with
-  keyboard overrides, marker buttons, a Simulation readout, play/pause/replay and speed.
+  keyboard overrides, marker buttons, a month readout, play/pause/replay and speed.
+  The button and the readout keep a fixed width (every label stacked in one grid cell), so the
+  bar does not shift. In `setup` the button reads Run and the track is disabled.
   The frame loop runs only while `playing`, through the injected `raf`, and does O(1) work.
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
   import type { Day } from '$lib/timelapse/time';
-  import { formatMonthYear, formatShortMonthYear } from './format';
+  import { formatMonthYear, formatShortMonthYear, monthYearLabels } from './format';
   import { advance, DEFAULT_SPEED, SPEED_LABEL } from './playback';
   import { nextMonth, prevMonth, shiftYear, utcParts } from './time';
   import type { Marker, Speed } from './types';
@@ -18,6 +20,9 @@
     playing?: boolean;
     speed?: Speed;
     markers?: Marker[];
+    /** Setup mode: the button reads Run and calls `onrun`; the track and markers are disabled. */
+    setup?: boolean;
+    onrun?: () => void;
     /** Called exactly once per day change. */
     onday?: (day: Day) => void;
     onheight?: (px: number) => void;
@@ -33,6 +38,8 @@
     playing = $bindable(false),
     speed = $bindable(DEFAULT_SPEED),
     markers = [],
+    setup = false,
+    onrun,
     onday,
     onheight,
     raf = (cb) => requestAnimationFrame(cb),
@@ -99,6 +106,7 @@
   const clampDay = (d: Day): Day => Math.min(Math.max(d, asOf), horizon);
 
   function onkeydown(e: KeyboardEvent) {
+    if (setup) return;
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     let to: Day;
     switch (e.key) {
@@ -133,7 +141,16 @@
     jump(Number(e.currentTarget.value));
   }
 
+  const PLAY_LABELS = ['Run', 'Play', 'Pause', 'Replay'] as const;
+  const playLabel = $derived(setup ? 'Run' : playing ? 'Pause' : atEnd ? 'Replay' : 'Play');
+  const monthLabels = $derived(monthYearLabels(utcParts(day).y));
+  const monthLabel = $derived(formatMonthYear(day));
+
   function toggle() {
+    if (setup) {
+      onrun?.();
+      return;
+    }
     if (atEnd) {
       setDay(asOf);
       playing = true;
@@ -149,14 +166,33 @@
   bind:offsetHeight={height}
 >
   <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-    <button type="button" class="ctl rounded-md px-3 text-sm font-medium" onclick={toggle}>
-      {playing ? 'Pause' : atEnd ? 'Replay' : 'Play'}
+    <button
+      type="button"
+      class="ctl grid rounded-md px-3 text-sm font-medium"
+      data-testid="fzp-play"
+      onclick={toggle}
+    >
+      {#each PLAY_LABELS as l (l)}
+        {#if l === playLabel}
+          <span class="[grid-area:1/1]" data-testid="fzp-play-label">{l}</span>
+        {:else}
+          <span class="invisible [grid-area:1/1]" aria-hidden="true">{l}</span>
+        {/if}
+      {/each}
     </button>
-    <!-- Not a live region: the date changes every frame during playback. -->
-    <p class="m-0 flex items-center gap-1.5 text-sm whitespace-nowrap" data-testid="fzp-readout">
-      <span class="pill rounded-full px-2 py-0.5 text-xs font-semibold">Simulation</span>
-      <span aria-hidden="true">·</span>
-      <span class="font-medium">{formatMonthYear(day)}</span>
+    <!-- Not a live region: the date changes every frame during playback. Every month of the year
+         is stacked invisibly in the cell so the readout keeps the widest label's width. -->
+    <p
+      class="m-0 grid text-sm font-medium whitespace-nowrap tabular-nums"
+      data-testid="fzp-readout"
+    >
+      {#each monthLabels as l (l)}
+        {#if l === monthLabel}
+          <span class="[grid-area:1/1]" data-testid="fzp-readout-label">{l}</span>
+        {:else}
+          <span class="invisible [grid-area:1/1]" aria-hidden="true">{l}</span>
+        {/if}
+      {/each}
     </p>
     <div class="flex items-center gap-1.5 text-sm">
       <label for={speedId} class="sr-only sm:not-sr-only">Speed</label>
@@ -179,6 +215,7 @@
       max={horizon}
       step="1"
       value={day}
+      disabled={setup}
       {onkeydown}
       {oninput}
     />
@@ -191,6 +228,7 @@
           class="marker ctl absolute top-0 rounded-md px-1.5 whitespace-nowrap"
           style:left="{((clampDay(m.day) - asOf) / span) * 100}%"
           aria-label={m.name}
+          disabled={setup}
           onclick={() => jump(clampDay(m.day))}
         >
           {m.label}
@@ -213,7 +251,10 @@
     background: #fff;
     color: inherit;
   }
-  .ctl:hover {
+  .ctl:disabled {
+    opacity: 0.5;
+  }
+  .ctl:hover:not(:disabled) {
     background: #f1f5f9;
   }
   .track {
@@ -222,10 +263,6 @@
   }
   .markers {
     min-height: 32px;
-  }
-  .pill {
-    background: #0f172a;
-    color: #fff;
   }
   .marker {
     transform: translateX(-50%);

@@ -3,6 +3,7 @@
  * shift midnight to the previous day west of Greenwich.
  */
 import type { Day } from '$lib/timelapse/time';
+import { dayFromUtc } from './time';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -28,6 +29,11 @@ const at = (day: Day) => new Date(day * MS_PER_DAY);
 /** "March 2031" */
 export function formatMonthYear(day: Day): string {
   return monthYear.format(at(day));
+}
+
+/** The twelve `formatMonthYear` labels of `year`, January first. */
+export function monthYearLabels(year: number): string[] {
+  return Array.from({ length: 12 }, (_, i) => formatMonthYear(dayFromUtc(year, i + 1, 1)));
 }
 
 /** "Mar 2031" */

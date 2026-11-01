@@ -4,7 +4,8 @@ import {
   formatChance,
   formatDate,
   formatMonthYear,
-  formatShortMonthYear
+  formatShortMonthYear,
+  monthYearLabels
 } from './format';
 import { dayFromUtc } from './time';
 
@@ -43,5 +44,14 @@ describe('formatChance', () => {
     [1, 'over 99%']
   ])('formats %s as %s', (p, text) => {
     expect(formatChance(p)).toBe(text);
+  });
+});
+
+describe('monthYearLabels', () => {
+  it('lists the twelve month labels of a year', () => {
+    const labels = monthYearLabels(2066);
+    expect(labels).toHaveLength(12);
+    expect(labels[0]).toBe('January 2066');
+    expect(labels[8]).toBe('September 2066');
   });
 });

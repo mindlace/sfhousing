@@ -17,6 +17,10 @@ Developer notes for `src/lib/fzp/`. The design is `docs/superpowers/specs/2026-1
 
 Keys with Alt, Ctrl or Meta are left to the browser. Every handled key, a drag on the track and a marker button **pause** playback and move the day (`jump`). The Play button toggles; at `horizon` it reads "Replay" and a press restarts from `asOf`.
 
+**Fixed width.** The button (`fzp-play`) and the readout (`fzp-readout`) stack every label (Run, Play, Pause, Replay; the 12 month names of the current year, `monthYearLabels`) in one grid cell, the extras `invisible` and `aria-hidden`, so the bar never shifts. The visible text has its own testid (`fzp-play-label`, `fzp-readout-label`); assert on those, because the readout's own text contains every month. There is no "Simulation" pill.
+
+**Setup mode.** With `setup` the button reads "Run" and calls `onrun` instead of toggling; the range and marker buttons are `disabled` and keys do nothing.
+
 - **Speeds** (`playback.ts`, a tier 4 UI choice): "1 month/s", "1 year/s" (default), "3 years/s", as days of simulated time per second of wall time (`MONTH_DAYS`, `12 x MONTH_DAYS`, `36 x MONTH_DAYS`).
 - **Frame step:** only while `playing`, through `requestAnimationFrame`: `t += min(dt, 100 ms) x daysPerSecond`, `day = min(floor(t), horizon)`. The 100 ms clamp stops a background tab from making the clock jump. If something else moves the day mid-play, the clock continues from there.
 - **No autoplay:** playback never starts on its own; the page opens paused at `asOf` and waits on Play.

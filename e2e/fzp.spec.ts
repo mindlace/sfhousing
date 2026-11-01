@@ -79,7 +79,7 @@ const SHIPYARD = projectById('CASE:2007.0001PRX');
 
 const slider = (page: Page): Locator =>
   page.getByRole('slider', { name: 'Date in the simulation' });
-const readout = (page: Page): Locator => page.getByTestId('fzp-readout');
+const readout = (page: Page): Locator => page.getByTestId('fzp-readout-label');
 /** The header score bar: "{n} homes added" at the scrubbed day. */
 const scoreBar = (page: Page): Locator => page.getByTestId('score-bar');
 /** "Another future", made visible first (below 768 px it waits in the header Menu). */
@@ -238,7 +238,7 @@ async function expectFooterReachable(page: Page): Promise<void> {
 test('loads ready and the keyboard drives the scrubber to both ends', async ({ page }) => {
   await gotoFzp(page);
   expect(await fzp(page, 'phase')).toBe('ready');
-  await expect(readout(page)).toContainText('October 2026');
+  await expect(readout(page)).toHaveText('October 2026');
   expect(await fzp(page, 'day')).toBe(await fzp(page, 'asOf'));
 
   const { baseline, shown, months } = JSON.parse(await scoreJson(page)) as {
@@ -250,13 +250,13 @@ test('loads ready and the keyboard drives the scrubber to both ends', async ({ p
   await slider(page).focus();
   await page.keyboard.press('PageUp'); // away from the start, so Home has something to do
   await page.keyboard.press('Home');
-  await expect(readout(page)).toContainText('October 2026');
+  await expect(readout(page)).toHaveText('October 2026');
   await expect(scoreBar(page)).toHaveText(
     `${formatCount(baseline.completedNet + shown[0].completedNet)} homes added`
   );
 
   await page.keyboard.press('End');
-  await expect(readout(page)).toContainText('December 2066');
+  await expect(readout(page)).toHaveText('December 2066');
   expect(await fzp(page, 'day')).toBe(await fzp(page, 'horizon'));
   await expect(scoreBar(page)).toHaveText(
     `${formatCount(baseline.completedNet + shown[months.length - 1].completedNet)} homes added`
