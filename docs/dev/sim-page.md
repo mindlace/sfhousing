@@ -30,12 +30,14 @@ What the build added to that layout:
 
 The page edits a `SimPolicy` (`src/lib/sim-page/policy.ts`, schema 2), a recipe of rule and stroke parameters, not lot lists (Call 1). `compileLevers` turns it into the FZP-only `SimLevers` ([sim-levers.md](sim-levers.md)) once every lot query has resolved (`null` until then). The recipe is what plan 5 autosaves and publishes (inside a `SimDoc`, "Autosave, publish and the read-only view" below); `timing` is plan 4's, edited in "Permitting timelines".
 
-| Field     | Meaning                                                                                                                                          |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `rules`   | New zoning rules: `transit` (stop types and bands) and `street` (classes, names, depth, `ncOnly` for the Commercial corridor), each with stories |
-| `custom`  | Custom zoning, in stroke order: `paint` (strokes and the stories they allow) and `erase` (strokes)                                               |
-| `protect` | The categories: `rentControl`, `historic`, `newerThanYears`                                                                                      |
-| `timing`  | `current` (preset, preset timers and shares, custom edits and shares, Local Program) and `saved` (plan 4; [sim-timers.md](sim-timers.md))        |
+| Field     | Meaning                                                                                                                                   |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `rules`   | New zoning rules: `transit` (stop types and bands), each with stories                                                                     |
+| `custom`  | Custom zoning, in stroke order: `paint` (strokes and the stories they allow) and `erase` (strokes)                                        |
+| `protect` | The categories: `rentControl`, `historic`, `newerThanYears`                                                                               |
+| `timing`  | `current` (preset, preset timers and shares, custom edits and shares, Local Program) and `saved` (plan 4; [sim-timers.md](sim-timers.md)) |
+
+A stored `street` rule (from before 2026-11) is dropped on load; publishing one is `bad-field`.
 
 Compile rules (sim runs spec, section 3; "Call n" is plan 3's):
 
@@ -45,7 +47,7 @@ Compile rules (sim runs spec, section 3; "Call n" is plan 3's):
 - **No modes or density limits:** rules and paint are uncapped by density (the engine keeps FZP's own caps on the baseline).
 - **Stories** are the editor's 1 to 80 (Call 6).
 - **Built height:** the generator builds at most the lot's physical max stories (`physicalMaxStories`, `src/lib/generator/physical.ts`), so built height is min(allowed N, physical max), then the typology cascade. Recorded projects are not capped.
-- **Transit and street** rules: see "Stop types and bands" below, Calls 8 to 10.
+- **Transit rules:** see "Stop types and bands" below, Calls 8 to 10.
 - **Protection** (Call 11) is the categories only. A protected lot is **not redevelopable** (partner ruling 2026-10-29): protection beats every rule and stroke. Projects already in the pipeline on a protected lot carry on (Call 21).
 - **The twin:** `compare` is `'preFzp'` when the policy equals `DEFAULT_POLICY` (`isDefaultPolicy`, ignoring the timeline Save snapshot), else `'fzp'`. Any customisation, a timing change alone included, compares with FZP as written; undoing back to the default compares with pre-FZP again.
 - **Map feedback**: the lot dots and their map key are gone. The overlay mux (`overlay-mux.ts`) has the slots `feedback`, `fog`, `outline` and `ring` (drawn in that order, bottom to top); `SimPage` creates it per map handle in both modes. The ring, the fog, the eraser's outlines and the paint feedback are described under "Map overlays" below.
@@ -102,20 +104,18 @@ Transit stop types (Call 7, `src/lib/sim/levers/brushes.ts`), read from `transit
 
 - **Distance** is straight-line from the lot's label point to the stop. Tier 4: SB 79 measures from the parcel edge, and `parcels.bin` carries no outline.
 - **Bands** (`DEFAULT_BANDS`, tier 4): a quarter mile (402 m) at 6 stories and a half mile (805 m) at 4 stories, SB 79's band edges. Bands never get taller with distance (partner ruling): compared by distance, whatever order they were entered in, each band is at most as tall as the band inside it, so the innermost band wins. `bandProblem` checks it: the form shows "An outer band can't be taller than the band inside it" and the parser rejects the rule at `rules[i].bands`. Two bands at one distance are rejected too (the second could never select a lot).
-- **Commercial corridor** (Call 10): a Street rule preset to arterial frontage intersected with `isNeighborhoodCommercial` (NC and NCT; CRNC is not counted, Open question 1).
-- **Street:** a segment matches by class or by name, at depth 0 (fronting) or 1 (one lot deep), from `frontage.bin` (`frontingRows`).
 
 ## Request flow
 
 - **Resolution.** `LeverSync` (`policy-store.svelte.ts`) asks the worker for each query the recipe needs (`queriesOf`, keyed by canonical JSON) with `resolveBrush { reqId, query }`, and caches the answers (`brushLots`: lots and their label points). A `no-session` answer (no client yet, a crash, an ended session) is parked, not a failure, until `resume()` on the next session; a card then reads "Finding lots…". Other failures read "Couldn't find lots" with Retry.
-- **Catalog.** The pickers read `brushCatalog` (street names, district families with lot counts, neighborhoods, stop counts, and `has.*` for each optional file). SimPage asks for it once, when the panel first opens, and again after a session restart if it came back null. A rule kind whose file is missing is disabled with its reason. (The catalog still carries districts and neighborhoods for the worker's `area` query, which the policy no longer uses.)
-- **Lazy files.** The worker fetches `frontage.bin`, `transit.json` and `neighborhoods.geojson` once per session, on the first request that needs them (the catalog needs all three). `policy.bin` is fetched with the scenario, because `/sim` always initialises with levers. So on md+, where the panel opens by default, the first catalog request fetches `frontage.bin` soon after load; on a phone nothing fetches it until the sheet opens.
+- **Catalog.** The pickers read `brushCatalog` (district families with lot counts, neighborhoods, stop counts, and `has.*` for each optional file). SimPage asks for it once, when the panel first opens, and again after a session restart if it came back null. A rule kind whose file is missing is disabled with its reason. (The catalog still carries districts and neighborhoods for the worker's `area` query, which the policy no longer uses.)
+- **Lazy files.** The worker fetches `transit.json` and `neighborhoods.geojson` once per session, on the first request that needs them (the catalog needs both). `policy.bin` is fetched with the scenario, because `/sim` always initialises with levers. So on md+, where the panel opens by default, the first catalog request fetches them soon after load; on a phone nothing fetches them until the sheet opens.
 - **Sending.** Once every query is resolved, `compileLevers` runs and, 250 ms after the last change, the new `SimLevers` goes to FzpMode's `levers`, which sends `setLevers` (it waits while a reroll is in flight). The lever status (`lever-status.ts`) goes `resolving` (with done / total lots) and then `current`; meanwhile the notice row above the scrubber shows "Updating the simulation for your policy… {done} of {total} lots", with a Retry chip when chunks failed, and the score bar is `aria-busy`.
 - **A failed revision.** If the worker cannot apply a revision (an exception in a recompute slice ends the session and posts `internal` at its rev, `scenario-host.ts`), the status goes `failed`. The notice row then shows an alert, "Couldn't update the simulation for your policy.", with Retry (`data-testid="fzp-lever-failed"`, a `role="alert"` region rendered even while empty so it stays in the accessibility tree). Retry is FzpMode's `retry()`: in the ready phase it re-sends `initScenario` with the latest levers and the shown seed, and `onclient` resumes the parked brush queries. The score keeps the last run's numbers, not `aria-busy` (a busy score that never settles could be withheld by a screen reader), and the score details say "These numbers are from before your latest policy change." until a revision is current. Later edits while failed get `bad-request` and stay failed until Retry. A `bad-request` above the latest levers' rev answers a refused reroll, not the levers, so it leaves the lever status alone (`lever-status.ts`).
 
 ## Dataset requirement
 
-`/sim` needs a dataset with `policy.bin` and `frontage.bin`, the first being `MIN_SIM_DATASET = '2026-10-29-0fd62c4d'` (`scripts/wrangler-config.spec.ts`). That test fails `test:unit` if production's or staging's `PUBLIC_DATASET_VERSION` predates it (versions are date-prefixed, so the date orders them). There is no missing-data fallback (Call 16): a dataset without `policy.bin` gets the worker's `scenario-missing` answer, shown as "The simulation data for dataset … is missing or damaged" with Retry.
+`/sim` needs a dataset with `policy.bin`, the first being `MIN_SIM_DATASET = '2026-10-29-0fd62c4d'` (`scripts/wrangler-config.spec.ts`). That test fails `test:unit` if production's or staging's `PUBLIC_DATASET_VERSION` predates it (versions are date-prefixed, so the date orders them). There is no missing-data fallback (Call 16): a dataset without `policy.bin` gets the worker's `scenario-missing` answer, shown as "The simulation data for dataset … is missing or damaged" with Retry.
 
 **Ordering (Task 0B).** Production deploys only on a release, and a release ships whatever is on `main`. So a data bump that `/sim` needs merges to `main`, and is released, **before** the code that needs it merges. Any release that contains the code then also contains the bump, even when the two land in one release. If a later change needs a newer dataset, promote it the same way first ([deploy.md](deploy.md), "Promoting a datasetVersion").
 
@@ -130,16 +130,15 @@ Transit stop types (Call 7, `src/lib/sim/levers/brushes.ts`), read from `transit
 | `total`   | lots to recompute while resolving (0 otherwise)                              |
 | `sentRev` | the revision of the latest levers sent, or null                              |
 
-A test waits for a policy change with `status === 'current'` and a `sentRev` above the one read before the change. The lever notices are in `data-testid="fzp-lever-status"`, the session notices in `data-testid="sim-notices"`. The e2e specs are `e2e/sim.spec.ts` and, for autosave, publish and `/s/<id>`, `e2e/sim-share.spec.ts`; it reads the street name and its lot count from fixture-0's `frontage.bin` and `parcels.bin` with the shared codecs.
+A test waits for a policy change with `status === 'current'` and a `sentRev` above the one read before the change. The lever notices are in `data-testid="fzp-lever-status"`, the session notices in `data-testid="sim-notices"`. The e2e specs are `e2e/sim.spec.ts` and, for autosave, publish and `/s/<id>`, `e2e/sim-share.spec.ts`; it reads lot counts from fixture-0's `parcels.bin` with the shared codec.
 
 ## Performance
 
-Citywide brushes (every RH-1 lot, arterial frontage, rail within 805 m) were measured on real records in plan 3: see [sim-levers.md](sim-levers.md), "Performance".
+Citywide brushes (every RH-1 lot, Metro and Rapid within 1,609 m, rail within 805 m) were measured on real records in plan 3: see [sim-levers.md](sim-levers.md), "Performance".
 
 ## Known gaps
 
 - **Map overlays.** A vacant lot has no tooltip (picking reads the buildings layer, `SimMap.svelte`), so the limits line never shows on one. The fog's self-overlap at steep edges blends twice (the layer does not write depth). The outlines and the paint feedback cover loaded chunks only (`missing` counts the rest; outlines re-ask on `onchunks`). Rule feedback shows at most `PREVIEW_MAX_LOTS` (300) lots, the nearest the view centre.
-- **Follow a street** (Open question 2). The freehand brush cannot follow a street: no segment geometry ships (`frontage.bin` holds lot-to-street matches only). The named-street brush paints every lot along a street, one lot deep if asked. A street-geometry file at a dataset bump would allow it.
 - **Neighborhood edges** (Call 8). Neighborhood membership is the label point in the polygon, which can differ from DataSF's `analysis_neighborhood` at polygon edges. A `neighborhood` column in `policy.bin` is the exact fix at the next dataset bump.
 - **In-flight `chanceShift` on the map.** The map's bars read the cohort's lookups, but the in-flight `chanceShift` for the stage a project is in at `asOf` under `'all'` timers is not applied on the map; cards apply it (Call 15).
 - **No keyboard access to cards** (unchanged from `/fzp`): map picking is pointer-only ([fzp-mode.md](fzp-mode.md)). Freehand strokes have keyboard and non-drag alternatives (the rule brushes, and the keyboard stamp `BrushController.stampAtCenter`).

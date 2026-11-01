@@ -87,8 +87,8 @@ Brushes (plan 3): `resolveBrush { reqId, query }` answers `brushLots { reqId, re
 
 - Only a session initialised with levers answers; otherwise `no-session` (catalog `null`). The router answers both itself outside scenario mode.
 - A request that arrives before the load waits for it. When the session ends (a new `initScenario`, a failed load, `dispose`), every waiting request is answered `no-session`.
-- The host validates each query (`brushQueryProblem`, `load.ts`): radii and `maxM` positive and finite, coordinates finite, kinds, stop types and street classes known; otherwise `bad-request`.
-- `frontage.bin` (`scenarios.fzp.frontage`), `transit.json` (`transit`) and `neighborhoods.geojson` (`neighborhoods`) are fetched once per session, on the first request needing them (street, transit, area-with-neighborhoods; the catalog needs all three). A missing manifest key, a failed fetch or a bad file gives `data-missing` for the queries needing it and `has.<file> = false` in the catalog. A missing key, a 4xx (not retried) or a bad file is cached for the session; a network error, 5xx or failed body read (after the session's retries) is not, so the next request needing the file fetches it again. `/fzp` never fetches them.
+- The host validates each query (`brushQueryProblem`, `load.ts`): radii and `maxM` positive and finite, coordinates finite, kinds and stop types known; otherwise `bad-request`.
+- `transit.json` (`transit`) and `neighborhoods.geojson` (`neighborhoods`) are fetched once per session, on the first request needing them (transit, area-with-neighborhoods; the catalog needs both). A missing manifest key, a failed fetch or a bad file gives `data-missing` for the queries needing it and `has.<file> = false` in the catalog. A missing key, a 4xx (not retried) or a bad file is cached for the session; a network error, 5xx or failed body read (after the session's retries) is not, so the next request needing the file fetches it again. `/fzp` never fetches them.
 - The `LotIndex` is built once per session, on the base (as-loaded) parcels.
 - The client resolves pending brush promises with `no-session` / `null` on crash, `restart` and `dispose`.
 
@@ -148,11 +148,13 @@ the chunk fetches.
 interleaving, so the split can be off in either direction. "Resolve ms" is `createLotIndex` +
 `resolveBrushRows`.
 
-| Brush                                                    | Lots   | Resolve ms | resolveEnvelopes ms | Needs (unique) | Cells | Chunk bytes | Recompute ms | scenarioYield ms (est.) | Other ms (est.) | Gross computed | Missing | fillNeeds + applyLevers ms |
-| -------------------------------------------------------- | ------ | ---------- | ------------------- | -------------- | ----- | ----------- | ------------ | ----------------------- | --------------- | -------------- | ------- | -------------------------- |
-| (a) every `RH-1` family lot, raise to 4, limits off      | 72,992 | 17         | 35                  | 49,196         | 80    | 15.7 MB     | 3,362        | 3,317                   | 45              | 161,791        | 0       | 20                         |
-| (b) arterial frontage depth 1, set to 8 (limits on)      | 13,472 | 16         | 39                  | 14,104         | 90    | 15.8 MB     | 2,319        | 2,314                   | 5               | 61,815         | 0       | 9                          |
-| (c) `regionalRail` within 805 m, raise to 8 (limits off) | 23,639 | 18         | 20                  | 21,190         | 44    | 7.3 MB      | 3,369        | 3,352                   | 17              | 105,890        | 0       | 10                         |
+| Brush                                                           | Lots    | Resolve ms | resolveEnvelopes ms | Needs (unique) | Cells | Chunk bytes | Recompute ms | scenarioYield ms (est.) | Other ms (est.) | Gross computed | Missing | fillNeeds + applyLevers ms |
+| --------------------------------------------------------------- | ------- | ---------- | ------------------- | -------------- | ----- | ----------- | ------------ | ----------------------- | --------------- | -------------- | ------- | -------------------------- |
+| (a) every `RH-1` family lot, raise to 4, limits off             | 72,992  | 17         | 35                  | 49,196         | 80    | 15.7 MB     | 3,362        | 3,317                   | 45              | 161,791        | 0       | 20                         |
+| (b) `metro` and `rapidBus` within 1,609 m, set to 8 (limits on) | 149,736 | 120        | 51                  | 141,082        | 126   | 21.1 MB     | 22,660       | 22,496                  | 164             | 705,410        | 0       | 19                         |
+| (c) `regionalRail` within 805 m, raise to 8 (limits off)        | 23,639  | 18         | 20                  | 21,190         | 44    | 7.3 MB      | 3,369        | 3,352                   | 17              | 105,890        | 0       | 10                         |
+
+Row (b) was re-measured on 2026-11-01 for the transit-only brush (`npx tsx scripts/bench-levers.ts <datasetDir>`, dataset `2026-10-29-14e0eccb`, Node 24.2.0, Apple M5 Pro, rule to 8, limits as the script sets them); rows (a) and (c) are the earlier plan 3 run. Row (b) recomputes 141,082 needs in 22,660 ms, over the 20,000 ms gate set for brush (a) (the gate applies to (a)).
 
 The gate (Call 20) was 20,000 ms for brush (a): it passes at 3,362 ms, so no per-lot yield-table
 fallback is needed. By the estimate, `scenarioYield` is nearly all of the recompute's cost.
@@ -173,4 +175,3 @@ Rulings 1 to 3 of the plan, each with its reason.
 - **Plan 3, in-flight card chances under `'all'` timers.** Done in plan 3, Task 2. `ProjectCard` carries `lookups` (`'inFlight'` or `'fresh'`, the cohort's table) and `chanceShift`; for an in-flight project in a rescaled stage, `cardStatus` reads the chance at `inFlightMonths(m, s)` months, not `m` (see "In-flight remaining-time rule"). The map's bars read their cohort's lookups since plan 4 Call 15 (`Schedule.inFlight`, `slotCohort`, the 36-row chance texture; [fzp-mode.md](fzp-mode.md)), but are not shifted by `chanceShift`: an in-flight bar in a rescaled stage reads the in-flight table at `m` months.
 - **Plan 4, timeline UI.** Done in plan 4 (Tasks 3 to 5; see [sim-timers.md](sim-timers.md)). Stacked timer edits are clamped to [0.05, 10] (`scaleTable`). The UI must show a clamped stacked edit as clamped, not silently limit it.
 - **Performance.** Done in plan 3, Task 11: measured on real records, with the recompute bucketed by cell. See "Performance".
-- **Carried from plan 1** (spec, "Carried from plan 1"): the commercial-corridor brush counts NC and NCT districts but not CRNC (241 parcels), and the partner decides whether CRNC counts. "Follow a street" needs street segment geometry (`frontage.bin` holds lot-to-street matches only).
