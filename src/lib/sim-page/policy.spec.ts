@@ -10,7 +10,6 @@ import {
   compileLevers,
   customQuery,
   isDefaultPolicy,
-  lotRoles,
   paintedLots,
   parseSimPolicy,
   queriesOf,
@@ -223,25 +222,6 @@ describe('queries', () => {
       ruleQueries(street('a'))[0],
       { kind: 'freehand', strokes: [s(1)] }
     ]);
-  });
-
-  it('lotRoles marks rule lots and painted lots as changed, not erased ones', () => {
-    const r = street('r');
-    const p = base({
-      rules: [r],
-      custom: [paint('p', [s(1)]), { id: 'e', kind: 'erase', strokes: [s(2)] }]
-    });
-    const lots = lotsOf({
-      [queryKey(ruleQueries(r)[0])]: ['1'],
-      [queryKey({ kind: 'freehand', strokes: [s(1)] })]: ['2', '3'],
-      [queryKey({ kind: 'freehand', strokes: [s(2)] })]: ['3']
-    });
-    expect(lotRoles(p, lots)).toEqual(
-      new Map([
-        ['1', 'changed'],
-        ['2', 'changed']
-      ])
-    );
   });
 });
 

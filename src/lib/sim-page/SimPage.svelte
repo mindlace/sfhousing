@@ -4,7 +4,7 @@
   and sends each new SimLevers to FzpMode's `levers`, which FzpMode passes on with setLevers. Every
   start opens on the Family Zoning Plan compared with the pre-FZP baseline (`DEFAULT_LEVERS`).
   Custom paint and erase strokes (Task 8) reuse `/`'s BrushController through the stroke
-  adapter; the lot dots and the brush ring share SimMap's overlay through the overlay mux.
+  adapter; the overlay layers and the brush ring share SimMap's overlay through the overlay mux.
   Zoning rules (Task 9) read the brush catalog, asked for once when the panel first opens and
   again after a session restart if it came back null; below md their form replaces the sheet's
   contents (layout ruling 9). "Protections" (Task 10) edits the category protections.
@@ -12,7 +12,7 @@
   with the calibration (Calls 11 and 12). The header gets the save state (its status slot) and Publish. In `mode: 'view'` (the
   read-only /s/<id>, Task 6) the shared policy opens reconciled with the calibration (Call 7, with
   the timing notice when anything moved); there is no stroke controller, no tools, no autosave and
-  no Publish, and the panel is the summary. The lot dots still draw.
+  no Publish, and the panel is the summary.
   Setup and Run (spec §1, sim-runs Task 7): the page opens in Setup (never persisted). Run (the
   scrubber's button) sets the tool to Move, locks the store and plays; the panel is read-only
   until "Change policy" ("Back to start" in the view) unlocks it and returns to the present.
@@ -25,13 +25,11 @@
   import PublishButton from '$lib/sharing/PublishButton.svelte';
   import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
   import { getStorage } from '$lib/sharing/storage';
-  import type { Layer } from '@deck.gl/core';
   import { BrushController, type ControllerMap } from '$lib/brush/BrushController.svelte';
   import { ANNOUNCE_MS } from '$lib/brush/messages';
   import type { OverlayCtors } from '$lib/brush/overlay';
   import { BrushState } from '$lib/brush/state.svelte';
   import type { Manifest } from '$lib/data/manifest';
-  import type { ParcelId } from '$lib/data/parcel';
   import FzpMode, { type SimClientApi } from '$lib/fzp/FzpMode.svelte';
   import type { SimMapHandle } from '$lib/map/types';
   import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
@@ -43,17 +41,9 @@
   import CustomZoningSection from './CustomZoningSection.svelte';
   import HistoryRow from './HistoryRow.svelte';
   import { SimBrushTools, brushToolOf, type SimTool } from './brush-tools.svelte';
-  import { lotOverlayLayers } from './lot-overlay';
   import { createOverlayMux } from './overlay-mux';
   import PhoneToolBar from './PhoneToolBar.svelte';
-  import {
-    DEFAULT_POLICY,
-    canonicalJson,
-    compileLevers,
-    lotRoles,
-    queriesOf,
-    type SimPolicy
-  } from './policy';
+  import { DEFAULT_POLICY, canonicalJson, compileLevers, type SimPolicy } from './policy';
   import { SIM_CODEC, simDocProblems, type SimDoc } from './sim-doc';
   import SimNotices from './SimNotices.svelte';
   import { restoreSimDoc, type SimNotice } from './sim-session';
@@ -303,30 +293,29 @@
   let controllerMap: ControllerMap | null = null;
   let mapHandle: SimMapHandle | null = null;
   let deckLayers = $state.raw<OverlayCtors | null>(null);
-  let lotsSlot = $state.raw<((l: Layer[]) => void) | null>(null);
+  let overlay = $state.raw<ReturnType<typeof createOverlayMux> | null>(null);
   let dead = false;
   let phoneBar = $state<PhoneToolBar>();
 
-  /** The view's map handle: it draws the lot dots only (no stroke controller, no ring). */
-  let viewHandle: SimMapHandle | null = null;
+  /** The map handle whose overlay mux exists (either mode); a new handle gets a new mux. */
+  let overlayHandle: SimMapHandle | null = null;
 
   function attachController(): void {
     if (dead || !mapHandle || !deckLayers) return;
-    if (mode === 'view') {
-      if (viewHandle === mapHandle) return;
-      const h = mapHandle;
-      viewHandle = h;
-      lotsSlot = createOverlayMux((l) => h.setOverlayLayers(l)).slot('lots');
-      return;
-    }
-    if (controller) return;
-    const map = mapHandle.getMap();
-    if (!map) return;
     const h = mapHandle;
-    const mux = createOverlayMux((l) => h.setOverlayLayers(l));
+    if (overlayHandle !== h) {
+      overlayHandle = h;
+      overlay = createOverlayMux((l) => h.setOverlayLayers(l));
+    }
+    if (mode === 'view' || controller) return;
+    const map = h.getMap();
+    if (!map || !overlay) return;
     controllerMap = map;
     controller = new BrushController({
-      handle: { setPanEnabled: (b) => h.setPanEnabled(b), setOverlayLayers: mux.slot('ring') },
+      handle: {
+        setPanEnabled: (b) => h.setPanEnabled(b),
+        setOverlayLayers: overlay.slot('ring')
+      },
       map,
       client: adapter.client,
       editor: adapter.editor,
@@ -336,7 +325,6 @@
       cancelRaf: (id) => cancelAnimationFrame(id)
     });
     controller.attach();
-    lotsSlot = mux.slot('lots');
   }
 
   function onMapReady(h: SimMapHandle, map: ControllerMap): void {
@@ -451,8 +439,6 @@
     forms.close();
   }
 
-  const prefersDark = new MediaQuery('(prefers-color-scheme: dark)');
-
   /** The summary's per-card lot lookup: a rule (`rule:<id>`) or a custom brush (`custom:<id>`). */
   function lotsOf(key: `rule:${string}` | `custom:${string}`): LotStatus {
     const p = store.policy;
@@ -467,27 +453,6 @@
     const b = p.custom.find((x) => x.id === id);
     return b ? customLotStatus(b, result) : { kind: 'finding' };
   }
-
-  // The lot dots: every lot a rule or the custom painting changes, at its label point.
-  $effect(() => {
-    const slot = lotsSlot;
-    const L = deckLayers;
-    if (!slot || !L) return;
-    const p = store.policy;
-    // A local scratch map, rebuilt on each run: not state.
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
-    const points = new Map<ParcelId, [number, number]>();
-    for (const { key } of queriesOf(p)) {
-      const r = sync.result(key);
-      if (!r?.ok) continue;
-      r.lots.forEach((id, i) => points.set(id, [r.points[2 * i], r.points[2 * i + 1]]));
-    }
-    const roles = lotRoles(p, (k) => {
-      const r = sync.result(k);
-      return r?.ok ? r.lots : undefined;
-    });
-    slot(lotOverlayLayers(L, roles, (id) => points.get(id), prefersDark.current));
-  });
 
   onMount(() => {
     import('@deck.gl/layers').then(

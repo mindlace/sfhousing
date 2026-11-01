@@ -89,15 +89,9 @@ describe('CustomZoningSection', () => {
       .toHaveAccessibleDescription(ERASE_HINT);
   });
 
-  it('has a map key with one swatch, your zoning changes', async () => {
+  it('has no map key', () => {
     setup();
-    const list = page.getByRole('list', { name: 'Map key' });
-    await expect.element(list).toBeVisible();
-    const items = list
-      .getByRole('listitem')
-      .elements()
-      .map((e) => e.textContent?.trim());
-    expect(items).toEqual(['Your zoning changes']);
+    expect(page.getByRole('list', { name: 'Map key' }).query()).toBeNull();
   });
 
   it('shows a brush lot count once found', async () => {
