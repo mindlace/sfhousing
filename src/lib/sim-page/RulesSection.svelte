@@ -27,6 +27,8 @@
     inlineForm?: boolean;
     /** Speaks a change's label (WCAG 4.1.3). */
     announce?: (msg: string) => void;
+    /** A rule form saved `r`; `changed` is false for an edit that changed nothing. */
+    onsaved?: (r: ZoningRule, changed: boolean) => void;
   }
 
   let {
@@ -35,7 +37,8 @@
     catalog = undefined,
     forms = new BrushForms(),
     inlineForm = true,
-    announce = undefined
+    announce = undefined,
+    onsaved = undefined
   }: Props = $props();
 
   const uid = $props.id();
@@ -55,8 +58,10 @@
   }
 
   function save(r: ZoningRule): void {
+    const before = store.policy;
     announce?.(forms.save(store, r));
     forms.close();
+    onsaved?.(r, store.policy !== before);
   }
 
   const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), select:not(:disabled)';

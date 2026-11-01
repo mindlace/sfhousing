@@ -496,6 +496,7 @@
 
   // ---- paint feedback (plan 2, Task 6) ----
 
+  const reducedMotion = new MediaQuery('(prefers-reduced-motion: reduce)');
   /** Per overlay mux: the fading layer in its `feedback` slot. */
   let feedback: PaintFeedback | null = null;
   const feedbackTrigger = new RuleFeedbackTrigger();
@@ -513,7 +514,7 @@
       now: () => performance.now(),
       raf: (cb) => requestAnimationFrame(() => cb()),
       cancelRaf: (h) => cancelAnimationFrame(h),
-      reducedMotion: () => matchMedia('(prefers-reduced-motion: reduce)').matches
+      reducedMotion: () => reducedMotion.current
     });
     feedback = fb;
     return () => {
@@ -649,11 +650,18 @@
     fetchCatalog();
   }
 
+  /**
+   * A rule form saved (the inline form from md, or the sheet's below): arm the rule feedback, but
+   * only for a save that changed the policy, as only that sends a new revision to wait for.
+   */
+  function ruleSaved(r: { id: string }, changed: boolean): void {
+    if (changed) feedbackTrigger.saved(r.id);
+  }
+
   function saveRuleBrush(b: Parameters<BrushForms['save']>[1]): void {
     const before = store.policy;
     brush.announce(forms.save(store, b), ANNOUNCE_MS);
-    // Only a save that changed the policy sends a new revision to wait for.
-    if (store.policy !== before) feedbackTrigger.saved(b.id);
+    ruleSaved(b, store.policy !== before);
     forms.close();
   }
 
@@ -771,6 +779,7 @@
         {forms}
         inlineForm={wide.current}
         announce={(m) => brush.announce(m, ANNOUNCE_MS)}
+        onsaved={ruleSaved}
       />
     {/snippet}
     {#snippet custom()}

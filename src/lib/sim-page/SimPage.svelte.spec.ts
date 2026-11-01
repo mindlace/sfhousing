@@ -23,6 +23,7 @@ import type { FogGrid } from '$lib/map/fog/grid';
 import { FOG_LAYER_ID } from '$lib/map/fog/fog-layer';
 import { DEFAULT_VIEW, HIDDEN_VIEW, VIEW_KEY } from '$lib/view/prefs';
 import type { PackedCell } from '$lib/map/types';
+import { chanceTable, typicalMonths } from '$lib/timelapse/model';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 const workers = vi.hoisted(() => [] as import('$lib/fzp/test/fake-worker').FakeScenarioWorker[]);
@@ -1047,5 +1048,85 @@ describe('SimPage paint feedback (plan 2, Task 6)', () => {
     });
     await wait(100);
     expect(feedbackIds()).toEqual([]);
+  });
+  /** The worker's `resolving` then `current` for `rev`. */
+  function leversCurrent(rev: number): void {
+    const w = workers.at(-1)!;
+    const one = () => ({
+      chance: chanceTable(calibration),
+      typicalMonths: typicalMonths(calibration)
+    });
+    w.emit({ type: 'levers', rev, phase: 'resolving', done: 0, total: 0, failedCells: [] });
+    w.emit({
+      type: 'levers',
+      rev,
+      phase: 'current',
+      lookups: { inFlight: one(), fresh: one() },
+      capacity: { plan: 10, withoutProtections: 10, protectedLots: 0 },
+      unknownLots: 0,
+      fog: { west: 0, south: 0, dLng: 1, dLat: 1, cols: 1, rows: 1, heightM: new Float32Array(4) }
+    });
+  }
+
+  /** Saves a new transit rule through its form and answers its lots: P0 in view, FAR not. */
+  async function saveRule() {
+    const w = workers.at(-1)!;
+    await expect.poll(() => w.lastOf('brushCatalog')).toBeTruthy();
+    w.emit({
+      type: 'brushCatalog',
+      reqId: w.lastOf('brushCatalog')!.reqId,
+      catalog: testCatalog()
+    });
+    await page.getByRole('button', { name: 'Add a rule' }).click();
+    await page.getByRole('button', { name: 'Transit' }).click();
+    await page.getByRole('checkbox', { name: /^Regional rail/ }).click();
+    await page.getByRole('button', { name: 'Save rule' }).click();
+    await expect.poll(() => w.allOf('resolveBrush').length).toBeGreaterThan(0);
+    const c = stub.map.getCenter();
+    for (const q of w.allOf('resolveBrush'))
+      w.emit({
+        type: 'brushLots',
+        reqId: q.reqId,
+        result: { ok: true, lots: ['P0', 'FAR'], points: Float64Array.from([c.lng, c.lat, 0, 0]) }
+      });
+    await expect.poll(() => w.allOf('setLevers').length, { timeout: 2000 }).toBe(1);
+    return w;
+  }
+
+  it('a saved rule shows its lots in view once its revision is current, at the levers', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    const w = await saveRule();
+    const rev = w.lastOf('setLevers')!.rev;
+    await wait(50);
+    expect(w.allOf('previewBuildings')).toHaveLength(0); // not before its current
+    leversCurrent(rev);
+    await expect.poll(() => w.allOf('previewBuildings').length).toBe(1);
+    const req = w.lastOf('previewBuildings')!;
+    expect(req.lots).toEqual(['P0']);
+    expect(req).not.toHaveProperty('stories');
+    leversCurrent(rev + 1); // fires once
+    await wait(50);
+    expect(w.allOf('previewBuildings')).toHaveLength(1);
+  });
+
+  it('an edit that changes nothing arms nothing', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    const w = await saveRule();
+    leversCurrent(w.lastOf('setLevers')!.rev);
+    await expect.poll(() => w.allOf('previewBuildings').length).toBe(1);
+    await page.getByRole('button', { name: /^Edit:/ }).click();
+    await page.getByRole('button', { name: 'Save rule' }).click();
+    await expect.element(page.getByRole('button', { name: 'Save rule' })).not.toBeInTheDocument();
+    await wait(400); // past the debounce: nothing changed, nothing is sent
+    expect(w.allOf('setLevers')).toHaveLength(1);
+    leversCurrent(w.lastOf('setLevers')!.rev + 1); // a later revision for another reason
+    await wait(50);
+    expect(w.allOf('previewBuildings')).toHaveLength(1);
   });
 });
