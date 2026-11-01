@@ -171,7 +171,7 @@
   <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
     <button
       type="button"
-      class="ctl grid rounded-md px-3 text-sm font-medium"
+      class="ctl grid justify-items-center rounded-md px-3 text-sm font-medium"
       class:run={setup}
       data-testid="fzp-play"
       aria-busy={busy}
