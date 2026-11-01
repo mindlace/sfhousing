@@ -884,6 +884,24 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
     await expect.element(page.getByRole('checkbox', { name: 'Height limits' })).toBeChecked();
   });
 
+  it('the rows follow the manifest the map renders: a Retry after a failed load brings transit', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await page.viewport(1024, 768);
+    await setup({ manifest: null, manifestError: true });
+    const retry = page.getByRole('button', { name: 'Retry', exact: true });
+    await expect.element(retry).toBeVisible();
+    await viewButton().click();
+    const rows = () =>
+      page.getByRole('group', { name: 'Map layers' }).getByRole('checkbox').elements();
+    expect(rows()).toHaveLength(1);
+    await viewButton().click(); // close
+    await retry.click();
+    await toReady();
+    await viewButton().click();
+    await expect.element(page.getByRole('checkbox', { name: 'Transit stops' })).toBeVisible();
+    expect(rows()).toHaveLength(3);
+  });
+
   it('the prefs are read from and written to the page storage', async () => {
     stub.reset();
     await page.viewport(1024, 768);

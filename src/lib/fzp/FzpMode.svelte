@@ -156,6 +156,11 @@
     leversPending?: boolean;
     /** The map's layer toggles (/sim: the viewer's in Setup, all off in a run). Default all off. */
     view?: ViewPrefs;
+    /**
+     * The manifest SimMap renders (null: none yet), once during setup and again whenever a Retry
+     * replaces it, so the page can gate manifest-dependent UI (the View rows) on it.
+     */
+    onmanifest?: (m: Manifest | null) => void;
   }
 
   let {
@@ -182,11 +187,13 @@
     runPhase = undefined,
     onrun = undefined,
     leversPending = false,
-    view = HIDDEN_VIEW
+    view = HIDDEN_VIEW,
+    onmanifest = undefined
   }: Props = $props();
 
   // The props seed the page once; Retry replaces the manifest and calibration in place.
   let manifest = $state.raw<Manifest | null>(untrack(() => initialManifest));
+  untrack(() => onmanifest?.(manifest));
   let calibration = $state.raw<Calibration | null>(untrack(() => initialCalibration));
   /** The main-thread data is missing or the worker rejected the manifest: Retry reloads it. */
   /** The worker rejected the mounted manifest: Retry must send the reloaded object. */
@@ -699,6 +706,7 @@
           fresh.manifest.datasetVersion !== manifest.datasetVersion
         ) {
           manifest = fresh.manifest;
+          onmanifest?.(manifest);
         }
         manifestRejected = false;
         if (fresh.calibration !== calibration) {

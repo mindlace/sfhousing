@@ -394,8 +394,10 @@
   /** The viewer's layer toggles, shared with / (`sfhousing:view`); kept through a run. */
   let viewPrefs = $state.raw<ViewPrefs>(untrack(() => readViewPrefs(storage())));
   const systemTheme = useSystemTheme();
+  /** The manifest the map renders (FzpMode's own, which a Retry can replace). */
+  let mapManifest = $state.raw<Manifest | null>(null);
   const viewRows = $derived<readonly ViewRow[]>(
-    manifest?.transit ? ['transitStops', 'transitAccess', 'heightFog'] : ['heightFog']
+    mapManifest?.transit ? ['transitStops', 'transitAccess', 'heightFog'] : ['heightFog']
   );
 
   function setView(v: ViewPrefs): void {
@@ -639,6 +641,7 @@
   leversPending={sync.pending}
   view={run.phase === 'setup' ? viewPrefs : HIDDEN_VIEW}
   onfog={(g) => (fog = g)}
+  onmanifest={(m) => (mapManifest = m)}
   {actions}
   status={mode === 'edit' ? saveState : undefined}
   notices={sessionNotices}
