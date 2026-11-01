@@ -319,13 +319,13 @@
         style:flex="{v.months} 1 0px"
         style:min-width="24px"
         class={[
-          'flex h-full items-center justify-center gap-0.5 overflow-hidden px-0 text-xs font-semibold whitespace-nowrap focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-700',
+          'flex h-full items-center justify-center gap-0.5 overflow-hidden px-0 text-xs font-semibold whitespace-nowrap focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent',
           v.editable
             ? v.atBound
               ? 'bg-amber-100 text-gray-900'
-              : 'bg-blue-100 text-gray-900'
+              : 'bg-accent-tint text-gray-900'
             : 'bg-[repeating-linear-gradient(135deg,#e5e7eb_0_5px,#f3f4f6_5px_10px)] text-gray-700',
-          open === v.stage && 'outline-2 -outline-offset-2 outline-blue-700'
+          open === v.stage && 'outline-2 -outline-offset-2 outline-accent'
         ]}
         onclick={() => toggle(v.stage)}
         onfocus={() => (active = i)}

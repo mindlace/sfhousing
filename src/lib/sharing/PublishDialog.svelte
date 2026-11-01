@@ -182,7 +182,7 @@
 
   const btn =
     'min-h-6 min-w-6 rounded-md px-3 py-1.5 text-sm pointer-coarse:min-h-11 pointer-coarse:min-w-11 disabled:cursor-not-allowed disabled:opacity-50';
-  const primary = `${btn} bg-blue-700 font-medium text-white`;
+  const primary = `${btn} bg-accent font-medium text-on-accent`;
   const secondary = `${btn} border border-gray-400 bg-white text-gray-800`;
 </script>
 

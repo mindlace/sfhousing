@@ -65,7 +65,7 @@
   aria-describedby={empty ? hintId : undefined}
   aria-haspopup="dialog"
   {onclick}
-  class="min-h-6 min-w-6 rounded-md bg-blue-700 px-2 text-sm font-medium whitespace-nowrap text-white disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-700 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+  class="min-h-6 min-w-6 rounded-md bg-accent px-2 text-sm font-medium whitespace-nowrap text-on-accent disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-700 dark:bg-accent-dark dark:text-on-accent-dark pointer-coarse:min-h-11 pointer-coarse:min-w-11"
 >
   {alreadyPublished ? 'Share link' : 'Publish'}
 </button>
