@@ -6,6 +6,7 @@ import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { parseManifest, type Manifest } from '$lib/data/manifest';
+import type { FogGrid } from '$lib/map/fog/grid';
 import type { TimelinePick } from '$lib/map/types';
 import type { LeverLookups } from '$lib/sim/levers/apply';
 import { DEFAULT_LEVERS, type SimLevers } from '$lib/sim/levers/types';
@@ -28,6 +29,16 @@ vi.mock('$lib/map/SimMap.svelte', () => import('./test/FzpSimMapStub.svelte'));
 const manifest: Manifest = parseManifest(manifestJson);
 const calibration = fixtureCalibration();
 const ASOF = calibration.asOf;
+/** A one-cell fog grid; each call a new object. */
+const fogOf = (h = 0): FogGrid => ({
+  west: -122.5,
+  south: 37.7,
+  dLng: 0.001,
+  dLat: 0.001,
+  cols: 1,
+  rows: 1,
+  heightM: new Float32Array([h, h, h, h])
+});
 
 type Over = Partial<{
   manifest: Manifest | null;
@@ -39,6 +50,7 @@ type Over = Partial<{
   reload: () => Promise<{ manifest: Manifest; calibration: Calibration }>;
   levers: SimLevers;
   onlevers: (s: LeverStatus) => void;
+  onfog: (g: FogGrid) => void;
   actions: Snippet;
   runPhase: SimPhase;
   onrun: () => void;
@@ -1020,7 +1032,8 @@ describe('FzpMode levers (/sim)', () => {
       phase: 'current',
       lookups,
       capacity: CAPACITY,
-      unknownLots: 0
+      unknownLots: 0,
+      fog: fogOf()
     });
     await expect.poll(() => callsOf('setTimelineLookups').length).toBe(2);
     expect(base).not.toHaveProperty('inFlight');
@@ -1036,7 +1049,8 @@ describe('FzpMode levers (/sim)', () => {
       phase: 'current',
       lookups,
       capacity: CAPACITY,
-      unknownLots: 0
+      unknownLots: 0,
+      fog: fogOf()
     });
     await new Promise((res) => setTimeout(res, 50));
     expect(callsOf('setTimelineLookups')).toHaveLength(2);
@@ -1055,10 +1069,80 @@ describe('FzpMode levers (/sim)', () => {
       phase: 'current',
       lookups: postedLookups(),
       capacity: CAPACITY,
-      unknownLots: 0
+      unknownLots: 0,
+      fog: fogOf()
     });
     await new Promise((res) => setTimeout(res, 50));
     expect(callsOf('setTimelineLookups')).toHaveLength(before);
+  });
+
+  it('onfog gets a kept current fog once, and a stale one not at all', async () => {
+    const onfog = vi.fn<(g: FogGrid) => void>();
+    const s = setup({ levers: DEFAULT_LEVERS, onfog });
+    await toReady(s);
+    const initRev = leverRev(s.w());
+    const fog = fogOf(12);
+    s.w().emit({
+      type: 'levers',
+      rev: initRev,
+      phase: 'current',
+      lookups: postedLookups(),
+      capacity: CAPACITY,
+      unknownLots: 0,
+      fog
+    });
+    await expect.poll(() => onfog.mock.calls.length).toBe(1);
+    expect(onfog.mock.calls[0][0]).toBe(fog);
+
+    await (await s.r).rerender({ levers: { ...OTHER } });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+    // a current below the latest rev sent is dropped by leversMessage: no fog
+    s.w().emit({
+      type: 'levers',
+      rev: initRev,
+      phase: 'current',
+      lookups: postedLookups(),
+      capacity: CAPACITY,
+      unknownLots: 0,
+      fog: fogOf(30)
+    });
+    await new Promise((res) => setTimeout(res, 50));
+    expect(onfog).toHaveBeenCalledTimes(1);
+  });
+
+  it("onfog takes a revision's fog from its first resolving, not again from its current", async () => {
+    const onfog = vi.fn<(g: FogGrid) => void>();
+    const s = setup({ levers: DEFAULT_LEVERS, onfog });
+    await toReady(s);
+    await (await s.r).rerender({ levers: { ...OTHER } });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+    const rev = leverRev(s.w());
+    const fog = fogOf(20);
+    s.w().emit({
+      type: 'levers',
+      rev,
+      phase: 'resolving',
+      done: 0,
+      total: 3,
+      failedCells: [],
+      fog
+    });
+    await expect.poll(() => onfog.mock.calls.length).toBe(1);
+    expect(onfog.mock.calls[0][0]).toBe(fog);
+    // later resolving posts carry no fog; the current's is the same grid
+    s.w().emit({ type: 'levers', rev, phase: 'resolving', done: 2, total: 3, failedCells: [] });
+    const before = callsOf('setTimelineLookups').length;
+    s.w().emit({
+      type: 'levers',
+      rev,
+      phase: 'current',
+      lookups: postedLookups(),
+      capacity: CAPACITY,
+      unknownLots: 0,
+      fog: fogOf(20)
+    });
+    await expect.poll(() => callsOf('setTimelineLookups').length).toBe(before + 1);
+    expect(onfog).toHaveBeenCalledTimes(1);
   });
 
   it('resolving shows the updating notice with done/total; current removes it', async () => {
@@ -1082,7 +1166,8 @@ describe('FzpMode levers (/sim)', () => {
       phase: 'current',
       lookups: postedLookups(),
       capacity: CAPACITY,
-      unknownLots: 0
+      unknownLots: 0,
+      fog: fogOf()
     });
     await expect
       .element(page.getByText(/Updating the simulation for your policy/))
@@ -1145,7 +1230,8 @@ describe('FzpMode levers (/sim)', () => {
       phase: 'current',
       lookups: postedLookups(),
       capacity: CAPACITY,
-      unknownLots: 0
+      unknownLots: 0,
+      fog: fogOf()
     });
     s.w().emit(timelineMsg(init.rev, 7));
     await expect.poll(() => onlevers.mock.calls.at(-1)![0].kind).toBe('current');
@@ -1281,7 +1367,8 @@ describe('FzpMode levers (/sim)', () => {
       phase: 'current',
       lookups,
       capacity: CAPACITY,
-      unknownLots: 0
+      unknownLots: 0,
+      fog: fogOf()
     });
     await expect.poll(() => callsOf('setTimelineLookups').length).toBe(before + 1);
     expect(callsOf('setTimelineLookups').at(-1)![0]).toEqual({

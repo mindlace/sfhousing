@@ -51,6 +51,7 @@ import type { PolicyParcels } from '$lib/data/policy-codec';
 import { envelopeOf, type ScenarioParcels } from '$lib/data/scenario-codec';
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
 import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
+import { buildFogGrid, type FogGrid } from '$lib/map/fog/grid';
 import { packTimedTransferables } from '$lib/map/pack-timed';
 import type { TimedPackedCell, TimelineUpdate } from '$lib/map/types';
 import { decodeTransit } from '$lib/data/transit-codec';
@@ -239,6 +240,8 @@ interface PendingLevers {
     resolution: Resolution;
     recompute: YieldRecompute;
     cells: Set<string>; // cells of the needs not loaded at the start
+    /** The revision's height-limit grid: its stories are final once resolved (spec §4). */
+    fog: FogGrid;
   } | null;
   failed: string[]; // the needed cells that failed to load, as last posted
   stalled: boolean; // every remaining need waits on a chunk: idle until one arrives
@@ -731,10 +734,14 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         lw.gross
       );
       const cells = new Set(recompute.cellsNeeded()); // once per revision
-      p.state = { resolution, recompute, cells };
+      // The fog goes out now, not at `current`: a revision waiting on chunks (or held by a failed
+      // one) still shows its heights as you paint. `resolving` sends a copy, as the grid is
+      // transferred again with `current`.
+      const fog = buildFogGrid(base.parcels.labelPoint, resolution.plan.table.stories);
+      p.state = { resolution, recompute, cells, fog };
       if (recompute.total === 0) return;
       p.failed = w.chunks.failed.filter((c) => cells.has(c));
-      postResolving(p);
+      postResolving(p, { ...fog, heightM: fog.heightM.slice() });
       w.chunks.loader.want(cells);
       return;
     }
@@ -754,14 +761,19 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     const filled = fillNeeds(p.state.resolution, r.result());
     const li = applyLevers(lw.base.fzp, lw.ctx, p.levers, filled);
     lw.pending = null;
-    post({
-      type: 'levers',
-      rev: p.rev,
-      phase: 'current',
-      lookups: li.lookups,
-      capacity: li.capacity,
-      unknownLots: li.unknownLots
-    });
+    const fog = p.state.fog;
+    post(
+      {
+        type: 'levers',
+        rev: p.rev,
+        phase: 'current',
+        lookups: li.lookups,
+        capacity: li.capacity,
+        unknownLots: li.unknownLots,
+        fog
+      },
+      [fog.heightM.buffer as ArrayBuffer]
+    );
     w.loaded = { ...lw.base, fzp: li.plan, twin: li.twin };
     w.references = li.references;
     w.band = createBandState(deps.bandRuns ?? BAND_RUNS);
@@ -771,16 +783,21 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     w.run = newRun(p.runRev, p.seed);
   }
 
-  function postResolving(p: PendingLevers): void {
+  /** `fog` only on the revision's first `resolving` (its buffer is transferred). */
+  function postResolving(p: PendingLevers, fog?: FogGrid): void {
     const r = p.state!.recompute;
-    post({
-      type: 'levers',
-      rev: p.rev,
-      phase: 'resolving',
-      done: r.done,
-      total: r.total,
-      failedCells: [...p.failed]
-    });
+    post(
+      {
+        type: 'levers',
+        rev: p.rev,
+        phase: 'resolving',
+        done: r.done,
+        total: r.total,
+        failedCells: [...p.failed],
+        ...(fog ? { fog } : {})
+      },
+      fog ? [fog.heightM.buffer as ArrayBuffer] : []
+    );
   }
 
   function bandFzp(w: Work, i: number): void {

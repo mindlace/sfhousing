@@ -56,6 +56,7 @@
 <script lang="ts">
   import { onMount, untrack, type Snippet } from 'svelte';
   import type { Manifest } from '$lib/data/manifest';
+  import type { FogGrid } from '$lib/map/fog/grid';
   import SimMap from '$lib/map/SimMap.svelte';
   import type { ChunkStatus, TimelinePick, TimelineUpdate } from '$lib/map/types';
   import { formatCount } from '$lib/scoreboard/format';
@@ -115,6 +116,11 @@
     /** Every lever status change (/sim). */
     onlevers?: (s: LeverStatus) => void;
     /**
+     * /sim: a kept lever revision's height-limit grid, once per rev: from its first `resolving`
+     * (stories are final before any yield recompute), else from its `current`.
+     */
+    onfog?: (g: FogGrid) => void;
+    /**
      * The client's brush requests on each new session (`initScenario`: mount, Retry), null on a
      * crash and on unmount. A call with the api means requests answered `no-session` before it
      * can be asked again.
@@ -162,6 +168,7 @@
     createWorker = spawnSimWorker,
     levers = undefined,
     onlevers = undefined,
+    onfog = undefined,
     onclient = undefined,
     onmapready = undefined,
     onphase = undefined,
@@ -308,6 +315,13 @@
     answered: boolean;
   } | null = null;
 
+  /**
+   * The rev whose fog `onfog` last had. The worker sends one grid per rev twice (its first
+   * `resolving` and its `current`, identical), so one call per rev; reset per session, as a new
+   * client may count revs again.
+   */
+  let fogRev: number | null = null;
+
   function setLeverState(next: LeverStatusState): void {
     if (next === leverState) return;
     const changed = next.status !== leverState.status;
@@ -329,6 +343,7 @@
       leversByRev.push({ rev, levers: l });
       setLeverState(leversSession(leverState, rev));
     }
+    fogRev = null;
     if (clientApi) onclient?.(clientApi);
     const keep = next !== null && next === seed;
     latest = {
@@ -602,6 +617,10 @@
       if (m.phase === 'current') {
         leverLookups = m.lookups;
         pushLookups();
+      }
+      if (m.fog && m.rev !== fogRev) {
+        fogRev = m.rev;
+        onfog?.(m.fog);
       }
     },
     onChunks(c) {

@@ -3,6 +3,7 @@ import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId } from '$lib/data/parcel';
 import type { GeneratedBuilding } from '$lib/generator';
+import type { FogGrid } from '$lib/map/fog/grid';
 import type { TimelineUpdate } from '$lib/map/types';
 import type { Target } from '$lib/scoreboard';
 import type { InFlightProject } from '$lib/timelapse/projects';
@@ -128,6 +129,7 @@ type RowScenarioResponse =
       done: number;
       total: number;
       failedCells: string[];
+      fog?: FogGrid; // map overlays Task 2: the revision's first resolving only
     } // plan 2 Task 12
   | {
       type: 'levers';
@@ -136,6 +138,7 @@ type RowScenarioResponse =
       lookups: LeverLookups;
       capacity: LeverCapacity;
       unknownLots: number;
+      fog: FogGrid; // map overlays Task 2
     };
 type RowWorkerRequest = SimRequest | RowScenarioRequest;
 

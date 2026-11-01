@@ -5,6 +5,7 @@ import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId } from '$lib/data/parcel';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import type { GeneratedBuilding } from '$lib/generator';
+import type { FogGrid } from '$lib/map/fog/grid';
 import type { TimelineUpdate } from '$lib/map/types';
 import type { Target } from '$lib/scoreboard';
 import type { InFlightProject } from '$lib/timelapse/projects';
@@ -120,7 +121,8 @@ export type ScenarioResponse =
  * A lever revision's status (plan 2): `rev` is the `initScenario` or `setLevers` that named the
  * levers. `resolving` while touched-lot yields are recomputed (`failedCells`: needed chunks that
  * failed to load; `retryChunks` re-wants them); `current` once the levers are in force, before
- * any timeline computed on them. A superseded revision never gets `current`.
+ * any timeline computed on them. A superseded revision never gets `current`. `fog` (map overlays
+ * plan Task 2) is the revision's height-limit grid: on its first `resolving`, and on `current`.
  */
 export type LeversResponse =
   | {
@@ -130,6 +132,8 @@ export type LeversResponse =
       done: number;
       total: number;
       failedCells: string[];
+      /** On the revision's first `resolving` only: its stories are final before any recompute. */
+      fog?: FogGrid;
     }
   | {
       type: 'levers';
@@ -138,6 +142,7 @@ export type LeversResponse =
       lookups: LeverLookups;
       capacity: LeverCapacity;
       unknownLots: number;
+      fog: FogGrid; // the height-limit grid of the levers in force; `heightM.buffer` transferred
     };
 export type WorkerRequest = SimRequest | ScenarioRequest;
 export type ProjectCard = {
