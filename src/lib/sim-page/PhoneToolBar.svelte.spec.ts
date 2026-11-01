@@ -47,11 +47,11 @@ describe('PhoneToolBar at 375 px', () => {
     await expect.element(stories).toHaveAttribute('aria-expanded', 'true');
   });
 
-  it('has no Mode or Density, and no Stories while protecting', async () => {
-    setup('protect');
-    await expect.element(page.getByRole('group', { name: 'Brush' })).toHaveTextContent('Protect');
+  it('has no Mode or Density; Erase keeps the stories opener', async () => {
+    setup('erase');
+    await expect.element(page.getByRole('group', { name: 'Brush' })).toHaveTextContent('Erase');
     await expect.element(page.getByRole('button', { name: 'Brush 30 m' })).toBeVisible();
-    expect(page.getByRole('button', { name: /stories per stroke/ }).elements()).toHaveLength(0);
+    await expect.element(page.getByRole('button', { name: /stories per stroke/ })).toBeVisible();
     expect(page.getByRole('checkbox').elements()).toHaveLength(0);
     expect(page.getByRole('radiogroup', { name: 'Mode' }).elements()).toHaveLength(0);
   });

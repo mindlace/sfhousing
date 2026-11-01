@@ -174,15 +174,63 @@ describe('markers and ends', () => {
 });
 
 describe('readout', () => {
-  it('shows the Simulation pill and the month, and is not a live region', async () => {
+  it('shows the month alone, with no Simulation pill, and is not a live region', async () => {
     await setup({ startDay: dayFromUtc(2031, 3, 9) });
     const readout = page.getByTestId('fzp-readout');
-    await expect.element(readout).toHaveTextContent('Simulation');
-    await expect.element(readout).toHaveTextContent('March 2031');
+    expect(readout.element().textContent).not.toMatch(/Simulation/);
+    await expect.element(page.getByTestId('fzp-readout-label')).toHaveTextContent(/^March 2031$/);
     const el = readout.element();
     expect(el.closest('[aria-live]')).toBeNull();
     expect(el.querySelector('[aria-live]')).toBeNull();
     expect(el.getAttribute('role')).toBeNull();
+  });
+
+  it('hides the sizing copies from assistive tech', async () => {
+    await setup({ startDay: dayFromUtc(2031, 3, 9) });
+    const hidden = page.getByTestId('fzp-readout').element().querySelectorAll('[aria-hidden]');
+    expect(hidden.length).toBeGreaterThanOrEqual(11);
+    expect(
+      page.getByTestId('fzp-readout-label').element().closest('[aria-hidden="true"]')
+    ).toBeNull();
+  });
+
+  it('the play button and the readout keep their width across labels and months', async () => {
+    const width = (id: string) => page.getByTestId(id).element().getBoundingClientRect().width;
+    const first = await setup({ startDay: dayFromUtc(2027, 5, 1) });
+    const w0 = width('fzp-play');
+    const o0 = width('fzp-readout');
+    first.unmount();
+    const second = await setup({ startDay: dayFromUtc(2027, 9, 1), setup: true });
+    await expect.element(page.getByTestId('fzp-play-label')).toHaveTextContent(/^Run$/);
+    expect(width('fzp-play')).toBe(w0);
+    expect(width('fzp-readout')).toBe(o0);
+    second.unmount();
+    await setup({ startDay: HORIZON });
+    await expect.element(page.getByTestId('fzp-play-label')).toHaveTextContent(/^Replay$/);
+    expect(width('fzp-play')).toBe(w0);
+  });
+
+  it('the readout keeps its width across years (2026 and 2040)', async () => {
+    const width = () => page.getByTestId('fzp-readout').element().getBoundingClientRect().width;
+    const first = await setup({ startDay: dayFromUtc(2026, 11, 1) });
+    await expect.element(page.getByTestId('fzp-readout-label')).toHaveTextContent('November 2026');
+    const w2026 = width();
+    first.unmount();
+    await setup({ startDay: dayFromUtc(2040, 11, 1) });
+    await expect.element(page.getByTestId('fzp-readout-label')).toHaveTextContent('November 2040');
+    expect(width()).toBe(w2026);
+  });
+
+  it('in setup the button runs and the track is disabled', async () => {
+    const onrun = vi.fn();
+    const { q } = await setup({ setup: true, onrun });
+    await page.getByRole('button', { name: 'Run' }).click();
+    expect(onrun).toHaveBeenCalledOnce();
+    expect(q.pending()).toBe(0);
+    await expect.element(slider()).toBeDisabled();
+    for (const m of MARKERS) {
+      await expect.element(page.getByRole('button', { name: m.name })).toBeDisabled();
+    }
   });
 });
 

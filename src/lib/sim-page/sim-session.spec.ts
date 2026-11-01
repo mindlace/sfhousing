@@ -6,14 +6,14 @@ import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration } from '$lib/timelapse/types';
 import fixture0CalibrationJson from '../../../e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json';
 import { DEFAULT_POLICY, type SimDoc } from './sim-doc';
-import { FZP_KEPT_TEXT, TIMING_NOTICE_TEXT, restoreSimDoc } from './sim-session';
+import { TIMING_NOTICE_TEXT, restoreSimDoc } from './sim-session';
 import { resolvePreset } from './timing';
 
 const cal: Calibration = parseCalibration(structuredClone(fixture0CalibrationJson) as unknown);
 const sim = copyFor('sim');
 
 const doc = (over: Partial<SimDoc> = {}): SimDoc => ({
-  schema: 1,
+  schema: 2,
   kind: 'sim',
   datasetVersion: 'fixture-0',
   policy: DEFAULT_POLICY,
@@ -98,11 +98,5 @@ describe('restoreSimDoc', () => {
     const r = restoreSimDoc({ plan: d, notice: { kind: 'corrupt' } }, null);
     expect(r.doc).toBe(d);
     expect(r.notices.map((n) => n.id)).toEqual(['corrupt']);
-  });
-
-  it('the fzp-kept copy is Call 13', () => {
-    expect(FZP_KEPT_TEXT).toBe(
-      'Showing the Family Zoning Plan comparison. Your saved policy is kept until you change something here.'
-    );
   });
 });

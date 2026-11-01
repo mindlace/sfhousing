@@ -20,6 +20,8 @@
   import { MONTH_DAYS } from '$lib/timelapse/time';
   import type { Calibration, ExitReason, Pathway, Provenance } from '$lib/timelapse/types';
   import type { PolicyStore } from './policy-store.svelte';
+  import { policyReadonly } from './policy-readonly';
+  import ReadonlyFieldset from './ReadonlyFieldset.svelte';
   import SourceList from './SourceList.svelte';
   import { PRESETS, routeView, setStageMonths, type StageView } from './timing';
 
@@ -33,6 +35,8 @@
   let { store, calibration, pathway, announce }: Props = $props();
 
   const uid = $props.id();
+  /** During a run the stage toggles still open their details; only the editing goes. */
+  const ro = policyReadonly();
   const ROUTE_NAMES: Record<Pathway, string> = {
     discretionary: 'Discretionary',
     streamlined: 'Streamlined',
@@ -338,7 +342,7 @@
     {/each}
   </div>
 
-  {#if fine.current}
+  {#if fine.current && !ro.on}
     <!-- Handles sit under the bar, centred on each editable segment's right boundary, so they
          never cover a segment; boundaries are at least 24 px apart, so handles never overlap. -->
     <div class="flex h-6 w-full gap-px border-x border-transparent" aria-hidden="true">
@@ -389,34 +393,36 @@
       </h5>
       {#if v.editable && v.bounds}
         {@const inputId = `${detailsId(v.stage)}-months`}
-        <div class="flex flex-wrap items-center gap-1">
-          <label for={inputId} class="font-semibold">Typical months</label>
-          <button
-            type="button"
-            aria-label="Shorten by 0.5 month"
-            aria-disabled={v.atBound === 'min'}
-            class="min-h-6 min-w-6 rounded-md border border-gray-300 bg-white px-2 font-bold aria-disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-            onclick={() => step(v, -1)}>−</button
-          >
-          <input
-            id={inputId}
-            type="number"
-            step={STEP}
-            min={v.bounds.min}
-            max={v.bounds.max}
-            value={v.months}
-            class="min-h-6 w-16 rounded-md border border-gray-400 px-1 text-center pointer-coarse:min-h-11"
-            onchange={(e) => commitInput(v, e.currentTarget)}
-          />
-          <button
-            type="button"
-            aria-label="Lengthen by 0.5 month"
-            aria-disabled={v.atBound === 'max'}
-            class="min-h-6 min-w-6 rounded-md border border-gray-300 bg-white px-2 font-bold aria-disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-            onclick={() => step(v, 1)}>+</button
-          >
-          <span class="text-gray-700">≈ {Math.round(v.months * MONTH_DAYS)} days</span>
-        </div>
+        <ReadonlyFieldset>
+          <div class="flex flex-wrap items-center gap-1">
+            <label for={inputId} class="font-semibold">Typical months</label>
+            <button
+              type="button"
+              aria-label="Shorten by 0.5 month"
+              aria-disabled={v.atBound === 'min'}
+              class="min-h-6 min-w-6 rounded-md border border-gray-300 bg-white px-2 font-bold aria-disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+              onclick={() => step(v, -1)}>−</button
+            >
+            <input
+              id={inputId}
+              type="number"
+              step={STEP}
+              min={v.bounds.min}
+              max={v.bounds.max}
+              value={v.months}
+              class="min-h-6 w-16 rounded-md border border-gray-400 px-1 text-center pointer-coarse:min-h-11"
+              onchange={(e) => commitInput(v, e.currentTarget)}
+            />
+            <button
+              type="button"
+              aria-label="Lengthen by 0.5 month"
+              aria-disabled={v.atBound === 'max'}
+              class="min-h-6 min-w-6 rounded-md border border-gray-300 bg-white px-2 font-bold aria-disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+              onclick={() => step(v, 1)}>+</button
+            >
+            <span class="text-gray-700">≈ {Math.round(v.months * MONTH_DAYS)} days</span>
+          </div>
+        </ReadonlyFieldset>
         {#if v.atBound}
           <p class="font-semibold text-amber-800">
             At the {v.atBound === 'min' ? 'minimum' : 'maximum'}

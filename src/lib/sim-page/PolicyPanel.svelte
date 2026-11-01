@@ -4,19 +4,23 @@
   so the project card sits to its right, and moves the map's bottom-left navigation control (zoom
   and compass) to its right edge so the panel never covers it (WCAG 2.2 2.4.11). Below md it is a modal sheet (`<dialog>`) that joins the
   header overlays, so it never shows with the phone Menu or the score details. Its sections are
-  disclosures; only "Zoning layers" starts open. Below md a sub-view (Task 9's "Add a brush")
-  replaces the sections, with a Back button. The read-only view (plan 5) shows a summary instead,
-  titled "Policy (read-only)".
+  disclosures, in order: New zoning rules, Custom zoning, Permitting timelines, Protections; the
+  two zoning sections start open, the others collapsed. The Undo and Redo row (`history`) sits once
+  above them. Below md a sub-view ("Add a rule") replaces the sections, with a Back button. The read-only view (plan 5) shows a summary instead,
+  titled "Policy (read-only)". During a run (`readonly`, spec §1) a reset button ("Change policy",
+  or "Back to start" on /s/<id>) and the line "Read-only during a run" sit at the top, and the
+  history row hides. The sections read the state through `policyReadonly()` and wrap their
+  editing controls in `ReadonlyFieldset` (disabled, described by that line), so every control
+  stays readable and controls that only show information stay usable; the disclosure toggles
+  still work. After the reset, focus moves to the first section toggle (WCAG 2.4.3).
 -->
 <script lang="ts">
   import { tick, untrack, type Snippet } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { headerOverlay } from '$lib/shell/header-actions.svelte';
-  import LayersSection from './LayersSection.svelte';
-  import type { PolicyStore } from './policy-store.svelte';
+  import { provideReadonly } from './policy-readonly';
 
   interface Props {
-    store: PolicyStore;
     open: boolean;
     onclose(): void;
     /** Opening the docked panel moves focus into it (false for the default open on md+). */
@@ -31,16 +35,23 @@
     subview?: Snippet;
     summary?: Snippet;
     onback?: () => void;
-    /** The "Your zoning" and "Protections" sections' contents (Tasks 8 to 10). */
-    zoning?: Snippet;
+    /** The Undo and Redo row, once above the sections (it covers every section). */
+    history?: Snippet;
+    /** The "New zoning rules", "Custom zoning" and "Protections" sections' contents. */
+    rules?: Snippet;
+    custom?: Snippet;
     protections?: Snippet;
     /** The "Permitting timelines" section's contents; the section shows only when given. */
     timing?: Snippet;
     /** A second line under that section's title (the set's label). */
     timingSummary?: string;
+    /** During a run: the reset button on top, no history row, every section body disabled. */
+    readonly?: boolean;
+    /** The reset button's press (ends the run). */
+    onreset?: () => void;
+    resetLabel?: 'Change policy' | 'Back to start';
   }
   let {
-    store,
     open,
     onclose,
     focusOnOpen = true,
@@ -49,31 +60,51 @@
     subview = undefined,
     summary = undefined,
     onback = undefined,
-    zoning = undefined,
+    history = undefined,
+    rules = undefined,
+    custom = undefined,
     protections = undefined,
     timing = undefined,
-    timingSummary = undefined
+    timingSummary = undefined,
+    readonly = false,
+    onreset = undefined,
+    resetLabel = 'Change policy'
   }: Props = $props();
 
   const uid = $props.id();
   const panelId = $derived(id ?? `${uid}-policy`);
   const headingId = `${uid}-heading`;
+  const noteId = `${uid}-readonly-note`;
+  provideReadonly(() => ({ on: readonly, noteId: readonly ? noteId : undefined }));
+
+  let headingEl = $state<HTMLElement>();
+
+  /**
+   * Ends the run. The reset button goes with the read-only state, so focus moves to the first
+   * section toggle (or the heading, in the summary view) instead of falling to the body.
+   */
+  async function reset(): Promise<void> {
+    onreset?.();
+    await tick();
+    const toggle = (docked ?? dialog)?.querySelector<HTMLElement>('[data-section-toggle]');
+    (toggle ?? headingEl)?.focus();
+  }
 
   const wide = new MediaQuery('(min-width: 768px)');
 
-  type SectionId = 'layers' | 'zoning' | 'protections' | 'timing';
+  type SectionId = 'rules' | 'custom' | 'timing' | 'protections';
   const ALL_SECTIONS: { id: SectionId; title: string }[] = [
-    { id: 'layers', title: 'Zoning layers' },
-    { id: 'zoning', title: 'Your zoning' },
-    { id: 'protections', title: 'Protections' },
-    { id: 'timing', title: 'Permitting timelines' }
+    { id: 'rules', title: 'New zoning rules' },
+    { id: 'custom', title: 'Custom zoning' },
+    { id: 'timing', title: 'Permitting timelines' },
+    { id: 'protections', title: 'Protections' }
   ];
   const SECTIONS = $derived(ALL_SECTIONS.filter((s) => s.id !== 'timing' || timing));
   let expanded = $state<Record<SectionId, boolean>>({
-    layers: true,
-    zoning: false,
-    protections: false,
-    timing: false
+    rules: true,
+    custom: true,
+    timing: false,
+    protections: false
   });
 
   let dialog = $state<HTMLDialogElement>();
@@ -117,7 +148,7 @@
 
 {#snippet body()}
   <div class="flex items-center justify-between gap-2 border-b border-gray-300 px-4 py-2">
-    <h2 id={headingId} class="text-base font-semibold">
+    <h2 bind:this={headingEl} id={headingId} tabindex="-1" class="text-base font-semibold">
       {view === 'summary' ? 'Policy (read-only)' : 'Policy'}
     </h2>
     <button
@@ -127,6 +158,16 @@
       onclick={() => onclose()}>Close</button
     >
   </div>
+  {#if readonly}
+    <div class="flex flex-col items-start gap-1 border-b border-gray-300 px-4 py-2">
+      <p id={noteId} class="text-sm text-gray-700">Read-only during a run</p>
+      <button
+        type="button"
+        class="min-h-11 rounded-md border border-gray-500 px-3 text-sm font-semibold"
+        onclick={() => void reset()}>{resetLabel}</button
+      >
+    </div>
+  {/if}
   {#if view === 'summary'}
     {@render summary?.()}
   {:else if view === 'add-brush' && subview}
@@ -136,15 +177,25 @@
         class="mb-2 min-h-6 rounded-md px-1 text-sm font-semibold underline pointer-coarse:min-h-11"
         onclick={() => onback?.()}>Back</button
       >
-      {@render subview()}
+      <fieldset
+        disabled={readonly}
+        aria-describedby={readonly ? noteId : undefined}
+        class="contents"
+      >
+        {@render subview()}
+      </fieldset>
     </div>
   {:else}
+    {#if !readonly}
+      {@render history?.()}
+    {/if}
     {#each SECTIONS as s (s.id)}
       {@const bodyId = `${uid}-${s.id}`}
       <div class="border-b border-gray-200">
         <h3>
           <button
             type="button"
+            data-section-toggle
             class="flex min-h-11 w-full items-center justify-between gap-2 px-4 text-left text-sm font-semibold"
             aria-expanded={expanded[s.id]}
             aria-controls={bodyId}
@@ -163,10 +214,10 @@
         </h3>
         {#if expanded[s.id]}
           <div id={bodyId} class="px-4 pb-4">
-            {#if s.id === 'layers'}
-              <LayersSection {store} />
-            {:else if s.id === 'zoning'}
-              {@render zoning?.()}
+            {#if s.id === 'rules'}
+              {@render rules?.()}
+            {:else if s.id === 'custom'}
+              {@render custom?.()}
             {:else if s.id === 'protections'}
               {@render protections?.()}
             {:else}

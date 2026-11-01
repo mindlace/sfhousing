@@ -134,23 +134,6 @@ export class Autosave<D = Plan> {
     }
   }
 
-  /**
-   * For a page that defers the restore (/sim under `start=fzp`): reads the stored record without
-   * loading or writing it, so that the first write keeps a corrupt or future record under the
-   * corrupt key first, as after `restore()`. Never throws.
-   */
-  guard(): void {
-    const storage = this.#getStorage();
-    if (!storage) return;
-    let read: ReadResult<D>;
-    try {
-      read = readRecord(storage, this.#codec);
-    } catch {
-      return;
-    }
-    this.#unpreserved = read.kind === 'corrupt' || read.kind === 'future' ? read.raw : null;
-  }
-
   /** Debounced write. Skips a plan whose serialization equals the last written one. */
   schedule(plan: D): void {
     if (!this.#writable(plan)) {
@@ -196,15 +179,6 @@ export class Autosave<D = Plan> {
       return;
     }
     this.#write(this.#codec.serialize(plan));
-  }
-
-  /**
-   * Records lastPublished without writing, for a page that has not started saving (/sim under
-   * `start=fzp`, where the stored policy is kept until the first change). The next write
-   * carries it.
-   */
-  rememberPublished(lp: LastPublished): void {
-    this.lastPublished = { id: lp.id, hash: lp.hash };
   }
 
   /** Adds visibilitychange/pagehide flush listeners; the remover flushes and clears the timer. */

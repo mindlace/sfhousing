@@ -4,7 +4,8 @@
   tooltip and the sources dialog, over timelapse-sim's ScenarioClient. Queueing before the map
   handle, chunk statuses and crash Retry mirror BrushEditor.svelte (copied, not imported). /sim
   passes `levers` (plan 3): the session runs the lever engine, and the worker's posted lookups
-  replace the calibration's once current.
+  replace the calibration's once current. /sim also passes `runPhase` (spec §1): in Setup the day
+  is pinned at asOf and the scrubber's button reads Run; Run plays once the score is current.
 -->
 <script module lang="ts">
   import { chanceTable, typicalMonths } from '$lib/timelapse/model';
@@ -69,6 +70,7 @@
   } from '$lib/sim-page/lever-status';
   import { spawnSimWorker } from '$lib/sim/client';
   import type { SimLevers } from '$lib/sim/levers/types';
+  import type { SimPhase } from '$lib/sim-page/run-phase.svelte';
   import { scoreCopy } from '$lib/sim-page/policy';
   import type { TimelineScore } from '$lib/sim/protocol';
   import {
@@ -133,6 +135,18 @@
      * above the scrubber, so their height joins the dock's and nothing they cover is lost.
      */
     notices?: Snippet;
+    /**
+     * /sim's phase (absent = /fzp, today's behaviour). In 'setup' playback stops and the day is
+     * pinned at asOf (through `onDay`, as a scrubber jump); the scrubber's button reads Run.
+     */
+    runPhase?: SimPhase;
+    /** The Run button's press; the page then moves `runPhase` to 'run'. */
+    onrun?: () => void;
+    /**
+     * /sim: newer levers are on their way (debounced, or their lots still being found). Run
+     * waits for them, and the score bar shows the pending state.
+     */
+    leversPending?: boolean;
   }
 
   let {
@@ -154,7 +168,10 @@
     panel = undefined,
     actions = undefined,
     status = undefined,
-    notices = undefined
+    notices = undefined,
+    runPhase = undefined,
+    onrun = undefined,
+    leversPending = false
   }: Props = $props();
 
   // The props seed the page once; Retry replaces the manifest and calibration in place.
@@ -199,6 +216,13 @@
   /** The rev of the latest non-stale timeline (0 before any). */
   let timelineRev = $state(0);
 
+  /**
+   * Run was pressed: play as soon as the phase is 'run' and the score is current, for the latest
+   * levers (none pending, none sent unanswered). While it waits the button still reads Run, so no
+   * press can play an older timeline. Playback starting and Setup clear it.
+   */
+  let playWhenCurrent = $state(false);
+
   let cardState = $state.raw<SummaryState>({ kind: 'idle' });
   let tipState = $state.raw<SummaryState>({ kind: 'idle' });
   let tipAt = $state({ x: 0, y: 0 });
@@ -213,8 +237,14 @@
       : lookups && { inFlight: lookups.chance, fresh: lookups.chance }
   );
   const leverStatus = $derived(leverState.status);
+  /**
+   * The levers the score on show answers (/sim): set when a timeline arrives for their revision
+   * or a later one, so the comparison copy never names the levers still being computed. Null
+   * before the first timeline and on /fzp.
+   */
+  let shownLevers = $state.raw<SimLevers | null>(null);
   /** Who the plan effect is for: the Family Zoning Plan on /fzp and under its levers. */
-  const copy = $derived(scoreCopy(levers ?? null));
+  const copy = $derived(scoreCopy(shownLevers ?? levers ?? null));
   const capacity = $derived(leverStatus.kind === 'current' ? leverStatus.capacity : null);
   /**
    * The score on show is from before the latest levers until a timeline at or after their rev
@@ -254,6 +284,8 @@
   let pushedLookups: MapLookups | null = null;
   /** The levers object the worker last received (identity), with initScenario or setLevers. */
   let sentLevers: SimLevers | null = null;
+  /** Each revision's levers, oldest first, until a timeline at or after its rev arrives. */
+  let leversByRev: { rev: number; levers: SimLevers }[] = [];
   /** A non-stale timeline has arrived since the last initScenario. */
   let scenarioLive = false;
   /** Prefetch the viewport on the first timeline after each initScenario. */
@@ -294,6 +326,7 @@
     const rev = client.initScenario(manifest, HORIZON, next, l);
     if (l !== undefined) {
       sentLevers = l;
+      leversByRev.push({ rev, levers: l });
       setLeverState(leversSession(leverState, rev));
     }
     if (clientApi) onclient?.(clientApi);
@@ -317,7 +350,18 @@
     if (l === undefined || l === sentLevers || dead || !client || client.crashed) return;
     if (!scenarioLive || rerollBusy) return;
     sentLevers = l;
-    setLeverState(leversSent(leverState, client.setLevers(l)));
+    const rev = client.setLevers(l);
+    leversByRev.push({ rev, levers: l });
+    setLeverState(leversSent(leverState, rev));
+  }
+
+  /** A timeline at `rev` answers the latest levers sent at or before it. */
+  function answerLevers(rev: number): void {
+    let i = -1;
+    while (i + 1 < leversByRev.length && leversByRev[i + 1].rev <= rev) i++;
+    if (i < 0) return;
+    shownLevers = leversByRev[i].levers;
+    leversByRev = leversByRev.slice(i + 1);
   }
 
   $effect(() => {
@@ -453,6 +497,44 @@
     if (cardMonth !== null && monthStart(d) !== cardMonth) refreshCard();
   }
 
+  function onRun(): void {
+    if (playWhenCurrent) return; // already waiting
+    playWhenCurrent = true;
+    if (runPhase !== 'run') onrun?.();
+  }
+
+  // Setup (spec §1): no playback, and the day pinned at asOf, moved as a scrubber jump moves it.
+  $effect(() => {
+    if (runPhase !== 'setup') return;
+    const a = asOf;
+    const d = day;
+    void playing;
+    untrack(() => {
+      if (playing) playing = false;
+      if (d !== a) {
+        day = a;
+        onDay(a);
+      }
+    });
+  });
+
+  // Back to Setup drops a pending Run.
+  $effect(() => {
+    if (runPhase === 'setup') untrack(() => (playWhenCurrent = false));
+  });
+
+  // Run plays once the score is current for the latest levers.
+  $effect(() => {
+    if (!playWhenCurrent) return;
+    if (playing) {
+      playWhenCurrent = false;
+      return;
+    }
+    if (runPhase !== 'run' || phase !== 'ready' || scoreBusy || leversPending) return;
+    playWhenCurrent = false;
+    playing = true;
+  });
+
   function applyInset(): void {
     handle?.setBottomInset(scrubberH + noticeH);
   }
@@ -485,6 +567,7 @@
       timelineRev = t.rev;
       applyRender(t.render);
       score = t.score;
+      answerLevers(t.rev);
       seed = t.seed;
       bandRuns = t.bandRuns;
       bandRunsTotal = t.bandRunsTotal;
@@ -675,6 +758,7 @@
       horizon: HORIZON,
       playing,
       score,
+      runPhase: runPhase ?? null,
       levers: {
         status: leverStatus.kind,
         done: leverStatus.kind === 'resolving' ? leverStatus.done : 0,
@@ -738,7 +822,7 @@
 
 {#snippet scoreBar()}
   {#if hasScoreboard && calibration}
-    <ScoreBar {score} {day} {playing} busy={scoreBusy} panel={scorePanel} />
+    <ScoreBar {score} {day} {playing} busy={scoreBusy || leversPending} panel={scorePanel} />
   {/if}
 {/snippet}
 
@@ -912,6 +996,9 @@
         bind:playing
         bind:speed
         {markers}
+        setup={runPhase === 'setup' || playWhenCurrent}
+        busy={playWhenCurrent}
+        onrun={onRun}
         onday={onDay}
         onheight={(px) => {
           scrubberH = px;

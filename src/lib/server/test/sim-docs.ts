@@ -1,5 +1,5 @@
 // Policy documents for server tests (publish, serve, shared page).
-import { defaultEffect, type SimPolicy, type Stroke, type ZoningBrush } from '$lib/sim-page/policy';
+import type { CustomBrush, SimPolicy, Stroke } from '$lib/sim-page/policy';
 import { DEFAULT_POLICY, serializeSimDoc, type SimDoc } from '$lib/sim-page/sim-doc';
 import type { TimingSet } from '$lib/sim-page/timing';
 
@@ -7,7 +7,7 @@ export const simDoc = (
   policy: SimPolicy = DEFAULT_POLICY,
   extra: Partial<SimDoc> = {}
 ): SimDoc => ({
-  schema: 1,
+  schema: 2,
   kind: 'sim',
   datasetVersion: 'fixture-0',
   policy,
@@ -19,17 +19,18 @@ export const stroke = (n = 2, radiusM = 50): Stroke => ({
   radiusM
 });
 
-export const freehand = (id: string, strokes: Stroke[]): ZoningBrush => ({
+/** A custom paint brush allowing 6 stories. */
+export const freehand = (id: string, strokes: Stroke[]): CustomBrush => ({
   id,
-  kind: 'freehand',
+  kind: 'paint',
   strokes,
-  effect: defaultEffect('raise', 6)
+  stories: 6
 });
 
-/** A policy that is not the default: one freehand brush. */
+/** A policy that is not the default: one custom paint brush. */
 export const paintedPolicy = (): SimPolicy => ({
   ...DEFAULT_POLICY,
-  brushes: [freehand('a', [stroke(3)])]
+  custom: [freehand('a', [stroke(3)])]
 });
 
 export const paintedText = (extra: Partial<SimDoc> = {}): string =>
@@ -53,7 +54,7 @@ export const tamperedText = (): string =>
   JSON.stringify(
     simDoc({
       ...DEFAULT_POLICY,
-      brushes: [freehand('a', [stroke(3)])],
+      custom: [freehand('a', [stroke(3)])],
       timing: { current: tamperedTiming(), saved: null }
     })
   );
@@ -63,7 +64,7 @@ export const manyStrokesText = (): string =>
   JSON.stringify(
     simDoc({
       ...DEFAULT_POLICY,
-      brushes: [
+      custom: [
         freehand(
           'a',
           Array.from({ length: 5001 }, () => stroke(1))

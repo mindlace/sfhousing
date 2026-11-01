@@ -11,6 +11,8 @@
     markers?: Marker[];
     startDay?: Day;
     startPlaying?: boolean;
+    setup?: boolean;
+    onrun?: () => void;
     onday?: (day: Day) => void;
     raf?: (cb: FrameRequestCallback) => number;
     cancelRaf?: (h: number) => void;

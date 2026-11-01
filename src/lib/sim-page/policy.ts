@@ -1,7 +1,10 @@
 /**
- * The /sim policy recipe: what the page keeps and edits (stock toggles, ordered brushes,
- * protections), and its compiler to plan 2's `SimLevers`. Pure TS: no Svelte, no DOM, so the
- * server can reuse it.
+ * The /sim policy recipe (sim runs spec, section 3): new zoning rules, custom painting, category
+ * protections and permitting timing, and its compiler to the `SimLevers` the worker runs. Pure
+ * TS: no Svelte, no DOM, so the server can reuse it.
+ *
+ * Rules are additive (each lot takes the highest rule that names it, never below FZP); custom
+ * paint sets a story count, in order, and an erase removes earlier paint only.
  */
 import type { ParcelId } from '$lib/data/parcel';
 import {
@@ -10,17 +13,17 @@ import {
   type StopType,
   type StreetClass
 } from '$lib/sim/levers/brushes';
+import { CALCULATING } from '$lib/fzp/copy';
+import { formatCount } from '$lib/scoreboard/format';
 import { STREET_CLASSES } from '$lib/data/frontage-codec';
 import {
   DEFAULT_LEVERS,
-  FZP_COMPAT_LEVERS,
   LeverFormatError,
-  STOCK_LAYERS,
   parseSimLevers,
+  type Compare,
   type SimLevers,
-  type StockLayerId,
-  type TimerEdit,
-  type UserEdit
+  type StoryEdit,
+  type TimerEdit
 } from '$lib/sim/levers/types';
 import { STORIES_MAX, STORIES_MIN } from '$lib/plan/constants';
 import { PATHWAYS, type Pathway } from '$lib/timelapse/types';
@@ -34,12 +37,6 @@ import {
 } from './timing';
 import { BENCHMARK_PERMIT_DAYS } from './timing-sources';
 
-export type BrushMode = 'raise' | 'lower' | 'set';
-export interface Effect {
-  mode: BrushMode;
-  stories: number;
-  densityLimits: boolean;
-}
 export interface Stroke {
   path: [lng: number, lat: number][];
   radiusM: number;
@@ -48,42 +45,34 @@ export interface TransitBand {
   maxM: number;
   stories: number;
 }
-export type ZoningBrush =
-  | { id: string; kind: 'freehand'; strokes: Stroke[]; effect: Effect }
-  | { id: string; kind: 'erase'; strokes: Stroke[] }
-  | {
-      id: string;
-      kind: 'transit';
-      stopTypes: StopType[];
-      bands: TransitBand[];
-      mode: BrushMode;
-      densityLimits: boolean;
-    }
+export type ZoningRule =
+  | { id: string; kind: 'transit'; stopTypes: StopType[]; bands: TransitBand[] }
   | {
       id: string;
       kind: 'street';
       classes: StreetClass[];
       names: string[];
       depth: 0 | 1;
+      /** The Commercial corridor preset: frontage zoned NC or NCT only. */
       ncOnly: boolean;
-      effect: Effect;
-    }
-  | { id: string; kind: 'area'; districts: string[]; neighborhoods: string[]; effect: Effect };
-
-export type ProtectStroke = Stroke & { kind: 'protect' | 'unprotect' };
+      stories: number;
+    };
+export type CustomBrush =
+  | { id: string; kind: 'paint'; strokes: Stroke[]; stories: number }
+  | { id: string; kind: 'erase'; strokes: Stroke[] };
+export interface CategoryProtections {
+  rentControl: boolean;
+  historic: boolean;
+  newerThanYears: number | null;
+}
 
 export interface SimPolicy {
-  schema: 1;
-  stock: StockLayerId[];
-  assumeAlternativePlanKept: boolean;
-  compare: 'currentLaw' | 'preFzp';
-  brushes: ZoningBrush[];
-  protect: {
-    rentControl: boolean;
-    historic: boolean;
-    newerThanYears: number | null;
-    strokes: ProtectStroke[];
-  };
+  schema: 2;
+  /** New zoning rules, in list order. */
+  rules: ZoningRule[];
+  /** Custom painting, in stroke order: a later brush wins. */
+  custom: CustomBrush[];
+  protect: CategoryProtections;
   /** The permitting timing set and its saved snapshot (`timing.ts`). */
   timing: SimTiming;
 }
@@ -97,9 +86,22 @@ export const DEFAULT_BANDS: TransitBand[] = [
   { maxM: 805, stories: 4 }
 ];
 
-/** Raising starts without density limits; lowering and setting start with them. */
-export function defaultEffect(mode: BrushMode, stories: number): Effect {
-  return { mode, stories, densityLimits: mode !== 'raise' };
+/** Bands sorted by distance, innermost first. */
+export const bandsInnermostFirst = (bands: readonly TransitBand[]): TransitBand[] =>
+  [...bands].sort((a, b) => a.maxM - b.maxM);
+
+/**
+ * Why a band list breaks the band rule (partner ruling: bands never get taller with distance),
+ * or null: compared innermost first, two bands at one distance, or an outer band taller than
+ * the band inside it.
+ */
+export function bandProblem(bands: readonly TransitBand[]): 'same-distance' | 'taller' | null {
+  const sorted = bandsInnermostFirst(bands);
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].maxM === sorted[i - 1].maxM) return 'same-distance';
+    if (sorted[i].stories > sorted[i - 1].stories) return 'taller';
+  }
+  return null;
 }
 
 export class PolicyFormatError extends Error {
@@ -115,30 +117,24 @@ function fail(path: string, message: string): never {
   throw new PolicyFormatError(path, message);
 }
 
-export function policyFromLevers(l: SimLevers): SimPolicy {
-  if (l.user.length > 0) throw new PolicyFormatError('user', 'expected no user edits');
-  if (l.protect.lots.length > 0) throw new PolicyFormatError('protect.lots', 'expected no lots');
-  if (l.timers.length > 0 || l.routeShares !== null)
-    throw new PolicyFormatError('timers', 'expected no timers and observed route shares');
-  if (!l.localProgramStreamlined)
-    throw new PolicyFormatError('localProgramStreamlined', 'expected true: every preset keeps it');
-  return {
-    schema: 1,
-    stock: [...l.stock],
-    assumeAlternativePlanKept: l.assumeAlternativePlanKept,
-    compare: l.compare,
-    brushes: [],
-    protect: {
-      rentControl: l.protect.rentControl,
-      historic: l.protect.historic,
-      newerThanYears: l.protect.newerThanYears,
-      strokes: []
-    },
-    timing: {
-      current: structuredClone(OBSERVED_TIMING.current),
-      saved: null
-    }
-  };
+/** The page's starting policy: FZP as written, no rules or painting, no protections, observed timing. */
+export const DEFAULT_POLICY: SimPolicy = {
+  schema: 2,
+  rules: [],
+  custom: [],
+  protect: { rentControl: false, historic: false, newerThanYears: null },
+  timing: { current: structuredClone(OBSERVED_TIMING.current), saved: null }
+};
+
+/** The policy without its saved timing snapshot. */
+export const withoutSnapshot = (p: SimPolicy): SimPolicy => ({
+  ...p,
+  timing: { ...p.timing, saved: null }
+});
+
+/** The policy equals the default one, ignoring the saved timing snapshot. */
+export function isDefaultPolicy(p: SimPolicy): boolean {
+  return canonicalJson(withoutSnapshot(p)) === canonicalJson(DEFAULT_POLICY);
 }
 
 // ---- parsing ----
@@ -147,8 +143,8 @@ function rec(v: unknown, path: string, keys: readonly string[]): Record<string, 
   if (typeof v !== 'object' || v === null || Array.isArray(v))
     fail(path || '$', 'expected an object');
   const r = v as Record<string, unknown>;
-  for (const k of Object.keys(r)) if (!keys.includes(k)) fail(`${path}.${k}`, 'unknown key');
-  for (const k of keys) if (!(k in r)) fail(`${path}.${k}`, 'missing');
+  for (const k of Object.keys(r)) if (!keys.includes(k)) fail(j(path, k), 'unknown key');
+  for (const k of keys) if (!(k in r)) fail(j(path, k), 'missing');
   return r;
 }
 const j = (base: string, k: string) => (base === '' ? k : `${base}.${k}`);
@@ -185,106 +181,82 @@ function stories(v: unknown, path: string): number {
     fail(path, `expected an integer from ${STORIES_MIN} to ${STORIES_MAX}`);
   return v;
 }
-const MODES = ['raise', 'lower', 'set'] as const;
-
-function parseEffect(v: unknown, path: string): Effect {
-  const r = rec(v, path, ['mode', 'stories', 'densityLimits']);
-  return {
-    mode: oneOf(r.mode, j(path, 'mode'), MODES),
-    stories: stories(r.stories, j(path, 'stories')),
-    densityLimits: bool(r.densityLimits, j(path, 'densityLimits'))
-  };
-}
-
-function parseStrokeBody(r: Record<string, unknown>, path: string): Stroke {
-  const radiusM = finite(r.radiusM, j(path, 'radiusM'));
-  if (radiusM <= 0) fail(j(path, 'radiusM'), 'expected a positive number');
-  const pathPts = arr(r.path, j(path, 'path')).map((p, i) => {
-    const pp = `${j(path, 'path')}[${i}]`;
-    const a = arr(p, pp);
-    if (a.length !== 2) fail(pp, 'expected [lng, lat]');
-    return [finite(a[0], `${pp}[0]`), finite(a[1], `${pp}[1]`)] as [number, number];
-  });
-  return { path: pathPts, radiusM };
-}
 
 function parseStrokes(v: unknown, path: string): Stroke[] {
   return arr(v, path).map((x, i) => {
     const p = `${path}[${i}]`;
-    return parseStrokeBody(rec(x, p, ['path', 'radiusM']), p);
+    const r = rec(x, p, ['path', 'radiusM']);
+    const radiusM = finite(r.radiusM, j(p, 'radiusM'));
+    if (radiusM <= 0) fail(j(p, 'radiusM'), 'expected a positive number');
+    const pathPts = arr(r.path, j(p, 'path')).map((pt, k) => {
+      const pp = `${j(p, 'path')}[${k}]`;
+      const a = arr(pt, pp);
+      if (a.length !== 2) fail(pp, 'expected [lng, lat]');
+      return [finite(a[0], `${pp}[0]`), finite(a[1], `${pp}[1]`)] as [number, number];
+    });
+    return { path: pathPts, radiusM };
   });
 }
 
-function parseBrush(v: unknown, path: string): ZoningBrush {
+function kindOf<T extends string>(v: unknown, path: string, kinds: readonly T[]): T {
   if (typeof v !== 'object' || v === null || Array.isArray(v)) fail(path, 'expected an object');
-  const kind = oneOf((v as Record<string, unknown>).kind, j(path, 'kind'), [
-    'freehand',
-    'erase',
-    'transit',
-    'street',
-    'area'
-  ] as const);
-  switch (kind) {
-    case 'freehand': {
-      const r = rec(v, path, ['id', 'kind', 'strokes', 'effect']);
-      return {
-        id: str(r.id, j(path, 'id')),
-        kind,
-        strokes: parseStrokes(r.strokes, j(path, 'strokes')),
-        effect: parseEffect(r.effect, j(path, 'effect'))
-      };
-    }
-    case 'erase': {
-      const r = rec(v, path, ['id', 'kind', 'strokes']);
-      return {
-        id: str(r.id, j(path, 'id')),
-        kind,
-        strokes: parseStrokes(r.strokes, j(path, 'strokes'))
-      };
-    }
-    case 'transit': {
-      const r = rec(v, path, ['id', 'kind', 'stopTypes', 'bands', 'mode', 'densityLimits']);
-      const bandList = arr(r.bands, j(path, 'bands'));
-      if (bandList.length === 0) fail(j(path, 'bands'), 'expected at least one band');
-      return {
-        id: str(r.id, j(path, 'id')),
-        kind,
-        stopTypes: oneOfList(r.stopTypes, j(path, 'stopTypes'), STOP_TYPES),
-        bands: bandList.map((b, i) => {
-          const bp = `${j(path, 'bands')}[${i}]`;
-          const br = rec(b, bp, ['maxM', 'stories']);
-          const maxM = finite(br.maxM, j(bp, 'maxM'));
-          if (maxM <= 0) fail(j(bp, 'maxM'), 'expected a positive number');
-          return { maxM, stories: stories(br.stories, j(bp, 'stories')) };
-        }),
-        mode: oneOf(r.mode, j(path, 'mode'), MODES),
-        densityLimits: bool(r.densityLimits, j(path, 'densityLimits'))
-      };
-    }
-    case 'street': {
-      const r = rec(v, path, ['id', 'kind', 'classes', 'names', 'depth', 'ncOnly', 'effect']);
-      if (r.depth !== 0 && r.depth !== 1) fail(j(path, 'depth'), 'expected 0 or 1');
-      return {
-        id: str(r.id, j(path, 'id')),
-        kind,
-        classes: oneOfList(r.classes, j(path, 'classes'), STREET_CLASSES),
-        names: strings(r.names, j(path, 'names')),
-        depth: r.depth,
-        ncOnly: bool(r.ncOnly, j(path, 'ncOnly')),
-        effect: parseEffect(r.effect, j(path, 'effect'))
-      };
-    }
-    case 'area': {
-      const r = rec(v, path, ['id', 'kind', 'districts', 'neighborhoods', 'effect']);
-      return {
-        id: str(r.id, j(path, 'id')),
-        kind,
-        districts: strings(r.districts, j(path, 'districts')),
-        neighborhoods: strings(r.neighborhoods, j(path, 'neighborhoods')),
-        effect: parseEffect(r.effect, j(path, 'effect'))
-      };
-    }
+  return oneOf((v as Record<string, unknown>).kind, j(path, 'kind'), kinds);
+}
+
+function parseRule(v: unknown, path: string): ZoningRule {
+  const kind = kindOf(v, path, ['transit', 'street'] as const);
+  if (kind === 'transit') {
+    const r = rec(v, path, ['id', 'kind', 'stopTypes', 'bands']);
+    const bp = j(path, 'bands');
+    const bandList = arr(r.bands, bp);
+    if (bandList.length === 0) fail(bp, 'expected at least one band');
+    const bands = bandList.map((b, i) => {
+      const p = `${bp}[${i}]`;
+      const br = rec(b, p, ['maxM', 'stories']);
+      const maxM = finite(br.maxM, j(p, 'maxM'));
+      if (maxM <= 0) fail(j(p, 'maxM'), 'expected a positive number');
+      return { maxM, stories: stories(br.stories, j(p, 'stories')) };
+    });
+    const why = bandProblem(bands);
+    if (why === 'same-distance') fail(bp, 'expected each band at a different distance');
+    if (why === 'taller') fail(bp, 'expected no band taller than the band inside it');
+    return {
+      id: str(r.id, j(path, 'id')),
+      kind,
+      stopTypes: oneOfList(r.stopTypes, j(path, 'stopTypes'), STOP_TYPES),
+      bands
+    };
   }
+  const r = rec(v, path, ['id', 'kind', 'classes', 'names', 'depth', 'ncOnly', 'stories']);
+  if (r.depth !== 0 && r.depth !== 1) fail(j(path, 'depth'), 'expected 0 or 1');
+  return {
+    id: str(r.id, j(path, 'id')),
+    kind,
+    classes: oneOfList(r.classes, j(path, 'classes'), STREET_CLASSES),
+    names: strings(r.names, j(path, 'names')),
+    depth: r.depth,
+    ncOnly: bool(r.ncOnly, j(path, 'ncOnly')),
+    stories: stories(r.stories, j(path, 'stories'))
+  };
+}
+
+function parseCustom(v: unknown, path: string): CustomBrush {
+  const kind = kindOf(v, path, ['paint', 'erase'] as const);
+  if (kind === 'paint') {
+    const r = rec(v, path, ['id', 'kind', 'strokes', 'stories']);
+    return {
+      id: str(r.id, j(path, 'id')),
+      kind,
+      strokes: parseStrokes(r.strokes, j(path, 'strokes')),
+      stories: stories(r.stories, j(path, 'stories'))
+    };
+  }
+  const r = rec(v, path, ['id', 'kind', 'strokes']);
+  return {
+    id: str(r.id, j(path, 'id')),
+    kind,
+    strokes: parseStrokes(r.strokes, j(path, 'strokes'))
+  };
 }
 
 /** One lever field through the lever parser's full check, re-pathed under `path`. */
@@ -444,47 +416,31 @@ export function parseSimPolicy(
   opts: { presetLayer?: PresetLayerMode } = {}
 ): SimPolicy {
   const mode = opts.presetLayer ?? 'strict';
-  const r = rec(json, '', [
-    'schema',
-    'stock',
-    'assumeAlternativePlanKept',
-    'compare',
-    'brushes',
-    'protect',
-    'timing'
-  ]);
-  if (r.schema !== 1) fail('schema', `expected 1, got ${String(r.schema)}`);
-  const stock = oneOfList(r.stock, 'stock', STOCK_LAYERS);
-  if (stock.length === 0) fail('stock', 'expected at least one layer');
-  const pr = rec(r.protect, 'protect', ['rentControl', 'historic', 'newerThanYears', 'strokes']);
+  const r = rec(json, '', ['schema', 'rules', 'custom', 'protect', 'timing']);
+  if (r.schema !== 2) fail('schema', `expected 2, got ${String(r.schema)}`);
+  const pr = rec(r.protect, 'protect', ['rentControl', 'historic', 'newerThanYears']);
   const n = pr.newerThanYears;
   if (n !== null && (typeof n !== 'number' || !Number.isFinite(n) || n <= 0))
     fail('protect.newerThanYears', 'expected null or a positive number');
   const timing = parseTiming(r.timing, mode);
-  const brushes = arr(r.brushes, 'brushes').map((b, i) => parseBrush(b, `brushes[${i}]`));
+  const rules = arr(r.rules, 'rules').map((b, i) => parseRule(b, `rules[${i}]`));
+  const custom = arr(r.custom, 'custom').map((b, i) => parseCustom(b, `custom[${i}]`));
+  // Ids are unique across both lists: the page keys cards and lot lookups by them.
   const ids = new Set<string>();
-  brushes.forEach((b, i) => {
-    if (ids.has(b.id)) fail(`brushes[${i}].id`, 'duplicate brush id');
+  const once = (list: string) => (b: { id: string }, i: number) => {
+    if (ids.has(b.id)) fail(`${list}[${i}].id`, 'duplicate id');
     ids.add(b.id);
-  });
+  };
+  rules.forEach(once('rules'));
+  custom.forEach(once('custom'));
   return {
-    schema: 1,
-    stock: STOCK_LAYERS.filter((l) => stock.includes(l)),
-    assumeAlternativePlanKept: bool(r.assumeAlternativePlanKept, 'assumeAlternativePlanKept'),
-    compare: oneOf(r.compare, 'compare', ['currentLaw', 'preFzp'] as const),
-    brushes,
+    schema: 2,
+    rules,
+    custom,
     protect: {
       rentControl: bool(pr.rentControl, 'protect.rentControl'),
       historic: bool(pr.historic, 'protect.historic'),
-      newerThanYears: n,
-      strokes: arr(pr.strokes, 'protect.strokes').map((x, i) => {
-        const p = `protect.strokes[${i}]`;
-        const sr = rec(x, p, ['path', 'radiusM', 'kind']);
-        return {
-          ...parseStrokeBody(sr, p),
-          kind: oneOf(sr.kind, j(p, 'kind'), ['protect', 'unprotect'] as const)
-        };
-      })
+      newerThanYears: n
     },
     timing
   };
@@ -509,39 +465,22 @@ export function queryKey(q: BrushQuery): string {
   return canonicalJson(q);
 }
 
-const bandsOutermostFirst = (bands: TransitBand[]) => [...bands].sort((a, b) => b.maxM - a.maxM);
+const bandsOutermostFirst = (bands: readonly TransitBand[]) => bandsInnermostFirst(bands).reverse();
 
-/** The lot queries a brush needs (a transit brush: one per band, outermost first). */
-export function brushQueries(b: ZoningBrush): BrushQuery[] {
-  switch (b.kind) {
-    case 'freehand':
-    case 'erase':
-      return [{ kind: 'freehand', strokes: b.strokes }];
-    case 'transit':
-      return bandsOutermostFirst(b.bands).map((band) => ({
-        kind: 'transit',
-        stopTypes: b.stopTypes,
-        maxM: band.maxM
-      }));
-    case 'street':
-      return [
-        { kind: 'street', classes: b.classes, names: b.names, depth: b.depth, ncOnly: b.ncOnly }
-      ];
-    case 'area':
-      return [{ kind: 'area', districts: b.districts, neighborhoods: b.neighborhoods }];
-  }
+/** The lot queries a rule needs (a transit rule: one per band, outermost first). */
+export function ruleQueries(r: ZoningRule): BrushQuery[] {
+  if (r.kind === 'transit')
+    return bandsOutermostFirst(r.bands).map((band) => ({
+      kind: 'transit',
+      stopTypes: r.stopTypes,
+      maxM: band.maxM
+    }));
+  return [{ kind: 'street', classes: r.classes, names: r.names, depth: r.depth, ncOnly: r.ncOnly }];
 }
 
-/** Runs of same-kind protect strokes, each a freehand query. */
-function protectRuns(p: SimPolicy): { kind: 'protect' | 'unprotect'; query: BrushQuery }[] {
-  const runs: { kind: 'protect' | 'unprotect'; strokes: Stroke[] }[] = [];
-  for (const st of p.protect.strokes) {
-    const last = runs[runs.length - 1];
-    const plain: Stroke = { path: st.path, radiusM: st.radiusM };
-    if (last && last.kind === st.kind) last.strokes.push(plain);
-    else runs.push({ kind: st.kind, strokes: [plain] });
-  }
-  return runs.map((r) => ({ kind: r.kind, query: { kind: 'freehand', strokes: r.strokes } }));
+/** The lot query a custom brush needs: its strokes, freehand. */
+export function customQuery(b: CustomBrush): BrushQuery {
+  return { kind: 'freehand', strokes: b.strokes };
 }
 
 /** Every lot query the policy needs, with a stable key (canonical JSON of the query). */
@@ -551,110 +490,110 @@ export function queriesOf(p: SimPolicy): { key: string; query: BrushQuery }[] {
     const k = queryKey(q);
     if (!seen.has(k)) seen.set(k, q);
   };
-  for (const b of p.brushes) brushQueries(b).forEach(add);
-  for (const r of protectRuns(p)) add(r.query);
+  for (const r of p.rules) ruleQueries(r).forEach(add);
+  for (const b of p.custom) add(customQuery(b));
   return [...seen].map(([key, query]) => ({ key, query }));
 }
 
-type Lots = (key: string) => readonly ParcelId[] | undefined;
+/** A query's lots by its key; undefined while unknown. */
+export type Lots = (key: string) => readonly ParcelId[] | undefined;
 
 const sortedUnique = (xs: Iterable<ParcelId>): ParcelId[] =>
   [...new Set(xs)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 
-/** Brushes in order to edits; null while any needed query is unknown. */
-function emit(p: SimPolicy, lots: Lots): UserEdit[] | null {
-  const out: UserEdit[] = [];
-  const need = (q: BrushQuery) => lots(queryKey(q));
-  const push = (ids: readonly ParcelId[], mode: BrushMode, stories: number, dl: boolean) => {
-    const l = sortedUnique(ids);
-    if (l.length > 0) out.push({ lots: l, mode, stories, densityLimits: dl });
-  };
-  for (const b of p.brushes) {
-    const qs = brushQueries(b);
-    const got = qs.map(need);
+/** Rules to edits in list order (a transit rule: a band each, outermost first); null while unknown. */
+function ruleEdits(p: SimPolicy, lots: Lots): StoryEdit[] | null {
+  const out: StoryEdit[] = [];
+  for (const r of p.rules) {
+    const got = ruleQueries(r).map((q) => lots(queryKey(q)));
     if (got.some((g) => g === undefined)) return null;
-    switch (b.kind) {
-      case 'erase': {
-        const gone = new Set(got[0]);
-        for (const e of out) e.lots = e.lots.filter((x) => !gone.has(x));
-        for (let i = out.length - 1; i >= 0; i--) if (out[i].lots.length === 0) out.splice(i, 1);
-        break;
-      }
-      case 'transit': {
-        const bands = bandsOutermostFirst(b.bands);
-        bands.forEach((band, i) => push(got[i]!, b.mode, band.stories, b.densityLimits));
-        break;
-      }
-      default:
-        push(got[0]!, b.effect.mode, b.effect.stories, b.effect.densityLimits);
+    const heights =
+      r.kind === 'transit' ? bandsOutermostFirst(r.bands).map((b) => b.stories) : [r.stories];
+    got.forEach((g, i) => {
+      const l = sortedUnique(g!);
+      if (l.length > 0) out.push({ lots: l, stories: heights[i] });
+    });
+  }
+  return out;
+}
+
+/** Custom paint to edits in order, each erase removing lots from the paint before it. */
+function paintEdits(p: SimPolicy, lots: Lots): StoryEdit[] | null {
+  let out: StoryEdit[] = [];
+  for (const b of p.custom) {
+    const got = lots(queryKey(customQuery(b)));
+    if (got === undefined) return null;
+    if (b.kind === 'erase') {
+      const gone = new Set(got);
+      out = out
+        .map((e) => ({ ...e, lots: e.lots.filter((x) => !gone.has(x)) }))
+        .filter((e) => e.lots.length > 0);
+    } else {
+      const l = sortedUnique(got);
+      if (l.length > 0) out.push({ lots: l, stories: b.stories });
     }
   }
   return out;
 }
 
-/** The keys of the protect strokes' queries (one per run of same-kind strokes). */
-export function protectQueryKeys(p: SimPolicy): string[] {
-  return [...new Set(protectRuns(p).map((r) => queryKey(r.query)))];
+/** Lot → painted stories after erasing, last stroke wins; null while a query is unknown. */
+export function paintedLots(p: SimPolicy, lots: Lots): Map<ParcelId, number> | null {
+  const edits = paintEdits(p, lots);
+  if (edits === null) return null;
+  const out = new Map<ParcelId, number>();
+  for (const e of edits)
+    for (const x of e.lots) {
+      out.delete(x); // re-insert, so the map's order is the order lots were last painted
+      out.set(x, e.stories);
+    }
+  return out;
 }
 
 /**
- * The compiled `protect.lots`: protect runs minus unprotect runs, in order; null while unknown.
+ * The levers for `p`; null while a needed query is unknown. The twin is pre-FZP zoning for the
+ * default policy, FZP as written for any other.
  */
-export function protectedLots(p: SimPolicy, lots: Lots): ParcelId[] | null {
-  const set = new Set<ParcelId>();
-  for (const r of protectRuns(p)) {
-    const got = lots(queryKey(r.query));
-    if (got === undefined) return null;
-    for (const x of got) {
-      if (r.kind === 'protect') set.add(x);
-      else set.delete(x);
-    }
-  }
-  return sortedUnique(set);
-}
-
 export function compileLevers(p: SimPolicy, lots: Lots): SimLevers | null {
-  const user = emit(p, lots);
-  const prot = protectedLots(p, lots);
-  if (user === null || prot === null) return null;
+  const rules = ruleEdits(p, lots);
+  const paint = paintEdits(p, lots);
+  if (rules === null || paint === null) return null;
   return {
-    schema: 1,
-    stock: [...p.stock],
-    assumeAlternativePlanKept: p.assumeAlternativePlanKept,
-    user,
-    protect: {
-      rentControl: p.protect.rentControl,
-      historic: p.protect.historic,
-      newerThanYears: p.protect.newerThanYears,
-      lots: prot
-    },
+    schema: 2,
+    rules,
+    paint,
+    protect: { ...p.protect },
     ...compileTiming(p.timing.current),
-    compare: p.compare
+    compare: isDefaultPolicy(p) ? 'preFzp' : 'fzp'
   };
 }
 
-export type LotRole = 'raise' | 'lower' | 'set' | 'protected';
+export type LotRole = 'changed';
 
-/** Per-lot role for the map: the last brush to touch a lot wins; protection beats all. */
+/** Per-lot role for the map: every lot a rule or the custom paint changes. Unknown queries count as empty. */
 export function lotRoles(p: SimPolicy, lots: Lots): Map<ParcelId, LotRole> {
+  const known: Lots = (k) => lots(k) ?? [];
   const roles = new Map<ParcelId, LotRole>();
-  for (const e of emit(p, (k) => lots(k) ?? []) ?? []) for (const x of e.lots) roles.set(x, e.mode);
-  for (const x of protectedLots(p, (k) => lots(k) ?? []) ?? []) roles.set(x, 'protected');
+  for (const e of ruleEdits(p, known) ?? []) for (const x of e.lots) roles.set(x, 'changed');
+  for (const x of paintedLots(p, known)?.keys() ?? []) roles.set(x, 'changed');
   return roles;
 }
 
 export interface ScoreCopy {
   plan: string;
   twin: string;
+  compare: Compare;
 }
 
-const isFzpCompat = (l: SimLevers) => canonicalJson(l) === canonicalJson(FZP_COMPAT_LEVERS);
-
 export function scoreCopy(l: SimLevers | null): ScoreCopy {
-  if (l === null || isFzpCompat(l))
-    return { plan: 'the Family Zoning Plan', twin: 'the old zoning' };
-  return {
-    plan: 'your policy',
-    twin: l.compare === 'currentLaw' ? "the City's current rules" : 'the old zoning'
-  };
+  if (l === null || l.compare === 'preFzp')
+    return { plan: 'the Family Zoning Plan', twin: 'the old zoning', compare: 'preFzp' };
+  return { plan: 'your policy', twin: 'the Family Zoning Plan as written', compare: 'fzp' };
+}
+
+/** The first line of the score details' "what … added" section: who is compared with what. */
+export function comparisonLine(copy: ScoreCopy, homes: number | null): string {
+  const mine = copy.compare === 'fzp';
+  if (homes === null) return `${mine ? 'Your policy vs FZP' : 'FZP vs no FZP'}: ${CALCULATING}`;
+  const n = formatCount(homes);
+  return mine ? `Your policy added ${n} homes vs FZP` : `FZP added ${n} homes vs no FZP`;
 }

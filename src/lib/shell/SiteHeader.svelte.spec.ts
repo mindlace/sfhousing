@@ -165,6 +165,34 @@ describe('SiteHeader', () => {
       expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth);
     });
 
+    it('at 375px keeps the order name, status, pinned, Menu', async () => {
+      await page.viewport(375, 812);
+      const st = createRawSnippet(() => ({ render: () => '<span data-testid="st">saved</span>' }));
+      render(SiteHeader, { routeId: '/sim', actions, pinned, status: st });
+      const x = (el: Element) => el.getBoundingClientRect().left;
+      const name = page.getByRole('link', { name: /SF Housing/ }).element();
+      const status = page.getByTestId('st').element();
+      const score = page.getByRole('button', { name: '1,234 homes added' }).element();
+      const m = menu().element();
+      expect(x(name)).toBeLessThan(x(status));
+      expect(x(status)).toBeLessThan(x(score));
+      expect(x(score)).toBeLessThan(x(m));
+    });
+
+    it('centres the score at 1024px even with a long status', async () => {
+      await page.viewport(1024, 768);
+      const long = createRawSnippet(() => ({
+        render: () => `<span>${'Saved a very long time ago '.repeat(12)}</span>`
+      }));
+      render(SiteHeader, { routeId: '/sim', actions, pinned, status: long });
+      const r = page
+        .getByRole('button', { name: '1,234 homes added' })
+        .element()
+        .getBoundingClientRect();
+      const h = page.getByRole('banner').element().getBoundingClientRect();
+      expect(Math.abs((r.left + r.right) / 2 - (h.left + h.right) / 2)).toBeLessThan(1);
+    });
+
     it('Escape closes the menu and returns focus to Menu', async () => {
       await page.viewport(375, 812);
       render(SiteHeader, { routeId: '/sim', actions, pinned });
@@ -405,6 +433,18 @@ describe('SiteHeader', () => {
       expect(score.getBoundingClientRect().right).toBeLessThanOrEqual(
         other.getBoundingClientRect().left
       );
+    });
+
+    it('centres the pinned item in the header from md', async () => {
+      await page.viewport(1024, 768);
+      render(SiteHeader, { routeId: '/sim', actions, pinned });
+      await expect.element(page.getByRole('button', { name: '1,234 homes added' })).toBeVisible();
+      const score = page.getByRole('button', { name: '1,234 homes added' }).element();
+      const rect = score.getBoundingClientRect();
+      const header = page.getByRole('banner').element().getBoundingClientRect();
+      expect(
+        Math.abs((rect.left + rect.right) / 2 - (header.left + header.right) / 2)
+      ).toBeLessThan(1);
     });
   });
 });

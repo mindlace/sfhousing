@@ -1,49 +1,40 @@
 # /sim policy levers
 
-The engine behind `/sim` (plan 2 of 5). Source: `src/lib/sim/levers/`; protocol: `src/lib/sim/scenario/types.ts`. The plan (`docs/superpowers/plans/2026-10-29-sim-policy-engine.md`, "Rulings") holds the reasons in full. Everything here is worker-safe and pure except the worker session.
+The engine behind `/sim` (plan 2 of 5; FZP-only since the sim runs plan 1, Task 1, spec `docs/superpowers/specs/2026-10-31-sim-runs-design.md`). Source: `src/lib/sim/levers/`; protocol: `src/lib/sim/scenario/types.ts`. The plan (`docs/superpowers/plans/2026-10-29-sim-policy-engine.md`, "Rulings") holds the reasons in full. Everything here is worker-safe and pure except the worker session.
 
 ## The lever document
 
-`SimLevers` (schema 1, `types.ts`) is a sibling of the editor's `Plan`, not new `PlanOp`s: levers are mostly static configuration, and user edits name lots by `ParcelId`, so the document survives row reordering. `parseSimLevers` validates it (hand-written guards; `LeverFormatError` names the first bad field).
+`SimLevers` (schema 2, `types.ts`) is a sibling of the editor's `Plan`, not new `PlanOp`s: levers are mostly static configuration, and rules and paint name lots by `ParcelId`, so the document survives row reordering. `parseSimLevers` validates it (hand-written guards; `LeverFormatError` names the first bad field). A schema-1 document fails on `schema`; the schema-1 fields (`stock`, `assumeAlternativePlanKept`, `user`) are unknown keys.
 
-| Field                       | Default (`DEFAULT_LEVERS`)        | Meaning                                                               |
-| --------------------------- | --------------------------------- | --------------------------------------------------------------------- |
-| `stock`                     | `['currentLaw']`                  | Stock layers blended per lot: `currentLaw`, `fzp`, `sb79`, `base`     |
-| `assumeAlternativePlanKept` | `false`                           | `true` keeps FZP + 207.11 throughout (no 2032 switch)                 |
-| `user`                      | `[]`                              | Ordered edits `{lots, mode: raise/lower/set, stories, densityLimits}` |
-| `protect`                   | none                              | `{rentControl, historic, newerThanYears, lots}`                       |
-| `timers`                    | `[]`                              | `{pathway, stage, scale, reach: all/new}`; scale in [0.05, 10]        |
-| `routeShares`               | `null` (observed `pathwayForNew`) | Pathway shares for new projects, normalised                           |
-| `localProgramStreamlined`   | `true`                            | Local Program lots forced onto streamlined                            |
-| `compare`                   | `'currentLaw'`                    | Twin: current law, or `'preFzp'` zoning                               |
+| Field                     | Default (`DEFAULT_LEVERS`)        | Meaning                                                                   |
+| ------------------------- | --------------------------------- | ------------------------------------------------------------------------- |
+| `rules`                   | `[]`                              | `{lots, stories}`: each lot takes `max(FZP, N)`, uncapped where it raises |
+| `paint`                   | `[]`                              | `{lots, stories}`: sets `N` uncapped, in document order (later wins)      |
+| `protect`                 | none                              | `{rentControl, historic, newerThanYears}`                                 |
+| `timers`                  | `[]`                              | `{pathway, stage, scale, reach: all/new}`; scale in [0.05, 10]            |
+| `routeShares`             | `null` (observed `pathwayForNew`) | Pathway shares for new projects, normalised                               |
+| `localProgramStreamlined` | `true`                            | Local Program lots forced onto streamlined                                |
+| `compare`                 | `'preFzp'`                        | Twin: `'preFzp'` zoning, or `'fzp'` (FZP as written)                      |
 
-`FZP_COMPAT_LEVERS` (`stock: ['fzp']`, `compare: 'preFzp'`) is the document under which `/sim` reproduces `/fzp`. Construction and completion are locked: no timer edits them.
+Stories are integers from 0 to 255 (one byte in the packed columns). `DEFAULT_LEVERS` is FZP as written compared with pre-FZP zoning: under it `/sim` reproduces `/fzp`. Construction and completion are locked: no timer edits them. There is no stock blend, no current law and no law switch: the plan always starts from FZP as written (`fzpYieldCap`) for the whole window.
+
+The page's `SimPolicy` (`src/lib/sim-page/policy.ts`, schema 2) compiles to these levers in `compileLevers`: its zoning rules become `rules` (a transit rule one edit per band), its custom paint becomes `paint` in stroke order (an erase removing earlier paint), its category protections `protect`, and `compare` is `'preFzp'` for the default policy and `'fzp'` for any other ([sim-page.md](sim-page.md), "The recipe and its compile rules").
 
 ## Resolution order
 
-`resolveEnvelopes` (`resolve.ts`) builds, per lot and per period: the stock blend, then user edits in document order (a later edit wins), then protections (a protected lot is not redevelopable: it is reset to its stock-blend row with `hostable` 0, and makes no `Need`). A user edit that needs a yield `policy.bin` does not hold becomes a `Need` (`row:stories:cap`); `fillNeeds` writes the recomputed rows in. Lots a document names that are not in the dataset are counted in `unknownLots`.
+`resolveEnvelopes(ctx, levers, asOf)` (`resolve.ts`) builds the plan table from a copy of the FZP table (`stockTable(ctx, 'fzp')`), then:
 
-- `raise` gives `max(s, N)`, `lower` gives `min(s, N)`, `set` gives `N`.
-- With `densityLimits: true` the cap is the period's current-law cap, so a capped edit follows the switch (see "Window"); with `false` there is no cap. (Raise-defaults-to-off is a UI default, plan 3.)
-- An edit whose final `(stories, cap)` matches one of the lot's stock rows (or its after-switch current-law row) reuses that row's yields and `hostable` instead of a `Need`. When the match is the SB 79 row (or the after-switch current-law row copied from it), the yields are SB 79's: `sb79Yield` zeroes fill levels below `MIN_UNITS` (`pipeline/lib/sb79.ts`) and `hostableSb79` is `sb79Status = 'applies'`, neither of which is `envelopeRow`'s rule. So such an edit's low fill levels are zeroed below `MIN_UNITS`, where the same envelope computed as a `Need` would not be. This is plan-mandated (a raise to a lot's SB 79 `(stories, cap)` gives no `Need`) and is correct where that row is current law.
+1. **Rules.** For each lot the rules name, `n` is the highest rule; if `n` is above the lot's FZP stories, the lot gets `n` stories and no cap (`NULL_CAP`). A rule at or below FZP leaves the FZP row, cap included. Rules are order-free: only the maximum matters, so nothing depends on their order (transit bands included).
+2. **Paint.** Each paint edit, in document order, sets its lots to `N` stories, uncapped, raising or lowering. A later stroke wins.
+3. **Protections.** A protected lot is not redevelopable: it is reset to its FZP row with `hostable` 0 and makes no `Need` (see "Protections and the capacity metric").
 
-## Stock blend and tie rule
+A touched row whose final `(stories, cap)` is its FZP row is left as it is; one at 0 stories hosts nothing. One that matches the lot's FZP or pre-FZP (`base`) row reuses that row's yields and `hostable`. Any other becomes a `Need` (`row:stories:cap`); `fillNeeds` writes the recomputed rows in. The SB 79 and current-law rows in `policy.bin` are not candidates: they follow other yield rules than `envelopeRow` (`sb79Yield` zeroes fill levels below `MIN_UNITS`, `hostableSb79` is `sb79Status = 'applies'`), so reusing them would give an uncapped edit yields a `Need` would not. `policy.bin`'s `currentStories` and `sb79*` columns stay in the data.
 
-Blending takes the most permissive layer per lot and is order-insensitive. The canonical order is `currentLaw, fzp, sb79, base`, and a tie keeps the earlier layer (plan 1's "a tie keeps FZP").
-
-## The law switch
-
-- **Date:** `CURRENT_LAW_SWITCH.day = 2032-01-31`, one year after the 7th-cycle Housing Element due date (2031-01-31).
-- **Provenance:** tier 4, "Assumption: SB 79 as written takes effect one year after the 7th-cycle Housing Element due date". The temporary SB 79 exemptions end on the same date, so they are not applied after it; the permanent exemption (`exemptPermanent`, Ord. 082-26 section 3) is.
-- **Rule:** from the switch day, current law per lot is the SB 79 row where `sb79Status = 'applies'`, `exemptPermanent = 0` and SB 79 is more permissive than FZP; otherwise the FZP row. 207.11 lapses with the Alternative Plan. No pipeline change and no dataset bump: `policy.bin` already carries SB 79 as written per lot.
-- **Window:** the "after" period is resolved whenever `asOf < switchDay <= horizon` and `assumeAlternativePlanKept` is false, whatever the stock layers, protections or edits. It is dropped (`after` is null, so the plan has no `lawSwitch`) when its table equals the "before" table row for row (stories, cap, yields and hostable), likewise for the unprotected view, and the Local Program column (`localProgramColumn`) is the same in both periods. So a run switches exactly when the switch changes an envelope or the Local Program column: `currentLaw` in the stock (including a stock such as `['currentLaw', 'sb79']` whose envelopes may not change but whose SB-79-wins Local Program lots stop being forced), or a user edit with `densityLimits: true` whose current-law cap changes at the switch. An FZP-only plan with no capped edits has no switch, whatever its protections. If `switchDay <= asOf`, the "before" period already uses after-switch law.
-- **Vesting:** a project keeps the regime of the month it initiated in, for both its hazard and its envelope (a filed application vests the standards in force, as SB 330's preliminary application does, Gov. Code section 65941.1). In-flight projects keep their current envelope.
-- **The regime is recorded on the Schedule** (plan 3, Task 2, option A). On a run with `lawSwitch`, the engine sets `Schedule.afterSwitch` on each simulated project from its own `T > T0` test (`engine.ts`, `simulatedPass`): true when the initiation month started on or after the switch, so the project ran on the after view (size row, yields, envelope, Local Program). It is absent on every other Schedule, including all of a run without a switch, so `/fzp`'s timelines and the goldens are unchanged. Readers use the flag, never the initiation day: the month grid is anchored at the day the parcel was at risk from (`asOf`, or a previous exit), so a function of the day alone disagrees with the engine near the switch. `projectCard` reads `localProgram` from `lawSwitch.parcels` when the flag is set.
-- **Protections alone never switch.** A protected row is its stock-blend row with `hostable` 0 in both periods, so it changes at the switch only when the blend does (`currentLaw` in the stock). With stock `['fzp']` and only protections, `after` is null. `Resolution.beforePeriod` names the law `before` was resolved under (`'after'` when `switchDay <= asOf`).
+`Resolution` is `{ plan, unprotected, protectedRows, unknownLots }`, each table a `ResolvedTable { table, needs }`; `unprotected === plan` when no row is protected. `unknownLots` counts distinct ids named in `rules` and `paint` that are not in the dataset, with one shared set, so an id named in both counts once.
 
 ## Protections and the capacity metric
 
-Protection works by category (`rentControl`, `historic`, `newerThanYears`) and by lot list. A protected lot is **not redevelopable** (partner ruling 2026-10-29): it is reset to its stock-blend row (stories, cap and yields, discarding any user edit) with `hostable` 0, so no new project initiates there and it makes no `Need`. In-flight projects on a protected lot carry on, on the stock-blend envelope; protection gates only new initiation, through `hostable` (partner Call 21). Since `netCapacity` counts only hostable rows, `withoutProtections - plan` is the protected rows' unprotected capacity and is never negative. `leverCapacity` reports static net capacity (sum over hostable lots of `max(0, full-fill yield - existing homes)`, the same measure as `policy.current.net_capacity`) for the plan with and without protections, before and after the switch. Reason: "how much capacity the protections removed" is a capacity, and a third simulated twin would double the band cost.
+Protection works by category only (`rentControl`, `historic`, `newerThanYears`); `protectedRows` reads the categories from the dataset. A protected lot is **not redevelopable** (partner ruling 2026-10-29): it is reset to its FZP row (stories, cap and yields, discarding any rule or paint) with `hostable` 0, so no new project initiates there and it makes no `Need`. In-flight projects on a protected lot carry on, on the FZP envelope; protection gates only new initiation, through `hostable` (partner Call 21). Since `netCapacity` counts only hostable rows, `withoutProtections - plan` is the protected rows' unprotected capacity and is never negative. `leverCapacity` reports `{ plan, withoutProtections, protectedLots }`: static net capacity (sum over hostable lots of `max(0, full-fill yield - existing homes)`, the same measure as `policy.current.net_capacity`) for the plan with and without protections. Reason: "how much capacity the protections removed" is a capacity, and a third simulated twin would double the band cost.
 
 ## Timer reach
 
@@ -67,25 +58,18 @@ The speedup is **statistical, not per-row**. The redraw loop is unchanged, so a 
 
 ## Route shares and Local Program forcing
 
-`routeSharesOp` replaces `pathwayForNew` with the normalised shares (provenance kept; `null` is identity). `localProgramColumn(ctx, levers, period)` (`view.ts`) gives the Local Program column per period (partner Call 22). A Local Program lot is forced onto streamlined when `localProgramStreamlined` is set and either:
-
-- `fzp` is on (in both periods: forcing still applies with the FZP map layer on); or
-- `currentLaw` is on (current law contains the FZP map), except after the switch where `sb79WinsAfter(ctx)` (`layers.ts`, the lots whose after-switch current law is the SB 79 row) is 1 and `assumeAlternativePlanKept` is false. Those lots follow the route shares after 2032-01-31.
-
-Otherwise the column is all zero, as in `baseZoning`. `planOf` (`apply.ts`) passes `Resolution.beforePeriod` for the plan view and `'after'` for the `lawSwitch` view; the current-law twin goes through `planOf`, so it follows the same rule.
+`routeSharesOp` replaces `pathwayForNew` with the normalised shares (provenance kept; `null` is identity). `localProgramColumn(ctx, levers)` (`view.ts`) gives the Local Program column (partner Call 22): the decoded `parcels.localProgram` when `localProgramStreamlined` is set, so Local Program lots are forced onto streamlined, otherwise all zero, as in `baseZoning`.
 
 ## Twins and the references rule
 
-`twinInput` builds the comparison run and never carries the plan's timers.
+`twinInput(base, ctx, compare)` builds the comparison run and never carries the plan's timers.
 
-- `'preFzp'`: `baseZoning` on the base calibration, no switch.
-- `'currentLaw'` (default): the plan of `{ ...DEFAULT_LEVERS, assumeAlternativePlanKept }` on the base calibration, with its own switch, resolved over the same window as the plan (`asOf = base.asOf`, the session horizon, `switchDay = CURRENT_LAW_SWITCH.day`).
+- `'preFzp'` (default): `baseZoning` on the base calibration.
+- `'fzp'`: the plan of `DEFAULT_LEVERS` (FZP as written: no rules, paint, protections or timers) on the base calibration. It has no `Need`s (`twinInput` throws if it had), and its envelopes and runs are the base FZP input's.
 
-Every lever field (`lawSwitch`, `newProjects`, `inFlightScale`) is set explicitly, because `applyPolicies` copies the whole input. Twins are memoised on (base, ctx, compare, `assumeAlternativePlanKept`, horizon).
+Every lever field (`newProjects`, `inFlightScale`) is set explicitly, because `applyPolicies` copies the whole input. Twins are memoised on (base, ctx, compare), so lever documents that differ elsewhere share one twin (and its precompute). `applyLevers(base, ctx, levers, filled)` takes no horizon: nothing in the engine depends on one.
 
-`applyLevers(base, ctx, levers, filled, horizon)` takes the horizon as a **fifth argument**, because the current-law twin's own switch needs `switchDay <= horizon`.
-
-**References.** The existing `REFERENCES` (`score.ts`) are FZP-versus-pre-FZP estimates on `planEffect.*`, so they are shown only under `compare: 'preFzp'`. Under `compare: 'currentLaw'` there are **no reference lines**: no existing entry measures `completedNet` against current law. RHNA targets come from `targetsOf`, unchanged.
+**References.** The existing `REFERENCES` (`score.ts`) are FZP-versus-pre-FZP estimates on `planEffect.*`, so they are all shown under `compare: 'preFzp'`. Under `compare: 'fzp'` only the `completedNet` ones are kept. RHNA targets come from `targetsOf`, unchanged.
 
 ## Protocol
 
@@ -145,7 +129,10 @@ once per lot (Call 19) and the revision still reaches `current`.
 
 Measured with `npx tsx scripts/bench-levers.ts <datasetDir>` on dataset `2026-10-29-0fd62c4d`
 (2026-10-30, Apple M5 Pro, 15 cores, 24 GB, Node v24.2.0). The script first runs every brush once
-as a JIT warm-up, then measures each brush with a fresh lot index and an empty gross cache.
+as a JIT warm-up, then measures each brush with a fresh lot index and an empty gross cache. Since
+the sim runs plan 1 (Task 1) each brush is compiled to one zoning **rule** (`max(FZP, N)`,
+uncapped where it raises); the table below was measured before that, on the schema-1 user edits
+(brush (b) was a capped `set`), and has not been re-measured.
 
 What it measures: for each brush, every needed chunk is loaded first, then the recompute runs as
 one unsliced `step(Infinity)`. So "Recompute ms" is the compute cost of the touched-lot yields
@@ -171,16 +158,15 @@ fallback is needed. By the estimate, `scenarioYield` is nearly all of the recomp
 
 Rulings 1 to 3 of the plan, each with its reason.
 
-- **Law switch (ruling 1):** no pipeline change and no dataset bump, because `policy.bin` carries everything the switch needs. A project keeps the regime of the month it initiated in, because a filed application vests the standards in force.
+- **Law switch (ruling 1):** retired by the sim runs plan 1: the engine is FZP-only, with no current law and no 2032 switch (Task 1 stopped producing one; Task 8 removed `SimInput.lawSwitch` and `Schedule.afterSwitch` from the engine).
 - **207.11 null cap and height (ruling 2):** a lot with no density cap has unlimited density, meets any minimum, and fails ordinance condition (b)(8), so it never qualifies (`s207Envelope` takes a non-null cap; `s207Row` throws on an `applies` row with a null cap). The under-40 ft test reads `lpFt` on a Local Program lot and `baseFt` elsewhere (input `fzpHeightFt`), because every project on a Local Program lot uses the Local Program. No shipped row changes (V33 stays OK).
 - **Sibling document, not `PlanOp`s (ruling 3):** see "The lever document".
-- **Blend order, edit semantics, protection (amended by the 2026-10-29 rulings), Local Program forcing, policy start, rescale, scale bounds, references, capacity metric, disapproval threshold (ruling 3):** each is stated with its reason in the sections above.
+- **Edit semantics (rules and paint, sim runs plan 1), protection (amended by the 2026-10-29 rulings), Local Program forcing, policy start, rescale, scale bounds, references, capacity metric, disapproval threshold (ruling 3):** each is stated with its reason in the sections above.
 
 ## Notes for plans 3 and 4
 
 - **Plan 3, reroll while resolving.** Done in plan 3, Task 1. `levers` messages keep the `setLevers` rev across a reroll-while-resolving. Do not treat a `levers` message below the reroll barrier as stale: the worker's `current` still names the `setLevers` rev, and the client clears `leversPending` when `current.rev >= leversRev`. The page's lever status (`src/lib/sim-page/lever-status.ts`, `leversMessage`) keeps any message at or above the rev it sent and never consults the timeline barrier.
 - **Plan 3, load failure.** Done in plan 3, Task 1. If the load fails after a `setLevers` sent before load, the error is posted at the `initScenario` rev, which is below `leversRev`. `ScenarioClient` now tracks the session's `initScenario` rev and clears `leversPending` on an error that ended the session; `leversError` likewise fails the page's lever status.
-- **Plan 3, project cards.** Done in plan 3, Task 2. Cards read `localProgram` from the view the engine ran the project on, through `Schedule.afterSwitch` (see "The law switch", option A), so a post-switch card no longer shows a stale Local Program flag.
 - **Plan 3, in-flight card chances under `'all'` timers.** Done in plan 3, Task 2. `ProjectCard` carries `lookups` (`'inFlight'` or `'fresh'`, the cohort's table) and `chanceShift`; for an in-flight project in a rescaled stage, `cardStatus` reads the chance at `inFlightMonths(m, s)` months, not `m` (see "In-flight remaining-time rule"). The map's bars read their cohort's lookups since plan 4 Call 15 (`Schedule.inFlight`, `slotCohort`, the 36-row chance texture; [fzp-mode.md](fzp-mode.md)), but are not shifted by `chanceShift`: an in-flight bar in a rescaled stage reads the in-flight table at `m` months.
 - **Plan 4, timeline UI.** Done in plan 4 (Tasks 3 to 5; see [sim-timers.md](sim-timers.md)). Stacked timer edits are clamped to [0.05, 10] (`scaleTable`). The UI must show a clamped stacked edit as clamped, not silently limit it.
 - **Performance.** Done in plan 3, Task 11: measured on real records, with the recompute bucketed by cell. See "Performance".

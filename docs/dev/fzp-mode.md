@@ -2,7 +2,7 @@
 
 Developer notes for `src/lib/fzp/`. The design is `docs/superpowers/specs/2026-10-16-fzp-mode-design.md`; this file records what the code does for people who change it or write tests against it. The page composition is `src/lib/fzp/FzpMode.svelte`.
 
-**Routing (plan 3).** `/fzp` is no longer a page: its load (`src/routes/fzp/+page.ts`) is a 307 redirect to `/sim` with every query parameter kept and `start=fzp` added, which opens the Family Zoning Plan comparison (`FZP_COMPAT_LEVERS`). The `/sim` route (`src/routes/sim/+page.ts`, `+page.svelte`) loads the manifest and calibration, owns the `?seed=` URL and renders `SimPage`, which wraps FzpMode with the policy panel. See [sim-page.md](sim-page.md). The header link is "Simulate" (`/sim`).
+**Routing (plan 3).** `/fzp` is no longer a page: its load (`src/routes/fzp/+page.ts`) is a 307 redirect to `/sim` with every query parameter kept except the retired `start`. `/sim` itself opens on the Family Zoning Plan comparison (`DEFAULT_LEVERS`: FZP as written against pre-FZP zoning). The `/sim` route (`src/routes/sim/+page.ts`, `+page.svelte`) loads the manifest and calibration, owns the `?seed=` URL and renders `SimPage`, which wraps FzpMode with the policy panel. See [sim-page.md](sim-page.md). The header link is "Simulate" (`/sim`).
 
 ## The scrubber contract
 
@@ -17,9 +17,15 @@ Developer notes for `src/lib/fzp/`. The design is `docs/superpowers/specs/2026-1
 
 Keys with Alt, Ctrl or Meta are left to the browser. Every handled key, a drag on the track and a marker button **pause** playback and move the day (`jump`). The Play button toggles; at `horizon` it reads "Replay" and a press restarts from `asOf`.
 
+**Fixed width.** The button (`fzp-play`) and the readout (`fzp-readout`) stack every label (Run, Play, Pause, Replay; the 12 month names of the current year, `monthYearLabels`) in one grid cell, the extras `invisible` and `aria-hidden`, so the bar never shifts. The visible text has its own testid (`fzp-play-label`, `fzp-readout-label`); assert on those, because the readout's own text contains every month. There is no "Simulation" pill.
+
+**Setup mode.** With `setup` the button reads "Run" and calls `onrun` instead of toggling; the range and marker buttons are `disabled` and keys do nothing.
+
+**Run phase (`FzpMode`'s `runPhase`, `/sim` only).** `/sim` passes `runPhase` (`'setup' | 'run'`, `src/lib/sim-page/run-phase.svelte.ts`) and `onrun`; without `runPhase` (a bare FzpMode) nothing changes. While `'setup'`, FzpMode passes `setup` to the scrubber, stops playback and pins the day at `asOf`: any move away (a calibration reload included) is put back through `onDay`, the path a scrubber jump takes. TimeScrubber does not pin the day itself. The Run press sets FzpMode's `playWhenCurrent` flag and calls `onrun`; once the page has moved `runPhase` to `'run'`, playback starts as soon as the score is not busy (a timeline at or after the latest levers' rev) and the page has no levers pending (`leversPending`, `/sim`'s `LeverSync.pending`), so Run never plays a timeline computed before the latest policy. While the flag is set the scrubber stays in `setup` (the button reads Run, `aria-busy`), so no press can play an older timeline; `leversPending` also marks the score bar busy. Playback starting and a return to `'setup'` clear the flag.
+
 - **Speeds** (`playback.ts`, a tier 4 UI choice): "1 month/s", "1 year/s" (default), "3 years/s", as days of simulated time per second of wall time (`MONTH_DAYS`, `12 x MONTH_DAYS`, `36 x MONTH_DAYS`).
 - **Frame step:** only while `playing`, through `requestAnimationFrame`: `t += min(dt, 100 ms) x daysPerSecond`, `day = min(floor(t), horizon)`. The 100 ms clamp stops a background tab from making the clock jump. If something else moves the day mid-play, the clock continues from there.
-- **No autoplay:** playback never starts on its own; the page opens paused at `asOf` and waits on Play.
+- **No autoplay:** playback never starts on its own; the page opens paused at `asOf` and waits on Play (on `/sim`, on Run in Setup).
 - **`onday`:** called exactly once per day change (`setDay` compares with the current day first). FzpMode's `onDay` does O(1) work: `handle.setTime(day)`, and a card refresh only when the month changed.
 - **Opening the sources dialog pauses** (`onopen` sets `playing = false`). Opening a card does not.
 - The readout is not a live region (it changes every frame). The header score bar's live region (`ScoreBar`, `data-testid="score-live"`) speaks only when playback is paused, 1000 ms after the day settles.
@@ -54,6 +60,7 @@ The ready-phase notices (the stopped chip with Retry, "Making another future…"
 | `asOf`, `horizon` | the scrubber's range                                                                                                                                               |
 | `playing`         | whether the frame loop is running                                                                                                                                  |
 | `score`           | the latest `TimelineScore`, or `null`; `score.band` and `planEffect` may be incomplete until the band runs finish (the score details mark those lines `aria-busy`) |
+| `runPhase`        | `/sim`'s phase, `'setup'` or `'run'`; `null` without `runPhase`                                                                                                    |
 | `levers`          | `/sim`'s lever status: `{ status, done, total, sentRev }`, see [sim-page.md](sim-page.md)                                                                          |
 
 `window.__sfhMap` (`src/lib/map/debug.ts`) gives the MapLibre map. Test helpers: `e2e/helpers/sharing.ts` (`jumpAndIdle`, `projectToPage`, `FRAME`, `headerAction`, `openHeaderMenu`) and `e2e/helpers/a11y.ts`. The specs are `e2e/fzp.spec.ts`, `e2e/fzp-sim.spec.ts` and, for `/sim`'s own controls, `e2e/sim.spec.ts`.
@@ -85,7 +92,7 @@ Map picking is pointer-only (mouse click, touch tap, hover), a gap shared with t
 ## e2e notes
 
 - Run on port 4206 with one worker: `SFH_E2E_PORT=4206 SFH_E2E_WORKERS=1 npx playwright test e2e/sim.spec.ts e2e/fzp.spec.ts e2e/fzp-sim.spec.ts`.
-- `e2e/fzp.spec.ts` opens the timelapse at `/sim?start=fzp` (`gotoFzp`; a reroll's URL is `/sim?start=fzp&seed=N`). `e2e/sim.spec.ts` covers the `/fzp` redirect itself (`/fzp?seed=5` lands on `/sim?seed=5&start=fzp`).
+- `e2e/fzp.spec.ts` opens the timelapse at `/sim` (`gotoFzp`; a reroll's URL is `/sim?seed=N`). `e2e/sim.spec.ts` covers the `/fzp` redirect itself (`/fzp?seed=5` lands on `/sim?seed=5`).
 - The fixture dataset (`fixture-0`) has two parcel chunks (cell 50_25, 15 parcels; cell 51_25, 3 parcels, lots 15 to 17) and five scenario files. `/sim` reads four at load (`parcels.bin`, `projects.json`, `calibration.json`, `policy.bin`) and `frontage.bin` for the brush catalog, which the policy panel asks for when it first opens (by default from 768 px). Tests read `projects.json`, `calibration.json`, `frontage.bin`, `parcels.bin` and the chunk from disk and derive counts, ids and labels; do not hard-code them.
 - fixture-0's two parcel chunks are neighbouring cells about 700 m apart, so they cannot show over-fetching by themselves. `e2e/fzp-sim.spec.ts` adds a third, far-away chunk to the manifest the page loads (route on `manifest.json`, reached by client navigation as below), asserts it is not requested while the viewport is elsewhere, then pans to it and asserts it is.
 - The score details are one region ("Score details") under the header; open them with the score bar (`data-testid="score-bar"`). Below 768 px the header's links and actions ("Policy", "Another future") wait in the Menu: use `headerAction` / `openHeaderMenu` (`e2e/helpers/sharing.ts`). The phone policy sheet is a modal `<dialog>`, so close it before pressing anything outside it.

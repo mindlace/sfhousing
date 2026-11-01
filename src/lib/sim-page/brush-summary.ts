@@ -1,29 +1,28 @@
 /**
- * Brushes in words: the card summary ("Raise to 8 stories · Arterials · 1,204 lots · density
- * limits off"), the undo label of a change ("Raised arterials to 8 stories"), and the rule brush
- * kinds "Add a brush" offers, with why one is unavailable. Pure TS.
+ * Rules and custom brushes in words: the card summary ("Up to 8 stories · Arterials · 1,204
+ * lots"; "Allow 8 stories · 3 strokes · 52 lots"), the undo label of a change ("Allowed up to 8
+ * stories on arterials"), and the rule kinds "Add a rule" offers, with why one is unavailable.
+ * Pure TS.
  */
 import type { BrushCatalog, StopType, StreetClass } from '$lib/sim/levers/brushes';
 import type { BrushLotsResult } from '$lib/sim/scenario/types';
 import {
-  brushQueries,
-  protectQueryKeys,
-  protectedLots,
+  bandsInnermostFirst,
+  customQuery,
   queryKey,
-  type BrushMode,
-  type SimPolicy,
-  type ZoningBrush
+  ruleQueries,
+  type CustomBrush,
+  type ZoningRule
 } from './policy';
-import { strokeLabel } from './stroke-adapter';
+import { ERASE_LABEL, strokeLabel } from './stroke-adapter';
 
-/** "Add a brush" kinds: a commercial corridor is a preset Street brush. */
-export type RuleKind = 'transit' | 'street' | 'corridor' | 'area';
+/** "Add a rule" kinds: a commercial corridor is a preset Street rule. */
+export type RuleKind = 'transit' | 'street' | 'corridor';
 
 export const RULE_KINDS: { id: RuleKind; label: string }[] = [
   { id: 'transit', label: 'Transit' },
   { id: 'street', label: 'Street' },
-  { id: 'corridor', label: 'Commercial corridor' },
-  { id: 'area', label: 'Area' }
+  { id: 'corridor', label: 'Commercial corridor' }
 ];
 
 export const STOP_LABELS: Record<StopType, string> = {
@@ -54,11 +53,10 @@ const classLabel = (c: StreetClass) => CLASS_LABEL[c] ?? `${c[0].toUpperCase()}$
 
 export const CORRIDOR_TEXT = 'Arterial frontage zoned neighborhood commercial (NC or NCT)';
 
-/** The form a saved rule brush opens in; null for freehand and erase. */
-export function ruleKindOf(b: ZoningBrush): RuleKind | null {
-  if (b.kind === 'street') return b.ncOnly ? 'corridor' : 'street';
-  if (b.kind === 'transit' || b.kind === 'area') return b.kind;
-  return null;
+/** The form a saved rule opens in. */
+export function ruleKindOf(r: ZoningRule): RuleKind {
+  if (r.kind === 'street') return r.ncOnly ? 'corridor' : 'street';
+  return r.kind;
 }
 
 /**
@@ -89,122 +87,87 @@ function list(items: string[], max = 3): string {
   return `${shown.slice(0, -1).join(', ')} and ${shown.at(-1)}`;
 }
 
-const VERB: Record<BrushMode, string> = { raise: 'Raise', lower: 'Lower', set: 'Set' };
-const PAST: Record<BrushMode, string> = { raise: 'Raised', lower: 'Lowered', set: 'Set' };
+const storiesText = (n: number) => count(n, 'story', 'stories');
+
 /**
- * What a street brush covers ("Arterials and Market St"; "Commercial corridors"); `lower`
+ * What a street rule covers ("Arterials and Market St"; "Commercial corridors"); `lower`
  * lower-cases the class words for mid-sentence use, never a street name.
  */
-function streetTarget(b: Extract<ZoningBrush, { kind: 'street' }>, lower = false): string {
+function streetTarget(r: Extract<ZoningRule, { kind: 'street' }>, lower = false): string {
   const cls = (c: string) => (lower ? c.toLowerCase() : c);
-  if (b.ncOnly) return cls('Commercial corridors');
-  const t = list([...b.classes.map((c) => cls(classLabel(c))), ...b.names]);
-  return b.depth === 1 ? `${t}, one lot deep` : t;
+  if (r.ncOnly) return cls('Commercial corridors');
+  const t = list([...r.classes.map((c) => cls(classLabel(c))), ...r.names]);
+  return r.depth === 1 ? `${t}, one lot deep` : t;
 }
-const areaTarget = (b: Extract<ZoningBrush, { kind: 'area' }>) =>
-  list([...b.districts, ...b.neighborhoods]);
 const stopsTarget = (types: StopType[]) => list(types.map((t) => STOP_SHORT[t]));
 
-/** The brush in words, without its lot count. */
-function describe(b: ZoningBrush): string[] {
-  switch (b.kind) {
-    case 'freehand':
-      return [
-        `${VERB[b.effect.mode]} to ${count(b.effect.stories, 'story', 'stories')}`,
-        count(b.strokes.length, 'stroke', 'strokes')
-      ];
-    case 'erase':
-      return ['Erase', count(b.strokes.length, 'stroke', 'strokes')];
-    case 'transit': {
-      const bands = [...b.bands]
-        .sort((x, y) => x.maxM - y.maxM)
-        .map((x) => `${count(x.stories, 'story', 'stories')} within ${nf.format(x.maxM)} m`);
-      return [`${VERB[b.mode]} to ${bands.join(', ')}`, `Near ${stopsTarget(b.stopTypes)}`];
-    }
-    case 'street':
-      return [
-        `${VERB[b.effect.mode]} to ${count(b.effect.stories, 'story', 'stories')}`,
-        streetTarget(b)
-      ];
-    case 'area':
-      return [
-        `${VERB[b.effect.mode]} to ${count(b.effect.stories, 'story', 'stories')}`,
-        areaTarget(b)
-      ];
-  }
+/** The rule's effect: "Up to 8 stories"; transit "Up to 6 stories within 402 m, 4 stories …". */
+function ruleEffect(r: ZoningRule): string {
+  if (r.kind === 'street') return `Up to ${storiesText(r.stories)}`;
+  const bands = bandsInnermostFirst(r.bands).map(
+    (b) => `${storiesText(b.stories)} within ${nf.format(b.maxM)} m`
+  );
+  return `Up to ${bands.join(', ')}`;
 }
 
-const densityOf = (b: ZoningBrush): boolean | null =>
-  b.kind === 'erase' ? null : b.kind === 'transit' ? b.densityLimits : b.effect.densityLimits;
-
-/** The card's line around its lot count: `head · {lots}` then ` · tail` when there is one. */
-export function summaryParts(b: ZoningBrush): { head: string; tail: string | null } {
-  const d = densityOf(b);
-  return {
-    head: describe(b).join(' · '),
-    tail: d === null ? null : `density limits ${d ? 'on' : 'off'}`
-  };
+/** The rule in words, without its lot count: effect · target. */
+export function ruleHead(r: ZoningRule): string {
+  const target = r.kind === 'street' ? streetTarget(r) : `Near ${stopsTarget(r.stopTypes)}`;
+  return `${ruleEffect(r)} · ${target}`;
 }
 
-/** The card's one line: effect · target · lots · density limits. */
-export function brushSummary(b: ZoningBrush, lotsText: string): string {
-  const { head, tail } = summaryParts(b);
-  return [head, lotsText, ...(tail === null ? [] : [tail])].join(' · ');
+/** The custom brush in words, without its lot count: "Allow 8 stories · 3 strokes". */
+export function customHead(b: CustomBrush): string {
+  const what = b.kind === 'paint' ? `Allow ${storiesText(b.stories)}` : 'Erase';
+  return `${what} · ${count(b.strokes.length, 'stroke', 'strokes')}`;
 }
 
-/** The undo label of adding this brush ("Raised arterials to 8 stories"). */
-export function changeLabel(b: ZoningBrush): string {
-  switch (b.kind) {
-    case 'freehand':
-      return strokeLabel(b.effect);
-    case 'erase':
-      return 'Erased brushed zoning';
-    case 'transit':
-      return `${PAST[b.mode]} lots near ${stopsTarget(b.stopTypes)}`;
-    case 'street':
-    case 'area': {
-      const target = b.kind === 'street' ? streetTarget(b, true) : areaTarget(b);
-      return `${PAST[b.effect.mode]} ${target} to ${count(b.effect.stories, 'story', 'stories')}`;
-    }
-  }
+/** The rule card's one line: effect · target · lots. */
+export function ruleSummary(r: ZoningRule, lotsText: string): string {
+  return `${ruleHead(r)} · ${lotsText}`;
+}
+
+/** The custom card's one line: "Allow 8 stories · 3 strokes · 52 lots". */
+export function customSummary(b: CustomBrush, lotsText: string): string {
+  return `${customHead(b)} · ${lotsText}`;
+}
+
+/** The undo label of adding this rule ("Allowed up to 8 stories on arterials"). */
+export function ruleChangeLabel(r: ZoningRule): string {
+  if (r.kind === 'street')
+    return `Allowed up to ${storiesText(r.stories)} on ${streetTarget(r, true)}`;
+  const top = Math.max(...r.bands.map((b) => b.stories));
+  return `Allowed up to ${storiesText(top)} near ${stopsTarget(r.stopTypes)}`;
+}
+
+/** The undo label of a custom brush ("Allowed 8 stories"; "Erased custom zoning"). */
+export function customChangeLabel(b: CustomBrush): string {
+  return b.kind === 'paint' ? strokeLabel(b.stories) : ERASE_LABEL;
 }
 
 export type LotStatus =
   { kind: 'found'; lots: number } | { kind: 'finding' } | { kind: 'failed'; keys: string[] };
 
 /**
- * A brush's lots: found (the union over its queries), finding (unanswered, or parked by a
+ * A rule's lots: found (the union over its queries), finding (unanswered, or parked by a
  * `no-session` answer until the next session), or failed with the keys to retry.
  */
-export function lotStatus(
-  b: ZoningBrush,
+export function ruleLotStatus(
+  r: ZoningRule,
   result: (key: string) => BrushLotsResult | undefined
 ): LotStatus {
-  return statusOf(brushQueries(b).map(queryKey), result, (lots) => new Set(lots.flat()).size);
+  return statusOf(ruleQueries(r).map(queryKey), result);
 }
 
-/**
- * The brushed protections' lots: the size of the compiled `protect.lots` (protect runs minus
- * unprotect runs) once every run is found; finding or failed as `lotStatus`.
- */
-export function protectLotStatus(
-  p: SimPolicy,
+/** A custom brush's lots (its strokes' query), as `ruleLotStatus`. */
+export function customLotStatus(
+  b: CustomBrush,
   result: (key: string) => BrushLotsResult | undefined
 ): LotStatus {
-  return statusOf(protectQueryKeys(p), result, () => {
-    const lots = protectedLots(p, (k) => {
-      const r = result(k);
-      return r?.ok ? r.lots : undefined;
-    });
-    return lots?.length ?? 0;
-  });
+  return statusOf([queryKey(customQuery(b))], result);
 }
 
-function statusOf(
-  keys: string[],
-  result: (key: string) => BrushLotsResult | undefined,
-  count: (lots: readonly (readonly string[])[]) => number
-): LotStatus {
+function statusOf(keys: string[], result: (key: string) => BrushLotsResult | undefined): LotStatus {
   const results = keys.map((k) => result(k));
   const failed = keys.filter((_, i) => {
     const r = results[i];
@@ -212,7 +175,7 @@ function statusOf(
   });
   if (failed.length > 0) return { kind: 'failed', keys: failed };
   if (results.every((r): r is Extract<BrushLotsResult, { ok: true }> => r?.ok === true)) {
-    return { kind: 'found', lots: count(results.map((r) => r.lots)) };
+    return { kind: 'found', lots: new Set(results.flatMap((r) => r.lots)).size };
   }
   return { kind: 'finding' };
 }

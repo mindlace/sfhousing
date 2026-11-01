@@ -4,7 +4,6 @@
  * Pure TS (the server validates published documents with it): no Svelte, no DOM.
  */
 import { DATASET_VERSION_RE } from '$lib/data/dataset-version';
-import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import {
   FUTURE_SCHEMA_MESSAGE,
   MAX_PLAN_BYTES,
@@ -22,36 +21,28 @@ import {
 import type { DocCodec } from '$lib/sharing/doc-codec';
 import { normalizeTitle } from '$lib/sharing/title';
 import {
+  DEFAULT_POLICY,
   PolicyFormatError,
   canonicalJson,
+  isDefaultPolicy,
   parseSimPolicy,
-  policyFromLevers,
+  withoutSnapshot,
   type SimPolicy,
   type Stroke
 } from './policy';
 
-export const SIM_DOC_SCHEMA = 1;
+export { DEFAULT_POLICY, isDefaultPolicy };
+
+export const SIM_DOC_SCHEMA = 2;
 /** The autosave key for the /sim policy. */
 export const SIM_KEY = 'sfhousing:sim:v1';
 
 export interface SimDoc {
-  schema: 1;
+  schema: 2;
   kind: 'sim';
   datasetVersion: string;
   title?: string;
   policy: SimPolicy;
-}
-
-export const DEFAULT_POLICY: SimPolicy = policyFromLevers(DEFAULT_LEVERS);
-
-const withoutSnapshot = (p: SimPolicy): SimPolicy => ({
-  ...p,
-  timing: { ...p.timing, saved: null }
-});
-
-/** The policy equals the default one, ignoring the saved timing snapshot. */
-export function isDefaultPolicy(p: SimPolicy): boolean {
-  return canonicalJson(withoutSnapshot(p)) === canonicalJson(DEFAULT_POLICY);
 }
 
 // ---- limits ----
@@ -59,14 +50,9 @@ export function isDefaultPolicy(p: SimPolicy): boolean {
 const MAX_PROBLEMS = 20;
 const encoder = new TextEncoder();
 
+/** The custom brushes' strokes: the only strokes a policy has, so the only ones the limits count. */
 function strokeLists(p: SimPolicy): { at: string; strokes: readonly Stroke[] }[] {
-  const lists: { at: string; strokes: readonly Stroke[] }[] = [];
-  p.brushes.forEach((b, i) => {
-    if (b.kind === 'freehand' || b.kind === 'erase')
-      lists.push({ at: `/policy/brushes/${i}/strokes`, strokes: b.strokes });
-  });
-  lists.push({ at: '/policy/protect/strokes', strokes: p.protect.strokes });
-  return lists;
+  return p.custom.map((b, i) => ({ at: `/policy/custom/${i}/strokes`, strokes: b.strokes }));
 }
 
 /** The size and range limits (Call 4) a parsed document must meet; the byte size comes last. */
@@ -118,7 +104,7 @@ const fail = (path: string, code: PlanErrorCode, message: string): Result<never>
   errors: [{ path, code, message }]
 });
 
-/** `timing.saved.set.preset` and `brushes[0].id` as `/timing/saved/set/preset`, `/brushes/0/id`. */
+/** `timing.saved.set.preset` and `rules[0].id` as `/timing/saved/set/preset`, `/rules/0/id`. */
 function pointer(policyPath: string): string {
   const segs = policyPath
     .replace(/\[(\d+)\]/g, '.$1')
@@ -129,7 +115,7 @@ function pointer(policyPath: string): string {
 
 /**
  * Parse a stored (`'reconcile'`, lenient: the preset layer is re-derived later) or published
- * (`'strict'`) document. A schema above 1 is `future-schema` in both modes.
+ * (`'strict'`) document. A schema above 2 is `future-schema` in both modes.
  */
 export function parseSimDoc(text: string, mode: 'strict' | 'reconcile'): Result<SimDoc> {
   let json: unknown;
@@ -168,13 +154,13 @@ export function parseSimDoc(text: string, mode: 'strict' | 'reconcile'): Result<
       return fail(`/policy${pointer(e.path)}`, 'bad-field', e.message);
     throw e;
   }
-  const d: SimDoc = { schema: 1, kind: 'sim', datasetVersion: r.datasetVersion, policy };
+  const d: SimDoc = { schema: 2, kind: 'sim', datasetVersion: r.datasetVersion, policy };
   if (title !== undefined) d.title = title;
   const problems = simDocProblems(d);
   return problems.length > 0 ? { ok: false, errors: problems } : { ok: true, value: d };
 }
 
-const quantizeStroke = <S extends Stroke>(s: S): S => ({
+const quantizeStroke = (s: Stroke): Stroke => ({
   ...s,
   path: s.path.map(([lng, lat]) => [quantize(lng), quantize(lat)] as [number, number])
 });
@@ -184,12 +170,7 @@ export function serializeSimDoc(d: SimDoc): string {
   const p = d.policy;
   const policy: SimPolicy = {
     ...p,
-    brushes: p.brushes.map((b) =>
-      b.kind === 'freehand' || b.kind === 'erase'
-        ? { ...b, strokes: b.strokes.map(quantizeStroke) }
-        : b
-    ),
-    protect: { ...p.protect, strokes: p.protect.strokes.map(quantizeStroke) }
+    custom: p.custom.map((b) => ({ ...b, strokes: b.strokes.map(quantizeStroke) }))
   };
   return canonicalJson({ ...d, policy });
 }
@@ -207,9 +188,9 @@ export const SIM_CODEC: DocCodec<SimDoc> = {
   schema: (d) => d.schema,
   datasetVersion: (d) => d.datasetVersion,
   rebase: (d, version) => ({ ...d, datasetVersion: version }),
-  empty: (version) => ({ schema: 1, kind: 'sim', datasetVersion: version, policy: DEFAULT_POLICY }),
+  empty: (version) => ({ schema: 2, kind: 'sim', datasetVersion: version, policy: DEFAULT_POLICY }),
   isEmpty: (d) => isDefaultPolicy(d.policy),
-  opCount: (d) => d.policy.brushes.length + d.policy.protect.strokes.length,
+  opCount: (d) => d.policy.rules.length + d.policy.custom.length,
   title: (d) => d.title,
   withTitle: (d, t) => {
     const { title: _old, ...rest } = d;

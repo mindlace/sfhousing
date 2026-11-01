@@ -14,8 +14,8 @@
     data: SimPageData & { datasetVersion: string };
     /** 'view': a published policy, read-only. */
     mode: 'edit' | 'view';
-    /** SimPage's persistence (edit: 'restore' or 'deferred'; view: 'off'). */
-    persist: 'restore' | 'deferred' | 'off';
+    /** SimPage's persistence (edit: 'restore'; view: 'off'). */
+    persist: 'restore' | 'off';
     /** View: the shared document's policy. */
     initialPolicy?: SimPolicy;
     /** Edit: the Remix hand-off from /s/<id>. */
@@ -76,7 +76,6 @@
         calibrationError={data.calibrationError}
         noScenario={data.noScenario}
         datasetVersion={data.datasetVersion}
-        start={data.start}
         {mode}
         {persist}
         {initialPolicy}

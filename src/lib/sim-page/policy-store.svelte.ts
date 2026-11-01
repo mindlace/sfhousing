@@ -21,6 +21,8 @@ export class PolicyStore {
   #future = $state.raw<Entry[]>([]);
   /** The coalesce key of the latest history entry; cleared by undo and redo. */
   #coalesceKey: string | undefined = undefined;
+  /** During a run (spec §1): `apply`, `undo` and `redo` change nothing. `reset` still loads. */
+  locked = $state(false);
 
   constructor(initial: SimPolicy) {
     this.#policy = $state.raw(initial);
@@ -55,6 +57,7 @@ export class PolicyStore {
    * into that entry: one undo reverses both, and the entry takes the newer label.
    */
   apply(change: (p: SimPolicy) => SimPolicy, label: string, coalesce?: string): void {
+    if (this.locked) return;
     const next = change(this.#policy);
     if (next === this.#policy) return;
     if (coalesce !== undefined && coalesce === this.#coalesceKey && this.#past.length > 0) {
@@ -81,6 +84,7 @@ export class PolicyStore {
 
   /** Restores the policy before the latest change; returns its label, or null if none. */
   undo(): string | null {
+    if (this.locked) return null;
     const last = this.#past.at(-1);
     if (!last) return null;
     this.#coalesceKey = undefined;
@@ -92,6 +96,7 @@ export class PolicyStore {
 
   /** Reapplies the latest undone change; returns its label, or null if none. */
   redo(): string | null {
+    if (this.locked) return null;
     const next = this.#future.at(-1);
     if (!next) return null;
     this.#coalesceKey = undefined;
@@ -132,6 +137,8 @@ export class LeverSync {
   #queries = new Map<string, BrushQuery>(); // eslint-disable-line svelte/prefer-svelte-reactivity
   #token = 0;
   #resolving = $state(0);
+  /** The debounce timer is armed: a recipe is about to be sent. */
+  #armed = $state(false);
   #levers = $state.raw<SimLevers | null>(null);
 
   constructor(deps: LeverSyncDeps) {
@@ -147,6 +154,14 @@ export class LeverSync {
   /** Queries in flight. */
   get resolving(): number {
     return this.#resolving;
+  }
+
+  /**
+   * A newer recipe has not gone out yet: the debounce is armed or a lot query is in flight. A
+   * failed query leaves it false (the levers before it stand, as the failed revision's score).
+   */
+  get pending(): boolean {
+    return this.#armed || this.#resolving > 0;
   }
 
   result(key: string): BrushLotsResult | undefined {
@@ -227,12 +242,15 @@ export class LeverSync {
     const { setTimeout: later, clearTimeout: cancel } = this.#deps;
     if (this.#timer !== null) cancel(this.#timer);
     this.#timer = null;
+    this.#armed = false;
     const p = this.#policy;
     if (!p) return;
     const ready = queriesOf(p).every(({ key }) => this.#results.get(key)?.ok === true);
     if (!ready) return;
+    this.#armed = true;
     this.#timer = later(() => {
       this.#timer = null;
+      this.#armed = false;
       this.#send();
     }, this.#debounceMs);
   }

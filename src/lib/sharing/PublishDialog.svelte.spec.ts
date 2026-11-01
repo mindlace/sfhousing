@@ -9,7 +9,7 @@ import { COPY, cannotRead, sizeLine, tooLarge } from './copy';
 import { sha256Hex } from './hash';
 import SiteHeader from '$lib/shell/SiteHeader.svelte';
 import { PLAN_CODEC } from './doc-codec';
-import { DEFAULT_POLICY, SIM_CODEC, type SimDoc } from '$lib/sim-page/sim-doc';
+import { DEFAULT_POLICY, SIM_CODEC, isDefaultPolicy, type SimDoc } from '$lib/sim-page/sim-doc';
 import { OBSERVED_TIMING } from '$lib/sim-page/timing';
 import PublishButton from './PublishButton.svelte';
 import SaveIndicator from './SaveIndicator.svelte';
@@ -164,15 +164,35 @@ describe('PublishButton + PublishDialog', () => {
     await expect.element(dialog()).not.toBeInTheDocument();
   });
 
+  it('the unchanged default sim policy: Publish is disabled, even with a saved timing set', async () => {
+    const saved = { label: 'Mine', set: OBSERVED_TIMING.current };
+    const doc: SimDoc = {
+      schema: 2,
+      kind: 'sim',
+      datasetVersion: 'fixture-0',
+      policy: { ...DEFAULT_POLICY, timing: { ...DEFAULT_POLICY.timing, saved } }
+    };
+    expect(isDefaultPolicy(doc.policy)).toBe(true);
+    await render(PublishButton<SimDoc>, {
+      codec: SIM_CODEC,
+      doc,
+      onpublished: vi.fn(),
+      fetchFn: vi.fn() as unknown as typeof fetch,
+      origin: ORIGIN
+    });
+    await expect.element(headerButton()).toBeDisabled();
+    await expect.element(headerButton()).toHaveAccessibleDescription('Change the policy first.');
+  });
+
   it('a sim policy posts the publishable form (snapshot stripped) to /api/policies', async () => {
     const saved = { label: "Permits at San Diego's pace", set: OBSERVED_TIMING.current };
     const doc: SimDoc = {
-      schema: 1,
+      schema: 2,
       kind: 'sim',
       datasetVersion: 'fixture-0',
       policy: {
         ...DEFAULT_POLICY,
-        compare: 'preFzp',
+        protect: { ...DEFAULT_POLICY.protect, historic: true }, // not the default: publishable
         timing: { ...DEFAULT_POLICY.timing, saved }
       }
     };

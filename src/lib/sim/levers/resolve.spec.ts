@@ -4,13 +4,7 @@ import type { EnvelopeRow } from '$lib/data/envelope-row';
 import { miniCity } from '../scenario/fixtures/mini-parcels';
 import { MINI_HISTORIC_ID, MINI_SB79_ID, miniPolicy } from '../scenario/fixtures/mini-policy';
 import { dayOf } from '../scenario/dates';
-import {
-  currentLawAfterTable,
-  currentLawTable,
-  stockTable,
-  type EnvelopeTable,
-  type LayerCtx
-} from './layers';
+import { stockTable, type EnvelopeTable, type LayerCtx } from './layers';
 import {
   allNeeds,
   fillNeeds,
@@ -20,25 +14,21 @@ import {
   protectedRows,
   resolveEnvelopes
 } from './resolve';
-import { DEFAULT_LEVERS, FZP_COMPAT_LEVERS, type SimLevers, type UserEdit } from './types';
+import { DEFAULT_LEVERS, type SimLevers, type StoryEdit } from './types';
 
 const F = 5;
 const FZP_LOT = '2999A001'; // 4 stories, uncapped, 1 home
 const ASOF = dayOf(2025, 6, 1);
-const SWITCH = dayOf(2032, 1, 31);
-const HORIZON = dayOf(2035, 1, 1);
-const WINDOW = { asOf: ASOF, horizon: HORIZON, switchDay: SWITCH };
 
 function ctx(): LayerCtx {
   const city = miniCity();
   return { parcels: city.parcels, policy: miniPolicy(city) };
 }
-function levers(patch: Partial<SimLevers> = {}): SimLevers {
-  return { ...structuredClone(FZP_COMPAT_LEVERS), compare: 'currentLaw', ...patch };
-}
-const edit = (lots: string[], mode: UserEdit['mode'], stories: number, densityLimits = false) =>
-  ({ lots, mode, stories, densityLimits }) satisfies UserEdit;
-const protectLots = (lots: string[]) => ({ ...DEFAULT_LEVERS.protect, lots });
+const L = (patch: Partial<SimLevers> = {}): SimLevers => ({
+  ...structuredClone(DEFAULT_LEVERS),
+  ...patch
+});
+const e = (lots: string[], stories: number): StoryEdit => ({ lots, stories });
 function row(t: EnvelopeTable, i: number) {
   return {
     stories: t.stories[i],
@@ -48,67 +38,133 @@ function row(t: EnvelopeTable, i: number) {
   };
 }
 const at = (c: LayerCtx, id: string) => c.parcels.index.get(id)!;
+/** Protections that cover exactly `ids` in `c`: the historic category, flagged on those lots only. */
+function protecting(c: LayerCtx, ids: string[]) {
+  c.policy.historicProtected.fill(0);
+  for (const id of ids) c.policy.historicProtected[at(c, id)] = 1;
+  return { ...DEFAULT_LEVERS.protect, historic: true };
+}
 
-describe('user edits', () => {
-  it('raise, lower and set on a 4-story lot', () => {
+/** The first mini-city row with an FZP yield cap that hosts. */
+const CAPPED = (() => {
+  const c = ctx();
+  for (let i = 0; i < c.parcels.count; i++)
+    if (c.policy.fzpYieldCap[i] !== NULL_CAP && c.parcels.hostable[i] === 1) return i;
+  throw new Error('the mini city has no capped hostable row');
+})();
+
+describe('rules and paint', () => {
+  it('with no edits the plan is the FZP table row for row', () => {
+    const c = ctx();
+    const r = resolveEnvelopes(c, L(), ASOF);
+    const fzp = stockTable(c, 'fzp');
+    for (let i = 0; i < c.parcels.count; i++) expect(row(r.plan.table, i)).toEqual(row(fzp, i));
+    expect(allNeeds(r)).toEqual([]);
+  });
+
+  it('a rule above FZP raises the lot uncapped', () => {
+    const c = ctx();
+    const id = c.parcels.id[CAPPED];
+    const s = stockTable(c, 'fzp').stories[CAPPED];
+    const r = resolveEnvelopes(c, L({ rules: [e([id], s + 3)] }), ASOF);
+    expect(r.plan.table.stories[CAPPED]).toBe(s + 3);
+    expect(r.plan.table.cap[CAPPED]).toBe(NULL_CAP);
+    expect(r.plan.needs).toEqual([{ row: CAPPED, stories: s + 3, cap: null }]);
+  });
+
+  it('a rule at or below FZP leaves the FZP row, cap included', () => {
+    const c = ctx();
+    const id = c.parcels.id[CAPPED];
+    const s = stockTable(c, 'fzp').stories[CAPPED];
+    for (const n of [s, s - 1]) {
+      const r = resolveEnvelopes(c, L({ rules: [e([id], n)] }), ASOF);
+      expect(row(r.plan.table, CAPPED)).toEqual(row(stockTable(c, 'fzp'), CAPPED));
+      expect(r.plan.needs).toEqual([]);
+    }
+  });
+
+  it('rules: the highest applicable wins, in any order', () => {
     const c = ctx();
     const i = at(c, FZP_LOT);
-    const run = (e: UserEdit) => resolveEnvelopes(c, levers({ user: [e] }), WINDOW);
-    expect(run(edit([FZP_LOT], 'raise', 6)).before.table.stories[i]).toBe(6);
-    const same = run(edit([FZP_LOT], 'raise', 3));
-    expect(same.before.table.stories[i]).toBe(4);
-    expect(same.before.needs).toEqual([]);
-    expect(run(edit([FZP_LOT], 'lower', 2)).before.table.stories[i]).toBe(2);
-    const zero = run(edit([FZP_LOT], 'set', 0));
-    expect(row(zero.before.table, i)).toMatchObject({
+    for (const rules of [
+      [e([FZP_LOT], 6), e([FZP_LOT], 9)],
+      [e([FZP_LOT], 9), e([FZP_LOT], 6)]
+    ])
+      expect(resolveEnvelopes(c, L({ rules }), ASOF).plan.table.stories[i]).toBe(9);
+  });
+
+  it('paint sets N after the rules, can lower, and a later stroke wins', () => {
+    const c = ctx();
+    const i = at(c, FZP_LOT);
+    const one = resolveEnvelopes(
+      c,
+      L({ rules: [e([FZP_LOT], 9)], paint: [e([FZP_LOT], 2)] }),
+      ASOF
+    );
+    expect(one.plan.table.stories[i]).toBe(2);
+    expect(one.plan.table.cap[i]).toBe(NULL_CAP);
+    const two = resolveEnvelopes(c, L({ paint: [e([FZP_LOT], 5), e([FZP_LOT], 7)] }), ASOF);
+    expect(two.plan.table.stories[i]).toBe(7);
+  });
+
+  it('paint to 0 stories hosts nothing and needs nothing', () => {
+    const c = ctx();
+    const i = at(c, FZP_LOT);
+    const r = resolveEnvelopes(c, L({ paint: [e([FZP_LOT], 0)] }), ASOF);
+    expect(row(r.plan.table, i)).toMatchObject({
       stories: 0,
       yield: [0, 0, 0, 0, 0],
       hostable: 0
     });
-    expect(zero.before.needs).toEqual([]);
+    expect(r.plan.needs).toEqual([]);
   });
 
-  it('a later edit wins; densityLimits picks current-law cap or none', () => {
+  it('a protected lot keeps its FZP row, not hostable, whatever rules and paint say', () => {
     const c = ctx();
-    const i = at(c, '3512007'); // current-law cap 4
+    const i = at(c, MINI_HISTORIC_ID);
     const r = resolveEnvelopes(
       c,
-      levers({ user: [edit(['3512007'], 'set', 9), edit(['3512007'], 'set', 7, true)] }),
-      WINDOW
+      L({
+        rules: [e([MINI_HISTORIC_ID], 20)],
+        paint: [e([MINI_HISTORIC_ID], 30)],
+        protect: { ...DEFAULT_LEVERS.protect, historic: true }
+      }),
+      ASOF
     );
-    expect(r.before.table.stories[i]).toBe(7);
-    expect(r.before.table.cap[i]).toBe(4);
-    expect(r.before.needs).toEqual([{ row: i, stories: 7, cap: 4 }]);
-    const open = resolveEnvelopes(
-      c,
-      levers({ user: [edit(['3512007'], 'set', 7, false)] }),
-      WINDOW
-    );
-    expect(open.before.table.cap[i]).toBe(NULL_CAP);
-    expect(open.before.needs).toEqual([{ row: i, stories: 7, cap: null }]);
+    const fzp = row(stockTable(c, 'fzp'), i);
+    expect(row(r.plan.table, i)).toEqual({ ...fzp, hostable: 0 });
+    expect(r.unprotected.table.stories[i]).toBe(30);
   });
 
-  it('a raise to the lot SB 79 row needs nothing; 7 stories needs a row', () => {
-    const c = ctx();
-    const i = at(c, MINI_SB79_ID);
-    const sb = resolveEnvelopes(c, levers({ user: [edit([MINI_SB79_ID], 'raise', 8)] }), WINDOW);
-    expect(sb.before.needs).toEqual([]);
-    expect(row(sb.before.table, i)).toEqual(row(stockTable(c, 'sb79'), i));
-    const seven = resolveEnvelopes(c, levers({ user: [edit([MINI_SB79_ID], 'set', 7)] }), WINDOW);
-    expect(seven.before.needs).toEqual([{ row: i, stories: 7, cap: null }]);
-    expect(needKey(seven.before.needs[0])).toBe(`${i}:7:n`);
-    expect(seven.before.table.hostable[i]).toBe(0);
+  it('unknown ids are counted once across rules and paint', () => {
+    const r = resolveEnvelopes(
+      ctx(),
+      L({ rules: [e(['nope', 'gone'], 5)], paint: [e(['nope'], 5)] }),
+      ASOF
+    );
+    expect(r.unknownLots).toBe(2);
+  });
+
+  it('unprotected is the plan itself when no row is protected', () => {
+    const r = resolveEnvelopes(ctx(), L({ rules: [e([FZP_LOT], 9)] }), ASOF);
+    expect(r.unprotected).toBe(r.plan);
   });
 
   it('does not write into the shared stock tables', () => {
     const c = ctx();
-    const before = Array.from(stockTable(c, 'fzp').stories);
+    const stories = Array.from(stockTable(c, 'fzp').stories);
+    const cap = Array.from(stockTable(c, 'fzp').cap);
     resolveEnvelopes(
       c,
-      levers({ user: [edit([FZP_LOT], 'set', 0)], protect: protectLots([MINI_SB79_ID]) }),
-      WINDOW
+      L({
+        rules: [e([c.parcels.id[CAPPED]], 40)],
+        paint: [e([FZP_LOT], 0)],
+        protect: protecting(c, [MINI_SB79_ID])
+      }),
+      ASOF
     );
-    expect(Array.from(stockTable(c, 'fzp').stories)).toEqual(before);
+    expect(Array.from(stockTable(c, 'fzp').stories)).toEqual(stories);
+    expect(Array.from(stockTable(c, 'fzp').cap)).toEqual(cap);
   });
 });
 
@@ -117,18 +173,18 @@ describe('protections', () => {
     const c = ctx();
     const i = at(c, FZP_LOT);
     const fzp = stockTable(c, 'fzp');
-    for (const e of [edit([FZP_LOT], 'raise', 8), edit([FZP_LOT], 'lower', 0)]) {
-      const r = resolveEnvelopes(c, levers({ user: [e], protect: protectLots([FZP_LOT]) }), WINDOW);
-      expect(row(r.before.table, i)).toEqual({ ...row(fzp, i), hostable: 0 });
+    for (const patch of [{ rules: [e([FZP_LOT], 8)] }, { paint: [e([FZP_LOT], 0)] }]) {
+      const r = resolveEnvelopes(c, L({ ...patch, protect: protecting(c, [FZP_LOT]) }), ASOF);
+      expect(row(r.plan.table, i)).toEqual({ ...row(fzp, i), hostable: 0 });
       expect(Array.from(r.protectedRows)).toEqual([i]);
-      // The protected views make no Need; the unprotected view may (a raise to 8 does).
-      expect(r.before.needs).toEqual([]);
-      expect(allNeeds(r).map(needKey)).toEqual(r.unprotected.before.needs.map(needKey));
+      // The protected view makes no Need; the unprotected view may (a raise to 8 does).
+      expect(r.plan.needs).toEqual([]);
+      expect(allNeeds(r).map(needKey)).toEqual(r.unprotected.needs.map(needKey));
     }
     const lowered = resolveEnvelopes(
       c,
-      levers({ user: [edit([FZP_LOT], 'lower', 0)], protect: protectLots([FZP_LOT]) }),
-      WINDOW
+      L({ paint: [e([FZP_LOT], 0)], protect: protecting(c, [FZP_LOT]) }),
+      ASOF
     );
     const cap = leverCapacity(lowered, c.parcels);
     expect(cap.withoutProtections - cap.plan).toBe(0); // lowered to 0: nothing either way
@@ -137,8 +193,7 @@ describe('protections', () => {
   it('categories: historic, rent control, newer-than', () => {
     const c = ctx();
     const none = DEFAULT_LEVERS.protect;
-    const rows = (p: Partial<typeof none>) =>
-      Array.from(protectedRows(c, { ...none, ...p }, ASOF).rows);
+    const rows = (p: Partial<typeof none>) => Array.from(protectedRows(c, { ...none, ...p }, ASOF));
     expect(rows({ historic: true })).toContain(at(c, MINI_HISTORIC_ID));
     expect(rows({ rentControl: true })).toEqual(
       [...c.parcels.rentControlLikely].flatMap((v, i) => (v ? [i] : []))
@@ -149,149 +204,47 @@ describe('protections', () => {
     expect(newer).not.toContain(at(c, '3600003')); // yearBuilt 0 = unknown
   });
 
-  it('unknown and duplicate lots', () => {
+  it('rows covered by several categories are listed once, ascending', () => {
     const c = ctx();
-    const lots = ['nope', FZP_LOT, FZP_LOT];
-    const p = protectedRows(c, protectLots(lots), ASOF);
-    expect(p.unknown).toBe(1);
-    expect(Array.from(p.rows)).toEqual([at(c, FZP_LOT)]);
-    const r = resolveEnvelopes(c, levers({ protect: protectLots(lots) }), WINDOW);
-    expect(r.unknownLots).toBe(1);
+    const all = protectedRows(c, { rentControl: true, historic: true, newerThanYears: 200 }, ASOF);
+    const xs = Array.from(all);
+    expect(xs).toEqual([...new Set(xs)].sort((a, b) => a - b));
+    expect(xs).toContain(at(c, MINI_HISTORIC_ID));
   });
 
   it('withoutProtections minus plan is the sum over protected rows', () => {
     const c = ctx();
-    const r = resolveEnvelopes(
+    const resolved = resolveEnvelopes(
       c,
-      levers({
-        user: [edit([FZP_LOT], 'set', 0), edit([MINI_SB79_ID], 'raise', 8)],
-        protect: protectLots([FZP_LOT, MINI_SB79_ID])
+      L({
+        rules: [e([MINI_SB79_ID], 8)],
+        paint: [e([FZP_LOT], 0)],
+        protect: protecting(c, [FZP_LOT, MINI_SB79_ID])
       }),
-      WINDOW
+      ASOF
     );
-    expect(allNeeds(r)).toEqual([]);
+    // The raise is a Need of the unprotected view only.
+    expect(resolved.plan.needs).toEqual([]);
+    const r = fillNeeds(
+      resolved,
+      new Map<string, EnvelopeRow>(
+        allNeeds(resolved).map((n) => [
+          needKey(n),
+          { stories: n.stories, cap: n.cap, yield: [0, 20, 40, 60, 80], hostable: true }
+        ])
+      )
+    );
     const cap = leverCapacity(r, c.parcels);
     let sum = 0;
     for (const i of r.protectedRows) {
       const one = (t: EnvelopeTable) =>
         t.hostable[i] === 1 ? Math.max(0, t.yield[i * F + F - 1] - c.parcels.existingUnits[i]) : 0;
-      sum += one(r.unprotected.before.table) - one(r.before.table);
+      sum += one(r.unprotected.table) - one(r.plan.table);
     }
     expect(cap.withoutProtections - cap.plan).toBe(sum);
     expect(cap.withoutProtections - cap.plan).toBeGreaterThan(0);
     expect(cap.protectedLots).toBe(2);
-    expect(cap.plan).toBe(netCapacity(r.before.table, c.parcels));
-  });
-});
-
-describe('periods', () => {
-  const stock = () => levers({ stock: ['currentLaw'] });
-  it('after is built when the switch falls inside the window', () => {
-    const c = ctx();
-    const r = resolveEnvelopes(c, stock(), WINDOW);
-    expect(r.after?.day).toBe(SWITCH);
-    expect(r.unprotected.after).not.toBeNull();
-    const i = at(c, MINI_SB79_ID);
-    expect(r.after!.period.table.stories[i]).toBe(8);
-    expect(r.before.table.stories[i]).toBe(6);
-    expect(leverCapacity(r, c.parcels).afterSwitch).not.toBeNull();
-  });
-
-  it('after is null: alternative plan kept, asOf at the switch, horizon before it, no current law', () => {
-    const c = ctx();
-    const kept = { ...stock(), assumeAlternativePlanKept: true };
-    expect(resolveEnvelopes(c, kept, WINDOW).after).toBeNull();
-    expect(resolveEnvelopes(c, stock(), { ...WINDOW, asOf: SWITCH }).after).toBeNull();
-    expect(resolveEnvelopes(c, stock(), { ...WINDOW, horizon: SWITCH - 1 }).after).toBeNull();
-    expect(resolveEnvelopes(c, levers(), WINDOW).after).toBeNull();
-    const late = resolveEnvelopes(c, stock(), { ...WINDOW, asOf: SWITCH + 5 });
-    expect(late.before.table.stories[at(c, MINI_SB79_ID)]).toBe(8); // already the after-switch law
-    expect(leverCapacity(late, c.parcels).afterSwitch).toBeNull();
-  });
-});
-
-describe('protected lots do not create a law switch', () => {
-  const S = (patch: Partial<SimLevers> = {}) =>
-    levers({ stock: ['fzp'], protect: protectLots([MINI_SB79_ID]), ...patch });
-  it('FZP stock: after is null; the protected row is the fzp row, not hostable', () => {
-    const c = ctx();
-    const i = at(c, MINI_SB79_ID);
-    const r = resolveEnvelopes(c, S(), WINDOW);
-    expect(r.after).toBeNull();
-    expect(r.unprotected.after).toBeNull();
-    expect(row(r.before.table, i)).toEqual({ ...row(stockTable(c, 'fzp'), i), hostable: 0 });
-    expect(row(r.unprotected.before.table, i)).toEqual(row(stockTable(c, 'fzp'), i));
-    expect(leverCapacity(r, c.parcels).afterSwitch).toBeNull();
-    const late = resolveEnvelopes(c, S(), { ...WINDOW, asOf: SWITCH });
-    expect(late.beforePeriod).toBe('after');
-    expect(row(late.before.table, i)).toEqual({ ...row(stockTable(c, 'fzp'), i), hostable: 0 });
-  });
-  it('current-law stock: the switch exists; the protected row is not hostable in either period', () => {
-    const c = ctx();
-    const i = at(c, MINI_SB79_ID);
-    const r = resolveEnvelopes(c, S({ stock: ['currentLaw'] }), WINDOW);
-    expect(r.beforePeriod).toBe('before');
-    expect(r.after).not.toBeNull();
-    expect(row(r.before.table, i)).toEqual({
-      ...row(currentLawTable(c, 'before', false), i),
-      hostable: 0
-    });
-    expect(row(r.after!.period.table, i)).toEqual({
-      ...row(currentLawAfterTable(c), i),
-      hostable: 0
-    });
-    expect(r.unprotected.after!.table.hostable[i]).toBe(1);
-  });
-});
-
-describe('capped user edits follow the switch whatever the other levers', () => {
-  const CAP_AFTER = 30;
-  /** The mini city with an SB 79 cap on the SB 79 lot, so its current-law cap changes at the switch. */
-  function capCtx(): LayerCtx {
-    const c = ctx();
-    c.policy.sb79Cap[at(c, MINI_SB79_ID)] = CAP_AFTER;
-    return c;
-  }
-  const capped = (patch: Partial<SimLevers> = {}) =>
-    levers({ stock: ['fzp'], user: [edit([MINI_SB79_ID], 'set', 7, true)], ...patch });
-
-  it('FZP stock, one capped edit: after exists and the edit takes the after-switch cap', () => {
-    const c = capCtx();
-    const i = at(c, MINI_SB79_ID);
-    expect(currentLawTable(c, 'before', false).cap[i]).toBe(NULL_CAP);
-    expect(currentLawAfterTable(c).cap[i]).toBe(CAP_AFTER);
-    const r = resolveEnvelopes(c, capped(), WINDOW);
-    expect(r.before.table.cap[i]).toBe(NULL_CAP);
-    expect(r.after).not.toBeNull();
-    expect(r.after!.day).toBe(SWITCH);
-    expect(r.after!.period.table.stories[i]).toBe(7);
-    expect(r.after!.period.table.cap[i]).toBe(CAP_AFTER);
-    expect(r.after!.period.needs).toContainEqual({ row: i, stories: 7, cap: CAP_AFTER });
-    expect(r.unprotected.after).toBe(r.after!.period);
-  });
-
-  it('protecting an unrelated lot leaves the edited lot rows unchanged', () => {
-    const c = capCtx();
-    const i = at(c, MINI_SB79_ID);
-    const alone = resolveEnvelopes(c, capped(), WINDOW);
-    const withProt = resolveEnvelopes(c, capped({ protect: protectLots([FZP_LOT]) }), WINDOW);
-    expect(withProt.after).not.toBeNull();
-    expect(row(withProt.after!.period.table, i)).toEqual(row(alone.after!.period.table, i));
-    expect(row(withProt.before.table, i)).toEqual(row(alone.before.table, i));
-  });
-
-  it('FZP stock with no edits and no protections: after is null', () => {
-    const c = capCtx();
-    const r = resolveEnvelopes(c, levers({ stock: ['fzp'] }), WINDOW);
-    expect(r.after).toBeNull();
-    expect(r.unprotected.after).toBeNull();
-    expect(leverCapacity(r, c.parcels).afterSwitch).toBeNull();
-  });
-
-  it('an uncapped edit on FZP stock gives no after period', () => {
-    const c = capCtx();
-    const r = resolveEnvelopes(c, levers({ user: [edit([MINI_SB79_ID], 'set', 7)] }), WINDOW);
-    expect(r.after).toBeNull();
+    expect(cap.plan).toBe(netCapacity(r.plan.table, c.parcels));
   });
 });
 
@@ -299,11 +252,7 @@ describe('needs', () => {
   it('allNeeds dedupes and sorts; fillNeeds writes rows and throws on a missing one', () => {
     const c = ctx();
     const a = at(c, FZP_LOT);
-    const r = resolveEnvelopes(
-      c,
-      levers({ stock: ['currentLaw'], user: [edit([MINI_SB79_ID, FZP_LOT], 'set', 7)] }),
-      WINDOW
-    );
+    const r = resolveEnvelopes(c, L({ paint: [e([MINI_SB79_ID, FZP_LOT], 7)] }), ASOF);
     const needs = allNeeds(r);
     expect(needs.map((n) => n.row)).toEqual([a, at(c, MINI_SB79_ID)].sort((x, y) => x - y));
     expect(() => fillNeeds(r, new Map())).toThrow(/no envelope row/);
@@ -314,9 +263,9 @@ describe('needs', () => {
       ])
     );
     const filled = fillNeeds(r, rows);
-    expect(row(filled.before.table, a).yield).toEqual([0, 1, 2, 3, 4]);
-    expect(filled.before.table.hostable[a]).toBe(1);
-    expect(filled.after!.period.table.hostable[a]).toBe(1);
-    expect(r.before.table.hostable[a]).toBe(0); // input untouched
+    expect(row(filled.plan.table, a).yield).toEqual([0, 1, 2, 3, 4]);
+    expect(filled.plan.table.hostable[a]).toBe(1);
+    expect(filled.unprotected).toBe(filled.plan);
+    expect(r.plan.table.hostable[a]).toBe(0); // input untouched
   });
 });

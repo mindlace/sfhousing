@@ -162,18 +162,18 @@ Schema change: edit `src/lib/server/db/schema/` → `npm run db:generate` → `n
 
 ## Policies (`/sim`)
 
-Plan 5 (`docs/superpowers/plans/2026-10-30-sim-publish.md`; "Call n" below is that plan's). The `/sim` policy is a sibling document, not a `Plan` schema: `SimDoc = { schema: 1; kind: 'sim'; datasetVersion; title?; policy: SimPolicy }` (`src/lib/sim-page/sim-doc.ts`). The page side is in [sim-page.md](sim-page.md).
+Plan 5 (`docs/superpowers/plans/2026-10-30-sim-publish.md`; "Call n" below is that plan's). The `/sim` policy is a sibling document, not a `Plan` schema: `SimDoc = { schema: 2; kind: 'sim'; datasetVersion; title?; policy: SimPolicy }` (`src/lib/sim-page/sim-doc.ts`). The page side is in [sim-page.md](sim-page.md).
 
-- **Storage:** the same `plan` table with `kind = 'sim'` and one id space. `op_count` is brushes plus protect strokes.
+- **Storage:** the same `plan` table with `kind = 'sim'` and one id space. `op_count` is the policy's rules plus its custom brushes.
 - **API:** `POST /api/policies` runs the `POST /api/plans` steps with `SIM_CODEC`. Step 5 is `parseSimDoc(text, 'strict')` with `simDocProblems` (the limits below). Step 6 refuses the default policy (`isDefaultPolicy`, ignoring the timeline Save snapshot) with 422 `empty_plan`. A 201's `Location` is `/s/<id>`. The server does not check timings against the calibration (Call 10): every load path reconciles. `GET /api/policies/:id` is `GET /api/plans/:id` for `'sim'` rows.
 - **Limits** (Call 4, the constants in `$lib/plan`):
   - canonical UTF-8 of at most `MAX_PLAN_BYTES` (262,144);
-  - at most `OPS_MAX` (5,000) strokes in total across freehand, erase and protect strokes;
+  - at most `OPS_MAX` (5,000) strokes in total across the custom paint and erase brushes (rules have no strokes);
   - 1 to `PATH_MAX_POINTS` points per stroke, each inside `SF_BBOX` after `quantize`;
   - an integer radius from `RADIUS_MIN_M` to `RADIUS_MAX_M`;
   - a title of at most `TITLE_MAX_CHARS`.
 
-  Brushes and name lists are bounded by the byte cap only. `too_many_ops` is reachable (see the POST notes).
+  Rules, brushes and name lists are bounded by the byte cap only. `too_many_ops` is reachable (see the POST notes).
 
 - **Canonical form and publish:** sorted keys, coordinates quantized to 1e-6° (Call 5). Publish strips the timeline Save snapshot (`timing.saved = null`, `SIM_CODEC.publishable`; Call 6), so two policies that differ only in it share a link. The seed is not published (Call 17).
 - **Strict to publish, lenient to load** (Call 8): `SIM_CODEC.parse` is strict (plan 4's preset-layer check); `SIM_CODEC.load` (`'reconcile'`) accepts any preset id and leaves the preset layer's values to `reconcileTiming`. GET, the shared page, autosave and the Remix hand-off use `load`, so a preset constant revised in code never makes a stored link 500.

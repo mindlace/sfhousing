@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OPS_MAX, serializePlan, type Plan, type PlanOp } from '$lib/plan';
-import { defaultEffect } from '$lib/sim-page/policy';
 import { DEFAULT_POLICY, SIM_CODEC, simDocProblems, type SimDoc } from '$lib/sim-page/sim-doc';
 import { MemoryStorage } from './fixtures/memory-storage';
 import { Autosave } from './autosave.svelte';
@@ -319,65 +318,24 @@ describe('Autosave.setLastPublished', () => {
   });
 });
 
-describe('Autosave.rememberPublished (deferred start)', () => {
-  it('keeps lastPublished in memory without writing; the first write carries it', () => {
-    const { s, a, setItem } = setup(seed(plan(2)));
-    a.guard();
-    const lp = { id: 'abcdEFGH', hash: 'e'.repeat(64) };
-    a.rememberPublished(lp);
-    expect(a.lastPublished).toEqual(lp);
-    vi.advanceTimersByTime(1000);
-    expect(setItem).not.toHaveBeenCalled();
-    a.schedule(plan(3));
-    vi.advanceTimersByTime(500);
-    expect(stored(s)).toMatchObject({ plan: serializePlan(plan(3)), lastPublished: lp });
-  });
-});
-
-describe('Autosave.guard (deferred start, no restore)', () => {
-  it('a corrupt record is preserved before the first write, and nothing is written by guard', () => {
-    const s = new MemoryStorage();
-    s.setItem(PLAN_KEY, '{nope');
-    const setItem = vi.spyOn(s, 'setItem');
-    const a = new Autosave({ currentVersion: 'fixture-1', storage: () => s, now: () => NOW });
-    a.guard();
-    expect(setItem).not.toHaveBeenCalled();
-    a.schedule(plan(1));
-    vi.advanceTimersByTime(500);
-    expect(corruptKeys(s).map((k) => s.getItem(k))).toEqual(['{nope']);
-    expect(stored(s).plan).toBe(serializePlan(plan(1)));
-    expect(a.status).toBe('saved');
-  });
-
-  it('a readable record is left alone and the first change still writes', () => {
-    const s = seed(plan(2));
-    const a = new Autosave({ currentVersion: 'fixture-1', storage: () => s, now: () => NOW });
-    a.guard();
-    a.schedule(plan(2)); // equal to what is stored, but nothing was restored: written
-    vi.advanceTimersByTime(500);
-    expect(corruptKeys(s)).toEqual([]);
-    expect(stored(s).plan).toBe(serializePlan(plan(2)));
-  });
-});
-
 describe('Autosave writable (ruling R4)', () => {
   // A SimDoc over OPS_MAX strokes fails simDocProblems; the lenient load would read it back as
   // corrupt, so writing it would lose the policy on reload.
   const simDoc = (strokes: number): SimDoc => ({
-    schema: 1,
+    schema: 2,
     kind: 'sim',
     datasetVersion: 'fixture-0',
     policy: {
       ...DEFAULT_POLICY,
-      brushes: [
+      custom: [
         {
           id: 'f',
-          kind: 'freehand',
+          kind: 'paint',
           strokes: Array.from({ length: strokes }, () => ({
             path: [[-122.4, 37.7] as [number, number]],
             radiusM: 50
           })),
-          effect: defaultEffect('raise', 6)
+          stories: 6
         }
       ]
     }

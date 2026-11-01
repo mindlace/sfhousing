@@ -10,7 +10,7 @@ import { changeText, reconcileTiming } from './reconcile';
 import type { SimDoc } from './sim-doc';
 
 export interface SimNotice {
-  id: 'corrupt' | 'future' | 'rebased' | 'timing' | 'remix' | 'fzp-kept';
+  id: 'corrupt' | 'future' | 'rebased' | 'timing' | 'remix';
   text: string;
   /** One line each, behind a "Details" disclosure. */
   details?: string[];
@@ -21,10 +21,6 @@ export interface SimNotice {
 
 export const TIMING_NOTICE_TEXT =
   'Some permitting timelines were re-fit to the data this simulation runs on.';
-
-/** Call 13: under `start=fzp` a non-default saved policy is kept until the first change. */
-export const FZP_KEPT_TEXT =
-  'Showing the Family Zoning Plan comparison. Your saved policy is kept until you change something here.';
 
 const SIM = copyFor('sim');
 

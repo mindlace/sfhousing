@@ -1,5 +1,5 @@
 // /sim e2e (plan 3, Task 12): the /fzp redirect, the header score bar and phone Menu, the policy
-// panel, a street brush, a freehand stroke and its undo, a brushed protection, Back and Forward
+// panel, a street rule, a Paint stroke and its undo, a category protection, Back and Forward
 // after a reroll, and the accessibility checks. Runs against the VITE_E2E build, which exposes
 // window.__sfhFzp (src/lib/fzp/debug.ts, with /sim's `levers` field) and window.__sfhMap.
 // Fixture-0 files are read from disk (frontage.bin through the shared codec); names, lots and
@@ -11,6 +11,7 @@ import { readScenarioParcels } from '../src/lib/data/scenario-codec';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { formatCount } from '../src/lib/scoreboard/format';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { slider, startRun } from './helpers/run';
 import {
   FROM,
   TO,
@@ -69,10 +70,16 @@ async function waitReady(page: Page): Promise<void> {
     .toBe('current');
 }
 
-async function gotoSim(page: Page, path = '/sim'): Promise<void> {
+/** /sim (or `path`), ready, in Setup; with `run`, a run started and paused at asOf. */
+async function gotoSim(
+  page: Page,
+  path = '/sim',
+  { run = false }: { run?: boolean } = {}
+): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(path);
   await waitReady(page);
+  if (run) await startRun(page);
 }
 
 const scoreBar = (page: Page): Locator => page.getByTestId('score-bar');
@@ -100,13 +107,6 @@ async function openPolicy(page: Page): Promise<Locator> {
   return panel(page);
 }
 
-/** Closes the phone sheet, which is modal: the rest of the page is inert while it shows. */
-async function closeSheet(page: Page, isMobile: boolean): Promise<void> {
-  if (!isMobile || !(await panel(page).isVisible())) return;
-  await panel(page).getByRole('button', { name: 'Close policy' }).click();
-  await expect(panel(page)).toBeHidden();
-}
-
 /** A panel section's disclosure, expanded. */
 async function expandSection(page: Page, title: string): Promise<void> {
   const button = panel(page).getByRole('button', { name: title, exact: true });
@@ -115,13 +115,13 @@ async function expandSection(page: Page, title: string): Promise<void> {
 }
 
 /**
- * "Add a brush", then the kind's button once the brush catalog allows it; the form opens named
+ * "Add a rule", then the kind's button once the brush catalog allows it; the form opens named
  * `title` exactly.
  */
 async function openBrushForm(page: Page, kind: string, title: string): Promise<Locator> {
   await openPolicy(page);
-  await expandSection(page, 'Your zoning');
-  await panel(page).getByRole('button', { name: 'Add a brush' }).click();
+  await expandSection(page, 'New zoning rules');
+  await panel(page).getByRole('button', { name: 'Add a rule' }).click();
   const choice = panel(page).getByRole('button', { name: kind, exact: true });
   await expect(choice).toBeEnabled({ timeout: 20_000 });
   await choice.click();
@@ -130,8 +130,10 @@ async function openBrushForm(page: Page, kind: string, title: string): Promise<L
   return form;
 }
 
-const brushList = (page: Page): Locator =>
-  panel(page).getByRole('list', { name: 'Your brushes' }).getByRole('listitem');
+const ruleList = (page: Page): Locator =>
+  panel(page).getByRole('list', { name: 'New zoning rules' }).getByRole('listitem');
+const customList = (page: Page): Locator =>
+  panel(page).getByRole('list', { name: 'Custom zoning' }).getByRole('listitem');
 
 /** One stroke across fixture-0's parcel row: a mouse drag on desktop, a finger on the phone. */
 async function strokeOnce(page: Page, isMobile: boolean): Promise<void> {
@@ -217,28 +219,18 @@ async function expectNoHorizontalScroll(page: Page): Promise<void> {
 
 // ---- the redirect and the shell -----------------------------------------------------------------
 
-test('/fzp?seed=5 lands on /sim?seed=5&start=fzp and its levers come into force', async ({
-  page
-}) => {
+test('/fzp?seed=5 lands on /sim?seed=5 and its levers come into force', async ({ page }) => {
   await page.goto('/fzp?seed=5');
-  await expect(page).toHaveURL(/\/sim\?seed=5&start=fzp$/);
+  await expect(page).toHaveURL(/\/sim\?seed=5$/);
   await waitReady(page);
   expect((await leverStatus(page)).status).toBe('current');
   expect(await fzp(page, 'seed')).toBe(5);
 });
 
-test('/sim starts on current law; the score bar opens the score details', async ({
-  isMobile,
+test('/sim starts on the Family Zoning Plan; the score bar opens the score details', async ({
   page
 }) => {
   await gotoSim(page);
-  await openPolicy(page);
-  await expect(
-    panel(page).getByRole('checkbox', { name: /^Current law/ }),
-    'current law is the only stock layer'
-  ).toBeChecked();
-  await expect(panel(page).getByRole('radio', { name: 'Current law', exact: true })).toBeChecked();
-  await closeSheet(page, isMobile);
 
   const { baseline, shown } = JSON.parse(
     await page.evaluate(() => JSON.stringify((window as FzpWin).__sfhFzp!.score))
@@ -248,7 +240,7 @@ test('/sim starts on current law; the score bar opens the score details', async 
   );
   await expect(scoreBar(page)).toHaveAttribute('aria-expanded', 'false');
   const details = await openScore(page);
-  await expect(details.getByText('What your policy added')).toBeVisible();
+  await expect(details.getByText('What the plan added')).toBeVisible();
 });
 
 test('at 375 px the links and Policy wait in Menu; the score bar stays pinned', async ({
@@ -331,21 +323,21 @@ test('below md Policy opens the modal sheet from the Menu and focus returns to M
 
 // ---- brushes ------------------------------------------------------------------------------------
 
-test('a Street brush on the first frontage name selects its fronting lots', async ({ page }) => {
+test('a Street rule on the first frontage name selects its fronting lots', async ({ page }) => {
   const street = await firstStreet();
   expect(street.lots, 'fixture-0 has an eligible lot on its first street').toBeGreaterThan(0);
   await gotoSim(page);
   const before = await leverStatus(page);
 
-  const form = await openBrushForm(page, 'Street', 'Add a street brush');
+  const form = await openBrushForm(page, 'Street', 'Add a street rule');
   await form.getByRole('combobox', { name: 'Street name' }).fill(street.name);
   await form.getByRole('button', { name: 'Add street' }).click();
   await expect(form.getByRole('list', { name: 'Chosen streets' })).toContainText(street.name);
   await watchLeverNotices(page);
-  await form.getByRole('button', { name: 'Save brush' }).click();
+  await form.getByRole('button', { name: 'Save rule' }).click();
 
-  await expect(brushList(page)).toHaveCount(1);
-  await expect(brushList(page).first()).toContainText(lotCount(street.lots));
+  await expect(ruleList(page)).toHaveCount(1);
+  await expect(ruleList(page).first()).toContainText(lotCount(street.lots));
 
   // The levers go resolving -> current; the updating notice shows, then clears.
   await expect
@@ -366,10 +358,10 @@ test('a Street brush on the first frontage name selects its fronting lots', asyn
   ).toBe(true);
 });
 
-test('a Paint stroke adds a freehand brush and Ctrl+Z removes it', async ({ isMobile, page }) => {
+test('a Paint stroke adds a custom brush and Ctrl+Z removes it', async ({ isMobile, page }) => {
   await gotoSim(page);
   await openPolicy(page);
-  await expandSection(page, 'Your zoning');
+  await expandSection(page, 'Custom zoning');
   const paint = panel(page).getByRole('radio', { name: 'Paint', exact: true });
   await expect(paint).toBeEnabled();
   await chooseTool(page, isMobile, () => paint.click());
@@ -380,8 +372,8 @@ test('a Paint stroke adds a freehand brush and Ctrl+Z removes it', async ({ isMo
     await page.getByTestId('phone-tool-bar').getByRole('button', { name: 'Done' }).click();
     await expect(panel(page)).toBeVisible();
   }
-  await expect(brushList(page)).toHaveCount(1);
-  await expect(brushList(page).first()).toContainText(/Raise/);
+  await expect(customList(page)).toHaveCount(1);
+  await expect(customList(page).first()).toContainText(/Allow \d+ stor/);
   if (isMobile) {
     await panel(page).getByRole('button', { name: 'Close policy' }).click();
     await expect(panel(page)).toBeHidden();
@@ -389,19 +381,19 @@ test('a Paint stroke adds a freehand brush and Ctrl+Z removes it', async ({ isMo
 
   await page.keyboard.press('Control+z');
   await openPolicy(page);
-  await expect(brushList(page)).toHaveCount(0);
+  await expect(customList(page)).toHaveCount(0);
   await expect(panel(page).getByRole('button', { name: /^Redo: / })).toBeEnabled();
 });
 
-test('a brushed protection shows the protections line in the score', async ({ isMobile, page }) => {
+test('a category protection shows the protections line in the score', async ({
+  isMobile,
+  page
+}) => {
   await gotoSim(page);
   const before = await leverStatus(page);
   await openPolicy(page);
   await expandSection(page, 'Protections');
-  const protect = panel(page).getByRole('button', { name: 'Protect lots with the brush' });
-  await expect(protect).toBeEnabled();
-  await chooseTool(page, isMobile, () => protect.click());
-  await strokeOnce(page, isMobile);
+  await panel(page).getByRole('checkbox', { name: 'Rent-controlled buildings (likely)' }).check();
 
   await expect
     .poll(async () => {
@@ -409,6 +401,8 @@ test('a brushed protection shows the protections line in the score', async ({ is
       return l.status === 'current' && (l.sentRev ?? -1) > (before.sentRev ?? -1);
     })
     .toBe(true);
+  // The phone sheet is modal: close it to reach the score bar.
+  if (isMobile) await panel(page).getByRole('button', { name: 'Close policy' }).click();
   const details = await openScore(page);
   await expect(details).toContainText(
     /\d[\d,]* lots? protected: [\d,]+ fewer homes? of zoned capacity/
@@ -435,13 +429,13 @@ async function expectAddressFuture(page: Page): Promise<void> {
 test('Back after a reroll', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/fzp?seed=5');
-  await expect(page).toHaveURL(/\/sim\?seed=5&start=fzp$/);
+  await expect(page).toHaveURL(/\/sim\?seed=5$/);
   await waitReady(page);
   await expectAddressFuture(page);
 
   await (await headerAction(page, 'Another future')).click();
-  await expect(page).toHaveURL((u) => /^\/sim$/.test(u.pathname) && !/\bseed=5&/.test(u.search));
-  await expect(page).toHaveURL(/\/sim\?seed=\d+&start=fzp$/);
+  await expect(page).toHaveURL((u) => /^\/sim$/.test(u.pathname) && !/\bseed=5$/.test(u.search));
+  await expect(page).toHaveURL(/\/sim\?seed=\d+$/);
   const seed = Number(new URL(page.url()).searchParams.get('seed'));
   await expectAddressFuture(page);
 
@@ -453,7 +447,7 @@ test('Back after a reroll', async ({ page }) => {
   await expectAddressFuture(page);
 
   await page.goBack();
-  await expect(page).toHaveURL(new RegExp(`/sim\\?seed=${seed}&start=fzp$`));
+  await expect(page).toHaveURL(new RegExp(`/sim\\?seed=${seed}$`));
   await expectAddressFuture(page);
   await page.goForward();
   await expect(page).toHaveURL(/\/sim$/);
@@ -465,15 +459,56 @@ test('Back after a reroll', async ({ page }) => {
 test('axe: the policy panel open', async ({ page }) => {
   await gotoSim(page);
   await openPolicy(page);
-  await expandSection(page, 'Your zoning');
+  await expandSection(page, 'New zoning rules');
+  await expandSection(page, 'Custom zoning');
   await expandSection(page, 'Protections');
   await expectNoA11yViolations(page);
 });
 
-test('axe: the Area brush form open', async ({ page }) => {
+// ---- Setup and Run (spec §1) ----------------------------------------------------------------------
+
+test('Run locks the policy and Change policy returns to the present', async ({
+  isMobile,
+  page
+}) => {
   await gotoSim(page);
-  const form = await openBrushForm(page, 'Area', 'Add an area brush');
-  await expect(form.getByRole('group', { name: 'Zoning districts' })).toBeVisible();
+  expect(await fzp(page, 'runPhase')).toBe('setup');
+  // The phone sheet is modal: Run sits under it, so it starts closed there.
+  if (isMobile && (await panel(page).isVisible())) {
+    await panel(page).getByRole('button', { name: 'Close policy' }).click();
+  }
+  await page.getByRole('button', { name: 'Run', exact: true }).click();
+  await expect.poll(() => fzp(page, 'runPhase')).toBe('run');
+  await expect
+    .poll(() => fzp(page, 'day'), { timeout: 20_000 })
+    .toBeGreaterThan(await fzp(page, 'asOf'));
+  await openPolicy(page);
+  const change = panel(page).getByRole('button', { name: 'Change policy' });
+  await expect(change).toBeVisible();
+  await expandSection(page, 'Protections');
+  const rent = panel(page).getByRole('checkbox', { name: 'Rent-controlled buildings (likely)' });
+  await expect(rent).toBeDisabled();
+
+  await change.click();
+  await expect.poll(() => fzp(page, 'runPhase')).toBe('setup');
+  await expect.poll(() => fzp(page, 'day')).toBe(await fzp(page, 'asOf'));
+  expect(await fzp(page, 'playing')).toBe(false);
+  await expect(rent).toBeEnabled();
+  await expect(slider(page)).toBeDisabled();
+});
+
+test('axe: the policy panel open during a run', async ({ page }) => {
+  await gotoSim(page, '/sim', { run: true });
+  await openPolicy(page);
+  await expect(panel(page).getByRole('button', { name: 'Change policy' })).toBeVisible();
+  await expandSection(page, 'Protections');
+  await expectNoA11yViolations(page);
+});
+
+test('axe: the Transit rule form open', async ({ page }) => {
+  await gotoSim(page);
+  const form = await openBrushForm(page, 'Transit', 'Add a transit rule');
+  await expect(form.getByRole('group', { name: 'Bands' })).toBeVisible();
   await expectNoA11yViolations(page);
 });
 
@@ -521,7 +556,7 @@ test('below md on a fine pointer the phone tool bar leaves the zoom control unco
   await page.setViewportSize({ width: 700, height: 800 });
   await gotoSim(page);
   await openPolicy(page);
-  await expandSection(page, 'Your zoning');
+  await expandSection(page, 'Custom zoning');
   await chooseTool(page, true, () =>
     panel(page).getByRole('radio', { name: 'Paint', exact: true }).click()
   );
@@ -547,7 +582,7 @@ test('at 375 px: no horizontal scroll, and the footer links stay unobscured', as
 
   // With the floating tool bar showing (a stroke tool chosen).
   await openPolicy(page);
-  await expandSection(page, 'Your zoning');
+  await expandSection(page, 'Custom zoning');
   await chooseTool(page, true, () =>
     panel(page).getByRole('radio', { name: 'Paint', exact: true }).click()
   );

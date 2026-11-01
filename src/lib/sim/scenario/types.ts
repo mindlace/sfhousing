@@ -41,10 +41,6 @@ export interface Schedule {
     of: number;
     start: 'scheduled' | 'estimated'; // scheduled = its permitFiled is the published plan date; estimated = the phaseGap stagger
   } | null; // a phase sub-project of a multi-phase master
-  // A simulated project on a run with `lawSwitch`: true when its initiation month started on or
-  // after the switch, so it ran on the after view (size row, yields, envelope, Local Program).
-  // Absent on every other Schedule, including all of a run without a switch.
-  afterSwitch?: boolean;
   // On a run whose input has `newProjects`: true when the schedule's job ran on `calibration`
   // (a pipeline row past preApplication, or a phase), so its map bar reads the in-flight lookups
   // (Call 15). Absent on every other Schedule, so a run without lever timers is unchanged.
@@ -62,12 +58,6 @@ export type SimInput = {
   // size, revision and phaseGap always read `calibration`.
   newProjects?: { calibration: Calibration; scale: StageScale }; // absent = calibration, scale 1
   inFlightScale?: StageScale; // absent = 1
-  // The time-switched envelope (plan 2 ruling 1): a simulated project whose initiation month starts
-  // on or after `day` runs on `parcels` (size row, yields, envelope, Local Program) and its
-  // initiation hazard switches there too; in-flight rows keep `parcels` above. `parcels` has the
-  // same rows, ids and existing columns as the base. Requires asOf < day (`runEngine` throws a
-  // RangeError otherwise). Absent = no switch.
-  lawSwitch?: { day: Day; parcels: ScenarioParcels };
 };
 export type Simulate = (input: SimInput, seed: number, horizon: Day) => Schedule[];
 

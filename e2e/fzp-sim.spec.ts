@@ -130,7 +130,7 @@ test('fetches only the viewport chunks, the scenario files and policy.bin', asyn
 
 test('the first timeline arrives within 3 s of navigation', async ({ page }) => {
   const start = Date.now();
-  await page.goto('/sim?start=fzp', { waitUntil: 'commit' });
+  await page.goto('/sim', { waitUntil: 'commit' });
   await expect
     .poll(() => page.evaluate(() => (window as FzpWin).__sfhFzp?.score != null), {
       timeout: 3_000,
@@ -141,7 +141,7 @@ test('the first timeline arrives within 3 s of navigation', async ({ page }) => 
 });
 
 test('a reroll changes the future, not the band', async ({ page }) => {
-  await page.goto('/sim?start=fzp');
+  await page.goto('/sim');
   await waitReady(page);
   await settled(page);
   const seed = await seedOf(page);
@@ -159,7 +159,7 @@ test('a reroll changes the future, not the band', async ({ page }) => {
 });
 
 test('the same URL seed after a reload gives an identical timeline score', async ({ page }) => {
-  await page.goto('/sim?start=fzp&seed=12345');
+  await page.goto('/sim?seed=12345');
   await waitReady(page);
   await settled(page);
   const first = await scoreJson(page);

@@ -1,13 +1,9 @@
 // The stroke adapter: BrushController's editor and client, writing strokes into the policy recipe.
 import { describe, expect, it, vi } from 'vitest';
 import type { PlanOp } from '$lib/plan';
-import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
-import { policyFromLevers, type Effect } from './policy';
+import { DEFAULT_POLICY } from './policy';
 import { PolicyStore } from './policy-store.svelte';
-import { createStrokeAdapter, type StrokeTarget } from './stroke-adapter';
-
-const raise8: Effect = { mode: 'raise', stories: 8, densityLimits: false };
-const lower4: Effect = { mode: 'lower', stories: 4, densityLimits: true };
+import { createStrokeAdapter, strokeLabel } from './stroke-adapter';
 
 const paint = (x: number, radiusM = 30): PlanOp => ({
   kind: 'paint',
@@ -27,79 +23,69 @@ const erase = (x: number): PlanOp => ({
 });
 
 function setup() {
-  const store = new PolicyStore(policyFromLevers(DEFAULT_LEVERS));
-  let target: StrokeTarget = 'zoning';
-  let effect: Effect = raise8;
+  const store = new PolicyStore(DEFAULT_POLICY);
+  let stories = 8;
   const announce = vi.fn();
-  const a = createStrokeAdapter({ store, target: () => target, effect: () => effect, announce });
-  return {
-    store,
-    announce,
-    a,
-    setTarget: (t: StrokeTarget) => (target = t),
-    setEffect: (e: Effect) => (effect = e)
-  };
+  const a = createStrokeAdapter({ store, stories: () => stories, announce });
+  return { store, announce, a, setStories: (n: number) => (stories = n) };
 }
 
+describe('strokeLabel', () => {
+  it('names the stories allowed', () => {
+    expect(strokeLabel(8)).toBe('Allowed 8 stories');
+    expect(strokeLabel(1)).toBe('Allowed 1 story');
+  });
+});
+
 describe('createStrokeAdapter', () => {
-  it('appends paint strokes with one effect to one freehand brush', () => {
+  it('two Paint strokes at 8 stories make one custom paint brush with two strokes', () => {
     const { store, a, announce } = setup();
     expect(a.editor.readOnly).toBe(false);
     expect(a.editor.commit(paint(0))).toEqual({ ok: true });
-    expect(announce).toHaveBeenLastCalledWith('Raised lots to 8 stories');
+    expect(announce).toHaveBeenLastCalledWith('Allowed 8 stories');
     expect(a.editor.commit(paint(0.001, 40))).toEqual({ ok: true });
-    const bs = store.policy.brushes;
+    const bs = store.policy.custom;
     expect(bs).toHaveLength(1);
-    expect(bs[0].kind).toBe('freehand');
-    if (bs[0].kind !== 'freehand') return;
-    expect(bs[0].effect).toEqual(raise8);
+    expect(bs[0]).toMatchObject({ kind: 'paint', stories: 8 });
     expect(bs[0].strokes).toEqual([
       { path: paint(0).path, radiusM: 30 },
       { path: paint(0.001).path, radiusM: 40 }
     ]);
+    expect(store.policy.rules).toEqual([]);
     // One store change per stroke, so each undoes alone.
-    expect(store.undo()).not.toBeNull();
-    expect(
-      store.policy.brushes[0].kind === 'freehand' && store.policy.brushes[0].strokes
-    ).toHaveLength(1);
+    expect(store.undo()).toBe('Allowed 8 stories');
+    expect(store.policy.custom[0].strokes).toHaveLength(1);
   });
 
-  it('starts a second brush when the effect changes', () => {
-    const { store, a, setEffect } = setup();
+  it('a Paint at 8 then at 5 makes two brushes', () => {
+    const { store, a, setStories, announce } = setup();
     a.editor.commit(paint(0));
-    setEffect(lower4);
+    setStories(5);
     a.editor.commit(paint(0.001));
-    const bs = store.policy.brushes;
-    expect(bs).toHaveLength(2);
-    expect(bs[1].kind === 'freehand' && bs[1].effect).toEqual(lower4);
+    expect(announce).toHaveBeenLastCalledWith('Allowed 5 stories');
+    const bs = store.policy.custom;
+    expect(bs.map((b) => [b.kind, b.kind === 'paint' && b.stories])).toEqual([
+      ['paint', 8],
+      ['paint', 5]
+    ]);
     expect(bs[0].id).not.toBe(bs[1].id);
   });
 
-  it('appends an erase op as an erase brush, and joins consecutive erases', () => {
-    const { store, a } = setup();
+  it('an Erase appends an erase brush, and joins consecutive erases', () => {
+    const { store, a, announce } = setup();
     a.editor.commit(paint(0));
     a.editor.commit(erase(0));
+    expect(announce).toHaveBeenLastCalledWith('Erased custom zoning');
     a.editor.commit(erase(0.001));
-    const bs = store.policy.brushes;
-    expect(bs.map((b) => b.kind)).toEqual(['freehand', 'erase']);
-    expect(bs[1].kind === 'erase' && bs[1].strokes).toEqual([
+    const bs = store.policy.custom;
+    expect(bs.map((b) => b.kind)).toEqual(['paint', 'erase']);
+    expect(bs[1].strokes).toEqual([
       { path: erase(0).path, radiusM: 20 },
       { path: erase(0.001).path, radiusM: 20 }
     ]);
-  });
-
-  it('writes protect and unprotect strokes for the protect target', () => {
-    const { store, a, setTarget, announce } = setup();
-    setTarget('protect');
-    a.editor.commit(paint(0));
-    expect(announce).toHaveBeenLastCalledWith('Protected lots');
-    a.editor.commit(erase(0));
-    expect(announce).toHaveBeenLastCalledWith('Unprotected lots');
-    expect(store.policy.brushes).toHaveLength(0);
-    expect(store.policy.protect.strokes).toEqual([
-      { path: paint(0).path, radiusM: 30, kind: 'protect' },
-      { path: erase(0).path, radiusM: 20, kind: 'unprotect' }
-    ]);
+    // Paint after an erase starts a new brush, even at the same stories.
+    a.editor.commit(paint(0.002));
+    expect(store.policy.custom.map((b) => b.kind)).toEqual(['paint', 'erase', 'paint']);
   });
 
   it('undo and redo go to the store, return null and announce the label', () => {
@@ -110,11 +96,11 @@ describe('createStrokeAdapter', () => {
     const label = store.undoLabel;
     expect(label).toBeTruthy();
     expect(a.editor.undo()).toBeNull();
-    expect(store.policy.brushes).toHaveLength(0);
+    expect(store.policy.custom).toHaveLength(0);
     expect(announce).toHaveBeenLastCalledWith(`Undid: ${label}`);
     expect(store.redoLabel).toBe(label);
     expect(a.editor.redo()).toBeNull();
-    expect(store.policy.brushes).toHaveLength(1);
+    expect(store.policy.custom).toHaveLength(1);
     expect(announce).toHaveBeenLastCalledWith(`Redid: ${label}`);
   });
 

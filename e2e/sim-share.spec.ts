@@ -1,6 +1,6 @@
 // /sim publishing e2e (plan 5, Task 7): publish a policy and open its /s/<id> link, Remix, the
 // autosave across a reload, a tampered and a gone-dataset policy seeded through the e2e-only
-// route, the /p -> /s redirect, `start=fzp` keeping the saved policy, storage refused, and the
+// route, the /p -> /s redirect, storage refused, and the
 // accessibility and layout checks on the read-only view. Runs against the VITE_E2E build on
 // fixture-0. Seeded documents are captured from the app's own autosave, never hand-written, so
 // they follow the SimDoc shape.
@@ -22,8 +22,6 @@ type Doc = {
 
 const PRESET = "Permits at San Diego's pace";
 const TIMING_NOTICE = 'Some permitting timelines were re-fit to the data this simulation runs on.';
-const FZP_KEPT =
-  'Showing the Family Zoning Plan comparison. Your saved policy is kept until you change something here.';
 const ID = '[1-9A-HJ-NP-Za-km-z]{8}';
 
 // ---- helpers (as in e2e/sim.spec.ts, which keeps its own copies) ---------------------------------
@@ -104,8 +102,8 @@ async function choosePreset(page: Page): Promise<void> {
   await expect(panel(page).getByTestId('timing-label')).toHaveText(PRESET);
 }
 
-const brushList = (page: Page): Locator =>
-  panel(page).getByRole('list', { name: 'Your brushes' }).getByRole('listitem');
+const ruleList = (page: Page): Locator =>
+  panel(page).getByRole('list', { name: 'New zoning rules' }).getByRole('listitem');
 
 /** The autosaved document, or null. */
 const storedDoc = (page: Page): Promise<Doc | null> =>
@@ -214,6 +212,14 @@ test('publish round trip', async ({ page, browser, isMobile }, testInfo) => {
     await expect(summary).toContainText(PRESET);
     expect(await storedDoc(visitor), 'viewing never writes the autosave').toBeNull();
     await closeSheet(visitor, isMobile);
+    // The view opens in Setup with Run available; during a run the pane offers "Back to start".
+    await visitor.getByRole('button', { name: 'Run', exact: true }).click();
+    await expect(
+      (await openPolicy(visitor)).getByRole('button', { name: 'Back to start' })
+    ).toBeVisible();
+    await panel(visitor).getByRole('button', { name: 'Back to start' }).click();
+    await expect(visitor.getByRole('button', { name: 'Run', exact: true })).toBeVisible();
+    await closeSheet(visitor, isMobile);
 
     // No confirm: the visitor's local policy is the default one.
     await sharedBanner(visitor).getByRole('button', { name: 'Remix' }).click();
@@ -237,16 +243,16 @@ test('publish round trip', async ({ page, browser, isMobile }, testInfo) => {
 test('autosave survives a reload', async ({ page }) => {
   await gotoSim(page);
   await openPolicy(page);
-  await expandSection(page, 'Your zoning');
-  await panel(page).getByRole('button', { name: 'Add a brush' }).click();
+  await expandSection(page, 'New zoning rules');
+  await panel(page).getByRole('button', { name: 'Add a rule' }).click();
   const transit = panel(page).getByRole('button', { name: 'Transit', exact: true });
   await expect(transit).toBeEnabled({ timeout: 20_000 });
   await transit.click();
-  const form = panel(page).getByRole('form', { name: 'Add a transit brush', exact: true });
+  const form = panel(page).getByRole('form', { name: 'Add a transit rule', exact: true });
   await form.getByRole('checkbox', { name: /^Muni Metro/ }).check();
-  await form.getByRole('button', { name: 'Save brush' }).click();
-  await expect(brushList(page)).toHaveCount(1);
-  await expect(brushList(page).first()).toContainText('Near');
+  await form.getByRole('button', { name: 'Save rule' }).click();
+  await expect(ruleList(page)).toHaveCount(1);
+  await expect(ruleList(page).first()).toContainText('Near');
 
   await choosePreset(page);
   await panel(page).getByRole('button', { name: 'Save timelines' }).click();
@@ -254,20 +260,22 @@ test('autosave survives a reload', async ({ page }) => {
   await expect
     .poll(async () => {
       const d = await storedDoc(page);
-      const p = d?.policy as { brushes?: unknown[]; timing?: { saved?: unknown } } | undefined;
-      return !!p && p.brushes?.length === 1 && !!p.timing?.saved;
+      const p = d?.policy as { rules?: unknown[]; timing?: { saved?: unknown } } | undefined;
+      return !!p && p.rules?.length === 1 && !!p.timing?.saved;
     })
     .toBe(true);
 
   await page.reload();
   await waitReady(page);
+  // The phase is not persisted: a reload opens in Setup.
+  await expect(page.getByTestId('fzp-play-label')).toHaveText('Run');
   await openPolicy(page);
-  await expandSection(page, 'Your zoning');
-  await expect(brushList(page)).toHaveCount(1);
-  await expect(brushList(page).first()).toContainText('Near');
-  // The restored brush resolves (C1): the card counts its lots, and the full levers are in force.
-  await expect(brushList(page).first()).toContainText(/ · [\d,]+ lots? · /, { timeout: 20_000 });
-  await expect(brushList(page).first()).not.toContainText('Finding lots…');
+  await expandSection(page, 'New zoning rules');
+  await expect(ruleList(page)).toHaveCount(1);
+  await expect(ruleList(page).first()).toContainText('Near');
+  // The restored rule resolves (C1): the card counts its lots, and the full levers are in force.
+  await expect(ruleList(page).first()).toContainText(/ · [\d,]+ lots? /, { timeout: 20_000 });
+  await expect(ruleList(page).first()).not.toContainText('Finding lots…');
   await expect
     .poll(async () => (await leverStatus(page)).status, { timeout: 20_000 })
     .toBe('current');
@@ -318,28 +326,6 @@ test('kind redirects: /p/<policy id> lands on /s/<policy id>', async ({ page }) 
 });
 
 // ---- /fzp and storage ------------------------------------------------------------------------------
-
-test('/fzp keeps the saved policy', async ({ page }) => {
-  await capturePresetDoc(page);
-  const raw = await page.evaluate((k) => localStorage.getItem(k), SIM_KEY);
-  expect(raw).not.toBeNull();
-
-  await page.goto('/fzp');
-  await expect(page).toHaveURL(/\/sim\?start=fzp$/);
-  await waitReady(page);
-  const kept = notices(page).filter({ hasText: FZP_KEPT });
-  await expect(kept).toHaveCount(1);
-  await expect(kept.getByRole('link', { name: 'Open your policy' })).toHaveAttribute(
-    'href',
-    '/sim'
-  );
-  expect(await page.evaluate((k) => localStorage.getItem(k), SIM_KEY)).toBe(raw);
-  expect(
-    await page.evaluate(() =>
-      Object.keys(localStorage).filter((k) => k.startsWith('sfhousing:sim:corrupt:'))
-    )
-  ).toEqual([]);
-});
 
 test('storage off: the header shows "Autosave off" and editing works', async ({ page }) => {
   await page.addInitScript(() => {

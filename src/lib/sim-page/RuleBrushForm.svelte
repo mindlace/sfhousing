@@ -1,8 +1,10 @@
 <!--
-  A rule brush's form (Transit, Street, Commercial corridor, Area). It is seeded once from
-  `initial` (an edit keeps the brush's id) and calls `onsave` with a complete brush; Save stays
-  disabled, with the reason beside it, until the brush would select something and its numbers are
-  in range. A commercial corridor is a Street brush preset to arterial frontage zoned NC or NCT.
+  A zoning rule's form (Transit, Street, Commercial corridor). It is seeded once from `initial`
+  (an edit keeps the rule's id) and calls `onsave` with a complete rule; pressing Save with a
+  problem shows the reason beside it instead, until the rule would select something and its
+  numbers are in range. A transit rule's bands never get taller with distance (partner ruling):
+  compared by distance, whatever order they were entered in. A commercial corridor is a Street
+  rule preset to arterial frontage zoned NC or NCT.
 -->
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
@@ -23,30 +25,19 @@
     count,
     type RuleKind
   } from './brush-summary';
-  import {
-    DEFAULT_BANDS,
-    defaultEffect,
-    type BrushMode,
-    type TransitBand,
-    type ZoningBrush
-  } from './policy';
+  import { DEFAULT_BANDS, bandProblem, type TransitBand, type ZoningRule } from './policy';
 
   interface Props {
     kind: RuleKind;
     catalog: BrushCatalog;
-    initial?: ZoningBrush;
-    onsave(b: ZoningBrush): void;
+    initial?: ZoningRule;
+    onsave(r: ZoningRule): void;
     oncancel(): void;
   }
   let { kind, catalog, initial = undefined, onsave, oncancel }: Props = $props();
 
   const MAX_BANDS = 3;
   const DEFAULT_STORIES = 6;
-  const MODES: { id: BrushMode; label: string }[] = [
-    { id: 'raise', label: 'Raise' },
-    { id: 'lower', label: 'Lower' },
-    { id: 'set', label: 'Set to' }
-  ];
 
   const uid = $props.id();
   // The form is seeded once: later prop changes do not reset what the user has entered.
@@ -55,19 +46,9 @@
   const kindName = RULE_KINDS.find((r) => r.id === k)!.label.toLowerCase();
   // "an" before a vowel sound: every kind label starts with its sound's letter.
   const article = /^[aeiou]/.test(kindName) ? 'an' : 'a';
-  const title = `${init ? 'Edit' : 'Add'} ${article} ${kindName} brush`;
+  const title = `${init ? 'Edit' : 'Add'} ${article} ${kindName} rule`;
 
-  const initEffect =
-    init && init.kind !== 'transit' && init.kind !== 'erase' ? init.effect : undefined;
-  const initMode: BrushMode = init?.kind === 'transit' ? init.mode : (initEffect?.mode ?? 'raise');
-
-  let mode = $state<BrushMode>(initMode);
-  let stories = $state<number | null>(initEffect?.stories ?? DEFAULT_STORIES);
-  let densityLimits = $state(
-    init?.kind === 'transit'
-      ? init.densityLimits
-      : (initEffect?.densityLimits ?? defaultEffect(initMode, DEFAULT_STORIES).densityLimits)
-  );
+  let stories = $state<number | null>(init?.kind === 'street' ? init.stories : DEFAULT_STORIES);
 
   // Transit
   let stopTypes = $state<StopType[]>(init?.kind === 'transit' ? [...init.stopTypes] : []);
@@ -82,18 +63,8 @@
   let nameInput = $state('');
   let nameError = $state<string | null>(null);
 
-  // Area
-  let districts = $state<string[]>(init?.kind === 'area' ? [...init.districts] : []);
-  let neighborhoods = $state<string[]>(init?.kind === 'area' ? [...init.neighborhoods] : []);
-  let openFamilies = $state<Record<string, boolean>>({});
-
   let heading = $state<HTMLHeadingElement>();
   onMount(() => heading?.focus());
-
-  function setMode(m: BrushMode): void {
-    mode = m;
-    densityLimits = defaultEffect(m, stories ?? DEFAULT_STORIES).densityLimits;
-  }
 
   const toggle = <T,>(xs: T[], x: T, on: boolean): T[] =>
     on ? (xs.includes(x) ? xs : [...xs, x]) : xs.filter((y) => y !== x);
@@ -117,6 +88,16 @@
 
   /** Two bands at one distance: the later one would select nothing (shown at once). */
   const DUPLICATE_BANDS = 'Each band needs a different distance.';
+  /** An outer band taller than the band inside it (shown at once). */
+  const TALLER_BAND = "An outer band can't be taller than the band inside it";
+  /** The band rule, over the bands whose numbers are complete (`bandProblem`). */
+  const bandRule = $derived(
+    bandProblem(
+      bands
+        .filter((b) => okMetres(b.maxM) && okStories(b.stories))
+        .map((b) => ({ maxM: b.maxM!, stories: b.stories! }))
+    )
+  );
   const duplicateBands = $derived.by(() => {
     const ds = bands.map((b) => b.maxM).filter(okMetres);
     return new Set(ds).size < ds.length;
@@ -127,6 +108,7 @@
     switch (k) {
       case 'transit':
         if (duplicateBands) return DUPLICATE_BANDS;
+        if (bandRule === 'taller') return TALLER_BAND;
         if (stopTypes.length === 0) return 'Choose at least one stop type.';
         if (bands.some((b) => !okMetres(b.maxM))) return 'Each band needs a distance above 0 m.';
         if (bands.some((b) => !okStories(b.stories))) return storiesMsg;
@@ -137,25 +119,18 @@
         return okStories(stories) ? null : storiesMsg;
       case 'corridor':
         return okStories(stories) ? null : storiesMsg;
-      case 'area':
-        if (districts.length === 0 && neighborhoods.length === 0)
-          return 'Choose a district or a neighborhood.';
-        return okStories(stories) ? null : storiesMsg;
     }
   });
 
-  function build(): ZoningBrush {
+  function build(): ZoningRule {
     const id = init?.id ?? newOpId();
-    const effect = { mode, stories: stories!, densityLimits };
     switch (k) {
       case 'transit':
         return {
           id,
           kind: 'transit',
           stopTypes: STOP_TYPES.filter((t) => stopTypes.includes(t)),
-          bands: bands.map((b): TransitBand => ({ maxM: b.maxM!, stories: b.stories! })),
-          mode,
-          densityLimits
+          bands: bands.map((b): TransitBand => ({ maxM: b.maxM!, stories: b.stories! }))
         };
       case 'street':
         return {
@@ -165,7 +140,7 @@
           names: [...names],
           depth,
           ncOnly: false,
-          effect
+          stories: stories!
         };
       case 'corridor':
         return {
@@ -175,32 +150,22 @@
           names: [],
           depth: 0,
           ncOnly: true,
-          effect
+          stories: stories!
         };
-      case 'area': {
-        const order = catalog.districts.flatMap((f) => f.codes.map((c) => c.code));
-        const rank = (c: string) => (order.includes(c) ? order.indexOf(c) : order.length);
-        return {
-          id,
-          kind: 'area',
-          districts: [...districts].sort((a, b) => rank(a) - rank(b)),
-          neighborhoods: catalog.neighborhoods
-            .filter((n) => neighborhoods.includes(n))
-            .concat(neighborhoods.filter((n) => !catalog.neighborhoods.includes(n))),
-          effect
-        };
-      }
     }
   }
 
   /**
    * Save stays enabled (a disabled button hides its reason from keyboard users). Pressing it with a
    * problem shows the reason in the form's live region (WCAG 4.1.3); from then on the reason
-   * follows the fields. A duplicate band distance is shown as soon as it is entered.
+   * follows the fields. A duplicate band distance or a taller outer band is shown as soon as it
+   * is entered.
    */
   let attempted = $state(false);
   const shown = $derived(
-    problem !== null && (attempted || problem === DUPLICATE_BANDS) ? problem : null
+    problem !== null && (attempted || problem === DUPLICATE_BANDS || problem === TALLER_BAND)
+      ? problem
+      : null
   );
 
   function onsubmit(e: SubmitEvent): void {
@@ -212,8 +177,6 @@
     onsave(build());
   }
 
-  const famCodes = (f: BrushCatalog['districts'][number]) => f.codes.map((c) => c.code);
-  const famLots = (f: BrushCatalog['districts'][number]) => f.codes.reduce((s, c) => s + c.lots, 0);
   const field = 'rounded-md border border-gray-400 px-2 min-h-11';
   const check = 'flex min-h-6 items-center gap-1.5';
   const smallBtn =
@@ -243,7 +206,10 @@
 
     <fieldset class="flex flex-col gap-2">
       <legend class="font-semibold">Bands</legend>
-      <p class="text-gray-700">Each band sets the height of the lots within its distance.</p>
+      <p class="text-gray-700">
+        Each band allows a height on the lots within its distance. The innermost band wins, and an
+        outer band is never taller than the band inside it.
+      </p>
       {#each bands as band, i (i)}
         <div class="flex flex-wrap items-end gap-2">
           <label class="flex flex-col">
@@ -356,98 +322,7 @@
     </label>
   {:else if k === 'corridor'}
     <p>{CORRIDOR_TEXT}</p>
-  {:else}
-    <fieldset class="flex flex-col gap-1">
-      <legend class="font-semibold">Zoning districts</legend>
-      <ul class="flex flex-col gap-1">
-        {#each catalog.districts as f, fi (f.family)}
-          {@const codes = famCodes(f)}
-          {@const on = codes.filter((c) => districts.includes(c)).length}
-          {@const codesId = `${uid}-fam-${fi}`}
-          <li>
-            <div class="flex flex-wrap items-center gap-x-2">
-              <label class={check}>
-                <input
-                  type="checkbox"
-                  class="size-6"
-                  checked={on === codes.length}
-                  indeterminate={on > 0 && on < codes.length}
-                  onchange={(e) => {
-                    const ticked = e.currentTarget.checked;
-                    districts = ticked
-                      ? [...districts, ...codes.filter((c) => !districts.includes(c))]
-                      : districts.filter((c) => !codes.includes(c));
-                  }}
-                />
-                {f.family} family · {count(famLots(f), 'lot', 'lots')}
-              </label>
-              <button
-                type="button"
-                class={smallBtn}
-                aria-expanded={!!openFamilies[f.family]}
-                aria-controls={codesId}
-                onclick={() => (openFamilies[f.family] = !openFamilies[f.family])}
-                >{f.family} codes</button
-              >
-            </div>
-            {#if openFamilies[f.family]}
-              <ul id={codesId} class="ml-8 flex flex-col gap-1">
-                {#each f.codes as c (c.code)}
-                  <li>
-                    <label class={check}>
-                      <input
-                        type="checkbox"
-                        class="size-6"
-                        checked={districts.includes(c.code)}
-                        onchange={(e) =>
-                          (districts = toggle(districts, c.code, e.currentTarget.checked))}
-                      />
-                      {c.code} · {count(c.lots, 'lot', 'lots')}
-                    </label>
-                  </li>
-                {/each}
-              </ul>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    </fieldset>
-
-    <fieldset class="flex flex-col gap-1">
-      <legend class="font-semibold">Neighborhoods</legend>
-      {#if catalog.has.neighborhoods}
-        {#each catalog.neighborhoods as nb (nb)}
-          <label class={check}>
-            <input
-              type="checkbox"
-              class="size-6"
-              checked={neighborhoods.includes(nb)}
-              onchange={(e) => (neighborhoods = toggle(neighborhoods, nb, e.currentTarget.checked))}
-            />
-            {nb}
-          </label>
-        {/each}
-      {:else}
-        <p class="text-gray-700">This dataset has no neighborhood boundaries.</p>
-      {/if}
-    </fieldset>
   {/if}
-
-  <fieldset class="flex flex-wrap gap-x-3 gap-y-1">
-    <legend class="w-full font-semibold">Mode</legend>
-    {#each MODES as m (m.id)}
-      <label class={check}>
-        <input
-          type="radio"
-          name="{uid}-mode"
-          class="size-6"
-          checked={mode === m.id}
-          onchange={() => setMode(m.id)}
-        />
-        {m.label}
-      </label>
-    {/each}
-  </fieldset>
 
   {#if k !== 'transit'}
     <label class="flex flex-col">
@@ -463,16 +338,11 @@
     </label>
   {/if}
 
-  <label class={check}>
-    <input type="checkbox" class="size-6" bind:checked={densityLimits} />
-    Density limits
-  </label>
-
   <div class="flex flex-wrap items-center gap-2">
     <button
       type="submit"
       class="min-h-11 rounded-md bg-black px-3 font-semibold text-white"
-      aria-describedby={shown ? `${uid}-problem` : undefined}>Save brush</button
+      aria-describedby={shown ? `${uid}-problem` : undefined}>Save rule</button
     >
     <button
       type="button"

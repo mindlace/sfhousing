@@ -1,8 +1,9 @@
-// /fzp e2e (fzp-mode spec §6). /fzp now redirects to /sim?start=fzp (plan 3, Call 14), so these
+// /fzp e2e (fzp-mode spec §6). /fzp now redirects to /sim (plan 3, Call 14), so these
 // tests open the timelapse there; e2e/sim.spec.ts covers the redirect itself. Runs against the
 // VITE_E2E build, which exposes window.__sfhFzp (src/lib/fzp/debug.ts) and window.__sfhMap.
 // Fixture-0 files are read from disk; counts, ids and labels are derived from them, never
-// hard-coded. Playback starts paused.
+// hard-coded. Playback starts paused, in Setup (spec §1): tests that scrub or play start a run
+// first (`gotoFzp(page, '', { run: true })`).
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { SOURCE_DATASETS } from '../src/lib/fzp/card';
@@ -10,6 +11,7 @@ import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { monthStart } from '../src/lib/fzp/time';
 import { formatCount } from '../src/lib/scoreboard/format';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { slider, startRun } from './helpers/run';
 import {
   FRAME,
   gotoHydrated,
@@ -77,9 +79,7 @@ const SHIPYARD = projectById('CASE:2007.0001PRX');
 
 // ---- helpers ------------------------------------------------------------------------------------
 
-const slider = (page: Page): Locator =>
-  page.getByRole('slider', { name: 'Date in the simulation' });
-const readout = (page: Page): Locator => page.getByTestId('fzp-readout');
+const readout = (page: Page): Locator => page.getByTestId('fzp-readout-label');
 /** The header score bar: "{n} homes added" at the scrubbed day. */
 const scoreBar = (page: Page): Locator => page.getByTestId('score-bar');
 /** "Another future", made visible first (below 768 px it waits in the header Menu). */
@@ -126,17 +126,25 @@ async function waitForMapOnly(page: Page): Promise<void> {
 }
 
 /** Where /fzp's redirect lands: the timelapse on /sim, with the FZP comparison. */
-const FZP_PATH = '/sim?start=fzp';
+const FZP_PATH = '/sim';
 /** The address bar on the timelapse's representative future. */
-const FZP_URL = /\/sim\?start=fzp$/;
+const FZP_URL = /\/sim$/;
 /** The address bar on the timelapse after a reroll to `seed` (any seed when omitted). */
-const seedUrl = (seed?: number): RegExp => new RegExp(`/sim\\?start=fzp&seed=${seed ?? '\\d+'}$`);
+const seedUrl = (seed?: number): RegExp => new RegExp(`/sim\\?seed=${seed ?? '\\d+'}$`);
 
-/** The timelapse (`/sim?start=fzp`, plus `search`'s parameters) at a stable day, ready. */
-async function gotoFzp(page: Page, search = ''): Promise<void> {
+/**
+ * The timelapse (`/sim`, plus `search`'s parameters) at a stable day, ready. With `run`, a run is
+ * started and paused at asOf, so the scrubber, Play and the markers work.
+ */
+async function gotoFzp(
+  page: Page,
+  search = '',
+  { run = false }: { run?: boolean } = {}
+): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto(search ? `${FZP_PATH}&${search.replace(/^\?/, '')}` : FZP_PATH);
+  await page.goto(search ? `${FZP_PATH}?${search.replace(/^\?/, '')}` : FZP_PATH);
   await waitReady(page);
+  if (run) await startRun(page);
 }
 
 /** A mouse click on desktop, a one-finger tap on the mobile project. */
@@ -236,9 +244,9 @@ async function expectFooterReachable(page: Page): Promise<void> {
 // ---- load and controls --------------------------------------------------------------------------
 
 test('loads ready and the keyboard drives the scrubber to both ends', async ({ page }) => {
-  await gotoFzp(page);
+  await gotoFzp(page, '', { run: true });
   expect(await fzp(page, 'phase')).toBe('ready');
-  await expect(readout(page)).toContainText('October 2026');
+  await expect(readout(page)).toHaveText('October 2026');
   expect(await fzp(page, 'day')).toBe(await fzp(page, 'asOf'));
 
   const { baseline, shown, months } = JSON.parse(await scoreJson(page)) as {
@@ -250,13 +258,13 @@ test('loads ready and the keyboard drives the scrubber to both ends', async ({ p
   await slider(page).focus();
   await page.keyboard.press('PageUp'); // away from the start, so Home has something to do
   await page.keyboard.press('Home');
-  await expect(readout(page)).toContainText('October 2026');
+  await expect(readout(page)).toHaveText('October 2026');
   await expect(scoreBar(page)).toHaveText(
     `${formatCount(baseline.completedNet + shown[0].completedNet)} homes added`
   );
 
   await page.keyboard.press('End');
-  await expect(readout(page)).toContainText('December 2066');
+  await expect(readout(page)).toHaveText('December 2066');
   expect(await fzp(page, 'day')).toBe(await fzp(page, 'horizon'));
   await expect(scoreBar(page)).toHaveText(
     `${formatCount(baseline.completedNet + shown[months.length - 1].completedNet)} homes added`
@@ -265,7 +273,9 @@ test('loads ready and the keyboard drives the scrubber to both ends', async ({ p
 
 // ---- playback start -----------------------------------------------------------------------------
 
-test('the day stays at asOf until Play is pressed', async ({ page }) => {
+test('the day stays at asOf, in Setup with the scrubber disabled, until Run is pressed', async ({
+  page
+}) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.goto(FZP_PATH);
   await waitReady(page);
@@ -273,8 +283,10 @@ test('the day stays at asOf until Play is pressed', async ({ page }) => {
   const asOf = await fzp(page, 'asOf');
   expect(await fzp(page, 'day')).toBe(asOf);
   expect(await fzp(page, 'playing')).toBe(false);
+  expect(await fzp(page, 'runPhase')).toBe('setup');
+  await expect(slider(page)).toBeDisabled();
 
-  await page.getByRole('button', { name: 'Play' }).click();
+  await page.getByRole('button', { name: 'Run', exact: true }).click();
   await expect.poll(() => fzp(page, 'day'), { timeout: 5_000 }).toBeGreaterThan(asOf);
 });
 
@@ -283,7 +295,7 @@ test('the day stays at asOf until Play is pressed', async ({ page }) => {
 test('Another future writes ?seed=N, keeps the day, and the URL seed reproduces the future', async ({
   page
 }) => {
-  await gotoFzp(page);
+  await gotoFzp(page, '', { run: true });
   const first = await fzp(page, 'seed');
   expect(await fzp(page, 'representative')).toBe(true);
 
@@ -346,14 +358,14 @@ test('after Another future, the header Simulate link, Back and Forward each show
   expect(await fzp(page, 'representative')).toBe(true);
   const seed = await reroll(page);
 
-  // The Simulate link is /sim (current law, a new load): its representative future.
+  // The Simulate link is /sim (a new load): its representative future.
   await (await headerLink(page, 'Simulate')).click();
   await expect(page).toHaveURL(/\/sim$/);
   await expectAddressFuture(page);
   await waitReady(page);
 
   // Back to the rerolled entry: SvelteKit navigates to the URL it stored before replaceState
-  // (/sim?start=fzp), but the address bar reads &seed=N, and the page must show #N.
+  // (/sim?seed=N before the reroll), but the address bar reads the rerolled seed, and the page must show #N.
   await page.goBack();
   await expect(page).toHaveURL(seedUrl(seed));
   await expectAddressFuture(page);
@@ -432,7 +444,7 @@ test('a phase of a multi-phase project reads "Phase n of m" once the scrubber re
   test.setTimeout(120_000);
   expect(SHIPYARD.multiPhase).toBe(true);
   const label = SHIPYARD.label!;
-  await gotoFzp(page);
+  await gotoFzp(page, '', { run: true });
   // Both phase lots in one view: centred between them, wide enough for a 375 px map.
   const points = SHIPYARD.parcelIds.map((id) => LABELS.get(id)!);
   await frameOn(page, [(points[0][0] + points[1][0]) / 2, points[0][1]], 17);

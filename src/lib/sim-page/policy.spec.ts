@@ -1,25 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import {
-  DEFAULT_LEVERS,
-  FZP_COMPAT_LEVERS,
-  parseSimLevers,
-  type TimerEdit
-} from '$lib/sim/levers/types';
+import { DEFAULT_LEVERS, parseSimLevers, type TimerEdit } from '$lib/sim/levers/types';
+import { CALCULATING } from '$lib/fzp/copy';
+import { PolicyStore } from './policy-store.svelte';
 import { OBSERVED_TIMING, type TimingSet } from './timing';
 import {
   DEFAULT_BANDS,
+  DEFAULT_POLICY,
   PolicyFormatError,
   compileLevers,
-  defaultEffect,
+  customQuery,
+  isDefaultPolicy,
   lotRoles,
+  paintedLots,
   parseSimPolicy,
-  policyFromLevers,
   queriesOf,
   queryKey,
+  comparisonLine,
+  ruleQueries,
   scoreCopy,
+  type CustomBrush,
+  type Lots,
   type SimPolicy,
   type Stroke,
-  type ZoningBrush
+  type TransitBand,
+  type ZoningRule
 } from './policy';
 
 const stroke: Stroke = {
@@ -30,22 +34,35 @@ const stroke: Stroke = {
   radiusM: 50
 };
 const base = (over: Partial<SimPolicy> = {}): SimPolicy => ({
-  ...policyFromLevers(DEFAULT_LEVERS),
+  ...DEFAULT_POLICY,
   ...over
 });
-const eff = (mode: 'raise' | 'lower' | 'set', stories = 6) => defaultEffect(mode, stories);
-const freehand = (
-  id: string,
-  s: Stroke[],
-  mode: 'raise' | 'lower' | 'set' = 'raise'
-): ZoningBrush => ({
-  id,
-  kind: 'freehand',
-  strokes: s,
-  effect: eff(mode)
-});
 const s = (r: number): Stroke => ({ path: [[-122, 37]], radiusM: r });
-const supply = (m: Map<string, string[]>) => (k: string) => m.get(k);
+const lotsOf =
+  (m: Record<string, string[]>): Lots =>
+  (k) =>
+    m[k];
+const T = (bands: TransitBand[]): ZoningRule => ({
+  id: 't',
+  kind: 'transit',
+  stopTypes: ['metro'],
+  bands
+});
+const street = (id: string, stories = 6): ZoningRule => ({
+  id,
+  kind: 'street',
+  classes: ['arterial'],
+  names: [],
+  depth: 0,
+  ncOnly: false,
+  stories
+});
+const paint = (id: string, strokes: Stroke[], stories = 6): CustomBrush => ({
+  id,
+  kind: 'paint',
+  strokes,
+  stories
+});
 
 /** A custom set on benchmarkPermits: its preset timers, one edit and custom route shares. */
 const CUSTOM: TimingSet = {
@@ -78,106 +95,153 @@ const SB423: TimingSet = {
 };
 
 describe('compileLevers', () => {
-  it('round-trips the default and FZP levers', () => {
-    for (const l of [DEFAULT_LEVERS, FZP_COMPAT_LEVERS])
-      expect(compileLevers(policyFromLevers(l), () => undefined)).toEqual(l);
+  it('the default policy compiles to DEFAULT_LEVERS', () => {
+    expect(isDefaultPolicy(DEFAULT_POLICY)).toBe(true);
+    expect(compileLevers(DEFAULT_POLICY, () => [])).toEqual(DEFAULT_LEVERS);
   });
 
-  it('an empty brush compiles to no edit', () => {
-    const p = base({
-      brushes: [
-        {
-          id: 'a',
-          kind: 'street',
-          classes: ['major'],
-          names: [],
-          depth: 0,
-          ncOnly: false,
-          effect: eff('raise')
-        }
+  it('transit bands compile to rules; the inner band wins where both apply', () => {
+    const p = {
+      ...DEFAULT_POLICY,
+      rules: [
+        T([
+          { maxM: 402, stories: 8 },
+          { maxM: 805, stories: 5 }
+        ])
       ]
-    });
-    const key = queriesOf(p)[0].key;
-    const out = compileLevers(p, supply(new Map([[key, []]])));
-    expect(out?.user).toEqual([]);
+    };
+    const [outer, inner] = ruleQueries(p.rules[0]).map(queryKey);
+    const l = compileLevers(p, lotsOf({ [outer]: ['a', 'b'], [inner]: ['a'] }))!;
+    expect(l.rules).toEqual([
+      { lots: ['a', 'b'], stories: 5 },
+      { lots: ['a'], stories: 8 }
+    ]);
+    expect(l.compare).toBe('fzp');
   });
 
-  it('erase removes from earlier brushes only', () => {
-    const a = freehand('a', [s(1)]);
-    const e: ZoningBrush = { id: 'e', kind: 'erase', strokes: [s(2)] };
-    const b = freehand('b', [s(3)], 'set');
-    const p = base({ brushes: [a, e, b] });
-    const m = new Map<string, string[]>([
-      [queryKey({ kind: 'freehand', strokes: [s(1)] }), ['1', '2', '3']],
-      [queryKey({ kind: 'freehand', strokes: [s(2)] }), ['2']],
-      [queryKey({ kind: 'freehand', strokes: [s(3)] }), ['4', '2']]
-    ]);
-    const out = compileLevers(p, supply(m))!;
-    expect(out.user.map((u) => u.lots)).toEqual([
-      ['1', '3'],
-      ['2', '4']
-    ]);
-    expect(out.user[1].mode).toBe('set');
-    expect(() => parseSimLevers(out)).not.toThrow();
+  it('rules compile in list order, each lot list sorted; an empty rule emits no edit', () => {
+    const a = street('b', 9);
+    const b: ZoningRule = { ...street('a', 4), names: ['Geary Blvd'] } as ZoningRule;
+    const p = base({ rules: [a, b] });
+    const k = (r: ZoningRule) => queryKey(ruleQueries(r)[0]);
+    const l = compileLevers(p, lotsOf({ [k(a)]: ['2', '1'], [k(b)]: [] }))!;
+    expect(l.rules).toEqual([{ lots: ['1', '2'], stories: 9 }]);
+    expect(() => parseSimLevers(l)).not.toThrow();
   });
 
-  it('transit bands compile outermost first', () => {
-    const p = base({
-      brushes: [
-        {
-          id: 't',
-          kind: 'transit',
-          stopTypes: ['metro'],
-          bands: DEFAULT_BANDS,
-          mode: 'raise',
-          densityLimits: false
-        }
+  it('erase removes earlier paint only; paint order is kept', () => {
+    const st: Stroke = { path: [[-122.4, 37.77]], radiusM: 20 };
+    const p: SimPolicy = {
+      ...DEFAULT_POLICY,
+      custom: [
+        { id: '1', kind: 'paint', strokes: [st], stories: 9 },
+        { id: '2', kind: 'erase', strokes: [{ ...st, radiusM: 10 }] },
+        { id: '3', kind: 'paint', strokes: [{ ...st, radiusM: 5 }], stories: 3 }
       ]
-    });
-    const keys = queriesOf(p).map((q) => q.key);
-    expect(keys).toHaveLength(2);
-    const m = new Map<string, string[]>([
-      [queryKey({ kind: 'transit', stopTypes: ['metro'], maxM: 402 }), ['1']],
-      [queryKey({ kind: 'transit', stopTypes: ['metro'], maxM: 805 }), ['1', '2']]
+    };
+    const [k1, k2, k3] = p.custom.map((b) => queryKey(customQuery(b)));
+    const lots = lotsOf({ [k1]: ['a', 'b', 'c'], [k2]: ['a', 'b'], [k3]: ['b'] });
+    expect(compileLevers(p, lots)!.paint).toEqual([
+      { lots: ['c'], stories: 9 },
+      { lots: ['b'], stories: 3 }
     ]);
-    const out = compileLevers(p, supply(m))!;
-    expect(out.user.map((u) => [u.stories, u.lots])).toEqual([
-      [4, ['1', '2']],
-      [6, ['1']]
-    ]);
+    expect(paintedLots(p, lots)).toEqual(
+      new Map([
+        ['c', 9],
+        ['b', 3]
+      ])
+    );
   });
 
-  it('protection wins over a later raise, and unprotect removes', () => {
-    const prot = { ...stroke, kind: 'protect' as const };
-    const unprot = { ...s(9), kind: 'unprotect' as const };
-    const p = base({
-      brushes: [freehand('r', [s(5)])],
-      protect: { ...base().protect, strokes: [prot, unprot] }
+  it('erase never touches rules', () => {
+    const r = street('r', 7);
+    const p = base({ rules: [r], custom: [{ id: 'e', kind: 'erase', strokes: [s(1)] }] });
+    const lots = lotsOf({
+      [queryKey(ruleQueries(r)[0])]: ['1'],
+      [queryKey(customQuery(p.custom[0]))]: ['1']
     });
-    const pk = queryKey({ kind: 'freehand', strokes: [stroke] });
-    const uk = queryKey({ kind: 'freehand', strokes: [s(9)] });
-    const rk = queryKey({ kind: 'freehand', strokes: [s(5)] });
-    const m = new Map<string, string[]>([
-      [pk, ['5', '6']],
-      [uk, ['6']],
-      [rk, ['5']]
-    ]);
-    expect(compileLevers(p, supply(m))!.protect.lots).toEqual(['5']);
-    expect(lotRoles(p, supply(m)).get('5')).toBe('protected');
-    expect(lotRoles(p, supply(m)).has('6')).toBe(false);
+    expect(compileLevers(p, lots)!.rules).toEqual([{ lots: ['1'], stories: 7 }]);
+    expect(paintedLots(p, lots)).toEqual(new Map());
   });
 
   it('returns null while a key is missing', () => {
-    const p = base({ brushes: [freehand('a', [s(1)])] });
-    expect(compileLevers(p, () => undefined)).toBeNull();
+    expect(compileLevers(base({ custom: [paint('a', [s(1)])] }), () => undefined)).toBeNull();
+    expect(compileLevers(base({ rules: [street('a')] }), () => undefined)).toBeNull();
+    expect(paintedLots(base({ custom: [paint('a', [s(1)])] }), () => undefined)).toBeNull();
   });
 
   it('maps category protections and timing', () => {
-    const l = {
+    const p = base({ protect: { ...DEFAULT_POLICY.protect, historic: true, newerThanYears: 5 } });
+    expect(compileLevers(p, () => [])).toEqual({
       ...DEFAULT_LEVERS,
-      protect: { ...DEFAULT_LEVERS.protect, historic: true, newerThanYears: 5 }
+      protect: { ...DEFAULT_LEVERS.protect, historic: true, newerThanYears: 5 },
+      compare: 'fzp'
+    });
+  });
+
+  it('undoing back to the default compares with pre-FZP again', () => {
+    const store = new PolicyStore(DEFAULT_POLICY);
+    store.apply((p) => ({ ...p, protect: { ...p.protect, historic: true } }), 'x');
+    expect(compileLevers(store.policy, () => [])!.compare).toBe('fzp');
+    store.undo();
+    expect(compileLevers(store.policy, () => [])!.compare).toBe('preFzp');
+  });
+
+  it('a timing change alone is a customisation', () => {
+    const p = {
+      ...DEFAULT_POLICY,
+      timing: {
+        ...DEFAULT_POLICY.timing,
+        current: { ...DEFAULT_POLICY.timing.current, localProgramStreamlined: false }
+      }
     };
-    expect(compileLevers(policyFromLevers(l), () => undefined)).toEqual(l);
+    expect(isDefaultPolicy(p)).toBe(false);
+  });
+
+  it('a saved timing snapshot alone is not a customisation', () => {
+    const saved = { label: 'x', set: OBSERVED_TIMING.current };
+    expect(isDefaultPolicy(base({ timing: { ...DEFAULT_POLICY.timing, saved } }))).toBe(true);
+  });
+});
+
+describe('queries', () => {
+  it('a transit rule has one query per band, outermost first', () => {
+    expect(ruleQueries(T(DEFAULT_BANDS))).toEqual([
+      { kind: 'transit', stopTypes: ['metro'], maxM: 805 },
+      { kind: 'transit', stopTypes: ['metro'], maxM: 402 }
+    ]);
+  });
+
+  it('a custom brush is one freehand query; queriesOf dedupes across rules and custom', () => {
+    const b = paint('a', [s(1)]);
+    expect(customQuery(b)).toEqual({ kind: 'freehand', strokes: [s(1)] });
+    const p = base({
+      rules: [street('a'), street('b')],
+      custom: [b, { id: 'e', kind: 'erase', strokes: [s(1)] }]
+    });
+    expect(queriesOf(p).map((q) => q.query)).toEqual([
+      ruleQueries(street('a'))[0],
+      { kind: 'freehand', strokes: [s(1)] }
+    ]);
+  });
+
+  it('lotRoles marks rule lots and painted lots as changed, not erased ones', () => {
+    const r = street('r');
+    const p = base({
+      rules: [r],
+      custom: [paint('p', [s(1)]), { id: 'e', kind: 'erase', strokes: [s(2)] }]
+    });
+    const lots = lotsOf({
+      [queryKey(ruleQueries(r)[0])]: ['1'],
+      [queryKey({ kind: 'freehand', strokes: [s(1)] })]: ['2', '3'],
+      [queryKey({ kind: 'freehand', strokes: [s(2)] })]: ['3']
+    });
+    expect(lotRoles(p, lots)).toEqual(
+      new Map([
+        ['1', 'changed'],
+        ['2', 'changed']
+      ])
+    );
   });
 });
 
@@ -208,20 +272,8 @@ describe('timing in the policy', () => {
     ]);
   });
 
-  it('policyFromLevers maps no timers to the observed set and refuses anything else', () => {
-    expect(policyFromLevers(DEFAULT_LEVERS).timing).toEqual({
-      current: OBSERVED_TIMING.current,
-      saved: null
-    });
-    for (const l of [
-      {
-        ...DEFAULT_LEVERS,
-        timers: [{ pathway: 'discretionary', stage: 'filed', scale: 0.5, reach: 'all' } as const]
-      },
-      { ...DEFAULT_LEVERS, routeShares: { discretionary: 1, streamlined: 1, permitOnly: 1 } },
-      { ...DEFAULT_LEVERS, localProgramStreamlined: false }
-    ])
-      expect(() => policyFromLevers(l)).toThrow(PolicyFormatError);
+  it('the default policy runs on the observed timing set', () => {
+    expect(DEFAULT_POLICY.timing).toEqual({ current: OBSERVED_TIMING.current, saved: null });
   });
 
   const rejectTiming = (
@@ -367,116 +419,122 @@ describe('timing in the policy', () => {
   });
 });
 
-describe('defaultEffect', () => {
-  it('sets density limits by mode', () => {
-    expect(defaultEffect('raise', 6).densityLimits).toBe(false);
-    expect(defaultEffect('set', 6).densityLimits).toBe(true);
-    expect(defaultEffect('lower', 2).densityLimits).toBe(true);
-  });
-});
-
 describe('parseSimPolicy', () => {
   const full = (): SimPolicy =>
     base({
-      brushes: [
-        freehand('a', [stroke]),
-        { id: 'e', kind: 'erase', strokes: [stroke] },
-        {
-          id: 't',
-          kind: 'transit',
-          stopTypes: ['metro', 'rapidBus'],
-          bands: DEFAULT_BANDS,
-          mode: 'raise',
-          densityLimits: false
-        },
-        {
-          id: 's',
-          kind: 'street',
-          classes: [],
-          names: ['Geary Blvd'],
-          depth: 1,
-          ncOnly: true,
-          effect: eff('lower', 2)
-        },
-        {
-          id: 'z',
-          kind: 'area',
-          districts: ['RH-1'],
-          neighborhoods: ['Sunset'],
-          effect: eff('set', 4)
-        }
+      rules: [
+        { id: 't', kind: 'transit', stopTypes: ['metro', 'rapidBus'], bands: DEFAULT_BANDS },
+        { ...street('s'), classes: [], names: ['Geary Blvd'], depth: 1, ncOnly: true } as ZoningRule
       ],
-      protect: { ...base().protect, strokes: [{ ...stroke, kind: 'protect' }] },
+      custom: [paint('a', [stroke]), { id: 'e', kind: 'erase', strokes: [stroke] }],
+      protect: { rentControl: true, historic: false, newerThanYears: 20 },
       timing: { current: CUSTOM, saved: { label: 'Mine', set: CUSTOM } }
     });
 
-  it('round-trips one brush of each kind', () => {
+  it('round-trips each kind of rule and custom brush', () => {
     const p = full();
     expect(parseSimPolicy(JSON.parse(JSON.stringify(p)))).toEqual(p);
   });
 
-  const reject = (
-    mut: (p: {
-      brushes: {
-        effect: { stories: number };
-        stopTypes: string[];
-        classes: string[];
-        depth: number;
-      }[];
-    }) => void,
-    path: string
-  ) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pathOf = (mut: (p: any) => void) => {
     const p = JSON.parse(JSON.stringify(full()));
     mut(p);
     try {
       parseSimPolicy(p);
-      expect.unreachable('should throw');
+      return null;
     } catch (e) {
-      expect((e as { path?: string }).path).toBe(path);
+      expect(e).toBeInstanceOf(PolicyFormatError);
+      return (e as PolicyFormatError).path;
     }
   };
+  const tr = (bands: TransitBand[]) => ({ ...DEFAULT_POLICY, rules: [T(bands)] });
 
-  it('rejects bad stories, stop type, street class and depth', () => {
-    reject((p) => (p.brushes[0].effect.stories = 0), 'brushes[0].effect.stories');
-    reject((p) => (p.brushes[0].effect.stories = 81), 'brushes[0].effect.stories');
-    reject((p) => (p.brushes[2].stopTypes = ['ferry']), 'brushes[2].stopTypes[0]');
-    reject((p) => (p.brushes[3].classes = ['highway']), 'brushes[3].classes[0]');
-    reject((p) => (p.brushes[3].depth = 2), 'brushes[3].depth');
+  it('rejects transit bands that get taller with distance (equal is allowed)', () => {
+    expect(() =>
+      parseSimPolicy(
+        tr([
+          { maxM: 402, stories: 4 },
+          { maxM: 805, stories: 6 }
+        ])
+      )
+    ).toThrow(/rules\[0\]\.bands/);
+    expect(
+      parseSimPolicy(
+        tr([
+          { maxM: 402, stories: 6 },
+          { maxM: 805, stories: 6 }
+        ])
+      ).rules
+    ).toHaveLength(1);
   });
 
-  it('rejects bad timing, duplicate ids and empty bands', () => {
-    const bad = (mut: (p: Record<string, unknown>) => void) => {
-      const p = JSON.parse(JSON.stringify(full()));
-      mut(p);
-      try {
-        parseSimPolicy(p);
-        expect.unreachable('should throw');
-      } catch (e) {
-        return (e as { path?: string }).path;
-      }
-    };
-    expect(
-      bad((p) => ((p.timing as { current: { edits: unknown } }).current.edits = ['x']))
-    ).toMatch(/^timing\.current\.edits/);
-    expect(bad((p) => ((p.brushes as { id: string }[])[1].id = 'a'))).toBe('brushes[1].id');
-    expect(bad((p) => ((p.brushes as { bands: unknown[] }[])[2].bands = []))).toBe(
-      'brushes[2].bands'
+  it('compares bands after sorting by distance, and rejects two bands at one distance', () => {
+    const ok = [
+      { maxM: 805, stories: 4 },
+      { maxM: 402, stories: 6 }
+    ];
+    expect(parseSimPolicy(tr(ok)).rules[0]).toEqual(T(ok));
+    expect(() =>
+      parseSimPolicy(
+        tr([
+          { maxM: 805, stories: 6 },
+          { maxM: 402, stories: 4 }
+        ])
+      )
+    ).toThrow(/rules\[0\]\.bands/);
+    expect(() =>
+      parseSimPolicy(
+        tr([
+          { maxM: 402, stories: 6 },
+          { maxM: 402, stories: 4 }
+        ])
+      )
+    ).toThrow(/rules\[0\]\.bands/);
+  });
+
+  it('rejects bad stories, stop type, street class and depth', () => {
+    expect(pathOf((p) => (p.custom[0].stories = 0))).toBe('custom[0].stories');
+    expect(pathOf((p) => (p.rules[1].stories = 81))).toBe('rules[1].stories');
+    expect(pathOf((p) => (p.rules[0].bands[0].stories = 0))).toBe('rules[0].bands[0].stories');
+    expect(pathOf((p) => (p.rules[0].stopTypes = ['ferry']))).toBe('rules[0].stopTypes[0]');
+    expect(pathOf((p) => (p.rules[1].classes = ['highway']))).toBe('rules[1].classes[0]');
+    expect(pathOf((p) => (p.rules[1].depth = 2))).toBe('rules[1].depth');
+  });
+
+  it('rejects bad timing, duplicate ids across both lists, empty bands and a bad stroke', () => {
+    expect(pathOf((p) => (p.timing.current.edits = ['x']))).toMatch(/^timing\.current\.edits/);
+    expect(pathOf((p) => (p.rules[1].id = 't'))).toBe('rules[1].id');
+    expect(pathOf((p) => (p.custom[0].id = 't'))).toBe('custom[0].id');
+    expect(pathOf((p) => (p.rules[0].bands = []))).toBe('rules[0].bands');
+    expect(pathOf((p) => (p.custom[0].strokes[0].radiusM = 0))).toBe(
+      'custom[0].strokes[0].radiusM'
     );
+    expect(pathOf((p) => (p.protect.newerThanYears = 0))).toBe('protect.newerThanYears');
+  });
+});
+
+describe('comparisonLine', () => {
+  it('names what the comparison is against', () => {
+    const fzp = scoreCopy(null);
+    const mine = scoreCopy({ ...DEFAULT_LEVERS, compare: 'fzp' });
+    expect(comparisonLine(fzp, 1234)).toBe('FZP added 1,234 homes vs no FZP');
+    expect(comparisonLine(mine, 56)).toBe('Your policy added 56 homes vs FZP');
+    expect(comparisonLine(mine, -56)).toBe('Your policy added \u221256 homes vs FZP');
+    expect(comparisonLine(mine, null)).toBe(`Your policy vs FZP: ${CALCULATING}`);
+    expect(comparisonLine(fzp, null)).toBe(`FZP vs no FZP: ${CALCULATING}`);
   });
 });
 
 describe('scoreCopy', () => {
   it('words the comparison', () => {
-    const fzp = { plan: 'the Family Zoning Plan', twin: 'the old zoning' };
+    const fzp = { plan: 'the Family Zoning Plan', twin: 'the old zoning', compare: 'preFzp' };
     expect(scoreCopy(null)).toEqual(fzp);
-    expect(scoreCopy(FZP_COMPAT_LEVERS)).toEqual(fzp);
-    expect(scoreCopy(DEFAULT_LEVERS)).toEqual({
+    expect(scoreCopy(DEFAULT_LEVERS)).toEqual(fzp);
+    expect(scoreCopy({ ...DEFAULT_LEVERS, compare: 'fzp' })).toEqual({
       plan: 'your policy',
-      twin: "the City's current rules"
-    });
-    expect(scoreCopy({ ...DEFAULT_LEVERS, compare: 'preFzp' })).toEqual({
-      plan: 'your policy',
-      twin: 'the old zoning'
+      twin: 'the Family Zoning Plan as written',
+      compare: 'fzp'
     });
   });
 });

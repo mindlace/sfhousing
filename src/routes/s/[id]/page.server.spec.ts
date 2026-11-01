@@ -56,7 +56,7 @@ describe('/s/[id] load', () => {
       createdAt: new Date(0).toISOString()
     });
     expect(data.doc.kind).toBe('sim');
-    expect(data.doc.policy.brushes).toHaveLength(1);
+    expect(data.doc.policy.custom).toHaveLength(1);
     expect(setHeaders).toHaveBeenCalledWith({ 'cache-control': 'private, max-age=300' });
   });
 

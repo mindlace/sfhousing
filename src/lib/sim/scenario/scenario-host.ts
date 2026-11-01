@@ -76,7 +76,7 @@ import {
 import type { LayerCtx } from '../levers/layers';
 import { createYieldRecompute, type GrossCache, type YieldRecompute } from '../levers/recompute';
 import { allNeeds, fillNeeds, resolveEnvelopes, type Resolution } from '../levers/resolve';
-import { CURRENT_LAW_SWITCH, parseSimLevers, type SimLevers } from '../levers/types';
+import { parseSimLevers, type SimLevers } from '../levers/types';
 import { chooseProject, projectCard, revisionAt, type CardCtx } from './card';
 import { createGeometry, type Geometry } from './geometry';
 import { massingFor, type MassingCtx } from './massing';
@@ -719,9 +719,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
   function leverStep(w: Work, lw: LeverWork, p: PendingLevers): void {
     if (p.state === null) {
       const base = lw.base.fzp;
-      // the current-law twin's window (twinInput), so plan and twin agree on the switch
-      const window = { asOf: base.asOf, horizon: w.horizon, switchDay: CURRENT_LAW_SWITCH.day };
-      const resolution = resolveEnvelopes(lw.ctx, p.levers, window);
+      const resolution = resolveEnvelopes(lw.ctx, p.levers, base.asOf);
       const recompute = createYieldRecompute(
         base.parcels,
         allNeeds(resolution),
@@ -754,7 +752,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         `lever recompute: no record for lot ${id} in its loaded cell; its yield is 0`
       );
     const filled = fillNeeds(p.state.resolution, r.result());
-    const li = applyLevers(lw.base.fzp, lw.ctx, p.levers, filled, w.horizon);
+    const li = applyLevers(lw.base.fzp, lw.ctx, p.levers, filled);
     lw.pending = null;
     post({
       type: 'levers',

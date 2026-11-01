@@ -2,27 +2,32 @@
 // debounce, send): the latest recipe alone reaches the worker (Review Focus 2).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrushQuery } from '$lib/sim/levers/brushes';
-import { DEFAULT_LEVERS, type SimLevers } from '$lib/sim/levers/types';
+import type { SimLevers } from '$lib/sim/levers/types';
 import type { BrushLotsResult } from '$lib/sim/scenario/types';
-import { policyFromLevers, queryKey, type SimPolicy, type ZoningBrush } from './policy';
+import { DEFAULT_POLICY, queryKey, type SimPolicy, type ZoningRule } from './policy';
 import { LeverSync, PolicyStore } from './policy-store.svelte';
 
-const BASE = policyFromLevers(DEFAULT_LEVERS);
+const BASE = DEFAULT_POLICY;
 
-function area(district: string, stories = 4): ZoningBrush {
+/** A street rule on one named street (the test's lot query). */
+function area(name: string, stories = 4): ZoningRule {
   return {
-    id: `b-${district}-${stories}`,
-    kind: 'area',
-    districts: [district],
-    neighborhoods: [],
-    effect: { mode: 'raise', stories, densityLimits: false }
-  } as ZoningBrush;
+    id: `b-${name}-${stories}`,
+    kind: 'street',
+    classes: [],
+    names: [name],
+    depth: 0,
+    ncOnly: false,
+    stories
+  };
 }
-const withBrushes = (...brushes: ZoningBrush[]): SimPolicy => ({ ...BASE, brushes });
-const areaQuery = (district: string): BrushQuery => ({
-  kind: 'area',
-  districts: [district],
-  neighborhoods: []
+const withBrushes = (...rules: ZoningRule[]): SimPolicy => ({ ...BASE, rules });
+const areaQuery = (name: string): BrushQuery => ({
+  kind: 'street',
+  classes: [],
+  names: [name],
+  depth: 0,
+  ncOnly: false
 });
 const ok = (lots: string[]): BrushLotsResult => ({
   ok: true,
@@ -52,42 +57,55 @@ function harness(answer?: (q: BrushQuery) => BrushLotsResult) {
 }
 
 describe('PolicyStore', () => {
+  it('a locked store ignores changes, undo and redo', () => {
+    const s = new PolicyStore(DEFAULT_POLICY);
+    s.apply((p) => ({ ...p, protect: { ...p.protect, historic: true } }), 'a');
+    s.locked = true;
+    const before = s.policy;
+    s.apply((p) => ({ ...p, protect: { ...p.protect, rentControl: true } }), 'b');
+    expect(s.undo()).toBeNull();
+    expect(s.redo()).toBeNull();
+    expect(s.policy).toBe(before);
+    s.locked = false;
+    expect(s.undo()).toBe('a');
+  });
+
   it('undo and redo restore the policy and return labels', () => {
     const store = new PolicyStore(BASE);
     expect(store.canUndo).toBe(false);
     expect(store.canRedo).toBe(false);
     expect(store.undo()).toBeNull();
-    store.apply((p) => ({ ...p, brushes: [area('RH-1')] }), 'Raised RH-1 to 4 stories');
+    store.apply((p) => ({ ...p, rules: [area('RH-1')] }), 'Allowed up to 4 stories on RH-1');
     const one = store.policy;
-    store.apply((p) => ({ ...p, compare: 'preFzp' }), 'Compared with the old zoning');
+    store.apply((p) => ({ ...p, protect: { ...p.protect, historic: true } }), 'Protected historic');
     expect(store.canUndo).toBe(true);
-    expect(store.undo()).toBe('Compared with the old zoning');
+    expect(store.undo()).toBe('Protected historic');
     expect(store.policy).toBe(one);
     expect(store.canRedo).toBe(true);
-    expect(store.undo()).toBe('Raised RH-1 to 4 stories');
+    expect(store.undo()).toBe('Allowed up to 4 stories on RH-1');
     expect(store.policy).toBe(BASE);
     expect(store.canUndo).toBe(false);
-    expect(store.redo()).toBe('Raised RH-1 to 4 stories');
+    expect(store.redo()).toBe('Allowed up to 4 stories on RH-1');
     expect(store.policy).toBe(one);
-    expect(store.redo()).toBe('Compared with the old zoning');
-    expect(store.policy.compare).toBe('preFzp');
+    expect(store.redo()).toBe('Protected historic');
+    expect(store.policy.protect.historic).toBe(true);
     expect(store.redo()).toBeNull();
   });
 
   it('a new change clears redo', () => {
     const store = new PolicyStore(BASE);
-    store.apply((p) => ({ ...p, brushes: [area('RH-1')] }), 'a');
+    store.apply((p) => ({ ...p, rules: [area('RH-1')] }), 'a');
     store.undo();
     expect(store.canRedo).toBe(true);
-    store.apply((p) => ({ ...p, brushes: [area('RH-2')] }), 'b');
+    store.apply((p) => ({ ...p, rules: [area('RH-2')] }), 'b');
     expect(store.canRedo).toBe(false);
     expect(store.redo()).toBeNull();
   });
 
   it('changes with one coalesce key and nothing between make one undo entry', () => {
     const store = new PolicyStore(BASE);
-    store.apply((p) => ({ ...p, brushes: [area('RH-1', 4)] }), 'first', 'k');
-    store.apply((p) => ({ ...p, brushes: [area('RH-1', 5)] }), 'second', 'k');
+    store.apply((p) => ({ ...p, rules: [area('RH-1', 4)] }), 'first', 'k');
+    store.apply((p) => ({ ...p, rules: [area('RH-1', 5)] }), 'second', 'k');
     expect(store.undoLabel).toBe('second');
     expect(store.undo()).toBe('second');
     expect(store.policy).toBe(BASE);
@@ -96,10 +114,10 @@ describe('PolicyStore', () => {
 
   it('an undo between same-key changes keeps two entries', () => {
     const store = new PolicyStore(BASE);
-    store.apply((p) => ({ ...p, brushes: [area('RH-1', 4)] }), 'first', 'k');
+    store.apply((p) => ({ ...p, rules: [area('RH-1', 4)] }), 'first', 'k');
     store.undo();
     store.redo();
-    store.apply((p) => ({ ...p, brushes: [area('RH-1', 5)] }), 'second', 'k');
+    store.apply((p) => ({ ...p, rules: [area('RH-1', 5)] }), 'second', 'k');
     expect(store.undo()).toBe('second');
     expect(store.undo()).toBe('first');
     expect(store.policy).toBe(BASE);
@@ -107,10 +125,10 @@ describe('PolicyStore', () => {
 
   it('a different key, or a change with none between, makes a new entry', () => {
     const store = new PolicyStore(BASE);
-    store.apply((p) => ({ ...p, brushes: [area('RH-1', 4)] }), 'a', 'k');
-    store.apply((p) => ({ ...p, brushes: [area('RH-1', 5)] }), 'b', 'j');
-    store.apply((p) => ({ ...p, compare: 'preFzp' }), 'c');
-    store.apply((p) => ({ ...p, brushes: [area('RH-1', 6)] }), 'd', 'j');
+    store.apply((p) => ({ ...p, rules: [area('RH-1', 4)] }), 'a', 'k');
+    store.apply((p) => ({ ...p, rules: [area('RH-1', 5)] }), 'b', 'j');
+    store.apply((p) => ({ ...p, rules: [area('RH-1', 7)] }), 'c');
+    store.apply((p) => ({ ...p, rules: [area('RH-1', 6)] }), 'd', 'j');
     expect(store.undo()).toBe('d');
     expect(store.undo()).toBe('c');
     expect(store.undo()).toBe('b');
@@ -125,8 +143,8 @@ describe('PolicyStore', () => {
 
   it('reset replaces the policy and clears undo, redo and coalescing', () => {
     const store = new PolicyStore(BASE);
-    store.apply((p) => ({ ...p, brushes: [area('RH-1', 4)] }), 'a', 'k');
-    store.apply((p) => ({ ...p, compare: 'preFzp' }), 'b');
+    store.apply((p) => ({ ...p, rules: [area('RH-1', 4)] }), 'a', 'k');
+    store.apply((p) => ({ ...p, rules: [area('RH-1', 5)] }), 'b');
     store.undo();
     expect(store.canUndo).toBe(true);
     expect(store.canRedo).toBe(true);
@@ -137,7 +155,7 @@ describe('PolicyStore', () => {
     expect(store.canRedo).toBe(false);
     expect(store.undoLabel).toBeNull();
     // The next keyed change is a new entry, not merged into a cleared one.
-    store.apply((q) => ({ ...q, brushes: [area('RH-1', 5)] }), 'c', 'k');
+    store.apply((q) => ({ ...q, rules: [area('RH-1', 5)] }), 'c', 'k');
     expect(store.undo()).toBe('c');
     expect(store.policy).toBe(p);
   });
@@ -152,7 +170,7 @@ describe('LeverSync', () => {
   });
 
   it('only the latest recipe is sent', async () => {
-    const h = harness((q) => ok(q.kind === 'area' ? [`lot-${q.districts[0]}`] : []));
+    const h = harness((q) => ok(q.kind === 'street' ? [`lot-${q.names[0]}`] : []));
     // Five changes 40 ms apart, all inside one 250 ms window of the one before.
     for (const [i, d] of ['RH-1', 'RH-2', 'RH-3', 'RM-1', 'RM-2'].entries()) {
       if (i > 0) await vi.advanceTimersByTimeAsync(40);
@@ -163,9 +181,7 @@ describe('LeverSync', () => {
     expect(h.sent).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].user).toEqual([
-      { lots: ['lot-RM-2'], mode: 'raise', stories: 4, densityLimits: false }
-    ]);
+    expect(h.sent[0].rules).toEqual([{ lots: ['lot-RM-2'], stories: 4 }]);
     expect(h.sync.levers).toBe(h.sent[0]);
   });
 
@@ -181,11 +197,39 @@ describe('LeverSync', () => {
     expect(h.sync.result(queryKey(areaQuery('RH-1')))).toMatchObject({ ok: true });
     await vi.advanceTimersByTimeAsync(250);
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].user[0].lots).toEqual(['a', 'b']);
+    expect(h.sent[0].rules[0].lots).toEqual(['a', 'b']);
+  });
+
+  it('pending: while the debounce is armed or a query is in flight, false once sent', async () => {
+    const h = harness();
+    expect(h.sync.pending).toBe(false);
+    h.sync.update(BASE);
+    expect(h.sync.pending).toBe(true); // armed
+    await vi.advanceTimersByTimeAsync(250);
+    expect(h.sent).toHaveLength(1);
+    expect(h.sync.pending).toBe(false);
+    h.sync.update(withBrushes(area('RH-1')));
+    expect(h.sync.pending).toBe(true); // in flight
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h.sync.pending).toBe(true);
+    h.pending[0].resolve(ok(['a']));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.sync.pending).toBe(true); // answered, now armed
+    await vi.advanceTimersByTimeAsync(250);
+    expect(h.sent).toHaveLength(2);
+    expect(h.sync.pending).toBe(false);
+  });
+
+  it('pending is false after a needed query fails (the standing levers stay)', async () => {
+    const h = harness(() => failed);
+    h.sync.update(withBrushes(area('RH-1')));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.sync.pending).toBe(false);
+    expect(h.sent).toEqual([]);
   });
 
   it('a query asked once is cached across updates', async () => {
-    const h = harness((q) => ok(q.kind === 'area' ? [q.districts[0]] : []));
+    const h = harness((q) => ok(q.kind === 'street' ? [q.names[0]] : []));
     h.sync.update(withBrushes(area('RH-1')));
     await vi.advanceTimersByTimeAsync(0);
     h.sync.update(withBrushes(area('RH-1', 6)));
@@ -193,7 +237,7 @@ describe('LeverSync', () => {
     await vi.advanceTimersByTimeAsync(250);
     expect(h.resolve).toHaveBeenCalledTimes(1);
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].user[0].stories).toBe(8);
+    expect(h.sent[0].rules[0].stories).toBe(8);
   });
 
   it('a failed query sends nothing until retry succeeds', async () => {
@@ -217,18 +261,17 @@ describe('LeverSync', () => {
     h.pending[1].resolve(ok(['x']));
     await vi.advanceTimersByTimeAsync(250);
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].user).toEqual([
-      { lots: ['x'], mode: 'raise', stories: 6, densityLimits: false }
-    ]);
+    expect(h.sent[0].rules).toEqual([{ lots: ['x'], stories: 6 }]);
   });
 
   it('a policy with no brushes compiles at once, after the debounce', async () => {
     const h = harness();
-    h.sync.update({ ...BASE, compare: 'preFzp' });
+    h.sync.update({ ...BASE, protect: { ...BASE.protect, historic: true } });
     expect(h.resolve).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(250);
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].compare).toBe('preFzp');
+    expect(h.sent[0].protect.historic).toBe(true);
+    expect(h.sent[0].compare).toBe('fzp'); // a customised policy compares with FZP as written
   });
 
   it('a superseded query answering late does not send the old recipe', async () => {
@@ -238,7 +281,7 @@ describe('LeverSync', () => {
     h.pending[1].resolve(ok(['two']));
     await vi.advanceTimersByTimeAsync(250);
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].user[0].lots).toEqual(['two']);
+    expect(h.sent[0].rules[0].lots).toEqual(['two']);
     h.pending[0].resolve(ok(['one']));
     await vi.advanceTimersByTimeAsync(1000);
     expect(h.sent).toHaveLength(1);
@@ -276,7 +319,7 @@ describe('LeverSync', () => {
     h.pending[1].resolve(ok(['a']));
     await vi.advanceTimersByTimeAsync(250);
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].user[0]).toMatchObject({ lots: ['a'], stories: 6 });
+    expect(h.sent[0].rules[0]).toMatchObject({ lots: ['a'], stories: 6 });
   });
 
   it('a no-session answer to a query asked before resume is asked again at once', async () => {

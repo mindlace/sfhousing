@@ -1,17 +1,17 @@
 /**
- * The open rule brush form, shared by BrushSection (inline from md) and SimPage (below md, the
+ * The open zoning rule form, shared by RulesSection (inline from md) and SimPage (below md, the
  * form replaces the sheet's contents, layout ruling 9). Saving is one labelled store change, so
  * Undo names it; closing returns focus to the control that opened the form.
  */
 import { tick } from 'svelte';
-import { changeLabel, type RuleKind } from './brush-summary';
-import type { ZoningBrush } from './policy';
+import { ruleChangeLabel, type RuleKind } from './brush-summary';
+import type { ZoningRule } from './policy';
 import type { PolicyStore } from './policy-store.svelte';
 
 export interface FormRequest {
   kind: RuleKind;
-  /** The brush being edited; absent for a new brush. */
-  initial?: ZoningBrush;
+  /** The rule being edited; absent for a new rule. */
+  initial?: ZoningRule;
 }
 
 export class BrushForms {
@@ -38,18 +38,15 @@ export class BrushForms {
     this.#returnTo = null;
   }
 
-  /** Adds `b`, or replaces the brush with its id; returns the change's label. */
-  save(store: PolicyStore, b: ZoningBrush): string {
-    const editing = store.policy.brushes.some((x) => x.id === b.id);
-    const label = editing ? `Edited: ${changeLabel(b)}` : changeLabel(b);
+  /** Adds `r`, or replaces the rule with its id; returns the change's label. */
+  save(store: PolicyStore, r: ZoningRule): string {
+    const editing = store.policy.rules.some((x) => x.id === r.id);
+    const label = editing ? `Edited: ${ruleChangeLabel(r)}` : ruleChangeLabel(r);
     store.apply((p) => {
       // An edit that changed nothing is no change (so Undo does not name it).
-      const old = p.brushes.find((x) => x.id === b.id);
-      if (old && JSON.stringify(old) === JSON.stringify(b)) return p;
-      return {
-        ...p,
-        brushes: old ? p.brushes.map((x) => (x.id === b.id ? b : x)) : [...p.brushes, b]
-      };
+      const old = p.rules.find((x) => x.id === r.id);
+      if (old && JSON.stringify(old) === JSON.stringify(r)) return p;
+      return { ...p, rules: old ? p.rules.map((x) => (x.id === r.id ? r : x)) : [...p.rules, r] };
     }, label);
     return label;
   }

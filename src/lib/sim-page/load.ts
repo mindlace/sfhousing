@@ -22,8 +22,8 @@ export type FzpPageData = SimScenarioData & {
   seedInvalid: boolean;
 };
 
-/** The /sim load's data: the scenario, the URL's seed and `start`. */
-export type SimPageData = FzpPageData & { start: 'fzp' | null };
+/** The /sim load's data: the scenario and the URL's seed. */
+export type SimPageData = FzpPageData;
 
 /**
  * The manifest of `version` (or of `current` when that 404s: `fellBack`) and its calibration.

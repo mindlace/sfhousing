@@ -8,9 +8,10 @@ import '../../routes/layout.css';
 import { parseManifest, type Manifest } from '$lib/data/manifest';
 import type { TimelinePick } from '$lib/map/types';
 import type { LeverLookups } from '$lib/sim/levers/apply';
-import { DEFAULT_LEVERS, FZP_COMPAT_LEVERS, type SimLevers } from '$lib/sim/levers/types';
+import { DEFAULT_LEVERS, type SimLevers } from '$lib/sim/levers/types';
 import type { ParcelSummary, ProjectCard } from '$lib/sim/protocol';
 import type { LeverStatus } from '$lib/sim-page/lever-status';
+import type { SimPhase } from '$lib/sim-page/run-phase.svelte';
 import { chanceTable, typicalMonths } from '$lib/timelapse/model';
 import type { Calibration } from '$lib/timelapse/types';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
@@ -39,6 +40,9 @@ type Over = Partial<{
   levers: SimLevers;
   onlevers: (s: LeverStatus) => void;
   actions: Snippet;
+  runPhase: SimPhase;
+  onrun: () => void;
+  leversPending: boolean;
 }>;
 
 function setup(over: Over = {}) {
@@ -437,7 +441,8 @@ describe('FzpMode on /sim: header actions and score copy', () => {
     const actions = createRawSnippet(() => ({
       render: () => '<button type="button">Policy</button>'
     }));
-    const s = setup({ levers: DEFAULT_LEVERS, actions });
+    // a customised policy: compared with the Family Zoning Plan as written
+    const s = setup({ levers: { ...DEFAULT_LEVERS, compare: 'fzp' }, actions });
     await toReady(s);
     const names = [...page.getByTestId('header-actions').element().querySelectorAll('button')].map(
       (b) => b.textContent?.trim()
@@ -449,6 +454,13 @@ describe('FzpMode on /sim: header actions and score copy', () => {
 
   it('keeps the Family Zoning Plan copy without levers (/fzp)', async () => {
     const s = setup();
+    await toReady(s);
+    const board = await details();
+    await expect.element(board.getByText('What the plan added')).toBeVisible();
+  });
+
+  it('keeps the Family Zoning Plan copy for the default levers', async () => {
+    const s = setup({ levers: DEFAULT_LEVERS });
     await toReady(s);
     const board = await details();
     await expect.element(board.getByText('What the plan added')).toBeVisible();
@@ -776,8 +788,7 @@ describe('FzpMode map, layout and lifecycle', () => {
         .element() as HTMLElement
     ).click();
     await expect.element(page.getByRole('dialog')).toBeVisible();
-    const toggle = page.getByTestId('fzp-scrubber').element().querySelector('button')!;
-    await expect.poll(() => toggle.textContent?.trim()).toBe('Play');
+    await expect.element(page.getByTestId('fzp-play-label')).toHaveTextContent(/^Play$/);
   });
 
   it('sets the map inset from the scrubber and --fzp-scrubber-h on its root', async () => {
@@ -951,7 +962,9 @@ describe('FzpMode levers (/sim)', () => {
     });
     return { inFlight: one(), fresh: one() };
   }
-  const CAPACITY = { plan: 10, withoutProtections: 10, protectedLots: 0, afterSwitch: null };
+  const CAPACITY = { plan: 10, withoutProtections: 10, protectedLots: 0 };
+  /** A lever document other than the default: the FZP-as-written comparison. */
+  const OTHER: SimLevers = { ...DEFAULT_LEVERS, compare: 'fzp' };
 
   /** The rev the levers last went out on (the init or the latest setLevers). */
   function leverRev(w: FakeScenarioWorker): number {
@@ -965,7 +978,7 @@ describe('FzpMode levers (/sim)', () => {
     expect(s.w().lastOf('initScenario')!.levers).toBe(DEFAULT_LEVERS);
     expect(s.w().allOf('setLevers')).toEqual([]);
     await toReady(s);
-    const next: SimLevers = { ...FZP_COMPAT_LEVERS };
+    const next: SimLevers = { ...OTHER };
     await (await s.r).rerender({ levers: next });
     await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
     expect(s.w().lastOf('setLevers')!.levers).toBe(next);
@@ -978,7 +991,7 @@ describe('FzpMode levers (/sim)', () => {
   it('a levers change before the first timeline waits for it', async () => {
     const s = setup({ levers: DEFAULT_LEVERS });
     await expect.poll(() => s.w()?.lastOf('initScenario')).toBeTruthy();
-    const next: SimLevers = { ...FZP_COMPAT_LEVERS };
+    const next: SimLevers = { ...OTHER };
     await (await s.r).rerender({ levers: next });
     await new Promise((res) => setTimeout(res, 50));
     expect(s.w().allOf('setLevers')).toEqual([]);
@@ -1033,7 +1046,7 @@ describe('FzpMode levers (/sim)', () => {
     const s = setup({ levers: DEFAULT_LEVERS });
     await toReady(s);
     const initRev = leverRev(s.w());
-    await (await s.r).rerender({ levers: { ...FZP_COMPAT_LEVERS } });
+    await (await s.r).rerender({ levers: { ...OTHER } });
     await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
     const before = callsOf('setTimelineLookups').length;
     s.w().emit({
@@ -1053,7 +1066,7 @@ describe('FzpMode levers (/sim)', () => {
     const s = setup({ levers: DEFAULT_LEVERS, onlevers });
     await toReady(s);
     await expect.element(scoreButton()).toHaveAttribute('aria-busy', 'false');
-    await (await s.r).rerender({ levers: { ...FZP_COMPAT_LEVERS } });
+    await (await s.r).rerender({ levers: { ...OTHER } });
     await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
     const rev = leverRev(s.w());
     s.w().emit({ type: 'levers', rev, phase: 'resolving', done: 2, total: 5, failedCells: [] });
@@ -1095,7 +1108,7 @@ describe('FzpMode levers (/sim)', () => {
     expect(region.element().textContent?.trim()).toBe('');
     expect(getComputedStyle(region.element()).display).not.toBe('none');
 
-    const next: SimLevers = { ...FZP_COMPAT_LEVERS };
+    const next: SimLevers = { ...OTHER };
     await (await s.r).rerender({ levers: next });
     await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
     const rev = leverRev(s.w());
@@ -1211,8 +1224,8 @@ describe('FzpMode levers (/sim)', () => {
     await another().click();
     const reroll = s.w().lastOf('reroll')!;
     const r = await s.r;
-    await r.rerender({ levers: { ...FZP_COMPAT_LEVERS } });
-    const latest: SimLevers = { ...FZP_COMPAT_LEVERS, compare: 'currentLaw' };
+    await r.rerender({ levers: { ...OTHER } });
+    const latest: SimLevers = { ...OTHER, localProgramStreamlined: false };
     await r.rerender({ levers: latest });
     await new Promise((res) => setTimeout(res, 50));
     expect(s.w().allOf('setLevers')).toEqual([]);
@@ -1233,7 +1246,7 @@ describe('FzpMode levers (/sim)', () => {
     await toReady(s, 7);
     await another().click();
     const reroll = s.w().lastOf('reroll')!;
-    const latest: SimLevers = { ...FZP_COMPAT_LEVERS };
+    const latest: SimLevers = { ...OTHER };
     await (await s.r).rerender({ levers: latest });
     await new Promise((res) => setTimeout(res, 50));
     expect(s.w().allOf('setLevers')).toEqual([]);
@@ -1250,7 +1263,7 @@ describe('FzpMode levers (/sim)', () => {
   it('a current at the setLevers rev that arrives after a reroll still pushes its lookups', async () => {
     const s = setup({ levers: DEFAULT_LEVERS });
     await toReady(s, 7);
-    await (await s.r).rerender({ levers: { ...FZP_COMPAT_LEVERS } });
+    await (await s.r).rerender({ levers: { ...OTHER } });
     await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
     const leversAt = s.w().lastOf('setLevers')!.rev;
     // The levers' run arrives, then a reroll goes out while their status is still pending.
@@ -1275,5 +1288,139 @@ describe('FzpMode levers (/sim)', () => {
       ...lookups.fresh,
       inFlight: lookups.inFlight
     });
+  });
+});
+
+describe('FzpMode Setup and Run (/sim, spec §1)', () => {
+  const OTHER: SimLevers = { ...DEFAULT_LEVERS, compare: 'fzp' };
+  const debug = () => window.__sfhFzp!;
+  const playLabel = () => page.getByTestId('fzp-play-label');
+  const setPhase = async (s: Setup, runPhase: SimPhase) => (await s.r).rerender({ runPhase });
+  /** Sends a new levers object and returns the rev its setLevers went out on. */
+  async function sendLevers(s: Setup, levers: SimLevers): Promise<number> {
+    const n = s.w().allOf('setLevers').length;
+    await (await s.r).rerender({ levers });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(n + 1);
+    return s.w().lastOf('setLevers')!.rev;
+  }
+
+  beforeEach(() => {
+    vi.stubEnv('VITE_E2E', '1');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('setup pins the day at asOf; Run waits for the current score, then plays', async () => {
+    const onrun = vi.fn();
+    const s = setup({ runPhase: 'setup', levers: DEFAULT_LEVERS, onrun });
+    await toReady(s);
+    expect(debug().day).toBe(debug().asOf);
+    expect(debug().runPhase).toBe('setup');
+    await expect.element(slider()).toBeDisabled();
+    await expect.element(playLabel()).toHaveTextContent(/^Run$/);
+    const rev = await sendLevers(s, { ...OTHER }); // sent, not yet answered: the score is busy
+    await page.getByRole('button', { name: 'Run' }).click();
+    expect(onrun).toHaveBeenCalledOnce();
+    await setPhase(s, 'run');
+    expect(debug().runPhase).toBe('run');
+    await new Promise((res) => setTimeout(res, 50));
+    expect(debug().playing).toBe(false);
+    expect(debug().day).toBe(ASOF);
+    s.w().emit(timelineMsg(rev, 7)); // the sent rev's timeline
+    await expect.poll(() => debug().playing).toBe(true);
+    await expect.element(playLabel()).toHaveTextContent(/^Pause$/);
+  });
+
+  it("the day can't move in Setup", async () => {
+    const s = setup({ runPhase: 'setup', levers: DEFAULT_LEVERS });
+    await toReady(s);
+    // The track is disabled; an input that reaches it anyway is put back at asOf.
+    const input = slider().element() as HTMLInputElement;
+    input.value = String(ASOF + 400);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await expect.poll(() => debug().day).toBe(ASOF);
+    expect(callsOf('setTime').at(-1)).toEqual([ASOF]);
+    expect(debug().playing).toBe(false);
+    for (const b of page.getByRole('button', { name: /^Jump to/ }).elements()) {
+      expect((b as HTMLButtonElement).disabled).toBe(true);
+    }
+  });
+
+  it('back to setup pauses and returns to asOf', async () => {
+    const s = setup({ runPhase: 'run', levers: DEFAULT_LEVERS });
+    await toReady(s);
+    await press('{PageUp}');
+    expect(debug().day).toBeGreaterThan(ASOF);
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await expect.poll(() => debug().playing).toBe(true);
+    await setPhase(s, 'setup');
+    await expect.poll(() => debug().day).toBe(ASOF);
+    expect(debug().playing).toBe(false);
+    expect(callsOf('setTime').at(-1)).toEqual([ASOF]);
+    await expect.element(playLabel()).toHaveTextContent(/^Run$/);
+  });
+
+  it('a new run after Change policy discards the old run and waits for the new policy', async () => {
+    const s = setup({ runPhase: 'run', levers: DEFAULT_LEVERS });
+    await toReady(s);
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await expect.poll(() => debug().day).toBeGreaterThan(ASOF);
+    await setPhase(s, 'setup');
+    const rev = await sendLevers(s, { ...OTHER });
+    await page.getByRole('button', { name: 'Run' }).click();
+    await setPhase(s, 'run');
+    await new Promise((res) => setTimeout(res, 50));
+    // The old run is gone: the new one starts at the present and does not play the old timeline.
+    expect(debug().day).toBe(ASOF);
+    expect(debug().playing).toBe(false);
+    s.w().emit(timelineMsg(rev, 7));
+    await expect.poll(() => debug().playing).toBe(true);
+  });
+
+  it('a second press while Run waits does not play the older timeline', async () => {
+    const onrun = vi.fn();
+    const s = setup({ runPhase: 'setup', levers: DEFAULT_LEVERS, onrun });
+    await toReady(s);
+    const rev = await sendLevers(s, { ...OTHER });
+    await page.getByRole('button', { name: 'Run' }).click();
+    await setPhase(s, 'run');
+    // Waiting: the button still reads Run, busy, and the track stays disabled.
+    await expect.element(playLabel()).toHaveTextContent(/^Run$/);
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-busy', 'true');
+    await expect.element(slider()).toBeDisabled();
+    await page.getByRole('button', { name: 'Run' }).click();
+    await new Promise((res) => setTimeout(res, 50));
+    expect(debug().playing).toBe(false);
+    expect(onrun).toHaveBeenCalledOnce();
+    s.w().emit(timelineMsg(rev, 7));
+    await expect.poll(() => debug().playing).toBe(true);
+    await expect.element(slider()).toBeEnabled();
+  });
+
+  it('Run waits while the page has levers pending, then for their timeline', async () => {
+    const s = setup({ runPhase: 'setup', levers: DEFAULT_LEVERS, leversPending: true });
+    await toReady(s);
+    await expect.element(scoreButton()).toHaveAttribute('aria-busy', 'true');
+    await page.getByRole('button', { name: 'Run' }).click();
+    await setPhase(s, 'run');
+    await new Promise((res) => setTimeout(res, 50));
+    expect(debug().playing).toBe(false);
+    // The pending levers go out: still waiting, now for their timeline.
+    const n = s.w().allOf('setLevers').length;
+    await (await s.r).rerender({ levers: { ...OTHER }, leversPending: false });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(n + 1);
+    await new Promise((res) => setTimeout(res, 50));
+    expect(debug().playing).toBe(false);
+    s.w().emit(timelineMsg(s.w().lastOf('setLevers')!.rev, 7));
+    await expect.poll(() => debug().playing).toBe(true);
+  });
+
+  it('without runPhase (/fzp) the button plays and the hook reports no run phase', async () => {
+    const s = setup();
+    await toReady(s);
+    expect(debug().runPhase).toBeNull();
+    await expect.element(slider()).toBeEnabled();
+    await expect.element(playLabel()).toHaveTextContent(/^Play$/);
   });
 });

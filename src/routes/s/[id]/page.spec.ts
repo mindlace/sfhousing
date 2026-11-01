@@ -35,7 +35,7 @@ function event(
   notice: 'none' | 'remix' | 'gone' = 'none',
   search = ''
 ): LoadEvent {
-  const doc: SimDoc = { schema: 1, kind: 'sim', datasetVersion: version, policy: DEFAULT_POLICY };
+  const doc: SimDoc = { schema: 2, kind: 'sim', datasetVersion: version, policy: DEFAULT_POLICY };
   return {
     fetch: fetchFn,
     url: new URL(`http://localhost/s/Abcdefg2${search}`),
@@ -62,7 +62,6 @@ describe('/s/[id] load', () => {
       noScenario: false,
       seed: 9,
       seedInvalid: false,
-      start: null,
       id: 'Abcdefg2'
     });
     expect(r.manifest?.datasetVersion).toBe('fixture-1');

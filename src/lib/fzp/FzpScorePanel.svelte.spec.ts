@@ -171,9 +171,10 @@ describe('what the plan added', () => {
 });
 
 describe('score copy (/sim)', () => {
-  it("names your policy and the City's current rules for the default levers", async () => {
+  it('names your policy and the Family Zoning Plan as written for a customised policy', async () => {
     await page.viewport(1024, 768);
-    await render(FzpScorePanel, { props: props({ copy: scoreCopy(DEFAULT_LEVERS) }) });
+    const copy = scoreCopy({ ...DEFAULT_LEVERS, compare: 'fzp' });
+    await render(FzpScorePanel, { props: props({ copy }) });
     await expect.element(page.getByText('What your policy added')).toBeVisible();
     await expect.element(page.getByText('What the plan added')).not.toBeInTheDocument();
     await expect
@@ -186,10 +187,25 @@ describe('score copy (/sim)', () => {
     await expect
       .element(
         page.getByText(
-          "To see what your policy itself does, each future is run twice: once with your policy, and once as the same city simulated under the City's current rules, with the same luck. The difference between the two is your policy's effect. Some homes would have been built anyway; they are not counted here."
+          "To see what your policy itself does, each future is run twice: once with your policy, and once as the same city simulated under the Family Zoning Plan as written, with the same luck. The difference between the two is your policy's effect. Some homes would have been built anyway; they are not counted here."
         )
       )
       .toBeInTheDocument();
+  });
+
+  it('names the comparison in the added section', async () => {
+    await page.viewport(1024, 768);
+    const screen = await render(FzpScorePanel, { props: props({ copy: scoreCopy(null) }) });
+    const first = () => page.getByText('What the plan added').element().closest('section')!;
+    expect(first().querySelector('p')!.textContent!.trim()).toBe('FZP added 1,290 homes vs no FZP');
+    await screen.rerender(props({ copy: scoreCopy({ ...DEFAULT_LEVERS, compare: 'fzp' }) }));
+    const mine = page.getByText('What your policy added').element().closest('section')!;
+    expect(mine.querySelector('p')!.textContent!.trim()).toBe(
+      'Your policy added 1,290 homes vs FZP'
+    );
+    await screen.rerender(props({ score: TIMELINE_SCORE_R0, copy: scoreCopy(null) }));
+    expect(first().getAttribute('aria-busy')).toBe('true');
+    expect(first().querySelector('p')!.textContent!.trim()).toBe('FZP vs no FZP: calculating…');
   });
 
   it('keeps the Family Zoning Plan text for the FZP copy', async () => {
@@ -197,6 +213,12 @@ describe('score copy (/sim)', () => {
     await render(FzpScorePanel, { props: props({ copy: scoreCopy(null) }) });
     await expect.element(page.getByText('What the plan added')).toBeVisible();
     await expect.element(page.getByText(INTRO)).toBeInTheDocument();
+  });
+
+  it('the default levers get the FZP copy', async () => {
+    await page.viewport(1024, 768);
+    await render(FzpScorePanel, { props: props({ copy: scoreCopy(DEFAULT_LEVERS) }) });
+    await expect.element(page.getByText('What the plan added')).toBeVisible();
   });
 });
 
@@ -207,7 +229,7 @@ describe('protections cost (/sim)', () => {
     await page.viewport(1024, 768);
     await render(FzpScorePanel, {
       props: props({
-        capacity: { plan: 900, withoutProtections: 1000, protectedLots: 12, afterSwitch: null }
+        capacity: { plan: 900, withoutProtections: 1000, protectedLots: 12 }
       })
     });
     const line = page.getByText(PROT);
@@ -218,28 +240,11 @@ describe('protections cost (/sim)', () => {
     expect(line.element().closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
   });
 
-  it('adds the cost from 2032 when the levers switch', async () => {
-    await page.viewport(1024, 768);
-    await render(FzpScorePanel, {
-      props: props({
-        capacity: {
-          plan: 900,
-          withoutProtections: 1000,
-          protectedLots: 12,
-          afterSwitch: { plan: 1200, withoutProtections: 1350 }
-        }
-      })
-    });
-    await expect
-      .element(page.getByText(PROT))
-      .toHaveTextContent('12 lots protected: 100 fewer homes of zoned capacity, 150 from 2032');
-  });
-
   it('formats large numbers with formatCount', async () => {
     await page.viewport(1024, 768);
     await render(FzpScorePanel, {
       props: props({
-        capacity: { plan: 0, withoutProtections: 12345, protectedLots: 1200, afterSwitch: null }
+        capacity: { plan: 0, withoutProtections: 12345, protectedLots: 1200 }
       })
     });
     await expect
@@ -251,24 +256,19 @@ describe('protections cost (/sim)', () => {
     await page.viewport(1024, 768);
     await render(FzpScorePanel, {
       props: props({
-        capacity: {
-          plan: 900,
-          withoutProtections: 901,
-          protectedLots: 1,
-          afterSwitch: { plan: 10, withoutProtections: 11 }
-        }
+        capacity: { plan: 900, withoutProtections: 901, protectedLots: 1 }
       })
     });
     await expect
       .element(page.getByText(/lot protected:/))
-      .toHaveTextContent('1 lot protected: 1 fewer home of zoned capacity, 1 from 2032');
+      .toHaveTextContent('1 lot protected: 1 fewer home of zoned capacity');
   });
 
   it('shows no line with no protected lots or no capacity', async () => {
     await page.viewport(1024, 768);
     const r = await render(FzpScorePanel, {
       props: props({
-        capacity: { plan: 900, withoutProtections: 900, protectedLots: 0, afterSwitch: null }
+        capacity: { plan: 900, withoutProtections: 900, protectedLots: 0 }
       })
     });
     await expect.element(page.getByTestId('fzp-net')).toBeVisible();
