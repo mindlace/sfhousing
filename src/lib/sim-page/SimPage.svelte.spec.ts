@@ -246,7 +246,7 @@ describe('SimPage rule brushes (Task 9)', () => {
     expect(w.allOf('brushCatalog')).toHaveLength(1);
   });
 
-  it('at 375 px, "Add a rule" → Street replaces the sheet body; Back returns', async () => {
+  it('at 375 px, "Add transit rule" replaces the sheet body; Back returns', async () => {
     stub.reset();
     await page.viewport(375, 700);
     await setup();
@@ -260,22 +260,23 @@ describe('SimPage rule brushes (Task 9)', () => {
       reqId: w.lastOf('brushCatalog')!.reqId,
       catalog: testCatalog()
     });
-    await page.getByRole('button', { name: 'Add a rule' }).click();
-    await page.getByRole('button', { name: 'Street', exact: true }).click();
+    await page.getByRole('button', { name: 'Add transit rule' }).click();
     const dialog = page.getByRole('dialog', { name: 'Policy' });
-    await expect.element(dialog.getByRole('checkbox', { name: 'Arterials' })).toBeVisible();
+    await expect.element(dialog.getByRole('form', { name: 'Add a transit rule' })).toBeVisible();
     // No second dialog: the only open dialog is the Policy sheet (FzpMode's closed sources
     // dialog stays in the DOM).
     expect([...document.querySelectorAll('dialog[open]')]).toEqual([dialog.element()]);
     await expect.element(rulesSection()).not.toBeInTheDocument();
     await page.getByRole('button', { name: 'Back', exact: true }).click();
     await expect.element(rulesSection()).toBeVisible();
-    await expect.element(page.getByRole('checkbox', { name: 'Arterials' })).not.toBeInTheDocument();
-    await expect.element(page.getByRole('button', { name: 'Add a rule' })).toHaveFocus();
+    await expect
+      .element(page.getByRole('form', { name: 'Add a transit rule' }))
+      .not.toBeInTheDocument();
+    await expect.element(page.getByRole('button', { name: 'Add transit rule' })).toHaveFocus();
   });
 
-  /** At 375 px: open the sheet, answer the catalog, open the Street form. */
-  async function openStreetForm() {
+  /** At 375 px: open the sheet, answer the catalog, open the transit form. */
+  async function openTransitForm() {
     await page.getByRole('button', { name: 'Menu' }).click();
     await policyButton().click();
     const w = workers.at(-1)!;
@@ -285,9 +286,8 @@ describe('SimPage rule brushes (Task 9)', () => {
       reqId: w.lastOf('brushCatalog')!.reqId,
       catalog: testCatalog()
     });
-    await page.getByRole('button', { name: 'Add a rule' }).click();
-    await page.getByRole('button', { name: 'Street', exact: true }).click();
-    await expect.element(page.getByRole('checkbox', { name: 'Arterials' })).toBeVisible();
+    await page.getByRole('button', { name: 'Add transit rule' }).click();
+    await expect.element(page.getByRole('form', { name: 'Add a transit rule' })).toBeVisible();
   }
 
   it('closing the sheet discards the open form; reopening shows the brush list', async () => {
@@ -295,7 +295,7 @@ describe('SimPage rule brushes (Task 9)', () => {
     await page.viewport(375, 700);
     await setup();
     await toReady();
-    await openStreetForm();
+    await openTransitForm();
     await userEvent.keyboard('{Escape}');
     await expect.element(page.getByRole('dialog', { name: 'Policy' })).not.toBeInTheDocument();
     await page.getByRole('button', { name: 'Menu' }).click();
@@ -305,7 +305,9 @@ describe('SimPage rule brushes (Task 9)', () => {
     await expect
       .element(page.getByRole('button', { name: 'Back', exact: true }))
       .not.toBeInTheDocument();
-    await expect.element(page.getByRole('checkbox', { name: 'Arterials' })).not.toBeInTheDocument();
+    await expect
+      .element(page.getByRole('form', { name: 'Add a transit rule' }))
+      .not.toBeInTheDocument();
   });
 
   it('crossing md discards the open form', async () => {
@@ -313,11 +315,13 @@ describe('SimPage rule brushes (Task 9)', () => {
     await page.viewport(375, 700);
     await setup();
     await toReady();
-    await openStreetForm();
+    await openTransitForm();
     await page.viewport(1024, 768);
     await expect.element(page.getByRole('region', { name: 'Policy' })).toBeVisible();
-    await expect.element(page.getByRole('checkbox', { name: 'Arterials' })).not.toBeInTheDocument();
-    await expect.element(page.getByRole('button', { name: 'Add a rule' })).toBeVisible();
+    await expect
+      .element(page.getByRole('form', { name: 'Add a transit rule' }))
+      .not.toBeInTheDocument();
+    await expect.element(page.getByRole('button', { name: 'Add transit rule' })).toBeVisible();
   });
 });
 
@@ -364,6 +368,38 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
     await timingToggle().click();
     await expect.element(timingLabel()).toHaveTextContent(`Custom (from ${SD})`);
     await expect.element(page.getByRole('button', { name: 'Revert to saved' })).toBeVisible();
+  });
+
+  it('a reload whose autosave holds a street rule restores the rest and the next save drops it', async () => {
+    await page.viewport(1024, 768);
+    const d = brushed(); // transit rule 'r' + paint 'a'
+    const STREET_RAW = {
+      id: 's',
+      kind: 'street',
+      classes: ['arterial'],
+      names: [],
+      depth: 0,
+      ncOnly: true,
+      stories: 6
+    };
+    const raw = { ...d, policy: { ...d.policy, rules: [STREET_RAW, ...d.policy.rules] } };
+    const mem = new MemoryStorage();
+    mem.setItem(SIM_KEY, JSON.stringify({ v: 1, savedAt: 'x', plan: JSON.stringify(raw) }));
+    const first = await setup({ storage: () => mem });
+    await toReady();
+    // one rule card and one custom card, no reset notice
+    await expect
+      .poll(
+        () =>
+          page.getByRole('list', { name: 'New zoning rules' }).getByRole('listitem').elements()
+            .length
+      )
+      .toBe(1);
+    await timingToggle().click();
+    await presetPicker().selectOptions(SD);
+    await first.unmount(); // flushes the pending write
+    expect(storedDoc(mem).policy.rules.map((r) => r.kind)).toEqual(['transit']);
+    expect(storedDoc(mem).policy.custom).toEqual(d.policy.custom);
   });
 
   it('a reload shows no timing notice', async () => {
@@ -510,15 +546,7 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
     policy: {
       ...DEFAULT_POLICY,
       rules: [
-        {
-          id: 'r',
-          kind: 'street',
-          classes: ['arterial'],
-          names: [],
-          depth: 0,
-          ncOnly: false,
-          stories: 8
-        }
+        { id: 'r', kind: 'transit', stopTypes: ['metro'], bands: [{ maxM: 402, stories: 8 }] }
       ],
       custom: [
         { id: 'a', kind: 'paint', strokes: [{ path: [[-122.4, 37.7]], radiusM: 50 }], stories: 6 }
@@ -1077,8 +1105,7 @@ describe('SimPage paint feedback (plan 2, Task 6)', () => {
       reqId: w.lastOf('brushCatalog')!.reqId,
       catalog: testCatalog()
     });
-    await page.getByRole('button', { name: 'Add a rule' }).click();
-    await page.getByRole('button', { name: 'Transit' }).click();
+    await page.getByRole('button', { name: 'Add transit rule' }).click();
     await page.getByRole('checkbox', { name: /^Regional rail/ }).click();
     await page.getByRole('button', { name: 'Save rule' }).click();
     await expect.poll(() => w.allOf('resolveBrush').length).toBeGreaterThan(0);

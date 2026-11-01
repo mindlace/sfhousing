@@ -7,15 +7,9 @@
  * paint sets a story count, in order, and an erase removes earlier paint only.
  */
 import type { ParcelId } from '$lib/data/parcel';
-import {
-  STOP_TYPES,
-  type BrushQuery,
-  type StopType,
-  type StreetClass
-} from '$lib/sim/levers/brushes';
+import { STOP_TYPES, type BrushQuery, type StopType } from '$lib/sim/levers/brushes';
 import { CALCULATING } from '$lib/fzp/copy';
 import { formatCount } from '$lib/scoreboard/format';
-import { STREET_CLASSES } from '$lib/data/frontage-codec';
 import {
   DEFAULT_LEVERS,
   LeverFormatError,
@@ -45,18 +39,12 @@ export interface TransitBand {
   maxM: number;
   stories: number;
 }
-export type ZoningRule =
-  | { id: string; kind: 'transit'; stopTypes: StopType[]; bands: TransitBand[] }
-  | {
-      id: string;
-      kind: 'street';
-      classes: StreetClass[];
-      names: string[];
-      depth: 0 | 1;
-      /** The Commercial corridor preset: frontage zoned NC or NCT only. */
-      ncOnly: boolean;
-      stories: number;
-    };
+export type ZoningRule = {
+  id: string;
+  kind: 'transit';
+  stopTypes: StopType[];
+  bands: TransitBand[];
+};
 export type CustomBrush =
   | { id: string; kind: 'paint'; strokes: Stroke[]; stories: number }
   | { id: string; kind: 'erase'; strokes: Stroke[] };
@@ -166,9 +154,6 @@ function oneOf<T extends string>(v: unknown, path: string, allowed: readonly T[]
     fail(path, `expected one of ${allowed.join(', ')}`);
   return v as T;
 }
-function strings(v: unknown, path: string): string[] {
-  return arr(v, path).map((x, i) => str(x, `${path}[${i}]`));
-}
 function oneOfList<T extends string>(v: unknown, path: string, allowed: readonly T[]): T[] {
   return arr(v, path).map((x, i) => oneOf(x, `${path}[${i}]`, allowed));
 }
@@ -204,39 +189,26 @@ function kindOf<T extends string>(v: unknown, path: string, kinds: readonly T[])
 }
 
 function parseRule(v: unknown, path: string): ZoningRule {
-  const kind = kindOf(v, path, ['transit', 'street'] as const);
-  if (kind === 'transit') {
-    const r = rec(v, path, ['id', 'kind', 'stopTypes', 'bands']);
-    const bp = j(path, 'bands');
-    const bandList = arr(r.bands, bp);
-    if (bandList.length === 0) fail(bp, 'expected at least one band');
-    const bands = bandList.map((b, i) => {
-      const p = `${bp}[${i}]`;
-      const br = rec(b, p, ['maxM', 'stories']);
-      const maxM = finite(br.maxM, j(p, 'maxM'));
-      if (maxM <= 0) fail(j(p, 'maxM'), 'expected a positive number');
-      return { maxM, stories: stories(br.stories, j(p, 'stories')) };
-    });
-    const why = bandProblem(bands);
-    if (why === 'same-distance') fail(bp, 'expected each band at a different distance');
-    if (why === 'taller') fail(bp, 'expected no band taller than the band inside it');
-    return {
-      id: str(r.id, j(path, 'id')),
-      kind,
-      stopTypes: oneOfList(r.stopTypes, j(path, 'stopTypes'), STOP_TYPES),
-      bands
-    };
-  }
-  const r = rec(v, path, ['id', 'kind', 'classes', 'names', 'depth', 'ncOnly', 'stories']);
-  if (r.depth !== 0 && r.depth !== 1) fail(j(path, 'depth'), 'expected 0 or 1');
+  const kind = kindOf(v, path, ['transit'] as const);
+  const r = rec(v, path, ['id', 'kind', 'stopTypes', 'bands']);
+  const bp = j(path, 'bands');
+  const bandList = arr(r.bands, bp);
+  if (bandList.length === 0) fail(bp, 'expected at least one band');
+  const bands = bandList.map((b, i) => {
+    const p = `${bp}[${i}]`;
+    const br = rec(b, p, ['maxM', 'stories']);
+    const maxM = finite(br.maxM, j(p, 'maxM'));
+    if (maxM <= 0) fail(j(p, 'maxM'), 'expected a positive number');
+    return { maxM, stories: stories(br.stories, j(p, 'stories')) };
+  });
+  const why = bandProblem(bands);
+  if (why === 'same-distance') fail(bp, 'expected each band at a different distance');
+  if (why === 'taller') fail(bp, 'expected no band taller than the band inside it');
   return {
     id: str(r.id, j(path, 'id')),
     kind,
-    classes: oneOfList(r.classes, j(path, 'classes'), STREET_CLASSES),
-    names: strings(r.names, j(path, 'names')),
-    depth: r.depth,
-    ncOnly: bool(r.ncOnly, j(path, 'ncOnly')),
-    stories: stories(r.stories, j(path, 'stories'))
+    stopTypes: oneOfList(r.stopTypes, j(path, 'stopTypes'), STOP_TYPES),
+    bands
   };
 }
 
@@ -409,7 +381,8 @@ function parseTiming(v: unknown, mode: PresetLayerMode): SimTiming {
  * Validate a policy document. Throws `PolicyFormatError` naming the first bad field. With
  * `presetLayer: 'reconcile'` the preset layer (preset id availability, its timers and shares)
  * is not checked against the preset: a stored document may name a retired preset or a scale
- * the current sources no longer give, and reconcile re-derives that layer.
+ * the current sources no longer give, and reconcile re-derives that layer. Reconcile also
+ * silently drops stored `street` rules (street-based rules were retired); strict rejects them.
  */
 export function parseSimPolicy(
   json: unknown,
@@ -423,7 +396,14 @@ export function parseSimPolicy(
   if (n !== null && (typeof n !== 'number' || !Number.isFinite(n) || n <= 0))
     fail('protect.newerThanYears', 'expected null or a positive number');
   const timing = parseTiming(r.timing, mode);
-  const rules = arr(r.rules, 'rules').map((b, i) => parseRule(b, `rules[${i}]`));
+  const isStreet = (b: unknown) =>
+    typeof b === 'object' &&
+    b !== null &&
+    !Array.isArray(b) &&
+    (b as Record<string, unknown>).kind === 'street';
+  const rules = arr(r.rules, 'rules').flatMap((b, i) =>
+    mode === 'reconcile' && isStreet(b) ? [] : [{ rule: parseRule(b, `rules[${i}]`), i }]
+  );
   const custom = arr(r.custom, 'custom').map((b, i) => parseCustom(b, `custom[${i}]`));
   // Ids are unique across both lists: the page keys cards and lot lookups by them.
   const ids = new Set<string>();
@@ -431,11 +411,11 @@ export function parseSimPolicy(
     if (ids.has(b.id)) fail(`${list}[${i}].id`, 'duplicate id');
     ids.add(b.id);
   };
-  rules.forEach(once('rules'));
+  rules.forEach((x) => once('rules')(x.rule, x.i));
   custom.forEach(once('custom'));
   return {
     schema: 2,
-    rules,
+    rules: rules.map((x) => x.rule),
     custom,
     protect: {
       rentControl: bool(pr.rentControl, 'protect.rentControl'),
@@ -469,13 +449,11 @@ const bandsOutermostFirst = (bands: readonly TransitBand[]) => bandsInnermostFir
 
 /** The lot queries a rule needs (a transit rule: one per band, outermost first). */
 export function ruleQueries(r: ZoningRule): BrushQuery[] {
-  if (r.kind === 'transit')
-    return bandsOutermostFirst(r.bands).map((band) => ({
-      kind: 'transit',
-      stopTypes: r.stopTypes,
-      maxM: band.maxM
-    }));
-  return [{ kind: 'street', classes: r.classes, names: r.names, depth: r.depth, ncOnly: r.ncOnly }];
+  return bandsOutermostFirst(r.bands).map((band) => ({
+    kind: 'transit',
+    stopTypes: r.stopTypes,
+    maxM: band.maxM
+  }));
 }
 
 /** The lot query a custom brush needs: its strokes, freehand. */
@@ -507,8 +485,7 @@ function ruleEdits(p: SimPolicy, lots: Lots): StoryEdit[] | null {
   for (const r of p.rules) {
     const got = ruleQueries(r).map((q) => lots(queryKey(q)));
     if (got.some((g) => g === undefined)) return null;
-    const heights =
-      r.kind === 'transit' ? bandsOutermostFirst(r.bands).map((b) => b.stories) : [r.stories];
+    const heights = bandsOutermostFirst(r.bands).map((b) => b.stories);
     got.forEach((g, i) => {
       const l = sortedUnique(g!);
       if (l.length > 0) out.push({ lots: l, stories: heights[i] });

@@ -244,10 +244,7 @@ test('autosave survives a reload', async ({ page }) => {
   await gotoSim(page);
   await openPolicy(page);
   await expandSection(page, 'New zoning rules');
-  await panel(page).getByRole('button', { name: 'Add a rule' }).click();
-  const transit = panel(page).getByRole('button', { name: 'Transit', exact: true });
-  await expect(transit).toBeEnabled({ timeout: 20_000 });
-  await transit.click();
+  await panel(page).getByRole('button', { name: 'Add transit rule' }).click({ timeout: 20_000 });
   const form = panel(page).getByRole('form', { name: 'Add a transit rule', exact: true });
   await form.getByRole('checkbox', { name: /^Muni Metro/ }).check();
   await form.getByRole('button', { name: 'Save rule' }).click();

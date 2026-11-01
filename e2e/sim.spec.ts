@@ -1,13 +1,8 @@
 // /sim e2e (plan 3, Task 12): the /fzp redirect, the header score bar and phone Menu, the policy
-// panel, a street rule, a Paint stroke and its undo, a category protection, Back and Forward
+// panel, a transit rule, a Paint stroke and its undo, a category protection, Back and Forward
 // after a reroll, and the accessibility checks. Runs against the VITE_E2E build, which exposes
 // window.__sfhFzp (src/lib/fzp/debug.ts, with /sim's `levers` field) and window.__sfhMap.
-// Fixture-0 files are read from disk (frontage.bin through the shared codec); names, lots and
-// counts are derived from them, never hard-coded.
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { readFileSync } from 'node:fs';
-import { frontingRows, readFrontage } from '../src/lib/data/frontage-codec';
-import { readScenarioParcels } from '../src/lib/data/scenario-codec';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { formatCount } from '../src/lib/scoreboard/format';
 import { expectNoA11yViolations } from './helpers/a11y';
@@ -27,27 +22,6 @@ import {
 } from './helpers/sharing';
 
 type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
-
-// ---- fixture-0 ----------------------------------------------------------------------------------
-
-const SCENARIO = new URL('./fixtures/data/fixture-0/scenarios/fzp/', import.meta.url);
-const bytes = (name: string): Uint8Array => new Uint8Array(readFileSync(new URL(name, SCENARIO)));
-
-/** "1 lot", "3 lots": the brush card's count (brush-summary.ts `count`). */
-const lotCount = (n: number): string => `${formatCount(n)} ${n === 1 ? 'lot' : 'lots'}`;
-
-/**
- * The first street name in fixture-0's frontage dictionary, and the lots a Street brush on it
- * selects: `frontingRows` at depth 0 (the form's default), eligible lots only (as the worker's
- * `resolveBrushRows` filters them).
- */
-async function firstStreet(): Promise<{ name: string; lots: number }> {
-  const parcels = await readScenarioParcels(bytes('parcels.bin'));
-  const frontage = await readFrontage(bytes('frontage.bin'), parcels);
-  const name = frontage.names[0];
-  const rows = frontingRows(frontage, (s) => frontage.segName[s] === 0, 0);
-  return { name, lots: rows.filter((i) => parcels.eligible[i] === 1).length };
-}
 
 // ---- helpers ------------------------------------------------------------------------------------
 
@@ -115,16 +89,13 @@ async function expandSection(page: Page, title: string): Promise<void> {
 }
 
 /**
- * "Add a rule", then the kind's button once the brush catalog allows it; the form opens named
- * `title` exactly.
+ * "Add transit rule" once the brush catalog allows it (it is aria-disabled until then, and
+ * Playwright waits for it to be enabled); the form opens named `title` exactly.
  */
-async function openBrushForm(page: Page, kind: string, title: string): Promise<Locator> {
+async function openBrushForm(page: Page, title: string): Promise<Locator> {
   await openPolicy(page);
   await expandSection(page, 'New zoning rules');
-  await panel(page).getByRole('button', { name: 'Add a rule' }).click();
-  const choice = panel(page).getByRole('button', { name: kind, exact: true });
-  await expect(choice).toBeEnabled({ timeout: 20_000 });
-  await choice.click();
+  await panel(page).getByRole('button', { name: 'Add transit rule' }).click({ timeout: 20_000 });
   const form = panel(page).getByRole('form', { name: title, exact: true });
   await expect(form).toBeVisible();
   return form;
@@ -323,21 +294,17 @@ test('below md Policy opens the modal sheet from the Menu and focus returns to M
 
 // ---- brushes ------------------------------------------------------------------------------------
 
-test('a Street rule on the first frontage name selects its fronting lots', async ({ page }) => {
-  const street = await firstStreet();
-  expect(street.lots, 'fixture-0 has an eligible lot on its first street').toBeGreaterThan(0);
+test('a transit rule resolves its lots and updates the levers', async ({ page }) => {
   await gotoSim(page);
   const before = await leverStatus(page);
 
-  const form = await openBrushForm(page, 'Street', 'Add a street rule');
-  await form.getByRole('combobox', { name: 'Street name' }).fill(street.name);
-  await form.getByRole('button', { name: 'Add street' }).click();
-  await expect(form.getByRole('list', { name: 'Chosen streets' })).toContainText(street.name);
+  const form = await openBrushForm(page, 'Add a transit rule');
+  await form.getByRole('checkbox', { name: /^Muni Metro/ }).check();
   await watchLeverNotices(page);
   await form.getByRole('button', { name: 'Save rule' }).click();
 
   await expect(ruleList(page)).toHaveCount(1);
-  await expect(ruleList(page).first()).toContainText(lotCount(street.lots));
+  await expect(ruleList(page).first()).toContainText('Near Muni Metro');
 
   // The levers go resolving -> current; the updating notice shows, then clears.
   await expect
@@ -507,7 +474,7 @@ test('axe: the policy panel open during a run', async ({ page }) => {
 
 test('axe: the Transit rule form open', async ({ page }) => {
   await gotoSim(page);
-  const form = await openBrushForm(page, 'Transit', 'Add a transit rule');
+  const form = await openBrushForm(page, 'Add a transit rule');
   await expect(form.getByRole('group', { name: 'Bands' })).toBeVisible();
   await expectNoA11yViolations(page);
 });

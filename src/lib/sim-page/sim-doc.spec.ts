@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { FUTURE_SCHEMA_MESSAGE } from '$lib/plan';
+import { MemoryStorage } from '$lib/sharing/fixtures/memory-storage';
+import { readRecord } from '$lib/sharing/storage';
 import {
   DEFAULT_POLICY,
   SIM_CODEC,
+  SIM_KEY,
   isDefaultPolicy,
   parseSimDoc,
   serializeSimDoc,
@@ -59,20 +62,20 @@ const codesOf = (text: string) => {
   const r = parseSimDoc(text, 'strict');
   return r.ok ? [] : r.errors.map((e) => e.code);
 };
-/** A policy with one street rule and nothing else. */
+/** A policy with one transit rule and nothing else. */
 const RULE_ONLY: SimPolicy = {
   ...DEFAULT_POLICY,
-  rules: [
-    {
-      id: 'r',
-      kind: 'street',
-      classes: ['arterial'],
-      names: [],
-      depth: 0,
-      ncOnly: true,
-      stories: 6
-    }
-  ]
+  rules: [{ id: 'r', kind: 'transit', stopTypes: ['metro'], bands: [{ maxM: 402, stories: 6 }] }]
+};
+/** A rule as an older version stored it: street rules are dropped on load. */
+const STREET_RAW = {
+  id: 's',
+  kind: 'street',
+  classes: ['arterial'],
+  names: [],
+  depth: 0,
+  ncOnly: true,
+  stories: 6
 };
 const raw = (policy: SimPolicy, over: Record<string, unknown> = {}) =>
   JSON.stringify({ ...doc(policy), ...over });
@@ -101,6 +104,33 @@ describe('serializeSimDoc', () => {
 });
 
 describe('SIM_CODEC', () => {
+  it('load drops a stored street rule; parse rejects it with bad-field', () => {
+    const TRANSIT_RULE = RULE_ONLY.rules[0];
+    const text = JSON.stringify({
+      ...doc(),
+      policy: { ...doc().policy, rules: [TRANSIT_RULE, STREET_RAW] }
+    });
+    const loaded = SIM_CODEC.load(text);
+    expect(loaded.ok && loaded.value.policy.rules).toEqual([TRANSIT_RULE]);
+    const parsed = SIM_CODEC.parse(text);
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok)
+      expect(parsed.errors[0]).toMatchObject({ code: 'bad-field', path: '/policy/rules/1/kind' });
+  });
+
+  it('an autosave with transit, street and paint restores all but the street rule', () => {
+    const policy = {
+      ...brushHeavy(),
+      protect: { rentControl: true, historic: true, newerThanYears: 20 }
+    };
+    const stored = { ...doc(policy), policy: { ...policy, rules: [STREET_RAW, ...policy.rules] } };
+    const mem = new MemoryStorage();
+    mem.setItem(SIM_KEY, JSON.stringify({ v: 1, savedAt: 'x', plan: JSON.stringify(stored) }));
+    const r = readRecord(mem, SIM_CODEC);
+    expect(r.kind).toBe('ok');
+    if (r.kind === 'ok') expect(r.plan.policy).toEqual(policy);
+  });
+
   it('names its storage and api', () => {
     expect(SIM_CODEC.kind).toBe('sim');
     expect(SIM_CODEC.api).toBe('/api/policies');

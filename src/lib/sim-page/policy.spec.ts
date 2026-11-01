@@ -7,6 +7,7 @@ import {
   DEFAULT_BANDS,
   DEFAULT_POLICY,
   PolicyFormatError,
+  type PresetLayerMode,
   compileLevers,
   customQuery,
   isDefaultPolicy,
@@ -47,15 +48,20 @@ const T = (bands: TransitBand[]): ZoningRule => ({
   stopTypes: ['metro'],
   bands
 });
-const street = (id: string, stories = 6): ZoningRule => ({
-  id,
+const transit = (id: string, stories = 6): ZoningRule => ({
+  ...T([{ maxM: 402, stories }]),
+  id
+});
+const STREET_RAW = {
+  id: 's',
   kind: 'street',
   classes: ['arterial'],
   names: [],
   depth: 0,
-  ncOnly: false,
-  stories
-});
+  ncOnly: true,
+  stories: 6
+};
+const rawPolicy = (rules: unknown[]) => ({ ...structuredClone(DEFAULT_POLICY), rules });
 const paint = (id: string, strokes: Stroke[], stories = 6): CustomBrush => ({
   id,
   kind: 'paint',
@@ -119,8 +125,8 @@ describe('compileLevers', () => {
   });
 
   it('rules compile in list order, each lot list sorted; an empty rule emits no edit', () => {
-    const a = street('b', 9);
-    const b: ZoningRule = { ...street('a', 4), names: ['Geary Blvd'] } as ZoningRule;
+    const a = transit('b', 9);
+    const b: ZoningRule = { ...transit('a', 4), stopTypes: ['rapidBus'] };
     const p = base({ rules: [a, b] });
     const k = (r: ZoningRule) => queryKey(ruleQueries(r)[0]);
     const l = compileLevers(p, lotsOf({ [k(a)]: ['2', '1'], [k(b)]: [] }))!;
@@ -153,7 +159,7 @@ describe('compileLevers', () => {
   });
 
   it('erase never touches rules', () => {
-    const r = street('r', 7);
+    const r = transit('r', 7);
     const p = base({ rules: [r], custom: [{ id: 'e', kind: 'erase', strokes: [s(1)] }] });
     const lots = lotsOf({
       [queryKey(ruleQueries(r)[0])]: ['1'],
@@ -165,7 +171,7 @@ describe('compileLevers', () => {
 
   it('returns null while a key is missing', () => {
     expect(compileLevers(base({ custom: [paint('a', [s(1)])] }), () => undefined)).toBeNull();
-    expect(compileLevers(base({ rules: [street('a')] }), () => undefined)).toBeNull();
+    expect(compileLevers(base({ rules: [transit('a')] }), () => undefined)).toBeNull();
     expect(paintedLots(base({ custom: [paint('a', [s(1)])] }), () => undefined)).toBeNull();
   });
 
@@ -215,11 +221,11 @@ describe('queries', () => {
     const b = paint('a', [s(1)]);
     expect(customQuery(b)).toEqual({ kind: 'freehand', strokes: [s(1)] });
     const p = base({
-      rules: [street('a'), street('b')],
+      rules: [transit('a'), transit('b')],
       custom: [b, { id: 'e', kind: 'erase', strokes: [s(1)] }]
     });
     expect(queriesOf(p).map((q) => q.query)).toEqual([
-      ruleQueries(street('a'))[0],
+      ruleQueries(transit('a'))[0],
       { kind: 'freehand', strokes: [s(1)] }
     ]);
   });
@@ -404,7 +410,12 @@ describe('parseSimPolicy', () => {
     base({
       rules: [
         { id: 't', kind: 'transit', stopTypes: ['metro', 'rapidBus'], bands: DEFAULT_BANDS },
-        { ...street('s'), classes: [], names: ['Geary Blvd'], depth: 1, ncOnly: true } as ZoningRule
+        {
+          id: 's',
+          kind: 'transit',
+          stopTypes: ['rapidBus'],
+          bands: [{ maxM: 300, stories: 5 }]
+        }
       ],
       custom: [paint('a', [stroke]), { id: 'e', kind: 'erase', strokes: [stroke] }],
       protect: { rentControl: true, historic: false, newerThanYears: 20 },
@@ -473,13 +484,51 @@ describe('parseSimPolicy', () => {
     ).toThrow(/rules\[0\]\.bands/);
   });
 
-  it('rejects bad stories, stop type, street class and depth', () => {
+  it('rejects bad stories and stop type', () => {
     expect(pathOf((p) => (p.custom[0].stories = 0))).toBe('custom[0].stories');
-    expect(pathOf((p) => (p.rules[1].stories = 81))).toBe('rules[1].stories');
+    expect(pathOf((p) => (p.rules[1].bands[0].stories = 81))).toBe('rules[1].bands[0].stories');
     expect(pathOf((p) => (p.rules[0].bands[0].stories = 0))).toBe('rules[0].bands[0].stories');
     expect(pathOf((p) => (p.rules[0].stopTypes = ['ferry']))).toBe('rules[0].stopTypes[0]');
-    expect(pathOf((p) => (p.rules[1].classes = ['highway']))).toBe('rules[1].classes[0]');
-    expect(pathOf((p) => (p.rules[1].depth = 2))).toBe('rules[1].depth');
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pathOfRaw = (json: any, presetLayer: PresetLayerMode = 'strict') => {
+    try {
+      parseSimPolicy(json, { presetLayer });
+    } catch (e) {
+      if (e instanceof PolicyFormatError) return e.path;
+      throw e;
+    }
+    return null;
+  };
+
+  it('reconcile drops a stored street rule and keeps the rest', () => {
+    const t = transit('t');
+    const p = {
+      ...rawPolicy([STREET_RAW, t]),
+      custom: [paint('p', [s(30)])],
+      protect: { rentControl: true, historic: false, newerThanYears: null }
+    };
+    const got = parseSimPolicy(p, { presetLayer: 'reconcile' });
+    expect(got.rules).toEqual([t]);
+    expect(got.custom).toEqual(p.custom);
+    expect(got.protect).toEqual(p.protect);
+  });
+  it('strict rejects a street rule at its kind', () => {
+    expect(() => parseSimPolicy(rawPolicy([STREET_RAW]))).toThrow(PolicyFormatError);
+    expect(pathOfRaw(rawPolicy([STREET_RAW]))).toBe('rules[0].kind');
+  });
+  it('reconcile still rejects another unknown rule kind', () => {
+    const p = rawPolicy([{ ...STREET_RAW, kind: 'corridor' }]);
+    expect(pathOfRaw(p, 'reconcile')).toBe('rules[0].kind');
+  });
+  it('reconcile keeps stored indices in error paths after a dropped rule', () => {
+    const p = rawPolicy([STREET_RAW, { ...transit('t'), bands: [] }]);
+    expect(pathOfRaw(p, 'reconcile')).toBe('rules[1].bands');
+  });
+  it("a dropped street rule's id is not a duplicate", () => {
+    const p = rawPolicy([{ ...STREET_RAW, id: 'x' }, transit('x')]);
+    expect(parseSimPolicy(p, { presetLayer: 'reconcile' }).rules.map((r) => r.id)).toEqual(['x']);
   });
 
   it('rejects bad timing, duplicate ids across both lists, empty bands and a bad stroke', () => {

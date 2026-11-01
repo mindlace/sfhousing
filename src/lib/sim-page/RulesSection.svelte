@@ -1,16 +1,15 @@
 <!--
-  "New zoning rules" (sim runs): the rules (BrushCard: summary, lot count, Edit, Remove) with "Add a
-  rule" (Transit, Street, Commercial corridor, each disabled with its reason while the catalog
-  lacks its data). Each lot takes the tallest rule that covers it, never below FZP. With
+  "New zoning rules" (sim runs): the rules (BrushCard: summary, lot count, Edit, Remove) with "Add
+  transit rule" (aria-disabled with its reason while the catalog lacks transit data). Each lot takes the tallest rule that covers it, never below FZP. With
   `inlineForm` (md+) a rule's form opens here; otherwise SimPage shows it in place of the sheet's
-  contents (layout ruling 9). After the last rule is removed focus moves to "Add a rule".
+  contents (layout ruling 9). After the last rule is removed focus moves to "Add transit rule".
 -->
 <script lang="ts">
   import { tick } from 'svelte';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
   import BrushCard from './BrushCard.svelte';
   import { BrushForms } from './brush-forms.svelte';
-  import { RULE_KINDS, kindUnavailable, ruleKindOf, type RuleKind } from './brush-summary';
+  import { transitUnavailable } from './brush-summary';
   import ReadonlyFieldset from './ReadonlyFieldset.svelte';
   import RuleBrushForm from './RuleBrushForm.svelte';
   import type { ZoningRule } from './policy';
@@ -42,19 +41,19 @@
   }: Props = $props();
 
   const uid = $props.id();
-  let adding = $state(false);
   let rulesList = $state<HTMLUListElement>();
   let addBtn = $state<HTMLButtonElement>();
   let root = $state<HTMLDivElement>();
   const ADD_SELECTOR = '[data-brush-add]';
 
-  function openKind(kind: RuleKind): void {
-    adding = false;
-    forms.open({ kind }, ADD_SELECTOR);
+  const why = $derived(transitUnavailable(catalog));
+
+  function openTransit(): void {
+    if (why === null) forms.open({}, ADD_SELECTOR);
   }
 
   function edit(r: ZoningRule): void {
-    forms.open({ kind: ruleKindOf(r), initial: r }, `[data-brush-edit="${r.id}"]`);
+    forms.open({ initial: r }, `[data-brush-edit="${r.id}"]`);
   }
 
   function save(r: ZoningRule): void {
@@ -67,7 +66,7 @@
   const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), select:not(:disabled)';
 
   /**
-   * After a card's Remove, focus the card now at its place, the one before it, or "Add a rule".
+   * After a card's Remove, focus the card now at its place, the one before it, or "Add transit rule".
    * A form open on the removed rule closes (saving it would re-add the rule); a new rule's form
    * stays, and with no card left focus goes to its first control (WCAG 2.4.3).
    */
@@ -95,7 +94,7 @@
           id={r.id}
           index={i}
           onedit={edit}
-          editUnavailable={kindUnavailable(ruleKindOf(r), catalog)}
+          editUnavailable={transitUnavailable(catalog)}
           {announce}
           onremoved={afterRemove}
         />
@@ -107,7 +106,6 @@
     <ReadonlyFieldset>
       {#key forms.current}
         <RuleBrushForm
-          kind={forms.current.kind}
           {catalog}
           initial={forms.current.initial}
           onsave={save}
@@ -116,35 +114,21 @@
       {/key}
     </ReadonlyFieldset>
   {:else}
-    <div>
+    <div class="flex flex-col items-start">
       <ReadonlyFieldset>
+        <!-- aria-disabled, not disabled: it stays in the tab order, so focus can land here while
+             the catalog loads (WCAG 2.4.3); the reason is its description. -->
         <button
           bind:this={addBtn}
           type="button"
           data-brush-add
-          aria-expanded={adding}
-          aria-controls="{uid}-kinds"
-          class="min-h-11 rounded-md border border-gray-300 px-3 font-medium"
-          onclick={() => (adding = !adding)}>Add a rule</button
+          aria-disabled={why !== null ? 'true' : undefined}
+          aria-describedby={why ? `${uid}-why` : undefined}
+          class="min-h-11 rounded-md border border-gray-300 px-3 font-medium aria-disabled:opacity-40"
+          onclick={openTransit}>Add transit rule</button
         >
-        {#if adding}
-          <ul id="{uid}-kinds" class="mt-2 flex flex-col gap-2">
-            {#each RULE_KINDS as kd (kd.id)}
-              {@const why = kindUnavailable(kd.id, catalog)}
-              <li class="flex flex-col">
-                <button
-                  type="button"
-                  disabled={why !== null}
-                  aria-describedby={why ? `${uid}-why-${kd.id}` : undefined}
-                  class="min-h-11 self-start rounded-md border border-gray-300 px-3 font-medium disabled:opacity-40"
-                  onclick={() => openKind(kd.id)}>{kd.label}</button
-                >
-                {#if why}
-                  <span id="{uid}-why-{kd.id}" class="text-gray-700">{why}</span>
-                {/if}
-              </li>
-            {/each}
-          </ul>
+        {#if why}
+          <span id="{uid}-why" class="mt-1 block text-gray-700">{why}</span>
         {/if}
       </ReadonlyFieldset>
     </div>

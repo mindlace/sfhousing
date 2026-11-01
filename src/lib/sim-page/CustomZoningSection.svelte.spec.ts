@@ -115,7 +115,7 @@ describe('CustomZoningSection', () => {
   it('a failed brush offers Retry', async () => {
     const { sync } = setup({
       brushes: [freehand],
-      result: { ok: false, reason: 'data-missing', message: 'no frontage' }
+      result: { ok: false, reason: 'data-missing', message: 'no transit' }
     });
     await expect.element(page.getByText("Couldn't find lots")).toBeVisible();
     await page.getByRole('button', { name: 'Retry' }).click();

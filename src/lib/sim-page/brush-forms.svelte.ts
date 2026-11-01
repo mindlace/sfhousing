@@ -4,12 +4,11 @@
  * Undo names it; closing returns focus to the control that opened the form.
  */
 import { tick } from 'svelte';
-import { ruleChangeLabel, type RuleKind } from './brush-summary';
+import { ruleChangeLabel } from './brush-summary';
 import type { ZoningRule } from './policy';
 import type { PolicyStore } from './policy-store.svelte';
 
 export interface FormRequest {
-  kind: RuleKind;
   /** The rule being edited; absent for a new rule. */
   initial?: ZoningRule;
 }

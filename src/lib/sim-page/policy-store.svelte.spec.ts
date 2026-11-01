@@ -9,32 +9,31 @@ import { LeverSync, PolicyStore } from './policy-store.svelte';
 
 const BASE = DEFAULT_POLICY;
 
-/** A street rule on one named street (the test's lot query). */
+const DISTRICTS = ['RH-1', 'RH-2', 'RH-3', 'RM-1', 'RM-2'];
+/** A district's distance in the test: a distinct transit band per name, so queries differ. */
+const metres = (name: string) => (DISTRICTS.indexOf(name) + 1) * 100;
+
+/** A transit rule whose single band stands for one named district (the test's lot query). */
 function area(name: string, stories = 4): ZoningRule {
   return {
     id: `b-${name}-${stories}`,
-    kind: 'street',
-    classes: [],
-    names: [name],
-    depth: 0,
-    ncOnly: false,
-    stories
+    kind: 'transit',
+    stopTypes: ['metro'],
+    bands: [{ maxM: metres(name), stories }]
   };
 }
 const withBrushes = (...rules: ZoningRule[]): SimPolicy => ({ ...BASE, rules });
 const areaQuery = (name: string): BrushQuery => ({
-  kind: 'street',
-  classes: [],
-  names: [name],
-  depth: 0,
-  ncOnly: false
+  kind: 'transit',
+  stopTypes: ['metro'],
+  maxM: metres(name)
 });
 const ok = (lots: string[]): BrushLotsResult => ({
   ok: true,
   lots,
   points: new Float64Array(lots.length * 2)
 });
-const failed: BrushLotsResult = { ok: false, reason: 'data-missing', message: 'no frontage' };
+const failed: BrushLotsResult = { ok: false, reason: 'data-missing', message: 'no transit' };
 const noSession: BrushLotsResult = { ok: false, reason: 'no-session', message: 'gone' };
 
 type Resolver = (r: BrushLotsResult) => void;
@@ -170,9 +169,9 @@ describe('LeverSync', () => {
   });
 
   it('only the latest recipe is sent', async () => {
-    const h = harness((q) => ok(q.kind === 'street' ? [`lot-${q.names[0]}`] : []));
+    const h = harness((q) => ok(q.kind === 'transit' ? [`lot-${q.maxM}`] : []));
     // Five changes 40 ms apart, all inside one 250 ms window of the one before.
-    for (const [i, d] of ['RH-1', 'RH-2', 'RH-3', 'RM-1', 'RM-2'].entries()) {
+    for (const [i, d] of DISTRICTS.entries()) {
       if (i > 0) await vi.advanceTimersByTimeAsync(40);
       h.sync.update(withBrushes(area(d)));
     }
@@ -181,7 +180,7 @@ describe('LeverSync', () => {
     expect(h.sent).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].rules).toEqual([{ lots: ['lot-RM-2'], stories: 4 }]);
+    expect(h.sent[0].rules).toEqual([{ lots: ['lot-500'], stories: 4 }]);
     expect(h.sync.levers).toBe(h.sent[0]);
   });
 
@@ -229,7 +228,7 @@ describe('LeverSync', () => {
   });
 
   it('a query asked once is cached across updates', async () => {
-    const h = harness((q) => ok(q.kind === 'street' ? [q.names[0]] : []));
+    const h = harness((q) => ok(q.kind === 'transit' ? [`lot-${q.maxM}`] : []));
     h.sync.update(withBrushes(area('RH-1')));
     await vi.advanceTimersByTimeAsync(0);
     h.sync.update(withBrushes(area('RH-1', 6)));
