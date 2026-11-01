@@ -2,7 +2,7 @@
 import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId } from '$lib/data/parcel';
 import type { BuildoutMode, TypologyId } from '$lib/generator';
-import type { ChunkStatus, GeneratedUpdate, ParcelSummaryLike } from '$lib/map/types';
+import type { ChunkStatus, GeneratedUpdate, LotLimits, ParcelSummaryLike } from '$lib/map/types';
 import type { BBox, Envelope, Plan, PlanOp } from '$lib/plan';
 import type { Score } from '$lib/scoreboard';
 import type { ProjectCard } from './scenario/types';
@@ -64,6 +64,11 @@ export interface ParcelSummary {
   envelope: Envelope | null; // committed-plus-preview display state
   generated: { typology: TypologyId; stories: number; units: number } | null;
   project?: ProjectCard; // T6; the editor never sets it
+  /**
+   * Map overlays plan 2 Task 7; `/sim` only. `allowed` repeats `envelope.maxStories` so that a
+   * ParcelSummary stays assignable to ParcelSummaryLike (the editor hands it over unmapped).
+   */
+  limits?: LotLimits;
 }
 
 // I17 addendum: ParcelSummary must be assignable to map-view's ParcelSummaryLike.

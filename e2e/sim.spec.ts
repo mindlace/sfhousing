@@ -918,3 +918,19 @@ test('a Paint stroke shows its buildings, then they fade', async ({ isMobile, pa
   await sampling;
   expect(seen).not.toContain(true);
 });
+
+test('hovering a building shows its allowed and buildable stories', async ({ isMobile, page }) => {
+  // Hover tooltips need a mouse; the phone's tap card carries the same text.
+  test.skip(isMobile, 'chromium project only');
+  await gotoSim(page);
+  // 3512014: fixture-0's 60 m, 40-unit building (map.spec E3 hovers it on the editor)
+  const lot: [number, number] = [-122.4179679, 37.7601348];
+  await jumpAndIdle(page, { center: lot, zoom: 16, pitch: 0, bearing: 0 });
+  const [x, y] = await projectToPage(page, lot);
+  await page.mouse.move(x, y, { steps: 5 });
+  const tip = page.getByTestId('map-root').getByRole('tooltip');
+  await expect(tip).toContainText('Parcel 3512014');
+  await expect(tip).toContainText(/Allowed: \d+( · (Buildable here: \d+|Protected))?/, {
+    timeout: 10_000
+  });
+});

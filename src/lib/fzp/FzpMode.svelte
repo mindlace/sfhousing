@@ -761,7 +761,8 @@
           eligible: s.eligible,
           ...(s.underwater ? { underwater: true } : {}),
           existingUnits: s.existingUnits,
-          generated: null
+          generated: null,
+          ...(s.limits ? { limits: s.limits } : {})
         }
     );
   }

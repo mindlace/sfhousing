@@ -50,7 +50,13 @@ import type { Manifest } from '$lib/data/manifest';
 import type { PolicyParcels } from '$lib/data/policy-codec';
 import { envelopeOf, scenarioRecordOf, type ScenarioParcels } from '$lib/data/scenario-codec';
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
-import { fnv1a32, generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
+import {
+  fnv1a32,
+  generate,
+  generateForUnits,
+  lotBuildableStories,
+  type GeneratedBuilding
+} from '$lib/generator';
 import { packCell, packTransferables } from '$lib/map/pack';
 import { buildFogGrid, type FogGrid } from '$lib/map/fog/grid';
 import { packTimedTransferables } from '$lib/map/pack-timed';
@@ -998,6 +1004,33 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       envelope: envelope && envelope.maxStories > 0 ? envelope : null,
       generated: null
     };
+    // The lot-limits line (map overlays plan 2 Task 7): `/sim` only (a lever session), for an
+    // eligible lot with plan stories. `allowed` is `envelope.maxStories`; the FZP stories for a
+    // protected lot (protection beats every rule and stroke).
+    const lw = st.work?.levers;
+    if (lw && i !== undefined && rec.eligible && out.envelope) {
+      const allowed = out.envelope.maxStories;
+      if (lw.protectedMask?.[i]) out.limits = { allowed, buildable: null, protected: true };
+      else {
+        const key = simKey(req.parcelId, allowed);
+        let b = memo.get(key);
+        if (b === undefined) {
+          const plan = (st.work?.loaded ?? st.loaded).fzp.parcels;
+          b = gen(
+            scenarioRecordOf(plan, i, rec),
+            { maxStories: allowed },
+            fnv1a32(req.parcelId),
+            'max'
+          );
+          memo.set(key, b);
+        }
+        out.limits = {
+          allowed,
+          buildable: b ? b.stories : lotBuildableStories(rec.polygon, allowed, out.existingUnits),
+          protected: false
+        };
+      }
+    }
     const w = st.work;
     const run = w?.run;
     if (!w || !run?.geometry) return out; // no shown run yet

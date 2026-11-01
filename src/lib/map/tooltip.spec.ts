@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { tooltipLines, typologyLabel, type TooltipHit } from './tooltip';
+import type { LotLimits } from './types';
 import type { TypologyId } from '$lib/generator';
 
 const P = '3512008';
@@ -135,5 +136,35 @@ describe('typologyLabel', () => {
     expect(
       (['adu', 'walkup', 'podium', 'midrise', 'tower'] as const).map((t) => typologyLabel(t, 5))
     ).toEqual(['ADU', 'Walk-up', '5-over-1', 'Mid-rise', 'Tower']);
+  });
+});
+
+const existingHit = (limits?: LotLimits): TooltipHit => ({
+  kind: 'existing',
+  parcelId: '1',
+  chunk: 'ready',
+  summary: {
+    parcelId: '1',
+    eligible: true,
+    existingUnits: 2,
+    generated: null,
+    ...(limits && { limits })
+  }
+});
+
+describe('limits line', () => {
+  it('adds the limits line', () => {
+    expect(tooltipLines(existingHit({ allowed: 40, buildable: 6, protected: false }))[2]).toBe(
+      'Allowed: 40 · Buildable here: 6'
+    );
+    expect(tooltipLines(existingHit({ allowed: 40, buildable: 6, protected: true }))[2]).toBe(
+      'Allowed: 40 · Protected'
+    );
+    expect(tooltipLines(existingHit({ allowed: 8, buildable: null, protected: false }))[2]).toBe(
+      'Allowed: 8'
+    );
+  });
+  it('two lines without limits (the editor)', () => {
+    expect(tooltipLines(existingHit())).toHaveLength(2);
   });
 });

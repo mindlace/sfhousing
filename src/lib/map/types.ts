@@ -104,12 +104,20 @@ export interface TimelineLookupSet {
   typicalMonths: ReturnType<typeof typicalMonths>;
 }
 
+/** The /sim tooltip's limits line: the plan's stories, what the lot's shape lets it build. */
+export interface LotLimits {
+  allowed: number;
+  buildable: number | null;
+  protected: boolean;
+}
+
 export interface ParcelSummaryLike {
   parcelId: ParcelId;
   eligible: boolean;
   underwater?: boolean;
   existingUnits: number;
   generated: { typology: TypologyId; stories: number; units: number } | null;
+  limits?: LotLimits;
 }
 
 export interface SimMapProps {
