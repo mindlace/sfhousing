@@ -25,7 +25,7 @@ const manifest = JSON.parse(readFileSync(MANIFEST_URL, 'utf8')) as {
 const { fzp } = manifest.scenarios;
 // /sim (where /fzp now redirects) reads these four: the timelapse's three and the lever engine's
 // policy.bin. The brush catalog (asked for when the policy panel first opens) reads only
-// transit.json and neighborhoods.geojson, never frontage.bin, which fixture-0 still names.
+// transit.json and neighborhoods.geojson, never frontage.bin.
 const SIM_FILES = [fzp.parcels, fzp.projects, fzp.calibration, fzp.policy];
 
 const scoreJson = (page: Page, field?: 'shown' | 'band'): Promise<string> =>

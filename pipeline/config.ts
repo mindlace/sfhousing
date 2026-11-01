@@ -30,21 +30,7 @@ export const SQL_VARS = {
   land_cell_m: 250,
   // 82_policy.sql pol_tod: ½ mile, 804.672 m, SB 79's outer band (Gov. Code §65912.157(a),
   // tier 1; pipeline/sb79-config.ts).
-  tod_half_m: BAND_MAX_M[3],
-  // 83_frontage.sql lot-to-street frontage (docs/dev/pipeline.md "Street frontage"); all tier 4,
-  // chosen for SF rights of way and lot widths and pinned by pipeline/test/frontage-sql.test.ts.
-  // Farthest a lot may lie from a centerline and front it: the widest common SF right of way is
-  // 125 ft (≈ 38 m), so half is about 19 m; the rest covers setbacks and plazas. Tier 4.
-  front_max_m: 40,
-  // A lot's facing edge is its boundary within (its distance to the segment + this). Tier 4.
-  front_tol_m: 2,
-  // Least facing edge that fronts: a 25 ft lot plus up to 2 × 2 m of side edges passes; a corner
-  // touch (≤ 4 m) does not. Tier 4.
-  front_min_m: 5,
-  // A probe line crossing another parcel by more than this is blocked by it. Tier 4.
-  occlude_min_m: 0.5,
-  // Least shared boundary for two lots to be neighbours (one lot deep). Tier 4.
-  adjacent_min_m: 3
+  tod_half_m: BAND_MAX_M[3]
 } as const;
 export const KNOWN_LANDUSE = [
   'RESIDENT',
@@ -138,10 +124,6 @@ export interface InvariantProfile {
   muniTier2MatchMin: number;
   /** V32 warns (still passes) when the share of parcels within ½ mile of a stop is outside it. */
   todShareWarn: [number, number] | null;
-  /** V34: maximum size of scenarios/fzp/frontage.bin on disk, bytes. */
-  frontageMaxBytes: number;
-  /** V34: minimum share of eligible parcels with a depth-0 frontage entry. */
-  frontageMin: number;
 }
 
 /**
@@ -212,11 +194,7 @@ export const LIVE_PROFILE: InvariantProfile = {
   muniTier2MatchMin: 0.95,
   // Warn band (tier 4) around Planning's "more than 75%" of parcels within ½ mile of a TOD stop
   // (Ord. 082-26 §2(e), tier 1).
-  todShareWarn: [0.6, 0.95],
-  frontageMaxBytes: 1.0e6,
-  // V34 check bound (tier 4, made up): nearly every eligible SF lot fronts a city street; the rest
-  // are interior, rear or right-of-way-isolated lots.
-  frontageMin: 0.9
+  todShareWarn: [0.6, 0.95]
 };
 
 /**
@@ -278,9 +256,5 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   sb79MinT2Stops: 2,
   // Fixture known answer (mini README "Transit"): no MUNI_TIER2_STOP_IDS id is a mini stop, 0/438.
   muniTier2MatchMin: 0,
-  todShareWarn: null,
-  frontageMaxBytes: LIVE_PROFILE.frontageMaxBytes,
-  // Fixture known answer (mini README "Streets"): 12 of the 15 eligible lots front a street at
-  // depth 0; shoreline lots 15 and 17 have none near, and lot 18 is only one lot deep.
-  frontageMin: 0.8
+  todShareWarn: null
 };

@@ -19,7 +19,6 @@ export type SourceId =
   | 'datasf-height-bulk'
   | 'datasf-parcel-attrs'
   | 'datasf-assessor-roll'
-  | 'datasf-streets'
   | 'datasf-historic-status'
   | 'sfbos-sb79-exemptions'
   | 'overture-buildings'
@@ -33,7 +32,6 @@ export const SOURCE_IDS: SourceId[] = [
   'datasf-height-bulk',
   'datasf-parcel-attrs',
   'datasf-assessor-roll',
-  'datasf-streets',
   'datasf-historic-status',
   'sfbos-sb79-exemptions',
   'overture-buildings',
@@ -49,7 +47,6 @@ const TABLES: Record<SourceId, string> = {
   'datasf-height-bulk': 'src_height_bulk',
   'datasf-parcel-attrs': 'src_parcel_attrs',
   'datasf-assessor-roll': 'src_roll',
-  'datasf-streets': 'src_streets',
   'datasf-historic-status': 'src_historic',
   'sfbos-sb79-exemptions': 'src_sb79_exempt',
   'overture-buildings': 'src_overture',
@@ -245,11 +242,6 @@ async function buildSelect(
         FROM ${p} ORDER BY mblr, sf16_bldgid`;
     case 'datasf-neighborhoods':
       return `SELECT ${sel(cols, 'nhood', 'VARCHAR')}, geom FROM ${p} ORDER BY nhood`;
-    case 'datasf-streets':
-      // `active` is filtered by the fetch's `$where`; cnn is unique, the geometry breaks ties.
-      return `SELECT ${sel(cols, 'cnn', 'BIGINT')}, ${sel(cols, 'streetname', 'VARCHAR')},
-        ${sel(cols, 'classcode', 'INTEGER')}, ${sel(cols, 'layer', 'VARCHAR')}, geom
-        FROM ${p} ORDER BY cnn, ST_AsHEXWKB(geom)`;
     case 'datasf-historic-status':
       // Codes stay verbatim (`A*` included); the policy step ranks them.
       return `SELECT ${txt(cols, 'apn', true)}, ${txt(cols, 'ceqacode')},

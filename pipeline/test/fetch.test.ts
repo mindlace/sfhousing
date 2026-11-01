@@ -532,17 +532,8 @@ describe('fetchGtfs', () => {
   });
 });
 
-describe('policy-layer sources (streets, historic status, SB 79 exemption tables)', () => {
-  it('datasf-streets and datasf-historic-status: dataset, select, where and licence', async () => {
-    expect(DATASF['datasf-streets']).toEqual({
-      dataset: '3psu-pn9h',
-      format: 'geojson',
-      select: 'cnn,streetname,classcode,layer,active,line',
-      where: 'active=true',
-      license: 'PDDL-1.0',
-      homepage: 'https://data.sf.gov/d/3psu-pn9h',
-      label: 'DataSF Streets – Active and Retired (centerlines)'
-    });
+describe('policy-layer sources (historic status, SB 79 exemption tables)', () => {
+  it('datasf-historic-status: dataset, select, where and licence', async () => {
     expect(DATASF['datasf-historic-status']).toEqual({
       dataset: '3tsw-4idn',
       format: 'csv',
@@ -551,14 +542,10 @@ describe('policy-layer sources (streets, historic status, SB 79 exemption tables
       homepage: 'https://data.sf.gov/d/3tsw-4idn',
       label: 'DataSF Historic Resource Status by Parcel'
     });
-    const http = fakeHttp([2]);
-    await fetchDatasf('datasf-streets', tmp(), http);
-    const u = new URL(http.urls[0]);
-    expect(u.pathname).toBe('/resource/3psu-pn9h.geojson');
-    expect(u.searchParams.get('$where')).toBe('active=true');
     expect(FETCH_IDS).toEqual(
-      expect.arrayContaining(['datasf-streets', 'datasf-historic-status', 'sfbos-sb79-exemptions'])
+      expect.arrayContaining(['datasf-historic-status', 'sfbos-sb79-exemptions'])
     );
+    expect(FETCH_IDS).not.toContain('datasf-streets');
   });
 
   it('fetchSfbosExemptions locks one file per Board File attachment', async () => {

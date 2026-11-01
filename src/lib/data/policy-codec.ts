@@ -125,16 +125,6 @@ const COLUMNS: { name: string; type: ColType; perFill?: true }[] = [
   { name: 'currentYield', type: 'u16', perFill: true }
 ];
 
-// Confirmed against Task 1's zone list (pipeline/sb79-config.ts ZONE_CLASS_RULES): the live
-// sc_zoning NC codes are NC-1, NC-2, NC-3, NC-S, NCT, NCT-1..3 and NCD. The two `.+ NCD/NCT`
-// alternatives match named districts ("<name> NCD"); none appears in the live data, kept as
-// harmless headroom.
-const NC_PATTERN = /^(NC-[1-3S]|NCD|NCT(-[1-3])?|.+ NCD|.+ NCT)$/;
-/** Ruling 5: NC/NCT and named neighborhood-commercial districts; a split code matches if any component does. */
-export function isNeighborhoodCommercial(code: string): boolean {
-  return code.split('|').some((c) => NC_PATTERN.test(c.trim()));
-}
-
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;

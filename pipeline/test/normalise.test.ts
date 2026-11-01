@@ -94,35 +94,6 @@ describe('normalise mini fixture', () => {
     expect(condo).toEqual({ n: 3, z: 'RH-2' });
   });
 
-  it('streets: five centerlines ordered by cnn, typed', async () => {
-    const db = await miniDuck();
-    const rows = await db.all<Record<string, unknown>>(
-      `SELECT cnn, streetname, classcode, layer FROM src_streets`
-    );
-    expect(rows).toHaveLength(5);
-    // cnn is BIGINT; the Duck wrapper returns a safe bigint as a number.
-    expect(rows[0]).toEqual({
-      cnn: 1000,
-      streetname: 'MISSION ST',
-      classcode: 3,
-      layer: 'STREETS'
-    });
-    expect(rows.map((r) => r.cnn)).toEqual([1000, 1001, 2000, 3000, 4000]);
-    const types = await db.all<{ column_name: string; column_type: string }>(
-      `DESCRIBE src_streets`
-    );
-    expect(types.slice(0, 4).map((c) => `${c.column_name} ${c.column_type}`)).toEqual([
-      'cnn BIGINT',
-      'streetname VARCHAR',
-      'classcode INTEGER',
-      'layer VARCHAR'
-    ]);
-    const [g] = await db.all<{ t: string }>(
-      `SELECT ST_GeometryType(geom)::VARCHAR t FROM src_streets WHERE cnn = 2000`
-    );
-    expect(g.t).toBe('MULTILINESTRING');
-  });
-
   it('historic status: one row per listed apn, 0026T001A verbatim, lot 18 absent', async () => {
     // Every mini lot but 18 has a row (lot 2 by its three condo blklots), plus retired 3512099.
     const db = await miniDuck();

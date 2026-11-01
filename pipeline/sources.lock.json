@@ -945,24 +945,6 @@
     {
       "files": [
         {
-          "archiveKey": "sources/671b96650a627a8ddc0abd110f8f36366f299c4077bc31c2b0a329d42f4757bf.geojson",
-          "bytes": 4536010,
-          "name": "datasf-streets.page-000.geojson",
-          "sha256": "671b96650a627a8ddc0abd110f8f36366f299c4077bc31c2b0a329d42f4757bf",
-          "url": "https://data.sf.gov/resource/3psu-pn9h.geojson?%24select=cnn%2Cstreetname%2Cclasscode%2Clayer%2Cactive%2Cline&%24where=active%3Dtrue&%24order=%3Aid&%24limit=50000&%24offset=0"
-        }
-      ],
-      "homepage": "https://data.sf.gov/d/3psu-pn9h",
-      "id": "datasf-streets",
-      "label": "DataSF Streets – Active and Retired (centerlines)",
-      "license": "PDDL-1.0",
-      "retrievedAt": "2026-10-29T09:09:24.450Z",
-      "rowCount": 16378,
-      "upstreamVersion": "Wed, 28 Oct 2026 17:32:58 GMT"
-    },
-    {
-      "files": [
-        {
           "archiveKey": "sources/e47d8189511602491133997fdb88e0119a796a843a0f726e4e774a0e76a92051.json",
           "bytes": 366123,
           "name": "datasf-unit-completions.page-000.json",

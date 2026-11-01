@@ -54,7 +54,6 @@ describe('live raw layout (<rawDir>/<sha256>, no extension)', () => {
         'datasf-height-bulk': 8,
         'datasf-parcel-attrs': 24,
         'datasf-assessor-roll': 37,
-        'datasf-streets': 5,
         'datasf-historic-status': 20,
         'sfbos-sb79-exemptions': 3,
         'overture-buildings': 13,

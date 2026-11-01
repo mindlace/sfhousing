@@ -48,7 +48,7 @@ describe('verify', () => {
       expect(seen).toContain(`HEAD /data/${V}/scenarios/fzp/${n}`);
     }
   });
-  it('HEAD-checks the policy and frontage urls when the manifest names them', async () => {
+  it('HEAD-checks the policy url when the manifest names it', async () => {
     const withKeys = JSON.parse(golden) as {
       scenarios: { fzp: Record<string, string> };
     };
@@ -58,15 +58,14 @@ describe('verify', () => {
     const r = await verify({ datasetVersion: V, origin: 'http://o', fetch: f });
     expect(r).toEqual({ ok: true, failures: [] });
     expect(seen).toContain(`HEAD /data/${V}/scenarios/fzp/policy.bin`);
-    expect(seen).toContain(`HEAD /data/${V}/scenarios/fzp/frontage.bin`);
+    expect(seen).not.toContain(`HEAD /data/${V}/scenarios/fzp/frontage.bin`);
   });
-  it('does not request policy or frontage when the manifest lacks them', async () => {
+  it('does not request policy when the manifest lacks it', async () => {
     const without = JSON.parse(golden) as { scenarios: { fzp: Record<string, string> } };
     delete without.scenarios.fzp.policy;
-    delete without.scenarios.fzp.frontage;
     const { f, seen } = fakeFetch(undefined, JSON.stringify(without));
     await verify({ datasetVersion: V, origin: 'http://o', fetch: f });
-    expect(seen.some((s) => s.includes('policy.bin') || s.includes('frontage.bin'))).toBe(false);
+    expect(seen.some((s) => s.includes('policy.bin'))).toBe(false);
   });
   it('collects a missing chunk and a PMTiles that ignores Range', async () => {
     const chunk = new URL(m.chunks[0].url, 'http://o').pathname;

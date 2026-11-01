@@ -77,7 +77,7 @@ export function docKind(v: unknown): 'TCO' | 'CFC' | null {
  * The lock entries whose `retrievedAt` sets the build's `asOf`: the project-record event sources.
  * `asOf` is the day the project histories are censored at (and so calibration's at-risk end) and
  * the scenario step's "today"; only a refresh of these sources moves it. A source that feeds only
- * policy, frontage, transit, tiles or parcel attributes (`datasf-streets`, `datasf-historic-status`,
+ * policy, transit, tiles or parcel attributes (`datasf-historic-status`,
  * `sfbos-sb79-exemptions`, ...) is not a member, so fetching it cannot move `asOf`. Membership is
  * by allowlist: a new source counts only when it is added here (docs/dev/pipeline.md).
  */

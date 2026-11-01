@@ -318,7 +318,7 @@ describe('transitTargetDate', () => {
         e('gtfs-muni', '2026-10-16T17:04:17.239Z'),
         e('gtfs-bart', '2026-10-16T17:04:18.530Z'),
         e('datasf-planning-projects', '2026-10-19T01:34:20.056Z'),
-        e('datasf-streets', '2026-10-29T09:09:24.450Z'),
+        e('datasf-historic-status', '2026-10-29T09:09:24.450Z'),
         e('sfbos-sb79-exemptions', '2026-10-29T09:09:29.985Z')
       ]
     };
@@ -326,7 +326,7 @@ describe('transitTargetDate', () => {
   });
   it('throws when the lock has no GTFS entry', () => {
     expect(() =>
-      transitTargetDate({ sources: [e('datasf-streets', '2026-10-29T00:00:00Z')] })
+      transitTargetDate({ sources: [e('datasf-historic-status', '2026-10-29T00:00:00Z')] })
     ).toThrow(TransitBuildError);
   });
 });
