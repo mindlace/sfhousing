@@ -72,7 +72,7 @@ describe('applyLevers: the default levers', () => {
 });
 
 describe('twins', () => {
-  it("the 'fzp' twin is FZP as written and never switches", () => {
+  it("the 'fzp' twin is FZP as written", () => {
     const { base, ctx } = setup();
     const months = monthsOf(base.asOf, H);
     const twin = twinInput(base, ctx, 'fzp');

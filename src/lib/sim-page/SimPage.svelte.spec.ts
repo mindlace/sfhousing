@@ -668,13 +668,33 @@ describe('SimPage Setup and Run (Task 7, spec §1)', () => {
   it('Run inside the 250 ms debounce waits, then plays the new policy', async () => {
     stub.reset();
     await page.viewport(1024, 768);
-    await setup();
+    // The debounce is held until the test releases it, so Run lands inside it on any machine.
+    const held = new Map<number, () => void>();
+    let nextId = 1;
+    const leverTimers = {
+      setTimeout: ((fn: () => void) => {
+        const id = nextId++;
+        held.set(id, fn);
+        return id;
+      }) as unknown as typeof setTimeout,
+      clearTimeout: ((id: number) => void held.delete(id)) as unknown as typeof clearTimeout
+    };
+    const release = () => {
+      const fns = [...held.values()];
+      held.clear();
+      for (const fn of fns) fn();
+    };
+    await setup({ leverTimers });
     await toReady();
     const w = workers.at(-1)!;
     await page.getByRole('button', { name: 'Protections', exact: true }).click();
     await historic().click();
     await run().click();
-    expect(w.allOf('setLevers')).toHaveLength(0); // still inside the debounce
+    await wait(50);
+    expect(held.size).toBe(1); // still inside the debounce
+    expect(w.allOf('setLevers')).toHaveLength(0);
+    await expect.element(playLabel()).toHaveTextContent(/^Run$/);
+    release();
     await expect.poll(() => w.allOf('setLevers').length).toBe(1);
     await wait(50);
     await expect.element(playLabel()).toHaveTextContent(/^Run$/);
@@ -757,5 +777,41 @@ describe('SimPage Setup and Run (Task 7, spec §1)', () => {
     await expect
       .element(dialog.getByRole('button', { name: 'New zoning rules', exact: true }))
       .toHaveFocus();
+  });
+});
+
+describe('SimPage score comparison (spec §5)', () => {
+  const historic = () =>
+    page.getByRole('checkbox', { name: 'Historic buildings (status A or A*)' });
+  const scoreButton = () => page.getByRole('button', { name: /homes added|Simulating/ });
+  /** The comparison line, read with the score details open (opened once). */
+  async function comparison() {
+    const b = scoreButton();
+    await expect.element(b).toBeInTheDocument();
+    if (b.element().getAttribute('aria-expanded') !== 'true') await b.click();
+    return page.getByRole('region', { name: 'Score details' }).getByText(/vs (no )?FZP/);
+  }
+
+  it('names the comparison of the score on show until the new revision answers', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    const w = workers.at(-1)!;
+    await expect.element(await comparison()).toHaveTextContent(/^FZP added .* vs no FZP$/);
+    await page.getByRole('button', { name: 'Protections', exact: true }).click();
+    await historic().click();
+    await expect.poll(() => w.allOf('setLevers').length).toBe(1);
+    // Sent, not answered: the score on show is still FZP vs no FZP.
+    await expect.element(await comparison()).toHaveTextContent(/^FZP added .* vs no FZP$/);
+    w.emit(timelineMsg(w.lastOf('setLevers')!.rev, 7));
+    await expect.element(await comparison()).toHaveTextContent(/^Your policy added .* vs FZP$/);
+
+    // Undo back to the default: the line stays on "your policy" until that revision answers.
+    await page.getByRole('button', { name: 'Undo: Protected historic buildings' }).click();
+    await expect.poll(() => w.allOf('setLevers').length).toBe(2);
+    await expect.element(await comparison()).toHaveTextContent(/^Your policy added .* vs FZP$/);
+    w.emit(timelineMsg(w.lastOf('setLevers')!.rev, 7));
+    await expect.element(await comparison()).toHaveTextContent(/^FZP added .* vs no FZP$/);
   });
 });

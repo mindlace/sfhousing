@@ -120,4 +120,27 @@ describe('RulesSection', () => {
     expect(store.policy.rules).toHaveLength(0);
     await expect.element(page.getByRole('button', { name: 'Add a rule' })).toHaveFocus();
   });
+
+  it('removing the rule whose Edit form is open closes the form and focuses "Add a rule"', async () => {
+    const { store } = setup({ rules: [street], catalog: testCatalog() });
+    await page.getByRole('button', { name: /^Edit:/ }).click();
+    await expect.element(page.getByRole('button', { name: 'Save rule' })).toBeVisible();
+    await page.getByRole('button', { name: /^Remove:/ }).click();
+    expect(store.policy.rules).toHaveLength(0);
+    await expect.element(page.getByRole('button', { name: 'Save rule' })).not.toBeInTheDocument();
+    await expect.element(page.getByRole('button', { name: 'Add a rule' })).toHaveFocus();
+  });
+
+  it('removing the last rule while a new rule form is open keeps focus in the section', async () => {
+    const { store } = setup({ rules: [street], catalog: testCatalog() });
+    await page.getByRole('button', { name: 'Add a rule' }).click();
+    await page.getByRole('button', { name: 'Street', exact: true }).click();
+    await expect.element(page.getByRole('button', { name: 'Save rule' })).toBeVisible();
+    await page.getByRole('button', { name: /^Remove:/ }).click();
+    expect(store.policy.rules).toHaveLength(0);
+    // The new rule's form stays open (it is not the removed rule's); focus goes into it.
+    await expect.element(page.getByRole('button', { name: 'Save rule' })).toBeVisible();
+    await expect.poll(() => document.activeElement).not.toBe(document.body);
+    expect(document.querySelector('form')?.contains(document.activeElement)).toBe(true);
+  });
 });

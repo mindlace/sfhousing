@@ -42,6 +42,7 @@
   let adding = $state(false);
   let rulesList = $state<HTMLUListElement>();
   let addBtn = $state<HTMLButtonElement>();
+  let root = $state<HTMLDivElement>();
   const ADD_SELECTOR = '[data-brush-add]';
 
   function openKind(kind: RuleKind): void {
@@ -58,18 +59,26 @@
     forms.close();
   }
 
-  /** After a card's Remove, focus the card now at its place, the one before it, or "Add a rule". */
+  const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), select:not(:disabled)';
+
+  /**
+   * After a card's Remove, focus the card now at its place, the one before it, or "Add a rule".
+   * A form open on the removed rule closes (saving it would re-add the rule); a new rule's form
+   * stays, and with no card left focus goes to its first control (WCAG 2.4.3).
+   */
   function afterRemove(i: number): void {
+    const open = forms.current?.initial;
+    if (open && !store.policy.rules.some((r) => r.id === open.id)) forms.dismiss();
     void tick().then(() => {
       const cards = rulesList?.querySelectorAll('li') ?? [];
       const card = cards[Math.min(i, cards.length - 1)];
-      const target = card?.querySelector<HTMLButtonElement>('button:not(:disabled)');
-      (target ?? addBtn)?.focus();
+      const target = card?.querySelector<HTMLElement>('button:not(:disabled)');
+      (target ?? addBtn ?? root?.querySelector<HTMLElement>(FOCUSABLE))?.focus();
     });
   }
 </script>
 
-<div class="flex flex-col gap-3 text-sm">
+<div bind:this={root} class="flex flex-col gap-3 text-sm">
   <p class="text-gray-700">Each lot takes the tallest rule that covers it, never below FZP.</p>
   {#if store.policy.rules.length > 0}
     <ul bind:this={rulesList} aria-label="New zoning rules" class="flex flex-col gap-2">

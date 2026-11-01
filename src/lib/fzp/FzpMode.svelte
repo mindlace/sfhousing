@@ -237,8 +237,14 @@
       : lookups && { inFlight: lookups.chance, fresh: lookups.chance }
   );
   const leverStatus = $derived(leverState.status);
+  /**
+   * The levers the score on show answers (/sim): set when a timeline arrives for their revision
+   * or a later one, so the comparison copy never names the levers still being computed. Null
+   * before the first timeline and on /fzp.
+   */
+  let shownLevers = $state.raw<SimLevers | null>(null);
   /** Who the plan effect is for: the Family Zoning Plan on /fzp and under its levers. */
-  const copy = $derived(scoreCopy(levers ?? null));
+  const copy = $derived(scoreCopy(shownLevers ?? levers ?? null));
   const capacity = $derived(leverStatus.kind === 'current' ? leverStatus.capacity : null);
   /**
    * The score on show is from before the latest levers until a timeline at or after their rev
@@ -278,6 +284,8 @@
   let pushedLookups: MapLookups | null = null;
   /** The levers object the worker last received (identity), with initScenario or setLevers. */
   let sentLevers: SimLevers | null = null;
+  /** Each revision's levers, oldest first, until a timeline at or after its rev arrives. */
+  let leversByRev: { rev: number; levers: SimLevers }[] = [];
   /** A non-stale timeline has arrived since the last initScenario. */
   let scenarioLive = false;
   /** Prefetch the viewport on the first timeline after each initScenario. */
@@ -318,6 +326,7 @@
     const rev = client.initScenario(manifest, HORIZON, next, l);
     if (l !== undefined) {
       sentLevers = l;
+      leversByRev.push({ rev, levers: l });
       setLeverState(leversSession(leverState, rev));
     }
     if (clientApi) onclient?.(clientApi);
@@ -341,7 +350,18 @@
     if (l === undefined || l === sentLevers || dead || !client || client.crashed) return;
     if (!scenarioLive || rerollBusy) return;
     sentLevers = l;
-    setLeverState(leversSent(leverState, client.setLevers(l)));
+    const rev = client.setLevers(l);
+    leversByRev.push({ rev, levers: l });
+    setLeverState(leversSent(leverState, rev));
+  }
+
+  /** A timeline at `rev` answers the latest levers sent at or before it. */
+  function answerLevers(rev: number): void {
+    let i = -1;
+    while (i + 1 < leversByRev.length && leversByRev[i + 1].rev <= rev) i++;
+    if (i < 0) return;
+    shownLevers = leversByRev[i].levers;
+    leversByRev = leversByRev.slice(i + 1);
   }
 
   $effect(() => {
@@ -547,6 +567,7 @@
       timelineRev = t.rev;
       applyRender(t.render);
       score = t.score;
+      answerLevers(t.rev);
       seed = t.seed;
       bandRuns = t.bandRuns;
       bandRunsTotal = t.bandRunsTotal;

@@ -97,6 +97,8 @@
     storage?: () => Storage | null;
     /** Tests: Publish's fetch. */
     fetchFn?: typeof fetch;
+    /** Tests: the lever debounce's timers (default the global ones). */
+    leverTimers?: { setTimeout: typeof setTimeout; clearTimeout: typeof clearTimeout };
   }
 
   let {
@@ -115,7 +117,8 @@
     persist = undefined,
     remix = undefined,
     storage = getStorage,
-    fetchFn = undefined
+    fetchFn = undefined,
+    leverTimers = undefined
   }: Props = $props();
 
   /**
@@ -235,8 +238,7 @@
   const sync = new LeverSync({
     resolve: (q) => (api ? api.resolveBrush(q) : Promise.resolve(noSession())),
     send: (l) => (levers = l),
-    setTimeout,
-    clearTimeout
+    ...untrack(() => leverTimers ?? { setTimeout, clearTimeout })
   });
 
   const uid = $props.id();
