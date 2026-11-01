@@ -4,14 +4,14 @@ import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { ControllerSnapshot, GeneratedController } from './generated-controller';
 import type { TimelineController } from './timeline-controller';
 import type { TimelineLookups, TimelineSnapshot } from './timelapse/types';
-import type { GeneratedUpdate, SimMapHandle, TimelineUpdate } from './types';
+import type { GeneratedUpdate, SimMapHandle, Theme, TimelineUpdate } from './types';
 import type { Day } from '$lib/timelapse/time';
 import { packCell } from './pack';
 
 /** SimMap's timeline handle functions: the hook calls them, so the lazy path runs as in FZP. */
 export type TimelineHandleFns = Pick<
   SimMapHandle,
-  'applyTimeline' | 'setTime' | 'setTimelineLookups'
+  'applyTimeline' | 'setTime' | 'setTimelineLookups' | 'setOverlayLayers'
 >;
 
 export interface SfhMapDebug {
@@ -43,6 +43,12 @@ export interface SfhMapDebug {
    * Resolves to the project and cell counts.
    */
   loadSyntheticTimeline(seed: number, n: number): Promise<{ projects: number; cells: number }>;
+  /**
+   * bench:map only (docs/dev/map-perf.md "Height fog case"): sets `[heightFogLayer(…)]` of
+   * `makeSyntheticFog(seed)` (the whole-city grid) through SimMap's `setOverlayLayers`, in the
+   * map's theme. Resolves to the fog's instance (cell) count.
+   */
+  loadSyntheticFog(seed?: number): Promise<{ cells: number }>;
   /** SimMap's `applyTimeline` (enters timeline mode; queues until the map is ready). */
   applyTimeline(u: TimelineUpdate): void;
   /** SimMap's `setTime`. */
@@ -69,6 +75,7 @@ export function installDebug(
     controller: GeneratedController | null;
     timeline: TimelineController | null;
     pendingGenerated: number;
+    theme: Theme;
   },
   timeline: TimelineHandleFns
 ): () => void {
@@ -167,6 +174,17 @@ export function installDebug(
       timeline.applyTimeline(u);
       const projects = u.cells.reduce((a, c) => a + c.slotProjectIds.length, 0);
       return { projects, cells: u.cells.length };
+    },
+    loadSyntheticFog: async (seed = 1) => {
+      const [{ heightFogLayer }, { makeSyntheticFog }, { fogInstances }] = await Promise.all([
+        import('./fog/fog-layer'),
+        import('./test/synthetic-fog'),
+        import('./fog/grid')
+      ]);
+      const g = makeSyntheticFog(seed);
+      const fi = fogInstances(g);
+      timeline.setOverlayLayers([heightFogLayer(fi, g, get().theme)]);
+      return { cells: fi.count };
     }
   };
   window.__sfhMap = hook;

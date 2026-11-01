@@ -426,9 +426,10 @@
         map: live?.map ?? null,
         controller: live?.controller ?? null,
         timeline: live?.timeline ?? null,
-        pendingGenerated: pendingApplies.length
+        pendingGenerated: pendingApplies.length,
+        theme
       }),
-      { applyTimeline, setTime, setTimelineLookups }
+      { applyTimeline, setTime, setTimelineLookups, setOverlayLayers }
     )
   );
 

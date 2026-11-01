@@ -61,6 +61,7 @@ display refresh rate, so on a 120 Hz display the p50 is about 8.3 ms. The bar is
 | Apple M5 Pro (Mac17,9), timeline "drag", 30,000 projects, zoom 15.5       | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 9.0 ms  | Yes                                          |
 | Apple M5 Pro (same), timeline "playback", closed rings (after #21)        | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 10.3 ms | Yes                                          |
 | Apple M5 Pro (same), timeline "drag", closed rings (after #21)            | 2026-10-17 | Playwright Chromium, Metal | 2   | 1200   | 8.3 ms | 10.3 ms | Yes                                          |
+| Apple M5 Pro (same), timeline "playback + fog", 135,270 fog cells         | 2026-11-01 | Playwright Chromium, Metal | 2   | 1200   | 8.3 ms | 8.8 ms  | Yes (full sweep; lone re-run 9.8 ms)         |
 
 Run the bench with both transit layers on (the default View prefs). fixture-0 has only 8 stops, so its transit row measures the layer overhead. The live-network row ran the same bench against a local copy of the production dataset (`npm run data:local -- <version>`, then `npm run data:transit -- <version>`) served with `PUBLIC_DATASET_VERSION` set to that version instead of `fixture-0` (the bench config pins `fixture-0`, so this needs a one-off config override). Re-check against live data when the stop layers change.
 
@@ -77,6 +78,8 @@ Both cases then pan for 10 s exactly as `map-pan` does (360 px/s, direction flip
 - **drag**: the full range in 2 s, back and forth (4,421 days/s, a 4 s period).
 
 Each prints `p50`, `p95`, frames, parts, `pumpMaxOps` (the demolish pump's largest feature-state call count in one frame, from `demolishMaxFrameOps`; the "catch-up" figure in parentheses is its value before the pan, i.e. the revision-0 install), the renderer and PASS/FAIL, and asserts p95 ≤ 16.7 ms. The existing-building catch-up bound is 2,000 feature-state changes per frame.
+
+**Height fog case.** **playback + fog** is `playback` plus the sim map's height fog (`HeightFogLayer`, `src/lib/map/fog/fog-layer.ts`). Once the timeline cells are in, it calls `window.__sfhMap.loadSyntheticFog(1)`, which builds `makeSyntheticFog(1)` (`src/lib/map/test/synthetic-fog.ts`: 150,000 seeded label points spread uniformly over `FOG_BOUNDS`, 4–40 stories each) through `buildFogGrid`, and sets `[heightFogLayer(…)]` through SimMap's `setOverlayLayers`. The grid is 50 m cells (`FOG_CELL_M`) over the map bounds; uniform points fill nearly all of it, so the layer draws 135,270 instanced quads (4 vertices each, a triangle strip), a worst case for the whole city. The line adds `fogCells=`. On 2026-11-01 (M5 Pro) p95 was 8.8 ms in the full sweep and 9.8 ms in a lone re-run, well under the bar, so `FOG_CELL_M` stays 50 m.
 
 The synthetic parcel ids match no buildings-tile features. The pump's `setFeatureState` call count is real, but MapLibre's render-time cost on live tiles is not measured here.
 
