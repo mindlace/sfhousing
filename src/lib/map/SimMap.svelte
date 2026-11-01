@@ -63,6 +63,7 @@
   import { validateTimedCell } from './timelapse/encode';
   import { packChanceTexture } from './timelapse/lookups';
   import { TOKENS } from './palette';
+  import { useSystemTheme } from './system-theme.svelte';
   import { cellAt, chunkStatusCollection, resolveExistingHit, tooltipPosition } from './pick';
   import {
     BUILDINGS_LAYER,
@@ -137,9 +138,8 @@
   let root = $state<HTMLElement>();
   let container = $state<HTMLDivElement>();
   let mapState = $state<MapState>('loading');
-  let systemTheme = $state<Theme>('light');
-  let systemResolved = $state(false);
-  const theme = $derived<Theme>(themeProp ?? systemTheme);
+  const systemTheme = useSystemTheme();
+  const theme = $derived<Theme>(themeProp ?? systemTheme.current);
   let bottomInset = $state(0);
   const chunkStatuses = new SvelteMap<string, ChunkStatus>();
   const chunkError = $derived([...chunkStatuses.values()].includes('error'));
@@ -160,7 +160,7 @@
   // Unset theme before the client resolves it (SSR, first paint): the CSS defaults apply.
   const rootStyle = $derived(
     [
-      ...(themeProp !== undefined || systemResolved
+      ...(themeProp !== undefined || systemTheme.resolved
         ? Object.entries(TOKENS[theme]).map(([k, v]) => `--map-${kebab(k)}: ${v}`)
         : []),
       `--map-bottom-inset: ${bottomInset}px`
@@ -386,15 +386,6 @@
   };
 
   // ---- effects ----------------------------------------------------------------------------------
-
-  $effect(() => {
-    const mq = matchMedia('(prefers-color-scheme: dark)');
-    systemTheme = mq.matches ? 'dark' : 'light';
-    systemResolved = true;
-    const on = (e: MediaQueryListEvent) => (systemTheme = e.matches ? 'dark' : 'light');
-    mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
-  });
 
   // Mount per manifest: a different manifest tears the map down and builds a new one. Read via a
   // $derived so an unrelated prop change (which re-signals every prop) with the same manifest

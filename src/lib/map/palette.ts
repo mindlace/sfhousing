@@ -137,6 +137,26 @@ export function hexToRgba(hex: string, alpha = 255): RGBA {
   ];
 }
 
+/** Fill opacity of the transit-access layer; the legend swatches composite at the same alpha. */
+export const TRANSIT_ACCESS_OPACITY = 0.45;
+
+/** sRGB channel blend of fg over bg at `alpha`, '#RRGGBB' uppercase. A legend helper only. */
+export function compositeHex(fg: string, bg: string, alpha: number): string {
+  const [fr, fgc, fb] = hexToRgba(fg);
+  const [br, bgc, bb] = hexToRgba(bg);
+  const mix = (f: number, b: number) =>
+    Math.round(f * alpha + b * (1 - alpha))
+      .toString(16)
+      .padStart(2, '0');
+  return `#${mix(fr, br)}${mix(fgc, bgc)}${mix(fb, bb)}`.toUpperCase();
+}
+
+/** The colour a capacity bin k actually shows on the map over land. */
+export function accessSwatch(theme: Theme, k: 1 | 2 | 3 | 4 | 5): string {
+  const t = TOKENS[theme];
+  return compositeHex(t[`transit-access-${k}` as const], t.land, TRANSIT_ACCESS_OPACITY);
+}
+
 export const GEN_RGBA: Record<Theme, RGBA[]> = {
   light: TYPOLOGY_ORDER.map((t) => hexToRgba(TOKENS.light[`gen-${t}`])),
   dark: TYPOLOGY_ORDER.map((t) => hexToRgba(TOKENS.dark[`gen-${t}`]))

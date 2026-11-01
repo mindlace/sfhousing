@@ -8,7 +8,9 @@ import {
   GEN_RGBA,
   tokenCss,
   timelineTokenCss,
-  type TokenName
+  type TokenName,
+  compositeHex,
+  accessSwatch
 } from './palette';
 import { TYPOLOGY_ORDER } from './types';
 
@@ -316,4 +318,20 @@ describe('tokenCss / timelineTokenCss (spec §4.6.1)', () => {
       expect(() => timelineTokenCss(bad), JSON.stringify(bad)).toThrow(/selector/);
     }
   });
+});
+
+describe('legend swatches', () => {
+  it('compositeHex blends channels', () => {
+    expect(compositeHex('#FFFFFF', '#000000', 0.5)).toBe('#808080');
+    expect(accessSwatch('light', 5)).toBe(compositeHex('#167A6E', '#F3EFE6', 0.45));
+  });
+
+  for (const theme of ['light', 'dark'] as const) {
+    it(`${theme}: legend swatch contrast with land strictly increases`, () => {
+      const cs = ([1, 2, 3, 4, 5] as const).map((k) =>
+        contrast(accessSwatch(theme, k), TOKENS[theme].land)
+      );
+      for (let i = 1; i < cs.length; i++) expect(cs[i]).toBeGreaterThan(cs[i - 1]);
+    });
+  }
 });
