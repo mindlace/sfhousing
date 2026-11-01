@@ -52,14 +52,21 @@ describe('/p/[id] View menu', () => {
   });
 
   it('honours the stored prefs, and a toggle updates the map and persists', async () => {
-    localStorage.setItem(VIEW_KEY, JSON.stringify({ transitStops: false, transitAccess: true }));
+    // /sim's heightFog: the plan page never shows it, and writes back the value it read.
+    localStorage.setItem(
+      VIEW_KEY,
+      JSON.stringify({ transitStops: false, transitAccess: true, heightFog: false })
+    );
     await render(PageHost, { props: { data: data() } });
-    expect(stubProps.view).toEqual({ transitStops: false, transitAccess: true });
+    expect(stubProps.view).toEqual({ transitStops: false, transitAccess: true, heightFog: false });
     await viewButton().click();
     await expect.element(page.getByRole('checkbox', { name: 'Transit stops' })).not.toBeChecked();
+    expect(page.getByRole('checkbox', { name: 'Height limits' }).query()).toBeNull();
     await page.getByRole('checkbox', { name: 'Transit stops' }).click();
-    await expect.poll(() => stubProps.view).toEqual({ transitStops: true, transitAccess: true });
-    expect(stored()).toEqual({ transitStops: true, transitAccess: true });
+    await expect
+      .poll(() => stubProps.view)
+      .toEqual({ transitStops: true, transitAccess: true, heightFog: false });
+    expect(stored()).toEqual({ transitStops: true, transitAccess: true, heightFog: false });
   });
 
   it('has no View button without manifest.transit', async () => {

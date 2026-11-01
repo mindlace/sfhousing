@@ -48,7 +48,7 @@ Compile rules (sim runs spec, section 3; "Call n" is plan 3's):
 - **Transit and street** rules: see "Stop types and bands" below, Calls 8 to 10.
 - **Protection** (Call 11) is the categories only. A protected lot is **not redevelopable** (partner ruling 2026-10-29): protection beats every rule and stroke. Projects already in the pipeline on a protected lot carry on (Call 21).
 - **The twin:** `compare` is `'preFzp'` when the policy equals `DEFAULT_POLICY` (`isDefaultPolicy`, ignoring the timeline Save snapshot), else `'fzp'`. Any customisation, a timing change alone included, compares with FZP as written; undoing back to the default compares with pre-FZP again.
-- **Map feedback**: the lot dots and their map key are gone. The overlay mux (`overlay-mux.ts`) has the slots `feedback`, `fog`, `outline` and `ring` (drawn in that order, bottom to top); `SimPage` creates it per map handle in both modes, and only the ring is written so far.
+- **Map feedback**: the lot dots and their map key are gone. The overlay mux (`overlay-mux.ts`) has the slots `feedback`, `fog`, `outline` and `ring` (drawn in that order, bottom to top); `SimPage` creates it per map handle in both modes. The ring and the fog (Setup only; "Map overlays" below) are written so far.
 - **Map lookups** (Call 13): the map gets the worker's posted `lookups.fresh`; each card picks `inFlight` or `fresh` for its project.
 - **No local persistence** (Call 15): **superseded by plan 5.** The policy autosaves and publishes; see "Autosave, publish and the read-only view" below.
 - **Lever sends are debounced 250 ms** after the last change once every lot is resolved (Call 18); the worker lets the latest `setLevers` win.
@@ -64,6 +64,15 @@ Spec §1 (`docs/superpowers/specs/2026-10-31-sim-runs-design.md`). `SimPage` own
 - **Read-only pane.** `PolicyPanel` takes `readonly`, `onreset` and `resetLabel`: a button at the top of the pane ("Change policy", or "Back to start" in the view), no history row, and the line "Read-only during a run". The sections read `policyReadonly()` (`policy-readonly.ts`, a context from `PolicyPanel`) and wrap their editing controls in `ReadonlyFieldset` (a `<fieldset disabled class="contents">` described by that line), so every control stays readable and focus skips it. Controls that only show information stay usable: the disclosure toggles, a timeline's stage toggles and their details, and a lot lookup's Retry. A timeline's drag handles hide. The stroke adapter's `readOnly` is `store.locked`, so the controller refuses strokes, undo and redo. After the reset, focus moves to the first section toggle. Scrubbing a run stays allowed.
 - **Change policy / Back to start** (`resetRun()`): unlocks the store and returns to Setup; FzpMode pauses and returns the day to the present. The policy is intact. The next Run starts over from the present and waits for the latest policy's timeline.
 - **e2e.** `gotoSim(page, path, { run: true })` and `gotoFzp(page, search, { run: true })` press Run, then Pause, then Home, and wait for `__sfhFzp.day === asOf` and `playing === false`. Tests that scrub, play or press a marker pass `run: true`.
+
+## Map overlays
+
+Sim map overlays plan (`docs/superpowers/plans/2026-10-31-sim-runs-2-map-overlays.md`), Task 4. Everything here shows in Setup only, in both modes (`/sim` and the read-only `/s/<id>`).
+
+- **View menu.** The header actions start with `ViewMenu` while `run.phase === 'setup'`: rows "Transit stops", "Transit capacity within a 10-minute walk" and "Height limits" (caption "A haze at the height zoning allows. Room under it is room to grow."), or only "Height limits" when the manifest has no `transit`. Its swatches and the fog share one `useSystemTheme()`.
+- **Prefs.** `viewPrefs` is read once with `readViewPrefs(storage())` and every change is written with `writeViewPrefs` to the same storage (SimPage's `storage` prop, default `localStorage`; the test host passes an in-memory one). It is the `sfhousing:view` record `/` uses, so a viewer's transit choice follows them between modes. A run keeps the toggles: FzpMode gets `view = run.phase === 'setup' ? viewPrefs : HIDDEN_VIEW`.
+- **Fog.** `fog` is the latest grid from FzpMode's `onfog`; one effect writes the overlay mux's `fog` slot: `[heightFogLayer(fogInstances(fog), fog, theme)]` in Setup with `heightFog` on, else `[]`. See [map-interfaces.md](map-interfaces.md), "Height fog".
+- **Header at 768 px.** View, Policy and Another future tighten their side padding from md to lg (`md:max-lg:px-1`), so the Setup header (View included, with "Autosave off", "Share link" and a five-digit score) still fits at 768 px with the score centred; removing View in a run does not move the score (the header's three-column grid). Checked by the SiteHeader spec's 768 px row and `e2e/sim.spec.ts` ("at 768 px the header fits…").
 
 ## Autosave, publish and the read-only view
 

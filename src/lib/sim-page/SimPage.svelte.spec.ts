@@ -19,6 +19,9 @@ import { replaceStateCalls } from '../../test-stubs/app/navigation';
 import type SimPage from './SimPage.svelte';
 import { DEFAULT_POLICY, SIM_CODEC, SIM_KEY, type SimDoc } from './sim-doc';
 import { resolvePreset } from './timing';
+import type { FogGrid } from '$lib/map/fog/grid';
+import { FOG_LAYER_ID } from '$lib/map/fog/fog-layer';
+import { DEFAULT_VIEW, HIDDEN_VIEW, VIEW_KEY } from '$lib/view/prefs';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 const workers = vi.hoisted(() => [] as import('$lib/fzp/test/fake-worker').FakeScenarioWorker[]);
@@ -813,5 +816,120 @@ describe('SimPage score comparison (spec §5)', () => {
     await expect.element(await comparison()).toHaveTextContent(/^Your policy added .* vs FZP$/);
     w.emit(timelineMsg(w.lastOf('setLevers')!.rev, 7));
     await expect.element(await comparison()).toHaveTextContent(/^FZP added .* vs no FZP$/);
+  });
+});
+
+describe('SimPage map overlays (plan 2, Task 4)', () => {
+  const run = () => page.getByRole('button', { name: 'Run', exact: true });
+  const viewButton = () => page.getByRole('button', { name: 'View', exact: true });
+  /** A one-cell fog grid. */
+  const GRID: FogGrid = {
+    west: -122.5,
+    south: 37.7,
+    dLng: 0.001,
+    dLat: 0.001,
+    cols: 1,
+    rows: 1,
+    heightM: new Float32Array([10, 10, 10, 10])
+  };
+  /** The ids the map's overlay last got. */
+  const overlayIds = () =>
+    ((callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as { id: string }[]).map((l) => l.id);
+  /** The worker's first `resolving` for the session's levers, carrying the fog. */
+  function postFog(g: FogGrid = GRID): void {
+    const w = workers.at(-1)!;
+    const rev = w.lastOf('initScenario')!.rev;
+    w.emit({ type: 'levers', rev, phase: 'resolving', done: 0, total: 1, failedCells: [], fog: g });
+  }
+
+  it('the View menu and the fog show in Setup only', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    postFog();
+    await expect.element(viewButton()).toBeVisible();
+    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
+    expect(stub.props.view).toEqual(DEFAULT_VIEW);
+    await run().click();
+    expect(viewButton().query()).toBeNull();
+    await expect.poll(() => overlayIds()).not.toContain(FOG_LAYER_ID);
+    expect(stub.props.view).toEqual(HIDDEN_VIEW);
+  });
+
+  it('toggles survive a run', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    postFog();
+    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
+    await viewButton().click();
+    await page.getByRole('checkbox', { name: 'Height limits' }).click();
+    await page.getByRole('checkbox', { name: 'Transit stops' }).click();
+    await expect.poll(() => overlayIds()).not.toContain(FOG_LAYER_ID);
+    await run().click();
+    await page.getByRole('button', { name: 'Change policy' }).click();
+    await expect.element(viewButton()).toBeVisible();
+    expect(stub.props.view).toEqual({ ...DEFAULT_VIEW, heightFog: false, transitStops: true });
+    expect(overlayIds()).not.toContain(FOG_LAYER_ID);
+  });
+
+  it('without transit the menu has only the fog row', async () => {
+    await page.viewport(1024, 768);
+    await setup({ manifest: { ...manifest, transit: undefined } });
+    await toReady();
+    await viewButton().click();
+    expect(page.getByRole('checkbox').elements()).toHaveLength(1);
+    await expect.element(page.getByRole('checkbox', { name: 'Height limits' })).toBeChecked();
+  });
+
+  it('the prefs are read from and written to the page storage', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    const mem = new MemoryStorage();
+    mem.setItem(VIEW_KEY, JSON.stringify({ transitStops: true, transitAccess: true }));
+    await setup({ storage: () => mem });
+    await toReady();
+    await expect
+      .poll(() => stub.props.view)
+      .toEqual({ transitStops: true, transitAccess: true, heightFog: true });
+    await viewButton().click();
+    await page.getByRole('checkbox', { name: 'Height limits' }).click();
+    await expect
+      .poll(() => JSON.parse(mem.getItem(VIEW_KEY) ?? '{}'))
+      .toEqual({ transitStops: true, transitAccess: true, heightFog: false });
+  });
+
+  it('a stored heightFog: false draws no fog until it is turned on', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    const mem = new MemoryStorage();
+    mem.setItem(VIEW_KEY, JSON.stringify({ ...DEFAULT_VIEW, heightFog: false }));
+    await setup({ storage: () => mem });
+    await toReady();
+    postFog();
+    await viewButton().click();
+    const fog = page.getByRole('checkbox', { name: 'Height limits' });
+    await expect.element(fog).not.toBeChecked();
+    expect(overlayIds()).not.toContain(FOG_LAYER_ID);
+    await fog.click();
+    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
+  });
+
+  it('the view (/s/:id) shows the View menu and the fog in Setup', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY });
+    await toReady();
+    postFog();
+    await expect.element(viewButton()).toBeVisible();
+    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
+    await run().click();
+    expect(viewButton().query()).toBeNull();
+    await expect.poll(() => overlayIds()).not.toContain(FOG_LAYER_ID);
+    await page.getByRole('button', { name: 'Back to start' }).click();
+    await expect.element(viewButton()).toBeVisible();
+    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
   });
 });

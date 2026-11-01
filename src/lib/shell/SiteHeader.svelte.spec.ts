@@ -372,13 +372,16 @@ describe('SiteHeader', () => {
         expect(s.right).toBeLessThanOrEqual(score.getBoundingClientRect().left);
       });
 
-      // The /sim row as it renders from md: the real chip, the score bar and the widest actions.
+      // The /sim row as it renders from md: the real chip, the score bar and the widest actions
+      // (Setup's, with View). View, Policy and Another future tighten their padding below lg.
       const btn = 'min-h-6 min-w-6 rounded-md border px-2 text-sm font-medium whitespace-nowrap';
+      const tight = `${btn} md:max-lg:px-1`;
       const simActions = createRawSnippet(() => ({
         render: () =>
-          `<div class="contents"><button class="${btn}">Policy</button>` +
+          `<div class="contents"><button class="${tight}">View</button>` +
+          `<button class="${tight}">Policy</button>` +
           `<button class="${btn} bg-accent text-on-accent">Share link</button>` +
-          `<button class="${btn}">Another future</button></div>`
+          `<button class="${tight}">Another future</button></div>`
       }));
       for (const width of [768, 1024]) {
         it(`at ${width}px "Autosave off", the nav and every action fit without overlap`, async () => {
@@ -402,6 +405,7 @@ describe('SiteHeader', () => {
               page.getByRole('navigation', { name: 'Modes' }).element(),
               chip.element(),
               page.getByRole('button', { name: '12,345 homes added' }).element(),
+              page.getByRole('button', { name: 'View' }).element(),
               page.getByRole('button', { name: 'Policy' }).element(),
               page.getByRole('button', { name: 'Share link' }).element(),
               page.getByRole('button', { name: 'Another future' }).element()

@@ -65,6 +65,11 @@ The ready-phase notices (the stopped chip with Retry, "Making another future…"
 
 `window.__sfhMap` (`src/lib/map/debug.ts`) gives the MapLibre map. Test helpers: `e2e/helpers/sharing.ts` (`jumpAndIdle`, `projectToPage`, `FRAME`, `headerAction`, `openHeaderMenu`) and `e2e/helpers/a11y.ts`. The specs are `e2e/fzp.spec.ts`, `e2e/fzp-sim.spec.ts` and, for `/sim`'s own controls, `e2e/sim.spec.ts`.
 
+## /sim props: `view` and `onfog`
+
+- **`view`** (`ViewPrefs`, default `HIDDEN_VIEW` from `src/lib/view/prefs.ts`: every layer off) is passed to SimMap as is. `/sim` passes the viewer's prefs in Setup and `HIDDEN_VIEW` during a run.
+- **`onfog(g)`** gets a kept lever revision's height-limit grid once per rev (from its first `resolving`, else from its `current`; [sim-levers.md](sim-levers.md)). `/sim` draws it as the height fog ([map-interfaces.md](map-interfaces.md), "Height fog").
+
 ## Request flow
 
 - **Scenario:** `FzpMode` owns a `ScenarioClient` (`src/lib/sim/scenario-client.ts`) over the simulation worker. `startScenario` is the only caller of `initScenario`; "Another future" and "Back to the representative future" go through `requestReroll`. Each request carries a revision; timelines and errors for older revisions are dropped. The page writes `?seed=N` through `onurlseed` only for the answer to a reroll (a null seed is the representative future and removes the parameter). Unknown query parameters are kept.

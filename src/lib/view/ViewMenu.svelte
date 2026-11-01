@@ -1,6 +1,12 @@
+<script lang="ts" module>
+  /** A View menu row: a checkbox (and its legend or caption) for one ViewPrefs field. */
+  export type ViewRow = 'transitStops' | 'transitAccess' | 'heightFog';
+</script>
+
 <script lang="ts">
-  // Header View menu (transit spec §6.3): a disclosure with one checkbox + legend per layer. A
-  // list, so later layers add rows.
+  // Header View menu (transit spec §6.3): a disclosure with one checkbox + legend per layer, in
+  // `rows` order. / and /p/:id show the two transit rows (the default); /sim adds the height fog
+  // (sim-runs plan 2 Task 4), and shows only the fog row when the dataset has no transit.
   import { TOKENS, accessSwatch } from '$lib/map/palette';
   import type { Theme } from '$lib/map/types';
   import { ACCESS_CAPTION, ACCESS_LEGEND } from '$lib/transit/legend';
@@ -10,14 +16,18 @@
     view: ViewPrefs;
     theme: Theme;
     onchange(v: ViewPrefs): void;
+    /** The rows shown, in order (default: the two transit rows). */
+    rows?: readonly ViewRow[];
   }
-  let { view, theme, onchange }: Props = $props();
+  let { view, theme, onchange, rows = ['transitStops', 'transitAccess'] }: Props = $props();
 
   const id = $props.id();
   let open = $state(false);
   let button = $state<HTMLButtonElement>();
   let panel = $state<HTMLDivElement>();
   const t = $derived(TOKENS[theme]);
+
+  const FOG_CAPTION = 'A haze at the height zoning allows. Room under it is room to grow.';
 
   const STOP_LEGEND = [
     ['transit-regional', 'BART / Caltrain'],
@@ -50,7 +60,7 @@
     type="button"
     aria-expanded={open}
     aria-controls="{id}-panel"
-    class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+    class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap md:max-lg:px-1 dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
     onclick={() => (open = !open)}>View</button
   >
   {#if open}
@@ -61,47 +71,67 @@
       aria-label="Map layers"
       class="absolute top-full right-4 z-50 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-md border border-gray-300 bg-white p-3 text-sm text-gray-900 shadow-lg sm:right-0 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
     >
-      <label class="flex min-h-6 items-center gap-2 font-medium">
-        <input
-          type="checkbox"
-          checked={view.transitStops}
-          onchange={(e) => onchange({ ...view, transitStops: e.currentTarget.checked })}
-        />
-        Transit stops
-      </label>
-      <ul class="mt-1 mb-3 space-y-1 pl-6" aria-label="Transit stops legend">
-        {#each STOP_LEGEND as [token, label] (token)}
-          <li class="flex items-center gap-2">
-            <span
-              aria-hidden="true"
-              class="inline-block size-3 rounded-full"
-              style="background: {t[token]}"
-            ></span>
-            {label}
-          </li>
-        {/each}
-      </ul>
-      <label class="flex min-h-6 items-center gap-2 font-medium">
-        <input
-          type="checkbox"
-          checked={view.transitAccess}
-          onchange={(e) => onchange({ ...view, transitAccess: e.currentTarget.checked })}
-        />
-        Transit capacity within a 10-minute walk
-      </label>
-      <ul class="mt-1 flex flex-wrap gap-x-3 gap-y-1 pl-6" aria-label="Transit capacity legend">
-        {#each ACCESS_LEGEND as label, i (label)}
-          <li class="flex items-center gap-1">
-            <span
-              aria-hidden="true"
-              class="inline-block size-3"
-              style="background: {accessSwatch(theme, (i + 1) as 1 | 2 | 3 | 4 | 5)}"
-            ></span>
-            {label}
-          </li>
-        {/each}
-      </ul>
-      <p class="mt-2 pl-6 text-xs text-gray-700 dark:text-gray-300">{ACCESS_CAPTION}</p>
+      {#each rows as row, n (row)}
+        <div class={n > 0 ? 'mt-3' : undefined}>
+          {#if row === 'transitStops'}
+            <label class="flex min-h-6 items-center gap-2 font-medium">
+              <input
+                type="checkbox"
+                checked={view.transitStops}
+                onchange={(e) => onchange({ ...view, transitStops: e.currentTarget.checked })}
+              />
+              Transit stops
+            </label>
+            <ul class="mt-1 space-y-1 pl-6" aria-label="Transit stops legend">
+              {#each STOP_LEGEND as [token, label] (token)}
+                <li class="flex items-center gap-2">
+                  <span
+                    aria-hidden="true"
+                    class="inline-block size-3 rounded-full"
+                    style="background: {t[token]}"
+                  ></span>
+                  {label}
+                </li>
+              {/each}
+            </ul>
+          {:else if row === 'transitAccess'}
+            <label class="flex min-h-6 items-center gap-2 font-medium">
+              <input
+                type="checkbox"
+                checked={view.transitAccess}
+                onchange={(e) => onchange({ ...view, transitAccess: e.currentTarget.checked })}
+              />
+              Transit capacity within a 10-minute walk
+            </label>
+            <ul
+              class="mt-1 flex flex-wrap gap-x-3 gap-y-1 pl-6"
+              aria-label="Transit capacity legend"
+            >
+              {#each ACCESS_LEGEND as label, i (label)}
+                <li class="flex items-center gap-1">
+                  <span
+                    aria-hidden="true"
+                    class="inline-block size-3"
+                    style="background: {accessSwatch(theme, (i + 1) as 1 | 2 | 3 | 4 | 5)}"
+                  ></span>
+                  {label}
+                </li>
+              {/each}
+            </ul>
+            <p class="mt-2 pl-6 text-xs text-gray-700 dark:text-gray-300">{ACCESS_CAPTION}</p>
+          {:else}
+            <label class="flex min-h-6 items-center gap-2 font-medium">
+              <input
+                type="checkbox"
+                checked={view.heightFog}
+                onchange={(e) => onchange({ ...view, heightFog: e.currentTarget.checked })}
+              />
+              Height limits
+            </label>
+            <p class="mt-1 pl-6 text-xs text-gray-700 dark:text-gray-300">{FOG_CAPTION}</p>
+          {/if}
+        </div>
+      {/each}
     </div>
   {/if}
 </div>

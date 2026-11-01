@@ -92,6 +92,7 @@
   import { HORIZON, monthIndex, monthStart } from './time';
   import TimeScrubber from './TimeScrubber.svelte';
   import type { FzpPhase, Speed } from './types';
+  import { HIDDEN_VIEW, type ViewPrefs } from '$lib/view/prefs';
 
   interface Props {
     manifest: Manifest | null;
@@ -153,6 +154,8 @@
      * waits for them, and the score bar shows the pending state.
      */
     leversPending?: boolean;
+    /** The map's layer toggles (/sim: the viewer's in Setup, all off in a run). Default all off. */
+    view?: ViewPrefs;
   }
 
   let {
@@ -178,7 +181,8 @@
     notices = undefined,
     runPhase = undefined,
     onrun = undefined,
-    leversPending = false
+    leversPending = false,
+    view = HIDDEN_VIEW
   }: Props = $props();
 
   // The props seed the page once; Retry replaces the manifest and calibration in place.
@@ -810,7 +814,7 @@
       disabled={!canReroll}
       aria-busy={rerollBusy}
       onclick={anotherFuture}
-      class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:text-gray-700 dark:border-gray-600 dark:disabled:text-gray-400 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+      class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:text-gray-700 md:max-lg:px-1 dark:border-gray-600 dark:disabled:text-gray-400 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
     >
       Another future
     </button>
@@ -856,7 +860,7 @@
       {requestParcelSummary}
       onRetryChunks={() => client?.retryChunks()}
       onready={onMapReady}
-      view={{ transitStops: false, transitAccess: false }}
+      {view}
       timelinePick={onPick}
     />
   {:else}

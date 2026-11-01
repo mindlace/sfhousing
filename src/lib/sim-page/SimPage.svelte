@@ -16,6 +16,8 @@
   Setup and Run (spec §1, sim-runs Task 7): the page opens in Setup (never persisted). Run (the
   scrubber's button) sets the tool to Move, locks the store and plays; the panel is read-only
   until "Change policy" ("Back to start" in the view) unlocks it and returns to the present.
+  Map overlays (sim-runs plan 2, Task 4): in Setup the header's View menu (transit stops, transit
+  capacity, the height fog) and the fog itself; a run hides them all and keeps the toggles.
 -->
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
@@ -31,7 +33,11 @@
   import { BrushState } from '$lib/brush/state.svelte';
   import type { Manifest } from '$lib/data/manifest';
   import FzpMode, { type SimClientApi } from '$lib/fzp/FzpMode.svelte';
+  import { fogInstances, type FogGrid } from '$lib/map/fog/grid';
+  import { useSystemTheme } from '$lib/map/system-theme.svelte';
   import type { SimMapHandle } from '$lib/map/types';
+  import ViewMenu, { type ViewRow } from '$lib/view/ViewMenu.svelte';
+  import { HIDDEN_VIEW, readViewPrefs, writeViewPrefs, type ViewPrefs } from '$lib/view/prefs';
   import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
   import type { BrushLotsResult } from '$lib/sim/scenario/types';
@@ -83,7 +89,7 @@
     persist?: 'restore' | 'off';
     /** The Remix hand-off from /s/<id> (`history.state.sfhSimRemix`). */
     remix?: { from: string; doc?: string };
-    /** Tests: the autosave's storage (default `localStorage`). */
+    /** Tests: the autosave's and the view prefs' storage (default `localStorage`). */
     storage?: () => Storage | null;
     /** Tests: Publish's fetch. */
     fetchFn?: typeof fetch;
@@ -383,6 +389,37 @@
     else adapter.editor.redo();
   }
 
+  // ---- map overlays (plan 2, Task 4) ----
+
+  /** The viewer's layer toggles, shared with / (`sfhousing:view`); kept through a run. */
+  let viewPrefs = $state.raw<ViewPrefs>(untrack(() => readViewPrefs(storage())));
+  const systemTheme = useSystemTheme();
+  const viewRows = $derived<readonly ViewRow[]>(
+    manifest?.transit ? ['transitStops', 'transitAccess', 'heightFog'] : ['heightFog']
+  );
+
+  function setView(v: ViewPrefs): void {
+    viewPrefs = v;
+    writeViewPrefs(v, storage());
+  }
+
+  /** The latest kept lever revision's height-limit grid (FzpMode's `onfog`). */
+  let fog = $state.raw<FogGrid | null>(null);
+  /** Per grid, not per theme: a theme change rebuilds the layer only. */
+  const fogCells = $derived(fog ? fogInstances(fog) : null);
+  let fogLayer = $state.raw<typeof import('$lib/map/fog/fog-layer') | null>(null);
+
+  $effect(() => {
+    const o = overlay;
+    if (!o) return;
+    const g = fog;
+    const cells = fogCells;
+    const mod = fogLayer;
+    const on = run.phase === 'setup' && viewPrefs.heightFog && g && cells && mod;
+    const layers = on ? [mod.heightFogLayer(cells, g, systemTheme.current)] : [];
+    untrack(() => o.slot('fog')(layers));
+  });
+
   // ---- rule brushes (Task 9) ----
 
   const forms = new BrushForms();
@@ -463,6 +500,12 @@
       },
       (e) => console.error('[sim] overlay layers failed to load', e)
     );
+    import('$lib/map/fog/fog-layer').then(
+      (mod) => {
+        if (!dead) fogLayer = mod;
+      },
+      (e) => console.error('[sim] the height fog layer failed to load', e)
+    );
     return () => {
       dead = true;
       controller?.destroy();
@@ -474,12 +517,15 @@
 </script>
 
 {#snippet actions()}
+  {#if run.phase === 'setup'}
+    <ViewMenu view={viewPrefs} theme={systemTheme.current} rows={viewRows} onchange={setView} />
+  {/if}
   <button
     bind:this={policyButton}
     type="button"
     aria-expanded={policyOpen}
     aria-controls={panelId}
-    class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+    class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap md:max-lg:px-1 dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
     onclick={() => (policyOpen ? void closePolicy() : openPolicy())}>Policy</button
   >
   {#if mode === 'edit'}
@@ -591,6 +637,8 @@
   runPhase={run.phase}
   onrun={startRun}
   leversPending={sync.pending}
+  view={run.phase === 'setup' ? viewPrefs : HIDDEN_VIEW}
+  onfog={(g) => (fog = g)}
   {actions}
   status={mode === 'edit' ? saveState : undefined}
   notices={sessionNotices}

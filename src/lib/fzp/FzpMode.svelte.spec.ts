@@ -15,6 +15,7 @@ import type { LeverStatus } from '$lib/sim-page/lever-status';
 import type { SimPhase } from '$lib/sim-page/run-phase.svelte';
 import { chanceTable, typicalMonths } from '$lib/timelapse/model';
 import type { Calibration } from '$lib/timelapse/types';
+import { HIDDEN_VIEW, type ViewPrefs } from '$lib/view/prefs';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import { fixtureCalibration } from './fixtures/calibration';
 import { REAL_ACTUAL, SIMULATED } from './fixtures/cards';
@@ -55,6 +56,7 @@ type Over = Partial<{
   runPhase: SimPhase;
   onrun: () => void;
   leversPending: boolean;
+  view: ViewPrefs;
 }>;
 
 function setup(over: Over = {}) {
@@ -249,11 +251,19 @@ describe('FzpMode loading and lookups', () => {
     expect(slider().element().getAttribute('min')).toBe(String(ASOF));
   });
 
-  it('passes SimMap the transit-off view and no theme', async () => {
+  it('passes SimMap the hidden view by default and no theme', async () => {
     setup();
-    await expect.poll(() => stub.props.view).toEqual({ transitStops: false, transitAccess: false });
+    await expect.poll(() => stub.props.view).toEqual(HIDDEN_VIEW);
     expect('theme' in stub.props).toBe(false);
     expect(stub.props.timelinePick).toBeTypeOf('function');
+  });
+
+  it("passes SimMap the page's view, and each new one", async () => {
+    const view: ViewPrefs = { transitStops: true, transitAccess: false, heightFog: true };
+    const s = setup({ view });
+    await expect.poll(() => stub.props.view).toEqual(view);
+    await (await s.r).rerender({ view: HIDDEN_VIEW });
+    await expect.poll(() => stub.props.view).toEqual(HIDDEN_VIEW);
   });
 });
 
