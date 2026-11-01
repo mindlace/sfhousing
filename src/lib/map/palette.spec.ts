@@ -215,7 +215,8 @@ describe('TIMELINE_LEGEND', () => {
 });
 
 // The body of SimMap's DEFAULT_TOKENS_CSS (between <style> and </style>) as rendered by the code
-// before the helper existed. This literal is dda6252's output, which is unchanged at 0784133.
+// before the helper existed, with the values of spec 2026-10-31 section 8
+// (docs/superpowers/specs/2026-10-31-sim-runs-design.md), the source of the pinned palette.
 // Pinned byte for byte (spec §4.6.1, AC15).
 const DEFAULT_TOKENS_BODY =
   '.sim-map { --map-land: #F3EFE6; --map-water: #C7D3D6; --map-park: #E2E4D3; ' +

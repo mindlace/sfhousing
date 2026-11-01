@@ -1,8 +1,10 @@
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { wcagContrast } from 'culori';
 import { describe, expect, it } from 'vitest';
 
-const css = readFileSync('src/routes/layout.css', 'utf8');
+const fromRoot = (p: string) => fileURLToPath(new URL(`../../../${p}`, import.meta.url));
+const css = readFileSync(fromRoot('src/routes/layout.css'), 'utf8');
 const theme = /@theme\s*\{([^}]*)\}/s.exec(css)?.[1] ?? '';
 const tok: Record<string, string> = {};
 for (const m of theme.matchAll(/--color-([\w-]+):\s*(#[0-9a-fA-F]{6})\s*;/g))
@@ -50,7 +52,7 @@ describe('app accent tokens', () => {
   });
   it('no Tailwind blue or blue hex remains in chrome', () => {
     for (const f of SCANNED) {
-      const src = readFileSync(f, 'utf8');
+      const src = readFileSync(fromRoot(f), 'utf8');
       expect(src, f).not.toMatch(/\bblue-\d{3}\b/);
       expect(src, f).not.toMatch(BLUE_HEX);
       expect(src, f).not.toMatch(BLUE_RGB);
