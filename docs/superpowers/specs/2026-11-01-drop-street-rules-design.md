@@ -1,6 +1,6 @@
 # Drop street-based zoning rules
 
-Status: draft for review (2026-11-01).
+Status: approved (2026-11-01).
 
 ## Intent
 
@@ -38,23 +38,16 @@ There are two street-based rule kinds today, Street and Commercial corridor. Bot
 
 **Today:**
 - No `/sim` policy has been published: staging's `plan` table has 0 `sim` rows, and production predates `/sim` publishing.
-- So the only street rules in the wild are in browser autosaves, under `sfhousing:sim:v1`.
+- So the only street rules in the wild are in browser autosaves, under `sfhousing:sim:v1`. The owner confirmed the only one is their own test autosave.
 
 **Schema:** stays at 2. There is no schema bump and no migrator.
 
 **Reading a stored policy (`parseSimDoc(…, 'reconcile')`, which `SIM_CODEC.load` uses):**
-- A stored rule with `kind: 'street'` is dropped. Every other part of the policy loads as before.
-- Other unknown kinds still fail as they do now.
-- The parser reports how many rules it dropped.
-
-**Notice:**
-- When the parser dropped any rules, autosave shows a one-time notice. The text is my draft: "Street rules are no longer offered, so N street rule(s) were removed from your policy."
+- A stored rule with `kind: 'street'` is dropped silently. Every other part of the policy loads as before.
 - The next autosave writes the policy without the street rules.
-- Where the count is carried:
-  - Street rules live only in `policy.rules`. Brush queries are derived from the rules (`ruleQueries`) and never stored.
-  - `rebased` can happen together with a drop. `corrupt` and `future` cannot, because the parse failed.
-  - So the count is its own field on `RestoreResult`, not a fourth `AutosaveNotice` kind.
-- The dropped-rules line shows where `rebased` shows; when both apply, both lines show.
+- Other unknown kinds still fail as they do now.
+- There is no notice and no dropped-rule count.
+- Street rules live only in `policy.rules`. Brush queries are derived from the rules (`ruleQueries`) and never stored.
 
 **Strict parsing (publishing):**
 - `strict` parsing still rejects `kind: 'street'` with `bad-field`.
@@ -129,5 +122,4 @@ Update the live docs:
 ## Left to the builder
 
 - Whether to rename `src/lib/sim/scenario/fixtures/mini-frontage.ts`, which also holds the transit and neighbourhood fixtures.
-- Whether the dropped-rule count travels as a field on the parse result or as a warning list.
 - Test changes follow from the code. The e2e check that `frontage.bin` is fetched when the panel opens is inverted: the panel does not fetch it.
