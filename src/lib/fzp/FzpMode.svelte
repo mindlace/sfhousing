@@ -142,6 +142,11 @@
     runPhase?: SimPhase;
     /** The Run button's press; the page then moves `runPhase` to 'run'. */
     onrun?: () => void;
+    /**
+     * /sim: newer levers are on their way (debounced, or their lots still being found). Run
+     * waits for them, and the score bar shows the pending state.
+     */
+    leversPending?: boolean;
   }
 
   let {
@@ -165,7 +170,8 @@
     status = undefined,
     notices = undefined,
     runPhase = undefined,
-    onrun = undefined
+    onrun = undefined,
+    leversPending = false
   }: Props = $props();
 
   // The props seed the page once; Retry replaces the manifest and calibration in place.
@@ -211,8 +217,9 @@
   let timelineRev = $state(0);
 
   /**
-   * Run was pressed: play as soon as the phase is 'run' and the score is current (never a
-   * timeline from before the latest levers sent). Playback starting, Pause and Setup clear it.
+   * Run was pressed: play as soon as the phase is 'run' and the score is current, for the latest
+   * levers (none pending, none sent unanswered). While it waits the button still reads Run, so no
+   * press can play an older timeline. Playback starting and Setup clear it.
    */
   let playWhenCurrent = $state(false);
 
@@ -471,8 +478,9 @@
   }
 
   function onRun(): void {
+    if (playWhenCurrent) return; // already waiting
     playWhenCurrent = true;
-    onrun?.();
+    if (runPhase !== 'run') onrun?.();
   }
 
   // Setup (spec §1): no playback, and the day pinned at asOf, moved as a scrubber jump moves it.
@@ -495,15 +503,14 @@
     if (runPhase === 'setup') untrack(() => (playWhenCurrent = false));
   });
 
-  // Run plays once the score is current. Playback that started otherwise (Play) clears the wait,
-  // so a Pause before the score is current keeps it paused.
+  // Run plays once the score is current for the latest levers.
   $effect(() => {
     if (!playWhenCurrent) return;
     if (playing) {
       playWhenCurrent = false;
       return;
     }
-    if (runPhase !== 'run' || phase !== 'ready' || scoreBusy) return;
+    if (runPhase !== 'run' || phase !== 'ready' || scoreBusy || leversPending) return;
     playWhenCurrent = false;
     playing = true;
   });
@@ -794,7 +801,7 @@
 
 {#snippet scoreBar()}
   {#if hasScoreboard && calibration}
-    <ScoreBar {score} {day} {playing} busy={scoreBusy} panel={scorePanel} />
+    <ScoreBar {score} {day} {playing} busy={scoreBusy || leversPending} panel={scorePanel} />
   {/if}
 {/snippet}
 
@@ -968,7 +975,8 @@
         bind:playing
         bind:speed
         {markers}
-        setup={runPhase === 'setup'}
+        setup={runPhase === 'setup' || playWhenCurrent}
+        busy={playWhenCurrent}
         onrun={onRun}
         onday={onDay}
         onheight={(px) => {

@@ -200,6 +200,34 @@ describe('LeverSync', () => {
     expect(h.sent[0].rules[0].lots).toEqual(['a', 'b']);
   });
 
+  it('pending: while the debounce is armed or a query is in flight, false once sent', async () => {
+    const h = harness();
+    expect(h.sync.pending).toBe(false);
+    h.sync.update(BASE);
+    expect(h.sync.pending).toBe(true); // armed
+    await vi.advanceTimersByTimeAsync(250);
+    expect(h.sent).toHaveLength(1);
+    expect(h.sync.pending).toBe(false);
+    h.sync.update(withBrushes(area('RH-1')));
+    expect(h.sync.pending).toBe(true); // in flight
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h.sync.pending).toBe(true);
+    h.pending[0].resolve(ok(['a']));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.sync.pending).toBe(true); // answered, now armed
+    await vi.advanceTimersByTimeAsync(250);
+    expect(h.sent).toHaveLength(2);
+    expect(h.sync.pending).toBe(false);
+  });
+
+  it('pending is false after a needed query fails (the standing levers stay)', async () => {
+    const h = harness(() => failed);
+    h.sync.update(withBrushes(area('RH-1')));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.sync.pending).toBe(false);
+    expect(h.sent).toEqual([]);
+  });
+
   it('a query asked once is cached across updates', async () => {
     const h = harness((q) => ok(q.kind === 'street' ? [q.names[0]] : []));
     h.sync.update(withBrushes(area('RH-1')));

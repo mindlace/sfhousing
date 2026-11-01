@@ -11,6 +11,7 @@
   import BrushCard from './BrushCard.svelte';
   import { BrushForms } from './brush-forms.svelte';
   import { RULE_KINDS, kindUnavailable, ruleKindOf, type RuleKind } from './brush-summary';
+  import ReadonlyFieldset from './ReadonlyFieldset.svelte';
   import RuleBrushForm from './RuleBrushForm.svelte';
   import type { ZoningRule } from './policy';
   import type { LeverSync, PolicyStore } from './policy-store.svelte';
@@ -89,45 +90,49 @@
   {/if}
 
   {#if inlineForm && forms.current && catalog}
-    {#key forms.current}
-      <RuleBrushForm
-        kind={forms.current.kind}
-        {catalog}
-        initial={forms.current.initial}
-        onsave={save}
-        oncancel={() => forms.close()}
-      />
-    {/key}
+    <ReadonlyFieldset>
+      {#key forms.current}
+        <RuleBrushForm
+          kind={forms.current.kind}
+          {catalog}
+          initial={forms.current.initial}
+          onsave={save}
+          oncancel={() => forms.close()}
+        />
+      {/key}
+    </ReadonlyFieldset>
   {:else}
     <div>
-      <button
-        bind:this={addBtn}
-        type="button"
-        data-brush-add
-        aria-expanded={adding}
-        aria-controls="{uid}-kinds"
-        class="min-h-11 rounded-md border border-gray-300 px-3 font-medium"
-        onclick={() => (adding = !adding)}>Add a rule</button
-      >
-      {#if adding}
-        <ul id="{uid}-kinds" class="mt-2 flex flex-col gap-2">
-          {#each RULE_KINDS as kd (kd.id)}
-            {@const why = kindUnavailable(kd.id, catalog)}
-            <li class="flex flex-col">
-              <button
-                type="button"
-                disabled={why !== null}
-                aria-describedby={why ? `${uid}-why-${kd.id}` : undefined}
-                class="min-h-11 self-start rounded-md border border-gray-300 px-3 font-medium disabled:opacity-40"
-                onclick={() => openKind(kd.id)}>{kd.label}</button
-              >
-              {#if why}
-                <span id="{uid}-why-{kd.id}" class="text-gray-700">{why}</span>
-              {/if}
-            </li>
-          {/each}
-        </ul>
-      {/if}
+      <ReadonlyFieldset>
+        <button
+          bind:this={addBtn}
+          type="button"
+          data-brush-add
+          aria-expanded={adding}
+          aria-controls="{uid}-kinds"
+          class="min-h-11 rounded-md border border-gray-300 px-3 font-medium"
+          onclick={() => (adding = !adding)}>Add a rule</button
+        >
+        {#if adding}
+          <ul id="{uid}-kinds" class="mt-2 flex flex-col gap-2">
+            {#each RULE_KINDS as kd (kd.id)}
+              {@const why = kindUnavailable(kd.id, catalog)}
+              <li class="flex flex-col">
+                <button
+                  type="button"
+                  disabled={why !== null}
+                  aria-describedby={why ? `${uid}-why-${kd.id}` : undefined}
+                  class="min-h-11 self-start rounded-md border border-gray-300 px-3 font-medium disabled:opacity-40"
+                  onclick={() => openKind(kd.id)}>{kd.label}</button
+                >
+                {#if why}
+                  <span id="{uid}-why-{kd.id}" class="text-gray-700">{why}</span>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </ReadonlyFieldset>
     </div>
   {/if}
 </div>

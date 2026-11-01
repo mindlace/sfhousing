@@ -137,6 +137,8 @@ export class LeverSync {
   #queries = new Map<string, BrushQuery>(); // eslint-disable-line svelte/prefer-svelte-reactivity
   #token = 0;
   #resolving = $state(0);
+  /** The debounce timer is armed: a recipe is about to be sent. */
+  #armed = $state(false);
   #levers = $state.raw<SimLevers | null>(null);
 
   constructor(deps: LeverSyncDeps) {
@@ -152,6 +154,14 @@ export class LeverSync {
   /** Queries in flight. */
   get resolving(): number {
     return this.#resolving;
+  }
+
+  /**
+   * A newer recipe has not gone out yet: the debounce is armed or a lot query is in flight. A
+   * failed query leaves it false (the levers before it stand, as the failed revision's score).
+   */
+  get pending(): boolean {
+    return this.#armed || this.#resolving > 0;
   }
 
   result(key: string): BrushLotsResult | undefined {
@@ -232,12 +242,15 @@ export class LeverSync {
     const { setTimeout: later, clearTimeout: cancel } = this.#deps;
     if (this.#timer !== null) cancel(this.#timer);
     this.#timer = null;
+    this.#armed = false;
     const p = this.#policy;
     if (!p) return;
     const ready = queriesOf(p).every(({ key }) => this.#results.get(key)?.ok === true);
     if (!ready) return;
+    this.#armed = true;
     this.#timer = later(() => {
       this.#timer = null;
+      this.#armed = false;
       this.#send();
     }, this.#debounceMs);
   }

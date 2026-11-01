@@ -8,14 +8,17 @@
   two zoning sections start open, the others collapsed. The Undo and Redo row (`history`) sits once
   above them. Below md a sub-view ("Add a rule") replaces the sections, with a Back button. The read-only view (plan 5) shows a summary instead,
   titled "Policy (read-only)". During a run (`readonly`, spec §1) a reset button ("Change policy",
-  or "Back to start" on /s/<id>) sits at the top, the history row hides, and each section body
-  sits in a disabled fieldset: every control stays readable and is skipped by focus, while the
-  disclosure toggles still work.
+  or "Back to start" on /s/<id>) and the line "Read-only during a run" sit at the top, and the
+  history row hides. The sections read the state through `policyReadonly()` and wrap their
+  editing controls in `ReadonlyFieldset` (disabled, described by that line), so every control
+  stays readable and controls that only show information stay usable; the disclosure toggles
+  still work. After the reset, focus moves to the first section toggle (WCAG 2.4.3).
 -->
 <script lang="ts">
   import { tick, untrack, type Snippet } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { headerOverlay } from '$lib/shell/header-actions.svelte';
+  import { provideReadonly } from './policy-readonly';
 
   interface Props {
     open: boolean;
@@ -71,6 +74,21 @@
   const uid = $props.id();
   const panelId = $derived(id ?? `${uid}-policy`);
   const headingId = `${uid}-heading`;
+  const noteId = `${uid}-readonly-note`;
+  provideReadonly(() => ({ on: readonly, noteId: readonly ? noteId : undefined }));
+
+  let headingEl = $state<HTMLElement>();
+
+  /**
+   * Ends the run. The reset button goes with the read-only state, so focus moves to the first
+   * section toggle (or the heading, in the summary view) instead of falling to the body.
+   */
+  async function reset(): Promise<void> {
+    onreset?.();
+    await tick();
+    const toggle = (docked ?? dialog)?.querySelector<HTMLElement>('[data-section-toggle]');
+    (toggle ?? headingEl)?.focus();
+  }
 
   const wide = new MediaQuery('(min-width: 768px)');
 
@@ -130,7 +148,7 @@
 
 {#snippet body()}
   <div class="flex items-center justify-between gap-2 border-b border-gray-300 px-4 py-2">
-    <h2 id={headingId} class="text-base font-semibold">
+    <h2 bind:this={headingEl} id={headingId} tabindex="-1" class="text-base font-semibold">
       {view === 'summary' ? 'Policy (read-only)' : 'Policy'}
     </h2>
     <button
@@ -141,11 +159,12 @@
     >
   </div>
   {#if readonly}
-    <div class="border-b border-gray-300 px-4 py-2">
+    <div class="flex flex-col items-start gap-1 border-b border-gray-300 px-4 py-2">
+      <p id={noteId} class="text-sm text-gray-700">Read-only during a run</p>
       <button
         type="button"
         class="min-h-11 rounded-md border border-gray-500 px-3 text-sm font-semibold"
-        onclick={() => onreset?.()}>{resetLabel}</button
+        onclick={() => void reset()}>{resetLabel}</button
       >
     </div>
   {/if}
@@ -158,7 +177,11 @@
         class="mb-2 min-h-6 rounded-md px-1 text-sm font-semibold underline pointer-coarse:min-h-11"
         onclick={() => onback?.()}>Back</button
       >
-      <fieldset disabled={readonly} class="contents">
+      <fieldset
+        disabled={readonly}
+        aria-describedby={readonly ? noteId : undefined}
+        class="contents"
+      >
         {@render subview()}
       </fieldset>
     </div>
@@ -172,6 +195,7 @@
         <h3>
           <button
             type="button"
+            data-section-toggle
             class="flex min-h-11 w-full items-center justify-between gap-2 px-4 text-left text-sm font-semibold"
             aria-expanded={expanded[s.id]}
             aria-controls={bodyId}
@@ -190,17 +214,15 @@
         </h3>
         {#if expanded[s.id]}
           <div id={bodyId} class="px-4 pb-4">
-            <fieldset disabled={readonly} class="contents">
-              {#if s.id === 'rules'}
-                {@render rules?.()}
-              {:else if s.id === 'custom'}
-                {@render custom?.()}
-              {:else if s.id === 'protections'}
-                {@render protections?.()}
-              {:else}
-                {@render timing?.()}
-              {/if}
-            </fieldset>
+            {#if s.id === 'rules'}
+              {@render rules?.()}
+            {:else if s.id === 'custom'}
+              {@render custom?.()}
+            {:else if s.id === 'protections'}
+              {@render protections?.()}
+            {:else}
+              {@render timing?.()}
+            {/if}
           </div>
         {/if}
       </div>

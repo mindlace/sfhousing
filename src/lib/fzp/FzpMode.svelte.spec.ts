@@ -42,6 +42,7 @@ type Over = Partial<{
   actions: Snippet;
   runPhase: SimPhase;
   onrun: () => void;
+  leversPending: boolean;
 }>;
 
 function setup(over: Over = {}) {
@@ -1377,17 +1378,42 @@ describe('FzpMode Setup and Run (/sim, spec §1)', () => {
     await expect.poll(() => debug().playing).toBe(true);
   });
 
-  it('Pause while Run waits clears the wait', async () => {
-    const s = setup({ runPhase: 'setup', levers: DEFAULT_LEVERS });
+  it('a second press while Run waits does not play the older timeline', async () => {
+    const onrun = vi.fn();
+    const s = setup({ runPhase: 'setup', levers: DEFAULT_LEVERS, onrun });
     await toReady(s);
     const rev = await sendLevers(s, { ...OTHER });
     await page.getByRole('button', { name: 'Run' }).click();
     await setPhase(s, 'run');
-    await page.getByRole('button', { name: 'Play', exact: true }).click();
-    await page.getByRole('button', { name: 'Pause', exact: true }).click();
-    s.w().emit(timelineMsg(rev, 7));
+    // Waiting: the button still reads Run, busy, and the track stays disabled.
+    await expect.element(playLabel()).toHaveTextContent(/^Run$/);
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-busy', 'true');
+    await expect.element(slider()).toBeDisabled();
+    await page.getByRole('button', { name: 'Run' }).click();
     await new Promise((res) => setTimeout(res, 50));
     expect(debug().playing).toBe(false);
+    expect(onrun).toHaveBeenCalledOnce();
+    s.w().emit(timelineMsg(rev, 7));
+    await expect.poll(() => debug().playing).toBe(true);
+    await expect.element(slider()).toBeEnabled();
+  });
+
+  it('Run waits while the page has levers pending, then for their timeline', async () => {
+    const s = setup({ runPhase: 'setup', levers: DEFAULT_LEVERS, leversPending: true });
+    await toReady(s);
+    await expect.element(scoreButton()).toHaveAttribute('aria-busy', 'true');
+    await page.getByRole('button', { name: 'Run' }).click();
+    await setPhase(s, 'run');
+    await new Promise((res) => setTimeout(res, 50));
+    expect(debug().playing).toBe(false);
+    // The pending levers go out: still waiting, now for their timeline.
+    const n = s.w().allOf('setLevers').length;
+    await (await s.r).rerender({ levers: { ...OTHER }, leversPending: false });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(n + 1);
+    await new Promise((res) => setTimeout(res, 50));
+    expect(debug().playing).toBe(false);
+    s.w().emit(timelineMsg(s.w().lastOf('setLevers')!.rev, 7));
+    await expect.poll(() => debug().playing).toBe(true);
   });
 
   it('without runPhase (/fzp) the button plays and the hook reports no run phase', async () => {

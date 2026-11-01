@@ -11,6 +11,7 @@ import { readScenarioParcels } from '../src/lib/data/scenario-codec';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { formatCount } from '../src/lib/scoreboard/format';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { slider, startRun } from './helpers/run';
 import {
   FROM,
   TO,
@@ -67,25 +68,6 @@ async function waitReady(page: Page): Promise<void> {
   await expect
     .poll(async () => (await leverStatus(page)).status, { timeout: 20_000 })
     .toBe('current');
-}
-
-const slider = (page: Page): Locator =>
-  page.getByRole('slider', { name: 'Date in the simulation' });
-
-/**
- * Starts a run (spec §1: the page opens in Setup): Run, then Pause once it plays, then Home on
- * the slider, so the run is paused at asOf.
- */
-async function startRun(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Run', exact: true }).click();
-  await expect.poll(() => fzp(page, 'playing'), { timeout: 20_000 }).toBe(true);
-  await page.getByRole('button', { name: 'Pause', exact: true }).click();
-  await slider(page).focus();
-  await page.keyboard.press('Home');
-  await page.waitForFunction(() => {
-    const f = (window as FzpWin).__sfhFzp!;
-    return f.day === f.asOf && !f.playing;
-  });
 }
 
 /** /sim (or `path`), ready, in Setup; with `run`, a run started and paused at asOf. */

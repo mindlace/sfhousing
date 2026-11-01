@@ -623,6 +623,7 @@
   {levers}
   runPhase={run.phase}
   onrun={startRun}
+  leversPending={sync.pending}
   {actions}
   status={mode === 'edit' ? saveState : undefined}
   notices={sessionNotices}

@@ -10,6 +10,7 @@
 <script lang="ts">
   import { PATHWAYS, type Calibration, type Pathway } from '$lib/timelapse/types';
   import type { PolicyStore } from './policy-store.svelte';
+  import ReadonlyFieldset from './ReadonlyFieldset.svelte';
   import RouteTimeline from './RouteTimeline.svelte';
   import SourceList from './SourceList.svelte';
   import {
@@ -108,58 +109,62 @@
 </script>
 
 <div class="flex flex-col gap-3 text-sm">
-  <label class="flex flex-col gap-1 font-semibold">
-    Preset
-    <select
-      class="min-h-6 rounded-md border border-gray-400 px-1 font-normal pointer-coarse:min-h-11"
-      aria-describedby="{uid}-preset-desc"
-      value={current.preset}
-      onchange={(e) => choosePreset(e.currentTarget.value as PresetId)}
-    >
-      {#each available as p (p.id)}
-        <option value={p.id}>{p.name}</option>
-      {/each}
-    </select>
-  </label>
-  <p id="{uid}-preset-desc" class="text-xs text-gray-700">
-    {preset.summary} Evidence tier {tier}.
-  </p>
-
-  <p class="font-semibold" data-testid="timing-label">{label}</p>
-  <div class="flex flex-wrap gap-2">
-    <button type="button" class={btn} disabled={!canSave} onclick={save}>Save timelines</button>
-    <button
-      type="button"
-      class={btn}
-      disabled={target === null}
-      aria-describedby={timing.saved ? `${uid}-revert-desc` : undefined}
-      onclick={revert}
-    >
-      {timing.saved ? 'Revert to saved' : `Revert to ${preset.name}`}
-    </button>
-    {#if timing.saved}
-      <span id="{uid}-revert-desc" class="sr-only"
-        >Restores the saved timelines: {timing.saved.label}</span
+  <ReadonlyFieldset>
+    <label class="flex flex-col gap-1 font-semibold">
+      Preset
+      <select
+        class="min-h-6 rounded-md border border-gray-400 px-1 font-normal pointer-coarse:min-h-11"
+        aria-describedby="{uid}-preset-desc"
+        value={current.preset}
+        onchange={(e) => choosePreset(e.currentTarget.value as PresetId)}
       >
-    {/if}
-  </div>
+        {#each available as p (p.id)}
+          <option value={p.id}>{p.name}</option>
+        {/each}
+      </select>
+    </label>
+    <p id="{uid}-preset-desc" class="text-xs text-gray-700">
+      {preset.summary} Evidence tier {tier}.
+    </p>
+
+    <p class="font-semibold" data-testid="timing-label">{label}</p>
+    <div class="flex flex-wrap gap-2">
+      <button type="button" class={btn} disabled={!canSave} onclick={save}>Save timelines</button>
+      <button
+        type="button"
+        class={btn}
+        disabled={target === null}
+        aria-describedby={timing.saved ? `${uid}-revert-desc` : undefined}
+        onclick={revert}
+      >
+        {timing.saved ? 'Revert to saved' : `Revert to ${preset.name}`}
+      </button>
+      {#if timing.saved}
+        <span id="{uid}-revert-desc" class="sr-only"
+          >Restores the saved timelines: {timing.saved.label}</span
+        >
+      {/if}
+    </div>
+  </ReadonlyFieldset>
 
   {#each PATHWAYS as p (p)}
     <div class="flex flex-col gap-1">
       <div class="flex items-center justify-between gap-2">
         <h4 class="font-semibold">{PATHWAY_NAMES[p]}</h4>
-        <label class="flex items-center gap-1">
-          {PATHWAY_NAMES[p]} share, %
-          <input
-            type="number"
-            min="0"
-            max="100"
-            step="1"
-            class="min-h-6 w-16 rounded-md border border-gray-400 px-1 pointer-coarse:min-h-11"
-            value={shares[p]}
-            onchange={(e) => commitShare(p, e.currentTarget)}
-          />
-        </label>
+        <ReadonlyFieldset>
+          <label class="flex items-center gap-1">
+            {PATHWAY_NAMES[p]} share, %
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="1"
+              class="min-h-6 w-16 rounded-md border border-gray-400 px-1 pointer-coarse:min-h-11"
+              value={shares[p]}
+              onchange={(e) => commitShare(p, e.currentTarget)}
+            />
+          </label>
+        </ReadonlyFieldset>
       </div>
       <RouteTimeline {store} {calibration} pathway={p} {announce} />
     </div>

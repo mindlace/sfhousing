@@ -604,7 +604,18 @@ describe('SimPage Setup and Run (Task 7, spec §1)', () => {
     await userEvent.keyboard('b');
     await expect.element(page.getByRole('radio', { name: 'Move' })).toBeChecked();
 
+    // Why the controls are off: the visible line describes them.
+    const note = page.getByText('Read-only during a run');
+    await expect.element(note).toBeVisible();
+    expect(rentControl().element().closest('fieldset')!.getAttribute('aria-describedby')).toBe(
+      note.element().id
+    );
+
     await change.click();
+    // The button went with the run: focus moves to the first section toggle, not the body.
+    await expect
+      .element(page.getByRole('button', { name: 'New zoning rules', exact: true }))
+      .toHaveFocus();
     await expect.element(rentControl()).toBeEnabled();
     await expect.element(run()).toBeVisible();
     expect(page.getByRole('button', { name: 'Change policy' }).query()).toBeNull();
@@ -649,5 +660,102 @@ describe('SimPage Setup and Run (Task 7, spec §1)', () => {
     await toReady();
     await expect.element(run()).toBeVisible();
     expect(page.getByRole('button', { name: 'Change policy' }).query()).toBeNull();
+  });
+
+  const playLabel = () => page.getByTestId('fzp-play-label');
+  const wait = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
+  it('Run inside the 250 ms debounce waits, then plays the new policy', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    const w = workers.at(-1)!;
+    await page.getByRole('button', { name: 'Protections', exact: true }).click();
+    await historic().click();
+    await run().click();
+    expect(w.allOf('setLevers')).toHaveLength(0); // still inside the debounce
+    await expect.poll(() => w.allOf('setLevers').length).toBe(1);
+    await wait(50);
+    await expect.element(playLabel()).toHaveTextContent(/^Run$/);
+    // A second press while waiting plays nothing.
+    await run().click();
+    await wait(50);
+    await expect.element(playLabel()).toHaveTextContent(/^Run$/);
+    w.emit(timelineMsg(w.lastOf('setLevers')!.rev, 7));
+    await expect.element(playLabel()).toHaveTextContent(/^Pause$/);
+  });
+
+  it("Run while a brush's lots are being found waits for them", async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    const w = workers.at(-1)!;
+    await page.getByRole('radio', { name: 'Paint' }).click();
+    const canvas = stub.map.getCanvas();
+    const ev = (type: string, x: number) =>
+      canvas.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: x,
+          clientY: 10,
+          pointerId: 1,
+          pointerType: 'mouse',
+          button: type === 'pointermove' ? -1 : 0,
+          isPrimary: true
+        })
+      );
+    ev('pointerdown', 10);
+    for (let x = 20; x <= 80; x += 10) ev('pointermove', x);
+    ev('pointerup', 80);
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(1);
+    await run().click();
+    await wait(400); // past the debounce: the lots still hold the send
+    expect(w.allOf('setLevers')).toHaveLength(0);
+    await expect.element(playLabel()).toHaveTextContent(/^Run$/);
+    w.emit({
+      type: 'brushLots',
+      reqId: w.lastOf('resolveBrush')!.reqId,
+      result: { ok: true, lots: ['P0'], points: new Float64Array(2) }
+    });
+    await expect.poll(() => w.allOf('setLevers').length).toBe(1);
+    await wait(50);
+    await expect.element(playLabel()).toHaveTextContent(/^Run$/);
+    w.emit(timelineMsg(w.lastOf('setLevers')!.rev, 7));
+    await expect.element(playLabel()).toHaveTextContent(/^Pause$/);
+  });
+
+  it('during a run a stage still opens its details; its months are read-only', async () => {
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    await run().click();
+    await page.getByRole('button', { name: /^Permitting timelines/ }).click();
+    const stage = page
+      .getByRole('group', { name: /timeline$/ })
+      .first()
+      .getByRole('button')
+      .first();
+    await expect.element(stage).toBeEnabled();
+    await stage.click();
+    await expect.element(stage).toHaveAttribute('aria-expanded', 'true');
+    const share = page.getByRole('spinbutton', { name: /share, %$/ }).first();
+    await expect.element(share).toBeDisabled();
+  });
+
+  it('at 375 px, Change policy in the sheet keeps focus in the sheet', async () => {
+    await page.viewport(375, 700);
+    await setup();
+    await toReady();
+    await run().click();
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await policyButton().click();
+    const dialog = page.getByRole('dialog', { name: 'Policy' });
+    await dialog.getByRole('button', { name: 'Change policy' }).click();
+    await expect
+      .element(dialog.getByRole('button', { name: 'New zoning rules', exact: true }))
+      .toHaveFocus();
   });
 });

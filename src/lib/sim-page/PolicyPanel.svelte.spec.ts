@@ -144,13 +144,34 @@ describe('PolicyPanel', () => {
       reset.element().compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
     expect(page.getByRole('button', { name: /^Undo/ }).query()).toBeNull();
-    await expect.element(page.getByRole('checkbox', { name: 'Rule control' })).toBeDisabled();
+    const control = page.getByRole('checkbox', { name: 'Rule control' });
+    await expect.element(control).toBeDisabled();
+    // Why: the visible line, which the section's editing controls are described by.
+    const note = page.getByText('Read-only during a run');
+    await expect.element(note).toBeVisible();
+    const fieldset = control.element().closest('fieldset')!;
+    expect(fieldset.getAttribute('aria-describedby')).toBe(note.element().id);
+    // A control outside the section's editing fieldset (one that shows information) stays usable.
+    await expect.element(page.getByRole('button', { name: 'Rule details' })).toBeEnabled();
     const protections = page.getByRole('button', { name: 'Protections', exact: true });
     await protections.click();
     await expect.element(protections).toHaveAttribute('aria-expanded', 'true');
     await expect.element(page.getByText('Protections body')).toBeVisible();
     await reset.click();
     expect(onreset).toHaveBeenCalledOnce();
+  });
+
+  it('after the reset, focus moves to the first section toggle (docked and in the sheet)', async () => {
+    for (const width of [1024, 375]) {
+      await page.viewport(width, 700);
+      const { view, onreset } = await setup(true, { readonly: true });
+      onreset.mockImplementation(() => void view.rerender({ readonly: false }));
+      await page.getByRole('button', { name: 'Change policy' }).click();
+      await expect
+        .element(page.getByRole('button', { name: 'New zoning rules', exact: true }))
+        .toHaveFocus();
+      view.unmount();
+    }
   });
 
   it('read-only takes the label it is given; editable shows no reset button', async () => {

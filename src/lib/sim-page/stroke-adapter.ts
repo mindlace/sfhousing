@@ -47,7 +47,11 @@ export function createStrokeAdapter(deps: {
   let rev = 0;
   return {
     editor: {
-      readOnly: false,
+      // During a run the store is locked: the controller refuses strokes, undo and redo, so
+      // nothing is announced that did not happen.
+      get readOnly() {
+        return store.locked;
+      },
       commit(op) {
         const stroke: Stroke = { path: op.path.map((q) => [q[0], q[1]]), radiusM: op.radiusM };
         const stories = deps.stories();

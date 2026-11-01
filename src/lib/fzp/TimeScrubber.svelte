@@ -23,6 +23,8 @@
     /** Setup mode: the button reads Run and calls `onrun`; the track and markers are disabled. */
     setup?: boolean;
     onrun?: () => void;
+    /** A Run is waiting for the latest score: the Run button is `aria-busy`. */
+    busy?: boolean;
     /** Called exactly once per day change. */
     onday?: (day: Day) => void;
     onheight?: (px: number) => void;
@@ -40,6 +42,7 @@
     markers = [],
     setup = false,
     onrun,
+    busy = false,
     onday,
     onheight,
     raf = (cb) => requestAnimationFrame(cb),
@@ -170,6 +173,7 @@
       type="button"
       class="ctl grid rounded-md px-3 text-sm font-medium"
       data-testid="fzp-play"
+      aria-busy={busy}
       onclick={toggle}
     >
       {#each PLAY_LABELS as l (l)}

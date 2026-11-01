@@ -19,6 +19,7 @@
     ruleSummary
   } from './brush-summary';
   import type { ZoningRule } from './policy';
+  import ReadonlyFieldset from './ReadonlyFieldset.svelte';
   import type { LeverSync, PolicyStore } from './policy-store.svelte';
 
   interface Props {
@@ -120,38 +121,40 @@
           onclick={() => keys.forEach((k) => sync.retry(k))}>Retry</button
         >
       {/if}
-      {#if rule}
-        {@const r = rule}
-        <button
-          type="button"
-          data-brush-edit={id}
-          aria-label="Edit: {summary}"
-          disabled={!onedit || editUnavailable !== null}
-          aria-describedby={editUnavailable ? `${uid}-edit-why` : undefined}
-          class={btn}
-          onclick={() => onedit?.(r)}>Edit</button
+      <ReadonlyFieldset>
+        {#if rule}
+          {@const r = rule}
+          <button
+            type="button"
+            data-brush-edit={id}
+            aria-label="Edit: {summary}"
+            disabled={!onedit || editUnavailable !== null}
+            aria-describedby={editUnavailable ? `${uid}-edit-why` : undefined}
+            class={btn}
+            onclick={() => onedit?.(r)}>Edit</button
+          >
+        {:else}
+          <button
+            bind:this={upBtn}
+            type="button"
+            aria-label="Move up: {summary}"
+            disabled={index === 0}
+            class={btn}
+            onclick={() => move(-1)}>Move up</button
+          >
+          <button
+            bind:this={downBtn}
+            type="button"
+            aria-label="Move down: {summary}"
+            disabled={index >= total - 1}
+            class={btn}
+            onclick={() => move(1)}>Move down</button
+          >
+        {/if}
+        <button type="button" aria-label="Remove: {summary}" class={btn} onclick={remove}
+          >Remove</button
         >
-      {:else}
-        <button
-          bind:this={upBtn}
-          type="button"
-          aria-label="Move up: {summary}"
-          disabled={index === 0}
-          class={btn}
-          onclick={() => move(-1)}>Move up</button
-        >
-        <button
-          bind:this={downBtn}
-          type="button"
-          aria-label="Move down: {summary}"
-          disabled={index >= total - 1}
-          class={btn}
-          onclick={() => move(1)}>Move down</button
-        >
-      {/if}
-      <button type="button" aria-label="Remove: {summary}" class={btn} onclick={remove}
-        >Remove</button
-      >
+      </ReadonlyFieldset>
     </div>
     {#if rule && editUnavailable}
       <span id="{uid}-edit-why" class="text-gray-700">{editUnavailable}</span>

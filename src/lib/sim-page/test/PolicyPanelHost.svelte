@@ -8,6 +8,7 @@
   import { DEFAULT_POLICY } from '../policy';
   import { PolicyStore } from '../policy-store.svelte';
   import PolicyPanel from '../PolicyPanel.svelte';
+  import ReadonlyFieldset from '../ReadonlyFieldset.svelte';
 
   let {
     open,
@@ -44,7 +45,10 @@
     {/snippet}
     {#snippet rules()}
       <p>Rules body</p>
-      <label><input type="checkbox" /> Rule control</label>
+      <ReadonlyFieldset>
+        <label><input type="checkbox" /> Rule control</label>
+      </ReadonlyFieldset>
+      <button type="button">Rule details</button>
     {/snippet}
     {#snippet custom()}
       <p>Custom body</p>
