@@ -74,6 +74,17 @@ export function createWorkerRouter(deps: RouterDeps): { handle(req: WorkerReques
           if (mode === 'scenario') scenarioHost().handle(req);
           else deps.post({ type: 'brushCatalog', reqId: req.reqId, catalog: null });
           return;
+        case 'lotOutlines':
+          if (mode === 'scenario') scenarioHost().handle(req);
+          else {
+            const message = 'outlines need a /sim scenario session';
+            deps.post({
+              type: 'lotOutlines',
+              reqId: req.reqId,
+              result: { ok: false, reason: 'no-session', message }
+            });
+          }
+          return;
         default: {
           const unreachable: never = req;
           void unreachable;

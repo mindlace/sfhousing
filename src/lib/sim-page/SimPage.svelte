@@ -40,7 +40,7 @@
   import { HIDDEN_VIEW, readViewPrefs, writeViewPrefs, type ViewPrefs } from '$lib/view/prefs';
   import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
-  import type { BrushLotsResult } from '$lib/sim/scenario/types';
+  import type { BrushLotsResult, LotOutlinesResult } from '$lib/sim/scenario/types';
   import { BrushForms } from './brush-forms.svelte';
   import RuleBrushForm from './RuleBrushForm.svelte';
   import type { Calibration } from '$lib/timelapse/types';
@@ -49,7 +49,16 @@
   import { SimBrushTools, brushToolOf, type SimTool } from './brush-tools.svelte';
   import { createOverlayMux } from './overlay-mux';
   import PhoneToolBar from './PhoneToolBar.svelte';
-  import { DEFAULT_POLICY, canonicalJson, compileLevers, type SimPolicy } from './policy';
+  import {
+    DEFAULT_POLICY,
+    canonicalJson,
+    compileLevers,
+    paintedLots,
+    type Lots,
+    type SimPolicy
+  } from './policy';
+  import { OutlineRequest } from './outline-request';
+  import { paintedOutlineLayers } from './painted-outline';
   import { SIM_CODEC, simDocProblems, type SimDoc } from './sim-doc';
   import SimNotices from './SimNotices.svelte';
   import { restoreSimDoc, type SimNotice } from './sim-session';
@@ -422,6 +431,49 @@
     untrack(() => o.slot('fog')(layers));
   });
 
+  // ---- outlines of custom-painted lots while erasing (plan 2, Task 5) ----
+
+  type Outlines = Extract<LotOutlinesResult, { ok: true }>;
+  /** The latest outline answer; kept, so a theme change redraws it without a new request. */
+  let outlines = $state.raw<Outlines | null>(null);
+  const outlineRequest = new OutlineRequest({
+    request: (lots) =>
+      api
+        ? api.lotOutlines(lots)
+        : Promise.resolve<LotOutlinesResult>({
+            ok: false,
+            reason: 'no-session',
+            message: 'the simulation is not running'
+          }),
+    show: (o) => (outlines = o)
+  });
+
+  $effect(() => {
+    const erasing = mode === 'edit' && tools.tool === 'erase';
+    if (!erasing) {
+      untrack(() => outlineRequest.want(null));
+      return;
+    }
+    // Read here, so the effect reruns when a stroke's lots arrive.
+    const lots: Lots = (key) => {
+      const r = sync.result(key);
+      return r?.ok ? r.lots : undefined;
+    };
+    const painted = paintedLots(store.policy, lots);
+    // A query is unresolved (an erase stroke just landed): keep what is drawn.
+    if (painted === null) return;
+    untrack(() => outlineRequest.want(new Set(painted.keys())));
+  });
+
+  $effect(() => {
+    const o = overlay;
+    if (!o) return;
+    const out = outlines;
+    const L = deckLayers;
+    const layers = out && L ? paintedOutlineLayers(L, out, systemTheme.current) : [];
+    untrack(() => o.slot('outline')(layers));
+  });
+
   // ---- rule brushes (Task 9) ----
 
   const forms = new BrushForms();
@@ -641,6 +693,7 @@
   leversPending={sync.pending}
   view={run.phase === 'setup' ? viewPrefs : HIDDEN_VIEW}
   onfog={(g) => (fog = g)}
+  onchunks={() => outlineRequest.chunksChanged()}
   onmanifest={(m) => (mapManifest = m)}
   {actions}
   status={mode === 'edit' ? saveState : undefined}

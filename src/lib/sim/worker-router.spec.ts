@@ -179,6 +179,30 @@ describe('worker router', () => {
     expect(t.posted).toHaveLength(1); // the last, in editor mode
   });
 
+  const outlines = { type: 'lotOutlines', reqId: 6, lots: ['a'] };
+
+  it('answers lotOutlines itself in editor mode: no-session; the scenario host otherwise', () => {
+    const t = setup();
+    t.send(outlines);
+    expect(t.created()).toBe(0);
+    expect(t.posted).toEqual([
+      {
+        type: 'lotOutlines',
+        reqId: 6,
+        result: { ok: false, reason: 'no-session', message: expect.any(String) }
+      }
+    ]);
+    const u = setup();
+    u.send(initScenario, outlines);
+    expect(u.log).toEqual([
+      'editor:dispose',
+      'scenario:create',
+      'scenario:initScenario',
+      'scenario:lotOutlines'
+    ]);
+    expect(u.scenarioReqs[1]).toEqual(outlines);
+  });
+
   it('sends the shared requests to the scenario host after init then initScenario', () => {
     const t = setup();
     t.send(init, initScenario, prefetch);

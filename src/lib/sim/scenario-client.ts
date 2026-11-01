@@ -11,6 +11,7 @@ import type { SimLevers } from './levers/types';
 import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev } from './protocol';
 import type {
   BrushLotsResult,
+  LotOutlinesResult,
   ScenarioResponse,
   TimelineResponse,
   WorkerRequest
@@ -56,6 +57,12 @@ const noSession = (): BrushLotsResult => ({
   message: 'the worker session ended before answering'
 });
 
+const noSessionOutlines = (): LotOutlinesResult => ({
+  ok: false,
+  reason: 'no-session',
+  message: 'the worker session ended before answering'
+});
+
 export class ScenarioClient {
   #worker: ScenarioWorkerLike;
   #events: ScenarioClientEvents;
@@ -73,6 +80,7 @@ export class ScenarioClient {
   #reqId = 0;
   #pending = new Map<number, (s: ParcelSummary | null) => void>();
   #pendingBrush = new Map<number, (r: BrushLotsResult) => void>();
+  #pendingOutlines = new Map<number, (r: LotOutlinesResult) => void>();
   #pendingCatalog = new Map<number, (c: BrushCatalog | null) => void>();
   #datasetVersion: string | null = null;
   #disposed = false;
@@ -193,6 +201,19 @@ export class ScenarioClient {
     });
   }
 
+  /**
+   * The ring outlines of lots (the loaded ones; `missing` counts the rest). Answered by a session
+   * initialised with levers; `no-session` otherwise, and on crash, `restart` and `dispose`.
+   */
+  lotOutlines(lots: ParcelId[]): Promise<LotOutlinesResult> {
+    if (this.#disposed || this.#crashed) return Promise.resolve(noSessionOutlines());
+    const reqId = ++this.#reqId;
+    return new Promise((resolve) => {
+      this.#pendingOutlines.set(reqId, resolve);
+      this.#worker.postMessage({ type: 'lotOutlines', reqId, lots });
+    });
+  }
+
   /** The brush pickers' catalog; null without a lever session, and on crash, restart, dispose. */
   brushCatalog(): Promise<BrushCatalog | null> {
     if (this.#disposed || this.#crashed) return Promise.resolve(null);
@@ -261,6 +282,8 @@ export class ScenarioClient {
     this.#pending.clear();
     for (const resolve of this.#pendingBrush.values()) resolve(noSession());
     this.#pendingBrush.clear();
+    for (const resolve of this.#pendingOutlines.values()) resolve(noSessionOutlines());
+    this.#pendingOutlines.clear();
     for (const resolve of this.#pendingCatalog.values()) resolve(null);
     this.#pendingCatalog.clear();
   }
@@ -307,6 +330,13 @@ export class ScenarioClient {
         const resolve = this.#pendingBrush.get(msg.reqId);
         if (!resolve) return;
         this.#pendingBrush.delete(msg.reqId);
+        resolve(msg.result);
+        return;
+      }
+      case 'lotOutlines': {
+        const resolve = this.#pendingOutlines.get(msg.reqId);
+        if (!resolve) return;
+        this.#pendingOutlines.delete(msg.reqId);
         resolve(msg.result);
         return;
       }

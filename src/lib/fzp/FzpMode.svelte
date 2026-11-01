@@ -11,8 +11,9 @@
   import { chanceTable, typicalMonths } from '$lib/timelapse/model';
   import type { Calibration } from '$lib/timelapse/types';
   import type { SimMapHandle } from '$lib/map/types';
+  import type { ParcelId } from '$lib/data/parcel';
   import type { BrushCatalog, BrushQuery } from '$lib/sim/levers/brushes';
-  import type { BrushLotsResult } from '$lib/sim/scenario/types';
+  import type { BrushLotsResult, LotOutlinesResult } from '$lib/sim/scenario/types';
   import type { LeverLookups } from '$lib/sim/levers/apply';
   import type { ChanceTable } from './card';
 
@@ -23,6 +24,7 @@
   export interface SimClientApi {
     resolveBrush(q: BrushQuery): Promise<BrushLotsResult>;
     brushCatalog(): Promise<BrushCatalog | null>;
+    lotOutlines(lots: ParcelId[]): Promise<LotOutlinesResult>;
     retryChunks(): void;
   }
 
@@ -121,6 +123,8 @@
      * (stories are final before any yield recompute), else from its `current`.
      */
     onfog?: (g: FogGrid) => void;
+    /** /sim: a chunk response arrived (lots may have loaded; the eraser outlines ask again). */
+    onchunks?: () => void;
     /**
      * The client's brush requests on each new session (`initScenario`: mount, Retry), null on a
      * crash and on unmount. A call with the api means requests answered `no-session` before it
@@ -188,7 +192,8 @@
     onrun = undefined,
     leversPending = false,
     view = HIDDEN_VIEW,
-    onmanifest = undefined
+    onmanifest = undefined,
+    onchunks = undefined
   }: Props = $props();
 
   // The props seed the page once; Retry replaces the manifest and calibration in place.
@@ -639,6 +644,7 @@
       for (const [cellId, s] of Object.entries(c.status)) setChunkStatus(cellId, s);
       cardReq.retryIfNotLoaded(day);
       tipReq.retryIfNotLoaded(day);
+      onchunks?.();
     },
     onError(e) {
       if (dead) return;
@@ -772,6 +778,7 @@
       clientApi = {
         resolveBrush: (q) => c.resolveBrush(q),
         brushCatalog: () => c.brushCatalog(),
+        lotOutlines: (lots) => c.lotOutlines(lots),
         retryChunks: () => c.retryChunks()
       };
       if (phase === 'loading') startScenario({ seed: urlSeed });

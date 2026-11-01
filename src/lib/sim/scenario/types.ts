@@ -86,7 +86,26 @@ export type ScenarioRequest =
     }
   // Brushes (plan 3): answered only in a session initialised with levers, once it has loaded.
   | { type: 'resolveBrush'; reqId: number; query: BrushQuery }
-  | { type: 'brushCatalog'; reqId: number };
+  | { type: 'brushCatalog'; reqId: number }
+  // Map overlays (plan 2 Task 5): the ring outlines of lots, answered like `resolveBrush`.
+  | { type: 'lotOutlines'; reqId: number; lots: ParcelId[] };
+/**
+ * The outlines of requested lots, for the dashed overlay while the eraser is chosen. `positions`
+ * holds lng/lat pairs of every ring of every loaded lot (transferred); `starts` the vertex index
+ * where each ring starts (rings + 1 entries); `ringLot` each ring's index into `lots` (the lots
+ * answered, in request order). `missing` counts requested lots whose record is not loaded.
+ * `no-session`: no session with levers (or it ended before answering).
+ */
+export type LotOutlinesResult =
+  | {
+      ok: true;
+      lots: ParcelId[];
+      ringLot: Uint32Array;
+      starts: Uint32Array;
+      positions: Float64Array;
+      missing: number;
+    }
+  | { ok: false; reason: 'no-session'; message: string };
 /**
  * A brush's lots: `points` holds each lot's label point (lng, lat), transferred. `no-session`: no
  * session with levers (or it ended before answering); `data-missing`: a file the query needs is
@@ -116,6 +135,7 @@ export type ScenarioResponse =
   | { type: 'parcelSummary'; reqId: number; summary: ParcelSummary | null }
   | { type: 'brushLots'; reqId: number; result: BrushLotsResult }
   | { type: 'brushCatalog'; reqId: number; catalog: BrushCatalog | null }
+  | { type: 'lotOutlines'; reqId: number; result: LotOutlinesResult }
   | LeversResponse;
 /**
  * A lever revision's status (plan 2): `rev` is the `initScenario` or `setLevers` that named the

@@ -58,6 +58,7 @@ import { decodeTransit } from '$lib/data/transit-codec';
 import type { TransitNetwork } from '$lib/data/transit';
 import type { Day } from '$lib/timelapse/time';
 import { cellsIntersecting, createChunkLoader, type ChunkLoader, type FetchLike } from '../chunks';
+import { toLngLat } from '$lib/generator/geo';
 import { DEFAULT_RETRY_DELAYS_MS } from '../host';
 import { createLru } from '../lru';
 import { checkManifestShape } from '../manifest-shape';
@@ -1029,6 +1030,57 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     if (st.loaded) startBrush(st, w);
   }
 
+  /**
+   * The ring outlines of the requested lots whose records are loaded (map overlays plan Task 5).
+   * Answered at once: a lot not loaded yet counts as `missing`, and the page asks again on a chunk.
+   */
+  function lotOutlines(reqId: number, lots: readonly ParcelId[]): void {
+    const st = s;
+    if (!st?.brush) {
+      const message = 'outlines need a session initialised with levers';
+      return post({
+        type: 'lotOutlines',
+        reqId,
+        result: { ok: false, reason: 'no-session', message }
+      });
+    }
+    const answered: ParcelId[] = [];
+    const rings: [number, number][][] = [];
+    const ringLot: number[] = [];
+    let missing = 0;
+    for (const id of lots) {
+      const rec = st.chunks.records.get(id);
+      if (!rec) {
+        missing++;
+        continue;
+      }
+      for (const ring of rec.polygon) {
+        rings.push(toLngLat(ring, rec.labelPoint));
+        ringLot.push(answered.length);
+      }
+      answered.push(id);
+    }
+    const starts = new Uint32Array(rings.length + 1);
+    rings.forEach((r, k) => (starts[k + 1] = starts[k] + r.length));
+    const positions = new Float64Array(2 * starts[rings.length]);
+    rings.forEach((r, k) =>
+      r.forEach(([lng, lat], v) => {
+        positions[2 * (starts[k] + v)] = lng;
+        positions[2 * (starts[k] + v) + 1] = lat;
+      })
+    );
+    const out = new Uint32Array(ringLot);
+    post(
+      {
+        type: 'lotOutlines',
+        reqId,
+        result: { ok: true, lots: answered, ringLot: out, starts, positions, missing }
+      },
+      // fresh typed arrays, so their buffers are ArrayBuffers
+      [out.buffer as ArrayBuffer, starts.buffer as ArrayBuffer, positions.buffer as ArrayBuffer]
+    );
+  }
+
   /** The files a request needs: every one for the catalog, else the query kind's. */
   function filesFor(q: BrushQuery | null): readonly BrushFile[] {
     if (q === null) return BRUSH_FILES;
@@ -1205,6 +1257,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         return brushRequest(req.reqId, false, req.query);
       case 'brushCatalog':
         return brushRequest(req.reqId, true);
+      case 'lotOutlines':
+        return lotOutlines(req.reqId, req.lots);
       case 'prefetch':
         if (s) prefetch(s, req.bbox);
         return;

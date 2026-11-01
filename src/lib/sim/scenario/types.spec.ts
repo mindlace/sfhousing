@@ -97,7 +97,18 @@ type RowScenarioRequest =
   | { type: 'setLevers'; rev: Rev; levers: SimLevers }
   | { type: 'parcelSummary'; reqId: number; parcelId: ParcelId; day: Day; projectId?: string }
   | { type: 'resolveBrush'; reqId: number; query: BrushQuery } // plan 3 Task 5
-  | { type: 'brushCatalog'; reqId: number };
+  | { type: 'brushCatalog'; reqId: number }
+  | { type: 'lotOutlines'; reqId: number; lots: ParcelId[] };
+type RowLotOutlinesResult =
+  | {
+      ok: true;
+      lots: ParcelId[];
+      ringLot: Uint32Array;
+      starts: Uint32Array;
+      positions: Float64Array;
+      missing: number;
+    }
+  | { ok: false; reason: 'no-session'; message: string };
 type RowBrushLotsResult =
   | { ok: true; lots: ParcelId[]; points: Float64Array }
   | { ok: false; reason: 'no-session' | 'data-missing' | 'bad-request'; message: string };
@@ -122,6 +133,7 @@ type RowScenarioResponse =
   | { type: 'parcelSummary'; reqId: number; summary: ParcelSummary | null }
   | { type: 'brushLots'; reqId: number; result: RowBrushLotsResult } // plan 3 Task 5
   | { type: 'brushCatalog'; reqId: number; catalog: BrushCatalog | null }
+  | { type: 'lotOutlines'; reqId: number; result: RowLotOutlinesResult }
   | {
       type: 'levers';
       rev: Rev;

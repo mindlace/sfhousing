@@ -857,3 +857,32 @@ test('at 768 px the header fits in Setup and in Run, and the score stays put', a
   const runCentre = await expectHeaderFits(page);
   expect(Math.abs(runCentre - setupCentre)).toBeLessThanOrEqual(1);
 });
+
+// ---- outlines of painted lots while erasing (plan 2, Task 5) ---------------------------------------
+
+test('the eraser outlines painted lots, only while chosen', async ({ isMobile, page }) => {
+  const OUTLINE_LAYER = 'sim-painted-outline';
+  await gotoSim(page);
+  await openPolicy(page);
+  await expandSection(page, 'Custom zoning');
+  const tool = (name: string) => panel(page).getByRole('radio', { name, exact: true });
+  await chooseTool(page, isMobile, () => tool('Paint').click());
+  await strokeOnce(page, isMobile);
+  if (isMobile) {
+    await page.getByTestId('phone-tool-bar').getByRole('button', { name: 'Done' }).click();
+    await expect(panel(page)).toBeVisible();
+  }
+  await expect(customList(page)).toHaveCount(1);
+  expect(await deckIds(page)).not.toContain(OUTLINE_LAYER);
+
+  await chooseTool(page, isMobile, () => tool('Erase').click());
+  await expect.poll(() => deckIds(page)).toContain(OUTLINE_LAYER);
+
+  if (isMobile) {
+    await page.getByTestId('phone-tool-bar').getByRole('button', { name: 'Done' }).click();
+    await expect(panel(page)).toBeVisible();
+  } else {
+    await tool('Move').click();
+  }
+  await expect.poll(() => deckIds(page)).not.toContain(OUTLINE_LAYER);
+});
