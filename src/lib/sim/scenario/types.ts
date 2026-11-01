@@ -6,7 +6,7 @@ import type { ParcelId } from '$lib/data/parcel';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import type { GeneratedBuilding } from '$lib/generator';
 import type { FogGrid } from '$lib/map/fog/grid';
-import type { TimelineUpdate } from '$lib/map/types';
+import type { PackedCell, TimelineUpdate } from '$lib/map/types';
 import type { Target } from '$lib/scoreboard';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
@@ -88,7 +88,18 @@ export type ScenarioRequest =
   | { type: 'resolveBrush'; reqId: number; query: BrushQuery }
   | { type: 'brushCatalog'; reqId: number }
   // Map overlays (plan 2 Task 5): the ring outlines of lots, answered like `resolveBrush`.
-  | { type: 'lotOutlines'; reqId: number; lots: ParcelId[] };
+  | { type: 'lotOutlines'; reqId: number; lots: ParcelId[] }
+  // Paint feedback (plan 2 Task 6): `stories` given = a custom stroke at that height; absent =
+  // the levers in force (a rule). The page sends the lots nearest first.
+  | { type: 'previewBuildings'; reqId: number; lots: ParcelId[]; stories?: number };
+/**
+ * The buildings a preview's lots could hold, packed as one cell (`'preview'`), or null when none
+ * builds. `built` counts the lots packed; `missing` the requested lots (within the cap) whose
+ * record is not loaded. `no-session`: no session with levers (or it ended before answering).
+ */
+export type PreviewResult =
+  | { ok: true; pack: PackedCell | null; built: number; missing: number }
+  | { ok: false; reason: 'no-session'; message: string };
 /**
  * The outlines of requested lots, for the dashed overlay while the eraser is chosen. `positions`
  * holds lng/lat pairs of every ring of every loaded lot (transferred); `starts` the vertex index
@@ -136,6 +147,7 @@ export type ScenarioResponse =
   | { type: 'brushLots'; reqId: number; result: BrushLotsResult }
   | { type: 'brushCatalog'; reqId: number; catalog: BrushCatalog | null }
   | { type: 'lotOutlines'; reqId: number; result: LotOutlinesResult }
+  | { type: 'previewBuildings'; reqId: number; result: PreviewResult }
   | LeversResponse;
 /**
  * A lever revision's status (plan 2): `rev` is the `initScenario` or `setLevers` that named the

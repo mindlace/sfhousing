@@ -48,9 +48,10 @@
 import { readFrontage, type Frontage } from '$lib/data/frontage-codec';
 import type { Manifest } from '$lib/data/manifest';
 import type { PolicyParcels } from '$lib/data/policy-codec';
-import { envelopeOf, type ScenarioParcels } from '$lib/data/scenario-codec';
+import { envelopeOf, scenarioRecordOf, type ScenarioParcels } from '$lib/data/scenario-codec';
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
-import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
+import { fnv1a32, generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
+import { packCell, packTransferables } from '$lib/map/pack';
 import { buildFogGrid, type FogGrid } from '$lib/map/fog/grid';
 import { packTimedTransferables } from '$lib/map/pack-timed';
 import type { TimedPackedCell, TimelineUpdate } from '$lib/map/types';
@@ -81,7 +82,7 @@ import { allNeeds, fillNeeds, resolveEnvelopes, type Resolution } from '../lever
 import { parseSimLevers, type SimLevers } from '../levers/types';
 import { chooseProject, projectCard, revisionAt, type CardCtx } from './card';
 import { createGeometry, type Geometry } from './geometry';
-import { massingFor, type MassingCtx } from './massing';
+import { massingFor, simKey, type MassingCtx } from './massing';
 import {
   brushQueryProblem,
   datasetUrl,
@@ -106,6 +107,7 @@ import {
   type NetSeries
 } from './score';
 import { simulateDetailed, simulateNet } from './simulate';
+import { PREVIEW_MAX_LOTS } from './preview';
 import type {
   BrushLotsResult,
   Massing,
@@ -128,6 +130,8 @@ export interface ScenarioHostDeps {
   maxConcurrent?: number;
   memoCap?: number;
   bandRuns?: number;
+  /** The most lots one `previewBuildings` builds (default `PREVIEW_MAX_LOTS`). */
+  previewMaxLots?: number;
   warn?(msg: string): void; // default console.warn
   /** Test seam: the parcels.bin decoder (default `readScenarioParcels`), so a harness can tell
    *  when the one host-external async step (the inflate) has settled. */
@@ -254,6 +258,8 @@ interface LeverWork {
   ctx: LayerCtx; // one per session: the after-switch table and the twin memo key on it
   gross: GrossCache; // one per session: kept across lever revisions
   pending: PendingLevers | null;
+  /** 1 on the rows protected under the levers in force (set at `current`); null before. */
+  protectedMask: Uint8Array | null;
 }
 
 /** A loaded session's timeline work. */
@@ -545,7 +551,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         base: loaded,
         ctx: { parcels: loaded.fzp.parcels, policy: loaded.policy! },
         gross: new Map(),
-        pending: pendingOf(st.levers.rev, st.levers.levers, st.seed)
+        pending: pendingOf(st.levers.rev, st.levers.levers, st.seed),
+        protectedMask: null
       };
     }
     // the brush requests that waited for the load
@@ -762,6 +769,9 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     const filled = fillNeeds(p.state.resolution, r.result());
     const li = applyLevers(lw.base.fzp, lw.ctx, p.levers, filled);
     lw.pending = null;
+    const mask = new Uint8Array(lw.base.fzp.parcels.count);
+    for (const row of filled.protectedRows) mask[row] = 1;
+    lw.protectedMask = mask;
     const fog = p.state.fog;
     post(
       {
@@ -1081,6 +1091,64 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     );
   }
 
+  /**
+   * The buildings the first `previewMaxLots` requested lots could hold (paint feedback, map
+   * overlays plan Task 6), packed as one cell. Per lot, in order: a lot protected under the
+   * levers in force builds nothing; one whose record is not loaded is `missing`; with `stories`
+   * (a custom stroke) it builds at that height; without (a rule), only a lot whose plan stories
+   * differ from FZP's stock builds, at the plan stories. The generator memo is shared with the
+   * timeline's simulated buildings (`simKey`: the same generate call), so a lot the timeline
+   * later builds at that height costs nothing twice. Answered at once, in one handler: the cap
+   * keeps it within a slice (measured in the spec).
+   */
+  function previewBuildings(reqId: number, lots: readonly ParcelId[], stories?: number): void {
+    const st = s;
+    const w = st?.work;
+    const lw = w?.levers;
+    if (!st?.brush || !w || !lw) {
+      const message = 'previews need a loaded session initialised with levers';
+      return post({
+        type: 'previewBuildings',
+        reqId,
+        result: { ok: false, reason: 'no-session', message }
+      });
+    }
+    const plan = w.loaded.fzp.parcels;
+    const stock = lw.base.fzp.parcels.envelopeStories;
+    const mask = lw.protectedMask;
+    const items: { building: GeneratedBuilding; existingUnits: number }[] = [];
+    const seen = new Set<ParcelId>();
+    let missing = 0;
+    for (const id of lots.slice(0, deps.previewMaxLots ?? PREVIEW_MAX_LOTS)) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const i = plan.index.get(id);
+      if (i === undefined) continue; // not in the scenario: nothing can be built there
+      if (mask?.[i]) continue;
+      const rec = w.chunks.records.get(id);
+      if (!rec) {
+        missing++;
+        continue;
+      }
+      const planStories = plan.envelopeStories[i];
+      if (stories === undefined && planStories === stock[i]) continue;
+      const at = stories ?? planStories;
+      if (at <= 0) continue;
+      const key = simKey(id, at);
+      let b = memo.get(key);
+      if (b === undefined) {
+        b = gen(scenarioRecordOf(plan, i, rec), { maxStories: at }, fnv1a32(id), 'max');
+        memo.set(key, b);
+      }
+      if (b) items.push({ building: b, existingUnits: plan.existingUnits[i] });
+    }
+    const pack = items.length > 0 ? packCell('preview', items) : null;
+    post(
+      { type: 'previewBuildings', reqId, result: { ok: true, pack, built: items.length, missing } },
+      pack ? packTransferables(pack) : []
+    );
+  }
+
   /** The files a request needs: every one for the catalog, else the query kind's. */
   function filesFor(q: BrushQuery | null): readonly BrushFile[] {
     if (q === null) return BRUSH_FILES;
@@ -1259,6 +1327,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         return brushRequest(req.reqId, true);
       case 'lotOutlines':
         return lotOutlines(req.reqId, req.lots);
+      case 'previewBuildings':
+        return previewBuildings(req.reqId, req.lots, req.stories);
       case 'prefetch':
         if (s) prefetch(s, req.bbox);
         return;

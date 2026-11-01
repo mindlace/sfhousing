@@ -337,6 +337,26 @@ describe('ScenarioClient', () => {
       await expect(client.lotOutlines(['y'])).resolves.toMatchObject({ reason: 'no-session' });
     });
 
+    it('posts previewBuildings (stories only when given) and resolves its answer; no-session after a crash', async () => {
+      const { w, client } = setup();
+      const a = client.previewBuildings(['x'], 8);
+      const r = client.previewBuildings(['y']);
+      expect(w.posts).toEqual([
+        { type: 'previewBuildings', reqId: 1, lots: ['x'], stories: 8 },
+        { type: 'previewBuildings', reqId: 2, lots: ['y'] }
+      ]);
+      const result = { ok: true as const, pack: null, built: 0, missing: 1 };
+      w.emit({ type: 'previewBuildings', reqId: 99, result }); // ignored
+      w.emit({ type: 'previewBuildings', reqId: 1, result });
+      await expect(a).resolves.toEqual(result);
+      client.restart(fakeWorker());
+      await expect(r).resolves.toMatchObject({ ok: false, reason: 'no-session' });
+      client.dispose();
+      await expect(client.previewBuildings(['z'], 4)).resolves.toMatchObject({
+        reason: 'no-session'
+      });
+    });
+
     it('restart and dispose resolve pending brush requests with no-session', async () => {
       const { client } = setup();
       const a = client.resolveBrush(q);

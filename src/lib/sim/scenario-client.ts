@@ -12,6 +12,7 @@ import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev } from './protoc
 import type {
   BrushLotsResult,
   LotOutlinesResult,
+  PreviewResult,
   ScenarioResponse,
   TimelineResponse,
   WorkerRequest
@@ -63,6 +64,12 @@ const noSessionOutlines = (): LotOutlinesResult => ({
   message: 'the worker session ended before answering'
 });
 
+const noSessionPreview = (): PreviewResult => ({
+  ok: false,
+  reason: 'no-session',
+  message: 'the worker session ended before answering'
+});
+
 export class ScenarioClient {
   #worker: ScenarioWorkerLike;
   #events: ScenarioClientEvents;
@@ -81,6 +88,7 @@ export class ScenarioClient {
   #pending = new Map<number, (s: ParcelSummary | null) => void>();
   #pendingBrush = new Map<number, (r: BrushLotsResult) => void>();
   #pendingOutlines = new Map<number, (r: LotOutlinesResult) => void>();
+  #pendingPreview = new Map<number, (r: PreviewResult) => void>();
   #pendingCatalog = new Map<number, (c: BrushCatalog | null) => void>();
   #datasetVersion: string | null = null;
   #disposed = false;
@@ -214,6 +222,25 @@ export class ScenarioClient {
     });
   }
 
+  /**
+   * The buildings `lots` could hold (paint feedback): at `stories` for a custom stroke, else at
+   * the levers in force, only where they differ from FZP. Answered by a session initialised with
+   * levers; `no-session` otherwise, and on crash, `restart` and `dispose`.
+   */
+  previewBuildings(lots: ParcelId[], stories?: number): Promise<PreviewResult> {
+    if (this.#disposed || this.#crashed) return Promise.resolve(noSessionPreview());
+    const reqId = ++this.#reqId;
+    return new Promise((resolve) => {
+      this.#pendingPreview.set(reqId, resolve);
+      this.#worker.postMessage({
+        type: 'previewBuildings',
+        reqId,
+        lots,
+        ...(stories === undefined ? {} : { stories })
+      });
+    });
+  }
+
   /** The brush pickers' catalog; null without a lever session, and on crash, restart, dispose. */
   brushCatalog(): Promise<BrushCatalog | null> {
     if (this.#disposed || this.#crashed) return Promise.resolve(null);
@@ -284,6 +311,8 @@ export class ScenarioClient {
     this.#pendingBrush.clear();
     for (const resolve of this.#pendingOutlines.values()) resolve(noSessionOutlines());
     this.#pendingOutlines.clear();
+    for (const resolve of this.#pendingPreview.values()) resolve(noSessionPreview());
+    this.#pendingPreview.clear();
     for (const resolve of this.#pendingCatalog.values()) resolve(null);
     this.#pendingCatalog.clear();
   }
@@ -337,6 +366,13 @@ export class ScenarioClient {
         const resolve = this.#pendingOutlines.get(msg.reqId);
         if (!resolve) return;
         this.#pendingOutlines.delete(msg.reqId);
+        resolve(msg.result);
+        return;
+      }
+      case 'previewBuildings': {
+        const resolve = this.#pendingPreview.get(msg.reqId);
+        if (!resolve) return;
+        this.#pendingPreview.delete(msg.reqId);
         resolve(msg.result);
         return;
       }

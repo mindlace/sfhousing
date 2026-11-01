@@ -886,3 +886,35 @@ test('the eraser outlines painted lots, only while chosen', async ({ isMobile, p
   }
   await expect.poll(() => deckIds(page)).not.toContain(OUTLINE_LAYER);
 });
+
+// ---- paint feedback (plan 2, Task 6) ---------------------------------------------------------------
+
+test('a Paint stroke shows its buildings, then they fade', async ({ isMobile, page }) => {
+  const isFeedback = (ids: string[]) => ids.some((id) => id.startsWith('sim-feedback-'));
+  await gotoSim(page);
+  await openPolicy(page);
+  await expandSection(page, 'Custom zoning');
+  const tool = (name: string) => panel(page).getByRole('radio', { name, exact: true });
+  await chooseTool(page, isMobile, () => tool('Paint').click());
+  await strokeOnce(page, isMobile);
+  await expect.poll(async () => isFeedback(await deckIds(page)), { timeout: 10_000 }).toBe(true);
+  await expect.poll(async () => isFeedback(await deckIds(page)), { timeout: 4_000 }).toBe(false);
+
+  if (isMobile) {
+    await page.getByTestId('phone-tool-bar').getByRole('button', { name: 'Done' }).click();
+    await expect(panel(page)).toBeVisible();
+  }
+  await expect(customList(page)).toHaveCount(1);
+  // An Erase stroke never adds one: sample the layers through the stroke and after it.
+  await chooseTool(page, isMobile, () => tool('Erase').click());
+  const seen: boolean[] = [];
+  const sampling = (async () => {
+    for (let k = 0; k < 20; k++) {
+      seen.push(isFeedback(await deckIds(page)));
+      await page.waitForTimeout(100);
+    }
+  })();
+  await strokeOnce(page, isMobile);
+  await sampling;
+  expect(seen).not.toContain(true);
+});

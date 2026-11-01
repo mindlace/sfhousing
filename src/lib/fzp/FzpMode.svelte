@@ -13,7 +13,7 @@
   import type { SimMapHandle } from '$lib/map/types';
   import type { ParcelId } from '$lib/data/parcel';
   import type { BrushCatalog, BrushQuery } from '$lib/sim/levers/brushes';
-  import type { BrushLotsResult, LotOutlinesResult } from '$lib/sim/scenario/types';
+  import type { BrushLotsResult, LotOutlinesResult, PreviewResult } from '$lib/sim/scenario/types';
   import type { LeverLookups } from '$lib/sim/levers/apply';
   import type { ChanceTable } from './card';
 
@@ -25,6 +25,8 @@
     resolveBrush(q: BrushQuery): Promise<BrushLotsResult>;
     brushCatalog(): Promise<BrushCatalog | null>;
     lotOutlines(lots: ParcelId[]): Promise<LotOutlinesResult>;
+    /** Paint feedback: the buildings `lots` could hold (at `stories`, else the levers in force). */
+    previewBuildings(lots: ParcelId[], stories?: number): Promise<PreviewResult>;
     retryChunks(): void;
   }
 
@@ -779,6 +781,7 @@
         resolveBrush: (q) => c.resolveBrush(q),
         brushCatalog: () => c.brushCatalog(),
         lotOutlines: (lots) => c.lotOutlines(lots),
+        previewBuildings: (lots, stories) => c.previewBuildings(lots, stories),
         retryChunks: () => c.retryChunks()
       };
       if (phase === 'loading') startScenario({ seed: urlSeed });

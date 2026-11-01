@@ -32,7 +32,11 @@ import {
 } from './fixtures/synth-city';
 import { buildSimInput } from './input';
 import type { FetchBytesLike } from './load';
-import { createScenarioHost, type ScenarioHost } from './scenario-host';
+import { SLICE_MS, createScenarioHost, type ScenarioHost } from './scenario-host';
+import { PREVIEW_MAX_LOTS } from './preview';
+import { fnv1a32, generate } from '$lib/generator';
+import { synthParcels } from '$lib/generator/fixtures/synth';
+import { packCell, packTransferables } from '$lib/map/pack';
 import { monthsOf, shownSeries } from './score';
 import type { ScenarioResponse, SimInput, TimelineResponse } from './types';
 
@@ -478,4 +482,26 @@ describe('scenario host budgets (spec §4.11)', () => {
       expect(grown).toBeLessThanOrEqual(300);
     }
   );
+});
+
+// Paint feedback (map overlays plan 2, Task 6): `previewBuildings` answers in one synchronous
+// handler, so its work for a full request (PREVIEW_MAX_LOTS lots, a cold memo) must fit a slice.
+// The handler is these generate calls plus one packCell (the rest is Map lookups).
+describe('previewBuildings budget', () => {
+  it(`${PREVIEW_MAX_LOTS} cold lots build and pack in ≤ SLICE_MS`, () => {
+    const worst: number[] = [];
+    for (const stories of [8, 40]) {
+      const cases = synthParcels(PREVIEW_MAX_LOTS, 100 + stories);
+      const t0 = performance.now();
+      const items = [];
+      for (const c of cases) {
+        const b = generate(c.parcel, { maxStories: stories }, fnv1a32(c.parcel.id), 'max');
+        if (b) items.push({ building: b, existingUnits: 1 });
+      }
+      packTransferables(packCell('preview', items));
+      worst.push(performance.now() - t0);
+    }
+    console.log(`[perf] previewBuildings ${PREVIEW_MAX_LOTS} lots: ${worst.map(ms).join(', ')}`);
+    expect(Math.max(...worst)).toBeLessThanOrEqual(SLICE_MS);
+  });
 });

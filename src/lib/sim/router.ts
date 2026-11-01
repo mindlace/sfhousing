@@ -85,6 +85,17 @@ export function createWorkerRouter(deps: RouterDeps): { handle(req: WorkerReques
             });
           }
           return;
+        case 'previewBuildings':
+          if (mode === 'scenario') scenarioHost().handle(req);
+          else {
+            const message = 'previews need a /sim scenario session';
+            deps.post({
+              type: 'previewBuildings',
+              reqId: req.reqId,
+              result: { ok: false, reason: 'no-session', message }
+            });
+          }
+          return;
         default: {
           const unreachable: never = req;
           void unreachable;

@@ -18,6 +18,8 @@
   until "Change policy" ("Back to start" in the view) unlocks it and returns to the present.
   Map overlays (sim-runs plan 2, Task 4): in Setup the header's View menu (transit stops, transit
   capacity, the height fog) and the fog itself; a run hides them all and keeps the toggles.
+  Paint feedback (Task 6): in Setup a Paint stroke, and a saved zoning rule once its revision is
+  current, briefly shows the buildings its lots in view could hold (the overlay's feedback slot).
 -->
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
@@ -41,6 +43,11 @@
   import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
   import type { BrushLotsResult, LotOutlinesResult } from '$lib/sim/scenario/types';
+  import { PREVIEW_MAX_LOTS } from '$lib/sim/scenario/preview';
+  import type { ParcelId } from '$lib/data/parcel';
+  import { packedCellLayer, type SolidPolygonLayerCtor } from '$lib/map/generated-controller';
+  import { PaintFeedback, RuleFeedbackTrigger, lotsInView, mergeLots } from './feedback';
+  import type { LeverStatus } from './lever-status';
   import { BrushForms } from './brush-forms.svelte';
   import RuleBrushForm from './RuleBrushForm.svelte';
   import type { Calibration } from '$lib/timelapse/types';
@@ -53,9 +60,14 @@
     DEFAULT_POLICY,
     canonicalJson,
     compileLevers,
+    customQuery,
     paintedLots,
+    queriesOf,
+    queryKey,
+    ruleQueries,
     type Lots,
-    type SimPolicy
+    type SimPolicy,
+    type Stroke
   } from './policy';
   import { OutlineRequest } from './outline-request';
   import { paintedOutlineLayers } from './painted-outline';
@@ -301,13 +313,16 @@
   const adapter = createStrokeAdapter({
     store,
     stories: () => tools.stories(),
-    announce: (m) => brush.announce(m, ANNOUNCE_MS)
+    announce: (m) => brush.announce(m, ANNOUNCE_MS),
+    onpaint: (stroke, stories) => paintFeedback(stroke, stories)
   });
   const wide = new MediaQuery('(min-width: 768px)');
   let controller: BrushController | null = null;
   let controllerMap: ControllerMap | null = null;
   let mapHandle: SimMapHandle | null = null;
   let deckLayers = $state.raw<OverlayCtors | null>(null);
+  /** `@deck.gl/layers`' SolidPolygonLayer, from the same lazy module (the paint feedback). */
+  let solidLayer = $state.raw<SolidPolygonLayerCtor | null>(null);
   let overlay = $state.raw<ReturnType<typeof createOverlayMux> | null>(null);
   let dead = false;
   let phoneBar = $state<PhoneToolBar>();
@@ -368,6 +383,11 @@
   const run = new RunPhase();
 
   function startRun(): void {
+    // Feedback is a Setup thing: a run clears it and drops any answer still on its way.
+    feedbackSeq++;
+    strokeWait = null;
+    feedbackTrigger.reset();
+    feedback?.show(null);
     setTool('move');
     store.locked = true;
     run.run();
@@ -474,6 +494,110 @@
     untrack(() => o.slot('outline')(layers));
   });
 
+  // ---- paint feedback (plan 2, Task 6) ----
+
+  /** Per overlay mux: the fading layer in its `feedback` slot. */
+  let feedback: PaintFeedback | null = null;
+  const feedbackTrigger = new RuleFeedbackTrigger();
+  /** Latest wins: a stroke or rule feedback bumps it, so an older answer is dropped. */
+  let feedbackSeq = 0;
+
+  $effect(() => {
+    const o = overlay;
+    const L = solidLayer;
+    if (!o || !L) return;
+    const fb = new PaintFeedback({
+      set: o.slot('feedback'),
+      layer: (pack, opacity, id) =>
+        packedCellLayer(L, id, pack, systemTheme.current, { opacity, pickable: false }),
+      now: () => performance.now(),
+      raf: (cb) => requestAnimationFrame(() => cb()),
+      cancelRaf: (h) => cancelAnimationFrame(h),
+      reducedMotion: () => matchMedia('(prefers-reduced-motion: reduce)').matches
+    });
+    feedback = fb;
+    return () => {
+      fb.destroy();
+      if (feedback === fb) feedback = null;
+    };
+  });
+
+  /** `lots` (with label points) in the map's view, nearest its centre first, up to the cap. */
+  function inView(lots: readonly ParcelId[], points: Float64Array): ParcelId[] {
+    const map = mapHandle?.getMap();
+    if (!map) return lots.slice(0, PREVIEW_MAX_LOTS);
+    const b = map.getBounds();
+    const c = map.getCenter();
+    return lotsInView(
+      lots,
+      points,
+      [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()],
+      [c.lng, c.lat],
+      PREVIEW_MAX_LOTS
+    );
+  }
+
+  /** Asks for the buildings `lots` could hold and shows them, unless superseded or running. */
+  function showPreview(seq: number, a: SimClientApi, lots: ParcelId[], stories?: number): void {
+    if (lots.length === 0) return;
+    void a.previewBuildings(lots, stories).then((p) => {
+      if (dead || seq !== feedbackSeq || run.phase !== 'setup' || !p.ok) return;
+      feedback?.show(p.pack);
+    });
+  }
+
+  /**
+   * A stroke whose lots LeverSync is already finding (it started a new brush, so its query is the
+   * brush's own): the feedback waits for that answer instead of asking again.
+   */
+  let strokeWait = $state.raw<{ seq: number; key: string; stories: number } | null>(null);
+
+  $effect(() => {
+    const w = strokeWait;
+    if (!w) return;
+    const r = sync.result(w.key);
+    if (!r) return;
+    untrack(() => {
+      strokeWait = null;
+      const a = api;
+      if (dead || !a || w.seq !== feedbackSeq || !r.ok) return;
+      showPreview(w.seq, a, inView(r.lots, r.points), w.stories);
+    });
+  });
+
+  /** A Paint stroke landed: its own lots (the stroke alone, as it may join a brush). */
+  function paintFeedback(stroke: Stroke, stories: number): void {
+    const a = api;
+    if (!a || run.phase !== 'setup') return;
+    const seq = ++feedbackSeq;
+    const q = customQuery({ id: 'feedback', kind: 'paint', strokes: [stroke], stories });
+    const key = queryKey(q);
+    if (queriesOf(store.policy).some((x) => x.key === key)) {
+      strokeWait = { seq, key, stories };
+      return;
+    }
+    strokeWait = null;
+    void a.resolveBrush(q).then((r) => {
+      if (dead || seq !== feedbackSeq || !r.ok) return;
+      showPreview(seq, a, inView(r.lots, r.points), stories);
+    });
+  }
+
+  /** A saved rule's revision is current: its lots in view, at the levers in force. */
+  function ruleFeedback(ruleId: string): void {
+    const a = api;
+    const rule = store.policy.rules.find((r) => r.id === ruleId);
+    if (!a || !rule || run.phase !== 'setup') return;
+    const seq = ++feedbackSeq;
+    const { lots, points } = mergeLots(ruleQueries(rule).map((q) => sync.result(queryKey(q))));
+    showPreview(seq, a, inView(lots, points));
+  }
+
+  function onLevers(s: LeverStatus): void {
+    const id = feedbackTrigger.status(s);
+    if (id !== null) ruleFeedback(id);
+  }
+
   // ---- rule brushes (Task 9) ----
 
   const forms = new BrushForms();
@@ -526,7 +650,10 @@
   }
 
   function saveRuleBrush(b: Parameters<BrushForms['save']>[1]): void {
+    const before = store.policy;
     brush.announce(forms.save(store, b), ANNOUNCE_MS);
+    // Only a save that changed the policy sends a new revision to wait for.
+    if (store.policy !== before) feedbackTrigger.saved(b.id);
     forms.close();
   }
 
@@ -550,6 +677,7 @@
       (mod) => {
         if (dead) return;
         deckLayers = mod;
+        solidLayer = mod.SolidPolygonLayer;
         attachController();
       },
       (e) => console.error('[sim] overlay layers failed to load', e)
@@ -693,6 +821,7 @@
   leversPending={sync.pending}
   view={run.phase === 'setup' ? viewPrefs : HIDDEN_VIEW}
   onfog={(g) => (fog = g)}
+  onlevers={onLevers}
   onchunks={() => outlineRequest.chunksChanged()}
   onmanifest={(m) => (mapManifest = m)}
   {actions}

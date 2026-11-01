@@ -42,6 +42,8 @@ export function createStrokeAdapter(deps: {
   store: PolicyStore;
   stories(): number;
   announce(msg: string): void;
+  /** A Paint stroke landed in the store (never called for Erase): the paint feedback. */
+  onpaint?(stroke: Stroke, stories: number): void;
 }): { editor: BrushControllerDeps['editor']; client: BrushControllerDeps['client'] } {
   const { store, announce } = deps;
   let rev = 0;
@@ -59,6 +61,7 @@ export function createStrokeAdapter(deps: {
         store.apply((p) => appendStroke(p, stroke, op, stories), label);
         // The stroke's result in words (WCAG 4.1.3); the lot count follows in "Custom zoning".
         announce(label);
+        if (op.kind === 'paint') deps.onpaint?.(stroke, stories);
         return { ok: true };
       },
       undo() {

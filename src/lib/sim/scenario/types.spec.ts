@@ -4,7 +4,7 @@ import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId } from '$lib/data/parcel';
 import type { GeneratedBuilding } from '$lib/generator';
 import type { FogGrid } from '$lib/map/fog/grid';
-import type { TimelineUpdate } from '$lib/map/types';
+import type { PackedCell, TimelineUpdate } from '$lib/map/types';
 import type { Target } from '$lib/scoreboard';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
@@ -98,7 +98,11 @@ type RowScenarioRequest =
   | { type: 'parcelSummary'; reqId: number; parcelId: ParcelId; day: Day; projectId?: string }
   | { type: 'resolveBrush'; reqId: number; query: BrushQuery } // plan 3 Task 5
   | { type: 'brushCatalog'; reqId: number }
-  | { type: 'lotOutlines'; reqId: number; lots: ParcelId[] };
+  | { type: 'lotOutlines'; reqId: number; lots: ParcelId[] }
+  | { type: 'previewBuildings'; reqId: number; lots: ParcelId[]; stories?: number }; // Task 6
+type RowPreviewResult =
+  | { ok: true; pack: PackedCell | null; built: number; missing: number }
+  | { ok: false; reason: 'no-session'; message: string };
 type RowLotOutlinesResult =
   | {
       ok: true;
@@ -134,6 +138,7 @@ type RowScenarioResponse =
   | { type: 'brushLots'; reqId: number; result: RowBrushLotsResult } // plan 3 Task 5
   | { type: 'brushCatalog'; reqId: number; catalog: BrushCatalog | null }
   | { type: 'lotOutlines'; reqId: number; result: RowLotOutlinesResult }
+  | { type: 'previewBuildings'; reqId: number; result: RowPreviewResult }
   | {
       type: 'levers';
       rev: Rev;
