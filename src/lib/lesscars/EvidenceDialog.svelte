@@ -49,6 +49,9 @@
     Every number in the plan says what kind of evidence it rests on. Numbers marked 'Assumption, not
     data' are invented and have no source.
   </p>
+  <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">
+    Transit line paths are drawn straight between stations (approximate).
+  </p>
   <div class="mt-3 space-y-5">
     {#each sections as s (s.id)}
       <section aria-labelledby={s.id}>

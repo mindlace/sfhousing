@@ -25,3 +25,7 @@ describe('isFullHeightRoute for /sim', () => {
     expect(isFullHeightRoute('/fzp')).toBe(false);
   });
 });
+
+describe('isFullHeightRoute for /lesscars', () => {
+  it('/lesscars is a full-height route', () => expect(isFullHeightRoute('/lesscars')).toBe(true));
+});
