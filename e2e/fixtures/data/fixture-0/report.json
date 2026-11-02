@@ -690,6 +690,11 @@
       "detail": "18 rows match §207.11 over FZP; 3 applies, 2 from §207.11",
       "id": "V33",
       "ok": true
+    },
+    {
+      "detail": "8 projects, 3 sites, 41 year ends",
+      "id": "V35",
+      "ok": true
     }
   ],
   "license": {

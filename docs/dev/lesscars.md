@@ -130,7 +130,7 @@ Order: parse, schedule, check (above), carve, sites, regimes, builds, paired run
 Street centrelines are the `datasf-streets` source (DataSF Streets, active centrelines,
 `data.sf.gov/d/3psu-pn9h`), normalised to `src_streets` (cnn, streetname, classcode, layer, geom
 in EPSG:7131). It is optional in a lock: without it `src_streets` is empty and any CNN fails the
-check. `docs/dev/pipeline.md` does not list it yet.
+check. It is listed in `docs/dev/pipeline.md`.
 
 `carveFreedLand` (`84_lesscars_sites.sql`) cuts removed right-of-way into sites from the parcels
 and the land mask, with no right-of-way source:
@@ -227,6 +227,12 @@ Goldens: `pipeline/test/fixtures/mini/golden/scenarios/lesscars/{plan,sites,summ
 compared byte for byte, and `timeline.decoded.json` against the decoded timeline. Regenerate them
 only with `npm run pipeline -- fixture --update-golden`.
 
+## Invariant V35
+
+`checkV35` (`pipeline/steps/check-lesscars.ts`) re-reads the published files in `check` and in
+`build`: see Invariants in [pipeline.md](pipeline.md). A build whose manifest has no
+`scenarios.lesscars` passes with "no plan".
+
 ## Running it
 
 - **Fixture:** `npm run pipeline -- fixture` builds fixture-0 with the mini plan and 5 seeds; the
@@ -235,3 +241,17 @@ only with `npm run pipeline -- fixture --update-golden`.
 - **Live:** once the live plan lands (plan 3), the release build (`npm run pipeline`) runs the full
   101-seed pairs on the maintainer's machine, as dataset builds already do. Until then the live
   build skips the step.
+
+## CI cost
+
+Measured 2026-11-01 as wall-clock seconds of `npm run test:pipeline`, three runs each, on this
+branch (95 test files, 1,843 tests) and on `origin/main` a21b226 (90 files, 1,783 tests), same
+machine, run one after the other:
+
+| Tree   | Runs (s)   | Median |
+| ------ | ---------- | ------ |
+| branch | 45, 41, 44 | 44 s   |
+| main   | 44, 44, 41 | 44 s   |
+
+The lesscars tests add no measurable time, far under the 60 s threshold, so nothing moved off
+`.github/workflows/pipeline.yml` or `chreode.config.ts`.
