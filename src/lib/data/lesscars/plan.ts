@@ -195,7 +195,8 @@ function line(v: unknown, path: string): [number, number][] {
   return a.map((p, i) => lngLat(p, at(path, i)));
 }
 
-function parseProvenance(v: unknown, path: string): Provenance {
+/** Validate a Provenance at `path` (shared with the /lesscars output codec). */
+export function parseProvenance(v: unknown, path: string): Provenance {
   const r = record(v, path, ['tier', 'label', 'sources', 'method'], ['n', 'window']);
   const tier = r.tier;
   if (tier !== 0 && tier !== 1 && tier !== 2 && tier !== 3 && tier !== 4)
