@@ -273,6 +273,24 @@
     {
       "files": [
         {
+          "archiveKey": "sources/5858a8f713d5481b78268ec9fd0cd94d5dcd8d90450d1bf9563540cec16f8bca.geojson",
+          "bytes": 1183,
+          "name": "datasf-streets.page-000.geojson",
+          "sha256": "5858a8f713d5481b78268ec9fd0cd94d5dcd8d90450d1bf9563540cec16f8bca",
+          "url": "https://fixture.invalid/datasf-streets.page-000.geojson"
+        }
+      ],
+      "homepage": "https://data.sf.gov/d/3psu-pn9h",
+      "id": "datasf-streets",
+      "label": "DataSF Streets – Active and Retired (centerlines)",
+      "license": "PDDL-1.0",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 5,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/5d0037be968ba69b18a4ec9a277040e3af8f5895754da7bc08b1bea2f15df49e.json",
           "bytes": 294,
           "name": "datasf-unit-completions.page-000.json",

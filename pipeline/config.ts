@@ -124,6 +124,11 @@ export interface InvariantProfile {
   muniTier2MatchMin: number;
   /** V32 warns (still passes) when the share of parcels within ½ mile of a stop is outside it. */
   todShareWarn: [number, number] | null;
+  /**
+   * /lesscars paired-run seeds (plan and baseline each). Odd, as BAND_RUNS, so the representative
+   * future is one run.
+   */
+  lesscarsSeeds: number;
 }
 
 /**
@@ -194,7 +199,10 @@ export const LIVE_PROFILE: InvariantProfile = {
   muniTier2MatchMin: 0.95,
   // Warn band (tier 4) around Planning's "more than 75%" of parcels within ½ mile of a TOD stop
   // (Ord. 082-26 §2(e), tier 1).
-  todShareWarn: [0.6, 0.95]
+  todShareWarn: [0.6, 0.95],
+  // Builder's call (tier 4): 101 seeds, as BAND_RUNS; reduced only if the live build's paired
+  // runs exceed 30 minutes (measured in lesscars plan 3).
+  lesscarsSeeds: 101
 };
 
 /**
@@ -256,5 +264,7 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   sb79MinT2Stops: 2,
   // Fixture known answer (mini README "Transit"): no MUNI_TIER2_STOP_IDS id is a mini stop, 0/438.
   muniTier2MatchMin: 0,
-  todShareWarn: null
+  todShareWarn: null,
+  // Few seeds keep test:pipeline cheap (spec "Heavy work stays off CI"); odd, as live.
+  lesscarsSeeds: 5
 };

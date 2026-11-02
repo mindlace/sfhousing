@@ -82,7 +82,10 @@ export interface Precompute {
    */
   sizeCum: Float32Array;
   parcelIndexOf(id: ParcelId): number; // -1 if absent
-  /** the rows that can initiate (hostable, hazard > 0, log1mh < 0), ascending */
+  /**
+   * the rows that can initiate (hostable, hazard > 0, log1mh < 0), ascending; with regimes, the
+   * rows that can initiate in any view
+   */
   candidates: Int32Array;
   /** `simEntity` of each candidate's parcel id, index-aligned with `candidates` */
   entity: Uint32Array;
@@ -93,9 +96,32 @@ export interface Precompute {
    * only: every u at or below the bound goes through the exact computation.
    */
   skipAbove(horizon: Day): Float64Array;
+  /**
+   * With `regimes`, each view's own precompute (`regimeInputsOf`, so its `regimes` is []),
+   * memoised by input; `candidates` above are then the union, in row order, of every view's
+   * candidates. [] without regimes.
+   */
+  regimes: Precompute[];
 }
 
 const memo = new WeakMap<SimInput, Precompute>();
+const regimeInputs = new WeakMap<SimInput, SimInput[]>();
+const NO_INPUTS: SimInput[] = [];
+
+/**
+ * One input per entry of `input.regimes`, with that view as its parcels and no regimes of its
+ * own, memoised by input; [] without regimes.
+ */
+export function regimeInputsOf(input: SimInput): SimInput[] {
+  if (!input.regimes || input.regimes.length === 0) return NO_INPUTS;
+  let a = regimeInputs.get(input);
+  if (!a) {
+    const { regimes, ...rest } = input;
+    a = regimes.map((g) => ({ ...rest, parcels: g.parcels }));
+    regimeInputs.set(input, a);
+  }
+  return a;
+}
 
 /** `simEntity` per row, shared by every input over the same id column (the twin's view too). */
 const entities = new WeakMap<readonly ParcelId[], { hash: Uint32Array; done: Uint8Array }>();
@@ -128,19 +154,76 @@ export function lastInitiationMonth(asOf: Day, horizon: Day): number {
 }
 
 /**
+ * Per regime day, the number of initiation months from `r` that start before it (plan 2 ruling
+ * 1, generalised): month T starts on `r + 1 + floor((T − 1)·MONTH_DAYS)`, and
+ * `T_k = lastInitiationMonth(r, days[k] − 1)`. Month T runs on view j when
+ * `T_(j−1) < T ≤ T_j` (view 0 up to `T_0`, the last view after the last bound).
+ */
+export function regimeMonths(r: Day, days: readonly Day[]): number[] {
+  return days.map((d) => lastInitiationMonth(r, d - 1));
+}
+
+/**
+ * The initiation month for L = log(1 − u) under a piecewise-constant hazard (ruling 1,
+ * generalised): segment j covers months (bounds[j − 1], bounds[j]] (from 0; the last is
+ * unbounded) at log-survival rate `rates[j]` (length bounds.length + 1). Walking the segments with
+ * `acc` = Σ months·rate so far, it returns `a + max(1, ceil((L − acc) / l))` for the first
+ * segment (starting after month a, rate l < 0) where that is ≤ its end; 0 = never. An empty
+ * segment adds nothing (no 0 · −Infinity). With no bounds it is exactly `max(1, ceil(L / l0))`.
+ */
+export function piecewiseMonth(
+  L: number,
+  bounds: readonly number[],
+  rates: readonly number[]
+): number {
+  const K = bounds.length;
+  let acc = 0;
+  let a = 0;
+  for (let j = 0; j <= K; j++) {
+    const end = j < K ? bounds[j] : Infinity;
+    if (!(end > a)) continue;
+    const l = rates[j];
+    if (l < 0) {
+      const T = a + Math.max(1, Math.ceil((L - acc) / l));
+      if (T <= end) return T;
+    }
+    acc += (end - a) * l;
+    a = end;
+  }
+  return 0;
+}
+
+/**
  * The `skipAbove` bounds (see `Precompute`). With T = max(1, ceil(log(1 − u) / log1mh)), the
  * initiation is after the horizon exactly when T > Tmax (`lastInitiationMonth`), that is when
  * u > u* = 1 − (1 − h)^Tmax = 1 − exp(Tmax · log1mh). The bound is u* widened by a relative
  * 1e-6 plus an absolute 1e-12 (u*·(1 + 1e-6) + 1e-12), far above every rounding error of the
  * exact path's `1 − u`, `log` and division and of u* itself, for any u* above 1e-6; below
- * that no bound is used.
+ * that no bound is used. With regimes (`bounds` = `regimeMonths(asOf, days)`, `views[j]` the
+ * log1mh of view j), the piecewise hazard gives u* = 1 − exp(Σ n_j·l_j), n_j the months of
+ * 1..Tmax in segment j, with the same widening.
  */
-function skipBounds(log1mh: Float64Array, candidates: Int32Array, Tmax: number): Float64Array {
+function skipBounds(
+  views: readonly Float64Array[],
+  candidates: Int32Array,
+  Tmax: number,
+  bounds: readonly number[]
+): Float64Array {
   const out = new Float64Array(candidates.length).fill(Infinity);
   if (Tmax < 1) return out;
+  const K = bounds.length;
+  const n = new Array<number>(K + 1);
+  for (let j = 0; j <= K; j++) {
+    const start = j === 0 ? 0 : bounds[j - 1];
+    const end = j < K ? bounds[j] : Infinity;
+    n[j] = Math.max(0, Math.min(Tmax, end) - start);
+  }
   for (let c = 0; c < candidates.length; c++) {
     const i = candidates[c];
-    const uStar = 1 - exp(Tmax * log1mh[i]);
+    // a zero month count adds nothing (and keeps 0 · −Infinity out of the sum)
+    let s = n[0] > 0 ? n[0] * views[0][i] : 0;
+    for (let j = 1; j <= K; j++) if (n[j] > 0) s += n[j] * views[j][i];
+    const uStar = 1 - exp(s);
     if (uStar > 1e-6) out[c] = uStar * (1 + 1e-6) + 1e-12;
   }
   return out;
@@ -202,7 +285,9 @@ export function sizeCumAgainst(input: SimInput, i: number, existing: number): Fl
  * The per-input precompute (spec §4.2 step 7, §4.4.4), memoised by `SimInput` identity. Only
  * hostable parcels with a gaining size level get a hazard; a hostable parcel with a non-finite
  * term feature gets 0 (`initiationHazard` would silently use bin 0), reported in one warning.
- * Features read the `fzp` variant: a `baseZoning` view supplies its base columns there.
+ * Features read the `fzp` variant: a `baseZoning` view supplies its base columns there. With
+ * `regimes`, `hazard`, `log1mh` and `sizeCum` stay `input.parcels`' and `regimes` holds each
+ * view's.
  */
 export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Precompute {
   const hit = memo.get(input);
@@ -241,7 +326,12 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
       `parcels.bin: hazard 0 for ${bad} parcel(s) with a non-finite feature; first: ${firstBad}`
     );
   }
-  const isCandidate = (i: number) => p.hostable[i] === 1 && hazard[i] > 0 && log1mh[i] < 0;
+  const regimes = regimeInputsOf(input).map((r) => precomputeOf(r, warn));
+  const inRegime = new Uint8Array(regimes.length > 0 ? n : 0);
+  for (const g of regimes) for (const i of g.candidates) inRegime[i] = 1;
+  const isCandidate = (i: number) =>
+    (p.hostable[i] === 1 && hazard[i] > 0 && log1mh[i] < 0) ||
+    (regimes.length > 0 && inRegime[i] === 1);
   let m = 0;
   for (let i = 0; i < n; i++) if (isCandidate(i)) m++;
   const candidates = new Int32Array(m);
@@ -251,6 +341,11 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
     candidates[c] = i;
     entity[c++] = entityOf(p.id, i);
   }
+  const views = [log1mh, ...regimes.map((g) => g.log1mh)];
+  const regimeBounds = regimeMonths(
+    input.asOf,
+    (input.regimes ?? []).map((g) => g.day)
+  );
   const bounds = new Map<Day, Float64Array>();
   const pre: Precompute = {
     hazard,
@@ -262,11 +357,13 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
     skipAbove(horizon) {
       let b = bounds.get(horizon);
       if (!b) {
-        b = skipBounds(log1mh, candidates, lastInitiationMonth(input.asOf, horizon));
+        const Tmax = lastInitiationMonth(input.asOf, horizon);
+        b = skipBounds(views, candidates, Tmax, regimeBounds);
         bounds.set(horizon, b);
       }
       return b;
-    }
+    },
+    regimes
   };
   memo.set(input, pre);
   return pre;

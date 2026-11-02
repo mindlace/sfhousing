@@ -63,7 +63,16 @@ const ManifestBaseSchema = z.object({
         policy: RootRelativeUrl.optional(),
         /** Older datasets' lot-to-street frontage. Accepted so they still validate; nothing reads it. */
         frontage: RootRelativeUrl.optional()
-      })
+      }),
+      /** /lesscars playback (docs/dev/lesscars.md). Optional: only builds with a plan have it. */
+      lesscars: z
+        .object({
+          plan: RootRelativeUrl,
+          sites: RootRelativeUrl,
+          summary: RootRelativeUrl,
+          timeline: RootRelativeUrl
+        })
+        .optional()
     })
     .optional()
 });
@@ -82,6 +91,10 @@ export const ManifestSchema = ManifestBaseSchema.superRefine((m, ctx) => {
     ['scenarios.fzp.calibration', m.scenarios?.fzp.calibration],
     ['scenarios.fzp.policy', m.scenarios?.fzp.policy],
     ['scenarios.fzp.frontage', m.scenarios?.fzp.frontage],
+    ['scenarios.lesscars.plan', m.scenarios?.lesscars?.plan],
+    ['scenarios.lesscars.sites', m.scenarios?.lesscars?.sites],
+    ['scenarios.lesscars.summary', m.scenarios?.lesscars?.summary],
+    ['scenarios.lesscars.timeline', m.scenarios?.lesscars?.timeline],
     ...m.chunks.map((c, i): [string, string] => [`chunks.${i}.url`, c.url])
   ];
   for (const [path, u] of urls) {

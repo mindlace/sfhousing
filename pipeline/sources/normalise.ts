@@ -19,6 +19,7 @@ export type SourceId =
   | 'datasf-height-bulk'
   | 'datasf-parcel-attrs'
   | 'datasf-assessor-roll'
+  | 'datasf-streets'
   | 'datasf-historic-status'
   | 'sfbos-sb79-exemptions'
   | 'overture-buildings'
@@ -32,11 +33,24 @@ export const SOURCE_IDS: SourceId[] = [
   'datasf-height-bulk',
   'datasf-parcel-attrs',
   'datasf-assessor-roll',
+  'datasf-streets',
   'datasf-historic-status',
   'sfbos-sb79-exemptions',
   'overture-buildings',
   'protomaps-basemap'
 ];
+
+/**
+ * Sources a lock may lack: `normaliseAll` writes an empty table for them. `datasf-streets` is
+ * page-only (street centrelines for plan references); the live lock gains it in a later plan.
+ */
+const OPTIONAL_SOURCE_IDS: readonly SourceId[] = ['datasf-streets'];
+
+/** Empty-table schema of each optional source (the columns its `buildSelect` writes). */
+const EMPTY_SELECT: Partial<Record<SourceId, string>> = {
+  'datasf-streets': `SELECT NULL::VARCHAR AS cnn, NULL::VARCHAR AS streetname,
+    NULL::VARCHAR AS classcode, NULL::VARCHAR AS layer, NULL::GEOMETRY AS geom WHERE false`
+};
 
 /** Normalised parquet basename -> src_ table. */
 const TABLES: Record<SourceId, string> = {
@@ -47,6 +61,7 @@ const TABLES: Record<SourceId, string> = {
   'datasf-height-bulk': 'src_height_bulk',
   'datasf-parcel-attrs': 'src_parcel_attrs',
   'datasf-assessor-roll': 'src_roll',
+  'datasf-streets': 'src_streets',
   'datasf-historic-status': 'src_historic',
   'sfbos-sb79-exemptions': 'src_sb79_exempt',
   'overture-buildings': 'src_overture',
@@ -242,6 +257,14 @@ async function buildSelect(
         FROM ${p} ORDER BY mblr, sf16_bldgid`;
     case 'datasf-neighborhoods':
       return `SELECT ${sel(cols, 'nhood', 'VARCHAR')}, geom FROM ${p} ORDER BY nhood`;
+    case 'datasf-streets':
+      // `active` is filtered by the fetch's `$where`. cnn and classcode stay text (SODA writes
+      // them as strings); geom is a MultiLineString in EPSG:7131 (the build CRS). cnn is unique,
+      // the geometry breaks ties.
+      return `SELECT ${txt(cols, 'cnn')}, ${txt(cols, 'streetname')}, ${txt(cols, 'classcode')},
+        ${txt(cols, 'layer')},
+        ST_Transform(geom, 'EPSG:4326', 'EPSG:7131', always_xy := true) AS geom
+        FROM ${p} ORDER BY cnn, ST_AsHEXWKB(geom)`;
     case 'datasf-historic-status':
       // Codes stay verbatim (`A*` included); the policy step ranks them.
       return `SELECT ${txt(cols, 'apn', true)}, ${txt(cols, 'ceqacode')},
@@ -307,6 +330,13 @@ export async function normaliseAll(
   const rows = {} as Record<SourceId, number>;
   for (const id of SOURCE_IDS) {
     const entry = lock.sources.find((s) => s.id === id);
+    if (!entry && OPTIONAL_SOURCE_IDS.includes(id)) {
+      const out = path.join(normDir, `${id}.parquet`);
+      fs.mkdirSync(normDir, { recursive: true });
+      await db.run(`COPY (${EMPTY_SELECT[id]}) TO ${q(out)} (FORMAT parquet)`);
+      rows[id] = 0;
+      continue;
+    }
     if (!entry) throw new Error(`lock has no entry for ${id}`);
     const files = entry.files.map((f) => path.resolve(rawPath(rawDir, f, opts.byName)));
     const parquet = entry.files.every((f) => f.name.endsWith('.parquet'));

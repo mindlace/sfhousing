@@ -30,9 +30,13 @@ const M2_PER_ACRE = 4046.8564224;
  * The SB 79 tier of each stop, keyed by stop index; a stop with no tier is absent. Heavy rail is
  * tier 1. Commuter rail is tier 1 at ≥ VHF_TPD trains a day at the station (Σ `tpd` over the
  * commuter-rail pattern stops sharing the stop's `stationId`, or its own id when null), tier 2 at
- * ≥ HF_TPD. LIGHT_RAIL_MODES and MUNI_TIER2_STOP_IDS are tier 2. The lowest tier wins.
+ * ≥ HF_TPD. LIGHT_RAIL_MODES and the stops in `tier2Ids` (by default MUNI_TIER2_STOP_IDS; a
+ * /lesscars snapshot passes it with the plan's BRT stops added) are tier 2. The lowest tier wins.
  */
-export function stopTiers(net: TransitNetwork): Map<number, Sb79Tier> {
+export function stopTiers(
+  net: TransitNetwork,
+  tier2Ids: ReadonlySet<string> = MUNI_TIER2_STOP_IDS
+): Map<number, Sb79Tier> {
   const stationOf = (i: number) => net.stops[i].stationId ?? net.stops[i].id;
   const trains = new Map<string, number>();
   for (const p of net.patterns)
@@ -54,7 +58,7 @@ export function stopTiers(net: TransitNetwork): Map<number, Sb79Tier> {
       } else if (LIGHT_RAIL_MODES.includes(p.mode)) set(s.stop, 2);
     }
   net.stops.forEach((s, i) => {
-    if (MUNI_TIER2_STOP_IDS.has(s.id)) set(i, 2);
+    if (tier2Ids.has(s.id)) set(i, 2);
   });
   return tiers;
 }

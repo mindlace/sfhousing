@@ -4,10 +4,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { openDuck } from '../lib/duck';
+import { readLock } from '../lib/lock';
 import { EXEMPTION_TABLES } from '../sb79-config';
-import { ATTRS_CAST_BITS, ROLL_CAST_BITS, normalise } from '../sources/normalise';
+import {
+  ATTRS_CAST_BITS,
+  ROLL_CAST_BITS,
+  loadNormalised,
+  normalise,
+  normaliseAll
+} from '../sources/normalise';
 import { SB79_EXEMPTIONS_CSV, readExemptionHeader } from '../sources/sfbos';
-import { miniDuck } from './helpers';
+import { MINI, miniDuck } from './helpers';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'sfh-norm-'));
 
@@ -92,6 +99,50 @@ describe('normalise mini fixture', () => {
       `SELECT count(*) n, min(zoning_code) z FROM src_parcel_attrs WHERE mapblklot = '3512002'`
     );
     expect(condo).toEqual({ n: 3, z: 'RH-2' });
+  });
+
+  it('streets: five centrelines, cnn as string, geometry in EPSG:7131', async () => {
+    const db = await miniDuck();
+    const rows = await db.all<Record<string, unknown>>(
+      `SELECT cnn, streetname, classcode, layer FROM src_streets ORDER BY cnn`
+    );
+    expect(rows).toHaveLength(5);
+    expect(rows.map((r) => r.cnn)).toEqual(['1000', '1001', '2000', '3000', '4000']);
+    expect(rows[0]).toEqual({
+      cnn: '1000',
+      streetname: 'MISSION ST',
+      classcode: '3',
+      layer: 'STREETS'
+    });
+    const cols = await db.all<{ column_name: string; column_type: string }>(`DESCRIBE src_streets`);
+    expect(cols.map((c) => `${c.column_name} ${c.column_type}`.replace(/\(.*/, ''))).toEqual([
+      'cnn VARCHAR',
+      'streetname VARCHAR',
+      'classcode VARCHAR',
+      'layer VARCHAR',
+      'geom GEOMETRY'
+    ]);
+    const [g] = await db.all<{ t: string; x: number }>(
+      `SELECT ST_GeometryType(geom)::VARCHAR t, ST_XMin(geom) x FROM src_streets WHERE cnn = '2000'`
+    );
+    expect(g.t).toBe('MULTILINESTRING');
+    // Local metres (the mini grid), not degrees.
+    expect(Math.abs(g.x)).toBeGreaterThan(1000);
+  });
+
+  it('a lock without datasf-streets gives an empty src_streets', async () => {
+    const lock = readLock(join(MINI, 'sources.lock.json'));
+    lock.sources = lock.sources.filter((s) => s.id !== 'datasf-streets');
+    const dir = tmp();
+    const db = await openDuck();
+    const counts = await normaliseAll(db, lock, join(MINI, 'raw'), dir, {
+      byName: true,
+      exemptionsCsv: SB79_EXEMPTIONS_CSV.fixture
+    });
+    await loadNormalised(db, dir);
+    expect(counts['datasf-streets']).toBe(0);
+    const [n] = await db.all<{ n: number }>(`SELECT count(*) n FROM src_streets`);
+    expect(n.n).toBe(0);
   });
 
   it('historic status: one row per listed apn, 0026T001A verbatim, lot 18 absent', async () => {

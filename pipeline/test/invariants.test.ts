@@ -41,7 +41,7 @@ import {
 import { fixture } from '../steps/fixture';
 import { PROJECTS_JSON } from '../steps/projects';
 import { miniProjectInput } from './fixtures/mini/projects-raw';
-import { PARCELS_BIN, POLICY_BIN } from '../lib/scenario-files';
+import { LESSCARS_FILES, PARCELS_BIN, POLICY_BIN } from '../lib/scenario-files';
 
 let base: string;
 /** The fixture build's derived cache root (kept, so the T14 report can be read). */
@@ -1205,5 +1205,57 @@ describe('maxOf', () => {
     const xs = Array.from({ length: 500_000 }, (_, i) => i % 1000);
     expect(maxOf(xs)).toBe(999);
     expect(maxOf([])).toBe(-Infinity);
+  });
+});
+
+describe('V35 /lesscars files', () => {
+  const v35 = async (dir: string) => (await result(dir, 'V35'))!;
+  const edit = (
+    dir: string,
+    file: string,
+    f: (j: Record<string, any>) => void // eslint-disable-line @typescript-eslint/no-explicit-any
+  ) => {
+    const p = join(dir, file);
+    const j = JSON.parse(readFileSync(p, 'utf8'));
+    f(j);
+    writeFileSync(p, JSON.stringify(j));
+  };
+  it('V35 passes on the fixture build', async () => {
+    const r = await v35(base);
+    expect(r.ok, r.detail).toBe(true);
+    expect(r.detail).not.toBe('no plan');
+  });
+  it('V35 fails when a source sum is edited', async () => {
+    const d = copy();
+    edit(d, LESSCARS_FILES.summary, (s) => {
+      s.bySource.freed[3] += 1;
+    });
+    const r = await v35(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/year \d{4}: source sums/);
+  });
+  it('V35 fails when plan times disagree with schedulePlan', async () => {
+    const d = copy();
+    edit(d, LESSCARS_FILES.plan, (p) => {
+      p.times[0].openDay += 1;
+    });
+    const r = await v35(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/times differ from schedulePlan/);
+  });
+  it('V35 fails when a named file is missing', async () => {
+    const d = copy();
+    rmSync(join(d, LESSCARS_FILES.sites));
+    const r = await v35(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/sites\.json is missing/);
+  });
+  it('V35 is OK with "no plan" when the manifest has no lesscars key', async () => {
+    const d = copy();
+    edit(d, 'manifest.json', (m) => {
+      delete m.scenarios.lesscars;
+    });
+    const r = await v35(d);
+    expect(r).toMatchObject({ id: 'V35', ok: true, detail: 'no plan' });
   });
 });

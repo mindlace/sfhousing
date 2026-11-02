@@ -113,6 +113,7 @@ export function datasetProblems(outDir: string, v: string, raw: unknown, lock: L
       ? [m.scenarios.fzp.parcels, m.scenarios.fzp.projects, m.scenarios.fzp.calibration]
       : []),
     ...(m.scenarios?.fzp.policy ? [m.scenarios.fzp.policy] : []),
+    ...(m.scenarios?.lesscars ? Object.values(m.scenarios.lesscars) : []),
     ...(m.sprite ? [m.sprite] : []),
     ...Object.values(FONT_STACKS).map((s) =>
       m.glyphs.replace('{fontstack}', s).replace('{range}', '0-255')
