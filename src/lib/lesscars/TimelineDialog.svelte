@@ -105,7 +105,7 @@
             <button
               type="button"
               aria-label="Evidence for {r.label}"
-              class="min-h-6 min-w-6 rounded-md border border-gray-400 px-2 py-0.5 text-xs font-medium hover:bg-gray-100 dark:border-gray-500 dark:hover:bg-gray-800"
+              class="min-h-6 min-w-6 rounded-md border border-gray-500 px-2 py-0.5 text-xs font-medium hover:bg-gray-100 dark:border-gray-500 dark:hover:bg-gray-800"
               onclick={() => evidence(r.id)}>Evidence</button
             >
           </td>
@@ -125,7 +125,7 @@
     <h2 id="lc-timeline-h" class="text-lg font-semibold">Project timeline</h2>
     <button
       type="button"
-      class="min-h-6 rounded-md border border-gray-400 px-3 py-1 text-sm font-medium hover:bg-gray-100 dark:border-gray-500 dark:hover:bg-gray-800"
+      class="min-h-6 rounded-md border border-gray-500 px-3 py-1 text-sm font-medium hover:bg-gray-100 dark:border-gray-500 dark:hover:bg-gray-800"
       onclick={() => dlg?.close()}>Close</button
     >
   </div>
