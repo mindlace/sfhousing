@@ -229,6 +229,11 @@ The drafter's calls:
   runtime stops, per-year SB 79 and synthetic parcels in the `/sim` worker. That is the expensive
   part of folding this into `/sim`, and it is deferred. The engine has never run in Node, so making
   it run there is in scope. The builder picks the seed count from cost and band width.
+- **Heavy work stays off CI (owner's constraint).** The owner's laptop is much faster than the CI
+  runners. The full paired-seed run happens in the local release build (`npm run pipeline`), as
+  dataset builds already do. The fixture and `test:pipeline` exercise it at small scale with few
+  seeds. If the new stages add materially to `.github/workflows/pipeline.yml`'s run time, move
+  those steps to `npm run signoff` (`chreode.config.ts`) and out of the workflow.
 - **Compact UI.** The headline difference goes in the top bar; the breakdown and the project
   timeline are behind a tap; phone header items go in the menu.
 - **Accessibility.** WCAG 2.2 AA, as every page (`docs/dev/accessibility.md`).
