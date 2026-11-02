@@ -392,7 +392,8 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
     const z = context.viewport.zoom;
     const was = this.state.zoom;
     if (was === undefined) return true;
-    return Math.floor(z) !== Math.floor(was) || inFade(z) || inFade(was);
+    // a pan at a fixed zoom never re-renders, not even inside the fade
+    return Math.floor(z) !== Math.floor(was) || (z !== was && (inFade(z) || inFade(was)));
   }
 
   renderLayers(): Layer[] {

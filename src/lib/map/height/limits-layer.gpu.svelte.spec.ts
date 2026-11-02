@@ -488,6 +488,10 @@ describe('HeightLimitsLayer on the GPU', () => {
     expect(should(15.0, 15.2)).toBe(true);
     expect(should(15.4, 15.6)).toBe(true);
     expect(should(13.2, 13.9)).toBe(false);
+    // a pan at a fixed zoom inside the fade (or on its edge) never re-renders
+    expect(should(15.0, 15.0)).toBe(false);
+    expect(should(15.5, 15.5)).toBe(false);
+    expect(should(14.5, 14.5)).toBe(false);
   });
 
   it('a pitch, bearing or pitched long-pan step reruns the label layer only; a flat pan never', () => {
