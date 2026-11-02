@@ -178,6 +178,12 @@ sites, acting as a public developer:
 - Every other lot, including lots upzoned by new transit, is built by the engine as usual. Those
   homes are the "transit-unlocked" share.
 
+**Parking converts in step with transit (owner's decision).** Parking is not seized on day 1. Each
+parking conversion depends on a plan transit project serving its area and starts only after that
+project opens. Until its conversion starts, a parking site is an ordinary lot in both runs. If the
+market has already begun building there in a given future, the conversion does not happen in that
+future, and the lot counts as it would anyway.
+
 The engine has no scheduled-build path today. Adding one, for these two site kinds only, is in
 scope.
 
