@@ -9,17 +9,16 @@ export function headlineCopy(n: number, year: number): string {
   return `No extra homes by ${year}`;
 }
 
+/** The button's accessible name: starts with the visible text (WCAG 2.5.3 Label in Name). */
 export function headlineNameCopy(n: number, year: number): string {
-  if (n > 0)
-    return `The plan adds ${formatCount(n)} homes by ${year} compared with no plan. Show details`;
-  if (n < 0)
-    return `The plan has ${formatCount(-n)} fewer homes by ${year} than no plan. Show details`;
-  return `The plan adds no homes by ${year} compared with no plan. Show details`;
+  return `${headlineCopy(n, year)} compared with no plan. Show details`;
 }
 
-/** The headline as a sentence, for the details panel (no "Show details"). */
+/** The headline as a sentence, for the details panel. */
 export function headlineSentence(n: number, year: number): string {
-  return headlineNameCopy(n, year).replace(/ Show details$/, '');
+  if (n > 0) return `The plan adds ${formatCount(n)} homes by ${year} compared with no plan.`;
+  if (n < 0) return `The plan has ${formatCount(-n)} fewer homes by ${year} than no plan.`;
+  return `The plan adds no homes by ${year} compared with no plan.`;
 }
 
 export function bandCopy(seeds: number, p10: string, p90: string): string {

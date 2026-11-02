@@ -92,7 +92,7 @@ export function scrubberMarkers(f: LessCarsPlanFile, switchDay: Day): Marker[] {
       label: String(utcParts(day).y),
       name: `Jump to ${labels.join(' and ')} opening, ${formatMonthYear(day)}`
     });
-  return out;
+  return out.sort((a, b) => a.day - b.day);
 }
 
 const JUMP = 'Jump to ';

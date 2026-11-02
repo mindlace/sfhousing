@@ -8,6 +8,7 @@ import { parseSummary } from '$lib/data/lesscars/codec';
 import summaryJson from '../../../e2e/fixtures/data/fixture-0/scenarios/lesscars/summary.json';
 import HeadlineBar from './HeadlineBar.svelte';
 import { headlineName, headlineText } from './summary-view';
+import { headlineNameCopy, headlineCopy } from './copy';
 
 const fx = parseSummary(summaryJson);
 const panel = createRawSnippet(() => ({
@@ -38,5 +39,9 @@ describe('HeadlineBar', () => {
     document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
     await expect.element(page.getByText('Details here')).not.toBeInTheDocument();
     await expect.element(page.getByTestId('lc-headline')).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it.each([-56, 0, 1234])('the accessible name starts with the visible text (n = %i)', (n) => {
+    expect(headlineNameCopy(n, 2068).startsWith(headlineCopy(n, 2068))).toBe(true);
   });
 });

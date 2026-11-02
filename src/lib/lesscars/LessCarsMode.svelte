@@ -280,7 +280,12 @@
       chance: chanceTable(calibration),
       typicalMonths: typicalMonths(calibration)
     });
-    h.onResyncNeeded(() => client?.resync());
+    h.onResyncNeeded(() => {
+      // The host restarts with no viewport cells: prefetch again once its revision 0 lands.
+      live = false;
+      prefetchDue = true;
+      client?.resync();
+    });
     const queued = pendingUpdates;
     pendingUpdates = [];
     for (const u of queued) h.applyTimeline(u);

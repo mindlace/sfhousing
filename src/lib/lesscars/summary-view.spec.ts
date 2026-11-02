@@ -55,10 +55,10 @@ describe('summary-view', () => {
     expect(headlineText(withFinal(fx, 0.3))).toBe(`No extra homes by ${Y}`);
     expect(headlineText(withFinal(fx, -0.3))).toBe(`No extra homes by ${Y}`);
     expect(headlineName(withFinal(fx, -56.2))).toBe(
-      `The plan has 56 fewer homes by ${Y} than no plan. Show details`
+      `−56 homes by ${Y} compared with no plan. Show details`
     );
     expect(headlineName(withFinal(fx, 12))).toBe(
-      `The plan adds 12 homes by ${Y} compared with no plan. Show details`
+      `+12 homes by ${Y} compared with no plan. Show details`
     );
   });
   it('bandText names the seed count and signed bounds', () => {

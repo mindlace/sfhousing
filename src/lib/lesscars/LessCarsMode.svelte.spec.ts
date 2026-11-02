@@ -154,6 +154,23 @@ describe('LessCarsMode', () => {
     ]);
   });
 
+  it('a resync after a revision gap re-inits the host and prefetches again', async () => {
+    setup();
+    await expect.poll(() => workers[0]?.posts.length).toBe(1);
+    const r0 = { revision: 0, cells: [], removedCells: [], demolish: [] };
+    const prefetches = () => workers[0].posts.filter((m) => m.type === 'prefetch').length;
+    workers[0].emit({ type: 'playback', rev: init().rev, render: r0, complete: true });
+    await expect.poll(prefetches).toBe(1);
+    expect(stub.resyncCb).toBeTruthy();
+    stub.resyncCb!();
+    await expect
+      .poll(() => workers[0].posts.filter((m) => m.type === 'initPlayback').length)
+      .toBe(2);
+    const second = workers[0].posts.filter((m) => m.type === 'initPlayback')[1] as { rev: number };
+    workers[0].emit({ type: 'playback', rev: second.rev, render: r0, complete: true });
+    await expect.poll(prefetches).toBe(2);
+  });
+
   it('puts the headline in the pinned slot and Timeline and Evidence among the actions', async () => {
     setup();
     const pinned = page.getByTestId('header-pinned');

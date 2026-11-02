@@ -48,6 +48,17 @@ describe('scrubberMarkers', () => {
   });
 });
 
+describe('scrubberMarkers order', () => {
+  it('sorts by day when a line opens before the switch day', () => {
+    const f = structuredClone(planFile);
+    const line = f.plan.projects.find((p) => p.kind === 'transit-line')!;
+    f.times.find((t) => t.id === line.id)!.openDay = summary.switchDay - 100;
+    const m = scrubberMarkers(f, summary.switchDay);
+    expect(m.map((x) => x.day)).toEqual([...m.map((x) => x.day)].sort((a, b) => a - b));
+    expect(m[0].label).not.toBe('SB 79');
+  });
+});
+
 describe('mergeMarkers', () => {
   const SPAN = LESSCARS_HORIZON - LESSCARS_START;
   const px = (day: number, trackPx: number) => ((day - LESSCARS_START) / SPAN) * trackPx;
