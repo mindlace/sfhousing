@@ -20,7 +20,10 @@ export default defineConfig({
         'src/lib/timelapse/**',
         'src/lib/data/**',
         'src/lib/plan/types.ts',
-        'src/lib/plan/geometry.ts'
+        'src/lib/plan/geometry.ts',
+        'src/lib/sim/scenario/**',
+        'src/lib/sim/levers/**',
+        'src/lib/scoreboard/**'
       ],
       triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline']
     },

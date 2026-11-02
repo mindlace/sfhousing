@@ -33,7 +33,14 @@ import {
   type Stage
 } from '$lib/timelapse/types';
 import type { StageScale } from '../levers/timers';
-import { afterInputOf, precomputeOf, sizeCumAgainst, switchMonth, type Precompute } from './input';
+import {
+  piecewiseMonth,
+  precomputeOf,
+  regimeInputsOf,
+  regimeMonths,
+  sizeCumAgainst,
+  type Precompute
+} from './input';
 import { P, drawOn, jobEntity, seedHash, stageRedraw, streamOf } from './rng';
 import type { Master } from './simulate';
 import type { Schedule, SimInput } from './types';
@@ -48,6 +55,11 @@ export interface Sink {
   readonly ids?: boolean;
   schedule(s: Schedule): void;
   master(m: Master): void;
+  /**
+   * Once per run for each row with `input.reservedFrom[row]` > 0 (candidate or not): whether the
+   * reservation was kept. Optional: a sink without it ignores reservations.
+   */
+  reservation?(row: number, kept: boolean): void;
 }
 
 type End = Schedule['end'];
@@ -206,8 +218,12 @@ interface Run {
   input: SimInput;
   /** the per-input precompute (memoised by input identity): hazards, log(1 − h), size rows */
   pre: Precompute;
-  /** `input.lawSwitch` with the after view's input and precompute; null = no switch */
-  sw: { day: Day; parcels: ScenarioParcels; input: SimInput; pre: Precompute } | null;
+  /** `input.regimes`, each with its view's input and precompute; [] = none */
+  regimes: { day: Day; parcels: ScenarioParcels; input: SimInput; pre: Precompute }[];
+  /** the regime days, ascending */
+  days: Day[];
+  /** `input.reservedFrom`; null = none */
+  reservedFrom: Int32Array | null;
   st: Static;
   /** by STAGE_ORDER index: the first `revision.at` entry for the stage, if any */
   revisionAt: (RevisionModel['at'][number] | undefined)[];
@@ -215,12 +231,47 @@ interface Run {
   ids: boolean;
 }
 
-function runOf(input: SimInput, seed: number, horizon: Day, ids: boolean): Run {
-  const ls = input.lawSwitch;
-  if (ls && !(input.asOf < ls.day)) {
-    throw new RangeError(`lawSwitch.day ${ls.day} must be after asOf ${input.asOf}`);
+/** Inputs whose `regimes` and `reservedFrom` passed `checkInput`. */
+const checked = new WeakSet<SimInput>();
+
+/** Throws a RangeError on bad `regimes` or `reservedFrom` (see `SimInput`); memoised by input. */
+function checkInput(input: SimInput): void {
+  if (checked.has(input)) return;
+  const n = input.parcels.count;
+  let prev = input.asOf;
+  for (const [k, g] of (input.regimes ?? []).entries()) {
+    if (!(g.day > prev)) {
+      throw new RangeError(
+        `regimes[${k}].day ${g.day} must be after ${k === 0 ? 'asOf' : 'the previous day'} ${prev}`
+      );
+    }
+    if (g.parcels.count !== n || g.parcels.id.length !== input.parcels.id.length) {
+      throw new RangeError(`regimes[${k}].parcels has ${g.parcels.count} rows, not ${n}`);
+    }
+    prev = g.day;
   }
+  const rf = input.reservedFrom;
+  if (rf) {
+    if (rf.length !== n) throw new RangeError(`reservedFrom has ${rf.length} rows, not ${n}`);
+    for (let i = 0; i < n; i++) {
+      if (rf[i] !== 0 && !(rf[i] > input.asOf)) {
+        throw new RangeError(`reservedFrom[${i}] ${rf[i]} must be 0 or after asOf ${input.asOf}`);
+      }
+    }
+  }
+  checked.add(input);
+}
+
+function runOf(input: SimInput, seed: number, horizon: Day, ids: boolean): Run {
+  checkInput(input);
   const pre = precomputeOf(input);
+  const regimeInputs = regimeInputsOf(input);
+  const regimes = regimeInputs.map((ri, k) => ({
+    day: input.regimes![k].day,
+    parcels: ri.parcels,
+    input: ri,
+    pre: pre.regimes[k]
+  }));
   const revisionAt: Run['revisionAt'] = STAGE_ORDER.map(() => undefined);
   for (const a of input.calibration.revision.at) {
     const i = STAGE_INDEX[a.stage];
@@ -238,9 +289,9 @@ function runOf(input: SimInput, seed: number, horizon: Day, ids: boolean): Run {
     parcels: input.parcels,
     input,
     pre,
-    sw: ls
-      ? { day: ls.day, parcels: ls.parcels, input: afterInputOf(input)!, pre: pre.after! }
-      : null,
+    regimes,
+    days: regimes.map((g) => g.day),
+    reservedFrom: input.reservedFrom ?? null,
     st: staticOf(input),
     revisionAt,
     ids
@@ -817,20 +868,20 @@ function newPathway(cal: Calibration, stream: number): Pathway {
 /**
  * The k-th initiation month on a parcel at risk from day `r` (§4.4.4 steps 1-2), on the parcel's
  * `(entity, k)` stream: the geometric month `T = max(1, ceil(log(1 − u) / l1))` by inverse CDF,
- * with `l1 = log(1 − h)` < 0. With a law switch (`l2` the after view's log(1 − h), `T0` =
- * `switchMonth(r, day)`), the piecewise hazard (ruling 1), L = log(1 − u): the same T when
- * `l1 < 0` and it is ≤ T0, else `T0 + max(1, ceil((L − T0·l1) / l2))` when `l2 < 0`, else 0
- * (never). The first branch is the unswitched expression, so pre-switch draws are unchanged.
+ * with `l1 = log(1 − h)` < 0. With regimes (`bounds` = `regimeMonths(r, days)`, `rates` each
+ * view's log(1 − h)), the piecewise hazard (ruling 1, generalised): `piecewiseMonth(L, bounds,
+ * rates)`, L = log(1 − u), 0 = never. Its first segment is the unswitched expression, so draws
+ * before the first regime are unchanged.
  */
-function initiationMonth(stream: number, l1: number, l2: number | null, T0: number): number {
+function initiationMonth(
+  stream: number,
+  l1: number,
+  bounds: number[] | null,
+  rates: number[]
+): number {
   const u = drawOn(stream, P.INIT, 0);
-  if (l2 === null) return Math.max(1, Math.ceil(log(1 - u) / l1));
-  const L = log(1 - u);
-  if (l1 < 0) {
-    const T = Math.max(1, Math.ceil(L / l1));
-    if (T <= T0) return T;
-  }
-  return l2 < 0 ? T0 + Math.max(1, Math.ceil((L - T0 * l1) / l2)) : 0;
+  if (bounds === null) return Math.max(1, Math.ceil(log(1 - u) / l1));
+  return piecewiseMonth(log(1 - u), bounds, rates);
 }
 
 /**
@@ -848,9 +899,9 @@ function initiationDay(run: Run, stream: number, T: number, r: Day): Day | null 
  * The k-th simulated project on T11 row i, initiated on `day` with `existing` units on the parcel
  * (0 once it has been demolished in the run), on its `(entity, k)` stream: pathway, first stage
  * and size (§4.4.4), then the ordinary stage steps with the simulated revision rule. Null if no
- * size level gains a home. `after`: its month started on or after the law switch, so its size
- * row, yields, envelope and Local Program come from the after view (ruling 1: a project keeps
- * the regime of the month it initiated in).
+ * size level gains a home. `view`: the regime its initiation month ran on (0 = `run.parcels`, k =
+ * `run.regimes[k − 1]`), whose size row, yields, envelope and Local Program it takes (ruling 1: a
+ * project keeps the regime of the month it initiated in).
  */
 function simulatedProject(
   run: Run,
@@ -860,9 +911,9 @@ function simulatedProject(
   k: number,
   day: Day,
   existing: number,
-  after: boolean
+  view: number
 ): Schedule | null {
-  const sw = after ? run.sw! : null;
+  const sw = view > 0 ? run.regimes[view - 1] : null;
   const p = sw ? sw.parcels : run.parcels;
   const cal = run.newCal;
   const pathway: Pathway = p.localProgram[i] === 1 ? 'streamlined' : newPathway(cal, stream);
@@ -911,9 +962,17 @@ function simulatedProject(
     multiPhase: false,
     phase: null
   };
-  // only on a switch run, so an unswitched Schedule (and every golden) is unchanged
-  if (run.sw !== null) s.afterSwitch = after;
+  // only on a run with regimes, so every other Schedule (and every golden) is unchanged
+  if (run.regimes.length > 0) s.regime = view;
   return s;
+}
+
+/**
+ * Whether a row's holders void its reservation from day `d`: one never ends (a completion, an open
+ * end or a skipped row: `blocked`) or exited on or after `d`.
+ */
+function holdVoids(hold: Hold | undefined, d: Day): boolean {
+  return hold !== undefined && (hold.blocked || (hold.lastExit !== null && hold.lastExit >= d));
 }
 
 /**
@@ -923,38 +982,79 @@ function simulatedProject(
  * is at risk again from x with k + 1; a completion or an open end finishes it. The parcel is
  * demolished at the first construction entry of any project on it, and every later project on
  * it has 0 existing units. A parcel no project holds, whose first initiation draw is above its
- * `skipAbove` bound, cannot initiate by the horizon and is passed over on that one draw.
+ * `skipAbove` bound, cannot initiate by the horizon and is passed over on that one draw. With
+ * regimes, each initiation month runs on its view (`initiationMonth`, `simulatedProject`).
+ *
+ * A row reserved from day d (`reservedFrom`) keeps its reservation unless a project began on it
+ * before d and had not exited before d: a holder that voids it (`holdVoids`), or a simulated
+ * project initiated before d that completes, stays open or exits on or after d. While kept, the
+ * row's loop stops at the first initiation day ≥ d; once voided it runs exactly as unreserved.
+ * Every reserved row, candidate or not, is reported once to `sink.reservation`.
  */
 function simulatedPass(run: Run, holds: Holds, sink: Sink): void {
-  const { parcels, pre, st, sw } = run;
+  const { parcels, pre, st, regimes, days, reservedFrom } = run;
   const { candidates, entity, log1mh } = pre;
   const skip = pre.skipAbove(run.horizon);
   const job = newJob(run);
+  const K = regimes.length;
+  const rates = new Array<number>(K + 1);
   for (let c = 0; c < candidates.length; c++) {
     const i = candidates[c];
     let r = run.asOf;
     let demolished = false;
     let stream = streamOf(run.sh, entity[c], 0);
+    // the reservation day while it is still kept; 0 = none or voided
+    let d = reservedFrom === null ? 0 : reservedFrom[i];
+    const reserved = d > 0;
     if (st.held[i] === 1) {
       const hold = holds.get(i);
-      if (hold?.blocked) continue;
+      if (d > 0 && holdVoids(hold, d)) d = 0;
+      if (hold?.blocked) {
+        if (reserved) sink.reservation?.(i, false);
+        continue;
+      }
       r = Math.max(run.asOf, hold?.lastExit ?? run.asOf);
       demolished = hold !== undefined && hold.demolished !== null;
-    } else if (drawOn(stream, P.INIT, 0) > skip[c]) continue;
+    } else if (drawOn(stream, P.INIT, 0) > skip[c]) {
+      if (reserved) sink.reservation?.(i, true);
+      continue;
+    }
+    if (K > 0) {
+      rates[0] = log1mh[i];
+      for (let j = 0; j < K; j++) rates[j + 1] = regimes[j].pre.log1mh[i];
+    }
     for (let k = 0; ; k++) {
       if (k > 0) stream = streamOf(run.sh, entity[c], k);
-      const T0 = sw === null ? 0 : switchMonth(r, sw.day);
-      const T = initiationMonth(stream, log1mh[i], sw === null ? null : sw.pre.log1mh[i], T0);
+      const bounds = K > 0 ? regimeMonths(r, days) : null;
+      const T = initiationMonth(stream, log1mh[i], bounds, rates);
       const day = initiationDay(run, stream, T, r);
       if (day === null) break;
+      if (d > 0 && day >= d) break;
+      let view = 0;
+      if (bounds !== null) while (view < K && bounds[view] < T) view++;
       const existing = demolished ? 0 : parcels.existingUnits[i];
-      const s = simulatedProject(run, job, i, stream, k, day, existing, sw !== null && T > T0);
+      const s = simulatedProject(run, job, i, stream, k, day, existing, view);
       if (s === null) break;
       sink.schedule(s);
+      // initiated before d (or there is no live reservation): void it unless it exits before d
+      if (d > 0 && (s.end.kind !== 'exit' || s.end.day >= d)) d = 0;
       if (s.entered.construction !== undefined) demolished = true;
       if (s.end.kind !== 'exit') break;
       r = s.end.day;
     }
+    if (reserved) sink.reservation?.(i, d > 0);
+  }
+  if (reservedFrom !== null) reservationsOff(run, holds, sink, candidates);
+}
+
+/** Reports the reserved rows that are not candidates: kept unless a holder voids them. */
+function reservationsOff(run: Run, holds: Holds, sink: Sink, candidates: Int32Array): void {
+  const rf = run.reservedFrom!;
+  let c = 0;
+  for (let i = 0; i < rf.length; i++) {
+    while (c < candidates.length && candidates[c] < i) c++;
+    if (rf[i] === 0 || (c < candidates.length && candidates[c] === i)) continue;
+    sink.reservation?.(i, !holdVoids(holds.get(i), rf[i]));
   }
 }
 

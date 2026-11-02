@@ -32,7 +32,9 @@ export function computeDatasetVersion(input: {
 /**
  * Code whose bytes shape the published data. geometry.ts is the shared projection (transit);
  * generator, timelapse and plan/types.ts feed the scenario step (yields, the Day type and time
- * helpers, FeatureId).
+ * helpers, FeatureId). The lesscars step runs the simulation engine, so sim/scenario, sim/levers
+ * and scoreboard shape the published data too (whole directories: over-hashing only costs a new
+ * version on the next build).
  */
 const PATHS = [
   'pipeline',
@@ -40,7 +42,10 @@ const PATHS = [
   'src/lib/generator',
   'src/lib/timelapse',
   'src/lib/plan/geometry.ts',
-  'src/lib/plan/types.ts'
+  'src/lib/plan/types.ts',
+  'src/lib/sim/scenario',
+  'src/lib/sim/levers',
+  'src/lib/scoreboard'
 ];
 const EXCLUDES = [
   ':(exclude)pipeline/sources.lock.json',

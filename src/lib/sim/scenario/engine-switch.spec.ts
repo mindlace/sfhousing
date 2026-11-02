@@ -1,5 +1,6 @@
-// Plan 2 Task 9: the time-switched envelope (ruling 1, the law switch). From `lawSwitch.day` a
-// second parcels view is in force, and a project keeps the regime of the month it initiated in.
+// Plan 2 Task 9: the time-switched envelope (ruling 1, the law switch), restored by lesscars plan 1
+// Task 4 as a single regime. From `regimes[0].day` a second parcels view is in force, and a project
+// keeps the regime of the month it initiated in.
 import { describe, expect, it } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
 import { parseCalibration } from '$lib/timelapse/model';
@@ -12,7 +13,7 @@ import miniCalibrationJson from './fixtures/mini-calibration.json';
 import { miniCity } from './fixtures/mini-parcels';
 import { miniPolicy } from './fixtures/mini-policy';
 import { MINI_AS_OF, MINI_HORIZON, miniProjectsJson } from './fixtures/mini-projects';
-import { buildSimInput, precomputeOf, switchMonth } from './input';
+import { buildSimInput, precomputeOf, regimeMonths } from './input';
 import { monthsOf, netOf, shownSeries } from './score';
 import { simulateDetailed, simulateNet } from './simulate';
 import type { Schedule, SimInput } from './types';
@@ -20,6 +21,7 @@ import type { Schedule, SimInput } from './types';
 const H = MINI_HORIZON;
 // the retired CURRENT_LAW_SWITCH day (SB 79 one year after the 7th-cycle Housing Element due date)
 const DAY = dayOf(2032, 1, 31);
+const switchMonth = (r: Day, day: Day) => regimeMonths(r, [day])[0];
 const seeds = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
 
 function setup() {
@@ -78,7 +80,7 @@ function monthOf(r: Day, d: Day): number {
 const startDay = (s: Schedule): Day => s.revisions[0].day;
 const afterRegime = (r: Day, s: Schedule) => monthOf(r, startDay(s)) > switchMonth(r, DAY);
 
-describe('switchMonth', () => {
+describe('regimeMonths (one day)', () => {
   it('counts the initiation months from r that start before day', () => {
     const r = MINI_AS_OF;
     const start = (T: number) => r + 1 + Math.floor((T - 1) * MONTH_DAYS);
@@ -95,13 +97,13 @@ describe('engine law switch', () => {
   it('an after-view equal to the base gives the unswitched run, seeds 1-20', () => {
     const { base, fzp } = setup();
     const view = parcelsView(base.parcels, fzp, base.parcels.localProgram);
-    const input: SimInput = { ...base, lawSwitch: { day: DAY, parcels: view } };
+    const input: SimInput = { ...base, regimes: [{ day: DAY, parcels: view }] };
     let sims = 0;
     for (const seed of seeds(20)) {
       const was = simulateDetailed(base, seed, H);
       const now = simulateDetailed(input, seed, H);
-      // a switch run tags its simulated schedules; the timelines are the same
-      for (const s of now.schedules) delete s.afterSwitch;
+      // a regime run tags its simulated schedules; the timelines are the same
+      for (const s of now.schedules) delete s.regime;
       expect(now).toEqual(was);
       sims += was.schedules.filter((s) => s.origin === 'simulated').length;
     }
@@ -119,7 +121,7 @@ describe('engine law switch', () => {
     const plan: SimInput = {
       ...base,
       parcels: parcelsView(base.parcels, before, lp),
-      lawSwitch: { day: DAY, parcels: parcelsView(base.parcels, after, lp) }
+      regimes: [{ day: DAY, parcels: parcelsView(base.parcels, after, lp) }]
     };
     const idA = base.parcels.id[onlyAfter];
     const idB = base.parcels.id[onlyBefore];
@@ -151,10 +153,12 @@ describe('engine law switch', () => {
     }
     const input: SimInput = {
       ...base,
-      lawSwitch: {
-        day: DAY,
-        parcels: parcelsView(base.parcels, after, base.parcels.localProgram)
-      }
+      regimes: [
+        {
+          day: DAY,
+          parcels: parcelsView(base.parcels, after, base.parcels.localProgram)
+        }
+      ]
     };
     const yieldsOf = (t: EnvelopeTable) => Array.from(t.yield.subarray(row * F, row * F + F));
     const was = yieldsOf(fzp);
@@ -192,10 +196,12 @@ describe('engine law switch', () => {
     }
     const input: SimInput = {
       ...base,
-      lawSwitch: {
-        day: DAY,
-        parcels: parcelsView(base.parcels, after, base.parcels.localProgram)
-      }
+      regimes: [
+        {
+          day: DAY,
+          parcels: parcelsView(base.parcels, after, base.parcels.localProgram)
+        }
+      ]
     };
     const months = monthsOf(input.asOf, H);
     let differs = false;
@@ -211,7 +217,7 @@ describe('engine law switch', () => {
     expect(differs).toBe(true);
   });
 
-  it('afterSwitch records the view each simulated project ran on, seeds 1-50', () => {
+  it('regime records the view each simulated project ran on, seeds 1-50', () => {
     const { base, fzp } = setup();
     const after = copyOf(fzp);
     const F = base.parcels.fillLevels.length;
@@ -223,22 +229,24 @@ describe('engine law switch', () => {
     }
     const input: SimInput = {
       ...base,
-      lawSwitch: {
-        day: DAY,
-        parcels: parcelsView(base.parcels, after, base.parcels.localProgram)
-      }
+      regimes: [
+        {
+          day: DAY,
+          parcels: parcelsView(base.parcels, after, base.parcels.localProgram)
+        }
+      ]
     };
     let pre = 0;
     let post = 0;
     for (const seed of seeds(50)) {
       for (const s of simulateDetailed(input, seed, H).schedules) {
         if (s.origin !== 'simulated') {
-          expect(s.afterSwitch).toBeUndefined();
+          expect(s.regime).toBeUndefined();
           continue;
         }
         // the after view's yields are all >= 1000, the before view's all below
-        expect(s.afterSwitch).toBe(s.revisions[0].units >= 1000);
-        if (s.afterSwitch) post++;
+        expect(s.regime).toBe(s.revisions[0].units >= 1000 ? 1 : 0);
+        if (s.regime === 1) post++;
         else pre++;
       }
     }
@@ -246,7 +254,7 @@ describe('engine law switch', () => {
     expect(post).toBeGreaterThan(0);
   });
 
-  it('afterSwitch picks the Local Program column of the view it ran on', () => {
+  it('regime picks the Local Program column of the view it ran on', () => {
     const { base, fzp } = setup();
     const [row] = freeCandidates(base);
     const lpBefore = base.parcels.localProgram.slice();
@@ -256,7 +264,7 @@ describe('engine law switch', () => {
     const plan: SimInput = {
       ...base,
       parcels: parcelsView(base.parcels, fzp, lpBefore),
-      lawSwitch: { day: DAY, parcels: parcelsView(base.parcels, fzp, lpAfter) }
+      regimes: [{ day: DAY, parcels: parcelsView(base.parcels, fzp, lpAfter) }]
     };
     const id = base.parcels.id[row];
     let pre = 0;
@@ -265,8 +273,8 @@ describe('engine law switch', () => {
     for (const seed of seeds(200)) {
       for (const s of simulateDetailed(plan, seed, H).schedules) {
         if (s.origin !== 'simulated' || s.parcelIds[0] !== id) continue;
-        expect(typeof s.afterSwitch).toBe('boolean');
-        if (s.afterSwitch) {
+        expect(typeof s.regime).toBe('number');
+        if (s.regime === 1) {
           post++;
           if (s.pathway !== 'streamlined') routed = true;
         } else {
@@ -282,17 +290,17 @@ describe('engine law switch', () => {
     expect(routed).toBe(true);
   });
 
-  it('leaves afterSwitch absent on a run without a switch', () => {
+  it('leaves regime absent on a run without regimes', () => {
     const { base } = setup();
     const ss = simulateDetailed(base, 1, H).schedules;
     expect(ss.length).toBeGreaterThan(0);
-    expect(ss.some((s) => 'afterSwitch' in s)).toBe(false);
+    expect(ss.some((s) => 'regime' in s)).toBe(false);
   });
 
   it('throws RangeError when the switch day is not after asOf', () => {
     const { base } = setup();
     for (const day of [base.asOf, base.asOf - 1]) {
-      const input: SimInput = { ...base, lawSwitch: { day, parcels: base.parcels } };
+      const input: SimInput = { ...base, regimes: [{ day, parcels: base.parcels }] };
       expect(() => simulateDetailed(input, 1, H)).toThrow(RangeError);
     }
   });

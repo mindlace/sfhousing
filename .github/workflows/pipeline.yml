@@ -5,11 +5,17 @@ on:
     paths:
       - 'pipeline/**'
       - 'src/lib/data/**'
+      - 'src/lib/sim/scenario/**'
+      - 'src/lib/sim/levers/**'
+      - 'src/lib/scoreboard/**'
       - '.github/workflows/pipeline.yml'
   push:
     paths:
       - 'pipeline/**'
       - 'src/lib/data/**'
+      - 'src/lib/sim/scenario/**'
+      - 'src/lib/sim/levers/**'
+      - 'src/lib/scoreboard/**'
       - '.github/workflows/pipeline.yml'
   workflow_dispatch:
 

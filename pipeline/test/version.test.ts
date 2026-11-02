@@ -102,6 +102,10 @@ describe('codeTreeHash', () => {
     mkdirSync(join(dir, 'src/lib/plan'), { recursive: true });
     mkdirSync(join(dir, 'src/lib/generator'), { recursive: true });
     mkdirSync(join(dir, 'src/lib/timelapse'), { recursive: true });
+    mkdirSync(join(dir, 'src/lib/sim/scenario'), { recursive: true });
+    mkdirSync(join(dir, 'src/lib/sim/levers'), { recursive: true });
+    mkdirSync(join(dir, 'src/lib/sim/other'), { recursive: true });
+    mkdirSync(join(dir, 'src/lib/scoreboard'), { recursive: true });
     writeFileSync(join(dir, 'pipeline/a.ts'), 'export const a = 1;\n');
     writeFileSync(join(dir, 'src/lib/data/b.ts'), 'export const b = 2;\n');
     writeFileSync(join(dir, 'src/lib/plan/geometry.ts'), 'export const g = 3;\n');
@@ -109,6 +113,10 @@ describe('codeTreeHash', () => {
     writeFileSync(join(dir, 'src/lib/plan/types.ts'), 'export type T = 1;\n');
     writeFileSync(join(dir, 'src/lib/generator/gen.ts'), 'export const gen = 5;\n');
     writeFileSync(join(dir, 'src/lib/timelapse/time.ts'), 'export const tl = 6;\n');
+    writeFileSync(join(dir, 'src/lib/sim/scenario/engine.ts'), 'export const e = 7;\n');
+    writeFileSync(join(dir, 'src/lib/sim/levers/apply.ts'), 'export const l = 8;\n');
+    writeFileSync(join(dir, 'src/lib/sim/other/x.ts'), 'export const x = 9;\n');
+    writeFileSync(join(dir, 'src/lib/scoreboard/index.ts'), 'export const sb = 10;\n');
     git('add', '.');
     git('commit', '-q', '-m', 'code');
     return { dir, git };
@@ -148,7 +156,10 @@ describe('codeTreeHash', () => {
   it.each([
     ['src/lib/generator', 'src/lib/generator/gen.ts'],
     ['src/lib/timelapse', 'src/lib/timelapse/time.ts'],
-    ['src/lib/plan/types.ts', 'src/lib/plan/types.ts']
+    ['src/lib/plan/types.ts', 'src/lib/plan/types.ts'],
+    ['src/lib/sim/scenario', 'src/lib/sim/scenario/engine.ts'],
+    ['src/lib/sim/levers', 'src/lib/sim/levers/apply.ts'],
+    ['src/lib/scoreboard', 'src/lib/scoreboard/index.ts']
   ])('codeTreeHash changes when a file under %s changes', async (_label, file) => {
     const { dir, git } = tempRepo();
     const clean = await codeTreeHash(dir);
@@ -159,5 +170,12 @@ describe('codeTreeHash', () => {
     const committed = await codeTreeHash(dir);
     expect(committed).not.toBe(clean);
     expect(committed).not.toBe(dirty);
+  });
+  it('does not cover other sim code', async () => {
+    const { dir, git } = tempRepo();
+    const clean = await codeTreeHash(dir);
+    writeFileSync(join(dir, 'src/lib/sim/other/x.ts'), 'export const x = 10;\n');
+    git('commit', '-q', '-am', 'other sim');
+    expect(await codeTreeHash(dir)).toBe(clean);
   });
 });

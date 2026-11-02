@@ -42,10 +42,10 @@ export interface Schedule {
     of: number;
     start: 'scheduled' | 'estimated'; // scheduled = its permitFiled is the published plan date; estimated = the phaseGap stagger
   } | null; // a phase sub-project of a multi-phase master
-  // A simulated project on a run with `lawSwitch`: true when its initiation month started on or
-  // after the switch, so it ran on the after view (size row, yields, envelope, Local Program).
-  // Absent on every other Schedule, including all of a run without a switch.
-  afterSwitch?: boolean;
+  // A simulated project on a run with `regimes`: the view its initiation month ran on (size row,
+  // yields, envelope, Local Program), 0 = `input.parcels`, k = `regimes[k - 1]`. Absent on every
+  // other Schedule, including all of a run without regimes.
+  regime?: number;
   // On a run whose input has `newProjects`: true when the schedule's job ran on `calibration`
   // (a pipeline row past preApplication, or a phase), so its map bar reads the in-flight lookups
   // (Call 15). Absent on every other Schedule, so a run without lever timers is unchanged.
@@ -63,12 +63,18 @@ export type SimInput = {
   // size, revision and phaseGap always read `calibration`.
   newProjects?: { calibration: Calibration; scale: StageScale }; // absent = calibration, scale 1
   inFlightScale?: StageScale; // absent = 1
-  // The time-switched envelope (plan 2 ruling 1): a simulated project whose initiation month starts
-  // on or after `day` runs on `parcels` (size row, yields, envelope, Local Program) and its
-  // initiation hazard switches there too; in-flight rows keep `parcels` above. `parcels` has the
-  // same rows, ids and existing columns as the base. Requires asOf < day (`runEngine` throws a
-  // RangeError otherwise). Absent = no switch.
-  lawSwitch?: { day: Day; parcels: ScenarioParcels };
+  // Dated regimes (the retired law switch, plan 2 ruling 1, generalised): from `regimes[k].day` the
+  // view `regimes[k].parcels` is in force. A simulated project runs on the view of the month it
+  // initiated in (size row, yields, envelope, Local Program) and its initiation hazard is
+  // piecewise over the views; in-flight rows keep `parcels` above. Days strictly ascending and
+  // every day > asOf; each view has the same rows, ids and existingUnits as `parcels`
+  // (`runEngine` throws a RangeError otherwise). Absent or [] = none.
+  regimes?: { day: Day; parcels: ScenarioParcels }[];
+  // Per T11 row, the day the parcel is reserved from (a later conversion's start), 0 = none. A
+  // reservation is kept unless a project began on the row before the day and had not exited by
+  // it; a kept one stops simulated initiations on or after the day (`Sink.reservation` reports
+  // each). Same length as `parcels.count`, every non-zero day > asOf. Absent = none.
+  reservedFrom?: Int32Array;
 };
 export type Simulate = (input: SimInput, seed: number, horizon: Day) => Schedule[];
 
