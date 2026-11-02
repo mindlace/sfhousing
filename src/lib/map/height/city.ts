@@ -466,7 +466,8 @@ function* cityBuild(input: CityInput): Generator<void, CityResult, void> {
             zM: 0,
             text: contourLabelText(hi[k]),
             priority: lenM,
-            roomM: Infinity // contour labels sit on the line: only collisions thin them
+            roomM: Infinity, // contour labels sit on the line: only collisions thin them
+            owners: [srcA[k], srcB[k]]
           });
           break;
         }

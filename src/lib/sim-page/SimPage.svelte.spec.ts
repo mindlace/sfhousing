@@ -1074,6 +1074,54 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
       expect(lastLayer()!.props.mode).toEqual({ kind: 'plain' });
     });
 
+    it('the selected rule leaving through Undo of its add clears the selection', async () => {
+      stub.reset();
+      await page.viewport(1024, 768);
+      await setup();
+      await toReady();
+      const w = workers.at(-1)!;
+      emitHeights(w);
+      await expect.poll(() => w.lastOf('brushCatalog')).toBeTruthy();
+      w.emit({
+        type: 'brushCatalog',
+        reqId: w.lastOf('brushCatalog')!.reqId,
+        catalog: testCatalog()
+      });
+      await page.getByRole('button', { name: 'Add transit rule' }).click();
+      await page.getByRole('checkbox', { name: /^Muni Metro/ }).click();
+      await page.getByRole('button', { name: 'Save rule' }).click();
+      await showToggle().click();
+      await expect.poll(() => lastLayer()?.props.mode).toMatchObject({ kind: 'rule' });
+      await page.getByRole('button', { name: /^Undo/ }).click();
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'plain' });
+      await page.getByRole('button', { name: /^Redo/ }).click();
+      await expect.element(showToggle()).toHaveAttribute('aria-pressed', 'false');
+      expect(lastLayer()!.props.mode).toEqual({ kind: 'plain' });
+    });
+
+    it('with Zoning height limits off, pressing Show on map turns them on', async () => {
+      stub.reset();
+      await page.viewport(1024, 768);
+      const mem = new MemoryStorage();
+      mem.setItem(
+        SIM_KEY,
+        JSON.stringify({ v: 1, savedAt: 'x', plan: SIM_CODEC.serialize(RULES_DOC) })
+      );
+      mem.setItem(
+        VIEW_KEY,
+        JSON.stringify({ transitStops: false, transitAccess: true, heightLimits: false })
+      );
+      await setup({ storage: () => mem });
+      await toReady();
+      emitHeights(workers.at(-1)!);
+      await new Promise((res) => setTimeout(res, 50));
+      expect(overlayIds()).not.toContain(LIMITS_LAYER_ID);
+      await showToggle().click();
+      await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
+      expect(lastLayer()!.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
+      expect(JSON.parse(mem.getItem(VIEW_KEY)!).heightLimits).toBe(true);
+    });
+
     it('Run clears the selection', async () => {
       await withRule();
       await showToggle().click();

@@ -14,6 +14,14 @@ export interface LabelSet {
   /** lng, lat, zM per label. */
   position: Float64Array;
   minZoom: Uint8Array;
+  /**
+   * The SRC_* codes of the sources under each label, flat: label i's are
+   * `owners[ownerStarts[i]..ownerStarts[i + 1]]` (a lid label: every source in its region; a
+   * contour label: both sides of its chain). Absent: the label is never dimmed by a rule
+   * selection.
+   */
+  owners?: Uint16Array;
+  ownerStarts?: Uint32Array;
 }
 
 /** City-wide contour polylines, flat on the ground. Chain i spans starts[i]..starts[i + 1]. */

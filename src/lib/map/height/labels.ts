@@ -42,6 +42,8 @@ export interface LabelCandidate {
   priority: number;
   /** Radius (m) of the largest circle the label may occupy; the box must fit inside it. */
   roomM: number;
+  /** The SRC_* codes under the label (lid: its region's sources; contour: both sides). */
+  owners?: readonly number[];
 }
 
 /** minZoom per candidate (smallest listed zoom where it is placed), NO_ZOOM = never. */
@@ -104,13 +106,28 @@ export function toLabelSet(c: readonly LabelCandidate[], minZoom: Uint8Array): L
   const text: string[] = [];
   const pos: number[] = [];
   const zooms: number[] = [];
+  const owners: number[] = [];
+  const ownerStarts: number[] = [0];
+  let hasOwners = false;
   for (let i = 0; i < c.length; i++) {
     if (minZoom[i] === NO_ZOOM) continue;
     text.push(c[i].text);
     pos.push(c[i].lng, c[i].lat, c[i].zM);
     zooms.push(minZoom[i]);
+    owners.push(...(c[i].owners ?? []));
+    ownerStarts.push(owners.length);
+    hasOwners ||= c[i].owners !== undefined;
   }
-  return { text, position: Float64Array.from(pos), minZoom: Uint8Array.from(zooms) };
+  const set: LabelSet = {
+    text,
+    position: Float64Array.from(pos),
+    minZoom: Uint8Array.from(zooms)
+  };
+  if (hasOwners) {
+    set.owners = Uint16Array.from(owners);
+    set.ownerStarts = Uint32Array.from(ownerStarts);
+  }
+  return set;
 }
 
 /**

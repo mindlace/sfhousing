@@ -333,6 +333,13 @@ function* lidBuild(
 
   // Labels: one per component, at the label point of its part with the most room (priority: the
   // component's cells); in paint mode, one per part, each with its own room to grow.
+  // The sources under a part: the paint part is paint; the rest is every other source of its component.
+  const localSources: Set<number>[] = localComp.map(() => new Set<number>());
+  for (let p = 0; p < pSrc.length; p++) localSources[pLocal[p]].add(pSrc[p]);
+  const ownersOf = (local: number, painted: boolean): number[] =>
+    painted
+      ? [SRC_PAINT]
+      : [...localSources[local]].filter((s) => s !== SRC_PAINT || localSources[local].size === 1);
   const candidate = (local: number, g: number, room: number, priority: number): LabelCandidate => {
     const i = parts.at[g];
     const s = model.componentStories[localComp[local]];
@@ -343,7 +350,8 @@ function* lidBuild(
       zM: storiesToM(s),
       text: lidLabelText(s, room),
       priority,
-      roomM: parts.dist[g]
+      roomM: parts.dist[g],
+      owners: ownersOf(local, g % 2 === 1)
     };
   };
   const plain: LabelCandidate[] = [];
@@ -373,7 +381,10 @@ function* lidBuild(
     : {
         text: [...labelSet.text],
         position: labelSet.position.slice(),
-        minZoom: labelSet.minZoom.slice()
+        minZoom: labelSet.minZoom.slice(),
+        ...(labelSet.owners
+          ? { owners: labelSet.owners.slice(), ownerStarts: labelSet.ownerStarts!.slice() }
+          : {})
       };
 
   const nPieces = pStories.length;

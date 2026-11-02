@@ -19,7 +19,7 @@ import {
   PAN_STEP_PX,
   heightLimitsLayer
 } from './limits-layer';
-import { GLAZE_ALPHA, type LimitsView } from './limits-style';
+import { DIM_ALPHA, GLAZE_ALPHA, type LimitsView } from './limits-style';
 import { lotBlock, LOT_D, runLids, scene, tinyLimits, toLngLat } from './test/fixtures';
 import type { HeightCity, HeightLids } from './types';
 
@@ -363,6 +363,29 @@ describe('HeightLimitsLayer on the GPU', () => {
     expect(subIds()).toContain(`${LIMITS_LAYER_ID}-rims-dashed`);
     await render([limits()], view(STREET, 17));
     expect(subIds()).not.toContain(`${LIMITS_LAYER_ID}-rims-dashed`);
+  });
+
+  it('rule mode draws the labels of other sources in a dimmed sublayer; plain draws one set', async () => {
+    const dimId = `${LIMITS_LAYER_ID}-lid-labels-text-dim`;
+    const fullId = `${LIMITS_LAYER_ID}-lid-labels-text`;
+    // a selected rule that decides no lot: every lid label belongs to another source
+    await render([limits(TINY, { kind: 'rule', ruleId: 'none' })], view(STREET, 17));
+    await render([limits(TINY, { kind: 'rule', ruleId: 'none' })], view(STREET, 17));
+    expect(subIds()).toContain(dimId);
+    const dim = live().find((l) => l.id === dimId)!;
+    expect((dim.props.data as unknown[]).length).toBeGreaterThan(0);
+    const ink = hexToRgba(TOKENS.light['limit-ink']);
+    expect((dim.props as unknown as { getColor: number[] }).getColor).toEqual([
+      ink[0],
+      ink[1],
+      ink[2],
+      Math.round(ink[3] * DIM_ALPHA)
+    ]);
+    expect((live().find((l) => l.id === fullId)!.props.data as unknown[]).length).toBe(0);
+    await render([limits()], view(STREET, 17));
+    await render([limits()], view(STREET, 17));
+    expect(subIds()).not.toContain(dimId);
+    expect(errors).toEqual([]);
   });
 
   it('zooming across the fade keeps the sublayers and their GPU state', async () => {

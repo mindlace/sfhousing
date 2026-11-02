@@ -213,6 +213,12 @@ describe('createCityBuild', () => {
     const { city } = run(grid(lots, ['r1']));
     expect(city.sourceIds).toEqual(['r1']);
     expect(chainsTouchingSource(city, SRC_RULE0)).toBeGreaterThan(0);
+    // a contour label carries both sides of its chain, the rule on one of them for some
+    const { text, owners, ownerStarts } = city.labels;
+    expect(text.length).toBeGreaterThan(0);
+    expect(owners!.length).toBe(2 * text.length);
+    expect(ownerStarts!.length).toBe(text.length + 1);
+    expect([...owners!]).toContain(SRC_RULE0);
   });
 
   it('a long 4 | 40 chain is labelled "40+" from z15 or lower; labels lie on the ground', () => {

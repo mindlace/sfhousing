@@ -21,10 +21,12 @@ import { TOKENS, hexToRgba, type RGBA } from '$lib/map/palette';
 import { M_PER_DEG_LAT, M_PER_DEG_LNG } from '$lib/plan/geometry';
 import type { Theme } from '$lib/map/types';
 import {
+  DIM_ALPHA,
   LIDS_FADE,
   chainLook,
   chainWidthPx,
   glazeAlpha,
+  labelDim,
   lidsOpacity,
   resolveMode,
   rimLook,
@@ -81,6 +83,8 @@ interface Label {
   text: string;
   position: [number, number, number];
   minZoom: number;
+  /** The SRC_* codes under the label (see LabelSet); undefined: never dimmed. */
+  owners?: Uint16Array;
 }
 
 interface LineSets {
@@ -188,7 +192,11 @@ function labelsAt(set: LabelSet, z: number): Label[] {
     out.push({
       text: set.text[i],
       position: [p[3 * i], p[3 * i + 1], p[3 * i + 2]],
-      minZoom: set.minZoom[i]
+      minZoom: set.minZoom[i],
+      owners:
+        set.owners && set.ownerStarts
+          ? set.owners.subarray(set.ownerStarts[i], set.ownerStarts[i + 1])
+          : undefined
     });
   }
   return out;
@@ -252,6 +260,8 @@ const sameItems = <T>(a: readonly T[], b: readonly T[]) =>
 
 interface LabelsProps {
   set: LabelSet;
+  /** In rule mode, labels of other sources dim with their lids and contours. */
+  mode?: LimitsMode;
   ink: RGBA;
   halo: RGBA;
 }
@@ -274,6 +284,8 @@ export class LimitLabelsLayer extends CompositeLayer<LabelsProps & LayerProps> {
      * a new key whose kept set is unchanged keeps the same array, so the TextLayer keeps its data.
      */
     shown?: Memo<Label[]>;
+    /** `shown` split into full and dimmed labels, once per (shown, mode). */
+    split?: Memo<{ full: Label[]; dim: Label[] }>;
   };
 
   /**
@@ -305,7 +317,7 @@ export class LimitLabelsLayer extends CompositeLayer<LabelsProps & LayerProps> {
   }
 
   renderLayers(): Layer[] {
-    const { set, ink, halo } = this.props;
+    const { set, ink, halo, mode = { kind: 'plain' } } = this.props;
     const viewport = this.context.viewport;
     const key = (this.state.key = LimitLabelsLayer.labelKey(viewport));
     const z = Math.floor(viewport.zoom);
@@ -318,26 +330,44 @@ export class LimitLabelsLayer extends CompositeLayer<LabelsProps & LayerProps> {
       const next = declutterOn(all, viewport);
       return before && sameItems(before.value, next) ? before.value : next;
     })).value;
-    return [
+    const modeK = mode.kind === 'rule' ? `rule:${mode.source}` : mode.kind;
+    const { full, dim } = (this.state.split = memo(this.state.split, shown, modeK, () => {
+      const f: Label[] = [];
+      const d: Label[] = [];
+      for (const l of shown) (labelDim(l.owners, mode) ? d : f).push(l);
+      // no dimmed label: keep `shown` itself, so the TextLayer's data stays the same
+      return { full: d.length === 0 ? shown : f, dim: d };
+    })).value;
+    const text = (id: string, data: Label[], c: RGBA, h: RGBA) =>
       new TextLayer<Label>(
         this.getSubLayerProps({
-          id: 'text',
-          data: shown,
+          id,
+          data,
           getText: (d: Label) => d.text,
           getPosition: (d: Label) => d.position,
-          getColor: ink,
+          getColor: c,
           getSize: LABEL_SIZE_PX,
           sizeUnits: 'pixels',
           fontFamily: LABEL_FONT_FAMILY,
           fontWeight: LABEL_FONT_WEIGHT,
           outlineWidth: LABEL_OUTLINE_WIDTH,
-          outlineColor: halo,
+          outlineColor: h,
           fontSettings: LABEL_FONT_SETTINGS,
           characterSet: LABEL_CHARS,
           parameters: { depthCompare: 'always', depthWriteEnabled: false }
         })
-      ) as unknown as Layer
-    ];
+      ) as unknown as Layer;
+    const out = [text('text', full, ink, halo)];
+    if (dim.length)
+      out.push(
+        text(
+          'text-dim',
+          dim,
+          [ink[0], ink[1], ink[2], Math.round(ink[3] * DIM_ALPHA)],
+          [halo[0], halo[1], halo[2], Math.round(halo[3] * DIM_ALPHA)]
+        )
+      );
+    return out;
   }
 }
 
@@ -419,7 +449,7 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
       );
       out.push(...this.lineLayers('rims', lid, lidsOp));
       if (labelSet.text.length)
-        out.push(this.labelLayer('lid-labels', labelSet, lidsOp, ink, halo));
+        out.push(this.labelLayer('lid-labels', labelSet, mode, lidsOp, ink, halo));
     }
 
     const contourOp = 1 - lidsOp;
@@ -431,7 +461,7 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
       )).value;
       out.push(...this.lineLayers('contours', lines, contourOp));
       if (city.labels.text.length)
-        out.push(this.labelLayer('contour-labels', city.labels, contourOp, ink, halo));
+        out.push(this.labelLayer('contour-labels', city.labels, mode, contourOp, ink, halo));
     }
     return out;
   }
@@ -464,9 +494,16 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
     return out;
   }
 
-  private labelLayer(id: string, set: LabelSet, opacity: number, ink: RGBA, halo: RGBA): Layer {
+  private labelLayer(
+    id: string,
+    set: LabelSet,
+    mode: LimitsMode,
+    opacity: number,
+    ink: RGBA,
+    halo: RGBA
+  ): Layer {
     return new LimitLabelsLayer(
-      this.getSubLayerProps({ id, set, ink, halo, opacity, visible: opacity > 0 })
+      this.getSubLayerProps({ id, set, mode, ink, halo, opacity, visible: opacity > 0 })
     ) as unknown as Layer;
   }
 }

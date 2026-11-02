@@ -80,7 +80,7 @@ import {
   type LidLot
 } from '$lib/map/height/lids';
 import { countableMask } from '$lib/map/height/room';
-import type { HeightCity, HeightLids } from '$lib/map/height/types';
+import type { HeightCity, HeightLids, LabelSet } from '$lib/map/height/types';
 import { M_PER_DEG_LAT, M_PER_DEG_LNG } from '$lib/plan/geometry';
 import { packTimedTransferables } from '$lib/map/pack-timed';
 import type { TimedPackedCell, TimelineUpdate } from '$lib/map/types';
@@ -384,8 +384,16 @@ function buffersOf(arrays: readonly ArrayBufferView[]): ArrayBuffer[] {
   return [...new Set(arrays.map((a) => a.buffer as ArrayBuffer))];
 }
 
+const labelOwners = (l: LabelSet): ArrayBufferView[] =>
+  l.owners && l.ownerStarts ? [l.owners, l.ownerStarts] : [];
+
 function cityTransfer(c: HeightCity): ArrayBuffer[] {
-  return buffersOf([...Object.values(c.chains), c.labels.position, c.labels.minZoom]);
+  return buffersOf([
+    ...Object.values(c.chains),
+    c.labels.position,
+    c.labels.minZoom,
+    ...labelOwners(c.labels)
+  ]);
 }
 
 function lidsTransfer(l: HeightLids): ArrayBuffer[] {
@@ -401,8 +409,10 @@ function lidsTransfer(l: HeightLids): ArrayBuffer[] {
     w.piece,
     l.labels.position,
     l.labels.minZoom,
+    ...labelOwners(l.labels),
     l.paintLabels.position,
-    l.paintLabels.minZoom
+    l.paintLabels.minZoom,
+    ...labelOwners(l.paintLabels)
   ]);
 }
 

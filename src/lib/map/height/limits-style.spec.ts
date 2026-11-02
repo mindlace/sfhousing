@@ -7,6 +7,7 @@ import {
   chainLook,
   chainWidthPx,
   glazeAlpha,
+  labelDim,
   lidsOpacity,
   resolveMode,
   rimLook,
@@ -115,5 +116,20 @@ describe('limits style', () => {
       kind: 'rule',
       source: -1
     });
+  });
+
+  it('rule mode dims the labels with none of the selected rule under them', () => {
+    const sel = { kind: 'rule', source: SRC_RULE0 + 1 } as const;
+    // a lid label: every source of its region; a contour label: both sides
+    expect(labelDim([SRC_RULE0 + 1], sel)).toBe(false);
+    expect(labelDim([SRC_FZP, SRC_RULE0 + 1], sel)).toBe(false);
+    expect(labelDim([SRC_RULE0], sel)).toBe(true);
+    expect(labelDim([SRC_FZP, SRC_RULE0], sel)).toBe(true);
+    // a rule deciding nothing (-1) dims every label with owners
+    expect(labelDim([SRC_FZP], { kind: 'rule', source: -1 })).toBe(true);
+    // other modes and unowned labels never dim
+    expect(labelDim([SRC_FZP], PLAIN)).toBe(false);
+    expect(labelDim([SRC_FZP], PAINT)).toBe(false);
+    expect(labelDim(undefined, sel)).toBe(false);
   });
 });

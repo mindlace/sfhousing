@@ -259,6 +259,11 @@ describe('createLidBuild', () => {
     expect(l.limitsRev).toBe(41);
     expect(l.sourceIds).toEqual(['r1']);
     expect([...l.pieces.source]).toEqual([SRC_RULE0]);
+    // each label carries its lid's source, for the rule selection to dim by
+    expect([...l.labels.owners!]).toEqual(l.labels.text.map(() => SRC_RULE0));
+    expect([...l.labels.ownerStarts!]).toEqual(
+      l.labels.text.map((_, i) => i).concat(l.labels.text.length)
+    );
   });
 
   it('step(budget) returns false until done, result throws before, and matches a single run', () => {

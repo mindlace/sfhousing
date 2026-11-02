@@ -396,7 +396,7 @@
     feedbackTrigger.reset();
     feedback?.show(null);
     setTool('move');
-    selectedRule = null;
+    pickedRule = null;
     store.locked = true;
     run.run();
   }
@@ -450,8 +450,8 @@
   let lids = $state.raw<HeightLids | null>(null);
   /** `limits-layer`, lazy-loaded on mount (it pulls in deck's layers). */
   let limitsModule = $state.raw<typeof import('$lib/map/height/limits-layer') | null>(null);
-  /** The zoning rule shown on the map (Task 13); none yet. */
-  let selectedRule = $state.raw<string | null>(null);
+  /** The rule whose "Show on map" was pressed; `selectedRule` is it while it is still in the policy. */
+  let pickedRule = $state.raw<string | null>(null);
   /** The map's view at its latest `moveend` (or when it became ready). */
   let mapView = $state.raw<{
     zoom: number;
@@ -493,6 +493,20 @@
     show: (l) => (lids = l)
   });
 
+  // A rule that leaves the policy (Remove, Undo, a restore) is no longer selected, in the same
+  // render (no frame dims everything for a rule that is gone); the effect forgets it, so a Redo
+  // does not bring the selection back.
+  const selectedRule = $derived(
+    pickedRule !== null && store.policy.rules.some((r) => r.id === pickedRule) ? pickedRule : null
+  );
+  $effect(() => {
+    if (pickedRule !== null && selectedRule === null) pickedRule = null;
+  });
+  /** "Show on map" pressed or released. Showing a rule turns the limits view on, which it needs. */
+  function selectRule(id: string | null): void {
+    pickedRule = id;
+    if (id !== null && !viewPrefs.heightLimits) setView({ ...viewPrefs, heightLimits: true });
+  }
   /** Plain; with the brush or eraser chosen, paint-set limits stand out; a selected rule wins. */
   const limitsMode = $derived<LimitsView>(
     selectedRule !== null
@@ -501,11 +515,6 @@
         ? { kind: 'paint' }
         : { kind: 'plain' }
   );
-  // The selected rule leaves the policy (Remove, Undo, a restore): the selection goes with it.
-  $effect(() => {
-    if (selectedRule !== null && !store.policy.rules.some((r) => r.id === selectedRule))
-      selectedRule = null;
-  });
   const limitsOn = $derived(run.phase === 'setup' && viewPrefs.heightLimits);
 
   // Lids from LIDS_FADE's start: the view's bbox, clamped around the view centre (R14).
@@ -862,7 +871,7 @@
         announce={(m) => brush.announce(m, ANNOUNCE_MS)}
         onsaved={ruleSaved}
         {selectedRule}
-        onselectrule={(id) => (selectedRule = id)}
+        onselectrule={selectRule}
       />
     {/snippet}
     {#snippet custom()}

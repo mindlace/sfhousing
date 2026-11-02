@@ -97,6 +97,18 @@ export function wallAlpha(owner: number, mode: LimitsMode): number {
   return mode.kind === 'rule' && owner !== mode.source ? DIM_ALPHA : 1;
 }
 
+/**
+ * Whether a label dims in `mode`: in rule mode, one with none of the selected rule's lots under it
+ * (`owners`: the sources under the label). A label with no owners stays full.
+ */
+export function labelDim(owners: ArrayLike<number> | undefined, mode: LimitsMode): boolean {
+  return (
+    mode.kind === 'rule' &&
+    owners !== undefined &&
+    !Array.prototype.includes.call(owners, mode.source)
+  );
+}
+
 /** The lids' opacity: smoothstep over LIDS_FADE. Contours take 1 − it. */
 export function lidsOpacity(zoom: number): number {
   const t = Math.max(0, Math.min(1, (zoom - LIDS_FADE[0]) / (LIDS_FADE[1] - LIDS_FADE[0])));
