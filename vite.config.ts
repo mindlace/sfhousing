@@ -4,7 +4,7 @@ import VitestFlakeReporter from '@mindlace/chreode/reporters/vitest';
 import { fileURLToPath } from 'node:url';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
-import { clientTestConfig } from './vite.config.client-test';
+import { clientTestConfig } from './vite.config.client-test.js';
 
 /** Server specs whose assertions are wall-clock budgets: project perf, not server. */
 const SERVER_PERF_SPECS = ['src/**/*.bench.spec.ts', 'src/**/*.perf.spec.ts'];
