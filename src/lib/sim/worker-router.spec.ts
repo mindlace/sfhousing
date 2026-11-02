@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_LEVERS } from './levers/types';
 import { createWorkerRouter } from './router';
 import type { SimRequest } from './protocol';
+import type { PlaybackResponse } from './lesscars/types';
 import type { ScenarioRequest, ScenarioResponse, WorkerRequest } from './scenario/types';
 
 function setup() {
   const log: string[] = [];
   const editorReqs: SimRequest[] = [];
   const scenarioReqs: ScenarioRequest[] = [];
-  const posted: ScenarioResponse[] = [];
+  const posted: (ScenarioResponse | PlaybackResponse)[] = [];
   let created = 0;
   const router = createWorkerRouter({
     post: (msg) => posted.push(msg),
@@ -28,6 +29,13 @@ function setup() {
           scenarioReqs.push(r);
         },
         dispose: () => log.push('scenario:dispose')
+      };
+    },
+    createPlayback: () => {
+      log.push('playback:create');
+      return {
+        handle: (r) => log.push(`playback:${r.type}`),
+        dispose: () => log.push('playback:dispose')
       };
     }
   });
@@ -237,5 +245,114 @@ describe('worker router', () => {
       'scenario:initScenario',
       'scenario:prefetch'
     ]);
+  });
+
+  const initPlayback = { type: 'initPlayback', rev: 3, manifest: {}, plan: {}, sites: {} };
+
+  it('initPlayback disposes the editor and the scenario host, then shared requests go to playback', () => {
+    const t = setup();
+    t.send(initScenario, initPlayback, prefetch, { type: 'retryChunks' });
+    expect(t.log).toEqual([
+      'editor:dispose',
+      'scenario:create',
+      'scenario:initScenario',
+      'editor:dispose',
+      'scenario:dispose',
+      'playback:create',
+      'playback:initPlayback',
+      'playback:prefetch',
+      'playback:retryChunks'
+    ]);
+  });
+
+  it('creates the playback host once across playback inits', () => {
+    const t = setup();
+    t.send(initPlayback, { ...initPlayback, rev: 4 });
+    expect(t.log).toEqual([
+      'editor:dispose',
+      'playback:create',
+      'playback:initPlayback',
+      'editor:dispose',
+      'playback:initPlayback'
+    ]);
+  });
+
+  it('init and initScenario dispose the playback host', () => {
+    const t = setup();
+    t.send(initPlayback, init);
+    expect(t.log.slice(-2)).toEqual(['playback:dispose', 'editor:init']);
+    t.send(initPlayback, initScenario);
+    expect(t.log.slice(-4)).toEqual([
+      'editor:dispose',
+      'playback:dispose',
+      'scenario:create',
+      'scenario:initScenario'
+    ]);
+  });
+
+  it('after init, the shared requests go back to the editor', () => {
+    const t = setup();
+    t.send(initPlayback, init, prefetch);
+    expect(t.log.at(-1)).toBe('editor:prefetch');
+  });
+
+  it('playbackCard outside playback mode answers card null; inside, the host gets it', () => {
+    const t = setup();
+    t.send({ type: 'playbackCard', reqId: 1, projectId: 'x', day: 5 });
+    expect(t.posted).toEqual([{ type: 'playbackCard', reqId: 1, card: null }]);
+    t.send(initPlayback, { type: 'playbackCard', reqId: 2, projectId: 'x', day: 5 });
+    expect(t.log.at(-1)).toBe('playback:playbackCard');
+    t.send(initScenario, { type: 'playbackCard', reqId: 3, projectId: 'x', day: 5 });
+    expect(t.posted.at(-1)).toEqual({ type: 'playbackCard', reqId: 3, card: null });
+  });
+
+  it('in playback mode: parcelSummary answers null; reroll and setLevers answer bad-request without a scenario host', () => {
+    const t = setup();
+    t.send(
+      initPlayback,
+      summary,
+      { type: 'reroll', rev: 4, seed: 1 },
+      { type: 'setLevers', rev: 5, levers: DEFAULT_LEVERS }
+    );
+    expect(t.posted).toEqual([
+      { type: 'parcelSummary', reqId: 7, summary: null },
+      {
+        type: 'error',
+        rev: 4,
+        code: 'bad-request',
+        message: 'reroll needs a /sim scenario session'
+      },
+      {
+        type: 'error',
+        rev: 5,
+        code: 'bad-request',
+        message: 'setLevers needs a /sim scenario session'
+      }
+    ]);
+    expect(t.created()).toBe(0);
+  });
+
+  it('in playback mode, brush requests take the no-session answers', () => {
+    const t = setup();
+    t.send(initPlayback, { type: 'brushCatalog', reqId: 9 }, brush, outlines, preview);
+    expect(t.posted).toEqual([
+      { type: 'brushCatalog', reqId: 9, catalog: null },
+      {
+        type: 'brushLots',
+        reqId: 4,
+        result: { ok: false, reason: 'no-session', message: expect.any(String) }
+      },
+      {
+        type: 'lotOutlines',
+        reqId: 6,
+        result: { ok: false, reason: 'no-session', message: expect.any(String) }
+      },
+      {
+        type: 'previewBuildings',
+        reqId: 7,
+        result: { ok: false, reason: 'no-session', message: expect.any(String) }
+      }
+    ]);
+    expect(t.created()).toBe(0);
   });
 });

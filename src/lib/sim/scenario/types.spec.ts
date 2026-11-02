@@ -14,6 +14,7 @@ import type { BrushCatalog, BrushQuery } from '../levers/brushes';
 import type { LeverCapacity } from '../levers/resolve';
 import type { StageScale } from '../levers/timers';
 import type { SimLevers } from '../levers/types';
+import type { PlaybackRequest } from '../lesscars/types';
 import type * as Protocol from '../protocol';
 import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev, SimRequest } from '../protocol';
 import type * as Scenario from './types';
@@ -160,7 +161,7 @@ type RowScenarioResponse =
       unknownLots: number;
       fog: FogGrid; // map overlays Task 2
     };
-type RowWorkerRequest = SimRequest | RowScenarioRequest;
+type RowWorkerRequest = SimRequest | RowScenarioRequest | PlaybackRequest;
 
 // T8
 interface RowTimelineScore {
