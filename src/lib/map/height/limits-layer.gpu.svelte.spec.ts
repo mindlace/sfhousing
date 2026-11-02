@@ -116,13 +116,26 @@ describe('HeightLimitsLayer on the GPU', () => {
   let gl: WebGL2RenderingContext;
   const errors: Error[] = [];
 
-  const live = () =>
-    (deck as unknown as { layerManager: { getLayers(): Layer[] } }).layerManager.getLayers();
+  const lm = () =>
+    (
+      deck as unknown as {
+        layerManager: { getLayers(): Layer[]; needsUpdate(): string | false };
+      }
+    ).layerManager;
+  const live = () => lm().getLayers();
+  const nextFrame = () => new Promise<number>((r) => requestAnimationFrame(r));
 
-  /** Sets the layers, waits until deck has initialised and linked every drawn layer, then reads. */
+  /**
+   * Sets the layers and view, then waits on deck's own frames until it has settled: every drawn
+   * layer initialised and linked, no layer update pending and no redraw pending. Layer updates
+   * run only in deck's animation frame, and a composite sees a new viewport when it is drawn, so
+   * it updates its sublayers (the label text) on the frame after that: a fixed wait reads stale
+   * state whenever the machine is slow to give a frame. Our rAF callback, requested after
+   * deck's, runs after deck's frame.
+   */
   async function render(layers: Layer[], viewState: MapViewState) {
     deck.setProps({ layers, viewState });
-    const ready = () => {
+    const linked = () => {
       const all = live();
       if (!layers.every((l) => all.includes(l))) return false;
       const drawn = all.filter((l) => !l.isComposite);
@@ -135,12 +148,14 @@ describe('HeightLimitsLayer on the GPU', () => {
             .every((m) => (m.pipeline as { linkStatus?: string }).linkStatus !== 'pending')
       );
     };
-    for (let i = 0; i < 200 && !ready(); i++) {
-      deck.redraw('link');
-      await new Promise((r) => setTimeout(r, 10));
+    const settled = () => linked() && !lm().needsUpdate() && !deck.needsRedraw();
+    for (let i = 0; i < 300; i++) {
+      await nextFrame();
+      if (settled()) break;
+      // a draw skipped for a pending link is redrawn once it links
+      if (!linked()) deck.redraw('link');
     }
-    expect(ready()).toBe(true);
-    await new Promise((r) => setTimeout(r, 10));
+    expect(settled()).toBe(true);
     deck.redraw('test');
     const buf = new Uint8Array(CW * CH * 4);
     gl.readPixels(0, 0, CW, CH, gl.RGBA, gl.UNSIGNED_BYTE, buf);
@@ -560,8 +575,6 @@ describe('HeightLimitsLayer on the GPU', () => {
     const before = at[0] + (b - 1) * dLng;
     const after = at[0] + b * dLng;
     await render([layer], view([before, at[1]], 17, 30));
-    // a composite updates on the frame after a viewport change
-    await render([layer], view([before, at[1]], 17, 30));
     const text0 = find('lid-labels-text');
     const data0 = text0.props.data;
     expect((data0 as unknown[]).length).toBeGreaterThan(0);
@@ -570,12 +583,8 @@ describe('HeightLimitsLayer on the GPU', () => {
     const key0 = (labelLayer.state as { key: string }).key;
     // inside the step
     await render([layer], view([before - 0.3 * dLng, at[1]], 17, 30));
-    // a composite updates on the frame after a viewport change
-    await render([layer], view([before - 0.3 * dLng, at[1]], 17, 30));
     expect(find('lid-labels-text').props.data).toBe(data0);
     // across it
-    await render([layer], view([after, at[1]], 17, 30));
-    // a composite updates on the frame after a viewport change
     await render([layer], view([after, at[1]], 17, 30));
     expect((find('lid-labels').state as { key: string }).key).not.toBe(key0);
     expect(find('lid-labels-text').props.data).toBe(data0);
@@ -600,14 +609,12 @@ describe('HeightLimitsLayer on the GPU', () => {
     const shownMemo = () => (find('lid-labels').state as { shown: unknown }).shown;
     const at = (zoom: number) => view(STREET, zoom, 30);
     await render([layer], at(15.1));
-    await render([layer], at(15.1));
     const data0 = find('lid-labels-text').props.data;
     const memo0 = shownMemo();
     expect((data0 as unknown[]).length).toBeGreaterThan(0);
     const op0 = find('lid-labels').props.opacity;
     const runs = LimitLabelsLayer.collisions;
     for (const zoom of [15.2, 15.3, 15.45]) {
-      await render([layer], at(zoom));
       await render([layer], at(zoom));
       expect(find('lid-labels').props.opacity).not.toBe(op0);
       expect(LimitLabelsLayer.collisions).toBe(runs);
