@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LessCarsPlanFile, LessCarsSitesFile } from '$lib/data/lesscars/codec';
 import type { Manifest } from '$lib/data/manifest';
 import type { TimelineUpdate } from '$lib/map/types';
@@ -14,6 +14,8 @@ const render = (revision = 0): TimelineUpdate =>
 const card = { projectId: 'p' } as PlaybackCard;
 
 describe('PlaybackClient', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it('drops responses from an older init', () => {
     const w = new FakePlaybackWorker();
     const onTimeline = vi.fn();
@@ -49,6 +51,7 @@ describe('PlaybackClient', () => {
   it('card resolves with the answer, and null on crash', async () => {
     const w = new FakePlaybackWorker();
     const onCrash = vi.fn();
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const c = new PlaybackClient(w, { onCrash });
     const p = c.card('lc-build:lc:hwy:1', 25000);
     w.emit({ type: 'playbackCard', reqId: w.lastReqId(), card });
@@ -57,6 +60,7 @@ describe('PlaybackClient', () => {
     w.crash();
     expect(await q).toBeNull();
     expect(onCrash).toHaveBeenCalledTimes(1);
+    expect(err).toHaveBeenCalledWith('[lesscars] playback worker crashed', expect.anything());
     expect(w.terminated).toBe(true);
     expect(await c.card('y', 1)).toBeNull();
   });
