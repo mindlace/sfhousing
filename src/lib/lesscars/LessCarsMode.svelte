@@ -45,7 +45,7 @@
   import LessCarsCard from './LessCarsCard.svelte';
   import type { LessCarsData } from './load';
   import { installLessCarsLayers, type LessCarsLayers } from './map-layers';
-  import { scrubberMarkers } from './timeline-view';
+  import { mergeMarkers, scrubberMarkers } from './timeline-view';
   import TimelineDialog from './TimelineDialog.svelte';
 
   type MapLike = NonNullable<ReturnType<SimMapHandle['getMap']>>;
@@ -69,7 +69,20 @@
     type: 'FeatureCollection',
     features: []
   };
-  const markers = scrubberMarkers(plan, summary.switchDay);
+  const allMarkers = scrubberMarkers(plan, summary.switchDay);
+  /** The scrubber track's width; near markers fold into one so none overlaps (WCAG 2.5.8). */
+  let trackPx = $state(0);
+  const markers = $derived(mergeMarkers(allMarkers, trackPx));
+  let scrubberBox = $state<HTMLDivElement>();
+
+  // TimeScrubber is shared with /sim and left untouched, so its range input is measured here.
+  $effect(() => {
+    const track = scrubberBox?.querySelector('input[type="range"]');
+    if (!track) return;
+    const ro = new ResizeObserver(() => (trackPx = track.getBoundingClientRect().width));
+    ro.observe(track);
+    return () => ro.disconnect();
+  });
 
   const theme = useSystemTheme();
 
@@ -372,7 +385,7 @@
     {/if}
   </div>
 
-  <div class="absolute inset-x-0 bottom-0 z-20">
+  <div class="absolute inset-x-0 bottom-0 z-20" bind:this={scrubberBox}>
     <TimeScrubber
       asOf={LESSCARS_START}
       horizon={LESSCARS_HORIZON}

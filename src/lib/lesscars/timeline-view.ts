@@ -94,3 +94,34 @@ export function scrubberMarkers(f: LessCarsPlanFile, switchDay: Day): Marker[] {
     });
   return out;
 }
+
+const JUMP = 'Jump to ';
+
+/**
+ * Folds scrubber markers whose centres sit closer than `minPx` on a `trackPx`-wide track into one
+ * (WCAG 2.5.8: TimeScrubber places markers absolutely, so near ones overlap). Each marker is
+ * compared with the first of its group, where the merged marker is drawn: the merged marker keeps
+ * that marker's label and day, and its name lists every event it covers ("Jump to a; b").
+ * Markers must be sorted by day. With no measured track (`trackPx <= 0`), returns them unchanged.
+ */
+export function mergeMarkers(
+  markers: readonly Marker[],
+  trackPx: number,
+  minPx = 48,
+  start: Day = LESSCARS_START,
+  end: Day = LESSCARS_HORIZON
+): Marker[] {
+  if (!(trackPx > 0)) return [...markers];
+  const span = Math.max(end - start, 1);
+  const x = (d: Day) => ((Math.min(Math.max(d, start), end) - start) / span) * trackPx;
+  const out: { head: Marker; events: string[] }[] = [];
+  for (const m of markers) {
+    const g = out.at(-1);
+    const event = m.name.startsWith(JUMP) ? m.name.slice(JUMP.length) : m.name;
+    if (g && x(m.day) - x(g.head.day) < minPx) g.events.push(event);
+    else out.push({ head: m, events: [event] });
+  }
+  return out.map(({ head, events }) =>
+    events.length === 1 ? head : { ...head, name: `${JUMP}${events.join('; ')}` }
+  );
+}
