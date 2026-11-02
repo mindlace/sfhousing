@@ -115,7 +115,12 @@ describe('checkPlan', () => {
     const early = tinyPlan((q) => (byId(q, 'tram').startYear = 2027));
     expect(codes(early)).toContainEqual({ code: 'outside-window', project: 'tram' });
     const late = tinyPlan((q) => {
-      (byId(q, 'removal') as Extract<PlanProject, { kind: 'street-removal' }>).build = {
+      (
+        byId(q, 'removal') as Extract<
+          PlanProject,
+          { kind: 'highway-truncation' | 'street-removal' }
+        >
+      ).build = {
         startYear: 2068,
         durationMonths: { value: 24, provenance: TINY_PLAN.capacity[0].provenance }
       };
@@ -125,14 +130,23 @@ describe('checkPlan', () => {
 
   it('build-before-available', () => {
     const p = tinyPlan((q) => {
-      (byId(q, 'removal') as Extract<PlanProject, { kind: 'street-removal' }>).build!.startYear =
-        2031;
+      (
+        byId(q, 'removal') as Extract<
+          PlanProject,
+          { kind: 'highway-truncation' | 'street-removal' }
+        >
+      ).build!.startYear = 2031;
     });
     expect(codes(p)).toContainEqual({ code: 'build-before-available', project: 'removal' });
   });
 
   it('garage-site: a garage on a freed project that has a build, and one starting too early', () => {
-    const withBuild = tinyPlan((q) => (byId(q, 'garage').site = { project: 'removal' }));
+    const withBuild = tinyPlan(
+      (q) =>
+        ((byId(q, 'garage') as Extract<PlanProject, { kind: 'edge-garage' }>).site = {
+          project: 'removal'
+        })
+    );
     expect(codes(withBuild)).toContainEqual({ code: 'garage-site', project: 'garage' });
     const early = tinyPlan((q) => (byId(q, 'garage').startYear = 2033));
     expect(codes(early)).toContainEqual({ code: 'garage-site', project: 'garage' });
