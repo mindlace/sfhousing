@@ -66,6 +66,8 @@ interface ProjectBase {
   startYear: number;
   durationMonths: Param;
   dependsOn: string[];
+  /** Projects that must open no later than this one opens (a check, not a start constraint). */
+  opensAfter?: string[];
 }
 export type PlanProject =
   | (ProjectBase & {
@@ -197,7 +199,11 @@ function year(v: unknown, path: string): number {
 function lngLat(v: unknown, path: string): [number, number] {
   const a = array(v, path);
   if (a.length !== 2) fail(path, 'expected [lng, lat]');
-  return [num(a[0], at(path, 0)), num(a[1], at(path, 1))];
+  const lng = num(a[0], at(path, 0));
+  const lat = num(a[1], at(path, 1));
+  if (lng < -180 || lng > 180) fail(path, `longitude ${lng} is outside [-180, 180]`);
+  if (lat < -90 || lat > 90) fail(path, `latitude ${lat} is outside [-90, 90]`);
+  return [lng, lat];
 }
 
 function line(v: unknown, path: string): [number, number][] {
@@ -304,13 +310,14 @@ function parseProject(v: unknown, path: string): PlanProject {
     'edge-garage': ['site', 'spaces'],
     'car-shuttle': ['garages', 'alignment', 'peakTph']
   };
-  const r = record(v, path, [...BASE_KEYS, ...own[kind]]);
+  const r = record(v, path, [...BASE_KEYS, ...own[kind]], ['opensAfter']);
   const base = {
     id: str(r.id, at(path, 'id')),
     label: str(r.label, at(path, 'label')),
     startYear: year(r.startYear, at(path, 'startYear')),
     durationMonths: parseDuration(r.durationMonths, at(path, 'durationMonths')),
-    dependsOn: strings(r.dependsOn, at(path, 'dependsOn'))
+    dependsOn: strings(r.dependsOn, at(path, 'dependsOn')),
+    ...('opensAfter' in r ? { opensAfter: strings(r.opensAfter, at(path, 'opensAfter')) } : {})
   };
   const tph = () => parseParam(r.peakTph, at(path, 'peakTph'));
   const segs = () => segments(r.segments, at(path, 'segments'));

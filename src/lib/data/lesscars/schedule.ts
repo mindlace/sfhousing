@@ -34,13 +34,22 @@ export interface PlanSchedule {
   times: Map<string, ProjectTimes>;
 }
 
-const months = (m: number) => Math.round(m * MONTH_DAYS);
+/**
+ * `start` plus `months` calendar months (UTC), and a fractional remainder as rounded days. A
+ * project of 36 months from 1 January 2029 opens on 1 January 2032.
+ */
+export function monthsAfter(start: Day, months: number): Day {
+  const whole = Math.floor(months);
+  const d = new Date(start * 86400000);
+  const day = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + whole, d.getUTCDate()) / 86400000;
+  return day + Math.round((months - whole) * MONTH_DAYS);
+}
 
 export function schedulePlan(plan: LessCarsPlan): PlanSchedule {
   const times = new Map<string, ProjectTimes>();
   for (const p of plan.projects) {
     const startDay = yearStart(p.startYear);
-    const openDay = startDay + months(p.durationMonths.value);
+    const openDay = monthsAfter(startDay, p.durationMonths.value);
     const hasSite =
       p.kind === 'highway-truncation' ||
       p.kind === 'street-removal' ||
@@ -49,7 +58,7 @@ export function schedulePlan(plan: LessCarsPlan): PlanSchedule {
     let build: ProjectTimes['build'] = null;
     if (b) {
       const bs = yearStart(b.startYear);
-      build = { startDay: bs, completeDay: bs + months(b.durationMonths.value) };
+      build = { startDay: bs, completeDay: monthsAfter(bs, b.durationMonths.value) };
     }
     times.set(p.id, {
       id: p.id,
@@ -66,6 +75,7 @@ export function schedulePlan(plan: LessCarsPlan): PlanSchedule {
 export type PlanProblemCode =
   | 'duplicate-id'
   | 'unknown-dependency'
+  | 'opens-before'
   | 'cycle'
   | 'outside-window'
   | 'starts-before-dependency'
@@ -141,7 +151,11 @@ export function checkPlan(plan: LessCarsPlan, s: PlanSchedule): PlanProblem[] {
   }
 
   for (const p of plan.projects) {
-    for (const d of [...p.dependsOn, ...(p.kind === 'car-shuttle' ? p.garages : [])]) {
+    for (const d of [
+      ...p.dependsOn,
+      ...(p.opensAfter ?? []),
+      ...(p.kind === 'car-shuttle' ? p.garages : [])
+    ]) {
       if (!byId.has(d)) add('unknown-dependency', p.id, `${p.id} names unknown project ${d}`);
     }
   }
@@ -187,6 +201,11 @@ export function checkPlan(plan: LessCarsPlan, s: PlanSchedule): PlanProblem[] {
       const dt = s.times.get(d.id);
       if (dt && t.startDay < dt.openDay)
         add('starts-before-dependency', p.id, `${p.id} starts before ${d.id} opens`);
+    }
+    for (const q of p.opensAfter ?? []) {
+      const qt = s.times.get(q);
+      if (qt && t.openDay < qt.openDay)
+        add('opens-before', p.id, `${p.id} opens before ${q} opens`);
     }
     const transitDeps = deps.filter((d) => TRANSIT_KINDS.includes(d.kind));
     if (p.kind === 'parking-conversion' && transitDeps.length === 0)

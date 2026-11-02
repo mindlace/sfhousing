@@ -65,7 +65,15 @@ Id spaces: `routeIds` are bare GTFS route ids (transit.json `Pattern.routeId`, f
 
 Builder's calls on the format (Task 2):
 
-- A project starts on 1 January of `startYear`; it opens `durationMonths` later.
+- A project starts on 1 January of `startYear`; it opens `durationMonths` calendar months later
+  (36 months from 1 January 2029 is 1 January 2032). Only a fractional remainder is converted to
+  days, as `round(fraction x MONTH_DAYS)`. `monthsAfter` in `schedule.ts` does this for the open
+  day and for `build.completeDay`.
+- An optional `opensAfter: string[]` on any project names projects this one must not open before.
+  It is a check (`opens-before`), not a start constraint, and takes no part in cycle search. A plan
+  without the key parses to an object without it.
+- Every `[lng, lat]` (stops, alignments, drawn lines) must have `lng` in [-180, 180] and `lat` in
+  [-90, 90]; the parser rejects a swapped pair at its path.
 - A parking conversion's own start and duration are its clearance; its `build` is the housing.
 - A garage is always an `edge-garage` that references a site, so a freed project whose land holds
   a garage has `build: null`.
@@ -84,7 +92,7 @@ or parking conversion's site is available on its open day.
 before it writes anything.
 
 From the plan alone (`checkPlan`, field = problem code): duplicate ids, unknown dependencies,
-cycles, dates outside 2028-01-01 to 2068-12-31, a start before a dependency opens, a car closure
+cycles, **`opens-before`** (a project opening before one it names in `opensAfter`), dates outside 2028-01-01 to 2068-12-31, a start before a dependency opens, a car closure
 with no transit dependency, **`fillmore`** (a closure before its transit opens), a build before
 its site is available, a garage on a site that is not a build-free removal, a reused site, a stop
 defined twice, capacity (`maxConcurrent` per capacity kind), a parking conversion with no

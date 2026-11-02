@@ -788,7 +788,7 @@
       "stories": 6,
       "existing": 0,
       "startDay": 24472,
-      "completeDay": 25385
+      "completeDay": 25383
     },
     {
       "siteId": "lc:hwy:2",
@@ -798,7 +798,7 @@
       "stories": 9,
       "existing": 0,
       "startDay": 24472,
-      "completeDay": 25385
+      "completeDay": 25383
     },
     {
       "siteId": "lc:hwy:3",
@@ -808,7 +808,7 @@
       "stories": 65,
       "existing": 0,
       "startDay": 24472,
-      "completeDay": 25385
+      "completeDay": 25383
     }
   ],
   "reservations": [
