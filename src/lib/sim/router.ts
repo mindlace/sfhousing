@@ -9,8 +9,8 @@ import type { ScenarioRequest, ScenarioResponse, WorkerRequest } from './scenari
 export interface RouterDeps {
   editor: { handle(r: SimRequest): void; dispose(): void };
   /**
-   * Called at most once: on the first `initScenario`, or a `reroll` or `setLevers` that arrives
-   * before one.
+   * Called on the first `initScenario` (or a `reroll` or `setLevers` outside playback mode that
+   * arrives before one), and again on the next one after an `initPlayback` disposed it.
    */
   createScenario: () => { handle(r: ScenarioRequest): void; dispose(): void };
   /** Called on the first `initPlayback`, and again after `init` or `initScenario` disposed it. */

@@ -50,7 +50,7 @@ import {
   type LoadFailure,
   type ScenarioUrls
 } from '../scenario/load';
-import { MEMO_CAP, SLICE_PLAN_MS } from '../scenario/scenario-host';
+import { MEMO_CAP, SLICE_PLAN_MS, createToken, type Token } from '../scenario/scenario-host';
 import type { ScenarioErrorCode, ScenarioResponse, Schedule, SimInput } from '../scenario/types';
 import { SITES_CELL, buildSchedule, freedMassing, playbackCard, type CardEntry } from './builds';
 import type { PlaybackCard, PlaybackRequest, PlaybackResponse } from './types';
@@ -80,37 +80,6 @@ export interface PlaybackHostDeps {
 export interface PlaybackHost {
   handle(r: PlaybackHostRequest): void;
   dispose(): void;
-}
-
-interface Token {
-  readonly cancelled: boolean;
-  later(fn: () => void, ms: number): unknown;
-  cancel(): void;
-}
-
-function createToken(deps: Pick<PlaybackHostDeps, 'setTimeout' | 'clearTimeout'>): Token {
-  const timers = new Set<unknown>();
-  let cancelled = false;
-  return {
-    get cancelled() {
-      return cancelled;
-    },
-    later(fn, ms) {
-      if (cancelled) return undefined;
-      const h = deps.setTimeout(() => {
-        timers.delete(h);
-        if (!cancelled) fn();
-      }, ms);
-      timers.add(h);
-      return h;
-    },
-    cancel() {
-      if (cancelled) return;
-      cancelled = true;
-      for (const h of timers) deps.clearTimeout(h);
-      timers.clear();
-    }
-  };
 }
 
 /** A freed-site build and the site it stands on. */
