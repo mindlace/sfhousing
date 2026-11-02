@@ -441,8 +441,13 @@ defined in Appendix A and resolve to the sources in Appendix B.
   tier 3). Clearance ends 2044.
 - **Build** start 2045, 30 months (PV-build).
 
-### Masonic & Geary roundabout (`masonic-roundabout`) — in (owner's addition)
+### Masonic & Geary roundabout (`masonic-roundabout`) — on hold (owner's addition)
 
+- **Status: on hold** (owner, 2026-11-01). `geary-trench` covers Gough to Steiner only, so it does
+  not touch the separate Masonic underpass, and no freed land reaches Masonic: the carve keeps a
+  `keepHalfM` (10 m) corridor around every crossing street (Laguna, Webster, Fillmore, Steiner) and
+  stops at the trench's ends. Nothing in v1 puts housing under or over Masonic. In v1 the Masonic
+  underpass stays as it is; this project is the only treatment drafted for it.
 - **Kind** `street-change` (display only, no homes). Geary dips under Masonic in a second
   underpass west of the trench. After `geary-subway-1` opens, the underpass is filled and the
   intersection becomes a roundabout carrying Geary's surface street, Masonic, buses and bikes.
@@ -562,7 +567,15 @@ Checks:
 7. **Car shuttle: leave for v2.**
 8. **Garages off freed land: agreed.**
 9. **Geary trench design: the linear block for v1.** The owner adds: convert intersections like
-   Masonic & Geary into roundabouts. Drafted as `masonic-roundabout` under Projects.
+   Masonic & Geary into roundabouts. Drafted as `masonic-roundabout` under Projects, then put on
+   hold by the owner: the trench (Gough–Steiner) does not reach the Masonic underpass.
+
+**Plan 3 carving check for the trench.** The main-lane CNNs share one centreline with their
+opposite-direction twins and the Fillmore frontage roads (Data findings). The carve removes a
+`keepHalfM` corridor around every _kept_ centreline, so if only the three main-lane CNNs are listed
+as removed, the twins' corridor would erase most of the 20 m freed strip. Plan 3 must list the twins
+in `segments` (or keep the frontage roads deliberately and accept a narrower block), and check the
+carved area against the expected ~1.8 ha.
 
 6 (open). **Are the two subway phases structurally dependent?** For construction, no: phase 2 is a
 separate tunnel drive from Park Presidio south under Golden Gate Park and 19th Avenue to Daly City
