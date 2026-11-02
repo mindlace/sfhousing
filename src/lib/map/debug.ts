@@ -44,11 +44,12 @@ export interface SfhMapDebug {
    */
   loadSyntheticTimeline(seed: number, n: number): Promise<{ projects: number; cells: number }>;
   /**
-   * bench:map only (docs/dev/map-perf.md "Height fog case"): sets `[heightFogLayer(…)]` of
-   * `makeSyntheticFog(seed)` (the whole-city grid) through SimMap's `setOverlayLayers`, in the
-   * map's theme. Resolves to the fog's instance (cell) count.
+   * bench:map only (docs/dev/map-perf.md "Height limits case"): builds `makeSyntheticLimits(seed)`
+   * (the whole-city contours and a downtown 3 km lid, on the main thread) and sets
+   * `[heightLimitsLayer(…)]` in plain mode, in the map's theme, through SimMap's
+   * `setOverlayLayers`. Resolves to the face, rim path and chain counts.
    */
-  loadSyntheticFog(seed?: number): Promise<{ cells: number }>;
+  loadSyntheticLimits(seed?: number): Promise<{ faces: number; rimPaths: number; chains: number }>;
   /** SimMap's `applyTimeline` (enters timeline mode; queues until the map is ready). */
   applyTimeline(u: TimelineUpdate): void;
   /** SimMap's `setTime`. */
@@ -175,16 +176,20 @@ export function installDebug(
       const projects = u.cells.reduce((a, c) => a + c.slotProjectIds.length, 0);
       return { projects, cells: u.cells.length };
     },
-    loadSyntheticFog: async (seed = 1) => {
-      const [{ heightFogLayer }, { makeSyntheticFog }, { fogInstances }] = await Promise.all([
-        import('./fog/fog-layer'),
-        import('./test/synthetic-fog'),
-        import('./fog/grid')
+    loadSyntheticLimits: async (seed = 1) => {
+      const [{ heightLimitsLayer }, { makeSyntheticLimits }] = await Promise.all([
+        import('./height/limits-layer'),
+        import('./test/synthetic-limits')
       ]);
-      const g = makeSyntheticFog(seed);
-      const fi = fogInstances(g);
-      timeline.setOverlayLayers([heightFogLayer(fi, g, get().theme)]);
-      return { cells: fi.count };
+      const { city, lids } = makeSyntheticLimits(seed);
+      timeline.setOverlayLayers([
+        heightLimitsLayer({ city, lids, mode: { kind: 'plain' }, theme: get().theme })
+      ]);
+      return {
+        faces: lids.faces.length,
+        rimPaths: lids.rims.starts.length - 1,
+        chains: city.chains.starts.length - 1
+      };
     }
   };
   window.__sfhMap = hook;

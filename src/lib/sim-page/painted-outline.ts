@@ -11,7 +11,6 @@ import { TOKENS, hexToRgba } from '$lib/map/palette';
 import type { Theme } from '$lib/map/types';
 
 export const OUTLINE_LAYER_ID = 'sim-painted-outline';
-export { OUTLINE_DASH_M, OUTLINE_GAP_M };
 
 type Pt = [number, number];
 

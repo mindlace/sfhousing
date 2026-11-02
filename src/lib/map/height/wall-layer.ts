@@ -52,7 +52,7 @@ out vec4 vColor;
 
 void main(void) {
   float z = mix(instanceZ.x, instanceZ.y, positions.y);
-  // As the fog layer: the along-wall offset goes on the low part, so a wall end shared by two
+  // The along-wall offset goes on the low part, so a wall end shared by two
   // segments comes out the same from both. Below zoom 12 deck projects without offsets and
   // ignores the low part: there the offset joins the high part.
   vec2 offset = positions.x * instanceDelta;

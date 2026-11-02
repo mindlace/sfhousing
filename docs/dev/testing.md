@@ -15,6 +15,8 @@ Cross-engine goldens (AC-11): `SFH_BROWSER=chromium|webkit|firefox` selects the 
 
 In the client project, `$app/state` and `$app/navigation` are aliased to small stubs in `src/test-stubs/app/` (kept outside `$lib`) so route component specs (e.g. `src/routes/page.svelte.spec.ts`) can render pages: specs set `page.state` and read `replaceStateCalls`. Other `$app/*` modules and `$env/*` have no alias and still need `vi.mock(...)`. `src/lib/sharing/**` must not import `$app/*` at all; an ESLint `no-restricted-imports` rule enforces it so the stubs can't hide such an import.
 
+GPU specs for deck layers (`*.gpu.svelte.spec.ts`, client project, real WebGL in Playwright Chromium): `src/lib/map/height/limits-layer.gpu.svelte.spec.ts` renders `HeightLimitsLayer` in a standalone `Deck` over a small canvas, and `limits-maplibre.gpu.svelte.spec.ts` renders it in an interleaved `MapLibreOverlay` before the first symbol layer, as `SimMap` does, over real MapLibre fill-extrusions. The interleaved pattern: build a tiny scene (`tinyLimits()` in `src/lib/map/height/test/fixtures.ts`), render it pitched with the layer and again without it, and compare chosen pixels (a box face tinted below the lid and untouched above it; open ground and ground hidden behind a tall box tinted), because a depth mistake against MapLibre's buildings only shows in a combined frame. Pixel assertions use the dark theme, where the light glaze shows most. The shared lot and scene builders for the height specs and the benches are in `src/lib/map/height/test/fixtures.ts`.
+
 Single test: `npx vitest --run --project server path/to/file.spec.ts` (or `--project client`).
 
 ## FakeR2Bucket

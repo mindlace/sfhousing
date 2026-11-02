@@ -28,25 +28,28 @@ const PLAYBACK_DAYS_PER_S = 1095.7;
 const DRAG_SWEEP_MS = 2000;
 
 /**
- * `daysPerS` is the sweep speed: the day is a triangle wave over [DAY_START, DAY_END]. `fog` adds
- * the whole-city synthetic height fog (`loadSyntheticFog(1)`) once the timeline is in.
+ * `daysPerS` is the sweep speed: the day is a triangle wave over [DAY_START, DAY_END]. `limits` adds
+ * the synthetic height limits (`loadSyntheticLimits(1)`: whole-city contours and a 3 km downtown
+ * lid, plain mode) once the timeline is in.
  */
 const CASES = [
-  { name: 'playback', daysPerS: PLAYBACK_DAYS_PER_S, fog: false },
-  { name: 'drag', daysPerS: (DAY_END - DAY_START) / (DRAG_SWEEP_MS / 1000), fog: false },
-  { name: 'playback + fog', daysPerS: PLAYBACK_DAYS_PER_S, fog: true }
+  { name: 'playback', daysPerS: PLAYBACK_DAYS_PER_S, limits: false },
+  { name: 'drag', daysPerS: (DAY_END - DAY_START) / (DRAG_SWEEP_MS / 1000), limits: false },
+  { name: 'playback + limits', daysPerS: PLAYBACK_DAYS_PER_S, limits: true }
 ] as const;
 
-/** A fog case's synthetic height fog (the overlay slot), installed; its cell count, else 0. */
-async function loadFog(page: Page, fog: boolean): Promise<number> {
-  if (!fog) return 0;
-  const { cells } = await page.evaluate(() => (window as Win).__sfhMap!.loadSyntheticFog(1));
-  if (!(cells > 10_000)) throw new Error(`synthetic fog has only ${cells} cells`);
-  return cells;
+/** A limits case's synthetic height limits (the overlay slot), installed; its counts, else null. */
+async function loadLimits(page: Page, limits: boolean) {
+  if (!limits) return null;
+  const c = await page.evaluate(() => (window as Win).__sfhMap!.loadSyntheticLimits(1));
+  if (!(c.rimPaths > 10_000 && c.chains > 1_000))
+    throw new Error(`synthetic limits are too small: ${JSON.stringify(c)}`);
+  return c;
 }
-const fogField = (fog: boolean, cells: number) => (fog ? `fogCells=${cells} ` : '');
+const limitsField = (c: Awaited<ReturnType<typeof loadLimits>>) =>
+  c ? `limits=${c.faces}/${c.rimPaths}/${c.chains} ` : '';
 
-for (const { name, daysPerS, fog } of CASES)
+for (const { name, daysPerS, limits } of CASES)
   test(`bench:map: timeline ${name}`, async ({ page }) => {
     await page.goto('/');
     await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
@@ -79,7 +82,7 @@ for (const { name, daysPerS, fog } of CASES)
       cells,
       { timeout: 120_000 }
     );
-    const fogCells = await loadFog(page, fog);
+    const limitCounts = await loadLimits(page, limits);
     await page.evaluate((d) => (window as Win).__sfhMap!.setTime(d), DAY_START);
 
     await page.evaluate(
@@ -137,7 +140,7 @@ for (const { name, daysPerS, fog } of CASES)
     const p95 = pct(sorted, 95);
     const line =
       `bench:map timeline=${name} frames=${deltas.length} projects=${projects} ` +
-      `p50=${p50.toFixed(1)}ms parts=${after.parts} ${fogField(fog, fogCells)}` +
+      `p50=${p50.toFixed(1)}ms parts=${after.parts} ${limitsField(limitCounts)}` +
       `p95=${p95.toFixed(1)}ms ` +
       `pumpMaxOps=${after.pumpMaxOps} (catch-up ${catchUpOps}) bar=${BAR_MS}ms ${verdict(p95)} ` +
       `dpr=${dpr} renderer="${renderer}"`;

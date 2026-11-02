@@ -26,7 +26,7 @@ import {
 export const CITY_CELL_M = 15;
 export const CITY_SIMPLIFY_M = 7.5;
 export const CONTOUR_LABEL_MIN_M = 300;
-/** = FOG_BOUNDS (= CONSTRAINTS.maxBounds, camera.ts); repeated so the worker need not import camera.ts. */
+/** = CONSTRAINTS.maxBounds (camera.ts); repeated so the worker need not import camera.ts. */
 export const CITY_BOUNDS: [[number, number], [number, number]] = [
   [-122.56, 37.69],
   [-122.33, 37.84]

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { differenceCiede2000, hsl, lab, parse } from 'culori';
 import {
   TOKENS,
-  hexToRgba,
   TIMELINE_LEGEND,
   colorFor,
   GEN_RGBA,
@@ -66,9 +65,6 @@ describe('palette (U4)', () => {
             contrast(TOKENS[theme][id], TOKENS[theme][base]),
             `${id}/${base}`
           ).toBeGreaterThanOrEqual(3);
-    });
-    it(`${theme}: height-fog is translucent (alpha <= 0.35)`, () => {
-      expect(hexToRgba(TOKENS[theme]['height-fog'])[3]).toBeLessThanOrEqual(90);
     });
     it(`${theme}: limit-ink is ≥ 4.5:1 against land and against limit-halo`, () => {
       const ink = TOKENS[theme]['limit-ink'];
@@ -251,7 +247,7 @@ const DEFAULT_TOKENS_BODY =
   '--map-transit-access-2: #B3E0D8; --map-transit-access-3: #7CC7BA; ' +
   '--map-transit-access-4: #3FA596; --map-transit-access-5: #167A6E; ' +
   '--map-transit-bus: #5E7A76; --map-transit-rail: #0F5A52; ' +
-  '--map-transit-regional: #0B3B36; --map-transit-stroke: #FFFFFF; --map-height-fog: rgba(90,100,108,0.18); ' +
+  '--map-transit-regional: #0B3B36; --map-transit-stroke: #FFFFFF; ' +
   '--map-limit-ink: #2B2A28; --map-limit-glaze: rgba(72,74,78,0.22); ' +
   '--map-limit-wall: rgba(72,74,78,0.25); --map-limit-halo: #F3EFE6; ' +
   '--map-brush-paint: #B4532F; --map-brush-erase: #2B2A28; --map-painted-outline: #B4532F; ' +
@@ -273,7 +269,7 @@ const DEFAULT_TOKENS_BODY =
   '--map-transit-access-3: #22595A; --map-transit-access-4: #2E7B78; ' +
   '--map-transit-access-5: #4BA59E; --map-transit-bus: #9BB5B0; ' +
   '--map-transit-rail: #7FD6C9; --map-transit-regional: #C2F0E8; ' +
-  '--map-transit-stroke: #111214; --map-height-fog: rgba(210,216,220,0.22); ' +
+  '--map-transit-stroke: #111214; ' +
   '--map-limit-ink: #E8E4DC; --map-limit-glaze: rgba(214,216,220,0.12); ' +
   '--map-limit-wall: rgba(214,216,220,0.18); --map-limit-halo: #1C1D1F; ' +
   '--map-brush-paint: #DB8B42; --map-brush-erase: #E8E4DC; ' +

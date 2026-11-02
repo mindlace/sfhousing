@@ -1,5 +1,5 @@
 // GPU test of HeightLimitsLayer (height-lids plan, Task 10): a standalone deck over a 128×64
-// canvas, as fog-layer.gpu.svelte.spec.ts, with the tinyLimits() scene. Top-down, the glaze lies
+// canvas, with the tinyLimits() scene. Top-down, the glaze lies
 // over open ground and low roofs but not over roofs above the lid, and the lid edge is ink.
 // Zoomed out, contours draw and the glaze does not. Pitched, a wall shows its colour unless a box
 // in front of it hides it. In rule mode a dimmed rim is lighter than a highlighted one.
