@@ -8,6 +8,7 @@ import { formatCount } from '../src/lib/scoreboard/format';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { slider, startRun } from './helpers/run';
 import {
+  FRAME,
   FROM,
   TO,
   TOUCH_FROM,
@@ -672,7 +673,7 @@ test('at 375 px with the timelines open: no horizontal scroll', async ({ isMobil
 
 // ---- map overlays (plan 2, Task 4) ----------------------------------------------------------------
 
-const FOG_LAYER = 'sim-height-fog';
+const LIMITS_LAYER = 'sim-height-limits';
 const mapVisibility = (page: Page, id: string) =>
   page.evaluate(
     (l) => (window as Win).__sfhMap!.map!.getLayoutProperty(l, 'visibility') ?? 'visible',
@@ -693,17 +694,17 @@ async function pressRun(page: Page, isMobile: boolean): Promise<void> {
   await expect.poll(() => fzp(page, 'runPhase')).toBe('run');
 }
 
-test('Setup shows the fog and transit; Run hides them; Change policy brings them back', async ({
+test('Setup shows the height limits and transit; Run hides them; Change policy brings them back', async ({
   isMobile,
   page
 }) => {
   await gotoSim(page);
-  await expect.poll(() => deckIds(page), { timeout: 20_000 }).toContain(FOG_LAYER);
+  await expect.poll(() => deckIds(page), { timeout: 20_000 }).toContain(LIMITS_LAYER);
   await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('visible');
   await expect(await headerAction(page, 'View')).toBeVisible();
 
   await pressRun(page, isMobile);
-  await expect.poll(() => deckIds(page)).not.toContain(FOG_LAYER);
+  await expect.poll(() => deckIds(page)).not.toContain(LIMITS_LAYER);
   await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('none');
   await openHeaderMenu(page);
   await expect(viewButtons(page)).toHaveCount(0);
@@ -711,21 +712,55 @@ test('Setup shows the fog and transit; Run hides them; Change policy brings them
   await openPolicy(page);
   await panel(page).getByRole('button', { name: 'Change policy' }).click();
   await expect.poll(() => fzp(page, 'runPhase')).toBe('setup');
-  await expect.poll(() => deckIds(page)).toContain(FOG_LAYER);
+  await expect.poll(() => deckIds(page)).toContain(LIMITS_LAYER);
   await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('visible');
   await expect(viewButtons(page)).toHaveCount(1);
 });
 
-test('the Height limits toggle removes the fog and survives a reload', async ({ page }) => {
+test('the Zoning height limits toggle removes the limits and survives a reload', async ({
+  page
+}) => {
   await gotoSim(page);
-  await expect.poll(() => deckIds(page), { timeout: 20_000 }).toContain(FOG_LAYER);
+  await expect.poll(() => deckIds(page), { timeout: 20_000 }).toContain(LIMITS_LAYER);
   await (await headerAction(page, 'View')).click();
-  await page.getByRole('checkbox', { name: 'Height limits' }).uncheck();
-  await expect.poll(() => deckIds(page)).not.toContain(FOG_LAYER);
+  await page.getByRole('checkbox', { name: 'Zoning height limits' }).uncheck();
+  await expect.poll(() => deckIds(page)).not.toContain(LIMITS_LAYER);
   await gotoSim(page);
   await (await headerAction(page, 'View')).click();
-  await expect(page.getByRole('checkbox', { name: 'Height limits' })).not.toBeChecked();
-  expect(await deckIds(page)).not.toContain(FOG_LAYER);
+  await expect(page.getByRole('checkbox', { name: 'Zoning height limits' })).not.toBeChecked();
+  expect(await deckIds(page)).not.toContain(LIMITS_LAYER);
+});
+
+/** The map canvas's pixels, as a PNG. */
+const mapShot = (page: Page) => page.getByTestId('map-root').locator('canvas').first().screenshot();
+
+test('zoomed in over the loaded lots, the glass lids draw: the toggle changes the map', async ({
+  isMobile,
+  page
+}) => {
+  test.skip(isMobile, 'the desktop map is enough to see the lids');
+  await gotoSim(page);
+  await expect.poll(() => deckIds(page), { timeout: 20_000 }).toContain(LIMITS_LAYER);
+  // Past LIDS_FADE (contours gone), pitched over the fixture's lots.
+  await jumpAndIdle(page, { ...FRAME, zoom: 17, pitch: 55 });
+  // The lids answer comes after the moveend; wait until two frames agree.
+  let on = await mapShot(page);
+  await expect
+    .poll(
+      async () => {
+        const next = await mapShot(page);
+        const same = next.equals(on);
+        on = next;
+        return same;
+      },
+      { timeout: 20_000, intervals: [500] }
+    )
+    .toBe(true);
+  await (await headerAction(page, 'View')).click();
+  await page.getByRole('checkbox', { name: 'Zoning height limits' }).uncheck();
+  await expect.poll(() => deckIds(page)).not.toContain(LIMITS_LAYER);
+  await page.keyboard.press('Escape');
+  await expect.poll(async () => (await mapShot(page)).equals(on), { timeout: 10_000 }).toBe(false);
 });
 
 for (const scheme of ['light', 'dark'] as const) {
@@ -735,12 +770,12 @@ for (const scheme of ['light', 'dark'] as const) {
     await (await headerAction(page, 'View')).click();
     const group = page.getByRole('group', { name: 'Map layers' });
     await expect(group).toBeVisible();
-    await expect(group.getByRole('checkbox', { name: 'Height limits' })).toBeVisible();
+    await expect(group.getByRole('checkbox', { name: 'Zoning height limits' })).toBeVisible();
     await expectNoA11yViolations(page, { include: ['header'] });
   });
 }
 
-test('without transit: no transit.json request, no transit layers, View has only the fog', async ({
+test('without transit: no transit.json request, no transit layers, View has only the height limits', async ({
   page
 }) => {
   const transitAsked: string[] = [];
@@ -757,6 +792,9 @@ test('without transit: no transit.json request, no transit layers, View has only
   });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect(async () => {
+    // A try that fell back to a full /sim load (the link clicked before hydration) asked for
+    // transit.json through SSR's manifest: only the try that passes counts.
+    transitAsked.length = 0;
     await page.goto('/attribution');
     await page.evaluate(() => ((window as Window & { __spa?: boolean }).__spa = true));
     await openHeaderMenu(page);
@@ -764,7 +802,7 @@ test('without transit: no transit.json request, no transit layers, View has only
     await waitReady(page);
     expect(await page.evaluate(() => (window as Window & { __spa?: boolean }).__spa)).toBe(true);
   }).toPass({ timeout: 40_000 });
-  await expect.poll(() => deckIds(page), { timeout: 20_000 }).toContain(FOG_LAYER);
+  await expect.poll(() => deckIds(page), { timeout: 20_000 }).toContain(LIMITS_LAYER);
   const transitLayers = await page.evaluate(() =>
     (window as Win)
       .__sfhMap!.map!.getStyle()
@@ -776,7 +814,7 @@ test('without transit: no transit.json request, no transit layers, View has only
   await (await headerAction(page, 'View')).click();
   const group = page.getByRole('group', { name: 'Map layers' });
   await expect(group.getByRole('checkbox')).toHaveCount(1);
-  await expect(group.getByRole('checkbox', { name: 'Height limits' })).toBeChecked();
+  await expect(group.getByRole('checkbox', { name: 'Zoning height limits' })).toBeChecked();
 });
 
 /** The visible header items, left to right, with their boxes. */

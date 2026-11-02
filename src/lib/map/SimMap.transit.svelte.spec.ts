@@ -117,12 +117,14 @@ describe('SimMap transit', { timeout: 30_000 }, () => {
 
   it('applies view changes without remounting', async () => {
     const { ready, screen } = await mount({
-      view: { transitStops: true, transitAccess: false, heightFog: false }
+      view: { transitStops: true, transitAccess: false, heightLimits: false }
     });
     const map = (await ready).getMap()!;
     await expect.poll(() => vis(map, TRANSIT_ACCESS_LAYER)).toBe('none');
     for (const id of TRANSIT_STOP_LAYERS) expect(vis(map, id)).toBe('visible');
-    await screen.rerender({ view: { transitStops: false, transitAccess: true, heightFog: false } });
+    await screen.rerender({
+      view: { transitStops: false, transitAccess: true, heightLimits: false }
+    });
     await expect.poll(() => vis(map, TRANSIT_ACCESS_LAYER)).toBe('visible');
     for (const id of TRANSIT_STOP_LAYERS) expect(vis(map, id)).toBe('none');
     expect((await ready).getMap()).toBe(map);
@@ -130,7 +132,7 @@ describe('SimMap transit', { timeout: 30_000 }, () => {
 
   it('shows the stop tooltip on hover at z14+ only, and never while stops are hidden', async () => {
     const { ready, screen } = await mount({
-      view: { transitStops: true, transitAccess: true, heightFog: false }
+      view: { transitStops: true, transitAccess: true, heightLimits: false }
     });
     const map = (await ready).getMap()!;
     await expect.poll(() => features(map, TRANSIT_STOPS_SOURCE), { timeout: 10_000 }).toBe(MARKERS);
@@ -147,7 +149,9 @@ describe('SimMap transit', { timeout: 30_000 }, () => {
     expect(tooltipText()).toContain('riders/hr at peak');
 
     // Hiding the stops layer drops a shown stop tooltip, and hovering finds no stop.
-    await screen.rerender({ view: { transitStops: false, transitAccess: true, heightFog: false } });
+    await screen.rerender({
+      view: { transitStops: false, transitAccess: true, heightLimits: false }
+    });
     await expect.poll(tooltipText).not.toContain('Fixture Station');
     await jumpIdle(map, STATION, 15);
     hoverAt(map, STATION);

@@ -264,7 +264,7 @@ describe('FzpMode loading and lookups', () => {
   });
 
   it("passes SimMap the page's view, and each new one", async () => {
-    const view: ViewPrefs = { transitStops: true, transitAccess: false, heightFog: true };
+    const view: ViewPrefs = { transitStops: true, transitAccess: false, heightLimits: true };
     const s = setup({ view });
     await expect.poll(() => stub.props.view).toEqual(view);
     await (await s.r).rerender({ view: HIDDEN_VIEW });

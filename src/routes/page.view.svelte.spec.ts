@@ -61,7 +61,11 @@ describe('/ View menu', () => {
     // First in the header actions: left of Publish.
     const slot = document.querySelector('[data-testid="header-actions"]')!;
     expect(slot.firstElementChild?.contains(viewButton().element())).toBe(true);
-    expect(stubProps.view).toEqual({ transitStops: false, transitAccess: true, heightFog: true });
+    expect(stubProps.view).toEqual({
+      transitStops: false,
+      transitAccess: true,
+      heightLimits: true
+    });
   });
 
   it('has no View button without manifest.transit', async () => {
@@ -72,27 +76,35 @@ describe('/ View menu', () => {
   });
 
   it('starts from the stored prefs, and a toggle updates the map and persists', async () => {
-    // /sim's heightFog: / never shows it, and writes back the value it read.
+    // /sim's heightLimits: / never shows it, and writes back the value it read.
     localStorage.setItem(
       VIEW_KEY,
-      JSON.stringify({ transitStops: false, transitAccess: true, heightFog: false })
+      JSON.stringify({ transitStops: false, transitAccess: true, heightLimits: false })
     );
     const first = await render(PageHost, { props: { data: data() } });
-    expect(stubProps.view).toEqual({ transitStops: false, transitAccess: true, heightFog: false });
-    expect(page.getByRole('checkbox', { name: 'Height limits' }).query()).toBeNull();
+    expect(stubProps.view).toEqual({
+      transitStops: false,
+      transitAccess: true,
+      heightLimits: false
+    });
+    expect(page.getByRole('checkbox', { name: 'Zoning height limits' }).query()).toBeNull();
     await viewButton().click();
     await expect.element(page.getByRole('checkbox', { name: 'Transit stops' })).not.toBeChecked();
 
     await page.getByRole('checkbox', { name: /Transit capacity/ }).click();
     await expect
       .poll(() => stubProps.view)
-      .toEqual({ transitStops: false, transitAccess: false, heightFog: false });
-    expect(stored()).toEqual({ transitStops: false, transitAccess: false, heightFog: false });
+      .toEqual({ transitStops: false, transitAccess: false, heightLimits: false });
+    expect(stored()).toEqual({ transitStops: false, transitAccess: false, heightLimits: false });
 
     // A fresh page load reads the persisted value back.
     await first.unmount();
     await render(PageHost, { props: { data: data() } });
-    expect(stubProps.view).toEqual({ transitStops: false, transitAccess: false, heightFog: false });
+    expect(stubProps.view).toEqual({
+      transitStops: false,
+      transitAccess: false,
+      heightLimits: false
+    });
   });
 
   it('gates View on the manifest the map renders: a reload after a failed load brings it', async () => {

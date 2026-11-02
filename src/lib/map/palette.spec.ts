@@ -252,8 +252,8 @@ const DEFAULT_TOKENS_BODY =
   '--map-transit-access-4: #3FA596; --map-transit-access-5: #167A6E; ' +
   '--map-transit-bus: #5E7A76; --map-transit-rail: #0F5A52; ' +
   '--map-transit-regional: #0B3B36; --map-transit-stroke: #FFFFFF; --map-height-fog: rgba(90,100,108,0.18); ' +
-  '--map-limit-ink: #2B2A28; --map-limit-glaze: rgba(96,98,102,0.14); ' +
-  '--map-limit-wall: rgba(96,98,102,0.20); --map-limit-halo: #F3EFE6; ' +
+  '--map-limit-ink: #2B2A28; --map-limit-glaze: rgba(72,74,78,0.22); ' +
+  '--map-limit-wall: rgba(72,74,78,0.25); --map-limit-halo: #F3EFE6; ' +
   '--map-brush-paint: #B4532F; --map-brush-erase: #2B2A28; --map-painted-outline: #B4532F; ' +
   '--map-tl-ghost-planning: #DDBBD2; --map-tl-ghost-permit: #C58FB1; ' +
   '--map-tl-ghost-ready: #93527F; --map-tl-ghost-dying: #C62828; ' +
