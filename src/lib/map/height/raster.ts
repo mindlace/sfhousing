@@ -105,6 +105,7 @@ export function closeGapLines(
   const dr = d === 0 ? 0 : 1;
   const step = d >= 2 ? Math.SQRT2 * f.cell : f.cell;
   const maxRun = Math.floor(maxGapM / step + 1e-9);
+  const run = new Int32Array(maxRun + 1);
   for (let line = from; line < to; line++) {
     let c: number;
     let r: number;
@@ -125,24 +126,30 @@ export function closeGapLines(
     }
     let endIdx = -1; // index of the last lot cell on this line
     let endLab = 0;
-    const run: number[] = [];
+    // the open run since the last lot cell; only its first maxRun + 1 cells are kept, since a
+    // longer run is never filled
+    let runLen = 0;
     for (; c >= 0 && c < f.cols && r >= 0 && r < f.rows; c += dc, r += dr) {
       const i = r * f.cols + c;
       const v = labels[i];
       if (v === BLOCK) {
         endIdx = -1;
-        run.length = 0;
+        runLen = 0;
         continue;
       }
       if (v === EMPTY || filled[i]) {
-        if (endIdx >= 0) run.push(i);
+        if (endIdx >= 0) {
+          if (runLen <= maxRun) run[runLen] = i;
+          runLen++;
+        }
         continue;
       }
       // a lot cell
-      if (endIdx >= 0 && run.length > 0 && run.length <= maxRun) {
+      if (endIdx >= 0 && runLen > 0 && runLen <= maxRun) {
         const fill = bridge(endLab, v);
         if (fill !== EMPTY) {
-          for (const k of run) {
+          for (let q = 0; q < runLen; q++) {
+            const k = run[q];
             if (labels[k] === EMPTY) {
               labels[k] = fill;
               filled[k] = 1;
@@ -157,7 +164,7 @@ export function closeGapLines(
       }
       endIdx = i;
       endLab = v;
-      run.length = 0;
+      runLen = 0;
     }
   }
 }
@@ -249,8 +256,9 @@ export function insideDistance(
   const o = cell / 3;
   const a = 3 * o;
   const b = 4 * o;
-  const at = (c: number, r: number) =>
-    c < 0 || c >= cols || r < 0 || r >= rows ? Infinity : out[r * cols + c];
+  const half = cell / 2;
+  const lastC = cols - 1;
+  // Neighbours outside the raster read as Infinity, so they are skipped.
   if (pass === 'forward') {
     for (let r = r0; r < r1; r++)
       for (let c = 0; c < cols; c++) {
@@ -258,30 +266,34 @@ export function insideDistance(
         const g = group[i];
         const edge =
           (c > 0 && group[i - 1] !== g) ||
-          (c < cols - 1 && group[i + 1] !== g) ||
+          (c < lastC && group[i + 1] !== g) ||
           (r > 0 && group[i - cols] !== g) ||
           (r < rows - 1 && group[i + cols] !== g);
-        let v = edge ? cell / 2 : Infinity;
-        v = Math.min(
-          v,
-          at(c - 1, r) + a,
-          at(c, r - 1) + a,
-          at(c - 1, r - 1) + b,
-          at(c + 1, r - 1) + b
-        );
+        let v = edge ? half : Infinity;
+        let t: number;
+        if (c > 0 && (t = out[i - 1] + a) < v) v = t;
+        if (r > 0) {
+          const u = i - cols;
+          if ((t = out[u] + a) < v) v = t;
+          if (c > 0 && (t = out[u - 1] + b) < v) v = t;
+          if (c < lastC && (t = out[u + 1] + b) < v) v = t;
+        }
         out[i] = v;
       }
   } else {
     for (let r = r1 - 1; r >= r0; r--)
-      for (let c = cols - 1; c >= 0; c--) {
+      for (let c = lastC; c >= 0; c--) {
         const i = r * cols + c;
-        out[i] = Math.min(
-          out[i],
-          at(c + 1, r) + a,
-          at(c, r + 1) + a,
-          at(c + 1, r + 1) + b,
-          at(c - 1, r + 1) + b
-        );
+        let v = out[i];
+        let t: number;
+        if (c < lastC && (t = out[i + 1] + a) < v) v = t;
+        if (r < rows - 1) {
+          const d = i + cols;
+          if ((t = out[d] + a) < v) v = t;
+          if (c < lastC && (t = out[d + 1] + b) < v) v = t;
+          if (c > 0 && (t = out[d - 1] + b) < v) v = t;
+        }
+        out[i] = v;
       }
   }
 }

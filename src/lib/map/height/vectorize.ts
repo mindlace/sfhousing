@@ -126,6 +126,13 @@ export function createChainTrace(labels: Uint32Array, cols: number, rows: number
     junctions(y0, y1) {
       for (let y = Math.max(0, y0); y < Math.min(rows + 1, y1); y++)
         for (let x = 0; x <= cols; x++) {
+          // fast path: an inner vertex whose four cells hold one raw label is no junction
+          if (x > 0 && x < cols && y > 0 && y < rows) {
+            const i = y * cols + x;
+            const v = labels[i];
+            if (labels[i - 1] === v && labels[i - cols] === v && labels[i - cols - 1] === v)
+              continue;
+          }
           if (!junction(x, y)) continue;
           for (let d = 0; d < 4; d++) {
             const e = edge(x, y, d);
@@ -138,6 +145,8 @@ export function createChainTrace(labels: Uint32Array, cols: number, rows: number
     loops(y0, y1) {
       for (let y = Math.max(0, y0); y < Math.min(rows + 1, y1); y++)
         for (let x = 0; x < cols; x++) {
+          // fast path: equal raw labels above and below mean no boundary edge
+          if (y > 0 && y < rows && labels[y * cols + x] === labels[(y - 1) * cols + x]) continue;
           const e = edge(x, y, 0);
           if (e >= 0 && !visited[e]) walk(x, y, 0, true);
         }
