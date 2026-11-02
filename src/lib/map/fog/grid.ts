@@ -9,7 +9,7 @@
  * non-empty neighbours so the city's edge does not sag; a vertex is the mean of the non-empty
  * cells that touch it. Every window is a product of 1-D weights, so each pass runs separably.
  */
-import { FTF_M, GROUND_FTF_M } from '$lib/generator/constants';
+import { storiesToM } from '$lib/map/height/room';
 import { M_PER_DEG_LAT, M_PER_DEG_LNG } from '$lib/plan/geometry';
 
 /** A vertex grid over FOG_BOUNDS; heightM is (cols+1)·(rows+1), row-major from the south-west. */
@@ -40,10 +40,7 @@ const ROWS = Math.ceil((FOG_BOUNDS[1][1] - FOG_BOUNDS[0][1]) / D_LAT);
 const FILL_W = [1, 4, 6, 4, 1]; // radius FOG_FILL_CELLS
 const SMOOTH_W = [1, 2, 1];
 
-/** 0 → 0; s ≥ 1 → GROUND_FTF_M + (s − 1)·FTF_M. */
-export function storiesToM(stories: number): number {
-  return stories <= 0 ? 0 : GROUND_FTF_M + (stories - 1) * FTF_M;
-}
+export { storiesToM };
 
 /** Separable 2-D convolution of `src` (cols × rows) with the 1-D kernel `k` on both axes, into `out`. */
 function convolve(
