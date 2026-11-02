@@ -1,10 +1,12 @@
-// GPU test of HeightLimitsLayer against a real MapLibre fill-extrusion (height-lids plan, Task 11;
-// spec "Depth against existing buildings"). A 256Ã—160 MapLibre map with the tinyLimits() lots
+// GPU test of HeightLimitsLayer against a real MapLibre fill-extrusion (height-lids spec, "Depth
+// against existing buildings"). A 256Ã—160 MapLibre map with the tinyLimits() lots
 // holds two existing-colour boxes in the 4-story region north of the street: a 40 m box, taller
 // than the 13.8 m lid, and a 10 m one under it. The limits layer draws in an interleaved
 // MapLibreOverlay before the first symbol layer, as SimMap does. Pitched 60Â° looking north, each
 // scene renders with the limits layer and without it, and the pixels are compared: the tall box's
-// face and a rim behind it are unchanged, the low roof and open ground under the lid are tinted.
+// face is tinted below the lid and unchanged above it, a rim behind it is unchanged, and the low
+// roof, open ground and ground hidden behind the tall box (a ground fill would not show there) are
+// tinted.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deck, Layer } from '@deck.gl/core';
 import { MapLibreOverlay } from '@deck.gl/maplibre';
@@ -163,6 +165,11 @@ describe('HeightLimitsLayer depth against a MapLibre fill-extrusion, pitched 60Â
 
   // The tall box's south face, 11 m above the lid: the lid lies behind it along the ray.
   const tallBoxFacePx = () => toPx(toLngLat((TALL.x0 + TALL.x1) / 2, TALL.y0), 25);
+  // The same face 8 m under the lid: the lid lies in front of it along the ray.
+  const tallBoxFaceBelowPx = () => toPx(toLngLat((TALL.x0 + TALL.x1) / 2, TALL.y0), 6);
+  // Open ground just north of the tall box, in its shadow: the box hides it from the camera, so a
+  // ground fill there would not show, but the ray to it crosses the lid in front of the box.
+  const shadowGroundPx = () => toPx(toLngLat((TALL.x0 + TALL.x1) / 2, TALL.y1 + 3), 0);
   // The low box's roof, 3.8 m under the lid.
   const lowRoofPx = () => toPx(toLngLat((LOW.x0 + LOW.x1) / 2, (LOW.y0 + LOW.y1) / 2), LOW.h);
   // The north edge of the 4-story region, behind the tall box.
@@ -228,6 +235,11 @@ describe('HeightLimitsLayer depth against a MapLibre fill-extrusion, pitched 60Â
     const bg = hexToRgba(BG).slice(0, 3) as Rgb;
     // without lids: the face and the rim probe land on the tall box, the roof on the low box
     expect(diff(without.at(tallBoxFacePx()), bg)).toBeGreaterThan(10);
+    expect(diff(without.at(tallBoxFaceBelowPx()), bg)).toBeGreaterThan(10);
+    // the shadow ground point is hidden: its pixel is the tall box's face, the same as below
+    expect(
+      diff(without.at(shadowGroundPx()), without.at(tallBoxFaceBelowPx()))
+    ).toBeLessThanOrEqual(2);
     expect(diff(without.at(rimBehindTallPx()), bg)).toBeGreaterThan(10);
     expect(diff(without.at(lowRoofPx()), bg)).toBeGreaterThan(10);
     expect(diff(without.at(groundPx()), bg)).toBeLessThanOrEqual(2);
@@ -236,6 +248,12 @@ describe('HeightLimitsLayer depth against a MapLibre fill-extrusion, pitched 60Â
 
   it('a lid behind a taller MapLibre building is hidden by it', () =>
     expectSame(withLids, without, tallBoxFacePx, 3));
+  it('one building: its face below the lid is tinted, above the lid it is clean', () => {
+    expectDiffer(withLids, without, tallBoxFaceBelowPx, 6);
+    expectSame(withLids, without, tallBoxFacePx, 3);
+  });
+  it('ground hidden behind a building still reads a lid in front (a lid up there, not a ground fill)', () =>
+    expectDiffer(withLids, without, shadowGroundPx, 6));
   it('the roof of a MapLibre building under the lid is tinted', () =>
     expectDiffer(withLids, without, lowRoofPx, 6));
   it('the lid rim does not draw over the tall building', () =>
