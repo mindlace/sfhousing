@@ -19,6 +19,6 @@ test('attribution page shows dataset version, sources and fixed notices', async 
   await expect(page.getByRole('link', { name: 'Overture Maps Buildings' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'SFMTA Muni GTFS' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'DataSF Analysis Neighborhoods' })).toBeVisible();
-  await expect(page.getByText(/DataSF Streets/)).toHaveCount(0);
+  await expect(page.getByText(/DataSF Streets/)).toBeVisible();
   for (const notice of NOTICES) await expect(page.getByText(notice)).toBeVisible();
 });

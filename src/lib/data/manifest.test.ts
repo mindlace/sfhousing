@@ -160,6 +160,21 @@ describe('parseManifest', () => {
       );
     });
 
+    it('accepts scenarios.lesscars and checks its url prefix', () => {
+      const lesscars = {
+        plan: `/data/${v}/scenarios/lesscars/plan.json`,
+        sites: `/data/${v}/scenarios/lesscars/sites.json`,
+        summary: `/data/${v}/scenarios/lesscars/summary.json`,
+        timeline: `/data/${v}/scenarios/lesscars/timeline.bin`
+      };
+      const m = parseManifest({ ...g(), scenarios: { fzp: fzp(), lesscars } });
+      expect(m.scenarios?.lesscars).toEqual(lesscars);
+      const bad = { ...lesscars, timeline: '/data/2026-01-01-00000000/scenarios/lesscars/t.bin' };
+      expect(() => parseManifest({ ...g(), scenarios: { fzp: fzp(), lesscars: bad } })).toThrow(
+        /scenarios\.lesscars\.timeline: url must start with/
+      );
+    });
+
     it('the golden manifest still validates', () => {
       expect(parseManifest(g()).datasetVersion).toBe(v);
     });

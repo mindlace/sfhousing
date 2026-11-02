@@ -52,7 +52,12 @@ const multi = (...polys: Poly[]) => ({
   type: 'MultiPolygon' as const,
   coordinates: polys.map((p) => p.map(ringLL))
 });
-type Geom = ReturnType<typeof polygon> | ReturnType<typeof multi>;
+/** MultiLineString from local-metre polylines. */
+const multiLine = (...lines: [number, number][][]) => ({
+  type: 'MultiLineString' as const,
+  coordinates: lines.map((l) => l.map(ll))
+});
+type Geom = ReturnType<typeof polygon> | ReturnType<typeof multi> | ReturnType<typeof multiLine>;
 const feature = (properties: Props, geometry: Geom) => ({ type: 'Feature', properties, geometry });
 /** SODA serialises numbers as strings. */
 const s = (v: number) => String(v);
@@ -491,6 +496,24 @@ const overture = [
   ov('bbay', 6, null, ['OpenStreetMap'], polygon(rect(E + 2, 10, E + 8, 20)))
 ];
 
+// ---- street centerlines (3psu-pn9h; sim data layers) ----
+// Mission St runs along y = -8 in two segments, Fixture Ave up x = 148 and stops below lot 18,
+// a paper street lies off the shoreline lots and I-80 crosses above the lots at y = 75.
+const streets = (
+  [
+    [1000, 'MISSION ST', 3, 'STREETS', [-60, -8], [95, -8]],
+    [1001, 'MISSION ST', 3, 'STREETS', [95, -8], [148, -8]],
+    [2000, 'FIXTURE AVE', 5, 'STREETS', [148, -60], [148, 28]],
+    [3000, 'PAPER ST', 0, 'PAPER_WATER', [E - 60, -8], [E + 60, -8]],
+    [4000, 'I-80', 1, 'FREEWAYS', [0, 75], [140, 75]]
+  ] as const
+).map(([cnn, streetname, classcode, layer, a, b]) =>
+  feature(
+    { cnn: s(cnn), streetname, classcode: s(classcode), layer, active: true },
+    multiLine([[...a], [...b]])
+  )
+);
+
 // ---- historic resource status (3tsw-4idn CSV; sim data layers) ----
 // Every lot but 18 has a row: lot 2 by its condo blklots (one A among two C), lot 13 A*, and the
 // retired 3512099 too.
@@ -670,6 +693,13 @@ const SOURCES = [
     license: 'public-domain',
     homepage: 'https://data.sf.gov/d/h9wh-cg3m',
     label: 'DataSF Zoning Map – Height and Bulk Districts'
+  },
+  {
+    id: 'datasf-streets',
+    features: streets,
+    license: DATASF['datasf-streets'].license,
+    homepage: DATASF['datasf-streets'].homepage,
+    label: DATASF['datasf-streets'].label
   }
 ];
 const CSV_SOURCES = [

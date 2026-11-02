@@ -1,0 +1,814 @@
+{
+  "format": "sfh-lesscars/1",
+  "datasetVersion": "fixture-0",
+  "count": 18,
+  "idsHash": 1063371383,
+  "seed": 3,
+  "schedules": [
+    {
+      "projectId": "BP:202403150003",
+      "origin": "pipeline",
+      "parcelIds": [
+        "3512005"
+      ],
+      "pathway": "permitOnly",
+      "entered": {
+        "permitFiled": 19797,
+        "permitIssued": 22008,
+        "construction": 22093,
+        "complete": 23319
+      },
+      "end": {
+        "kind": "complete",
+        "day": 23319
+      },
+      "revisions": [
+        {
+          "day": 19797,
+          "units": 2,
+          "stories": null
+        }
+      ],
+      "existingUnits": 1,
+      "multiPhase": false,
+      "phase": null
+    },
+    {
+      "projectId": "BP:202501150019",
+      "origin": "pipeline",
+      "parcelIds": [
+        "3512001"
+      ],
+      "pathway": "permitOnly",
+      "entered": {
+        "permitFiled": 20103,
+        "permitIssued": 21027,
+        "construction": 21079,
+        "complete": 21634
+      },
+      "end": {
+        "kind": "complete",
+        "day": 21634
+      },
+      "revisions": [
+        {
+          "day": 20103,
+          "units": 3,
+          "stories": null
+        }
+      ],
+      "existingUnits": 0,
+      "multiPhase": false,
+      "phase": null
+    },
+    {
+      "projectId": "CASE:2007.0001PRX:phase:1",
+      "origin": "pipeline",
+      "parcelIds": [
+        "3512014"
+      ],
+      "pathway": "discretionary",
+      "entered": {
+        "permitFiled": 21467,
+        "permitIssued": 21604,
+        "construction": 21664,
+        "complete": 22240
+      },
+      "end": {
+        "kind": "complete",
+        "day": 22240
+      },
+      "revisions": [
+        {
+          "day": 21467,
+          "units": 120,
+          "stories": null
+        }
+      ],
+      "existingUnits": 40,
+      "multiPhase": true,
+      "phase": {
+        "masterId": "CASE:2007.0001PRX",
+        "index": 1,
+        "of": 2,
+        "start": "estimated"
+      }
+    },
+    {
+      "projectId": "CASE:2007.0001PRX:phase:2",
+      "origin": "pipeline",
+      "parcelIds": [
+        "3512002"
+      ],
+      "pathway": "discretionary",
+      "entered": {
+        "permitFiled": 20878,
+        "permitIssued": 21299
+      },
+      "end": {
+        "kind": "exit",
+        "stage": "permitIssued",
+        "reason": "expired",
+        "day": 23997
+      },
+      "revisions": [
+        {
+          "day": 20878,
+          "units": 180,
+          "stories": null
+        }
+      ],
+      "existingUnits": 3,
+      "multiPhase": true,
+      "phase": {
+        "masterId": "CASE:2007.0001PRX",
+        "index": 2,
+        "of": 2,
+        "start": "scheduled"
+      }
+    },
+    {
+      "projectId": "CASE:2010.0002PRX:phase:1",
+      "origin": "pipeline",
+      "parcelIds": [
+        "3512009"
+      ],
+      "pathway": "discretionary",
+      "entered": {
+        "permitFiled": 21467,
+        "permitIssued": 21814,
+        "construction": 21866,
+        "complete": 23090
+      },
+      "end": {
+        "kind": "complete",
+        "day": 23090
+      },
+      "revisions": [
+        {
+          "day": 21467,
+          "units": 100,
+          "stories": null
+        }
+      ],
+      "existingUnits": 0,
+      "multiPhase": true,
+      "phase": {
+        "masterId": "CASE:2010.0002PRX",
+        "index": 1,
+        "of": 1,
+        "start": "estimated"
+      }
+    },
+    {
+      "projectId": "CASE:2012-000020PRX",
+      "origin": "pipeline",
+      "parcelIds": [],
+      "pathway": "discretionary",
+      "entered": {
+        "entitled": 15826,
+        "permitFiled": 20895,
+        "permitIssued": 21969,
+        "construction": 22017,
+        "complete": 22882
+      },
+      "end": {
+        "kind": "complete",
+        "day": 22882
+      },
+      "revisions": [
+        {
+          "day": 15826,
+          "units": 7,
+          "stories": null
+        }
+      ],
+      "existingUnits": 0,
+      "multiPhase": true,
+      "phase": null
+    },
+    {
+      "projectId": "PRJ:2019-000001PRJ",
+      "origin": "pipeline",
+      "parcelIds": [
+        "3512010",
+        "3512011"
+      ],
+      "pathway": "discretionary",
+      "entered": {
+        "preApplication": 17836,
+        "filed": 17911,
+        "entitled": 18323,
+        "permitFiled": 18323,
+        "permitIssued": 18659,
+        "construction": 18750,
+        "complete": 21188
+      },
+      "end": {
+        "kind": "complete",
+        "day": 21188
+      },
+      "revisions": [
+        {
+          "day": 17836,
+          "units": 24,
+          "stories": 6
+        }
+      ],
+      "existingUnits": 3,
+      "multiPhase": false,
+      "phase": null
+    },
+    {
+      "projectId": "PRJ:2020-000008PRJ",
+      "origin": "pipeline",
+      "parcelIds": [
+        "3512012"
+      ],
+      "pathway": "permitOnly",
+      "entered": {
+        "permitFiled": 18414,
+        "permitIssued": 18687
+      },
+      "end": {
+        "kind": "exit",
+        "stage": "permitIssued",
+        "reason": "expired",
+        "day": 21492
+      },
+      "revisions": [
+        {
+          "day": 18414,
+          "units": 4,
+          "stories": null
+        }
+      ],
+      "existingUnits": 0,
+      "multiPhase": false,
+      "phase": null
+    },
+    {
+      "projectId": "PRJ:2020-000010PRJ",
+      "origin": "pipeline",
+      "parcelIds": [
+        "3512001"
+      ],
+      "pathway": "discretionary",
+      "entered": {
+        "filed": 18231,
+        "entitled": 18932,
+        "permitFiled": 18932,
+        "permitIssued": 20749,
+        "construction": 20829,
+        "complete": 22328
+      },
+      "end": {
+        "kind": "complete",
+        "day": 22328
+      },
+      "revisions": [
+        {
+          "day": 18231,
+          "units": 6,
+          "stories": null
+        }
+      ],
+      "existingUnits": 2,
+      "multiPhase": false,
+      "phase": null
+    },
+    {
+      "projectId": "PRJ:2022-000035PRJ",
+      "origin": "pipeline",
+      "parcelIds": [
+        "3512010"
+      ],
+      "pathway": "discretionary",
+      "entered": {
+        "filed": 19144,
+        "entitled": 19417
+      },
+      "end": {
+        "kind": "exit",
+        "stage": "entitled",
+        "reason": "expired",
+        "day": 21292
+      },
+      "revisions": [
+        {
+          "day": 19144,
+          "units": 10,
+          "stories": null
+        }
+      ],
+      "existingUnits": 0,
+      "multiPhase": false,
+      "phase": null
+    },
+    {
+      "projectId": "PRJ:2024-000016PRJ",
+      "origin": "pipeline",
+      "parcelIds": [
+        "0026T001A"
+      ],
+      "pathway": "discretionary",
+      "entered": {
+        "filed": 19754,
+        "entitled": 20896,
+        "permitFiled": 20902
+      },
+      "end": {
+        "kind": "exit",
+        "stage": "permitFiled",
+        "reason": "withdrawn",
+        "day": 20918
+      },
+      "revisions": [
+        {
+          "day": 19754,
+          "units": 200,
+          "stories": null
+        }
+      ],
+      "existingUnits": 3,
+      "multiPhase": false,
+      "phase": null
+    },
+    {
+      "projectId": "PRJ:2025-000015PRJ",
+      "origin": "pipeline",
+      "parcelIds": [
+        "8711023C"
+      ],
+      "pathway": "permitOnly",
+      "entered": {
+        "permitFiled": 20179,
+        "permitIssued": 20770
+      },
+      "end": {
+        "kind": "exit",
+        "stage": "permitIssued",
+        "reason": "expired",
+        "day": 21909
+      },
+      "revisions": [
+        {
+          "day": 20179,
+          "units": 10,
+          "stories": 3
+        }
+      ],
+      "existingUnits": 4,
+      "multiPhase": false,
+      "phase": null
+    },
+    {
+      "projectId": "PRJ:2026-000002PRJ",
+      "origin": "pipeline",
+      "parcelIds": [
+        "3512013"
+      ],
+      "pathway": "streamlined",
+      "entered": {
+        "filed": 20574,
+        "entitled": 20947,
+        "permitFiled": 21984,
+        "permitIssued": 22188,
+        "construction": 22250,
+        "complete": 23153
+      },
+      "end": {
+        "kind": "complete",
+        "day": 23153
+      },
+      "revisions": [
+        {
+          "day": 20574,
+          "units": 40,
+          "stories": 8
+        }
+      ],
+      "existingUnits": 0,
+      "multiPhase": false,
+      "phase": null
+    },
+    {
+      "projectId": "PRJ:2026-000011PRJ",
+      "origin": "pipeline",
+      "parcelIds": [
+        "3512006"
+      ],
+      "pathway": "discretionary",
+      "entered": {
+        "filed": 20716,
+        "entitled": 21119,
+        "permitFiled": 21122,
+        "permitIssued": 21592,
+        "construction": 21624,
+        "complete": 22481
+      },
+      "end": {
+        "kind": "complete",
+        "day": 22481
+      },
+      "revisions": [
+        {
+          "day": 20716,
+          "units": 3,
+          "stories": null
+        }
+      ],
+      "existingUnits": 2,
+      "multiPhase": false,
+      "phase": null
+    },
+    {
+      "projectId": "PRJ:2026-000012PRJ",
+      "origin": "pipeline",
+      "parcelIds": [
+        "3512008"
+      ],
+      "pathway": "discretionary",
+      "entered": {
+        "preApplication": 20668,
+        "filed": 21604,
+        "entitled": 21841,
+        "permitFiled": 21951,
+        "permitIssued": 22099,
+        "construction": 22158,
+        "complete": 23102
+      },
+      "end": {
+        "kind": "complete",
+        "day": 23102
+      },
+      "revisions": [
+        {
+          "day": 20668,
+          "units": 24,
+          "stories": null
+        }
+      ],
+      "existingUnits": 12,
+      "multiPhase": false,
+      "phase": null
+    },
+    {
+      "projectId": "PRJ:2026-000033PRJ",
+      "origin": "pipeline",
+      "parcelIds": [
+        "3512012"
+      ],
+      "pathway": "discretionary",
+      "entered": {
+        "filed": 20666,
+        "entitled": 20962
+      },
+      "end": {
+        "kind": "exit",
+        "stage": "entitled",
+        "reason": "expired",
+        "day": 23317
+      },
+      "revisions": [
+        {
+          "day": 20666,
+          "units": 12,
+          "stories": null
+        }
+      ],
+      "existingUnits": 0,
+      "multiPhase": false,
+      "phase": null
+    },
+    {
+      "projectId": "sim:0026T001A:0",
+      "origin": "simulated",
+      "parcelIds": [
+        "0026T001A"
+      ],
+      "pathway": "discretionary",
+      "entered": {
+        "filed": 21596,
+        "entitled": 21755,
+        "permitFiled": 21937,
+        "permitIssued": 22587,
+        "construction": 22635,
+        "complete": 23504
+      },
+      "end": {
+        "kind": "complete",
+        "day": 23504
+      },
+      "revisions": [
+        {
+          "day": 21596,
+          "units": 9,
+          "stories": 4
+        }
+      ],
+      "existingUnits": 3,
+      "multiPhase": false,
+      "phase": null,
+      "regime": 0
+    },
+    {
+      "projectId": "sim:3512002:0",
+      "origin": "simulated",
+      "parcelIds": [
+        "3512002"
+      ],
+      "pathway": "streamlined",
+      "entered": {
+        "filed": 24041,
+        "entitled": 24439
+      },
+      "end": {
+        "kind": "exit",
+        "stage": "entitled",
+        "reason": "expired",
+        "day": 27754
+      },
+      "revisions": [
+        {
+          "day": 24041,
+          "units": 11,
+          "stories": 6
+        }
+      ],
+      "existingUnits": 3,
+      "multiPhase": false,
+      "phase": null,
+      "regime": 2
+    },
+    {
+      "projectId": "sim:3512002:1",
+      "origin": "simulated",
+      "parcelIds": [
+        "3512002"
+      ],
+      "pathway": "streamlined",
+      "entered": {
+        "filed": 29299,
+        "entitled": 29711
+      },
+      "end": {
+        "kind": "exit",
+        "stage": "entitled",
+        "reason": "expired",
+        "day": 32603
+      },
+      "revisions": [
+        {
+          "day": 29299,
+          "units": 11,
+          "stories": 6
+        }
+      ],
+      "existingUnits": 3,
+      "multiPhase": false,
+      "phase": null,
+      "regime": 2
+    },
+    {
+      "projectId": "sim:3512002:2",
+      "origin": "simulated",
+      "parcelIds": [
+        "3512002"
+      ],
+      "pathway": "streamlined",
+      "entered": {
+        "filed": 33038,
+        "entitled": 33341,
+        "permitFiled": 33506
+      },
+      "end": {
+        "kind": "exit",
+        "stage": "permitFiled",
+        "reason": "withdrawn",
+        "day": 33514
+      },
+      "revisions": [
+        {
+          "day": 33038,
+          "units": 11,
+          "stories": 6
+        }
+      ],
+      "existingUnits": 3,
+      "multiPhase": false,
+      "phase": null,
+      "regime": 2
+    },
+    {
+      "projectId": "sim:3512002:3",
+      "origin": "simulated",
+      "parcelIds": [
+        "3512002"
+      ],
+      "pathway": "streamlined",
+      "entered": {
+        "filed": 33533,
+        "entitled": 33748,
+        "permitFiled": 34798,
+        "permitIssued": 35138,
+        "construction": 35221,
+        "complete": 36126
+      },
+      "end": {
+        "kind": "complete",
+        "day": 36126
+      },
+      "revisions": [
+        {
+          "day": 33533,
+          "units": 11,
+          "stories": 6
+        }
+      ],
+      "existingUnits": 3,
+      "multiPhase": false,
+      "phase": null,
+      "regime": 2
+    },
+    {
+      "projectId": "sim:3512015:0",
+      "origin": "simulated",
+      "parcelIds": [
+        "3512015"
+      ],
+      "pathway": "permitOnly",
+      "entered": {
+        "permitFiled": 21386,
+        "permitIssued": 21546,
+        "construction": 21636,
+        "complete": 22503
+      },
+      "end": {
+        "kind": "complete",
+        "day": 22503
+      },
+      "revisions": [
+        {
+          "day": 21386,
+          "units": 6,
+          "stories": 6
+        }
+      ],
+      "existingUnits": 0,
+      "multiPhase": false,
+      "phase": null,
+      "regime": 0
+    },
+    {
+      "projectId": "sim:3512017:0",
+      "origin": "simulated",
+      "parcelIds": [
+        "3512017"
+      ],
+      "pathway": "permitOnly",
+      "entered": {
+        "permitFiled": 21396,
+        "permitIssued": 21549
+      },
+      "end": {
+        "kind": "exit",
+        "stage": "permitIssued",
+        "reason": "expired",
+        "day": 22682
+      },
+      "revisions": [
+        {
+          "day": 21396,
+          "units": 4,
+          "stories": 3
+        }
+      ],
+      "existingUnits": 0,
+      "multiPhase": false,
+      "phase": null,
+      "regime": 0
+    },
+    {
+      "projectId": "sim:3512017:1",
+      "origin": "simulated",
+      "parcelIds": [
+        "3512017"
+      ],
+      "pathway": "permitOnly",
+      "entered": {
+        "permitFiled": 23089,
+        "permitIssued": 23438,
+        "construction": 23513,
+        "complete": 24460
+      },
+      "end": {
+        "kind": "complete",
+        "day": 24460
+      },
+      "revisions": [
+        {
+          "day": 23089,
+          "units": 23,
+          "stories": 6
+        }
+      ],
+      "existingUnits": 0,
+      "multiPhase": false,
+      "phase": null,
+      "regime": 2
+    },
+    {
+      "projectId": "sim:3512018:0",
+      "origin": "simulated",
+      "parcelIds": [
+        "3512018"
+      ],
+      "pathway": "streamlined",
+      "entered": {
+        "filed": 20740,
+        "entitled": 20964,
+        "permitFiled": 20976,
+        "permitIssued": 21319,
+        "construction": 21360,
+        "complete": 22304
+      },
+      "end": {
+        "kind": "complete",
+        "day": 22304
+      },
+      "revisions": [
+        {
+          "day": 20740,
+          "units": 4,
+          "stories": 40
+        }
+      ],
+      "existingUnits": 2,
+      "multiPhase": false,
+      "phase": null,
+      "regime": 0
+    },
+    {
+      "projectId": "sim:8711023C:0",
+      "origin": "simulated",
+      "parcelIds": [
+        "8711023C"
+      ],
+      "pathway": "permitOnly",
+      "entered": {
+        "permitFiled": 22242,
+        "permitIssued": 22380,
+        "construction": 22432,
+        "complete": 23580
+      },
+      "end": {
+        "kind": "complete",
+        "day": 23580
+      },
+      "revisions": [
+        {
+          "day": 22242,
+          "units": 9,
+          "stories": 4
+        }
+      ],
+      "existingUnits": 4,
+      "multiPhase": false,
+      "phase": null,
+      "regime": 0
+    }
+  ],
+  "builds": [
+    {
+      "siteId": "lc:hwy:1",
+      "projectId": "hwy",
+      "parcelRow": null,
+      "units": 82,
+      "stories": 6,
+      "existing": 0,
+      "startDay": 24472,
+      "completeDay": 25385
+    },
+    {
+      "siteId": "lc:hwy:2",
+      "projectId": "hwy",
+      "parcelRow": null,
+      "units": 56,
+      "stories": 9,
+      "existing": 0,
+      "startDay": 24472,
+      "completeDay": 25385
+    },
+    {
+      "siteId": "lc:hwy:3",
+      "projectId": "hwy",
+      "parcelRow": null,
+      "units": 122,
+      "stories": 65,
+      "existing": 0,
+      "startDay": 24472,
+      "completeDay": 25385
+    }
+  ]
+}

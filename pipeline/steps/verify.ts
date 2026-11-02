@@ -53,6 +53,7 @@ export async function verify(a: VerifyArgs): Promise<{ ok: boolean; failures: st
       ? [m.scenarios.fzp.parcels, m.scenarios.fzp.projects, m.scenarios.fzp.calibration]
       : []),
     ...(m.scenarios?.fzp.policy ? [m.scenarios.fzp.policy] : []),
+    ...(m.scenarios?.lesscars ? Object.values(m.scenarios.lesscars) : []),
     m.buildingsTiles,
     m.basemapTiles,
     ...Object.values(FONT_STACKS).map((s) =>

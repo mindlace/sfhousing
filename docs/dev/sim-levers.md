@@ -164,6 +164,7 @@ fallback is needed. By the estimate, `scenarioYield` is nearly all of the recomp
 Rulings 1 to 3 of the plan, each with its reason.
 
 - **Law switch (ruling 1):** retired by the sim runs plan 1: the engine is FZP-only, with no current law and no 2032 switch (Task 1 stopped producing one; Task 8 removed `SimInput.lawSwitch` and `Schedule.afterSwitch` from the engine).
+- **Dated regimes:** the engine's `regimes` and `reservedFrom` inputs (`SimInput`, `src/lib/sim/scenario/types.ts`) exist for the `/lesscars` pipeline step only ([lesscars.md](lesscars.md)); `/sim` never sets them.
 - **207.11 null cap and height (ruling 2):** a lot with no density cap has unlimited density, meets any minimum, and fails ordinance condition (b)(8), so it never qualifies (`s207Envelope` takes a non-null cap; `s207Row` throws on an `applies` row with a null cap). The under-40 ft test reads `lpFt` on a Local Program lot and `baseFt` elsewhere (input `fzpHeightFt`), because every project on a Local Program lot uses the Local Program. No shipped row changes (V33 stays OK).
 - **Sibling document, not `PlanOp`s (ruling 3):** see "The lever document".
 - **Edit semantics (rules and paint, sim runs plan 1), protection (amended by the 2026-10-29 rulings), Local Program forcing, policy start, rescale, scale bounds, references, capacity metric, disapproval threshold (ruling 3):** each is stated with its reason in the sections above.
