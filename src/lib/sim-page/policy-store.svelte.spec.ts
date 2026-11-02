@@ -180,7 +180,8 @@ describe('LeverSync', () => {
     expect(h.sent).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].rules).toEqual([{ lots: ['lot-500'], stories: 4 }]);
+    // the latest rule (RM-2, the fifth band) and its id as the edit's source
+    expect(h.sent[0].rules).toEqual([{ lots: ['lot-500'], stories: 4, source: 'b-RM-2-4' }]);
     expect(h.sync.levers).toBe(h.sent[0]);
   });
 
@@ -260,7 +261,7 @@ describe('LeverSync', () => {
     h.pending[1].resolve(ok(['x']));
     await vi.advanceTimersByTimeAsync(250);
     expect(h.sent).toHaveLength(1);
-    expect(h.sent[0].rules).toEqual([{ lots: ['x'], stories: 6 }]);
+    expect(h.sent[0].rules).toEqual([{ lots: ['x'], stories: 6, source: 'b-RH-1-6' }]);
   });
 
   it('a policy with no brushes compiles at once, after the debounce', async () => {

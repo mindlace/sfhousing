@@ -152,10 +152,19 @@ describe('scenario host: heights', () => {
   });
 
   it('a revision superseded before its city is done posts no heights', async () => {
-    const h = harness();
+    const h = harness({ ticking: true });
     const initRev = h.init({ levers: structuredClone(DEFAULT_LEVERS) });
     await h.runAll();
-    const r1 = setLevers(h, painted(LOT_A, 30));
+    // a rule above FZP: LOT_A is a Need, so r1's resolve step posts `resolving`
+    const l1 = structuredClone(DEFAULT_LEVERS);
+    l1.rules.push({ lots: [LOT_A], stories: 30 });
+    const r1 = setLevers(h, l1);
+    const resolved = () =>
+      h.posts.some((m) => m.type === 'levers' && m.rev === r1 && m.phase === 'resolving');
+    for (let k = 0; k < 10 && !resolved(); k++) await h.step();
+    expect(resolved()).toBe(true); // r1's city build has started...
+    await h.step(); // ...and run a slice
+    expect(heights(h).map((m) => m.rev)).toEqual([initRev]); // ...and is not done
     const r2 = setLevers(h, painted(LOT_A, 40));
     await h.runAll();
     expect(h.errors()).toEqual([]);
