@@ -3,7 +3,7 @@ import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId } from '$lib/data/parcel';
 import type { GeneratedBuilding } from '$lib/generator';
-import type { FogGrid } from '$lib/map/fog/grid';
+import type { HeightCity, HeightLids } from '$lib/map/height/types';
 import type { PackedCell, TimelineUpdate } from '$lib/map/types';
 import type { Target } from '$lib/scoreboard';
 import type { InFlightProject } from '$lib/timelapse/projects';
@@ -103,7 +103,11 @@ type RowScenarioRequest =
   | { type: 'resolveBrush'; reqId: number; query: BrushQuery } // plan 3 Task 5
   | { type: 'brushCatalog'; reqId: number }
   | { type: 'lotOutlines'; reqId: number; lots: ParcelId[] }
-  | { type: 'previewBuildings'; reqId: number; lots: ParcelId[]; stories?: number }; // Task 6
+  | { type: 'previewBuildings'; reqId: number; lots: ParcelId[]; stories?: number } // Task 6
+  | { type: 'heightLids'; reqId: number; bbox: [number, number, number, number] }; // height lids Task 8
+type RowHeightLidsResult =
+  | { ok: true; lids: HeightLids; missing: number }
+  | { ok: false; reason: 'no-session' | 'superseded' | 'too-large'; message: string };
 type RowPreviewResult =
   | { ok: true; pack: PackedCell | null; built: number; missing: number }
   | { ok: false; reason: 'no-session'; message: string };
@@ -143,6 +147,8 @@ type RowScenarioResponse =
   | { type: 'brushCatalog'; reqId: number; catalog: BrushCatalog | null }
   | { type: 'lotOutlines'; reqId: number; result: RowLotOutlinesResult }
   | { type: 'previewBuildings'; reqId: number; result: RowPreviewResult }
+  | { type: 'heights'; rev: Rev; city: HeightCity } // height lids Task 8
+  | { type: 'heightLids'; reqId: number; result: RowHeightLidsResult }
   | {
       type: 'levers';
       rev: Rev;
@@ -150,7 +156,6 @@ type RowScenarioResponse =
       done: number;
       total: number;
       failedCells: string[];
-      fog?: FogGrid; // map overlays Task 2: the revision's first resolving only
     } // plan 2 Task 12
   | {
       type: 'levers';
@@ -159,7 +164,6 @@ type RowScenarioResponse =
       lookups: LeverLookups;
       capacity: LeverCapacity;
       unknownLots: number;
-      fog: FogGrid; // map overlays Task 2
     };
 type RowWorkerRequest = SimRequest | RowScenarioRequest | PlaybackRequest;
 
@@ -210,7 +214,9 @@ const rowsMatch: Assert<
                   ? Equals<Scenario.ScenarioResponse, RowScenarioResponse> extends true
                     ? Equals<Scenario.WorkerRequest, RowWorkerRequest> extends true
                       ? Equals<Scenario.TimelineScore, RowTimelineScore> extends true
-                        ? Equals<Scenario.TargetProgressAt, RowTargetProgressAt>
+                        ? Equals<Scenario.TargetProgressAt, RowTargetProgressAt> extends true
+                          ? Equals<Scenario.HeightLidsResult, RowHeightLidsResult>
+                          : false
                         : false
                       : false
                     : false

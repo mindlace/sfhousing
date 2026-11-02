@@ -3,7 +3,7 @@
 // below), focus on close, and the notices it must not cover.
 import { describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { page, userEvent } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { parseManifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
@@ -19,11 +19,13 @@ import { replaceStateCalls } from '../../test-stubs/app/navigation';
 import type SimPage from './SimPage.svelte';
 import { DEFAULT_POLICY, SIM_CODEC, SIM_KEY, type SimDoc } from './sim-doc';
 import { resolvePreset } from './timing';
-import type { FogGrid } from '$lib/map/fog/grid';
-import { FOG_LAYER_ID } from '$lib/map/fog/fog-layer';
 import { DEFAULT_VIEW, HIDDEN_VIEW, VIEW_KEY } from '$lib/view/prefs';
 import type { PackedCell } from '$lib/map/types';
 import { chanceTable, typicalMonths } from '$lib/timelapse/model';
+import { LIMITS_LAYER_ID } from '$lib/map/height/limits-layer';
+import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
+import { tinyLimits } from '$lib/map/height/test/fixtures';
+import { clampBbox } from './lid-request';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('$lib/fzp/test/FzpSimMapStub.svelte'));
 const workers = vi.hoisted(() => [] as import('$lib/fzp/test/fake-worker').FakeScenarioWorker[]);
@@ -852,39 +854,283 @@ describe('SimPage score comparison (spec §5)', () => {
 describe('SimPage map overlays (plan 2, Task 4)', () => {
   const run = () => page.getByRole('button', { name: 'Run', exact: true });
   const viewButton = () => page.getByRole('button', { name: 'View', exact: true });
-  /** A one-cell fog grid. */
-  const GRID: FogGrid = {
-    west: -122.5,
-    south: 37.7,
-    dLng: 0.001,
-    dLat: 0.001,
-    cols: 1,
-    rows: 1,
-    heightM: new Float32Array([10, 10, 10, 10])
+  const overlays = () => (callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as LimitsLayerLike[];
+  const overlayIds = () => overlays().map((l) => l.id);
+  type LimitsLayerLike = {
+    id: string;
+    props: { city: unknown; lids: unknown; mode: unknown; theme: string };
   };
-  /** The ids the map's overlay last got. */
-  const overlayIds = () =>
-    ((callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as { id: string }[]).map((l) => l.id);
-  /** The worker's first `resolving` for the session's levers, carrying the fog. */
-  function postFog(g: FogGrid = GRID): void {
-    const w = workers.at(-1)!;
-    const rev = w.lastOf('initScenario')!.rev;
-    w.emit({ type: 'levers', rev, phase: 'resolving', done: 0, total: 1, failedCells: [], fog: g });
+  /** The limits layer in the latest overlay, or undefined. */
+  const lastLayer = () => overlays().find((l) => l.id === LIMITS_LAYER_ID);
+  /** The worker posts the height regions of its latest lever revision. */
+  function emitHeights(w: (typeof workers)[number]) {
+    const rev = Math.max(w.lastOf('initScenario')!.rev, ...w.allOf('setLevers').map((m) => m.rev));
+    const { city } = tinyLimits();
+    w.emit({ type: 'heights', rev, city: { ...city, rev } });
+    return city;
+  }
+  /** Zooms the stub map to `zoom` and ends the move. */
+  function moveTo(zoom: number) {
+    stub.map.zoom = zoom;
+    stub.map.fire('moveend');
+  }
+  async function scheme(value: 'light' | 'dark') {
+    await cdp().send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-color-scheme', value }]
+    });
   }
 
-  it('the View menu and the fog show in Setup only', async () => {
+  it('the View menu and the limits layer show in Setup only', async () => {
     stub.reset();
     await page.viewport(1024, 768);
     await setup();
     await toReady();
-    postFog();
     await expect.element(viewButton()).toBeVisible();
-    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
     expect(stub.props.view).toEqual(DEFAULT_VIEW);
+    emitHeights(workers.at(-1)!);
+    await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
+    expect(lastLayer()!.props).toMatchObject({ lids: null, mode: { kind: 'plain' } });
     await run().click();
     expect(viewButton().query()).toBeNull();
-    await expect.poll(() => overlayIds()).not.toContain(FOG_LAYER_ID);
     expect(stub.props.view).toEqual(HIDDEN_VIEW);
+    await expect.poll(overlayIds).not.toContain(LIMITS_LAYER_ID);
+    await page.getByRole('button', { name: 'Change policy' }).click();
+    await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
+  });
+
+  it('at zoom ≥ 14.5 the page asks heightLids for the view; below, it asks nothing', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    const w = workers.at(-1)!;
+    emitHeights(w);
+    await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
+    moveTo(14);
+    await new Promise((res) => setTimeout(res, 50));
+    expect(w.allOf('heightLids')).toHaveLength(0);
+    // The stub's view is 4.4 km wide (a 2560 px window at z14.5): clamped around the view's
+    // centre, which a pitched map puts off the middle of its bounds (R14).
+    const centre = { lng: -122.44, lat: 37.76 };
+    stub.map.getCenter = () => centre;
+    moveTo(14.5);
+    await expect.poll(() => w.allOf('heightLids').length).toBe(1);
+    const asked = w.lastOf('heightLids')!.bbox;
+    expect(asked).toEqual(clampBbox(stub.map.bounds, LID_MAX_SPAN_M, [centre.lng, centre.lat]));
+    expect(asked[0] <= centre.lng && centre.lng <= asked[2]).toBe(true);
+    expect(asked[2] - asked[0]).toBeLessThan(stub.map.bounds[2] - stub.map.bounds[0]);
+    const { lids } = tinyLimits();
+    w.emit({
+      type: 'heightLids',
+      reqId: w.lastOf('heightLids')!.reqId,
+      result: { ok: true, lids, missing: 0 }
+    });
+    await expect.poll(() => lastLayer()?.props.lids).toBe(lids);
+    // Zoomed out again: the lids go, the contours stay.
+    moveTo(13);
+    await expect.poll(() => lastLayer()?.props.lids).toBeNull();
+    expect(lastLayer()!.props.city).not.toBeNull();
+    expect(w.allOf('heightLids')).toHaveLength(1);
+  });
+
+  it('a theme change or a tool change rebuilds the layer without a new heightLids', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    const w = workers.at(-1)!;
+    emitHeights(w);
+    moveTo(15);
+    await expect.poll(() => w.allOf('heightLids').length).toBe(1);
+    const { lids } = tinyLimits();
+    w.emit({
+      type: 'heightLids',
+      reqId: w.lastOf('heightLids')!.reqId,
+      result: { ok: true, lids, missing: 0 }
+    });
+    await expect.poll(() => lastLayer()?.props.lids).toBe(lids);
+    const before = w.allOf('heightLids').length;
+    try {
+      await scheme('dark');
+      await expect.poll(() => lastLayer()?.props.theme).toBe('dark');
+      await page.getByRole('radio', { name: 'Paint' }).click();
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'paint' });
+      await page.getByRole('radio', { name: 'Erase' }).click();
+      expect(lastLayer()!.props.mode).toEqual({ kind: 'paint' });
+      await page.getByRole('radio', { name: 'Move' }).click();
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'plain' });
+      await page.getByRole('radio', { name: 'Paint' }).click();
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'paint' });
+      expect(lastLayer()!.props.lids).toBe(lids);
+      expect(w.allOf('heightLids')).toHaveLength(before);
+    } finally {
+      await scheme('light');
+    }
+  });
+
+  it('no-session drops the lids, keeps the contours and asks again on the next client', async () => {
+    stub.reset();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await page.viewport(1024, 768);
+    await setup();
+    await toReady();
+    const w = workers.at(-1)!;
+    emitHeights(w);
+    moveTo(15);
+    await expect.poll(() => w.allOf('heightLids').length).toBe(1);
+    const { lids } = tinyLimits();
+    w.emit({
+      type: 'heightLids',
+      reqId: w.lastOf('heightLids')!.reqId,
+      result: { ok: true, lids, missing: 0 }
+    });
+    await expect.poll(() => lastLayer()?.props.lids).toBe(lids);
+    // A pan: asked again; the worker crashes before answering (no-session).
+    stub.map.bounds = [-122.44, 37.75, -122.43, 37.76];
+    moveTo(15);
+    await expect.poll(() => w.allOf('heightLids').length).toBe(2);
+    w.crash();
+    await expect.poll(() => lastLayer()?.props.lids).toBeNull();
+    expect(lastLayer()!.props.city).not.toBeNull();
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect.poll(() => workers.at(-1)).not.toBe(w);
+    const w2 = workers.at(-1)!;
+    await expect.poll(() => w2.allOf('heightLids').length).toBe(1);
+  });
+
+  it('a stored heightLimits: false draws nothing until turned on', async () => {
+    stub.reset();
+    await page.viewport(1024, 768);
+    const mem = new MemoryStorage();
+    mem.setItem(
+      VIEW_KEY,
+      JSON.stringify({ transitStops: false, transitAccess: true, heightFog: false })
+    );
+    await setup({ storage: () => mem });
+    await toReady();
+    const w = workers.at(-1)!;
+    emitHeights(w);
+    moveTo(15);
+    await new Promise((res) => setTimeout(res, 50));
+    expect(overlayIds()).not.toContain(LIMITS_LAYER_ID);
+    expect(w.allOf('heightLids')).toHaveLength(0);
+    await viewButton().click();
+    await page.getByRole('checkbox', { name: 'Zoning height limits' }).click();
+    await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
+    await expect.poll(() => w.allOf('heightLids').length).toBe(1);
+  });
+
+  describe('rule selection (Task 13)', () => {
+    const RULES_DOC: SimDoc = {
+      schema: 2,
+      kind: 'sim',
+      datasetVersion: 'fixture-0',
+      policy: {
+        ...DEFAULT_POLICY,
+        rules: [
+          { id: 'r1', kind: 'transit', stopTypes: ['metro'], bands: [{ maxM: 402, stories: 8 }] }
+        ]
+      }
+    };
+    const showToggle = () => page.getByRole('button', { name: /^Show on map/ });
+    async function withRule() {
+      stub.reset();
+      await page.viewport(1024, 768);
+      const mem = new MemoryStorage();
+      mem.setItem(
+        SIM_KEY,
+        JSON.stringify({ v: 1, savedAt: 'x', plan: SIM_CODEC.serialize(RULES_DOC) })
+      );
+      await setup({ storage: () => mem });
+      await toReady();
+      emitHeights(workers.at(-1)!);
+      await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
+    }
+
+    it('a selected rule sets the layer mode to its id; pressing again clears it', async () => {
+      await withRule();
+      await showToggle().click();
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
+      await showToggle().click();
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'plain' });
+    });
+
+    it('rule mode wins over the paint tool', async () => {
+      await withRule();
+      await page.getByRole('radio', { name: 'Paint' }).click();
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'paint' });
+      await showToggle().click();
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
+    });
+
+    it('removing the selected rule clears the selection, and undo does not bring it back', async () => {
+      await withRule();
+      await showToggle().click();
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
+      await page.getByRole('button', { name: /^Remove:/ }).click();
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'plain' });
+      await page.getByRole('button', { name: /^Undo/ }).click();
+      await expect.element(showToggle()).toHaveAttribute('aria-pressed', 'false');
+      expect(lastLayer()!.props.mode).toEqual({ kind: 'plain' });
+    });
+
+    it('the selected rule leaving through Undo of its add clears the selection', async () => {
+      stub.reset();
+      await page.viewport(1024, 768);
+      await setup();
+      await toReady();
+      const w = workers.at(-1)!;
+      emitHeights(w);
+      await expect.poll(() => w.lastOf('brushCatalog')).toBeTruthy();
+      w.emit({
+        type: 'brushCatalog',
+        reqId: w.lastOf('brushCatalog')!.reqId,
+        catalog: testCatalog()
+      });
+      await page.getByRole('button', { name: 'Add transit rule' }).click();
+      await page.getByRole('checkbox', { name: /^Muni Metro/ }).click();
+      await page.getByRole('button', { name: 'Save rule' }).click();
+      await showToggle().click();
+      await expect.poll(() => lastLayer()?.props.mode).toMatchObject({ kind: 'rule' });
+      await page.getByRole('button', { name: /^Undo/ }).click();
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'plain' });
+      await page.getByRole('button', { name: /^Redo/ }).click();
+      await expect.element(showToggle()).toHaveAttribute('aria-pressed', 'false');
+      expect(lastLayer()!.props.mode).toEqual({ kind: 'plain' });
+    });
+
+    it('with Zoning height limits off, pressing Show on map turns them on', async () => {
+      stub.reset();
+      await page.viewport(1024, 768);
+      const mem = new MemoryStorage();
+      mem.setItem(
+        SIM_KEY,
+        JSON.stringify({ v: 1, savedAt: 'x', plan: SIM_CODEC.serialize(RULES_DOC) })
+      );
+      mem.setItem(
+        VIEW_KEY,
+        JSON.stringify({ transitStops: false, transitAccess: true, heightLimits: false })
+      );
+      await setup({ storage: () => mem });
+      await toReady();
+      emitHeights(workers.at(-1)!);
+      await new Promise((res) => setTimeout(res, 50));
+      expect(overlayIds()).not.toContain(LIMITS_LAYER_ID);
+      await showToggle().click();
+      await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
+      expect(lastLayer()!.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
+      expect(JSON.parse(mem.getItem(VIEW_KEY)!).heightLimits).toBe(true);
+    });
+
+    it('Run clears the selection', async () => {
+      await withRule();
+      await showToggle().click();
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
+      await run().click();
+      await page.getByRole('button', { name: 'Change policy' }).click();
+      await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
+      expect(lastLayer()!.props.mode).toEqual({ kind: 'plain' });
+    });
   });
 
   it('toggles survive a run', async () => {
@@ -892,26 +1138,24 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
     await page.viewport(1024, 768);
     await setup();
     await toReady();
-    postFog();
-    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
     await viewButton().click();
-    await page.getByRole('checkbox', { name: 'Height limits' }).click();
+    await page.getByRole('checkbox', { name: 'Zoning height limits' }).click();
     await page.getByRole('checkbox', { name: 'Transit stops' }).click();
-    await expect.poll(() => overlayIds()).not.toContain(FOG_LAYER_ID);
     await run().click();
     await page.getByRole('button', { name: 'Change policy' }).click();
     await expect.element(viewButton()).toBeVisible();
-    expect(stub.props.view).toEqual({ ...DEFAULT_VIEW, heightFog: false, transitStops: true });
-    expect(overlayIds()).not.toContain(FOG_LAYER_ID);
+    expect(stub.props.view).toEqual({ ...DEFAULT_VIEW, heightLimits: false, transitStops: true });
   });
 
-  it('without transit the menu has only the fog row', async () => {
+  it('without transit the menu has only the height-limits row', async () => {
     await page.viewport(1024, 768);
     await setup({ manifest: { ...manifest, transit: undefined } });
     await toReady();
     await viewButton().click();
     expect(page.getByRole('checkbox').elements()).toHaveLength(1);
-    await expect.element(page.getByRole('checkbox', { name: 'Height limits' })).toBeChecked();
+    await expect
+      .element(page.getByRole('checkbox', { name: 'Zoning height limits' }))
+      .toBeChecked();
   });
 
   it('the rows follow the manifest the map renders: a Retry after a failed load brings transit', async () => {
@@ -941,44 +1185,24 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
     await toReady();
     await expect
       .poll(() => stub.props.view)
-      .toEqual({ transitStops: true, transitAccess: true, heightFog: true });
+      .toEqual({ transitStops: true, transitAccess: true, heightLimits: true });
     await viewButton().click();
-    await page.getByRole('checkbox', { name: 'Height limits' }).click();
+    await page.getByRole('checkbox', { name: 'Zoning height limits' }).click();
     await expect
       .poll(() => JSON.parse(mem.getItem(VIEW_KEY) ?? '{}'))
-      .toEqual({ transitStops: true, transitAccess: true, heightFog: false });
+      .toEqual({ transitStops: true, transitAccess: true, heightLimits: false });
   });
 
-  it('a stored heightFog: false draws no fog until it is turned on', async () => {
-    stub.reset();
-    await page.viewport(1024, 768);
-    const mem = new MemoryStorage();
-    mem.setItem(VIEW_KEY, JSON.stringify({ ...DEFAULT_VIEW, heightFog: false }));
-    await setup({ storage: () => mem });
-    await toReady();
-    postFog();
-    await viewButton().click();
-    const fog = page.getByRole('checkbox', { name: 'Height limits' });
-    await expect.element(fog).not.toBeChecked();
-    expect(overlayIds()).not.toContain(FOG_LAYER_ID);
-    await fog.click();
-    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
-  });
-
-  it('the view (/s/:id) shows the View menu and the fog in Setup', async () => {
+  it('the view (/s/:id) shows the View menu in Setup', async () => {
     stub.reset();
     await page.viewport(1024, 768);
     await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY });
     await toReady();
-    postFog();
     await expect.element(viewButton()).toBeVisible();
-    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
     await run().click();
     expect(viewButton().query()).toBeNull();
-    await expect.poll(() => overlayIds()).not.toContain(FOG_LAYER_ID);
     await page.getByRole('button', { name: 'Back to start' }).click();
     await expect.element(viewButton()).toBeVisible();
-    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
   });
 });
 
@@ -1091,8 +1315,7 @@ describe('SimPage paint feedback (plan 2, Task 6)', () => {
       phase: 'current',
       lookups: { inFlight: one(), fresh: one() },
       capacity: { plan: 10, withoutProtections: 10, protectedLots: 0 },
-      unknownLots: 0,
-      fog: { west: 0, south: 0, dLng: 1, dLat: 1, cols: 1, rows: 1, heightM: new Float32Array(4) }
+      unknownLots: 0
     });
   }
 

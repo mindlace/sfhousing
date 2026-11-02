@@ -58,6 +58,7 @@ Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link t
 | `npm run format`                                    | `prettier --write .`                                                                                             |
 | `npm test`                                          | `test:unit` then `test:e2e`                                                                                      |
 | `npm run test:unit`                                 | Vitest, server and client projects                                                                               |
+| `npm run test:perf`                                 | Wall-clock budgets (perf, client-perf); idle machine only, not in signoff                                        |
 | `npm run test:e2e`                                  | Playwright (starts the preview server, loads the fixture, migrates)                                              |
 | `npm run bench:map`                                 | Headed GPU map pan benchmark (p50/p95 frame time); see docs/dev/map-perf.md                                      |
 | `npm run db:generate`                               | Generate + classify + flatten a migration from the Drizzle schema                                                |

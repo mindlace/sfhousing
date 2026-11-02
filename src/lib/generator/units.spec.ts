@@ -386,14 +386,10 @@ describe('generateForUnits', () => {
     expect(massingApproximate(b)).toBe(true);
   });
 
-  it('a huge undershoot on std is fast and approximate', () => {
-    generateForUnits(P(std), 1e9, 80, fnv1a32(P(std).id)); // warm up: time the steady state
-    const t0 = performance.now();
+  it('a huge undershoot on std is approximate (its time budget: units.perf.spec.ts)', () => {
     const b = generateForUnits(P(std), 1e9, 80, fnv1a32(P(std).id))!;
-    const ms = performance.now() - t0;
     expect(b).not.toBeNull();
     expect(b.units).toBe(1e9);
     expect(massingApproximate(b)).toBe(true);
-    expect(ms).toBeLessThan(50);
   });
 });

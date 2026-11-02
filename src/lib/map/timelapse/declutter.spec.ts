@@ -180,27 +180,4 @@ describe('declutter', () => {
       { numRuns: 100 }
     );
   });
-
-  it('declutters 30,000 bars across the SF bbox in 50 ms', () => {
-    let seed = 12345;
-    const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
-    const make = () => {
-      const bars: BarAttrs[] = [];
-      for (let i = 0; i < 30000; i++) {
-        const from = Math.floor(rnd() * 8000);
-        const b = mk(`p${i}`, 1 + Math.floor(rnd() * 400), 0, 0, from, from + 500 + rnd() * 3000);
-        b.anchor = [-122.515 + rnd() * 0.17, 37.708 + rnd() * 0.12, 20];
-        bars.push(b);
-      }
-      return bars;
-    };
-    const times: number[] = [];
-    for (let run = 0; run < 3; run++) {
-      const bars = make();
-      const t0 = performance.now();
-      declutter(bars);
-      times.push(performance.now() - t0);
-    }
-    expect(Math.min(...times)).toBeLessThanOrEqual(50);
-  });
 });

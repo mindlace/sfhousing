@@ -118,8 +118,8 @@ describe('compileLevers', () => {
     const [outer, inner] = ruleQueries(p.rules[0]).map(queryKey);
     const l = compileLevers(p, lotsOf({ [outer]: ['a', 'b'], [inner]: ['a'] }))!;
     expect(l.rules).toEqual([
-      { lots: ['a', 'b'], stories: 5 },
-      { lots: ['a'], stories: 8 }
+      { lots: ['a', 'b'], stories: 5, source: 't' },
+      { lots: ['a'], stories: 8, source: 't' }
     ]);
     expect(l.compare).toBe('fzp');
   });
@@ -130,8 +130,23 @@ describe('compileLevers', () => {
     const p = base({ rules: [a, b] });
     const k = (r: ZoningRule) => queryKey(ruleQueries(r)[0]);
     const l = compileLevers(p, lotsOf({ [k(a)]: ['2', '1'], [k(b)]: [] }))!;
-    expect(l.rules).toEqual([{ lots: ['1', '2'], stories: 9 }]);
+    expect(l.rules).toEqual([{ lots: ['1', '2'], stories: 9, source: 'b' }]);
     expect(() => parseSimLevers(l)).not.toThrow();
+  });
+
+  it('compileLevers stamps each rule band edit with its rule id; paint edits have none', () => {
+    const st: Stroke = { path: [[-122.4, 37.77]], radiusM: 20 };
+    const r = transit('rule-a', 6);
+    const paint = { id: '1', kind: 'paint' as const, strokes: [st], stories: 9 };
+    const p = base({ rules: [r], custom: [paint] });
+    const l = compileLevers(
+      p,
+      lotsOf({ [queryKey(ruleQueries(r)[0])]: ['a'], [queryKey(customQuery(paint))]: ['b'] })
+    )!;
+    expect(l.rules.length).toBeGreaterThan(0);
+    expect(l.rules.every((e) => e.source === 'rule-a')).toBe(true);
+    expect(l.paint.length).toBeGreaterThan(0);
+    expect(l.paint.every((e) => !('source' in e))).toBe(true);
   });
 
   it('erase removes earlier paint only; paint order is kept', () => {
@@ -165,7 +180,7 @@ describe('compileLevers', () => {
       [queryKey(ruleQueries(r)[0])]: ['1'],
       [queryKey(customQuery(p.custom[0]))]: ['1']
     });
-    expect(compileLevers(p, lots)!.rules).toEqual([{ lots: ['1'], stories: 7 }]);
+    expect(compileLevers(p, lots)!.rules).toEqual([{ lots: ['1'], stories: 7, source: 'r' }]);
     expect(paintedLots(p, lots)).toEqual(new Map());
   });
 

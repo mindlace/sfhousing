@@ -89,10 +89,16 @@ describe('validatePlan: one test per §4.6 row', () => {
 
   it('ops: must be an array of ≤ OPS_MAX, and a huge array is rejected without per-op work', () => {
     expect(errorsOf({ ...base(), ops: 'x' })).toEqual([['/ops', 'bad-field']]);
-    const huge = new Array(1_000_000).fill(null);
-    const t0 = performance.now();
+    // No per-op work: the rejection reads `length` and touches no element or array method.
+    const read = new Set<string | symbol>();
+    const huge = new Proxy(new Array(1_000_000).fill(null), {
+      get(target, key, receiver) {
+        read.add(key);
+        return Reflect.get(target, key, receiver);
+      }
+    });
     expect(errorsOf({ ...base(), ops: huge })).toEqual([['/ops', 'too-many-ops']]);
-    expect(performance.now() - t0).toBeLessThan(100);
+    expect([...read]).toEqual(['length']);
     expect(errorsOf({ ...base(), ops: new Array(OPS_MAX + 1).fill(null) })).toEqual([
       ['/ops', 'too-many-ops']
     ]);

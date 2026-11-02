@@ -1,25 +1,26 @@
-// Per-viewer map layer toggles (transit spec T6, §6.3; the height fog, sim-runs plan 2 Task 4).
+// Per-viewer map layer toggles (transit spec T6, §6.3; the height limits, height-lids plan Task 12).
 // One record shared by / and /sim, so a viewer's transit choice follows them between modes; / never
-// shows or uses `heightFog` and writes back the value it read. Best-effort persistence.
+// shows or uses `heightLimits` and writes back the value it read. A record from the height fog's
+// time stored `heightFog`: it is still read as `heightLimits`. Best-effort persistence.
 
 export interface ViewPrefs {
   transitStops: boolean;
   transitAccess: boolean;
-  /** /sim only: the height-limit fog in Setup. */
-  heightFog: boolean;
+  /** /sim only: the zoning height limits (glass lids and contours) in Setup. */
+  heightLimits: boolean;
 }
 
 export const VIEW_KEY = 'sfhousing:view';
 export const DEFAULT_VIEW: ViewPrefs = {
   transitStops: false,
   transitAccess: true,
-  heightFog: true
+  heightLimits: true
 };
 /** Every layer off: FzpMode's default, and what /sim's map gets during a run. */
 export const HIDDEN_VIEW: ViewPrefs = {
   transitStops: false,
   transitAccess: false,
-  heightFog: false
+  heightLimits: false
 };
 
 function defaultStorage(): Storage | null {
@@ -41,7 +42,7 @@ export function readViewPrefs(
     return {
       transitStops: bool(v?.transitStops, DEFAULT_VIEW.transitStops),
       transitAccess: bool(v?.transitAccess, DEFAULT_VIEW.transitAccess),
-      heightFog: bool(v?.heightFog, DEFAULT_VIEW.heightFog)
+      heightLimits: bool(v?.heightLimits, bool(v?.heightFog, DEFAULT_VIEW.heightLimits))
     };
   } catch {
     return { ...DEFAULT_VIEW };
@@ -58,7 +59,7 @@ export function writeViewPrefs(
       JSON.stringify({
         transitStops: v.transitStops,
         transitAccess: v.transitAccess,
-        heightFog: v.heightFog
+        heightLimits: v.heightLimits
       })
     );
   } catch {

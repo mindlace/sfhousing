@@ -16,8 +16,9 @@ export interface RouterDeps {
   /** Called on the first `initPlayback`, and again after `init` or `initScenario` disposed it. */
   createPlayback: () => { handle(r: PlaybackHostRequest): void; dispose(): void };
   /**
-   * The router's own answers: brush requests outside scenario mode (`no-session`), and the
-   * requests playback mode does not serve (a null summary or card, `bad-request`).
+   * The router's own answers: brush, outline, preview and lid requests outside scenario mode
+   * (`no-session`), and the requests playback mode does not serve (a null summary or card,
+   * `bad-request`).
    */
   post(msg: ScenarioResponse | PlaybackResponse): void;
 }
@@ -128,6 +129,17 @@ export function createWorkerRouter(deps: RouterDeps): { handle(req: WorkerReques
             const message = 'previews need a /sim scenario session';
             deps.post({
               type: 'previewBuildings',
+              reqId: req.reqId,
+              result: { ok: false, reason: 'no-session', message }
+            });
+          }
+          return;
+        case 'heightLids':
+          if (mode === 'scenario') scenarioHost().handle(req);
+          else {
+            const message = 'height lids need a /sim scenario session';
+            deps.post({
+              type: 'heightLids',
               reqId: req.reqId,
               result: { ok: false, reason: 'no-session', message }
             });

@@ -49,19 +49,19 @@ display refresh rate, so on a 120 Hz display the p50 is about 8.3 ms. The bar is
 
 ## Results
 
-| Machine                                                                   | Date       | Browser                    | DPR | Frames | p50    | p95     | Pass                                         |
-| ------------------------------------------------------------------------- | ---------- | -------------------------- | --- | ------ | ------ | ------- | -------------------------------------------- |
-| Apple M5 Pro (Mac17,9), 24 GB, macOS 27.0.1, 120 Hz                       | 2026-10-11 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 9.0 ms  | Yes                                          |
-| Apple M5 Pro (same), superseded first run                                 | 2026-10-11 | Playwright Chromium, Metal | 1   | 1201   | 8.3 ms | 10.0 ms | Yes (DPR 1, fixed 6 px step)                 |
-| 2022 MacBook Air (M2)                                                     | —          | —                          | 2   | —      | —      | —       | not yet recorded                             |
-| Apple M5 Pro (same), both transit layers on, fixture-0 (8 stops)          | 2026-10-15 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 8.5 ms  | Yes (representative; worst-case p95 8.4 ms)  |
-| Apple M5 Pro (same), both transit layers on, live network (3,147 markers) | 2026-10-15 | Playwright Chromium, Metal | 2   | 1181   | 8.3 ms | 10.2 ms | Yes (representative; worst-case p95 10.0 ms) |
-| Apple M5 Pro (same), closed packed rings (one more wall per part)         | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 9.3 ms  | Yes (representative; worst-case p95 8.6 ms)  |
-| Apple M5 Pro (Mac17,9), timeline "playback", 30,000 projects, zoom 15.5   | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 10.3 ms | Yes                                          |
-| Apple M5 Pro (Mac17,9), timeline "drag", 30,000 projects, zoom 15.5       | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 9.0 ms  | Yes                                          |
-| Apple M5 Pro (same), timeline "playback", closed rings (after #21)        | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 10.3 ms | Yes                                          |
-| Apple M5 Pro (same), timeline "drag", closed rings (after #21)            | 2026-10-17 | Playwright Chromium, Metal | 2   | 1200   | 8.3 ms | 10.3 ms | Yes                                          |
-| Apple M5 Pro (same), timeline "playback + fog", 135,270 fog cells         | 2026-11-01 | Playwright Chromium, Metal | 2   | 1200   | 8.3 ms | 8.8 ms  | Yes (full sweep; lone re-run 9.8 ms)         |
+| Machine                                                                                          | Date       | Browser                    | DPR | Frames | p50    | p95     | Pass                                         |
+| ------------------------------------------------------------------------------------------------ | ---------- | -------------------------- | --- | ------ | ------ | ------- | -------------------------------------------- |
+| Apple M5 Pro (Mac17,9), 24 GB, macOS 27.0.1, 120 Hz                                              | 2026-10-11 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 9.0 ms  | Yes                                          |
+| Apple M5 Pro (same), superseded first run                                                        | 2026-10-11 | Playwright Chromium, Metal | 1   | 1201   | 8.3 ms | 10.0 ms | Yes (DPR 1, fixed 6 px step)                 |
+| 2022 MacBook Air (M2)                                                                            | —          | —                          | 2   | —      | —      | —       | not yet recorded                             |
+| Apple M5 Pro (same), both transit layers on, fixture-0 (8 stops)                                 | 2026-10-15 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 8.5 ms  | Yes (representative; worst-case p95 8.4 ms)  |
+| Apple M5 Pro (same), both transit layers on, live network (3,147 markers)                        | 2026-10-15 | Playwright Chromium, Metal | 2   | 1181   | 8.3 ms | 10.2 ms | Yes (representative; worst-case p95 10.0 ms) |
+| Apple M5 Pro (same), closed packed rings (one more wall per part)                                | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 9.3 ms  | Yes (representative; worst-case p95 8.6 ms)  |
+| Apple M5 Pro (Mac17,9), timeline "playback", 30,000 projects, zoom 15.5                          | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 10.3 ms | Yes                                          |
+| Apple M5 Pro (Mac17,9), timeline "drag", 30,000 projects, zoom 15.5                              | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 9.0 ms  | Yes                                          |
+| Apple M5 Pro (same), timeline "playback", closed rings (after #21)                               | 2026-10-17 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 10.3 ms | Yes                                          |
+| Apple M5 Pro (same), timeline "drag", closed rings (after #21)                                   | 2026-10-17 | Playwright Chromium, Metal | 2   | 1200   | 8.3 ms | 10.3 ms | Yes                                          |
+| Apple M5 Pro (same), timeline "playback + limits", 5,531 faces, 10,352 rim paths, 390,036 chains | 2026-11-01 | Playwright Chromium, Metal | 2   | 1201   | 8.3 ms | 10.0 ms | Yes                                          |
 
 Run the bench with both transit layers on (the default View prefs). fixture-0 has only 8 stops, so its transit row measures the layer overhead. The live-network row ran the same bench against a local copy of the production dataset (`npm run data:local -- <version>`, then `npm run data:transit -- <version>`) served with `PUBLIC_DATASET_VERSION` set to that version instead of `fixture-0` (the bench config pins `fixture-0`, so this needs a one-off config override). Re-check against live data when the stop layers change.
 
@@ -79,7 +79,7 @@ Both cases then pan for 10 s exactly as `map-pan` does (360 px/s, direction flip
 
 Each prints `p50`, `p95`, frames, parts, `pumpMaxOps` (the demolish pump's largest feature-state call count in one frame, from `demolishMaxFrameOps`; the "catch-up" figure in parentheses is its value before the pan, i.e. the revision-0 install), the renderer and PASS/FAIL, and asserts p95 ≤ 16.7 ms. The existing-building catch-up bound is 2,000 feature-state changes per frame.
 
-**Height fog case.** **playback + fog** is `playback` plus the sim map's height fog (`HeightFogLayer`, `src/lib/map/fog/fog-layer.ts`). Once the timeline cells are in, it calls `window.__sfhMap.loadSyntheticFog(1)`, which builds `makeSyntheticFog(1)` (`src/lib/map/test/synthetic-fog.ts`: 150,000 seeded label points spread uniformly over `FOG_BOUNDS`, 4–40 stories each) through `buildFogGrid`, and sets `[heightFogLayer(…)]` through SimMap's `setOverlayLayers`. The grid is 50 m cells (`FOG_CELL_M`) over the map bounds; uniform points fill nearly all of it, so the layer draws 135,270 instanced quads (4 vertices each, a triangle strip), a worst case for the whole city. The line adds `fogCells=`. On 2026-11-01 (M5 Pro) p95 was 8.8 ms in the full sweep and 9.8 ms in a lone re-run, well under the bar, so `FOG_CELL_M` stays 50 m.
+**Height limits case.** **playback + limits** is `playback` plus the sim map's height limits (`HeightLimitsLayer`, `src/lib/map/height/limits-layer.ts`) in plain mode, at the bench camera (zoom 15.5, pitch 55: inside the lid band, so lids and their labels draw and the contours are faded out). Once the timeline cells are in, it calls `window.__sfhMap.loadSyntheticLimits(1)`, which runs `makeSyntheticLimits(1)` (`src/lib/map/test/synthetic-limits.ts`) on the main thread, the one place the real builders do: the city build over 150,000 seeded lots across `CITY_BOUNDS` (limits 4–40 stories), and a lid build over a 3 km × 3 km downtown view centred on the bench camera, of 25 ft × 100 ft lots in 3 × 2 blocks between 10 m streets, a limit per block of 4–40, 1 lot in 20 an exception and 1 in 50 painted. It sets `[heightLimitsLayer(…)]` through SimMap's `setOverlayLayers`. The line adds `limits=faces/rimPaths/chains`. On 2026-11-01 (M5 Pro, 120 Hz), after the final review's fixes (no re-render on a pan at a fixed zoom inside the fade), the run printed `limits=5531/10352/390036`, p50 8.3 ms and p95 10.0 ms over 1201 frames, under the bar (the first run read 9.3 ms over 1200 frames; this run's other cases also read 9.7 to 10.0 ms, so the spread is run to run); `npm run bench:map` ran all five cases (5 passed). The worker's own build times are separate (`src/lib/map/height/height.bench.spec.ts`).
 
 The synthetic parcel ids match no buildings-tile features. The pump's `setFeatureState` call count is real, but MapLibre's render-time cost on live tiles is not measured here.
 
@@ -97,9 +97,11 @@ The first two rows were measured on open packed rings; the "closed rings (after 
 ## CI
 
 CI does not run this bench. Headless Chromium in CI renders with software GL (SwiftShader), so
-GPU frame times there mean nothing. CI gates the main-thread budgets instead: client test C5 in
-`src/lib/map/generated-controller.svelte.spec.ts` checks that a 500-parcel update reaches its first
-rising frame within 30 ms.
+GPU frame times there mean nothing. The main-thread budgets are client tests instead: C5 in
+`src/lib/map/generated-controller.perf.svelte.spec.ts` checks that a 500-parcel update reaches its
+first rising frame within 30 ms. Like every wall-clock budget they run in `npm run test:perf`
+(project `client-perf`) on an idle machine, not in `test:unit` or signoff
+([testing.md](testing.md)).
 
 ## Building compositions validation (2026-10-11)
 
