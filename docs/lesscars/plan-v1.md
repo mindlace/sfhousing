@@ -441,23 +441,20 @@ defined in Appendix A and resolve to the sources in Appendix B.
   tier 3). Clearance ends 2044.
 - **Build** start 2045, 30 months (PV-build).
 
-### Masonic & Geary roundabout (`masonic-roundabout`) — on hold (owner's addition)
+### Masonic underpass becomes the Masonic station (part of `geary-subway-1`) — no separate project
 
-- **Status: on hold** (owner, 2026-11-01). `geary-trench` covers Gough to Steiner only, so it does
-  not touch the separate Masonic underpass, and no freed land reaches Masonic: the carve keeps a
-  `keepHalfM` (10 m) corridor around every crossing street (Laguna, Webster, Fillmore, Steiner) and
-  stops at the trench's ends. Nothing in v1 puts housing under or over Masonic. In v1 the Masonic
-  underpass stays as it is; this project is the only treatment drafted for it.
-- **Kind** `street-change` (display only, no homes). Geary dips under Masonic in a second
-  underpass west of the trench. After `geary-subway-1` opens, the underpass is filled and the
-  intersection becomes a roundabout carrying Geary's surface street, Masonic, buses and bikes.
-  Other wide Geary crossings (Park Presidio, Arguello) are candidates for the same treatment in v2.
-- **Format gap.** Plan 1's `LANE_USES` has no roundabout. Plan 3 adds either a `roundabout` lane use
-  or a `form` field on `street-change` so the page can draw it; until then it transcribes as a
-  `street-change` with lanes `bus`, `bike`, `pedestrian`, `car`.
-- **Geometry** the Masonic/Geary intersection CNNs (Plan 3 resolves them from `src_streets`).
-- **Dependencies** `geary-subway-1`. **Start** 2041. **Duration** 18 months (PV-roundabout, tier 4,
-  invented). Counts against `street` capacity.
+- **Owner, 2026-11-01:** no roundabout. The `lc:geary-masonic` station replaces the Masonic
+  underpass, and the Masonic and Park Presidio crossings stay more or less as they are: ordinary
+  surface intersections.
+- **Why it is not a separate project.** `geary-trench` covers Gough to Steiner only and never reaches
+  Masonic; the carve keeps a `keepHalfM` (10 m) corridor around every crossing street, so no freed
+  land or housing reaches Masonic. The station box is built in the underpass as part of the subway's
+  own construction (2032–2041) and Geary runs at grade through the Masonic intersection when the
+  station opens. No land is freed, no homes are added, and the change is not a car closure (Geary
+  keeps car lanes at grade), so it needs no project of its own and adds nothing to `street`
+  capacity, which is full in 2041.
+- **For the page (Plan 2):** show the Masonic underpass as filled from `geary-subway-1`'s opening.
+  Park Presidio (a phase 2 station) is unchanged at the surface.
 
 ### Parking conversions (48 projects, `park-<parcel>`) — in
 
@@ -560,15 +557,16 @@ Checks:
    transition into or out of the city stays a garage; one that serves parking for trips within the
    city is converted. The four downtown and Japantown garages (`3724067`, `0286024`, `0327021`,
    `0700035`) are destination parking inside the city, not at an entrance, so they stay in v1 as
-   parking conversions **(drafter's reading of the rule; owner to confirm)**. The edge-garage role
+   parking conversions (drafter's reading of the rule, confirmed by the owner). The edge-garage role
    is carried by `garage-south` and `garage-north`.
 5. **Public-zoned (`P`) sites: keep** (an honest zero where no envelope applies).
-6. **Phase 2 dependency: still open; see below.**
+6. **Phase 2 dependency: independent** (owner). Plan 3 adds a check that phase 2 does not open before phase 1; reasoning below.
 7. **Car shuttle: leave for v2.**
 8. **Garages off freed land: agreed.**
 9. **Geary trench design: the linear block for v1.** The owner adds: convert intersections like
-   Masonic & Geary into roundabouts. Drafted as `masonic-roundabout` under Projects, then put on
-   hold by the owner: the trench (Gough–Steiner) does not reach the Masonic underpass.
+   Masonic & Geary into roundabouts. Then, on reflection: no roundabout; the Masonic subway station
+   replaces the underpass and the Masonic and Park Presidio crossings stay ordinary intersections
+   (see "Masonic underpass becomes the Masonic station").
 
 **Plan 3 carving check for the trench.** The main-lane CNNs share one centreline with their
 opposite-direction twins and the Fillmore frontage roads (Data findings). The carve removes a
@@ -577,7 +575,7 @@ as removed, the twins' corridor would erase most of the 20 m freed strip. Plan 3
 in `segments` (or keep the frontage roads deliberately and accept a narrower block), and check the
 carved area against the expected ~1.8 ha.
 
-6 (open). **Are the two subway phases structurally dependent?** For construction, no: phase 2 is a
+6 (resolved). **Are the two subway phases structurally dependent?** For construction, no: phase 2 is a
 separate tunnel drive from Park Presidio south under Golden Gate Park and 19th Avenue to Daly City
 BART, and California and peer agencies routinely build segments of one line under separate
 contracts at the same time. For service, partly: phase 2 has its own utility (19th Avenue to Daly
