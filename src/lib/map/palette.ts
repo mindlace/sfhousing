@@ -34,9 +34,21 @@ export type TokenName =
   | 'tl-bar-likely'
   | 'tl-bar-uncertain'
   | 'tl-bar-unlikely'
-  | 'tl-bar-dead';
+  | 'tl-bar-dead'
+  | 'lc-works'
+  | 'lc-transit'
+  | 'lc-bike'
+  | 'lc-pedestrian'
+  | 'lc-removed'
+  | 'lc-grade'
+  | 'lc-line-subway'
+  | 'lc-line-tram'
+  | 'lc-line-brt'
+  | 'lc-shuttle'
+  | 'lc-garage'
+  | 'lc-site';
 
-/** Spec §4.3 verbatim, with the one-hue-per-meaning transit, pipeline and brush tokens from spec 2026-10-31 §8; `transit-*` from transit spec §6.1; `tl-*` from timelapse-render spec §4.6. Hex, or rgba() for highlight. */
+/** Spec §4.3 verbatim, with the one-hue-per-meaning transit, pipeline and brush tokens from spec 2026-10-31 §8; `transit-*` from transit spec §6.1; `tl-*` from timelapse-render spec §4.6; `lc-*` are the /lesscars map marks (plan 2 Task 3b). Hex, or rgba() for highlight. */
 export const TOKENS: Record<Theme, Record<TokenName, string>> = {
   light: {
     land: '#F3EFE6',
@@ -78,7 +90,19 @@ export const TOKENS: Record<Theme, Record<TokenName, string>> = {
     'tl-bar-likely': '#2E7D32',
     'tl-bar-uncertain': '#B26A00',
     'tl-bar-unlikely': '#C62828',
-    'tl-bar-dead': '#8A8478'
+    'tl-bar-dead': '#8A8478',
+    'lc-works': '#B35C00',
+    'lc-transit': '#C1272D',
+    'lc-bike': '#2E7D32',
+    'lc-pedestrian': '#7B3FA0',
+    'lc-removed': '#6E6658',
+    'lc-grade': '#1E63B0',
+    'lc-line-subway': '#0B4F8A',
+    'lc-line-tram': '#8A5A00',
+    'lc-line-brt': '#A3195B',
+    'lc-shuttle': '#4A4A4A',
+    'lc-garage': '#3B4A9C',
+    'lc-site': '#8C6D3F'
   },
   dark: {
     land: '#1C1D1F',
@@ -120,7 +144,19 @@ export const TOKENS: Record<Theme, Record<TokenName, string>> = {
     'tl-bar-likely': '#81C784',
     'tl-bar-uncertain': '#FFB74D',
     'tl-bar-unlikely': '#FF8A80',
-    'tl-bar-dead': '#8F8A80'
+    'tl-bar-dead': '#8F8A80',
+    'lc-works': '#F0A040',
+    'lc-transit': '#FF8A8A',
+    'lc-bike': '#7FCF83',
+    'lc-pedestrian': '#C9A0F0',
+    'lc-removed': '#B8B0A0',
+    'lc-grade': '#7FB8F0',
+    'lc-line-subway': '#6FC3F0',
+    'lc-line-tram': '#E0C060',
+    'lc-line-brt': '#F07AB0',
+    'lc-shuttle': '#C8C8C8',
+    'lc-garage': '#A8B4F8',
+    'lc-site': '#C9A86A'
   }
 };
 
