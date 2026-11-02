@@ -40,7 +40,7 @@ Fetch the file when working in the relevant area:
 - **Policy levers engine (`SimLevers`, resolution order, law switch, timer reach, `setLevers` protocol)** — [docs/dev/sim-levers.md](docs/dev/sim-levers.md)
 - **`/sim` page (policy recipe, brushes, lever status, dataset requirement)** — [docs/dev/sim-page.md](docs/dev/sim-page.md)
 - **Permitting timers on `/sim` (presets, floors, evidence, timeline UI)** — [docs/dev/sim-timers.md](docs/dev/sim-timers.md)
-- **`/lesscars` pipeline (plan format, checks, dated regimes and reservations, freed land, paired runs, output files)** — [docs/dev/lesscars.md](docs/dev/lesscars.md)
+- **`/lesscars` (plan format, checks, dated regimes and reservations, freed land, paired runs, output files, the page)** — [docs/dev/lesscars.md](docs/dev/lesscars.md)
 - **Design, specs and plans** — `docs/superpowers/design/`, `docs/superpowers/specs/`, `docs/superpowers/plans/`
 
 Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link them from this list.
