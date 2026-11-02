@@ -223,14 +223,14 @@ export function paintedSameHeight(s: number): Scene & { painted: number } {
 
 /**
  * About a dozen lots: two 3 × 2 blocks of 4 stories across a 20 m street, one 25 ft 6-story
- * exception (lot 1 of the south block), a 2 × 2 8-story block sharing the south block's east side
+ * exception (lot 1 of the south block), a 1 × 2 8-story strip sharing the south block's east side
  * (a wall), and one painted lot (lot 1 of the north block's back row).
  */
 export function tinyLimitsScene(): Scene {
   const north = 2 * LOT_D + 20;
   return scene([
     ...lotBlock(0, 0, 3, 2, (i, j) => ({ stories: i === 1 && j === 0 ? 6 : 4, existing: 2 })),
-    ...lotBlock(3 * LOT_W, 0, 2, 2, () => ({ stories: 8, existing: 3 })),
+    ...lotBlock(3 * LOT_W, 0, 1, 2, () => ({ stories: 8, existing: 3 })),
     ...lotBlock(0, north, 3, 2, (i, j) => ({
       existing: 1,
       src: i === 1 && j === 1 ? SRC_PAINT : SRC_FZP

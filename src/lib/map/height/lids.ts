@@ -284,7 +284,7 @@ function* lidBuild(
         rimStarts.push(rimPos.length / 3);
         rimPiece.push(side - 1);
         rimKind.push(
-          other === EMPTY || pComp[other - 1] !== pComp[side - 1] ? CHAIN_LIMIT : CHAIN_SOURCE
+          other === EMPTY || pStories[other - 1] !== pStories[side - 1] ? CHAIN_LIMIT : CHAIN_SOURCE
         );
       }
       if (L === EMPTY || R === EMPTY) continue;

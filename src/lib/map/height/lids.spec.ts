@@ -275,3 +275,73 @@ describe('createLidBuild', () => {
     expect([...b.result().rims.positions]).toEqual([...once.rims.positions]);
   });
 });
+
+describe('narrow features of one limit are one region (I1)', () => {
+  /** The lots `rows` share one component, one piece, one label with their summed room, and only limit rims. */
+  function expectOneRegion(sc: Scene, rows: number[], stories: number) {
+    const comps = new Set(rows.map((i) => sc.model.lotComponent[i]));
+    expect(comps.size).toBe(1);
+    const comp = [...comps][0];
+    const room = rows.reduce((a, i) => a + sc.model.lotRoom[i], 0);
+    expect(sc.model.componentRoom[comp]).toBe(room);
+    const l = run(sc);
+    const p = pieceOf(l, { stories });
+    expect(l.faces.filter((f) => f.piece === p)).toHaveLength(1);
+    const prefix = `${stories} stories`;
+    expect(l.labels.text.filter((t) => t.startsWith(prefix))).toEqual([
+      lidLabelText(stories, room)
+    ]);
+    expect(rimsOf(l, { piece: p }).length).toBeGreaterThan(0);
+    expect(rimsOf(l, { piece: p, kind: CHAIN_SOURCE })).toHaveLength(0);
+  }
+
+  it('a 1 × 2 8-story strip (tinyLimits) is one region', () => {
+    expectOneRegion(tinyLimitsScene(), [6, 7], 8);
+  });
+
+  // the block slides against the 15 m city grid, so label points fall on cells every which way
+  const offsets = [0, 2.5, 5, 7.5, 10, 12.5];
+  it.each([2, 3].flatMap((n) => offsets.map((dx) => [n, dx])))(
+    '%i adjacent 25 ft exception lots in a row (block offset %f m) are one region',
+    (n, dx) => {
+      const lots = lotBlock(dx, dx, 12, 2, (i, j) => ({
+        stories: j === 0 && i >= 5 && i < 5 + n ? 7 : 4
+      }));
+      const rows = Array.from({ length: n }, (_, k) => 5 + k);
+      expectOneRegion(scene(lots), rows, 7);
+    }
+  );
+
+  it('a 1 × 2 painted strip at a new height is one region', () => {
+    const lots = lotBlock(0, 0, 12, 2, (i) => ({
+      stories: i === 6 ? 9 : 4,
+      src: i === 6 ? SRC_PAINT : SRC_FZP,
+      existing: 1
+    }));
+    expectOneRegion(scene(lots), [6, 18], 9);
+  });
+
+  it('M1: a chain between two pieces is a limit rim on both sides iff their heights differ', () => {
+    let pairs = 0;
+    for (const sc of [paintedSameHeight(4), tinyLimitsScene()]) {
+      const l = run(sc);
+      const { starts, positions, kind } = l.rims;
+      // a chain with pieces on both sides emits its two rims back to back, on the same vertices
+      for (let k = 0; k + 1 < starts.length - 1; k++) {
+        const n = starts[k + 1] - starts[k];
+        if (starts[k + 2] - starts[k + 1] !== n) continue;
+        let same = true;
+        for (let v = 0; v < n && same; v++)
+          for (const d of [0, 1])
+            same &&= positions[3 * (starts[k] + v) + d] === positions[3 * (starts[k + 1] + v) + d];
+        if (!same) continue;
+        pairs++;
+        const z0 = positions[3 * starts[k] + 2];
+        const z1 = positions[3 * starts[k + 1] + 2];
+        const want = z0 !== z1 ? CHAIN_LIMIT : CHAIN_SOURCE;
+        expect([kind[k], kind[k + 1]]).toEqual([want, want]);
+      }
+    }
+    expect(pairs).toBeGreaterThan(2);
+  });
+});

@@ -157,6 +157,20 @@ describe('createCityBuild', () => {
     expect(lots.filter((_, i) => model.lotComponent[i] === comp)).toHaveLength(1);
   });
 
+  it('near mismatched lots of equal stories merge into one component; a far one does not', () => {
+    const lots = block(0, 9, 0, 9, (c, r) => ({ c, r, stories: c < 5 ? 4 : 8 }));
+    // 6-story lots whose label points lose their cells to the 8s (3 m off each cell centre)
+    lots.push({ c: 7, r: 2, dx: 3, stories: 6 }, { c: 7, r: 3, dx: 3, stories: 6 });
+    lots.push({ c: 7, r: 9, dx: 3, stories: 6 });
+    const [a, b, far] = [lots.length - 3, lots.length - 2, lots.length - 1];
+    const { model } = run(grid(lots));
+    expect(model.lotComponent[a]).toBe(model.lotComponent[b]);
+    expect(model.componentStories[model.lotComponent[a]]).toBe(6);
+    expect(model.componentRoom[model.lotComponent[a]]).toBe(12);
+    expect(model.lotComponent[far]).not.toBe(model.lotComponent[a]);
+    expect(model.componentStories[model.lotComponent[far]]).toBe(6);
+  });
+
   it('the shore is a contour with lo 0; open water gets no cells; a limit-0 lot has no component', () => {
     const lots = block(0, 9, 0, 9, (c, r) => ({ c, r, stories: 4 }));
     lots.push({ c: 20, r: 20, stories: 0 });

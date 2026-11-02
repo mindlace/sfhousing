@@ -45,6 +45,10 @@ export const NO_COMPONENT = 0xffffffff;
 const REACH_MIN_M = 30;
 const REACH_MAX_M = 200;
 const SMOOTH_ITERATIONS = 2;
+/** A narrow feature's lots merge across up to this gap between lots (= the lid's LID_CLOSE_M). */
+const MERGE_GAP_M = 30;
+/** Bucket size for the merge search; also the cap on a merge distance. */
+const MERGE_BUCKET_M = 60;
 
 // Work units, sized to a few ms each on the full city raster so step(budget) overruns by little.
 const NEAREST_ROWS = 16;
@@ -202,17 +206,22 @@ function* cityBuild(input: CityInput): Generator<void, CityResult, void> {
     yield;
   }
 
-  // Lot components: the label-point cell's when the stories match, else an equal 4-neighbour's,
-  // else a singleton.
+  // Lot components: the label-point cell's when the stories match, else an equal 4-neighbour's.
+  // A lot with neither is "pending": too narrow a feature to own cells of its own.
   const lotComponent = new Uint32Array(nLots);
+  const px = new Float64Array(nLots);
+  const py = new Float64Array(nLots);
+  const pending: number[] = [];
   for (let i0 = 0; i0 < nLots; i0 += LOTS_PER_UNIT) {
     for (let i = i0; i < Math.min(nLots, i0 + LOTS_PER_UNIT); i++) {
       const s = stories[i];
+      const [x, y] = project(labelPoint[2 * i], labelPoint[2 * i + 1]);
+      px[i] = x;
+      py[i] = y;
       if (s === 0) {
         lotComponent[i] = NO_COMPONENT;
         continue;
       }
-      const [x, y] = project(labelPoint[2 * i], labelPoint[2 * i + 1]);
       const c = Math.floor((x - f.x0) / f.cell);
       const r = Math.floor((y - f.y0) / f.cell);
       let comp = NO_COMPONENT;
@@ -224,9 +233,91 @@ function* cityBuild(input: CityInput): Generator<void, CityResult, void> {
         else if (r > 0 && cellStories[k - cols] === s) comp = cellComp[k - cols];
         else if (r < rows - 1 && cellStories[k + cols] === s) comp = cellComp[k + cols];
       }
-      if (comp === NO_COMPONENT) {
+      lotComponent[i] = comp;
+      if (comp === NO_COMPONENT) pending.push(i);
+    }
+    yield;
+  }
+
+  // Pending lots merge with near lots of equal stories (label points at most
+  // √areaA + √areaB + MERGE_GAP_M apart, capped at MERGE_BUCKET_M; √area stands in for a lot's
+  // half-depth, generous for the usual narrow deep lot: neighbours, or across a
+  // gap the lid would close). A merged group takes the component of a member that has one, else
+  // one new component of its own.
+  if (pending.length > 0) {
+    const bCols = Math.ceil((cols * f.cell) / MERGE_BUCKET_M);
+    const bRows = Math.ceil((rows * f.cell) / MERGE_BUCKET_M);
+    const bucketOf = (i: number): number => {
+      const bc = Math.floor((px[i] - f.x0) / MERGE_BUCKET_M);
+      const br = Math.floor((py[i] - f.y0) / MERGE_BUCKET_M);
+      return bc < 0 || bc >= bCols || br < 0 || br >= bRows ? -1 : br * bCols + bc;
+    };
+    // counting sort of lots with stories > 0 by bucket
+    const bucket = new Int32Array(nLots);
+    const start = new Int32Array(bCols * bRows + 1);
+    for (let i = 0; i < nLots; i++) {
+      const b = stories[i] === 0 ? -1 : bucketOf(i);
+      bucket[i] = b;
+      if (b >= 0) start[b + 1]++;
+    }
+    for (let b = 0; b < bCols * bRows; b++) start[b + 1] += start[b];
+    const fill = start.slice(0, bCols * bRows);
+    const order = new Int32Array(start[bCols * bRows]);
+    for (let i = 0; i < nLots; i++) if (bucket[i] >= 0) order[fill[bucket[i]]++] = i;
+    yield;
+
+    // union-find over lots; -1 is a root
+    const up = new Int32Array(nLots).fill(-1);
+    const findLot = (i: number): number => {
+      let root = i;
+      while (up[root] >= 0) root = up[root];
+      while (up[i] >= 0) {
+        const next = up[i];
+        up[i] = root;
+        i = next;
+      }
+      return root;
+    };
+    const unionLot = (a: number, b: number): void => {
+      const ra = findLot(a);
+      const rb = findLot(b);
+      if (ra < rb) up[rb] = ra;
+      else if (rb < ra) up[ra] = rb;
+    };
+    const touched: number[] = [];
+    for (const i of pending) {
+      const b = bucket[i];
+      if (b < 0) continue;
+      const bc = b % bCols;
+      const br = (b - bc) / bCols;
+      const sizeI = Math.sqrt(lotAreaM2[i]);
+      for (let r = Math.max(0, br - 1); r <= Math.min(bRows - 1, br + 1); r++)
+        for (let c = Math.max(0, bc - 1); c <= Math.min(bCols - 1, bc + 1); c++) {
+          const nb = r * bCols + c;
+          for (let k = start[nb]; k < start[nb + 1]; k++) {
+            const j = order[k];
+            if (j === i || stories[j] !== stories[i]) continue;
+            const reach = Math.min(MERGE_BUCKET_M, sizeI + Math.sqrt(lotAreaM2[j]) + MERGE_GAP_M);
+            const dx = px[j] - px[i];
+            const dy = py[j] - py[i];
+            if (dx * dx + dy * dy > reach * reach) continue;
+            unionLot(i, j);
+            if (lotComponent[j] !== NO_COMPONENT) touched.push(j);
+          }
+        }
+    }
+    const groupComp = new Map<number, number>();
+    for (const j of touched) {
+      const root = findLot(j);
+      if (!groupComp.has(root)) groupComp.set(root, lotComponent[j]);
+    }
+    for (const i of pending) {
+      const root = findLot(i);
+      let comp = groupComp.get(root);
+      if (comp === undefined) {
         comp = compStories.length;
-        compStories.push(s);
+        compStories.push(stories[i]);
+        groupComp.set(root, comp);
       }
       lotComponent[i] = comp;
     }
