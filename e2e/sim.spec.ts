@@ -480,6 +480,21 @@ test('axe: the Transit rule form open', async ({ page }) => {
   await expectNoA11yViolations(page);
 });
 
+test('a rule card has a Show on map toggle; pressed, the panel passes axe', async ({ page }) => {
+  await gotoSim(page);
+  const form = await openBrushForm(page, 'Add a transit rule');
+  await form.getByRole('checkbox', { name: /^Muni Metro/ }).check();
+  await form.getByRole('button', { name: 'Save rule' }).click();
+  await expect(ruleList(page)).toHaveCount(1);
+  const toggle = ruleList(page)
+    .first()
+    .getByRole('button', { name: /^Show on map/ });
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expectNoA11yViolations(page);
+});
+
 /**
  * WCAG 2.2 2.4.11 (Focus Not Obscured): each button of the map's bottom-left navigation control
  * (zoom in, zoom out, compass) stays clear of `cover`, and, focused, is the topmost element at its

@@ -1020,6 +1020,71 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
     await expect.poll(() => w.allOf('heightLids').length).toBe(1);
   });
 
+  describe('rule selection (Task 13)', () => {
+    const RULES_DOC: SimDoc = {
+      schema: 2,
+      kind: 'sim',
+      datasetVersion: 'fixture-0',
+      policy: {
+        ...DEFAULT_POLICY,
+        rules: [
+          { id: 'r1', kind: 'transit', stopTypes: ['metro'], bands: [{ maxM: 402, stories: 8 }] }
+        ]
+      }
+    };
+    const showToggle = () => page.getByRole('button', { name: /^Show on map/ });
+    async function withRule() {
+      stub.reset();
+      await page.viewport(1024, 768);
+      const mem = new MemoryStorage();
+      mem.setItem(
+        SIM_KEY,
+        JSON.stringify({ v: 1, savedAt: 'x', plan: SIM_CODEC.serialize(RULES_DOC) })
+      );
+      await setup({ storage: () => mem });
+      await toReady();
+      emitHeights(workers.at(-1)!);
+      await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
+    }
+
+    it('a selected rule sets the layer mode to its id; pressing again clears it', async () => {
+      await withRule();
+      await showToggle().click();
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
+      await showToggle().click();
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'plain' });
+    });
+
+    it('rule mode wins over the paint tool', async () => {
+      await withRule();
+      await page.getByRole('radio', { name: 'Paint' }).click();
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'paint' });
+      await showToggle().click();
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
+    });
+
+    it('removing the selected rule clears the selection, and undo does not bring it back', async () => {
+      await withRule();
+      await showToggle().click();
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
+      await page.getByRole('button', { name: /^Remove:/ }).click();
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'plain' });
+      await page.getByRole('button', { name: /^Undo/ }).click();
+      await expect.element(showToggle()).toHaveAttribute('aria-pressed', 'false');
+      expect(lastLayer()!.props.mode).toEqual({ kind: 'plain' });
+    });
+
+    it('Run clears the selection', async () => {
+      await withRule();
+      await showToggle().click();
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
+      await run().click();
+      await page.getByRole('button', { name: 'Change policy' }).click();
+      await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
+      expect(lastLayer()!.props.mode).toEqual({ kind: 'plain' });
+    });
+  });
+
   it('toggles survive a run', async () => {
     stub.reset();
     await page.viewport(1024, 768);

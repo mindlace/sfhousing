@@ -28,6 +28,10 @@
     announce?: (msg: string) => void;
     /** A rule form saved `r`; `changed` is false for an edit that changed nothing. */
     onsaved?: (r: ZoningRule, changed: boolean) => void;
+    /** The rule shown on the map ("Show on map" pressed), or null. */
+    selectedRule?: string | null;
+    /** A card's "Show on map" changed: the rule's id, or null when released. */
+    onselectrule?: (id: string | null) => void;
   }
 
   let {
@@ -37,7 +41,9 @@
     forms = new BrushForms(),
     inlineForm = true,
     announce = undefined,
-    onsaved = undefined
+    onsaved = undefined,
+    selectedRule = null,
+    onselectrule = undefined
   }: Props = $props();
 
   const uid = $props.id();
@@ -97,6 +103,8 @@
           editUnavailable={transitUnavailable(catalog)}
           {announce}
           onremoved={afterRemove}
+          selected={selectedRule === r.id}
+          onselect={(on) => onselectrule?.(on ? r.id : null)}
         />
       {/each}
     </ul>

@@ -144,4 +144,25 @@ describe('RulesSection', () => {
     await expect.poll(() => document.activeElement).not.toBe(document.body);
     expect(document.querySelector('form')?.contains(document.activeElement)).toBe(true);
   });
+
+  it('selecting B reports B; the selected card is pressed and the other is not', async () => {
+    const b: ZoningRule = { ...transit, id: 's2', bands: [{ maxM: 200, stories: 5 }] };
+    const store = new PolicyStore(DEFAULT_POLICY);
+    store.apply((p) => ({ ...p, rules: [transit, b] }), 'Two rules');
+    const sync = { result: vi.fn(() => undefined), retry: vi.fn() };
+    const onselectrule = vi.fn();
+    const r = await render(RulesSection, {
+      props: { store, sync, catalog: testCatalog(), selectedRule: 's1', onselectrule }
+    });
+    const toggles = () => page.getByRole('button', { name: /^Show on map/ });
+    await expect.element(toggles().nth(0)).toHaveAttribute('aria-pressed', 'true');
+    await expect.element(toggles().nth(1)).toHaveAttribute('aria-pressed', 'false');
+    await toggles().nth(1).click();
+    expect(onselectrule).toHaveBeenLastCalledWith('s2');
+    await r.rerender({ selectedRule: 's2' });
+    await expect.element(toggles().nth(0)).toHaveAttribute('aria-pressed', 'false');
+    await expect.element(toggles().nth(1)).toHaveAttribute('aria-pressed', 'true');
+    await toggles().nth(1).click();
+    expect(onselectrule).toHaveBeenLastCalledWith(null);
+  });
 });

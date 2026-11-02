@@ -396,6 +396,7 @@
     feedbackTrigger.reset();
     feedback?.show(null);
     setTool('move');
+    selectedRule = null;
     store.locked = true;
     run.run();
   }
@@ -500,6 +501,11 @@
         ? { kind: 'paint' }
         : { kind: 'plain' }
   );
+  // The selected rule leaves the policy (Remove, Undo, a restore): the selection goes with it.
+  $effect(() => {
+    if (selectedRule !== null && !store.policy.rules.some((r) => r.id === selectedRule))
+      selectedRule = null;
+  });
   const limitsOn = $derived(run.phase === 'setup' && viewPrefs.heightLimits);
 
   // Lids from LIDS_FADE's start: the view's bbox, clamped around the view centre (R14).
@@ -855,6 +861,8 @@
         inlineForm={wide.current}
         announce={(m) => brush.announce(m, ANNOUNCE_MS)}
         onsaved={ruleSaved}
+        {selectedRule}
+        onselectrule={(id) => (selectedRule = id)}
       />
     {/snippet}
     {#snippet custom()}
