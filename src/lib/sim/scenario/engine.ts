@@ -33,7 +33,7 @@ import {
   type Stage
 } from '$lib/timelapse/types';
 import type { StageScale } from '../levers/timers';
-import { precomputeOf, sizeCumAgainst, type Precompute } from './input';
+import { afterInputOf, precomputeOf, sizeCumAgainst, switchMonth, type Precompute } from './input';
 import { P, drawOn, jobEntity, seedHash, stageRedraw, streamOf } from './rng';
 import type { Master } from './simulate';
 import type { Schedule, SimInput } from './types';
@@ -206,6 +206,8 @@ interface Run {
   input: SimInput;
   /** the per-input precompute (memoised by input identity): hazards, log(1 − h), size rows */
   pre: Precompute;
+  /** `input.lawSwitch` with the after view's input and precompute; null = no switch */
+  sw: { day: Day; parcels: ScenarioParcels; input: SimInput; pre: Precompute } | null;
   st: Static;
   /** by STAGE_ORDER index: the first `revision.at` entry for the stage, if any */
   revisionAt: (RevisionModel['at'][number] | undefined)[];
@@ -214,6 +216,10 @@ interface Run {
 }
 
 function runOf(input: SimInput, seed: number, horizon: Day, ids: boolean): Run {
+  const ls = input.lawSwitch;
+  if (ls && !(input.asOf < ls.day)) {
+    throw new RangeError(`lawSwitch.day ${ls.day} must be after asOf ${input.asOf}`);
+  }
   const pre = precomputeOf(input);
   const revisionAt: Run['revisionAt'] = STAGE_ORDER.map(() => undefined);
   for (const a of input.calibration.revision.at) {
@@ -232,6 +238,9 @@ function runOf(input: SimInput, seed: number, horizon: Day, ids: boolean): Run {
     parcels: input.parcels,
     input,
     pre,
+    sw: ls
+      ? { day: ls.day, parcels: ls.parcels, input: afterInputOf(input)!, pre: pre.after! }
+      : null,
     st: staticOf(input),
     revisionAt,
     ids
@@ -808,18 +817,28 @@ function newPathway(cal: Calibration, stream: number): Pathway {
 /**
  * The k-th initiation month on a parcel at risk from day `r` (§4.4.4 steps 1-2), on the parcel's
  * `(entity, k)` stream: the geometric month `T = max(1, ceil(log(1 − u) / l1))` by inverse CDF,
- * with `l1 = log(1 − h)` < 0.
+ * with `l1 = log(1 − h)` < 0. With a law switch (`l2` the after view's log(1 − h), `T0` =
+ * `switchMonth(r, day)`), the piecewise hazard (ruling 1), L = log(1 − u): the same T when
+ * `l1 < 0` and it is ≤ T0, else `T0 + max(1, ceil((L − T0·l1) / l2))` when `l2 < 0`, else 0
+ * (never). The first branch is the unswitched expression, so pre-switch draws are unchanged.
  */
-function initiationMonth(stream: number, l1: number): number {
+function initiationMonth(stream: number, l1: number, l2: number | null, T0: number): number {
   const u = drawOn(stream, P.INIT, 0);
-  return Math.max(1, Math.ceil(log(1 - u) / l1));
+  if (l2 === null) return Math.max(1, Math.ceil(log(1 - u) / l1));
+  const L = log(1 - u);
+  if (l1 < 0) {
+    const T = Math.max(1, Math.ceil(L / l1));
+    if (T <= T0) return T;
+  }
+  return l2 < 0 ? T0 + Math.max(1, Math.ceil((L - T0 * l1) / l2)) : 0;
 }
 
 /**
  * The initiation day in month T from `r` (§4.4.4 step 3), placed uniformly within the month on
- * the same stream. Null when the day falls after the horizon.
+ * the same stream. Null when T is 0 (never) or the day falls after the horizon.
  */
 function initiationDay(run: Run, stream: number, T: number, r: Day): Day | null {
+  if (T === 0) return null;
   const v = drawOn(stream, P.INIT_DAY, 0);
   const day = r + 1 + Math.floor((T - 1 + v) * MONTH_DAYS);
   return day > run.horizon ? null : day;
@@ -829,7 +848,9 @@ function initiationDay(run: Run, stream: number, T: number, r: Day): Day | null 
  * The k-th simulated project on T11 row i, initiated on `day` with `existing` units on the parcel
  * (0 once it has been demolished in the run), on its `(entity, k)` stream: pathway, first stage
  * and size (§4.4.4), then the ordinary stage steps with the simulated revision rule. Null if no
- * size level gains a home.
+ * size level gains a home. `after`: its month started on or after the law switch, so its size
+ * row, yields, envelope and Local Program come from the after view (ruling 1: a project keeps
+ * the regime of the month it initiated in).
  */
 function simulatedProject(
   run: Run,
@@ -838,9 +859,11 @@ function simulatedProject(
   stream: number,
   k: number,
   day: Day,
-  existing: number
+  existing: number,
+  after: boolean
 ): Schedule | null {
-  const p = run.parcels;
+  const sw = after ? run.sw! : null;
+  const p = sw ? sw.parcels : run.parcels;
   const cal = run.newCal;
   const pathway: Pathway = p.localProgram[i] === 1 ? 'streamlined' : newPathway(cal, stream);
   const first: Stage =
@@ -851,7 +874,7 @@ function simulatedProject(
         : 'filed';
   // the precomputed row is against T11 existingUnits; a demolished parcel needs its own (rare)
   const own = existing === p.existingUnits[i];
-  const cum = own ? run.pre.sizeCum : sizeCumAgainst(run.input, i, existing);
+  const cum = own ? (sw ?? run).pre.sizeCum : sizeCumAgainst((sw ?? run).input, i, existing);
   const at = own ? i * F : 0;
   const u = drawOn(stream, P.SIZE, 0);
   let f = 0;
@@ -876,7 +899,7 @@ function simulatedProject(
   job.top = top;
   job.env = p.envelopeStories[i];
   const end = runStages(run, job, first, day, false);
-  return {
+  const s: Schedule = {
     projectId: run.ids ? `sim:${p.id[i]}:${k}` : '',
     origin: 'simulated',
     parcelIds: run.ids ? [p.id[i]] : NO_IDS,
@@ -888,6 +911,9 @@ function simulatedProject(
     multiPhase: false,
     phase: null
   };
+  // only on a switch run, so an unswitched Schedule (and every golden) is unchanged
+  if (run.sw !== null) s.afterSwitch = after;
+  return s;
 }
 
 /**
@@ -900,7 +926,7 @@ function simulatedProject(
  * `skipAbove` bound, cannot initiate by the horizon and is passed over on that one draw.
  */
 function simulatedPass(run: Run, holds: Holds, sink: Sink): void {
-  const { parcels, pre, st } = run;
+  const { parcels, pre, st, sw } = run;
   const { candidates, entity, log1mh } = pre;
   const skip = pre.skipAbove(run.horizon);
   const job = newJob(run);
@@ -917,11 +943,12 @@ function simulatedPass(run: Run, holds: Holds, sink: Sink): void {
     } else if (drawOn(stream, P.INIT, 0) > skip[c]) continue;
     for (let k = 0; ; k++) {
       if (k > 0) stream = streamOf(run.sh, entity[c], k);
-      const T = initiationMonth(stream, log1mh[i]);
+      const T0 = sw === null ? 0 : switchMonth(r, sw.day);
+      const T = initiationMonth(stream, log1mh[i], sw === null ? null : sw.pre.log1mh[i], T0);
       const day = initiationDay(run, stream, T, r);
       if (day === null) break;
       const existing = demolished ? 0 : parcels.existingUnits[i];
-      const s = simulatedProject(run, job, i, stream, k, day, existing);
+      const s = simulatedProject(run, job, i, stream, k, day, existing, sw !== null && T > T0);
       if (s === null) break;
       sink.schedule(s);
       if (s.entered.construction !== undefined) demolished = true;
