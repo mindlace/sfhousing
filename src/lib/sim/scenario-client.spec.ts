@@ -357,6 +357,54 @@ describe('ScenarioClient', () => {
       });
     });
 
+    it('posts heightLids with a request id and resolves its answer; no-session on crash and dispose', async () => {
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { w, client } = setup({ onCrash: () => {} });
+      const bbox: [number, number, number, number] = [-122.45, 37.75, -122.44, 37.76];
+      const a = client.heightLids(bbox);
+      expect(w.posts).toEqual([{ type: 'heightLids', reqId: 1, bbox }]);
+      const result = { ok: false as const, reason: 'superseded' as const, message: 'm' };
+      w.emit({ type: 'heightLids', reqId: 99, result }); // ignored
+      w.emit({ type: 'heightLids', reqId: 1, result });
+      await expect(a).resolves.toEqual(result);
+      // crash
+      const b = client.heightLids(bbox);
+      w.onerror?.({} as ErrorEvent);
+      await expect(b).resolves.toMatchObject({ ok: false, reason: 'no-session' });
+      await expect(client.heightLids(bbox)).resolves.toMatchObject({ reason: 'no-session' });
+      // restart, then dispose
+      const w2 = fakeWorker();
+      client.restart(w2);
+      const c = client.heightLids(bbox);
+      expect(w2.posts).toEqual([{ type: 'heightLids', reqId: 3, bbox }]);
+      client.dispose();
+      await expect(c).resolves.toMatchObject({ ok: false, reason: 'no-session' });
+      await expect(client.heightLids(bbox)).resolves.toMatchObject({ reason: 'no-session' });
+      err.mockRestore();
+    });
+
+    it('forwards heights to onHeights', () => {
+      const onHeights = vi.fn();
+      const { w } = setup({ onHeights });
+      const city = {
+        rev: 1,
+        sourceIds: [],
+        chains: {
+          starts: new Uint32Array(1),
+          positions: new Float64Array(0),
+          hi: new Uint8Array(0),
+          lo: new Uint8Array(0),
+          kind: new Uint8Array(0),
+          srcA: new Uint16Array(0),
+          srcB: new Uint16Array(0)
+        },
+        labels: { text: [], position: new Float64Array(0), minZoom: new Uint8Array(0) }
+      };
+      const m = { type: 'heights' as const, rev: 1, city };
+      w.emit(m);
+      expect(onHeights).toHaveBeenCalledWith(m);
+    });
+
     it('restart and dispose resolve pending brush requests with no-session', async () => {
       const { client } = setup();
       const a = client.resolveBrush(q);

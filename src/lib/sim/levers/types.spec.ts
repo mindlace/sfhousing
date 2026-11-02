@@ -16,6 +16,12 @@ function pathOf(json: unknown): string {
 }
 
 const edit = { lots: ['a'], stories: 5 };
+it('a rule edit may carry a string source; a non-string source names its path', () => {
+  expect(parseSimLevers(with_({ rules: [{ ...edit, source: 'r1' }] })).rules[0].source).toBe('r1');
+  expect(pathOf(with_({ rules: [{ ...edit, source: 3 }] }))).toBe('rules[0].source');
+  expect('source' in parseSimLevers(with_({ rules: [edit] })).rules[0]).toBe(false);
+});
+
 const timer = { pathway: 'discretionary', stage: 'filed', scale: 1, reach: 'all' };
 
 describe('parseSimLevers', () => {

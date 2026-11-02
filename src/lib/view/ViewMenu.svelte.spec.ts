@@ -31,20 +31,20 @@ describe('ViewMenu', () => {
     expect(onchange).toHaveBeenCalledWith({
       transitStops: false,
       transitAccess: false,
-      heightFog: true
+      heightLimits: true
     });
   });
 
-  it("rows: the default menu has no fog row; /sim's lists all three in order", async () => {
+  it("rows: the default menu has no height-limits row; /sim's lists all three in order", async () => {
     const a = await render(ViewMenu, { view: DEFAULT_VIEW, theme: 'light', onchange: vi.fn() });
     await page.getByRole('button', { name: 'View' }).click();
-    expect(page.getByRole('checkbox', { name: 'Height limits' }).query()).toBeNull();
+    expect(page.getByRole('checkbox', { name: 'Zoning height limits' }).query()).toBeNull();
     a.unmount();
     render(ViewMenu, {
       view: DEFAULT_VIEW,
       theme: 'light',
       onchange: vi.fn(),
-      rows: ['transitStops', 'transitAccess', 'heightFog']
+      rows: ['transitStops', 'transitAccess', 'heightLimits']
     });
     await page.getByRole('button', { name: 'View' }).click();
     const names = page
@@ -54,19 +54,23 @@ describe('ViewMenu', () => {
     expect(names).toEqual([
       'Transit stops',
       'Transit capacity within a 10-minute walk',
-      'Height limits'
+      'Zoning height limits'
     ]);
-    await expect
-      .element(page.getByText('A haze at the height zoning allows. Room under it is room to grow.'))
-      .toBeVisible();
   });
 
-  it('the fog row toggles heightFog only', async () => {
+  it('the Zoning height limits row toggles heightLimits only, with its caption', async () => {
     const onchange = vi.fn();
-    render(ViewMenu, { view: DEFAULT_VIEW, theme: 'light', onchange, rows: ['heightFog'] });
+    render(ViewMenu, { view: DEFAULT_VIEW, theme: 'light', onchange, rows: ['heightLimits'] });
     await page.getByRole('button', { name: 'View' }).click();
-    await page.getByRole('checkbox', { name: 'Height limits' }).click();
-    expect(onchange).toHaveBeenCalledWith({ ...DEFAULT_VIEW, heightFog: false });
+    await page.getByRole('checkbox', { name: 'Zoning height limits' }).click();
+    expect(onchange).toHaveBeenCalledWith({ ...DEFAULT_VIEW, heightLimits: false });
+    await expect
+      .element(
+        page.getByText(
+          "Glass lids at the height zoning allows, with each area's room to grow in floors. Zoomed out, contour lines."
+        )
+      )
+      .toBeVisible();
   });
 
   it('shows both legends and the caption', async () => {

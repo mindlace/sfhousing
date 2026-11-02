@@ -20,6 +20,8 @@ const TIMED_STAGES = [
 export interface StoryEdit {
   lots: ParcelId[];
   stories: number;
+  /** The rule id a rule edit came from (absent on paint); lets the page highlight a rule's lots. */
+  source?: string;
 }
 
 export interface Protections {
@@ -90,11 +92,17 @@ function join(base: string, key: string): string {
   return base === '' ? key : `${base}.${key}`;
 }
 
-function record(v: unknown, path: string, keys: readonly string[]): Record<string, unknown> {
+function record(
+  v: unknown,
+  path: string,
+  keys: readonly string[],
+  optional: readonly string[] = []
+): Record<string, unknown> {
   if (typeof v !== 'object' || v === null || Array.isArray(v))
     fail(path || '$', 'expected an object');
   const r = v as Record<string, unknown>;
-  for (const k of Object.keys(r)) if (!keys.includes(k)) fail(join(path, k), 'unknown key');
+  for (const k of Object.keys(r))
+    if (!keys.includes(k) && !optional.includes(k)) fail(join(path, k), 'unknown key');
   for (const k of keys) if (!(k in r)) fail(join(path, k), 'missing');
   return r;
 }
@@ -123,7 +131,7 @@ function lotIds(v: unknown, path: string): ParcelId[] {
 }
 
 function parseStoryEdit(v: unknown, path: string): StoryEdit {
-  const r = record(v, path, ['lots', 'stories']);
+  const r = record(v, path, ['lots', 'stories'], ['source']);
   const stories = r.stories;
   if (
     typeof stories !== 'number' ||
@@ -132,7 +140,12 @@ function parseStoryEdit(v: unknown, path: string): StoryEdit {
     stories > MAX_STORIES
   )
     fail(`${path}.stories`, `expected an integer from 0 to ${MAX_STORIES}`);
-  return { lots: lotIds(r.lots, `${path}.lots`), stories };
+  const edit: StoryEdit = { lots: lotIds(r.lots, `${path}.lots`), stories };
+  if (r.source !== undefined) {
+    if (typeof r.source !== 'string') fail(`${path}.source`, 'expected a string rule id');
+    edit.source = r.source;
+  }
+  return edit;
 }
 
 function parseProtections(v: unknown): Protections {

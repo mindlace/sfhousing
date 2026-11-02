@@ -4,6 +4,10 @@ import VitestFlakeReporter from '@mindlace/chreode/reporters/vitest';
 import { fileURLToPath } from 'node:url';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
+import { clientTestConfig } from './vite.config.client-test.js';
+
+/** Server specs whose assertions are wall-clock budgets: project perf, not server. */
+const SERVER_PERF_SPECS = ['src/**/*.bench.spec.ts', 'src/**/*.perf.spec.ts'];
 
 const SRC_LIB = fileURLToPath(new URL('./src/lib', import.meta.url));
 
@@ -43,9 +47,21 @@ export default defineConfig({
           name: 'server',
           environment: 'node',
           include: ['src/**/*.{test,spec}.ts', 'scripts/**/*.spec.ts'],
+          exclude: ['src/**/*.svelte.{test,spec}.ts', ...SERVER_PERF_SPECS]
+        }
+      },
+      // Wall-clock budgets (`npm run test:perf`): they measure the machine as much as the code,
+      // so they run on an idle machine before a perf-sensitive merge, not in test:unit or signoff.
+      {
+        extends: './vite.config.ts',
+        test: {
+          name: 'perf',
+          environment: 'node',
+          include: SERVER_PERF_SPECS,
           exclude: ['src/**/*.svelte.{test,spec}.ts']
         }
       },
+      clientTestConfig({ perf: true }),
       // Data pipeline: standalone (no SvelteKit config); imports src/lib/data by relative path.
       {
         plugins: [srcLibForSrc],

@@ -488,7 +488,7 @@ function ruleEdits(p: SimPolicy, lots: Lots): StoryEdit[] | null {
     const heights = bandsOutermostFirst(r.bands).map((b) => b.stories);
     got.forEach((g, i) => {
       const l = sortedUnique(g!);
-      if (l.length > 0) out.push({ lots: l, stories: heights[i] });
+      if (l.length > 0) out.push({ lots: l, stories: heights[i], source: r.id });
     });
   }
   return out;

@@ -36,6 +36,10 @@
     announce?: (msg: string) => void;
     /** After Remove: the list moves focus (this card is gone). */
     onremoved?: (index: number) => void;
+    /** Rules only: this rule is the one shown on the map ("Show on map" is pressed). */
+    selected?: boolean;
+    /** Rules only: "Show on map" pressed (`on`) or released. */
+    onselect?: (on: boolean) => void;
   }
   let {
     store,
@@ -46,7 +50,9 @@
     onedit = undefined,
     editUnavailable = null,
     announce = undefined,
-    onremoved = undefined
+    onremoved = undefined,
+    selected = false,
+    onselect = undefined
   }: Props = $props();
 
   const uid = $props.id();
@@ -124,6 +130,13 @@
       <ReadonlyFieldset>
         {#if rule}
           {@const r = rule}
+          <button
+            type="button"
+            aria-pressed={selected}
+            aria-label="Show on map: {summary}"
+            class="{btn} aria-pressed:bg-gray-200 aria-pressed:no-underline"
+            onclick={() => onselect?.(!selected)}>Show on map</button
+          >
           <button
             type="button"
             data-brush-edit={id}

@@ -1,12 +1,12 @@
 <script lang="ts" module>
   /** A View menu row: a checkbox (and its legend or caption) for one ViewPrefs field. */
-  export type ViewRow = 'transitStops' | 'transitAccess' | 'heightFog';
+  export type ViewRow = 'transitStops' | 'transitAccess' | 'heightLimits';
 </script>
 
 <script lang="ts">
   // Header View menu (transit spec §6.3): a disclosure with one checkbox + legend per layer, in
-  // `rows` order. / and /p/:id show the two transit rows (the default); /sim adds the height fog
-  // (sim-runs plan 2 Task 4), and shows only the fog row when the dataset has no transit.
+  // `rows` order. / and /p/:id show the two transit rows (the default); /sim adds the zoning height
+  // limits (height-lids plan Task 12), and shows only that row when the dataset has no transit.
   import { TOKENS, accessSwatch } from '$lib/map/palette';
   import type { Theme } from '$lib/map/types';
   import { ACCESS_CAPTION, ACCESS_LEGEND } from '$lib/transit/legend';
@@ -27,7 +27,8 @@
   let panel = $state<HTMLDivElement>();
   const t = $derived(TOKENS[theme]);
 
-  const FOG_CAPTION = 'A haze at the height zoning allows. Room under it is room to grow.';
+  const LIMITS_CAPTION =
+    "Glass lids at the height zoning allows, with each area's room to grow in floors. Zoomed out, contour lines.";
 
   const STOP_LEGEND = [
     ['transit-regional', 'BART / Caltrain'],
@@ -123,12 +124,12 @@
             <label class="flex min-h-6 items-center gap-2 font-medium">
               <input
                 type="checkbox"
-                checked={view.heightFog}
-                onchange={(e) => onchange({ ...view, heightFog: e.currentTarget.checked })}
+                checked={view.heightLimits}
+                onchange={(e) => onchange({ ...view, heightLimits: e.currentTarget.checked })}
               />
-              Height limits
+              Zoning height limits
             </label>
-            <p class="mt-1 pl-6 text-xs text-gray-700 dark:text-gray-300">{FOG_CAPTION}</p>
+            <p class="mt-1 pl-6 text-xs text-gray-700 dark:text-gray-300">{LIMITS_CAPTION}</p>
           {/if}
         </div>
       {/each}

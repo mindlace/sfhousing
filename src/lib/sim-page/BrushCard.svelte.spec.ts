@@ -35,7 +35,12 @@ const lots = (n: number): BrushLotsResult => ({
   points: new Float64Array(n * 2)
 });
 
-function setup(list: 'rules' | 'custom', id: string, index: number) {
+function setup(
+  list: 'rules' | 'custom',
+  id: string,
+  index: number,
+  extra: { selected?: boolean; onselect?: (on: boolean) => void } = {}
+) {
   const store = new PolicyStore(DEFAULT_POLICY);
   store.apply((p) => ({ ...p, rules: [transit], custom: [paint, erase] }), 'Seeded');
   const sync = {
@@ -46,7 +51,7 @@ function setup(list: 'rules' | 'custom', id: string, index: number) {
   };
   const onedit = vi.fn();
   const announce = vi.fn();
-  render(BrushCard, { props: { store, sync, list, id, index, onedit, announce } });
+  render(BrushCard, { props: { store, sync, list, id, index, onedit, announce, ...extra } });
   return { store, onedit, announce };
 }
 
@@ -107,4 +112,43 @@ describe('BrushCard', () => {
     expect(store.policy.custom.map((b) => b.id)).toEqual(['p1']);
     expect(store.undoLabel).toBe('Removed: Erased custom zoning');
   });
+
+  it('a rule card has a Show on map toggle with aria-pressed; custom cards do not', async () => {
+    setup('rules', 's1', 0);
+    const toggle = page.getByRole('button', { name: `Show on map: ${RULE}` });
+    await expect.element(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(toggle.element().textContent?.trim()).toBe('Show on map');
+    const box = toggle.element().getBoundingClientRect();
+    expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(24);
+    expect(toggle.element().closest('fieldset')).not.toBeNull();
+  });
+
+  it('a custom card has no Show on map toggle', async () => {
+    setup('custom', 'p1', 0);
+    await expect.element(page.getByText(PAINT)).toBeVisible();
+    expect(page.getByRole('button', { name: /Show on map/ }).elements()).toHaveLength(0);
+  });
+
+  it('pressing it calls onselect(true), pressing again onselect(false)', async () => {
+    const onselect = vi.fn();
+    const { rerender } = await setupWith(onselect, false);
+    await page.getByRole('button', { name: /^Show on map/ }).click();
+    expect(onselect).toHaveBeenLastCalledWith(true);
+    await rerender(true);
+    await expect
+      .element(page.getByRole('button', { name: /^Show on map/ }))
+      .toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: /^Show on map/ }).click();
+    expect(onselect).toHaveBeenLastCalledWith(false);
+  });
 });
+
+async function setupWith(onselect: (on: boolean) => void, selected: boolean) {
+  const store = new PolicyStore(DEFAULT_POLICY);
+  store.apply((p) => ({ ...p, rules: [transit] }), 'Seeded');
+  const sync = { result: vi.fn(() => undefined), retry: vi.fn() };
+  const r = await render(BrushCard, {
+    props: { store, sync, list: 'rules' as const, id: 's1', index: 0, selected, onselect }
+  });
+  return { rerender: (v: boolean) => r.rerender({ selected: v }) };
+}

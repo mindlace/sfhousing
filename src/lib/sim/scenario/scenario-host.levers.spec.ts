@@ -1,16 +1,15 @@
 // The scenario host's lever plumbing (plan 2 Task 12): `initScenario.levers`, `setLevers`, the
 // `levers` resolving/current posts, the touched-lot recompute as the scheduler's first job, latest
 // lever revision wins, a failed needed chunk holds the revision, and /fzp (no levers) unchanged.
-// Map overlays Task 2: each revision's fog grid, on its first resolving and on current.
+// Each revision's height limits: scenario-host.heights.spec.ts.
 import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
 import { decodeParcelChunk, encodeParcelChunk } from '$lib/data/parcel-chunk';
-import { sampleFog } from '$lib/map/fog/grid';
 import { allNeeds, resolveEnvelopes } from '../levers/resolve';
 import { DEFAULT_LEVERS, type SimLevers } from '../levers/types';
 import { MINI_CHUNK_URL, MINI_VERSION, miniCity } from './fixtures/mini-parcels';
-import { MINI_HISTORIC_ID, miniPolicy } from './fixtures/mini-policy';
+import { miniPolicy } from './fixtures/mini-policy';
 import { MINI_AS_OF } from './fixtures/mini-projects';
 import { MINI_POLICY_URL, makeScenarioHarness, type ScenarioHarness } from './test/host-harness';
 import type { ScenarioResponse, TimelineResponse } from './types';
@@ -24,8 +23,6 @@ const cellOf = (id: ParcelId) => city.parcels.cells[city.parcels.cell[city.parce
 /** Two lots in different cells (50_25 and 50_26). */
 const LOT_A: ParcelId = '0026T009';
 const LOT_B: ParcelId = '2999A001';
-/** An unprotected lot below 40 stories under FZP. */
-const FZP_LOT: ParcelId = LOT_A;
 
 /** A fresh copy of `base` with one rule above FZP (uncapped): every named lot is a Need. */
 function raised(lots: ParcelId[], stories: number, base: SimLevers = DEFAULT_LEVERS): SimLevers {
@@ -66,33 +63,6 @@ const indexOf = (h: ScenarioHarness, pred: (m: ScenarioResponse) => boolean) =>
   h.posts.findIndex(pred);
 const isCurrent = (rev: number) => (m: ScenarioResponse) =>
   m.type === 'levers' && m.rev === rev && m.phase === 'current';
-
-type CurrentPost = Extract<LeversPost, { phase: 'current' }>;
-/** A lever session, run until its first `current`, with the fog tests' helpers. */
-async function leverSession(levers: SimLevers) {
-  const h = harness();
-  h.init({ levers: structuredClone(levers) });
-  await h.runAll();
-  expect(h.errors()).toEqual([]);
-  const lastIndex = (type: ScenarioResponse['type']) =>
-    h.posts.findLastIndex((m) => m.type === type);
-  return {
-    h,
-    posted: (type: 'levers') => leversPosts(h).filter((m) => m.type === type),
-    labelPoint: (id: ParcelId): [number, number] => {
-      const i = city.parcels.index.get(id)!;
-      return [city.parcels.labelPoint[2 * i], city.parcels.labelPoint[2 * i + 1]];
-    },
-    setLevers: (l: SimLevers) =>
-      h.host.handle({ type: 'setLevers', rev: h.next(), levers: structuredClone(l) }),
-    untilCurrent: () => h.runAll(),
-    lastCurrent: (): CurrentPost =>
-      leversPosts(h)
-        .filter((m): m is CurrentPost => m.phase === 'current')
-        .at(-1)!,
-    lastTransfer: (type: ScenarioResponse['type']) => h.transfers[lastIndex(type)]
-  };
-}
 
 /**
  * The no-lever run below (seed 1, the whole city prefetched, then a reroll to seed 9) as the host
@@ -305,75 +275,6 @@ describe('scenario host with levers', () => {
     const b = await run(LOT_B);
     expect(a.length).toBeGreaterThan(0);
     expect(b).toEqual(a);
-  });
-
-  it('every current carries the fog of the levers in force', async () => {
-    const h = await leverSession(DEFAULT_LEVERS);
-    const first = h.posted('levers').find((m) => m.phase === 'current')!;
-    expect(first.phase === 'current' && first.fog).toBeTruthy();
-    const [lng, lat] = h.labelPoint(FZP_LOT);
-    const before = sampleFog((first as CurrentPost).fog, lng, lat);
-    expect(before).toBeGreaterThan(0);
-    h.setLevers({ ...DEFAULT_LEVERS, paint: [{ lots: [FZP_LOT], stories: 40 }], compare: 'fzp' });
-    await h.untilCurrent();
-    expect(h.h.errors()).toEqual([]);
-    expect(sampleFog(h.lastCurrent().fog, lng, lat)).toBeGreaterThan(before);
-    expect(h.lastTransfer('levers')).toContain(h.lastCurrent().fog.heightM.buffer);
-  });
-
-  it('a painted lot under a category protection keeps its FZP fog', async () => {
-    const h = await leverSession(DEFAULT_LEVERS);
-    const [lng, lat] = h.labelPoint(MINI_HISTORIC_ID);
-    const fzp = sampleFog(h.lastCurrent().fog, lng, lat);
-    expect(fzp).toBeGreaterThan(0); // the lot has an FZP limit, so equality below means something
-    const paint = { ...DEFAULT_LEVERS, paint: [{ lots: [MINI_HISTORIC_ID], stories: 40 }] };
-    // control: the same paint, unprotected, raises the fog there
-    h.setLevers({ ...paint, compare: 'fzp' });
-    await h.untilCurrent();
-    expect(h.h.errors()).toEqual([]);
-    const painted = h.lastCurrent();
-    expect(sampleFog(painted.fog, lng, lat)).toBeGreaterThan(fzp + 1);
-    // protected: back to FZP
-    h.setLevers({
-      ...paint,
-      protect: { ...DEFAULT_LEVERS.protect, historic: true },
-      compare: 'fzp'
-    });
-    await h.untilCurrent();
-    expect(h.h.errors()).toEqual([]);
-    expect(h.lastCurrent().rev).toBeGreaterThan(painted.rev);
-    expect(sampleFog(h.lastCurrent().fog, lng, lat)).toBeCloseTo(fzp, 4);
-  });
-
-  it('the fog goes out on the first resolving: a revision held by a failed chunk shows it', async () => {
-    const h = makeScenarioHarness({ deps: { bandRuns: N }, policy: true, retryDelaysMs: [] });
-    h.init({ levers: structuredClone(DEFAULT_LEVERS) });
-    await h.runAll();
-    const before = leversPosts(h).find((m) => m.phase === 'current') as CurrentPost;
-    const i = city.parcels.index.get(LOT_A)!;
-    const [lng, lat] = [city.parcels.labelPoint[2 * i], city.parcels.labelPoint[2 * i + 1]];
-    const cell = cellOf(LOT_A).cellId;
-    h.fail(MINI_CHUNK_URL(cell), 1, { status: 503 });
-    const from = h.posts.length;
-    const rev = h.next();
-    h.host.handle({ type: 'setLevers', rev, levers: raised([LOT_A], 40) });
-    await h.runAll();
-
-    const lv = leversPosts(h, from);
-    expect(lv.some((m) => m.phase === 'current')).toBe(false); // held
-    expect(lv.at(-1)).toMatchObject({ rev, phase: 'resolving', failedCells: [cell] });
-    const withFog = lv.filter((m) => m.phase === 'resolving' && m.fog);
-    expect(withFog).toHaveLength(1); // the first resolving only
-    expect(withFog[0]).toBe(lv[0]);
-    const fog = (lv[0] as Extract<LeversPost, { phase: 'resolving' }>).fog!;
-    expect(sampleFog(fog, lng, lat)).toBeGreaterThan(sampleFog(before.fog, lng, lat));
-    expect(h.transfers[h.posts.indexOf(lv[0])]).toEqual([fog.heightM.buffer]);
-
-    h.host.handle({ type: 'retryChunks' });
-    await h.runAll();
-    const current = h.posts.find(isCurrent(rev)) as CurrentPost;
-    expect(current.fog.heightM).toEqual(fog.heightM); // the same grid, a separate buffer
-    expect(current.fog.heightM.buffer).not.toBe(fog.heightM.buffer);
   });
 
   it('a need whose record is missing from its loaded cell reaches current and warns once', async () => {

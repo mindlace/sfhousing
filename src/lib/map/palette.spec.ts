@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { differenceCiede2000, hsl, lab, parse } from 'culori';
 import {
   TOKENS,
-  hexToRgba,
   TIMELINE_LEGEND,
   colorFor,
   GEN_RGBA,
@@ -67,8 +66,26 @@ describe('palette (U4)', () => {
             `${id}/${base}`
           ).toBeGreaterThanOrEqual(3);
     });
-    it(`${theme}: height-fog is translucent (alpha <= 0.35)`, () => {
-      expect(hexToRgba(TOKENS[theme]['height-fog'])[3]).toBeLessThanOrEqual(90);
+    it(`${theme}: limit-ink is ≥ 4.5:1 against land and against limit-halo`, () => {
+      const ink = TOKENS[theme]['limit-ink'];
+      expect(contrast(ink, TOKENS[theme].land)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(ink, TOKENS[theme]['limit-halo'])).toBeGreaterThanOrEqual(4.5);
+    });
+    it(`${theme}: limit-ink is ≥ 3:1 over every transit-access step composited at TRANSIT_ACCESS_OPACITY`, () => {
+      for (const k of [1, 2, 3, 4, 5] as const)
+        expect(
+          contrast(TOKENS[theme]['limit-ink'], accessSwatch(theme, k)),
+          `access-${k}`
+        ).toBeGreaterThanOrEqual(3);
+    });
+    it(`${theme}: glaze and wall are neutral (channel spread ≤ 12) and translucent (alpha ≤ 0.25)`, () => {
+      for (const id of ['limit-glaze', 'limit-wall'] as const) {
+        const m = TOKENS[theme][id].match(/^rgba\((\d+),(\d+),(\d+),([\d.]+)\)$/);
+        expect(m, id).not.toBeNull();
+        const ch = [m![1], m![2], m![3]].map(Number);
+        expect(Math.max(...ch) - Math.min(...ch), id).toBeLessThanOrEqual(12);
+        expect(Number(m![4]), id).toBeLessThanOrEqual(0.25);
+      }
     });
     it(`${theme}: stop markers keep 3:1 contrast with land`, () => {
       for (const id of ['transit-bus', 'transit-rail', 'transit-regional'] as const)
@@ -230,7 +247,9 @@ const DEFAULT_TOKENS_BODY =
   '--map-transit-access-2: #B3E0D8; --map-transit-access-3: #7CC7BA; ' +
   '--map-transit-access-4: #3FA596; --map-transit-access-5: #167A6E; ' +
   '--map-transit-bus: #5E7A76; --map-transit-rail: #0F5A52; ' +
-  '--map-transit-regional: #0B3B36; --map-transit-stroke: #FFFFFF; --map-height-fog: rgba(90,100,108,0.18); ' +
+  '--map-transit-regional: #0B3B36; --map-transit-stroke: #FFFFFF; ' +
+  '--map-limit-ink: #2B2A28; --map-limit-glaze: rgba(72,74,78,0.22); ' +
+  '--map-limit-wall: rgba(72,74,78,0.25); --map-limit-halo: #F3EFE6; ' +
   '--map-brush-paint: #B4532F; --map-brush-erase: #2B2A28; --map-painted-outline: #B4532F; ' +
   '--map-tl-ghost-planning: #DDBBD2; --map-tl-ghost-permit: #C58FB1; ' +
   '--map-tl-ghost-ready: #93527F; --map-tl-ghost-dying: #C62828; ' +
@@ -250,7 +269,10 @@ const DEFAULT_TOKENS_BODY =
   '--map-transit-access-3: #22595A; --map-transit-access-4: #2E7B78; ' +
   '--map-transit-access-5: #4BA59E; --map-transit-bus: #9BB5B0; ' +
   '--map-transit-rail: #7FD6C9; --map-transit-regional: #C2F0E8; ' +
-  '--map-transit-stroke: #111214; --map-height-fog: rgba(210,216,220,0.22); --map-brush-paint: #DB8B42; --map-brush-erase: #E8E4DC; ' +
+  '--map-transit-stroke: #111214; ' +
+  '--map-limit-ink: #E8E4DC; --map-limit-glaze: rgba(214,216,220,0.12); ' +
+  '--map-limit-wall: rgba(214,216,220,0.18); --map-limit-halo: #1C1D1F; ' +
+  '--map-brush-paint: #DB8B42; --map-brush-erase: #E8E4DC; ' +
   '--map-painted-outline: #DB8B42; --map-tl-ghost-planning: #623257; ' +
   '--map-tl-ghost-permit: #8A5679; --map-tl-ghost-ready: #C08AAE; ' +
   '--map-tl-ghost-dying: #FF8A80; --map-tl-bar-track: #2C2E31; ' +

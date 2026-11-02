@@ -17,7 +17,10 @@
   scrubber's button) sets the tool to Move, locks the store and plays; the panel is read-only
   until "Change policy" ("Back to start" in the view) unlocks it and returns to the present.
   Map overlays (sim-runs plan 2, Task 4): in Setup the header's View menu (transit stops, transit
-  capacity, the height fog) and the fog itself; a run hides them all and keeps the toggles.
+  capacity, height limits); a run hides them all and keeps the toggles. The height limits
+  (height-lids plan, Task 12) draw in the overlay's `limits` slot: the contours from FzpMode's
+  `onheights`, and from z14.5 the glass lids of the view, asked of the worker on each `moveend`
+  (LidRequest: latest wins, the bbox clamped around the centre).
   Paint feedback (Task 6): in Setup a Paint stroke, and a saved zoning rule once its revision is
   current, briefly shows the buildings its lots in view could hold (the overlay's feedback slot).
 -->
@@ -35,7 +38,9 @@
   import { BrushState } from '$lib/brush/state.svelte';
   import type { Manifest } from '$lib/data/manifest';
   import FzpMode, { type SimClientApi } from '$lib/fzp/FzpMode.svelte';
-  import { fogInstances, type FogGrid } from '$lib/map/fog/grid';
+  import type { HeightCity, HeightLids } from '$lib/map/height/types';
+  import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
+  import { LIDS_FADE, type LimitsView } from '$lib/map/height/limits-style';
   import { useSystemTheme } from '$lib/map/system-theme.svelte';
   import type { SimMapHandle } from '$lib/map/types';
   import ViewMenu, { type ViewRow } from '$lib/view/ViewMenu.svelte';
@@ -70,6 +75,7 @@
     type Stroke
   } from './policy';
   import { OutlineRequest } from './outline-request';
+  import { LidRequest, clampBbox } from './lid-request';
   import { paintedOutlineLayers } from './painted-outline';
   import { SIM_CODEC, simDocProblems, type SimDoc } from './sim-doc';
   import SimNotices from './SimNotices.svelte';
@@ -363,6 +369,7 @@
       controller = null;
     }
     mapHandle = h;
+    watchView(map);
     attachController();
   }
 
@@ -389,6 +396,7 @@
     feedbackTrigger.reset();
     feedback?.show(null);
     setTool('move');
+    pickedRule = null;
     store.locked = true;
     run.run();
   }
@@ -426,7 +434,7 @@
   /** The manifest the map renders (FzpMode's own, which a Retry can replace). */
   let mapManifest = $state.raw<Manifest | null>(null);
   const viewRows = $derived<readonly ViewRow[]>(
-    mapManifest?.transit ? ['transitStops', 'transitAccess', 'heightFog'] : ['heightFog']
+    mapManifest?.transit ? ['transitStops', 'transitAccess', 'heightLimits'] : ['heightLimits']
   );
 
   function setView(v: ViewPrefs): void {
@@ -434,21 +442,101 @@
     writeViewPrefs(v, storage());
   }
 
-  /** The latest kept lever revision's height-limit grid (FzpMode's `onfog`). */
-  let fog = $state.raw<FogGrid | null>(null);
-  /** Per grid, not per theme: a theme change rebuilds the layer only. */
-  const fogCells = $derived(fog ? fogInstances(fog) : null);
-  let fogLayer = $state.raw<typeof import('$lib/map/fog/fog-layer') | null>(null);
+  // ---- zoning height limits: contours and glass lids (height-lids plan, Task 12) ----
+
+  /** The latest kept lever revision's height regions and contours (FzpMode's `onheights`). */
+  let city = $state.raw<HeightCity | null>(null);
+  /** The latest lids answer for the view; kept, so a theme or tool change asks nothing new. */
+  let lids = $state.raw<HeightLids | null>(null);
+  /** `limits-layer`, lazy-loaded on mount (it pulls in deck's layers). */
+  let limitsModule = $state.raw<typeof import('$lib/map/height/limits-layer') | null>(null);
+  /** The rule whose "Show on map" was pressed; `selectedRule` is it while it is still in the policy. */
+  let pickedRule = $state.raw<string | null>(null);
+  /** The map's view at its latest `moveend` (or when it became ready). */
+  let mapView = $state.raw<{
+    zoom: number;
+    bbox: [number, number, number, number];
+    centre: [number, number];
+  } | null>(null);
+  let viewMap: ControllerMap | null = null;
+
+  function readView(): void {
+    const m = viewMap;
+    if (!m) return;
+    const b = m.getBounds();
+    const c = m.getCenter();
+    mapView = {
+      zoom: m.getZoom(),
+      bbox: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()],
+      centre: [c.lng, c.lat]
+    };
+  }
+
+  /** Follows `map`'s view on `moveend` (a new map replaces the old one's listener). */
+  function watchView(map: ControllerMap): void {
+    if (map === viewMap) return;
+    viewMap?.off('moveend', readView);
+    viewMap = map;
+    map.on('moveend', readView);
+    readView();
+  }
+
+  const lidRequest = new LidRequest({
+    request: (bbox) =>
+      api
+        ? api.heightLids(bbox)
+        : Promise.resolve({
+            ok: false,
+            reason: 'no-session',
+            message: 'the simulation is not running'
+          }),
+    show: (l) => (lids = l)
+  });
+
+  // A rule that leaves the policy (Remove, Undo, a restore) is no longer selected, in the same
+  // render (no frame dims everything for a rule that is gone); the effect forgets it, so a Redo
+  // does not bring the selection back.
+  const selectedRule = $derived(
+    pickedRule !== null && store.policy.rules.some((r) => r.id === pickedRule) ? pickedRule : null
+  );
+  $effect(() => {
+    if (pickedRule !== null && selectedRule === null) pickedRule = null;
+  });
+  /** "Show on map" pressed or released. Showing a rule turns the limits view on, which it needs. */
+  function selectRule(id: string | null): void {
+    pickedRule = id;
+    if (id !== null && !viewPrefs.heightLimits) setView({ ...viewPrefs, heightLimits: true });
+  }
+  /** Plain; with the brush or eraser chosen, paint-set limits stand out; a selected rule wins. */
+  const limitsMode = $derived<LimitsView>(
+    selectedRule !== null
+      ? { kind: 'rule', ruleId: selectedRule }
+      : mode === 'edit' && (tools.tool === 'paint' || tools.tool === 'erase')
+        ? { kind: 'paint' }
+        : { kind: 'plain' }
+  );
+  const limitsOn = $derived(run.phase === 'setup' && viewPrefs.heightLimits);
+
+  // Lids from LIDS_FADE's start: the view's bbox, clamped around the view centre (R14).
+  $effect(() => {
+    const v = mapView;
+    const bbox =
+      limitsOn && v !== null && v.zoom >= LIDS_FADE[0]
+        ? clampBbox(v.bbox, LID_MAX_SPAN_M, v.centre)
+        : null;
+    untrack(() => lidRequest.want(bbox));
+  });
 
   $effect(() => {
     const o = overlay;
+    const M = limitsModule;
     if (!o) return;
-    const g = fog;
-    const cells = fogCells;
-    const mod = fogLayer;
-    const on = run.phase === 'setup' && viewPrefs.heightFog && g && cells && mod;
-    const layers = on ? [mod.heightFogLayer(cells, g, systemTheme.current)] : [];
-    untrack(() => o.slot('fog')(layers));
+    const c = city;
+    const layers =
+      M && c && limitsOn
+        ? [M.heightLimitsLayer({ city: c, lids, mode: limitsMode, theme: systemTheme.current })]
+        : [];
+    untrack(() => o.slot('limits')(layers));
   });
 
   // ---- outlines of custom-painted lots while erasing (plan 2, Task 5) ----
@@ -690,14 +778,16 @@
       },
       (e) => console.error('[sim] overlay layers failed to load', e)
     );
-    import('$lib/map/fog/fog-layer').then(
+    import('$lib/map/height/limits-layer').then(
       (mod) => {
-        if (!dead) fogLayer = mod;
+        if (!dead) limitsModule = mod;
       },
-      (e) => console.error('[sim] the height fog layer failed to load', e)
+      (e) => console.error('[sim] height limits layer failed to load', e)
     );
     return () => {
       dead = true;
+      viewMap?.off('moveend', readView);
+      viewMap = null;
       controller?.destroy();
       controller = null;
       mapHandle = null;
@@ -780,6 +870,8 @@
         inlineForm={wide.current}
         announce={(m) => brush.announce(m, ANNOUNCE_MS)}
         onsaved={ruleSaved}
+        {selectedRule}
+        onselectrule={selectRule}
       />
     {/snippet}
     {#snippet custom()}
@@ -828,9 +920,15 @@
   onrun={startRun}
   leversPending={sync.pending}
   view={run.phase === 'setup' ? viewPrefs : HIDDEN_VIEW}
-  onfog={(g) => (fog = g)}
+  onheights={(c) => {
+    city = c;
+    lidRequest.limitsChanged(c.rev);
+  }}
   onlevers={onLevers}
-  onchunks={() => outlineRequest.chunksChanged()}
+  onchunks={() => {
+    outlineRequest.chunksChanged();
+    lidRequest.chunksChanged();
+  }}
   onmanifest={(m) => (mapManifest = m)}
   {actions}
   status={mode === 'edit' ? saveState : undefined}
@@ -844,6 +942,7 @@
     if (a) {
       sync.resume();
       catalogSession();
+      lidRequest.sessionChanged();
     }
   }}
 />

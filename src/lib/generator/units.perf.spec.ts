@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { generateForUnits } from './units';
 import { pipelineSynth, type PipelineCase } from './fixtures/pipeline-synth';
+import { fnv1a32 } from './seed';
+import type { ParcelRecord } from '../data/parcel';
+import std from './fixtures/std-25x100.json';
 
 describe('generateForUnits performance budget (§4.7)', () => {
   it(
@@ -33,4 +36,14 @@ describe('generateForUnits performance budget (§4.7)', () => {
       expect(built).toBeGreaterThanOrEqual(0.9 * cases.length);
     }
   );
+
+  it('a huge undershoot on std takes < 50 ms', () => {
+    const lot = std as unknown as ParcelRecord;
+    generateForUnits(lot, 1e9, 80, fnv1a32(lot.id)); // warm up: time the steady state
+    const t0 = performance.now();
+    const b = generateForUnits(lot, 1e9, 80, fnv1a32(lot.id));
+    const ms = performance.now() - t0;
+    expect(b).not.toBeNull();
+    expect(ms).toBeLessThan(50);
+  });
 });

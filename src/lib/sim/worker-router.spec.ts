@@ -227,6 +227,30 @@ describe('worker router', () => {
     expect(u.scenarioReqs[1]).toEqual(preview);
   });
 
+  const lids = { type: 'heightLids', reqId: 8, bbox: [0, 0, 0.01, 0.01] };
+
+  it('answers heightLids itself in editor mode: no-session; the scenario host otherwise', () => {
+    const t = setup();
+    t.send(lids);
+    expect(t.created()).toBe(0);
+    expect(t.posted).toEqual([
+      {
+        type: 'heightLids',
+        reqId: 8,
+        result: { ok: false, reason: 'no-session', message: expect.any(String) }
+      }
+    ]);
+    const u = setup();
+    u.send(initScenario, lids);
+    expect(u.log).toEqual([
+      'editor:dispose',
+      'scenario:create',
+      'scenario:initScenario',
+      'scenario:heightLids'
+    ]);
+    expect(u.scenarioReqs[1]).toEqual(lids);
+  });
+
   it('sends the shared requests to the scenario host after init then initScenario', () => {
     const t = setup();
     t.send(init, initScenario, prefetch);

@@ -11,6 +11,7 @@ import type { SimLevers } from './levers/types';
 import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev } from './protocol';
 import type {
   BrushLotsResult,
+  HeightLidsResult,
   LotOutlinesResult,
   PreviewResult,
   ScenarioResponse,
@@ -43,6 +44,8 @@ export interface ScenarioClientEvents {
   onChunks?(c: ChunksResponse): void;
   /** Every lever status, a superseded revision's `resolving` included. */
   onLevers?(l: Extract<ScenarioResponse, { type: 'levers' }>): void;
+  /** Every revision's height regions and contours, a superseded revision's included. */
+  onHeights?(m: Extract<ScenarioResponse, { type: 'heights' }>): void;
   /** Never answered by a resync. */
   onError?(e: ScenarioErrorResponse): void;
   /**
@@ -70,6 +73,12 @@ const noSessionPreview = (): PreviewResult => ({
   message: 'the worker session ended before answering'
 });
 
+const noSessionLids = (): HeightLidsResult => ({
+  ok: false,
+  reason: 'no-session',
+  message: 'the worker session ended before answering'
+});
+
 export class ScenarioClient {
   #worker: ScenarioWorkerLike;
   #events: ScenarioClientEvents;
@@ -90,6 +99,7 @@ export class ScenarioClient {
   #pendingOutlines = new Map<number, (r: LotOutlinesResult) => void>();
   #pendingPreview = new Map<number, (r: PreviewResult) => void>();
   #pendingCatalog = new Map<number, (c: BrushCatalog | null) => void>();
+  #pendingLids = new Map<number, (r: HeightLidsResult) => void>();
   #datasetVersion: string | null = null;
   #disposed = false;
   #crashed = false;
@@ -241,6 +251,20 @@ export class ScenarioClient {
     });
   }
 
+  /**
+   * The glass lids of the loaded lots in `bbox` (lng/lat), on the latest complete city. A newer
+   * call answers this one `superseded`. Answered by a session initialised with levers;
+   * `no-session` otherwise, and on crash, `restart` and `dispose`.
+   */
+  heightLids(bbox: [number, number, number, number]): Promise<HeightLidsResult> {
+    if (this.#disposed || this.#crashed) return Promise.resolve(noSessionLids());
+    const reqId = ++this.#reqId;
+    return new Promise((resolve) => {
+      this.#pendingLids.set(reqId, resolve);
+      this.#worker.postMessage({ type: 'heightLids', reqId, bbox });
+    });
+  }
+
   /** The brush pickers' catalog; null without a lever session, and on crash, restart, dispose. */
   brushCatalog(): Promise<BrushCatalog | null> {
     if (this.#disposed || this.#crashed) return Promise.resolve(null);
@@ -315,6 +339,8 @@ export class ScenarioClient {
     this.#pendingPreview.clear();
     for (const resolve of this.#pendingCatalog.values()) resolve(null);
     this.#pendingCatalog.clear();
+    for (const resolve of this.#pendingLids.values()) resolve(noSessionLids());
+    this.#pendingLids.clear();
   }
 
   #crash(worker: ScenarioWorkerLike, e: Event): void {
@@ -383,6 +409,16 @@ export class ScenarioClient {
         resolve(msg.catalog);
         return;
       }
+      case 'heightLids': {
+        const resolve = this.#pendingLids.get(msg.reqId);
+        if (!resolve) return;
+        this.#pendingLids.delete(msg.reqId);
+        resolve(msg.result);
+        return;
+      }
+      case 'heights':
+        this.#events.onHeights?.(msg);
+        return;
       case 'error':
         // Never a resync here (unlike SimClient): resending cannot fix a bad file or request. An
         // error at or after the resync rev only closes the episode.
