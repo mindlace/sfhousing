@@ -82,6 +82,11 @@ export interface LessCarsTimeline {
   seed: number;
   schedules: Schedule[];
   builds: InitiativeBuild[];
+  /**
+   * Every T11-reserved parcel row in this seed's plan run, strictly ascending by row: kept when
+   * the reservation held, false when the market got to the parcel first (voided).
+   */
+  reservations: { row: number; kept: boolean }[];
 }
 
 export interface LessCarsSite {
@@ -363,6 +368,15 @@ export function encodeTimelinePayload(
     b.startDay.push(x.startDay);
     b.completeDay.push(x.completeDay);
   }
+  const reservations = { row: [] as number[], kept: [] as number[] };
+  let last = -1;
+  for (const x of t.reservations) {
+    if (!(Number.isInteger(x.row) && x.row > last && x.row < t.count))
+      throw new Error(`lesscars: reservations row ${x.row} out of range or out of order`);
+    last = x.row;
+    reservations.row.push(x.row);
+    reservations.kept.push(x.kept ? 1 : 0);
+  }
   const doc = {
     format: t.format,
     datasetVersion: t.datasetVersion,
@@ -370,7 +384,8 @@ export function encodeTimelinePayload(
     idsHash: t.idsHash,
     seed: t.seed,
     schedules: s,
-    builds: b
+    builds: b,
+    reservations
   };
   return new TextEncoder().encode(JSON.stringify(doc));
 }
@@ -395,7 +410,8 @@ export function decodeTimelinePayload(
     'idsHash',
     'seed',
     'schedules',
-    'builds'
+    'builds',
+    'reservations'
   ]);
   const fmt = format(r.format, 'format');
   const count = int(r.count, 'count');
@@ -549,6 +565,16 @@ export function decodeTimelinePayload(
       completeDay: int(completeDay[i], at(p, 'completeDay'))
     });
   }
+  const rv = obj(r.reservations, 'reservations', ['row', 'kept']);
+  const rRows = ints(rv.row, 'reservations.row');
+  const rKept = ints(rv.kept, 'reservations.kept', rRows.length);
+  const reservations = rRows.map((row, i) => {
+    const p = at('reservations.row', i);
+    if (row < 0 || row >= count) fail(p, `row ${row} out of range`);
+    if (i > 0 && row <= rRows[i - 1]) fail(p, 'rows not strictly ascending');
+    if (rKept[i] !== 0 && rKept[i] !== 1) fail(at('reservations.kept', i), 'expected 0 or 1');
+    return { row, kept: rKept[i] === 1 };
+  });
   return {
     format: fmt,
     datasetVersion: str(r.datasetVersion, 'datasetVersion'),
@@ -556,7 +582,8 @@ export function decodeTimelinePayload(
     idsHash: hash,
     seed: int(r.seed, 'seed'),
     schedules,
-    builds
+    builds,
+    reservations
   };
 }
 

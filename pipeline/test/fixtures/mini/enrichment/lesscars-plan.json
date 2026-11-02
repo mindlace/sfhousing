@@ -288,5 +288,13 @@
         }
       }
     }
+  ],
+  "displays": [
+    {
+      "id": "underpass",
+      "label": "Fixture Ave underpass filled",
+      "segments": [{ "cnn": ["2000"] }],
+      "from": "subway"
+    }
   ]
 }

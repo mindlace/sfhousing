@@ -81,6 +81,34 @@ describe('parseLessCarsPlan', () => {
   });
 });
 
+describe('plan displays', () => {
+  const display = {
+    id: 'underpass',
+    label: 'Underpass filled',
+    segments: [{ cnn: ['2000'] }],
+    from: 'subway'
+  };
+  const displayWith = (edit: Partial<typeof display> | Record<string, unknown>) =>
+    JSON.parse(JSON.stringify({ ...TINY_PLAN, displays: [{ ...display, ...edit }] }));
+  const withDisplays = displayWith({});
+  const miniPlan = JSON.parse(JSON.stringify(TINY_PLAN));
+
+  it('parses displays; a plan without them has no displays key', () => {
+    expect(parseLessCarsPlan(withDisplays).displays).toEqual([
+      { id: 'underpass', label: 'Underpass filled', segments: [{ cnn: ['2000'] }], from: 'subway' }
+    ]);
+    expect('displays' in parseLessCarsPlan(miniPlan)).toBe(false);
+  });
+
+  it('rejects a display with no segments, a missing from and an unknown key', () => {
+    expect(() => parseLessCarsPlan(displayWith({ segments: [] }))).toThrow(/displays\.0\.segments/);
+    const noFrom = displayWith({});
+    delete noFrom.displays[0].from;
+    expect(() => parseLessCarsPlan(noFrom)).toThrow(/displays\.0\.from/);
+    expect(() => parseLessCarsPlan(displayWith({ extra: 1 }))).toThrow(/displays\.0\.extra/);
+  });
+});
+
 describe('closesToCars', () => {
   it('is true for removals, truncations and street changes without a car lane', () => {
     expect(closesToCars(project('street-removal'))).toBe(true);

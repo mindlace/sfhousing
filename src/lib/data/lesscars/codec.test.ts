@@ -70,8 +70,13 @@ const t: LessCarsTimeline = {
       startDay: dayOf(2035, 1, 1),
       completeDay: dayOf(2036, 7, 1)
     }
+  ],
+  reservations: [
+    { row: 2, kept: true },
+    { row: 5, kept: false }
   ]
 };
+const bound = { count: ids.length, id: ids };
 
 function summary(): LessCarsSummary {
   // two seeds; per source sums (×2): freed 4, parking −1, transitUnlocked 3, other 0 → extra 6
@@ -105,6 +110,32 @@ describe('lesscars codec', () => {
       decodeTimelinePayload(bytes, { count: ids.length, id: [...ids].reverse() })
     ).toThrow(/idsHash/);
     expect(() => decodeTimelinePayload(bytes, { count: 3, id: ids.slice(0, 3) })).toThrow(/count/);
+  });
+
+  it('round-trips reservations ascending by row', () => {
+    const back = decodeTimelinePayload(encodeTimelinePayload(t, ids), bound);
+    expect(back.reservations).toEqual([
+      { row: 2, kept: true },
+      { row: 5, kept: false }
+    ]);
+  });
+
+  it('rejects reservations missing, out of range, unsorted or with a bad kept flag', () => {
+    const withColumn = (col: unknown): Uint8Array => {
+      const doc = JSON.parse(new TextDecoder().decode(encodeTimelinePayload(t, ids)));
+      if (col === undefined) delete doc.reservations;
+      else doc.reservations = col;
+      return new TextEncoder().encode(JSON.stringify(doc));
+    };
+    for (const col of [
+      undefined,
+      { row: [ids.length], kept: [1] },
+      { row: [5, 2], kept: [1, 1] },
+      { row: [2, 2], kept: [1, 1] },
+      { row: [2], kept: [2] },
+      { row: [2, 5], kept: [1] }
+    ])
+      expect(() => decodeTimelinePayload(withColumn(col), bound)).toThrow(/reservations/);
   });
 
   it('round trip keeps absent optional schedule fields absent', () => {

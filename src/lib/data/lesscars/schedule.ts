@@ -146,6 +146,16 @@ export function checkPlan(plan: LessCarsPlan, s: PlanSchedule): PlanProblem[] {
     }
   }
 
+  // Displays share the id space with projects and show from their `from` project's open day.
+  const displayIds = new Set<string>();
+  for (const d of plan.displays ?? []) {
+    if (byId.has(d.id) || displayIds.has(d.id))
+      add('duplicate-id', d.id, `id ${d.id} is used by more than one project or display`);
+    displayIds.add(d.id);
+    if (!byId.has(d.from))
+      add('unknown-dependency', d.id, `${d.id} names unknown project ${d.from}`);
+  }
+
   // Cycles: depth-first search; every project on a cycle is reported.
   const state = new Map<string, 1 | 2>();
   const stack: string[] = [];

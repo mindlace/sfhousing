@@ -255,30 +255,32 @@ describe('lesscars runs', () => {
     expect(s.extra.mean[12]).toBe(47);
   });
 
-  it('a voided conversion has no build in that seed', () => {
-    // find a candidate row and day where the plan arm keeps the reservation in some seeds and
-    // voids it in others
-    const planOf = (rf: Int32Array): SimInput => ({
-      ...base,
-      regimes: same.plan,
-      reservedFrom: rf
-    });
-    let found: { row: number; rf: Int32Array; kept: boolean[] } | null = null;
-    outer: for (const day of [dayOf(2030, 1, 1), dayOf(2034, 1, 1), dayOf(2040, 1, 1)]) {
+  const planOf = (rf: Int32Array): SimInput => ({
+    ...base,
+    regimes: same.plan,
+    reservedFrom: rf
+  });
+  /**
+   * A candidate row and day where the plan arm keeps the reservation in some seeds and voids it in
+   * others; `kept[i]` is seed bandSeed(i)'s verdict.
+   */
+  function findMixedReservation(): { row: number; rf: Int32Array; kept: boolean[] } {
+    for (const day of [dayOf(2030, 1, 1), dayOf(2034, 1, 1), dayOf(2040, 1, 1)]) {
       for (const row of pre.candidates) {
         const rf = new Int32Array(n);
         rf[row] = day;
         const kept = Array.from({ length: SEEDS }, (_, i) =>
           keptIn(planOf(rf), bandSeed(i)).get(row)!
         );
-        if (kept.some((k) => k) && kept.some((k) => !k)) {
-          found = { row, rf, kept };
-          break outer;
-        }
+        if (kept.some((k) => k) && kept.some((k) => !k)) return { row, rf, kept };
       }
     }
-    expect(found).not.toBeNull();
-    const { row, rf, kept } = found!;
+    throw new Error('no candidate row is kept in some seeds and voided in others');
+  }
+
+  it('a voided conversion has no build in that seed', () => {
+    const { row, rf, kept } = findMixedReservation();
+    expect(kept).toContain(false);
     const build = parking(row, 30, dayOf(2045, 1, 1));
     const r = pairs(same, rf, [build]);
     const id = base.parcels.id[row];
@@ -380,6 +382,26 @@ describe('lesscars runs', () => {
     expect(t.builds[0]).toEqual(builds[0]);
     expect(t.builds.length).toBeGreaterThan(1);
     expect(t).toMatchObject({ seed, count: n, idsHash: idsHash(base.parcels.id) });
+  });
+
+  it('representativeTimeline records every reserved row, kept and voided', () => {
+    const { row, rf, kept } = findMixedReservation();
+    const other = pre.candidates.find((r) => r !== row)!;
+    rf[other] = dayOf(2034, 1, 1); // a second reserved row, so the column has more than one entry
+    const tl = (i: number) =>
+      representativeTimeline({
+        base,
+        regimes: same,
+        reservedFrom: rf,
+        builds: [],
+        seed: bandSeed(i),
+        horizon: H,
+        datasetVersion: 'fixture-0'
+      });
+    const voided = tl(kept.indexOf(false));
+    expect(voided.reservations.map((r) => r.row)).toEqual([row, other].sort((a, b) => a - b));
+    expect(voided.reservations.find((r) => r.row === row)?.kept).toBe(false);
+    expect(tl(kept.indexOf(true)).reservations.find((r) => r.row === row)?.kept).toBe(true);
   });
 
   it('reservationsOf: conversion clearance start; garage on a parcel its start; on freed land none', () => {

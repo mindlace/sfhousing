@@ -131,6 +131,13 @@ describe('afterSwitchRow', () => {
 });
 
 describe('buildRegimes on the mini plan', () => {
+  it('every regime view keeps the base Local Program column', () => {
+    // card.ts reads Local Program from the base view; the lesscars page relies on no regime
+    // changing it (Plan 2 Decisions: own card, not ProjectCard).
+    for (const g of [...regimes.plan, ...regimes.baseline])
+      expect(Array.from(g.parcels.localProgram)).toEqual(Array.from(parcels.localProgram));
+  });
+
   it('baseline after-switch equals the retired rule on every fixture row', () => {
     expect(regimes.baseline.map((g) => g.day)).toEqual([SW]);
     const view = regimes.baseline[0].parcels;

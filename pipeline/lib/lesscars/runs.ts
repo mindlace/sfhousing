@@ -380,7 +380,8 @@ const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
  * The plan arm of `seed` (the representative seed): every Schedule in simulateDetailed's order
- * (pipeline then simulated, each by projectId) and the builds kept in that seed.
+ * (pipeline then simulated, each by projectId), the builds kept in that seed, and every reserved
+ * row's verdict there (kept, or voided by the market), ascending by row.
  */
 export function representativeTimeline(a: {
   base: SimInput;
@@ -408,6 +409,9 @@ export function representativeTimeline(a: {
   pipeline.sort((x, y) => cmp(x.projectId, y.projectId));
   simulated.sort((x, y) => cmp(x.projectId, y.projectId));
   const builds = a.builds.filter((b) => b.parcelRow === null || kept.get(b.parcelRow) === true);
+  const reservations = [...kept]
+    .map(([row, k]) => ({ row, kept: k }))
+    .sort((x, y) => x.row - y.row);
   return {
     format: LESSCARS_FORMAT,
     datasetVersion: a.datasetVersion,
@@ -415,6 +419,7 @@ export function representativeTimeline(a: {
     idsHash: idsHash(base.parcels.id),
     seed: a.seed,
     schedules: [...pipeline, ...simulated],
-    builds
+    builds,
+    reservations
   };
 }

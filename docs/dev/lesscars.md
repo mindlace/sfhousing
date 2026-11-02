@@ -50,6 +50,15 @@ A segment is `{ cnn: [...] }` (DataSF street centrelines, `src_streets`) or a dr
 `{ line, provenance }` in [lng, lat]. A stop is `{ id, name, lngLat }`; `lngLat` null names an
 existing transit.json stop.
 
+An optional top-level `displays` list holds display-only map items (`PlanDisplay`: `id`,
+`label`, `segments`, `from`). A display has no capacity, no homes and no closure: the page draws
+its segments as changed from the open day of project `from`, and nothing in the engine or the
+summary reads it. Its id shares the project id space (`checkPlan` reports `duplicate-id`), `from`
+must name a project (`unknown-dependency`), its CNNs are checked against `src_streets` and drawn
+in `plan.json` `segments` like a project's. Plan 3 uses it for the Masonic underpass, filled from
+the Geary subway's opening. A plan without `displays` parses to an object without the key, so its
+plan.json is unchanged.
+
 Id spaces: `routeIds` are bare GTFS route ids (transit.json `Pattern.routeId`, for example `14`,
 `N`). Existing stop ids carry the operator prefix (transit.json `Stop.id`, for example
 `muni:m1`). Stops the plan adds use the `lc:` prefix.
@@ -78,12 +87,12 @@ From the plan alone (`checkPlan`, field = problem code): duplicate ids, unknown 
 cycles, dates outside 2028-01-01 to 2068-12-31, a start before a dependency opens, a car closure
 with no transit dependency, **`fillmore`** (a closure before its transit opens), a build before
 its site is available, a garage on a site that is not a build-free removal, a reused site, a stop
-defined twice, capacity (`maxConcurrent` per capacity kind), and a parking conversion with no
-transit dependency.
+defined twice, capacity (`maxConcurrent` per capacity kind), a parking conversion with no
+transit dependency, and a display whose id is reused or whose `from` names no project.
 
 Against this dataset:
 
-- every CNN is in `src_streets` (`segments`);
+- every CNN of a project or display is in `src_streets` (`segments`);
 - every existing stop id is in transit.json, and every `lc:` stop id is placed by a transit line
   of the plan (`stops`, `stopIds`);
 - every `routeIds` entry has a pattern in transit.json in the project's mode family (tram
@@ -215,7 +224,12 @@ file the manifest names.
 | `timeline.bin` | the representative future: columnar JSON, deflate-raw level 9, as policy.bin |
 
 `timeline.bin` is bound to parcels.bin by `count` and `idsHash`; decoding it against another
-parcels.bin throws. Codecs: `parsePlanFile`, `parseSitesFile`, `parseSummary`,
+parcels.bin throws. Besides the plan arm's schedules and the initiative builds kept in the
+representative seed, it holds `reservations`: every reserved row's verdict in that seed (`kept`,
+or voided because the market began a project there first), strictly ascending by row, encoded as
+the column object `{ row: number[], kept: (0 | 1)[] }`. A voided garage parcel has no build to
+drop, and a zero-gain conversion keeps its reservation with no build, so the page needs the
+verdict to tell kept from voided. Codecs: `parsePlanFile`, `parseSitesFile`, `parseSummary`,
 `decodeTimelinePayload` (`src/lib/data/lesscars/codec.ts`).
 
 Counts in report.json: `lesscars.projects`, `lesscars.sites`, `lesscars.sites.zero_yield`,
@@ -231,7 +245,10 @@ only with `npm run pipeline -- fixture --update-golden`.
 
 `checkV35` (`pipeline/steps/check-lesscars.ts`) re-reads the published files in `check` and in
 `build`: see Invariants in [pipeline.md](pipeline.md). A build whose manifest has no
-`scenarios.lesscars` passes with "no plan".
+`scenarios.lesscars` passes with "no plan". Among its checks, the timeline's `reservations` rows
+must equal the non-zero rows of `reservationsOf(plan, schedulePlan(plan), parcels)`
+(`pipeline/lib/lesscars/runs.ts`); a mismatch fails with `timeline reservations ≠ plan's reserved
+parcels`.
 
 ## Running it
 
