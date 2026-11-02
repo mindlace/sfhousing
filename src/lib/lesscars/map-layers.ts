@@ -24,7 +24,7 @@ import type { FeatureCollection, LineString, Point, Polygon } from 'geojson';
 import { TOKENS, type TokenName } from '$lib/map/palette';
 import { BUILDINGS_LAYER, OVERLAY_ANCHOR, firstSymbolLayerId } from '$lib/map/style';
 import type { Theme } from '$lib/map/types';
-import type { Day } from '$lib/timelapse/time';
+import { OPEN_DAY, type Day } from '$lib/timelapse/time';
 import {
   STREET_STATES,
   epochOf,
@@ -303,6 +303,22 @@ const DEFS: LayerDef[] = [
   }
 ];
 
+/**
+ * The `to` a never-ending feature carries in a MapLibre source. MapLibre's GeoJSON worker
+ * re-encodes tiles with vt-pbf, which writes integer properties as varints: OPEN_DAY (3e38) does
+ * not fit and the whole source fails to load. Any integer past every simulated day will do.
+ */
+const MAP_OPEN_DAY = 2 ** 31 - 1;
+
+function forMap<T extends LessCarsLayerData[keyof LessCarsLayerData]>(fc: T): T {
+  return {
+    ...fc,
+    features: fc.features.map((f) =>
+      f.properties.to === OPEN_DAY ? { ...f, properties: { ...f.properties, to: MAP_OPEN_DAY } } : f
+    )
+  };
+}
+
 /** The filter that keeps `own`'s features live on day `d`. */
 function dayFilter(own: FilterSpecification | null, d: Day): FilterSpecification {
   const live: ExpressionSpecification[] = [
@@ -330,7 +346,7 @@ export function installLessCarsLayers(
 
   for (const key of Object.keys(SOURCE) as (keyof LessCarsLayerData)[])
     if (!map.getSource(SOURCE[key]))
-      map.addSource(SOURCE[key], { type: 'geojson', data: current[key] });
+      map.addSource(SOURCE[key], { type: 'geojson', data: forMap(current[key]) });
 
   const style = map.getStyle();
   const anchors = {
@@ -367,7 +383,7 @@ export function installLessCarsLayers(
     },
     setData(key, fc) {
       current[key] = fc;
-      (map.getSource(SOURCE[key]) as GeoJSONSource | undefined)?.setData(fc);
+      (map.getSource(SOURCE[key]) as GeoJSONSource | undefined)?.setData(forMap(fc));
       days = eventDays(...Object.values(current));
       refilter();
     }

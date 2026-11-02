@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { FeatureCollection, Point } from 'geojson';
+import type { FeatureCollection, Point, Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
 import { parsePlanFile, parseSitesFile } from '$lib/data/lesscars/codec';
-import { LESSCARS_START } from '$lib/data/lesscars/schedule';
+import { LESSCARS_HORIZON, LESSCARS_START } from '$lib/data/lesscars/schedule';
 import { BUILDINGS_LAYER, OVERLAY_ANCHOR } from '$lib/map/style';
 import { TOKENS } from '$lib/map/palette';
-import type { Day } from '$lib/timelapse/time';
+import { OPEN_DAY, type Day } from '$lib/timelapse/time';
 import {
   STREET_STATES,
   garageFeatures,
@@ -14,7 +14,8 @@ import {
   siteFeatures,
   stopFeatures,
   streetFeatures,
-  type GarageProps
+  type GarageProps,
+  type SiteProps
 } from './features';
 import { LESSCARS_LEGEND } from './legend';
 import {
@@ -222,10 +223,47 @@ describe('installLessCarsLayers', () => {
     const before = m.lastFilter(LC_LAYER.garagesCircle);
     expect(JSON.stringify(before)).not.toContain(JSON.stringify(['<=', ['get', 'from'], open]));
     l.setData('garages', garages);
-    expect(m.sourceData('lc-garages')).toBe(garages);
+    expect((m.sourceData('lc-garages') as typeof garages).features).toHaveLength(
+      garages.features.length
+    );
     expect(JSON.stringify(m.lastFilter(LC_LAYER.garagesCircle))).toContain(
       JSON.stringify(['<=', ['get', 'from'], open])
     );
+  });
+});
+
+describe('source data for MapLibre', () => {
+  // MapLibre's GeoJSON worker re-encodes tiles with vt-pbf, which writes an integer property as a
+  // varint: OPEN_DAY (3e38) does not fit in 10 bytes and the whole source fails to load.
+  it('carries no property value too large for a vt-pbf varint, on install and on setData', () => {
+    const m = fakeMap();
+    const l = installLessCarsLayers(asMap(m), data(), 'light', LESSCARS_START);
+    l.setData(
+      'garages',
+      garageFeatures(planFile, sitesFile, { '3512015': [-122.418, 37.76] }, [
+        { parcelId: '3512015', kept: true }
+      ])
+    );
+    let checked = 0;
+    for (const id of m.sources) {
+      const fc = m.sourceData(id) as FeatureCollection;
+      for (const f of fc.features)
+        for (const v of Object.values(f.properties ?? {}))
+          if (typeof v === 'number') {
+            expect(Math.abs(v)).toBeLessThan(2 ** 53);
+            checked++;
+          }
+    }
+    expect(checked).toBeGreaterThan(0);
+    expect(OPEN_DAY).toBeGreaterThan(2 ** 53);
+  });
+
+  it('a feature that never ends stays live on the horizon and long after', () => {
+    const m = fakeMap();
+    installLessCarsLayers(asMap(m), data(), 'light', LESSCARS_HORIZON);
+    const fc = m.sourceData('lc-sites') as FeatureCollection<Polygon, SiteProps>;
+    expect(fc.features.length).toBeGreaterThan(0);
+    for (const f of fc.features) expect(f.properties.to).toBeGreaterThan(LESSCARS_HORIZON * 100);
   });
 });
 
