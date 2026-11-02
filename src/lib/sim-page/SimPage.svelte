@@ -452,14 +452,23 @@
   /** The zoning rule shown on the map (Task 13); none yet. */
   let selectedRule = $state.raw<string | null>(null);
   /** The map's view at its latest `moveend` (or when it became ready). */
-  let mapView = $state.raw<{ zoom: number; bbox: [number, number, number, number] } | null>(null);
+  let mapView = $state.raw<{
+    zoom: number;
+    bbox: [number, number, number, number];
+    centre: [number, number];
+  } | null>(null);
   let viewMap: ControllerMap | null = null;
 
   function readView(): void {
     const m = viewMap;
     if (!m) return;
     const b = m.getBounds();
-    mapView = { zoom: m.getZoom(), bbox: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()] };
+    const c = m.getCenter();
+    mapView = {
+      zoom: m.getZoom(),
+      bbox: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()],
+      centre: [c.lng, c.lat]
+    };
   }
 
   /** Follows `map`'s view on `moveend` (a new map replaces the old one's listener). */
@@ -493,11 +502,13 @@
   );
   const limitsOn = $derived(run.phase === 'setup' && viewPrefs.heightLimits);
 
-  // Lids from LIDS_FADE's start: the view's bbox, clamped around its centre.
+  // Lids from LIDS_FADE's start: the view's bbox, clamped around the view centre (R14).
   $effect(() => {
     const v = mapView;
     const bbox =
-      limitsOn && v !== null && v.zoom >= LIDS_FADE[0] ? clampBbox(v.bbox, LID_MAX_SPAN_M) : null;
+      limitsOn && v !== null && v.zoom >= LIDS_FADE[0]
+        ? clampBbox(v.bbox, LID_MAX_SPAN_M, v.centre)
+        : null;
     untrack(() => lidRequest.want(bbox));
   });
 

@@ -8,13 +8,16 @@
  * never dropped, so deck keeps its GPU state and a zoom across the fade re-tessellates nothing.
  *
  * The look per mode (plain, paint, rule) comes from limits-style. Filtered and dashed data is
- * memoized per (lids | city, mode, theme), and labels per integer zoom, so a pan or a zoom inside
- * one integer zoom outside the fade does no work here.
+ * memoized per (lids | city, mode, theme). Labels are the worker's per-zoom placement, then a
+ * screen-space collision pass (`declutter`) on the current view, memoized per labelKey (integer
+ * zoom, pitch and bearing steps, and a coarse pan step), so the labels shown never overlap at any
+ * pitch, and a small pan or a zoom inside one integer zoom outside the fade does no work here.
  */
 import { CompositeLayer, type Layer, type LayerProps, type UpdateParameters } from '@deck.gl/core';
 import { PathLayer, SolidPolygonLayer, TextLayer } from '@deck.gl/layers';
 import { OUTLINE_DASH_M, OUTLINE_GAP_M, dashPath } from '$lib/map/dash';
 import { TOKENS, hexToRgba, type RGBA } from '$lib/map/palette';
+import { M_PER_DEG_LAT } from '$lib/plan/geometry';
 import type { Theme } from '$lib/map/types';
 import {
   LIDS_FADE,
@@ -29,6 +32,7 @@ import {
   type LimitsView,
   type Look
 } from './limits-style';
+import { LABEL_FONT_FAMILY, LABEL_FONT_WEIGHT, declutter, metersPerPixel } from './labels';
 import { storiesToM } from './room';
 import type { HeightCity, HeightLids, LabelSet } from './types';
 import { LidWallLayer } from './wall-layer';
@@ -42,6 +46,18 @@ export const CONTOUR_DASH_M = 40;
 export const CONTOUR_GAP_M = 30;
 export const RIM_WIDTH_PX = 1.5;
 export const LABEL_SIZE_PX = 12;
+/** The halo round each glyph, in screen px: rims, walls and bars never cut through a label. */
+export const LABEL_HALO_PX = 2;
+/**
+ * The SDF atlas: glyphs drawn at 64 px with a 20 px distance range and a 12 px buffer, room for
+ * the halo. Deck's outline reaches `0.75 · outlineWidth` atlas px past the glyph edge (its
+ * buffer 0.75 × (1 − outlineWidth / radius)); at LABEL_SIZE_PX that is LABEL_HALO_PX on screen.
+ */
+export const LABEL_FONT_SETTINGS = { sdf: true, fontSize: 64, radius: 20, buffer: 12 } as const;
+export const LABEL_OUTLINE_WIDTH =
+  (LABEL_HALO_PX * LABEL_FONT_SETTINGS.fontSize) / LABEL_SIZE_PX / 0.75;
+/** Collision boxes grow by this much, for the drift inside one labelKey step. */
+const DECLUTTER_SLACK = 1.15;
 /** Every character a lid or contour label can hold ("4 stories · +1,200 floors", "40+"). */
 export const LABEL_CHARS = '0123456789+,· storiesyfl';
 
@@ -63,6 +79,7 @@ interface Line {
 interface Label {
   text: string;
   position: [number, number, number];
+  minZoom: number;
 }
 
 interface LineSets {
@@ -167,12 +184,50 @@ function labelsAt(set: LabelSet, z: number): Label[] {
   for (let i = 0; i < set.text.length; i++) {
     if (set.minZoom[i] > z) continue;
     const p = set.position;
-    out.push({ text: set.text[i], position: [p[3 * i], p[3 * i + 1], p[3 * i + 2]] });
+    out.push({
+      text: set.text[i],
+      position: [p[3 * i], p[3 * i + 1], p[3 * i + 2]],
+      minZoom: set.minZoom[i]
+    });
   }
   return out;
 }
 
 const inFade = (z: number) => z >= LIDS_FADE[0] && z <= LIDS_FADE[1];
+
+interface ViewLike {
+  zoom: number;
+  pitch?: number;
+  bearing?: number;
+  longitude?: number;
+  latitude?: number;
+  width?: number;
+  height?: number;
+  project?(xyz: number[]): number[];
+}
+
+/**
+ * The labels of `set` shown on `viewport`: those placed at its integer zoom, in placement order
+ * (earlier minZoom first), with any whose box would overlap an earlier one dropped. Positions are
+ * scaled about the view centre to the integer zoom, where labels sit closest together, so zooming
+ * in inside the step only spreads them.
+ */
+function labelsOn(set: LabelSet, viewport: ViewLike): Label[] {
+  const z = Math.floor(viewport.zoom);
+  const all = labelsAt(set, z).sort((a, b) => a.minZoom - b.minZoom);
+  const project = viewport.project?.bind(viewport);
+  if (!project) return all;
+  const [cx, cy] = [(viewport.width ?? 0) / 2, (viewport.height ?? 0) / 2];
+  const k = 2 ** (z - viewport.zoom) / DECLUTTER_SLACK;
+  return declutter(
+    all,
+    (l) => l.text,
+    (l) => {
+      const [x, y] = project(l.position);
+      return [cx + (x - cx) * k, cy + (y - cy) * k];
+    }
+  );
+}
 
 /** Never written to depth, so the overlays drawn after are never cut by a lid. */
 const NO_DEPTH_WRITE = { depthWriteEnabled: false } as const;
@@ -187,7 +242,25 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
     contours?: Memo<LineSets>;
     lidLabels?: Memo<Label[]>;
     contourLabels?: Memo<Label[]>;
+    /** The labelKey the labels were last decluttered for. */
+    labelKey?: string;
   };
+
+  /**
+   * When the screen label collision must run again: the integer zoom, 5° of pitch, 10° of
+   * bearing, or a pan of 128 px at the integer zoom.
+   */
+  static labelKey(v: ViewLike): string {
+    const z = Math.floor(v.zoom);
+    const step = (128 * metersPerPixel(z)) / M_PER_DEG_LAT;
+    return [
+      z,
+      Math.round((v.pitch ?? 0) / 5),
+      Math.round(((((v.bearing ?? 0) % 360) + 360) % 360) / 10) % 36,
+      Math.round((v.longitude ?? 0) / step),
+      Math.round((v.latitude ?? 0) / step)
+    ].join(':');
+  }
 
   shouldUpdateState({ changeFlags, context }: UpdateParameters<this>): boolean {
     if (changeFlags.propsOrDataChanged || changeFlags.updateTriggersChanged) return true;
@@ -195,14 +268,17 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
     const z = context.viewport.zoom;
     const was = this.state.zoom;
     if (was === undefined) return true;
-    return Math.floor(z) !== Math.floor(was) || inFade(z) || inFade(was);
+    if (Math.floor(z) !== Math.floor(was) || inFade(z) || inFade(was)) return true;
+    const key = this.state.labelKey;
+    return key !== undefined && key !== HeightLimitsLayer.labelKey(context.viewport);
   }
 
   renderLayers(): Layer[] {
     const { city, lids, mode: view, theme } = this.props;
-    const zoom = this.context.viewport.zoom;
+    const viewport = this.context.viewport;
+    const zoom = viewport.zoom;
     this.state.zoom = zoom;
-    const zBucket = Math.floor(zoom);
+    const labelKey = (this.state.labelKey = HeightLimitsLayer.labelKey(viewport));
     const lidsOp = lidsOpacity(zoom);
     const t = TOKENS[theme];
     const ink = hexToRgba(t['limit-ink']);
@@ -217,11 +293,8 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
         lidData(lids, mode, theme)
       )).value;
       const labelSet = mode.kind === 'paint' ? lids.paintLabels : lids.labels;
-      const labels = (this.state.lidLabels = memo(
-        this.state.lidLabels,
-        labelSet,
-        String(zBucket),
-        () => labelsAt(labelSet, zBucket)
+      const labels = (this.state.lidLabels = memo(this.state.lidLabels, labelSet, labelKey, () =>
+        labelsOn(labelSet, viewport)
       )).value;
       out.push(
         new SolidPolygonLayer(
@@ -269,8 +342,8 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
       const labels = (this.state.contourLabels = memo(
         this.state.contourLabels,
         city.labels,
-        String(zBucket),
-        () => labelsAt(city.labels, zBucket)
+        labelKey,
+        () => labelsOn(city.labels, viewport)
       )).value;
       out.push(...this.lineLayers('contours', lines, contourOp));
       if (labels.length) out.push(this.labelLayer('contour-labels', labels, contourOp, ink, halo));
@@ -316,9 +389,11 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
         getColor: ink,
         getSize: LABEL_SIZE_PX,
         sizeUnits: 'pixels',
-        outlineWidth: 2,
+        fontFamily: LABEL_FONT_FAMILY,
+        fontWeight: LABEL_FONT_WEIGHT,
+        outlineWidth: LABEL_OUTLINE_WIDTH,
         outlineColor: halo,
-        fontSettings: { sdf: true },
+        fontSettings: LABEL_FONT_SETTINGS,
         characterSet: LABEL_CHARS,
         opacity,
         visible: opacity > 0,

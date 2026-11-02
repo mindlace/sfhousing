@@ -11,6 +11,7 @@ import { M_PER_DEG_LAT, M_PER_DEG_LNG } from '$lib/plan/geometry';
 import { SRC_FZP, SRC_RULE0 } from '$lib/sim/levers/source';
 import { TOKENS, hexToRgba } from '../palette';
 import type { Theme } from '../types';
+import { LABEL_FONT_FAMILY, LABEL_H_PX, labelWidthPx } from './labels';
 import { LIMITS_LAYER_ID, HeightLimitsLayer, heightLimitsLayer } from './limits-layer';
 import { GLAZE_ALPHA, type LimitsView } from './limits-style';
 import { lotBlock, LOT_D, runLids, scene, tinyLimits, toLngLat } from './test/fixtures';
@@ -375,6 +376,67 @@ describe('HeightLimitsLayer on the GPU', () => {
     expect(errors).toEqual([]);
   });
 
+  type Shown = { text: string; position: [number, number, number] };
+  const shownLabels = () =>
+    (live().find((l) => l.id === `${LIMITS_LAYER_ID}-lid-labels`)?.props.data ?? []) as Shown[];
+
+  it('labels draw in the system sans with a visible halo', async () => {
+    const i = TINY.lids.labels.minZoom.findIndex((z) => z <= 17);
+    const p = TINY.lids.labels.position;
+    const at: [number, number] = [p[3 * i], p[3 * i + 1]];
+    const px = await render([limits(TINY, { kind: 'plain' }, 'light')], view(at, 17));
+    const text = live().find((l) => l.id === `${LIMITS_LAYER_ID}-lid-labels`)!;
+    expect((text.props as { fontFamily?: string }).fontFamily).toBe(LABEL_FONT_FAMILY);
+    const halo = hexToRgba(TOKENS.light['limit-halo']);
+    let n = 0;
+    for (let y = 0; y < CH; y++)
+      for (let x = 0; x < CW; x++) {
+        const c = px.at(x, y);
+        if (c.every((v, k) => Math.abs(v - halo[k]) <= 8)) n++;
+      }
+    // a 2 px halo round the glyphs of one label: well over a hundred pixels (a 0.3 px one: none)
+    expect(n).toBeGreaterThan(100);
+    expect(errors).toEqual([]);
+  });
+
+  it('pitched, the paint-mode labels shown never overlap on screen', async () => {
+    // A region's paint part and rest labelled 12 m apart north-south at one height: clear of each
+    // other top-down (about 50 px at z18), squeezed together once pitched.
+    const north = 12 / M_PER_DEG_LAT;
+    const lids: HeightLids = {
+      ...TINY.lids,
+      paintLabels: {
+        text: ['4 stories · +16 floors', '4 stories · +41 floors'],
+        position: Float64Array.of(STREET[0], STREET[1], Z4, STREET[0], STREET[1] + north, Z4),
+        minZoom: Uint8Array.of(15, 15)
+      }
+    };
+    for (const [zoom, pitch, bearing] of [
+      [18, 0, 0],
+      [17, 60, -20],
+      [18, 70, 0],
+      [18, 60, 90]
+    ]) {
+      await render(
+        [limits({ ...TINY, lids }, { kind: 'paint' })],
+        view(STREET, zoom, pitch, bearing)
+      );
+      const shown = shownLabels();
+      if (pitch === 0) expect(shown).toHaveLength(2);
+      const boxes = shown.map((l) => {
+        const [x, y] = toPx([l.position[0], l.position[1]], l.position[2]);
+        return { x, y, hw: labelWidthPx(l.text) / 2, hh: LABEL_H_PX / 2 };
+      });
+      for (let i = 0; i < boxes.length; i++)
+        for (let j = i + 1; j < boxes.length; j++) {
+          const [p, q] = [boxes[i], boxes[j]];
+          const overlap = Math.abs(p.x - q.x) < p.hw + q.hw && Math.abs(p.y - q.y) < p.hh + q.hh;
+          expect(overlap, `z${zoom} pitch ${pitch} bearing ${bearing}`).toBe(false);
+        }
+    }
+    expect(errors).toEqual([]);
+  });
+
   it('is `sim-height-limits`, a HeightLimitsLayer', () => {
     const layer = limits();
     expect(layer).toBeInstanceOf(HeightLimitsLayer);
@@ -396,5 +458,30 @@ describe('HeightLimitsLayer on the GPU', () => {
     expect(should(15.0, 15.2)).toBe(true);
     expect(should(15.4, 15.6)).toBe(true);
     expect(should(13.2, 13.9)).toBe(false);
+  });
+
+  it('a pitch, bearing or long-pan change re-runs the screen label collision', () => {
+    const layer = limits();
+    const vp = (o: Record<string, number>) => ({
+      zoom: 16.2,
+      pitch: 30,
+      bearing: 0,
+      longitude: STREET[0],
+      latitude: STREET[1],
+      width: 800,
+      height: 600,
+      ...o
+    });
+    const should = (was: Record<string, number>, now: Record<string, number>) => {
+      layer.state = { zoom: 16.2, labelKey: HeightLimitsLayer.labelKey(vp(was)) } as never;
+      return layer.shouldUpdateState({
+        changeFlags: { viewportChanged: true, propsOrDataChanged: false },
+        context: { viewport: vp(now) }
+      } as unknown as Parameters<HeightLimitsLayer['shouldUpdateState']>[0]);
+    };
+    expect(should({}, { longitude: STREET[0] + 1e-5 })).toBe(false);
+    expect(should({}, { pitch: 45 })).toBe(true);
+    expect(should({}, { bearing: 30 })).toBe(true);
+    expect(should({}, { longitude: STREET[0] + 0.01 })).toBe(true);
   });
 });

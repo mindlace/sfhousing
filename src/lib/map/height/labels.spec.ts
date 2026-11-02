@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { M_PER_DEG_LNG } from '$lib/plan/geometry';
 import { NO_ZOOM } from './types';
-import { LID_ZOOMS, metersPerPixel, placeLabels, toLabelSet, type LabelCandidate } from './labels';
+import {
+  LABEL_H_PX,
+  LID_ZOOMS,
+  declutter,
+  labelWidthPx,
+  metersPerPixel,
+  placeLabels,
+  toLabelSet,
+  type LabelCandidate
+} from './labels';
 
 function cand(o: Partial<LabelCandidate> = {}): LabelCandidate {
   return {
@@ -41,5 +50,58 @@ describe('labels', () => {
     expect(s.text).toEqual([c[0].text]);
     expect(Array.from(s.position)).toEqual([c[0].lng, c[0].lat, 7]);
     expect(Array.from(s.minZoom)).toEqual([15]);
+  });
+
+  it('labelWidthPx: digits and + wide, spaces and dots narrow, letters between', () => {
+    expect(labelWidthPx('8')).toBe(8.5);
+    expect(labelWidthPx(' ·,')).toBe(12);
+    expect(labelWidthPx('6 stories · +16 floors')).toBeCloseTo(138.5, 5);
+  });
+
+  it('placeLabels sizes a box by labelWidthPx: two wide labels collide where two short ones fit', () => {
+    // 40 m apart east-west at z17 (≈ 0.47 m/px): ≈ 85 px apart.
+    const east = -122.4431 + 40 / M_PER_DEG_LNG;
+    const short = placeLabels(
+      [cand({ text: '4', priority: 2 }), cand({ lng: east, text: '8' })],
+      [17]
+    );
+    expect([...short]).toEqual([17, 17]);
+    const long = placeLabels(
+      [
+        cand({ text: '6 stories · +16 floors', priority: 2 }),
+        cand({ lng: east, text: '6 stories · +41 floors' })
+      ],
+      [17]
+    );
+    expect([...long]).toEqual([17, NO_ZOOM]);
+  });
+
+  it('declutter: in screen px, the first of two labels on one point shows, never both', () => {
+    const at = (x: number, y: number) => ({ x, y });
+    const proj = new Map([
+      ['a', at(100, 100)],
+      ['b', at(100, 100)],
+      ['c', at(400, 100)]
+    ]);
+    const kept = declutter(
+      ['a', 'b', 'c'],
+      (k) => k,
+      (k) => [proj.get(k)!.x, proj.get(k)!.y]
+    );
+    expect(kept).toEqual(['a', 'c']);
+  });
+
+  it('declutter: a pair clear of each other flat collides once pitch squeezes their rows together', () => {
+    const text = '6 stories · +16 floors';
+    const rows = (dy: number) => [
+      { text, y: 100 },
+      { text, y: 100 + dy }
+    ];
+    const pos = (l: { y: number }): [number, number] => [200, l.y];
+    // flat: two rows 30 px apart are clear (box height 16 + 2 × 4 padding = 24)
+    expect(declutter(rows(30), (l) => l.text, pos)).toHaveLength(2);
+    // pitched 60°: the same ground rows are 15 px apart on screen
+    expect(declutter(rows(15), (l) => l.text, pos)).toHaveLength(1);
+    expect(LABEL_H_PX).toBe(16);
   });
 });

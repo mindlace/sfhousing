@@ -909,11 +909,15 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
     moveTo(14);
     await new Promise((res) => setTimeout(res, 50));
     expect(w.allOf('heightLids')).toHaveLength(0);
-    // The stub's view is 4.4 km wide (a 2560 px window at z14.5): clamped around its centre.
+    // The stub's view is 4.4 km wide (a 2560 px window at z14.5): clamped around the view's
+    // centre, which a pitched map puts off the middle of its bounds (R14).
+    const centre = { lng: -122.44, lat: 37.76 };
+    stub.map.getCenter = () => centre;
     moveTo(14.5);
     await expect.poll(() => w.allOf('heightLids').length).toBe(1);
     const asked = w.lastOf('heightLids')!.bbox;
-    expect(asked).toEqual(clampBbox(stub.map.bounds, LID_MAX_SPAN_M));
+    expect(asked).toEqual(clampBbox(stub.map.bounds, LID_MAX_SPAN_M, [centre.lng, centre.lat]));
+    expect(asked[0] <= centre.lng && centre.lng <= asked[2]).toBe(true);
     expect(asked[2] - asked[0]).toBeLessThan(stub.map.bounds[2] - stub.map.bounds[0]);
     const { lids } = tinyLimits();
     w.emit({

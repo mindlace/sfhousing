@@ -17,17 +17,28 @@ export interface LidRequestDeps {
 }
 
 /**
- * `bbox` (west, south, east, north) with each axis at most `maxSpanM` metres, clamped around its
- * centre: a wide or very pitched view asks for the lids around where the user is looking.
+ * `bbox` (west, south, east, north) with each axis at most `maxSpanM` metres: a window of
+ * `maxSpanM` around `centre` (the map's view centre; default the bbox's), slid to stay inside the
+ * bbox. A pitched view's bounds run out toward the horizon, so their middle lies well beyond the
+ * view centre; clamping around the view centre keeps the near part of the view, where the user
+ * looks (R14).
  */
-export function clampBbox(bbox: BBox, maxSpanM: number): BBox {
+export function clampBbox(
+  bbox: BBox,
+  maxSpanM: number,
+  centre: [number, number] = [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2]
+): BBox {
   const [w, s, e, n] = bbox;
-  const halfLng = maxSpanM / 2 / M_PER_DEG_LNG;
-  const halfLat = maxSpanM / 2 / M_PER_DEG_LAT;
-  const [cx, cy] = [(w + e) / 2, (s + n) / 2];
-  const [w1, e1] = e - w > 2 * halfLng ? [cx - halfLng, cx + halfLng] : [w, e];
-  const [s1, n1] = n - s > 2 * halfLat ? [cy - halfLat, cy + halfLat] : [s, n];
-  return [w1, s1, e1, n1];
+  const [x0, x1] = clampAxis(w, e, centre[0], maxSpanM / M_PER_DEG_LNG);
+  const [y0, y1] = clampAxis(s, n, centre[1], maxSpanM / M_PER_DEG_LAT);
+  return [x0, y0, x1, y1];
+}
+
+/** [lo, hi] cut to `span` around `c`, slid back inside [lo, hi]. */
+function clampAxis(lo: number, hi: number, c: number, span: number): [number, number] {
+  if (hi - lo <= span) return [lo, hi];
+  const start = Math.max(lo, Math.min(c - span / 2, hi - span));
+  return [start, start + span];
 }
 
 const sameBbox = (a: BBox, b: BBox) => a.every((x, i) => x === b[i]);

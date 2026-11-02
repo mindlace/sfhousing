@@ -61,6 +61,37 @@ describe('clampBbox', () => {
   });
 });
 
+describe('clampBbox around the view centre (R14)', () => {
+  it('pitched: the far edge runs out, the box keeps the view centre and the near part of the view', () => {
+    // 1 km before the centre (the near, bottom edge) to 3.6 km beyond it; 2 km wide.
+    const centre: [number, number] = [-122.42, 37.76];
+    const kmLat = 1000 / M_PER_DEG_LAT;
+    const kmLng = 1000 / M_PER_DEG_LNG;
+    const view: BBox = [
+      centre[0] - kmLng,
+      centre[1] - 1 * kmLat,
+      centre[0] + kmLng,
+      centre[1] + 3.6 * kmLat
+    ];
+    const c = clampBbox(view, 3000, centre);
+    expect((c[3] - c[1]) * M_PER_DEG_LAT).toBeCloseTo(3000, 3);
+    // the near part of the view, whole: the bottom edge stays
+    expect(c[1]).toBe(view[1]);
+    expect(c[1] <= centre[1] && centre[1] <= c[3]).toBe(true);
+    expect([c[0], c[2]]).toEqual([view[0], view[2]]);
+    // the bbox-centre clamp would have lost the near 0.8 km
+    expect(clampBbox(view, 3000)[1]).toBeGreaterThan(centre[1] - 0.3 * kmLat);
+  });
+
+  it('a centre in the middle of a wide view clamps around it, both axes', () => {
+    const centre: [number, number] = [-122.45, 37.75];
+    const big: BBox = [-122.5, 37.7, -122.4, 37.8];
+    const d = clampBbox(big, 3000, centre);
+    expect((d[0] + d[2]) / 2).toBeCloseTo(centre[0], 9);
+    expect((d[1] + d[3]) / 2).toBeCloseTo(centre[1], 9);
+  });
+});
+
 describe('LidRequest', () => {
   it('one request in flight; the latest bbox goes after the answer; older answers are dropped', async () => {
     const t = setup();
