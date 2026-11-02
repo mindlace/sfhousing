@@ -2,8 +2,8 @@ import type { Provenance } from '../../../timelapse/types';
 import type { LessCarsPlan } from '../plan';
 
 const prov: Provenance = {
-  tier: 2,
-  label: 'Fixture assumption',
+  tier: 4,
+  label: 'Invented fixture value',
   sources: [{ label: 'Fixture', url: 'https://example.org/fixture' }],
   method: 'Invented for tests.'
 };
@@ -140,3 +140,10 @@ export const TINY_PLAN: LessCarsPlan = {
     }
   ]
 };
+
+/** A deep copy of `TINY_PLAN` with `edit` applied. */
+export function tinyPlan(edit?: (p: LessCarsPlan) => void): LessCarsPlan {
+  const copy = structuredClone(TINY_PLAN);
+  edit?.(copy);
+  return copy;
+}

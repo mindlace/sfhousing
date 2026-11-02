@@ -3,13 +3,12 @@ import {
   capacityKindOf,
   closesToCars,
   parseLessCarsPlan,
-  tinyPlan,
-  TINY_PLAN,
   type LaneUse,
   type LessCarsPlan,
   type PlanProject,
   type ProjectKind
 } from './plan';
+import { tinyPlan, TINY_PLAN } from './fixtures/tiny-plan';
 
 function project(kind: ProjectKind): PlanProject {
   const p = TINY_PLAN.projects.find((x) => x.kind === kind);
@@ -97,6 +96,7 @@ describe('capacityKindOf', () => {
     expect(capacityKindOf(project('transit-line'))).toBe('transit');
     expect(capacityKindOf(project('street-removal'))).toBe('street');
     expect(capacityKindOf(project('edge-garage'))).toBe('garage');
+    expect(capacityKindOf(project('car-shuttle'))).toBe('transit');
     expect(capacityKindOf(project('parking-conversion'))).toBe('street'); // clearance; its build counts as housing in checkPlan
   });
 });

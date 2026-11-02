@@ -9,10 +9,9 @@
 // - A parking conversion or garage names exactly one parcel (a multi-lot site is several
 //   conversions on one schedule), because the engine keeps or voids each dated reservation per
 //   parcel and a half-voided multi-lot site would leave lots idle.
-// - `car-shuttle` draws on garage capacity: it is built to serve the edge garages.
+// - `car-shuttle` draws on transit capacity: it is rail construction.
 import type { Provenance } from '../../timelapse/types';
 import type { ParcelId } from '../parcel';
-import { TINY_PLAN as FIXTURE } from './fixtures/tiny-plan';
 
 export const LESSCARS_PLAN_SCHEMA = 1;
 export const PROJECT_KINDS = [
@@ -408,6 +407,7 @@ export function capacityKindOf(p: PlanProject): CapacityKind {
     case 'transit-line':
     case 'tram-priority':
     case 'bus-lane':
+    case 'car-shuttle':
       return 'transit';
     case 'street-change':
     case 'highway-truncation':
@@ -415,7 +415,6 @@ export function capacityKindOf(p: PlanProject): CapacityKind {
     case 'parking-conversion':
       return 'street';
     case 'edge-garage':
-    case 'car-shuttle':
       return 'garage';
   }
 }
@@ -425,13 +424,4 @@ export function closesToCars(p: PlanProject): boolean {
   if (p.kind === 'street-removal' || p.kind === 'highway-truncation') return true;
   if (p.kind === 'street-change') return !p.lanes.includes('car');
   return false;
-}
-
-export const TINY_PLAN: LessCarsPlan = FIXTURE;
-
-/** A deep copy of `TINY_PLAN` with `edit` applied. */
-export function tinyPlan(edit?: (p: LessCarsPlan) => void): LessCarsPlan {
-  const copy = structuredClone(FIXTURE);
-  edit?.(copy);
-  return copy;
 }
