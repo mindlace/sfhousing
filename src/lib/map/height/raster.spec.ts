@@ -37,8 +37,9 @@ const cellAt = (fr: RasterFrame, xM: number, yM: number) =>
 const count = (l: Uint32Array, v: number) => l.reduce((n, x) => n + (x === v ? 1 : 0), 0);
 const sameComp = (a: number, b: number) => (a === b ? a : EMPTY);
 const rank = (l: number) => l;
-function close(l: Uint32Array, maxGap = 30, br = sameComp, rk = rank) {
-  for (let d = 0 as GapDir; d < 4; d++) closeGapLines(l, f, d, 0, lineCount(f, d), maxGap, br, rk);
+function close(l: Uint32Array, maxGap = 30, filled = new Uint8Array(l.length)) {
+  for (let d = 0 as GapDir; d < 4; d++)
+    closeGapLines(l, f, d, 0, lineCount(f, d), maxGap, sameComp, rank, filled);
 }
 const blank = () => new Uint32Array(f.cols * f.rows);
 function layout(gapW: number, bLabel = 1) {
@@ -99,6 +100,27 @@ describe('closeGapLines', () => {
     const l = layout(20, 2);
     close(l);
     expect(l[cellAt(f, 80, 50)]).toBe(EMPTY);
+  });
+  it('reusing a labels array with a fresh mask cannot overwrite a real lot cell', () => {
+    const l = blank();
+    for (const [x, y] of [
+      [10, 40],
+      [90, 40]
+    ])
+      rasterizeRings(f, rect(x, y, 60, 20), 1, l);
+    rasterizeRings(f, rect(70, 10, 20, 30), 3, l);
+    rasterizeRings(f, rect(70, 60, 20, 30), 3, l);
+    close(l);
+    expect(l[cellAt(f, 80, 50)]).toBe(3);
+    // rebuild in the same array: a 1-labelled lot now sits where the bridge cell was filled
+    l.fill(0);
+    rasterizeRings(f, rect(10, 40, 60, 20), 1, l);
+    rasterizeRings(f, rect(90, 40, 60, 20), 1, l);
+    rasterizeRings(f, rect(70, 40, 20, 20), 1, l);
+    rasterizeRings(f, rect(70, 10, 20, 30), 3, l);
+    rasterizeRings(f, rect(70, 60, 20, 30), 3, l);
+    close(l);
+    expect(l[cellAt(f, 80, 50)]).toBe(1);
   });
   it('closes an intersection; the higher rank wins a contested cell', () => {
     const l = blank();

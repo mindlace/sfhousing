@@ -82,14 +82,13 @@ export function lineCount(f: RasterFrame, d: GapDir): number {
   return d === 0 ? f.rows : d === 1 ? f.cols : f.cols + f.rows - 1;
 }
 
-// Cells closeGapLines has filled, per label array, so a later direction can contest them.
-const filledMasks = new WeakMap<Uint32Array, Uint8Array>();
-
 /**
  * Fill runs of EMPTY cells (and cells filled by an earlier direction) that sit between two lot
  * cells on one raster line and are at most maxGapM long. bridge(a, b) gives the fill label, or
  * EMPTY for none. BLOCK, lot cells, and runs touching the raster edge are never filled. A cell
- * contested by an earlier fill goes to the higher rank, then the lower label.
+ * contested by an earlier fill goes to the higher rank, then the lower label. `filled` is a
+ * caller-owned mask (one byte per cell, allocate it fresh per build and share it across all
+ * directions of that build) marking cells already filled by a bridge.
  */
 export function closeGapLines(
   labels: Uint32Array,
@@ -99,13 +98,9 @@ export function closeGapLines(
   to: number,
   maxGapM: number,
   bridge: (a: number, b: number) => number,
-  rank: (label: number) => number
+  rank: (label: number) => number,
+  filled: Uint8Array
 ): void {
-  let filled = filledMasks.get(labels);
-  if (!filled) {
-    filled = new Uint8Array(labels.length);
-    filledMasks.set(labels, filled);
-  }
   const dc = d === 1 ? 0 : d === 3 ? -1 : 1;
   const dr = d === 0 ? 0 : 1;
   const step = d >= 2 ? Math.SQRT2 * f.cell : f.cell;
