@@ -936,11 +936,14 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     post({ type: 'heights', rev: c.rev, city }, cityTransfer(city));
   }
 
-  /** One slice of the wanted lid view, started on the current limits if none runs. */
+  /**
+   * One slice of the wanted lid view. With none running, the job starts one on the current limits
+   * (gathers its lots, allocates its raster) and ends: its units run from the next slice.
+   */
   function lidStep(st: Session, w: Work, lw: LeverWork): void {
     const want = st.lidWant!;
     const limits = lw.limits!;
-    let lid = lw.lid;
+    const lid = lw.lid;
     if (lid === null) {
       const { lots, missing } = lidLots(st, lw, want.bbox);
       let build: LidBuild;
@@ -959,7 +962,10 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         st.lidWant = null;
         return postLids(want.reqId, { ok: false, reason: 'too-large', message: e.message });
       }
-      lid = lw.lid = { reqId: want.reqId, limitsRev: limits.rev, build, missing };
+      lw.lid = { reqId: want.reqId, limitsRev: limits.rev, build, missing };
+      // gathering the lots and allocating the raster take a job of their own: the build's first
+      // unit waits for the next slice, so this macrotask stays within the slice
+      return;
     }
     if (!lid.build.step(sliceLeft(w), clock)) return;
     const lids = lid.build.result();

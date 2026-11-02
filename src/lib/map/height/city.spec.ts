@@ -6,6 +6,7 @@ import {
   CITY_FRAME,
   NO_COMPONENT,
   createCityBuild,
+  stagedBuild,
   type CityInput,
   type CityModel
 } from './city';
@@ -238,5 +239,52 @@ describe('createCityBuild', () => {
     const once = run(input);
     expect([...b.result().city.chains.positions]).toEqual([...once.city.chains.positions]);
     expect([...b.result().model.lotComponent]).toEqual([...once.model.lotComponent]);
+  });
+});
+
+describe('stagedBuild (I2)', () => {
+  /** A generator of `units` work units, each advancing the fake clock by `ms[i]`. */
+  function clocked(ms: number[]) {
+    let t = 0;
+    function* gen(): Generator<void, number, void> {
+      for (const d of ms) {
+        t += d;
+        yield;
+      }
+      return ms.length;
+    }
+    return { b: stagedBuild(gen(), 'test'), now: () => t };
+  }
+
+  it('stops before a unit that would overrun the budget, judged by the largest unit so far', () => {
+    const { b, now } = clocked(Array(20).fill(10));
+    const t0 = now();
+    expect(b.step(45, now)).toBe(false);
+    expect(now() - t0).toBe(40); // a fifth unit would end at 50
+    const spans: number[] = [];
+    for (let done = false; !done;) {
+      const s = now();
+      done = b.step(45, now);
+      spans.push(now() - s);
+    }
+    expect(Math.max(...spans)).toBeLessThanOrEqual(45);
+    expect(b.result()).toBe(20);
+  });
+
+  it('a large unit seen once keeps later steps short of the budget by its length', () => {
+    const { b, now } = clocked([2, 30, 2, 2, 2, 2, 2, 2, 2, 2]);
+    expect(b.step(45, now)).toBe(false);
+    expect(now()).toBe(32); // 32 + 30 > 45
+    const s = now();
+    expect(b.step(45, now)).toBe(false);
+    expect(now() - s).toBe(16); // eight 2 ms units: 16 + 30 > 45
+  });
+
+  it('always runs one unit, so a budget of 0 still makes progress', () => {
+    const { b, now } = clocked([5, 5, 5]);
+    let n = 0;
+    while (!b.step(0, now)) n++;
+    expect(n).toBe(3);
+    expect(b.result()).toBe(3);
   });
 });

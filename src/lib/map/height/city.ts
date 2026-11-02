@@ -83,7 +83,11 @@ export interface CityModel {
 }
 
 export interface StagedBuild<T> {
-  /** Runs work units until done or budgetMs has passed (at least one unit per call). true = done. */
+  /**
+   * Runs work units until done, or until the next unit could overrun budgetMs: it stops once the
+   * time used plus the largest unit seen so far reaches the budget. At least one unit runs per
+   * call. true = done.
+   */
   step(budgetMs: number, now: () => number): boolean;
   /** Throws until step has returned true. */
   result(): T;
@@ -98,17 +102,22 @@ export function createCityBuild(input: CityInput): StagedBuild<CityResult> {
 /** A StagedBuild over a generator that yields after each work unit. */
 export function stagedBuild<T>(gen: Generator<void, T, void>, what: string): StagedBuild<T> {
   let done: { value: T } | null = null;
+  /** The largest unit so far: the estimate of the next one. */
+  let unitMs = 0;
   return {
     step(budgetMs, now) {
       if (done) return true;
       const t0 = now();
-      for (;;) {
+      for (let u0 = t0; ;) {
         const r = gen.next();
         if (r.done) {
           done = { value: r.value };
           return true;
         }
-        if (now() - t0 >= budgetMs) return false;
+        const t = now();
+        unitMs = Math.max(unitMs, t - u0);
+        u0 = t;
+        if (t - t0 + unitMs >= budgetMs) return false;
       }
     },
     result() {
