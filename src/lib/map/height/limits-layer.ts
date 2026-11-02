@@ -8,16 +8,17 @@
  * never dropped, so deck keeps its GPU state and a zoom across the fade re-tessellates nothing.
  *
  * The look per mode (plain, paint, rule) comes from limits-style. Filtered and dashed data is
- * memoized per (lids | city, mode, theme). Labels are the worker's per-zoom placement, then a
- * screen-space collision pass (`declutter`) on the current view, memoized per labelKey (integer
- * zoom, pitch and bearing steps, and a coarse pan step), so the labels shown never overlap at any
- * pitch, and a small pan or a zoom inside one integer zoom outside the fade does no work here.
+ * memoized per (lids | city, mode, theme), so a pan or a zoom inside one integer zoom outside the
+ * fade does no work here. Labels are a LimitLabelsLayer each: the worker's per-zoom placement,
+ * then a screen-space collision pass (`declutter`) on the current view, rerun only when its
+ * labelKey changes (integer zoom, pitch and bearing steps, and a coarse pan step when pitched) and
+ * only for itself; an unchanged kept set keeps its array, so the TextLayer keeps its attributes.
  */
 import { CompositeLayer, type Layer, type LayerProps, type UpdateParameters } from '@deck.gl/core';
 import { PathLayer, SolidPolygonLayer, TextLayer } from '@deck.gl/layers';
 import { OUTLINE_DASH_M, OUTLINE_GAP_M, dashPath } from '$lib/map/dash';
 import { TOKENS, hexToRgba, type RGBA } from '$lib/map/palette';
-import { M_PER_DEG_LAT } from '$lib/plan/geometry';
+import { M_PER_DEG_LAT, M_PER_DEG_LNG } from '$lib/plan/geometry';
 import type { Theme } from '$lib/map/types';
 import {
   LIDS_FADE,
@@ -206,27 +207,123 @@ interface ViewLike {
   project?(xyz: number[]): number[];
 }
 
+/** A pitched view's label key moves every PAN_STEP_PX of pan at the integer zoom. */
+export const PAN_STEP_PX = 512;
+/** Below this pitch a pan is a pure translation of the labels: no pan step in the key. */
+const FLAT_PITCH = 1;
+
 /**
- * The labels of `set` shown on `viewport`: those placed at its integer zoom, in placement order
- * (earlier minZoom first), with any whose box would overlap an earlier one dropped. Positions are
- * scaled about the view centre to the integer zoom, where labels sit closest together, so zooming
- * in inside the step only spreads them.
+ * The labels of `all` (in placement order) kept on `viewport`: any whose box would overlap an
+ * earlier one is dropped. Positions are scaled about the view centre to the integer zoom, where
+ * labels sit closest together, so zooming in inside the step only spreads them. Pitched, only the
+ * labels within reach of the view across one pan step are considered (the rest cannot show
+ * before the key changes); flat, all of them (a pan moves them all alike).
  */
-function labelsOn(set: LabelSet, viewport: ViewLike): Label[] {
-  const z = Math.floor(viewport.zoom);
-  const all = labelsAt(set, z).sort((a, b) => a.minZoom - b.minZoom);
+function declutterOn(all: Label[], viewport: ViewLike): Label[] {
   const project = viewport.project?.bind(viewport);
   if (!project) return all;
-  const [cx, cy] = [(viewport.width ?? 0) / 2, (viewport.height ?? 0) / 2];
+  const [w, h] = [viewport.width ?? 0, viewport.height ?? 0];
+  const [cx, cy] = [w / 2, h / 2];
+  const z = Math.floor(viewport.zoom);
   const k = 2 ** (z - viewport.zoom) / DECLUTTER_SLACK;
+  const m = (viewport.pitch ?? 0) < FLAT_PITCH ? Infinity : PAN_STEP_PX + 128;
+  const near: { l: Label; x: number; y: number }[] = [];
+  for (const l of all) {
+    const [x, y] = project(l.position);
+    if (x < -m || x > w + m || y < -m || y > h + m) continue;
+    near.push({ l, x: cx + (x - cx) * k, y: cy + (y - cy) * k });
+  }
   return declutter(
-    all,
-    (l) => l.text,
-    (l) => {
-      const [x, y] = project(l.position);
-      return [cx + (x - cx) * k, cy + (y - cy) * k];
-    }
-  );
+    near,
+    (n) => n.l.text,
+    (n) => [n.x, n.y]
+  ).map((n) => n.l);
+}
+
+const sameItems = <T>(a: readonly T[], b: readonly T[]) =>
+  a.length === b.length && a.every((x, i) => x === b[i]);
+
+interface LabelsProps {
+  set: LabelSet;
+  ink: RGBA;
+  halo: RGBA;
+}
+
+/**
+ * One label set (lid or contour labels) as a TextLayer, decluttered on the view. Its own
+ * shouldUpdateState watches its labelKey, so a pan, pitch or bearing step reruns this layer only.
+ */
+export class LimitLabelsLayer extends CompositeLayer<LabelsProps & LayerProps> {
+  static layerName = 'LimitLabelsLayer';
+
+  declare state: {
+    key?: string;
+    /** The set's labels at an integer zoom, in placement order. */
+    all?: Memo<Label[]>;
+    /** The labels last drawn; kept as is while the kept set is unchanged. */
+    shown?: Label[];
+  };
+
+  /**
+   * When the collision must run again: the integer zoom, 5° of pitch, 10° of bearing and, pitched,
+   * a pan of PAN_STEP_PX at the integer zoom (each axis at its own scale).
+   */
+  static labelKey(v: ViewLike): string {
+    const z = Math.floor(v.zoom);
+    const pitch = v.pitch ?? 0;
+    const parts: (number | string)[] = [
+      z,
+      Math.round(pitch / 5),
+      Math.round(((((v.bearing ?? 0) % 360) + 360) % 360) / 10) % 36
+    ];
+    if (pitch >= FLAT_PITCH) {
+      const m = PAN_STEP_PX * metersPerPixel(z);
+      parts.push(
+        Math.round(((v.longitude ?? 0) * M_PER_DEG_LNG) / m),
+        Math.round(((v.latitude ?? 0) * M_PER_DEG_LAT) / m)
+      );
+    } else parts.push('flat');
+    return parts.join(':');
+  }
+
+  shouldUpdateState({ changeFlags, context }: UpdateParameters<this>): boolean {
+    if (changeFlags.propsOrDataChanged || changeFlags.updateTriggersChanged) return true;
+    if (!changeFlags.viewportChanged) return false;
+    return this.state.key !== LimitLabelsLayer.labelKey(context.viewport);
+  }
+
+  renderLayers(): Layer[] {
+    const { set, ink, halo } = this.props;
+    const viewport = this.context.viewport;
+    this.state.key = LimitLabelsLayer.labelKey(viewport);
+    const z = Math.floor(viewport.zoom);
+    const all = (this.state.all = memo(this.state.all, set, String(z), () =>
+      labelsAt(set, z).sort((a, b) => a.minZoom - b.minZoom)
+    )).value;
+    const next = declutterOn(all, viewport);
+    const prev = this.state.shown;
+    const shown = (this.state.shown = prev && sameItems(prev, next) ? prev : next);
+    return [
+      new TextLayer<Label>(
+        this.getSubLayerProps({
+          id: 'text',
+          data: shown,
+          getText: (d: Label) => d.text,
+          getPosition: (d: Label) => d.position,
+          getColor: ink,
+          getSize: LABEL_SIZE_PX,
+          sizeUnits: 'pixels',
+          fontFamily: LABEL_FONT_FAMILY,
+          fontWeight: LABEL_FONT_WEIGHT,
+          outlineWidth: LABEL_OUTLINE_WIDTH,
+          outlineColor: halo,
+          fontSettings: LABEL_FONT_SETTINGS,
+          characterSet: LABEL_CHARS,
+          parameters: { depthCompare: 'always', depthWriteEnabled: false }
+        })
+      ) as unknown as Layer
+    ];
+  }
 }
 
 /** Never written to depth, so the overlays drawn after are never cut by a lid. */
@@ -240,27 +337,9 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
     zoom?: number;
     lid?: Memo<LidData>;
     contours?: Memo<LineSets>;
-    lidLabels?: Memo<Label[]>;
-    contourLabels?: Memo<Label[]>;
-    /** The labelKey the labels were last decluttered for. */
-    labelKey?: string;
+    /** Ink and halo per theme, kept so the label layers' props stay equal across renders. */
+    colors?: Memo<{ ink: RGBA; halo: RGBA }>;
   };
-
-  /**
-   * When the screen label collision must run again: the integer zoom, 5° of pitch, 10° of
-   * bearing, or a pan of 128 px at the integer zoom.
-   */
-  static labelKey(v: ViewLike): string {
-    const z = Math.floor(v.zoom);
-    const step = (128 * metersPerPixel(z)) / M_PER_DEG_LAT;
-    return [
-      z,
-      Math.round((v.pitch ?? 0) / 5),
-      Math.round(((((v.bearing ?? 0) % 360) + 360) % 360) / 10) % 36,
-      Math.round((v.longitude ?? 0) / step),
-      Math.round((v.latitude ?? 0) / step)
-    ].join(':');
-  }
 
   shouldUpdateState({ changeFlags, context }: UpdateParameters<this>): boolean {
     if (changeFlags.propsOrDataChanged || changeFlags.updateTriggersChanged) return true;
@@ -268,21 +347,19 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
     const z = context.viewport.zoom;
     const was = this.state.zoom;
     if (was === undefined) return true;
-    if (Math.floor(z) !== Math.floor(was) || inFade(z) || inFade(was)) return true;
-    const key = this.state.labelKey;
-    return key !== undefined && key !== HeightLimitsLayer.labelKey(context.viewport);
+    return Math.floor(z) !== Math.floor(was) || inFade(z) || inFade(was);
   }
 
   renderLayers(): Layer[] {
     const { city, lids, mode: view, theme } = this.props;
-    const viewport = this.context.viewport;
-    const zoom = viewport.zoom;
+    const zoom = this.context.viewport.zoom;
     this.state.zoom = zoom;
-    const labelKey = (this.state.labelKey = HeightLimitsLayer.labelKey(viewport));
     const lidsOp = lidsOpacity(zoom);
     const t = TOKENS[theme];
-    const ink = hexToRgba(t['limit-ink']);
-    const halo = hexToRgba(t['limit-halo']);
+    const { ink, halo } = (this.state.colors = memo(this.state.colors, t, theme, () => ({
+      ink: hexToRgba(t['limit-ink']),
+      halo: hexToRgba(t['limit-halo'])
+    }))).value;
     const out: Layer[] = [];
 
     if (lids) {
@@ -293,9 +370,6 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
         lidData(lids, mode, theme)
       )).value;
       const labelSet = mode.kind === 'paint' ? lids.paintLabels : lids.labels;
-      const labels = (this.state.lidLabels = memo(this.state.lidLabels, labelSet, labelKey, () =>
-        labelsOn(labelSet, viewport)
-      )).value;
       out.push(
         new SolidPolygonLayer(
           this.getSubLayerProps({
@@ -329,7 +403,8 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
         )
       );
       out.push(...this.lineLayers('rims', lid, lidsOp));
-      if (labels.length) out.push(this.labelLayer('lid-labels', labels, lidsOp, ink, halo));
+      if (labelSet.text.length)
+        out.push(this.labelLayer('lid-labels', labelSet, lidsOp, ink, halo));
     }
 
     const contourOp = 1 - lidsOp;
@@ -339,14 +414,9 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
       const lines = (this.state.contours = memo(this.state.contours, city, key, () =>
         contourData(city, mode, theme)
       )).value;
-      const labels = (this.state.contourLabels = memo(
-        this.state.contourLabels,
-        city.labels,
-        labelKey,
-        () => labelsOn(city.labels, viewport)
-      )).value;
       out.push(...this.lineLayers('contours', lines, contourOp));
-      if (labels.length) out.push(this.labelLayer('contour-labels', labels, contourOp, ink, halo));
+      if (city.labels.text.length)
+        out.push(this.labelLayer('contour-labels', city.labels, contourOp, ink, halo));
     }
     return out;
   }
@@ -379,26 +449,9 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
     return out;
   }
 
-  private labelLayer(id: string, data: Label[], opacity: number, ink: RGBA, halo: RGBA): Layer {
-    return new TextLayer<Label>(
-      this.getSubLayerProps({
-        id,
-        data,
-        getText: (d: Label) => d.text,
-        getPosition: (d: Label) => d.position,
-        getColor: ink,
-        getSize: LABEL_SIZE_PX,
-        sizeUnits: 'pixels',
-        fontFamily: LABEL_FONT_FAMILY,
-        fontWeight: LABEL_FONT_WEIGHT,
-        outlineWidth: LABEL_OUTLINE_WIDTH,
-        outlineColor: halo,
-        fontSettings: LABEL_FONT_SETTINGS,
-        characterSet: LABEL_CHARS,
-        opacity,
-        visible: opacity > 0,
-        parameters: { depthCompare: 'always', depthWriteEnabled: false }
-      })
+  private labelLayer(id: string, set: LabelSet, opacity: number, ink: RGBA, halo: RGBA): Layer {
+    return new LimitLabelsLayer(
+      this.getSubLayerProps({ id, set, ink, halo, opacity, visible: opacity > 0 })
     ) as unknown as Layer;
   }
 }

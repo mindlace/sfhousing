@@ -12,7 +12,13 @@ import { SRC_FZP, SRC_RULE0 } from '$lib/sim/levers/source';
 import { TOKENS, hexToRgba } from '../palette';
 import type { Theme } from '../types';
 import { LABEL_FONT_FAMILY, LABEL_H_PX, labelWidthPx } from './labels';
-import { LIMITS_LAYER_ID, HeightLimitsLayer, heightLimitsLayer } from './limits-layer';
+import {
+  LIMITS_LAYER_ID,
+  HeightLimitsLayer,
+  LimitLabelsLayer,
+  PAN_STEP_PX,
+  heightLimitsLayer
+} from './limits-layer';
 import { GLAZE_ALPHA, type LimitsView } from './limits-style';
 import { lotBlock, LOT_D, runLids, scene, tinyLimits, toLngLat } from './test/fixtures';
 import type { HeightCity, HeightLids } from './types';
@@ -378,14 +384,15 @@ describe('HeightLimitsLayer on the GPU', () => {
 
   type Shown = { text: string; position: [number, number, number] };
   const shownLabels = () =>
-    (live().find((l) => l.id === `${LIMITS_LAYER_ID}-lid-labels`)?.props.data ?? []) as Shown[];
+    (live().find((l) => l.id === `${LIMITS_LAYER_ID}-lid-labels-text`)?.props.data ??
+      []) as Shown[];
 
   it('labels draw in the system sans with a visible halo', async () => {
     const i = TINY.lids.labels.minZoom.findIndex((z) => z <= 17);
     const p = TINY.lids.labels.position;
     const at: [number, number] = [p[3 * i], p[3 * i + 1]];
     const px = await render([limits(TINY, { kind: 'plain' }, 'light')], view(at, 17));
-    const text = live().find((l) => l.id === `${LIMITS_LAYER_ID}-lid-labels`)!;
+    const text = live().find((l) => l.id === `${LIMITS_LAYER_ID}-lid-labels-text`)!;
     expect((text.props as { fontFamily?: string }).fontFamily).toBe(LABEL_FONT_FAMILY);
     const halo = hexToRgba(TOKENS.light['limit-halo']);
     let n = 0;
@@ -460,8 +467,7 @@ describe('HeightLimitsLayer on the GPU', () => {
     expect(should(13.2, 13.9)).toBe(false);
   });
 
-  it('a pitch, bearing or long-pan change re-runs the screen label collision', () => {
-    const layer = limits();
+  it('a pitch, bearing or pitched long-pan step reruns the label layer only; a flat pan never', () => {
     const vp = (o: Record<string, number>) => ({
       zoom: 16.2,
       pitch: 30,
@@ -472,16 +478,82 @@ describe('HeightLimitsLayer on the GPU', () => {
       height: 600,
       ...o
     });
-    const should = (was: Record<string, number>, now: Record<string, number>) => {
-      layer.state = { zoom: 16.2, labelKey: HeightLimitsLayer.labelKey(vp(was)) } as never;
-      return layer.shouldUpdateState({
+    const labels = new LimitLabelsLayer({
+      id: 'x',
+      set: TINY.lids.labels,
+      ink: [0, 0, 0, 255],
+      halo: [255, 255, 255, 255]
+    });
+    const shouldLabels = (was: Record<string, number>, now: Record<string, number>) => {
+      labels.state = { key: LimitLabelsLayer.labelKey(vp(was)) };
+      return labels.shouldUpdateState({
+        changeFlags: { viewportChanged: true, propsOrDataChanged: false },
+        context: { viewport: vp(now) }
+      } as unknown as Parameters<LimitLabelsLayer['shouldUpdateState']>[0]);
+    };
+    const parent = limits();
+    const shouldParent = (now: Record<string, number>) => {
+      parent.state = { zoom: 16.2 } as HeightLimitsLayer['state'];
+      return parent.shouldUpdateState({
         changeFlags: { viewportChanged: true, propsOrDataChanged: false },
         context: { viewport: vp(now) }
       } as unknown as Parameters<HeightLimitsLayer['shouldUpdateState']>[0]);
     };
-    expect(should({}, { longitude: STREET[0] + 1e-5 })).toBe(false);
-    expect(should({}, { pitch: 45 })).toBe(true);
-    expect(should({}, { bearing: 30 })).toBe(true);
-    expect(should({}, { longitude: STREET[0] + 0.01 })).toBe(true);
+    const far = { longitude: STREET[0] + 0.02, latitude: STREET[1] + 0.02 };
+    expect(shouldLabels({}, { longitude: STREET[0] + 1e-5 })).toBe(false);
+    expect(shouldLabels({}, { pitch: 45 })).toBe(true);
+    expect(shouldLabels({}, { bearing: 30 })).toBe(true);
+    expect(shouldLabels({}, far)).toBe(true);
+    expect(shouldLabels({ pitch: 0 }, { pitch: 0, ...far })).toBe(false);
+    for (const now of [{ pitch: 45 }, { bearing: 30 }, far] as Record<string, number>[])
+      expect(shouldParent(now)).toBe(false);
+    // each axis steps at its own scale: PAN_STEP_PX at the integer zoom, east-west as north-south
+    const key = (lng: number, lat: number) =>
+      LimitLabelsLayer.labelKey(vp({ longitude: lng, latitude: lat })).split(':');
+    const stepM = PAN_STEP_PX * ((78271.517 * 0.7906233208295852) / 2 ** 16);
+    const lngKey = (d: number) => Number(key(STREET[0] + d / M_PER_DEG_LNG, STREET[1])[3]);
+    const latKey = (d: number) => Number(key(STREET[0], STREET[1] + d / M_PER_DEG_LAT)[4]);
+    expect(lngKey(stepM) - lngKey(0)).toBe(1);
+    expect(latKey(stepM) - latKey(0)).toBe(1);
+  });
+
+  it('a pan inside a key step, and one across it keeping the kept set, keep the text data and rebuild no lid sublayer', async () => {
+    const i = TINY.lids.labels.minZoom.findIndex((z) => z <= 17);
+    const p = TINY.lids.labels.position;
+    const at: [number, number] = [p[3 * i], p[3 * i + 1]];
+    const layer = limits();
+    const find = (id: string) => live().find((l) => l.id === `${LIMITS_LAYER_ID}-${id}`)!;
+    const keyAt = (lng: number) =>
+      LimitLabelsLayer.labelKey({ ...view([lng, at[1]], 17, 30), width: CW, height: CH });
+    // the first lng east of `at` where the key changes
+    const dLng = 1 / M_PER_DEG_LNG; // 1 m
+    let b = 0;
+    while (keyAt(at[0] + b * dLng) === keyAt(at[0]) && b < 2000) b++;
+    expect(b).toBeLessThan(2000);
+    const before = at[0] + (b - 1) * dLng;
+    const after = at[0] + b * dLng;
+    await render([layer], view([before, at[1]], 17, 30));
+    // a composite updates on the frame after a viewport change
+    await render([layer], view([before, at[1]], 17, 30));
+    const text0 = find('lid-labels-text');
+    const data0 = text0.props.data;
+    expect((data0 as unknown[]).length).toBeGreaterThan(0);
+    const [glaze, walls, rims] = [find('glaze'), find('walls'), find('rims')];
+    const labelLayer = find('lid-labels');
+    const key0 = (labelLayer.state as { key: string }).key;
+    // inside the step
+    await render([layer], view([before - 0.3 * dLng, at[1]], 17, 30));
+    // a composite updates on the frame after a viewport change
+    await render([layer], view([before - 0.3 * dLng, at[1]], 17, 30));
+    expect(find('lid-labels-text').props.data).toBe(data0);
+    // across it
+    await render([layer], view([after, at[1]], 17, 30));
+    // a composite updates on the frame after a viewport change
+    await render([layer], view([after, at[1]], 17, 30));
+    expect((find('lid-labels').state as { key: string }).key).not.toBe(key0);
+    expect(find('lid-labels-text').props.data).toBe(data0);
+    expect([find('glaze'), find('walls'), find('rims')]).toEqual([glaze, walls, rims]);
+    expect(find('glaze')).toBe(glaze);
+    expect(errors).toEqual([]);
   });
 });
