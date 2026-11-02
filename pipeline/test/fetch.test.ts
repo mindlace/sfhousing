@@ -533,6 +533,11 @@ describe('fetchGtfs', () => {
 });
 
 describe('policy-layer sources (historic status, SB 79 exemption tables)', () => {
+  it('FETCH_IDS includes datasf-streets, the page-only centreline source', () => {
+    expect(FETCH_IDS).toContain('datasf-streets');
+    expect(DATASF['datasf-streets']).toMatchObject({ dataset: '3psu-pn9h', where: 'active=true' });
+  });
+
   it('datasf-historic-status: dataset, select, where and licence', async () => {
     expect(DATASF['datasf-historic-status']).toEqual({
       dataset: '3tsw-4idn',
@@ -545,7 +550,6 @@ describe('policy-layer sources (historic status, SB 79 exemption tables)', () =>
     expect(FETCH_IDS).toEqual(
       expect.arrayContaining(['datasf-historic-status', 'sfbos-sb79-exemptions'])
     );
-    expect(FETCH_IDS).not.toContain('datasf-streets');
   });
 
   it('fetchSfbosExemptions locks one file per Board File attachment', async () => {
