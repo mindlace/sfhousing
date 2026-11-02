@@ -26,10 +26,12 @@ import { asOfFromLock } from '../project-records/parse';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
 import { SB79_EXEMPTIONS_CSV } from '../sources/sfbos';
 import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
+import { LESSCARS_PLAN_JSON } from '../lesscars-config';
 import { writeCalibration } from './calibration';
 import { checkDataset, type InvariantResult } from './check';
 import { readParcelRecords, writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
 import { buildManifest, writeManifest } from './manifest';
+import { writeLessCars } from './lesscars';
 import { writePolicy } from './policy';
 import { writeProjectRecords } from './projects';
 import { writeScenario } from './scenario';
@@ -273,6 +275,21 @@ export async function build(
       writePolicy({ db, outDir, datasetVersion, records, capDay: asOf, buildCounts: counts })
     );
     report.warnings.push(...policy.warnings);
+    // /lesscars (docs/dev/lesscars.md): after the policy step (pol_tod, policy.bin), projects,
+    // calibration and transit. Without a plan file (the live build until the authored plan
+    // lands) it writes nothing and the manifest has no lesscars key.
+    const lesscars = await report.time('lesscars', () =>
+      writeLessCars({
+        db,
+        outDir,
+        datasetVersion,
+        records,
+        planPath: fixtureMode ? LESSCARS_PLAN_JSON.fixture : LESSCARS_PLAN_JSON.live,
+        profile: opts.profile,
+        capDay: asOf
+      })
+    );
+    report.warnings.push(...lesscars.warnings);
     // After the last step that records T14 counts (spec §4.10), so the report covers every owner.
     writeQualityReport(join(derivedDir, QUALITY_REPORT_MD), datasetVersion, counts, [
       await landClipSection(db)
@@ -298,6 +315,7 @@ export async function build(
       transit: true,
       scenarios: SCENARIO_FILES.every((f) => existsSync(join(outDir, 'scenarios/fzp', f))),
       policy: existsSync(join(outDir, POLICY_BIN)),
+      lesscars: lesscars.written,
       warn: (w) => report.warnings.push(w)
     });
     const manifestBytes = writeManifest(outDir, manifest);
@@ -311,6 +329,7 @@ export async function build(
       ...transit.counts,
       ...scenario.counts,
       ...policy.counts,
+      ...lesscars.counts,
       ...Object.fromEntries(overtureContrib.map((o) => [`overture.contrib.${o.dataset}`, o.n])),
       'units.total': totals.units,
       'parcels.height_max_m': totals.hmax,

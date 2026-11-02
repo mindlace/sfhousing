@@ -34,7 +34,8 @@ const PLAN_VEHICLE: Record<TransitMode, { vehicle: VehicleId; cars: number }> = 
   brt: { vehicle: 'muni-bus-60', cars: 1 }
 };
 
-const RAISE_MODES: Record<'tram-priority' | 'bus-lane', readonly ModeId[]> = {
+/** The modes whose patterns a tram priority or bus lane serves (and raises), by `routeId`. */
+export const RAISE_MODES: Record<'tram-priority' | 'bus-lane', readonly ModeId[]> = {
   'tram-priority': ['light-rail', 'streetcar'],
   'bus-lane': ['bus']
 };

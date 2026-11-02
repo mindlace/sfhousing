@@ -99,6 +99,15 @@
     "landuse.orphan_rows": 2,
     "landuse.rows": 19,
     "landuse.unknown_values": 0,
+    "lesscars.bytes.timeline_payload": 3670,
+    "lesscars.extra_2068.mean": 260,
+    "lesscars.projects": 8,
+    "lesscars.regimes": 2,
+    "lesscars.seeds": 5,
+    "lesscars.sites": 3,
+    "lesscars.sites.zero_gain_parking": 0,
+    "lesscars.sites.zero_yield": 0,
+    "lesscars.unlocked_lots": 1,
     "link.bpMergeRejected": 0,
     "link.bpMergeSplitSkipped": 0,
     "link.bpMerged": 1,
@@ -111,7 +120,7 @@
     "link.ppaOnly": 1,
     "link.satellites": 0,
     "link.splitComponents": 1,
-    "manifest.bytes": 6047,
+    "manifest.bytes": 6291,
     "multiphase.descendants.2007.0001PRX": 1,
     "multiphase.descendants.2010.0002PRX": 1,
     "multiphase.descendants.2012-000020PRX": 1,
@@ -568,7 +577,7 @@
       "ok": true
     },
     {
-      "detail": "manifest 6047/64000 B; neighborhoods 709/150000 B",
+      "detail": "manifest 6291/64000 B; neighborhoods 709/150000 B",
       "id": "V11",
       "ok": true
     },

@@ -2,6 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseManifest, type Manifest } from '../../src/lib/data/manifest';
 import type { Lock } from '../lib/lock';
+import { LESSCARS_FILES } from '../lib/scenario-files';
 import type { ChunkOut } from './chunks';
 
 /** Overture contributing datasets (spec §4.8, §4.12) -> SPDX licence. */
@@ -27,6 +28,8 @@ export function buildManifest(a: {
   scenarios?: boolean;
   /** The build wrote `scenarios/fzp/policy.bin`; only emitted with `scenarios`. */
   policy?: boolean;
+  /** The build wrote LESSCARS_FILES; only emitted with `scenarios`. */
+  lesscars?: boolean;
   warn?: (msg: string) => void;
 }): Manifest {
   const v = a.datasetVersion;
@@ -79,7 +82,17 @@ export function buildManifest(a: {
               projects: `${base}/scenarios/fzp/projects.json`,
               calibration: `${base}/scenarios/fzp/calibration.json`,
               ...(a.policy ? { policy: `${base}/scenarios/fzp/policy.bin` } : {})
-            }
+            },
+            ...(a.lesscars
+              ? {
+                  lesscars: {
+                    plan: `${base}/${LESSCARS_FILES.plan}`,
+                    sites: `${base}/${LESSCARS_FILES.sites}`,
+                    summary: `${base}/${LESSCARS_FILES.summary}`,
+                    timeline: `${base}/${LESSCARS_FILES.timeline}`
+                  }
+                }
+              : {})
           }
         }
       : {})

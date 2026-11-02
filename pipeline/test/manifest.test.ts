@@ -98,6 +98,26 @@ describe('buildManifest', () => {
     expect('frontage' in m.scenarios!.fzp).toBe(false);
   });
 
+  it('names the four lesscars urls with scenarios, and none without', () => {
+    const at = (scenarios: boolean) =>
+      buildManifest({
+        datasetVersion: 'fixture-3',
+        builtAt: '2026-10-10T00:00:00.000Z',
+        lock: { sources: [] },
+        chunks: [],
+        overtureContrib: [],
+        scenarios,
+        lesscars: true
+      });
+    expect(at(true).scenarios?.lesscars).toEqual({
+      plan: '/data/fixture-3/scenarios/lesscars/plan.json',
+      sites: '/data/fixture-3/scenarios/lesscars/sites.json',
+      summary: '/data/fixture-3/scenarios/lesscars/summary.json',
+      timeline: '/data/fixture-3/scenarios/lesscars/timeline.bin'
+    });
+    expect('scenarios' in at(false)).toBe(false);
+  });
+
   it('ignores policy without scenarios', () => {
     const m = buildManifest({
       datasetVersion: 'fixture-3',

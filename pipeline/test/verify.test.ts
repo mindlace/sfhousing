@@ -60,6 +60,19 @@ describe('verify', () => {
     expect(seen).toContain(`HEAD /data/${V}/scenarios/fzp/policy.bin`);
     expect(seen).not.toContain(`HEAD /data/${V}/scenarios/fzp/frontage.bin`);
   });
+  it('HEAD-checks the lesscars urls when the manifest names them', async () => {
+    const withKeys = JSON.parse(golden) as {
+      scenarios: Record<string, Record<string, string>>;
+    };
+    const names = ['plan.json', 'sites.json', 'summary.json', 'timeline.bin'];
+    withKeys.scenarios.lesscars = Object.fromEntries(
+      names.map((n) => [n.split('.')[0], `/data/${V}/scenarios/lesscars/${n}`])
+    );
+    const { f, seen } = fakeFetch(undefined, JSON.stringify(withKeys));
+    const r = await verify({ datasetVersion: V, origin: 'http://o', fetch: f });
+    expect(r).toEqual({ ok: true, failures: [] });
+    for (const n of names) expect(seen).toContain(`HEAD /data/${V}/scenarios/lesscars/${n}`);
+  });
   it('does not request policy when the manifest lacks it', async () => {
     const without = JSON.parse(golden) as { scenarios: { fzp: Record<string, string> } };
     delete without.scenarios.fzp.policy;

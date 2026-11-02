@@ -9,6 +9,8 @@ import { GOLDEN_DERIVED, fixture } from '../steps/fixture';
 import { CALIBRATION_JSON } from '../steps/calibration';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, dumpPermits } from '../steps/projects';
 import { POLICY_BIN, POLICY_DUMP, formatPolicyDump, readPolicyBin } from '../steps/policy';
+import { formatLessCarsTimelineDump } from '../steps/lesscars';
+import { LESSCARS_FILES, LESSCARS_TIMELINE_DUMP } from '../lib/scenario-files';
 import { PARCELS_BIN, SCENARIO_DUMP, formatScenarioDump, readParcelsBin } from '../steps/scenario';
 import { which } from '../lib/exec';
 import { QUALITY_RULES } from '../lib/quality';
@@ -34,12 +36,17 @@ const COMPARED = (f: string) =>
   f === 'manifest.json' ||
   f === 'report.json' ||
   f === PROJECTS_JSON ||
-  f === CALIBRATION_JSON;
+  f === CALIBRATION_JSON ||
+  f === LESSCARS_FILES.plan ||
+  f === LESSCARS_FILES.sites ||
+  f === LESSCARS_FILES.summary;
 const stripBuiltAt = (s: string) => s.replace(/"builtAt":"[^"]*"/, '"builtAt":""');
 const decodeBin = (dir: string) => readParcelsBin(join(dir, PARCELS_BIN));
 const dumpOf = (dir: string) => formatScenarioDump(decodeBin(dir));
 const policyDumpOf = (dir: string) =>
   formatPolicyDump(readPolicyBin(join(dir, POLICY_BIN), decodeBin(dir)));
+const timelineDumpOf = (dir: string) =>
+  formatLessCarsTimelineDump(join(dir, LESSCARS_FILES.timeline), decodeBin(dir));
 
 describe('pipeline fixture', () => {
   const a = mkdtempSync(join(tmpdir(), 'sfh-fx-a-'));
@@ -71,6 +78,10 @@ describe('pipeline fixture', () => {
     const policy = policyDumpOf(a);
     expect(policy).toBe(readFileSync(join(golden, POLICY_DUMP), 'utf8'));
     expect(policy).toBe(policyDumpOf(b));
+    // /lesscars timeline.bin: the decoded payload too.
+    const timeline = timelineDumpOf(a);
+    expect(timeline).toBe(readFileSync(join(golden, LESSCARS_TIMELINE_DUMP), 'utf8'));
+    expect(timeline).toBe(timelineDumpOf(b));
     // Project-records spec §4.9: the histories byte for byte, permits.parquet by row values.
     const histories = (root: string) =>
       readFileSync(join(root, 'fixture-0', HISTORIES_JSON), 'utf8');
@@ -190,6 +201,7 @@ describe('pipeline fixture', () => {
       expect(readFileSync(join(e2e, f), 'utf8'), f).toBe(readFileSync(join(golden, f), 'utf8'));
     }
     expect(dumpOf(e2e)).toBe(readFileSync(join(golden, SCENARIO_DUMP), 'utf8'));
+    expect(timelineDumpOf(e2e)).toBe(readFileSync(join(golden, LESSCARS_TIMELINE_DUMP), 'utf8'));
   });
 });
 
@@ -601,7 +613,7 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
     );
   });
 
-  it('names the three scenario files and policy.bin in the manifest', () => {
+  it('names the three scenario files, policy.bin and the lesscars files in the manifest', () => {
     const m = JSON.parse(readFileSync(join(e2e, 'manifest.json'), 'utf8')) as {
       scenarios?: unknown;
     };
@@ -609,12 +621,19 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
       expect(existsSync(join(e2e, 'scenarios/fzp', f)), f).toBe(true);
     }
     expect(existsSync(join(e2e, 'scenarios/fzp', 'frontage.bin'))).toBe(false);
+    for (const f of Object.values(LESSCARS_FILES)) expect(existsSync(join(e2e, f)), f).toBe(true);
     expect(m.scenarios).toEqual({
       fzp: {
         parcels: '/data/fixture-0/scenarios/fzp/parcels.bin',
         projects: '/data/fixture-0/scenarios/fzp/projects.json',
         calibration: '/data/fixture-0/scenarios/fzp/calibration.json',
         policy: '/data/fixture-0/scenarios/fzp/policy.bin'
+      },
+      lesscars: {
+        plan: '/data/fixture-0/scenarios/lesscars/plan.json',
+        sites: '/data/fixture-0/scenarios/lesscars/sites.json',
+        summary: '/data/fixture-0/scenarios/lesscars/summary.json',
+        timeline: '/data/fixture-0/scenarios/lesscars/timeline.bin'
       }
     });
   });
