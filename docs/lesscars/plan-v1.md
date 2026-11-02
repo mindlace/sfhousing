@@ -893,4 +893,4 @@ Every source below was opened for this draft (2026-11-01).
 | D3  | SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`. https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json                | Stops, tph, parcel outlines and homes, in-flight projects, construction durations, Geary width                                                                                         |
 | D4  | `MUNI_TIER2_STOP_IDS`, `pipeline/sb79-config.ts` (MTC SB 79 TOD stops, cited there)                                                                                                                                                         | Which corridor stops are already tier 2                                                                                                                                                |
 
-Owner review: pending
+Owner review: approved 2026-11-01 (answers to the nine questions recorded under "Open questions for the owner"; no Masonic roundabout, the Masonic station replaces the underpass).
