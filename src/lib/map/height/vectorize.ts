@@ -30,6 +30,26 @@ const DY = [0, 1, 0, -1];
  * junctions, or a closed loop with none.
  */
 export function traceChains(labels: Uint32Array, cols: number, rows: number): Chains {
+  const t = createChainTrace(labels, cols, rows);
+  t.junctions(0, rows + 1);
+  t.loops(0, rows + 1);
+  return t.result();
+}
+
+/**
+ * traceChains in resumable pieces. Vertex rows run 0..rows inclusive. Run `junctions` over every
+ * vertex row in ascending bands, then `loops` likewise, then `result`: the chains are the same as
+ * traceChains gives. A band's walks may run outside the band; edges are visited once overall.
+ */
+export interface ChainTrace {
+  /** Chains that start at a junction on vertex rows [y0, y1). */
+  junctions(y0: number, y1: number): void;
+  /** Closed loops whose lowest-leftmost vertex is on vertex rows [y0, y1). */
+  loops(y0: number, y1: number): void;
+  result(): Chains;
+}
+
+export function createChainTrace(labels: Uint32Array, cols: number, rows: number): ChainTrace {
   const lab = (c: number, r: number): number => {
     if (c < 0 || c >= cols || r < 0 || r >= rows) return EMPTY;
     const v = labels[r * cols + c];
@@ -102,28 +122,35 @@ export function traceChains(labels: Uint32Array, cols: number, rows: number): Ch
     starts.push(xy.length / 2);
   };
 
-  for (let y = 0; y <= rows; y++)
-    for (let x = 0; x <= cols; x++) {
-      if (!junction(x, y)) continue;
-      for (let d = 0; d < 4; d++) {
-        const e = edge(x, y, d);
-        if (e >= 0 && !visited[e]) walk(x, y, d, false);
-      }
-    }
-  // What is left are closed loops. The first unvisited horizontal edge in row-major order starts
-  // at the loop's lowest-leftmost vertex, so walking east from it runs counter-clockwise.
-  for (let y = 0; y <= rows; y++)
-    for (let x = 0; x < cols; x++) {
-      const e = edge(x, y, 0);
-      if (e >= 0 && !visited[e]) walk(x, y, 0, true);
-    }
-
   return {
-    starts: Uint32Array.from(starts),
-    xy: Float64Array.from(xy),
-    left: Uint32Array.from(left),
-    right: Uint32Array.from(right),
-    closed: Uint8Array.from(closed)
+    junctions(y0, y1) {
+      for (let y = Math.max(0, y0); y < Math.min(rows + 1, y1); y++)
+        for (let x = 0; x <= cols; x++) {
+          if (!junction(x, y)) continue;
+          for (let d = 0; d < 4; d++) {
+            const e = edge(x, y, d);
+            if (e >= 0 && !visited[e]) walk(x, y, d, false);
+          }
+        }
+    },
+    // What is left are closed loops. The first unvisited horizontal edge in row-major order starts
+    // at the loop's lowest-leftmost vertex, so walking east from it runs counter-clockwise.
+    loops(y0, y1) {
+      for (let y = Math.max(0, y0); y < Math.min(rows + 1, y1); y++)
+        for (let x = 0; x < cols; x++) {
+          const e = edge(x, y, 0);
+          if (e >= 0 && !visited[e]) walk(x, y, 0, true);
+        }
+    },
+    result() {
+      return {
+        starts: Uint32Array.from(starts),
+        xy: Float64Array.from(xy),
+        left: Uint32Array.from(left),
+        right: Uint32Array.from(right),
+        closed: Uint8Array.from(closed)
+      };
+    }
   };
 }
 
@@ -165,7 +192,11 @@ function douglasPeucker(xy: Float64Array, a: number, b: number, tol: number, kee
   }
 }
 
-function rebuild(c: Chains, pts: ArrayLike<number>[]): Chains {
+/**
+ * Chains with new vertices per chain (pts[i] is chain i's x, y pairs) and c's labels. The output
+ * shares c's left, right and closed arrays.
+ */
+export function chainsFromPoints(c: Chains, pts: ArrayLike<number>[]): Chains {
   const starts = new Uint32Array(pts.length + 1);
   let n = 0;
   for (let i = 0; i < pts.length; i++) {
@@ -184,7 +215,19 @@ function rebuild(c: Chains, pts: ArrayLike<number>[]): Chains {
  */
 export function simplifyChains(c: Chains, tolCells: number): Chains {
   const out: Float64Array[] = [];
-  for (let i = 0; i + 1 < c.starts.length; i++) {
+  simplifyChainRange(c, tolCells, 0, c.starts.length - 1, out);
+  return chainsFromPoints(c, out);
+}
+
+/** simplifyChains for chains [from, to): writes out[i] for each; chainsFromPoints assembles them. */
+export function simplifyChainRange(
+  c: Chains,
+  tolCells: number,
+  from: number,
+  to: number,
+  out: Float64Array[]
+): void {
+  for (let i = from; i < to; i++) {
     const s = c.starts[i];
     const e = c.starts[i + 1] - 1;
     const keep = new Uint8Array(e - s + 1);
@@ -234,15 +277,26 @@ export function simplifyChains(c: Chains, tolCells: number): Chains {
     }
     const kept: number[] = [];
     for (let k = 0; k <= e - s; k++) if (keep[k]) kept.push(pts[2 * k], pts[2 * k + 1]);
-    out.push(Float64Array.from(kept));
+    out[i] = Float64Array.from(kept);
   }
-  return rebuild(c, out);
 }
 
 /** Chaikin corner cutting. Open chains keep their endpoints; closed loops are smoothed all round. */
 export function smoothChains(c: Chains, iterations: number): Chains {
   const out: Float64Array[] = [];
-  for (let i = 0; i + 1 < c.starts.length; i++) {
+  smoothChainRange(c, iterations, 0, c.starts.length - 1, out);
+  return chainsFromPoints(c, out);
+}
+
+/** smoothChains for chains [from, to): writes out[i] for each; chainsFromPoints assembles them. */
+export function smoothChainRange(
+  c: Chains,
+  iterations: number,
+  from: number,
+  to: number,
+  out: Float64Array[]
+): void {
+  for (let i = from; i < to; i++) {
     let pts: Float64Array = c.xy.slice(2 * c.starts[i], 2 * c.starts[i + 1]);
     for (let it = 0; it < iterations; it++) {
       const n = pts.length / 2;
@@ -261,9 +315,8 @@ export function smoothChains(c: Chains, iterations: number): Chains {
       else next.push(pts[2 * n - 2], pts[2 * n - 1]);
       pts = Float64Array.from(next);
     }
-    out.push(pts);
+    out[i] = pts;
   }
-  return rebuild(c, out);
 }
 
 function signedArea(r: Float64Array): number {

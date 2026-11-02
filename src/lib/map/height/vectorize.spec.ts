@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { BLOCK, EMPTY } from './raster';
-import { assembleFaces, simplifyChains, smoothChains, traceChains, type Chains } from './vectorize';
+import {
+  assembleFaces,
+  chainsFromPoints,
+  createChainTrace,
+  simplifyChainRange,
+  simplifyChains,
+  smoothChainRange,
+  smoothChains,
+  traceChains,
+  type Chains
+} from './vectorize';
 
 function grid(cols: number, rows: number, at: (c: number, r: number) => number): Uint32Array {
   const g = new Uint32Array(cols * rows);
@@ -197,5 +207,53 @@ describe('simplifyChains and smoothChains', () => {
     const p = chainXY(s, 0);
     expect(p[0]).toEqual(p[p.length - 1]);
     expect(ringArea(new Float64Array(p.slice(0, -1).flat()))).toBeGreaterThan(0);
+  });
+});
+
+describe('range variants', () => {
+  // Blobs of four labels with a hole, a checkerboard patch and BLOCK cells: junctions and loops.
+  const cols = 41;
+  const rows = 37;
+  const blobs = grid(cols, rows, (c, r) => {
+    if ((c * 7 + r * 13) % 29 === 0) return BLOCK;
+    if (c > 30 && r > 28) return (c + r) % 2 ? 4 : 0;
+    const d1 = Math.hypot(c - 12, r - 12);
+    const d2 = Math.hypot(c - 26, r - 20);
+    if (d1 < 3) return 3;
+    if (d1 < 9) return 1;
+    if (d2 < 10) return 2;
+    return r > 32 ? 1 : 0;
+  });
+
+  const same = (a: Chains, b: Chains) => {
+    expect([...a.starts]).toEqual([...b.starts]);
+    expect([...a.xy]).toEqual([...b.xy]);
+    expect([...a.left]).toEqual([...b.left]);
+    expect([...a.right]).toEqual([...b.right]);
+    expect([...a.closed]).toEqual([...b.closed]);
+  };
+
+  it('tracing by row bands equals the single-shot trace', () => {
+    const t = createChainTrace(blobs, cols, rows);
+    for (let y = 0; y <= rows; y += 5) t.junctions(y, Math.min(rows + 1, y + 5));
+    for (let y = 0; y <= rows; y += 3) t.loops(y, Math.min(rows + 1, y + 3));
+    const once = traceChains(blobs, cols, rows);
+    expect(chainCount(once)).toBeGreaterThan(5);
+    expect(once.closed).toContain(1);
+    same(t.result(), once);
+  });
+
+  it('simplifying and smoothing by chain ranges equal the single-shot results', () => {
+    const c = traceChains(blobs, cols, rows);
+    const n = chainCount(c);
+    const simp: Float64Array[] = [];
+    // out of order on purpose: ranges write by index
+    for (let i = n - (n % 4 || 4); i >= 0; i -= 4)
+      simplifyChainRange(c, 0.6, i, Math.min(n, i + 4), simp);
+    const s = chainsFromPoints(c, simp);
+    same(s, simplifyChains(c, 0.6));
+    const smooth: Float64Array[] = [];
+    for (let i = 0; i < n; i += 3) smoothChainRange(s, 2, i, Math.min(n, i + 3), smooth);
+    same(chainsFromPoints(s, smooth), smoothChains(s, 2));
   });
 });
