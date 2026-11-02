@@ -74,6 +74,8 @@ export interface CityModel {
   componentRoom: Uint32Array;
   /** glazeStep of the component's area-weighted unused stories. */
   componentGlaze: Uint8Array;
+  /** Per lot: its share of room to grow, countable ? max(0, stories − existing stories) : 0. */
+  lotRoom: Uint8Array;
 }
 
 export interface StagedBuild<T> {
@@ -86,8 +88,12 @@ export interface StagedBuild<T> {
 export type CityResult = { city: HeightCity; model: CityModel };
 
 export function createCityBuild(input: CityInput): StagedBuild<CityResult> {
-  const gen = cityBuild(input);
-  let done: CityResult | null = null;
+  return stagedBuild(cityBuild(input), 'city build');
+}
+
+/** A StagedBuild over a generator that yields after each work unit. */
+export function stagedBuild<T>(gen: Generator<void, T, void>, what: string): StagedBuild<T> {
+  let done: { value: T } | null = null;
   return {
     step(budgetMs, now) {
       if (done) return true;
@@ -95,21 +101,21 @@ export function createCityBuild(input: CityInput): StagedBuild<CityResult> {
       for (;;) {
         const r = gen.next();
         if (r.done) {
-          done = r.value;
+          done = { value: r.value };
           return true;
         }
         if (now() - t0 >= budgetMs) return false;
       }
     },
     result() {
-      if (!done) throw new Error('city build is not done');
-      return done;
+      if (!done) throw new Error(`${what} is not done`);
+      return done.value;
     }
   };
 }
 
 /** [from, to) chain ranges of at most about maxVerts vertices each (at least one chain). */
-function* chainRanges(c: Chains, maxVerts: number): Generator<[number, number]> {
+export function* chainRanges(c: Chains, maxVerts: number): Generator<[number, number]> {
   const n = c.starts.length - 1;
   let from = 0;
   while (from < n) {
@@ -233,6 +239,7 @@ function* cityBuild(input: CityInput): Generator<void, CityResult, void> {
   const componentRoom = new Uint32Array(nComp);
   const unusedM2 = new Float64Array(nComp);
   const areaM2 = new Float64Array(nComp);
+  const lotRoom = new Uint8Array(nLots);
   for (let i0 = 0; i0 < nLots; i0 += LOTS_PER_UNIT) {
     for (let i = i0; i < Math.min(nLots, i0 + LOTS_PER_UNIT); i++) {
       const comp = lotComponent[i];
@@ -240,6 +247,7 @@ function* cityBuild(input: CityInput): Generator<void, CityResult, void> {
       areaM2[comp] += lotAreaM2[i];
       if (!countable[i]) continue;
       const unused = Math.max(0, stories[i] - existingStories[i]);
+      lotRoom[i] = unused;
       componentRoom[comp] += unused;
       unusedM2[comp] += unused * lotAreaM2[i];
     }
@@ -385,6 +393,6 @@ function* cityBuild(input: CityInput): Generator<void, CityResult, void> {
       chains: { starts: smooth.starts, positions, hi, lo, kind, srcA, srcB },
       labels: contourLabels
     },
-    model: { lotComponent, componentStories, componentRoom, componentGlaze }
+    model: { lotComponent, componentStories, componentRoom, componentGlaze, lotRoom }
   };
 }

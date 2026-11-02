@@ -25,7 +25,10 @@ export interface ChainSet {
   hi: Uint8Array;
   lo: Uint8Array;
   kind: Uint8Array;
-  /** Indices into HeightCity.sourceIds for the source on each side. */
+  /**
+   * SRC_* codes (lever source.ts) of the winning source on each side: A is the higher side (the
+   * left on a tie), B the lower. A rule's code is SRC_RULE0 + its index in HeightCity.sourceIds.
+   */
   srcA: Uint16Array;
   srcB: Uint16Array;
 }
@@ -77,5 +80,12 @@ export interface HeightLids {
   faces: LidFace[];
   rims: LidRims;
   walls: LidWalls;
+  /** One label per region (component) in view: every mode but paint. */
   labels: LabelSet;
+  /**
+   * The labels for paint mode, where "set by paint" is part of the region key: per component, one
+   * for its paint-source part and one for the rest, each with its own room to grow, placed
+   * together. A component with no paint keeps its plain label.
+   */
+  paintLabels: LabelSet;
 }

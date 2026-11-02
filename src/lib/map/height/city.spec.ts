@@ -114,6 +114,8 @@ describe('createCityBuild', () => {
     expect(model.componentStories[comp]).toBe(4);
     expect(model.componentRoom[comp]).toBe(2 * countableCount);
     expect(model.componentGlaze[comp]).toBe(glazeStep(2 * countableCount * 225, lots.length * 225));
+    // lotRoom is each countable lot's share of the room
+    lots.forEach((l, i) => expect(model.lotRoom[i]).toBe(l.countable ? 2 : 0));
   });
 
   it('a 4 | 8 step gives a CHAIN_LIMIT chain with hi 8 and lo 4', () => {
