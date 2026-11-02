@@ -16,7 +16,7 @@ import { FIXTURE_PROFILE } from '../config';
 import { LESSCARS_PLAN_JSON } from '../lesscars-config';
 import { LESSCARS_FILES } from '../lib/scenario-files';
 import { CALIBRATION_JSON } from '../steps/calibration';
-import { writeLessCars } from '../steps/lesscars';
+import { writeLessCars, zeroYieldSites } from '../steps/lesscars';
 import { PROJECTS_JSON } from '../steps/projects';
 import { MINI } from './helpers';
 import { lesscarsMini, type LessCarsMini } from './lesscars-helpers';
@@ -60,6 +60,7 @@ function withPlan(edit: (plan: Json) => void) {
 
 const unknownCnn = (p: Json) => (project(p, 'ped').segments = [{ cnn: ['99999'] }]);
 const unknownStop = (p: Json) => (project(p, 'buslane').stopIds = ['muni:nope']);
+const parkingUnknown = (p: Json) => (project(p, 'parking').parcel = 'no-such-parcel');
 const parkingWithHomes = (p: Json) => {
   const row = m.parcels.existingUnits.findIndex((u) => u > 0);
   project(p, 'parking').parcel = m.parcels.id[row];
@@ -127,11 +128,39 @@ describe('writeLessCars', () => {
     expect('lesscars.bytes.timeline' in r.counts).toBe(false);
   });
 
+  it('publishes every freed-site coordinate at 7 decimals', async () => {
+    await writeLessCars(args(LESSCARS_PLAN_JSON.fixture));
+    const file = JSON.parse(readFileSync(join(outDir, LESSCARS_FILES.sites), 'utf8')) as {
+      sites: { outline: [number, number][][] }[];
+    };
+    const coords = file.sites.flatMap((s) => s.outline.flat(2));
+    expect(coords.length).toBeGreaterThan(0);
+    for (const c of coords) expect(c).toBe(Math.round(c * 1e7) / 1e7);
+  });
+
+  it('zero_yield counts freed sites of a build project that no build uses', () => {
+    const sites = [
+      { siteId: 'lc:hwy:0', projectId: 'hwy' },
+      { siteId: 'lc:hwy:1', projectId: 'hwy' },
+      { siteId: 'lc:other:0', projectId: 'other' }
+    ];
+    const builds = [
+      { siteId: 'lc:hwy:0', parcelRow: null },
+      { siteId: 'lc:park', parcelRow: 4 }
+    ];
+    // hwy:1 is a sliver whose envelope holds no home; `other` has no build, so it is no failure.
+    expect(zeroYieldSites(sites, new Set(['hwy']), builds).map((s) => s.siteId)).toEqual([
+      'lc:hwy:1'
+    ]);
+    expect(zeroYieldSites(sites, new Set(['hwy']), [])).toHaveLength(2);
+  });
+
   it('bad plan data fails the build', async () => {
     for (const [edit, needle] of [
       [unknownCnn, 'ped.segments'],
       [unknownStop, 'buslane.stopIds'],
       [parkingWithHomes, 'parking.parcel'],
+      [parkingUnknown, 'parking.parcel'],
       [parkingUnserved, 'parking.dependsOn']
     ] as const) {
       await expect(writeLessCars(withPlan(edit))).rejects.toThrow(needle);

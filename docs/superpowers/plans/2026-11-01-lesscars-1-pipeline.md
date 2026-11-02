@@ -620,7 +620,7 @@ export interface LessCarsSitesFile { format; datasetVersion; sites: { siteId: st
 export interface LessCarsPlanFile { format; datasetVersion; plan: LessCarsPlan; times: ProjectTimes[]; segments: Record<string, [number, number][][]> /* cnn → lng/lat lines */ }
 export function parseSitesFile(json: unknown): LessCarsSitesFile; export function parsePlanFile(json: unknown): LessCarsPlanFile;
 // pipeline/lib/lesscars/runs.ts
-export function reservationsOf(plan: LessCarsPlan, s: PlanSchedule, parcels: ScenarioParcels): Int32Array; // reservedFrom: parking build start or garage start per row, 0 elsewhere
+export function reservationsOf(plan: LessCarsPlan, s: PlanSchedule, parcels: ScenarioParcels): Int32Array; // reservedFrom: the parking conversion project's startDay (clearance, not the build start) or the garage's start per row, 0 elsewhere
 export function sourceOfRows(count: number, reservedFrom: Int32Array, unlocked: Uint8Array): Uint8Array; // index into SOURCES; a reserved row is parking in both arms, kept or not; parking beats transitUnlocked
 export function initiativeBuilds(plan: LessCarsPlan, s: PlanSchedule, sites: FreedSite[], parcels: ScenarioParcels, rows: Pick<RegimeSet, 'siteRowAt' | 'parcelRowAt'>): InitiativeBuild[];
   // housing builds only; units = top fill yield of the row at build.startDay; stories = that row's stories

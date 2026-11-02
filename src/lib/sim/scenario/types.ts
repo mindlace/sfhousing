@@ -67,8 +67,9 @@ export type SimInput = {
   // view `regimes[k].parcels` is in force. A simulated project runs on the view of the month it
   // initiated in (size row, yields, envelope, Local Program) and its initiation hazard is
   // piecewise over the views; in-flight rows keep `parcels` above. Days strictly ascending and
-  // every day > asOf; each view has the same rows, ids and existingUnits as `parcels`
-  // (`runEngine` throws a RangeError otherwise). Absent or [] = none.
+  // every day > asOf; each view must have the same rows, ids and existingUnits as `parcels`
+  // (the caller's contract; `runEngine` throws a RangeError only on a different row count or id
+  // array length). Absent or [] = none.
   regimes?: { day: Day; parcels: ScenarioParcels }[];
   // Per T11 row, the day the parcel is reserved from (a later conversion's start), 0 = none. A
   // reservation is kept unless a project began on the row before the day and had not exited by

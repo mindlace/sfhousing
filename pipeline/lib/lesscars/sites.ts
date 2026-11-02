@@ -86,9 +86,12 @@ type Geom =
   | { type: 'Polygon'; coordinates: number[][][] }
   | { type: 'MultiPolygon'; coordinates: number[][][][] };
 
+const round7 = (x: number) => Math.round(x * 1e7) / 1e7;
+
+/** Outline rings in [lng, lat], rounded to 1e-7° so the published file is platform-stable. */
 const lngLatRings = (g: Geom): [number, number][][] =>
   (g.type === 'Polygon' ? g.coordinates : g.coordinates.flat()).map((r) =>
-    r.map((p) => [p[0], p[1]] as [number, number])
+    r.map((p) => [round7(p[0]), round7(p[1])] as [number, number])
   );
 
 /**

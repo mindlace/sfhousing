@@ -72,6 +72,19 @@ import { PARCELS_BIN, readParcelsBin } from './scenario';
 
 const FIXTURE_RE = /^fixture-\d+$/;
 const DAY_MS = 86400000;
+/**
+ * Freed sites of a project with a build that no scheduled build uses: slivers whose envelope holds
+ * no home (counted in `lesscars.sites.zero_yield`).
+ */
+export function zeroYieldSites<S extends { siteId: string; projectId: string }>(
+  sites: S[],
+  withBuild: Set<string>,
+  builds: { siteId: string; parcelRow: number | null }[]
+): S[] {
+  const freedBuilt = new Set(builds.filter((b) => b.parcelRow === null).map((b) => b.siteId));
+  return sites.filter((s) => withBuild.has(s.projectId) && !freedBuilt.has(s.siteId));
+}
+
 const round7 = (x: number) => Math.round(x * 1e7) / 1e7;
 
 const cnnsOf = (p: PlanProject): string[] =>
@@ -397,8 +410,7 @@ export async function writeLessCars(a: {
       .filter((p) => (p.kind === 'highway-truncation' || p.kind === 'street-removal') && p.build)
       .map((p) => p.id)
   );
-  const freedBuilt = new Set(builds.filter((b) => b.parcelRow === null).map((b) => b.siteId));
-  const zeroYield = sites.filter((s) => withBuild.has(s.projectId) && !freedBuilt.has(s.siteId));
+  const zeroYield = zeroYieldSites(sites, withBuild, builds);
   const parkingBuilt = new Set(builds.filter((b) => b.parcelRow !== null).map((b) => b.projectId));
   const zeroGain = plan.projects.filter(
     (p) => p.kind === 'parking-conversion' && !parkingBuilt.has(p.id)
