@@ -78,8 +78,9 @@ should block that, but nothing here builds toward it either.
   shuttle are shown on the map. They add zero homes and appear in no housing number.
 - **Invented numbers presented as findings.** Unsourced parameters are labelled as such (evidence
   tier 4) on the page, not hidden.
-- **Instant city.** Freed land does not fill the year it frees. It goes through the same
-  build-rate machinery as every other lot.
+- **Instant city.** Freed land does not fill the year it frees. Initiative sites wait for
+  clearance, start on the plan's schedule within its construction capacity, and take realistic
+  build durations.
 
 ## Law
 
