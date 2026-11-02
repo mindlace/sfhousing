@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MONTH_DAYS } from '../../timelapse/time';
 import type { LessCarsPlan, PlanProject } from './plan';
 import { TINY_PLAN, tinyPlan } from './fixtures/tiny-plan';
 import {
@@ -57,6 +58,32 @@ describe('checkPlan', () => {
       byId(q, 'ped').startYear = 2032;
     });
     expect(codes(p)).not.toContainEqual({ code: 'starts-before-dependency', project: 'ped' });
+  });
+
+  it('two 36-month bus lanes opening on the day two lines start are within a cap of 2', () => {
+    const p = tinyPlan((q) => {
+      const lane = byId(q, 'buslane');
+      const line = byId(q, 'subway');
+      const mk = (base: PlanProject, id: string, startYear: number, months: number) => {
+        const c = structuredClone(base);
+        c.id = id;
+        c.startYear = startYear;
+        c.durationMonths.value = months;
+        c.dependsOn = [];
+        return c;
+      };
+      q.projects = [
+        mk(lane, 'lane1', 2029, 36),
+        mk(lane, 'lane2', 2029, 36),
+        mk(line, 'line1', 2032, 60),
+        mk(line, 'line2', 2032, 60)
+      ];
+    });
+    const s = schedulePlan(p);
+    expect(s.times.get('lane1')!.openDay).toBe(yearStart(2032));
+    expect(checkPlan(p, s).map((c) => c.code)).not.toContain('capacity');
+    // The old rounding opened them a day late, so all four were under way on 2032-01-01.
+    expect(yearStart(2029) + Math.round(36 * MONTH_DAYS)).toBeGreaterThan(yearStart(2032));
   });
 
   it('opensAfter: opening before the named project is opens-before; equal or later passes', () => {

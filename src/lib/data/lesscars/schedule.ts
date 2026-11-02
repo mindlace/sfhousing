@@ -36,7 +36,9 @@ export interface PlanSchedule {
 
 /**
  * `start` plus `months` calendar months (UTC), and a fractional remainder as rounded days. A
- * project of 36 months from 1 January 2029 opens on 1 January 2032.
+ * project of 36 months from 1 January 2029 opens on 1 January 2032. A day-of-month the target
+ * month lacks overflows into the next month, as `Date.UTC` does; plan starts are always 1 January,
+ * so this never happens in practice.
  */
 export function monthsAfter(start: Day, months: number): Day {
   const whole = Math.floor(months);

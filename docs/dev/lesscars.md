@@ -92,10 +92,11 @@ or parking conversion's site is available on its open day.
 before it writes anything.
 
 From the plan alone (`checkPlan`, field = problem code): duplicate ids, unknown dependencies,
-cycles, **`opens-before`** (a project opening before one it names in `opensAfter`), dates outside 2028-01-01 to 2068-12-31, a start before a dependency opens, a car closure
-with no transit dependency, **`fillmore`** (a closure before its transit opens), a build before
-its site is available, a garage on a site that is not a build-free removal, a reused site, a stop
-defined twice, capacity (`maxConcurrent` per capacity kind), a parking conversion with no
+cycles, `opens-before` (a project opening before one it names in `opensAfter`), dates outside
+2028-01-01 to 2068-12-31, a start before a dependency opens, a car closure with no transit
+dependency, **`fillmore`** (a closure before its transit opens), a build before its site is
+available, a garage on a site that is not a build-free removal, a reused site, a stop defined
+twice, capacity (`maxConcurrent` per capacity kind), a parking conversion with no
 transit dependency, and a display whose id is reused or whose `from` names no project.
 
 Against this dataset:
