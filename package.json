@@ -20,6 +20,7 @@
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "vitest --run --project server --project client --no-file-parallelism --maxWorkers=1",
     "test:pipeline": "vitest --run --project pipeline",
+    "test:perf": "vitest --run --project perf --project client-perf --no-file-parallelism --maxWorkers=1",
     "pipeline": "tsx pipeline/cli.ts",
     "test:e2e": "playwright test",
     "bench:map": "playwright test --config playwright.bench.config.ts",

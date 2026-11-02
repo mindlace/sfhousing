@@ -72,6 +72,8 @@ export default defineConfig({
         // Before server, whose globs also match *.svelte.spec.ts.
         name: 'client',
         match: 'src/**/*.svelte.{test,spec}.ts',
+        // Wall-clock budgets live in the client-perf project (`npm run test:perf`), not client.
+        ignore: ['src/**/*.perf.svelte.{test,spec}.ts'],
         command: (files, n) =>
           Array.from(
             { length: n },
@@ -81,9 +83,13 @@ export default defineConfig({
       {
         name: 'server',
         match: ['src/**/*.{test,spec}.ts', 'scripts/**/*.spec.ts'],
-        // Load-sensitive timing budgets: parallel, no-retry reruns measure the machine, not the
-        // code. They still run in the serial test:unit gate.
-        ignore: ['src/**/*.bench.spec.ts', 'src/**/*.perf.spec.ts'],
+        // Wall-clock budgets measure the machine as much as the code: they live in the perf
+        // projects (`npm run test:perf`, run by hand on an idle machine), not in signoff.
+        ignore: [
+          'src/**/*.bench.spec.ts',
+          'src/**/*.perf.spec.ts',
+          'src/**/*.perf.svelte.{test,spec}.ts'
+        ],
         command: (files, n) =>
           Array.from(
             { length: n },

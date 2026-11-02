@@ -121,7 +121,7 @@ export class DemolishPump {
   /**
    * One frame: moves the cursor toward the target by at most SLICE_IDS entries. An arrow field,
    * bound once, so scheduling from `setTarget` allocates no closure. Emits the `sfh-pump`
-   * measure under MEASURE (the §4.5 pass bar, timed by timeline-perf.svelte.spec.ts).
+   * measure under MEASURE (the §4.5 pass bar, timed by timeline.perf.svelte.spec.ts).
    */
   private readonly frame = (): void => {
     this.handle = null;

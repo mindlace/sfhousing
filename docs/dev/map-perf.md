@@ -97,9 +97,11 @@ The first two rows were measured on open packed rings; the "closed rings (after 
 ## CI
 
 CI does not run this bench. Headless Chromium in CI renders with software GL (SwiftShader), so
-GPU frame times there mean nothing. CI gates the main-thread budgets instead: client test C5 in
-`src/lib/map/generated-controller.svelte.spec.ts` checks that a 500-parcel update reaches its first
-rising frame within 30 ms.
+GPU frame times there mean nothing. The main-thread budgets are client tests instead: C5 in
+`src/lib/map/generated-controller.perf.svelte.spec.ts` checks that a 500-parcel update reaches its
+first rising frame within 30 ms. Like every wall-clock budget they run in `npm run test:perf`
+(project `client-perf`) on an idle machine, not in `test:unit` or signoff
+([testing.md](testing.md)).
 
 ## Building compositions validation (2026-10-11)
 
