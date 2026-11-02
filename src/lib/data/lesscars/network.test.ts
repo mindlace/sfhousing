@@ -62,6 +62,12 @@ describe('networkAt', () => {
     const bus = times('buslane').openDay;
     expect(networkAt(BASE, TINY_PLAN, S, bus - 1).tier2Ids.has('existing-1')).toBe(false);
     expect(networkAt(BASE, TINY_PLAN, S, bus).tier2Ids.has('existing-1')).toBe(true);
+    // Bus lanes raise tph on their route (4 → 10), tpd unchanged.
+    const r14 = (d: number) =>
+      networkAt(BASE, TINY_PLAN, S, d).net.patterns.find((p) => p.routeId === '14')!;
+    expect([r14(bus - 1).stops[0].tph, r14(bus).stops[0].tph, r14(bus).stops[0].tpd]).toEqual([
+      4, 10, 60
+    ]);
     const tram = times('tram').openDay;
     const nBefore = networkAt(BASE, TINY_PLAN, S, tram - 1).net.patterns.find(
       (p) => p.routeId === 'N'

@@ -1,7 +1,8 @@
 // Network snapshots, per-day SB 79 and regime views (lesscars Task 7), on the mini fixture build
 // and the mini plan.
 import { beforeAll, describe, expect, it } from 'vitest';
-import { SB79_STATUSES, type PolicyParcels } from '../../src/lib/data/policy-codec';
+import type { ParcelRecord } from '../../src/lib/data/parcel';
+import { NULL_CAP, SB79_STATUSES, type PolicyParcels } from '../../src/lib/data/policy-codec';
 import type { ScenarioParcels } from '../../src/lib/data/scenario-codec';
 import { scenarioYield } from '../../src/lib/data/scenario-yield';
 import { mostPermissive } from '../../src/lib/data/stock-layers';
@@ -19,6 +20,8 @@ import type { Duck } from '../lib/duck';
 import {
   afterSwitchRow,
   buildRegimes,
+  lotSb79Row,
+  parcelGrossAt,
   regimeDays,
   tierChanges,
   type RegimeSet
@@ -41,6 +44,7 @@ let plan: LessCarsPlan;
 let schedule: PlanSchedule;
 let sites: FreedSite[];
 let regimes: RegimeSet;
+let records: Map<string, ParcelRecord>;
 
 beforeAll(async () => {
   const m = await lesscarsMini();
@@ -48,11 +52,12 @@ beforeAll(async () => {
   plan = miniLessCarsPlan();
   schedule = schedulePlan(plan);
   sites = await readFreedSites(db, capDay);
+  records = new Map(m.records.map((r) => [r.rec.id, r.rec]));
   regimes = await buildRegimes({
     db,
     parcels,
     policy,
-    records: new Map(m.records.map((r) => [r.rec.id, r.rec])),
+    records,
     sites,
     base: transit,
     plan,
@@ -156,6 +161,44 @@ describe('buildRegimes on the mini plan', () => {
     expect(tookSb79).toBeGreaterThan(0);
     expect(view.localProgram).toBe(parcels.localProgram);
     expect(view.id).toBe(parcels.id);
+  });
+
+  it('the recompute path reproduces policy.bin SB 79 at its own best standard on every row', () => {
+    const f = F();
+    let reached = 0;
+    for (let i = 0; i < parcels.count; i++) {
+      const best =
+        policy.todTier[i] === 0
+          ? null
+          : { tier: policy.todTier[i] as 1 | 2, band: policy.todBand[i] as 1 | 2 | 3 };
+      if (best) reached++;
+      const r = lotSb79Row(
+        parcels,
+        policy,
+        i,
+        best,
+        parcelGrossAt(parcels, i, records.get(parcels.id[i])!)
+      );
+      expect(
+        {
+          status: r.status,
+          stories: r.stories,
+          cap: r.cap === null ? NULL_CAP : r.cap,
+          yield: r.yield,
+          hostable: r.hostable ? 1 : 0
+        },
+        parcels.id[i]
+      ).toEqual({
+        status: SB79_STATUSES[policy.sb79Status[i]],
+        stories: policy.sb79Stories[i],
+        cap: policy.sb79Cap[i],
+        yield: Array.from(policy.sb79Yield.subarray(i * f, (i + 1) * f)),
+        hostable: policy.hostableSb79[i]
+      });
+    }
+    // Every fixture lot is in reach, so the comparison covers the statute envelope, not 'outside'.
+    expect(reached).toBe(parcels.count);
+    expect(new Set(Array.from(policy.sb79Status)).size).toBeGreaterThan(2);
   });
 
   it('the mini subway unlocks lots near its stops after it opens, and only those', async () => {

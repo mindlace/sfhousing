@@ -163,6 +163,52 @@ export interface RegimeSet {
 
 type Reach = Partial<Record<Sb79Tier, number>>;
 
+/** The generator's gross homes at a stories count for row `i`, as writePolicy computes it. */
+export function parcelGrossAt(
+  parcels: ScenarioParcels,
+  i: number,
+  rec: ParcelRecord
+): (stories: number) => number {
+  const view = scenarioRecordOf(parcels, i, rec);
+  const memo = new Map<number, number>();
+  return (stories) => {
+    let g = memo.get(stories);
+    if (g === undefined) memo.set(stories, (g = scenarioYield(view, stories, null)));
+    return g;
+  };
+}
+
+/**
+ * Lot `i` under SB 79 at standard `best`, with writePolicy's inputs (zone from policy.bin's use
+ * district, eligibility, rent control, lot area, existing homes); `hostable` is `applies`, as
+ * policy.bin's hostableSb79. At policy.bin's own todTier/todBand it reproduces its sb79* columns.
+ */
+export function lotSb79Row(
+  parcels: ScenarioParcels,
+  policy: PolicyParcels,
+  i: number,
+  best: { tier: Sb79Tier; band: TodBand } | null,
+  grossAt: (stories: number) => number
+): EnvelopeRow & { status: Sb79Status } {
+  const code = policy.useDistricts[policy.useDistrict[i]];
+  const sb = sb79Row({
+    best,
+    eligible: parcels.eligible[i] === 1,
+    zone: zoneClassOf(code === '' ? null : code).zoneClass,
+    rentControlLikely: parcels.rentControlLikely[i] === 1,
+    lotAreaM2: parcels.lotAreaM2[i],
+    existingUnits: parcels.existingUnits[i],
+    grossAt
+  });
+  return {
+    status: sb.status,
+    stories: sb.stories,
+    cap: sb.cap,
+    yield: sb.yield,
+    hostable: sb.status === 'applies'
+  };
+}
+
 function emptyTable(count: number, F: number): EnvelopeTable {
   return {
     count,
@@ -336,7 +382,7 @@ export async function buildRegimes(a: {
     if (!g) {
       const rec = a.records.get(s.id[i]);
       if (!rec) throw new Error(`lesscars: parcel ${s.id[i]} has no record`);
-      grossOfRow.set(i, (g = grossFor(scenarioRecordOf(s, i, rec))));
+      grossOfRow.set(i, (g = parcelGrossAt(s, i, rec)));
     }
     return g;
   };
@@ -352,25 +398,9 @@ export async function buildRegimes(a: {
     const key = `${i}|${keyOf(best)}`;
     let r = recomputed.get(key);
     if (!r) {
-      const code = q.useDistricts[q.useDistrict[i]];
-      const sb = sb79Row({
-        best,
-        eligible: s.eligible[i] === 1,
-        zone: zoneClassOf(code === '' ? null : code).zoneClass,
-        rentControlLikely: s.rentControlLikely[i] === 1,
-        lotAreaM2: s.lotAreaM2[i],
-        existingUnits: s.existingUnits[i],
-        grossAt: rowGross(i)
-      });
       const row = afterSwitchRow(
         fzpRow(i),
-        {
-          status: sb.status,
-          stories: sb.stories,
-          cap: sb.cap,
-          yield: sb.yield,
-          hostable: sb.status === 'applies'
-        },
+        lotSb79Row(s, q, i, best, rowGross(i)),
         q.exemptPermanent[i] === 1
       );
       r = { stories: row.stories, cap: row.cap, yield: row.yield, hostable: row.hostable };
