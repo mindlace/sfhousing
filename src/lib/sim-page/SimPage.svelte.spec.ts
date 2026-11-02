@@ -19,8 +19,6 @@ import { replaceStateCalls } from '../../test-stubs/app/navigation';
 import type SimPage from './SimPage.svelte';
 import { DEFAULT_POLICY, SIM_CODEC, SIM_KEY, type SimDoc } from './sim-doc';
 import { resolvePreset } from './timing';
-import type { FogGrid } from '$lib/map/fog/grid';
-import { FOG_LAYER_ID } from '$lib/map/fog/fog-layer';
 import { DEFAULT_VIEW, HIDDEN_VIEW, VIEW_KEY } from '$lib/view/prefs';
 import type { PackedCell } from '$lib/map/types';
 import { chanceTable, typicalMonths } from '$lib/timelapse/model';
@@ -852,38 +850,17 @@ describe('SimPage score comparison (spec §5)', () => {
 describe('SimPage map overlays (plan 2, Task 4)', () => {
   const run = () => page.getByRole('button', { name: 'Run', exact: true });
   const viewButton = () => page.getByRole('button', { name: 'View', exact: true });
-  /** A one-cell fog grid. */
-  const GRID: FogGrid = {
-    west: -122.5,
-    south: 37.7,
-    dLng: 0.001,
-    dLat: 0.001,
-    cols: 1,
-    rows: 1,
-    heightM: new Float32Array([10, 10, 10, 10])
-  };
-  /** The ids the map's overlay last got. */
-  const overlayIds = () =>
-    ((callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as { id: string }[]).map((l) => l.id);
-  /** The worker's first `resolving` for the session's levers, carrying the fog. */
-  function postFog(g: FogGrid = GRID): void {
-    const w = workers.at(-1)!;
-    const rev = w.lastOf('initScenario')!.rev;
-    w.emit({ type: 'levers', rev, phase: 'resolving', done: 0, total: 1, failedCells: [], fog: g });
-  }
+  // The height-limit drawing itself (glass lids and contours) is the height-lids plan's Task 12.
 
-  it('the View menu and the fog show in Setup only', async () => {
+  it('the View menu shows in Setup only', async () => {
     stub.reset();
     await page.viewport(1024, 768);
     await setup();
     await toReady();
-    postFog();
     await expect.element(viewButton()).toBeVisible();
-    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
     expect(stub.props.view).toEqual(DEFAULT_VIEW);
     await run().click();
     expect(viewButton().query()).toBeNull();
-    await expect.poll(() => overlayIds()).not.toContain(FOG_LAYER_ID);
     expect(stub.props.view).toEqual(HIDDEN_VIEW);
   });
 
@@ -892,20 +869,16 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
     await page.viewport(1024, 768);
     await setup();
     await toReady();
-    postFog();
-    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
     await viewButton().click();
     await page.getByRole('checkbox', { name: 'Height limits' }).click();
     await page.getByRole('checkbox', { name: 'Transit stops' }).click();
-    await expect.poll(() => overlayIds()).not.toContain(FOG_LAYER_ID);
     await run().click();
     await page.getByRole('button', { name: 'Change policy' }).click();
     await expect.element(viewButton()).toBeVisible();
     expect(stub.props.view).toEqual({ ...DEFAULT_VIEW, heightFog: false, transitStops: true });
-    expect(overlayIds()).not.toContain(FOG_LAYER_ID);
   });
 
-  it('without transit the menu has only the fog row', async () => {
+  it('without transit the menu has only the height-limits row', async () => {
     await page.viewport(1024, 768);
     await setup({ manifest: { ...manifest, transit: undefined } });
     await toReady();
@@ -949,36 +922,16 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
       .toEqual({ transitStops: true, transitAccess: true, heightFog: false });
   });
 
-  it('a stored heightFog: false draws no fog until it is turned on', async () => {
-    stub.reset();
-    await page.viewport(1024, 768);
-    const mem = new MemoryStorage();
-    mem.setItem(VIEW_KEY, JSON.stringify({ ...DEFAULT_VIEW, heightFog: false }));
-    await setup({ storage: () => mem });
-    await toReady();
-    postFog();
-    await viewButton().click();
-    const fog = page.getByRole('checkbox', { name: 'Height limits' });
-    await expect.element(fog).not.toBeChecked();
-    expect(overlayIds()).not.toContain(FOG_LAYER_ID);
-    await fog.click();
-    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
-  });
-
-  it('the view (/s/:id) shows the View menu and the fog in Setup', async () => {
+  it('the view (/s/:id) shows the View menu in Setup', async () => {
     stub.reset();
     await page.viewport(1024, 768);
     await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY });
     await toReady();
-    postFog();
     await expect.element(viewButton()).toBeVisible();
-    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
     await run().click();
     expect(viewButton().query()).toBeNull();
-    await expect.poll(() => overlayIds()).not.toContain(FOG_LAYER_ID);
     await page.getByRole('button', { name: 'Back to start' }).click();
     await expect.element(viewButton()).toBeVisible();
-    await expect.poll(() => overlayIds()).toContain(FOG_LAYER_ID);
   });
 });
 
@@ -1091,8 +1044,7 @@ describe('SimPage paint feedback (plan 2, Task 6)', () => {
       phase: 'current',
       lookups: { inFlight: one(), fresh: one() },
       capacity: { plan: 10, withoutProtections: 10, protectedLots: 0 },
-      unknownLots: 0,
-      fog: { west: 0, south: 0, dLng: 1, dLat: 1, cols: 1, rows: 1, heightM: new Float32Array(4) }
+      unknownLots: 0
     });
   }
 

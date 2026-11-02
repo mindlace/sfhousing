@@ -10,7 +10,7 @@ export interface RouterDeps {
    * before one.
    */
   createScenario: () => { handle(r: ScenarioRequest): void; dispose(): void };
-  /** The router's own answers: brush requests outside scenario mode (`no-session`). */
+  /** The router's own answers: brush, outline, preview and lid requests outside scenario mode (`no-session`). */
   post(msg: ScenarioResponse): void;
 }
 
@@ -91,6 +91,17 @@ export function createWorkerRouter(deps: RouterDeps): { handle(req: WorkerReques
             const message = 'previews need a /sim scenario session';
             deps.post({
               type: 'previewBuildings',
+              reqId: req.reqId,
+              result: { ok: false, reason: 'no-session', message }
+            });
+          }
+          return;
+        case 'heightLids':
+          if (mode === 'scenario') scenarioHost().handle(req);
+          else {
+            const message = 'height lids need a /sim scenario session';
+            deps.post({
+              type: 'heightLids',
               reqId: req.reqId,
               result: { ok: false, reason: 'no-session', message }
             });

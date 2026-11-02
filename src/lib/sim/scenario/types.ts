@@ -5,7 +5,7 @@ import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId } from '$lib/data/parcel';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import type { GeneratedBuilding } from '$lib/generator';
-import type { FogGrid } from '$lib/map/fog/grid';
+import type { HeightCity, HeightLids } from '$lib/map/height/types';
 import type { PackedCell, TimelineUpdate } from '$lib/map/types';
 import type { Target } from '$lib/scoreboard';
 import type { InFlightProject } from '$lib/timelapse/projects';
@@ -91,7 +91,19 @@ export type ScenarioRequest =
   | { type: 'lotOutlines'; reqId: number; lots: ParcelId[] }
   // Paint feedback (plan 2 Task 6): `stories` given = a custom stroke at that height; absent =
   // the levers in force (a rule). The page sends the lots nearest first.
-  | { type: 'previewBuildings'; reqId: number; lots: ParcelId[]; stories?: number };
+  | { type: 'previewBuildings'; reqId: number; lots: ParcelId[]; stories?: number }
+  // Glass lids (height-lids Task 8): the lids of the loaded lots in a view (lng/lat bbox),
+  // answered on the latest complete city of a session initialised with levers.
+  | { type: 'heightLids'; reqId: number; bbox: [number, number, number, number] };
+/**
+ * The glass lids of a view, built on the latest complete city (`lids.limitsRev`). `missing`
+ * counts the cells intersecting the bbox whose chunks are not loaded (the page asks again as they
+ * load). `no-session`: no session with levers (or it ended before answering); `superseded`: a
+ * newer `heightLids` replaced this one; `too-large`: the bbox spans too far for lids.
+ */
+export type HeightLidsResult =
+  | { ok: true; lids: HeightLids; missing: number }
+  | { ok: false; reason: 'no-session' | 'superseded' | 'too-large'; message: string };
 /**
  * The buildings a preview's lots could hold, packed as one cell (`'preview'`), or null when none
  * builds. `built` counts the lots packed; `missing` the requested lots (within the cap) whose
@@ -148,13 +160,17 @@ export type ScenarioResponse =
   | { type: 'brushCatalog'; reqId: number; catalog: BrushCatalog | null }
   | { type: 'lotOutlines'; reqId: number; result: LotOutlinesResult }
   | { type: 'previewBuildings'; reqId: number; result: PreviewResult }
+  // A lever revision's height regions and contours, once per revision, before its `current`
+  // (a superseded revision may get none); the chain and label buffers are transferred.
+  | { type: 'heights'; rev: Rev; city: HeightCity }
+  | { type: 'heightLids'; reqId: number; result: HeightLidsResult }
   | LeversResponse;
 /**
  * A lever revision's status (plan 2): `rev` is the `initScenario` or `setLevers` that named the
  * levers. `resolving` while touched-lot yields are recomputed (`failedCells`: needed chunks that
  * failed to load; `retryChunks` re-wants them); `current` once the levers are in force, before
- * any timeline computed on them. A superseded revision never gets `current`. `fog` (map overlays
- * plan Task 2) is the revision's height-limit grid: on its first `resolving`, and on `current`.
+ * any timeline computed on them. A superseded revision never gets `current`. Its height limits
+ * go out separately, as `heights`.
  */
 export type LeversResponse =
   | {
@@ -164,8 +180,6 @@ export type LeversResponse =
       done: number;
       total: number;
       failedCells: string[];
-      /** On the revision's first `resolving` only: its stories are final before any recompute. */
-      fog?: FogGrid;
     }
   | {
       type: 'levers';
@@ -174,7 +188,6 @@ export type LeversResponse =
       lookups: LeverLookups;
       capacity: LeverCapacity;
       unknownLots: number;
-      fog: FogGrid; // the height-limit grid of the levers in force; `heightM.buffer` transferred
     };
 export type WorkerRequest = SimRequest | ScenarioRequest;
 export type ProjectCard = {

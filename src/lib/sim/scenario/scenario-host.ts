@@ -45,6 +45,15 @@
 // is answered `no-session` when its session ends (a new init, a failed load, dispose). The
 // `LotIndex` is built once per session on the base parcels; the resolver memoises on object
 // identity, so the session's own decoded objects are passed every time. /fzp never fetches them.
+//
+// Height limits (height-lids Task 8). Each lever revision's resolve step starts a staged city
+// build (`city.ts`) on its effective stories; its steps run next (job kind 'heights'), ahead of
+// the recompute, and the finished city is posted as `heights` (before the revision's `current`)
+// and kept as the session's `limits`. A `heightLids { bbox }` waits for limits, then runs a
+// staged lid build (`lids.ts`) on the loaded lots in the view, ahead of every job but a pending
+// revision's resolve and city steps. A new `heightLids` answers an older waiting or running one
+// `superseded`; a new city restarts a running lid build on its limits, so an answer never mixes
+// revisions. A session end answers a waiting request `no-session`.
 import type { Manifest } from '$lib/data/manifest';
 import type { PolicyParcels } from '$lib/data/policy-codec';
 import { envelopeOf, scenarioRecordOf, type ScenarioParcels } from '$lib/data/scenario-codec';
@@ -57,7 +66,22 @@ import {
   type GeneratedBuilding
 } from '$lib/generator';
 import { packCell, packTransferables } from '$lib/map/pack';
-import { buildFogGrid, type FogGrid } from '$lib/map/fog/grid';
+import {
+  createCityBuild,
+  type CityModel,
+  type CityResult,
+  type StagedBuild
+} from '$lib/map/height/city';
+import {
+  LID_PAD_M,
+  LidTooLarge,
+  createLidBuild,
+  type LidBuild,
+  type LidLot
+} from '$lib/map/height/lids';
+import { countableMask } from '$lib/map/height/room';
+import type { HeightCity, HeightLids } from '$lib/map/height/types';
+import { M_PER_DEG_LAT, M_PER_DEG_LNG } from '$lib/plan/geometry';
 import { packTimedTransferables } from '$lib/map/pack-timed';
 import type { TimedPackedCell, TimelineUpdate } from '$lib/map/types';
 import { decodeTransit } from '$lib/data/transit-codec';
@@ -82,6 +106,7 @@ import {
   type NeighborhoodShapes
 } from '../levers/brushes';
 import type { LayerCtx } from '../levers/layers';
+import { limitSources, type LimitSources } from '../levers/source';
 import { createYieldRecompute, type GrossCache, type YieldRecompute } from '../levers/recompute';
 import { allNeeds, fillNeeds, resolveEnvelopes, type Resolution } from '../levers/resolve';
 import { parseSimLevers, type SimLevers } from '../levers/types';
@@ -115,6 +140,7 @@ import { simulateDetailed, simulateNet } from './simulate';
 import { PREVIEW_MAX_LOTS } from './preview';
 import type {
   BrushLotsResult,
+  HeightLidsResult,
   Massing,
   ScenarioErrorCode,
   ScenarioRequest,
@@ -248,8 +274,6 @@ interface PendingLevers {
     resolution: Resolution;
     recompute: YieldRecompute;
     cells: Set<string>; // cells of the needs not loaded at the start
-    /** The revision's height-limit grid: its stories are final once resolved (spec §4). */
-    fog: FogGrid;
   } | null;
   failed: string[]; // the needed cells that failed to load, as last posted
   stalled: boolean; // every remaining need waits on a chunk: idle until one arrives
@@ -263,6 +287,17 @@ interface LeverWork {
   pending: PendingLevers | null;
   /** 1 on the rows protected under the levers in force (set at `current`); null before. */
   protectedMask: Uint8Array | null;
+  /** The latest complete city: its rev, the per-lot stories and sources it was built on, its model. */
+  limits: { rev: Rev; stories: Uint8Array; sources: LimitSources; model: CityModel } | null;
+  /** The city build of the latest resolved revision, until done. */
+  city: {
+    rev: Rev;
+    build: StagedBuild<CityResult>;
+    stories: Uint8Array;
+    sources: LimitSources;
+  } | null;
+  /** The running lid build of `Session.lidWant`, on `limits` at `limitsRev`. */
+  lid: { reqId: number; limitsRev: Rev; build: LidBuild; missing: number } | null;
 }
 
 /** A loaded session's timeline work. */
@@ -313,7 +348,7 @@ interface BrushSession {
   files: { [K in BrushFile]?: Promise<BrushFiles[K] | null> };
 }
 
-type JobKind = 'recompute' | 'net' | 'shown' | 'geometry' | 'pack' | 'post';
+type JobKind = 'recompute' | 'heights' | 'net' | 'shown' | 'geometry' | 'pack' | 'post';
 type Job = { kind: JobKind; run(): void };
 
 /** The per-init state. */
@@ -334,6 +369,8 @@ interface Session {
   levers: { rev: Rev; levers: SimLevers } | null;
   /** Null for /fzp: brush requests are answered `no-session`. */
   brush: BrushSession | null;
+  /** The latest `heightLids` not yet answered (lever sessions only). */
+  lidWant: { reqId: number; bbox: [number, number, number, number] } | null;
 }
 
 type InitRequest = Extract<ScenarioRequest, { type: 'initScenario' }>;
@@ -341,6 +378,33 @@ type RerollRequest = Extract<ScenarioRequest, { type: 'reroll' }>;
 type SetLeversRequest = Extract<ScenarioRequest, { type: 'setLevers' }>;
 
 const NO_LEVERS_SESSION = 'setLevers needs a session initialised with levers';
+
+/** Each distinct buffer of `arrays`, once (a transfer list may not name one twice). */
+function buffersOf(arrays: readonly ArrayBufferView[]): ArrayBuffer[] {
+  return [...new Set(arrays.map((a) => a.buffer as ArrayBuffer))];
+}
+
+function cityTransfer(c: HeightCity): ArrayBuffer[] {
+  return buffersOf([...Object.values(c.chains), c.labels.position, c.labels.minZoom]);
+}
+
+function lidsTransfer(l: HeightLids): ArrayBuffer[] {
+  const w = l.walls;
+  return buffersOf([
+    ...Object.values(l.pieces),
+    ...l.faces.flatMap((f) => f.rings),
+    ...Object.values(l.rims),
+    w.a,
+    w.b,
+    w.zLo,
+    w.zHi,
+    w.piece,
+    l.labels.position,
+    l.labels.minZoom,
+    l.paintLabels.position,
+    l.paintLabels.minZoom
+  ]);
+}
 
 export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
   const retryDelaysMs = deps.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
@@ -380,6 +444,11 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       st.brush.waiting.clear();
       for (const w of waiting) noSession(w.reqId, w.query === null);
     }
+    const want = st?.lidWant;
+    if (want) {
+      st!.lidWant = null;
+      lidsNoSession(want.reqId);
+    }
   }
 
   function fail(st: Session, code: ScenarioErrorCode, message: string): void {
@@ -418,7 +487,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       // validateInitRequest has accepted it; parsing gives a fresh copy the host owns
       levers:
         req.levers === undefined ? null : { rev: req.rev, levers: parseSimLevers(req.levers) },
-      brush: req.levers === undefined ? null : { waiting: new Set(), index: null, files: {} }
+      brush: req.levers === undefined ? null : { waiting: new Set(), index: null, files: {} },
+      lidWant: null
     } as Omit<Session, 'chunks'> as Session;
     st.chunks = {
       loader: createChunkLoader(manifest, {
@@ -554,7 +624,10 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         ctx: { parcels: loaded.fzp.parcels, policy: loaded.policy! },
         gross: new Map(),
         pending: pendingOf(st.levers.rev, st.levers.levers, st.seed),
-        protectedMask: null
+        protectedMask: null,
+        limits: null,
+        city: null,
+        lid: null
       };
     }
     // the brush requests that waited for the load
@@ -660,7 +733,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     w.sliceStart = start;
     for (let first = true; ; first = false) {
       if (!live(st)) return;
-      const job = nextJob(w);
+      const job = nextJob(st, w);
       if (job === null) return; // idle until a reroll or a chunk kicks again
       if (!first) {
         if (job.kind === 'shown') return kick(st); // the shown run has a slice of its own
@@ -674,10 +747,18 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     }
   }
 
-  function nextJob(w: Work): Job | null {
-    // a pending lever revision comes before every other job, and holds them all
-    const p = w.levers?.pending;
-    if (p) return p.stalled ? null : { kind: 'recompute', run: () => leverStep(w, w.levers!, p) };
+  function nextJob(st: Session, w: Work): Job | null {
+    // A pending lever revision's resolve step, then its city, then a wanted lid view on the
+    // newest limits, then its recompute: the timeline jobs wait until it is current.
+    const lw = w.levers;
+    if (lw) {
+      const p = lw.pending;
+      if (p && p.state === null) return { kind: 'recompute', run: () => leverStep(w, lw, p) };
+      const c = lw.city;
+      if (c) return { kind: 'heights', run: () => cityStep(w, lw, c) };
+      if (st.lidWant && lw.limits) return { kind: 'heights', run: () => lidStep(st, w, lw) };
+      if (p) return p.stalled ? null : { kind: 'recompute', run: () => leverStep(w, lw, p) };
+    }
     const run = w.run;
     const band = w.band;
     if (run.revision < 0) {
@@ -744,14 +825,13 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         lw.gross
       );
       const cells = new Set(recompute.cellsNeeded()); // once per revision
-      // The fog goes out now, not at `current`: a revision waiting on chunks (or held by a failed
-      // one) still shows its heights as you paint. `resolving` sends a copy, as the grid is
-      // transferred again with `current`.
-      const fog = buildFogGrid(base.parcels.labelPoint, resolution.plan.table.stories);
-      p.state = { resolution, recompute, cells, fog };
+      p.state = { resolution, recompute, cells };
+      // The city goes out before the recompute: a revision waiting on chunks (or held by a
+      // failed one) still shows its heights as you paint. Its stories are final once resolved.
+      lw.city = cityOf(lw, p.rev, p.levers, resolution);
       if (recompute.total === 0) return;
       p.failed = w.chunks.failed.filter((c) => cells.has(c));
-      postResolving(p, { ...fog, heightM: fog.heightM.slice() });
+      postResolving(p);
       w.chunks.loader.want(cells);
       return;
     }
@@ -774,19 +854,14 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     const mask = new Uint8Array(lw.base.fzp.parcels.count);
     for (const row of filled.protectedRows) mask[row] = 1;
     lw.protectedMask = mask;
-    const fog = p.state.fog;
-    post(
-      {
-        type: 'levers',
-        rev: p.rev,
-        phase: 'current',
-        lookups: li.lookups,
-        capacity: li.capacity,
-        unknownLots: li.unknownLots,
-        fog
-      },
-      [fog.heightM.buffer as ArrayBuffer]
-    );
+    post({
+      type: 'levers',
+      rev: p.rev,
+      phase: 'current',
+      lookups: li.lookups,
+      capacity: li.capacity,
+      unknownLots: li.unknownLots
+    });
     w.loaded = { ...lw.base, fzp: li.plan, twin: li.twin };
     w.references = li.references;
     w.band = createBandState(deps.bandRuns ?? BAND_RUNS);
@@ -796,21 +871,143 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     w.run = newRun(p.runRev, p.seed);
   }
 
-  /** `fog` only on the revision's first `resolving` (its buffer is transferred). */
-  function postResolving(p: PendingLevers, fog?: FogGrid): void {
+  function postResolving(p: PendingLevers): void {
     const r = p.state!.recompute;
-    post(
-      {
-        type: 'levers',
-        rev: p.rev,
-        phase: 'resolving',
-        done: r.done,
-        total: r.total,
-        failedCells: [...p.failed],
-        ...(fog ? { fog } : {})
-      },
-      fog ? [fog.heightM.buffer as ArrayBuffer] : []
-    );
+    post({
+      type: 'levers',
+      rev: p.rev,
+      phase: 'resolving',
+      done: r.done,
+      total: r.total,
+      failedCells: [...p.failed]
+    });
+  }
+
+  // --- height limits (height-lids Task 8) ---
+
+  /** What is left of the slice plan (a staged build always runs at least one unit). */
+  const sliceLeft = (w: Work) => Math.max(0, SLICE_PLAN_MS - (deps.now() - w.sliceStart));
+  const clock = () => deps.now();
+
+  /**
+   * A resolved revision's city build: its effective stories (a protected lot at FZP), the
+   * winning source per lot, and which lots count toward room to grow.
+   */
+  function cityOf(
+    lw: LeverWork,
+    rev: Rev,
+    levers: SimLevers,
+    r: Resolution
+  ): NonNullable<LeverWork['city']> {
+    const parcels = lw.base.fzp.parcels;
+    const plan = r.plan;
+    const stories = plan.table.stories;
+    const sources = limitSources(lw.ctx, levers, r.protectedRows);
+    const build = createCityBuild({
+      rev,
+      labelPoint: parcels.labelPoint,
+      lotAreaM2: parcels.lotAreaM2,
+      existingStories: parcels.existingStories,
+      stories,
+      countable: countableMask(plan.table, parcels.eligible, plan.needs, r.protectedRows),
+      sources
+    });
+    return { rev, build, stories, sources };
+  }
+
+  /** One slice of the city build; once done, `heights` goes out and the city becomes `limits`. */
+  function cityStep(w: Work, lw: LeverWork, c: NonNullable<LeverWork['city']>): void {
+    if (!c.build.step(sliceLeft(w), clock)) return;
+    const { city, model } = c.build.result();
+    lw.city = null;
+    lw.limits = { rev: c.rev, stories: c.stories, sources: c.sources, model };
+    // a lid build on older limits starts again on these
+    if (lw.lid && lw.lid.limitsRev !== c.rev) lw.lid = null;
+    post({ type: 'heights', rev: c.rev, city }, cityTransfer(city));
+  }
+
+  /** One slice of the wanted lid view, started on the current limits if none runs. */
+  function lidStep(st: Session, w: Work, lw: LeverWork): void {
+    const want = st.lidWant!;
+    const limits = lw.limits!;
+    let lid = lw.lid;
+    if (lid === null) {
+      const { lots, missing } = lidLots(st, lw, want.bbox);
+      let build: LidBuild;
+      try {
+        build = createLidBuild({
+          limitsRev: limits.rev,
+          sourceIds: limits.sources.ruleIds,
+          bbox: want.bbox,
+          lots,
+          stories: limits.stories,
+          sources: limits.sources.source,
+          model: limits.model
+        });
+      } catch (e) {
+        if (!(e instanceof LidTooLarge)) throw e;
+        st.lidWant = null;
+        return postLids(want.reqId, { ok: false, reason: 'too-large', message: e.message });
+      }
+      lid = lw.lid = { reqId: want.reqId, limitsRev: limits.rev, build, missing };
+    }
+    if (!lid.build.step(sliceLeft(w), clock)) return;
+    const lids = lid.build.result();
+    lw.lid = null;
+    st.lidWant = null;
+    postLids(lid.reqId, { ok: true, lids, missing: lid.missing }, lidsTransfer(lids));
+  }
+
+  /**
+   * The lid lots of a view: the loaded records of the cells around the bbox padded by
+   * `LID_PAD_M` whose label point lies in it, as rows of the limits tables. `missing` counts the
+   * cells intersecting the bbox itself that are not loaded.
+   */
+  function lidLots(
+    st: Session,
+    lw: LeverWork,
+    bbox: readonly number[]
+  ): { lots: LidLot[]; missing: number } {
+    const dLng = LID_PAD_M / M_PER_DEG_LNG;
+    const dLat = LID_PAD_M / M_PER_DEG_LAT;
+    const [w0, s0, e0, n0] = [bbox[0] - dLng, bbox[1] - dLat, bbox[2] + dLng, bbox[3] + dLat];
+    const index = lw.base.fzp.parcels.index;
+    const byCell = st.chunks.byCell;
+    const lots: LidLot[] = [];
+    for (const cellId of cellsIntersecting(st.manifest, [w0, s0, e0, n0])) {
+      for (const rec of byCell.get(cellId) ?? []) {
+        const [lng, lat] = rec.labelPoint;
+        if (lng < w0 || lng > e0 || lat < s0 || lat > n0) continue;
+        const row = index.get(rec.id);
+        if (row === undefined) continue;
+        lots.push({ row, rings: rec.polygon.map((ring) => toLngLat(ring, rec.labelPoint)) });
+      }
+    }
+    const missing = cellsIntersecting(st.manifest, bbox).filter((c) => !byCell.has(c)).length;
+    return { lots, missing };
+  }
+
+  function postLids(reqId: number, result: HeightLidsResult, transfer: ArrayBuffer[] = []): void {
+    post({ type: 'heightLids', reqId, result }, transfer);
+  }
+
+  function lidsNoSession(reqId: number): void {
+    const message = 'height lids need a loaded session initialised with levers';
+    postLids(reqId, { ok: false, reason: 'no-session', message });
+  }
+
+  /** A `heightLids`: answers the one it replaces `superseded`, then waits for its turn. */
+  function heightLids(reqId: number, bbox: [number, number, number, number]): void {
+    const st = s;
+    if (!st?.levers) return lidsNoSession(reqId);
+    const prev = st.lidWant;
+    if (prev) {
+      const message = 'a newer heightLids replaced this one';
+      postLids(prev.reqId, { ok: false, reason: 'superseded', message });
+    }
+    st.lidWant = { reqId, bbox: [bbox[0], bbox[1], bbox[2], bbox[3]] };
+    if (st.work?.levers) st.work.levers.lid = null;
+    kick(st);
   }
 
   function bandFzp(w: Work, i: number): void {
@@ -1335,6 +1532,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         return lotOutlines(req.reqId, req.lots);
       case 'previewBuildings':
         return previewBuildings(req.reqId, req.lots, req.stories);
+      case 'heightLids':
+        return heightLids(req.reqId, req.bbox);
       case 'prefetch':
         if (s) prefetch(s, req.bbox);
         return;

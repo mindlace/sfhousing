@@ -17,7 +17,8 @@
   scrubber's button) sets the tool to Move, locks the store and plays; the panel is read-only
   until "Change policy" ("Back to start" in the view) unlocks it and returns to the present.
   Map overlays (sim-runs plan 2, Task 4): in Setup the header's View menu (transit stops, transit
-  capacity, the height fog) and the fog itself; a run hides them all and keeps the toggles.
+  capacity, height limits); a run hides them all and keeps the toggles. The height limits (glass
+  lids and contours, height-lids plan) come from FzpMode's `onheights`; nothing draws them yet.
   Paint feedback (Task 6): in Setup a Paint stroke, and a saved zoning rule once its revision is
   current, briefly shows the buildings its lots in view could hold (the overlay's feedback slot).
 -->
@@ -35,7 +36,7 @@
   import { BrushState } from '$lib/brush/state.svelte';
   import type { Manifest } from '$lib/data/manifest';
   import FzpMode, { type SimClientApi } from '$lib/fzp/FzpMode.svelte';
-  import { fogInstances, type FogGrid } from '$lib/map/fog/grid';
+  import type { HeightCity } from '$lib/map/height/types';
   import { useSystemTheme } from '$lib/map/system-theme.svelte';
   import type { SimMapHandle } from '$lib/map/types';
   import ViewMenu, { type ViewRow } from '$lib/view/ViewMenu.svelte';
@@ -434,22 +435,12 @@
     writeViewPrefs(v, storage());
   }
 
-  /** The latest kept lever revision's height-limit grid (FzpMode's `onfog`). */
-  let fog = $state.raw<FogGrid | null>(null);
-  /** Per grid, not per theme: a theme change rebuilds the layer only. */
-  const fogCells = $derived(fog ? fogInstances(fog) : null);
-  let fogLayer = $state.raw<typeof import('$lib/map/fog/fog-layer') | null>(null);
-
-  $effect(() => {
-    const o = overlay;
-    if (!o) return;
-    const g = fog;
-    const cells = fogCells;
-    const mod = fogLayer;
-    const on = run.phase === 'setup' && viewPrefs.heightFog && g && cells && mod;
-    const layers = on ? [mod.heightFogLayer(cells, g, systemTheme.current)] : [];
-    untrack(() => o.slot('fog')(layers));
-  });
+  /**
+   * The latest kept lever revision's height regions and contours (FzpMode's `onheights`). Not
+   * drawn yet: the contour and lid layers read it (height-lids plan, Task 12).
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Task 12's layers read it
+  let city = $state.raw<HeightCity | null>(null);
 
   // ---- outlines of custom-painted lots while erasing (plan 2, Task 5) ----
 
@@ -690,12 +681,6 @@
       },
       (e) => console.error('[sim] overlay layers failed to load', e)
     );
-    import('$lib/map/fog/fog-layer').then(
-      (mod) => {
-        if (!dead) fogLayer = mod;
-      },
-      (e) => console.error('[sim] the height fog layer failed to load', e)
-    );
     return () => {
       dead = true;
       controller?.destroy();
@@ -828,7 +813,7 @@
   onrun={startRun}
   leversPending={sync.pending}
   view={run.phase === 'setup' ? viewPrefs : HIDDEN_VIEW}
-  onfog={(g) => (fog = g)}
+  onheights={(c) => (city = c)}
   onlevers={onLevers}
   onchunks={() => outlineRequest.chunksChanged()}
   onmanifest={(m) => (mapManifest = m)}
