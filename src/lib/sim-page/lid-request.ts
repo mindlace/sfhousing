@@ -92,8 +92,13 @@ export class LidRequest {
     if (this.#wanted !== null && this.#last !== null && this.#last.missing > 0) this.#send();
   }
 
-  /** A new client: ask again if the last request failed for want of a session. */
+  /**
+   * A new client: ask again if the last request failed for want of a session. A new client may
+   * count revisions from the start again, so the last revision is forgotten: its first `heights`
+   * always asks for fresh lids.
+   */
   sessionChanged(): void {
+    this.#rev = null;
     if (this.#wanted !== null && this.#failed) this.#send();
   }
 

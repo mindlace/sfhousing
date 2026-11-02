@@ -162,6 +162,21 @@ describe('LidRequest', () => {
     expect(t.shown.at(-1)).toBe(back.ok && back.lids);
   });
 
+  it('M4: a new session forgets the last revision, so its first heights asks again even at the same rev', async () => {
+    const t = setup();
+    t.r.want(A);
+    t.r.limitsChanged(1);
+    await t.answer(ok(1));
+    await t.answer(ok(1));
+    expect(t.sent).toHaveLength(2);
+    // a new client counts revisions from the start again: its rev 1 is new limits
+    t.r.sessionChanged();
+    t.r.limitsChanged(1);
+    expect(t.sent).toEqual([A, A, A]);
+    t.r.limitsChanged(1); // the same revision of the same session: no new request
+    expect(t.sent).toHaveLength(3);
+  });
+
   it('a rejected request shows null and is asked again on a new session', async () => {
     const shown: (HeightLids | null)[] = [];
     const rejecters: ((e: unknown) => void)[] = [];

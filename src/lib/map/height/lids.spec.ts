@@ -10,6 +10,7 @@ import {
   createLidBuild,
   type LidInput
 } from './lids';
+import { labelDim } from './limits-style';
 import { lidLabelText, storiesToM } from './room';
 import { CHAIN_LIMIT, CHAIN_SOURCE, type HeightLids } from './types';
 import {
@@ -236,6 +237,35 @@ describe('createLidBuild', () => {
     // a lid without paint has the same labels in both modes
     const plain = run(twoBlocks(20));
     expect(plain.paintLabels).toEqual(plain.labels);
+  });
+
+  it('M1: a component mixing paint and the selected rule keeps its plain label full ink in rule mode', () => {
+    // most of the block is painted, so the painted part is the roomier one and places the label
+    const sc = scene(
+      lotBlock(0, 0, 10, 2, (i) => ({
+        stories: 6,
+        existing: 1,
+        src: i === 0 ? SRC_RULE0 : SRC_PAINT
+      })),
+      { sourceIds: ['r1'] }
+    );
+    const l = run(sc);
+    expect(l.labels.text).toHaveLength(1);
+    const owners = [
+      ...l.labels.owners!.subarray(l.labels.ownerStarts![0], l.labels.ownerStarts![1])
+    ];
+    expect(owners.sort()).toEqual([SRC_PAINT, SRC_RULE0].sort());
+    expect(labelDim(owners, { kind: 'rule', source: SRC_RULE0 })).toBe(false);
+    // paint mode keeps per-part owners: the painted part's label is paint's alone
+    const paintOwners: number[][] = [];
+    for (let i = 0; i < l.paintLabels.text.length; i++)
+      paintOwners.push([
+        ...l.paintLabels.owners!.subarray(
+          l.paintLabels.ownerStarts![i],
+          l.paintLabels.ownerStarts![i + 1]
+        )
+      ]);
+    expect(paintOwners).toContainEqual([SRC_PAINT]);
   });
 
   it('a bbox over 3 km + pads throws LidTooLarge; limitsRev and sourceIds are echoed', () => {

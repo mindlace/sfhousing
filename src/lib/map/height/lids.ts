@@ -333,14 +333,22 @@ function* lidBuild(
 
   // Labels: one per component, at the label point of its part with the most room (priority: the
   // component's cells); in paint mode, one per part, each with its own room to grow.
-  // The sources under a part: the paint part is paint; the rest is every other source of its component.
+  // The sources under a label: a plain label's are all of its component's (its figure is the
+  // whole region's, wherever it is placed); a paint-mode part's paint part is paint, and its rest
+  // every other source of the component.
   const localSources: Set<number>[] = localComp.map(() => new Set<number>());
   for (let p = 0; p < pSrc.length; p++) localSources[pLocal[p]].add(pSrc[p]);
-  const ownersOf = (local: number, painted: boolean): number[] =>
+  const partOwners = (local: number, painted: boolean): number[] =>
     painted
       ? [SRC_PAINT]
       : [...localSources[local]].filter((s) => s !== SRC_PAINT || localSources[local].size === 1);
-  const candidate = (local: number, g: number, room: number, priority: number): LabelCandidate => {
+  const candidate = (
+    local: number,
+    g: number,
+    room: number,
+    priority: number,
+    owners: number[]
+  ): LabelCandidate => {
     const i = parts.at[g];
     const s = model.componentStories[localComp[local]];
     const [lng, lat] = vertexToLngLat(f, (i % cols) + 0.5, Math.floor(i / cols) + 0.5);
@@ -351,7 +359,7 @@ function* lidBuild(
       text: lidLabelText(s, room),
       priority,
       roomM: parts.dist[g],
-      owners: ownersOf(local, g % 2 === 1)
+      owners
     };
   };
   const plain: LabelCandidate[] = [];
@@ -364,15 +372,16 @@ function* lidBuild(
     const room = model.componentRoom[localComp[local]] ?? 0;
     const roomier =
       parts.cells[rest] === 0 || parts.dist[painted] > parts.dist[rest] ? painted : rest;
-    const c = candidate(local, roomier, room, total);
+    const c = candidate(local, roomier, room, total, [...localSources[local]]);
     plain.push(c);
     if (parts.cells[painted] === 0) {
       paint.push(c);
       continue;
     }
     const pr = Math.min(room, paintRoom[local]);
-    paint.push(candidate(local, painted, pr, parts.cells[painted]));
-    if (parts.cells[rest] > 0) paint.push(candidate(local, rest, room - pr, parts.cells[rest]));
+    paint.push(candidate(local, painted, pr, parts.cells[painted], partOwners(local, true)));
+    if (parts.cells[rest] > 0)
+      paint.push(candidate(local, rest, room - pr, parts.cells[rest], partOwners(local, false)));
   }
   const labelSet = toLabelSet(plain, placeLabels(plain, LID_ZOOMS));
   // without paint in view the sets are equal, but never shared (each buffer is transferred once)
