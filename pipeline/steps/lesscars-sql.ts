@@ -99,3 +99,33 @@ export async function carveFreedLand(db: Duck, removed: FreedRemoval[]): Promise
     await db.run(`SET VARIABLE ${name} = CAST('${value}' AS DOUBLE)`);
   await runSqlFile(db, path.join(SQL_DIR, '84_lesscars_sites.sql'));
 }
+
+/** One stop for 85_lesscars_reach.sql; `parcels` false means freed sites only. */
+export interface ReachStop {
+  id: string;
+  tier: 1 | 2;
+  lng: number;
+  lat: number;
+  parcels: boolean;
+}
+
+/**
+ * Write lc_stops and run 85_lesscars_reach.sql, which writes lc_reach(id, stop_id, dist_m) for
+ * parcels (against `parcels` stops) and lc_site pieces (against every stop) within ½ mile,
+ * replacing any earlier run's. Needs runSql and carveFreedLand on `db`.
+ */
+export async function reachLessCars(db: Duck, stops: ReachStop[]): Promise<void> {
+  await createTableFromRows(
+    db,
+    'lc_stops',
+    [
+      ['id', 'VARCHAR'],
+      ['tier', 'INTEGER'],
+      ['lng', 'DOUBLE'],
+      ['lat', 'DOUBLE'],
+      ['parcels', 'BOOLEAN']
+    ],
+    stops.map((s) => [s.id, s.tier, s.lng, s.lat, s.parcels])
+  );
+  await runSqlFile(db, path.join(SQL_DIR, '85_lesscars_reach.sql'));
+}
