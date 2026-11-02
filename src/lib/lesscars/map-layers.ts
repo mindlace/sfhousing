@@ -3,14 +3,15 @@
 // features live on the current epoch's start day, so scrubbing within one epoch sets no filter.
 //
 // Builder's calls:
-// - One line layer per street state, because `line-dasharray` is not data-driven. The states
+// - One line layer per street state, so each pattern is a plain constant. The states
 //   differ by width and pattern as well as colour (WCAG 1.4.1): works dashed, transit wide solid,
 //   bike narrow solid, pedestrian dotted, removed thin solid, underpass filled a double line
 //   (`line-gap-width`).
-// - The plan lines share one layer (13 layer ids in all), so a line being built cannot be dashed:
-//   it is narrower and translucent instead, and the car shuttle is narrower than the transit lines.
-// - Stops are hollow discs (ring in the `label` token), all modes alike; garages are discs with a
-//   "P", hollow while being built.
+// - The plan lines share one layer (13 layer ids in all) and are told apart by width (LINE_STYLE):
+//   subway widest, then tram, rapid bus, car shuttle; a line being built is narrower again and
+//   translucent. Every mode and stage has a width of its own.
+// - Stops are hollow discs (ring in the `label` token) sized by mode (STOP_RADIUS); garages are
+//   discs with a "P", hollow while being built.
 // - Runtime layers bypass the style's font rewrite, so text uses the shipped glyph names.
 import type {
   ExpressionSpecification,
@@ -35,6 +36,7 @@ import {
   type StreetProps,
   type StreetState
 } from './features';
+import type { TransitMode } from '$lib/data/lesscars/plan';
 
 export interface LessCarsLayerData {
   streets: FeatureCollection<LineString, StreetProps>;
@@ -107,6 +109,29 @@ export const STREET_STYLE: Record<
   removed: { width: 1.5, dash: null, gap: 0 },
   grade: { width: 2, dash: null, gap: 3 }
 };
+/**
+ * Plan line widths by mode, built and while being built (also translucent). All eight differ by at
+ * least 0.5 px, so mode and stage never rest on colour alone (WCAG 1.4.1).
+ */
+export const LINE_STYLE: Record<LineProps['mode'], { width: number; building: number }> = {
+  subway: { width: 8, building: 4.5 },
+  tram: { width: 6, building: 3 },
+  brt: { width: 4, building: 2 },
+  shuttle: { width: 2.5, building: 1 }
+};
+/** Stop disc radius by mode, ordered like the line widths. */
+export const STOP_RADIUS: Record<TransitMode, number> = { subway: 6, tram: 5, brt: 4 };
+const lineWidths = (stage: 'width' | 'building'): ExpressionSpecification => [
+  'match',
+  ['get', 'mode'],
+  'subway',
+  LINE_STYLE.subway[stage],
+  'tram',
+  LINE_STYLE.tram[stage],
+  'brt',
+  LINE_STYLE.brt[stage],
+  LINE_STYLE.shuttle[stage]
+];
 /** Opacity of the freed-land fill under its outline. */
 const SITE_FILL_OPACITY = 0.3;
 /** The text font, by its shipped glyph directory name (FONT_RENAME in src/lib/map/style.ts). */
@@ -193,11 +218,9 @@ const DEFS: LayerDef[] = [
         ],
         'line-width': [
           'case',
-          ['==', ['get', 'mode'], 'shuttle'],
-          2.5,
           ['==', ['get', 'building'], 1],
-          2.5,
-          5
+          lineWidths('building'),
+          lineWidths('width')
         ],
         'line-opacity': ['case', ['==', ['get', 'building'], 1], 0.55, 1]
       }
@@ -211,7 +234,17 @@ const DEFS: LayerDef[] = [
       type: 'circle',
       source: SOURCE.stops,
       paint: {
-        'circle-radius': 5,
+        'circle-radius': [
+          'match',
+          ['get', 'mode'],
+          'subway',
+          STOP_RADIUS.subway,
+          'tram',
+          STOP_RADIUS.tram,
+          'brt',
+          STOP_RADIUS.brt,
+          STOP_RADIUS.brt
+        ],
         'circle-color': t['transit-stroke'],
         'circle-stroke-color': t.label,
         'circle-stroke-width': 2

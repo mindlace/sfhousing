@@ -21,6 +21,8 @@ import {
   LC_LAYER,
   LC_LAYER_IDS,
   LC_STREET_LAYER,
+  LINE_STYLE,
+  STOP_RADIUS,
   installLessCarsLayers,
   type LayerMap,
   type LessCarsLayerData
@@ -256,6 +258,67 @@ describe('LESSCARS_LEGEND', () => {
       expect(row.kind).toBe('line');
       expect(row.token).toBe(`lc-${s}`);
       expect(row.dash).toEqual(m.layer(LC_STREET_LAYER[s]).paint['line-dasharray'] ?? null);
+      expect(row.width).toBe(m.layer(LC_STREET_LAYER[s]).paint['line-width']);
+      expect(row.gap).toBe(m.layer(LC_STREET_LAYER[s]).paint['line-gap-width'] ?? 0);
+      expect(row.double).toBe(row.gap > 0);
     });
+  });
+
+  // WCAG 1.4.1: no two rows of one group may differ by colour alone.
+  const signature = (r: (typeof LESSCARS_LEGEND)[number]) =>
+    JSON.stringify([r.kind, r.dash, r.width, r.gap, r.double]);
+
+  it('every street-state row differs from every other by a non-colour property', () => {
+    const rows = LESSCARS_LEGEND.filter((r) => r.id.startsWith('street-'));
+    expect(rows).toHaveLength(STREET_STATES.length);
+    expect(new Set(rows.map(signature)).size).toBe(rows.length);
+    expect(rows.filter((r) => r.double).map((r) => r.id)).toEqual(['street-grade']);
+  });
+
+  it('every line-mode row differs from every other by a non-colour property', () => {
+    const ids = ['line-subway', 'line-tram', 'line-brt', 'shuttle'];
+    const rows = ids.map((id) => LESSCARS_LEGEND.find((r) => r.id === id)!);
+    expect(rows.map((r) => r.width)).toEqual([
+      LINE_STYLE.subway.width,
+      LINE_STYLE.tram.width,
+      LINE_STYLE.brt.width,
+      LINE_STYLE.shuttle.width
+    ]);
+    expect(new Set(rows.map(signature)).size).toBe(rows.length);
+  });
+});
+
+describe('plan lines and stops without colour', () => {
+  const lineWidth = (expr: unknown, mode: string, building: 0 | 1): number => {
+    // Evaluate the layer's width expression: ['case', building, <match>, <match>].
+    const [, , whenBuilding, whenBuilt] = expr as [string, unknown, unknown, unknown];
+    const match = (building ? whenBuilding : whenBuilt) as unknown[];
+    const i = match.indexOf(mode, 2);
+    return (i > 0 ? match[i + 1] : match.at(-1)) as number;
+  };
+
+  it('built and building lines of every mode have widths no other has', () => {
+    const m = fakeMap();
+    installLessCarsLayers(asMap(m), data(), 'light', LESSCARS_START);
+    const expr = m.paint(LC_LAYER.lines, 'line-width');
+    const modes = ['subway', 'tram', 'brt', 'shuttle'] as const;
+    const widths = modes.flatMap((mode) => [lineWidth(expr, mode, 0), lineWidth(expr, mode, 1)]);
+    expect(widths.slice(0, 2)).toEqual([LINE_STYLE.subway.width, LINE_STYLE.subway.building]);
+    expect(new Set(widths).size).toBe(widths.length);
+    const sorted = [...widths].sort((a, b) => a - b);
+    for (let i = 1; i < sorted.length; i++)
+      expect(sorted[i] - sorted[i - 1], `${sorted[i - 1]} vs ${sorted[i]}`).toBeGreaterThanOrEqual(
+        0.5
+      );
+  });
+
+  it('stop discs are sized by mode, like their lines', () => {
+    const m = fakeMap();
+    installLessCarsLayers(asMap(m), data(), 'light', LESSCARS_START);
+    const r = JSON.stringify(m.paint(LC_LAYER.stopsCircle, 'circle-radius'));
+    for (const mode of ['subway', 'tram', 'brt'] as const)
+      expect(r).toContain(JSON.stringify([mode, STOP_RADIUS[mode]]).slice(1, -1));
+    expect(STOP_RADIUS.subway).toBeGreaterThan(STOP_RADIUS.tram);
+    expect(STOP_RADIUS.tram).toBeGreaterThan(STOP_RADIUS.brt);
   });
 });

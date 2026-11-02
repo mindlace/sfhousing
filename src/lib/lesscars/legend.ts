@@ -1,8 +1,9 @@
 // The /lesscars map key: one row per street state (map-key order) and per mark, with the token and
-// pattern the map draws it in, so the key never says something the map does not show.
+// pattern the map draws it in, so the key never says something the map does not show. Rows within
+// a group differ by dash, width or double stroke, never by colour alone (WCAG 1.4.1).
 import type { TokenName } from '$lib/map/palette';
-import { STREET_STATES, type StreetState } from './features';
-import { STREET_STYLE } from './map-layers';
+import { STREET_STATES, type LineProps, type StreetState } from './features';
+import { LINE_STYLE, STREET_STYLE } from './map-layers';
 
 export interface LegendRow {
   id: string;
@@ -11,6 +12,12 @@ export interface LegendRow {
   kind: 'line' | 'disc' | 'square' | 'fill';
   /** Dash pattern in line widths (MapLibre `line-dasharray`), null when solid. */
   dash: number[] | null;
+  /** Line width in px as the map draws it (a built line for plan lines); null for non-lines. */
+  width: number | null;
+  /** Gap between the two strokes of a double line in px (`line-gap-width`), 0 for one stroke. */
+  gap: number;
+  /** Drawn as two parallel strokes (gap > 0). */
+  double: boolean;
 }
 
 const STREET_LABEL: Record<StreetState, string> = {
@@ -22,19 +29,39 @@ const STREET_LABEL: Record<StreetState, string> = {
   grade: 'Underpass filled'
 };
 
+const mark = { dash: null, width: null, gap: 0, double: false } as const;
+const planLine = (
+  id: string,
+  label: string,
+  token: TokenName,
+  mode: LineProps['mode']
+): LegendRow => ({
+  id,
+  label,
+  token,
+  kind: 'line',
+  dash: null,
+  width: LINE_STYLE[mode].width,
+  gap: 0,
+  double: false
+});
+
 export const LESSCARS_LEGEND: readonly LegendRow[] = [
   ...STREET_STATES.map((s): LegendRow => ({
     id: `street-${s}`,
     label: STREET_LABEL[s],
     token: `lc-${s}`,
     kind: 'line',
-    dash: STREET_STYLE[s].dash
+    dash: STREET_STYLE[s].dash,
+    width: STREET_STYLE[s].width,
+    gap: STREET_STYLE[s].gap,
+    double: STREET_STYLE[s].gap > 0
   })),
-  { id: 'line-subway', label: 'New subway', token: 'lc-line-subway', kind: 'line', dash: null },
-  { id: 'line-tram', label: 'New tram', token: 'lc-line-tram', kind: 'line', dash: null },
-  { id: 'line-brt', label: 'New rapid bus', token: 'lc-line-brt', kind: 'line', dash: null },
-  { id: 'shuttle', label: 'Car shuttle', token: 'lc-shuttle', kind: 'line', dash: null },
-  { id: 'stop', label: 'Plan stop', token: 'label', kind: 'disc', dash: null },
-  { id: 'garage', label: 'Edge garage', token: 'lc-garage', kind: 'square', dash: null },
-  { id: 'site', label: 'Freed land', token: 'lc-site', kind: 'fill', dash: null }
+  planLine('line-subway', 'New subway', 'lc-line-subway', 'subway'),
+  planLine('line-tram', 'New tram', 'lc-line-tram', 'tram'),
+  planLine('line-brt', 'New rapid bus', 'lc-line-brt', 'brt'),
+  planLine('shuttle', 'Car shuttle', 'lc-shuttle', 'shuttle'),
+  { id: 'stop', label: 'Plan stop', token: 'label', kind: 'disc', ...mark },
+  { id: 'garage', label: 'Edge garage', token: 'lc-garage', kind: 'square', ...mark },
+  { id: 'site', label: 'Freed land', token: 'lc-site', kind: 'fill', ...mark }
 ];
