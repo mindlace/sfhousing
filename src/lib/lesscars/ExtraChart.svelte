@@ -5,7 +5,9 @@
 -->
 <script lang="ts">
   import type { LessCarsSummary } from '$lib/data/lesscars/codec';
+  import { useSystemTheme } from '$lib/map/system-theme.svelte';
   import { formatCount } from '$lib/scoreboard/format';
+  import { CHART_COLORS } from './chart-colors';
   import type { Day } from '$lib/timelapse/time';
   import { extraChartModel, finalYear, signed, yearIndexAt } from './summary-view';
 
@@ -15,6 +17,8 @@
   }
   let { summary, day }: Props = $props();
 
+  const theme = useSystemTheme();
+  const col = $derived(CHART_COLORS[theme.current]);
   const H = 140;
   const PAD = { l: 44, r: 8, t: 8, b: 20 };
   const FALLBACK_W = 320;
@@ -49,8 +53,8 @@
       class="block w-full"
       style:height="{H}px"
     >
-      <line x1={PAD.l} x2={width - PAD.r} y1={y(m.yMax)} y2={y(m.yMax)} stroke="#d1d5db" />
-      <line x1={PAD.l} x2={width - PAD.r} y1={y(m.yMin)} y2={y(m.yMin)} stroke="#d1d5db" />
+      <line x1={PAD.l} x2={width - PAD.r} y1={y(m.yMax)} y2={y(m.yMax)} stroke={col.grid} />
+      <line x1={PAD.l} x2={width - PAD.r} y1={y(m.yMin)} y2={y(m.yMin)} stroke={col.grid} />
       {#if m.yMin < 0}
         <line
           data-zero-line
@@ -58,12 +62,12 @@
           x2={width - PAD.r}
           y1={y(0)}
           y2={y(0)}
-          stroke="#6b7280"
+          stroke={col.zero}
           stroke-dasharray="4 3"
         />
       {/if}
-      <polygon points={band} fill="#2563eb" fill-opacity="0.18" />
-      <polyline points={line} fill="none" stroke="#1d4ed8" stroke-width="2.5" />
+      <polygon points={band} fill={col.band} fill-opacity="0.18" />
+      <polyline points={line} fill="none" stroke={col.mean} stroke-width="2.5" />
       <line
         data-now
         data-year-index={nowIndex}
@@ -71,11 +75,11 @@
         x2={x(nowIndex)}
         y1={PAD.t}
         y2={H - PAD.b}
-        stroke="#374151"
+        stroke={col.now}
         stroke-width="1.5"
         stroke-dasharray="2 2"
       />
-      <g font-size="10" fill="#374151">
+      <g font-size="10" fill={col.text}>
         <text x={PAD.l - 4} y={y(m.yMax) + 3} text-anchor="end">{formatCount(m.yMax)}</text>
         <text x={PAD.l - 4} y={y(m.yMin) + 3} text-anchor="end">{formatCount(m.yMin)}</text>
         <text x={PAD.l} y={H - 6}>{m.years[0]}</text>
