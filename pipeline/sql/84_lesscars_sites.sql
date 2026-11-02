@@ -23,9 +23,11 @@
 --   removal given as a drawn line over a live street does not remove that street's corridor.
 -- - Bands of different projects never share land: a project loses what an earlier one (lc_in.ord)
 --   already frees.
--- - Each line is cut into ceil(length / lotMaxM) equal stretches (so every stretch is at most
---   lotMaxM). Each stretch owns the flat-ended buffer round it, less those of earlier stretches;
---   the wedges no stretch covers at a bend go to the nearest stretch.
+-- - Each line is cut into ceil((length - 1 mm) / lotMaxM) equal stretches (so every stretch is
+--   at most lotMaxM, give or take 1 mm). The 1 mm absorbs projection noise: a 60 m line measures
+--   60.0000000007 m and would otherwise be cut in two. Each stretch owns the flat-ended buffer
+--   round it, less those of earlier stretches; the wedges no stretch covers at a bend go to the
+--   nearest stretch.
 -- - Pieces are numbered k = 1, 2, … per project along the merged lines (line, stretch), then by
 --   centroid x, y.
 -- - Neighbours: parcels (current outline) within lc_neighbour_m of the piece; with none, the
@@ -128,7 +130,8 @@ WHERE ST_GeometryType(geom) = 'POLYGON'
 -- band, so no band edge falls outside it).
 CREATE OR REPLACE TEMP TABLE lc_stretch AS
 WITH n AS (
-  SELECT *, greatest(1, ceil(len / getvariable('lc_lot_max_m')))::INTEGER AS n FROM lc_line
+  SELECT *, greatest(1, ceil((len - 0.001) / getvariable('lc_lot_max_m')))::INTEGER AS n
+  FROM lc_line
 ),
 c AS (SELECT *, unnest(range(n)) AS ci FROM n)
 SELECT project_id, lid, ci::INTEGER AS ci, row_half_m,

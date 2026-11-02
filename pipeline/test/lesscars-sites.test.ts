@@ -7,6 +7,7 @@ import { PROJECT_KINDS } from '../../src/lib/data/lesscars/plan';
 import { checkPlan, schedulePlan } from '../../src/lib/data/lesscars/schedule';
 import type { Day } from '../../src/lib/timelapse/time';
 import { SQL_VARS } from '../config';
+import { densityCap, fzpYieldCapOf } from '../lib/density-caps';
 import type { Duck } from '../lib/duck';
 import { chooseZoning, freedFzpRow, readFreedSites, type FreedSite } from '../lib/lesscars/sites';
 import { LC } from '../lesscars-config';
@@ -294,23 +295,48 @@ describe('chooseZoning', () => {
 });
 
 describe('freedFzpRow', () => {
-  it('a sliver yields 0 homes and is still a site', () => {
-    const polygon: [number, number][][] = [
-      [
-        [-30, -1],
-        [30, -1],
-        [30, 1],
-        [-30, 1]
-      ]
-    ];
-    const site: FreedSite = {
-      siteId: 'lc:hwy:9',
+  it('a sliver yields 0 homes and is still a site', async () => {
+    try {
+      // A 2 m wide, 60 m strip below lots 2 to 7, clear of Mission St's corridor: 120 m², one
+      // piece (one stretch: its length is 60 m plus projection noise).
+      const line = await lngLatOf(db, [
+        [10, -25],
+        [70, -25]
+      ]);
+      await carveFreedLand(db, [
+        { projectId: 'sliver', cnns: [], lines: [line], rowHalfWidthM: 1 }
+      ]);
+      const sites = await readFreedSites(db, capDay);
+      expect(sites.map((x) => x.siteId)).toEqual(['lc:sliver:1']);
+      const site = sites[0];
+      expect(site.rec.areaM2).toBeGreaterThanOrEqual(LC.minPieceM2);
+      expect(site.rec.areaM2).toBeLessThan(121);
+      expect(site.zoning.fzpStories).toBeGreaterThan(0);
+      const row = freedFzpRow(site, capDay, (st) => scenarioYield(site.rec, st, null));
+      expect(row.stories).toBe(site.zoning.fzpStories);
+      expect(row.yield).toEqual(FILL_LEVELS.map(() => 0));
+      expect(row.hostable).toBe(false);
+    } finally {
+      await recarvePlan();
+    }
+  });
+
+  it('caps a capped code on the piece’s own area', () => {
+    const site = (areaM2: number): FreedSite => ({
+      siteId: 'lc:hwy:1',
       projectId: 'hwy',
       rec: {
-        id: 'lc:hwy:9',
-        polygon,
+        id: 'lc:hwy:1',
+        polygon: [
+          [
+            [0, 0],
+            [areaM2 / 20, 0],
+            [areaM2 / 20, 20],
+            [0, 20]
+          ]
+        ],
         labelPoint: [-122.42, 37.76],
-        areaM2: 120,
+        areaM2,
         existingUnits: 0,
         existingFloorAreaM2: 0,
         existingHeightM: 0,
@@ -319,21 +345,27 @@ describe('freedFzpRow', () => {
         neighborhood: 'Mission'
       },
       outline: [],
-      zoning: zone('3512005', 6, true)
-    };
-    const row = freedFzpRow(site, capDay, (st) => scenarioYield(site.rec, st, null));
-    expect(row.stories).toBe(6);
-    expect(row.yield).toEqual(FILL_LEVELS.map(() => 0));
-    expect(row.hostable).toBe(false);
-    expect(site.rec.areaM2).toBeGreaterThanOrEqual(LC.minPieceM2);
+      zoning: zone('3512006', 6, false, 'RM-1')
+    });
+    const caps = [400, 2000].map((a) => {
+      const row = freedFzpRow(site(a), capDay, () => 1_000_000);
+      const want = densityCap('RM-1', a, false, capDay);
+      expect(want).not.toBeNull();
+      expect(row.cap).toBe(want);
+      expect(row.cap).toBe(fzpYieldCapOf('RM-1', a, false, false, capDay));
+      expect(row.yield[row.yield.length - 1]).toBe(want);
+      return row.cap;
+    });
+    expect(caps[1]).toBeGreaterThan(caps[0] as number);
   });
 
-  it('caps a capped neighbour on the piece’s own area', async () => {
+  it('caps a carved site as its chosen neighbour reads', async () => {
     const sites = await readFreedSites(db, capDay);
     for (const s of sites) {
       const row = freedFzpRow(s, capDay, () => 1_000_000);
       expect(row.stories).toBe(s.zoning.fzpStories);
-      if (s.zoning.localProgram) expect(row.cap).toBeNull();
+      const z = s.zoning;
+      expect(row.cap).toBe(fzpYieldCapOf(z.zoningCode, s.rec.areaM2, z.r4, z.localProgram, capDay));
     }
   });
 });
