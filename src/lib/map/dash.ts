@@ -4,6 +4,10 @@
  */
 import { M_PER_DEG_LAT, M_PER_DEG_LNG } from '$lib/plan/geometry';
 
+/** The eraser's painted-lot outline and the lid rims: 4 m dashes, 3 m gaps (tier 4). */
+export const OUTLINE_DASH_M = 4;
+export const OUTLINE_GAP_M = 3;
+
 const lengthM = (a: readonly number[], b: readonly number[]): number =>
   Math.hypot((b[0] - a[0]) * M_PER_DEG_LNG, (b[1] - a[1]) * M_PER_DEG_LAT);
 

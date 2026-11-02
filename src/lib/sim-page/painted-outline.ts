@@ -6,13 +6,12 @@
 import type { Layer } from '@deck.gl/core';
 import type { OverlayCtors } from '$lib/brush/overlay';
 import type { LotOutlinesResult } from '$lib/sim/scenario/types';
-import { dashPath } from '$lib/map/dash';
+import { OUTLINE_DASH_M, OUTLINE_GAP_M, dashPath } from '$lib/map/dash';
 import { TOKENS, hexToRgba } from '$lib/map/palette';
 import type { Theme } from '$lib/map/types';
 
 export const OUTLINE_LAYER_ID = 'sim-painted-outline';
-export const OUTLINE_DASH_M = 4; // tier 4
-export const OUTLINE_GAP_M = 3; // tier 4
+export { OUTLINE_DASH_M, OUTLINE_GAP_M };
 
 type Pt = [number, number];
 

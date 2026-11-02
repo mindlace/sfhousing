@@ -285,7 +285,10 @@ describe('HeightLimitsLayer on the GPU', () => {
     const centre = toLngLat(152.4, 121.92);
     const px = await render([limits(big)], view(centre, 13));
     expect(subIds()).toContain(`${LIMITS_LAYER_ID}-contours`);
-    expect(subIds()).not.toContain(`${LIMITS_LAYER_ID}-glaze`);
+    // hidden, not dropped: deck keeps the lid sublayers' GPU state across the fade
+    const glazeLayer = live().find((l) => l.id === `${LIMITS_LAYER_ID}-glaze`);
+    expect(glazeLayer?.props.visible).toBe(false);
+    expect(live().find((l) => l.id === `${LIMITS_LAYER_ID}-contours`)?.props.visible).toBe(true);
     // the contour's longest segment, at its midpoint
     const { starts, positions } = big.city.chains;
     let best = -1;
@@ -353,6 +356,23 @@ describe('HeightLimitsLayer on the GPU', () => {
     expect(subIds()).toContain(`${LIMITS_LAYER_ID}-rims-dashed`);
     await render([limits()], view(STREET, 17));
     expect(subIds()).not.toContain(`${LIMITS_LAYER_ID}-rims-dashed`);
+  });
+
+  it('zooming across the fade keeps the sublayers and their GPU state', async () => {
+    const find = (id: string) => live().find((l) => l.id === `${LIMITS_LAYER_ID}-${id}`);
+    await render([limits()], view(STREET, 13));
+    const glaze = find('glaze')!.getModels()[0];
+    const walls = find('walls')!.getModels()[0];
+    expect(find('glaze')!.props.visible).toBe(false);
+    await render([limits()], view(STREET, 17));
+    expect(find('glaze')!.props.visible).toBe(true);
+    expect(find('glaze')!.getModels()[0]).toBe(glaze);
+    expect(find('walls')!.getModels()[0]).toBe(walls);
+    const contours = find('contours')!.getModels()[0];
+    expect(find('contours')!.props.visible).toBe(false);
+    await render([limits()], view(STREET, 13));
+    expect(find('contours')!.getModels()[0]).toBe(contours);
+    expect(errors).toEqual([]);
   });
 
   it('is `sim-height-limits`, a HeightLimitsLayer', () => {

@@ -4,7 +4,8 @@
  * Zoomed in, glass lids from the worker's HeightLids: a faint glaze face per piece at its limit
  * height, walls where the limit steps, ink rims along the lid edges and one label per region.
  * Zoomed out, the city's contour chains flat on the ground with their labels. Lids fade in over
- * LIDS_FADE and contours fade out over it; a sublayer at opacity 0 is not rendered.
+ * LIDS_FADE and contours fade out over it. A sublayer at opacity 0 is hidden (`visible: false`),
+ * never dropped, so deck keeps its GPU state and a zoom across the fade re-tessellates nothing.
  *
  * The look per mode (plain, paint, rule) comes from limits-style. Filtered and dashed data is
  * memoized per (lids | city, mode, theme), and labels per integer zoom, so a pan or a zoom inside
@@ -12,10 +13,9 @@
  */
 import { CompositeLayer, type Layer, type LayerProps, type UpdateParameters } from '@deck.gl/core';
 import { PathLayer, SolidPolygonLayer, TextLayer } from '@deck.gl/layers';
-import { dashPath } from '$lib/map/dash';
+import { OUTLINE_DASH_M, OUTLINE_GAP_M, dashPath } from '$lib/map/dash';
 import { TOKENS, hexToRgba, type RGBA } from '$lib/map/palette';
 import type { Theme } from '$lib/map/types';
-import { OUTLINE_DASH_M, OUTLINE_GAP_M } from '$lib/sim-page/painted-outline';
 import {
   LIDS_FADE,
   chainLook,
@@ -209,7 +209,7 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
     const halo = hexToRgba(t['limit-halo']);
     const out: Layer[] = [];
 
-    if (lids && lidsOp > 0) {
+    if (lids) {
       // lids and city may come from different limit revisions: each maps the rule id itself (R5)
       const mode = resolveMode(view, lids.sourceIds);
       const key = modeKey(mode, theme);
@@ -240,6 +240,7 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
             updateTriggers: { getFillColor: key },
             extruded: false,
             opacity: lidsOp,
+            visible: lidsOp > 0,
             parameters: NO_DEPTH_WRITE
           })
         ),
@@ -249,7 +250,8 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
             data: lids.walls,
             color: hexToRgba(t['limit-wall']),
             alpha: lid.wallAlpha,
-            opacity: lidsOp
+            opacity: lidsOp,
+            visible: lidsOp > 0
           })
         )
       );
@@ -258,7 +260,7 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
     }
 
     const contourOp = 1 - lidsOp;
-    if (city && contourOp > 0) {
+    if (city) {
       const mode = resolveMode(view, city.sourceIds);
       const key = modeKey(mode, theme);
       const lines = (this.state.contours = memo(this.state.contours, city, key, () =>
@@ -295,6 +297,7 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
             getWidth: (d: Line) => d.width,
             widthUnits: 'pixels',
             opacity,
+            visible: opacity > 0,
             parameters: NO_DEPTH_WRITE
           })
         )
@@ -318,6 +321,7 @@ export class HeightLimitsLayer extends CompositeLayer<Props> {
         fontSettings: { sdf: true },
         characterSet: LABEL_CHARS,
         opacity,
+        visible: opacity > 0,
         parameters: { depthCompare: 'always', depthWriteEnabled: false }
       })
     ) as unknown as Layer;
