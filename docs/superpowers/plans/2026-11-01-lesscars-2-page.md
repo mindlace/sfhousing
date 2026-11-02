@@ -40,7 +40,7 @@
 - **Representative future only.** The map plays the plan arm of the representative seed, as stored. No baseline toggle (spec: "The map plays one representative future").
 - **No `Schedule.origin` extension.** The playback host converts each `InitiativeBuild` into an ordinary `Schedule` (`origin: 'simulated'`, id prefix `lc-build:`) only inside the worker, for massing and packing, and keeps its own index for cards. Widening `origin` would touch the engine, Plan 1's encoded `ORIGINS` index and `card.ts`, for no gain.
 - **Own card, not `ProjectCard`.** A tap on a building opens a small lesscars card (what it is, homes, stories, status, dates). The page shows no FZP `ProjectCard`, so `card.ts:210` (Local Program read from the base view) is not on any lesscars path. It is also harmless as data stands: every regime view keeps the base `localProgram` column (`pipeline/lib/lesscars/regimes.ts:9-10,416`); Task 1 pins that invariant with a test so a future change shows up.
-- **Freed sites are one synthetic cell.** Their records are not in `parcels.bin` (they live in `sites.json`), so `createGeometry` cannot anchor them. The host packs all freed-site builds once into cell `lc-sites`; parking builds stand on real parcels and go through `createGeometry` like engine schedules.
+- **Freed sites are one synthetic cell.** Their records are not in `parcels.bin` (they live in `sites.json`), so `createGeometry` cannot anchor them. The host packs all freed-site builds once into cell `lc-sites-cell`; parking builds stand on real parcels and go through `createGeometry` like engine schedules.
 - **Street geometry stays in `plan.json`.** `segments` (cnn → lines) and drawn `{ line }` segments already carry every street; sites come from `sites.json`. Nothing new is published for geometry. Garage parcels' positions come from the worker (`parcels.bin` label points), since the main thread never loads `parcels.bin`.
 - **Plan stops only.** The map draws the stops a plan line adds (`lc:` ids, with `lngLat`). Existing stops a line reuses are not redrawn, and `transit.json` is not fetched; `SimMap` gets `HIDDEN_VIEW` (`src/lib/view/prefs.ts`).
 - **Masonic underpass.** plan-v1 asks the page to show it filled from `geary-subway-1`'s opening, with no project of its own (plan-v1 "Masonic underpass becomes the Masonic station"). Task 1 adds an optional, display-only `displays` list to the plan format; Plan 3 adds the Masonic entry to the live plan.
@@ -83,6 +83,8 @@
 ```
 
 Below lg the headline's words "homes" and "2068" may be visually hidden as `ScoreBar` does for "added" (the accessible name keeps them) if the 375 px header does not fit; Task 9's e2e checks no horizontal scroll at 375 px.
+
+(Values in the sketch are fixture-0's, for illustration only.)
 
 Street states (map key order), each with its own pattern: **Works under way** (dashed), **Buses and trams only** (solid, wide), **Bike lanes** (solid, medium, dotted edge or narrower), **Pedestrian street** (dotted), **Removed: now land** (thin solid over the freed-land fill), **Underpass filled** (double or cased line). Plan lines: subway, tram, BRT (solid, by mode colour; dashed while being built), car shuttle (dash-dot). Stops: discs. Garages: square markers with a "P" label (hollow while being built). Freed land: hatched-look fill (fill + outline). Colours are new palette tokens (Task 3b) checked for contrast.
 
@@ -128,22 +130,30 @@ Ruling 5 from Plan 1: the timeline does not record per-seed reservation verdicts
 - Produces (codec): `LessCarsTimeline.reservations: { row: number; kept: boolean }[]`, one entry per reserved T11 row in the run, strictly ascending by `row`. Encoded as a column object `reservations: { row: number[]; kept: number[] }` (kept 0/1). `decodeTimelinePayload` throws (`lesscars: reservations…`) on a missing key, a length mismatch, a row out of `[0, count)`, rows not strictly ascending, or `kept` not 0 or 1.
 - Produces (plan): `export interface PlanDisplay { id: string; label: string; segments: SegmentRef[]; from: string }` (shown from the open day of project `from`); `LessCarsPlan.displays?: PlanDisplay[]`. The parser accepts the optional top-level key; absent stays absent (goldens of plans without it are unchanged byte for byte); `segments` must be non-empty (the existing `segments()` helper, `plan.ts:257`).
 - Produces (checks): `checkPlan` reports `unknown-dependency` (project = the display id) when `from` names no project, and `duplicate-id` when a display id equals a project id or another display id.
-- Produces (pipeline): display CNNs are checked against `src_streets` (message `${display.id}.segments: CNN ${c} is not in src_streets`) and their lines are in `plan.json` `segments`. `representativeTimeline` returns `reservations`. V35 fails when the timeline's reservation rows differ from the rows of the plan's parking-conversion parcels and `edge-garage` `{ parcel }` sites.
+- Produces (pipeline): display CNNs are checked against `src_streets` (message `${display.id}.segments: CNN ${c} is not in src_streets`) and their lines are in `plan.json` `segments`. `representativeTimeline` returns `reservations`. V35 fails when the timeline's reservation rows differ from the non-zero rows of `reservationsOf` (`runs.ts:67-87`: parking-conversion parcels and `edge-garage` `{ parcel }` sites).
 
 - [ ] **Step 1: Write the failing tests**
 
 ```ts
 // src/lib/data/lesscars/codec.test.ts
+// Existing base object `t` (codec.test.ts:45) gains `reservations: [{ row: 2, kept: true },
+// { row: 5, kept: false }]`, so the existing round-trip test ('timeline round-trips and is bound
+// to parcels.bin', :101) now covers the column; `bound = { count: ids.length, id: ids }`.
 it('round-trips reservations ascending by row', () => {
-  const t = { ...timeline, reservations: [{ row: 2, kept: true }, { row: 5, kept: false }] };
-  const back = decodeTimelinePayload(encodeTimelinePayload(t, ids), parcels);
+  const back = decodeTimelinePayload(encodeTimelinePayload(t, ids), bound);
   expect(back.reservations).toEqual([{ row: 2, kept: true }, { row: 5, kept: false }]);
 });
-it('rejects reservations out of range, unsorted or with a bad kept flag', () => {
-  for (const r of [{ row: [99], kept: [1] }, { row: [5, 2], kept: [1, 1] }, { row: [2], kept: [2] }])
-    expect(() => decodeTimelinePayload(withReservations(r), parcels)).toThrow(/reservations/);
+it('rejects reservations missing, out of range, unsorted or with a bad kept flag', () => {
+  const withColumn = (col: unknown): Uint8Array => {
+    const doc = JSON.parse(new TextDecoder().decode(encodeTimelinePayload(t, ids)));
+    if (col === undefined) delete doc.reservations;
+    else doc.reservations = col;
+    return new TextEncoder().encode(JSON.stringify(doc));
+  };
+  for (const col of [undefined, { row: [ids.length], kept: [1] }, { row: [5, 2], kept: [1, 1] },
+                     { row: [2], kept: [2] }, { row: [2, 5], kept: [1] }])
+    expect(() => decodeTimelinePayload(withColumn(col), bound)).toThrow(/reservations/);
 });
-// withReservations: encode the fixture timeline, then replace the JSON `reservations` column.
 
 // src/lib/data/lesscars/plan.test.ts
 it('parses displays; a plan without them has no displays key', () => {
@@ -164,26 +174,48 @@ it('a display naming no project is unknown-dependency; a reused id is duplicate-
   expect(codes).toContain('subway:duplicate-id');
 });
 
-// pipeline/test/lesscars-runs.test.ts (reuse the voided-conversion search already at :258)
+// pipeline/test/lesscars-runs.test.ts
+// Work: hoist the search inside 'a voided conversion has no build in that seed' (:258-282) into a
+// describe-level `findMixedReservation(): { row: number; rf: Int32Array; kept: boolean[] }`
+// (same body: planOf, the day/row loops, keptIn over bandSeed(i), i < SEEDS); that test calls it.
 it('representativeTimeline records every reserved row, kept and voided', () => {
-  const t = representativeTimeline({ ...args, seed: found.seed });
-  expect(t.reservations.map((r) => r.row)).toEqual(reservedRows(found.rf));
-  expect(t.reservations.find((r) => r.row === found.row)?.kept).toBe(false);
+  const { row, rf, kept } = findMixedReservation();
+  const other = pre.candidates.find((r) => r !== row)!;
+  rf[other] = dayOf(2034, 1, 1); // a second reserved row, so the column has more than one entry
+  const tl = (i: number) =>
+    representativeTimeline({ base, regimes: same, reservedFrom: rf, builds: [],
+      seed: bandSeed(i), horizon: H, datasetVersion: 'fixture-0' });
+  const voided = tl(kept.indexOf(false));
+  expect(voided.reservations.map((r) => r.row)).toEqual([row, other].sort((a, b) => a - b));
+  expect(voided.reservations.find((r) => r.row === row)?.kept).toBe(false);
+  expect(tl(kept.indexOf(true)).reservations.find((r) => r.row === row)?.kept).toBe(true);
 });
 
-// pipeline/test/lesscars-step.test.ts
-it('display CNNs are checked and drawn', async () => {
-  await expect(runStepWith(displayCnn('9999'))).rejects.toThrow(
-    /underpass\.segments: CNN 9999 is not in src_streets/
-  );
-  expect(Object.keys((await fixturePlanFile()).segments)).toContain('2000');
+// pipeline/test/lesscars-step.test.ts — the file's own `withPlan`, `args`, `outDir`
+// (lesscars-step.test.ts:36-58). Work: add `unknownDisplayCnn` beside `unknownCnn` (:61) and a
+// row in 'bad plan data fails the build' (:158); add the segment assertion to 'the mini plan
+// writes four files…' (:94), which runs after Step 5 adds the fixture display.
+const unknownDisplayCnn = (p: Json) => (p.displays[0].segments = [{ cnn: ['99999'] }]);
+//   [unknownDisplayCnn, 'underpass.segments'],   // new row in the table at :159
+it('the mini plan writes four files… (added lines)', async () => {
+  await writeLessCars(args(LESSCARS_PLAN_JSON.fixture));
+  const plan = parsePlanFile(JSON.parse(readFileSync(join(outDir, LESSCARS_FILES.plan), 'utf8')));
+  expect(plan.plan.displays?.map((d) => d.id)).toEqual(['underpass']);
+  expect(Object.keys(plan.segments)).toContain('2000');
 });
 
-// pipeline/test/invariants.test.ts (in 'V35 /lesscars files')
+// pipeline/test/invariants.test.ts (in 'V35 /lesscars files', :1211). Work: a local
+// `editTimeline(dir, f)` beside `edit` (:1213): inflateRawSync the file, JSON.parse the payload,
+// f(doc), JSON.stringify, deflateRawSync, write back (both zlib calls are already imported, :5).
 it('V35 fails when the timeline lacks a reserved parcel', async () => {
-  const dir = await fixtureCopy(); // existing helper pattern at :1228
-  rewriteTimeline(dir, (t) => ({ ...t, reservations: t.reservations.slice(1) }));
-  expect((await v35(dir)).ok).toBe(false);
+  const d = copy();
+  editTimeline(d, (doc) => {
+    doc.reservations.row.shift();
+    doc.reservations.kept.shift();
+  });
+  const r = await v35(d);
+  expect(r.ok).toBe(false);
+  expect(r.detail).toMatch(/timeline reservations/);
 });
 
 // pipeline/test/lesscars-regimes.test.ts
@@ -205,7 +237,7 @@ Expected: the new tests FAIL (no `reservations`, no `displays`); the Local Progr
 
 - [ ] **Step 4: Implement the pipeline side**
 
-`runs.ts` `representativeTimeline`: `reservations` = the sink's `kept` map as `{ row, kept }` sorted by row. `lesscars.ts`: `cnnsOf` takes the plan and returns project and display CNNs (`segmentLines` and the CNN check both use it). `check-lesscars.ts`: in V35, compute the plan's reserved rows from `plan.projects` and `parcels.bin`'s index and compare with `timeline.reservations` rows (`timeline reservations ≠ plan's reserved parcels` in the detail).
+`runs.ts` `representativeTimeline`: `reservations` = the sink's `kept` map as `{ row, kept }` sorted by row. `lesscars.ts`: `cnnsOf` takes the plan and returns project and display CNNs (`segmentLines` and the CNN check both use it). `check-lesscars.ts`: in V35, call `reservationsOf(plan, schedulePlan(plan), parcels)` (`pipeline/lib/lesscars/runs.ts:67`; V35 already has `schedulePlan` and `readParcelsBin`) and compare its non-zero rows with `timeline.reservations` rows (`timeline reservations ≠ plan's reserved parcels` in the detail). Do not re-derive the rows.
 
 - [ ] **Step 5: Add the fixture display and regenerate**
 
@@ -474,8 +506,20 @@ export interface LessCarsLayers {
   /** Replaces one source's data (garages arrive once the worker has loaded) and refreshes the event days. */
   setData<K extends keyof LessCarsLayerData>(key: K, fc: LessCarsLayerData[K]): void;
 }
-export const LC_STREET_LAYER: Record<StreetState, string>; // 'lc-street-works', …
-export const LC_LAYER_IDS: readonly string[]; // every layer id, in stack order
+export const LC_STREET_LAYER: Record<StreetState, string>; // `lc-street-${state}`
+/** The non-street layers by role; e2e queries these ids. */
+export const LC_LAYER = {
+  sitesFill: 'lc-sites-fill',
+  sitesOutline: 'lc-sites-outline',
+  lines: 'lc-lines',
+  stopsCircle: 'lc-stops-circle',
+  stopsLabel: 'lc-stops-label',
+  garagesCircle: 'lc-garages-circle',
+  garagesLabel: 'lc-garages-label'
+} as const;
+/** Every layer, in stack order: sites fill, sites outline, the six street layers in STREET_STATES
+ *  order, lines, stops circle, stops label, garages circle, garages label (13 ids). */
+export const LC_LAYER_IDS: readonly string[];
 export function installLessCarsLayers(map: LayerMap, data: LessCarsLayerData, theme: Theme, day: Day): LessCarsLayers;
 ```
 
@@ -511,6 +555,12 @@ it('installs every source and layer once, in stack order', () => {
   installLessCarsLayers(m, data, 'light', LESSCARS_START);
   expect(m.sources).toEqual(['lc-streets', 'lc-lines', 'lc-stops', 'lc-sites', 'lc-garages']);
   expect(m.layers.map((l) => l.id)).toEqual([...LC_LAYER_IDS]);
+  expect(LC_LAYER_IDS).toEqual([
+    LC_LAYER.sitesFill, LC_LAYER.sitesOutline, ...STREET_STATES.map((s) => LC_STREET_LAYER[s]),
+    LC_LAYER.lines, LC_LAYER.stopsCircle, LC_LAYER.stopsLabel, LC_LAYER.garagesCircle,
+    LC_LAYER.garagesLabel
+  ]);
+  expect(m.layer(LC_LAYER.stopsLabel).layout['text-font']).toEqual(['NotoSans-Regular']);
 });
 it('every street-state layer has a dash or width no other has', () => {
   const sig = Object.values(LC_STREET_LAYER).map((id) => JSON.stringify([
@@ -524,8 +574,11 @@ it('setDay refilters only on an epoch change, forwards and backwards', () => {
   expect(m.filterCalls).toBe(0);
   l.setDay(T('hwy').openDay);
   expect(m.filterCalls).toBe(LC_LAYER_IDS.length);
-  l.setDay(LESSCARS_START); // back: filters restored to epoch 0
+  // back to the install day's epoch (LESSCARS_START is itself an event day in fixture-0, so epoch 1)
+  l.setDay(LESSCARS_START);
   expect(m.lastFilter('lc-street-removed')).toEqual(m.initialFilter('lc-street-removed'));
+  l.setDay(LESSCARS_START - 1); // before every event: epoch 0
+  expect(m.lastFilter('lc-street-removed')).not.toEqual(m.initialFilter('lc-street-removed'));
 });
 it('setTheme repaints with the other theme', () => {
   l.setTheme('dark');
@@ -566,11 +619,12 @@ git commit -m "feat(lesscars): map layers for street states, plan transit, garag
 
 **Files:**
 - Create: `src/lib/sim/lesscars/types.ts`, `src/lib/sim/lesscars/builds.ts`, `src/lib/sim/lesscars/playback-host.ts`
-- Modify: `src/lib/sim/scenario/types.ts:196` (`WorkerRequest`), `src/lib/sim/router.ts`, `src/lib/sim/worker.ts`
-- Test: `src/lib/sim/lesscars/builds.spec.ts`, `src/lib/sim/lesscars/playback-host.spec.ts`, `src/lib/sim/worker-router.spec.ts`
+- Modify: `src/lib/sim/scenario/types.ts:196` (`WorkerRequest`, new `WorkerResponse`), `src/lib/sim/router.ts:6-15` (`RouterDeps`: `post` type, `createPlayback`) and its switch, `src/lib/sim/worker.ts:10-13` (`Scope.postMessage`) and the router wiring
+- Not modified: `src/lib/sim/scenario-client.ts` (the playback client gets its own typed worker channel, Task 5), `ScenarioResponse`
+- Test: `src/lib/sim/lesscars/builds.spec.ts`, `src/lib/sim/lesscars/playback-host.spec.ts`, `src/lib/sim/worker-router.spec.ts` (its `setup()` gains a recording `createPlayback`)
 
 **Interfaces:**
-- Consumes: `decodeTimelinePayload`, `InitiativeBuild`, `LessCarsPlanFile`, `LessCarsSitesFile` (codec, with Task 1's `reservations`); `loadScenario`, `scenarioUrls`, `datasetUrl`, `fetchWithRetry` (`src/lib/sim/scenario/load.ts:244,104,93,176`); `inflateRawBody` (`src/lib/data/column-file.ts:181`); `createChunkLoader`, `cellsIntersecting` (`src/lib/sim/chunks.ts`); `createGeometry` (`src/lib/sim/scenario/geometry.ts:77`); `packTimedCell`, `packTimedTransferables` (`src/lib/map/pack-timed.ts`); `generate`, `generateForUnits`, `fnv1a32` (`$lib/generator`); `blockLot`, `revisionAt` (`src/lib/sim/scenario/card.ts:34,77`); `checkManifestShape` (`src/lib/sim/manifest-shape.ts`); `createLru`, `MEMO_CAP`, `SLICE_PLAN_MS` (`scenario-host.ts:187-204`).
+- Consumes: `decodeTimelinePayload`, `InitiativeBuild`, `LessCarsPlanFile`, `LessCarsSitesFile` (codec, with Task 1's `reservations`); `loadScenario`, `scenarioUrls`, `datasetUrl`, `fetchWithRetry` (`src/lib/sim/scenario/load.ts:244,104,93,176`); `inflateRawBody` (`src/lib/data/column-file.ts:181`); `createChunkLoader`, `cellsIntersecting` (`src/lib/sim/chunks.ts`); `createGeometry` (`src/lib/sim/scenario/geometry.ts:77`); `packTimedCell`, `packTimedTransferables` (`src/lib/map/pack-timed.ts`); `generate`, `generateForUnits`, `fnv1a32` (`$lib/generator`); `blockLot`, `isVisible`, `revisionAt` (`src/lib/sim/scenario/card.ts:34,47,77`); `checkManifestShape` (`src/lib/sim/manifest-shape.ts`); `createLru` (`src/lib/sim/lru.ts`); `MEMO_CAP`, `SLICE_PLAN_MS` (`src/lib/sim/scenario/scenario-host.ts:204,193`).
 - Produces (`types.ts`):
 
 ```ts
@@ -604,16 +658,16 @@ export type PlaybackResponse =
   | { type: 'playbackCard'; reqId: number; card: PlaybackCard | null };
 ```
 
-  `WorkerRequest` becomes `SimRequest | ScenarioRequest | PlaybackRequest`. Errors reuse the scenario `error` response (`ScenarioErrorCode`); `ready` and `chunks` are reused as is.
+  Typing (`scenario/types.ts`, type-only import of `../lesscars/types`): `WorkerRequest` becomes `SimRequest | ScenarioRequest | PlaybackRequest`; new `export type WorkerResponse = SimResponse | ScenarioResponse | PlaybackResponse`. `RouterDeps.post(msg: ScenarioResponse | PlaybackResponse)`; `Scope.postMessage(msg: WorkerResponse, transfer)`. `ScenarioResponse` itself is unchanged, so `ScenarioClient` and `FakeScenarioWorker` are untouched. Errors reuse the scenario `error` response (`ScenarioErrorCode`); `ready` and `chunks` are reused as is.
 - Produces (`builds.ts`):
 
 ```ts
-export const SITES_CELL = 'lc-sites';
+export const SITES_CELL = 'lc-sites-cell';
 export const BUILD_PREFIX = 'lc-build:';
 /** A drawable Schedule for one initiative build: id BUILD_PREFIX + siteId, origin 'simulated',
  *  parcelIds [parcelId], pathway 'permitOnly', entered { construction: startDay, complete:
  *  completeDay } (complete only if <= horizon), end complete or open, one revision
- *  { day: startDay, units, stories }, existingUnits = existing, no phase. */
+ *  { day: startDay, units, stories }, existingUnits = existing, multiPhase false, phase null. */
 export function buildSchedule(b: InitiativeBuild, parcelId: ParcelId, horizon: Day): Schedule;
 /** The freed-site building: gen(rec, { maxStories: b.stories }, fnv1a32(b.siteId), 'max'),
  *  stamped source 'scenario'; a null or throwing generator gives the outline's footprint. */
@@ -648,10 +702,10 @@ Host behaviour (one session per `initPlayback`, superseded by the next or by `di
 2. Load in parallel: `loadScenario(…, urls, cancelled)` (no policy) and `timeline.bin` bytes via `fetchWithRetry`; then `inflateRawBody` and `decodeTimelinePayload(bytes, parcels)` (a throw → `scenario-invalid`, `timeline.bin: <message>`).
 3. Entries: every timeline schedule (`market`); each build with a `parcelRow` (`parking`, parcel `parcels.id[row]`, schedule `buildSchedule`); each build without (`freed`, its site from `sites` by `siteId`; a missing site is warned once and skipped). Plan labels from `plan.plan.projects`.
 4. Post `playbackLoaded` (`seed`, `places` from `parcels.labelPoint` for each `parking-conversion` parcel and `edge-garage` `{ parcel }` present in `parcels.bin`, `reservations` mapped row → id).
-5. Geometry: `createGeometry` over market and parking schedules (massing ctx with the session memo, `gen`, `genForUnits`). Revision 0: the `lc-sites` cell (`packTimedCell(SITES_CELL, freedItems)`, pick parcel = site id; omitted when there are no freed builds) plus every packable cell; `demolish` = `geometry.demolish()` merged with each kept parking reservation's parcel at its conversion project's `startDay` (the earlier day wins). Later: each ready chunk (`onRecords`) schedules a `setTimeout(0)` slice that packs packable cells while `now() − sliceStart` plus the last pack cost fits `SLICE_PLAN_MS`, and posts one `playback` revision with those cells, `removedCells: []`, `demolish: []`. `complete` = `geometry.complete()`.
+5. Geometry: `createGeometry` over market and parking schedules (massing ctx with the session memo, `gen`, `genForUnits`). Revision 0: the `lc-sites-cell` cell (`packTimedCell(SITES_CELL, freedItems)`, pick parcel = site id; omitted when there are no freed builds) plus every packable cell; `demolish` = `geometry.demolish()` merged with each kept parking reservation's parcel at its conversion project's `startDay` (the earlier day wins). A kept edge-garage `{ parcel }` reservation clears nothing: clearance belongs to parking conversions (`docs/dev/lesscars.md`, "Builder's calls on the format"); the garage shows as a marker (Task 3). Later: each ready chunk (`onRecords`) schedules a `setTimeout(0)` slice that packs packable cells while `now() − sliceStart` plus the last pack cost fits `SLICE_PLAN_MS`, and posts one `playback` revision with those cells, `removedCells: []`, `demolish: []`. `complete` = `geometry.complete()`.
 6. `prefetch(bbox)`: wanted cells plus `geometry.cellsFor` (as `scenario-host.ts:478-485`). `retryChunks` forwards to the loader. `playbackCard`: the entry by `projectId` → `playbackCard(entry, day)`; unknown id, no session or not loaded → `card: null`.
 
-Router (`router.ts`): a third lazily created host (`deps.createPlayback`). `initPlayback`: mode `'playback'`, `deps.editor.dispose()`, scenario disposed, playback handles it. `initScenario` and `init` dispose the playback host. `prefetch`/`retryChunks` go to the host of the current mode. `playbackCard` outside playback mode posts `{ type: 'playbackCard', reqId, card: null }`. `parcelSummary` in playback mode posts `{ type: 'parcelSummary', reqId, summary: null }`. Brush and lever requests in playback mode get the existing `no-session` answers. `worker.ts` wires `createPlayback: () => createPlaybackHost({ … same deps as the scenario host … })` and widens `Scope.postMessage`.
+Router (`router.ts`): a third lazily created host (`deps.createPlayback`). `initPlayback`: mode `'playback'`, `deps.editor.dispose()`, `scenario?.dispose()` and `scenario = null`, then the playback host (created lazily) handles it. `init`: `scenario?.dispose()`, then `playback?.dispose()` and `playback = null`, then the editor. `initScenario`: `deps.editor.dispose()`, `playback?.dispose()` and `playback = null`, then the scenario host. `prefetch`/`retryChunks` go to the host of the current mode. `playbackCard` outside playback mode posts `{ type: 'playbackCard', reqId, card: null }`. `parcelSummary` in playback mode posts `{ type: 'parcelSummary', reqId, summary: null }`. In playback mode, `resolveBrush`, `brushCatalog`, `lotOutlines` and `previewBuildings` take their existing outside-scenario branches (the router's `no-session` answers and `catalog: null`, `router.ts:66-100`). `reroll` and `setLevers` in playback mode do not create or reach the scenario host: the router posts `{ type: 'error', rev: req.rev, code: 'bad-request', message: '<type> needs a /sim scenario session' }`. Outside playback mode they route as today (`router.ts:46-51`). `worker.ts` wires `createPlayback: () => createPlaybackHost({ … same deps as the scenario host … })` and widens `Scope.postMessage`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -671,29 +725,36 @@ it('freedMassing falls back to the outline when the generator gives nothing', ()
   expect('footprint' in freedMassing(b, site.rec, () => null)).toBe(true);
 });
 it('playbackCard reads status and plan label at the day', () => {
-  const e: CardEntry = { kind: 'freed', schedule: buildSchedule(b, 'lc:hwy:1', LESSCARS_HORIZON), build: b, planLabel: 'I-80 truncation' };
-  expect(playbackCard(e, 24472)).toMatchObject({ kind: 'freed', planLabel: 'I-80 truncation', status: 'construction', units: 40 });
+  const e: CardEntry = { kind: 'freed', schedule: buildSchedule(b, 'lc:hwy:1', LESSCARS_HORIZON), build: b, planLabel: 'A label' };
+  expect(playbackCard(e, 24472)).toMatchObject({ kind: 'freed', planLabel: 'A label', status: 'construction', units: 40 });
   expect(playbackCard(e, 25385)?.status).toBe('complete');
   expect(playbackCard(e, 24471)).toBeNull();
 });
 
 // src/lib/sim/lesscars/playback-host.spec.ts — fixture-0 files served by a fake fetch, a manual
-// clock and timers (the scenario-host spec harness pattern), the real generator
+// clock and timers (the scenario-host spec harness pattern), the real generator.
+// `harness({ timeline? })`: by default serves fixture-0's own timeline.bin; with `timeline`, a
+// hand-built LessCarsTimeline encoded against fixture-0's parcels.bin ids (encodeTimelinePayload,
+// count and idsHash from that parcels.bin) and deflated (node:zlib deflateRawSync).
+// fixture-0 facts the defaults rely on (after Task 1's regeneration): three freed builds
+// (lc:hwy:1..3), no parking build (bySource.parking is 0 in every year), and reservations for the
+// plan's two parcels, read from the decoded file — their kept flags are not assumed.
 it('initPlayback posts ready, playbackLoaded with places and reservations, then revision 0', async () => {
   const h = harness(); h.init();
   await h.settle();
   expect(h.posted('ready')).toHaveLength(1);
   const loaded = h.posted('playbackLoaded')[0];
-  expect(loaded.seed).toBe(summary.representativeSeed);
-  expect(loaded.reservations.map((r) => r.parcelId).sort()).toEqual(['3512015', '3512017']);
-  expect(Object.keys(loaded.places).sort()).toEqual(['3512015', '3512017']);
+  expect(loaded.seed).toBe(fixtureTimeline.seed);
+  expect(loaded.reservations).toEqual(fixtureTimeline.reservations.map((r) => ({
+    parcelId: fixtureParcels.id[r.row], kept: r.kept })));
+  expect(Object.keys(loaded.places).sort()).toEqual(planParcels(fixturePlan).sort()); // parking + garage parcels
   const r0 = h.posted('playback')[0].render;
   expect(r0.revision).toBe(0);
   expect(r0.cells.map((c) => c.cellId)).toContain(SITES_CELL);
 });
-it('the sites cell holds one slot per kept freed build', async () => {
+it('the sites cell holds one slot per freed build', async () => {
   const cell = (await h.revision0()).cells.find((c) => c.cellId === SITES_CELL)!;
-  expect(cell.slotProjectIds).toEqual(timeline.builds.filter((x) => x.parcelRow === null).map((x) => `lc-build:${x.siteId}`).sort());
+  expect(cell.slotProjectIds).toEqual(fixtureTimeline.builds.filter((x) => x.parcelRow === null).map((x) => `lc-build:${x.siteId}`).sort());
 });
 it('chunk cells pack after prefetch, one revision per slice, demolish only in revision 0', async () => {
   h.prefetch(fixtureBBox); await h.settle();
@@ -703,11 +764,25 @@ it('chunk cells pack after prefetch, one revision per slice, demolish only in re
   expect(later.at(-1)!.complete).toBe(true);
 });
 it('a kept parking build is drawn and its lot demolished at the conversion start; a voided one is not', async () => {
-  // fixture: read the decoded timeline's reservation for 3512017 and branch on it; also run a
-  // patched timeline with that reservation flipped to voided and its build removed
-  expect(slotIds(await h.allCells())).toContain('lc-build:3512017'); // kept case
-  expect(slotIds(await voided.allCells())).not.toContain('lc-build:3512017');
-  expect((await voided.revision0()).demolish.map((d) => d.parcelId)).not.toContain('3512017');
+  // hand-built timelines on fixture-0's parking parcel P (the mini plan's parking-conversion
+  // parcel, row r = parcels.index.get(P)): `kept` has a build { siteId: P, projectId: 'parking',
+  // parcelRow: r, units: 12, stories: 4, existing: 0, startDay/completeDay: the plan's build
+  // times } and reservations [{ row: r, kept: true }]; `voided` has no build and
+  // [{ row: r, kept: false }], as representativeTimeline writes a voided seed (runs.ts:410).
+  const kept = harness({ timeline: handBuilt({ parkingKept: true }) });
+  const voided = harness({ timeline: handBuilt({ parkingKept: false }) });
+  for (const x of [kept, voided]) { x.init(); x.prefetch(fixtureBBox); await x.settle(); }
+  expect(slotIds(kept.allCells())).toContain(`lc-build:${P}`);
+  expect(kept.revision0().demolish).toContainEqual({ parcelId: P, day: planTimes('parking').startDay });
+  expect(slotIds(voided.allCells())).not.toContain(`lc-build:${P}`);
+  expect(voided.revision0().demolish.map((d) => d.parcelId)).not.toContain(P);
+  expect(voided.posted('playbackLoaded')[0].reservations).toEqual([{ parcelId: P, kept: false }]);
+});
+it('a kept garage-parcel reservation is reported but demolishes nothing', async () => {
+  const g = harness({ timeline: handBuilt({ garageKept: true }) }); // reservations [{ row of G, kept: true }]
+  g.init(); await g.settle();
+  expect(g.posted('playbackLoaded')[0].reservations).toEqual([{ parcelId: G, kept: true }]);
+  expect(g.revision0().demolish.map((d) => d.parcelId)).not.toContain(G);
 });
 it('playbackCard answers a freed build and null for an unknown id', async () => {
   expect((await h.card(`lc-build:lc:hwy:1`, LESSCARS_HORIZON))?.kind).toBe('freed');
@@ -723,9 +798,50 @@ it('a second initPlayback supersedes the first: nothing more from the old sessio
   expect(new Set(h.posted('playback').map((p) => p.rev))).toEqual(new Set([2]));
 });
 
-// src/lib/sim/worker-router.spec.ts
-it('initPlayback disposes the editor and scenario hosts and routes prefetch to playback', () => { … expect(calls).toEqual([...]) });
-it('playbackCard outside playback mode answers card null', () => { … expect(posted).toEqual([{ type: 'playbackCard', reqId: 1, card: null }]) });
+// src/lib/sim/worker-router.spec.ts — `setup()` (:7-37) gains, beside createScenario:
+//   createPlayback: () => { log.push('playback:create'); return {
+//     handle: (r) => log.push(`playback:${r.type}`), dispose: () => log.push('playback:dispose') }; }
+const initPlayback = { type: 'initPlayback', rev: 3, manifest: {}, plan: {}, sites: {} };
+it('initPlayback disposes the editor and the scenario host, then shared requests go to playback', () => {
+  const t = setup();
+  t.send(initScenario, initPlayback, prefetch, { type: 'retryChunks' });
+  expect(t.log).toEqual([
+    'editor:dispose', 'scenario:create', 'scenario:initScenario',
+    'editor:dispose', 'scenario:dispose', 'playback:create', 'playback:initPlayback',
+    'playback:prefetch', 'playback:retryChunks'
+  ]);
+});
+it('init and initScenario dispose the playback host', () => {
+  const t = setup();
+  t.send(initPlayback, init);
+  expect(t.log.slice(-2)).toEqual(['playback:dispose', 'editor:init']);
+  t.send(initPlayback, initScenario);
+  expect(t.log.slice(-4)).toEqual([
+    'editor:dispose', 'playback:dispose', 'scenario:create', 'scenario:initScenario'
+  ]);
+});
+it('playbackCard outside playback mode answers card null; inside, the host gets it', () => {
+  const t = setup();
+  t.send({ type: 'playbackCard', reqId: 1, projectId: 'x', day: 5 });
+  expect(t.posted).toEqual([{ type: 'playbackCard', reqId: 1, card: null }]);
+  t.send(initPlayback, { type: 'playbackCard', reqId: 2, projectId: 'x', day: 5 });
+  expect(t.log.at(-1)).toBe('playback:playbackCard');
+});
+it('in playback mode: parcelSummary answers null; reroll and setLevers answer bad-request without a scenario host', () => {
+  const t = setup();
+  t.send(initPlayback, summary, { type: 'reroll', rev: 4, seed: 1 }, { type: 'setLevers', rev: 5, levers: DEFAULT_LEVERS });
+  expect(t.posted).toEqual([
+    { type: 'parcelSummary', reqId: 7, summary: null },
+    { type: 'error', rev: 4, code: 'bad-request', message: 'reroll needs a /sim scenario session' },
+    { type: 'error', rev: 5, code: 'bad-request', message: 'setLevers needs a /sim scenario session' }
+  ]);
+  expect(t.created()).toBe(0);
+});
+it('in playback mode, brush requests take the no-session answers', () => {
+  const t = setup();
+  t.send(initPlayback, { type: 'brushCatalog', reqId: 9 });
+  expect(t.posted).toEqual([{ type: 'brushCatalog', reqId: 9, catalog: null }]);
+});
 ```
 
 - [ ] **Step 2: Run to verify they fail**
@@ -758,14 +874,28 @@ git commit -m "feat(lesscars): worker playback host for the stored representativ
 ### Task 5: The playback client
 
 **Files:**
-- Create: `src/lib/sim/lesscars/playback-client.ts`
+- Create: `src/lib/sim/lesscars/playback-client.ts`, `src/lib/sim/lesscars/test/fake-playback-worker.ts`
 - Test: `src/lib/sim/lesscars/playback-client.spec.ts`
 
 **Interfaces:**
-- Consumes: Task 4's request and response types; `ScenarioWorkerInput`, `ScenarioWorkerLike` (`src/lib/sim/scenario-client.ts:21-35`); `ReadyResponse`, `ChunksResponse`, `ScenarioErrorResponse`.
-- Produces:
+- Consumes: Task 4's request and response types; `WorkerLike` (`src/lib/sim/client.ts:17`); `ReadyResponse`, `ChunksResponse`, `ScenarioErrorResponse` (`src/lib/sim/scenario-client.ts:37`).
+- Produces (its own typed channel, so `ScenarioWorkerLike` and `ScenarioClient` stay as they are):
 
 ```ts
+export type PlaybackInbound = ScenarioResponse | PlaybackResponse;
+export interface PlaybackWorkerLike {
+  postMessage(msg: WorkerRequest): void;
+  onmessage: ((e: { data: PlaybackInbound }) => void) | null;
+  onerror?: ((e: ErrorEvent) => void) | null;
+  onmessageerror?: ((e: MessageEvent) => void) | null;
+  terminate(): void;
+}
+/** `spawnSimWorker()`'s WorkerLike is the same real Worker; accepted without a cast, as
+ *  ScenarioWorkerInput does (scenario-client.ts:28-35). */
+export type PlaybackWorkerInput = PlaybackWorkerLike | WorkerLike;
+// test/fake-playback-worker.ts: FakePlaybackWorker implements PlaybackWorkerLike, modelled on
+// src/lib/fzp/test/fake-worker.ts (posts, emit(r: PlaybackInbound), crash(), terminated), plus
+// lastReqId(): the reqId of the last posted playbackCard.
 export interface PlaybackClientEvents {
   onReady?(r: ReadyResponse): void;
   onLoaded?(r: Extract<PlaybackResponse, { type: 'playbackLoaded' }>): void;
@@ -777,7 +907,7 @@ export interface PlaybackClientEvents {
   onCrash?(e: Event): void;
 }
 export class PlaybackClient {
-  constructor(worker: ScenarioWorkerInput, events: PlaybackClientEvents);
+  constructor(worker: PlaybackWorkerInput, events: PlaybackClientEvents);
   /** Sends initPlayback with a new rev; later responses of older revs are dropped. */
   init(manifest: Manifest, plan: LessCarsPlanFile, sites: LessCarsSitesFile): Rev;
   /** SimMap's revision gap: re-sends initPlayback with the last arguments and a new rev, at most
@@ -787,7 +917,7 @@ export class PlaybackClient {
   retryChunks(): void;
   /** Resolves null on crash, restart or dispose. */
   card(projectId: string, day: Day): Promise<PlaybackCard | null>;
-  restart(worker: ScenarioWorkerInput): void; // terminates the old worker; the caller calls init again
+  restart(worker: PlaybackWorkerInput): void; // terminates the old worker; the caller calls init again
   dispose(): void;
 }
 ```
@@ -795,7 +925,7 @@ export class PlaybackClient {
 - [ ] **Step 1: Write the failing tests**
 
 ```ts
-// src/lib/sim/lesscars/playback-client.spec.ts — a fake worker recording postMessage
+// src/lib/sim/lesscars/playback-client.spec.ts — `w = new FakePlaybackWorker()`
 it('drops responses from an older init', () => {
   const c = new PlaybackClient(w, { onTimeline }); c.init(m, plan, sites); c.init(m, plan, sites);
   w.emit({ type: 'playback', rev: 1, render, complete: true });
@@ -804,7 +934,7 @@ it('drops responses from an older init', () => {
 });
 it('resync re-sends initPlayback once per episode', () => {
   c.init(m, plan, sites); c.resync(); c.resync();
-  expect(w.sent.filter((x) => x.type === 'initPlayback').map((x) => x.rev)).toEqual([1, 2]);
+  expect(w.posts.filter((x) => x.type === 'initPlayback').map((x) => x.rev)).toEqual([1, 2]);
 });
 it('card resolves with the answer, and null on crash', async () => {
   const p = c.card('lc-build:lc:hwy:1', 25000);
@@ -822,7 +952,7 @@ it('card resolves with the answer, and null on crash', async () => {
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/lib/sim/lesscars/playback-client.ts src/lib/sim/lesscars/playback-client.spec.ts
+git add src/lib/sim/lesscars/playback-client.ts src/lib/sim/lesscars/playback-client.spec.ts src/lib/sim/lesscars/test
 git commit -m "feat(lesscars): main-thread playback client"
 ```
 
@@ -832,7 +962,7 @@ git commit -m "feat(lesscars): main-thread playback client"
 
 **Files:**
 - Create: `src/lib/lesscars/summary-view.ts`, `src/lib/lesscars/copy.ts`, `src/lib/lesscars/HeadlineBar.svelte`, `src/lib/lesscars/DetailsPanel.svelte`, `src/lib/lesscars/ExtraChart.svelte`
-- Test: `src/lib/lesscars/summary-view.spec.ts`, `src/lib/lesscars/HeadlineBar.svelte.spec.ts`, `src/lib/lesscars/DetailsPanel.svelte.spec.ts`
+- Test: `src/lib/lesscars/summary-view.spec.ts`, `src/lib/lesscars/HeadlineBar.svelte.spec.ts`, `src/lib/lesscars/DetailsPanel.svelte.spec.ts`, `src/lib/lesscars/ExtraChart.svelte.spec.ts`
 
 **Interfaces:**
 - Consumes: `LessCarsSummary`, `SOURCES`, `Source` (codec); `formatCount` (`src/lib/scoreboard/format.ts:13`); `niceCeil` (`src/lib/fzp/chart.ts:72`); `headerOverlay` (`src/lib/shell/header-actions.svelte.ts`); `LESSCARS_LEGEND` (Task 3b); `TOKENS`, `useSystemTheme`.
@@ -841,7 +971,7 @@ git commit -m "feat(lesscars): main-thread playback client"
 ```ts
 export const SOURCE_LABEL: Record<Source, string>; // 'Freed land', 'Parking sites', 'Transit-unlocked', 'Other'
 export function signed(n: number): string; // '+1,234', '−56' (U+2212), '0'
-export function finalYear(s: LessCarsSummary): number; // UTC year of the last year end
+export function finalYear(s: LessCarsSummary): number; // utcParts(last year end).y (src/lib/fzp/time.ts:15)
 export function headlineText(s: LessCarsSummary): string;
 export function headlineName(s: LessCarsSummary): string;
 export function bandText(s: LessCarsSummary): string;
@@ -858,11 +988,16 @@ Exact copy (`copy.ts`): with `n = Math.round(mean at the last year)` and year `Y
 - Produces (components):
   - `HeadlineBar.svelte` props `{ summary: LessCarsSummary; panel: Snippet }`: one button (`data-testid="lc-headline"`, visible `headlineText`, `aria-label` `headlineName`, `aria-expanded`, `aria-controls`) that opens the details region (`role="region"`, name "Fewer-cars details", `data-testid="lc-details"`): popover at the top right from 768 px, full-width disclosure below; closes on Escape, outside press, or another header overlay (`headerOverlay`); restores focus to the button only when focus was inside. The behaviour copies `ScoreBar.svelte` (no live region: the text never changes).
   - `DetailsPanel.svelte` props `{ summary: LessCarsSummary; day: Day; onevidence: () => void }`: the headline as a sentence, `bandText`, a `<table>` (caption above; rows from `breakdownRows`, plus a Total row equal to the headline's n), a divergent bar per row (`aria-hidden`), `ExtraChart`, the amenities sentence, a closed `<details>` "Map key" with `LESSCARS_LEGEND` swatches (`aria-hidden` swatches, text labels), and a button "Evidence for every number" calling `onevidence`.
-  - `ExtraChart.svelte` props `{ summary: LessCarsSummary; day: Day }`: SVG, `role="img"` with `aria-label` "Extra homes by year: ${signed(first)} in 2028, ${signed(last)} by ${Y}", the mean line, the p10 to p90 band, a zero line when yMin < 0, a vertical marker at `yearIndexAt(day)`.
+  - `ExtraChart.svelte` props `{ summary: LessCarsSummary; day: Day }`: SVG, `role="img"` with `aria-label` "Extra homes by year: ${signed(round(first mean))} in 2028, ${signed(round(last mean))} by ${Y}", the mean line, the p10 to p90 band, a zero line (`data-zero-line`) when yMin < 0, a vertical marker (`data-now`, `data-year-index`) at `yearIndexAt(day)`.
 
 - [ ] **Step 1: Write the failing tests**
 
 ```ts
+// Shared by the four specs: `fx` = parseSummary(fixture-0 summary.json); `N` =
+// Math.round(fx.extra.mean.at(-1)!); `Y` = finalYear(fx); no fixture number is written literally.
+// Synthetic summaries (`withFinal(fx, v)`, `withP10(fx, v)`, `fractional(fx, seeds)`) copy fx and
+// change one series, keeping parseSummary's integer-sum rule.
+
 // src/lib/lesscars/summary-view.spec.ts
 it('roundedParts sums to the rounded total, negatives included', () => {
   expect(roundedParts([10.4, 10.4, 10.2, 0], 31)).toEqual([11, 10, 10, 0]);
@@ -871,34 +1006,38 @@ it('roundedParts sums to the rounded total, negatives included', () => {
   expect(r.every((x, i) => Math.abs(x - [100.6, -40.3, 12.35, 0.35][i]) < 1)).toBe(true);
 });
 it('breakdownRows add to the headline number on the fixture and on a fractional summary', () => {
-  for (const s of [fixtureSummary, fractional(fixtureSummary, 7)]) {
+  for (const s of [fx, fractional(fx, 7)]) {
     const n = Math.round(s.extra.mean.at(-1)!);
     expect(breakdownRows(s).reduce((a, r) => a + r.homes, 0)).toBe(n);
   }
 });
-it('headline copy for positive, negative and zero', () => {
-  expect(headlineText(withFinal(fixtureSummary, 1234.4))).toBe('+1,234 homes by 2068');
-  expect(headlineText(withFinal(fixtureSummary, -56.2))).toBe('−56 homes by 2068');
-  expect(headlineText(withFinal(fixtureSummary, 0.3))).toBe('No extra homes by 2068');
-  expect(headlineName(withFinal(fixtureSummary, -56.2))).toBe('The plan has 56 fewer homes by 2068 than no plan. Show details');
+it('headline copy for positive, negative and zero (synthetic values)', () => {
+  expect(headlineText(withFinal(fx, 1234.4))).toBe(`+1,234 homes by ${Y}`);
+  expect(headlineText(withFinal(fx, -56.2))).toBe(`−56 homes by ${Y}`);
+  expect(headlineText(withFinal(fx, 0.3))).toBe(`No extra homes by ${Y}`);
+  expect(headlineName(withFinal(fx, -56.2))).toBe(`The plan has 56 fewer homes by ${Y} than no plan. Show details`);
 });
 it('bandText names the seed count and signed bounds', () => {
-  expect(bandText(fixtureSummary)).toBe('Middle 80% of 5 paired futures: +260 to +260');
+  const [p10, p90] = [fx.extra.p10.at(-1)!, fx.extra.p90.at(-1)!];
+  expect(bandText(fx)).toBe(`Middle 80% of ${fx.seeds} paired futures: ${signed(p10)} to ${signed(p90)}`);
+  expect(signed(12)).toBe('+12');
+  expect(signed(-3)).toBe('−3');
+  expect(signed(0)).toBe('0');
 });
 it('extraChartModel reaches below zero only when a value does', () => {
-  expect(extraChartModel(fixtureSummary).yMin).toBe(0);
-  expect(extraChartModel(withP10(fixtureSummary, -30)).yMin).toBeLessThan(0);
+  expect(extraChartModel(withP10(fx, 0)).yMin).toBe(0);
+  expect(extraChartModel(withP10(fx, -30)).yMin).toBeLessThan(0);
 });
 it('yearIndexAt clamps to the year ends', () => {
-  expect(yearIndexAt(fixtureSummary, LESSCARS_START)).toBe(0);
-  expect(yearIndexAt(fixtureSummary, LESSCARS_HORIZON + 99)).toBe(fixtureSummary.yearEnds.length - 1);
+  expect(yearIndexAt(fx, LESSCARS_START)).toBe(0);
+  expect(yearIndexAt(fx, LESSCARS_HORIZON + 99)).toBe(fx.yearEnds.length - 1);
 });
 
 // src/lib/lesscars/HeadlineBar.svelte.spec.ts (vitest-browser-svelte, as ScoreBar's spec)
 it('shows the headline and opens the details region by click, closes on Escape with focus back', async () => {
   const btn = page.getByTestId('lc-headline');
-  await expect.element(btn).toHaveTextContent('+260 homes by 2068');
-  await expect.element(btn).toHaveAccessibleName('The plan adds 260 homes by 2068 compared with no plan. Show details');
+  await expect.element(btn).toHaveTextContent(headlineText(fx));
+  await expect.element(btn).toHaveAccessibleName(headlineName(fx));
   await btn.click();
   await expect.element(page.getByRole('region', { name: 'Fewer-cars details' })).toBeVisible();
   await userEvent.keyboard('{Escape}');
@@ -907,9 +1046,10 @@ it('shows the headline and opens the details region by click, closes on Escape w
 
 // src/lib/lesscars/DetailsPanel.svelte.spec.ts
 it('the breakdown table rows and total match the headline', async () => {
-  const rows = page.getByRole('table', { name: 'Where the extra homes come from, 2068' }).getByRole('row');
-  await expect.element(rows.nth(1)).toHaveTextContent('Freed land260');
-  await expect.element(rows.last()).toHaveTextContent('Total260');
+  const rows = page.getByRole('table', { name: `Where the extra homes come from, ${Y}` }).getByRole('row');
+  for (const [k, r] of breakdownRows(fx).entries())
+    await expect.element(rows.nth(k + 1)).toHaveTextContent(`${r.label}${formatCount(r.homes)}`);
+  await expect.element(rows.last()).toHaveTextContent(`Total${formatCount(N)}`);
 });
 it('Evidence for every number calls onevidence; the map key lists Removed: now land', async () => {
   await page.getByRole('button', { name: 'Evidence for every number' }).click();
@@ -917,12 +1057,23 @@ it('Evidence for every number calls onevidence; the map key lists Removed: now l
   await page.getByText('Map key').click();
   await expect.element(page.getByText('Removed: now land')).toBeVisible();
 });
+
+// src/lib/lesscars/ExtraChart.svelte.spec.ts
+it('names the first and last values, draws a zero line only below zero, marks the day', async () => {
+  const { container } = render(ExtraChart, { summary: fx, day: fx.yearEnds[3] });
+  await expect.element(page.getByRole('img')).toHaveAccessibleName(
+    `Extra homes by year: ${signed(Math.round(fx.extra.mean[0]))} in 2028, ${signed(N)} by ${Y}`);
+  expect(container.querySelector('[data-zero-line]')).toBeNull();
+  expect(container.querySelector('[data-now]')?.getAttribute('data-year-index')).toBe('3');
+  render(ExtraChart, { summary: withP10(fx, -30), day: fx.yearEnds[0] });
+  expect(document.querySelector('[data-zero-line]')).not.toBeNull();
+});
 ```
 
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `npx vitest run --project server src/lib/lesscars/summary-view.spec.ts`
-Run: `npx vitest run --project client src/lib/lesscars/HeadlineBar.svelte.spec.ts src/lib/lesscars/DetailsPanel.svelte.spec.ts`
+Run: `npx vitest run --project client src/lib/lesscars/HeadlineBar.svelte.spec.ts src/lib/lesscars/DetailsPanel.svelte.spec.ts src/lib/lesscars/ExtraChart.svelte.spec.ts`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement `summary-view.ts` and `copy.ts`; run the server spec to PASS**
@@ -930,7 +1081,7 @@ Expected: FAIL.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/lib/lesscars/summary-view.ts src/lib/lesscars/summary-view.spec.ts src/lib/lesscars/copy.ts src/lib/lesscars/HeadlineBar.svelte src/lib/lesscars/HeadlineBar.svelte.spec.ts src/lib/lesscars/DetailsPanel.svelte src/lib/lesscars/DetailsPanel.svelte.spec.ts src/lib/lesscars/ExtraChart.svelte
+git add src/lib/lesscars/summary-view.ts src/lib/lesscars/summary-view.spec.ts src/lib/lesscars/copy.ts src/lib/lesscars/HeadlineBar.svelte src/lib/lesscars/HeadlineBar.svelte.spec.ts src/lib/lesscars/DetailsPanel.svelte src/lib/lesscars/DetailsPanel.svelte.spec.ts src/lib/lesscars/ExtraChart.svelte src/lib/lesscars/ExtraChart.svelte.spec.ts
 git commit -m "feat(lesscars): headline, source breakdown and extra-homes chart"
 ```
 
@@ -943,7 +1094,7 @@ git commit -m "feat(lesscars): headline, source breakdown and extra-homes chart"
 - Test: `src/lib/lesscars/timeline-view.spec.ts`, `src/lib/lesscars/TimelineDialog.svelte.spec.ts`
 
 **Interfaces:**
-- Consumes: `LessCarsPlanFile`, `ProjectKind`, `TRANSIT_KINDS`; `formatMonthYear` (`src/lib/fzp/format.ts:30`); `Marker` (`src/lib/fzp/types.ts`).
+- Consumes: `LessCarsPlanFile`, `ProjectKind`, `TRANSIT_KINDS`; `formatMonthYear` (`src/lib/fzp/format.ts:30`); `utcParts` (`src/lib/fzp/time.ts:15`); `Marker` (`src/lib/fzp/types.ts`).
 - Produces:
 
 ```ts
@@ -969,9 +1120,11 @@ export function scrubberMarkers(f: LessCarsPlanFile, switchDay: Day): Marker[];
 
 ```ts
 // src/lib/lesscars/timeline-view.spec.ts
-it('groups rows transit, streets, garages, housing; ordered by start', () => {
+it('groups rows transit, streets, garages, housing; by startDay, then id', () => {
+  // fixture-0 times: subway and buslane both start on 21184 (id order: buslane first), tram 21550;
+  // ped 21915, hwy 23376; garage 21915, shuttle 22645; parking 23376
   expect(timelineRows(planFile).map((r) => `${r.group}:${r.id}`)).toEqual([
-    'transit:subway', 'transit:buslane', 'transit:tram',
+    'transit:buslane', 'transit:subway', 'transit:tram',
     'streets:ped', 'streets:hwy',
     'garages:garage', 'garages:shuttle',
     'housing:parking'
@@ -980,21 +1133,22 @@ it('groups rows transit, streets, garages, housing; ordered by start', () => {
 it('scrubberMarkers: SB 79 first, then line openings by year', () => {
   const m = scrubberMarkers(planFile, summary.switchDay);
   expect(m[0]).toMatchObject({ day: summary.switchDay, label: 'SB 79' });
-  expect(m.map((x) => x.label)).toContain(String(new Date(T('subway').openDay * 864e5).getUTCFullYear()));
+  expect(m.map((x) => x.label)).toContain(String(utcParts(T('subway').openDay).y));
   expect(new Set(m.map((x) => x.name)).size).toBe(m.length);
 });
 
-// src/lib/lesscars/TimelineDialog.svelte.spec.ts
+// src/lib/lesscars/TimelineDialog.svelte.spec.ts — labels read from the fixture plan
 it('lists every project with its dates and opens evidence for one', async () => {
+  const hwy = planFile.plan.projects.find((p) => p.id === 'hwy')!;
   dialog.show();
   await expect.element(page.getByRole('dialog', { name: 'Project timeline' })).toBeVisible();
-  await expect.element(page.getByRole('table', { name: 'Transit' })).toBeVisible();
-  await page.getByRole('button', { name: 'Evidence for I-80 truncation' }).click();
+  await expect.element(page.getByRole('table', { name: GROUP_LABEL.transit })).toBeVisible();
+  for (const p of planFile.plan.projects)
+    await expect.element(page.getByRole('row', { name: new RegExp(p.label) })).toBeInTheDocument();
+  await page.getByRole('button', { name: `Evidence for ${hwy.label}` }).click();
   expect(onevidence).toHaveBeenCalledWith('hwy');
 });
 ```
-
-(Use the fixture plan's real labels; read them from the file rather than hard-coding.)
 
 - [ ] **Step 2: Run to verify they fail** — `npx vitest run --project server src/lib/lesscars/timeline-view.spec.ts`; `npx vitest run --project client src/lib/lesscars/TimelineDialog.svelte.spec.ts` → FAIL.
 - [ ] **Step 3: Implement `timeline-view.ts`; server spec PASS**
@@ -1061,9 +1215,10 @@ it('the model section carries the summary provenance and counts futures, not rec
 
 // src/lib/lesscars/EvidenceDialog.svelte.spec.ts
 it('show(id) opens on that project and focuses its heading', async () => {
-  dialog.show('ev-hwy');
+  const hwy = planFile.plan.projects.find((p) => p.id === 'hwy')!;
+  dialog.show(evidenceSectionId('hwy'));
   await expect.element(page.getByRole('dialog', { name: 'Evidence for every number' })).toBeVisible();
-  await expect.element(page.getByRole('heading', { name: /I-80/ })).toHaveFocus();
+  await expect.element(page.getByRole('heading', { name: `${hwy.label} (${KIND_LABEL[hwy.kind]})` })).toHaveFocus();
   await expect.element(page.getByText('Invented').first()).toBeVisible();
 });
 ```
@@ -1086,6 +1241,8 @@ git commit -m "feat(lesscars): evidence dialog with tier and source for every pl
 - Create: `src/lib/lesscars/LessCarsMode.svelte`, `src/lib/lesscars/LessCarsCard.svelte`, `src/lib/lesscars/debug.ts`
 - Create: `src/routes/lesscars/+page.ts`, `src/routes/lesscars/+page.svelte`
 - Modify: `src/lib/shell/layout.ts:2-9` (`isFullHeightRoute` adds `/lesscars`); `src/lib/shell/layout.spec.ts`
+- Create (test support): `src/lib/lesscars/test/LessCarsModeHost.svelte` (copy of `src/lib/fzp/test/FzpModeHost.svelte` around `LessCarsMode`: `provideHeaderActions()`, renders `slot.pinned` in `data-testid="header-pinned"` and `slot.current` in `data-testid="header-actions"`, then a 600 px `#map-region` holding the mode)
+- Modify (test support): `src/lib/fzp/test/sim-map-stub.ts` `FakeMap`: additive recording no-ops for what `installLessCarsLayers` calls (`addSource`, `getSource` returning `{ setData }` and a `sourceData(id)` reader of the latest data, `addLayer`, `getLayer`, `setFilter`, `setPaintProperty`, `getStyle` returning `{ layers: [] }`); existing FzpMode specs are unaffected
 - Test: `src/lib/lesscars/LessCarsMode.svelte.spec.ts`, `src/routes/lesscars/page.spec.ts`, `src/routes/lesscars/page.svelte.spec.ts`
 
 **Interfaces:**
@@ -1106,8 +1263,8 @@ export interface SfhLessCarsDebug {
 export function installLessCarsDebug(get: () => SfhLessCarsDebug): () => void; // window.__sfhLessCars
 ```
 
-  `LessCarsMode.svelte` props `{ data: LessCarsData; createWorker?: () => ScenarioWorkerInput }`. Behaviour:
-  - Header: `useHeaderActions(actions, { pinned: headline })`; `actions` = two buttons "Timeline" (opens `TimelineDialog`) and "Evidence" (opens `EvidenceDialog`); `headline` = `HeadlineBar` with `DetailsPanel` (its `onevidence` opens the evidence dialog). Opening either dialog pauses playback.
+  `LessCarsMode.svelte` props `{ data: LessCarsData; createWorker?: () => PlaybackWorkerInput }`. Behaviour:
+  - Header: `useHeaderActions(actions, { pinned: headline })`; `actions` = two buttons "Timeline" (opens `TimelineDialog`) and "Evidence" (opens `EvidenceDialog`); `headline` = `HeadlineBar` with `DetailsPanel` (its `onevidence` opens the evidence dialog). `TimelineDialog`'s `onevidence(id)` calls `evidence.show(evidenceSectionId(id))`. Opening either dialog pauses playback.
   - Map: `SimMap` with `view={HIDDEN_VIEW}` and `timelinePick`. On `onready(h)`: `h.setTimelineLookups({ chance: chanceTable(cal), typicalMonths: typicalMonths(cal) })` (once), `h.onResyncNeeded(() => client.resync())`, queued playback updates applied, `installLessCarsLayers(h.getMap()!, { streets, lines, stops, sites, garages: empty }, theme, day)`, `h.setTime(day)`. Theme changes call `layers.setTheme`. `playbackLoaded` calls `layers.setData('garages', garageFeatures(…, places, reservations))`.
   - Client: created on mount (`createWorker ?? spawnSimWorker`), `init(data.manifest, data.plan, data.sites)`; `playback` → `h.applyTimeline(render)` (queued until the handle); `chunks` → `h.setChunkStatus`; `error`/crash → phase `failed` with a notice "Couldn't load the buildings." and a Retry button (`restart(spawnSimWorker())`, `init`); the plan layers keep working while buildings fail.
   - Scrubber: `asOf = LESSCARS_START`, `horizon = LESSCARS_HORIZON`, opens at `LESSCARS_START`, paused; `markers = scrubberMarkers(plan, summary.switchDay)`; `onday(d)`: `h.setTime(d)`, `layers.setDay(d)`, and a card refresh when the month changed. Its height sets the map's bottom inset and a `--lc-scrubber-h` variable for the card and notices.
@@ -1135,27 +1292,41 @@ it('no-scenario and error states render without a map or worker', async () => {
   await expect.element(page.getByRole('button', { name: 'Retry' })).toBeVisible();
 });
 
-// src/lib/lesscars/LessCarsMode.svelte.spec.ts — fake worker (records requests, emits responses);
-// SimMap is real but unsupported-WebGL-safe in the client project as FzpMode's spec does
-it('sends initPlayback with the plan and sites, opens paused at 2028-01-01', async () => {
-  expect(worker.sent[0]).toMatchObject({ type: 'initPlayback', plan: data.plan, sites: data.sites });
-  await expect.element(page.getByTestId('fzp-readout-label')).toHaveTextContent('January 2028');
+// src/lib/lesscars/LessCarsMode.svelte.spec.ts — the FzpMode spec pattern
+// (src/lib/fzp/FzpMode.svelte.spec.ts:1-30): `vi.mock('$lib/map/SimMap.svelte', () =>
+// import('$lib/fzp/test/FzpSimMapStub.svelte'))`, the recording `stub`/`callsOf` from
+// `$lib/fzp/test/sim-map-stub` (reset per test), render `LessCarsModeHost` (so useHeaderActions
+// has a slot), `createWorker` returning `FakePlaybackWorker`s (Task 5) pushed to `workers`.
+// Picks are driven through `stub.props.timelinePick!(…)`; `data` = loadLessCars on fixture-0.
+it('sends initPlayback with the plan and sites, opens paused at the plan start', async () => {
+  expect(workers[0].posts[0]).toMatchObject({ type: 'initPlayback', plan: data.plan, sites: data.sites });
+  await expect.element(page.getByTestId('fzp-readout-label')).toHaveTextContent(formatMonthYear(LESSCARS_START));
   await expect.element(page.getByTestId('fzp-play-label')).toHaveTextContent('Play');
+  expect(callsOf('setTimelineLookups')).toHaveLength(1);
+});
+it('applies playback revisions to the map handle; playbackLoaded fills the garage source', async () => {
+  workers[0].emit({ type: 'playback', rev: 1, render: { revision: 0, cells: [], removedCells: [], demolish: [] }, complete: true });
+  expect(callsOf('applyTimeline')).toHaveLength(1);
+  workers[0].emit({ type: 'playbackLoaded', rev: 1, seed: 1, places: { [G]: [-122.418, 37.76] },
+    reservations: [{ parcelId: G, kept: true }] }); // G: the mini plan's garage parcel
+  expect(stub.map.sourceData('lc-garages').features.length).toBeGreaterThan(0); // FakeMap records setData
 });
 it('puts the headline in the pinned slot and Timeline and Evidence among the actions', async () => {
-  await expect.element(page.getByTestId('lc-headline')).toHaveTextContent('+260 homes by 2068');
-  await page.getByRole('button', { name: 'Timeline' }).click();
+  const pinned = page.getByTestId('header-pinned');
+  await expect.element(pinned.getByTestId('lc-headline')).toHaveTextContent(headlineText(data.summary));
+  await page.getByTestId('header-actions').getByRole('button', { name: 'Timeline' }).click();
   await expect.element(page.getByRole('dialog', { name: 'Project timeline' })).toBeVisible();
 });
 it('a worker error shows the failure notice; Retry restarts and re-inits', async () => {
-  worker.emit({ type: 'error', rev: 1, code: 'internal', message: 'x' });
+  workers[0].emit({ type: 'error', rev: 1, code: 'internal', message: 'x' });
   await page.getByRole('button', { name: 'Retry' }).click();
-  expect(spawned).toBe(2);
-  expect(lastWorker.sent[0].type).toBe('initPlayback');
+  expect(workers).toHaveLength(2);
+  expect(workers[0].terminated).toBe(true);
+  expect(workers[1].posts[0].type).toBe('initPlayback');
 });
 it('a card answer renders the building details; Escape closes it', async () => {
-  pick({ projectId: 'lc-build:lc:hwy:1', parcelId: 'lc:hwy:1', x: 10, y: 10, kind: 'tap' });
-  worker.emit({ type: 'playbackCard', reqId: worker.lastReqId(), card: freedCard });
+  stub.props.timelinePick!({ projectId: 'lc-build:lc:hwy:1', parcelId: 'lc:hwy:1', x: 10, y: 10, kind: 'tap' });
+  workers[0].emit({ type: 'playbackCard', reqId: workers[0].lastReqId(), card: freedCard });
   await expect.element(page.getByRole('region', { name: 'Building details' })).toHaveTextContent('Built by the plan on freed land');
   await userEvent.keyboard('{Escape}');
   await expect.element(page.getByRole('region', { name: 'Building details' })).not.toBeInTheDocument();
@@ -1176,7 +1347,7 @@ Expected: FAIL.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/lib/lesscars src/routes/lesscars src/lib/shell/layout.ts src/lib/shell/layout.spec.ts
+git add src/lib/lesscars src/routes/lesscars src/lib/shell/layout.ts src/lib/shell/layout.spec.ts src/lib/fzp/test/sim-map-stub.ts
 git commit -m "feat(lesscars): the /lesscars page"
 ```
 
@@ -1191,13 +1362,12 @@ git commit -m "feat(lesscars): the /lesscars page"
 **Interfaces:**
 - Consumes: the page; `window.__sfhLessCars` (Task 9), `window.__sfhMap` (`src/lib/map/debug.ts`); helpers `expectNoA11yViolations` (`e2e/helpers/a11y.ts:48`), `headerAction`, `openHeaderMenu`, `projectToPage`, `gotoHydrated` (`e2e/helpers/sharing.ts`), `slider` (`e2e/helpers/run.ts:8`); disk reads of `e2e/fixtures/data/fixture-0/scenarios/lesscars/*` and `scenarios/fzp/parcels.bin`, decoded with `parseSummary`, `parseSitesFile`, `parsePlanFile`, `decodeTimelinePayload` (after `inflateRawSync`) and `readScenarioParcels`. No expected value is hard-coded: every count, label, day and id comes from those files.
 
-Tests (all under both Playwright projects unless noted; `reducedMotion: 'reduce'` as `gotoFzp` does):
+Tests (all under both Playwright projects unless noted). A `test.beforeEach` emulates `reducedMotion: 'reduce'` (as `gotoFzp` does), calls `gotoHydrated(page, '/lesscars')` and waits for `window.__sfhLessCars.phase === 'ready'`; every test starts there on a fresh page. `setDay(page, d)` focuses `slider(page)` first, then presses keys until the readout shows `formatMonthYear(monthStart(d))` (`End`/`Home` for the bounds). Layer ids come from `LC_LAYER`/`LC_STREET_LAYER` (Task 3b), imported from `src/lib/lesscars/map-layers.ts`.
 
 ```ts
-test('opens paused on 2028 with the headline from summary.json', async ({ page }) => {
-  await gotoHydrated(page, '/lesscars');
+test('opens paused on the plan start with the headline from summary.json', async ({ page }) => {
   await expect(page.getByTestId('lc-headline')).toHaveText(headlineText(summary));
-  await expect(page.getByTestId('fzp-readout-label')).toHaveText('January 2028');
+  await expect(page.getByTestId('fzp-readout-label')).toHaveText(formatMonthYear(LESSCARS_START));
   expect(await page.evaluate(() => window.__sfhLessCars!.playing)).toBe(false);
 });
 test('the details show a breakdown that adds to the headline', async ({ page }) => {
@@ -1210,19 +1380,21 @@ test('street states are rendered by day, and revert when scrubbing back', async 
   const removed = () => renderedProps(page, LC_STREET_LAYER.removed); // queryRenderedFeatures via __sfhMap
   await setDay(page, T('hwy').openDay);                           // keyboard on the slider until the readout month, or End
   expect((await removed()).map((p) => p.project)).toContain('hwy');
+  await slider(page).focus();
   await page.keyboard.press('Home');
   expect(await removed()).toEqual([]);
 });
 test('plan lines and stops appear on opening; freed land appears when available', async ({ page }) => {
   await setDay(page, T('subway').openDay);
-  expect(await renderedProps(page, 'lc-stops')).not.toEqual([]);
+  expect(await renderedProps(page, LC_LAYER.stopsCircle)).not.toEqual([]);
   await setDay(page, T('hwy').availableDay!);
-  expect((await renderedProps(page, 'lc-sites')).map((p) => p.siteId).sort()).toEqual(siteIds);
+  expect((await renderedProps(page, LC_LAYER.sitesFill)).map((p) => p.siteId).sort()).toEqual(siteIds);
 });
 test('a freed-land building rises and its card matches timeline.bin', async ({ page }) => {
   const b = timeline.builds.find((x) => x.parcelRow === null)!;
+  await slider(page).focus();
   await page.keyboard.press('End');
-  await waitFor(page, () => window.__sfhLessCars!.cells.includes('lc-sites'));
+  await waitFor(page, () => window.__sfhLessCars!.cells.includes(SITES_CELL));
   await page.mouse.click(...(await projectToPage(page, siteCentre(b.siteId))));
   const card = page.getByRole('region', { name: 'Building details' });
   await expect(card).toContainText('Built by the plan on freed land');
@@ -1232,7 +1404,7 @@ test('the garage marker follows the reservation verdict', async ({ page }) => {
   const garageParcel = garageOnParcel(planFile).site.parcel; // the edge-garage with a { parcel } site
   const r = timeline.reservations.find((x) => parcels.id[x.row] === garageParcel)!;
   await setDay(page, T('garage').openDay);
-  expect((await renderedProps(page, 'lc-garages')).length > 0).toBe(r.kept);
+  expect((await renderedProps(page, LC_LAYER.garagesCircle)).length > 0).toBe(r.kept);
 });
 test('Timeline and Evidence open from the header (Menu on phones), axe clean', async ({ page }) => {
   await (await headerAction(page, 'Timeline')).click();
@@ -1269,7 +1441,7 @@ Expected: PASS (no change to `/sim`).
 
 - [ ] **Step 4: Write the docs**
 
-`docs/dev/lesscars.md` "The page": the route and load states; the data flow (main thread: plan, sites, summary, calibration; worker playback host: parcels.bin, projects.json, calibration.json, timeline.bin, chunks); the request flow (`initPlayback`, `playbackLoaded`, `playback`, `playbackCard`, prefetch); the synthetic `lc-sites` cell and `lc-build:` ids; street-state rules (`laneState`, the event order) and the layer ids; epoch-gated filters; the header (pinned headline, Timeline and Evidence actions in the Menu below 768 px); the debug hook; the e2e notes (port, fixture ids read from disk); the known gap (pointer-only picking); the builder's calls from this plan's Decisions. `CLAUDE.md:43`: link text becomes "**`/lesscars` (plan format, checks, dated regimes and reservations, freed land, paired runs, output files, the page)**".
+`docs/dev/lesscars.md` "The page": the route and load states; the data flow (main thread: plan, sites, summary, calibration; worker playback host: parcels.bin, projects.json, calibration.json, timeline.bin, chunks); the request flow (`initPlayback`, `playbackLoaded`, `playback`, `playbackCard`, prefetch); the synthetic `lc-sites-cell` cell and `lc-build:` ids; street-state rules (`laneState`, the event order) and the layer ids; epoch-gated filters; the header (pinned headline, Timeline and Evidence actions in the Menu below 768 px); the debug hook; the e2e notes (port, fixture ids read from disk); the known gap (pointer-only picking); the builder's calls from this plan's Decisions. `CLAUDE.md:43`: link text becomes "**`/lesscars` (plan format, checks, dated regimes and reservations, freed land, paired runs, output files, the page)**".
 
 - [ ] **Step 5: Final verification**
 
