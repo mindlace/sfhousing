@@ -552,8 +552,41 @@ describe('HeightLimitsLayer on the GPU', () => {
     await render([layer], view([after, at[1]], 17, 30));
     expect((find('lid-labels').state as { key: string }).key).not.toBe(key0);
     expect(find('lid-labels-text').props.data).toBe(data0);
-    expect([find('glaze'), find('walls'), find('rims')]).toEqual([glaze, walls, rims]);
     expect(find('glaze')).toBe(glaze);
+    expect(find('walls')).toBe(walls);
+    expect(find('rims')).toBe(rims);
+    expect(errors).toEqual([]);
+  });
+
+  it('zooming through the fade at one integer zoom reruns no collision and keeps the text data', async () => {
+    // one lid label shown from z15, at the view centre
+    const lids: HeightLids = {
+      ...TINY.lids,
+      labels: {
+        text: ['4 stories · +16 floors'],
+        position: Float64Array.of(STREET[0], STREET[1], Z4),
+        minZoom: Uint8Array.of(15)
+      }
+    };
+    const layer = limits({ ...TINY, lids });
+    const find = (id: string) => live().find((l) => l.id === `${LIMITS_LAYER_ID}-${id}`)!;
+    const shownMemo = () => (find('lid-labels').state as { shown: unknown }).shown;
+    const at = (zoom: number) => view(STREET, zoom, 30);
+    await render([layer], at(15.1));
+    await render([layer], at(15.1));
+    const data0 = find('lid-labels-text').props.data;
+    const memo0 = shownMemo();
+    expect((data0 as unknown[]).length).toBeGreaterThan(0);
+    const op0 = find('lid-labels').props.opacity;
+    const runs = LimitLabelsLayer.collisions;
+    for (const zoom of [15.2, 15.3, 15.45]) {
+      await render([layer], at(zoom));
+      await render([layer], at(zoom));
+      expect(find('lid-labels').props.opacity).not.toBe(op0);
+      expect(LimitLabelsLayer.collisions).toBe(runs);
+      expect(shownMemo()).toBe(memo0);
+      expect(find('lid-labels-text').props.data).toBe(data0);
+    }
     expect(errors).toEqual([]);
   });
 });

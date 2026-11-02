@@ -217,7 +217,9 @@ const FLAT_PITCH = 1;
  * earlier one is dropped. Positions are scaled about the view centre to the integer zoom, where
  * labels sit closest together, so zooming in inside the step only spreads them. Pitched, only the
  * labels within reach of the view across one pan step are considered (the rest cannot show
- * before the key changes); flat, all of them (a pan moves them all alike).
+ * before the key changes): the step is PAN_STEP_PX at the integer zoom, so 2^(zoom − z) times
+ * that on screen, magnified up to 1 / cos(pitch) toward the near edge. Flat, all of them (a pan
+ * moves them all alike).
  */
 function declutterOn(all: Label[], viewport: ViewLike): Label[] {
   const project = viewport.project?.bind(viewport);
@@ -226,7 +228,12 @@ function declutterOn(all: Label[], viewport: ViewLike): Label[] {
   const [cx, cy] = [w / 2, h / 2];
   const z = Math.floor(viewport.zoom);
   const k = 2 ** (z - viewport.zoom) / DECLUTTER_SLACK;
-  const m = (viewport.pitch ?? 0) < FLAT_PITCH ? Infinity : PAN_STEP_PX + 128;
+  const pitch = viewport.pitch ?? 0;
+  const m =
+    pitch < FLAT_PITCH
+      ? Infinity
+      : (PAN_STEP_PX * 2 ** (viewport.zoom - z)) / Math.cos((Math.min(pitch, 80) * Math.PI) / 180) +
+        128;
   const near: { l: Label; x: number; y: number }[] = [];
   for (const l of all) {
     const [x, y] = project(l.position);
@@ -255,13 +262,18 @@ interface LabelsProps {
  */
 export class LimitLabelsLayer extends CompositeLayer<LabelsProps & LayerProps> {
   static layerName = 'LimitLabelsLayer';
+  /** Collision passes run, all instances (tests: an opacity-only update must not add one). */
+  static collisions = 0;
 
   declare state: {
     key?: string;
     /** The set's labels at an integer zoom, in placement order. */
     all?: Memo<Label[]>;
-    /** The labels last drawn; kept as is while the kept set is unchanged. */
-    shown?: Label[];
+    /**
+     * The labels drawn, per (set, key): an opacity change (the fade) reuses them as they are, and
+     * a new key whose kept set is unchanged keeps the same array, so the TextLayer keeps its data.
+     */
+    shown?: Memo<Label[]>;
   };
 
   /**
@@ -295,14 +307,17 @@ export class LimitLabelsLayer extends CompositeLayer<LabelsProps & LayerProps> {
   renderLayers(): Layer[] {
     const { set, ink, halo } = this.props;
     const viewport = this.context.viewport;
-    this.state.key = LimitLabelsLayer.labelKey(viewport);
+    const key = (this.state.key = LimitLabelsLayer.labelKey(viewport));
     const z = Math.floor(viewport.zoom);
-    const all = (this.state.all = memo(this.state.all, set, String(z), () =>
-      labelsAt(set, z).sort((a, b) => a.minZoom - b.minZoom)
-    )).value;
-    const next = declutterOn(all, viewport);
-    const prev = this.state.shown;
-    const shown = (this.state.shown = prev && sameItems(prev, next) ? prev : next);
+    const before = this.state.shown;
+    const shown = (this.state.shown = memo(before, set, key, () => {
+      const all = (this.state.all = memo(this.state.all, set, String(z), () =>
+        labelsAt(set, z).sort((a, b) => a.minZoom - b.minZoom)
+      )).value;
+      LimitLabelsLayer.collisions++;
+      const next = declutterOn(all, viewport);
+      return before && sameItems(before.value, next) ? before.value : next;
+    })).value;
     return [
       new TextLayer<Label>(
         this.getSubLayerProps({
