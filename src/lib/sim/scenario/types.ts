@@ -16,7 +16,15 @@ import type { BrushCatalog, BrushQuery } from '../levers/brushes';
 import type { LeverCapacity } from '../levers/resolve';
 import type { StageScale } from '../levers/timers';
 import type { SimLevers } from '../levers/types';
-import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev, SimRequest } from '../protocol';
+import type { PlaybackRequest, PlaybackResponse } from '../lesscars/types';
+import type {
+  ChunksResponse,
+  ParcelSummary,
+  ReadyResponse,
+  Rev,
+  SimRequest,
+  SimResponse
+} from '../protocol';
 
 // T5
 export interface Schedule {
@@ -206,7 +214,9 @@ export type LeversResponse =
       capacity: LeverCapacity;
       unknownLots: number;
     };
-export type WorkerRequest = SimRequest | ScenarioRequest;
+export type WorkerRequest = SimRequest | ScenarioRequest | PlaybackRequest;
+/** Everything the Worker posts: the editor's, the scenario host's and the playback host's. */
+export type WorkerResponse = SimResponse | ScenarioResponse | PlaybackResponse;
 export type ProjectCard = {
   projectId: string;
   origin: 'pipeline' | 'simulated';

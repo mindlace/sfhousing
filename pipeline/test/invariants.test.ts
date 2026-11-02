@@ -1220,6 +1220,16 @@ describe('V35 /lesscars files', () => {
     f(j);
     writeFileSync(p, JSON.stringify(j));
   };
+  /** Rewrites timeline.bin's JSON payload (raw deflate, as the step writes it). */
+  const editTimeline = (
+    dir: string,
+    f: (doc: Record<string, any>) => void // eslint-disable-line @typescript-eslint/no-explicit-any
+  ) => {
+    const p = join(dir, LESSCARS_FILES.timeline);
+    const doc = JSON.parse(inflateRawSync(readFileSync(p)).toString('utf8'));
+    f(doc);
+    writeFileSync(p, deflateRawSync(Buffer.from(JSON.stringify(doc), 'utf8')));
+  };
   it('V35 passes on the fixture build', async () => {
     const r = await v35(base);
     expect(r.ok, r.detail).toBe(true);
@@ -1242,6 +1252,17 @@ describe('V35 /lesscars files', () => {
     const r = await v35(d);
     expect(r.ok).toBe(false);
     expect(r.detail).toMatch(/times differ from schedulePlan/);
+  });
+  it('V35 fails when the timeline lacks a reserved parcel', async () => {
+    const d = copy();
+    editTimeline(d, (doc) => {
+      expect(doc.reservations.row.length).toBeGreaterThan(0);
+      doc.reservations.row.shift();
+      doc.reservations.kept.shift();
+    });
+    const r = await v35(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/timeline reservations/);
   });
   it('V35 fails when a named file is missing', async () => {
     const d = copy();

@@ -1,13 +1,13 @@
-// Thin shell: all behaviour lives in createSimHost / createScenarioHost (tested in Node) and the
-// router that puts them behind this one Worker.
+// Thin shell: all behaviour lives in createSimHost / createScenarioHost / createPlaybackHost
+// (tested in Node) and the router that puts them behind this one Worker.
 import { createSimHost } from './host';
+import { createPlaybackHost } from './lesscars/playback-host';
 import { createWorkerRouter } from './router';
 import { createScenarioHost } from './scenario/scenario-host';
-import type { SimResponse } from './protocol';
-import type { ScenarioResponse, WorkerRequest } from './scenario/types';
+import type { WorkerRequest, WorkerResponse } from './scenario/types';
 
 interface Scope {
-  postMessage(msg: SimResponse | ScenarioResponse, transfer: Transferable[]): void;
+  postMessage(msg: WorkerResponse, transfer: Transferable[]): void;
   onmessage: ((e: MessageEvent<WorkerRequest>) => void) | null;
 }
 const scope = self as unknown as Scope;
@@ -24,6 +24,16 @@ const router = createWorkerRouter({
   }),
   createScenario: () =>
     createScenarioHost({
+      fetch: (url) => fetch(url),
+      fetchBytes: (url) => fetch(url),
+      post: (msg, transfer) => scope.postMessage(msg, transfer),
+      setTimeout: (fn, ms) => setTimeout(fn, ms),
+      clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+      now: () => performance.now(),
+      retryDelaysMs
+    }),
+  createPlayback: () =>
+    createPlaybackHost({
       fetch: (url) => fetch(url),
       fetchBytes: (url) => fetch(url),
       post: (msg, transfer) => scope.postMessage(msg, transfer),

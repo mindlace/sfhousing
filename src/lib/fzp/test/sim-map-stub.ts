@@ -63,6 +63,49 @@ export class FakeMap {
     return { lng: w + x * 1e-5, lat: n - y * 1e-5 };
   }
 
+  // What /lesscars' installLessCarsLayers calls: recording no-ops over sources and layers.
+  #sources = new Map<string, { data: unknown }>();
+  #layers = new Map<string, unknown>();
+  filters = new Map<string, unknown>();
+
+  addSource(id: string, spec: { data?: unknown }): this {
+    this.#sources.set(id, { data: spec.data });
+    return this;
+  }
+
+  getSource(id: string) {
+    const src = this.#sources.get(id);
+    return src && { setData: (d: unknown) => void (src.data = d) };
+  }
+
+  /** The latest data of a GeoJSON source (its spec's, then each setData's). */
+  sourceData(id: string): { features: unknown[] } {
+    return this.#sources.get(id)?.data as { features: unknown[] };
+  }
+
+  addLayer(spec: { id: string; filter?: unknown }): this {
+    this.#layers.set(spec.id, spec);
+    this.filters.set(spec.id, spec.filter);
+    return this;
+  }
+
+  getLayer(id: string): unknown {
+    return this.#layers.get(id);
+  }
+
+  setFilter(id: string, filter: unknown): this {
+    this.filters.set(id, filter);
+    return this;
+  }
+
+  setPaintProperty(): this {
+    return this;
+  }
+
+  getStyle(): { layers: { id: string }[] } {
+    return { layers: [] };
+  }
+
   /** Calls every listener of this event type. */
   fire(ev: string): void {
     for (const cb of [...(this.#listeners.get(ev) ?? [])]) cb({ type: ev });

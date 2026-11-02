@@ -59,6 +59,7 @@ function withPlan(edit: (plan: Json) => void) {
 }
 
 const unknownCnn = (p: Json) => (project(p, 'ped').segments = [{ cnn: ['99999'] }]);
+const unknownDisplayCnn = (p: Json) => (p.displays[0].segments = [{ cnn: ['99999'] }]);
 const unknownStop = (p: Json) => (project(p, 'buslane').stopIds = ['muni:nope']);
 const parkingUnknown = (p: Json) => (project(p, 'parking').parcel = 'no-such-parcel');
 const parkingWithHomes = (p: Json) => {
@@ -98,7 +99,9 @@ describe('writeLessCars', () => {
     const plan = parsePlanFile(read(LESSCARS_FILES.plan));
     expect(plan.datasetVersion).toBe('fixture-0');
     expect(plan.times.map((t) => t.id)).toEqual(plan.plan.projects.map((p) => p.id));
-    expect(Object.keys(plan.segments).sort()).toEqual(['1000', '1001', '4000']);
+    expect(plan.plan.displays?.map((d) => d.id)).toEqual(['underpass']);
+    // 2000 is the display's street: display CNNs are drawn like project CNNs
+    expect(Object.keys(plan.segments).sort()).toEqual(['1000', '1001', '2000', '4000']);
     const sites = parseSitesFile(read(LESSCARS_FILES.sites));
     expect(sites.sites.length).toBeGreaterThan(0);
     expect(sites.sites.every((s) => s.projectId === 'hwy')).toBe(true);
@@ -158,6 +161,7 @@ describe('writeLessCars', () => {
   it('bad plan data fails the build', async () => {
     for (const [edit, needle] of [
       [unknownCnn, 'ped.segments'],
+      [unknownDisplayCnn, 'underpass.segments'],
       [unknownStop, 'buslane.stopIds'],
       [parkingWithHomes, 'parking.parcel'],
       [parkingUnknown, 'parking.parcel'],

@@ -184,7 +184,7 @@ export interface Token {
   cancel(): void;
 }
 
-function createToken(deps: Pick<ScenarioHostDeps, 'setTimeout' | 'clearTimeout'>): Token {
+export function createToken(deps: Pick<ScenarioHostDeps, 'setTimeout' | 'clearTimeout'>): Token {
   const timers = new Set<unknown>();
   let cancelled = false;
   return {

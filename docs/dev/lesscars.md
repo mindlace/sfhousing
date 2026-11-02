@@ -1,4 +1,4 @@
-# /lesscars pipeline
+# /lesscars
 
 `/lesscars` plays one fixed fewer-cars plan from 2028 to 2068 against a no-plan baseline. The
 spec is `docs/superpowers/specs/2026-11-01-lesscars-design.md`; the plan for this part is
@@ -50,6 +50,15 @@ A segment is `{ cnn: [...] }` (DataSF street centrelines, `src_streets`) or a dr
 `{ line, provenance }` in [lng, lat]. A stop is `{ id, name, lngLat }`; `lngLat` null names an
 existing transit.json stop.
 
+An optional top-level `displays` list holds display-only map items (`PlanDisplay`: `id`,
+`label`, `segments`, `from`). A display has no capacity, no homes and no closure: the page draws
+its segments as changed from the open day of project `from`, and nothing in the engine or the
+summary reads it. Its id shares the project id space (`checkPlan` reports `duplicate-id`), `from`
+must name a project (`unknown-dependency`), its CNNs are checked against `src_streets` and drawn
+in `plan.json` `segments` like a project's. Plan 3 uses it for the Masonic underpass, filled from
+the Geary subway's opening. A plan without `displays` parses to an object without the key, so its
+plan.json is unchanged.
+
 Id spaces: `routeIds` are bare GTFS route ids (transit.json `Pattern.routeId`, for example `14`,
 `N`). Existing stop ids carry the operator prefix (transit.json `Stop.id`, for example
 `muni:m1`). Stops the plan adds use the `lc:` prefix.
@@ -78,12 +87,12 @@ From the plan alone (`checkPlan`, field = problem code): duplicate ids, unknown 
 cycles, dates outside 2028-01-01 to 2068-12-31, a start before a dependency opens, a car closure
 with no transit dependency, **`fillmore`** (a closure before its transit opens), a build before
 its site is available, a garage on a site that is not a build-free removal, a reused site, a stop
-defined twice, capacity (`maxConcurrent` per capacity kind), and a parking conversion with no
-transit dependency.
+defined twice, capacity (`maxConcurrent` per capacity kind), a parking conversion with no
+transit dependency, and a display whose id is reused or whose `from` names no project.
 
 Against this dataset:
 
-- every CNN is in `src_streets` (`segments`);
+- every CNN of a project or display is in `src_streets` (`segments`);
 - every existing stop id is in transit.json, and every `lc:` stop id is placed by a transit line
   of the plan (`stops`, `stopIds`);
 - every `routeIds` entry has a pattern in transit.json in the project's mode family (tram
@@ -215,7 +224,12 @@ file the manifest names.
 | `timeline.bin` | the representative future: columnar JSON, deflate-raw level 9, as policy.bin |
 
 `timeline.bin` is bound to parcels.bin by `count` and `idsHash`; decoding it against another
-parcels.bin throws. Codecs: `parsePlanFile`, `parseSitesFile`, `parseSummary`,
+parcels.bin throws. Besides the plan arm's schedules and the initiative builds kept in the
+representative seed, it holds `reservations`: every reserved row's verdict in that seed (`kept`,
+or voided because the market began a project there first), strictly ascending by row, encoded as
+the column object `{ row: number[], kept: (0 | 1)[] }`. A voided garage parcel has no build to
+drop, and a zero-gain conversion keeps its reservation with no build, so the page needs the
+verdict to tell kept from voided. Codecs: `parsePlanFile`, `parseSitesFile`, `parseSummary`,
 `decodeTimelinePayload` (`src/lib/data/lesscars/codec.ts`).
 
 Counts in report.json: `lesscars.projects`, `lesscars.sites`, `lesscars.sites.zero_yield`,
@@ -231,7 +245,10 @@ only with `npm run pipeline -- fixture --update-golden`.
 
 `checkV35` (`pipeline/steps/check-lesscars.ts`) re-reads the published files in `check` and in
 `build`: see Invariants in [pipeline.md](pipeline.md). A build whose manifest has no
-`scenarios.lesscars` passes with "no plan".
+`scenarios.lesscars` passes with "no plan". Among its checks, the timeline's `reservations` rows
+must equal the non-zero rows of `reservationsOf(plan, schedulePlan(plan), parcels)`
+(`pipeline/lib/lesscars/runs.ts`); a mismatch fails with `timeline reservations ≠ plan's reserved
+parcels`.
 
 ## Running it
 
@@ -255,3 +272,136 @@ machine, run one after the other:
 
 The lesscars tests add no measurable time, far under the 60 s threshold, so nothing moved off
 `.github/workflows/pipeline.yml` or `chreode.config.ts`.
+
+## The page
+
+`/lesscars` (`src/routes/lesscars/`, plan `docs/superpowers/plans/2026-11-01-lesscars-2-page.md`)
+plays the stored representative future of the plan from `LESSCARS_START` (2028-01-01) to
+`LESSCARS_HORIZON` (2068-12-31). It opens paused at the start; nobody edits anything but the day
+(scrub, play) and the map. The route is reachable by URL only: the header mode link arrives with
+the live plan in Plan 3.
+
+| Area                                       | Code                                                             |
+| ------------------------------------------ | ---------------------------------------------------------------- |
+| Route and load states                      | `src/routes/lesscars/+page.{ts,svelte}`, `lesscars/load.ts`      |
+| Page body (map, scrubber, header, dialogs) | `src/lib/lesscars/LessCarsMode.svelte`                           |
+| Plan features by day                       | `src/lib/lesscars/features.ts`                                   |
+| MapLibre layers and epoch-gated filters    | `src/lib/lesscars/map-layers.ts`                                 |
+| Headline, details, chart, map key          | `HeadlineBar`, `DetailsPanel`, `ExtraChart`, `legend.ts`         |
+| Timeline and evidence dialogs              | `TimelineDialog`, `EvidenceDialog`, `evidence.ts`                |
+| Building card                              | `src/lib/lesscars/LessCarsCard.svelte`                           |
+| Playback worker host, builds, client       | `src/lib/sim/lesscars/{playback-host,builds,playback-client}.ts` |
+| Debug hook                                 | `src/lib/lesscars/debug.ts`                                      |
+| e2e                                        | `e2e/lesscars.spec.ts`                                           |
+
+### Load states
+
+The universal load (`loadLessCars`, also run during SSR) never throws: a manifest without
+`scenarios.lesscars` gives `no-scenario` ("This dataset has no fewer-cars plan yet.", a link to
+`/sim`, no map and no worker); a failed fetch, a malformed file or a `datasetVersion` mismatch
+gives `error` with a Retry that calls `invalidateAll()`. `ready` mounts `LessCarsMode` under
+`{#key data.data.manifest}`, so a new manifest remounts it on a fresh map.
+
+### Data flow
+
+- **Main thread:** the manifest, the FZP `calibration.json` (the timeline lookups SimMap needs) and
+  `scenarios/lesscars/{plan,sites,summary}.json`. The plan's streets, lines, stops, freed land and
+  the headline come from these alone, so they keep working while the buildings load or fail.
+- **Worker (playback host):** `scenarios/fzp/parcels.bin`, `projects.json`, `calibration.json`,
+  `scenarios/lesscars/timeline.bin` (decoded against parcels.bin) and the parcel chunks for
+  massing. It simulates nothing.
+
+### Request flow
+
+`PlaybackClient.init` posts `initPlayback` (manifest, plan, sites) with a new rev. The host
+answers `ready`, then `playbackLoaded` (the seed, label points of the parcels the plan names and
+the reservation verdicts; the page builds the garage markers from these), then `playback`
+revisions: revision 0 holds the sites cell, every ready cell and the full demolish list; later
+ones one per packing slice as chunks arrive. `playbackCard` answers a tap at the scrubbed day (a
+token drops stale answers; a new month re-asks). The page sends `prefetch` for the viewport on
+the first revision after each init and on every `moveend`. Until SimMap's handle exists,
+revisions and chunk statuses queue in order. A crash shows "Couldn't load the buildings." with a
+Retry that restarts the client.
+
+Freed sites are not in parcels.bin, so the host packs every freed-site build once into the
+synthetic cell `lc-sites-cell` (`SITES_CELL`). Each initiative build becomes an ordinary
+`Schedule` (origin `simulated`, id `lc-build:<siteId>`) inside the worker only, for massing,
+packing and cards.
+
+### Street states and layers
+
+A street project draws `works` from its start day and its open state from its open day:
+`laneState(lanes)` for a street change (no car lane: pedestrian, else transit, else bike; with
+cars: transit or bike, or nothing), `transit` for bus lanes and tram priority, `removed` for a
+removal or highway truncation, and `grade` (underpass filled) for a display from its source
+project's opening. Events on one segment sort by day, then plan order, so one project's start
+precedes its open on the same day; each state lasts until the next event.
+
+The 13 layer ids are `LC_LAYER_IDS` (`map-layers.ts`): `lc-sites-fill`, `lc-sites-outline`,
+`lc-street-{works,transit,bike,pedestrian,removed,grade}`, `lc-lines`, `lc-stops-circle`,
+`lc-stops-label`, `lc-garages-circle`, `lc-garages-label`. Each street state differs by width or
+pattern as well as colour, and has a map-key row. Every feature carries `[from, to)`; an
+open-ended `to` is stored as 2^31−1 in the map sources (a vt-pbf varint). Filters are
+epoch-gated: `setDay` finds the day's epoch among the sorted event days (O(log n)) and calls
+`setFilter` only when the epoch changes, keeping the features live on that epoch's start day. So
+the map is a pure function of the day, backwards as well as forwards.
+
+A garage on a `{ parcel }` site is drawn only when its reservation was kept in the
+representative seed; a voided one draws nothing (the summary does not count it). fixture-0's
+representative seed voids both reservations.
+
+### Header
+
+The headline (`summary.extra.mean` at 2068, with the p10 to p90 band) sits in the header's
+pinned slot as one button; it opens the details (breakdown that adds to the headline, chart,
+amenities note, map key, evidence). Timeline and Evidence are header actions, in the Menu below
+768 px.
+
+### Scrubber markers
+
+`scrubberMarkers` gives SB 79 at `switchDay` and each transit-line opening. `TimeScrubber` (shared
+with `/sim`, unchanged) places markers absolutely, so near ones would overlap (WCAG 2.5.8):
+`LessCarsMode` measures the scrubber's range input with a `ResizeObserver` and passes the width to
+`mergeMarkers(markers, trackPx, minPx = 48)`, which folds a marker into the previous kept one
+when their centres are closer than `minPx`. The merged marker keeps the first label and day; its
+accessible name lists every event ("Jump to SB 79; Fixture subway opening, December 2032"). On
+fixture-0 the two markers merge at both 1280 and 375 px.
+
+### Debug hook
+
+`window.__sfhLessCars` (`src/lib/lesscars/debug.ts`), VITE_E2E builds only, read-only getters:
+`phase`, `day`, `playing`, `seed`, `revision`, `cells`, `reservations`.
+
+### e2e notes
+
+- Run: `SFH_E2E_PORT=4207 SFH_E2E_WORKERS=1 npx playwright test e2e/lesscars.spec.ts` (both
+  projects).
+- Every expected value is read from fixture-0 on disk (`plan.json`, `sites.json`, `summary.json`,
+  `timeline.bin` decoded against `scenarios/fzp/parcels.bin`); none is hard-coded.
+- Map assertions call `queryRenderedFeatures` on the layer ids above after a repaint and `idle`,
+  so they check what MapLibre drew, not the sources.
+- The no-plan test strips `scenarios.lesscars` from `manifest.json` with `page.route` and reaches
+  `/lesscars` by client navigation from `/about` (a first load takes the manifest from SSR); with
+  no header link yet, it clicks an anchor the test adds.
+
+### Known gap
+
+Map picking is pointer-only (mouse click, touch tap), as on `/sim` (see "Known gap" in
+[fzp-mode.md](fzp-mode.md)): a keyboard user cannot open a building card.
+
+### Builder's calls
+
+- Representative future only: the map plays the plan arm of the representative seed, with no
+  baseline toggle.
+- No `Schedule.origin` extension: initiative builds become `simulated` Schedules with the
+  `lc-build:` prefix inside the worker.
+- Own card, not `ProjectCard`: what the building is, homes, stories, status and dates.
+- Freed sites are one synthetic cell (`lc-sites-cell`); parking builds stand on real parcels.
+- Street geometry stays in `plan.json`; garage parcel positions come from the worker.
+- Plan stops only (`lc:` ids); existing stops are not redrawn and `transit.json` is not fetched.
+- The Masonic underpass is an optional, display-only `displays` entry (Plan 3 adds it).
+- No header mode link until Plan 3.
+- A load failure's Retry calls `invalidateAll()`; a worker crash's Retry restarts the client.
+
+Follow-up: `LessCarsMode` copies `FzpMode`'s map-ready queue, chunk-status tracking and prefetch
+wiring rather than sharing them; a shared helper would remove the duplication.

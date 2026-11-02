@@ -20,6 +20,7 @@ import {
   type ProjectTimes
 } from '../../src/lib/data/lesscars/schedule';
 import { parseManifest } from '../../src/lib/data/manifest';
+import { reservationsOf } from '../lib/lesscars/runs';
 import { LESSCARS_FILES, PARCELS_BIN } from '../lib/scenario-files';
 import { readParcelsBin } from './scenario';
 import type { InvariantResult } from './check';
@@ -84,6 +85,7 @@ function sourceSumProblem(raw: unknown): string | null {
  * file exists and decodes; timeline.bin binds to parcels.bin; the plan passes checkPlan and its
  * times equal schedulePlan's; no site belongs to a project that is not a site kind; parking and
  * garage parcels hold no homes and every parking conversion depends directly on transit; the
+ * timeline's reservation rows are exactly reservationsOf's reserved rows; the
  * summary's source sums equal its differences at every year end and it has 41 year ends ending
  * 2068-12-31; timeline.bin is at most 3 MB, warning above 2 MB. Never throws.
  */
@@ -120,7 +122,10 @@ export function checkV35(outDir: string, counts: Record<string, number>): Invari
     }
     const summary = parseSummary(rawSummary);
     const timelineFile = join(outDir, LESSCARS_FILES.timeline);
-    decodeTimelinePayload(new Uint8Array(inflateRawSync(readFileSync(timelineFile))), parcels);
+    const timeline = decodeTimelinePayload(
+      new Uint8Array(inflateRawSync(readFileSync(timelineFile))),
+      parcels
+    );
     const { plan } = planFile;
 
     // The plan: rules and times.
@@ -161,6 +166,26 @@ export function checkV35(outDir: string, counts: Record<string, number>): Invari
         });
         if (!direct) problems.push(`${p.id}: no direct transit dependency`);
       }
+    }
+
+    // The timeline's reservation verdicts cover exactly the plan's reserved parcels.
+    let reserved: Int32Array | null = null;
+    try {
+      reserved = reservationsOf(plan, sched, parcels);
+    } catch (e) {
+      problems.push((e as Error).message);
+    }
+    if (reserved !== null) {
+      const want: number[] = [];
+      reserved.forEach((d, row) => {
+        if (d !== 0) want.push(row);
+      });
+      const got = timeline.reservations.map((r) => r.row);
+      if (want.length !== got.length || want.some((row, i) => row !== got[i]))
+        problems.push(
+          `timeline reservations ≠ plan's reserved parcels (rows ${got.join(',') || 'none'} vs ` +
+            `${want.join(',') || 'none'})`
+        );
     }
 
     // The summary.

@@ -15,3 +15,10 @@ export function replaceState(url: string, state: App.PageState): void {
   replaceStateCalls.push({ url, state });
   page.state = state;
 }
+
+/** How many times invalidateAll ran, for assertions. */
+export const invalidateAllCalls: number[] = [];
+
+export async function invalidateAll(): Promise<void> {
+  invalidateAllCalls.push(Date.now());
+}

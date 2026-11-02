@@ -36,7 +36,8 @@ import {
   TRANSIT_KINDS,
   parseLessCarsPlan,
   type LessCarsPlan,
-  type PlanProject
+  type PlanProject,
+  type SegmentRef
 } from '../../src/lib/data/lesscars/plan';
 import { RAISE_MODES } from '../../src/lib/data/lesscars/network';
 import { LESSCARS_HORIZON, checkPlan, schedulePlan } from '../../src/lib/data/lesscars/schedule';
@@ -87,8 +88,18 @@ export function zeroYieldSites<S extends { siteId: string; projectId: string }>(
 
 const round7 = (x: number) => Math.round(x * 1e7) / 1e7;
 
-const cnnsOf = (p: PlanProject): string[] =>
-  'segments' in p ? p.segments.flatMap((s) => ('cnn' in s ? s.cnn : [])) : [];
+const refCnns = (segments: readonly SegmentRef[]): string[] =>
+  segments.flatMap((s) => ('cnn' in s ? s.cnn : []));
+
+/** Every CNN the plan names, with the project or display naming it, projects first. */
+const cnnsOf = (plan: LessCarsPlan): { owner: string; cnn: string }[] =>
+  [
+    ...plan.projects.map((p) => ({
+      owner: p.id,
+      cnns: 'segments' in p ? refCnns(p.segments) : []
+    })),
+    ...(plan.displays ?? []).map((d) => ({ owner: d.id, cnns: refCnns(d.segments) }))
+  ].flatMap(({ owner, cnns }) => cnns.map((cnn) => ({ owner, cnn })));
 
 /**
  * Stop points of a transit project, as `pol_tod` would see them: transit.json stops, and `lc:`
@@ -152,9 +163,9 @@ async function dataProblems(
   const byId = new Map(plan.projects.map((p) => [p.id, p]));
   const parking: { project: PlanProject; parcel: string; deps: PlanProject[] }[] = [];
 
+  for (const { owner, cnn } of cnnsOf(plan))
+    if (!cnns.has(cnn)) out.push(`${owner}.segments: CNN ${cnn} is not in src_streets`);
   for (const p of plan.projects) {
-    for (const c of cnnsOf(p))
-      if (!cnns.has(c)) out.push(`${p.id}.segments: CNN ${c} is not in src_streets`);
     if (p.kind === 'transit-line')
       for (const s of p.stops) {
         const why = s.lngLat === null ? stopProblem(s.id) : null;
@@ -237,7 +248,7 @@ async function dataProblems(
 
 /** cnn → [lng, lat] lines of every CNN the plan names (src_streets is EPSG:7131). */
 async function segmentLines(db: Duck, plan: LessCarsPlan): Promise<LessCarsPlanFile['segments']> {
-  const cnns = [...new Set(plan.projects.flatMap(cnnsOf))].sort();
+  const cnns = [...new Set(cnnsOf(plan).map((x) => x.cnn))].sort();
   const out: LessCarsPlanFile['segments'] = {};
   if (cnns.length === 0) return out;
   await createTableFromRows(

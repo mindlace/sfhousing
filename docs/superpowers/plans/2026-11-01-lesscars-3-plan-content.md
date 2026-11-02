@@ -23,3 +23,23 @@
 3. **Live build and measure.** `npm run pipeline -- build`; record the lesscars step time, the seed count, V35's detail, the headline (mean, p10, p90), the source breakdown, the regime days and the zero-yield site count in `docs/dev/lesscars.md` ("First live build"). If the build's lesscars step exceeds 30 minutes, reduce `LIVE_PROFILE.lesscarsSeeds` (keep it odd) and record the band width at both counts.
 4. **Owner review of the answer.** Present the numbers and the map (Plan 2's page on a local dataset via `npm run data:local`) to the owner; changes to the plan go back through `docs/lesscars/plan-v1.md` and Task 1.
 5. **Hand off the partner actions.** Upload, verify on staging, bump staging then production through a release, per `docs/dev/deploy.md`.
+
+## Carried from Plan 2
+
+Items the Plan 2 final review left for this plan:
+
+- The header "Fewer cars" mode link.
+- 375 px header fit with the live headline; hide "homes" and "2068" as ScoreBar does if needed.
+- An axe pass in dark mode.
+- The timeline table at 375 px with plan-v1's long labels and 48 parking rows.
+- The plan-stop key row's per-mode size once several live modes exist.
+- The display-id duplicate message once real displays land.
+- An e2e for a kept garage, if the live seed keeps one.
+- Card placement on touch tablets (`md:left-16`).
+- Watch revision 0's uncapped packing on the live dataset.
+- The shared FzpMode/LessCarsMode helper (map-ready queue, chunk status, prefetch wiring).
+- The Geary trench twin-CNN carve check (plan-v1).
+- The phase-2-opens-after-phase-1 check (plan-v1).
+- The `masonic` display entry.
+- Street-change only, no `roundabout`.
+- Stop lng/lat range validation (Plan 1 ruling 6).

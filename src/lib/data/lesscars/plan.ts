@@ -112,12 +112,23 @@ export interface CapacityRule {
   maxConcurrent: number;
   provenance: Provenance;
 }
+/**
+ * A display-only map item: streets drawn as changed from the open day of project `from`. It has no
+ * capacity, homes or closure of its own (plan-v1's Masonic underpass, filled when the subway opens).
+ */
+export interface PlanDisplay {
+  id: string;
+  label: string;
+  segments: SegmentRef[];
+  from: string;
+}
 export interface LessCarsPlan {
   schema: 1;
   id: string;
   label: string;
   capacity: CapacityRule[];
   projects: PlanProject[];
+  displays?: PlanDisplay[];
 }
 
 export class PlanFormatError extends Error {
@@ -389,17 +400,30 @@ function parseCapacity(v: unknown, path: string): CapacityRule {
   };
 }
 
+function parseDisplay(v: unknown, path: string): PlanDisplay {
+  const r = record(v, path, ['id', 'label', 'segments', 'from']);
+  return {
+    id: str(r.id, at(path, 'id')),
+    label: str(r.label, at(path, 'label')),
+    segments: segments(r.segments, at(path, 'segments')),
+    from: str(r.from, at(path, 'from'))
+  };
+}
+
 /** Validate a plan document. Throws `PlanFormatError` naming the first bad field by dotted path. */
 export function parseLessCarsPlan(json: unknown): LessCarsPlan {
-  const r = record(json, '', ['schema', 'id', 'label', 'capacity', 'projects']);
+  const r = record(json, '', ['schema', 'id', 'label', 'capacity', 'projects'], ['displays']);
   if (r.schema !== LESSCARS_PLAN_SCHEMA) fail('schema', `expected 1, got ${String(r.schema)}`);
-  return {
+  const plan: LessCarsPlan = {
     schema: 1,
     id: str(r.id, 'id'),
     label: str(r.label, 'label'),
     capacity: array(r.capacity, 'capacity').map((c, i) => parseCapacity(c, at('capacity', i))),
     projects: array(r.projects, 'projects').map((p, i) => parseProject(p, at('projects', i)))
   };
+  if ('displays' in r)
+    plan.displays = array(r.displays, 'displays').map((d, i) => parseDisplay(d, at('displays', i)));
+  return plan;
 }
 
 /** The capacity a project draws on while it is under way. */

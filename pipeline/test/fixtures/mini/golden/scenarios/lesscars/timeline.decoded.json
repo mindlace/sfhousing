@@ -810,5 +810,15 @@
       "startDay": 24472,
       "completeDay": 25385
     }
+  ],
+  "reservations": [
+    {
+      "row": 15,
+      "kept": false
+    },
+    {
+      "row": 17,
+      "kept": false
+    }
   ]
 }

@@ -47,6 +47,25 @@ describe('checkPlan', () => {
     expect(checkPlan(TINY_PLAN, schedulePlan(TINY_PLAN))).toEqual([]);
   });
 
+  const planWithDisplays = (ds: { id: string; from: string }[]): LessCarsPlan =>
+    tinyPlan((q) => {
+      q.displays = ds.map((d) => ({ ...d, label: d.id, segments: [{ cnn: ['2000'] }] }));
+    });
+
+  it('a display naming no project is unknown-dependency; a reused id is duplicate-id', () => {
+    const p = planWithDisplays([
+      { id: 'x', from: 'nope' },
+      { id: 'subway', from: 'subway' },
+      { id: 'y', from: 'subway' },
+      { id: 'y', from: 'subway' }
+    ]);
+    const found = checkPlan(p, schedulePlan(p)).map((q) => `${q.project}:${q.code}`);
+    expect(found).toContain('x:unknown-dependency');
+    expect(found).toContain('subway:duplicate-id');
+    expect(found).toContain('y:duplicate-id');
+    expect(codes(planWithDisplays([{ id: 'underpass', from: 'subway' }]))).toEqual([]);
+  });
+
   it('fillmore: a removal starting before its transit opens', () => {
     const p = tinyPlan((q) => (byId(q, 'hwy').startYear = byId(q, 'subway').startYear));
     expect(codes(p)).toContainEqual({ code: 'fillmore', project: 'hwy' });
