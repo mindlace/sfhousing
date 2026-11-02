@@ -146,9 +146,34 @@ Order: parse, schedule, check (above), carve, sites, regimes, builds, paired run
 ### Streets and freed land
 
 Street centrelines are the `datasf-streets` source (DataSF Streets, active centrelines,
-`data.sf.gov/d/3psu-pn9h`), normalised to `src_streets` (cnn, streetname, classcode, layer, geom
+`data.sf.gov/d/3psu-pn9h`), normalised to `src_streets` (cnn, streetname, classcode, layer, `f_st`, `t_st`, geom
 in EPSG:7131). It is optional in a lock: without it `src_streets` is empty and any CNN fails the
 check. It is listed in `docs/dev/pipeline.md`.
+
+Plan segments written as a street selector (`STREET, FROM → TO`, plan-v1 Appendix A) are
+transcribed verbatim into `pipeline/enrichment/lesscars/corridors.json`
+(`{ "schema": 1, "corridors": [{ owner, street, from, to }] }`, `owner` the project or display
+id). `npm run pipeline -- lesscars-cnns` normalises the locked `datasf-streets` raw files (no
+network) and writes `corridors.resolved.json`: `{ schema: 1, source: { id, sha256 }, corridors }`,
+each corridor the selector plus `cnn` (sorted) and `lengthM` (to 0.1 m), `sha256` the lock's file
+hashes in lock order. It writes nothing and exits 1 when any selector fails, listing every failure.
+Plan CNN lists must equal `corridors.resolved.json`.
+
+The resolver (`pipeline/lib/lesscars/corridors.ts`):
+
+1. Candidates are the segments whose `streetname` is `STREET`. Graph nodes are their line-part
+   endpoints clustered within `snapM`; each part is an edge weighted by its length.
+2. FROM (TO) nodes are the candidate nodes within `crossM` of any line of a segment named `FROM`
+   (`TO`), so a divided cross street gives a node at each carriageway. `COUNTY LINE` instead takes
+   the degree-1 nodes ending a candidate whose `f_st` or `t_st` is `COUNTY LINE`.
+3. The path is the shortest from any FROM node to any TO node (multi-source Dijkstra). No FROM or
+   TO node is `no crossing with <name>`; no path (or FROM and TO at one node) is `no path`.
+4. The corridor is the path's segments plus every candidate whose every vertex lies within `bandM`
+   of the path: the other carriageway, shared-centreline twins and the short piece through a
+   divided cross street's median. A block past FROM or TO longer than `bandM` is not included,
+   nor is the same name elsewhere.
+
+`CORRIDOR` (all tier 4, builder's): `snapM` 0.5 m, `crossM` 25 m, `bandM` 40 m.
 
 `carveFreedLand` (`84_lesscars_sites.sql`) cuts removed right-of-way into sites from the parcels
 and the land mask, with no right-of-way source:

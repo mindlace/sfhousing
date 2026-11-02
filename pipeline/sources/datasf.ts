@@ -183,7 +183,7 @@ export const DATASF: Record<
   'datasf-streets': {
     dataset: '3psu-pn9h',
     format: 'geojson',
-    select: 'cnn,streetname,classcode,layer,active,line',
+    select: 'cnn,streetname,classcode,layer,active,f_st,t_st,line',
     where: 'active=true',
     license: 'PDDL-1.0',
     homepage: 'https://data.sf.gov/d/3psu-pn9h',
