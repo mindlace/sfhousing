@@ -441,6 +441,19 @@ defined in Appendix A and resolve to the sources in Appendix B.
   tier 3). Clearance ends 2044.
 - **Build** start 2045, 30 months (PV-build).
 
+### Masonic & Geary roundabout (`masonic-roundabout`) — in (owner's addition)
+
+- **Kind** `street-change` (display only, no homes). Geary dips under Masonic in a second
+  underpass west of the trench. After `geary-subway-1` opens, the underpass is filled and the
+  intersection becomes a roundabout carrying Geary's surface street, Masonic, buses and bikes.
+  Other wide Geary crossings (Park Presidio, Arguello) are candidates for the same treatment in v2.
+- **Format gap.** Plan 1's `LANE_USES` has no roundabout. Plan 3 adds either a `roundabout` lane use
+  or a `form` field on `street-change` so the page can draw it; until then it transcribes as a
+  `street-change` with lanes `bus`, `bike`, `pedestrian`, `car`.
+- **Geometry** the Masonic/Geary intersection CNNs (Plan 3 resolves them from `src_streets`).
+- **Dependencies** `geary-subway-1`. **Start** 2041. **Duration** 18 months (PV-roundabout, tier 4,
+  invented). Counts against `street` capacity.
+
 ### Parking conversions (48 projects, `park-<parcel>`) — in
 
 - **Kind** `parking-conversion`, one parcel each (the table under Data findings). Each depends on
@@ -534,25 +547,32 @@ Checks:
 
 1. **Switch day — resolved.** 2032-01-31, accepted by the owner in plan review (spec open question
    1). Listed here for the record only.
-2. **Subway station count.** v1 places 12 new stations at 0.6–1.2 miles (within the Strategic Case's
-   0.5–1 mile range at the dense end). The study modelled 5–6 on the whole line. More stations mean
-   more tier 1 land. Keep 12, or cut to the study's 5–6?
-3. **Which transit a parking site waits for.** v1 makes each site wait for the earliest-opening
-   serving project (23 sites wait for the Fulton BRT in 2032 rather than the Geary subway in 2041).
-   Earlier homes, but built to the tier 2 envelope rather than tier 1. Alternative: wait for the
-   highest-tier serving project.
-4. **Government garages.** `3724067` (Mission St), `0286024` (Sutter St), `0327021` (O'Farrell St)
-   and `0700035` (Japantown) are among the largest sites and look like the city's own garages
-   (identity unconfirmed). Keep them?
-5. **Public-zoned (`P`) sites.** Four sites may get no residential envelope. Keep (honest zero) or
-   drop?
-6. **Phase 2 dependency.** Leave `geary-19th-subway-2` independent of phase 1 (opens 2044), or make
-   it depend on phase 1 (opens 2050)?
-7. **Car shuttle.** Add it to v1 as display only with invented geometry, or leave it for v2?
-8. **Garages off freed land.** v1 puts both edge garages on existing 0-home parcels so the freed
-   Central Freeway land builds homes. Agree?
-9. **Geary trench design.** A linear block in the middle of Geary with one-way streets either side
-   (v1), or one deeper block against one side?
+   Owner answers, 2026-11-01:
+
+2. **Subway station count: keep 12.**
+3. **Which transit a parking site waits for: the earliest-opening serving project** (as drafted).
+4. **Government garages: the rule is function, not ownership.** A garage that works as the
+   transition into or out of the city stays a garage; one that serves parking for trips within the
+   city is converted. The four downtown and Japantown garages (`3724067`, `0286024`, `0327021`,
+   `0700035`) are destination parking inside the city, not at an entrance, so they stay in v1 as
+   parking conversions **(drafter's reading of the rule; owner to confirm)**. The edge-garage role
+   is carried by `garage-south` and `garage-north`.
+5. **Public-zoned (`P`) sites: keep** (an honest zero where no envelope applies).
+6. **Phase 2 dependency: still open; see below.**
+7. **Car shuttle: leave for v2.**
+8. **Garages off freed land: agreed.**
+9. **Geary trench design: the linear block for v1.** The owner adds: convert intersections like
+   Masonic & Geary into roundabouts. Drafted as `masonic-roundabout` under Projects.
+
+6 (open). **Are the two subway phases structurally dependent?** For construction, no: phase 2 is a
+separate tunnel drive from Park Presidio south under Golden Gate Park and 19th Avenue to Daly City
+BART, and California and peer agencies routinely build segments of one line under separate
+contracts at the same time. For service, partly: phase 2 has its own utility (19th Avenue to Daly
+City BART, the N and L transfers, SF State), but its trains reach downtown only through phase 1. The
+schedule already opens phase 2 (2044) after phase 1 (2041), so nothing is stranded. The plan format
+has no "opens after" link, only "starts after a dependency opens", which would push phase 2's
+opening to 2050. Drafter's recommendation: keep it independent and add a plan check in Plan 3 that
+phase 2 does not open before phase 1.
 
 ## Appendix A: plan.json fields
 
