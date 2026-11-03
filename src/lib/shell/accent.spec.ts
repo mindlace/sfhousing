@@ -46,6 +46,8 @@ const THEMED_FILES = [
   'src/lib/sim-page/HistoryRow.svelte',
   'src/lib/sim-page/PolicySummary.svelte',
   'src/lib/sim-page/PhoneToolBar.svelte',
+  'src/lib/paint/HeightPalette.svelte',
+  'src/lib/paint/HistoryButtons.svelte',
   'src/lib/fzp/ProjectCardPanel.svelte',
   'src/lib/fzp/ProjectTooltip.svelte'
 ];

@@ -5,15 +5,19 @@
  */
 import type { BrushCatalog, StopType } from '$lib/sim/levers/brushes';
 import type { BrushLotsResult } from '$lib/sim/scenario/types';
+import { count, lotsText, type LotStatus, type PaintRow } from '$lib/paint/rows';
 import {
   bandsInnermostFirst,
   customQuery,
   queryKey,
   ruleQueries,
   type CustomBrush,
+  type SimPolicy,
   type ZoningRule
 } from './policy';
 import { ERASE_LABEL, strokeLabel } from './stroke-adapter';
+
+export { count, lotsText, type LotStatus };
 
 export const STOP_LABELS: Record<StopType, string> = {
   regionalRail: 'Regional rail (BART, Caltrain)',
@@ -41,8 +45,6 @@ export function transitUnavailable(catalog: BrushCatalog | null | undefined): st
 }
 
 const nf = new Intl.NumberFormat('en-US');
-export const count = (k: number, one: string, many: string) =>
-  `${nf.format(k)} ${k === 1 ? one : many}`;
 
 /** "a, b and c"; past `max` items, "a, b and 3 more". */
 function list(items: string[], max = 3): string {
@@ -96,9 +98,6 @@ export function customChangeLabel(b: CustomBrush): string {
   return b.kind === 'paint' ? strokeLabel(b.stories) : ERASE_LABEL;
 }
 
-export type LotStatus =
-  { kind: 'found'; lots: number } | { kind: 'finding' } | { kind: 'failed'; keys: string[] };
-
 /**
  * A rule's lots: found (the union over its queries), finding (unanswered, or parked by a
  * `no-session` answer until the next session), or failed with the keys to retry.
@@ -131,10 +130,16 @@ function statusOf(keys: string[], result: (key: string) => BrushLotsResult | und
   return { kind: 'finding' };
 }
 
-export function lotsText(s: LotStatus): string {
-  return s.kind === 'found'
-    ? count(s.lots, 'lot', 'lots')
-    : s.kind === 'finding'
-      ? 'Finding lots…'
-      : "Couldn't find lots";
+/** /sim's Paint rows: one per custom brush, in policy order. */
+export function simPaintRows(
+  p: SimPolicy,
+  result: (key: string) => BrushLotsResult | undefined
+): PaintRow[] {
+  return p.custom.map((b) => ({
+    id: b.id,
+    kind: b.kind,
+    stories: b.kind === 'paint' ? b.stories : null,
+    strokes: b.strokes.length,
+    lots: customLotStatus(b, result)
+  }));
 }
