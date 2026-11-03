@@ -67,13 +67,15 @@ const lotRect = (i: number) => rect(10 * (i - 1), 0, 10 * i, 30);
 const lotId = (i: number) => `35120${String(i).padStart(2, '0')}`;
 // Lots 3 and 4 use the odd-shaped (alphanumeric) ids; the rest are 35120NN.
 const LOT_IDS: Record<number, string> = {
-  ...Object.fromEntries(Array.from({ length: 18 }, (_, k) => [k + 1, lotId(k + 1)])),
+  ...Object.fromEntries(Array.from({ length: 19 }, (_, k) => [k + 1, lotId(k + 1)])),
   3: '8711023C',
   4: '0026T001A'
 };
 const nhoodOf = (i: number) => (i <= 8 ? 'Mission' : 'Noe Valley');
 /** Lot 18: directly behind lot 13 (x[120, 130], y[30, 60]), in Noe Valley. */
 const LOT18 = rect(120, 30, 130, 60);
+/** Lot 19: freeway land beside the fixture I-80 (y = 75), x[-40, 40] y[62, 72], in Mission. */
+const LOT19 = rect(-40, 62, 40, 72);
 
 // ---- shoreline (lots 15-17) ----
 // The basemap extract has z15 earth in tile columns 5240 and 5241 only, so the east edge of 5241
@@ -190,6 +192,13 @@ parcelRows.push({
   nh: nhoodOf(18),
   polys: [[LOT18]]
 });
+parcelRows.push({
+  mapblklot: LOT_IDS[19],
+  blklot: LOT_IDS[19],
+  active: true,
+  nh: 'Mission',
+  polys: [[LOT19]]
+});
 // retired parcels
 parcelRows.push({
   mapblklot: '3512099',
@@ -273,7 +282,8 @@ const ZONING: Record<number, string> = {
   15: 'RH-2',
   16: 'RH-2',
   17: 'RH-2',
-  18: 'RM-1'
+  18: 'RM-1',
+  19: 'P'
 };
 const lotOfId = Object.fromEntries(Object.entries(LOT_IDS).map(([i, id]) => [id, Number(i)]));
 const DROPPED: Record<string, string> = {
@@ -380,6 +390,7 @@ const ROLL: RollSpec[] = [
   rr('3512016', 'SRES/D', '1950', [1, 2, 1200], [300000, 100000]),
   rr('3512017', 'MISC/V', null, [0, 0, 0], [100000, 0]),
   rr('3512018', 'MRES/A', '2001', [2, 2, 1600], [300000, 400000]),
+  rr('3512019', 'MISC/V', null, [0, 0, 0], [100000, 0]),
   rr('3512099', 'MRES/A', '1910', [2, 7, 5600], [300000, 200000], { years: [2024] })
 ];
 const roll = ROLL_YEARS.flatMap((year) =>
@@ -431,6 +442,7 @@ const landuse = [
   lu(LOT_IDS[14], 'MIXRES', 40, 30000, 5000, lot(14)),
   ...[15, 16, 17].map((i) => lu(LOT_IDS[i], 'VACANT', 0, 0, 0, polygon(SHORE_LOTS[i]))),
   lu(LOT_IDS[18], 'RESIDENT', 2, 1600, 0, polygon(LOT18)),
+  lu(LOT_IDS[19], 'VACANT', 0, 0, 0, polygon(LOT19)),
   lu('3512099', 'RESIDENT', 7, 0, 0, polygon(rect(111, 26, 119, 29))),
   lu('3512098', 'RESIDENT', 9, 0, 0, polygon(rect(1, 26, 9, 29)))
 ];
@@ -515,7 +527,7 @@ const streets = (
 );
 
 // ---- historic resource status (3tsw-4idn CSV; sim data layers) ----
-// Every lot but 18 has a row: lot 2 by its condo blklots (one A among two C), lot 13 A*, and the
+// Every lot but 18 has a row (lot 19's is C): lot 2 by its condo blklots (one A among two C), lot 13 A*, and the
 // retired 3512099 too.
 const HISTORIC_HEADER = ['apn', 'ceqacode', 'ceqacodea10a11'];
 const HISTORIC_CODE: Record<string, [string, string]> = {
@@ -534,6 +546,7 @@ const historicApns = [
   '3512102',
   '3512103',
   ...Array.from({ length: 15 }, (_, k) => LOT_IDS[k + 3]),
+  LOT_IDS[19],
   '3512099'
 ];
 const historic = historicApns.map((apn) => [apn, ...(HISTORIC_CODE[apn] ?? ['C', 'C'])]);

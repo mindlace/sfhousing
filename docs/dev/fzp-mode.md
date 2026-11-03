@@ -80,6 +80,8 @@ The ready-phase notices (the stopped chip with Retry, "Making another future…"
 - **Summaries are latest-wins** (`summary-request.ts`). One `SummaryRequester` per surface (card, tooltip): at most one request in flight and one queued behind it, and only the latest query's answer reaches the UI. While a card is on show, a request for the same parcel and project keeps it on show until the answer replaces it (no flash of "loading" on every month). A `not-loaded` answer is retried on each worker `chunks` message.
 - **Card refresh:** the open card asks again when the scrubbed month changes, when a reroll or crash Retry answers, and when the worker crashes (then it reads "Details unavailable" until Retry).
 
+Freeway land never builds in the FZP timelapse: a parcel in the freeway-land catalog is scenario-ineligible in `parcels.bin` ([pipeline.md](pipeline.md), "Freeway land"). Nothing new is drawn for it.
+
 ## The T9 lookups seam
 
 The card's chance lookup (`chanceTable`) and the map's stage-duration lookup (`typicalMonths`) start from the base `calibration.json` (`lookupsFor` in `FzpMode.svelte`, one object per calibration object, because SimMap compares lookups by identity). `pushLookups` is the single call site that hands them to the map.

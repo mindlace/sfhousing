@@ -32,7 +32,7 @@ import {
   type V2xInputs
 } from '../project-records/invariants';
 import {
-  checkDataset,
+  checkDataset as checkDatasetOf,
   checkV30,
   maxOf,
   type CheckExtras,
@@ -42,6 +42,14 @@ import { fixture } from '../steps/fixture';
 import { PROJECTS_JSON } from '../steps/projects';
 import { miniProjectInput } from './fixtures/mini/projects-raw';
 import { LESSCARS_FILES, PARCELS_BIN, POLICY_BIN } from '../lib/scenario-files';
+import { readFreewayLandSet } from '../lib/lesscars/freeway-land';
+import { LESSCARS_FREEWAY_LAND_JSON } from '../lesscars-config';
+
+/** The fixture's freeway-land catalog (lot 19), which `check` reads for a fixture version. */
+const FREEWAY_LAND = readFreewayLandSet(LESSCARS_FREEWAY_LAND_JSON.fixture);
+/** checkDataset with the fixture catalog, as the build and `check` pass it. */
+const checkDataset: typeof checkDatasetOf = (dir, profile, extras) =>
+  checkDatasetOf(dir, profile, { freewayLand: FREEWAY_LAND, ...extras });
 
 let base: string;
 /** The fixture build's derived cache root (kept, so the T14 report can be read). */
@@ -206,7 +214,8 @@ describe('invariants', () => {
     const v8 = r.find((x) => x.id === 'V8')!;
     expect(v8.ok).toBe(false);
     expect(v8.detail).toMatch(/more than one chunk/);
-    expect(v8.detail).toMatch(/17 distinct ids ≠ V2 18/);
+    // 19 mini lots with lot 19 (3512019).
+    expect(v8.detail).toMatch(/18 distinct ids ≠ V2 19/);
     expect(v8.detail).not.toMatch(/Σ parcelCount/);
   });
   it('V7 fails on an empty polygon', async () => {
@@ -334,7 +343,8 @@ describe('invariants', () => {
     });
     const v15 = await result(d, 'V15');
     expect(v15.ok).toBe(false);
-    expect(v15.detail).toMatch(/15 id\(s\) whose cell ≠ their chunk's cellId/);
+    // Cell 0 holds 16 lots, lot 19 (3512019) among them.
+    expect(v15.detail).toMatch(/16 id\(s\) whose cell ≠ their chunk's cellId/);
   });
   it('V15 fails when an id is in no chunk', async () => {
     const d = copy();
@@ -360,7 +370,8 @@ describe('invariants', () => {
     writeFileSync(join(d, 'manifest.json'), JSON.stringify(m));
     const v15 = await result(d, 'V15');
     expect(v15.ok).toBe(false);
-    expect(v15.detail).toMatch(/33 chunk records ≠ count 18/);
+    // 19 lots with lot 19 (3512019); the doubled chunk holds 16 of them.
+    expect(v15.detail).toMatch(/35 chunk records ≠ count 19/);
   });
   it('V16 fails when too few eligible parcels have a district', async () => {
     const d = copy();
@@ -843,7 +854,8 @@ describe('V30 data-quality registry', () => {
       expect(md, r.id).toMatch(new RegExp(`^\\| \`${r.id.replaceAll('.', '\\.')}\` \\|`, 'm'));
     }
     // The scenario-data SQL rules recorded into the build's counts.
-    expect(md).toMatch(/\| `sd\.roll\.units-capacity` \|.*\| 3 \/ 33 \|/);
+    // Of: 35 parcel-years, lot 19's two included.
+    expect(md).toMatch(/\| `sd\.roll\.units-capacity` \|.*\| 3 \/ 35 \|/);
     expect(md).not.toContain('| not reported |');
     expect(md).not.toContain('Not reported.');
   });
@@ -923,7 +935,8 @@ describe('V31 policy file', () => {
   it('is OK on the fixture', async () => {
     const r = await v31(base);
     expect(r.ok, r.detail).toBe(true);
-    expect(r.detail).toMatch(/historic 17\/18/);
+    // Every lot but 18 has a historic row, lot 19 (3512019) included.
+    expect(r.detail).toMatch(/historic 18\/19/);
   });
   it('fails with "does not decode" against a parcels.bin with one id changed', async () => {
     const d = copy();
@@ -1157,7 +1170,8 @@ describe('V33 current law (FZP + §207.11)', () => {
   it('is OK on the fixture', async () => {
     const r = await v33(base);
     expect(r.ok, r.detail).toBe(true);
-    expect(r.detail).toBe('18 rows match §207.11 over FZP; 3 applies, 2 from §207.11');
+    // 19 rows with lot 19 (3512019).
+    expect(r.detail).toBe('19 rows match §207.11 over FZP; 3 applies, 2 from §207.11');
   });
   it('fails when one row’s currentCap is altered', async () => {
     const s207 = await v33(editPolicyRow(FROM_S207, (p, i) => (p.currentCap[i] += 1)));

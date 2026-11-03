@@ -16,7 +16,8 @@ import { readLock } from '../lib/lock';
 import { Report } from '../lib/report';
 import { POLICY_BIN } from '../lib/scenario-files';
 import { runSql } from '../lib/sql';
-import { LESSCARS_PLAN_JSON } from '../lesscars-config';
+import { LESSCARS_FREEWAY_LAND_JSON, LESSCARS_PLAN_JSON } from '../lesscars-config';
+import { readFreewayLand } from '../lib/lesscars/freeway-land';
 import { asOfFromLock } from '../project-records/parse';
 import { readParcelRecords, writeNeighborhoods } from '../steps/chunks';
 import { carveFreedLand, removalsOf } from '../steps/lesscars-sql';
@@ -33,6 +34,8 @@ export interface LessCarsMini {
   parcels: ScenarioParcels;
   policy: PolicyParcels;
   transit: TransitNetwork;
+  /** The build counts: the scenario step's (returned) and every buildCounts owner's. */
+  counts: Record<string, number>;
 }
 
 /** The mini plan (`pipeline/test/fixtures/mini/enrichment/lesscars-plan.json`), parsed. */
@@ -57,7 +60,7 @@ export function lesscarsMini(): Promise<LessCarsMini> {
     const root = mkdtempSync(join(tmpdir(), 'sfh-lesscars-'));
     const outDir = join(root, 'out');
     const buildCounts: Record<string, number> = {};
-    await writeScenario({
+    const scenario = await writeScenario({
       db,
       outDir,
       derivedDir: join(root, 'derived'),
@@ -65,7 +68,8 @@ export function lesscarsMini(): Promise<LessCarsMini> {
       records,
       capDay,
       report: new Report(),
-      buildCounts
+      buildCounts,
+      freewayLand: readFreewayLand(LESSCARS_FREEWAY_LAND_JSON.fixture)
     });
     await writeNeighborhoods(db, outDir);
     writeTransit({
@@ -76,12 +80,20 @@ export function lesscarsMini(): Promise<LessCarsMini> {
       targetDate: transitTargetDate(lock),
       strict: false
     });
-    await writePolicy({ db, outDir, datasetVersion: 'fixture-0', records, capDay, buildCounts });
+    const policyStep = await writePolicy({
+      db,
+      outDir,
+      datasetVersion: 'fixture-0',
+      records,
+      capDay,
+      buildCounts
+    });
     await carveFreedLand(db, removalsOf(miniLessCarsPlan()));
     const parcels = readParcelsBin(join(outDir, PARCELS_BIN));
     const policy = readPolicyBin(join(outDir, POLICY_BIN), parcels);
     const transit = decodeTransit(JSON.parse(readFileSync(join(outDir, 'transit.json'), 'utf8')));
-    return { db, outDir, records, capDay, parcels, policy, transit };
+    const counts = { ...buildCounts, ...scenario.counts, ...policyStep.counts };
+    return { db, outDir, records, capDay, parcels, policy, transit, counts };
   })();
   return memo;
 }

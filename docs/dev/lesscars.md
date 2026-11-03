@@ -134,6 +134,10 @@ the engine's `$lib` imports through the root `tsconfig.json`, which extends
 resolve hook and no headless browser. It needs `svelte-kit sync` to have run (`npm install`'s
 `prepare` does it). `pipeline/test/fixtures/engine-node-smoke.ts` is the smoke test.
 
+Freeway land ([pipeline.md](pipeline.md), "Freeway land") is scenario-ineligible in
+`parcels.bin`, which both arms read, so the rule applies to the baseline and the plan arm alike:
+a catalog parcel builds nothing in either until its freeway is removed.
+
 ## The step
 
 `writeLessCars` (`pipeline/steps/lesscars.ts`) runs in `build` after the policy step. Inputs: the

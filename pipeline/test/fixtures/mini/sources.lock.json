@@ -3,10 +3,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/eeb327e59b5cc9f1428b729443ce8f4e449872fa56a55aea53ac8bbbfdc55b0e.csv",
-          "bytes": 3197,
+          "archiveKey": "sources/7ac89ded34d516667a0aeb1a77c40c31b23cace180cea8a5302c767eb9a0c9d3.csv",
+          "bytes": 3335,
           "name": "datasf-assessor-roll.page-000.csv",
-          "sha256": "eeb327e59b5cc9f1428b729443ce8f4e449872fa56a55aea53ac8bbbfdc55b0e",
+          "sha256": "7ac89ded34d516667a0aeb1a77c40c31b23cace180cea8a5302c767eb9a0c9d3",
           "url": "https://fixture.invalid/datasf-assessor-roll.page-000.csv"
         }
       ],
@@ -15,7 +15,7 @@
       "label": "DataSF Assessor Historical Secured Property Tax Rolls",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 37,
+      "rowCount": 39,
       "upstreamVersion": "fixture"
     },
     {
@@ -75,10 +75,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/98776f1587338438c10b0966f4fc46bba8ca05836ea99083f0389b65c087cf90.csv",
-          "bytes": 398,
+          "archiveKey": "sources/b16486d41d805d49a49d9a63188952208075db7ee59f0eedc43477d6cb44d4f1.csv",
+          "bytes": 416,
           "name": "datasf-historic-status.page-000.csv",
-          "sha256": "98776f1587338438c10b0966f4fc46bba8ca05836ea99083f0389b65c087cf90",
+          "sha256": "b16486d41d805d49a49d9a63188952208075db7ee59f0eedc43477d6cb44d4f1",
           "url": "https://fixture.invalid/datasf-historic-status.page-000.csv"
         }
       ],
@@ -87,7 +87,7 @@
       "label": "DataSF Historic Resource Status by Parcel",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 20,
+      "rowCount": 21,
       "upstreamVersion": "fixture"
     },
     {
@@ -111,10 +111,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/f213addee4322492e76a8aeb0a2d02f9671ec0ac1722a9d5ef1fc535828c3e97.geojson",
-          "bytes": 5871,
+          "archiveKey": "sources/3785f4d6416aa1fee7147bd3eebbf57324b6a0e2cb9ac7b96c7ca2538fe80843.geojson",
+          "bytes": 6165,
           "name": "datasf-landuse-2023.page-000.geojson",
-          "sha256": "f213addee4322492e76a8aeb0a2d02f9671ec0ac1722a9d5ef1fc535828c3e97",
+          "sha256": "3785f4d6416aa1fee7147bd3eebbf57324b6a0e2cb9ac7b96c7ca2538fe80843",
           "url": "https://fixture.invalid/datasf-landuse-2023.page-000.geojson"
         }
       ],
@@ -123,7 +123,7 @@
       "label": "DataSF Land Use 2023",
       "license": "public-domain",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 19,
+      "rowCount": 20,
       "upstreamVersion": "fixture"
     },
     {
@@ -147,10 +147,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/91eef43264e8f9890a5b5b4d05f151a01c97718074713ff9fb26423344d2201b.csv",
-          "bytes": 1713,
+          "archiveKey": "sources/d04cf69c20adabea19cb89047cc37917d65f4d9976873274ec4a3011c88e18ed.csv",
+          "bytes": 1774,
           "name": "datasf-parcel-attrs.page-000.csv",
-          "sha256": "91eef43264e8f9890a5b5b4d05f151a01c97718074713ff9fb26423344d2201b",
+          "sha256": "d04cf69c20adabea19cb89047cc37917d65f4d9976873274ec4a3011c88e18ed",
           "url": "https://fixture.invalid/datasf-parcel-attrs.page-000.csv"
         }
       ],
@@ -159,16 +159,16 @@
       "label": "DataSF Parcels (attributes, active and retired)",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 24,
+      "rowCount": 25,
       "upstreamVersion": "fixture"
     },
     {
       "files": [
         {
-          "archiveKey": "sources/0700e77f426c75f26843288993a7594f3d88fcc5aba6a0ccd598fe1a4b92f189.geojson",
-          "bytes": 8289,
+          "archiveKey": "sources/ad459204446594030941644b596795b6defa9afa68da1f328ae34585f61f242f.geojson",
+          "bytes": 8625,
           "name": "datasf-parcels.page-000.geojson",
-          "sha256": "0700e77f426c75f26843288993a7594f3d88fcc5aba6a0ccd598fe1a4b92f189",
+          "sha256": "ad459204446594030941644b596795b6defa9afa68da1f328ae34585f61f242f",
           "url": "https://fixture.invalid/datasf-parcels.page-000.geojson"
         }
       ],
@@ -177,7 +177,7 @@
       "label": "DataSF Parcels (Active and Retired)",
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 24,
+      "rowCount": 25,
       "upstreamVersion": "fixture"
     },
     {

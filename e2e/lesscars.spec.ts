@@ -188,9 +188,17 @@ async function pick(page: Page, isMobile: boolean, [x, y]: [number, number]): Pr
   else await page.mouse.click(x, y);
 }
 
-/** At the horizon, taps the first freed-land build's site until its card shows. */
+/**
+ * At the horizon, taps the label point of the freed-land build on the largest site until its card
+ * shows. The largest site is the one whose building surely covers its label point: an irregular
+ * piece (lc:hwy:1, carved round freeway-land lot 19) can have its label point off the building.
+ */
 async function openFreedCard(page: Page, isMobile: boolean) {
-  const b = timeline.builds.find((x) => x.parcelRow === null);
+  const areaOf = (siteId: string) =>
+    sitesFile.sites.find((s) => s.siteId === siteId)?.rec.areaM2 ?? 0;
+  const b = timeline.builds
+    .filter((x) => x.parcelRow === null)
+    .sort((x, y) => areaOf(y.siteId) - areaOf(x.siteId))[0];
   expect(b, 'fixture-0 has a freed-land build').toBeDefined();
   await toEnd(page);
   await page.waitForFunction(

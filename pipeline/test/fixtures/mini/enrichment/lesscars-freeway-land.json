@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "segments": [
+    {
+      "id": "fx-i80",
+      "freeway": "I-80",
+      "label": "Fixture I-80",
+      "ref": null,
+      "cnn": ["4000"],
+      "removedBy": "hwy",
+      "curated": "hand",
+      "parcels": ["3512019"],
+      "excluded": [{ "parcel": "3512018", "reason": "2 homes: freeway land holds none" }]
+    }
+  ]
+}

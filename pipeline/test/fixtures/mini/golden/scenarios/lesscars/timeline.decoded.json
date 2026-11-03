@@ -1,8 +1,8 @@
 {
   "format": "sfh-lesscars/1",
   "datasetVersion": "fixture-0",
-  "count": 18,
-  "idsHash": 1063371383,
+  "count": 19,
+  "idsHash": 4215366088,
   "seed": 3,
   "schedules": [
     {
@@ -784,7 +784,7 @@
       "siteId": "lc:hwy:1",
       "projectId": "hwy",
       "parcelRow": null,
-      "units": 82,
+      "units": 34,
       "stories": 6,
       "existing": 0,
       "startDay": 24472,
@@ -813,11 +813,11 @@
   ],
   "reservations": [
     {
-      "row": 15,
+      "row": 16,
       "kept": false
     },
     {
-      "row": 17,
+      "row": 18,
       "kept": false
     }
   ]

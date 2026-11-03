@@ -207,14 +207,14 @@ export const LIVE_PROFILE: InvariantProfile = {
 
 /**
  * The mini fixture's known answers (pipeline/test/fixtures/mini/README.md): Σ units
- * 2+6+4+3+1+2+0+12+0+3+3+7+5+40 (+0 on shoreline lots 15-17) +2 (lot 18) = 90 exactly,
- * 18 parcels, 16/18 matched land use, 10/11 kept buildings with hs ≠ 3, max parcel height 60 m (lot 14),
+ * 2+6+4+3+1+2+0+12+0+3+3+7+5+40 (+0 on shoreline lots 15-17) +2 (lot 18) +0 (lot 19, freeway
+ * land) = 90 exactly, 19 parcels, 17/19 matched land use, 10/11 kept buildings with hs ≠ 3, max parcel height 60 m (lot 14),
  * 3 neighborhoods, 8 transit stops, one BART station.
  */
 export const FIXTURE_PROFILE: InvariantProfile = {
   unitsTarget: 90,
   unitsTol: 0,
-  parcelRange: [18, 18],
+  parcelRange: [19, 19],
   landUseMatchMin: 0.8,
   heightCoverageMin: 0.5,
   pieceAreaParcelMin: 0.5,
@@ -234,7 +234,7 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   // Spec §4.10 V16: every eligible mini parcel has a district (fixture known answer).
   heightJoinMin: 1,
   // Ruling: 13 of the 15 eligible mini parcels have a 2025 roll row (lots 12 and 13 do not; lot 16
-  // is underwater, so not eligible).
+  // is underwater and lot 19 freeway land, so not eligible).
   rollJoinMin: 0.8,
   // Spec §4.10 V18 "fixture exact": Σ 2025 roll units of the mini fixture after the units rules
   // (known answer, spec §4.11): 66, plus lot 3's 5,000 replaced by its LUDB 4 (RA1), plus the 2
@@ -253,9 +253,9 @@ export const FIXTURE_PROFILE: InvariantProfile = {
   // Spec §4.10 V30: the mini fixture fires rules on a handful of rows by design, so its shares
   // mean nothing; V30 still requires every rule to report.
   qualityShares: false,
-  // Fixture known answers: every lot but 18 has a historic row (17/18); 2 of the 3 exemption rows
+  // Fixture known answers: every lot but 18 has a historic row (18/19); 2 of the 3 exemption rows
   // match an active parcel (lots 12 and 15; `3512999` is the unmatched stand-in pseudo-lot).
-  historicJoinMin: 17 / 18,
+  historicJoinMin: 18 / 19,
   exemptJoinMin: 2 / 3,
   policyMaxBytes: LIVE_PROFILE.policyMaxBytes,
   // Fixture known answers (mini README "Transit"): tier 1 FX-1 (BART) and 70011, 70012 (80

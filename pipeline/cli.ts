@@ -16,6 +16,8 @@ import { lesscarsCnns } from './steps/lesscars-cnns';
 import { upload } from './steps/upload';
 import { verify } from './steps/verify';
 import { readLock } from './lib/lock';
+import { readFreewayLandSet } from './lib/lesscars/freeway-land';
+import { LESSCARS_FREEWAY_LAND_JSON } from './lesscars-config';
 import { replaceQualityDocSection } from './lib/quality';
 import { wranglerTarget } from './lib/r2';
 
@@ -120,7 +122,9 @@ const steps: Record<string, { help: string; run: Step }> = {
         // V28 and V29 likewise come from the calibration step's in-memory computation.
         calibrationChecks: report.invariants?.filter((r) =>
           (CALIBRATION_CHECK_IDS as readonly string[]).includes(r.id)
-        )
+        ),
+        // V17 reads today's freeway-land catalog of the version's kind (docs/dev/pipeline.md).
+        freewayLand: readFreewayLandSet(LESSCARS_FREEWAY_LAND_JSON[fixtureV ? 'fixture' : 'live'])
       });
       return printResults(results);
     }

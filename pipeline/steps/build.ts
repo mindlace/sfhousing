@@ -26,7 +26,8 @@ import { asOfFromLock } from '../project-records/parse';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
 import { SB79_EXEMPTIONS_CSV } from '../sources/sfbos';
 import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
-import { LESSCARS_PLAN_JSON } from '../lesscars-config';
+import { LESSCARS_FREEWAY_LAND_JSON, LESSCARS_PLAN_JSON } from '../lesscars-config';
+import { freewayLandSet, readFreewayLand } from '../lib/lesscars/freeway-land';
 import { writeCalibration } from './calibration';
 import { checkDataset, type InvariantResult } from './check';
 import { readParcelRecords, writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
@@ -207,6 +208,10 @@ export async function build(
     const counts: Record<string, number> = {};
     // The scenario and policy steps share the chunk records (same rows, same order).
     const records = await readParcelRecords(db);
+    // Freeway land (lesscars v1.1): absent live until Plan B curates it, so no rule applies.
+    const freewayLand = readFreewayLand(
+      LESSCARS_FREEWAY_LAND_JSON[fixtureMode ? 'fixture' : 'live']
+    );
     const scenario = await report.time('scenario', async () =>
       writeScenario({
         db,
@@ -216,7 +221,8 @@ export async function build(
         records,
         capDay: asOf,
         report,
-        buildCounts: counts
+        buildCounts: counts,
+        freewayLand
       })
     );
     report.warnings.push(...scenario.warnings);
@@ -344,7 +350,8 @@ export async function build(
         stableDetail: fixtureMode,
         asOf,
         projectChecks: projects.checks,
-        calibrationChecks: calibration.checks
+        calibrationChecks: calibration.checks,
+        freewayLand: freewayLandSet(freewayLand)
       })
     );
     const body: Record<string, unknown> = {

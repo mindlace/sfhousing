@@ -79,4 +79,20 @@ describe('v18Compare (V18 cap-period exclusion, coordinator ruling 2026-10-18)',
       })
     ).toEqual({ capPeriodDiffers: false, mismatch: false });
   });
+
+  it('freeway land compares the base features of the rule (0), not the panel', () => {
+    // The panel keeps freeway land eligible (calibration describes the past market); T11 applies
+    // the rule, so its hostableBase and base ratio are 0 while the panel's are not.
+    const t = t11Of(ROW, 3);
+    t.hostableBase[0] = 0;
+    t.potentialRatio.base[0] = 0;
+    expect(v18Compare(t, 0, ROW, true)).toEqual({ capPeriodDiffers: false, mismatch: false });
+    expect(v18Compare(t, 0, ROW).mismatch).toBe(true);
+    expect(v18Compare(t11Of(ROW, 3), 0, ROW, true).mismatch).toBe(true);
+    const u = t11Of(ROW, 3);
+    u.hostableBase[0] = 0;
+    u.potentialRatio.base[0] = 0;
+    u.yearBuilt[0] = 1926;
+    expect(v18Compare(u, 0, ROW, true).mismatch).toBe(true);
+  });
 });

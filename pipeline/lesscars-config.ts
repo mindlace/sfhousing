@@ -61,3 +61,12 @@ export const LESSCARS_PLAN_JSON = {
   live: path.join(PIPELINE_DIR, 'enrichment/lesscars/plan.json'),
   fixture: path.join(PIPELINE_DIR, 'test/fixtures/mini/enrichment/lesscars-plan.json')
 };
+
+/**
+ * The freeway-land catalog (`pipeline/lib/lesscars/freeway-land.ts`): live (absent until Plan B
+ * curates it, so a live build applies no freeway rule), and the mini fixture's.
+ */
+export const LESSCARS_FREEWAY_LAND_JSON = {
+  live: path.join(PIPELINE_DIR, 'enrichment/lesscars/freeway-land.json'),
+  fixture: path.join(PIPELINE_DIR, 'test/fixtures/mini/enrichment/lesscars-freeway-land.json')
+};
