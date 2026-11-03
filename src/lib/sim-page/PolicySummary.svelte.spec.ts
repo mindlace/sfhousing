@@ -48,13 +48,19 @@ function customPolicy(): SimPolicy {
 }
 
 describe('PolicySummary', () => {
-  it('the default policy lists no rules, no custom zoning and SF as observed', async () => {
+  it('the default policy lists no transit layers, no painted areas and SF as observed', async () => {
     render(PolicySummary, { policy: DEFAULT_POLICY, calibration, lotsOf: () => FINDING });
     await expect.element(page.getByText('SF as observed', { exact: true })).toBeVisible();
-    await expect.element(page.getByText('No new zoning rules')).toBeVisible();
-    await expect.element(page.getByText('No custom zoning')).toBeVisible();
+    // The sections use the editing tabs' words (spec Goal 10), not the old section titles.
+    await expect
+      .element(page.getByRole('region', { name: 'Transit layers' }).getByText('No transit layers'))
+      .toBeVisible();
+    await expect
+      .element(page.getByRole('region', { name: 'Painted areas' }).getByText('No painted areas'))
+      .toBeVisible();
+    expect(page.getByText(/new zoning rules|custom zoning/i).elements()).toHaveLength(0);
     // No zoning layers or comparison line any more.
-    expect(page.getByText(/layers|Compared with/i).elements()).toHaveLength(0);
+    expect(page.getByText(/zoning layers|Compared with/i).elements()).toHaveLength(0);
     expect(page.getByText('Family Zoning Plan map').elements()).toHaveLength(0);
     // Nothing differs from observed: no disclosure to open.
     expect(page.getByRole('button').elements()).toHaveLength(0);

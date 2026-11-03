@@ -1029,7 +1029,7 @@ describe('SimPage Setup and Run (Task 7, spec §1)', () => {
     ).toEqual(['Policy']);
     await expect.element(tab('Policy')).toHaveAttribute('aria-selected', 'true');
     await expect.element(page.getByRole('tablist', { name: 'Policy (read-only)' })).toBeVisible();
-    await expect.element(page.getByText('No new zoning rules')).toBeVisible();
+    await expect.element(page.getByText('No transit layers')).toBeVisible();
     expect(page.getByRole('button', { name: /^Undo/ }).elements()).toHaveLength(0);
     expect(page.getByRole('button', { name: /^Redo/ }).elements()).toHaveLength(0);
     expect(editPolicy().query()).toBeNull();

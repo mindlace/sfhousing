@@ -75,9 +75,9 @@
 
 <div class="flex flex-col gap-4 text-sm text-ink dark:text-ink-dark">
   <section class="flex flex-col gap-1" aria-labelledby="{uid}-rules">
-    <h3 id="{uid}-rules" class="font-semibold">New zoning rules</h3>
+    <h3 id="{uid}-rules" class="font-semibold">Transit layers</h3>
     {#if policy.rules.length === 0}
-      <p class={MUTED}>No new zoning rules</p>
+      <p class={MUTED}>No transit layers</p>
     {:else}
       <ul class="flex flex-col gap-1">
         {#each policy.rules as r (r.id)}
@@ -88,9 +88,9 @@
   </section>
 
   <section class="flex flex-col gap-1" aria-labelledby="{uid}-custom">
-    <h3 id="{uid}-custom" class="font-semibold">Custom zoning</h3>
+    <h3 id="{uid}-custom" class="font-semibold">Painted areas</h3>
     {#if policy.custom.length === 0}
-      <p class={MUTED}>No custom zoning</p>
+      <p class={MUTED}>No painted areas</p>
     {:else}
       <ul class="flex flex-col gap-1">
         {#each policy.custom as b (b.id)}

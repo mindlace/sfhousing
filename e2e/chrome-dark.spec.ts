@@ -271,7 +271,7 @@ test('the shared view dock on Policy has no axe violations in dark', async ({ pa
     'true'
   );
   await expect(
-    dock(page).getByRole('region', { name: 'New zoning rules' }).getByRole('listitem')
+    dock(page).getByRole('region', { name: 'Transit layers' }).getByRole('listitem')
   ).toHaveCount(1);
   await expectNoA11yViolations(page, { include: ['[data-testid=dock]'] });
 });
