@@ -82,7 +82,7 @@
 {#if state.kind !== 'idle'}
   <section
     aria-labelledby={headingId}
-    class="absolute inset-x-4 bottom-[calc(var(--map-controls-br-block-size,60px)+8px)] z-20 max-h-[min(50%,calc(100%-var(--map-controls-br-block-size,60px)-1rem))] overflow-y-auto rounded-lg bg-white p-4 text-sm text-black shadow-lg md:inset-x-auto md:top-4 md:bottom-auto md:left-[calc(var(--dock-w,0px)+1rem)] md:max-h-[calc(100%-2rem-var(--fzp-scrubber-h,0px))] md:w-80"
+    class="absolute inset-x-4 bottom-[calc(var(--map-controls-br-block-size,60px)+8px)] z-20 max-h-[min(50%,calc(100%-var(--map-controls-br-block-size,60px)-1rem))] overflow-y-auto rounded-lg border border-line bg-surface p-4 text-sm text-ink shadow-lg md:inset-x-auto md:top-4 md:bottom-auto md:left-[calc(var(--dock-w,0px)+1rem)] md:max-h-[calc(100%-2rem-var(--fzp-scrubber-h,0px))] md:w-80 dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
   >
     <div class="flex items-start justify-between gap-2">
       <h2 id={headingId} class="text-base font-semibold">{heading}</h2>
@@ -96,10 +96,10 @@
     </div>
 
     {#if message !== null}
-      <p class="mt-2 text-gray-800" role="status">{message}</p>
+      <p class="mt-2 text-ink-muted dark:text-ink-dark-muted" role="status">{message}</p>
     {:else if card && status}
       <p
-        class="mt-1 inline-block rounded-full border border-gray-700 px-2 py-0.5 text-xs font-semibold"
+        class="mt-1 inline-block rounded-full border border-control-line px-2 py-0.5 text-xs font-semibold dark:border-control-line-dark"
         data-testid="card-badge"
       >
         {card.origin === 'pipeline' ? 'Real project' : 'Simulated project'}
@@ -108,26 +108,26 @@
         <p class="mt-2">{phaseLine(card)}</p>
       {/if}
       {#if massingNote(card)}
-        <p class="mt-2 text-gray-800">{massingNote(card)}</p>
+        <p class="mt-2 text-ink-muted dark:text-ink-dark-muted">{massingNote(card)}</p>
       {/if}
       {#if card.origin === 'simulated'}
-        <p class="mt-2 text-gray-800">{SIMULATED_DISCLAIMER}</p>
+        <p class="mt-2 text-ink-muted dark:text-ink-dark-muted">{SIMULATED_DISCLAIMER}</p>
       {/if}
 
       <p class="mt-2">{PATHWAY_LABEL[card.pathway]}</p>
       <p class="mt-2 font-semibold">{statusText(status, card, asOf)}</p>
       <p class="mt-1">{sizeLine(card, day, marked)}</p>
       {#each revisionLines(card, day, asOf) as line, i (i)}
-        <p class="text-gray-800">{line}</p>
+        <p class="text-ink-muted dark:text-ink-dark-muted">{line}</p>
       {/each}
 
       {#if estimate && status.chance !== null}
         <div class="mt-3">
           <p class="font-semibold">{chanceLine(status.chance)}</p>
           {#if estimate.research}
-            <p class="text-gray-800">This is {RESEARCH_NOTE}.</p>
+            <p class="text-ink-muted dark:text-ink-dark-muted">This is {RESEARCH_NOTE}.</p>
           {/if}
-          <p class="text-gray-800">{CHANCE_EXPLANATION}</p>
+          <p class="text-ink-muted dark:text-ink-dark-muted">{CHANCE_EXPLANATION}</p>
           <details class="mt-1">
             <summary class="min-h-6 cursor-pointer pointer-coarse:min-h-11"
               >How is this estimated?</summary
@@ -171,7 +171,7 @@
             <li>{item}</li>
           {/each}
         </ul>
-        <p class="mt-1 text-gray-800">{notes.footer}</p>
+        <p class="mt-1 text-ink-muted dark:text-ink-dark-muted">{notes.footer}</p>
       {/if}
 
       {#if links.length > 0}

@@ -1,9 +1,9 @@
 <!--
   The /lesscars headline in the header's pinned slot: one button, "+N homes by 2068", that opens
   the details under the header: a popover at the top right from md, a full-width disclosure below
-  md. The text is fixed (the 2068 mean), so there is no live region. Behaviour copies the /sim
-  ScoreBar: closes on Escape, an outside press, or another header overlay; focus returns to the
-  button only when it was inside the details.
+  md. The text is fixed (the 2068 mean), so there is no live region. The details close on Escape, an
+  outside press, or another header overlay; focus returns to the button only when it was inside
+  them.
 -->
 <script lang="ts">
   import { tick, type Snippet } from 'svelte';

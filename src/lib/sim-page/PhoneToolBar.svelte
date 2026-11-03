@@ -27,7 +27,7 @@
   let bar = $state<HTMLElement>();
 
   const POP =
-    'absolute bottom-full left-0 z-10 mb-2 w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-gray-300 bg-white p-2 text-black shadow-lg';
+    'absolute bottom-full left-0 z-10 mb-2 w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-line bg-surface text-ink shadow-lg dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark p-2';
   const label = $derived(SIM_TOOLS.find((t) => t.id === tools.tool)?.label ?? '');
 
   function toggle(p: Pop) {
@@ -45,7 +45,7 @@
   role="group"
   aria-label="Brush"
   data-testid="phone-tool-bar"
-  class="sim-phone-tool-bar absolute left-4 z-30 flex items-center gap-1 rounded-lg border border-gray-300 bg-white p-1 text-sm text-black shadow-lg md:hidden"
+  class="sim-phone-tool-bar absolute left-4 z-30 flex items-center gap-1 rounded-lg border border-line bg-surface p-1 text-sm text-ink shadow-lg [--bt-bg:var(--color-surface)] [--bt-fg:var(--color-ink)] [--bt-line:var(--color-control-line)] md:hidden dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark dark:[--bt-bg:var(--color-surface-dark)] dark:[--bt-fg:var(--color-ink-dark)] dark:[--bt-line:var(--color-control-line-dark)]"
   style:bottom="calc(var(--fzp-scrubber-h, 0px) + {lift}px + 0.5rem)"
 >
   <span class="px-2 font-semibold">{label}</span>

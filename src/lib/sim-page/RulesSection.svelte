@@ -1,9 +1,8 @@
 <!--
   "New zoning rules" (sim runs): the rules (BrushCard: summary, lot count, Edit, Remove) with "Add
-  transit rule" (aria-disabled with its reason while the catalog lacks transit data). Each lot
-  takes the tallest rule that covers it, never below FZP. A rule's form opens here, in place of
-  "Add transit rule", at every width (the dock's Transit tab). After the last rule is removed focus
-  moves to "Add transit rule".
+  transit layer" (aria-disabled with its reason while the catalog lacks transit data). A rule's
+  form opens here, in place of "Add transit layer", at every width (the dock's Transit tab). After
+  the last rule is removed focus moves to "Add transit layer".
 -->
 <script lang="ts">
   import { tick } from 'svelte';
@@ -69,7 +68,7 @@
   const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), select:not(:disabled)';
 
   /**
-   * After a card's Remove, focus the card now at its place, the one before it, or "Add transit rule".
+   * After a card's Remove, focus the card now at its place, the one before it, or "Add transit layer".
    * A form open on the removed rule closes (saving it would re-add the rule); a new rule's form
    * stays, and with no card left focus goes to its first control (WCAG 2.4.3).
    */
@@ -86,7 +85,6 @@
 </script>
 
 <div bind:this={root} class="flex flex-col gap-3 text-sm">
-  <p class="text-gray-700">Each lot takes the tallest rule that covers it, never below FZP.</p>
   {#if store.policy.rules.length > 0}
     <ul bind:this={rulesList} aria-label="New zoning rules" class="flex flex-col gap-2">
       {#each store.policy.rules as r, i (r.id)}
@@ -127,11 +125,12 @@
         data-brush-add
         aria-disabled={why !== null ? 'true' : undefined}
         aria-describedby={why ? `${uid}-why` : undefined}
-        class="min-h-11 rounded-md border border-gray-300 px-3 font-medium aria-disabled:opacity-40"
-        onclick={openTransit}>Add transit rule</button
+        class="min-h-11 rounded-md border border-control-line px-3 font-medium text-ink hover:bg-surface-raised aria-disabled:opacity-40 dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised"
+        onclick={openTransit}
+        ><span class="sr-only">Add</span> <span aria-hidden="true">+</span> Transit layer</button
       >
       {#if why}
-        <span id="{uid}-why" class="mt-1 block text-gray-700">{why}</span>
+        <span id="{uid}-why" class="mt-1 block text-ink-muted dark:text-ink-dark-muted">{why}</span>
       {/if}
     </div>
   {/if}

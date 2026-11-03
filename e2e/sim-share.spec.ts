@@ -258,7 +258,7 @@ test('publish round trip', async ({ page, browser, isMobile }, testInfo) => {
 test('autosave survives a reload', async ({ page }) => {
   await gotoSim(page);
   await openTab(page, 'Transit');
-  await panel(page).getByRole('button', { name: 'Add transit rule' }).click({ timeout: 20_000 });
+  await panel(page).getByRole('button', { name: 'Add transit layer' }).click({ timeout: 20_000 });
   const form = panel(page).getByRole('form', { name: 'Add a transit rule', exact: true });
   await form.getByRole('checkbox', { name: /^Muni Metro/ }).check();
   await form.getByRole('button', { name: 'Save rule' }).click();

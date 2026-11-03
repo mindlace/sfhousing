@@ -88,7 +88,7 @@
         <button
           type="button"
           aria-label="Dismiss"
-          class="{PILL_ACTION} flex items-center justify-center no-underline hover:bg-surface-raised dark:hover:bg-surface-dark"
+          class="{PILL_ACTION} flex items-center justify-center no-underline hover:bg-surface-raised dark:hover:bg-line-dark"
           onclick={() => ondismiss(n.id)}
         >
           <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none">

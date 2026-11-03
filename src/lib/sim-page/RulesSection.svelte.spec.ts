@@ -1,5 +1,5 @@
 /// <reference types="@vitest/browser-playwright" />
-// "New zoning rules" (sim runs): the rules with "Add transit rule", the inline form, Edit, and focus
+// "New zoning rules" (sim runs): the rules with "Add transit layer", the inline form, Edit, and focus
 // after the last rule is removed.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
@@ -41,9 +41,18 @@ describe('RulesSection', () => {
         rules.getByRole('button', { name: /^Edit: Up to 8 stories within 402 m · Near Muni Metro/ })
       )
       .toBeEnabled();
-    await expect
-      .element(page.getByText('Each lot takes the tallest rule that covers it, never below FZP.'))
-      .toBeVisible();
+    expect(page.getByText('Each lot takes the tallest rule').elements()).toHaveLength(0);
+  });
+
+  it('the add button reads "+ Transit layer" and is named "Add transit layer"', async () => {
+    setup({ catalog: testCatalog() });
+    const add = page.getByRole('button', { name: 'Add transit layer' });
+    await expect.element(add).toBeVisible();
+    // The visible text: the screen-reader-only "Add " is not part of it.
+    const visible = add.element().cloneNode(true) as HTMLElement;
+    visible.querySelectorAll('.sr-only').forEach((n) => n.remove());
+    expect(visible.textContent?.trim()).toBe('+ Transit layer');
+    expect(add.element().hasAttribute('data-brush-add')).toBe(true);
   });
 
   it('has no tools, key or custom list (those are Custom zoning)', async () => {
@@ -53,27 +62,27 @@ describe('RulesSection', () => {
     expect(page.getByText('Map key').elements()).toHaveLength(0);
   });
 
-  it('"Add transit rule" opens the transit form', async () => {
+  it('"Add transit layer" opens the transit form', async () => {
     setup({ catalog: testCatalog() });
-    await page.getByRole('button', { name: 'Add transit rule' }).click();
+    await page.getByRole('button', { name: 'Add transit layer' }).click();
     await expect.element(page.getByRole('form', { name: 'Add a transit rule' })).toBeVisible();
     expect(page.getByRole('button', { name: 'Add a rule' }).elements()).toHaveLength(0);
     expect(page.getByRole('button', { name: 'Street', exact: true }).elements()).toHaveLength(0);
     expect(page.getByRole('button', { name: 'Commercial corridor' }).elements()).toHaveLength(0);
   });
 
-  it('without transit data, "Add transit rule" is aria-disabled with its reason and opens nothing', async () => {
+  it('without transit data, "Add transit layer" is aria-disabled with its reason and opens nothing', async () => {
     setup({ catalog: testCatalog({ transit: false }) });
-    const add = page.getByRole('button', { name: 'Add transit rule' });
+    const add = page.getByRole('button', { name: 'Add transit layer' });
     await expect.element(add).toHaveAttribute('aria-disabled', 'true');
     await expect.element(add).toHaveAccessibleDescription('This dataset has no transit data.');
     await add.click({ force: true }); // Playwright will not click an aria-disabled button
     expect(page.getByRole('form', { name: 'Add a transit rule' }).elements()).toHaveLength(0);
   });
 
-  it('while the catalog loads, "Add transit rule" says so and stays focusable', async () => {
+  it('while the catalog loads, "Add transit layer" says so and stays focusable', async () => {
     setup({ catalog: undefined });
-    const add = page.getByRole('button', { name: 'Add transit rule' });
+    const add = page.getByRole('button', { name: 'Add transit layer' });
     await expect.element(add).toHaveAccessibleDescription('Loading brush data…');
     (add.element() as HTMLElement).focus();
     await expect.element(add).toHaveFocus();
@@ -81,7 +90,7 @@ describe('RulesSection', () => {
 
   it('on md+ a rule form opens inline and its save is a labelled change', async () => {
     const { store, announce } = setup({ catalog: testCatalog() });
-    await page.getByRole('button', { name: 'Add transit rule' }).click();
+    await page.getByRole('button', { name: 'Add transit layer' }).click();
     await page.getByRole('checkbox', { name: /^Regional rail/ }).click();
     await page.getByRole('button', { name: 'Save rule' }).click();
     expect(store.policy.rules).toHaveLength(1);
@@ -89,7 +98,7 @@ describe('RulesSection', () => {
     expect(store.undoLabel).toBe('Allowed up to 6 stories near regional rail');
     expect(announce).toHaveBeenCalledWith('Allowed up to 6 stories near regional rail');
     await expect.element(page.getByRole('button', { name: 'Save rule' })).not.toBeInTheDocument();
-    await expect.element(page.getByRole('button', { name: 'Add transit rule' })).toHaveFocus();
+    await expect.element(page.getByRole('button', { name: 'Add transit layer' })).toHaveFocus();
   });
 
   it('onsaved names the saved rule and whether the save changed the policy', async () => {
@@ -97,7 +106,7 @@ describe('RulesSection', () => {
     await page.getByRole('button', { name: /^Edit:/ }).click();
     await page.getByRole('button', { name: 'Save rule' }).click();
     expect(onsaved).toHaveBeenLastCalledWith(expect.objectContaining({ id: transit.id }), false);
-    await page.getByRole('button', { name: 'Add transit rule' }).click();
+    await page.getByRole('button', { name: 'Add transit layer' }).click();
     await page.getByRole('checkbox', { name: /^Regional rail/ }).click();
     await page.getByRole('button', { name: 'Save rule' }).click();
     const added = store.policy.rules.at(-1)!;
@@ -116,26 +125,26 @@ describe('RulesSection', () => {
       .toBeVisible();
   });
 
-  it('removing the last rule moves focus to "Add transit rule"', async () => {
+  it('removing the last rule moves focus to "Add transit layer"', async () => {
     const { store } = setup({ rules: [transit], catalog: testCatalog() });
     await page.getByRole('button', { name: /^Remove:/ }).click();
     expect(store.policy.rules).toHaveLength(0);
-    await expect.element(page.getByRole('button', { name: 'Add transit rule' })).toHaveFocus();
+    await expect.element(page.getByRole('button', { name: 'Add transit layer' })).toHaveFocus();
   });
 
-  it('removing the rule whose Edit form is open closes the form and focuses "Add transit rule"', async () => {
+  it('removing the rule whose Edit form is open closes the form and focuses "Add transit layer"', async () => {
     const { store } = setup({ rules: [transit], catalog: testCatalog() });
     await page.getByRole('button', { name: /^Edit:/ }).click();
     await expect.element(page.getByRole('button', { name: 'Save rule' })).toBeVisible();
     await page.getByRole('button', { name: /^Remove:/ }).click();
     expect(store.policy.rules).toHaveLength(0);
     await expect.element(page.getByRole('button', { name: 'Save rule' })).not.toBeInTheDocument();
-    await expect.element(page.getByRole('button', { name: 'Add transit rule' })).toHaveFocus();
+    await expect.element(page.getByRole('button', { name: 'Add transit layer' })).toHaveFocus();
   });
 
   it('removing the last rule while a new rule form is open keeps focus in the section', async () => {
     const { store } = setup({ rules: [transit], catalog: testCatalog() });
-    await page.getByRole('button', { name: 'Add transit rule' }).click();
+    await page.getByRole('button', { name: 'Add transit layer' }).click();
     await expect.element(page.getByRole('button', { name: 'Save rule' })).toBeVisible();
     await page.getByRole('button', { name: /^Remove:/ }).click();
     expect(store.policy.rules).toHaveLength(0);

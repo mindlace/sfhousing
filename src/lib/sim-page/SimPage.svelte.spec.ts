@@ -121,8 +121,20 @@ describe('SimPage dock', () => {
     expect(document.activeElement).toBe(document.body);
     // The editing face: Undo and Redo above the Transit tab's rules.
     await expect.element(page.getByRole('button', { name: 'Undo', exact: true })).toBeVisible();
-    await expect.element(page.getByRole('button', { name: 'Add transit rule' })).toBeVisible();
+    await expect.element(page.getByRole('button', { name: 'Add transit layer' })).toBeVisible();
     expect(getComputedStyle(sfhFzp()).getPropertyValue('--dock-w').trim()).toBe('320px');
+  });
+
+  it('without a calibration the dock has no Permits tab (no empty face)', async () => {
+    await page.viewport(1024, 768);
+    await setup({ calibration: null, calibrationError: true });
+    await expect.poll(dockPanel).not.toBeNull();
+    expect(
+      page
+        .getByRole('tab')
+        .elements()
+        .map((t) => t.textContent?.trim())
+    ).toEqual(['Transit', 'Paint', 'Protect']);
   });
 
   it('starts with only the handle at 375 px; the handle opens the sheet on Transit', async () => {
@@ -293,7 +305,7 @@ describe('SimPage dock', () => {
       reqId: w.lastOf('brushCatalog')!.reqId,
       catalog: testCatalog()
     });
-    await page.getByRole('button', { name: 'Add transit rule' }).click();
+    await page.getByRole('button', { name: 'Add transit layer' }).click();
     const form = page.getByRole('tabpanel', { name: 'Transit' }).getByRole('form', {
       name: 'Add a transit rule'
     });
@@ -301,7 +313,7 @@ describe('SimPage dock', () => {
     await expect.element(tab('Transit')).toBeVisible(); // the tabs stay: no sub-view
     expect(page.getByRole('button', { name: 'Back', exact: true }).query()).toBeNull();
     await page.getByRole('button', { name: 'Cancel' }).click();
-    await expect.element(page.getByRole('button', { name: 'Add transit rule' })).toHaveFocus();
+    await expect.element(page.getByRole('button', { name: 'Add transit layer' })).toHaveFocus();
   });
 
   it('at 375 px, opened from the Menu, Escape returns focus to the Menu button', async () => {
@@ -446,7 +458,7 @@ describe('SimPage rule brushes (Task 9)', () => {
       reqId: w.lastOf('brushCatalog')!.reqId,
       catalog: testCatalog()
     });
-    await page.getByRole('button', { name: 'Add transit rule' }).click();
+    await page.getByRole('button', { name: 'Add transit layer' }).click();
     const form = () => page.getByRole('form', { name: 'Add a transit rule' });
     await expect.element(form()).toBeVisible();
     const metro = () => page.getByRole('checkbox', { name: /^Muni Metro/ });
@@ -1201,7 +1213,7 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
         reqId: w.lastOf('brushCatalog')!.reqId,
         catalog: testCatalog()
       });
-      await page.getByRole('button', { name: 'Add transit rule' }).click();
+      await page.getByRole('button', { name: 'Add transit layer' }).click();
       await page.getByRole('checkbox', { name: /^Muni Metro/ }).click();
       await page.getByRole('button', { name: 'Save rule' }).click();
       await showToggle().click();
@@ -1443,7 +1455,7 @@ describe('SimPage paint feedback (plan 2, Task 6)', () => {
       reqId: w.lastOf('brushCatalog')!.reqId,
       catalog: testCatalog()
     });
-    await page.getByRole('button', { name: 'Add transit rule' }).click();
+    await page.getByRole('button', { name: 'Add transit layer' }).click();
     await page.getByRole('checkbox', { name: /^Regional rail/ }).click();
     await page.getByRole('button', { name: 'Save rule' }).click();
     await expect.poll(() => w.allOf('resolveBrush').length).toBeGreaterThan(0);

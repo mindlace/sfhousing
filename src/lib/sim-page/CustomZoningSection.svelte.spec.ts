@@ -131,6 +131,12 @@ describe('CustomZoningSection', () => {
       .toBeVisible();
   });
 
+  it('does not repeat that later strokes win (the order is the list)', async () => {
+    setup({ brushes: [freehand], result: lots(3) });
+    await expect.element(page.getByRole('list', { name: 'Custom zoning' })).toBeVisible();
+    expect(page.getByText('Later strokes win').elements()).toHaveLength(0);
+  });
+
   it('removing the last custom brush moves focus to the tool radio, not to a rule control', async () => {
     const { store } = setup({ brushes: [freehand], result: lots(3) });
     await page.getByRole('button', { name: /^Remove:/ }).click();

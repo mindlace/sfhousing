@@ -96,7 +96,7 @@
   import PolicySummary from './PolicySummary.svelte';
   import { customLotStatus, ruleLotStatus, type LotStatus } from './brush-summary';
   import ProtectionsSection from './ProtectionsSection.svelte';
-  import { SIM_TABS, VIEW_TABS } from './tabs';
+  import { VIEW_TABS, simTabs, tabOrFirst } from './tabs';
 
   interface Props {
     manifest: Manifest | null;
@@ -278,6 +278,13 @@
    * scenario FzpMode renders no dock. The view's only tab is the summary (`policy`).
    */
   const dock = new DockState({ tab: untrack(() => mode) === 'view' ? 'policy' : 'transit' });
+  /** The dock's tabs: Permits is offered only with a calibration (no empty face). */
+  const dockTabs = $derived(mode === 'view' ? VIEW_TABS : simTabs(calibration !== null));
+  // A tab that is no longer offered (Permits without a calibration) falls back to the first.
+  $effect.pre(() => {
+    const t = tabOrFirst(dockTabs, dock.tab);
+    if (t !== dock.tab) dock.tab = t;
+  });
   /**
    * Opening moves focus into the dock only when the user asked (the Policy button, the header
    * score, Done on the phone tool bar), never for the default open or a Run (WCAG 2.4.3).
@@ -886,7 +893,7 @@
     id={dockId}
     label={mode === 'view' ? 'Policy (read-only)' : 'Policy'}
     state={dock}
-    tabs={mode === 'view' ? VIEW_TABS : SIM_TABS}
+    tabs={dockTabs}
     panel={tabPanel}
     top={mode === 'edit' ? history : undefined}
     {results}

@@ -33,7 +33,20 @@ const THEMED_FILES = [
   'src/lib/fzp/SimResults.svelte',
   'src/lib/fzp/ScoreChart.svelte',
   'src/lib/fzp/MapKey.svelte',
-  'src/lib/scoreboard/TargetRow.svelte'
+  'src/lib/scoreboard/TargetRow.svelte',
+  'src/lib/dock/Dock.svelte',
+  'src/lib/scoreboard/HeaderScore.svelte',
+  'src/lib/sim-page/RulesSection.svelte',
+  'src/lib/sim-page/RuleBrushForm.svelte',
+  'src/lib/sim-page/BrushCard.svelte',
+  'src/lib/sim-page/CustomZoningSection.svelte',
+  'src/lib/sim-page/PermittingSection.svelte',
+  'src/lib/sim-page/RouteTimeline.svelte',
+  'src/lib/sim-page/ProtectionsSection.svelte',
+  'src/lib/sim-page/HistoryRow.svelte',
+  'src/lib/sim-page/PhoneToolBar.svelte',
+  'src/lib/fzp/ProjectCardPanel.svelte',
+  'src/lib/fzp/ProjectTooltip.svelte'
 ];
 /** Themed files whose colours come from tokens and custom properties only: no hex at all. */
 const NO_HEX_FILES = [
@@ -116,6 +129,23 @@ describe('app accent tokens', () => {
       expect(src, f).not.toMatch(/\bbg-white\b/);
       expect(src, f).not.toMatch(/\btext-black\b/);
     }
+  });
+  it('themed files pair every gray, white or black utility with a dark: class', () => {
+    // Per quote-free string (a class attribute or a class constant): a gray, white or black
+    // utility needs its dark: partner of the same kind (bg, border, text) in the same string.
+    const bad: string[] = [];
+    // TargetRow keeps its unthemed branch behind the temporary `themed` prop until a later plan
+    // removes it.
+    for (const f of THEMED_FILES.filter((f) => f !== 'src/lib/scoreboard/TargetRow.svelte')) {
+      const src = readFileSync(fromRoot(f), 'utf8');
+      for (const m of src.matchAll(/[^"'`]+/g)) {
+        const chunk = m[0];
+        for (const u of chunk.matchAll(/(?<![\w:-])(bg|border|text)-(?:gray-\d+|white|black)\b/g)) {
+          if (!chunk.includes(`dark:${u[1]}-`)) bad.push(`${f}: ${u[0]}`);
+        }
+      }
+    }
+    expect(bad).toEqual([]);
   });
   it('no Tailwind blue or blue hex remains in chrome', () => {
     for (const f of SCANNED) {

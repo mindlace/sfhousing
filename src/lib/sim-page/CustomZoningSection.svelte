@@ -70,7 +70,11 @@
   }
 </script>
 
-<div class="flex flex-col gap-3 text-sm">
+<!-- The brush controls take their colours from the --bt-* custom properties (BrushToolbar's
+     names), set to the dock's surface and ink tokens. -->
+<div
+  class="flex flex-col gap-3 text-sm [--bt-bg:var(--color-surface)] [--bt-fg:var(--color-ink)] [--bt-line:var(--color-control-line)] dark:[--bt-bg:var(--color-surface-dark)] dark:[--bt-fg:var(--color-ink-dark)] dark:[--bt-line:var(--color-control-line-dark)]"
+>
   <div role="radiogroup" aria-label="Brush tool" class="flex flex-wrap gap-1">
     {#each SIM_TOOLS as t (t.id)}
       <button
@@ -80,7 +84,7 @@
         aria-checked={tools.tool === t.id}
         tabindex={t.id === tabStop ? 0 : -1}
         disabled={!enabled(t.id)}
-        class="sim-tool min-h-11 min-w-11 rounded-md border border-gray-300 px-2 disabled:opacity-40"
+        class="sim-tool min-h-11 min-w-11 rounded-md border border-control-line px-2 text-ink hover:bg-surface-raised disabled:opacity-40 dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised"
         onclick={() => select(t.id)}
         onkeydown={(e) => onRadioKey(e, t.id)}>{t.label}</button
       >
@@ -96,28 +100,25 @@
   <RadiusPopover state={brush} inline />
 
   {#if store.policy.custom.length > 0}
-    <div>
-      <p class="text-gray-700">Later strokes win where they overlap.</p>
-      <ol bind:this={customList} aria-label="Custom zoning" class="mt-1 flex flex-col gap-2">
-        {#each store.policy.custom as b, i (b.id)}
-          <BrushCard
-            {store}
-            {sync}
-            list="custom"
-            id={b.id}
-            index={i}
-            {announce}
-            onremoved={afterRemove}
-          />
-        {/each}
-      </ol>
-    </div>
+    <ol bind:this={customList} aria-label="Custom zoning" class="flex flex-col gap-2">
+      {#each store.policy.custom as b, i (b.id)}
+        <BrushCard
+          {store}
+          {sync}
+          list="custom"
+          id={b.id}
+          index={i}
+          {announce}
+          onremoved={afterRemove}
+        />
+      {/each}
+    </ol>
   {/if}
 </div>
 
 <style>
   .sim-tool[aria-checked='true'] {
-    background: rgb(0 0 0 / 0.08);
+    background: color-mix(in srgb, currentColor 10%, transparent);
     box-shadow: inset 0 -3px 0 currentColor;
     font-weight: 600;
   }

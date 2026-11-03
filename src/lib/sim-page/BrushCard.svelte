@@ -112,7 +112,7 @@
 </script>
 
 {#if status}
-  <li class="flex flex-col gap-1 rounded-md border border-gray-300 p-2">
+  <li class="flex flex-col gap-1 rounded-md border border-line p-2 dark:border-line-dark">
     <!-- The lot count is its own polite region, kept across states, so a count arriving is
          spoken (WCAG 4.1.3). -->
     <p id="{uid}-summary">{head} · <span role="status">{lots}</span></p>
@@ -132,7 +132,7 @@
           type="button"
           aria-pressed={selected}
           aria-label="Show on map: {summary}"
-          class="{btn} aria-pressed:bg-gray-200 aria-pressed:no-underline"
+          class="{btn} aria-pressed:bg-accent-tint aria-pressed:text-ink aria-pressed:no-underline dark:aria-pressed:bg-accent-dark/30 dark:aria-pressed:text-ink-dark"
           onclick={() => onselect?.(!selected)}>Show on map</button
         >
         <button
@@ -167,7 +167,9 @@
       >
     </div>
     {#if rule && editUnavailable}
-      <span id="{uid}-edit-why" class="text-gray-700">{editUnavailable}</span>
+      <span id="{uid}-edit-why" class="text-ink-muted dark:text-ink-dark-muted"
+        >{editUnavailable}</span
+      >
     {/if}
   </li>
 {/if}

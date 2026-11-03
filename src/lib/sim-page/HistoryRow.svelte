@@ -14,13 +14,13 @@
   let { store, onundo, onredo }: Props = $props();
 </script>
 
-<div class="flex gap-2 border-b border-gray-200 px-4 py-2">
+<div class="flex gap-2 border-b border-line px-4 py-2 dark:border-line-dark">
   <button
     type="button"
     aria-label={store.undoLabel ? `Undo: ${store.undoLabel}` : 'Undo'}
     title={store.undoLabel ? `Undo: ${store.undoLabel}` : undefined}
     disabled={!store.canUndo}
-    class="min-h-11 min-w-11 rounded-md border border-gray-300 px-3 text-sm font-medium disabled:opacity-40"
+    class="min-h-11 min-w-11 rounded-md border border-control-line px-3 text-sm font-medium text-ink hover:bg-surface-raised disabled:opacity-40 dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised"
     onclick={() => onundo()}>Undo</button
   >
   <button
@@ -28,7 +28,7 @@
     aria-label={store.redoLabel ? `Redo: ${store.redoLabel}` : 'Redo'}
     title={store.redoLabel ? `Redo: ${store.redoLabel}` : undefined}
     disabled={!store.canRedo}
-    class="min-h-11 min-w-11 rounded-md border border-gray-300 px-3 text-sm font-medium disabled:opacity-40"
+    class="min-h-11 min-w-11 rounded-md border border-control-line px-3 text-sm font-medium text-ink hover:bg-surface-raised disabled:opacity-40 dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised"
     onclick={() => onredo()}>Redo</button
   >
 </div>

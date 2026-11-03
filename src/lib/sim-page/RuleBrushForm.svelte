@@ -105,7 +105,8 @@
     onsave(build());
   }
 
-  const field = 'rounded-md border border-gray-400 px-2 min-h-11';
+  const field =
+    'rounded-md border border-control-line bg-surface text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark px-2 min-h-11';
   const check = 'flex min-h-6 items-center gap-1.5';
   const smallBtn =
     'min-h-6 min-w-6 rounded-md px-1 font-semibold underline disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11';
@@ -133,10 +134,17 @@
 
   <fieldset class="flex flex-col gap-2">
     <legend class="font-semibold">Bands</legend>
-    <p class="text-gray-700">
-      Each band allows a height on the lots within its distance. The innermost band wins, and an
-      outer band is never taller than the band inside it.
-    </p>
+    <details class="text-ink-muted dark:text-ink-dark-muted">
+      <summary
+        aria-label="About bands"
+        class="inline-flex min-h-6 min-w-6 cursor-pointer items-center justify-center rounded-full pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+        ><span aria-hidden="true">ⓘ</span></summary
+      >
+      <p>
+        Each band allows a height on the lots within its distance. The innermost band wins, and an
+        outer band is never taller than the band inside it.
+      </p>
+    </details>
     {#each d.bands as band, i (i)}
       <div class="flex flex-wrap items-end gap-2">
         <label class="flex flex-col">
@@ -173,18 +181,22 @@
   <div class="flex flex-wrap items-center gap-2">
     <button
       type="submit"
-      class="min-h-11 rounded-md bg-black px-3 font-semibold text-white"
+      class="min-h-11 rounded-md bg-accent px-3 font-semibold text-on-accent hover:bg-accent-hover dark:bg-accent-dark dark:text-on-accent-dark dark:hover:bg-accent-dark-hover"
       aria-describedby={shown ? `${uid}-problem` : undefined}>Save rule</button
     >
     <button
       type="button"
-      class="min-h-11 rounded-md border border-gray-300 px-3 font-medium"
+      class="min-h-11 rounded-md border border-control-line px-3 font-medium text-ink hover:bg-surface-raised dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised"
       onclick={() => oncancel()}>Cancel</button
     >
   </div>
   <!-- Always present and in the accessibility tree (sr-only while empty, never display:none),
        so a reason appearing or changing is spoken (WCAG 4.1.3). -->
-  <p id="{uid}-problem" role="status" class="text-red-800 {shown ? '' : 'sr-only'}">
+  <p
+    id="{uid}-problem"
+    role="status"
+    class="text-red-800 dark:text-red-300 {shown ? '' : 'sr-only'}"
+  >
     {shown ?? ''}
   </p>
 </form>

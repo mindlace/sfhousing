@@ -116,7 +116,7 @@
           disabled={!newer}
           aria-invalid={yearsError ? 'true' : undefined}
           aria-describedby={yearsError ? `${uid}-years-error` : undefined}
-          class="min-h-6 w-20 rounded-md border border-gray-400 px-2 disabled:opacity-40 pointer-coarse:min-h-11"
+          class="min-h-6 w-20 rounded-md border border-control-line bg-surface px-2 text-ink disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark pointer-coarse:min-h-11"
           value={yearsText}
           oninput={(e) => (yearsText = e.currentTarget.value)}
           onchange={(e) => commitYears(e.currentTarget.value)}
@@ -126,12 +126,16 @@
     </div>
     <!-- Always present and in the accessibility tree (sr-only while empty, never display:none),
          so the error is spoken when it appears (WCAG 4.1.3). -->
-    <p id="{uid}-years-error" role="alert" class="text-red-800 {yearsError ? '' : 'sr-only'}">
+    <p
+      id="{uid}-years-error"
+      role="alert"
+      class="text-red-800 dark:text-red-300 {yearsError ? '' : 'sr-only'}"
+    >
       {yearsError ?? ''}
     </p>
   </fieldset>
 
-  <p class="text-gray-700">
+  <p class="text-ink-muted dark:text-ink-dark-muted">
     Protected lots get no new housing in the simulation. Projects already in the pipeline continue.
   </p>
 </div>

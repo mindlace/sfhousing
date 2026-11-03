@@ -118,12 +118,12 @@ async function closeSheet(page: Page): Promise<void> {
 }
 
 /**
- * "Add transit rule" once the brush catalog allows it (it is aria-disabled until then, and
+ * "Add transit layer" once the brush catalog allows it (it is aria-disabled until then, and
  * Playwright waits for it to be enabled); the form opens named `title` exactly.
  */
 async function openBrushForm(page: Page, title: string): Promise<Locator> {
   await openTab(page, 'Transit');
-  await panel(page).getByRole('button', { name: 'Add transit rule' }).click({ timeout: 20_000 });
+  await panel(page).getByRole('button', { name: 'Add transit layer' }).click({ timeout: 20_000 });
   const form = panel(page).getByRole('form', { name: title, exact: true });
   await expect(form).toBeVisible();
   return form;
