@@ -68,6 +68,7 @@ type Over = Partial<{
   onscore: () => void;
   scoreControls: string;
   bottomExtra: number;
+  cards: boolean;
 }>;
 
 function setup(over: Over = {}) {
@@ -776,6 +777,33 @@ describe('FzpMode picks and summaries', () => {
     pick({ projectId: null, kind: 'tap' });
     await expect.poll(() => card().elements().length).toBe(0);
     await expect.poll(() => page.getByRole('tooltip').elements().length).toBe(0);
+  });
+
+  it('with cards off a tap opens no card; hover tooltips still show', async () => {
+    const s = setup({ cards: false });
+    await toReady(s);
+    pick({ projectId: 'pr-1', parcelId: 'p1', x: 10, y: 10, kind: 'tap' });
+    await new Promise((res) => setTimeout(res, 50));
+    expect(s.w().lastSummary()).toBeUndefined();
+    expect(card().elements()).toEqual([]);
+    pick({ projectId: 'pr-1', parcelId: 'p1', x: 40, y: 50, kind: 'hover' });
+    await answerLastSummary(s.w(), summary(REAL_ACTUAL));
+    await expect.element(page.getByRole('tooltip')).toHaveTextContent('1234 Mission St');
+    // A tap leaves the tooltip of the hover before it alone.
+    pick({ projectId: 'pr-1', parcelId: 'p1', x: 40, y: 50, kind: 'tap' });
+    await new Promise((res) => setTimeout(res, 50));
+    await expect.element(page.getByRole('tooltip')).toBeVisible();
+    expect(card().elements()).toEqual([]);
+  });
+
+  it('turning cards off closes an open card', async () => {
+    const s = setup();
+    await toReady(s);
+    pick({ projectId: 'pr-1', parcelId: 'p1', x: 10, y: 10, kind: 'tap' });
+    await answerLastSummary(s.w(), summary(REAL_ACTUAL));
+    await expect.element(page.getByTestId('card-badge')).toBeVisible();
+    await (await s.r).rerender({ cards: false });
+    await expect.poll(() => card().elements().length).toBe(0);
   });
 
   it('requestParcelSummary sends the scrubbed day without projectId and drops generated', async () => {

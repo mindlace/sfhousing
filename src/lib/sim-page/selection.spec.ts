@@ -1,7 +1,8 @@
 // The dock's one selection (a rule or a painted area) and the limits view it chooses.
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_POLICY, type SimPolicy } from './policy';
-import { limitsViewOf, liveSelection } from './selection';
+import type { LimitOwner } from '$lib/sim/levers/source';
+import { DEFAULT_POLICY, customQuery, queryKey, type Lots, type SimPolicy } from './policy';
+import { limitsViewOf, liveSelection, selectionForLot, tabOf } from './selection';
 
 const policy: SimPolicy = {
   ...DEFAULT_POLICY,
@@ -56,5 +57,60 @@ describe('limitsViewOf', () => {
   it('Move, or the view with a tool chosen, gives plain', () => {
     expect(limitsViewOf(null, 'move', 'edit')).toEqual({ kind: 'plain' });
     expect(limitsViewOf(null, 'paint', 'view')).toEqual({ kind: 'plain' });
+  });
+});
+
+describe('selectionForLot', () => {
+  const k1 = queryKey(customQuery(policy.custom[0]));
+  const lots: Lots = (k) => (k === k1 ? ['L1'] : undefined);
+
+  it('a rule still in the policy selects that rule', () => {
+    expect(selectionForLot({ kind: 'rule', ruleId: 'r1' }, 'L1', policy, lots)).toEqual({
+      kind: 'rule',
+      id: 'r1'
+    });
+  });
+
+  it('a rule no longer in the policy (removed, or a stale answer) selects the FZP baseline', () => {
+    expect(selectionForLot({ kind: 'rule', ruleId: 'r9' }, 'L1', policy, lots)).toEqual({
+      kind: 'fzp'
+    });
+  });
+
+  it('a missing or empty rule id selects the FZP baseline', () => {
+    expect(selectionForLot({ kind: 'rule', ruleId: '' }, 'L1', policy, lots)).toEqual({
+      kind: 'fzp'
+    });
+    const missing = { kind: 'rule', ruleId: undefined } as unknown as LimitOwner;
+    expect(selectionForLot(missing, 'L1', policy, lots)).toEqual({ kind: 'fzp' });
+  });
+
+  it('paint selects the painted area holding the lot, else the FZP baseline', () => {
+    expect(selectionForLot({ kind: 'paint' }, 'L1', policy, lots)).toEqual({
+      kind: 'paint',
+      id: 'b1'
+    });
+    expect(selectionForLot({ kind: 'paint' }, 'L2', policy, lots)).toEqual({ kind: 'fzp' });
+    expect(selectionForLot({ kind: 'paint' }, 'L1', policy, () => undefined)).toEqual({
+      kind: 'fzp'
+    });
+  });
+
+  it('fzp selects the FZP baseline', () => {
+    expect(selectionForLot({ kind: 'fzp' }, 'L1', policy, lots)).toEqual({ kind: 'fzp' });
+  });
+
+  it('no lot, or a lot without an owner, clears the selection', () => {
+    expect(selectionForLot(null, null, policy, lots)).toBeNull();
+    expect(selectionForLot({ kind: 'fzp' }, null, policy, lots)).toBeNull();
+    expect(selectionForLot(null, 'L1', policy, lots)).toBeNull();
+  });
+});
+
+describe('tabOf', () => {
+  it('a rule and the FZP baseline live on Transit; a painted area on Paint', () => {
+    expect(tabOf({ kind: 'rule', id: 'r1' })).toBe('transit');
+    expect(tabOf({ kind: 'fzp' })).toBe('transit');
+    expect(tabOf({ kind: 'paint', id: 'b1' })).toBe('paint');
   });
 });

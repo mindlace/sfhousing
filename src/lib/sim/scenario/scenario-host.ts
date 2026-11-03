@@ -106,13 +106,13 @@ import {
   type NeighborhoodShapes
 } from '../levers/brushes';
 import type { LayerCtx } from '../levers/layers';
-import { lotAtPoint } from './lot-at';
 import { limitSources, ownerOf, type LimitOwner, type LimitSources } from '../levers/source';
 import { createYieldRecompute, type GrossCache, type YieldRecompute } from '../levers/recompute';
 import { allNeeds, fillNeeds, resolveEnvelopes, type Resolution } from '../levers/resolve';
 import { parseSimLevers, type SimLevers } from '../levers/types';
 import { chooseProject, projectCard, revisionAt, type CardCtx } from './card';
 import { createGeometry, type Geometry } from './geometry';
+import { lotAtPoint } from './lot-at';
 import { massingFor, simKey, type MassingCtx } from './massing';
 import {
   brushQueryProblem,
@@ -1274,9 +1274,9 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
   // --- lotAt (sim UX plan 4 Task 3) ---
 
   /**
-   * The lot under `point` (lng, lat) among the loaded records of the cells within `LID_PAD_M` (a lot may reach past its cell),
-   * and who sets its limit on the limits the worker holds now. Answered at once: it never waits
-   * on a pending lever revision.
+   * The lot under `point` (lng, lat) among the loaded records of the cells within `LID_PAD_M`
+   * (a lot may reach past its cell), and who sets its limit on the limits the worker holds now.
+   * Answered at once: it never waits on a pending lever revision.
    */
   function lotAt(reqId: number, point: [number, number]): void {
     const st = s;

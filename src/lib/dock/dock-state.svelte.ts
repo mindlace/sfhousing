@@ -32,6 +32,17 @@ export class DockState {
     if (this.sheet === 'peek') this.sheet = 'full';
   }
 
+  /**
+   * Show the editing face at `tab` (a map selection): desktop opens the panel, a closed phone sheet
+   * goes to 'peek' so the clicked lot stays in view; an open sheet keeps its size.
+   */
+  reveal(tab: string): void {
+    this.face = 'edit';
+    this.tab = tab;
+    this.open = true;
+    if (this.sheet === 'closed') this.sheet = 'peek';
+  }
+
   /** The header score in Set Policy: Results <-> editing face, opening the dock if hidden. */
   toggleResults(wide: boolean): void {
     if (!this.visible(wide) || this.face === 'edit') this.showResults();

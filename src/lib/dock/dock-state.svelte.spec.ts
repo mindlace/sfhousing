@@ -65,6 +65,23 @@ describe('DockState', () => {
     expect(d.sheet).toBe('closed');
   });
 
+  it('reveal shows the editing face at a tab: the panel opens, a closed sheet peeks', () => {
+    const d = new DockState({ tab: 'transit', open: false });
+    d.face = 'results';
+    d.reveal('paint');
+    expect([d.face, d.tab, d.open, d.sheet]).toEqual(['edit', 'paint', true, 'peek']);
+  });
+
+  it('reveal leaves an open sheet at its size', () => {
+    const d = new DockState({ tab: 'transit' });
+    d.sheet = 'full';
+    d.reveal('transit');
+    expect(d.sheet).toBe('full');
+    d.sheet = 'peek';
+    d.reveal('paint');
+    expect([d.tab, d.sheet]).toEqual(['paint', 'peek']);
+  });
+
   it('visible follows the width', () => {
     const d = new DockState({ tab: 'transit', open: true });
     expect([d.visible(true), d.visible(false)]).toEqual([true, false]);

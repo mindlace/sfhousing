@@ -195,6 +195,11 @@
      * its handle never hides the attribution). Default 0.
      */
     bottomExtra?: number;
+    /**
+     * Taps open project cards (default true). /sim passes `run.phase === 'run'`: in Set Policy a
+     * click selects a layer instead. Turning it off closes an open card. Hover tooltips stay.
+     */
+    cards?: boolean;
   }
 
   let {
@@ -227,7 +232,8 @@
     onscore = undefined,
     scoreExpanded = false,
     scoreControls = undefined,
-    bottomExtra = 0
+    bottomExtra = 0,
+    cards = true
   }: Props = $props();
 
   // The props seed the page once; Retry replaces the manifest and calibration in place.
@@ -535,7 +541,14 @@
     tipReq.reset();
   }
 
+  // Cards turned off (/sim's Set Policy): an open card closes.
+  $effect(() => {
+    if (!cards) untrack(closeCard);
+  });
+
   function onPick(p: TimelinePick): void {
+    // Without cards a tap is not this component's (/sim selects a layer): hover still shows tips.
+    if (p.kind === 'tap' && !cards) return;
     if (p.projectId === null) {
       hideTooltip();
       if (p.kind === 'tap') closeCard();

@@ -1928,3 +1928,276 @@ describe('SimPage live preview (sim-ux plan 3, Task 4)', () => {
     expect(feedbackIds()).toEqual([]);
   });
 });
+
+describe('SimPage map selection (sim-ux plan 4, Task 4)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  type W = (typeof workers)[number];
+  const wait = (ms: number) => new Promise((res) => setTimeout(res, ms));
+  /** A point inside the stub map's view: the lot the tests click. */
+  const X: [number, number] = [-122.42, 37.76];
+  const ruleId = 'r1';
+  const paintId = 'b1';
+  const DOC: SimDoc = {
+    schema: 2,
+    kind: 'sim',
+    datasetVersion: 'fixture-0',
+    policy: {
+      ...DEFAULT_POLICY,
+      rules: [
+        { id: ruleId, kind: 'transit', stopTypes: ['metro'], bands: [{ maxM: 402, stories: 8 }] }
+      ],
+      custom: [{ id: paintId, kind: 'paint', strokes: [{ path: [X], radiusM: 20 }], stories: 9 }]
+    }
+  };
+  const layerButton = (id: string) =>
+    document.querySelector<HTMLElement>(`[data-layer-row="${id}"] > button`);
+  const paintButton = (id: string) =>
+    document.querySelector<HTMLElement>(`[data-paint-row="${id}"]`);
+  /** The pressed Transit and Paint rows, by layer id (`fzp` for the baseline) or area id. */
+  const pressed = () =>
+    [...document.querySelectorAll<HTMLElement>('[data-layer-row] > button, [data-paint-row]')]
+      .filter((b) => b.getAttribute('aria-pressed') === 'true')
+      .map(
+        (b) => b.closest('[data-layer-row]')?.getAttribute('data-layer-row') ?? b.dataset.paintRow
+      );
+
+  /** /sim ready in Setup with DOC restored (a transit layer and a painted area), its lots found. */
+  async function readySimWithRule(width = 1024) {
+    const mem = new MemoryStorage();
+    mem.setItem(SIM_KEY, JSON.stringify({ v: 1, savedAt: 'x', plan: SIM_CODEC.serialize(DOC) }));
+    const { w } = await readySim(width, { storage: () => mem });
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(2);
+    for (const q of w.allOf('resolveBrush'))
+      w.emit({
+        type: 'brushLots',
+        reqId: q.reqId,
+        result: { ok: true, lots: ['X'], points: Float64Array.from(X) }
+      });
+    return { w, map: stub.map };
+  }
+
+  function clickAt(map: FakeMap, [lng, lat]: [number, number] = X): void {
+    map.fire('click', { lngLat: { lng, lat } });
+  }
+  type Owner = { kind: 'fzp' } | { kind: 'paint' } | { kind: 'rule'; ruleId: string } | null;
+  /** Answers the `n`th (1-based; default the latest) lotAt. */
+  function answer(w: W, owner: Owner, parcelId: string | null = 'X', n?: number): void {
+    const all = w.allOf('lotAt');
+    const req = n === undefined ? all.at(-1)! : all[n - 1];
+    w.emit({ type: 'lotAt', reqId: req.reqId, result: { ok: true, parcelId, owner } });
+  }
+
+  it('a click with Move in Set Policy asks lotAt and selects the rule that owns the lot', async () => {
+    const scrolled = vi.spyOn(Element.prototype, 'scrollIntoView');
+    const { w, map } = await readySimWithRule();
+    await tab('Protect').click();
+    (document.activeElement as HTMLElement | null)?.blur();
+    const focused = document.activeElement;
+    map.fire('click', { lngLat: { lng: X[0], lat: X[1] } });
+    const req = w.lastOf('lotAt')!;
+    expect(req.point).toEqual(X);
+    w.emit({
+      type: 'lotAt',
+      reqId: req.reqId,
+      result: { ok: true, parcelId: 'X', owner: { kind: 'rule', ruleId: ruleId } }
+    });
+    const selected = () =>
+      document.querySelector(`[data-layer-row="${ruleId}"] [aria-pressed="true"]`);
+    await expect.poll(selected).not.toBeNull();
+    await expect.element(page.elementLocator(selected()!)).toBeVisible();
+    await expect.element(tab('Transit')).toHaveAttribute('aria-selected', 'true');
+    // Selected and expanded, scrolled into view; focus stays where it was (on the map).
+    await expect.element(page.getByRole('group', { name: 'Stop types' })).toBeVisible();
+    await expect
+      .poll(() => scrolled.mock.contexts.includes(layerButton(ruleId)!.parentElement))
+      .toBe(true);
+    expect(scrolled).toHaveBeenCalledWith({ block: 'nearest' });
+    expect(document.activeElement).toBe(focused);
+    expect(dockEl()!.contains(document.activeElement)).toBe(false);
+  });
+
+  it('a painted owner opens the Paint tab on that area', async () => {
+    const { w, map } = await readySimWithRule();
+    // From the Results face too: the click shows the editing face.
+    await scoreButton().click();
+    await expect.element(results()).toBeVisible();
+    clickAt(map);
+    answer(w, { kind: 'paint' });
+    await expect.element(tab('Paint')).toHaveAttribute('aria-selected', 'true');
+    await expect.poll(() => paintButton(paintId)?.getAttribute('aria-pressed')).toBe('true');
+    expect(pressed()).toEqual([paintId]);
+  });
+
+  it('an FZP owner selects the baseline row; a click on no lot clears the selection', async () => {
+    const { w, map } = await readySimWithRule();
+    clickAt(map);
+    answer(w, { kind: 'fzp' });
+    await expect.poll(() => layerButton('fzp')?.getAttribute('aria-pressed')).toBe('true');
+    expect(pressed()).toEqual(['fzp']);
+    clickAt(map, [-122.5, 37.7]);
+    answer(w, null, null);
+    await expect.poll(pressed).toEqual([]);
+  });
+
+  it('only the latest click answer counts', async () => {
+    const { w, map } = await readySimWithRule();
+    clickAt(map);
+    clickAt(map);
+    expect(w.allOf('lotAt')).toHaveLength(2);
+    // The second answers first; the first, late, changes nothing.
+    answer(w, { kind: 'fzp' }, 'X', 2);
+    await expect.poll(pressed).toEqual(['fzp']);
+    answer(w, { kind: 'rule', ruleId }, 'X', 1);
+    await wait(50);
+    expect(pressed()).toEqual(['fzp']);
+    // An older answer arriving before the latest one is dropped too.
+    clickAt(map);
+    clickAt(map);
+    answer(w, { kind: 'paint' }, 'X', 3);
+    await wait(50);
+    expect(pressed()).toEqual(['fzp']);
+    answer(w, { kind: 'rule', ruleId }, 'X', 4);
+    await expect.poll(pressed).toEqual([ruleId]);
+  });
+
+  it('a no-session answer changes nothing', async () => {
+    const { w, map } = await readySimWithRule();
+    clickAt(map);
+    answer(w, { kind: 'rule', ruleId });
+    await expect.poll(pressed).toEqual([ruleId]);
+    await tab('Protect').click();
+    clickAt(map);
+    w.emit({
+      type: 'lotAt',
+      reqId: w.lastOf('lotAt')!.reqId,
+      result: { ok: false, reason: 'no-session', message: 'x' }
+    });
+    await wait(50);
+    await expect.element(tab('Protect')).toHaveAttribute('aria-selected', 'true');
+    await tab('Transit').click();
+    expect(pressed()).toEqual([ruleId]);
+  });
+
+  // Review focus 1: the worker answers from the limits it holds now, which may be a revision behind.
+  it('a click while a revision resolves follows the answer; a rule since removed selects FZP', async () => {
+    const { w, map } = await readySimWithRule();
+    await page.getByRole('button', { name: /^Near Muni Metro/ }).click();
+    await page.getByRole('button', { name: 'Remove layer' }).click();
+    await expect.poll(() => layerButton(ruleId)).toBeNull();
+    // The removal's revision is still on its way: the worker still names r1.
+    clickAt(map);
+    answer(w, { kind: 'rule', ruleId });
+    await expect.poll(pressed).toEqual(['fzp']);
+    // An owner from the revision before that is still in the policy is selected.
+    clickAt(map);
+    answer(w, { kind: 'paint' });
+    await expect.poll(pressed).toEqual([paintId]);
+  });
+
+  // Review focus 4: in each state exactly one of a selection, a stroke and a card happens.
+  describe('a click does exactly one thing', () => {
+    /** A mouse click on the map: pointer down and up on the canvas, MapLibre's click, SimMap's pick. */
+    function fullClick() {
+      const canvas = stub.map.getCanvas();
+      for (const type of ['pointerdown', 'pointerup'])
+        canvas.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            clientX: 30,
+            clientY: 10,
+            pointerId: 1,
+            pointerType: 'mouse',
+            button: 0,
+            isPrimary: true
+          })
+        );
+      clickAt(stub.map);
+      stub.props.timelinePick?.({ projectId: 'pr-1', parcelId: 'X', x: 30, y: 10, kind: 'tap' });
+    }
+    const counts = (w: W) => ({
+      lotAt: w.allOf('lotAt').length,
+      stroke: w.allOf('resolveBrush').length,
+      card: w.allOf('parcelSummary').length
+    });
+
+    it('Set Policy with Move: a selection, no stroke and no card', async () => {
+      const { w } = await readySim();
+      fullClick();
+      await wait(50);
+      expect(counts(w)).toEqual({ lotAt: 1, stroke: 0, card: 0 });
+      await expect.element(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+    });
+
+    it('Set Policy with Paint: a stroke, no selection and no card', async () => {
+      const { w } = await readySim();
+      await tab('Paint').click();
+      await page.getByRole('radio', { name: 'Paint' }).click();
+      await expect.poll(() => callsOf('setPanEnabled').at(-1)?.[0]).toBe(false);
+      fullClick();
+      await expect.poll(() => w.allOf('resolveBrush').length).toBe(1);
+      await wait(50);
+      expect(counts(w)).toEqual({ lotAt: 0, stroke: 1, card: 0 });
+    });
+
+    it('Set Policy with Erase: no selection and no card', async () => {
+      const { w } = await readySim();
+      await tab('Paint').click();
+      await page.getByRole('radio', { name: 'Erase' }).click();
+      fullClick();
+      await wait(50);
+      expect(counts(w)).toMatchObject({ lotAt: 0, card: 0 });
+    });
+
+    it('a run: a card, no selection and no stroke', async () => {
+      const { w } = await readySim();
+      await pressRun(w);
+      fullClick();
+      await wait(50);
+      expect(counts(w)).toEqual({ lotAt: 0, stroke: 0, card: 1 });
+    });
+
+    it('the view: nothing', async () => {
+      vi.stubEnv('VITE_E2E', '1');
+      stub.reset();
+      await page.viewport(1024, 768);
+      await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY });
+      await toReady();
+      const w = workers.at(-1)!;
+      fullClick();
+      await wait(50);
+      expect(counts(w)).toEqual({ lotAt: 0, stroke: 0, card: 0 });
+    });
+  });
+
+  it('the listener goes with a replaced map and on unmount', async () => {
+    vi.stubEnv('VITE_E2E', '1');
+    stub.reset();
+    await page.viewport(1024, 768);
+    const r = await setup();
+    await toReady();
+    const old = stub.map;
+    await expect.poll(() => old.listenerCount('click')).toBe(1);
+    stub.map = new FakeMap();
+    stub.fireReady();
+    expect(old.listenerCount('click')).toBe(0);
+    expect(stub.map.listenerCount('click')).toBe(1);
+    r.unmount();
+    expect(stub.map.listenerCount('click')).toBe(0);
+  });
+
+  it('at 375 px a click opens the closed sheet at peek on the selected row', async () => {
+    const { w, map } = await readySimWithRule(375);
+    await expect.element(handle()).toHaveAttribute('aria-expanded', 'false');
+    clickAt(map);
+    answer(w, { kind: 'rule', ruleId });
+    await expect.element(handle()).toHaveAttribute('aria-expanded', 'true');
+    await expect.poll(pressed).toEqual([ruleId]);
+    const sheet = document.querySelector<HTMLElement>('.sfh-dock-sheet')!;
+    expect(sheet.style.maxHeight).toContain('40dvh');
+  });
+});

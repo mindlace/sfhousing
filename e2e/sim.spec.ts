@@ -522,6 +522,102 @@ test('a painted area is selected, outlined and removed from the Paint tab', asyn
   expect(await deckIds(page)).not.toContain(OUTLINE_LAYER);
 });
 
+// ---- selecting on the map (sim-ux plan 4, Task 4) -----------------------------------------------
+
+/** 3512006: a fixture-0 lot in the row FROM..TO crosses, near the fixture's metro and rail stops. */
+const LOT_X: [number, number] = [-122.4189155, 37.760135];
+/** About 45 m south of the fixture's row of lots, in the frame: no lot there. */
+const NO_LOT: [number, number] = [-122.4187, 37.7597];
+
+/** Waits until the levers sent last are in force, with a revision newer than `before`. */
+async function waitCurrentAfter(page: Page, before: number | null): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const l = await leverStatus(page);
+        return l.status === 'current' && (l.sentRev ?? -1) > (before ?? -1);
+      },
+      { timeout: 20_000 }
+    )
+    .toBe(true);
+}
+
+/** Folds a phone sheet, frames the fixture's lots and clicks (taps on the phone) at `at`. */
+async function clickMapAt(page: Page, isMobile: boolean, at: [number, number]): Promise<void> {
+  await closeSheet(page);
+  await jumpAndIdle(page);
+  const [x, y] = await projectToPage(page, at);
+  if (isMobile) await page.touchscreen.tap(x, y);
+  else await page.mouse.click(x, y);
+}
+
+/** The Transit and Paint rows whose select button is pressed. */
+const pressedRows = (page: Page): Locator =>
+  panel(page).locator(
+    '[data-layer-row] > button[aria-pressed="true"], [data-paint-row][aria-pressed="true"]'
+  );
+
+test('clicking a lot in Set Policy selects the transit layer that sets its limit', async ({
+  isMobile,
+  page
+}) => {
+  await gotoSim(page);
+  const before = (await leverStatus(page)).sentRev;
+  const row = await addTransitLayer(page);
+  // Taller than FZP on the fixture's lots, so the layer sets their limit.
+  const inner = row.getByRole('group', { name: 'Band 1' });
+  for (let k = 0; k < 14; k++)
+    await inner.getByRole('button', { name: 'More stories, band 1', exact: true }).click();
+  await expect(inner).toContainText('20 stories');
+  // Deselect it, so the click is what selects it again.
+  await selectButton(row).click();
+  await expect(selectButton(row)).toHaveAttribute('aria-pressed', 'false');
+  await openTab(page, 'Protect');
+  await waitCurrentAfter(page, before);
+
+  await clickMapAt(page, isMobile, LOT_X);
+  await expect(tabOf(page, 'Transit')).toHaveAttribute('aria-selected', 'true');
+  await expect(selectButton(row)).toHaveAttribute('aria-pressed', 'true');
+  await expect(selectButton(row)).toBeInViewport();
+  await expect(row.getByRole('group', { name: 'Stop types' })).toBeVisible();
+  // A phone opens the sheet at peek only (40dvh), so the lot stays in view; focus stays off the
+  // dock.
+  if (isMobile)
+    expect(await page.locator('.sfh-dock-sheet').evaluate((e) => e.style.maxHeight)).toContain(
+      '40dvh'
+    );
+  expect(await panel(page).evaluate((d) => d.contains(document.activeElement))).toBe(false);
+
+  // A click on no lot clears the selection.
+  await clickMapAt(page, isMobile, NO_LOT);
+  await expect(pressedRows(page)).toHaveCount(0);
+});
+
+test('clicking inside a painted stroke opens the Paint tab on that area', async ({
+  isMobile,
+  page
+}) => {
+  await gotoSim(page);
+  const before = (await leverStatus(page)).sentRev;
+  await openTab(page, 'Paint');
+  const tool = (name: string) => panel(page).getByRole('radio', { name, exact: true });
+  await expect(tool('Paint')).toBeEnabled();
+  await chooseTool(page, isMobile, () => tool('Paint').click());
+  await strokeOnce(page, isMobile);
+  if (isMobile) await stripDone(page);
+  else await tool('Move').click();
+  await expect(customList(page)).toHaveCount(1);
+  await openTab(page, 'Transit');
+  await waitCurrentAfter(page, before);
+
+  await clickMapAt(page, isMobile, LOT_X);
+  await expect(tabOf(page, 'Paint')).toHaveAttribute('aria-selected', 'true');
+  const area = customList(page).first().locator('[data-paint-row]');
+  await expect(area).toHaveAttribute('aria-pressed', 'true');
+  await expect(area).toBeInViewport();
+  await expect(pressedRows(page)).toHaveCount(1);
+});
+
 test('a category protection shows the protections line in the score', async ({ page }) => {
   await gotoSim(page);
   const before = await leverStatus(page);

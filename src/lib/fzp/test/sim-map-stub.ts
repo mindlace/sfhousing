@@ -106,9 +106,12 @@ export class FakeMap {
     return { layers: [] };
   }
 
-  /** Calls every listener of this event type. */
-  fire(ev: string): void {
-    for (const cb of [...(this.#listeners.get(ev) ?? [])]) cb({ type: ev });
+  /**
+   * Calls every listener of this event type with `{ type: ev }`, merged with `payload` when given
+   * (a `click`'s `{ lngLat }`).
+   */
+  fire(ev: string, payload?: object): void {
+    for (const cb of [...(this.#listeners.get(ev) ?? [])]) cb({ type: ev, ...payload });
   }
 }
 

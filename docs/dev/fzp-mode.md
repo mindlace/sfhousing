@@ -70,18 +70,20 @@ Every notice is a pill (`PILL` in `src/lib/shell/pill.ts`) in one stack, `Notice
 
 `window.__sfhMap` (`src/lib/map/debug.ts`) gives the MapLibre map. Test helpers: `e2e/helpers/sharing.ts` (`jumpAndIdle`, `projectToPage`, `FRAME`, `headerAction`, `openHeaderMenu`) and `e2e/helpers/a11y.ts`. The specs are `e2e/fzp.spec.ts`, `e2e/fzp-sim.spec.ts` and, for `/sim`'s own controls, `e2e/sim.spec.ts`.
 
-## /sim props: `view`, `onmanifest`, `onheights` and `onchunks`
+## /sim props: `view`, `onmanifest`, `onheights`, `onchunks` and `cards`
 
 - **`view`** (`ViewPrefs`, default `HIDDEN_VIEW` from `src/lib/view/prefs.ts`: every layer off) is passed to SimMap as is. `/sim` passes the viewer's prefs in Setup and `HIDDEN_VIEW` during a run.
 - **`onmanifest(m)`** reports the manifest SimMap renders, once at setup and again whenever a Retry replaces it (as BrushEditor does for `/`). `/sim` builds its View rows from it.
 - **`onheights(city)`** gets a `heights` message's `HeightCity` (city-wide contour chains and labels) for a lever revision at or above the latest rev sent ([sim-levers.md](sim-levers.md)); a stale one is dropped. `/sim` draws it as the height limits ([map-interfaces.md](map-interfaces.md), "Height limits"). The glass lids are not a prop: `SimClientApi.heightLids(bbox)` forwards to the worker's `heightLids` request, and SimPage calls it per view.
 - **`onchunks()`** fires when the worker reports newly loaded parcel chunks. `/sim` uses it to re-ask for the eraser's outlines while the last answer had lots in chunks not yet loaded ([sim-page.md](sim-page.md), "Map overlays").
+- **`cards`** (default true): taps and clicks open project cards. `/sim` passes `run.phase === 'run'`, so in Set Policy (and the view's Setup) a tap opens no card; turning it off closes an open card. Hover tooltips are unaffected.
+- **`SimClientApi.lotAt(point)`** forwards the worker's `lotAt`: the lot under a lng/lat point and the layer that sets its limit (`LotAtResult`, [sim-levers.md](sim-levers.md)); `parcelSummary`'s `limits.owner` carries the same owner. `/sim` calls it on a map click in Set Policy.
 
 ## Request flow
 
 - **Scenario:** `FzpMode` owns a `ScenarioClient` (`src/lib/sim/scenario-client.ts`) over the simulation worker. `startScenario` is the only caller of `initScenario`; "Another future" and "Back to the representative future" go through `requestReroll`. Each request carries a revision; timelines and errors for older revisions are dropped. The page writes `?seed=N` through `onurlseed` only for the answer to a reroll (a null seed is the representative future and removes the parameter). Unknown query parameters are kept.
 - **Prefetch:** after the first timeline following each `initScenario`, and on every `moveend`, the page asks the worker to fetch the parcel chunks for the viewport. The worker fetches only those chunks, the three `scenarios/fzp/` timelapse files and, because `/sim` always initialises with levers, `policy.bin`. `transit.json` and `neighborhoods.geojson` are fetched only for brushes (see [sim-page.md](sim-page.md), "Request flow").
-- **Picks:** SimMap reports `timelinePick` events. A hover over a part feeds the tooltip's requester; a tap or mouse click feeds the card's requester; a tap or click on nothing closes the card. Hover shows a tooltip only. Existing buildings keep SimMap's own tooltip. Parts of a simulated project are pickable only while visible at the scrubbed day.
+- **Picks:** SimMap reports `timelinePick` events. A hover over a part feeds the tooltip's requester; a tap or mouse click feeds the card's requester (only while `cards` is on); a tap or click on nothing closes the card. Hover shows a tooltip only. Existing buildings keep SimMap's own tooltip. Parts of a simulated project are pickable only while visible at the scrubbed day.
 - **Summaries are latest-wins** (`summary-request.ts`). One `SummaryRequester` per surface (card, tooltip): at most one request in flight and one queued behind it, and only the latest query's answer reaches the UI. While a card is on show, a request for the same parcel and project keeps it on show until the answer replaces it (no flash of "loading" on every month). A `not-loaded` answer is retried on each worker `chunks` message.
 - **Card refresh:** the open card asks again when the scrubbed month changes, when a reroll or crash Retry answers, and when the worker crashes (then it reads "Details unavailable" until Retry).
 

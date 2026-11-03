@@ -30,7 +30,9 @@
   (LidRequest: latest wins, the bbox clamped around the centre).
   Selection (sim-ux plan 3, Task 3; plan 4, Task 2): one `picked` selection, a transit layer or
   the FZP baseline (a Transit tab row) or a painted area (a Paint tab row); the selected area's
-  lots are outlined on the map.
+  lots are outlined on the map. In Set Policy with Move, a click on a lot selects the layer that
+  sets its limit (the worker's `lotAt`, latest click wins) and shows its row (plan 4, Task 4); a
+  click outside every lot clears it. Project cards open on a tap only in a run (`cards`).
   Live preview (sim-ux plan 3, Task 4): in Setup, while a Paint stroke is drawn, the buildings
   its lots nearest the brush ring could hold show under it (StrokePreview, the overlay's feedback
   slot); they fade on release, clear at once on a cancel, and a run clears them.
@@ -89,7 +91,13 @@
   import { SIM_CODEC, simDocProblems, type SimDoc } from './sim-doc';
   import SimNotices from './SimNotices.svelte';
   import { restoreSimDoc, type SimNotice } from './sim-session';
-  import { limitsViewOf, liveSelection, type DockSelection } from './selection';
+  import {
+    limitsViewOf,
+    liveSelection,
+    selectionForLot,
+    tabOf,
+    type DockSelection
+  } from './selection';
   import { createStrokeAdapter, removeCustomBrush } from './stroke-adapter';
   import { focusHeaderMenu } from '$lib/shell/header-actions.svelte';
   import { LeverSync, PolicyStore } from './policy-store.svelte';
@@ -420,7 +428,7 @@
     controller.attach();
   }
 
-  function onMapReady(h: SimMapHandle, map: ControllerMap): void {
+  function onMapReady(h: SimMapHandle, map: ControllerMap & ClickMap): void {
     if (controller && map !== controllerMap) {
       controller.destroy();
       controller = null;
@@ -429,6 +437,7 @@
     }
     mapHandle = h;
     watchView(map);
+    watchClicks(map);
     attachController();
   }
 
@@ -581,6 +590,69 @@
   function selectPaint(id: string | null): void {
     picked = id === null ? null : { kind: 'paint', id };
   }
+
+  // ---- selecting on the map (sim-ux plan 4, Task 4) ----
+
+  /** MapLibre's `click`, as the selection reads it. */
+  interface MapClick {
+    lngLat: { lng: number; lat: number };
+  }
+  /** What the selection needs of the map (`ControllerMap` has no `click`). */
+  interface ClickMap {
+    on(ev: 'click', fn: (e: MapClick) => void): void;
+    off(ev: 'click', fn: (e: MapClick) => void): void;
+  }
+  let clickMap: ClickMap | null = null;
+  /** The latest click's number: only its answer counts. */
+  let clickSeq = 0;
+
+  /** Listens for clicks on `map` (a new map replaces the old one's listener). */
+  function watchClicks(map: ClickMap): void {
+    if (map === clickMap) return;
+    clickMap?.off('click', onMapClick);
+    clickMap = map;
+    map.on('click', onMapClick);
+  }
+
+  /** A click selects only in Set Policy with Move: Paint and Erase stroke, a run opens a card. */
+  const selecting = () => mode === 'edit' && run.phase === 'setup' && tools.tool === 'move';
+
+  function onMapClick(e: MapClick): void {
+    if (!selecting() || !api) return;
+    void selectAt([e.lngLat.lng, e.lngLat.lat], ++clickSeq, api);
+  }
+
+  /**
+   * Asks the worker which lot is under `point` and which layer sets its limit (from the limits it
+   * holds now, one source of truth with the height layer), then selects that layer's row: the
+   * dock shows it (a closed phone sheet peeks, so the lot stays in view) and scrolls it into view.
+   * Focus stays on the map. A `no-session` answer, or one overtaken by a later click or by a
+   * change out of Set Policy's Move, changes nothing.
+   */
+  async function selectAt(point: [number, number], seq: number, a: SimClientApi): Promise<void> {
+    const r = await a.lotAt(point);
+    if (seq !== clickSeq || dead || !r.ok || !selecting()) return;
+    const lots: Lots = (key) => {
+      const x = sync.result(key);
+      return x?.ok ? x.lots : undefined;
+    };
+    const sel = selectionForLot(r.owner, r.parcelId, store.policy, lots);
+    if (sel === null) {
+      picked = null;
+      return;
+    }
+    if (sel.kind === 'paint') selectPaint(sel.id);
+    else selectLayer(sel);
+    dockFocus = false;
+    dock.reveal(tabOf(sel));
+    await tick();
+    const row =
+      sel.kind === 'paint'
+        ? `[data-paint-row="${CSS.escape(sel.id)}"]`
+        : `[data-layer-row="${sel.kind === 'fzp' ? 'fzp' : CSS.escape(sel.id)}"]`;
+    document.getElementById(dockId)?.querySelector(row)?.scrollIntoView({ block: 'nearest' });
+  }
+
   /**
    * Plain; with the brush or eraser chosen, or a painted area selected, paint-set limits stand
    * out; a selected layer (or the FZP baseline) wins.
@@ -802,6 +874,8 @@
       strokePreview.reset();
       viewMap?.off('moveend', readView);
       viewMap = null;
+      clickMap?.off('click', onMapClick);
+      clickMap = null;
       controller?.destroy();
       controller = null;
       mapHandle = null;
@@ -945,6 +1019,7 @@
     lidRequest.chunksChanged();
   }}
   onmanifest={(m) => (mapManifest = m)}
+  cards={run.phase === 'run'}
   {actions}
   status={mode === 'edit' ? saveState : undefined}
   notices={sessionNotices}
