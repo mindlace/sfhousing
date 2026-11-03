@@ -245,26 +245,26 @@
 
 <style>
   .sfh-fzp-scrubber {
-    background: #fff;
-    border-top: 1px solid #cbd5e1;
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-line);
     overflow-x: clip;
   }
   .ctl {
     min-width: 32px;
     min-height: 32px;
-    border: 1px solid #64748b;
-    background: #fff;
+    border: 1px solid var(--color-control-line);
+    background: var(--color-surface);
     color: inherit;
   }
   .ctl:disabled {
     opacity: 0.5;
   }
   .ctl:hover:not(:disabled) {
-    background: #f1f5f9;
+    background: var(--color-surface-raised);
   }
   .track {
     min-height: 32px;
-    accent-color: #a3472c;
+    accent-color: var(--color-accent);
   }
   .markers {
     min-height: 32px;
@@ -277,51 +277,51 @@
   }
   .ctl:focus-visible,
   .track:focus-visible {
-    outline: 2px solid #a3472c;
+    outline: 2px solid var(--color-accent);
     outline-offset: 2px;
   }
   /* Run (setup only) carries the app accent (spec §8); Play, Pause and Replay stay plain. */
   .run {
-    border-color: #a3472c;
-    background: #a3472c;
-    color: #fff;
+    border-color: var(--color-accent);
+    background: var(--color-accent);
+    color: var(--color-on-accent);
   }
   .run:hover:not(:disabled) {
-    border-color: #84371f;
-    background: #84371f;
+    border-color: var(--color-accent-hover);
+    background: var(--color-accent-hover);
   }
   @media (prefers-color-scheme: dark) {
     .sfh-fzp-scrubber {
-      background: #1c1d1f;
-      border-top-color: #3b3d41;
-      color: #e8e4dc;
+      background: var(--color-surface-dark);
+      border-top-color: var(--color-line-dark);
+      color: var(--color-ink-dark);
     }
     .ctl {
-      border-color: #8f8a80;
-      background: #232427;
+      border-color: var(--color-control-line-dark);
+      background: var(--color-surface-dark-raised);
     }
     .ctl:hover:not(:disabled) {
-      background: #2c2e31;
+      background: var(--color-chrome-dark-raised);
     }
     .marker {
       border-color: transparent;
       background: transparent;
     }
     .track {
-      accent-color: #e0955a;
+      accent-color: var(--color-accent-dark);
     }
     .ctl:focus-visible,
     .track:focus-visible {
-      outline-color: #e0955a;
+      outline-color: var(--color-accent-dark);
     }
     .run {
-      border-color: #e0955a;
-      background: #e0955a;
-      color: #1c1d1f;
+      border-color: var(--color-accent-dark);
+      background: var(--color-accent-dark);
+      color: var(--color-on-accent-dark);
     }
     .run:hover:not(:disabled) {
-      border-color: #ebae7e;
-      background: #ebae7e;
+      border-color: var(--color-accent-dark-hover);
+      background: var(--color-accent-dark-hover);
     }
   }
   /* The repo's coarse-pointer pattern (BrushToolbar): 44 px targets. */

@@ -10,4 +10,16 @@
   --color-on-accent-dark: #1c1d1f;
   --color-chrome-dark: #1c1d1f;
   --color-chrome-dark-raised: #2c2e31;
+  --color-surface: #ffffff;
+  --color-surface-raised: #f3f4f6;
+  --color-line: #d1d5db;
+  --color-control-line: #64748b;
+  --color-ink: #111827;
+  --color-ink-muted: #4b5563;
+  --color-surface-dark: #1c1d1f;
+  --color-surface-dark-raised: #2c2e31;
+  --color-line-dark: #3b3d41;
+  --color-control-line-dark: #8f8a80;
+  --color-ink-dark: #e8e4dc;
+  --color-ink-dark-muted: #b4aea3;
 }

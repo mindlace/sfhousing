@@ -33,6 +33,7 @@ describe('app accent tokens', () => {
     expect(tok['accent']).toBe('#A3472C');
     expect(tok['accent-hover']).toBe('#84371F');
     expect(tok['accent-dark']).toBe('#E0955A');
+    expect(tok['surface-dark']).toBe(tok['chrome-dark']);
   });
   it('on-accent text is >= 4.5:1 on accent and hover, light and dark', () => {
     expect(contrast(tok['on-accent'], tok['accent'])).toBeGreaterThanOrEqual(4.5);
@@ -47,8 +48,24 @@ describe('app accent tokens', () => {
     expect(contrast(tok['accent-dark'], tok['chrome-dark'])).toBeGreaterThanOrEqual(3);
     expect(contrast('#111827', tok['accent-tint'])).toBeGreaterThanOrEqual(4.5);
   });
-  it('light-only surfaces use the light accent: no colour token is redefined under dark', () => {
-    expect(css).not.toMatch(/prefers-color-scheme[^}]*--color-accent/s);
+  it('text tokens are >= 4.5:1 on every surface of their theme', () => {
+    for (const bg of ['surface', 'surface-raised'])
+      for (const fg of ['ink', 'ink-muted'])
+        expect(contrast(tok[fg], tok[bg]), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
+    for (const bg of ['surface-dark', 'surface-dark-raised'])
+      for (const fg of ['ink-dark', 'ink-dark-muted', 'accent-dark'])
+        expect(contrast(tok[fg], tok[bg]), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(tok['accent'], tok['surface-raised'])).toBeGreaterThanOrEqual(4.5);
+  });
+  it('control borders are >= 3:1 on their surfaces (WCAG 1.4.11)', () => {
+    for (const bg of ['surface', 'surface-raised'])
+      expect(contrast(tok['control-line'], tok[bg])).toBeGreaterThanOrEqual(3);
+    for (const bg of ['surface-dark', 'surface-dark-raised'])
+      expect(contrast(tok['control-line-dark'], tok[bg])).toBeGreaterThanOrEqual(3);
+  });
+  it('the time bar uses tokens, not hex', () => {
+    const src = readFileSync(fromRoot('src/lib/fzp/TimeScrubber.svelte'), 'utf8');
+    expect(src).not.toMatch(/#[0-9a-fA-F]{3,6}\b/);
   });
   it('no Tailwind blue or blue hex remains in chrome', () => {
     for (const f of SCANNED) {
