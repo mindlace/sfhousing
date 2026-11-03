@@ -1295,12 +1295,14 @@
   {/if}
   <p class="sr-only" aria-live="polite">{loadingSlow ? 'Loading buildings…' : ''}</p>
 
-  <!-- The failure chips sit at the top centre, below the page's notice pills when they overlay the
-       map (`--notice-pills-bottom`, published by NoticePills from md; see map-interfaces.md). -->
+  <!-- The failure chips sit at the top centre of the map the dock leaves uncovered (`--dock-w`,
+       published by the Dock from md, as the notice pills centre), below the page's notice pills
+       when they overlay the map (`--notice-pills-bottom`, published by NoticePills from md; see
+       map-interfaces.md). -->
   {#if chunkError && mapState === 'ready'}
     <div
       role="status"
-      class="sim-map-panel absolute left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full pl-4 text-sm"
+      class="sim-map-panel sim-map-chip absolute z-10 flex w-max -translate-x-1/2 items-center gap-1 rounded-full pl-4 text-sm"
       style:top="calc(var(--notice-pills-bottom, 0px) + 0.5rem)"
     >
       <span>Some parcels didn't load —</span>
@@ -1315,7 +1317,7 @@
   {#if buildingsFailed && mapState === 'ready'}
     <div
       role="status"
-      class="sim-map-panel absolute left-1/2 z-10 flex w-max max-w-[calc(100%-32px)] -translate-x-1/2 items-center gap-1 rounded-lg pl-4 text-sm"
+      class="sim-map-panel sim-map-chip absolute z-10 flex w-max -translate-x-1/2 items-center gap-1 rounded-lg pl-4 text-sm"
       style:top="calc(var(--notice-pills-bottom, 0px) + 4rem)"
     >
       <span>Existing buildings couldn't load. Generated buildings still work.</span>
@@ -1415,6 +1417,11 @@
     color: var(--map-label);
     border: 1px solid var(--map-existing);
     box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
+  }
+  /* Centred right of the dock (0 without one), within 16 px of the map's edges either side. */
+  .sim-map-chip {
+    left: calc(50% + var(--dock-w, 0px) / 2);
+    max-width: calc(100% - 32px - var(--dock-w, 0px));
   }
   .sim-map-card {
     left: 16px;

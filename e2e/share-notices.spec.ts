@@ -145,6 +145,22 @@ async function expectCentredRightOfDock(page: Page, dock: Locator): Promise<void
   expect(n.x).toBeGreaterThanOrEqual(d.x + d.width);
 }
 
+/**
+ * SimMap's failure chips sit right of the dock (its panel or rail), centred on the map it leaves
+ * uncovered, as the notice stack is.
+ */
+async function expectChipsRightOfDock(page: Page, dock: Locator): Promise<void> {
+  const region = await box(page.locator('#map-region'));
+  const d = await box(dock);
+  const mid = (d.x + d.width + region.x + region.width) / 2;
+  for (const chip of [chunkChip(page), buildingsChip(page)]) {
+    const c = await box(chip);
+    expect(c.x, `chip ${fmt(c)} under the dock ${fmt(d)}`).toBeGreaterThanOrEqual(d.x + d.width);
+    expect(c.x + c.width).toBeLessThanOrEqual(region.x + region.width);
+    expect(Math.abs(c.x + c.width / 2 - mid)).toBeLessThanOrEqual(1);
+  }
+}
+
 /** `/` with N3 showing and both failure chips up, on the fixture frame. */
 async function gotoWithN3AndChips(page: Page): Promise<void> {
   await seedOldPlan(page);
@@ -173,6 +189,7 @@ test.describe('desktop', () => {
       await gotoWithN3AndChips(page);
       await expectNoticesClear(page, DESKTOP);
       await expectCentredRightOfDock(page, page.locator('.sfh-dock-panel'));
+      await expectChipsRightOfDock(page, page.locator('.sfh-dock-panel'));
       // A pill: fully rounded, below the brush status in the same stack.
       const radius = await notice(page)
         .first()
@@ -189,6 +206,7 @@ test.describe('desktop', () => {
     await expect(rail).toBeVisible();
     await expectNoticesClear(page, [...BASE, 'dock rail']);
     await expectCentredRightOfDock(page, rail);
+    await expectChipsRightOfDock(page, rail);
   });
 
   test('1024×768: the Remix toast is clear of the map chrome too', async ({ page, request }) => {
