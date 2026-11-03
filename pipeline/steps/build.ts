@@ -215,7 +215,8 @@ export async function build(
     const counts: Record<string, number> = {};
     // The scenario and policy steps share the chunk records (same rows, same order).
     const records = await readParcelRecords(db);
-    // Freeway land (lesscars v1.1): absent live until Plan B curates it, so no rule applies.
+    // Freeway land (lesscars v1.1): the live catalog lists its segments with empty parcel lists until
+    // Plan B curates it, so no parcel is marked (a live build still reports zero-valued counts).
     const freewayLand = readFreewayLand(
       LESSCARS_FREEWAY_LAND_JSON[fixtureMode ? 'fixture' : 'live']
     );

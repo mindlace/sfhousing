@@ -575,7 +575,7 @@ The build splits the listed stretches out of the basemap (`writeBasemap`, `pipel
 corridor: its project's CNN lines buffered by `LC.basemapBandM` (25 m) with flat caps in EPSG:7131
 (`splitPhasesOf`). Every tile of the archive, at every zoom over its header bounds, is decoded and
 re-encoded (`rewritePmtiles`, `pipeline/lib/pmtiles-rewrite.ts`: an MBTiles file written with
-`node:sqlite`, then `pmtiles convert`; tiles away from every corridor are copied unchanged). In
+`node:sqlite`, then `pmtiles convert`; tiles away from every corridor are re-gzipped, identical once decompressed). In
 the `roads` layer:
 
 - every listed id, at every zoom, whatever its kind, and on `LC.basemapClipZooms` also every
@@ -704,7 +704,7 @@ Under the breakdown the details give the freed-land disclosure from `sites.json`
 of each site's area), to one decimal, held sites excluded; with no parcel land it says only the
 roadway figure. When `summary.garageCost` is present and above 0, a second line gives the homes
 the edge garages' footprints cost. A held site (`heldBy`) is not drawn by `siteFeatures`: it is
-garage land. A dataset without `parcels`, `heldBy` or `garageCost` shows the roadway sentence only.
+garage land. The disclosure is shown only when some site carries a `parcels` key (the v1.1 sites file; the key is absent in v1 files and when empty), so a published v1 dataset renders its details exactly as before: no freed-land line at all. A dataset without `heldBy` or `garageCost` shows no garage line.
 
 ### Scrubber markers
 
