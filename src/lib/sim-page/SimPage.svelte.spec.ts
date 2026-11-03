@@ -815,15 +815,52 @@ describe('SimPage Setup and Run (Task 7, spec §1)', () => {
     await expect.element(bar).not.toBeInTheDocument();
   });
 
-  it('the view reads Back to start and opens in Setup', async () => {
+  it("the view's dock has one Policy tab with the summary and no Undo", async () => {
+    await page.viewport(1024, 768);
+    await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY });
+    await toReady();
+    expect(
+      page
+        .getByRole('tab')
+        .elements()
+        .map((t) => t.textContent?.trim())
+    ).toEqual(['Policy']);
+    await expect.element(tab('Policy')).toHaveAttribute('aria-selected', 'true');
+    await expect.element(page.getByRole('tablist', { name: 'Policy (read-only)' })).toBeVisible();
+    await expect.element(page.getByText('No new zoning rules')).toBeVisible();
+    expect(page.getByRole('button', { name: /^Undo/ }).elements()).toHaveLength(0);
+    expect(page.getByRole('button', { name: /^Redo/ }).elements()).toHaveLength(0);
+    expect(editPolicy().query()).toBeNull();
+    await expect.element(policyButton()).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('in the view, Run flips to Results and Policy ends the run', async () => {
     await page.viewport(1024, 768);
     await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY });
     await toReady();
     await run().click();
-    await expect.element(page.getByRole('button', { name: 'Back to start' })).toBeVisible();
+    await expect.element(results()).toBeVisible();
+    expect(page.getByRole('tablist').elements()).toHaveLength(0);
+    expect(page.getByRole('button', { name: 'Back to start' }).query()).toBeNull();
     expect(editPolicy().query()).toBeNull();
-    await page.getByRole('button', { name: 'Back to start' }).click();
+    // The flip's visible label is "Policy"; its name differs from the header's Policy button, so
+    // no two buttons answer to the same name.
+    const flip = page.getByTestId('dock-flip');
+    await expect.element(flip).toHaveTextContent('Policy');
+    expect(page.getByRole('button', { name: 'Policy', exact: true }).elements()).toHaveLength(1);
+    await flip.click();
+    await expect.element(tab('Policy')).toHaveFocus();
     await expect.element(run()).toBeVisible();
+  });
+
+  it('in the view, a folded rail names its Policy button apart from the header', async () => {
+    await page.viewport(1024, 768);
+    await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY });
+    await toReady();
+    await policyButton().click();
+    await expect.poll(dockPanel).toBeNull();
+    expect(page.getByRole('button', { name: 'Policy', exact: true }).elements()).toHaveLength(1);
+    await expect.element(page.getByRole('button', { name: 'Policy summary' })).toBeVisible();
   });
 
   it('a remount opens in Setup', async () => {
@@ -1327,7 +1364,7 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
     await expect.element(viewButton()).toBeVisible();
     await run().click();
     expect(viewButton().query()).toBeNull();
-    await page.getByRole('button', { name: 'Back to start' }).click();
+    await page.getByTestId('dock-flip').click();
     await expect.element(viewButton()).toBeVisible();
   });
 });

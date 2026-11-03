@@ -24,7 +24,10 @@ export function tabOrFirst(tabs: readonly DockTab[], tab: string): string {
   return tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
 }
 
-/** The view's (/s/<id>) one tab: the policy summary (plan 2, Task 6 restyles it). */
+/**
+ * The view's (/s/<id>) one tab: the policy summary. Its rail button is named "Policy summary", so
+ * it never shares the header Policy button's name.
+ */
 export const VIEW_TABS: readonly DockTab[] = [
-  { id: 'policy', label: 'Policy', icon: DOCK_ICONS.policy }
+  { id: 'policy', label: 'Policy', icon: DOCK_ICONS.policy, railLabel: 'Policy summary' }
 ];

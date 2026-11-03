@@ -20,7 +20,7 @@
   header score flips it to Results and back.
   Setup and Run (spec §1, sim-runs Task 7): the page opens in Setup (never persisted). Run (the
   scrubber's button) sets the tool to Move, locks the store, plays and flips the dock to Results
-  (a phone sheet peeks); a run offers Results only, until "Edit policy" ("Back to start" in the
+  (a phone sheet peeks); a run offers Results only, until "Edit policy" ("Policy" in the
   view) or a scrub back to Today unlocks the store and returns to the editing face.
   Map overlays (sim-runs plan 2, Task 4): in Setup the header's View menu (transit stops, transit
   capacity, height limits); a run hides them all and keeps the toggles. The height limits
@@ -317,8 +317,8 @@
   }
 
   /**
-   * The Results face's flip ("Edit policy", "Back to start" in the view): ends a run, else shows
-   * the editing face. The flip button goes with the face, so focus moves to the selected tab.
+   * The Results face's flip ("Edit policy", "Policy" in the view): ends a run, else shows the
+   * editing face (the view's one Policy tab). The flip button goes with the face, so focus moves to the selected tab.
    */
   async function flip(): Promise<void> {
     if (run.phase === 'run') resetRun();
@@ -897,7 +897,8 @@
     panel={tabPanel}
     top={mode === 'edit' ? history : undefined}
     {results}
-    flipLabel={mode === 'view' ? 'Back to start' : 'Edit policy'}
+    flipLabel={mode === 'view' ? 'Policy' : 'Edit policy'}
+    flipName={mode === 'view' ? 'Back to the policy' : undefined}
     onflip={() => void flip()}
     focusOnOpen={dockFocus}
     onsheetheight={(px) => (sheetH = px)}

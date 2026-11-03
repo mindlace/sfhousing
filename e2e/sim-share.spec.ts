@@ -227,12 +227,12 @@ test('publish round trip', async ({ page, browser, isMobile }, testInfo) => {
     expect(await storedDoc(visitor), 'viewing never writes the autosave').toBeNull();
     await closeSheet(visitor, isMobile);
     // The view opens in Setup with Run available; a run flips the dock to Results, whose flip
-    // button reads "Back to start".
+    // button reads "Policy" (its accessible name is "Back to the policy", apart from the header's
+    // Policy button) and ends the run.
     await visitor.getByRole('button', { name: 'Run', exact: true }).click();
-    await expect(
-      (await openPolicy(visitor)).getByRole('button', { name: 'Back to start' })
-    ).toBeVisible();
-    await panel(visitor).getByRole('button', { name: 'Back to start' }).click();
+    const flip = (await openPolicy(visitor)).getByRole('button', { name: 'Back to the policy' });
+    await expect(flip).toHaveText('Policy');
+    await flip.click();
     await expect(visitor.getByRole('button', { name: 'Run', exact: true })).toBeVisible();
     await closeSheet(visitor, isMobile);
 

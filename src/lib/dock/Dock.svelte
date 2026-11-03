@@ -4,6 +4,8 @@
     id: string;
     label: string;
     icon: readonly string[];
+    /** The rail button's accessible name when it must differ from `label` (default `label`). */
+    railLabel?: string;
   }
 </script>
 
@@ -52,6 +54,11 @@
     results?: Snippet;
     /** 'Edit policy' | 'Paint' | 'Policy'. */
     flipLabel: string;
+    /**
+     * The flip button's accessible name when the visible `flipLabel` alone would repeat another
+     * button's (it contains `flipLabel`, so the visible label stays in the name).
+     */
+    flipName?: string;
     /** The flip button on Results. */
     onflip(): void;
     /** The user opened it (button, handle, score): move focus in. False for the default open. */
@@ -72,6 +79,7 @@
     top = undefined,
     results = undefined,
     flipLabel,
+    flipName = undefined,
     onflip,
     focusOnOpen = false,
     onsheetheight = undefined,
@@ -269,6 +277,7 @@
         <button
           type="button"
           data-testid="dock-flip"
+          aria-label={flipName}
           class="min-h-10 rounded-md px-3 text-sm font-semibold pointer-coarse:min-h-11 {PRIMARY}"
           onclick={() => onflip()}>{flipLabel}</button
         >
@@ -317,8 +326,8 @@
             <button
               type="button"
               class={ICON_BUTTON}
-              aria-label={t.label}
-              title={t.label}
+              aria-label={t.railLabel ?? t.label}
+              title={t.railLabel ?? t.label}
               data-dock-rail={t.id}
               onclick={() =>
                 void openFromRail(() => {
