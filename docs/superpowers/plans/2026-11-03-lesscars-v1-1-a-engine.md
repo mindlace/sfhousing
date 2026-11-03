@@ -1129,7 +1129,13 @@ Report to the controller: the section's path, totals by segment (parcels, ha, FZ
 4. Basemap: check first (Task 1), fallback is the tiles step (Task 7b); ids checked against the dataset's basemap (Task 6).
 5. `garage-south` retired: no code names it (`rg` over `src`, `pipeline/lib`, `pipeline/steps`, `pipeline/test`, `e2e`); it is plan content, removed in Plan B.
 
-## Open questions for the owner
+## Resolved questions
+
+All four recommendations below were accepted as rulings on 2026-11-03 and are recorded in the spec
+("Rulings while planning"). Task 9 drafts them as decided, not as questions: phases name CNNs (the
+stub moves to `19204001`/`19264001`), the stub depends on `garage-alemany`, the large-lot lift stays
+R-4-only and the section says so, and the basemap fallback (Task 7b) is accepted if Task 1 confirms
+it.
 
 1. **Phase geometry: CNNs, not drawn lines.** A drawn line leaves the freeway's own `src_streets` centrelines in place, and their 10 m corridors erase most of the freed strip; this is part of why v1's stub freed 0 m². Recommendation: phases name the FREEWAYS-layer CNNs, and the stub moves from its drawn line to CNNs `19204001`/`19264001` (plan-v1's worry about 13th St is handled by 13th St's own kept corridor). Task 9 drafts it that way and asks.
 2. **The stub's v1 dependency on `garage-south`.** The spec keeps the stub's v1 dates and dependencies but retires `garage-south`. Recommendation: the stub depends on `garage-alemany` instead, which takes `garage-south`'s 2031 start and 24 months, so the stub still starts in 2033.
