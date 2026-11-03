@@ -222,8 +222,11 @@
     if (dock.sheet !== 'closed') void tick().then(moveFocusIn);
   }
 
-  const handleText = $derived(
-    dock.face === 'results' ? 'Results' : (tabs.find((t) => t.id === dock.tab)?.label ?? label)
+  const shownTab = $derived(tabs.find((t) => t.id === dock.tab));
+  const handleText = $derived(dock.face === 'results' ? 'Results' : (shownTab?.label ?? label));
+  /** The handle's name: its text, or the tab's `railLabel` (which contains the text). */
+  const handleName = $derived(
+    dock.face === 'results' ? 'Results' : (shownTab?.railLabel ?? handleText)
   );
 </script>
 
@@ -360,6 +363,7 @@
       <button
         type="button"
         data-testid="dock-handle"
+        aria-label={handleName}
         aria-expanded={dock.sheet !== 'closed'}
         aria-controls={bodyId}
         class="flex min-h-11 shrink-0 flex-col items-center justify-center gap-0.5 rounded-t-lg px-4 text-sm font-semibold {HOVER}"

@@ -863,6 +863,23 @@ describe('SimPage Setup and Run (Task 7, spec §1)', () => {
     await expect.element(page.getByRole('button', { name: 'Policy summary' })).toBeVisible();
   });
 
+  it('in the view at 375 px, one button is named Policy with the Menu open (the handle is not)', async () => {
+    await page.viewport(375, 700);
+    await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY });
+    await toReady();
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await expect.element(policyButton()).toBeVisible();
+    expect(page.getByRole('button', { name: 'Policy', exact: true }).elements()).toHaveLength(1);
+    // The handle keeps its visible "Policy" and is named "Policy summary", as the rail's button.
+    await expect.element(handle()).toHaveTextContent('Policy');
+    await expect.element(handle()).toHaveAccessibleName('Policy summary');
+  });
+
+  it('/sim at 375 px keeps the handle named by its tab', async () => {
+    await readySim(375);
+    await expect.element(handle()).toHaveAccessibleName('Transit');
+  });
+
   it('a remount opens in Setup', async () => {
     await page.viewport(1024, 768);
     const first = await setup();

@@ -11,6 +11,8 @@ import {
   headerAction,
   jumpAndIdle,
   projectToPage,
+  seedPlanRow,
+  SIM_KEY,
   type LngLat
 } from './helpers/sharing';
 
@@ -151,6 +153,60 @@ test('the dock with a rule form and a saved rule card has no axe violations in d
 
 test('the dock on Results during a run has no axe violations in dark', async ({ page }) => {
   await gotoSim(page, { run: true });
+  await openDock(page);
+  await expect(page.getByRole('region', { name: 'Results' })).toBeVisible();
+  await expectNoA11yViolations(page, { include: ['[data-testid=dock]'] });
+});
+
+/**
+ * A shared policy with one transit rule (so the summary has a row), opened at /s/<id>: the rule is
+ * added on /sim, read back from the app's own autosave, seeded as a policy row and visited.
+ */
+async function gotoSharedPolicy(page: Page): Promise<void> {
+  await gotoSim(page);
+  await openTab(page, 'Transit');
+  await dock(page).getByRole('button', { name: 'Add transit layer' }).click({ timeout: 20_000 });
+  const form = dock(page).getByRole('form', { name: 'Add a transit rule', exact: true });
+  await form.getByRole('checkbox', { name: /^Muni Metro/ }).check();
+  await form.getByRole('button', { name: 'Save rule' }).click();
+  await expect(dock(page).getByRole('list', { name: 'New zoning rules' })).toBeVisible();
+  const stored = () =>
+    page.evaluate((k) => {
+      const raw = localStorage.getItem(k);
+      return raw === null ? null : (JSON.parse(raw) as { plan: string }).plan;
+    }, SIM_KEY);
+  await expect.poll(async () => (await stored())?.includes('"transit"')).toBe(true);
+  const body = (await stored())!;
+  const id = await seedPlanRow(page.request, {
+    body,
+    datasetVersion: (JSON.parse(body) as { datasetVersion: string }).datasetVersion,
+    kind: 'sim'
+  });
+  await page.goto(`/s/${id}`);
+  await page.waitForFunction(() => (window as FzpWin).__sfhFzp?.phase === 'ready', undefined, {
+    timeout: 20_000
+  });
+  await expect(page.getByRole('region', { name: 'Shared policy' })).toBeVisible();
+}
+
+test('the shared view dock on Policy has no axe violations in dark', async ({ page }) => {
+  await gotoSharedPolicy(page);
+  await openDock(page);
+  await expect(dock(page).getByRole('tab', { name: 'Policy', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  );
+  await expect(
+    dock(page).getByRole('region', { name: 'New zoning rules' }).getByRole('listitem')
+  ).toHaveCount(1);
+  await expectNoA11yViolations(page, { include: ['[data-testid=dock]'] });
+});
+
+test('the shared view dock on Results during a run has no axe violations in dark', async ({
+  page
+}) => {
+  await gotoSharedPolicy(page);
+  await startRun(page);
   await openDock(page);
   await expect(page.getByRole('region', { name: 'Results' })).toBeVisible();
   await expectNoA11yViolations(page, { include: ['[data-testid=dock]'] });
