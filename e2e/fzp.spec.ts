@@ -666,10 +666,7 @@ test('axe: the crash chip', async ({ page }) => {
   await expectNoA11yViolations(page);
 });
 
-test('axe: a failed reroll, whose notice clears the card and the score panel', async ({
-  isMobile,
-  page
-}) => {
+test('axe: a failed reroll, whose notice clears the card', async ({ isMobile, page }) => {
   // A reroll makes no request, so no route can fail it. Instead the page's own reroll request is
   // given a seed the worker rejects (bad-request), and the real error path runs.
   await page.addInitScript(() => {
@@ -688,11 +685,11 @@ test('axe: a failed reroll, whose notice clears the card and the score panel', a
   await expect(page.getByTestId('fzp-lever-failed')).toHaveText('');
   expect(await fzp(page, 'representative')).toBe(true);
   await expectNoA11yViolations(page);
-  const details = await openScore(page);
 
   const overlap = async (): Promise<string[]> => {
     const a = (await alert.boundingBox())!;
-    const panels = [c, details];
+    // The open score details (z-50) deliberately overlay the pill stack; the card is in the map.
+    const panels = [c];
     const hits: string[] = [];
     for (const p of panels) {
       const b = (await p.boundingBox())!;
@@ -706,10 +703,53 @@ test('axe: a failed reroll, whose notice clears the card and the score panel', a
     }
     return hits;
   };
-  const widths = isMobile ? [375] : [1280, 1000, 768];
-  for (const width of widths) {
-    await page.setViewportSize({ width, height: isMobile ? 812 : 720 });
-    await expect.poll(overlap, { message: `at ${width} px` }).toEqual([]);
+  // On a phone the pill stack is in flow above the map, so it never meets the card. From md it
+  // is an overlay (z-30) at the map's top centre and may cross the card's top; it takes no space.
+  if (!isMobile) return;
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect.poll(overlap, { message: 'at 375 px' }).toEqual([]);
+});
+
+test('a notice is a pill at the top: it moves nothing on desktop and pushes the map down on a phone', async ({
+  isMobile,
+  page
+}) => {
+  // The page's own reroll request is given a seed the worker rejects, so the failed-reroll notice
+  // shows and stays (the same route as the axe test above).
+  await page.addInitScript(() => {
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (this: Worker, msg: unknown, ...rest: never[]) {
+      const m = msg as { type?: string };
+      return post.call(this, m?.type === 'reroll' ? { ...m, seed: -1 } : msg, ...rest);
+    } as typeof Worker.prototype.postMessage;
+  });
+  await gotoFzp(page);
+  const mapRoot = page.getByTestId('map-root');
+  const bar = page.getByTestId('fzp-scrubber');
+  const barBefore = (await bar.boundingBox())!;
+  const mapBefore = (await mapRoot.boundingBox())!;
+  const header = (await page.getByRole('banner').boundingBox())!;
+
+  await (await anotherFuture(page)).click();
+  const alert = page.getByRole('alert').filter({ hasText: "Couldn't make another future" });
+  await expect(alert).toBeVisible();
+  const stack = page.getByTestId('fzp-notices');
+  await expect(stack).toContainText("Couldn't make another future");
+  const box = (await stack.boundingBox())!;
+
+  if (isMobile) {
+    // In flow, right under the header; the map starts below it and is shorter by the stack.
+    expect(Math.abs(box.y - (header.y + header.height))).toBeLessThanOrEqual(1);
+    await expect
+      .poll(async () => (await mapRoot.boundingBox())!.y)
+      .toBeGreaterThanOrEqual(box.y + box.height - 1);
+    expect((await mapRoot.boundingBox())!.height).toBeLessThan(mapBefore.height);
+  } else {
+    // An overlay on the map's top: the map and the time bar keep their boxes.
+    expect(box.y).toBeGreaterThanOrEqual(mapBefore.y);
+    expect(box.y).toBeLessThan(mapBefore.y + 16);
+    expect(await mapRoot.boundingBox()).toEqual(mapBefore);
+    expect(await bar.boundingBox()).toEqual(barBefore);
   }
 });
 

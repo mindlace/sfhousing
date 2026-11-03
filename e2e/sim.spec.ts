@@ -157,6 +157,28 @@ const leverSeen = (page: Page) =>
       (window as FzpWin & { __leverSeen?: { status: string; text: string }[] }).__leverSeen ?? []
   );
 
+/**
+ * From now on, each time the "Updating the simulation" pill shows, records the policy panel's and
+ * the time bar's boxes at that moment (a MutationObserver, so a pill that shows briefly is still
+ * measured).
+ */
+async function watchBoxesWhileUpdating(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    type Box = { x: number; y: number; width: number; height: number };
+    const w = window as unknown as { __updatingBoxes?: { panel: Box; bar: Box }[] };
+    const row = document.querySelector('[data-testid="fzp-lever-status"]')!;
+    const box = (testid: string): Box => {
+      const r = document.querySelector(`[data-testid="${testid}"]`)!.getBoundingClientRect();
+      return { x: r.x, y: r.y, width: r.width, height: r.height };
+    };
+    w.__updatingBoxes = [];
+    new MutationObserver(() => {
+      if (!(row.textContent ?? '').includes('Updating the simulation')) return;
+      w.__updatingBoxes!.push({ panel: box('policy-panel'), bar: box('fzp-scrubber') });
+    }).observe(row, { childList: true, subtree: true, characterData: true });
+  });
+}
+
 // W6b: the footer links stay visible, unobscured and tappable (as in e2e/fzp.spec.ts).
 const FOOTER_LINKS = ['About', 'Data & licences', 'Source code (GitHub)'];
 
@@ -324,6 +346,40 @@ test('a transit rule resolves its lots and updates the levers', async ({ page })
     seen.slice(resolving + 1).some((s) => s.text === ''),
     JSON.stringify(seen)
   ).toBe(true);
+});
+
+test('a notice never moves the docked panel or the time bar', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'desktop rule; phones push content down by design');
+  await gotoSim(page);
+  const before = await leverStatus(page);
+  const form = await openBrushForm(page, 'Add a transit rule');
+  await form.getByRole('checkbox', { name: /^Muni Metro/ }).check();
+  const panelBox = await panel(page).boundingBox();
+  const barBox = await page.getByTestId('fzp-scrubber').boundingBox();
+  await watchBoxesWhileUpdating(page);
+  // Saving the rule sends a revision: the "Updating the simulation" pill shows until it is current.
+  await form.getByRole('button', { name: 'Save rule' }).click();
+  await expect
+    .poll(async () => {
+      const l = await leverStatus(page);
+      return l.status === 'current' && (l.sentRev ?? -1) > (before.sentRev ?? -1);
+    })
+    .toBe(true);
+  const seen = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __updatingBoxes?: { panel: unknown; bar: unknown }[];
+        }
+      ).__updatingBoxes ?? []
+  );
+  expect(seen.length, 'the Updating pill never showed').toBeGreaterThan(0);
+  for (const s of seen) {
+    expect(s.panel).toEqual(panelBox);
+    expect(s.bar).toEqual(barBox);
+  }
+  expect(await panel(page).boundingBox()).toEqual(panelBox);
+  expect(await page.getByTestId('fzp-scrubber').boundingBox()).toEqual(barBox);
 });
 
 test('a Paint stroke adds a custom brush and Ctrl+Z removes it', async ({ isMobile, page }) => {

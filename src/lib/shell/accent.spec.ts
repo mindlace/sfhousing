@@ -25,6 +25,12 @@ const SCANNED = [
   'src/lib/brush/RadiusPopover.svelte',
   'src/lib/fzp/TimeScrubber.svelte'
 ];
+/** Files that follow the light and dark surface tokens (later plans append theirs). */
+const THEMED_FILES = [
+  'src/lib/shell/NoticePills.svelte',
+  'src/lib/sim-page/SimNotices.svelte',
+  'src/lib/fzp/FzpMode.svelte'
+];
 const BLUE_HEX = /#(1d4ed8|2563eb|1e40af|3b82f6|1e3a8a)\b/i;
 const BLUE_RGB = /rgb\(\s*(29[ ,]+78[ ,]+216|37[ ,]+99[ ,]+235)\s*\)/i;
 
@@ -66,6 +72,13 @@ describe('app accent tokens', () => {
   it('the time bar uses tokens, not hex', () => {
     const src = readFileSync(fromRoot('src/lib/fzp/TimeScrubber.svelte'), 'utf8');
     expect(src).not.toMatch(/#[0-9a-fA-F]{3,6}\b/);
+  });
+  it('themed files use surface and ink tokens, not bg-white or text-black', () => {
+    for (const f of THEMED_FILES) {
+      const src = readFileSync(fromRoot(f), 'utf8');
+      expect(src, f).not.toMatch(/\bbg-white\b/);
+      expect(src, f).not.toMatch(/\btext-black\b/);
+    }
   });
   it('no Tailwind blue or blue hex remains in chrome', () => {
     for (const f of SCANNED) {

@@ -72,6 +72,8 @@
   import type { ChunkStatus, TimelinePick, TimelineUpdate } from '$lib/map/types';
   import { formatCount } from '$lib/scoreboard/format';
   import { useHeaderActions } from '$lib/shell/header-actions.svelte';
+  import NoticePills from '$lib/shell/NoticePills.svelte';
+  import { PILL, PILL_ACTION } from '$lib/shell/pill';
   import {
     leversError,
     leversMessage,
@@ -151,8 +153,8 @@
     /** The header's status slot (/sim: the save state); read once, at mount. */
     status?: Snippet;
     /**
-     * The page's own notices (/sim: restore, refit, Remix), first in the ready-phase notice row
-     * above the scrubber, so their height joins the dock's and nothing they cover is lost.
+     * The page's own notices (/sim: restore, refit, Remix), first among the ready-phase pills in
+     * the notice stack (`NoticePills`); each should be a `PILL`.
      */
     notices?: Snippet;
     /**
@@ -234,8 +236,6 @@
   let rerollBusy = $state(false);
   let rerollFailed = $state(false);
   let scrubberH = $state(0);
-  /** The notices above the scrubber (0 when none shows). */
-  let noticeH = $state(0);
 
   /** The lever revision's status (`off` on /fzp). */
   let leverState = $state.raw<LeverStatusState>({
@@ -287,7 +287,7 @@
   );
   /**
    * The latest revision failed (/sim): the score stands from the policy before it, the score
-   * details say so, and the notice row offers Retry, which restarts with the latest levers.
+   * details say so, and the notice stack offers Retry, which restarts with the latest levers.
    */
   const leverFailed = $derived(leverStatus.kind === 'failed' && !stopped);
   const markers = $derived(score ? scrubMarkers(score) : []);
@@ -568,29 +568,23 @@
   });
 
   function applyInset(): void {
-    handle?.setBottomInset(scrubberH + noticeH);
+    handle?.setBottomInset(scrubberH);
   }
 
   /**
-   * The viewport y of the dock's top edge (the notices and the scrubber), on :root as
-   * `--fzp-dock-top`: the header's score details end above it. Set while FzpMode is mounted.
+   * The viewport y of the dock's top edge (the scrubber's), on :root as `--fzp-dock-top`: the
+   * header's score details end above it. Set while FzpMode is mounted. Notices are not part of
+   * the dock (they overlay the map's top from md, and sit above the map in flow below it).
    */
   function publishDockTop(): void {
     if (!rootEl) return;
-    const top = rootEl.getBoundingClientRect().bottom - (scrubberH + noticeH);
+    const top = rootEl.getBoundingClientRect().bottom - scrubberH;
     document.documentElement.style.setProperty('--fzp-dock-top', `${Math.floor(top)}px`);
   }
   $effect(() => {
     void scrubberH;
-    void noticeH;
     void rootEl;
     untrack(publishDockTop);
-  });
-
-  // A notice appearing or going changes the dock's height.
-  $effect(() => {
-    void noticeH;
-    untrack(applyInset);
   });
 
   const events: ScenarioClientEvents = {
@@ -871,128 +865,67 @@
 
 <div
   bind:this={rootEl}
-  class="sfh-fzp relative h-full"
-  style:--fzp-scrubber-h="{scrubberH + noticeH}px"
+  class="sfh-fzp relative flex h-full flex-col"
+  style:--fzp-scrubber-h="{scrubberH}px"
 >
-  {#if manifest}
-    <SimMap
-      {manifest}
-      {requestParcelSummary}
-      onRetryChunks={() => client?.retryChunks()}
-      onready={onMapReady}
-      {view}
-      timelinePick={onPick}
-    />
-  {:else}
-    <div class="h-full" data-testid="fzp-frame"></div>
-  {/if}
-
-  <!-- Top-centre notices only where nothing else sits there. While loading, the header's score
-       details open at the top right on md+, so the notice takes the top left (no card can be
-       open yet). -->
-  {#if phase === 'loading'}
-    <div
-      class="absolute top-4 left-1/2 z-30 -translate-x-1/2 md:left-[calc(var(--sim-panel-w,0px)+1rem)] md:translate-x-0"
-    >
-      <p
+  <!-- Every notice is a pill in this one stack: an overlay at the map's top from md (it takes no
+       space, so nothing moves when one shows), in flow under the header below md. -->
+  <NoticePills>
+    {#if phase === 'loading'}
+      <p role="status" data-testid="fzp-status" class="{PILL} pr-4">Loading the simulation…</p>
+    {:else if phase === 'failed'}
+      <div class={PILL}>
+        <p role="alert" data-testid="fzp-status">
+          {dataError
+            ? `The simulation data for dataset ${datasetVersion} is missing or damaged.`
+            : "The simulation couldn't load."}
+        </p>
+        <button type="button" class="shrink-0 {PILL_ACTION}" onclick={() => void retry()}
+          >Retry</button
+        >
+      </div>
+    {:else if phase === 'no-scenario'}
+      <!-- A sentence and a link do not fit one pill line at 375 px: the same surface, as a card. -->
+      <div
         role="status"
         data-testid="fzp-status"
-        class="rounded-lg bg-white px-3 py-2 text-sm text-black shadow"
+        class="{PILL} w-[min(28rem,100%)]! flex-col! items-start! gap-0! rounded-lg! pr-4 pb-0"
       >
-        Loading the simulation…
-      </p>
-    </div>
-  {:else if phase === 'failed'}
-    <div
-      class="absolute top-4 left-[calc(50%+var(--sim-panel-w,0px)/2)] z-30 flex w-max max-w-[calc(100%-32px-var(--sim-panel-w,0px))] -translate-x-1/2 items-center gap-2 rounded-lg bg-white py-1 pl-3 text-sm text-black shadow"
-    >
-      <p role="alert" data-testid="fzp-status">
-        {dataError
-          ? `The simulation data for dataset ${datasetVersion} is missing or damaged.`
-          : "The simulation couldn't load."}
-      </p>
-      <button
-        type="button"
-        class="min-h-11 min-w-11 shrink-0 rounded-lg px-3 font-semibold underline"
-        onclick={() => void retry()}>Retry</button
-      >
-    </div>
-  {:else if phase === 'no-scenario'}
-    <div
-      role="status"
-      data-testid="fzp-status"
-      class="absolute top-4 left-1/2 z-30 w-[min(28rem,calc(100%-32px))] -translate-x-1/2 rounded-lg bg-white p-4 text-sm text-black shadow"
-    >
-      <p>
-        The Family Zoning Plan timelapse isn't available for dataset {datasetVersion}. It needs
-        simulation data that this dataset doesn't have.
-      </p>
-      <a href="/" class="mt-2 inline-flex min-h-11 items-center font-semibold underline"
-        >Go to the editor</a
-      >
-    </div>
-  {/if}
+        <p>
+          The Family Zoning Plan timelapse isn't available for dataset {datasetVersion}. It needs
+          simulation data that this dataset doesn't have.
+        </p>
+        <a href="/" class="inline-flex min-h-11 items-center font-semibold underline"
+          >Go to the editor</a
+        >
+      </div>
+    {/if}
 
-  {#if phase === 'ready' && calibration && cardChance}
-    <!-- The posted lookups carry no calibration: lever timers rescale durations, not the
-         provenance the card cites, so both cohorts cite the base calibration. -->
-    <ProjectCardPanel
-      state={cardState}
-      {day}
-      {asOf}
-      calibration={{ inFlight: calibration, fresh: calibration }}
-      chance={cardChance}
-      onclose={closeCard}
-      onsource={(id) => dialog?.open(id)}
-    />
-    <ProjectTooltip state={tipState} {day} x={tipAt.x} y={tipAt.y} />
-    <!-- The ready-phase notices sit just above the scrubber. Their height joins the scrubber's
-         in the map inset, --fzp-scrubber-h and --fzp-dock-top, so the card and the header's
-         score details (at any width) always end above them and are never covered. -->
-    <div
-      class="pointer-events-none absolute inset-x-0 z-20 flex flex-col items-center px-4"
-      style:bottom="{scrubberH}px"
-      data-testid="fzp-notices"
-      bind:offsetHeight={noticeH}
-    >
+    {#if phase === 'ready' && calibration && cardChance}
       {@render notices?.()}
-      <div role="status" data-testid="fzp-status" class="max-w-full">
+      <div role="status" data-testid="fzp-status" class="contents">
         {#if stopped}
-          <span
-            class="pointer-events-auto mb-2 flex w-max max-w-full items-center gap-1 rounded-full bg-white py-1 pl-4 text-sm text-black shadow"
-          >
+          <span class={PILL}>
             <span>Part of the simulation stopped.</span>
-            <button
-              type="button"
-              class="min-h-11 min-w-11 rounded-full px-3 font-semibold underline"
-              onclick={() => void retry()}>Retry</button
-            >
+            <button type="button" class={PILL_ACTION} onclick={() => void retry()}>Retry</button>
           </span>
         {:else if rerollBusy}
-          <span
-            class="pointer-events-auto mb-2 block rounded-lg bg-white px-3 py-2 text-sm text-black shadow"
-            >Making another future…</span
-          >
+          <span class="{PILL} pr-4">Making another future…</span>
         {/if}
       </div>
       <!-- Lever notices (/sim): their own polite region, beside the reroll and crash ones. -->
-      <div role="status" data-testid="fzp-lever-status" class="max-w-full">
+      <div role="status" data-testid="fzp-lever-status" class="contents">
         {#if leverStatus.kind === 'resolving' && !stopped}
-          <span
-            class="pointer-events-auto mb-2 block rounded-lg bg-white px-3 py-2 text-sm text-black shadow"
+          <span class="{PILL} pr-4"
             >Updating the simulation for your policy…{leverStatus.total > 0
               ? ` ${formatCount(leverStatus.done)} of ${formatCount(leverStatus.total)} lots`
               : ''}</span
           >
           {#if leverStatus.failedCells.length > 0}
-            <span
-              class="pointer-events-auto mb-2 flex w-max max-w-full items-center gap-1 rounded-lg bg-white py-1 pl-3 text-sm text-black shadow"
-            >
+            <span class={PILL}>
               <span>Some map data didn't load.</span>
-              <button
-                type="button"
-                class="min-h-11 min-w-11 rounded-lg px-3 font-semibold underline"
-                onclick={() => client?.retryChunks()}>Retry</button
+              <button type="button" class={PILL_ACTION} onclick={() => client?.retryChunks()}
+                >Retry</button
               >
             </span>
           {/if}
@@ -1001,68 +934,90 @@
       <!-- A failed lever revision (/sim only). The alert region is always rendered on /sim (empty
            when not failed), so it stays in the accessibility tree and its message is announced. -->
       {#if levers !== undefined}
-        <div role="alert" data-testid="fzp-lever-failed" class="max-w-full">
+        <div role="alert" data-testid="fzp-lever-failed" class="contents">
           {#if leverFailed}
-            <span
-              class="pointer-events-auto mb-2 flex w-max max-w-full items-center gap-1 rounded-lg bg-white py-1 pl-3 text-sm text-black shadow"
-            >
+            <span class={PILL}>
               <span>Couldn't update the simulation for your policy.</span>
-              <button
-                type="button"
-                class="min-h-11 min-w-11 rounded-lg px-3 font-semibold underline"
-                onclick={() => void retry()}>Retry</button
-              >
+              <button type="button" class={PILL_ACTION} onclick={() => void retry()}>Retry</button>
             </span>
           {/if}
         </div>
       {/if}
       {#if rerollFailed && !stopped}
-        <div
-          role="alert"
-          class="pointer-events-auto mb-2 flex w-max max-w-full items-center gap-1 rounded-lg bg-white py-1 pl-3 text-sm text-black shadow"
-        >
+        <div role="alert" class={PILL}>
           <span>Couldn't make another future. Try again.</span>
           <button
             type="button"
             aria-label="Dismiss"
-            class="min-h-11 min-w-11 rounded-lg px-3 font-semibold"
+            class={PILL_ACTION}
             onclick={() => (rerollFailed = false)}>×</button
           >
         </div>
       {/if}
-    </div>
-    <div class="absolute inset-x-0 bottom-0 z-20">
-      <TimeScrubber
-        {asOf}
-        horizon={HORIZON}
-        bind:day
-        bind:playing
-        bind:speed
-        {markers}
-        setup={runPhase === 'setup' || playWhenCurrent}
-        busy={playWhenCurrent}
-        onrun={onRun}
-        onday={onDay}
-        onheight={(px) => {
-          scrubberH = px;
-          applyInset();
-        }}
+    {/if}
+  </NoticePills>
+
+  <!-- The map and everything positioned over it: the stack above is not part of its box. -->
+  <div class="relative min-h-0 flex-1">
+    {#if manifest}
+      <SimMap
+        {manifest}
+        {requestParcelSummary}
+        onRetryChunks={() => client?.retryChunks()}
+        onready={onMapReady}
+        {view}
+        timelinePick={onPick}
       />
-    </div>
-  {/if}
+    {:else}
+      <div class="h-full" data-testid="fzp-frame"></div>
+    {/if}
 
-  {#if phase !== 'no-scenario'}
-    {@render panel?.()}
-  {/if}
+    {#if phase === 'ready' && calibration && cardChance}
+      <!-- The posted lookups carry no calibration: lever timers rescale durations, not the
+           provenance the card cites, so both cohorts cite the base calibration. -->
+      <ProjectCardPanel
+        state={cardState}
+        {day}
+        {asOf}
+        calibration={{ inFlight: calibration, fresh: calibration }}
+        chance={cardChance}
+        onclose={closeCard}
+        onsource={(id) => dialog?.open(id)}
+      />
+      <ProjectTooltip state={tipState} {day} x={tipAt.x} y={tipAt.y} />
+      <div class="absolute inset-x-0 bottom-0 z-20">
+        <TimeScrubber
+          {asOf}
+          horizon={HORIZON}
+          bind:day
+          bind:playing
+          bind:speed
+          {markers}
+          setup={runPhase === 'setup' || playWhenCurrent}
+          busy={playWhenCurrent}
+          onrun={onRun}
+          onday={onDay}
+          onheight={(px) => {
+            scrubberH = px;
+            applyInset();
+          }}
+        />
+      </div>
+    {/if}
 
-  {#if calibration && phase !== 'no-scenario'}
-    <SourcesDialog
-      bind:this={dialog}
-      {calibration}
-      {score}
-      projectsUrl={manifest?.scenarios?.fzp.projects ?? null}
-      {asOf}
-      onopen={() => (playing = false)}
-    />
-  {/if}
+    {#if phase !== 'no-scenario'}
+      {@render panel?.()}
+    {/if}
+
+    {#if calibration && phase !== 'no-scenario'}
+      <SourcesDialog
+        bind:this={dialog}
+        {calibration}
+        {score}
+        projectsUrl={manifest?.scenarios?.fzp.projects ?? null}
+        {asOf}
+        onopen={() => (playing = false)}
+      />
+    {/if}
+  </div>
 </div>
