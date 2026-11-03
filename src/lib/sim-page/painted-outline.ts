@@ -5,7 +5,7 @@
  */
 import type { Layer } from '@deck.gl/core';
 import type { OverlayCtors } from '$lib/brush/overlay';
-import type { LotOutlinesResult } from '$lib/sim/scenario/types';
+import type { LotOutlines } from '$lib/sim/outlines';
 import { OUTLINE_DASH_M, OUTLINE_GAP_M, dashPath } from '$lib/map/dash';
 import { TOKENS, hexToRgba } from '$lib/map/palette';
 import type { Theme } from '$lib/map/types';
@@ -15,11 +15,7 @@ export const OUTLINE_LAYER_ID = 'sim-painted-outline';
 type Pt = [number, number];
 
 /** One PathLayer, id 'sim-painted-outline', 2 px, the 'painted-outline' token. */
-export function paintedOutlineLayers(
-  L: OverlayCtors,
-  o: Extract<LotOutlinesResult, { ok: true }>,
-  theme: Theme
-): Layer[] {
+export function paintedOutlineLayers(L: OverlayCtors, o: LotOutlines, theme: Theme): Layer[] {
   const paths: number[][][] = [];
   for (let k = 0; k + 1 < o.starts.length; k++) {
     const ring: Pt[] = [];

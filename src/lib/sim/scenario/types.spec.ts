@@ -15,6 +15,7 @@ import type { LeverCapacity } from '../levers/resolve';
 import type { StageScale } from '../levers/timers';
 import type { LimitOwner } from '../levers/source';
 import type { SimLevers } from '../levers/types';
+import type { LotOutlines } from '../outlines';
 import type { PlaybackRequest } from '../lesscars/types';
 import type * as Protocol from '../protocol';
 import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev, SimRequest } from '../protocol';
@@ -116,15 +117,10 @@ type RowHeightLidsResult =
 type RowPreviewResult =
   | { ok: true; pack: PackedCell | null; built: number; missing: number }
   | { ok: false; reason: 'no-session'; message: string };
+// `LotOutlines` is { lots: ParcelId[]; ringLot: Uint32Array; starts: Uint32Array;
+// positions: Float64Array } (sim/outlines.ts), shared with the editor's `opLots`.
 type RowLotOutlinesResult =
-  | {
-      ok: true;
-      lots: ParcelId[];
-      ringLot: Uint32Array;
-      starts: Uint32Array;
-      positions: Float64Array;
-      missing: number;
-    }
+  | (LotOutlines & { ok: true; missing: number })
   | { ok: false; reason: 'no-session'; message: string };
 type RowBrushLotsResult =
   | { ok: true; lots: ParcelId[]; points: Float64Array }

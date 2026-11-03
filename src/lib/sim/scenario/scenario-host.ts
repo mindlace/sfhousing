@@ -88,6 +88,7 @@ import { decodeTransit } from '$lib/data/transit-codec';
 import type { TransitNetwork } from '$lib/data/transit';
 import type { Day } from '$lib/timelapse/time';
 import { cellsIntersecting, createChunkLoader, type ChunkLoader, type FetchLike } from '../chunks';
+import { packOutlines } from '../outlines';
 import { toLngLat } from '$lib/generator/geo';
 import { DEFAULT_RETRY_DELAYS_MS } from '../host';
 import { createLru } from '../lru';
@@ -1341,41 +1342,15 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         result: { ok: false, reason: 'no-session', message }
       });
     }
-    const answered: ParcelId[] = [];
-    const rings: [number, number][][] = [];
-    const ringLot: number[] = [];
+    const found: ParcelRecord[] = [];
     let missing = 0;
     for (const id of lots) {
       const rec = st.chunks.records.get(id);
-      if (!rec) {
-        missing++;
-        continue;
-      }
-      for (const ring of rec.polygon) {
-        rings.push(toLngLat(ring, rec.labelPoint));
-        ringLot.push(answered.length);
-      }
-      answered.push(id);
+      if (rec) found.push(rec);
+      else missing++;
     }
-    const starts = new Uint32Array(rings.length + 1);
-    rings.forEach((r, k) => (starts[k + 1] = starts[k] + r.length));
-    const positions = new Float64Array(2 * starts[rings.length]);
-    rings.forEach((r, k) =>
-      r.forEach(([lng, lat], v) => {
-        positions[2 * (starts[k] + v)] = lng;
-        positions[2 * (starts[k] + v) + 1] = lat;
-      })
-    );
-    const out = new Uint32Array(ringLot);
-    post(
-      {
-        type: 'lotOutlines',
-        reqId,
-        result: { ok: true, lots: answered, ringLot: out, starts, positions, missing }
-      },
-      // fresh typed arrays, so their buffers are ArrayBuffers
-      [out.buffer as ArrayBuffer, starts.buffer as ArrayBuffer, positions.buffer as ArrayBuffer]
-    );
+    const { outlines, transfer } = packOutlines(found);
+    post({ type: 'lotOutlines', reqId, result: { ok: true, ...outlines, missing } }, transfer);
   }
 
   /**

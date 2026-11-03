@@ -3,6 +3,7 @@ import type { Layer } from '@deck.gl/core';
 import type { OverlayCtors } from '$lib/brush/overlay';
 import { M_PER_DEG_LAT, M_PER_DEG_LNG } from '$lib/plan/geometry';
 import { TOKENS, hexToRgba } from '$lib/map/palette';
+import type { LotOutlines } from '$lib/sim/outlines';
 import type { LotOutlinesResult } from '$lib/sim/scenario/types';
 import { paintedOutlineLayers } from './painted-outline';
 
@@ -45,6 +46,22 @@ const ONE_LOT: Extract<LotOutlinesResult, { ok: true }> = {
 };
 
 describe('paintedOutlineLayers', () => {
+  it('takes a plain LotOutlines (an opLots outline), with the same layer', () => {
+    const plain: LotOutlines = {
+      lots: ONE_LOT.lots,
+      ringLot: ONE_LOT.ringLot,
+      starts: ONE_LOT.starts,
+      positions: ONE_LOT.positions
+    };
+    type Props = { props: { id: string; data: unknown[]; getColor: unknown } };
+    const a = paintedOutlineLayers(FAKE_L, plain, 'light') as unknown as Props[];
+    const b = paintedOutlineLayers(FAKE_L, ONE_LOT, 'light') as unknown as Props[];
+    expect(a).toHaveLength(1);
+    expect(a[0].props.id).toBe(b[0].props.id);
+    expect(a[0].props.data).toEqual(b[0].props.data);
+    expect(a[0].props.getColor).toEqual(b[0].props.getColor);
+  });
+
   it('one path layer in the painted-outline token, per theme', () => {
     for (const theme of ['light', 'dark'] as const) {
       const layers = paintedOutlineLayers(FAKE_L, ONE_LOT, theme);

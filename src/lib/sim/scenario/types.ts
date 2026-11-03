@@ -16,6 +16,7 @@ import type { BrushCatalog, BrushQuery } from '../levers/brushes';
 import type { LeverCapacity } from '../levers/resolve';
 import type { LimitOwner } from '../levers/source';
 import type { StageScale } from '../levers/timers';
+import type { LotOutlines } from '../outlines';
 import type { SimLevers } from '../levers/types';
 import type { PlaybackRequest, PlaybackResponse } from '../lesscars/types';
 import type {
@@ -157,14 +158,7 @@ export type PreviewResult =
  * `no-session`: no session with levers (or it ended before answering).
  */
 export type LotOutlinesResult =
-  | {
-      ok: true;
-      lots: ParcelId[];
-      ringLot: Uint32Array;
-      starts: Uint32Array;
-      positions: Float64Array;
-      missing: number;
-    }
+  | (LotOutlines & { ok: true; missing: number })
   | { ok: false; reason: 'no-session'; message: string };
 /**
  * A brush's lots: `points` holds each lot's label point (lng, lat), transferred. `no-session`: no
