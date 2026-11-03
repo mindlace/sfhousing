@@ -164,7 +164,7 @@
 </script>
 
 <div
-  class="sfh-fzp-scrubber flex flex-col gap-1 px-3 py-2 text-slate-900 md:flex-row md:items-center md:gap-4"
+  class="sfh-fzp-scrubber flex flex-col gap-1 px-3 py-2 text-ink md:flex-row md:items-center md:gap-4"
   data-testid="fzp-scrubber"
   bind:offsetHeight={height}
 >
@@ -298,10 +298,10 @@
     }
     .ctl {
       border-color: var(--color-control-line-dark);
-      background: var(--color-surface-dark-raised);
+      background: var(--color-surface-dark);
     }
     .ctl:hover:not(:disabled) {
-      background: var(--color-chrome-dark-raised);
+      background: var(--color-surface-dark-raised);
     }
     .marker {
       border-color: transparent;
