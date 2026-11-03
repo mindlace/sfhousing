@@ -1,8 +1,9 @@
 <!--
   The hover tooltip over a timeline project (spec §4.8): non-interactive, same markup as
   SimMap's tooltip (`role="tooltip"`, `sim-map-panel`), on the surface and ink tokens of the colour
-  scheme (the --map-* custom properties live on .sim-map, which this is not inside). It renders a `SummaryState`; FzpMode owns
-  the request. `x`/`y` are the pointer position inside the map region, in CSS pixels.
+  scheme (the --map-* custom properties live on .sim-map, which this is not inside). It renders a
+  `SummaryState`; FzpMode owns the request. `x`/`y` are the pointer position inside the map
+  region, in CSS pixels.
 -->
 <script lang="ts">
   import { formatCount } from '$lib/scoreboard/format';

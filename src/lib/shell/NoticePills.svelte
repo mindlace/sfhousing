@@ -1,10 +1,11 @@
 <!--
-  The notice stack: every /sim and /fzp notice is a pill (`PILL` in ./pill) in this column. From md
-  it overlays the map's top, centred over the map right of the dock (`--dock-w`: the open panel or
-  the rail), and takes no space, so a notice never moves the dock, the time bar or the map inset.
-  The container lets clicks through to the map; each pill takes them. Below md it sits in flow
-  under the header, full width, and pushes the map down (the phone rule, spec Goal 8).
-  Map-view's failure chips sit at the map's top centre too, so from md the stack publishes its
+  The notice stack: every notice on `/`, `/p/:id`, `/sim` and `/s/<id>` is a pill (`PILL` in
+  ./pill) in this column, one stack per page. From md it overlays the map's top, centred over the
+  map right of the dock (`--dock-w`: the open panel or the rail), and takes no space, so a notice
+  never moves the dock, the time bar or the map inset. The container lets clicks through to the
+  map; each pill takes them. Below md it sits in flow under the header, full width, and pushes the
+  map down (the phone rule, spec Goal 8).
+  Map-view's failure chips sit at the same top centre, so from md the stack publishes its
   bottom edge, in px from its host's top, on its host (the parent element: FzpMode's or
   BrushEditor's root) as `--notice-pills-bottom`, and SimMap places the chips below it. It is `0px`
   while the stack is empty and below md (in flow, the map is already below it).

@@ -258,7 +258,7 @@
   <div class="grid min-w-0 grid-cols-[auto_1fr_auto] items-center gap-x-2 text-xs md:flex-1">
     <button
       type="button"
-      class="end ctl rounded-md px-2"
+      class="ctl rounded-md px-2"
       data-testid="fzp-start"
       aria-label="Jump to {startText}, {formatMonthYear(asOf)}"
       disabled={setup}
@@ -282,7 +282,7 @@
     />
     <button
       type="button"
-      class="end ctl rounded-md px-2"
+      class="ctl rounded-md px-2"
       data-testid="fzp-end"
       aria-label="Jump to {endYear}"
       disabled={setup}

@@ -10,15 +10,15 @@
   Task 2) lists them as layers, each edited in place when selected, then the locked FZP baseline
   row. "Protections" (Task 10) edits the category protections.
   Plan 5 (Task 5): the policy autosaves (`sfhousing:sim:v1`) and is restored on mount, reconciled
-  with the calibration (Calls 11 and 12). The header gets the save state (its status slot) and Publish. In `mode: 'view'` (the
-  read-only /s/<id>, Task 6) the shared policy opens reconciled with the calibration (Call 7, with
-  the timing notice when anything moved); there is no stroke controller, no tools, no autosave and
-  no Publish, and the dock's one tab is the summary.
+  with the calibration (Calls 11 and 12). The header gets the save state (its status slot) and
+  Publish. In `mode: 'view'` (the read-only /s/<id>, Task 6) the shared policy opens reconciled
+  with the calibration (Call 7, with the timing notice when anything moved); there is no stroke
+  controller, no tools, no autosave and no Publish, and the dock's one tab is the summary.
   The dock (sim-ux plan 2, Task 4): the policy lives in a `Dock` with the tabs Transit · Paint ·
-  Permits · Protect (`SIM_TABS`), Undo and Redo (`HistoryButtons`) above them, and a Results face (FzpMode's
-  `SimResults`). From md it is open on the left of the map by default and folds to a rail; below
-  md it is a bottom sheet behind a handle. The header's Policy button opens and folds it; the
-  header score flips it to Results and back.
+  Permits · Protect (`SIM_TABS`), Undo and Redo (`HistoryButtons`) above them, and a Results
+  face (FzpMode's `SimResults`). From md it is open on the left of the map by default and folds to
+  a rail; below md it is a bottom sheet behind a handle. The header's Policy button opens and
+  folds it; the header score flips it to Results and back.
   Setup and Run (spec §1, sim-runs Task 7): the page opens in Setup (never persisted). Run (the
   scrubber's button) sets the tool to Move, locks the store, plays and flips the dock to Results
   (a phone sheet peeks); a run offers Results only, until "Edit policy" ("Policy" in the
@@ -108,12 +108,7 @@
   import PermittingSection from './PermittingSection.svelte';
   import TransitTab from './TransitTab.svelte';
   import PolicySummary from './PolicySummary.svelte';
-  import {
-    customLotStatus,
-    ruleLotStatus,
-    simPaintRows,
-    type LotStatus
-  } from './brush-summary';
+  import { customLotStatus, ruleLotStatus, simPaintRows, type LotStatus } from './brush-summary';
   import ProtectionsSection from './ProtectionsSection.svelte';
   import { VIEW_TABS, simTabs, tabOrFirst } from './tabs';
 
@@ -328,7 +323,7 @@
 
   /**
    * The dock folded by its collapse button or Escape: focus goes to the Policy button, or, when it
-   * sits in the closed phone Menu, to the Menu button.
+   * sits in the closed header Menu (below lg), to the Menu button.
    */
   function dockClosed(): void {
     if (policyButton?.checkVisibility()) policyButton.focus();
@@ -337,7 +332,8 @@
 
   /**
    * The Results face's flip ("Edit policy", "Policy" in the view): ends a run, else shows the
-   * editing face (the view's one Policy tab). The flip button goes with the face, so focus moves to the selected tab.
+   * editing face (the view's one Policy tab). The flip button goes with the face, so focus moves
+   * to the selected tab.
    */
   async function flip(): Promise<void> {
     if (run.phase === 'run') resetRun();
@@ -529,7 +525,10 @@
   let lids = $state.raw<HeightLids | null>(null);
   /** `limits-layer`, lazy-loaded on mount (it pulls in deck's layers). */
   let limitsModule = $state.raw<typeof import('$lib/map/height/limits-layer') | null>(null);
-  /** What was picked in the dock (a Transit or Paint tab row); `selection` is it while it is still in the policy. */
+  /**
+   * What was picked in the dock (a Transit or Paint tab row); `selection` is it while it is still
+   * in the policy.
+   */
   let picked = $state.raw<DockSelection>(null);
   /** The map's view at its latest `moveend` (or when it became ready). */
   let mapView = $state.raw<{

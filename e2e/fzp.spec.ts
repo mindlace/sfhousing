@@ -144,7 +144,7 @@ const seedUrl = (seed?: number): RegExp => new RegExp(`/sim\\?seed=${seed ?? '\\
 
 /**
  * The timelapse (`/sim`, plus `search`'s parameters) at a stable day, ready. With `run`, a run is
- * started and paused at asOf, so the scrubber, Play and the markers work.
+ * started and paused at or just past asOf, so the scrubber, Play and the markers work.
  */
 async function gotoFzp(
   page: Page,

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Test host: SiteHeader with the real /sim HeaderScore pinned (fixed props) and one plain
+  // Test host: SiteHeader on /sim with the real HeaderScore pinned (fixed props) and one plain
   // action, plus an area outside the header to press. A spec passes its own `actions`, `status`
   // and the score's `total` and `delta` to check how the row fits.
   import { createRawSnippet, type Snippet } from 'svelte';

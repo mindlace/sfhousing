@@ -6,7 +6,7 @@ import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { focusHeaderMenu } from './header-actions.svelte';
 import SiteHeader from './SiteHeader.svelte';
-import ScoreBarHeader from './test/ScoreBarHeader.svelte';
+import HeaderScoreHeader from './test/HeaderScoreHeader.svelte';
 
 describe('SiteHeader', () => {
   it('renders a banner with a home link', async () => {
@@ -388,7 +388,7 @@ describe('SiteHeader', () => {
         it(`at ${width}px "Autosave off", the nav and every action fit without overlap`, async () => {
           await page.viewport(width, 768);
           // The real score, with the delta a run that compares with the FZP shows.
-          render(ScoreBarHeader, {
+          render(HeaderScoreHeader, {
             props: { actions: simActions, status, total: 12345, delta: 12345 }
           });
           const host = page.getByTestId('status-slot').element() as HTMLElement;
@@ -463,7 +463,7 @@ describe('SiteHeader', () => {
 
       it('at 375px it sits right after the site title, outside the Menu', async () => {
         await page.viewport(375, 812);
-        render(ScoreBarHeader, { props: { actions, status, total: 12345, delta: 12345 } });
+        render(HeaderScoreHeader, { props: { actions, status, total: 12345, delta: 12345 } });
         const host = page.getByTestId('status-slot').element() as HTMLElement;
         const a = mount(SaveIndicator, { target: host, props: { status: 'off', align: 'start' } });
         try {

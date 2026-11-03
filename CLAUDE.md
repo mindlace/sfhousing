@@ -77,7 +77,7 @@ Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link t
 
 One Cloudflare Worker (SvelteKit via `@sveltejs/adapter-cloudflare`) with bindings `DB` (D1), `BUCKET` (R2, bucket `sfhousing`, shared by both environments) and `PUBLISH_RL` (rate limit), plus `ASSETS`. The worker does no geo computation at runtime. All geographic data is static and versioned on R2 at key `data/<datasetVersion>/<path>`, served at `/data/<datasetVersion>/<path>` by `src/routes/data/[version]/[...path]/+server.ts`. The var `PUBLIC_DATASET_VERSION` (in `wrangler.jsonc`, per environment) names the current dataset; it is passed to the client as data from the root layout load, never read as a global. Published versions are immutable.
 
-Shell: the root layout renders the skip link, header, `<main>` and footer. Pages put actions in the header with `useHeaderActions(snippet, { pinned?, status? })` from `src/lib/shell/header-actions.svelte.ts`; only the root layout calls `provideHeaderActions()`. `status` is a non-interactive status slot on the left (after the mode links from md, after the site name on phones, never in the Menu), used for `/sim`'s save state.
+Shell: the root layout renders the skip link, header, `<main>` and footer. Pages put actions in the header with `useHeaderActions(snippet, { pinned?, status? })` from `src/lib/shell/header-actions.svelte.ts`; only the root layout calls `provideHeaderActions()`. `status` is a non-interactive status slot on the left (after the mode links from lg, after the site name below lg, never in the Menu), used for the save state on `/` and `/sim`.
 
 ## Conventions
 

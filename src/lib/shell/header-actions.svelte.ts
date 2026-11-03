@@ -3,13 +3,16 @@ import { getContext, onDestroy, setContext, type Snippet } from 'svelte';
 const KEY = Symbol('header-actions');
 
 export class HeaderActions {
-  /** The right-aligned actions: in the header from md, in the phone menu below md. */
+  /** The right-aligned actions: in the header from lg, in the header's Menu below lg. */
   current = $state<Snippet | null>(null);
-  /** The page's one always-visible item (the /sim score bar): in the header at every width. */
+  /**
+   * The page's one always-visible item (the header score on `/`, `/p/:id`, `/sim` and `/s/<id>`;
+   * the `/lesscars` headline): in the header at every width.
+   */
   pinned = $state<Snippet | null>(null);
   /**
-   * The page's non-interactive status (the /sim save state): on the left at every width, after
-   * the mode links from md and after the site name below md. Never among the actions.
+   * The page's non-interactive status (the save state on `/` and `/sim`): on the left at every
+   * width, after the mode links from lg and after the site name below lg. Never among the actions.
    */
   status = $state<Snippet | null>(null);
   /**

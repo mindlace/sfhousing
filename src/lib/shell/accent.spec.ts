@@ -155,7 +155,8 @@ describe('app accent tokens', () => {
     // `--brush-paint` was set only by the deleted BrushToolbar: nothing defines it now.
     expect(src).not.toMatch(/--brush-paint/);
     expect(src).toMatch(/\.range\s*\{\s*accent-color:\s*var\(--color-accent\);/);
-    const dark = /@media \(prefers-color-scheme: dark\)\s*\{([\s\S]*?)\n {2}\}/.exec(src)?.[1] ?? '';
+    const dark =
+      /@media \(prefers-color-scheme: dark\)\s*\{([\s\S]*?)\n {2}\}/.exec(src)?.[1] ?? '';
     expect(dark).toMatch(/\.range\s*\{\s*accent-color:\s*var\(--color-accent-dark\);/);
   });
   it('no Tailwind blue or blue hex remains in chrome', () => {

@@ -190,7 +190,7 @@ test.describe('desktop', () => {
       await expectNoticesClear(page, DESKTOP);
       await expectCentredRightOfDock(page, page.locator('.sfh-dock-panel'));
       await expectChipsRightOfDock(page, page.locator('.sfh-dock-panel'));
-      // A pill: fully rounded, below the brush status in the same stack.
+      // A pill: fully rounded.
       const radius = await notice(page)
         .first()
         .evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius));

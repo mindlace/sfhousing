@@ -1,13 +1,15 @@
 <!--
-  The /sim header score, one box: the headline count ("{n} homes added" at the scrubbed day), a
-  "vs FZP" delta under it when the page passes one (a run that compares your policy with the
-  Family Zoning Plan; stacked, so it adds height and not width to the header row), and a 4 px
-  RHNA progress meter along its bottom edge. The count is the button (its name); the delta is its
-  description and the meter sits beside it, so neither is swallowed into the name. Pressing
-  anywhere on the box shows or hides the dock's Results face (`expanded` and `controls` are the
-  dock's state and id). Below lg the word "added" is visually hidden ("{n} homes"; the name keeps
-  it), so the header row fits the save state at 375 px and 768 px. The button text is not a live region; one polite sr-only region
-  speaks a new `live` text 1,000 ms after it last changed, and only while `quiet` is false.
+  The header score of `/`, `/p/:id`, `/sim` and `/s/<id>`, one box: the headline count ("{n} homes
+  added": the net homes on `/` and `/p/:id`, at the scrubbed day on `/sim`), a "vs FZP" delta
+  under it when the page passes one (a /sim run that compares your policy with the Family Zoning
+  Plan; stacked, so it adds height and not width to the header row), and a 4 px RHNA progress
+  meter along its bottom edge. The count is the button (its name); the delta is its description
+  and the meter sits beside it, so neither is swallowed into the name. Pressing anywhere on the box
+  shows or hides the dock's Results face (`expanded` and `controls` are the dock's state and id).
+  Below lg the word "added" is visually hidden ("{n} homes"; the name keeps it), so the header row
+  fits the save state at 375 px and 768 px. The button text is not a live region; one polite
+  sr-only region speaks a new `live` text 1,000 ms after it last changed, and only while `quiet`
+  is false.
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
