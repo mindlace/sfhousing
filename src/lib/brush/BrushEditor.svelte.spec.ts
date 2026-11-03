@@ -93,7 +93,7 @@ async function setup(opts: SetupOpts = {}) {
 
 const status = (text: string) => page.getByText(text, { exact: true });
 const retryButton = () => page.getByRole('button', { name: 'Retry', exact: true });
-/** DOM click: the WebGL fallback overlay may sit above the toolbar at desktop widths. */
+/** DOM click: the WebGL fallback overlay may sit above the dock at desktop widths. */
 const click = async (loc: ReturnType<typeof page.getByRole>) =>
   (loc.element() as HTMLElement).click();
 
@@ -106,8 +106,10 @@ const diff = (rev: number): SimResponse => ({
   score: { total: 1 } as unknown as Score
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   stubNoWebGL2();
+  // From md the dock is open: the Paint tab's tools are on screen.
+  await page.viewport(1024, 768);
 });
 
 afterEach(() => {
@@ -293,7 +295,7 @@ describe('BrushEditor exposes the Editor; Editor.load drives the worker', () => 
     expect(posts('load')).toEqual([{ type: 'load', rev: 2, plan: p2 }]);
   });
 
-  it('a read-only load shows the read-only toolbar and refuses commits; an editable load restores it', async () => {
+  it('a read-only load shows the read-only Paint tab and refuses commits; an editable load restores it', async () => {
     const { workers, editors } = await setup();
     await expect.poll(() => workers.length).toBe(1);
     ready(workers[0]);
@@ -302,11 +304,11 @@ describe('BrushEditor exposes the Editor; Editor.load drives the worker', () => 
 
     ed.load(p2, { readOnly: true });
     await expect.element(status(MSG.readOnly)).toBeInTheDocument();
+    // Rows only: no tools, no Undo.
     await expect.element(page.getByRole('radio', { name: 'Paint' })).not.toBeInTheDocument();
-    expect(radios()).toHaveLength(1);
-    await expect
-      .element(page.getByRole('radio', { name: 'Move' }))
-      .toHaveAttribute('aria-checked', 'true');
+    expect(radios()).toHaveLength(0);
+    expect(page.getByRole('button', { name: /^Undo/ }).elements()).toEqual([]);
+    await expect.element(page.getByRole('button', { name: /^Erased · / })).toBeInTheDocument();
     expect(ed.readOnly).toBe(true);
     expect(ed.commit(p2.ops[0])).toEqual({ ok: false, reason: 'read-only' });
 
@@ -316,7 +318,7 @@ describe('BrushEditor exposes the Editor; Editor.load drives the worker', () => 
     await expect
       .element(page.getByRole('radio', { name: fine ? 'Paint' : 'Move' }))
       .toHaveAttribute('aria-checked', 'true');
-    expect(radios().length).toBeGreaterThan(1);
+    expect(radios()).toHaveLength(3);
     expect(ed.readOnly).toBe(false);
     expect(ed.commit(p2.ops[0])).toEqual({ ok: true });
   });

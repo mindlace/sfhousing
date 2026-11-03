@@ -61,7 +61,7 @@
     about 620 px at 1024x768) cannot reach it either.
     768-1023 px: the two columns leave no room beside the toolbar, so the stack sits under it.
     The stack publishes its height as --notice-stack-h and the toolbar caps its own height to
-    end 0.5rem above the stack, scrolling inside (BrushToolbar.svelte); keep the 6rem in sync.
+    end 0.5rem above the stack, scrolling inside. The dock that replaced that toolbar does not.
   Short narrow viewports (below 768 px wide and at most 480 px tall, e.g. a 667x375 landscape
   phone): the map region is about 290 px with the 112 px of bars and the attribution strip above
   them, so 8rem down lands on the attribution and the brush bar. The stack moves to 0.5rem from

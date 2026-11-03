@@ -1,7 +1,8 @@
 /**
- * Dashed outlines of custom-painted lots, drawn while the eraser is chosen (map overlays spec,
- * "Outlines while erasing"). One outline per lot, since the lot is what the eraser acts on, as
- * metric dashes along each ring (`dashPath`). Dashed so colour is never the only signal.
+ * Dashed outlines of painted lots: on /sim while the eraser is chosen (map overlays spec,
+ * "Outlines while erasing"), and the selected painted area's on /sim and /. One outline per lot,
+ * since the lot is what the eraser acts on, as metric dashes along each ring (`dashPath`). Dashed
+ * so colour is never the only signal.
  */
 import type { Layer } from '@deck.gl/core';
 import type { OverlayCtors } from '$lib/brush/overlay';

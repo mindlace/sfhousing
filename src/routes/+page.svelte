@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onDestroy, onMount, untrack } from 'svelte';
+  import { MediaQuery } from 'svelte/reactivity';
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import BrushEditor from '$lib/brush/BrushEditor.svelte';
   import { exposeEditorForDebug } from '$lib/brush/debug';
   import type { Editor } from '$lib/brush/editor.svelte';
   import type { Manifest } from '$lib/data/manifest';
+  import { DockState } from '$lib/dock/dock-state.svelte';
   import { frameLatest, type Score, type ScoreStatus } from '$lib/scoreboard';
   import Scoreboard from '$lib/scoreboard/Scoreboard.svelte';
   import { Autosave } from '$lib/sharing/autosave.svelte';
@@ -15,7 +17,7 @@
   import PublishButton from '$lib/sharing/PublishButton.svelte';
   import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
   import { applyTitle } from '$lib/sharing/title';
-  import { useHeaderActions } from '$lib/shell/header-actions.svelte';
+  import { focusHeaderMenu, useHeaderActions } from '$lib/shell/header-actions.svelte';
   import { loadManifest } from '$lib/sim/manifest';
   import { readViewPrefs, writeViewPrefs, type ViewPrefs } from '$lib/view/prefs';
   import ViewMenu from '$lib/view/ViewMenu.svelte';
@@ -84,6 +86,28 @@
 
   useHeaderActions(headerActions, { status: saveState });
 
+  // The dock (sim-ux plan 5): the Paint tab, open on the left of the map from md (folding to a
+  // rail), a bottom sheet behind its handle below md. The header's Paint button toggles it.
+  const wide = new MediaQuery('(min-width: 768px)');
+  const uid = $props.id();
+  const dockId = `${uid}-dock`;
+  const dock = new DockState({ tab: 'paint' });
+  /** The user opened the dock (the Paint button): focus moves in. False for the default open. */
+  let dockFocus = $state(false);
+  let paintButton = $state<HTMLButtonElement>();
+
+  /** The header's Paint button: desktop open <-> rail; phone sheet closed <-> full. */
+  function togglePaint(): void {
+    dockFocus = true;
+    dock.toggleOpen(wide.current);
+  }
+
+  /** The dock folded by its collapse button or Escape: focus to Paint, or the phone Menu button. */
+  function dockClosed(): void {
+    if (paintButton?.checkVisibility()) paintButton.focus();
+    else focusHeaderMenu();
+  }
+
   // Map layer toggles (transit spec §6.3), per viewer. View shows only when the manifest the map
   // renders (BrushEditor's own, which a Retry can replace) has a transit network.
   let view = $state<ViewPrefs>(readViewPrefs());
@@ -115,6 +139,14 @@
 </script>
 
 {#snippet headerActions()}
+  <button
+    bind:this={paintButton}
+    type="button"
+    aria-expanded={dock.visible(wide.current)}
+    aria-controls={dockId}
+    class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap md:max-lg:px-1 dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+    onclick={togglePaint}>Paint</button
+  >
   {#if mapManifest?.transit}
     <ViewMenu {view} theme={systemTheme.current} onchange={onViewChange} />
   {/if}
@@ -149,6 +181,10 @@
     onchunks={(c) => (chunkState = c)}
     {view}
     onmanifest={(m) => (mapManifest = m)}
+    {dock}
+    {dockId}
+    {dockFocus}
+    ondockclose={dockClosed}
   />
   <Scoreboard
     score={latestScore.current.score}

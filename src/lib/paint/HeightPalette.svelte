@@ -1,7 +1,7 @@
 <!--
   The Paint tab's height control: a swatch per story preset, then the stepper (fewer, a number
   input, more, the height in metres). Disabled as a whole with `hint` as its description (Erase).
-  Behaviour of the stories stepper in brush/StoriesPopover.svelte, which stays for `/`. Colours
+  Shared by `/` and /sim (the Paint tab, and the palette strip's height pop-over). Colours
   are tokens.
 -->
 <script lang="ts">

@@ -1,4 +1,4 @@
-/** The Paint tab's tools and history icons (24x24 stroke paths; copies of BrushToolbar's). */
+/** The Paint tab's tools and history icons (24x24 stroke paths). */
 import type { BrushTool } from '$lib/brush/sampler';
 
 export const PAINT_TOOLS: readonly {

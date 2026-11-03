@@ -389,7 +389,7 @@
       background: var(--color-accent-dark-hover);
     }
   }
-  /* The repo's coarse-pointer pattern (BrushToolbar): 44 px targets. */
+  /* The repo's coarse-pointer pattern (the Paint tab's tools): 44 px targets. */
   @media (pointer: coarse) {
     .ctl,
     .track,

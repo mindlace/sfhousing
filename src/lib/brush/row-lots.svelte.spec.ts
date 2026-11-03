@@ -74,10 +74,30 @@ describe('RowLots', () => {
     rl.want([g('a'), g('c', 'x')]);
     await settle();
     expect(calls.map((c) => c.opIds)).toEqual([['a'], ['c'], ['c', 'x']]);
-    // The grown row's old count is stale: it shows 'finding' until its new answer.
-    expect(rl.status('c')).toEqual({ kind: 'finding' });
+    // The grown row keeps its last count until its new answer: no flicker to 'finding'.
+    expect(rl.status('c')).toEqual({ kind: 'found', lots: 2 });
     expect(rl.status('a')).toEqual({ kind: 'found', lots: 1 });
     await reply(calls, 2, answer(3));
+    expect(rl.status('c')).toEqual({ kind: 'found', lots: 3 });
+  });
+
+  it('a growing selected row keeps its last outline until the new answer brings the next', async () => {
+    const { rl, calls } = setup();
+    rl.want([g('c')]);
+    rl.select('c');
+    await settle();
+    const o = outlineOf('1', '2');
+    await reply(calls, 0, answer(2, 0, o));
+    expect(rl.outline).toBe(o);
+    rl.want([g('c', 'x')]);
+    expect(rl.outline).toBe(o);
+    expect(rl.status('c')).toEqual({ kind: 'found', lots: 2 });
+    await settle();
+    expect(calls[1]).toMatchObject({ opIds: ['c', 'x'], outlines: true });
+    // An answer to the old ops would be dropped; the new one replaces count and outline.
+    const o2 = outlineOf('1', '2', '3');
+    await reply(calls, 1, answer(3, 0, o2));
+    expect(rl.outline).toBe(o2);
     expect(rl.status('c')).toEqual({ kind: 'found', lots: 3 });
   });
 

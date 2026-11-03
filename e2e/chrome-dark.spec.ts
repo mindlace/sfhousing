@@ -10,6 +10,7 @@ import {
   gotoEditor,
   headerAction,
   jumpAndIdle,
+  paintOnce,
   projectToPage,
   seedPlanRow,
   SIM_KEY,
@@ -120,6 +121,22 @@ for (const name of ['Transit', 'Paint', 'Permits', 'Protect']) {
     await expectNoA11yViolations(page, { include: ['[data-testid=dock]'] });
   });
 }
+
+test("/'s dock on Paint, a painted row selected, has no axe violations in dark", async ({
+  page,
+  isMobile
+}) => {
+  await gotoEditor(page);
+  await paintOnce(page, isMobile);
+  await openDock(page);
+  const row = dock(page).locator('[data-paint-row]').first();
+  await row.click();
+  await expect(row).toHaveAttribute('aria-pressed', 'true');
+  await expect(dock(page).getByRole('button', { name: /^Remove: / })).toBeVisible();
+  await expectNoA11yViolations(page, {
+    include: ['[data-testid=dock]', '[data-testid=fzp-notices]']
+  });
+});
 
 test('at 375px the palette strip has no axe violations in dark, palette open and in Erase', async ({
   page

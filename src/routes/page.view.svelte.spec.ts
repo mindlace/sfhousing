@@ -37,7 +37,9 @@ const viewButton = () => page.getByRole('button', { name: 'View' });
 const stored = () => JSON.parse(localStorage.getItem(VIEW_KEY) ?? 'null');
 
 describe('/ View menu', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // From md the dock is open, so the Paint tab's tools are on screen.
+    await page.viewport(1024, 768);
     vi.stubGlobal(
       'Worker',
       class {
@@ -58,9 +60,14 @@ describe('/ View menu', () => {
   it('shows View in the header and passes the default view to the map', async () => {
     await render(PageHost, { props: { data: data() } });
     await expect.element(viewButton()).toBeInTheDocument();
-    // First in the header actions: left of Publish.
+    // In the header actions after Paint, left of Publish.
     const slot = document.querySelector('[data-testid="header-actions"]')!;
-    expect(slot.firstElementChild?.contains(viewButton().element())).toBe(true);
+    const items = [...slot.children];
+    const at = (el: Element) => items.findIndex((c) => c.contains(el));
+    const paint = page.getByRole('button', { name: 'Paint', exact: true });
+    expect(at(paint.element())).toBe(0);
+    expect(at(viewButton().element())).toBe(1);
+    expect(at(page.getByRole('button', { name: /Publish/ }).element())).toBe(2);
     expect(stubProps.view).toEqual({
       transitStops: false,
       transitAccess: true,

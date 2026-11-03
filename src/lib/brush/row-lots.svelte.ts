@@ -3,7 +3,8 @@
  * eligible lots each row covers, and for the selected row's outline. One request is in flight at
  * a time with a queue behind it, since a long plan can have many rows; the selected row goes to
  * the front. A row's answer is dropped if the row changed or the worker restarted since it was
- * asked. While a row's chunks are still loading (`missing > 0`) it stays 'finding' and is asked
+ * asked; a row that changed shows its last answer (count and outline) until its new one arrives.
+ * While a row's chunks are still loading (`missing > 0`) it stays 'finding' and is asked
  * again on each `chunks` message.
  */
 // The Maps and Sets here are either bookkeeping the page never reads, or the `#answers` map,
@@ -67,15 +68,24 @@ export class RowLots {
       const key = g.opIds.join('\n');
       const row = this.#rows.get(g.id);
       if (row && row.key === key) continue;
-      this.#rows.set(g.id, {
-        opIds: [...g.opIds],
-        key,
-        answer: null,
-        withOutline: false,
-        nulled: false,
-        again: false
-      });
-      this.#setAnswer(g.id, null);
+      if (row) {
+        // A row that grew (or shrank) keeps its last answer, count and outline, on screen until
+        // the new one arrives, so painting does not flicker it to 'finding' on every stroke. The
+        // key check in #pump drops any answer to its old ops.
+        row.opIds = [...g.opIds];
+        row.key = key;
+        row.nulled = false;
+        row.again = false;
+      } else {
+        this.#rows.set(g.id, {
+          opIds: [...g.opIds],
+          key,
+          answer: null,
+          withOutline: false,
+          nulled: false,
+          again: false
+        });
+      }
       this.#enqueue(g.id);
     }
     for (const id of [...this.#rows.keys()]) {

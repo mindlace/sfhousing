@@ -47,7 +47,8 @@ const THEMED_FILES = [
   'src/lib/paint/PaintTab.svelte',
   'src/lib/paint/PaletteStrip.svelte',
   'src/lib/fzp/ProjectCardPanel.svelte',
-  'src/lib/fzp/ProjectTooltip.svelte'
+  'src/lib/fzp/ProjectTooltip.svelte',
+  'src/lib/brush/BrushEditor.svelte'
 ];
 /** Themed files whose colours come from tokens and custom properties only: no hex at all. */
 const NO_HEX_FILES = [

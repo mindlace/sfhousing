@@ -9,6 +9,7 @@ import { replaceStateCalls } from '../test-stubs/app/navigation';
 import { page as appPage } from '../test-stubs/app/state';
 import manifestJson from '../../e2e/fixtures/data/fixture-0/manifest.json';
 import Page from './+page.svelte';
+import PaintHeaderHost from './test/PaintHeaderHost.svelte';
 
 const manifest = manifestJson as unknown as Manifest;
 const plan = emptyPlan('fixture-0');
@@ -25,7 +26,9 @@ function data(over: { manifest?: Manifest | null; manifestError?: boolean } = {}
 }
 
 describe('/ editor page', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // From md the dock is open, so the Paint tab's tools and Undo are on screen.
+    await page.viewport(1024, 768);
     // The page spawns the sim worker; a stub keeps these tests about the page shell.
     vi.stubGlobal(
       'Worker',
@@ -55,7 +58,7 @@ describe('/ editor page', () => {
     replaceStateCalls.length = 0;
   });
 
-  it('renders the heading, the map region and the brush toolbar', async () => {
+  it('renders the heading, the map region and the Paint dock', async () => {
     await render(Page, { props: { data: data(), params: {} } });
     await expect
       .element(page.getByRole('heading', { level: 1 }))
@@ -66,7 +69,41 @@ describe('/ editor page', () => {
       .element(page.getByRole('region', { name: '3D map of San Francisco' }))
       .toBeInTheDocument();
     expect(region!.querySelector('[data-testid="map-root"]')).not.toBeNull();
+    await expect
+      .element(page.getByRole('region', { name: 'Paint', exact: true }))
+      .toBeInTheDocument();
     await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeInTheDocument();
+    expect(document.querySelector('.brush-toolbar')).toBeNull();
+  });
+
+  it('the header has a Paint button that toggles the dock', async () => {
+    render(PaintHeaderHost, { props: { data: data() } });
+    const paint = page.getByRole('banner').getByRole('button', { name: 'Paint', exact: true });
+    await expect.element(paint).toHaveAttribute('aria-expanded', 'true');
+    const dock = page.getByRole('region', { name: 'Paint', exact: true });
+    expect(paint.element().getAttribute('aria-controls')).toBe(dock.element().id);
+    // One button named Paint on the page: the rail's is "Paint tools", Results' "Back to painting".
+    expect(page.getByRole('button', { name: 'Paint', exact: true }).elements()).toHaveLength(1);
+    // Before Publish among the actions.
+    const publish = page.getByRole('button', { name: /Publish/ });
+    await expect.element(publish).toBeVisible();
+    expect(
+      paint.element().compareDocumentPosition(publish.element()) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(document.querySelector('.sfh-dock-panel')).not.toBeNull();
+
+    await paint.click();
+    await expect.element(paint).toHaveAttribute('aria-expanded', 'false');
+    expect(document.querySelector('.sfh-dock-panel')).toBeNull();
+    await expect.element(page.getByTestId('dock-rail')).toBeVisible();
+    await expect.element(page.getByRole('button', { name: 'Paint tools' })).toBeVisible();
+    expect(page.getByRole('button', { name: 'Paint', exact: true }).elements()).toHaveLength(1);
+
+    await paint.click();
+    await expect.element(paint).toHaveAttribute('aria-expanded', 'true');
+    await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
+    // The user opened it: focus moves into the dock, on its selected tab.
+    await expect.poll(() => document.activeElement?.getAttribute('role')).toBe('tab');
   });
 
   it('renders the scoreboard region with the empty state', async () => {
@@ -147,6 +184,36 @@ describe('/ editor page', () => {
       await render(Page, { props: { data: data(), params: {} } });
       await expect.element(page.getByText(remixedToast('My plan'))).toBeVisible();
       expect(replaceStateCalls).toEqual([{ url: '', state: {} }]);
+      await expect.element(undo()).toBeEnabled();
+    });
+
+    it('an autosave after a row removal restores the same rows', async () => {
+      const op = (id: string, stories: number) => ({
+        id,
+        kind: 'paint' as const,
+        stories,
+        radiusM: 20,
+        path: [[-122.4193, 37.76013]] as [number, number][]
+      });
+      seed({ schema: 1, datasetVersion: 'fixture-0', ops: [op('a', 6), op('c', 8), op('d', 6)] });
+      const rows = () =>
+        [...document.querySelectorAll('[data-paint-row]')].map((b) => b.getAttribute('aria-label'));
+      const screen = await render(Page, { props: { data: data(), params: {} } });
+      await expect.poll(rows).toHaveLength(3);
+      await page.getByRole('button', { name: /^8 stories · / }).click();
+      await page.getByRole('button', { name: /^Remove: 8 stories/ }).click();
+      // The neighbours at one height now make one row.
+      await expect.poll(rows).toEqual(['6 stories · 2 strokes · Finding lots…']);
+      // The autosave is the new op list.
+      await expect
+        .poll(() => JSON.parse(JSON.parse(localStorage.getItem(PLAN_KEY)!).plan).ops.length)
+        .toBe(2);
+      const saved = JSON.parse(JSON.parse(localStorage.getItem(PLAN_KEY)!).plan) as Plan;
+      expect(saved.ops.map((o) => o.id)).toEqual(['a', 'd']);
+
+      await screen.unmount();
+      await render(Page, { props: { data: data(), params: {} } });
+      await expect.poll(rows).toEqual(['6 stories · 2 strokes · Finding lots…']);
       await expect.element(undo()).toBeEnabled();
     });
 

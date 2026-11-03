@@ -1,5 +1,5 @@
 <!--
-  The phone palette strip, shared by `/sim` and (plan 5) `/`: below md, while Paint or Erase is the
+  The phone palette strip, shared by `/sim` and `/`: below md, while Paint or Erase is the
   tool and the dock's sheet is out of the way, one line over the map: the tool (a button that
   cycles Paint and Erase), the height swatch (a neutral tile with the story count, opening a
   pop-over that holds the height palette; disabled with the hint while Erase), the brush size (the
@@ -8,7 +8,7 @@
   sheet. The pop-overs share one open slot (opening one closes the other); Escape closes the open
   one and returns focus to its opener; a press outside closes it. The strip sits above the
   scrubber (`--fzp-scrubber-h`, 0 when unset) and above `lift` px (the dock's sheet handle on
-  `/sim`). On a fine pointer (a narrow desktop window) the map's bottom-left navigation control
+  `/sim` and `/`). On a fine pointer (a narrow desktop window) the map's bottom-left navigation control
   would sit under it, so while the strip shows the control is lifted above it (WCAG 2.2 2.4.11).
   Colours are tokens; a control's hover steps one level up from its background.
 -->
@@ -31,7 +31,7 @@
     ondone(): void;
     /** Why the height swatch is disabled while Erase is chosen. */
     eraseHint: string;
-    /** Px above the scrubber to clear (the dock's sheet handle on `/sim`). */
+    /** Px above the scrubber to clear (the dock's sheet handle). */
     lift?: number;
   }
 
@@ -171,10 +171,13 @@
 
 <style>
   /* The strip is 54 px tall (a 44 px target, 4 px padding, 1 px border) and sits 0.5rem above the
-     map inset (the scrubber and the sheet handle, which /sim adds to the inset), so the
-     control's container clears it by 0.5rem + 3.5rem. `.sim-map` outranks
-     SimMap's own `bottom` rule for the container. */
-  :global(.sfh-fzp:has(.sfh-palette-strip) .sim-map .maplibregl-ctrl-bottom-left) {
+     map inset (the bar and the sheet handle, which the page adds to the inset), so a control at
+     the map's bottom left clears it at 0.5rem + 3.5rem: the navigation control's container (fine
+     pointers) and SimMap's Reset view button (coarse pointers). `.sim-map` outranks SimMap's own
+     `bottom` rules. The host is the dock's (`.sfh-dock-host`: FzpMode's root on /sim,
+     BrushEditor's on /). */
+  :global(.sfh-dock-host:has(.sfh-palette-strip) .sim-map .maplibregl-ctrl-bottom-left),
+  :global(.sfh-dock-host:has(.sfh-palette-strip) .sim-map .sim-map-reset) {
     bottom: calc(var(--map-bottom-inset, 0px) + 4rem);
   }
 </style>

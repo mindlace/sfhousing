@@ -75,7 +75,7 @@
   import PaintTab from '$lib/paint/PaintTab.svelte';
   import PaletteStrip from '$lib/paint/PaletteStrip.svelte';
   import { ERASE_HINT, SimBrushTools, brushToolOf, type SimTool } from './brush-tools.svelte';
-  import { createOverlayMux } from './overlay-mux';
+  import { createOverlayMux } from '$lib/map/overlay-mux';
   import {
     DEFAULT_POLICY,
     canonicalJson,
@@ -88,7 +88,7 @@
   } from './policy';
   import { OutlineRequest } from './outline-request';
   import { LidRequest, clampBbox } from './lid-request';
-  import { paintedOutlineLayers } from './painted-outline';
+  import { paintedOutlineLayers } from '$lib/paint/outline-layers';
   import { SIM_CODEC, simDocProblems, type SimDoc } from './sim-doc';
   import SimNotices from './SimNotices.svelte';
   import { restoreSimDoc, type SimNotice } from './sim-session';

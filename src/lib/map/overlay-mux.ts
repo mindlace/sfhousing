@@ -1,7 +1,8 @@
 /**
- * SimMap's `setOverlayLayers` has one owner (docs/dev/map-interfaces.md). On /sim several writers
- * share it: the feedback buildings, the height limits, the painted outlines and the brush ring. Each
- * writes its own slot; the map gets the slots concatenated in a fixed order.
+ * SimMap's `setOverlayLayers` has one owner (docs/dev/map-interfaces.md). Several writers share it:
+ * on /sim the feedback buildings, the height limits, the painted outlines and the brush ring; on /
+ * the selected row's outline and the brush ring. Each writes its own slot; the map gets the slots
+ * concatenated in a fixed order.
  */
 import type { Layer } from '@deck.gl/core';
 
