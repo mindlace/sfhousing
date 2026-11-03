@@ -738,7 +738,7 @@ describe('SimPage Setup and Run (Task 7, spec §1)', () => {
     await wait(50);
     await expect.element(playLabel()).toHaveTextContent(/^Run$/);
     w.emit(timelineMsg(w.lastOf('setLevers')!.rev, 7));
-    await expect.element(playLabel()).toHaveTextContent(/^Pause$/);
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it("Run while a brush's lots are being found waits for them", async () => {
@@ -779,7 +779,7 @@ describe('SimPage Setup and Run (Task 7, spec §1)', () => {
     await wait(50);
     await expect.element(playLabel()).toHaveTextContent(/^Run$/);
     w.emit(timelineMsg(w.lastOf('setLevers')!.rev, 7));
-    await expect.element(playLabel()).toHaveTextContent(/^Pause$/);
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('during a run a stage still opens its details; its months are read-only', async () => {

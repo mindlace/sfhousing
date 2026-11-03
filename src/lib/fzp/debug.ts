@@ -4,7 +4,7 @@ import type { LeverStatus } from '$lib/sim-page/lever-status';
 import type { SimPhase } from '$lib/sim-page/run-phase.svelte';
 import type { TimelineScore } from '$lib/sim/protocol';
 import type { Day } from '$lib/timelapse/time';
-import type { FzpPhase } from './types';
+import type { FzpPhase, Speed } from './types';
 
 export interface SfhFzpDebug {
   readonly phase: FzpPhase;
@@ -14,6 +14,8 @@ export interface SfhFzpDebug {
   readonly asOf: Day;
   readonly horizon: Day;
   readonly playing: boolean;
+  /** The playback speed Play or Faster last chose. */
+  readonly speed: Speed;
   readonly score: TimelineScore | null;
   /** /sim's phase, 'setup' or 'run'; null without one (a session with no `runPhase`). */
   readonly runPhase: SimPhase | null;
@@ -55,6 +57,9 @@ export function installFzpDebug(get: () => SfhFzpDebug): () => void {
     },
     get playing() {
       return get().playing;
+    },
+    get speed() {
+      return get().speed;
     },
     get score() {
       return get().score;

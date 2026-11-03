@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { MONTH_DAYS } from '$lib/timelapse/time';
-import { DEFAULT_SPEED, FRAME_CLAMP_MS, SPEED_DAYS, SPEED_LABEL, advance } from './playback';
+import { DEFAULT_SPEED, FRAME_CLAMP_MS, SPEED_DAYS, SPEED_NAME, advance } from './playback';
 import { HORIZON, dayFromUtc } from './time';
 import type { Speed } from './types';
 
@@ -9,8 +9,8 @@ const asOf = dayFromUtc(2026, 10, 16);
 
 describe('speed tables', () => {
   it('maps speeds to days per second', () => {
+    expect(Object.keys(SPEED_DAYS).sort()).toEqual(['threeYears', 'year']);
     expect(SPEED_DAYS).toEqual({
-      month: MONTH_DAYS,
       year: 12 * MONTH_DAYS,
       threeYears: 36 * MONTH_DAYS
     });
@@ -18,12 +18,17 @@ describe('speed tables', () => {
     expect(FRAME_CLAMP_MS).toBe(100);
   });
 
-  it('labels speeds', () => {
-    expect(SPEED_LABEL).toEqual({
-      month: '1 month/s',
-      year: '1 year/s',
-      threeYears: '3 years/s'
+  it('names speeds', () => {
+    expect(SPEED_NAME).toEqual({
+      year: '1 year per second',
+      threeYears: '3 years per second'
     });
+  });
+
+  it('3 years per second advances 36 months a second (a frame counts at most 100 ms)', () => {
+    expect(advance(0, 100, 'threeYears', 10_000).day).toBe(Math.floor(3.6 * MONTH_DAYS));
+    expect(advance(0, 1000, 'threeYears', 10_000).day).toBe(Math.floor(3.6 * MONTH_DAYS));
+    expect(advance(0, 100, 'threeYears', 10_000).t).toBeCloseTo(0.1 * 36 * MONTH_DAYS, 9);
   });
 });
 
@@ -48,7 +53,7 @@ describe('advance', () => {
   });
 
   it('keeps day within [asOf, HORIZON] and non-decreasing for any frame sequence', () => {
-    const speed = fc.constantFrom<Speed>('month', 'year', 'threeYears');
+    const speed = fc.constantFrom<Speed>('year', 'threeYears');
     fc.assert(
       fc.property(
         fc.array(fc.tuple(fc.double({ min: 0, max: 10000, noNaN: true }), speed), {

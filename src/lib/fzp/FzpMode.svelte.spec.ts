@@ -502,7 +502,7 @@ describe('FzpMode rerolls and the representative flag', () => {
     await another().click();
     s.w().emit(timelineMsg(s.w().lastOf('reroll')!.rev, 8));
     await expect.element(await futureLine()).toHaveTextContent(/^This future: #8$/);
-    await expect.element(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('a failed-reroll notice does not come back after a crash Retry', async () => {
@@ -805,11 +805,11 @@ describe('FzpMode map, layout and lifecycle', () => {
     await toReady(s);
     const play = page.getByRole('button', { name: 'Play', exact: true });
     await play.click();
-    await expect.element(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'true');
     pick({ projectId: 'pr-1', parcelId: 'p1', x: 10, y: 10, kind: 'tap' });
     await answerLastSummary(s.w(), summary(REAL_ACTUAL));
     await expect.element(page.getByTestId('card-badge')).toBeVisible();
-    await expect.element(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'true');
     (
       (await details())
         .getByRole('button', { name: 'Where these numbers come from' })
@@ -817,7 +817,7 @@ describe('FzpMode map, layout and lifecycle', () => {
         .element() as HTMLElement
     ).click();
     await expect.element(page.getByRole('dialog')).toBeVisible();
-    await expect.element(page.getByTestId('fzp-play-label')).toHaveTextContent(/^Play$/);
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('sets the map inset from the scrubber and --fzp-scrubber-h on its root', async () => {
@@ -1431,7 +1431,7 @@ describe('FzpMode Setup and Run (/sim, spec §1)', () => {
     expect(debug().day).toBe(ASOF);
     s.w().emit(timelineMsg(rev, 7)); // the sent rev's timeline
     await expect.poll(() => debug().playing).toBe(true);
-    await expect.element(playLabel()).toHaveTextContent(/^Pause$/);
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it("the day can't move in Setup", async () => {

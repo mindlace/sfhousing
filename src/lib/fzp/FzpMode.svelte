@@ -794,6 +794,7 @@
       asOf,
       horizon: HORIZON,
       playing,
+      speed,
       score,
       runPhase: runPhase ?? null,
       levers: {

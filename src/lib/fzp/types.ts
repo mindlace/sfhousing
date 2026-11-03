@@ -4,8 +4,8 @@ import type { Stage } from '$lib/timelapse/types';
 
 export type FzpPhase = 'loading' | 'ready' | 'failed' | 'no-scenario';
 
-/** Playback speed choice. */
-export type Speed = 'month' | 'year' | 'threeYears';
+/** Playback speed: Play runs at `year`, Faster at `threeYears`. */
+export type Speed = 'year' | 'threeYears';
 
 /** The scoreboard at one month (score-view.ts, pure). */
 export interface ScoreAt {
