@@ -4,7 +4,7 @@
 // full-height routes; the map's inset follows the sheet, which the header score opens on Results;
 // the brush status is a pill under the header; the palette strip leaves the map controls uncovered.
 // From 768 px the dock is a panel on the left of the map.
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { MSG } from '../src/lib/brush/messages';
 import { COPY } from '../src/lib/sharing/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
@@ -387,23 +387,26 @@ test.describe('medium width', () => {
 
   // From md to lg the dock is the desktop panel, but the header is the Menu layout: the Paint
   // button that folds the dock waits in the Menu with the other actions.
+  const open: Record<'/' | '/p/:id', (page: Page, request: APIRequestContext) => Promise<void>> = {
+    '/': (page) => gotoEditor(page),
+    '/p/:id': async (page, request) => {
+      const res = await request.post('/api/plans', {
+        data: smallText,
+        headers: { 'content-type': 'application/json' }
+      });
+      expect(res.ok()).toBe(true);
+      const { id } = (await res.json()) as { id: string };
+      await page.goto(`/p/${id}`);
+      await waitForMap(page);
+    }
+  };
   for (const path of ['/', '/p/:id'] as const) {
     test(`768 px on ${path}: the header is the Menu layout and Paint folds the dock from the Menu`, async ({
       page,
       request
     }) => {
       await page.setViewportSize({ width: 768, height: 1024 });
-      if (path === '/') await gotoEditor(page);
-      else {
-        const res = await request.post('/api/plans', {
-          data: smallText,
-          headers: { 'content-type': 'application/json' }
-        });
-        expect(res.ok()).toBe(true);
-        const { id } = (await res.json()) as { id: string };
-        await page.goto(`/p/${id}`);
-        await waitForMap(page);
-      }
+      await open[path](page, request);
       const banner = page.getByRole('banner');
       const menu = banner.getByRole('button', { name: 'Menu', exact: true });
       const paint = banner.getByRole('button', { name: 'Paint', exact: true });
