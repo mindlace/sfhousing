@@ -11,12 +11,15 @@ import { dayFromUtc, monthIndex, utcParts } from './time';
 
 export const CHART_H = 140;
 
-/** Stroke colours (spec §4.6): each has at least 3:1 contrast on white (SC 1.4.11). */
+/**
+ * Stroke colours (spec §4.6) as the custom properties layout.css defines per theme; each has at
+ * least 3:1 contrast on its theme's surfaces (SC 1.4.11, checked in accent.spec.ts).
+ */
 export const COLORS = {
-  total: '#1d4ed8',
-  pipeline: '#374151',
-  fresh: '#b45309',
-  plan: '#6d28d9'
+  total: 'var(--chart-total)',
+  pipeline: 'var(--chart-pipeline)',
+  fresh: 'var(--chart-fresh)',
+  plan: 'var(--chart-plan)'
 } as const;
 
 export const SERIES_NAME: Record<

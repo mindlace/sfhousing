@@ -29,7 +29,18 @@ const SCANNED = [
 const THEMED_FILES = [
   'src/lib/shell/NoticePills.svelte',
   'src/lib/sim-page/SimNotices.svelte',
-  'src/lib/fzp/FzpMode.svelte'
+  'src/lib/fzp/FzpMode.svelte',
+  'src/lib/fzp/SimResults.svelte',
+  'src/lib/fzp/ScoreChart.svelte',
+  'src/lib/fzp/MapKey.svelte',
+  'src/lib/scoreboard/TargetRow.svelte'
+];
+/** Themed files whose colours come from tokens and custom properties only: no hex at all. */
+const NO_HEX_FILES = [
+  'src/lib/fzp/SimResults.svelte',
+  'src/lib/fzp/ScoreChart.svelte',
+  'src/lib/fzp/MapKey.svelte',
+  'src/lib/scoreboard/TargetRow.svelte'
 ];
 const BLUE_HEX = /#(1d4ed8|2563eb|1e40af|3b82f6|1e3a8a)\b/i;
 const BLUE_RGB = /rgb\(\s*(29[ ,]+78[ ,]+216|37[ ,]+99[ ,]+235)\s*\)/i;
@@ -72,6 +83,32 @@ describe('app accent tokens', () => {
   it('the time bar uses tokens, not hex', () => {
     const src = readFileSync(fromRoot('src/lib/fzp/TimeScrubber.svelte'), 'utf8');
     expect(src).not.toMatch(/#[0-9a-fA-F]{3,6}\b/);
+  });
+  it('the chart, results and target row carry no hex of their own', () => {
+    for (const f of NO_HEX_FILES) {
+      expect(readFileSync(fromRoot(f), 'utf8'), f).not.toMatch(/#[0-9a-fA-F]{3,6}\b/);
+    }
+  });
+  it('chart strokes are >= 3:1 on the surfaces of their theme, labels >= 4.5:1', () => {
+    const light = /:root\s*\{([^}]*--chart-[^}]*)\}/s.exec(css)?.[1] ?? '';
+    const dark = /prefers-color-scheme:\s*dark\)\s*\{\s*:root\s*\{([^}]*)\}/s.exec(css)?.[1] ?? '';
+    const vars = (block: string) => {
+      const out: Record<string, string> = {};
+      for (const m of block.matchAll(/--chart-([\w-]+):\s*(#[0-9a-fA-F]{6})\s*;/g))
+        out[m[1]] = m[2];
+      return out;
+    };
+    expect(vars(dark)['total']).toBeDefined();
+    const themes = [
+      { v: vars(light), surfaces: ['surface', 'surface-raised'] },
+      { v: { ...vars(light), ...vars(dark) }, surfaces: ['surface-dark', 'surface-dark-raised'] }
+    ];
+    for (const { v, surfaces } of themes)
+      for (const s of surfaces) {
+        for (const k of ['total', 'pipeline', 'fresh', 'plan', 'vertical', 'ink'])
+          expect(contrast(v[k], tok[s]), `${k} on ${s}`).toBeGreaterThanOrEqual(3);
+        expect(contrast(v['label'], tok[s]), `label on ${s}`).toBeGreaterThanOrEqual(4.5);
+      }
   });
   it('themed files use surface and ink tokens, not bg-white or text-black', () => {
     for (const f of THEMED_FILES) {

@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+/// <reference types="@vitest/browser-playwright" />
+import { afterEach, describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { page } from 'vitest/browser';
+import { cdp, page } from 'vitest/browser';
 import '../../routes/layout.css';
 import { chartLabel, chartModel, tableRows } from './chart';
 import {
@@ -95,11 +96,11 @@ describe('ScoreChart', () => {
     await render(ScoreChart, { props: props() });
     const attr = (key: string, name: string) =>
       document.querySelector(`[data-series="${key}"]`)!.getAttribute(name);
-    expect(attr('total', 'stroke')).toBe('#1d4ed8');
+    expect(attr('total', 'stroke')).toBe('var(--chart-total)');
     expect(attr('total', 'stroke-width')).toBe('2.5');
     expect(attr('pipeline', 'stroke-dasharray')).toBe('6 3');
-    expect(attr('fresh', 'stroke')).toBe('#b45309');
-    expect(attr('planCompleted', 'stroke')).toBe('#6d28d9');
+    expect(attr('fresh', 'stroke')).toBe('var(--chart-fresh)');
+    expect(attr('planCompleted', 'stroke')).toBe('var(--chart-plan)');
     expect(attr('planEntitled', 'stroke-dasharray')).toBe('2 2');
     expect(attr('band', 'fill-opacity')).toBe('0.15');
   });
@@ -158,5 +159,41 @@ describe('ScoreChart', () => {
     const ys = [...d.matchAll(/ (-?[\d.]+)/g)].map((m) => Number(m[1]));
     expect(Math.min(...ys)).toBeGreaterThanOrEqual(0);
     expect(Math.max(...ys)).toBeLessThanOrEqual(140);
+  });
+});
+
+describe('ScoreChart themes', () => {
+  const scheme = (value: 'light' | 'dark') =>
+    cdp().send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-color-scheme', value }]
+    });
+  afterEach(() => scheme('light'));
+
+  it('resolves every stroke, label and halo, and they change with the scheme', async () => {
+    await page.viewport(1024, 768);
+    await render(ScoreChart, { props: props() });
+    const st = (sel: string, prop: 'stroke' | 'fill') =>
+      getComputedStyle(document.querySelector(sel)!)[prop];
+    const read = () => [
+      st('[data-series="total"]', 'stroke'),
+      st('[data-series="pipeline"]', 'stroke'),
+      st('[data-series="fresh"]', 'stroke'),
+      st('[data-series="planCompleted"]', 'stroke'),
+      st('[data-series="rhna"]', 'stroke'),
+      st('[data-cursor]', 'stroke'),
+      st('[data-vertical]', 'stroke'),
+      st('svg[role="img"] text', 'fill'),
+      st('svg[role="img"] text', 'stroke')
+    ];
+    await scheme('light');
+    const light = read();
+    await scheme('dark');
+    await expect.poll(read).not.toEqual(light);
+    const dark = read();
+    light.forEach((v, k) => {
+      expect(v, `light ${k}`).toMatch(/^rgb/);
+      expect(dark[k], `dark ${k}`).toMatch(/^rgb/);
+      expect(dark[k], `dark ${k} differs`).not.toBe(v);
+    });
   });
 });
