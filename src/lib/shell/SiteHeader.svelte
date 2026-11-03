@@ -1,8 +1,8 @@
 <!--
-  The site header. From md: the site name, the mode links, the page's status, then (on the
-  right) the pinned item and the actions. Below md: the site name, the status, the pinned item
+  The site header. From xl: the site name, the mode links, the page's status, then (on the
+  right) the pinned item and the actions. Below xl: the site name, the status, the pinned item
   and a hamburger Menu button whose panel (under the header) holds the mode links and the
-  actions. The status and the actions render once at every width: from md the panel is
+  actions. The status and the actions render once at every width: from xl the panel is
   `display: contents`, so the actions sit in the header row.
 -->
 <script lang="ts">
@@ -22,7 +22,7 @@
     routeId?: string | null;
   } = $props();
 
-  const WIDE = '(min-width: 768px)';
+  const WIDE = '(min-width: 1280px)';
   const uid = $props.id();
   const panelId = `${uid}-menu`;
 
@@ -32,7 +32,7 @@
   // The current one is filled with the accent; the other carries a resting border so it reads as
   // pressable. Both take a 1 px border so their sizes match.
   const link =
-    'inline-flex min-h-6 items-center whitespace-nowrap rounded-md border px-2 no-underline md:max-xl:px-1 md:max-lg:px-0.5 pointer-coarse:min-h-11 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent dark:focus-visible:outline-accent-dark';
+    'inline-flex min-h-6 items-center whitespace-nowrap rounded-md border px-2 no-underline pointer-coarse:min-h-11 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent dark:focus-visible:outline-accent-dark';
   const tab = (current: boolean) => [
     link,
     current
@@ -106,29 +106,26 @@
   >
   <a href="/sim" class={tab(onSim)} aria-current={onSim ? 'page' : undefined}>Simulate</a>
   <a href="/lesscars" class={tab(onLessCars)} aria-current={onLessCars ? 'page' : undefined}
-    ><span class="max-xl:sr-only">Fewer </span>cars</a
+    >Fewer cars</a
   >
 {/snippet}
 
 <header
   bind:this={header}
   class={[
-    'relative flex h-12 items-center justify-between gap-2 border-b bg-white px-4 text-gray-900 md:max-lg:px-2 dark:border-gray-700 dark:bg-chrome-dark dark:text-gray-100',
-    pinned && 'md:grid md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]'
+    'relative flex h-12 items-center justify-between gap-2 border-b bg-white px-4 text-gray-900 dark:border-gray-700 dark:bg-chrome-dark dark:text-gray-100',
+    pinned && 'xl:grid xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]'
   ]}
 >
   <div class={pinned ? 'flex min-w-0 flex-1 items-center gap-2' : 'contents'}>
     <a href="/" class="shrink-0 font-semibold whitespace-nowrap"
       >SF Housing <span class="sr-only lg:not-sr-only">Simulator</span></a
     >
-    <nav
-      aria-label="Modes"
-      class="flex shrink-0 items-center gap-3 text-sm max-md:hidden md:max-xl:gap-1 md:max-xl:text-xs md:max-lg:gap-0.5"
-    >
+    <nav aria-label="Modes" class="flex shrink-0 items-center gap-3 text-sm max-xl:hidden">
       {@render modeLinks()}
     </nav>
     <!-- The status, then the space that pushes the pinned item and the actions right. -->
-    <div class="flex min-w-0 flex-1 items-center md:pl-2 md:max-xl:pl-0" data-header-status>
+    <div class="flex min-w-0 flex-1 items-center xl:pl-2" data-header-status>
       {@render status?.()}
     </div>
   </div>
@@ -138,7 +135,7 @@
   <button
     bind:this={menuButton}
     type="button"
-    class="inline-flex min-h-8 min-w-8 shrink-0 items-center justify-center rounded-md border border-gray-300 md:hidden dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+    class="inline-flex min-h-8 min-w-8 shrink-0 items-center justify-center rounded-md border border-gray-300 xl:hidden dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
     aria-label="Menu"
     aria-expanded={open}
     aria-controls={panelId}
@@ -154,17 +151,17 @@
     bind:this={panel}
     id={panelId}
     class={[
-      'md:contents',
+      'xl:contents',
       open
-        ? 'max-md:absolute max-md:inset-x-0 max-md:top-full max-md:z-50 max-md:flex max-md:flex-col max-md:gap-3 max-md:border-b max-md:bg-white max-md:p-4 max-md:shadow-lg dark:max-md:border-gray-700 dark:max-md:bg-chrome-dark'
-        : 'max-md:hidden'
+        ? 'max-xl:absolute max-xl:inset-x-0 max-xl:top-full max-xl:z-50 max-xl:flex max-xl:flex-col max-xl:gap-3 max-xl:border-b max-xl:bg-white max-xl:p-4 max-xl:shadow-lg dark:max-xl:border-gray-700 dark:max-xl:bg-chrome-dark'
+        : 'max-xl:hidden'
     ]}
     onclick={onpanelclick}
   >
-    <nav aria-label="Modes" class="flex flex-wrap items-center gap-4 text-sm md:hidden">
+    <nav aria-label="Modes" class="flex flex-wrap items-center gap-4 text-sm xl:hidden">
       {@render modeLinks()}
     </nav>
-    <div class="flex items-center gap-2 max-md:flex-wrap md:justify-self-end">
+    <div class="flex items-center gap-2 max-xl:flex-wrap xl:justify-self-end">
       {@render actions?.()}
     </div>
   </div>

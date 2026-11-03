@@ -351,9 +351,9 @@ The lesscars tests add no measurable time, far under the 60 s threshold, so noth
 plays the stored representative future of the plan from `LESSCARS_START` (2028-01-01) to
 `LESSCARS_HORIZON` (2068-12-31). It opens paused at the start; nobody edits anything but the day
 (scrub, play) and the map. The header has a "Fewer cars" mode link to it (third after Paint and
-Simulate, `aria-current` on the route; in the Menu below 768 px). From md the link text is "cars"
-until xl, with the full "Fewer cars" as its accessible name, and the mode nav is a step smaller and
-tighter, so the `/sim` row fits at 768 and 1024 px.
+Simulate, `aria-current` on the route). From xl (1280 px) the mode links sit inline in the header;
+below xl the header is the phone layout and the links and the actions are in the Menu. The link
+text is always "Fewer cars": at 768 and 1024 px the `/sim` row did not fit inline with it.
 
 | Area                                       | Code                                                             |
 | ------------------------------------------ | ---------------------------------------------------------------- |
@@ -429,7 +429,7 @@ representative seed voids both reservations.
 The headline (`summary.extra.mean` at 2068, with the p10 to p90 band) sits in the header's
 pinned slot as one button; it opens the details (breakdown that adds to the headline, chart,
 amenities note, map key, evidence). Timeline and Evidence are header actions, in the Menu below
-768 px.
+1280 px.
 
 ### Scrubber markers
 

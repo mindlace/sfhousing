@@ -66,8 +66,8 @@ const policyPanel = () => document.querySelector('[data-testid="policy-panel"]')
 const sfhFzp = () => document.querySelector('.sfh-fzp') as HTMLElement;
 
 describe('SimPage policy panel', () => {
-  it('opens docked by default at 1024 px, without moving focus', async () => {
-    await page.viewport(1024, 768);
+  it('opens docked by default at 1280 px, without moving focus', async () => {
+    await page.viewport(1280, 800);
     await setup();
     const region = page.getByRole('region', { name: 'Policy' });
     await expect.element(region).toBeVisible();
@@ -103,7 +103,7 @@ describe('SimPage policy panel', () => {
   });
 
   it('opening it with the button moves focus into the docked panel', async () => {
-    await page.viewport(1024, 768);
+    await page.viewport(1280, 800);
     await setup();
     await page.getByRole('button', { name: 'Close policy' }).click();
     await expect.element(policyButton()).toHaveAttribute('aria-expanded', 'false');
@@ -469,7 +469,7 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
   });
 
   it('Share link after publish, Publish again after an edit', async () => {
-    await page.viewport(1024, 768);
+    await page.viewport(1280, 800);
     const fetchFn = vi.fn(
       async () =>
         new Response(JSON.stringify({ id: 'AbCdEfGh' }), {
@@ -882,7 +882,7 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
 
   it('the View menu and the limits layer show in Setup only', async () => {
     stub.reset();
-    await page.viewport(1024, 768);
+    await page.viewport(1280, 800);
     await setup();
     await toReady();
     await expect.element(viewButton()).toBeVisible();
@@ -1000,7 +1000,7 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
 
   it('a stored heightLimits: false draws nothing until turned on', async () => {
     stub.reset();
-    await page.viewport(1024, 768);
+    await page.viewport(1280, 800);
     const mem = new MemoryStorage();
     mem.setItem(
       VIEW_KEY,
@@ -1135,7 +1135,7 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
 
   it('toggles survive a run', async () => {
     stub.reset();
-    await page.viewport(1024, 768);
+    await page.viewport(1280, 800);
     await setup();
     await toReady();
     await viewButton().click();
@@ -1148,7 +1148,7 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
   });
 
   it('without transit the menu has only the height-limits row', async () => {
-    await page.viewport(1024, 768);
+    await page.viewport(1280, 800);
     await setup({ manifest: { ...manifest, transit: undefined } });
     await toReady();
     await viewButton().click();
@@ -1160,7 +1160,7 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
 
   it('the rows follow the manifest the map renders: a Retry after a failed load brings transit', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    await page.viewport(1024, 768);
+    await page.viewport(1280, 800);
     await setup({ manifest: null, manifestError: true });
     const retry = page.getByRole('button', { name: 'Retry', exact: true });
     await expect.element(retry).toBeVisible();
@@ -1178,7 +1178,7 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
 
   it('the prefs are read from and written to the page storage', async () => {
     stub.reset();
-    await page.viewport(1024, 768);
+    await page.viewport(1280, 800);
     const mem = new MemoryStorage();
     mem.setItem(VIEW_KEY, JSON.stringify({ transitStops: true, transitAccess: true }));
     await setup({ storage: () => mem });
@@ -1195,7 +1195,7 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
 
   it('the view (/s/:id) shows the View menu in Setup', async () => {
     stub.reset();
-    await page.viewport(1024, 768);
+    await page.viewport(1280, 800);
     await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY });
     await toReady();
     await expect.element(viewButton()).toBeVisible();
