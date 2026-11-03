@@ -292,7 +292,8 @@ export async function build(
         records,
         planPath: fixtureMode ? LESSCARS_PLAN_JSON.fixture : LESSCARS_PLAN_JSON.live,
         profile: opts.profile,
-        capDay: asOf
+        capDay: asOf,
+        freewayLand
       })
     );
     report.warnings.push(...lesscars.warnings);

@@ -65,6 +65,7 @@ import {
 import { readFreedSites } from '../lib/lesscars/sites';
 import { LESSCARS_FILES, POLICY_BIN } from '../lib/scenario-files';
 import { LC } from '../lesscars-config';
+import type { FreewayLandFile, FreewaySegment } from '../lib/lesscars/freeway-land';
 import { CALIBRATION_JSON } from './calibration';
 import { carveFreedLand, removalsOf } from './lesscars-sql';
 import { readPolicyBin } from './policy';
@@ -138,7 +139,8 @@ async function dataProblems(
   db: Duck,
   plan: LessCarsPlan,
   parcels: ScenarioParcels,
-  transit: TransitNetwork
+  transit: TransitNetwork,
+  freewayLand: FreewayLandFile | null
 ): Promise<string[]> {
   const out: string[] = [];
   const streetRows = await db.all<{ cnn: string }>(
@@ -161,6 +163,10 @@ async function dataProblems(
     return stopIds.has(id) ? null : `stop ${id} is not in transit.json`;
   };
   const byId = new Map(plan.projects.map((p) => [p.id, p]));
+  /** Catalog parcel → its segment. */
+  const catalogSegment = new Map<string, FreewaySegment>();
+  for (const seg of freewayLand?.segments ?? [])
+    for (const id of seg.parcels) catalogSegment.set(id, seg);
   const parking: { project: PlanProject; parcel: string; deps: PlanProject[] }[] = [];
 
   for (const { owner, cnn } of cnnsOf(plan))
@@ -183,6 +189,36 @@ async function dataProblems(
             `${p.id}.routeIds: route ${r} has no ${RAISE_MODES[p.kind].join(' or ')} pattern ` +
               'in transit.json'
           );
+    if (p.kind === 'highway-truncation' && p.freewayLand) {
+      for (const id of p.freewayLand.parcels) {
+        const row = parcels.index.get(id);
+        if (row === undefined) {
+          out.push(`${p.id}.freewayLand: parcel ${id} is not in parcels.bin`);
+          continue;
+        }
+        const homes = parcels.existingUnits[row];
+        if (homes !== 0)
+          out.push(
+            `${p.id}.freewayLand: parcel ${id} has ${homes} existing homes; the plan takes none`
+          );
+        const seg = catalogSegment.get(id);
+        if (seg === undefined)
+          out.push(
+            `${p.id}.freewayLand: parcel ${id} is not freeway land in freeway-land.json; ` +
+              'freeing it would count its homes twice'
+          );
+        else if (seg.removedBy !== p.id)
+          out.push(
+            `${p.id}.freewayLand: parcel ${id} is freeway land of ${seg.id}, ` +
+              `removed by ${seg.removedBy ?? 'none'}`
+          );
+      }
+      for (const e of p.freewayLand.excluded)
+        if (!parcels.index.has(e.parcel))
+          out.push(`${p.id}.freewayLand: parcel ${e.parcel} is not in parcels.bin`);
+    }
+    if (p.kind === 'parking-conversion' && catalogSegment.has(p.parcel))
+      out.push(`${p.id}.parcel: parcel ${p.parcel} is freeway land; only a garage may stand on it`);
     let field: string | null = null;
     let id: string | null = null;
     if (p.kind === 'parking-conversion') [field, id] = ['parcel', p.parcel];
@@ -298,6 +334,8 @@ export async function writeLessCars(a: {
   planPath: string | null;
   profile: InvariantProfile;
   capDay: Day;
+  /** The freeway-land catalog; null: no catalog. */
+  freewayLand: FreewayLandFile | null;
 }): Promise<{ written: boolean; counts: Record<string, number>; warnings: string[] }> {
   if (a.planPath === null || !existsSync(a.planPath))
     return { written: false, counts: {}, warnings: [] };
@@ -311,7 +349,7 @@ export async function writeLessCars(a: {
   const transit = decodeTransit(JSON.parse(readFileSync(join(outDir, 'transit.json'), 'utf8')));
   const problems = [
     ...checkPlan(plan, schedule).map((p) => `${p.project}.${p.code}: ${p.message}`),
-    ...(await dataProblems(db, plan, parcels, transit))
+    ...(await dataProblems(db, plan, parcels, transit, a.freewayLand))
   ];
   if (problems.length > 0)
     throw new BuildError(

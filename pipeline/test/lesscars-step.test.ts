@@ -13,7 +13,8 @@ import {
   parseSummary
 } from '../../src/lib/data/lesscars/codec';
 import { FIXTURE_PROFILE } from '../config';
-import { LESSCARS_PLAN_JSON } from '../lesscars-config';
+import { LESSCARS_FREEWAY_LAND_JSON, LESSCARS_PLAN_JSON } from '../lesscars-config';
+import { readFreewayLand, type FreewayLandFile } from '../lib/lesscars/freeway-land';
 import { LESSCARS_FILES } from '../lib/scenario-files';
 import { CALIBRATION_JSON } from '../steps/calibration';
 import { writeLessCars, zeroYieldSites } from '../steps/lesscars';
@@ -32,7 +33,7 @@ beforeAll(async () => {
     cpSync(join(MINI, 'golden', f), join(m.outDir, f));
 });
 
-function args(planPath: string | null) {
+function args(planPath: string | null, freewayLand: FreewayLandFile | null = null) {
   outDir = mkdtempSync(join(tmpdir(), 'sfh-lesscars-step-'));
   cpSync(m.outDir, outDir, { recursive: true });
   return {
@@ -42,20 +43,21 @@ function args(planPath: string | null) {
     records: m.records,
     planPath,
     profile: FIXTURE_PROFILE,
-    capDay: m.capDay
+    capDay: m.capDay,
+    freewayLand
   };
 }
 
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 const project = (plan: Json, id: string): Json => plan.projects.find((p: Json) => p.id === id);
 
-function withPlan(edit: (plan: Json) => void) {
+function withPlan(edit: (plan: Json) => void, freewayLand: FreewayLandFile | null = null) {
   const plan = JSON.parse(readFileSync(LESSCARS_PLAN_JSON.fixture, 'utf8')) as Json;
   edit(plan);
   const dir = mkdtempSync(join(tmpdir(), 'sfh-lesscars-plan-'));
   const path = join(dir, 'plan.json');
   writeFileSync(path, JSON.stringify(plan));
-  return args(path);
+  return args(path, freewayLand);
 }
 
 const unknownCnn = (p: Json) => (project(p, 'ped').segments = [{ cnn: ['99999'] }]);
@@ -190,5 +192,64 @@ describe('writeLessCars', () => {
   it('a plan that does not parse fails the build', async () => {
     await expect(writeLessCars(withPlan((p) => (p.schema = 2)))).rejects.toThrow('schema');
     expect(existsSync(join(outDir, 'scenarios/lesscars'))).toBe(false);
+  });
+});
+
+describe('freewayLand checks', () => {
+  const FIXTURE_CATALOG = readFreewayLand(LESSCARS_FREEWAY_LAND_JSON.fixture)!;
+  /** The fixture catalog with its one segment changed. */
+  const catalog = (change: { parcels?: string[]; removedBy?: string | null }): FreewayLandFile => ({
+    schema: 1,
+    segments: [{ ...FIXTURE_CATALOG.segments[0], ...change }]
+  });
+  const step = (edit: (p: Json) => void, o: { freewayLand: FreewayLandFile }) =>
+    writeLessCars(withPlan(edit, o.freewayLand));
+  const withFreed = (parcel: string) => (p: Json) =>
+    (project(p, 'hwy').freewayLand = { parcels: [parcel], excluded: [] });
+  const parkingOn = (parcel: string) => (p: Json) => (project(p, 'parking').parcel = parcel);
+  const garageOn = (parcel: string) => (p: Json) => (project(p, 'garage').site = { parcel });
+
+  it('a freewayLand parcel outside the catalog fails as counted twice', async () => {
+    await expect(step(withFreed('3512017'), { freewayLand: FIXTURE_CATALOG })).rejects.toThrow(
+      /hwy\.freewayLand: parcel 3512017 is not freeway land/
+    );
+  });
+
+  it('a freewayLand parcel with homes, or not in parcels.bin, fails', async () => {
+    await expect(
+      step(withFreed('3512018'), { freewayLand: catalog({ parcels: ['3512018'] }) })
+    ).rejects.toThrow(/parcel 3512018 has 2 existing homes/);
+    await expect(step(withFreed('nope'), { freewayLand: FIXTURE_CATALOG })).rejects.toThrow(
+      /hwy\.freewayLand: parcel nope is not in parcels.bin/
+    );
+  });
+
+  it('an excluded parcel must be in parcels.bin', async () => {
+    const edit = (p: Json) =>
+      (project(p, 'hwy').freewayLand = {
+        parcels: ['3512019'],
+        excluded: [{ parcel: 'nope', reason: 'a park' }]
+      });
+    await expect(step(edit, { freewayLand: FIXTURE_CATALOG })).rejects.toThrow(
+      /hwy\.freewayLand: parcel nope is not in parcels.bin/
+    );
+  });
+
+  it('a phase may not free a kept freeway’s land, nor another phase’s', async () => {
+    await expect(
+      step(withFreed('3512019'), { freewayLand: catalog({ removedBy: null }) })
+    ).rejects.toThrow(/parcel 3512019 is freeway land of fx-i80, removed by none/);
+    await expect(
+      step(withFreed('3512019'), { freewayLand: catalog({ removedBy: 'other' }) })
+    ).rejects.toThrow(/removed by other/);
+  });
+
+  it('a parking conversion on freeway land fails; a garage there passes', async () => {
+    await expect(step(parkingOn('3512019'), { freewayLand: FIXTURE_CATALOG })).rejects.toThrow(
+      /parking\.parcel: parcel 3512019 is freeway land/
+    );
+    await expect(
+      step(garageOn('3512019'), { freewayLand: FIXTURE_CATALOG })
+    ).resolves.toMatchObject({ written: true });
   });
 });

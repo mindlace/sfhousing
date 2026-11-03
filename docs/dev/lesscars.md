@@ -43,7 +43,7 @@ and their own fields:
 | `tram-priority`      | `routeIds`, `segments`, `peakTph`                           | no               |
 | `bus-lane`           | `routeIds`, `stopIds`, `segments`, `peakTph`                | no (moves SB 79) |
 | `street-change`      | `segments`, `lanes`                                         | no               |
-| `highway-truncation` | `segments`, `rowHalfWidthM`, `build`                        | freed land       |
+| `highway-truncation` | `segments`, `rowHalfWidthM`, `build`, `freewayLand?`        | freed land       |
 | `street-removal`     | `segments`, `rowHalfWidthM`, `build`                        | freed land       |
 | `parking-conversion` | `parcel`, `build`                                           | parking site     |
 | `edge-garage`        | `site` (`{ project }` or `{ parcel }`), `spaces`            | no               |
@@ -75,6 +75,10 @@ Builder's calls on the format (Task 2):
 - An optional `opensAfter: string[]` on any project names projects this one must not open before.
   It is a check (`opens-before`), not a start constraint, and takes no part in cycle search. A plan
   without the key parses to an object without it.
+- An optional `freewayLand: { parcels, excluded }` on a `highway-truncation` (any other kind with
+  the key fails as `unknown key`) lists the freeway-land parcels the phase frees and the catalog
+  candidates it leaves out, each with a `reason`. A plan without the key parses to an object
+  without it.
 - Every `[lng, lat]` (stops, alignments, drawn lines) must have `lng` in [-180, 180] and `lat` in
   [-90, 90]; the parser rejects a swapped pair at its path.
 - A parking conversion's own start and duration are its clearance; its `build` is the housing.
@@ -98,7 +102,10 @@ From the plan alone (`checkPlan`, field = problem code): duplicate ids, unknown 
 cycles, `opens-before` (a project opening before one it names in `opensAfter`), dates outside
 2028-01-01 to 2068-12-31, a start before a dependency opens, a car closure with no transit
 dependency, **`fillmore`** (a closure before its transit opens), a build before its site is
-available, a garage on a site that is not a build-free removal, a reused site, a stop defined
+available, a garage on a site that is not a build-free removal, a reused site (a parcel is used
+once across parking conversions, garages and every truncation's `freewayLand`, except that one
+garage `{ parcel }` may share its parcel with one truncation's `freewayLand`: the garage stands
+on that phase's land), a stop defined
 twice, capacity (`maxConcurrent` per capacity kind), a parking conversion with no
 transit dependency, and a display whose id is reused or whose `from` names no project.
 
@@ -111,6 +118,13 @@ Against this dataset:
   priority: light rail and streetcar; bus lane: bus), the patterns `networkAt` raises (`routeIds`);
 - every parking and garage parcel is in parcels.bin with no existing homes: the plan demolishes no
   housing (`parcel`, `site`);
+- every `freewayLand` parcel is in parcels.bin with no existing homes, is in `freeway-land.json`
+  (otherwise freeing it would count its homes twice), and sits in a catalog segment whose
+  `removedBy` is this truncation: a kept freeway never frees its land, nor does another phase's
+  (`freewayLand`); every `excluded` parcel is in parcels.bin (`freewayLand`). With no catalog
+  every `freewayLand` parcel fails the catalog check;
+- a parking conversion on a catalog parcel fails: only a garage may stand on freeway land
+  (`parcel`);
 - every parking conversion is served: some stop of one of its direct transit dependencies (a
   transit line's stops, a bus lane's `stopIds`, the stops of a tram priority's routes) is within
   `SQL_VARS.tod_half_m` (½ mile) of the parcel's DataSF outline (`geom_orig`, EPSG:7131), the

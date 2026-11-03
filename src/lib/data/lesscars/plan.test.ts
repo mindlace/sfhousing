@@ -40,6 +40,32 @@ describe('parseLessCarsPlan', () => {
     expect('opensAfter' in parseLessCarsPlan(TINY_PLAN).projects[0]).toBe(false);
   });
 
+  it('freewayLand parses on a truncation and is absent when omitted', () => {
+    const land = tinyPlan((p) => {
+      const hwy = p.projects.find((x) => x.id === 'hwy') as unknown as Record<string, unknown>;
+      hwy.freewayLand = { parcels: ['3512019'], excluded: [] };
+    });
+    const hwy = (pl: LessCarsPlan) => pl.projects.find((x) => x.id === 'hwy')!;
+    expect(hwy(parseLessCarsPlan(land))).toMatchObject({
+      freewayLand: { parcels: ['3512019'], excluded: [] }
+    });
+    expect('freewayLand' in hwy(parseLessCarsPlan(TINY_PLAN))).toBe(false);
+  });
+
+  it('freewayLand on a street removal is an unknown key; an empty reason fails', () => {
+    const edit = (key: string, v: unknown) =>
+      tinyPlan((p) => {
+        (p.projects.find((x) => x.id === key) as unknown as Record<string, unknown>).freewayLand =
+          v;
+      });
+    expect(() => parseLessCarsPlan(edit('removal', { parcels: [], excluded: [] }))).toThrow(
+      /projects\.\d+\.freewayLand: unknown key/
+    );
+    expect(() =>
+      parseLessCarsPlan(edit('hwy', { parcels: [], excluded: [{ parcel: '1', reason: '' }] }))
+    ).toThrow(/freewayLand\.excluded\.0\.reason/);
+  });
+
   it('rejects a point outside lng/lat range, naming its path', () => {
     expect(failure((p) => (p.projects[0].stops[0].lngLat = [37.77, -122.43])).path).toBe(
       'projects.0.stops.0.lngLat'
