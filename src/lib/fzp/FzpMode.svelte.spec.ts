@@ -782,6 +782,8 @@ describe('FzpMode picks and summaries', () => {
   it('with cards off a tap opens no card; hover tooltips still show', async () => {
     const s = setup({ cards: false });
     await toReady(s);
+    // SimMap's own tap cards (a touch tap on a building) go with them.
+    expect(stub.props.tapCards).toBe(false);
     pick({ projectId: 'pr-1', parcelId: 'p1', x: 10, y: 10, kind: 'tap' });
     await new Promise((res) => setTimeout(res, 50));
     expect(s.w().lastSummary()).toBeUndefined();
@@ -802,8 +804,10 @@ describe('FzpMode picks and summaries', () => {
     pick({ projectId: 'pr-1', parcelId: 'p1', x: 10, y: 10, kind: 'tap' });
     await answerLastSummary(s.w(), summary(REAL_ACTUAL));
     await expect.element(page.getByTestId('card-badge')).toBeVisible();
+    expect(stub.props.tapCards).toBe(true);
     await (await s.r).rerender({ cards: false });
     await expect.poll(() => card().elements().length).toBe(0);
+    expect(stub.props.tapCards).toBe(false);
   });
 
   it('requestParcelSummary sends the scrubbed day without projectId and drops generated', async () => {

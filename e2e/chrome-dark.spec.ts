@@ -268,7 +268,8 @@ test('an open project card has no axe violations in dark', async ({ isMobile, pa
   const i = chunk.id.indexOf(own);
   const at: LngLat = [chunk.label[2 * i] / 1e7, chunk.label[2 * i + 1] / 1e7];
 
-  await gotoSim(page);
+  // Cards open only in a run (in Set Policy a click selects a layer).
+  await gotoSim(page, { run: true });
   await jumpAndIdle(page, { ...FRAME, center: at });
   const card = page.getByRole('region', { name: real.label ?? real.id, exact: true });
   await expect(async () => {

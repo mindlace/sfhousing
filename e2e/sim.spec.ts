@@ -557,23 +557,31 @@ const pressedRows = (page: Page): Locator =>
     '[data-layer-row] > button[aria-pressed="true"], [data-paint-row][aria-pressed="true"]'
   );
 
+/**
+ * Adds a transit layer at 20 stories (taller than FZP on the fixture's lots, so it sets their
+ * limit), deselects it so a click is what selects it again, leaves the Transit tab and waits for
+ * its revision to be in force. Returns its row.
+ */
+async function addTallLayer(page: Page): Promise<Locator> {
+  const before = (await leverStatus(page)).sentRev;
+  const row = await addTransitLayer(page);
+  const inner = row.getByRole('group', { name: 'Band 1' });
+  for (let k = 0; k < 14; k++)
+    await inner.getByRole('button', { name: 'More stories, band 1', exact: true }).click();
+  await expect(inner).toContainText('20 stories');
+  await selectButton(row).click();
+  await expect(selectButton(row)).toHaveAttribute('aria-pressed', 'false');
+  await openTab(page, 'Protect');
+  await waitCurrentAfter(page, before);
+  return row;
+}
+
 test('clicking a lot in Set Policy selects the transit layer that sets its limit', async ({
   isMobile,
   page
 }) => {
   await gotoSim(page);
-  const before = (await leverStatus(page)).sentRev;
-  const row = await addTransitLayer(page);
-  // Taller than FZP on the fixture's lots, so the layer sets their limit.
-  const inner = row.getByRole('group', { name: 'Band 1' });
-  for (let k = 0; k < 14; k++)
-    await inner.getByRole('button', { name: 'More stories, band 1', exact: true }).click();
-  await expect(inner).toContainText('20 stories');
-  // Deselect it, so the click is what selects it again.
-  await selectButton(row).click();
-  await expect(selectButton(row)).toHaveAttribute('aria-pressed', 'false');
-  await openTab(page, 'Protect');
-  await waitCurrentAfter(page, before);
+  const row = await addTallLayer(page);
 
   await clickMapAt(page, isMobile, LOT_X);
   await expect(tabOf(page, 'Transit')).toHaveAttribute('aria-selected', 'true');
@@ -591,6 +599,27 @@ test('clicking a lot in Set Policy selects the transit layer that sets its limit
   // A click on no lot clears the selection.
   await clickMapAt(page, isMobile, NO_LOT);
   await expect(pressedRows(page)).toHaveCount(0);
+});
+
+test('a tap on a built lot in Set Policy only selects: no building card or tooltip', async ({
+  isMobile,
+  page
+}) => {
+  test.skip(!isMobile, 'a touch tap; the desktop click never opened a building card');
+  await gotoSim(page);
+  // 3512014: fixture-0's 60 m, 40-unit building (map.spec E4 taps its card on the editor). FZP
+  // allows it 65 stories, so FZP sets its limit.
+  const lot: [number, number] = [-122.4179679, 37.7601348];
+  await jumpAndIdle(page, { center: lot, zoom: 17, pitch: 0, bearing: 0 });
+  const [x, y] = await projectToPage(page, lot);
+  await page.touchscreen.tap(x, y);
+  const fzpRow = panel(page).getByRole('button', { name: 'FZP baseline', exact: true });
+  await expect(fzpRow).toHaveAttribute('aria-pressed', 'true');
+  await expect(pressedRows(page)).toHaveCount(1);
+  // SimMap shows its card at once on a tap: none, then or after the selection.
+  const mapRoot = page.getByTestId('map-root');
+  await expect(mapRoot.locator('.sim-map-card')).toHaveCount(0);
+  await expect(mapRoot.getByRole('tooltip')).toHaveCount(0);
 });
 
 test('clicking inside a painted stroke opens the Paint tab on that area', async ({

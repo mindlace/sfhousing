@@ -111,7 +111,8 @@
     onready = undefined,
     view = undefined,
     fetchTransit = undefined,
-    timelinePick = undefined
+    timelinePick = undefined,
+    tapCards = true
   }: SimMapProps = $props();
 
   type PaintProp = Parameters<MapLibreMap['setPaintProperty']>[1];
@@ -413,6 +414,14 @@
   $effect(() => {
     const t = theme;
     untrack(() => applyTheme(t));
+  });
+
+  // Tap cards turned off (/sim's Set Policy): an open card closes.
+  $effect(() => {
+    if (tapCards) return;
+    untrack(() => {
+      if (shown?.surface === 'card') clearShown();
+    });
   });
 
   $effect(() => {
@@ -1058,10 +1067,12 @@
    * own surface. A miss reports `{ projectId: null, kind }` (§4.8.1): every tap or click miss
    * sends a tap miss and leaves `hoverReported` alone; a hover miss is sent once, only after a
    * hover hit. Without it, a part shows the generated tooltip or card. Everything else presents as
-   * in the editor.
+   * in the editor. With `tapCards` off a tap presents nothing (it is still reported).
    */
   function deliver(kind: PickKind, x: number, y: number, r: PickResult): void {
     const surface: Surface = kind === 'hover' ? 'tooltip' : 'card';
+    // Without tap cards a tap shows nothing of SimMap's own; it is still reported.
+    const show = kind === 'hover' || (kind === 'tap' && tapCards);
     const report = timelinePick;
     if (r && 'timeline' in r) {
       const { projectId, parcelId, typology, stories, units, existingUnits } = r.timeline;
@@ -1072,7 +1083,8 @@
         return;
       }
       const hit = { kind: 'generated', parcelId, typology, stories, units, existingUnits } as const;
-      return present(surface, x, y, { hit, cell: null });
+      if (show || kind === 'click') present(surface, x, y, { hit, cell: null });
+      return;
     }
     if (report) {
       if (kind !== 'hover') report({ projectId: null, kind: 'tap' });
@@ -1081,7 +1093,7 @@
         report({ projectId: null, kind: 'hover' });
       }
     }
-    if (kind !== 'click') present(surface, x, y, r);
+    if (show) present(surface, x, y, r);
   }
 
   /** A pointer left the parts with nothing new under it (leave, suppression, movestart, teardown):

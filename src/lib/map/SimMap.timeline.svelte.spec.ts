@@ -548,6 +548,28 @@ describe('SimMap timeline picking', { timeout: 60_000 }, () => {
     expect(document.body.textContent).not.toContain('Parcel 9100001');
   });
 
+  it('with tapCards off a touch tap on a building opens no card (turning it off closes one); hover tooltips stay', async () => {
+    const timelinePick = vi.fn<(p: TimelinePick) => void>();
+    const { at, fire, screen } = await readyOverPart({ timelinePick });
+    const building = at(AT);
+    const tap = () => {
+      fire('pointerdown', 'touch', building);
+      fire('pointerup', 'touch', building);
+    };
+    tap();
+    await expect.poll(() => card()?.textContent ?? '').toContain(`Parcel ${P}`);
+    await screen.rerender({ tapCards: false });
+    await expect.poll(card).toBeNull();
+    // The tap is still reported (the page decides what a tap does), but SimMap shows no card.
+    tap();
+    await expect.poll(() => timelinePick.mock.calls.length).toBe(2);
+    expect(timelinePick).toHaveBeenLastCalledWith(TAP_MISS);
+    await frames(3);
+    expect(card()).toBeNull();
+    fire('pointermove', 'mouse', building);
+    await expect.poll(() => tooltip()?.textContent ?? '').toContain(`Parcel ${P}`);
+  });
+
   it('painting and card picking are exclusive: with pan off (a stroke tool), clicks pick nothing', async () => {
     // /sim's BrushController turns pan off for Paint, Erase, Protect and Unprotect; a press on
     // the map is then a stroke, never a card (Task 8 review).

@@ -140,6 +140,12 @@ export interface SimMapProps {
    * timeline parts (implemented by timelapse-render step 1).
    */
   timelinePick?: (p: TimelinePick) => void;
+  /**
+   * A touch tap opens SimMap's own card (an existing building, a stop, a generated part) (default
+   * true). /sim turns it off in Set Policy, where a tap selects a layer; turning it off closes an
+   * open card. Hover tooltips and `timelinePick` reports are unaffected.
+   */
+  tapCards?: boolean;
 }
 
 /**

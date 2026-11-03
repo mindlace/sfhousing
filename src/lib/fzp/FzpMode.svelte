@@ -196,8 +196,9 @@
      */
     bottomExtra?: number;
     /**
-     * Taps open project cards (default true). /sim passes `run.phase === 'run'`: in Set Policy a
-     * click selects a layer instead. Turning it off closes an open card. Hover tooltips stay.
+     * Taps open cards (default true): project cards and, on touch, SimMap's own (`tapCards`).
+     * /sim passes `run.phase === 'run'`: in Set Policy a click selects a layer instead. Turning it
+     * off closes an open card. Hover tooltips stay.
      */
     cards?: boolean;
   }
@@ -1010,6 +1011,7 @@
         onready={onMapReady}
         {view}
         timelinePick={onPick}
+        tapCards={cards}
       />
     {:else}
       <div class="h-full" data-testid="fzp-frame"></div>

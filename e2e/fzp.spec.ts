@@ -2,7 +2,8 @@
 // tests open the timelapse there; e2e/sim.spec.ts covers the redirect itself. Runs against the
 // VITE_E2E build, which exposes window.__sfhFzp (src/lib/fzp/debug.ts) and window.__sfhMap.
 // Fixture-0 files are read from disk; counts, ids and labels are derived from them, never
-// hard-coded. Playback starts paused, in Setup (spec §1): tests that scrub or play start a run
+// hard-coded. Playback starts paused, in Setup (spec §1): tests that scrub or play, or open a
+// project card (cards open only in a run; in Set Policy a click selects a layer), start a run
 // first (`gotoFzp(page, '', { run: true })`).
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -436,7 +437,7 @@ test('tapping a real project opens its card with the DataSF source links', async
   isMobile,
   page
 }) => {
-  await gotoFzp(page);
+  await gotoFzp(page, '', { run: true });
   const c = await openRealCard(page, isMobile);
   await expect(c.getByTestId('card-badge')).toHaveText('Real project');
   expect(REAL.sources.length).toBeGreaterThan(0);
@@ -521,7 +522,7 @@ test('a record the data checks changed lists them under "About this record\'s da
   page
 }) => {
   expect(REAL.quality.length).toBeGreaterThan(0);
-  await gotoFzp(page);
+  await gotoFzp(page, '', { run: true });
   const c = await openRealCard(page, isMobile);
   await expect(c.getByRole('heading', { name: "* About this record's data" })).toBeVisible();
   for (const id of REAL.quality) {
@@ -534,7 +535,7 @@ test('clicking empty map closes the card; moving the pointer off the part does n
   isMobile,
   page
 }) => {
-  await gotoFzp(page);
+  await gotoFzp(page, '', { run: true });
   const at = LABELS.get(ownParcel(REAL))!;
   await frameOn(page, at);
   const c = await openCardAt(page, isMobile, at, REAL_LABEL);
@@ -649,7 +650,7 @@ test('/attribution carries the scenario notice', async ({ page }) => {
 // ---- accessibility and layout -------------------------------------------------------------------
 
 test('axe: the card open', async ({ isMobile, page }) => {
-  await gotoFzp(page);
+  await gotoFzp(page, '', { run: true });
   await openRealCard(page, isMobile);
   await expectNoA11yViolations(page);
 });
@@ -688,7 +689,7 @@ test('axe: a failed reroll, whose notice clears the card', async ({ isMobile, pa
       return post.call(this, m?.type === 'reroll' ? { ...m, seed: -1 } : msg, ...rest);
     } as typeof Worker.prototype.postMessage;
   });
-  await gotoFzp(page);
+  await gotoFzp(page, '', { run: true });
   const c = await openRealCard(page, isMobile);
   await (await anotherFuture(page)).click();
   const alert = page.getByRole('alert').filter({ hasText: "Couldn't make another future" });
@@ -798,7 +799,7 @@ test('footer links stay unobscured at 375 px: scrubber, card and score details',
   page
 }) => {
   test.skip(!isMobile, 'W6b is the phone layout');
-  await gotoFzp(page);
+  await gotoFzp(page, '', { run: true });
   await expectFooterReachable(page);
 
   await openRealCard(page, isMobile);

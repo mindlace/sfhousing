@@ -2127,6 +2127,8 @@ describe('SimPage map selection (sim-ux plan 4, Task 4)', () => {
 
     it('Set Policy with Move: a selection, no stroke and no card', async () => {
       const { w } = await readySim();
+      // No tap card of SimMap's own either (a touch tap on a building).
+      expect(stub.props.tapCards).toBe(false);
       fullClick();
       await wait(50);
       expect(counts(w)).toEqual({ lotAt: 1, stroke: 0, card: 0 });
@@ -2156,6 +2158,7 @@ describe('SimPage map selection (sim-ux plan 4, Task 4)', () => {
     it('a run: a card, no selection and no stroke', async () => {
       const { w } = await readySim();
       await pressRun(w);
+      await expect.poll(() => stub.props.tapCards).toBe(true);
       fullClick();
       await wait(50);
       expect(counts(w)).toEqual({ lotAt: 0, stroke: 0, card: 1 });
@@ -2168,6 +2171,7 @@ describe('SimPage map selection (sim-ux plan 4, Task 4)', () => {
       await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY });
       await toReady();
       const w = workers.at(-1)!;
+      expect(stub.props.tapCards).toBe(false);
       fullClick();
       await wait(50);
       expect(counts(w)).toEqual({ lotAt: 0, stroke: 0, card: 0 });

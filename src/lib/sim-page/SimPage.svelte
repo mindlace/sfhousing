@@ -32,7 +32,8 @@
   the FZP baseline (a Transit tab row) or a painted area (a Paint tab row); the selected area's
   lots are outlined on the map. In Set Policy with Move, a click on a lot selects the layer that
   sets its limit (the worker's `lotAt`, latest click wins) and shows its row (plan 4, Task 4); a
-  click outside every lot clears it. Project cards open on a tap only in a run (`cards`).
+  click outside every lot clears it. Cards (project cards, and SimMap's own tap card on a
+  building) open on a tap only in a run (`cards`).
   Live preview (sim-ux plan 3, Task 4): in Setup, while a Paint stroke is drawn, the buildings
   its lots nearest the brush ring could hold show under it (StrokePreview, the overlay's feedback
   slot); they fade on release, clear at once on a cancel, and a run clears them.
