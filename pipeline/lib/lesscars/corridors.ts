@@ -8,12 +8,18 @@
 // 2. FROM (TO) nodes are the candidate nodes within `crossM` of any line of a segment named
 //    `from` (`to`): a divided cross street gives a node at each carriageway. `COUNTY LINE` instead
 //    takes the degree-1 nodes ending a candidate whose f_st or t_st is `COUNTY LINE`.
-// 3. The path is the shortest from any FROM node to any TO node (multi-source Dijkstra), so of a
-//    divided street's two carriageways it walks one, and of a name used in two places it walks
-//    the stretch between the named crossings.
-// 4. The corridor is the path's segments plus every candidate whose every vertex lies within
-//    `bandM` of the path polyline: the other carriageway, shared-centreline twins and the short
-//    piece through a divided cross street's median. A next block (longer than `bandM`) is not.
+// 3. The path is the shortest positive-length one from any FROM node to any TO node
+//    (multi-source Dijkstra), so of a divided street's two carriageways it walks one, and of a
+//    name used in two places it walks the stretch between the named crossings. A node that is both
+//    a FROM and a TO node is not a path.
+// 4. The corridor is the path's segments plus every candidate lying alongside the path: every
+//    vertex within `bandM` of the path polyline, and none beyond a path end. A vertex is beyond an
+//    end when its nearest path point is that end and it lies outward along the chord of the
+//    path's last `bandM`, unless it is within `snapM` of the end node or of a line of that end's
+//    cross street (for COUNTY LINE, of a county-line dead end). A candidate whose f_st and t_st
+//    both name an end's cross street (the piece through a divided cross street's median) needs
+//    only the band. This keeps the other carriageway and shared-centreline twins, and drops a
+//    short block before FROM, a stub past TO and a fork at either end.
 // CORRIDOR values are tier 4 (builder's).
 
 export interface StreetSeg {
@@ -204,18 +210,20 @@ export function resolveCorridor(
       }
       return out;
     }
-    const lines = segs.filter((s) => named(s, want)).flatMap((s) => s.lines);
+    const lines = crossLines(want);
     nodes.forEach((p, n) => {
       if (distToLines(p, lines) <= CORRIDOR.crossM) out.add(n);
     });
     return out;
   };
+  const crossLines = (want: string) => segs.filter((s) => named(s, want)).flatMap((s) => s.lines);
   const from = endsOf(fromName);
   if (from.size === 0) fail(`no crossing with ${fromName}`);
   const to = endsOf(toName);
   if (to.size === 0) fail(`no crossing with ${toName}`);
 
-  // 3. Multi-source Dijkstra to the nearest TO node.
+  // 3. Multi-source Dijkstra to the nearest TO node reached by a positive-length path (a node in
+  // both FROM and TO sits at distance 0 and is passed over, not taken as the answer).
   const dist = new Array<number>(nodes.length).fill(Infinity);
   const via = new Array<number>(nodes.length).fill(-1);
   const done = new Array<boolean>(nodes.length).fill(false);
@@ -227,7 +235,7 @@ export function resolveCorridor(
       if (!done[n] && dist[n] < Infinity && (u < 0 || dist[n] < dist[u])) u = n;
     }
     if (u < 0) break;
-    if (to.has(u)) {
+    if (to.has(u) && dist[u] > 0) {
       reached = u;
       break;
     }
@@ -241,22 +249,89 @@ export function resolveCorridor(
       }
     }
   }
-  if (reached < 0) fail('no path');
+  if (reached < 0) {
+    const meet = [...from].some((n) => to.has(n));
+    fail(meet ? `no path (${fromName} and ${toName} meet at one node)` : 'no path');
+  }
+  // The path as one ordered polyline, from the TO end (P[0]) back to the FROM end.
   const pathEdges: Edge[] = [];
+  const P: Pt[] = [];
   for (let n = reached; via[n] >= 0;) {
     const e = edges[via[n]];
     pathEdges.push(e);
-    n = e.a === n ? e.b : e.a;
+    const forward = e.a === n;
+    const pts = forward ? e.part : [...e.part].reverse();
+    P.push(...(P.length === 0 ? pts : pts.slice(1)));
+    n = forward ? e.b : e.a;
   }
-  if (pathEdges.length === 0) fail(`no path (${fromName} and ${toName} meet at one node)`);
 
-  // 4. The path's segments plus every candidate lying wholly within bandM of the path.
+  // 4. The path's segments plus every candidate lying alongside the path.
   const keep = new Set(pathEdges.map((e) => e.seg));
   const polyline = pathEdges.map((e) => e.part);
+  /**
+   * One path end: `out` is the outward direction of the chord from the point `bandM` back along
+   * the path (or the far end of a shorter path) to the end, so a short, angled last piece (two
+   * carriageways splaying from a shared node) does not skew it.
+   */
+  const endOf = (path: Pt[], name: string, set: Set<number>) => {
+    const atEnd = path[0];
+    let back = path[path.length - 1];
+    for (let i = 1, s = 0; i < path.length; i++) {
+      const step = Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]);
+      if (s + step >= CORRIDOR.bandM) {
+        const t = (CORRIDOR.bandM - s) / step;
+        back = [
+          path[i - 1][0] + t * (path[i][0] - path[i - 1][0]),
+          path[i - 1][1] + t * (path[i][1] - path[i - 1][1])
+        ];
+        break;
+      }
+      s += step;
+    }
+    const len = Math.hypot(atEnd[0] - back[0], atEnd[1] - back[1]) || 1;
+    const out: Pt = [(atEnd[0] - back[0]) / len, (atEnd[1] - back[1]) / len];
+    const want = canonicalStreet(name);
+    const county = want === COUNTY_LINE;
+    const anchors: Pt[] = county ? [...set].map((n) => nodes[n]) : [];
+    const lines = county ? [] : crossLines(want);
+    return { at: atEnd, out, anchors, lines, name: county ? null : want };
+  };
+  const pathEnds = [endOf(P, toName, to), endOf([...P].reverse(), fromName, from)];
+  const near = (p: Pt, q: Pt) => Math.hypot(p[0] - q[0], p[1] - q[1]) <= CORRIDOR.snapM;
+  const alongside = (p: Pt): boolean => {
+    const d = distToLines(p, polyline);
+    if (d > CORRIDOR.bandM) return false;
+    for (const end of pathEnds) {
+      const toEnd = Math.hypot(p[0] - end.at[0], p[1] - end.at[1]);
+      const outward = (p[0] - end.at[0]) * end.out[0] + (p[1] - end.at[1]) * end.out[1];
+      if (toEnd > d + 1e-6 || outward <= 1e-6) continue;
+      const anchored =
+        near(p, end.at) ||
+        end.anchors.some((q) => near(p, q)) ||
+        (end.lines.length > 0 && distToLines(p, end.lines) <= CORRIDOR.snapM);
+      if (!anchored) return false;
+    }
+    return true;
+  };
+  // A piece through a divided cross street's median runs from one of its carriageways to the
+  // other: DataSF names that cross street at both ends (f_st = t_st), and its inner vertices
+  // lie between the carriageways, on neither line.
+  const isMedian = (s: StreetSeg) =>
+    s.fSt !== null &&
+    s.tSt !== null &&
+    pathEnds.some(
+      (end) =>
+        end.name !== null &&
+        canonicalStreet(s.fSt!) === end.name &&
+        canonicalStreet(s.tSt!) === end.name
+    );
+  const inBand = (p: Pt) => distToLines(p, polyline) <= CORRIDOR.bandM;
   cands.forEach((s, i) => {
     if (keep.has(i)) return;
-    const inside = s.lines.every((l) => l.every((p) => distToLines(p, polyline) <= CORRIDOR.bandM));
-    if (inside) keep.add(i);
+    const fits = isMedian(s)
+      ? s.lines.every((l) => l.every(inBand))
+      : s.lines.every((l) => l.every(alongside));
+    if (fits) keep.add(i);
   });
   const chosen = [...keep].map((i) => cands[i]);
   const cnn = [...new Set(chosen.map((s) => s.cnn))].sort();

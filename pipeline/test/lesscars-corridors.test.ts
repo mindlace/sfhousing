@@ -256,6 +256,129 @@ describe('resolveCorridor', () => {
     expect(() => resolveCorridor(grid, sel('NOPE AVE', 'A ST', 'C ST'))).toThrow(CorridorError);
   });
 
+  describe('the band keeps only what runs alongside the path', () => {
+    const ab = seg('m-ab', 'MAIN ST', [
+      [0, 0],
+      [100, 0]
+    ]);
+    const ends = [cross('a', 'A ST', 0), cross('b', 'B ST', 100)];
+
+    it('a stub past TO shorter than bandM is excluded', () => {
+      const stub = seg('stub', 'MAIN ST', [
+        [100, 0],
+        [130, 0]
+      ]);
+      expect(resolveCorridor([ab, stub, ...ends], sel('MAIN ST', 'A ST', 'B ST')).cnn).toEqual([
+        'm-ab'
+      ]);
+    });
+
+    it('a block before FROM shorter than bandM is excluded', () => {
+      const pre = seg('pre', 'MAIN ST', [
+        [-25, 0],
+        [0, 0]
+      ]);
+      expect(resolveCorridor([pre, ab, ...ends], sel('MAIN ST', 'A ST', 'B ST')).cnn).toEqual([
+        'm-ab'
+      ]);
+    });
+
+    it('a short fork at TO is excluded', () => {
+      const fork = seg('fork', 'MAIN ST', [
+        [100, 0],
+        [130, 20]
+      ]);
+      const on = seg('on', 'MAIN ST', [
+        [100, 0],
+        [200, 0]
+      ]);
+      expect(resolveCorridor([ab, fork, on, ...ends], sel('MAIN ST', 'A ST', 'B ST')).cnn).toEqual([
+        'm-ab'
+      ]);
+    });
+
+    it('a skewed crossing keeps the far carriageway, whose end overshoots the path end', () => {
+      // B ST runs from (100, -60) to (120, 60): it meets y = -15 at x 107.5 and y = 15 at x 112.5.
+      const segs: StreetSeg[] = [
+        seg('w-n', 'WIDE BLVD', [
+          [0, 15],
+          [112.5, 15]
+        ]),
+        seg('w-s', 'WIDE BLVD', [
+          [0, -15],
+          [107.5, -15]
+        ]),
+        cross('a', 'A ST', 0),
+        seg('b', 'B ST', [
+          [100, -60],
+          [120, 60]
+        ])
+      ];
+      expect(resolveCorridor(segs, sel('WIDE BLVD', 'A ST', 'B ST')).cnn).toEqual(['w-n', 'w-s']);
+    });
+  });
+
+  it('carriageways splaying from a shared node keep the other one (Geary at Presidio)', () => {
+    // Both carriageways leave the shared node at (0, 0) at a steep angle, then run 20 m apart.
+    const segs: StreetSeg[] = [
+      seg('g-n', 'GEARY BLVD', [
+        [0, 0],
+        [-10, 10],
+        [-130, -10]
+      ]),
+      seg('g-s', 'GEARY BLVD', [
+        [0, 0],
+        [-6, -11],
+        [-124, -30],
+        [-130, -10]
+      ]),
+      cross('p', 'PRESIDIO AVE', 0),
+      cross('m', 'MASONIC AVE', -130)
+    ];
+    expect(resolveCorridor(segs, sel('GEARY BLVD', 'PRESIDIO AVE', 'MASONIC AVE')).cnn).toEqual([
+      'g-n',
+      'g-s'
+    ]);
+  });
+
+  it('a curved median piece is kept when f_st and t_st both name the cross street', () => {
+    // J ST is divided: carriageways at x 0 and x -30; MAIN ST's path starts at the x 0 one.
+    const median = (fSt: string | null, tSt: string | null) =>
+      seg(
+        'med',
+        'MAIN ST',
+        [
+          [0, 0],
+          [-15, 8],
+          [-30, 0]
+        ],
+        fSt,
+        tSt
+      );
+    const segs = (m: StreetSeg) => [
+      m,
+      seg('m-1', 'MAIN ST', [
+        [0, 0],
+        [100, 0]
+      ]),
+      cross('j1', 'J ST', 0),
+      cross('j2', 'J ST', -30),
+      cross('k', 'K ST', 100)
+    ];
+    expect(
+      resolveCorridor(segs(median('J ST', 'J ST')), sel('MAIN ST', 'J ST', 'K ST')).cnn
+    ).toEqual(['m-1', 'med']);
+    // Without the names its inner vertex lies beyond the path end, on neither carriageway.
+    expect(resolveCorridor(segs(median(null, null)), sel('MAIN ST', 'J ST', 'K ST')).cnn).toEqual([
+      'm-1'
+    ]);
+  });
+
+  it('a node in both FROM and TO is passed over for the shortest positive path', () => {
+    const segs = [...grid, cross('ab0', 'AB ST', 0), cross('ab1', 'AB ST', 100)];
+    expect(resolveCorridor(segs, sel('MAIN ST', 'A ST', 'AB ST')).cnn).toEqual(['m-ab']);
+  });
+
   it('FROM and TO at the same node is no path, not an empty corridor', () => {
     const segs = [...grid, cross('a2', 'AA ST', 0)];
     expect(() => resolveCorridor(segs, sel('MAIN ST', 'A ST', 'AA ST'))).toThrow(/no path/);

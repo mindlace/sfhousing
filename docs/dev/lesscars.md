@@ -177,15 +177,34 @@ The resolver (`pipeline/lib/lesscars/corridors.ts`):
 2. FROM (TO) nodes are the candidate nodes within `crossM` of any line of a segment named `FROM`
    (`TO`), so a divided cross street gives a node at each carriageway. `COUNTY LINE` instead takes
    the degree-1 nodes ending a candidate whose `f_st` or `t_st` is `COUNTY LINE`.
-3. The path is the shortest from any FROM node to any TO node (multi-source Dijkstra). No FROM or
-   TO node is `no crossing with <name>`; no path (or FROM and TO at one node) is `no path`.
-4. The corridor is the path's segments plus every candidate whose every vertex lies within `bandM`
-   of the path: the other carriageway, shared-centreline twins and the short piece through a
-   divided cross street's median. A block past FROM or TO longer than `bandM` is not included,
-   nor is the same name elsewhere.
+3. The path is the shortest positive-length path from any FROM node to any TO node (multi-source
+   Dijkstra); a node that is both a FROM and a TO node is passed over, not taken as the answer. No
+   FROM or TO node is `no crossing with <name>`; no path is `no path` (`no path (… meet at one
+node)` when FROM and TO share a node and nothing longer joins them).
+4. The corridor is the path's segments plus every candidate lying alongside the path: every vertex
+   within `bandM` of the path, and none beyond a path end. A vertex is beyond an end when its
+   nearest path point is that end and it lies outward along the chord of the path's last `bandM`;
+   it is still allowed within `snapM` of the end node or of a line of that end's cross street (for
+   `COUNTY LINE`, of a county-line dead end), which is where the other carriageway ends. A
+   candidate whose `f_st` and `t_st` both name an end's cross street (the piece through a divided
+   cross street's median, such as Ocean `9846000`) needs only the band. So the other carriageway
+   and shared-centreline twins are kept; a short block before FROM, a stub past TO and a fork at
+   either end are not (on the locked data: McAllister `8887000`, Church `4009000`, Judah `7686000`,
+   Richardson `15173000`), nor is the same name elsewhere.
 
-Streets DataSF digitises as two carriageways (19th Ave, Park Presidio, Van Ness, Lombard, Geary;
-CNN suffixes `1xx` and `2xx`) give a `lengthM` about twice the street's length.
+`lengthM` is a centreline sum, not a route length: it adds every kept segment, so each carriageway
+and each shared-centreline twin counts. Streets DataSF digitises as two carriageways (19th Ave, Park
+Presidio, Van Ness, Lombard, Geary; CNN suffixes `1xx` and `2xx`) give about twice the street's
+length. Do not use it as the distance a bus travels.
+
+Known limits (no check today; review `corridors.resolved.json` after a data refresh):
+
+- **Same-name stretches tie silently.** If a street has two disconnected stretches that both cross
+  FROM and TO, the shorter path wins without a warning. On the locked data every selector street
+  has 1–3 components and exactly one holds both a FROM and a TO node.
+- **Candidates are matched by name, not `layer`.** A PAPER, PSEUDO or PRIVATE segment of the same
+  name alongside the path would join the corridor. Every CNN resolved on the locked data is
+  `layer = STREETS`.
 
 `CORRIDOR` (all tier 4, builder's): `snapM` 0.5 m, `crossM` 25 m, `bandM` 40 m.
 
