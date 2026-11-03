@@ -450,6 +450,21 @@ describe('placement beside the building', () => {
     expect(cs.width).toBe('320px');
   });
 
+  it('from md takes the anchor.maxHeight as its max height, else the room above the time bar', async () => {
+    await page.viewport(1024, 800);
+    const view = await setup(project(REAL_ACTUAL), {
+      anchor: { left: 420, top: 96, maxHeight: 300 }
+    });
+    expect(panel().style.getPropertyValue('--card-max-h')).toBe('300px');
+    expect(getComputedStyle(panel()).maxHeight).toBe('300px');
+    expect(panel().getBoundingClientRect().height).toBeLessThanOrEqual(300);
+    await view.view.unmount();
+    await setup(project(REAL_ACTUAL), { anchor: { left: 420, top: 96 } });
+    expect(panel().style.getPropertyValue('--card-max-h')).toBe('');
+    // 100% of the map less 2rem (no scrubber here): the fixed spot's rule.
+    expect(getComputedStyle(panel()).maxHeight).not.toBe('300px');
+  });
+
   it('with no anchor sits top-left right of the dock, as before', async () => {
     await page.viewport(1024, 800);
     await setup(project(REAL_ACTUAL), { anchor: null });

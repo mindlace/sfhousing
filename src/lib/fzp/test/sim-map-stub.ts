@@ -63,6 +63,13 @@ export class FakeMap {
     return { lng: w + x * 1e-5, lat: n - y * 1e-5 };
   }
 
+  /** The inverse of `unproject`, for a lng/lat as MapLibre takes it (an array or an object). */
+  project(ll: [number, number] | { lng: number; lat: number }): { x: number; y: number } {
+    const [lng, lat] = Array.isArray(ll) ? ll : [ll.lng, ll.lat];
+    const [w, , , n] = this.bounds;
+    return { x: (lng - w) / 1e-5, y: (n - lat) / 1e-5 };
+  }
+
   // What /lesscars' installLessCarsLayers calls: recording no-ops over sources and layers.
   #sources = new Map<string, { data: unknown }>();
   #layers = new Map<string, unknown>();

@@ -6,23 +6,28 @@ export interface CardArea {
 }
 
 /**
- * The room the card may take, in map-container px: right of the dock (`dockW`), above the time
- * bar (`scrubberH`), and below the notice-pill stack when it overlays the map's top (from md; a
- * pill may be showing). The stack's `height` is 0 when no pill shows, and below md it sits in
- * flow above the map, so its bottom is not past the map's top: both leave the top at 0.
+ * The room the card may take, in map-container px: right of the dock (`dockW`) and of the
+ * bottom-left controls (`controls.left`: zoom and compass, px from the map's left edge), above the
+ * time bar (`scrubberH`) and the bottom-right controls (`controls.bottom`: the footprint
+ * `--map-controls-br-block-size`, px from the map's bottom, which includes the inset and the
+ * attribution band; whichever is higher wins), and below the notice-pill stack when it overlays
+ * the map's top (from md; a pill may be showing). The stack's `height` is 0 when no pill shows,
+ * and below md it sits in flow above the map, so its bottom is not past the map's top: both leave
+ * the top at 0.
  */
 export function cardArea(
   map: { left: number; top: number; width: number; height: number },
   pills: { top: number; bottom: number; height: number } | null,
   dockW: number,
-  scrubberH: number
+  scrubberH: number,
+  controls: { left?: number; bottom?: number } = {}
 ): CardArea {
   const pillsBottom = pills && pills.height > 0 ? pills.bottom - map.top : 0;
   return {
-    left: dockW,
+    left: Math.max(dockW, controls.left ?? 0),
     top: Math.max(0, pillsBottom),
     right: map.width,
-    bottom: map.height - scrubberH
+    bottom: map.height - Math.max(scrubberH, controls.bottom ?? 0)
   };
 }
 

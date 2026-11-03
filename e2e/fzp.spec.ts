@@ -514,6 +514,56 @@ for (const [where, fx] of [
   });
 }
 
+for (const [where, fx, fy] of [
+  ['low on the right', 0.6, 0.65],
+  ['low beside the zoom controls', 0.3, 0.65]
+] as const) {
+  test(`from md a tall card (${where}) stays off the attribution and the zoom controls`, async ({
+    isMobile,
+    page
+  }) => {
+    test.skip(isMobile, 'below md the card is a bottom sheet');
+    await gotoFzp(page, '', { run: true });
+    const at = LABELS.get(ownParcel(REAL))!;
+    await placeLot(page, at, fx, fy);
+    const c = await openCardAt(page, isMobile, at, REAL_LABEL);
+    const box = (await c.boundingBox())!;
+    const attribution = page.locator('.maplibregl-ctrl-bottom-right').first();
+    const zoom = page.locator('.maplibregl-ctrl-bottom-left').first();
+    // The card is tall: the real project's card with its timeline, notes and sources.
+    expect(box.height).toBeGreaterThan(300);
+    await expect(attribution).toBeVisible();
+    expect(overlaps(box, (await attribution.boundingBox())!), 'covers the attribution').toBe(false);
+    expect(overlaps(box, (await zoom.boundingBox())!), 'covers the zoom controls').toBe(false);
+    // And still clear of the time bar.
+    expect(overlaps(box, (await page.getByTestId('fzp-scrubber').boundingBox())!)).toBe(false);
+  });
+}
+
+test('from md the card follows its building when the map pans', async ({ isMobile, page }) => {
+  test.skip(isMobile, 'below md the card is a bottom sheet');
+  await gotoFzp(page, '', { run: true });
+  const at = LABELS.get(ownParcel(REAL))!;
+  await placeLot(page, at, 0.45, 0.4);
+  const c = await openCardAt(page, isMobile, at, REAL_LABEL);
+  const before = (await c.boundingBox())!;
+  const [x0] = await projectToPage(page, at);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const map = (window as Win).__sfhMap!.map!;
+        map.once('idle', () => resolve());
+        map.panBy([-120, 0], { animate: false }); // the view moves west: the building moves east
+      })
+  );
+  const [x1] = await projectToPage(page, at);
+  expect(x1 - x0).toBeGreaterThan(100);
+  await expect
+    .poll(async () => (await c.boundingBox())!.x - before.x, { timeout: 5_000 })
+    .toBeGreaterThan(100);
+  await expect(c).toBeVisible();
+});
+
 test('from md the card clears a showing notice pill', async ({ isMobile, page }) => {
   test.skip(isMobile, 'below md the stack is in flow above the map');
   await gotoFzp(page, '', { run: true });

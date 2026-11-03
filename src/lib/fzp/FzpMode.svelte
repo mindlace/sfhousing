@@ -100,6 +100,7 @@
   import HeaderScore from '$lib/scoreboard/HeaderScore.svelte';
   import SimResults from './SimResults.svelte';
   import { DEFAULT_SPEED } from './playback';
+  import { BR_BLOCK, watchCardArea } from './card-area-watch';
   import { cardArea, cardPlacement, type CardArea } from './card-place';
   import ProjectCardPanel from './ProjectCardPanel.svelte';
   import ProjectTooltip from './ProjectTooltip.svelte';
@@ -294,8 +295,16 @@
   let playWhenCurrent = $state(false);
 
   let cardState = $state.raw<SummaryState>({ kind: 'idle' });
-  /** The tap that opened the card: its point (map px) and lot; the card sits beside the point. */
-  let cardTap = $state.raw<{ x: number; y: number; parcelId: ParcelId } | null>(null);
+  /**
+   * The tap that opened the card: its point (map px), the place under it (the card follows it
+   * across pans and zooms) and its lot. The card sits beside the point.
+   */
+  let cardTap = $state.raw<{
+    x: number;
+    y: number;
+    lngLat: [number, number] | null;
+    parcelId: ParcelId;
+  } | null>(null);
   let cardSize = $state.raw<{ w: number; h: number } | null>(null);
   let cardBounds = $state.raw<CardArea | null>(null);
   let host = $state<HTMLElement>();
@@ -554,16 +563,22 @@
     cardTap = null;
   }
 
-  /** The room for the card now: beside the dock, over the time bar, under any showing pill. */
+  /** The room for the card now: beside the dock and the zoom controls, over the time bar and the
+   *  attribution, under any showing pill. */
   function measureCardArea(scrubber = scrubberH): void {
     if (!host || !mapBox) return;
     const dock = parseFloat(getComputedStyle(host).getPropertyValue('--dock-w')) || 0;
     const m = mapBox.getBoundingClientRect();
+    // MapLibre's bottom-left controls (fine pointers; zero-sized when hidden) and the bottom-right
+    // footprint SimMap publishes on :root, measured from the map's bottom.
+    const zoom = mapBox.querySelector('.maplibregl-ctrl-bottom-left')?.getBoundingClientRect();
+    const br = parseFloat(document.documentElement.style.getPropertyValue(BR_BLOCK)) || 0;
     const next = cardArea(
       { left: m.left, top: m.top, width: m.width, height: m.height },
       pillsEl ? pillsEl.getBoundingClientRect() : null,
       dock,
-      scrubber
+      scrubber,
+      { left: zoom && zoom.width > 0 ? zoom.right - m.left : 0, bottom: br }
     );
     const was = cardBounds;
     if (
@@ -578,27 +593,40 @@
   }
 
   const cardOpen = $derived(cardState.kind !== 'idle');
-  // While a card is open its room is followed: the map, the stack of pills and the dock (which
-  // opens, folds to its rail and closes in the map's subtree) can each change it.
+  // While a card is open its room is followed, by the few things that change it and nothing that
+  // plays (`watchCardArea`); and it follows its building across pans and zooms.
   $effect(() => {
     if (!cardOpen || !mapBox) return;
-    let frame = 0;
-    const soon = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => measureCardArea());
-    };
     const bar = scrubberH;
     untrack(() => measureCardArea(bar));
-    const ro = new ResizeObserver(soon);
-    ro.observe(mapBox);
-    if (pillsEl) ro.observe(pillsEl);
-    const mo = new MutationObserver(soon);
-    mo.observe(mapBox, { childList: true, subtree: true });
-    if (pillsEl) mo.observe(pillsEl, { childList: true, subtree: true });
+    const stop = watchCardArea(
+      {
+        map: mapBox,
+        pills: pillsEl,
+        dock: mapBox.querySelector<HTMLElement>('[data-testid="dock"]'),
+        controls: mapBox.querySelector<HTMLElement>('.maplibregl-ctrl-bottom-left')
+      },
+      () => measureCardArea()
+    );
+    return stop;
+  });
+  $effect(() => {
+    const m = map;
+    if (!cardOpen || !m) return;
+    let frame = 0;
+    const follow = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const tap = cardTap;
+        if (!tap?.lngLat) return;
+        const at = m.project(tap.lngLat);
+        if (at.x !== tap.x || at.y !== tap.y) cardTap = { ...tap, x: at.x, y: at.y };
+      });
+    };
+    m.on('move', follow);
     return () => {
       cancelAnimationFrame(frame);
-      ro.disconnect();
-      mo.disconnect();
+      m.off('move', follow);
     };
   });
   const cardAnchor = $derived.by(() => {
@@ -636,7 +664,13 @@
     }
     hideTooltip();
     cardMonth = monthStart(day);
-    cardTap = { x: p.x, y: p.y, parcelId: p.parcelId };
+    const at = map?.unproject([p.x, p.y]);
+    cardTap = {
+      x: p.x,
+      y: p.y,
+      lngLat: at ? [at.lng, at.lat] : null,
+      parcelId: p.parcelId
+    };
     cardReq.request(q);
   }
 

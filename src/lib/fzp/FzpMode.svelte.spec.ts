@@ -779,6 +779,49 @@ describe('FzpMode picks and summaries', () => {
     await expect.poll(() => page.getByRole('tooltip').elements().length).toBe(0);
   });
 
+  describe('the card follows its building', () => {
+    const cardLeft = () =>
+      getComputedStyle(page.getByRole('region', { name: /1234 Mission St/ }).element()).left;
+    const pan = (dx: number) => {
+      // Moving the view east by `dx` px moves a building west of it: bounds shift the other way.
+      stub.map.bounds = [
+        stub.map.bounds[0] + dx * 1e-5,
+        stub.map.bounds[1],
+        stub.map.bounds[2] + dx * 1e-5,
+        stub.map.bounds[3]
+      ];
+      stub.map.fire('move');
+    };
+
+    it('re-places the card on map move, clamps when the building leaves, and never closes it', async () => {
+      const s = setup();
+      await toReady(s);
+      pick({ projectId: 'pr-1', parcelId: 'p1', x: 300, y: 300, kind: 'tap' });
+      await answerLastSummary(s.w(), summary(REAL_ACTUAL));
+      await expect.element(page.getByTestId('card-badge')).toBeVisible();
+      // Right of the click by the gap (no dock in this host).
+      await expect.poll(cardLeft).toBe('316px');
+
+      pan(-100); // the view moves west: the building goes 100 px east on screen
+      await expect.poll(cardLeft).toBe('416px');
+
+      pan(2000); // the building is far off the map's left edge: clamped, and the card stays
+      await expect.poll(cardLeft).toBe('8px');
+      await expect.element(page.getByTestId('card-badge')).toBeVisible();
+    });
+
+    it('listens to move only while a card is open', async () => {
+      const s = setup();
+      await toReady(s);
+      expect(stub.map.listenerCount('move')).toBe(0);
+      pick({ projectId: 'pr-1', parcelId: 'p1', x: 300, y: 300, kind: 'tap' });
+      await answerLastSummary(s.w(), summary(REAL_ACTUAL));
+      await expect.poll(() => stub.map.listenerCount('move')).toBe(1);
+      pick({ projectId: null, kind: 'tap' });
+      await expect.poll(() => stub.map.listenerCount('move')).toBe(0);
+    });
+  });
+
   it('with cards off a tap opens no card; hover tooltips still show', async () => {
     const s = setup({ cards: false });
     await toReady(s);

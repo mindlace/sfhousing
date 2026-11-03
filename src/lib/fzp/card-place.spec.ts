@@ -54,6 +54,25 @@ describe('cardArea', () => {
     expect(cardArea(map, null, 320, 80)).toEqual({ left: 320, top: 0, right: 1280, bottom: 620 });
   });
 
+  it('stops above the bottom-right controls when they stand higher than the time bar', () => {
+    // The footprint includes the inset (time bar plus a phone's sheet) and the attribution band.
+    expect(cardArea(map, null, 320, 80, { bottom: 112 }).bottom).toBe(700 - 112);
+    // The time bar still counts when the footprint is smaller or unknown.
+    expect(cardArea(map, null, 320, 80, { bottom: 40 }).bottom).toBe(620);
+    expect(cardArea(map, null, 320, 80, {}).bottom).toBe(620);
+  });
+
+  it('starts right of the bottom-left controls (zoom and compass) when they reach past the dock', () => {
+    expect(cardArea(map, null, 320, 80, { left: 372 }).left).toBe(372);
+    expect(cardArea(map, null, 320, 80, { left: 200 }).left).toBe(320);
+  });
+
+  it('keeps a tall card off the attribution band', () => {
+    const area = cardArea(map, null, 320, 80, { bottom: 112 });
+    const top = cardPlacement({ x: 800, y: 690 }, { w: 320, h: 400 }, area).top;
+    expect(top + 400).toBeLessThanOrEqual(700 - 112 - 8);
+  });
+
   it('starts below a showing notice pill, so the card never overlaps it', () => {
     // A pill 8 px below the map's top, 36 px high: its bottom is 44 px into the map.
     const pills = { top: 64, bottom: 100, height: 36 };

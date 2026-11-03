@@ -35,6 +35,8 @@ Example:
 
 The same host rule moves MapLibre's bottom-left container (`.maplibregl-ctrl-bottom-left`: zoom and compass, fine pointers only) to `left: var(--dock-w)`, so the dock never covers it (WCAG 2.2 2.4.11). Below 768 px the phone sheet's height is added to the map's bottom inset (`setBottomInset`, through FzpMode's `bottomExtra`), so both bottom containers, and `--map-controls-br-block-size`, sit above the sheet's handle.
 
+Consumers of `--map-controls-br-block-size` from md include the project card's placement area (`cardArea` in `src/lib/fzp/card-place.ts`): its bottom is the map's height less the larger of the time bar and this footprint, so a card opened beside a building never covers the attribution; its left is right of the bottom-left controls' right edge (read from their box). A change to the footprint re-places an open card (`watchCardArea`, `src/lib/fzp/card-area-watch.ts`, watches the inline value on `:root`). Below md the card is a bottom sheet over the same footprint (see [fzp-mode.md](fzp-mode.md), "Card placement").
+
 ## Transit layers
 
 Transit spec section 6. `SimMap` draws a transit access surface and the stops as ordinary MapLibre layers, present only when the manifest names `transit` (`src/lib/map/style.ts`).
