@@ -466,6 +466,37 @@ Two problems were found. Both are follow-ups, not release blockers:
 - **Duplicate heading:** the timeline disclosure repeats a "Parking conversions" heading under its
   summary.
 
+## Freeway land
+
+The catalog format, its build rule and the V17 and homes checks are in [pipeline.md](pipeline.md)
+("Freeway land"). This section is the candidate command.
+
+`npm run pipeline -- lesscars-freeway-land [--dataset <v>]` proposes parcels for each segment of
+`pipeline/enrichment/lesscars/freeway-land.json` into `freeway-land.candidates.json`. It never
+writes the catalog: the curated list is the source of truth, not the rule. It normalises the
+locked sources, runs the SQL stage on a fresh DuckDB (no chunks, no tiles), then
+`pipeline/sql/86_freeway_land.sql`, and prints one line per segment. A segment naming a CNN
+`src_streets` lacks exits 1 and writes nothing.
+
+The rule, with its `LC` values (`pipeline/lesscars-config.ts`, tier 4):
+
+- A parcel is a candidate when it holds 0 homes and is `VACANT`, or is zoned `P` with no building
+  (height 0, floor area 0), and at least `LC.freewayMinShare` (0.5) of its area lies within
+  `LC.freewayBandM` (60 m) of the segment's streets. "At least" is inclusive (a 1e-6 tolerance
+  absorbs projection noise on a parcel exactly half in the band).
+- Open space (land use `OPENSPACE`) is proposed with `openSpace: true`, not filtered: a park is an
+  exclusion, and curation decides.
+- A parcel in several segments' bands goes to the nearest segment (smaller id on a tie).
+- `status` is against the segment's current entry: `listed`, `excluded` or `new`. `rowM2` is the
+  unparcelled land (land mask less every parcel) within the band, a size for the drafter, not a
+  list.
+- With `--dataset <v>` (default: the newest `pipeline/out/<v>` with a `parcels.bin`; none for a
+  fixture run) `fzpTopYield`, `hostable` and `inFlight` (ids of `projects.json` projects naming
+  the parcel) are filled, else null.
+
+The streets come from `loadLockedStreets` (`pipeline/lib/lesscars/streets.ts`), which
+`lesscars-cnns` shares for the lock checks and street rows.
+
 ## Basemap ids
 
 Can a removed freeway stretch be hidden on the basemap by protomaps `roads` feature id at every

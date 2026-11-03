@@ -25,6 +25,7 @@ All run as `npm run pipeline -- <cmd>`.
 | `verify <v> --origin <url>`                                     | Fetches the manifest, checks every URL it names, range-reads both PMTiles expecting 206.                                                                           | yes     |
 | `fixture [--out <dir> --version fixture-<n>] [--update-golden]` | Builds `pipeline/test/fixtures/mini` into `e2e/fixtures/data/fixture-0/`.                                                                                          | none    |
 | `lesscars-cnns`                                                 | Resolves `pipeline/enrichment/lesscars/corridors.json` to `corridors.resolved.json` from the lock's `datasf-streets` raw files (see [lesscars.md](lesscars.md)).   | none    |
+| `lesscars-freeway-land [--dataset <v>]`                         | Proposes freeway-land parcels per segment of `freeway-land.json` into `freeway-land.candidates.json`; never writes the catalog (see [lesscars.md](lesscars.md)).   | none    |
 | `quality-doc`                                                   | Rewrites the generated Data quality section below from `QUALITY_RULES`.                                                                                            | none    |
 | `all [--release <ov>] [--basemap-date <d>]`                     | `fetch` (only if the lock is missing) then `build`. Never uploads.                                                                                                 | yes     |
 
