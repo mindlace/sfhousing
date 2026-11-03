@@ -58,6 +58,11 @@ export function undoMessage(op: PlanOp, verb: 'Undid' | 'Redid'): string {
   return `${verb} paint, ${op.stories} ${plural(op.stories, 'story', 'stories')}`;
 }
 
+/** "Undid: Removed 8 stories": a removed row undone or redone. */
+export function rowStepMessage(step: { label: string }, verb: 'Undid' | 'Redid'): string {
+  return `${verb}: ${step.label}`;
+}
+
 export function radiusValueText(r: number): string {
   return `Brush radius ${r} metres`;
 }

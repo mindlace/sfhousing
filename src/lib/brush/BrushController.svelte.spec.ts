@@ -39,6 +39,7 @@ interface Fixture {
     commits: { rev: number; op: PlanOp }[];
     cancels: number[];
     undos: string[];
+    loads: Plan[];
     prefetches: number[][];
   };
   editor: Editor;
@@ -91,6 +92,7 @@ function setup(opts: { plan?: Plan; noPreview?: boolean } = {}): Fixture {
     commits: [],
     cancels: [],
     undos: [],
+    loads: [],
     prefetches: []
   };
   const clientApi: BrushControllerDeps['client'] = {
@@ -112,6 +114,10 @@ function setup(opts: { plan?: Plan; noPreview?: boolean } = {}): Fixture {
     },
     undo: (id) => {
       client.undos.push(id);
+      return ++client.rev;
+    },
+    load: (plan) => {
+      client.loads.push(plan);
       return ++client.rev;
     },
     prefetch: (bbox) => void client.prefetches.push([...bbox])
@@ -653,6 +659,70 @@ describe('BrushController keyboard stamp, undo and redo', () => {
     expect(fx.ctl.markedCommitRev).not.toBe(fx.ctl.lastCommitRev);
     expect(fx.editor.plan.ops).toHaveLength(1);
     expect(fx.state.announcement).toBe('Redid paint, 6 stories');
+  });
+
+  describe('a removed row (a rows step)', () => {
+    const op = (id: string, stories: number): PlanOp => ({
+      kind: 'paint',
+      stories,
+      radiusM: 30,
+      path: [[-122.41, 37.76]],
+      id
+    });
+    const a = op('a', 4);
+    const b1 = op('b1', 8);
+    const b2 = op('b2', 8);
+    const c = op('c', 6);
+    const plan4 = (): Plan => ({ ...emptyPlan('fixture-0'), ops: [a, b1, b2, c] });
+
+    it('undo loads the restored plan (not client.undo) and announces; redo loads the removal', () => {
+      fx.editor.load(plan4());
+      fx.editor.removeOps(['b1', 'b2'], 'Removed 8 stories');
+      key('z', { ctrlKey: true });
+      expect(fx.client.undos).toEqual([]);
+      expect(fx.client.loads).toHaveLength(1);
+      expect(fx.client.loads[0].ops).toEqual([a, b1, b2, c]);
+      expect(fx.state.announcement).toBe('Undid: Removed 8 stories');
+
+      key('z', { ctrlKey: true, shiftKey: true });
+      expect(fx.client.commits).toEqual([]);
+      expect(fx.client.loads).toHaveLength(2);
+      expect(fx.client.loads[1].ops).toEqual([a, c]);
+      expect(fx.state.announcement).toBe('Redid: Removed 8 stories');
+    });
+
+    it('remove, undo, redo, then a stroke: the next undo is that stroke alone', () => {
+      fx.editor.load(plan4());
+      fx.editor.removeOps(['b1', 'b2'], 'Removed 8 stories');
+      fx.ctl.undo();
+      fx.ctl.redo();
+      stroke();
+      const strokeId = fx.editor.plan.ops.at(-1)!.id;
+      expect(fx.editor.plan.ops.map((o) => o.id)).toEqual(['a', 'c', strokeId]);
+      expect(fx.client.commits.map((x) => x.op.id)).toEqual([strokeId]);
+
+      fx.ctl.undo();
+      expect(fx.client.undos).toEqual([strokeId]);
+      expect(fx.client.loads).toHaveLength(2);
+      expect(fx.editor.plan.ops).toEqual([a, c]);
+    });
+
+    it('does not move lastCommitRev or the pointerup mark', () => {
+      fx.editor.load(plan4());
+      fx.editor.removeOps(['b1'], 'Removed 8 stories');
+      fx.ctl.undo();
+      fx.ctl.redo();
+      expect(fx.ctl.lastCommitRev).toBeNull();
+      expect(fx.ctl.markedCommitRev).toBeNull();
+    });
+
+    it('without client.load, a rows step still moves the editor and announces', () => {
+      fx.editor.load(plan4());
+      delete (fx.client as { load?: unknown }).load;
+      fx.editor.removeOps(['b1'], 'Removed 8 stories');
+      expect(() => fx.ctl.undo()).not.toThrow();
+      expect(fx.editor.plan.ops).toHaveLength(4);
+    });
   });
 
   it('steps stories and radius from the keyboard', () => {
