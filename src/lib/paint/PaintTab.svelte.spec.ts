@@ -125,6 +125,21 @@ describe('PaintTab', () => {
     await expect.element(list.getByRole('status').first()).toHaveTextContent('52 lots');
   });
 
+  it('names a row button "name · meta" and keeps the lot status outside it', async () => {
+    setup();
+    await expect
+      .element(page.getByRole('button', { name: '8 stories · 3 strokes · 52 lots', exact: true }))
+      .toBeVisible();
+    const btn = document.querySelector('[data-paint-row="a"]')!;
+    const status = btn.closest('li')!.querySelector('[role="status"]')!;
+    expect(status.textContent).toBe('52 lots');
+    expect(btn.contains(status)).toBe(false);
+    expect(btn.querySelector('[role="status"]')).toBeNull();
+    // The visible text (name, then meta) is in the button, so the name contains it (WCAG 2.5.3).
+    expect(btn.textContent).toContain('8 stories');
+    expect(btn.textContent).toContain('3 strokes · 52 lots');
+  });
+
   it('shows no list without rows', async () => {
     setup({ rows: [] });
     expect(page.getByRole('list', { name: 'Painted areas' }).elements()).toHaveLength(0);

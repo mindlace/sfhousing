@@ -3,8 +3,8 @@
   a roving tab stop), the height palette (disabled with the mode's hint while Erase is chosen), the
   brush size, then "Painted areas": one row per painted height (or erase), in creation order, a
   later stroke winning where they overlap. A row is a select button (pressed = the row shown on the
-  map) holding a neutral swatch, its name and its meta, whose lot part is a polite status
-  (WCAG 4.1.3); Retry when its lot lookup failed; and, when selected, Remove. After Remove focus
+  map) holding a neutral swatch, its name and its meta (named "name · meta"), with the lot count
+  also in a sibling polite status (WCAG 4.1.3); Retry when its lot lookup failed; and, when selected, Remove. After Remove focus
   moves to the row now at that place, the one before it, or the checked tool radio. `readonly`
   (a shared plan) shows the rows alone. Colours are tokens.
 -->
@@ -14,7 +14,7 @@
   import RadiusPopover from '$lib/brush/RadiusPopover.svelte';
   import type { BrushState } from '$lib/brush/state.svelte';
   import HeightPalette from './HeightPalette.svelte';
-  import { count, lotsText, rowMeta, rowName, type PaintRow } from './rows';
+  import { lotsText, rowMeta, rowName, type PaintRow } from './rows';
   import { PAINT_TOOLS } from './tools';
 
   interface Props {
@@ -147,6 +147,7 @@
             type="button"
             data-paint-row={row.id}
             aria-pressed={isSel}
+            aria-label="{name} · {meta}"
             class="flex min-h-11 w-full items-center gap-2 rounded-md px-1 text-left hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
             onclick={() => onselect(isSel ? null : row.id)}
           >
@@ -174,12 +175,13 @@
             </span>
             <span class="flex min-w-0 flex-col">
               <span class="font-semibold">{name}</span>
-              <span class="text-ink-muted dark:text-ink-dark-muted"
-                >{count(row.strokes, 'stroke', 'strokes')} ·
-                <span role="status">{lotsText(row.lots)}</span></span
-              >
+              <span class="text-ink-muted dark:text-ink-dark-muted">{meta}</span>
             </span>
           </button>
+          <!-- The lot count's polite live region is a sibling, not inside the button (a button's
+               children are presentational, so a change there is not announced); the button's
+               name carries the same text. -->
+          <span role="status" class="sr-only">{lotsText(row.lots)}</span>
           {#if row.lots.kind === 'failed' || (isSel && !readonly)}
             <div class="flex flex-wrap gap-x-2 gap-y-1">
               {#if row.lots.kind === 'failed'}
