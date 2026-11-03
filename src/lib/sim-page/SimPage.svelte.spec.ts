@@ -659,6 +659,30 @@ describe('SimPage Setup and Run (Task 7, spec §1)', () => {
     await expect.element(historic()).not.toBeChecked(); // unlocked: the key undoes again
   });
 
+  it('Home on the slider during a run returns to Setup and unlocks the policy', async () => {
+    vi.stubEnv('VITE_E2E', '1');
+    try {
+      stub.reset();
+      await page.viewport(1024, 768);
+      await setup();
+      await toReady();
+      await page.getByRole('button', { name: 'Protections', exact: true }).click(); // collapsed
+      await run().click();
+      const fzp = () => window.__sfhFzp!;
+      await expect.poll(() => fzp().playing).toBe(true);
+      await expect.element(rentControl()).toBeDisabled();
+      const slider = page.getByRole('slider', { name: 'Date in the simulation' });
+      (slider.element() as HTMLElement).focus();
+      await userEvent.keyboard('{Home}');
+      await expect.poll(() => fzp().runPhase).toBe('setup');
+      expect(fzp().playing).toBe(false);
+      await expect.element(rentControl()).toBeEnabled(); // the policy store is unlocked
+      await expect.element(run()).toBeVisible();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('at 375 px the phone tool bar goes when Run starts', async () => {
     stub.reset();
     await page.viewport(375, 700);

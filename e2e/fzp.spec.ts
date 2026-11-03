@@ -246,8 +246,9 @@ async function expectFooterReachable(page: Page): Promise<void> {
 test('loads ready and the keyboard drives the scrubber to both ends', async ({ page }) => {
   await gotoFzp(page, '', { run: true });
   expect(await fzp(page, 'phase')).toBe('ready');
-  await expect(readout(page)).toHaveText('October 2026');
-  expect(await fzp(page, 'day')).toBe(await fzp(page, 'asOf'));
+  // The paused run sits at asOf or a little past it (Pause lands a few frames in).
+  expect(await fzp(page, 'day')).toBeGreaterThanOrEqual(await fzp(page, 'asOf'));
+  expect(await fzp(page, 'runPhase')).toBe('run');
 
   const { baseline, shown, months } = JSON.parse(await scoreJson(page)) as {
     baseline: { completedNet: number };
@@ -256,18 +257,20 @@ test('loads ready and the keyboard drives the scrubber to both ends', async ({ p
   };
 
   await slider(page).focus();
-  await page.keyboard.press('PageUp'); // away from the start, so Home has something to do
-  await page.keyboard.press('Home');
-  await expect(readout(page)).toHaveText('October 2026');
-  await expect(scoreBar(page)).toHaveText(
-    `${formatCount(baseline.completedNet + shown[0].completedNet)} homes added`
-  );
-
   await page.keyboard.press('End');
   await expect(readout(page)).toHaveText('December 2066');
   expect(await fzp(page, 'day')).toBe(await fzp(page, 'horizon'));
   await expect(scoreBar(page)).toHaveText(
     `${formatCount(baseline.completedNet + shown[months.length - 1].completedNet)} homes added`
+  );
+
+  // Home is a scrub back to Today: the run ends and the page returns to Set Policy at asOf.
+  await page.keyboard.press('Home');
+  await expect.poll(() => fzp(page, 'runPhase')).toBe('setup');
+  expect(await fzp(page, 'day')).toBe(await fzp(page, 'asOf'));
+  await expect(readout(page)).toHaveText('October 2026');
+  await expect(scoreBar(page)).toHaveText(
+    `${formatCount(baseline.completedNet + shown[0].completedNet)} homes added`
   );
 });
 

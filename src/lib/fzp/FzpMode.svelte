@@ -165,6 +165,11 @@
     /** The Run button's press; the page then moves `runPhase` to 'run'. */
     onrun?: () => void;
     /**
+     * /sim: the viewer scrubbed back to Today during a run (Home, the Today marker, a key or drag
+     * that lands on asOf); the page then returns to Setup. Never called by Replay or playback.
+     */
+    onrewind?: () => void;
+    /**
      * /sim: newer levers are on their way (debounced, or their lots still being found). Run
      * waits for them, and the score bar shows the pending state.
      */
@@ -201,6 +206,7 @@
     notices = undefined,
     runPhase = undefined,
     onrun = undefined,
+    onrewind = undefined,
     leversPending = false,
     view = HIDDEN_VIEW,
     onmanifest = undefined,
@@ -997,6 +1003,8 @@
           setup={runPhase === 'setup' || playWhenCurrent}
           busy={playWhenCurrent}
           onrun={onRun}
+          startLabel={runPhase ? 'Today' : undefined}
+          ontoday={() => runPhase === 'run' && onrewind?.()}
           onday={onDay}
           onheight={(px) => {
             scrubberH = px;

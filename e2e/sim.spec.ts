@@ -45,7 +45,7 @@ async function waitReady(page: Page): Promise<void> {
     .toBe('current');
 }
 
-/** /sim (or `path`), ready, in Setup; with `run`, a run started and paused at asOf. */
+/** /sim (or `path`), ready, in Setup; with `run`, a run started and paused (the day at or just past asOf). */
 async function gotoSim(
   page: Page,
   path = '/sim',
@@ -519,6 +519,28 @@ test('Run locks the policy and Change policy returns to the present', async ({
   expect(await fzp(page, 'playing')).toBe(false);
   await expect(rent).toBeEnabled();
   await expect(slider(page)).toBeDisabled();
+});
+
+test('the Today marker in a run returns to Setup; Replay at the horizon does not', async ({
+  page
+}) => {
+  await gotoSim(page, '/sim', { run: true });
+  await slider(page).focus();
+  await page.keyboard.press('End');
+  await expect.poll(() => fzp(page, 'day')).toBe(await fzp(page, 'horizon'));
+  await expect.poll(() => fzp(page, 'playing')).toBe(false);
+
+  // Replay restarts the run from the present: scrubbing forward from asOf is not "back to Today".
+  await page.getByTestId('fzp-play').click();
+  await expect.poll(() => fzp(page, 'playing')).toBe(true);
+  expect(await fzp(page, 'runPhase')).toBe('run');
+
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect.poll(() => fzp(page, 'playing')).toBe(false);
+  await page.getByTestId('fzp-start').click();
+  await expect.poll(() => fzp(page, 'runPhase')).toBe('setup');
+  expect(await fzp(page, 'day')).toBe(await fzp(page, 'asOf'));
+  await expect(page.getByTestId('fzp-play-label')).toHaveText('Run');
 });
 
 test('axe: the policy panel open during a run', async ({ page }) => {

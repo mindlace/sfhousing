@@ -3,19 +3,22 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { startRun } from './helpers/run';
 import { gotoEditor } from './helpers/sharing';
 
 type FzpWin = Window & { __sfhFzp?: SfhFzpDebug };
 
 test.use({ colorScheme: 'dark' });
 
-async function gotoSim(page: Page): Promise<void> {
+/** /sim, ready, in Setup; with `run`, a run started and paused. */
+async function gotoSim(page: Page, { run = false }: { run?: boolean } = {}): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/sim');
   await page.waitForFunction(() => (window as FzpWin).__sfhFzp?.phase === 'ready', undefined, {
     timeout: 20_000
   });
   await expect(page.locator('.sfh-fzp-scrubber')).toBeVisible();
+  if (run) await startRun(page);
 }
 
 /** Below md the scoreboard is a sheet behind its bar; from md it is already open. */
@@ -33,9 +36,17 @@ test('/ header has no axe violations in dark', async ({ page }) => {
   await expectNoA11yViolations(page, { include: ['header'] });
 });
 
-test('/sim header and timeline bar have no axe violations in dark', async ({ page }) => {
+test('/sim header and timeline bar have no axe violations in dark, in Setup', async ({ page }) => {
   await gotoSim(page);
   await expect(page.getByRole('banner')).toBeVisible();
+  await expectNoA11yViolations(page, { include: ['header', '.sfh-fzp-scrubber'] });
+});
+
+test('/sim timeline bar (Today and horizon markers, Play) has no axe violations in dark, in a run', async ({
+  page
+}) => {
+  await gotoSim(page, { run: true });
+  await expect(page.getByTestId('fzp-start')).toHaveText('Today');
   await expectNoA11yViolations(page, { include: ['header', '.sfh-fzp-scrubber'] });
 });
 

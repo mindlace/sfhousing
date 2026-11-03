@@ -60,6 +60,7 @@ type Over = Partial<{
   actions: Snippet;
   runPhase: SimPhase;
   onrun: () => void;
+  onrewind: () => void;
   leversPending: boolean;
   view: ViewPrefs;
 }>;
@@ -1516,6 +1517,32 @@ describe('FzpMode Setup and Run (/sim, spec §1)', () => {
     expect(debug().playing).toBe(false);
     s.w().emit(timelineMsg(s.w().lastOf('setLevers')!.rev, 7));
     await expect.poll(() => debug().playing).toBe(true);
+  });
+
+  it('the start marker reads Today; in a run it calls onrewind once, in Setup it is disabled', async () => {
+    const onrewind = vi.fn();
+    const s = setup({ runPhase: 'run', levers: DEFAULT_LEVERS, onrewind });
+    await toReady(s);
+    await press('{PageUp}');
+    expect(debug().day).toBeGreaterThan(ASOF);
+    const start = page.getByTestId('fzp-start');
+    await expect.element(start).toHaveTextContent(/^Today$/);
+    await start.click();
+    expect(onrewind).toHaveBeenCalledOnce();
+    await setPhase(s, 'setup');
+    await expect.element(start).toBeDisabled();
+    expect(onrewind).toHaveBeenCalledOnce();
+  });
+
+  it('without runPhase the start marker reads the date and onrewind is not called', async () => {
+    const onrewind = vi.fn();
+    const s = setup({ onrewind });
+    await toReady(s);
+    await press('{PageUp}');
+    const start = page.getByTestId('fzp-start');
+    await expect.element(start).not.toHaveTextContent(/Today/);
+    await start.click();
+    expect(onrewind).not.toHaveBeenCalled();
   });
 
   it('without runPhase (/fzp) the button plays and the hook reports no run phase', async () => {

@@ -918,6 +918,7 @@
   {levers}
   runPhase={run.phase}
   onrun={startRun}
+  onrewind={resetRun}
   leversPending={sync.pending}
   view={run.phase === 'setup' ? viewPrefs : HIDDEN_VIEW}
   onheights={(c) => {
