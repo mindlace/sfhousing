@@ -94,7 +94,14 @@
                 />
               {/each}
             {:else if row.kind === 'disc'}
-              <circle cx="20" cy="8" r="5" fill="none" stroke={color(row.token)} stroke-width="2" />
+              <circle
+                cx="20"
+                cy="8"
+                r={row.radius ?? 5}
+                fill="none"
+                stroke={color(row.token)}
+                stroke-width="2"
+              />
             {:else if row.kind === 'square'}
               <rect x="13" y="1" width="14" height="14" fill={color(row.token)} />
             {:else}

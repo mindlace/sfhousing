@@ -280,12 +280,20 @@ describe('LESSCARS_LEGEND', () => {
       'New tram',
       'New rapid bus',
       'Car shuttle',
-      'Plan stop',
+      'Subway stop',
+      'Tram stop',
+      'Rapid bus stop',
       'Edge garage',
       'Freed land'
     ]);
     expect(LESSCARS_LEGEND.every((r) => r.token in TOKENS.light)).toBe(true);
     expect(new Set(LESSCARS_LEGEND.map((r) => r.id)).size).toBe(LESSCARS_LEGEND.length);
+  });
+
+  it('the key has one stop row per mode, sized as the map draws it', () => {
+    for (const mode of ['subway', 'tram', 'brt'] as const)
+      expect(LESSCARS_LEGEND.find((r) => r.id === `stop-${mode}`)?.radius).toBe(STOP_RADIUS[mode]);
+    expect(LESSCARS_LEGEND.some((r) => r.id === 'stop')).toBe(false);
   });
 
   it('street rows carry their layer pattern, so the key matches the map', () => {

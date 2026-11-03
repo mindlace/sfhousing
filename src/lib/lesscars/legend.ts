@@ -3,7 +3,7 @@
 // a group differ by dash, width or double stroke, never by colour alone (WCAG 1.4.1).
 import type { TokenName } from '$lib/map/palette';
 import { STREET_STATES, type LineProps, type StreetState } from './features';
-import { LINE_STYLE, STREET_STYLE } from './map-layers';
+import { LINE_STYLE, STOP_RADIUS, STREET_STYLE } from './map-layers';
 
 export interface LegendRow {
   id: string;
@@ -18,6 +18,8 @@ export interface LegendRow {
   gap: number;
   /** Drawn as two parallel strokes (gap > 0). */
   double: boolean;
+  /** Disc radius in px as the map draws it (stops); null for non-discs. */
+  radius: number | null;
 }
 
 const STREET_LABEL: Record<StreetState, string> = {
@@ -29,7 +31,7 @@ const STREET_LABEL: Record<StreetState, string> = {
   grade: 'Underpass filled'
 };
 
-const mark = { dash: null, width: null, gap: 0, double: false } as const;
+const mark = { dash: null, width: null, gap: 0, double: false, radius: null } as const;
 const planLine = (
   id: string,
   label: string,
@@ -43,7 +45,8 @@ const planLine = (
   dash: null,
   width: LINE_STYLE[mode].width,
   gap: 0,
-  double: false
+  double: false,
+  radius: null
 });
 
 export const LESSCARS_LEGEND: readonly LegendRow[] = [
@@ -55,13 +58,27 @@ export const LESSCARS_LEGEND: readonly LegendRow[] = [
     dash: STREET_STYLE[s].dash,
     width: STREET_STYLE[s].width,
     gap: STREET_STYLE[s].gap,
-    double: STREET_STYLE[s].gap > 0
+    double: STREET_STYLE[s].gap > 0,
+    radius: null
   })),
   planLine('line-subway', 'New subway', 'lc-line-subway', 'subway'),
   planLine('line-tram', 'New tram', 'lc-line-tram', 'tram'),
   planLine('line-brt', 'New rapid bus', 'lc-line-brt', 'brt'),
   planLine('shuttle', 'Car shuttle', 'lc-shuttle', 'shuttle'),
-  { id: 'stop', label: 'Plan stop', token: 'label', kind: 'disc', ...mark },
+  ...(
+    [
+      ['subway', 'Subway stop'],
+      ['tram', 'Tram stop'],
+      ['brt', 'Rapid bus stop']
+    ] as const
+  ).map(([mode, label]): LegendRow => ({
+    id: `stop-${mode}`,
+    label,
+    token: 'label',
+    kind: 'disc',
+    ...mark,
+    radius: STOP_RADIUS[mode]
+  })),
   { id: 'garage', label: 'Edge garage', token: 'lc-garage', kind: 'square', ...mark },
   { id: 'site', label: 'Freed land', token: 'lc-site', kind: 'fill', ...mark }
 ];

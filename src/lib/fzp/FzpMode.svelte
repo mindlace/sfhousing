@@ -971,7 +971,7 @@
       disabled={!canReroll}
       aria-busy={rerollBusy}
       onclick={anotherFuture}
-      class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:text-gray-700 md:max-lg:px-1 dark:border-gray-600 dark:disabled:text-gray-400 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+      class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:text-gray-700 dark:border-gray-600 dark:disabled:text-gray-400 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
     >
       Another future
     </button>

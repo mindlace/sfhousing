@@ -536,6 +536,9 @@ describe('policy-layer sources (historic status, SB 79 exemption tables)', () =>
   it('FETCH_IDS includes datasf-streets, the page-only centreline source', () => {
     expect(FETCH_IDS).toContain('datasf-streets');
     expect(DATASF['datasf-streets']).toMatchObject({ dataset: '3psu-pn9h', where: 'active=true' });
+    expect(DATASF['datasf-streets'].select).toBe(
+      'cnn,streetname,classcode,layer,active,f_st,t_st,line'
+    );
   });
 
   it('datasf-historic-status: dataset, select, where and licence', async () => {

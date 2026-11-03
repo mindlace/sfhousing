@@ -71,6 +71,56 @@ describe('SiteHeader', () => {
         .not.toHaveAttribute('aria-current');
     });
 
+    it('shows Fewer cars at 1024px, pointing at /lesscars and current there', async () => {
+      await page.viewport(1024, 768);
+      render(SiteHeader, { routeId: '/lesscars' });
+      const nav = page.getByRole('navigation', { name: 'Modes' });
+      const fewer = nav.getByRole('link', { name: 'Fewer cars' });
+      await expect.element(fewer).toHaveAttribute('href', '/lesscars');
+      await expect.element(fewer).toHaveAttribute('aria-current', 'page');
+      await expect
+        .element(nav.getByRole('link', { name: 'Simulate' }))
+        .not.toHaveAttribute('aria-current');
+    });
+
+    it('puts Fewer cars in the menu at 375px, spelled out', async () => {
+      await page.viewport(375, 812);
+      render(SiteHeader, { routeId: '/' });
+      await page.getByRole('button', { name: 'Menu' }).click();
+      const nav = page.getByRole('navigation', { name: 'Modes' });
+      const link = nav.getByRole('link', { name: 'Fewer cars' });
+      await expect.element(link).toBeVisible();
+      expect((link.element() as HTMLElement).innerText).toBe('Fewer cars');
+    });
+
+    for (const width of [1024, 1280, 1440]) {
+      it(`shows the visible text "Fewer cars" inline at ${width}px`, async () => {
+        await page.viewport(width, 768);
+        render(SiteHeader, { routeId: '/' });
+        const link = page
+          .getByRole('navigation', { name: 'Modes' })
+          .getByRole('link', { name: 'Fewer cars' });
+        await expect.element(link).toBeVisible();
+        expect((link.element() as HTMLElement).innerText).toBe('Fewer cars');
+        expect(link.element().textContent).toBe('Fewer cars');
+      });
+    }
+
+    for (const width of [768])
+      it(`at ${width}px the links wait in the Menu, with Fewer cars spelled out`, async () => {
+        await page.viewport(width, 1024);
+        render(SiteHeader, { routeId: '/' });
+        await expect
+          .element(page.getByRole('link', { name: 'Fewer cars' }))
+          .not.toBeInTheDocument();
+        await page.getByRole('button', { name: 'Menu' }).click();
+        const link = page
+          .getByRole('navigation', { name: 'Modes' })
+          .getByRole('link', { name: 'Fewer cars' });
+        await expect.element(link).toBeVisible();
+        expect((link.element() as HTMLElement).innerText).toBe('Fewer cars');
+      });
+
     it('puts both links in the menu at 375px and marks the current mode', async () => {
       await page.viewport(375, 812);
       render(SiteHeader, { routeId: '/sim' });
@@ -88,7 +138,7 @@ describe('SiteHeader', () => {
     const tabs = async (width: number) => {
       await page.viewport(width, 812);
       render(SiteHeader, { routeId: '/' });
-      if (width < 768) await page.getByRole('button', { name: 'Menu' }).click();
+      if (width < 1024) await page.getByRole('button', { name: 'Menu' }).click();
       const nav = page.getByRole('navigation', { name: 'Modes' });
       const current = nav.getByRole('link', { name: 'Paint' });
       const other = nav.getByRole('link', { name: 'Simulate' });
@@ -133,8 +183,17 @@ describe('SiteHeader', () => {
       expect(suffixOf().getBoundingClientRect().width).toBeLessThanOrEqual(1);
     });
 
-    it('shows "SF Housing Simulator" at 1024px', async () => {
+    it('shows "SF Housing" only at 1024px and keeps the full accessible name', async () => {
       await page.viewport(1024, 768);
+      render(SiteHeader);
+      const link = page.getByRole('banner').getByRole('link', { name: 'SF Housing Simulator' });
+      await expect.element(link).toBeVisible();
+      expect(link.element().textContent).toBe('SF Housing Simulator');
+      expect(suffixOf().getBoundingClientRect().width).toBeLessThanOrEqual(1);
+    });
+
+    it('shows "SF Housing Simulator" at 1280px', async () => {
+      await page.viewport(1280, 800);
       render(SiteHeader);
       await expect
         .element(page.getByRole('banner').getByRole('link', { name: 'SF Housing Simulator' }))
@@ -181,7 +240,7 @@ describe('SiteHeader', () => {
       await expect.element(banner.getByRole('button', { name: '1,234 homes added' })).toBeVisible();
       await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
       await expect.element(page.getByText('Another future')).not.toBeVisible();
-      // Two copies of the links (header row from md, menu below md): neither shows.
+      // Two copies of the links (header row from lg, menu below lg): neither shows.
       expect(page.getByRole('link', { name: 'Paint' }).elements()).toEqual([]);
       expect(page.getByText('Paint').elements()).toHaveLength(2);
 
@@ -292,34 +351,40 @@ describe('SiteHeader', () => {
       const status = createRawSnippet(() => ({
         render: () => '<div data-testid="status-slot"></div>'
       }));
-      it('from md it sits right after the Simulate link, left of the actions', async () => {
+      const wide = createRawSnippet(() => ({
+        // As HeaderScore renders it: "added" is visually hidden below lg.
+        render: () =>
+          '<button class="rounded-md border px-2 text-sm font-semibold whitespace-nowrap">' +
+          '12,345 homes <span class="max-lg:sr-only">added</span></button>'
+      }));
+
+      it('from lg it sits right after the last mode link, left of the actions', async () => {
         await page.viewport(1024, 768);
         render(SiteHeader, { routeId: '/sim', actions, pinned, status });
         const slot = page.getByTestId('status-slot').element();
         const nav = page.getByRole('navigation', { name: 'Modes' });
-        const simulate = nav.getByRole('link', { name: 'Simulate' }).element();
+        const lastLink = nav.getByRole('link', { name: 'Fewer cars' }).element();
         const score = page.getByRole('button', { name: '1,234 homes added' }).element();
         expect(
-          simulate.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING
+          lastLink.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING
         ).toBeTruthy();
         const s = slot.getBoundingClientRect();
-        expect(s.left).toBeGreaterThanOrEqual(simulate.getBoundingClientRect().right);
-        expect(s.left - simulate.getBoundingClientRect().right).toBeLessThanOrEqual(24);
+        expect(s.left).toBeGreaterThanOrEqual(lastLink.getBoundingClientRect().right);
+        expect(s.left - lastLink.getBoundingClientRect().right).toBeLessThanOrEqual(24);
         expect(s.right).toBeLessThanOrEqual(score.getBoundingClientRect().left);
       });
 
-      // The /sim row as it renders from md: the real chip, the score bar and the widest actions
-      // (Setup's, with View). View, Policy and Another future tighten their padding below lg.
+      // The /sim row as it renders from lg: the real chip, the score bar and the widest actions
+      // (Setup's, with View).
       const btn = 'min-h-6 min-w-6 rounded-md border px-2 text-sm font-medium whitespace-nowrap';
-      const tight = `${btn} md:max-lg:px-1`;
       const simActions = createRawSnippet(() => ({
         render: () =>
-          `<div class="contents"><button class="${tight}">View</button>` +
-          `<button class="${tight}">Policy</button>` +
+          `<div class="contents"><button class="${btn}">View</button>` +
+          `<button class="${btn}">Policy</button>` +
           `<button class="${btn} bg-accent text-on-accent">Share link</button>` +
-          `<button class="${tight}">Another future</button></div>`
+          `<button class="${btn}">Another future</button></div>`
       }));
-      for (const width of [768, 1024]) {
+      for (const width of [1024, 1280]) {
         it(`at ${width}px "Autosave off", the nav and every action fit without overlap`, async () => {
           await page.viewport(width, 768);
           // The real score, with the delta a run that compares with the FZP shows.
@@ -359,6 +424,42 @@ describe('SiteHeader', () => {
           }
         });
       }
+
+      for (const width of [768])
+        it(`at ${width}px every action is in the Menu and the header does not overflow`, async () => {
+          await page.viewport(width, 768);
+          render(SiteHeader, { routeId: '/sim', actions: simActions, pinned: wide, status });
+          const host = page.getByTestId('status-slot').element() as HTMLElement;
+          const a = mount(SaveIndicator, {
+            target: host,
+            props: { status: 'off', align: 'start' }
+          });
+          try {
+            const banner = page.getByRole('banner').element() as HTMLElement;
+            await expect.element(page.getByRole('button', { name: 'Autosave off' })).toBeVisible();
+            await expect
+              .element(page.getByRole('button', { name: '12,345 homes added' }))
+              .toBeVisible();
+            await expect.element(page.getByText('Share link')).not.toBeVisible();
+            await page.getByRole('button', { name: 'Menu' }).click();
+            for (const name of ['View', 'Policy', 'Share link', 'Another future'])
+              await expect.element(page.getByRole('button', { name })).toBeVisible();
+            expect(banner.getBoundingClientRect().height).toBe(48);
+            expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);
+            expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+            const chip = page.getByRole('button', { name: 'Autosave off' }).element();
+            const score = page.getByRole('button', { name: '12,345 homes added' }).element();
+            const menuBtn = page.getByRole('button', { name: 'Menu' }).element();
+            expect(chip.getBoundingClientRect().right).toBeLessThanOrEqual(
+              score.getBoundingClientRect().left
+            );
+            expect(score.getBoundingClientRect().right).toBeLessThanOrEqual(
+              menuBtn.getBoundingClientRect().left
+            );
+          } finally {
+            await unmount(a);
+          }
+        });
 
       it('at 375px it sits right after the site title, outside the Menu', async () => {
         await page.viewport(375, 812);
@@ -411,7 +512,7 @@ describe('SiteHeader', () => {
       );
     });
 
-    it('centres the pinned item in the header from md', async () => {
+    it('centres the pinned item in the header from lg', async () => {
       await page.viewport(1024, 768);
       render(SiteHeader, { routeId: '/sim', actions, pinned });
       await expect.element(page.getByRole('button', { name: '1,234 homes added' })).toBeVisible();

@@ -5,7 +5,7 @@
  * - plain: limit steps are solid ink; source boundaries (same height, another source) are hidden.
  * - paint (brush or eraser selected): anything set by paint, or bounding it, is a dashed line in
  *   the paint tone, source boundaries included. Everything else is as plain.
- * - rule s: the rims of s and the outline of its lot set are full ink (the outline 2 px); every
+ * - rule s: the rims of s and the outline of its lot set are full ink (the outline 1.5 px); every
  *   other line is dimmed, glaze shows only on s and walls of s are full, others dimmed. The FZP
  *   baseline selected is rule mode with s = SRC_FZP.
  */
@@ -25,7 +25,7 @@ export type LimitsView =
 export const DIM_ALPHA = 0.3;
 export const LIDS_FADE = [14.5, 15.5] as const;
 /** Glaze alpha per room-to-grow step, × the `limit-glaze` token alpha. */
-export const GLAZE_ALPHA = [0.3, 0.55, 0.8, 1] as const;
+export const GLAZE_ALPHA = [0.4, 0.6, 0.8, 1] as const;
 
 export interface Look {
   show: boolean;
@@ -78,7 +78,7 @@ export function chainLook(kind: number, srcA: number, srcB: number, mode: Limits
       const a = srcA === mode.source;
       const b = srcB === mode.source;
       // exactly one side: the outline of the rule's lot set, bold so it can be found from afar
-      if (a !== b) return { ...INK, widthPx: 2 };
+      if (a !== b) return { ...INK, widthPx: 1.5 };
       // both sides: a limit step inside the rule's own set, full like its rims
       if (a) return kind === CHAIN_SOURCE ? HIDDEN : INK;
       return kind === CHAIN_SOURCE ? HIDDEN : DIM;
@@ -86,10 +86,10 @@ export function chainLook(kind: number, srcA: number, srcB: number, mode: Limits
   }
 }
 
-/** Contour width: 1 px below a 4-story step, 1.5 px from 4 to 11, 2 px from 12. */
-export function chainWidthPx(hi: number, lo: number): 1 | 1.5 | 2 {
+/** Contour width: 0.75 px below a 4-story step, 1 px from 4 to 11, 1.25 px from 12. */
+export function chainWidthPx(hi: number, lo: number): 0.75 | 1 | 1.25 {
   const step = hi - lo;
-  return step >= 12 ? 2 : step >= 4 ? 1.5 : 1;
+  return step >= 12 ? 1.25 : step >= 4 ? 1 : 0.75;
 }
 
 /** Glaze alpha for a piece of `owner` at room-to-grow `step` (0–3), × the token alpha. */

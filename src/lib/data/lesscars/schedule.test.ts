@@ -7,6 +7,7 @@ import {
   LESSCARS_START,
   checkPlan,
   inProgress,
+  monthsAfter,
   schedulePlan,
   yearStart
 } from './schedule';
@@ -16,12 +17,10 @@ const codes = (p: LessCarsPlan) =>
   checkPlan(p, schedulePlan(p)).map(({ code, project }) => ({ code, project }));
 
 describe('schedulePlan', () => {
-  it('schedules TINY_PLAN: open = start + round(months x MONTH_DAYS)', () => {
+  it('schedules TINY_PLAN: open = start + whole calendar months', () => {
     const t = schedulePlan(TINY_PLAN).times.get('subway')!;
     expect(t.startDay).toBe(yearStart(TINY_PLAN.projects[0].startYear));
-    expect(t.openDay).toBe(
-      t.startDay + Math.round(TINY_PLAN.projects[0].durationMonths.value * MONTH_DAYS)
-    );
+    expect(t.openDay).toBe(yearStart(TINY_PLAN.projects[0].startYear + 5));
     expect(t.closeDay).toBeNull();
     expect(t.availableDay).toBeNull();
   });
@@ -42,7 +41,66 @@ describe('schedulePlan', () => {
   });
 });
 
+describe('monthsAfter', () => {
+  it('whole months are calendar months, a fraction adds days', () => {
+    expect(monthsAfter(yearStart(2029), 36)).toBe(yearStart(2032));
+    expect(monthsAfter(yearStart(2032), 108)).toBe(yearStart(2041));
+    expect(monthsAfter(yearStart(2033), 30)).toBe(Date.UTC(2035, 6, 1) / 86400000);
+    expect(monthsAfter(yearStart(2030), 0.5)).toBe(yearStart(2030) + 15);
+  });
+});
+
 describe('checkPlan', () => {
+  it('a dependant may start on the day a 36-month dependency opens', () => {
+    const p = tinyPlan((q) => {
+      byId(q, 'buslane').startYear = 2029;
+      byId(q, 'buslane').durationMonths.value = 36;
+      byId(q, 'ped').startYear = 2032;
+    });
+    expect(codes(p)).not.toContainEqual({ code: 'starts-before-dependency', project: 'ped' });
+  });
+
+  it('two 36-month bus lanes opening on the day two lines start are within a cap of 2', () => {
+    const p = tinyPlan((q) => {
+      const lane = byId(q, 'buslane');
+      const line = byId(q, 'subway');
+      const mk = (base: PlanProject, id: string, startYear: number, months: number) => {
+        const c = structuredClone(base);
+        c.id = id;
+        c.startYear = startYear;
+        c.durationMonths.value = months;
+        c.dependsOn = [];
+        return c;
+      };
+      q.projects = [
+        mk(lane, 'lane1', 2029, 36),
+        mk(lane, 'lane2', 2029, 36),
+        mk(line, 'line1', 2032, 60),
+        mk(line, 'line2', 2032, 60)
+      ];
+    });
+    const s = schedulePlan(p);
+    expect(s.times.get('lane1')!.openDay).toBe(yearStart(2032));
+    expect(checkPlan(p, s).map((c) => c.code)).not.toContain('capacity');
+    // The old rounding opened them a day late, so all four were under way on 2032-01-01.
+    expect(yearStart(2029) + Math.round(36 * MONTH_DAYS)).toBeGreaterThan(yearStart(2032));
+  });
+
+  it('opensAfter: opening before the named project is opens-before; equal or later passes', () => {
+    const found = (edit: (q: LessCarsPlan) => void) =>
+      codes(tinyPlan(edit)).map((c) => `${c.project}:${c.code}`);
+    // removal opens 2032-01-01; ped starts 2030 and runs 12 months (2031-01-01)
+    const early = found((q) => (byId(q, 'ped').opensAfter = ['removal']));
+    expect(early).toContain('ped:opens-before');
+    const sameDay = found((q) => {
+      byId(q, 'ped').opensAfter = ['removal'];
+      byId(q, 'ped').durationMonths.value = 24;
+    });
+    expect(sameDay).not.toContain('ped:opens-before');
+    const unknown = found((q) => (byId(q, 'ped').opensAfter = ['nope']));
+    expect(unknown).toContain('ped:unknown-dependency');
+  });
+
   it('TINY_PLAN has no problems', () => {
     expect(checkPlan(TINY_PLAN, schedulePlan(TINY_PLAN))).toEqual([]);
   });

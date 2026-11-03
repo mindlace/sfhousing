@@ -83,7 +83,7 @@ const SHIPYARD = projectById('CASE:2007.0001PRX');
 const readout = (page: Page): Locator => page.getByTestId('fzp-readout-label');
 /** The header score bar: "{n} homes added" at the scrubbed day. */
 const scoreBar = (page: Page): Locator => page.getByTestId('score-bar');
-/** "Another future", made visible first (below 768 px it waits in the header Menu). */
+/** "Another future", made visible first (below 1024 px it waits in the header Menu). */
 const anotherFuture = (page: Page): Promise<Locator> => headerAction(page, 'Another future');
 /** The dock's Results face (`data-testid="score-details"`), which the header score flips to. */
 const scoreDetails = (page: Page): Locator => page.getByRole('region', { name: 'Results' });
@@ -103,7 +103,7 @@ async function openScore(page: Page): Promise<Locator> {
 }
 const sourcesDialog = (page: Page): Locator =>
   page.getByRole('dialog', { name: 'Where these numbers come from' });
-/** A header mode link, made visible first (below 768 px the links wait in the header Menu). */
+/** A header mode link, made visible first (below 1024 px the links wait in the header Menu). */
 async function headerLink(page: Page, name: string): Promise<Locator> {
   await openHeaderMenu(page);
   return page.getByRole('banner').getByRole('link', { name, exact: true });

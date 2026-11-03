@@ -76,7 +76,7 @@ const tabOf = (page: Page, name: string): Locator =>
   panel(page).getByRole('tab', { name, exact: true });
 const menuButton = (page: Page): Locator =>
   page.getByRole('banner').getByRole('button', { name: 'Menu', exact: true });
-/** Hidden ones included: below md it waits in the Menu, which closes when the sheet opens. */
+/** Hidden ones included: below lg it waits in the Menu, which closes when the sheet opens. */
 const policyButton = (page: Page): Locator =>
   page
     .getByRole('banner')
@@ -98,7 +98,10 @@ const dockShown = (page: Page): Promise<boolean> =>
         'true'
   );
 
-/** The dock, opened if it is not already (from md the Policy button, below md the handle). */
+/**
+ * The dock, opened if it is not already (from md the Policy button, which waits in the Menu below
+ * lg; below md the handle).
+ */
 async function openPolicy(page: Page): Promise<Locator> {
   if (!(await dockShown(page))) {
     if (await handle(page).isVisible()) await handle(page).click();
@@ -1085,7 +1088,7 @@ const mapVisibility = (page: Page, id: string) =>
   );
 const deckIds = (page: Page) =>
   page.evaluate(() => (window as Win).__sfhMap!.timelineSnapshot()?.layerIds ?? []);
-/** Hidden ones included: below md the View button waits in the header Menu. */
+/** Hidden ones included: below lg the View button waits in the header Menu. */
 const viewButtons = (page: Page): Locator =>
   page.getByRole('banner').getByRole('button', { name: 'View', exact: true, includeHidden: true });
 
@@ -1250,16 +1253,80 @@ async function expectHeaderFits(page: Page): Promise<number> {
   return score.x + score.width / 2;
 }
 
-test('at 768 px the header fits in Setup and in Run, and the score stays put', async ({ page }) => {
-  await page.setViewportSize({ width: 768, height: 1024 });
-  await gotoSim(page);
-  await expect(page.getByRole('banner').getByRole('button', { name: 'View' })).toBeVisible();
-  const setupCentre = await expectHeaderFits(page);
-  await pressRun(page);
-  await expect(viewButtons(page)).toHaveCount(0);
-  const runCentre = await expectHeaderFits(page);
-  expect(Math.abs(runCentre - setupCentre)).toBeLessThanOrEqual(1);
-});
+/**
+ * The widest header strings the page can show: the "Autosave off" chip and a five-digit score.
+ * The score's count is the button's own text; its "added" span (visually hidden below lg) stays.
+ */
+async function widestHeaderText(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const chip = document.querySelector('[data-header-status]');
+    if (chip) {
+      const w = document.createTreeWalker(chip, NodeFilter.SHOW_TEXT);
+      for (let n = w.nextNode(); n; n = w.nextNode())
+        if (n.textContent?.trim()) {
+          n.textContent = 'Autosave off';
+          break;
+        }
+    }
+    const score = document.querySelector('[data-testid="score-bar"]');
+    if (!score) return;
+    let first = true;
+    for (const n of score.childNodes)
+      if (n.nodeType === Node.TEXT_NODE) {
+        n.textContent = first ? '12,345 homes ' : '';
+        first = false;
+      }
+  });
+}
+
+for (const width of [1024, 1280]) {
+  test(`at ${width} px the header fits in Setup and in Run with the widest strings, and the score stays put`, async ({
+    page
+  }) => {
+    await page.setViewportSize({ width, height: 1024 });
+    await gotoSim(page);
+    await expect(page.getByRole('banner').getByRole('button', { name: 'View' })).toBeVisible();
+    await widestHeaderText(page);
+    await expect(scoreBar(page)).toHaveAccessibleName('12,345 homes added');
+    const setupCentre = await expectHeaderFits(page);
+    await pressRun(page);
+    await expect(viewButtons(page)).toHaveCount(0);
+    await widestHeaderText(page);
+    const runCentre = await expectHeaderFits(page);
+    expect(Math.abs(runCentre - setupCentre)).toBeLessThanOrEqual(1);
+  });
+}
+
+for (const width of [768]) {
+  test(`at ${width} px the header is the Menu layout: it fits, and every action and mode link is in the Menu`, async ({
+    page
+  }) => {
+    await page.setViewportSize({ width, height: 1024 });
+    await gotoSim(page);
+    const banner = page.getByRole('banner');
+    const menu = banner.getByRole('button', { name: 'Menu', exact: true });
+    await expect(menu).toBeVisible();
+    // Closed: the site name, status, score and Menu button only; no action or mode link shows.
+    await expect(banner.getByRole('button', { name: 'View', exact: true })).toHaveCount(0);
+    await expect(banner.getByRole('button', { name: 'Policy', exact: true })).toHaveCount(0);
+    await expect(banner.getByRole('link', { name: 'Fewer cars' })).toHaveCount(0);
+    // The dock is still the desktop panel from md: its button waits in the Menu.
+    await expect(dockPanel(page)).toBeVisible();
+    await expectHeaderFits(page);
+    await openHeaderMenu(page);
+    for (const name of ['View', 'Policy', /^(Publish|Share link)/, 'Another future'])
+      await expect(
+        banner.getByRole('button', { name, exact: typeof name === 'string' })
+      ).toBeVisible();
+    for (const name of ['Paint', 'Simulate', 'Fewer cars'])
+      await expect(banner.getByRole('link', { name, exact: true })).toBeVisible();
+    await expectNoHorizontalScroll(page);
+    await menu.click();
+    await pressRun(page);
+    await expect(viewButtons(page)).toHaveCount(0);
+    await expectHeaderFits(page);
+  });
+}
 
 // ---- outlines of painted lots while erasing (plan 2, Task 5) ---------------------------------------
 

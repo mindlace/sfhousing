@@ -120,6 +120,8 @@ describe('normalise mini fixture', () => {
       'streetname VARCHAR',
       'classcode VARCHAR',
       'layer VARCHAR',
+      'f_st VARCHAR',
+      't_st VARCHAR',
       'geom GEOMETRY'
     ]);
     const [g] = await db.all<{ t: string; x: number }>(
@@ -128,6 +130,58 @@ describe('normalise mini fixture', () => {
     expect(g.t).toBe('MULTILINESTRING');
     // Local metres (the mini grid), not degrees.
     expect(Math.abs(g.x)).toBeGreaterThan(1000);
+  });
+
+  it('src_streets carries f_st and t_st, NULL when the raw file lacks them', async () => {
+    const db = await miniDuck();
+    const columns = (await db.all<{ column_name: string }>(`DESCRIBE src_streets`)).map(
+      (c) => c.column_name
+    );
+    expect(columns).toEqual(expect.arrayContaining(['f_st', 't_st']));
+    const [n] = await db.all<{ n: number }>(
+      `SELECT count(*) n FROM src_streets WHERE f_st IS NOT NULL OR t_st IS NOT NULL`
+    );
+    expect(n.n).toBe(0);
+  });
+
+  it('src_streets keeps f_st and t_st from a raw file that has them', async () => {
+    const dir = tmp();
+    const raw = join(dir, 'streets.geojson');
+    writeFileSync(
+      raw,
+      JSON.stringify({
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            properties: {
+              cnn: '7710106',
+              streetname: 'JUNIPERO SERRA BLVD',
+              classcode: '2',
+              layer: 'STREETS',
+              f_st: 'BROTHERHOOD WAY',
+              t_st: ' COUNTY LINE '
+            },
+            geometry: {
+              type: 'MultiLineString',
+              coordinates: [
+                [
+                  [-122.47, 37.71],
+                  [-122.47, 37.709]
+                ]
+              ]
+            }
+          }
+        ]
+      })
+    );
+    const db = await openDuck();
+    const out = join(dir, 'streets.parquet');
+    expect(await normalise(db, 'datasf-streets', [raw], out)).toBe(1);
+    const [r] = await db.all<{ f_st: string; t_st: string }>(
+      `SELECT f_st, t_st FROM read_parquet('${out}')`
+    );
+    expect(r).toEqual({ f_st: 'BROTHERHOOD WAY', t_st: 'COUNTY LINE' });
   });
 
   it('a lock without datasf-streets gives an empty src_streets', async () => {
@@ -143,6 +197,10 @@ describe('normalise mini fixture', () => {
     expect(counts['datasf-streets']).toBe(0);
     const [n] = await db.all<{ n: number }>(`SELECT count(*) n FROM src_streets`);
     expect(n.n).toBe(0);
+    const cols = (await db.all<{ column_name: string }>(`DESCRIBE src_streets`)).map(
+      (c) => c.column_name
+    );
+    expect(cols).toEqual(['cnn', 'streetname', 'classcode', 'layer', 'f_st', 't_st', 'geom']);
   });
 
   it('historic status: one row per listed apn, 0026T001A verbatim, lot 18 absent', async () => {

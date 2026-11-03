@@ -49,7 +49,8 @@ const OPTIONAL_SOURCE_IDS: readonly SourceId[] = ['datasf-streets'];
 /** Empty-table schema of each optional source (the columns its `buildSelect` writes). */
 const EMPTY_SELECT: Partial<Record<SourceId, string>> = {
   'datasf-streets': `SELECT NULL::VARCHAR AS cnn, NULL::VARCHAR AS streetname,
-    NULL::VARCHAR AS classcode, NULL::VARCHAR AS layer, NULL::GEOMETRY AS geom WHERE false`
+    NULL::VARCHAR AS classcode, NULL::VARCHAR AS layer, NULL::VARCHAR AS f_st,
+    NULL::VARCHAR AS t_st, NULL::GEOMETRY AS geom WHERE false`
 };
 
 /** Normalised parquet basename -> src_ table. */
@@ -260,9 +261,10 @@ async function buildSelect(
     case 'datasf-streets':
       // `active` is filtered by the fetch's `$where`. cnn and classcode stay text (SODA writes
       // them as strings); geom is a MultiLineString in EPSG:7131 (the build CRS). cnn is unique,
-      // the geometry breaks ties.
+      // the geometry breaks ties. f_st / t_st are the cross streets at each end ("COUNTY LINE" at
+      // the south edge), read by the /lesscars corridor resolver; NULL when the raw file lacks them.
       return `SELECT ${txt(cols, 'cnn')}, ${txt(cols, 'streetname')}, ${txt(cols, 'classcode')},
-        ${txt(cols, 'layer')},
+        ${txt(cols, 'layer')}, ${txt(cols, 'f_st')}, ${txt(cols, 't_st')},
         ST_Transform(geom, 'EPSG:4326', 'EPSG:7131', always_xy := true) AS geom
         FROM ${p} ORDER BY cnn, ST_AsHEXWKB(geom)`;
     case 'datasf-historic-status':

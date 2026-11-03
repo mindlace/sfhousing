@@ -1,0 +1,129 @@
+{
+  "schema": 1,
+  "corridors": [
+    {
+      "owner": "fulton-brt",
+      "street": "MCALLISTER ST",
+      "from": "JONES ST",
+      "to": "CENTRAL AVE"
+    },
+    {
+      "owner": "fulton-brt",
+      "street": "FULTON ST",
+      "from": "CENTRAL AVE",
+      "to": "LA PLAYA ST"
+    },
+    {
+      "owner": "19th-ave-brt",
+      "street": "PARK PRESIDIO BLVD",
+      "from": "LAKE ST",
+      "to": "FULTON ST"
+    },
+    {
+      "owner": "19th-ave-brt",
+      "street": "19TH AVE",
+      "from": "LINCOLN WAY",
+      "to": "JUNIPERO SERRA BLVD"
+    },
+    {
+      "owner": "19th-ave-brt",
+      "street": "JUNIPERO SERRA BLVD",
+      "from": "19TH AVE",
+      "to": "COUNTY LINE"
+    },
+    {
+      "owner": "lombard-bus-lane",
+      "street": "LOMBARD ST",
+      "from": "VAN NESS AVE",
+      "to": "LYON ST"
+    },
+    {
+      "owner": "lombard-bus-lane",
+      "street": "RICHARDSON AVE",
+      "from": "LYON ST",
+      "to": "FRANCISCO ST"
+    },
+    {
+      "owner": "n-judah-priority",
+      "street": "CARL ST",
+      "from": "COLE ST",
+      "to": "ARGUELLO BLVD"
+    },
+    {
+      "owner": "n-judah-priority",
+      "street": "IRVING ST",
+      "from": "ARGUELLO BLVD",
+      "to": "9TH AVE"
+    },
+    {
+      "owner": "n-judah-priority",
+      "street": "9TH AVE",
+      "from": "IRVING ST",
+      "to": "JUDAH ST"
+    },
+    {
+      "owner": "n-judah-priority",
+      "street": "JUDAH ST",
+      "from": "9TH AVE",
+      "to": "LA PLAYA ST"
+    },
+    {
+      "owner": "j-church-priority",
+      "street": "CHURCH ST",
+      "from": "MARKET ST",
+      "to": "18TH ST"
+    },
+    {
+      "owner": "j-church-priority",
+      "street": "CHURCH ST",
+      "from": "22ND ST",
+      "to": "30TH ST"
+    },
+    {
+      "owner": "k-ocean-priority",
+      "street": "OCEAN AVE",
+      "from": "JUNIPERO SERRA BLVD",
+      "to": "SAN JOSE AVE"
+    },
+    {
+      "owner": "van-ness-street",
+      "street": "VAN NESS AVE",
+      "from": "LOMBARD ST",
+      "to": "MARKET ST"
+    },
+    {
+      "owner": "fell-oak-street",
+      "street": "FELL ST",
+      "from": "MARKET ST",
+      "to": "BAKER ST"
+    },
+    {
+      "owner": "fell-oak-street",
+      "street": "OAK ST",
+      "from": "MARKET ST",
+      "to": "BAKER ST",
+      "as": {
+        "from": "VAN NESS AVE",
+        "reason": "Oak St's east end in DataSF is Van Ness Ave (CNN 9750000); it does not meet Market St, about 60 m south. Same stretch."
+      }
+    },
+    {
+      "owner": "irving-pedestrian",
+      "street": "IRVING ST",
+      "from": "ARGUELLO BLVD",
+      "to": "9TH AVE"
+    },
+    {
+      "owner": "columbus-pedestrian",
+      "street": "COLUMBUS AVE",
+      "from": "BROADWAY",
+      "to": "BAY ST"
+    },
+    {
+      "owner": "masonic-station",
+      "street": "GEARY BLVD",
+      "from": "PRESIDIO AVE",
+      "to": "WOOD ST"
+    }
+  ]
+}

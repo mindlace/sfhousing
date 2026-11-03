@@ -13,6 +13,7 @@ import {
   chooseTool,
   gotoEditor,
   headerScore,
+  openHeaderMenu,
   resultsFace,
   smallText,
   waitForMap,
@@ -381,6 +382,52 @@ test.describe('medium width', () => {
       await expect(last).toBeInViewport({ ratio: 1 });
       await expectUnobscured(last);
       await last.click({ trial: true });
+    });
+  }
+
+  // From md to lg the dock is the desktop panel, but the header is the Menu layout: the Paint
+  // button that folds the dock waits in the Menu with the other actions.
+  for (const path of ['/', '/p/:id'] as const) {
+    test(`768 px on ${path}: the header is the Menu layout and Paint folds the dock from the Menu`, async ({
+      page,
+      request
+    }) => {
+      await page.setViewportSize({ width: 768, height: 1024 });
+      if (path === '/') await gotoEditor(page);
+      else {
+        const res = await request.post('/api/plans', {
+          data: smallText,
+          headers: { 'content-type': 'application/json' }
+        });
+        expect(res.ok()).toBe(true);
+        const { id } = (await res.json()) as { id: string };
+        await page.goto(`/p/${id}`);
+        await waitForMap(page);
+      }
+      const banner = page.getByRole('banner');
+      const menu = banner.getByRole('button', { name: 'Menu', exact: true });
+      const paint = banner.getByRole('button', { name: 'Paint', exact: true });
+      await expect(menu).toBeVisible();
+      await expect(headerScore(page)).toBeVisible();
+      await expect(paint).toHaveCount(0);
+      await expect(banner.getByRole('link', { name: 'Fewer cars' })).toHaveCount(0);
+      const fit = await banner.evaluate((b) => b.scrollWidth <= b.clientWidth);
+      expect(fit, 'the header overflows').toBe(true);
+      await expect(page.locator('.sfh-dock-panel')).toBeVisible();
+
+      await menu.click();
+      await expect(paint).toBeVisible();
+      for (const name of ['Paint', 'Simulate', 'Fewer cars'])
+        await expect(banner.getByRole('link', { name, exact: true })).toBeVisible();
+      await expect(paint).toHaveAttribute('aria-expanded', 'true');
+      await paint.click();
+      await expect(page.locator('.sfh-dock-panel')).toHaveCount(0);
+      await expect(page.getByTestId('dock-rail')).toBeVisible();
+      await openHeaderMenu(page);
+      await expect(paint).toHaveAttribute('aria-expanded', 'false');
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+      ).toBe(true);
     });
   }
 });

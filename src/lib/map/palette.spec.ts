@@ -93,13 +93,13 @@ describe('palette (U4)', () => {
           `access-${k}`
         ).toBeGreaterThanOrEqual(3);
     });
-    it(`${theme}: glaze and wall are neutral (channel spread ≤ 12) and translucent (alpha ≤ 0.25)`, () => {
+    it(`${theme}: glaze and wall are neutral (channel spread ≤ 12) and translucent (alpha ≤ 0.4)`, () => {
       for (const id of ['limit-glaze', 'limit-wall'] as const) {
         const m = TOKENS[theme][id].match(/^rgba\((\d+),(\d+),(\d+),([\d.]+)\)$/);
         expect(m, id).not.toBeNull();
         const ch = [m![1], m![2], m![3]].map(Number);
         expect(Math.max(...ch) - Math.min(...ch), id).toBeLessThanOrEqual(12);
-        expect(Number(m![4]), id).toBeLessThanOrEqual(0.25);
+        expect(Number(m![4]), id).toBeLessThanOrEqual(0.4);
       }
     });
     it(`${theme}: lesscars marks reach 3:1 against land and road (SC 1.4.11)`, () => {
@@ -282,7 +282,8 @@ const DEFAULT_TOKENS_BODY =
   '--map-transit-access-4: #3FA596; --map-transit-access-5: #167A6E; ' +
   '--map-transit-bus: #5E7A76; --map-transit-rail: #0F5A52; ' +
   '--map-transit-regional: #0B3B36; --map-transit-stroke: #FFFFFF; ' +
-  '--map-limit-ink: #2B2A28; --map-limit-glaze: rgba(72,74,78,0.22); ' +
+  '--map-limit-ink: #2B2A28; --map-limit-edge: rgba(43,42,40,0.45); ' +
+  '--map-limit-glaze: rgba(72,74,78,0.4); ' +
   '--map-limit-wall: rgba(72,74,78,0.25); --map-limit-halo: #F3EFE6; ' +
   '--map-brush-paint: #B4532F; --map-brush-erase: #2B2A28; --map-painted-outline: #B4532F; ' +
   '--map-tl-ghost-planning: #DDBBD2; --map-tl-ghost-permit: #C58FB1; ' +
@@ -304,7 +305,8 @@ const DEFAULT_TOKENS_BODY =
   '--map-transit-access-5: #4BA59E; --map-transit-bus: #9BB5B0; ' +
   '--map-transit-rail: #7FD6C9; --map-transit-regional: #C2F0E8; ' +
   '--map-transit-stroke: #111214; ' +
-  '--map-limit-ink: #E8E4DC; --map-limit-glaze: rgba(214,216,220,0.12); ' +
+  '--map-limit-ink: #E8E4DC; --map-limit-edge: rgba(232,228,220,0.4); ' +
+  '--map-limit-glaze: rgba(214,216,220,0.3); ' +
   '--map-limit-wall: rgba(214,216,220,0.18); --map-limit-halo: #1C1D1F; ' +
   '--map-brush-paint: #DB8B42; --map-brush-erase: #E8E4DC; ' +
   '--map-painted-outline: #DB8B42; --map-tl-ghost-planning: #623257; ' +
