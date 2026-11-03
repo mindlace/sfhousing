@@ -348,7 +348,14 @@ async function basemapProblems(
       problems.push(`basemap-ids.json: ${ph.project} is not a highway truncation of the plan`);
       continue;
     }
-    phases.push({ ...ph, lines: refCnns(p.segments).flatMap((c) => segments[c] ?? []) });
+    const lines = refCnns(p.segments).flatMap((c) => segments[c] ?? []);
+    // A truncation drawn as a line has nothing to split by: refuse it, never leave the freeway
+    // drawing (the id check and the split both need the CNN lines).
+    if (!lines.some((l) => l.length >= 2)) {
+      problems.push(`basemap-ids.json: ${ph.project} has no CNN segments to split by`);
+      continue;
+    }
+    phases.push({ ...ph, lines });
   }
   const pts = phases.flatMap((ph) => ph.lines.flat());
   if (pts.length > 0 && problems.length === 0) {

@@ -274,6 +274,22 @@ describe('basemap ids', () => {
       /nope is not a highway truncation/
     );
   });
+  it('a phase whose truncation has no CNN segments fails instead of going unsplit', async () => {
+    const a = withPlan((p) => {
+      project(p, 'hwy').segments = [
+        {
+          line: [
+            [-122.4183648, 37.7609007],
+            [-122.4160943, 37.7627019]
+          ],
+          provenance: project(p, 'hwy').rowHalfWidthM.provenance
+        }
+      ];
+    });
+    await expect(writeLessCars(a)).rejects.toThrow(
+      /basemap-ids\.json: hwy has no CNN segments to split by/
+    );
+  });
   it('a different lock sha256 is a warning, not a failure', async () => {
     const a = args(LESSCARS_PLAN_JSON.fixture);
     const sha256 = FIXTURE_BASEMAP_IDS.source.sha256;
