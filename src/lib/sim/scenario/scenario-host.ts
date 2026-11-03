@@ -1334,7 +1334,7 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
   }
 
   /**
-   * The buildings the first `previewMaxLots` requested lots could hold (paint feedback, map
+   * The buildings the first `previewMaxLots` requested lots could hold (/sim's live preview, map
    * overlays plan Task 6), packed as one cell. Per lot, in order: a lot protected under the
    * levers in force builds nothing; one whose record is not loaded is `missing`; with `stories`
    * (a custom stroke) it builds at that height; without (a rule), only a lot whose plan stories

@@ -1,9 +1,11 @@
 // /sim e2e (plan 3, Task 12; the dock, sim-ux plan 2): the /fzp redirect, the header score and
 // phone Menu, the policy dock (tabs, Results, rail, phone sheet), a transit rule, a Paint stroke and its undo, a category protection, Back and Forward
 // after a reroll, and the accessibility checks. Runs against the VITE_E2E build, which exposes
-// window.__sfhFzp (src/lib/fzp/debug.ts, with /sim's `levers` field) and window.__sfhMap.
+// window.__sfhFzp (src/lib/fzp/debug.ts, with /sim's `levers` field), window.__sfhSim (the live
+// preview, src/lib/sim-page/debug.ts) and window.__sfhMap.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
+import type { SfhSimDebug } from '../src/lib/sim-page/debug';
 import { formatCount } from '../src/lib/scoreboard/format';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { slider, startRun } from './helpers/run';
@@ -30,6 +32,10 @@ function fzp<K extends keyof SfhFzpDebug>(page: Page, key: K): Promise<SfhFzpDeb
   return page.evaluate((k) => (window as FzpWin).__sfhFzp![k], key) as Promise<SfhFzpDebug[K]>;
 }
 const leverStatus = (page: Page) => fzp(page, 'levers');
+type SimWin = Win & { __sfhSim?: SfhSimDebug };
+/** The live preview's state (`window.__sfhSim`, src/lib/sim-page/debug.ts). */
+const simPreview = (page: Page) =>
+  page.evaluate(() => (window as SimWin).__sfhSim?.preview ?? null);
 
 /** The page is ready, the map is up and the levers sent with the session are in force. */
 async function waitReady(page: Page): Promise<void> {
@@ -410,6 +416,11 @@ test('a transit rule resolves its lots and updates the levers', async ({ page })
     seen.slice(resolving + 1).some((s) => s.text === ''),
     JSON.stringify(seen)
   ).toBe(true);
+  // No building flash on a transit edit (sim-ux spec, Goal 2).
+  for (let k = 0; k < 10; k++) {
+    expect(await simPreview(page)).toBe('none');
+    await page.waitForTimeout(100);
+  }
 });
 
 test('a notice never moves the docked panel or the time bar', async ({ page, isMobile }) => {
@@ -1077,32 +1088,83 @@ test('the eraser outlines painted lots, only while chosen', async ({ isMobile, p
   await expect.poll(() => deckIds(page)).not.toContain(OUTLINE_LAYER);
 });
 
-// ---- paint feedback (plan 2, Task 6) ---------------------------------------------------------------
+// ---- live preview while painting (sim-ux plan 3, Task 4) ---------------------------------------
 
-test('a Paint stroke shows its buildings, then they fade', async ({ isMobile, page }) => {
-  const isFeedback = (ids: string[]) => ids.some((id) => id.startsWith('sim-feedback-'));
+const isPreviewLayer = (ids: string[]) => ids.some((id) => id.startsWith('sim-feedback-'));
+
+/**
+ * Starts a drag across fixture-0's parcel row and holds it mid-stroke (a mouse on desktop, one
+ * finger on the phone): down, then two moves. Returns the release.
+ */
+async function holdDrag(page: Page, isMobile: boolean): Promise<() => Promise<void>> {
+  const [x0, y0] = await projectToPage(page, isMobile ? TOUCH_FROM : FROM);
+  const [x1, y1] = await projectToPage(page, isMobile ? TOUCH_TO : TO);
+  const mid: [number, number] = [(x0 + x1) / 2, (y0 + y1) / 2];
+  if (isMobile) {
+    const cdp = await page.context().newCDPSession(page);
+    const touch = (type: 'touchStart' | 'touchMove', [x, y]: [number, number]) =>
+      cdp.send('Input.dispatchTouchEvent', { type, touchPoints: [{ x, y, id: 1 }] });
+    await touch('touchStart', [x0, y0]);
+    await touch('touchMove', mid);
+    await touch('touchMove', [x1, y1]);
+    return async () => {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    };
+  }
+  await page.mouse.move(x0, y0);
+  await page.mouse.down();
+  await page.mouse.move(...mid);
+  await page.mouse.move(x1, y1);
+  return () => page.mouse.up();
+}
+
+test('a Paint drag shows live buildings under the brush, fading on release', async ({
+  isMobile,
+  page
+}) => {
+  await gotoSim(page);
+  // gotoSim emulates reduced motion, under which a release clears at once: the fade needs it off.
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await openTab(page, 'Paint');
+  const tool = (name: string) => panel(page).getByRole('radio', { name, exact: true });
+  await chooseTool(page, isMobile, () => tool('Paint').click());
+  await jumpAndIdle(page);
+  expect(await simPreview(page)).toBe('none');
+
+  const release = await holdDrag(page, isMobile);
+  await expect.poll(() => simPreview(page), { timeout: 10_000 }).toBe('live');
+  expect(isPreviewLayer(await deckIds(page))).toBe(true);
+  await release();
+
+  await expect.poll(() => simPreview(page)).toBe('fading');
+  await expect.poll(() => simPreview(page), { timeout: 4_000 }).toBe('none');
+  expect(isPreviewLayer(await deckIds(page))).toBe(false);
+  if (isMobile) await toolBarDone(page);
+  await expect(customList(page)).toHaveCount(1);
+});
+
+test('an Erase drag shows no buildings', async ({ isMobile, page }) => {
   await gotoSim(page);
   await openTab(page, 'Paint');
   const tool = (name: string) => panel(page).getByRole('radio', { name, exact: true });
   await chooseTool(page, isMobile, () => tool('Paint').click());
   await strokeOnce(page, isMobile);
-  await expect.poll(async () => isFeedback(await deckIds(page)), { timeout: 10_000 }).toBe(true);
-  await expect.poll(async () => isFeedback(await deckIds(page)), { timeout: 4_000 }).toBe(false);
-
   if (isMobile) await toolBarDone(page);
   await expect(customList(page)).toHaveCount(1);
-  // An Erase stroke never adds one: sample the layers through the stroke and after it.
+  await expect.poll(() => simPreview(page)).toBe('none');
+  // Sample the preview through an Erase stroke and after it.
   await chooseTool(page, isMobile, () => tool('Erase').click());
-  const seen: boolean[] = [];
+  const seen: (string | null)[] = [];
   const sampling = (async () => {
     for (let k = 0; k < 20; k++) {
-      seen.push(isFeedback(await deckIds(page)));
+      seen.push(await simPreview(page));
       await page.waitForTimeout(100);
     }
   })();
   await strokeOnce(page, isMobile);
   await sampling;
-  expect(seen).not.toContain(true);
+  expect(seen.every((s) => s === 'none')).toBe(true);
+  expect(isPreviewLayer(await deckIds(page))).toBe(false);
 });
 
 test('hovering a building shows its allowed and buildable stories', async ({ isMobile, page }) => {

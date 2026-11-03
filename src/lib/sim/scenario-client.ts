@@ -233,7 +233,7 @@ export class ScenarioClient {
   }
 
   /**
-   * The buildings `lots` could hold (paint feedback): at `stories` for a custom stroke, else at
+   * The buildings `lots` could hold (/sim's live preview): at `stories` for a custom stroke, else at
    * the levers in force, only where they differ from FZP. Answered by a session initialised with
    * levers; `no-session` otherwise, and on crash, `restart` and `dispose`.
    */

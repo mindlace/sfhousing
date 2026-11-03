@@ -27,7 +27,10 @@ export interface ControllerMap {
 export interface BrushControllerDeps {
   handle: Pick<SimMapHandle, 'setPanEnabled' | 'setOverlayLayers'>;
   map: ControllerMap;
-  /** No `preview` (/sim): no previews and no preview gating; strokes commit on pointer-up. */
+  /**
+   * No `preview`: no previews and no preview gating; strokes commit on pointer-up. /sim's preview
+   * answers through `previewDone` instead of `onDiff`.
+   */
   client: Pick<SimClient, 'commit' | 'undo' | 'prefetch' | 'datasetVersion'> &
     Partial<Pick<SimClient, 'preview' | 'cancelPreview'>>;
   editor: Pick<Editor, 'commit' | 'undo' | 'redo' | 'readOnly'>;
@@ -189,11 +192,19 @@ export class BrushController {
   }
 
   onDiff(d: DiffResponse, stale: boolean): void {
-    if (this.#inFlightRev !== null && d.rev >= this.#inFlightRev) this.#clearInFlight();
+    this.previewDone(d.rev);
     if (!stale && d.phase === 'commit' && d.stats && d.stats.opId === this.#awaitingStats) {
       this.#awaitingStats = null;
       this.#d.state.announce(strokeMessage(d.stats), ANNOUNCE_MS);
     }
+  }
+
+  /**
+   * A preview at or above the one in flight was answered without a diff (/sim): stop waiting (and
+   * send the latest path, on the next frame, if it changed meanwhile).
+   */
+  previewDone(rev: number): void {
+    if (this.#inFlightRev !== null && rev >= this.#inFlightRev) this.#clearInFlight();
   }
 
   /**

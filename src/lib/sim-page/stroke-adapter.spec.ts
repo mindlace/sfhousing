@@ -4,6 +4,7 @@ import type { PlanOp } from '$lib/plan';
 import { DEFAULT_POLICY, type CustomBrush, type SimPolicy, type Stroke } from './policy';
 import { PolicyStore } from './policy-store.svelte';
 import { createStrokeAdapter, removeCustomBrush, strokeLabel } from './stroke-adapter';
+import type { StrokePreview } from './stroke-preview';
 
 const paint = (x: number, radiusM = 30): PlanOp => ({
   kind: 'paint',
@@ -104,25 +105,42 @@ describe('createStrokeAdapter', () => {
     expect(announce).toHaveBeenLastCalledWith(`Redid: ${label}`);
   });
 
-  it('a Paint stroke calls onpaint once, after the store change, with the stroke and stories', () => {
-    const store = new PolicyStore(DEFAULT_POLICY);
-    const seen: number[] = [];
-    const onpaint = vi.fn(() => seen.push(store.policy.custom.length));
-    const a = createStrokeAdapter({ store, stories: () => 8, announce: () => {}, onpaint });
-    a.editor.commit(paint(0));
-    expect(onpaint).toHaveBeenCalledTimes(1);
-    expect(onpaint).toHaveBeenCalledWith({ path: paint(0).path, radiusM: 30 }, 8);
-    expect(seen).toEqual([1]); // the store already holds the stroke
-    a.editor.commit(erase(0));
-    expect(onpaint).toHaveBeenCalledTimes(1); // never for Erase
-  });
-
-  it('the client sends nothing to a worker and has no preview', () => {
+  it('without a StrokePreview the client sends nothing to a worker and has no preview', () => {
     const { a } = setup();
     expect(a.client.preview).toBeUndefined();
     expect(a.client.cancelPreview).toBeUndefined();
     expect(typeof a.client.commit(paint(0))).toBe('number');
     expect(a.client.datasetVersion).toBeNull();
+  });
+
+  it('with a StrokePreview: preview and cancelPreview forward; commit and undo are fading barriers', () => {
+    const store = new PolicyStore(DEFAULT_POLICY);
+    let rev = 0;
+    const sp = {
+      preview: vi.fn(() => ++rev),
+      cancel: vi.fn(() => ++rev),
+      barrier: vi.fn(() => ++rev),
+      reset: vi.fn()
+    };
+    const a = createStrokeAdapter({
+      store,
+      stories: () => 8,
+      announce: () => {},
+      preview: sp as unknown as StrokePreview
+    });
+    expect(a.client.preview!(paint(0))).toBe(1);
+    expect(sp.preview).toHaveBeenCalledWith(paint(0));
+    expect(a.client.cancelPreview!()).toBe(2);
+    expect(sp.cancel).toHaveBeenCalledTimes(1);
+    expect(a.client.commit(paint(0))).toBe(3);
+    expect(sp.barrier).toHaveBeenLastCalledWith(true);
+    expect(a.client.undo('p0')).toBe(4);
+    expect(sp.barrier).toHaveBeenCalledTimes(2);
+    expect(sp.barrier).toHaveBeenLastCalledWith(true);
+    // the editor's commit is the store change alone: no paint callback, no preview
+    a.editor.commit(paint(0));
+    expect(sp.preview).toHaveBeenCalledTimes(1);
+    expect(store.policy.custom).toHaveLength(1);
   });
 });
 

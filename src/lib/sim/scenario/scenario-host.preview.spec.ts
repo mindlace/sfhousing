@@ -1,5 +1,5 @@
 // The scenario host's `previewBuildings` request (map overlays plan 2, Task 6): the buildings a
-// painted stroke's or a saved rule's lots could hold, packed as one cell for the paint feedback.
+// painted stroke's or a saved rule's lots could hold, packed as one cell for /sim's live preview.
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
 import { lotPhysicalMaxStories } from '$lib/generator';

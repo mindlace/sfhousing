@@ -12,6 +12,8 @@ import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import { stub, callsOf } from '$lib/fzp/test/sim-map-stub';
 import { timelineMsg } from '$lib/fzp/test/fake-worker';
 import SimPageHost from './test/SimPageHost.svelte';
+import { BrushController } from '$lib/brush/BrushController.svelte';
+import './debug';
 import { testCatalog } from './test/catalog';
 import type { ComponentProps } from 'svelte';
 import { copyFor } from '$lib/sharing/copy';
@@ -1587,32 +1589,35 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
   });
 });
 
-describe('SimPage paint feedback (plan 2, Task 6)', () => {
-  const run = () => page.getByRole('button', { name: 'Run', exact: true });
+describe('SimPage live preview (sim-ux plan 3, Task 4)', () => {
   const wait = (ms: number) => new Promise((res) => setTimeout(res, ms));
+  /** `window.__sfhSim` (installed while `VITE_E2E` is '1', see `readySim`). */
+  const preview = () => window.__sfhSim?.preview;
   const feedbackIds = () =>
     ((callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as { id: string }[])
       .map((l) => l.id)
       .filter((id) => id.startsWith('sim-feedback-'));
-  /** One stroke across the stub map's canvas with the current tool. */
-  function stroke(): void {
-    const canvas = stub.map.getCanvas();
-    const ev = (type: string, x: number) =>
-      canvas.dispatchEvent(
-        new PointerEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          clientX: x,
-          clientY: 10,
-          pointerId: 1,
-          pointerType: 'mouse',
-          button: type === 'pointermove' ? -1 : 0,
-          isPrimary: true
-        })
-      );
-    ev('pointerdown', 10);
-    for (let x = 20; x <= 80; x += 10) ev('pointermove', x);
-    ev('pointerup', 80);
+  const ev = (type: string, x: number, pointerId = 1) =>
+    stub.map.getCanvas().dispatchEvent(
+      new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: 10,
+        pointerId,
+        pointerType: 'mouse',
+        button: type === 'pointermove' ? -1 : 0,
+        isPrimary: true
+      })
+    );
+  /** Pointer down and moves to `to` across the stub map's canvas: a stroke still in progress. */
+  function drag(from: number, to: number, pointerId = 1): void {
+    ev('pointerdown', from, pointerId);
+    for (let x = from + 10; x <= to; x += 10) ev('pointermove', x, pointerId);
+  }
+  /** More of the stroke in progress, from `from` to `to`. */
+  function moveTo(from: number, to: number, pointerId = 1): void {
+    for (let x = from; x <= to; x += 10) ev('pointermove', x, pointerId);
   }
   /** A one-part pack: a small box at the map's centre. */
   function pack(): PackedCell {
@@ -1632,57 +1637,166 @@ describe('SimPage paint feedback (plan 2, Task 6)', () => {
       partTypology: Uint8Array.from([0])
     };
   }
-  /** Paints one stroke and answers its lots: P0 at the centre, FAR out of view. */
-  async function paintAndAnswer() {
-    const w = workers.at(-1)!;
-    await tab('Paint').click();
-    await page.getByRole('radio', { name: 'Paint' }).click();
-    stroke();
-    await expect.poll(() => w.allOf('resolveBrush').length).toBe(1);
+  type W = (typeof workers)[number];
+  /** Answers the `n`th (1-based) resolveBrush: P0 at the centre, FAR out of view. */
+  function answerLots(w: W, n: number): void {
     const c = stub.map.getCenter();
     w.emit({
       type: 'brushLots',
-      reqId: w.lastOf('resolveBrush')!.reqId,
+      reqId: w.allOf('resolveBrush')[n - 1].reqId,
       result: { ok: true, lots: ['P0', 'FAR'], points: Float64Array.from([c.lng, c.lat, 0, 0]) }
     });
-    await expect.poll(() => w.allOf('previewBuildings').length).toBe(1);
+  }
+  /** Answers the `n`th (1-based) previewBuildings with a pack. */
+  function answerBuildings(w: W, n: number): void {
+    w.emit({
+      type: 'previewBuildings',
+      reqId: w.allOf('previewBuildings')[n - 1].reqId,
+      result: { ok: true, pack: pack(), built: 1, missing: 0 }
+    });
+  }
+  /** /sim ready in Setup with `tool` chosen on the Paint tab. */
+  async function readyToPaint(tool: 'Paint' | 'Erase' = 'Paint') {
+    const { w } = await readySim();
+    await tab('Paint').click();
+    const radio = page.getByRole('radio', { name: tool });
+    await expect.element(radio).toBeEnabled();
+    await radio.click();
+    await expect.poll(() => callsOf('setPanEnabled').at(-1)?.[0]).toBe(false);
     return w;
   }
+  /** Mid-stroke, the first preview answered: its buildings show. */
+  async function liveStroke(w: W) {
+    drag(10, 40);
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(1);
+    answerLots(w, 1);
+    await expect.poll(() => w.allOf('previewBuildings').length).toBe(1);
+    answerBuildings(w, 1);
+    await expect.poll(preview).toBe('live');
+  }
 
-  it('a Paint stroke asks for its lots in view at its stories and shows the answer', async () => {
-    stub.reset();
-    await page.viewport(1024, 768);
-    await setup();
-    await toReady();
-    const w = await paintAndAnswer();
-    // the stroke's own query is the new brush's: no second resolveBrush
-    expect(w.allOf('resolveBrush')).toHaveLength(1);
-    const req = w.lastOf('previewBuildings')!;
-    expect(req).toMatchObject({ lots: ['P0'], stories: expect.any(Number) });
-    w.emit({
-      type: 'previewBuildings',
-      reqId: req.reqId,
-      result: { ok: true, pack: pack(), built: 1, missing: 0 }
+  /** The client project runs with reduced motion; the fade needs it off. */
+  const motion = (value: 'reduce' | 'no-preference') =>
+    cdp().send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-reduced-motion', value }]
     });
-    await expect.poll(() => feedbackIds()).toEqual(['sim-feedback-1']);
-    await expect.poll(() => feedbackIds(), { timeout: 4000 }).toEqual([]);
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await motion('reduce');
   });
 
-  it('a run drops an answer still on its way', async () => {
-    stub.reset();
-    await page.viewport(1024, 768);
-    await setup();
-    await toReady();
-    const w = await paintAndAnswer();
-    await run().click();
-    w.emit({
-      type: 'previewBuildings',
-      reqId: w.lastOf('previewBuildings')!.reqId,
-      result: { ok: true, pack: pack(), built: 1, missing: 0 }
-    });
-    await wait(100);
+  it('a Paint drag asks previewBuildings mid-stroke and fades on release', async () => {
+    await motion('no-preference');
+    const w = await readyToPaint();
+    expect(preview()).toBe('none');
+    drag(10, 40);
+    // The first preview goes out on the next frame, before any pointer-up.
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(1);
+    expect(w.lastOf('resolveBrush')!.query).toMatchObject({ kind: 'freehand' });
+    answerLots(w, 1);
+    await expect.poll(() => w.allOf('previewBuildings').length).toBe(1);
+    // The stroke's lots in view, nearest the ring, at the brush's stories.
+    expect(w.lastOf('previewBuildings')).toMatchObject({ lots: ['P0'], stories: 6 });
+    answerBuildings(w, 1);
+    await expect.poll(preview).toBe('live');
+    expect(feedbackIds()).toEqual(['sim-feedback-1']);
+    // One in flight: more of the stroke asks again once the first was answered.
+    moveTo(50, 80);
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(2);
+    ev('pointerup', 80);
+    expect(preview()).toBe('fading');
+    await expect.poll(preview, { timeout: 4000 }).toBe('none');
     expect(feedbackIds()).toEqual([]);
   });
+
+  it('release before an answer arrives: the late answer is dropped and nothing comes back after the fade', async () => {
+    await motion('no-preference');
+    const w = await readyToPaint();
+    await liveStroke(w);
+    moveTo(50, 80);
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(2);
+    answerLots(w, 2);
+    await expect.poll(() => w.allOf('previewBuildings').length).toBe(2);
+    ev('pointerup', 80);
+    expect(preview()).toBe('fading');
+    answerBuildings(w, 2); // the second preview's answer, after the release
+    await wait(100);
+    expect(preview()).not.toBe('live');
+    expect(feedbackIds()).not.toContain('sim-feedback-2');
+    await expect.poll(preview, { timeout: 4000 }).toBe('none');
+    await wait(100);
+    expect(preview()).toBe('none');
+    expect(feedbackIds()).toEqual([]);
+  });
+
+  it('Escape mid-stroke clears the buildings at once; the cancelled preview is answered and the next stroke previews', async () => {
+    const done = vi.spyOn(BrushController.prototype, 'previewDone');
+    const w = await readyToPaint();
+    await liveStroke(w);
+    expect(done).toHaveBeenCalledTimes(1);
+    moveTo(50, 80);
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(2);
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    // A cancelled stroke committed nothing: no fade, the buildings go at once.
+    expect(preview()).toBe('none');
+    expect(feedbackIds()).toEqual([]);
+    answerLots(w, 2); // the cancelled preview's lots: dropped, but answered
+    await expect.poll(() => done.mock.calls.length).toBe(2);
+    await wait(50);
+    expect(w.allOf('previewBuildings')).toHaveLength(1);
+    expect(preview()).toBe('none');
+    ev('pointerup', 80);
+    // The next stroke's first preview goes out on its first frame.
+    drag(10, 40, 2);
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(3);
+    ev('pointerup', 40, 2);
+  });
+
+  it('an Erase drag shows no buildings, and each of its previews is answered', async () => {
+    const done = vi.spyOn(BrushController.prototype, 'previewDone');
+    const w = await readyToPaint('Erase');
+    drag(10, 40);
+    await expect.poll(() => done.mock.calls.length).toBe(1);
+    moveTo(50, 80);
+    // The controller sent a second preview, so it saw the first answered.
+    await expect.poll(() => done.mock.calls.length).toBe(2);
+    expect(w.allOf('resolveBrush')).toHaveLength(0);
+    expect(w.allOf('previewBuildings')).toHaveLength(0);
+    expect(preview()).toBe('none');
+    ev('pointerup', 80);
+    await wait(50);
+    expect(w.allOf('previewBuildings')).toHaveLength(0);
+    expect(feedbackIds()).toEqual([]);
+  });
+
+  it('Run mid-stroke clears the preview and drops the answer on its way', async () => {
+    const w = await readyToPaint();
+    await liveStroke(w);
+    moveTo(50, 80);
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(2);
+    answerLots(w, 2);
+    await expect.poll(() => w.allOf('previewBuildings').length).toBe(2);
+    await pressRun();
+    expect(preview()).toBe('none');
+    expect(feedbackIds()).toEqual([]);
+    answerBuildings(w, 2);
+    await wait(100);
+    expect(preview()).toBe('none');
+    expect(feedbackIds()).toEqual([]);
+  });
+
+  it('Run during the fade clears the preview at once', async () => {
+    await motion('no-preference');
+    const w = await readyToPaint();
+    await liveStroke(w);
+    ev('pointerup', 40);
+    expect(preview()).toBe('fading');
+    await pressRun();
+    expect(preview()).toBe('none');
+    expect(feedbackIds()).toEqual([]);
+  });
+
   /** The worker's `resolving` then `current` for `rev`. */
   function leversCurrent(rev: number): void {
     const w = workers.at(-1)!;
@@ -1701,9 +1815,16 @@ describe('SimPage paint feedback (plan 2, Task 6)', () => {
     });
   }
 
-  /** Saves a new transit rule through its form and answers its lots: P0 in view, FAR not. */
-  async function saveRule() {
-    const w = workers.at(-1)!;
+  it('under reduced motion a release clears the buildings at once', async () => {
+    const w = await readyToPaint();
+    await liveStroke(w);
+    ev('pointerup', 40);
+    expect(preview()).toBe('none');
+    expect(feedbackIds()).toEqual([]);
+  });
+
+  it('saving a transit rule shows no buildings', async () => {
+    const { w } = await readySim();
     await expect.poll(() => w.lastOf('brushCatalog')).toBeTruthy();
     w.emit({
       type: 'brushCatalog',
@@ -1722,43 +1843,11 @@ describe('SimPage paint feedback (plan 2, Task 6)', () => {
         result: { ok: true, lots: ['P0', 'FAR'], points: Float64Array.from([c.lng, c.lat, 0, 0]) }
       });
     await expect.poll(() => w.allOf('setLevers').length, { timeout: 2000 }).toBe(1);
-    return w;
-  }
-
-  it('a saved rule shows its lots in view once its revision is current, at the levers', async () => {
-    stub.reset();
-    await page.viewport(1024, 768);
-    await setup();
-    await toReady();
-    const w = await saveRule();
-    const rev = w.lastOf('setLevers')!.rev;
-    await wait(50);
-    expect(w.allOf('previewBuildings')).toHaveLength(0); // not before its current
-    leversCurrent(rev);
-    await expect.poll(() => w.allOf('previewBuildings').length).toBe(1);
-    const req = w.lastOf('previewBuildings')!;
-    expect(req.lots).toEqual(['P0']);
-    expect(req).not.toHaveProperty('stories');
-    leversCurrent(rev + 1); // fires once
-    await wait(50);
-    expect(w.allOf('previewBuildings')).toHaveLength(1);
-  });
-
-  it('an edit that changes nothing arms nothing', async () => {
-    stub.reset();
-    await page.viewport(1024, 768);
-    await setup();
-    await toReady();
-    const w = await saveRule();
     leversCurrent(w.lastOf('setLevers')!.rev);
-    await expect.poll(() => w.allOf('previewBuildings').length).toBe(1);
-    await page.getByRole('button', { name: /^Edit:/ }).click();
-    await page.getByRole('button', { name: 'Save rule' }).click();
-    await expect.element(page.getByRole('button', { name: 'Save rule' })).not.toBeInTheDocument();
-    await wait(400); // past the debounce: nothing changed, nothing is sent
-    expect(w.allOf('setLevers')).toHaveLength(1);
-    leversCurrent(w.lastOf('setLevers')!.rev + 1); // a later revision for another reason
-    await wait(50);
-    expect(w.allOf('previewBuildings')).toHaveLength(1);
+    await expect.poll(() => fzpDebug().levers.status).toBe('current');
+    await wait(100);
+    expect(w.allOf('previewBuildings')).toHaveLength(0);
+    expect(preview()).toBe('none');
+    expect(feedbackIds()).toEqual([]);
   });
 });

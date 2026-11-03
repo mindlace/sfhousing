@@ -1,15 +1,18 @@
 /**
  * BrushController's editor and client on /sim: a committed stroke becomes one PolicyStore change
- * (a custom paint or erase stroke in the recipe) instead of a plan op sent to a worker. The
- * client has no `preview`, so the controller sends no previews and gates nothing. Undo and redo
- * go to the store and return null, so the controller announces nothing; the adapter announces
- * the store's label instead, as it does for each committed stroke.
+ * (a custom paint or erase stroke in the recipe) instead of a plan op sent to a worker. With a
+ * `StrokePreview`, the client's `preview` and `cancelPreview` go to it and `commit` and `undo`
+ * are its barriers (the live buildings fade); without one the client has no `preview`, so the
+ * controller sends no previews and gates nothing. Undo and redo go to the store and return null,
+ * so the controller announces nothing; the adapter announces the store's label instead, as it
+ * does for each committed stroke.
  */
 import type { BrushControllerDeps } from '$lib/brush/BrushController.svelte';
 import { newOpId } from '$lib/brush/ids';
 import type { PlanOp } from '$lib/plan';
 import type { CustomBrush, SimPolicy, Stroke } from './policy';
 import type { PolicyStore } from './policy-store.svelte';
+import type { StrokePreview } from './stroke-preview';
 
 /** The undo label of a Paint stroke ("Allowed 8 stories"). */
 export function strokeLabel(stories: number): string {
@@ -65,10 +68,10 @@ export function createStrokeAdapter(deps: {
   store: PolicyStore;
   stories(): number;
   announce(msg: string): void;
-  /** A Paint stroke landed in the store (never called for Erase): the paint feedback. */
-  onpaint?(stroke: Stroke, stories: number): void;
+  /** The live preview; absent: no previews (the view mode has no controller anyway). */
+  preview?: StrokePreview;
 }): { editor: BrushControllerDeps['editor']; client: BrushControllerDeps['client'] } {
-  const { store, announce } = deps;
+  const { store, announce, preview: sp } = deps;
   let rev = 0;
   return {
     editor: {
@@ -84,7 +87,6 @@ export function createStrokeAdapter(deps: {
         store.apply((p) => appendStroke(p, stroke, op, stories), label);
         // The stroke's result in words (WCAG 4.1.3); the lot count follows in the Paint tab's rows.
         announce(label);
-        if (op.kind === 'paint') deps.onpaint?.(stroke, stories);
         return { ok: true };
       },
       undo() {
@@ -98,11 +100,21 @@ export function createStrokeAdapter(deps: {
         return null;
       }
     },
-    client: {
-      datasetVersion: null,
-      commit: () => ++rev,
-      undo: () => ++rev,
-      prefetch: () => {}
-    }
+    client: sp
+      ? {
+          datasetVersion: null,
+          preview: (op) => sp.preview(op),
+          cancelPreview: () => sp.cancel(),
+          // The stroke is in the policy: its live buildings fade (Set Policy shows the present).
+          commit: () => sp.barrier(true),
+          undo: () => sp.barrier(true),
+          prefetch: () => {}
+        }
+      : {
+          datasetVersion: null,
+          commit: () => ++rev,
+          undo: () => ++rev,
+          prefetch: () => {}
+        }
   };
 }

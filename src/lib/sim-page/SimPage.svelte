@@ -29,8 +29,9 @@
   (LidRequest: latest wins, the bbox clamped around the centre).
   Selection (sim-ux plan 3, Task 3): one `picked` selection, a rule ("Show on map") or a painted
   area (a Paint tab row); the selected area's lots are outlined on the map.
-  Paint feedback (Task 6): in Setup a Paint stroke, and a saved zoning rule once its revision is
-  current, briefly shows the buildings its lots in view could hold (the overlay's feedback slot).
+  Live preview (sim-ux plan 3, Task 4): in Setup, while a Paint stroke is drawn, the buildings
+  its lots nearest the brush ring could hold show under it (StrokePreview, the overlay's feedback
+  slot); they fade on release, clear at once on a cancel, and a run clears them.
 -->
 <script lang="ts">
   import { onMount, tick, untrack, type Snippet } from 'svelte';
@@ -57,12 +58,13 @@
   import { HIDDEN_VIEW, readViewPrefs, writeViewPrefs, type ViewPrefs } from '$lib/view/prefs';
   import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
-  import type { BrushLotsResult, LotOutlinesResult } from '$lib/sim/scenario/types';
+  import type { BrushLotsResult, LotOutlinesResult, PreviewResult } from '$lib/sim/scenario/types';
   import { PREVIEW_MAX_LOTS } from '$lib/sim/scenario/preview';
   import type { ParcelId } from '$lib/data/parcel';
   import { packedCellLayer, type SolidPolygonLayerCtor } from '$lib/map/generated-controller';
-  import { PaintFeedback, RuleFeedbackTrigger, lotsInView, mergeLots } from './feedback';
-  import type { LeverStatus } from './lever-status';
+  import { PaintFeedback, lotsInView } from './feedback';
+  import { installSimDebug } from './debug';
+  import { StrokePreview } from './stroke-preview';
   import { BrushForms } from './brush-forms.svelte';
   import type { Calibration } from '$lib/timelapse/types';
   import HistoryButtons from '$lib/paint/HistoryButtons.svelte';
@@ -76,12 +78,9 @@
     compileLevers,
     customQuery,
     paintedLots,
-    queriesOf,
     queryKey,
-    ruleQueries,
     type Lots,
-    type SimPolicy,
-    type Stroke
+    type SimPolicy
   } from './policy';
   import { OutlineRequest } from './outline-request';
   import { LidRequest, clampBbox } from './lid-request';
@@ -356,17 +355,35 @@
   /** /sim keeps no brush settings: `/`'s saved stories and radius stay untouched. */
   const brush = new BrushState({ storage: null, fine: false });
   const tools = new SimBrushTools(brush);
+  const noSessionPreview = (): PreviewResult => ({
+    ok: false,
+    reason: 'no-session',
+    message: 'the simulation is not running'
+  });
+  /** The live preview while painting (sim-ux plan 3, Task 4); its layer is `feedback`. */
+  const strokePreview = new StrokePreview({
+    resolve: (q) => (api ? api.resolveBrush(q) : Promise.resolve(noSession())),
+    buildings: (lots, stories) =>
+      api ? api.previewBuildings(lots, stories) : Promise.resolve(noSessionPreview()),
+    nearest: (lots, points, at) => nearest(lots, points, at),
+    live: (pack) => {
+      if (!dead && run.phase === 'setup') feedback?.live(pack);
+    },
+    release: () => feedback?.release(),
+    clear: () => feedback?.clear(),
+    answered: (rev) => controller?.previewDone(rev)
+  });
   const adapter = createStrokeAdapter({
     store,
     stories: () => tools.stories(),
     announce: (m) => brush.announce(m, ANNOUNCE_MS),
-    onpaint: (stroke, stories) => paintFeedback(stroke, stories)
+    preview: strokePreview
   });
   let controller: BrushController | null = null;
   let controllerMap: ControllerMap | null = null;
   let mapHandle: SimMapHandle | null = null;
   let deckLayers = $state.raw<OverlayCtors | null>(null);
-  /** `@deck.gl/layers`' SolidPolygonLayer, from the same lazy module (the paint feedback). */
+  /** `@deck.gl/layers`' SolidPolygonLayer, from the same lazy module (the live preview). */
   let solidLayer = $state.raw<SolidPolygonLayerCtor | null>(null);
   let overlay = $state.raw<ReturnType<typeof createOverlayMux> | null>(null);
   let dead = false;
@@ -436,11 +453,8 @@
   const run = new RunPhase();
 
   function startRun(): void {
-    // Feedback is a Setup thing: a run clears it and drops any answer still on its way.
-    feedbackSeq++;
-    strokeWait = null;
-    feedbackTrigger.reset();
-    feedback?.show(null);
+    // The live preview is a Setup thing: a run clears it and drops any answer still on its way.
+    strokePreview.reset();
     setTool('move');
     picked = null;
     store.locked = true;
@@ -645,14 +659,11 @@
     untrack(() => o.slot('outline')(layers));
   });
 
-  // ---- paint feedback (plan 2, Task 6) ----
+  // ---- live preview (sim-ux plan 3, Task 4) ----
 
   const reducedMotion = new MediaQuery('(prefers-reduced-motion: reduce)');
-  /** Per overlay mux: the fading layer in its `feedback` slot. */
+  /** Per overlay mux: the preview layer in its `feedback` slot. */
   let feedback: PaintFeedback | null = null;
-  const feedbackTrigger = new RuleFeedbackTrigger();
-  /** Latest wins: a stroke or rule feedback bumps it, so an older answer is dropped. */
-  let feedbackSeq = 0;
 
   $effect(() => {
     const o = overlay;
@@ -674,80 +685,25 @@
     };
   });
 
-  /** `lots` (with label points) in the map's view, nearest its centre first, up to the cap. */
-  function inView(lots: readonly ParcelId[], points: Float64Array): ParcelId[] {
+  /**
+   * `lots` (with label points) in the map's view, nearest `at` (the brush ring) first, up to the
+   * cap, so the buildings appear under the brush.
+   */
+  function nearest(
+    lots: readonly ParcelId[],
+    points: Float64Array,
+    at: [number, number]
+  ): ParcelId[] {
     const map = mapHandle?.getMap();
     if (!map) return lots.slice(0, PREVIEW_MAX_LOTS);
     const b = map.getBounds();
-    const c = map.getCenter();
     return lotsInView(
       lots,
       points,
       [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()],
-      [c.lng, c.lat],
+      at,
       PREVIEW_MAX_LOTS
     );
-  }
-
-  /** Asks for the buildings `lots` could hold and shows them, unless superseded or running. */
-  function showPreview(seq: number, a: SimClientApi, lots: ParcelId[], stories?: number): void {
-    if (lots.length === 0) return;
-    void a.previewBuildings(lots, stories).then((p) => {
-      if (dead || seq !== feedbackSeq || run.phase !== 'setup' || !p.ok) return;
-      feedback?.show(p.pack);
-    });
-  }
-
-  /**
-   * A stroke whose lots LeverSync is already finding (it started a new brush, so its query is the
-   * brush's own): the feedback waits for that answer instead of asking again.
-   */
-  let strokeWait = $state.raw<{ seq: number; key: string; stories: number } | null>(null);
-
-  $effect(() => {
-    const w = strokeWait;
-    if (!w) return;
-    const r = sync.result(w.key);
-    if (!r) return;
-    untrack(() => {
-      strokeWait = null;
-      const a = api;
-      if (dead || !a || w.seq !== feedbackSeq || !r.ok) return;
-      showPreview(w.seq, a, inView(r.lots, r.points), w.stories);
-    });
-  });
-
-  /** A Paint stroke landed: its own lots (the stroke alone, as it may join a brush). */
-  function paintFeedback(stroke: Stroke, stories: number): void {
-    const a = api;
-    if (!a || run.phase !== 'setup') return;
-    const seq = ++feedbackSeq;
-    const q = customQuery({ id: 'feedback', kind: 'paint', strokes: [stroke], stories });
-    const key = queryKey(q);
-    if (queriesOf(store.policy).some((x) => x.key === key)) {
-      strokeWait = { seq, key, stories };
-      return;
-    }
-    strokeWait = null;
-    void a.resolveBrush(q).then((r) => {
-      if (dead || seq !== feedbackSeq || !r.ok) return;
-      showPreview(seq, a, inView(r.lots, r.points), stories);
-    });
-  }
-
-  /** A saved rule's revision is current: its lots in view, at the levers in force. */
-  function ruleFeedback(ruleId: string): void {
-    const a = api;
-    const rule = store.policy.rules.find((r) => r.id === ruleId);
-    if (!a || !rule || run.phase !== 'setup') return;
-    const seq = ++feedbackSeq;
-    const { lots, points } = mergeLots(ruleQueries(rule).map((q) => sync.result(queryKey(q))));
-    showPreview(seq, a, inView(lots, points));
-  }
-
-  function onLevers(s: LeverStatus): void {
-    const id = feedbackTrigger.status(s);
-    if (id !== null) ruleFeedback(id);
   }
 
   // ---- rule brushes (Task 9) ----
@@ -788,14 +744,6 @@
     catalogInFlight = false;
     catalog = undefined;
     fetchCatalog();
-  }
-
-  /**
-   * A rule form saved: arm the rule feedback, but only for a save that changed the policy, as
-   * only that sends a new revision to wait for.
-   */
-  function ruleSaved(r: { id: string }, changed: boolean): void {
-    if (changed) feedbackTrigger.saved(r.id);
   }
 
   /** The Paint tab's rows: one per custom brush, in policy order. */
@@ -844,8 +792,11 @@
       },
       (e) => console.error('[sim] height limits layer failed to load', e)
     );
+    const uninstall = installSimDebug(() => ({ preview: feedback?.state ?? 'none' }));
     return () => {
       dead = true;
+      uninstall();
+      strokePreview.reset();
       viewMap?.off('moveend', readView);
       viewMap = null;
       controller?.destroy();
@@ -912,7 +863,6 @@
       {catalog}
       {forms}
       announce={(m) => brush.announce(m, ANNOUNCE_MS)}
-      onsaved={ruleSaved}
       {selectedRule}
       onselectrule={selectRule}
     />
@@ -986,7 +936,6 @@
     city = c;
     lidRequest.limitsChanged(c.rev);
   }}
-  onlevers={onLevers}
   onchunks={() => {
     outlineRequest.chunksChanged();
     lidRequest.chunksChanged();

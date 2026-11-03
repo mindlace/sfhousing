@@ -784,6 +784,30 @@ describe('BrushController stale touch and in-flight recovery', () => {
     up(60, 0);
   });
 
+  it('previewDone at or above the in-flight rev lets the latest path out on the next frame', () => {
+    down(0, 0);
+    move(30, 0);
+    fx.flushRaf();
+    expect(fx.client.previews).toHaveLength(1);
+    const first = fx.client.previews[0].rev;
+    move(60, 0);
+    fx.flushRaf();
+    expect(fx.client.previews).toHaveLength(1); // waits: the first is never answered with a diff
+
+    fx.ctl.previewDone(first - 1); // an older answer does not clear it
+    fx.flushRaf();
+    expect(fx.client.previews).toHaveLength(1);
+
+    fx.ctl.previewDone(first);
+    expect(fx.client.previews).toHaveLength(1); // not before the next frame
+    fx.flushRaf();
+    expect(fx.client.previews).toHaveLength(2);
+    // the latest path: it reaches past the first preview's end
+    const [a, b] = fx.client.previews.map((p) => p.op.path.at(-1)![0]);
+    expect(b).toBeGreaterThan(a);
+    up(60, 0);
+  });
+
   it('a new stroke after a commit does not wait on the previous stroke’s unanswered preview', () => {
     down(0, 0);
     move(30, 0);
