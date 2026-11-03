@@ -12,6 +12,7 @@
 
 ## Global Constraints
 
+- Line numbers cited here predate earlier plans in the series; locate code by symbol.
 - Tabs on `/`: Paint. The dock has two faces: the Paint tab and Results; the flip button on Results reads **"Paint"**, in the same place as `/sim`'s "Edit policy".
 - The header score is the one `HeaderScore`: a headline number and a progress bar toward RHNA; `/` shows no "vs FZP" delta. Tapping it flips the dock to Results, which shows what the floating Scoreboard card shows today. The floating Scoreboard card goes away.
 - Rows mean the same thing on both pages: a run of consecutive strokes at one height (erase strokes a run of erases). On `/`, rows are derived from the plan's op list. `/` gains a remove-row edit, lot counts, and row outlines (new requests in `/`'s editor worker).
@@ -40,7 +41,8 @@
 | `src/lib/brush/BrushController.svelte.ts` (+ spec), `messages.ts` | undo/redo of a row step through `client.load` | 1 |
 | `src/lib/paint/rows.ts` (+ spec) | `planRowGroups`, `planPaintRows` | 2 |
 | `src/lib/sim/outlines.ts` (new, + spec) | `LotOutlines`, `packOutlines` (shared with the scenario host) | 2 |
-| `src/lib/sim/protocol.ts`, `host.ts` (+ spec), `router.ts` (+ `worker-router.spec.ts`), `client.ts` (+ spec) | the `opLots` request | 2 |
+| `src/lib/sim/protocol.ts`, `host.ts` (+ spec), `router.ts` (+ `worker-router.spec.ts`), `client.ts` (+ spec) | the `opLots` request; `RouterDeps.post` widened | 2 |
+| `src/lib/sim-page/painted-outline.ts` (+ spec) | `paintedOutlineLayers` takes `LotOutlines` | 2 |
 | `src/lib/sim/scenario/scenario-host.ts` | `lotOutlines` uses `packOutlines` | 2 |
 | `src/lib/brush/row-lots.svelte.ts` (new, + spec) | rows' lot counts and the selected row's outline, latest wins | 2 |
 | `src/lib/map/overlay-mux.ts`, `src/lib/paint/outline-layers.ts` (moved from `src/lib/sim-page/overlay-mux.ts`, `painted-outline.ts`) | shared overlay slots and outline layers | 3 |
@@ -49,7 +51,7 @@
 | `src/routes/+page.svelte` (+ specs) | `DockState`, "Paint" button, header score, Results, notices | 3, 4 |
 | `src/lib/scoreboard/ScoreboardPanel.svelte` (+ spec) | the Results face for `/`, tokens | 4 |
 | `src/lib/scoreboard/Scoreboard.svelte` (+ spec) | deleted | 4 |
-| `src/lib/sharing/NoticeStack.svelte` (+ spec) | renders in `NoticePills` | 4 |
+| `src/lib/sharing/NoticeStack.svelte` (+ spec) | renders its pills into BrushEditor's `notices` snippet (no `NoticePills` of its own) | 4 |
 | `src/routes/p/[id]/+page.svelte` (+ spec) | the read-only dock, header score, Results | 4 |
 | `e2e/brush.spec.ts`, `scoreboard.spec.ts`, `layout.spec.ts`, `share-*.spec.ts`, `chrome-dark.spec.ts`, `pages-a11y.spec.ts`, `map.spec.ts` | flows | 3, 4 |
 | `docs/dev/developing.md`, `plan-sharing.md`, `map-interfaces.md`, `testing.md` | the brush hook, layout, insets | 3, 4 |
@@ -137,7 +139,8 @@ git commit -m "feat(brush): removing a row of strokes is one undoable step"
 - Modify: `src/lib/paint/rows.ts`, `rows.spec.ts`
 - Create: `src/lib/sim/outlines.ts`, `outlines.spec.ts`
 - Modify: `src/lib/sim/protocol.ts:11-51`, `host.ts` (a handler beside `parcelSummary`, `:404-475`), `host.spec.ts`
-- Modify: `src/lib/sim/router.ts:44-56` (route `opLots` to the editor in editor mode; outside it answer `result: null`), `worker-router.spec.ts`
+- Modify: `src/lib/sim/router.ts:23, 44-56` (route `opLots` to the editor in editor mode; outside it answer `result: null`; widen `RouterDeps.post` from `ScenarioResponse | PlaybackResponse` to also take `SimResponse`, since `opLots` is a `SimResponse`), `worker-router.spec.ts`
+- Modify: `src/lib/sim-page/painted-outline.ts:18-21`, `painted-outline.spec.ts` (`paintedOutlineLayers`' parameter widens from `Extract<LotOutlinesResult, { ok: true }>` to `LotOutlines`, so `RowLots.outline` fits; the layer output is unchanged)
 - Modify: `src/lib/sim/client.ts` (`opLots`, its pending map like `parcelSummary`, `:108-116`), `client.spec.ts`
 - Modify: `src/lib/sim/scenario/scenario-host.ts:1289-1330` (use `packOutlines`)
 - Create: `src/lib/brush/row-lots.svelte.ts`, `row-lots.svelte.spec.ts`
@@ -179,14 +182,14 @@ git commit -m "feat(brush): removing a row of strokes is one undoable step"
     reset(): void;
   }
   ```
-  Unknown op ids are skipped by the host. `LotOutlinesResult`'s ok shape becomes `LotOutlines & { ok: true; missing: number }` (same fields, so `outline-request.ts` and `painted-outline.ts` are unchanged). Builder's call: `RowLots` keeps one request in flight and a queue, since a long plan can have many rows.
+  Unknown op ids are skipped by the host. `LotOutlinesResult`'s ok shape becomes `LotOutlines & { ok: true; missing: number }` (same fields, so `outline-request.ts` is unchanged; `paintedOutlineLayers` takes `LotOutlines` as above). Builder's call: `RowLots` keeps one request in flight and a queue, since a long plan can have many rows.
 
 - [ ] **Step 1: Write the failing tests**
 
 `rows.spec.ts`: `planRowGroups` groups `[p8, p8, p6, e, e, p8]` into four rows (`p8×2`, `p6`, `e×2`, `p8`) with the first op ids; `planPaintRows` carries the statuses.
 `outlines.spec.ts`: one ring per polygon ring, `starts` cumulative, `positions` the lng/lat of `toLngLat`, `transfer` the three buffers.
 `host.spec.ts`: on the mini dataset, `opLots` for two overlapping paint ops counts the union of their eligible covered lots, `missing` 0 once their chunks are loaded and > 0 before; `outlines: true` returns rings for exactly those lots; before `init` the answer is `result: null`.
-`worker-router.spec.ts`: `opLots` goes to the editor in editor mode and is answered `result: null` in scenario mode.
+`worker-router.spec.ts`: `opLots` goes to the editor in editor mode and is answered `result: null` in scenario mode (through the widened `RouterDeps.post`).
 `client.spec.ts`: `opLots` resolves by `reqId`; after a crash it resolves null.
 `row-lots.svelte.spec.ts`: `want` asks once per changed row; an unchanged row is not asked again; a growing last row is asked again; `missing > 0` stays `finding` and `chunksChanged` asks again; `select` asks with `outlines: true` and exposes `outline`; an answer for a row since changed is dropped.
 
@@ -205,7 +208,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add -A src/lib/paint src/lib/sim src/lib/brush/row-lots.svelte.ts src/lib/brush/row-lots.svelte.spec.ts
+git add -A src/lib/paint src/lib/sim src/lib/sim-page/painted-outline.ts src/lib/sim-page/painted-outline.spec.ts src/lib/brush/row-lots.svelte.ts src/lib/brush/row-lots.svelte.spec.ts
 git commit -m "feat(brush): count and outline a painted row's lots in the editor worker"
 ```
 
@@ -230,8 +233,9 @@ git commit -m "feat(brush): count and outline a painted row's lots in the editor
   dock: DockState;          // the page's; tab 'paint'
   dockId: string;           // for the page's "Paint" button and the score's aria-controls
   results?: Snippet;        // the page's Results face
+  notices?: Snippet;        // the page's own notices (/: NoticeStack's items), rendered in BrushEditor's one NoticePills, as FzpMode's `notices`
   ```
-  `BrushEditor` renders (root class `brush-editor sfh-dock-host`): SimMap; the `Dock` (`label="Paint"`, `tabs=[{ id: 'paint', label: 'Paint', icon: DOCK_ICONS.paint }]`, `top` = `HistoryButtons` with `editor.canUndo`/`canRedo`, labels null, `onundo`/`onredo` → the controller, `panel` = `PaintTab` with `brush`, `tool = brush.tool`, `ontool = onToolChange`, `rows = planPaintRows(planRowGroups(editor.plan.ops), rowLots.status)`, `selected`, `onselect`, `onremove = removeRow`, `eraseHint = MSG.eraseHint`, `readonly = editor.readOnly`; `results`; `flipLabel="Paint"`, `onflip` → `dock.showEdit('paint')`); the `PaletteStrip` below md while a stroke tool is chosen and the sheet is closed; the brush status line and its Retry, and the read-only status (`BrushEditor.svelte:409-425`), as pills in a `NoticePills` (with `PILL`). An overlay mux (`createOverlayMux`) owns `handle.setOverlayLayers`: the controller writes `ring`, and the selected row's outline (`rowLots.outline` through `paintedOutlineLayers`) writes `outline`. `removeRow(id)`: `controller?.cancelStroke()`, `editor.removeOps(group.opIds, \`Removed ${rowName(group)}\`)`, `client.load(editor.plan)`, announce the label, clear the selection. `rowLots.want(groups)` runs on every plan change; `rowLots.chunksChanged()` on each `chunks` message; `rowLots.reset()` on a restart. The map's bottom inset below md is the sheet's height from `onsheetheight` (the `--brushbar-h` and `--scorebar-h` arithmetic, `BrushEditor.svelte:255-268`, goes; `setSheetInset` goes with the Scoreboard in Task 4).
+  `BrushEditor` renders (root class `brush-editor sfh-dock-host`): SimMap; the `Dock` (`label="Paint"`, `tabs=[{ id: 'paint', label: 'Paint', icon: DOCK_ICONS.paint }]`, `top` = `HistoryButtons` with `editor.canUndo`/`canRedo`, labels null, `onundo`/`onredo` → the controller, `panel` = `PaintTab` with `brush`, `tool = brush.tool`, `ontool = onToolChange` (below md, choosing Paint or Erase also sets `dock.sheet = 'closed'` so the strip shows; `PaletteStrip` calls `ontool` and relies on it), `rows = planPaintRows(planRowGroups(editor.plan.ops), rowLots.status)`, `selected`, `onselect`, `onremove = removeRow`, `eraseHint = MSG.eraseHint`, `readonly = editor.readOnly`; `results`; `flipLabel="Paint"`, `onflip` → `dock.showEdit('paint')`); the `PaletteStrip` below md while a stroke tool is chosen and the sheet is closed; the brush status line and its Retry, and the read-only status (`BrushEditor.svelte:409-425`), as pills in the one `NoticePills` (with `PILL`), followed by `{@render notices?.()}`: the page's notices go into that same container, so there is one stack and one `fzp-notices` testid, never a second `NoticePills`. An overlay mux (`createOverlayMux`) owns `handle.setOverlayLayers`: the controller writes `ring`, and the selected row's outline (`rowLots.outline` through `paintedOutlineLayers`) writes `outline`. `removeRow(id)`: `controller?.cancelStroke()`, `editor.removeOps(group.opIds, \`Removed ${rowName(group)}\`)`, `client.load(editor.plan)`, announce the label, clear the selection. `rowLots.want(groups)` runs on every plan change; `rowLots.chunksChanged()` on each `chunks` message; `rowLots.reset()` on a restart. The map's bottom inset below md is the sheet's height from `onsheetheight` (the `--brushbar-h` and `--scorebar-h` arithmetic, `BrushEditor.svelte:255-268`, goes; `setSheetInset` goes with the Scoreboard in Task 4).
   `+page.svelte`: `dock = new DockState({ tab: 'paint' })`, opened on mount from md; a "Paint" header action (`aria-expanded={dock.visible(wide)}`, `aria-controls={dockId}`) toggling it, before View and Publish.
   Builder's calls: the "Paint" header button shares its name with the "Paint" mode link (spec Goal 12); they are distinct roles (a link with `aria-current`, a button with `aria-expanded`); the keyboard shortcuts table moves behind `HistoryButtons`' ⓘ.
 
@@ -248,7 +252,7 @@ it('Remove on the selected row loads the new plan and Undo loads it back', async
   // w.lastOf('load').plan.ops after Remove lacks the row's ops; after Ctrl+Z they are back at their places
 });
 it('Remove during a stroke cancels the stroke first', async () => {});
-it('the status line and Retry are pills in the notice stack', async () => {});
+it('the status line and Retry are pills in the notice stack, together with the page\'s `notices` snippet in one `fzp-notices`', async () => {});
 it('below md a stroke tool shows the palette strip; Done reopens the sheet on Paint', async () => {});
 it('read-only (/p/:id): rows only; no tools, no Remove; Ctrl+Z does nothing', async () => {});
 ```
@@ -261,7 +265,7 @@ Retarget the existing BrushEditor specs from the toolbar to the dock (the tool r
 Run: `npx vitest --run --project client src/lib/brush src/routes/page.svelte.spec.ts src/routes/page.header.svelte.spec.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement** as in Interfaces; delete `BrushToolbar` and `StoriesPopover` (`grep -rn "StoriesPopover\|BrushToolbar" src` must come back empty).
+- [ ] **Step 3: Implement** as in Interfaces; delete `BrushToolbar` and `StoriesPopover` (`grep -rn "StoriesPopover\|BrushToolbar" src` must come back empty, ignoring comment lines: `RadiusPopover.svelte:2`, `TimeScrubber.svelte:327` and `NoticeStack.svelte:64` only mention them in comments, so reword those comments or filter comments out of the gate).
 
 - [ ] **Step 4: Run the tests and e2e**
 
@@ -283,21 +287,21 @@ git commit -m "feat(paint): / paints from the shared dock and Paint tab"
 - Modify: `src/lib/scoreboard/ScoreboardPanel.svelte`, `ScoreboardPanel.svelte.spec.ts` (tokens; it is the Results body)
 - Delete: `src/lib/scoreboard/Scoreboard.svelte`, `Scoreboard.svelte.spec.ts`
 - Modify: `src/lib/scoreboard/TargetRow.svelte`, `NeighborhoodList.svelte` (tokens)
-- Modify: `src/lib/sharing/NoticeStack.svelte` (+ spec): render inside `NoticePills`, `PILL` items; drop its toolbar-column placement and `--notice-stack-h`
-- Modify: `src/routes/+page.svelte`, `src/routes/page.view.svelte.spec.ts`, `src/routes/p/[id]/+page.svelte`, `src/routes/p/page.view.svelte.spec.ts`
+- Modify: `src/lib/sharing/NoticeStack.svelte` (+ spec): render only its `PILL` items, to be passed to BrushEditor as the `notices` snippet and so land inside BrushEditor's one `NoticePills` (no `NoticePills` of its own, no second `fzp-notices`); drop its toolbar-column placement and `--notice-stack-h`
+- Modify: `src/routes/+page.svelte`, `src/routes/page.view.svelte.spec.ts`, `src/routes/p/[id]/+page.svelte`, `src/routes/p/[id]/page.view.svelte.spec.ts`
 - Modify: `src/lib/shell/accent.spec.ts` (`THEMED_FILES` += `ScoreboardPanel.svelte`, `TargetRow.svelte`, `NeighborhoodList.svelte`, `NoticeStack.svelte`)
 - Modify: `e2e/scoreboard.spec.ts`, `e2e/share-*.spec.ts`, `e2e/chrome-dark.spec.ts`, `e2e/pages-a11y.spec.ts`; `docs/dev/plan-sharing.md` (notices, the view), `docs/dev/map-interfaces.md` (no `--scorebar-h`)
 
 **Interfaces:**
 - Consumes: plan 2's `HeaderScore`; `announcement`, `primaryTarget`, `viewState` (`src/lib/scoreboard/view.ts`); Task 3's BrushEditor props.
-- Produces: on `/` and `/p/:id`, `useHeaderActions(headerActions, { pinned: score, status })` where `score` renders `HeaderScore` with `total = shown.netUnits`, `target = primaryTarget(shown) ?? null`, no `delta`, `busy = view.updating`, `expanded = dock.face === 'results' && dock.visible(wide)`, `controls = dockId`, `onclick` → `dock.toggleResults(wide)`, `live = announcement(shown)`, `quiet = view.updating`. The Results snippet renders `ScoreboardPanel` (score, status, `onretry` → `brushEditor.retryChunks()`). `/p/:id` passes `readOnly` and the same dock, header score and Results, and opens on the Paint tab (rows, no tools). `--scorebar-h` and `BrushEditor.setSheetInset` are deleted.
+- Produces: on `/` and `/p/:id`, the page derives `shown = $derived(score ?? EMPTY)` and `scoreView = $derived(viewState(shown, status))` itself (`shown` and `view` were `Scoreboard.svelte`'s internals, `:27-28`; `view` is already `ViewPrefs` in `+page.svelte:89`, so use `scoreView`, never `view`; `EMPTY` is imported as `Scoreboard.svelte` does). Then `useHeaderActions(headerActions, { pinned: score, status })` where `score` renders `HeaderScore` with `total = shown.netUnits`, `target = primaryTarget(shown) ?? null`, no `delta`, `busy = scoreView.updating`, `expanded = dock.face === 'results' && dock.visible(wide)`, `controls = dockId`, `onclick` → `dock.toggleResults(wide)`, `live = announcement(shown)`, `quiet = scoreView.updating`. `/` passes `notices` (a snippet rendering `NoticeStack`) to `BrushEditor`; `/p/:id` does the same for its own notices. The Results snippet renders `ScoreboardPanel` (score, status, `onretry` → `brushEditor.retryChunks()`). `/p/:id` passes `readOnly` and the same dock, header score and Results, and opens on the Paint tab (rows, no tools). `--scorebar-h` and `BrushEditor.setSheetInset` are deleted.
 
 - [ ] **Step 1: Write the failing tests**
 
 `page.view.svelte.spec.ts`: "the header score shows the net homes and the RHNA bar; pressing it shows Results with the scoreboard's content and a Paint button that flips back"; "there is no Housing scoreboard region".
-`p/page.view.svelte.spec.ts`: "a shared plan shows the header score, a read-only Paint tab with its rows, and Results".
+`p/[id]/page.view.svelte.spec.ts`: "a shared plan shows the header score, a read-only Paint tab with its rows, and Results".
 `ScoreboardPanel.svelte.spec.ts`: keep its content assertions; add that it renders no `bg-white`.
-`NoticeStack.svelte.spec.ts`: notices render inside `fzp-notices` (the shared stack's testid), toasts still dismiss after 8 s.
+`NoticeStack.svelte.spec.ts`: rendered through BrushEditor's `notices` snippet, its notices sit inside the single `fzp-notices` (the page has exactly one), toasts still dismiss after 8 s.
 
 - [ ] **Step 2: Run them to see them fail**
 
@@ -324,5 +328,7 @@ git commit -m "feat(score): / and shared plans use the header score and the Resu
 
 ## Open questions
 
-1. **`/p/:id` (shared plans).** The spec names `/` and `/s/<id>` but not `/p/:id`, which today renders the same floating Scoreboard and `BrushEditor` read-only. Removing the Scoreboard from `/` while keeping it on `/p/:id` would leave two score UIs (spec: "The score looks the same in both"). This plan gives `/p/:id` the header score, the Results face and a read-only Paint tab (Task 4). Recommendation: keep that; the partner may prefer `/p/:id` to open on Results.
-2. **`/`'s plan-sharing notices** (N1 to N3, the Remix toast, `NoticeStack`) were positioned against the toolbar column that goes. This plan renders them in the same pill stack as `/sim`'s (Task 4), the one notice UI. Recommendation: keep.
+None. Decided here:
+
+1. **`/p/:id` (shared plans)** gets the dock, the header score and the Results face, with a read-only Paint tab (Task 4): the spec's Goal 5 says the score looks the same in both modes, and keeping the floating Scoreboard on `/p/:id` would leave two score UIs. It opens on the Paint tab.
+2. **`/`'s plan-sharing notices** (N1 to N3, the Remix toast, `NoticeStack`) move into the one pill stack that `BrushEditor` renders, through its `notices` snippet (Tasks 3 and 4): spec Goal 8, one notice style.

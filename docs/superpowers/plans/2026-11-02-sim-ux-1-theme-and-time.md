@@ -161,18 +161,18 @@ it('a lever notice shows at the top and changes neither --fzp-scrubber-h nor the
   const { w, map } = await readyFzp({ levers: someLevers }); // existing host helpers
   const root = document.querySelector<HTMLElement>('.sfh-fzp')!;
   const before = root.style.getPropertyValue('--fzp-scrubber-h');
-  const insets = map.bottomInsets.length;
+  const insets = map.callsOf('setBottomInset').length;
   w.emit({ type: 'levers', rev: w.lastOf('initScenario')!.rev, phase: 'resolving', done: 1, total: 9, failedCells: ['c1'] });
   await expect.element(page.getByText(/Updating the simulation for your policy/)).toBeVisible();
   const pills = page.getByTestId('fzp-notices');
   await expect.element(pills.getByRole('button', { name: 'Retry' })).toBeVisible();
   expect(root.style.getPropertyValue('--fzp-scrubber-h')).toBe(before);
-  expect(map.bottomInsets.length).toBe(insets);
+  expect(map.callsOf('setBottomInset').length).toBe(insets);
 });
 it('the loading, failed and no-scenario notices render in the same stack', async () => { /* each phase: getByTestId('fzp-status') is inside getByTestId('fzp-notices') */ });
 ```
 
-(`readyFzp`, `someLevers` and `map.bottomInsets` stand for the spec's existing host and stub helpers in `src/lib/fzp/test/`; use what is there, adding a `bottomInsets` record to `sim-map-stub.ts` if it has none.)
+(`readyFzp` and `someLevers` do not exist: write them as small local helpers in `FzpMode.svelte.spec.ts`, built from the spec's existing mount/host setup. `map.bottomInsets` does not exist either: the stub already records `setBottomInset` calls, so read `map.callsOf('setBottomInset').length` (`src/lib/fzp/test/sim-map-stub.ts:149,167`) and use it in place of `map.bottomInsets.length`. The `fzp-notices` testid already exists on `FzpMode.svelte` and moves into `NoticePills`.)
 
 In `accent.spec.ts`, add `THEMED_FILES = ['src/lib/shell/NoticePills.svelte', 'src/lib/sim-page/SimNotices.svelte', 'src/lib/fzp/FzpMode.svelte']` and a test that none contains `bg-white` or `text-black` (later plans append their files to this list).
 
@@ -203,7 +203,7 @@ test('a notice never moves the docked panel or the time bar', async ({ page, isM
   await gotoSim(page);
   const panelBox = await panel(page).boundingBox();
   const barBox = await page.getByTestId('fzp-scrubber').boundingBox();
-  await addTransitRule(page); // existing helper: sends a revision, so "Updating…" shows
+  await openBrushForm(page, 'Add a transit rule'); // existing helper in this file (sim.spec.ts:96); sending a revision makes "Updating…" show
   await expect(page.getByTestId('fzp-lever-status')).toContainText('Updating the simulation');
   expect(await panel(page).boundingBox()).toEqual(panelBox);
   expect(await page.getByTestId('fzp-scrubber').boundingBox()).toEqual(barBox);
@@ -229,7 +229,7 @@ git commit -m "feat(sim): notices are pills at the top of the map and never move
 ### Task 3: Pause · Play · Faster, end markers and `ontoday`
 
 **Files:**
-- Modify: `src/lib/fzp/playback.ts`, `src/lib/fzp/types.ts:7-8`, `src/lib/fzp/playback.spec.ts`
+- Modify: `src/lib/fzp/playback.ts`, `src/lib/fzp/types.ts:7-8`, `src/lib/fzp/playback.spec.ts` (rewrite the `SPEED_LABEL` tests at `:21-27` and the `'month'` generator entry at `:51`)
 - Modify: `src/lib/fzp/TimeScrubber.svelte:16-244`, `TimeScrubber.svelte.spec.ts`, `TimeScrubberHarness.svelte`
 - Modify: `src/lib/fzp/debug.ts` (add `speed`), `src/lib/fzp/FzpMode.svelte:795-811` (report it)
 - Modify: `src/lib/lesscars/LessCarsMode.svelte:394-405` (no change needed beyond type-checking; `startLabel` defaults to the date)
@@ -265,7 +265,7 @@ git commit -m "feat(sim): notices are pills at the top of the map and never move
 
 - [ ] **Step 1: Write the failing tests**
 
-`playback.spec.ts`: `SPEED_DAYS` has exactly the keys `year` and `threeYears`; `advance(0, 1000, 'threeYears', 10_000).day` is `36 * MONTH_DAYS` (floored).
+`playback.spec.ts`: `SPEED_DAYS` has exactly the keys `year` and `threeYears`; `advance(0, 1000, 'threeYears', 10_000).day` is `36 * MONTH_DAYS` (floored). Also rewrite the existing tests that use `SPEED_LABEL` (`playback.spec.ts:21-27`) and the `'month'` entry in `fc.constantFrom` (`:51`): they move to `SPEED_NAME` and the keys `year` and `threeYears`.
 
 `TimeScrubber.svelte.spec.ts` (through `TimeScrubberHarness`, which gains `ontoday` and `startLabel` pass-through and a `todayCalls` counter):
 
@@ -337,7 +337,7 @@ git commit -m "feat(sim): sim-game time controls with Today and horizon markers"
 ```ts
 it('Home on the slider during a run returns to Setup and unlocks the policy', async () => {
   const { w } = await readySim();
-  await pressRun(w); // existing helpers: Run, then the timeline for the latest rev
+  await pressRun(w); // new helpers (see below): Run, then the timeline for the latest rev
   await expect.poll(() => fzpDebug().playing).toBe(true);
   slider().focus();
   await userEvent.keyboard('{Home}');
@@ -346,6 +346,8 @@ it('Home on the slider during a run returns to Setup and unlocks the policy', as
   expect(store().locked).toBe(false);
 });
 ```
+
+The helpers `readySim`, `pressRun(w)`, `fzpDebug`, `slider` and `store` do not exist in `SimPage.svelte.spec.ts` (it has only `setup()` and `toReady()`): write them there, built on those two. Reading `__sfhFzp` needs `vi.stubEnv('VITE_E2E', '1')` in the spec, as `FzpMode.svelte.spec.ts:1236` does.
 
 e2e (`e2e/sim.spec.ts`): "the Today marker in a run returns to Setup; Replay at the horizon does not": start a run, press End, wait `playing === false`, press Replay (`fzp-play`), expect `runPhase` stays `'run'` and `playing` true; press Pause, press the Today marker, expect `runPhase === 'setup'` and the Run label.
 

@@ -12,6 +12,7 @@
 
 ## Global Constraints
 
+- Line numbers cited here predate earlier plans in the series; locate code by symbol.
 - One Paint tab component, used by both modes. Anti-goal: two paint experiences that drift.
 - Tools: Move / Paint / Erase. Height: a palette of swatches (`STORY_PRESETS`, `src/lib/brush/radius.ts:51`: 2, 3, 4, 6, 8, 12, 20, 40) plus the stepper for other values (1 to 80). Brush size.
 - Painted areas: a list; each row has a swatch, an auto name, its stroke and lot counts, and Remove when selected. Selecting one outlines it on the map. Creation order, later wins, no reordering (Move up/down go). Erase areas are rows too, with an eraser swatch.
@@ -38,12 +39,12 @@
 
 | File | Responsibility | Tasks |
 | --- | --- | --- |
-| `src/lib/paint/rows.ts` (new, + spec) | `PaintRow`, `LotStatus`, `rowName`, `rowMeta`, `simPaintRows` | 1 |
+| `src/lib/paint/rows.ts` (new, + spec) | `PaintRow`, `LotStatus`, `lotsText`, `count`, `rowName`, `rowMeta` (imports nothing from `sim-page`) | 1 |
 | `src/lib/paint/tools.ts` (new) | `PAINT_TOOLS` with icon paths (moved from `BrushToolbar.svelte:22-47`) | 1 |
 | `src/lib/paint/HeightPalette.svelte` (new, + spec) | swatches and the stepper | 1 |
 | `src/lib/paint/HistoryButtons.svelte` (new, + spec) | Undo, Redo and the shortcuts ⓘ | 1 |
 | `src/lib/paint/PaintTab.svelte` (new, + spec, `test/PaintTabHost.svelte`) | the tab | 2 |
-| `src/lib/sim-page/brush-summary.ts` | `LotStatus`, `lotsText` re-exported from `paint/rows.ts` | 1 |
+| `src/lib/sim-page/brush-summary.ts` (+ spec) | `simPaintRows`; `count`, `LotStatus`, `lotsText` re-exported from `paint/rows.ts` | 1 |
 | `src/lib/sim-page/selection.ts` (new, + spec) | `DockSelection`, `liveSelection`, `limitsViewOf` | 3 |
 | `src/lib/sim-page/SimPage.svelte` (+ spec) | Paint tab, selection, outlines, preview wiring | 3, 4, 5 |
 | `src/lib/sim-page/CustomZoningSection.svelte` (+ spec), `HistoryRow.svelte` (+ spec), `PhoneToolBar.svelte` (+ spec) | deleted | 3, 5 |
@@ -62,13 +63,14 @@
 
 **Files:**
 - Create: `src/lib/paint/rows.ts`, `rows.spec.ts`, `tools.ts`, `HeightPalette.svelte`, `HeightPalette.svelte.spec.ts`, `HistoryButtons.svelte`, `HistoryButtons.svelte.spec.ts`
-- Modify: `src/lib/sim-page/brush-summary.ts:99-140` (move `LotStatus` and `lotsText` out, re-export)
+- Modify: `src/lib/sim-page/brush-summary.ts:44, 99-140` (move `count`, `LotStatus` and `lotsText` out to `paint/rows.ts` and re-export them; add `simPaintRows`), `src/lib/sim-page/brush-summary.spec.ts` (create if absent: the `simPaintRows` test)
 
 **Interfaces:**
-- Consumes: `BrushState` (`setStories`, `stories`, `phase`), `STORY_PRESETS`, `heightHintM` (`radius.ts`), `SHORTCUTS` (`shortcuts.ts`), `customLotStatus`, `count` (`brush-summary.ts`).
+- Consumes: `BrushState` (`setStories`, `stories`, `phase`), `STORY_PRESETS`, `heightHintM` (`radius.ts`), `SHORTCUTS` (`shortcuts.ts`); in `brush-summary.ts`, `simPaintRows` consumes `customLotStatus` (which stays there).
 - Produces:
   ```ts
-  // rows.ts
+  // rows.ts (no import from sim-page: brush-summary.ts imports from here, never the reverse)
+  export const count: (k: number, one: string, many: string) => string; // moved verbatim from brush-summary.ts
   export type LotStatus =
     { kind: 'found'; lots: number } | { kind: 'finding' } | { kind: 'failed'; keys: string[] };
   export function lotsText(s: LotStatus): string; // moved verbatim
@@ -83,6 +85,7 @@
   export function rowName(r: Pick<PaintRow, 'kind' | 'stories'>): string;
   /** "3 strokes · 52 lots". */
   export function rowMeta(r: PaintRow): string;
+  // brush-summary.ts (sim-page; re-exports count, LotStatus, lotsText so its callers are unchanged)
   /** /sim: one row per custom brush, in policy order. */
   export function simPaintRows(
     p: SimPolicy,
@@ -105,6 +108,11 @@ it('names rows by height or as erased', () => {
   expect(rowName({ kind: 'paint', stories: 1 })).toBe('1 story');
   expect(rowName({ kind: 'erase', stories: null })).toBe('Erased');
 });
+```
+
+`brush-summary.spec.ts` (server; `simPaintRows` lives in `brush-summary.ts`):
+
+```ts
 it('simPaintRows: one row per custom brush in order, with strokes and lot status', () => {
   const p = { ...DEFAULT_POLICY, custom: [paint('a', 8, 3), erase('b', 1)] };
   const rows = simPaintRows(p, (k) => (k === queryKey(customQuery(p.custom[0])) ? found(52) : undefined));
@@ -112,7 +120,7 @@ it('simPaintRows: one row per custom brush in order, with strokes and lot status
     { id: 'a', kind: 'paint', stories: 8, strokes: 3, lots: { kind: 'found', lots: 52 } },
     { id: 'b', kind: 'erase', stories: null, strokes: 1, lots: { kind: 'finding' } }
   ]);
-  expect(rowMeta(rows[0])).toBe('3 strokes · 52 lots');
+  expect(rowMeta(rows[0])).toBe('3 strokes · 52 lots'); // rowMeta from paint/rows
 });
 ```
 
@@ -121,10 +129,10 @@ it('simPaintRows: one row per custom brush in order, with strokes and lot status
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `npx vitest --run --project server src/lib/paint` and `npx vitest --run --project client src/lib/paint`
+Run: `npx vitest --run --project server src/lib/paint src/lib/sim-page/brush-summary.spec.ts` and `npx vitest --run --project client src/lib/paint`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement** as in Interfaces; `brush-summary.ts` imports and re-exports `LotStatus` and `lotsText`, so its callers are unchanged.
+- [ ] **Step 3: Implement** as in Interfaces; `brush-summary.ts` imports and re-exports `count`, `LotStatus` and `lotsText` from `paint/rows.ts`, so its callers are unchanged; `simPaintRows` stays in `brush-summary.ts` (so `paint/rows.ts` never imports `sim-page`, which would be a cycle).
 
 - [ ] **Step 4: Run the tests**
 
@@ -134,7 +142,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add -A src/lib/paint src/lib/sim-page/brush-summary.ts
+git add -A src/lib/paint src/lib/sim-page/brush-summary.ts src/lib/sim-page/brush-summary.spec.ts
 git commit -m "feat(paint): painted-area rows, a height palette and history buttons"
 ```
 
@@ -160,7 +168,7 @@ git commit -m "feat(paint): painted-area rows, a height palette and history butt
     eraseHint: string;                // /sim: ERASE_HINT; /: MSG.eraseHint
     /** /p/:id (plan 5): rows only, no tools, no Remove. */
     readonly?: boolean;
-    /** A row's lot lookup failed: retry its keys (/sim: sync.retry). */
+    /** A row's lot lookup failed: retry its keys (/sim: `keys.forEach((k) => sync.retry(k))`, since `LeverSync.retry` takes one key). */
     onretry?: (keys: string[]) => void;
   }
   ```
@@ -202,8 +210,10 @@ git commit -m "feat(paint): the Paint tab shared by both modes"
 **Files:**
 - Create: `src/lib/sim-page/selection.ts`, `selection.spec.ts`
 - Modify: `src/lib/sim-page/SimPage.svelte:453-583` (selection, limits mode, outlines), the Dock's `panel` and `top` snippets, `SimPage.svelte.spec.ts`
+- Modify: `src/lib/sim-page/stroke-adapter.ts`, `stroke-adapter.spec.ts` (`removeCustomBrush`, the removal's merge rule)
 - Modify: `src/lib/sim-page/BrushCard.svelte` (drop `list="custom"`, Move up/down), `BrushCard.svelte.spec.ts`, `RulesSection.svelte` (selection props renamed below)
 - Delete: `src/lib/sim-page/CustomZoningSection.svelte`, `CustomZoningSection.svelte.spec.ts`, `HistoryRow.svelte`, `HistoryRow.svelte.spec.ts`
+- Modify: `src/lib/shell/accent.spec.ts` (drop `CustomZoningSection.svelte` and `HistoryRow.svelte` from `THEMED_FILES`, else the scan hits ENOENT)
 - Modify: `e2e/sim.spec.ts` (the custom zoning tests: rows, select, remove)
 
 **Interfaces:**
@@ -214,10 +224,18 @@ git commit -m "feat(paint): the Paint tab shared by both modes"
   export type DockSelection = { kind: 'rule'; id: string } | { kind: 'paint'; id: string } | null;
   /** `sel`, or null once its rule or brush has left the policy (Remove, Undo, a restore). */
   export function liveSelection(sel: DockSelection, p: SimPolicy): DockSelection;
+  // stroke-adapter.ts
+  /**
+   * The policy without custom brush `id`; the two brushes now adjacent merge when they are the
+   * same kind and (paint) the same stories: the earlier brush's id is kept and its strokes are
+   * followed by the later one's. This is `appendStroke`'s join rule and `/`'s derived row
+   * grouping, so a row means the same on both pages.
+   */
+  export function removeCustomBrush(p: SimPolicy, id: string): SimPolicy;
   /** A selected rule → rule mode; a selected painted area, or Paint/Erase chosen (edit) → paint; else plain. */
   export function limitsViewOf(sel: DockSelection, tool: SimTool, mode: 'edit' | 'view'): LimitsView;
   ```
-  SimPage replaces `pickedRule` / `selectedRule` (`:453-517`) with `picked = $state.raw<DockSelection>(null)` and `selection = $derived(liveSelection(picked, store.policy))` (the effect that forgets a gone selection stays, so Redo does not restore it). RulesSection's `selectedRule` / `onselectrule` read and write `{ kind: 'rule', id }` (its "Show on map" stays until plan 4). The Paint tab: `rows = simPaintRows(store.policy, (k) => sync.result(k))`, `selected = selection?.kind === 'paint' ? selection.id : null`, `onremove(id)` → `store.apply(p => ({ ...p, custom: p.custom.filter(b => b.id !== id) }), \`Removed: ${customChangeLabel(b)}\`)` and announce it; `onretry` → `sync.retry`. The outline request wants, in order: the selected painted area's lots (its `customQuery` result; an erase area's too), else the painted lots while Erase is chosen (today's rule, `:559-574`), else nothing. The dock's `top` is `HistoryButtons` over the store (`undoLabel`, `redoLabel`, `canUndo`, `canRedo`) with SimPage's `undo`/`redo`.
+  SimPage replaces `pickedRule` / `selectedRule` (`:453-517`) with `picked = $state.raw<DockSelection>(null)` and `selection = $derived(liveSelection(picked, store.policy))` (the effect that forgets a gone selection stays, so Redo does not restore it). RulesSection's `selectedRule` / `onselectrule` read and write `{ kind: 'rule', id }` (its "Show on map" stays until plan 4). The Paint tab: `rows = simPaintRows(store.policy, (k) => sync.result(k))`, `selected = selection?.kind === 'paint' ? selection.id : null`, `onremove(id)` → `store.apply(p => removeCustomBrush(p, id), \`Removed: ${customChangeLabel(b)}\`)` and announce it (removing a row between two rows of equal height merges them into one row, as `/` does; Undo restores all three); `onretry(keys)` → `keys.forEach((k) => sync.retry(k))` (`LeverSync.retry(key: string)`, as `BrushCard.svelte:127` does). The outline request wants, in order: the selected painted area's lots (its `customQuery` result; an erase area's too), else the painted lots while Erase is chosen (today's rule, `:559-574`), else nothing. The dock's `top` is `HistoryButtons` over the store (`undoLabel`, `redoLabel`, `canUndo`, `canRedo`) with SimPage's `undo`/`redo`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -234,8 +252,11 @@ it('selecting a painted area asks for its outlines; unselecting drops them', asy
   await expect.poll(() => w.lastOf('lotOutlines')?.lots).toEqual(brushLots);
 });
 it('Remove on the selected area is one change Undo names; the selection clears', async () => {});
+it('removing the middle of three rows with the outer two at one height leaves one row; Undo restores three', async () => {});
 it('undoing the stroke that made the selected area clears the selection; Redo does not restore it', async () => {});
 ```
+
+`stroke-adapter.spec.ts`: `removeCustomBrush` on `[p8, p6, p8]` removing `p6` gives one paint brush at 8 stories whose strokes are both `p8`s' in order and whose id is the first's; on `[p8, p6, p4]` removing `p6` leaves two brushes; on `[e1, p8, e2]` removing `p8` merges the erases; removing the first or last brush merges nothing; the result's brushes never repeat an id.
 
 Delete the custom-brush Move up/down tests in `BrushCard.svelte.spec.ts`.
 
@@ -244,17 +265,17 @@ Delete the custom-brush Move up/down tests in `BrushCard.svelte.spec.ts`.
 Run: `npx vitest --run --project server src/lib/sim-page/selection.spec.ts` and `npx vitest --run --project client src/lib/sim-page/SimPage.svelte.spec.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement** as in Interfaces; delete the four files.
+- [ ] **Step 3: Implement** as in Interfaces; delete the four files and drop `src/lib/sim-page/CustomZoningSection.svelte` and `src/lib/sim-page/HistoryRow.svelte` from `THEMED_FILES` in `src/lib/shell/accent.spec.ts`.
 
 - [ ] **Step 4: Run the tests and e2e**
 
-Run: the Step 2 commands, then `npx vitest --run --project client src/lib/sim-page`, then `SFH_E2E_PORT=4206 SFH_E2E_WORKERS=1 npx playwright test e2e/sim.spec.ts` (retarget the custom zoning tests: `getByRole('list', { name: 'Painted areas' })` instead of `'Custom zoning'`).
+Run: the Step 2 commands, then `npx vitest --run --project client src/lib/sim-page`, `npx vitest --run --project server src/lib/shell/accent.spec.ts`, then `SFH_E2E_PORT=4206 SFH_E2E_WORKERS=1 npx playwright test e2e/sim.spec.ts` (retarget the custom zoning tests: `getByRole('list', { name: 'Painted areas' })` instead of `'Custom zoning'`).
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add -A src/lib/sim-page e2e/sim.spec.ts
+git add -A src/lib/sim-page src/lib/shell/accent.spec.ts e2e/sim.spec.ts
 git commit -m "feat(sim): the Paint tab lists painted areas you select and remove"
 ```
 
@@ -378,7 +399,7 @@ git commit -m "feat(sim): live building preview under the brush, fading on relea
 - Create: `src/lib/paint/PaletteStrip.svelte`, `PaletteStrip.svelte.spec.ts`
 - Delete: `src/lib/sim-page/PhoneToolBar.svelte`, `PhoneToolBar.svelte.spec.ts`
 - Modify: `src/lib/sim-page/SimPage.svelte:902-904`, `SimPage.svelte.spec.ts`
-- Modify: `src/lib/shell/accent.spec.ts` (`THEMED_FILES` += the `src/lib/paint/*.svelte` files)
+- Modify: `src/lib/shell/accent.spec.ts` (`THEMED_FILES` += the `src/lib/paint/*.svelte` files; drop `PhoneToolBar.svelte`, which this task deletes)
 - Modify: `e2e/sim.spec.ts` (375 px tool bar tests), `e2e/chrome-dark.spec.ts`; `docs/dev/sim-page.md`
 
 **Interfaces:**
@@ -389,6 +410,7 @@ git commit -m "feat(sim): live building preview under the brush, fading on relea
   interface Props {
     brush: BrushState;
     tool: BrushTool;
+    /** Choosing a tool: the page's handler sets it and, on a phone, closes the sheet (`dock.sheet = 'closed'`) when it is Paint or Erase. */
     ontool(t: BrushTool): void;
     ondone(): void;          // after Done chose Move: the page reopens the sheet on Paint
     eraseHint: string;
@@ -407,7 +429,7 @@ git commit -m "feat(sim): live building preview under the brush, fading on relea
 Run: `npx vitest --run --project client src/lib/paint/PaletteStrip.svelte.spec.ts src/lib/sim-page/SimPage.svelte.spec.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement**; delete `PhoneToolBar`.
+- [ ] **Step 3: Implement**; delete `PhoneToolBar` and drop it from `THEMED_FILES` in `accent.spec.ts` (the `THEMED_FILES` edit lands in this task's commit).
 
 - [ ] **Step 4: Run the tests and e2e**
 

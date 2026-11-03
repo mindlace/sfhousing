@@ -12,6 +12,7 @@
 
 ## Global Constraints
 
+- Line numbers cited here predate earlier plans in the series; locate code by symbol.
 - Each transit rule is a layer row: a height swatch (its tallest band), a name from its stop types ("Near Muni Metro"), its lot count. **FZP baseline** is the last row: locked, not editable, a lock glyph, no explanatory sentence.
 - **"+ Transit layer"** adds a layer, selected and expanded, with sensible defaults. A selected layer has a Remove control.
 - The selected row expands in place to show the editor: stop-type chips; up to 3 distance bands, each with an editable distance and a stories stepper; add and remove a band. No separate form and no Save: edits apply as you make them, and undo covers them.
@@ -64,7 +65,7 @@
 - Modify: `src/lib/sim-page/brush-summary.ts:57,67-70` (export `ruleTarget(r)`: "Muni Metro", "regional rail and Muni Metro")
 
 **Interfaces:**
-- Consumes: `ZoningRule`, `TransitBand`, `DEFAULT_BANDS`, `bandsInnermostFirst`, `bandProblem` (`policy.ts:36-92`); `STOP_TYPES`, `StopType`; `STORIES_MIN`, `STORIES_MAX`; `newOpId`.
+- Consumes: `SimPolicy`, `ZoningRule`, `TransitBand`, `DEFAULT_BANDS`, `bandsInnermostFirst`, `bandProblem` (`policy.ts:36-92`); `STOP_TYPES`, `StopType`; `STORIES_MIN`, `STORIES_MAX`; `newOpId`.
 - Produces:
   ```ts
   export const MAX_BANDS = 3;
@@ -74,6 +75,8 @@
   export const NEW_BAND_STEP_M = 402;
   /** "+ Transit layer": rail (BART, Caltrain) and Muni Metro, at DEFAULT_BANDS. */
   export function newLayer(): ZoningRule;
+  /** The policy with rule `next` replacing the rule of the same id (new: no such helper exists yet; Task 2's edits call it). */
+  export function replaceRule(p: SimPolicy, next: ZoningRule): SimPolicy;
   /** "Near Muni Metro". */
   export function layerName(r: ZoningRule): string;
   /** The swatch: the tallest band's stories. */
@@ -128,6 +131,7 @@ it('names a layer from its stops and swatches its tallest band', () => {
   expect(layerTop(rule(DEFAULT_BANDS))).toBe(6);
 });
 it('an unsorted saved rule is returned innermost first by any edit', () => {});
+it('replaceRule swaps the rule with the same id, keeps order, and leaves other rules alone', () => {});
 ```
 
 (Wrap the property test as `expect(() => fc.assert(...)).not.toThrow()`; `fast-check` is already a dev dependency, used by `accumulator.property.spec.ts`.)
@@ -161,7 +165,7 @@ git commit -m "feat(sim): transit layer edits that cannot produce an invalid rul
 - Modify: `src/lib/map/height/limits-style.ts:14-47`, `limits-style.spec.ts`
 - Modify: `src/lib/sim-page/SimPage.svelte` (the Transit panel; the catalog stays), `SimPage.svelte.spec.ts`
 - Delete: `src/lib/sim-page/RulesSection.svelte`, `RuleBrushForm.svelte`, `brush-forms.svelte.ts`, `BrushCard.svelte` and their specs
-- Modify: `src/lib/shell/accent.spec.ts` (`THEMED_FILES`), `e2e/sim.spec.ts`, `e2e/sim-share.spec.ts` (the `addTransitRule` helpers)
+- Modify: `src/lib/shell/accent.spec.ts` (drop `RulesSection.svelte`, `RuleBrushForm.svelte` and `BrushCard.svelte` from `THEMED_FILES`, else the scan hits ENOENT; add `TransitTab.svelte` and `TransitLayerRow.svelte`), `e2e/sim.spec.ts` (the `openBrushForm` helper, `:96`, and its callers), `e2e/sim-share.spec.ts` (the inline "Add transit rule" click, `:247`)
 
 **Interfaces:**
 - Consumes: Task 1; plan 3's `DockSelection`, `liveSelection`, `limitsViewOf`; `ruleLotStatus`, `ruleChangeLabel`, `transitUnavailable`, `STOP_LABELS`, `count` (`brush-summary.ts`); `PolicyStore.apply(change, label, coalesce)` (`policy-store.svelte.ts:59-73`); `SRC_FZP` (`source.ts:9`).
@@ -223,11 +227,11 @@ it('+ Transit layer is aria-disabled with its reason while the catalog loads', a
 Run: `npx vitest --run --project server src/lib/map/height/limits-style.spec.ts src/lib/sim-page/selection.spec.ts` and `npx vitest --run --project client src/lib/sim-page/TransitLayerRow.svelte.spec.ts src/lib/sim-page/TransitTab.svelte.spec.ts src/lib/sim-page/SimPage.svelte.spec.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement** as in Interfaces; delete the four components and their specs. `PolicySummary` (the view) keeps using `ruleSummary` and is unaffected.
+- [ ] **Step 3: Implement** as in Interfaces; delete the four components and their specs, and drop their three `.svelte` entries from `THEMED_FILES` in `src/lib/shell/accent.spec.ts` in the same task. `PolicySummary` (the view) keeps using `ruleSummary` and is unaffected.
 
 - [ ] **Step 4: Run the tests and e2e**
 
-Run: the Step 2 commands, then `npm run check`, then `SFH_E2E_PORT=4206 SFH_E2E_WORKERS=1 npx playwright test e2e/sim.spec.ts e2e/sim-share.spec.ts` (rewrite `addTransitRule`: open the Transit tab, press "+ Transit layer", wait for the row's lot count; the edit tests use the chips and steppers; the "Show on map" a11y test becomes "a selected layer's expanded editor passes axe", light and dark).
+Run: the Step 2 commands, then `npm run check`, then `SFH_E2E_PORT=4206 SFH_E2E_WORKERS=1 npx playwright test e2e/sim.spec.ts e2e/sim-share.spec.ts` (rewrite `openBrushForm` in `e2e/sim.spec.ts` (there is no `addTransitRule` helper; rename it `addTransitLayer(page)` and update its three callers at `:302, :478, :485`) and the inline click in `sim-share.spec.ts:247`: open the Transit tab, press "+ Transit layer", wait for the row's lot count; the edit tests use the chips and steppers; the "Show on map" a11y test becomes "a selected layer's expanded editor passes axe", light and dark).
 Expected: PASS on `chromium` and `mobile`.
 
 - [ ] **Step 5: Commit**
@@ -315,6 +319,8 @@ git commit -m "feat(sim): the worker finds the lot under a point and who sets it
 - Modify: `src/lib/sim-page/selection.ts` (`selectionForLot`, `tabOf`), `selection.spec.ts`
 - Modify: `src/lib/dock/dock-state.svelte.ts` (`reveal`), `dock-state.svelte.spec.ts`
 - Modify: `src/lib/fzp/FzpMode.svelte:509-524` (`cards`), `FzpMode.svelte.spec.ts`
+- Modify: `src/lib/fzp/test/sim-map-stub.ts` (`FakeMap.fire` takes an event payload)
+- Modify: `src/lib/brush/BrushController.svelte.ts:24` (add `'click'` to `ControllerMap.on`'s event types, if SimPage's map handle is typed through it)
 - Modify: `src/lib/sim-page/SimPage.svelte:366-374` (the click listener), `SimPage.svelte.spec.ts`
 - Modify: `e2e/sim.spec.ts`
 
@@ -369,7 +375,7 @@ it('with Paint chosen, in a run, or in the view a click asks nothing', async () 
 Run: `npx vitest --run --project server src/lib/sim-page/policy.spec.ts src/lib/sim-page/selection.spec.ts src/lib/dock/dock-state.svelte.spec.ts` and `npx vitest --run --project client src/lib/fzp/FzpMode.svelte.spec.ts src/lib/sim-page/SimPage.svelte.spec.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement** as in Interfaces (the map stub in `src/lib/fzp/test/sim-map-stub.ts` gains `fire('click', e)` if it has no event emitter).
+- [ ] **Step 3: Implement** as in Interfaces (`FakeMap.fire(ev: string)` at `src/lib/fzp/test/sim-map-stub.ts:110` passes no payload: extend it to `fire(ev: string, payload?: unknown)` and hand the payload to the listeners, keeping every existing call valid; `ControllerMap.on` at `BrushController.svelte.ts:24` has no `click` type, so widen it or type SimPage's click subscription separately).
 
 - [ ] **Step 4: Run the tests and e2e**
 
@@ -421,7 +427,7 @@ git commit -m "feat(sim): clicking a lot selects the layer that sets its limit"
   /** "Near Muni Metro" for a rule still in the policy, "Painted 8 stories" for paint, null for FZP. */
   export function ownerLabel(owner: LimitOwner, lot: ParcelId, p: SimPolicy, lots: Lots): string | null;
   ```
-  FzpMode keeps the tap's `{ x, y }` (`TimelinePick`, `src/lib/map/types.ts:146-148`, map-container px) as the card's anchor, measures the card (`bind:offsetWidth`, `bind:offsetHeight`) and places it with `cardPlacement` inside the map area (left `--dock-w` read from the root's computed style, bottom above the scrubber). The "Allowed by" line follows the size line, only when `ownerName` returns a name.
+  FzpMode keeps the tap's `{ x, y }` (`TimelinePick`, `src/lib/map/types.ts:146-148`, map-container px) as the card's anchor, measures the card (`bind:offsetWidth`, `bind:offsetHeight`) and places it with `cardPlacement` inside the map area (left `--dock-w` read from the root's computed style: plan 2 declares it in px, `320px` / `48px`, bottom above the scrubber). The "Allowed by" line follows the size line, only when `ownerName` returns a name.
 
 - [ ] **Step 1: Write the failing tests**
 
