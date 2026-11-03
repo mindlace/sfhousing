@@ -1,5 +1,6 @@
 <script lang="ts">
-  // Test host: the shared-plan page with the root layout's header-actions slot rendered beside it.
+  // Test host: the shared-plan page with the root layout's header-actions and pinned slots rendered
+  // beside it.
   import type { ComponentProps } from 'svelte';
   import { provideHeaderActions } from '$lib/shell/header-actions.svelte';
   import Page from '../+page.svelte';
@@ -8,5 +9,6 @@
   const slot = provideHeaderActions();
 </script>
 
+<div data-testid="header-pinned">{@render slot.pinned?.()}</div>
 <div data-testid="header-actions">{@render slot.current?.()}</div>
 <Page {data} form={undefined} params={{ id: data.id }} />

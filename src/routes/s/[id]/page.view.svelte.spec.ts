@@ -1,6 +1,6 @@
 /// <reference types="@vitest/browser-playwright" />
 // /s/[id] (plan 5, Task 6): a published policy, read-only. The banner names it and offers Remix;
-// the header has only Policy and Another future; the panel is the summary; a document whose
+// the header has only Policy and Another future; the dock's one tab is the summary; a document whose
 // timelines no longer fit the calibration opens refit with the timing notice. A fake Worker
 // stands in for the scenario worker; the SimMap stub records its props.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -143,21 +143,33 @@ describe('/s/[id] read-only view', () => {
     await expect.poll(() => StubWorker.all.at(-1)!.allOf('resolveBrush').length).toBeGreaterThan(0);
   });
 
-  it('Policy toggles "Policy (read-only)", docked on md+ and a sheet on a phone', async () => {
+  it('Policy folds and opens the "Policy (read-only)" dock; a sheet on a phone', async () => {
     await render(PageHost, { props: { data: data() } });
-    const policy = page.getByRole('button', { name: 'Policy', exact: true });
-    const region = page.getByRole('region', { name: 'Policy (read-only)' });
-    await expect.element(region).toBeVisible();
+    const policy = page.getByRole('banner').getByRole('button', { name: 'Policy', exact: true });
+    const docked = () => document.querySelector('.sfh-dock-panel');
+    await expect.poll(docked).not.toBeNull();
+    const dock = document.querySelector('[data-testid="dock"]')!;
+    expect(dock.getAttribute('aria-label')).toBe('Policy (read-only)');
+    // One tab: the summary.
+    expect(
+      page
+        .getByRole('tab')
+        .elements()
+        .map((t) => t.textContent?.trim())
+    ).toEqual(['Policy']);
     await policy.click();
-    await expect.element(region).not.toBeInTheDocument();
+    await expect.poll(docked).toBeNull();
+    await expect.element(page.getByTestId('dock-rail')).toBeVisible();
     await policy.click();
-    await expect.element(region).toBeVisible();
+    await expect.poll(docked).not.toBeNull();
 
     await page.viewport(375, 700);
-    await page.getByRole('button', { name: 'Close policy' }).click();
+    await expect.element(page.getByTestId('dock-handle')).toHaveAttribute('aria-expanded', 'false');
     await page.getByRole('button', { name: 'Menu' }).click();
     await policy.click();
-    await expect.element(page.getByRole('dialog', { name: 'Policy (read-only)' })).toBeVisible();
+    await expect.element(page.getByTestId('dock-handle')).toHaveAttribute('aria-expanded', 'true');
+    await expect.element(page.getByRole('tab', { name: 'Policy' })).toBeVisible();
+    expect(document.querySelectorAll('dialog[open]')).toHaveLength(0);
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
   });
 

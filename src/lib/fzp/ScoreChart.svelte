@@ -18,7 +18,7 @@
 
   /** Used until the container reports its width. */
   const FALLBACK_W = 288;
-  const GRAY = '#6b7280';
+  const VERTICAL = 'var(--chart-vertical)';
 
   let measured = $state(0);
   const width = $derived(measured > 0 ? measured : FALLBACK_W);
@@ -72,13 +72,13 @@
       style:height="{CHART_H}px"
     >
       {#each model.gridlines as g, i (i)}
-        <line x1="0" x2={width} y1={g.y} y2={g.y} stroke="#e5e7eb" stroke-width="1" />
+        <line x1="0" x2={width} y1={g.y} y2={g.y} stroke="var(--chart-grid)" stroke-width="1" />
         <text
           x="2"
           y={g.y - 2}
           font-size="10"
-          fill="#374151"
-          stroke="white"
+          fill="var(--chart-label)"
+          stroke="var(--chart-halo)"
           stroke-width="3"
           paint-order="stroke">{g.label}</text
         >
@@ -102,7 +102,7 @@
         x2={width}
         y1={model.rhnaY}
         y2={model.rhnaY}
-        stroke="black"
+        stroke="var(--chart-ink)"
         stroke-width="1"
       />
 
@@ -113,7 +113,7 @@
           x2={v.x}
           y1="0"
           y2={CHART_H}
-          stroke={GRAY}
+          stroke={VERTICAL}
           stroke-width="1"
           stroke-dasharray="4 3"
         />
@@ -154,7 +154,7 @@
         x2={cursorX}
         y1="0"
         y2={CHART_H}
-        stroke="black"
+        stroke="var(--chart-ink)"
         stroke-width="1.5"
       />
 
@@ -163,8 +163,8 @@
         y={model.rhnaY - 3}
         text-anchor="end"
         font-size="10"
-        fill="black"
-        stroke="white"
+        fill="var(--chart-ink)"
+        stroke="var(--chart-halo)"
         stroke-width="3"
         paint-order="stroke">RHNA</text
       >
@@ -173,8 +173,8 @@
           x={v.x + 3}
           y="10"
           font-size="10"
-          fill="#374151"
-          stroke="white"
+          fill="var(--chart-label)"
+          stroke="var(--chart-halo)"
           stroke-width="3"
           paint-order="stroke">{v.label}</text
         >
@@ -185,8 +185,8 @@
           y={CHART_H - 3}
           text-anchor={i === model.xTicks.length - 1 && t.x > width - 24 ? 'end' : 'middle'}
           font-size="10"
-          fill="#374151"
-          stroke="white"
+          fill="var(--chart-label)"
+          stroke="var(--chart-halo)"
           stroke-width="3"
           paint-order="stroke">{t.label}</text
         >
@@ -195,7 +195,7 @@
   </div>
 
   <div>
-    <ul class="mt-2 space-y-1 text-xs text-gray-800">
+    <ul class="mt-2 space-y-1 text-xs text-ink dark:text-ink-dark">
       {#each LEGEND_ORDER as key (key)}
         <li class="flex items-center gap-2" data-legend-series={key}>
           <svg width="24" height="8" aria-hidden="true" class="shrink-0">
@@ -217,11 +217,11 @@
         </li>
       {/each}
     </ul>
-    <p class="mt-2 text-xs text-gray-800">
+    <p class="mt-2 text-xs text-ink dark:text-ink-dark">
       Dotted: published estimates of what the plan adds. Compare them with the violet lines, which
       show this simulation's plan effect (with the plan minus the old zoning).
     </p>
-    <ul class="mt-1 space-y-1 text-xs text-gray-800">
+    <ul class="mt-1 space-y-1 text-xs text-ink dark:text-ink-dark">
       {#each model.references as r, i (i)}
         <li class="flex items-center gap-2" data-reference-label={i}>
           <svg width="24" height="8" aria-hidden="true" class="shrink-0">
@@ -259,7 +259,7 @@
         </thead>
         <tbody>
           {#each rows as r (r.index)}
-            <tr class="border-t border-gray-300">
+            <tr class="border-t border-line dark:border-line-dark">
               <th scope="row" class="px-1 py-1 font-normal whitespace-nowrap">{r.date}</th>
               <td class="px-1 py-1">{r.total}</td>
               <td class="px-1 py-1">{r.pipeline}</td>

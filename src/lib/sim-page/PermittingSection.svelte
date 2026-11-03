@@ -10,7 +10,6 @@
 <script lang="ts">
   import { PATHWAYS, type Calibration, type Pathway } from '$lib/timelapse/types';
   import type { PolicyStore } from './policy-store.svelte';
-  import ReadonlyFieldset from './ReadonlyFieldset.svelte';
   import RouteTimeline from './RouteTimeline.svelte';
   import SourceList from './SourceList.svelte';
   import {
@@ -105,66 +104,62 @@
   }
 
   const btn =
-    'min-h-6 min-w-6 rounded-md border border-gray-300 px-2 font-semibold disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11';
+    'min-h-6 min-w-6 rounded-md border border-control-line text-ink hover:bg-surface-raised dark:border-control-line-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised px-2 font-semibold disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11';
 </script>
 
 <div class="flex flex-col gap-3 text-sm">
-  <ReadonlyFieldset>
-    <label class="flex flex-col gap-1 font-semibold">
-      Preset
-      <select
-        class="min-h-6 rounded-md border border-gray-400 px-1 font-normal pointer-coarse:min-h-11"
-        aria-describedby="{uid}-preset-desc"
-        value={current.preset}
-        onchange={(e) => choosePreset(e.currentTarget.value as PresetId)}
-      >
-        {#each available as p (p.id)}
-          <option value={p.id}>{p.name}</option>
-        {/each}
-      </select>
-    </label>
-    <p id="{uid}-preset-desc" class="text-xs text-gray-700">
-      {preset.summary} Evidence tier {tier}.
-    </p>
+  <label class="flex flex-col gap-1 font-semibold">
+    Preset
+    <select
+      class="min-h-6 rounded-md border border-control-line bg-surface px-1 font-normal text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark pointer-coarse:min-h-11"
+      aria-describedby="{uid}-preset-desc"
+      value={current.preset}
+      onchange={(e) => choosePreset(e.currentTarget.value as PresetId)}
+    >
+      {#each available as p (p.id)}
+        <option value={p.id}>{p.name}</option>
+      {/each}
+    </select>
+  </label>
+  <p id="{uid}-preset-desc" class="text-xs text-ink-muted dark:text-ink-dark-muted">
+    {preset.summary} Evidence tier {tier}.
+  </p>
 
-    <p class="font-semibold" data-testid="timing-label">{label}</p>
-    <div class="flex flex-wrap gap-2">
-      <button type="button" class={btn} disabled={!canSave} onclick={save}>Save timelines</button>
-      <button
-        type="button"
-        class={btn}
-        disabled={target === null}
-        aria-describedby={timing.saved ? `${uid}-revert-desc` : undefined}
-        onclick={revert}
+  <p class="font-semibold" data-testid="timing-label">{label}</p>
+  <div class="flex flex-wrap gap-2">
+    <button type="button" class={btn} disabled={!canSave} onclick={save}>Save timelines</button>
+    <button
+      type="button"
+      class={btn}
+      disabled={target === null}
+      aria-describedby={timing.saved ? `${uid}-revert-desc` : undefined}
+      onclick={revert}
+    >
+      {timing.saved ? 'Revert to saved' : `Revert to ${preset.name}`}
+    </button>
+    {#if timing.saved}
+      <span id="{uid}-revert-desc" class="sr-only"
+        >Restores the saved timelines: {timing.saved.label}</span
       >
-        {timing.saved ? 'Revert to saved' : `Revert to ${preset.name}`}
-      </button>
-      {#if timing.saved}
-        <span id="{uid}-revert-desc" class="sr-only"
-          >Restores the saved timelines: {timing.saved.label}</span
-        >
-      {/if}
-    </div>
-  </ReadonlyFieldset>
+    {/if}
+  </div>
 
   {#each PATHWAYS as p (p)}
     <div class="flex flex-col gap-1">
       <div class="flex items-center justify-between gap-2">
         <h4 class="font-semibold">{PATHWAY_NAMES[p]}</h4>
-        <ReadonlyFieldset>
-          <label class="flex items-center gap-1">
-            {PATHWAY_NAMES[p]} share, %
-            <input
-              type="number"
-              min="0"
-              max="100"
-              step="1"
-              class="min-h-6 w-16 rounded-md border border-gray-400 px-1 pointer-coarse:min-h-11"
-              value={shares[p]}
-              onchange={(e) => commitShare(p, e.currentTarget)}
-            />
-          </label>
-        </ReadonlyFieldset>
+        <label class="flex items-center gap-1">
+          {PATHWAY_NAMES[p]} share, %
+          <input
+            type="number"
+            min="0"
+            max="100"
+            step="1"
+            class="min-h-6 w-16 rounded-md border border-control-line bg-surface px-1 text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark pointer-coarse:min-h-11"
+            value={shares[p]}
+            onchange={(e) => commitShare(p, e.currentTarget)}
+          />
+        </label>
       </div>
       <RouteTimeline {store} {calibration} pathway={p} {announce} />
     </div>
@@ -175,9 +170,9 @@
     streamlined route.
   </p>
 
-  <details class="text-xs text-gray-700">
+  <details class="text-xs text-ink-muted dark:text-ink-dark-muted">
     <summary
-      class="flex min-h-6 cursor-pointer items-center font-semibold text-gray-900 pointer-coarse:min-h-11"
+      class="flex min-h-6 cursor-pointer items-center font-semibold text-ink dark:text-ink-dark pointer-coarse:min-h-11"
       >Sources and tiers</summary
     >
     <div class="mt-1 flex flex-col gap-1">

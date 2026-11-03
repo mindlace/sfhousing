@@ -11,6 +11,7 @@ import {
   compileLevers,
   customQuery,
   isDefaultPolicy,
+  paintBrushOf,
   paintedLots,
   parseSimPolicy,
   queriesOf,
@@ -221,6 +222,34 @@ describe('compileLevers', () => {
   it('a saved timing snapshot alone is not a customisation', () => {
     const saved = { label: 'x', set: OBSERVED_TIMING.current };
     expect(isDefaultPolicy(base({ timing: { ...DEFAULT_POLICY.timing, saved } }))).toBe(true);
+  });
+});
+
+describe('paintBrushOf', () => {
+  const erase = (id: string, strokes: Stroke[]): CustomBrush => ({ id, kind: 'erase', strokes });
+  const p = base({
+    custom: [paint('a', [s(1)], 8), paint('b', [s(2)], 4), erase('e', [s(3)]), paint('c', [s(4)])]
+  });
+  const [ka, kb, ke, kc] = p.custom.map((b) => queryKey(customQuery(b)));
+  const lots = lotsOf({ [ka]: ['1', '2', '3'], [kb]: ['2', '3'], [ke]: ['3'], [kc]: ['4', '3'] });
+
+  it('returns the last paint brush covering the lot', () => {
+    expect(paintBrushOf(p, lots, '1')).toBe('a');
+    expect(paintBrushOf(p, lots, '2')).toBe('b');
+  });
+
+  it('an erase after the paint returns null; a later paint after the erase wins', () => {
+    const noC = base({ custom: p.custom.slice(0, 3) });
+    expect(paintBrushOf(noC, lots, '3')).toBeNull();
+    expect(paintBrushOf(p, lots, '3')).toBe('c');
+  });
+
+  it('a lot no brush covers returns null', () => {
+    expect(paintBrushOf(p, lots, '9')).toBeNull();
+  });
+
+  it('an unknown query returns null', () => {
+    expect(paintBrushOf(p, lotsOf({ [ka]: ['1'] }), '1')).toBeNull();
   });
 });
 

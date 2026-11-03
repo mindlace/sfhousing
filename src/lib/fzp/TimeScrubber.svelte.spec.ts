@@ -48,6 +48,10 @@ type HarnessProps = ComponentProps<typeof TimeScrubberHarness>;
 const stateText = () => page.getByTestId('state').element().textContent;
 const stateDay = () => Number(stateText()!.split('|')[0]);
 const slider = () => page.getByRole('slider', { name: 'Date in the simulation' });
+const todayCalls = () => Number(page.getByTestId('today-calls').element().textContent);
+const play = () => page.getByTestId('fzp-play');
+const faster = () => page.getByTestId('fzp-faster');
+const pause = () => page.getByTestId('fzp-pause');
 
 async function setup(props: Partial<HarnessProps> = {}) {
   await page.viewport(1280, 800);
@@ -136,6 +140,94 @@ describe('keys', () => {
   });
 });
 
+describe('ontoday', () => {
+  const from = dayFromUtc(2026, 10, 20);
+
+  it('Home, the start marker and an arrow clamped to asOf call ontoday once each', async () => {
+    const first = await setup({ startDay: dayFromUtc(2030, 5, 5) });
+    slider().element().focus();
+    await userEvent.keyboard('{Home}');
+    expect(todayCalls()).toBe(1);
+    first.unmount();
+
+    const second = await setup({ startDay: dayFromUtc(2030, 5, 5) });
+    await page.getByTestId('fzp-start').click();
+    expect(todayCalls()).toBe(1);
+    expect(stateDay()).toBe(ASOF);
+    second.unmount();
+
+    // ArrowLeft from 2026-10-20: the previous month start is before asOf, so it clamps.
+    const third = await setup({ startDay: from });
+    slider().element().focus();
+    await userEvent.keyboard('{ArrowLeft}');
+    expect(stateDay()).toBe(ASOF);
+    expect(todayCalls()).toBe(1);
+    third.unmount();
+
+    // PageDown clamps the same way.
+    await setup({ startDay: dayFromUtc(2027, 3, 17) });
+    slider().element().focus();
+    await userEvent.keyboard('{PageDown}');
+    expect(todayCalls()).toBe(1);
+  });
+
+  it('keys that land elsewhere do not call ontoday', async () => {
+    await setup({ startDay: dayFromUtc(2027, 3, 17) });
+    slider().element().focus();
+    await userEvent.keyboard('{ArrowRight}{End}');
+    expect(todayCalls()).toBe(0);
+  });
+
+  it('a drag released at asOf calls ontoday; input events at asOf mid-drag do not', async () => {
+    await setup({ startDay: dayFromUtc(2030, 1, 1) });
+    const r = slider().element() as HTMLInputElement;
+    r.value = String(ASOF);
+    r.dispatchEvent(new Event('input', { bubbles: true }));
+    flushSync();
+    expect(stateDay()).toBe(ASOF);
+    expect(todayCalls()).toBe(0);
+    r.dispatchEvent(new Event('change', { bubbles: true }));
+    flushSync();
+    expect(todayCalls()).toBe(1);
+  });
+
+  it('a drag released after asOf does not call ontoday', async () => {
+    await setup();
+    const r = slider().element() as HTMLInputElement;
+    r.value = String(ASOF + 400);
+    r.dispatchEvent(new Event('input', { bubbles: true }));
+    r.dispatchEvent(new Event('change', { bubbles: true }));
+    flushSync();
+    expect(todayCalls()).toBe(0);
+  });
+
+  it('Replay at the horizon restarts from asOf without calling ontoday', async () => {
+    const { onday } = await setup({ startDay: HORIZON });
+    await expect.element(page.getByTestId('fzp-play-label')).toHaveTextContent(/^Replay$/);
+    await play().click();
+    expect(stateText()).toBe(`${ASOF}|true|year`);
+    expect(onday).toHaveBeenLastCalledWith(ASOF);
+    expect(todayCalls()).toBe(0);
+  });
+
+  it('the frame loop never calls ontoday', async () => {
+    const { q } = await setup({ startDay: ASOF + 1, startPlaying: true });
+    q.frame(0);
+    q.frame(100);
+    expect(todayCalls()).toBe(0);
+  });
+
+  it('in setup ontoday never fires', async () => {
+    await setup({ setup: true });
+    const r = slider().element() as HTMLInputElement;
+    r.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true, cancelable: true }));
+    r.dispatchEvent(new Event('change', { bubbles: true }));
+    flushSync();
+    expect(todayCalls()).toBe(0);
+    await expect.element(page.getByTestId('fzp-start')).toBeDisabled();
+  });
+});
+
 describe('markers and ends', () => {
   it('marker buttons carry the accessible name, jump and pause', async () => {
     const { onday } = await setup({ startPlaying: true });
@@ -166,10 +258,29 @@ describe('markers and ends', () => {
     expect(left('Jump late')).toBe('100%');
   });
 
-  it('labels both ends of the track', async () => {
+  it('the start marker shows startLabel; the end marker the horizon year', async () => {
     await setup();
-    await expect.element(page.getByText('Oct 2026', { exact: true })).toBeVisible();
-    await expect.element(page.getByText('2050', { exact: true })).toBeVisible();
+    const start = page.getByTestId('fzp-start');
+    await expect.element(start).toHaveTextContent(/^Oct 2026$/);
+    await expect.element(start).toHaveAccessibleName('Jump to Oct 2026, October 2026');
+    const end = page.getByTestId('fzp-end');
+    await expect.element(end).toHaveTextContent(/^2050$/);
+    await expect.element(end).toHaveAccessibleName('Jump to 2050');
+  });
+
+  it('startLabel replaces the start marker text and its name', async () => {
+    await setup({ startLabel: 'Today' });
+    const start = page.getByTestId('fzp-start');
+    await expect.element(start).toHaveTextContent(/^Today$/);
+    await expect.element(start).toHaveAccessibleName('Jump to Today, October 2026');
+  });
+
+  it('the end marker jumps to the horizon and pauses, without ontoday', async () => {
+    const { onday } = await setup({ startPlaying: true });
+    await page.getByTestId('fzp-end').click();
+    expect(stateText()).toBe(`${HORIZON}|false|year`);
+    expect(onday).toHaveBeenLastCalledWith(HORIZON);
+    expect(todayCalls()).toBe(0);
   });
 });
 
@@ -221,6 +332,24 @@ describe('readout', () => {
     expect(width()).toBe(w2026);
   });
 
+  it('in setup Play reads Run, Pause and Faster are hidden, the track and markers are disabled', async () => {
+    await setup({ setup: true });
+    await expect.element(page.getByTestId('fzp-play-label')).toHaveTextContent(/^Run$/);
+    for (const el of [pause(), faster()]) {
+      const e = el.element() as HTMLElement;
+      expect(getComputedStyle(e).visibility).toBe('hidden');
+      expect(e.getBoundingClientRect().width).toBeGreaterThan(0);
+    }
+    expect(page.getByRole('button', { name: 'Pause' }).elements()).toHaveLength(0);
+    expect(page.getByRole('button', { name: 'Faster' }).elements()).toHaveLength(0);
+    await expect.element(slider()).toBeDisabled();
+    await expect.element(page.getByTestId('fzp-start')).toBeDisabled();
+    await expect.element(page.getByTestId('fzp-end')).toBeDisabled();
+    for (const m of MARKERS) {
+      await expect.element(page.getByRole('button', { name: m.name })).toBeDisabled();
+    }
+  });
+
   it('in setup the button runs and the track is disabled', async () => {
     const onrun = vi.fn();
     const { q } = await setup({ setup: true, onrun });
@@ -245,14 +374,47 @@ describe('readout', () => {
 });
 
 describe('play, pause, replay', () => {
-  it('Play starts the frame loop and reads Pause; Pause stops it', async () => {
+  it('Play starts the frame loop; Pause stops it', async () => {
     const { q } = await setup();
     await page.getByRole('button', { name: 'Play' }).click();
-    await expect.element(page.getByRole('button', { name: 'Pause' })).toBeVisible();
+    await expect.element(play()).toHaveAttribute('aria-pressed', 'true');
     expect(q.pending()).toBe(1);
     await page.getByRole('button', { name: 'Pause' }).click();
     expect(q.pending()).toBe(0);
+    await expect.element(play()).toHaveAttribute('aria-pressed', 'false');
     expect(stateText()).toBe(`${ASOF}|false|year`);
+  });
+
+  it('Play plays at 1 year/s, Faster at 3 years/s, Pause stops', async () => {
+    await setup();
+    await expect.element(play()).toHaveAttribute('aria-pressed', 'false');
+    await expect.element(faster()).toHaveAttribute('aria-pressed', 'false');
+    await faster().click();
+    expect(stateText()).toBe(`${ASOF}|true|threeYears`);
+    await expect.element(faster()).toHaveAttribute('aria-pressed', 'true');
+    await expect.element(play()).toHaveAttribute('aria-pressed', 'false');
+    await play().click();
+    expect(stateText()).toBe(`${ASOF}|true|year`);
+    await expect.element(play()).toHaveAttribute('aria-pressed', 'true');
+    await expect.element(faster()).toHaveAttribute('aria-pressed', 'false');
+    await pause().click();
+    expect(stateText()).toBe(`${ASOF}|false|year`);
+    await expect.element(play()).toHaveAttribute('aria-pressed', 'false');
+    await expect.element(faster()).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('Faster has the accessible name Faster and a title naming 3 years per second', async () => {
+    await setup();
+    await expect.element(faster()).toHaveAccessibleName('Faster');
+    await expect.element(faster()).toHaveAttribute('title', '3 years per second');
+    await expect.element(pause()).toHaveAccessibleName('Pause');
+  });
+
+  it('Faster at the horizon restarts from asOf at 3 years/s', async () => {
+    await setup({ startDay: HORIZON });
+    await faster().click();
+    expect(stateText()).toBe(`${ASOF}|true|threeYears`);
+    expect(todayCalls()).toBe(0);
   });
 
   it('advances by the speed each frame and reports each day change once', async () => {
@@ -290,22 +452,27 @@ describe('play, pause, replay', () => {
 });
 
 describe('speed', () => {
-  it('is a select named Speed with the three options, 1 year/s selected', async () => {
+  it('there is no speed select', async () => {
     await setup();
-    const sel = page.getByRole('combobox', { name: 'Speed' });
-    await expect.element(sel).toHaveValue('year');
-    const el = sel.element() as unknown as HTMLSelectElement;
-    expect([...el.options].map((o) => o.text)).toEqual(['1 month/s', '1 year/s', '3 years/s']);
-    expect(el.selectedOptions[0].text).toBe('1 year/s');
+    expect(page.getByRole('combobox').elements()).toHaveLength(0);
   });
 
-  it('changing it changes the advance per frame', async () => {
+  it('Faster changes the advance per frame', async () => {
     const { q } = await setup({ startPlaying: true });
-    await page.getByRole('combobox', { name: 'Speed' }).selectOptions('threeYears');
+    await faster().click();
     expect(stateText()).toBe(`${ASOF}|true|threeYears`);
     q.frame(0);
     q.frame(100);
     expect(stateDay()).toBe(Math.floor(ASOF + 0.1 * 36 * MONTH_DAYS));
+  });
+
+  it('Play after Faster returns to 1 year/s', async () => {
+    const { q } = await setup();
+    await faster().click();
+    await play().click();
+    q.frame(0);
+    q.frame(100);
+    expect(stateDay()).toBe(Math.floor(ASOF + 0.1 * 12 * MONTH_DAYS));
   });
 });
 
@@ -341,7 +508,7 @@ describe('playback start', () => {
 describe('per frame work', () => {
   it('setTime called at most once per frame: onday fires only when the day changed', async () => {
     const { q, onday } = await setup({ startPlaying: true });
-    await page.getByRole('combobox', { name: 'Speed' }).selectOptions('threeYears');
+    await faster().click();
     q.frame(0);
     let ts = 0;
     let last = ASOF;
@@ -358,11 +525,10 @@ describe('per frame work', () => {
 
   it('a frame whose floor(t) is unchanged does not call onday', async () => {
     const { q, onday } = await setup({ startPlaying: true });
-    await page.getByRole('combobox', { name: 'Speed' }).selectOptions('month');
     q.frame(0);
-    q.frame(10); // 10 ms at about 30 days/s is 0.3 day
+    q.frame(1); // 1 ms at about 365 days/s is 0.37 day
     expect(onday).not.toHaveBeenCalled();
-    expect(stateText()).toBe(`${ASOF}|true|month`);
+    expect(stateText()).toBe(`${ASOF}|true|year`);
   });
 });
 
@@ -433,12 +599,22 @@ describe('reflow and targets', () => {
     );
   });
 
-  it('the Speed label is visible from 640 px and screen-reader-only below', async () => {
+  it('the transport order is Pause, Play, Faster, then the readout', async () => {
     await setup();
-    await expect.element(page.getByText('Speed', { exact: true })).toBeVisible();
-    await page.viewport(500, 800);
-    const label = page.getByText('Speed', { exact: true }).element().getBoundingClientRect();
-    expect(label.width).toBeLessThanOrEqual(1);
+    const x = (id: string) => page.getByTestId(id).element().getBoundingClientRect().left;
+    expect(x('fzp-pause')).toBeLessThan(x('fzp-play'));
+    expect(x('fzp-play')).toBeLessThan(x('fzp-faster'));
+    expect(x('fzp-faster')).toBeLessThan(x('fzp-readout'));
+  });
+
+  it('the bar keeps its height and the readout its place between setup and run', async () => {
+    const first = await setup({ setup: true });
+    const h0 = page.getByTestId('fzp-scrubber').element().getBoundingClientRect().height;
+    const x0 = page.getByTestId('fzp-readout').element().getBoundingClientRect().left;
+    first.unmount();
+    await setup();
+    expect(page.getByTestId('fzp-scrubber').element().getBoundingClientRect().height).toBe(h0);
+    expect(page.getByTestId('fzp-readout').element().getBoundingClientRect().left).toBe(x0);
   });
 });
 
@@ -451,13 +627,10 @@ describe('control contrast (WCAG 1.4.11)', () => {
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   };
 
-  it('the Speed select and the Play button borders are at least 3:1 against white', async () => {
+  it('the Pause, Play and Faster button borders are at least 3:1 against white', async () => {
     await setup();
     const white = luminance([255, 255, 255]);
-    for (const el of [
-      page.getByRole('combobox', { name: 'Speed' }).element(),
-      page.getByRole('button', { name: 'Play' }).element()
-    ]) {
+    for (const el of [pause().element(), play().element(), faster().element()]) {
       const rgb = getComputedStyle(el).borderTopColor.match(/\d+/g)!.slice(0, 3).map(Number);
       expect((white + 0.05) / (luminance(rgb) + 0.05)).toBeGreaterThanOrEqual(3);
     }

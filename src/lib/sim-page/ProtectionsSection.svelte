@@ -7,7 +7,6 @@
 <script lang="ts">
   import type { SimPolicy } from './policy';
   import type { PolicyStore } from './policy-store.svelte';
-  import { policyReadonly } from './policy-readonly';
 
   interface Props {
     store: PolicyStore;
@@ -23,7 +22,6 @@
   const YEARS_ERROR = `Enter a whole number of years from ${YEARS_MIN} to ${YEARS_MAX}.`;
 
   const uid = $props.id();
-  const ro = policyReadonly();
   const protect = $derived(store.policy.protect);
   const newer = $derived(protect.newerThanYears !== null);
   /** The last valid year count, offered again when "newer than" is checked. */
@@ -77,11 +75,7 @@
 </script>
 
 <div class="flex flex-col gap-3 text-sm">
-  <fieldset
-    class="flex flex-col gap-1"
-    disabled={ro.on}
-    aria-describedby={ro.on ? ro.noteId : undefined}
-  >
+  <fieldset class="flex flex-col gap-1">
     <legend class="font-semibold">Protect by category</legend>
     <label class="flex min-h-6 items-center gap-1.5">
       <input
@@ -122,7 +116,7 @@
           disabled={!newer}
           aria-invalid={yearsError ? 'true' : undefined}
           aria-describedby={yearsError ? `${uid}-years-error` : undefined}
-          class="min-h-6 w-20 rounded-md border border-gray-400 px-2 disabled:opacity-40 pointer-coarse:min-h-11"
+          class="min-h-6 w-20 rounded-md border border-control-line bg-surface px-2 text-ink disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark pointer-coarse:min-h-11"
           value={yearsText}
           oninput={(e) => (yearsText = e.currentTarget.value)}
           onchange={(e) => commitYears(e.currentTarget.value)}
@@ -132,12 +126,16 @@
     </div>
     <!-- Always present and in the accessibility tree (sr-only while empty, never display:none),
          so the error is spoken when it appears (WCAG 4.1.3). -->
-    <p id="{uid}-years-error" role="alert" class="text-red-800 {yearsError ? '' : 'sr-only'}">
+    <p
+      id="{uid}-years-error"
+      role="alert"
+      class="text-red-800 dark:text-red-300 {yearsError ? '' : 'sr-only'}"
+    >
       {yearsError ?? ''}
     </p>
   </fieldset>
 
-  <p class="text-gray-700">
+  <p class="text-ink-muted dark:text-ink-dark-muted">
     Protected lots get no new housing in the simulation. Projects already in the pipeline continue.
   </p>
 </div>

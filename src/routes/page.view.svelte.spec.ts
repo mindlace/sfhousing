@@ -7,9 +7,11 @@ import { page } from 'vitest/browser';
 import type { Manifest } from '$lib/data/manifest';
 import { emptyPlan } from '$lib/plan';
 import { stubProps } from '$lib/brush/test/sim-map-stub';
+import { meterValueText, primaryTarget } from '$lib/scoreboard/view';
 import { VIEW_KEY } from '$lib/view/prefs';
 import manifestJson from '../../e2e/fixtures/data/fixture-0/manifest.json';
 import PageHost from './test/PageHost.svelte';
+import { PageWorker, pageWorkers, scoreDiff, scoreOf } from './test/page-worker';
 
 vi.mock('$lib/map/SimMap.svelte', async () => import('$lib/brush/test/SimMapStub.svelte'));
 // Retry after a failed manifest load reloads it through here.
@@ -37,15 +39,11 @@ const viewButton = () => page.getByRole('button', { name: 'View' });
 const stored = () => JSON.parse(localStorage.getItem(VIEW_KEY) ?? 'null');
 
 describe('/ View menu', () => {
-  beforeEach(() => {
-    vi.stubGlobal(
-      'Worker',
-      class {
-        onmessage = null;
-        postMessage() {}
-        terminate() {}
-      }
-    );
+  beforeEach(async () => {
+    // From md the dock is open, so the Paint tab's tools are on screen.
+    await page.viewport(1024, 768);
+    pageWorkers.length = 0;
+    vi.stubGlobal('Worker', PageWorker);
   });
 
   afterEach(() => {
@@ -58,9 +56,14 @@ describe('/ View menu', () => {
   it('shows View in the header and passes the default view to the map', async () => {
     await render(PageHost, { props: { data: data() } });
     await expect.element(viewButton()).toBeInTheDocument();
-    // First in the header actions: left of Publish.
+    // In the header actions after Paint, left of Publish.
     const slot = document.querySelector('[data-testid="header-actions"]')!;
-    expect(slot.firstElementChild?.contains(viewButton().element())).toBe(true);
+    const items = [...slot.children];
+    const at = (el: Element) => items.findIndex((c) => c.contains(el));
+    const paint = page.getByRole('button', { name: 'Paint', exact: true });
+    expect(at(paint.element())).toBe(0);
+    expect(at(viewButton().element())).toBe(1);
+    expect(at(page.getByRole('button', { name: /Publish/ }).element())).toBe(2);
     expect(stubProps.view).toEqual({
       transitStops: false,
       transitAccess: true,
@@ -115,5 +118,100 @@ describe('/ View menu', () => {
     expect(viewButton().elements()).toHaveLength(0);
     (retry.element() as HTMLElement).click();
     await expect.element(viewButton()).toBeInTheDocument();
+  });
+});
+
+describe('/ score: the header score and the Results face', () => {
+  beforeEach(async () => {
+    await page.viewport(1024, 768);
+    pageWorkers.length = 0;
+    vi.stubGlobal('Worker', PageWorker);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  const pinned = () => page.getByTestId('header-pinned');
+  const scoreButton = () => page.getByTestId('score-bar');
+  const results = () => page.getByRole('region', { name: 'Results' });
+
+  it("the header score shows the net homes and the RHNA bar; pressing it shows Results with the scoreboard's content and a Paint button that flips back", async () => {
+    await render(PageHost, { props: { data: data() } });
+    // Before the worker's first score: the empty score.
+    await expect.element(scoreButton()).toHaveTextContent('0 homes added');
+    await expect.poll(() => pageWorkers.length).toBe(1);
+    const w = pageWorkers[0];
+    w.ready();
+    const s = scoreOf(1234);
+    w.emit(scoreDiff(s));
+    await expect.element(scoreButton()).toHaveTextContent('1,234 homes added');
+    const meter = pinned().getByRole('meter');
+    await expect
+      .element(meter)
+      .toHaveAttribute('aria-valuetext', meterValueText(primaryTarget(s)!));
+    // A painted plan has no FZP comparison: no "vs FZP" delta.
+    expect(document.querySelector('[data-testid="score-delta"]')).toBeNull();
+    // It controls the Paint dock, which is on its Paint tab.
+    const dock = page.getByRole('region', { name: 'Paint', exact: true });
+    expect(scoreButton().element().getAttribute('aria-controls')).toBe(dock.element().id);
+    await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'false');
+    expect(results().elements()).toHaveLength(0);
+
+    await scoreButton().click();
+    await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'true');
+    await expect.element(results().getByTestId('score-net')).toHaveTextContent('1,234');
+    await expect
+      .element(results().getByText('Theoretical max buildout', { exact: true }))
+      .toBeVisible();
+    await expect.element(results().getByTestId('target-rhna')).toBeVisible();
+    await expect.element(results().getByText('By neighborhood')).toBeVisible();
+    await expect.element(results().getByText('What does this number mean?')).toBeVisible();
+    expect(page.getByRole('radiogroup', { name: 'Brush tool' }).elements()).toHaveLength(0);
+    const flip = page.getByRole('button', { name: 'Back to painting' });
+    await expect.element(flip).toHaveTextContent('Paint');
+
+    await flip.click();
+    await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
+    await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'false');
+    expect(results().elements()).toHaveLength(0);
+
+    // The score toggles: Results, then the Paint tab again.
+    await scoreButton().click();
+    await expect.element(results()).toBeVisible();
+    await scoreButton().click();
+    await expect.element(page.getByRole('radiogroup', { name: 'Brush tool' })).toBeVisible();
+
+    // Folded to the rail, the score opens the dock on Results, and focus moves in (as on /sim).
+    await page.getByRole('button', { name: 'Paint', exact: true }).click();
+    await expect.element(page.getByTestId('dock-rail')).toBeVisible();
+    await scoreButton().click();
+    await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'true');
+    await expect.element(results().getByTestId('score-net')).toHaveTextContent('1,234');
+    await expect.poll(() => document.activeElement).toBe(flip.element());
+  });
+
+  it("Results' Retry for failed parcel areas asks the worker again", async () => {
+    await render(PageHost, { props: { data: data() } });
+    await expect.poll(() => pageWorkers.length).toBe(1);
+    const w = pageWorkers[0];
+    w.ready();
+    w.emit({ type: 'chunks', status: { a: 'error' }, pending: 0, failed: ['a'] });
+    await scoreButton().click();
+    const retry = results().getByRole('button', { name: 'Retry' });
+    await expect.element(retry).toBeVisible();
+    await retry.click();
+    expect(w.allOf('retryChunks')).toHaveLength(1);
+  });
+
+  it('there is no Housing scoreboard region', async () => {
+    await render(PageHost, { props: { data: data() } });
+    await expect.element(scoreButton()).toBeInTheDocument();
+    expect(page.getByRole('region', { name: 'Housing scoreboard' }).elements()).toHaveLength(0);
+    expect(document.querySelector('.sfh-scoreboard, [data-testid="scorebar-text"]')).toBeNull();
+    // One score on the page: the header's.
+    expect(page.getByTestId('score-live').elements()).toHaveLength(1);
   });
 });

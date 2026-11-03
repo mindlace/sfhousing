@@ -1,9 +1,10 @@
 // The stroke adapter: BrushController's editor and client, writing strokes into the policy recipe.
 import { describe, expect, it, vi } from 'vitest';
 import type { PlanOp } from '$lib/plan';
-import { DEFAULT_POLICY } from './policy';
+import { DEFAULT_POLICY, type CustomBrush, type SimPolicy, type Stroke } from './policy';
 import { PolicyStore } from './policy-store.svelte';
-import { createStrokeAdapter, strokeLabel } from './stroke-adapter';
+import { createStrokeAdapter, removeCustomBrush, strokeLabel } from './stroke-adapter';
+import type { StrokePreview } from './stroke-preview';
 
 const paint = (x: number, radiusM = 30): PlanOp => ({
   kind: 'paint',
@@ -104,24 +105,90 @@ describe('createStrokeAdapter', () => {
     expect(announce).toHaveBeenLastCalledWith(`Redid: ${label}`);
   });
 
-  it('a Paint stroke calls onpaint once, after the store change, with the stroke and stories', () => {
-    const store = new PolicyStore(DEFAULT_POLICY);
-    const seen: number[] = [];
-    const onpaint = vi.fn(() => seen.push(store.policy.custom.length));
-    const a = createStrokeAdapter({ store, stories: () => 8, announce: () => {}, onpaint });
-    a.editor.commit(paint(0));
-    expect(onpaint).toHaveBeenCalledTimes(1);
-    expect(onpaint).toHaveBeenCalledWith({ path: paint(0).path, radiusM: 30 }, 8);
-    expect(seen).toEqual([1]); // the store already holds the stroke
-    a.editor.commit(erase(0));
-    expect(onpaint).toHaveBeenCalledTimes(1); // never for Erase
-  });
-
-  it('the client sends nothing to a worker and has no preview', () => {
+  it('without a StrokePreview the client sends nothing to a worker and has no preview', () => {
     const { a } = setup();
     expect(a.client.preview).toBeUndefined();
     expect(a.client.cancelPreview).toBeUndefined();
     expect(typeof a.client.commit(paint(0))).toBe('number');
     expect(a.client.datasetVersion).toBeNull();
+  });
+
+  it('with a StrokePreview: preview and cancelPreview forward; commit and undo are fading barriers', () => {
+    const store = new PolicyStore(DEFAULT_POLICY);
+    let rev = 0;
+    const sp = {
+      preview: vi.fn(() => ++rev),
+      cancel: vi.fn(() => ++rev),
+      barrier: vi.fn(() => ++rev),
+      reset: vi.fn()
+    };
+    const a = createStrokeAdapter({
+      store,
+      stories: () => 8,
+      announce: () => {},
+      preview: sp as unknown as StrokePreview
+    });
+    expect(a.client.preview!(paint(0))).toBe(1);
+    expect(sp.preview).toHaveBeenCalledWith(paint(0));
+    expect(a.client.cancelPreview!()).toBe(2);
+    expect(sp.cancel).toHaveBeenCalledTimes(1);
+    expect(a.client.commit(paint(0))).toBe(3);
+    expect(sp.barrier).toHaveBeenLastCalledWith(true);
+    expect(a.client.undo('p0')).toBe(4);
+    expect(sp.barrier).toHaveBeenCalledTimes(2);
+    expect(sp.barrier).toHaveBeenLastCalledWith(true);
+    // the editor's commit is the store change alone: no paint callback, no preview
+    a.editor.commit(paint(0));
+    expect(sp.preview).toHaveBeenCalledTimes(1);
+    expect(store.policy.custom).toHaveLength(1);
+  });
+});
+
+describe('removeCustomBrush', () => {
+  const s = (x: number): Stroke => ({ path: [[-122.42 + x, 37.76]], radiusM: 30 });
+  const p = (id: string, stories: number, x: number): CustomBrush => ({
+    id,
+    kind: 'paint',
+    strokes: [s(x)],
+    stories
+  });
+  const e = (id: string, x: number): CustomBrush => ({ id, kind: 'erase', strokes: [s(x)] });
+  const policy = (...custom: CustomBrush[]): SimPolicy => ({ ...DEFAULT_POLICY, custom });
+  const ids = (q: SimPolicy) => q.custom.map((b) => b.id);
+
+  it('merges the two paint brushes made adjacent when they share their stories', () => {
+    const q = removeCustomBrush(policy(p('a', 8, 0), p('b', 6, 1), p('c', 8, 2)), 'b');
+    expect(q.custom).toEqual([{ id: 'a', kind: 'paint', stories: 8, strokes: [s(0), s(2)] }]);
+  });
+
+  it('leaves two brushes when their stories differ', () => {
+    const q = removeCustomBrush(policy(p('a', 8, 0), p('b', 6, 1), p('c', 4, 2)), 'b');
+    expect(ids(q)).toEqual(['a', 'c']);
+    expect(q.custom[0].strokes).toEqual([s(0)]);
+  });
+
+  it('merges the erases either side of a removed paint brush', () => {
+    const q = removeCustomBrush(policy(e('e1', 0), p('b', 8, 1), e('e2', 2)), 'b');
+    expect(q.custom).toEqual([{ id: 'e1', kind: 'erase', strokes: [s(0), s(2)] }]);
+  });
+
+  it('never merges a paint brush with an erase', () => {
+    const q = removeCustomBrush(policy(p('a', 8, 0), p('b', 6, 1), e('c', 2)), 'b');
+    expect(ids(q)).toEqual(['a', 'c']);
+    const r = removeCustomBrush(policy(e('a', 0), p('b', 6, 1), p('c', 8, 2)), 'b');
+    expect(ids(r)).toEqual(['a', 'c']);
+  });
+
+  it('merges nothing when the first or last brush goes', () => {
+    const three = policy(p('a', 8, 0), p('b', 6, 1), p('c', 8, 2));
+    expect(ids(removeCustomBrush(three, 'a'))).toEqual(['b', 'c']);
+    expect(ids(removeCustomBrush(three, 'c'))).toEqual(['a', 'b']);
+  });
+
+  it('returns the policy itself for an id that is not there; ids never repeat', () => {
+    const three = policy(p('a', 8, 0), p('b', 6, 1), p('c', 8, 2));
+    expect(removeCustomBrush(three, 'zz')).toBe(three);
+    const q = removeCustomBrush(policy(p('a', 8, 0), p('b', 8, 1), p('c', 8, 2)), 'b');
+    expect(new Set(ids(q)).size).toBe(ids(q).length);
   });
 });

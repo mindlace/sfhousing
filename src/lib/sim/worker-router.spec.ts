@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_LEVERS } from './levers/types';
 import { createWorkerRouter } from './router';
-import type { SimRequest } from './protocol';
+import type { SimRequest, SimResponse } from './protocol';
 import type { PlaybackResponse } from './lesscars/types';
 import type { ScenarioRequest, ScenarioResponse, WorkerRequest } from './scenario/types';
 
@@ -9,7 +9,7 @@ function setup() {
   const log: string[] = [];
   const editorReqs: SimRequest[] = [];
   const scenarioReqs: ScenarioRequest[] = [];
-  const posted: (ScenarioResponse | PlaybackResponse)[] = [];
+  const posted: (ScenarioResponse | PlaybackResponse | SimResponse)[] = [];
   let created = 0;
   const router = createWorkerRouter({
     post: (msg) => posted.push(msg),
@@ -211,6 +211,28 @@ describe('worker router', () => {
     expect(u.scenarioReqs[1]).toEqual(outlines);
   });
 
+  const opLots = { type: 'opLots', reqId: 9, opIds: ['a'], outlines: false };
+
+  it('sends opLots to the editor in editor mode and answers result null elsewhere', () => {
+    const t = setup();
+    t.send(opLots);
+    expect(t.log).toEqual(['editor:opLots']);
+    expect(t.editorReqs[0]).toEqual(opLots);
+    expect(t.created()).toBe(0);
+    expect(t.posted).toEqual([]);
+
+    const u = setup();
+    u.send(initScenario, opLots);
+    expect(u.log).not.toContain('editor:opLots');
+    expect(u.scenarioReqs).toHaveLength(1);
+    expect(u.posted).toEqual([{ type: 'opLots', reqId: 9, result: null }]);
+
+    const v = setup();
+    v.send({ type: 'initPlayback', rev: 3, manifest: {}, plan: {}, sites: {} }, opLots);
+    expect(v.log).not.toContain('editor:opLots');
+    expect(v.posted).toEqual([{ type: 'opLots', reqId: 9, result: null }]);
+  });
+
   const preview = { type: 'previewBuildings', reqId: 7, lots: ['a'], stories: 8 };
 
   it('answers previewBuildings itself in editor mode: no-session; the scenario host otherwise', () => {
@@ -233,6 +255,30 @@ describe('worker router', () => {
       'scenario:previewBuildings'
     ]);
     expect(u.scenarioReqs[1]).toEqual(preview);
+  });
+
+  const lotAtReq = { type: 'lotAt', reqId: 9, point: [-122.4, 37.8] };
+
+  it('answers lotAt itself in editor mode: no-session; the scenario host otherwise', () => {
+    const t = setup();
+    t.send(lotAtReq);
+    expect(t.created()).toBe(0);
+    expect(t.posted).toEqual([
+      {
+        type: 'lotAt',
+        reqId: 9,
+        result: { ok: false, reason: 'no-session', message: expect.any(String) }
+      }
+    ]);
+    const u = setup();
+    u.send(initScenario, lotAtReq);
+    expect(u.log).toEqual([
+      'editor:dispose',
+      'scenario:create',
+      'scenario:initScenario',
+      'scenario:lotAt'
+    ]);
+    expect(u.scenarioReqs[1]).toEqual(lotAtReq);
   });
 
   const lids = { type: 'heightLids', reqId: 8, bbox: [0, 0, 0.01, 0.01] };

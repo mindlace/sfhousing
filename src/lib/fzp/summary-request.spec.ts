@@ -90,6 +90,20 @@ describe('SummaryRequester', () => {
     expect(t.last()).toEqual({ kind: 'project', card: REAL_ACTUAL });
   });
 
+  it('carries the lot limits with the card', async () => {
+    const t = setup();
+    t.r.request(q(1, 'pr-1'));
+    const limits = {
+      allowed: 8,
+      buildable: 6,
+      protected: false,
+      owner: { kind: 'rule', ruleId: 'r1' } as const
+    };
+    t.calls[0].d.resolve({ ...summary(true), limits });
+    await tick();
+    expect(t.last()).toEqual({ kind: 'project', card: REAL_ACTUAL, limits });
+  });
+
   it('reports not-loaded for a null summary', async () => {
     const t = setup();
     t.r.request(q(1));

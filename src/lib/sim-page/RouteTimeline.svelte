@@ -20,8 +20,6 @@
   import { MONTH_DAYS } from '$lib/timelapse/time';
   import type { Calibration, ExitReason, Pathway, Provenance } from '$lib/timelapse/types';
   import type { PolicyStore } from './policy-store.svelte';
-  import { policyReadonly } from './policy-readonly';
-  import ReadonlyFieldset from './ReadonlyFieldset.svelte';
   import SourceList from './SourceList.svelte';
   import { PRESETS, routeView, setStageMonths, type StageView } from './timing';
 
@@ -35,8 +33,6 @@
   let { store, calibration, pathway, announce }: Props = $props();
 
   const uid = $props.id();
-  /** During a run the stage toggles still open their details; only the editing goes. */
-  const ro = policyReadonly();
   const ROUTE_NAMES: Record<Pathway, string> = {
     discretionary: 'Discretionary',
     streamlined: 'Streamlined',
@@ -295,7 +291,7 @@
         {#if v.atBound}
           <span
             data-testid="bound-{v.stage}"
-            class="rounded-sm bg-amber-800 px-0.5 text-[9px] leading-3 font-bold text-white"
+            class="rounded-sm bg-amber-800 px-0.5 text-[9px] leading-3 font-bold text-white dark:bg-amber-300 dark:text-amber-950"
             >{v.atBound}</span
           >
         {/if}
@@ -305,7 +301,7 @@
   <div
     role="group"
     aria-label="{routeName} timeline"
-    class="flex h-9 w-full gap-px overflow-hidden rounded-md border border-gray-400 bg-white pointer-coarse:h-11"
+    class="flex h-9 w-full gap-px overflow-hidden rounded-md border border-control-line bg-surface dark:border-control-line-dark dark:bg-surface-dark pointer-coarse:h-11"
     bind:clientWidth={trackPx}
   >
     {#each shown as v, i (v.stage)}
@@ -322,9 +318,9 @@
           'flex h-full items-center justify-center gap-0.5 overflow-hidden px-0 text-xs font-semibold whitespace-nowrap focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent',
           v.editable
             ? v.atBound
-              ? 'bg-amber-100 text-gray-900'
-              : 'bg-accent-tint text-gray-900'
-            : 'bg-[repeating-linear-gradient(135deg,#e5e7eb_0_5px,#f3f4f6_5px_10px)] text-gray-700',
+              ? 'bg-amber-100 text-ink dark:bg-amber-400/30 dark:text-ink-dark'
+              : 'bg-accent-tint text-ink dark:bg-accent-dark/30 dark:text-ink-dark'
+            : 'bg-[repeating-linear-gradient(135deg,var(--color-line)_0_5px,var(--color-surface-raised)_5px_10px)] text-ink-muted dark:bg-[repeating-linear-gradient(135deg,var(--color-line-dark)_0_5px,var(--color-surface-dark-raised)_5px_10px)] dark:text-ink-dark-muted',
           open === v.stage && 'outline-2 -outline-offset-2 outline-accent'
         ]}
         onclick={() => toggle(v.stage)}
@@ -342,7 +338,7 @@
     {/each}
   </div>
 
-  {#if fine.current && !ro.on}
+  {#if fine.current}
     <!-- Handles sit under the bar, centred on each editable segment's right boundary, so they
          never cover a segment; boundaries are at least 24 px apart, so handles never overlap. -->
     <div class="flex h-6 w-full gap-px border-x border-transparent" aria-hidden="true">
@@ -359,7 +355,8 @@
               onpointercancel={() => (drag = null)}
               onlostpointercapture={() => (drag = null)}
             >
-              <span class="mt-0.5 h-4 w-1.5 rounded-full bg-gray-600"></span>
+              <span class="mt-0.5 h-4 w-1.5 rounded-full bg-control-line dark:bg-control-line-dark"
+              ></span>
             </div>
           {/if}
         </div>
@@ -368,7 +365,7 @@
   {/if}
 
   <div
-    class="flex w-full gap-px border-x border-transparent text-[11px] text-gray-700"
+    class="flex w-full gap-px border-x border-transparent text-[11px] text-ink-muted dark:text-ink-dark-muted"
     aria-hidden="true"
   >
     {#each shown as v, i (v.stage)}
@@ -386,62 +383,65 @@
     {@const src = sourcesOf(v)}
     <div
       id={detailsId(v.stage)}
-      class="mt-1 flex flex-col gap-1 rounded-md border border-gray-300 bg-gray-50 p-2 text-xs"
+      class="mt-1 flex flex-col gap-1 rounded-md border border-line bg-surface-raised p-2 text-xs dark:border-line-dark dark:bg-surface-dark-raised"
     >
       <h5 class="text-sm font-semibold">
-        {v.label} <span class="font-normal text-gray-700">· {routeName}</span>
+        {v.label}
+        <span class="font-normal text-ink-muted dark:text-ink-dark-muted">· {routeName}</span>
       </h5>
       {#if v.editable && v.bounds}
         {@const inputId = `${detailsId(v.stage)}-months`}
-        <ReadonlyFieldset>
-          <div class="flex flex-wrap items-center gap-1">
-            <label for={inputId} class="font-semibold">Typical months</label>
-            <button
-              type="button"
-              aria-label="Shorten by 0.5 month"
-              aria-disabled={v.atBound === 'min'}
-              class="min-h-6 min-w-6 rounded-md border border-gray-300 bg-white px-2 font-bold aria-disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-              onclick={() => step(v, -1)}>−</button
-            >
-            <input
-              id={inputId}
-              type="number"
-              step={STEP}
-              min={v.bounds.min}
-              max={v.bounds.max}
-              value={v.months}
-              class="min-h-6 w-16 rounded-md border border-gray-400 px-1 text-center pointer-coarse:min-h-11"
-              onchange={(e) => commitInput(v, e.currentTarget)}
-            />
-            <button
-              type="button"
-              aria-label="Lengthen by 0.5 month"
-              aria-disabled={v.atBound === 'max'}
-              class="min-h-6 min-w-6 rounded-md border border-gray-300 bg-white px-2 font-bold aria-disabled:opacity-40 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-              onclick={() => step(v, 1)}>+</button
-            >
-            <span class="text-gray-700">≈ {Math.round(v.months * MONTH_DAYS)} days</span>
-          </div>
-        </ReadonlyFieldset>
+        <div class="flex flex-wrap items-center gap-1">
+          <label for={inputId} class="font-semibold">Typical months</label>
+          <button
+            type="button"
+            aria-label="Shorten by 0.5 month"
+            aria-disabled={v.atBound === 'min'}
+            class="min-h-6 min-w-6 rounded-md border border-control-line bg-surface px-2 font-bold text-ink hover:bg-surface-raised aria-disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+            onclick={() => step(v, -1)}>−</button
+          >
+          <input
+            id={inputId}
+            type="number"
+            step={STEP}
+            min={v.bounds.min}
+            max={v.bounds.max}
+            value={v.months}
+            class="min-h-6 w-16 rounded-md border border-control-line bg-surface px-1 text-center text-ink dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark pointer-coarse:min-h-11"
+            onchange={(e) => commitInput(v, e.currentTarget)}
+          />
+          <button
+            type="button"
+            aria-label="Lengthen by 0.5 month"
+            aria-disabled={v.atBound === 'max'}
+            class="min-h-6 min-w-6 rounded-md border border-control-line bg-surface px-2 font-bold text-ink hover:bg-surface-raised aria-disabled:opacity-40 dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark dark:hover:bg-surface-dark-raised pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+            onclick={() => step(v, 1)}>+</button
+          >
+          <span class="text-ink-muted dark:text-ink-dark-muted"
+            >≈ {Math.round(v.months * MONTH_DAYS)} days</span
+          >
+        </div>
         {#if v.atBound}
-          <p class="font-semibold text-amber-800">
+          <p class="font-semibold text-amber-800 dark:text-amber-300">
             At the {v.atBound === 'min' ? 'minimum' : 'maximum'}
           </p>
         {/if}
-        <p class="text-gray-700">{minimumText(v)}</p>
+        <p class="text-ink-muted dark:text-ink-dark-muted">{minimumText(v)}</p>
       {:else}
         <p>Typical: {monthsText(v.months)}</p>
-        {#if v.lockReason}<p class="text-gray-700">{v.lockReason}</p>{/if}
+        {#if v.lockReason}<p class="text-ink-muted dark:text-ink-dark-muted">{v.lockReason}</p>{/if}
       {/if}
       {#if v.stage === 'preApplication' && ppaNote}<p>{ppaNote}</p>{/if}
       <p>{chancesText(v)}</p>
       {#if v.editable}
         {#if reach}<p>{reach}</p>{/if}
         {#if v.presetLimitedByFloor}
-          <p class="text-amber-800">The preset's value is below the minimum; the minimum is used</p>
+          <p class="text-amber-800 dark:text-amber-300">
+            The preset's value is below the minimum; the minimum is used
+          </p>
         {/if}
       {/if}
-      <div class="text-gray-700">
+      <div class="text-ink-muted dark:text-ink-dark-muted">
         {#if src.custom}
           <p>
             Your value: {monthsText(v.months)} (custom, not sourced). Observed: {monthsText(

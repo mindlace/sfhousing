@@ -14,7 +14,9 @@ import type { Calibration, ExitReason, Pathway, Provenance, Stage } from '$lib/t
 import type { LeverLookups } from '../levers/apply';
 import type { BrushCatalog, BrushQuery } from '../levers/brushes';
 import type { LeverCapacity } from '../levers/resolve';
+import type { LimitOwner } from '../levers/source';
 import type { StageScale } from '../levers/timers';
+import type { LotOutlines } from '../outlines';
 import type { SimLevers } from '../levers/types';
 import type { PlaybackRequest, PlaybackResponse } from '../lesscars/types';
 import type {
@@ -114,12 +116,15 @@ export type ScenarioRequest =
   | { type: 'brushCatalog'; reqId: number }
   // Map overlays (plan 2 Task 5): the ring outlines of lots, answered like `resolveBrush`.
   | { type: 'lotOutlines'; reqId: number; lots: ParcelId[] }
-  // Paint feedback (plan 2 Task 6): `stories` given = a custom stroke at that height; absent =
-  // the levers in force (a rule). The page sends the lots nearest first.
-  | { type: 'previewBuildings'; reqId: number; lots: ParcelId[]; stories?: number }
+  // Live preview (plan 2 Task 6, sim UX plan 3 Task 4): the buildings a Paint stroke's lots could
+  // hold at `stories`. The page sends the lots nearest first.
+  | { type: 'previewBuildings'; reqId: number; lots: ParcelId[]; stories: number }
   // Glass lids (height-lids Task 8): the lids of the loaded lots in a view (lng/lat bbox),
   // answered on the latest complete city of a session initialised with levers.
-  | { type: 'heightLids'; reqId: number; bbox: [number, number, number, number] };
+  | { type: 'heightLids'; reqId: number; bbox: [number, number, number, number] }
+  // Map selection (sim UX plan 4 Task 3): the lot under a point (lng, lat) and who sets its limit,
+  // answered at once from the limits the worker holds.
+  | { type: 'lotAt'; reqId: number; point: [number, number] };
 /**
  * The glass lids of a view, built on the latest complete city (`lids.limitsRev`). `missing`
  * counts the cells intersecting the bbox whose chunks are not loaded (the page asks again as they
@@ -129,6 +134,14 @@ export type ScenarioRequest =
 export type HeightLidsResult =
   | { ok: true; lids: HeightLids; missing: number }
   | { ok: false; reason: 'no-session' | 'superseded' | 'too-large'; message: string };
+/**
+ * The lot under a point, built or vacant, and the layer that sets its height limit. `parcelId` is
+ * null where no loaded lot holds the point. `owner` is null when the lot has no row in the limits
+ * table or the session has no limits yet. `no-session`: no session with levers.
+ */
+export type LotAtResult =
+  | { ok: true; parcelId: ParcelId | null; owner: LimitOwner | null }
+  | { ok: false; reason: 'no-session'; message: string };
 /**
  * The buildings a preview's lots could hold, packed as one cell (`'preview'`), or null when none
  * builds. `built` counts the lots packed; `missing` the requested lots (within the cap) whose
@@ -145,14 +158,7 @@ export type PreviewResult =
  * `no-session`: no session with levers (or it ended before answering).
  */
 export type LotOutlinesResult =
-  | {
-      ok: true;
-      lots: ParcelId[];
-      ringLot: Uint32Array;
-      starts: Uint32Array;
-      positions: Float64Array;
-      missing: number;
-    }
+  | (LotOutlines & { ok: true; missing: number })
   | { ok: false; reason: 'no-session'; message: string };
 /**
  * A brush's lots: `points` holds each lot's label point (lng, lat), transferred. `no-session`: no
@@ -189,6 +195,7 @@ export type ScenarioResponse =
   // (a superseded revision may get none); the chain and label buffers are transferred.
   | { type: 'heights'; rev: Rev; city: HeightCity }
   | { type: 'heightLids'; reqId: number; result: HeightLidsResult }
+  | { type: 'lotAt'; reqId: number; result: LotAtResult }
   | LeversResponse;
 /**
  * A lever revision's status (plan 2): `rev` is the `initScenario` or `setLevers` that named the

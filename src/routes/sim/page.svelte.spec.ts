@@ -116,10 +116,15 @@ describe('/sim page', () => {
     w.emit({ type: 'ready', rev: init.rev, datasetVersion: 'fixture-0', chunkCount: 4 });
     w.emit(timelineMsg(init.rev, 5));
 
-    // 'Back to the representative future' (in the header score bar's details): the answer writes
-    // the bare URL with replaceState.
+    // 'Back to the representative future' (in the Sources disclosure of the dock's Results face,
+    // which the header score flips to): the answer writes the bare URL with replaceState.
     await page.getByTestId('score-bar').click();
-    await page.getByRole('button', { name: 'Back to the representative future' }).first().click();
+    const results = page.getByRole('region', { name: 'Results' });
+    await results.getByTestId('fzp-sources').getByText('Sources', { exact: true }).first().click();
+    await results
+      .getByRole('button', { name: 'Back to the representative future' })
+      .first()
+      .click();
     const reroll = w.lastOf('reroll')!;
     expect(reroll.seed).toBeNull();
     w.emit(timelineMsg(reroll.rev, 31));

@@ -209,10 +209,10 @@ describe('series names and colours', () => {
       planBand: 'Plan effect, 8 in 10 futures'
     });
     expect(COLORS).toEqual({
-      total: '#1d4ed8',
-      pipeline: '#374151',
-      fresh: '#b45309',
-      plan: '#6d28d9'
+      total: 'var(--chart-total)',
+      pipeline: 'var(--chart-pipeline)',
+      fresh: 'var(--chart-fresh)',
+      plan: 'var(--chart-plan)'
     });
   });
 });

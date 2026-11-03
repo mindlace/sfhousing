@@ -88,6 +88,7 @@ import { decodeTransit } from '$lib/data/transit-codec';
 import type { TransitNetwork } from '$lib/data/transit';
 import type { Day } from '$lib/timelapse/time';
 import { cellsIntersecting, createChunkLoader, type ChunkLoader, type FetchLike } from '../chunks';
+import { packOutlines } from '../outlines';
 import { toLngLat } from '$lib/generator/geo';
 import { DEFAULT_RETRY_DELAYS_MS } from '../host';
 import { createLru } from '../lru';
@@ -106,12 +107,13 @@ import {
   type NeighborhoodShapes
 } from '../levers/brushes';
 import type { LayerCtx } from '../levers/layers';
-import { limitSources, type LimitSources } from '../levers/source';
+import { limitSources, ownerOf, type LimitOwner, type LimitSources } from '../levers/source';
 import { createYieldRecompute, type GrossCache, type YieldRecompute } from '../levers/recompute';
 import { allNeeds, fillNeeds, resolveEnvelopes, type Resolution } from '../levers/resolve';
 import { parseSimLevers, type SimLevers } from '../levers/types';
 import { chooseProject, projectCard, revisionAt, type CardCtx } from './card';
 import { createGeometry, type Geometry } from './geometry';
+import { lotAtPoint } from './lot-at';
 import { massingFor, simKey, type MassingCtx } from './massing';
 import {
   brushQueryProblem,
@@ -1219,8 +1221,17 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     const lw = st.work?.levers;
     if (lw && i !== undefined && rec.eligible && out.envelope) {
       const allowed = out.envelope.maxStories;
-      if (lw.protectedMask?.[i]) out.limits = { allowed, buildable: null, protected: true };
-      else {
+      // the layer that sets `allowed`, from the limits held now; a protected lot reads FZP
+      const owner = lw.limits ? limitOwnerAt(lw.limits.sources, i) : null;
+      const ownerField = owner ? { owner } : {};
+      if (lw.protectedMask?.[i]) {
+        out.limits = {
+          allowed,
+          buildable: null,
+          protected: true,
+          ...(lw.limits ? { owner: { kind: 'fzp' as const } } : {})
+        };
+      } else {
         const key = simKey(req.parcelId, allowed);
         let b = memo.get(key);
         if (b === undefined) {
@@ -1236,7 +1247,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         out.limits = {
           allowed,
           buildable: b ? b.stories : lotBuildableStories(rec.polygon, allowed, out.existingUnits),
-          protected: false
+          protected: false,
+          ...ownerField
         };
       }
     }
@@ -1253,6 +1265,40 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     if (!('footprint' in m))
       out.generated = { typology: m.typology, stories: m.stories, units: m.units };
     return out;
+  }
+
+  /** The owner of limits row `row`, or null for a row the limits table does not cover. */
+  function limitOwnerAt(sources: LimitSources, row: number): LimitOwner | null {
+    return row < sources.source.length ? ownerOf(sources, row) : null;
+  }
+
+  // --- lotAt (sim UX plan 4 Task 3) ---
+
+  /**
+   * The lot under `point` (lng, lat) among the loaded records of the cells within `LID_PAD_M`
+   * (a lot may reach past its cell), and who sets its limit on the limits the worker holds now.
+   * Answered at once: it never waits on a pending lever revision.
+   */
+  function lotAt(reqId: number, point: [number, number]): void {
+    const st = s;
+    if (!st?.brush || !st.work?.levers) {
+      const message = 'lot lookup needs a session initialised with levers';
+      return post({ type: 'lotAt', reqId, result: { ok: false, reason: 'no-session', message } });
+    }
+    const lw = st.work.levers;
+    const dLng = LID_PAD_M / M_PER_DEG_LNG;
+    const dLat = LID_PAD_M / M_PER_DEG_LAT;
+    const box = [point[0] - dLng, point[1] - dLat, point[0] + dLng, point[1] + dLat];
+    const near: ParcelRecord[] = [];
+    for (const cellId of cellsIntersecting(st.manifest, box))
+      for (const rec of st.chunks.byCell.get(cellId) ?? []) near.push(rec);
+    const rec = lotAtPoint(near, point, (r) =>
+      r.polygon.map((ring) => toLngLat(ring, r.labelPoint))
+    );
+    const row = rec ? lw.base.fzp.parcels.index.get(rec.id) : undefined;
+    const owner =
+      rec && row !== undefined && lw.limits ? limitOwnerAt(lw.limits.sources, row) : null;
+    post({ type: 'lotAt', reqId, result: { ok: true, parcelId: rec ? rec.id : null, owner } });
   }
 
   // --- brushes (plan 3 Task 5) ---
@@ -1296,54 +1342,27 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         result: { ok: false, reason: 'no-session', message }
       });
     }
-    const answered: ParcelId[] = [];
-    const rings: [number, number][][] = [];
-    const ringLot: number[] = [];
+    const found: ParcelRecord[] = [];
     let missing = 0;
     for (const id of lots) {
       const rec = st.chunks.records.get(id);
-      if (!rec) {
-        missing++;
-        continue;
-      }
-      for (const ring of rec.polygon) {
-        rings.push(toLngLat(ring, rec.labelPoint));
-        ringLot.push(answered.length);
-      }
-      answered.push(id);
+      if (rec) found.push(rec);
+      else missing++;
     }
-    const starts = new Uint32Array(rings.length + 1);
-    rings.forEach((r, k) => (starts[k + 1] = starts[k] + r.length));
-    const positions = new Float64Array(2 * starts[rings.length]);
-    rings.forEach((r, k) =>
-      r.forEach(([lng, lat], v) => {
-        positions[2 * (starts[k] + v)] = lng;
-        positions[2 * (starts[k] + v) + 1] = lat;
-      })
-    );
-    const out = new Uint32Array(ringLot);
-    post(
-      {
-        type: 'lotOutlines',
-        reqId,
-        result: { ok: true, lots: answered, ringLot: out, starts, positions, missing }
-      },
-      // fresh typed arrays, so their buffers are ArrayBuffers
-      [out.buffer as ArrayBuffer, starts.buffer as ArrayBuffer, positions.buffer as ArrayBuffer]
-    );
+    const { outlines, transfer } = packOutlines(found);
+    post({ type: 'lotOutlines', reqId, result: { ok: true, ...outlines, missing } }, transfer);
   }
 
   /**
-   * The buildings the first `previewMaxLots` requested lots could hold (paint feedback, map
+   * The buildings the first `previewMaxLots` requested lots could hold (/sim's live preview, map
    * overlays plan Task 6), packed as one cell. Per lot, in order: a lot protected under the
-   * levers in force builds nothing; one whose record is not loaded is `missing`; with `stories`
-   * (a custom stroke) it builds at that height; without (a rule), only a lot whose plan stories
-   * differ from FZP's stock builds, at the plan stories. The generator memo is shared with the
-   * timeline's simulated buildings (`simKey`: the same generate call), so a lot the timeline
-   * later builds at that height costs nothing twice. Answered at once, in one handler: the cap
-   * keeps it within a slice (measured in the spec).
+   * levers in force builds nothing; one whose record is not loaded is `missing`; any other builds
+   * at the stroke's `stories` (the generator clamps at the lot's physical max). The generator memo
+   * is shared with the timeline's simulated buildings (`simKey`: the same generate call), so a lot
+   * the timeline later builds at that height costs nothing twice. Answered at once, in one
+   * handler: the cap keeps it within a slice (measured in the spec).
    */
-  function previewBuildings(reqId: number, lots: readonly ParcelId[], stories?: number): void {
+  function previewBuildings(reqId: number, lots: readonly ParcelId[], stories: number): void {
     const st = s;
     const w = st?.work;
     const lw = w?.levers;
@@ -1356,7 +1375,6 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       });
     }
     const plan = w.loaded.fzp.parcels;
-    const stock = lw.base.fzp.parcels.envelopeStories;
     const mask = lw.protectedMask;
     const items: { building: GeneratedBuilding; existingUnits: number }[] = [];
     const seen = new Set<ParcelId>();
@@ -1372,14 +1390,11 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         missing++;
         continue;
       }
-      const planStories = plan.envelopeStories[i];
-      if (stories === undefined && planStories === stock[i]) continue;
-      const at = stories ?? planStories;
-      if (at <= 0) continue;
-      const key = simKey(id, at);
+      if (stories <= 0) continue;
+      const key = simKey(id, stories);
       let b = memo.get(key);
       if (b === undefined) {
-        b = gen(scenarioRecordOf(plan, i, rec), { maxStories: at }, fnv1a32(id), 'max');
+        b = gen(scenarioRecordOf(plan, i, rec), { maxStories: stories }, fnv1a32(id), 'max');
         memo.set(key, b);
       }
       if (b) items.push({ building: b, existingUnits: plan.existingUnits[i] });
@@ -1546,6 +1561,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         return brushRequest(req.reqId, true);
       case 'lotOutlines':
         return lotOutlines(req.reqId, req.lots);
+      case 'lotAt':
+        return lotAt(req.reqId, req.point);
       case 'previewBuildings':
         return previewBuildings(req.reqId, req.lots, req.stories);
       case 'heightLids':

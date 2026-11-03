@@ -1,13 +1,29 @@
+<script module lang="ts">
+  import { M1_TARGETS, score as computeScore } from '$lib/scoreboard';
+  /** The score before the worker's first diff. */
+  const EMPTY = computeScore([], M1_TARGETS);
+</script>
+
 <script lang="ts">
   import { onDestroy, onMount, untrack } from 'svelte';
+  import { MediaQuery } from 'svelte/reactivity';
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import BrushEditor from '$lib/brush/BrushEditor.svelte';
   import { exposeEditorForDebug } from '$lib/brush/debug';
   import type { Editor } from '$lib/brush/editor.svelte';
   import type { Manifest } from '$lib/data/manifest';
-  import { frameLatest, type Score, type ScoreStatus } from '$lib/scoreboard';
-  import Scoreboard from '$lib/scoreboard/Scoreboard.svelte';
+  import { DockState } from '$lib/dock/dock-state.svelte';
+  import {
+    announcement,
+    frameLatest,
+    primaryTarget,
+    viewState,
+    type Score,
+    type ScoreStatus
+  } from '$lib/scoreboard';
+  import HeaderScore from '$lib/scoreboard/HeaderScore.svelte';
+  import ScoreboardPanel from '$lib/scoreboard/ScoreboardPanel.svelte';
   import { Autosave } from '$lib/sharing/autosave.svelte';
   import { COPY, n3, remixedToast } from '$lib/sharing/copy';
   import NoticeStack from '$lib/sharing/NoticeStack.svelte';
@@ -15,7 +31,7 @@
   import PublishButton from '$lib/sharing/PublishButton.svelte';
   import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
   import { applyTitle } from '$lib/sharing/title';
-  import { useHeaderActions } from '$lib/shell/header-actions.svelte';
+  import { focusHeaderMenu, useHeaderActions } from '$lib/shell/header-actions.svelte';
   import { loadManifest } from '$lib/sim/manifest';
   import { readViewPrefs, writeViewPrefs, type ViewPrefs } from '$lib/view/prefs';
   import ViewMenu from '$lib/view/ViewMenu.svelte';
@@ -82,7 +98,36 @@
     autosave.setLastPublished({ id: r.id, hash: r.hash }, editor.plan);
   }
 
-  useHeaderActions(headerActions, { status: saveState });
+  useHeaderActions(headerActions, { pinned: scoreBar, status: saveState });
+
+  // The dock (sim-ux plan 5): the Paint tab, open on the left of the map from md (folding to a
+  // rail), a bottom sheet behind its handle below md. The header's Paint button toggles it; the
+  // header score flips it to its Results face (the scoreboard) and back.
+  const wide = new MediaQuery('(min-width: 768px)');
+  const uid = $props.id();
+  const dockId = `${uid}-dock`;
+  const dock = new DockState({ tab: 'paint' });
+  /** The user opened the dock (the Paint button): focus moves in. False for the default open. */
+  let dockFocus = $state(false);
+  let paintButton = $state<HTMLButtonElement>();
+
+  /** The header's Paint button: desktop open <-> rail; phone sheet closed <-> full. */
+  function togglePaint(): void {
+    dockFocus = true;
+    dock.toggleOpen(wide.current);
+  }
+
+  /** The header score: Results <-> the Paint tab, opening the dock if it is hidden. */
+  function pressScore(): void {
+    dockFocus = true;
+    dock.toggleResults(wide.current);
+  }
+
+  /** The dock folded by its collapse button or Escape: focus to Paint, or the phone Menu button. */
+  function dockClosed(): void {
+    if (paintButton?.checkVisibility()) paintButton.focus();
+    else focusHeaderMenu();
+  }
 
   // Map layer toggles (transit spec §6.3), per viewer. View shows only when the manifest the map
   // renders (BrushEditor's own, which a Retry can replace) has a transit network.
@@ -93,7 +138,8 @@
     writeViewPrefs(v);
   }
 
-  // Scoreboard wiring (scoreboard spec §4.3/§4.4), separate from the editor/plan concern above.
+  // Score wiring (scoreboard spec §4.3/§4.4), separate from the editor/plan concern above: the
+  // header score and the dock's Results face (sim-ux spec Goal 5, the same as /sim's).
   let brushEditor = $state<ReturnType<typeof BrushEditor>>();
   // Score and its diff's `complete` travel together, coalesced to ≤ 1 commit per frame.
   const latestScore = frameLatest<{ score: Score | null; complete: boolean }>({
@@ -108,13 +154,47 @@
     complete: latestScore.current.complete,
     datasetVersion: data.manifest?.datasetVersion ?? data.datasetVersion,
     builtAt: data.manifest?.builtAt ?? '',
-    planDatasetVersion: data.plan.datasetVersion,
+    // The header score (in the layout) reads this, and a client navigation away updates `data`
+    // to the next page's before this page unmounts: that data may have no `plan`.
+    planDatasetVersion: data.plan?.datasetVersion ?? data.datasetVersion,
     mode: 'max'
   });
+  const shown = $derived(latestScore.current.score ?? EMPTY);
+  const scoreView = $derived(viewState(shown, scoreStatus));
   const systemTheme = useSystemTheme();
 </script>
 
+{#snippet scoreBar()}
+  <!-- A painted plan has no FZP comparison: no "vs FZP" delta (sim-ux spec Goal 5). -->
+  <HeaderScore
+    total={shown.netUnits}
+    target={primaryTarget(shown) ?? null}
+    busy={scoreView.updating}
+    expanded={dock.face === 'results' && dock.visible(wide.current)}
+    controls={dockId}
+    onclick={pressScore}
+    live={announcement(shown)}
+    quiet={scoreView.updating}
+  />
+{/snippet}
+
+{#snippet results()}
+  <ScoreboardPanel score={shown} status={scoreStatus} onretry={() => brushEditor?.retryChunks()} />
+{/snippet}
+
+{#snippet noticeStack()}
+  <NoticeStack {notices} ondismiss={(id) => (notices = notices.filter((n) => n.id !== id))} />
+{/snippet}
+
 {#snippet headerActions()}
+  <button
+    bind:this={paintButton}
+    type="button"
+    aria-expanded={dock.visible(wide.current)}
+    aria-controls={dockId}
+    class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+    onclick={togglePaint}>Paint</button
+  >
   {#if mapManifest?.transit}
     <ViewMenu {view} theme={systemTheme.current} onchange={onViewChange} />
   {/if}
@@ -149,12 +229,11 @@
     onchunks={(c) => (chunkState = c)}
     {view}
     onmanifest={(m) => (mapManifest = m)}
+    {dock}
+    {dockId}
+    {dockFocus}
+    ondockclose={dockClosed}
+    {results}
+    notices={noticeStack}
   />
-  <Scoreboard
-    score={latestScore.current.score}
-    status={scoreStatus}
-    onretry={() => brushEditor?.retryChunks()}
-    onsheetchange={(open, h) => brushEditor?.setSheetInset(open ? h : null)}
-  />
-  <NoticeStack {notices} ondismiss={(id) => (notices = notices.filter((n) => n.id !== id))} />
 </div>

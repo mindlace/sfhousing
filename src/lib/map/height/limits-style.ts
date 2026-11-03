@@ -6,19 +6,21 @@
  * - paint (brush or eraser selected): anything set by paint, or bounding it, is a dashed line in
  *   the paint tone, source boundaries included. Everything else is as plain.
  * - rule s: the rims of s and the outline of its lot set are full ink (the outline 1.5 px); every
- *   other line is dimmed, glaze shows only on s and walls of s are full, others dimmed.
+ *   other line is dimmed, glaze shows only on s and walls of s are full, others dimmed. The FZP
+ *   baseline selected is rule mode with s = SRC_FZP.
  */
-import { SRC_PAINT, SRC_RULE0 } from '$lib/sim/levers/source';
+import { SRC_FZP, SRC_PAINT, SRC_RULE0 } from '$lib/sim/levers/source';
 import { CHAIN_SOURCE } from './types';
 
 /** The style-side mode: in rule mode, `source` is the rule's SRC_* code (-1: it decides nothing). */
 export type LimitsMode = { kind: 'plain' } | { kind: 'paint' } | { kind: 'rule'; source: number };
 
 /**
- * The page-side mode: a selected rule by id. Lids and the city may come from different limit
- * revisions, so each maps the id through its own `sourceIds` (`resolveMode`).
+ * The page-side mode: a selected rule by id, or the FZP baseline. Lids and the city may come from
+ * different limit revisions, so each maps the id through its own `sourceIds` (`resolveMode`).
  */
-export type LimitsView = { kind: 'plain' } | { kind: 'paint' } | { kind: 'rule'; ruleId: string };
+export type LimitsView =
+  { kind: 'plain' } | { kind: 'paint' } | { kind: 'rule'; ruleId: string } | { kind: 'fzp' };
 
 export const DIM_ALPHA = 0.3;
 export const LIDS_FADE = [14.5, 15.5] as const;
@@ -39,8 +41,12 @@ const INK: Look = { show: true, dashed: false, tone: 'ink', alpha: 1 };
 const DIM: Look = { show: true, dashed: false, tone: 'ink', alpha: DIM_ALPHA };
 const PAINT_DASH: Look = { show: true, dashed: true, tone: 'paint', alpha: 1 };
 
-/** `view` with its rule id mapped to a code through `sourceIds` (absent: -1). */
+/**
+ * `view` with its rule id mapped to a code through `sourceIds` (absent: -1). The FZP baseline is
+ * rule mode on `SRC_FZP`: the lots FZP sets in ink, the rest dimmed.
+ */
 export function resolveMode(view: LimitsView, sourceIds: readonly string[]): LimitsMode {
+  if (view.kind === 'fzp') return { kind: 'rule', source: SRC_FZP };
   if (view.kind !== 'rule') return view;
   const k = sourceIds.indexOf(view.ruleId);
   return { kind: 'rule', source: k < 0 ? -1 : SRC_RULE0 + k };

@@ -1,6 +1,6 @@
 <!--
   The timelapse composition (spec §4.1, §4.2, §4.3, §4.7, §4.8): SimMap, the time scrubber, the
-  header score bar (ScoreBar, pinned in the header, opening FzpScorePanel), the project card and
+  header score (HeaderScore, pinned in the header; it shows and hides the dock's Results), the project card and
   tooltip and the sources dialog, over timelapse-sim's ScenarioClient. Queueing before the map
   handle, chunk statuses and crash Retry mirror BrushEditor.svelte (copied, not imported). /sim
   passes `levers` (plan 3): the session runs the lever engine, and the worker's posted lookups
@@ -16,6 +16,7 @@
   import type {
     BrushLotsResult,
     HeightLidsResult,
+    LotAtResult,
     LotOutlinesResult,
     PreviewResult
   } from '$lib/sim/scenario/types';
@@ -30,10 +31,12 @@
     resolveBrush(q: BrushQuery): Promise<BrushLotsResult>;
     brushCatalog(): Promise<BrushCatalog | null>;
     lotOutlines(lots: ParcelId[]): Promise<LotOutlinesResult>;
-    /** Paint feedback: the buildings `lots` could hold (at `stories`, else the levers in force). */
-    previewBuildings(lots: ParcelId[], stories?: number): Promise<PreviewResult>;
+    /** Paint feedback: the buildings `lots` could hold at `stories`. */
+    previewBuildings(lots: ParcelId[], stories: number): Promise<PreviewResult>;
     /** The glass lids of the loaded lots in a view (lng/lat bbox), on the latest city. */
     heightLids(bbox: [number, number, number, number]): Promise<HeightLidsResult>;
+    /** The lot under a point (lng, lat) and the layer that sets its limit, at once. */
+    lotAt(point: [number, number]): Promise<LotAtResult>;
     retryChunks(): void;
   }
 
@@ -72,15 +75,17 @@
   import type { ChunkStatus, TimelinePick, TimelineUpdate } from '$lib/map/types';
   import { formatCount } from '$lib/scoreboard/format';
   import { useHeaderActions } from '$lib/shell/header-actions.svelte';
+  import NoticePills from '$lib/shell/NoticePills.svelte';
+  import { PILL, PILL_ACTION } from '$lib/shell/pill';
   import {
     leversError,
     leversMessage,
     leversSent,
     leversSession,
-    type LeverStatus,
     type LeverStatusState
   } from '$lib/sim-page/lever-status';
   import { spawnSimWorker } from '$lib/sim/client';
+  import type { LimitOwner } from '$lib/sim/levers/source';
   import type { SimLevers } from '$lib/sim/levers/types';
   import type { SimPhase } from '$lib/sim-page/run-phase.svelte';
   import { scoreCopy } from '$lib/sim-page/policy';
@@ -92,12 +97,14 @@
   } from '$lib/sim/scenario-client';
   import type { Day } from '$lib/timelapse/time';
   import { installFzpDebug } from './debug';
-  import ScoreBar from '$lib/sim-page/ScoreBar.svelte';
-  import FzpScorePanel from './FzpScorePanel.svelte';
+  import HeaderScore from '$lib/scoreboard/HeaderScore.svelte';
+  import SimResults from './SimResults.svelte';
   import { DEFAULT_SPEED } from './playback';
+  import { BR_BLOCK, watchCardArea } from './card-area-watch';
+  import { cardArea, cardPlacement, type CardArea } from './card-place';
   import ProjectCardPanel from './ProjectCardPanel.svelte';
   import ProjectTooltip from './ProjectTooltip.svelte';
-  import { scoreAt, scrubMarkers } from './score-view';
+  import { RHNA_ID, homesAddedBy, scoreAt, scrubMarkers } from './score-view';
   import SourcesDialog from './SourcesDialog.svelte';
   import { SummaryRequester, type SummaryState } from './summary-request';
   import { HORIZON, monthIndex, monthStart } from './time';
@@ -125,8 +132,6 @@
      * scenario is live sends `setLevers`.
      */
     levers?: SimLevers;
-    /** Every lever status change (/sim). */
-    onlevers?: (s: LeverStatus) => void;
     /**
      * /sim: a kept lever revision's height regions and contours (one `heights` per rev, before its
      * `current`); a revision below the latest levers sent is dropped.
@@ -144,15 +149,18 @@
     onmapready?: (h: SimMapHandle, map: MapLike) => void;
     /** Every phase change (/sim: the brush tools work once the scenario is ready). */
     onphase?: (p: FzpPhase) => void;
-    /** Rendered inside `.sfh-fzp` (the /sim policy panel). */
-    panel?: Snippet;
+    /**
+     * Rendered inside `.sfh-fzp` (the /sim dock). It is given the Results snippet (`SimResults`
+     * with the scrubbed month's score) for the dock's Results face.
+     */
+    panel?: Snippet<[Snippet]>;
     /** The page's own header actions, before 'Another future' (/sim: "Policy"). */
     actions?: Snippet;
     /** The header's status slot (/sim: the save state); read once, at mount. */
     status?: Snippet;
     /**
-     * The page's own notices (/sim: restore, refit, Remix), first in the ready-phase notice row
-     * above the scrubber, so their height joins the dock's and nothing they cover is lost.
+     * The page's own notices (/sim: restore, refit, Remix), first among the ready-phase pills in
+     * the notice stack (`NoticePills`); each should be a `PILL`.
      */
     notices?: Snippet;
     /**
@@ -162,6 +170,11 @@
     runPhase?: SimPhase;
     /** The Run button's press; the page then moves `runPhase` to 'run'. */
     onrun?: () => void;
+    /**
+     * /sim: the viewer scrubbed back to Today during a run (Home, the Today marker, a key or drag
+     * that lands on asOf); the page then returns to Setup. Never called by Replay or playback.
+     */
+    onrewind?: () => void;
     /**
      * /sim: newer levers are on their way (debounced, or their lots still being found). Run
      * waits for them, and the score bar shows the pending state.
@@ -174,6 +187,28 @@
      * replaces it, so the page can gate manifest-dependent UI (the View rows) on it.
      */
     onmanifest?: (m: Manifest | null) => void;
+    /** The header score is pressed: the page shows or hides the dock's Results (/sim). */
+    onscore?: () => void;
+    /** The dock shows Results: the header score's `aria-expanded`. */
+    scoreExpanded?: boolean;
+    /** The dock's id: the header score's `aria-controls`. */
+    scoreControls?: string;
+    /**
+     * Px added to the map's bottom inset over the scrubber (/sim below md: the dock's sheet, so
+     * its handle never hides the attribution). Default 0.
+     */
+    bottomExtra?: number;
+    /**
+     * Taps open cards (default true): project cards and, on touch, SimMap's own (`tapCards`).
+     * /sim passes `run.phase === 'run'`: in Set Policy a click selects a layer instead. Turning it
+     * off closes an open card. Hover tooltips stay.
+     */
+    cards?: boolean;
+    /**
+     * What to call the layer that set a clicked lot's limit, for the card's "Allowed by" line
+     * (/sim: a layer's name, "Painted 8 stories"); null shows no line (FZP, a removed layer).
+     */
+    ownerName?: (owner: LimitOwner, parcelId: ParcelId) => string | null;
   }
 
   let {
@@ -188,7 +223,6 @@
     onurlseed = undefined,
     createWorker = spawnSimWorker,
     levers = undefined,
-    onlevers = undefined,
     onheights = undefined,
     onclient = undefined,
     onmapready = undefined,
@@ -199,10 +233,17 @@
     notices = undefined,
     runPhase = undefined,
     onrun = undefined,
+    onrewind = undefined,
     leversPending = false,
     view = HIDDEN_VIEW,
     onmanifest = undefined,
-    onchunks = undefined
+    onchunks = undefined,
+    onscore = undefined,
+    scoreExpanded = false,
+    scoreControls = undefined,
+    bottomExtra = 0,
+    cards = true,
+    ownerName = undefined
   }: Props = $props();
 
   // The props seed the page once; Retry replaces the manifest and calibration in place.
@@ -234,8 +275,6 @@
   let rerollBusy = $state(false);
   let rerollFailed = $state(false);
   let scrubberH = $state(0);
-  /** The notices above the scrubber (0 when none shows). */
-  let noticeH = $state(0);
 
   /** The lever revision's status (`off` on /fzp). */
   let leverState = $state.raw<LeverStatusState>({
@@ -256,6 +295,21 @@
   let playWhenCurrent = $state(false);
 
   let cardState = $state.raw<SummaryState>({ kind: 'idle' });
+  /**
+   * The tap that opened the card: its point (map px), the place under it (the card follows it
+   * across pans and zooms) and its lot. The card sits beside the point.
+   */
+  let cardTap = $state.raw<{
+    x: number;
+    y: number;
+    lngLat: [number, number] | null;
+    parcelId: ParcelId;
+  } | null>(null);
+  let cardSize = $state.raw<{ w: number; h: number } | null>(null);
+  let cardBounds = $state.raw<CardArea | null>(null);
+  let host = $state<HTMLElement>();
+  let mapBox = $state<HTMLElement>();
+  let pillsEl = $state<HTMLElement>();
   let tipState = $state.raw<SummaryState>({ kind: 'idle' });
   let tipAt = $state({ x: 0, y: 0 });
   let dialog = $state<ReturnType<typeof SourcesDialog>>();
@@ -287,13 +341,23 @@
   );
   /**
    * The latest revision failed (/sim): the score stands from the policy before it, the score
-   * details say so, and the notice row offers Retry, which restarts with the latest levers.
+   * details say so, and the notice stack offers Retry, which restarts with the latest levers.
    */
   const leverFailed = $derived(leverStatus.kind === 'failed' && !stopped);
   const markers = $derived(score ? scrubMarkers(score) : []);
   /** The score at the scrubbed month, for the details panel. */
   const at = $derived(
     score ? scoreAt(score, monthIndex(day, score.months[0], score.months.length)) : null
+  );
+  /**
+   * The header score's "vs FZP" delta: your policy's effect at the day, in a run that compares
+   * with the Family Zoning Plan as written. A default-policy run compares the plan with the old
+   * zoning, so "vs FZP" would mislabel it (the Results face states that comparison).
+   */
+  const scoreDelta = $derived(
+    runPhase === 'run' && copy.compare === 'fzp' && at?.planCompleted != null
+      ? at.planCompleted
+      : null
   );
   const hasScoreboard = $derived(
     calibration !== null && (phase === 'loading' || phase === 'ready')
@@ -325,8 +389,6 @@
   let asOfChecked = false;
   /** The scrubbed month the open card was last requested for. */
   let cardMonth: Day | null = null;
-  /** FzpMode's root, for the dock's top edge (`--fzp-dock-top`). */
-  let rootEl = $state<HTMLDivElement>();
 
   /**
    * The page's latest scenario request. `representative` is the flag its answer sets (null =
@@ -342,9 +404,7 @@
 
   function setLeverState(next: LeverStatusState): void {
     if (next === leverState) return;
-    const changed = next.status !== leverState.status;
     leverState = next;
-    if (changed) onlevers?.(next.status);
   }
 
   /**
@@ -500,13 +560,97 @@
   function closeCard(): void {
     cardReq.reset();
     cardMonth = null;
+    cardTap = null;
   }
+
+  /** The room for the card now: beside the dock and the zoom controls, over the time bar and the
+   *  attribution, under any showing pill. */
+  function measureCardArea(scrubber = scrubberH): void {
+    if (!host || !mapBox) return;
+    const dock = parseFloat(getComputedStyle(host).getPropertyValue('--dock-w')) || 0;
+    const m = mapBox.getBoundingClientRect();
+    // MapLibre's bottom-left controls (fine pointers; zero-sized when hidden) and the bottom-right
+    // footprint SimMap publishes on :root, measured from the map's bottom.
+    const zoom = mapBox.querySelector('.maplibregl-ctrl-bottom-left')?.getBoundingClientRect();
+    const br = parseFloat(document.documentElement.style.getPropertyValue(BR_BLOCK)) || 0;
+    const next = cardArea(
+      { left: m.left, top: m.top, width: m.width, height: m.height },
+      pillsEl ? pillsEl.getBoundingClientRect() : null,
+      dock,
+      scrubber,
+      { left: zoom && zoom.width > 0 ? zoom.right - m.left : 0, bottom: br }
+    );
+    const was = cardBounds;
+    if (
+      was &&
+      was.left === next.left &&
+      was.top === next.top &&
+      was.right === next.right &&
+      was.bottom === next.bottom
+    )
+      return;
+    cardBounds = next;
+  }
+
+  const cardOpen = $derived(cardState.kind !== 'idle');
+  // While a card is open its room is followed, by the few things that change it and nothing that
+  // plays (`watchCardArea`); and it follows its building across pans and zooms.
+  $effect(() => {
+    if (!cardOpen || !mapBox) return;
+    const bar = scrubberH;
+    untrack(() => measureCardArea(bar));
+    const stop = watchCardArea(
+      {
+        map: mapBox,
+        pills: pillsEl,
+        dock: mapBox.querySelector<HTMLElement>('[data-testid="dock"]'),
+        controls: mapBox.querySelector<HTMLElement>('.maplibregl-ctrl-bottom-left')
+      },
+      () => measureCardArea()
+    );
+    return stop;
+  });
+  $effect(() => {
+    const m = map;
+    if (!cardOpen || !m) return;
+    let frame = 0;
+    const follow = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const tap = cardTap;
+        if (!tap?.lngLat) return;
+        const at = m.project(tap.lngLat);
+        if (at.x !== tap.x || at.y !== tap.y) cardTap = { ...tap, x: at.x, y: at.y };
+      });
+    };
+    m.on('move', follow);
+    return () => {
+      cancelAnimationFrame(frame);
+      m.off('move', follow);
+    };
+  });
+  const cardAnchor = $derived.by(() => {
+    if (!cardTap || !cardSize || !cardBounds) return null;
+    const { left, top } = cardPlacement({ x: cardTap.x, y: cardTap.y }, cardSize, cardBounds);
+    return { left, top, maxHeight: Math.max(0, cardBounds.bottom - cardBounds.top - 16) };
+  });
+  const cardAllowedBy = $derived.by(() => {
+    const owner = cardState.kind === 'project' ? cardState.limits?.owner : undefined;
+    return owner && cardTap && ownerName ? ownerName(owner, cardTap.parcelId) : null;
+  });
 
   function hideTooltip(): void {
     tipReq.reset();
   }
 
+  // Cards turned off (/sim's Set Policy): an open card closes.
+  $effect(() => {
+    if (!cards) untrack(closeCard);
+  });
+
   function onPick(p: TimelinePick): void {
+    // Without cards a tap is not this component's (/sim selects a layer): hover still shows tips.
+    if (p.kind === 'tap' && !cards) return;
     if (p.projectId === null) {
       hideTooltip();
       if (p.kind === 'tap') closeCard();
@@ -520,6 +664,13 @@
     }
     hideTooltip();
     cardMonth = monthStart(day);
+    const at = map?.unproject([p.x, p.y]);
+    cardTap = {
+      x: p.x,
+      y: p.y,
+      lngLat: at ? [at.lng, at.lat] : null,
+      parcelId: p.parcelId
+    };
     cardReq.request(q);
   }
 
@@ -568,28 +719,15 @@
   });
 
   function applyInset(): void {
-    handle?.setBottomInset(scrubberH + noticeH);
+    handle?.setBottomInset(scrubberH + untrack(() => bottomExtra));
   }
 
-  /**
-   * The viewport y of the dock's top edge (the notices and the scrubber), on :root as
-   * `--fzp-dock-top`: the header's score details end above it. Set while FzpMode is mounted.
-   */
-  function publishDockTop(): void {
-    if (!rootEl) return;
-    const top = rootEl.getBoundingClientRect().bottom - (scrubberH + noticeH);
-    document.documentElement.style.setProperty('--fzp-dock-top', `${Math.floor(top)}px`);
-  }
+  // The page's extra inset (the phone sheet) moves the map's bottom edge as the scrubber does.
+  let lastExtra = untrack(() => bottomExtra);
   $effect(() => {
-    void scrubberH;
-    void noticeH;
-    void rootEl;
-    untrack(publishDockTop);
-  });
-
-  // A notice appearing or going changes the dock's height.
-  $effect(() => {
-    void noticeH;
+    const extra = bottomExtra;
+    if (extra === lastExtra) return;
+    lastExtra = extra;
     untrack(applyInset);
   });
 
@@ -784,13 +922,13 @@
         lotOutlines: (lots) => c.lotOutlines(lots),
         previewBuildings: (lots, stories) => c.previewBuildings(lots, stories),
         heightLids: (bbox) => c.heightLids(bbox),
+        lotAt: (point) => c.lotAt(point),
         retryChunks: () => c.retryChunks()
       };
       if (phase === 'loading') startScenario({ seed: urlSeed });
     }
 
     applyInset();
-    addEventListener('resize', publishDockTop);
 
     const uninstall = installFzpDebug(() => ({
       phase,
@@ -800,6 +938,7 @@
       asOf,
       horizon: HORIZON,
       playing,
+      speed,
       score,
       runPhase: runPhase ?? null,
       levers: {
@@ -814,8 +953,6 @@
       dead = true;
       if (client) onclient?.(null);
       uninstall();
-      removeEventListener('resize', publishDockTop);
-      document.documentElement.style.removeProperty('--fzp-dock-top');
       playing = false;
       attachMap(null);
       client?.dispose();
@@ -834,15 +971,15 @@
       disabled={!canReroll}
       aria-busy={rerollBusy}
       onclick={anotherFuture}
-      class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:text-gray-700 md:max-lg:px-1 dark:border-gray-600 dark:disabled:text-gray-400 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+      class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:text-gray-700 dark:border-gray-600 dark:disabled:text-gray-400 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
     >
       Another future
     </button>
   {/if}
 {/snippet}
 
-{#snippet scorePanel()}
-  <FzpScorePanel
+{#snippet results()}
+  <SimResults
     {score}
     {at}
     {day}
@@ -865,134 +1002,83 @@
 
 {#snippet scoreBar()}
   {#if hasScoreboard && calibration}
-    <ScoreBar {score} {day} {playing} busy={scoreBusy || leversPending} panel={scorePanel} />
+    <HeaderScore
+      total={at?.total ?? null}
+      target={at?.targets.find((t) => t.tp.target.id === RHNA_ID)?.tp ?? null}
+      delta={scoreDelta}
+      busy={scoreBusy || leversPending}
+      expanded={scoreExpanded}
+      controls={scoreControls ?? ''}
+      onclick={() => onscore?.()}
+      live={at ? homesAddedBy(day, at) : ''}
+      quiet={playing}
+    />
   {/if}
 {/snippet}
 
 <div
-  bind:this={rootEl}
-  class="sfh-fzp relative h-full"
-  style:--fzp-scrubber-h="{scrubberH + noticeH}px"
+  bind:this={host}
+  class="sfh-fzp sfh-dock-host relative flex h-full flex-col"
+  style:--fzp-scrubber-h="{scrubberH}px"
 >
-  {#if manifest}
-    <SimMap
-      {manifest}
-      {requestParcelSummary}
-      onRetryChunks={() => client?.retryChunks()}
-      onready={onMapReady}
-      {view}
-      timelinePick={onPick}
-    />
-  {:else}
-    <div class="h-full" data-testid="fzp-frame"></div>
-  {/if}
-
-  <!-- Top-centre notices only where nothing else sits there. While loading, the header's score
-       details open at the top right on md+, so the notice takes the top left (no card can be
-       open yet). -->
-  {#if phase === 'loading'}
-    <div
-      class="absolute top-4 left-1/2 z-30 -translate-x-1/2 md:left-[calc(var(--sim-panel-w,0px)+1rem)] md:translate-x-0"
-    >
-      <p
+  <!-- Every notice is a pill in this one stack: an overlay at the map's top from md (it takes no
+       space, so nothing moves when one shows), in flow under the header below md. -->
+  <NoticePills bind:el={pillsEl}>
+    {#if phase === 'loading'}
+      <p role="status" data-testid="fzp-status" class="{PILL} pr-4">Loading the simulation…</p>
+    {:else if phase === 'failed'}
+      <div class={PILL}>
+        <p role="alert" data-testid="fzp-status">
+          {dataError
+            ? `The simulation data for dataset ${datasetVersion} is missing or damaged.`
+            : "The simulation couldn't load."}
+        </p>
+        <button type="button" class="shrink-0 {PILL_ACTION}" onclick={() => void retry()}
+          >Retry</button
+        >
+      </div>
+    {:else if phase === 'no-scenario'}
+      <!-- A sentence and a link do not fit one pill line at 375 px: the same surface, as a card. -->
+      <div
         role="status"
         data-testid="fzp-status"
-        class="rounded-lg bg-white px-3 py-2 text-sm text-black shadow"
+        class="{PILL} w-[min(28rem,100%)]! flex-col! items-start! gap-0! rounded-lg! pr-4 pb-0"
       >
-        Loading the simulation…
-      </p>
-    </div>
-  {:else if phase === 'failed'}
-    <div
-      class="absolute top-4 left-[calc(50%+var(--sim-panel-w,0px)/2)] z-30 flex w-max max-w-[calc(100%-32px-var(--sim-panel-w,0px))] -translate-x-1/2 items-center gap-2 rounded-lg bg-white py-1 pl-3 text-sm text-black shadow"
-    >
-      <p role="alert" data-testid="fzp-status">
-        {dataError
-          ? `The simulation data for dataset ${datasetVersion} is missing or damaged.`
-          : "The simulation couldn't load."}
-      </p>
-      <button
-        type="button"
-        class="min-h-11 min-w-11 shrink-0 rounded-lg px-3 font-semibold underline"
-        onclick={() => void retry()}>Retry</button
-      >
-    </div>
-  {:else if phase === 'no-scenario'}
-    <div
-      role="status"
-      data-testid="fzp-status"
-      class="absolute top-4 left-1/2 z-30 w-[min(28rem,calc(100%-32px))] -translate-x-1/2 rounded-lg bg-white p-4 text-sm text-black shadow"
-    >
-      <p>
-        The Family Zoning Plan timelapse isn't available for dataset {datasetVersion}. It needs
-        simulation data that this dataset doesn't have.
-      </p>
-      <a href="/" class="mt-2 inline-flex min-h-11 items-center font-semibold underline"
-        >Go to the editor</a
-      >
-    </div>
-  {/if}
+        <p>
+          The Family Zoning Plan timelapse isn't available for dataset {datasetVersion}. It needs
+          simulation data that this dataset doesn't have.
+        </p>
+        <a href="/" class="inline-flex min-h-11 items-center font-semibold underline"
+          >Go to the editor</a
+        >
+      </div>
+    {/if}
 
-  {#if phase === 'ready' && calibration && cardChance}
-    <!-- The posted lookups carry no calibration: lever timers rescale durations, not the
-         provenance the card cites, so both cohorts cite the base calibration. -->
-    <ProjectCardPanel
-      state={cardState}
-      {day}
-      {asOf}
-      calibration={{ inFlight: calibration, fresh: calibration }}
-      chance={cardChance}
-      onclose={closeCard}
-      onsource={(id) => dialog?.open(id)}
-    />
-    <ProjectTooltip state={tipState} {day} x={tipAt.x} y={tipAt.y} />
-    <!-- The ready-phase notices sit just above the scrubber. Their height joins the scrubber's
-         in the map inset, --fzp-scrubber-h and --fzp-dock-top, so the card and the header's
-         score details (at any width) always end above them and are never covered. -->
-    <div
-      class="pointer-events-none absolute inset-x-0 z-20 flex flex-col items-center px-4"
-      style:bottom="{scrubberH}px"
-      data-testid="fzp-notices"
-      bind:offsetHeight={noticeH}
-    >
+    {#if phase === 'ready' && calibration && cardChance}
       {@render notices?.()}
-      <div role="status" data-testid="fzp-status" class="max-w-full">
+      <div role="status" data-testid="fzp-status" class="contents">
         {#if stopped}
-          <span
-            class="pointer-events-auto mb-2 flex w-max max-w-full items-center gap-1 rounded-full bg-white py-1 pl-4 text-sm text-black shadow"
-          >
+          <span class={PILL}>
             <span>Part of the simulation stopped.</span>
-            <button
-              type="button"
-              class="min-h-11 min-w-11 rounded-full px-3 font-semibold underline"
-              onclick={() => void retry()}>Retry</button
-            >
+            <button type="button" class={PILL_ACTION} onclick={() => void retry()}>Retry</button>
           </span>
         {:else if rerollBusy}
-          <span
-            class="pointer-events-auto mb-2 block rounded-lg bg-white px-3 py-2 text-sm text-black shadow"
-            >Making another future…</span
-          >
+          <span class="{PILL} pr-4">Making another future…</span>
         {/if}
       </div>
       <!-- Lever notices (/sim): their own polite region, beside the reroll and crash ones. -->
-      <div role="status" data-testid="fzp-lever-status" class="max-w-full">
+      <div role="status" data-testid="fzp-lever-status" class="contents">
         {#if leverStatus.kind === 'resolving' && !stopped}
-          <span
-            class="pointer-events-auto mb-2 block rounded-lg bg-white px-3 py-2 text-sm text-black shadow"
+          <span class="{PILL} pr-4"
             >Updating the simulation for your policy…{leverStatus.total > 0
               ? ` ${formatCount(leverStatus.done)} of ${formatCount(leverStatus.total)} lots`
               : ''}</span
           >
           {#if leverStatus.failedCells.length > 0}
-            <span
-              class="pointer-events-auto mb-2 flex w-max max-w-full items-center gap-1 rounded-lg bg-white py-1 pl-3 text-sm text-black shadow"
-            >
+            <span class={PILL}>
               <span>Some map data didn't load.</span>
-              <button
-                type="button"
-                class="min-h-11 min-w-11 rounded-lg px-3 font-semibold underline"
-                onclick={() => client?.retryChunks()}>Retry</button
+              <button type="button" class={PILL_ACTION} onclick={() => client?.retryChunks()}
+                >Retry</button
               >
             </span>
           {/if}
@@ -1001,68 +1087,96 @@
       <!-- A failed lever revision (/sim only). The alert region is always rendered on /sim (empty
            when not failed), so it stays in the accessibility tree and its message is announced. -->
       {#if levers !== undefined}
-        <div role="alert" data-testid="fzp-lever-failed" class="max-w-full">
+        <div role="alert" data-testid="fzp-lever-failed" class="contents">
           {#if leverFailed}
-            <span
-              class="pointer-events-auto mb-2 flex w-max max-w-full items-center gap-1 rounded-lg bg-white py-1 pl-3 text-sm text-black shadow"
-            >
+            <span class={PILL}>
               <span>Couldn't update the simulation for your policy.</span>
-              <button
-                type="button"
-                class="min-h-11 min-w-11 rounded-lg px-3 font-semibold underline"
-                onclick={() => void retry()}>Retry</button
-              >
+              <button type="button" class={PILL_ACTION} onclick={() => void retry()}>Retry</button>
             </span>
           {/if}
         </div>
       {/if}
       {#if rerollFailed && !stopped}
-        <div
-          role="alert"
-          class="pointer-events-auto mb-2 flex w-max max-w-full items-center gap-1 rounded-lg bg-white py-1 pl-3 text-sm text-black shadow"
-        >
+        <div role="alert" class={PILL}>
           <span>Couldn't make another future. Try again.</span>
           <button
             type="button"
             aria-label="Dismiss"
-            class="min-h-11 min-w-11 rounded-lg px-3 font-semibold"
+            class={PILL_ACTION}
             onclick={() => (rerollFailed = false)}>×</button
           >
         </div>
       {/if}
-    </div>
-    <div class="absolute inset-x-0 bottom-0 z-20">
-      <TimeScrubber
-        {asOf}
-        horizon={HORIZON}
-        bind:day
-        bind:playing
-        bind:speed
-        {markers}
-        setup={runPhase === 'setup' || playWhenCurrent}
-        busy={playWhenCurrent}
-        onrun={onRun}
-        onday={onDay}
-        onheight={(px) => {
-          scrubberH = px;
-          applyInset();
-        }}
+    {/if}
+  </NoticePills>
+
+  <!-- The map and everything positioned over it: the stack above is not part of its box. -->
+  <div bind:this={mapBox} class="relative min-h-0 flex-1">
+    {#if manifest}
+      <SimMap
+        {manifest}
+        {requestParcelSummary}
+        onRetryChunks={() => client?.retryChunks()}
+        onready={onMapReady}
+        {view}
+        timelinePick={onPick}
+        tapCards={cards}
       />
-    </div>
-  {/if}
+    {:else}
+      <div class="h-full" data-testid="fzp-frame"></div>
+    {/if}
 
-  {#if phase !== 'no-scenario'}
-    {@render panel?.()}
-  {/if}
+    {#if phase === 'ready' && calibration && cardChance}
+      <!-- The posted lookups carry no calibration: lever timers rescale durations, not the
+           provenance the card cites, so both cohorts cite the base calibration. -->
+      <ProjectCardPanel
+        state={cardState}
+        {day}
+        {asOf}
+        calibration={{ inFlight: calibration, fresh: calibration }}
+        chance={cardChance}
+        onclose={closeCard}
+        onsource={(id) => dialog?.open(id)}
+        anchor={cardAnchor}
+        allowedBy={cardAllowedBy}
+        onsize={(s) => (cardSize = s)}
+      />
+      <ProjectTooltip state={tipState} {day} x={tipAt.x} y={tipAt.y} />
+      <div class="absolute inset-x-0 bottom-0 z-20">
+        <TimeScrubber
+          {asOf}
+          horizon={HORIZON}
+          bind:day
+          bind:playing
+          bind:speed
+          {markers}
+          setup={runPhase === 'setup' || playWhenCurrent}
+          busy={playWhenCurrent}
+          onrun={onRun}
+          startLabel={runPhase ? 'Today' : undefined}
+          ontoday={() => runPhase === 'run' && onrewind?.()}
+          onday={onDay}
+          onheight={(px) => {
+            scrubberH = px;
+            applyInset();
+          }}
+        />
+      </div>
+    {/if}
 
-  {#if calibration && phase !== 'no-scenario'}
-    <SourcesDialog
-      bind:this={dialog}
-      {calibration}
-      {score}
-      projectsUrl={manifest?.scenarios?.fzp.projects ?? null}
-      {asOf}
-      onopen={() => (playing = false)}
-    />
-  {/if}
+    {#if phase !== 'no-scenario'}
+      {@render panel?.(results)}
+    {/if}
+
+    {#if calibration && phase !== 'no-scenario'}
+      <SourcesDialog
+        bind:this={dialog}
+        {calibration}
+        {score}
+        projectsUrl={manifest?.scenarios?.fzp.projects ?? null}
+        {asOf}
+        onopen={() => (playing = false)}
+      />
+    {/if}
+  </div>
 </div>

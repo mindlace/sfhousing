@@ -111,7 +111,7 @@ interface LocalPlanRecord {
 
 ## Notices
 
-All copy is in `src/lib/sharing/copy.ts`. On `/` a single `role="status"` region (`NoticeStack`) shows N1–N3 and the Remix toast "Remixed from <title or id>. You're editing your own copy." (shown once; the history state is cleared with `replaceState` so a reload does not re-toast).
+All copy is in `src/lib/sharing/copy.ts`. On `/` a single `role="status"` region (`NoticeStack`) shows N1–N3 and the Remix toast "Remixed from <title or id>. You're editing your own copy." (shown once; the history state is cleared with `replaceState` so a reload does not re-toast; a toast dismisses itself after 8 s). Each notice is a pill (`PILL` in `src/lib/shell/pill.ts`) with a Dismiss button. `NoticeStack` has no stack or placement of its own: the page passes it as BrushEditor's `notices` snippet, so its pills sit in BrushEditor's one notice stack (`NoticePills`, `data-testid="fzp-notices"`) after the brush status pill, as on `/sim` (sim-ux spec Goal 8): an overlay at the top centre of the map from 768 px, which moves nothing, and in flow under the header below 768 px.
 
 | id  | where       | when                                                      |
 | --- | ----------- | --------------------------------------------------------- |
@@ -128,7 +128,8 @@ N5 and N6 lines end with **Open with current data**, which runs Remix.
 
 The server load (`src/lib/server/sharing/shared-page.ts`) reads the row from D1 directly (no HTTP self-call), parses it, and picks the dataset to render against with `BUCKET.head` on `data/<version>/manifest.json`.
 
-- Found: read-only map + scoreboard, sticky banner "**<title or 'Untitled plan'>** · Shared plan · published <Mon D, YYYY>" (UTC) with **Remix** and **Start your own**. No brush, undo, Publish or autosave; viewing never reads into or writes the local plan.
+- Found: read-only map, sticky banner "**<title or 'Untitled plan'>** · Shared plan · published <Mon D, YYYY>" (UTC) with **Remix** and **Start your own**. No brush, undo, Publish or autosave; viewing never reads into or writes the local plan.
+- The score and the dock are `/`'s (sim-ux spec Goal 5): the header score (`HeaderScore`, the net homes and the RHNA meter, no "vs FZP" delta) flips the dock to its Results face (`ScoreboardPanel`) and back. The dock opens on a read-only Paint tab: the plan's rows, which list and select (the selected row's outline is drawn), with no tools, no Remove and no undo (Ctrl+Z does nothing); the header's Paint button folds and opens it. The page passes BrushEditor `readOnly`, its own `DockState`, `dockId` and the Results snippet; it has no notices of its own (N5 and N6 are in the banner).
 - **Remix:** if the local plan has ≥ 1 op, a confirm ("Replace your current plan (<n> strokes) …", Replace / Cancel). Then the plan is rebased to the current dataset, written to `localStorage` (title kept, `lastPublished` cleared) and the app goes to `/`. If the write fails, the plan rides along in `history.state`. A corrupt local record is preserved first, as for N1.
 - Bad id or missing row: 404 "Plan not found", link **Start your own plan**, `<meta name="robots" content="noindex">`.
 - Stored body fails to parse (only after a breaking app change): 500 "This plan can't be shown by this version of the app."

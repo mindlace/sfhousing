@@ -6,6 +6,7 @@ import { gridId, gridIndex, gridLngLat, gridRecord } from '$lib/plan/fixtures/gr
 import type {
   ChunksResponse,
   ErrorResponse,
+  OpLotsResult,
   OpStats,
   ParcelSummary,
   ReadyResponse
@@ -441,6 +442,99 @@ describe('(j) parcelSummary', () => {
     await h.flush();
     expect(summary(h, gridId(3, 2))).toMatchObject({ landUse: 'UNKNOWN', eligible: true });
     assertScores(h);
+  });
+});
+
+describe('opLots (sim UX plan 5)', () => {
+  const A = paint('a', 6, [
+    [2, 2],
+    [5, 2]
+  ]);
+  const B = paint('b', 9, [
+    [4, 2],
+    [7, 2]
+  ]);
+  function ask(h: Harness, opIds: string[], outlines = false): OpLotsResult | null {
+    const reqId = h.sent.length + 2000;
+    h.host.handle({ type: 'opLots', reqId, opIds, outlines });
+    const m = h.sent.at(-1)!;
+    if (m.type !== 'opLots' || m.reqId !== reqId) throw new Error('no opLots reply');
+    return m.result;
+  }
+  /** The eligible lots the ops cover, as the plan index sees them (the union). */
+  function expected(ops: PlanOp[]): string[] {
+    const index = gridIndex();
+    const out = new Set<string>();
+    for (const op of ops)
+      for (const id of index.covered(op)) if (index.get(id)!.eligible) out.add(id);
+    return [...out].sort();
+  }
+
+  it('counts the union of the ops eligible covered lots; missing 0 once their chunks are loaded', async () => {
+    const h = makeHarness();
+    start(h);
+    load(h, planOf([A, B]));
+    await h.flush();
+    const want = expected([A, B]);
+    expect(want.length).toBeGreaterThan(0);
+    expect(want.length).toBeLessThan(expected([A]).length + expected([B]).length); // they overlap
+    expect(ask(h, ['a', 'b'])).toEqual({ lots: want.length, missing: 0, outline: null });
+    expect(ask(h, ['a'])).toMatchObject({ lots: expected([A]).length, missing: 0 });
+    assertScores(h);
+  });
+
+  it('reports the ops cells not loaded yet as missing, and counts only loaded lots', async () => {
+    const h = makeHarness({ mode: 'manual' });
+    start(h);
+    load(h, planOf([A, B]));
+    const before = ask(h, ['a', 'b'])!;
+    expect(before.lots).toBe(0);
+    expect(before.missing).toBeGreaterThan(0);
+    h.release('0_0');
+    await h.flush();
+    const mid = ask(h, ['a', 'b'])!;
+    expect(mid.missing).toBeLessThan(before.missing);
+    expect(mid.lots).toBeGreaterThan(0);
+    for (const c of h.fetches.map((f) => f.match(/parcels\/(.+)\.json/)![1]))
+      if (c !== '0_0') {
+        try {
+          h.release(c);
+        } catch {
+          /* already released */
+        }
+      }
+    await h.flush();
+    expect(ask(h, ['a', 'b'])).toMatchObject({ missing: 0 });
+  });
+
+  it('with outlines returns one ring per lot for exactly those lots', async () => {
+    const h = makeHarness();
+    start(h);
+    load(h, planOf([A, B]));
+    await h.flush();
+    const r = ask(h, ['a', 'b'], true)!;
+    const want = expected([A, B]);
+    expect(r.outline).not.toBeNull();
+    expect([...r.outline!.lots].sort()).toEqual(want);
+    expect(r.outline!.ringLot.length).toBe(want.length); // the grid lots have one ring each
+    expect(r.outline!.starts.length).toBe(want.length + 1);
+    expect(r.outline!.positions.length).toBe(2 * r.outline!.starts[want.length]);
+    expect(r.lots).toBe(want.length);
+  });
+
+  it('skips unknown op ids, and counts nothing for none', async () => {
+    const h = makeHarness();
+    start(h);
+    load(h, planOf([A]));
+    await h.flush();
+    expect(ask(h, ['nope', 'a'])).toMatchObject({ lots: expected([A]).length, missing: 0 });
+    expect(ask(h, [])).toEqual({ lots: 0, missing: 0, outline: null });
+  });
+
+  it('before init the answer is result null', () => {
+    const h = makeHarness();
+    expect(ask(h, ['a'])).toBeNull();
+    expect(ask(h, ['a'], true)).toBeNull();
   });
 });
 

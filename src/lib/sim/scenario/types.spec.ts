@@ -13,7 +13,9 @@ import type { LeverLookups } from '../levers/apply';
 import type { BrushCatalog, BrushQuery } from '../levers/brushes';
 import type { LeverCapacity } from '../levers/resolve';
 import type { StageScale } from '../levers/timers';
+import type { LimitOwner } from '../levers/source';
 import type { SimLevers } from '../levers/types';
+import type { LotOutlines } from '../outlines';
 import type { PlaybackRequest } from '../lesscars/types';
 import type * as Protocol from '../protocol';
 import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev, SimRequest } from '../protocol';
@@ -103,23 +105,22 @@ type RowScenarioRequest =
   | { type: 'resolveBrush'; reqId: number; query: BrushQuery } // plan 3 Task 5
   | { type: 'brushCatalog'; reqId: number }
   | { type: 'lotOutlines'; reqId: number; lots: ParcelId[] }
-  | { type: 'previewBuildings'; reqId: number; lots: ParcelId[]; stories?: number } // Task 6
-  | { type: 'heightLids'; reqId: number; bbox: [number, number, number, number] }; // height lids Task 8
+  | { type: 'previewBuildings'; reqId: number; lots: ParcelId[]; stories: number } // Task 6
+  | { type: 'heightLids'; reqId: number; bbox: [number, number, number, number] } // height lids Task 8
+  | { type: 'lotAt'; reqId: number; point: [number, number] }; // sim UX plan 4 Task 3
+type RowLotAtResult =
+  | { ok: true; parcelId: ParcelId | null; owner: LimitOwner | null }
+  | { ok: false; reason: 'no-session'; message: string };
 type RowHeightLidsResult =
   | { ok: true; lids: HeightLids; missing: number }
   | { ok: false; reason: 'no-session' | 'superseded' | 'too-large'; message: string };
 type RowPreviewResult =
   | { ok: true; pack: PackedCell | null; built: number; missing: number }
   | { ok: false; reason: 'no-session'; message: string };
+// `LotOutlines` is { lots: ParcelId[]; ringLot: Uint32Array; starts: Uint32Array;
+// positions: Float64Array } (sim/outlines.ts), shared with the editor's `opLots`.
 type RowLotOutlinesResult =
-  | {
-      ok: true;
-      lots: ParcelId[];
-      ringLot: Uint32Array;
-      starts: Uint32Array;
-      positions: Float64Array;
-      missing: number;
-    }
+  | (LotOutlines & { ok: true; missing: number })
   | { ok: false; reason: 'no-session'; message: string };
 type RowBrushLotsResult =
   | { ok: true; lots: ParcelId[]; points: Float64Array }
@@ -149,6 +150,7 @@ type RowScenarioResponse =
   | { type: 'previewBuildings'; reqId: number; result: RowPreviewResult }
   | { type: 'heights'; rev: Rev; city: HeightCity } // height lids Task 8
   | { type: 'heightLids'; reqId: number; result: RowHeightLidsResult }
+  | { type: 'lotAt'; reqId: number; result: RowLotAtResult }
   | {
       type: 'levers';
       rev: Rev;

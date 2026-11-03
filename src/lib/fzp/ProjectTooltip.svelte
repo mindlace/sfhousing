@@ -1,7 +1,9 @@
 <!--
   The hover tooltip over a timeline project (spec §4.8): non-interactive, same markup as
-  SimMap's tooltip (`role="tooltip"`, `sim-map-panel`). It renders a `SummaryState`; FzpMode owns
-  the request. `x`/`y` are the pointer position inside the map region, in CSS pixels.
+  SimMap's tooltip (`role="tooltip"`, `sim-map-panel`), on the surface and ink tokens of the colour
+  scheme (the --map-* custom properties live on .sim-map, which this is not inside). It renders a
+  `SummaryState`; FzpMode owns the request. `x`/`y` are the pointer position inside the map
+  region, in CSS pixels.
 -->
 <script lang="ts">
   import { formatCount } from '$lib/scoreboard/format';
@@ -58,20 +60,10 @@
     bind:this={tip}
     bind:offsetWidth={tw}
     bind:offsetHeight={th}
-    class="sim-map-panel pointer-events-none absolute z-20 max-w-xs rounded-md px-3 py-2 text-xs"
+    class="sim-map-panel pointer-events-none absolute z-20 max-w-xs rounded-md border border-control-line bg-surface px-3 py-2 text-xs text-ink shadow dark:border-control-line-dark dark:bg-surface-dark dark:text-ink-dark"
     style="left: {pos.left}px; top: {pos.top}px"
   >
     <p class="font-semibold">{lines[0]}</p>
     {#if lines[1]}<p>{lines[1]}</p>{/if}
   </div>
 {/if}
-
-<style>
-  /* SimMap's panel look. The --map-* tokens live on .sim-map, which this is not inside. */
-  .sim-map-panel {
-    background: var(--map-land, #fff);
-    color: var(--map-label, #111);
-    border: 1px solid var(--map-existing, #6b7280);
-    box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
-  }
-</style>

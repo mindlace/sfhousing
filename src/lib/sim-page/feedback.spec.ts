@@ -1,20 +1,9 @@
-// Paint feedback (map overlays plan 2, Task 6): the fade curve, the layer's lifetime, the rule
-// trigger and the nearest-first lot pick.
+// The live preview's layer on /sim (sim-ux plan 3, Task 4): full strength while painting, a fade
+// on release, and the nearest-first lot pick.
 import { describe, expect, it } from 'vitest';
 import type { Layer } from '@deck.gl/core';
-import type { LeverCapacity } from '$lib/sim/levers/resolve';
-import type { LeverLookups } from '$lib/sim/levers/apply';
 import type { PackedCell } from '$lib/map/types';
-import {
-  FEEDBACK_FADE_MS,
-  FEEDBACK_HOLD_MS,
-  PaintFeedback,
-  RuleFeedbackTrigger,
-  feedbackOpacity,
-  lotsInView,
-  mergeLots
-} from './feedback';
-import type { LeverStatus } from './lever-status';
+import { FEEDBACK_FADE_MS, PaintFeedback, lotsInView } from './feedback';
 
 const PACK_A = { cellId: 'preview', parcelIds: ['a'] } as unknown as PackedCell;
 const PACK_B = { cellId: 'preview', parcelIds: ['b'] } as unknown as PackedCell;
@@ -55,94 +44,96 @@ function harness(reduced = false) {
         for (const [, cb] of due) cb();
       }
     },
-    lastLayers: () => sets.at(-1),
-    lastPack: () => sets.at(-1)?.[0]?.pack
+    lastLayers: () => sets.at(-1)
   };
 }
 
-const current = (rev: number): LeverStatus => ({
-  kind: 'current',
-  rev,
-  lookups: {} as LeverLookups,
-  capacity: {} as LeverCapacity
-});
-
-describe('feedbackOpacity', () => {
-  it('holds, fades and removes', () => {
-    expect(feedbackOpacity(0, false)).toBe(1);
-    expect(feedbackOpacity(FEEDBACK_HOLD_MS, false)).toBe(1);
-    expect(feedbackOpacity(FEEDBACK_HOLD_MS + FEEDBACK_FADE_MS / 2, false)).toBeCloseTo(0.5, 6);
-    expect(feedbackOpacity(FEEDBACK_HOLD_MS + FEEDBACK_FADE_MS, false)).toBeNull();
-    expect(feedbackOpacity(FEEDBACK_HOLD_MS + 1, true)).toBe(1);
-    expect(feedbackOpacity(FEEDBACK_HOLD_MS + FEEDBACK_FADE_MS, true)).toBeNull();
-  });
-});
-
 describe('PaintFeedback', () => {
-  it('a new show replaces the old; the layer is cleared at the end', () => {
+  it('live shows one layer at full strength with no frame loop; a new live replaces it', () => {
     const f = harness();
-    f.fb.show(PACK_A);
-    f.tick(300);
-    f.fb.show(PACK_B);
-    expect(f.lastPack()).toBe(PACK_B);
-    f.tick(FEEDBACK_HOLD_MS + FEEDBACK_FADE_MS);
-    expect(f.lastLayers()).toEqual([]);
-    expect(f.frames()).toBe(0);
-  });
-
-  it('fades through the layer opacity, ids sim-feedback-<n>', () => {
-    const f = harness();
-    f.fb.show(PACK_A);
-    expect(f.lastLayers()).toEqual([{ id: 'sim-feedback-1', pack: PACK_A, opacity: 1 }]);
-    f.tick(FEEDBACK_HOLD_MS + FEEDBACK_FADE_MS / 2);
-    const o = f.lastLayers()![0].opacity;
-    expect(o).toBeGreaterThan(0.4);
-    expect(o).toBeLessThan(0.6);
-    f.fb.show(PACK_B);
-    expect(f.lastLayers()![0].id).toBe('sim-feedback-2');
-  });
-
-  it('under reduced motion: one full-strength layer, then cleared', () => {
-    const f = harness(true);
-    f.fb.show(PACK_A);
-    f.tick(FEEDBACK_HOLD_MS + FEEDBACK_FADE_MS - 20);
+    expect(f.fb.state).toBe('none');
+    f.fb.live(PACK_A);
+    expect(f.fb.state).toBe('live');
     expect(f.sets).toEqual([[{ id: 'sim-feedback-1', pack: PACK_A, opacity: 1 }]]);
-    f.tick(40);
+    expect(f.frames()).toBe(0);
+    f.tick(5000); // no timer: it stays until released
+    expect(f.sets).toHaveLength(1);
+    f.fb.live(PACK_B);
+    expect(f.lastLayers()).toEqual([{ id: 'sim-feedback-2', pack: PACK_B, opacity: 1 }]);
+    f.fb.live(null);
     expect(f.lastLayers()).toEqual([]);
+    expect(f.fb.state).toBe('none');
   });
 
-  it('show(null) and destroy clear at once', () => {
+  it('release fades the opacity linearly, removing the layer at FEEDBACK_FADE_MS', () => {
     const f = harness();
-    f.fb.show(PACK_A);
-    f.fb.show(null);
+    f.fb.live(PACK_A);
+    f.fb.release();
+    expect(f.fb.state).toBe('fading');
+    f.tick(FEEDBACK_FADE_MS / 4);
+    expect(f.lastLayers()![0].opacity).toBeCloseTo(0.75, 1);
+    expect(f.lastLayers()![0].id).toBe('sim-feedback-1');
+    f.tick(FEEDBACK_FADE_MS / 4);
+    expect(f.lastLayers()![0].opacity).toBeCloseTo(0.5, 1);
+    const opacities = f.sets.map((l) => l[0].opacity);
+    expect(opacities).toEqual([...opacities].sort((a, b) => b - a));
+    f.tick(FEEDBACK_FADE_MS / 2);
     expect(f.lastLayers()).toEqual([]);
+    expect(f.fb.state).toBe('none');
     expect(f.frames()).toBe(0);
-    f.fb.show(PACK_B);
+  });
+
+  it('release under reduced motion clears at once', () => {
+    const f = harness(true);
+    f.fb.live(PACK_A);
+    f.fb.release();
+    expect(f.lastLayers()).toEqual([]);
+    expect(f.fb.state).toBe('none');
+    expect(f.frames()).toBe(0);
+  });
+
+  it('live during a fade stops it; release with nothing live does nothing', () => {
+    const f = harness();
+    f.fb.release();
+    expect(f.sets).toEqual([]);
+    expect(f.fb.state).toBe('none');
+    f.fb.live(PACK_A);
+    f.fb.release();
+    f.tick(300);
+    f.fb.live(PACK_B);
+    expect(f.fb.state).toBe('live');
+    expect(f.frames()).toBe(0);
+    expect(f.lastLayers()).toEqual([{ id: 'sim-feedback-2', pack: PACK_B, opacity: 1 }]);
+    f.tick(FEEDBACK_FADE_MS * 2);
+    expect(f.lastLayers()).toEqual([{ id: 'sim-feedback-2', pack: PACK_B, opacity: 1 }]);
+  });
+
+  it('a second release keeps the fade going from where it was', () => {
+    const f = harness();
+    f.fb.live(PACK_A);
+    f.fb.release();
+    f.tick(FEEDBACK_FADE_MS / 2);
+    f.fb.release();
+    f.tick(FEEDBACK_FADE_MS / 2);
+    expect(f.lastLayers()).toEqual([]);
+    expect(f.fb.state).toBe('none');
+  });
+
+  it('clear and destroy clear at once', () => {
+    const f = harness();
+    f.fb.live(PACK_A);
+    f.fb.release();
+    f.tick(100);
+    f.fb.clear();
+    expect(f.lastLayers()).toEqual([]);
+    expect(f.fb.state).toBe('none');
+    expect(f.frames()).toBe(0);
+    f.fb.live(PACK_B);
     f.fb.destroy();
     expect(f.lastLayers()).toEqual([]);
-    f.fb.show(PACK_A); // ignored after destroy
+    f.fb.live(PACK_A); // ignored after destroy
     expect(f.lastLayers()).toEqual([]);
-  });
-});
-
-describe('RuleFeedbackTrigger', () => {
-  it('the rule trigger fires once, on a current above the save', () => {
-    const t = new RuleFeedbackTrigger();
-    t.status({ kind: 'resolving', rev: 4, done: 0, total: 0, failedCells: [] });
-    t.saved('r1');
-    expect(t.status(current(4))).toBeNull(); // the revision sent before the save
-    t.status({ kind: 'resolving', rev: 5, done: 0, total: 0, failedCells: [] });
-    expect(t.status(current(5))).toBe('r1');
-    expect(t.status(current(6))).toBeNull();
-  });
-
-  it('reset disarms; off is ignored', () => {
-    const t = new RuleFeedbackTrigger();
-    t.status(current(2));
-    t.saved('r1');
-    expect(t.status({ kind: 'off' })).toBeNull();
-    t.reset();
-    expect(t.status(current(3))).toBeNull();
+    expect(f.fb.state).toBe('none');
   });
 });
 
@@ -158,18 +149,5 @@ describe('lotsInView', () => {
       'c',
       'b'
     ]);
-  });
-});
-
-describe('mergeLots', () => {
-  it('each lot once with its point; failed and unknown results skipped', () => {
-    const m = mergeLots([
-      { ok: true, lots: ['a', 'b'], points: new Float64Array([1, 2, 3, 4]) },
-      undefined,
-      { ok: false, reason: 'data-missing', message: 'x' },
-      { ok: true, lots: ['b', 'c'], points: new Float64Array([9, 9, 5, 6]) }
-    ]);
-    expect(m.lots).toEqual(['a', 'b', 'c']);
-    expect([...m.points]).toEqual([1, 2, 3, 4, 5, 6]);
   });
 });

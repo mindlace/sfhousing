@@ -52,11 +52,15 @@ export class BrushState {
   #setTimeout: typeof setTimeout;
   #clearTimeout: typeof clearTimeout;
 
-  /** Ruling R14: city phase > transient announcement > loading parcels > zoom hint. */
+  /**
+   * The visible status line (ruling R14's order): city phase > loading parcels > zoom hint. The
+   * transient `announcement` (a stroke's result, an undo) is not part of it: it goes to a
+   * screen-reader-only status of its own, as on /sim, so a stroke never shows (and then hides) a
+   * line that moves the map.
+   */
   readonly statusText: string = $derived.by(() => {
     if (this.phase === 'loading') return MSG.loadingCity;
     if (this.phase === 'failed') return MSG.cityFailed;
-    if (this.#announcement) return this.#announcement;
     if (this.loadingParcels) return MSG.loadingParcels;
     if (this.zoomHint) return MSG.zoomIn;
     return '';

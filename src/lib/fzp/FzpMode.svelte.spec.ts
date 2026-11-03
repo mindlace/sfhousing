@@ -11,7 +11,6 @@ import type { TimelinePick } from '$lib/map/types';
 import type { LeverLookups } from '$lib/sim/levers/apply';
 import { DEFAULT_LEVERS, type SimLevers } from '$lib/sim/levers/types';
 import type { ParcelSummary, ProjectCard } from '$lib/sim/protocol';
-import type { LeverStatus } from '$lib/sim-page/lever-status';
 import type { SimPhase } from '$lib/sim-page/run-phase.svelte';
 import { chanceTable, typicalMonths } from '$lib/timelapse/model';
 import type { Calibration } from '$lib/timelapse/types';
@@ -19,11 +18,14 @@ import { HIDDEN_VIEW, type ViewPrefs } from '$lib/view/prefs';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import { fixtureCalibration } from './fixtures/calibration';
 import { REAL_ACTUAL, SIMULATED } from './fixtures/cards';
+import { formatCount } from '$lib/scoreboard/format';
+import { meterValueText } from '$lib/scoreboard/view';
 import { TIMELINE_SCORE } from './fixtures/timeline-score';
 import { FakeScenarioWorker, timelineMsg } from './test/fake-worker';
 import FzpModeHost from './test/FzpModeHost.svelte';
 import { callsOf, stub } from './test/sim-map-stub';
-import { HORIZON, dayFromUtc } from './time';
+import { scoreAt, vsFzpText } from './score-view';
+import { HORIZON, dayFromUtc, monthIndex } from './time';
 
 vi.mock('$lib/map/SimMap.svelte', () => import('./test/FzpSimMapStub.svelte'));
 
@@ -55,13 +57,18 @@ type Over = Partial<{
   urlSeed: number | null;
   reload: () => Promise<{ manifest: Manifest; calibration: Calibration }>;
   levers: SimLevers;
-  onlevers: (s: LeverStatus) => void;
   onheights: (c: HeightCity) => void;
   actions: Snippet;
   runPhase: SimPhase;
   onrun: () => void;
+  onrewind: () => void;
   leversPending: boolean;
   view: ViewPrefs;
+  scoreExpanded: boolean;
+  onscore: () => void;
+  scoreControls: string;
+  bottomExtra: number;
+  cards: boolean;
 }>;
 
 function setup(over: Over = {}) {
@@ -108,14 +115,27 @@ const statusText = () =>
 /** The header's score bar (the pinned slot). */
 const scoreButton = () =>
   page.getByTestId('header-pinned').getByRole('button', { name: /homes added|Simulating/ });
-/** Opens the score details from the score bar (once) and returns them. */
+/**
+ * Shows the Results face from the header score (once), with its Sources disclosure open, and
+ * returns it: the host stands in for the page's dock, showing FzpMode's Results snippet in a
+ * region named Results while expanded.
+ */
 async function details() {
   const b = scoreButton();
   await expect.element(b).toBeInTheDocument();
   if (b.element().getAttribute('aria-expanded') !== 'true') await b.click();
-  return page.getByRole('region', { name: 'Score details' });
+  const region = page.getByRole('region', { name: 'Results' });
+  await expect.element(region).toBeInTheDocument();
+  // The future's controls and "Where these numbers come from" sit in the Sources disclosure.
+  const sources = region.getByTestId('fzp-sources').element() as HTMLDetailsElement;
+  sources.open = true;
+  return region;
 }
-const futureLine = async () => (await details()).getByText(/^This future: #/).first();
+/** The shown future as the Results face states it ("This future: #7 (representative)"). */
+const future = () => {
+  const d = window.__sfhFzp!;
+  return `This future: #${d.seed}${d.representative ? ' (representative)' : ''}`;
+};
 const card = () => page.getByRole('region', { name: /1234 Mission St|Block 3512|Project details/ });
 
 /** The latest scenario request's rev on the current worker. */
@@ -168,6 +188,7 @@ beforeEach(async () => {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe('FzpMode loading and lookups', () => {
@@ -448,6 +469,13 @@ describe('FzpMode failures and Retry', () => {
 });
 
 describe('FzpMode header score bar', () => {
+  /** A ready session. */
+  async function ready(over: Over = {}) {
+    const s = setup(over);
+    await toReady(s);
+    return s;
+  }
+
   it('renders no scoreboard region; the header pinned slot holds the score bar', async () => {
     const s = setup();
     await expect.element(scoreButton()).toHaveTextContent('Simulating…');
@@ -455,26 +483,80 @@ describe('FzpMode header score bar', () => {
     expect(document.querySelector('[aria-label="Simulation scoreboard"]')).toBeNull();
     await expect.element(scoreButton()).toHaveTextContent(/^[\d,]+ homes added$/);
     await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'false');
-    const board = await details();
-    await expect.element(board.getByTestId('fzp-net')).toBeVisible();
     await expect
       .element(page.getByTestId('header-actions').getByRole('button', { name: 'Another future' }))
       .toBeVisible();
   });
+
+  it('shows the total at the scrubbed day, with the RHNA bar', async () => {
+    await ready();
+    const at = scoreAt(TIMELINE_SCORE, 0);
+    await expect.element(scoreButton()).toHaveTextContent(`${formatCount(at.total)} homes added`);
+    await expect
+      .element(page.getByTestId('header-pinned').getByRole('meter'))
+      .toHaveAttribute('aria-valuetext', meterValueText(at.targets[0].tp));
+  });
+
+  it('aria-expanded follows scoreExpanded, and a click calls onscore', async () => {
+    const onscore = vi.fn();
+    const s = await ready({ onscore, scoreControls: 'dock' });
+    await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'false');
+    await expect.element(scoreButton()).toHaveAttribute('aria-controls', 'dock');
+    await (await s.r).rerender({ scoreExpanded: true });
+    await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'true');
+    await scoreButton().click();
+    expect(onscore).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows no delta in Setup', async () => {
+    await ready({ runPhase: 'setup', levers: { ...DEFAULT_LEVERS, compare: 'fzp' } });
+    expect(page.getByTestId('score-delta').elements()).toEqual([]);
+  });
+
+  it("shows the timeline's plan effect at the day in a run that compares with the FZP", async () => {
+    await ready({ runPhase: 'run', levers: { ...DEFAULT_LEVERS, compare: 'fzp' } });
+    const shownIndex = () =>
+      monthIndex(
+        Number((slider().element() as HTMLInputElement).value),
+        TIMELINE_SCORE.months[0],
+        TIMELINE_SCORE.months.length
+      );
+    const delta = () => vsFzpText(scoreAt(TIMELINE_SCORE, shownIndex()).planCompleted!);
+    await expect.element(page.getByTestId('score-delta')).toHaveTextContent(delta());
+    // Scrub forward: the delta follows the day.
+    await press('{PageUp}');
+    expect(shownIndex()).toBeGreaterThan(0);
+    await expect.element(page.getByTestId('score-delta')).toHaveTextContent(delta());
+  });
+
+  it('shows no delta in a run on the default policy (it compares with the old zoning)', async () => {
+    await ready({ runPhase: 'run', levers: DEFAULT_LEVERS });
+    expect(page.getByTestId('score-delta').elements()).toEqual([]);
+  });
+
+  it('shows no delta without levers (/fzp)', async () => {
+    await ready();
+    expect(page.getByTestId('score-delta').elements()).toEqual([]);
+  });
 });
 
 describe('FzpMode on /sim: header actions and score copy', () => {
-  it('renders the page actions first in the header, and names your policy in the details', async () => {
+  it('renders the page actions first in the header', async () => {
     const actions = createRawSnippet(() => ({
       render: () => '<button type="button">Policy</button>'
     }));
-    // a customised policy: compared with the Family Zoning Plan as written
     const s = setup({ levers: { ...DEFAULT_LEVERS, compare: 'fzp' }, actions });
     await toReady(s);
     const names = [...page.getByTestId('header-actions').element().querySelectorAll('button')].map(
       (b) => b.textContent?.trim()
     );
     expect(names).toEqual(['Policy', 'Another future']);
+  });
+
+  it('names your policy in the details of a customised policy', async () => {
+    // a customised policy: compared with the Family Zoning Plan as written
+    const s = setup({ levers: { ...DEFAULT_LEVERS, compare: 'fzp' } });
+    await toReady(s);
     const board = await details();
     await expect.element(board.getByText('What your policy added')).toBeVisible();
   });
@@ -495,14 +577,21 @@ describe('FzpMode on /sim: header actions and score copy', () => {
 });
 
 describe('FzpMode rerolls and the representative flag', () => {
+  beforeEach(() => {
+    vi.stubEnv('VITE_E2E', '1'); // the debug hook reports the shown future
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("'Another future' keeps the play state", async () => {
     const s = setup();
     await toReady(s, 7);
     await page.getByRole('button', { name: 'Play', exact: true }).click();
     await another().click();
     s.w().emit(timelineMsg(s.w().lastOf('reroll')!.rev, 8));
-    await expect.element(await futureLine()).toHaveTextContent(/^This future: #8$/);
-    await expect.element(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+    await expect.poll(future).toBe('This future: #8');
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('a failed-reroll notice does not come back after a crash Retry', async () => {
@@ -530,7 +619,7 @@ describe('FzpMode rerolls and the representative flag', () => {
     await expect.poll(() => s.w()?.lastOf('initScenario')).toBeTruthy();
     await expect.element(another()).toBeDisabled();
     await toReady(s, 7);
-    await expect.element(await futureLine()).toHaveTextContent('This future: #7 (representative)');
+    await expect.poll(future).toBe('This future: #7 (representative)');
     await press('{PageUp}');
     const day = Number((slider().element() as HTMLInputElement).value);
 
@@ -545,7 +634,7 @@ describe('FzpMode rerolls and the representative flag', () => {
 
     const applied = callsOf('applyTimeline').length;
     s.w().emit(timelineMsg(reroll.rev, 4242));
-    await expect.element(await futureLine()).toHaveTextContent(/^This future: #4242$/);
+    await expect.poll(future).toBe('This future: #4242');
     expect(s.onurlseed.mock.calls).toEqual([[4242]]);
     expect(Number((slider().element() as HTMLInputElement).value)).toBe(day);
     await expect.element(another()).toBeEnabled();
@@ -554,13 +643,13 @@ describe('FzpMode rerolls and the representative flag', () => {
     // A late answer to the first scenario rev is stale: dropped.
     s.w().emit(timelineMsg(reroll.rev - 1, 7, { revision: 1 }));
     expect(callsOf('applyTimeline').length).toBe(applied + 1);
-    await expect.element(await futureLine()).toHaveTextContent(/^This future: #4242$/);
+    await expect.poll(future).toBe('This future: #4242');
   });
 
   it("'Back to the representative future' sends reroll null and clears the URL seed", async () => {
     const s = setup({ urlSeed: 5 });
     await toReady(s, 5);
-    await expect.element(await futureLine()).toHaveTextContent(/^This future: #5$/);
+    await expect.poll(future).toBe('This future: #5');
     await (
       await details()
     )
@@ -570,7 +659,7 @@ describe('FzpMode rerolls and the representative flag', () => {
     const reroll = s.w().lastOf('reroll')!;
     expect(reroll.seed).toBeNull();
     s.w().emit(timelineMsg(reroll.rev, 31));
-    await expect.element(await futureLine()).toHaveTextContent('This future: #31 (representative)');
+    await expect.poll(future).toBe('This future: #31 (representative)');
     expect(s.onurlseed.mock.calls).toEqual([[null]]);
   });
 
@@ -607,7 +696,7 @@ describe('FzpMode rerolls and the representative flag', () => {
     const r = s.w().lastOf('reroll')!;
     expect(r.seed).toBe(7);
     s.w().emit(timelineMsg(r.rev, 7));
-    await expect.element(await futureLine()).toHaveTextContent('This future: #7 (representative)');
+    await expect.poll(future).toBe('This future: #7 (representative)');
     expect(s.onurlseed).not.toHaveBeenCalled();
   });
 
@@ -620,13 +709,13 @@ describe('FzpMode rerolls and the representative flag', () => {
     await expect.poll(() => s.workers.length).toBe(2);
     await expect.poll(() => s.w().lastOf('initScenario')).toBeTruthy();
     s.w().emit(timelineMsg(lastRev(s.w()), 7));
-    await expect.element(await futureLine()).toHaveTextContent('This future: #7 (representative)');
+    await expect.poll(future).toBe('This future: #7 (representative)');
     await unmount(s);
 
     stub.reset();
     const t = setup({ urlSeed: 5 });
     await toReady(t, 5);
-    await expect.element(await futureLine()).toHaveTextContent(/^This future: #5$/);
+    await expect.poll(future).toBe('This future: #5');
   });
 
   it('a reroll error in ready keeps the shown future and shows a dismissible notice', async () => {
@@ -639,7 +728,7 @@ describe('FzpMode rerolls and the representative flag', () => {
     await expect
       .element(page.getByRole('alert'))
       .toHaveTextContent("Couldn't make another future. Try again.");
-    await expect.element(await futureLine()).toHaveTextContent('This future: #7 (representative)');
+    await expect.poll(future).toBe('This future: #7 (representative)');
     await expect.element(slider()).toBeInTheDocument();
     await expect.element(another()).toBeEnabled();
     expect(err).toHaveBeenCalledTimes(1);
@@ -688,6 +777,80 @@ describe('FzpMode picks and summaries', () => {
     pick({ projectId: null, kind: 'tap' });
     await expect.poll(() => card().elements().length).toBe(0);
     await expect.poll(() => page.getByRole('tooltip').elements().length).toBe(0);
+  });
+
+  describe('the card follows its building', () => {
+    const cardLeft = () =>
+      getComputedStyle(page.getByRole('region', { name: /1234 Mission St/ }).element()).left;
+    const pan = (dx: number) => {
+      // Moving the view east by `dx` px moves a building west of it: bounds shift the other way.
+      stub.map.bounds = [
+        stub.map.bounds[0] + dx * 1e-5,
+        stub.map.bounds[1],
+        stub.map.bounds[2] + dx * 1e-5,
+        stub.map.bounds[3]
+      ];
+      stub.map.fire('move');
+    };
+
+    it('re-places the card on map move, clamps when the building leaves, and never closes it', async () => {
+      const s = setup();
+      await toReady(s);
+      pick({ projectId: 'pr-1', parcelId: 'p1', x: 300, y: 300, kind: 'tap' });
+      await answerLastSummary(s.w(), summary(REAL_ACTUAL));
+      await expect.element(page.getByTestId('card-badge')).toBeVisible();
+      // Right of the click by the gap (no dock in this host).
+      await expect.poll(cardLeft).toBe('316px');
+
+      pan(-100); // the view moves west: the building goes 100 px east on screen
+      await expect.poll(cardLeft).toBe('416px');
+
+      pan(2000); // the building is far off the map's left edge: clamped, and the card stays
+      await expect.poll(cardLeft).toBe('8px');
+      await expect.element(page.getByTestId('card-badge')).toBeVisible();
+    });
+
+    it('listens to move only while a card is open', async () => {
+      const s = setup();
+      await toReady(s);
+      expect(stub.map.listenerCount('move')).toBe(0);
+      pick({ projectId: 'pr-1', parcelId: 'p1', x: 300, y: 300, kind: 'tap' });
+      await answerLastSummary(s.w(), summary(REAL_ACTUAL));
+      await expect.poll(() => stub.map.listenerCount('move')).toBe(1);
+      pick({ projectId: null, kind: 'tap' });
+      await expect.poll(() => stub.map.listenerCount('move')).toBe(0);
+    });
+  });
+
+  it('with cards off a tap opens no card; hover tooltips still show', async () => {
+    const s = setup({ cards: false });
+    await toReady(s);
+    // SimMap's own tap cards (a touch tap on a building) go with them.
+    expect(stub.props.tapCards).toBe(false);
+    pick({ projectId: 'pr-1', parcelId: 'p1', x: 10, y: 10, kind: 'tap' });
+    await new Promise((res) => setTimeout(res, 50));
+    expect(s.w().lastSummary()).toBeUndefined();
+    expect(card().elements()).toEqual([]);
+    pick({ projectId: 'pr-1', parcelId: 'p1', x: 40, y: 50, kind: 'hover' });
+    await answerLastSummary(s.w(), summary(REAL_ACTUAL));
+    await expect.element(page.getByRole('tooltip')).toHaveTextContent('1234 Mission St');
+    // A tap leaves the tooltip of the hover before it alone.
+    pick({ projectId: 'pr-1', parcelId: 'p1', x: 40, y: 50, kind: 'tap' });
+    await new Promise((res) => setTimeout(res, 50));
+    await expect.element(page.getByRole('tooltip')).toBeVisible();
+    expect(card().elements()).toEqual([]);
+  });
+
+  it('turning cards off closes an open card', async () => {
+    const s = setup();
+    await toReady(s);
+    pick({ projectId: 'pr-1', parcelId: 'p1', x: 10, y: 10, kind: 'tap' });
+    await answerLastSummary(s.w(), summary(REAL_ACTUAL));
+    await expect.element(page.getByTestId('card-badge')).toBeVisible();
+    expect(stub.props.tapCards).toBe(true);
+    await (await s.r).rerender({ cards: false });
+    await expect.poll(() => card().elements().length).toBe(0);
+    expect(stub.props.tapCards).toBe(false);
   });
 
   it('requestParcelSummary sends the scrubbed day without projectId and drops generated', async () => {
@@ -803,11 +966,11 @@ describe('FzpMode map, layout and lifecycle', () => {
     await toReady(s);
     const play = page.getByRole('button', { name: 'Play', exact: true });
     await play.click();
-    await expect.element(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'true');
     pick({ projectId: 'pr-1', parcelId: 'p1', x: 10, y: 10, kind: 'tap' });
     await answerLastSummary(s.w(), summary(REAL_ACTUAL));
     await expect.element(page.getByTestId('card-badge')).toBeVisible();
-    await expect.element(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'true');
     (
       (await details())
         .getByRole('button', { name: 'Where these numbers come from' })
@@ -815,7 +978,7 @@ describe('FzpMode map, layout and lifecycle', () => {
         .element() as HTMLElement
     ).click();
     await expect.element(page.getByRole('dialog')).toBeVisible();
-    await expect.element(page.getByTestId('fzp-play-label')).toHaveTextContent(/^Play$/);
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('sets the map inset from the scrubber and --fzp-scrubber-h on its root', async () => {
@@ -829,113 +992,147 @@ describe('FzpMode map, layout and lifecycle', () => {
     expect(root.style.getPropertyValue('--fzp-scrubber-h')).toBe(`${h}px`);
   });
 
-  it.each([375, 768, 900, 1000, 1280])(
-    'at %i px the notices never cover the card or the score panel',
-    async (width) => {
-      vi.spyOn(console, 'error').mockImplementation(() => {});
-      await page.viewport(width, 800);
-      // SimMap's contract (docs/dev/map-interfaces.md): the controls' top includes the inset.
-      const syncControls = () => {
-        const inset = callsOf('setBottomInset').at(-1)?.[0] ?? 0;
-        document.documentElement.style.setProperty('--map-controls-br-block-size', `${inset}px`);
-      };
-      try {
-        const s = setup();
-        await toReady(s);
-        await details();
-        pick({ projectId: 'pr-1', parcelId: 'p1', x: 10, y: 10, kind: 'tap' });
-        await answerLastSummary(s.w(), summary(REAL_ACTUAL));
-        await expect.element(page.getByTestId('card-badge')).toBeVisible();
+  /** A ready /sim page (levers set) and its worker and map-stub call recorder. */
+  async function readyFzp(over: Over = {}) {
+    const s = setup({ levers: DEFAULT_LEVERS, ...over });
+    await toReady(s);
+    return { s, w: s.w(), map: { callsOf } };
+  }
 
-        const rect = (el: Element) => el.getBoundingClientRect();
-        const overlaps = (a: DOMRect, b: DOMRect) =>
-          a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-        /** The card and the score details (open), under the header. */
-        const covered = () =>
-          [card().element(), ...document.querySelectorAll('[data-testid="score-details"]')]
-            .filter((el) => (el as HTMLElement).offsetParent !== null)
-            .map(rect);
-        const check = async (notice: () => Element) => {
-          await expect.poll(() => rect(notice()).height).toBeGreaterThan(0);
-          await expect
-            .poll(() => {
-              syncControls();
-              return covered().filter((r) => overlaps(rect(notice()), r)).length;
-            })
-            .toBe(0);
-          expect(covered().length).toBeGreaterThanOrEqual(2);
-        };
+  it('a lever notice shows at the top and changes neither --fzp-scrubber-h nor the map inset', async () => {
+    await page.viewport(1024, 768);
+    const { s, w, map } = await readyFzp();
+    await (await s.r).rerender({ levers: { ...DEFAULT_LEVERS, compare: 'fzp' } });
+    await expect.poll(() => w.allOf('setLevers').length).toBe(1);
+    const root = document.querySelector<HTMLElement>('.sfh-fzp')!;
+    const before = root.style.getPropertyValue('--fzp-scrubber-h');
+    const insets = map.callsOf('setBottomInset').length;
+    const scrubberTop = page.getByTestId('fzp-scrubber').element().getBoundingClientRect().top;
+    w.emit({
+      type: 'levers',
+      rev: w.lastOf('setLevers')!.rev,
+      phase: 'resolving',
+      done: 1,
+      total: 9,
+      failedCells: ['c1']
+    });
+    await expect.element(page.getByText(/Updating the simulation for your policy/)).toBeVisible();
+    const pills = page.getByTestId('fzp-notices');
+    await expect.element(pills.getByRole('button', { name: 'Retry' })).toBeVisible();
+    // The stack is above the scrubber, over the map's top, and takes no space from the layout.
+    const stack = pills.element().getBoundingClientRect();
+    expect(stack.top).toBeLessThan(scrubberTop);
+    expect(root.style.getPropertyValue('--fzp-scrubber-h')).toBe(before);
+    expect(map.callsOf('setBottomInset').length).toBe(insets);
+    expect(page.getByTestId('fzp-scrubber').element().getBoundingClientRect().top).toBe(
+      scrubberTop
+    );
+  });
 
-        anotherKeyed();
-        await check(() => page.getByText('Making another future…').element());
-        s.w().emit({
-          type: 'error',
-          rev: s.w().lastOf('reroll')!.rev,
-          code: 'internal',
-          message: 'x'
-        });
-        await check(() => page.getByRole('alert').element());
-        s.w().crash();
-        await check(
-          () => page.getByText('Part of the simulation stopped.').element().parentElement!
-        );
-      } finally {
-        document.documentElement.style.removeProperty('--map-controls-br-block-size');
-      }
-    }
-  );
+  it('--fzp-scrubber-h is the scrubber alone, whatever notices show, and --fzp-dock-top is gone', async () => {
+    await page.viewport(1024, 768);
+    const s = setup();
+    await toReady(s);
+    const scrubber = page.getByTestId('fzp-scrubber').element() as HTMLElement;
+    const root = document.querySelector<HTMLElement>('.sfh-fzp')!;
+    anotherKeyed();
+    await expect.element(page.getByText('Making another future…')).toBeVisible();
+    expect(root.style.getPropertyValue('--fzp-scrubber-h')).toBe(`${scrubber.offsetHeight}px`);
+    expect(document.documentElement.style.getPropertyValue('--fzp-dock-top')).toBe('');
+  });
 
-  it('at 375 px with the score details open, every notice shows on top, below them', async () => {
+  it('the loading notice renders in the notice stack', async () => {
+    setup();
+    await expect
+      .element(page.getByTestId('fzp-notices').getByTestId('fzp-status'))
+      .toHaveTextContent('Loading the simulation…');
+  });
+
+  it('the failed notice renders in the notice stack, with Retry', async () => {
+    setup({ manifestError: true });
+    const pills = page.getByTestId('fzp-notices');
+    await expect.element(pills.getByTestId('fzp-status')).toHaveTextContent(/couldn't load/);
+    await expect.element(pills.getByRole('button', { name: 'Retry' })).toBeVisible();
+  });
+
+  it('the no-scenario notice renders in the notice stack, with its link', async () => {
+    setup({ noScenario: true, calibration: null });
+    const pills = page.getByTestId('fzp-notices');
+    await expect.element(pills.getByTestId('fzp-status')).toHaveTextContent(/isn't available/);
+    await expect.element(pills.getByRole('link', { name: 'Go to the editor' })).toBeVisible();
+  });
+
+  it('the ready-phase notices render in the notice stack', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = setup();
+    await toReady(s);
+    anotherKeyed();
+    const pills = page.getByTestId('fzp-notices');
+    await expect.element(pills.getByText('Making another future…')).toBeVisible();
+    s.w().emit({ type: 'error', rev: s.w().lastOf('reroll')!.rev, code: 'internal', message: 'x' });
+    await expect.element(pills.getByRole('alert')).toBeVisible();
+    s.w().crash();
+    await expect.element(pills.getByText('Part of the simulation stopped.')).toBeVisible();
+  });
+
+  it('at 375 px the notices sit in flow above the map: they never cover the card', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     await page.viewport(375, 800);
     const s = setup();
     await toReady(s);
-    const board = await details();
-    await expect.element(board).toBeVisible();
+    pick({ projectId: 'pr-1', parcelId: 'p1', x: 10, y: 10, kind: 'tap' });
+    await answerLastSummary(s.w(), summary(REAL_ACTUAL));
+    await expect.element(card()).toBeVisible();
 
-    /** The element is on top at its centre and wholly below the details. */
-    const onTop = (el: Element) => {
-      const r = el.getBoundingClientRect();
-      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-      const d = (board.element() as HTMLElement).getBoundingClientRect();
-      return r.height > 0 && !!top && el.contains(top) && r.top >= d.bottom;
+    const rect = (el: Element) => el.getBoundingClientRect();
+    const stack = () => page.getByTestId('fzp-notices').element();
+    const root = document.querySelector('.sfh-fzp') as HTMLElement;
+    const check = async (notice: () => Element) => {
+      await expect.poll(() => rect(notice()).height).toBeGreaterThan(0);
+      // The stack is the root's first row; the map region (and the card in it) starts below it.
+      expect(getComputedStyle(stack()).position).toBe('static');
+      expect(rect(stack()).top).toBe(rect(root).top);
+      expect(rect(notice()).bottom).toBeLessThanOrEqual(rect(card().element()).top);
     };
 
     anotherKeyed();
-    const busy = () => page.getByText('Making another future…').element();
-    await expect.poll(() => onTop(busy())).toBe(true);
+    await check(() => page.getByText('Making another future…').element());
     s.w().emit({ type: 'error', rev: s.w().lastOf('reroll')!.rev, code: 'internal', message: 'x' });
-    await expect
-      .poll(() => onTop(page.getByRole('button', { name: 'Dismiss' }).element()))
-      .toBe(true);
-    expect(onTop(page.getByRole('alert').element())).toBe(true);
+    await check(() => page.getByRole('alert').element());
     s.w().crash();
-    const retry = () => page.getByRole('button', { name: 'Retry', exact: true }).element();
-    await expect.poll(() => onTop(retry())).toBe(true);
-    await expect.element(board).toBeVisible();
+    await check(() => page.getByText('Part of the simulation stopped.').element());
+  });
+
+  it('at 375 px with no notice the stack takes no height', async () => {
+    await page.viewport(375, 800);
+    const s = setup();
+    await toReady(s);
+    expect(page.getByTestId('fzp-notices').element().getBoundingClientRect().height).toBe(0);
   });
 
   it.each([768, 1000])(
-    'at %i px the loading notice clears the open score details',
+    'at %i px the notice stack overlays the map top and the map takes the whole root',
     async (width) => {
       await page.viewport(width, 800);
-      setup();
-      const notice = page.getByText('Loading the simulation…', { exact: true }).first();
-      await expect.element(notice).toBeVisible();
-      await expect.element(scoreButton()).toHaveTextContent('Simulating…');
-      const board = await details();
-      await expect.element(board).toBeVisible();
-      const n = (
-        document.querySelector('[data-testid="fzp-status"]') as HTMLElement
-      ).getBoundingClientRect();
-      const p = (board.element() as HTMLElement).getBoundingClientRect();
-      expect(n.left < p.right && p.left < n.right && n.top < p.bottom && p.top < n.bottom).toBe(
-        false
-      );
+      const s = setup();
+      await toReady(s);
+      const root = document.querySelector('.sfh-fzp') as HTMLElement;
+      const region = page.getByTestId('fzp-scrubber').element().closest('.relative') as HTMLElement;
+      anotherKeyed();
+      await expect.element(page.getByText('Making another future…')).toBeVisible();
+      const stack = page.getByTestId('fzp-notices').element();
+      expect(getComputedStyle(stack).position).toBe('absolute');
+      const rr = root.getBoundingClientRect();
+      expect(region.getBoundingClientRect().top).toBe(rr.top);
+      expect(region.getBoundingClientRect().bottom).toBe(rr.bottom);
+      const r = stack.getBoundingClientRect();
+      expect(r.top - rr.top).toBeLessThanOrEqual(8);
+      // Centred over the map (no docked panel here).
+      expect(Math.abs(r.left + r.width / 2 - (rr.left + rr.width / 2))).toBeLessThan(2);
     }
   );
 
-  it('below 768 px the inset is the scrubber alone, with the score details open or not', async () => {
+  it('below 768 px the inset is the scrubber alone', async () => {
     await page.viewport(375, 800);
     const s = setup();
     await toReady(s);
@@ -945,24 +1142,21 @@ describe('FzpMode map, layout and lifecycle', () => {
     const wrapper = scrubber.parentElement as HTMLElement;
     const root = document.querySelector('.sfh-fzp') as HTMLElement;
     expect(wrapper.getBoundingClientRect().bottom).toBe(root.getBoundingClientRect().bottom);
-
-    await details();
-    await expect.poll(() => callsOf('setBottomInset').at(-1)).toEqual([scrubber.offsetHeight]);
   });
 
-  it('the score details end above the scrubber dock, and --fzp-dock-top leaves on unmount', async () => {
-    await page.viewport(1024, 768);
-    const s = setup();
+  it('bottomExtra (the phone sheet) adds to the inset; the root hosts the dock', async () => {
+    await page.viewport(375, 800);
+    const s = setup({ bottomExtra: 120 });
     await toReady(s);
-    const board = await details();
-    await expect.element(board).toBeVisible();
     const scrubber = page.getByTestId('fzp-scrubber').element() as HTMLElement;
+    await expect.poll(() => scrubber.offsetHeight).toBeGreaterThan(0);
     await expect
-      .poll(() => (board.element() as HTMLElement).getBoundingClientRect().bottom)
-      .toBeLessThanOrEqual(scrubber.getBoundingClientRect().top);
-    expect(document.documentElement.style.getPropertyValue('--fzp-dock-top')).not.toBe('');
-    await unmount(s);
-    expect(document.documentElement.style.getPropertyValue('--fzp-dock-top')).toBe('');
+      .poll(() => callsOf('setBottomInset').at(-1))
+      .toEqual([scrubber.offsetHeight + 120]);
+    await (await s.r).rerender({ bottomExtra: 0 });
+    await expect.poll(() => callsOf('setBottomInset').at(-1)).toEqual([scrubber.offsetHeight]);
+    const root = document.querySelector('.sfh-fzp') as HTMLElement;
+    expect(root.classList.contains('sfh-dock-host')).toBe(true);
   });
 
   it('unmount terminates the worker and leaves no frame loop pending', async () => {
@@ -981,6 +1175,13 @@ describe('FzpMode map, layout and lifecycle', () => {
 });
 
 describe('FzpMode levers (/sim)', () => {
+  beforeEach(() => {
+    vi.stubEnv('VITE_E2E', '1'); // the debug hook reports the shown future
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   /** A distinct lookups pair, so identity checks can tell it from the calibration's. */
   function postedLookups(): LeverLookups {
     const one = () => ({
@@ -1123,8 +1324,8 @@ describe('FzpMode levers (/sim)', () => {
   });
 
   it('resolving shows the updating notice with done/total; current removes it', async () => {
-    const onlevers = vi.fn<(st: LeverStatus) => void>();
-    const s = setup({ levers: DEFAULT_LEVERS, onlevers });
+    vi.stubEnv('VITE_E2E', '1'); // the debug hook reports the lever status
+    const s = setup({ levers: DEFAULT_LEVERS });
     await toReady(s);
     await expect.element(scoreButton()).toHaveAttribute('aria-busy', 'false');
     await (await s.r).rerender({ levers: { ...OTHER } });
@@ -1135,7 +1336,7 @@ describe('FzpMode levers (/sim)', () => {
       .getByRole('status')
       .getByText('Updating the simulation for your policy… 2 of 5 lots');
     await expect.element(notice).toBeVisible();
-    expect(onlevers.mock.calls.at(-1)![0]).toMatchObject({ kind: 'resolving', done: 2, total: 5 });
+    expect(window.__sfhFzp!.levers).toMatchObject({ status: 'resolving', done: 2, total: 5 });
     await expect.element(scoreButton()).toHaveAttribute('aria-busy', 'true');
     s.w().emit({
       type: 'levers',
@@ -1148,19 +1349,29 @@ describe('FzpMode levers (/sim)', () => {
     await expect
       .element(page.getByText(/Updating the simulation for your policy/))
       .not.toBeInTheDocument();
-    expect(onlevers.mock.calls.at(-1)![0]).toMatchObject({ kind: 'current', rev });
+    expect(window.__sfhFzp!.levers).toMatchObject({ status: 'current', sentRev: rev });
     // The score stays the last run's, busy, until the new run's timeline arrives.
-    const board = await details();
     await expect.element(scoreButton()).toHaveAttribute('aria-busy', 'true');
-    await expect.element(board).toHaveAttribute('aria-busy', 'true');
     s.w().emit(timelineMsg(rev, 7));
     await expect.element(scoreButton()).toHaveAttribute('aria-busy', 'false');
-    await expect.element(board).toHaveAttribute('aria-busy', 'false');
+  });
+
+  it('a failed revision says in the details that the numbers predate the change', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = setup({ levers: DEFAULT_LEVERS });
+    await toReady(s);
+    await (await s.r).rerender({ levers: { ...OTHER } });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+    s.w().emit({ type: 'error', rev: leverRev(s.w()), code: 'internal', message: 'x' });
+    const board = await details();
+    await expect
+      .element(board.getByText('These numbers are from before your latest policy change.'))
+      .toBeVisible();
   });
 
   it('a failed revision shows an alert whose Retry restarts with the latest levers', async () => {
-    const onlevers = vi.fn<(st: LeverStatus) => void>();
-    const s = setup({ levers: DEFAULT_LEVERS, onlevers });
+    vi.stubEnv('VITE_E2E', '1'); // the debug hook reports the lever status
+    const s = setup({ levers: DEFAULT_LEVERS });
     await toReady(s);
     // The alert region is in the accessibility tree before it has anything to say.
     const region = page.getByTestId('fzp-lever-failed');
@@ -1183,13 +1394,9 @@ describe('FzpMode levers (/sim)', () => {
     const alert = page.getByRole('alert').filter({ hasText: message });
     await expect.element(alert).toBeVisible();
     expect(region.element().contains(alert.element())).toBe(true);
-    expect(onlevers.mock.calls.at(-1)![0]).toMatchObject({ kind: 'failed', rev });
+    expect(window.__sfhFzp!.levers).toMatchObject({ status: 'failed', sentRev: rev });
     expect(err).toHaveBeenCalledWith('[fzp] worker error', 'internal', 'x');
     await expect.element(page.getByText(/Updating the simulation/)).not.toBeInTheDocument();
-    // The score says its numbers predate the change.
-    const board = await details();
-    const stale = board.getByText('These numbers are from before your latest policy change.');
-    await expect.element(stale).toBeVisible();
 
     const inits = s.w().allOf('initScenario').length;
     await alert.getByRole('button', { name: 'Retry', exact: true }).click();
@@ -1209,10 +1416,9 @@ describe('FzpMode levers (/sim)', () => {
       unknownLots: 0
     });
     s.w().emit(timelineMsg(init.rev, 7));
-    await expect.poll(() => onlevers.mock.calls.at(-1)![0].kind).toBe('current');
+    await expect.poll(() => window.__sfhFzp!.levers.status).toBe('current');
     await expect.element(page.getByText(message)).not.toBeInTheDocument();
     expect(region.element().textContent?.trim()).toBe('');
-    await expect.element(stale).not.toBeInTheDocument();
   });
 
   it('failed cells offer Retry, which retries the chunks', async () => {
@@ -1298,7 +1504,7 @@ describe('FzpMode levers (/sim)', () => {
     expect(sent.rev).toBeGreaterThan(reroll.rev);
     // The reroll's answer was not superseded: its future is on show and in the URL.
     expect(s.onurlseed.mock.calls).toEqual([[4242]]);
-    await expect.element(await futureLine()).toHaveTextContent(/^This future: #4242$/);
+    await expect.poll(future).toBe('This future: #4242');
   });
 
   it('a levers change during a reroll is sent after the reroll fails', async () => {
@@ -1390,7 +1596,7 @@ describe('FzpMode Setup and Run (/sim, spec §1)', () => {
     expect(debug().day).toBe(ASOF);
     s.w().emit(timelineMsg(rev, 7)); // the sent rev's timeline
     await expect.poll(() => debug().playing).toBe(true);
-    await expect.element(playLabel()).toHaveTextContent(/^Pause$/);
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it("the day can't move in Setup", async () => {
@@ -1422,7 +1628,7 @@ describe('FzpMode Setup and Run (/sim, spec §1)', () => {
     await expect.element(playLabel()).toHaveTextContent(/^Run$/);
   });
 
-  it('a new run after Change policy discards the old run and waits for the new policy', async () => {
+  it('a new run after Edit policy discards the old run and waits for the new policy', async () => {
     const s = setup({ runPhase: 'run', levers: DEFAULT_LEVERS });
     await toReady(s);
     await page.getByRole('button', { name: 'Play', exact: true }).click();
@@ -1475,6 +1681,32 @@ describe('FzpMode Setup and Run (/sim, spec §1)', () => {
     expect(debug().playing).toBe(false);
     s.w().emit(timelineMsg(s.w().lastOf('setLevers')!.rev, 7));
     await expect.poll(() => debug().playing).toBe(true);
+  });
+
+  it('the start marker reads Today; in a run it calls onrewind once, in Setup it is disabled', async () => {
+    const onrewind = vi.fn();
+    const s = setup({ runPhase: 'run', levers: DEFAULT_LEVERS, onrewind });
+    await toReady(s);
+    await press('{PageUp}');
+    expect(debug().day).toBeGreaterThan(ASOF);
+    const start = page.getByTestId('fzp-start');
+    await expect.element(start).toHaveTextContent(/^Today$/);
+    await start.click();
+    expect(onrewind).toHaveBeenCalledOnce();
+    await setPhase(s, 'setup');
+    await expect.element(start).toBeDisabled();
+    expect(onrewind).toHaveBeenCalledOnce();
+  });
+
+  it('without runPhase the start marker reads the date and onrewind is not called', async () => {
+    const onrewind = vi.fn();
+    const s = setup({ onrewind });
+    await toReady(s);
+    await press('{PageUp}');
+    const start = page.getByTestId('fzp-start');
+    await expect.element(start).not.toHaveTextContent(/Today/);
+    await start.click();
+    expect(onrewind).not.toHaveBeenCalled();
   });
 
   it('without runPhase (/fzp) the button plays and the hook reports no run phase', async () => {

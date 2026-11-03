@@ -527,6 +527,21 @@ export function paintedLots(p: SimPolicy, lots: Lots): Map<ParcelId, number> | n
 }
 
 /**
+ * The custom paint brush whose paint holds on `lot` after erasing (last wins); null if none or a
+ * query is unknown.
+ */
+export function paintBrushOf(p: SimPolicy, lots: Lots, lot: ParcelId): string | null {
+  let owner: string | null = null;
+  for (const b of p.custom) {
+    const got = lots(queryKey(customQuery(b)));
+    if (got === undefined) return null;
+    if (!got.includes(lot)) continue;
+    owner = b.kind === 'paint' ? b.id : null;
+  }
+  return owner;
+}
+
+/**
  * The levers for `p`; null while a needed query is unknown. The twin is pre-FZP zoning for the
  * default policy, FZP as written for any other.
  */

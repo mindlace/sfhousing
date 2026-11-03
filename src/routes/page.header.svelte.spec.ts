@@ -87,10 +87,13 @@ describe('/ header save state', () => {
         page.getByRole('link', { name: /SF Housing/ }).element(),
         ...(width >= 1024 ? [page.getByRole('navigation', { name: 'Modes' }).element()] : []),
         chip.element(),
-        (width >= 1024
-          ? page.getByRole('button', { name: /Publish/ })
-          : page.getByRole('button', { name: 'Menu' })
-        ).element()
+        ...(width >= 1024
+          ? [
+              page.getByRole('banner').getByRole('button', { name: 'Paint', exact: true }),
+              page.getByRole('button', { name: /Publish/ })
+            ]
+          : [page.getByRole('button', { name: 'Menu' })]
+        ).map((l) => l.element())
       ];
       for (let i = 1; i < row.length; i++)
         expect(box(row[i]).left, `item ${i} after item ${i - 1}`).toBeGreaterThanOrEqual(

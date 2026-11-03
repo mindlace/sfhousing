@@ -1,29 +1,14 @@
 /**
- * Paint feedback on /sim (map overlays plan 2, Task 6): a custom paint stroke, or a zoning rule
- * once its saved revision is in force, briefly shows the generated buildings its lots could
- * hold, then they fade. Pure apart from the injected clock, frame loop and layer factory.
+ * The live preview's layer on /sim (sim-ux plan 3, Task 4): while a Paint stroke is drawn, the
+ * buildings its lots could hold show at full strength; on release they fade out (Set Policy's map
+ * shows the present). Pure apart from the injected clock, frame loop and layer factory.
  */
 import type { Layer } from '@deck.gl/core';
 import type { ParcelId } from '$lib/data/parcel';
 import type { PackedCell } from '$lib/map/types';
-import type { BrushLotsResult } from '$lib/sim/scenario/types';
-import type { LeverStatus } from './lever-status';
 
-/** Tier 4 (engineering): the buildings show at full strength this long. */
-export const FEEDBACK_HOLD_MS = 500;
-/** Tier 4: then fade linearly to 0 over this long (about 2 s in all; the spec's "my call"). */
+/** Tier 4 (engineering): on release the buildings fade linearly to 0 over this long. */
 export const FEEDBACK_FADE_MS = 1500;
-
-/**
- * The feedback's opacity `t` ms after it was shown; null once it is over (remove the layer).
- * Under reduced motion there is no fade: full strength for the whole time, then gone (as
- * SimMap's rising buildings skip their animation).
- */
-export function feedbackOpacity(t: number, reducedMotion: boolean): number | null {
-  if (t >= FEEDBACK_HOLD_MS + FEEDBACK_FADE_MS) return null;
-  if (t <= FEEDBACK_HOLD_MS || reducedMotion) return 1;
-  return 1 - (t - FEEDBACK_HOLD_MS) / FEEDBACK_FADE_MS;
-}
 
 export interface PaintFeedbackDeps {
   /** The feedback overlay slot's layers ([] clears). */
@@ -36,13 +21,14 @@ export interface PaintFeedbackDeps {
   reducedMotion(): boolean;
 }
 
-/** The fading feedback layer: one at a time; a new `show` replaces what is showing. */
+/** The preview layer: one at a time; `live` replaces what is showing. */
 export class PaintFeedback {
   #deps: PaintFeedbackDeps;
   #n = 0;
   #pack: PackedCell | null = null;
+  #fading = false;
   #start = 0;
-  #opacity: number | null = null;
+  #opacity = 1;
   #raf: number | null = null;
   #destroyed = false;
 
@@ -50,38 +36,67 @@ export class PaintFeedback {
     this.#deps = deps;
   }
 
-  /** Shows `pack` from full strength (replacing what is showing); null clears. */
-  show(pack: PackedCell | null): void {
+  get state(): 'none' | 'live' | 'fading' {
+    if (this.#pack === null) return 'none';
+    return this.#fading ? 'fading' : 'live';
+  }
+
+  /** Shows `pack` at full strength until released (replacing what is showing); null clears. */
+  live(pack: PackedCell | null): void {
     if (this.#destroyed) return;
-    this.#stop();
     if (pack === null) {
-      this.#clear();
+      this.clear();
       return;
     }
+    this.#stop();
+    this.#fading = false;
     this.#n++;
     this.#pack = pack;
+    this.#opacity = 1;
+    this.#deps.set([this.#deps.layer(pack, 1, `sim-feedback-${this.#n}`)]);
+  }
+
+  /**
+   * Fades what is live linearly to nothing over FEEDBACK_FADE_MS; under reduced motion it clears
+   * at once. A fade already under way carries on.
+   */
+  release(): void {
+    if (this.#destroyed || this.state !== 'live') return;
+    if (this.#deps.reducedMotion()) {
+      this.clear();
+      return;
+    }
+    this.#fading = true;
     this.#start = this.#deps.now();
-    this.#opacity = null;
-    this.#frame();
+    this.#raf = this.#deps.raf(this.#frame);
+  }
+
+  /** Removes what is showing at once. */
+  clear(): void {
+    this.#stop();
+    this.#fading = false;
+    const had = this.#pack !== null;
+    this.#pack = null;
+    this.#opacity = 1;
+    if (had) this.#deps.set([]);
   }
 
   destroy(): void {
     if (this.#destroyed) return;
-    this.#stop();
-    this.#clear();
+    this.clear();
     this.#destroyed = true;
   }
 
   #frame = (): void => {
     this.#raf = null;
     const pack = this.#pack;
-    if (!pack || this.#destroyed) return;
-    const o = feedbackOpacity(this.#deps.now() - this.#start, this.#deps.reducedMotion());
-    if (o === null) {
-      this.#clear();
+    if (!pack || !this.#fading || this.#destroyed) return;
+    const t = this.#deps.now() - this.#start;
+    if (t >= FEEDBACK_FADE_MS) {
+      this.clear();
       return;
     }
-    // Under reduced motion the opacity holds at 1: no new layer until it ends.
+    const o = 1 - t / FEEDBACK_FADE_MS;
     if (o !== this.#opacity) {
       this.#opacity = o;
       this.#deps.set([this.#deps.layer(pack, o, `sim-feedback-${this.#n}`)]);
@@ -92,43 +107,6 @@ export class PaintFeedback {
   #stop(): void {
     if (this.#raf !== null) this.#deps.cancelRaf(this.#raf);
     this.#raf = null;
-  }
-
-  #clear(): void {
-    const had = this.#pack !== null;
-    this.#pack = null;
-    this.#opacity = null;
-    if (had) this.#deps.set([]);
-  }
-}
-
-/**
- * When a saved zoning rule's feedback is due: the page arms it on a save that changed the policy,
- * and it fires on the first `current` above the latest lever revision seen at the save (the
- * revision the save's levers go out as, or a later one that carries them).
- */
-export class RuleFeedbackTrigger {
-  #lastRev = -Infinity;
-  #armed: { ruleId: string; rev: number } | null = null;
-
-  /** A rule was added or edited (BrushForms save) while the latest lever rev seen was `lastRev`. */
-  saved(ruleId: string): void {
-    this.#armed = { ruleId, rev: this.#lastRev };
-  }
-
-  /** Every LeverStatus; returns the rule id to show once a `current` above the save's rev lands. */
-  status(s: LeverStatus): string | null {
-    if (s.kind === 'off') return null;
-    if (s.rev > this.#lastRev) this.#lastRev = s.rev;
-    const a = this.#armed;
-    if (s.kind !== 'current' || !a || s.rev <= a.rev) return null;
-    this.#armed = null;
-    return a.ruleId;
-  }
-
-  /** Forgets an armed save (a run started, or the session ended). */
-  reset(): void {
-    this.#armed = null;
   }
 }
 
@@ -157,28 +135,4 @@ export function lotsInView(
   }
   inView.sort((a, b) => a.d - b.d);
   return inView.slice(0, Math.max(0, max)).map((x) => x.id);
-}
-
-/**
- * One lot list from several brush results (a rule's queries; a transit rule's bands overlap):
- * each lot once, first occurrence kept, with its label point. Unknown and failed results are
- * skipped.
- */
-export function mergeLots(results: readonly (BrushLotsResult | undefined)[]): {
-  lots: ParcelId[];
-  points: Float64Array;
-} {
-  const seen = new Set<ParcelId>();
-  const lots: ParcelId[] = [];
-  const pts: number[] = [];
-  for (const r of results) {
-    if (!r?.ok) continue;
-    r.lots.forEach((id, k) => {
-      if (seen.has(id)) return;
-      seen.add(id);
-      lots.push(id);
-      pts.push(r.points[2 * k], r.points[2 * k + 1]);
-    });
-  }
-  return { lots, points: Float64Array.from(pts) };
 }

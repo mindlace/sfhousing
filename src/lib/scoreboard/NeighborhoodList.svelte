@@ -18,9 +18,9 @@
         <span class="truncate">{r.name}</span>
         <span class="tabular-nums">{formatCount(r.net)}</span>
       </div>
-      <div class="h-1.5 rounded-sm bg-gray-100" aria-hidden="true">
+      <div class="h-1.5 rounded-sm bg-gray-100 dark:bg-line-dark" aria-hidden="true">
         <div
-          class="h-full rounded-sm bg-accent"
+          class="h-full rounded-sm bg-accent dark:bg-accent-dark"
           style:width="{largest > 0 ? (Math.max(0, r.net) / largest) * 100 : 0}%"
         ></div>
       </div>
@@ -30,7 +30,7 @@
 {#if !showAll && rows.length > NEIGHBORHOOD_TOP}
   <button
     type="button"
-    class="mt-2 min-h-11 text-sm font-semibold underline"
+    class="mt-2 -ml-1 min-h-11 rounded-md px-1 text-sm font-semibold underline hover:bg-surface-raised dark:hover:bg-surface-dark-raised"
     onclick={() => (showAll = true)}>Show all {rows.length}</button
   >
 {/if}
