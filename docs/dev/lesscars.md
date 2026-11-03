@@ -403,6 +403,43 @@ Two problems were found. Both are follow-ups, not release blockers:
 - **Duplicate heading:** the timeline disclosure repeats a "Parking conversions" heading under its
   summary.
 
+## Basemap ids
+
+Can a removed freeway stretch be hidden on the basemap by protomaps `roads` feature id at every
+zoom the page shows (11 to the archive's maxzoom 15), or must the tiles step split it out? The
+check lists the `roads` features coming within `LC.basemapBandM` (25 m) of the removed lines and,
+per zoom, each feature's full length (every tile of the archive, tile buffers counted once) and its
+in-band length. A `highway` feature with an in-band share in [0.1, 0.9) is mixed: one id covers a
+removed stretch and a kept one, so an id filter would hide too much or too little.
+
+```bash
+npm run pipeline -- lesscars-basemap --report --lines <removed.geojson> \
+  [--pmtiles pipeline/out/<v>/basemap.pmtiles] [--band 25]
+```
+
+The provisional removed lines (a scratch file, not committed): from the locked `datasf-streets`
+raw files, every `FREEWAYS` segment named `HWY 101…` with every vertex north of lat 37.7335 (the
+Alemany interchange) and every `I-80…` segment with every vertex west of lng -122.3925 (the
+Rincon Hill touchdown), in EPSG:4326 (96 segments, 69 of them US-101).
+
+Measured on `2026-11-02-39fbf039/basemap.pmtiles`:
+
+| Zoom | Highway ids near the lines | Mixed |
+| ---- | -------------------------- | ----- |
+| 11   | 14                         | 4     |
+| 12   | 29                         | 12    |
+| 13   | 34                         | 10    |
+| 14   | 43                         | 10    |
+| 15   | 61                         | 14    |
+
+Verdict: **split (zooms 11,12,13,14,15)**. Ids are stable at every zoom, but US-101 merges across
+the Alemany cut at z11 to z13 (`35184377160410`, 7474 of 13942 m in band at z11, 3274 of 9092 m at
+z13) and unnamed highway links and the kept freeways that cross or touch the lines (I-280, CA 1,
+the rest of I-80) are mixed at every zoom. An id filter cannot isolate the stretches, so Task 7b
+(split the removed stretches into source layer `roads_lc` at build time) runs, not Task 7a.
+`LC.basemapClipZooms` is set to all five zooms. The 25 m band counts a crossing road as mixed, so
+the z14 and z15 entries overstate the merged lines; Task 6's candidate rule narrows them.
+
 ## The page
 
 `/lesscars` (`src/routes/lesscars/`, plan `docs/superpowers/plans/2026-11-01-lesscars-2-page.md`)

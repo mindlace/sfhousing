@@ -11,6 +11,7 @@ import {
 import { doctor } from './steps/doctor';
 import { fetchAll } from './steps/fetch';
 import { fixture } from './steps/fixture';
+import { lesscarsBasemap } from './steps/lesscars-basemap';
 import { lesscarsCnns } from './steps/lesscars-cnns';
 import { upload } from './steps/upload';
 import { verify } from './steps/verify';
@@ -193,6 +194,24 @@ const steps: Record<string, { help: string; run: Step }> = {
   'lesscars-cnns': {
     help: 'resolve the /lesscars corridor selectors to CNNs from the locked datasf-streets source',
     run: async () => lesscarsCnns({ lockPath: LOCK, rawDir: RAW })
+  },
+  'lesscars-basemap': {
+    help: 'inspect or propose the basemap road ids of the /lesscars freeway removals',
+    run: async (args) => {
+      const v = latestOut();
+      const pmtiles = str(args.flags.pmtiles) ?? (v ? join(OUT, v, 'basemap.pmtiles') : undefined);
+      if (!pmtiles || !existsSync(pmtiles)) {
+        console.error('no basemap.pmtiles: build a dataset or pass --pmtiles <file>');
+        return 1;
+      }
+      const band = str(args.flags.band);
+      return lesscarsBasemap({
+        mode: args.flags.report ? 'report' : 'candidates',
+        pmtiles,
+        linesPath: str(args.flags.lines),
+        bandM: band ? Number(band) : undefined
+      });
+    }
   },
   'quality-doc': {
     help: 'rewrite the generated Data quality section of docs/dev/pipeline.md from QUALITY_RULES',

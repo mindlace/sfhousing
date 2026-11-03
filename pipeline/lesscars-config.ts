@@ -26,7 +26,13 @@ export const LC = {
   /** Freed pieces smaller than this are dropped, m². */
   minPieceM2: 100,
   /** A freed piece's neighbours: parcels within this distance, metres. */
-  neighbourM: 40
+  neighbourM: 40,
+  /** A basemap road within this of a removed line is near it, metres. */
+  basemapBandM: 25,
+  /** Task 6: a basemap feature at least this much in band is the removed stretch's. */
+  basemapMinShare: 0.9,
+  /** Basemap zooms where a highway feature spans the cut, measured by `lesscars-basemap`. */
+  basemapClipZooms: [11, 12, 13, 14, 15] as number[]
 } as const;
 
 export const LC_CITE: Record<keyof typeof LC, TieredCite> = {
@@ -40,7 +46,12 @@ export const LC_CITE: Record<keyof typeof LC, TieredCite> = {
   accessM: invented('6 m service strip along every parcel edge'),
   lotMaxM: invented('60 m maximum lot length along a removed line'),
   minPieceM2: invented('100 m² smallest freed piece kept'),
-  neighbourM: invented('40 m neighbour search radius for a freed piece’s zoning')
+  neighbourM: invented('40 m neighbour search radius for a freed piece’s zoning'),
+  basemapBandM: invented('25 m band: a basemap road within it of a removed line is near it'),
+  basemapMinShare: invented('0.9: a feature this much in band is the removed stretch’s'),
+  basemapClipZooms: invented(
+    'zooms where a basemap highway merges across a cut, measured (docs/dev/lesscars.md "Basemap ids")'
+  )
 };
 
 const PIPELINE_DIR = import.meta.dirname;
