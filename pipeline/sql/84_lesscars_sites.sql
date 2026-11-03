@@ -267,9 +267,13 @@ QUALIFY row_number() OVER (
 
 -- Sites: seeds (with the pieces merged into them) by (parcel id, part), then the unmerged pieces
 -- of at least lc_min_piece_m2 in v1 order.
+-- A parcel outline and the ROW cut from it need not share vertices exactly, so their union can
+-- keep a hair-thin crack along the seam: valid here, but a zero-width spike once the published
+-- rings are rounded. A seed with merged pieces is therefore closed (buffered out and back by
+-- lc_merge_m, mitred, so square corners stay square), filling only gaps under 2 × lc_merge_m.
 CREATE OR REPLACE TEMP TABLE lc_piece AS
-WITH seed AS (
-  SELECT s.project_id, s.parcel_id, s.part, s.held_by,
+WITH seed0 AS (
+  SELECT s.project_id, s.parcel_id, s.part, s.held_by, count(*) AS n_parts,
          row_number() OVER (PARTITION BY s.project_id ORDER BY s.parcel_id, s.part)::INTEGER AS k,
          ST_CollectionExtract(
            ST_Union_Agg(u.geom ORDER BY u.src, u.vk), 3
@@ -282,6 +286,18 @@ WITH seed AS (
     FROM lc_merge m JOIN lc_piece0 pc USING (project_id, vk)
   ) u USING (project_id, parcel_id, part)
   GROUP BY s.project_id, s.parcel_id, s.part, s.held_by
+),
+seed AS (
+  SELECT project_id, k, held_by,
+         CASE WHEN n_parts = 1 THEN geom
+              ELSE ST_CollectionExtract(
+                ST_Buffer(
+                  ST_Buffer(geom, getvariable('lc_merge_m'), 1, 'CAP_FLAT', 'JOIN_MITRE', 5.0),
+                  -getvariable('lc_merge_m'), 1, 'CAP_FLAT', 'JOIN_MITRE', 5.0
+                ),
+                3
+              ) END AS geom
+  FROM seed0
 ),
 n AS (SELECT project_id, count(*)::INTEGER AS n FROM lc_seed GROUP BY project_id),
 piece AS (

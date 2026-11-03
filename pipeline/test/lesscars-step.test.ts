@@ -149,6 +149,43 @@ describe('writeLessCars', () => {
     for (const c of coords) expect(c).toBe(Math.round(c * 1e7) / 1e7);
   });
 
+  it('every published site polygon and outline is a valid, simple polygon', async () => {
+    // rec.polygon rings are open (ParcelRecord); outline rings are closed (GeoJSON).
+    const closed = (r: [number, number][]) => {
+      const [a, z] = [r[0], r[r.length - 1]];
+      return a[0] === z[0] && a[1] === z[1] ? r : [...r, a];
+    };
+    const wkt = (rings: [number, number][][]) =>
+      `POLYGON(${rings
+        .map(
+          (r) =>
+            `(${closed(r)
+              .map(([x, y]) => `${x} ${y}`)
+              .join(', ')})`
+        )
+        .join(', ')})`;
+    const garageOn19 = (p: Json) => (project(p, 'garage').site = { parcel: '3512019' });
+    // The mini plan, and its variant whose garage holds lot 19 (outDir is the latest args call's).
+    for (const a of [() => args(LESSCARS_PLAN_JSON.fixture), () => withPlan(garageOn19)]) {
+      await writeLessCars(a());
+      const sites = parseSitesFile(
+        JSON.parse(readFileSync(join(outDir, LESSCARS_FILES.sites), 'utf8'))
+      ).sites;
+      expect(sites.length).toBeGreaterThan(0);
+      for (const s of sites)
+        for (const [what, rings] of [
+          ['rec.polygon', s.rec.polygon],
+          ['outline', s.outline]
+        ] as const) {
+          const [r] = await m.db.all<{ valid: boolean; simple: boolean }>(
+            `SELECT ST_IsValid(g) AS valid, ST_IsSimple(g) AS simple
+             FROM (SELECT ST_GeomFromText('${wkt(rings)}') AS g)`
+          );
+          expect(r, `${s.siteId} ${what}`).toEqual({ valid: true, simple: true });
+        }
+    }
+  });
+
   it('zero_yield counts freed sites of a build project that no build uses, held ones aside', () => {
     const sites = [
       { siteId: 'lc:hwy:0', projectId: 'hwy', heldBy: null },
