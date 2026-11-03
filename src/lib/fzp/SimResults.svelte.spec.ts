@@ -456,16 +456,19 @@ describe('map key', () => {
 });
 
 describe('footnote', () => {
-  it('names the data, the build, the as-of date and links Sources, then the phasing sentence', async () => {
+  it('names the data, the build, the as-of date and links Data sources, then the phasing sentence', async () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: props() });
     openSources();
     await expect
-      .element(page.getByText('Data fixture-0 · built 2026-10-10 · as of Oct 16, 2026 · Sources'))
+      .element(
+        page.getByText('Data fixture-0 · built 2026-10-10 · as of Oct 16, 2026 · Data sources')
+      )
       .toBeVisible();
-    expect(page.getByRole('link', { name: 'Sources' }).element().getAttribute('href')).toBe(
-      '/attribution'
-    );
+    const link = page.getByRole('link', { name: 'Data sources', exact: true });
+    expect(link.element().getAttribute('href')).toBe('/attribution');
+    // Only the disclosure is named "Sources": the link inside it has its own name.
+    expect(page.getByRole('link', { name: 'Sources', exact: true }).elements()).toEqual([]);
     await expect
       .element(
         page.getByText(
@@ -518,17 +521,20 @@ describe('target size on a fine pointer (SC 2.5.8)', () => {
       page.getByRole('button', { name: 'Where these numbers come from' }).element(),
       'Where these numbers come from'
     );
-    expectTarget(page.getByRole('link', { name: 'Sources' }).element(), 'Sources link');
+    expectTarget(
+      page.getByRole('link', { name: 'Data sources', exact: true }).element(),
+      'Data sources link'
+    );
   });
 
-  it('summaries and the Sources link carry the 44 px coarse-pointer variant', async () => {
+  it('summaries and the Data sources link carry the 44 px coarse-pointer variant', async () => {
     await page.viewport(1024, 768);
     await render(SimResults, { props: props() });
     openSources();
     for (const el of [
       document.querySelector('.sfh-fzp-legend > summary')!,
       document.querySelector('[data-testid="fzp-chart"] details > summary')!,
-      page.getByRole('link', { name: 'Sources' }).element()
+      page.getByRole('link', { name: 'Data sources', exact: true }).element()
     ]) {
       expect(el.classList.contains('pointer-coarse:min-h-11'), el.outerHTML).toBe(true);
     }

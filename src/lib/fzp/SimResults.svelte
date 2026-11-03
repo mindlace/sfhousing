@@ -259,7 +259,7 @@
         Data {datasetVersion} · built {formatBuiltDate(builtAt)} · as of {formatDate(asOf)} ·
         <a
           class="inline-flex min-h-6 items-center underline pointer-coarse:min-h-11"
-          href="/attribution">Sources</a
+          href="/attribution">Data sources</a
         >
       </p>
       {#if phasing}
