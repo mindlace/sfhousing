@@ -293,8 +293,15 @@ describe('basemap ids', () => {
     ]);
     expect(r.basemapPhases[0].lines[0].length).toBeGreaterThanOrEqual(2);
   });
-  it('no id list, no phases', async () => {
+  it('plan.json names the split phases in basemapHide', async () => {
+    await run(FIXTURE_BASEMAP_IDS);
+    const plan = JSON.parse(readFileSync(join(outDir, LESSCARS_FILES.plan), 'utf8'));
+    expect(plan.basemapHide).toEqual([{ projectId: 'hwy', ids: FIXTURE_IDS }]);
+  });
+  it('no id list, no phases, and no basemapHide', async () => {
     expect((await run(null)).basemapPhases).toEqual([]);
+    const plan = JSON.parse(readFileSync(join(outDir, LESSCARS_FILES.plan), 'utf8'));
+    expect(plan).not.toHaveProperty('basemapHide');
   });
 });
 

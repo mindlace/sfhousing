@@ -521,6 +521,7 @@
     "scenario.yield.clamped": 0,
     "scenario.yield.fzp_net_total": 28,
     "scenario.yield.nonlp_base_mismatch": 0,
+    "tiles.basemap_split_changed": 2,
     "transit.bytes": 2876,
     "transit.patterns": 7,
     "transit.stops": 8,

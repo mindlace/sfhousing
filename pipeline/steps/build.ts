@@ -27,11 +27,13 @@ import { loadNormalised, normaliseAll } from '../sources/normalise';
 import { SB79_EXEMPTIONS_CSV } from '../sources/sfbos';
 import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
 import {
+  LC,
   LESSCARS_BASEMAP_IDS_JSON,
   LESSCARS_FREEWAY_LAND_JSON,
   LESSCARS_PLAN_JSON
 } from '../lesscars-config';
 import { readBasemapIds } from '../lib/lesscars/basemap-ids';
+import { splitPhasesOf } from '../lib/lesscars/basemap-split';
 import { freewayLandSet, readFreewayLand } from '../lib/lesscars/freeway-land';
 import { writeCalibration } from './calibration';
 import { checkDataset, type InvariantResult } from './check';
@@ -41,7 +43,7 @@ import { writeLessCars } from './lesscars';
 import { writePolicy } from './policy';
 import { writeProjectRecords } from './projects';
 import { writeScenario } from './scenario';
-import { copyBasemap, installFonts, writeBuildingsTiles } from './tiles';
+import { installFonts, writeBasemap, writeBuildingsTiles } from './tiles';
 import { transitTargetDate, writeTransit } from './transit';
 
 export interface BuildOpts {
@@ -318,7 +320,15 @@ export async function build(
     if (!opts.skipTiles) {
       await report.time('tiles', () => writeBuildingsTiles(db, outDir, work));
     }
-    copyBasemap(basemapRaw, outDir);
+    // The removed freeway stretches of the basemap id list move to source layer roads_lc
+    // (docs/dev/lesscars.md "Basemap ids"); without phases the archive is copied byte for byte
+    // and the report gains no key (a live build without an id list reports as before).
+    const splitPhases = await splitPhasesOf(db, lesscars.basemapPhases, LC.basemapBandM);
+    if (splitPhases.length > 0) {
+      const split = { phases: splitPhases, clipZooms: LC.basemapClipZooms, workDir: work };
+      const r = await report.time('basemap', () => writeBasemap(basemapRaw, outDir, split));
+      counts['tiles.basemap_split_changed'] = r.changed;
+    } else await writeBasemap(basemapRaw, outDir, null);
     await materialiseFonts(lock, opts.rawDir, byName, join(work, 'fonts'));
     installFonts(join(work, 'fonts'), outDir);
 

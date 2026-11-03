@@ -186,10 +186,32 @@ function protomapsLayers(theme: Theme): {
       layout['text-font'] = rewriteFont(tf, stack);
     }
   }
+  const withClones = kept.flatMap((l) => (isRoadsLayer(l) ? [l, roadsClone(l)] : [l]));
   return {
-    base: kept.filter((l) => l.type !== 'symbol'),
-    labels: kept.filter((l) => l.type === 'symbol')
+    base: withClones.filter((l) => l.type !== 'symbol'),
+    labels: withClones.filter((l) => l.type === 'symbol')
   };
+}
+
+/**
+ * The /lesscars removed freeway stretches: the tiles step moves them from the basemap's `roads`
+ * source layer into this one (docs/dev/lesscars.md "Basemap ids"). Every `roads` layer has a clone
+ * on it, `${id}__lc`, right after it, so the moved parts draw as before; an archive without the
+ * layer draws nothing on the clones. /lesscars filters the clones by day (basemap-hide.ts).
+ */
+export const LC_ROADS_SOURCE_LAYER = 'roads_lc';
+export const LC_CLONE_SUFFIX = '__lc';
+
+function isRoadsLayer(l: LayerSpecification): boolean {
+  return (l as { 'source-layer'?: string })['source-layer'] === 'roads';
+}
+
+function roadsClone(l: LayerSpecification): LayerSpecification {
+  return {
+    ...structuredClone(l),
+    id: `${l.id}${LC_CLONE_SUFFIX}`,
+    'source-layer': LC_ROADS_SOURCE_LAYER
+  } as LayerSpecification;
 }
 
 export function buildingsSource(manifest: Manifest): VectorSourceSpecification {

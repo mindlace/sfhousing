@@ -83,7 +83,8 @@ function sourceSumProblem(raw: unknown): string | null {
 /**
  * V35: OK with "no plan" when the manifest has no `scenarios.lesscars`. Otherwise every named
  * file exists and decodes; timeline.bin binds to parcels.bin; the plan passes checkPlan and its
- * times equal schedulePlan's; no site belongs to a project that is not a site kind; parking and
+ * times equal schedulePlan's; each `basemapHide` project is a highway truncation; no site belongs
+ * to a project that is not a site kind; parking and
  * garage parcels hold no homes and every parking conversion depends directly on transit; a held
  * site's `heldBy` is an edge garage on one of its `parcels`; every freewayLand parcel is in some
  * site's `parcels` (one per polygon part) and is scenario-ineligible in parcels.bin; no timeline
@@ -143,6 +144,10 @@ export function checkV35(outDir: string, counts: Record<string, number>): Invari
 
     // Sites and parking.
     const byId = new Map(plan.projects.map((p) => [p.id, p]));
+    // The split basemap phases: removals of a highway truncation only.
+    for (const h of planFile.basemapHide ?? [])
+      if (byId.get(h.projectId)?.kind !== 'highway-truncation')
+        problems.push(`basemapHide: ${h.projectId} is not a highway truncation`);
     for (const s of sites.sites) {
       const p = byId.get(s.projectId);
       if (!p) problems.push(`site ${s.siteId}: unknown project ${s.projectId}`);

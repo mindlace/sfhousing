@@ -328,12 +328,12 @@ tagged `format: 'sfh-lesscars/1'` and named in the manifest as `scenarios.lessca
 `sites`, `summary`, `timeline`), a sibling of `scenarios.fzp`. `upload` and `verify` check every
 file the manifest names.
 
-| File           | Content                                                                      |
-| -------------- | ---------------------------------------------------------------------------- |
-| `plan.json`    | the plan, each project's dated times, and each named CNN's [lng, lat] lines  |
-| `sites.json`   | freed sites: id, project, parcel record, outline in [lng, lat]               |
-| `summary.json` | paired-run summary: extra homes (mean, band) and by source, per year end     |
-| `timeline.bin` | the representative future: columnar JSON, deflate-raw level 9, as policy.bin |
+| File           | Content                                                                                    |
+| -------------- | ------------------------------------------------------------------------------------------ |
+| `plan.json`    | the plan, each project's dated times, and each named CNN's [lng, lat] lines; `basemapHide` |
+| `sites.json`   | freed sites: id, project, parcel record, outline in [lng, lat]                             |
+| `summary.json` | paired-run summary: extra homes (mean, band) and by source, per year end                   |
+| `timeline.bin` | the representative future: columnar JSON, deflate-raw level 9, as policy.bin               |
 
 `timeline.bin` is bound to parcels.bin by `count` and `idsHash`; decoding it against another
 parcels.bin throws. Besides the plan arm's schedules and the initiative builds kept in the
@@ -567,6 +567,49 @@ box plus 500 m (`basemapIdsMissing`; was the basemap rebuilt?). A `source.sha256
 lock's basemap is only a warning: the ids are what is checked. The step returns each phase with
 its project's CNN lines (`basemapPhases`) for the tiles split. The list is read by `build.ts`
 (live or fixture file by kind) and is not a published file.
+
+### The split: `roads_lc`
+
+The build splits the listed stretches out of the basemap (`writeBasemap`, `pipeline/steps/tiles.ts`;
+`splitRoadsTile`, `pipeline/lib/lesscars/basemap-split.ts`). Each phase with lines gets a
+corridor: its project's CNN lines buffered by `LC.basemapBandM` (25 m) with flat caps in EPSG:7131
+(`splitPhasesOf`). Every tile of the archive, at every zoom over its header bounds, is decoded and
+re-encoded (`rewritePmtiles`, `pipeline/lib/pmtiles-rewrite.ts`: an MBTiles file written with
+`node:sqlite`, then `pmtiles convert`; tiles away from every corridor are copied unchanged). In
+the `roads` layer:
+
+- every listed id, at every zoom, whatever its kind, and on `LC.basemapClipZooms` also every
+  unlisted `kind = 'highway'` feature whose `ref` has the phase's `ref` as one of its
+  `;`-separated tokens, is clipped at the corridor: each line is cut where it crosses a corridor
+  edge, and a piece is inside when its midpoint is (tile units);
+- the inside pieces move to source layer `roads_lc`, with the feature's id and properties plus
+  `lc_project` (the phase's project; the first phase whose corridor holds a piece takes it);
+- the outside pieces stay in `roads` with the same id and properties. A feature is never moved
+  whole, so a low-zoom merge that also covers a kept stretch, or a kept freeway or link that
+  merely crosses the band, keeps its outside part.
+
+Other layers and features are re-encoded unchanged; `vector_layers` gains `roads_lc`. Without
+phases (no id list: the live build until Plan B) the archive is copied byte for byte. The count
+`tiles.basemap_split_changed` is the number of tiles rewritten. On the mini fixture the listed id
+(Mission Street, a stand-in crossing the mini I-80) exists at z14 and z15 only, and two tiles
+change. The rewrite is deterministic (same bytes across builds); the golden does not compare
+`basemap.pmtiles`.
+
+`plan.json` names the split phases in the optional `basemapHide`
+(`[{ projectId, ids }]`, the phases with lines, in id-list order; absent when there are none).
+V35 checks each `basemapHide` project is a `highway-truncation`.
+
+The style draws `roads_lc` with a clone of every protomaps layer on source layer `roads`,
+`${id}__lc`, placed right after it (`LC_ROADS_SOURCE_LAYER`, `src/lib/map/style.ts`), so a moved
+piece looks as it did. `/sim` and FZP draw the clones unfiltered. `/lesscars` installs
+`installBasemapHide` (`src/lib/lesscars/basemap-hide.ts`) beside its own layers: from a project's
+`openDay` each clone's filter becomes `['all', own, ['!', ['in', ['get', 'lc_project'],
+['literal', removed]]]]`, where `own` is the clone's style filter converted to an expression
+(`toExpressionFilter`, `src/lib/map/filter-expr.ts`: a legacy filter mixed into an expression
+`all` would be misread). Filters are set only when the removed set changes and restored when
+scrubbing back. A theme switch sets paint properties only, so the filters survive it. A plan file
+without `basemapHide` (the published `2026-11-02-39fbf039`) sets no filter and the page renders as
+before.
 
 ## The page
 

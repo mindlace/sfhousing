@@ -28,6 +28,7 @@
   import { chanceTable, typicalMonths } from '$lib/timelapse/model';
   import type { Day } from '$lib/timelapse/time';
   import { HIDDEN_VIEW } from '$lib/view/prefs';
+  import { installBasemapHide } from './basemap-hide';
   import { installLessCarsDebug } from './debug';
   import DetailsPanel from './DetailsPanel.svelte';
   import { evidenceSectionId } from './evidence';
@@ -110,6 +111,8 @@
   let handle: SimMapHandle | null = null;
   let map: MapLike | null = null;
   let layers: LessCarsLayers | null = null;
+  /** The basemap's removed freeway stretches (roads_lc), hidden from their open day. */
+  let basemapHide: ReturnType<typeof installBasemapHide> | null = null;
   let garages = NO_GARAGES;
   let dead = false;
   /** Until SimMap's handle exists, playback revisions and chunk statuses wait here, in order. */
@@ -207,6 +210,7 @@
   function onDay(d: Day): void {
     handle?.setTime(d);
     layers?.setDay(d);
+    basemapHide?.setDay(d);
     if (cardMonth !== null && monthStart(d) !== cardMonth) requestCard();
   }
 
@@ -292,7 +296,10 @@
     for (const [cellId, s] of pendingStatus) h.setChunkStatus(cellId, s);
     pendingStatus.clear();
     const m = h.getMap();
-    if (m) layers = installLessCarsLayers(m, { ...planLayers, garages }, theme.current, day);
+    if (m) {
+      layers = installLessCarsLayers(m, { ...planLayers, garages }, theme.current, day);
+      basemapHide = installBasemapHide(m, plan, day);
+    }
     h.setTime(day);
     applyInset();
     attachMap(m);
@@ -323,6 +330,7 @@
       client = null;
       handle = null;
       layers = null;
+      basemapHide = null;
     };
   });
 </script>

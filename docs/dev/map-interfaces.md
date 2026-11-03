@@ -40,6 +40,18 @@ Transit spec section 6. `SimMap` draws a transit access surface and the stops as
 - **UI gating:** the header View menu (`src/lib/view/ViewMenu.svelte`; prefs persist in localStorage `sfhousing:view`, one record for every route). Gating is per route. On `/` and `/p/:id` it is mounted only when `manifest.transit` is set, with the two transit rows (the default `rows`); those pages never show `heightLimits` and write back the value they read. On `/sim` (and `/s/:id`) the menu is always mounted in Setup, so only the transit rows are gated on `manifest.transit` (the limits row needs no transit), with `rows` `['transitStops', 'transitAccess', 'heightLimits']`, or `['heightLimits']` without `manifest.transit`; during a run the menu goes and the map gets `HIDDEN_VIEW` (every layer off), and the toggles come back with Setup. Without `manifest.transit` there are no transit sources, layers or transit rows, and `transit.json` is never fetched.
 - **Known gap:** the stop tooltip is pointer-only. It has no keyboard parity yet.
 
+## Basemap road clones (`__lc`)
+
+`buildStyle` (`src/lib/map/style.ts`) gives every protomaps layer on source layer `roads` a clone,
+id `${id}__lc`, on source layer `roads_lc` (`LC_ROADS_SOURCE_LAYER`), placed right after it, with
+the same filter, layout and paint (and the same theme paint diff). The tiles step moves the
+/lesscars removed freeway stretches into `roads_lc` (docs/dev/lesscars.md "The split:
+`roads_lc`"); an archive without that layer draws nothing on the clones. Every page draws them
+unfiltered except `/lesscars`, whose `installBasemapHide` sets their filters by day. A consumer
+that queries or restyles basemap roads by layer id should include the `__lc` clones; a consumer
+that inserts layers relative to a road layer should not assume the next layer is another road
+layer.
+
 ## Height limits
 
 Height-lids spec (`docs/superpowers/specs/2026-11-01-height-lids-design.md`); it replaces the height fog (sim-runs spec §4), whose layer, grid and token are gone. `/sim` draws the zoning height limit as glass lids over the lots (zoomed in) and as contour lines on the ground (zoomed out), through SimMap's `setOverlayLayers` in the overlay mux's `limits` slot (`src/lib/sim-page/overlay-mux.ts`), so it is a deck layer, not a MapLibre one.

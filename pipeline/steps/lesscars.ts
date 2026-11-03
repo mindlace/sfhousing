@@ -504,12 +504,19 @@ export async function writeLessCars(a: {
   });
 
   // ---- Files ----
+  // A phase splits only when it has lines (splitPhasesOf skips the others).
+  const split = basemap.phases.filter((ph) => ph.lines.some((l) => l.length >= 2));
   const planFile: LessCarsPlanFile = {
     format: LESSCARS_FORMAT,
     datasetVersion,
     plan,
     times: plan.projects.map((p) => schedule.times.get(p.id)!),
-    segments
+    segments,
+    // The phases the tiles step splits into roads_lc; absent without any, so the page hides
+    // nothing (the published v1 files have no key).
+    ...(split.length > 0
+      ? { basemapHide: split.map((ph) => ({ projectId: ph.project, ids: ph.ids })) }
+      : {})
   };
   const sitesFile: LessCarsSitesFile = {
     format: LESSCARS_FORMAT,

@@ -10,6 +10,7 @@ import {
   FONT_RENAME,
   rewriteFont,
   firstSymbolLayerId,
+  LC_ROADS_SOURCE_LAYER,
   TRANSIT_ACCESS_LAYER,
   TRANSIT_ACCESS_SOURCE,
   TRANSIT_STOP_LAYERS,
@@ -246,5 +247,40 @@ describe('transit layers', () => {
     const d = themePaintDiff(withTransit);
     expect(d.dark.some(([id]) => id === TRANSIT_ACCESS_LAYER)).toBe(true);
     for (const id of TRANSIT_STOP_LAYERS) expect(d.dark.some(([x]) => x === id)).toBe(true);
+  });
+});
+
+describe('the roads_lc clones (lesscars v1.1)', () => {
+  for (const theme of themes) {
+    it(`${theme}: every roads layer has a roads_lc clone right after it`, () => {
+      const s = buildStyle(base, theme);
+      const ids = s.layers.map((l) => l.id);
+      const of = (id: string) => s.layers.find((l) => l.id === id) as Record<string, unknown>;
+      const roadIds = s.layers
+        .filter((l) => (l as { 'source-layer'?: string })['source-layer'] === 'roads')
+        .map((l) => l.id);
+      expect(roadIds.length).toBeGreaterThan(0);
+      for (const id of roadIds) {
+        expect(ids[ids.indexOf(id) + 1]).toBe(`${id}__lc`);
+        const { id: cloneId, 'source-layer': layer, ...rest } = of(`${id}__lc`);
+        const { id: ownId, 'source-layer': ownLayer, ...own } = of(id);
+        expect([cloneId, layer, ownId, ownLayer]).toEqual([
+          `${id}__lc`,
+          LC_ROADS_SOURCE_LAYER,
+          id,
+          'roads'
+        ]);
+        expect(rest).toEqual(own);
+      }
+    });
+  }
+
+  it('theme-diffs the clones as their roads layers', () => {
+    const d = themePaintDiff(base);
+    const own = d.dark.filter(([id]) => id === 'roads_highway').map(([, p, v]) => [p, v]);
+    expect(own.length).toBeGreaterThan(0);
+    expect(d.dark.filter(([id]) => id === 'roads_highway__lc').map(([, p, v]) => [p, v])).toEqual(
+      own
+    );
   });
 });

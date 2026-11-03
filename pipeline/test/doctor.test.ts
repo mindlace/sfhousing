@@ -20,6 +20,8 @@ describe('doctor', () => {
       })
     });
     expect(checks.filter((c) => !c.ok)).toEqual([]);
+    // the basemap split writes MBTiles with node:sqlite
+    expect(checks.find((c) => c.name === 'node:sqlite')).toMatchObject({ ok: true });
   });
 
   it('fails with an install hint when tippecanoe is missing or the wrong version', async () => {

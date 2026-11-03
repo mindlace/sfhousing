@@ -248,6 +248,17 @@ describe('v1 files', () => {
     expect(parsePlanFile(V1_PLAN).plan.id).toBe('mini');
   });
 
+  it('basemapHide parses when present and is absent when omitted', () => {
+    const withHide = { ...structuredClone(V1_PLAN), basemapHide: [{ projectId: 'hwy', ids: [5] }] };
+    expect(parsePlanFile(withHide).basemapHide).toEqual([{ projectId: 'hwy', ids: [5] }]);
+    expect(parsePlanFile(V1_PLAN)).not.toHaveProperty('basemapHide');
+    const bad = (basemapHide: unknown) => () =>
+      parsePlanFile({ ...structuredClone(V1_PLAN), basemapHide });
+    expect(bad([{ projectId: 'nope', ids: [5] }])).toThrow(/basemapHide\.0\.projectId/);
+    expect(bad([{ projectId: 'hwy', ids: [1.5] }])).toThrow(/basemapHide\.0\.ids\.0/);
+    expect(bad({})).toThrow(/basemapHide/);
+  });
+
   it('round-trips the optional site keys and the garage cost', () => {
     const v1 = structuredClone(V1_SITES) as Json;
     Object.assign(v1.sites[0], { parcels: ['3512019'], parcelM2: 800.5, heldBy: 'garage' });

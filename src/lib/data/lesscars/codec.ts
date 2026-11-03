@@ -120,6 +120,12 @@ export interface LessCarsPlanFile {
   times: ProjectTimes[];
   /** cnn → lng/lat lines. */
   segments: Record<string, [number, number][][]>;
+  /**
+   * v1.1, absent when empty (and in v1 files): the removal phases whose basemap features the
+   * tiles step moved to source layer `roads_lc` (property `lc_project`), with the basemap ids
+   * listed for each. The page hides a project's `roads_lc` features from its openDay.
+   */
+  basemapHide?: { projectId: string; ids: number[] }[];
 }
 
 // ---- validation helpers ----
@@ -704,11 +710,26 @@ export function parsePlanFile(json: unknown): LessCarsPlanFile {
   const seg = obj(r.segments, 'segments', []);
   const segments: Record<string, [number, number][][]> = {};
   for (const [cnn, lines] of Object.entries(seg)) segments[cnn] = rings(lines, at('segments', cnn));
-  return {
+  const file: LessCarsPlanFile = {
     format: format(r.format, 'format'),
     datasetVersion: str(r.datasetVersion, 'datasetVersion'),
     plan,
     times,
     segments
   };
+  if ('basemapHide' in r)
+    file.basemapHide = arr(r.basemapHide, 'basemapHide').map((v, i) => {
+      const p = at('basemapHide', i);
+      const h = obj(v, p, ['projectId', 'ids']);
+      const projectId = str(h.projectId, at(p, 'projectId'));
+      if (!ids.has(projectId)) fail(at(p, 'projectId'), `no project ${projectId} in the plan`);
+      const list = arr(h.ids, at(p, 'ids')).map((x, j) => {
+        const id = num(x, at(at(p, 'ids'), j));
+        if (!Number.isSafeInteger(id) || id < 0)
+          fail(at(at(p, 'ids'), j), 'expected a non-negative integer id');
+        return id;
+      });
+      return { projectId, ids: list };
+    });
+  return file;
 }

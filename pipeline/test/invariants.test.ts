@@ -1289,6 +1289,16 @@ describe('V35 /lesscars files', () => {
       /freed parcel 3512019 is scenario-eligible: its homes would count twice/
     );
   });
+  it('V35 fails when a basemapHide project is not a highway truncation', async () => {
+    const d = copy();
+    edit(d, LESSCARS_FILES.plan, (p) => {
+      expect(p.basemapHide?.length).toBeGreaterThan(0);
+      p.basemapHide.push({ projectId: 'subway', ids: [1] });
+    });
+    const r = await v35(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/basemapHide: subway is not a highway truncation/);
+  });
   it('V35 fails when a freewayLand parcel is in no site', async () => {
     const d = copy();
     edit(d, LESSCARS_FILES.sites, (f) => {
