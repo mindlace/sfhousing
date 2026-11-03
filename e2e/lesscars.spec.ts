@@ -6,6 +6,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { inflateRawSync } from 'node:zlib';
+import { LC } from '../pipeline/lesscars-config';
 import {
   decodeTimelinePayload,
   parsePlanFile,
@@ -188,9 +189,18 @@ async function pick(page: Page, isMobile: boolean, [x, y]: [number, number]): Pr
   else await page.mouse.click(x, y);
 }
 
-/** At the horizon, taps the first freed-land build's site until its card shows. */
+/**
+ * At the horizon, taps the label point of the freed-land build on the largest site until its card
+ * shows. The largest site is the one whose building surely covers its label point: on fixture-0
+ * that is lc:hwy:1, freeway-land lot 19 merged with the ROW piece it touches (1,800 m²), whose
+ * label point falls in the stretch's full-width rectangle, not in the lot's narrow tab.
+ */
 async function openFreedCard(page: Page, isMobile: boolean) {
-  const b = timeline.builds.find((x) => x.parcelRow === null);
+  const areaOf = (siteId: string) =>
+    sitesFile.sites.find((s) => s.siteId === siteId)?.rec.areaM2 ?? 0;
+  const b = timeline.builds
+    .filter((x) => x.parcelRow === null)
+    .sort((x, y) => areaOf(y.siteId) - areaOf(x.siteId))[0];
   expect(b, 'fixture-0 has a freed-land build').toBeDefined();
   await toEnd(page);
   await page.waitForFunction(
@@ -229,6 +239,96 @@ async function expectFooterReachable(page: Page): Promise<void> {
     expect(hit.ok, `${name} covered by ${hit.top}`).toBe(true);
     await link.tap({ trial: true });
   }
+}
+
+// ---- the basemap split (docs/dev/lesscars.md "Basemap ids") -------------------------------------
+
+/** The split phase on fixture-0: its project, the listed basemap ids and its project's lines. */
+const hide = (() => {
+  const h = planFile.basemapHide?.[0];
+  if (!h) throw new Error("fixture-0's plan.json has no basemapHide");
+  const p = planFile.plan.projects.find((x) => x.id === h.projectId)!;
+  const cnns = 'segments' in p ? p.segments.flatMap((s) => ('cnn' in s ? s.cnn : [])) : [];
+  const lines = cnns.flatMap((c) => planFile.segments[c] ?? []);
+  return { ...h, openDay: T(h.projectId).openDay, lines };
+})();
+
+/**
+ * A box inside the corridor (the lines buffered by LC.basemapBandM, flat caps): the lines' bounds,
+ * widened across by half the band. On fixture-0 the hwy line runs east-west, so the box stays in
+ * the corridor; the listed street's parts outside it stay in `roads`.
+ */
+const corridorBox = (() => {
+  const pts = hide.lines.flat();
+  const lats = pts.map((p) => p[1]);
+  const d = LC.basemapBandM / 2 / 111_320;
+  if (Math.max(...lats) - Math.min(...lats) >= d)
+    throw new Error(
+      "fixture-0's split phase line is not east-west: the box would leave the corridor"
+    );
+  const lngs = pts.map((p) => p[0]);
+  return {
+    sw: [Math.min(...lngs), Math.min(...lats) - d] as LngLat,
+    ne: [Math.max(...lngs), Math.max(...lats) + d] as LngLat
+  };
+})();
+const corridorFrame = {
+  center: [
+    (corridorBox.sw[0] + corridorBox.ne[0]) / 2,
+    (corridorBox.sw[1] + corridorBox.ne[1]) / 2
+  ] as LngLat,
+  zoom: 17,
+  pitch: 0,
+  bearing: 0
+};
+
+/** The style's line layers on the basemap's `roads` or `roads_lc` source layer. */
+async function lineLayers(page: Page, sourceLayer: 'roads' | 'roads_lc'): Promise<string[]> {
+  return page.evaluate(
+    (sl) =>
+      (window as Win)
+        .__sfhMap!.map!.getStyle()
+        .layers.filter(
+          (l) => l.type === 'line' && (l as { 'source-layer'?: string })['source-layer'] === sl
+        )
+        .map((l) => l.id),
+    sourceLayer
+  );
+}
+
+/**
+ * Repaints, waits for idle, and returns the feature ids MapLibre drew on `layers` in the box
+ * (null: the whole viewport).
+ */
+async function renderedIds(
+  page: Page,
+  layers: string[],
+  box: { sw: LngLat; ne: LngLat } | null
+): Promise<number[]> {
+  return page.evaluate(
+    ({ layers, box }) =>
+      new Promise<number[]>((resolve) => {
+        const map = (window as Win).__sfhMap!.map!;
+        map.once('idle', () => {
+          let fs;
+          if (box === null) fs = map.queryRenderedFeatures({ layers });
+          else {
+            const a = map.project(box.sw);
+            const b = map.project(box.ne);
+            fs = map.queryRenderedFeatures(
+              [
+                [Math.min(a.x, b.x), Math.min(a.y, b.y)],
+                [Math.max(a.x, b.x), Math.max(a.y, b.y)]
+              ],
+              { layers }
+            );
+          }
+          resolve([...new Set(fs.map((f) => Number(f.id)))].sort((x, y) => x - y));
+        });
+        map.triggerRepaint();
+      }),
+    { layers, box }
+  );
 }
 
 // ---- the page -----------------------------------------------------------------------------------
@@ -271,6 +371,29 @@ test.describe('the page on fixture-0', () => {
     expect(sources.reduce((a, b) => a + b, 0)).toBe(shown);
   });
 
+  test('the details say how much freed land came from freeway parcels and from roadway', async ({
+    page
+  }) => {
+    let parcelM2 = 0;
+    let rowM2 = 0;
+    for (const s of sitesFile.sites) {
+      if (s.heldBy) continue;
+      const p = Math.min(s.parcelM2 ?? 0, s.rec.areaM2);
+      parcelM2 += p;
+      rowM2 += s.rec.areaM2 - p;
+    }
+    const ha = (m2: number) => (m2 / 10000).toFixed(1);
+    const want =
+      parcelM2 > 0
+        ? `Freed land: ${ha(parcelM2)} ha of former freeway land and ${ha(rowM2)} ha of former roadway.`
+        : `Freed land: ${ha(rowM2)} ha of former roadway.`;
+    await page.getByTestId('lc-headline').click();
+    await expect(page.getByTestId('lc-panel').getByText(want, { exact: true })).toBeVisible();
+    // the fixture summary has no garageCost, so no garage line
+    expect(summary.garageCost).toBeUndefined();
+    await expect(page.getByText(/take the place of/)).toHaveCount(0);
+  });
+
   test('street states are rendered by day, and revert when scrubbing back', async ({ page }) => {
     const hwy = planFile.plan.projects.find((p) => p.kind === 'highway-truncation')!;
     await frameOn(page, planBBox(planFile));
@@ -287,6 +410,50 @@ test.describe('the page on fixture-0', () => {
     await expect(readout(page)).toHaveText(formatMonthYear(LESSCARS_START));
     expect(await renderedProps(page, LC_STREET_LAYER.removed)).toEqual([]);
     expect(await projectsOn(page, LC_STREET_LAYER.works)).not.toContain(hwy.id);
+  });
+
+  test('inside the corridor the removed street draws from roads_lc until its removal day, never from roads', async ({
+    page
+  }) => {
+    const cloneIds = await lineLayers(page, 'roads_lc');
+    const roadIds = await lineLayers(page, 'roads');
+    expect(cloneIds).toHaveLength(roadIds.length);
+    await jumpAndIdle(page, corridorFrame);
+    expect(await renderedIds(page, cloneIds, corridorBox)).toEqual(
+      expect.arrayContaining(hide.ids)
+    );
+    const fromRoads = await renderedIds(page, roadIds, corridorBox);
+    await setDay(page, hide.openDay);
+    const after = await renderedIds(page, cloneIds, corridorBox);
+    for (const id of hide.ids) {
+      expect(fromRoads, String(id)).not.toContain(id);
+      expect(after, String(id)).not.toContain(id);
+    }
+    // the rest of the street still draws outside the corridor, from roads
+    expect(await renderedIds(page, roadIds, null)).toEqual(expect.arrayContaining(hide.ids));
+    // scrubbing back brings it back
+    await slider(page).focus();
+    await page.keyboard.press('Home');
+    await expect(readout(page)).toHaveText(formatMonthYear(LESSCARS_START));
+    const back = await renderedIds(page, cloneIds, corridorBox);
+    for (const id of hide.ids) expect(back, String(id)).toContain(id);
+  });
+
+  test('the filter survives a theme switch', async ({ page }) => {
+    const cloneIds = await lineLayers(page, 'roads_lc');
+    await jumpAndIdle(page, corridorFrame);
+    await setDay(page, hide.openDay);
+    expect(cloneIds).toContain('roads_highway__lc');
+    const paint = () =>
+      page.evaluate(
+        (id) => JSON.stringify((window as Win).__sfhMap!.map!.getPaintProperty(id, 'line-color')),
+        'roads_highway__lc'
+      );
+    const light = await paint();
+    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+    await expect.poll(paint).not.toBe(light);
+    const after = await renderedIds(page, cloneIds, corridorBox);
+    for (const id of hide.ids) expect(after, String(id)).not.toContain(id);
   });
 
   test('plan lines and stops appear on opening; freed land appears when available', async ({
@@ -425,6 +592,56 @@ test.describe('the page on fixture-0', () => {
     await noScroll();
     await expectFooterReachable(page);
   });
+});
+
+// ---- the clones elsewhere -----------------------------------------------------------------------
+
+test('/sim still draws the moved street, from the clone layers', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await gotoHydrated(page, '/sim');
+  await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
+    timeout: 20_000
+  });
+  await page.waitForFunction(() => !!(window as Win).__sfhMap?.map);
+  await jumpAndIdle(page, corridorFrame);
+  const cloneIds = await lineLayers(page, 'roads_lc');
+  expect(cloneIds.length).toBeGreaterThan(0);
+  expect(await renderedIds(page, cloneIds, corridorBox)).toEqual(expect.arrayContaining(hide.ids));
+});
+
+test('a plan file without basemapHide hides nothing: the street draws after its removal day', async ({
+  page
+}) => {
+  // The published 2026-11-02-39fbf039 plan.json has no basemapHide key. A first load fetches the
+  // plan in the server render, so navigate client-side from /about, where the intercept applies.
+  let served = false;
+  await page.route('**/data/fixture-0/scenarios/lesscars/plan.json', async (route) => {
+    const res = await route.fetch();
+    const plan = (await res.json()) as Record<string, unknown>;
+    delete plan.basemapHide;
+    served = true;
+    await route.fulfill({ response: res, json: plan });
+  });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await gotoHydrated(page, '/about');
+  await openHeaderMenu(page);
+  await page.getByRole('banner').getByRole('link', { name: 'Fewer cars', exact: true }).click();
+  await expect(page).toHaveURL(/\/lesscars$/);
+  await page.waitForFunction(() => (window as LcWin).__sfhLessCars?.phase === 'ready', undefined, {
+    timeout: 20_000
+  });
+  await page.waitForFunction(() => !!(window as Win).__sfhMap?.map);
+  expect(served).toBe(true);
+  await jumpAndIdle(page, corridorFrame);
+  await setDay(page, hide.openDay);
+  const cloneIds = await lineLayers(page, 'roads_lc');
+  const after = await renderedIds(page, cloneIds, corridorBox);
+  for (const id of hide.ids) expect(after, String(id)).toContain(id);
+  const filters = await page.evaluate(
+    (ids) => ids.map((id) => JSON.stringify((window as Win).__sfhMap!.map!.getFilter(id) ?? null)),
+    cloneIds
+  );
+  for (const f of filters) expect(f).not.toContain('lc_project');
 });
 
 // ---- a dataset without the plan -----------------------------------------------------------------

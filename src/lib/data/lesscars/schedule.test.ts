@@ -188,6 +188,42 @@ describe('checkPlan', () => {
     expect(codes(p)).toContainEqual({ code: 'site-reused', project: 'garage2' });
   });
 
+  it('a parcel freed by two truncations, or freed and converted, is site-reused', () => {
+    const free = (q: LessCarsPlan, id: string, parcels: string[]) =>
+      Object.assign(byId(q, id), { freewayLand: { parcels, excluded: [] } });
+    const two = tinyPlan((q) => {
+      const hwy2 = structuredClone(byId(q, 'hwy'));
+      hwy2.id = 'hwy2';
+      q.projects.push(hwy2);
+      free(q, 'hwy', ['P1']);
+      free(q, 'hwy2', ['P1']);
+    });
+    expect(codes(two)).toContainEqual({ code: 'site-reused', project: 'hwy2' });
+    const converted = tinyPlan((q) => free(q, 'hwy', ['0001001']));
+    expect(codes(converted)).toContainEqual({ code: 'site-reused', project: 'parking' });
+  });
+
+  it('a garage may stand on one truncation’s freeway land; two garages on it may not', () => {
+    const onLand = (n: number) =>
+      tinyPlan((q) => {
+        Object.assign(byId(q, 'hwy'), { freewayLand: { parcels: ['P1'], excluded: [] } });
+        for (let i = 0; i < n; i++) {
+          const g = structuredClone(byId(q, 'garage'));
+          g.id = i === 0 ? 'garage' : `garage${i + 1}`;
+          Object.assign(g, { site: { parcel: 'P1' } });
+          if (i === 0)
+            q.projects.splice(
+              q.projects.findIndex((x) => x.id === 'garage'),
+              1
+            );
+          q.projects.push(g);
+        }
+      });
+    const one = codes(onLand(1));
+    expect(one.filter((c) => c.code === 'site-reused')).toEqual([]);
+    expect(codes(onLand(2))).toContainEqual({ code: 'site-reused', project: 'garage2' });
+  });
+
   it('outside-window: a start in 2027 and a build completing in 2069', () => {
     const early = tinyPlan((q) => (byId(q, 'tram').startYear = 2027));
     expect(codes(early)).toContainEqual({ code: 'outside-window', project: 'tram' });

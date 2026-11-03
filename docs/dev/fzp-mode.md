@@ -89,6 +89,8 @@ Every notice is a pill (`PILL` in `src/lib/shell/pill.ts`) in one stack, `Notice
 - **"Allowed by"** (`ownerName`). With the `ownerName` prop FzpMode shows `Allowed by: {name}` (`data-testid="card-allowed-by"`) after the card's size line, from the `limits.owner` that `parcelSummary` carries (`SummaryState` `project` has `limits?: LotLimits`) and the tap's parcel. `/sim` passes `ownerLabel(owner, lot, policy, lots)` (`sim-page/selection.ts`): "Near Muni Metro" (`layerName`) for a rule still in the policy, "Painted 8 stories" for paint (`paintBrushOf`, `rowName`), and null for FZP, a rule that has left the policy or paint it cannot place (the worker's limits can be a revision behind), so then there is no line. `/fzp` has no lever session, so no owner and no line.
 - **Card refresh:** the open card asks again when the scrubbed month changes, when a reroll or crash Retry answers, and when the worker crashes (then it reads "Details unavailable" until Retry).
 
+Freeway land never builds in the FZP timelapse: a parcel in the freeway-land catalog is scenario-ineligible in `parcels.bin` ([pipeline.md](pipeline.md), "Freeway land"). Nothing new is drawn for it.
+
 ## The T9 lookups seam
 
 The card's chance lookup (`chanceTable`) and the map's stage-duration lookup (`typicalMonths`) start from the base `calibration.json` (`lookupsFor` in `FzpMode.svelte`, one object per calibration object, because SimMap compares lookups by identity). `pushLookups` is the single call site that hands them to the map.

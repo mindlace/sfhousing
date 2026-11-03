@@ -106,13 +106,25 @@ const panel = () =>
 describe('scenario T13 panel and T11 features (mini fixture)', () => {
   it("every parcel's 2025 panel row equals its T11 features and mask", async () => {
     const rows = (await panel()).filter((r) => r.roll_year === 2025);
-    // Lots 9, 12 and 13 have no 2025 roll row (mini README), so 15 of the 18 parcels.
-    expect(rows).toHaveLength(15);
+    // Lots 9, 12 and 13 have no 2025 roll row (mini README), so 16 of the 19 parcels.
+    expect(rows).toHaveLength(16);
     expect(p.rollYear).toBe(2025);
     for (const r of rows) {
       const i = p.index.get(r.mapblklot);
       expect(i, r.mapblklot).toBeDefined();
       const k = i as number;
+      // Lot 19 (3512019) is freeway land: the panel keeps it eligible (calibration describes the
+      // past market), T11 does not, so its base-yield features are the rule's 0 on T11 only.
+      const freeway = r.mapblklot === '3512019';
+      if (freeway) {
+        expect(r.hostable_base, 'lot 19 panel').toBe(true);
+        expect(r.base_yield, 'lot 19 panel').toBeGreaterThan(0);
+        expect(r.potential_ratio_base, 'lot 19 panel').toBeGreaterThan(0);
+        expect(p.hostableBase[k], 'lot 19 T11').toBe(0);
+        expect(p.baseYield[k * F + F - 1], 'lot 19 T11').toBe(0);
+        expect(featureValue(p, k, 'potentialRatio', 'base'), 'lot 19 T11').toBe(0);
+      }
+      const ruled = (v: number) => (freeway ? 0 : v);
       expect(
         {
           existing_units: r.existing_units,
@@ -123,12 +135,12 @@ describe('scenario T13 panel and T11 features (mini fixture)', () => {
           rent_control_likely: r.rent_control_likely ? 1 : 0,
           land_use_class: r.land_use_class,
           imputed: r.imputed,
-          potential_ratio_base: r.potential_ratio_base,
+          potential_ratio_base: ruled(r.potential_ratio_base),
           stories_gap_base: r.stories_gap_base,
           base_stories: r.base_stories,
           base_density_cap: r.base_density_cap ?? 0xffff,
-          base_yield: r.base_yield,
-          hostable_base: r.hostable_base ? 1 : 0
+          base_yield: ruled(r.base_yield),
+          hostable_base: ruled(r.hostable_base ? 1 : 0)
         },
         r.mapblklot
       ).toEqual({
@@ -157,15 +169,15 @@ describe('scenario T13 panel and T11 features (mini fixture)', () => {
     // Partner ruling (option c): the density cap no longer gates the at-risk set, so a cap change
     // such as the 2022-11-27 fourplex ordinance cannot flip it. Trivially true on mini (all its
     // roll years follow the ordinance), still asserted; V18 asserts it on every build. Compared
-    // over the parcels with a row in both years: mini's panel grows from 2 rows (2023) to 17
-    // (2024) and 15 (2025), which is coverage, not flips. Vacant lots 15 and 17 are hostable in
-    // 2024 and 2025; underwater lot 16 never is.
+    // over the parcels with a row in both years: mini's panel grows from 2 rows (2023) to 18
+    // (2024) and 16 (2025), which is coverage, not flips. Vacant lots 15, 17 and 19 are hostable
+    // in 2024 and 2025 (lot 19, freeway land, only in the panel); underwater lot 16 never is.
     const rows = await panel();
     const years = [...new Set(rows.map((r) => r.roll_year))].sort();
     expect(years.map((y) => counts[`scenario.panel.hostable_base.${y}`])).toEqual(
       years.map((y) => rows.filter((r) => r.roll_year === y && r.hostable_base).length)
     );
-    expect(years.map((y) => counts[`scenario.panel.hostable_base.${y}`])).toEqual([2, 11, 10]);
+    expect(years.map((y) => counts[`scenario.panel.hostable_base.${y}`])).toEqual([2, 12, 11]);
     const at = new Map(rows.map((r) => [`${r.mapblklot}:${r.roll_year}`, r.hostable_base]));
     for (const y of years.slice(1)) {
       const both = rows.filter((r) => r.roll_year === y && at.has(`${r.mapblklot}:${y - 1}`));
@@ -220,6 +232,7 @@ describe('scenario T13 panel and T11 features (mini fixture)', () => {
       buildCounts: {}
     });
     const t11 = readParcelsBin(join(root, 'out', PARCELS_BIN));
+    // Lots 9, 12 and 13 have no latest-year row: 16 of the 19 parcels (lot 19 included).
     const rows = await sdb.all<{
       mapblklot: string;
       existing_floor_area_m2: number;
@@ -228,7 +241,7 @@ describe('scenario T13 panel and T11 features (mini fixture)', () => {
       `SELECT mapblklot, existing_floor_area_m2, imputed FROM sc_features
        WHERE roll_year = (SELECT max(roll_year) FROM sc_features) ORDER BY mapblklot`
     );
-    expect(rows).toHaveLength(15);
+    expect(rows).toHaveLength(16);
     for (const r of rows) {
       const i = t11.index.get(r.mapblklot);
       expect(i, r.mapblklot).toBeDefined();

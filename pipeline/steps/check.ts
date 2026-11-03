@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync, inflateRawSync } from 'node:zlib';
 import { parseManifest, type Manifest } from '../../src/lib/data/manifest';
-import type { ParcelRecord } from '../../src/lib/data/parcel';
+import type { ParcelId, ParcelRecord } from '../../src/lib/data/parcel';
 import { decodeParcelChunk } from '../../src/lib/data/parcel-chunk';
 import {
   FILL_LEVELS,
@@ -56,6 +56,12 @@ export interface CheckExtras {
    * `check` carries them from report.json; when absent they fail as not measured.
    */
   calibrationChecks?: InvariantResult[];
+  /**
+   * V17: the freeway-land catalog's parcels (`readFreewayLandSet`), scenario-ineligible while their
+   * freeway stands. A standalone `check` reads today's catalog of the version's kind, so an older
+   * out dir checked against a newer catalog can fail. Absent: no freeway land.
+   */
+  freewayLand?: ReadonlySet<ParcelId>;
 }
 
 /** The project-records invariants measured in the build, not from the files. */
@@ -653,7 +659,8 @@ export async function checkDataset(
   // payload can show (hostable ⇒ eligible ∧ stories ≥ 1; eligible ∧ stories ≥ 1 ∧ capped
   // yield[F−1] > 0 ⇒ hostable, since capped > 0 implies uncapped > 0) and the step's counts of
   // flags that disagree with its own uncapped yields. Eligibility is flags bit 5, which must equal
-  // the chunk record's `eligible` or sd.landuse.none-with-units on the row's latest-roll units.
+  // the chunk record's `eligible` or sd.landuse.none-with-units on the row's latest-roll units,
+  // and is 0 on freeway land (`extras.freewayLand`).
   {
     const clamped = c['scenario.yield.clamped'];
     const nonlp = c['scenario.yield.nonlp_base_mismatch'];
@@ -678,7 +685,8 @@ export async function checkDataset(
         const rec = recById.get(p.id[i]);
         if (
           (p.eligible[i] === 1) !==
-          (rec !== undefined && scenarioEligible(rec, p.existingUnits[i]))
+          (rec !== undefined &&
+            scenarioEligible(rec, p.existingUnits[i], extras.freewayLand?.has(p.id[i]) ?? false))
         )
           badE++;
         const elig = p.eligible[i] === 1;

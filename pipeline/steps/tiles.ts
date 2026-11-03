@@ -4,6 +4,12 @@ import { join, resolve } from 'node:path';
 import { FONT_STACKS, type BBOX } from '../config';
 import type { Duck } from '../lib/duck';
 import { run } from '../lib/exec';
+import {
+  LC_ROADS_VECTOR_LAYER,
+  splitRoadsTile,
+  type SplitPhase
+} from '../lib/lesscars/basemap-split';
+import { rewritePmtiles } from '../lib/pmtiles-rewrite';
 
 interface ExportRow {
   parcel_id: string | null;
@@ -78,9 +84,31 @@ export async function writeBuildingsTiles(
   }
 }
 
-export function copyBasemap(rawFile: string, outDir: string): void {
+/**
+ * outDir/basemap.pmtiles from the locked protomaps archive. Without split phases it is copied byte
+ * for byte. With them every tile goes through splitRoadsTile (docs/dev/lesscars.md "Basemap ids"):
+ * the removed freeway stretches move to source layer `roads_lc`, unlisted highways clipped only on
+ * `clipZooms`. Returns the tiles rewritten and how many changed (0, 0 for a copy).
+ */
+export async function writeBasemap(
+  rawFile: string,
+  outDir: string,
+  split: { phases: SplitPhase[]; clipZooms: readonly number[]; workDir: string } | null
+): Promise<{ tiles: number; changed: number }> {
   mkdirSync(outDir, { recursive: true });
-  copyFileSync(rawFile, join(outDir, 'basemap.pmtiles'));
+  const out = join(outDir, 'basemap.pmtiles');
+  if (split === null || split.phases.length === 0) {
+    copyFileSync(rawFile, out);
+    return { tiles: 0, changed: 0 };
+  }
+  const { phases, clipZooms } = split;
+  return rewritePmtiles({
+    input: rawFile,
+    output: out,
+    workDir: join(split.workDir, 'basemap-split'),
+    transform: (z, x, y, mvt) => splitRoadsTile(mvt, z, x, y, phases, clipZooms.includes(z)),
+    extraLayers: [LC_ROADS_VECTOR_LAYER]
+  });
 }
 
 /**

@@ -26,7 +26,15 @@ import { asOfFromLock } from '../project-records/parse';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
 import { SB79_EXEMPTIONS_CSV } from '../sources/sfbos';
 import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
-import { LESSCARS_PLAN_JSON } from '../lesscars-config';
+import {
+  LC,
+  LESSCARS_BASEMAP_IDS_JSON,
+  LESSCARS_FREEWAY_LAND_JSON,
+  LESSCARS_PLAN_JSON
+} from '../lesscars-config';
+import { readBasemapIds } from '../lib/lesscars/basemap-ids';
+import { splitPhasesOf } from '../lib/lesscars/basemap-split';
+import { freewayLandSet, readFreewayLand } from '../lib/lesscars/freeway-land';
 import { writeCalibration } from './calibration';
 import { checkDataset, type InvariantResult } from './check';
 import { readParcelRecords, writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
@@ -35,7 +43,7 @@ import { writeLessCars } from './lesscars';
 import { writePolicy } from './policy';
 import { writeProjectRecords } from './projects';
 import { writeScenario } from './scenario';
-import { copyBasemap, installFonts, writeBuildingsTiles } from './tiles';
+import { installFonts, writeBasemap, writeBuildingsTiles } from './tiles';
 import { transitTargetDate, writeTransit } from './transit';
 
 export interface BuildOpts {
@@ -207,6 +215,11 @@ export async function build(
     const counts: Record<string, number> = {};
     // The scenario and policy steps share the chunk records (same rows, same order).
     const records = await readParcelRecords(db);
+    // Freeway land (lesscars v1.1): the live catalog lists its segments with empty parcel lists until
+    // Plan B curates it, so no parcel is marked (a live build still reports zero-valued counts).
+    const freewayLand = readFreewayLand(
+      LESSCARS_FREEWAY_LAND_JSON[fixtureMode ? 'fixture' : 'live']
+    );
     const scenario = await report.time('scenario', async () =>
       writeScenario({
         db,
@@ -216,7 +229,8 @@ export async function build(
         records,
         capDay: asOf,
         report,
-        buildCounts: counts
+        buildCounts: counts,
+        freewayLand
       })
     );
     report.warnings.push(...scenario.warnings);
@@ -278,15 +292,25 @@ export async function build(
     // /lesscars (docs/dev/lesscars.md): after the policy step (pol_tod, policy.bin), projects,
     // calibration and transit. Without a plan file (the live build until the authored plan
     // lands) it writes nothing and the manifest has no lesscars key.
+    // The basemap archive's raw path is resolved here: the id list is checked against it.
+    const basemap = lock.sources.find((s) => s.id === 'protomaps-basemap')?.files[0];
+    if (!basemap) throw new BuildError('lock has no protomaps-basemap file');
+    const basemapRaw = rawPath(opts.rawDir, basemap, byName);
     const lesscars = await report.time('lesscars', () =>
       writeLessCars({
+        basemap: {
+          pmtiles: basemapRaw,
+          ids: readBasemapIds(LESSCARS_BASEMAP_IDS_JSON[fixtureMode ? 'fixture' : 'live']),
+          sha256: basemap.sha256
+        },
         db,
         outDir,
         datasetVersion,
         records,
         planPath: fixtureMode ? LESSCARS_PLAN_JSON.fixture : LESSCARS_PLAN_JSON.live,
         profile: opts.profile,
-        capDay: asOf
+        capDay: asOf,
+        freewayLand
       })
     );
     report.warnings.push(...lesscars.warnings);
@@ -297,9 +321,15 @@ export async function build(
     if (!opts.skipTiles) {
       await report.time('tiles', () => writeBuildingsTiles(db, outDir, work));
     }
-    const basemap = lock.sources.find((s) => s.id === 'protomaps-basemap')?.files[0];
-    if (!basemap) throw new BuildError('lock has no protomaps-basemap file');
-    copyBasemap(rawPath(opts.rawDir, basemap, byName), outDir);
+    // The removed freeway stretches of the basemap id list move to source layer roads_lc
+    // (docs/dev/lesscars.md "Basemap ids"); without phases the archive is copied byte for byte
+    // and the report gains no key (a live build without an id list reports as before).
+    const splitPhases = await splitPhasesOf(db, lesscars.basemapPhases, LC.basemapBandM);
+    if (splitPhases.length > 0) {
+      const split = { phases: splitPhases, clipZooms: LC.basemapClipZooms, workDir: work };
+      const r = await report.time('basemap', () => writeBasemap(basemapRaw, outDir, split));
+      counts['tiles.basemap_split_changed'] = r.changed;
+    } else await writeBasemap(basemapRaw, outDir, null);
     await materialiseFonts(lock, opts.rawDir, byName, join(work, 'fonts'));
     installFonts(join(work, 'fonts'), outDir);
 
@@ -344,7 +374,8 @@ export async function build(
         stableDetail: fixtureMode,
         asOf,
         projectChecks: projects.checks,
-        calibrationChecks: calibration.checks
+        calibrationChecks: calibration.checks,
+        freewayLand: freewayLandSet(freewayLand)
       })
     );
     const body: Record<string, unknown> = {

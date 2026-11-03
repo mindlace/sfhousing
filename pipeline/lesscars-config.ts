@@ -26,7 +26,17 @@ export const LC = {
   /** Freed pieces smaller than this are dropped, m². */
   minPieceM2: 100,
   /** A freed piece's neighbours: parcels within this distance, metres. */
-  neighbourM: 40
+  neighbourM: 40,
+  /** A basemap road within this of a removed line is near it, metres. */
+  basemapBandM: 25,
+  /** Task 6: a basemap feature at least this much in band is the removed stretch's. */
+  basemapMinShare: 0.9,
+  /** Basemap zooms where a highway feature spans the cut, measured by `lesscars-basemap`. */
+  basemapClipZooms: [11, 12, 13, 14, 15] as number[],
+  /** Freeway land (spec "My call"): a parcel within this of a segment's streets is a candidate, metres. */
+  freewayBandM: 60,
+  /** Freeway land (spec): a candidate has at least this share of its area within the band. */
+  freewayMinShare: 0.5
 } as const;
 
 export const LC_CITE: Record<keyof typeof LC, TieredCite> = {
@@ -40,7 +50,18 @@ export const LC_CITE: Record<keyof typeof LC, TieredCite> = {
   accessM: invented('6 m service strip along every parcel edge'),
   lotMaxM: invented('60 m maximum lot length along a removed line'),
   minPieceM2: invented('100 m² smallest freed piece kept'),
-  neighbourM: invented('40 m neighbour search radius for a freed piece’s zoning')
+  neighbourM: invented('40 m neighbour search radius for a freed piece’s zoning'),
+  basemapBandM: invented('25 m band: a basemap road within it of a removed line is near it'),
+  basemapMinShare: invented('0.9: a feature this much in band is the removed stretch’s'),
+  basemapClipZooms: invented(
+    'zooms where a basemap highway merges across a cut, measured (docs/dev/lesscars.md "Basemap ids")'
+  ),
+  freewayBandM: invented(
+    '60 m candidate band for freeway land, the spec’s own call (2026-11-03-lesscars-v1-1-design.md "Freeway land")'
+  ),
+  freewayMinShare: invented(
+    '"at least half within" the band, inclusive (2026-11-03-lesscars-v1-1-design.md "Freeway land")'
+  )
 };
 
 const PIPELINE_DIR = import.meta.dirname;
@@ -49,4 +70,22 @@ const PIPELINE_DIR = import.meta.dirname;
 export const LESSCARS_PLAN_JSON = {
   live: path.join(PIPELINE_DIR, 'enrichment/lesscars/plan.json'),
   fixture: path.join(PIPELINE_DIR, 'test/fixtures/mini/enrichment/lesscars-plan.json')
+};
+
+/**
+ * The freeway-land catalog (`pipeline/lib/lesscars/freeway-land.ts`): live (its segments have empty
+ * parcel lists until Plan B curates it, so a live build marks no parcel), and the mini fixture's.
+ */
+export const LESSCARS_FREEWAY_LAND_JSON = {
+  live: path.join(PIPELINE_DIR, 'enrichment/lesscars/freeway-land.json'),
+  fixture: path.join(PIPELINE_DIR, 'test/fixtures/mini/enrichment/lesscars-freeway-land.json')
+};
+
+/**
+ * The curated basemap id list (`pipeline/lib/lesscars/basemap-ids.ts`): live (absent until Plan B
+ * curates it, so a live build checks no ids), and the mini fixture's.
+ */
+export const LESSCARS_BASEMAP_IDS_JSON = {
+  live: path.join(PIPELINE_DIR, 'enrichment/lesscars/basemap-ids.json'),
+  fixture: path.join(PIPELINE_DIR, 'test/fixtures/mini/enrichment/lesscars-basemap-ids.json')
 };

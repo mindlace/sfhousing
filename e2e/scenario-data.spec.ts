@@ -49,7 +49,8 @@ test('decodes scenario parcels in the browser through the shared codec', async (
     };
   }, PARCELS);
 
-  expect(decoded.count).toBe(18);
+  // 19 mini lots, freeway-land lot 19 (3512019) included.
+  expect(decoded.count).toBe(19);
   expect(decoded.row).toBeGreaterThanOrEqual(0);
   expect(decoded.envelope).toBe(65);
 });

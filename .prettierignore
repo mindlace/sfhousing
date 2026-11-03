@@ -19,6 +19,8 @@ src/lib/sharing/fixtures/plans/oversize.json
 src/lib/sharing/fixtures/plans/schema2.json
 src/lib/sharing/fixtures/plans/old-version.json
 src/lib/sim/fixtures/data
+# Byte copies of the v1 /lesscars files (dataset 2026-11-02-39fbf039's format), test inputs
+src/lib/data/lesscars/fixtures/v1
 # Owned by release-please: regenerated on every release, never hand-formatted
 CHANGELOG.md
 .release-please-manifest.json

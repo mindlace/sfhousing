@@ -11,10 +11,14 @@ import {
 import { doctor } from './steps/doctor';
 import { fetchAll } from './steps/fetch';
 import { fixture } from './steps/fixture';
+import { lesscarsBasemap } from './steps/lesscars-basemap';
 import { lesscarsCnns } from './steps/lesscars-cnns';
+import { lesscarsFreewayLand } from './steps/lesscars-freeway-land';
 import { upload } from './steps/upload';
 import { verify } from './steps/verify';
 import { readLock } from './lib/lock';
+import { readFreewayLandSet } from './lib/lesscars/freeway-land';
+import { LESSCARS_FREEWAY_LAND_JSON } from './lesscars-config';
 import { replaceQualityDocSection } from './lib/quality';
 import { wranglerTarget } from './lib/r2';
 
@@ -119,7 +123,9 @@ const steps: Record<string, { help: string; run: Step }> = {
         // V28 and V29 likewise come from the calibration step's in-memory computation.
         calibrationChecks: report.invariants?.filter((r) =>
           (CALIBRATION_CHECK_IDS as readonly string[]).includes(r.id)
-        )
+        ),
+        // V17 reads today's freeway-land catalog of the version's kind (docs/dev/pipeline.md).
+        freewayLand: readFreewayLandSet(LESSCARS_FREEWAY_LAND_JSON[fixtureV ? 'fixture' : 'live'])
       });
       return printResults(results);
     }
@@ -193,6 +199,43 @@ const steps: Record<string, { help: string; run: Step }> = {
   'lesscars-cnns': {
     help: 'resolve the /lesscars corridor selectors to CNNs from the locked datasf-streets source',
     run: async () => lesscarsCnns({ lockPath: LOCK, rawDir: RAW })
+  },
+  'lesscars-freeway-land': {
+    help: 'propose freeway-land parcels for each segment of freeway-land.json from the locked sources',
+    run: async (args) => {
+      const dataset = str(args.flags.dataset);
+      const dir = dataset ? join(OUT, dataset) : undefined;
+      if (dir && !existsSync(dir)) {
+        console.error(`no built dataset ${dataset} under ${OUT}`);
+        return 1;
+      }
+      return lesscarsFreewayLand({
+        lockPath: LOCK,
+        rawDir: RAW,
+        catalogPath: LESSCARS_FREEWAY_LAND_JSON.live,
+        datasetDir: dir
+      });
+    }
+  },
+  'lesscars-basemap': {
+    help: 'inspect or propose the basemap road ids of the /lesscars freeway removals',
+    run: async (args) => {
+      const v = latestOut();
+      const pmtiles = str(args.flags.pmtiles) ?? (v ? join(OUT, v, 'basemap.pmtiles') : undefined);
+      if (!pmtiles || !existsSync(pmtiles)) {
+        console.error('no basemap.pmtiles: build a dataset or pass --pmtiles <file>');
+        return 1;
+      }
+      const band = str(args.flags.band);
+      return lesscarsBasemap({
+        mode: args.flags.report ? 'report' : 'candidates',
+        pmtiles,
+        lockPath: LOCK,
+        rawDir: RAW,
+        linesPath: str(args.flags.lines),
+        bandM: band ? Number(band) : undefined
+      });
+    }
   },
   'quality-doc': {
     help: 'rewrite the generated Data quality section of docs/dev/pipeline.md from QUALITY_RULES',

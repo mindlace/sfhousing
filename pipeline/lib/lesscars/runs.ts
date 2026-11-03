@@ -103,15 +103,29 @@ export function sourceOfRows(
   return out;
 }
 
+/** The top fill yield and stories of freed site `siteId` on `day` (the row initiativeBuilds builds). */
+function siteTop(
+  rows: Pick<RegimeSet, 'siteRowAt'>,
+  siteId: string,
+  day: Day
+): { units: number; stories: number } {
+  const r = rows.siteRowAt(siteId, day);
+  return { units: r.yield[r.yield.length - 1], stories: r.stories };
+}
+
+const bySiteId = <S extends { siteId: string }>(a: S, b: S) =>
+  a.siteId < b.siteId ? -1 : a.siteId > b.siteId ? 1 : 0;
+
 /**
  * The plan's housing builds: each freed site of a removal or truncation with a build, then each
  * parking conversion, in plan order (sites by siteId). `units` is the top fill yield of the row
- * in force at the build's start, `stories` that row's stories. Builds adding no homes are dropped.
+ * in force at the build's start, `stories` that row's stories. Builds adding no homes are dropped,
+ * and a site a garage holds (`heldBy`) gets none.
  */
 export function initiativeBuilds(
   plan: LessCarsPlan,
   s: PlanSchedule,
-  sites: readonly Pick<FreedSite, 'siteId' | 'projectId'>[],
+  sites: readonly Pick<FreedSite, 'siteId' | 'projectId' | 'heldBy'>[],
   parcels: Pick<ScenarioParcels, 'index' | 'existingUnits'>,
   rows: Pick<RegimeSet, 'siteRowAt' | 'parcelRowAt'>
 ): InitiativeBuild[] {
@@ -125,17 +139,13 @@ export function initiativeBuilds(
     const build = t.build;
     if (build === null) continue;
     if (p.kind === 'highway-truncation' || p.kind === 'street-removal') {
-      const mine = sites
-        .filter((x) => x.projectId === p.id)
-        .sort((a, b) => (a.siteId < b.siteId ? -1 : a.siteId > b.siteId ? 1 : 0));
+      const mine = sites.filter((x) => x.projectId === p.id && x.heldBy === null).sort(bySiteId);
       for (const site of mine) {
-        const r = rows.siteRowAt(site.siteId, build.startDay);
         push({
           siteId: site.siteId,
           projectId: p.id,
           parcelRow: null,
-          units: r.yield[r.yield.length - 1],
-          stories: r.stories,
+          ...siteTop(rows, site.siteId, build.startDay),
           existing: 0,
           startDay: build.startDay,
           completeDay: build.completeDay
@@ -159,6 +169,33 @@ export function initiativeBuilds(
     }
   }
   return out;
+}
+
+/**
+ * Per garage holding sites: the top fill yield its held sites would have had at their project's
+ * build start (the open day when the project has no build), summed. Garages holding none are
+ * absent; the rest in plan order.
+ */
+export function garageCosts(
+  plan: LessCarsPlan,
+  s: PlanSchedule,
+  sites: readonly Pick<FreedSite, 'siteId' | 'projectId' | 'heldBy'>[],
+  rows: Pick<RegimeSet, 'siteRowAt'>
+): { projectId: string; homes: number }[] {
+  const homes = new Map<string, number>();
+  for (const site of [...sites].sort(bySiteId)) {
+    if (site.heldBy === null) continue;
+    const t = s.times.get(site.projectId);
+    if (!t) throw new Error(`lesscars: project ${site.projectId} is not scheduled`);
+    const day = t.build?.startDay ?? t.openDay;
+    homes.set(site.heldBy, (homes.get(site.heldBy) ?? 0) + siteTop(rows, site.siteId, day).units);
+  }
+  for (const g of homes.keys())
+    if (!plan.projects.some((p) => p.id === g && p.kind === 'edge-garage'))
+      throw new Error(`lesscars: site held by ${g}, which is no edge garage of the plan`);
+  return plan.projects.flatMap((p) =>
+    homes.has(p.id) ? [{ projectId: p.id, homes: homes.get(p.id)! }] : []
+  );
 }
 
 type Regimes = Pick<RegimeSet, 'baseline' | 'plan'>;
@@ -324,7 +361,10 @@ const SUMMARY_PROVENANCE = (seeds: number): LessCarsSummary['provenance'] => ({
  */
 export function summarise(
   r: ReturnType<typeof runPairs>,
-  meta: Pick<LessCarsSummary, 'datasetVersion' | 'planId' | 'switchDay' | 'regimeDays' | 'yearEnds'>
+  meta: Pick<
+    LessCarsSummary,
+    'datasetVersion' | 'planId' | 'switchDay' | 'regimeDays' | 'yearEnds' | 'garageCost'
+  >
 ): LessCarsSummary {
   const seeds = r.perSeed.length;
   if (seeds === 0) throw new RangeError('lesscars: no seeds to summarise');
@@ -372,7 +412,11 @@ export function summarise(
     ) as Record<Source, number[]>,
     plan: planSum.map((v) => v / seeds),
     baseline: baseSum.map((v) => v / seeds),
-    provenance: SUMMARY_PROVENANCE(seeds)
+    provenance: SUMMARY_PROVENANCE(seeds),
+    // Omitted when no garage holds a site, so a plan without one writes the v1 summary.
+    ...(meta.garageCost && meta.garageCost.length > 0
+      ? { garageCost: meta.garageCost.map((g) => ({ ...g })) }
+      : {})
   };
 }
 

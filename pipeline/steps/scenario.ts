@@ -38,6 +38,7 @@ import { localProgramEnvelope } from '../lib/local-program';
 import { recordQuality, recordSqlQuality } from '../lib/quality';
 import type { Report } from '../lib/report';
 import { scenarioEligible } from '../lib/scenario-eligibility';
+import { freewayLandSet, type FreewayLandFile } from '../lib/lesscars/freeway-land';
 import { PARCELS_BIN } from '../lib/scenario-files';
 import { readClippedOriginals } from './chunks';
 import { runScenarioSql } from './scenario-sql';
@@ -268,12 +269,15 @@ export type V18Panel = Pick<
  * RM/RC maximum, so the two caps can differ, each correct for its own date. Where they differ
  * (`capPeriodDiffers`), the features derived from the base cap (`potentialRatio.base`, from the
  * capped base yield) are not compared; every other feature, the mask and `hostableBase` (which
- * reads no cap) are compared on every parcel.
+ * reads no cap) are compared on every parcel. On freeway land (`freewayLand`, lesscars v1.1) T11
+ * applies the rule and the panel does not (calibration describes the past market), so T11's
+ * base-yield features must be the rule's instead: `hostableBase` 0 and `potentialRatio.base` 0.
  */
 export function v18Compare(
   t: V18Panel,
   i: number,
-  r: V18Row
+  r: V18Row,
+  freewayLand = false
 ): { capPeriodDiffers: boolean; mismatch: boolean } {
   const t11Cap = t.baseCap[i] === NULL_CAP ? null : t.baseCap[i];
   const capPeriodDiffers = t11Cap !== r.base_density_cap;
@@ -287,9 +291,11 @@ export function v18Compare(
     t.rentControlLikely[i] === (r.rent_control_likely ? 1 : 0) &&
     t.landUseClass[i] === r.land_use_class &&
     t.imputed[i] === r.imputed &&
-    (capPeriodDiffers || t.potentialRatio.base[i] === r.potential_ratio_base) &&
     t.storiesGap.base[i] === r.stories_gap_base &&
-    t.hostableBase[i] === (r.hostable_base ? 1 : 0);
+    (freewayLand
+      ? t.potentialRatio.base[i] === 0 && t.hostableBase[i] === 0
+      : (capPeriodDiffers || t.potentialRatio.base[i] === r.potential_ratio_base) &&
+        t.hostableBase[i] === (r.hostable_base ? 1 : 0));
   return { capPeriodDiffers, mismatch: !same };
 }
 
@@ -394,7 +400,10 @@ function provenance(capDay: Day, rollYear: number): ScenarioParcels['provenance'
         `height and the pre-FZP cap (${preFzp}). Ineligible parcels (open space, or no city ` +
         'land-use record and no homes on the roll) have 0: a parcel without a land-use record ' +
         'is eligible when the roll shows homes on it (sd.landuse.none-with-units, 4 / 4), in ' +
-        `the panel on each roll year's homes. ${CAP_RULES}`
+        `the panel on each roll year's homes. Freeway land ` +
+        '(pipeline/enrichment/lesscars/freeway-land.json: vacant or public parcels under or ' +
+        'fronting a freeway, curated) is ineligible while its freeway stands. ' +
+        CAP_RULES
     )
   };
 }
@@ -478,6 +487,11 @@ export function readParcelsBin(file: string): ScenarioParcels {
  * once, after the T11 rows (the SQL tallies via recordSqlQuality, the TS rules via
  * recordQuality), never into a step-local object. Returns every scenario.* count (the SQL
  * stage's included) and warnings. Throws when the written file does not decode.
+ *
+ * `freewayLand` is the freeway-land catalog (absent or null: no rule): its parcels are
+ * scenario-ineligible on T11 (never on the T13 panel), counted in `scenario.freeway_land.*`. A
+ * catalog parcel with existing homes throws (freeway land holds none); one not in the records is
+ * warned about.
  */
 export async function writeScenario(a: {
   db: Duck;
@@ -488,6 +502,7 @@ export async function writeScenario(a: {
   capDay: Day;
   report: Report;
   buildCounts: Record<string, number>;
+  freewayLand?: FreewayLandFile | null;
 }): Promise<{ counts: Record<string, number>; warnings: string[] }> {
   const { db, report } = a;
   const warnings: string[] = [];
@@ -626,9 +641,26 @@ export async function writeScenario(a: {
     'units.total',
     'yield.fzp_net_total',
     'yield.clamped',
-    'yield.nonlp_base_mismatch'
+    'yield.nonlp_base_mismatch',
+    'freeway_land.lots',
+    'freeway_land.net_removed'
   ])
     inc(k, 0);
+  // Freeway land (lesscars v1.1): catalog parcels are unbuildable while their freeway stands.
+  // `net_removed` is the static net capacity the rule takes away: over catalog rows the rule turns
+  // unhostable, max(0, FZP full-fill yield − existing homes), the measure of /sim's netCapacity.
+  const freewayLand = freewayLandSet(a.freewayLand);
+  /** Catalog parcel → its segment's freeway, lower-cased (the count key). */
+  const freewayOf = new Map<string, string>();
+  for (const seg of a.freewayLand?.segments ?? []) {
+    const key = seg.freeway.toLowerCase();
+    inc(`freeway_land.net_removed.${key}`, 0);
+    for (const id of seg.parcels) freewayOf.set(id, key);
+  }
+  /** Lower-cased freeway → the catalog's spelling, for the warning line. */
+  const freewayLabel = new Map(
+    (a.freewayLand?.segments ?? []).map((seg) => [seg.freeway.toLowerCase(), seg.freeway])
+  );
   // Affected parcel ids of the TS-side T14 rules (spec §4.12), reported after the T11 rows.
   const noRow: string[] = [];
   /** sd.landuse.none-with-units: no land-use row, latest-roll units > 0, so eligible. */
@@ -714,8 +746,18 @@ export async function writeScenario(a: {
     p.existingFloorAreaM2[i] = fit('existingFloorAreaM2', floorArea, U32_MAX);
     p.existingStories[i] = fit('existingStories', existingStories, 0xff);
     // Scenario eligibility (flags bit 5) on the latest roll's units, before the yields: the
-    // generator reads it through scenarioRecordOf (sd.landuse.none-with-units).
-    const eligible = scenarioEligible(rec, existingUnits);
+    // generator reads it through scenarioRecordOf (sd.landuse.none-with-units). Freeway land is
+    // never eligible, and never holds homes (the build refuses one that does).
+    const onFreeway = freewayLand.has(rec.id);
+    if (onFreeway) {
+      if (existingUnits > 0) {
+        throw new Error(
+          `scenario: freeway-land parcel ${rec.id} has ${existingUnits} existing homes`
+        );
+      }
+      inc('freeway_land.lots');
+    }
+    const eligible = scenarioEligible(rec, existingUnits, onFreeway);
     p.eligible[i] = eligible ? 1 : 0;
     if (eligible) inc('eligible');
     if (eligible && !rec.eligible) noneWithUnits.push(rec.id);
@@ -803,6 +845,22 @@ export async function writeScenario(a: {
     p.storiesGap.fzp[i] = env.envelopeStories - existingStories;
     p.storiesGap.base[i] = env.baseStories - existingStories;
     if (p.hostable[i]) inc('hostable');
+    // Freeway land: what the row would have hosted without the rule (the hostable test above on
+    // scenarioEligible without the flag), at the capped FZP full-fill yield.
+    if (onFreeway && scenarioEligible(rec, existingUnits) && env.envelopeStories >= 1) {
+      const unruled = scenarioRecordFrom(rec, {
+        existingUnits,
+        existingFloorAreaM2: floorArea,
+        existingStories,
+        eligible: true
+      });
+      const g = scenarioYield(unruled, fillStories(full, env.envelopeStories), null);
+      if (g > 0) {
+        const net = Math.max(0, capScenarioYield(g, fzpYieldCap, existingUnits) - existingUnits);
+        inc('freeway_land.net_removed', net);
+        inc(`freeway_land.net_removed.${freewayOf.get(rec.id)!}`, net);
+      }
+    }
     // sd.yield.zero-hostable (observation, tier 4): of scenario-eligible parcels with an envelope.
     if (eligible && env.envelopeStories >= 1) {
       envelopeEligible++;
@@ -867,6 +925,22 @@ export async function writeScenario(a: {
       if (p.hostable[i]) zoning[key].push(rec.id);
     }
   });
+  if (a.freewayLand) {
+    const missing = [...freewayLand].filter((id) => !p.index.has(id)).sort(cmp);
+    if (missing.length > 0) {
+      warnings.push(
+        `scenario: freeway-land parcel(s) ${missing.join(', ')} are not in parcels.bin`
+      );
+    }
+    const byFreeway = [...freewayLabel]
+      .sort(([x], [y]) => cmp(x, y))
+      .map(([key, label]) => `${label} ${c[`scenario.freeway_land.net_removed.${key}`]}`);
+    warnings.push(
+      `scenario: freeway land makes ${c['scenario.freeway_land.lots']} lots unbuildable, ` +
+        `${c['scenario.freeway_land.net_removed']} net homes of static capacity ` +
+        `(${byFreeway.join(', ')})`
+    );
+  }
   c['scenario.parcels'] = n;
   c['scenario.panel.years'] = years;
   c['scenario.panel.base_yield_memo'] = memoSize;
@@ -897,7 +971,7 @@ export async function writeScenario(a: {
       mismatch++;
       continue;
     }
-    const v = v18Compare(decoded, i, r);
+    const v = v18Compare(decoded, i, r, freewayLand.has(r.mapblklot));
     if (v.mismatch) mismatch++;
     if (v.capPeriodDiffers) {
       c['scenario.v18.cap_period_differs']++;

@@ -1,5 +1,10 @@
 // Pure view helpers for the /lesscars headline, source breakdown and extra-homes chart.
-import { SOURCES, type LessCarsSummary, type Source } from '$lib/data/lesscars/codec';
+import {
+  SOURCES,
+  type LessCarsSitesFile,
+  type LessCarsSummary,
+  type Source
+} from '$lib/data/lesscars/codec';
 import { niceCeil } from '$lib/fzp/chart';
 import { utcParts } from '$lib/fzp/time';
 import { formatCount } from '$lib/scoreboard/format';
@@ -94,4 +99,17 @@ export function extraChartModel(s: LessCarsSummary): ExtraChartModel {
     yMax: niceCeil(hi),
     yMin: lo < 0 ? -niceCeil(-lo) : 0
   };
+}
+
+/** Freed land in m²: parcelM2 summed, and the rest of each site's area; held sites excluded. */
+export function freedLandSplit(s: LessCarsSitesFile): { parcelM2: number; rowM2: number } {
+  let parcelM2 = 0;
+  let rowM2 = 0;
+  for (const site of s.sites) {
+    if (site.heldBy) continue;
+    const p = Math.min(site.parcelM2 ?? 0, site.rec.areaM2);
+    parcelM2 += p;
+    rowM2 += site.rec.areaM2 - p;
+  }
+  return { parcelM2, rowM2 };
 }

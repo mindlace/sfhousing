@@ -129,10 +129,19 @@ export function inProgress(
   return items(plan, s).filter((i) => i.kind === kind && i.start <= day && day < i.end).length;
 }
 
-function siteKeys(p: PlanProject): string[] {
-  if (p.kind === 'parking-conversion') return [`parcel:${p.parcel}`];
+type SiteUse = 'freed' | 'garage' | 'other';
+
+/** The sites a project stands on, each with how it uses it. */
+function siteKeys(p: PlanProject): { key: string; use: SiteUse }[] {
+  if (p.kind === 'parking-conversion') return [{ key: `parcel:${p.parcel}`, use: 'other' }];
   if (p.kind === 'edge-garage')
-    return ['project' in p.site ? `project:${p.site.project}` : `parcel:${p.site.parcel}`];
+    return [
+      'project' in p.site
+        ? { key: `project:${p.site.project}`, use: 'other' }
+        : { key: `parcel:${p.site.parcel}`, use: 'garage' }
+    ];
+  if (p.kind === 'highway-truncation' && p.freewayLand)
+    return p.freewayLand.parcels.map((id) => ({ key: `parcel:${id}`, use: 'freed' as const }));
   return [];
 }
 
@@ -243,11 +252,14 @@ export function checkPlan(plan: LessCarsPlan, s: PlanSchedule): PlanProblem[] {
     }
   }
 
-  const sites = new Set<string>();
+  // A site is used once, except that one garage may stand on one truncation's freeway land.
+  const sites = new Map<string, SiteUse[]>();
   for (const p of plan.projects) {
-    for (const k of siteKeys(p)) {
-      if (sites.has(k)) add('site-reused', p.id, `${p.id} reuses site ${k}`);
-      sites.add(k);
+    for (const { key, use } of siteKeys(p)) {
+      const seen = sites.get(key) ?? [];
+      const pair = seen.length === 1 && [seen[0], use].sort().join() === 'freed,garage';
+      if (seen.length > 0 && !pair) add('site-reused', p.id, `${p.id} reuses site ${key}`);
+      sites.set(key, [...seen, use]);
     }
   }
 

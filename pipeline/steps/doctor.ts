@@ -70,6 +70,20 @@ export async function doctor(
     hint: w.code === 0 ? undefined : 'npm install'
   });
 
+  // The tiles step writes the split basemap's MBTiles with node:sqlite (pmtiles-rewrite.ts).
+  try {
+    const { DatabaseSync } = await import('node:sqlite');
+    new DatabaseSync(':memory:').close();
+    checks.push({ name: 'node:sqlite', ok: true, found: 'node:sqlite' });
+  } catch (e) {
+    checks.push({
+      name: 'node:sqlite',
+      ok: false,
+      found: e instanceof Error ? e.message.split('\n')[0] : String(e),
+      hint: 'use Node 24 (.nvmrc): the basemap split needs node:sqlite'
+    });
+  }
+
   for (const ext of ['spatial', 'httpfs']) {
     try {
       const db = await openDuck({ httpfs: ext === 'httpfs' });

@@ -160,7 +160,7 @@ describe('runScenarioSql on the mini fixture', () => {
   it('readParcelRecords returns every parcel sorted by id with its cell', async () => {
     const recs = await readParcelRecords(db);
     const ids = recs.map((r) => r.rec.id);
-    expect(ids).toHaveLength(18);
+    expect(ids, '19 mini lots, lot 19 (3512019) included').toHaveLength(19);
     expect(ids).toEqual([...ids].sort());
     expect(recs.every((r) => /^-?\d+_-?\d+$/.test(r.cellId))).toBe(true);
   });
@@ -228,7 +228,7 @@ describe('runScenarioSql on the mini fixture', () => {
     const z = await db.all<{ id: string; zoning_code: string }>(
       'SELECT id, zoning_code FROM sc_zoning ORDER BY id'
     );
-    expect(z).toHaveLength(18);
+    expect(z, '19 mini lots, lot 19 (3512019) included').toHaveLength(19);
     const by = Object.fromEntries(z.map((r) => [r.id, r.zoning_code]));
     expect(by['3512002']).toBe('RH-2');
     expect(by['8711023C']).toBe('NCT');
@@ -334,7 +334,8 @@ describe('runScenarioSql on the mini fixture', () => {
     expect(c['scenario.roll.years']).toBe(3);
     expect(c['scenario.roll.unmatched.2023']).toBe(0);
     expect(c['scenario.roll.latest']).toBe(2025);
-    expect(c['scenario.roll.matched_parcels']).toBe(17);
+    // + lot 19 (3512019), which has 2024 and 2025 roll rows.
+    expect(c['scenario.roll.matched_parcels']).toBe(18);
     expect(c['scenario.roll.unmatched.2024']).toBe(0);
     expect(c['scenario.roll.unmatched.2025']).toBe(0);
     expect(c['scenario.roll.unmatched_units.2024']).toBe(0);
@@ -453,7 +454,8 @@ describe('runScenarioSql on the mini fixture', () => {
       'SELECT count(*)::INTEGER n, count(DISTINCT rule_id)::INTEGER d FROM quality_tally'
     );
     expect(t.n).toBe(t.d);
-    expect(quality['quality.sd.roll.units-capacity.of']).toBe(33);
+    // 35 parcel-years, lot 19's (3512019) two included.
+    expect(quality['quality.sd.roll.units-capacity.of']).toBe(35);
   });
 });
 

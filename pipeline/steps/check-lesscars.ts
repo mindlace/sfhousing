@@ -83,9 +83,13 @@ function sourceSumProblem(raw: unknown): string | null {
 /**
  * V35: OK with "no plan" when the manifest has no `scenarios.lesscars`. Otherwise every named
  * file exists and decodes; timeline.bin binds to parcels.bin; the plan passes checkPlan and its
- * times equal schedulePlan's; no site belongs to a project that is not a site kind; parking and
- * garage parcels hold no homes and every parking conversion depends directly on transit; the
- * timeline's reservation rows are exactly reservationsOf's reserved rows; the
+ * times equal schedulePlan's; each `basemapHide` project is a highway truncation; no site belongs
+ * to a project that is not a site kind; parking and
+ * garage parcels hold no homes and every parking conversion depends directly on transit; a held
+ * site's `heldBy` is an edge garage on one of its `parcels`; every freewayLand parcel is in some
+ * site's `parcels` (one per polygon part) and is scenario-ineligible in parcels.bin; no timeline
+ * build is on a held site; the timeline's reservation rows are exactly reservationsOf's reserved
+ * rows; the
  * summary's source sums equal its differences at every year end and it has 41 year ends ending
  * 2068-12-31; timeline.bin is at most 3 MB, warning above 2 MB. Never throws.
  */
@@ -140,6 +144,10 @@ export function checkV35(outDir: string, counts: Record<string, number>): Invari
 
     // Sites and parking.
     const byId = new Map(plan.projects.map((p) => [p.id, p]));
+    // The split basemap phases: removals of a highway truncation only.
+    for (const h of planFile.basemapHide ?? [])
+      if (byId.get(h.projectId)?.kind !== 'highway-truncation')
+        problems.push(`basemapHide: ${h.projectId} is not a highway truncation`);
     for (const s of sites.sites) {
       const p = byId.get(s.projectId);
       if (!p) problems.push(`site ${s.siteId}: unknown project ${s.projectId}`);
@@ -167,6 +175,36 @@ export function checkV35(outDir: string, counts: Record<string, number>): Invari
         if (!direct) problems.push(`${p.id}: no direct transit dependency`);
       }
     }
+
+    // Freed parcels and held sites.
+    for (const s of sites.sites) {
+      if (s.heldBy !== undefined) {
+        const g = byId.get(s.heldBy);
+        const on = g?.kind === 'edge-garage' && 'parcel' in g.site ? g.site.parcel : null;
+        if (on === null || !(s.parcels ?? []).includes(on))
+          problems.push(
+            `site ${s.siteId} is held by ${s.heldBy}, which is no edge garage on its parcels`
+          );
+      }
+      for (const id of s.parcels ?? []) {
+        const row = parcels.index.get(id);
+        if (row === undefined) problems.push(`freed parcel ${id} is not in parcels.bin`);
+        else if (parcels.eligible[row] !== 0)
+          problems.push(`freed parcel ${id} is scenario-eligible: its homes would count twice`);
+      }
+    }
+    for (const p of plan.projects) {
+      if (p.kind !== 'highway-truncation' || !p.freewayLand) continue;
+      for (const id of p.freewayLand.parcels) {
+        const n = sites.sites.filter((s) => s.parcels?.includes(id)).length;
+        // A parcel of several polygon parts is one site per part (docs/dev/lesscars.md).
+        if (n === 0) problems.push(`freed parcel ${id} is in ${n} sites`);
+      }
+    }
+    const held = new Set(sites.sites.filter((s) => s.heldBy !== undefined).map((s) => s.siteId));
+    for (const b of timeline.builds)
+      if (b.parcelRow === null && held.has(b.siteId))
+        problems.push(`timeline builds on held site ${b.siteId}`);
 
     // The timeline's reservation verdicts cover exactly the plan's reserved parcels.
     let reserved: Int32Array | null = null;

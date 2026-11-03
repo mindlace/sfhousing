@@ -274,7 +274,9 @@ describe('writePolicy on the mini fixture', () => {
   it('reports sd.historic.no-row and sd.exempt.unmatched', () => {
     expect(qualityRule('sd.historic.no-row').kind).toBe('missing');
     expect(buildCounts['quality.sd.historic.no-row.fired']).toBe(1);
-    expect(buildCounts['quality.sd.historic.no-row.of']).toBe(18);
+    expect(buildCounts['quality.sd.historic.no-row.of'], '19 lots, lot 19 (3512019) included').toBe(
+      19
+    );
     // The stand-in pseudo-lot 3512999 matches no active parcel.
     expect(buildCounts['quality.sd.exempt.unmatched.fired']).toBe(1);
     expect(buildCounts['quality.sd.exempt.unmatched.of']).toBe(3);

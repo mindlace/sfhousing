@@ -69,6 +69,12 @@ interface ProjectBase {
   /** Projects that must open no later than this one opens (a check, not a start constraint). */
   opensAfter?: string[];
 }
+/** Parcels a highway truncation frees, and the parcels it leaves out with a reason each. */
+export interface FreewayLandPlan {
+  parcels: ParcelId[];
+  excluded: { parcel: ParcelId; reason: string }[];
+}
+
 export type PlanProject =
   | (ProjectBase & {
       kind: 'transit-line';
@@ -96,6 +102,11 @@ export type PlanProject =
       segments: SegmentRef[];
       rowHalfWidthM: Param;
       build: SiteBuild | null;
+      /**
+       * Only a highway-truncation carries it (parsed as an unknown key on any other kind):
+       * the freeway-land parcels this phase frees, and the candidates it leaves out with why.
+       */
+      freewayLand?: FreewayLandPlan;
     })
   | (ProjectBase & { kind: 'parking-conversion'; parcel: ParcelId; build: SiteBuild })
   | (ProjectBase & {
@@ -294,6 +305,18 @@ function parseStop(v: unknown, path: string): PlanStop {
   return { id, name, lngLat: lngLat(r.lngLat, at(path, 'lngLat')) };
 }
 
+function parseFreewayLand(v: unknown, path: string): FreewayLandPlan {
+  const r = record(v, path, ['parcels', 'excluded']);
+  return {
+    parcels: strings(r.parcels, at(path, 'parcels')),
+    excluded: array(r.excluded, at(path, 'excluded')).map((x, i) => {
+      const p = at(at(path, 'excluded'), i);
+      const e = record(x, p, ['parcel', 'reason']);
+      return { parcel: str(e.parcel, at(p, 'parcel')), reason: str(e.reason, at(p, 'reason')) };
+    })
+  };
+}
+
 const BASE_KEYS = ['id', 'label', 'kind', 'startYear', 'durationMonths', 'dependsOn'] as const;
 
 function parseProject(v: unknown, path: string): PlanProject {
@@ -310,7 +333,12 @@ function parseProject(v: unknown, path: string): PlanProject {
     'edge-garage': ['site', 'spaces'],
     'car-shuttle': ['garages', 'alignment', 'peakTph']
   };
-  const r = record(v, path, [...BASE_KEYS, ...own[kind]], ['opensAfter']);
+  const r = record(
+    v,
+    path,
+    [...BASE_KEYS, ...own[kind]],
+    kind === 'highway-truncation' ? ['opensAfter', 'freewayLand'] : ['opensAfter']
+  );
   const base = {
     id: str(r.id, at(path, 'id')),
     label: str(r.label, at(path, 'label')),
@@ -366,7 +394,10 @@ function parseProject(v: unknown, path: string): PlanProject {
         kind,
         segments: segs(),
         rowHalfWidthM: parseParam(r.rowHalfWidthM, at(path, 'rowHalfWidthM')),
-        build: r.build === null ? null : parseBuild(r.build, at(path, 'build'))
+        build: r.build === null ? null : parseBuild(r.build, at(path, 'build')),
+        ...('freewayLand' in r
+          ? { freewayLand: parseFreewayLand(r.freewayLand, at(path, 'freewayLand')) }
+          : {})
       };
     case 'parking-conversion':
       return {

@@ -12,7 +12,7 @@ import type { Duck } from '../lib/duck';
 import { chooseZoning, freedFzpRow, readFreedSites, type FreedSite } from '../lib/lesscars/sites';
 import { LC } from '../lesscars-config';
 import { carveFreedLand, removalsOf } from '../steps/lesscars-sql';
-import { lesscarsMini, miniLessCarsPlan } from './lesscars-helpers';
+import { carveMini, lesscarsMini, miniLessCarsPlan } from './lesscars-helpers';
 
 let db: Duck;
 let capDay: Day;
@@ -70,7 +70,21 @@ const extent = (s: FreedSite, axis: 0 | 1) => {
 const spanAcrossLineM = (s: FreedSite) => extent(s, 1);
 const spanAlongLineM = (s: FreedSite) => extent(s, 0);
 
-const recarvePlan = () => carveFreedLand(db, removalsOf(miniLessCarsPlan()));
+const recarvePlan = () => carveMini(db);
+const NONE: ReadonlySet<string> = new Set();
+const LOT19 = '3512019';
+
+/** Area of lc_site within parcel `id` (current outline). */
+async function parcelOverlapM2(d: Duck, id: string): Promise<number> {
+  const [r] = await d.all<{ m2: number | null }>(
+    `SELECT sum(ST_Area(ST_Intersection(ST_GeomFromGeoJSON(s.geojson7131), p.geom))) AS m2
+     FROM lc_site s, parcels p WHERE p.id = '${id}'`
+  );
+  return r.m2 ?? 0;
+}
+
+const totalSiteArea = (sites: FreedSite[], projectId: string) =>
+  sites.filter((s) => s.projectId === projectId).reduce((t, s) => t + s.rec.areaM2, 0);
 
 describe('the mini plan', () => {
   it('parses and passes the plan check', () => {
@@ -122,21 +136,157 @@ describe('carveFreedLand', () => {
     const sites = await readFreedSites(db, capDay);
     expect(sites.length).toBeGreaterThan(0);
     expect(sites.every((s) => s.siteId.startsWith('lc:hwy:'))).toBe(true);
-    expect(await overlapM2(db, 'lc_site', 'parcels')).toBeLessThan(0.01);
+    // Only lot 19, the freed freeway land, lies under a site.
+    expect(
+      (await overlapM2(db, 'lc_site', 'parcels')) - (await parcelOverlapM2(db, LOT19))
+    ).toBeLessThan(0.01);
     expect(Math.max(...sites.map(spanAcrossLineM))).toBeLessThanOrEqual(2 * 15 + 0.01);
   });
 
-  it('no piece is longer than lotMaxM along the line or smaller than minPieceM2', async () => {
+  it('no ROW piece is longer than lotMaxM along the line; no site is under minPieceM2', async () => {
     const sites = await readFreedSites(db, capDay);
     expect(sites.length).toBeGreaterThan(1);
     for (const s of sites) {
-      expect(spanAlongLineM(s), s.siteId).toBeLessThanOrEqual(LC.lotMaxM + 0.01);
+      // A site merged with a freed parcel takes the parcel's own extent.
+      if (s.parcelM2 === 0)
+        expect(spanAlongLineM(s), s.siteId).toBeLessThanOrEqual(LC.lotMaxM + 0.01);
       expect(s.rec.areaM2, s.siteId).toBeGreaterThanOrEqual(LC.minPieceM2);
     }
-    // The 140 m truncation: about 140 x 30 m less the access strip round lot 18.
-    const total = sites.reduce((t, s) => t + s.rec.areaM2, 0);
-    expect(total).toBeGreaterThan(3500);
-    expect(total).toBeLessThanOrEqual(140 * 30 + 0.5);
+    // The 140 m truncation: about 140 x 30 m less the access strip round lot 18, plus the half of
+    // lot 19 (x[-40, 0]) outside the band.
+    const total = totalSiteArea(sites, 'hwy');
+    expect(total).toBeGreaterThan(3600);
+    expect(total).toBeLessThanOrEqual(140 * 30 + 400 + 0.5);
+  });
+
+  it('lot 19 becomes one site merged with the ROW piece it touches', async () => {
+    const sites = await readFreedSites(db, capDay);
+    const s = sites.filter((x) => x.parcels.includes(LOT19));
+    expect(s).toHaveLength(1);
+    expect(s[0].siteId).toBe('lc:hwy:1');
+    expect(s[0].parcels).toEqual([LOT19]);
+    expect(s[0].parcelM2).toBeCloseTo(800, 0);
+    // 800 m² parcel + the 1,000 m² rest of the first 46.7 m stretch (x[0, 46.7] × y[60, 90]).
+    expect(s[0].rec.areaM2).toBeCloseTo(1800, 0);
+    expect(s[0].heldBy).toBeNull();
+    for (const o of sites.filter((x) => x !== s[0])) {
+      expect(o.parcels, o.siteId).toEqual([]);
+      expect(o.parcelM2, o.siteId).toBe(0);
+      expect(o.heldBy, o.siteId).toBeNull();
+    }
+  });
+
+  it('no ROW piece overlaps a freed parcel and the sites cover the band once', async () => {
+    const sites = await readFreedSites(db, capDay);
+    expect(await parcelOverlapM2(db, LOT19)).toBeCloseTo(800, 0); // only site 1 overlaps it
+    // v1's 4,084 m² band (lot 19 then had no row and no access strip), plus lot 19's 400 m²
+    // outside it.
+    expect(totalSiteArea(sites, 'hwy')).toBeCloseTo(4084 + 400, 0);
+    const [r] = await db.all<{ shared: number }>(
+      `WITH g AS (SELECT site_id, ST_GeomFromGeoJSON(geojson7131) AS g FROM lc_site)
+       SELECT coalesce(sum(ST_Area(ST_Intersection(a.g, b.g))), 0) AS shared
+       FROM g a JOIN g b ON a.site_id < b.site_id AND ST_Intersects(a.g, b.g)`
+    );
+    expect(r.shared).toBeLessThan(0.01);
+  });
+
+  it('a freed site never takes freeway land as its zoning neighbour', async () => {
+    const sites = await readFreedSites(db, capDay);
+    for (const s of sites) expect(s.zoning.parcelId, s.siteId).not.toBe(LOT19);
+    const n = await db.all<{ parcel_id: string }>('SELECT parcel_id FROM lc_site_neighbour');
+    expect(n.map((r) => r.parcel_id)).not.toContain(LOT19);
+  });
+
+  it('lot 19’s site takes its neighbours within neighbourM that are not freeway land', async () => {
+    const [site1] = (await readFreedSites(db, capDay)).filter((x) => x.siteId === 'lc:hwy:1');
+    const near = await db.all<{ id: string }>(
+      `SELECT p.id FROM parcels p, lc_site s
+       WHERE s.site_id = 'lc:hwy:1'
+         AND ST_DWithin(ST_GeomFromGeoJSON(s.geojson7131), p.geom, ${LC.neighbourM})
+       ORDER BY p.id`
+    );
+    expect(near.map((r) => r.id)).toContain(LOT19);
+    const got = await db.all<{ parcel_id: string }>(
+      `SELECT parcel_id FROM lc_site_neighbour WHERE site_id = 'lc:hwy:1' ORDER BY parcel_id`
+    );
+    const want = near.map((r) => r.id).filter((id) => id !== LOT19);
+    expect(want.length).toBeGreaterThan(0);
+    expect(got.map((r) => r.parcel_id)).toEqual(want);
+    expect(want).toContain(site1.zoning.parcelId);
+  });
+
+  it('a two-part freed parcel becomes two sites', async () => {
+    // A synthetic MultiPolygon parcel p2 (two 20 x 10 m parts) on a 100 m line far from the lots.
+    const [o] = await db.all<{ x: number; y: number }>(
+      `SELECT ST_X(p) AS x, ST_Y(p) AS y FROM (
+         SELECT ST_Transform(ST_Point(-122.4195, 37.76), 'EPSG:4326', 'EPSG:7131',
+                             always_xy := true) AS p)`
+    );
+    const sq = (x0: number, x1: number) =>
+      `((${[
+        [x0, 195],
+        [x1, 195],
+        [x1, 205],
+        [x0, 205],
+        [x0, 195]
+      ]
+        .map(([x, y]) => `${o.x + x} ${o.y + y}`)
+        .join(', ')}))`;
+    const wkt = `MULTIPOLYGON(${sq(310, 330)}, ${sq(360, 380)})`;
+    try {
+      await db.run(
+        `INSERT INTO parcels (id, geom, geom_orig)
+         VALUES ('p2', ST_GeomFromText('${wkt}'), ST_GeomFromText('${wkt}'))`
+      );
+      const line = await lngLatOf(db, [
+        [300, 200],
+        [400, 200]
+      ]);
+      await carveFreedLand(
+        db,
+        [
+          {
+            projectId: 'two',
+            cnns: [],
+            lines: [line],
+            rowHalfWidthM: 10,
+            parcels: [{ id: 'p2', heldBy: null }]
+          }
+        ],
+        new Set(['p2'])
+      );
+      const twoPart = await readFreedSites(db, capDay);
+      expect(twoPart.map((s) => s.siteId)).toEqual(['lc:two:1', 'lc:two:2']);
+      expect(twoPart.map((s) => s.parcels)).toEqual([['p2'], ['p2']]);
+      expect(twoPart[0].parcelM2 + twoPart[1].parcelM2).toBeCloseTo(400, 0);
+      // Each part takes its stretch's ROW: the band is 100 x 20 m.
+      expect(totalSiteArea(twoPart, 'two')).toBeCloseTo(2000, 0);
+      for (const s of twoPart) expect(s.zoning.parcelId).not.toBe('p2');
+    } finally {
+      await db.run(`DELETE FROM parcels WHERE id = 'p2'`);
+      await recarvePlan();
+    }
+  });
+
+  it('a held parcel is a site of its own that no ROW piece joins', async () => {
+    const removed = removalsOf(miniLessCarsPlan()).map((r) => ({
+      ...r,
+      parcels: r.parcels.map((p) => ({ ...p, heldBy: 'garage' }))
+    }));
+    try {
+      await carveFreedLand(db, removed, new Set([LOT19]));
+      const sites = await readFreedSites(db, capDay);
+      const held = sites.filter((s) => s.heldBy !== null);
+      expect(held.map((s) => [s.siteId, s.heldBy, s.parcels])).toEqual([
+        ['lc:hwy:1', 'garage', [LOT19]]
+      ]);
+      expect(held[0].rec.areaM2).toBeCloseTo(800, 0);
+      expect(held[0].parcelM2).toBeCloseTo(800, 0);
+      // The ROW piece it touched stays a site; the band is covered as before.
+      expect(totalSiteArea(sites, 'hwy')).toBeCloseTo(4084 + 400, 0);
+    } finally {
+      await recarvePlan();
+    }
   });
 
   it('ids, records and the access strip', async () => {
@@ -153,11 +303,11 @@ describe('carveFreedLand', () => {
       expect(s.rec.neighborhood).toBe(s.zoning.neighborhood);
       expect(s.outline[0].length).toBeGreaterThanOrEqual(4);
     }
-    // No freed land within accessM of a parcel.
+    // No freed land within accessM of a parcel, but the freed parcel's own (it gets no strip).
     const [r] = await db.all<{ m2: number | null }>(
       `SELECT sum(ST_Area(ST_Intersection(ST_GeomFromGeoJSON(s.geojson7131),
                                          ST_Buffer(p.geom_orig, ${LC.accessM - 0.01})))) AS m2
-       FROM lc_site s, parcels p`
+       FROM lc_site s, parcels p WHERE p.id <> '${LOT19}'`
     );
     expect(r.m2 ?? 0).toBeLessThan(0.01);
   });
@@ -194,7 +344,11 @@ describe('carveFreedLand', () => {
         [120, -30],
         [180, -30]
       ]);
-      await carveFreedLand(db, [{ projectId: 'x', cnns: [], lines: [line], rowHalfWidthM: 15 }]);
+      await carveFreedLand(
+        db,
+        [{ projectId: 'x', cnns: [], lines: [line], rowHalfWidthM: 15, parcels: [] }],
+        NONE
+      );
       const sites = await readFreedSites(db, capDay);
       expect(sites.length).toBe(2);
       expect(await areaNearCnn(db, '2000', LC.keepHalfM - 0.01)).toBeLessThan(0.01);
@@ -210,7 +364,11 @@ describe('carveFreedLand', () => {
         [300, 200],
         [400, 200]
       ]);
-      await carveFreedLand(db, [{ projectId: 'far', cnns: [], lines: [line], rowHalfWidthM: 10 }]);
+      await carveFreedLand(
+        db,
+        [{ projectId: 'far', cnns: [], lines: [line], rowHalfWidthM: 10, parcels: [] }],
+        NONE
+      );
       const sites = await readFreedSites(db, capDay);
       expect(sites.length).toBeGreaterThan(0);
       const n = await db.all<{ site_id: string; parcel_id: string; dist_m: number }>(
@@ -237,7 +395,11 @@ describe('carveFreedLand', () => {
         [442, 196]
       ]);
       // Two 120 m legs: the bend falls on a cut, so the wedge outside it is no stretch's own.
-      await carveFreedLand(db, [{ projectId: 'bend', cnns: [], lines: [line], rowHalfWidthM: 10 }]);
+      await carveFreedLand(
+        db,
+        [{ projectId: 'bend', cnns: [], lines: [line], rowHalfWidthM: 10, parcels: [] }],
+        NONE
+      );
       const sites = await readFreedSites(db, capDay);
       expect(sites.length).toBe(4);
       const [w] = await db.all<{ n: number }>('SELECT count(*)::INTEGER AS n FROM lc_left');
@@ -260,7 +422,11 @@ describe('carveFreedLand', () => {
 
   it('rejects a CNN the street table does not have', async () => {
     await expect(
-      carveFreedLand(db, [{ projectId: 'bad', cnns: ['999999'], lines: [], rowHalfWidthM: 10 }])
+      carveFreedLand(
+        db,
+        [{ projectId: 'bad', cnns: ['999999'], lines: [], rowHalfWidthM: 10, parcels: [] }],
+        NONE
+      )
     ).rejects.toThrow(/999999/);
     await recarvePlan();
   });
@@ -303,9 +469,11 @@ describe('freedFzpRow', () => {
         [10, -25],
         [70, -25]
       ]);
-      await carveFreedLand(db, [
-        { projectId: 'sliver', cnns: [], lines: [line], rowHalfWidthM: 1 }
-      ]);
+      await carveFreedLand(
+        db,
+        [{ projectId: 'sliver', cnns: [], lines: [line], rowHalfWidthM: 1, parcels: [] }],
+        NONE
+      );
       const sites = await readFreedSites(db, capDay);
       expect(sites.map((x) => x.siteId)).toEqual(['lc:sliver:1']);
       const site = sites[0];
@@ -345,7 +513,10 @@ describe('freedFzpRow', () => {
         neighborhood: 'Mission'
       },
       outline: [],
-      zoning: zone('3512006', 6, false, 'RM-1')
+      zoning: zone('3512006', 6, false, 'RM-1'),
+      parcels: [],
+      parcelM2: 0,
+      heldBy: null
     });
     const caps = [400, 2000].map((a) => {
       const row = freedFzpRow(site(a), capDay, () => 1_000_000);

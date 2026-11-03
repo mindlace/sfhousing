@@ -43,7 +43,7 @@ and their own fields:
 | `tram-priority`      | `routeIds`, `segments`, `peakTph`                           | no               |
 | `bus-lane`           | `routeIds`, `stopIds`, `segments`, `peakTph`                | no (moves SB 79) |
 | `street-change`      | `segments`, `lanes`                                         | no               |
-| `highway-truncation` | `segments`, `rowHalfWidthM`, `build`                        | freed land       |
+| `highway-truncation` | `segments`, `rowHalfWidthM`, `build`, `freewayLand?`        | freed land       |
 | `street-removal`     | `segments`, `rowHalfWidthM`, `build`                        | freed land       |
 | `parking-conversion` | `parcel`, `build`                                           | parking site     |
 | `edge-garage`        | `site` (`{ project }` or `{ parcel }`), `spaces`            | no               |
@@ -75,6 +75,10 @@ Builder's calls on the format (Task 2):
 - An optional `opensAfter: string[]` on any project names projects this one must not open before.
   It is a check (`opens-before`), not a start constraint, and takes no part in cycle search. A plan
   without the key parses to an object without it.
+- An optional `freewayLand: { parcels, excluded }` on a `highway-truncation` (any other kind with
+  the key fails as `unknown key`) lists the freeway-land parcels the phase frees and the catalog
+  candidates it leaves out, each with a `reason`. A plan without the key parses to an object
+  without it.
 - Every `[lng, lat]` (stops, alignments, drawn lines) must have `lng` in [-180, 180] and `lat` in
   [-90, 90]; the parser rejects a swapped pair at its path.
 - A parking conversion's own start and duration are its clearance; its `build` is the housing.
@@ -98,7 +102,10 @@ From the plan alone (`checkPlan`, field = problem code): duplicate ids, unknown 
 cycles, `opens-before` (a project opening before one it names in `opensAfter`), dates outside
 2028-01-01 to 2068-12-31, a start before a dependency opens, a car closure with no transit
 dependency, **`fillmore`** (a closure before its transit opens), a build before its site is
-available, a garage on a site that is not a build-free removal, a reused site, a stop defined
+available, a garage on a site that is not a build-free removal, a reused site (a parcel is used
+once across parking conversions, garages and every truncation's `freewayLand`, except that one
+garage `{ parcel }` may share its parcel with one truncation's `freewayLand`: the garage stands
+on that phase's land), a stop defined
 twice, capacity (`maxConcurrent` per capacity kind), a parking conversion with no
 transit dependency, and a display whose id is reused or whose `from` names no project.
 
@@ -111,6 +118,13 @@ Against this dataset:
   priority: light rail and streetcar; bus lane: bus), the patterns `networkAt` raises (`routeIds`);
 - every parking and garage parcel is in parcels.bin with no existing homes: the plan demolishes no
   housing (`parcel`, `site`);
+- every `freewayLand` parcel is in parcels.bin with no existing homes, is in `freeway-land.json`
+  (otherwise freeing it would count its homes twice), and sits in a catalog segment whose
+  `removedBy` is this truncation: a kept freeway never frees its land, nor does another phase's
+  (`freewayLand`); every `excluded` parcel is in parcels.bin (`freewayLand`). With no catalog
+  every `freewayLand` parcel fails the catalog check;
+- a parking conversion on a catalog parcel fails: only a garage may stand on freeway land
+  (`parcel`);
 - every parking conversion is served: some stop of one of its direct transit dependencies (a
   transit line's stops, a bus lane's `stopIds`, the stops of a tram priority's routes) is within
   `SQL_VARS.tod_half_m` (½ mile) of the parcel's DataSF outline (`geom_orig`, EPSG:7131), the
@@ -133,6 +147,10 @@ the engine's `$lib` imports through the root `tsconfig.json`, which extends
 `.svelte-kit/tsconfig.json` and its `$lib` paths (as `scripts/bench-levers.ts` relies on). No
 resolve hook and no headless browser. It needs `svelte-kit sync` to have run (`npm install`'s
 `prepare` does it). `pipeline/test/fixtures/engine-node-smoke.ts` is the smoke test.
+
+Freeway land ([pipeline.md](pipeline.md), "Freeway land") is scenario-ineligible in
+`parcels.bin`, which both arms read, so the rule applies to the baseline and the plan arm alike:
+a catalog parcel builds nothing in either until its freeway is removed.
 
 ## The step
 
@@ -217,17 +235,35 @@ Known limits (no check today; review `corridors.resolved.json` after a data refr
 and the land mask, with no right-of-way source:
 
 ```
-freed = (land_mask − ∪ buffer(parcel outline, accessM)) ∩ buffer(removed lines, rowHalfWidthM)
+row   = (land_mask − ∪ buffer(parcel outline, accessM), freed parcels excepted)
+        ∩ buffer(removed lines, rowHalfWidthM)
         − ∪ buffer(every other centreline, keepHalfM)
+        − ∪ freed parcels (current outline)
 ```
 
-keeping the parts that touch a removed line, cut across it every `lotMaxM` at most, and dropping
-pieces under `minPieceM2`. Parameters (`LC`, all tier 4 invented): `keepHalfM` 10 m, `accessM`
-6 m, `lotMaxM` 60 m, `minPieceM2` 100 m², `neighbourM` 40 m. Sites are `lc:<project>:<k>`.
+keeping the parts that touch a removed line and cutting them across it every `lotMaxM` at most
+(the ROW pieces). Parameters (`LC`, all tier 4 invented): `keepHalfM` 10 m, `accessM` 6 m,
+`lotMaxM` 60 m, `minPieceM2` 100 m², `neighbourM` 40 m. Sites are `lc:<project>:<k>`.
+
+**Freed parcels** (a truncation's `freewayLand.parcels`, v1.1) become sites of their own: each
+polygon part of a freed parcel's current outline is a seed. A ROW piece within 0.05 m of a seed of
+a non-held freed parcel of the same project merges into the seed it shares the most land with
+inside that 0.05 m (the smaller parcel id, then part, on a tie); every other ROW piece stays a
+site. Freed parcels get no access strip, and ROW pieces never overlap them, so no land is counted
+twice. Numbering per project: seeds first, by (parcel id, part), then the unmerged ROW pieces in v1
+order (line, stretch, centroid); `minPieceM2` drops only unmerged pieces. A project freeing no
+parcel numbers and carves exactly as in v1. A site lists the freed parcels it overlaps by more than
+1 m² (`parcels`, sorted) and its area in them (`parcelM2`). The 0.05 m and 1 m² tolerances absorb
+projection noise (builder's).
+
+**Held sites.** A garage `{ parcel }` on a phase's freed parcel (the one overlap `checkPlan`
+allows) holds that parcel's sites (`heldBy` the garage); no ROW piece merges into a held site.
 
 A freed site's zoning is its most permissive neighbour within `neighbourM` (most FZP stories, then
 no density cap over a cap, then the smaller parcel id): before the switch, FZP on that zoning;
-from the switch, the larger of that and SB 79 on the site's own reach to stops.
+from the switch, the larger of that and SB 79 on the site's own reach to stops. Neighbours are
+never freeway land: catalog parcels and freed parcels are excluded (the zoning is the city's
+around the freeway, not the freeway land's own P zoning).
 
 ### Regimes
 
@@ -251,8 +287,12 @@ The initiative builds on freed sites and parking sites itself (spec "The initiat
 - Each freed site of a removal or truncation with a `build`, and each parking conversion, gets
   one scheduled build at its project's build start, of the top fill yield of the row in force on
   that day.
+- A site held by a garage gets no build. `summary.garageCost` reports, per garage holding sites,
+  the top fill yield its held sites would have had at their project's build start (its open day
+  when the project has no build), summed (`garageCosts`, which reads the same row as
+  `initiativeBuilds` through one helper). Absent when no garage holds a site.
 - A build that adds no homes is dropped. A freed sliver whose envelope holds none counts in
-  `lesscars.sites.zero_yield`. A parking build that adds none still keeps its reservation (ruling
+  `lesscars.sites.zero_yield`; a held site never does. A parking build that adds none still keeps its reservation (ruling
   4: the plan named the lot); it counts in `lesscars.sites.zero_gain_parking` with a build
   warning, not a failure.
 - A parking conversion reserves its parcel from the conversion's start (clearance), not its build
@@ -288,12 +328,12 @@ tagged `format: 'sfh-lesscars/1'` and named in the manifest as `scenarios.lessca
 `sites`, `summary`, `timeline`), a sibling of `scenarios.fzp`. `upload` and `verify` check every
 file the manifest names.
 
-| File           | Content                                                                      |
-| -------------- | ---------------------------------------------------------------------------- |
-| `plan.json`    | the plan, each project's dated times, and each named CNN's [lng, lat] lines  |
-| `sites.json`   | freed sites: id, project, parcel record, outline in [lng, lat]               |
-| `summary.json` | paired-run summary: extra homes (mean, band) and by source, per year end     |
-| `timeline.bin` | the representative future: columnar JSON, deflate-raw level 9, as policy.bin |
+| File           | Content                                                                                    |
+| -------------- | ------------------------------------------------------------------------------------------ |
+| `plan.json`    | the plan, each project's dated times, and each named CNN's [lng, lat] lines; `basemapHide` |
+| `sites.json`   | freed sites: id, project, parcel record, outline in [lng, lat]                             |
+| `summary.json` | paired-run summary: extra homes (mean, band) and by source, per year end                   |
+| `timeline.bin` | the representative future: columnar JSON, deflate-raw level 9, as policy.bin               |
 
 `timeline.bin` is bound to parcels.bin by `count` and `idsHash`; decoding it against another
 parcels.bin throws. Besides the plan arm's schedules and the initiative builds kept in the
@@ -304,7 +344,20 @@ drop, and a zero-gain conversion keeps its reservation with no build, so the pag
 verdict to tell kept from voided. Codecs: `parsePlanFile`, `parseSitesFile`, `parseSummary`,
 `decodeTimelinePayload` (`src/lib/data/lesscars/codec.ts`).
 
-Counts in report.json: `lesscars.projects`, `lesscars.sites`, `lesscars.sites.zero_yield`,
+v1.1 keys, all optional so the v1 files (dataset `2026-11-02-39fbf039`) still parse; the writer
+omits a key that is empty, 0 or null, so a plan freeing no parcel writes v1 files:
+
+- `sites.json`, per site: `parcels` (freed parcels it overlaps, sorted), `parcelM2` (its area in
+  them, to 0.01 m²), `heldBy` (the garage holding it).
+- `summary.json`: `garageCost: [{ projectId, homes }]`, `homes` a non-negative integer.
+
+Test copies of the v1 files are in `src/lib/data/lesscars/fixtures/v1/` (`V1_PLAN`, `V1_SITES`,
+`V1_SUMMARY`).
+
+Counts in report.json: `lesscars.projects`, `lesscars.sites`, `lesscars.sites.parcels` (sites
+with `parcelM2 > 0`), `lesscars.sites.held`, `lesscars.freed_m2.parcels` and
+`lesscars.freed_m2.row` (rounded m² of freed-parcel and right-of-way land, held sites excluded),
+`lesscars.sites.zero_yield`,
 `lesscars.sites.zero_gain_parking`, `lesscars.regimes`, `lesscars.seeds`,
 `lesscars.extra_2068.mean` (rounded), `lesscars.unlocked_lots`, `lesscars.bytes.timeline_payload`,
 and `lesscars.bytes.timeline` on live builds only (deflate bytes vary by zlib).
@@ -321,6 +374,16 @@ only with `npm run pipeline -- fixture --update-golden`.
 must equal the non-zero rows of `reservationsOf(plan, schedulePlan(plan), parcels)`
 (`pipeline/lib/lesscars/runs.ts`); a mismatch fails with `timeline reservations ≠ plan's reserved
 parcels`.
+
+Freed parcels and held sites (v1.1):
+
+- every site's `heldBy` names an `edge-garage` whose `site.parcel` is in the site's `parcels`;
+- every `freewayLand` parcel is in some site's `parcels` (`freed parcel <id> is in 0 sites`). A
+  parcel of several polygon parts is in one site per part, so V35 cannot require exactly one; the
+  carve's subtraction keeps ROW pieces off freed parcels;
+- every parcel in a site's `parcels` has `eligible` 0 in parcels.bin (`freed parcel <id> is
+scenario-eligible: its homes would count twice`);
+- no timeline build is on a held site (`timeline builds on held site <id>`).
 
 ## Running it
 
@@ -402,6 +465,151 @@ Two problems were found. Both are follow-ups, not release blockers:
   before capping the packing.
 - **Duplicate heading:** the timeline disclosure repeats a "Parking conversions" heading under its
   summary.
+
+## Freeway land
+
+The catalog format, its build rule and the V17 and homes checks are in [pipeline.md](pipeline.md)
+("Freeway land"). This section is the candidate command.
+
+`npm run pipeline -- lesscars-freeway-land [--dataset <v>]` proposes parcels for each segment of
+`pipeline/enrichment/lesscars/freeway-land.json` into `freeway-land.candidates.json`. It never
+writes the catalog: the curated list is the source of truth, not the rule. It normalises the
+locked sources, runs the SQL stage on a fresh DuckDB (no chunks, no tiles), then
+`pipeline/sql/86_freeway_land.sql`, and prints one line per segment. A segment naming a CNN
+`src_streets` lacks exits 1 and writes nothing.
+
+The rule, with its `LC` values (`pipeline/lesscars-config.ts`, tier 4):
+
+- A parcel is a candidate when it holds 0 homes and is `VACANT`, or is zoned `P` with no building
+  (height 0, floor area 0), and at least `LC.freewayMinShare` (0.5) of its area lies within
+  `LC.freewayBandM` (60 m) of the segment's streets. "At least" is inclusive (a 1e-6 tolerance
+  absorbs projection noise on a parcel exactly half in the band).
+- Open space (land use `OPENSPACE`) is proposed with `openSpace: true`, not filtered: a park is an
+  exclusion, and curation decides.
+- A parcel in several segments' bands goes to the nearest segment (smaller id on a tie).
+- `status` is against the segment's current entry: `listed`, `excluded` or `new`. `rowM2` is the
+  unparcelled land (land mask less every parcel) within the band, a size for the drafter, not a
+  list.
+- With `--dataset <v>` (default: the newest `pipeline/out/<v>` with a `parcels.bin`; none for a
+  fixture run) `fzpTopYield`, `hostable` and `inFlight` (ids of `projects.json` projects naming
+  the parcel) are filled, else null.
+
+The streets come from `loadLockedStreets` (`pipeline/lib/lesscars/streets.ts`), which
+`lesscars-cnns` shares for the lock checks and street rows.
+
+## Basemap ids
+
+Can a removed freeway stretch be hidden on the basemap by protomaps `roads` feature id at every
+zoom the page shows (11 to the archive's maxzoom 15), or must the tiles step split it out? The
+check lists the `roads` features coming within `LC.basemapBandM` (25 m) of the removed lines and,
+per zoom, each feature's full length (every tile of the archive, tile buffers counted once) and its
+in-band length. A `highway` feature with an in-band share in [0.1, 0.9) is mixed: one id covers a
+removed stretch and a kept one, so an id filter would hide too much or too little.
+
+```bash
+npm run pipeline -- lesscars-basemap --report --lines <removed.geojson> \
+  [--pmtiles pipeline/out/<v>/basemap.pmtiles] [--band 25]
+```
+
+The provisional removed lines (a scratch file, not committed): from the locked `datasf-streets`
+raw files, every `FREEWAYS` segment named `HWY 101…` with every vertex north of lat 37.7335 (the
+Alemany interchange) and every `I-80…` segment with every vertex west of lng -122.3925 (the
+Rincon Hill touchdown), in EPSG:4326 (96 segments, 69 of them US-101).
+
+Measured on `2026-11-02-39fbf039/basemap.pmtiles`:
+
+| Zoom | Highway ids near the lines | Mixed |
+| ---- | -------------------------- | ----- |
+| 11   | 14                         | 4     |
+| 12   | 29                         | 12    |
+| 13   | 34                         | 10    |
+| 14   | 43                         | 10    |
+| 15   | 61                         | 14    |
+
+Verdict: **split (zooms 11,12,13,14,15)**. Ids are stable at every zoom, but US-101 merges across
+the Alemany cut at z11 to z13 (`35184377160410`, 7474 of 13942 m in band at z11, 3274 of 9092 m at
+z13) and unnamed highway links and the kept freeways that cross or touch the lines (I-280, CA 1,
+the rest of I-80) are mixed at every zoom. An id filter cannot isolate the stretches, so Task 7b
+(split the removed stretches into source layer `roads_lc` at build time) runs, not Task 7a.
+`LC.basemapClipZooms` is set to all five zooms. The 25 m band counts a crossing road as mixed, so
+the z14 and z15 entries overstate the merged lines; Task 6's candidate rule narrows them.
+
+### The id list
+
+`pipeline/enrichment/lesscars/basemap-ids.json` (absent until Plan B curates it; the mini
+fixture's is `pipeline/test/fixtures/mini/enrichment/lesscars-basemap-ids.json`) lists, per
+removal phase, the protomaps `roads` feature ids of the removed stretch:
+
+```json
+{
+  "schema": 1,
+  "source": { "sha256": "<sha256 of the protomaps-basemap lock file>" },
+  "phases": [{ "project": "<highway-truncation id>", "ref": "US 101", "ids": [35184377160410] }]
+}
+```
+
+`ids` are sorted and unique. The curated file is the source of truth; the candidates command only
+proposes:
+
+```bash
+npm run pipeline -- lesscars-basemap [--pmtiles <file>] [--band 25]
+```
+
+For every `freeway-land.json` segment with `removedBy`, it reads the segment's CNN centrelines
+from the locked `datasf-streets`, takes the `roads` pieces within `LC.basemapBandM` and keeps each
+whose in-band share is at least `LC.basemapMinShare` (0.9) at any zoom, grouped by (`removedBy`,
+`ref`) into phases, and writes `basemap-ids.candidates.json` beside the catalog with the lock's
+basemap sha256. Curate it into `basemap-ids.json` by hand.
+
+The build (`writeLessCars`) fails when a phase's `project` is not a `highway-truncation` of the
+plan, or when a listed id is in no `roads` tile at z11 to z15 within the phases' lines' bounding
+box plus 500 m (`basemapIdsMissing`; was the basemap rebuilt?). A `source.sha256` other than the
+lock's basemap is only a warning: the ids are what is checked. The step returns each phase with
+its project's CNN lines (`basemapPhases`) for the tiles split. The list is read by `build.ts`
+(live or fixture file by kind) and is not a published file.
+
+### The split: `roads_lc`
+
+The build splits the listed stretches out of the basemap (`writeBasemap`, `pipeline/steps/tiles.ts`;
+`splitRoadsTile`, `pipeline/lib/lesscars/basemap-split.ts`). Each phase with lines gets a
+corridor: its project's CNN lines buffered by `LC.basemapBandM` (25 m) with flat caps in EPSG:7131
+(`splitPhasesOf`). Every tile of the archive, at every zoom over its header bounds, is decoded and
+re-encoded (`rewritePmtiles`, `pipeline/lib/pmtiles-rewrite.ts`: an MBTiles file written with
+`node:sqlite`, then `pmtiles convert`; tiles away from every corridor are re-gzipped, identical once decompressed). In
+the `roads` layer:
+
+- every listed id, at every zoom, whatever its kind, and on `LC.basemapClipZooms` also every
+  unlisted `kind = 'highway'` feature whose `ref` has the phase's `ref` as one of its
+  `;`-separated tokens, is clipped at the corridor: each line is cut where it crosses a corridor
+  edge, and a piece is inside when its midpoint is (tile units);
+- the inside pieces move to source layer `roads_lc`, with the feature's id and properties plus
+  `lc_project` (the phase's project; the first phase whose corridor holds a piece takes it);
+- the outside pieces stay in `roads` with the same id and properties. A feature is never moved
+  whole, so a low-zoom merge that also covers a kept stretch, or a kept freeway or link that
+  merely crosses the band, keeps its outside part.
+
+Other layers and features are re-encoded unchanged; `vector_layers` gains `roads_lc`. Without
+phases (no id list: the live build until Plan B) the archive is copied byte for byte. The count
+`tiles.basemap_split_changed` is the number of tiles rewritten. On the mini fixture the listed id
+(Mission Street, a stand-in crossing the mini I-80) exists at z14 and z15 only, and two tiles
+change. The rewrite is deterministic (same bytes across builds); the golden does not compare
+`basemap.pmtiles`.
+
+`plan.json` names the split phases in the optional `basemapHide`
+(`[{ projectId, ids }]`, the phases with lines, in id-list order; absent when there are none).
+V35 checks each `basemapHide` project is a `highway-truncation`.
+
+The style draws `roads_lc` with a clone of every protomaps layer on source layer `roads`,
+`${id}__lc`, placed right after it (`LC_ROADS_SOURCE_LAYER`, `src/lib/map/style.ts`), so a moved
+piece looks as it did. `/sim` and FZP draw the clones unfiltered. `/lesscars` installs
+`installBasemapHide` (`src/lib/lesscars/basemap-hide.ts`) beside its own layers: from a project's
+`openDay` each clone's filter becomes `['all', own, ['!', ['in', ['get', 'lc_project'],
+['literal', removed]]]]`, where `own` is the clone's style filter converted to an expression
+(`toExpressionFilter`, `src/lib/map/filter-expr.ts`: a legacy filter mixed into an expression
+`all` would be misread). Filters are set only when the removed set changes and restored when
+scrubbing back. A theme switch sets paint properties only, so the filters survive it. A plan file
+without `basemapHide` (the published `2026-11-02-39fbf039`) sets no filter and the page renders as
+before.
 
 ## The page
 
@@ -490,6 +698,13 @@ The headline (`summary.extra.mean` at 2068, with the p10 to p90 band) sits in th
 pinned slot as one button; it opens the details (breakdown that adds to the headline, chart,
 amenities note, map key, evidence). Timeline and Evidence are header actions, in the Menu below
 1024 px.
+
+Under the breakdown the details give the freed-land disclosure from `sites.json`
+(`freedLandSplit`): hectares from freeway-land parcels (`parcelM2`) and from right-of-way (the rest
+of each site's area), to one decimal, held sites excluded; with no parcel land it says only the
+roadway figure. When `summary.garageCost` is present and above 0, a second line gives the homes
+the edge garages' footprints cost. A held site (`heldBy`) is not drawn by `siteFeatures`: it is
+garage land. The disclosure is shown only when some site carries a `parcels` key (the v1.1 sites file; the key is absent in v1 files and when empty), so a published v1 dataset renders its details exactly as before: no freed-land line at all. A dataset without `heldBy` or `garageCost` shows no garage line.
 
 ### Scrubber markers
 

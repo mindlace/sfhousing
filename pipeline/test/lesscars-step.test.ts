@@ -13,7 +13,13 @@ import {
   parseSummary
 } from '../../src/lib/data/lesscars/codec';
 import { FIXTURE_PROFILE } from '../config';
-import { LESSCARS_PLAN_JSON } from '../lesscars-config';
+import {
+  LESSCARS_BASEMAP_IDS_JSON,
+  LESSCARS_FREEWAY_LAND_JSON,
+  LESSCARS_PLAN_JSON
+} from '../lesscars-config';
+import { readBasemapIds, type BasemapIdsFile } from '../lib/lesscars/basemap-ids';
+import { readFreewayLand, type FreewayLandFile } from '../lib/lesscars/freeway-land';
 import { LESSCARS_FILES } from '../lib/scenario-files';
 import { CALIBRATION_JSON } from '../steps/calibration';
 import { writeLessCars, zeroYieldSites } from '../steps/lesscars';
@@ -32,30 +38,50 @@ beforeAll(async () => {
     cpSync(join(MINI, 'golden', f), join(m.outDir, f));
 });
 
-function args(planPath: string | null) {
+/** The fixture catalog (lot 19 under I-80), which the build passes for a fixture version. */
+const FIXTURE_FREEWAY_LAND = readFreewayLand(LESSCARS_FREEWAY_LAND_JSON.fixture);
+
+const MINI_BASEMAP = join(MINI, 'raw/protomaps-basemap.pmtiles');
+const FIXTURE_BASEMAP_IDS = readBasemapIds(LESSCARS_BASEMAP_IDS_JSON.fixture)!;
+const FIXTURE_IDS = FIXTURE_BASEMAP_IDS.phases[0].ids;
+const idsOf = (project: string, ids: number[]): BasemapIdsFile => ({
+  ...FIXTURE_BASEMAP_IDS,
+  phases: [{ project, ref: null, ids }]
+});
+
+function args(
+  planPath: string | null,
+  freewayLand: FreewayLandFile | null = FIXTURE_FREEWAY_LAND,
+  ids: BasemapIdsFile | null = FIXTURE_BASEMAP_IDS
+) {
   outDir = mkdtempSync(join(tmpdir(), 'sfh-lesscars-step-'));
   cpSync(m.outDir, outDir, { recursive: true });
   return {
+    basemap: { pmtiles: MINI_BASEMAP, ids, sha256: undefined as string | undefined },
     db: m.db,
     outDir,
     datasetVersion: 'fixture-0',
     records: m.records,
     planPath,
     profile: FIXTURE_PROFILE,
-    capDay: m.capDay
+    capDay: m.capDay,
+    freewayLand
   };
 }
 
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 const project = (plan: Json, id: string): Json => plan.projects.find((p: Json) => p.id === id);
 
-function withPlan(edit: (plan: Json) => void) {
+function withPlan(
+  edit: (plan: Json) => void,
+  freewayLand: FreewayLandFile | null = FIXTURE_FREEWAY_LAND
+) {
   const plan = JSON.parse(readFileSync(LESSCARS_PLAN_JSON.fixture, 'utf8')) as Json;
   edit(plan);
   const dir = mkdtempSync(join(tmpdir(), 'sfh-lesscars-plan-'));
   const path = join(dir, 'plan.json');
   writeFileSync(path, JSON.stringify(plan));
-  return args(path);
+  return args(path, freewayLand);
 }
 
 const unknownCnn = (p: Json) => (project(p, 'ped').segments = [{ cnn: ['99999'] }]);
@@ -87,7 +113,7 @@ describe('writeLessCars', () => {
   it('no plan file: nothing written, no manifest key', async () => {
     for (const planPath of [null, join(tmpdir(), 'sfh-no-such-plan.json')]) {
       const r = await writeLessCars(args(planPath));
-      expect(r).toEqual({ written: false, counts: {}, warnings: [] });
+      expect(r).toEqual({ written: false, counts: {}, warnings: [], basemapPhases: [] });
       expect(existsSync(join(outDir, 'scenarios/lesscars'))).toBe(false);
     }
   });
@@ -141,11 +167,49 @@ describe('writeLessCars', () => {
     for (const c of coords) expect(c).toBe(Math.round(c * 1e7) / 1e7);
   });
 
-  it('zero_yield counts freed sites of a build project that no build uses', () => {
+  it('every published site polygon and outline is a valid, simple polygon', async () => {
+    // rec.polygon rings are open (ParcelRecord); outline rings are closed (GeoJSON).
+    const closed = (r: [number, number][]) => {
+      const [a, z] = [r[0], r[r.length - 1]];
+      return a[0] === z[0] && a[1] === z[1] ? r : [...r, a];
+    };
+    const wkt = (rings: [number, number][][]) =>
+      `POLYGON(${rings
+        .map(
+          (r) =>
+            `(${closed(r)
+              .map(([x, y]) => `${x} ${y}`)
+              .join(', ')})`
+        )
+        .join(', ')})`;
+    const garageOn19 = (p: Json) => (project(p, 'garage').site = { parcel: '3512019' });
+    // The mini plan, and its variant whose garage holds lot 19 (outDir is the latest args call's).
+    for (const a of [() => args(LESSCARS_PLAN_JSON.fixture), () => withPlan(garageOn19)]) {
+      await writeLessCars(a());
+      const sites = parseSitesFile(
+        JSON.parse(readFileSync(join(outDir, LESSCARS_FILES.sites), 'utf8'))
+      ).sites;
+      expect(sites.length).toBeGreaterThan(0);
+      for (const s of sites)
+        for (const [what, rings] of [
+          ['rec.polygon', s.rec.polygon],
+          ['outline', s.outline]
+        ] as const) {
+          const [r] = await m.db.all<{ valid: boolean; simple: boolean }>(
+            `SELECT ST_IsValid(g) AS valid, ST_IsSimple(g) AS simple
+             FROM (SELECT ST_GeomFromText('${wkt(rings)}') AS g)`
+          );
+          expect(r, `${s.siteId} ${what}`).toEqual({ valid: true, simple: true });
+        }
+    }
+  });
+
+  it('zero_yield counts freed sites of a build project that no build uses, held ones aside', () => {
     const sites = [
-      { siteId: 'lc:hwy:0', projectId: 'hwy' },
-      { siteId: 'lc:hwy:1', projectId: 'hwy' },
-      { siteId: 'lc:other:0', projectId: 'other' }
+      { siteId: 'lc:hwy:0', projectId: 'hwy', heldBy: null },
+      { siteId: 'lc:hwy:1', projectId: 'hwy', heldBy: null },
+      { siteId: 'lc:hwy:2', projectId: 'hwy', heldBy: 'garage' },
+      { siteId: 'lc:other:0', projectId: 'other', heldBy: null }
     ];
     const builds = [
       { siteId: 'lc:hwy:0', parcelRow: null },
@@ -190,5 +254,182 @@ describe('writeLessCars', () => {
   it('a plan that does not parse fails the build', async () => {
     await expect(writeLessCars(withPlan((p) => (p.schema = 2)))).rejects.toThrow('schema');
     expect(existsSync(join(outDir, 'scenarios/lesscars'))).toBe(false);
+  });
+});
+
+describe('basemap ids', () => {
+  const run = (ids: BasemapIdsFile | null) =>
+    writeLessCars(args(LESSCARS_PLAN_JSON.fixture, FIXTURE_FREEWAY_LAND, ids));
+  it('an id missing from basemap.pmtiles fails the build', async () => {
+    await expect(run(idsOf('hwy', [1, ...FIXTURE_IDS]))).rejects.toThrow(
+      /ids 1 are not in basemap\.pmtiles/
+    );
+    expect(existsSync(join(outDir, 'scenarios/lesscars'))).toBe(false);
+  });
+  it('a phase naming a project that is not a truncation fails', async () => {
+    await expect(run(idsOf('subway', FIXTURE_IDS))).rejects.toThrow(
+      /subway is not a highway truncation/
+    );
+    await expect(run(idsOf('nope', FIXTURE_IDS))).rejects.toThrow(
+      /nope is not a highway truncation/
+    );
+  });
+  it('a phase whose truncation has no CNN segments fails instead of going unsplit', async () => {
+    const a = withPlan((p) => {
+      project(p, 'hwy').segments = [
+        {
+          line: [
+            [-122.4183648, 37.7609007],
+            [-122.4160943, 37.7627019]
+          ],
+          provenance: project(p, 'hwy').rowHalfWidthM.provenance
+        }
+      ];
+    });
+    await expect(writeLessCars(a)).rejects.toThrow(
+      /basemap-ids\.json: hwy has no CNN segments to split by/
+    );
+  });
+  it('a different lock sha256 is a warning, not a failure', async () => {
+    const a = args(LESSCARS_PLAN_JSON.fixture);
+    const sha256 = FIXTURE_BASEMAP_IDS.source.sha256;
+    a.basemap = {
+      pmtiles: MINI_BASEMAP,
+      ids: { ...FIXTURE_BASEMAP_IDS, source: { sha256: 'x' } },
+      sha256
+    };
+    const r = await writeLessCars(a);
+    expect(r.warnings.some((w) => /basemap-ids\.json: ids were read from/.test(w))).toBe(true);
+    expect(r.basemapPhases).toHaveLength(1);
+  });
+  it('the step returns each phase with its lines', async () => {
+    const r = await run(FIXTURE_BASEMAP_IDS);
+    expect(r.basemapPhases).toEqual([
+      expect.objectContaining({ project: 'hwy', ids: FIXTURE_IDS })
+    ]);
+    expect(r.basemapPhases[0].lines[0].length).toBeGreaterThanOrEqual(2);
+  });
+  it('plan.json names the split phases in basemapHide', async () => {
+    await run(FIXTURE_BASEMAP_IDS);
+    const plan = JSON.parse(readFileSync(join(outDir, LESSCARS_FILES.plan), 'utf8'));
+    expect(plan.basemapHide).toEqual([{ projectId: 'hwy', ids: FIXTURE_IDS }]);
+  });
+  it('no id list, no phases, and no basemapHide', async () => {
+    expect((await run(null)).basemapPhases).toEqual([]);
+    const plan = JSON.parse(readFileSync(join(outDir, LESSCARS_FILES.plan), 'utf8'));
+    expect(plan).not.toHaveProperty('basemapHide');
+  });
+});
+
+describe('freewayLand checks', () => {
+  const FIXTURE_CATALOG = readFreewayLand(LESSCARS_FREEWAY_LAND_JSON.fixture)!;
+  /** The fixture catalog with its one segment changed. */
+  const catalog = (change: { parcels?: string[]; removedBy?: string | null }): FreewayLandFile => ({
+    schema: 1,
+    segments: [{ ...FIXTURE_CATALOG.segments[0], ...change }]
+  });
+  const step = (edit: (p: Json) => void, o: { freewayLand: FreewayLandFile }) =>
+    writeLessCars(withPlan(edit, o.freewayLand));
+  const withFreed = (parcel: string) => (p: Json) =>
+    (project(p, 'hwy').freewayLand = { parcels: [parcel], excluded: [] });
+  const parkingOn = (parcel: string) => (p: Json) => (project(p, 'parking').parcel = parcel);
+  const garageOn = (parcel: string) => (p: Json) => (project(p, 'garage').site = { parcel });
+
+  it('a freewayLand parcel outside the catalog fails as counted twice', async () => {
+    await expect(step(withFreed('3512017'), { freewayLand: FIXTURE_CATALOG })).rejects.toThrow(
+      /hwy\.freewayLand: parcel 3512017 is not freeway land/
+    );
+  });
+
+  it('a freewayLand parcel with homes, or not in parcels.bin, fails', async () => {
+    await expect(
+      step(withFreed('3512018'), { freewayLand: catalog({ parcels: ['3512018'] }) })
+    ).rejects.toThrow(/parcel 3512018 has 2 existing homes/);
+    await expect(step(withFreed('nope'), { freewayLand: FIXTURE_CATALOG })).rejects.toThrow(
+      /hwy\.freewayLand: parcel nope is not in parcels.bin/
+    );
+  });
+
+  it('an excluded parcel must be in parcels.bin', async () => {
+    const edit = (p: Json) =>
+      (project(p, 'hwy').freewayLand = {
+        parcels: ['3512019'],
+        excluded: [{ parcel: 'nope', reason: 'a park' }]
+      });
+    await expect(step(edit, { freewayLand: FIXTURE_CATALOG })).rejects.toThrow(
+      /hwy\.freewayLand: parcel nope is not in parcels.bin/
+    );
+  });
+
+  it('a phase may not free a kept freeway’s land, nor another phase’s', async () => {
+    await expect(
+      step(withFreed('3512019'), { freewayLand: catalog({ removedBy: null }) })
+    ).rejects.toThrow(/parcel 3512019 is freeway land of fx-i80, removed by none/);
+    await expect(
+      step(withFreed('3512019'), { freewayLand: catalog({ removedBy: 'other' }) })
+    ).rejects.toThrow(/removed by other/);
+  });
+
+  it('a parking conversion on freeway land fails; a garage there passes', async () => {
+    await expect(step(parkingOn('3512019'), { freewayLand: FIXTURE_CATALOG })).rejects.toThrow(
+      /parking\.parcel: parcel 3512019 is freeway land/
+    );
+    await expect(
+      step(garageOn('3512019'), { freewayLand: FIXTURE_CATALOG })
+    ).resolves.toMatchObject({ written: true });
+  });
+});
+
+describe('freed parcels and held sites', () => {
+  const read = (f: string) => JSON.parse(readFileSync(join(outDir, f), 'utf8')) as Json;
+  const garageOn = (parcel: string) => (p: Json) => (project(p, 'garage').site = { parcel });
+
+  it('lot 19 is freed into site 1; the counts split freed land by parcels and right-of-way', async () => {
+    const r = await writeLessCars(args(LESSCARS_PLAN_JSON.fixture));
+    const raw = read(LESSCARS_FILES.sites);
+    const sites = parseSitesFile(raw).sites;
+    const withParcels = sites.filter((s) => s.parcels !== undefined);
+    expect(withParcels.map((s) => [s.siteId, s.parcels])).toEqual([['lc:hwy:1', ['3512019']]]);
+    expect(withParcels[0].parcelM2).toBeCloseTo(800, 0);
+    // The writer omits a key that is empty, 0 or null.
+    for (const s of raw.sites as Json[]) expect('heldBy' in s, s.siteId).toBe(false);
+    for (const s of (raw.sites as Json[]).filter((x) => x.siteId !== 'lc:hwy:1')) {
+      expect('parcels' in s, s.siteId).toBe(false);
+      expect('parcelM2' in s, s.siteId).toBe(false);
+    }
+    expect('garageCost' in read(LESSCARS_FILES.summary)).toBe(false);
+    const area = sites.reduce((t, s) => t + s.rec.areaM2, 0);
+    expect(r.counts).toMatchObject({
+      'lesscars.sites.parcels': 1,
+      'lesscars.sites.held': 0,
+      'lesscars.freed_m2.parcels': 800
+    });
+    expect(r.counts['lesscars.freed_m2.parcels'] + r.counts['lesscars.freed_m2.row']).toBeCloseTo(
+      area,
+      -1
+    );
+  });
+
+  it('a held site is not zero-yield and its garage cost is in summary.json', async () => {
+    const r = await writeLessCars(withPlan(garageOn('3512019')));
+    const sites = parseSitesFile(read(LESSCARS_FILES.sites)).sites;
+    const held = sites.filter((s) => s.heldBy !== undefined);
+    expect(held.map((s) => [s.siteId, s.heldBy, s.parcels])).toEqual([
+      ['lc:hwy:1', 'garage', ['3512019']]
+    ]);
+    const t = decodeTimelinePayload(
+      inflateRawSync(readFileSync(join(outDir, LESSCARS_FILES.timeline))),
+      m.parcels
+    );
+    expect(t.builds.map((b) => b.siteId)).not.toContain('lc:hwy:1');
+    const built = new Set(t.builds.map((b) => b.siteId));
+    const zeroYieldWithoutHeld = sites.filter((s) => !s.heldBy && !built.has(s.siteId)).length;
+    expect(r.counts['lesscars.sites.held']).toBe(1);
+    expect(r.counts['lesscars.sites.zero_yield']).toBe(zeroYieldWithoutHeld);
+    // Held land is neither freed parcel land nor right-of-way in the counts.
+    expect(r.counts['lesscars.freed_m2.parcels']).toBe(0);
+    const summary = parseSummary(read(LESSCARS_FILES.summary));
+    expect(summary.garageCost).toEqual([{ projectId: 'garage', homes: expect.any(Number) }]);
+    expect(summary.garageCost![0].homes).toBeGreaterThan(0);
   });
 });

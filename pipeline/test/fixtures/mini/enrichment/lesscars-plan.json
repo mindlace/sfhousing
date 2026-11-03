@@ -237,6 +237,10 @@
       },
       "dependsOn": ["subway"],
       "segments": [{ "cnn": ["4000"] }],
+      "freewayLand": {
+        "parcels": ["3512019"],
+        "excluded": [{ "parcel": "3512018", "reason": "2 homes: freeway land holds none" }]
+      },
       "rowHalfWidthM": {
         "value": 15,
         "provenance": {

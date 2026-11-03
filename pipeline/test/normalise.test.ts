@@ -33,10 +33,11 @@ describe('normalise mini fixture', () => {
         )
       ).map((r) => [r.t, r.n])
     );
-    // parcels: 18 lots, lot 2 has 3 rows → 20, + 3 retired + 1 null-id = 24 (attrs likewise);
-    // height: 8 districts; roll: 17 rows in 2025 + 18 in 2024 (lot 13 and 3512099 only in 2024,
-    // lot 3 not in 2024) + 2 in 2023 (lots 3 and 4)
-    expect(counts).toEqual({ p: 24, l: 19, f: 3, n: 3, o: 13, h: 8, a: 24, r: 37 });
+    // parcels: 19 lots, lot 2 has 3 rows → 21, + 3 retired + 1 null-id = 25 (attrs likewise);
+    // land use: 20 (lot 19's VACANT row included); height: 8 districts; roll: 18 rows in 2025 +
+    // 19 in 2024 (lot 13 and 3512099 only in 2024, lot 3 not in 2024; lot 19 in both) + 2 in 2023
+    // (lots 3 and 4)
+    expect(counts).toEqual({ p: 25, l: 20, f: 3, n: 3, o: 13, h: 8, a: 25, r: 39 });
     const [ids] = await db.all<{ ok: boolean }>(
       `SELECT bool_and(mapblklot IS NULL OR typeof(mapblklot) = 'VARCHAR') ok FROM src_parcels`
     );
@@ -204,12 +205,14 @@ describe('normalise mini fixture', () => {
   });
 
   it('historic status: one row per listed apn, 0026T001A verbatim, lot 18 absent', async () => {
-    // Every mini lot but 18 has a row (lot 2 by its three condo blklots), plus retired 3512099.
+    // Every mini lot but 18 has a row (lot 2 by its three condo blklots; lot 19 too), plus retired
+    // 3512099.
     const db = await miniDuck();
     const rows = await db.all<{ apn: string; ceqacode: string; ceqacodea10a11: string }>(
       `SELECT apn, ceqacode, ceqacodea10a11 FROM src_historic`
     );
-    expect(rows).toHaveLength(20);
+    expect(rows).toHaveLength(21);
+    expect(rows).toContainEqual({ apn: '3512019', ceqacode: 'C', ceqacodea10a11: 'C' });
     expect(rows).toContainEqual({ apn: '0026T001A', ceqacode: 'C', ceqacodea10a11: 'C' });
     expect(rows).toContainEqual({ apn: '3512013', ceqacode: 'A', ceqacodea10a11: 'A*' });
     expect(rows.some((r) => r.apn === '3512018')).toBe(false);

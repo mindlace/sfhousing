@@ -71,6 +71,11 @@ export interface LessCarsSummary {
   plan: number[];
   baseline: number[];
   provenance: Provenance;
+  /**
+   * Per edge garage holding freed sites (v1.1; absent when none does, and in v1 files): the
+   * homes its held sites would have had at their project's build start, a whole number.
+   */
+  garageCost?: { projectId: string; homes: number }[];
 }
 
 export interface LessCarsTimeline {
@@ -94,6 +99,13 @@ export interface LessCarsSite {
   projectId: string;
   rec: ParcelRecord;
   outline: [number, number][][];
+  /**
+   * v1.1 keys, each absent when empty, 0 or null (and in v1 files): the freed freeway-land
+   * parcels the site overlaps (sorted), its area in them (m²), and the edge garage holding it.
+   */
+  parcels?: ParcelId[];
+  parcelM2?: number;
+  heldBy?: string;
 }
 export interface LessCarsSitesFile {
   format: typeof LESSCARS_FORMAT;
@@ -108,6 +120,12 @@ export interface LessCarsPlanFile {
   times: ProjectTimes[];
   /** cnn → lng/lat lines. */
   segments: Record<string, [number, number][][]>;
+  /**
+   * v1.1, absent when empty (and in v1 files): the removal phases whose basemap features the
+   * tiles step moved to source layer `roads_lc` (property `lc_project`), with the basemap ids
+   * listed for each. The page hides a project's `roads_lc` features from its openDay.
+   */
+  basemapHide?: { projectId: string; ids: number[] }[];
 }
 
 // ---- validation helpers ----
@@ -250,8 +268,19 @@ export function parseSummary(json: unknown): LessCarsSummary {
     bySource,
     plan,
     baseline,
-    provenance: parseProvenance(r.provenance, 'provenance')
+    provenance: parseProvenance(r.provenance, 'provenance'),
+    ...('garageCost' in r ? { garageCost: parseGarageCost(r.garageCost, 'garageCost') } : {})
   };
+}
+
+function parseGarageCost(v: unknown, path: string): { projectId: string; homes: number }[] {
+  return arr(v, path).map((g, i) => {
+    const p = at(path, i);
+    const o = obj(g, p, ['projectId', 'homes']);
+    const homes = int(o.homes, at(p, 'homes'));
+    if (homes < 0) fail(at(p, 'homes'), 'expected a non-negative number of homes');
+    return { projectId: str(o.projectId, at(p, 'projectId')), homes };
+  });
 }
 
 // ---- timeline ----
@@ -630,12 +659,23 @@ export function parseSitesFile(json: unknown): LessCarsSitesFile {
     sites: arr(r.sites, 'sites').map((v, i) => {
       const p = at('sites', i);
       const s = obj(v, p, ['siteId', 'projectId', 'rec', 'outline']);
-      return {
+      const site: LessCarsSite = {
         siteId: str(s.siteId, at(p, 'siteId')),
         projectId: str(s.projectId, at(p, 'projectId')),
         rec: parseRecord(s.rec, at(p, 'rec')),
         outline: rings(s.outline, at(p, 'outline'))
       };
+      if ('parcels' in s)
+        site.parcels = arr(s.parcels, at(p, 'parcels')).map((x, j) =>
+          str(x, at(at(p, 'parcels'), j))
+        );
+      if ('parcelM2' in s) {
+        const m2 = num(s.parcelM2, at(p, 'parcelM2'));
+        if (m2 < 0) fail(at(p, 'parcelM2'), 'expected a non-negative area');
+        site.parcelM2 = m2;
+      }
+      if ('heldBy' in s) site.heldBy = str(s.heldBy, at(p, 'heldBy'));
+      return site;
     })
   };
 }
@@ -670,11 +710,26 @@ export function parsePlanFile(json: unknown): LessCarsPlanFile {
   const seg = obj(r.segments, 'segments', []);
   const segments: Record<string, [number, number][][]> = {};
   for (const [cnn, lines] of Object.entries(seg)) segments[cnn] = rings(lines, at('segments', cnn));
-  return {
+  const file: LessCarsPlanFile = {
     format: format(r.format, 'format'),
     datasetVersion: str(r.datasetVersion, 'datasetVersion'),
     plan,
     times,
     segments
   };
+  if ('basemapHide' in r)
+    file.basemapHide = arr(r.basemapHide, 'basemapHide').map((v, i) => {
+      const p = at('basemapHide', i);
+      const h = obj(v, p, ['projectId', 'ids']);
+      const projectId = str(h.projectId, at(p, 'projectId'));
+      if (!ids.has(projectId)) fail(at(p, 'projectId'), `no project ${projectId} in the plan`);
+      const list = arr(h.ids, at(p, 'ids')).map((x, j) => {
+        const id = num(x, at(at(p, 'ids'), j));
+        if (!Number.isSafeInteger(id) || id < 0)
+          fail(at(at(p, 'ids'), j), 'expected a non-negative integer id');
+        return id;
+      });
+      return { projectId, ids: list };
+    });
+  return file;
 }

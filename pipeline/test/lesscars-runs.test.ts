@@ -27,6 +27,7 @@ import { simulate, simulateDetailed, simulateNet } from '../../src/lib/sim/scena
 import type { Schedule, SimInput } from '../../src/lib/sim/scenario/types';
 import type { Day } from '../../src/lib/timelapse/time';
 import {
+  garageCosts,
   initiativeBuilds,
   lesscarsYearEnds,
   representativeTimeline,
@@ -467,8 +468,8 @@ describe('lesscars runs', () => {
       }
     };
     const sites = [
-      { siteId: 'lc:hwy:0', projectId: 'hwy' },
-      { siteId: 'lc:hwy:1', projectId: 'hwy' }
+      { siteId: 'lc:hwy:0', projectId: 'hwy', heldBy: null },
+      { siteId: 'lc:hwy:1', projectId: 'hwy', heldBy: null }
     ];
     const hwy = s.times.get('hwy')!.build!;
     const park = s.times.get('parking')!.build!;
@@ -501,5 +502,62 @@ describe('lesscars runs', () => {
       `lc:hwy:1@${hwy.startDay}`,
       `2@${park.startDay}`
     ]);
+  });
+
+  describe('held sites', () => {
+    const plan = miniLessCarsPlan();
+    const s = schedulePlan(plan);
+    const ids = ['3512001', '3512015', '3512017'];
+    const parcels = {
+      count: 3,
+      index: new Map(ids.map((id, i) => [id, i])),
+      existingUnits: Uint16Array.from([0, 0, 2])
+    };
+    const row = (stories: number, top: number): EnvelopeRow => ({
+      stories,
+      cap: null,
+      yield: [1, 2, 3, top].slice(-F),
+      hostable: true
+    });
+    const freed = { siteId: 'lc:hwy:2', projectId: 'hwy', heldBy: null };
+    const held = { siteId: 'lc:hwy:1', projectId: 'hwy', heldBy: 'garage' };
+    const asked: string[] = [];
+    const rows = {
+      siteRowAt: (id: string, day: Day) => {
+        asked.push(`${id}@${day}`);
+        return id === held.siteId ? row(5, 37) : row(6, 50);
+      },
+      parcelRowAt: () => row(4, 21)
+    };
+
+    it('a site held by a garage gets no build and its homes are the garage’s cost', () => {
+      const hwy = s.times.get('hwy')!.build!;
+      const builds = initiativeBuilds(plan, s, [freed, held], parcels, rows);
+      expect(builds.filter((b) => b.projectId === 'hwy').map((b) => b.siteId)).toEqual([
+        freed.siteId
+      ]);
+      asked.length = 0;
+      expect(garageCosts(plan, s, [freed, held], rows)).toEqual([
+        { projectId: 'garage', homes: 37 }
+      ]);
+      // read at the holding project's build start: the row initiativeBuilds would have built
+      expect(asked).toEqual([`${held.siteId}@${hwy.startDay}`]);
+    });
+
+    it('garageCosts: the open day without a build; sums per garage; none held, none listed', () => {
+      const noBuild: LessCarsPlan = {
+        ...plan,
+        projects: plan.projects.map((p) =>
+          p.kind === 'highway-truncation' ? { ...p, build: null } : p
+        )
+      };
+      const sNo = schedulePlan(noBuild);
+      const open = sNo.times.get('hwy')!.openDay;
+      asked.length = 0;
+      const two = [held, { ...held, siteId: 'lc:hwy:3' }];
+      expect(garageCosts(noBuild, sNo, two, rows)).toEqual([{ projectId: 'garage', homes: 87 }]);
+      expect(asked).toEqual([`lc:hwy:1@${open}`, `lc:hwy:3@${open}`]);
+      expect(garageCosts(plan, s, [freed], rows)).toEqual([]);
+    });
   });
 });
