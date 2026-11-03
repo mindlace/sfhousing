@@ -41,7 +41,7 @@ const over = (c: Rgb, a: number): Rgb => c.map((v, i) => a * v + (1 - a) * BG[i]
 const mix = (under: Rgb, top: Rgb, a: number): Rgb =>
   under.map((v, i) => a * top[i] + (1 - a) * v) as Rgb;
 
-const token = (theme: Theme, name: 'limit-ink' | 'limit-glaze' | 'limit-wall') => {
+const token = (theme: Theme, name: 'limit-ink' | 'limit-edge' | 'limit-glaze' | 'limit-wall') => {
   const [r, g, b, a] = hexToRgba(TOKENS[theme][name]);
   return { rgb: [r, g, b] as Rgb, a: a / 255 };
 };
@@ -208,6 +208,19 @@ describe('HeightLimitsLayer on the GPU', () => {
   };
   const subIds = () => live().map((l) => l.id);
 
+  /**
+   * A drawn edge: the neutral edge (with any glaze under it) over the background at some alpha.
+   * Thin lines cover a pixel partly, so the alpha is a range, not a value: seen (≥ 0.15) and
+   * lighter than solid ink (≤ 0.75, the edge's 0.45 plus the densest glaze under it).
+   */
+  const expectEdge = (got: Rgb) => {
+    const ink = token('light', 'limit-edge').rgb;
+    const a = (BG[0] - got[0]) / (BG[0] - ink[0]);
+    expect(a, `edge alpha of rgb(${got.join(',')})`).toBeGreaterThanOrEqual(0.15);
+    expect(a, `edge alpha of rgb(${got.join(',')})`).toBeLessThanOrEqual(0.75);
+    expectPx(got, mix(BG, ink, a), 8);
+  };
+
   const expectPx = (got: Rgb, want: Rgb, tol: number) =>
     expect(
       Math.max(...got.map((v, i) => Math.abs(v - want[i]))),
@@ -288,14 +301,10 @@ describe('HeightLimitsLayer on the GPU', () => {
     expect(errors).toEqual([]);
   });
 
-  it('the lid edge draws ink', async () => {
+  it('the lid edge draws the edge colour', async () => {
     const px = await render([limits()], view(STREET, 17));
     // the west edge of the 4-story region (x = 0) at the street's latitude
-    expectPx(
-      px.at(...rimPx(TINY.lids, 0, toLngLat(0, 70.96))),
-      token('light', 'limit-ink').rgb,
-      TOL_BLEND
-    );
+    expectEdge(px.at(...rimPx(TINY.lids, 0, toLngLat(0, 70.96))));
     expect(errors).toEqual([]);
   });
 
@@ -326,7 +335,7 @@ describe('HeightLimitsLayer on the GPU', () => {
       (positions[2 * best] + positions[2 * best + 2]) / 2,
       (positions[2 * best + 1] + positions[2 * best + 3]) / 2
     ];
-    expectPx(px.at(...toPx(mid)), token('light', 'limit-ink').rgb, TOL_BLEND);
+    expectEdge(px.at(...toPx(mid)));
     expectPx(px.at(...toPx(centre)), BG, TOL);
     expect(errors).toEqual([]);
   });
@@ -368,7 +377,7 @@ describe('HeightLimitsLayer on the GPU', () => {
     const dimmed = px.at(...rimPx(data.lids, 0, toLngLat(11.43, 2 * LOT_D))); // FZP, north edge
     const full = px.at(...rimPx(data.lids, 1, toLngLat(11.43, north))); // rule 'r', south edge
     const sum = (c: Rgb) => c[0] + c[1] + c[2];
-    expectPx(full, token('light', 'limit-ink').rgb, TOL_BLEND);
+    expectEdge(full);
     expect(sum(dimmed)).toBeGreaterThan(sum(full) + 100);
     expect(errors).toEqual([]);
   });

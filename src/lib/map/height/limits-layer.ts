@@ -47,7 +47,7 @@ export const RIM_DASH_M = OUTLINE_DASH_M;
 export const RIM_GAP_M = OUTLINE_GAP_M;
 export const CONTOUR_DASH_M = 40;
 export const CONTOUR_GAP_M = 30;
-export const RIM_WIDTH_PX = 1.5;
+export const RIM_WIDTH_PX = 1;
 export const LABEL_SIZE_PX = 12;
 /** The halo round each glyph, in screen px: rims, walls and bars never cut through a label. */
 export const LABEL_HALO_PX = 2;
@@ -123,7 +123,7 @@ const modeKey = (m: LimitsMode, theme: Theme) =>
  */
 function lidData(lids: HeightLids, mode: LimitsMode, theme: Theme): LidData {
   const t = TOKENS[theme];
-  const ink = hexToRgba(t['limit-ink']);
+  const ink = hexToRgba(t['limit-edge']);
   const paint = hexToRgba(t['painted-outline']);
   const glazeToken = hexToRgba(t['limit-glaze']);
   const { pieces, rims, walls } = lids;
@@ -160,7 +160,7 @@ function lidData(lids: HeightLids, mode: LimitsMode, theme: Theme): LidData {
 /** Contour chains for `city` in `mode`; paint-touching chains dashed once per (city, mode) (R10). */
 function contourData(city: HeightCity, mode: LimitsMode, theme: Theme): LineSets {
   const t = TOKENS[theme];
-  const ink = hexToRgba(t['limit-ink']);
+  const ink = hexToRgba(t['limit-edge']);
   const paint = hexToRgba(t['painted-outline']);
   const c = city.chains;
   const solid: Line[] = [];
