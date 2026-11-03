@@ -238,7 +238,9 @@
 {/snippet}
 
 {#snippet face()}
-  <div class="flex items-start gap-1 border-b border-line p-1 dark:border-line-dark">
+  <div
+    class="sticky top-0 z-10 flex items-start gap-1 border-b border-line bg-surface p-1 dark:border-line-dark dark:bg-surface-dark"
+  >
     {#if dock.face === 'edit'}
       <div role="tablist" aria-label={label} class="flex min-w-0 flex-1 gap-1">
         {#each tabs as t (t.id)}

@@ -329,6 +329,54 @@ describe('Dock, phone', () => {
   });
 });
 
+describe('Dock, face header', () => {
+  /** Scrolls the nearest scrolling ancestor of the face header to its end. */
+  function scrollBody(header: HTMLElement): HTMLElement {
+    let el: HTMLElement | null = header.parentElement;
+    while (el && getComputedStyle(el).overflowY !== 'auto') el = el.parentElement;
+    expect(el).not.toBeNull();
+    el!.scrollTop = el!.scrollHeight;
+    expect(el!.scrollTop).toBeGreaterThan(0);
+    return el!;
+  }
+
+  it('the tablist and collapse button stay in view when a tall tab body scrolls (panel)', async () => {
+    await page.viewport(1024, 768);
+    await setup(new DockState({ tab: 'transit' }), { focusOnOpen: false });
+    const list = page.getByRole('tablist').element() as HTMLElement;
+    const collapse = page.getByRole('button', { name: 'Collapse Policy' }).element();
+    const panel = scrollBody(list.parentElement!);
+    const top = panel.getBoundingClientRect().top;
+    expect(list.getBoundingClientRect().top).toBeGreaterThanOrEqual(top - 1);
+    expect(list.getBoundingClientRect().top).toBeLessThan(top + 20);
+    expect(collapse.getBoundingClientRect().top).toBeLessThan(top + 20);
+  });
+
+  it('the flip and collapse buttons stay in view on a tall Results body (panel)', async () => {
+    await page.viewport(1024, 768);
+    const state = new DockState({ tab: 'transit' });
+    state.face = 'results';
+    await setup(state, { focusOnOpen: false });
+    const flip = page.getByTestId('dock-flip').element();
+    const panel = scrollBody(flip.parentElement!.parentElement!);
+    const top = panel.getBoundingClientRect().top;
+    expect(flip.getBoundingClientRect().top).toBeLessThan(top + 20);
+    expect(flip.getBoundingClientRect().top).toBeGreaterThanOrEqual(top - 1);
+  });
+
+  it('the tablist stays in view when the sheet body scrolls (phone)', async () => {
+    await page.viewport(375, 700);
+    const state = new DockState({ tab: 'transit' });
+    state.sheet = 'full';
+    await setup(state, { focusOnOpen: false });
+    const list = page.getByRole('tablist').element() as HTMLElement;
+    const body = scrollBody(list.parentElement!);
+    const top = body.getBoundingClientRect().top;
+    expect(list.getBoundingClientRect().top).toBeGreaterThanOrEqual(top - 1);
+    expect(list.getBoundingClientRect().top).toBeLessThan(top + 20);
+  });
+});
+
 describe('Dock, resizing', () => {
   it('375 -> 1024 with the sheet open on Permits shows the panel on Permits and keeps focus inside', async () => {
     await page.viewport(375, 700);
