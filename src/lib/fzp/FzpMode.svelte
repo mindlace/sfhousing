@@ -85,6 +85,7 @@
     type LeverStatusState
   } from '$lib/sim-page/lever-status';
   import { spawnSimWorker } from '$lib/sim/client';
+  import type { LimitOwner } from '$lib/sim/levers/source';
   import type { SimLevers } from '$lib/sim/levers/types';
   import type { SimPhase } from '$lib/sim-page/run-phase.svelte';
   import { scoreCopy } from '$lib/sim-page/policy';
@@ -99,6 +100,7 @@
   import HeaderScore from '$lib/scoreboard/HeaderScore.svelte';
   import SimResults from './SimResults.svelte';
   import { DEFAULT_SPEED } from './playback';
+  import { cardArea, cardPlacement, type CardArea } from './card-place';
   import ProjectCardPanel from './ProjectCardPanel.svelte';
   import ProjectTooltip from './ProjectTooltip.svelte';
   import { RHNA_ID, homesAddedBy, scoreAt, scrubMarkers } from './score-view';
@@ -201,6 +203,11 @@
      * off closes an open card. Hover tooltips stay.
      */
     cards?: boolean;
+    /**
+     * What to call the layer that set a clicked lot's limit, for the card's "Allowed by" line
+     * (/sim: a layer's name, "Painted 8 stories"); null shows no line (FZP, a removed layer).
+     */
+    ownerName?: (owner: LimitOwner, parcelId: ParcelId) => string | null;
   }
 
   let {
@@ -234,7 +241,8 @@
     scoreExpanded = false,
     scoreControls = undefined,
     bottomExtra = 0,
-    cards = true
+    cards = true,
+    ownerName = undefined
   }: Props = $props();
 
   // The props seed the page once; Retry replaces the manifest and calibration in place.
@@ -286,6 +294,13 @@
   let playWhenCurrent = $state(false);
 
   let cardState = $state.raw<SummaryState>({ kind: 'idle' });
+  /** The tap that opened the card: its point (map px) and lot; the card sits beside the point. */
+  let cardTap = $state.raw<{ x: number; y: number; parcelId: ParcelId } | null>(null);
+  let cardSize = $state.raw<{ w: number; h: number } | null>(null);
+  let cardBounds = $state.raw<CardArea | null>(null);
+  let host = $state<HTMLElement>();
+  let mapBox = $state<HTMLElement>();
+  let pillsEl = $state<HTMLElement>();
   let tipState = $state.raw<SummaryState>({ kind: 'idle' });
   let tipAt = $state({ x: 0, y: 0 });
   let dialog = $state<ReturnType<typeof SourcesDialog>>();
@@ -536,7 +551,65 @@
   function closeCard(): void {
     cardReq.reset();
     cardMonth = null;
+    cardTap = null;
   }
+
+  /** The room for the card now: beside the dock, over the time bar, under any showing pill. */
+  function measureCardArea(scrubber = scrubberH): void {
+    if (!host || !mapBox) return;
+    const dock = parseFloat(getComputedStyle(host).getPropertyValue('--dock-w')) || 0;
+    const m = mapBox.getBoundingClientRect();
+    const next = cardArea(
+      { left: m.left, top: m.top, width: m.width, height: m.height },
+      pillsEl ? pillsEl.getBoundingClientRect() : null,
+      dock,
+      scrubber
+    );
+    const was = cardBounds;
+    if (
+      was &&
+      was.left === next.left &&
+      was.top === next.top &&
+      was.right === next.right &&
+      was.bottom === next.bottom
+    )
+      return;
+    cardBounds = next;
+  }
+
+  const cardOpen = $derived(cardState.kind !== 'idle');
+  // While a card is open its room is followed: the map, the stack of pills and the dock (which
+  // opens, folds to its rail and closes in the map's subtree) can each change it.
+  $effect(() => {
+    if (!cardOpen || !mapBox) return;
+    let frame = 0;
+    const soon = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => measureCardArea());
+    };
+    const bar = scrubberH;
+    untrack(() => measureCardArea(bar));
+    const ro = new ResizeObserver(soon);
+    ro.observe(mapBox);
+    if (pillsEl) ro.observe(pillsEl);
+    const mo = new MutationObserver(soon);
+    mo.observe(mapBox, { childList: true, subtree: true });
+    if (pillsEl) mo.observe(pillsEl, { childList: true, subtree: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      ro.disconnect();
+      mo.disconnect();
+    };
+  });
+  const cardAnchor = $derived.by(() => {
+    if (!cardTap || !cardSize || !cardBounds) return null;
+    const { left, top } = cardPlacement({ x: cardTap.x, y: cardTap.y }, cardSize, cardBounds);
+    return { left, top, maxHeight: Math.max(0, cardBounds.bottom - cardBounds.top - 16) };
+  });
+  const cardAllowedBy = $derived.by(() => {
+    const owner = cardState.kind === 'project' ? cardState.limits?.owner : undefined;
+    return owner && cardTap && ownerName ? ownerName(owner, cardTap.parcelId) : null;
+  });
 
   function hideTooltip(): void {
     tipReq.reset();
@@ -563,6 +636,7 @@
     }
     hideTooltip();
     cardMonth = monthStart(day);
+    cardTap = { x: p.x, y: p.y, parcelId: p.parcelId };
     cardReq.request(q);
   }
 
@@ -909,12 +983,13 @@
 {/snippet}
 
 <div
+  bind:this={host}
   class="sfh-fzp sfh-dock-host relative flex h-full flex-col"
   style:--fzp-scrubber-h="{scrubberH}px"
 >
   <!-- Every notice is a pill in this one stack: an overlay at the map's top from md (it takes no
        space, so nothing moves when one shows), in flow under the header below md. -->
-  <NoticePills>
+  <NoticePills bind:el={pillsEl}>
     {#if phase === 'loading'}
       <p role="status" data-testid="fzp-status" class="{PILL} pr-4">Loading the simulation…</p>
     {:else if phase === 'failed'}
@@ -1002,7 +1077,7 @@
   </NoticePills>
 
   <!-- The map and everything positioned over it: the stack above is not part of its box. -->
-  <div class="relative min-h-0 flex-1">
+  <div bind:this={mapBox} class="relative min-h-0 flex-1">
     {#if manifest}
       <SimMap
         {manifest}
@@ -1028,6 +1103,9 @@
         chance={cardChance}
         onclose={closeCard}
         onsource={(id) => dialog?.open(id)}
+        anchor={cardAnchor}
+        allowedBy={cardAllowedBy}
+        onsize={(s) => (cardSize = s)}
       />
       <ProjectTooltip state={tipState} {day} x={tipAt.x} y={tipAt.y} />
       <div class="absolute inset-x-0 bottom-0 z-20">

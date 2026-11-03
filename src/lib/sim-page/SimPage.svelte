@@ -95,6 +95,7 @@
   import {
     limitsViewOf,
     liveSelection,
+    ownerLabel,
     selectionForLot,
     tabOf,
     type DockSelection
@@ -615,6 +616,12 @@
     map.on('click', onMapClick);
   }
 
+  /** The lots each brush query has found so far (unknown while it is still being found). */
+  const foundLots: Lots = (key) => {
+    const r = sync.result(key);
+    return r?.ok ? r.lots : undefined;
+  };
+
   /** A click selects only in Set Policy with Move: Paint and Erase stroke, a run opens a card. */
   const selecting = () => mode === 'edit' && run.phase === 'setup' && tools.tool === 'move';
 
@@ -633,11 +640,7 @@
   async function selectAt(point: [number, number], seq: number, a: SimClientApi): Promise<void> {
     const r = await a.lotAt(point);
     if (seq !== clickSeq || dead || !r.ok || !selecting()) return;
-    const lots: Lots = (key) => {
-      const x = sync.result(key);
-      return x?.ok ? x.lots : undefined;
-    };
-    const sel = selectionForLot(r.owner, r.parcelId, store.policy, lots);
+    const sel = selectionForLot(r.owner, r.parcelId, store.policy, foundLots);
     if (sel === null) {
       picked = null;
       return;
@@ -718,11 +721,7 @@
       untrack(() => outlineRequest.want(null));
       return;
     }
-    const lots: Lots = (key) => {
-      const r = sync.result(key);
-      return r?.ok ? r.lots : undefined;
-    };
-    const painted = paintedLots(store.policy, lots);
+    const painted = paintedLots(store.policy, foundLots);
     // A query is unresolved (an erase stroke just landed): keep what is drawn.
     if (painted === null) return;
     untrack(() => outlineRequest.want(new Set(painted.keys())));
@@ -1021,6 +1020,7 @@
   }}
   onmanifest={(m) => (mapManifest = m)}
   cards={run.phase === 'run'}
+  ownerName={(o, id) => ownerLabel(o, id, store.policy, foundLots)}
   {actions}
   status={mode === 'edit' ? saveState : undefined}
   notices={sessionNotices}

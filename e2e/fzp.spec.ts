@@ -440,6 +440,8 @@ test('tapping a real project opens its card with the DataSF source links', async
   await gotoFzp(page, '', { run: true });
   const c = await openRealCard(page, isMobile);
   await expect(c.getByTestId('card-badge')).toHaveText('Real project');
+  // Nothing but FZP sets this lot's limit here: no "Allowed by" line.
+  await expect(c.getByTestId('card-allowed-by')).toHaveCount(0);
   expect(REAL.sources.length).toBeGreaterThan(0);
   for (const { dataset, id, key } of REAL.sources) {
     const known = SOURCE_DATASETS[dataset];
@@ -448,6 +450,104 @@ test('tapping a real project opens its card with the DataSF source links', async
       : `https://data.sf.gov/d/${dataset}`;
     await expect(c.locator(`a[href="${href}"]`).first()).toBeVisible();
   }
+});
+
+/**
+ * Pans the map so `at` sits at (`fx`, `fy`) of the map canvas, as fractions of its width and
+ * height, then waits for it to settle.
+ */
+async function placeLot(page: Page, at: LngLat, fx: number, fy: number): Promise<void> {
+  await frameOn(page, at);
+  await page.evaluate(
+    ([ll, ax, ay]) =>
+      new Promise<void>((resolve) => {
+        const map = (window as Win).__sfhMap!.map!;
+        const p = map.project(ll as [number, number]);
+        const r = map.getCanvas().getBoundingClientRect();
+        map.once('idle', () => resolve());
+        map.panBy([p.x - (ax as number) * r.width, p.y - (ay as number) * r.height], {
+          animate: false
+        });
+      }),
+    [at, fx, fy] as const
+  );
+}
+
+/** The dock's box: the open panel or the rail. */
+const dockBox = async (page: Page) =>
+  (await page.locator('.sfh-dock-panel, .sfh-dock-rail').first().boundingBox())!;
+
+const overlaps = (
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number }
+): boolean =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+for (const [where, fx] of [
+  ['left of the map', 0.3],
+  ['right of the map', 0.78]
+] as const) {
+  test(`from md the card opens beside the building (${where}), clear of the dock`, async ({
+    isMobile,
+    page
+  }) => {
+    test.skip(isMobile, 'below md the card is a bottom sheet');
+    await gotoFzp(page, '', { run: true });
+    const at = LABELS.get(ownParcel(REAL))!;
+    await placeLot(page, at, fx, 0.5);
+    const [x, y] = await projectToPage(page, at);
+    const c = await openCardAt(page, isMobile, at, REAL_LABEL);
+    const box = (await c.boundingBox())!;
+    const dock = await dockBox(page);
+    // Right of the click by about a gap, or left of it when the right side would overflow.
+    if (box.x > x) expect(box.x - x).toBeGreaterThanOrEqual(8);
+    else expect(x - (box.x + box.width)).toBeGreaterThanOrEqual(8);
+    expect(box.x + box.width, 'the card stays inside the page').toBeLessThanOrEqual(1280);
+    // Vertically centred on the click (or clamped inside the map): the click is beside it.
+    expect(y).toBeGreaterThanOrEqual(box.y);
+    expect(y).toBeLessThanOrEqual(box.y + box.height);
+    expect(box.x, 'the card is right of the dock').toBeGreaterThanOrEqual(
+      dock.x + dock.width - 0.5
+    );
+    expect(overlaps(box, dock)).toBe(false);
+    if (fx > 0.5) expect(box.x + box.width).toBeLessThan(x);
+  });
+}
+
+test('from md the card clears a showing notice pill', async ({ isMobile, page }) => {
+  test.skip(isMobile, 'below md the stack is in flow above the map');
+  await gotoFzp(page, '', { run: true });
+  const at = LABELS.get(ownParcel(REAL))!;
+  // The building near the map's top centre, where the pill stack overlays the map.
+  await placeLot(page, at, 0.5, 0.06);
+  await openCardAt(page, isMobile, at, REAL_LABEL);
+
+  // A real crash shows the "Part of the simulation stopped" pill.
+  const sim = page.workers().find((w) => /\/_app\/.*worker/.test(w.url()));
+  expect(sim, 'no simulation worker').toBeTruthy();
+  await sim!.evaluate(() => {
+    setTimeout(() => {
+      throw new Error('e2e: simulated worker crash');
+    });
+  });
+  const pill = page.getByTestId('fzp-notices').getByText('Part of the simulation stopped.');
+  await expect(pill).toBeVisible();
+  // The card asks again for the day and finds the worker gone: it stays, saying so.
+  const c = card(page, 'Project details');
+  await expect(c).toBeVisible();
+  await expect
+    .poll(
+      async () => {
+        const a = (await pill.boundingBox())!;
+        const b = (await c.boundingBox())!;
+        return overlaps(a, b);
+      },
+      { message: 'the card overlaps the pill' }
+    )
+    .toBe(false);
+  // Pushed down, not sideways: it sits under the pill.
+  const a = (await page.getByTestId('fzp-notices').boundingBox())!;
+  expect((await c.boundingBox())!.y).toBeGreaterThanOrEqual(a.y + a.height);
 });
 
 test('a phase of a multi-phase project reads "Phase n of m" once the scrubber reaches it', async ({

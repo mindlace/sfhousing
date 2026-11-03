@@ -6,7 +6,9 @@ import type { ParcelId } from '$lib/data/parcel';
 import type { LimitsView } from '$lib/map/height/limits-style';
 import type { LimitOwner } from '$lib/sim/levers/source';
 import type { SimTool } from './brush-tools.svelte';
+import { rowName } from '$lib/paint/rows';
 import { paintBrushOf, type Lots, type SimPolicy } from './policy';
+import { layerName } from './transit-edit';
 
 export type DockSelection =
   { kind: 'rule'; id: string } | { kind: 'paint'; id: string } | { kind: 'fzp' } | null;
@@ -43,6 +45,30 @@ export function selectionForLot(
     return id === null ? { kind: 'fzp' } : { kind: 'paint', id };
   }
   return { kind: 'fzp' };
+}
+
+/**
+ * What to call the layer that sets `lot`'s limit, for the building card's "Allowed by" line:
+ * "Near Muni Metro" for a rule still in the policy, "Painted 8 stories" for paint. Null for FZP,
+ * and for a rule that has left the policy or paint the main thread cannot place (it may be a
+ * revision behind): the card then says nothing.
+ */
+export function ownerLabel(
+  owner: LimitOwner,
+  lot: ParcelId,
+  p: SimPolicy,
+  lots: Lots
+): string | null {
+  if (owner.kind === 'rule') {
+    const rule = owner.ruleId ? p.rules.find((r) => r.id === owner.ruleId) : undefined;
+    return rule ? layerName(rule) : null;
+  }
+  if (owner.kind === 'paint') {
+    const id = paintBrushOf(p, lots, lot);
+    const brush = id === null ? undefined : p.custom.find((b) => b.id === id);
+    return brush?.kind === 'paint' ? `Painted ${rowName(brush)}` : null;
+  }
+  return null;
 }
 
 /** The dock tab that lists a selection: a rule and the FZP baseline on Transit, paint on Paint. */

@@ -622,6 +622,44 @@ test('a tap on a built lot in Set Policy only selects: no building card or toolt
   await expect(mapRoot.getByRole('tooltip')).toHaveCount(0);
 });
 
+/** 3512011, the parcel only "100 Fixture St" (a pipeline project) holds, in the fixture's row. */
+const PROJECT_LOT: [number, number] = [-122.4183084, 37.7601349];
+
+test('in a run, a project card names the layer that allowed its lot', async ({
+  isMobile,
+  page
+}) => {
+  test.setTimeout(120_000);
+  await gotoSim(page);
+  await addTallLayer(page);
+  await closeSheet(page);
+  await startRun(page);
+  await jumpAndIdle(page, { ...FRAME, center: PROJECT_LOT });
+  const card = page.getByRole('region', { name: '100 Fixture St', exact: true });
+  await expect(async () => {
+    const [x, y] = await projectToPage(page, PROJECT_LOT);
+    if (isMobile) await page.touchscreen.tap(x, y);
+    else await page.mouse.click(x, y);
+    await expect(card).toBeVisible({ timeout: 1_500 });
+  }).toPass({ timeout: 15_000 });
+  const line = card.getByTestId('card-allowed-by');
+  await expect(line).toHaveText(/^Allowed by: Near /);
+  // It follows the size line.
+  const order = await card.evaluate((c) => {
+    const nodes = [...c.querySelectorAll('p')];
+    const at = (re: RegExp) => nodes.findIndex((p) => re.test(p.textContent ?? ''));
+    return [at(/stor(y|ies)/), at(/^Allowed by:/)];
+  });
+  expect(order[1]).toBe(order[0] + 1);
+
+  // The card with the line has no axe violations, light and dark.
+  await expectNoA11yViolations(page, { include: ['section[aria-labelledby]'] });
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+  await expect(card).toHaveCSS('background-color', 'rgb(28, 29, 31)');
+  await expectNoA11yViolations(page, { include: ['section[aria-labelledby]'] });
+  await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
+});
+
 test('clicking inside a painted stroke opens the Paint tab on that area', async ({
   isMobile,
   page

@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { LimitOwner } from '$lib/sim/levers/source';
 import { DEFAULT_POLICY, customQuery, queryKey, type Lots, type SimPolicy } from './policy';
-import { limitsViewOf, liveSelection, selectionForLot, tabOf } from './selection';
+import { limitsViewOf, liveSelection, ownerLabel, selectionForLot, tabOf } from './selection';
 
 const policy: SimPolicy = {
   ...DEFAULT_POLICY,
@@ -104,6 +104,38 @@ describe('selectionForLot', () => {
     expect(selectionForLot(null, null, policy, lots)).toBeNull();
     expect(selectionForLot({ kind: 'fzp' }, null, policy, lots)).toBeNull();
     expect(selectionForLot(null, 'L1', policy, lots)).toBeNull();
+  });
+});
+
+describe('ownerLabel', () => {
+  const k1 = queryKey(customQuery(policy.custom[0]));
+  const lots: Lots = (k) => (k === k1 ? ['L1'] : undefined);
+
+  it('names a rule still in the policy by its layer name', () => {
+    expect(ownerLabel({ kind: 'rule', ruleId: 'r1' }, 'L1', policy, lots)).toBe('Near Muni Metro');
+  });
+
+  it('gives null for a rule no longer in the policy, or with no id', () => {
+    expect(ownerLabel({ kind: 'rule', ruleId: 'r9' }, 'L1', policy, lots)).toBeNull();
+    expect(ownerLabel({ kind: 'rule', ruleId: '' }, 'L1', policy, lots)).toBeNull();
+  });
+
+  it('names paint by its story count', () => {
+    expect(ownerLabel({ kind: 'paint' }, 'L1', policy, lots)).toBe('Painted 6 stories');
+    const one: SimPolicy = { ...policy, custom: [{ ...policy.custom[0], stories: 1 } as never] };
+    const k = queryKey(customQuery(one.custom[0]));
+    expect(ownerLabel({ kind: 'paint' }, 'L1', one, (x) => (x === k ? ['L1'] : undefined))).toBe(
+      'Painted 1 story'
+    );
+  });
+
+  it('gives null for paint it cannot place (another lot, unknown lots)', () => {
+    expect(ownerLabel({ kind: 'paint' }, 'L2', policy, lots)).toBeNull();
+    expect(ownerLabel({ kind: 'paint' }, 'L1', policy, () => undefined)).toBeNull();
+  });
+
+  it('gives null for FZP', () => {
+    expect(ownerLabel({ kind: 'fzp' }, 'L1', policy, lots)).toBeNull();
   });
 });
 

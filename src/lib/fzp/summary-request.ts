@@ -4,6 +4,7 @@
  * answer reaches `onstate`. FzpMode owns the instances and supplies `send`.
  */
 import type { ParcelId } from '$lib/data/parcel';
+import type { LotLimits } from '$lib/map/types';
 import type { ParcelSummary, ProjectCard } from '$lib/sim/protocol';
 import type { Day } from '$lib/timelapse/time';
 
@@ -14,7 +15,7 @@ export type SummaryState =
   | { kind: 'loading' }
   | { kind: 'not-loaded' }
   | { kind: 'none' }
-  | { kind: 'project'; card: ProjectCard }
+  | { kind: 'project'; card: ProjectCard; limits?: LotLimits }
   | { kind: 'unavailable' };
 
 export const SUMMARY_COPY: Record<'loading' | 'not-loaded' | 'none' | 'unavailable', string> = {
@@ -115,7 +116,8 @@ export class SummaryRequester {
       if (summary === null) {
         this.#emit({ kind: this.#deps.unavailable() ? 'unavailable' : 'not-loaded' });
       } else if (summary.project) {
-        this.#emit({ kind: 'project', card: summary.project }, q);
+        const { project: card, limits } = summary;
+        this.#emit(limits ? { kind: 'project', card, limits } : { kind: 'project', card }, q);
       } else {
         this.#emit({ kind: 'none' });
       }

@@ -8,10 +8,12 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
 
-  let { children }: { children: Snippet } = $props();
+  /** `el` is the stack's element, for a host that places something clear of the pills. */
+  let { children, el = $bindable() }: { children: Snippet; el?: HTMLElement } = $props();
 </script>
 
 <div
+  bind:this={el}
   data-testid="fzp-notices"
   class="sfh-notice-pills pointer-events-none flex flex-col items-center gap-1 px-4 py-1 md:absolute md:top-2 md:z-30 md:w-max md:-translate-x-1/2 md:p-0"
 >

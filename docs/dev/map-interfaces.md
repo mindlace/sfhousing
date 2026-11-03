@@ -31,7 +31,7 @@ Example:
 
 ## The dock's width and the bottom-left control
 
-`Dock` (`src/lib/dock/Dock.svelte`) publishes `--dock-w` on its host, the nearest ancestor with the class `sfh-dock-host` (on `/sim` and `/s/<id>`, FzpMode's root): from 768 px, `320px` while the panel is open and `48px` while it is folded to the rail; unset below 768 px (the phone sheet sits over the map's bottom instead) and when no dock renders. Anything placed over the map from the left reads it with a fallback, `calc(var(--dock-w, 0px) + 1rem)` (the project card, the notice stack's centre).
+`Dock` (`src/lib/dock/Dock.svelte`) publishes `--dock-w` on its host, the nearest ancestor with the class `sfh-dock-host` (on `/sim` and `/s/<id>`, FzpMode's root): from 768 px, `320px` while the panel is open and `48px` while it is folded to the rail; unset below 768 px (the phone sheet sits over the map's bottom instead) and when no dock renders. Anything placed over the map from the left reads it with a fallback, `calc(var(--dock-w, 0px) + 1rem)` (the notice stack's centre, and the left of the area the project card may take: the card opens beside the clicked building, never under the dock or a showing notice pill; see [fzp-mode.md](fzp-mode.md), "Card placement").
 
 The same host rule moves MapLibre's bottom-left container (`.maplibregl-ctrl-bottom-left`: zoom and compass, fine pointers only) to `left: var(--dock-w)`, so the dock never covers it (WCAG 2.2 2.4.11). Below 768 px the phone sheet's height is added to the map's bottom inset (`setBottomInset`, through FzpMode's `bottomExtra`), so both bottom containers, and `--map-controls-br-block-size`, sit above the sheet's handle.
 

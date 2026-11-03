@@ -423,6 +423,60 @@ describe('target sizes (spec §4.3)', () => {
   });
 });
 
+describe('allowed by', () => {
+  it('names the layer after the size line', async () => {
+    await page.viewport(1280, 800);
+    await setup(project(REAL_ACTUAL), { allowedBy: 'Near Muni Metro' });
+    await expect
+      .element(page.getByTestId('card-allowed-by'))
+      .toHaveTextContent('Allowed by: Near Muni Metro');
+  });
+
+  it.each([[undefined], [null]])('shows no line when it is %s', async (allowedBy) => {
+    await page.viewport(1280, 800);
+    await setup(project(REAL_ACTUAL), { allowedBy });
+    await expect.element(page.getByTestId('card-badge')).toBeVisible();
+    expect(document.querySelector('[data-testid="card-allowed-by"]')).toBeNull();
+  });
+});
+
+describe('placement beside the building', () => {
+  it('from md takes the anchor as its top-left', async () => {
+    await page.viewport(1024, 800);
+    await setup(project(REAL_ACTUAL), { anchor: { left: 420, top: 96 } });
+    const cs = getComputedStyle(panel());
+    expect(cs.left).toBe('420px');
+    expect(cs.top).toBe('96px');
+    expect(cs.width).toBe('320px');
+  });
+
+  it('with no anchor sits top-left right of the dock, as before', async () => {
+    await page.viewport(1024, 800);
+    await setup(project(REAL_ACTUAL), { anchor: null });
+    const cs = getComputedStyle(panel());
+    expect(cs.top).toBe('16px');
+    expect(cs.left).toBe('16px');
+  });
+
+  it('is the bottom sheet at 375 px whatever the anchor', async () => {
+    await page.viewport(375, 700);
+    document.documentElement.style.setProperty('--map-controls-br-block-size', '100px');
+    await setup(project(REAL_ACTUAL), { anchor: { left: 420, top: 96 } });
+    const cs = getComputedStyle(panel());
+    expect(cs.left).toBe('16px');
+    expect(cs.right).toBe('16px');
+    expect(cs.bottom).toBe('108px');
+  });
+
+  it('reports its size for placement', async () => {
+    await page.viewport(1024, 800);
+    const sizes: { w: number; h: number }[] = [];
+    await setup(project(REAL_ACTUAL), { onsize: (s) => sizes.push(s) });
+    const r = panel().getBoundingClientRect();
+    await vi.waitFor(() => expect(sizes.at(-1)).toEqual({ w: r.width, h: r.height }));
+  });
+});
+
 describe('layout (spec §4.3)', () => {
   it('sits top-left at w-80 on a wide viewport', async () => {
     await page.viewport(1280, 800);
