@@ -7,7 +7,9 @@
   counts and the selected row's outline come from the editor worker (`RowLots`, `opLots`), and the
   outline is drawn in the overlay mux's `outline` slot, beside the brush ring's. Remove takes a
   row's ops out as one undoable step and sends the worker the new plan. The brush status line, its
-  Retry and the page's own notices are pills in one notice stack (`NoticePills`). The live preview
+  Retry and the page's own notices are pills in one notice stack (`NoticePills`); a stroke's or an
+  undo's announcement is screen-reader only, as on /sim, so painting never resizes the map on a
+  phone (where the stack is in flow). The live preview
   stays after release here, because on `/` it is the plan.
 -->
 <script module lang="ts">
@@ -568,8 +570,9 @@
   class="brush-editor sfh-dock-host relative flex h-full flex-col"
   style:--fzp-scrubber-h="var(--scorebar-h, 0px)"
 >
-  <!-- One notice stack: the brush status (and its Retry), then the page's own notices. An
-       overlay at the map's top from md; in flow under the header below md. -->
+  <!-- One notice stack: the brush status line (city data, parcels loading, the zoom hint, a failure
+       with its Retry), then the page's own notices. An overlay at the map's top from md; in flow
+       under the header below md. -->
   <NoticePills>
     <div role="status" aria-live="polite" data-testid="brush-status" class="contents">
       {#if brush.statusText}
@@ -585,6 +588,10 @@
     </div>
     {@render notices?.()}
   </NoticePills>
+  <!-- Announcements (a stroke's result, Undid, Removed): heard, not shown, as on /sim. -->
+  <p role="status" aria-live="polite" data-testid="brush-announcement" class="sr-only">
+    {brush.announcement}
+  </p>
 
   <!-- The map and everything over it: the stack above is not part of its box. -->
   <div class="relative min-h-0 flex-1">

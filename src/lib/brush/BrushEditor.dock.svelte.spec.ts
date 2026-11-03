@@ -15,6 +15,8 @@ import { emptyPlan, type Plan, type PlanOp } from '$lib/plan';
 import { M_PER_DEG_LAT, M_PER_DEG_LNG } from '$lib/plan/geometry';
 import { PILL } from '$lib/shell/pill';
 import type { LotOutlines } from '$lib/sim/outlines';
+import type { GeneratedUpdate } from '$lib/map/types';
+import type { Score } from '$lib/scoreboard';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import BrushEditorHost from './test/BrushEditorHost.svelte';
 import type { Editor } from './editor.svelte';
@@ -110,6 +112,8 @@ const rowButtons = () => [...document.querySelectorAll<HTMLElement>('[data-paint
 const rowNames = () => rowButtons().map((b) => b.getAttribute('aria-label'));
 const rowButton = (re: RegExp) => rowButtons().find((b) => re.test(b.ariaLabel ?? ''))!;
 const removeButton = () => page.getByRole('button', { name: /^Remove: / });
+/** The screen-reader-only status that carries the brush's announcements (as on /sim). */
+const announcement = () => page.getByTestId('brush-announcement');
 const overlayIds = () =>
   ((callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as { id: string }[]).map((l) => l.id);
 const loadedIds = (w: FakeEditorWorker) => w.lastOf('load')!.plan.ops.map((o) => o.id);
@@ -247,14 +251,12 @@ describe('BrushEditor on the dock', () => {
     expect(editor().plan.ops.map((o) => o.id)).toEqual(['a', 'b', 'd']);
     await expect.poll(rowNames).toEqual(['6 stories · 3 strokes · Finding lots…']);
     expect(rowButtons().map((b) => b.getAttribute('aria-pressed'))).toEqual(['false']);
-    await expect.element(page.getByTestId('brush-status')).toHaveTextContent('Removed 8 stories');
+    await expect.element(announcement()).toHaveTextContent('Removed 8 stories');
 
     key('z');
     expect(loadedIds(w)).toEqual(['a', 'b', 'c', 'd']);
     await expect.poll(() => rowNames().length).toBe(3);
-    await expect
-      .element(page.getByTestId('brush-status'))
-      .toHaveTextContent('Undid: Removed 8 stories');
+    await expect.element(announcement()).toHaveTextContent('Undid: Removed 8 stories');
 
     key('z', true);
     expect(loadedIds(w)).toEqual(['a', 'b', 'd']);
@@ -311,6 +313,52 @@ describe('BrushEditor on the dock', () => {
     await expect.element(retry).toBeVisible();
     expect(stack.contains(retry.element())).toBe(true);
     expect(stacks()).toHaveLength(1);
+  });
+
+  it("on a phone a stroke's announcement is screen-reader only: the map box keeps its height", async () => {
+    const { w, editor } = await setup({ width: 375 });
+    await ready(w);
+    const mapBox = () =>
+      document.querySelector<HTMLElement>('[data-testid="fzp-sim-map-stub"]')!.parentElement!;
+    // Nothing visible in the stack once the worker is ready.
+    await expect.element(page.getByTestId('brush-status')).toHaveTextContent('');
+    const before = mapBox().getBoundingClientRect().height;
+    expect(before).toBeGreaterThan(0);
+
+    stroke();
+    await expect.poll(() => w.lastOf('commit')).toBeTruthy();
+    const c = w.lastOf('commit')!;
+    w.emit({
+      type: 'diff',
+      rev: c.rev,
+      phase: 'commit',
+      render: { revision: 1 } as GeneratedUpdate,
+      complete: true,
+      score: { total: 1 } as unknown as Score,
+      stats: {
+        opId: editor().plan.ops[0].id,
+        kind: 'paint',
+        stories: 6,
+        covered: 3,
+        ineligible: 0,
+        underwater: 0,
+        built: 3,
+        notBigger: 0,
+        removed: 0,
+        partial: false
+      }
+    });
+    // The announcement is made (a frame for layout), and the map box has not moved.
+    await expect
+      .poll(() => document.body.textContent?.includes('Painted 6 stories on 3 parcels'))
+      .toBe(true);
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    expect(mapBox().getBoundingClientRect().height).toBe(before);
+    const status = announcement();
+    await expect.element(status).toHaveTextContent(/^Painted 6 stories on 3 parcels/);
+    expect(status.element().getAttribute('role')).toBe('status');
+    expect(status.element().classList.contains('sr-only')).toBe(true);
+    await expect.element(page.getByTestId('brush-status')).toHaveTextContent('');
   });
 
   it('below md a stroke tool shows the palette strip; Done reopens the sheet on Paint', async () => {

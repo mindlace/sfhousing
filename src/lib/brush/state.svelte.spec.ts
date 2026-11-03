@@ -58,7 +58,7 @@ describe('BrushState', () => {
     expect(JSON.parse(storage.getItem(SETTINGS_KEY)!)).toEqual({ stories: 80, radiusM: 5 });
   });
 
-  it('orders the status line: city phase > announcement > loading parcels > zoom hint', () => {
+  it('orders the status line: city phase > loading parcels > zoom hint, never an announcement', () => {
     const t = fakeTimers();
     const s = new BrushState({ storage: null, ...t });
     s.loadingParcels = true;
@@ -69,7 +69,9 @@ describe('BrushState', () => {
     s.phase = 'failed';
     expect(s.statusText).toBe(MSG.cityFailed);
     s.phase = 'ready';
-    expect(s.statusText).toBe('Painted');
+    // The announcement is screen-reader only (its own region): the visible line skips it.
+    expect(s.announcement).toBe('Painted');
+    expect(s.statusText).toBe(MSG.loadingParcels);
     t.flush();
     expect(s.announcement).toBe('');
     expect(s.statusText).toBe(MSG.loadingParcels);

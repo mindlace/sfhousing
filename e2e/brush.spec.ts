@@ -65,9 +65,12 @@ const generated = (page: Page) =>
 const center = (page: Page) =>
   page.evaluate(() => (window as Win).__sfhMap!.map!.getCenter().toArray() as LngLat);
 
-/** The brush status line: a pill in the notice stack. */
-function brushStatus(page: Page): Locator {
-  return page.getByTestId('brush-status');
+/**
+ * The brush's announcements (a stroke's result, Undid, Removed): a screen-reader-only status, as on
+ * /sim. The visible status line (`brush-status`) carries only loading, the zoom hint and failures.
+ */
+function announcement(page: Page): Locator {
+  return page.getByTestId('brush-announcement');
 }
 
 /** The Paint tab's row select buttons ("6 stories · 2 strokes · 12 lots"). */
@@ -176,7 +179,7 @@ test.describe('brush tool', () => {
 
       await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
 
-      await expect(brushStatus(page)).toHaveText(/^Painted 6 stories on \d+ parcels/);
+      await expect(announcement(page)).toHaveText(/^Painted 6 stories on \d+ parcels/);
       expect(await ops(page)).toBe(1);
       await expect.poll(() => generated(page)).toBeGreaterThanOrEqual(1);
 
@@ -190,13 +193,13 @@ test.describe('brush tool', () => {
       await gotoEditor(page);
       await jumpAndIdle(page, FRAME);
       await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
-      await expect(brushStatus(page)).toHaveText(/^Painted 6 stories/);
+      await expect(announcement(page)).toHaveText(/^Painted 6 stories/);
       await expect.poll(() => generated(page)).toBeGreaterThanOrEqual(1);
       const painted = await generated(page);
 
       await page.keyboard.press('Control+z');
       await expect.poll(() => ops(page)).toBe(0);
-      await expect(brushStatus(page)).toHaveText('Undid paint, 6 stories');
+      await expect(announcement(page)).toHaveText('Undid paint, 6 stories');
       await expect.poll(() => generated(page)).toBe(0);
 
       await page.keyboard.press('Control+Shift+z');
@@ -364,7 +367,7 @@ test.describe('brush tool', () => {
       await expect.poll(() => ops(page)).toBe(3);
       await expect.poll(() => rows(page)).toBe(3);
       await expectRowsMatchOps(page);
-      await expect(brushStatus(page)).toHaveText('Undid: Removed 20 stories');
+      await expect(announcement(page)).toHaveText('Undid: Removed 20 stories');
       expect(await settledNet(page)).toBe(full);
 
       await page.keyboard.press('Control+Shift+z');
@@ -452,8 +455,16 @@ test.describe('brush tool', () => {
       await jumpAndIdle(page, FRAME);
       const p = await projectToPage(page, [-122.419, 37.76014]);
       const q = await projectToPage(page, [-122.4183, 37.76014]);
+      const mapHeight = () =>
+        page.getByTestId('map-root').evaluate((el) => el.getBoundingClientRect().height);
+      // Nothing visible in the status line (parcels loaded, no zoom hint) before measuring.
+      await expect(page.getByTestId('brush-status')).toHaveText('');
+      const heightBefore = await mapHeight();
       await touchDrag(cdp, p, q);
       await expect.poll(() => ops(page)).toBe(1);
+      // The stroke's result is announced, not shown: the map keeps its height (no pill in flow).
+      await expect(announcement(page)).toHaveText(/^Painted 6 stories/);
+      expect(await mapHeight()).toBe(heightBefore);
 
       // A second touch mid-stroke cancels it: still one op.
       await jumpAndIdle(page, FRAME);
