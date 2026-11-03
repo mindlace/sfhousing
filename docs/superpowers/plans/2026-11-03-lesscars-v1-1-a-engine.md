@@ -16,13 +16,13 @@
 - **Never demolish homes.** A freeway-land parcel, a freed parcel and a garage parcel hold 0 homes in `parcels.bin`; the build refuses any other (Tasks 2, 3).
 - **Never free a real park.** A named open space, playground, community garden, school, rail yard or Port facility is an exclusion with a reason, never freeway land (Task 9 curates; the candidate rule only proposes).
 - **Never count homes twice.** A parcel the plan frees is scenario-ineligible in `parcels.bin` in both arms; its homes come only from its freed site (Tasks 2-4).
-- Plan A changes no live number: the live catalog, basemap id list and plan changes are Plan B's. With no live `freeway-land.json` the scenario step applies no freeway rule, so a live build from this plan's code differs from today's only by the `datasetVersion` hash.
+- Plan A changes no live number: the live catalog, basemap id list and plan changes are Plan B's. With no live `freeway-land.json` the scenario step applies no freeway rule, so a live build from this plan's code differs from today's only by the `datasetVersion` hash, the zero-valued `scenario.freeway_land.*` counts in `report.json` and one added sentence in the parcels.bin provenance text.
 - New code must read the current published dataset (`2026-11-02-39fbf039`) unchanged: every new key in `plan.json`, `sites.json`, `summary.json` and the manifest is optional, and staging runs the merged code on the old dataset until Plan B's staging bump.
 - `fixture-0` and `pipeline/test/fixtures/mini/golden/` change only through `npm run pipeline -- fixture --update-golden`; mini raw sources only through `npx tsx pipeline/test/fixtures/mini/make-fixture.ts`. Never hand-edit either, nor a migration.
 - JSON under `pipeline/enrichment/` and `pipeline/test/fixtures/mini/enrichment/` is prettier-checked: run `npx prettier --write <file>` on every authored or generated JSON file.
 - Tests: Vitest with `expect.requireAssertions` (every test calls `expect`); e2e in both Playwright projects (`chromium`, `mobile` 375 px) on `fixture-0`, every expected value read from fixture-0 on disk.
 - CSP (`kit.csp` in `svelte.config.js`) is unchanged; a change would be an interface change to raise, not make.
-- No new runtime dependency in the bundle. A pipeline-only devDependency (Task 7b) needs no `SOFTWARE` credit.
+- No new runtime dependency in the bundle. Pipeline- and test-only devDependencies (`@maplibre/maplibre-gl-style-spec` 26.4.4 in Task 7a or 7b, `@maplibre/vt-pbf` 4.3.2 in Task 7b), both already in the lockfile, need no `SOFTWARE` credit.
 - WCAG 2.2 AA (`docs/dev/accessibility.md`): new page text passes `expectNoA11yViolations` in light and dark.
 - Code style: 2-space indent, single quotes, no trailing commas, 100 columns. Conventional Commits. No Claude attribution anywhere (no `Co-Authored-By`, no generated-with footers, no session links). Multi-line commit messages through a temp file and `git commit -F <file>`, never heredocs. Never compound `cd … && cmd`. Never bare `git stash`.
 - Finishing is `npm run signoff` (never `git push` first); Plan B owns the PRs. This plan commits on `feat/lesscars-v1-1` only.
@@ -30,7 +30,7 @@
 ## Review Focus
 
 1. **A freed parcel counted twice.** A plan lists a parcel in `freewayLand` that the catalog does not mark unbuildable: the baseline builds on the row and the plan builds a freed site on the same land. Expected: the build fails naming the parcel, and V35 fails a published plan whose freed parcels are eligible in `parcels.bin`. Test: Task 3 (`a freewayLand parcel outside the catalog fails as counted twice`), Task 4 (`V35 fails when a freed parcel row is scenario-eligible`).
-2. **A kept freeway erased at low zoom.** At z11-13 the basemap merges US-101 into lines that cross the Alemany cut (measured while drafting this plan: feature `35184377160410` spans lat 37.708-37.767 at z11 to z13; at z14-15 no US-101 feature crosses it). Hiding by id there would erase US-101 south of Alemany. Expected: Task 1's report names those zooms and the page never hides a kept stretch nor keeps a removed one. Test: Task 1 (`a merged line across the cut is mixed`), Task 7b (`a merged line is clipped at the corridor: the kept part stays in roads`).
+2. **A kept freeway erased at low zoom.** At z11-13 the basemap merges US-101 into lines that cross the Alemany cut (measured while drafting this plan: feature `35184377160410` spans lat 37.708-37.767 at z11 to z13; at z14-15 no US-101 feature crosses it). Hiding by id there would erase US-101 south of Alemany. Expected: Task 1's report names those zooms and the page never hides a kept stretch nor keeps a removed one. Test: Task 1 (`a merged line across the cut is mixed`), Task 7b (`a merged line is clipped at the corridor: the kept part stays in roads`, `a listed id on a clip zoom is clipped, not moved whole`).
 3. **Homes on a garage.** A garage stands on a removal phase's freeway-land parcel; the carve makes that parcel a freed site, and an unguarded `initiativeBuilds` would build homes on the garage. Expected: the held site gets no build, is not counted as zero-yield, and its would-be homes are reported as the garage's cost. Test: Task 4 (`a site held by a garage gets no build and its homes are the garage's cost`).
 4. **The old dataset on the new code.** Staging serves the merged code against `2026-11-02-39fbf039` until Plan B's staging bump. Expected: `parsePlanFile`, `parseSitesFile` and `parseSummary` accept files without the new keys and the page renders as today. Test: Task 4 (`the v1 sites and summary files still parse`), Task 7a/7b (`a plan file with no basemap ids hides nothing`).
 5. **A multipart freed parcel.** A clipped or multipart freeway-land parcel becomes a MultiPolygon site; `siteFeatures` draws `outline` as one Polygon, so a second part would draw as a hole. Expected: each polygon part is its own site, with its own `parcelM2`. Test: Task 4 (`a two-part freed parcel becomes two sites`).
@@ -42,15 +42,15 @@ Also pinned: a basemap rebuild that renumbers ids fails the build (Task 6 `an id
 ## Decisions (builder's calls; the owner may revisit any)
 
 - **Freeway land is scenario eligibility, not the chunk record.** `scenarioEligible(rec, units, freewayLand)` returns false for a catalog parcel, beside the underwater rule. Reason: `parcels.bin`'s `eligible` already feeds `hostable` (`pipeline/steps/scenario.ts:718-800`), SB 79 in `policy.bin` (`pipeline/steps/policy.ts:400,435,451`), the levers (`src/lib/sim/levers/recompute.ts:78`) and the /lesscars regimes (`pipeline/lib/lesscars/regimes.ts:196`), so one flag covers `/sim`, FZP and both arms, and the Paint editor (chunk records) is untouched, as the spec's list of runs implies.
-- **The rule applies to today's rows (T11), not the calibration panel.** The T13 panel (`scenario.ts:161`) keeps `scenarioEligible(rec, units)` without the catalog. Reason: calibration describes the past market; leaving it unchanged keeps `calibration.json` byte-identical, so the delta report isolates the rule.
+- **The rule applies to today's rows (T11), not the calibration panel.** The T13 panel (`scenario.ts:161`) keeps `scenarioEligible(rec, units)` without the catalog. Reason: calibration describes the past market, and the delta report must isolate the rule. Live, Plan A ships no catalog, so live calibration is unchanged; in the fixture, `calibration.json` changes because lot 19 adds panel rows and `writeCalibration` reads `parcels.bin`'s `hostable` (`pipeline/steps/calibration.ts:109`, `pipeline/lib/fzp-cal/calibrate.ts:89`), and the regenerated golden records that.
 - **One catalog file for kept and removed freeways.** `freeway-land.json` holds every segment (CNNs, `removedBy`, curated parcels, exclusions with reasons); the candidate command reads its segments and writes `freeway-land.candidates.json`, never the catalog. Reason: the catalog is the source of truth (spec "The curated list is the source of truth, not the rule").
 - **The delta report is static net capacity.** Counts `scenario.freeway_land.lots`, `scenario.freeway_land.net_removed` and `scenario.freeway_land.net_removed.<freeway>`: over catalog rows the rule turns unhostable, Σ max(0, FZP full-fill yield − existing homes), the measure of `/sim`'s `netCapacity` (`src/lib/sim/levers/resolve.ts:186-193`). Reason: deterministic, in-build, by freeway; Plan B adds the simulated before/after.
 - **A check run outside a build reads the current catalog.** `check [<v>]` passes the catalog of the version's kind to V17. Reason: V17 compares `eligible` with `scenarioEligible`, which now needs the set; an older out dir checked against a newer catalog can fail, and the docs say so.
 - **Freed parcels become freed sites.** Each `freewayLand` parcel is one site with its own boundary (each polygon part, if multipart); a carved right-of-way piece touching a non-held freed parcel of the same project merges into the parcel it shares the most boundary with (smaller id on a tie); pieces touching none stay v1 pieces. ROW pieces never overlap freed parcels (the carve subtracts them) and freed parcels get no access strip. Site ids stay `lc:<project>:<k>`: parcel sites first by smallest parcel id, then v1 pieces in v1 order, so a project with no freed parcels numbers as today. The spec leaves the combination to the builder ("as long as one piece of land is never counted twice").
 - **A freed site's neighbours exclude freeway land.** Catalog parcels and freed parcels are never a freed site's zoning neighbour. Reason: the spec's zoning is "the adjacent zoning", the city around the freeway, not the P zoning of the freeway land itself.
 - **A garage on a phase's land holds that site.** A garage `{ parcel }` may also be in one truncation's `freewayLand` (`checkPlan` allows exactly that overlap); the carve marks the site `heldBy` the garage, `initiativeBuilds` skips it, and `summary.garageCost` reports its would-be homes at the phase's build start. A carved piece never merges into a held site. Reason: spec "That part never gets homes. The breakdown reports the homes the garage footprint costs."
-- **No new plan check code for the garage exception.** A garage `{ parcel }` on catalog freeway land passes (it holds 0 homes); a parking conversion on catalog freeway land fails (`parcel`). That is the spec's "accepts this only for garage projects".
-- **Phases name freeway CNNs.** Task 9 writes each phase's geometry as `{ cnn }` lists of `src_streets` FREEWAYS-layer segments, not a drawn line, and the v1 stub's line is kept only if the owner prefers it. Reason: a drawn line leaves the freeway's own centrelines "kept", and their `keepHalfM` corridors erase the strip (`84_lesscars_sites.sql:22-23,87-97`); see Open questions.
+- **The garage exception lives in `checkPlan`'s `site-reused`.** It allows exactly one overlap: one garage `{ parcel }` may share its parcel with one truncation's `freewayLand` (Task 3). No new dataset check is needed for the garage itself: a garage on catalog freeway land passes (it holds 0 homes), and a parking conversion on catalog freeway land fails (`parcel`). That is the spec's "accepts this only for garage projects".
+- **Phases name freeway CNNs.** Task 9 writes each phase's geometry as `{ cnn }` lists of `src_streets` FREEWAYS-layer segments, not a drawn line; the v1 stub moves from its drawn line to CNNs `19204001`/`19264001` (ruled, spec "Rulings while planning"). Reason: a drawn line leaves the freeway's own centrelines "kept", and their `keepHalfM` corridors erase the strip (`84_lesscars_sites.sql:22-23,87-97`).
 - **Basemap mechanism follows Task 1.** Verdict `ids`: Task 7a filters the protomaps `roads` layers by id per day. Verdict `split`: Task 7b, the spec's fallback, moves the removed stretches into source layer `roads_lc` at build time. Exactly one of 7a and 7b runs.
 - **Every `roads` layer is filtered, not just highways.** The id filter (7a) and the clones (7b) cover every protomaps layer with `source-layer: 'roads'` (roads_shields has an icon and is already dropped, `src/lib/map/style.ts:176-180`). Reason: a removed ramp tagged as a major road must go too, and the fixture's test feature is a plain street.
 - **Freed-land disclosure is land area.** The details panel says how many hectares of freed land came from freeway-land parcels and how many from right-of-way, from `sites.json`. Reason: per-site homes live only in the worker's timeline; area is on the main thread.
@@ -87,7 +87,7 @@ The spec's first check. The result decides Task 7a or 7b.
 
 **Files:**
 - Create: `pipeline/lib/lesscars/basemap-roads.ts`, `pipeline/steps/lesscars-basemap.ts`
-- Modify: `pipeline/cli.ts:193-196` (new entry beside `lesscars-cnns`)
+- Modify: `pipeline/cli.ts:193-196` (new entry beside `lesscars-cnns`), `pipeline/lesscars-config.ts:14-44` (`LC` and `LC_CITE` basemap rows)
 - Test: `pipeline/test/lesscars-basemap-roads.test.ts`
 - Modify: `docs/dev/lesscars.md` (new section "Basemap ids")
 
@@ -118,8 +118,17 @@ export function roadsNear(a: {
   zooms?: readonly number[]; // default BASEMAP_ZOOMS
 }): Promise<RoadPiece[]>;
 export interface ZoomVerdict { z: number; ok: boolean; mixed: RoadPiece[] }
-/** Per zoom: ok when no `highway` piece has an in-band share in [lo, hi) (defaults 0.1, 0.9). */
-export function idVerdict(pieces: readonly RoadPiece[], lo?: number, hi?: number): ZoomVerdict[];
+/** One entry per zoom of `zooms` (default BASEMAP_ZOOMS), a zoom with no pieces included: ok when
+ *  no `highway` piece has an in-band share in [lo, hi) (defaults 0.1, 0.9). */
+export function idVerdict(
+  pieces: readonly RoadPiece[],
+  opts?: { lo?: number; hi?: number; zooms?: readonly number[] }
+): ZoomVerdict[];
+
+// pipeline/lesscars-config.ts, LC (tier 4, builder's), with LC_CITE rows
+basemapBandM: 25,       // a basemap road within this of a removed line is near it
+basemapMinShare: 0.9,   // Task 6: a feature this much in band is the removed stretch's
+basemapClipZooms: [11, 12, 13] as number[], // set in Step 6 to the mixed zooms measured
 ```
 
 ```ts
@@ -149,9 +158,13 @@ it('a merged line across the cut is mixed; a line wholly inside or outside is no
   expect(v.find((x) => x.z === 14)?.ok).toBe(true);
 });
 it('a mixed street does not fail the verdict; only highways do', () => {
-  expect(idVerdict([piece({ z: 12, kind: 'major_road', lengthM: 100, inBandM: 50 })])[0].ok).toBe(true);
+  expect(idVerdict([piece({ z: 12, kind: 'major_road', lengthM: 100, inBandM: 50 })]).find((v) => v.z === 12)?.ok).toBe(true);
 });
-it('roadsNear finds the fixture street under the mini I-80 at every zoom the extract has', async () => {
+it('the verdict covers every zoom the page shows, pieces or not', () => {
+  expect(idVerdict([]).map((v) => v.z)).toEqual([...BASEMAP_ZOOMS]);
+  expect(idVerdict([]).every((v) => v.ok)).toBe(true);
+});
+it('roadsNear finds the fixture street under the mini I-80', async () => {
   // the mini I-80 (src_streets 4000) runs y = 75 m from O = (-122.4195, 37.7600), on a real street
   const pieces = await roadsNear({ pmtiles: MINI_BASEMAP, lines: [MINI_I80_LNGLAT], bandM: 15 });
   expect(pieces.length).toBeGreaterThan(0);
@@ -185,10 +198,10 @@ Expected (from the probe while drafting): ids present at every zoom; US-101 mixe
 
 - [ ] **Step 6: Record the verdict and commit**
 
-`docs/dev/lesscars.md` "Basemap ids": the command, the provisional lines' rule, the per-zoom table, the verdict, the mixed zooms and which of Task 7a or 7b runs. Task 5 sets `LC.basemapClipZooms` to these mixed zooms.
+`docs/dev/lesscars.md` "Basemap ids": the command, the provisional lines' rule, the per-zoom table, the verdict, the mixed zooms and which of Task 7a or 7b runs. Set `LC.basemapClipZooms` to the mixed zooms measured (and its `LC_CITE` row to cite this section).
 
 ```bash
-git add pipeline/lib/lesscars/basemap-roads.ts pipeline/steps/lesscars-basemap.ts pipeline/cli.ts pipeline/test/lesscars-basemap-roads.test.ts docs/dev/lesscars.md
+git add pipeline/lib/lesscars/basemap-roads.ts pipeline/steps/lesscars-basemap.ts pipeline/cli.ts pipeline/lesscars-config.ts pipeline/test/lesscars-basemap-roads.test.ts docs/dev/lesscars.md
 git commit -m "feat(lesscars): basemap road id report for the freeway removals"
 ```
 
@@ -312,7 +325,7 @@ Expected: raw parcel, land use, attrs, roll and historic files and `sources.lock
 - [ ] **Step 5: Run the tests to verify they pass, then regenerate the goldens**
 
 Run: `npx vitest --run --project pipeline pipeline/test/lesscars-freeway-land.test.ts pipeline/test/scenario-quality.test.ts`, then `npm run pipeline -- fixture --update-golden`, then `npm run test:pipeline`
-Expected: PASS. The golden diff: lot 19 in chunks, `parcels.decoded.json` (eligible 0, hostable 0), `policy.decoded.json`, `report.json` counts (`scenario.freeway_land.*`, parcel counts), the lesscars files only where lot 19 is a neighbour or reached. `calibration.json` and `calibration-report.md` unchanged (the panel is untouched); a change there means the panel picked up the rule: fix it.
+Expected: PASS. The golden diff: lot 19 in chunks, `parcels.decoded.json` (eligible 0, hostable 0), `policy.decoded.json`, `report.json` counts (`scenario.freeway_land.*`, parcel counts), the lesscars files (before Task 4, unfreed lot 19 and its 6 m access strip are cut out of `lc:hwy:1`, about 1,400 to about 570 m²), and `calibration.json` and `calibration-report.md` (lot 19's panel rows, and its unhostable T11 row in the FZP application). Check in the panel that lot 19's `hostable_base` follows `scenarioEligible(rec, units)` without the catalog and that lots 1-18's panel rows are unchanged; a lot 1-18 change means the panel picked up the rule: fix it.
 
 - [ ] **Step 6: Run the unit and e2e suites on the regenerated fixture**
 
@@ -336,12 +349,12 @@ git commit -m "feat(lesscars): freeway land is unbuildable in every simulator ru
 - Modify: `src/lib/data/lesscars/plan.ts:94-99` (truncation type), `:297-313` (`parseProject`)
 - Modify: `src/lib/data/lesscars/schedule.ts:132-137` (`siteKeys`), `:246-252` (site loop)
 - Modify: `pipeline/steps/lesscars.ts:137-206` (`dataProblems`), `:293-301` (args), `:308-320`
-- Modify: `pipeline/steps/build.ts:281-291` (pass the catalog set)
+- Modify: `pipeline/steps/build.ts:281-291` (pass the catalog)
 - Test: `src/lib/data/lesscars/plan.test.ts`, `src/lib/data/lesscars/schedule.test.ts`, `pipeline/test/lesscars-step.test.ts`
 - Modify: `docs/dev/lesscars.md` ("The plan format", "Checks")
 
 **Interfaces:**
-- Consumes: `readFreewayLandSet`, `LESSCARS_FREEWAY_LAND_JSON` (Task 2).
+- Consumes: `readFreewayLand`, `FreewayLandFile`, `LESSCARS_FREEWAY_LAND_JSON` (Task 2).
 - Produces:
 
 ```ts
@@ -349,12 +362,12 @@ git commit -m "feat(lesscars): freeway land is unbuildable in every simulator ru
 freewayLand?: { parcels: ParcelId[]; excluded: { parcel: ParcelId; reason: string }[] };
 // only on 'highway-truncation'; any other kind with the key fails as `unknown key`
 
-// writeLessCars gains `freewayLand: ReadonlySet<ParcelId>` (the catalog's parcels)
+// writeLessCars gains `freewayLand: FreewayLandFile | null` (the catalog; null: no catalog)
 ```
 
 Rules:
 - `checkPlan` `site-reused`: a parcel appears at most once across parking conversions, garages `{ parcel }` and every truncation's `freewayLand.parcels`, except that one garage may share its parcel with one truncation's `freewayLand` (the garage stands on that phase's land). Message as today: `${p.id} reuses site parcel:<id>`.
-- `dataProblems` (field `freewayLand` unless stated): every `freewayLand` parcel is in parcels.bin (`parcel <id> is not in parcels.bin`), has 0 homes (`parcel <id> has <n> existing homes; the plan takes none`) and is in the catalog (`parcel <id> is not freeway land in freeway-land.json; freeing it would count its homes twice`); every `excluded` parcel is in parcels.bin; a parking conversion on a catalog parcel fails (field `parcel`: `parcel <id> is freeway land; only a garage may stand on it`). A garage `{ parcel }` on catalog land passes.
+- `dataProblems` (field `freewayLand` unless stated): every `freewayLand` parcel is in parcels.bin (`parcel <id> is not in parcels.bin`), has 0 homes (`parcel <id> has <n> existing homes; the plan takes none`) is in the catalog (`parcel <id> is not freeway land in freeway-land.json; freeing it would count its homes twice`), and its catalog segment's `removedBy` is this truncation (`parcel <id> is freeway land of <segment>, removed by <removedBy | none>`: a kept freeway never frees its land, nor does another phase's); every `excluded` parcel is in parcels.bin; a parking conversion on a catalog parcel fails (field `parcel`: `parcel <id> is freeway land; only a garage may stand on it`). A garage `{ parcel }` on catalog land passes.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -378,15 +391,20 @@ it('a garage may stand on one truncation’s freeway land; two garages on it may
   expect(codes(check(twoGaragesOnPhaseLand))).toContain('garage2:site-reused');
 });
 // lesscars-step.test.ts (mini data; plans built from miniLessCarsPlan())
+// catalog(...) builds a FreewayLandFile from the fixture catalog with the given changes
 it('a freewayLand parcel outside the catalog fails as counted twice', async () => {
-  await expect(step(withFreed('3512017'), { freewayLand: new Set(['3512019']) })).rejects.toThrow(/hwy\.freewayLand: parcel 3512017 is not freeway land/);
+  await expect(step(withFreed('3512017'), { freewayLand: FIXTURE_CATALOG })).rejects.toThrow(/hwy\.freewayLand: parcel 3512017 is not freeway land/);
 });
 it('a freewayLand parcel with homes fails', async () => {
-  await expect(step(withFreed('3512018'), { freewayLand: new Set(['3512018']) })).rejects.toThrow(/parcel 3512018 has 2 existing homes/);
+  await expect(step(withFreed('3512018'), { freewayLand: catalog({ parcels: ['3512018'] }) })).rejects.toThrow(/parcel 3512018 has 2 existing homes/);
+});
+it('a phase may not free a kept freeway’s land, nor another phase’s', async () => {
+  await expect(step(withFreed('3512019'), { freewayLand: catalog({ removedBy: null }) })).rejects.toThrow(/parcel 3512019 is freeway land of fx-i80, removed by none/);
+  await expect(step(withFreed('3512019'), { freewayLand: catalog({ removedBy: 'other' }) })).rejects.toThrow(/removed by other/);
 });
 it('a parking conversion on freeway land fails; a garage there passes', async () => {
-  await expect(step(parkingOn('3512019'), catalog)).rejects.toThrow(/parking\.parcel: parcel 3512019 is freeway land/);
-  await expect(step(garageOn('3512019'), catalog)).resolves.toMatchObject({ written: true });
+  await expect(step(parkingOn('3512019'), { freewayLand: FIXTURE_CATALOG })).rejects.toThrow(/parking\.parcel: parcel 3512019 is freeway land/);
+  await expect(step(garageOn('3512019'), { freewayLand: FIXTURE_CATALOG })).resolves.toMatchObject({ written: true });
 });
 ```
 
@@ -397,7 +415,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Implement the key, the site keys and the dataset checks**
 
-`parseProject` passes `['opensAfter', 'freewayLand']` as optional keys for `highway-truncation` only (others keep `['opensAfter']`). `build.ts` passes `readFreewayLandSet(...)` (the same file as Task 2) to `writeLessCars`.
+`parseProject` passes `['opensAfter', 'freewayLand']` as optional keys for `highway-truncation` only (others keep `['opensAfter']`). `build.ts` passes `readFreewayLand(...)` (the same file as Task 2) to `writeLessCars`.
 
 - [ ] **Step 4: Run them to verify they pass**
 
@@ -431,7 +449,7 @@ git commit -m "feat(lesscars): freewayLand parcel lists on truncations, with the
 - Modify: `docs/dev/lesscars.md` ("Streets and freed land", "Builds and reservations", "Output files", "Invariant V35")
 
 **Interfaces:**
-- Consumes: Task 3's `freewayLand`; the catalog set (Task 2); `siteRowAt` (`regimes.ts:449`).
+- Consumes: Task 3's `freewayLand` and the catalog `writeLessCars` receives; `siteRowAt` (`regimes.ts:449`).
 - Produces:
 
 ```ts
@@ -463,7 +481,9 @@ export function garageCosts(
   sites: readonly Pick<FreedSite, 'siteId' | 'projectId' | 'heldBy'>[],
   rows: Pick<RegimeSet, 'siteRowAt'>
 ): { projectId: string; homes: number }[];
-// initiativeBuilds skips sites with heldBy !== null.
+// initiativeBuilds skips sites with heldBy !== null. Both read a site's units through one helper:
+/** The top fill yield and stories of freed site `siteId` on `day` (the row initiativeBuilds builds). */
+function siteTop(rows: Pick<RegimeSet, 'siteRowAt'>, siteId: string, day: Day): { units: number; stories: number };
 ```
 
 Carve rules (the SQL does what Decisions says; these pin what the tests do not):
@@ -530,7 +550,7 @@ it('rejects a negative parcelM2 or a garage cost that is not a whole number', ()
 });
 ```
 
-`V1_SITES` and `V1_SUMMARY` are copies of today's `fixture-0` files, committed under `src/lib/data/lesscars/fixtures/` before the regeneration (they are test inputs, not fixture-0). The held-garage step test uses a variant mini plan whose `garage` site is `{ parcel: '3512019' }`.
+`V1_SITES`, `V1_SUMMARY` and `V1_PLAN` are copies of today's `fixture-0` `sites.json`, `summary.json` and `plan.json` (the files of dataset version `2026-11-02-39fbf039`'s format), committed under `src/lib/data/lesscars/fixtures/` before the regeneration (test inputs, not fixture-0); Tasks 7a/7b use `V1_PLAN`. The held-garage step test uses a variant mini plan whose `garage` site is `{ parcel: '3512019' }`.
 
 - [ ] **Step 2: Run them to verify they fail**
 
@@ -539,7 +559,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Implement the carve, the site fields, held sites, `garageCosts`, the codec keys, the counts and V35**
 
-`removalsOf` fills `parcels` from `freewayLand.parcels`, `heldBy` from the garage whose `site.parcel` is that id. `writeLessCars` passes the catalog set ∪ freed parcels as `notNeighbours`, adds `garageCost` to the summary only when non-empty, and writes the optional site keys only when non-empty. The 1 m² and 0.05 m tolerances are builder's (projection noise).
+`removalsOf` fills `parcels` from `freewayLand.parcels`, `heldBy` from the garage whose `site.parcel` is that id. `writeLessCars` passes every catalog parcel ∪ freed parcels as `notNeighbours`, adds `garageCost` to the summary only when non-empty, and writes the optional site keys only when non-empty. The 1 m² and 0.05 m tolerances are builder's (projection noise).
 
 - [ ] **Step 4: Run them to verify they pass, then regenerate**
 
@@ -577,11 +597,8 @@ export function loadLockedStreets(a: {
 
 // pipeline/lesscars-config.ts, LC (tier 4, builder's unless the spec fixes it)
 freewayBandM: 60,       // spec "My call": the candidate band
-freewayMinShare: 0.5,   // spec: "at least half within"
-basemapBandM: 25,       // Task 6: basemap id band
-basemapMinShare: 0.9,   // Task 6: a feature this much in band is the removed stretch's
-basemapClipZooms: [11, 12, 13] as number[], // the mixed zooms docs/dev/lesscars.md "Basemap ids" records (Task 1); 7b clips there
-// with LC_CITE rows for each
+freewayMinShare: 0.5,   // spec: "at least half within" (inclusive)
+// with LC_CITE rows for each (the basemap values came in Task 1)
 
 // pipeline/steps/lesscars-freeway-land.ts
 export const FREEWAY_LAND_CANDIDATES_JSON: string; // pipeline/enrichment/lesscars/freeway-land.candidates.json
@@ -591,6 +608,8 @@ export interface FreewayCandidate {
   labelLngLat: [number, number];
   fzpTopYield: number | null; hostable: boolean | null; inFlight: string[] | null; // null without --dataset
   status: 'listed' | 'excluded' | 'new';  // against the segment's current catalog entry
+  /** land use OPENSPACE: proposed, but flagged for curation (a park is an exclusion). */
+  openSpace: boolean;
 }
 export interface FreewayCandidatesFile {
   schema: 1;
@@ -601,25 +620,31 @@ export interface FreewayCandidatesFile {
 export function lesscarsFreewayLand(a: {
   lockPath: string; rawDir: string; byName?: boolean;
   catalogPath?: string; outPath?: string; datasetDir?: string | null;
+  rule?: { bandM: number; minShare: number }; // default LC.freewayBandM, LC.freewayMinShare
 }): Promise<number>;
 ```
 
-Candidate rule (`86_freeway_land.sql`, reading `parcel_out`, `parcels`, `src_parcel_attrs` zoning as `80_scenario.sql:98-110` picks it, and an input table `fl_seg(segment_id, cnn)` joined to `src_streets`): a parcel is a candidate of a segment when `units = 0`, (`land_use = 'VACANT'` or (zoning `P` and `height_m = 0` and `floor_area_m2 = 0`)), and `ST_Area(ST_Intersection(geom, ST_Buffer(segment lines, freewayBandM))) / ST_Area(geom) >= freewayMinShare`. A parcel in several segments' bands goes to the nearest segment (smaller id on a tie). `rowM2` is the unparcelled land-mask area within the band (`land_mask − ∪ parcels`), a size for the drafter, not a list. Sorted by segment order, then `inBandShare` descending, then parcel id. `--dataset <v>` (default: newest `pipeline/out/<v>` with a `parcels.bin`) fills `fzpTopYield`, `hostable` and `inFlight` (ids of `projects.json` projects naming the parcel). CLI help: `propose freeway-land parcels for each segment of freeway-land.json from the locked sources`.
+Candidate rule (`86_freeway_land.sql`, reading `parcel_out`, `parcels`, `src_parcel_attrs` zoning as `80_scenario.sql:98-110` picks it, and an input table `fl_seg(segment_id, cnn)` joined to `src_streets`): a parcel is a candidate of a segment when `units = 0`, (`land_use = 'VACANT'` or (zoning `P` and `height_m = 0` and `floor_area_m2 = 0`)), and `ST_Area(ST_Intersection(geom, ST_Buffer(segment lines, bandM))) / ST_Area(geom) >= minShare − 1e-6` (inclusive, the tolerance absorbs projection noise on a parcel exactly half in the band). Open space is proposed, not filtered: `openSpace` flags it for curation. A parcel in several segments' bands goes to the nearest segment (smaller id on a tie). `rowM2` is the unparcelled land-mask area within the band (`land_mask − ∪ parcels`), a size for the drafter, not a list. Sorted by segment order, then `inBandShare` descending, then parcel id. `--dataset <v>` (default: newest `pipeline/out/<v>` with a `parcels.bin`) fills `fzpTopYield`, `hostable` and `inFlight` (ids of `projects.json` projects naming the parcel). CLI help: `propose freeway-land parcels for each segment of freeway-land.json from the locked sources`.
 
 - [ ] **Step 1: Write the failing tests**
 
 ```ts
-it('proposes lot 19 for the fixture I-80 and not lot 18 (2 homes) or lot 7 (open space)', async () => {
+it('proposes lot 19 for the fixture I-80, not lot 18 (2 homes) nor lot 1 (2 homes)', async () => {
   const out = await runOnMini(); // lesscarsFreewayLand on the mini lock (byName), to a temp outPath
   const c = out.segments[0].candidates;
   expect(c.map((x) => x.parcel)).toContain('3512019');
   expect(c.map((x) => x.parcel)).not.toContain('3512018');
   expect(c.find((x) => x.parcel === '3512019')).toMatchObject({ status: 'listed', units: 0, landUse: 'VACANT', zoning: 'P' });
   expect(c.find((x) => x.parcel === '3512019')!.inBandShare).toBeGreaterThanOrEqual(0.5);
+  expect(c.map((x) => x.parcel)).not.toContain('3512001'); // lot 1 is exactly half in band but holds homes
+});
+it('open space exactly half in the band is proposed and flagged for curation', async () => {
+  // lot 7: zoning P, OPENSPACE, no building, y[0, 30], so exactly half within 60 m of y = 75
+  expect(c.find((x) => x.parcel === '3512007')).toMatchObject({ openSpace: true, status: 'new' });
 });
 it('a parcel under half in the band is not proposed', async () => {
-  expect(await shareOf('3512001')).toBeLessThan(0.5); // lot 1, y[0,30], 45-75 m from the line
-  expect(c.map((x) => x.parcel)).not.toContain('3512001');
+  const narrow = await runOnMini({ rule: { bandM: 50, minShare: 0.5 } }); // lot 7: a third within 50 m
+  expect(narrow.segments[0].candidates.map((x) => x.parcel)).not.toContain('3512007');
 });
 it('writes nothing and exits 1 when a segment names a CNN src_streets lacks', async () => {
   expect(await runWithCatalog(badCnn)).toBe(1);
@@ -665,7 +690,7 @@ git commit -m "feat(lesscars): lesscars-freeway-land proposes freeway-land parce
 - Modify: `docs/dev/lesscars.md` ("Basemap ids")
 
 **Interfaces:**
-- Consumes: `roadsNear`, `BASEMAP_ZOOMS` (Task 1); `loadLockedStreets` (Task 5); `readFreewayLand` (Task 2); `LC.basemapBandM`, `LC.basemapMinShare` (Task 5).
+- Consumes: `roadsNear`, `BASEMAP_ZOOMS`, `LC.basemapBandM`, `LC.basemapMinShare` (Task 1); `loadLockedStreets` (Task 5); `readFreewayLand` (Task 2).
 - Produces:
 
 ```ts
@@ -746,6 +771,7 @@ Skip when Task 1's verdict is `split`; run Task 7b instead.
 - Create: `src/lib/map/filter-expr.ts` (+ `filter-expr.spec.ts`), `src/lib/lesscars/basemap-hide.ts` (+ `basemap-hide.spec.ts`)
 - Modify: `src/lib/data/lesscars/codec.ts:104-111,663-680` (`basemapHide`), `pipeline/steps/lesscars.ts:385-391` (plan file), `pipeline/steps/check-lesscars.ts` (V35)
 - Modify: `src/lib/lesscars/LessCarsMode.svelte:209,295` (install, `setDay`)
+- Modify: `package.json` (devDependency `@maplibre/maplibre-gl-style-spec` `26.4.4`, the version already in the lockfile as a transitive dependency; used by `filter-expr.spec.ts` only, never in the bundle)
 - Test: `e2e/lesscars.spec.ts`, `src/lib/data/lesscars/codec.test.ts`
 - Regenerate: goldens and fixture-0 (plan.json gains `basemapHide`)
 - Modify: `docs/dev/lesscars.md` ("Street states and layers", "Output files")
@@ -818,9 +844,14 @@ test('the removed street leaves the basemap on its removal day and returns when 
   // FIXTURE ids and hwy's openDay read from fixture-0's plan.json; queryRenderedFeatures on roadLayerIds
   // with zoom 15 over the mini I-80, after a repaint and idle
   expect(await renderedIds(page, before)).toEqual(expect.arrayContaining(ids));
-  expect(await renderedIds(page, after)).not.toEqual(expect.arrayContaining(ids));
+  const after_ = await renderedIds(page, after);
+  for (const id of ids) expect(after_, String(id)).not.toContain(id);
+  const back = await renderedIds(page, before);
+  for (const id of ids) expect(back, String(id)).toContain(id);
 });
-test('the filter survives a theme switch', async ({ page }) => { /* scrub after, emulate dark, still hidden */ });
+test('the filter survives a theme switch', async ({ page }) => {
+  // scrub to after, emulate dark: every listed id still absent, one by one
+});
 ```
 
 - [ ] **Step 2: Run them to verify they fail**
@@ -840,7 +871,7 @@ Expected: PASS in both projects; golden diff only `plan.json`'s `basemapHide`.
 - [ ] **Step 5: Docs and commit**
 
 ```bash
-git add src/lib pipeline e2e docs/dev/lesscars.md
+git add src/lib pipeline e2e package.json package-lock.json docs/dev/lesscars.md
 git commit -m "feat(lesscars): removed freeways leave the basemap on their removal day"
 ```
 
@@ -852,17 +883,18 @@ The spec's fallback. Skip when Task 1's verdict is `ids`.
 
 **Files:**
 - Create: `pipeline/lib/pmtiles-rewrite.ts`, `pipeline/lib/lesscars/basemap-split.ts` (+ `pipeline/test/lesscars-basemap-split.test.ts`, `pipeline/test/pmtiles-rewrite.test.ts`)
-- Create: `src/lib/map/filter-expr.ts` (+ spec), `src/lib/lesscars/basemap-hide.ts` (+ spec), as in Task 7a's interface but for the clones
+- Create: `src/lib/map/filter-expr.ts` (+ `filter-expr.spec.ts`, with Task 7a's two `toExpressionFilter` tests verbatim), `src/lib/lesscars/basemap-hide.ts` (+ spec), for the clones
+- Modify: `src/lib/data/lesscars/codec.ts:104-111,663-680` (`basemapHide`, as Task 7a), `pipeline/steps/lesscars.ts:385-391` (plan file), `pipeline/steps/check-lesscars.ts` (V35: each `basemapHide` project is a `highway-truncation`)
 - Modify: `pipeline/steps/tiles.ts:81-84` (`writeBasemap` replaces `copyBasemap`), `pipeline/steps/build.ts:297-304`, `pipeline/steps/doctor.ts` (`node:sqlite` loads)
 - Modify: `src/lib/map/style.ts:170-193` (clones), `src/lib/map/style.spec.ts`
 - Modify: `src/lib/lesscars/LessCarsMode.svelte:209,295`
-- Modify: `package.json` (devDependency `@maplibre/vt-pbf` `4.3.2`, the version already in the lockfile)
-- Test: `e2e/lesscars.spec.ts`, `e2e/` `/sim` smoke (the freeway clone draws there)
+- Modify: `package.json` (devDependencies `@maplibre/vt-pbf` `4.3.2` and `@maplibre/maplibre-gl-style-spec` `26.4.4`, the versions already in the lockfile; pipeline and tests only)
+- Test: `e2e/lesscars.spec.ts`, `src/lib/data/lesscars/codec.test.ts` (Task 7a's `basemapHide parses when present and is absent when omitted`)
 - Regenerate: goldens and fixture-0 (fixture-0's `basemap.pmtiles` is rewritten)
 - Modify: `docs/dev/lesscars.md` ("Basemap ids"), `docs/dev/pipeline.md` (Where things land: `basemap.pmtiles` may carry `roads_lc`), `docs/dev/map-interfaces.md` (the `__lc` clone layers)
 
 **Interfaces:**
-- Consumes: `basemapPhases` (Task 6), `LC.basemapClipZooms`, `LC.basemapBandM` (Task 5); `toExpressionFilter`.
+- Consumes: `basemapPhases` (Task 6), `LC.basemapClipZooms`, `LC.basemapBandM` (Task 1); `toExpressionFilter`.
 - Produces:
 
 ```ts
@@ -884,9 +916,11 @@ export interface SplitPhase {
   ref: string | null;
   corridor: [number, number][][]; // polygon ring(s), [lng, lat]: the phase's lines buffered by basemapBandM
 }
-/** Moves the phases' features from `roads` to `roads_lc` (property lc_project): listed ids whole at
- *  every zoom; on clip zooms, the part inside a corridor of every `highway` feature whose ref has the
- *  phase's ref token. Other layers and features are re-encoded unchanged. null when nothing moved. */
+/** Moves the parts of the phases' features inside their corridor from `roads` to `roads_lc`
+ *  (property lc_project): at every zoom, every listed id; on clip zooms also every `highway` feature
+ *  whose ref has the phase's ref token. A feature is never moved whole: its parts outside the corridor
+ *  stay in `roads` with its id and properties (a listed id can be a low-zoom merge that also covers a
+ *  kept stretch). Other layers and features are re-encoded unchanged. null when nothing moved. */
 export function splitRoadsTile(
   mvt: Uint8Array, z: number, x: number, y: number,
   phases: readonly SplitPhase[], clip: boolean
@@ -900,23 +934,33 @@ export function writeBasemap(rawFile: string, outDir: string,
 // source-layer 'roads_lc', placed right after it. Always present (an archive without the layer draws nothing).
 export const LC_ROADS_SOURCE_LAYER = 'roads_lc';
 
+// codec.ts: the same optional `basemapHide?: { projectId: string; ids: number[] }[]` as Task 7a,
+// written from basemapPhases only when non-empty; it names the phases that were split.
+
 // src/lib/lesscars/basemap-hide.ts
-/** Projects whose openDay <= day (their roads_lc features stop drawing). */
+/** The basemapHide projects whose openDay <= day (their roads_lc features stop drawing); [] without the key. */
 export function removedProjects(f: LessCarsPlanFile, day: Day): string[];
 export function installBasemapHide(map: Pick<MapLibreMap, 'getStyle' | 'setFilter'>, f: LessCarsPlanFile, day: Day): { setDay(day: Day): void };
 // filters each `__lc` clone with ['all', toExpressionFilter(own), ['!', ['in', ['get', 'lc_project'], ['literal', removed]]]]
 ```
 
-Builder's calls: the corridor is the phase's `lines` buffered by `LC.basemapBandM` with flat caps (DuckDB `ST_Buffer(…, 'CAP_FLAT')` in EPSG:7131, then to EPSG:4326), computed in `build.ts` from `basemapPhases`; clipping in tile units: walk each line, split where it crosses a corridor edge, and keep a part inside when its midpoint is (point in polygon after transforming the corridor to tile units); only `kind = 'highway'` features are clipped; a `ref` matches when any `;`-separated token equals the phase's `ref`. MBTiles rows use TMS y (`2^z − 1 − y`) and gzip the MVT, as `pmtiles convert` expects. `/sim` and FZP draw the clones unfiltered, so they look as today.
+Builder's calls: the corridor is the phase's `lines` buffered by `LC.basemapBandM` with flat caps (DuckDB `ST_Buffer(…, 'CAP_FLAT')` in EPSG:7131, then to EPSG:4326), computed in `build.ts` from `basemapPhases`; clipping in tile units: walk each line, split where it crosses a corridor edge, and keep a part inside when its midpoint is (point in polygon after transforming the corridor to tile units); listed ids are clipped whatever their kind, unlisted features only when `kind = 'highway'` on a clip zoom; a `ref` matches when any `;`-separated token equals the phase's `ref`. MBTiles rows use TMS y (`2^z − 1 − y`) and gzip the MVT, as `pmtiles convert` expects. `/sim` and FZP draw the clones unfiltered, so they look as today.
 
 - [ ] **Step 1: Write the failing tests**
 
 ```ts
 // lesscars-basemap-split.test.ts (synthetic tiles encoded with @maplibre/vt-pbf)
-it('a listed id moves whole to roads_lc with lc_project; other features stay', () => {
-  const out = decode(splitRoadsTile(tile([road(7, 'highway'), road(8, 'minor_road')]), 14, x, y, [phase({ ids: [7] })], false)!);
+it('a listed id inside the corridor moves to roads_lc with lc_project; other features stay', () => {
+  const out = decode(splitRoadsTile(tile([road(7, 'highway', inside), road(8, 'minor_road', inside)]), 14, x, y, [phase({ ids: [7], corridor })], false)!);
   expect(out.roads.map((f) => f.id)).toEqual([8]);
   expect(out.roads_lc.map((f) => [f.id, f.properties.lc_project])).toEqual([[7, 'p1']]);
+});
+it('a listed id on a clip zoom is clipped, not moved whole', () => {
+  // listed 35184377160410-like merge: half inside the corridor, half along the kept stretch
+  const out = decode(splitRoadsTile(tile([listedMerge]), 12, x, y, [phase({ ids: [listedMerge.id], corridor })], true)!);
+  expect(lengthOf(out.roads_lc)).toBeCloseTo(insideLength, -1);
+  expect(out.roads.map((f) => f.id)).toEqual([listedMerge.id]);
+  expect(lengthOf(out.roads)).toBeCloseTo(outsideLength, -1);
 });
 it('a merged line is clipped at the corridor: the kept part stays in roads', () => {
   // a highway with ref 'US 101' crossing the corridor's flat end at mid-tile
@@ -945,14 +989,22 @@ it('every roads layer has a roads_lc clone right after it', () => {
 
 ```ts
 // e2e/lesscars.spec.ts: on fixture-0 the hwy phase's ids are in roads_lc
-test('the removed street draws from roads_lc until its removal day, never from roads', async ({ page }) => {
-  expect(await renderedIds(page, before, cloneIds)).toEqual(expect.arrayContaining(ids));
-  expect(await renderedIds(page, before, roadIds)).not.toEqual(expect.arrayContaining(ids));
-  expect(await renderedIds(page, after, cloneIds)).not.toEqual(expect.arrayContaining(ids));
+// renderedIds(page, day, layers, box): queryRenderedFeatures inside the corridor's screen box only,
+// since a listed feature's parts outside the corridor stay in roads
+test('inside the corridor the removed street draws from roads_lc until its removal day, never from roads', async ({ page }) => {
+  expect(await renderedIds(page, before, cloneIds, corridorBox)).toEqual(expect.arrayContaining(ids));
+  const fromRoads = await renderedIds(page, before, roadIds, corridorBox);
+  const after_ = await renderedIds(page, after, cloneIds, corridorBox);
+  for (const id of ids) {
+    expect(fromRoads, String(id)).not.toContain(id);
+    expect(after_, String(id)).not.toContain(id);
+  }
 });
-test('the filter survives a theme switch', async ({ page }) => { /* scrub after, emulate dark, still hidden */ });
+test('the filter survives a theme switch', async ({ page }) => {
+  // scrub to after, emulate dark: every listed id still absent from the clones, one by one
+});
 test('/sim still draws the moved street, from the clone layers', async ({ page }) => {
-  expect(await renderedIds(simPage, anyDay, cloneIds)).toEqual(expect.arrayContaining(ids));
+  expect(await renderedIds(simPage, anyDay, cloneIds, corridorBox)).toEqual(expect.arrayContaining(ids));
 });
 ```
 
@@ -970,7 +1022,7 @@ it('a clone stops drawing a project’s features from its open day', () => {
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `npx vitest --run --project pipeline pipeline/test/lesscars-basemap-split.test.ts pipeline/test/pmtiles-rewrite.test.ts`, `npx vitest --run --project server src/lib/map`
+Run: `npx vitest --run --project pipeline pipeline/test/lesscars-basemap-split.test.ts pipeline/test/pmtiles-rewrite.test.ts`, `npx vitest --run --project server src/lib/map src/lib/lesscars/basemap-hide.spec.ts src/lib/data/lesscars/codec.test.ts`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement the rewrite, the split, `writeBasemap`, the clones and the page filter**
@@ -980,7 +1032,7 @@ Expected: FAIL.
 - [ ] **Step 4: Run them to verify they pass, regenerate and run e2e**
 
 Run: the Step 2 commands; `npm run pipeline -- fixture --update-golden`; `npm run test:pipeline`; `npm run test:unit`; `SFH_E2E_PORT=4207 SFH_E2E_WORKERS=1 npx playwright test`
-Expected: PASS. If the golden test compares `basemap.pmtiles` bytes and they differ between runs, compare it decoded (tile for tile) as `parcels.bin` is, in this task.
+Expected: PASS; the golden diff includes `plan.json`'s `basemapHide`. If the golden test compares `basemap.pmtiles` bytes and they differ between runs, compare it decoded (tile for tile) as `parcels.bin` is, in this task.
 
 - [ ] **Step 5: Docs and commit**
 
@@ -1074,11 +1126,11 @@ Run by the controller, in this session, on the owner's laptop (needs `pipeline/.
 
 Section layout (headings exact; Plan B's tests parse them):
 
-1. `### What changes` — the owner's three problems and decisions, in two paragraphs, and what v1.1 does not model (traffic: where US-101 traffic goes is not modelled).
+1. `### What changes` — the owner's three problems and decisions, in two paragraphs; what v1.1 does not model (traffic: where US-101 traffic goes is not modelled); and that the large-lot lift to 65 ft applies only where a freed site's chosen neighbour is in an R-4 (Local Program) district (`pipeline/lib/local-program.ts:40-49`), so freeway land beside other districts does not lift (ruled).
 2. `### Freeway segments` — one table: `Segment id | Freeway | Stretch | removedBy | CNNs | Curated`, every SF freeway segment (US-101 north of Alemany in the phases below; US-101 south of Alemany; I-280 including the Southern Embarcadero Freeway and the King St stretch; I-80 west of the Rincon cut; the Bay Bridge approach east of it). CNNs are `src_streets` FREEWAYS-layer segments (classcode 1 and 6), with the query used.
 3. `### Freeway land` — per segment a `#### <segment id>` with a table `Parcel | Area m² | In band | Land use | Zoning | FZP yield today | Decision | Reason`; removed segments curated by hand (every candidate checked on satellite and basemap imagery and decided `in` or `out`), kept segments `rule` with the spot check written up (at least 10 candidates per segment checked, the sample listed). Required rows: `3502112`, `3503002`, `3513071`, `3513074` (the stub); the 14 P/VACANT parcels of the owner's example (US-101, 18th to 22nd St, Potrero Ave to Vermont St), each confirmed; `3179011`, `3179010`, `4012031`, `4154001`, each decided with a reason, and `4154001`'s 60,882 m² and baseline yield of 2,721 explained whichever way it goes. A totals line per segment (parcels, ha, FZP yield removed).
-4. `### Phases` — one subsection per project with Appendix A's field table: `central-freeway-stub` kept as the first phase on its v1 dates; then north to south, the US-101/I-80 interchange with the rest of the Central Freeway, the James Lick Freeway with the Hairball, the Bayshore Freeway to the Alemany interchange; and `i80-rincon` (I-80 west of Rincon Hill). Each: `segments` as `{ cnn }` lists of the segment CNNs (or the stub's v1 line, per the owner's answer below), `rowHalfWidthM` with a PV id, `durationMonths` 30 (PV-hwy) unless better evidence is cited, `dependsOn` (its garage, and the transit carrying the corridor's trips, by the Fillmore rule), `build`, and `freewayLand` (`parcels` from §3, `excluded` with reasons). No two phases of one freeway overlap in [start, open). Which Rincon Hill ramps stay so the Bay Bridge reaches city streets, with the reason.
-5. `### Garages` — `garage-alemany` and `garage-rincon` with the field table: `site: { parcel }` on interchange land off the mainline deck (the loops and green between ramps), the footprint's area and why it was chosen, `spaces` = footprint × 5 ÷ 30 (a PV id each), start and duration (PV-garage), opening before the closures they serve; or, where no such footprint exists, the nearest 0-home parcel and why. `garage-south` retired (its row removed; parcel `3901004` an ordinary lot). Garage capacity: three garages against `maxConcurrent` 2; stagger the starts or raise the cap, with the reason.
+4. `### Phases` — one subsection per project with Appendix A's field table: `central-freeway-stub` kept as the first phase on its v1 dates; then north to south, the US-101/I-80 interchange with the rest of the Central Freeway, the James Lick Freeway with the Hairball, the Bayshore Freeway to the Alemany interchange; and `i80-rincon` (I-80 west of Rincon Hill). Each: `segments` as `{ cnn }` lists of the segment CNNs (the stub's drawn line becomes CNNs `19204001`/`19264001`, ruled), `rowHalfWidthM` with a PV id, `durationMonths` 30 (PV-hwy) unless better evidence is cited, `dependsOn` (its garage, and the transit carrying the corridor's trips, by the Fillmore rule; the stub's `garage-south` becomes `garage-alemany`, ruled), `build`, and `freewayLand` (`parcels` from §3, `excluded` with reasons). No two phases of one freeway overlap in [start, open). Which Rincon Hill ramps stay so the Bay Bridge reaches city streets, with the reason.
+5. `### Garages` — `garage-alemany` and `garage-rincon` with the field table: `site: { parcel }` on interchange land off the mainline deck (the loops and green between ramps), the footprint's area and why it was chosen, `spaces` = footprint × 5 ÷ 30 (a PV id each), start and duration (PV-garage), opening before the closures they serve (`garage-alemany` takes `garage-south`'s 2031 start and 24 months, so the stub still starts in 2033); or, where no such footprint exists, the nearest 0-home parcel and why. `garage-south` retired (its row removed; parcel `3901004` an ordinary lot). Garage capacity: three garages against `maxConcurrent` 2; stagger the starts or raise the cap, with the reason.
 6. `### Appendix A changes` — tables Plan B transcribes verbatim: `#### Projects added`, `#### Projects changed` (field, v1 value, v1.1 value), `#### Projects removed`, `#### Provenances added` (Appendix A's Provenances layout), `#### Capacity changed` (if any).
 7. `### Schedule` — the full dated table in v1's Schedule layout with the v1.1 projects.
 8. `### Basemap ids` — per phase, the ids from `basemap-ids.candidates.json` kept or dropped with a reason (a kept-stretch feature never kept), and Task 1's verdict.
@@ -1129,15 +1181,11 @@ Report to the controller: the section's path, totals by segment (parcels, ha, FZ
 4. Basemap: check first (Task 1), fallback is the tiles step (Task 7b); ids checked against the dataset's basemap (Task 6).
 5. `garage-south` retired: no code names it (`rg` over `src`, `pipeline/lib`, `pipeline/steps`, `pipeline/test`, `e2e`); it is plan content, removed in Plan B.
 
-## Resolved questions
+## Rulings while planning (spec, 2026-11-03)
 
-All four recommendations below were accepted as rulings on 2026-11-03 and are recorded in the spec
-("Rulings while planning"). Task 9 drafts them as decided, not as questions: phases name CNNs (the
-stub moves to `19204001`/`19264001`), the stub depends on `garage-alemany`, the large-lot lift stays
-R-4-only and the section says so, and the basemap fallback (Task 7b) is accepted if Task 1 confirms
-it.
+Settled; Task 9 drafts them as decided, not as questions:
 
-1. **Phase geometry: CNNs, not drawn lines.** A drawn line leaves the freeway's own `src_streets` centrelines in place, and their 10 m corridors erase most of the freed strip; this is part of why v1's stub freed 0 m². Recommendation: phases name the FREEWAYS-layer CNNs, and the stub moves from its drawn line to CNNs `19204001`/`19264001` (plan-v1's worry about 13th St is handled by 13th St's own kept corridor). Task 9 drafts it that way and asks.
-2. **The stub's v1 dependency on `garage-south`.** The spec keeps the stub's v1 dates and dependencies but retires `garage-south`. Recommendation: the stub depends on `garage-alemany` instead, which takes `garage-south`'s 2031 start and 24 months, so the stub still starts in 2033.
-3. **The large-lot rule lifts only in R-4 districts.** `localProgramEnvelope` applies 65 ft only to Local Program (R-4) lots (`pipeline/lib/local-program.ts:40-49`); a freed site takes its neighbour's district, so freeway land beside a non-R-4 district does not lift. The spec says "as it already does for freed sites", which is this behaviour. Recommendation: keep it, and say so in the v1.1 section.
-4. **The basemap fallback is likely.** The probe while drafting found US-101 merged across the Alemany cut at z11-13. If Task 1 confirms it, Task 7b rewrites `basemap.pmtiles` at build time (a pipeline-only devDependency, `@maplibre/vt-pbf`). Recommendation: accept; the alternative (hiding kept US-101 at low zoom) breaks the spec's "never keep drawing a removed freeway" or its converse.
+1. Phases name `src_streets` FREEWAYS-layer CNNs, not drawn lines; the stub moves to CNNs `19204001`/`19264001` (a drawn line keeps the freeway's own centrelines, whose 10 m corridors erase the strip).
+2. The stub depends on `garage-alemany` in place of the retired `garage-south`, keeping its 2033 start.
+3. The large-lot lift stays R-4-only, and the v1.1 section says so (Task 9 §1).
+4. The basemap fallback (Task 7b) runs if Task 1's verdict is `split`.
