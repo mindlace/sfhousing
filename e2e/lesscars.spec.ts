@@ -29,6 +29,7 @@ import {
   gotoHydrated,
   headerAction,
   jumpAndIdle,
+  openHeaderMenu,
   projectToPage,
   type LngLat,
   type Win
@@ -386,6 +387,22 @@ test.describe('the page on fixture-0', () => {
     await expectNoA11yViolations(page);
   });
 
+  test('dark mode: axe on the page, the details and the timeline', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+    await expectNoA11yViolations(page);
+
+    await page.getByTestId('lc-headline').click();
+    await expect(page.getByRole('region', { name: 'Fewer-cars details' })).toBeVisible();
+    await page.getByText('Map key').click();
+    await expectNoA11yViolations(page);
+    await page.getByTestId('lc-headline').click();
+    await expect(page.getByRole('region', { name: 'Fewer-cars details' })).toBeHidden();
+
+    await (await headerAction(page, 'Timeline')).click();
+    await expect(page.getByRole('dialog', { name: 'Project timeline' })).toBeVisible();
+    await expectNoA11yViolations(page, { include: ['[data-testid=lc-timeline]'], structure: true });
+  });
+
   test('375 px: no horizontal scroll, footer reachable with the details and a card open', async ({
     page,
     isMobile
@@ -431,17 +448,9 @@ test('a dataset without scenarios.lesscars shows the not-in-dataset page and sta
       lesscarsRequests.push(r.url());
   });
   page.on('worker', (w) => workers.push(w.url()));
-  // No header link leads here yet (Plan 3), so the client navigation goes through a link the test
-  // adds; SvelteKit's router takes any same-origin anchor click.
-  await page.evaluate(() => {
-    const a = document.createElement('a');
-    a.href = '/lesscars';
-    a.textContent = 'Fewer cars (test link)';
-    a.dataset.testid = 'e2e-lesscars-link';
-    document.querySelector('main')!.appendChild(a);
-  });
   await page.evaluate(() => ((window as Window & { __spa?: boolean }).__spa = true));
-  await page.getByTestId('e2e-lesscars-link').click();
+  await openHeaderMenu(page);
+  await page.getByRole('banner').getByRole('link', { name: 'Fewer cars', exact: true }).click();
   await expect(page).toHaveURL(/\/lesscars$/);
   await expect(page.getByText('This dataset has no fewer-cars plan yet.')).toBeVisible();
   expect(await page.evaluate(() => (window as Window & { __spa?: boolean }).__spa)).toBe(true);

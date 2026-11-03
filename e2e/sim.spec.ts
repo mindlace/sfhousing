@@ -62,7 +62,7 @@ const scoreDetails = (page: Page): Locator => page.getByRole('region', { name: '
 const panel = (page: Page): Locator => page.getByTestId('policy-panel');
 const menuButton = (page: Page): Locator =>
   page.getByRole('banner').getByRole('button', { name: 'Menu', exact: true });
-/** Hidden ones included: below md it waits in the Menu, which closes when the sheet opens. */
+/** Hidden ones included: below lg it waits in the Menu, which closes when the sheet opens. */
 const policyButton = (page: Page): Locator =>
   page
     .getByRole('banner')
@@ -75,7 +75,7 @@ async function openScore(page: Page): Promise<Locator> {
   return scoreDetails(page);
 }
 
-/** The policy panel, opened if it is not already (docked from md, the sheet through Menu below). */
+/** The policy panel, opened if it is not already (docked from md; its button waits in the Menu below lg). */
 async function openPolicy(page: Page): Promise<Locator> {
   if (!(await panel(page).isVisible())) await (await headerAction(page, 'Policy')).click();
   await expect(panel(page)).toBeVisible();
@@ -696,7 +696,7 @@ const mapVisibility = (page: Page, id: string) =>
   );
 const deckIds = (page: Page) =>
   page.evaluate(() => (window as Win).__sfhMap!.timelineSnapshot()?.layerIds ?? []);
-/** Hidden ones included: below md the View button waits in the header Menu. */
+/** Hidden ones included: below lg the View button waits in the header Menu. */
 const viewButtons = (page: Page): Locator =>
   page.getByRole('banner').getByRole('button', { name: 'View', exact: true, includeHidden: true });
 
@@ -864,19 +864,69 @@ async function expectHeaderFits(page: Page): Promise<number> {
   return score.x + score.width / 2;
 }
 
-test('at 768 px the header fits in Setup and in Run, and the score stays put', async ({
-  isMobile,
-  page
-}) => {
-  await page.setViewportSize({ width: 768, height: 1024 });
-  await gotoSim(page);
-  await expect(page.getByRole('banner').getByRole('button', { name: 'View' })).toBeVisible();
-  const setupCentre = await expectHeaderFits(page);
-  await pressRun(page, isMobile);
-  await expect(viewButtons(page)).toHaveCount(0);
-  const runCentre = await expectHeaderFits(page);
-  expect(Math.abs(runCentre - setupCentre)).toBeLessThanOrEqual(1);
-});
+/** The widest header strings the page can show: the "Autosave off" chip and a five-digit score. */
+async function widestHeaderText(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const set = (root: Element | null, text: string) => {
+      if (!root) return;
+      const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (let n = w.nextNode(); n; n = w.nextNode())
+        if (n.textContent?.trim()) {
+          n.textContent = text;
+          return;
+        }
+    };
+    set(document.querySelector('[data-header-status]'), 'Autosave off');
+    set(document.querySelector('[data-testid="score-bar"]'), '12,345 homes added');
+  });
+}
+
+for (const width of [1024, 1280]) {
+  test(`at ${width} px the header fits in Setup and in Run with the widest strings, and the score stays put`, async ({
+    isMobile,
+    page
+  }) => {
+    await page.setViewportSize({ width, height: 1024 });
+    await gotoSim(page);
+    await expect(page.getByRole('banner').getByRole('button', { name: 'View' })).toBeVisible();
+    await widestHeaderText(page);
+    const setupCentre = await expectHeaderFits(page);
+    await pressRun(page, isMobile);
+    await expect(viewButtons(page)).toHaveCount(0);
+    await widestHeaderText(page);
+    const runCentre = await expectHeaderFits(page);
+    expect(Math.abs(runCentre - setupCentre)).toBeLessThanOrEqual(1);
+  });
+}
+
+for (const width of [768]) {
+  test(`at ${width} px the header is the Menu layout: it fits, and every action and mode link is in the Menu`, async ({
+    isMobile,
+    page
+  }) => {
+    await page.setViewportSize({ width, height: 1024 });
+    await gotoSim(page);
+    const banner = page.getByRole('banner');
+    const menu = banner.getByRole('button', { name: 'Menu', exact: true });
+    await expect(menu).toBeVisible();
+    // Closed: the site name, status, score bar and Menu button only; no action or mode link shows.
+    await expect(banner.getByRole('button', { name: 'View', exact: true })).toHaveCount(0);
+    await expect(banner.getByRole('link', { name: 'Fewer cars' })).toHaveCount(0);
+    await expectHeaderFits(page);
+    await openHeaderMenu(page);
+    for (const name of ['View', 'Policy', /^(Publish|Share link)/, 'Another future'])
+      await expect(
+        banner.getByRole('button', { name, exact: typeof name === 'string' })
+      ).toBeVisible();
+    for (const name of ['Paint', 'Simulate', 'Fewer cars'])
+      await expect(banner.getByRole('link', { name, exact: true })).toBeVisible();
+    await expectNoHorizontalScroll(page);
+    await menu.click();
+    await pressRun(page, isMobile);
+    await expect(viewButtons(page)).toHaveCount(0);
+    await expectHeaderFits(page);
+  });
+}
 
 // ---- outlines of painted lots while erasing (plan 2, Task 5) ---------------------------------------
 

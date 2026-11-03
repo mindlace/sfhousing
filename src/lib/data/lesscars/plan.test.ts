@@ -34,6 +34,24 @@ function failure(edit: (p: Loose) => void) {
 }
 
 describe('parseLessCarsPlan', () => {
+  it('opensAfter parses when present and is absent from the object when omitted', () => {
+    const withOpensAfter = tinyPlan((p) => (p.projects[1].opensAfter = ['subway']));
+    expect(parseLessCarsPlan(withOpensAfter).projects[1].opensAfter).toEqual(['subway']);
+    expect('opensAfter' in parseLessCarsPlan(TINY_PLAN).projects[0]).toBe(false);
+  });
+
+  it('rejects a point outside lng/lat range, naming its path', () => {
+    expect(failure((p) => (p.projects[0].stops[0].lngLat = [37.77, -122.43])).path).toBe(
+      'projects.0.stops.0.lngLat'
+    );
+    expect(failure((p) => (p.projects[0].alignment[1] = [-122.4, 137])).path).toBe(
+      'projects.0.alignment.1'
+    );
+    expect(failure((p) => (p.projects[2].segments[0].line[0] = [200, 37])).path).toBe(
+      'projects.2.segments.0.line.0'
+    );
+  });
+
   it('parses TINY_PLAN and round-trips through JSON', () => {
     expect(parseLessCarsPlan(JSON.parse(JSON.stringify(TINY_PLAN)))).toEqual(TINY_PLAN);
   });

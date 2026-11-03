@@ -14,7 +14,7 @@ then a Fisherman's Wharf extension of the Central Subway, three bus-lane corrido
 19th Avenue, Lombard) and three tram-priority lines (N, J, K). Behind that transit it closes the
 Geary expressway trench and the Central Freeway stub north of Mission Street, pedestrianises two
 streets, sites two edge garages, and has the initiative build homes itself on the freed land and on
-48 surface lots and garages, each one only after a plan transit project with a stop within ½ mile
+46 surface lots and garages, each one only after a plan transit project with a stop within ½ mile
 has opened. Nothing in the plan takes an existing home.
 
 ## Method and evidence hierarchy
@@ -57,9 +57,10 @@ Fixed rules from the owner and Plan 1:
 - **The initiative builds (owner).** Freed land and converted parking get scheduled builds at full
   fill of the envelope in force at the build's start. Freed-land zoning is the larger of the
   adjacent block's zoning and SB 79.
-- **No plan project demolishes existing homes (owner).** Every parking parcel below has 0 homes on
-  the 2025 assessor roll and in the dataset's parcel file; freed land excludes parcels by
-  construction.
+- **No plan project demolishes existing homes (owner).** Every parking parcel in the plan has 0
+  homes on the 2025 assessor roll and in the dataset's parcel file; freed land excludes parcels by
+  construction. Two sites first listed had homes in the built parcel file and were dropped (see
+  the correction under Parking sites).
 - **Fillmore rule.** Every car-closing project depends on at least one transit project and starts
   on or after the latest opening of those it depends on.
 
@@ -107,7 +108,8 @@ https://data.sf.gov/resource/wv5m-vpq2.json?$select=parcel_number,property_locat
 | Excluded: in-flight project on the parcel (`projects.json`)                          | 5                 |
 | Excluded: Union Square (`0308001`: the plaza, land use OPENSPACE, garage underneath) | 1                 |
 | Excluded: used as the north edge-garage site (`0509009`)                             | 1                 |
-| **Parking conversions in v1**                                                        | **48** (11.1 ha)  |
+| Excluded: homes in the built parcel file (correction 2026-11-02)                     | 2                 |
+| **Parking conversions in v1**                                                        | **46** (10.8 ha)  |
 
 Areas are shoelace areas of the dataset's parcel outlines (`parcels/*.json`, `xy` in cm about the
 label point). Distances are from each outline vertex to each plan stop, equirectangular. The
@@ -124,61 +126,67 @@ would mostly be voided):
 | `3721013` | PRJ:2023-010883PRJ 524 Howard St (permitFiled, 672 homes)  |
 | `0836013` | PRJ:2016-014802PRJ 98 Franklin St (permitFiled, 345 homes) |
 
-The 48 sites, with the transit project each depends on (the earliest-opening serving project,
+The 48 sites first listed (two since dropped, marked **dropped**; see the correction below), with
+the transit project each depends on (the earliest-opening serving project,
 **drafter's call**, see Open question 3) and any other serving project. `zoning` is the assessor
 roll's `zoning_code` (`NA` = the roll has none), not the Planning zoning map, which the pipeline
 reads itself:
 
-| Parcel    | Street          | Neighbourhood                  | Class | Area m² | Zoning | Land use 2023 | Depends on (stop distance)         | Also served by             |
-| --------- | --------------- | ------------------------------ | ----- | ------- | ------ | ------------- | ---------------------------------- | -------------------------- |
-| `0700035` | Geary Blvd      | Japantown                      | GG    | 11,964  | NA     | VACANT        | fulton-brt (656 m)                 | geary-subway-1 185 m       |
-| `3724067` | Mission St      | South of Market                | PLG   | 11,903  | P      | MIXED         | fulton-brt (552 m)                 | geary-subway-1 416 m       |
-| `7296007` | Winston Dr      | Lakeshore                      | G     | 6,463   | C2     | RETAIL/ENT    | 19th-ave-brt (256 m)               | geary-19th-subway-2 273 m  |
-| `0286024` | Sutter St       | Financial District/South Beach | GG    | 4,723   | P      | RETAIL/ENT    | geary-subway-1 (274 m)             | —                          |
-| `0056007` | Montgomery St   | North Beach                    | G     | 4,515   | C2     | MIXED         | central-subway-north-beach (620 m) | central-subway-wharf 440 m |
-| `3735060` | 3rd St          | Financial District/South Beach | PLG   | 3,718   | C3S    | MIXED         | geary-subway-1 (498 m)             | —                          |
-| `0446003` | Marina Blvd     | Marina                         | PL    | 3,258   | NCS    | VACANT        | lombard-bus-lane (429 m)           | —                          |
-| `0327021` | O'Farrell St    | Financial District/South Beach | GG    | 3,131   | P      | PDR           | fulton-brt (661 m)                 | geary-subway-1 337 m       |
-| `0035001` | Bay St          | North Beach                    | PLG   | 2,915   | C2     | PDR           | central-subway-north-beach (739 m) | central-subway-wharf 325 m |
-| `0719002` | Van Ness Ave    | Western Addition               | G     | 2,757   | RC4    | RETAIL/ENT    | fulton-brt (426 m)                 | geary-subway-1 172 m       |
-| `0781034` | Fulton St       | Western Addition               | PLG   | 2,459   | RM2    | VACANT        | fulton-brt (143 m)                 | geary-subway-1 741 m       |
-| `0347016` | Golden Gate Ave | Tenderloin                     | GG    | 2,377   | CM     | RETAIL/ENT    | fulton-brt (64 m)                  | geary-subway-1 632 m       |
-| `0785030` | McAllister St   | Hayes Valley                   | PLG   | 2,073   | NC3    | VACANT        | fulton-brt (40 m)                  | geary-subway-1 671 m       |
-| `1450049` | 18th Ave        | Outer Richmond                 | G     | 2,020   | NA     | VACANT        | 19th-ave-brt (443 m)               | geary-19th-subway-2 451 m  |
-| `0719001` | Van Ness Ave    | Western Addition               | G     | 1,990   | RC4    | RETAIL/ENT    | fulton-brt (473 m)                 | geary-subway-1 125 m       |
-| `0715015` | Van Ness Ave    | Tenderloin                     | G     | 1,937   | NC3    | RETAIL/ENT    | fulton-brt (543 m)                 | geary-subway-1 120 m       |
-| `0685050` | Webster St      | Japantown                      | PL    | 1,795   | NC2    | VACANT        | fulton-brt (778 m)                 | geary-subway-1 222 m       |
-| `0195019` | Kearny St       | Chinatown                      | G     | 1,779   | CRNC   | MIXED         | central-subway-north-beach (675 m) | —                          |
-| `0285020` | Sutter St       | Financial District/South Beach | G     | 1,753   | NA     | VISITOR       | geary-subway-1 (415 m)             | —                          |
-| `0081003` | Sansome St      | Financial District/South Beach | G     | 1,750   | C2     | VACANT        | central-subway-north-beach (730 m) | central-subway-wharf 797 m |
-| `0147029` | Vallejo St      | Chinatown                      | GG    | 1,750   | NA     | PDR           | central-subway-north-beach (238 m) | —                          |
-| `0713033` | Gough St        | Western Addition               | PL    | 1,741   | RM4    | VACANT        | fulton-brt (515 m)                 | geary-subway-1 187 m       |
-| `3722079` | Natoma St       | Financial District/South Beach | G     | 1,740   | C3O    | PDR           | geary-subway-1 (318 m)             | —                          |
-| `3753122` | 6th St          | South of Market                | PL    | 1,523   | RSD    | VACANT        | fulton-brt (666 m)                 | —                          |
-| `0743001` | Van Ness Ave    | Western Addition               | G     | 1,394   | RC4    | VACANT        | fulton-brt (263 m)                 | geary-subway-1 335 m       |
-| `3721084` | Minna St        | Financial District/South Beach | G     | 1,383   | C3O    | VACANT        | geary-subway-1 (497 m)             | —                          |
-| `7080009` | 19th Ave        | Oceanview/Merced/Ingleside     | G     | 1,370   | NC1    | PDR           | 19th-ave-brt (84 m)                | geary-19th-subway-2 114 m  |
-| `0761065` | Golden Gate Ave | Western Addition               | PLG   | 1,332   | NA     | NONE          | fulton-brt (130 m)                 | geary-subway-1 520 m       |
-| `0647014` | California St   | Western Addition               | G     | 1,292   | NC3    | VACANT        | geary-subway-1 (465 m)             | —                          |
-| `1228006` | Stanyan St      | Haight Ashbury                 | PL    | 1,284   | HAIGHT | RETAIL/ENT    | fulton-brt (575 m)                 | —                          |
-| `2413038` | Taraval St      | West of Twin Peaks             | PL    | 1,281   | NC2    | VACANT        | 19th-ave-brt (592 m)               | geary-19th-subway-2 601 m  |
-| `0768073` | Redwood St      | Western Addition               | PL    | 1,270   | NC3    | VACANT        | fulton-brt (42 m)                  | geary-subway-1 609 m       |
-| `0776010` | McAllister St   | Western Addition               | PL    | 1,268   | RM1    | VACANT        | fulton-brt (64 m)                  | geary-subway-1 697 m       |
-| `0668003` | Bush St         | Nob Hill                       | GG    | 1,264   | P      | VACANT        | geary-subway-1 (384 m)             | —                          |
-| `1017027` | California St   | Presidio Heights               | PL    | 1,261   | RM2    | VACANT        | geary-subway-1 (704 m)             | —                          |
-| `0718021` | Van Ness Ave    | Tenderloin                     | G     | 1,215   | RC4    | VACANT        | fulton-brt (477 m)                 | geary-subway-1 130 m       |
-| `0658003` | Pierce St       | Pacific Heights                | PL    | 1,204   | RH3    | CIE           | geary-subway-1 (394 m)             | —                          |
-| `0817011` | Fell St         | Hayes Valley                   | G     | 1,199   | HAYES  | PDR           | fulton-brt (374 m)                 | —                          |
-| `1216019` | Oak St          | Hayes Valley                   | PL    | 1,197   | RH3    | VACANT        | fulton-brt (464 m)                 | —                          |
-| `0266007` | Battery St      | Financial District/South Beach | G     | 1,176   | C3O    | VACANT        | geary-subway-1 (548 m)             | —                          |
-| `0680001` | Bush St         | Pacific Heights                | G     | 1,175   | RH3    | MIXED         | geary-subway-1 (387 m)             | —                          |
-| `3710014` | Beale St        | Financial District/South Beach | G     | 1,174   | C3O    | VACANT        | geary-subway-1 (692 m)             | —                          |
-| `0647012` | California St   | Western Addition               | G     | 1,166   | NC3    | VACANT        | geary-subway-1 (472 m)             | —                          |
-| `1182023` | Fulton St       | Hayes Valley                   | G     | 1,118   | NC2    | VACANT        | fulton-brt (125 m)                 | —                          |
-| `1101027` | O'Farrell St    | Western Addition               | PL    | 1,106   | RM3    | VACANT        | fulton-brt (473 m)                 | geary-subway-1 590 m       |
-| `0347017` | Golden Gate Ave | Tenderloin                     | GG    | 1,100   | NA     | VACANT        | fulton-brt (51 m)                  | geary-subway-1 636 m       |
-| `0643016` | Sacramento St   | Nob Hill                       | PL    | 1,057   | POLK   | VACANT        | geary-subway-1 (579 m)             | —                          |
-| `0101031` | Filbert St      | Chinatown                      | G     | 1,022   | NBEACH | MIXED         | central-subway-north-beach (97 m)  | central-subway-wharf 764 m |
+| Parcel                | Street          | Neighbourhood                  | Class | Area m² | Zoning | Land use 2023 | Depends on (stop distance)         | Also served by             |
+| --------------------- | --------------- | ------------------------------ | ----- | ------- | ------ | ------------- | ---------------------------------- | -------------------------- |
+| `0700035`             | Geary Blvd      | Japantown                      | GG    | 11,964  | NA     | VACANT        | fulton-brt (656 m)                 | geary-subway-1 185 m       |
+| `3724067`             | Mission St      | South of Market                | PLG   | 11,903  | P      | MIXED         | fulton-brt (552 m)                 | geary-subway-1 416 m       |
+| `7296007`             | Winston Dr      | Lakeshore                      | G     | 6,463   | C2     | RETAIL/ENT    | 19th-ave-brt (256 m)               | geary-19th-subway-2 273 m  |
+| `0286024`             | Sutter St       | Financial District/South Beach | GG    | 4,723   | P      | RETAIL/ENT    | geary-subway-1 (274 m)             | —                          |
+| `0056007`             | Montgomery St   | North Beach                    | G     | 4,515   | C2     | MIXED         | central-subway-north-beach (620 m) | central-subway-wharf 440 m |
+| `3735060`             | 3rd St          | Financial District/South Beach | PLG   | 3,718   | C3S    | MIXED         | geary-subway-1 (498 m)             | —                          |
+| `0446003`             | Marina Blvd     | Marina                         | PL    | 3,258   | NCS    | VACANT        | lombard-bus-lane (429 m)           | —                          |
+| `0327021`             | O'Farrell St    | Financial District/South Beach | GG    | 3,131   | P      | PDR           | fulton-brt (661 m)                 | geary-subway-1 337 m       |
+| `0035001`             | Bay St          | North Beach                    | PLG   | 2,915   | C2     | PDR           | central-subway-north-beach (739 m) | central-subway-wharf 325 m |
+| `0719002`             | Van Ness Ave    | Western Addition               | G     | 2,757   | RC4    | RETAIL/ENT    | fulton-brt (426 m)                 | geary-subway-1 172 m       |
+| `0781034`             | Fulton St       | Western Addition               | PLG   | 2,459   | RM2    | VACANT        | fulton-brt (143 m)                 | geary-subway-1 741 m       |
+| `0347016`             | Golden Gate Ave | Tenderloin                     | GG    | 2,377   | CM     | RETAIL/ENT    | fulton-brt (64 m)                  | geary-subway-1 632 m       |
+| `0785030`             | McAllister St   | Hayes Valley                   | PLG   | 2,073   | NC3    | VACANT        | fulton-brt (40 m)                  | geary-subway-1 671 m       |
+| `1450049`             | 18th Ave        | Outer Richmond                 | G     | 2,020   | NA     | VACANT        | 19th-ave-brt (443 m)               | geary-19th-subway-2 451 m  |
+| `0719001`             | Van Ness Ave    | Western Addition               | G     | 1,990   | RC4    | RETAIL/ENT    | fulton-brt (473 m)                 | geary-subway-1 125 m       |
+| `0715015`             | Van Ness Ave    | Tenderloin                     | G     | 1,937   | NC3    | RETAIL/ENT    | fulton-brt (543 m)                 | geary-subway-1 120 m       |
+| `0685050`             | Webster St      | Japantown                      | PL    | 1,795   | NC2    | VACANT        | fulton-brt (778 m)                 | geary-subway-1 222 m       |
+| `0195019` **dropped** | Kearny St       | Chinatown                      | G     | 1,779   | CRNC   | MIXED         | central-subway-north-beach (675 m) | —                          |
+| `0285020` **dropped** | Sutter St       | Financial District/South Beach | G     | 1,753   | NA     | VISITOR       | geary-subway-1 (415 m)             | —                          |
+| `0081003`             | Sansome St      | Financial District/South Beach | G     | 1,750   | C2     | VACANT        | central-subway-north-beach (730 m) | central-subway-wharf 797 m |
+| `0147029`             | Vallejo St      | Chinatown                      | GG    | 1,750   | NA     | PDR           | central-subway-north-beach (238 m) | —                          |
+| `0713033`             | Gough St        | Western Addition               | PL    | 1,741   | RM4    | VACANT        | fulton-brt (515 m)                 | geary-subway-1 187 m       |
+| `3722079`             | Natoma St       | Financial District/South Beach | G     | 1,740   | C3O    | PDR           | geary-subway-1 (318 m)             | —                          |
+| `3753122`             | 6th St          | South of Market                | PL    | 1,523   | RSD    | VACANT        | fulton-brt (666 m)                 | —                          |
+| `0743001`             | Van Ness Ave    | Western Addition               | G     | 1,394   | RC4    | VACANT        | fulton-brt (263 m)                 | geary-subway-1 335 m       |
+| `3721084`             | Minna St        | Financial District/South Beach | G     | 1,383   | C3O    | VACANT        | geary-subway-1 (497 m)             | —                          |
+| `7080009`             | 19th Ave        | Oceanview/Merced/Ingleside     | G     | 1,370   | NC1    | PDR           | 19th-ave-brt (84 m)                | geary-19th-subway-2 114 m  |
+| `0761065`             | Golden Gate Ave | Western Addition               | PLG   | 1,332   | NA     | NONE          | fulton-brt (130 m)                 | geary-subway-1 520 m       |
+| `0647014`             | California St   | Western Addition               | G     | 1,292   | NC3    | VACANT        | geary-subway-1 (465 m)             | —                          |
+| `1228006`             | Stanyan St      | Haight Ashbury                 | PL    | 1,284   | HAIGHT | RETAIL/ENT    | fulton-brt (575 m)                 | —                          |
+| `2413038`             | Taraval St      | West of Twin Peaks             | PL    | 1,281   | NC2    | VACANT        | 19th-ave-brt (592 m)               | geary-19th-subway-2 601 m  |
+| `0768073`             | Redwood St      | Western Addition               | PL    | 1,270   | NC3    | VACANT        | fulton-brt (42 m)                  | geary-subway-1 609 m       |
+| `0776010`             | McAllister St   | Western Addition               | PL    | 1,268   | RM1    | VACANT        | fulton-brt (64 m)                  | geary-subway-1 697 m       |
+| `0668003`             | Bush St         | Nob Hill                       | GG    | 1,264   | P      | VACANT        | geary-subway-1 (384 m)             | —                          |
+| `1017027`             | California St   | Presidio Heights               | PL    | 1,261   | RM2    | VACANT        | geary-subway-1 (704 m)             | —                          |
+| `0718021`             | Van Ness Ave    | Tenderloin                     | G     | 1,215   | RC4    | VACANT        | fulton-brt (477 m)                 | geary-subway-1 130 m       |
+| `0658003`             | Pierce St       | Pacific Heights                | PL    | 1,204   | RH3    | CIE           | geary-subway-1 (394 m)             | —                          |
+| `0817011`             | Fell St         | Hayes Valley                   | G     | 1,199   | HAYES  | PDR           | fulton-brt (374 m)                 | —                          |
+| `1216019`             | Oak St          | Hayes Valley                   | PL    | 1,197   | RH3    | VACANT        | fulton-brt (464 m)                 | —                          |
+| `0266007`             | Battery St      | Financial District/South Beach | G     | 1,176   | C3O    | VACANT        | geary-subway-1 (548 m)             | —                          |
+| `0680001`             | Bush St         | Pacific Heights                | G     | 1,175   | RH3    | MIXED         | geary-subway-1 (387 m)             | —                          |
+| `3710014`             | Beale St        | Financial District/South Beach | G     | 1,174   | C3O    | VACANT        | geary-subway-1 (692 m)             | —                          |
+| `0647012`             | California St   | Western Addition               | G     | 1,166   | NC3    | VACANT        | geary-subway-1 (472 m)             | —                          |
+| `1182023`             | Fulton St       | Hayes Valley                   | G     | 1,118   | NC2    | VACANT        | fulton-brt (125 m)                 | —                          |
+| `1101027`             | O'Farrell St    | Western Addition               | PL    | 1,106   | RM3    | VACANT        | fulton-brt (473 m)                 | geary-subway-1 590 m       |
+| `0347017`             | Golden Gate Ave | Tenderloin                     | GG    | 1,100   | NA     | VACANT        | fulton-brt (51 m)                  | geary-subway-1 636 m       |
+| `0643016`             | Sacramento St   | Nob Hill                       | PL    | 1,057   | POLK   | VACANT        | geary-subway-1 (579 m)             | —                          |
+| `0101031`             | Filbert St      | Chinatown                      | G     | 1,022   | NBEACH | MIXED         | central-subway-north-beach (97 m)  | central-subway-wharf 764 m |
+
+**Correction (2026-11-02).** 0195019 (Kearny St, 105 homes) and 0285020 (Sutter St, 400 homes)
+dropped: the parcels hold existing homes, and the plan demolishes none (spec Anti-goals). Found by
+the first live build. Both rows stay in the table above as data findings; neither is a parking
+conversion, and the plan has 46.
 
 Multi-lot sites on one schedule: `0719001` + `0719002` (Van Ness Ave, block 0719), `0647012` +
 `0647014` (California St, block 0647), `0347016` + `0347017` (Golden Gate Ave, block 0347).
@@ -323,7 +331,7 @@ defined in Appendix A and resolve to the sources in Appendix B.
   A). Side-running red lanes like Geary Rapid.
 - **Why.** The 5/5R is the busiest east–west line with no tier 2 stop (0 of 60). Dedicated lanes
   make its corridor BRT and its stops tier 2 from 2032, two years before anything else in the
-  plan opens, and it serves 23 of the 48 parking sites.
+  plan opens, and it serves 23 of the 46 parking sites.
 - **Peak tph** 11 (PV-tph-brt, tier 2: the 38R's 10–11 peak tph on Geary's red lanes, transit.json,
   applied to Fulton; today's 5R is 7.5–8.5).
 - **Start** 2029. **Duration** 36 months (PV-brt, tier 2: Geary Rapid, about 3 miles of red lanes,
@@ -456,7 +464,7 @@ defined in Appendix A and resolve to the sources in Appendix B.
 - **For the page (Plan 2):** show the Masonic underpass as filled from `geary-subway-1`'s opening.
   Park Presidio (a phase 2 station) is unchanged at the surface.
 
-### Parking conversions (48 projects, `park-<parcel>`) — in
+### Parking conversions (46 projects, `park-<parcel>`) — in
 
 - **Kind** `parking-conversion`, one parcel each (the table under Data findings). Each depends on
   the earliest-opening plan transit project with a stop within 804.672 m of its outline, and starts
@@ -493,16 +501,16 @@ listed by parcel.
 | 2032 | geary-subway-1, j-church-priority, lombard-bus-lane; irving-pedestrian; parking 0700035, 3724067, 7296007, 0327021, 0781034 | fulton-brt, 19th-ave-brt, n-judah-priority (1 Jan); switch day 31 Jan                                                     | irving-pedestrian (after n-judah-priority, open 2032)              | 4/4     | 6/6    | 2/2    | 0/15    |
 | 2033 | central-freeway-stub, van-ness-street; parking 0719001, 0719002, 0347016, 0347017                                           | garage-south, garage-north, irving-pedestrian                                                                             | central-freeway-stub (after fulton-brt and n-judah-priority, 2032) | 4/4     | 6/6    | 0/2    | 5/15    |
 | 2034 | k-ocean-priority; parking 0446003, 0785030, 1450049, 0715015                                                                | lombard-bus-lane, j-church-priority                                                                                       |                                                                    | 3/4     | 6/6    | 0/2    | 9/15    |
-| 2035 | geary-19th-subway-2; columbus-pedestrian; parking 0056007, 0035001, 0685050, 0195019                                        | central-subway-north-beach, van-ness-street; central-freeway-stub clearance (mid-year); first initiative homes (mid-year) | columbus-pedestrian (after central-subway-north-beach, 2035)       | 3/4     | 6/6    | 0/2    | 13/15   |
-| 2036 | central-subway-wharf; fell-oak-street; Central Freeway build; parking 0081003, 0147029, 0713033, 3753122, 0743001           | k-ocean-priority, columbus-pedestrian                                                                                     |                                                                    | 3/4     | 6/6    | 0/2    | 13/15   |
-| 2037 | parking 7080009, 0761065, 1228006, 2413038, 0768073                                                                         |                                                                                                                           |                                                                    | 3/4     | 6/6    | 0/2    | 14/15   |
-| 2038 | parking 0776010, 0718021, 0817011, 1216019, 1182023                                                                         | fell-oak-street                                                                                                           |                                                                    | 3/4     | 5/6    | 0/2    | 15/15   |
+| 2035 | geary-19th-subway-2; columbus-pedestrian; parking 0056007, 0035001, 0685050                                                 | central-subway-north-beach, van-ness-street; central-freeway-stub clearance (mid-year); first initiative homes (mid-year) | columbus-pedestrian (after central-subway-north-beach, 2035)       | 3/4     | 5/6    | 0/2    | 13/15   |
+| 2036 | central-subway-wharf; fell-oak-street; Central Freeway build; parking 0081003, 0147029, 0713033, 3753122, 0743001           | k-ocean-priority, columbus-pedestrian                                                                                     |                                                                    | 3/4     | 6/6    | 0/2    | 12/15   |
+| 2037 | parking 7080009, 0761065, 1228006, 2413038, 0768073                                                                         |                                                                                                                           |                                                                    | 3/4     | 6/6    | 0/2    | 13/15   |
+| 2038 | parking 0776010, 0718021, 0817011, 1216019, 1182023                                                                         | fell-oak-street                                                                                                           |                                                                    | 3/4     | 5/6    | 0/2    | 14/15   |
 | 2039 | parking 1101027, 0101031                                                                                                    |                                                                                                                           |                                                                    | 3/4     | 2/6    | 0/2    | 15/15   |
 | 2040 |                                                                                                                             |                                                                                                                           |                                                                    | 3/4     | 0/6    | 0/2    | 12/15   |
-| 2041 | geary-trench; parking 0286024, 3735060, 0285020, 3722079, 3721084                                                           | geary-subway-1                                                                                                            | geary-trench (after geary-subway-1, 2041)                          | 2/4     | 6/6    | 0/2    | 7/15    |
-| 2042 | parking 0647012, 0647014, 0668003, 1017027, 0658003                                                                         |                                                                                                                           |                                                                    | 2/4     | 6/6    | 0/2    | 7/15    |
-| 2043 | parking 0266007, 0680001, 3710014, 0643016                                                                                  |                                                                                                                           |                                                                    | 2/4     | 5/6    | 0/2    | 10/15   |
-| 2044 |                                                                                                                             | geary-19th-subway-2, central-subway-wharf, geary-trench clearance                                                         |                                                                    | 0/4     | 0/6    | 0/2    | 14/15   |
+| 2041 | geary-trench; parking 0286024, 3735060, 3722079, 3721084                                                                    | geary-subway-1                                                                                                            | geary-trench (after geary-subway-1, 2041)                          | 2/4     | 5/6    | 0/2    | 7/15    |
+| 2042 | parking 0647012, 0647014, 0668003, 1017027, 0658003                                                                         |                                                                                                                           |                                                                    | 2/4     | 6/6    | 0/2    | 6/15    |
+| 2043 | parking 0266007, 0680001, 3710014, 0643016                                                                                  |                                                                                                                           |                                                                    | 2/4     | 5/6    | 0/2    | 9/15    |
+| 2044 |                                                                                                                             | geary-19th-subway-2, central-subway-wharf, geary-trench clearance                                                         |                                                                    | 0/4     | 0/6    | 0/2    | 13/15   |
 | 2045 | Geary trench build                                                                                                          |                                                                                                                           |                                                                    | 0/4     | 0/6    | 0/2    | 10/15   |
 | 2046 |                                                                                                                             |                                                                                                                           |                                                                    | 0/4     | 0/6    | 0/2    | 5/15    |
 | 2047 |                                                                                                                             | last scheduled build completes (mid-2047)                                                                                 |                                                                    | 0/4     | 0/6    | 0/2    | 1/15    |
@@ -515,8 +523,8 @@ Checks:
   2035 ≥ `central-subway-north-beach` 2035; `geary-trench` 2041 ≥ `geary-subway-1` 2041.
 - **Parking in step with transit.** Every conversion starts on or after its dependency's opening
   (2032 Fulton/19th Ave, 2034 Lombard, 2035 North Beach, 2041 Geary).
-- **Capacity.** No year exceeds a cap. `transit` is binding 2030–2033, `street` 2032–2037 and
-  2041–2042, `housing` 2038–2039.
+- **Capacity.** No year exceeds a cap. `transit` is binding 2030–2033, `street` 2032–2034,
+  2036–2037 and 2042, `housing` 2039.
 - **No instant city.** The first initiative homes complete in mid-2035, three years after the first
   transit opens; the last scheduled build completes in 2047.
 
@@ -835,7 +843,6 @@ All rows: `kind` `parking-conversion`; `label` "Parking at <street> becomes home
 | `park-0056007` | `0056007` | 2035        | 12 (PV-clear-garage) | `central-subway-north-beach` | 2036              |
 | `park-0035001` | `0035001` | 2035        | 12 (PV-clear-garage) | `central-subway-north-beach` | 2036              |
 | `park-0685050` | `0685050` | 2035        | 6 (PV-clear-lot)     | `fulton-brt`                 | 2036              |
-| `park-0195019` | `0195019` | 2035        | 12 (PV-clear-garage) | `central-subway-north-beach` | 2036              |
 | `park-0081003` | `0081003` | 2036        | 12 (PV-clear-garage) | `central-subway-north-beach` | 2037              |
 | `park-0147029` | `0147029` | 2036        | 12 (PV-clear-garage) | `central-subway-north-beach` | 2037              |
 | `park-0713033` | `0713033` | 2036        | 6 (PV-clear-lot)     | `fulton-brt`                 | 2037              |
@@ -855,7 +862,6 @@ All rows: `kind` `parking-conversion`; `label` "Parking at <street> becomes home
 | `park-0101031` | `0101031` | 2039        | 12 (PV-clear-garage) | `central-subway-north-beach` | 2040              |
 | `park-0286024` | `0286024` | 2041        | 12 (PV-clear-garage) | `geary-subway-1`             | 2042              |
 | `park-3735060` | `3735060` | 2041        | 12 (PV-clear-garage) | `geary-subway-1`             | 2042              |
-| `park-0285020` | `0285020` | 2041        | 12 (PV-clear-garage) | `geary-subway-1`             | 2042              |
 | `park-3722079` | `3722079` | 2041        | 12 (PV-clear-garage) | `geary-subway-1`             | 2042              |
 | `park-3721084` | `3721084` | 2041        | 12 (PV-clear-garage) | `geary-subway-1`             | 2042              |
 | `park-0647012` | `0647012` | 2042        | 12 (PV-clear-garage) | `geary-subway-1`             | 2043              |

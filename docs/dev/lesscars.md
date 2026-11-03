@@ -25,8 +25,11 @@ Source map:
 ## The plan format
 
 A plan is JSON (`LessCarsPlan`, schema 1): `id`, `label`, `capacity` rules and `projects`. The
-live plan is `pipeline/enrichment/lesscars/plan.json` (it does not exist yet; plan 3 of the
-lesscars work adds it). The fixture plan is
+live plan is `pipeline/enrichment/lesscars/plan.json`, transcribed from the owner-approved
+`docs/lesscars/plan-v1.md` Appendix A (64 projects, the Masonic display);
+`pipeline/test/lesscars-live-plan.test.ts` holds it to the document: it parses Appendix A's tables
+itself, rebuilds the plan from them and `corridors.resolved.json`, and requires `checkPlan` to be
+empty. A change to the plan goes into plan-v1 first, then into plan.json. The fixture plan is
 `pipeline/test/fixtures/mini/enrichment/lesscars-plan.json`, one project of most kinds on the mini
 city. Every number in a plan is a `Param`, a `value` with a `Provenance` (tier 0 per-record to 4
 invented, label, sources, method), so the page can show its evidence.
@@ -65,7 +68,15 @@ Id spaces: `routeIds` are bare GTFS route ids (transit.json `Pattern.routeId`, f
 
 Builder's calls on the format (Task 2):
 
-- A project starts on 1 January of `startYear`; it opens `durationMonths` later.
+- A project starts on 1 January of `startYear`; it opens `durationMonths` calendar months later
+  (36 months from 1 January 2029 is 1 January 2032). Only a fractional remainder is converted to
+  days, as `round(fraction x MONTH_DAYS)`. `monthsAfter` in `schedule.ts` does this for the open
+  day and for `build.completeDay`.
+- An optional `opensAfter: string[]` on any project names projects this one must not open before.
+  It is a check (`opens-before`), not a start constraint, and takes no part in cycle search. A plan
+  without the key parses to an object without it.
+- Every `[lng, lat]` (stops, alignments, drawn lines) must have `lng` in [-180, 180] and `lat` in
+  [-90, 90]; the parser rejects a swapped pair at its path.
 - A parking conversion's own start and duration are its clearance; its `build` is the housing.
 - A garage is always an `edge-garage` that references a site, so a freed project whose land holds
   a garage has `build: null`.
@@ -84,10 +95,11 @@ or parking conversion's site is available on its open day.
 before it writes anything.
 
 From the plan alone (`checkPlan`, field = problem code): duplicate ids, unknown dependencies,
-cycles, dates outside 2028-01-01 to 2068-12-31, a start before a dependency opens, a car closure
-with no transit dependency, **`fillmore`** (a closure before its transit opens), a build before
-its site is available, a garage on a site that is not a build-free removal, a reused site, a stop
-defined twice, capacity (`maxConcurrent` per capacity kind), a parking conversion with no
+cycles, `opens-before` (a project opening before one it names in `opensAfter`), dates outside
+2028-01-01 to 2068-12-31, a start before a dependency opens, a car closure with no transit
+dependency, **`fillmore`** (a closure before its transit opens), a build before its site is
+available, a garage on a site that is not a build-free removal, a reused site, a stop defined
+twice, capacity (`maxConcurrent` per capacity kind), a parking conversion with no
 transit dependency, and a display whose id is reused or whose `from` names no project.
 
 Against this dataset:
@@ -128,7 +140,7 @@ resolve hook and no headless browser. It needs `svelte-kit sync` to have run (`n
 plan file (`LESSCARS_PLAN_JSON`: the fixture plan for `fixture-<n>` versions, the live path
 otherwise), parcels.bin, policy.bin, projects.json, calibration.json and transit.json from the out
 dir, and from DuckDB `src_streets`, `parcels`, `pol_tod` and the scenario tables. No plan file:
-nothing is written, no counts, no manifest key. That is the live build until the live plan lands.
+nothing is written, no counts, no manifest key.
 
 Order: parse, schedule, check (above), carve, sites, regimes, builds, paired runs, write.
 `buildRegimes` runs only after the policy step and the carve, because it reads `pol_tod` and
@@ -137,9 +149,69 @@ Order: parse, schedule, check (above), carve, sites, regimes, builds, paired run
 ### Streets and freed land
 
 Street centrelines are the `datasf-streets` source (DataSF Streets, active centrelines,
-`data.sf.gov/d/3psu-pn9h`), normalised to `src_streets` (cnn, streetname, classcode, layer, geom
+`data.sf.gov/d/3psu-pn9h`), normalised to `src_streets` (cnn, streetname, classcode, layer, `f_st`, `t_st`, geom
 in EPSG:7131). It is optional in a lock: without it `src_streets` is empty and any CNN fails the
 check. It is listed in `docs/dev/pipeline.md`.
+
+Plan segments written as a street selector (`STREET, FROM → TO`, plan-v1 Appendix A) are
+transcribed verbatim into `pipeline/enrichment/lesscars/corridors.json`
+(`{ "schema": 1, "corridors": [{ owner, street, from, to, as? }] }`, `owner` the project or
+display id). `npm run pipeline -- lesscars-cnns` normalises the locked `datasf-streets` raw files (no
+network) and writes `corridors.resolved.json`: `{ schema: 1, source: { id, sha256 }, corridors }`,
+each corridor the selector (with its `as`, if any) plus `cnn` (sorted) and `lengthM` (to 0.1 m), `sha256` the lock's file
+hashes in lock order. It writes nothing and exits 1 when any selector fails, listing every failure.
+Plan CNN lists must equal `corridors.resolved.json`.
+
+Names are compared through `canonicalStreet`, for selector strings and data names (`streetname`,
+`f_st`, `t_st`) alike: upper-cased, trimmed, a leading zero dropped from an ordinal (DataSF writes
+`09TH AVE`, Appendix A `9TH AVE`), then `STREET_ALIASES` (`LA PLAYA ST` → `LA PLAYA`: La Playa's own
+segments are named `LA PLAYA` while its neighbours' `f_st`/`t_st` say `LA PLAYA ST`).
+
+When a cross street named in Appendix A does not meet the street in the data, the selector keeps
+its verbatim strings and gains `as: { from?, to?, reason }`; the resolver uses `as.from` / `as.to`
+in their place, and `as` is carried into `corridors.resolved.json` for review. There is one:
+fell-oak-street's `OAK ST, MARKET ST → BAKER ST` resolves from `VAN NESS AVE` (Oak St's east end in
+DataSF, CNN 9750000; it does not meet Market St, about 60 m south, so the stretch is the same).
+
+The resolver (`pipeline/lib/lesscars/corridors.ts`):
+
+1. Candidates are the segments whose canonical `streetname` is `STREET`'s. Graph nodes are their line-part
+   endpoints clustered within `snapM`; each part is an edge weighted by its length.
+2. FROM (TO) nodes are the candidate nodes within `crossM` of any line of a segment named `FROM`
+   (`TO`), so a divided cross street gives a node at each carriageway. `COUNTY LINE` instead takes
+   the degree-1 nodes ending a candidate whose `f_st` or `t_st` is `COUNTY LINE`.
+3. The path is the shortest positive-length path from any FROM node to any TO node (multi-source
+   Dijkstra); a node that is both a FROM and a TO node is passed over, not taken as the answer. No
+   FROM or TO node is `no crossing with <name>`; no path is `no path` (`no path (… meet at one
+node)` when FROM and TO share a node and nothing longer joins them).
+4. The corridor is the path's segments plus every candidate lying alongside the path: every vertex
+   within `bandM` of the path, and none beyond a path end. A vertex is beyond an end when its
+   nearest path point is that end and it lies outward along the chord of the path's last `bandM`;
+   it is still allowed within `snapM` of the end node or of a line of that end's cross street (for
+   `COUNTY LINE`, of a county-line dead end), which is where the other carriageway ends. A
+   candidate whose `f_st` and `t_st` both name an end's cross street and whose endpoints both lie
+   within `snapM` of that street's lines (the piece through a divided cross street's median, such
+   as Ocean `9846000`) needs only the band; the label alone is not enough, since DataSF also writes
+   it on stubs past a crossing (Hyde `7147000` past Francisco). So the other carriageway
+   and shared-centreline twins are kept; a short block before FROM, a stub past TO and a fork at
+   either end are not (on the locked data: McAllister `8887000`, Church `4009000`, Judah `7686000`,
+   Richardson `15173000`), nor is the same name elsewhere.
+
+`lengthM` is a centreline sum, not a route length: it adds every kept segment, so each carriageway
+and each shared-centreline twin counts. Streets DataSF digitises as two carriageways (19th Ave, Park
+Presidio, Van Ness, Lombard, Geary; CNN suffixes `1xx` and `2xx`) give about twice the street's
+length. Do not use it as the distance a bus travels.
+
+Known limits (no check today; review `corridors.resolved.json` after a data refresh):
+
+- **Same-name stretches tie silently.** If a street has two disconnected stretches that both cross
+  FROM and TO, the shorter path wins without a warning. On the locked data every selector street
+  has 1–3 components and exactly one holds both a FROM and a TO node.
+- **Candidates are matched by name, not `layer`.** A PAPER, PSEUDO or PRIVATE segment of the same
+  name alongside the path would join the corridor. Every CNN resolved on the locked data is
+  `layer = STREETS`.
+
+`CORRIDOR` (all tier 4, builder's): `snapM` 0.5 m, `crossM` 25 m, `bandM` 40 m.
 
 `carveFreedLand` (`84_lesscars_sites.sql`) cuts removed right-of-way into sites from the parcels
 and the land mask, with no right-of-way source:
@@ -255,9 +327,9 @@ parcels`.
 - **Fixture:** `npm run pipeline -- fixture` builds fixture-0 with the mini plan and 5 seeds; the
   step adds well under a second. `npm run test:pipeline` covers it
   (`pipeline/test/lesscars-step.test.ts` and the golden test).
-- **Live:** once the live plan lands (plan 3), the release build (`npm run pipeline`) runs the full
-  101-seed pairs on the maintainer's machine, as dataset builds already do. Until then the live
-  build skips the step.
+- **Live:** the release build (`npm run pipeline`) runs the step with the live plan and the full
+  101-seed pairs on the maintainer's machine, as dataset builds already do. See "First live
+  build" for what it measured.
 
 ## CI cost
 
@@ -273,13 +345,75 @@ machine, run one after the other:
 The lesscars tests add no measurable time, far under the 60 s threshold, so nothing moved off
 `.github/workflows/pipeline.yml` or `chreode.config.ts`.
 
+## First live build
+
+Built 2026-11-02 on the owner's laptop (Apple Silicon Mac) as `2026-11-02-39fbf039`.
+
+- **Time:** the whole build took 2 min 53 s wall clock (266.9 s user); `timings.lesscars` was
+  6,957 ms. 101 seeds, representative seed 92. The 30-minute rule did not apply, so the seed
+  count stayed at 101.
+- **V35:** `64 projects, 40 sites, 41 year ends`.
+- **Headline at 2068:** mean +7,786 extra homes (p10 7,062, p50 7,883, p90 8,211); plan 97,840
+  against baseline 90,054.
+- **2068 by source** (largest-remainder rounding, as the page shows it, summing to 7,786): freed
+  1,684; parking 5,988; transit-unlocked 114; other 0.
+- **Regimes:** `summary.regimeDays` are 2032-01-31, 2034-01-01, 2035-01-01, 2041-01-01 and
+  2044-01-01.
+- **Report counts:** `lesscars.sites` 40; `lesscars.sites.zero_yield` 3;
+  `lesscars.sites.zero_gain_parking` 2, named by the warning "parking conversion(s)
+  park-0715015, park-0761065 add no homes at their envelope; their lots stay reserved";
+  `lesscars.unlocked_lots` 3,617.
+- **Bytes:** `timeline.bin` is 104,931 B, 435,051 B decoded.
+- **Carve:** `geary-trench` freed 26,411 m² (2.64 ha) across 40 sites. The plan's 12,000-20,000 m²
+  band was a guess sized for the main lanes alone (plan-v1's ~1.8 ha); the trench removes 14 CNNs,
+  including the Fillmore frontage roads, so the larger area is expected and was accepted.
+  `central-freeway-stub` freed 0 m²: plan-v1 Concern 2, the land under the viaduct is already a
+  parcel, reported to the owner and not fixed.
+- **Garage reservations** in the representative seed (92): `garage-south` (parcel 3901004) kept;
+  `garage-north` (parcel 0509009) kept. Of the 48 reserved parcels, 4 were voided.
+- **Dates:** `asOf` unchanged from the published `2026-10-29-14e0eccb` (projects and calibration,
+  day 20745); transit service dates unchanged (Muni 2026-08-25; BART and Caltrain 2026-10-20).
+- **Plan correction:** the first build attempt failed because two parking parcels held homes;
+  0195019 (Kearny St, 105 homes) and 0285020 (Sutter St, 400 homes) were dropped from the plan.
+
+### Live check
+
+On 2026-11-02 the page ran against `2026-11-02-39fbf039` in local R2 (`VITE_E2E=1 npm run
+preview`, headless Chromium, 1280 and 375 px). It passed these checks:
+
+- **Headline:** +7,786 homes by 2068, with the band +7,062 to +8,211. The four source parts add
+  to the headline.
+- **Header and dialogs:** "Fewer cars" is current. The timeline lists 64 projects, with parking
+  conversions (46) in the disclosure. Evidence shows tier 4 as "Assumption, not data".
+- **Street, transit and garage layers:**
+  - Fulton, 19th Ave and N Judah are in their transit state from day 22645.
+  - The Geary subway line and its 6 stops appear on day 25933.
+  - Trench sites appear on day 27028.
+  - 40 parking builds rise between 2033 and 2046. That is 46 conversions less the 4 voided
+    reservations and the 2 sites with no gain.
+  - Both garage markers appear. Scrubbing back to 2028 clears every plan layer.
+- **Errors:** none in the console or the network.
+
+Two problems were found. Both are follow-ups, not release blockers:
+
+- **Scrubber lag:** revision 0 arrives 317 ms after navigation, with 1 cell; cells reach 97 later.
+  While they pack, a pointer drag lags about 2 s per step. Keyboard scrubbing updates within 3 ms.
+  The headless browser was near 1000% CPU throughout the run, so profile this in a real browser
+  before capping the packing.
+- **Duplicate heading:** the timeline disclosure repeats a "Parking conversions" heading under its
+  summary.
+
 ## The page
 
 `/lesscars` (`src/routes/lesscars/`, plan `docs/superpowers/plans/2026-11-01-lesscars-2-page.md`)
 plays the stored representative future of the plan from `LESSCARS_START` (2028-01-01) to
 `LESSCARS_HORIZON` (2068-12-31). It opens paused at the start; nobody edits anything but the day
-(scrub, play) and the map. The route is reachable by URL only: the header mode link arrives with
-the live plan in Plan 3.
+(scrub, play) and the map. The header has a "Fewer cars" mode link to it (third after Paint and
+Simulate, `aria-current` on the route). From lg (1024 px) the mode links sit inline in the header;
+below lg the header is the phone layout and the links and the actions are in the Menu. The link
+text is always "Fewer cars". Between lg and xl (1280 px) the site name shows "SF Housing" only (its
+accessible name stays "SF Housing Simulator") and the mode links take `px-1` and `gap-2`, so the
+`/sim` row fits at 1024 px.
 
 | Area                                       | Code                                                             |
 | ------------------------------------------ | ---------------------------------------------------------------- |
@@ -355,7 +489,7 @@ representative seed voids both reservations.
 The headline (`summary.extra.mean` at 2068, with the p10 to p90 band) sits in the header's
 pinned slot as one button; it opens the details (breakdown that adds to the headline, chart,
 amenities note, map key, evidence). Timeline and Evidence are header actions, in the Menu below
-768 px.
+1024 px.
 
 ### Scrubber markers
 
@@ -400,7 +534,6 @@ Map picking is pointer-only (mouse click, touch tap), as on `/sim` (see "Known g
 - Street geometry stays in `plan.json`; garage parcel positions come from the worker.
 - Plan stops only (`lc:` ids); existing stops are not redrawn and `transit.json` is not fetched.
 - The Masonic underpass is an optional, display-only `displays` entry (Plan 3 adds it).
-- No header mode link until Plan 3.
 - A load failure's Retry calls `invalidateAll()`; a worker crash's Retry restarts the client.
 
 Follow-up: `LessCarsMode` copies `FzpMode`'s map-ready queue, chunk-status tracking and prefetch

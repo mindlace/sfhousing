@@ -11,6 +11,7 @@ import {
 import { doctor } from './steps/doctor';
 import { fetchAll } from './steps/fetch';
 import { fixture } from './steps/fixture';
+import { lesscarsCnns } from './steps/lesscars-cnns';
 import { upload } from './steps/upload';
 import { verify } from './steps/verify';
 import { readLock } from './lib/lock';
@@ -188,6 +189,10 @@ const steps: Record<string, { help: string; run: Step }> = {
       );
       return r.ok ? 0 : 1;
     }
+  },
+  'lesscars-cnns': {
+    help: 'resolve the /lesscars corridor selectors to CNNs from the locked datasf-streets source',
+    run: async () => lesscarsCnns({ lockPath: LOCK, rawDir: RAW })
   },
   'quality-doc': {
     help: 'rewrite the generated Data quality section of docs/dev/pipeline.md from QUALITY_RULES',

@@ -60,25 +60,29 @@
         <th scope="col" class="px-2 py-1 font-medium">Starts</th>
         <th scope="col" class="px-2 py-1 font-medium">Opens</th>
         <th scope="col" class="px-2 py-1 font-medium">Homes built</th>
-        <th scope="col" class="px-2 py-1 font-medium"><span class="sr-only">Over time</span></th>
+        <th scope="col" class="px-2 py-1 font-medium max-sm:hidden"
+          ><span class="sr-only">Over time</span></th
+        >
         <th scope="col" class="py-1 pl-2 font-medium"><span class="sr-only">Evidence</span></th>
       </tr>
     </thead>
     <tbody>
       {#each group.rows as r (r.id)}
         <tr class="border-t border-gray-200 align-middle dark:border-gray-700">
-          <th scope="row" class="py-1.5 pr-2 font-normal">
+          <th scope="row" class="py-1.5 pr-2 font-normal wrap-anywhere">
             {r.label}
             <span class="block text-xs text-gray-700 dark:text-gray-300">{KIND_LABEL[r.kind]}</span>
           </th>
-          <td class="px-2 py-1.5 whitespace-nowrap tabular-nums"
+          <td
+            class="px-2 py-1.5 whitespace-nowrap tabular-nums max-sm:px-1 max-sm:whitespace-normal"
             >{formatShortMonthYear(r.startDay)}</td
           >
-          <td class="px-2 py-1.5 whitespace-nowrap tabular-nums"
+          <td
+            class="px-2 py-1.5 whitespace-nowrap tabular-nums max-sm:px-1 max-sm:whitespace-normal"
             >{formatShortMonthYear(r.openDay)}</td
           >
           <td class="px-2 py-1.5 tabular-nums">{built(r)}</td>
-          <td class="min-w-24 px-2 py-1.5">
+          <td class="min-w-24 px-2 py-1.5 max-sm:hidden">
             <span
               class="relative block h-3 rounded-sm bg-gray-200 dark:bg-gray-700"
               aria-hidden="true"

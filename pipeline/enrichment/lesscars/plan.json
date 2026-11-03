@@ -1,0 +1,3109 @@
+{
+  "schema": 1,
+  "id": "lesscars-v1",
+  "label": "Fewer cars, v1",
+  "capacity": [
+    {
+      "kind": "transit",
+      "maxConcurrent": 4,
+      "provenance": {
+        "tier": 2,
+        "label": "Four major transit projects at once, as SFMTA ran in 2019–2021",
+        "sources": [
+          {
+            "label": "SFMTA, Central Subway Project.",
+            "url": "https://www.sfmta.com/projects/central-subway-project"
+          },
+          {
+            "label": "Wikipedia, \"Van Ness Bus Rapid Transit\".",
+            "url": "https://en.wikipedia.org/wiki/Van_Ness_Bus_Rapid_Transit"
+          },
+          {
+            "label": "SFMTA, Geary Rapid Project.",
+            "url": "https://www.sfmta.com/projects/geary-rapid-project"
+          },
+          {
+            "label": "SFMTA, L Taraval Improvement Project.",
+            "url": "https://www.sfmta.com/projects/l-taraval-improvement-project"
+          }
+        ],
+        "method": "Overlap of the four projects' construction dates."
+      }
+    },
+    {
+      "kind": "street",
+      "maxConcurrent": 6,
+      "provenance": {
+        "tier": 4,
+        "label": "Six street projects at once (invented)",
+        "sources": [],
+        "method": "Unsourced."
+      }
+    },
+    {
+      "kind": "garage",
+      "maxConcurrent": 2,
+      "provenance": {
+        "tier": 4,
+        "label": "Two garage projects at once (invented)",
+        "sources": [],
+        "method": "Unsourced."
+      }
+    },
+    {
+      "kind": "housing",
+      "maxConcurrent": 15,
+      "provenance": {
+        "tier": 2,
+        "label": "Fifteen large builds at once, the city's count today",
+        "sources": [
+          {
+            "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+            "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+          }
+        ],
+        "method": "Projects of 50+ homes in construction in projects.json (asOf 2026-10-19)."
+      }
+    }
+  ],
+  "projects": [
+    {
+      "id": "geary-subway-1",
+      "label": "Geary subway, phase 1 (Kearny to Arguello)",
+      "kind": "transit-line",
+      "startYear": 2032,
+      "durationMonths": {
+        "value": 108,
+        "provenance": {
+          "tier": 2,
+          "label": "9 years to build a subway phase (peer range 7–10 years)",
+          "sources": [
+            {
+              "label": "SFCTA, Geary/19th Ave Subway and Regional Connections Study Strategic Case, Final Report, June 2026.",
+              "url": "https://www.sfcta.org/sites/default/files/2026-06/SFCTA_Geary-19th_Subway_and_Regional_Connections_Study_Final_Report_2026-06-23.pdf"
+            },
+            {
+              "label": "SFMTA, Central Subway Project.",
+              "url": "https://www.sfmta.com/projects/central-subway-project"
+            },
+            {
+              "label": "Tunneling Online, \"Worth the Wait\" (Central Subway, November 2013).",
+              "url": "https://tunnelingonline.com/san-francisco-tunnel/"
+            }
+          ],
+          "method": "Midpoint of the Strategic Case's 7–10 years for construction and commissioning; Central Subway's June 2011 tunnel contract to January 2023 service (~11.5 years) as the San Francisco check."
+        }
+      },
+      "dependsOn": [],
+      "mode": "subway",
+      "stops": [
+        {
+          "id": "lc:geary-kearny",
+          "name": "Geary & Kearny",
+          "lngLat": [-122.40366, 37.788]
+        },
+        {
+          "id": "lc:geary-jones",
+          "name": "Geary & Jones",
+          "lngLat": [-122.41333, 37.78677]
+        },
+        {
+          "id": "lc:geary-van-ness",
+          "name": "Geary & Van Ness",
+          "lngLat": [-122.42158, 37.78575]
+        },
+        {
+          "id": "lc:geary-fillmore",
+          "name": "Geary & Fillmore",
+          "lngLat": [-122.43305, 37.78439]
+        },
+        {
+          "id": "lc:geary-masonic",
+          "name": "Geary & Masonic",
+          "lngLat": [-122.4468, 37.7825]
+        },
+        {
+          "id": "lc:geary-arguello",
+          "name": "Geary & Arguello",
+          "lngLat": [-122.45869, 37.78115]
+        }
+      ],
+      "peakTph": {
+        "value": 24,
+        "provenance": {
+          "tier": 2,
+          "label": "24 trains an hour at the peak",
+          "sources": [
+            {
+              "label": "SFCTA, Geary/19th Ave Subway and Regional Connections Study Strategic Case, Final Report, June 2026.",
+              "url": "https://www.sfcta.org/sites/default/files/2026-06/SFCTA_Geary-19th_Subway_and_Regional_Connections_Study_Final_Report_2026-06-23.pdf"
+            }
+          ],
+          "method": "The Strategic Case's modelling assumption per direction."
+        }
+      },
+      "alignment": [
+        [-122.40366, 37.788],
+        [-122.41333, 37.78677],
+        [-122.42158, 37.78575],
+        [-122.43305, 37.78439],
+        [-122.4468, 37.7825],
+        [-122.45869, 37.78115]
+      ]
+    },
+    {
+      "id": "geary-19th-subway-2",
+      "label": "Geary/19th Avenue subway, phase 2 (Park Presidio to Daly City)",
+      "kind": "transit-line",
+      "startYear": 2035,
+      "durationMonths": {
+        "value": 108,
+        "provenance": {
+          "tier": 2,
+          "label": "9 years to build a subway phase (peer range 7–10 years)",
+          "sources": [
+            {
+              "label": "SFCTA, Geary/19th Ave Subway and Regional Connections Study Strategic Case, Final Report, June 2026.",
+              "url": "https://www.sfcta.org/sites/default/files/2026-06/SFCTA_Geary-19th_Subway_and_Regional_Connections_Study_Final_Report_2026-06-23.pdf"
+            },
+            {
+              "label": "SFMTA, Central Subway Project.",
+              "url": "https://www.sfmta.com/projects/central-subway-project"
+            },
+            {
+              "label": "Tunneling Online, \"Worth the Wait\" (Central Subway, November 2013).",
+              "url": "https://tunnelingonline.com/san-francisco-tunnel/"
+            }
+          ],
+          "method": "Midpoint of the Strategic Case's 7–10 years for construction and commissioning; Central Subway's June 2011 tunnel contract to January 2023 service (~11.5 years) as the San Francisco check."
+        }
+      },
+      "dependsOn": [],
+      "opensAfter": ["geary-subway-1"],
+      "mode": "subway",
+      "stops": [
+        {
+          "id": "lc:geary-park-presidio",
+          "name": "Geary & Park Presidio",
+          "lngLat": [-122.47231, 37.78066]
+        },
+        {
+          "id": "lc:19th-irving",
+          "name": "19th Ave & Irving",
+          "lngLat": [-122.47717, 37.76356]
+        },
+        {
+          "id": "lc:19th-noriega",
+          "name": "19th Ave & Noriega",
+          "lngLat": [-122.47645, 37.75412]
+        },
+        {
+          "id": "lc:19th-taraval",
+          "name": "19th Ave & Taraval",
+          "lngLat": [-122.47564, 37.74296]
+        },
+        {
+          "id": "lc:19th-winston",
+          "name": "19th Ave & Winston (Stonestown/SF State)",
+          "lngLat": [-122.4749, 37.72723]
+        },
+        {
+          "id": "lc:19th-junipero-serra",
+          "name": "19th Ave & Junipero Serra (Parkmerced)",
+          "lngLat": [-122.47308, 37.71769]
+        }
+      ],
+      "peakTph": {
+        "value": 24,
+        "provenance": {
+          "tier": 2,
+          "label": "24 trains an hour at the peak",
+          "sources": [
+            {
+              "label": "SFCTA, Geary/19th Ave Subway and Regional Connections Study Strategic Case, Final Report, June 2026.",
+              "url": "https://www.sfcta.org/sites/default/files/2026-06/SFCTA_Geary-19th_Subway_and_Regional_Connections_Study_Final_Report_2026-06-23.pdf"
+            }
+          ],
+          "method": "The Strategic Case's modelling assumption per direction."
+        }
+      },
+      "alignment": [
+        [-122.45869, 37.78115],
+        [-122.47231, 37.78066],
+        [-122.47717, 37.76356],
+        [-122.47645, 37.75412],
+        [-122.47564, 37.74296],
+        [-122.4749, 37.72723],
+        [-122.47308, 37.71769],
+        [-122.46892, 37.70626]
+      ]
+    },
+    {
+      "id": "central-subway-north-beach",
+      "label": "Central Subway to North Beach",
+      "kind": "transit-line",
+      "startYear": 2030,
+      "durationMonths": {
+        "value": 60,
+        "provenance": {
+          "tier": 4,
+          "label": "5 years for one station on existing tunnels (invented)",
+          "sources": [
+            {
+              "label": "SFMTA, Central Subway Extension.",
+              "url": "https://www.sfmta.com/projects/central-subway-extension"
+            }
+          ],
+          "method": "No published estimate. The tunnels to Columbus & Union exist (S5)."
+        }
+      },
+      "dependsOn": [],
+      "mode": "tram",
+      "stops": [
+        {
+          "id": "lc:north-beach",
+          "name": "Columbus & Union (North Beach)",
+          "lngLat": [-122.41043, 37.80044]
+        }
+      ],
+      "peakTph": {
+        "value": 6,
+        "provenance": {
+          "tier": 2,
+          "label": "6 trains an hour, today's T Third peak",
+          "sources": [
+            {
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+              "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+            }
+          ],
+          "method": "Max of tph on the T patterns in transit.json (5.5–6.0), carried onto the extension."
+        }
+      },
+      "alignment": [
+        [-122.40808, 37.79481],
+        [-122.41043, 37.80044]
+      ]
+    },
+    {
+      "id": "central-subway-wharf",
+      "label": "Central Subway to Fisherman's Wharf",
+      "kind": "transit-line",
+      "startYear": 2036,
+      "durationMonths": {
+        "value": 96,
+        "provenance": {
+          "tier": 2,
+          "label": "8 years for a bored extension",
+          "sources": [
+            {
+              "label": "SFCTA, Geary/19th Ave Subway and Regional Connections Study Strategic Case, Final Report, June 2026.",
+              "url": "https://www.sfcta.org/sites/default/files/2026-06/SFCTA_Geary-19th_Subway_and_Regional_Connections_Study_Final_Report_2026-06-23.pdf"
+            }
+          ],
+          "method": "Low end of the Strategic Case's 7–10 years, plus one year."
+        }
+      },
+      "dependsOn": ["central-subway-north-beach"],
+      "mode": "tram",
+      "stops": [
+        {
+          "id": "lc:fishermans-wharf",
+          "name": "Fisherman's Wharf (Beach & Stockton)",
+          "lngLat": [-122.41081, 37.80784]
+        }
+      ],
+      "peakTph": {
+        "value": 6,
+        "provenance": {
+          "tier": 2,
+          "label": "6 trains an hour, today's T Third peak",
+          "sources": [
+            {
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+              "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+            }
+          ],
+          "method": "Max of tph on the T patterns in transit.json (5.5–6.0), carried onto the extension."
+        }
+      },
+      "alignment": [
+        [-122.41043, 37.80044],
+        [-122.41081, 37.80784]
+      ]
+    },
+    {
+      "id": "fulton-brt",
+      "label": "Fulton and McAllister bus lanes (5, 5R)",
+      "kind": "bus-lane",
+      "startYear": 2029,
+      "durationMonths": {
+        "value": 36,
+        "provenance": {
+          "tier": 2,
+          "label": "3 years for side-running bus lanes",
+          "sources": [
+            {
+              "label": "SFMTA, Geary Rapid Project.",
+              "url": "https://www.sfmta.com/projects/geary-rapid-project"
+            },
+            {
+              "label": "Wikipedia, \"Van Ness Bus Rapid Transit\".",
+              "url": "https://en.wikipedia.org/wiki/Van_Ness_Bus_Rapid_Transit"
+            }
+          ],
+          "method": "Geary Rapid: three-year capital project, about 3 miles, completed fall 2021 (S7). Van Ness BRT 2016–2022 as the slow bound (S6)."
+        }
+      },
+      "dependsOn": [],
+      "routeIds": ["5", "5R"],
+      "stopIds": [
+        "muni:4211",
+        "muni:4212",
+        "muni:4213",
+        "muni:4215",
+        "muni:4218",
+        "muni:4221",
+        "muni:4222",
+        "muni:4223",
+        "muni:4224",
+        "muni:4225",
+        "muni:4226",
+        "muni:4228",
+        "muni:4229",
+        "muni:4230",
+        "muni:4231",
+        "muni:4232",
+        "muni:4233",
+        "muni:4234",
+        "muni:4235",
+        "muni:4236",
+        "muni:4730",
+        "muni:4731",
+        "muni:4732",
+        "muni:4733",
+        "muni:4734",
+        "muni:4735",
+        "muni:4736",
+        "muni:4737",
+        "muni:4742",
+        "muni:4746",
+        "muni:4747",
+        "muni:4748",
+        "muni:4749",
+        "muni:4751",
+        "muni:4753",
+        "muni:5384",
+        "muni:5385",
+        "muni:5389",
+        "muni:5390",
+        "muni:5391",
+        "muni:5392",
+        "muni:5393",
+        "muni:5394",
+        "muni:5395",
+        "muni:5396",
+        "muni:5397",
+        "muni:5398",
+        "muni:5399",
+        "muni:5400",
+        "muni:5401",
+        "muni:5404",
+        "muni:5405",
+        "muni:7563",
+        "muni:7635",
+        "muni:7720",
+        "muni:7721",
+        "muni:7727",
+        "muni:7728",
+        "muni:7729",
+        "muni:7730"
+      ],
+      "segments": [
+        {
+          "cnn": [
+            "8888000",
+            "8889000",
+            "8890000",
+            "8891000",
+            "8892000",
+            "8893000",
+            "8894000",
+            "8895000",
+            "8896000",
+            "8897000",
+            "8898001",
+            "8898002",
+            "8899001",
+            "8899002",
+            "8900000",
+            "8901000",
+            "8902000",
+            "8903000",
+            "8904000",
+            "8905000",
+            "8906000",
+            "8907000"
+          ]
+        },
+        {
+          "cnn": [
+            "5895000",
+            "5896000",
+            "5897000",
+            "5898000",
+            "5899000",
+            "5900000",
+            "5901000",
+            "5902000",
+            "5903000",
+            "5904000",
+            "5905000",
+            "5906000",
+            "5907000",
+            "5908000",
+            "5909000",
+            "5910000",
+            "5911000",
+            "5912000",
+            "5913000",
+            "5914000",
+            "5915000",
+            "5916000",
+            "5917000",
+            "5918000",
+            "5919000",
+            "5920000",
+            "5921000",
+            "5922000",
+            "5923000",
+            "5924000",
+            "5925000",
+            "5926000",
+            "5927000",
+            "5928000",
+            "5929000",
+            "5930000",
+            "5931000",
+            "5932000",
+            "5933000",
+            "5934000",
+            "5935000",
+            "5936000",
+            "5937000",
+            "5938000",
+            "5939000",
+            "5940000",
+            "5941000",
+            "5942000",
+            "5943000",
+            "5944000",
+            "5945000",
+            "5946000",
+            "5947000",
+            "5948000",
+            "5949000",
+            "5950000",
+            "5951000",
+            "5952000",
+            "5953000",
+            "5954000",
+            "5955000"
+          ]
+        }
+      ],
+      "peakTph": {
+        "value": 11,
+        "provenance": {
+          "tier": 2,
+          "label": "11 buses an hour, the 38R on Geary's red lanes",
+          "sources": [
+            {
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+              "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+            }
+          ],
+          "method": "Max of tph on the 38R patterns in transit.json (10–11), applied to the plan corridors."
+        }
+      }
+    },
+    {
+      "id": "19th-ave-brt",
+      "label": "19th Avenue and Park Presidio bus lanes (28, 28R)",
+      "kind": "bus-lane",
+      "startYear": 2029,
+      "durationMonths": {
+        "value": 36,
+        "provenance": {
+          "tier": 2,
+          "label": "3 years for side-running bus lanes",
+          "sources": [
+            {
+              "label": "SFMTA, Geary Rapid Project.",
+              "url": "https://www.sfmta.com/projects/geary-rapid-project"
+            },
+            {
+              "label": "Wikipedia, \"Van Ness Bus Rapid Transit\".",
+              "url": "https://en.wikipedia.org/wiki/Van_Ness_Bus_Rapid_Transit"
+            }
+          ],
+          "method": "Geary Rapid: three-year capital project, about 3 miles, completed fall 2021 (S7). Van Ness BRT 2016–2022 as the slow bound (S6)."
+        }
+      },
+      "dependsOn": [],
+      "routeIds": ["28", "28R"],
+      "stopIds": [
+        "muni:390",
+        "muni:3354",
+        "muni:3355",
+        "muni:3356",
+        "muni:3359",
+        "muni:3360",
+        "muni:3362",
+        "muni:3363",
+        "muni:3364",
+        "muni:3365",
+        "muni:3368",
+        "muni:3369",
+        "muni:3371",
+        "muni:3374",
+        "muni:3375",
+        "muni:3379",
+        "muni:3380",
+        "muni:3383",
+        "muni:3384",
+        "muni:3388",
+        "muni:3389",
+        "muni:3390",
+        "muni:3391",
+        "muni:3394",
+        "muni:3395",
+        "muni:3398",
+        "muni:3399",
+        "muni:3402",
+        "muni:5134",
+        "muni:5135",
+        "muni:5136",
+        "muni:5140",
+        "muni:5946",
+        "muni:5947",
+        "muni:5948",
+        "muni:5949",
+        "muni:5950",
+        "muni:5951",
+        "muni:5952",
+        "muni:5953",
+        "muni:7448",
+        "muni:7758"
+      ],
+      "segments": [
+        {
+          "cnn": [
+            "10265101",
+            "10265201",
+            "10266101",
+            "10266201",
+            "10267101",
+            "10267201",
+            "10268101",
+            "10268201",
+            "10269101",
+            "10269201",
+            "10270101",
+            "10270201",
+            "10271101",
+            "10271201"
+          ]
+        },
+        {
+          "cnn": [
+            "909101",
+            "909201",
+            "910101",
+            "910201",
+            "911101",
+            "911201",
+            "912101",
+            "912201",
+            "913101",
+            "913201",
+            "914101",
+            "914201",
+            "915101",
+            "915201",
+            "916101",
+            "916201",
+            "917101",
+            "917201",
+            "918101",
+            "918201",
+            "919101",
+            "919201",
+            "920101",
+            "920201",
+            "921101",
+            "921201",
+            "922101",
+            "922201",
+            "923101",
+            "923201",
+            "924102",
+            "924103",
+            "924201",
+            "925101",
+            "925201",
+            "926101",
+            "926201",
+            "927101",
+            "927102",
+            "927201",
+            "927202",
+            "928101",
+            "928102",
+            "928103",
+            "928201",
+            "928202",
+            "929101",
+            "929201",
+            "930101",
+            "930102",
+            "930201",
+            "930202"
+          ]
+        },
+        {
+          "cnn": [
+            "7710101",
+            "7710102",
+            "7710103",
+            "7710104",
+            "7710105",
+            "7710106",
+            "7710201",
+            "7710202",
+            "7710203",
+            "7710204",
+            "7710206",
+            "7710207"
+          ]
+        }
+      ],
+      "peakTph": {
+        "value": 11,
+        "provenance": {
+          "tier": 2,
+          "label": "11 buses an hour, the 38R on Geary's red lanes",
+          "sources": [
+            {
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+              "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+            }
+          ],
+          "method": "Max of tph on the 38R patterns in transit.json (10–11), applied to the plan corridors."
+        }
+      }
+    },
+    {
+      "id": "lombard-bus-lane",
+      "label": "Lombard Street bus lanes (28)",
+      "kind": "bus-lane",
+      "startYear": 2032,
+      "durationMonths": {
+        "value": 24,
+        "provenance": {
+          "tier": 2,
+          "label": "2 years for street and track works on a tram corridor",
+          "sources": [
+            {
+              "label": "SFMTA, L Taraval Improvement Project.",
+              "url": "https://www.sfmta.com/projects/l-taraval-improvement-project"
+            }
+          ],
+          "method": "L Taraval segment A, September 2019 to July 2021 (about 22 months), rounded up."
+        }
+      },
+      "dependsOn": [],
+      "routeIds": ["28"],
+      "stopIds": [
+        "muni:5272",
+        "muni:5273",
+        "muni:5274",
+        "muni:5275",
+        "muni:5280",
+        "muni:5281",
+        "muni:5284",
+        "muni:5285",
+        "muni:6181",
+        "muni:6182",
+        "muni:7787",
+        "muni:7800"
+      ],
+      "segments": [
+        {
+          "cnn": [
+            "8453101",
+            "8453201",
+            "8454101",
+            "8454201",
+            "8455101",
+            "8455201",
+            "8456101",
+            "8456201",
+            "8457101",
+            "8457201",
+            "8458101",
+            "8458201",
+            "8459101",
+            "8459201",
+            "8460101",
+            "8460201",
+            "8461101",
+            "8461201",
+            "8462101",
+            "8462201",
+            "8463101",
+            "8463201",
+            "8464101",
+            "8464201",
+            "8465101",
+            "8465201",
+            "8466000",
+            "8467000"
+          ]
+        },
+        {
+          "cnn": ["19198000"]
+        }
+      ],
+      "peakTph": {
+        "value": 11,
+        "provenance": {
+          "tier": 2,
+          "label": "11 buses an hour, the 38R on Geary's red lanes",
+          "sources": [
+            {
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+              "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+            }
+          ],
+          "method": "Max of tph on the 38R patterns in transit.json (10–11), applied to the plan corridors."
+        }
+      }
+    },
+    {
+      "id": "n-judah-priority",
+      "label": "N Judah: no cars on the tram lanes",
+      "kind": "tram-priority",
+      "startYear": 2030,
+      "durationMonths": {
+        "value": 24,
+        "provenance": {
+          "tier": 2,
+          "label": "2 years for street and track works on a tram corridor",
+          "sources": [
+            {
+              "label": "SFMTA, L Taraval Improvement Project.",
+              "url": "https://www.sfmta.com/projects/l-taraval-improvement-project"
+            }
+          ],
+          "method": "L Taraval segment A, September 2019 to July 2021 (about 22 months), rounded up."
+        }
+      },
+      "dependsOn": [],
+      "routeIds": ["N"],
+      "segments": [
+        {
+          "cnn": ["3695000", "3696000", "3697000", "3698000", "3699000"]
+        },
+        {
+          "cnn": [
+            "7278000",
+            "7279000",
+            "7280000",
+            "7281000",
+            "7282000",
+            "7283000",
+            "7284000",
+            "7285000"
+          ]
+        },
+        {
+          "cnn": ["432000"]
+        },
+        {
+          "cnn": [
+            "7644101",
+            "7644201",
+            "7645101",
+            "7645201",
+            "7646101",
+            "7646201",
+            "7647101",
+            "7647201",
+            "7648101",
+            "7648201",
+            "7649101",
+            "7649201",
+            "7650101",
+            "7650201",
+            "7651101",
+            "7651201",
+            "7652101",
+            "7652201",
+            "7653101",
+            "7653201",
+            "7654000",
+            "7655000",
+            "7656000",
+            "7657000",
+            "7658000",
+            "7659000",
+            "7660000",
+            "7661000",
+            "7662000",
+            "7663000",
+            "7664000",
+            "7665000",
+            "7666000",
+            "7667000",
+            "7668000",
+            "7669000",
+            "7670000",
+            "7671000",
+            "7672000",
+            "7673000",
+            "7674000",
+            "7675000",
+            "7676000",
+            "7677000",
+            "7678000",
+            "7679000",
+            "7680000",
+            "7681000",
+            "7682000",
+            "7683000",
+            "7684000",
+            "7685000"
+          ]
+        }
+      ],
+      "peakTph": {
+        "value": 10,
+        "provenance": {
+          "tier": 4,
+          "label": "10 trams an hour on the N after priority (invented)",
+          "sources": [
+            {
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+              "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+            }
+          ],
+          "method": "Today 6.0–6.5 (transit.json); the gain is a guess."
+        }
+      }
+    },
+    {
+      "id": "j-church-priority",
+      "label": "J Church: no cars on the tram lanes",
+      "kind": "tram-priority",
+      "startYear": 2032,
+      "durationMonths": {
+        "value": 24,
+        "provenance": {
+          "tier": 2,
+          "label": "2 years for street and track works on a tram corridor",
+          "sources": [
+            {
+              "label": "SFMTA, L Taraval Improvement Project.",
+              "url": "https://www.sfmta.com/projects/l-taraval-improvement-project"
+            }
+          ],
+          "method": "L Taraval segment A, September 2019 to July 2021 (about 22 months), rounded up."
+        }
+      },
+      "dependsOn": [],
+      "routeIds": ["J"],
+      "segments": [
+        {
+          "cnn": ["4010000", "4011000", "4012000", "4013000", "4014000", "4015000"]
+        },
+        {
+          "cnn": [
+            "4024000",
+            "4025000",
+            "4026000",
+            "4027000",
+            "4028000",
+            "4029000",
+            "4030000",
+            "4031000",
+            "4032000",
+            "4033000",
+            "4034000",
+            "4035000",
+            "4036000",
+            "4037000",
+            "4038000"
+          ]
+        }
+      ],
+      "peakTph": {
+        "value": 7,
+        "provenance": {
+          "tier": 4,
+          "label": "7 trams an hour on the J after priority (invented)",
+          "sources": [
+            {
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+              "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+            }
+          ],
+          "method": "Today 4.0–4.5; the gain is a guess."
+        }
+      }
+    },
+    {
+      "id": "k-ocean-priority",
+      "label": "K Ingleside: no cars on the tram lanes",
+      "kind": "tram-priority",
+      "startYear": 2034,
+      "durationMonths": {
+        "value": 24,
+        "provenance": {
+          "tier": 2,
+          "label": "2 years for street and track works on a tram corridor",
+          "sources": [
+            {
+              "label": "SFMTA, L Taraval Improvement Project.",
+              "url": "https://www.sfmta.com/projects/l-taraval-improvement-project"
+            }
+          ],
+          "method": "L Taraval segment A, September 2019 to July 2021 (about 22 months), rounded up."
+        }
+      },
+      "dependsOn": [],
+      "routeIds": ["K"],
+      "segments": [
+        {
+          "cnn": [
+            "9814101",
+            "9814201",
+            "9815101",
+            "9815201",
+            "9815202",
+            "9816101",
+            "9816201",
+            "9817101",
+            "9817201",
+            "9818101",
+            "9818201",
+            "9819101",
+            "9819201",
+            "9820101",
+            "9820201",
+            "9821101",
+            "9821201",
+            "9822101",
+            "9822201",
+            "9823101",
+            "9823201",
+            "9824101",
+            "9824201",
+            "9825101",
+            "9825201",
+            "9826101",
+            "9826201",
+            "9827101",
+            "9827201",
+            "9828101",
+            "9828201",
+            "9829101",
+            "9829201",
+            "9830101",
+            "9830201",
+            "9831101",
+            "9831201",
+            "9832101",
+            "9832102",
+            "9832201",
+            "9833101",
+            "9833201",
+            "9834101",
+            "9834201",
+            "9835101",
+            "9835201",
+            "9836101",
+            "9836201",
+            "9837101",
+            "9837102",
+            "9837201",
+            "9838101",
+            "9838201",
+            "9839101",
+            "9839201",
+            "9840101",
+            "9840201",
+            "9841101",
+            "9841201",
+            "9842101",
+            "9842201",
+            "9843101",
+            "9843201",
+            "9844101",
+            "9844201",
+            "9845101",
+            "9845201",
+            "9846000"
+          ]
+        }
+      ],
+      "peakTph": {
+        "value": 8,
+        "provenance": {
+          "tier": 4,
+          "label": "8 trams an hour on the K after priority (invented)",
+          "sources": [
+            {
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+              "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+            }
+          ],
+          "method": "Today 6.0–6.5; the gain is a guess."
+        }
+      }
+    },
+    {
+      "id": "garage-south",
+      "label": "South edge garage (US-101 terminus, Division St)",
+      "kind": "edge-garage",
+      "startYear": 2031,
+      "durationMonths": {
+        "value": 24,
+        "provenance": {
+          "tier": 2,
+          "label": "2 years to build a garage",
+          "sources": [
+            {
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+              "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+            }
+          ],
+          "method": "Construction-stage median 23–25 months in calibration.json (SF permit records), applied to a parking structure."
+        }
+      },
+      "dependsOn": [],
+      "site": {
+        "parcel": "3901004"
+      },
+      "spaces": {
+        "value": 750,
+        "provenance": {
+          "tier": 4,
+          "label": "750 spaces (invented)",
+          "sources": [
+            {
+              "label": "DataSF Streets – Active and Retired (3psu-pn9h).",
+              "url": "https://data.sf.gov/d/3psu-pn9h"
+            }
+          ],
+          "method": "4,687 m² footprint × 5 levels ÷ 30 m² per space."
+        }
+      }
+    },
+    {
+      "id": "garage-north",
+      "label": "North edge garage (Golden Gate approach, Lombard St)",
+      "kind": "edge-garage",
+      "startYear": 2031,
+      "durationMonths": {
+        "value": 24,
+        "provenance": {
+          "tier": 2,
+          "label": "2 years to build a garage",
+          "sources": [
+            {
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+              "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+            }
+          ],
+          "method": "Construction-stage median 23–25 months in calibration.json (SF permit records), applied to a parking structure."
+        }
+      },
+      "dependsOn": [],
+      "site": {
+        "parcel": "0509009"
+      },
+      "spaces": {
+        "value": 300,
+        "provenance": {
+          "tier": 4,
+          "label": "300 spaces (invented)",
+          "sources": [
+            {
+              "label": "DataSF Streets – Active and Retired (3psu-pn9h).",
+              "url": "https://data.sf.gov/d/3psu-pn9h"
+            }
+          ],
+          "method": "1,864 m² footprint × 5 levels ÷ 30 m² per space."
+        }
+      }
+    },
+    {
+      "id": "van-ness-street",
+      "label": "Van Ness: one car lane each way, wider sidewalks, bike lane",
+      "kind": "street-change",
+      "startYear": 2033,
+      "durationMonths": {
+        "value": 24,
+        "provenance": {
+          "tier": 2,
+          "label": "2 years for street and track works on a tram corridor",
+          "sources": [
+            {
+              "label": "SFMTA, L Taraval Improvement Project.",
+              "url": "https://www.sfmta.com/projects/l-taraval-improvement-project"
+            }
+          ],
+          "method": "L Taraval segment A, September 2019 to July 2021 (about 22 months), rounded up."
+        }
+      },
+      "dependsOn": [],
+      "segments": [
+        {
+          "cnn": [
+            "13143101",
+            "13143102",
+            "13143103",
+            "13143201",
+            "13144101",
+            "13144201",
+            "13145101",
+            "13145201",
+            "13145202",
+            "13146101",
+            "13146201",
+            "13147101",
+            "13147201",
+            "13147202",
+            "13148101",
+            "13148201",
+            "13148202",
+            "13149101",
+            "13149102",
+            "13149201",
+            "13150101",
+            "13150102",
+            "13150201",
+            "13150202",
+            "13151101",
+            "13151102",
+            "13151201",
+            "13151202",
+            "13152101",
+            "13152102",
+            "13152201",
+            "13152202",
+            "13153101",
+            "13153201",
+            "13153202",
+            "13154101",
+            "13154102",
+            "13154201",
+            "13154202",
+            "13155101",
+            "13155102",
+            "13155201",
+            "13155202",
+            "13156101",
+            "13156102",
+            "13156201",
+            "13156202",
+            "13157101",
+            "13157201",
+            "13158101",
+            "13158201",
+            "13159101",
+            "13159201",
+            "13160101",
+            "13160201",
+            "13161101",
+            "13161201",
+            "13162101",
+            "13162201",
+            "13163101",
+            "13163201",
+            "13164101",
+            "13164201",
+            "13165101",
+            "13165201",
+            "13166101",
+            "13166201",
+            "13167101",
+            "13167201",
+            "13168101",
+            "13168201",
+            "13169101",
+            "13169201"
+          ]
+        }
+      ],
+      "lanes": ["car", "bus", "bike", "sidewalk"]
+    },
+    {
+      "id": "fell-oak-street",
+      "label": "Fell and Oak: one fewer car lane each",
+      "kind": "street-change",
+      "startYear": 2036,
+      "durationMonths": {
+        "value": 18,
+        "provenance": {
+          "tier": 4,
+          "label": "18 months to reconfigure Fell and Oak (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["central-freeway-stub"],
+      "segments": [
+        {
+          "cnn": [
+            "5439000",
+            "5440000",
+            "5441000",
+            "5442000",
+            "5443000",
+            "5444000",
+            "5445000",
+            "5446000",
+            "5447000",
+            "5448000",
+            "5449000",
+            "5450000",
+            "5451000",
+            "5452000"
+          ]
+        },
+        {
+          "cnn": [
+            "9750000",
+            "9751000",
+            "9752000",
+            "9753000",
+            "9754000",
+            "9755000",
+            "9756000",
+            "9757000",
+            "9758000",
+            "9759000",
+            "9760000",
+            "9761000",
+            "9762000"
+          ]
+        }
+      ],
+      "lanes": ["car", "bus", "bike", "sidewalk"]
+    },
+    {
+      "id": "irving-pedestrian",
+      "label": "Irving Street pedestrian street",
+      "kind": "street-change",
+      "startYear": 2032,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "1 year to pedestrianise a street (invented)",
+          "sources": [
+            {
+              "label": "SFMTA, \"Car-Free Market Street starts January 29\" (31 December 2019).",
+              "url": "https://www.sfmta.com/blog/car-free-market-street-starts-january-29"
+            }
+          ],
+          "method": "Car-free Market Street started 29 days after SFMTA announced it (S9); a year allows for loading and curb work."
+        }
+      },
+      "dependsOn": ["n-judah-priority"],
+      "segments": [
+        {
+          "cnn": [
+            "7278000",
+            "7279000",
+            "7280000",
+            "7281000",
+            "7282000",
+            "7283000",
+            "7284000",
+            "7285000"
+          ]
+        }
+      ],
+      "lanes": ["tram", "pedestrian", "service", "sidewalk"]
+    },
+    {
+      "id": "columbus-pedestrian",
+      "label": "Columbus Avenue pedestrian street",
+      "kind": "street-change",
+      "startYear": 2035,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "1 year to pedestrianise a street (invented)",
+          "sources": [
+            {
+              "label": "SFMTA, \"Car-Free Market Street starts January 29\" (31 December 2019).",
+              "url": "https://www.sfmta.com/blog/car-free-market-street-starts-january-29"
+            }
+          ],
+          "method": "Car-free Market Street started 29 days after SFMTA announced it (S9); a year allows for loading and curb work."
+        }
+      },
+      "dependsOn": ["central-subway-north-beach"],
+      "segments": [
+        {
+          "cnn": [
+            "4292000",
+            "4293000",
+            "4294000",
+            "4295000",
+            "4296000",
+            "4297000",
+            "4298000",
+            "4299000",
+            "4300000",
+            "4301000",
+            "4302000",
+            "4303000",
+            "4304000",
+            "4305000"
+          ]
+        }
+      ],
+      "lanes": ["bus", "pedestrian", "service", "sidewalk"]
+    },
+    {
+      "id": "central-freeway-stub",
+      "label": "Central Freeway ends at Mission Street",
+      "kind": "highway-truncation",
+      "startYear": 2033,
+      "durationMonths": {
+        "value": 30,
+        "provenance": {
+          "tier": 2,
+          "label": "30 months to take down an elevated freeway stub",
+          "sources": [
+            {
+              "label": "SF Board of Supervisors, Resolution 94-13 (Central Freeway freeway agreement).",
+              "url": "https://www.sfbos.org/ftp/uploadedfiles/bdsupvrs/resolutions13/r0094-13.pdf"
+            }
+          ],
+          "method": "Central Freeway: demolition began March 2003, Octavia Boulevard opened 9 September 2005."
+        }
+      },
+      "dependsOn": ["fulton-brt", "n-judah-priority", "garage-south"],
+      "segments": [
+        {
+          "line": [
+            [-122.419542, 37.770086],
+            [-122.4201, 37.770105],
+            [-122.420816, 37.770145],
+            [-122.4215, 37.770298],
+            [-122.422168, 37.770602],
+            [-122.422814, 37.771135],
+            [-122.423252, 37.77177],
+            [-122.423397, 37.771886]
+          ],
+          "provenance": {
+            "tier": 0,
+            "label": "Central Freeway stub from the Mission St ramps to Market St",
+            "sources": [
+              {
+                "label": "DataSF Streets – Active and Retired (3psu-pn9h).",
+                "url": "https://data.sf.gov/d/3psu-pn9h"
+              }
+            ],
+            "method": "Vertices of Streets CNN 19204001 from the Mission St ramp junction (−122.4194) to the Market St touchdown."
+          }
+        }
+      ],
+      "rowHalfWidthM": {
+        "value": 11,
+        "provenance": {
+          "tier": 4,
+          "label": "11 m either side of the freeway line (invented)",
+          "sources": [],
+          "method": "Half a four-lane deck with shoulders; unsourced."
+        }
+      },
+      "build": {
+        "startYear": 2036,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "geary-trench",
+      "label": "Geary expressway trench filled, Gough to Steiner",
+      "kind": "street-removal",
+      "startYear": 2041,
+      "durationMonths": {
+        "value": 36,
+        "provenance": {
+          "tier": 2,
+          "label": "3 years to fill a sunken expressway",
+          "sources": [
+            {
+              "label": "FHWA, \"Rochester, NY: Freeway to Boulevard\" project profile.",
+              "url": "https://www.fhwa.dot.gov/ipd/project_profiles/ny_freeway_to_boulvard_rochester.aspx"
+            },
+            {
+              "label": "CBS San Francisco (Phil Matier), \"San Francisco's $50 Million Plan To Fill Geary Blvd. Underpass\", 7 February 2014.",
+              "url": "https://www.cbsnews.com/amp/sanfrancisco/news/phil-matier-san-franciscos-50-million-plan-to-fill-geary-blvd-underpass/"
+            }
+          ],
+          "method": "Rochester Inner Loop East, November 2014 to December 2017 (S12); the 2014 Geary underpass estimate of two years (S13, tier 3) as a check."
+        }
+      },
+      "dependsOn": ["geary-subway-1"],
+      "segments": [
+        {
+          "cnn": [
+            "6039201",
+            "6040201",
+            "6041201",
+            "6039101",
+            "6039102",
+            "6040102",
+            "6040103",
+            "6040104",
+            "6041101",
+            "6041102",
+            "6041103",
+            "6041202",
+            "6041203",
+            "6041204"
+          ]
+        }
+      ],
+      "rowHalfWidthM": {
+        "value": 10,
+        "provenance": {
+          "tier": 4,
+          "label": "10 m either side of Geary's centreline becomes land (frontage widths invented)",
+          "sources": [
+            {
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+              "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+            }
+          ],
+          "method": "Right-of-way 45.7–54.3 m measured from parcel outlines (tier 0); about 15 m kept each side for a one-way street is invented."
+        }
+      },
+      "build": {
+        "startYear": 2045,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0700035",
+      "label": "Parking at Geary Blvd becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2032,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "0700035",
+      "build": {
+        "startYear": 2033,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-3724067",
+      "label": "Parking at Mission St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2032,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "3724067",
+      "build": {
+        "startYear": 2033,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-7296007",
+      "label": "Parking at Winston Dr becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2032,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["19th-ave-brt"],
+      "parcel": "7296007",
+      "build": {
+        "startYear": 2033,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0327021",
+      "label": "Parking at O'Farrell St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2032,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "0327021",
+      "build": {
+        "startYear": 2033,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0781034",
+      "label": "Parking at Fulton St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2032,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "0781034",
+      "build": {
+        "startYear": 2033,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0719001",
+      "label": "Parking at Van Ness Ave becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2033,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "0719001",
+      "build": {
+        "startYear": 2034,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0719002",
+      "label": "Parking at Van Ness Ave becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2033,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "0719002",
+      "build": {
+        "startYear": 2034,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0347016",
+      "label": "Parking at Golden Gate Ave becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2033,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "0347016",
+      "build": {
+        "startYear": 2034,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0347017",
+      "label": "Parking at Golden Gate Ave becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2033,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "0347017",
+      "build": {
+        "startYear": 2034,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0446003",
+      "label": "Parking at Marina Blvd becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2034,
+      "durationMonths": {
+        "value": 6,
+        "provenance": {
+          "tier": 4,
+          "label": "6 months to clear a surface lot (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["lombard-bus-lane"],
+      "parcel": "0446003",
+      "build": {
+        "startYear": 2035,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0785030",
+      "label": "Parking at McAllister St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2034,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "0785030",
+      "build": {
+        "startYear": 2035,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-1450049",
+      "label": "Parking at 18th Ave becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2034,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["19th-ave-brt"],
+      "parcel": "1450049",
+      "build": {
+        "startYear": 2035,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0715015",
+      "label": "Parking at Van Ness Ave becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2034,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "0715015",
+      "build": {
+        "startYear": 2035,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0056007",
+      "label": "Parking at Montgomery St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2035,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["central-subway-north-beach"],
+      "parcel": "0056007",
+      "build": {
+        "startYear": 2036,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0035001",
+      "label": "Parking at Bay St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2035,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["central-subway-north-beach"],
+      "parcel": "0035001",
+      "build": {
+        "startYear": 2036,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0685050",
+      "label": "Parking at Webster St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2035,
+      "durationMonths": {
+        "value": 6,
+        "provenance": {
+          "tier": 4,
+          "label": "6 months to clear a surface lot (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "0685050",
+      "build": {
+        "startYear": 2036,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0081003",
+      "label": "Parking at Sansome St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2036,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["central-subway-north-beach"],
+      "parcel": "0081003",
+      "build": {
+        "startYear": 2037,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0147029",
+      "label": "Parking at Vallejo St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2036,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["central-subway-north-beach"],
+      "parcel": "0147029",
+      "build": {
+        "startYear": 2037,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0713033",
+      "label": "Parking at Gough St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2036,
+      "durationMonths": {
+        "value": 6,
+        "provenance": {
+          "tier": 4,
+          "label": "6 months to clear a surface lot (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "0713033",
+      "build": {
+        "startYear": 2037,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-3753122",
+      "label": "Parking at 6th St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2036,
+      "durationMonths": {
+        "value": 6,
+        "provenance": {
+          "tier": 4,
+          "label": "6 months to clear a surface lot (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "3753122",
+      "build": {
+        "startYear": 2037,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0743001",
+      "label": "Parking at Van Ness Ave becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2036,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "0743001",
+      "build": {
+        "startYear": 2037,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-7080009",
+      "label": "Parking at 19th Ave becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2037,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["19th-ave-brt"],
+      "parcel": "7080009",
+      "build": {
+        "startYear": 2038,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0761065",
+      "label": "Parking at Golden Gate Ave becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2037,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "0761065",
+      "build": {
+        "startYear": 2038,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-1228006",
+      "label": "Parking at Stanyan St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2037,
+      "durationMonths": {
+        "value": 6,
+        "provenance": {
+          "tier": 4,
+          "label": "6 months to clear a surface lot (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "1228006",
+      "build": {
+        "startYear": 2038,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-2413038",
+      "label": "Parking at Taraval St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2037,
+      "durationMonths": {
+        "value": 6,
+        "provenance": {
+          "tier": 4,
+          "label": "6 months to clear a surface lot (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["19th-ave-brt"],
+      "parcel": "2413038",
+      "build": {
+        "startYear": 2038,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0768073",
+      "label": "Parking at Redwood St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2037,
+      "durationMonths": {
+        "value": 6,
+        "provenance": {
+          "tier": 4,
+          "label": "6 months to clear a surface lot (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "0768073",
+      "build": {
+        "startYear": 2038,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0776010",
+      "label": "Parking at McAllister St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2038,
+      "durationMonths": {
+        "value": 6,
+        "provenance": {
+          "tier": 4,
+          "label": "6 months to clear a surface lot (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "0776010",
+      "build": {
+        "startYear": 2039,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0718021",
+      "label": "Parking at Van Ness Ave becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2038,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "0718021",
+      "build": {
+        "startYear": 2039,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0817011",
+      "label": "Parking at Fell St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2038,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "0817011",
+      "build": {
+        "startYear": 2039,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-1216019",
+      "label": "Parking at Oak St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2038,
+      "durationMonths": {
+        "value": 6,
+        "provenance": {
+          "tier": 4,
+          "label": "6 months to clear a surface lot (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "1216019",
+      "build": {
+        "startYear": 2039,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-1182023",
+      "label": "Parking at Fulton St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2038,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "1182023",
+      "build": {
+        "startYear": 2039,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-1101027",
+      "label": "Parking at O'Farrell St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2039,
+      "durationMonths": {
+        "value": 6,
+        "provenance": {
+          "tier": 4,
+          "label": "6 months to clear a surface lot (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["fulton-brt"],
+      "parcel": "1101027",
+      "build": {
+        "startYear": 2040,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0101031",
+      "label": "Parking at Filbert St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2039,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["central-subway-north-beach"],
+      "parcel": "0101031",
+      "build": {
+        "startYear": 2040,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0286024",
+      "label": "Parking at Sutter St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2041,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["geary-subway-1"],
+      "parcel": "0286024",
+      "build": {
+        "startYear": 2042,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-3735060",
+      "label": "Parking at 3rd St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2041,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["geary-subway-1"],
+      "parcel": "3735060",
+      "build": {
+        "startYear": 2042,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-3722079",
+      "label": "Parking at Natoma St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2041,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["geary-subway-1"],
+      "parcel": "3722079",
+      "build": {
+        "startYear": 2042,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-3721084",
+      "label": "Parking at Minna St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2041,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["geary-subway-1"],
+      "parcel": "3721084",
+      "build": {
+        "startYear": 2042,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0647012",
+      "label": "Parking at California St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2042,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["geary-subway-1"],
+      "parcel": "0647012",
+      "build": {
+        "startYear": 2043,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0647014",
+      "label": "Parking at California St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2042,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["geary-subway-1"],
+      "parcel": "0647014",
+      "build": {
+        "startYear": 2043,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0668003",
+      "label": "Parking at Bush St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2042,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["geary-subway-1"],
+      "parcel": "0668003",
+      "build": {
+        "startYear": 2043,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-1017027",
+      "label": "Parking at California St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2042,
+      "durationMonths": {
+        "value": 6,
+        "provenance": {
+          "tier": 4,
+          "label": "6 months to clear a surface lot (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["geary-subway-1"],
+      "parcel": "1017027",
+      "build": {
+        "startYear": 2043,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0658003",
+      "label": "Parking at Pierce St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2042,
+      "durationMonths": {
+        "value": 6,
+        "provenance": {
+          "tier": 4,
+          "label": "6 months to clear a surface lot (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["geary-subway-1"],
+      "parcel": "0658003",
+      "build": {
+        "startYear": 2043,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0266007",
+      "label": "Parking at Battery St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2043,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["geary-subway-1"],
+      "parcel": "0266007",
+      "build": {
+        "startYear": 2044,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0680001",
+      "label": "Parking at Bush St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2043,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["geary-subway-1"],
+      "parcel": "0680001",
+      "build": {
+        "startYear": 2044,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-3710014",
+      "label": "Parking at Beale St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2043,
+      "durationMonths": {
+        "value": 12,
+        "provenance": {
+          "tier": 4,
+          "label": "12 months to demolish a garage (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["geary-subway-1"],
+      "parcel": "3710014",
+      "build": {
+        "startYear": 2044,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    },
+    {
+      "id": "park-0643016",
+      "label": "Parking at Sacramento St becomes homes",
+      "kind": "parking-conversion",
+      "startYear": 2043,
+      "durationMonths": {
+        "value": 6,
+        "provenance": {
+          "tier": 4,
+          "label": "6 months to clear a surface lot (invented)",
+          "sources": [],
+          "method": "Unsourced."
+        }
+      },
+      "dependsOn": ["geary-subway-1"],
+      "parcel": "0643016",
+      "build": {
+        "startYear": 2044,
+        "durationMonths": {
+          "value": 30,
+          "provenance": {
+            "tier": 2,
+            "label": "30 months to build a large building",
+            "sources": [
+              {
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
+                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
+              }
+            ],
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
+          }
+        }
+      }
+    }
+  ],
+  "displays": [
+    {
+      "id": "masonic-station",
+      "label": "Masonic underpass filled: Geary at grade at the Masonic station",
+      "segments": [
+        {
+          "cnn": ["6046101", "6046201", "6047101", "6047201", "6047202"]
+        }
+      ],
+      "from": "geary-subway-1"
+    }
+  ]
+}
