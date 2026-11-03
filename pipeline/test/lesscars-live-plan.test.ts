@@ -88,6 +88,13 @@ function tablesUnder(heading: string, after = 0): Table[] {
 const APPENDIX_A = DOC.split('\n').findIndex((l) => l === '## Appendix A: plan.json fields');
 const appendixTable = (heading: string) => tablesUnder(heading, APPENDIX_A)[0];
 const unquote = (s: string) => s.replace(/^`|`$/g, '');
+/** Markdown marks out, wording kept: code backticks and `_x_` / `*x*` emphasis (controller ruling). */
+const stripMarkdown = (s: string) =>
+  s
+    .replace(/`/g, '')
+    .replace(/(?<![\w*])\*{1,2}([^*]+?)\*{1,2}(?![\w*])/g, '$1')
+    .replace(/(?<![\w_])_{1,2}([^_]+?)_{1,2}(?![\w_])/g, '$1');
+const MARKDOWN_MARK = /`|(?<![\w*])\*[^*]+\*(?![\w*])|(?<![\w_])_[^_]+_(?![\w_])/;
 
 // ---- Appendix B sources and Appendix A provenances --------------------------------------------
 
@@ -95,7 +102,9 @@ const unquote = (s: string) => s.replace(/^`|`$/g, '');
 const SOURCES = new Map(
   tablesUnder('## Appendix B: sources')[0].rows.flatMap(([id, source]) => {
     const url = source.match(/https?:\/\/\S+/);
-    return url ? [[id, { label: source.slice(0, url.index).trim(), url: url[0] }] as const] : [];
+    return url
+      ? [[id, { label: stripMarkdown(source.slice(0, url.index).trim()), url: url[0] }] as const]
+      : [];
   })
 );
 
@@ -104,7 +113,7 @@ const PROVENANCES = new Map<string, Provenance>(
     id,
     {
       tier: Number(tier) as Provenance['tier'],
-      label,
+      label: stripMarkdown(label),
       sources:
         sources === '—'
           ? []
@@ -113,7 +122,7 @@ const PROVENANCES = new Map<string, Provenance>(
               if (!src) throw new Error(`${id}: no Appendix B row for ${s}`);
               return src;
             }),
-      method
+      method: stripMarkdown(method)
     }
   ])
 );
@@ -183,7 +192,7 @@ function expectedProject(f: Record<string, string>): PlanProject {
   const startYear = Number(f.startYear.match(/^(\d{4})/)?.[1]);
   const base = {
     id,
-    label: f.label,
+    label: stripMarkdown(f.label),
     kind,
     startYear,
     durationMonths: param(f.durationMonths),
@@ -200,7 +209,11 @@ function expectedProject(f: Record<string, string>): PlanProject {
       const stops = f.stops.split('; ').map((s) => {
         const m = s.match(/^`(lc:[^`]+)` (.+) \[(-?[\d.]+), (-?[\d.]+)\]$/);
         if (!m) throw new Error(`${id}: bad stop ${s}`);
-        return { id: m[1], name: m[2], lngLat: [Number(m[3]), Number(m[4])] as [number, number] };
+        return {
+          id: m[1],
+          name: stripMarkdown(m[2]),
+          lngLat: [Number(m[3]), Number(m[4])] as [number, number]
+        };
       });
       const at = coords(f.alignment);
       const stopLine = stops.map((s) => s.lngLat);
@@ -312,7 +325,7 @@ function expectedPlan(): LessCarsPlan {
   );
   const parking: PlanProject[] = appendixParkingRows().map((r) => ({
     id: r.id,
-    label: `Parking at ${siteOf(r.parcel)![1]} becomes homes`,
+    label: `Parking at ${stripMarkdown(siteOf(r.parcel)![1])} becomes homes`,
     kind: 'parking-conversion',
     startYear: r.startYear,
     durationMonths: r.months,
@@ -520,6 +533,22 @@ describe('the live plan (plan-v1 Appendix A)', () => {
     });
     expect(codes(checkPlan(withClash, schedulePlan(withClash)))).toContain(
       'masonic-station:duplicate-id'
+    );
+  });
+
+  it('no string in plan.json carries Markdown markup', () => {
+    const strings: { path: string; s: string }[] = [];
+    const walk = (v: unknown, path: string) => {
+      if (typeof v === 'string') strings.push({ path, s: v });
+      else if (Array.isArray(v)) v.forEach((x, i) => walk(x, `${path}.${i}`));
+      else if (v && typeof v === 'object')
+        for (const [k, x] of Object.entries(v)) walk(x, path ? `${path}.${k}` : k);
+    };
+    walk(JSON.parse(readFileSync(LESSCARS_PLAN_JSON.live, 'utf8')), '');
+    expect(strings.length).toBeGreaterThan(0);
+    for (const { path, s } of strings) expect(s, path).not.toMatch(MARKDOWN_MARK);
+    expect(stripMarkdown('SFCTA, _Geary Case_, `tph` and *x*')).toBe(
+      'SFCTA, Geary Case, tph and x'
     );
   });
 

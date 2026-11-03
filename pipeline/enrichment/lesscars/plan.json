@@ -58,11 +58,11 @@
         "label": "Fifteen large builds at once, the city's count today",
         "sources": [
           {
-            "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+            "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
             "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
           }
         ],
-        "method": "Projects of 50+ homes in `construction` in `projects.json` (asOf 2026-10-19)."
+        "method": "Projects of 50+ homes in construction in projects.json (asOf 2026-10-19)."
       }
     }
   ],
@@ -79,7 +79,7 @@
           "label": "9 years to build a subway phase (peer range 7–10 years)",
           "sources": [
             {
-              "label": "SFCTA, _Geary/19th Ave Subway and Regional Connections Study Strategic Case_, Final Report, June 2026.",
+              "label": "SFCTA, Geary/19th Ave Subway and Regional Connections Study Strategic Case, Final Report, June 2026.",
               "url": "https://www.sfcta.org/sites/default/files/2026-06/SFCTA_Geary-19th_Subway_and_Regional_Connections_Study_Final_Report_2026-06-23.pdf"
             },
             {
@@ -135,7 +135,7 @@
           "label": "24 trains an hour at the peak",
           "sources": [
             {
-              "label": "SFCTA, _Geary/19th Ave Subway and Regional Connections Study Strategic Case_, Final Report, June 2026.",
+              "label": "SFCTA, Geary/19th Ave Subway and Regional Connections Study Strategic Case, Final Report, June 2026.",
               "url": "https://www.sfcta.org/sites/default/files/2026-06/SFCTA_Geary-19th_Subway_and_Regional_Connections_Study_Final_Report_2026-06-23.pdf"
             }
           ],
@@ -163,7 +163,7 @@
           "label": "9 years to build a subway phase (peer range 7–10 years)",
           "sources": [
             {
-              "label": "SFCTA, _Geary/19th Ave Subway and Regional Connections Study Strategic Case_, Final Report, June 2026.",
+              "label": "SFCTA, Geary/19th Ave Subway and Regional Connections Study Strategic Case, Final Report, June 2026.",
               "url": "https://www.sfcta.org/sites/default/files/2026-06/SFCTA_Geary-19th_Subway_and_Regional_Connections_Study_Final_Report_2026-06-23.pdf"
             },
             {
@@ -220,7 +220,7 @@
           "label": "24 trains an hour at the peak",
           "sources": [
             {
-              "label": "SFCTA, _Geary/19th Ave Subway and Regional Connections Study Strategic Case_, Final Report, June 2026.",
+              "label": "SFCTA, Geary/19th Ave Subway and Regional Connections Study Strategic Case, Final Report, June 2026.",
               "url": "https://www.sfcta.org/sites/default/files/2026-06/SFCTA_Geary-19th_Subway_and_Regional_Connections_Study_Final_Report_2026-06-23.pdf"
             }
           ],
@@ -273,11 +273,11 @@
           "label": "6 trains an hour, today's T Third peak",
           "sources": [
             {
-              "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
               "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
             }
           ],
-          "method": "Max of `tph` on the T patterns in `transit.json` (5.5–6.0), carried onto the extension."
+          "method": "Max of tph on the T patterns in transit.json (5.5–6.0), carried onto the extension."
         }
       },
       "alignment": [
@@ -297,7 +297,7 @@
           "label": "8 years for a bored extension",
           "sources": [
             {
-              "label": "SFCTA, _Geary/19th Ave Subway and Regional Connections Study Strategic Case_, Final Report, June 2026.",
+              "label": "SFCTA, Geary/19th Ave Subway and Regional Connections Study Strategic Case, Final Report, June 2026.",
               "url": "https://www.sfcta.org/sites/default/files/2026-06/SFCTA_Geary-19th_Subway_and_Regional_Connections_Study_Final_Report_2026-06-23.pdf"
             }
           ],
@@ -320,11 +320,11 @@
           "label": "6 trains an hour, today's T Third peak",
           "sources": [
             {
-              "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
               "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
             }
           ],
-          "method": "Max of `tph` on the T patterns in `transit.json` (5.5–6.0), carried onto the extension."
+          "method": "Max of tph on the T patterns in transit.json (5.5–6.0), carried onto the extension."
         }
       },
       "alignment": [
@@ -519,11 +519,11 @@
           "label": "11 buses an hour, the 38R on Geary's red lanes",
           "sources": [
             {
-              "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
               "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
             }
           ],
-          "method": "Max of `tph` on the 38R patterns in `transit.json` (10–11), applied to the plan corridors."
+          "method": "Max of tph on the 38R patterns in transit.json (10–11), applied to the plan corridors."
         }
       }
     },
@@ -695,11 +695,11 @@
           "label": "11 buses an hour, the 38R on Geary's red lanes",
           "sources": [
             {
-              "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
               "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
             }
           ],
-          "method": "Max of `tph` on the 38R patterns in `transit.json` (10–11), applied to the plan corridors."
+          "method": "Max of tph on the 38R patterns in transit.json (10–11), applied to the plan corridors."
         }
       }
     },
@@ -782,11 +782,11 @@
           "label": "11 buses an hour, the 38R on Geary's red lanes",
           "sources": [
             {
-              "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
               "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
             }
           ],
-          "method": "Max of `tph` on the 38R patterns in `transit.json` (10–11), applied to the plan corridors."
+          "method": "Max of tph on the 38R patterns in transit.json (10–11), applied to the plan corridors."
         }
       }
     },
@@ -894,11 +894,11 @@
           "label": "10 trams an hour on the N after priority (invented)",
           "sources": [
             {
-              "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
               "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
             }
           ],
-          "method": "Today 6.0–6.5 (`transit.json`); the gain is a guess."
+          "method": "Today 6.0–6.5 (transit.json); the gain is a guess."
         }
       }
     },
@@ -954,7 +954,7 @@
           "label": "7 trams an hour on the J after priority (invented)",
           "sources": [
             {
-              "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
               "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
             }
           ],
@@ -1064,7 +1064,7 @@
           "label": "8 trams an hour on the K after priority (invented)",
           "sources": [
             {
-              "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
               "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
             }
           ],
@@ -1084,11 +1084,11 @@
           "label": "2 years to build a garage",
           "sources": [
             {
-              "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
               "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
             }
           ],
-          "method": "Construction-stage median 23–25 months in `calibration.json` (SF permit records), applied to a parking structure."
+          "method": "Construction-stage median 23–25 months in calibration.json (SF permit records), applied to a parking structure."
         }
       },
       "dependsOn": [],
@@ -1102,7 +1102,7 @@
           "label": "750 spaces (invented)",
           "sources": [
             {
-              "label": "DataSF Streets – Active and Retired (`3psu-pn9h`).",
+              "label": "DataSF Streets – Active and Retired (3psu-pn9h).",
               "url": "https://data.sf.gov/d/3psu-pn9h"
             }
           ],
@@ -1122,11 +1122,11 @@
           "label": "2 years to build a garage",
           "sources": [
             {
-              "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
               "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
             }
           ],
-          "method": "Construction-stage median 23–25 months in `calibration.json` (SF permit records), applied to a parking structure."
+          "method": "Construction-stage median 23–25 months in calibration.json (SF permit records), applied to a parking structure."
         }
       },
       "dependsOn": [],
@@ -1140,7 +1140,7 @@
           "label": "300 spaces (invented)",
           "sources": [
             {
-              "label": "DataSF Streets – Active and Retired (`3psu-pn9h`).",
+              "label": "DataSF Streets – Active and Retired (3psu-pn9h).",
               "url": "https://data.sf.gov/d/3psu-pn9h"
             }
           ],
@@ -1418,11 +1418,11 @@
             "label": "Central Freeway stub from the Mission St ramps to Market St",
             "sources": [
               {
-                "label": "DataSF Streets – Active and Retired (`3psu-pn9h`).",
+                "label": "DataSF Streets – Active and Retired (3psu-pn9h).",
                 "url": "https://data.sf.gov/d/3psu-pn9h"
               }
             ],
-            "method": "Vertices of Streets CNN `19204001` from the Mission St ramp junction (−122.4194) to the Market St touchdown."
+            "method": "Vertices of Streets CNN 19204001 from the Mission St ramp junction (−122.4194) to the Market St touchdown."
           }
         }
       ],
@@ -1444,11 +1444,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -1504,7 +1504,7 @@
           "label": "10 m either side of Geary's centreline becomes land (frontage widths invented)",
           "sources": [
             {
-              "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+              "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
               "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
             }
           ],
@@ -1520,11 +1520,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -1554,11 +1554,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -1588,11 +1588,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -1622,11 +1622,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -1656,11 +1656,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -1690,11 +1690,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -1724,11 +1724,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -1758,11 +1758,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -1792,11 +1792,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -1826,11 +1826,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -1860,11 +1860,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -1894,11 +1894,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -1928,11 +1928,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -1962,11 +1962,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -1996,11 +1996,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2030,11 +2030,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2064,11 +2064,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2098,11 +2098,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2132,11 +2132,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2166,11 +2166,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2200,11 +2200,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2234,11 +2234,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2268,11 +2268,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2302,11 +2302,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2336,11 +2336,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2370,11 +2370,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2404,11 +2404,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2438,11 +2438,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2472,11 +2472,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2506,11 +2506,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2540,11 +2540,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2574,11 +2574,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2608,11 +2608,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2642,11 +2642,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2676,11 +2676,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2710,11 +2710,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2744,11 +2744,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2778,11 +2778,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2812,11 +2812,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2846,11 +2846,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2880,11 +2880,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2914,11 +2914,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2948,11 +2948,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -2982,11 +2982,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -3016,11 +3016,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -3050,11 +3050,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -3084,11 +3084,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -3118,11 +3118,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
@@ -3152,11 +3152,11 @@
             "label": "30 months to build a large building",
             "sources": [
               {
-                "label": "SF Housing Simulator dataset `2026-10-29-14e0eccb`: `transit.json`, `parcels/*.json`, `scenarios/fzp/projects.json`, `scenarios/fzp/calibration.json`.",
+                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
                 "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
               }
             ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in `calibration.json`; 30 for full-fill buildings."
+            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
           }
         }
       }
