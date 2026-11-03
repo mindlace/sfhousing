@@ -86,6 +86,30 @@ describe('HeaderScore', () => {
     expect(page.getByTestId('score-delta').elements()).toEqual([]);
   });
 
+  it('names the button by the count alone; the delta describes it and the meter sits outside', async () => {
+    await page.viewport(1024, 768);
+    const onclick = vi.fn();
+    const s = await render(HeaderScore, { props: props({ delta: 1234, onclick }) });
+    await expect.element(bar()).toHaveAccessibleName('12,345 homes added');
+    await expect.element(bar()).toHaveAccessibleDescription(vsFzpText(1234));
+    const meter = page.getByRole('meter');
+    await expect.element(meter).toHaveAccessibleName(rhna.label);
+    expect(bar().element().contains(meter.element())).toBe(false);
+    const delta = page.getByTestId('score-delta');
+    expect(bar().element().contains(delta.element())).toBe(false);
+    // The whole box is the target: a press on the delta or the meter lands on the button.
+    for (const el of [delta.element(), meter.element()]) {
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      expect(hit).toBe(bar().element());
+    }
+    await bar().click();
+    expect(onclick).toHaveBeenCalledTimes(1);
+    await s.rerender(props({ total: null, delta: null }));
+    await expect.element(bar()).toHaveAccessibleName('Simulating…');
+    expect(bar().element().getAttribute('aria-describedby')).toBeNull();
+  });
+
   it('is one button that reports expanded, controls and busy, and calls onclick', async () => {
     await page.viewport(1024, 768);
     const onclick = vi.fn();

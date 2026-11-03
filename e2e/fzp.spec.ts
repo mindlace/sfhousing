@@ -84,11 +84,20 @@ const readout = (page: Page): Locator => page.getByTestId('fzp-readout-label');
 const scoreBar = (page: Page): Locator => page.getByTestId('score-bar');
 /** "Another future", made visible first (below 768 px it waits in the header Menu). */
 const anotherFuture = (page: Page): Promise<Locator> => headerAction(page, 'Another future');
-const scoreDetails = (page: Page): Locator => page.getByRole('region', { name: 'Score details' });
-/** Opens the header score bar's details (once) and returns them. */
+/** The dock's Results face (`data-testid="score-details"`), which the header score flips to. */
+const scoreDetails = (page: Page): Locator => page.getByRole('region', { name: 'Results' });
+/**
+ * Flips the dock to Results from the header score (once), opens its Sources disclosure (the
+ * future's controls and "Where these numbers come from" sit there) and returns it.
+ */
 async function openScore(page: Page): Promise<Locator> {
   if ((await scoreBar(page).getAttribute('aria-expanded')) !== 'true') await scoreBar(page).click();
   await expect(scoreDetails(page)).toBeVisible();
+  const sources = scoreDetails(page).getByTestId('fzp-sources');
+  if ((await sources.getAttribute('open')) === null) {
+    await sources.locator(':scope > summary').click();
+    await expect(sources).toHaveAttribute('open', '');
+  }
   return scoreDetails(page);
 }
 const sourcesDialog = (page: Page): Locator =>
@@ -205,7 +214,7 @@ async function bareMapPoint(page: Page): Promise<[number, number]> {
   return point!;
 }
 
-/** Opens the sources dialog, through the header score bar's details. */
+/** Opens the sources dialog, through the dock's Results face. */
 async function openSources(page: Page): Promise<Locator> {
   await (
     await openScore(page)
@@ -756,7 +765,7 @@ test('a notice is a pill at the top: it moves nothing on desktop and pushes the 
   }
 });
 
-test('axe: the score details open', async ({ page }) => {
+test('axe: the Results face open', async ({ page }) => {
   await gotoFzp(page);
   await openScore(page);
   await expectNoA11yViolations(page);

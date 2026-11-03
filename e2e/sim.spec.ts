@@ -1,5 +1,5 @@
-// /sim e2e (plan 3, Task 12): the /fzp redirect, the header score bar and phone Menu, the policy
-// panel, a transit rule, a Paint stroke and its undo, a category protection, Back and Forward
+// /sim e2e (plan 3, Task 12; the dock, sim-ux plan 2): the /fzp redirect, the header score and
+// phone Menu, the policy dock (tabs, Results, rail, phone sheet), a transit rule, a Paint stroke and its undo, a category protection, Back and Forward
 // after a reroll, and the accessibility checks. Runs against the VITE_E2E build, which exposes
 // window.__sfhFzp (src/lib/fzp/debug.ts, with /sim's `levers` field) and window.__sfhMap.
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -58,8 +58,16 @@ async function gotoSim(
 }
 
 const scoreBar = (page: Page): Locator => page.getByTestId('score-bar');
-const scoreDetails = (page: Page): Locator => page.getByRole('region', { name: 'Score details' });
-const panel = (page: Page): Locator => page.getByTestId('policy-panel');
+/** The dock's Results face (`data-testid="score-details"`): Run and the header score show it. */
+const scoreDetails = (page: Page): Locator => page.getByRole('region', { name: 'Results' });
+/** The policy dock. Its root is `display: contents`: the docked panel, rail or sheet is the box. */
+const panel = (page: Page): Locator => page.getByTestId('dock');
+/** The docked panel (from md). */
+const dockPanel = (page: Page): Locator => page.locator('.sfh-dock-panel');
+/** The phone sheet's handle (below md). */
+const handle = (page: Page): Locator => page.getByTestId('dock-handle');
+const tabOf = (page: Page, name: string): Locator =>
+  panel(page).getByRole('tab', { name, exact: true });
 const menuButton = (page: Page): Locator =>
   page.getByRole('banner').getByRole('button', { name: 'Menu', exact: true });
 /** Hidden ones included: below md it waits in the Menu, which closes when the sheet opens. */
@@ -75,18 +83,38 @@ async function openScore(page: Page): Promise<Locator> {
   return scoreDetails(page);
 }
 
-/** The policy panel, opened if it is not already (docked from md, the sheet through Menu below). */
+/** The dock shows its body: the docked panel from md, the sheet open (peek or full) below. */
+const dockShown = (page: Page): Promise<boolean> =>
+  page.evaluate(
+    () =>
+      !!document.querySelector('.sfh-dock-panel') ||
+      document.querySelector('[data-testid="dock-handle"]')?.getAttribute('aria-expanded') ===
+        'true'
+  );
+
+/** The dock, opened if it is not already (from md the Policy button, below md the handle). */
 async function openPolicy(page: Page): Promise<Locator> {
-  if (!(await panel(page).isVisible())) await (await headerAction(page, 'Policy')).click();
-  await expect(panel(page)).toBeVisible();
+  if (!(await dockShown(page))) {
+    if (await handle(page).isVisible()) await handle(page).click();
+    else await (await headerAction(page, 'Policy')).click();
+  }
+  await expect.poll(() => dockShown(page)).toBe(true);
   return panel(page);
 }
 
-/** A panel section's disclosure, expanded. */
-async function expandSection(page: Page, title: string): Promise<void> {
-  const button = panel(page).getByRole('button', { name: title, exact: true });
-  if ((await button.getAttribute('aria-expanded')) !== 'true') await button.click();
-  await expect(button).toHaveAttribute('aria-expanded', 'true');
+/** Opens the dock (on the editing face, in Setup) and selects the tab `name`. */
+async function openTab(page: Page, name: string): Promise<void> {
+  await openPolicy(page);
+  await tabOf(page, name).click();
+  await expect(tabOf(page, name)).toHaveAttribute('aria-selected', 'true');
+}
+
+/** Below md: folds an open sheet to its handle (a no-op from md). */
+async function closeSheet(page: Page): Promise<void> {
+  if (!(await handle(page).isVisible())) return;
+  if ((await handle(page).getAttribute('aria-expanded')) !== 'true') return;
+  await panel(page).getByRole('button', { name: 'Collapse Policy' }).click();
+  await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
 }
 
 /**
@@ -94,8 +122,7 @@ async function expandSection(page: Page, title: string): Promise<void> {
  * Playwright waits for it to be enabled); the form opens named `title` exactly.
  */
 async function openBrushForm(page: Page, title: string): Promise<Locator> {
-  await openPolicy(page);
-  await expandSection(page, 'New zoning rules');
+  await openTab(page, 'Transit');
   await panel(page).getByRole('button', { name: 'Add transit rule' }).click({ timeout: 20_000 });
   const form = panel(page).getByRole('form', { name: title, exact: true });
   await expect(form).toBeVisible();
@@ -123,15 +150,22 @@ async function strokeOnce(page: Page, isMobile: boolean): Promise<void> {
 }
 
 /**
- * Chooses a stroke tool from the open panel. On a phone this closes the sheet for the floating
- * tool bar (layout ruling 5).
+ * Chooses a stroke tool from the open Paint tab. On a phone this folds the sheet to its handle for
+ * the floating tool bar (layout ruling 5).
  */
 async function chooseTool(page: Page, isMobile: boolean, choose: () => Promise<void>) {
   await choose();
   if (isMobile) {
-    await expect(panel(page)).toBeHidden();
+    await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByTestId('phone-tool-bar')).toBeVisible();
   }
+}
+
+/** The phone tool bar's Done: back to Move, the sheet open full on the Paint tab. */
+async function toolBarDone(page: Page): Promise<void> {
+  await page.getByTestId('phone-tool-bar').getByRole('button', { name: 'Done' }).click();
+  await expect(handle(page)).toHaveAttribute('aria-expanded', 'true');
+  await expect(tabOf(page, 'Paint')).toHaveAttribute('aria-selected', 'true');
 }
 
 /**
@@ -158,7 +192,7 @@ const leverSeen = (page: Page) =>
   );
 
 /**
- * From now on, each time the "Updating the simulation" pill shows, records the policy panel's and
+ * From now on, each time the "Updating the simulation" pill shows, records the docked panel's and
  * the time bar's boxes at that moment (a MutationObserver, so a pill that shows briefly is still
  * measured).
  */
@@ -167,14 +201,17 @@ async function watchBoxesWhileUpdating(page: Page): Promise<void> {
     type Box = { x: number; y: number; width: number; height: number };
     const w = window as unknown as { __updatingBoxes?: { panel: Box; bar: Box }[] };
     const row = document.querySelector('[data-testid="fzp-lever-status"]')!;
-    const box = (testid: string): Box => {
-      const r = document.querySelector(`[data-testid="${testid}"]`)!.getBoundingClientRect();
+    const box = (selector: string): Box => {
+      const r = document.querySelector(selector)!.getBoundingClientRect();
       return { x: r.x, y: r.y, width: r.width, height: r.height };
     };
     w.__updatingBoxes = [];
     new MutationObserver(() => {
       if (!(row.textContent ?? '').includes('Updating the simulation')) return;
-      w.__updatingBoxes!.push({ panel: box('policy-panel'), bar: box('fzp-scrubber') });
+      w.__updatingBoxes!.push({
+        panel: box('.sfh-dock-panel'),
+        bar: box('[data-testid="fzp-scrubber"]')
+      });
     }).observe(row, { childList: true, subtree: true, characterData: true });
   });
 }
@@ -221,7 +258,7 @@ test('/fzp?seed=5 lands on /sim?seed=5 and its levers come into force', async ({
   expect(await fzp(page, 'seed')).toBe(5);
 });
 
-test('/sim starts on the Family Zoning Plan; the score bar opens the score details', async ({
+test('/sim starts on the Family Zoning Plan; the header score flips the dock to Results', async ({
   page
 }) => {
   await gotoSim(page);
@@ -259,60 +296,87 @@ test('at 375 px the links and Policy wait in Menu; the score bar stays pinned', 
   await expect(scoreBar(page)).toBeVisible();
 });
 
-test('from md the Policy button closes and reopens the docked panel and returns focus', async ({
+test('from md the Policy button folds the dock to a rail and reopens it, and returns focus', async ({
   isMobile,
   page
 }) => {
   test.skip(isMobile, 'the docked panel is md+');
   await gotoSim(page);
-  // Docked and open by default, without taking focus.
-  await expect(panel(page)).toBeVisible();
+  // Docked and open by default on Transit, without taking focus.
+  await expect(dockPanel(page)).toBeVisible();
+  await expect(tabOf(page, 'Transit')).toHaveAttribute('aria-selected', 'true');
   await expect(policyButton(page)).toHaveAttribute('aria-expanded', 'true');
-  await expect(panel(page)).not.toBeFocused();
+  expect(await panel(page).evaluate((d) => d.contains(document.activeElement))).toBe(false);
   await policyButton(page).click();
-  await expect(panel(page)).toBeHidden();
+  await expect(dockPanel(page)).toBeHidden();
+  await expect(page.getByTestId('dock-rail')).toBeVisible();
   await expect(policyButton(page)).toHaveAttribute('aria-expanded', 'false');
 
-  // Opened by the user: focus moves into the panel; Escape closes it and focus returns.
+  // Opened by the user: focus moves to the selected tab; Escape folds it and focus returns.
   await policyButton(page).click();
-  await expect(panel(page)).toBeVisible();
+  await expect(dockPanel(page)).toBeVisible();
   await expect(policyButton(page)).toHaveAttribute('aria-expanded', 'true');
-  await expect(panel(page)).toBeFocused();
+  await expect(tabOf(page, 'Transit')).toBeFocused();
   await page.keyboard.press('Escape');
-  await expect(panel(page)).toBeHidden();
+  await expect(dockPanel(page)).toBeHidden();
   await expect(policyButton(page)).toBeFocused();
 
   await policyButton(page).click();
-  await panel(page).getByRole('button', { name: 'Close policy' }).click();
-  await expect(panel(page)).toBeHidden();
+  await panel(page).getByRole('button', { name: 'Collapse Policy' }).click();
+  await expect(dockPanel(page)).toBeHidden();
   await expect(policyButton(page)).toBeFocused();
 });
 
-test('below md Policy opens the modal sheet from the Menu and focus returns to Menu', async ({
+test('below md the sheet opens from the handle or the Menu, and focus returns to Menu', async ({
   isMobile,
   page
 }) => {
   test.skip(!isMobile, 'the sheet is below md');
   await gotoSim(page);
-  // Closed by default; the sheet opens from the Menu and is modal.
-  await expect(panel(page)).toBeHidden();
+  // Closed to its handle by default; the sheet is not modal.
+  await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
+  await expect(handle(page)).toHaveText('Transit');
+  await handle(page).click();
+  await expect(tabOf(page, 'Transit')).toBeVisible();
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+  await handle(page).click();
+  await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
+
   await openHeaderMenu(page);
   await expect(policyButton(page)).toHaveAttribute('aria-expanded', 'false');
   await policyButton(page).click();
-  await expect(panel(page)).toBeVisible();
+  await expect(handle(page)).toHaveAttribute('aria-expanded', 'true');
   await expect(policyButton(page)).toHaveAttribute('aria-expanded', 'true');
-  await expect(page.locator('dialog[open]')).toHaveCount(1);
-  await panel(page).getByRole('button', { name: 'Close policy' }).click();
-  await expect(panel(page)).toBeHidden();
+  await panel(page).getByRole('button', { name: 'Collapse Policy' }).click();
+  await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
   await expect(policyButton(page)).toHaveAttribute('aria-expanded', 'false');
   // The Policy button waits in the closed Menu, so focus returns to the Menu button.
   await expect(menuButton(page)).toBeFocused();
 
   await (await headerAction(page, 'Policy')).click();
-  await expect(panel(page)).toBeVisible();
+  await expect(handle(page)).toHaveAttribute('aria-expanded', 'true');
   await page.keyboard.press('Escape');
-  await expect(panel(page)).toBeHidden();
+  await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
   await expect(menuButton(page)).toBeFocused();
+});
+
+test('the header score flips the dock to Results and back in Setup; in a run it keeps Results', async ({
+  page
+}) => {
+  await gotoSim(page);
+  await openScore(page);
+  expect(await fzp(page, 'runPhase')).toBe('setup');
+  await expect(panel(page).getByRole('button', { name: 'Edit policy' })).toBeVisible();
+  await scoreBar(page).click();
+  await expect(scoreDetails(page)).toBeHidden();
+  await expect(scoreBar(page)).toHaveAttribute('aria-expanded', 'false');
+  await expect(tabOf(page, 'Transit')).toBeVisible();
+
+  await startRun(page);
+  await expect(scoreDetails(page)).toBeVisible();
+  await scoreBar(page).click();
+  await expect(scoreDetails(page)).toBeVisible();
+  expect(await fzp(page, 'runPhase')).toBe('run');
 });
 
 // ---- brushes ------------------------------------------------------------------------------------
@@ -354,7 +418,7 @@ test('a notice never moves the docked panel or the time bar', async ({ page, isM
   const before = await leverStatus(page);
   const form = await openBrushForm(page, 'Add a transit rule');
   await form.getByRole('checkbox', { name: /^Muni Metro/ }).check();
-  const panelBox = await panel(page).boundingBox();
+  const panelBox = await dockPanel(page).boundingBox();
   const barBox = await page.getByTestId('fzp-scrubber').boundingBox();
   await watchBoxesWhileUpdating(page);
   // Saving the rule sends a revision: the "Updating the simulation" pill shows until it is current.
@@ -378,30 +442,23 @@ test('a notice never moves the docked panel or the time bar', async ({ page, isM
     expect(s.panel).toEqual(panelBox);
     expect(s.bar).toEqual(barBox);
   }
-  expect(await panel(page).boundingBox()).toEqual(panelBox);
+  expect(await dockPanel(page).boundingBox()).toEqual(panelBox);
   expect(await page.getByTestId('fzp-scrubber').boundingBox()).toEqual(barBox);
 });
 
 test('a Paint stroke adds a custom brush and Ctrl+Z removes it', async ({ isMobile, page }) => {
   await gotoSim(page);
-  await openPolicy(page);
-  await expandSection(page, 'Custom zoning');
+  await openTab(page, 'Paint');
   const paint = panel(page).getByRole('radio', { name: 'Paint', exact: true });
   await expect(paint).toBeEnabled();
   await chooseTool(page, isMobile, () => paint.click());
   await strokeOnce(page, isMobile);
 
-  if (isMobile) {
-    // Done goes back to Move and reopens the sheet.
-    await page.getByTestId('phone-tool-bar').getByRole('button', { name: 'Done' }).click();
-    await expect(panel(page)).toBeVisible();
-  }
+  // Done goes back to Move and reopens the sheet on Paint.
+  if (isMobile) await toolBarDone(page);
   await expect(customList(page)).toHaveCount(1);
   await expect(customList(page).first()).toContainText(/Allow \d+ stor/);
-  if (isMobile) {
-    await panel(page).getByRole('button', { name: 'Close policy' }).click();
-    await expect(panel(page)).toBeHidden();
-  }
+  await closeSheet(page);
 
   await page.keyboard.press('Control+z');
   await openPolicy(page);
@@ -415,8 +472,7 @@ test('a category protection shows the protections line in the score', async ({
 }) => {
   await gotoSim(page);
   const before = await leverStatus(page);
-  await openPolicy(page);
-  await expandSection(page, 'Protections');
+  await openTab(page, 'Protect');
   await panel(page).getByRole('checkbox', { name: 'Rent-controlled buildings (likely)' }).check();
 
   await expect
@@ -425,8 +481,7 @@ test('a category protection shows the protections line in the score', async ({
       return l.status === 'current' && (l.sentRev ?? -1) > (before.sentRev ?? -1);
     })
     .toBe(true);
-  // The phone sheet is modal: close it to reach the score bar.
-  if (isMobile) await panel(page).getByRole('button', { name: 'Close policy' }).click();
+  void isMobile;
   const details = await openScore(page);
   await expect(details).toContainText(
     /\d[\d,]* lots? protected: [\d,]+ fewer homes? of zoned capacity/
@@ -480,45 +535,71 @@ test('Back after a reroll', async ({ page }) => {
 
 // ---- accessibility and layout -------------------------------------------------------------------
 
-test('axe: the policy panel open', async ({ page }) => {
-  await gotoSim(page);
-  await openPolicy(page);
-  await expandSection(page, 'New zoning rules');
-  await expandSection(page, 'Custom zoning');
-  await expandSection(page, 'Protections');
-  await expectNoA11yViolations(page);
-});
+for (const name of ['Transit', 'Paint', 'Protect']) {
+  test(`axe: the dock open on ${name}`, async ({ page }) => {
+    await gotoSim(page);
+    await openTab(page, name);
+    await expectNoA11yViolations(page);
+  });
+}
 
 // ---- Setup and Run (spec §1) ----------------------------------------------------------------------
 
-test('Run locks the policy and Change policy returns to the present', async ({
-  isMobile,
-  page
-}) => {
+test('Run flips the dock to Results and Edit policy returns to the present', async ({ page }) => {
   await gotoSim(page);
   expect(await fzp(page, 'runPhase')).toBe('setup');
-  // The phone sheet is modal: Run sits under it, so it starts closed there.
-  if (isMobile && (await panel(page).isVisible())) {
-    await panel(page).getByRole('button', { name: 'Close policy' }).click();
-  }
+  await openTab(page, 'Protect');
   await page.getByRole('button', { name: 'Run', exact: true }).click();
   await expect.poll(() => fzp(page, 'runPhase')).toBe('run');
   await expect
     .poll(() => fzp(page, 'day'), { timeout: 20_000 })
     .toBeGreaterThan(await fzp(page, 'asOf'));
-  await openPolicy(page);
-  const change = panel(page).getByRole('button', { name: 'Change policy' });
-  await expect(change).toBeVisible();
-  await expandSection(page, 'Protections');
-  const rent = panel(page).getByRole('checkbox', { name: 'Rent-controlled buildings (likely)' });
-  await expect(rent).toBeDisabled();
+  // A run offers Results only: no tabs, no Undo, and the header score reports it.
+  await expect(scoreDetails(page)).toBeVisible();
+  await expect(panel(page).getByRole('tablist')).toHaveCount(0);
+  await expect(scoreBar(page)).toHaveAttribute('aria-expanded', 'true');
+  const edit = panel(page).getByRole('button', { name: 'Edit policy' });
+  await expect(edit).toBeVisible();
 
-  await change.click();
+  await edit.click();
   await expect.poll(() => fzp(page, 'runPhase')).toBe('setup');
   await expect.poll(() => fzp(page, 'day')).toBe(await fzp(page, 'asOf'));
   expect(await fzp(page, 'playing')).toBe(false);
-  await expect(rent).toBeEnabled();
+  // Back on the tab used before Run, its controls live.
+  await expect(tabOf(page, 'Protect')).toHaveAttribute('aria-selected', 'true');
+  await expect(tabOf(page, 'Protect')).toBeFocused();
+  await expect(
+    panel(page).getByRole('checkbox', { name: 'Rent-controlled buildings (likely)' })
+  ).toBeEnabled();
   await expect(slider(page)).toBeDisabled();
+});
+
+test('at 375 px in a run the sheet peeks Results, and the scrubber and footer links stay unobscured', async ({
+  isMobile,
+  page
+}) => {
+  test.skip(!isMobile, 'the phone layout');
+  await gotoSim(page, '/sim', { run: true });
+  await expect(scoreDetails(page)).toBeVisible();
+  await expect(handle(page)).toHaveText('Results');
+  const sheet = (await page.locator('.sfh-dock-sheet').boundingBox())!;
+  const bar = (await page.getByTestId('fzp-scrubber').boundingBox())!;
+  const viewport = page.viewportSize()!;
+  // A peek: at most 40dvh, above the time bar.
+  expect(sheet.height).toBeLessThanOrEqual(viewport.height * 0.4 + 1);
+  expect(sheet.y + sheet.height).toBeLessThanOrEqual(bar.y + 0.5);
+  // Every scrubber control is the topmost element at its centre.
+  for (const control of await page.getByTestId('fzp-scrubber').getByRole('button').all()) {
+    if (!(await control.isVisible())) continue;
+    const hit = await control.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return !!top && el.contains(top);
+    });
+    expect(hit, `${await control.getAttribute('aria-label')} is covered`).toBe(true);
+  }
+  await expectNoHorizontalScroll(page);
+  await expectFooterReachable(page);
 });
 
 test('the Today marker in a run returns to Setup; Replay at the horizon does not', async ({
@@ -543,11 +624,11 @@ test('the Today marker in a run returns to Setup; Replay at the horizon does not
   await expect(page.getByTestId('fzp-play-label')).toHaveText('Run');
 });
 
-test('axe: the policy panel open during a run', async ({ page }) => {
+test('axe: the dock on Results during a run', async ({ page }) => {
   await gotoSim(page, '/sim', { run: true });
   await openPolicy(page);
-  await expect(panel(page).getByRole('button', { name: 'Change policy' })).toBeVisible();
-  await expandSection(page, 'Protections');
+  await expect(panel(page).getByRole('button', { name: 'Edit policy' })).toBeVisible();
+  await expect(scoreDetails(page)).toBeVisible();
   await expectNoA11yViolations(page);
 });
 
@@ -605,8 +686,12 @@ test('from md the docked panel leaves the zoom and compass control uncovered', a
   test.skip(isMobile, 'the docked panel is md+, and a coarse pointer gets no navigation control');
   await page.setViewportSize({ width: 1280, height: 800 });
   await gotoSim(page);
-  await expect(panel(page)).toBeVisible();
-  await expectNavControlClear(page, panel(page));
+  await expect(dockPanel(page)).toBeVisible();
+  await expectNavControlClear(page, dockPanel(page));
+  // Folded to the rail, the control moves beside the rail.
+  await (await headerAction(page, 'Policy')).click();
+  await expect(page.getByTestId('dock-rail')).toBeVisible();
+  await expectNavControlClear(page, page.getByTestId('dock-rail'));
 });
 
 test('below md on a fine pointer the phone tool bar leaves the zoom control uncovered', async ({
@@ -616,8 +701,7 @@ test('below md on a fine pointer the phone tool bar leaves the zoom control unco
   test.skip(isMobile, 'a coarse pointer gets no navigation control');
   await page.setViewportSize({ width: 700, height: 800 });
   await gotoSim(page);
-  await openPolicy(page);
-  await expandSection(page, 'Custom zoning');
+  await openTab(page, 'Paint');
   await chooseTool(page, true, () =>
     panel(page).getByRole('radio', { name: 'Paint', exact: true }).click()
   );
@@ -634,7 +718,7 @@ test('at 375 px: no horizontal scroll, and the footer links stay unobscured', as
   await expectNoHorizontalScroll(page);
   await expectFooterReachable(page);
 
-  // With the score details open.
+  // With the sheet on Results (the header score).
   await openScore(page);
   await expectNoHorizontalScroll(page);
   await expectFooterReachable(page);
@@ -642,8 +726,7 @@ test('at 375 px: no horizontal scroll, and the footer links stay unobscured', as
   await expect(scoreDetails(page)).toBeHidden();
 
   // With the floating tool bar showing (a stroke tool chosen).
-  await openPolicy(page);
-  await expandSection(page, 'Custom zoning');
+  await openTab(page, 'Paint');
   await chooseTool(page, true, () =>
     panel(page).getByRole('radio', { name: 'Paint', exact: true }).click()
   );
@@ -653,15 +736,9 @@ test('at 375 px: no horizontal scroll, and the footer links stay unobscured', as
 
 // ---- permitting timelines (plan 4) ----------------------------------------------------------------
 
-/** The "Permitting timelines" disclosure: its name carries the set's label ("…, <summary>"). */
-const timingToggle = (page: Page): Locator =>
-  panel(page).getByRole('button', { name: /^Permitting timelines/ });
-
+/** The Permits tab: the permitting timelines. */
 async function openTiming(page: Page): Promise<void> {
-  await openPolicy(page);
-  const toggle = timingToggle(page);
-  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await openTab(page, 'Permits');
 }
 
 const timingLabel = (page: Page): Locator => panel(page).getByTestId('timing-label');
@@ -688,7 +765,6 @@ test('choosing a preset sends timers and the label changes', async ({ page }) =>
   await panel(page).getByLabel('Preset').selectOption({ label: "Permits at San Diego's pace" });
   await expectNewRevision(page, before);
   await expect(timingLabel(page)).toHaveText("Permits at San Diego's pace");
-  await expect(timingToggle(page)).toContainText("Permits at San Diego's pace");
 });
 
 test('a keyboard edit makes the set custom and Revert undoes it', async ({ page }) => {
@@ -743,7 +819,7 @@ test('route shares sum to 100', async ({ page }) => {
   await expect(share('Streamlined')).toHaveValue('0');
 });
 
-test('axe: the timelines section open, details open (1280 px; the 375 px sheet on mobile)', async ({
+test('axe: the Permits tab open, details open (1280 px; the 375 px sheet on mobile)', async ({
   page
 }) => {
   await gotoSim(page);
@@ -760,7 +836,7 @@ test('at 375 px with the timelines open: no horizontal scroll', async ({ isMobil
   await routeTimeline(page, 'Discretionary').getByRole('button').nth(1).click();
   await expect(panel(page).getByLabel('Typical months')).toBeVisible();
   await expectNoHorizontalScroll(page);
-  const box = (await panel(page).boundingBox())!;
+  const box = (await page.locator('.sfh-dock-sheet').boundingBox())!;
   expect(box.x + box.width).toBeLessThanOrEqual(375);
 });
 
@@ -778,16 +854,14 @@ const deckIds = (page: Page) =>
 const viewButtons = (page: Page): Locator =>
   page.getByRole('banner').getByRole('button', { name: 'View', exact: true, includeHidden: true });
 
-/** Run from Setup (the phone sheet, modal, closed first), until the run is on. */
+/** Run from Setup, until the run is on (the phone sheet sits above the time bar, never on it). */
 async function pressRun(page: Page, isMobile: boolean): Promise<void> {
-  if (isMobile && (await panel(page).isVisible())) {
-    await panel(page).getByRole('button', { name: 'Close policy' }).click();
-  }
+  void isMobile;
   await page.getByRole('button', { name: 'Run', exact: true }).click();
   await expect.poll(() => fzp(page, 'runPhase')).toBe('run');
 }
 
-test('Setup shows the height limits and transit; Run hides them; Change policy brings them back', async ({
+test('Setup shows the height limits and transit; Run hides them; Edit policy brings them back', async ({
   isMobile,
   page
 }) => {
@@ -802,8 +876,9 @@ test('Setup shows the height limits and transit; Run hides them; Change policy b
   await openHeaderMenu(page);
   await expect(viewButtons(page)).toHaveCount(0);
 
+  await page.keyboard.press('Escape'); // the Menu
   await openPolicy(page);
-  await panel(page).getByRole('button', { name: 'Change policy' }).click();
+  await panel(page).getByRole('button', { name: 'Edit policy' }).click();
   await expect.poll(() => fzp(page, 'runPhase')).toBe('setup');
   await expect.poll(() => deckIds(page)).toContain(LIMITS_LAYER);
   await expect.poll(() => mapVisibility(page, 'transit-access')).toBe('visible');
@@ -961,27 +1036,19 @@ test('at 768 px the header fits in Setup and in Run, and the score stays put', a
 test('the eraser outlines painted lots, only while chosen', async ({ isMobile, page }) => {
   const OUTLINE_LAYER = 'sim-painted-outline';
   await gotoSim(page);
-  await openPolicy(page);
-  await expandSection(page, 'Custom zoning');
+  await openTab(page, 'Paint');
   const tool = (name: string) => panel(page).getByRole('radio', { name, exact: true });
   await chooseTool(page, isMobile, () => tool('Paint').click());
   await strokeOnce(page, isMobile);
-  if (isMobile) {
-    await page.getByTestId('phone-tool-bar').getByRole('button', { name: 'Done' }).click();
-    await expect(panel(page)).toBeVisible();
-  }
+  if (isMobile) await toolBarDone(page);
   await expect(customList(page)).toHaveCount(1);
   expect(await deckIds(page)).not.toContain(OUTLINE_LAYER);
 
   await chooseTool(page, isMobile, () => tool('Erase').click());
   await expect.poll(() => deckIds(page)).toContain(OUTLINE_LAYER);
 
-  if (isMobile) {
-    await page.getByTestId('phone-tool-bar').getByRole('button', { name: 'Done' }).click();
-    await expect(panel(page)).toBeVisible();
-  } else {
-    await tool('Move').click();
-  }
+  if (isMobile) await toolBarDone(page);
+  else await tool('Move').click();
   await expect.poll(() => deckIds(page)).not.toContain(OUTLINE_LAYER);
 });
 
@@ -990,18 +1057,14 @@ test('the eraser outlines painted lots, only while chosen', async ({ isMobile, p
 test('a Paint stroke shows its buildings, then they fade', async ({ isMobile, page }) => {
   const isFeedback = (ids: string[]) => ids.some((id) => id.startsWith('sim-feedback-'));
   await gotoSim(page);
-  await openPolicy(page);
-  await expandSection(page, 'Custom zoning');
+  await openTab(page, 'Paint');
   const tool = (name: string) => panel(page).getByRole('radio', { name, exact: true });
   await chooseTool(page, isMobile, () => tool('Paint').click());
   await strokeOnce(page, isMobile);
   await expect.poll(async () => isFeedback(await deckIds(page)), { timeout: 10_000 }).toBe(true);
   await expect.poll(async () => isFeedback(await deckIds(page)), { timeout: 4_000 }).toBe(false);
 
-  if (isMobile) {
-    await page.getByTestId('phone-tool-bar').getByRole('button', { name: 'Done' }).click();
-    await expect(panel(page)).toBeVisible();
-  }
+  if (isMobile) await toolBarDone(page);
   await expect(customList(page)).toHaveCount(1);
   // An Erase stroke never adds one: sample the layers through the stroke and after it.
   await chooseTool(page, isMobile, () => tool('Erase').click());

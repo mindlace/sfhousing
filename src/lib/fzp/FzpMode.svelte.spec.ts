@@ -69,6 +69,7 @@ type Over = Partial<{
   scoreExpanded: boolean;
   onscore: () => void;
   scoreControls: string;
+  bottomExtra: number;
 }>;
 
 function setup(over: Over = {}) {
@@ -115,23 +116,27 @@ const statusText = () =>
 /** The header's score bar (the pinned slot). */
 const scoreButton = () =>
   page.getByTestId('header-pinned').getByRole('button', { name: /homes added|Simulating/ });
-/** Opens the score details from the score bar (once) and returns them. */
+/**
+ * Shows the Results face from the header score (once), with its Sources disclosure open, and
+ * returns it: the host stands in for the page's dock, showing FzpMode's Results snippet in a
+ * region named Results while expanded.
+ */
 async function details() {
   const b = scoreButton();
   await expect.element(b).toBeInTheDocument();
   if (b.element().getAttribute('aria-expanded') !== 'true') await b.click();
-  return page.getByRole('region', { name: 'Score details' });
+  const region = page.getByRole('region', { name: 'Results' });
+  await expect.element(region).toBeInTheDocument();
+  // The future's controls and "Where these numbers come from" sit in the Sources disclosure.
+  const sources = region.getByTestId('fzp-sources').element() as HTMLDetailsElement;
+  sources.open = true;
+  return region;
 }
 /** The shown future as the Results face states it ("This future: #7 (representative)"). */
 const future = () => {
   const d = window.__sfhFzp!;
   return `This future: #${d.seed}${d.representative ? ' (representative)' : ''}`;
 };
-/**
- * Tests that read the score details. The header score no longer opens them (HeaderScore), and the
- * dock's Results face is not wired to FzpMode until Task 3 of plan 2, so these wait for it.
- */
-const itResults = it.skip;
 const card = () => page.getByRole('region', { name: /1234 Mission St|Block 3512|Project details/ });
 
 /** The latest scenario request's rev on the current worker. */
@@ -548,7 +553,7 @@ describe('FzpMode on /sim: header actions and score copy', () => {
     expect(names).toEqual(['Policy', 'Another future']);
   });
 
-  itResults('names your policy in the details of a customised policy', async () => {
+  it('names your policy in the details of a customised policy', async () => {
     // a customised policy: compared with the Family Zoning Plan as written
     const s = setup({ levers: { ...DEFAULT_LEVERS, compare: 'fzp' } });
     await toReady(s);
@@ -556,14 +561,14 @@ describe('FzpMode on /sim: header actions and score copy', () => {
     await expect.element(board.getByText('What your policy added')).toBeVisible();
   });
 
-  itResults('keeps the Family Zoning Plan copy without levers (/fzp)', async () => {
+  it('keeps the Family Zoning Plan copy without levers (/fzp)', async () => {
     const s = setup();
     await toReady(s);
     const board = await details();
     await expect.element(board.getByText('What the plan added')).toBeVisible();
   });
 
-  itResults('keeps the Family Zoning Plan copy for the default levers', async () => {
+  it('keeps the Family Zoning Plan copy for the default levers', async () => {
     const s = setup({ levers: DEFAULT_LEVERS });
     await toReady(s);
     const board = await details();
@@ -641,51 +646,45 @@ describe('FzpMode rerolls and the representative flag', () => {
     await expect.poll(future).toBe('This future: #4242');
   });
 
-  itResults(
-    "'Back to the representative future' sends reroll null and clears the URL seed",
-    async () => {
-      const s = setup({ urlSeed: 5 });
-      await toReady(s, 5);
-      await expect.poll(future).toBe('This future: #5');
-      await (
-        await details()
-      )
-        .getByRole('button', { name: 'Back to the representative future' })
-        .first()
-        .click();
-      const reroll = s.w().lastOf('reroll')!;
-      expect(reroll.seed).toBeNull();
-      s.w().emit(timelineMsg(reroll.rev, 31));
-      await expect.poll(future).toBe('This future: #31 (representative)');
-      expect(s.onurlseed.mock.calls).toEqual([[null]]);
-    }
-  );
+  it("'Back to the representative future' sends reroll null and clears the URL seed", async () => {
+    const s = setup({ urlSeed: 5 });
+    await toReady(s, 5);
+    await expect.poll(future).toBe('This future: #5');
+    await (
+      await details()
+    )
+      .getByRole('button', { name: 'Back to the representative future' })
+      .first()
+      .click();
+    const reroll = s.w().lastOf('reroll')!;
+    expect(reroll.seed).toBeNull();
+    s.w().emit(timelineMsg(reroll.rev, 31));
+    await expect.poll(future).toBe('This future: #31 (representative)');
+    expect(s.onurlseed.mock.calls).toEqual([[null]]);
+  });
 
-  itResults(
-    "'Back to the representative future' is disabled while a reroll is busy or the worker stopped",
-    async () => {
-      vi.spyOn(console, 'error').mockImplementation(() => {});
-      const s = setup({ urlSeed: 5 });
-      await toReady(s, 5);
-      const board = await details();
-      const back = () =>
-        board.getByRole('button', { name: 'Back to the representative future' }).first();
-      await expect.element(back()).not.toHaveAttribute('aria-disabled');
+  it("'Back to the representative future' is disabled while a reroll is busy or the worker stopped", async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = setup({ urlSeed: 5 });
+    await toReady(s, 5);
+    const board = await details();
+    const back = () =>
+      board.getByRole('button', { name: 'Back to the representative future' }).first();
+    await expect.element(back()).not.toHaveAttribute('aria-disabled');
 
-      anotherKeyed();
-      const reroll = s.w().lastOf('reroll')!;
-      await expect.element(back()).toHaveAttribute('aria-disabled', 'true');
-      (back().element() as HTMLElement).click();
-      expect(s.w().allOf('reroll')).toHaveLength(1);
-      s.w().emit(timelineMsg(reroll.rev, 6));
-      await expect.element(back()).not.toHaveAttribute('aria-disabled');
+    anotherKeyed();
+    const reroll = s.w().lastOf('reroll')!;
+    await expect.element(back()).toHaveAttribute('aria-disabled', 'true');
+    (back().element() as HTMLElement).click();
+    expect(s.w().allOf('reroll')).toHaveLength(1);
+    s.w().emit(timelineMsg(reroll.rev, 6));
+    await expect.element(back()).not.toHaveAttribute('aria-disabled');
 
-      s.w().crash();
-      await expect.element(back()).toHaveAttribute('aria-disabled', 'true');
-      (back().element() as HTMLElement).click();
-      expect(s.w().allOf('reroll')).toHaveLength(1);
-    }
-  );
+    s.w().crash();
+    await expect.element(back()).toHaveAttribute('aria-disabled', 'true');
+    (back().element() as HTMLElement).click();
+    expect(s.w().allOf('reroll')).toHaveLength(1);
+  });
 
   it('onResyncNeeded calls client.resync: one reroll per episode, flag kept', async () => {
     const s = setup();
@@ -888,7 +887,7 @@ describe('FzpMode map, layout and lifecycle', () => {
     expect(page.getByTestId('fzp-sim-map-stub').elements()).toHaveLength(1);
   });
 
-  itResults('opening the sources dialog pauses playback; opening a card does not', async () => {
+  it('opening the sources dialog pauses playback; opening a card does not', async () => {
     const s = setup();
     await toReady(s);
     const play = page.getByRole('button', { name: 'Play', exact: true });
@@ -1068,6 +1067,21 @@ describe('FzpMode map, layout and lifecycle', () => {
     const wrapper = scrubber.parentElement as HTMLElement;
     const root = document.querySelector('.sfh-fzp') as HTMLElement;
     expect(wrapper.getBoundingClientRect().bottom).toBe(root.getBoundingClientRect().bottom);
+  });
+
+  it('bottomExtra (the phone sheet) adds to the inset; the root hosts the dock', async () => {
+    await page.viewport(375, 800);
+    const s = setup({ bottomExtra: 120 });
+    await toReady(s);
+    const scrubber = page.getByTestId('fzp-scrubber').element() as HTMLElement;
+    await expect.poll(() => scrubber.offsetHeight).toBeGreaterThan(0);
+    await expect
+      .poll(() => callsOf('setBottomInset').at(-1))
+      .toEqual([scrubber.offsetHeight + 120]);
+    await (await s.r).rerender({ bottomExtra: 0 });
+    await expect.poll(() => callsOf('setBottomInset').at(-1)).toEqual([scrubber.offsetHeight]);
+    const root = document.querySelector('.sfh-fzp') as HTMLElement;
+    expect(root.classList.contains('sfh-dock-host')).toBe(true);
   });
 
   it('unmount terminates the worker and leaves no frame loop pending', async () => {
@@ -1267,21 +1281,18 @@ describe('FzpMode levers (/sim)', () => {
     await expect.element(scoreButton()).toHaveAttribute('aria-busy', 'false');
   });
 
-  itResults(
-    'a failed revision says in the details that the numbers predate the change',
-    async () => {
-      vi.spyOn(console, 'error').mockImplementation(() => {});
-      const s = setup({ levers: DEFAULT_LEVERS });
-      await toReady(s);
-      await (await s.r).rerender({ levers: { ...OTHER } });
-      await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
-      s.w().emit({ type: 'error', rev: leverRev(s.w()), code: 'internal', message: 'x' });
-      const board = await details();
-      await expect
-        .element(board.getByText('These numbers are from before your latest policy change.'))
-        .toBeVisible();
-    }
-  );
+  it('a failed revision says in the details that the numbers predate the change', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = setup({ levers: DEFAULT_LEVERS });
+    await toReady(s);
+    await (await s.r).rerender({ levers: { ...OTHER } });
+    await expect.poll(() => s.w().allOf('setLevers').length).toBe(1);
+    s.w().emit({ type: 'error', rev: leverRev(s.w()), code: 'internal', message: 'x' });
+    const board = await details();
+    await expect
+      .element(board.getByText('These numbers are from before your latest policy change.'))
+      .toBeVisible();
+  });
 
   it('a failed revision shows an alert whose Retry restarts with the latest levers', async () => {
     const onlevers = vi.fn<(st: LeverStatus) => void>();
@@ -1542,7 +1553,7 @@ describe('FzpMode Setup and Run (/sim, spec §1)', () => {
     await expect.element(playLabel()).toHaveTextContent(/^Run$/);
   });
 
-  it('a new run after Change policy discards the old run and waits for the new policy', async () => {
+  it('a new run after Edit policy discards the old run and waits for the new policy', async () => {
     const s = setup({ runPhase: 'run', levers: DEFAULT_LEVERS });
     await toReady(s);
     await page.getByRole('button', { name: 'Play', exact: true }).click();

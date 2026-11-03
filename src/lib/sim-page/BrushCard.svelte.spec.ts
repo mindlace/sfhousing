@@ -120,7 +120,8 @@ describe('BrushCard', () => {
     expect(toggle.element().textContent?.trim()).toBe('Show on map');
     const box = toggle.element().getBoundingClientRect();
     expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(24);
-    expect(toggle.element().closest('fieldset')).not.toBeNull();
+    // No read-only wrapper: a run hides the tabs instead (plan 2, Task 4).
+    expect(toggle.element().closest('fieldset')).toBeNull();
   });
 
   it('a custom card has no Show on map toggle', async () => {

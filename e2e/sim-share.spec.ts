@@ -62,35 +62,49 @@ async function expectNewRevision(page: Page, before: number | null): Promise<voi
     .toBe(true);
 }
 
-const panel = (page: Page): Locator => page.getByTestId('policy-panel');
+/** The policy dock. Its root is `display: contents`: the docked panel, rail or sheet is the box. */
+const panel = (page: Page): Locator => page.getByTestId('dock');
+const dockPanel = (page: Page): Locator => page.locator('.sfh-dock-panel');
+const handle = (page: Page): Locator => page.getByTestId('dock-handle');
 
+/** The dock shows its body: the docked panel from md, the sheet open (peek or full) below. */
+const dockShown = (page: Page): Promise<boolean> =>
+  page.evaluate(
+    () =>
+      !!document.querySelector('.sfh-dock-panel') ||
+      document.querySelector('[data-testid="dock-handle"]')?.getAttribute('aria-expanded') ===
+        'true'
+  );
+
+/** The dock, opened if it is not already (from md the Policy button, below md the handle). */
 async function openPolicy(page: Page): Promise<Locator> {
-  if (!(await panel(page).isVisible())) await (await headerAction(page, 'Policy')).click();
-  await expect(panel(page)).toBeVisible();
+  if (!(await dockShown(page))) {
+    if (await handle(page).isVisible()) await handle(page).click();
+    else await (await headerAction(page, 'Policy')).click();
+  }
+  await expect.poll(() => dockShown(page)).toBe(true);
   return panel(page);
 }
 
-/** Closes the phone sheet, which is modal: the rest of the page is inert while it shows. */
+/** Below md: folds an open sheet to its handle. */
 async function closeSheet(page: Page, isMobile: boolean): Promise<void> {
-  if (!isMobile || !(await panel(page).isVisible())) return;
-  await panel(page).getByRole('button', { name: 'Close policy' }).click();
-  await expect(panel(page)).toBeHidden();
+  if (!isMobile || (await handle(page).getAttribute('aria-expanded')) !== 'true') return;
+  await panel(page)
+    .getByRole('button', { name: /^Collapse Policy/ })
+    .click();
+  await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
 }
 
-async function expandSection(page: Page, title: string): Promise<void> {
-  const button = panel(page).getByRole('button', { name: title, exact: true });
-  if ((await button.getAttribute('aria-expanded')) !== 'true') await button.click();
-  await expect(button).toHaveAttribute('aria-expanded', 'true');
+/** Opens the dock and selects the tab `name`. */
+async function openTab(page: Page, name: string): Promise<void> {
+  await openPolicy(page);
+  const tab = panel(page).getByRole('tab', { name, exact: true });
+  await tab.click();
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
 }
-
-const timingToggle = (page: Page): Locator =>
-  panel(page).getByRole('button', { name: /^Permitting timelines/ });
 
 async function openTiming(page: Page): Promise<void> {
-  await openPolicy(page);
-  const toggle = timingToggle(page);
-  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await openTab(page, 'Permits');
 }
 
 /** Chooses the San Diego preset in the open timelines section and waits for it to be in force. */
@@ -208,11 +222,12 @@ test('publish round trip', async ({ page, browser, isMobile }, testInfo) => {
     await expect(sharedBanner(visitor)).toContainText('SD permits · Shared policy');
     await waitReady(visitor);
     const summary = await openPolicy(visitor);
-    await expect(summary).toContainText('Policy (read-only)');
+    await expect(summary).toHaveAttribute('aria-label', 'Policy (read-only)');
     await expect(summary).toContainText(PRESET);
     expect(await storedDoc(visitor), 'viewing never writes the autosave').toBeNull();
     await closeSheet(visitor, isMobile);
-    // The view opens in Setup with Run available; during a run the pane offers "Back to start".
+    // The view opens in Setup with Run available; a run flips the dock to Results, whose flip
+    // button reads "Back to start".
     await visitor.getByRole('button', { name: 'Run', exact: true }).click();
     await expect(
       (await openPolicy(visitor)).getByRole('button', { name: 'Back to start' })
@@ -242,8 +257,7 @@ test('publish round trip', async ({ page, browser, isMobile }, testInfo) => {
 
 test('autosave survives a reload', async ({ page }) => {
   await gotoSim(page);
-  await openPolicy(page);
-  await expandSection(page, 'New zoning rules');
+  await openTab(page, 'Transit');
   await panel(page).getByRole('button', { name: 'Add transit rule' }).click({ timeout: 20_000 });
   const form = panel(page).getByRole('form', { name: 'Add a transit rule', exact: true });
   await form.getByRole('checkbox', { name: /^Muni Metro/ }).check();
@@ -266,8 +280,7 @@ test('autosave survives a reload', async ({ page }) => {
   await waitReady(page);
   // The phase is not persisted: a reload opens in Setup.
   await expect(page.getByTestId('fzp-play-label')).toHaveText('Run');
-  await openPolicy(page);
-  await expandSection(page, 'New zoning rules');
+  await openTab(page, 'Transit');
   await expect(ruleList(page)).toHaveCount(1);
   await expect(ruleList(page).first()).toContainText('Near');
   // The restored rule resolves (C1): the card counts its lots, and the full levers are in force.
@@ -336,7 +349,7 @@ test('storage off: the header shows "Autosave off" and editing works', async ({ 
   await expect(
     page.getByRole('banner').getByRole('button', { name: 'Autosave off', exact: true })
   ).toBeVisible();
-  await expect(timingToggle(page)).toContainText(PRESET);
+  await expect(panel(page).getByTestId('timing-label')).toHaveText(PRESET);
 });
 
 // ---- the read-only view: accessibility and layout -----------------------------------------------
@@ -352,8 +365,9 @@ test('axe on /s/<id>: 1280 px with the summary open; 375 px with the sheet open'
   await waitReady(page);
   await expect(sharedBanner(page)).toBeVisible();
   const summary = await openPolicy(page);
-  await expect(summary).toContainText('Policy (read-only)');
-  if (isMobile) await expect(page.locator('dialog[open]')).toHaveCount(1);
+  await expect(summary).toHaveAttribute('aria-label', 'Policy (read-only)');
+  // The sheet is not modal: no dialog opens with it.
+  if (isMobile) await expect(page.locator('dialog[open]')).toHaveCount(0);
   await expect(sharedBanner(page)).toBeVisible();
   await expectNoA11yViolations(page);
   if (isMobile) await expectNoHorizontalScroll(page);
@@ -425,11 +439,11 @@ test('at 768 px on /s/<id> the banner, summary and notices leave the zoom contro
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(`/s/${id}`);
   await waitReady(page);
-  await expect(panel(page)).toBeVisible();
+  await expect(dockPanel(page)).toBeVisible();
   await expect(notices(page).filter({ hasText: TIMING_NOTICE })).toHaveCount(1);
   await expectNavControlClear(page, [
     sharedBanner(page),
-    panel(page),
+    dockPanel(page),
     ...(await notices(page).all())
   ]);
 });

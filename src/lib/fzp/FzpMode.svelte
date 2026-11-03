@@ -190,6 +190,11 @@
     scoreExpanded?: boolean;
     /** The dock's id: the header score's `aria-controls`. */
     scoreControls?: string;
+    /**
+     * Px added to the map's bottom inset over the scrubber (/sim below md: the dock's sheet, so
+     * its handle never hides the attribution). Default 0.
+     */
+    bottomExtra?: number;
   }
 
   let {
@@ -222,7 +227,8 @@
     onchunks = undefined,
     onscore = undefined,
     scoreExpanded = false,
-    scoreControls = undefined
+    scoreControls = undefined,
+    bottomExtra = 0
   }: Props = $props();
 
   // The props seed the page once; Retry replaces the manifest and calibration in place.
@@ -594,8 +600,17 @@
   });
 
   function applyInset(): void {
-    handle?.setBottomInset(scrubberH);
+    handle?.setBottomInset(scrubberH + untrack(() => bottomExtra));
   }
+
+  // The page's extra inset (the phone sheet) moves the map's bottom edge as the scrubber does.
+  let lastExtra = untrack(() => bottomExtra);
+  $effect(() => {
+    const extra = bottomExtra;
+    if (extra === lastExtra) return;
+    lastExtra = extra;
+    untrack(applyInset);
+  });
 
   const events: ScenarioClientEvents = {
     onTimeline(t) {
@@ -881,7 +896,10 @@
   {/if}
 {/snippet}
 
-<div class="sfh-fzp relative flex h-full flex-col" style:--fzp-scrubber-h="{scrubberH}px">
+<div
+  class="sfh-fzp sfh-dock-host relative flex h-full flex-col"
+  style:--fzp-scrubber-h="{scrubberH}px"
+>
   <!-- Every notice is a pill in this one stack: an overlay at the map's top from md (it takes no
        space, so nothing moves when one shows), in flow under the header below md. -->
   <NoticePills>

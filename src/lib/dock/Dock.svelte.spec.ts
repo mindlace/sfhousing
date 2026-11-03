@@ -243,6 +243,18 @@ describe('Dock, desktop', () => {
 });
 
 describe('Dock, phone', () => {
+  it('a full sheet stays inside its host, so it never covers the header above the map', async () => {
+    await page.viewport(375, 900); // 85dvh (765 px) is taller than the 600 px host
+    const state = new DockState({ tab: 'transit' });
+    state.sheet = 'full';
+    await setup(state);
+    const sheet = document.querySelector('.sfh-dock-sheet') as HTMLElement;
+    await expect.poll(() => sheet.getBoundingClientRect().height).toBeGreaterThan(0);
+    expect(sheet.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      map().getBoundingClientRect().top
+    );
+  });
+
   it('is a handle naming the active tab; pressing it opens a non-modal sheet and moves focus in', async () => {
     await page.viewport(375, 700);
     const onsheetheight = vi.fn();

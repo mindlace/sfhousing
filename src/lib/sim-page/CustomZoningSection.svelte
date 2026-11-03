@@ -11,7 +11,6 @@
   import RadiusPopover from '$lib/brush/RadiusPopover.svelte';
   import StoriesPopover from '$lib/brush/StoriesPopover.svelte';
   import BrushCard from './BrushCard.svelte';
-  import ReadonlyFieldset from './ReadonlyFieldset.svelte';
   import { ERASE_HINT, SIM_TOOLS, type SimBrushTools, type SimTool } from './brush-tools.svelte';
   import type { LeverSync, PolicyStore } from './policy-store.svelte';
 
@@ -72,31 +71,29 @@
 </script>
 
 <div class="flex flex-col gap-3 text-sm">
-  <ReadonlyFieldset>
-    <div role="radiogroup" aria-label="Brush tool" class="flex flex-wrap gap-1">
-      {#each SIM_TOOLS as t (t.id)}
-        <button
-          bind:this={radios[t.id]}
-          type="button"
-          role="radio"
-          aria-checked={tools.tool === t.id}
-          tabindex={t.id === tabStop ? 0 : -1}
-          disabled={!enabled(t.id)}
-          class="sim-tool min-h-11 min-w-11 rounded-md border border-gray-300 px-2 disabled:opacity-40"
-          onclick={() => select(t.id)}
-          onkeydown={(e) => onRadioKey(e, t.id)}>{t.label}</button
-        >
-      {/each}
-    </div>
+  <div role="radiogroup" aria-label="Brush tool" class="flex flex-wrap gap-1">
+    {#each SIM_TOOLS as t (t.id)}
+      <button
+        bind:this={radios[t.id]}
+        type="button"
+        role="radio"
+        aria-checked={tools.tool === t.id}
+        tabindex={t.id === tabStop ? 0 : -1}
+        disabled={!enabled(t.id)}
+        class="sim-tool min-h-11 min-w-11 rounded-md border border-gray-300 px-2 disabled:opacity-40"
+        onclick={() => select(t.id)}
+        onkeydown={(e) => onRadioKey(e, t.id)}>{t.label}</button
+      >
+    {/each}
+  </div>
 
-    <!-- Erase has no height: the stepper is disabled with the /sim hint. -->
-    <div role="group" aria-labelledby="{uid}-allow" class="flex flex-col gap-1">
-      <p id="{uid}-allow" class="font-semibold">{allowText}</p>
-      <StoriesPopover state={brush} inline disabled={tools.tool === 'erase'} hint={ERASE_HINT} />
-    </div>
+  <!-- Erase has no height: the stepper is disabled with the /sim hint. -->
+  <div role="group" aria-labelledby="{uid}-allow" class="flex flex-col gap-1">
+    <p id="{uid}-allow" class="font-semibold">{allowText}</p>
+    <StoriesPopover state={brush} inline disabled={tools.tool === 'erase'} hint={ERASE_HINT} />
+  </div>
 
-    <RadiusPopover state={brush} inline />
-  </ReadonlyFieldset>
+  <RadiusPopover state={brush} inline />
 
   {#if store.policy.custom.length > 0}
     <div>

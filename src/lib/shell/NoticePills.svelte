@@ -1,9 +1,9 @@
 <!--
   The notice stack: every /sim and /fzp notice is a pill (`PILL` in ./pill) in this column. From md
-  it overlays the map's top, centred over the map right of the docked policy panel, and takes no
-  space, so a notice never moves the panel, the time bar, the map inset or `--fzp-dock-top`. The
-  container lets clicks through to the map; each pill takes them. Below md it sits in flow under
-  the header, full width, and pushes the map down (the phone rule, spec Goal 8).
+  it overlays the map's top, centred over the map right of the dock (`--dock-w`: the open panel or
+  the rail), and takes no space, so a notice never moves the dock, the time bar or the map inset.
+  The container lets clicks through to the map; each pill takes them. Below md it sits in flow
+  under the header, full width, and pushes the map down (the phone rule, spec Goal 8).
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
@@ -27,8 +27,8 @@
   }
   @media (min-width: 48rem) {
     .sfh-notice-pills {
-      left: calc(50% + var(--sim-panel-w, 0px) / 2);
-      max-width: calc(100% - 2rem - var(--sim-panel-w, 0px));
+      left: calc(50% + var(--dock-w, 0px) / 2);
+      max-width: calc(100% - 2rem - var(--dock-w, 0px));
     }
   }
 </style>

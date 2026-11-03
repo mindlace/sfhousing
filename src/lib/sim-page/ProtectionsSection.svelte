@@ -7,7 +7,6 @@
 <script lang="ts">
   import type { SimPolicy } from './policy';
   import type { PolicyStore } from './policy-store.svelte';
-  import { policyReadonly } from './policy-readonly';
 
   interface Props {
     store: PolicyStore;
@@ -23,7 +22,6 @@
   const YEARS_ERROR = `Enter a whole number of years from ${YEARS_MIN} to ${YEARS_MAX}.`;
 
   const uid = $props.id();
-  const ro = policyReadonly();
   const protect = $derived(store.policy.protect);
   const newer = $derived(protect.newerThanYears !== null);
   /** The last valid year count, offered again when "newer than" is checked. */
@@ -77,11 +75,7 @@
 </script>
 
 <div class="flex flex-col gap-3 text-sm">
-  <fieldset
-    class="flex flex-col gap-1"
-    disabled={ro.on}
-    aria-describedby={ro.on ? ro.noteId : undefined}
-  >
+  <fieldset class="flex flex-col gap-1">
     <legend class="font-semibold">Protect by category</legend>
     <label class="flex min-h-6 items-center gap-1.5">
       <input

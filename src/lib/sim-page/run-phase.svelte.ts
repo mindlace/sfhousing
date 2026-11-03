@@ -13,7 +13,7 @@ export class RunPhase {
     this.phase = 'run';
   }
 
-  /** Run → Setup ("Change policy", or "Back to start" on `/s/<id>`). */
+  /** Run → Setup ("Edit policy", or "Back to start" on `/s/<id>`; a scrub back to Today). */
   reset(): void {
     this.phase = 'setup';
   }

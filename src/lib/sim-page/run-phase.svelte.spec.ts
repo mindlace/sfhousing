@@ -1,4 +1,4 @@
-// RunPhase (spec §1): /sim opens in Setup; Run and Change policy (or Back to start) move between
+// RunPhase (spec §1): /sim opens in Setup; Run and Edit policy (or Back to start) move between
 // the two phases. Never persisted.
 import { describe, expect, it } from 'vitest';
 import { RunPhase } from './run-phase.svelte';

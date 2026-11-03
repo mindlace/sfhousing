@@ -5,17 +5,23 @@
   start opens on the Family Zoning Plan compared with the pre-FZP baseline (`DEFAULT_LEVERS`).
   Custom paint and erase strokes (Task 8) reuse `/`'s BrushController through the stroke
   adapter; the overlay layers and the brush ring share SimMap's overlay through the overlay mux.
-  Zoning rules (Task 9) read the brush catalog, asked for once when the panel first opens and
-  again after a session restart if it came back null; below md their form replaces the sheet's
-  contents (layout ruling 9). "Protections" (Task 10) edits the category protections.
+  Zoning rules (Task 9) read the brush catalog, asked for once when the dock's editing face first
+  shows and again after a session restart if it came back null; their form opens inline in the
+  Transit tab at every width. "Protections" (Task 10) edits the category protections.
   Plan 5 (Task 5): the policy autosaves (`sfhousing:sim:v1`) and is restored on mount, reconciled
   with the calibration (Calls 11 and 12). The header gets the save state (its status slot) and Publish. In `mode: 'view'` (the
   read-only /s/<id>, Task 6) the shared policy opens reconciled with the calibration (Call 7, with
   the timing notice when anything moved); there is no stroke controller, no tools, no autosave and
-  no Publish, and the panel is the summary.
+  no Publish, and the dock's one tab is the summary.
+  The dock (sim-ux plan 2, Task 4): the policy lives in a `Dock` with the tabs Transit · Paint ·
+  Permits · Protect (`SIM_TABS`), the Undo and Redo row above them, and a Results face (FzpMode's
+  `SimResults`). From md it is open on the left of the map by default and folds to a rail; below
+  md it is a bottom sheet behind a handle. The header's Policy button opens and folds it; the
+  header score flips it to Results and back.
   Setup and Run (spec §1, sim-runs Task 7): the page opens in Setup (never persisted). Run (the
-  scrubber's button) sets the tool to Move, locks the store and plays; the panel is read-only
-  until "Change policy" ("Back to start" in the view) unlocks it and returns to the present.
+  scrubber's button) sets the tool to Move, locks the store, plays and flips the dock to Results
+  (a phone sheet peeks); a run offers Results only, until "Edit policy" ("Back to start" in the
+  view) or a scrub back to Today unlocks the store and returns to the editing face.
   Map overlays (sim-runs plan 2, Task 4): in Setup the header's View menu (transit stops, transit
   capacity, height limits); a run hides them all and keeps the toggles. The height limits
   (height-lids plan, Task 12) draw in the overlay's `limits` slot: the contours from FzpMode's
@@ -25,7 +31,7 @@
   current, briefly shows the buildings its lots in view could hold (the overlay's feedback slot).
 -->
 <script lang="ts">
-  import { onMount, tick, untrack } from 'svelte';
+  import { onMount, tick, untrack, type Snippet } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { replaceState } from '$app/navigation';
   import { Autosave } from '$lib/sharing/autosave.svelte';
@@ -37,6 +43,8 @@
   import type { OverlayCtors } from '$lib/brush/overlay';
   import { BrushState } from '$lib/brush/state.svelte';
   import type { Manifest } from '$lib/data/manifest';
+  import Dock from '$lib/dock/Dock.svelte';
+  import { DockState } from '$lib/dock/dock-state.svelte';
   import FzpMode, { type SimClientApi } from '$lib/fzp/FzpMode.svelte';
   import type { HeightCity, HeightLids } from '$lib/map/height/types';
   import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
@@ -54,7 +62,6 @@
   import { PaintFeedback, RuleFeedbackTrigger, lotsInView, mergeLots } from './feedback';
   import type { LeverStatus } from './lever-status';
   import { BrushForms } from './brush-forms.svelte';
-  import RuleBrushForm from './RuleBrushForm.svelte';
   import type { Calibration } from '$lib/timelapse/types';
   import CustomZoningSection from './CustomZoningSection.svelte';
   import HistoryRow from './HistoryRow.svelte';
@@ -81,16 +88,15 @@
   import SimNotices from './SimNotices.svelte';
   import { restoreSimDoc, type SimNotice } from './sim-session';
   import { createStrokeAdapter } from './stroke-adapter';
-  import { timingLabel } from './timing';
   import { focusHeaderMenu } from '$lib/shell/header-actions.svelte';
   import { LeverSync, PolicyStore } from './policy-store.svelte';
   import { RunPhase } from './run-phase.svelte';
   import PermittingSection from './PermittingSection.svelte';
-  import PolicyPanel from './PolicyPanel.svelte';
   import RulesSection from './RulesSection.svelte';
   import PolicySummary from './PolicySummary.svelte';
   import { customLotStatus, ruleLotStatus, type LotStatus } from './brush-summary';
   import ProtectionsSection from './ProtectionsSection.svelte';
+  import { SIM_TABS, VIEW_TABS } from './tabs';
 
   interface Props {
     manifest: Manifest | null;
@@ -264,39 +270,57 @@
     ...untrack(() => leverTimers ?? { setTimeout, clearTimeout })
   });
 
+  const wide = new MediaQuery('(min-width: 768px)');
   const uid = $props.id();
-  const panelId = `${uid}-policy`;
-  let policyOpen = $state(false);
-  /** Opening moves focus into the panel only when the user opened it (WCAG 2.4.3). */
-  let policyFocus = $state(true);
+  const dockId = `${uid}-dock`;
+  /**
+   * The dock: open (docked) from md by default, the phone sheet closed to its handle. With no
+   * scenario FzpMode renders no dock. The view's only tab is the summary (`policy`).
+   */
+  const dock = new DockState({ tab: untrack(() => mode) === 'view' ? 'policy' : 'transit' });
+  /**
+   * Opening moves focus into the dock only when the user asked (the Policy button, the header
+   * score, Done on the phone tool bar), never for the default open or a Run (WCAG 2.4.3).
+   */
+  let dockFocus = $state(false);
   let policyButton = $state<HTMLButtonElement>();
+  /** The phone sheet's height above the scrubber (0 from md): FzpMode's extra map inset. */
+  let sheetH = $state(0);
 
-  // The panel starts open, docked, from md and closed below (the controller's ruling); read once,
-  // on the client. With no scenario there is no panel.
-  onMount(() => {
-    if (noScenario || !matchMedia('(min-width: 768px)').matches) return;
-    policyFocus = false;
-    policyOpen = true;
-  });
+  /** The header's Policy button: desktop open <-> rail; phone sheet closed <-> full. */
+  function togglePolicy(): void {
+    dockFocus = true;
+    dock.toggleOpen(wide.current);
+  }
 
-  function openPolicy(): void {
-    policyFocus = true;
-    policyOpen = true;
+  /** The header score: Results in a run (it stays); in Setup, Results <-> the editing face. */
+  function pressScore(): void {
+    dockFocus = true;
+    if (run.phase === 'run') dock.showResults();
+    else dock.toggleResults(wide.current);
   }
 
   /**
-   * Closing the panel returns focus to the Policy button, or, when it sits in the closed phone
-   * Menu, to the Menu button. Focus elsewhere on the page (a press on the map) stays put.
+   * The dock folded by its collapse button or Escape: focus goes to the Policy button, or, when it
+   * sits in the closed phone Menu, to the Menu button.
    */
-  async function closePolicy(): Promise<void> {
-    const a = document.activeElement;
-    const panel = document.getElementById(panelId);
-    const restore = !a || a === document.body || !!panel?.contains(a);
-    policyOpen = false;
-    await tick();
-    if (!restore) return;
+  function dockClosed(): void {
     if (policyButton?.checkVisibility()) policyButton.focus();
     else focusHeaderMenu();
+  }
+
+  /**
+   * The Results face's flip ("Edit policy", "Back to start" in the view): ends a run, else shows
+   * the editing face. The flip button goes with the face, so focus moves to the selected tab.
+   */
+  async function flip(): Promise<void> {
+    if (run.phase === 'run') resetRun();
+    else dock.showEdit();
+    await tick();
+    document
+      .getElementById(dockId)
+      ?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+      ?.focus();
   }
 
   // Every policy change after the first goes to LeverSync. The initial policy is `initial`, which
@@ -322,7 +346,6 @@
     announce: (m) => brush.announce(m, ANNOUNCE_MS),
     onpaint: (stroke, stories) => paintFeedback(stroke, stories)
   });
-  const wide = new MediaQuery('(min-width: 768px)');
   let controller: BrushController | null = null;
   let controllerMap: ControllerMap | null = null;
   let mapHandle: SimMapHandle | null = null;
@@ -379,10 +402,17 @@
     if (controller) controller.setTool(bt);
     else brush.tool = bt;
     // On a phone, a stroke tool closes the sheet and shows the floating tool bar.
-    if (t !== 'move' && !wide.current && policyOpen) {
-      policyOpen = false;
+    if (t !== 'move' && !wide.current && dock.sheet !== 'closed') {
+      dock.sheet = 'closed';
       void tick().then(() => phoneBar?.focus());
     }
+  }
+
+  /** The phone tool bar's Done (it chose Move): the sheet opens full on the Paint tab. */
+  function toolBarDone(): void {
+    dockFocus = true;
+    dock.showEdit('paint');
+    dock.sheet = 'full';
   }
 
   // ---- Setup and Run (spec §1) ----
@@ -399,11 +429,16 @@
     pickedRule = null;
     store.locked = true;
     run.run();
+    // The dock flips to Results (a rail or a closed sheet opens on it); focus stays at Run.
+    dockFocus = false;
+    dock.showResults();
   }
 
+  /** Ends a run ("Edit policy", a scrub back to Today): the editing face, on its last tab. */
   function resetRun(): void {
     store.locked = false;
     run.reset();
+    dock.showEdit();
   }
 
   // The controller's own tool keys set brush.tool: keep the /sim tool in step. During a run the
@@ -689,19 +724,8 @@
 
   // ---- rule brushes (Task 9) ----
 
+  /** The open rule form, kept while the user moves between tabs (it shows in Transit). */
   const forms = new BrushForms();
-
-  // Closing the panel, or crossing md (inline form <-> sheet sub-view), discards an open brush
-  // form, so the panel reopens on the brush list (the coordinator's ruling).
-  let formLayout: boolean | null = null;
-  $effect(() => {
-    const isOpen = policyOpen;
-    const w = wide.current;
-    untrack(() => {
-      if (!isOpen || (formLayout !== null && formLayout !== w)) forms.dismiss();
-      formLayout = w;
-    });
-  });
   /** undefined: not asked yet or in flight; null: the session had none to give. */
   let catalog = $state.raw<BrushCatalog | null | undefined>(undefined);
   let catalogWanted = false;
@@ -719,9 +743,9 @@
     });
   }
 
-  // Asked for once, when the panel first opens (the view's summary needs no catalog).
+  // Asked for once, when the editing face first shows (the view's summary needs no catalog).
   $effect(() => {
-    if (!policyOpen || mode === 'view') return;
+    if (dock.face !== 'edit' || !dock.visible(wide.current) || mode === 'view') return;
     untrack(() => {
       if (catalogWanted) return;
       catalogWanted = true;
@@ -739,18 +763,11 @@
   }
 
   /**
-   * A rule form saved (the inline form from md, or the sheet's below): arm the rule feedback, but
-   * only for a save that changed the policy, as only that sends a new revision to wait for.
+   * A rule form saved: arm the rule feedback, but only for a save that changed the policy, as
+   * only that sends a new revision to wait for.
    */
   function ruleSaved(r: { id: string }, changed: boolean): void {
     if (changed) feedbackTrigger.saved(r.id);
-  }
-
-  function saveRuleBrush(b: Parameters<BrushForms['save']>[1]): void {
-    const before = store.policy;
-    brush.announce(forms.save(store, b), ANNOUNCE_MS);
-    ruleSaved(b, store.policy !== before);
-    forms.close();
   }
 
   /** The summary's per-card lot lookup: a rule (`rule:<id>`) or a custom brush (`custom:<id>`). */
@@ -803,10 +820,10 @@
   <button
     bind:this={policyButton}
     type="button"
-    aria-expanded={policyOpen}
-    aria-controls={panelId}
+    aria-expanded={dock.visible(wide.current)}
+    aria-controls={dockId}
     class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap md:max-lg:px-1 dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-    onclick={() => (policyOpen ? void closePolicy() : openPolicy())}>Policy</button
+    onclick={togglePolicy}>Policy</button
   >
   {#if mode === 'edit'}
     <PublishButton
@@ -829,78 +846,65 @@
   <SimNotices {notices} ondismiss={dismissNotice} />
 {/snippet}
 
-{#snippet policySummary()}
-  <PolicySummary policy={store.policy} {calibration} {lotsOf} />
+{#snippet history()}
+  <HistoryRow {store} onundo={undo} onredo={redo} />
 {/snippet}
 
-{#snippet timingSection()}
-  {#if calibration}
-    <PermittingSection {store} {calibration} announce={(m) => brush.announce(m, ANNOUNCE_MS)} />
+{#snippet tabPanel(id: string)}
+  {#if id === 'policy'}
+    <PolicySummary policy={store.policy} {calibration} {lotsOf} />
+  {:else if id === 'transit'}
+    <RulesSection
+      {store}
+      {sync}
+      {catalog}
+      {forms}
+      announce={(m) => brush.announce(m, ANNOUNCE_MS)}
+      onsaved={ruleSaved}
+      {selectedRule}
+      onselectrule={selectRule}
+    />
+  {:else if id === 'paint'}
+    <CustomZoningSection
+      {store}
+      {sync}
+      {tools}
+      ontool={setTool}
+      announce={(m) => brush.announce(m, ANNOUNCE_MS)}
+    />
+  {:else if id === 'permits'}
+    {#if calibration}
+      <PermittingSection {store} {calibration} announce={(m) => brush.announce(m, ANNOUNCE_MS)} />
+    {/if}
+  {:else if id === 'protect'}
+    <ProtectionsSection {store} announce={(m) => brush.announce(m, ANNOUNCE_MS)} />
   {/if}
 {/snippet}
 
-{#snippet panel()}
-  <PolicyPanel
-    id={panelId}
-    open={policyOpen}
-    focusOnOpen={policyFocus}
-    onclose={() => void closePolicy()}
-    view={mode === 'view'
-      ? 'summary'
-      : forms.current && catalog && !wide.current
-        ? 'add-brush'
-        : 'sections'}
-    onback={() => forms.close()}
-    timingSummary={calibration ? timingLabel(store.policy.timing.current) : undefined}
-    timing={calibration ? timingSection : undefined}
-    summary={policySummary}
-    readonly={run.phase === 'run'}
-    onreset={resetRun}
-    resetLabel={mode === 'view' ? 'Back to start' : 'Change policy'}
-  >
-    {#snippet history()}
-      <HistoryRow {store} onundo={undo} onredo={redo} />
-    {/snippet}
-    {#snippet rules()}
-      <RulesSection
-        {store}
-        {sync}
-        {catalog}
-        {forms}
-        inlineForm={wide.current}
-        announce={(m) => brush.announce(m, ANNOUNCE_MS)}
-        onsaved={ruleSaved}
-        {selectedRule}
-        onselectrule={selectRule}
-      />
-    {/snippet}
-    {#snippet custom()}
-      <CustomZoningSection
-        {store}
-        {sync}
-        {tools}
-        ontool={setTool}
-        announce={(m) => brush.announce(m, ANNOUNCE_MS)}
-      />
-    {/snippet}
-    {#snippet protections()}
-      <ProtectionsSection {store} announce={(m) => brush.announce(m, ANNOUNCE_MS)} />
-    {/snippet}
-    {#snippet subview()}
-      {#if forms.current && catalog}
-        {#key forms.current}
-          <RuleBrushForm
-            {catalog}
-            initial={forms.current.initial}
-            onsave={saveRuleBrush}
-            oncancel={() => forms.close()}
-          />
-        {/key}
-      {/if}
-    {/snippet}
-  </PolicyPanel>
-  {#if mode === 'edit' && run.phase === 'setup' && !wide.current && !policyOpen && tools.tool !== 'move'}
-    <PhoneToolBar bind:this={phoneBar} {tools} ontool={setTool} ondone={openPolicy} />
+{#snippet panel(results: Snippet)}
+  <Dock
+    id={dockId}
+    label={mode === 'view' ? 'Policy (read-only)' : 'Policy'}
+    state={dock}
+    tabs={mode === 'view' ? VIEW_TABS : SIM_TABS}
+    panel={tabPanel}
+    top={mode === 'edit' ? history : undefined}
+    {results}
+    flipLabel={mode === 'view' ? 'Back to start' : 'Edit policy'}
+    onflip={() => void flip()}
+    focusOnOpen={dockFocus}
+    onsheetheight={(px) => (sheetH = px)}
+    onclose={dockClosed}
+    resultsOnly={run.phase === 'run'}
+  />
+  {#if mode === 'edit' && run.phase === 'setup' && !wide.current && dock.sheet === 'closed' && tools.tool !== 'move'}
+    <PhoneToolBar
+      bind:this={phoneBar}
+      {tools}
+      ontool={setTool}
+      ondone={toolBarDone}
+      lift={sheetH}
+    />
   {/if}
   <p role="status" aria-live="polite" class="sr-only">{brush.announcement}</p>
 {/snippet}
@@ -935,6 +939,10 @@
   status={mode === 'edit' ? saveState : undefined}
   notices={sessionNotices}
   {panel}
+  scoreExpanded={dock.face === 'results' && dock.visible(wide.current)}
+  scoreControls={dockId}
+  onscore={pressScore}
+  bottomExtra={sheetH}
   onmapready={onMapReady}
   onphase={(p) => (brush.phase = p === 'ready' ? 'ready' : p === 'failed' ? 'failed' : 'loading')}
   onclient={(a) => {

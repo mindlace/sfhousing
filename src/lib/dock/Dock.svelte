@@ -12,7 +12,8 @@
   and the Results face (a flip button, then the results). From md it is a 320 px panel on the
   left of the map that folds to a 48 px rail of icon buttons (one per tab and Results); below md it
   is a bottom sheet over the map, a handle always visible and the body at 'peek' (about 40dvh) or
-  'full' (up to 85dvh). The page owns `state` (a `DockState`); this component renders it and writes
+  'full' (up to 85dvh), never taller than its host above the time bar (so it never covers the
+  header). The page owns `state` (a `DockState`); this component renders it and writes
   to it for the user's own input (tabs, rail, handle, collapse, Escape).
 
   The root is a `display: contents` region named by `label` (the target of the header buttons'
@@ -343,7 +344,9 @@
       bind:this={sheetEl}
       class="sfh-dock-sheet absolute right-0 left-0 z-30 flex flex-col rounded-t-lg border-t border-line bg-surface text-ink shadow-lg dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
       style:bottom="var(--fzp-scrubber-h, 0px)"
-      style:max-height={dock.sheet === 'full' ? '85dvh' : dock.sheet === 'peek' ? '40dvh' : null}
+      style:max-height={dock.sheet === 'closed'
+        ? null
+        : `min(${dock.sheet === 'full' ? 85 : 40}dvh, calc(100% - var(--fzp-scrubber-h, 0px)))`}
     >
       <button
         type="button"

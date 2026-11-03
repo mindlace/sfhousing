@@ -1,8 +1,9 @@
 <!--
   "New zoning rules" (sim runs): the rules (BrushCard: summary, lot count, Edit, Remove) with "Add
-  transit rule" (aria-disabled with its reason while the catalog lacks transit data). Each lot takes the tallest rule that covers it, never below FZP. With
-  `inlineForm` (md+) a rule's form opens here; otherwise SimPage shows it in place of the sheet's
-  contents (layout ruling 9). After the last rule is removed focus moves to "Add transit rule".
+  transit rule" (aria-disabled with its reason while the catalog lacks transit data). Each lot
+  takes the tallest rule that covers it, never below FZP. A rule's form opens here, in place of
+  "Add transit rule", at every width (the dock's Transit tab). After the last rule is removed focus
+  moves to "Add transit rule".
 -->
 <script lang="ts">
   import { tick } from 'svelte';
@@ -10,7 +11,6 @@
   import BrushCard from './BrushCard.svelte';
   import { BrushForms } from './brush-forms.svelte';
   import { transitUnavailable } from './brush-summary';
-  import ReadonlyFieldset from './ReadonlyFieldset.svelte';
   import RuleBrushForm from './RuleBrushForm.svelte';
   import type { ZoningRule } from './policy';
   import type { LeverSync, PolicyStore } from './policy-store.svelte';
@@ -20,10 +20,8 @@
     sync: Pick<LeverSync, 'result' | 'retry'>;
     /** The brush pickers' data: undefined while loading, null when unavailable. */
     catalog?: BrushCatalog | null;
-    /** The open rule brush form, shared with SimPage. */
+    /** The open rule brush form, shared with SimPage (it outlives a tab change). */
     forms?: BrushForms;
-    /** Show the open form here (md+); below md SimPage shows it in place of the sections. */
-    inlineForm?: boolean;
     /** Speaks a change's label (WCAG 4.1.3). */
     announce?: (msg: string) => void;
     /** A rule form saved `r`; `changed` is false for an edit that changed nothing. */
@@ -39,7 +37,6 @@
     sync,
     catalog = undefined,
     forms = new BrushForms(),
-    inlineForm = true,
     announce = undefined,
     onsaved = undefined,
     selectedRule = null,
@@ -110,35 +107,31 @@
     </ul>
   {/if}
 
-  {#if inlineForm && forms.current && catalog}
-    <ReadonlyFieldset>
-      {#key forms.current}
-        <RuleBrushForm
-          {catalog}
-          initial={forms.current.initial}
-          onsave={save}
-          oncancel={() => forms.close()}
-        />
-      {/key}
-    </ReadonlyFieldset>
+  {#if forms.current && catalog}
+    {#key forms.current}
+      <RuleBrushForm
+        {catalog}
+        initial={forms.current.initial}
+        onsave={save}
+        oncancel={() => forms.close()}
+      />
+    {/key}
   {:else}
     <div class="flex flex-col items-start">
-      <ReadonlyFieldset>
-        <!-- aria-disabled, not disabled: it stays in the tab order, so focus can land here while
-             the catalog loads (WCAG 2.4.3); the reason is its description. -->
-        <button
-          bind:this={addBtn}
-          type="button"
-          data-brush-add
-          aria-disabled={why !== null ? 'true' : undefined}
-          aria-describedby={why ? `${uid}-why` : undefined}
-          class="min-h-11 rounded-md border border-gray-300 px-3 font-medium aria-disabled:opacity-40"
-          onclick={openTransit}>Add transit rule</button
-        >
-        {#if why}
-          <span id="{uid}-why" class="mt-1 block text-gray-700">{why}</span>
-        {/if}
-      </ReadonlyFieldset>
+      <!-- aria-disabled, not disabled: it stays in the tab order, so focus can land here while
+           the catalog loads (WCAG 2.4.3); the reason is its description. -->
+      <button
+        bind:this={addBtn}
+        type="button"
+        data-brush-add
+        aria-disabled={why !== null ? 'true' : undefined}
+        aria-describedby={why ? `${uid}-why` : undefined}
+        class="min-h-11 rounded-md border border-gray-300 px-3 font-medium aria-disabled:opacity-40"
+        onclick={openTransit}>Add transit rule</button
+      >
+      {#if why}
+        <span id="{uid}-why" class="mt-1 block text-gray-700">{why}</span>
+      {/if}
     </div>
   {/if}
 </div>
