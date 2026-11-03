@@ -422,6 +422,7 @@ describe('SimPage Paint tab (sim-ux plan 3, Task 3)', () => {
   const overlayIds = () =>
     ((callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as { id: string }[]).map((l) => l.id);
   const brushLots = ['P0', 'P1'];
+  const OUTLINE = 'sim-painted-outline';
 
   /** One stroke across the stub map's canvas with the current tool. */
   function drawStroke(): void {
@@ -458,6 +459,34 @@ describe('SimPage Paint tab (sim-ux plan 3, Task 3)', () => {
       type: 'brushLots',
       reqId: w.lastOf('resolveBrush')!.reqId,
       result: { ok: true, lots, points: new Float64Array(lots.length * 2) }
+    });
+  }
+
+  /** Answers the latest `lotOutlines` request with one ring for `lots`. */
+  function answerOutlines(w: (typeof workers)[number]) {
+    const req = w.lastOf('lotOutlines')!;
+    const c = stub.map.getCenter();
+    const d = 1e-3;
+    w.emit({
+      type: 'lotOutlines',
+      reqId: req.reqId,
+      result: {
+        ok: true,
+        lots: req.lots,
+        ringLot: Uint32Array.from([0]),
+        starts: Uint32Array.from([0, 4]),
+        positions: Float64Array.from([
+          c.lng,
+          c.lat,
+          c.lng + d,
+          c.lat,
+          c.lng + d,
+          c.lat + d,
+          c.lng,
+          c.lat + d
+        ]),
+        missing: 0
+      }
     });
   }
 
@@ -504,39 +533,23 @@ describe('SimPage Paint tab (sim-ux plan 3, Task 3)', () => {
     await page.getByRole('tab', { name: 'Paint' }).click();
     await paintRows().first().click();
     await expect.poll(() => w.lastOf('lotOutlines')?.lots).toEqual(brushLots);
-    const c = stub.map.getCenter();
-    const d = 1e-3;
-    w.emit({
-      type: 'lotOutlines',
-      reqId: w.lastOf('lotOutlines')!.reqId,
-      result: {
-        ok: true,
-        lots: brushLots,
-        ringLot: Uint32Array.from([0]),
-        starts: Uint32Array.from([0, 4]),
-        positions: Float64Array.from([
-          c.lng,
-          c.lat,
-          c.lng + d,
-          c.lat,
-          c.lng + d,
-          c.lat + d,
-          c.lng,
-          c.lat + d
-        ]),
-        missing: 0
-      }
-    });
+    answerOutlines(w);
     await expect.poll(overlayIds).toContain('sim-painted-outline');
     await paintRows().first().click();
     await expect.poll(overlayIds).not.toContain('sim-painted-outline');
   });
 
   it('Remove on the selected area is one change Undo names; the selection clears', async () => {
-    await readySimWithPaint();
+    const { w } = await readySimWithPaint();
     await paintRows().first().click();
+    await expect.poll(() => w.lastOf('lotOutlines')?.lots).toEqual(brushLots);
+    answerOutlines(w);
+    await expect.poll(overlayIds).toContain(OUTLINE);
+    const asked = w.allOf('lotOutlines').length;
     await page.getByRole('button', { name: /^Remove:/ }).click();
     expect(paintRows().elements()).toHaveLength(0);
+    // The selection and its outline go with the area, not on a later request.
+    await expect.poll(overlayIds).not.toContain(OUTLINE);
     await expect
       .element(page.getByRole('button', { name: 'Undo: Removed: Allowed 6 stories' }))
       .toBeEnabled();
@@ -546,6 +559,10 @@ describe('SimPage Paint tab (sim-ux plan 3, Task 3)', () => {
     await page.getByRole('button', { name: /^Undo:/ }).click();
     await expect.element(paintRows().first()).toHaveAttribute('aria-pressed', 'false');
     expect(page.getByRole('button', { name: /^Remove:/ }).elements()).toHaveLength(0);
+    // Undo does not bring the selection, and so the outline, back.
+    await new Promise((res) => setTimeout(res, 50));
+    expect(overlayIds()).not.toContain(OUTLINE);
+    expect(w.allOf('lotOutlines')).toHaveLength(asked);
   });
 
   it('after Remove, focus lands on the row now at its place', async () => {
@@ -576,14 +593,23 @@ describe('SimPage Paint tab (sim-ux plan 3, Task 3)', () => {
   });
 
   it('undoing the stroke that made the selected area clears the selection; Redo does not restore it', async () => {
-    await readySimWithPaint();
+    const { w } = await readySimWithPaint();
     await paintRows().first().click();
     await expect.element(paintRows().first()).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(() => w.lastOf('lotOutlines')?.lots).toEqual(brushLots);
+    answerOutlines(w);
+    await expect.poll(overlayIds).toContain(OUTLINE);
+    const asked = w.allOf('lotOutlines').length;
     await page.getByRole('button', { name: 'Undo: Allowed 6 stories' }).click();
     expect(paintRows().elements()).toHaveLength(0);
+    await expect.poll(overlayIds).not.toContain(OUTLINE);
     await page.getByRole('button', { name: 'Redo: Allowed 6 stories' }).click();
     await expect.element(paintRows().first()).toHaveAttribute('aria-pressed', 'false');
     expect(page.getByRole('button', { name: /^Remove:/ }).elements()).toHaveLength(0);
+    // Redo brings the row back, but neither the selection nor its outline.
+    await new Promise((res) => setTimeout(res, 50));
+    expect(overlayIds()).not.toContain(OUTLINE);
+    expect(w.allOf('lotOutlines')).toHaveLength(asked);
   });
 });
 
