@@ -5,27 +5,41 @@
   start opens on the Family Zoning Plan compared with the pre-FZP baseline (`DEFAULT_LEVERS`).
   Custom paint and erase strokes (Task 8) reuse `/`'s BrushController through the stroke
   adapter; the overlay layers and the brush ring share SimMap's overlay through the overlay mux.
-  Zoning rules (Task 9) read the brush catalog, asked for once when the panel first opens and
-  again after a session restart if it came back null; below md their form replaces the sheet's
-  contents (layout ruling 9). "Protections" (Task 10) edits the category protections.
+  Zoning rules (Task 9) read the brush catalog, asked for once when the dock's editing face first
+  shows and again after a session restart if it came back null. The Transit tab (sim-ux plan 4,
+  Task 2) lists them as layers, each edited in place when selected, then the locked FZP baseline
+  row. "Protections" (Task 10) edits the category protections.
   Plan 5 (Task 5): the policy autosaves (`sfhousing:sim:v1`) and is restored on mount, reconciled
-  with the calibration (Calls 11 and 12). The header gets the save state (its status slot) and Publish. In `mode: 'view'` (the
-  read-only /s/<id>, Task 6) the shared policy opens reconciled with the calibration (Call 7, with
-  the timing notice when anything moved); there is no stroke controller, no tools, no autosave and
-  no Publish, and the panel is the summary.
+  with the calibration (Calls 11 and 12). The header gets the save state (its status slot) and
+  Publish. In `mode: 'view'` (the read-only /s/<id>, Task 6) the shared policy opens reconciled
+  with the calibration (Call 7, with the timing notice when anything moved); there is no stroke
+  controller, no tools, no autosave and no Publish, and the dock's one tab is the summary.
+  The dock (sim-ux plan 2, Task 4): the policy lives in a `Dock` with the tabs Transit · Paint ·
+  Permits · Protect (`SIM_TABS`), Undo and Redo (`HistoryButtons`) above them, and a Results
+  face (FzpMode's `SimResults`). From md it is open on the left of the map by default and folds to
+  a rail; below md it is a bottom sheet behind a handle. The header's Policy button opens and
+  folds it; the header score flips it to Results and back.
   Setup and Run (spec §1, sim-runs Task 7): the page opens in Setup (never persisted). Run (the
-  scrubber's button) sets the tool to Move, locks the store and plays; the panel is read-only
-  until "Change policy" ("Back to start" in the view) unlocks it and returns to the present.
+  scrubber's button) sets the tool to Move, locks the store, plays and flips the dock to Results
+  (a phone sheet peeks); a run offers Results only, until "Edit policy" ("Policy" in the
+  view) or a scrub back to Today unlocks the store and returns to the editing face.
   Map overlays (sim-runs plan 2, Task 4): in Setup the header's View menu (transit stops, transit
   capacity, height limits); a run hides them all and keeps the toggles. The height limits
   (height-lids plan, Task 12) draw in the overlay's `limits` slot: the contours from FzpMode's
   `onheights`, and from z14.5 the glass lids of the view, asked of the worker on each `moveend`
   (LidRequest: latest wins, the bbox clamped around the centre).
-  Paint feedback (Task 6): in Setup a Paint stroke, and a saved zoning rule once its revision is
-  current, briefly shows the buildings its lots in view could hold (the overlay's feedback slot).
+  Selection (sim-ux plan 3, Task 3; plan 4, Task 2): one `picked` selection, a transit layer or
+  the FZP baseline (a Transit tab row) or a painted area (a Paint tab row); the selected area's
+  lots are outlined on the map. In Set Policy with Move, a click on a lot selects the layer that
+  sets its limit (the worker's `lotAt`, latest click wins) and shows its row (plan 4, Task 4); a
+  click outside every lot clears it. Cards (project cards, and SimMap's own tap card on a
+  building) open on a tap only in a run (`cards`).
+  Live preview (sim-ux plan 3, Task 4): in Setup, while a Paint stroke is drawn, the buildings
+  its lots nearest the brush ring could hold show under it (StrokePreview, the overlay's feedback
+  slot); they fade on release, clear at once on a cancel, and a run clears them.
 -->
 <script lang="ts">
-  import { onMount, tick, untrack } from 'svelte';
+  import { onMount, tick, untrack, type Snippet } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { replaceState } from '$app/navigation';
   import { Autosave } from '$lib/sharing/autosave.svelte';
@@ -37,6 +51,8 @@
   import type { OverlayCtors } from '$lib/brush/overlay';
   import { BrushState } from '$lib/brush/state.svelte';
   import type { Manifest } from '$lib/data/manifest';
+  import Dock from '$lib/dock/Dock.svelte';
+  import { DockState } from '$lib/dock/dock-state.svelte';
   import FzpMode, { type SimClientApi } from '$lib/fzp/FzpMode.svelte';
   import type { HeightCity, HeightLids } from '$lib/map/height/types';
   import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
@@ -47,50 +63,54 @@
   import { HIDDEN_VIEW, readViewPrefs, writeViewPrefs, type ViewPrefs } from '$lib/view/prefs';
   import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
-  import type { BrushLotsResult, LotOutlinesResult } from '$lib/sim/scenario/types';
+  import type { BrushLotsResult, LotOutlinesResult, PreviewResult } from '$lib/sim/scenario/types';
   import { PREVIEW_MAX_LOTS } from '$lib/sim/scenario/preview';
   import type { ParcelId } from '$lib/data/parcel';
   import { packedCellLayer, type SolidPolygonLayerCtor } from '$lib/map/generated-controller';
-  import { PaintFeedback, RuleFeedbackTrigger, lotsInView, mergeLots } from './feedback';
-  import type { LeverStatus } from './lever-status';
-  import { BrushForms } from './brush-forms.svelte';
-  import RuleBrushForm from './RuleBrushForm.svelte';
+  import { PaintFeedback, lotsInView } from './feedback';
+  import { installSimDebug } from './debug';
+  import { StrokePreview } from './stroke-preview';
   import type { Calibration } from '$lib/timelapse/types';
-  import CustomZoningSection from './CustomZoningSection.svelte';
-  import HistoryRow from './HistoryRow.svelte';
-  import { SimBrushTools, brushToolOf, type SimTool } from './brush-tools.svelte';
-  import { createOverlayMux } from './overlay-mux';
-  import PhoneToolBar from './PhoneToolBar.svelte';
+  import HistoryButtons from '$lib/paint/HistoryButtons.svelte';
+  import PaintTab from '$lib/paint/PaintTab.svelte';
+  import PaletteStrip from '$lib/paint/PaletteStrip.svelte';
+  import { ERASE_HINT, SimBrushTools, brushToolOf, type SimTool } from './brush-tools.svelte';
+  import { createOverlayMux } from '$lib/map/overlay-mux';
   import {
     DEFAULT_POLICY,
     canonicalJson,
     compileLevers,
     customQuery,
     paintedLots,
-    queriesOf,
     queryKey,
-    ruleQueries,
     type Lots,
-    type SimPolicy,
-    type Stroke
+    type SimPolicy
   } from './policy';
   import { OutlineRequest } from './outline-request';
   import { LidRequest, clampBbox } from './lid-request';
-  import { paintedOutlineLayers } from './painted-outline';
+  import { paintedOutlineLayers } from '$lib/paint/outline-layers';
+  import { removedLabel } from '$lib/paint/rows';
   import { SIM_CODEC, simDocProblems, type SimDoc } from './sim-doc';
   import SimNotices from './SimNotices.svelte';
   import { restoreSimDoc, type SimNotice } from './sim-session';
-  import { createStrokeAdapter } from './stroke-adapter';
-  import { timingLabel } from './timing';
+  import {
+    limitsViewOf,
+    liveSelection,
+    ownerLabel,
+    selectionForLot,
+    tabOf,
+    type DockSelection
+  } from './selection';
+  import { createStrokeAdapter, removeCustomBrush } from './stroke-adapter';
   import { focusHeaderMenu } from '$lib/shell/header-actions.svelte';
   import { LeverSync, PolicyStore } from './policy-store.svelte';
   import { RunPhase } from './run-phase.svelte';
   import PermittingSection from './PermittingSection.svelte';
-  import PolicyPanel from './PolicyPanel.svelte';
-  import RulesSection from './RulesSection.svelte';
+  import TransitTab from './TransitTab.svelte';
   import PolicySummary from './PolicySummary.svelte';
-  import { customLotStatus, ruleLotStatus, type LotStatus } from './brush-summary';
+  import { customLotStatus, ruleLotStatus, simPaintRows, type LotStatus } from './brush-summary';
   import ProtectionsSection from './ProtectionsSection.svelte';
+  import { VIEW_TABS, simTabs, tabOrFirst } from './tabs';
 
   interface Props {
     manifest: Manifest | null;
@@ -264,39 +284,65 @@
     ...untrack(() => leverTimers ?? { setTimeout, clearTimeout })
   });
 
+  const wide = new MediaQuery('(min-width: 768px)');
   const uid = $props.id();
-  const panelId = `${uid}-policy`;
-  let policyOpen = $state(false);
-  /** Opening moves focus into the panel only when the user opened it (WCAG 2.4.3). */
-  let policyFocus = $state(true);
-  let policyButton = $state<HTMLButtonElement>();
-
-  // The panel starts open, docked, from md and closed below (the controller's ruling); read once,
-  // on the client. With no scenario there is no panel.
-  onMount(() => {
-    if (noScenario || !matchMedia('(min-width: 768px)').matches) return;
-    policyFocus = false;
-    policyOpen = true;
+  const dockId = `${uid}-dock`;
+  /**
+   * The dock: open (docked) from md by default, the phone sheet closed to its handle. With no
+   * scenario FzpMode renders no dock. The view's only tab is the summary (`policy`).
+   */
+  const dock = new DockState({ tab: untrack(() => mode) === 'view' ? 'policy' : 'transit' });
+  /** The dock's tabs: Permits is offered only with a calibration (no empty face). */
+  const dockTabs = $derived(mode === 'view' ? VIEW_TABS : simTabs(calibration !== null));
+  // A tab that is no longer offered (Permits without a calibration) falls back to the first.
+  $effect.pre(() => {
+    const t = tabOrFirst(dockTabs, dock.tab);
+    if (t !== dock.tab) dock.tab = t;
   });
+  /**
+   * Opening moves focus into the dock only when the user asked (the Policy button, the header
+   * score, Done on the palette strip), never for the default open or a Run (WCAG 2.4.3).
+   */
+  let dockFocus = $state(false);
+  let policyButton = $state<HTMLButtonElement>();
+  /** The phone sheet's height above the scrubber (0 from md): FzpMode's extra map inset. */
+  let sheetH = $state(0);
 
-  function openPolicy(): void {
-    policyFocus = true;
-    policyOpen = true;
+  /** The header's Policy button: desktop open <-> rail; phone sheet closed <-> full. */
+  function togglePolicy(): void {
+    dockFocus = true;
+    dock.toggleOpen(wide.current);
+  }
+
+  /** The header score: Results in a run (it stays); in Setup, Results <-> the editing face. */
+  function pressScore(): void {
+    dockFocus = true;
+    if (run.phase === 'run') dock.showResults();
+    else dock.toggleResults(wide.current);
   }
 
   /**
-   * Closing the panel returns focus to the Policy button, or, when it sits in the closed phone
-   * Menu, to the Menu button. Focus elsewhere on the page (a press on the map) stays put.
+   * The dock folded by its collapse button or Escape: focus goes to the Policy button, or, when it
+   * sits in the closed header Menu (below lg), to the Menu button.
    */
-  async function closePolicy(): Promise<void> {
-    const a = document.activeElement;
-    const panel = document.getElementById(panelId);
-    const restore = !a || a === document.body || !!panel?.contains(a);
-    policyOpen = false;
-    await tick();
-    if (!restore) return;
+  function dockClosed(): void {
     if (policyButton?.checkVisibility()) policyButton.focus();
     else focusHeaderMenu();
+  }
+
+  /**
+   * The Results face's flip ("Edit policy", "Policy" in the view): ends a run, else shows the
+   * editing face (the view's one Policy tab). The flip button goes with the face, so focus moves
+   * to the selected tab.
+   */
+  async function flip(): Promise<void> {
+    if (run.phase === 'run') resetRun();
+    else dock.showEdit();
+    await tick();
+    document
+      .getElementById(dockId)
+      ?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+      ?.focus();
   }
 
   // Every policy change after the first goes to LeverSync. The initial policy is `initial`, which
@@ -316,22 +362,39 @@
   /** /sim keeps no brush settings: `/`'s saved stories and radius stay untouched. */
   const brush = new BrushState({ storage: null, fine: false });
   const tools = new SimBrushTools(brush);
+  const noSessionPreview = (): PreviewResult => ({
+    ok: false,
+    reason: 'no-session',
+    message: 'the simulation is not running'
+  });
+  /** The live preview while painting (sim-ux plan 3, Task 4); its layer is `feedback`. */
+  const strokePreview = new StrokePreview({
+    resolve: (q) => (api ? api.resolveBrush(q) : Promise.resolve(noSession())),
+    buildings: (lots, stories) =>
+      api ? api.previewBuildings(lots, stories) : Promise.resolve(noSessionPreview()),
+    nearest: (lots, points, at) => nearest(lots, points, at),
+    live: (pack) => {
+      if (!dead && run.phase === 'setup') feedback?.live(pack);
+    },
+    release: () => feedback?.release(),
+    clear: () => feedback?.clear(),
+    answered: (rev) => controller?.previewDone(rev)
+  });
   const adapter = createStrokeAdapter({
     store,
     stories: () => tools.stories(),
     announce: (m) => brush.announce(m, ANNOUNCE_MS),
-    onpaint: (stroke, stories) => paintFeedback(stroke, stories)
+    preview: strokePreview
   });
-  const wide = new MediaQuery('(min-width: 768px)');
   let controller: BrushController | null = null;
   let controllerMap: ControllerMap | null = null;
   let mapHandle: SimMapHandle | null = null;
   let deckLayers = $state.raw<OverlayCtors | null>(null);
-  /** `@deck.gl/layers`' SolidPolygonLayer, from the same lazy module (the paint feedback). */
+  /** `@deck.gl/layers`' SolidPolygonLayer, from the same lazy module (the live preview). */
   let solidLayer = $state.raw<SolidPolygonLayerCtor | null>(null);
   let overlay = $state.raw<ReturnType<typeof createOverlayMux> | null>(null);
   let dead = false;
-  let phoneBar = $state<PhoneToolBar>();
+  let paletteStrip = $state<PaletteStrip>();
 
   /** The map handle whose overlay mux exists (either mode); a new handle gets a new mux. */
   let overlayHandle: SimMapHandle | null = null;
@@ -363,13 +426,16 @@
     controller.attach();
   }
 
-  function onMapReady(h: SimMapHandle, map: ControllerMap): void {
+  function onMapReady(h: SimMapHandle, map: ControllerMap & ClickMap): void {
     if (controller && map !== controllerMap) {
       controller.destroy();
       controller = null;
+      // A preview barrier: the live buildings clear and an answer still on its way is dropped.
+      strokePreview.cancel();
     }
     mapHandle = h;
     watchView(map);
+    watchClicks(map);
     attachController();
   }
 
@@ -378,11 +444,18 @@
     const bt = brushToolOf(t);
     if (controller) controller.setTool(bt);
     else brush.tool = bt;
-    // On a phone, a stroke tool closes the sheet and shows the floating tool bar.
-    if (t !== 'move' && !wide.current && policyOpen) {
-      policyOpen = false;
-      void tick().then(() => phoneBar?.focus());
+    // On a phone, a stroke tool closes the sheet and shows the palette strip.
+    if (t !== 'move' && !wide.current && dock.sheet !== 'closed') {
+      dock.sheet = 'closed';
+      void tick().then(() => paletteStrip?.focus());
     }
+  }
+
+  /** The palette strip's Done (it chose Move): the sheet opens full on the Paint tab. */
+  function stripDone(): void {
+    dockFocus = true;
+    dock.showEdit('paint');
+    dock.sheet = 'full';
   }
 
   // ---- Setup and Run (spec §1) ----
@@ -390,20 +463,22 @@
   const run = new RunPhase();
 
   function startRun(): void {
-    // Feedback is a Setup thing: a run clears it and drops any answer still on its way.
-    feedbackSeq++;
-    strokeWait = null;
-    feedbackTrigger.reset();
-    feedback?.show(null);
+    // The live preview is a Setup thing: a run clears it and drops any answer still on its way.
+    strokePreview.reset();
     setTool('move');
-    pickedRule = null;
+    picked = null;
     store.locked = true;
     run.run();
+    // The dock flips to Results (a rail or a closed sheet opens on it); focus stays at Run.
+    dockFocus = false;
+    dock.showResults();
   }
 
+  /** Ends a run ("Edit policy", a scrub back to Today): the editing face, on its last tab. */
   function resetRun(): void {
     store.locked = false;
     run.reset();
+    dock.showEdit();
   }
 
   // The controller's own tool keys set brush.tool: keep the /sim tool in step. During a run the
@@ -450,8 +525,11 @@
   let lids = $state.raw<HeightLids | null>(null);
   /** `limits-layer`, lazy-loaded on mount (it pulls in deck's layers). */
   let limitsModule = $state.raw<typeof import('$lib/map/height/limits-layer') | null>(null);
-  /** The rule whose "Show on map" was pressed; `selectedRule` is it while it is still in the policy. */
-  let pickedRule = $state.raw<string | null>(null);
+  /**
+   * What was picked in the dock (a Transit or Paint tab row); `selection` is it while it is still
+   * in the policy.
+   */
+  let picked = $state.raw<DockSelection>(null);
   /** The map's view at its latest `moveend` (or when it became ready). */
   let mapView = $state.raw<{
     zoom: number;
@@ -493,28 +571,96 @@
     show: (l) => (lids = l)
   });
 
-  // A rule that leaves the policy (Remove, Undo, a restore) is no longer selected, in the same
-  // render (no frame dims everything for a rule that is gone); the effect forgets it, so a Redo
-  // does not bring the selection back.
-  const selectedRule = $derived(
-    pickedRule !== null && store.policy.rules.some((r) => r.id === pickedRule) ? pickedRule : null
-  );
+  // A rule or painted area that leaves the policy (Remove, Undo, a restore) is no longer selected,
+  // in the same render (no frame dims everything or outlines lots for one that is gone); the
+  // effect forgets it, so a Redo does not bring the selection back.
+  const selection = $derived(liveSelection(picked, store.policy));
   $effect(() => {
-    if (pickedRule !== null && selectedRule === null) pickedRule = null;
+    if (picked !== null && selection === null) picked = null;
   });
-  /** "Show on map" pressed or released. Showing a rule turns the limits view on, which it needs. */
-  function selectRule(id: string | null): void {
-    pickedRule = id;
-    if (id !== null && !viewPrefs.heightLimits) setView({ ...viewPrefs, heightLimits: true });
+  const selectedPaint = $derived(selection?.kind === 'paint' ? selection.id : null);
+  /**
+   * A Transit tab row (a layer or the FZP baseline) pressed or released. Showing one turns the
+   * limits view on, which it needs.
+   */
+  function selectLayer(sel: DockSelection): void {
+    picked = sel;
+    if (sel !== null && !viewPrefs.heightLimits) setView({ ...viewPrefs, heightLimits: true });
   }
-  /** Plain; with the brush or eraser chosen, paint-set limits stand out; a selected rule wins. */
-  const limitsMode = $derived<LimitsView>(
-    selectedRule !== null
-      ? { kind: 'rule', ruleId: selectedRule }
-      : mode === 'edit' && (tools.tool === 'paint' || tools.tool === 'erase')
-        ? { kind: 'paint' }
-        : { kind: 'plain' }
-  );
+  /** A painted area's row pressed or released. */
+  function selectPaint(id: string | null): void {
+    picked = id === null ? null : { kind: 'paint', id };
+  }
+
+  // ---- selecting on the map (sim-ux plan 4, Task 4) ----
+
+  /** MapLibre's `click`, as the selection reads it. */
+  interface MapClick {
+    lngLat: { lng: number; lat: number };
+  }
+  /** What the selection needs of the map (`ControllerMap` has no `click`). */
+  interface ClickMap {
+    on(ev: 'click', fn: (e: MapClick) => void): void;
+    off(ev: 'click', fn: (e: MapClick) => void): void;
+  }
+  let clickMap: ClickMap | null = null;
+  /** The latest click's number: only its answer counts. */
+  let clickSeq = 0;
+
+  /** Listens for clicks on `map` (a new map replaces the old one's listener). */
+  function watchClicks(map: ClickMap): void {
+    if (map === clickMap) return;
+    clickMap?.off('click', onMapClick);
+    clickMap = map;
+    map.on('click', onMapClick);
+  }
+
+  /** The lots each brush query has found so far (unknown while it is still being found). */
+  const foundLots: Lots = (key) => {
+    const r = sync.result(key);
+    return r?.ok ? r.lots : undefined;
+  };
+
+  /** A click selects only in Set Policy with Move: Paint and Erase stroke, a run opens a card. */
+  const selecting = () => mode === 'edit' && run.phase === 'setup' && tools.tool === 'move';
+
+  function onMapClick(e: MapClick): void {
+    if (!selecting() || !api) return;
+    void selectAt([e.lngLat.lng, e.lngLat.lat], ++clickSeq, api);
+  }
+
+  /**
+   * Asks the worker which lot is under `point` and which layer sets its limit (from the limits it
+   * holds now, one source of truth with the height layer), then selects that layer's row: the
+   * dock shows it (a closed phone sheet peeks, so the lot stays in view) and scrolls it into view.
+   * Focus stays on the map. A `no-session` answer, or one overtaken by a later click or by a
+   * change out of Set Policy's Move, changes nothing.
+   */
+  async function selectAt(point: [number, number], seq: number, a: SimClientApi): Promise<void> {
+    const r = await a.lotAt(point);
+    if (seq !== clickSeq || dead || !r.ok || !selecting()) return;
+    const sel = selectionForLot(r.owner, r.parcelId, store.policy, foundLots);
+    if (sel === null) {
+      picked = null;
+      return;
+    }
+    if (sel.kind === 'paint') selectPaint(sel.id);
+    else selectLayer(sel);
+    dockFocus = false;
+    dock.reveal(tabOf(sel));
+    await tick();
+    const row =
+      sel.kind === 'paint'
+        ? `[data-paint-row="${CSS.escape(sel.id)}"]`
+        : `[data-layer-row="${sel.kind === 'fzp' ? 'fzp' : CSS.escape(sel.id)}"]`;
+    document.getElementById(dockId)?.querySelector(row)?.scrollIntoView({ block: 'nearest' });
+  }
+
+  /**
+   * Plain; with the brush or eraser chosen, or a painted area selected, paint-set limits stand
+   * out; a selected layer (or the FZP baseline) wins.
+   */
+  const limitsMode = $derived<LimitsView>(limitsViewOf(selection, tools.tool, mode));
   const limitsOn = $derived(run.phase === 'setup' && viewPrefs.heightLimits);
 
   // Lids from LIDS_FADE's start: the view's bbox, clamped around the view centre (R14).
@@ -556,18 +702,25 @@
     show: (o) => (outlines = o)
   });
 
+  // The outlines wanted, in order: the selected painted area's lots (an erase area's too), else
+  // the painted lots while Erase is chosen, else none.
   $effect(() => {
+    const area =
+      selectedPaint !== null ? store.policy.custom.find((b) => b.id === selectedPaint) : undefined;
+    if (area) {
+      // Read here, so the effect reruns when the area's lots arrive.
+      const r = sync.result(queryKey(customQuery(area)));
+      // Unanswered (a stroke just joined this area): keep what is drawn.
+      if (!r) return;
+      untrack(() => outlineRequest.want(r.ok ? new Set(r.lots) : null));
+      return;
+    }
     const erasing = mode === 'edit' && tools.tool === 'erase';
     if (!erasing) {
       untrack(() => outlineRequest.want(null));
       return;
     }
-    // Read here, so the effect reruns when a stroke's lots arrive.
-    const lots: Lots = (key) => {
-      const r = sync.result(key);
-      return r?.ok ? r.lots : undefined;
-    };
-    const painted = paintedLots(store.policy, lots);
+    const painted = paintedLots(store.policy, foundLots);
     // A query is unresolved (an erase stroke just landed): keep what is drawn.
     if (painted === null) return;
     untrack(() => outlineRequest.want(new Set(painted.keys())));
@@ -582,14 +735,11 @@
     untrack(() => o.slot('outline')(layers));
   });
 
-  // ---- paint feedback (plan 2, Task 6) ----
+  // ---- live preview (sim-ux plan 3, Task 4) ----
 
   const reducedMotion = new MediaQuery('(prefers-reduced-motion: reduce)');
-  /** Per overlay mux: the fading layer in its `feedback` slot. */
+  /** Per overlay mux: the preview layer in its `feedback` slot. */
   let feedback: PaintFeedback | null = null;
-  const feedbackTrigger = new RuleFeedbackTrigger();
-  /** Latest wins: a stroke or rule feedback bumps it, so an older answer is dropped. */
-  let feedbackSeq = 0;
 
   $effect(() => {
     const o = overlay;
@@ -611,97 +761,29 @@
     };
   });
 
-  /** `lots` (with label points) in the map's view, nearest its centre first, up to the cap. */
-  function inView(lots: readonly ParcelId[], points: Float64Array): ParcelId[] {
+  /**
+   * `lots` (with label points) in the map's view, nearest `at` (the brush ring) first, up to the
+   * cap, so the buildings appear under the brush.
+   */
+  function nearest(
+    lots: readonly ParcelId[],
+    points: Float64Array,
+    at: [number, number]
+  ): ParcelId[] {
     const map = mapHandle?.getMap();
     if (!map) return lots.slice(0, PREVIEW_MAX_LOTS);
     const b = map.getBounds();
-    const c = map.getCenter();
     return lotsInView(
       lots,
       points,
       [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()],
-      [c.lng, c.lat],
+      at,
       PREVIEW_MAX_LOTS
     );
   }
 
-  /** Asks for the buildings `lots` could hold and shows them, unless superseded or running. */
-  function showPreview(seq: number, a: SimClientApi, lots: ParcelId[], stories?: number): void {
-    if (lots.length === 0) return;
-    void a.previewBuildings(lots, stories).then((p) => {
-      if (dead || seq !== feedbackSeq || run.phase !== 'setup' || !p.ok) return;
-      feedback?.show(p.pack);
-    });
-  }
+  // ---- transit layers (Task 9; sim-ux plan 4, Task 2) ----
 
-  /**
-   * A stroke whose lots LeverSync is already finding (it started a new brush, so its query is the
-   * brush's own): the feedback waits for that answer instead of asking again.
-   */
-  let strokeWait = $state.raw<{ seq: number; key: string; stories: number } | null>(null);
-
-  $effect(() => {
-    const w = strokeWait;
-    if (!w) return;
-    const r = sync.result(w.key);
-    if (!r) return;
-    untrack(() => {
-      strokeWait = null;
-      const a = api;
-      if (dead || !a || w.seq !== feedbackSeq || !r.ok) return;
-      showPreview(w.seq, a, inView(r.lots, r.points), w.stories);
-    });
-  });
-
-  /** A Paint stroke landed: its own lots (the stroke alone, as it may join a brush). */
-  function paintFeedback(stroke: Stroke, stories: number): void {
-    const a = api;
-    if (!a || run.phase !== 'setup') return;
-    const seq = ++feedbackSeq;
-    const q = customQuery({ id: 'feedback', kind: 'paint', strokes: [stroke], stories });
-    const key = queryKey(q);
-    if (queriesOf(store.policy).some((x) => x.key === key)) {
-      strokeWait = { seq, key, stories };
-      return;
-    }
-    strokeWait = null;
-    void a.resolveBrush(q).then((r) => {
-      if (dead || seq !== feedbackSeq || !r.ok) return;
-      showPreview(seq, a, inView(r.lots, r.points), stories);
-    });
-  }
-
-  /** A saved rule's revision is current: its lots in view, at the levers in force. */
-  function ruleFeedback(ruleId: string): void {
-    const a = api;
-    const rule = store.policy.rules.find((r) => r.id === ruleId);
-    if (!a || !rule || run.phase !== 'setup') return;
-    const seq = ++feedbackSeq;
-    const { lots, points } = mergeLots(ruleQueries(rule).map((q) => sync.result(queryKey(q))));
-    showPreview(seq, a, inView(lots, points));
-  }
-
-  function onLevers(s: LeverStatus): void {
-    const id = feedbackTrigger.status(s);
-    if (id !== null) ruleFeedback(id);
-  }
-
-  // ---- rule brushes (Task 9) ----
-
-  const forms = new BrushForms();
-
-  // Closing the panel, or crossing md (inline form <-> sheet sub-view), discards an open brush
-  // form, so the panel reopens on the brush list (the coordinator's ruling).
-  let formLayout: boolean | null = null;
-  $effect(() => {
-    const isOpen = policyOpen;
-    const w = wide.current;
-    untrack(() => {
-      if (!isOpen || (formLayout !== null && formLayout !== w)) forms.dismiss();
-      formLayout = w;
-    });
-  });
   /** undefined: not asked yet or in flight; null: the session had none to give. */
   let catalog = $state.raw<BrushCatalog | null | undefined>(undefined);
   let catalogWanted = false;
@@ -719,9 +801,9 @@
     });
   }
 
-  // Asked for once, when the panel first opens (the view's summary needs no catalog).
+  // Asked for once, when the editing face first shows (the view's summary needs no catalog).
   $effect(() => {
-    if (!policyOpen || mode === 'view') return;
+    if (dock.face !== 'edit' || !dock.visible(wide.current) || mode === 'view') return;
     untrack(() => {
       if (catalogWanted) return;
       catalogWanted = true;
@@ -738,19 +820,19 @@
     fetchCatalog();
   }
 
-  /**
-   * A rule form saved (the inline form from md, or the sheet's below): arm the rule feedback, but
-   * only for a save that changed the policy, as only that sends a new revision to wait for.
-   */
-  function ruleSaved(r: { id: string }, changed: boolean): void {
-    if (changed) feedbackTrigger.saved(r.id);
-  }
+  /** The Paint tab's rows: one per custom brush, in policy order. */
+  const paintRows = $derived(simPaintRows(store.policy, (k) => sync.result(k)));
 
-  function saveRuleBrush(b: Parameters<BrushForms['save']>[1]): void {
-    const before = store.policy;
-    brush.announce(forms.save(store, b), ANNOUNCE_MS);
-    ruleSaved(b, store.policy !== before);
-    forms.close();
+  /**
+   * A painted area's Remove: one store change Undo names, applied synchronously (PaintTab moves
+   * focus after a single tick). Neighbours of equal kind and height merge, as on `/`.
+   */
+  function removePaintArea(id: string): void {
+    const b = store.policy.custom.find((x) => x.id === id);
+    if (!b) return;
+    const label = removedLabel({ kind: b.kind, stories: b.kind === 'paint' ? b.stories : null });
+    store.apply((p) => removeCustomBrush(p, id), label);
+    brush.announce(label, ANNOUNCE_MS);
   }
 
   /** The summary's per-card lot lookup: a rule (`rule:<id>`) or a custom brush (`custom:<id>`). */
@@ -784,10 +866,15 @@
       },
       (e) => console.error('[sim] height limits layer failed to load', e)
     );
+    const uninstall = installSimDebug(() => ({ preview: feedback?.state ?? 'none' }));
     return () => {
       dead = true;
+      uninstall();
+      strokePreview.reset();
       viewMap?.off('moveend', readView);
       viewMap = null;
+      clickMap?.off('click', onMapClick);
+      clickMap = null;
       controller?.destroy();
       controller = null;
       mapHandle = null;
@@ -803,10 +890,10 @@
   <button
     bind:this={policyButton}
     type="button"
-    aria-expanded={policyOpen}
-    aria-controls={panelId}
+    aria-expanded={dock.visible(wide.current)}
+    aria-controls={dockId}
     class="min-h-6 min-w-6 rounded-md border border-gray-300 px-2 text-sm font-medium whitespace-nowrap dark:border-gray-600 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-    onclick={() => (policyOpen ? void closePolicy() : openPolicy())}>Policy</button
+    onclick={togglePolicy}>Policy</button
   >
   {#if mode === 'edit'}
     <PublishButton
@@ -829,78 +916,79 @@
   <SimNotices {notices} ondismiss={dismissNotice} />
 {/snippet}
 
-{#snippet policySummary()}
-  <PolicySummary policy={store.policy} {calibration} {lotsOf} />
+{#snippet history()}
+  <div class="border-b border-line px-4 py-2 dark:border-line-dark">
+    <HistoryButtons
+      canUndo={store.canUndo}
+      canRedo={store.canRedo}
+      undoLabel={store.undoLabel}
+      redoLabel={store.redoLabel}
+      onundo={undo}
+      onredo={redo}
+    />
+  </div>
 {/snippet}
 
-{#snippet timingSection()}
-  {#if calibration}
-    <PermittingSection {store} {calibration} announce={(m) => brush.announce(m, ANNOUNCE_MS)} />
+{#snippet tabPanel(id: string)}
+  {#if id === 'policy'}
+    <PolicySummary policy={store.policy} {calibration} {lotsOf} />
+  {:else if id === 'transit'}
+    <TransitTab
+      {store}
+      {sync}
+      {catalog}
+      {selection}
+      onselect={selectLayer}
+      announce={(m) => brush.announce(m, ANNOUNCE_MS)}
+    />
+  {:else if id === 'paint'}
+    <PaintTab
+      {brush}
+      tool={tools.tool}
+      ontool={setTool}
+      rows={paintRows}
+      selected={selectedPaint}
+      onselect={selectPaint}
+      onremove={removePaintArea}
+      eraseHint={ERASE_HINT}
+      onretry={(keys) => keys.forEach((k) => sync.retry(k))}
+    />
+  {:else if id === 'permits'}
+    {#if calibration}
+      <PermittingSection {store} {calibration} announce={(m) => brush.announce(m, ANNOUNCE_MS)} />
+    {/if}
+  {:else if id === 'protect'}
+    <ProtectionsSection {store} announce={(m) => brush.announce(m, ANNOUNCE_MS)} />
   {/if}
 {/snippet}
 
-{#snippet panel()}
-  <PolicyPanel
-    id={panelId}
-    open={policyOpen}
-    focusOnOpen={policyFocus}
-    onclose={() => void closePolicy()}
-    view={mode === 'view'
-      ? 'summary'
-      : forms.current && catalog && !wide.current
-        ? 'add-brush'
-        : 'sections'}
-    onback={() => forms.close()}
-    timingSummary={calibration ? timingLabel(store.policy.timing.current) : undefined}
-    timing={calibration ? timingSection : undefined}
-    summary={policySummary}
-    readonly={run.phase === 'run'}
-    onreset={resetRun}
-    resetLabel={mode === 'view' ? 'Back to start' : 'Change policy'}
-  >
-    {#snippet history()}
-      <HistoryRow {store} onundo={undo} onredo={redo} />
-    {/snippet}
-    {#snippet rules()}
-      <RulesSection
-        {store}
-        {sync}
-        {catalog}
-        {forms}
-        inlineForm={wide.current}
-        announce={(m) => brush.announce(m, ANNOUNCE_MS)}
-        onsaved={ruleSaved}
-        {selectedRule}
-        onselectrule={selectRule}
-      />
-    {/snippet}
-    {#snippet custom()}
-      <CustomZoningSection
-        {store}
-        {sync}
-        {tools}
-        ontool={setTool}
-        announce={(m) => brush.announce(m, ANNOUNCE_MS)}
-      />
-    {/snippet}
-    {#snippet protections()}
-      <ProtectionsSection {store} announce={(m) => brush.announce(m, ANNOUNCE_MS)} />
-    {/snippet}
-    {#snippet subview()}
-      {#if forms.current && catalog}
-        {#key forms.current}
-          <RuleBrushForm
-            {catalog}
-            initial={forms.current.initial}
-            onsave={saveRuleBrush}
-            oncancel={() => forms.close()}
-          />
-        {/key}
-      {/if}
-    {/snippet}
-  </PolicyPanel>
-  {#if mode === 'edit' && run.phase === 'setup' && !wide.current && !policyOpen && tools.tool !== 'move'}
-    <PhoneToolBar bind:this={phoneBar} {tools} ontool={setTool} ondone={openPolicy} />
+{#snippet panel(results: Snippet)}
+  <Dock
+    id={dockId}
+    label={mode === 'view' ? 'Policy (read-only)' : 'Policy'}
+    state={dock}
+    tabs={dockTabs}
+    panel={tabPanel}
+    top={mode === 'edit' ? history : undefined}
+    {results}
+    flipLabel={mode === 'view' ? 'Policy' : 'Edit policy'}
+    flipName={mode === 'view' ? 'Back to the policy' : undefined}
+    onflip={() => void flip()}
+    focusOnOpen={dockFocus}
+    onsheetheight={(px) => (sheetH = px)}
+    onclose={dockClosed}
+    resultsOnly={run.phase === 'run'}
+  />
+  {#if mode === 'edit' && run.phase === 'setup' && !wide.current && dock.sheet === 'closed' && tools.tool !== 'move'}
+    <PaletteStrip
+      bind:this={paletteStrip}
+      {brush}
+      tool={tools.tool}
+      ontool={setTool}
+      ondone={stripDone}
+      eraseHint={ERASE_HINT}
+      lift={sheetH}
+    />
   {/if}
   <p role="status" aria-live="polite" class="sr-only">{brush.announcement}</p>
 {/snippet}
@@ -918,22 +1006,28 @@
   {levers}
   runPhase={run.phase}
   onrun={startRun}
+  onrewind={resetRun}
   leversPending={sync.pending}
   view={run.phase === 'setup' ? viewPrefs : HIDDEN_VIEW}
   onheights={(c) => {
     city = c;
     lidRequest.limitsChanged(c.rev);
   }}
-  onlevers={onLevers}
   onchunks={() => {
     outlineRequest.chunksChanged();
     lidRequest.chunksChanged();
   }}
   onmanifest={(m) => (mapManifest = m)}
+  cards={run.phase === 'run'}
+  ownerName={(o, id) => ownerLabel(o, id, store.policy, foundLots)}
   {actions}
   status={mode === 'edit' ? saveState : undefined}
   notices={sessionNotices}
   {panel}
+  scoreExpanded={dock.face === 'results' && dock.visible(wide.current)}
+  scoreControls={dockId}
+  onscore={pressScore}
+  bottomExtra={sheetH}
   onmapready={onMapReady}
   onphase={(p) => (brush.phase = p === 'ready' ? 'ready' : p === 'failed' ? 'failed' : 'loading')}
   onclient={(a) => {

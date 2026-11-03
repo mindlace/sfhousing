@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test';
 import {
   PLAN_KEY,
   gotoEditor,
+  headerNet,
   ops,
   paintOnce,
   publishDialog,
@@ -20,7 +21,7 @@ test('share roundtrip: publish, open in a fresh browser, same score, Remix', asy
 }, testInfo) => {
   await gotoEditor(page);
   await paintOnce(page, isMobile);
-  await expect(page.getByTestId('score-net')).not.toHaveText('0');
+  await expect.poll(() => headerNet(page)).toBeGreaterThan(0);
   const authorNet = await settledNet(page);
 
   const opener = await openPublish(page);
@@ -63,7 +64,7 @@ test('share roundtrip: publish, open in a fresh browser, same score, Remix', asy
     expect(await visitor.evaluate((k) => localStorage.getItem(k), PLAN_KEY)).toBeNull();
 
     await waitForMap(visitor);
-    await expect(visitor.getByTestId('score-net')).not.toHaveText('0');
+    await expect.poll(() => headerNet(visitor)).toBeGreaterThan(0);
     expect(await settledNet(visitor)).toBe(authorNet);
     // Acceptance 6: viewing a shared plan never writes the visitor's autosave.
     expect(await visitor.evaluate((k) => localStorage.getItem(k), PLAN_KEY)).toBeNull();

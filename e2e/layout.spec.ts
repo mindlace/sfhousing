@@ -1,11 +1,24 @@
-// W6b layout (WCAG 2.4.11 Focus Not Obscured): below 768 px the brush bar, the score bar and the
-// scoreboard sheet are anchored to #map-region, not the viewport, so the site footer's links stay
-// visible, unobscured and tappable on the full-height routes `/` and `/p/:id`.
-import { expect, test, type Locator, type Page } from '@playwright/test';
+// `/` and `/p/:id` layout (W6b, WCAG 2.4.11 Focus Not Obscured), on the dock (sim-ux plan 5): below
+// 768 px the dock's sheet handle sits on #map-region's bottom (the score is in the header, so no bar
+// sits under it), so the site footer's links stay visible, unobscured and tappable on the
+// full-height routes; the map's inset follows the sheet, which the header score opens on Results;
+// the brush status is a pill under the header; the palette strip leaves the map controls uncovered.
+// From 768 px the dock is a panel on the left of the map.
+import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { MSG } from '../src/lib/brush/messages';
 import { COPY } from '../src/lib/sharing/copy';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { PLAN_KEY, gotoEditor, smallText, waitForMap, type Win } from './helpers/sharing';
+import {
+  PLAN_KEY,
+  chooseTool,
+  gotoEditor,
+  headerScore,
+  openHeaderMenu,
+  resultsFace,
+  smallText,
+  waitForMap,
+  type Win
+} from './helpers/sharing';
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -16,25 +29,19 @@ const fmt = (b: Box): string =>
   `[${Math.round(b.x)},${Math.round(b.y)} ${Math.round(b.width)}x${Math.round(b.height)}]`;
 
 const notice = (page: Page): Locator => page.getByTestId('notice');
-const statusLine = (page: Page): Locator => page.locator('.brush-toolbar').getByRole('status');
-/** The narrow brush bar's popover openers (stories, then radius). */
-const POP_OPENERS = [/stories per stroke/, /^Brush \d+ m$/];
-
-/** Taps a narrow popover's opener and returns the open popover. */
-async function openPopover(page: Page, name: RegExp): Promise<Locator> {
-  const opener = page.getByTestId('brush-bar').getByRole('button', { name });
-  await opener.tap();
-  const pop = page.locator(`[id="${await opener.getAttribute('aria-controls')}"]`);
-  await expect(pop).toBeVisible();
-  return pop;
-}
+const statusLine = (page: Page): Locator => page.getByTestId('brush-status');
+const handle = (page: Page): Locator => page.getByTestId('dock-handle');
+const dockSheet = (page: Page): Locator => page.locator('.sfh-dock-sheet');
+const strip = (page: Page): Locator => page.getByTestId('palette-strip');
 
 /** Paint at the default city zoom: the brush is too small to see, so the zoom hint shows. */
 async function showZoomHint(page: Page): Promise<void> {
-  await page.getByTestId('brush-bar').getByRole('radio', { name: 'Paint' }).tap();
+  await chooseTool(page, 'Paint');
   await expect(statusLine(page)).toHaveText(MSG.zoomIn);
-  await expect(statusLine(page)).toBeVisible();
 }
+
+/** The status pill (the status region itself is `display: contents`). */
+const statusPill = (page: Page): Locator => statusLine(page).locator(':scope > span');
 
 /**
  * Seeds an unparsable autosave before the first load, so restore shows N1 (as
@@ -107,26 +114,10 @@ async function setAttribution(page: Page, expanded: boolean): Promise<void> {
   await expectFootprintSettled(page);
 }
 
-/**
- * The attribution is painted on top at its centre and no `floats` box overlaps it: a floating
- * popover or status line leaves the whole control uncovered, wrapping or narrowing instead.
- */
-async function expectAttributionClear(page: Page, floats: [string, Locator][]): Promise<void> {
-  await expect(attribution(page)).toBeVisible();
-  await expectUnobscured(attribution(page));
-  await expectApart(floats, [['attribution', attribution(page)]]);
-}
-
 const FOOTER_LINKS = ['About', 'Data & licences', 'Source code (GitHub)'];
 
 const footerLink = (page: Page, name: string): Locator =>
   page.getByRole('navigation', { name: 'Footer' }).getByRole('link', { name, exact: true });
-const brushBar = (page: Page): Locator => page.getByTestId('brush-bar');
-const scoreRegion = (page: Page): Locator =>
-  page.getByRole('region', { name: 'Housing scoreboard' });
-const scoreBar = (page: Page): Locator =>
-  scoreRegion(page).locator('button[aria-controls]', { has: page.getByTestId('scorebar-text') });
-const sheet = (page: Page): Locator => page.getByRole('group', { name: 'Scoreboard details' });
 
 /** The element painted at the centre of `loc`'s box is `loc` itself or one of its descendants. */
 async function expectUnobscured(loc: Locator): Promise<void> {
@@ -167,93 +158,79 @@ async function expectInside(inner: Locator, outer: Locator): Promise<void> {
   expect(i.y + i.height).toBeLessThanOrEqual(o.y + o.height + 0.5);
 }
 
-/** Bars visible, footer reachable; then the sheet open, inside the map region, footer still so. */
+const paddingBottom = (page: Page): Promise<number> =>
+  page.evaluate(() => (window as Win).__sfhMap!.map!.getPadding().bottom ?? 0);
+
+/**
+ * The handle visible on the region's bottom, footer reachable; the map's inset follows the dock
+ * sheet, opened by its handle and on Results by the header score; the sheet stays inside the region.
+ */
 async function checkMobile(page: Page): Promise<void> {
   const region = page.locator('#map-region');
-  await expect(brushBar(page)).toBeVisible();
-  await expect(scoreBar(page)).toBeVisible();
-  await expectUnobscured(brushBar(page));
-  await expectUnobscured(scoreBar(page));
-  await expectInside(page.locator('.brush-toolbar'), region);
-  await expectInside(scoreBar(page), region);
-  // Stacked: the brush bar sits directly on top of the score bar, both at the region's bottom.
+  await expect(handle(page)).toBeVisible();
+  await expectUnobscured(handle(page));
+  await expectInside(dockSheet(page), region);
+  await expect(page.locator('.sfh-scoreboard')).toHaveCount(0);
+  // The closed sheet (its handle) sits on the region's bottom: nothing under it.
   const r = await box(region);
-  const sb = await box(scoreBar(page));
-  const bb = await box(brushBar(page));
-  expect(Math.abs(sb.y + sb.height - (r.y + r.height))).toBeLessThanOrEqual(1);
-  expect(Math.abs(bb.y + bb.height - sb.y)).toBeLessThanOrEqual(1);
+  const ds = await box(dockSheet(page));
+  expect(Math.abs(ds.y + ds.height - (r.y + r.height))).toBeLessThanOrEqual(1);
   await expectFooterReachable(page);
-  // Containing blocks: the bars resolve against the map region (directly, or via BrushEditor's
-  // frame, which fills it), and the map canvas ends where the bars do.
+  // Containing blocks: the sheet resolves against the map box in BrushEditor's frame, which fills
+  // the region; the map canvas ends at the region's bottom.
   const cb = await page.evaluate(() => {
     const rg = document.getElementById('map-region')!;
     const frame = rg.querySelector<HTMLElement>('.brush-editor')!;
-    const toolbar = rg.querySelector<HTMLElement>('.brush-toolbar')!;
-    const bar = rg.querySelector<HTMLElement>('.sfh-scoreboard button[aria-controls]')!;
+    const sheet = rg.querySelector<HTMLElement>('.sfh-dock-sheet')!;
     const canvas = (window as Win).__sfhMap!.map!.getCanvas().getBoundingClientRect();
     const r = rg.getBoundingClientRect();
     const f = frame.getBoundingClientRect();
     return {
-      toolbarParent: toolbar.offsetParent === frame,
-      barParent: bar.parentElement!.offsetParent === rg,
+      sheetInFrame: frame.contains(sheet.offsetParent),
       frameFills: Math.abs(f.top - r.top) < 1 && Math.abs(f.bottom - r.bottom) < 1,
       canvasBottom: Math.abs(canvas.bottom - r.bottom) < 1
     };
   });
-  expect(cb).toEqual({
-    toolbarParent: true,
-    barParent: true,
-    frameFills: true,
-    canvasBottom: true
-  });
-  // setBottomInset: brush bar + score bar, in map-container pixels.
-  await expect.poll(() => paddingBottom(page)).toBe(sb.height + bb.height);
+  expect(cb).toEqual({ sheetInFrame: true, frameFills: true, canvasBottom: true });
+  // setBottomInset: the handle, in map-container pixels.
+  await expect.poll(() => paddingBottom(page)).toBe(Math.round(ds.height));
 
-  await scoreBar(page).tap();
-  await expect(sheet(page)).toBeVisible();
-  await expectInside(sheet(page), region);
+  // The dock's sheet open: inside the region, the footer still reachable, the inset its height.
+  await handle(page).tap();
+  await expect(handle(page)).toHaveAttribute('aria-expanded', 'true');
+  await expectInside(dockSheet(page), region);
   await expectFooterReachable(page);
-  // With the sheet open, the inset is the sheet's height.
-  const sheetH = await sheet(page).evaluate((el) => (el as HTMLElement).offsetHeight);
-  await expect.poll(() => paddingBottom(page)).toBe(sheetH);
-  await page.keyboard.press('Escape');
-  await expect(sheet(page)).toBeHidden();
-  await expect.poll(() => paddingBottom(page)).toBe(sb.height + bb.height);
-}
+  const openH = await dockSheet(page).evaluate((el) => el.getBoundingClientRect().height);
+  await expect.poll(() => paddingBottom(page)).toBe(Math.round(openH));
+  await handle(page).tap();
+  await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
+  await expect.poll(() => paddingBottom(page)).toBe(Math.round(ds.height));
 
-const paddingBottom = (page: Page): Promise<number> =>
-  page.evaluate(() => (window as Win).__sfhMap!.map!.getPadding().bottom ?? 0);
+  // The header score opens the sheet on Results: inside the region, the footer reachable, the
+  // inset its height; pressing the score again flips to the editing face, the handle folds it.
+  await headerScore(page).tap();
+  await expect(resultsFace(page)).toBeVisible();
+  await expectInside(dockSheet(page), region);
+  await expectFooterReachable(page);
+  const resultsH = await dockSheet(page).evaluate((el) => el.getBoundingClientRect().height);
+  // The peek height is 40dvh, so the inset may be fractional.
+  await expect.poll(() => paddingBottom(page)).toBeCloseTo(resultsH, 0);
+  await headerScore(page).tap();
+  await expect(resultsFace(page)).toHaveCount(0);
+  await handle(page).tap();
+  await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
+  await expect.poll(() => paddingBottom(page)).toBe(Math.round(ds.height));
+}
 
 test.describe('mobile', () => {
   // eslint-disable-next-line playwright/no-skipped-test
   test.skip(({ isMobile }) => !isMobile, 'mobile project only');
 
-  test('/: footer links stay visible, unobscured and tappable over the bars and sheet', async ({
+  test('/: footer links stay visible, unobscured and tappable over the handle and sheet', async ({
     page
   }) => {
     await gotoEditor(page);
     await checkMobile(page);
-
-    // The brush bar's popovers float above it inside the map region, unclipped and on top.
-    // Collapsed attribution here; the expanded case has its own test below.
-    await setAttribution(page, false);
-    const region = page.locator('#map-region');
-    for (const name of [/stories per stroke/, /^Brush \d+ m$/]) {
-      const opener = brushBar(page).getByRole('button', { name });
-      await opener.tap();
-      const pop = page.locator(`[id="${await opener.getAttribute('aria-controls')}"]`);
-      await expect(pop).toBeVisible();
-      await expectInside(pop, region);
-      expect((await box(pop)).y + (await box(pop)).height).toBeLessThanOrEqual(
-        (await box(brushBar(page))).y
-      );
-      await expectUnobscured(pop);
-      expect(await pop.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
-      // ...and leave the map's attribution (i) button, just above the bars, uncovered.
-      await expectUnobscured(page.locator('.maplibregl-ctrl-attrib-button'));
-      await page.keyboard.press('Escape');
-      await expect(pop).toBeHidden();
-    }
 
     await footerLink(page, 'About').tap();
     await expect(page).toHaveURL(/\/about$/);
@@ -274,88 +251,72 @@ test.describe('mobile', () => {
     await checkMobile(page);
   });
 
-  // The floating status line shares the band just above the bars with map-view's compact
-  // attribution (i) button (< 640 px), so it must leave that button uncovered too. These cases
-  // collapse the attribution first; the expanded case has its own test below.
-  const attrib = (page: Page): Locator => page.locator('.maplibregl-ctrl-attrib-button');
-
-  async function expectStatusClearOfAttrib(page: Page): Promise<void> {
-    await setAttribution(page, false);
-    await expect(attrib(page)).toBeVisible();
-    await expectUnobscured(attrib(page));
-    // The wrapper bounds any message (a long one wraps inside it), not just the current one.
-    const s = await box(page.locator('.brush-status'));
-    expect(s.x + s.width).toBeLessThanOrEqual((await box(attrib(page))).x);
-    expect(s.y + s.height).toBeLessThanOrEqual((await box(brushBar(page))).y);
-  }
-
-  test('/: a status message leaves the attribution button unobscured', async ({ page }) => {
-    await gotoEditor(page);
-    // Paint at the default city zoom: the brush is too small to see, so the zoom hint shows.
-    await brushBar(page).getByRole('radio', { name: 'Paint' }).tap();
-    await expect(statusLine(page)).toHaveText(MSG.zoomIn);
-    await expect(statusLine(page)).toBeVisible();
-    // (The status line is pointer-events: none, so elementFromPoint looks through it; no
-    // unobscured check on the line itself.)
-    await expectStatusClearOfAttrib(page);
-  });
-
-  test('/: the failed phase with Retry leaves the attribution button unobscured', async ({
+  test('/: a status message is a pill under the header, clear of the strip and the map controls', async ({
     page
   }) => {
+    await gotoEditor(page);
+    await setAttribution(page, false);
+    await showZoomHint(page);
+    const pill = statusPill(page);
+    await expect(pill).toBeVisible();
+    const header = await box(page.locator('header').first());
+    expect((await box(pill)).y).toBeGreaterThanOrEqual(header.y + header.height);
+    await expect(pill).toBeInViewport({ ratio: 1 });
+    await expectApart(
+      [['status pill', pill]],
+      [
+        ['palette strip', strip(page)],
+        ['dock handle', handle(page)],
+        ['attribution', attribution(page)]
+      ]
+    );
+  });
+
+  test('/: the failed phase shows its Retry pill, unobscured', async ({ page }) => {
     // The sim worker never loads: the client reports a crash and the brush enters `failed`.
     await page.route('**/workers/worker-*.js', (r) => r.fulfill({ status: 404, body: '' }));
     await page.goto('/');
     await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
       timeout: 20_000
     });
-    await expect(statusLine(page)).toHaveText(MSG.cityFailed);
-    const retry = page.locator('.brush-toolbar').getByRole('button', { name: 'Retry' });
+    await expect(statusLine(page)).toHaveText(new RegExp(`^${MSG.cityFailed}`));
+    const retry = statusLine(page).getByRole('button', { name: 'Retry' });
     await expect(retry).toBeVisible();
+    await expect(retry).toBeInViewport({ ratio: 1 });
     await expectUnobscured(retry);
-    await expectStatusClearOfAttrib(page);
-    expect((await box(retry)).x + (await box(retry)).width).toBeLessThanOrEqual(
-      (await box(attrib(page))).x
-    );
+    await retry.tap({ trial: true });
   });
 
-  /** Each popover, then the status line, leaves the attribution uncovered and stays in bounds. */
-  async function expectFloatsClearOfAttribution(page: Page): Promise<void> {
+  test('/: the palette strip and its pop-overs stay in the region, on top, clear of the attribution button', async ({
+    page
+  }) => {
+    await gotoEditor(page);
+    await setAttribution(page, false);
+    await chooseTool(page, 'Paint');
     const region = page.locator('#map-region');
-    for (const name of POP_OPENERS) {
-      const pop = await openPopover(page, name);
+    await expectInside(strip(page), region);
+    await expectUnobscured(strip(page).getByRole('button', { name: 'Done' }));
+    await expectApart([['palette strip', strip(page)]], [['attribution', attribution(page)]]);
+    await expectUnobscured(page.locator('.maplibregl-ctrl-attrib-button'));
+    // Map-view's Reset view button (coarse pointers, the map's bottom left) is lifted above it.
+    const reset = page.getByRole('button', { name: 'Reset view' });
+    await expectApart([['palette strip', strip(page)]], [['Reset view', reset]]);
+    await expectUnobscured(reset);
+    // The strip sits above the folded sheet's handle.
+    expect((await box(strip(page))).y + (await box(strip(page))).height).toBeLessThanOrEqual(
+      (await box(handle(page))).y
+    );
+    for (const name of [/^Height: /, /^Brush \d+ m$/]) {
+      const opener = strip(page).getByRole('button', { name });
+      await opener.tap();
+      const pop = page.locator(`[id="${await opener.getAttribute('aria-controls')}"]`);
+      await expect(pop).toBeVisible();
       await expectInside(pop, region);
       await expectUnobscured(pop);
       expect(await pop.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
-      await expectAttributionClear(page, [['popover', pop]]);
       await page.keyboard.press('Escape');
       await expect(pop).toBeHidden();
     }
-    await showZoomHint(page);
-    await expectInside(page.locator('.brush-status'), region);
-    await expectAttributionClear(page, [['status line', page.locator('.brush-status')]]);
-  }
-
-  test('/: with the attribution expanded, the popovers and status line leave it uncovered', async ({
-    page
-  }) => {
-    await gotoEditor(page);
-    // Expanded from the (i) toggle (collapse first: MapLibre starts it expanded).
-    await setAttribution(page, false);
-    await setAttribution(page, true);
-    await expect(attribution(page)).toHaveClass(/maplibregl-compact-show/);
-    await expectFloatsClearOfAttribution(page);
-  });
-
-  test('700×800: the popovers and status line leave the attribution strip uncovered', async ({
-    page
-  }) => {
-    // 640–767 px: the attribution is a full-width text strip (not compact) above the bars.
-    await page.setViewportSize({ width: 700, height: 800 });
-    await gotoEditor(page);
-    await expect(attribution(page)).not.toHaveClass(/maplibregl-compact/);
-    await expectFootprintSettled(page);
-    await expectFloatsClearOfAttribution(page);
   });
 });
 
@@ -363,7 +324,7 @@ test.describe('desktop', () => {
   // eslint-disable-next-line playwright/no-skipped-test
   test.skip(({ isMobile }) => isMobile, 'chromium project only');
 
-  test('/: footer reachable, toolbar top-left, scoreboard panel top-right', async ({ page }) => {
+  test('/: footer reachable, the dock on the left, the score in the header', async ({ page }) => {
     await gotoEditor(page);
     for (const name of FOOTER_LINKS) {
       const link = footerLink(page, name);
@@ -372,61 +333,48 @@ test.describe('desktop', () => {
       await expectUnobscured(link);
     }
     const region = await box(page.locator('#map-region'));
-    const toolbar = await box(page.locator('.brush-toolbar'));
-    expect(toolbar.x - region.x).toBeCloseTo(16, 0);
-    expect(toolbar.y - region.y).toBeCloseTo(16, 0);
-    const panel = await box(scoreRegion(page).locator('div.md\\:block').first());
-    expect(region.x + region.width - (panel.x + panel.width)).toBeCloseTo(16, 0);
-    expect(panel.y - region.y).toBeCloseTo(16, 0);
-    await expect(scoreBar(page)).toBeHidden();
+    const dock = await box(page.locator('.sfh-dock-panel'));
+    expect(dock.x - region.x).toBeCloseTo(0, 0);
+    expect(dock.y - region.y).toBeCloseTo(0, 0);
+    expect(dock.width).toBeCloseTo(320, 0);
+    expect(region.y + region.height - (dock.y + dock.height)).toBeCloseTo(0, 0);
+    await expect(page.locator('.sfh-scoreboard')).toHaveCount(0);
+    await expect(headerScore(page)).toBeVisible();
+    await expect(handle(page)).toHaveCount(0);
+    // The map's navigation control moves right of the dock.
+    const nav = await box(page.locator('.maplibregl-ctrl-bottom-left'));
+    expect(nav.x).toBeGreaterThanOrEqual(dock.x + dock.width - 0.5);
   });
 });
 
-// 768–1023 px: the floating toolbar (top-left) and the scoreboard panel (top-right) leave no room
-// beside the toolbar, so plan-sharing's NoticeStack sits under it. The toolbar caps its height
-// above the stack and scrolls inside.
+// 768–1023 px: the dock hangs from the top on the left and scrolls inside when its content is taller
+// than the map.
 test.describe('medium width', () => {
   // eslint-disable-next-line playwright/no-skipped-test
   test.skip(({ isMobile }) => isMobile, 'chromium project only');
-
-  async function expectToolbarClear(page: Page): Promise<void> {
-    const toolbar = page.locator('.brush-toolbar');
-    await expectInside(toolbar, page.locator('#map-region'));
-    await expectApart(
-      [['toolbar', toolbar]],
-      [
-        ['notice', notice(page)],
-        ['scoreboard panel', page.locator('.sfh-scoreboard > div.md\\:block')]
-      ]
-    );
-  }
 
   for (const [width, height] of [
     [800, 600],
     [1023, 700]
   ] as const) {
-    test(`${width}×${height}: the toolbar stays clear of a notice and scrolls inside`, async ({
+    test(`${width}×${height}: the dock stays in the region and scrolls inside`, async ({
       page
     }) => {
       await page.setViewportSize({ width, height });
-      await gotoEditorWithN1(page);
-      await expectToolbarClear(page);
+      await gotoEditor(page);
+      const panel = page.locator('.sfh-dock-panel');
+      await expectInside(panel, page.locator('#map-region'));
 
-      // The keyboard shortcuts table grows the toolbar's content past the room above the notice.
-      const panel = page.getByTestId('brush-bar');
-      const toggle = panel.getByRole('button', { name: 'Keyboard shortcuts' });
-      await toggle.click();
+      // The keyboard shortcuts table grows the dock's content past the map's height.
+      await panel.getByText('Keyboard shortcuts', { exact: true }).click();
       await expect(panel.locator('table')).toBeVisible();
-      await expectToolbarClear(page);
-
       const scroll = await panel.evaluate((el) => ({
         overflows: el.scrollHeight > el.clientHeight,
         overflowY: getComputedStyle(el).overflowY
       }));
       expect(scroll).toEqual({ overflows: true, overflowY: 'auto' });
 
-      // The last control scrolls into view inside the panel and is reachable; so does the end
-      // of the content.
+      // The last control scrolls into view inside the panel and is reachable.
       const controls = panel.locator('button, input');
       const last = controls.nth((await controls.count()) - 1);
       await last.scrollIntoViewIfNeeded();
@@ -434,16 +382,61 @@ test.describe('medium width', () => {
       await expect(last).toBeInViewport({ ratio: 1 });
       await expectUnobscured(last);
       await last.click({ trial: true });
-      await panel.evaluate((el) => el.scrollTo(0, el.scrollHeight));
-      const lastRow = panel.locator('tbody tr').last();
-      await expectInside(lastRow, panel);
-      await expect(lastRow).toBeInViewport({ ratio: 1 });
+    });
+  }
+
+  // From md to lg the dock is the desktop panel, but the header is the Menu layout: the Paint
+  // button that folds the dock waits in the Menu with the other actions.
+  const open: Record<'/' | '/p/:id', (page: Page, request: APIRequestContext) => Promise<void>> = {
+    '/': (page) => gotoEditor(page),
+    '/p/:id': async (page, request) => {
+      const res = await request.post('/api/plans', {
+        data: smallText,
+        headers: { 'content-type': 'application/json' }
+      });
+      expect(res.ok()).toBe(true);
+      const { id } = (await res.json()) as { id: string };
+      await page.goto(`/p/${id}`);
+      await waitForMap(page);
+    }
+  };
+  for (const path of ['/', '/p/:id'] as const) {
+    test(`768 px on ${path}: the header is the Menu layout and Paint folds the dock from the Menu`, async ({
+      page,
+      request
+    }) => {
+      await page.setViewportSize({ width: 768, height: 1024 });
+      await open[path](page, request);
+      const banner = page.getByRole('banner');
+      const menu = banner.getByRole('button', { name: 'Menu', exact: true });
+      const paint = banner.getByRole('button', { name: 'Paint', exact: true });
+      await expect(menu).toBeVisible();
+      await expect(headerScore(page)).toBeVisible();
+      await expect(paint).toHaveCount(0);
+      await expect(banner.getByRole('link', { name: 'Fewer cars' })).toHaveCount(0);
+      const fit = await banner.evaluate((b) => b.scrollWidth <= b.clientWidth);
+      expect(fit, 'the header overflows').toBe(true);
+      await expect(page.locator('.sfh-dock-panel')).toBeVisible();
+
+      await menu.click();
+      await expect(paint).toBeVisible();
+      for (const name of ['Paint', 'Simulate', 'Fewer cars'])
+        await expect(banner.getByRole('link', { name, exact: true })).toBeVisible();
+      await expect(paint).toHaveAttribute('aria-expanded', 'true');
+      await paint.click();
+      await expect(page.locator('.sfh-dock-panel')).toHaveCount(0);
+      await expect(page.getByTestId('dock-rail')).toBeVisible();
+      await openHeaderMenu(page);
+      await expect(paint).toHaveAttribute('aria-expanded', 'false');
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+      ).toBe(true);
     });
   }
 });
 
-// A landscape phone: below 768 px, so the narrow layout (score bar + brush bar, 112 px) on a
-// 291 px map region; from 640 px the attribution is a full-width text strip above the bars.
+// A landscape phone: below 768 px, so the narrow layout (the sheet handle, the score in the header)
+// on a short map region; from 640 px the attribution is a full-width text strip above the handle.
 test.describe('landscape phone 667×375', () => {
   // By project name: this describe's own test.use sets isMobile in both projects.
   test.beforeEach(() => {
@@ -453,12 +446,9 @@ test.describe('landscape phone 667×375', () => {
 
   test.use({ viewport: { width: 667, height: 375 }, isMobile: true, hasTouch: true });
 
-  const bars = (page: Page): [string, Locator][] => [
-    ['brush toolbar', page.locator('.brush-toolbar')],
-    ['score bar', scoreBar(page)]
-  ];
+  const bars = (page: Page): [string, Locator][] => [['dock handle', handle(page)]];
 
-  test('/: bars, popovers, status, sheet and a notice all fit, reachable and axe clean', async ({
+  test('/: handle, strip, status, sheet, Results and a notice all fit, reachable and axe clean', async ({
     page
   }) => {
     await gotoEditorWithN1(page);
@@ -471,16 +461,7 @@ test.describe('landscape phone 667×375', () => {
     ).toBe(true);
     await expectFooterReachable(page);
 
-    // Every brush control and the score bar: visible and painted on top.
-    const bar = brushBar(page);
-    const controls = [
-      ...['Move', 'Paint', 'Erase'].map((name) => bar.getByRole('radio', { name })),
-      ...POP_OPENERS.map((name) => bar.getByRole('button', { name })),
-      bar.getByRole('button', { name: /^Undo/ }),
-      bar.getByRole('button', { name: /^Redo/ }),
-      scoreBar(page)
-    ];
-    for (const c of controls) {
+    for (const c of [handle(page), headerScore(page)]) {
       await expect(c).toBeVisible();
       await expect(c).toBeInViewport({ ratio: 1 });
       await expectUnobscured(c);
@@ -495,42 +476,45 @@ test.describe('landscape phone 667×375', () => {
     expect((await box(notice(page))).y).toBeGreaterThanOrEqual(header.y + header.height);
     await expectNoA11yViolations(page);
 
-    // Popovers: inside the viewport and the map region (so below the header), on top, clear of
-    // the bars and the attribution strip.
-    for (const name of POP_OPENERS) {
-      const pop = await openPopover(page, name);
-      await expect(pop).toBeInViewport({ ratio: 1 });
-      await expectInside(pop, region);
-      expect((await box(pop)).y).toBeGreaterThanOrEqual(header.y + header.height);
-      await expectUnobscured(pop);
-      await expectApart([['popover', pop]], bars(page));
-      await expectAttributionClear(page, [['popover', pop]]);
-      await page.keyboard.press('Escape');
-      await expect(pop).toBeHidden();
+    // The palette strip: every control visible, on top, clear of the bars.
+    await chooseTool(page, 'Paint');
+    for (const name of [/^Tool: /, /^Height: /, /^Brush \d+ m$/, /^Done$/]) {
+      const c = strip(page).getByRole('button', { name });
+      await expect(c).toBeInViewport({ ratio: 1 });
+      await expectUnobscured(c);
     }
+    await expectApart([['palette strip', strip(page)]], bars(page));
 
-    // The status line: inside the region, clear of the bars, the attribution and the notice.
-    await showZoomHint(page);
-    const status = page.locator('.brush-status');
-    await expectInside(status, region);
-    await expectApart([['status line', status]], [...bars(page), ['notice', notice(page)]]);
-    await expectAttributionClear(page, [['status line', status]]);
+    // The status pill: under the header, in the viewport.
+    await expect(statusLine(page)).toHaveText(MSG.zoomIn);
+    expect((await box(statusPill(page))).y).toBeGreaterThanOrEqual(header.y + header.height);
+    await expect(statusPill(page)).toBeInViewport({ ratio: 1 });
 
-    // The sheet: inside the map region, its Close button reachable, the footer still reachable.
-    await scoreBar(page).tap();
-    await expect(sheet(page)).toBeVisible();
-    await expectInside(sheet(page), region);
-    const close = sheet(page).getByRole('button', { name: 'Close' });
-    await expect(close).toBeInViewport({ ratio: 1 });
-    await expectUnobscured(close);
-    await close.tap({ trial: true });
+    // The dock's sheet: inside the region, its collapse button reachable.
+    await chooseTool(page, 'Move');
+    await expect(handle(page)).toHaveAttribute('aria-expanded', 'true');
+    await expectInside(dockSheet(page), region);
+    const collapse = dockSheet(page).getByRole('button', { name: 'Collapse Paint' });
+    await expect(collapse).toBeInViewport({ ratio: 1 });
+    await expectUnobscured(collapse);
+    await expectNoA11yViolations(page);
+    await collapse.tap();
+    await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
+
+    // Results (the header score) in the sheet: inside the map region, its flip button reachable.
+    await headerScore(page).tap();
+    await expect(resultsFace(page)).toBeVisible();
+    await expectInside(dockSheet(page), region);
+    const flip = dockSheet(page).getByRole('button', { name: 'Back to painting' });
+    await expect(flip).toBeInViewport({ ratio: 1 });
+    await expectUnobscured(flip);
     await expectFooterReachable(page);
     await expectNoA11yViolations(page);
-    await close.tap();
-    await expect(sheet(page)).toBeHidden();
+    await flip.tap();
+    await expect(resultsFace(page)).toHaveCount(0);
   });
 
-  test('/p/:id: read-only bars and footer fit under the shared banner', async ({
+  test('/p/:id: read-only handle, score and footer fit under the shared banner', async ({
     page,
     request
   }) => {
@@ -546,7 +530,10 @@ test.describe('landscape phone 667×375', () => {
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
     ).toBe(true);
     await checkMobile(page);
-    await expectUnobscured(brushBar(page).getByRole('radio', { name: 'Move' }));
+    // Read-only: the sheet holds the rows, no tools.
+    await handle(page).tap();
+    await expect(page.locator('[data-paint-row]').first()).toBeVisible();
+    await expect(page.getByRole('radiogroup', { name: 'Brush tool' })).toHaveCount(0);
     await expectNoA11yViolations(page);
   });
 });

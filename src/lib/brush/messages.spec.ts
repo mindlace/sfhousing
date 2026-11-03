@@ -6,6 +6,7 @@ import {
   MSG,
   TOO_LARGE_MS,
   radiusValueText,
+  rowStepMessage,
   strokeMessage,
   undoMessage
 } from './messages';
@@ -71,6 +72,14 @@ describe('undoMessage', () => {
     expect(undoMessage(paint, 'Undid')).toBe('Undid paint, 6 stories');
     expect(undoMessage(erase, 'Undid')).toBe('Undid erase');
     expect(undoMessage({ ...paint, stories: 1 }, 'Redid')).toBe('Redid paint, 1 story');
+  });
+});
+
+describe('rowStepMessage', () => {
+  it('names the removal being undone or redone', () => {
+    const step = { label: 'Removed 8 stories' };
+    expect(rowStepMessage(step, 'Undid')).toBe('Undid: Removed 8 stories');
+    expect(rowStepMessage(step, 'Redid')).toBe('Redid: Removed 8 stories');
   });
 });
 

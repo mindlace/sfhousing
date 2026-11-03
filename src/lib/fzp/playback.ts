@@ -4,17 +4,16 @@ import type { Speed } from './types';
 
 /** Days of simulated time per second of wall time. */
 export const SPEED_DAYS: Record<Speed, number> = {
-  month: MONTH_DAYS,
   year: 12 * MONTH_DAYS,
   threeYears: 36 * MONTH_DAYS
 };
 
 export const DEFAULT_SPEED: Speed = 'year';
 
-export const SPEED_LABEL: Record<Speed, string> = {
-  month: '1 month/s',
-  year: '1 year/s',
-  threeYears: '3 years/s'
+/** The spoken and tooltip name of each speed. */
+export const SPEED_NAME: Record<Speed, string> = {
+  year: '1 year per second',
+  threeYears: '3 years per second'
 };
 
 /** Longest frame counted, so a background tab does not make the clock jump. */

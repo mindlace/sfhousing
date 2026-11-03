@@ -1,6 +1,11 @@
 <!--
   The project card (spec §4.8): an interactive panel over the map. It renders a `SummaryState` and
   never requests anything itself; FzpMode owns the requests. All text comes from card.ts.
+  Below md it sits above the map's bottom-right controls (`--map-controls-br-block-size`, which
+  includes the map inset: the scrubber and, on /sim, the dock's sheet) and is at most half the
+  map, never taller than the room above it, so it never rises over the header. From md it sits
+  where `anchor` puts it (FzpMode places it beside the clicked building), else at the top, right
+  of the dock (`--dock-w`). It reports its box through `onsize` for that placement.
 -->
 <script lang="ts">
   import type { Day } from '$lib/timelapse/time';
@@ -33,12 +38,51 @@
     calibration: CardCalibration;
     chance: CardChance;
     onclose: () => void;
+    /**
+     * From md: the card's top-left in map px (and the most height it may take); below md the card
+     * stays a bottom sheet. Null or absent: the fixed spot right of the dock.
+     */
+    anchor?: { left: number; top: number; maxHeight?: number } | null;
+    /** The layer that set the lot's limit, shown as "Allowed by: …"; null or absent: no line. */
+    allowedBy?: string | null;
+    /** The card's box, whenever it changes (placement measures it). */
+    onsize?: (size: { w: number; h: number }) => void;
     /** A dialog section id from `chanceProvenance` (the "How is this estimated?" list). */
     onsource: (sectionId: string) => void;
   }
-  let { state, day, asOf, calibration, chance, onclose, onsource }: Props = $props();
+  let {
+    state,
+    day,
+    asOf,
+    calibration,
+    chance,
+    onclose,
+    onsource,
+    anchor = null,
+    allowedBy = null,
+    onsize = undefined
+  }: Props = $props();
 
   const headingId = $props.id();
+
+  /** Reports the card's box now and whenever it changes (placement measures it). */
+  function measure(node: HTMLElement) {
+    const report = () => {
+      if (node.offsetWidth > 0 && node.offsetHeight > 0)
+        onsize?.({ w: node.offsetWidth, h: node.offsetHeight });
+    };
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(node);
+    return { destroy: () => ro.disconnect() };
+  }
+  /** The placement as custom properties: only the md classes read them. */
+  const placed = $derived(
+    anchor
+      ? `--card-left:${anchor.left}px;--card-top:${anchor.top}px` +
+          (anchor.maxHeight === undefined ? '' : `;--card-max-h:${anchor.maxHeight}px`)
+      : undefined
+  );
 
   const card = $derived(state.kind === 'project' ? state.card : null);
   const status = $derived(card ? cardStatus(card, day, chance) : null);
@@ -78,7 +122,9 @@
 {#if state.kind !== 'idle'}
   <section
     aria-labelledby={headingId}
-    class="absolute inset-x-4 bottom-[calc(var(--map-controls-br-block-size,60px)+8px)] z-20 max-h-1/2 overflow-y-auto rounded-lg bg-white p-4 text-sm text-black shadow-lg md:inset-x-auto md:top-4 md:bottom-auto md:left-[calc(var(--sim-panel-w,0px)+1rem)] md:max-h-[calc(100%-2rem-var(--fzp-scrubber-h,0px))] md:w-80"
+    style={placed}
+    use:measure
+    class="absolute inset-x-4 bottom-[calc(var(--map-controls-br-block-size,60px)+8px)] z-20 max-h-[min(50%,calc(100%-var(--map-controls-br-block-size,60px)-1rem))] overflow-y-auto rounded-lg border border-line bg-surface p-4 text-sm text-ink shadow-lg md:inset-x-auto md:top-[var(--card-top,1rem)] md:bottom-auto md:left-[var(--card-left,calc(var(--dock-w,0px)+1rem))] md:max-h-[var(--card-max-h,calc(100%-2rem-var(--fzp-scrubber-h,0px)))] md:w-80 dark:border-line-dark dark:bg-surface-dark dark:text-ink-dark"
   >
     <div class="flex items-start justify-between gap-2">
       <h2 id={headingId} class="text-base font-semibold">{heading}</h2>
@@ -92,10 +138,10 @@
     </div>
 
     {#if message !== null}
-      <p class="mt-2 text-gray-800" role="status">{message}</p>
+      <p class="mt-2 text-ink-muted dark:text-ink-dark-muted" role="status">{message}</p>
     {:else if card && status}
       <p
-        class="mt-1 inline-block rounded-full border border-gray-700 px-2 py-0.5 text-xs font-semibold"
+        class="mt-1 inline-block rounded-full border border-control-line px-2 py-0.5 text-xs font-semibold dark:border-control-line-dark"
         data-testid="card-badge"
       >
         {card.origin === 'pipeline' ? 'Real project' : 'Simulated project'}
@@ -104,26 +150,29 @@
         <p class="mt-2">{phaseLine(card)}</p>
       {/if}
       {#if massingNote(card)}
-        <p class="mt-2 text-gray-800">{massingNote(card)}</p>
+        <p class="mt-2 text-ink-muted dark:text-ink-dark-muted">{massingNote(card)}</p>
       {/if}
       {#if card.origin === 'simulated'}
-        <p class="mt-2 text-gray-800">{SIMULATED_DISCLAIMER}</p>
+        <p class="mt-2 text-ink-muted dark:text-ink-dark-muted">{SIMULATED_DISCLAIMER}</p>
       {/if}
 
       <p class="mt-2">{PATHWAY_LABEL[card.pathway]}</p>
       <p class="mt-2 font-semibold">{statusText(status, card, asOf)}</p>
       <p class="mt-1">{sizeLine(card, day, marked)}</p>
+      {#if allowedBy}
+        <p class="mt-1" data-testid="card-allowed-by">Allowed by: {allowedBy}</p>
+      {/if}
       {#each revisionLines(card, day, asOf) as line, i (i)}
-        <p class="text-gray-800">{line}</p>
+        <p class="text-ink-muted dark:text-ink-dark-muted">{line}</p>
       {/each}
 
       {#if estimate && status.chance !== null}
         <div class="mt-3">
           <p class="font-semibold">{chanceLine(status.chance)}</p>
           {#if estimate.research}
-            <p class="text-gray-800">This is {RESEARCH_NOTE}.</p>
+            <p class="text-ink-muted dark:text-ink-dark-muted">This is {RESEARCH_NOTE}.</p>
           {/if}
-          <p class="text-gray-800">{CHANCE_EXPLANATION}</p>
+          <p class="text-ink-muted dark:text-ink-dark-muted">{CHANCE_EXPLANATION}</p>
           <details class="mt-1">
             <summary class="min-h-6 cursor-pointer pointer-coarse:min-h-11"
               >How is this estimated?</summary
@@ -167,7 +216,7 @@
             <li>{item}</li>
           {/each}
         </ul>
-        <p class="mt-1 text-gray-800">{notes.footer}</p>
+        <p class="mt-1 text-ink-muted dark:text-ink-dark-muted">{notes.footer}</p>
       {/if}
 
       {#if links.length > 0}

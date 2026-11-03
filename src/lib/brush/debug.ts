@@ -7,6 +7,8 @@ import type { Editor } from './editor.svelte';
 /** What BrushEditor reports to the hook. */
 export interface SfhBrushDebugState {
   readonly ops: number;
+  /** The Paint tab's rows (the plan's ops grouped as `planRowGroups` groups them). */
+  readonly rows: number;
   readonly lastStats: OpStats | null;
   readonly ready: boolean;
   readonly chunks: { pending: number; failed: string[] };
@@ -44,6 +46,9 @@ export function installBrushDebug(get: () => SfhBrushDebugState): () => void {
   const hook: SfhBrushDebug = {
     get ops() {
       return get().ops;
+    },
+    get rows() {
+      return get().rows;
     },
     get lastStats() {
       return get().lastStats;

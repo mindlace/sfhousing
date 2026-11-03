@@ -116,7 +116,7 @@ export type SolidPolygonLayerCtor = new (props: Record<string, unknown>) => Laye
 
 /**
  * One packed cell as an extruded deck layer, coloured per part by typology and appearance (the
- * generated buildings' look). The controller's layers and /sim's paint feedback share it. Props
+ * generated buildings' look). The controller's layers and /sim's live preview share it. Props
  * not given are left to deck's defaults; `autoHighlight` uses the theme's highlight token.
  */
 export function packedCellLayer(

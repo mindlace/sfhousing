@@ -1,5 +1,6 @@
 // Shared helpers for the plan-sharing e2e specs. Editor navigation and the drag helpers are copied
-// from e2e/scoreboard.spec.ts and e2e/brush.spec.ts (those specs keep their own copies).
+// from e2e/scoreboard.spec.ts and e2e/brush.spec.ts (those specs keep their own copies). The score
+// helpers (`headerScore`, `headerNet`, `openResults`, `settledNet`) read `/`'s header score.
 import {
   expect,
   type APIRequestContext,
@@ -146,6 +147,48 @@ export async function touchDrag(
 export const ops = (page: Page): Promise<number> =>
   page.evaluate(() => (window as Win).__sfhBrush!.ops);
 
+/** The number of rows in `/`'s Paint tab (the plan's ops grouped), from the brush debug hook. */
+export const rows = (page: Page): Promise<number> =>
+  page.evaluate(() => (window as Win).__sfhBrush!.rows);
+
+/**
+ * Chooses a brush tool from `/`'s Paint tab. From md the tab is open in the dock. Below md it sits
+ * in the dock's sheet: the handle opens it, and Paint or Erase folds it to the palette strip
+ * (whose tool button switches Paint and Erase, and whose Done chooses Move).
+ */
+export async function chooseTool(page: Page, tool: 'Move' | 'Paint' | 'Erase'): Promise<void> {
+  const handle = page.getByTestId('dock-handle');
+  const strip = page.getByTestId('palette-strip');
+  const radio = page.getByRole('radio', { name: tool, exact: true });
+  if (!(await handle.isVisible())) {
+    await radio.click();
+    await expect(radio).toHaveAttribute('aria-checked', 'true');
+    return;
+  }
+  if (await strip.isVisible()) {
+    if (tool === 'Move') {
+      await strip.getByRole('button', { name: 'Done' }).click();
+      await expect(radio).toHaveAttribute('aria-checked', 'true');
+      return;
+    }
+    const current = strip.getByRole('button', { name: /^Tool: / });
+    if ((await current.getAttribute('aria-label')) !== `Tool: ${tool}`) await current.click();
+    await expect(strip.getByRole('button', { name: `Tool: ${tool}` })).toBeVisible();
+    return;
+  }
+  if ((await handle.getAttribute('aria-expanded')) !== 'true') await handle.click();
+  await expect(handle).toHaveAttribute('aria-expanded', 'true');
+  const checked = (await radio.getAttribute('aria-checked')) === 'true';
+  if (!checked) await radio.click();
+  if (tool === 'Move') {
+    await expect(radio).toHaveAttribute('aria-checked', 'true');
+  } else {
+    // Already the tool: the sheet stays open, so fold it by its handle.
+    if (checked) await handle.click();
+    await expect(strip.getByRole('button', { name: `Tool: ${tool}` })).toBeVisible();
+  }
+}
+
 /**
  * Paints one stroke at FRAME: a mouse drag FROM → TO on desktop; on the mobile project, switch to
  * Paint mode and drag TOUCH_FROM → TOUCH_TO with one finger. Resolves once the editor holds
@@ -154,11 +197,9 @@ export const ops = (page: Page): Promise<number> =>
 export async function paintOnce(page: Page, isMobile: boolean): Promise<void> {
   await jumpAndIdle(page);
   if (isMobile) {
-    await page.getByRole('radio', { name: 'Paint' }).tap();
-    await expect(page.getByRole('radio', { name: 'Paint' })).toHaveAttribute(
-      'aria-checked',
-      'true'
-    );
+    await chooseTool(page, 'Paint');
+    // The strip and the folded sheet are in place: project after the layout settles.
+    await jumpAndIdle(page);
     const cdp = await page.context().newCDPSession(page);
     const a = await projectToPage(page, TOUCH_FROM);
     const b = await projectToPage(page, TOUCH_TO);
@@ -169,9 +210,31 @@ export async function paintOnce(page: Page, isMobile: boolean): Promise<void> {
   await expect.poll(() => ops(page)).toBe(1);
 }
 
-/** Waits until the net readout is unchanged across 3 polls >= 100 ms apart; returns its text. */
+/** The header score on `/` and `/p/:id` (and `/sim`): "{n} homes added", the RHNA meter beside. */
+export const headerScore = (page: Page): Locator =>
+  page.getByRole('banner').getByTestId('score-bar');
+
+/** The header score's count, read from its text ("1,234 homes added" → 1234). */
+export async function headerNet(page: Page): Promise<number> {
+  const t = (await headerScore(page).textContent()) ?? '';
+  return Number(t.replace(/homes[\s\S]*$/, '').replace(/[^\d-]/g, ''));
+}
+
+/** The dock's Results face (the scoreboard on `/` and `/p/:id`). */
+export const resultsFace = (page: Page): Locator => page.getByRole('region', { name: 'Results' });
+
+/** Shows the dock's Results face by pressing the header score (when it is not already shown). */
+export async function openResults(page: Page): Promise<Locator> {
+  const score = headerScore(page);
+  if ((await score.getAttribute('aria-expanded')) !== 'true') await score.click();
+  await expect(score).toHaveAttribute('aria-expanded', 'true');
+  await expect(resultsFace(page)).toBeVisible();
+  return resultsFace(page);
+}
+
+/** Waits until the header score is unchanged across 3 polls >= 100 ms apart; returns its text. */
 export async function settledNet(page: Page): Promise<string> {
-  const net = page.getByTestId('score-net');
+  const net = headerScore(page);
   let prev = '';
   let stable = 0;
   await expect

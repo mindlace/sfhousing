@@ -26,7 +26,15 @@ import { cellsIntersecting, createChunkLoader, type ChunkLoader, type FetchLike 
 import { createDisplay, type Display } from './display';
 import { createLru, type Lru } from './lru';
 import { checkManifestShape } from './manifest-shape';
-import type { ErrorResponse, OpStats, ParcelSummary, SimRequest, SimResponse } from './protocol';
+import { packOutlines } from './outlines';
+import type {
+  ErrorResponse,
+  OpLotsResult,
+  OpStats,
+  ParcelSummary,
+  SimRequest,
+  SimResponse
+} from './protocol';
 
 export interface SimHostDeps {
   fetch: FetchLike;
@@ -413,10 +421,50 @@ export function createSimHost(deps: SimHostDeps): SimHost {
     };
   }
 
+  /**
+   * The eligible loaded lots the committed ops `opIds` cover, as a union (unknown ids are
+   * skipped), and how many of the ops' cells are not loaded yet. Never fetches: the cells were
+   * asked of the loader when the ops were loaded or committed.
+   */
+  function opLots(
+    st: State | null,
+    opIds: readonly string[],
+    outlines: boolean
+  ): { result: OpLotsResult | null; transfer: ArrayBuffer[] } {
+    if (!st) return { result: null, transfer: [] };
+    const want = new Set(opIds);
+    const lots = new Set<ParcelId>();
+    const cells = new Set<string>();
+    for (const op of st.plan.ops) {
+      if (!want.has(op.id)) continue;
+      for (const c of opCellsOf(st, op)) cells.add(c);
+      for (const id of st.index.covered(op)) if (st.index.get(id)!.eligible) lots.add(id);
+    }
+    let missing = 0;
+    for (const c of cells) if (!st.loader.isReady(c)) missing++;
+    if (!outlines) return { result: { lots: lots.size, missing, outline: null }, transfer: [] };
+    const packed = packOutlines([...lots].map((id) => st.index.get(id)!));
+    return {
+      result: { lots: lots.size, missing, outline: packed.outlines },
+      transfer: packed.transfer
+    };
+  }
+
   function dispatch(req: SimRequest): void {
     switch (req.type) {
       case 'init':
         return init(req);
+      case 'opLots': {
+        let answer: ReturnType<typeof opLots>;
+        try {
+          answer = opLots(s, req.opIds, req.outlines);
+        } catch (e) {
+          console.error('[sim] opLots:', e);
+          answer = { result: null, transfer: [] }; // the client's promise must still resolve
+        }
+        post({ type: 'opLots', reqId: req.reqId, result: answer.result }, answer.transfer);
+        return;
+      }
       case 'parcelSummary': {
         let summary: ParcelSummary | null;
         try {

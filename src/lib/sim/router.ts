@@ -3,7 +3,7 @@
 // DOM-free and $app-free.
 import type { PlaybackHostRequest } from './lesscars/playback-host';
 import type { PlaybackResponse } from './lesscars/types';
-import type { SimRequest } from './protocol';
+import type { SimRequest, SimResponse } from './protocol';
 import type { ScenarioRequest, ScenarioResponse, WorkerRequest } from './scenario/types';
 
 export interface RouterDeps {
@@ -18,9 +18,9 @@ export interface RouterDeps {
   /**
    * The router's own answers: brush, outline, preview and lid requests outside scenario mode
    * (`no-session`), and the requests playback mode does not serve (a null summary or card,
-   * `bad-request`).
+   * `bad-request`), and the editor's `opLots` outside editor mode (`result: null`).
    */
-  post(msg: ScenarioResponse | PlaybackResponse): void;
+  post(msg: ScenarioResponse | PlaybackResponse | SimResponse): void;
 }
 
 export function createWorkerRouter(deps: RouterDeps): { handle(req: WorkerRequest): void } {
@@ -53,6 +53,11 @@ export function createWorkerRouter(deps: RouterDeps): { handle(req: WorkerReques
         case 'commit':
         case 'undo':
           deps.editor.handle(req);
+          return;
+        case 'opLots':
+          // The editor's own request; with no editor session the answer is null, as for a summary.
+          if (mode === 'editor') deps.editor.handle(req);
+          else deps.post({ type: 'opLots', reqId: req.reqId, result: null });
           return;
         case 'initScenario':
           mode = 'scenario';
@@ -140,6 +145,17 @@ export function createWorkerRouter(deps: RouterDeps): { handle(req: WorkerReques
             const message = 'height lids need a /sim scenario session';
             deps.post({
               type: 'heightLids',
+              reqId: req.reqId,
+              result: { ok: false, reason: 'no-session', message }
+            });
+          }
+          return;
+        case 'lotAt':
+          if (mode === 'scenario') scenarioHost().handle(req);
+          else {
+            const message = 'lot lookup needs a /sim scenario session';
+            deps.post({
+              type: 'lotAt',
               reqId: req.reqId,
               result: { ok: false, reason: 'no-session', message }
             });

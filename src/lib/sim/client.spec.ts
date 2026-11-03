@@ -200,6 +200,26 @@ describe('SimClient', () => {
     await expect(a).resolves.toBeNull();
   });
 
+  it('resolves opLots by reqId, out of order', async () => {
+    const { w, client } = setup();
+    const a = client.opLots(['x', 'y'], false);
+    const b = client.opLots(['z'], true);
+    const reqs = w.posts.filter((p) => p.type === 'opLots') as Extract<
+      SimRequest,
+      { type: 'opLots' }
+    >[];
+    expect(reqs).toHaveLength(2);
+    expect(reqs[0]).toMatchObject({ opIds: ['x', 'y'], outlines: false });
+    expect(reqs[1]).toMatchObject({ opIds: ['z'], outlines: true });
+    expect(reqs[0].reqId).not.toBe(reqs[1].reqId);
+    const result = { lots: 3, missing: 0, outline: null };
+    w.emit({ type: 'opLots', reqId: reqs[1].reqId, result });
+    w.emit({ type: 'opLots', reqId: 999, result }); // unknown: ignored
+    w.emit({ type: 'opLots', reqId: reqs[0].reqId, result: null });
+    await expect(b).resolves.toEqual(result);
+    await expect(a).resolves.toBeNull();
+  });
+
   it('dispose terminates and resolves pending summaries with null', async () => {
     const { w, client } = setup();
     const p = client.parcelSummary('111');
@@ -260,6 +280,17 @@ describe('SimClient worker crash', () => {
       expect.anything()
     );
   };
+
+  it('a crash resolves a pending opLots with null, and later asks answer null at once', async () => {
+    const { w, client } = setup({ onCrash: () => {} });
+    const pending = client.opLots(['q'], true);
+    w.onerror?.({} as ErrorEvent);
+    expectCrashLogged();
+    await expect(pending).resolves.toBeNull();
+    const n = w.posts.length;
+    await expect(client.opLots(['q'], false)).resolves.toBeNull();
+    expect(w.posts).toHaveLength(n);
+  });
 
   it.each(['onerror', 'onmessageerror'] as const)(
     '%s clears the resync latch, resolves pending summaries with null and reports a crash',

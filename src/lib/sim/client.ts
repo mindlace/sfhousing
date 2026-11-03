@@ -7,6 +7,7 @@ import type {
   ChunksResponse,
   DiffResponse,
   ErrorResponse,
+  OpLotsResult,
   ParcelSummary,
   ReadyResponse,
   Rev,
@@ -44,6 +45,7 @@ export class SimClient {
   #resyncRev: Rev | null = null;
   #reqId = 0;
   #pending = new Map<number, (s: ParcelSummary | null) => void>();
+  #pendingOpLots = new Map<number, (r: OpLotsResult | null) => void>();
   #datasetVersion: string | null = null;
   #disposed = false;
   #crashed = false;
@@ -114,6 +116,19 @@ export class SimClient {
     });
   }
 
+  /**
+   * The eligible loaded lots the ops cover (see `OpLotsResult`). Null: no worker state, a crash
+   * or a dispose.
+   */
+  opLots(opIds: string[], outlines: boolean): Promise<OpLotsResult | null> {
+    if (this.#disposed || this.#crashed) return Promise.resolve(null);
+    const reqId = ++this.#reqId;
+    return new Promise((resolve) => {
+      this.#pendingOpLots.set(reqId, resolve);
+      this.#worker.postMessage({ type: 'opLots', reqId, opIds, outlines });
+    });
+  }
+
   /** map-view onResyncNeeded and bad-request both call this; one load per episode. */
   resync(): void {
     if (this.#disposed || this.#crashed || this.#resyncRev !== null) return;
@@ -163,6 +178,8 @@ export class SimClient {
   #resolvePending(): void {
     for (const resolve of this.#pending.values()) resolve(null);
     this.#pending.clear();
+    for (const resolve of this.#pendingOpLots.values()) resolve(null);
+    this.#pendingOpLots.clear();
   }
 
   #crash(worker: WorkerLike, e: Event): void {
@@ -197,6 +214,13 @@ export class SimClient {
         if (!resolve) return;
         this.#pending.delete(msg.reqId);
         resolve(msg.summary);
+        return;
+      }
+      case 'opLots': {
+        const resolve = this.#pendingOpLots.get(msg.reqId);
+        if (!resolve) return;
+        this.#pendingOpLots.delete(msg.reqId);
+        resolve(msg.result);
         return;
       }
       case 'error': {

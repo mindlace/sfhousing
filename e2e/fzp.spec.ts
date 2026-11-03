@@ -2,7 +2,8 @@
 // tests open the timelapse there; e2e/sim.spec.ts covers the redirect itself. Runs against the
 // VITE_E2E build, which exposes window.__sfhFzp (src/lib/fzp/debug.ts) and window.__sfhMap.
 // Fixture-0 files are read from disk; counts, ids and labels are derived from them, never
-// hard-coded. Playback starts paused, in Setup (spec §1): tests that scrub or play start a run
+// hard-coded. Playback starts paused, in Setup (spec §1): tests that scrub or play, or open a
+// project card (cards open only in a run; in Set Policy a click selects a layer), start a run
 // first (`gotoFzp(page, '', { run: true })`).
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -84,11 +85,20 @@ const readout = (page: Page): Locator => page.getByTestId('fzp-readout-label');
 const scoreBar = (page: Page): Locator => page.getByTestId('score-bar');
 /** "Another future", made visible first (below 1024 px it waits in the header Menu). */
 const anotherFuture = (page: Page): Promise<Locator> => headerAction(page, 'Another future');
-const scoreDetails = (page: Page): Locator => page.getByRole('region', { name: 'Score details' });
-/** Opens the header score bar's details (once) and returns them. */
+/** The dock's Results face (`data-testid="score-details"`), which the header score flips to. */
+const scoreDetails = (page: Page): Locator => page.getByRole('region', { name: 'Results' });
+/**
+ * Flips the dock to Results from the header score (once), opens its Sources disclosure (the
+ * future's controls and "Where these numbers come from" sit there) and returns it.
+ */
 async function openScore(page: Page): Promise<Locator> {
   if ((await scoreBar(page).getAttribute('aria-expanded')) !== 'true') await scoreBar(page).click();
   await expect(scoreDetails(page)).toBeVisible();
+  const sources = scoreDetails(page).getByTestId('fzp-sources');
+  if ((await sources.getAttribute('open')) === null) {
+    await sources.locator(':scope > summary').click();
+    await expect(sources).toHaveAttribute('open', '');
+  }
   return scoreDetails(page);
 }
 const sourcesDialog = (page: Page): Locator =>
@@ -134,7 +144,7 @@ const seedUrl = (seed?: number): RegExp => new RegExp(`/sim\\?seed=${seed ?? '\\
 
 /**
  * The timelapse (`/sim`, plus `search`'s parameters) at a stable day, ready. With `run`, a run is
- * started and paused at asOf, so the scrubber, Play and the markers work.
+ * started and paused at or just past asOf, so the scrubber, Play and the markers work.
  */
 async function gotoFzp(
   page: Page,
@@ -205,7 +215,7 @@ async function bareMapPoint(page: Page): Promise<[number, number]> {
   return point!;
 }
 
-/** Opens the sources dialog, through the header score bar's details. */
+/** Opens the sources dialog, through the dock's Results face. */
 async function openSources(page: Page): Promise<Locator> {
   await (
     await openScore(page)
@@ -246,8 +256,9 @@ async function expectFooterReachable(page: Page): Promise<void> {
 test('loads ready and the keyboard drives the scrubber to both ends', async ({ page }) => {
   await gotoFzp(page, '', { run: true });
   expect(await fzp(page, 'phase')).toBe('ready');
-  await expect(readout(page)).toHaveText('October 2026');
-  expect(await fzp(page, 'day')).toBe(await fzp(page, 'asOf'));
+  // The paused run sits at asOf or a little past it (Pause lands a few frames in).
+  expect(await fzp(page, 'day')).toBeGreaterThanOrEqual(await fzp(page, 'asOf'));
+  expect(await fzp(page, 'runPhase')).toBe('run');
 
   const { baseline, shown, months } = JSON.parse(await scoreJson(page)) as {
     baseline: { completedNet: number };
@@ -256,18 +267,20 @@ test('loads ready and the keyboard drives the scrubber to both ends', async ({ p
   };
 
   await slider(page).focus();
-  await page.keyboard.press('PageUp'); // away from the start, so Home has something to do
-  await page.keyboard.press('Home');
-  await expect(readout(page)).toHaveText('October 2026');
-  await expect(scoreBar(page)).toHaveText(
-    `${formatCount(baseline.completedNet + shown[0].completedNet)} homes added`
-  );
-
   await page.keyboard.press('End');
   await expect(readout(page)).toHaveText('December 2066');
   expect(await fzp(page, 'day')).toBe(await fzp(page, 'horizon'));
   await expect(scoreBar(page)).toHaveText(
     `${formatCount(baseline.completedNet + shown[months.length - 1].completedNet)} homes added`
+  );
+
+  // Home is a scrub back to Today: the run ends and the page returns to Set Policy at asOf.
+  await page.keyboard.press('Home');
+  await expect.poll(() => fzp(page, 'runPhase')).toBe('setup');
+  expect(await fzp(page, 'day')).toBe(await fzp(page, 'asOf'));
+  await expect(readout(page)).toHaveText('October 2026');
+  await expect(scoreBar(page)).toHaveText(
+    `${formatCount(baseline.completedNet + shown[0].completedNet)} homes added`
   );
 });
 
@@ -424,9 +437,11 @@ test('tapping a real project opens its card with the DataSF source links', async
   isMobile,
   page
 }) => {
-  await gotoFzp(page);
+  await gotoFzp(page, '', { run: true });
   const c = await openRealCard(page, isMobile);
   await expect(c.getByTestId('card-badge')).toHaveText('Real project');
+  // Nothing but FZP sets this lot's limit here: no "Allowed by" line.
+  await expect(c.getByTestId('card-allowed-by')).toHaveCount(0);
   expect(REAL.sources.length).toBeGreaterThan(0);
   for (const { dataset, id, key } of REAL.sources) {
     const known = SOURCE_DATASETS[dataset];
@@ -435,6 +450,154 @@ test('tapping a real project opens its card with the DataSF source links', async
       : `https://data.sf.gov/d/${dataset}`;
     await expect(c.locator(`a[href="${href}"]`).first()).toBeVisible();
   }
+});
+
+/**
+ * Pans the map so `at` sits at (`fx`, `fy`) of the map canvas, as fractions of its width and
+ * height, then waits for it to settle.
+ */
+async function placeLot(page: Page, at: LngLat, fx: number, fy: number): Promise<void> {
+  await frameOn(page, at);
+  await page.evaluate(
+    ([ll, ax, ay]) =>
+      new Promise<void>((resolve) => {
+        const map = (window as Win).__sfhMap!.map!;
+        const p = map.project(ll as [number, number]);
+        const r = map.getCanvas().getBoundingClientRect();
+        map.once('idle', () => resolve());
+        map.panBy([p.x - (ax as number) * r.width, p.y - (ay as number) * r.height], {
+          animate: false
+        });
+      }),
+    [at, fx, fy] as const
+  );
+}
+
+/** The dock's box: the open panel or the rail. */
+const dockBox = async (page: Page) =>
+  (await page.locator('.sfh-dock-panel, .sfh-dock-rail').first().boundingBox())!;
+
+const overlaps = (
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number }
+): boolean =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+for (const [where, fx] of [
+  ['left of the map', 0.3],
+  ['right of the map', 0.78]
+] as const) {
+  test(`from md the card opens beside the building (${where}), clear of the dock`, async ({
+    isMobile,
+    page
+  }) => {
+    test.skip(isMobile, 'below md the card is a bottom sheet');
+    await gotoFzp(page, '', { run: true });
+    const at = LABELS.get(ownParcel(REAL))!;
+    await placeLot(page, at, fx, 0.5);
+    const [x, y] = await projectToPage(page, at);
+    const c = await openCardAt(page, isMobile, at, REAL_LABEL);
+    const box = (await c.boundingBox())!;
+    const dock = await dockBox(page);
+    // Right of the click by about a gap, or left of it when the right side would overflow.
+    if (box.x > x) expect(box.x - x).toBeGreaterThanOrEqual(8);
+    else expect(x - (box.x + box.width)).toBeGreaterThanOrEqual(8);
+    expect(box.x + box.width, 'the card stays inside the page').toBeLessThanOrEqual(1280);
+    // Vertically centred on the click (or clamped inside the map): the click is beside it.
+    expect(y).toBeGreaterThanOrEqual(box.y);
+    expect(y).toBeLessThanOrEqual(box.y + box.height);
+    expect(box.x, 'the card is right of the dock').toBeGreaterThanOrEqual(
+      dock.x + dock.width - 0.5
+    );
+    expect(overlaps(box, dock)).toBe(false);
+    if (fx > 0.5) expect(box.x + box.width).toBeLessThan(x);
+  });
+}
+
+for (const [where, fx, fy] of [
+  ['low on the right', 0.6, 0.65],
+  ['low beside the zoom controls', 0.3, 0.65]
+] as const) {
+  test(`from md a tall card (${where}) stays off the attribution and the zoom controls`, async ({
+    isMobile,
+    page
+  }) => {
+    test.skip(isMobile, 'below md the card is a bottom sheet');
+    await gotoFzp(page, '', { run: true });
+    const at = LABELS.get(ownParcel(REAL))!;
+    await placeLot(page, at, fx, fy);
+    const c = await openCardAt(page, isMobile, at, REAL_LABEL);
+    const box = (await c.boundingBox())!;
+    const attribution = page.locator('.maplibregl-ctrl-bottom-right').first();
+    const zoom = page.locator('.maplibregl-ctrl-bottom-left').first();
+    // The card is tall: the real project's card with its timeline, notes and sources.
+    expect(box.height).toBeGreaterThan(300);
+    await expect(attribution).toBeVisible();
+    expect(overlaps(box, (await attribution.boundingBox())!), 'covers the attribution').toBe(false);
+    expect(overlaps(box, (await zoom.boundingBox())!), 'covers the zoom controls').toBe(false);
+    // And still clear of the time bar.
+    expect(overlaps(box, (await page.getByTestId('fzp-scrubber').boundingBox())!)).toBe(false);
+  });
+}
+
+test('from md the card follows its building when the map pans', async ({ isMobile, page }) => {
+  test.skip(isMobile, 'below md the card is a bottom sheet');
+  await gotoFzp(page, '', { run: true });
+  const at = LABELS.get(ownParcel(REAL))!;
+  await placeLot(page, at, 0.45, 0.4);
+  const c = await openCardAt(page, isMobile, at, REAL_LABEL);
+  const before = (await c.boundingBox())!;
+  const [x0] = await projectToPage(page, at);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const map = (window as Win).__sfhMap!.map!;
+        map.once('idle', () => resolve());
+        map.panBy([-120, 0], { animate: false }); // the view moves west: the building moves east
+      })
+  );
+  const [x1] = await projectToPage(page, at);
+  expect(x1 - x0).toBeGreaterThan(100);
+  await expect
+    .poll(async () => (await c.boundingBox())!.x - before.x, { timeout: 5_000 })
+    .toBeGreaterThan(100);
+  await expect(c).toBeVisible();
+});
+
+test('from md the card clears a showing notice pill', async ({ isMobile, page }) => {
+  test.skip(isMobile, 'below md the stack is in flow above the map');
+  await gotoFzp(page, '', { run: true });
+  const at = LABELS.get(ownParcel(REAL))!;
+  // The building near the map's top centre, where the pill stack overlays the map.
+  await placeLot(page, at, 0.5, 0.06);
+  await openCardAt(page, isMobile, at, REAL_LABEL);
+
+  // A real crash shows the "Part of the simulation stopped" pill.
+  const sim = page.workers().find((w) => /\/_app\/.*worker/.test(w.url()));
+  expect(sim, 'no simulation worker').toBeTruthy();
+  await sim!.evaluate(() => {
+    setTimeout(() => {
+      throw new Error('e2e: simulated worker crash');
+    });
+  });
+  const pill = page.getByTestId('fzp-notices').getByText('Part of the simulation stopped.');
+  await expect(pill).toBeVisible();
+  // The card asks again for the day and finds the worker gone: it stays, saying so.
+  const c = card(page, 'Project details');
+  await expect(c).toBeVisible();
+  await expect
+    .poll(
+      async () => {
+        const a = (await pill.boundingBox())!;
+        const b = (await c.boundingBox())!;
+        return overlaps(a, b);
+      },
+      { message: 'the card overlaps the pill' }
+    )
+    .toBe(false);
+  // Pushed down, not sideways: it sits under the pill.
+  const a = (await page.getByTestId('fzp-notices').boundingBox())!;
+  expect((await c.boundingBox())!.y).toBeGreaterThanOrEqual(a.y + a.height);
 });
 
 test('a phase of a multi-phase project reads "Phase n of m" once the scrubber reaches it', async ({
@@ -509,7 +672,7 @@ test('a record the data checks changed lists them under "About this record\'s da
   page
 }) => {
   expect(REAL.quality.length).toBeGreaterThan(0);
-  await gotoFzp(page);
+  await gotoFzp(page, '', { run: true });
   const c = await openRealCard(page, isMobile);
   await expect(c.getByRole('heading', { name: "* About this record's data" })).toBeVisible();
   for (const id of REAL.quality) {
@@ -522,7 +685,7 @@ test('clicking empty map closes the card; moving the pointer off the part does n
   isMobile,
   page
 }) => {
-  await gotoFzp(page);
+  await gotoFzp(page, '', { run: true });
   const at = LABELS.get(ownParcel(REAL))!;
   await frameOn(page, at);
   const c = await openCardAt(page, isMobile, at, REAL_LABEL);
@@ -637,7 +800,7 @@ test('/attribution carries the scenario notice', async ({ page }) => {
 // ---- accessibility and layout -------------------------------------------------------------------
 
 test('axe: the card open', async ({ isMobile, page }) => {
-  await gotoFzp(page);
+  await gotoFzp(page, '', { run: true });
   await openRealCard(page, isMobile);
   await expectNoA11yViolations(page);
 });
@@ -666,10 +829,7 @@ test('axe: the crash chip', async ({ page }) => {
   await expectNoA11yViolations(page);
 });
 
-test('axe: a failed reroll, whose notice clears the card and the score panel', async ({
-  isMobile,
-  page
-}) => {
+test('axe: a failed reroll, whose notice clears the card', async ({ isMobile, page }) => {
   // A reroll makes no request, so no route can fail it. Instead the page's own reroll request is
   // given a seed the worker rejects (bad-request), and the real error path runs.
   await page.addInitScript(() => {
@@ -679,7 +839,7 @@ test('axe: a failed reroll, whose notice clears the card and the score panel', a
       return post.call(this, m?.type === 'reroll' ? { ...m, seed: -1 } : msg, ...rest);
     } as typeof Worker.prototype.postMessage;
   });
-  await gotoFzp(page);
+  await gotoFzp(page, '', { run: true });
   const c = await openRealCard(page, isMobile);
   await (await anotherFuture(page)).click();
   const alert = page.getByRole('alert').filter({ hasText: "Couldn't make another future" });
@@ -688,11 +848,11 @@ test('axe: a failed reroll, whose notice clears the card and the score panel', a
   await expect(page.getByTestId('fzp-lever-failed')).toHaveText('');
   expect(await fzp(page, 'representative')).toBe(true);
   await expectNoA11yViolations(page);
-  const details = await openScore(page);
 
   const overlap = async (): Promise<string[]> => {
     const a = (await alert.boundingBox())!;
-    const panels = [c, details];
+    // The open score details (z-50) deliberately overlay the pill stack; the card is in the map.
+    const panels = [c];
     const hits: string[] = [];
     for (const p of panels) {
       const b = (await p.boundingBox())!;
@@ -706,17 +866,82 @@ test('axe: a failed reroll, whose notice clears the card and the score panel', a
     }
     return hits;
   };
-  const widths = isMobile ? [375] : [1280, 1000, 768];
-  for (const width of widths) {
-    await page.setViewportSize({ width, height: isMobile ? 812 : 720 });
-    await expect.poll(overlap, { message: `at ${width} px` }).toEqual([]);
+  // On a phone the pill stack is in flow above the map, so it never meets the card. From md it
+  // is an overlay (z-30) at the map's top centre and may cross the card's top; it takes no space.
+  if (!isMobile) return;
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect.poll(overlap, { message: 'at 375 px' }).toEqual([]);
+});
+
+test('a notice is a pill at the top: it moves nothing on desktop and pushes the map down on a phone', async ({
+  isMobile,
+  page
+}) => {
+  // The page's own reroll request is given a seed the worker rejects, so the failed-reroll notice
+  // shows and stays (the same route as the axe test above).
+  await page.addInitScript(() => {
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (this: Worker, msg: unknown, ...rest: never[]) {
+      const m = msg as { type?: string };
+      return post.call(this, m?.type === 'reroll' ? { ...m, seed: -1 } : msg, ...rest);
+    } as typeof Worker.prototype.postMessage;
+  });
+  await gotoFzp(page);
+  const mapRoot = page.getByTestId('map-root');
+  const bar = page.getByTestId('fzp-scrubber');
+  const barBefore = (await bar.boundingBox())!;
+  const mapBefore = (await mapRoot.boundingBox())!;
+  const header = (await page.getByRole('banner').boundingBox())!;
+
+  await (await anotherFuture(page)).click();
+  const alert = page.getByRole('alert').filter({ hasText: "Couldn't make another future" });
+  await expect(alert).toBeVisible();
+  const stack = page.getByTestId('fzp-notices');
+  await expect(stack).toContainText("Couldn't make another future");
+  const box = (await stack.boundingBox())!;
+
+  if (isMobile) {
+    // In flow, right under the header; the map starts below it and is shorter by the stack.
+    expect(Math.abs(box.y - (header.y + header.height))).toBeLessThanOrEqual(1);
+    await expect
+      .poll(async () => (await mapRoot.boundingBox())!.y)
+      .toBeGreaterThanOrEqual(box.y + box.height - 1);
+    expect((await mapRoot.boundingBox())!.height).toBeLessThan(mapBefore.height);
+  } else {
+    // An overlay on the map's top: the map and the time bar keep their boxes.
+    expect(box.y).toBeGreaterThanOrEqual(mapBefore.y);
+    expect(box.y).toBeLessThan(mapBefore.y + 16);
+    expect(await mapRoot.boundingBox()).toEqual(mapBefore);
+    expect(await bar.boundingBox()).toEqual(barBefore);
   }
 });
 
-test('axe: the score details open', async ({ page }) => {
+test('axe: the Results face open', async ({ page }) => {
   await gotoFzp(page);
   await openScore(page);
   await expectNoA11yViolations(page);
+});
+
+test('at 375 px in a run, a project card stays below the header while Results peeks', async ({
+  isMobile,
+  page
+}) => {
+  test.skip(!isMobile, 'the phone layout');
+  await gotoFzp(page, '', { run: true });
+  // The run peeks Results above the time bar, which lifts the map's bottom inset.
+  await expect(page.getByTestId('dock-handle')).toHaveText('Results');
+  const c = await openRealCard(page, isMobile);
+  const box = (await c.boundingBox())!;
+  const region = (await page.getByTestId('map-root').boundingBox())!;
+  expect(box.y, 'the card rises above the map').toBeGreaterThanOrEqual(region.y - 0.5);
+  // The header score stays the topmost element at its centre, so it can be pressed.
+  await scoreBar(page).click({ trial: true, timeout: 2_000 });
+  const covered = await scoreBar(page).evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return !(top && el.contains(top));
+  });
+  expect(covered, 'the header score is covered').toBe(false);
 });
 
 test('footer links stay unobscured at 375 px: scrubber, card and score details', async ({
@@ -724,7 +949,7 @@ test('footer links stay unobscured at 375 px: scrubber, card and score details',
   page
 }) => {
   test.skip(!isMobile, 'W6b is the phone layout');
-  await gotoFzp(page);
+  await gotoFzp(page, '', { run: true });
   await expectFooterReachable(page);
 
   await openRealCard(page, isMobile);

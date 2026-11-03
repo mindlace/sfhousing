@@ -5,6 +5,7 @@ import type { BuildoutMode, TypologyId } from '$lib/generator';
 import type { ChunkStatus, GeneratedUpdate, LotLimits, ParcelSummaryLike } from '$lib/map/types';
 import type { BBox, Envelope, Plan, PlanOp } from '$lib/plan';
 import type { Score } from '$lib/scoreboard';
+import type { LotOutlines } from './outlines';
 import type { ProjectCard } from './scenario/types';
 
 export type Rev = number; // strictly increasing per client, starting at 1
@@ -17,7 +18,9 @@ export type SimRequest =
   | { type: 'undo'; rev: Rev; opId: string }
   | { type: 'prefetch'; bbox: BBox }
   | { type: 'retryChunks' }
-  | { type: 'parcelSummary'; reqId: number; parcelId: ParcelId };
+  | { type: 'parcelSummary'; reqId: number; parcelId: ParcelId }
+  // The eligible loaded lots the plan's ops cover, for `/`'s Paint tab rows (sim UX plan 5).
+  | { type: 'opLots'; reqId: number; opIds: string[]; outlines: boolean };
 export type DiffPhase = 'load' | 'preview' | 'cancel' | 'commit' | 'undo' | 'chunk';
 export interface OpStats {
   opId: string;
@@ -44,6 +47,7 @@ export type SimResponse =
     }
   | { type: 'chunks'; status: Record<string, ChunkStatus>; pending: number; failed: string[] }
   | { type: 'parcelSummary'; reqId: number; summary: ParcelSummary | null }
+  | { type: 'opLots'; reqId: number; result: OpLotsResult | null }
   | {
       type: 'error';
       rev: Rev;
@@ -54,6 +58,17 @@ export type DiffResponse = Extract<SimResponse, { type: 'diff' }>;
 export type ChunksResponse = Extract<SimResponse, { type: 'chunks' }>;
 export type ReadyResponse = Extract<SimResponse, { type: 'ready' }>;
 export type ErrorResponse = Extract<SimResponse, { type: 'error' }>;
+/**
+ * The eligible loaded lots the ops cover (the union); `missing` counts the ops' cells not loaded
+ * yet (the page asks again on a `chunks` message while it is above 0). `outline` is set when
+ * asked for, for exactly those lots. The `result` is null with no worker state: before `init`,
+ * after a crash or dispose, and outside editor mode.
+ */
+export interface OpLotsResult {
+  lots: number;
+  missing: number;
+  outline: LotOutlines | null;
+}
 export interface ParcelSummary {
   parcelId: ParcelId;
   neighborhood: string;

@@ -10,4 +10,43 @@
   --color-on-accent-dark: #1c1d1f;
   --color-chrome-dark: #1c1d1f;
   --color-chrome-dark-raised: #2c2e31;
+  --color-surface: #ffffff;
+  --color-surface-raised: #f3f4f6;
+  --color-line: #d1d5db;
+  --color-control-line: #64748b;
+  --color-ink: #111827;
+  --color-ink-muted: #4b5563;
+  --color-surface-dark: #1c1d1f;
+  --color-surface-dark-raised: #2c2e31;
+  --color-line-dark: #3b3d41;
+  --color-control-line-dark: #8f8a80;
+  --color-ink-dark: #e8e4dc;
+  --color-ink-dark-muted: #b4aea3;
+}
+
+/* The score chart's strokes, labels and halos (src/lib/fzp/ScoreChart.svelte), light and dark.
+   Every stroke is >= 3:1 on surface and surface-raised of its theme (SC 1.4.11). */
+:root {
+  --chart-total: #1d4ed8;
+  --chart-pipeline: #374151;
+  --chart-fresh: #b45309;
+  --chart-plan: #6d28d9;
+  --chart-label: #374151;
+  --chart-ink: #000000;
+  --chart-halo: #ffffff;
+  --chart-vertical: #6b7280;
+  --chart-grid: #e5e7eb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --chart-total: #7ba5ff;
+    --chart-pipeline: #d1d5db;
+    --chart-fresh: #f0a030;
+    --chart-plan: #b095f5;
+    --chart-label: #d1d5db;
+    --chart-ink: #e8e4dc;
+    --chart-halo: #1c1d1f;
+    --chart-vertical: #9ca3af;
+    --chart-grid: #4b4d52;
+  }
 }

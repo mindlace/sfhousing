@@ -7,7 +7,7 @@ import { formatCount } from '$lib/scoreboard';
 import type { TimelineScore } from '$lib/sim/protocol';
 import { STAGE_ORDER, type Stage } from '$lib/timelapse/types';
 import type { Day } from '$lib/timelapse/time';
-import { formatMonthYear } from './format';
+import { formatMonthYear, formatShortMonthYear } from './format';
 import { inStageLabel } from './labels';
 import { YEAR_2045, monthIndex, utcParts } from './time';
 import type { Marker, ScoreAt } from './types';
@@ -153,4 +153,19 @@ export function homesAdded(at: ScoreAt): string {
 /** The score bar's sr-only live-region text once the day settles. */
 export function homesAddedBy(day: Day, at: ScoreAt): string {
   return `${homesAdded(at)} by ${formatMonthYear(day)}`;
+}
+
+/** The header score's delta: "vs FZP +1,234", "vs FZP −56" (U+2212), "vs FZP +0". */
+export function vsFzpText(n: number): string {
+  return `vs FZP ${n < 0 ? '' : '+'}${formatCount(n)}`;
+}
+
+/** "8,805 homes added since Jan 2021": `at.total` since `score.baseline.since`. */
+export function sinceText(score: TimelineScore, at: ScoreAt): string {
+  return `${homesAdded(at)} since ${formatShortMonthYear(score.baseline.since)}`;
+}
+
+/** "of which 8,805 built by today": `at.actual`. */
+export function builtByTodayText(at: ScoreAt): string {
+  return `of which ${formatCount(at.actual)} built by today`;
 }

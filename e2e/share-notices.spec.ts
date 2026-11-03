@@ -1,6 +1,8 @@
-// Plan-sharing notices (spec §4.5/§4.8) against the W6b layout: the NoticeStack never covers the
-// brush toolbar, the scoreboard panel / score bar, map-view's failure chips or its attribution
-// control, at every width from 375 to 1440 px.
+// Plan-sharing notices (spec §4.5/§4.8) on the sim-ux layout: N1 to N3 and the Remix toast are
+// pills in BrushEditor's one notice stack (`fzp-notices`, after the brush status), as on /sim
+// (sim-ux spec Goal 8). From 768 px the stack overlays the map's top centre, right of the dock; below
+// 768 px it is in flow under the header. Either way a notice never covers the dock, map-view's
+// failure chips, its attribution or its navigation control, at every width from 375 to 1440 px.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
   FRAME,
@@ -45,9 +47,8 @@ const buildingsChip = (page: Page): Locator =>
   page
     .getByRole('status')
     .filter({ hasText: "Existing buildings couldn't load. Generated buildings still work." });
-const scoreRegion = (page: Page): Locator =>
-  page.getByRole('region', { name: 'Housing scoreboard' });
 const notice = (page: Page): Locator => page.getByTestId('notice');
+const stack = (page: Page): Locator => page.getByTestId('fzp-notices');
 
 async function box(loc: Locator): Promise<Box> {
   const b = await loc.boundingBox();
@@ -64,10 +65,9 @@ const intersects = (a: Box, b: Box): boolean =>
 /** The map chrome a notice must leave uncovered at this width (only what is rendered). */
 async function chrome(page: Page): Promise<[string, Locator][]> {
   const all: [string, Locator][] = [
-    ['brush toolbar', page.locator('.brush-toolbar')],
-    ['brush status line', page.locator('.brush-status')],
-    ['scoreboard panel', scoreRegion(page).locator('div.md\\:block').first()],
-    ['score bar', scoreRegion(page).locator('button[aria-controls]').first()],
+    ['dock panel', page.locator('.sfh-dock-panel')],
+    ['dock rail', page.getByTestId('dock-rail')],
+    ['dock handle', page.getByTestId('dock-handle')],
     ['parcels chip', chunkChip(page)],
     ['buildings chip', buildingsChip(page)],
     ['attribution', page.locator('.maplibregl-ctrl-attrib')],
@@ -78,13 +78,17 @@ async function chrome(page: Page): Promise<[string, Locator][]> {
   return shown;
 }
 
-/** Every notice box lies inside #map-region and intersects none of the visible chrome. */
-const BASE = ['brush toolbar', 'parcels chip', 'buildings chip', 'attribution'];
-/** Required chrome per project: the scoreboard panel on desktop, the score bar on mobile. */
-const DESKTOP = [...BASE, 'scoreboard panel'];
-const MOBILE = [...BASE, 'score bar'];
+const BASE = ['parcels chip', 'buildings chip', 'attribution'];
+/** Required chrome per project: the dock's panel on desktop, its sheet handle on mobile. */
+const DESKTOP = [...BASE, 'dock panel'];
+const MOBILE = [...BASE, 'dock handle'];
 
+/**
+ * One notice stack, every notice a pill inside it, inside #map-region, intersecting none of the
+ * visible chrome and painted on top.
+ */
 async function expectNoticesClear(page: Page, required: string[]): Promise<void> {
+  await expect(stack(page)).toHaveCount(1);
   const region = await box(page.locator('#map-region'));
   const items = await chrome(page);
   const names = items.map(([n]) => n);
@@ -95,6 +99,7 @@ async function expectNoticesClear(page: Page, required: string[]): Promise<void>
 
   const count = await notice(page).count();
   expect(count).toBeGreaterThan(0);
+  await expect(stack(page).getByTestId('notice')).toHaveCount(count);
   const overlaps: string[] = [];
   for (let i = 0; i < count; i++) {
     const n = await box(notice(page).nth(i));
@@ -108,17 +113,18 @@ async function expectNoticesClear(page: Page, required: string[]): Promise<void>
     }
   }
   expect(overlaps, overlaps.join('\n')).toEqual([]);
-  // Painted on top: each notice's corners (inset past the 8 px radius) hit the notice itself.
+  // Painted on top: each notice's corners (inset past the pill's radius) hit the notice itself.
   for (let i = 0; i < count; i++) {
     const hits = await notice(page)
       .nth(i)
       .evaluate((el) => {
         const r = el.getBoundingClientRect();
+        const inset = Math.min(r.height / 2, 16);
         const pts: [number, number][] = [
-          [r.left + 8, r.top + 8],
-          [r.right - 8, r.top + 8],
-          [r.left + 8, r.bottom - 8],
-          [r.right - 8, r.bottom - 8]
+          [r.left + inset, r.top + inset],
+          [r.right - inset, r.top + inset],
+          [r.left + inset, r.bottom - inset],
+          [r.right - inset, r.bottom - inset]
         ];
         return pts.map(([x, y]) => {
           const top = document.elementFromPoint(x, y);
@@ -126,6 +132,32 @@ async function expectNoticesClear(page: Page, required: string[]): Promise<void>
         });
       });
     expect(hits).toEqual([true, true, true, true]);
+  }
+}
+
+/** From md the stack is centred over the map right of the dock (its panel or rail). */
+async function expectCentredRightOfDock(page: Page, dock: Locator): Promise<void> {
+  const region = await box(page.locator('#map-region'));
+  const d = await box(dock);
+  const n = await box(notice(page).first());
+  const mid = (d.x + d.width + region.x + region.width) / 2;
+  expect(Math.abs(n.x + n.width / 2 - mid)).toBeLessThanOrEqual(1);
+  expect(n.x).toBeGreaterThanOrEqual(d.x + d.width);
+}
+
+/**
+ * SimMap's failure chips sit right of the dock (its panel or rail), centred on the map it leaves
+ * uncovered, as the notice stack is.
+ */
+async function expectChipsRightOfDock(page: Page, dock: Locator): Promise<void> {
+  const region = await box(page.locator('#map-region'));
+  const d = await box(dock);
+  const mid = (d.x + d.width + region.x + region.width) / 2;
+  for (const chip of [chunkChip(page), buildingsChip(page)]) {
+    const c = await box(chip);
+    expect(c.x, `chip ${fmt(c)} under the dock ${fmt(d)}`).toBeGreaterThanOrEqual(d.x + d.width);
+    expect(c.x + c.width).toBeLessThanOrEqual(region.x + region.width);
+    expect(Math.abs(c.x + c.width / 2 - mid)).toBeLessThanOrEqual(1);
   }
 }
 
@@ -144,40 +176,37 @@ test.describe('desktop', () => {
   // eslint-disable-next-line playwright/no-skipped-test
   test.skip(({ isMobile }) => isMobile, 'chromium project only');
 
-  // `beside`: from lg the stack starts right of the toolbar column (below lg, under the toolbar).
-  for (const [width, height, beside] of [
-    [768, 1024, false],
-    [1024, 768, true],
-    [1280, 800, true],
-    [1440, 900, true]
+  for (const [width, height] of [
+    [768, 1024],
+    [1024, 768],
+    [1280, 800],
+    [1440, 900]
   ] as const) {
-    test(`${width}×${height}: N3 clear of toolbar, scoreboard, chips and attribution`, async ({
+    test(`${width}×${height}: N3 is a pill in the one stack, clear of the dock, chips and attribution`, async ({
       page
     }) => {
       await page.setViewportSize({ width, height });
       await gotoWithN3AndChips(page);
       await expectNoticesClear(page, DESKTOP);
-      // Out of the scoreboard column at any panel height; from xl, out of the toolbar's too.
-      const n = await box(notice(page).first());
-      const panel = await box(scoreRegion(page).locator('div.md\\:block').first());
-      expect(n.x + n.width).toBeLessThanOrEqual(panel.x);
-      const toolbar = await box(page.locator('.brush-toolbar'));
-      expect(n.x >= toolbar.x + toolbar.width).toBe(beside);
+      await expectCentredRightOfDock(page, page.locator('.sfh-dock-panel'));
+      await expectChipsRightOfDock(page, page.locator('.sfh-dock-panel'));
+      // A pill: fully rounded.
+      const radius = await notice(page)
+        .first()
+        .evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius));
+      expect(radius).toBeGreaterThanOrEqual(16);
     });
   }
 
-  test('1024×768: N3 stays clear when the keyboard shortcuts grow the toolbar', async ({
-    page
-  }) => {
+  test('1024×768: folded to the rail, the stack recentres and stays clear', async ({ page }) => {
     await page.setViewportSize({ width: 1024, height: 768 });
     await gotoWithN3AndChips(page);
-    const toggle = page
-      .locator('.brush-toolbar')
-      .getByRole('button', { name: 'Keyboard shortcuts' });
-    await toggle.click();
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    await expect(page.locator('.brush-toolbar table')).toBeVisible();
-    await expectNoticesClear(page, DESKTOP);
+    await page.getByRole('button', { name: 'Collapse Paint' }).click();
+    const rail = page.getByTestId('dock-rail');
+    await expect(rail).toBeVisible();
+    await expectNoticesClear(page, [...BASE, 'dock rail']);
+    await expectCentredRightOfDock(page, rail);
+    await expectChipsRightOfDock(page, rail);
   });
 
   test('1024×768: the Remix toast is clear of the map chrome too', async ({ page, request }) => {
@@ -202,12 +231,7 @@ test.describe('desktop', () => {
     await jumpAndIdle(page, FRAME);
     await expect(notice(page).filter({ hasText: /^Remixed from/ })).toBeVisible();
     await expect(chunkChip(page)).toBeVisible({ timeout: 10_000 });
-    await expectNoticesClear(page, [
-      'brush toolbar',
-      'parcels chip',
-      'attribution',
-      'scoreboard panel'
-    ]);
+    await expectNoticesClear(page, ['parcels chip', 'attribution', 'dock panel']);
   });
 });
 
@@ -215,7 +239,7 @@ test.describe('mobile', () => {
   // eslint-disable-next-line playwright/no-skipped-test
   test.skip(({ isMobile }) => !isMobile, 'mobile project only');
 
-  test('375×812: N3 clear of the bars, chips and attribution; no horizontal scroll', async ({
+  test('375×812: N3 under the header, clear of the handle, chips and attribution; no horizontal scroll', async ({
     page
   }) => {
     await gotoWithN3AndChips(page);
@@ -232,10 +256,12 @@ test.describe('mobile', () => {
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth
       )
     ).toBe(true);
-    // Below 640 px the stack keeps 60 px clear on the right (W6b rule).
-    const region = await box(page.locator('#map-region'));
+    // In flow under the header (above the map, which it pushes down).
+    const header = await box(page.locator('header').first());
     const n = await box(notice(page).first());
-    expect(region.x + region.width - (n.x + n.width)).toBeGreaterThanOrEqual(60 - 0.5);
+    expect(n.y).toBeGreaterThanOrEqual(header.y + header.height);
+    const map = await box(page.getByTestId('map-root'));
+    expect(n.y + n.height).toBeLessThanOrEqual(map.y + 0.5);
     // The notice text wraps inside its box.
     expect(
       await notice(page)
@@ -243,13 +269,21 @@ test.describe('mobile', () => {
         .evaluate((el) => el.scrollWidth <= el.clientWidth)
     ).toBe(true);
 
-    // The score bar's sheet (z-30, a modal surface) may open over the notice; on close the notice
-    // is back on top and still clear of the score bar.
-    const bar = scoreRegion(page).locator('button[aria-controls]').first();
-    await bar.tap();
-    await expect(page.getByRole('group', { name: 'Scoreboard details' })).toBeVisible();
-    await page.keyboard.press('Escape');
-    await expect(page.getByRole('group', { name: 'Scoreboard details' })).toBeHidden();
-    await expectNoticesClear(page, MOBILE);
+    // The dock's sheet opened full stays in the map box: the notice keeps its place, unobscured.
+    const handle = page.getByTestId('dock-handle');
+    await handle.tap();
+    await expect(handle).toHaveAttribute('aria-expanded', 'true');
+    expect(await box(notice(page).first())).toEqual(n);
+    const sheet = await box(page.locator('.sfh-dock-sheet'));
+    expect(sheet.y).toBeGreaterThanOrEqual(n.y + n.height - 0.5);
+    const dismiss = notice(page).first().getByRole('button', { name: 'Dismiss' });
+    const hit = await dismiss.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return !!top && el.contains(top);
+    });
+    expect(hit).toBe(true);
+    await handle.tap();
+    await expect(handle).toHaveAttribute('aria-expanded', 'false');
   });
 });

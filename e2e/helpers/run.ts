@@ -8,17 +8,19 @@ type FzpWin = Window & { __sfhFzp?: SfhFzpDebug };
 export const slider = (page: Page): Locator =>
   page.getByRole('slider', { name: 'Date in the simulation' });
 
-/** Run, then Pause once it plays, then Home on the slider: the run waits paused at asOf. */
+/**
+ * Run, then Pause once it plays: the run waits paused, the day just past asOf (or at asOf if the
+ * pause beat the first frame). It stays in Run: only a user jump to Today (Home, the Today marker)
+ * returns to Setup, so a test that needs asOf in a run reads `__sfhFzp.day` instead.
+ */
 export async function startRun(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Run', exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => (window as FzpWin).__sfhFzp!.playing), { timeout: 20_000 })
     .toBe(true);
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
-  await slider(page).focus();
-  await page.keyboard.press('Home');
   await page.waitForFunction(() => {
     const f = (window as FzpWin).__sfhFzp!;
-    return f.day === f.asOf && !f.playing;
+    return f.runPhase === 'run' && !f.playing;
   });
 }

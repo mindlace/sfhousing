@@ -1,5 +1,5 @@
 <!--
-  The brush radius control (spec §4.2), shared by `/`'s BrushToolbar and /sim: inline, the
+  The brush radius control (spec §4.2), shared by the Paint tab and the palette strip: inline, the
   labelled slider; otherwise a "{n} m" opener whose pop-over holds the slider. Escape closes the
   pop-over and refocuses the opener; a press outside it closes it.
 -->
@@ -92,6 +92,11 @@
     background: color-mix(in srgb, var(--bt-fg, currentColor) 10%, transparent);
   }
   .range {
-    accent-color: var(--brush-paint, #b4532f);
+    accent-color: var(--color-accent);
+  }
+  @media (prefers-color-scheme: dark) {
+    .range {
+      accent-color: var(--color-accent-dark);
+    }
   }
 </style>

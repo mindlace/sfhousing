@@ -1,15 +1,18 @@
 /**
  * BrushController's editor and client on /sim: a committed stroke becomes one PolicyStore change
- * (a custom paint or erase stroke in the recipe) instead of a plan op sent to a worker. The
- * client has no `preview`, so the controller sends no previews and gates nothing. Undo and redo
- * go to the store and return null, so the controller announces nothing; the adapter announces
- * the store's label instead, as it does for each committed stroke.
+ * (a custom paint or erase stroke in the recipe) instead of a plan op sent to a worker. With a
+ * `StrokePreview`, the client's `preview` and `cancelPreview` go to it and `commit` and `undo`
+ * are its barriers (the live buildings fade); without one the client has no `preview`, so the
+ * controller sends no previews and gates nothing. Undo and redo go to the store and return null,
+ * so the controller announces nothing; the adapter announces the store's label instead, as it
+ * does for each committed stroke.
  */
 import type { BrushControllerDeps } from '$lib/brush/BrushController.svelte';
 import { newOpId } from '$lib/brush/ids';
 import type { PlanOp } from '$lib/plan';
 import type { CustomBrush, SimPolicy, Stroke } from './policy';
 import type { PolicyStore } from './policy-store.svelte';
+import type { StrokePreview } from './stroke-preview';
 
 /** The undo label of a Paint stroke ("Allowed 8 stories"). */
 export function strokeLabel(stories: number): string {
@@ -38,14 +41,37 @@ function appendStroke(p: SimPolicy, stroke: Stroke, op: PlanOp, stories: number)
   return { ...p, custom };
 }
 
+/** Two custom brushes are one row when they are the same kind and (paint) the same stories. */
+function sameRow(a: CustomBrush, b: CustomBrush): boolean {
+  return a.kind === 'paint' ? b.kind === 'paint' && a.stories === b.stories : b.kind === 'erase';
+}
+
+/**
+ * The policy without custom brush `id`; the two brushes now adjacent merge when they are the
+ * same kind and (paint) the same stories: the earlier brush's id is kept and its strokes are
+ * followed by the later one's. This is `appendStroke`'s join rule and `/`'s derived row
+ * grouping, so a row means the same on both pages. An unknown `id` returns `p` itself.
+ */
+export function removeCustomBrush(p: SimPolicy, id: string): SimPolicy {
+  const i = p.custom.findIndex((b) => b.id === id);
+  if (i < 0) return p;
+  const custom = p.custom.filter((_, j) => j !== i);
+  const before = custom[i - 1];
+  const after = custom[i];
+  if (before && after && sameRow(before, after)) {
+    custom.splice(i - 1, 2, { ...before, strokes: [...before.strokes, ...after.strokes] });
+  }
+  return { ...p, custom };
+}
+
 export function createStrokeAdapter(deps: {
   store: PolicyStore;
   stories(): number;
   announce(msg: string): void;
-  /** A Paint stroke landed in the store (never called for Erase): the paint feedback. */
-  onpaint?(stroke: Stroke, stories: number): void;
+  /** The live preview; absent: no previews (the view mode has no controller anyway). */
+  preview?: StrokePreview;
 }): { editor: BrushControllerDeps['editor']; client: BrushControllerDeps['client'] } {
-  const { store, announce } = deps;
+  const { store, announce, preview: sp } = deps;
   let rev = 0;
   return {
     editor: {
@@ -59,9 +85,8 @@ export function createStrokeAdapter(deps: {
         const stories = deps.stories();
         const label = op.kind === 'paint' ? strokeLabel(stories) : ERASE_LABEL;
         store.apply((p) => appendStroke(p, stroke, op, stories), label);
-        // The stroke's result in words (WCAG 4.1.3); the lot count follows in "Custom zoning".
+        // The stroke's result in words (WCAG 4.1.3); the lot count follows in the Paint tab's rows.
         announce(label);
-        if (op.kind === 'paint') deps.onpaint?.(stroke, stories);
         return { ok: true };
       },
       undo() {
@@ -75,11 +100,21 @@ export function createStrokeAdapter(deps: {
         return null;
       }
     },
-    client: {
-      datasetVersion: null,
-      commit: () => ++rev,
-      undo: () => ++rev,
-      prefetch: () => {}
-    }
+    client: sp
+      ? {
+          datasetVersion: null,
+          preview: (op) => sp.preview(op),
+          cancelPreview: () => sp.cancel(),
+          // The stroke is in the policy: its live buildings fade (Set Policy shows the present).
+          commit: () => sp.barrier(true),
+          undo: () => sp.barrier(true),
+          prefetch: () => {}
+        }
+      : {
+          datasetVersion: null,
+          commit: () => ++rev,
+          undo: () => ++rev,
+          prefetch: () => {}
+        }
   };
 }

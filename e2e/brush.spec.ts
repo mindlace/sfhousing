@@ -1,12 +1,22 @@
-// Brush tool e2e (spec §6 Playwright 1–6, §7). Runs against the VITE_E2E build, which exposes
-// window.__sfhBrush (src/lib/brush/debug.ts) and window.__sfhMap (src/lib/map/debug.ts), and
-// shortens the worker's chunk retries to 50/100/200 ms.
+// Brush tool e2e (spec §6 Playwright 1–6, §7), on the dock's Paint tab (sim-ux plan 5): rows of
+// painted areas, Remove, undo and redo of a removed row, the autosave and Publish after one. Runs
+// against the VITE_E2E build, which exposes window.__sfhBrush (src/lib/brush/debug.ts) and
+// window.__sfhMap (src/lib/map/debug.ts), and shortens the worker's chunk retries to 50/100/200 ms.
 import { expect, test, type CDPSession, type Locator, type Page } from '@playwright/test';
 import { MSG } from '../src/lib/brush/messages';
 import type { SfhBrushDebug } from '../src/lib/brush/debug';
 import type { Plan } from '../src/lib/plan';
 import type { SfhMapDebug } from '../src/lib/map/debug';
 import { expectNoA11yViolations } from './helpers/a11y';
+import {
+  PLAN_KEY,
+  chooseTool,
+  gotoEditor as gotoEditorWithActions,
+  publishDialog,
+  publishOpen,
+  rows,
+  settledNet
+} from './helpers/sharing';
 
 type Win = Window & { __sfhMap?: SfhMapDebug; __sfhBrush?: SfhBrushDebug };
 type LngLat = [number, number];
@@ -15,8 +25,8 @@ type LngLat = [number, number];
 const FRAME = { center: [-122.4187, 37.76014] as LngLat, zoom: 18.5, pitch: 0, bearing: 0 };
 const CHUNK = '**/data/fixture-0/parcels/50_25.json';
 
-async function gotoEditor(page: Page): Promise<void> {
-  await page.goto('/');
+async function gotoEditor(page: Page, { reload = true }: { reload?: boolean } = {}): Promise<void> {
+  if (reload) await page.goto('/');
   await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
     timeout: 20_000
   });
@@ -55,8 +65,60 @@ const generated = (page: Page) =>
 const center = (page: Page) =>
   page.evaluate(() => (window as Win).__sfhMap!.map!.getCenter().toArray() as LngLat);
 
-function brushStatus(page: Page): Locator {
-  return page.locator('.brush-toolbar').getByRole('status');
+/**
+ * The brush's announcements (a stroke's result, Undid, Removed): a screen-reader-only status, as on
+ * /sim. The visible status line (`brush-status`) carries only loading, the zoom hint and failures.
+ */
+function announcement(page: Page): Locator {
+  return page.getByTestId('brush-announcement');
+}
+
+/** The Paint tab's row select buttons ("6 stories · 2 strokes · 12 lots"). */
+const rowButtons = (page: Page): Locator => page.locator('[data-paint-row]');
+
+/** The rows on screen match the hook: one button per row, their strokes summing to the ops. */
+async function expectRowsMatchOps(page: Page): Promise<void> {
+  const names = await rowButtons(page).evaluateAll((bs) =>
+    bs.map((b) => b.getAttribute('aria-label') ?? '')
+  );
+  const strokes = names.reduce((n, name) => n + Number(/ · (\d+) strokes? · /.exec(name)![1]), 0);
+  expect(names).toHaveLength(await rows(page));
+  expect(strokes).toBe(await ops(page));
+}
+
+/** Records every error the editor worker answers with (bad-request, internal) in the page. */
+async function recordWorkerErrors(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const W = window.Worker;
+    const w = window as unknown as { __sfhWorkerErrors: string[] };
+    w.__sfhWorkerErrors = [];
+    window.Worker = class extends W {
+      constructor(url: string | URL, opts?: WorkerOptions) {
+        super(url, opts);
+        this.addEventListener('message', (e: MessageEvent) => {
+          const d = e.data as { type?: string; code?: string };
+          if (d?.type === 'error') w.__sfhWorkerErrors.push(String(d.code));
+        });
+      }
+    };
+  });
+}
+const workerErrors = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __sfhWorkerErrors: string[] }).__sfhWorkerErrors);
+
+/** Selects the row whose name starts with `name`, then presses its Remove. */
+async function removeRow(page: Page, name: string): Promise<void> {
+  const row = page.getByRole('button', { name: new RegExp(`^${name} · `) });
+  await row.click();
+  await expect(row).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: new RegExp(`^Remove: ${name} · `) }).click();
+}
+
+/** The height palette's preset (the Paint tab is open in the dock from md). */
+async function pickStories(page: Page, n: number): Promise<void> {
+  const swatch = page.getByRole('button', { name: `${n} stories`, exact: true });
+  await swatch.click();
+  await expect(swatch).toHaveAttribute('aria-pressed', 'true');
 }
 
 async function mouseDrag(page: Page, from: LngLat, to: LngLat, steps = 15): Promise<void> {
@@ -117,7 +179,7 @@ test.describe('brush tool', () => {
 
       await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
 
-      await expect(brushStatus(page)).toHaveText(/^Painted 6 stories on \d+ parcels/);
+      await expect(announcement(page)).toHaveText(/^Painted 6 stories on \d+ parcels/);
       expect(await ops(page)).toBe(1);
       await expect.poll(() => generated(page)).toBeGreaterThanOrEqual(1);
 
@@ -131,13 +193,13 @@ test.describe('brush tool', () => {
       await gotoEditor(page);
       await jumpAndIdle(page, FRAME);
       await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
-      await expect(brushStatus(page)).toHaveText(/^Painted 6 stories/);
+      await expect(announcement(page)).toHaveText(/^Painted 6 stories/);
       await expect.poll(() => generated(page)).toBeGreaterThanOrEqual(1);
       const painted = await generated(page);
 
       await page.keyboard.press('Control+z');
       await expect.poll(() => ops(page)).toBe(0);
-      await expect(brushStatus(page)).toHaveText('Undid paint, 6 stories');
+      await expect(announcement(page)).toHaveText('Undid paint, 6 stories');
       await expect.poll(() => generated(page)).toBe(0);
 
       await page.keyboard.press('Control+Shift+z');
@@ -217,11 +279,150 @@ test.describe('brush tool', () => {
 
     test('axe: the editor with the keyboard shortcuts disclosure open', async ({ page }) => {
       await gotoEditor(page);
-      const keys = page.getByRole('button', { name: 'Keyboard shortcuts' });
-      await keys.click();
-      await expect(keys).toHaveAttribute('aria-expanded', 'true');
-      await expect(page.getByRole('table', { name: 'Keyboard shortcuts' })).toBeVisible();
+      // Behind HistoryButtons' disclosure, at the top of the dock.
+      const dock = page.getByTestId('dock');
+      await dock.getByText('Keyboard shortcuts', { exact: true }).click();
+      await expect(dock.locator('details')).toHaveAttribute('open', '');
+      await expect(dock.getByRole('table')).toBeVisible();
       await expectNoA11yViolations(page);
+    });
+
+    test('rows: remove the first of two heights; the autosave restores one row, Publish reads Publish again', async ({
+      page
+    }) => {
+      await gotoEditorWithActions(page);
+      await jumpAndIdle(page, FRAME);
+      await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
+      await expect.poll(() => ops(page)).toBe(1);
+      await pickStories(page, 8);
+      await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
+      await expect.poll(() => ops(page)).toBe(2);
+      await expect(rowButtons(page)).toHaveCount(2);
+      await expectRowsMatchOps(page);
+
+      // Published: the button offers the link.
+      await publishOpen(page).click();
+      const dialog = publishDialog(page);
+      await dialog.getByLabel('Title').fill('Two heights');
+      await dialog.getByRole('button', { name: 'Publish' }).click();
+      await expect(dialog.getByRole('heading', { name: 'Published' })).toBeVisible();
+      await dialog.getByRole('button', { name: 'Done' }).click();
+      await expect(publishOpen(page)).toHaveText('Share link');
+
+      await removeRow(page, '6 stories');
+      await expect.poll(() => ops(page)).toBe(1);
+      await expect(rowButtons(page)).toHaveCount(1);
+      await expect(rowButtons(page).first()).toHaveAccessibleName(/^8 stories · 1 stroke · /);
+      await expectRowsMatchOps(page);
+      // A new op list: its hash differs from the published one.
+      await expect(publishOpen(page)).toHaveText('Publish');
+      // The autosave is the new op list...
+      await expect
+        .poll(() =>
+          page.evaluate(
+            (k) => JSON.parse(JSON.parse(localStorage.getItem(k)!).plan).ops.length,
+            PLAN_KEY
+          )
+        )
+        .toBe(1);
+      // ...and restores to the same rows.
+      await page.reload();
+      await gotoEditor(page, { reload: false });
+      await expect.poll(() => ops(page)).toBe(1);
+      await expect(rowButtons(page)).toHaveCount(1);
+      await expect(rowButtons(page).first()).toHaveAccessibleName(/^8 stories · 1 stroke · /);
+      await expectRowsMatchOps(page);
+    });
+
+    test('a middle row removed, undone, redone, then a stroke and Ctrl+Z: the worker keeps step', async ({
+      page
+    }) => {
+      await recordWorkerErrors(page);
+      await gotoEditor(page);
+      await jumpAndIdle(page, FRAME);
+      const [cx, cy] = await projectToPage(page, FRAME.center);
+      // Three rows: a 6-story stamp, a 20-story stroke over it, another 6-story stamp.
+      await page.mouse.click(cx, cy);
+      await expect.poll(() => ops(page)).toBe(1);
+      await pickStories(page, 20);
+      await mouseDrag(page, [-122.4193, 37.76014], [-122.418, 37.76014]);
+      await expect.poll(() => ops(page)).toBe(2);
+      await pickStories(page, 6);
+      await page.mouse.click(cx, cy);
+      await expect.poll(() => ops(page)).toBe(3);
+      await expect(rowButtons(page)).toHaveCount(3);
+      await expectRowsMatchOps(page);
+      const full = await settledNet(page);
+
+      // Remove the middle row: its neighbours, both 6 stories, make one row.
+      await removeRow(page, '20 stories');
+      await expect.poll(() => ops(page)).toBe(2);
+      await expect.poll(() => rows(page)).toBe(1);
+      await expectRowsMatchOps(page);
+      const removed = await settledNet(page);
+      expect(removed).not.toBe(full);
+
+      // Undo brings the row back, and the score with it.
+      await page.keyboard.press('Control+z');
+      await expect.poll(() => ops(page)).toBe(3);
+      await expect.poll(() => rows(page)).toBe(3);
+      await expectRowsMatchOps(page);
+      await expect(announcement(page)).toHaveText('Undid: Removed: 20 stories');
+      expect(await settledNet(page)).toBe(full);
+
+      await page.keyboard.press('Control+Shift+z');
+      await expect.poll(() => ops(page)).toBe(2);
+      await expect.poll(() => rows(page)).toBe(1);
+      expect(await settledNet(page)).toBe(removed);
+
+      // A new stroke, then Ctrl+Z pops that stroke alone.
+      await page.mouse.click(cx + 30, cy);
+      await expect.poll(() => ops(page)).toBe(3);
+      await expect.poll(() => rows(page)).toBe(1);
+      await expectRowsMatchOps(page);
+      await page.keyboard.press('Control+z');
+      await expect.poll(() => ops(page)).toBe(2);
+      await expectRowsMatchOps(page);
+      expect(await settledNet(page)).toBe(removed);
+      expect(await workerErrors(page)).toEqual([]);
+    });
+
+    test('Remove pressed during a stroke cancels the stroke; nothing half-commits', async ({
+      page
+    }) => {
+      await recordWorkerErrors(page);
+      await gotoEditor(page);
+      await jumpAndIdle(page, FRAME);
+      const [cx, cy] = await projectToPage(page, FRAME.center);
+      await page.mouse.click(cx, cy);
+      await expect.poll(() => ops(page)).toBe(1);
+      await pickStories(page, 20);
+      await page.mouse.click(cx, cy);
+      await expect.poll(() => ops(page)).toBe(2);
+      const row = page.getByRole('button', { name: /^20 stories · / });
+      await row.click();
+      const remove = page.getByRole('button', { name: /^Remove: 20 stories · / });
+      await expect(remove).toBeVisible();
+
+      // A stroke in progress (the button held down), then Remove (as assistive tech presses it).
+      const [x0, y0] = await projectToPage(page, [-122.4193, 37.76014]);
+      const [x1, y1] = await projectToPage(page, [-122.418, 37.76014]);
+      await page.mouse.move(x0, y0);
+      await page.mouse.down();
+      await page.mouse.move(x1, y1, { steps: 10 });
+      await remove.evaluate((b) => (b as HTMLElement).click());
+      await page.mouse.up();
+
+      await expect.poll(() => ops(page)).toBe(1);
+      await settledNet(page);
+      expect(await ops(page)).toBe(1);
+      await expect(rowButtons(page)).toHaveCount(1);
+      await expectRowsMatchOps(page);
+      // The next undo restores the row: the stroke left nothing to undo.
+      await page.keyboard.press('Control+z');
+      await expect.poll(() => ops(page)).toBe(2);
+      await expect(rowButtons(page)).toHaveCount(2);
+      expect(await workerErrors(page)).toEqual([]);
     });
   });
 
@@ -233,10 +434,12 @@ test.describe('brush tool', () => {
       await gotoEditor(page);
       await jumpAndIdle(page, FRAME);
       const cdp = await page.context().newCDPSession(page);
-      await expect(page.getByRole('radio', { name: 'Move' })).toHaveAttribute(
-        'aria-checked',
-        'true'
-      );
+      // Move is the touch default: the sheet holds the tools, and no palette strip shows.
+      await expect(page.getByTestId('palette-strip')).toBeHidden();
+      await chooseTool(page, 'Move');
+      const handle = page.getByTestId('dock-handle');
+      await handle.click();
+      await expect(handle).toHaveAttribute('aria-expanded', 'false');
 
       // Move: a one-finger drag pans and creates no op.
       const before = await center(page);
@@ -247,16 +450,21 @@ test.describe('brush tool', () => {
       expect(await ops(page)).toBe(0);
 
       // Paint: a drag creates one op.
+      // Paint folds the sheet to the palette strip.
+      await chooseTool(page, 'Paint');
       await jumpAndIdle(page, FRAME);
-      await page.getByRole('radio', { name: 'Paint' }).tap();
-      await expect(page.getByRole('radio', { name: 'Paint' })).toHaveAttribute(
-        'aria-checked',
-        'true'
-      );
       const p = await projectToPage(page, [-122.419, 37.76014]);
       const q = await projectToPage(page, [-122.4183, 37.76014]);
+      const mapHeight = () =>
+        page.getByTestId('map-root').evaluate((el) => el.getBoundingClientRect().height);
+      // Nothing visible in the status line (parcels loaded, no zoom hint) before measuring.
+      await expect(page.getByTestId('brush-status')).toHaveText('');
+      const heightBefore = await mapHeight();
       await touchDrag(cdp, p, q);
       await expect.poll(() => ops(page)).toBe(1);
+      // The stroke's result is announced, not shown: the map keeps its height (no pill in flow).
+      await expect(announcement(page)).toHaveText(/^Painted 6 stories/);
+      expect(await mapHeight()).toBe(heightBefore);
 
       // A second touch mid-stroke cancels it: still one op.
       await jumpAndIdle(page, FRAME);
@@ -284,7 +492,11 @@ test.describe('brush tool', () => {
 
     test('axe: the editor with the radius popover open', async ({ page }) => {
       await gotoEditor(page);
-      const opener = page.getByRole('button', { name: /^Brush \d+ m$/ });
+      // The palette strip's size pop-over (Paint folds the sheet to the strip).
+      await chooseTool(page, 'Paint');
+      const opener = page
+        .getByTestId('palette-strip')
+        .getByRole('button', { name: /^Brush \d+ m$/ });
       await expect(opener).toHaveText(/^\d+ m$/);
       await opener.tap();
       await expect(opener).toHaveAttribute('aria-expanded', 'true');

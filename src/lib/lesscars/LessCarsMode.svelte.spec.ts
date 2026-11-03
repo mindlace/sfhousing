@@ -193,9 +193,9 @@ describe('LessCarsMode', () => {
   it('opening a dialog pauses playback', async () => {
     setup();
     await page.getByTestId('fzp-play').click();
-    await expect.element(page.getByTestId('fzp-play-label')).toHaveTextContent('Pause');
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'true');
     await page.getByTestId('header-actions').getByRole('button', { name: 'Timeline' }).click();
-    await expect.element(page.getByTestId('fzp-play-label')).toHaveTextContent('Play');
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'false');
   });
 
   it("the timeline's Evidence button opens the evidence dialog on that project", async () => {

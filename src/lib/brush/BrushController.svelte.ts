@@ -5,7 +5,14 @@ import type { SimClient } from '$lib/sim/client';
 import type { DiffResponse } from '$lib/sim/protocol';
 import type { Editor } from './editor.svelte';
 import { newOpId } from './ids';
-import { ANNOUNCE_MS, MSG, TOO_LARGE_MS, strokeMessage, undoMessage } from './messages';
+import {
+  ANNOUNCE_MS,
+  MSG,
+  TOO_LARGE_MS,
+  rowStepMessage,
+  strokeMessage,
+  undoMessage
+} from './messages';
 import { buildOverlayLayers, metersPerPixel, type OverlayCtors } from './overlay';
 import { stepRadius } from './radius';
 import { createSampler, type BrushTool, type StrokeSampler } from './sampler';
@@ -27,9 +34,12 @@ export interface ControllerMap {
 export interface BrushControllerDeps {
   handle: Pick<SimMapHandle, 'setPanEnabled' | 'setOverlayLayers'>;
   map: ControllerMap;
-  /** No `preview` (/sim): no previews and no preview gating; strokes commit on pointer-up. */
+  /**
+   * No `preview`: no previews and no preview gating; strokes commit on pointer-up. /sim's preview
+   * answers through `previewDone` instead of `onDiff`.
+   */
   client: Pick<SimClient, 'commit' | 'undo' | 'prefetch' | 'datasetVersion'> &
-    Partial<Pick<SimClient, 'preview' | 'cancelPreview'>>;
+    Partial<Pick<SimClient, 'preview' | 'cancelPreview' | 'load'>>;
   editor: Pick<Editor, 'commit' | 'undo' | 'redo' | 'readOnly'>;
   state: BrushState;
   layers: OverlayCtors; // from import('@deck.gl/layers')
@@ -189,11 +199,19 @@ export class BrushController {
   }
 
   onDiff(d: DiffResponse, stale: boolean): void {
-    if (this.#inFlightRev !== null && d.rev >= this.#inFlightRev) this.#clearInFlight();
+    this.previewDone(d.rev);
     if (!stale && d.phase === 'commit' && d.stats && d.stats.opId === this.#awaitingStats) {
       this.#awaitingStats = null;
       this.#d.state.announce(strokeMessage(d.stats), ANNOUNCE_MS);
     }
+  }
+
+  /**
+   * A preview at or above the one in flight was answered without a diff (/sim): stop waiting (and
+   * send the latest path, on the next frame, if it changed meanwhile).
+   */
+  previewDone(rev: number): void {
+    if (this.#inFlightRev !== null && rev >= this.#inFlightRev) this.#clearInFlight();
   }
 
   /**
@@ -254,20 +272,31 @@ export class BrushController {
   undo(): void {
     const { editor, client, state } = this.#d;
     if (this.#stroke || editor.readOnly) return;
-    const op = editor.undo();
-    if (!op) return;
-    if (this.#awaitingStats === op.id) this.#awaitingStats = null;
-    client.undo(op.id);
-    state.announce(undoMessage(op, 'Undid'), ANNOUNCE_MS);
+    const step = editor.undo();
+    if (!step) return;
+    if (step.kind === 'rows') {
+      // The worker's undo only pops the last op: a restored row goes over as the whole plan.
+      client.load?.(step.plan);
+      state.announce(rowStepMessage(step, 'Undid'), ANNOUNCE_MS);
+      return;
+    }
+    if (this.#awaitingStats === step.op.id) this.#awaitingStats = null;
+    client.undo(step.op.id);
+    state.announce(undoMessage(step.op, 'Undid'), ANNOUNCE_MS);
   }
 
   redo(): void {
-    const { editor, state } = this.#d;
+    const { editor, client, state } = this.#d;
     if (this.#stroke || editor.readOnly) return;
-    const op = editor.redo();
-    if (!op) return;
-    this.#lastCommitRev = this.#commit(op);
-    state.announce(undoMessage(op, 'Redid'), ANNOUNCE_MS);
+    const step = editor.redo();
+    if (!step) return;
+    if (step.kind === 'rows') {
+      client.load?.(step.plan);
+      state.announce(rowStepMessage(step, 'Redid'), ANNOUNCE_MS);
+      return;
+    }
+    this.#lastCommitRev = this.#commit(step.op);
+    state.announce(undoMessage(step.op, 'Redid'), ANNOUNCE_MS);
   }
 
   // ---- gating, effects ----

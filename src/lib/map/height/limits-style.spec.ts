@@ -118,6 +118,13 @@ describe('limits style', () => {
     });
   });
 
+  it('the FZP baseline selected is rule mode on SRC_FZP: FZP-set lots in ink, the rest dimmed', () => {
+    const m = resolveMode({ kind: 'fzp' }, ['a', 'b']);
+    expect(m).toEqual({ kind: 'rule', source: SRC_FZP });
+    expect(rimLook(CHAIN_LIMIT, SRC_FZP, m).alpha).toBe(1);
+    expect(rimLook(CHAIN_LIMIT, SRC_RULE0, m).alpha).toBe(DIM_ALPHA);
+  });
+
   it('rule mode dims the labels with none of the selected rule under them', () => {
     const sel = { kind: 'rule', source: SRC_RULE0 + 1 } as const;
     // a lid label: every source of its region; a contour label: both sides

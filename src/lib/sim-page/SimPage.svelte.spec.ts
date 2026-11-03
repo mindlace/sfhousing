@@ -1,16 +1,19 @@
 /// <reference types="@vitest/browser-playwright" />
-// SimPage with the real header: the Policy panel's default (open and docked from md, closed
-// below), focus on close, and the notices it must not cover.
-import { describe, expect, it, vi } from 'vitest';
+// SimPage with the real header: the policy dock (open on Transit from md, a handle below; Run
+// flips it to Results, Edit policy back), focus on open and close, and the notices it must not
+// cover.
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { cdp, page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { parseManifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
-import { stub, callsOf } from '$lib/fzp/test/sim-map-stub';
+import { stub, callsOf, FakeMap } from '$lib/fzp/test/sim-map-stub';
 import { timelineMsg } from '$lib/fzp/test/fake-worker';
 import SimPageHost from './test/SimPageHost.svelte';
+import { BrushController } from '$lib/brush/BrushController.svelte';
+import './debug';
 import { testCatalog } from './test/catalog';
 import type { ComponentProps } from 'svelte';
 import { copyFor } from '$lib/sharing/copy';
@@ -61,77 +64,20 @@ async function setup(over: Over = {}) {
   });
 }
 
-const policyButton = () => page.getByRole('button', { name: 'Policy', exact: true });
-const policyPanel = () => document.querySelector('[data-testid="policy-panel"]');
+/** The header's Policy button (from md in the header; below md in the open Menu). */
+const policyButton = () =>
+  page.getByRole('banner').getByRole('button', { name: 'Policy', exact: true });
+const dockEl = () => document.querySelector('[data-testid="dock"]');
+const dockPanel = () => document.querySelector('.sfh-dock-panel');
 const sfhFzp = () => document.querySelector('.sfh-fzp') as HTMLElement;
-
-describe('SimPage policy panel', () => {
-  it('opens docked by default at 1024 px, without moving focus', async () => {
-    await page.viewport(1024, 768);
-    await setup();
-    const region = page.getByRole('region', { name: 'Policy' });
-    await expect.element(region).toBeVisible();
-    await expect.element(policyButton()).toHaveAttribute('aria-expanded', 'true');
-    expect(region.element().contains(document.activeElement)).toBe(false);
-    expect(document.activeElement).toBe(document.body);
-  });
-
-  it('starts closed at 375 px', async () => {
-    await page.viewport(375, 700);
-    await setup();
-    await expect.element(page.getByRole('button', { name: 'Menu' })).toBeVisible();
-    // The Policy button sits in the closed Menu (hidden), so it is found by text.
-    const hidden = [...document.querySelectorAll('header button')].find(
-      (b) => b.textContent?.trim() === 'Policy'
-    );
-    expect(hidden?.getAttribute('aria-expanded')).toBe('false');
-    expect(policyPanel()).toBeNull();
-  });
-
-  it('at 375 px, opened from the Menu, Escape returns focus to the Menu button', async () => {
-    await page.viewport(375, 700);
-    await setup();
-    const menu = page.getByRole('button', { name: 'Menu' });
-    await menu.click();
-    await policyButton().click();
-    const dialog = page.getByRole('dialog', { name: 'Policy' });
-    await expect.element(dialog).toBeVisible();
-    await expect.element(menu).toHaveAttribute('aria-expanded', 'false');
-    await userEvent.keyboard('{Escape}');
-    await expect.element(dialog).not.toBeInTheDocument();
-    await expect.element(menu).toHaveFocus();
-  });
-
-  it('opening it with the button moves focus into the docked panel', async () => {
-    await page.viewport(1024, 768);
-    await setup();
-    await page.getByRole('button', { name: 'Close policy' }).click();
-    await expect.element(policyButton()).toHaveAttribute('aria-expanded', 'false');
-    await expect.element(policyButton()).toHaveFocus();
-    await policyButton().click();
-    await expect.element(page.getByRole('region', { name: 'Policy' })).toHaveFocus();
-  });
-
-  it('no-scenario: no panel and no Policy button, so the notice stays clear', async () => {
-    await page.viewport(1024, 768);
-    await setup({ noScenario: true });
-    await expect.element(page.getByTestId('fzp-status')).toBeVisible();
-    expect(policyPanel()).toBeNull();
-    await expect.element(policyButton()).not.toBeInTheDocument();
-    expect(getComputedStyle(sfhFzp()).getPropertyValue('--sim-panel-w').trim()).toBe('');
-  });
-
-  it('failed: the notice sits right of the docked panel', async () => {
-    await page.viewport(1024, 768);
-    await setup({ manifestError: true });
-    const alert = page.getByRole('alert');
-    await expect.element(alert).toBeVisible();
-    await expect.element(page.getByRole('region', { name: 'Policy' })).toBeVisible();
-    const notice = alert.element().parentElement!.getBoundingClientRect();
-    expect(notice.left - sfhFzp().getBoundingClientRect().left).toBeGreaterThanOrEqual(320);
-    expect(notice.right).toBeLessThanOrEqual(sfhFzp().getBoundingClientRect().right);
-  });
-});
+const tab = (name: string) => page.getByRole('tab', { name, exact: true });
+const results = () => page.getByRole('region', { name: 'Results' });
+const editPolicy = () => page.getByRole('button', { name: 'Edit policy', exact: true });
+const handle = () => page.getByTestId('dock-handle');
+const runButton = () => page.getByRole('button', { name: 'Run', exact: true });
+const scoreButton = () => page.getByTestId('score-bar');
+/** `window.__sfhFzp` (installed while `VITE_E2E` is '1', see `readySim`). */
+const fzpDebug = () => window.__sfhFzp!;
 
 /** The scenario answers `ready` and its first timeline: the brush tools come on. */
 async function toReady() {
@@ -142,8 +88,279 @@ async function toReady() {
   w.emit(timelineMsg(rev, 7));
 }
 
-// Both zoning sections start open, so a test reaches their controls without a click.
-const rulesSection = () => page.getByRole('button', { name: 'New zoning rules', exact: true });
+/** /sim at `width` (1024 by default), ready in Setup, with the debug hook on. */
+async function readySim(width = 1024, over: Over = {}) {
+  vi.stubEnv('VITE_E2E', '1');
+  stub.reset();
+  await page.viewport(width, width < 768 ? 700 : 768);
+  await setup(over);
+  await toReady();
+  return { w: workers.at(-1)! };
+}
+
+/** Run: the page enters the run at once (it plays once the score is current). */
+async function pressRun(_w?: (typeof workers)[number]) {
+  await runButton().click();
+  await expect.poll(() => fzpDebug().runPhase).toBe('run');
+}
+
+describe('SimPage dock', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('opens docked on the Transit tab at 1024 px, without moving focus', async () => {
+    await readySim();
+    await expect.element(page.getByRole('tablist', { name: 'Policy' })).toBeVisible();
+    await expect.element(tab('Transit')).toHaveAttribute('aria-selected', 'true');
+    expect(
+      page
+        .getByRole('tab')
+        .elements()
+        .map((t) => t.textContent?.trim())
+    ).toEqual(['Transit', 'Paint', 'Permits', 'Protect']);
+    await expect.element(policyButton()).toHaveAttribute('aria-expanded', 'true');
+    expect(policyButton().element().getAttribute('aria-controls')).toBe(dockEl()!.id);
+    expect(dockEl()!.contains(document.activeElement)).toBe(false);
+    expect(document.activeElement).toBe(document.body);
+    // The editing face: Undo and Redo above the Transit tab's rules.
+    await expect.element(page.getByRole('button', { name: 'Undo', exact: true })).toBeVisible();
+    await expect.element(page.getByRole('button', { name: 'Add transit layer' })).toBeVisible();
+    expect(getComputedStyle(sfhFzp()).getPropertyValue('--dock-w').trim()).toBe('320px');
+  });
+
+  it('without a calibration the dock has no Permits tab (no empty face)', async () => {
+    await page.viewport(1024, 768);
+    await setup({ calibration: null, calibrationError: true });
+    await expect.poll(dockPanel).not.toBeNull();
+    expect(
+      page
+        .getByRole('tab')
+        .elements()
+        .map((t) => t.textContent?.trim())
+    ).toEqual(['Transit', 'Paint', 'Protect']);
+  });
+
+  it('starts with only the handle at 375 px; the handle opens the sheet on Transit', async () => {
+    await readySim(375);
+    await expect.element(handle()).toBeVisible();
+    await expect.element(handle()).toHaveAttribute('aria-expanded', 'false');
+    await expect.element(handle()).toHaveTextContent('Transit');
+    expect(page.getByRole('tablist').elements()).toHaveLength(0);
+    // The Policy button sits in the closed Menu (hidden), so it is found by text.
+    const hidden = [...document.querySelectorAll('header button')].find(
+      (b) => b.textContent?.trim() === 'Policy'
+    );
+    expect(hidden?.getAttribute('aria-expanded')).toBe('false');
+    await handle().click();
+    await expect.element(tab('Transit')).toHaveAttribute('aria-selected', 'true');
+    await expect.element(handle()).toHaveAttribute('aria-expanded', 'true');
+    // No modal sheet: the dock is not a dialog.
+    expect(document.querySelectorAll('dialog[open]')).toHaveLength(0);
+  });
+
+  it('Run flips the dock to Results; Edit policy ends the run on the tab used before', async () => {
+    const { w } = await readySim();
+    await tab('Permits').click();
+    await pressRun(w);
+    await expect.element(results()).toBeVisible();
+    expect(page.getByRole('tablist').elements()).toHaveLength(0);
+    expect(page.getByRole('button', { name: /^Undo/ }).elements()).toHaveLength(0);
+    await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'true');
+    await editPolicy().click();
+    await expect.poll(() => fzpDebug().runPhase).toBe('setup');
+    await expect.element(tab('Permits')).toHaveAttribute('aria-selected', 'true');
+    // The flip button went with the run: focus moves to the selected tab, not the body.
+    await expect.element(tab('Permits')).toHaveFocus();
+    await expect.element(runButton()).toBeVisible();
+  });
+
+  it('the header score flips to Results in Set Policy and back; in a run it keeps Results', async () => {
+    const { w } = await readySim();
+    await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'false');
+    expect(scoreButton().element().getAttribute('aria-controls')).toBe(dockEl()!.id);
+    await scoreButton().click();
+    await expect.element(results()).toBeVisible();
+    await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'true');
+    expect(fzpDebug().runPhase).toBe('setup');
+    await scoreButton().click();
+    await expect.element(tab('Transit')).toHaveAttribute('aria-selected', 'true');
+    await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'false');
+    // In Set Policy the Results face's flip only flips back.
+    await scoreButton().click();
+    await editPolicy().click();
+    await expect.element(tab('Transit')).toBeVisible();
+    expect(fzpDebug().runPhase).toBe('setup');
+
+    await pressRun(w);
+    await scoreButton().click();
+    await scoreButton().click();
+    await expect.element(results()).toBeVisible();
+    await expect.element(scoreButton()).toHaveAttribute('aria-expanded', 'true');
+    expect(fzpDebug().runPhase).toBe('run');
+  });
+
+  it('collapsing the dock during a run and reopening shows Results first; its rail offers only Results', async () => {
+    const { w } = await readySim();
+    await pressRun(w);
+    await page.getByRole('button', { name: 'Collapse Policy' }).click();
+    await expect.element(policyButton()).toHaveAttribute('aria-expanded', 'false');
+    await expect.element(policyButton()).toHaveFocus();
+    const rail = page.getByTestId('dock-rail');
+    await expect.element(rail).toBeVisible();
+    expect(
+      rail
+        .getByRole('button')
+        .elements()
+        .map((b) => b.getAttribute('aria-label'))
+    ).toEqual(['Results']);
+    await policyButton().click();
+    await expect.element(results()).toBeVisible();
+    // "Edit policy" is the first control, and focus moves to it.
+    await expect.element(editPolicy()).toHaveFocus();
+    expect(fzpDebug().runPhase).toBe('run');
+  });
+
+  it('Run with the desktop dock collapsed opens the panel on Results', async () => {
+    const { w } = await readySim();
+    await page.getByRole('button', { name: 'Collapse Policy' }).click();
+    await expect.element(page.getByTestId('dock-rail')).toBeVisible();
+    expect(getComputedStyle(sfhFzp()).getPropertyValue('--dock-w').trim()).toBe('48px');
+    await pressRun(w);
+    await expect.element(results()).toBeVisible();
+    expect(dockPanel()).not.toBeNull();
+    // Run keeps focus at the scrubber: the page opened the dock, the user did not.
+    expect(dockEl()!.contains(document.activeElement)).toBe(false);
+  });
+
+  it('scrubbing back to Today shows the editing face', async () => {
+    const { w } = await readySim();
+    await tab('Protect').click();
+    await pressRun(w);
+    await expect.element(results()).toBeVisible();
+    (page.getByRole('slider', { name: 'Date in the simulation' }).element() as HTMLElement).focus();
+    await userEvent.keyboard('{Home}');
+    await expect.poll(() => fzpDebug().runPhase).toBe('setup');
+    await expect.element(tab('Protect')).toHaveAttribute('aria-selected', 'true');
+    expect(results().query()).toBeNull();
+  });
+
+  it('the store stays locked during a run: Ctrl+Z changes nothing', async () => {
+    const { w } = await readySim();
+    await tab('Protect').click();
+    const historic = () =>
+      page.getByRole('checkbox', { name: 'Historic buildings (status A or A*)' });
+    await historic().click(); // one change to undo
+    await tab('Paint').click();
+    await page.getByRole('radio', { name: 'Paint' }).click(); // Run resets the tool to Move
+    await pressRun(w);
+    await userEvent.keyboard('{Control>}z{/Control}');
+    await new Promise((res) => setTimeout(res, 50));
+    // Its tool keys change nothing either.
+    await userEvent.keyboard('b');
+    await editPolicy().click();
+    await expect.element(tab('Paint')).toHaveAttribute('aria-selected', 'true');
+    await expect.element(page.getByRole('radio', { name: 'Move' })).toBeChecked();
+    await tab('Protect').click();
+    await expect.element(historic()).toBeChecked(); // the controller's undo key changed nothing
+    await userEvent.keyboard('{Control>}z{/Control}');
+    await expect.element(historic()).not.toBeChecked(); // unlocked: the key undoes again
+  });
+
+  it('at 375 px Run peeks Results above the time bar', async () => {
+    const { w } = await readySim(375);
+    await pressRun(w);
+    await expect.element(results()).toBeVisible();
+    await expect.element(handle()).toHaveTextContent('Results');
+    const sheet = document.querySelector('.sfh-dock-sheet') as HTMLElement;
+    const bar = page.getByTestId('fzp-scrubber').element().getBoundingClientRect();
+    const box = sheet.getBoundingClientRect();
+    expect(box.bottom).toBeLessThanOrEqual(bar.top + 1);
+    expect(box.height).toBeLessThanOrEqual(window.innerHeight * 0.4 + 1);
+    // The map's bottom inset grows by the sheet, so the attribution stays clear of it.
+    await expect.poll(() => callsOf('setBottomInset').at(-1)?.[0]).toBe(bar.height + box.height);
+  });
+
+  it('at 375 px Paint closes the sheet for the palette strip; Done goes back to Move and the Paint tab', async () => {
+    await readySim(375);
+    await handle().click();
+    await tab('Paint').click();
+    await page.getByRole('radio', { name: 'Paint' }).click();
+    await expect.element(handle()).toHaveAttribute('aria-expanded', 'false');
+    const bar = page.getByTestId('palette-strip');
+    await expect.element(bar).toBeVisible();
+    await expect.element(bar.getByRole('button').first()).toHaveFocus();
+    // The strip sits above the sheet's handle.
+    const hb = handle().element().getBoundingClientRect();
+    expect(bar.element().getBoundingClientRect().bottom).toBeLessThanOrEqual(hb.top);
+    await bar.getByRole('button', { name: 'Done' }).click();
+    await expect.element(handle()).toHaveAttribute('aria-expanded', 'true');
+    await expect.element(tab('Paint')).toHaveAttribute('aria-selected', 'true');
+    await expect.element(page.getByRole('radio', { name: 'Move' })).toBeChecked();
+    await expect.element(bar).not.toBeInTheDocument();
+  });
+
+  it('+ Transit layer adds a layer expanded in place in the Transit tab at 375 px too', async () => {
+    const { w } = await readySim(375);
+    await handle().click();
+    await expect.poll(() => w.lastOf('brushCatalog')).toBeTruthy();
+    w.emit({
+      type: 'brushCatalog',
+      reqId: w.lastOf('brushCatalog')!.reqId,
+      catalog: testCatalog()
+    });
+    await page.getByRole('button', { name: 'Add transit layer' }).click();
+    const panel = page.getByRole('tabpanel', { name: 'Transit' });
+    const chips = panel.getByRole('group', { name: 'Stop types' });
+    await expect.element(chips).toBeVisible();
+    await expect.element(chips.getByRole('button').first()).toHaveFocus();
+    await expect.element(tab('Transit')).toBeVisible(); // the tabs stay: no sub-view
+    expect(page.getByRole('button', { name: 'Back', exact: true }).query()).toBeNull();
+    // No form and no Save: the layer is in the policy already.
+    expect(page.getByRole('form').query()).toBeNull();
+    expect(page.getByRole('button', { name: /^Save/ }).query()).toBeNull();
+    await expect.element(page.getByRole('button', { name: /^Undo/ })).toBeEnabled();
+  });
+
+  it('at 375 px, opened from the Menu, Escape returns focus to the Menu button', async () => {
+    await readySim(375);
+    const menu = page.getByRole('button', { name: 'Menu' });
+    await menu.click();
+    await policyButton().click();
+    await expect.element(tab('Transit')).toBeVisible();
+    await expect.element(menu).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.keyboard('{Escape}');
+    await expect.element(handle()).toHaveAttribute('aria-expanded', 'false');
+    await expect.element(menu).toHaveFocus();
+  });
+
+  it('opening it with the button moves focus to the selected tab', async () => {
+    await readySim();
+    await page.getByRole('button', { name: 'Collapse Policy' }).click();
+    await expect.element(policyButton()).toHaveAttribute('aria-expanded', 'false');
+    await expect.element(policyButton()).toHaveFocus();
+    await policyButton().click();
+    await expect.element(tab('Transit')).toHaveFocus();
+  });
+
+  it('no-scenario: no dock and no Policy button, so the notice stays clear', async () => {
+    await page.viewport(1024, 768);
+    await setup({ noScenario: true });
+    await expect.element(page.getByTestId('fzp-status')).toBeVisible();
+    expect(dockEl()).toBeNull();
+    await expect.element(policyButton()).not.toBeInTheDocument();
+    expect(getComputedStyle(sfhFzp()).getPropertyValue('--dock-w').trim()).toBe('');
+  });
+
+  it('failed: the notice sits right of the docked panel', async () => {
+    await page.viewport(1024, 768);
+    await setup({ manifestError: true });
+    const alert = page.getByRole('alert');
+    await expect.element(alert).toBeVisible();
+    await expect.poll(dockPanel).not.toBeNull();
+    const notice = alert.element().parentElement!.getBoundingClientRect();
+    expect(notice.left - sfhFzp().getBoundingClientRect().left).toBeGreaterThanOrEqual(320);
+    expect(notice.right).toBeLessThanOrEqual(sfhFzp().getBoundingClientRect().right);
+  });
+});
 
 describe('SimPage strokes (Task 8)', () => {
   it('a Paint stroke on the map adds a custom brush that Undo names and undoes', async () => {
@@ -151,6 +368,7 @@ describe('SimPage strokes (Task 8)', () => {
     await page.viewport(1024, 768);
     await setup();
     await toReady();
+    await tab('Paint').click();
     const paint = page.getByRole('radio', { name: 'Paint' });
     await expect.element(paint).toBeEnabled();
     await paint.click();
@@ -174,32 +392,13 @@ describe('SimPage strokes (Task 8)', () => {
     ev('pointerup', 80);
     const undo = page.getByRole('button', { name: 'Undo: Allowed 6 stories' });
     await expect.element(undo).toBeEnabled();
-    await expect.element(page.getByText('Finding lots…')).toBeVisible();
+    const row = page.getByRole('button', { name: '6 stories · 1 stroke · Finding lots…' });
+    await expect.element(row).toBeVisible();
     await undo.click();
     await expect
       .element(page.getByRole('status').filter({ hasText: 'Undid: Allowed 6 stories' }))
       .toBeInTheDocument();
-    await expect.element(page.getByText('Finding lots…')).not.toBeInTheDocument();
-  });
-
-  it('at 375 px, Paint closes the sheet for the tool bar; Done goes back to Move and the sheet', async () => {
-    stub.reset();
-    await page.viewport(375, 700);
-    await setup();
-    await toReady();
-    await page.getByRole('button', { name: 'Menu' }).click();
-    await policyButton().click();
-    const dialog = page.getByRole('dialog', { name: 'Policy' });
-    await expect.element(dialog).toBeVisible();
-    await page.getByRole('radio', { name: 'Paint' }).click();
-    await expect.element(dialog).not.toBeInTheDocument();
-    const bar = page.getByRole('group', { name: 'Brush' });
-    await expect.element(bar).toBeVisible();
-    await expect.element(bar.getByRole('button').first()).toHaveFocus();
-    await bar.getByRole('button', { name: 'Done' }).click();
-    await expect.element(dialog).toBeVisible();
-    await expect.element(page.getByRole('radio', { name: 'Move' })).toBeChecked();
-    await expect.element(bar).not.toBeInTheDocument();
+    await expect.element(row).not.toBeInTheDocument();
   });
 
   it('B and E pick Paint and Erase; V goes back to Move', async () => {
@@ -207,6 +406,7 @@ describe('SimPage strokes (Task 8)', () => {
     await page.viewport(1024, 768);
     await setup();
     await toReady();
+    await tab('Paint').click();
     await page.getByRole('radio', { name: 'Paint' }).click();
     await userEvent.keyboard('e');
     await expect.element(page.getByRole('radio', { name: 'Erase' })).toBeChecked();
@@ -217,13 +417,213 @@ describe('SimPage strokes (Task 8)', () => {
   });
 });
 
+describe('SimPage Paint tab (sim-ux plan 3, Task 3)', () => {
+  /** The row select buttons ("8 stories · 2 strokes · 52 lots"), not Retry or Remove. */
+  const paintRows = () =>
+    page
+      .getByRole('list', { name: 'Painted areas' })
+      .getByRole('button', { name: /^(\d+ stor(y|ies)|Erased) · / });
+  const overlayIds = () =>
+    ((callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as { id: string }[]).map((l) => l.id);
+  const brushLots = ['P0', 'P1'];
+  const OUTLINE = 'sim-painted-outline';
+
+  /** One stroke across the stub map's canvas with the current tool. */
+  function drawStroke(): void {
+    const canvas = stub.map.getCanvas();
+    const ev = (type: string, x: number) =>
+      canvas.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: x,
+          clientY: 10,
+          pointerId: 1,
+          pointerType: 'mouse',
+          button: type === 'pointermove' ? -1 : 0,
+          isPrimary: true
+        })
+      );
+    ev('pointerdown', 10);
+    for (let x = 20; x <= 80; x += 10) ev('pointermove', x);
+    ev('pointerup', 80);
+  }
+
+  /** Choose Paint on the Paint tab (the tools come on once the scenario is ready). */
+  async function choosePaint() {
+    await tab('Paint').click();
+    const paint = page.getByRole('radio', { name: 'Paint' });
+    await expect.element(paint).toBeEnabled();
+    await paint.click();
+  }
+
+  /** Answers the latest brush query with `lots`. */
+  function answer(w: (typeof workers)[number], lots: string[] = brushLots) {
+    w.emit({
+      type: 'brushLots',
+      reqId: w.lastOf('resolveBrush')!.reqId,
+      result: { ok: true, lots, points: new Float64Array(lots.length * 2) }
+    });
+  }
+
+  /** Answers the latest `lotOutlines` request with one ring for `lots`. */
+  function answerOutlines(w: (typeof workers)[number]) {
+    const req = w.lastOf('lotOutlines')!;
+    const c = stub.map.getCenter();
+    const d = 1e-3;
+    w.emit({
+      type: 'lotOutlines',
+      reqId: req.reqId,
+      result: {
+        ok: true,
+        lots: req.lots,
+        ringLot: Uint32Array.from([0]),
+        starts: Uint32Array.from([0, 4]),
+        positions: Float64Array.from([
+          c.lng,
+          c.lat,
+          c.lng + d,
+          c.lat,
+          c.lng + d,
+          c.lat + d,
+          c.lng,
+          c.lat + d
+        ]),
+        missing: 0
+      }
+    });
+  }
+
+  /** /sim ready, Paint chosen, one stroke painted and its lots answered. */
+  async function readySimWithPaint() {
+    const { w } = await readySim();
+    await choosePaint();
+    drawStroke();
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(1);
+    answer(w);
+    await expect.element(paintRows().first()).toHaveAccessibleName('6 stories · 1 stroke · 2 lots');
+    return { w };
+  }
+
+  /** Paints strokes at 8, 4 and 8 stories: three painted areas. */
+  async function paintThreeAreas() {
+    const { w } = await readySim();
+    await choosePaint();
+    for (const n of [8, 4, 8]) {
+      await page.getByRole('button', { name: `${n} stories`, exact: true }).click();
+      drawStroke();
+    }
+    await expect.poll(() => paintRows().elements().length).toBe(3);
+    return { w };
+  }
+
+  it('a Paint stroke adds a row to the Paint tab with its stroke and lot counts', async () => {
+    const { w } = await readySim();
+    await choosePaint();
+    drawStroke();
+    const list = page.getByRole('list', { name: 'Painted areas' });
+    await expect
+      .element(list.getByRole('button', { name: '6 stories · 1 stroke · Finding lots…' }))
+      .toBeVisible();
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(1);
+    answer(w);
+    await expect
+      .element(list.getByRole('button', { name: '6 stories · 1 stroke · 2 lots' }))
+      .toBeVisible();
+  });
+
+  it('selecting a painted area asks for its outlines; unselecting drops them', async () => {
+    const { w } = await readySimWithPaint();
+    await page.getByRole('tab', { name: 'Paint' }).click();
+    await paintRows().first().click();
+    await expect.poll(() => w.lastOf('lotOutlines')?.lots).toEqual(brushLots);
+    answerOutlines(w);
+    await expect.poll(overlayIds).toContain('sim-painted-outline');
+    await paintRows().first().click();
+    await expect.poll(overlayIds).not.toContain('sim-painted-outline');
+  });
+
+  it('Remove on the selected area is one change Undo names; the selection clears', async () => {
+    const { w } = await readySimWithPaint();
+    await paintRows().first().click();
+    await expect.poll(() => w.lastOf('lotOutlines')?.lots).toEqual(brushLots);
+    answerOutlines(w);
+    await expect.poll(overlayIds).toContain(OUTLINE);
+    const asked = w.allOf('lotOutlines').length;
+    await page.getByRole('button', { name: /^Remove:/ }).click();
+    expect(paintRows().elements()).toHaveLength(0);
+    // The selection and its outline go with the area, not on a later request.
+    await expect.poll(overlayIds).not.toContain(OUTLINE);
+    await expect
+      .element(page.getByRole('button', { name: 'Undo: Removed: 6 stories' }))
+      .toBeEnabled();
+    await expect
+      .element(page.getByRole('status').filter({ hasText: 'Removed: 6 stories' }))
+      .toBeInTheDocument();
+    await page.getByRole('button', { name: /^Undo:/ }).click();
+    await expect.element(paintRows().first()).toHaveAttribute('aria-pressed', 'false');
+    expect(page.getByRole('button', { name: /^Remove:/ }).elements()).toHaveLength(0);
+    // Undo does not bring the selection, and so the outline, back.
+    await new Promise((res) => setTimeout(res, 50));
+    expect(overlayIds()).not.toContain(OUTLINE);
+    expect(w.allOf('lotOutlines')).toHaveLength(asked);
+  });
+
+  it('after Remove, focus lands on the row now at its place', async () => {
+    await paintThreeAreas();
+    // Remove the first of the 8 / 4 / 8 rows: the 4-story row takes its place.
+    await paintRows().first().click();
+    await page.getByRole('button', { name: /^Remove:/ }).click();
+    await expect
+      .poll(() => (document.activeElement as HTMLElement | null)?.dataset.paintRow !== undefined)
+      .toBe(true);
+    expect((document.activeElement as HTMLElement).getAttribute('aria-label')).toMatch(
+      /^4 stories/
+    );
+  });
+
+  it('removing the middle of three rows with the outer two at one height leaves one row; Undo restores three', async () => {
+    await paintThreeAreas();
+    await paintRows().nth(1).click();
+    await page.getByRole('button', { name: /^Remove:/ }).click();
+    await expect.poll(() => paintRows().elements().length).toBe(1);
+    await expect.element(paintRows().first()).toHaveAccessibleName(/^8 stories · 2 strokes/);
+    await expect
+      .element(page.getByRole('button', { name: 'Undo: Removed: 4 stories' }))
+      .toBeEnabled();
+    await page.getByRole('button', { name: /^Undo:/ }).click();
+    await expect.poll(() => paintRows().elements().length).toBe(3);
+    await expect.element(paintRows().nth(1)).toHaveAccessibleName(/^4 stories · 1 stroke/);
+  });
+
+  it('undoing the stroke that made the selected area clears the selection; Redo does not restore it', async () => {
+    const { w } = await readySimWithPaint();
+    await paintRows().first().click();
+    await expect.element(paintRows().first()).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(() => w.lastOf('lotOutlines')?.lots).toEqual(brushLots);
+    answerOutlines(w);
+    await expect.poll(overlayIds).toContain(OUTLINE);
+    const asked = w.allOf('lotOutlines').length;
+    await page.getByRole('button', { name: 'Undo: Allowed 6 stories' }).click();
+    expect(paintRows().elements()).toHaveLength(0);
+    await expect.poll(overlayIds).not.toContain(OUTLINE);
+    await page.getByRole('button', { name: 'Redo: Allowed 6 stories' }).click();
+    await expect.element(paintRows().first()).toHaveAttribute('aria-pressed', 'false');
+    expect(page.getByRole('button', { name: /^Remove:/ }).elements()).toHaveLength(0);
+    // Redo brings the row back, but neither the selection nor its outline.
+    await new Promise((res) => setTimeout(res, 50));
+    expect(overlayIds()).not.toContain(OUTLINE);
+    expect(w.allOf('lotOutlines')).toHaveLength(asked);
+  });
+});
+
 describe('SimPage protections (Task 10)', () => {
   it('a category checkbox is a change that Undo names', async () => {
     stub.reset();
     await page.viewport(1024, 768);
     await setup();
     await toReady();
-    await page.getByRole('button', { name: 'Protections' }).click();
+    await tab('Protect').click();
     await page.getByRole('checkbox', { name: 'Historic buildings (status A or A*)' }).click();
     await expect
       .element(page.getByRole('button', { name: 'Undo: Protected historic buildings' }))
@@ -232,7 +632,9 @@ describe('SimPage protections (Task 10)', () => {
 });
 
 describe('SimPage rule brushes (Task 9)', () => {
-  it('fetches the catalog once, when the panel first opens', async () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('fetches the catalog once, when the editing face first shows', async () => {
     await page.viewport(375, 700);
     await setup();
     await toReady();
@@ -241,100 +643,65 @@ describe('SimPage rule brushes (Task 9)', () => {
     await page.getByRole('button', { name: 'Menu' }).click();
     await policyButton().click();
     await expect.poll(() => w.allOf('brushCatalog').length).toBe(1);
-    await page.getByRole('button', { name: 'Close policy' }).click();
-    await page.getByRole('button', { name: 'Menu' }).click();
-    await policyButton().click();
-    await expect.element(page.getByRole('dialog', { name: 'Policy' })).toBeVisible();
+    await page.getByRole('button', { name: 'Collapse Policy' }).click();
+    await expect.element(handle()).toHaveAttribute('aria-expanded', 'false');
+    await handle().click();
+    await expect.element(tab('Transit')).toBeVisible();
     expect(w.allOf('brushCatalog')).toHaveLength(1);
   });
 
-  it('at 375 px, "Add transit rule" replaces the sheet body; Back returns', async () => {
+  it('a selected layer stays selected and expanded across a tab change; a run clears it', async () => {
+    vi.stubEnv('VITE_E2E', '1');
     stub.reset();
-    await page.viewport(375, 700);
-    await setup();
-    await toReady();
-    await page.getByRole('button', { name: 'Menu' }).click();
-    await policyButton().click();
-    const w = workers.at(-1)!;
-    await expect.poll(() => w.lastOf('brushCatalog')).toBeTruthy();
-    w.emit({
-      type: 'brushCatalog',
-      reqId: w.lastOf('brushCatalog')!.reqId,
-      catalog: testCatalog()
-    });
-    await page.getByRole('button', { name: 'Add transit rule' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Policy' });
-    await expect.element(dialog.getByRole('form', { name: 'Add a transit rule' })).toBeVisible();
-    // No second dialog: the only open dialog is the Policy sheet (FzpMode's closed sources
-    // dialog stays in the DOM).
-    expect([...document.querySelectorAll('dialog[open]')]).toEqual([dialog.element()]);
-    await expect.element(rulesSection()).not.toBeInTheDocument();
-    await page.getByRole('button', { name: 'Back', exact: true }).click();
-    await expect.element(rulesSection()).toBeVisible();
-    await expect
-      .element(page.getByRole('form', { name: 'Add a transit rule' }))
-      .not.toBeInTheDocument();
-    await expect.element(page.getByRole('button', { name: 'Add transit rule' })).toHaveFocus();
-  });
-
-  /** At 375 px: open the sheet, answer the catalog, open the transit form. */
-  async function openTransitForm() {
-    await page.getByRole('button', { name: 'Menu' }).click();
-    await policyButton().click();
-    const w = workers.at(-1)!;
-    await expect.poll(() => w.lastOf('brushCatalog')).toBeTruthy();
-    w.emit({
-      type: 'brushCatalog',
-      reqId: w.lastOf('brushCatalog')!.reqId,
-      catalog: testCatalog()
-    });
-    await page.getByRole('button', { name: 'Add transit rule' }).click();
-    await expect.element(page.getByRole('form', { name: 'Add a transit rule' })).toBeVisible();
-  }
-
-  it('closing the sheet discards the open form; reopening shows the brush list', async () => {
-    stub.reset();
-    await page.viewport(375, 700);
-    await setup();
-    await toReady();
-    await openTransitForm();
-    await userEvent.keyboard('{Escape}');
-    await expect.element(page.getByRole('dialog', { name: 'Policy' })).not.toBeInTheDocument();
-    await page.getByRole('button', { name: 'Menu' }).click();
-    await policyButton().click();
-    await expect.element(page.getByRole('dialog', { name: 'Policy' })).toBeVisible();
-    await expect.element(rulesSection()).toBeVisible();
-    await expect
-      .element(page.getByRole('button', { name: 'Back', exact: true }))
-      .not.toBeInTheDocument();
-    await expect
-      .element(page.getByRole('form', { name: 'Add a transit rule' }))
-      .not.toBeInTheDocument();
-  });
-
-  it('crossing md discards the open form', async () => {
-    stub.reset();
-    await page.viewport(375, 700);
-    await setup();
-    await toReady();
-    await openTransitForm();
     await page.viewport(1024, 768);
-    await expect.element(page.getByRole('region', { name: 'Policy' })).toBeVisible();
+    await setup();
+    await toReady();
+    const w = workers.at(-1)!;
+    await expect.poll(() => w.lastOf('brushCatalog')).toBeTruthy();
+    w.emit({
+      type: 'brushCatalog',
+      reqId: w.lastOf('brushCatalog')!.reqId,
+      catalog: testCatalog()
+    });
+    await page.getByRole('button', { name: 'Add transit layer' }).click();
+    const chips = () => page.getByRole('group', { name: 'Stop types' });
+    const distance = () =>
+      page
+        .getByRole('group', { name: 'Band 1' })
+        .getByRole('spinbutton', { name: 'Within metres, band 1' });
+    await expect.element(chips()).toBeVisible();
+    await distance().fill('777');
+    await userEvent.keyboard('{Enter}');
+    await tab('Permits').click();
+    await expect.element(chips()).not.toBeInTheDocument();
+    await tab('Transit').click();
+    await expect.element(chips()).toBeVisible();
+    await expect.element(distance()).toHaveValue(777);
+    // A remount does not take focus from the tab the user pressed.
+    await expect.element(tab('Transit')).toHaveFocus();
+
+    await pressRun(w);
+    await editPolicy().click();
+    await expect.element(distance()).not.toBeInTheDocument();
     await expect
-      .element(page.getByRole('form', { name: 'Add a transit rule' }))
-      .not.toBeInTheDocument();
-    await expect.element(page.getByRole('button', { name: 'Add transit rule' })).toBeVisible();
+      .element(page.getByRole('button', { name: /^Near regional rail and Muni Metro/ }))
+      .toHaveAttribute('aria-pressed', 'false');
   });
 });
 
 describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
   const SD = "Permits at San Diego's pace";
   const sim = copyFor('sim');
-  const timingToggle = () => page.getByRole('button', { name: /^Permitting timelines/ });
+  const timingToggle = () => tab('Permits');
   const presetPicker = () => page.getByRole('combobox', { name: 'Preset' });
   const timingLabel = () => page.getByTestId('timing-label');
   const notices = () => page.getByTestId('fzp-notices');
   const publish = () => page.getByTestId('publish-open');
+  /** The Permits tab shows `label` as the current set's label. */
+  async function expectTiming(label: string) {
+    await timingToggle().click();
+    await expect.element(timingLabel()).toHaveTextContent(label);
+  }
 
   const docWith = (current = resolvePreset('benchmarkPermits', calibration)): SimDoc => ({
     schema: 2,
@@ -364,11 +731,7 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
     await first.unmount(); // flushes the pending write
 
     await setup({ storage: () => mem });
-    await expect
-      .element(timingToggle())
-      .toHaveAccessibleName(`Permitting timelines, Custom (from ${SD})`);
-    await timingToggle().click();
-    await expect.element(timingLabel()).toHaveTextContent(`Custom (from ${SD})`);
+    await expectTiming(`Custom (from ${SD})`);
     await expect.element(page.getByRole('button', { name: 'Revert to saved' })).toBeVisible();
   });
 
@@ -391,11 +754,7 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
     await toReady();
     // one rule card and one custom card, no reset notice
     await expect
-      .poll(
-        () =>
-          page.getByRole('list', { name: 'New zoning rules' }).getByRole('listitem').elements()
-            .length
-      )
+      .poll(() => document.querySelectorAll('[data-layer-row]:not([data-layer-row="fzp"])').length)
       .toBe(1);
     await timingToggle().click();
     await presetPicker().selectOptions(SD);
@@ -409,7 +768,7 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
     await setup({ storage: () => seeded() });
     await toReady();
     await expect.element(notices()).toBeInTheDocument();
-    await expect.element(timingToggle()).toHaveAccessibleName(`Permitting timelines, ${SD}`);
+    await expectTiming(`${SD}`);
     expect(notices().element().textContent).not.toContain('re-fit');
   });
 
@@ -446,9 +805,7 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
     const kept = mem.keys().filter((k) => k.startsWith('sfhousing:sim:corrupt:'));
     expect(kept).toHaveLength(1);
     expect(mem.getItem(kept[0])).toBe('{nope');
-    await expect
-      .element(timingToggle())
-      .toHaveAccessibleName('Permitting timelines, SF as observed');
+    await expectTiming('SF as observed');
     await expect.element(publish()).toBeDisabled();
   });
 
@@ -517,7 +874,7 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
   it('the first restore does not add an undo entry', async () => {
     await page.viewport(1024, 768);
     await setup({ storage: () => seeded() });
-    await expect.element(timingToggle()).toHaveAccessibleName(`Permitting timelines, ${SD}`);
+    await expectTiming(`${SD}`);
     await expect.element(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
   });
 
@@ -534,7 +891,7 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
     await expect
       .element(notices().getByText("Remixed from SD permits. You're editing your own copy."))
       .toBeVisible();
-    await expect.element(timingToggle()).toHaveAccessibleName(`Permitting timelines, ${SD}`);
+    await expectTiming(`${SD}`);
     expect(replaceStateCalls).toEqual([{ url: '', state: {} }]);
     expect(storedDoc(mem).title).toBe('SD permits');
   });
@@ -584,9 +941,12 @@ describe('SimPage autosave, restore and publish (plan 5, Task 5)', () => {
       const sent = w.lastOf('setLevers')!.levers;
       expect(sent.rules[0].lots.length).toBe(2);
       expect(sent.paint[0].lots.length).toBe(2);
-      await expect.element(page.getByText(/· 2 lots$/).first()).toBeVisible();
-      expect(page.getByText(/· 2 lots$/).elements()).toHaveLength(2);
-      expect(page.getByText('Finding lots…').elements()).toHaveLength(0);
+      // The rule's row in the Transit tab, the custom brush's in Paint.
+      for (const t of ['Transit', 'Paint']) {
+        await tab(t).click();
+        await expect.element(page.getByRole('button', { name: /· 2 lots$/ })).toBeVisible();
+        expect(page.getByText('Finding lots…').elements()).toHaveLength(0);
+      }
       // The next real change still goes through LeverSync, once.
       const before = w.allOf('setLevers').length;
       await timingToggle().click();
@@ -615,73 +975,111 @@ describe('SimPage Setup and Run (Task 7, spec §1)', () => {
     page.getByRole('checkbox', { name: 'Historic buildings (status A or A*)' });
   const rentControl = () => page.getByRole('checkbox', { name: /Rent-controlled/ });
 
-  it('Run locks the pane and resets the tool; Change policy unlocks it', async () => {
-    stub.reset();
-    await page.viewport(1024, 768);
-    await setup();
-    await toReady();
-    await page.getByRole('button', { name: 'Protections', exact: true }).click(); // collapsed
-    await historic().click(); // one change to undo
-    await expect
-      .element(page.getByRole('button', { name: 'Undo: Protected historic buildings' }))
-      .toBeEnabled();
-    await page.getByRole('radio', { name: 'Paint' }).click();
-    await run().click();
-    const change = page.getByRole('button', { name: 'Change policy' });
-    await expect.element(change).toBeVisible();
-    await expect.element(rentControl()).toBeDisabled();
-    await expect.element(page.getByRole('radio', { name: 'Move' })).toBeChecked();
-    expect(page.getByRole('button', { name: /^Undo/ }).query()).toBeNull();
-    await userEvent.keyboard('{Control>}z{/Control}');
-    await new Promise((res) => setTimeout(res, 50));
-    await expect.element(historic()).toBeChecked(); // the controller's undo key changed nothing
-    // Its tool keys change nothing either.
-    await userEvent.keyboard('b');
-    await expect.element(page.getByRole('radio', { name: 'Move' })).toBeChecked();
-
-    // Why the controls are off: the visible line describes them.
-    const note = page.getByText('Read-only during a run');
-    await expect.element(note).toBeVisible();
-    expect(rentControl().element().closest('fieldset')!.getAttribute('aria-describedby')).toBe(
-      note.element().id
-    );
-
-    await change.click();
-    // The button went with the run: focus moves to the first section toggle, not the body.
-    await expect
-      .element(page.getByRole('button', { name: 'New zoning rules', exact: true }))
-      .toHaveFocus();
-    await expect.element(rentControl()).toBeEnabled();
-    await expect.element(run()).toBeVisible();
-    expect(page.getByRole('button', { name: 'Change policy' }).query()).toBeNull();
-    await expect.element(historic()).toBeChecked(); // the policy is intact
-    await userEvent.keyboard('{Control>}z{/Control}');
-    await expect.element(historic()).not.toBeChecked(); // unlocked: the key undoes again
+  it('Home on the slider during a run returns to Setup and unlocks the policy', async () => {
+    vi.stubEnv('VITE_E2E', '1');
+    try {
+      stub.reset();
+      await page.viewport(1024, 768);
+      await setup();
+      await toReady();
+      await tab('Protect').click();
+      await run().click();
+      const fzp = () => window.__sfhFzp!;
+      await expect.poll(() => fzp().playing).toBe(true);
+      expect(rentControl().query()).toBeNull(); // a run shows Results, not the tabs
+      const slider = page.getByRole('slider', { name: 'Date in the simulation' });
+      (slider.element() as HTMLElement).focus();
+      await userEvent.keyboard('{Home}');
+      await expect.poll(() => fzp().runPhase).toBe('setup');
+      expect(fzp().playing).toBe(false);
+      await rentControl().click(); // the policy store is unlocked
+      await expect
+        .element(page.getByRole('button', { name: /^Undo: .*rent-controlled/i }))
+        .toBeEnabled();
+      await expect.element(run()).toBeVisible();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
-  it('at 375 px the phone tool bar goes when Run starts', async () => {
+  it('at 375 px the palette strip goes when Run starts', async () => {
     stub.reset();
     await page.viewport(375, 700);
     await setup();
     await toReady();
     await page.getByRole('button', { name: 'Menu' }).click();
     await policyButton().click();
+    await tab('Paint').click();
     await page.getByRole('radio', { name: 'Paint' }).click();
-    const bar = page.getByRole('group', { name: 'Brush' });
+    const bar = page.getByTestId('palette-strip');
     await expect.element(bar).toBeVisible();
     await run().click();
     await expect.element(bar).not.toBeInTheDocument();
   });
 
-  it('the view reads Back to start and opens in Setup', async () => {
+  it("the view's dock has one Policy tab with the summary and no Undo", async () => {
+    await page.viewport(1024, 768);
+    await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY });
+    await toReady();
+    expect(
+      page
+        .getByRole('tab')
+        .elements()
+        .map((t) => t.textContent?.trim())
+    ).toEqual(['Policy']);
+    await expect.element(tab('Policy')).toHaveAttribute('aria-selected', 'true');
+    await expect.element(page.getByRole('tablist', { name: 'Policy (read-only)' })).toBeVisible();
+    await expect.element(page.getByText('No transit layers')).toBeVisible();
+    expect(page.getByRole('button', { name: /^Undo/ }).elements()).toHaveLength(0);
+    expect(page.getByRole('button', { name: /^Redo/ }).elements()).toHaveLength(0);
+    expect(editPolicy().query()).toBeNull();
+    await expect.element(policyButton()).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('in the view, Run flips to Results and Policy ends the run', async () => {
     await page.viewport(1024, 768);
     await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY });
     await toReady();
     await run().click();
-    await expect.element(page.getByRole('button', { name: 'Back to start' })).toBeVisible();
-    expect(page.getByRole('button', { name: 'Change policy' }).query()).toBeNull();
-    await page.getByRole('button', { name: 'Back to start' }).click();
+    await expect.element(results()).toBeVisible();
+    expect(page.getByRole('tablist').elements()).toHaveLength(0);
+    expect(page.getByRole('button', { name: 'Back to start' }).query()).toBeNull();
+    expect(editPolicy().query()).toBeNull();
+    // The flip's visible label is "Policy"; its name differs from the header's Policy button, so
+    // no two buttons answer to the same name.
+    const flip = page.getByTestId('dock-flip');
+    await expect.element(flip).toHaveTextContent('Policy');
+    expect(page.getByRole('button', { name: 'Policy', exact: true }).elements()).toHaveLength(1);
+    await flip.click();
+    await expect.element(tab('Policy')).toHaveFocus();
     await expect.element(run()).toBeVisible();
+  });
+
+  it('in the view, a folded rail names its Policy button apart from the header', async () => {
+    await page.viewport(1024, 768);
+    await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY });
+    await toReady();
+    await policyButton().click();
+    await expect.poll(dockPanel).toBeNull();
+    expect(page.getByRole('button', { name: 'Policy', exact: true }).elements()).toHaveLength(1);
+    await expect.element(page.getByRole('button', { name: 'Policy summary' })).toBeVisible();
+  });
+
+  it('in the view at 375 px, one button is named Policy with the Menu open (the handle is not)', async () => {
+    await page.viewport(375, 700);
+    await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY });
+    await toReady();
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await expect.element(policyButton()).toBeVisible();
+    expect(page.getByRole('button', { name: 'Policy', exact: true }).elements()).toHaveLength(1);
+    // The handle keeps its visible "Policy" and is named "Policy summary", as the rail's button.
+    await expect.element(handle()).toHaveTextContent('Policy');
+    await expect.element(handle()).toHaveAccessibleName('Policy summary');
+  });
+
+  it('/sim at 375 px keeps the handle named by its tab', async () => {
+    await readySim(375);
+    await expect.element(handle()).toHaveAccessibleName('Transit');
   });
 
   it('a remount opens in Setup', async () => {
@@ -689,12 +1087,13 @@ describe('SimPage Setup and Run (Task 7, spec §1)', () => {
     const first = await setup();
     await toReady();
     await run().click();
-    await expect.element(page.getByRole('button', { name: 'Change policy' })).toBeVisible();
+    await expect.element(editPolicy()).toBeVisible();
     await first.unmount();
     await setup();
     await toReady();
     await expect.element(run()).toBeVisible();
-    expect(page.getByRole('button', { name: 'Change policy' }).query()).toBeNull();
+    expect(editPolicy().query()).toBeNull();
+    await expect.element(tab('Transit')).toHaveAttribute('aria-selected', 'true');
   });
 
   const playLabel = () => page.getByTestId('fzp-play-label');
@@ -722,7 +1121,7 @@ describe('SimPage Setup and Run (Task 7, spec §1)', () => {
     await setup({ leverTimers });
     await toReady();
     const w = workers.at(-1)!;
-    await page.getByRole('button', { name: 'Protections', exact: true }).click();
+    await tab('Protect').click();
     await historic().click();
     await run().click();
     await wait(50);
@@ -738,7 +1137,7 @@ describe('SimPage Setup and Run (Task 7, spec §1)', () => {
     await wait(50);
     await expect.element(playLabel()).toHaveTextContent(/^Run$/);
     w.emit(timelineMsg(w.lastOf('setLevers')!.rev, 7));
-    await expect.element(playLabel()).toHaveTextContent(/^Pause$/);
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it("Run while a brush's lots are being found waits for them", async () => {
@@ -747,6 +1146,7 @@ describe('SimPage Setup and Run (Task 7, spec §1)', () => {
     await setup();
     await toReady();
     const w = workers.at(-1)!;
+    await tab('Paint').click();
     await page.getByRole('radio', { name: 'Paint' }).click();
     const canvas = stub.map.getCanvas();
     const ev = (type: string, x: number) =>
@@ -779,52 +1179,29 @@ describe('SimPage Setup and Run (Task 7, spec §1)', () => {
     await wait(50);
     await expect.element(playLabel()).toHaveTextContent(/^Run$/);
     w.emit(timelineMsg(w.lastOf('setLevers')!.rev, 7));
-    await expect.element(playLabel()).toHaveTextContent(/^Pause$/);
+    await expect.element(page.getByTestId('fzp-play')).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('during a run a stage still opens its details; its months are read-only', async () => {
-    await page.viewport(1024, 768);
-    await setup();
-    await toReady();
-    await run().click();
-    await page.getByRole('button', { name: /^Permitting timelines/ }).click();
-    const stage = page
-      .getByRole('group', { name: /timeline$/ })
-      .first()
-      .getByRole('button')
-      .first();
-    await expect.element(stage).toBeEnabled();
-    await stage.click();
-    await expect.element(stage).toHaveAttribute('aria-expanded', 'true');
-    const share = page.getByRole('spinbutton', { name: /share, %$/ }).first();
-    await expect.element(share).toBeDisabled();
-  });
-
-  it('at 375 px, Change policy in the sheet keeps focus in the sheet', async () => {
+  it('at 375 px, Edit policy in the sheet keeps focus in the sheet', async () => {
     await page.viewport(375, 700);
     await setup();
     await toReady();
     await run().click();
-    await page.getByRole('button', { name: 'Menu' }).click();
-    await policyButton().click();
-    const dialog = page.getByRole('dialog', { name: 'Policy' });
-    await dialog.getByRole('button', { name: 'Change policy' }).click();
-    await expect
-      .element(dialog.getByRole('button', { name: 'New zoning rules', exact: true }))
-      .toHaveFocus();
+    await editPolicy().click();
+    await expect.element(tab('Transit')).toHaveFocus();
+    expect(document.querySelector('.sfh-dock-sheet')!.contains(document.activeElement)).toBe(true);
   });
 });
 
 describe('SimPage score comparison (spec §5)', () => {
   const historic = () =>
     page.getByRole('checkbox', { name: 'Historic buildings (status A or A*)' });
-  const scoreButton = () => page.getByRole('button', { name: /homes added|Simulating/ });
-  /** The comparison line, read with the score details open (opened once). */
+  /** The comparison line, read on the dock's Results face (flipped to by the header score). */
   async function comparison() {
     const b = scoreButton();
     await expect.element(b).toBeInTheDocument();
     if (b.element().getAttribute('aria-expanded') !== 'true') await b.click();
-    return page.getByRole('region', { name: 'Score details' }).getByText(/vs (no )?FZP/);
+    return results().getByText(/vs (no )?FZP/);
   }
 
   it('names the comparison of the score on show until the new revision answers', async () => {
@@ -834,7 +1211,8 @@ describe('SimPage score comparison (spec §5)', () => {
     await toReady();
     const w = workers.at(-1)!;
     await expect.element(await comparison()).toHaveTextContent(/^FZP added .* vs no FZP$/);
-    await page.getByRole('button', { name: 'Protections', exact: true }).click();
+    await editPolicy().click();
+    await tab('Protect').click();
     await historic().click();
     await expect.poll(() => w.allOf('setLevers').length).toBe(1);
     // Sent, not answered: the score on show is still FZP vs no FZP.
@@ -843,6 +1221,7 @@ describe('SimPage score comparison (spec §5)', () => {
     await expect.element(await comparison()).toHaveTextContent(/^Your policy added .* vs FZP$/);
 
     // Undo back to the default: the line stays on "your policy" until that revision answers.
+    await editPolicy().click();
     await page.getByRole('button', { name: 'Undo: Protected historic buildings' }).click();
     await expect.poll(() => w.allOf('setLevers').length).toBe(2);
     await expect.element(await comparison()).toHaveTextContent(/^Your policy added .* vs FZP$/);
@@ -894,7 +1273,7 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
     expect(viewButton().query()).toBeNull();
     expect(stub.props.view).toEqual(HIDDEN_VIEW);
     await expect.poll(overlayIds).not.toContain(LIMITS_LAYER_ID);
-    await page.getByRole('button', { name: 'Change policy' }).click();
+    await editPolicy().click();
     await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
   });
 
@@ -953,6 +1332,7 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
     try {
       await scheme('dark');
       await expect.poll(() => lastLayer()?.props.theme).toBe('dark');
+      await tab('Paint').click();
       await page.getByRole('radio', { name: 'Paint' }).click();
       await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'paint' });
       await page.getByRole('radio', { name: 'Erase' }).click();
@@ -1020,7 +1400,7 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
     await expect.poll(() => w.allOf('heightLids').length).toBe(1);
   });
 
-  describe('rule selection (Task 13)', () => {
+  describe('layer selection (Task 13; sim-ux plan 4, Task 2)', () => {
     const RULES_DOC: SimDoc = {
       schema: 2,
       kind: 'sim',
@@ -1032,7 +1412,8 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
         ]
       }
     };
-    const showToggle = () => page.getByRole('button', { name: /^Show on map/ });
+    const layerRow = () => page.getByRole('button', { name: /^Near Muni Metro/ });
+    const fzpRow = () => page.getByRole('button', { name: 'FZP baseline', exact: true });
     async function withRule() {
       stub.reset();
       await page.viewport(1024, 768);
@@ -1047,34 +1428,73 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
       await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
     }
 
-    it('a selected rule sets the layer mode to its id; pressing again clears it', async () => {
+    it('selecting a layer sets the limits mode to its rule; the FZP row sets fzp mode', async () => {
       await withRule();
-      await showToggle().click();
+      await layerRow().click();
+      await expect.element(layerRow()).toHaveAttribute('aria-pressed', 'true');
       await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
-      await showToggle().click();
+      await layerRow().click();
       await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'plain' });
+      await fzpRow().click();
+      await expect.element(fzpRow()).toHaveAttribute('aria-pressed', 'true');
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'fzp' });
+      // One selection: a layer replaces the baseline.
+      await layerRow().click();
+      await expect.element(fzpRow()).toHaveAttribute('aria-pressed', 'false');
+      await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
     });
 
     it('rule mode wins over the paint tool', async () => {
       await withRule();
+      await tab('Paint').click();
       await page.getByRole('radio', { name: 'Paint' }).click();
       await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'paint' });
-      await showToggle().click();
+      await tab('Transit').click();
+      await layerRow().click();
       await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
     });
 
-    it('removing the selected rule clears the selection, and undo does not bring it back', async () => {
+    it('removing the selected layer clears the selection and Undo does not bring it back', async () => {
       await withRule();
-      await showToggle().click();
+      await layerRow().click();
       await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
-      await page.getByRole('button', { name: /^Remove:/ }).click();
+      await page.getByRole('button', { name: 'Remove layer' }).click();
       await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'plain' });
+      await expect
+        .element(
+          page.getByRole('button', {
+            name: 'Undo: Removed: Allowed up to 8 stories near Muni Metro'
+          })
+        )
+        .toBeVisible();
       await page.getByRole('button', { name: /^Undo/ }).click();
-      await expect.element(showToggle()).toHaveAttribute('aria-pressed', 'false');
+      await expect.element(layerRow()).toHaveAttribute('aria-pressed', 'false');
+      expect(page.getByRole('group', { name: 'Stop types' }).query()).toBeNull();
       expect(lastLayer()!.props.mode).toEqual({ kind: 'plain' });
     });
 
-    it('the selected rule leaving through Undo of its add clears the selection', async () => {
+    it('Undo of an edit keeps the layer selected and expanded', async () => {
+      await withRule();
+      await layerRow().click();
+      const more = page.getByRole('group', { name: 'Band 1' }).getByRole('button', {
+        name: 'More stories, band 1'
+      });
+      await more.click();
+      await more.click();
+      await expect
+        .element(page.getByRole('button', { name: /^Undo: Edited: Allowed up to 10 stories/ }))
+        .toBeVisible();
+      await page.getByRole('button', { name: /^Undo/ }).click();
+      await expect.element(layerRow()).toHaveAttribute('aria-pressed', 'true');
+      await expect
+        .element(page.getByRole('group', { name: 'Band 1' }))
+        .toHaveTextContent(/8\s*stories/);
+      expect(lastLayer()!.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
+      // One undo took the whole run back: the next undoes nothing (the restore is not a change).
+      await expect.element(page.getByRole('button', { name: /^Undo/ })).toBeDisabled();
+    });
+
+    it('the selected layer leaving through Undo of its add clears the selection', async () => {
       stub.reset();
       await page.viewport(1024, 768);
       await setup();
@@ -1087,47 +1507,50 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
         reqId: w.lastOf('brushCatalog')!.reqId,
         catalog: testCatalog()
       });
-      await page.getByRole('button', { name: 'Add transit rule' }).click();
-      await page.getByRole('checkbox', { name: /^Muni Metro/ }).click();
-      await page.getByRole('button', { name: 'Save rule' }).click();
-      await showToggle().click();
+      await page.getByRole('button', { name: 'Add transit layer' }).click();
       await expect.poll(() => lastLayer()?.props.mode).toMatchObject({ kind: 'rule' });
       await page.getByRole('button', { name: /^Undo/ }).click();
       await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'plain' });
       await page.getByRole('button', { name: /^Redo/ }).click();
-      await expect.element(showToggle()).toHaveAttribute('aria-pressed', 'false');
+      const added = page.getByRole('button', { name: /^Near regional rail and Muni Metro/ });
+      await expect.element(added).toHaveAttribute('aria-pressed', 'false');
       expect(lastLayer()!.props.mode).toEqual({ kind: 'plain' });
     });
 
-    it('with Zoning height limits off, pressing Show on map turns them on', async () => {
-      stub.reset();
-      await page.viewport(1024, 768);
-      const mem = new MemoryStorage();
-      mem.setItem(
-        SIM_KEY,
-        JSON.stringify({ v: 1, savedAt: 'x', plan: SIM_CODEC.serialize(RULES_DOC) })
-      );
-      mem.setItem(
-        VIEW_KEY,
-        JSON.stringify({ transitStops: false, transitAccess: true, heightLimits: false })
-      );
-      await setup({ storage: () => mem });
-      await toReady();
-      emitHeights(workers.at(-1)!);
-      await new Promise((res) => setTimeout(res, 50));
-      expect(overlayIds()).not.toContain(LIMITS_LAYER_ID);
-      await showToggle().click();
-      await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
-      expect(lastLayer()!.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
-      expect(JSON.parse(mem.getItem(VIEW_KEY)!).heightLimits).toBe(true);
+    it('with Zoning height limits off, selecting a layer or the FZP row turns them on', async () => {
+      for (const row of [layerRow, fzpRow]) {
+        stub.reset();
+        await page.viewport(1024, 768);
+        const mem = new MemoryStorage();
+        mem.setItem(
+          SIM_KEY,
+          JSON.stringify({ v: 1, savedAt: 'x', plan: SIM_CODEC.serialize(RULES_DOC) })
+        );
+        mem.setItem(
+          VIEW_KEY,
+          JSON.stringify({ transitStops: false, transitAccess: true, heightLimits: false })
+        );
+        const r = await setup({ storage: () => mem });
+        await toReady();
+        emitHeights(workers.at(-1)!);
+        await new Promise((res) => setTimeout(res, 50));
+        expect(overlayIds()).not.toContain(LIMITS_LAYER_ID);
+        await row().click();
+        await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
+        expect(lastLayer()!.props.mode).toEqual(
+          row === layerRow ? { kind: 'rule', ruleId: 'r1' } : { kind: 'fzp' }
+        );
+        expect(JSON.parse(mem.getItem(VIEW_KEY)!).heightLimits).toBe(true);
+        r.unmount();
+      }
     });
 
     it('Run clears the selection', async () => {
       await withRule();
-      await showToggle().click();
+      await layerRow().click();
       await expect.poll(() => lastLayer()?.props.mode).toEqual({ kind: 'rule', ruleId: 'r1' });
       await run().click();
-      await page.getByRole('button', { name: 'Change policy' }).click();
+      await editPolicy().click();
       await expect.poll(overlayIds).toContain(LIMITS_LAYER_ID);
       expect(lastLayer()!.props.mode).toEqual({ kind: 'plain' });
     });
@@ -1142,7 +1565,7 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
     await page.getByRole('checkbox', { name: 'Zoning height limits' }).click();
     await page.getByRole('checkbox', { name: 'Transit stops' }).click();
     await run().click();
-    await page.getByRole('button', { name: 'Change policy' }).click();
+    await editPolicy().click();
     await expect.element(viewButton()).toBeVisible();
     expect(stub.props.view).toEqual({ ...DEFAULT_VIEW, heightLimits: false, transitStops: true });
   });
@@ -1201,37 +1624,40 @@ describe('SimPage map overlays (plan 2, Task 4)', () => {
     await expect.element(viewButton()).toBeVisible();
     await run().click();
     expect(viewButton().query()).toBeNull();
-    await page.getByRole('button', { name: 'Back to start' }).click();
+    await page.getByTestId('dock-flip').click();
     await expect.element(viewButton()).toBeVisible();
   });
 });
 
-describe('SimPage paint feedback (plan 2, Task 6)', () => {
-  const run = () => page.getByRole('button', { name: 'Run', exact: true });
+describe('SimPage live preview (sim-ux plan 3, Task 4)', () => {
   const wait = (ms: number) => new Promise((res) => setTimeout(res, ms));
+  /** `window.__sfhSim` (installed while `VITE_E2E` is '1', see `readySim`). */
+  const preview = () => window.__sfhSim?.preview;
   const feedbackIds = () =>
     ((callsOf('setOverlayLayers').at(-1)?.[0] ?? []) as { id: string }[])
       .map((l) => l.id)
       .filter((id) => id.startsWith('sim-feedback-'));
-  /** One stroke across the stub map's canvas with the current tool. */
-  function stroke(): void {
-    const canvas = stub.map.getCanvas();
-    const ev = (type: string, x: number) =>
-      canvas.dispatchEvent(
-        new PointerEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          clientX: x,
-          clientY: 10,
-          pointerId: 1,
-          pointerType: 'mouse',
-          button: type === 'pointermove' ? -1 : 0,
-          isPrimary: true
-        })
-      );
-    ev('pointerdown', 10);
-    for (let x = 20; x <= 80; x += 10) ev('pointermove', x);
-    ev('pointerup', 80);
+  const ev = (type: string, x: number, pointerId = 1) =>
+    stub.map.getCanvas().dispatchEvent(
+      new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: 10,
+        pointerId,
+        pointerType: 'mouse',
+        button: type === 'pointermove' ? -1 : 0,
+        isPrimary: true
+      })
+    );
+  /** Pointer down and moves to `to` across the stub map's canvas: a stroke still in progress. */
+  function drag(from: number, to: number, pointerId = 1): void {
+    ev('pointerdown', from, pointerId);
+    for (let x = from + 10; x <= to; x += 10) ev('pointermove', x, pointerId);
+  }
+  /** More of the stroke in progress, from `from` to `to`. */
+  function moveTo(from: number, to: number, pointerId = 1): void {
+    for (let x = from; x <= to; x += 10) ev('pointermove', x, pointerId);
   }
   /** A one-part pack: a small box at the map's centre. */
   function pack(): PackedCell {
@@ -1251,56 +1677,184 @@ describe('SimPage paint feedback (plan 2, Task 6)', () => {
       partTypology: Uint8Array.from([0])
     };
   }
-  /** Paints one stroke and answers its lots: P0 at the centre, FAR out of view. */
-  async function paintAndAnswer() {
-    const w = workers.at(-1)!;
-    await page.getByRole('radio', { name: 'Paint' }).click();
-    stroke();
-    await expect.poll(() => w.allOf('resolveBrush').length).toBe(1);
+  type W = (typeof workers)[number];
+  /** Answers the `n`th (1-based) resolveBrush: P0 at the centre, FAR out of view. */
+  function answerLots(w: W, n: number): void {
     const c = stub.map.getCenter();
     w.emit({
       type: 'brushLots',
-      reqId: w.lastOf('resolveBrush')!.reqId,
+      reqId: w.allOf('resolveBrush')[n - 1].reqId,
       result: { ok: true, lots: ['P0', 'FAR'], points: Float64Array.from([c.lng, c.lat, 0, 0]) }
     });
-    await expect.poll(() => w.allOf('previewBuildings').length).toBe(1);
+  }
+  /** Answers the `n`th (1-based) previewBuildings with a pack. */
+  function answerBuildings(w: W, n: number): void {
+    w.emit({
+      type: 'previewBuildings',
+      reqId: w.allOf('previewBuildings')[n - 1].reqId,
+      result: { ok: true, pack: pack(), built: 1, missing: 0 }
+    });
+  }
+  /** /sim ready in Setup with `tool` chosen on the Paint tab. */
+  async function readyToPaint(tool: 'Paint' | 'Erase' = 'Paint') {
+    const { w } = await readySim();
+    await tab('Paint').click();
+    const radio = page.getByRole('radio', { name: tool });
+    await expect.element(radio).toBeEnabled();
+    await radio.click();
+    await expect.poll(() => callsOf('setPanEnabled').at(-1)?.[0]).toBe(false);
     return w;
   }
+  /** Mid-stroke, the first preview answered: its buildings show. */
+  async function liveStroke(w: W) {
+    drag(10, 40);
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(1);
+    answerLots(w, 1);
+    await expect.poll(() => w.allOf('previewBuildings').length).toBe(1);
+    answerBuildings(w, 1);
+    await expect.poll(preview).toBe('live');
+  }
 
-  it('a Paint stroke asks for its lots in view at its stories and shows the answer', async () => {
-    stub.reset();
-    await page.viewport(1024, 768);
-    await setup();
-    await toReady();
-    const w = await paintAndAnswer();
-    // the stroke's own query is the new brush's: no second resolveBrush
-    expect(w.allOf('resolveBrush')).toHaveLength(1);
-    const req = w.lastOf('previewBuildings')!;
-    expect(req).toMatchObject({ lots: ['P0'], stories: expect.any(Number) });
-    w.emit({
-      type: 'previewBuildings',
-      reqId: req.reqId,
-      result: { ok: true, pack: pack(), built: 1, missing: 0 }
+  /** The client project runs with reduced motion; the fade needs it off. */
+  const motion = (value: 'reduce' | 'no-preference') =>
+    cdp().send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-reduced-motion', value }]
     });
-    await expect.poll(() => feedbackIds()).toEqual(['sim-feedback-1']);
-    await expect.poll(() => feedbackIds(), { timeout: 4000 }).toEqual([]);
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await motion('reduce');
   });
 
-  it('a run drops an answer still on its way', async () => {
-    stub.reset();
-    await page.viewport(1024, 768);
-    await setup();
-    await toReady();
-    const w = await paintAndAnswer();
-    await run().click();
-    w.emit({
-      type: 'previewBuildings',
-      reqId: w.lastOf('previewBuildings')!.reqId,
-      result: { ok: true, pack: pack(), built: 1, missing: 0 }
-    });
-    await wait(100);
+  it('a Paint drag asks previewBuildings mid-stroke and fades on release', async () => {
+    await motion('no-preference');
+    const w = await readyToPaint();
+    expect(preview()).toBe('none');
+    drag(10, 40);
+    // The first preview goes out on the next frame, before any pointer-up.
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(1);
+    expect(w.lastOf('resolveBrush')!.query).toMatchObject({ kind: 'freehand' });
+    answerLots(w, 1);
+    await expect.poll(() => w.allOf('previewBuildings').length).toBe(1);
+    // The stroke's lots in view, nearest the ring, at the brush's stories.
+    expect(w.lastOf('previewBuildings')).toMatchObject({ lots: ['P0'], stories: 6 });
+    answerBuildings(w, 1);
+    await expect.poll(preview).toBe('live');
+    expect(feedbackIds()).toEqual(['sim-feedback-1']);
+    // One in flight: more of the stroke asks again once the first was answered.
+    moveTo(50, 80);
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(2);
+    ev('pointerup', 80);
+    expect(preview()).toBe('fading');
+    await expect.poll(preview, { timeout: 4000 }).toBe('none');
     expect(feedbackIds()).toEqual([]);
   });
+
+  it('release before an answer arrives: the late answer is dropped and nothing comes back after the fade', async () => {
+    await motion('no-preference');
+    const w = await readyToPaint();
+    await liveStroke(w);
+    moveTo(50, 80);
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(2);
+    answerLots(w, 2);
+    await expect.poll(() => w.allOf('previewBuildings').length).toBe(2);
+    ev('pointerup', 80);
+    expect(preview()).toBe('fading');
+    answerBuildings(w, 2); // the second preview's answer, after the release
+    await wait(100);
+    expect(preview()).not.toBe('live');
+    expect(feedbackIds()).not.toContain('sim-feedback-2');
+    await expect.poll(preview, { timeout: 4000 }).toBe('none');
+    await wait(100);
+    expect(preview()).toBe('none');
+    expect(feedbackIds()).toEqual([]);
+  });
+
+  it('Escape mid-stroke clears the buildings at once; the cancelled preview is answered and the next stroke previews', async () => {
+    const done = vi.spyOn(BrushController.prototype, 'previewDone');
+    const w = await readyToPaint();
+    await liveStroke(w);
+    expect(done).toHaveBeenCalledTimes(1);
+    moveTo(50, 80);
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(2);
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    // A cancelled stroke committed nothing: no fade, the buildings go at once.
+    expect(preview()).toBe('none');
+    expect(feedbackIds()).toEqual([]);
+    answerLots(w, 2); // the cancelled preview's lots: dropped, but answered
+    await expect.poll(() => done.mock.calls.length).toBe(2);
+    await wait(50);
+    expect(w.allOf('previewBuildings')).toHaveLength(1);
+    expect(preview()).toBe('none');
+    ev('pointerup', 80);
+    // The next stroke's first preview goes out on its first frame.
+    drag(10, 40, 2);
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(3);
+    ev('pointerup', 40, 2);
+  });
+
+  it('a new map mid-stroke clears the live buildings and drops the answers still on their way', async () => {
+    const w = await readyToPaint();
+    await liveStroke(w);
+    moveTo(50, 80);
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(2);
+    // The map is replaced (a style reload): the old controller is destroyed, with a preview in
+    // flight and buildings on screen.
+    stub.map = new FakeMap();
+    stub.fireReady();
+    expect(preview()).toBe('none');
+    expect(feedbackIds()).toEqual([]);
+    // The in-flight preview's answers arrive late: nothing shows.
+    answerLots(w, 2);
+    await wait(50);
+    expect(w.allOf('previewBuildings')).toHaveLength(1);
+    expect(preview()).toBe('none');
+  });
+
+  it('an Erase drag shows no buildings, and each of its previews is answered', async () => {
+    const done = vi.spyOn(BrushController.prototype, 'previewDone');
+    const w = await readyToPaint('Erase');
+    drag(10, 40);
+    await expect.poll(() => done.mock.calls.length).toBe(1);
+    moveTo(50, 80);
+    // The controller sent a second preview, so it saw the first answered.
+    await expect.poll(() => done.mock.calls.length).toBe(2);
+    expect(w.allOf('resolveBrush')).toHaveLength(0);
+    expect(w.allOf('previewBuildings')).toHaveLength(0);
+    expect(preview()).toBe('none');
+    ev('pointerup', 80);
+    await wait(50);
+    expect(w.allOf('previewBuildings')).toHaveLength(0);
+    expect(feedbackIds()).toEqual([]);
+  });
+
+  it('Run mid-stroke clears the preview and drops the answer on its way', async () => {
+    const w = await readyToPaint();
+    await liveStroke(w);
+    moveTo(50, 80);
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(2);
+    answerLots(w, 2);
+    await expect.poll(() => w.allOf('previewBuildings').length).toBe(2);
+    await pressRun();
+    expect(preview()).toBe('none');
+    expect(feedbackIds()).toEqual([]);
+    answerBuildings(w, 2);
+    await wait(100);
+    expect(preview()).toBe('none');
+    expect(feedbackIds()).toEqual([]);
+  });
+
+  it('Run during the fade clears the preview at once', async () => {
+    await motion('no-preference');
+    const w = await readyToPaint();
+    await liveStroke(w);
+    ev('pointerup', 40);
+    expect(preview()).toBe('fading');
+    await pressRun();
+    expect(preview()).toBe('none');
+    expect(feedbackIds()).toEqual([]);
+  });
+
   /** The worker's `resolving` then `current` for `rev`. */
   function leversCurrent(rev: number): void {
     const w = workers.at(-1)!;
@@ -1319,18 +1873,34 @@ describe('SimPage paint feedback (plan 2, Task 6)', () => {
     });
   }
 
-  /** Saves a new transit rule through its form and answers its lots: P0 in view, FAR not. */
-  async function saveRule() {
+  it('under reduced motion a release clears the buildings at once', async () => {
+    const w = await readyToPaint();
+    await liveStroke(w);
+    ev('pointerup', 40);
+    expect(preview()).toBe('none');
+    expect(feedbackIds()).toEqual([]);
+  });
+
+  it('an edit sends a new revision and shows no preview buildings', async () => {
+    stub.reset();
+    vi.stubEnv('VITE_E2E', '1');
+    await page.viewport(1024, 768);
+    const mem = new MemoryStorage();
+    const doc: SimDoc = {
+      schema: 2,
+      kind: 'sim',
+      datasetVersion: 'fixture-0',
+      policy: {
+        ...DEFAULT_POLICY,
+        rules: [
+          { id: 'r1', kind: 'transit', stopTypes: ['metro'], bands: [{ maxM: 402, stories: 8 }] }
+        ]
+      }
+    };
+    mem.setItem(SIM_KEY, JSON.stringify({ v: 1, savedAt: 'x', plan: SIM_CODEC.serialize(doc) }));
+    await setup({ storage: () => mem });
+    await toReady();
     const w = workers.at(-1)!;
-    await expect.poll(() => w.lastOf('brushCatalog')).toBeTruthy();
-    w.emit({
-      type: 'brushCatalog',
-      reqId: w.lastOf('brushCatalog')!.reqId,
-      catalog: testCatalog()
-    });
-    await page.getByRole('button', { name: 'Add transit rule' }).click();
-    await page.getByRole('checkbox', { name: /^Regional rail/ }).click();
-    await page.getByRole('button', { name: 'Save rule' }).click();
     await expect.poll(() => w.allOf('resolveBrush').length).toBeGreaterThan(0);
     const c = stub.map.getCenter();
     for (const q of w.allOf('resolveBrush'))
@@ -1340,43 +1910,298 @@ describe('SimPage paint feedback (plan 2, Task 6)', () => {
         result: { ok: true, lots: ['P0', 'FAR'], points: Float64Array.from([c.lng, c.lat, 0, 0]) }
       });
     await expect.poll(() => w.allOf('setLevers').length, { timeout: 2000 }).toBe(1);
-    return w;
-  }
+    leversCurrent(w.lastOf('setLevers')!.rev);
+    await expect.poll(() => fzpDebug().levers.status).toBe('current');
+    // A stories edit needs no new lots: the next revision goes out with the new height.
+    await page.getByRole('button', { name: /^Near Muni Metro/ }).click();
+    await page
+      .getByRole('group', { name: 'Band 1' })
+      .getByRole('button', { name: 'More stories, band 1' })
+      .click();
+    await expect.poll(() => w.allOf('setLevers').length, { timeout: 2000 }).toBe(2);
+    expect(w.lastOf('setLevers')!.levers.rules[0].stories).toBe(9);
+    leversCurrent(w.lastOf('setLevers')!.rev);
+    await expect.poll(() => fzpDebug().levers.status).toBe('current');
+    await wait(100);
+    expect(w.allOf('previewBuildings')).toHaveLength(0);
+    expect(preview()).toBe('none');
+    expect(feedbackIds()).toEqual([]);
+  });
+});
 
-  it('a saved rule shows its lots in view once its revision is current, at the levers', async () => {
-    stub.reset();
-    await page.viewport(1024, 768);
-    await setup();
-    await toReady();
-    const w = await saveRule();
-    const rev = w.lastOf('setLevers')!.rev;
-    await wait(50);
-    expect(w.allOf('previewBuildings')).toHaveLength(0); // not before its current
-    leversCurrent(rev);
-    await expect.poll(() => w.allOf('previewBuildings').length).toBe(1);
-    const req = w.lastOf('previewBuildings')!;
-    expect(req.lots).toEqual(['P0']);
-    expect(req).not.toHaveProperty('stories');
-    leversCurrent(rev + 1); // fires once
-    await wait(50);
-    expect(w.allOf('previewBuildings')).toHaveLength(1);
+describe('SimPage map selection (sim-ux plan 4, Task 4)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 
-  it('an edit that changes nothing arms nothing', async () => {
+  type W = (typeof workers)[number];
+  const wait = (ms: number) => new Promise((res) => setTimeout(res, ms));
+  /** A point inside the stub map's view: the lot the tests click. */
+  const X: [number, number] = [-122.42, 37.76];
+  const ruleId = 'r1';
+  const paintId = 'b1';
+  const DOC: SimDoc = {
+    schema: 2,
+    kind: 'sim',
+    datasetVersion: 'fixture-0',
+    policy: {
+      ...DEFAULT_POLICY,
+      rules: [
+        { id: ruleId, kind: 'transit', stopTypes: ['metro'], bands: [{ maxM: 402, stories: 8 }] }
+      ],
+      custom: [{ id: paintId, kind: 'paint', strokes: [{ path: [X], radiusM: 20 }], stories: 9 }]
+    }
+  };
+  const layerButton = (id: string) =>
+    document.querySelector<HTMLElement>(`[data-layer-row="${id}"] > button`);
+  const paintButton = (id: string) =>
+    document.querySelector<HTMLElement>(`[data-paint-row="${id}"]`);
+  /** The pressed Transit and Paint rows, by layer id (`fzp` for the baseline) or area id. */
+  const pressed = () =>
+    [...document.querySelectorAll<HTMLElement>('[data-layer-row] > button, [data-paint-row]')]
+      .filter((b) => b.getAttribute('aria-pressed') === 'true')
+      .map(
+        (b) => b.closest('[data-layer-row]')?.getAttribute('data-layer-row') ?? b.dataset.paintRow
+      );
+
+  /** /sim ready in Setup with DOC restored (a transit layer and a painted area), its lots found. */
+  async function readySimWithRule(width = 1024) {
+    const mem = new MemoryStorage();
+    mem.setItem(SIM_KEY, JSON.stringify({ v: 1, savedAt: 'x', plan: SIM_CODEC.serialize(DOC) }));
+    const { w } = await readySim(width, { storage: () => mem });
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(2);
+    for (const q of w.allOf('resolveBrush'))
+      w.emit({
+        type: 'brushLots',
+        reqId: q.reqId,
+        result: { ok: true, lots: ['X'], points: Float64Array.from(X) }
+      });
+    return { w, map: stub.map };
+  }
+
+  function clickAt(map: FakeMap, [lng, lat]: [number, number] = X): void {
+    map.fire('click', { lngLat: { lng, lat } });
+  }
+  type Owner = { kind: 'fzp' } | { kind: 'paint' } | { kind: 'rule'; ruleId: string } | null;
+  /** Answers the `n`th (1-based; default the latest) lotAt. */
+  function answer(w: W, owner: Owner, parcelId: string | null = 'X', n?: number): void {
+    const all = w.allOf('lotAt');
+    const req = n === undefined ? all.at(-1)! : all[n - 1];
+    w.emit({ type: 'lotAt', reqId: req.reqId, result: { ok: true, parcelId, owner } });
+  }
+
+  it('a click with Move in Set Policy asks lotAt and selects the rule that owns the lot', async () => {
+    const scrolled = vi.spyOn(Element.prototype, 'scrollIntoView');
+    const { w, map } = await readySimWithRule();
+    await tab('Protect').click();
+    (document.activeElement as HTMLElement | null)?.blur();
+    const focused = document.activeElement;
+    map.fire('click', { lngLat: { lng: X[0], lat: X[1] } });
+    const req = w.lastOf('lotAt')!;
+    expect(req.point).toEqual(X);
+    w.emit({
+      type: 'lotAt',
+      reqId: req.reqId,
+      result: { ok: true, parcelId: 'X', owner: { kind: 'rule', ruleId: ruleId } }
+    });
+    const selected = () =>
+      document.querySelector(`[data-layer-row="${ruleId}"] [aria-pressed="true"]`);
+    await expect.poll(selected).not.toBeNull();
+    await expect.element(page.elementLocator(selected()!)).toBeVisible();
+    await expect.element(tab('Transit')).toHaveAttribute('aria-selected', 'true');
+    // Selected and expanded, scrolled into view; focus stays where it was (on the map).
+    await expect.element(page.getByRole('group', { name: 'Stop types' })).toBeVisible();
+    await expect
+      .poll(() => scrolled.mock.contexts.includes(layerButton(ruleId)!.parentElement))
+      .toBe(true);
+    expect(scrolled).toHaveBeenCalledWith({ block: 'nearest' });
+    expect(document.activeElement).toBe(focused);
+    expect(dockEl()!.contains(document.activeElement)).toBe(false);
+  });
+
+  it('a painted owner opens the Paint tab on that area', async () => {
+    const { w, map } = await readySimWithRule();
+    // From the Results face too: the click shows the editing face.
+    await scoreButton().click();
+    await expect.element(results()).toBeVisible();
+    clickAt(map);
+    answer(w, { kind: 'paint' });
+    await expect.element(tab('Paint')).toHaveAttribute('aria-selected', 'true');
+    await expect.poll(() => paintButton(paintId)?.getAttribute('aria-pressed')).toBe('true');
+    expect(pressed()).toEqual([paintId]);
+  });
+
+  it('an FZP owner selects the baseline row; a click on no lot clears the selection', async () => {
+    const { w, map } = await readySimWithRule();
+    clickAt(map);
+    answer(w, { kind: 'fzp' });
+    await expect.poll(() => layerButton('fzp')?.getAttribute('aria-pressed')).toBe('true');
+    expect(pressed()).toEqual(['fzp']);
+    clickAt(map, [-122.5, 37.7]);
+    answer(w, null, null);
+    await expect.poll(pressed).toEqual([]);
+  });
+
+  it('only the latest click answer counts', async () => {
+    const { w, map } = await readySimWithRule();
+    clickAt(map);
+    clickAt(map);
+    expect(w.allOf('lotAt')).toHaveLength(2);
+    // The second answers first; the first, late, changes nothing.
+    answer(w, { kind: 'fzp' }, 'X', 2);
+    await expect.poll(pressed).toEqual(['fzp']);
+    answer(w, { kind: 'rule', ruleId }, 'X', 1);
+    await wait(50);
+    expect(pressed()).toEqual(['fzp']);
+    // An older answer arriving before the latest one is dropped too.
+    clickAt(map);
+    clickAt(map);
+    answer(w, { kind: 'paint' }, 'X', 3);
+    await wait(50);
+    expect(pressed()).toEqual(['fzp']);
+    answer(w, { kind: 'rule', ruleId }, 'X', 4);
+    await expect.poll(pressed).toEqual([ruleId]);
+  });
+
+  it('a no-session answer changes nothing', async () => {
+    const { w, map } = await readySimWithRule();
+    clickAt(map);
+    answer(w, { kind: 'rule', ruleId });
+    await expect.poll(pressed).toEqual([ruleId]);
+    await tab('Protect').click();
+    clickAt(map);
+    w.emit({
+      type: 'lotAt',
+      reqId: w.lastOf('lotAt')!.reqId,
+      result: { ok: false, reason: 'no-session', message: 'x' }
+    });
+    await wait(50);
+    await expect.element(tab('Protect')).toHaveAttribute('aria-selected', 'true');
+    await tab('Transit').click();
+    expect(pressed()).toEqual([ruleId]);
+  });
+
+  // Review focus 1: the worker answers from the limits it holds now, which may be a revision behind.
+  it('a click while a revision resolves follows the answer; a rule since removed selects FZP', async () => {
+    const { w, map } = await readySimWithRule();
+    await page.getByRole('button', { name: /^Near Muni Metro/ }).click();
+    await page.getByRole('button', { name: 'Remove layer' }).click();
+    await expect.poll(() => layerButton(ruleId)).toBeNull();
+    // The removal's revision is still on its way: the worker still names r1.
+    clickAt(map);
+    answer(w, { kind: 'rule', ruleId });
+    await expect.poll(pressed).toEqual(['fzp']);
+    // An owner from the revision before that is still in the policy is selected.
+    clickAt(map);
+    answer(w, { kind: 'paint' });
+    await expect.poll(pressed).toEqual([paintId]);
+  });
+
+  // Review focus 4: in each state exactly one of a selection, a stroke and a card happens.
+  describe('a click does exactly one thing', () => {
+    /** A mouse click on the map: pointer down and up on the canvas, MapLibre's click, SimMap's pick. */
+    function fullClick() {
+      const canvas = stub.map.getCanvas();
+      for (const type of ['pointerdown', 'pointerup'])
+        canvas.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            clientX: 30,
+            clientY: 10,
+            pointerId: 1,
+            pointerType: 'mouse',
+            button: 0,
+            isPrimary: true
+          })
+        );
+      clickAt(stub.map);
+      stub.props.timelinePick?.({ projectId: 'pr-1', parcelId: 'X', x: 30, y: 10, kind: 'tap' });
+    }
+    const counts = (w: W) => ({
+      lotAt: w.allOf('lotAt').length,
+      stroke: w.allOf('resolveBrush').length,
+      card: w.allOf('parcelSummary').length
+    });
+
+    it('Set Policy with Move: a selection, no stroke and no card', async () => {
+      const { w } = await readySim();
+      // No tap card of SimMap's own either (a touch tap on a building).
+      expect(stub.props.tapCards).toBe(false);
+      fullClick();
+      await wait(50);
+      expect(counts(w)).toEqual({ lotAt: 1, stroke: 0, card: 0 });
+      await expect.element(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled();
+    });
+
+    it('Set Policy with Paint: a stroke, no selection and no card', async () => {
+      const { w } = await readySim();
+      await tab('Paint').click();
+      await page.getByRole('radio', { name: 'Paint' }).click();
+      await expect.poll(() => callsOf('setPanEnabled').at(-1)?.[0]).toBe(false);
+      fullClick();
+      await expect.poll(() => w.allOf('resolveBrush').length).toBe(1);
+      await wait(50);
+      expect(counts(w)).toEqual({ lotAt: 0, stroke: 1, card: 0 });
+    });
+
+    it('Set Policy with Erase: no selection and no card', async () => {
+      const { w } = await readySim();
+      await tab('Paint').click();
+      await page.getByRole('radio', { name: 'Erase' }).click();
+      fullClick();
+      await wait(50);
+      expect(counts(w)).toMatchObject({ lotAt: 0, card: 0 });
+    });
+
+    it('a run: a card, no selection and no stroke', async () => {
+      const { w } = await readySim();
+      await pressRun(w);
+      await expect.poll(() => stub.props.tapCards).toBe(true);
+      fullClick();
+      await wait(50);
+      expect(counts(w)).toEqual({ lotAt: 0, stroke: 0, card: 1 });
+    });
+
+    it('the view: nothing', async () => {
+      vi.stubEnv('VITE_E2E', '1');
+      stub.reset();
+      await page.viewport(1024, 768);
+      await setup({ mode: 'view', initialPolicy: DEFAULT_POLICY });
+      await toReady();
+      const w = workers.at(-1)!;
+      expect(stub.props.tapCards).toBe(false);
+      fullClick();
+      await wait(50);
+      expect(counts(w)).toEqual({ lotAt: 0, stroke: 0, card: 0 });
+    });
+  });
+
+  it('the listener goes with a replaced map and on unmount', async () => {
+    vi.stubEnv('VITE_E2E', '1');
     stub.reset();
     await page.viewport(1024, 768);
-    await setup();
+    const r = await setup();
     await toReady();
-    const w = await saveRule();
-    leversCurrent(w.lastOf('setLevers')!.rev);
-    await expect.poll(() => w.allOf('previewBuildings').length).toBe(1);
-    await page.getByRole('button', { name: /^Edit:/ }).click();
-    await page.getByRole('button', { name: 'Save rule' }).click();
-    await expect.element(page.getByRole('button', { name: 'Save rule' })).not.toBeInTheDocument();
-    await wait(400); // past the debounce: nothing changed, nothing is sent
-    expect(w.allOf('setLevers')).toHaveLength(1);
-    leversCurrent(w.lastOf('setLevers')!.rev + 1); // a later revision for another reason
-    await wait(50);
-    expect(w.allOf('previewBuildings')).toHaveLength(1);
+    const old = stub.map;
+    await expect.poll(() => old.listenerCount('click')).toBe(1);
+    stub.map = new FakeMap();
+    stub.fireReady();
+    expect(old.listenerCount('click')).toBe(0);
+    expect(stub.map.listenerCount('click')).toBe(1);
+    r.unmount();
+    expect(stub.map.listenerCount('click')).toBe(0);
+  });
+
+  it('at 375 px a click opens the closed sheet at peek on the selected row', async () => {
+    const { w, map } = await readySimWithRule(375);
+    await expect.element(handle()).toHaveAttribute('aria-expanded', 'false');
+    clickAt(map);
+    answer(w, { kind: 'rule', ruleId });
+    await expect.element(handle()).toHaveAttribute('aria-expanded', 'true');
+    await expect.poll(pressed).toEqual([ruleId]);
+    const sheet = document.querySelector<HTMLElement>('.sfh-dock-sheet')!;
+    expect(sheet.style.maxHeight).toContain('40dvh');
   });
 });

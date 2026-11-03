@@ -2,10 +2,26 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { emptyPlan } from '$lib/plan';
 import { exposeEditorForDebug, installBrushDebug } from './debug';
 
-const state = { ops: 0, lastStats: null, ready: true, chunks: { pending: 0, failed: [] } };
+const state = {
+  ops: 3,
+  rows: 2,
+  lastStats: null,
+  ready: true,
+  chunks: { pending: 0, failed: [] }
+};
 
 afterEach(() => {
   vi.unstubAllEnvs();
+});
+
+describe('brush debug hook state', () => {
+  it('reports the op and row counts BrushEditor gives it', () => {
+    vi.stubEnv('VITE_E2E', '1');
+    const uninstall = installBrushDebug(() => state);
+    expect(window.__sfhBrush!.ops).toBe(3);
+    expect(window.__sfhBrush!.rows).toBe(2);
+    uninstall();
+  });
 });
 
 describe('brush debug hook load', () => {

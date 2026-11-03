@@ -12,6 +12,7 @@ import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev } from './protoc
 import type {
   BrushLotsResult,
   HeightLidsResult,
+  LotAtResult,
   LotOutlinesResult,
   PreviewResult,
   ScenarioResponse,
@@ -67,6 +68,12 @@ const noSessionOutlines = (): LotOutlinesResult => ({
   message: 'the worker session ended before answering'
 });
 
+const noSessionLotAt = (): LotAtResult => ({
+  ok: false,
+  reason: 'no-session',
+  message: 'the worker session ended before answering'
+});
+
 const noSessionPreview = (): PreviewResult => ({
   ok: false,
   reason: 'no-session',
@@ -97,6 +104,7 @@ export class ScenarioClient {
   #pending = new Map<number, (s: ParcelSummary | null) => void>();
   #pendingBrush = new Map<number, (r: BrushLotsResult) => void>();
   #pendingOutlines = new Map<number, (r: LotOutlinesResult) => void>();
+  #pendingLotAt = new Map<number, (r: LotAtResult) => void>();
   #pendingPreview = new Map<number, (r: PreviewResult) => void>();
   #pendingCatalog = new Map<number, (c: BrushCatalog | null) => void>();
   #pendingLids = new Map<number, (r: HeightLidsResult) => void>();
@@ -233,21 +241,30 @@ export class ScenarioClient {
   }
 
   /**
-   * The buildings `lots` could hold (paint feedback): at `stories` for a custom stroke, else at
-   * the levers in force, only where they differ from FZP. Answered by a session initialised with
-   * levers; `no-session` otherwise, and on crash, `restart` and `dispose`.
+   * The lot under `point` (lng, lat) and the layer that sets its height limit, from the limits the
+   * worker holds now. Answered by a session initialised with levers; `no-session` otherwise, and
+   * on crash, `restart` and `dispose`.
    */
-  previewBuildings(lots: ParcelId[], stories?: number): Promise<PreviewResult> {
+  lotAt(point: [number, number]): Promise<LotAtResult> {
+    if (this.#disposed || this.#crashed) return Promise.resolve(noSessionLotAt());
+    const reqId = ++this.#reqId;
+    return new Promise((resolve) => {
+      this.#pendingLotAt.set(reqId, resolve);
+      this.#worker.postMessage({ type: 'lotAt', reqId, point });
+    });
+  }
+
+  /**
+   * The buildings `lots` could hold at `stories` (/sim's live preview of a Paint stroke). Answered
+   * by a session initialised with levers; `no-session` otherwise, and on crash, `restart` and
+   * `dispose`.
+   */
+  previewBuildings(lots: ParcelId[], stories: number): Promise<PreviewResult> {
     if (this.#disposed || this.#crashed) return Promise.resolve(noSessionPreview());
     const reqId = ++this.#reqId;
     return new Promise((resolve) => {
       this.#pendingPreview.set(reqId, resolve);
-      this.#worker.postMessage({
-        type: 'previewBuildings',
-        reqId,
-        lots,
-        ...(stories === undefined ? {} : { stories })
-      });
+      this.#worker.postMessage({ type: 'previewBuildings', reqId, lots, stories });
     });
   }
 
@@ -335,6 +352,8 @@ export class ScenarioClient {
     this.#pendingBrush.clear();
     for (const resolve of this.#pendingOutlines.values()) resolve(noSessionOutlines());
     this.#pendingOutlines.clear();
+    for (const resolve of this.#pendingLotAt.values()) resolve(noSessionLotAt());
+    this.#pendingLotAt.clear();
     for (const resolve of this.#pendingPreview.values()) resolve(noSessionPreview());
     this.#pendingPreview.clear();
     for (const resolve of this.#pendingCatalog.values()) resolve(null);
@@ -392,6 +411,13 @@ export class ScenarioClient {
         const resolve = this.#pendingOutlines.get(msg.reqId);
         if (!resolve) return;
         this.#pendingOutlines.delete(msg.reqId);
+        resolve(msg.result);
+        return;
+      }
+      case 'lotAt': {
+        const resolve = this.#pendingLotAt.get(msg.reqId);
+        if (!resolve) return;
+        this.#pendingLotAt.delete(msg.reqId);
         resolve(msg.result);
         return;
       }

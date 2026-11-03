@@ -1,6 +1,6 @@
 // Map view e2e (spec §6 E1–E10, §4.8 states). Runs against the VITE_E2E build, which exposes
 // window.__sfhMap (src/lib/map/debug.ts) and window.__sfhBrush (src/lib/brush/debug.ts). E2–E8
-// paint with brush-tool's toolbar through the worker host.
+// paint with the Paint tab's tools (the dock's) through the worker host.
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import type { SfhBrushDebug } from '../src/lib/brush/debug';
@@ -13,6 +13,7 @@ import {
   TO,
   TOUCH_FROM,
   TOUCH_TO,
+  chooseTool,
   mouseDrag,
   ops,
   paintOnce,
@@ -77,7 +78,7 @@ async function projectToPage(page: Page, lngLat: [number, number]): Promise<[num
   }, lngLat);
 }
 
-// ---- painting helpers (brush-tool's toolbar and the worker host) --------------------------------
+// ---- painting helpers (the Paint tab's tools and the worker host) -------------------------------
 
 const CHUNK = '**/data/fixture-0/parcels/50_25.json';
 
@@ -101,11 +102,8 @@ async function gotoEditor(page: Page): Promise<void> {
 
 /** Selects a brush tool, then strokes FROM → TO (mouse) or TOUCH_FROM → TOUCH_TO (one finger). */
 async function stroke(page: Page, isMobile: boolean, tool: 'Paint' | 'Erase'): Promise<void> {
+  await chooseTool(page, tool);
   await jumpAndIdle(page, FRAME);
-  const radio = page.getByRole('radio', { name: tool });
-  if (isMobile) await radio.tap();
-  else await radio.click();
-  await expect(radio).toHaveAttribute('aria-checked', 'true');
   if (isMobile) {
     const cdp = await page.context().newCDPSession(page);
     await touchDrag(

@@ -24,7 +24,7 @@ const manifest = JSON.parse(readFileSync(MANIFEST_URL, 'utf8')) as {
 };
 const { fzp } = manifest.scenarios;
 // /sim (where /fzp now redirects) reads these four: the timelapse's three and the lever engine's
-// policy.bin. The brush catalog (asked for when the policy panel first opens) reads only
+// policy.bin. The brush catalog (asked for when the dock's editing face first shows) reads only
 // transit.json and neighborhoods.geojson, never frontage.bin.
 const SIM_FILES = [fzp.parcels, fzp.projects, fzp.calibration, fzp.policy];
 
@@ -51,7 +51,7 @@ async function waitReady(page: Page): Promise<void> {
 async function settled(page: Page): Promise<void> {
   const bar = page.getByTestId('score-bar');
   if ((await bar.getAttribute('aria-expanded')) !== 'true') await bar.click();
-  const board = page.getByRole('region', { name: 'Score details' });
+  const board = page.getByRole('region', { name: 'Results' }); // the dock's Results face
   await expect(board.locator('[aria-busy="true"]')).toHaveCount(0, { timeout: 20_000 });
   await expect(board).not.toContainText(/calculating/);
 }

@@ -1,9 +1,9 @@
 <!--
-  The read-only policy summary (plan 5, Call 15): what a shared policy turns on, in words, one
-  compact block per section. One line per new zoning rule and per custom brush (each with its
-  lots), the protections (hard choices stay visible), and the timelines' label. The route shares
-  and every stage that differs from observed sit behind one disclosure, closed by default
-  (compact UI, details on demand). No controls change the policy.
+  The read-only policy summary (plan 5, Call 15), the view's dock tab: what a shared policy turns
+  on, in words, as rows on the dock's surface. One row per new zoning rule and per custom brush
+  (each with its lots), the protections (hard choices stay visible), and the timelines' label. The
+  route shares and every stage that differs from observed sit behind one disclosure, closed by
+  default (compact UI, details on demand). No controls change the policy. Colours are tokens.
 -->
 <script lang="ts">
   import { PATHWAYS, type Calibration, type Pathway } from '$lib/timelapse/types';
@@ -23,6 +23,10 @@
   const uid = $props.id();
   const detailsId = `${uid}-timing-details`;
   let open = $state(false);
+
+  /** A row on the dock's surface (as the editing cards): a line, outlined. */
+  const ROW = 'rounded-md border border-line px-2 py-1.5 dark:border-line-dark';
+  const MUTED = 'text-ink-muted dark:text-ink-dark-muted';
 
   const ROUTE: Record<Pathway, string> = {
     discretionary: 'discretionary',
@@ -69,53 +73,53 @@
   });
 </script>
 
-<div class="divide-y divide-gray-200 text-sm text-black">
-  <section class="px-4 py-3" aria-labelledby="{uid}-rules">
-    <h3 id="{uid}-rules" class="font-semibold">New zoning rules</h3>
+<div class="flex flex-col gap-4 text-sm text-ink dark:text-ink-dark">
+  <section class="flex flex-col gap-1" aria-labelledby="{uid}-rules">
+    <h3 id="{uid}-rules" class="font-semibold">Transit layers</h3>
     {#if policy.rules.length === 0}
-      <p class="mt-1 text-gray-700">No new zoning rules</p>
+      <p class={MUTED}>No transit layers</p>
     {:else}
-      <ul class="mt-1 list-disc space-y-1 pl-4">
+      <ul class="flex flex-col gap-1">
         {#each policy.rules as r (r.id)}
-          <li>{ruleSummary(r, lotsText(lotsOf(`rule:${r.id}`)))}</li>
+          <li class={ROW}>{ruleSummary(r, lotsText(lotsOf(`rule:${r.id}`)))}</li>
         {/each}
       </ul>
     {/if}
   </section>
 
-  <section class="px-4 py-3" aria-labelledby="{uid}-custom">
-    <h3 id="{uid}-custom" class="font-semibold">Custom zoning</h3>
+  <section class="flex flex-col gap-1" aria-labelledby="{uid}-custom">
+    <h3 id="{uid}-custom" class="font-semibold">Painted areas</h3>
     {#if policy.custom.length === 0}
-      <p class="mt-1 text-gray-700">No custom zoning</p>
+      <p class={MUTED}>No painted areas</p>
     {:else}
-      <ul class="mt-1 list-disc space-y-1 pl-4">
+      <ul class="flex flex-col gap-1">
         {#each policy.custom as b (b.id)}
-          <li>{customSummary(b, lotsText(lotsOf(`custom:${b.id}`)))}</li>
+          <li class={ROW}>{customSummary(b, lotsText(lotsOf(`custom:${b.id}`)))}</li>
         {/each}
       </ul>
     {/if}
   </section>
 
-  <section class="px-4 py-3" aria-labelledby="{uid}-protections">
+  <section class="flex flex-col gap-1" aria-labelledby="{uid}-protections">
     <h3 id="{uid}-protections" class="font-semibold">Protections</h3>
-    <p class="mt-1">{protections}</p>
+    <p class={ROW}>{protections}</p>
   </section>
 
-  <section class="px-4 py-3" aria-labelledby="{uid}-timing">
+  <section class="flex flex-col gap-1" aria-labelledby="{uid}-timing">
     <h3 id="{uid}-timing" class="font-semibold">Permitting timelines</h3>
-    <p class="mt-1">{timingLabel(current)}</p>
+    <p class={ROW}>{timingLabel(current)}</p>
     {#if timingLines.length > 0}
       <button
         type="button"
-        class="mt-1 flex min-h-6 min-w-6 items-center gap-1 text-left font-semibold underline pointer-coarse:min-h-11"
+        class="flex min-h-6 min-w-6 items-center gap-1 rounded-md px-2 text-left font-semibold hover:bg-surface-raised dark:hover:bg-surface-dark-raised pointer-coarse:min-h-11"
         aria-expanded={open}
         aria-controls={detailsId}
         onclick={() => (open = !open)}
         >Shares and changed stages<span aria-hidden="true">{open ? '−' : '+'}</span></button
       >
-      <ul id={detailsId} hidden={!open} class="mt-1 list-disc space-y-1 pl-4 text-gray-800">
+      <ul id={detailsId} hidden={!open} class="flex flex-col gap-1">
         {#each timingLines as line (line)}
-          <li>{line}</li>
+          <li class={ROW}>{line}</li>
         {/each}
       </ul>
     {/if}

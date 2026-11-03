@@ -8,6 +8,7 @@ import type { TransitNetwork } from '$lib/data/transit';
 import type { ViewPrefs } from '$lib/view/prefs';
 import type { chanceTable, typicalMonths } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
+import type { LimitOwner } from '$lib/sim/levers/source';
 
 export type Theme = 'light' | 'dark';
 export interface CameraFrame {
@@ -109,6 +110,8 @@ export interface LotLimits {
   allowed: number;
   buildable: number | null;
   protected: boolean;
+  /** The layer that sets `allowed` (a lever session only): a protected lot reads FZP. */
+  owner?: LimitOwner;
 }
 
 export interface ParcelSummaryLike {
@@ -137,6 +140,12 @@ export interface SimMapProps {
    * timeline parts (implemented by timelapse-render step 1).
    */
   timelinePick?: (p: TimelinePick) => void;
+  /**
+   * A touch tap opens SimMap's own card (an existing building, a stop, a generated part) (default
+   * true). /sim turns it off in Set Policy, where a tap selects a layer; turning it off closes an
+   * open card. Hover tooltips and `timelinePick` reports are unaffected.
+   */
+  tapCards?: boolean;
 }
 
 /**
