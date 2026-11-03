@@ -152,16 +152,27 @@ check. It is listed in `docs/dev/pipeline.md`.
 
 Plan segments written as a street selector (`STREET, FROM → TO`, plan-v1 Appendix A) are
 transcribed verbatim into `pipeline/enrichment/lesscars/corridors.json`
-(`{ "schema": 1, "corridors": [{ owner, street, from, to }] }`, `owner` the project or display
-id). `npm run pipeline -- lesscars-cnns` normalises the locked `datasf-streets` raw files (no
+(`{ "schema": 1, "corridors": [{ owner, street, from, to, as? }] }`, `owner` the project or
+display id). `npm run pipeline -- lesscars-cnns` normalises the locked `datasf-streets` raw files (no
 network) and writes `corridors.resolved.json`: `{ schema: 1, source: { id, sha256 }, corridors }`,
-each corridor the selector plus `cnn` (sorted) and `lengthM` (to 0.1 m), `sha256` the lock's file
+each corridor the selector (with its `as`, if any) plus `cnn` (sorted) and `lengthM` (to 0.1 m), `sha256` the lock's file
 hashes in lock order. It writes nothing and exits 1 when any selector fails, listing every failure.
 Plan CNN lists must equal `corridors.resolved.json`.
 
+Names are compared through `canonicalStreet`, for selector strings and data names (`streetname`,
+`f_st`, `t_st`) alike: upper-cased, trimmed, a leading zero dropped from an ordinal (DataSF writes
+`09TH AVE`, Appendix A `9TH AVE`), then `STREET_ALIASES` (`LA PLAYA ST` → `LA PLAYA`: La Playa's own
+segments are named `LA PLAYA` while its neighbours' `f_st`/`t_st` say `LA PLAYA ST`).
+
+When a cross street named in Appendix A does not meet the street in the data, the selector keeps
+its verbatim strings and gains `as: { from?, to?, reason }`; the resolver uses `as.from` / `as.to`
+in their place, and `as` is carried into `corridors.resolved.json` for review. There is one:
+fell-oak-street's `OAK ST, MARKET ST → BAKER ST` resolves from `VAN NESS AVE` (Oak St's east end in
+DataSF, CNN 9750000; it does not meet Market St, about 60 m south, so the stretch is the same).
+
 The resolver (`pipeline/lib/lesscars/corridors.ts`):
 
-1. Candidates are the segments whose `streetname` is `STREET`. Graph nodes are their line-part
+1. Candidates are the segments whose canonical `streetname` is `STREET`'s. Graph nodes are their line-part
    endpoints clustered within `snapM`; each part is an edge weighted by its length.
 2. FROM (TO) nodes are the candidate nodes within `crossM` of any line of a segment named `FROM`
    (`TO`), so a divided cross street gives a node at each carriageway. `COUNTY LINE` instead takes
@@ -172,6 +183,9 @@ The resolver (`pipeline/lib/lesscars/corridors.ts`):
    of the path: the other carriageway, shared-centreline twins and the short piece through a
    divided cross street's median. A block past FROM or TO longer than `bandM` is not included,
    nor is the same name elsewhere.
+
+Streets DataSF digitises as two carriageways (19th Ave, Park Presidio, Van Ness, Lombard, Geary;
+CNN suffixes `1xx` and `2xx`) give a `lengthM` about twice the street's length.
 
 `CORRIDOR` (all tier 4, builder's): `snapM` 0.5 m, `crossM` 25 m, `bandM` 40 m.
 

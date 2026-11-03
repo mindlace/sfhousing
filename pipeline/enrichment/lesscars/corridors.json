@@ -101,7 +101,11 @@
       "owner": "fell-oak-street",
       "street": "OAK ST",
       "from": "MARKET ST",
-      "to": "BAKER ST"
+      "to": "BAKER ST",
+      "as": {
+        "from": "VAN NESS AVE",
+        "reason": "Oak St's east end in DataSF is Van Ness Ave (CNN 9750000); it does not meet Market St, about 60 m south. Same stretch."
+      }
     },
     {
       "owner": "irving-pedestrian",

@@ -25,11 +25,22 @@ export interface StreetSeg {
   lines: [number, number][][];
 }
 
+/**
+ * A cross-street override: the resolver uses `as.from` / `as.to` in place of `from` / `to`, which
+ * stay the verbatim Appendix A strings. `reason` says why (carried into corridors.resolved.json).
+ */
+export interface CorridorAs {
+  from?: string;
+  to?: string;
+  reason: string;
+}
+
 export interface CorridorSelector {
   owner: string;
   street: string;
   from: string;
   to: string;
+  as?: CorridorAs;
 }
 
 export interface ResolvedCorridor extends CorridorSelector {
@@ -40,6 +51,25 @@ export interface ResolvedCorridor extends CorridorSelector {
 export const COUNTY_LINE = 'COUNTY LINE';
 
 export const CORRIDOR = { snapM: 0.5, crossM: 25, bandM: 40 } as const;
+
+/**
+ * Selector spellings mapped to DataSF's (after upper-casing, trimming and ordinal unpadding).
+ * DataSF names La Playa's own segments `LA PLAYA` while its neighbours' f_st/t_st say `LA PLAYA ST`.
+ */
+export const STREET_ALIASES: Readonly<Record<string, string>> = { 'LA PLAYA ST': 'LA PLAYA' };
+
+/**
+ * The name every comparison uses, for selector strings and data names alike: upper-cased,
+ * trimmed, ordinals unpadded (DataSF writes `09TH AVE`), then STREET_ALIASES.
+ */
+export function canonicalStreet(name: string): string {
+  const n = name
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, ' ')
+    .replace(/\b0+(\d+(?:ST|ND|RD|TH))\b/g, '$1');
+  return STREET_ALIASES[n] ?? n;
+}
 
 export class CorridorError extends Error {}
 
@@ -117,7 +147,10 @@ function clusterPoints(pts: readonly Pt[], tol: number): { ids: number[]; nodes:
   return { ids, nodes };
 }
 
-const label = (sel: CorridorSelector) => `${sel.owner}: ${sel.street}, ${sel.from} → ${sel.to}`;
+const label = (sel: CorridorSelector) => {
+  const end = (v: string, o: string | undefined) => (o === undefined ? v : `${v} (as ${o})`);
+  return `${sel.owner}: ${sel.street}, ${end(sel.from, sel.as?.from)} → ${end(sel.to, sel.as?.to)}`;
+};
 
 /** Throws CorridorError naming the selector when it does not resolve. */
 export function resolveCorridor(
@@ -127,8 +160,12 @@ export function resolveCorridor(
   const fail = (why: string): never => {
     throw new CorridorError(`${label(sel)}: ${why}`);
   };
+  const street = canonicalStreet(sel.street);
+  const fromName = sel.as?.from ?? sel.from;
+  const toName = sel.as?.to ?? sel.to;
+  const named = (s: StreetSeg, name: string) => canonicalStreet(s.streetname) === name;
   const cands = segs
-    .filter((s) => s.streetname === sel.street)
+    .filter((s) => named(s, street))
     .sort((x, y) => (x.cnn < y.cnn ? -1 : x.cnn > y.cnn ? 1 : 0));
   if (cands.length === 0) fail(`no segment named ${sel.street}`);
 
@@ -157,24 +194,26 @@ export function resolveCorridor(
   // 2. FROM / TO nodes.
   const endsOf = (name: string): Set<number> => {
     const out = new Set<number>();
-    if (name === COUNTY_LINE) {
+    const want = canonicalStreet(name);
+    if (want === COUNTY_LINE) {
+      const isCounty = (v: string | null) => v !== null && canonicalStreet(v) === COUNTY_LINE;
       for (const e of edges) {
         const s = cands[e.seg];
-        if (s.fSt !== COUNTY_LINE && s.tSt !== COUNTY_LINE) continue;
+        if (!isCounty(s.fSt) && !isCounty(s.tSt)) continue;
         for (const n of [e.a, e.b]) if (degree[n] === 1) out.add(n);
       }
       return out;
     }
-    const lines = segs.filter((s) => s.streetname === name).flatMap((s) => s.lines);
+    const lines = segs.filter((s) => named(s, want)).flatMap((s) => s.lines);
     nodes.forEach((p, n) => {
       if (distToLines(p, lines) <= CORRIDOR.crossM) out.add(n);
     });
     return out;
   };
-  const from = endsOf(sel.from);
-  if (from.size === 0) fail(`no crossing with ${sel.from}`);
-  const to = endsOf(sel.to);
-  if (to.size === 0) fail(`no crossing with ${sel.to}`);
+  const from = endsOf(fromName);
+  if (from.size === 0) fail(`no crossing with ${fromName}`);
+  const to = endsOf(toName);
+  if (to.size === 0) fail(`no crossing with ${toName}`);
 
   // 3. Multi-source Dijkstra to the nearest TO node.
   const dist = new Array<number>(nodes.length).fill(Infinity);
@@ -209,7 +248,7 @@ export function resolveCorridor(
     pathEdges.push(e);
     n = e.a === n ? e.b : e.a;
   }
-  if (pathEdges.length === 0) fail(`no path (${sel.from} and ${sel.to} meet at one node)`);
+  if (pathEdges.length === 0) fail(`no path (${fromName} and ${toName} meet at one node)`);
 
   // 4. The path's segments plus every candidate lying wholly within bandM of the path.
   const keep = new Set(pathEdges.map((e) => e.seg));
@@ -222,7 +261,16 @@ export function resolveCorridor(
   const chosen = [...keep].map((i) => cands[i]);
   const cnn = [...new Set(chosen.map((s) => s.cnn))].sort();
   const lengthM = Math.round(chosen.reduce((t, s) => t + segLength(s), 0) * 10) / 10;
-  return { owner: sel.owner, street: sel.street, from: sel.from, to: sel.to, cnn, lengthM };
+  const { owner, from: f, to: t } = sel;
+  return {
+    owner,
+    street: sel.street,
+    from: f,
+    to: t,
+    ...(sel.as ? { as: sel.as } : {}),
+    cnn,
+    lengthM
+  };
 }
 
 /** Resolves every selector; throws one CorridorError listing every failure. */

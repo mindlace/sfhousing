@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   COUNTY_LINE,
+  STREET_ALIASES,
+  canonicalStreet,
   CorridorError,
   resolveCorridor,
   resolveCorridors,
@@ -266,6 +268,95 @@ describe('resolveCorridor', () => {
   });
 });
 
+describe('canonicalStreet', () => {
+  it('unpads DataSF ordinals and leaves real numbers alone', () => {
+    expect(canonicalStreet('09TH AVE')).toBe('9TH AVE');
+    expect(canonicalStreet('08TH AVE')).toBe('8TH AVE');
+    expect(canonicalStreet('01ST ST')).toBe('1ST ST');
+    expect(canonicalStreet('02ND AVE')).toBe('2ND AVE');
+    expect(canonicalStreet('03RD ST')).toBe('3RD ST');
+    expect(canonicalStreet('19TH AVE')).toBe('19TH AVE');
+    expect(canonicalStreet('30TH ST')).toBe('30TH ST');
+    expect(canonicalStreet('I-280')).toBe('I-280');
+  });
+
+  it('upper-cases, trims and applies STREET_ALIASES', () => {
+    expect(STREET_ALIASES).toEqual({ 'LA PLAYA ST': 'LA PLAYA' });
+    expect(canonicalStreet(' la playa st ')).toBe('LA PLAYA');
+    expect(canonicalStreet('LA PLAYA')).toBe('LA PLAYA');
+    expect(canonicalStreet('9th Ave')).toBe('9TH AVE');
+  });
+
+  it('a selector matches zero-padded and aliased data names', () => {
+    const segs: StreetSeg[] = [
+      seg('i-1', 'IRVING ST', [
+        [0, 0],
+        [100, 0]
+      ]),
+      seg('i-2', 'IRVING ST', [
+        [100, 0],
+        [200, 0]
+      ]),
+      cross('arg', 'ARGUELLO BLVD', 0),
+      cross('9th', '09TH AVE', 100),
+      cross('lp', 'LA PLAYA', 200)
+    ];
+    expect(resolveCorridor(segs, sel('IRVING ST', 'ARGUELLO BLVD', '9TH AVE')).cnn).toEqual([
+      'i-1'
+    ]);
+    expect(resolveCorridor(segs, sel('IRVING ST', '9TH AVE', 'LA PLAYA ST')).cnn).toEqual(['i-2']);
+    const ninth = [
+      seg('n-1', '09TH AVE', [
+        [100, 0],
+        [100, 60]
+      ]),
+      seg('h', 'IRVING ST', [
+        [50, 0],
+        [150, 0]
+      ]),
+      seg('j', 'JUDAH ST', [
+        [50, 60],
+        [150, 60]
+      ])
+    ];
+    expect(resolveCorridor(ninth, sel('9TH AVE', 'IRVING ST', 'JUDAH ST')).cnn).toEqual(['n-1']);
+  });
+});
+
+describe('the as override', () => {
+  const asSel: CorridorSelector = {
+    ...sel('MAIN ST', 'NOPE ST', 'C ST', 'o'),
+    as: { from: 'B ST', reason: 'Main St meets B St, not Nope St.' }
+  };
+
+  it('the resolver uses as.from / as.to in place of from / to', () => {
+    expect(resolveCorridor(grid, asSel).cnn).toEqual(['m-bc']);
+    expect(
+      resolveCorridor(grid, {
+        ...sel('MAIN ST', 'A ST', 'NOPE ST'),
+        as: { to: 'B ST', reason: 'r' }
+      }).cnn
+    ).toEqual(['m-ab']);
+  });
+
+  it('the resolved corridor keeps the verbatim strings and carries as', () => {
+    expect(resolveCorridor(grid, asSel)).toMatchObject({
+      owner: 'o',
+      street: 'MAIN ST',
+      from: 'NOPE ST',
+      to: 'C ST',
+      as: { from: 'B ST', reason: 'Main St meets B St, not Nope St.' }
+    });
+    expect(resolveCorridor(grid, sel('MAIN ST', 'A ST', 'B ST'))).not.toHaveProperty('as');
+  });
+
+  it('a failure names the override', () => {
+    expect(() => resolveCorridor(grid, { ...asSel, as: { from: 'Q ST', reason: 'r' } })).toThrow(
+      /o: MAIN ST, NOPE ST \(as Q ST\) → C ST: no crossing with Q ST/
+    );
+  });
+});
+
 describe('resolveCorridors', () => {
   it('resolves every selector in order', () => {
     const r = resolveCorridors(grid, [
@@ -345,7 +436,13 @@ describe('lesscarsCnns', () => {
     const outPath = join(dir, 'corridors.resolved.json');
     writeFileSync(
       inPath,
-      JSON.stringify({ schema: 1, corridors: [sel('MAIN ST', 'C ST', 'A ST', 'p')] })
+      JSON.stringify({
+        schema: 1,
+        corridors: [
+          sel('MAIN ST', 'C ST', 'A ST', 'p'),
+          { ...sel('MAIN ST', 'Q ST', 'C ST', 'q'), as: { from: 'A ST', reason: 'why' } }
+        ]
+      })
     );
     const code = await lesscarsCnns({
       lockPath: join(dir, 'lock.json'),
@@ -357,7 +454,7 @@ describe('lesscarsCnns', () => {
     const out = JSON.parse(readFileSync(outPath, 'utf8'));
     expect(out.schema).toBe(1);
     expect(out.source).toEqual({ id: 'datasf-streets', sha256: [lock.sources[0].files[0].sha256] });
-    expect(out.corridors).toHaveLength(1);
+    expect(out.corridors).toHaveLength(2);
     expect(out.corridors[0]).toMatchObject({
       owner: 'p',
       street: 'MAIN ST',
@@ -368,6 +465,13 @@ describe('lesscarsCnns', () => {
     // Two blocks of 1e-3 deg lng at 37.77 N: about 176 m.
     expect(out.corridors[0].lengthM).toBeGreaterThan(170);
     expect(out.corridors[0].lengthM).toBeLessThan(182);
+    expect(out.corridors[1]).toMatchObject({
+      owner: 'q',
+      from: 'Q ST',
+      as: { from: 'A ST', reason: 'why' },
+      cnn: ['10', '11']
+    });
+    expect(out.corridors[0]).not.toHaveProperty('as');
   });
 
   it('an unresolved selector exits 1 and writes nothing', async () => {
@@ -454,11 +558,29 @@ describe('corridors.json', () => {
       to: 'WOOD ST'
     });
     expect(corridors.find((c) => c.to === COUNTY_LINE)?.street).toBe('JUNIPERO SERRA BLVD');
+    const overridden = corridors.filter((c) => c.as);
+    expect(overridden).toHaveLength(1);
+    expect(overridden[0]).toMatchObject({
+      owner: 'fell-oak-street',
+      street: 'OAK ST',
+      from: 'MARKET ST',
+      to: 'BAKER ST',
+      as: { from: 'VAN NESS AVE' }
+    });
   });
 
   it('a malformed entry is rejected with its index', () => {
     expect(() =>
       parseCorridorsFile(JSON.stringify({ schema: 1, corridors: [{ owner: 'a', street: 'B' }] }))
     ).toThrow(/corridors\[0\]\.from/);
+    const base = { owner: 'a', street: 'B', from: 'C', to: 'D' };
+    expect(() =>
+      parseCorridorsFile(JSON.stringify({ schema: 1, corridors: [{ ...base, as: { from: 'E' } }] }))
+    ).toThrow(/corridors\[0\]\.as\.reason/);
+    expect(() =>
+      parseCorridorsFile(
+        JSON.stringify({ schema: 1, corridors: [{ ...base, as: { reason: 'r' } }] })
+      )
+    ).toThrow(/corridors\[0\]\.as needs/);
   });
 });

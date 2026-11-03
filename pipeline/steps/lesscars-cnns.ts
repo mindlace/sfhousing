@@ -45,6 +45,17 @@ export function parseCorridorsFile(text: string): CorridorsFile {
       }
     }
   });
+  v.corridors.forEach((c: { as?: unknown }, i) => {
+    if (c.as === undefined) return;
+    const o = c.as as Record<string, unknown>;
+    const bad = (k: string) => o[k] !== undefined && (typeof o[k] !== 'string' || o[k] === '');
+    if (!o || typeof o !== 'object' || typeof o.reason !== 'string' || o.reason === '') {
+      throw new Error(`corridors.json: corridors[${i}].as.reason must be a non-empty string`);
+    }
+    if (bad('from') || bad('to') || (o.from === undefined && o.to === undefined)) {
+      throw new Error(`corridors.json: corridors[${i}].as needs a non-empty from or to`);
+    }
+  });
   return { schema: 1, corridors: v.corridors as CorridorSelector[] };
 }
 
