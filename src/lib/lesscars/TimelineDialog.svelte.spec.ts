@@ -33,15 +33,15 @@ const liveFile: typeof planFile = {
 };
 
 describe('TimelineDialog', () => {
-  it('at 375 px the live plan timeline has no horizontal overflow; 48 parking rows sit in the disclosure', async () => {
+  it('at 375 px the live plan timeline has no horizontal overflow; 46 parking rows sit in the disclosure', async () => {
     await page.viewport(375, 812);
     await open({ plan: liveFile });
     const dialog = page.getByTestId('lc-timeline').element();
     expect(dialog.scrollWidth).toBeLessThanOrEqual(dialog.clientWidth);
     await expect.element(page.getByText('Parking at Geary Blvd becomes homes')).not.toBeVisible();
-    await page.getByText(/^Parking conversions \(48\)/).click();
+    await page.getByText(/^Parking conversions \(46\)/).click();
     const rows = [...document.querySelectorAll('details tbody tr')];
-    expect(rows).toHaveLength(48);
+    expect(rows).toHaveLength(46);
     expect(dialog.scrollWidth).toBeLessThanOrEqual(dialog.clientWidth);
     const longest = rows.reduce((a, b) =>
       (b.querySelector('th')?.textContent ?? '').length >

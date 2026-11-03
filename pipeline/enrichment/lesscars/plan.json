@@ -2074,40 +2074,6 @@
       }
     },
     {
-      "id": "park-0195019",
-      "label": "Parking at Kearny St becomes homes",
-      "kind": "parking-conversion",
-      "startYear": 2035,
-      "durationMonths": {
-        "value": 12,
-        "provenance": {
-          "tier": 4,
-          "label": "12 months to demolish a garage (invented)",
-          "sources": [],
-          "method": "Unsourced."
-        }
-      },
-      "dependsOn": ["central-subway-north-beach"],
-      "parcel": "0195019",
-      "build": {
-        "startYear": 2036,
-        "durationMonths": {
-          "value": 30,
-          "provenance": {
-            "tier": 2,
-            "label": "30 months to build a large building",
-            "sources": [
-              {
-                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
-                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
-              }
-            ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
-          }
-        }
-      }
-    },
-    {
       "id": "park-0081003",
       "label": "Parking at Sansome St becomes homes",
       "kind": "parking-conversion",
@@ -2735,40 +2701,6 @@
       },
       "dependsOn": ["geary-subway-1"],
       "parcel": "3735060",
-      "build": {
-        "startYear": 2042,
-        "durationMonths": {
-          "value": 30,
-          "provenance": {
-            "tier": 2,
-            "label": "30 months to build a large building",
-            "sources": [
-              {
-                "label": "SF Housing Simulator dataset 2026-10-29-14e0eccb: transit.json, parcels/*.json, scenarios/fzp/projects.json, scenarios/fzp/calibration.json.",
-                "url": "https://sfhousing.mindlace.net/data/2026-10-29-14e0eccb/manifest.json"
-              }
-            ],
-            "method": "Construction-stage median 23–25 months and 80th percentile 34–46 months in calibration.json; 30 for full-fill buildings."
-          }
-        }
-      }
-    },
-    {
-      "id": "park-0285020",
-      "label": "Parking at Sutter St becomes homes",
-      "kind": "parking-conversion",
-      "startYear": 2041,
-      "durationMonths": {
-        "value": 12,
-        "provenance": {
-          "tier": 4,
-          "label": "12 months to demolish a garage (invented)",
-          "sources": [],
-          "method": "Unsourced."
-        }
-      },
-      "dependsOn": ["geary-subway-1"],
-      "parcel": "0285020",
       "build": {
         "startYear": 2042,
         "durationMonths": {

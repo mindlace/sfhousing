@@ -304,7 +304,13 @@ const NAMED_HEADINGS = DOC.split('\n')
 const SITES = tablesUnder('### Parking sites').find(
   (t) => t.header[0] === 'Parcel' && t.header[1] === 'Street'
 )!;
-const siteOf = (parcel: string) => SITES.rows.find((r) => unquote(r[0]) === parcel);
+/** A Data-findings row's parcel id; the cell may carry the **dropped** marker after it. */
+const siteParcel = (row: string[]) => row[0].match(/`(\d+)`/)![1];
+/** Data-findings rows marked **dropped** (Correction 2026-11-02): kept as findings, not in the plan. */
+const isDropped = (row: string[]) => /\*\*dropped\*\*/.test(row[0]);
+const DROPPED = SITES.rows.filter(isDropped).map(siteParcel);
+const KEPT_SITES = SITES.rows.filter((r) => !isDropped(r));
+const siteOf = (parcel: string) => SITES.rows.find((r) => siteParcel(r) === parcel);
 
 function appendixParkingRows() {
   return appendixTable('### Parking conversions').rows.map(
@@ -404,8 +410,8 @@ describe('the live plan (plan-v1 Appendix A)', () => {
   it('has the approved shape', () => {
     expect(plan.id).toBe('lesscars-v1');
     expect(plan.label).toBe('Fewer cars, v1');
-    expect(plan.projects).toHaveLength(66);
-    expect(plan.projects.filter((p) => p.kind === 'parking-conversion')).toHaveLength(48);
+    expect(plan.projects).toHaveLength(64);
+    expect(plan.projects.filter((p) => p.kind === 'parking-conversion')).toHaveLength(46);
     expect(plan.capacity.map((c) => [c.kind, c.maxConcurrent])).toEqual([
       ['transit', 4],
       ['street', 6],
@@ -423,7 +429,7 @@ describe('the live plan (plan-v1 Appendix A)', () => {
 
   it('every Param has a provenance label; every tier 4 label says invented or unsourced', () => {
     const all = params(plan);
-    expect(all.length).toBeGreaterThan(66);
+    expect(all.length).toBeGreaterThan(64);
     for (const { path, provenance } of all) {
       expect(provenance.label.trim(), path).not.toBe('');
       if (provenance.tier === 4) expect(provenance.label, path).toMatch(/invented|unsourced/i);
@@ -456,12 +462,11 @@ describe('the live plan (plan-v1 Appendix A)', () => {
     expect(parking).toEqual(appendixParkingRows());
   });
 
-  it("the Appendix A parking rows agree with the Data findings' 48-site table", () => {
+  it("the Appendix A parking rows agree with the Data findings' 48-site table, less the dropped", () => {
     const rows = appendixParkingRows();
     expect(SITES.rows).toHaveLength(48);
-    expect(new Set(rows.map((r) => r.parcel))).toEqual(
-      new Set(SITES.rows.map((r) => unquote(r[0])))
-    );
+    expect(KEPT_SITES).toHaveLength(46);
+    expect(new Set(rows.map((r) => r.parcel))).toEqual(new Set(KEPT_SITES.map(siteParcel)));
     for (const r of rows) {
       const site = siteOf(r.parcel)!;
       expect(site[7].split(' ')[0], r.id).toBe(r.dependsOn[0]);
@@ -470,6 +475,19 @@ describe('the live plan (plan-v1 Appendix A)', () => {
       );
       expect(r.buildStart, r.id).toBe(r.startYear + 1);
     }
+  });
+
+  it('no parking conversion targets a parcel the Data findings mark as dropped', () => {
+    expect(DROPPED.length).toBeGreaterThan(0);
+    const parcels = plan.projects.flatMap((p) =>
+      p.kind === 'parking-conversion' ? [p.parcel] : []
+    );
+    for (const d of DROPPED) expect(parcels, d).not.toContain(d);
+    for (const d of DROPPED)
+      expect(
+        appendixParkingRows().map((r) => r.parcel),
+        d
+      ).not.toContain(d);
   });
 
   it('selector segments equal corridors.resolved.json', () => {
