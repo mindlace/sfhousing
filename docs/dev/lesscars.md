@@ -26,7 +26,7 @@ Source map:
 
 A plan is JSON (`LessCarsPlan`, schema 1): `id`, `label`, `capacity` rules and `projects`. The
 live plan is `pipeline/enrichment/lesscars/plan.json`, transcribed from the owner-approved
-`docs/lesscars/plan-v1.md` Appendix A (66 projects, the Masonic display);
+`docs/lesscars/plan-v1.md` Appendix A (64 projects, the Masonic display);
 `pipeline/test/lesscars-live-plan.test.ts` holds it to the document: it parses Appendix A's tables
 itself, rebuilds the plan from them and `corridors.resolved.json`, and requires `checkPlan` to be
 empty. A change to the plan goes into plan-v1 first, then into plan.json. The fixture plan is
