@@ -58,6 +58,9 @@ const storiesText = (n: number) => count(n, 'story', 'stories');
 
 const stopsTarget = (types: StopType[]) => list(types.map((t) => STOP_SHORT[t]));
 
+/** The stops a rule applies near, in words: "Muni Metro", "regional rail and Muni Metro". */
+export const ruleTarget = (r: ZoningRule): string => stopsTarget(r.stopTypes);
+
 /** The rule's effect: "Up to 6 stories within 402 m, 4 stories within 805 m". */
 function ruleEffect(r: ZoningRule): string {
   const bands = bandsInnermostFirst(r.bands).map(
