@@ -3,9 +3,10 @@
 -- pipeline/steps/lesscars-sql.ts (carveFreedLand), not by runSql, after runSql (05_macros for
 -- sfh_label; 45_land for land_mask and parcels.geom_orig). Reads src_streets, land_mask, parcels
 -- and three input tables the TS step writes first: lc_in (project_id, ord, row_half_m), lc_in_cnn
--- (project_id, cnn) and lc_in_line (project_id, li, wkt: a LINESTRING in lng/lat). Variables
--- (pipeline/lesscars-config.ts LC): lc_keep_half_m, lc_access_m, lc_lot_max_m, lc_min_piece_m2,
--- lc_neighbour_m. Writes lc_site and lc_site_neighbour. Every aggregate over geometry is ordered,
+-- (project_id, cnn) and lc_in_line (project_id, li, wkt: a LINESTRING in lng/lat), plus the
+-- freed-parcel inputs below. Variables (pipeline/lesscars-config.ts LC): lc_keep_half_m,
+-- lc_access_m, lc_lot_max_m, lc_min_piece_m2, lc_neighbour_m. Writes lc_site and
+-- lc_site_neighbour. Every aggregate over geometry is ordered,
 -- so the result does not depend on scan order.
 --
 -- Builder's call (the spec says only "removed right-of-way becomes new parcels"): freed land is
@@ -31,7 +32,14 @@
 -- - Pieces are numbered k = 1, 2, … per project along the merged lines (line, stretch), then by
 --   centroid x, y.
 -- - Neighbours: parcels (current outline) within lc_neighbour_m of the piece; with none, the
---   nearest parcel (smaller id on a tie).
+--   nearest parcel (smaller id on a tie). Never a parcel of lc_in_not_neighbour (freeway land).
+-- Freed parcels (lesscars v1.1; input lc_in_parcel (project_id, parcel_id, held_by) and
+-- lc_in_not_neighbour (parcel_id), variables lc_merge_m and lc_overlap_m2): they get no access
+-- strip and are subtracted from the ROW; each polygon part of one is a seed site, and a ROW piece
+-- within lc_merge_m of a non-held seed of its project merges into the seed it shares most land
+-- with inside lc_merge_m (smaller parcel id, then part). k: seeds by (parcel id, part), then the
+-- unmerged pieces of at least lc_min_piece_m2 in v1 order. lc_site gains parcels (freed parcels
+-- overlapped by more than lc_overlap_m2, sorted), parcel_m2 and held_by.
 
 CREATE OR REPLACE TEMP TABLE lc_raw_line AS
 SELECT i.project_id, s.geom
@@ -77,12 +85,21 @@ LEFT JOIN (
   GROUP BY b.project_id
 ) e USING (project_id);
 
--- The access strip round every parcel near the band, and the corridor of every kept centreline.
+-- The access strip round every parcel near the band but the freed ones, and the corridor of every
+-- kept centreline.
 CREATE OR REPLACE TEMP TABLE lc_access AS
 SELECT b.project_id,
        ST_Union_Agg(ST_Buffer(p.geom_orig, getvariable('lc_access_m')) ORDER BY p.id) AS u
-FROM lc_band b JOIN parcels p ON ST_DWithin(p.geom_orig, b.geom, getvariable('lc_access_m'))
+FROM lc_band b
+JOIN parcels p
+  ON ST_DWithin(p.geom_orig, b.geom, getvariable('lc_access_m'))
+ AND p.id NOT IN (SELECT parcel_id FROM lc_in_parcel)
 GROUP BY b.project_id;
+
+-- Every freed parcel (current outline): never ROW land; it becomes sites of its own.
+CREATE OR REPLACE TEMP TABLE lc_freed AS
+SELECT ST_Union_Agg(p.geom ORDER BY p.id) AS u
+FROM parcels p JOIN lc_in_parcel i ON i.parcel_id = p.id;
 
 CREATE OR REPLACE TEMP TABLE lc_kept AS
 SELECT b.project_id,
@@ -96,7 +113,7 @@ JOIN src_streets s
  AND ST_DWithin(s.geom, b.geom, getvariable('lc_keep_half_m'))
 GROUP BY b.project_id;
 
-CREATE OR REPLACE TEMP TABLE lc_free AS
+CREATE OR REPLACE TEMP TABLE lc_free0 AS
 SELECT b.project_id,
        ST_CollectionExtract(
          ST_Difference(
@@ -112,6 +129,13 @@ FROM lc_band b
 CROSS JOIN land_mask m
 LEFT JOIN lc_access a USING (project_id)
 LEFT JOIN lc_kept k USING (project_id);
+
+-- Less the freed parcels; a run that frees none keeps the v1 geometry exactly.
+CREATE OR REPLACE TEMP TABLE lc_free AS
+SELECT f.project_id,
+       CASE WHEN r.u IS NULL OR NOT ST_Intersects(f.geom, r.u) THEN f.geom
+            ELSE ST_CollectionExtract(ST_Difference(f.geom, r.u), 3) END AS geom
+FROM lc_free0 f CROSS JOIN lc_freed r;
 
 -- Connected parts that touch a removed line.
 CREATE OR REPLACE TEMP TABLE lc_part AS
@@ -187,7 +211,8 @@ QUALIFY row_number() OVER (
   PARTITION BY d.project_id, d.pid, d.path ORDER BY ST_Distance(d.geom, s.chunk), s.lid, s.ci
 ) = 1;
 
-CREATE OR REPLACE TEMP TABLE lc_piece AS
+-- Every ROW piece, in v1 order (vk), before the merge and the size filter.
+CREATE OR REPLACE TEMP TABLE lc_piece0 AS
 WITH g AS (
   SELECT project_id, pid, lid, ci,
          ST_CollectionExtract(ST_Union_Agg(geom ORDER BY src, ST_AsHEXWKB(geom)), 3) AS geom
@@ -201,39 +226,125 @@ WITH g AS (
 d AS (
   SELECT project_id, lid, ci, struct_extract(x, 'geom') AS geom
   FROM (SELECT project_id, lid, ci, unnest(ST_Dump(geom)) AS x FROM g WHERE NOT ST_IsEmpty(geom))
+)
+SELECT project_id, geom, ST_Area(geom) AS area_m2,
+       row_number() OVER (
+         PARTITION BY project_id
+         ORDER BY lid, ci, ST_X(ST_Centroid(geom)), ST_Y(ST_Centroid(geom)), ST_AsHEXWKB(geom)
+       )::INTEGER AS vk
+FROM d
+WHERE ST_GeometryType(geom) = 'POLYGON';
+
+-- Seeds: each polygon part of each freed parcel (current outline).
+CREATE OR REPLACE TEMP TABLE lc_seed AS
+WITH d AS (
+  SELECT i.project_id, i.parcel_id, i.held_by, struct_extract(x, 'geom') AS geom,
+         struct_extract(x, 'path') AS path
+  FROM (
+    SELECT i.project_id, i.parcel_id, i.held_by, unnest(ST_Dump(p.geom)) AS x
+    FROM lc_in_parcel i JOIN parcels p ON p.id = i.parcel_id
+  ) i
+)
+SELECT project_id, parcel_id, held_by, geom,
+       row_number() OVER (PARTITION BY parcel_id ORDER BY path)::INTEGER AS part
+FROM d
+WHERE ST_GeometryType(geom) = 'POLYGON' AND NOT ST_IsEmpty(geom);
+
+-- A ROW piece within lc_merge_m of a seed of a non-held parcel of its project joins the seed it
+-- shares the most land with inside that tolerance (smaller parcel id, then part, on a tie).
+CREATE OR REPLACE TEMP TABLE lc_merge AS
+SELECT pc.project_id, pc.vk, s.parcel_id, s.part
+FROM lc_piece0 pc
+JOIN lc_seed s
+  ON s.project_id = pc.project_id
+ AND s.held_by IS NULL
+ AND ST_DWithin(pc.geom, s.geom, getvariable('lc_merge_m'))
+QUALIFY row_number() OVER (
+  PARTITION BY pc.project_id, pc.vk
+  ORDER BY ST_Area(ST_Intersection(pc.geom, ST_Buffer(s.geom, getvariable('lc_merge_m')))) DESC,
+           s.parcel_id, s.part
+) = 1;
+
+-- Sites: seeds (with the pieces merged into them) by (parcel id, part), then the unmerged pieces
+-- of at least lc_min_piece_m2 in v1 order.
+CREATE OR REPLACE TEMP TABLE lc_piece AS
+WITH seed AS (
+  SELECT s.project_id, s.parcel_id, s.part, s.held_by,
+         row_number() OVER (PARTITION BY s.project_id ORDER BY s.parcel_id, s.part)::INTEGER AS k,
+         ST_CollectionExtract(
+           ST_Union_Agg(u.geom ORDER BY u.src, u.vk), 3
+         ) AS geom
+  FROM lc_seed s
+  JOIN (
+    SELECT project_id, parcel_id, part, 0 AS src, 0 AS vk, geom FROM lc_seed
+    UNION ALL
+    SELECT m.project_id, m.parcel_id, m.part, 1, m.vk, pc.geom
+    FROM lc_merge m JOIN lc_piece0 pc USING (project_id, vk)
+  ) u USING (project_id, parcel_id, part)
+  GROUP BY s.project_id, s.parcel_id, s.part, s.held_by
+),
+n AS (SELECT project_id, count(*)::INTEGER AS n FROM lc_seed GROUP BY project_id),
+piece AS (
+  SELECT pc.project_id, pc.geom,
+         coalesce(n.n, 0) + row_number() OVER (PARTITION BY pc.project_id ORDER BY pc.vk)::INTEGER
+           AS k
+  FROM lc_piece0 pc
+  LEFT JOIN n USING (project_id)
+  WHERE NOT EXISTS (
+    SELECT 1 FROM lc_merge m WHERE m.project_id = pc.project_id AND m.vk = pc.vk
+  )
+    AND pc.area_m2 >= getvariable('lc_min_piece_m2')
 ),
 k AS (
-  SELECT project_id, geom, ST_Area(geom) AS area_m2,
-         row_number() OVER (
-           PARTITION BY project_id
-           ORDER BY lid, ci, ST_X(ST_Centroid(geom)), ST_Y(ST_Centroid(geom)), ST_AsHEXWKB(geom)
-         )::INTEGER AS k
-  FROM d
-  WHERE ST_GeometryType(geom) = 'POLYGON' AND ST_Area(geom) >= getvariable('lc_min_piece_m2')
+  SELECT project_id, k, held_by, geom FROM seed
+  UNION ALL
+  SELECT project_id, k, NULL, geom FROM piece
 )
-SELECT 'lc:' || project_id || ':' || k AS site_id, project_id, k, area_m2, geom FROM k;
+SELECT 'lc:' || project_id || ':' || k AS site_id, project_id, k, ST_Area(geom) AS area_m2,
+       held_by, geom
+FROM k;
+
+-- The freed parcels each site overlaps by more than lc_overlap_m2, and the land it has in them.
+CREATE OR REPLACE TEMP TABLE lc_piece_parcel AS
+SELECT s.site_id,
+       list(i.parcel_id ORDER BY i.parcel_id) AS parcels,
+       sum(ST_Area(ST_Intersection(s.geom, p.geom))) AS parcel_m2
+FROM lc_piece s
+JOIN lc_in_parcel i ON true
+JOIN parcels p ON p.id = i.parcel_id AND ST_Intersects(s.geom, p.geom)
+WHERE ST_Area(ST_Intersection(s.geom, p.geom)) > getvariable('lc_overlap_m2')
+GROUP BY s.site_id;
 
 CREATE OR REPLACE TEMP TABLE lc_piece_lbl AS SELECT site_id AS id, geom FROM lc_piece;
 
 CREATE OR REPLACE TABLE lc_site AS
 SELECT s.site_id, s.project_id, s.k, s.area_m2,
+       coalesce(pp.parcels, []::VARCHAR[]) AS parcels,
+       coalesce(pp.parcel_m2, 0)::DOUBLE AS parcel_m2,
+       s.held_by,
        ST_X(l.lp) AS x0, ST_Y(l.lp) AS y0,
        round(ST_X(ST_Transform(l.lp, 'EPSG:7131', 'EPSG:4326', always_xy := true)), 7) AS lng,
        round(ST_Y(ST_Transform(l.lp, 'EPSG:7131', 'EPSG:4326', always_xy := true)), 7) AS lat,
        ST_AsGeoJSON(s.geom) AS geojson7131,
        ST_AsGeoJSON(ST_Transform(s.geom, 'EPSG:7131', 'EPSG:4326', always_xy := true))
          AS geojson4326
-FROM lc_piece s JOIN sfh_label('lc_piece_lbl') l ON l.id = s.site_id
+FROM lc_piece s
+JOIN sfh_label('lc_piece_lbl') l ON l.id = s.site_id
+LEFT JOIN lc_piece_parcel pp USING (site_id)
 ORDER BY s.site_id;
+
+-- Neighbours: never freeway land (lc_in_not_neighbour: the catalog and every freed parcel).
+CREATE OR REPLACE TEMP TABLE lc_nb_parcel AS
+SELECT id, geom FROM parcels WHERE id NOT IN (SELECT parcel_id FROM lc_in_not_neighbour);
 
 CREATE OR REPLACE TABLE lc_site_neighbour AS
 WITH near AS (
   SELECT s.site_id, p.id AS parcel_id, ST_Distance(s.geom, p.geom) AS dist_m
-  FROM lc_piece s JOIN parcels p ON ST_DWithin(s.geom, p.geom, getvariable('lc_neighbour_m'))
+  FROM lc_piece s JOIN lc_nb_parcel p ON ST_DWithin(s.geom, p.geom, getvariable('lc_neighbour_m'))
 ),
 lone AS (
   SELECT s.site_id, p.id AS parcel_id, ST_Distance(s.geom, p.geom) AS dist_m
-  FROM lc_piece s, parcels p
+  FROM lc_piece s, lc_nb_parcel p
   WHERE s.site_id NOT IN (SELECT site_id FROM near)
   QUALIFY row_number() OVER (PARTITION BY s.site_id ORDER BY ST_Distance(s.geom, p.geom), p.id) = 1
 )

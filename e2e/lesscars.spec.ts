@@ -190,8 +190,9 @@ async function pick(page: Page, isMobile: boolean, [x, y]: [number, number]): Pr
 
 /**
  * At the horizon, taps the label point of the freed-land build on the largest site until its card
- * shows. The largest site is the one whose building surely covers its label point: an irregular
- * piece (lc:hwy:1, carved round freeway-land lot 19) can have its label point off the building.
+ * shows. The largest site is the one whose building surely covers its label point: on fixture-0
+ * that is lc:hwy:1, freeway-land lot 19 merged with the ROW piece it touches (1,800 m²), whose
+ * label point falls in the stretch's full-width rectangle, not in the lot's narrow tab.
  */
 async function openFreedCard(page: Page, isMobile: boolean) {
   const areaOf = (siteId: string) =>

@@ -235,17 +235,35 @@ Known limits (no check today; review `corridors.resolved.json` after a data refr
 and the land mask, with no right-of-way source:
 
 ```
-freed = (land_mask − ∪ buffer(parcel outline, accessM)) ∩ buffer(removed lines, rowHalfWidthM)
+row   = (land_mask − ∪ buffer(parcel outline, accessM), freed parcels excepted)
+        ∩ buffer(removed lines, rowHalfWidthM)
         − ∪ buffer(every other centreline, keepHalfM)
+        − ∪ freed parcels (current outline)
 ```
 
-keeping the parts that touch a removed line, cut across it every `lotMaxM` at most, and dropping
-pieces under `minPieceM2`. Parameters (`LC`, all tier 4 invented): `keepHalfM` 10 m, `accessM`
-6 m, `lotMaxM` 60 m, `minPieceM2` 100 m², `neighbourM` 40 m. Sites are `lc:<project>:<k>`.
+keeping the parts that touch a removed line and cutting them across it every `lotMaxM` at most
+(the ROW pieces). Parameters (`LC`, all tier 4 invented): `keepHalfM` 10 m, `accessM` 6 m,
+`lotMaxM` 60 m, `minPieceM2` 100 m², `neighbourM` 40 m. Sites are `lc:<project>:<k>`.
+
+**Freed parcels** (a truncation's `freewayLand.parcels`, v1.1) become sites of their own: each
+polygon part of a freed parcel's current outline is a seed. A ROW piece within 0.05 m of a seed of
+a non-held freed parcel of the same project merges into the seed it shares the most land with
+inside that 0.05 m (the smaller parcel id, then part, on a tie); every other ROW piece stays a
+site. Freed parcels get no access strip, and ROW pieces never overlap them, so no land is counted
+twice. Numbering per project: seeds first, by (parcel id, part), then the unmerged ROW pieces in v1
+order (line, stretch, centroid); `minPieceM2` drops only unmerged pieces. A project freeing no
+parcel numbers and carves exactly as in v1. A site lists the freed parcels it overlaps by more than
+1 m² (`parcels`, sorted) and its area in them (`parcelM2`). The 0.05 m and 1 m² tolerances absorb
+projection noise (builder's).
+
+**Held sites.** A garage `{ parcel }` on a phase's freed parcel (the one overlap `checkPlan`
+allows) holds that parcel's sites (`heldBy` the garage); no ROW piece merges into a held site.
 
 A freed site's zoning is its most permissive neighbour within `neighbourM` (most FZP stories, then
 no density cap over a cap, then the smaller parcel id): before the switch, FZP on that zoning;
-from the switch, the larger of that and SB 79 on the site's own reach to stops.
+from the switch, the larger of that and SB 79 on the site's own reach to stops. Neighbours are
+never freeway land: catalog parcels and freed parcels are excluded (the zoning is the city's
+around the freeway, not the freeway land's own P zoning).
 
 ### Regimes
 
@@ -269,8 +287,12 @@ The initiative builds on freed sites and parking sites itself (spec "The initiat
 - Each freed site of a removal or truncation with a `build`, and each parking conversion, gets
   one scheduled build at its project's build start, of the top fill yield of the row in force on
   that day.
+- A site held by a garage gets no build. `summary.garageCost` reports, per garage holding sites,
+  the top fill yield its held sites would have had at their project's build start (its open day
+  when the project has no build), summed (`garageCosts`, which reads the same row as
+  `initiativeBuilds` through one helper). Absent when no garage holds a site.
 - A build that adds no homes is dropped. A freed sliver whose envelope holds none counts in
-  `lesscars.sites.zero_yield`. A parking build that adds none still keeps its reservation (ruling
+  `lesscars.sites.zero_yield`; a held site never does. A parking build that adds none still keeps its reservation (ruling
   4: the plan named the lot); it counts in `lesscars.sites.zero_gain_parking` with a build
   warning, not a failure.
 - A parking conversion reserves its parcel from the conversion's start (clearance), not its build
@@ -322,7 +344,20 @@ drop, and a zero-gain conversion keeps its reservation with no build, so the pag
 verdict to tell kept from voided. Codecs: `parsePlanFile`, `parseSitesFile`, `parseSummary`,
 `decodeTimelinePayload` (`src/lib/data/lesscars/codec.ts`).
 
-Counts in report.json: `lesscars.projects`, `lesscars.sites`, `lesscars.sites.zero_yield`,
+v1.1 keys, all optional so the v1 files (dataset `2026-11-02-39fbf039`) still parse; the writer
+omits a key that is empty, 0 or null, so a plan freeing no parcel writes v1 files:
+
+- `sites.json`, per site: `parcels` (freed parcels it overlaps, sorted), `parcelM2` (its area in
+  them, to 0.01 m²), `heldBy` (the garage holding it).
+- `summary.json`: `garageCost: [{ projectId, homes }]`, `homes` a non-negative integer.
+
+Test copies of the v1 files are in `src/lib/data/lesscars/fixtures/v1/` (`V1_PLAN`, `V1_SITES`,
+`V1_SUMMARY`).
+
+Counts in report.json: `lesscars.projects`, `lesscars.sites`, `lesscars.sites.parcels` (sites
+with `parcelM2 > 0`), `lesscars.sites.held`, `lesscars.freed_m2.parcels` and
+`lesscars.freed_m2.row` (rounded m² of freed-parcel and right-of-way land, held sites excluded),
+`lesscars.sites.zero_yield`,
 `lesscars.sites.zero_gain_parking`, `lesscars.regimes`, `lesscars.seeds`,
 `lesscars.extra_2068.mean` (rounded), `lesscars.unlocked_lots`, `lesscars.bytes.timeline_payload`,
 and `lesscars.bytes.timeline` on live builds only (deflate bytes vary by zlib).
@@ -339,6 +374,16 @@ only with `npm run pipeline -- fixture --update-golden`.
 must equal the non-zero rows of `reservationsOf(plan, schedulePlan(plan), parcels)`
 (`pipeline/lib/lesscars/runs.ts`); a mismatch fails with `timeline reservations ≠ plan's reserved
 parcels`.
+
+Freed parcels and held sites (v1.1):
+
+- every site's `heldBy` names an `edge-garage` whose `site.parcel` is in the site's `parcels`;
+- every `freewayLand` parcel is in some site's `parcels` (`freed parcel <id> is in 0 sites`). A
+  parcel of several polygon parts is in one site per part, so V35 cannot require exactly one; the
+  carve's subtraction keeps ROW pieces off freed parcels;
+- every parcel in a site's `parcels` has `eligible` 0 in parcels.bin (`freed parcel <id> is
+scenario-eligible: its homes would count twice`);
+- no timeline build is on a held site (`timeline builds on held site <id>`).
 
 ## Running it
 

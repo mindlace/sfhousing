@@ -10,7 +10,7 @@
 //   period (densityCap is null whatever the lot area). The plan window (2028 on) is all FZP period.
 // - `outline` is the piece in [lng, lat] (GeoJSON rings, closed), for drawing; `rec.polygon` is
 //   the local-frame record the generator reads.
-import type { ParcelRecord } from '../../../src/lib/data/parcel';
+import type { ParcelId, ParcelRecord } from '../../../src/lib/data/parcel';
 import { ringsAreaM2 } from '../../../src/lib/data/parcel-chunk';
 import { envelopeRow, type EnvelopeRow } from '../../../src/lib/data/envelope-row';
 import type { Day } from '../../../src/lib/timelapse/time';
@@ -39,6 +39,12 @@ export interface FreedSite {
   rec: ParcelRecord;
   outline: [number, number][][];
   zoning: NeighbourZoning;
+  /** Freed (freewayLand) parcels the site overlaps by more than 1 m², sorted; [] for ROW only. */
+  parcels: ParcelId[];
+  /** The site's area inside those parcels, m² (0 for ROW only). */
+  parcelM2: number;
+  /** The edge garage standing on the site's parcel: no homes are built there. */
+  heldBy: string | null;
 }
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
@@ -62,6 +68,9 @@ interface SiteRow {
   site_id: string;
   project_id: string;
   area_m2: number;
+  parcels: string[];
+  parcel_m2: number;
+  held_by: string | null;
   x0: number;
   y0: number;
   lng: number;
@@ -102,7 +111,8 @@ const lngLatRings = (g: Geom): [number, number][][] =>
 export async function readFreedSites(db: Duck, capDay: Day): Promise<FreedSite[]> {
   void capDay;
   const sites = await db.all<SiteRow>(
-    `SELECT site_id, project_id, area_m2, x0, y0, lng, lat, geojson7131, geojson4326
+    `SELECT site_id, project_id, area_m2, parcels, parcel_m2, held_by, x0, y0, lng, lat,
+            geojson7131, geojson4326
      FROM lc_site ORDER BY site_id`
   );
   const ns = await db.all<NeighbourRow>(
@@ -159,7 +169,10 @@ export async function readFreedSites(db: Duck, capDay: Day): Promise<FreedSite[]
         neighborhood: zoning.neighborhood
       },
       outline: lngLatRings(JSON.parse(s.geojson4326)),
-      zoning
+      zoning,
+      parcels: [...s.parcels].sort(cmp),
+      parcelM2: s.parcel_m2,
+      heldBy: s.held_by
     };
   });
   return out.sort((a, b) => cmp(a.siteId, b.siteId));

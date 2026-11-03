@@ -20,7 +20,7 @@ import { LESSCARS_FREEWAY_LAND_JSON, LESSCARS_PLAN_JSON } from '../lesscars-conf
 import { readFreewayLand } from '../lib/lesscars/freeway-land';
 import { asOfFromLock } from '../project-records/parse';
 import { readParcelRecords, writeNeighborhoods } from '../steps/chunks';
-import { carveFreedLand, removalsOf } from '../steps/lesscars-sql';
+import { carveFreedLand, notNeighboursOf, removalsOf } from '../steps/lesscars-sql';
 import { readPolicyBin, writePolicy } from '../steps/policy';
 import { PARCELS_BIN, readParcelsBin, writeScenario } from '../steps/scenario';
 import { transitTargetDate, writeTransit } from '../steps/transit';
@@ -41,6 +41,13 @@ export interface LessCarsMini {
 /** The mini plan (`pipeline/test/fixtures/mini/enrichment/lesscars-plan.json`), parsed. */
 export function miniLessCarsPlan(): LessCarsPlan {
   return parseLessCarsPlan(JSON.parse(readFileSync(LESSCARS_PLAN_JSON.fixture, 'utf8')));
+}
+
+/** Carve the mini plan's freed land with the fixture catalog, as writeLessCars does. */
+export function carveMini(db: Duck): Promise<void> {
+  const removed = removalsOf(miniLessCarsPlan());
+  const catalog = readFreewayLand(LESSCARS_FREEWAY_LAND_JSON.fixture);
+  return carveFreedLand(db, removed, notNeighboursOf(catalog, removed));
 }
 
 let memo: Promise<LessCarsMini> | undefined;
@@ -88,7 +95,7 @@ export function lesscarsMini(): Promise<LessCarsMini> {
       capDay,
       buildCounts
     });
-    await carveFreedLand(db, removalsOf(miniLessCarsPlan()));
+    await carveMini(db);
     const parcels = readParcelsBin(join(outDir, PARCELS_BIN));
     const policy = readPolicyBin(join(outDir, POLICY_BIN), parcels);
     const transit = decodeTransit(JSON.parse(readFileSync(join(outDir, 'transit.json'), 'utf8')));

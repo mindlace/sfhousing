@@ -33,7 +33,10 @@ beforeAll(async () => {
     cpSync(join(MINI, 'golden', f), join(m.outDir, f));
 });
 
-function args(planPath: string | null, freewayLand: FreewayLandFile | null = null) {
+/** The fixture catalog (lot 19 under I-80), which the build passes for a fixture version. */
+const FIXTURE_FREEWAY_LAND = readFreewayLand(LESSCARS_FREEWAY_LAND_JSON.fixture);
+
+function args(planPath: string | null, freewayLand: FreewayLandFile | null = FIXTURE_FREEWAY_LAND) {
   outDir = mkdtempSync(join(tmpdir(), 'sfh-lesscars-step-'));
   cpSync(m.outDir, outDir, { recursive: true });
   return {
@@ -51,7 +54,10 @@ function args(planPath: string | null, freewayLand: FreewayLandFile | null = nul
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 const project = (plan: Json, id: string): Json => plan.projects.find((p: Json) => p.id === id);
 
-function withPlan(edit: (plan: Json) => void, freewayLand: FreewayLandFile | null = null) {
+function withPlan(
+  edit: (plan: Json) => void,
+  freewayLand: FreewayLandFile | null = FIXTURE_FREEWAY_LAND
+) {
   const plan = JSON.parse(readFileSync(LESSCARS_PLAN_JSON.fixture, 'utf8')) as Json;
   edit(plan);
   const dir = mkdtempSync(join(tmpdir(), 'sfh-lesscars-plan-'));
@@ -143,11 +149,12 @@ describe('writeLessCars', () => {
     for (const c of coords) expect(c).toBe(Math.round(c * 1e7) / 1e7);
   });
 
-  it('zero_yield counts freed sites of a build project that no build uses', () => {
+  it('zero_yield counts freed sites of a build project that no build uses, held ones aside', () => {
     const sites = [
-      { siteId: 'lc:hwy:0', projectId: 'hwy' },
-      { siteId: 'lc:hwy:1', projectId: 'hwy' },
-      { siteId: 'lc:other:0', projectId: 'other' }
+      { siteId: 'lc:hwy:0', projectId: 'hwy', heldBy: null },
+      { siteId: 'lc:hwy:1', projectId: 'hwy', heldBy: null },
+      { siteId: 'lc:hwy:2', projectId: 'hwy', heldBy: 'garage' },
+      { siteId: 'lc:other:0', projectId: 'other', heldBy: null }
     ];
     const builds = [
       { siteId: 'lc:hwy:0', parcelRow: null },
@@ -251,5 +258,59 @@ describe('freewayLand checks', () => {
     await expect(
       step(garageOn('3512019'), { freewayLand: FIXTURE_CATALOG })
     ).resolves.toMatchObject({ written: true });
+  });
+});
+
+describe('freed parcels and held sites', () => {
+  const read = (f: string) => JSON.parse(readFileSync(join(outDir, f), 'utf8')) as Json;
+  const garageOn = (parcel: string) => (p: Json) => (project(p, 'garage').site = { parcel });
+
+  it('lot 19 is freed into site 1; the counts split freed land by parcels and right-of-way', async () => {
+    const r = await writeLessCars(args(LESSCARS_PLAN_JSON.fixture));
+    const raw = read(LESSCARS_FILES.sites);
+    const sites = parseSitesFile(raw).sites;
+    const withParcels = sites.filter((s) => s.parcels !== undefined);
+    expect(withParcels.map((s) => [s.siteId, s.parcels])).toEqual([['lc:hwy:1', ['3512019']]]);
+    expect(withParcels[0].parcelM2).toBeCloseTo(800, 0);
+    // The writer omits a key that is empty, 0 or null.
+    for (const s of raw.sites as Json[]) expect('heldBy' in s, s.siteId).toBe(false);
+    for (const s of (raw.sites as Json[]).filter((x) => x.siteId !== 'lc:hwy:1')) {
+      expect('parcels' in s, s.siteId).toBe(false);
+      expect('parcelM2' in s, s.siteId).toBe(false);
+    }
+    expect('garageCost' in read(LESSCARS_FILES.summary)).toBe(false);
+    const area = sites.reduce((t, s) => t + s.rec.areaM2, 0);
+    expect(r.counts).toMatchObject({
+      'lesscars.sites.parcels': 1,
+      'lesscars.sites.held': 0,
+      'lesscars.freed_m2.parcels': 800
+    });
+    expect(r.counts['lesscars.freed_m2.parcels'] + r.counts['lesscars.freed_m2.row']).toBeCloseTo(
+      area,
+      -1
+    );
+  });
+
+  it('a held site is not zero-yield and its garage cost is in summary.json', async () => {
+    const r = await writeLessCars(withPlan(garageOn('3512019')));
+    const sites = parseSitesFile(read(LESSCARS_FILES.sites)).sites;
+    const held = sites.filter((s) => s.heldBy !== undefined);
+    expect(held.map((s) => [s.siteId, s.heldBy, s.parcels])).toEqual([
+      ['lc:hwy:1', 'garage', ['3512019']]
+    ]);
+    const t = decodeTimelinePayload(
+      inflateRawSync(readFileSync(join(outDir, LESSCARS_FILES.timeline))),
+      m.parcels
+    );
+    expect(t.builds.map((b) => b.siteId)).not.toContain('lc:hwy:1');
+    const built = new Set(t.builds.map((b) => b.siteId));
+    const zeroYieldWithoutHeld = sites.filter((s) => !s.heldBy && !built.has(s.siteId)).length;
+    expect(r.counts['lesscars.sites.held']).toBe(1);
+    expect(r.counts['lesscars.sites.zero_yield']).toBe(zeroYieldWithoutHeld);
+    // Held land is neither freed parcel land nor right-of-way in the counts.
+    expect(r.counts['lesscars.freed_m2.parcels']).toBe(0);
+    const summary = parseSummary(read(LESSCARS_FILES.summary));
+    expect(summary.garageCost).toEqual([{ projectId: 'garage', homes: expect.any(Number) }]);
+    expect(summary.garageCost![0].homes).toBeGreaterThan(0);
   });
 });

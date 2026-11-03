@@ -54,6 +54,7 @@ import { BuildError } from '../lib/build-error';
 import { createTableFromRows, type Duck } from '../lib/duck';
 import { buildRegimes } from '../lib/lesscars/regimes';
 import {
+  garageCosts,
   initiativeBuilds,
   lesscarsYearEnds,
   representativeTimeline,
@@ -67,7 +68,7 @@ import { LESSCARS_FILES, POLICY_BIN } from '../lib/scenario-files';
 import { LC } from '../lesscars-config';
 import type { FreewayLandFile, FreewaySegment } from '../lib/lesscars/freeway-land';
 import { CALIBRATION_JSON } from './calibration';
-import { carveFreedLand, removalsOf } from './lesscars-sql';
+import { carveFreedLand, notNeighboursOf, removalsOf } from './lesscars-sql';
 import { readPolicyBin } from './policy';
 import { PROJECTS_JSON } from './projects';
 import { PARCELS_BIN, readParcelsBin } from './scenario';
@@ -76,18 +77,20 @@ const FIXTURE_RE = /^fixture-\d+$/;
 const DAY_MS = 86400000;
 /**
  * Freed sites of a project with a build that no scheduled build uses: slivers whose envelope holds
- * no home (counted in `lesscars.sites.zero_yield`).
+ * no home (counted in `lesscars.sites.zero_yield`). A site a garage holds is not one.
  */
-export function zeroYieldSites<S extends { siteId: string; projectId: string }>(
-  sites: S[],
-  withBuild: Set<string>,
-  builds: { siteId: string; parcelRow: number | null }[]
-): S[] {
+export function zeroYieldSites<
+  S extends { siteId: string; projectId: string; heldBy: string | null }
+>(sites: S[], withBuild: Set<string>, builds: { siteId: string; parcelRow: number | null }[]): S[] {
   const freedBuilt = new Set(builds.filter((b) => b.parcelRow === null).map((b) => b.siteId));
-  return sites.filter((s) => withBuild.has(s.projectId) && !freedBuilt.has(s.siteId));
+  return sites.filter(
+    (s) => s.heldBy === null && withBuild.has(s.projectId) && !freedBuilt.has(s.siteId)
+  );
 }
 
 const round7 = (x: number) => Math.round(x * 1e7) / 1e7;
+/** Published areas to the cm² (platform-stable; projection noise is far below it). */
+const round2 = (x: number) => Math.round(x * 100) / 100;
 
 const refCnns = (segments: readonly SegmentRef[]): string[] =>
   segments.flatMap((s) => ('cnn' in s ? s.cnn : []));
@@ -370,7 +373,8 @@ export async function writeLessCars(a: {
     (w) => warnings.push(`lesscars: ${w}`)
   );
   // buildRegimes reads pol_tod (the policy step) and lc_site (the carve): carve first.
-  await carveFreedLand(db, removalsOf(plan));
+  const removed = removalsOf(plan);
+  await carveFreedLand(db, removed, notNeighboursOf(a.freewayLand, removed));
   const sites = await readFreedSites(db, a.capDay);
   const switchDay = Date.parse(LC.switchDay) / DAY_MS;
   const regimes = await buildRegimes({
@@ -407,7 +411,8 @@ export async function writeLessCars(a: {
     planId: plan.id,
     switchDay,
     regimeDays: regimes.plan.map((g) => g.day),
-    yearEnds
+    yearEnds,
+    garageCost: garageCosts(plan, schedule, sites, regimes)
   });
   const timeline = representativeTimeline({
     base,
@@ -430,11 +435,15 @@ export async function writeLessCars(a: {
   const sitesFile: LessCarsSitesFile = {
     format: LESSCARS_FORMAT,
     datasetVersion,
+    // The v1.1 keys only when non-empty, so a plan freeing no parcel writes the v1 file.
     sites: sites.map((s) => ({
       siteId: s.siteId,
       projectId: s.projectId,
       rec: s.rec,
-      outline: s.outline
+      outline: s.outline,
+      ...(s.parcels.length > 0 ? { parcels: s.parcels } : {}),
+      ...(s.parcelM2 > 0 ? { parcelM2: round2(s.parcelM2) } : {}),
+      ...(s.heldBy !== null ? { heldBy: s.heldBy } : {})
     }))
   };
   const payload = encodeTimelinePayload(timeline, parcels.id);
@@ -471,9 +480,17 @@ export async function writeLessCars(a: {
     );
   let unlocked = 0;
   for (const u of regimes.unlocked) unlocked += u;
+  // Freed land by origin, held sites aside (they get no homes).
+  const open = sites.filter((s) => s.heldBy === null);
+  const parcelM2 = open.reduce((t, s) => t + s.parcelM2, 0);
+  const rowM2 = open.reduce((t, s) => t + s.rec.areaM2 - s.parcelM2, 0);
   const counts: Record<string, number> = {
     'lesscars.projects': plan.projects.length,
     'lesscars.sites': sites.length,
+    'lesscars.sites.parcels': sites.filter((s) => s.parcelM2 > 0).length,
+    'lesscars.sites.held': sites.length - open.length,
+    'lesscars.freed_m2.parcels': Math.round(parcelM2),
+    'lesscars.freed_m2.row': Math.round(rowM2),
     'lesscars.sites.zero_yield': zeroYield.length,
     'lesscars.sites.zero_gain_parking': zeroGain.length,
     'lesscars.regimes': regimes.plan.length,

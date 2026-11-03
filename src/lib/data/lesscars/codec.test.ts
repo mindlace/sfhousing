@@ -17,6 +17,9 @@ import {
   type LessCarsTimeline
 } from './codec';
 import { TINY_PLAN } from './fixtures/tiny-plan';
+import V1_PLAN from './fixtures/v1/plan.json';
+import V1_SITES from './fixtures/v1/sites.json';
+import V1_SUMMARY from './fixtures/v1/summary.json';
 import { schedulePlan } from './schedule';
 
 const ids = miniCity().parcels.id;
@@ -226,5 +229,47 @@ describe('lesscars codec', () => {
     expect(parsePlanFile(JSON.parse(JSON.stringify(file)))).toEqual(file);
     const bad = { ...file, times: [{ ...file.times[0], id: 'ghost' }] };
     expect(() => parsePlanFile(bad)).toThrow(/ghost/);
+  });
+});
+
+type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+// The files of dataset 2026-11-02-39fbf039's format (fixture-0 before lesscars v1.1 Task 4).
+describe('v1 files', () => {
+  it('the v1 sites, summary and plan files still parse', () => {
+    const sites = parseSitesFile(V1_SITES);
+    expect(sites.sites.length).toBeGreaterThan(0);
+    for (const s of sites.sites) {
+      expect(s).not.toHaveProperty('parcels');
+      expect(s).not.toHaveProperty('parcelM2');
+      expect(s).not.toHaveProperty('heldBy');
+    }
+    expect(parseSummary(V1_SUMMARY)).not.toHaveProperty('garageCost');
+    expect(parsePlanFile(V1_PLAN).plan.id).toBe('mini');
+  });
+
+  it('round-trips the optional site keys and the garage cost', () => {
+    const v1 = structuredClone(V1_SITES) as Json;
+    Object.assign(v1.sites[0], { parcels: ['3512019'], parcelM2: 800.5, heldBy: 'garage' });
+    expect(parseSitesFile(v1).sites[0]).toMatchObject({
+      parcels: ['3512019'],
+      parcelM2: 800.5,
+      heldBy: 'garage'
+    });
+    const cost = [{ projectId: 'garage', homes: 40 }];
+    expect(parseSummary({ ...summary(), garageCost: cost }).garageCost).toEqual(cost);
+  });
+
+  it('rejects a negative parcelM2 or a garage cost that is not a whole number', () => {
+    const v1 = structuredClone(V1_SITES) as Json;
+    v1.sites[0].parcelM2 = -1;
+    expect(() => parseSitesFile(v1)).toThrow(/sites\.0\.parcelM2/);
+    v1.sites[0].parcelM2 = 1;
+    v1.sites[0].parcels = [3];
+    expect(() => parseSitesFile(v1)).toThrow(/sites\.0\.parcels\.0/);
+    const fractionalCost = { ...summary(), garageCost: [{ projectId: 'garage', homes: 1.5 }] };
+    expect(() => parseSummary(fractionalCost)).toThrow(/garageCost\.0\.homes/);
+    const negative = { ...summary(), garageCost: [{ projectId: 'garage', homes: -2 }] };
+    expect(() => parseSummary(negative)).toThrow(/garageCost\.0\.homes/);
   });
 });

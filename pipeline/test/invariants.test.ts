@@ -1278,6 +1278,37 @@ describe('V35 /lesscars files', () => {
     expect(r.ok).toBe(false);
     expect(r.detail).toMatch(/timeline reservations/);
   });
+  it('V35 fails when a freed parcel row is scenario-eligible', async () => {
+    const d = copy();
+    editScenario(d, (p) => {
+      p.eligible[p.index.get('3512019')!] = 1;
+    });
+    const r = await v35(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(
+      /freed parcel 3512019 is scenario-eligible: its homes would count twice/
+    );
+  });
+  it('V35 fails when a freewayLand parcel is in no site', async () => {
+    const d = copy();
+    edit(d, LESSCARS_FILES.sites, (f) => {
+      for (const s of f.sites) delete s.parcels;
+    });
+    const r = await v35(d);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/freed parcel 3512019 is in 0 sites/);
+  });
+  it('V35 fails when a site is held by no garage on its parcels, or a build is on it', async () => {
+    const d = copy();
+    edit(d, LESSCARS_FILES.sites, (f) => {
+      f.sites.find((s: { parcels?: string[] }) => s.parcels).heldBy = 'garage';
+    });
+    const r = await v35(d);
+    expect(r.ok).toBe(false);
+    // The fixture's garage stands on lot 15, not on lot 19.
+    expect(r.detail).toMatch(/site lc:hwy:1 is held by garage, which is no edge garage on/);
+    expect(r.detail).toMatch(/timeline builds on held site lc:hwy:1/);
+  });
   it('V35 fails when a named file is missing', async () => {
     const d = copy();
     rmSync(join(d, LESSCARS_FILES.sites));
