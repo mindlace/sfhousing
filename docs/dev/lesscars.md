@@ -376,6 +376,33 @@ Built 2026-11-02 on the owner's laptop (Apple Silicon Mac) as `2026-11-02-39fbf0
 - **Plan correction:** the first build attempt failed because two parking parcels held homes;
   0195019 (Kearny St, 105 homes) and 0285020 (Sutter St, 400 homes) were dropped from the plan.
 
+### Live check
+
+On 2026-11-02 the page ran against `2026-11-02-39fbf039` in local R2 (`VITE_E2E=1 npm run
+preview`, headless Chromium, 1280 and 375 px). It passed these checks:
+
+- **Headline:** +7,786 homes by 2068, with the band +7,062 to +8,211. The four source parts add
+  to the headline.
+- **Header and dialogs:** "Fewer cars" is current. The timeline lists 64 projects, with parking
+  conversions (46) in the disclosure. Evidence shows tier 4 as "Assumption, not data".
+- **Street, transit and garage layers:**
+  - Fulton, 19th Ave and N Judah are in their transit state from day 22645.
+  - The Geary subway line and its 6 stops appear on day 25933.
+  - Trench sites appear on day 27028.
+  - 40 parking builds rise between 2033 and 2046. That is 46 conversions less the 4 voided
+    reservations and the 2 sites with no gain.
+  - Both garage markers appear. Scrubbing back to 2028 clears every plan layer.
+- **Errors:** none in the console or the network.
+
+Two problems were found. Both are follow-ups, not release blockers:
+
+- **Scrubber lag:** revision 0 arrives 317 ms after navigation, with 1 cell; cells reach 97 later.
+  While they pack, a pointer drag lags about 2 s per step. Keyboard scrubbing updates within 3 ms.
+  The headless browser was near 1000% CPU throughout the run, so profile this in a real browser
+  before capping the packing.
+- **Duplicate heading:** the timeline disclosure repeats a "Parking conversions" heading under its
+  summary.
+
 ## The page
 
 `/lesscars` (`src/routes/lesscars/`, plan `docs/superpowers/plans/2026-11-01-lesscars-2-page.md`)
