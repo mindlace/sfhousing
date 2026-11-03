@@ -337,6 +337,27 @@ describe('ScenarioClient', () => {
       await expect(client.lotOutlines(['y'])).resolves.toMatchObject({ reason: 'no-session' });
     });
 
+    it('posts lotAt with a request id and resolves its answer; no-session on crash and dispose', async () => {
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { w, client } = setup({ onCrash: () => {} });
+      const a = client.lotAt([-122.4, 37.8]);
+      const b = client.lotAt([-122.5, 37.7]);
+      expect(w.posts).toEqual([
+        { type: 'lotAt', reqId: 1, point: [-122.4, 37.8] },
+        { type: 'lotAt', reqId: 2, point: [-122.5, 37.7] }
+      ]);
+      const result = { ok: true as const, parcelId: 'x', owner: { kind: 'fzp' as const } };
+      w.emit({ type: 'lotAt', reqId: 99, result }); // ignored
+      w.emit({ type: 'lotAt', reqId: 1, result });
+      await expect(a).resolves.toEqual(result);
+      w.onerror?.({} as ErrorEvent);
+      await expect(b).resolves.toMatchObject({ ok: false, reason: 'no-session' });
+      await expect(client.lotAt([0, 0])).resolves.toMatchObject({ reason: 'no-session' });
+      client.dispose();
+      await expect(client.lotAt([0, 0])).resolves.toMatchObject({ reason: 'no-session' });
+      err.mockRestore();
+    });
+
     it('posts previewBuildings (stories only when given) and resolves its answer; no-session after a crash', async () => {
       const { w, client } = setup();
       const a = client.previewBuildings(['x'], 8);

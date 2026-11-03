@@ -57,3 +57,14 @@ export function limitSources(
   for (const i of protectedRows) source[i] = SRC_FZP;
   return { source, ruleIds };
 }
+
+/** The layer that sets a lot's limit: FZP, the paint strokes, or a rule (by its edit `source` id). */
+export type LimitOwner = { kind: 'fzp' } | { kind: 'paint' } | { kind: 'rule'; ruleId: string };
+
+/** The owner of lot `row`'s limit (`row` indexes `s.source`). */
+export function ownerOf(s: LimitSources, row: number): LimitOwner {
+  const code = s.source[row];
+  if (code === SRC_FZP) return { kind: 'fzp' };
+  if (code === SRC_PAINT) return { kind: 'paint' };
+  return { kind: 'rule', ruleId: s.ruleIds[code - SRC_RULE0] };
+}

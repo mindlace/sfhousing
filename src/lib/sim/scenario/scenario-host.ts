@@ -106,7 +106,8 @@ import {
   type NeighborhoodShapes
 } from '../levers/brushes';
 import type { LayerCtx } from '../levers/layers';
-import { limitSources, type LimitSources } from '../levers/source';
+import { lotAtPoint } from './lot-at';
+import { limitSources, ownerOf, type LimitOwner, type LimitSources } from '../levers/source';
 import { createYieldRecompute, type GrossCache, type YieldRecompute } from '../levers/recompute';
 import { allNeeds, fillNeeds, resolveEnvelopes, type Resolution } from '../levers/resolve';
 import { parseSimLevers, type SimLevers } from '../levers/types';
@@ -1219,8 +1220,17 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     const lw = st.work?.levers;
     if (lw && i !== undefined && rec.eligible && out.envelope) {
       const allowed = out.envelope.maxStories;
-      if (lw.protectedMask?.[i]) out.limits = { allowed, buildable: null, protected: true };
-      else {
+      // the layer that sets `allowed`, from the limits held now; a protected lot reads FZP
+      const owner = lw.limits ? limitOwnerAt(lw.limits.sources, i) : null;
+      const ownerField = owner ? { owner } : {};
+      if (lw.protectedMask?.[i]) {
+        out.limits = {
+          allowed,
+          buildable: null,
+          protected: true,
+          ...(lw.limits ? { owner: { kind: 'fzp' as const } } : {})
+        };
+      } else {
         const key = simKey(req.parcelId, allowed);
         let b = memo.get(key);
         if (b === undefined) {
@@ -1236,7 +1246,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         out.limits = {
           allowed,
           buildable: b ? b.stories : lotBuildableStories(rec.polygon, allowed, out.existingUnits),
-          protected: false
+          protected: false,
+          ...ownerField
         };
       }
     }
@@ -1253,6 +1264,40 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
     if (!('footprint' in m))
       out.generated = { typology: m.typology, stories: m.stories, units: m.units };
     return out;
+  }
+
+  /** The owner of limits row `row`, or null for a row the limits table does not cover. */
+  function limitOwnerAt(sources: LimitSources, row: number): LimitOwner | null {
+    return row < sources.source.length ? ownerOf(sources, row) : null;
+  }
+
+  // --- lotAt (sim UX plan 4 Task 3) ---
+
+  /**
+   * The lot under `point` (lng, lat) among the loaded records of the cells within `LID_PAD_M` (a lot may reach past its cell),
+   * and who sets its limit on the limits the worker holds now. Answered at once: it never waits
+   * on a pending lever revision.
+   */
+  function lotAt(reqId: number, point: [number, number]): void {
+    const st = s;
+    if (!st?.brush || !st.work?.levers) {
+      const message = 'lot lookup needs a session initialised with levers';
+      return post({ type: 'lotAt', reqId, result: { ok: false, reason: 'no-session', message } });
+    }
+    const lw = st.work.levers;
+    const dLng = LID_PAD_M / M_PER_DEG_LNG;
+    const dLat = LID_PAD_M / M_PER_DEG_LAT;
+    const box = [point[0] - dLng, point[1] - dLat, point[0] + dLng, point[1] + dLat];
+    const near: ParcelRecord[] = [];
+    for (const cellId of cellsIntersecting(st.manifest, box))
+      for (const rec of st.chunks.byCell.get(cellId) ?? []) near.push(rec);
+    const rec = lotAtPoint(near, point, (r) =>
+      r.polygon.map((ring) => toLngLat(ring, r.labelPoint))
+    );
+    const row = rec ? lw.base.fzp.parcels.index.get(rec.id) : undefined;
+    const owner =
+      rec && row !== undefined && lw.limits ? limitOwnerAt(lw.limits.sources, row) : null;
+    post({ type: 'lotAt', reqId, result: { ok: true, parcelId: rec ? rec.id : null, owner } });
   }
 
   // --- brushes (plan 3 Task 5) ---
@@ -1546,6 +1591,8 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         return brushRequest(req.reqId, true);
       case 'lotOutlines':
         return lotOutlines(req.reqId, req.lots);
+      case 'lotAt':
+        return lotAt(req.reqId, req.point);
       case 'previewBuildings':
         return previewBuildings(req.reqId, req.lots, req.stories);
       case 'heightLids':

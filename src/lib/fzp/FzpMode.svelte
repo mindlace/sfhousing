@@ -16,6 +16,7 @@
   import type {
     BrushLotsResult,
     HeightLidsResult,
+    LotAtResult,
     LotOutlinesResult,
     PreviewResult
   } from '$lib/sim/scenario/types';
@@ -34,6 +35,8 @@
     previewBuildings(lots: ParcelId[], stories?: number): Promise<PreviewResult>;
     /** The glass lids of the loaded lots in a view (lng/lat bbox), on the latest city. */
     heightLids(bbox: [number, number, number, number]): Promise<HeightLidsResult>;
+    /** The lot under a point (lng, lat) and the layer that sets its limit, at once. */
+    lotAt(point: [number, number]): Promise<LotAtResult>;
     retryChunks(): void;
   }
 
@@ -797,6 +800,7 @@
         lotOutlines: (lots) => c.lotOutlines(lots),
         previewBuildings: (lots, stories) => c.previewBuildings(lots, stories),
         heightLids: (bbox) => c.heightLids(bbox),
+        lotAt: (point) => c.lotAt(point),
         retryChunks: () => c.retryChunks()
       };
       if (phase === 'loading') startScenario({ seed: urlSeed });

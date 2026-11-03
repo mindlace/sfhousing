@@ -235,6 +235,30 @@ describe('worker router', () => {
     expect(u.scenarioReqs[1]).toEqual(preview);
   });
 
+  const lotAtReq = { type: 'lotAt', reqId: 9, point: [-122.4, 37.8] };
+
+  it('answers lotAt itself in editor mode: no-session; the scenario host otherwise', () => {
+    const t = setup();
+    t.send(lotAtReq);
+    expect(t.created()).toBe(0);
+    expect(t.posted).toEqual([
+      {
+        type: 'lotAt',
+        reqId: 9,
+        result: { ok: false, reason: 'no-session', message: expect.any(String) }
+      }
+    ]);
+    const u = setup();
+    u.send(initScenario, lotAtReq);
+    expect(u.log).toEqual([
+      'editor:dispose',
+      'scenario:create',
+      'scenario:initScenario',
+      'scenario:lotAt'
+    ]);
+    expect(u.scenarioReqs[1]).toEqual(lotAtReq);
+  });
+
   const lids = { type: 'heightLids', reqId: 8, bbox: [0, 0, 0.01, 0.01] };
 
   it('answers heightLids itself in editor mode: no-session; the scenario host otherwise', () => {

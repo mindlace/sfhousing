@@ -5,7 +5,7 @@ import { miniPolicy } from '../scenario/fixtures/mini-policy';
 import { dayOf } from '../scenario/dates';
 import { stockTable, type LayerCtx } from './layers';
 import { resolveEnvelopes } from './resolve';
-import { limitSources, SRC_FZP, SRC_PAINT, SRC_RULE0 } from './source';
+import { limitSources, ownerOf, SRC_FZP, SRC_PAINT, SRC_RULE0 } from './source';
 import { DEFAULT_LEVERS, type SimLevers, type StoryEdit } from './types';
 
 const city = miniCity();
@@ -95,5 +95,18 @@ describe('limitSources', () => {
       }
     );
     expect(() => fc.assert(prop)).not.toThrow();
+  });
+});
+
+describe('ownerOf', () => {
+  it('maps the fzp, paint and rule codes to owners; a rule code to its id', () => {
+    const s = {
+      source: Uint16Array.from([SRC_FZP, SRC_PAINT, SRC_RULE0, SRC_RULE0 + 1]),
+      ruleIds: ['a', 'b']
+    };
+    expect(ownerOf(s, 0)).toEqual({ kind: 'fzp' });
+    expect(ownerOf(s, 1)).toEqual({ kind: 'paint' });
+    expect(ownerOf(s, 2)).toEqual({ kind: 'rule', ruleId: 'a' });
+    expect(ownerOf(s, 3)).toEqual({ kind: 'rule', ruleId: 'b' });
   });
 });
