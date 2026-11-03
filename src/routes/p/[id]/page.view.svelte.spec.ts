@@ -193,7 +193,9 @@ describe('/p/[id] score and dock', () => {
       .toBeVisible();
     await expect.element(results().getByTestId('target-rhna')).toBeVisible();
     await expect.element(results().getByText('What does this number mean?')).toBeVisible();
-    await page.getByRole('button', { name: 'Back to painting' }).click();
+    // Read-only: nothing can be painted, so the flip names the Paint tab, not painting.
+    expect(page.getByRole('button', { name: 'Back to painting' }).elements()).toEqual([]);
+    await page.getByRole('button', { name: 'Back to the Paint tab' }).click();
     await expect.poll(rowNames).toHaveLength(2);
     expect(page.getByRole('radiogroup', { name: 'Brush tool' }).elements()).toEqual([]);
   });

@@ -606,7 +606,7 @@
       top={history}
       {results}
       flipLabel="Paint"
-      flipName="Back to painting"
+      flipName={editor.readOnly ? 'Back to the Paint tab' : 'Back to painting'}
       onflip={() => void flip()}
       focusOnOpen={dockFocus || doneFocus}
       onsheetheight={(px) =>
