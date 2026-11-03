@@ -255,21 +255,16 @@ export class ScenarioClient {
   }
 
   /**
-   * The buildings `lots` could hold (/sim's live preview): at `stories` for a custom stroke, else at
-   * the levers in force, only where they differ from FZP. Answered by a session initialised with
-   * levers; `no-session` otherwise, and on crash, `restart` and `dispose`.
+   * The buildings `lots` could hold at `stories` (/sim's live preview of a Paint stroke). Answered
+   * by a session initialised with levers; `no-session` otherwise, and on crash, `restart` and
+   * `dispose`.
    */
-  previewBuildings(lots: ParcelId[], stories?: number): Promise<PreviewResult> {
+  previewBuildings(lots: ParcelId[], stories: number): Promise<PreviewResult> {
     if (this.#disposed || this.#crashed) return Promise.resolve(noSessionPreview());
     const reqId = ++this.#reqId;
     return new Promise((resolve) => {
       this.#pendingPreview.set(reqId, resolve);
-      this.#worker.postMessage({
-        type: 'previewBuildings',
-        reqId,
-        lots,
-        ...(stories === undefined ? {} : { stories })
-      });
+      this.#worker.postMessage({ type: 'previewBuildings', reqId, lots, stories });
     });
   }
 

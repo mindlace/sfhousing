@@ -358,13 +358,13 @@ describe('ScenarioClient', () => {
       err.mockRestore();
     });
 
-    it('posts previewBuildings (stories only when given) and resolves its answer; no-session after a crash', async () => {
+    it('posts previewBuildings with its stories and resolves its answer; no-session after a crash', async () => {
       const { w, client } = setup();
       const a = client.previewBuildings(['x'], 8);
-      const r = client.previewBuildings(['y']);
+      const r = client.previewBuildings(['y'], 4);
       expect(w.posts).toEqual([
         { type: 'previewBuildings', reqId: 1, lots: ['x'], stories: 8 },
-        { type: 'previewBuildings', reqId: 2, lots: ['y'] }
+        { type: 'previewBuildings', reqId: 2, lots: ['y'], stories: 4 }
       ]);
       const result = { ok: true as const, pack: null, built: 0, missing: 1 };
       w.emit({ type: 'previewBuildings', reqId: 99, result }); // ignored

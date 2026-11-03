@@ -105,7 +105,7 @@ type RowScenarioRequest =
   | { type: 'resolveBrush'; reqId: number; query: BrushQuery } // plan 3 Task 5
   | { type: 'brushCatalog'; reqId: number }
   | { type: 'lotOutlines'; reqId: number; lots: ParcelId[] }
-  | { type: 'previewBuildings'; reqId: number; lots: ParcelId[]; stories?: number } // Task 6
+  | { type: 'previewBuildings'; reqId: number; lots: ParcelId[]; stories: number } // Task 6
   | { type: 'heightLids'; reqId: number; bbox: [number, number, number, number] } // height lids Task 8
   | { type: 'lotAt'; reqId: number; point: [number, number] }; // sim UX plan 4 Task 3
 type RowLotAtResult =

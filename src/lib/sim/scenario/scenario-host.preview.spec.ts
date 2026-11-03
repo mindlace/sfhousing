@@ -52,14 +52,9 @@ async function leverSession(
   return {
     h,
     record: (id: ParcelId) => city.records.get(id)!,
-    async preview(lots: ParcelId[], stories?: number): Promise<PreviewResult> {
+    async preview(lots: ParcelId[], stories: number): Promise<PreviewResult> {
       const id = ++reqId;
-      h.host.handle({
-        type: 'previewBuildings',
-        reqId: id,
-        lots,
-        ...(stories === undefined ? {} : { stories })
-      });
+      h.host.handle({ type: 'previewBuildings', reqId: id, lots, stories });
       await h.flush();
       const ps = h.posts.filter(
         (m): m is PreviewPost => m.type === 'previewBuildings' && m.reqId === id
@@ -101,16 +96,6 @@ describe('previewBuildings', () => {
   it('the same lot unprotected builds', async () => {
     const h = await leverSession(DEFAULT_LEVERS, {}, [cellOf(MINI_HISTORIC_ID)]);
     expect(await h.preview([MINI_HISTORIC_ID], 40)).toMatchObject({ ok: true, built: 1 });
-  });
-
-  it('without stories, only lots the policy changed build, at their plan height', async () => {
-    const h = await leverSession({
-      ...DEFAULT_LEVERS,
-      rules: [{ lots: [LOADED_LOT], stories: 30 }],
-      compare: 'fzp'
-    });
-    const r = await h.preview([LOADED_LOT, OTHER_LOADED_LOT]);
-    expect(r.ok && r.pack!.parcelIds).toEqual([LOADED_LOT]);
   });
 
   it('cap: builds at most previewMaxLots, in request order', async () => {

@@ -1356,14 +1356,13 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
   /**
    * The buildings the first `previewMaxLots` requested lots could hold (/sim's live preview, map
    * overlays plan Task 6), packed as one cell. Per lot, in order: a lot protected under the
-   * levers in force builds nothing; one whose record is not loaded is `missing`; with `stories`
-   * (a custom stroke) it builds at that height; without (a rule), only a lot whose plan stories
-   * differ from FZP's stock builds, at the plan stories. The generator memo is shared with the
-   * timeline's simulated buildings (`simKey`: the same generate call), so a lot the timeline
-   * later builds at that height costs nothing twice. Answered at once, in one handler: the cap
-   * keeps it within a slice (measured in the spec).
+   * levers in force builds nothing; one whose record is not loaded is `missing`; any other builds
+   * at the stroke's `stories` (the generator clamps at the lot's physical max). The generator memo
+   * is shared with the timeline's simulated buildings (`simKey`: the same generate call), so a lot
+   * the timeline later builds at that height costs nothing twice. Answered at once, in one
+   * handler: the cap keeps it within a slice (measured in the spec).
    */
-  function previewBuildings(reqId: number, lots: readonly ParcelId[], stories?: number): void {
+  function previewBuildings(reqId: number, lots: readonly ParcelId[], stories: number): void {
     const st = s;
     const w = st?.work;
     const lw = w?.levers;
@@ -1376,7 +1375,6 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
       });
     }
     const plan = w.loaded.fzp.parcels;
-    const stock = lw.base.fzp.parcels.envelopeStories;
     const mask = lw.protectedMask;
     const items: { building: GeneratedBuilding; existingUnits: number }[] = [];
     const seen = new Set<ParcelId>();
@@ -1392,14 +1390,11 @@ export function createScenarioHost(deps: ScenarioHostDeps): ScenarioHost {
         missing++;
         continue;
       }
-      const planStories = plan.envelopeStories[i];
-      if (stories === undefined && planStories === stock[i]) continue;
-      const at = stories ?? planStories;
-      if (at <= 0) continue;
-      const key = simKey(id, at);
+      if (stories <= 0) continue;
+      const key = simKey(id, stories);
       let b = memo.get(key);
       if (b === undefined) {
-        b = gen(scenarioRecordOf(plan, i, rec), { maxStories: at }, fnv1a32(id), 'max');
+        b = gen(scenarioRecordOf(plan, i, rec), { maxStories: stories }, fnv1a32(id), 'max');
         memo.set(key, b);
       }
       if (b) items.push({ building: b, existingUnits: plan.existingUnits[i] });

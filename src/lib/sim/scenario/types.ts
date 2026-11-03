@@ -116,9 +116,9 @@ export type ScenarioRequest =
   | { type: 'brushCatalog'; reqId: number }
   // Map overlays (plan 2 Task 5): the ring outlines of lots, answered like `resolveBrush`.
   | { type: 'lotOutlines'; reqId: number; lots: ParcelId[] }
-  // Paint feedback (plan 2 Task 6): `stories` given = a custom stroke at that height; absent =
-  // the levers in force (a rule). The page sends the lots nearest first.
-  | { type: 'previewBuildings'; reqId: number; lots: ParcelId[]; stories?: number }
+  // Live preview (plan 2 Task 6, sim UX plan 3 Task 4): the buildings a Paint stroke's lots could
+  // hold at `stories`. The page sends the lots nearest first.
+  | { type: 'previewBuildings'; reqId: number; lots: ParcelId[]; stories: number }
   // Glass lids (height-lids Task 8): the lids of the loaded lots in a view (lng/lat bbox),
   // answered on the latest complete city of a session initialised with levers.
   | { type: 'heightLids'; reqId: number; bbox: [number, number, number, number] }

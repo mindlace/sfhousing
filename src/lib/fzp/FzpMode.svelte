@@ -32,7 +32,7 @@
     brushCatalog(): Promise<BrushCatalog | null>;
     lotOutlines(lots: ParcelId[]): Promise<LotOutlinesResult>;
     /** Paint feedback: the buildings `lots` could hold (at `stories`, else the levers in force). */
-    previewBuildings(lots: ParcelId[], stories?: number): Promise<PreviewResult>;
+    previewBuildings(lots: ParcelId[], stories: number): Promise<PreviewResult>;
     /** The glass lids of the loaded lots in a view (lng/lat bbox), on the latest city. */
     heightLids(bbox: [number, number, number, number]): Promise<HeightLidsResult>;
     /** The lot under a point (lng, lat) and the layer that sets its limit, at once. */
