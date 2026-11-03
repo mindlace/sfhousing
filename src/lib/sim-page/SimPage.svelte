@@ -69,9 +69,9 @@
   import type { Calibration } from '$lib/timelapse/types';
   import HistoryButtons from '$lib/paint/HistoryButtons.svelte';
   import PaintTab from '$lib/paint/PaintTab.svelte';
+  import PaletteStrip from '$lib/paint/PaletteStrip.svelte';
   import { ERASE_HINT, SimBrushTools, brushToolOf, type SimTool } from './brush-tools.svelte';
   import { createOverlayMux } from './overlay-mux';
-  import PhoneToolBar from './PhoneToolBar.svelte';
   import {
     DEFAULT_POLICY,
     canonicalJson,
@@ -295,7 +295,7 @@
   });
   /**
    * Opening moves focus into the dock only when the user asked (the Policy button, the header
-   * score, Done on the phone tool bar), never for the default open or a Run (WCAG 2.4.3).
+   * score, Done on the palette strip), never for the default open or a Run (WCAG 2.4.3).
    */
   let dockFocus = $state(false);
   let policyButton = $state<HTMLButtonElement>();
@@ -387,7 +387,7 @@
   let solidLayer = $state.raw<SolidPolygonLayerCtor | null>(null);
   let overlay = $state.raw<ReturnType<typeof createOverlayMux> | null>(null);
   let dead = false;
-  let phoneBar = $state<PhoneToolBar>();
+  let paletteStrip = $state<PaletteStrip>();
 
   /** The map handle whose overlay mux exists (either mode); a new handle gets a new mux. */
   let overlayHandle: SimMapHandle | null = null;
@@ -423,6 +423,8 @@
     if (controller && map !== controllerMap) {
       controller.destroy();
       controller = null;
+      // A preview barrier: the live buildings clear and an answer still on its way is dropped.
+      strokePreview.cancel();
     }
     mapHandle = h;
     watchView(map);
@@ -434,15 +436,15 @@
     const bt = brushToolOf(t);
     if (controller) controller.setTool(bt);
     else brush.tool = bt;
-    // On a phone, a stroke tool closes the sheet and shows the floating tool bar.
+    // On a phone, a stroke tool closes the sheet and shows the palette strip.
     if (t !== 'move' && !wide.current && dock.sheet !== 'closed') {
       dock.sheet = 'closed';
-      void tick().then(() => phoneBar?.focus());
+      void tick().then(() => paletteStrip?.focus());
     }
   }
 
-  /** The phone tool bar's Done (it chose Move): the sheet opens full on the Paint tab. */
-  function toolBarDone(): void {
+  /** The palette strip's Done (it chose Move): the sheet opens full on the Paint tab. */
+  function stripDone(): void {
     dockFocus = true;
     dock.showEdit('paint');
     dock.sheet = 'full';
@@ -905,11 +907,13 @@
     resultsOnly={run.phase === 'run'}
   />
   {#if mode === 'edit' && run.phase === 'setup' && !wide.current && dock.sheet === 'closed' && tools.tool !== 'move'}
-    <PhoneToolBar
-      bind:this={phoneBar}
-      {tools}
+    <PaletteStrip
+      bind:this={paletteStrip}
+      {brush}
+      tool={tools.tool}
       ontool={setTool}
-      ondone={toolBarDone}
+      ondone={stripDone}
+      eraseHint={ERASE_HINT}
       lift={sheetH}
     />
   {/if}

@@ -121,6 +121,36 @@ for (const name of ['Transit', 'Paint', 'Permits', 'Protect']) {
   });
 }
 
+test('at 375px the palette strip has no axe violations in dark, palette open and in Erase', async ({
+  page
+}) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await gotoSim(page);
+  await openTab(page, 'Paint');
+  await dock(page).getByRole('radio', { name: 'Paint', exact: true }).click();
+  const strip = page.getByTestId('palette-strip');
+  await expect(strip).toBeVisible();
+  await expectNoA11yViolations(page, { include: ['[data-testid=palette-strip]'] });
+  // The height pop-over open; Escape returns focus to the swatch.
+  const swatch = strip.getByRole('button', { name: /^Height: / });
+  await swatch.click();
+  await expect(strip.getByRole('group', { name: 'Height', exact: true })).toBeVisible();
+  await expectNoA11yViolations(page, { include: ['[data-testid=palette-strip]'] });
+  await page.keyboard.press('Escape');
+  await expect(strip.getByRole('group', { name: 'Height', exact: true })).toBeHidden();
+  await expect(swatch).toBeFocused();
+  // The radius pop-over open.
+  await strip.getByRole('button', { name: /^Brush \d+ m$/ }).click();
+  await expect(strip.getByRole('group', { name: 'Brush radius' })).toBeVisible();
+  await expectNoA11yViolations(page, { include: ['[data-testid=palette-strip]'] });
+  // Erase: the swatch is disabled and carries the hint.
+  await page.keyboard.press('Escape');
+  await strip.getByRole('button', { name: 'Tool: Paint' }).click();
+  await expect(strip.getByRole('button', { name: 'Tool: Erase' })).toBeVisible();
+  await expect(swatch).toBeDisabled();
+  await expectNoA11yViolations(page, { include: ['[data-testid=palette-strip]'] });
+});
+
 test('the dock on Permits with a stage open has no axe violations in dark', async ({ page }) => {
   await gotoSim(page);
   await openTab(page, 'Permits');

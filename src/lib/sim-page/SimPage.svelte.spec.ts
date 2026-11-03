@@ -9,7 +9,7 @@ import '../../routes/layout.css';
 import { parseManifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
-import { stub, callsOf } from '$lib/fzp/test/sim-map-stub';
+import { stub, callsOf, FakeMap } from '$lib/fzp/test/sim-map-stub';
 import { timelineMsg } from '$lib/fzp/test/fake-worker';
 import SimPageHost from './test/SimPageHost.svelte';
 import { BrushController } from '$lib/brush/BrushController.svelte';
@@ -279,16 +279,16 @@ describe('SimPage dock', () => {
     await expect.poll(() => callsOf('setBottomInset').at(-1)?.[0]).toBe(bar.height + box.height);
   });
 
-  it('at 375 px Paint closes the sheet for the tool bar; Done goes back to Move and the Paint tab', async () => {
+  it('at 375 px Paint closes the sheet for the palette strip; Done goes back to Move and the Paint tab', async () => {
     await readySim(375);
     await handle().click();
     await tab('Paint').click();
     await page.getByRole('radio', { name: 'Paint' }).click();
     await expect.element(handle()).toHaveAttribute('aria-expanded', 'false');
-    const bar = page.getByRole('group', { name: 'Brush' });
+    const bar = page.getByTestId('palette-strip');
     await expect.element(bar).toBeVisible();
     await expect.element(bar.getByRole('button').first()).toHaveFocus();
-    // The bar sits above the sheet's handle.
+    // The strip sits above the sheet's handle.
     const hb = handle().element().getBoundingClientRect();
     expect(bar.element().getBoundingClientRect().bottom).toBeLessThanOrEqual(hb.top);
     await bar.getByRole('button', { name: 'Done' }).click();
@@ -1003,7 +1003,7 @@ describe('SimPage Setup and Run (Task 7, spec §1)', () => {
     }
   });
 
-  it('at 375 px the phone tool bar goes when Run starts', async () => {
+  it('at 375 px the palette strip goes when Run starts', async () => {
     stub.reset();
     await page.viewport(375, 700);
     await setup();
@@ -1012,7 +1012,7 @@ describe('SimPage Setup and Run (Task 7, spec §1)', () => {
     await policyButton().click();
     await tab('Paint').click();
     await page.getByRole('radio', { name: 'Paint' }).click();
-    const bar = page.getByRole('group', { name: 'Brush' });
+    const bar = page.getByTestId('palette-strip');
     await expect.element(bar).toBeVisible();
     await run().click();
     await expect.element(bar).not.toBeInTheDocument();
@@ -1751,6 +1751,24 @@ describe('SimPage live preview (sim-ux plan 3, Task 4)', () => {
     drag(10, 40, 2);
     await expect.poll(() => w.allOf('resolveBrush').length).toBe(3);
     ev('pointerup', 40, 2);
+  });
+
+  it('a new map mid-stroke clears the live buildings and drops the answers still on their way', async () => {
+    const w = await readyToPaint();
+    await liveStroke(w);
+    moveTo(50, 80);
+    await expect.poll(() => w.allOf('resolveBrush').length).toBe(2);
+    // The map is replaced (a style reload): the old controller is destroyed, with a preview in
+    // flight and buildings on screen.
+    stub.map = new FakeMap();
+    stub.fireReady();
+    expect(preview()).toBe('none');
+    expect(feedbackIds()).toEqual([]);
+    // The in-flight preview's answers arrive late: nothing shows.
+    answerLots(w, 2);
+    await wait(50);
+    expect(w.allOf('previewBuildings')).toHaveLength(1);
+    expect(preview()).toBe('none');
   });
 
   it('an Erase drag shows no buildings, and each of its previews is answered', async () => {

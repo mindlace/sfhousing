@@ -14,9 +14,11 @@
     disabled?: boolean;
     /** Shown, and describing every control, while disabled. */
     hint?: string;
+    /** A preset swatch was chosen (not the stepper): the phone strip closes its pop-over. */
+    onpick?(stories: number): void;
   }
 
-  let { brush, disabled = false, hint = MSG.eraseHint }: Props = $props();
+  let { brush, disabled = false, hint = MSG.eraseHint, onpick = undefined }: Props = $props();
 
   const uid = $props.id();
   const hintId = `${uid}-hint`;
@@ -49,7 +51,10 @@
         n
           ? 'bg-ink text-surface dark:bg-ink-dark dark:text-surface-dark'
           : 'bg-surface-raised text-ink dark:bg-surface-dark-raised dark:text-ink-dark'}"
-        onclick={() => brush.setStories(n)}>{n}</button
+        onclick={() => {
+          brush.setStories(n);
+          onpick?.(n);
+        }}>{n}</button
       >
     {/each}
   </div>

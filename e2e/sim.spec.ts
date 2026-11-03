@@ -157,19 +157,19 @@ async function strokeOnce(page: Page, isMobile: boolean): Promise<void> {
 
 /**
  * Chooses a stroke tool from the open Paint tab. On a phone this folds the sheet to its handle for
- * the floating tool bar (layout ruling 5).
+ * the palette strip (layout ruling 5).
  */
 async function chooseTool(page: Page, isMobile: boolean, choose: () => Promise<void>) {
   await choose();
   if (isMobile) {
     await expect(handle(page)).toHaveAttribute('aria-expanded', 'false');
-    await expect(page.getByTestId('phone-tool-bar')).toBeVisible();
+    await expect(page.getByTestId('palette-strip')).toBeVisible();
   }
 }
 
-/** The phone tool bar's Done: back to Move, the sheet open full on the Paint tab. */
-async function toolBarDone(page: Page): Promise<void> {
-  await page.getByTestId('phone-tool-bar').getByRole('button', { name: 'Done' }).click();
+/** The palette strip's Done: back to Move, the sheet open full on the Paint tab. */
+async function stripDone(page: Page): Promise<void> {
+  await page.getByTestId('palette-strip').getByRole('button', { name: 'Done' }).click();
   await expect(handle(page)).toHaveAttribute('aria-expanded', 'true');
   await expect(tabOf(page, 'Paint')).toHaveAttribute('aria-selected', 'true');
 }
@@ -466,7 +466,7 @@ test('a Paint stroke adds a custom brush and Ctrl+Z removes it', async ({ isMobi
   await strokeOnce(page, isMobile);
 
   // Done goes back to Move and reopens the sheet on Paint.
-  if (isMobile) await toolBarDone(page);
+  if (isMobile) await stripDone(page);
   await expect(customList(page)).toHaveCount(1);
   await expect(customList(page).first()).toContainText(/\d+ stor/);
   await closeSheet(page);
@@ -488,7 +488,7 @@ test('a painted area is selected, outlined and removed from the Paint tab', asyn
   await expect(paint).toBeEnabled();
   await chooseTool(page, isMobile, () => paint.click());
   await strokeOnce(page, isMobile);
-  if (isMobile) await toolBarDone(page);
+  if (isMobile) await stripDone(page);
   await expect(customList(page)).toHaveCount(1);
 
   // Selecting the row outlines its lots (Move is chosen: nothing else would).
@@ -735,7 +735,7 @@ test('from md the docked panel leaves the zoom and compass control uncovered', a
   await expectNavControlClear(page, page.getByTestId('dock-rail'));
 });
 
-test('below md on a fine pointer the phone tool bar leaves the zoom control uncovered', async ({
+test('below md on a fine pointer the palette strip leaves the zoom control uncovered', async ({
   isMobile,
   page
 }) => {
@@ -746,8 +746,8 @@ test('below md on a fine pointer the phone tool bar leaves the zoom control unco
   await chooseTool(page, true, () =>
     panel(page).getByRole('radio', { name: 'Paint', exact: true }).click()
   );
-  await expect(page.getByTestId('phone-tool-bar')).toBeVisible();
-  await expectNavControlClear(page, page.getByTestId('phone-tool-bar'));
+  await expect(page.getByTestId('palette-strip')).toBeVisible();
+  await expectNavControlClear(page, page.getByTestId('palette-strip'));
 });
 
 test('at 375 px: no horizontal scroll, and the footer links stay unobscured', async ({
@@ -766,7 +766,7 @@ test('at 375 px: no horizontal scroll, and the footer links stay unobscured', as
   await scoreBar(page).click();
   await expect(scoreDetails(page)).toBeHidden();
 
-  // With the floating tool bar showing (a stroke tool chosen).
+  // With the palette strip showing (a stroke tool chosen).
   await openTab(page, 'Paint');
   await chooseTool(page, true, () =>
     panel(page).getByRole('radio', { name: 'Paint', exact: true }).click()
@@ -1076,14 +1076,14 @@ test('the eraser outlines painted lots, only while chosen', async ({ isMobile, p
   const tool = (name: string) => panel(page).getByRole('radio', { name, exact: true });
   await chooseTool(page, isMobile, () => tool('Paint').click());
   await strokeOnce(page, isMobile);
-  if (isMobile) await toolBarDone(page);
+  if (isMobile) await stripDone(page);
   await expect(customList(page)).toHaveCount(1);
   expect(await deckIds(page)).not.toContain(OUTLINE_LAYER);
 
   await chooseTool(page, isMobile, () => tool('Erase').click());
   await expect.poll(() => deckIds(page)).toContain(OUTLINE_LAYER);
 
-  if (isMobile) await toolBarDone(page);
+  if (isMobile) await stripDone(page);
   else await tool('Move').click();
   await expect.poll(() => deckIds(page)).not.toContain(OUTLINE_LAYER);
 });
@@ -1139,7 +1139,7 @@ test('a Paint drag shows live buildings under the brush, fading on release', asy
   await expect.poll(() => simPreview(page)).toBe('fading');
   await expect.poll(() => simPreview(page), { timeout: 4_000 }).toBe('none');
   expect(isPreviewLayer(await deckIds(page))).toBe(false);
-  if (isMobile) await toolBarDone(page);
+  if (isMobile) await stripDone(page);
   await expect(customList(page)).toHaveCount(1);
 });
 
@@ -1149,7 +1149,7 @@ test('an Erase drag shows no buildings', async ({ isMobile, page }) => {
   const tool = (name: string) => panel(page).getByRole('radio', { name, exact: true });
   await chooseTool(page, isMobile, () => tool('Paint').click());
   await strokeOnce(page, isMobile);
-  if (isMobile) await toolBarDone(page);
+  if (isMobile) await stripDone(page);
   await expect(customList(page)).toHaveCount(1);
   await expect.poll(() => simPreview(page)).toBe('none');
   // Sample the preview through an Erase stroke and after it.
