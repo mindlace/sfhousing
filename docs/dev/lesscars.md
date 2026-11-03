@@ -327,9 +327,9 @@ parcels`.
 - **Fixture:** `npm run pipeline -- fixture` builds fixture-0 with the mini plan and 5 seeds; the
   step adds well under a second. `npm run test:pipeline` covers it
   (`pipeline/test/lesscars-step.test.ts` and the golden test).
-- **Live:** once the live plan lands (plan 3), the release build (`npm run pipeline`) runs the full
-  101-seed pairs on the maintainer's machine, as dataset builds already do. Until then the live
-  build skips the step.
+- **Live:** the release build (`npm run pipeline`) runs the step with the live plan and the full
+  101-seed pairs on the maintainer's machine, as dataset builds already do. See "First live
+  build" for what it measured.
 
 ## CI cost
 
@@ -344,6 +344,37 @@ machine, run one after the other:
 
 The lesscars tests add no measurable time, far under the 60 s threshold, so nothing moved off
 `.github/workflows/pipeline.yml` or `chreode.config.ts`.
+
+## First live build
+
+Built 2026-11-02 on the owner's laptop (Apple Silicon Mac) as `2026-11-02-39fbf039`.
+
+- **Time:** the whole build took 2 min 53 s wall clock (266.9 s user); `timings.lesscars` was
+  6,957 ms. 101 seeds, representative seed 92. The 30-minute rule did not apply, so the seed
+  count stayed at 101.
+- **V35:** `64 projects, 40 sites, 41 year ends`.
+- **Headline at 2068:** mean +7,786 extra homes (p10 7,062, p50 7,883, p90 8,211); plan 97,840
+  against baseline 90,054.
+- **2068 by source** (largest-remainder rounding, as the page shows it, summing to 7,786): freed
+  1,684; parking 5,988; transit-unlocked 114; other 0.
+- **Regimes:** `summary.regimeDays` are 2032-01-31, 2034-01-01, 2035-01-01, 2041-01-01 and
+  2044-01-01.
+- **Report counts:** `lesscars.sites` 40; `lesscars.sites.zero_yield` 3;
+  `lesscars.sites.zero_gain_parking` 2, named by the warning "parking conversion(s)
+  park-0715015, park-0761065 add no homes at their envelope; their lots stay reserved";
+  `lesscars.unlocked_lots` 3,617.
+- **Bytes:** `timeline.bin` is 104,931 B, 435,051 B decoded.
+- **Carve:** `geary-trench` freed 26,411 m² (2.64 ha) across 40 sites. The plan's 12,000-20,000 m²
+  band was a guess sized for the main lanes alone (plan-v1's ~1.8 ha); the trench removes 14 CNNs,
+  including the Fillmore frontage roads, so the larger area is expected and was accepted.
+  `central-freeway-stub` freed 0 m²: plan-v1 Concern 2, the land under the viaduct is already a
+  parcel, reported to the owner and not fixed.
+- **Garage reservations** in the representative seed (92): `garage-south` (parcel 3901004) kept;
+  `garage-north` (parcel 0509009) kept. Of the 48 reserved parcels, 4 were voided.
+- **Dates:** `asOf` unchanged from the published `2026-10-29-14e0eccb` (projects and calibration,
+  day 20745); transit service dates unchanged (Muni 2026-08-25; BART and Caltrain 2026-10-20).
+- **Plan correction:** the first build attempt failed because two parking parcels held homes;
+  0195019 (Kearny St, 105 homes) and 0285020 (Sutter St, 400 homes) were dropped from the plan.
 
 ## The page
 
