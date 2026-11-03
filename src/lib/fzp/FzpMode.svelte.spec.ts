@@ -1063,6 +1063,7 @@ describe('FzpMode map, layout and lifecycle', () => {
   });
 
   it('the ready-phase notices render in the notice stack', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
     const s = setup();
     await toReady(s);
     anotherKeyed();
