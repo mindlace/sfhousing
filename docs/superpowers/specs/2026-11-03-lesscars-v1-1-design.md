@@ -234,3 +234,16 @@ the plan document and in `plan.json`. The pipeline check refuses a listed parcel
 1. **Freeway land is unbuildable everywhere while its freeway stands** (owner, 2026-11-03): in
    `/sim`, FZP and both /lesscars runs. The build reports the change to `/sim`'s numbers before
    anything ships.
+
+## Rulings while planning (2026-11-03)
+
+- **Phase geometry is a list of the freeway's street-segment ids (CNNs), not a drawn line.** With a
+  drawn line the freeway's own centrelines stay "kept" and their 10 m strips erase most of the
+  freed land (one reason v1's stub freed almost nothing).
+- **`central-freeway-stub` depends on `garage-alemany`** in place of the retired `garage-south`;
+  its other dependencies and dates are unchanged.
+- **The large-lot lift applies only where it already does** (R-4 districts, per
+  `pipeline/lib/local-program.ts`). Freed land elsewhere takes the v1 freed-land zoning without the
+  lift. The v1.1 plan section says so.
+- **Map:** basemap ids hold at every zoom, but at z11–13 US-101 is merged across the Alemany cut, so
+  the tiles-step fallback (removed stretches moved to their own source layer) is the expected path.
