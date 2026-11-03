@@ -22,6 +22,7 @@ export type TokenName =
   | 'transit-regional'
   | 'transit-stroke'
   | 'limit-ink'
+  | 'limit-edge'
   | 'limit-glaze'
   | 'limit-wall'
   | 'limit-halo'
@@ -81,7 +82,8 @@ export const TOKENS: Record<Theme, Record<TokenName, string>> = {
     'transit-regional': '#0B3B36',
     'transit-stroke': '#FFFFFF',
     'limit-ink': '#2B2A28',
-    'limit-glaze': 'rgba(72,74,78,0.22)',
+    'limit-edge': 'rgba(43,42,40,0.45)',
+    'limit-glaze': 'rgba(72,74,78,0.4)',
     'limit-wall': 'rgba(72,74,78,0.25)',
     'limit-halo': '#F3EFE6',
     'brush-paint': '#B4532F',
@@ -138,7 +140,8 @@ export const TOKENS: Record<Theme, Record<TokenName, string>> = {
     'transit-regional': '#C2F0E8',
     'transit-stroke': '#111214',
     'limit-ink': '#E8E4DC',
-    'limit-glaze': 'rgba(214,216,220,0.12)',
+    'limit-edge': 'rgba(232,228,220,0.4)',
+    'limit-glaze': 'rgba(214,216,220,0.3)',
     'limit-wall': 'rgba(214,216,220,0.18)',
     'limit-halo': '#1C1D1F',
     'brush-paint': '#DB8B42',

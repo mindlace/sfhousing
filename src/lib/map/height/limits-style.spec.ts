@@ -69,8 +69,8 @@ describe('limits style', () => {
 
   it('rule s: the outline of its lot set is 2 px; other chains take no width', () => {
     const m = { kind: 'rule', source: SRC_RULE0 } as const;
-    expect(chainLook(CHAIN_SOURCE, SRC_FZP, SRC_RULE0, m).widthPx).toBe(2);
-    expect(chainLook(CHAIN_LIMIT, SRC_RULE0, SRC_NONE, m).widthPx).toBe(2);
+    expect(chainLook(CHAIN_SOURCE, SRC_FZP, SRC_RULE0, m).widthPx).toBe(1.5);
+    expect(chainLook(CHAIN_LIMIT, SRC_RULE0, SRC_NONE, m).widthPx).toBe(1.5);
     expect(chainLook(CHAIN_LIMIT, SRC_RULE0, SRC_RULE0, m).widthPx).toBeUndefined();
     expect(chainLook(CHAIN_LIMIT, SRC_FZP, SRC_NONE, m).widthPx).toBeUndefined();
     expect(chainLook(CHAIN_LIMIT, SRC_FZP, SRC_NONE, PLAIN).widthPx).toBeUndefined();
@@ -91,14 +91,14 @@ describe('limits style', () => {
     expect(wallAlpha(SRC_FZP, PLAIN)).toBe(1);
   });
 
-  it('contour widths: 1 px below a 4-story step, 1.5 from 4 to 11, 2 from 12', () => {
+  it('contour widths: 0.75 px below a 4-story step, 1 from 4 to 11, 1.25 from 12', () => {
     expect([
       chainWidthPx(5, 2),
       chainWidthPx(8, 4),
       chainWidthPx(15, 4),
       chainWidthPx(16, 4)
-    ]).toEqual([1, 1.5, 1.5, 2]);
-    expect(chainWidthPx(4, 0)).toBe(1.5);
+    ]).toEqual([0.75, 1, 1, 1.25]);
+    expect(chainWidthPx(4, 0)).toBe(1);
   });
 
   it('crossfade', () => {
