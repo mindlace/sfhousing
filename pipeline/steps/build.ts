@@ -26,7 +26,12 @@ import { asOfFromLock } from '../project-records/parse';
 import { loadNormalised, normaliseAll } from '../sources/normalise';
 import { SB79_EXEMPTIONS_CSV } from '../sources/sfbos';
 import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
-import { LESSCARS_FREEWAY_LAND_JSON, LESSCARS_PLAN_JSON } from '../lesscars-config';
+import {
+  LESSCARS_BASEMAP_IDS_JSON,
+  LESSCARS_FREEWAY_LAND_JSON,
+  LESSCARS_PLAN_JSON
+} from '../lesscars-config';
+import { readBasemapIds } from '../lib/lesscars/basemap-ids';
 import { freewayLandSet, readFreewayLand } from '../lib/lesscars/freeway-land';
 import { writeCalibration } from './calibration';
 import { checkDataset, type InvariantResult } from './check';
@@ -284,8 +289,17 @@ export async function build(
     // /lesscars (docs/dev/lesscars.md): after the policy step (pol_tod, policy.bin), projects,
     // calibration and transit. Without a plan file (the live build until the authored plan
     // lands) it writes nothing and the manifest has no lesscars key.
+    // The basemap archive's raw path is resolved here: the id list is checked against it.
+    const basemap = lock.sources.find((s) => s.id === 'protomaps-basemap')?.files[0];
+    if (!basemap) throw new BuildError('lock has no protomaps-basemap file');
+    const basemapRaw = rawPath(opts.rawDir, basemap, byName);
     const lesscars = await report.time('lesscars', () =>
       writeLessCars({
+        basemap: {
+          pmtiles: basemapRaw,
+          ids: readBasemapIds(LESSCARS_BASEMAP_IDS_JSON[fixtureMode ? 'fixture' : 'live']),
+          sha256: basemap.sha256
+        },
         db,
         outDir,
         datasetVersion,
@@ -304,9 +318,7 @@ export async function build(
     if (!opts.skipTiles) {
       await report.time('tiles', () => writeBuildingsTiles(db, outDir, work));
     }
-    const basemap = lock.sources.find((s) => s.id === 'protomaps-basemap')?.files[0];
-    if (!basemap) throw new BuildError('lock has no protomaps-basemap file');
-    copyBasemap(rawPath(opts.rawDir, basemap, byName), outDir);
+    copyBasemap(basemapRaw, outDir);
     await materialiseFonts(lock, opts.rawDir, byName, join(work, 'fonts'));
     installFonts(join(work, 'fonts'), outDir);
 

@@ -534,6 +534,40 @@ the rest of I-80) are mixed at every zoom. An id filter cannot isolate the stret
 `LC.basemapClipZooms` is set to all five zooms. The 25 m band counts a crossing road as mixed, so
 the z14 and z15 entries overstate the merged lines; Task 6's candidate rule narrows them.
 
+### The id list
+
+`pipeline/enrichment/lesscars/basemap-ids.json` (absent until Plan B curates it; the mini
+fixture's is `pipeline/test/fixtures/mini/enrichment/lesscars-basemap-ids.json`) lists, per
+removal phase, the protomaps `roads` feature ids of the removed stretch:
+
+```json
+{
+  "schema": 1,
+  "source": { "sha256": "<sha256 of the protomaps-basemap lock file>" },
+  "phases": [{ "project": "<highway-truncation id>", "ref": "US 101", "ids": [35184377160410] }]
+}
+```
+
+`ids` are sorted and unique. The curated file is the source of truth; the candidates command only
+proposes:
+
+```bash
+npm run pipeline -- lesscars-basemap [--pmtiles <file>] [--band 25]
+```
+
+For every `freeway-land.json` segment with `removedBy`, it reads the segment's CNN centrelines
+from the locked `datasf-streets`, takes the `roads` pieces within `LC.basemapBandM` and keeps each
+whose in-band share is at least `LC.basemapMinShare` (0.9) at any zoom, grouped by (`removedBy`,
+`ref`) into phases, and writes `basemap-ids.candidates.json` beside the catalog with the lock's
+basemap sha256. Curate it into `basemap-ids.json` by hand.
+
+The build (`writeLessCars`) fails when a phase's `project` is not a `highway-truncation` of the
+plan, or when a listed id is in no `roads` tile at z11 to z15 within the phases' lines' bounding
+box plus 500 m (`basemapIdsMissing`; was the basemap rebuilt?). A `source.sha256` other than the
+lock's basemap is only a warning: the ids are what is checked. The step returns each phase with
+its project's CNN lines (`basemapPhases`) for the tiles split. The list is read by `build.ts`
+(live or fixture file by kind) and is not a published file.
+
 ## The page
 
 `/lesscars` (`src/routes/lesscars/`, plan `docs/superpowers/plans/2026-11-01-lesscars-2-page.md`)

@@ -13,7 +13,12 @@ import {
   parseSummary
 } from '../../src/lib/data/lesscars/codec';
 import { FIXTURE_PROFILE } from '../config';
-import { LESSCARS_FREEWAY_LAND_JSON, LESSCARS_PLAN_JSON } from '../lesscars-config';
+import {
+  LESSCARS_BASEMAP_IDS_JSON,
+  LESSCARS_FREEWAY_LAND_JSON,
+  LESSCARS_PLAN_JSON
+} from '../lesscars-config';
+import { readBasemapIds, type BasemapIdsFile } from '../lib/lesscars/basemap-ids';
 import { readFreewayLand, type FreewayLandFile } from '../lib/lesscars/freeway-land';
 import { LESSCARS_FILES } from '../lib/scenario-files';
 import { CALIBRATION_JSON } from '../steps/calibration';
@@ -36,10 +41,23 @@ beforeAll(async () => {
 /** The fixture catalog (lot 19 under I-80), which the build passes for a fixture version. */
 const FIXTURE_FREEWAY_LAND = readFreewayLand(LESSCARS_FREEWAY_LAND_JSON.fixture);
 
-function args(planPath: string | null, freewayLand: FreewayLandFile | null = FIXTURE_FREEWAY_LAND) {
+const MINI_BASEMAP = join(MINI, 'raw/protomaps-basemap.pmtiles');
+const FIXTURE_BASEMAP_IDS = readBasemapIds(LESSCARS_BASEMAP_IDS_JSON.fixture)!;
+const FIXTURE_IDS = FIXTURE_BASEMAP_IDS.phases[0].ids;
+const idsOf = (project: string, ids: number[]): BasemapIdsFile => ({
+  ...FIXTURE_BASEMAP_IDS,
+  phases: [{ project, ref: null, ids }]
+});
+
+function args(
+  planPath: string | null,
+  freewayLand: FreewayLandFile | null = FIXTURE_FREEWAY_LAND,
+  ids: BasemapIdsFile | null = FIXTURE_BASEMAP_IDS
+) {
   outDir = mkdtempSync(join(tmpdir(), 'sfh-lesscars-step-'));
   cpSync(m.outDir, outDir, { recursive: true });
   return {
+    basemap: { pmtiles: MINI_BASEMAP, ids, sha256: undefined as string | undefined },
     db: m.db,
     outDir,
     datasetVersion: 'fixture-0',
@@ -95,7 +113,7 @@ describe('writeLessCars', () => {
   it('no plan file: nothing written, no manifest key', async () => {
     for (const planPath of [null, join(tmpdir(), 'sfh-no-such-plan.json')]) {
       const r = await writeLessCars(args(planPath));
-      expect(r).toEqual({ written: false, counts: {}, warnings: [] });
+      expect(r).toEqual({ written: false, counts: {}, warnings: [], basemapPhases: [] });
       expect(existsSync(join(outDir, 'scenarios/lesscars'))).toBe(false);
     }
   });
@@ -236,6 +254,47 @@ describe('writeLessCars', () => {
   it('a plan that does not parse fails the build', async () => {
     await expect(writeLessCars(withPlan((p) => (p.schema = 2)))).rejects.toThrow('schema');
     expect(existsSync(join(outDir, 'scenarios/lesscars'))).toBe(false);
+  });
+});
+
+describe('basemap ids', () => {
+  const run = (ids: BasemapIdsFile | null) =>
+    writeLessCars(args(LESSCARS_PLAN_JSON.fixture, FIXTURE_FREEWAY_LAND, ids));
+  it('an id missing from basemap.pmtiles fails the build', async () => {
+    await expect(run(idsOf('hwy', [1, ...FIXTURE_IDS]))).rejects.toThrow(
+      /ids 1 are not in basemap\.pmtiles/
+    );
+    expect(existsSync(join(outDir, 'scenarios/lesscars'))).toBe(false);
+  });
+  it('a phase naming a project that is not a truncation fails', async () => {
+    await expect(run(idsOf('subway', FIXTURE_IDS))).rejects.toThrow(
+      /subway is not a highway truncation/
+    );
+    await expect(run(idsOf('nope', FIXTURE_IDS))).rejects.toThrow(
+      /nope is not a highway truncation/
+    );
+  });
+  it('a different lock sha256 is a warning, not a failure', async () => {
+    const a = args(LESSCARS_PLAN_JSON.fixture);
+    const sha256 = FIXTURE_BASEMAP_IDS.source.sha256;
+    a.basemap = {
+      pmtiles: MINI_BASEMAP,
+      ids: { ...FIXTURE_BASEMAP_IDS, source: { sha256: 'x' } },
+      sha256
+    };
+    const r = await writeLessCars(a);
+    expect(r.warnings.some((w) => /basemap-ids\.json: ids were read from/.test(w))).toBe(true);
+    expect(r.basemapPhases).toHaveLength(1);
+  });
+  it('the step returns each phase with its lines', async () => {
+    const r = await run(FIXTURE_BASEMAP_IDS);
+    expect(r.basemapPhases).toEqual([
+      expect.objectContaining({ project: 'hwy', ids: FIXTURE_IDS })
+    ]);
+    expect(r.basemapPhases[0].lines[0].length).toBeGreaterThanOrEqual(2);
+  });
+  it('no id list, no phases', async () => {
+    expect((await run(null)).basemapPhases).toEqual([]);
   });
 });
 

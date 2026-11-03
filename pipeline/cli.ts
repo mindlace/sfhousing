@@ -230,6 +230,8 @@ const steps: Record<string, { help: string; run: Step }> = {
       return lesscarsBasemap({
         mode: args.flags.report ? 'report' : 'candidates',
         pmtiles,
+        lockPath: LOCK,
+        rawDir: RAW,
         linesPath: str(args.flags.lines),
         bandM: band ? Number(band) : undefined
       });

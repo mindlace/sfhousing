@@ -201,3 +201,37 @@ export function idVerdict(
     return { z, ok: mixed.length === 0, mixed };
   });
 }
+
+/**
+ * The listed ids found in no `roads` tile at any of BASEMAP_ZOOMS within `bbox` ([w, s, e, n]):
+ * the build's check that a curated id list still matches the dataset's basemap (a rebuilt basemap
+ * can change ids). Sorted ascending.
+ */
+export async function basemapIdsMissing(
+  pmtiles: string,
+  ids: readonly number[],
+  bbox: [number, number, number, number]
+): Promise<number[]> {
+  const left = new Set(ids);
+  if (left.size === 0) return [];
+  const pm = new PMTiles(new NodeFileSource(pmtiles));
+  for (const z of BASEMAP_ZOOMS) {
+    const x0 = tileX(bbox[0], z);
+    const x1 = tileX(bbox[2], z);
+    const y0 = tileY(bbox[3], z);
+    const y1 = tileY(bbox[1], z);
+    for (let x = x0; x <= x1; x++)
+      for (let y = y0; y <= y1; y++) {
+        const t = await pm.getZxy(z, x, y);
+        if (!t) continue;
+        const layer = new VectorTile(new Pbf(new Uint8Array(t.data))).layers.roads;
+        if (!layer) continue;
+        for (let i = 0; i < layer.length; i++) {
+          const id = layer.feature(i).id;
+          if (id !== undefined) left.delete(id);
+        }
+        if (left.size === 0) return [];
+      }
+  }
+  return [...left].sort((a, b) => a - b);
+}

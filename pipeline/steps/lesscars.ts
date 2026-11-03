@@ -64,6 +64,8 @@ import {
   summarise
 } from '../lib/lesscars/runs';
 import { readFreedSites } from '../lib/lesscars/sites';
+import type { BasemapIdsFile } from '../lib/lesscars/basemap-ids';
+import { basemapIdsMissing } from '../lib/lesscars/basemap-roads';
 import { LESSCARS_FILES, POLICY_BIN } from '../lib/scenario-files';
 import { LC } from '../lesscars-config';
 import type { FreewayLandFile, FreewaySegment } from '../lib/lesscars/freeway-land';
@@ -314,6 +316,69 @@ async function segmentLines(db: Duck, plan: LessCarsPlan): Promise<LessCarsPlanF
   return out;
 }
 
+/** A phase of the basemap id list with the CNN centrelines of its project ([lng, lat]). */
+export interface BasemapPhase {
+  project: string;
+  ref: string | null;
+  ids: number[];
+  lines: [number, number][][];
+}
+
+const BASEMAP_BBOX_PAD_M = 500;
+const M_PER_DEG = 111_320;
+
+/**
+ * The basemap id list against the plan and the dataset's basemap.pmtiles: every phase names a
+ * highway truncation, and every listed id is still in a `roads` tile near the phases' lines. A
+ * list read from another basemap build than the lock's is a warning (the ids are what is checked).
+ */
+async function basemapProblems(
+  plan: LessCarsPlan,
+  segments: LessCarsPlanFile['segments'],
+  basemap: { pmtiles: string; ids: BasemapIdsFile | null; sha256?: string },
+  warnings: string[]
+): Promise<{ problems: string[]; phases: BasemapPhase[] }> {
+  const ids = basemap.ids;
+  if (ids === null) return { problems: [], phases: [] };
+  const problems: string[] = [];
+  const phases: BasemapPhase[] = [];
+  for (const ph of ids.phases) {
+    const p = plan.projects.find((x) => x.id === ph.project);
+    if (p === undefined || p.kind !== 'highway-truncation') {
+      problems.push(`basemap-ids.json: ${ph.project} is not a highway truncation of the plan`);
+      continue;
+    }
+    phases.push({ ...ph, lines: refCnns(p.segments).flatMap((c) => segments[c] ?? []) });
+  }
+  const pts = phases.flatMap((ph) => ph.lines.flat());
+  if (pts.length > 0 && problems.length === 0) {
+    const lngs = pts.map((q) => q[0]);
+    const lats = pts.map((q) => q[1]);
+    const dLat = BASEMAP_BBOX_PAD_M / M_PER_DEG;
+    const dLng = BASEMAP_BBOX_PAD_M / (M_PER_DEG * Math.cos((Math.min(...lats) * Math.PI) / 180));
+    const missing = await basemapIdsMissing(
+      basemap.pmtiles,
+      [...new Set(phases.flatMap((ph) => ph.ids))],
+      [
+        Math.min(...lngs) - dLng,
+        Math.min(...lats) - dLat,
+        Math.max(...lngs) + dLng,
+        Math.max(...lats) + dLat
+      ]
+    );
+    if (missing.length > 0)
+      problems.push(
+        `basemap-ids.json: ids ${missing.join(', ')} are not in basemap.pmtiles; was the basemap rebuilt?`
+      );
+  }
+  if (basemap.sha256 !== undefined && ids.source.sha256 !== basemap.sha256)
+    warnings.push(
+      `lesscars: basemap-ids.json: ids were read from basemap ${ids.source.sha256}, ` +
+        `the dataset's is ${basemap.sha256}`
+    );
+  return { problems, phases };
+}
+
 function readPlan(planPath: string): LessCarsPlan {
   try {
     return parseLessCarsPlan(JSON.parse(readFileSync(planPath, 'utf8')));
@@ -339,9 +404,20 @@ export async function writeLessCars(a: {
   capDay: Day;
   /** The freeway-land catalog; null: no catalog. */
   freewayLand: FreewayLandFile | null;
-}): Promise<{ written: boolean; counts: Record<string, number>; warnings: string[] }> {
+  /**
+   * The dataset's basemap archive and the curated basemap id list (null: none, the live build
+   * until Plan B); `sha256` is the lock's, for the stale-list warning.
+   */
+  basemap: { pmtiles: string; ids: BasemapIdsFile | null; sha256?: string };
+}): Promise<{
+  written: boolean;
+  counts: Record<string, number>;
+  warnings: string[];
+  /** Each phase of the id list with its project's CNN lines, for the tiles split; [] without. */
+  basemapPhases: BasemapPhase[];
+}> {
   if (a.planPath === null || !existsSync(a.planPath))
-    return { written: false, counts: {}, warnings: [] };
+    return { written: false, counts: {}, warnings: [], basemapPhases: [] };
   const { db, outDir, datasetVersion } = a;
   const warnings: string[] = [];
 
@@ -350,9 +426,12 @@ export async function writeLessCars(a: {
   const schedule = schedulePlan(plan);
   const parcels = readParcelsBin(join(outDir, PARCELS_BIN));
   const transit = decodeTransit(JSON.parse(readFileSync(join(outDir, 'transit.json'), 'utf8')));
+  const segments = await segmentLines(db, plan);
+  const basemap = await basemapProblems(plan, segments, a.basemap, warnings);
   const problems = [
     ...checkPlan(plan, schedule).map((p) => `${p.project}.${p.code}: ${p.message}`),
-    ...(await dataProblems(db, plan, parcels, transit, a.freewayLand))
+    ...(await dataProblems(db, plan, parcels, transit, a.freewayLand)),
+    ...basemap.problems
   ];
   if (problems.length > 0)
     throw new BuildError(
@@ -430,7 +509,7 @@ export async function writeLessCars(a: {
     datasetVersion,
     plan,
     times: plan.projects.map((p) => schedule.times.get(p.id)!),
-    segments: await segmentLines(db, plan)
+    segments
   };
   const sitesFile: LessCarsSitesFile = {
     format: LESSCARS_FORMAT,
@@ -501,7 +580,7 @@ export async function writeLessCars(a: {
   };
   // Deflate bytes may differ across zlib builds, so fixture reports omit them (as policy.bin's).
   if (!FIXTURE_RE.test(datasetVersion)) counts['lesscars.bytes.timeline'] = body.length;
-  return { written: true, counts, warnings };
+  return { written: true, counts, warnings, basemapPhases: basemap.phases };
 }
 
 /** The golden's canonical dump of a written timeline.bin, decoded against its parcels.bin. */

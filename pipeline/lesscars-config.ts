@@ -80,3 +80,12 @@ export const LESSCARS_FREEWAY_LAND_JSON = {
   live: path.join(PIPELINE_DIR, 'enrichment/lesscars/freeway-land.json'),
   fixture: path.join(PIPELINE_DIR, 'test/fixtures/mini/enrichment/lesscars-freeway-land.json')
 };
+
+/**
+ * The curated basemap id list (`pipeline/lib/lesscars/basemap-ids.ts`): live (absent until Plan B
+ * curates it, so a live build checks no ids), and the mini fixture's.
+ */
+export const LESSCARS_BASEMAP_IDS_JSON = {
+  live: path.join(PIPELINE_DIR, 'enrichment/lesscars/basemap-ids.json'),
+  fixture: path.join(PIPELINE_DIR, 'test/fixtures/mini/enrichment/lesscars-basemap-ids.json')
+};
