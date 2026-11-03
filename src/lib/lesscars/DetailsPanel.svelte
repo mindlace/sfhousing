@@ -36,8 +36,11 @@
   const year = $derived(finalYear(summary));
   const scale = $derived(Math.max(1, ...rows.map((r) => Math.abs(r.homes))));
   const land = $derived(freedLandSplit(sites));
+  // The disclosure belongs to the v1.1 sites file: any site carrying `parcels` (the key is absent
+  // in v1 files, so a published v1 dataset renders as before).
+  const hasParcelInfo = $derived(sites.sites.some((s) => s.parcels !== undefined));
   const landText = $derived(
-    land.parcelM2 + land.rowM2 > 0
+    hasParcelInfo && land.parcelM2 + land.rowM2 > 0
       ? freedLandCopy((land.parcelM2 / 10000).toFixed(1), (land.rowM2 / 10000).toFixed(1))
       : null
   );

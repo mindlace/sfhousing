@@ -6,6 +6,7 @@ import '../../routes/layout.css';
 import { parseSitesFile, parseSummary } from '$lib/data/lesscars/codec';
 import { formatCount } from '$lib/scoreboard/format';
 import sitesJson from '../../../e2e/fixtures/data/fixture-0/scenarios/lesscars/sites.json';
+import V1_SITES from '$lib/data/lesscars/fixtures/v1/sites.json';
 import summaryJson from '../../../e2e/fixtures/data/fixture-0/scenarios/lesscars/summary.json';
 import { AMENITIES_COPY, BUILDING_NOTE } from './copy';
 import DetailsPanel from './DetailsPanel.svelte';
@@ -57,6 +58,20 @@ describe('DetailsPanel', () => {
       .toBeVisible();
   });
 
+  it('a v1 sites file (no parcels information) shows no freed-land line', async () => {
+    await page.viewport(1024, 768);
+    await render(DetailsPanel, {
+      props: {
+        summary: fx,
+        sites: parseSitesFile(V1_SITES),
+        day: fx.yearEnds[0],
+        onevidence: vi.fn()
+      }
+    });
+    await expect.element(page.getByText(/Freed land:/)).not.toBeInTheDocument();
+    await expect.element(page.getByTestId('lc-panel')).toBeVisible();
+  });
+
   it('shows the garage cost only when summary.garageCost is present', async () => {
     await page.viewport(1024, 768);
     const a = await render(DetailsPanel, {
@@ -71,19 +86,5 @@ describe('DetailsPanel', () => {
     await expect
       .element(page.getByText('Edge garages on freed land take the place of 1,234 homes.'))
       .toBeVisible();
-  });
-
-  it('an old dataset with no parcels shows only the roadway sentence', async () => {
-    await page.viewport(1024, 768);
-    const old = structuredClone(sites);
-    for (const x of old.sites) {
-      delete x.parcels;
-      delete x.parcelM2;
-    }
-    await render(DetailsPanel, {
-      props: { summary: fx, sites: old, day: fx.yearEnds[0], onevidence: vi.fn() }
-    });
-    await expect.element(page.getByText(/of former freeway land/)).not.toBeInTheDocument();
-    await expect.element(page.getByText(/ha of former roadway\./)).toBeVisible();
   });
 });
